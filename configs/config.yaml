@@ -1,0 +1,37 @@
+# kagent configuration
+# Override any value with KAGENT_<KEY> environment variables
+# e.g. KAGENT_LLM_API_KEY, KAGENT_LLM_PROVIDER
+
+# LLM provider settings
+llm:
+  provider: openai           # openai | claude | deepseek
+  model: gpt-4o              # model name
+  api_key: ""                # set via env: OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY
+  base_url: ""               # optional override (e.g. for Ollama: http://localhost:11434/v1)
+
+# Workspace directory for file and shell tools
+# Defaults to current working directory
+workspace: ""
+
+# SerpAPI key for web_search tool
+serpapi_key: ""              # set via env: KAGENT_SERPAPI_KEY
+
+# Max ReAct loop steps per agent task
+max_steps: 30
+
+# HTTP server settings (server mode)
+server:
+  addr: ":8080"
+
+# SQLite database path for persistent memory
+# Leave empty to use in-memory storage
+database:
+  path: ""                   # e.g. ~/.kagent/memory.db
+
+# HITL settings
+hitl:
+  fail_threshold: 3          # trigger HITL after N consecutive tool failures
+
+# Logging
+log:
+  level: info                # debug | info | warn | error

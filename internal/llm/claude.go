@@ -1,0 +1,238 @@
+package llm
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"math"
+	"net/http"
+	"time"
+)
+
+const (
+	claudeAPIBase    = "https://api.anthropic.com/v1"
+	claudeAPIVersion = "2023-06-01"
+)
+
+// ClaudeProvider implements Provider for Anthropic Claude.
+type ClaudeProvider struct {
+	apiKey string
+	model  string
+	client *http.Client
+}
+
+// ClaudeConfig configures a ClaudeProvider.
+type ClaudeConfig struct {
+	APIKey string
+	Model  string // default: claude-sonnet-4-6
+}
+
+// NewClaudeProvider creates a ClaudeProvider.
+func NewClaudeProvider(cfg ClaudeConfig) *ClaudeProvider {
+	if cfg.Model == "" {
+		cfg.Model = "claude-sonnet-4-6"
+	}
+	return &ClaudeProvider{
+		apiKey: cfg.APIKey,
+		model:  cfg.Model,
+		client: &http.Client{Timeout: 120 * time.Second},
+	}
+}
+
+// Name implements Provider.
+func (p *ClaudeProvider) Name() string { return "claude" }
+
+// Complete implements Provider.
+func (p *ClaudeProvider) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
+	model := req.Model
+	if model == "" {
+		model = p.model
+	}
+
+	body := p.buildRequestBody(req, model)
+	respData, err := p.doRequest(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	return p.parseResponse(respData)
+}
+
+// Stream implements Provider (simplified: calls Complete).
+func (p *ClaudeProvider) Stream(ctx context.Context, req *CompletionRequest) (<-chan string, error) {
+	ch := make(chan string, 1)
+	go func() {
+		defer close(ch)
+		resp, err := p.Complete(ctx, req)
+		if err != nil {
+			slog.Error("claude stream error", "err", err)
+			return
+		}
+		ch <- resp.Content
+	}()
+	return ch, nil
+}
+
+// Embed implements Provider — delegates to OpenAI embeddings since Claude has no native embed API.
+func (p *ClaudeProvider) Embed(_ context.Context, _ string) ([]float32, error) {
+	return nil, fmt.Errorf("claude provider does not support embeddings: use an OpenAI-compatible provider for embeddings")
+}
+
+func (p *ClaudeProvider) buildRequestBody(req *CompletionRequest, model string) map[string]any {
+	msgs := make([]map[string]any, 0, len(req.Messages))
+
+	for _, m := range req.Messages {
+		switch {
+		case m.ToolCall != nil:
+			msgs = append(msgs, map[string]any{
+				"role": "assistant",
+				"content": []map[string]any{{
+					"type":  "tool_use",
+					"id":    m.ToolCall.ID,
+					"name":  m.ToolCall.Name,
+					"input": m.ToolCall.Arguments,
+				}},
+			})
+		case m.ToolResult != nil:
+			msgs = append(msgs, map[string]any{
+				"role": "user",
+				"content": []map[string]any{{
+					"type":        "tool_result",
+					"tool_use_id": m.ToolResult.ToolCallID,
+					"content":     m.ToolResult.Content,
+				}},
+			})
+		default:
+			msgs = append(msgs, map[string]any{"role": m.Role, "content": m.Content})
+		}
+	}
+
+	body := map[string]any{
+		"model":      model,
+		"messages":   msgs,
+		"max_tokens": 4096,
+	}
+	if req.MaxTokens > 0 {
+		body["max_tokens"] = req.MaxTokens
+	}
+	if req.System != "" {
+		body["system"] = req.System
+	}
+
+	if len(req.Tools) > 0 {
+		tools := make([]map[string]any, len(req.Tools))
+		for i, t := range req.Tools {
+			tools[i] = map[string]any{
+				"name":         t.Name,
+				"description":  t.Description,
+				"input_schema": t.Parameters,
+			}
+		}
+		body["tools"] = tools
+	}
+
+	return body
+}
+
+func (p *ClaudeProvider) parseResponse(data []byte) (*CompletionResponse, error) {
+	var raw struct {
+		Content []struct {
+			Type  string          `json:"type"`
+			Text  string          `json:"text"`
+			ID    string          `json:"id"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
+		} `json:"content"`
+		StopReason string `json:"stop_reason"`
+		Usage      struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("parse claude response: %w", err)
+	}
+	if raw.Error != nil {
+		return nil, fmt.Errorf("claude api error: %s", raw.Error.Message)
+	}
+
+	resp := &CompletionResponse{
+		FinishReason: raw.StopReason,
+		Usage: TokenUsage{
+			PromptTokens:     raw.Usage.InputTokens,
+			CompletionTokens: raw.Usage.OutputTokens,
+			TotalTokens:      raw.Usage.InputTokens + raw.Usage.OutputTokens,
+		},
+	}
+
+	for _, block := range raw.Content {
+		switch block.Type {
+		case "text":
+			resp.Content += block.Text
+		case "tool_use":
+			var args map[string]any
+			_ = json.Unmarshal(block.Input, &args)
+			resp.ToolCalls = append(resp.ToolCalls, ToolCall{
+				ID:        block.ID,
+				Name:      block.Name,
+				Arguments: args,
+			})
+		}
+	}
+	if len(resp.ToolCalls) > 0 {
+		resp.FinishReason = "tool_calls"
+	}
+	return resp, nil
+}
+
+func (p *ClaudeProvider) doRequest(ctx context.Context, body map[string]any) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(math.Pow(2, float64(attempt))) * time.Second
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshal claude request: %w", err)
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, claudeAPIBase+"/messages", bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("x-api-key", p.apiKey)
+		httpReq.Header.Set("anthropic-version", claudeAPIVersion)
+
+		httpResp, err := p.client.Do(httpReq)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		defer httpResp.Body.Close()
+
+		respData, err := io.ReadAll(httpResp.Body)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if httpResp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("claude server error %d: %s", httpResp.StatusCode, string(respData))
+			continue
+		}
+		return respData, nil
+	}
+	return nil, fmt.Errorf("claude request failed after retries: %w", lastErr)
+}
