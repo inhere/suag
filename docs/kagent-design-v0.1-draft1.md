@@ -2,7 +2,7 @@
 
 > 版本: v0.1-draft | 日期: 2025-03-15 | 状态: 待评审
 
----
+***
 
 ## 目录
 
@@ -16,7 +16,7 @@
 8. [分阶段实施规划](#8-分阶段实施规划)
 9. [待确认问题列表](#9-待确认问题列表)
 
----
+***
 
 ## 1. 需求关联分析
 
@@ -63,16 +63,16 @@
 
 ### 1.2 数据流分析
 
-| 数据流 | 源 | 目标 | 内容 | 频率 |
-|--------|-----|------|------|------|
-| 用户指令 | Gateway | Orchestrator | 自然语言任务 | 按需 |
-| LLM 请求 | Agent | LLM Provider | Prompt + Context | 每个 ReAct 步骤 |
-| 工具调用 | Agent | Toolbox | Function Call 参数 | 按需 |
-| 记忆检索 | Agent | Memory System | 语义查询向量 | 每次对话 |
-| 追踪事件 | 所有层 | Tracing System | Span 数据 | 持续 |
-| SSE 推送 | Tracing/Orchestrator | Gateway | 状态变更事件 | 实时 |
-| HITL 请求 | Agent | HITL Manager | 决策请求 | 条件触发 |
-| 团队协作 | Agent | Team Manager | 任务分配/结果 | 按需 |
+| 数据流     | 源                    | 目标             | 内容               | 频率          |
+| ------- | -------------------- | -------------- | ---------------- | ----------- |
+| 用户指令    | Gateway              | Orchestrator   | 自然语言任务           | 按需          |
+| LLM 请求  | Agent                | LLM Provider   | Prompt + Context | 每个 ReAct 步骤 |
+| 工具调用    | Agent                | Toolbox        | Function Call 参数 | 按需          |
+| 记忆检索    | Agent                | Memory System  | 语义查询向量           | 每次对话        |
+| 追踪事件    | 所有层                  | Tracing System | Span 数据          | 持续          |
+| SSE 推送  | Tracing/Orchestrator | Gateway        | 状态变更事件           | 实时          |
+| HITL 请求 | Agent                | HITL Manager   | 决策请求             | 条件触发        |
+| 团队协作    | Agent                | Team Manager   | 任务分配/结果          | 按需          |
 
 ### 1.3 核心能力 vs 扩展能力边界
 
@@ -99,16 +99,16 @@
 
 ### 1.4 需求矛盾点与模糊点
 
-| 编号 | 问题 | 影响 | 建议 |
-|------|------|------|------|
-| C-1 | "能长时间处理任务" 与 LLM 上下文窗口限制矛盾 | 架构设计 | 需要 Sub-agent 隔离会话 + 摘要回传机制 |
-| C-2 | "小团队自带跟踪审核" 与 "默认任务跟踪专家" 是否重叠 | 团队设计 | 建议: 小团队内置 Reviewer 角色，大任务额外有全局审核 |
-| C-3 | SOUL.md 与 SKILL.md 的关系未明确 | 角色定义 | SOUL.md 定义角色身份/目标/约束，SKILL.md 定义可执行技能脚本 |
-| C-4 | "上帝模式"指令注入的权限边界 | 安全设计 | 需要定义注入指令的优先级和覆盖范围 |
-| C-5 | 外部 Agent 的错误处理和超时策略未定义 | 可靠性 | claude-code 等外部进程可能长时间运行，需要超时和重试策略 |
-| C-6 | Browser Agent 的技术方案未指定 | 实现复杂度 | 建议基于 chromedp 或 rod 实现 |
+| 编号  | 问题                            | 影响    | 建议                                      |
+| --- | ----------------------------- | ----- | --------------------------------------- |
+| C-1 | "能长时间处理任务" 与 LLM 上下文窗口限制矛盾    | 架构设计  | 需要 Sub-agent 隔离会话 + 摘要回传机制              |
+| C-2 | "小团队自带跟踪审核" 与 "默认任务跟踪专家" 是否重叠 | 团队设计  | 建议: 小团队内置 Reviewer 角色，大任务额外有全局审核        |
+| C-3 | SOUL.md 与 SKILL.md 的关系未明确     | 角色定义  | SOUL.md 定义角色身份/目标/约束，SKILL.md 定义可执行技能脚本 |
+| C-4 | "上帝模式"指令注入的权限边界               | 安全设计  | 需要定义注入指令的优先级和覆盖范围                       |
+| C-5 | 外部 Agent 的错误处理和超时策略未定义        | 可靠性   | claude-code 等外部进程可能长时间运行，需要超时和重试策略      |
+| C-6 | Browser Agent 的技术方案未指定        | 实现复杂度 | 建议基于 chromedp 或 rod 实现                  |
 
----
+***
 
 ## 2. 整体架构设计
 
@@ -168,12 +168,12 @@
 
 ### 2.2 各层职责边界
 
-| 层 | 职责 | 不做什么 |
-|----|------|----------|
-| 接入层 | 协议适配、认证鉴权、请求路由、SSE 推送 | 不做业务逻辑、不直接调用 LLM |
+| 层   | 职责                       | 不做什么               |
+| --- | ------------------------ | ------------------ |
+| 接入层 | 协议适配、认证鉴权、请求路由、SSE 推送    | 不做业务逻辑、不直接调用 LLM   |
 | 编排层 | 任务分解、Agent 调度、团队协作、状态机管理 | 不直接做工具执行、不管 LLM 细节 |
-| 能力层 | LLM 调用、记忆管理、追踪埋点 | 不做业务决策、不管任务调度 |
-| 执行层 | 工具执行、外部系统集成、沙箱隔离 | 不做推理决策 |
+| 能力层 | LLM 调用、记忆管理、追踪埋点         | 不做业务决策、不管任务调度      |
+| 执行层 | 工具执行、外部系统集成、沙箱隔离         | 不做推理决策             |
 
 ### 2.3 接口契约
 
@@ -237,7 +237,7 @@ type MemoryStore interface {
 }
 ```
 
----
+***
 
 ## 3. 核心数据模型
 
@@ -401,7 +401,7 @@ type CompletionResponse struct {
 }
 ```
 
----
+***
 
 ## 4. 关键流程设计
 
@@ -586,7 +586,7 @@ Agent 执行中
 └──────────────────────────┘
 ```
 
----
+***
 
 ## 5. 模块详细设计
 
@@ -688,6 +688,7 @@ func (e *AgentEngine) handleFailure(ctx context.Context, task *Task, err error) 
 **职责：** 管理团队创建、角色分配、任务分发和协作。
 
 **设计原则：**
+
 - 每个团队自动包含一个 Tracker（跟踪）和 Reviewer（审核）角色
 - 支持动态创建专家角色
 - 基于 Go channel 实现 Agent 间消息传递
@@ -1096,7 +1097,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, name string, args json.RawMe
 
 **SKILL.md 格式示例：**
 
-```markdown
+````markdown
 ---
 name: deploy_service
 description: 部署服务到指定环境
@@ -1114,7 +1115,7 @@ timeout: 300s
 cd /workspace/${service_name}
 make build
 kubectl apply -f deploy/${environment}.yaml
-```
+````
 
 ## Flow 类型示例 (多步骤编排)
 
@@ -1529,29 +1530,29 @@ func (eb *EventBus) Subscribe() chan Event {
 }
 ```
 
----
+***
 
 ## 6. 技术选型
 
 ### 6.1 核心依赖
 
-| 领域 | 选型 | 理由 |
-|------|------|------|
-| HTTP 框架 | `go-chi/chi/v5` | 轻量，兼容 net/http，中间件生态好 |
-| SQLite 驱动 | `modernc.org/sqlite` | 纯 Go 实现，无需 CGO，跨平台 |
-| 向量搜索 | `asg017/sqlite-vec` (CGO) 或 `viant/sqlite-vec` (纯 Go) | PRD 明确要求 SQLite + sqlite-vec |
-| MCP 集成 | `modelcontextprotocol/go-sdk` | 官方 SDK，Google 协维护，规范全覆盖 |
-| OpenAI 客户端 | `openai/openai-go` | 官方 SDK，支持 function calling + structured output |
-| Anthropic 客户端 | `anthropics/anthropic-sdk-go` | 官方 SDK |
-| Claude-Code 集成 | `bpowers/go-claudecode` 或 `severity1/claude-agent-sdk-go` | 社区 SDK，支持子进程通信和沙箱 |
-| Cron 调度 | `robfig/cron/v3` | Go 标准 cron 库，支持秒级调度 |
-| SSE | 内置实现 (基于 net/http Flusher) | 简单场景无需额外依赖；复杂场景可用 `r3labs/sse` |
-| 日志 | `log/slog` (标准库) | Go 1.21+ 内置结构化日志 |
-| 配置 | `koanf` 或 `viper` | 支持 YAML/ENV/CLI，热重载 |
-| 测试 | `testify` + `gomock` | 断言 + mock 标准组合 |
-| Browser 自动化 | `go-rod/rod` | 高性能 CDP 库，API 简洁 |
-| Embedding | OpenAI `text-embedding-3-small` 或本地模型 | 起步用云端 API，后续可切本地 |
-| UUID | `google/uuid` | 标准 UUID 生成 |
+| 领域             | 选型                                                        | 理由                                             |
+| -------------- | --------------------------------------------------------- | ---------------------------------------------- |
+| HTTP 框架        | `go-chi/chi/v5`                                           | 轻量，兼容 net/http，中间件生态好                          |
+| SQLite 驱动      | `modernc.org/sqlite`                                      | 纯 Go 实现，无需 CGO，跨平台                             |
+| 向量搜索           | `asg017/sqlite-vec` (CGO) 或 `viant/sqlite-vec` (纯 Go)     | PRD 明确要求 SQLite + sqlite-vec                   |
+| MCP 集成         | `modelcontextprotocol/go-sdk`                             | 官方 SDK，Google 协维护，规范全覆盖                        |
+| OpenAI 客户端     | `openai/openai-go`                                        | 官方 SDK，支持 function calling + structured output |
+| Anthropic 客户端  | `anthropics/anthropic-sdk-go`                             | 官方 SDK                                         |
+| Claude-Code 集成 | `bpowers/go-claudecode` 或 `severity1/claude-agent-sdk-go` | 社区 SDK，支持子进程通信和沙箱                              |
+| Cron 调度        | `robfig/cron/v3`                                          | Go 标准 cron 库，支持秒级调度                            |
+| SSE            | 内置实现 (基于 net/http Flusher)                                | 简单场景无需额外依赖；复杂场景可用 `r3labs/sse`                 |
+| 日志             | `log/slog` (标准库)                                          | Go 1.21+ 内置结构化日志                               |
+| 配置             | `koanf` 或 `viper`                                         | 支持 YAML/ENV/CLI，热重载                            |
+| 测试             | `testify` + `gomock`                                      | 断言 + mock 标准组合                                 |
+| Browser 自动化    | `go-rod/rod`                                              | 高性能 CDP 库，API 简洁                               |
+| Embedding      | OpenAI `text-embedding-3-small` 或本地模型                     | 起步用云端 API，后续可切本地                               |
+| UUID           | `google/uuid`                                             | 标准 UUID 生成                                     |
 
 ### 6.2 sqlite-vec 集成方案
 
@@ -1594,7 +1595,7 @@ kagent
       方式: MCP Client 或 REST API
 ```
 
----
+***
 
 ## 7. 代码结构
 
@@ -1707,7 +1708,7 @@ kagent/
 └── README.md
 ```
 
----
+***
 
 ## 8. 分阶段实施规划
 
@@ -1716,6 +1717,7 @@ kagent/
 **目标：** 单 Agent 能完成基本 ReAct 循环，可通过 CLI 交互。
 
 **交付：**
+
 - 单 Agent ReAct Loop 引擎
 - LLM Provider（OpenAI 兼容协议，覆盖 OpenAI + DeepSeek）
 - 基础内存记忆（会话内消息列表 + 摘要压缩）
@@ -1726,19 +1728,22 @@ kagent/
 - 单元测试覆盖核心引擎
 
 **技术风险：**
+
 - LLM function calling 的格式差异（OpenAI vs Claude）需要适配层
 - 上下文窗口管理（摘要时机）
 
 **依赖：**
+
 - 无外部依赖，可独立启动
 
----
+***
 
 ### Phase 2: 记忆与追踪 -- 预计 2-3 周
 
 **目标：** Agent 具备跨会话记忆能力和全链路追踪。
 
 **交付：**
+
 - SQLite 持久化（消息、任务、追踪）
 - sqlite-vec 向量语义记忆
 - Embedding 集成（OpenAI text-embedding-3-small）
@@ -1747,19 +1752,22 @@ kagent/
 - 基础日志（slog 结构化输出）
 
 **技术风险：**
+
 - sqlite-vec 纯 Go 版本性能需验证
 - 嵌入模型延迟对 ReAct Loop 速度的影响
 
 **依赖：**
+
 - Phase 1 完成
 
----
+***
 
 ### Phase 3: 团队协作 -- 预计 3-4 周
 
 **目标：** 支持多 Agent 团队协作，包含内置跟踪和审核。
 
 **交付：**
+
 - Team Manager
 - SOUL.md 角色定义与解析
 - 多 Agent 并发执行（Go 协程）
@@ -1769,20 +1777,23 @@ kagent/
 - 串行/并行 Pipeline
 
 **技术风险：**
+
 - Agent 间通信的消息格式需标准化
 - 并发执行的错误传播和取消机制
 - Sub-Agent 结果摘要的质量
 
 **依赖：**
+
 - Phase 2 完成（需要追踪和记忆支持团队因果分析）
 
----
+***
 
 ### Phase 4: 外部集成 -- 预计 2-3 周
 
 **目标：** 集成 MCP 协议和外部 Agent。
 
 **交付：**
+
 - MCP Client 集成（modelcontextprotocol/go-sdk）
 - claude-code 外部 Agent 桥接
 - opencode 外部 Agent 桥接
@@ -1790,20 +1801,23 @@ kagent/
 - 工具沙箱（Docker 可选，资源限制）
 
 **技术风险：**
+
 - 外部 Agent 子进程的稳定性和超时处理
 - MCP Server 兼容性（不同 MCP 实现的差异）
 - 沙箱安全隔离的完整性
 
 **依赖：**
+
 - Phase 1 的 ToolRegistry
 
----
+***
 
 ### Phase 5: Web UI 与 HITL -- 预计 3-4 周
 
 **目标：** 完整的 Web 仪表盘，支持实时追踪和人机协作。
 
 **交付：**
+
 - HTTP API 服务器（chi）
 - SSE 实时事件推送
 - HITL Manager（人机协作干预）
@@ -1816,34 +1830,39 @@ kagent/
 - API 认证（简单 Token 或 OAuth）
 
 **技术风险：**
+
 - SSE 长连接的稳定性（代理/负载均衡器兼容性）
 - Web UI 技术选型（建议 React/Vue + Vite）
 - HITL 阻塞状态的超时和恢复机制
 
 **依赖：**
+
 - Phase 2（Tracing）
 - Phase 3（Team 协作数据展示）
 
----
+***
 
 ### Phase 6: 高级特性 -- 预计 2-3 周
 
 **目标：** 智能定时任务、Browser Agent、多渠道接入。
 
 **交付：**
+
 - Agentic Cron（智能定时任务）
 - Browser Agent（基于 rod）
 - TUI 客户端（可选，基于 bubbletea）
 - 多渠道 IM 适配器（Slack/微信，接口预留）
 
 **技术风险：**
+
 - Browser Agent 的稳定性和资源消耗
 - IM 渠道的 API 限制
 
 **依赖：**
+
 - Phase 1-5 基本完成
 
----
+***
 
 ### 里程碑总结
 
@@ -1856,41 +1875,41 @@ Week 15-18: [Phase 5] Web UI + HITL ────────── 完整可视�
 Week 19-21: [Phase 6] 高级特性 ────────────── 定时任务 + Browser
 ```
 
----
+***
 
 ## 9. 待确认问题列表
 
 ### 高优先级（影响架构设计）
 
-| # | 问题 | 影响范围 | 建议默认值 |
-|---|------|----------|-----------|
-| P1 | SOUL.md 的具体格式规范是什么？是否使用 YAML front-matter + Markdown 正文？ | Team Manager, Soul Registry | 建议用 YAML front-matter + Markdown |
-| P2 | SKILL.md 中 "flow" 类型的技能编排语法如何定义？是否支持条件分支和循环？ | Skill Engine | 建议 MVP 阶段仅支持线性 steps |
-| P3 | "上帝模式"指令注入的优先级如何？是否能覆盖 Agent 的 SOUL 约束？ | 安全模型, Gateway | 建议注入指令优先级高于任务上下文但不覆盖安全约束 |
-| P4 | 外部 Agent（claude-code）的 workspace 是否与 kagent 共享？安全隔离到什么程度？ | External Bridge, 安全 | 建议共享 workspace 但限制在项目目录内 |
-| P5 | 向量嵌入使用云端 API（OpenAI）还是本地模型？对延迟和成本的要求？ | Memory System | 建议起步用云端 API，后续支持本地 |
+| #  | 问题                                                        | 影响范围                        | 建议默认值                            |
+| -- | --------------------------------------------------------- | --------------------------- | -------------------------------- |
+| P1 | SOUL.md 的具体格式规范是什么？是否使用 YAML front-matter + Markdown 正文？  | Team Manager, Soul Registry | 建议用 YAML front-matter + Markdown |
+| P2 | SKILL.md 中 "flow" 类型的技能编排语法如何定义？是否支持条件分支和循环？              | Skill Engine                | 建议 MVP 阶段仅支持线性 steps             |
+| P3 | "上帝模式"指令注入的优先级如何？是否能覆盖 Agent 的 SOUL 约束？                   | 安全模型, Gateway               | 建议注入指令优先级高于任务上下文但不覆盖安全约束         |
+| P4 | 外部 Agent（claude-code）的 workspace 是否与 kagent 共享？安全隔离到什么程度？ | External Bridge, 安全         | 建议共享 workspace 但限制在项目目录内         |
+| P5 | 向量嵌入使用云端 API（OpenAI）还是本地模型？对延迟和成本的要求？                     | Memory System               | 建议起步用云端 API，后续支持本地               |
 
 ### 中优先级（影响功能实现）
 
-| # | 问题 | 影响范围 | 建议默认值 |
-|---|------|----------|-----------|
-| P6 | 团队的 Agent 数量上限？是否需要动态扩缩？ | Team Manager | 建议默认上限 10，可配置 |
-| P7 | HITL 干预请求的超时时间？超时后自动终止还是继续等待？ | HITL Manager | 建议默认 30 分钟，超时后自动终止任务 |
-| P8 | 记忆的保留策略？是否需要自动清理过期记忆？ | Memory System | 建议按时间 + 重要度自动清理 |
-| P9 | Web UI 的技术栈偏好？React/Vue/Svelte？ | Web UI | 建议 React + shadcn/ui + Vite |
-| P10 | 是否需要多用户/多租户支持？ | 全局架构 | 建议 MVP 单用户，后续扩展 |
+| #   | 问题                              | 影响范围          | 建议默认值                       |
+| --- | ------------------------------- | ------------- | --------------------------- |
+| P6  | 团队的 Agent 数量上限？是否需要动态扩缩？        | Team Manager  | 建议默认上限 10，可配置               |
+| P7  | HITL 干预请求的超时时间？超时后自动终止还是继续等待？   | HITL Manager  | 建议默认 30 分钟，超时后自动终止任务        |
+| P8  | 记忆的保留策略？是否需要自动清理过期记忆？           | Memory System | 建议按时间 + 重要度自动清理             |
+| P9  | Web UI 的技术栈偏好？React/Vue/Svelte？ | Web UI        | 建议 React + shadcn/ui + Vite |
+| P10 | 是否需要多用户/多租户支持？                  | 全局架构          | 建议 MVP 单用户，后续扩展             |
 
 ### 低优先级（可后续迭代）
 
-| # | 问题 | 影响范围 | 建议默认值 |
-|---|------|----------|-----------|
-| P11 | Agentic Cron 的任务持久化？重启后是否恢复？ | Cron 系统 | 建议配置文件定义，启动时注册 |
-| P12 | Browser Agent 是否需要支持无头模式和有头模式切换？ | Browser Agent | 建议默认无头，调试时有头 |
-| P13 | 追踪数据的保留时间和存储上限？ | Tracing System | 建议默认保留 30 天 |
-| P14 | IM 渠道的优先级排序？首先接入哪个平台？ | 接入层 | 根据实际需求确定 |
-| P15 | 是否需要 Agent 的热更新能力（运行时修改 SOUL.md 后无需重启）？ | Team Manager | 建议支持，通过文件监控实现 |
+| #   | 问题                                      | 影响范围           | 建议默认值          |
+| --- | --------------------------------------- | -------------- | -------------- |
+| P11 | Agentic Cron 的任务持久化？重启后是否恢复？            | Cron 系统        | 建议配置文件定义，启动时注册 |
+| P12 | Browser Agent 是否需要支持无头模式和有头模式切换？        | Browser Agent  | 建议默认无头，调试时有头   |
+| P13 | 追踪数据的保留时间和存储上限？                         | Tracing System | 建议默认保留 30 天    |
+| P14 | IM 渠道的优先级排序？首先接入哪个平台？                   | 接入层            | 根据实际需求确定       |
+| P15 | 是否需要 Agent 的热更新能力（运行时修改 SOUL.md 后无需重启）？ | Team Manager   | 建议支持，通过文件监控实现  |
 
----
+***
 
 ## 附录 A: 关键技术参考
 
@@ -1912,3 +1931,4 @@ Week 19-21: [Phase 6] 高级特性 ────────────── �
 - [ComposioHQ/agent-orchestrator](https://github.com/ComposioHQ/agent-orchestrator) -- 多 Agent 编排参考
 - [smallnest/goclaw](https://github.com/smallnest/goclaw) -- Go 多智能体 AI 网关
 - [mosaxiv/clawlet](https://github.com/mosaxiv/clawlet) -- 本地语义记忆单机助手
+

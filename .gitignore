@@ -1,2 +1,5 @@
-.omc
+.claude/
+.omc/
 .env
+*.exe
+.xenv.*
