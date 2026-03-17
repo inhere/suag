@@ -224,9 +224,11 @@
 ### Agentic Cron
 
 - [ ] P5-020 实现 Cron 调度器（基于 cron 表达式）
-- [ ] P5-021 实现 `CronJob` 数据模型及持久化
+- [ ] P5-021 实现 `CronJob` 数据模型及 SQLite 持久化
 - [ ] P5-022 实现感知-决策-执行三阶段流程
 - [ ] P5-023 实现 Cron 执行日志与 SSE 推送
+- [ ] P5-024 实现 CLI 管理命令：`kagent cron add/list/enable/disable/delete`
+- [ ] P5-025 实现 WebUI Cron 管理页（创建/编辑/启停），与 CLI 共用同一存储层
 
 ### LLM Provider Pool
 
@@ -259,11 +261,14 @@
 - [ ] P6-010 实现 PGVector 可选支持（VectorStore 接口替换）
 - [ ] P6-011 实现跨数据库迁移工具
 
-### 安全增强
+### 多用户支持
 
-- [ ] P6-020 完善多用户隔离（任务和 Agent 按用户 ID 分区）
-- [ ] P6-021 实现 API 认证（API Key 或 JWT）
-- [ ] P6-022 实现审计日志（所有上帝模式注入、HITL 操作记录）
+- [ ] P6-020 数据模型增加 `user_id` 字段（Task、Agent、CronJob、HITLTicket）
+- [ ] P6-021 实现 API 认证（API Key 优先，可扩展 JWT）
+- [ ] P6-022 实现请求中间件：认证 → 解析 user_id → 注入 context
+- [ ] P6-023 实现数据隔离：所有查询按 user_id 过滤，禁止跨用户访问
+- [ ] P6-024 实现用户管理 API（创建/停用账号、API Key 轮换）
+- [ ] P6-025 实现审计日志（上帝模式注入、HITL 操作、跨用户操作均记录）
 
 ### 开发者体验
 
@@ -286,13 +291,12 @@
 | P1-1 | SKILL.md flow 类型语法 | **LLM 可读的自然语言描述步骤**，设计了 `steps[]` 模板（含 agent_role / depends_on / condition），见 [04-tools-skills.md](./04-tools-skills.md#511-flow-类型-skill-模板) | Skills Engine |
 | P1-2 | 上帝模式安全边界 | **不可以覆盖** SOUL.md / AGENTS.md 约束，权限层强制校验，见 [06-gateway-api.md](./06-gateway-api.md#23-上帝模式注入) | Gateway、权限层 |
 | P1-3 | Team 任务分配策略 | **Orchestrator LLM 自动分解任务 DAG**，不需要手工定义 | Team Manager |
+| P1-4 | Subagent 结果格式 | **结构化 JSON `SubAgentResult`**，含 Summary + Artifacts，沿用当前方案 | Agent Core |
+| P2-1 | Web UI 技术栈 | **Vue**（go:embed 打包为单二进制） | WebUI |
+| P2-2 | 多用户支持 | **需要**，涉及用户隔离、任务按 user_id 分区、API 认证 | Gateway、存储层 |
+| P2-3 | Agentic Cron 任务定义 | **CLI + WebUI 双入口**均支持配置，底层统一存储到 SQLite | Agentic Cron |
+| P2-4 | 开源计划 | **先内部开发**，稳定后可能开源；第三方库优先选宽松许可证 | 全局 |
 
 ### ⏳ 待确认
 
-| # | 优先级 | 问题 | 影响模块 |
-|---|--------|------|----------|
-| P1-4 | Phase 3 前 | Subagent 结果格式：纯文本摘要还是结构化 JSON？（当前方案为结构化 `SubAgentResult`，是否确定？） | Agent Core |
-| P2-1 | Phase 4 前 | Web UI 技术栈偏好（Vue / React / 纯 HTML）？ | WebUI |
-| P2-2 | Phase 6 前 | 多用户支持是否在计划内？（涉及隔离和权限） | Gateway、存储层 |
-| P2-3 | Phase 5 前 | Agentic Cron 任务定义：配置文件还是 Web UI 管理？ | Agentic Cron |
-| P2-4 | 随时 | 项目是否计划开源？（影响部分第三方库选型） | — |
+> 全部问题已确认，无待确认项。

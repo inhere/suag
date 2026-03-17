@@ -183,7 +183,7 @@ flowchart TD
 
 ## 5. WebUI 功能
 
-WebUI 通过 go:embed 打包为单二进制，访问 `http://localhost:8080`：
+WebUI 使用 **Vue** 构建，通过 go:embed 打包为单二进制，访问 `http://localhost:8080`：
 
 | 页面 | 功能 |
 |------|------|
@@ -192,6 +192,7 @@ WebUI 通过 go:embed 打包为单二进制，访问 `http://localhost:8080`：
 | HITL 干预面板 | 挂起 ticket 列表、上下文查看、指令输入框 |
 | Agent 监控 | 活跃 Agent 列表、状态、token 用量 |
 | 上帝模式 | 选择 Agent、输入注入指令 |
+| Cron 管理 | 定时任务列表、创建/编辑/启停（与 CLI 同步） |
 
 ---
 
