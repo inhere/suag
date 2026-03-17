@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/kagent/kagent/internal/hitl"
-	"github.com/kagent/kagent/internal/llm"
-	"github.com/kagent/kagent/internal/memory"
-	"github.com/kagent/kagent/internal/tracing"
+	"github.com/inhere/axon/internal/hitl"
+	"github.com/inhere/axon/internal/llm"
+	"github.com/inhere/axon/internal/memory"
+	"github.com/inhere/axon/internal/tracing"
 )
 
 const (

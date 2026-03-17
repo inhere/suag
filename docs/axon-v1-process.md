@@ -2,8 +2,8 @@
 
 > 项目开始时间：2026-03-14 22:00
 
-- 原始需求文档 [kagent-prd.md](kagent-prd.md)
-- 设计文档参考 [kagent-design-v0.1.md](kagent-design-v0.1.md)
+- 原始需求文档 [axon-prd.md](axon-prd.md)
+- 设计文档参考 [axon-design-v0.1.md](axon-design-v0.1.md)
 
 ## Phase 1 MVP Complete ✓
 
@@ -14,8 +14,8 @@ Build & tests: `go build ./... and go test ./...` both pass cleanly (pure-Go, no
 What was implemented
 
 ```txt
-D:/work/aidev/kagent/
-├── cmd/kagent/main.go          # CLI: chat mode + HTTP server mode
+D:/work/aidev/axon/
+├── cmd/axon/main.go          # CLI: chat mode + HTTP server mode
 ├── internal/
 │   ├── agent/                  # Agent struct, ReAct runner, state machine, SOUL.md parser
 │   ├── llm/                    # OpenAI, Claude (Anthropic), DeepSeek, Pool w/ failover
@@ -45,10 +45,10 @@ export OPENAI_API_KEY=sk-...
 # or ANTHROPIC_API_KEY / DEEPSEEK_API_KEY + set llm.provider in config.yaml
 
 # Chat mode (Phase 1 entry point)
-go run ./cmd/kagent chat
+go run ./cmd/axon chat
 
 # HTTP server mode (Phase 4+ UI)
-go run ./cmd/kagent server   # listens on :8080
+go run ./cmd/axon server   # listens on :8080
 # GET  /events?trace_id=*    → SSE stream
 # POST /api/tasks            → {"description": "..."}
 # GET  /api/hitl             → pending HITL tickets

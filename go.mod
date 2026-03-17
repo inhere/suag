@@ -1,4 +1,4 @@
-module github.com/kagent/kagent
+module github.com/inhere/axon
 
 go 1.22
 

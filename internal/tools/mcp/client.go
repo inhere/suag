@@ -14,8 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/kagent/kagent/internal/llm"
-	"github.com/kagent/kagent/internal/tools"
+	"github.com/inhere/axon/internal/llm"
+	"github.com/inhere/axon/internal/tools"
 )
 
 // ServerConfig describes an MCP server to connect to.
@@ -70,7 +70,7 @@ func (c *Client) Start(ctx context.Context) error {
 	// Handshake: initialize.
 	_, err = c.call(ctx, "initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
-		"clientInfo":      map[string]any{"name": "kagent", "version": "0.1.0"},
+		"clientInfo":      map[string]any{"name": "axon", "version": "0.1.0"},
 		"capabilities":    map[string]any{},
 	})
 	return err

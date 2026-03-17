@@ -1,6 +1,6 @@
-# kagent configuration
-# Override any value with KAGENT_<KEY> environment variables
-# e.g. KAGENT_LLM_API_KEY, KAGENT_LLM_PROVIDER
+# axon configuration
+# Override any value with AXON_<KEY> environment variables
+# e.g. AXON_LLM_API_KEY, AXON_LLM_PROVIDER
 
 # LLM provider settings
 llm:
@@ -14,7 +14,7 @@ llm:
 workspace: ""
 
 # SerpAPI key for web_search tool
-serpapi_key: ""              # set via env: KAGENT_SERPAPI_KEY
+serpapi_key: ""              # set via env: AXON_SERPAPI_KEY
 
 # Max ReAct loop steps per agent task
 max_steps: 30
@@ -26,7 +26,7 @@ server:
 # SQLite database path for persistent memory
 # Leave empty to use in-memory storage
 database:
-  path: ""                   # e.g. ~/.kagent/memory.db
+  path: ""                   # e.g. ~/.axon/memory.db
 
 # HITL settings
 hitl:

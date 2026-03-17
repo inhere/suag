@@ -16,7 +16,7 @@
 ## 快速上手
 
 ```go
-import "github.com/kagent/kagent/internal/llm"
+import "github.com/axon/axon/internal/llm"
 
 m := llm.NewMockProvider("my-test")
 ```

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kagent/kagent/internal/llm"
-	"github.com/kagent/kagent/internal/orchestrator"
-	"github.com/kagent/kagent/internal/tools"
+	"github.com/inhere/axon/internal/llm"
+	"github.com/inhere/axon/internal/orchestrator"
+	"github.com/inhere/axon/internal/tools"
 )
 
 // Scheduler runs agentic cron jobs on their configured schedules.

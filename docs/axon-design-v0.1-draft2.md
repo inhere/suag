@@ -1,4 +1,4 @@
-# kagent 系统架构设计
+# axon 系统架构设计
 
 > 文档状态：草稿 v0.1 | 日期：2026-03-15
 
@@ -24,7 +24,7 @@
 
 ### 1.1 定位
 
-kagent 是一个以 **Go 语言**构建的本地优先 AI Agent 编排引擎，定位为：
+axon 是一个以 **Go 语言**构建的本地优先 AI Agent 编排引擎，定位为：
 
 - **大脑入口**：统一接收用户任务，分解并分发给专家 Agent 团队
 - **长期记忆**：通过 SQLite + 向量搜索实现跨会话记忆
@@ -702,9 +702,9 @@ func (h *Handler) StreamEvents(w http.ResponseWriter, r *http.Request) {
 ## 7. Go 项目目录结构
 
 ```
-kagent/
+axon/
 ├── cmd/
-│   ├── kagent/          # 主程序入口
+│   ├── axon/          # 主程序入口
 │   │   └── main.go
 │   └── server/          # HTTP Server 模式
 │       └── main.go

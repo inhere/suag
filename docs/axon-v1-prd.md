@@ -3,7 +3,7 @@
 ## 需求
 
 ```txt
-kagent 大脑，入口
+axon 大脑，入口
 记忆能力
 创建职责团队 专家
 根据职责配备相应的 规范，工具，技能
@@ -41,12 +41,20 @@ s12   "各干各的目录, 互不干扰" — 任务管目标, worktree 管目录
 
 ### 2026.03.17 补充
 
-- 模块化，可插拔式设计，统一定义接口
+模块化，可插拔式设计，统一定义接口
   - eg: 支持不同的 LLM 供应商，不同的存储实现，不同的消息入口渠道(qq, 钉钉，飞书, 命令行等)，不同的工具实现等。
-- Agent
+
+Agent:
   - 需要新增支持 AGENTS.md 定义不同的智能体角色，每个角色有自己的系统提示词，工具集，技能集等。
   - SOUL.md 定义智能体的灵魂，包括其角色、目标、行为规范等。SOUL.md + AGENTS.md 定义一个完整的智能体。
   - 加上 agent 工作空间，每个 agent 有自己的目录/存储，用来存储自己的历史，缓存，记忆，任务图，工具集，技能集等。
+
+Memory backend:
+ - Hybrid: SQLite + Markdown
+ - SQLite with FTS5 search (recommended)
+ - Markdown files — simple, human-readable
+ - In-memory LRU — no persistence, ideal for testing
+ - HTTP API — delegate to external REST service
 
 ## 核心架构分层
 

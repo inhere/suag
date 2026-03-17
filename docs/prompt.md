@@ -5,7 +5,7 @@
 > date: 2026.03.16 22:00
 
 ```txt
-查看 docs 下的 kagent-design-v0.1-draft1.md 和 kagent-design-v0.1-draft2.md
+查看 docs 下的 axon-design-v0.1-draft1.md 和 axon-design-v0.1-draft2.md
 附加今天新看到的一些要点：
 - agent loop 叠加策略、权限与生命周期层
 - 事件 / Hook 总线

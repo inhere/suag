@@ -1,4 +1,4 @@
-// Command kagent is the main entry point for the kagent AI agent orchestration engine.
+// Command axon is the main entry point for the axon AI agent orchestration engine.
 package main
 
 import (
@@ -13,16 +13,16 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/kagent/kagent/internal/cron"
-	"github.com/kagent/kagent/internal/gateway"
-	"github.com/kagent/kagent/internal/hitl"
-	"github.com/kagent/kagent/internal/llm"
-	"github.com/kagent/kagent/internal/memory"
-	"github.com/kagent/kagent/internal/orchestrator"
-	"github.com/kagent/kagent/internal/team"
-	"github.com/kagent/kagent/internal/tools"
-	"github.com/kagent/kagent/internal/tools/native"
-	"github.com/kagent/kagent/internal/tracing"
+	"github.com/inhere/axon/internal/cron"
+	"github.com/inhere/axon/internal/gateway"
+	"github.com/inhere/axon/internal/hitl"
+	"github.com/inhere/axon/internal/llm"
+	"github.com/inhere/axon/internal/memory"
+	"github.com/inhere/axon/internal/orchestrator"
+	"github.com/inhere/axon/internal/team"
+	"github.com/inhere/axon/internal/tools"
+	"github.com/inhere/axon/internal/tools/native"
+	"github.com/inhere/axon/internal/tracing"
 )
 
 func main() {
@@ -50,7 +50,7 @@ func main() {
 	case "chat":
 		runChat(ctx, app)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown mode %q. Usage: kagent [chat|server]\n", mode)
+		fmt.Fprintf(os.Stderr, "unknown mode %q. Usage: axon [chat|server]\n", mode)
 		os.Exit(1)
 	}
 }
@@ -195,7 +195,7 @@ func runServer(ctx context.Context, a *app) {
 }
 
 func runChat(ctx context.Context, a *app) {
-	fmt.Println("kagent chat mode — type your task and press Enter. Ctrl+C to exit.")
+	fmt.Println("axon chat mode — type your task and press Enter. Ctrl+C to exit.")
 	fmt.Println("Commands: :quit, :hitl (list pending tickets), :respond <id> <instruction>")
 	fmt.Println()
 
@@ -250,7 +250,7 @@ func runChat(ctx context.Context, a *app) {
 
 func setupLogging() {
 	level := slog.LevelInfo
-	if os.Getenv("KAGENT_DEBUG") != "" {
+	if os.Getenv("AXON_DEBUG") != "" {
 		level = slog.LevelDebug
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
@@ -260,7 +260,7 @@ func loadConfig() {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath("./configs")
-	viper.AddConfigPath("$HOME/.kagent")
+	viper.AddConfigPath("$HOME/.axon")
 	viper.AddConfigPath(".")
 
 	viper.SetDefault("llm.provider", "openai")
@@ -269,7 +269,7 @@ func loadConfig() {
 	viper.SetDefault("server.addr", ":8080")
 
 	viper.AutomaticEnv()
-	viper.SetEnvPrefix("KAGENT")
+	viper.SetEnvPrefix("AXON")
 
 	if err := viper.ReadInConfig(); err != nil {
 		// Config file is optional.

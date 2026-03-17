@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kagent/kagent/internal/agent"
-	"github.com/kagent/kagent/internal/hitl"
-	"github.com/kagent/kagent/internal/llm"
-	"github.com/kagent/kagent/internal/memory"
-	"github.com/kagent/kagent/internal/tools"
-	"github.com/kagent/kagent/internal/tracing"
+	"github.com/inhere/axon/internal/agent"
+	"github.com/inhere/axon/internal/hitl"
+	"github.com/inhere/axon/internal/llm"
+	"github.com/inhere/axon/internal/memory"
+	"github.com/inhere/axon/internal/tools"
+	"github.com/inhere/axon/internal/tracing"
 )
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

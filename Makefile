@@ -1,7 +1,7 @@
 .PHONY: all build tidy test lint run-chat run-server clean
 
-BINARY := kagent
-CMD     := ./cmd/kagent
+BINARY := axon
+CMD     := ./cmd/axon
 GOFLAGS := -ldflags="-s -w"
 
 all: tidy build
@@ -10,7 +10,7 @@ all: tidy build
 tidy:
 	go mod tidy
 
-## build: compile the kagent binary
+## build: compile the axon binary
 build:
 	go build $(GOFLAGS) -o $(BINARY) $(CMD)
 
@@ -33,7 +33,7 @@ run-server: build
 ## clean: remove build artifacts
 clean:
 	rm -f $(BINARY)
-	rm -f kagent.db
+	rm -f axon.db
 
 ## help: print available targets
 help:

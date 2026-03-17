@@ -5,11 +5,11 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/kagent/kagent/internal/hitl"
-	"github.com/kagent/kagent/internal/orchestrator"
+	"github.com/inhere/axon/internal/hitl"
+	"github.com/inhere/axon/internal/orchestrator"
 )
 
-// Handler exposes the REST API for the kagent server.
+// Handler exposes the REST API for the axon server.
 type Handler struct {
 	orch    *orchestrator.Orchestrator
 	bus     *EventBus

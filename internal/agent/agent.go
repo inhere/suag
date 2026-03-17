@@ -5,10 +5,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/kagent/kagent/internal/llm"
-	"github.com/kagent/kagent/internal/memory"
-	"github.com/kagent/kagent/internal/tools"
-	"github.com/kagent/kagent/internal/tracing"
+	"github.com/inhere/axon/internal/llm"
+	"github.com/inhere/axon/internal/memory"
+	"github.com/inhere/axon/internal/tools"
+	"github.com/inhere/axon/internal/tracing"
 )
 
 // AgentState represents the lifecycle state of an agent.

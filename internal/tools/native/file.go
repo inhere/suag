@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kagent/kagent/internal/llm"
-	"github.com/kagent/kagent/internal/tools"
+	"github.com/inhere/axon/internal/llm"
+	"github.com/inhere/axon/internal/tools"
 )
 
 // FileReadTool reads a file within the workspace.

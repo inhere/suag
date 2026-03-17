@@ -1,4 +1,4 @@
-# kagent - 智能多 Agent 编排系统架构设计
+# axon - 智能多 Agent 编排系统架构设计
 
 > 版本: v0.1-draft | 日期: 2025-03-15 | 状态: 待评审
 
@@ -1580,7 +1580,7 @@ type PGVectorStore struct { ... }
 ### 6.3 外部 Agent 集成方案
 
 ```
-kagent
+axon
   │
   ├─► claude-code (子进程)
   │   方式: exec.Command("claude", "-p", prompt, "--output-format", "stream-json")
@@ -1600,11 +1600,11 @@ kagent
 ## 7. 代码结构
 
 ```
-kagent/
+axon/
 ├── cmd/
-│   ├── kagent/              # 主入口（包含 server + TUI 模式）
+│   ├── axon/              # 主入口（包含 server + TUI 模式）
 │   │   └── main.go
-│   └── kagent-cli/          # 轻量 CLI 客户端
+│   └── axon-cli/          # 轻量 CLI 客户端
 │       └── main.go
 │
 ├── internal/
@@ -1700,7 +1700,7 @@ kagent/
 │   └── config.example.yaml
 │
 ├── data/                    # 数据目录（运行时生成）
-│   └── kagent.db            # SQLite 数据库
+│   └── axon.db            # SQLite 数据库
 │
 ├── go.mod
 ├── go.sum
@@ -1723,7 +1723,7 @@ kagent/
 - 基础内存记忆（会话内消息列表 + 摘要压缩）
 - 3 个内置工具：文件读写、Shell 执行、Web 搜索
 - ToolRegistry 基础注册/执行
-- CLI 入口（`kagent -p "your prompt"`）
+- CLI 入口（`axon -p "your prompt"`）
 - 基础配置加载（YAML）
 - 单元测试覆盖核心引擎
 
@@ -1886,7 +1886,7 @@ Week 19-21: [Phase 6] 高级特性 ────────────── �
 | P1 | SOUL.md 的具体格式规范是什么？是否使用 YAML front-matter + Markdown 正文？  | Team Manager, Soul Registry | 建议用 YAML front-matter + Markdown |
 | P2 | SKILL.md 中 "flow" 类型的技能编排语法如何定义？是否支持条件分支和循环？              | Skill Engine                | 建议 MVP 阶段仅支持线性 steps             |
 | P3 | "上帝模式"指令注入的优先级如何？是否能覆盖 Agent 的 SOUL 约束？                   | 安全模型, Gateway               | 建议注入指令优先级高于任务上下文但不覆盖安全约束         |
-| P4 | 外部 Agent（claude-code）的 workspace 是否与 kagent 共享？安全隔离到什么程度？ | External Bridge, 安全         | 建议共享 workspace 但限制在项目目录内         |
+| P4 | 外部 Agent（claude-code）的 workspace 是否与 axon 共享？安全隔离到什么程度？ | External Bridge, 安全         | 建议共享 workspace 但限制在项目目录内         |
 | P5 | 向量嵌入使用云端 API（OpenAI）还是本地模型？对延迟和成本的要求？                     | Memory System               | 建议起步用云端 API，后续支持本地               |
 
 ### 中优先级（影响功能实现）
