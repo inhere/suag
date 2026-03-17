@@ -1,4 +1,4 @@
-# kagent 架构总纲
+# axon 架构总纲
 
 > 版本: v1.0 | 日期: 2026-03-16 | 状态: 设计稿
 
@@ -6,7 +6,7 @@
 
 ## 1. 项目定位
 
-kagent 是以 **Go 语言**构建的本地优先 AI Agent 编排引擎，定位是：
+axon 是以 **Go 语言**构建的本地优先 AI Agent 编排引擎，定位是：
 
 - **大脑入口**：统一接收用户任务，分解并分发给专家 Agent 团队
 - **长期记忆**：通过 SQLite + 向量搜索实现跨会话记忆
@@ -118,9 +118,9 @@ graph TB
 ## 5. 项目目录结构
 
 ```
-kagent/
+axon/
 ├── cmd/
-│   ├── kagent/          # 主程序入口 (CLI/TUI)
+│   ├── axon/          # 主程序入口 (CLI/TUI)
 │   └── server/          # HTTP Server 模式
 │
 ├── internal/
