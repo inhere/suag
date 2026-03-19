@@ -11,7 +11,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/spf13/viper"
+	"github.com/gookit/config/v2"
+	"github.com/gookit/ini/v2/dotenv"
 
 	"github.com/inhere/axon/internal/cron"
 	"github.com/inhere/axon/internal/gateway"
@@ -66,7 +67,7 @@ type app struct {
 }
 
 func buildApp() (*app, error) {
-	workspace := viper.GetString("workspace")
+	workspace := config.String("workspace", "~/.axon/workspace")
 	if workspace == "" {
 		var err error
 		workspace, err = os.Getwd()
@@ -87,7 +88,7 @@ func buildApp() (*app, error) {
 		registry.MustRegister(t)
 	}
 	registry.MustRegister(native.NewShellExecTool(workspace, 0))
-	if serpKey := viper.GetString("serpapi_key"); serpKey != "" {
+	if serpKey := config.String("serpapi_key"); serpKey != "" {
 		registry.MustRegister(native.NewWebSearchTool(serpKey))
 	}
 
@@ -130,7 +131,7 @@ func buildApp() (*app, error) {
 		HITL:      hitlMgr,
 		Team:      teamMgr,
 		Workspace: workspace,
-		MaxSteps:  viper.GetInt("max_steps"),
+		MaxSteps:  config.Int("max_steps", 10),
 	})
 
 	// ── Cron scheduler ────────────────────────────────────────────────────────
@@ -146,32 +147,32 @@ func buildApp() (*app, error) {
 }
 
 func buildLLMProvider() (llm.Provider, error) {
-	prov := viper.GetString("llm.provider")
+	prov := config.String("llm.provider", "openai")
 	switch prov {
 	case "claude":
-		key := viper.GetString("llm.api_key")
+		key := config.String("llm.api_key")
 		if key == "" {
 			key = os.Getenv("ANTHROPIC_API_KEY")
 		}
 		return llm.NewClaudeProvider(llm.ClaudeConfig{
 			APIKey: key,
-			Model:  viper.GetString("llm.model"),
+			Model:  config.String("llm.model"),
 		}), nil
 	case "deepseek":
-		key := viper.GetString("llm.api_key")
+		key := config.String("llm.api_key")
 		if key == "" {
 			key = os.Getenv("DEEPSEEK_API_KEY")
 		}
-		return llm.NewDeepSeekProvider(key, viper.GetString("llm.model")), nil
+		return llm.NewDeepSeekProvider(key, config.String("llm.model")), nil
 	default: // "openai"
-		key := viper.GetString("llm.api_key")
+		key := config.String("llm.api_key")
 		if key == "" {
 			key = os.Getenv("OPENAI_API_KEY")
 		}
 		return llm.NewOpenAIProvider(llm.OpenAIConfig{
 			APIKey:  key,
-			Model:   viper.GetString("llm.model"),
-			BaseURL: viper.GetString("llm.base_url"),
+			Model:   config.String("llm.model"),
+			BaseURL: config.String("llm.base_url"),
 		}), nil
 	}
 }
@@ -180,9 +181,9 @@ func buildLLMProvider() (llm.Provider, error) {
 
 func runServer(ctx context.Context, a *app) {
 	h := gateway.NewHandler(a.orch, a.bus, a.hitlMgr)
-	addr := viper.GetString("server.addr")
+	addr := config.String("server.addr", ":8180")
 	if addr == "" {
-		addr = ":8080"
+		addr = ":8180"
 	}
 	srv := gateway.NewServer(addr, h, a.bus)
 
@@ -257,22 +258,11 @@ func setupLogging() {
 }
 
 func loadConfig() {
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath("./configs")
-	viper.AddConfigPath("$HOME/.axon")
-	viper.AddConfigPath(".")
+	// config.SetEnvPrefix("AXON")
+	dotenv.LoadExists(".")
 
-	viper.SetDefault("llm.provider", "openai")
-	viper.SetDefault("llm.model", "gpt-4o")
-	viper.SetDefault("max_steps", 30)
-	viper.SetDefault("server.addr", ":8080")
-
-	viper.AutomaticEnv()
-	viper.SetEnvPrefix("AXON")
-
-	if err := viper.ReadInConfig(); err != nil {
-		// Config file is optional.
-		slog.Debug("no config file found, using defaults and env vars")
+	err := config.LoadExists("./configs/config.yaml", "~/.axon/config.yaml", "config.yaml")
+	if err != nil {
+		slog.Error("loading config file", "err", err)
 	}
 }
