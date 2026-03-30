@@ -2,6 +2,8 @@
 
 ## 需求
 
+当前项目是一个基于 AI agent 的智能体系统，用于处理复杂的任务和决策，支持团队协作和任务分配，能够自动处理任务，跟踪任务进度，审核任务结果，与外部系统集成。
+
 ```txt
 axon 大脑，入口
 记忆能力
@@ -55,6 +57,107 @@ Memory backend:
  - Markdown files — simple, human-readable
  - In-memory LRU — no persistence, ideal for testing
  - HTTP API — delegate to external REST service
+
+Plugin: 思考插件如何实现？
+  - 支持插件机制，可插拔式扩展功能。
+  - 每个插件有自己的目录，包含插件代码，配置文件等。
+  - 插件可以在运行时动态加载和卸载。
+
+### 2026.03.18 补充
+
+OpenClaw:
+1.统一控制平面Gateway网关 Gateway是OpenClaw的心脏，充当系统的单一控制平面
+  - 功能职责: 负责管理会话(Sessions)、状态感知(Presence)、配置、定时任务(Cron)、网络钩子(Webhooks)以及控制界面(Control UI)和Canvas宿主
+  - 通信协议: 基于WebSocket(WS) 网络构建，为所有客户端、工具和事件提供统一的连接通道。
+  - 角色分离 operator（控制面）和 node（能力节点）两种角色
+2.Agentic Loop
+3.定时任务系统
+4.工具系统
+5.Channels 连接生态 将AI能力注入到用户已有的社交生态。
+  - 路由规则: 具备复杂的群组路由逻辑，包括提及门控（Mention gating）、回复标签处理以及针对不同频道的自动消息分块。
+6.上下文管理
+7.SubAgent子智能体
+8.SandBox沙箱系统
+9.记忆管理
+10.Skills模块
+11.Session管理
+12.自进化机制
+13.工作区与Agent路由
+14.Nodes
+15.安全策略
+16.配置管理
+
+实现可控的消息路由、权限治理与工具循环执行
+
+**智能体运行时**
+是处理逻辑和生成回复的核心引擎:
+RPC模型: Agent 以RPC(远程过程调用)模式运行，支持工具流(Tool Streaming)和块流(Block Streaming)，确保响应的高效与实时性。
+多智能体路由: 系统能够将来自不同频道、账户或同伴的输入路由到相互隔离的智能体(拥有独立的Workspace和会话)
+会话模型: 提供main模式用户直接对话，并支持群组隔离、激活模式切换和队列管理。
+
+设备节点与伴侣应用: Nodes & Apps
+通过将不同设备定义为“节点”，OpenClaw 实现了跨设备的硬件控制：
+跨平台支持：包括 macOS 菜单栏应用、iOS 节点和 Android 节点。
+硬件能力调用：通过协议，智能体可以远程调用各节点上的硬件功能，如摄像头拍照/录码、麦克风录音等。
+
+**工具与自动化：Tools & Skills**
+架构中集成了丰富的生产力工具：
+浏览器控制：内置托管的 Chrome/Chromium 实例，支持快照、动作执行和文件上传。
+Live Canvas：基于 A2UI 构建的实时交互画布，允许智能体驱动视觉化的工作空间。
+技能平台 (ClawHub)：提供技能注册表，支持捆绑技能、托管技能和工作区技能的自动搜索与安装。
+
+**部署与远程访问**
+本地/远程灵活部署：Gateway 可以运行在本地或小型 Linux 实例上。
+内网穿透：集成 Tailscale Serve/Funnel 或 SSH 隧道，使用户能够安全地从远程访问 Gateway 面板和 WebSocket 服务。
+
+**工具过载**
+解决“MCP 过多”的问题，核心思路是：从“全量加载”转向“按需路由”和“分层治理”
+- 引入“工具检索”（Tool RAG） 不要将所有 MCP 工具的定义直接塞进 Prompt，而是将工具视为一种“知识”，使用 RAG (Retrieval-Augmented Generation) 的逻辑进行动态加载
+- 采用“路由代理”模式 (Router-Worker Architecture) 不要让一个 Agent 负责所有事情，而是建立一个层级化架构。Dispatcher 负责路由请求到合适的 Worker Agent，Worker Agent 负责执行具体的任务。
+- 基于权限（RBAC）的工具过滤 企业场景下，并非所有用户都有权访问所有 MCP 能力
+- 动态上下文（Dynamic Context Loading） MCP 协议本身支持 Resource（资源） 的概念。我们可以利用这一点来优化
+- 提示词压缩与 Schema 精简 标准的 JSON Schema 往往包含大量冗余描述（如 description, type, required 等）。
+  - Schema 裁剪： 在向 LLM 传递 MCP 工具定义前，移除不必要的字段，使用更紧凑的文本格式（如 TypeScript 定义）代替繁琐的 JSON
+
+refer:
+- https://mp.weixin.qq.com/s/wVcItgqsCiwl9-PZ56z27w
+- https://seanfalconer.medium.com/agentic-mesh-the-future-of-enterprise-agent-ecosystems-f26e7d53951e
+
+### 2026.03.20 补充
+
+- 内部多个 Agent 交互使用 A2A 协议，ACP 是 A2A 的基石之一。
+- 信息拼成系统提示：AGENTS.md（行为指南）、SOUL.md（人格）、IDENTITY.md（身份）、USER.md（用户偏好）、MEMORY.md（长期记忆）、技能摘要。
+
+#### Harness
+
+Harness 在真实系统中的形态在真实工程系统中，这些结构其实已经广泛存在。
+以代码 Agent 为例，一个典型系统通常包含：
+- Environment 提供本地代码仓库和执行环境；
+- Tool 系统封装 read_file、write_file、run_test 等能力；
+- Control 系统限制执行步数和任务时间；
+- Memory 系统保存任务状态和历史修改记录；
+- Evaluation 系统自动运行单元测试。
+
+refer:
+- https://mp.weixin.qq.com/s/adQSYnS_vMjXr0DKILWIMA
+
+### 2026.03.25 补充
+
+- agent core, orchestrator, agents, team(leader, worker), tools, skills, api
+- 支持多节点部署，每个节点运行一个 axon，一个为主节点，其他节点为从节点。通过协议进行通信协作指挥。
+  - 主节点负责协调和管理所有智能体，可以调度指定从节点负责执行具体任务。
+  - 一个子节点可能是一个专业的 agent team，负责执行特定类型的任务。
+- A2A 用作多个agent时，允许agent是远程运行的，这时 编排或者agent 直接可以通过A2A交互通信
+- ACP 是想让 agent 可以发现并操作本地已有的 claude-code, codex, opencode
+
+### 2026.03.28 补充
+
+- ag-ui 和 A2UI 协议
+- 每个 agent 都是一个虚拟人/员工
+  - 可以有 leader，也可以独立运作
+  - 每个人都有自己的头像信息登
+- 可以自动创建讨论群
+- 可以添加真实用户到讨论群里，给一个身份 可以参与讨论或者审核等
 
 ## 核心架构分层
 
@@ -123,160 +226,13 @@ agent/
 └── main.go
 ```
 
+> 示例代码参考 [code-refer.v0.1.draft.md](code-refer.v0.1.draft.md)
+
 #### 基础工具
 
 1. Web Search（SerpAPI 等）
 2. 代码执行（本地，Docker 沙箱，强限资源）
 3. 文件操作（限定 workspace 目录）
-
-### 一些代码参考
-
-```go
-type Agent struct {
-    llm      LLMClient
-    memory   *Memory
-    tools    *ToolRegistry
-    maxSteps int
-}
-
-func (a *Agent) Run(ctx context.Context, task string) error {
-    a.memory.AddMessage("user", task)
-
-    for step := 0; step < a.maxSteps; step++ {
-        // 1. 从 LLM 获取回复
-        resp, err := a.llm.CompleteWithRetry(ctx, a.memory.GetContext())
-        if err != nil {
-            return err
-        }
-
-        if resp.ToolCall != nil {
-            result, err := a.tools.Execute(ctx, resp.ToolCall)
-            if err != nil {
-                a.memory.AddMessage("system", "tool error: "+err.Error())
-                continue
-            }
-            a.memory.AddMessage("tool", result)
-            continue
-        }
- 
-        a.memory.AddMessage("assistant", resp)
-        if resp.IsComplete {
-            return nil
-        }
-    }
-
-    return errors.New("max steps reached")
-}
-```
-
-llm client:
-
-```go
-func (c *LLMClient) CompleteWithRetry(ctx context.Context, prompt string) (*Response, error) {
-    var lastErr error
-
-    for attempt := 0; attempt < 3; attempt++ {
-        resp, err := c.Complete(ctx, prompt)
-        if err == nil {
-            return resp, nil
-        }
-
-        lastErr = err
-
-        backoff := time.Duration(1<<attempt) * time.Second
-
-        select {
-        case <-time.After(backoff):
-        case <-ctx.Done():
-            return nil, ctx.Err()
-        }
-    }
-
-    return nil, fmt.Errorf("failed after retries: %w", lastErr)
-}
-```
-
-context memory:
-
-```go
-type Memory struct {
-    messages []Message
-}
-
-type Message struct {
-    Role   string
-    Content string
-}
-
-func (m *Memory) AddMessage(role, content string) {
-    m.messages = append(m.messages, Message{Role: role, Content: content})
-}
-
-func (m *Memory) GetContext() string {
-    if len(m.messages) <= 10 {
-        return m.formatAll()
-    }
-
-    summary := m.getSummary()
-    recent := m.messages[len(m.messages)-10:]
-    return summary + "\n" + formatMessages(recent)
-}
-```
-
-tool registry:
-
-```go
-type Tool struct {
-    Name        string
-    Description string
-    Parameters  map[string]string
-    Execute     func(context.Context, map[string]interface{}) (string, error)
-}
-
-type ToolRegistry struct {
-    tools map[string]*Tool
-    mu    sync.RWMutex
-}
-
-func (r *ToolRegistry) Register(tool *Tool) {
-    r.mu.Lock()
-    defer r.mu.Unlock()
-    r.tools[tool.Name] = tool
-}
-
-func (r *ToolRegistry) GetSchema() []map[string]interface{} {
-    r.mu.RLock()
-    defer r.mu.RUnlock()
-
-    schemas := make([]map[string]interface{}, 0, len(r.tools))
-    for _, t := range r.tools {
-        schemas = append(schemas, map[string]interface{}{
-            "name":        t.Name,
-            "description": t.Description,
-            "parameters":  t.Parameters,
-        })
-    }
-    return schemas
-}
-```
-
-Mock LLM：
-
-```go
-type MockLLMClient struct {
-    responses []Response
-    callCount int
-}
-
-func (m *MockLLM) Complete(ctx context.Context, prompt string) (*Response, error) {
-    if m.callCount >= len(m.responses) {
-        return nil, errors.New("no more responses")
-    }
-    resp := m.responses[m.callCount]
-    m.callCount++
-    return &resp, nil
-}
-```
 
 ## 参考
 
