@@ -159,6 +159,12 @@ refer:
 - 可以自动创建讨论群
 - 可以添加真实用户到讨论群里，给一个身份 可以参与讨论或者审核等
 
+### 2026.03.28 补充
+
+- 技术架构上 go 实现核心功能， ts/js 实现扩展能力（插件等）和UI展示
+- 参考 https://github.com/paperclipai/paperclip
+- 参考 https://github.com/ComposioHQ/agent-orchestrator
+
 ## 核心架构分层
 
 - **接入层 (Gateway/UI)：** 网页端仪表盘，通过 **SSE (Server-Sent Events)** 实现毫秒级追踪展示，支持“上帝模式”指令注入。
