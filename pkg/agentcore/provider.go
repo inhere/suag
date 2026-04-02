@@ -58,6 +58,9 @@ func (r *GenerateResult) Validate() error {
 		if tc.CallID == "" {
 			return ErrMissingToolCallID
 		}
+		if tc.Name == "" {
+			return ErrMissingToolName
+		}
 	}
 	return nil
 }

@@ -60,6 +60,18 @@ func TestGenerateResultValidate_RejectsToolCallWithoutID(t *testing.T) {
 	}
 }
 
+func TestGenerateResultValidate_RejectsToolCallWithoutName(t *testing.T) {
+	res := &GenerateResult{
+		ToolCalls:    []ToolCall{{CallID: "call-1"}},
+		FinishReason: FinishToolCalls,
+	}
+
+	err := res.Validate()
+	if !errors.Is(err, ErrMissingToolName) {
+		t.Fatalf("expected missing tool name error, got %v", err)
+	}
+}
+
 func TestGenerateResultValidate_RejectsMissingFinishReason(t *testing.T) {
 	res := &GenerateResult{Content: "done"}
 	err := res.Validate()

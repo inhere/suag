@@ -7,29 +7,29 @@ import (
 
 // Hook defines the public lifecycle extension points for agentcore.
 type Hook interface {
-	BeforeRun(ctx context.Context, event RunEvent, ctrl *Control) error
-	BeforePromptBuild(ctx context.Context, event PromptEvent, ctrl *Control) error
-	BeforeContextBuild(ctx context.Context, event ContextEvent, ctrl *Control) error
-	BeforeModel(ctx context.Context, event ModelEvent, ctrl *Control) error
-	AfterModel(ctx context.Context, event ModelEvent, ctrl *Control) error
-	BeforeTool(ctx context.Context, event ToolEvent, ctrl *Control) error
-	AfterTool(ctx context.Context, event ToolEvent, ctrl *Control) error
-	AfterRun(ctx context.Context, event RunEvent, ctrl *Control) error
-	OnError(ctx context.Context, event ErrorEvent, ctrl *Control) error
+	BeforeRun(ctx context.Context, event *RunEvent, ctrl *Control) error
+	BeforePromptBuild(ctx context.Context, event *PromptEvent, ctrl *Control) error
+	BeforeContextBuild(ctx context.Context, event *ContextEvent, ctrl *Control) error
+	BeforeModel(ctx context.Context, event *ModelEvent, ctrl *Control) error
+	AfterModel(ctx context.Context, event *ModelEvent, ctrl *Control) error
+	BeforeTool(ctx context.Context, event *ToolEvent, ctrl *Control) error
+	AfterTool(ctx context.Context, event *ToolEvent, ctrl *Control) error
+	AfterRun(ctx context.Context, event *RunEvent, ctrl *Control) error
+	OnError(ctx context.Context, event *ErrorEvent, ctrl *Control) error
 }
 
 // NopHook provides a no-op implementation for all public hook lifecycle methods.
 type NopHook struct{}
 
-func (NopHook) BeforeRun(context.Context, RunEvent, *Control) error              { return nil }
-func (NopHook) BeforePromptBuild(context.Context, PromptEvent, *Control) error   { return nil }
-func (NopHook) BeforeContextBuild(context.Context, ContextEvent, *Control) error { return nil }
-func (NopHook) BeforeModel(context.Context, ModelEvent, *Control) error          { return nil }
-func (NopHook) AfterModel(context.Context, ModelEvent, *Control) error           { return nil }
-func (NopHook) BeforeTool(context.Context, ToolEvent, *Control) error            { return nil }
-func (NopHook) AfterTool(context.Context, ToolEvent, *Control) error             { return nil }
-func (NopHook) AfterRun(context.Context, RunEvent, *Control) error               { return nil }
-func (NopHook) OnError(context.Context, ErrorEvent, *Control) error              { return nil }
+func (NopHook) BeforeRun(context.Context, *RunEvent, *Control) error              { return nil }
+func (NopHook) BeforePromptBuild(context.Context, *PromptEvent, *Control) error   { return nil }
+func (NopHook) BeforeContextBuild(context.Context, *ContextEvent, *Control) error { return nil }
+func (NopHook) BeforeModel(context.Context, *ModelEvent, *Control) error          { return nil }
+func (NopHook) AfterModel(context.Context, *ModelEvent, *Control) error           { return nil }
+func (NopHook) BeforeTool(context.Context, *ToolEvent, *Control) error            { return nil }
+func (NopHook) AfterTool(context.Context, *ToolEvent, *Control) error             { return nil }
+func (NopHook) AfterRun(context.Context, *RunEvent, *Control) error               { return nil }
+func (NopHook) OnError(context.Context, *ErrorEvent, *Control) error              { return nil }
 
 // Control allows hooks to short-circuit or yield a run.
 type Control struct {

@@ -11,6 +11,8 @@ var (
 	ErrInvalidFinishReason = errors.New("invalid finish reason for generate result payload")
 	// ErrMissingToolCallID indicates a requested tool call omitted its stable call identifier.
 	ErrMissingToolCallID = errors.New("missing tool call id")
+	// ErrMissingToolName indicates a requested tool call omitted its dispatchable tool name.
+	ErrMissingToolName = errors.New("missing tool name")
 	// ErrMissingFinishReason indicates the provider omitted the result finish reason.
 	ErrMissingFinishReason = errors.New("missing finish reason")
 )
