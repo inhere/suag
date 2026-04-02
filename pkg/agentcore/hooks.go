@@ -18,6 +18,19 @@ type Hook interface {
 	OnError(ctx context.Context, event ErrorEvent, ctrl *Control) error
 }
 
+// NopHook provides a no-op implementation for all public hook lifecycle methods.
+type NopHook struct{}
+
+func (NopHook) BeforeRun(context.Context, RunEvent, *Control) error              { return nil }
+func (NopHook) BeforePromptBuild(context.Context, PromptEvent, *Control) error   { return nil }
+func (NopHook) BeforeContextBuild(context.Context, ContextEvent, *Control) error { return nil }
+func (NopHook) BeforeModel(context.Context, ModelEvent, *Control) error          { return nil }
+func (NopHook) AfterModel(context.Context, ModelEvent, *Control) error           { return nil }
+func (NopHook) BeforeTool(context.Context, ToolEvent, *Control) error            { return nil }
+func (NopHook) AfterTool(context.Context, ToolEvent, *Control) error             { return nil }
+func (NopHook) AfterRun(context.Context, RunEvent, *Control) error               { return nil }
+func (NopHook) OnError(context.Context, ErrorEvent, *Control) error              { return nil }
+
 // Control allows hooks to short-circuit or yield a run.
 type Control struct {
 	ShortCircuited bool

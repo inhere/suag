@@ -48,6 +48,12 @@ func (r *GenerateResult) Validate() error {
 	if r.FinishReason == "" {
 		return ErrMissingFinishReason
 	}
+	if r.Content != "" && r.FinishReason != FinishFinal {
+		return ErrInvalidFinishReason
+	}
+	if len(r.ToolCalls) > 0 && r.FinishReason != FinishToolCalls {
+		return ErrInvalidFinishReason
+	}
 	for _, tc := range r.ToolCalls {
 		if tc.CallID == "" {
 			return ErrMissingToolCallID

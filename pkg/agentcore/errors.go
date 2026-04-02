@@ -7,6 +7,8 @@ var (
 	ErrEmptyGenerateResult = errors.New("empty result")
 	// ErrMixedGenerateResult indicates final content and tool calls were returned together.
 	ErrMixedGenerateResult = errors.New("content and tool calls are mutually exclusive")
+	// ErrInvalidFinishReason indicates the finish reason does not match the returned payload shape.
+	ErrInvalidFinishReason = errors.New("invalid finish reason for generate result payload")
 	// ErrMissingToolCallID indicates a requested tool call omitted its stable call identifier.
 	ErrMissingToolCallID = errors.New("missing tool call id")
 	// ErrMissingFinishReason indicates the provider omitted the result finish reason.

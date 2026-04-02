@@ -20,3 +20,7 @@ func (testHook) OnError(context.Context, ErrorEvent, *Control) error            
 func TestHookLifecycleContracts_AreRepresentable(t *testing.T) {
 	var _ Hook = (*testHook)(nil)
 }
+
+func TestNopHook_ImplementsHook(t *testing.T) {
+	var _ Hook = NopHook{}
+}

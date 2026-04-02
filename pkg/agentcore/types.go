@@ -23,13 +23,13 @@ const (
 	RunFailed    RunStatus = "failed"
 )
 
-// ResumeMode describes how a runtime should treat previously persisted state.
+// ResumeMode describes how a runtime should source state when continuing a run.
 type ResumeMode string
 
 const (
-	ResumeDisabled ResumeMode = "disabled"
-	ResumeAuto     ResumeMode = "auto"
-	ResumeRequired ResumeMode = "required"
+	ResumeAuto      ResumeMode = "auto"
+	ResumeFromState ResumeMode = "from_state"
+	ResumeWithInput ResumeMode = "with_input"
 )
 
 // Message is the public conversation unit exchanged with prompt, context, and model layers.
