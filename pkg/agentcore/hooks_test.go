@@ -24,3 +24,16 @@ func TestHookLifecycleContracts_AreRepresentable(t *testing.T) {
 func TestNopHook_ImplementsHook(t *testing.T) {
 	var _ Hook = NopHook{}
 }
+
+func TestRunEvent_UsesRunResult(t *testing.T) {
+	event := RunEvent{
+		RunID:   "run-1",
+		AgentID: "agent-1",
+		Input:   &RunInput{RunID: "run-1", AgentID: "agent-1"},
+		Result:  &RunResult{RunID: "run-1", Status: RunCompleted, Output: "done"},
+	}
+
+	if event.Result == nil || event.Result.RunID != "run-1" {
+		t.Fatal("expected run event result to use RunResult")
+	}
+}

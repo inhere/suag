@@ -74,14 +74,12 @@ func (c *Control) ShouldShortCircuit() bool {
 	return c != nil && c.ShortCircuited
 }
 
-// RunEvent is the concrete lifecycle event for run boundaries.
+// RunEvent is the concrete lifecycle event for run boundaries using the public runtime model.
 type RunEvent struct {
 	RunID     string
 	AgentID   string
 	Input     *RunInput
-	Status    RunStatus
-	Result    *GenerateResult
-	Yield     *Yield
+	Result    *RunResult
 	Metadata  map[string]any
 	Timestamp time.Time
 }
