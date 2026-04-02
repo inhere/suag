@@ -1,36 +1,59 @@
-package agentcore
+package agentcore_test
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"testing"
+
+	"github.com/inhere/axon/pkg/agentcore"
+	hookchain "github.com/inhere/axon/pkg/agentcore/hooks"
 )
 
 type testHook struct{}
 
-func (testHook) BeforeRun(context.Context, *RunEvent, *Control) error              { return nil }
-func (testHook) BeforePromptBuild(context.Context, *PromptEvent, *Control) error   { return nil }
-func (testHook) BeforeContextBuild(context.Context, *ContextEvent, *Control) error { return nil }
-func (testHook) BeforeModel(context.Context, *ModelEvent, *Control) error          { return nil }
-func (testHook) AfterModel(context.Context, *ModelEvent, *Control) error           { return nil }
-func (testHook) BeforeTool(context.Context, *ToolEvent, *Control) error            { return nil }
-func (testHook) AfterTool(context.Context, *ToolEvent, *Control) error             { return nil }
-func (testHook) AfterRun(context.Context, *RunEvent, *Control) error               { return nil }
-func (testHook) OnError(context.Context, *ErrorEvent, *Control) error              { return nil }
+func (testHook) BeforeRun(context.Context, *agentcore.RunEvent, *agentcore.Control) error {
+	return nil
+}
+func (testHook) BeforePromptBuild(context.Context, *agentcore.PromptEvent, *agentcore.Control) error {
+	return nil
+}
+func (testHook) BeforeContextBuild(context.Context, *agentcore.ContextEvent, *agentcore.Control) error {
+	return nil
+}
+func (testHook) BeforeModel(context.Context, *agentcore.ModelEvent, *agentcore.Control) error {
+	return nil
+}
+func (testHook) AfterModel(context.Context, *agentcore.ModelEvent, *agentcore.Control) error {
+	return nil
+}
+func (testHook) BeforeTool(context.Context, *agentcore.ToolEvent, *agentcore.Control) error {
+	return nil
+}
+func (testHook) AfterTool(context.Context, *agentcore.ToolEvent, *agentcore.Control) error {
+	return nil
+}
+func (testHook) AfterRun(context.Context, *agentcore.RunEvent, *agentcore.Control) error {
+	return nil
+}
+func (testHook) OnError(context.Context, *agentcore.ErrorEvent, *agentcore.Control) error {
+	return nil
+}
 
 func TestHookLifecycleContracts_AreRepresentable(t *testing.T) {
-	var _ Hook = (*testHook)(nil)
+	var _ agentcore.Hook = (*testHook)(nil)
 }
 
 func TestNopHook_ImplementsHook(t *testing.T) {
-	var _ Hook = NopHook{}
+	var _ agentcore.Hook = agentcore.NopHook{}
 }
 
 func TestRunEvent_UsesRunResult(t *testing.T) {
-	event := RunEvent{
+	event := agentcore.RunEvent{
 		RunID:   "run-1",
 		AgentID: "agent-1",
-		Input:   &RunInput{RunID: "run-1", AgentID: "agent-1"},
-		Result:  &RunResult{RunID: "run-1", Status: RunCompleted, Output: "done"},
+		Input:   &agentcore.RunInput{RunID: "run-1", AgentID: "agent-1"},
+		Result:  &agentcore.RunResult{RunID: "run-1", Status: agentcore.RunCompleted, Output: "done"},
 	}
 
 	if event.Result == nil || event.Result.RunID != "run-1" {
@@ -40,81 +63,137 @@ func TestRunEvent_UsesRunResult(t *testing.T) {
 
 type mutatingPromptHook struct{}
 
-func (mutatingPromptHook) BeforeRun(context.Context, *RunEvent, *Control) error { return nil }
-func (mutatingPromptHook) BeforePromptBuild(_ context.Context, event *PromptEvent, _ *Control) error {
+func (mutatingPromptHook) BeforeRun(context.Context, *agentcore.RunEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingPromptHook) BeforePromptBuild(_ context.Context, event *agentcore.PromptEvent, _ *agentcore.Control) error {
 	event.System = "after"
 	return nil
 }
-func (mutatingPromptHook) BeforeContextBuild(context.Context, *ContextEvent, *Control) error {
+func (mutatingPromptHook) BeforeContextBuild(context.Context, *agentcore.ContextEvent, *agentcore.Control) error {
 	return nil
 }
-func (mutatingPromptHook) BeforeModel(context.Context, *ModelEvent, *Control) error { return nil }
-func (mutatingPromptHook) AfterModel(context.Context, *ModelEvent, *Control) error  { return nil }
-func (mutatingPromptHook) BeforeTool(context.Context, *ToolEvent, *Control) error   { return nil }
-func (mutatingPromptHook) AfterTool(context.Context, *ToolEvent, *Control) error    { return nil }
-func (mutatingPromptHook) AfterRun(context.Context, *RunEvent, *Control) error      { return nil }
-func (mutatingPromptHook) OnError(context.Context, *ErrorEvent, *Control) error     { return nil }
+func (mutatingPromptHook) BeforeModel(context.Context, *agentcore.ModelEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingPromptHook) AfterModel(context.Context, *agentcore.ModelEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingPromptHook) BeforeTool(context.Context, *agentcore.ToolEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingPromptHook) AfterTool(context.Context, *agentcore.ToolEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingPromptHook) AfterRun(context.Context, *agentcore.RunEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingPromptHook) OnError(context.Context, *agentcore.ErrorEvent, *agentcore.Control) error {
+	return nil
+}
 
 type mutatingContextHook struct{}
 
-func (mutatingContextHook) BeforeRun(context.Context, *RunEvent, *Control) error { return nil }
-func (mutatingContextHook) BeforePromptBuild(context.Context, *PromptEvent, *Control) error {
+func (mutatingContextHook) BeforeRun(context.Context, *agentcore.RunEvent, *agentcore.Control) error {
 	return nil
 }
-func (mutatingContextHook) BeforeContextBuild(_ context.Context, event *ContextEvent, _ *Control) error {
-	event.Messages = []Message{{Role: "assistant", Content: "after"}}
+func (mutatingContextHook) BeforePromptBuild(context.Context, *agentcore.PromptEvent, *agentcore.Control) error {
 	return nil
 }
-func (mutatingContextHook) BeforeModel(context.Context, *ModelEvent, *Control) error { return nil }
-func (mutatingContextHook) AfterModel(context.Context, *ModelEvent, *Control) error  { return nil }
-func (mutatingContextHook) BeforeTool(context.Context, *ToolEvent, *Control) error   { return nil }
-func (mutatingContextHook) AfterTool(context.Context, *ToolEvent, *Control) error    { return nil }
-func (mutatingContextHook) AfterRun(context.Context, *RunEvent, *Control) error      { return nil }
-func (mutatingContextHook) OnError(context.Context, *ErrorEvent, *Control) error     { return nil }
+func (mutatingContextHook) BeforeContextBuild(_ context.Context, event *agentcore.ContextEvent, _ *agentcore.Control) error {
+	event.Messages = []agentcore.Message{{Role: "assistant", Content: "after"}}
+	return nil
+}
+func (mutatingContextHook) BeforeModel(context.Context, *agentcore.ModelEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingContextHook) AfterModel(context.Context, *agentcore.ModelEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingContextHook) BeforeTool(context.Context, *agentcore.ToolEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingContextHook) AfterTool(context.Context, *agentcore.ToolEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingContextHook) AfterRun(context.Context, *agentcore.RunEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingContextHook) OnError(context.Context, *agentcore.ErrorEvent, *agentcore.Control) error {
+	return nil
+}
 
 type mutatingModelHook struct{}
 
-func (mutatingModelHook) BeforeRun(context.Context, *RunEvent, *Control) error            { return nil }
-func (mutatingModelHook) BeforePromptBuild(context.Context, *PromptEvent, *Control) error { return nil }
-func (mutatingModelHook) BeforeContextBuild(context.Context, *ContextEvent, *Control) error {
+func (mutatingModelHook) BeforeRun(context.Context, *agentcore.RunEvent, *agentcore.Control) error {
 	return nil
 }
-func (mutatingModelHook) BeforeModel(_ context.Context, event *ModelEvent, _ *Control) error {
-	event.Request = &GenerateRequest{Model: "mutated"}
+func (mutatingModelHook) BeforePromptBuild(context.Context, *agentcore.PromptEvent, *agentcore.Control) error {
 	return nil
 }
-func (mutatingModelHook) AfterModel(context.Context, *ModelEvent, *Control) error { return nil }
-func (mutatingModelHook) BeforeTool(context.Context, *ToolEvent, *Control) error  { return nil }
-func (mutatingModelHook) AfterTool(context.Context, *ToolEvent, *Control) error   { return nil }
-func (mutatingModelHook) AfterRun(context.Context, *RunEvent, *Control) error     { return nil }
-func (mutatingModelHook) OnError(context.Context, *ErrorEvent, *Control) error    { return nil }
+func (mutatingModelHook) BeforeContextBuild(context.Context, *agentcore.ContextEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingModelHook) BeforeModel(_ context.Context, event *agentcore.ModelEvent, _ *agentcore.Control) error {
+	event.Request = &agentcore.GenerateRequest{Model: "mutated"}
+	return nil
+}
+func (mutatingModelHook) AfterModel(context.Context, *agentcore.ModelEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingModelHook) BeforeTool(context.Context, *agentcore.ToolEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingModelHook) AfterTool(context.Context, *agentcore.ToolEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingModelHook) AfterRun(context.Context, *agentcore.RunEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingModelHook) OnError(context.Context, *agentcore.ErrorEvent, *agentcore.Control) error {
+	return nil
+}
 
 type mutatingToolHook struct{}
 
-func (mutatingToolHook) BeforeRun(context.Context, *RunEvent, *Control) error            { return nil }
-func (mutatingToolHook) BeforePromptBuild(context.Context, *PromptEvent, *Control) error { return nil }
-func (mutatingToolHook) BeforeContextBuild(context.Context, *ContextEvent, *Control) error {
+func (mutatingToolHook) BeforeRun(context.Context, *agentcore.RunEvent, *agentcore.Control) error {
 	return nil
 }
-func (mutatingToolHook) BeforeModel(context.Context, *ModelEvent, *Control) error { return nil }
-func (mutatingToolHook) AfterModel(context.Context, *ModelEvent, *Control) error  { return nil }
-func (mutatingToolHook) BeforeTool(_ context.Context, event *ToolEvent, _ *Control) error {
-	event.Call = &ToolCall{CallID: "call-2", Name: "mutated"}
+func (mutatingToolHook) BeforePromptBuild(context.Context, *agentcore.PromptEvent, *agentcore.Control) error {
 	return nil
 }
-func (mutatingToolHook) AfterTool(context.Context, *ToolEvent, *Control) error { return nil }
-func (mutatingToolHook) AfterRun(context.Context, *RunEvent, *Control) error   { return nil }
-func (mutatingToolHook) OnError(context.Context, *ErrorEvent, *Control) error  { return nil }
+func (mutatingToolHook) BeforeContextBuild(context.Context, *agentcore.ContextEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingToolHook) BeforeModel(context.Context, *agentcore.ModelEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingToolHook) AfterModel(context.Context, *agentcore.ModelEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingToolHook) BeforeTool(_ context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
+	event.Call = &agentcore.ToolCall{CallID: "call-2", Name: "mutated"}
+	return nil
+}
+func (mutatingToolHook) AfterTool(context.Context, *agentcore.ToolEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingToolHook) AfterRun(context.Context, *agentcore.RunEvent, *agentcore.Control) error {
+	return nil
+}
+func (mutatingToolHook) OnError(context.Context, *agentcore.ErrorEvent, *agentcore.Control) error {
+	return nil
+}
 
 func TestPromptEvent_IsMutablySharedThroughHook(t *testing.T) {
-	event := &PromptEvent{
+	event := &agentcore.PromptEvent{
 		RunID:   "run-1",
 		AgentID: "agent-1",
 		System:  "before",
 	}
 
 	hook := mutatingPromptHook{}
-	if err := hook.BeforePromptBuild(context.Background(), event, NewControl()); err != nil {
+	if err := hook.BeforePromptBuild(context.Background(), event, agentcore.NewControl()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if event.System != "after" {
@@ -123,10 +202,10 @@ func TestPromptEvent_IsMutablySharedThroughHook(t *testing.T) {
 }
 
 func TestContextEvent_IsMutablySharedThroughHook(t *testing.T) {
-	event := &ContextEvent{
+	event := &agentcore.ContextEvent{
 		RunID:    "run-1",
 		AgentID:  "agent-1",
-		Messages: []Message{{Role: "user", Content: "before"}},
+		Messages: []agentcore.Message{{Role: "user", Content: "before"}},
 	}
 
 	if len(event.Messages) != 1 {
@@ -134,7 +213,7 @@ func TestContextEvent_IsMutablySharedThroughHook(t *testing.T) {
 	}
 
 	hook := mutatingContextHook{}
-	if err := hook.BeforeContextBuild(context.Background(), event, NewControl()); err != nil {
+	if err := hook.BeforeContextBuild(context.Background(), event, agentcore.NewControl()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(event.Messages) != 1 || event.Messages[0].Content != "after" {
@@ -143,14 +222,14 @@ func TestContextEvent_IsMutablySharedThroughHook(t *testing.T) {
 }
 
 func TestModelEvent_RequestIsMutablySharedThroughHook(t *testing.T) {
-	event := &ModelEvent{
+	event := &agentcore.ModelEvent{
 		RunID:   "run-1",
 		AgentID: "agent-1",
-		Request: &GenerateRequest{Model: "before"},
+		Request: &agentcore.GenerateRequest{Model: "before"},
 	}
 
 	hook := mutatingModelHook{}
-	if err := hook.BeforeModel(context.Background(), event, NewControl()); err != nil {
+	if err := hook.BeforeModel(context.Background(), event, agentcore.NewControl()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if event.Request == nil || event.Request.Model != "mutated" {
@@ -159,17 +238,63 @@ func TestModelEvent_RequestIsMutablySharedThroughHook(t *testing.T) {
 }
 
 func TestToolEvent_CallIsMutablySharedThroughHook(t *testing.T) {
-	event := &ToolEvent{
+	event := &agentcore.ToolEvent{
 		RunID:   "run-1",
 		AgentID: "agent-1",
-		Call:    &ToolCall{CallID: "call-1", Name: "before"},
+		Call:    &agentcore.ToolCall{CallID: "call-1", Name: "before"},
 	}
 
 	hook := mutatingToolHook{}
-	if err := hook.BeforeTool(context.Background(), event, NewControl()); err != nil {
+	if err := hook.BeforeTool(context.Background(), event, agentcore.NewControl()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if event.Call == nil || event.Call.Name != "mutated" {
 		t.Fatalf("expected tool event call mutation to persist, got %#v", event.Call)
+	}
+}
+
+type orderedHook struct {
+	agentcore.NopHook
+	name  string
+	order *[]string
+	err   error
+}
+
+func (h orderedHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, _ *agentcore.Control) error {
+	*h.order = append(*h.order, h.name)
+	return h.err
+}
+
+func TestHookChain_BeforeModelRunsHooksInOrder(t *testing.T) {
+	var order []string
+	chain := hookchain.NewChain(
+		orderedHook{name: "first", order: &order},
+		orderedHook{name: "second", order: &order},
+	)
+
+	err := chain.BeforeModel(context.Background(), &agentcore.ModelEvent{}, agentcore.NewControl())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !reflect.DeepEqual(order, []string{"first", "second"}) {
+		t.Fatalf("expected hooks to run in order, got %#v", order)
+	}
+}
+
+func TestHookChain_StopsOnFirstError(t *testing.T) {
+	var order []string
+	wantErr := errors.New("stop")
+	chain := hookchain.NewChain(
+		orderedHook{name: "first", order: &order},
+		orderedHook{name: "second", order: &order, err: wantErr},
+		orderedHook{name: "third", order: &order},
+	)
+
+	err := chain.BeforeModel(context.Background(), &agentcore.ModelEvent{}, agentcore.NewControl())
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected %v, got %v", wantErr, err)
+	}
+	if !reflect.DeepEqual(order, []string{"first", "second"}) {
+		t.Fatalf("expected execution to stop after error, got %#v", order)
 	}
 }
