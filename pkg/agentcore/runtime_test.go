@@ -136,6 +136,26 @@ func TestControl_ShortCircuit(t *testing.T) {
 	}
 }
 
+func TestRuntimeErrorCategories_ArePublicWrappers(t *testing.T) {
+	base := errors.New("boom")
+
+	errs := []error{
+		&ProviderError{Err: base},
+		&ToolError{Err: base},
+		&HookError{Err: base},
+		&StorageError{Err: base},
+	}
+
+	if len(errs) != 4 {
+		t.Fatal("expected public runtime error categories to be instantiable")
+	}
+
+	var providerErr *ProviderError
+	if !errors.As(errs[0], &providerErr) || !errors.Is(errs[0], base) {
+		t.Fatalf("expected provider error wrapper semantics, got %v", errs[0])
+	}
+}
+
 func TestRunStateAndRunResult_ArePublicTypes(t *testing.T) {
 	state := RunState{
 		RunID:     "run-1",
@@ -155,11 +175,22 @@ func TestRunStateAndRunResult_ArePublicTypes(t *testing.T) {
 		Output: "paused",
 		Steps:  2,
 		Usage:  Usage{TotalTokens: 5},
-		Yield:  &Yield{Reason: "await_approval"},
+		Yield:  &Yield{Reason: "await_approval", ResumeOK: true},
 	}
 
 	if state.RunID == "" || result.RunID == "" {
 		t.Fatal("expected public run contracts to be instantiable")
+	}
+}
+
+func TestYield_IncludesResumeOK(t *testing.T) {
+	yield := Yield{
+		Reason:   "await_approval",
+		ResumeOK: true,
+	}
+
+	if !yield.ResumeOK {
+		t.Fatal("expected yield resume flag to be publicly available")
 	}
 }
 

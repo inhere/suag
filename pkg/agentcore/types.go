@@ -57,6 +57,7 @@ type Usage struct {
 // Yield captures a paused runtime state that requires external input.
 type Yield struct {
 	Reason   string
+	ResumeOK bool
 	Metadata map[string]any
 }
 

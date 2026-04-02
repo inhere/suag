@@ -2,6 +2,82 @@ package agentcore
 
 import "errors"
 
+// ProviderError classifies provider-layer runtime failures while preserving the wrapped cause.
+type ProviderError struct {
+	Err error
+}
+
+func (e *ProviderError) Error() string {
+	if e == nil || e.Err == nil {
+		return "provider error"
+	}
+	return "provider error: " + e.Err.Error()
+}
+
+func (e *ProviderError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+// ToolError classifies tool execution failures while preserving the wrapped cause.
+type ToolError struct {
+	Err error
+}
+
+func (e *ToolError) Error() string {
+	if e == nil || e.Err == nil {
+		return "tool error"
+	}
+	return "tool error: " + e.Err.Error()
+}
+
+func (e *ToolError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+// HookError classifies hook lifecycle failures while preserving the wrapped cause.
+type HookError struct {
+	Err error
+}
+
+func (e *HookError) Error() string {
+	if e == nil || e.Err == nil {
+		return "hook error"
+	}
+	return "hook error: " + e.Err.Error()
+}
+
+func (e *HookError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+// StorageError classifies storage-layer runtime failures while preserving the wrapped cause.
+type StorageError struct {
+	Err error
+}
+
+func (e *StorageError) Error() string {
+	if e == nil || e.Err == nil {
+		return "storage error"
+	}
+	return "storage error: " + e.Err.Error()
+}
+
+func (e *StorageError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 var (
 	// ErrEmptyGenerateResult indicates the provider returned no content and no tool calls.
 	ErrEmptyGenerateResult = errors.New("empty result")

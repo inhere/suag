@@ -72,6 +72,40 @@ func (mutatingContextHook) AfterTool(context.Context, *ToolEvent, *Control) erro
 func (mutatingContextHook) AfterRun(context.Context, *RunEvent, *Control) error      { return nil }
 func (mutatingContextHook) OnError(context.Context, *ErrorEvent, *Control) error     { return nil }
 
+type mutatingModelHook struct{}
+
+func (mutatingModelHook) BeforeRun(context.Context, *RunEvent, *Control) error            { return nil }
+func (mutatingModelHook) BeforePromptBuild(context.Context, *PromptEvent, *Control) error { return nil }
+func (mutatingModelHook) BeforeContextBuild(context.Context, *ContextEvent, *Control) error {
+	return nil
+}
+func (mutatingModelHook) BeforeModel(_ context.Context, event *ModelEvent, _ *Control) error {
+	event.Request = &GenerateRequest{Model: "mutated"}
+	return nil
+}
+func (mutatingModelHook) AfterModel(context.Context, *ModelEvent, *Control) error { return nil }
+func (mutatingModelHook) BeforeTool(context.Context, *ToolEvent, *Control) error  { return nil }
+func (mutatingModelHook) AfterTool(context.Context, *ToolEvent, *Control) error   { return nil }
+func (mutatingModelHook) AfterRun(context.Context, *RunEvent, *Control) error     { return nil }
+func (mutatingModelHook) OnError(context.Context, *ErrorEvent, *Control) error    { return nil }
+
+type mutatingToolHook struct{}
+
+func (mutatingToolHook) BeforeRun(context.Context, *RunEvent, *Control) error            { return nil }
+func (mutatingToolHook) BeforePromptBuild(context.Context, *PromptEvent, *Control) error { return nil }
+func (mutatingToolHook) BeforeContextBuild(context.Context, *ContextEvent, *Control) error {
+	return nil
+}
+func (mutatingToolHook) BeforeModel(context.Context, *ModelEvent, *Control) error { return nil }
+func (mutatingToolHook) AfterModel(context.Context, *ModelEvent, *Control) error  { return nil }
+func (mutatingToolHook) BeforeTool(_ context.Context, event *ToolEvent, _ *Control) error {
+	event.Call = &ToolCall{CallID: "call-2", Name: "mutated"}
+	return nil
+}
+func (mutatingToolHook) AfterTool(context.Context, *ToolEvent, *Control) error { return nil }
+func (mutatingToolHook) AfterRun(context.Context, *RunEvent, *Control) error   { return nil }
+func (mutatingToolHook) OnError(context.Context, *ErrorEvent, *Control) error  { return nil }
+
 func TestPromptEvent_IsMutablySharedThroughHook(t *testing.T) {
 	event := &PromptEvent{
 		RunID:   "run-1",
@@ -105,5 +139,37 @@ func TestContextEvent_IsMutablySharedThroughHook(t *testing.T) {
 	}
 	if len(event.Messages) != 1 || event.Messages[0].Content != "after" {
 		t.Fatalf("expected context event message replacement to persist, got %#v", event.Messages)
+	}
+}
+
+func TestModelEvent_RequestIsMutablySharedThroughHook(t *testing.T) {
+	event := &ModelEvent{
+		RunID:   "run-1",
+		AgentID: "agent-1",
+		Request: &GenerateRequest{Model: "before"},
+	}
+
+	hook := mutatingModelHook{}
+	if err := hook.BeforeModel(context.Background(), event, NewControl()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event.Request == nil || event.Request.Model != "mutated" {
+		t.Fatalf("expected model event request mutation to persist, got %#v", event.Request)
+	}
+}
+
+func TestToolEvent_CallIsMutablySharedThroughHook(t *testing.T) {
+	event := &ToolEvent{
+		RunID:   "run-1",
+		AgentID: "agent-1",
+		Call:    &ToolCall{CallID: "call-1", Name: "before"},
+	}
+
+	hook := mutatingToolHook{}
+	if err := hook.BeforeTool(context.Background(), event, NewControl()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event.Call == nil || event.Call.Name != "mutated" {
+		t.Fatalf("expected tool event call mutation to persist, got %#v", event.Call)
 	}
 }
