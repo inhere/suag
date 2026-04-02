@@ -2,23 +2,7 @@ package agentcore
 
 import "context"
 
-// Prompt captures the assembled prompt sent to a provider.
-type Prompt struct {
-	System   string
-	Messages []Message
-	Tools    []ToolSchema
-	Metadata map[string]any
-}
-
-// PromptInput captures the inputs required to assemble a prompt.
-type PromptInput struct {
-	Run      RunInput
-	Context  []Message
-	Tools    []ToolSchema
-	Metadata map[string]any
-}
-
-// PromptBuilder builds a provider-ready prompt from public contracts.
+// PromptBuilder builds the provider system prompt from the current public run state.
 type PromptBuilder interface {
-	BuildPrompt(ctx context.Context, input PromptInput) (*Prompt, error)
+	BuildSystemPrompt(ctx context.Context, state *RunState) (string, error)
 }

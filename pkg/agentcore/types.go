@@ -1,7 +1,5 @@
 package agentcore
 
-import "time"
-
 // RunInput captures the public input contract for a single agent run.
 type RunInput struct {
 	RunID       string
@@ -62,15 +60,26 @@ type Yield struct {
 	Metadata map[string]any
 }
 
-// RunRecord is the portable persisted form of a run state.
-type RunRecord struct {
-	Input       RunInput
-	Status      RunStatus
-	Messages    []Message
-	Result      *GenerateResult
-	Yield       *Yield
-	Metadata    map[string]any
-	StartedAt   time.Time
-	UpdatedAt   time.Time
-	CompletedAt *time.Time
+// RunState is the primary public runtime state contract shared across storage and builders.
+type RunState struct {
+	RunID     string
+	AgentID   string
+	Status    RunStatus
+	Step      int
+	Messages  []Message
+	Artifacts []Artifact
+	Metadata  map[string]any
+	Scratch   map[string]any
+	Usage     Usage
+	LastError string
+}
+
+// RunResult is the public outcome contract returned by a runtime execution.
+type RunResult struct {
+	RunID  string
+	Status RunStatus
+	Output string
+	Steps  int
+	Usage  Usage
+	Yield  *Yield
 }

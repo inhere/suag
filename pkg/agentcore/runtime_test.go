@@ -1,9 +1,31 @@
 package agentcore
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
+
+type testStorage struct{}
+
+func (testStorage) LoadRun(context.Context, string) (*RunState, error)      { return nil, nil }
+func (testStorage) LoadMessages(context.Context, string) ([]Message, error) { return nil, nil }
+func (testStorage) SaveRun(context.Context, *RunState) error                { return nil }
+func (testStorage) AppendMessages(context.Context, string, ...Message) error {
+	return nil
+}
+
+type testPromptBuilder struct{}
+
+func (testPromptBuilder) BuildSystemPrompt(context.Context, *RunState) (string, error) {
+	return "", nil
+}
+
+type testContextBuilder struct{}
+
+func (testContextBuilder) BuildMessages(context.Context, *RunState) ([]Message, error) {
+	return nil, nil
+}
 
 func TestGenerateResultValidate_RejectsEmptyResult(t *testing.T) {
 	res := &GenerateResult{}
@@ -100,4 +122,40 @@ func TestControl_ShortCircuit(t *testing.T) {
 	if ctrl.Replacement != "replacement" {
 		t.Fatalf("expected replacement to be preserved, got %v", ctrl.Replacement)
 	}
+}
+
+func TestRunStateAndRunResult_ArePublicTypes(t *testing.T) {
+	state := RunState{
+		RunID:     "run-1",
+		AgentID:   "agent-1",
+		Status:    RunRunning,
+		Step:      2,
+		Messages:  []Message{{Role: "user", Content: "hello"}},
+		Artifacts: []Artifact{{Kind: "file", URI: "out.txt"}},
+		Metadata:  map[string]any{"scope": "contract"},
+		Scratch:   map[string]any{"planner": "draft"},
+		Usage:     Usage{TotalTokens: 5},
+		LastError: "previous failure",
+	}
+	result := RunResult{
+		RunID:  "run-1",
+		Status: RunYielded,
+		Output: "paused",
+		Steps:  2,
+		Usage:  Usage{TotalTokens: 5},
+		Yield:  &Yield{Reason: "await_approval"},
+	}
+
+	if state.RunID == "" || result.RunID == "" {
+		t.Fatal("expected public run contracts to be instantiable")
+	}
+}
+
+func TestStorageContract_IncludesMessagePersistenceMethods(t *testing.T) {
+	var _ Storage = (*testStorage)(nil)
+}
+
+func TestPromptAndContextBuilderContracts_UseRunState(t *testing.T) {
+	var _ PromptBuilder = (*testPromptBuilder)(nil)
+	var _ ContextBuilder = (*testContextBuilder)(nil)
 }

@@ -90,8 +90,8 @@ type RunEvent struct {
 type PromptEvent struct {
 	RunID     string
 	AgentID   string
-	Input     *PromptInput
-	Prompt    *Prompt
+	State     *RunState
+	System    string
 	Metadata  map[string]any
 	Timestamp time.Time
 }
@@ -100,8 +100,8 @@ type PromptEvent struct {
 type ContextEvent struct {
 	RunID     string
 	AgentID   string
-	Input     *ContextInput
-	Context   *ContextSnapshot
+	State     *RunState
+	Messages  []Message
 	Metadata  map[string]any
 	Timestamp time.Time
 }
