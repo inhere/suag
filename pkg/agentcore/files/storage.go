@@ -130,13 +130,20 @@ func (s *Storage) AppendMessages(_ context.Context, runID string, msgs ...agentc
 	if err != nil {
 		return s.wrapError("open messages log", runID, err)
 	}
-	defer file.Close()
 
 	enc := json.NewEncoder(file)
 	for _, msg := range msgs {
 		if err := enc.Encode(msg); err != nil {
+			_ = file.Close()
 			return s.wrapError("append messages log", runID, err)
 		}
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return s.wrapError("sync messages log", runID, err)
+	}
+	if err := file.Close(); err != nil {
+		return s.wrapError("close messages log", runID, err)
 	}
 	return nil
 }
