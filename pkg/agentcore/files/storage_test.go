@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/inhere/axon/pkg/agentcore"
@@ -190,6 +191,87 @@ func TestStorageRejectsEmptyRunID(t *testing.T) {
 	assertStorageError(t, err)
 }
 
+func TestStorageRejectsUnsafeRunID(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	root := filepath.Join(parent, "storage-root")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("expected root dir creation to succeed, got %v", err)
+	}
+	store := files.NewStorage(root)
+	writeState := func(dir, content string) {
+		t.Helper()
+
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("expected fixture dir creation to succeed, got %v", err)
+		}
+		state := `{"runId":"` + content + `","agentId":"agent-1","status":"running"}`
+		if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(state), 0o644); err != nil {
+			t.Fatalf("expected fixture state creation to succeed, got %v", err)
+		}
+	}
+
+	writeState(filepath.Join(parent, "escape"), "escaped")
+	writeState(filepath.Join(root, "nested", "run"), "nested")
+	absoluteRunDir := filepath.Join(parent, "absolute-run")
+	writeState(absoluteRunDir, "absolute")
+
+	for _, runID := range []string{"../escape", "nested/run", absoluteRunDir} {
+		t.Run(runID, func(t *testing.T) {
+			_, err := store.LoadRun(context.Background(), runID)
+			assertStorageError(t, err)
+			if !strings.Contains(err.Error(), "validate run id") {
+				t.Fatalf("expected validation failure for %q, got %v", runID, err)
+			}
+		})
+	}
+}
+
+func TestStorageSaveRunOverwritesSnapshotContent(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store := files.NewStorage(root)
+	first := &agentcore.RunState{
+		RunID:    "run-overwrite",
+		AgentID:  "agent-1",
+		Status:   agentcore.RunRunning,
+		Step:     1,
+		Messages: []agentcore.Message{{Role: "user", Content: "first"}},
+	}
+	second := &agentcore.RunState{
+		RunID:    "run-overwrite",
+		AgentID:  "agent-1",
+		Status:   agentcore.RunCompleted,
+		Step:     2,
+		Messages: []agentcore.Message{{Role: "assistant", Content: "second"}},
+		Metadata: map[string]any{"version": "latest"},
+	}
+
+	if err := store.SaveRun(context.Background(), first); err != nil {
+		t.Fatalf("expected first save to succeed, got %v", err)
+	}
+	if err := store.SaveRun(context.Background(), second); err != nil {
+		t.Fatalf("expected second save to succeed, got %v", err)
+	}
+
+	loaded, err := store.LoadRun(context.Background(), "run-overwrite")
+	if err != nil {
+		t.Fatalf("expected load to succeed, got %v", err)
+	}
+
+	if loaded.Status != agentcore.RunCompleted || loaded.Step != 2 {
+		t.Fatalf("expected latest snapshot to win, got %#v", loaded)
+	}
+	if len(loaded.Messages) != 1 || loaded.Messages[0].Content != "second" {
+		t.Fatalf("expected latest messages to be persisted, got %#v", loaded.Messages)
+	}
+	if loaded.Metadata["version"] != "latest" {
+		t.Fatalf("expected latest metadata to be persisted, got %#v", loaded.Metadata)
+	}
+}
+
 func TestStorageMissingRunReturnsWrappedNotExist(t *testing.T) {
 	t.Parallel()
 
@@ -206,6 +288,56 @@ func TestStorageMissingRunReturnsWrappedNotExist(t *testing.T) {
 	assertStorageError(t, err)
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected missing message log to wrap os.ErrNotExist, got %v", err)
+	}
+}
+
+func TestStorageLoadRunWrapsDecodeErrors(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	runDir := filepath.Join(root, "run-bad-state")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("expected run dir creation to succeed, got %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "state.json"), []byte("{bad json"), 0o644); err != nil {
+		t.Fatalf("expected bad state fixture creation to succeed, got %v", err)
+	}
+
+	store := files.NewStorage(root)
+	_, err := store.LoadRun(context.Background(), "run-bad-state")
+	assertStorageError(t, err)
+
+	if !strings.Contains(err.Error(), "decode run snapshot") {
+		t.Fatalf("expected decode context in error, got %v", err)
+	}
+}
+
+func TestStorageLoadMessagesWrapsDecodeErrorsWithLineNumbers(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	runDir := filepath.Join(root, "run-bad-messages")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("expected run dir creation to succeed, got %v", err)
+	}
+	log := strings.Join([]string{
+		`{"role":"user","content":"ok"}`,
+		`{"role":"assistant","content":`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(runDir, "messages.jsonl"), []byte(log), 0o644); err != nil {
+		t.Fatalf("expected bad messages fixture creation to succeed, got %v", err)
+	}
+
+	store := files.NewStorage(root)
+	_, err := store.LoadMessages(context.Background(), "run-bad-messages")
+	assertStorageError(t, err)
+
+	if !strings.Contains(err.Error(), "decode messages log") {
+		t.Fatalf("expected decode context in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "line 2") {
+		t.Fatalf("expected line number context in error, got %v", err)
 	}
 }
 

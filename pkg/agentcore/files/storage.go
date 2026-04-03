@@ -108,8 +108,8 @@ func (s *Storage) SaveRun(_ context.Context, state *agentcore.RunState) error {
 	if err != nil {
 		return s.wrapError("encode run snapshot", state.RunID, err)
 	}
-	if err := os.WriteFile(s.statePath(state.RunID), data, 0o644); err != nil {
-		return s.wrapError("write run snapshot", state.RunID, err)
+	if err := s.writeFileAtomically(state.RunID, s.statePath(state.RunID), data, 0o644); err != nil {
+		return err
 	}
 	return nil
 }
@@ -189,6 +189,60 @@ func (s *Storage) validateRunID(runID string) error {
 	if strings.TrimSpace(runID) == "" {
 		return s.wrapError("validate run id", runID, errors.New("run id is required"))
 	}
+	if filepath.IsAbs(runID) || filepath.VolumeName(runID) != "" {
+		return s.wrapError("validate run id", runID, errors.New("run id must not be an absolute path"))
+	}
+	if runID == "." || runID == ".." {
+		return s.wrapError("validate run id", runID, errors.New("run id must not reference the current or parent directory"))
+	}
+	if strings.ContainsAny(runID, `/\`) {
+		return s.wrapError("validate run id", runID, errors.New("run id must not contain path separators"))
+	}
+	if cleaned := filepath.Clean(runID); cleaned != runID || cleaned == "." || cleaned == ".." {
+		return s.wrapError("validate run id", runID, errors.New("run id must resolve to a single safe path segment"))
+	}
+	return nil
+}
+
+func (s *Storage) writeFileAtomically(runID, path string, data []byte, perm os.FileMode) error {
+	tempFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return s.wrapError("create temp run snapshot", runID, err)
+	}
+
+	tempPath := tempFile.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tempPath)
+		}
+	}()
+
+	if err := tempFile.Chmod(perm); err != nil {
+		_ = tempFile.Close()
+		return s.wrapError("set temp run snapshot mode", runID, err)
+	}
+	if _, err := tempFile.Write(data); err != nil {
+		_ = tempFile.Close()
+		return s.wrapError("write temp run snapshot", runID, err)
+	}
+	if err := tempFile.Sync(); err != nil {
+		_ = tempFile.Close()
+		return s.wrapError("sync temp run snapshot", runID, err)
+	}
+	if err := tempFile.Close(); err != nil {
+		return s.wrapError("close temp run snapshot", runID, err)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return s.wrapError("replace run snapshot", runID, err)
+		}
+		if err := os.Rename(tempPath, path); err != nil {
+			return s.wrapError("replace run snapshot", runID, err)
+		}
+	}
+
+	cleanup = false
 	return nil
 }
 
