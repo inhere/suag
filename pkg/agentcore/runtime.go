@@ -147,13 +147,14 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 		return r.returnWithHandledError(ctx, state, "model", ErrInvalidFinishReason, ctrl)
 	}
 
+	preOutputState := cloneRunStateValue(state)
 	assistantMessage := Message{Role: "assistant", Content: res.Content}
 	state.Messages = append(state.Messages, assistantMessage)
 	state.Status = RunCompleted
 	state.LastError = ""
 
 	if err := r.saveState(ctx, state, []Message{assistantMessage}); err != nil {
-		return r.returnWithHandledError(ctx, state, "persist_output", err, ctrl)
+		return r.returnWithHandledError(ctx, preOutputState, "persist_output", err, ctrl)
 	}
 
 	result := &RunResult{
@@ -248,42 +249,48 @@ func (r *DefaultRuntime) runAfterRun(ctx context.Context, event *RunEvent, ctrl 
 }
 
 func (r *DefaultRuntime) buildPrompt(ctx context.Context, state *RunState, ctrl *Control) (string, error) {
-	systemPrompt, err := r.promptBuilder.BuildSystemPrompt(ctx, state)
-	if err != nil {
-		return "", err
-	}
-
 	event := &PromptEvent{
 		RunID:     state.RunID,
 		AgentID:   state.AgentID,
 		State:     state,
-		System:    systemPrompt,
+		System:    "",
 		Metadata:  cloneMetadata(state.Metadata),
 		Timestamp: time.Now(),
 	}
 	if err := r.hooks.BeforePromptBuild(ctx, event, ctrl); err != nil {
 		return "", wrapHookError(err)
 	}
+	if ctrl != nil && (ctrl.ShouldYield() || ctrl.ShouldShortCircuit()) {
+		return event.System, nil
+	}
+	systemPrompt, err := r.promptBuilder.BuildSystemPrompt(ctx, state)
+	if err != nil {
+		return "", err
+	}
+	event.System = systemPrompt
 	return event.System, nil
 }
 
 func (r *DefaultRuntime) buildContext(ctx context.Context, state *RunState, ctrl *Control) ([]Message, error) {
-	messages, err := r.contextBuilder.BuildMessages(ctx, state)
-	if err != nil {
-		return nil, err
-	}
-
 	event := &ContextEvent{
 		RunID:     state.RunID,
 		AgentID:   state.AgentID,
 		State:     state,
-		Messages:  cloneMessagesValue(messages),
+		Messages:  nil,
 		Metadata:  cloneMetadata(state.Metadata),
 		Timestamp: time.Now(),
 	}
 	if err := r.hooks.BeforeContextBuild(ctx, event, ctrl); err != nil {
 		return nil, wrapHookError(err)
 	}
+	if ctrl != nil && (ctrl.ShouldYield() || ctrl.ShouldShortCircuit()) {
+		return event.Messages, nil
+	}
+	messages, err := r.contextBuilder.BuildMessages(ctx, state)
+	if err != nil {
+		return nil, err
+	}
+	event.Messages = cloneMessagesValue(messages)
 	return event.Messages, nil
 }
 

@@ -207,11 +207,21 @@ func TestPromptAndContextBuilderContracts_UseRunState(t *testing.T) {
 }
 
 type runtimeTestPromptBuilder struct {
-	prompt string
-	err    error
+	prompt  string
+	err     error
+	calls   *int
+	onBuild func(*RunState) error
 }
 
-func (b runtimeTestPromptBuilder) BuildSystemPrompt(context.Context, *RunState) (string, error) {
+func (b runtimeTestPromptBuilder) BuildSystemPrompt(_ context.Context, state *RunState) (string, error) {
+	if b.calls != nil {
+		*b.calls = *b.calls + 1
+	}
+	if b.onBuild != nil {
+		if err := b.onBuild(state); err != nil {
+			return "", err
+		}
+	}
 	if b.err != nil {
 		return "", b.err
 	}
@@ -219,10 +229,20 @@ func (b runtimeTestPromptBuilder) BuildSystemPrompt(context.Context, *RunState) 
 }
 
 type runtimeTestContextBuilder struct {
-	err error
+	err     error
+	calls   *int
+	onBuild func(*RunState) error
 }
 
 func (b runtimeTestContextBuilder) BuildMessages(_ context.Context, state *RunState) ([]Message, error) {
+	if b.calls != nil {
+		*b.calls = *b.calls + 1
+	}
+	if b.onBuild != nil {
+		if err := b.onBuild(state); err != nil {
+			return nil, err
+		}
+	}
 	if b.err != nil {
 		return nil, b.err
 	}
@@ -262,12 +282,14 @@ func (p *runtimeTestProvider) Generate(_ context.Context, req *GenerateRequest) 
 }
 
 type runtimeTestStorage struct {
-	runs        map[string]*RunState
-	messages    map[string][]Message
-	loadRunErr  error
-	loadMsgsErr error
-	saveRunErr  error
-	appendErr   error
+	runs            map[string]*RunState
+	messages        map[string][]Message
+	loadRunErr      error
+	loadMsgsErr     error
+	saveRunErr      error
+	appendErr       error
+	appendErrOnCall int
+	appendCalls     int
 }
 
 func newRuntimeTestStorage() *runtimeTestStorage {
@@ -303,7 +325,11 @@ func (s *runtimeTestStorage) SaveRun(_ context.Context, state *RunState) error {
 }
 
 func (s *runtimeTestStorage) AppendMessages(_ context.Context, runID string, msgs ...Message) error {
-	if s.appendErr != nil {
+	s.appendCalls++
+	if s.appendErrOnCall > 0 && s.appendCalls == s.appendErrOnCall {
+		return s.appendErr
+	}
+	if s.appendErr != nil && s.appendErrOnCall == 0 {
 		return s.appendErr
 	}
 	s.messages[runID] = append(s.messages[runID], cloneMessages(msgs)...)
@@ -314,6 +340,7 @@ type runtimeTestHook struct {
 	NopHook
 	beforeRun      func(*Control)
 	beforePrompt   func(*Control)
+	beforeContext  func(*Control)
 	beforeModel    func(*Control)
 	afterModel     func(*Control)
 	afterRun       func(*Control)
@@ -333,6 +360,13 @@ func (h *runtimeTestHook) BeforeRun(_ context.Context, _ *RunEvent, ctrl *Contro
 func (h *runtimeTestHook) BeforePromptBuild(_ context.Context, _ *PromptEvent, ctrl *Control) error {
 	if h.beforePrompt != nil {
 		h.beforePrompt(ctrl)
+	}
+	return nil
+}
+
+func (h *runtimeTestHook) BeforeContextBuild(_ context.Context, _ *ContextEvent, ctrl *Control) error {
+	if h.beforeContext != nil {
+		h.beforeContext(ctrl)
 	}
 	return nil
 }
@@ -812,6 +846,99 @@ func TestRuntime_Run_HookYieldReturnsYieldedResult(t *testing.T) {
 	}
 }
 
+func TestRuntime_Run_BeforePromptBuildRunsBeforeBuilderAndCanYield(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "should-not-run",
+			FinishReason: FinishFinal,
+		}},
+	}
+	var promptCalls int
+	hook := &runtimeTestHook{
+		beforePrompt: func(ctrl *Control) {
+			ctrl.Yield("before_prompt", map[string]any{"stage": "before_prompt"})
+		},
+	}
+
+	rt := New(Config{
+		Provider: provider,
+		Storage:  store,
+		Tools:    NewToolRegistry(),
+		PromptBuilder: runtimeTestPromptBuilder{
+			calls: &promptCalls,
+			onBuild: func(*RunState) error {
+				return fmt.Errorf("prompt builder should not run after before-prompt yield")
+			},
+		},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{hook},
+	})
+
+	result, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-before-prompt-yield",
+		AgentID:     "agent-1",
+		Instruction: "pause before prompt",
+	})
+	if err != nil {
+		t.Fatalf("expected before-prompt yield to succeed, got %v", err)
+	}
+	if promptCalls != 0 {
+		t.Fatalf("expected prompt builder not to run after before-prompt yield, got %d calls", promptCalls)
+	}
+	if result.Status != RunYielded || result.Yield == nil || result.Yield.Reason != "before_prompt" {
+		t.Fatalf("expected yielded result from before-prompt control, got %#v", result)
+	}
+}
+
+func TestRuntime_Run_BeforeContextBuildRunsBeforeBuilderAndCanShortCircuit(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "should-not-run",
+			FinishReason: FinishFinal,
+		}},
+	}
+	var contextCalls int
+	hook := &runtimeTestHook{
+		beforeContext: func(ctrl *Control) {
+			ctrl.ShortCircuit(&RunResult{
+				Status: RunCompleted,
+				Output: "from-context-hook",
+			})
+		},
+	}
+
+	rt := New(Config{
+		Provider:      provider,
+		Storage:       store,
+		Tools:         NewToolRegistry(),
+		PromptBuilder: runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{
+			calls: &contextCalls,
+			onBuild: func(*RunState) error {
+				return fmt.Errorf("context builder should not run after before-context short-circuit")
+			},
+		},
+		Hooks: []Hook{hook},
+	})
+
+	result, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-before-context-short-circuit",
+		AgentID:     "agent-1",
+		Instruction: "finish before context",
+	})
+	if err != nil {
+		t.Fatalf("expected before-context short-circuit to succeed, got %v", err)
+	}
+	if contextCalls != 0 {
+		t.Fatalf("expected context builder not to run after before-context short-circuit, got %d calls", contextCalls)
+	}
+	if result.Status != RunCompleted || result.Output != "from-context-hook" {
+		t.Fatalf("expected short-circuit result from before-context control, got %#v", result)
+	}
+}
+
 func TestRuntime_Run_AfterModelYieldPreservesStepAndUsage(t *testing.T) {
 	store := newRuntimeTestStorage()
 	provider := &runtimeTestProvider{
@@ -945,6 +1072,55 @@ func TestRuntime_Run_AfterRunYieldIsNotIgnored(t *testing.T) {
 	saved := store.runs["run-after-run-yield"]
 	if saved == nil || saved.Status != RunYielded || saved.Step != 1 || saved.Usage.TotalTokens != 5 {
 		t.Fatalf("expected after-run yield to persist yielded state with usage, got %#v", saved)
+	}
+}
+
+func TestRuntime_Run_PersistOutputFailureOnErrorYieldDoesNotForkAuthorityState(t *testing.T) {
+	store := newRuntimeTestStorage()
+	store.appendErr = errors.New("append failed")
+	store.appendErrOnCall = 2
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done",
+			FinishReason: FinishFinal,
+		}},
+	}
+	hook := &runtimeTestHook{
+		onError: func(ctrl *Control) {
+			ctrl.Yield("recover_after_persist_output", map[string]any{"stage": "on_error"})
+		},
+	}
+
+	rt := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{hook},
+	})
+
+	result, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-persist-output-yield",
+		AgentID:     "agent-1",
+		Instruction: "trigger append failure",
+	})
+	if err != nil {
+		t.Fatalf("expected on-error yield to recover persist-output failure, got %v", err)
+	}
+	if result.Status != RunYielded || result.Yield == nil || result.Yield.Reason != "recover_after_persist_output" {
+		t.Fatalf("expected yielded result after persist-output failure, got %#v", result)
+	}
+
+	saved := store.runs["run-persist-output-yield"]
+	if saved == nil || saved.Status != RunYielded {
+		t.Fatalf("expected yielded state to be persisted, got %#v", saved)
+	}
+	if len(saved.Messages) != 1 || saved.Messages[0].Content != "trigger append failure" {
+		t.Fatalf("expected state snapshot to avoid unlogged assistant message, got %#v", saved.Messages)
+	}
+	if len(store.messages["run-persist-output-yield"]) != 1 || store.messages["run-persist-output-yield"][0].Content != "trigger append failure" {
+		t.Fatalf("expected authority log to remain aligned with state snapshot, got %#v", store.messages["run-persist-output-yield"])
 	}
 }
 
