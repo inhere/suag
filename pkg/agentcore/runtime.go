@@ -80,6 +80,9 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	if err := r.runBeforeRun(ctx, runEvent, ctrl); err != nil {
 		return nil, r.handleError(ctx, state, "before_run", err, ctrl)
 	}
+	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+		return result, err
+	}
 
 	newMessages := make([]Message, 0, 2)
 	if appendInstruction {
@@ -96,10 +99,16 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	if err != nil {
 		return nil, r.handleError(ctx, state, "prompt", err, ctrl)
 	}
+	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+		return result, err
+	}
 
 	messages, err := r.buildContext(ctx, state, ctrl)
 	if err != nil {
 		return nil, r.handleError(ctx, state, "context", err, ctrl)
+	}
+	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+		return result, err
 	}
 
 	tools, err := r.listTools(ctx)
@@ -117,6 +126,9 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	res, err := r.callModel(ctx, state, req, ctrl)
 	if err != nil {
 		return nil, r.handleError(ctx, state, "model", err, ctrl)
+	}
+	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+		return result, err
 	}
 
 	state.Step++
@@ -280,6 +292,9 @@ func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *Ge
 	if err := r.hooks.BeforeModel(ctx, event, ctrl); err != nil {
 		return nil, wrapHookError(err)
 	}
+	if ctrl != nil && (ctrl.ShouldYield() || ctrl.ShouldShortCircuit()) {
+		return nil, nil
+	}
 
 	result, err := r.provider.Generate(ctx, event.Request)
 	if err != nil {
@@ -309,12 +324,30 @@ func (r *DefaultRuntime) saveState(ctx context.Context, state *RunState, message
 	return nil
 }
 
+func (r *DefaultRuntime) resolveControl(ctx context.Context, state *RunState, ctrl *Control) (*RunResult, error, bool) {
+	if ctrl == nil {
+		return nil, nil, false
+	}
+	if ctrl.ShouldYield() {
+		result, err := r.persistYield(ctx, state, ctrl)
+		return result, err, true
+	}
+	if ctrl.ShouldShortCircuit() {
+		result, err := r.persistShortCircuit(ctx, state, ctrl)
+		return result, err, true
+	}
+	return nil, nil, false
+}
+
 func (r *DefaultRuntime) handleError(ctx context.Context, state *RunState, stage string, err error, ctrl *Control) error {
 	if err == nil {
 		return nil
 	}
 
 	wrapped := classifyRuntimeError(err)
+	if persistErr := r.persistFailureState(ctx, state, wrapped); persistErr != nil {
+		wrapped = persistErr
+	}
 	event := &ErrorEvent{
 		RunID:     state.RunID,
 		AgentID:   state.AgentID,
@@ -327,6 +360,92 @@ func (r *DefaultRuntime) handleError(ctx context.Context, state *RunState, stage
 		return wrapHookError(hookErr)
 	}
 	return wrapped
+}
+
+func (r *DefaultRuntime) persistYield(ctx context.Context, state *RunState, ctrl *Control) (*RunResult, error) {
+	state.Status = RunYielded
+	state.LastError = ""
+
+	if err := r.saveState(ctx, state, nil); err != nil {
+		return nil, err
+	}
+
+	return &RunResult{
+		RunID:  state.RunID,
+		Status: RunYielded,
+		Output: "",
+		Steps:  state.Step,
+		Usage:  state.Usage,
+		Yield: &Yield{
+			Reason:   ctrl.YieldReason,
+			ResumeOK: true,
+			Metadata: cloneMetadata(ctrl.YieldMetadata),
+		},
+	}, nil
+}
+
+func (r *DefaultRuntime) persistShortCircuit(ctx context.Context, state *RunState, ctrl *Control) (*RunResult, error) {
+	replacement, ok := ctrl.Replacement.(*RunResult)
+	if !ok || replacement == nil {
+		return nil, r.handleError(ctx, state, "short_circuit", fmt.Errorf("short circuit replacement must be *RunResult, got %T", ctrl.Replacement), ctrl)
+	}
+
+	result := *replacement
+	if result.RunID == "" {
+		result.RunID = state.RunID
+	}
+	if result.Status == "" {
+		result.Status = RunCompleted
+	}
+	if result.Steps == 0 {
+		result.Steps = state.Step
+	}
+
+	var newMessages []Message
+	switch result.Status {
+	case RunYielded:
+		state.Status = RunYielded
+		state.LastError = ""
+		if result.Yield == nil {
+			result.Yield = &Yield{ResumeOK: true}
+		}
+	case RunFailed:
+		state.Status = RunFailed
+		state.LastError = result.Output
+	case RunCompleted:
+		state.Status = RunCompleted
+		state.LastError = ""
+		if result.Output != "" {
+			assistantMessage := Message{Role: "assistant", Content: result.Output}
+			state.Messages = append(state.Messages, assistantMessage)
+			newMessages = []Message{assistantMessage}
+		}
+	default:
+		state.Status = result.Status
+		state.LastError = ""
+	}
+	state.Usage = result.Usage
+	state.Step = result.Steps
+
+	if err := r.saveState(ctx, state, newMessages); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *DefaultRuntime) persistFailureState(ctx context.Context, state *RunState, err error) error {
+	if state == nil || r == nil || r.storage == nil {
+		return err
+	}
+	state.Status = RunFailed
+	state.LastError = err.Error()
+	if saveErr := r.storage.SaveRun(ctx, state); saveErr != nil {
+		if errors.As(err, new(*StorageError)) {
+			return err
+		}
+		return wrapStorageError(saveErr)
+	}
+	return err
 }
 
 func defaultStorage(storage Storage) Storage {
@@ -636,40 +755,44 @@ func newDefaultFileStorage(root string) *defaultFileStorage {
 }
 
 func (s *defaultFileStorage) LoadRun(_ context.Context, runID string) (*RunState, error) {
-	if strings.TrimSpace(runID) == "" {
-		return nil, &StorageError{Err: errors.New("run id is required")}
+	if err := s.validateRunID(runID); err != nil {
+		return nil, err
 	}
 	data, err := os.ReadFile(filepath.Join(s.root, runID, "state.json"))
 	if err != nil {
-		return nil, &StorageError{Err: err}
+		return nil, s.wrapError("load run snapshot", runID, err)
 	}
 	var state RunState
 	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, &StorageError{Err: err}
+		return nil, s.wrapError("decode run snapshot", runID, err)
 	}
 	return &state, nil
 }
 
 func (s *defaultFileStorage) LoadMessages(_ context.Context, runID string) ([]Message, error) {
-	if strings.TrimSpace(runID) == "" {
-		return nil, &StorageError{Err: errors.New("run id is required")}
+	if err := s.validateRunID(runID); err != nil {
+		return nil, err
 	}
 	file, err := os.Open(filepath.Join(s.root, runID, "messages.jsonl"))
 	if err != nil {
-		return nil, &StorageError{Err: err}
+		return nil, s.wrapError("load messages log", runID, err)
 	}
 	defer file.Close()
 
-	var messages []Message
+	messages := make([]Message, 0)
+	lineNo := 0
 	reader := bufio.NewReader(file)
 	for {
 		line, err := reader.ReadBytes('\n')
-		if len(strings.TrimSpace(string(line))) > 0 {
+		if len(line) > 0 {
+			lineNo++
 			var msg Message
-			if unmarshalErr := json.Unmarshal(line, &msg); unmarshalErr != nil {
-				return nil, &StorageError{Err: unmarshalErr}
+			if trimmed := strings.TrimSpace(string(line)); trimmed != "" {
+				if unmarshalErr := json.Unmarshal([]byte(trimmed), &msg); unmarshalErr != nil {
+					return nil, s.wrapError("decode messages log", runID, fmt.Errorf("line %d: %w", lineNo, unmarshalErr))
+				}
+				messages = append(messages, msg)
 			}
-			messages = append(messages, msg)
 		}
 		if err == nil {
 			continue
@@ -677,51 +800,168 @@ func (s *defaultFileStorage) LoadMessages(_ context.Context, runID string) ([]Me
 		if errors.Is(err, io.EOF) {
 			break
 		}
-		return nil, &StorageError{Err: err}
-	}
-	if messages == nil {
-		return []Message{}, nil
+		return nil, s.wrapError("read messages log", runID, err)
 	}
 	return messages, nil
 }
 
 func (s *defaultFileStorage) SaveRun(_ context.Context, state *RunState) error {
 	if state == nil {
-		return &StorageError{Err: errors.New("run state is nil")}
+		return s.wrapError("save run snapshot", "", errors.New("run state is nil"))
+	}
+	if err := s.validateRunID(state.RunID); err != nil {
+		return err
 	}
 	runDir := filepath.Join(s.root, state.RunID)
-	if err := os.MkdirAll(runDir, 0o755); err != nil {
-		return &StorageError{Err: err}
+	if err := s.ensureLayout(state.RunID); err != nil {
+		return err
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
-		return &StorageError{Err: err}
+		return s.wrapError("encode run snapshot", state.RunID, err)
 	}
-	if err := os.WriteFile(filepath.Join(runDir, "state.json"), data, 0o644); err != nil {
-		return &StorageError{Err: err}
+	if err := s.writeFileAtomically(state.RunID, filepath.Join(runDir, "state.json"), data, 0o644); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (s *defaultFileStorage) AppendMessages(_ context.Context, runID string, msgs ...Message) error {
-	runDir := filepath.Join(s.root, runID)
-	if err := os.MkdirAll(runDir, 0o755); err != nil {
-		return &StorageError{Err: err}
+	if err := s.validateRunID(runID); err != nil {
+		return err
+	}
+	if err := s.ensureLayout(runID); err != nil {
+		return err
 	}
 	if len(msgs) == 0 {
 		return nil
 	}
-	file, err := os.OpenFile(filepath.Join(runDir, "messages.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	file, err := os.OpenFile(filepath.Join(s.root, runID, "messages.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return &StorageError{Err: err}
+		return s.wrapError("open messages log", runID, err)
 	}
-	defer file.Close()
 
 	enc := json.NewEncoder(file)
 	for _, msg := range msgs {
 		if err := enc.Encode(msg); err != nil {
-			return &StorageError{Err: err}
+			_ = file.Close()
+			return s.wrapError("append messages log", runID, err)
 		}
 	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return s.wrapError("sync messages log", runID, err)
+	}
+	if err := file.Close(); err != nil {
+		return s.wrapError("close messages log", runID, err)
+	}
 	return nil
+}
+
+func (s *defaultFileStorage) ensureLayout(runID string) error {
+	runDir := filepath.Join(s.root, runID)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		return s.wrapError("create run directory", runID, err)
+	}
+	if err := os.MkdirAll(filepath.Join(runDir, "artifacts"), 0o755); err != nil {
+		return s.wrapError("create artifacts directory", runID, err)
+	}
+	if err := s.ensureJSONFile(runID, filepath.Join(runDir, "meta.json")); err != nil {
+		return err
+	}
+	if err := s.ensureFile(runID, filepath.Join(runDir, "messages.jsonl")); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *defaultFileStorage) ensureJSONFile(runID, path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return s.wrapError("stat file", runID, err)
+	}
+	if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
+		return s.wrapError("initialize file", runID, err)
+	}
+	return nil
+}
+
+func (s *defaultFileStorage) ensureFile(runID, path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return s.wrapError("stat file", runID, err)
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return s.wrapError("initialize file", runID, err)
+	}
+	return file.Close()
+}
+
+func (s *defaultFileStorage) validateRunID(runID string) error {
+	if strings.TrimSpace(runID) == "" {
+		return s.wrapError("validate run id", runID, errors.New("run id is required"))
+	}
+	if filepath.IsAbs(runID) || filepath.VolumeName(runID) != "" {
+		return s.wrapError("validate run id", runID, errors.New("run id must not be an absolute path"))
+	}
+	if runID == "." || runID == ".." {
+		return s.wrapError("validate run id", runID, errors.New("run id must not reference the current or parent directory"))
+	}
+	if strings.ContainsAny(runID, `/\`) {
+		return s.wrapError("validate run id", runID, errors.New("run id must not contain path separators"))
+	}
+	if cleaned := filepath.Clean(runID); cleaned != runID || cleaned == "." || cleaned == ".." {
+		return s.wrapError("validate run id", runID, errors.New("run id must resolve to a single safe path segment"))
+	}
+	return nil
+}
+
+func (s *defaultFileStorage) writeFileAtomically(runID, path string, data []byte, perm os.FileMode) error {
+	tempFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return s.wrapError("create temp run snapshot", runID, err)
+	}
+
+	tempPath := tempFile.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tempPath)
+		}
+	}()
+
+	if err := tempFile.Chmod(perm); err != nil {
+		_ = tempFile.Close()
+		return s.wrapError("set temp run snapshot mode", runID, err)
+	}
+	if _, err := tempFile.Write(data); err != nil {
+		_ = tempFile.Close()
+		return s.wrapError("write temp run snapshot", runID, err)
+	}
+	if err := tempFile.Sync(); err != nil {
+		_ = tempFile.Close()
+		return s.wrapError("sync temp run snapshot", runID, err)
+	}
+	if err := tempFile.Close(); err != nil {
+		return s.wrapError("close temp run snapshot", runID, err)
+	}
+	if err := runtimeReplaceFile(tempPath, path); err != nil {
+		return s.wrapError("replace run snapshot", runID, err)
+	}
+
+	cleanup = false
+	return nil
+}
+
+func (s *defaultFileStorage) wrapError(action, runID string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if runID == "" {
+		return &StorageError{Err: fmt.Errorf("%s: %w", action, err)}
+	}
+	return &StorageError{Err: fmt.Errorf("%s for run %q: %w", action, runID, err)}
 }

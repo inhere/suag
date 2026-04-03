@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -311,16 +312,32 @@ func (s *runtimeTestStorage) AppendMessages(_ context.Context, runID string, msg
 
 type runtimeTestHook struct {
 	NopHook
+	beforeRun      func(*Control)
+	beforePrompt   func(*Control)
+	beforeModel    func(*Control)
 	beforeModelErr error
 	beforeRunCalls int
 }
 
-func (h *runtimeTestHook) BeforeRun(context.Context, *RunEvent, *Control) error {
+func (h *runtimeTestHook) BeforeRun(_ context.Context, _ *RunEvent, ctrl *Control) error {
 	h.beforeRunCalls++
+	if h.beforeRun != nil {
+		h.beforeRun(ctrl)
+	}
 	return nil
 }
 
-func (h *runtimeTestHook) BeforeModel(context.Context, *ModelEvent, *Control) error {
+func (h *runtimeTestHook) BeforePromptBuild(_ context.Context, _ *PromptEvent, ctrl *Control) error {
+	if h.beforePrompt != nil {
+		h.beforePrompt(ctrl)
+	}
+	return nil
+}
+
+func (h *runtimeTestHook) BeforeModel(_ context.Context, _ *ModelEvent, ctrl *Control) error {
+	if h.beforeModel != nil {
+		h.beforeModel(ctrl)
+	}
 	return h.beforeModelErr
 }
 
@@ -420,6 +437,40 @@ func TestRuntime_New_WithOnlyProvider_UsesDefaults(t *testing.T) {
 	})
 	if !errors.Is(err, ErrRunNotResumable) {
 		t.Fatalf("expected default storage to persist the completed run and reject resume, got %v", err)
+	}
+}
+
+func TestRuntime_New_WithOnlyProvider_RejectsUnsafeRunID(t *testing.T) {
+	unique := filepath.Base(t.TempDir()) + "-unsafe"
+	outsidePath := filepath.Join(os.TempDir(), unique)
+	_ = os.RemoveAll(outsidePath)
+	defer os.RemoveAll(outsidePath)
+
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "ok",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	rt := New(Config{Provider: provider})
+
+	_, err := rt.Run(context.Background(), RunInput{
+		RunID:       filepath.Join("..", unique),
+		AgentID:     "agent-1",
+		Instruction: "unsafe",
+		ResumeMode:  ResumeFromState,
+	})
+
+	var storageErr *StorageError
+	if !errors.As(err, &storageErr) {
+		t.Fatalf("expected unsafe run id to fail with storage error, got %T %v", err, err)
+	}
+	if len(provider.calls) != 0 {
+		t.Fatalf("expected provider not to be called for unsafe run id, got %#v", provider.calls)
+	}
+	if _, statErr := os.Stat(outsidePath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected unsafe run id not to create %q, got %v", outsidePath, statErr)
 	}
 }
 
@@ -691,6 +742,101 @@ func TestRuntime_Run_CompletedRunCannotResume(t *testing.T) {
 	}
 }
 
+func TestRuntime_Run_HookYieldReturnsYieldedResult(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "should-not-run",
+			FinishReason: FinishFinal,
+		}},
+	}
+	hook := &runtimeTestHook{
+		beforeModel: func(ctrl *Control) {
+			ctrl.Yield("await_approval", map[string]any{"policy": "manual"})
+		},
+	}
+
+	rt := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{hook},
+	})
+
+	result, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-yield",
+		AgentID:     "agent-1",
+		Instruction: "pause",
+	})
+	if err != nil {
+		t.Fatalf("expected yield to return a result, got %v", err)
+	}
+	if result.Status != RunYielded || result.Yield == nil || result.Yield.Reason != "await_approval" {
+		t.Fatalf("expected yielded result, got %#v", result)
+	}
+	if len(provider.calls) != 0 {
+		t.Fatalf("expected provider not to run after yield, got %#v", provider.calls)
+	}
+	saved := store.runs["run-yield"]
+	if saved == nil || saved.Status != RunYielded || saved.LastError != "" {
+		t.Fatalf("expected yielded state to be persisted, got %#v", saved)
+	}
+	if len(store.messages["run-yield"]) != 1 || store.messages["run-yield"][0].Content != "pause" {
+		t.Fatalf("expected only the user message to be persisted on yield, got %#v", store.messages["run-yield"])
+	}
+}
+
+func TestRuntime_Run_HookShortCircuitReturnsReplacement(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "should-not-run",
+			FinishReason: FinishFinal,
+		}},
+	}
+	hook := &runtimeTestHook{
+		beforeModel: func(ctrl *Control) {
+			ctrl.ShortCircuit(&RunResult{
+				Status: RunCompleted,
+				Output: "cached",
+			})
+		},
+	}
+
+	rt := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{hook},
+	})
+
+	result, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-short-circuit",
+		AgentID:     "agent-1",
+		Instruction: "use cache",
+	})
+	if err != nil {
+		t.Fatalf("expected short-circuit replacement to succeed, got %v", err)
+	}
+	if result.Status != RunCompleted || result.Output != "cached" {
+		t.Fatalf("expected short-circuit replacement result, got %#v", result)
+	}
+	if len(provider.calls) != 0 {
+		t.Fatalf("expected provider not to run after short-circuit, got %#v", provider.calls)
+	}
+	saved := store.runs["run-short-circuit"]
+	if saved == nil || saved.Status != RunCompleted {
+		t.Fatalf("expected completed short-circuit state to be persisted, got %#v", saved)
+	}
+	if len(store.messages["run-short-circuit"]) != 2 || store.messages["run-short-circuit"][1].Content != "cached" {
+		t.Fatalf("expected assistant short-circuit output to be persisted, got %#v", store.messages["run-short-circuit"])
+	}
+}
+
 func TestRuntime_Run_ToolCallsNotImplemented(t *testing.T) {
 	store := newRuntimeTestStorage()
 	provider := &runtimeTestProvider{
@@ -703,20 +849,26 @@ func TestRuntime_Run_ToolCallsNotImplemented(t *testing.T) {
 		}},
 	}
 
-	rt := New(Config{
+	_, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
 		Tools:          NewToolRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
-	})
-
-	_, err := rt.Run(context.Background(), RunInput{
+	}).Run(context.Background(), RunInput{
+		RunID:       "run-tool-calls",
 		AgentID:     "agent-1",
 		Instruction: "use a tool",
 	})
 	if !errors.Is(err, ErrToolCallsNotImplemented) {
 		t.Fatalf("expected tool-calls-not-implemented error, got %v", err)
+	}
+	saved := store.runs["run-tool-calls"]
+	if saved == nil || saved.Status != RunFailed || saved.LastError == "" {
+		t.Fatalf("expected tool-call failure state to be persisted, got %#v", saved)
+	}
+	if len(store.messages["run-tool-calls"]) != 1 || store.messages["run-tool-calls"][0].Content != "use a tool" {
+		t.Fatalf("expected only the user message to be persisted on tool-call failure, got %#v", store.messages["run-tool-calls"])
 	}
 }
 
@@ -768,6 +920,7 @@ func TestRuntime_Run_ProviderErrorMapped(t *testing.T) {
 	})
 
 	_, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-provider-fail",
 		AgentID:     "agent-1",
 		Instruction: "trigger provider",
 	})
@@ -775,6 +928,10 @@ func TestRuntime_Run_ProviderErrorMapped(t *testing.T) {
 	var providerErr *ProviderError
 	if !errors.As(err, &providerErr) {
 		t.Fatalf("expected provider error wrapper, got %T %v", err, err)
+	}
+	saved := store.runs["run-provider-fail"]
+	if saved == nil || saved.Status != RunFailed || saved.LastError == "" {
+		t.Fatalf("expected provider failure state to be persisted, got %#v", saved)
 	}
 }
 
