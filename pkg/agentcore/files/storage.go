@@ -233,13 +233,8 @@ func (s *Storage) writeFileAtomically(runID, path string, data []byte, perm os.F
 	if err := tempFile.Close(); err != nil {
 		return s.wrapError("close temp run snapshot", runID, err)
 	}
-	if err := os.Rename(tempPath, path); err != nil {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return s.wrapError("replace run snapshot", runID, err)
-		}
-		if err := os.Rename(tempPath, path); err != nil {
-			return s.wrapError("replace run snapshot", runID, err)
-		}
+	if err := replaceFile(tempPath, path); err != nil {
+		return s.wrapError("replace run snapshot", runID, err)
 	}
 
 	cleanup = false
