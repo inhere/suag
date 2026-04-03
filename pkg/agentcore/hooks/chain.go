@@ -22,83 +22,68 @@ func NewChain(hooks ...agentcore.Hook) Chain {
 	return Chain{hooks: filtered}
 }
 
-func (c Chain) BeforeRun(ctx context.Context, event *agentcore.RunEvent, ctrl *agentcore.Control) error {
+func (c Chain) runStage(call func(agentcore.Hook) error, ctrl *agentcore.Control) error {
 	for _, hook := range c.hooks {
-		if err := hook.BeforeRun(ctx, event, ctrl); err != nil {
+		if err := call(hook); err != nil {
 			return err
+		}
+		if ctrl != nil && (ctrl.ShouldShortCircuit() || ctrl.ShouldYield()) {
+			return nil
 		}
 	}
 	return nil
+}
+
+func (c Chain) BeforeRun(ctx context.Context, event *agentcore.RunEvent, ctrl *agentcore.Control) error {
+	return c.runStage(func(hook agentcore.Hook) error {
+		return hook.BeforeRun(ctx, event, ctrl)
+	}, ctrl)
 }
 
 func (c Chain) BeforePromptBuild(ctx context.Context, event *agentcore.PromptEvent, ctrl *agentcore.Control) error {
-	for _, hook := range c.hooks {
-		if err := hook.BeforePromptBuild(ctx, event, ctrl); err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.runStage(func(hook agentcore.Hook) error {
+		return hook.BeforePromptBuild(ctx, event, ctrl)
+	}, ctrl)
 }
 
 func (c Chain) BeforeContextBuild(ctx context.Context, event *agentcore.ContextEvent, ctrl *agentcore.Control) error {
-	for _, hook := range c.hooks {
-		if err := hook.BeforeContextBuild(ctx, event, ctrl); err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.runStage(func(hook agentcore.Hook) error {
+		return hook.BeforeContextBuild(ctx, event, ctrl)
+	}, ctrl)
 }
 
 func (c Chain) BeforeModel(ctx context.Context, event *agentcore.ModelEvent, ctrl *agentcore.Control) error {
-	for _, hook := range c.hooks {
-		if err := hook.BeforeModel(ctx, event, ctrl); err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.runStage(func(hook agentcore.Hook) error {
+		return hook.BeforeModel(ctx, event, ctrl)
+	}, ctrl)
 }
 
 func (c Chain) AfterModel(ctx context.Context, event *agentcore.ModelEvent, ctrl *agentcore.Control) error {
-	for _, hook := range c.hooks {
-		if err := hook.AfterModel(ctx, event, ctrl); err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.runStage(func(hook agentcore.Hook) error {
+		return hook.AfterModel(ctx, event, ctrl)
+	}, ctrl)
 }
 
 func (c Chain) BeforeTool(ctx context.Context, event *agentcore.ToolEvent, ctrl *agentcore.Control) error {
-	for _, hook := range c.hooks {
-		if err := hook.BeforeTool(ctx, event, ctrl); err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.runStage(func(hook agentcore.Hook) error {
+		return hook.BeforeTool(ctx, event, ctrl)
+	}, ctrl)
 }
 
 func (c Chain) AfterTool(ctx context.Context, event *agentcore.ToolEvent, ctrl *agentcore.Control) error {
-	for _, hook := range c.hooks {
-		if err := hook.AfterTool(ctx, event, ctrl); err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.runStage(func(hook agentcore.Hook) error {
+		return hook.AfterTool(ctx, event, ctrl)
+	}, ctrl)
 }
 
 func (c Chain) AfterRun(ctx context.Context, event *agentcore.RunEvent, ctrl *agentcore.Control) error {
-	for _, hook := range c.hooks {
-		if err := hook.AfterRun(ctx, event, ctrl); err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.runStage(func(hook agentcore.Hook) error {
+		return hook.AfterRun(ctx, event, ctrl)
+	}, ctrl)
 }
 
 func (c Chain) OnError(ctx context.Context, event *agentcore.ErrorEvent, ctrl *agentcore.Control) error {
-	for _, hook := range c.hooks {
-		if err := hook.OnError(ctx, event, ctrl); err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.runStage(func(hook agentcore.Hook) error {
+		return hook.OnError(ctx, event, ctrl)
+	}, ctrl)
 }

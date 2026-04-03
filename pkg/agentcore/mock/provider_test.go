@@ -1,4 +1,4 @@
-package mock_test
+package mock
 
 import (
 	stdctx "context"
@@ -6,15 +6,14 @@ import (
 	"testing"
 
 	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/mock"
 )
 
 func TestDefaultRegistrySchemas(t *testing.T) {
 	reg := agentcore.NewToolRegistry()
-	reg.Register(mock.NewTool(
+	reg.Register(NewTool(
 		"echo",
-		mock.WithDescription("echoes input text"),
-		mock.WithSchema(map[string]any{
+		WithDescription("echoes input text"),
+		WithSchema(map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"text": map[string]any{"type": "string"},
@@ -54,9 +53,9 @@ func TestDefaultRegistrySchemas(t *testing.T) {
 }
 
 func TestMockProvider_ReturnsScriptedStepsInOrder(t *testing.T) {
-	provider := mock.NewProvider(
-		mock.ToolCall("call-1", "echo", map[string]any{"text": "x"}),
-		mock.Final("hello"),
+	provider := NewProvider(
+		ToolCall("call-1", "echo", map[string]any{"text": "x"}),
+		Final("hello"),
 	)
 
 	first, err := provider.Generate(stdctx.Background(), &agentcore.GenerateRequest{})
@@ -78,7 +77,7 @@ func TestMockProvider_ReturnsScriptedStepsInOrder(t *testing.T) {
 
 func TestMockProvider_ReturnsScriptedErrorStep(t *testing.T) {
 	wantErr := errors.New("provider step failed")
-	provider := mock.NewProvider(mock.Error(wantErr))
+	provider := NewProvider(Error(wantErr))
 
 	result, err := provider.Generate(stdctx.Background(), &agentcore.GenerateRequest{})
 	if !errors.Is(err, wantErr) {
@@ -89,8 +88,25 @@ func TestMockProvider_ReturnsScriptedErrorStep(t *testing.T) {
 	}
 }
 
+func TestMockProvider_RejectsInvalidScriptedResult(t *testing.T) {
+	provider := NewProvider(Step{
+		result: &agentcore.GenerateResult{
+			Content:      "hello",
+			FinishReason: agentcore.FinishToolCalls,
+		},
+	})
+
+	result, err := provider.Generate(stdctx.Background(), &agentcore.GenerateRequest{})
+	if !errors.Is(err, agentcore.ErrInvalidFinishReason) {
+		t.Fatalf("expected invalid finish reason error, got result=%#v err=%v", result, err)
+	}
+	if result != nil {
+		t.Fatalf("expected no result for invalid scripted output, got %#v", result)
+	}
+}
+
 func TestMockProvider_ErrorsWhenExhausted(t *testing.T) {
-	provider := mock.NewProvider(mock.Final("hello"))
+	provider := NewProvider(Final("hello"))
 
 	_, err := provider.Generate(stdctx.Background(), &agentcore.GenerateRequest{})
 	if err != nil {
@@ -107,7 +123,7 @@ func TestMockProvider_ErrorsWhenExhausted(t *testing.T) {
 }
 
 func TestMockTool_EchoesTextArgument(t *testing.T) {
-	tool := mock.NewTool("echo")
+	tool := NewTool("echo")
 
 	result, err := tool.Execute(stdctx.Background(), agentcore.ToolCall{
 		CallID:    "call-1",

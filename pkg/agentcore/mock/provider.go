@@ -85,6 +85,9 @@ func (p *Provider) Generate(context.Context, *agentcore.GenerateRequest) (*agent
 	if step.err != nil {
 		return nil, step.err
 	}
+	if err := step.result.Validate(); err != nil {
+		return nil, err
+	}
 	return step.result, nil
 }
 

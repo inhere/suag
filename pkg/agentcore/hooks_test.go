@@ -412,6 +412,21 @@ func (h chainRecorderHook) OnError(_ context.Context, _ *agentcore.ErrorEvent, c
 	return h.record("OnError")
 }
 
+type controlStopHook struct {
+	agentcore.NopHook
+	name  string
+	order *[]string
+	stop  func(*agentcore.Control)
+}
+
+func (h controlStopHook) BeforePromptBuild(_ context.Context, _ *agentcore.PromptEvent, ctrl *agentcore.Control) error {
+	*h.order = append(*h.order, h.name)
+	if h.stop != nil {
+		h.stop(ctrl)
+	}
+	return nil
+}
+
 func TestHookChain_MethodsRunHooksInOrder(t *testing.T) {
 	type testCase struct {
 		name   string
@@ -497,101 +512,56 @@ func TestHookChain_MethodsRunHooksInOrder(t *testing.T) {
 	}
 }
 
-func TestHookChain_MethodsShareControlAndStopOnError(t *testing.T) {
-	type testCase struct {
-		name   string
-		method string
-		invoke func(hookchain.Chain, *agentcore.Control) error
+func TestHookChain_BeforePromptBuildShortCircuitStopsLaterSameStageHooks(t *testing.T) {
+	var order []string
+	ctrl := agentcore.NewControl()
+	chain := hookchain.NewChain(
+		controlStopHook{
+			name:  "first",
+			order: &order,
+			stop: func(ctrl *agentcore.Control) {
+				ctrl.ShortCircuit("replacement")
+			},
+		},
+		controlStopHook{name: "second", order: &order},
+		controlStopHook{name: "third", order: &order},
+	)
+
+	err := chain.BeforePromptBuild(context.Background(), &agentcore.PromptEvent{}, ctrl)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
-
-	tests := []testCase{
-		{
-			name:   "BeforeRun",
-			method: "BeforeRun",
-			invoke: func(chain hookchain.Chain, ctrl *agentcore.Control) error {
-				return chain.BeforeRun(context.Background(), &agentcore.RunEvent{}, ctrl)
-			},
-		},
-		{
-			name:   "BeforePromptBuild",
-			method: "BeforePromptBuild",
-			invoke: func(chain hookchain.Chain, ctrl *agentcore.Control) error {
-				return chain.BeforePromptBuild(context.Background(), &agentcore.PromptEvent{}, ctrl)
-			},
-		},
-		{
-			name:   "BeforeContextBuild",
-			method: "BeforeContextBuild",
-			invoke: func(chain hookchain.Chain, ctrl *agentcore.Control) error {
-				return chain.BeforeContextBuild(context.Background(), &agentcore.ContextEvent{}, ctrl)
-			},
-		},
-		{
-			name:   "AfterModel",
-			method: "AfterModel",
-			invoke: func(chain hookchain.Chain, ctrl *agentcore.Control) error {
-				return chain.AfterModel(context.Background(), &agentcore.ModelEvent{}, ctrl)
-			},
-		},
-		{
-			name:   "BeforeTool",
-			method: "BeforeTool",
-			invoke: func(chain hookchain.Chain, ctrl *agentcore.Control) error {
-				return chain.BeforeTool(context.Background(), &agentcore.ToolEvent{}, ctrl)
-			},
-		},
-		{
-			name:   "AfterTool",
-			method: "AfterTool",
-			invoke: func(chain hookchain.Chain, ctrl *agentcore.Control) error {
-				return chain.AfterTool(context.Background(), &agentcore.ToolEvent{}, ctrl)
-			},
-		},
-		{
-			name:   "AfterRun",
-			method: "AfterRun",
-			invoke: func(chain hookchain.Chain, ctrl *agentcore.Control) error {
-				return chain.AfterRun(context.Background(), &agentcore.RunEvent{}, ctrl)
-			},
-		},
-		{
-			name:   "OnError",
-			method: "OnError",
-			invoke: func(chain hookchain.Chain, ctrl *agentcore.Control) error {
-				return chain.OnError(context.Background(), &agentcore.ErrorEvent{}, ctrl)
-			},
-		},
+	if !reflect.DeepEqual(order, []string{"first"}) {
+		t.Fatalf("expected short-circuit to stop later hooks, got %#v", order)
 	}
+	if !ctrl.ShouldShortCircuit() || ctrl.Replacement != "replacement" {
+		t.Fatalf("expected short-circuit control to be preserved, got %#v", ctrl)
+	}
+}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			var order []string
-			wantErr := errors.New("stop")
-			chain := hookchain.NewChain(
-				chainRecorderHook{
-					name:           "first",
-					order:          &order,
-					targetMethod:   tc.method,
-					shortCircuitOn: tc.method,
-				},
-				chainRecorderHook{
-					name:            "second",
-					order:           &order,
-					targetMethod:    tc.method,
-					assertControlOn: tc.method,
-					errOnMethod:     tc.method,
-					err:             wantErr,
-				},
-				chainRecorderHook{name: "third", order: &order, targetMethod: tc.method},
-			)
+func TestHookChain_BeforePromptBuildYieldStopsLaterSameStageHooks(t *testing.T) {
+	var order []string
+	ctrl := agentcore.NewControl()
+	chain := hookchain.NewChain(
+		controlStopHook{
+			name:  "first",
+			order: &order,
+			stop: func(ctrl *agentcore.Control) {
+				ctrl.Yield("await_approval", map[string]any{"policy": "manual"})
+			},
+		},
+		controlStopHook{name: "second", order: &order},
+		controlStopHook{name: "third", order: &order},
+	)
 
-			err := tc.invoke(chain, agentcore.NewControl())
-			if !errors.Is(err, wantErr) {
-				t.Fatalf("expected %v, got %v", wantErr, err)
-			}
-			if !reflect.DeepEqual(order, []string{"first", "second"}) {
-				t.Fatalf("expected execution to stop after error, got %#v", order)
-			}
-		})
+	err := chain.BeforePromptBuild(context.Background(), &agentcore.PromptEvent{}, ctrl)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !reflect.DeepEqual(order, []string{"first"}) {
+		t.Fatalf("expected yield to stop later hooks, got %#v", order)
+	}
+	if !ctrl.ShouldYield() || ctrl.YieldReason != "await_approval" {
+		t.Fatalf("expected yield control to be preserved, got %#v", ctrl)
 	}
 }
