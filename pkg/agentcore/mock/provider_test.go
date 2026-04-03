@@ -145,6 +145,15 @@ func TestMockProvider_ClonesNestedInputsAndResults(t *testing.T) {
 			}},
 			FinishReason: agentcore.FinishToolCalls,
 			Metadata:     metadata,
+			Artifacts: []agentcore.Artifact{{
+				Kind: "file",
+				URI:  "artifact://1",
+				Metadata: map[string]any{
+					"payload": map[string]any{
+						"status": "ready",
+					},
+				},
+			}},
 		},
 	}
 
@@ -168,10 +177,14 @@ func TestMockProvider_ClonesNestedInputsAndResults(t *testing.T) {
 	if got := first.Metadata["trace"].(map[string]any)["steps"].([]any)[1].(map[string]any)["state"]; got != "ready" {
 		t.Fatalf("expected provider metadata to be isolated from caller mutations, got %#v", got)
 	}
+	if got := first.Artifacts[0].Metadata["payload"].(map[string]any)["status"]; got != "ready" {
+		t.Fatalf("expected provider artifacts to clone nested metadata, got %#v", got)
+	}
 
 	first.ToolCalls[0].Arguments["payload"].(map[string]any)["message"] = "mutated return"
 	first.ToolCalls[0].Arguments["payload"].(map[string]any)["items"].([]any)[1].(map[string]any)["nested"] = "mutated return"
 	first.Metadata["trace"].(map[string]any)["steps"].([]any)[1].(map[string]any)["state"] = "mutated return"
+	first.Artifacts[0].Metadata["payload"].(map[string]any)["status"] = "mutated return"
 
 	second, err := provider.Generate(stdctx.Background(), &agentcore.GenerateRequest{})
 	if err != nil {
@@ -186,6 +199,9 @@ func TestMockProvider_ClonesNestedInputsAndResults(t *testing.T) {
 	}
 	if got := second.Metadata["trace"].(map[string]any)["steps"].([]any)[1].(map[string]any)["state"]; got != "ready" {
 		t.Fatalf("expected returned metadata to be cloned on each read, got %#v", got)
+	}
+	if got := second.Artifacts[0].Metadata["payload"].(map[string]any)["status"]; got != "ready" {
+		t.Fatalf("expected returned artifact metadata to be cloned on each read, got %#v", got)
 	}
 }
 

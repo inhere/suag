@@ -127,7 +127,14 @@ func cloneResult(result *agentcore.GenerateResult) *agentcore.GenerateResult {
 
 	if len(result.Artifacts) > 0 {
 		cloned.Artifacts = make([]agentcore.Artifact, len(result.Artifacts))
-		copy(cloned.Artifacts, result.Artifacts)
+		for i, artifact := range result.Artifacts {
+			cloned.Artifacts[i] = agentcore.Artifact{
+				Kind:     artifact.Kind,
+				URI:      artifact.URI,
+				Content:  artifact.Content,
+				Metadata: cloneMap(artifact.Metadata),
+			}
+		}
 	}
 
 	return cloned
