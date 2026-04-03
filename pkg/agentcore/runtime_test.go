@@ -315,6 +315,9 @@ type runtimeTestHook struct {
 	beforeRun      func(*Control)
 	beforePrompt   func(*Control)
 	beforeModel    func(*Control)
+	afterModel     func(*Control)
+	afterRun       func(*Control)
+	onError        func(*Control)
 	beforeModelErr error
 	beforeRunCalls int
 }
@@ -339,6 +342,27 @@ func (h *runtimeTestHook) BeforeModel(_ context.Context, _ *ModelEvent, ctrl *Co
 		h.beforeModel(ctrl)
 	}
 	return h.beforeModelErr
+}
+
+func (h *runtimeTestHook) AfterModel(_ context.Context, _ *ModelEvent, ctrl *Control) error {
+	if h.afterModel != nil {
+		h.afterModel(ctrl)
+	}
+	return nil
+}
+
+func (h *runtimeTestHook) AfterRun(_ context.Context, _ *RunEvent, ctrl *Control) error {
+	if h.afterRun != nil {
+		h.afterRun(ctrl)
+	}
+	return nil
+}
+
+func (h *runtimeTestHook) OnError(_ context.Context, _ *ErrorEvent, ctrl *Control) error {
+	if h.onError != nil {
+		h.onError(ctrl)
+	}
+	return nil
 }
 
 func TestRuntime_Run_FinalAnswer(t *testing.T) {
@@ -788,6 +812,51 @@ func TestRuntime_Run_HookYieldReturnsYieldedResult(t *testing.T) {
 	}
 }
 
+func TestRuntime_Run_AfterModelYieldPreservesStepAndUsage(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done",
+			FinishReason: FinishFinal,
+			Usage:        Usage{InputTokens: 11, OutputTokens: 7, TotalTokens: 18},
+		}},
+	}
+	hook := &runtimeTestHook{
+		afterModel: func(ctrl *Control) {
+			ctrl.Yield("await_review", map[string]any{"stage": "after_model"})
+		},
+	}
+
+	rt := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{hook},
+	})
+
+	result, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-after-model-yield",
+		AgentID:     "agent-1",
+		Instruction: "compute first",
+	})
+	if err != nil {
+		t.Fatalf("expected after-model yield to succeed, got %v", err)
+	}
+	if result.Status != RunYielded || result.Steps != 1 || result.Usage.TotalTokens != 18 {
+		t.Fatalf("expected yielded result with persisted usage and step, got %#v", result)
+	}
+
+	saved := store.runs["run-after-model-yield"]
+	if saved == nil || saved.Status != RunYielded || saved.Step != 1 || saved.Usage.TotalTokens != 18 {
+		t.Fatalf("expected yielded state to preserve step and usage, got %#v", saved)
+	}
+	if len(store.messages["run-after-model-yield"]) != 1 {
+		t.Fatalf("expected only the user message to be persisted on after-model yield, got %#v", store.messages["run-after-model-yield"])
+	}
+}
+
 func TestRuntime_Run_HookShortCircuitReturnsReplacement(t *testing.T) {
 	store := newRuntimeTestStorage()
 	provider := &runtimeTestProvider{
@@ -834,6 +903,48 @@ func TestRuntime_Run_HookShortCircuitReturnsReplacement(t *testing.T) {
 	}
 	if len(store.messages["run-short-circuit"]) != 2 || store.messages["run-short-circuit"][1].Content != "cached" {
 		t.Fatalf("expected assistant short-circuit output to be persisted, got %#v", store.messages["run-short-circuit"])
+	}
+}
+
+func TestRuntime_Run_AfterRunYieldIsNotIgnored(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done",
+			FinishReason: FinishFinal,
+			Usage:        Usage{InputTokens: 2, OutputTokens: 3, TotalTokens: 5},
+		}},
+	}
+	hook := &runtimeTestHook{
+		afterRun: func(ctrl *Control) {
+			ctrl.Yield("after_run_pause", map[string]any{"source": "after_run"})
+		},
+	}
+
+	rt := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{hook},
+	})
+
+	result, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-after-run-yield",
+		AgentID:     "agent-1",
+		Instruction: "finish then yield",
+	})
+	if err != nil {
+		t.Fatalf("expected after-run yield to override final return, got %v", err)
+	}
+	if result.Status != RunYielded || result.Yield == nil || result.Yield.Reason != "after_run_pause" {
+		t.Fatalf("expected yielded result from after-run control, got %#v", result)
+	}
+
+	saved := store.runs["run-after-run-yield"]
+	if saved == nil || saved.Status != RunYielded || saved.Step != 1 || saved.Usage.TotalTokens != 5 {
+		t.Fatalf("expected after-run yield to persist yielded state with usage, got %#v", saved)
 	}
 }
 
@@ -932,6 +1043,44 @@ func TestRuntime_Run_ProviderErrorMapped(t *testing.T) {
 	saved := store.runs["run-provider-fail"]
 	if saved == nil || saved.Status != RunFailed || saved.LastError == "" {
 		t.Fatalf("expected provider failure state to be persisted, got %#v", saved)
+	}
+}
+
+func TestRuntime_Run_OnErrorYieldIsNotIgnored(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestProvider{
+		errs: []error{errors.New("provider boom")},
+	}
+	hook := &runtimeTestHook{
+		onError: func(ctrl *Control) {
+			ctrl.Yield("recoverable_error", map[string]any{"stage": "on_error"})
+		},
+	}
+
+	rt := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{hook},
+	})
+
+	result, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-on-error-yield",
+		AgentID:     "agent-1",
+		Instruction: "recover if provider fails",
+	})
+	if err != nil {
+		t.Fatalf("expected on-error yield to override the returned error, got %v", err)
+	}
+	if result.Status != RunYielded || result.Yield == nil || result.Yield.Reason != "recoverable_error" {
+		t.Fatalf("expected yielded result from on-error control, got %#v", result)
+	}
+
+	saved := store.runs["run-on-error-yield"]
+	if saved == nil || saved.Status != RunYielded {
+		t.Fatalf("expected on-error yield to persist yielded state, got %#v", saved)
 	}
 }
 

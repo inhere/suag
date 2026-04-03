@@ -78,7 +78,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	}
 
 	if err := r.runBeforeRun(ctx, runEvent, ctrl); err != nil {
-		return nil, r.handleError(ctx, state, "before_run", err, ctrl)
+		return r.returnWithHandledError(ctx, state, "before_run", err, ctrl)
 	}
 	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
 		return result, err
@@ -92,12 +92,12 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	}
 
 	if err := r.saveState(ctx, state, newMessages); err != nil {
-		return nil, r.handleError(ctx, state, "persist_input", err, ctrl)
+		return r.returnWithHandledError(ctx, state, "persist_input", err, ctrl)
 	}
 
 	systemPrompt, err := r.buildPrompt(ctx, state, ctrl)
 	if err != nil {
-		return nil, r.handleError(ctx, state, "prompt", err, ctrl)
+		return r.returnWithHandledError(ctx, state, "prompt", err, ctrl)
 	}
 	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
 		return result, err
@@ -105,7 +105,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 
 	messages, err := r.buildContext(ctx, state, ctrl)
 	if err != nil {
-		return nil, r.handleError(ctx, state, "context", err, ctrl)
+		return r.returnWithHandledError(ctx, state, "context", err, ctrl)
 	}
 	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
 		return result, err
@@ -113,7 +113,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 
 	tools, err := r.listTools(ctx)
 	if err != nil {
-		return nil, r.handleError(ctx, state, "tools", err, ctrl)
+		return r.returnWithHandledError(ctx, state, "tools", err, ctrl)
 	}
 
 	req := &GenerateRequest{
@@ -125,20 +125,26 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 
 	res, err := r.callModel(ctx, state, req, ctrl)
 	if err != nil {
-		return nil, r.handleError(ctx, state, "model", err, ctrl)
+		return r.returnWithHandledError(ctx, state, "model", err, ctrl)
 	}
-	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
-		return result, err
+	if res == nil {
+		if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+			return result, err
+		}
+		return r.returnWithHandledError(ctx, state, "model", fmt.Errorf("model execution returned no result"), ctrl)
 	}
 
 	state.Step++
 	state.Usage = res.Usage
+	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+		return result, err
+	}
 
 	if res.FinishReason == FinishToolCalls {
-		return nil, r.handleError(ctx, state, "tool_loop", ErrToolCallsNotImplemented, ctrl)
+		return r.returnWithHandledError(ctx, state, "tool_loop", ErrToolCallsNotImplemented, ctrl)
 	}
 	if res.FinishReason != FinishFinal {
-		return nil, r.handleError(ctx, state, "model", ErrInvalidFinishReason, ctrl)
+		return r.returnWithHandledError(ctx, state, "model", ErrInvalidFinishReason, ctrl)
 	}
 
 	assistantMessage := Message{Role: "assistant", Content: res.Content}
@@ -147,7 +153,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	state.LastError = ""
 
 	if err := r.saveState(ctx, state, []Message{assistantMessage}); err != nil {
-		return nil, r.handleError(ctx, state, "persist_output", err, ctrl)
+		return r.returnWithHandledError(ctx, state, "persist_output", err, ctrl)
 	}
 
 	result := &RunResult{
@@ -161,10 +167,22 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	runEvent.Metadata = cloneMetadata(state.Metadata)
 
 	if err := r.runAfterRun(ctx, runEvent, ctrl); err != nil {
-		return nil, r.handleError(ctx, state, "after_run", err, ctrl)
+		return r.returnWithHandledError(ctx, state, "after_run", err, ctrl)
+	}
+	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+		return result, err
 	}
 
 	return result, nil
+}
+
+func (r *DefaultRuntime) returnWithHandledError(ctx context.Context, state *RunState, stage string, err error, ctrl *Control) (*RunResult, error) {
+	handledErr := r.handleError(ctx, state, stage, err, ctrl)
+	var resolved runtimeResolvedControlError
+	if errors.As(handledErr, &resolved) {
+		return resolved.result, nil
+	}
+	return nil, handledErr
 }
 
 func (r *DefaultRuntime) prepareState(ctx context.Context, input RunInput) (*RunState, bool, error) {
@@ -308,7 +326,8 @@ func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *Ge
 	if err := r.hooks.AfterModel(ctx, event, ctrl); err != nil {
 		return nil, wrapHookError(err)
 	}
-	return event.Result, nil
+	result = event.Result
+	return result, nil
 }
 
 func (r *DefaultRuntime) saveState(ctx context.Context, state *RunState, messages []Message) error {
@@ -358,6 +377,12 @@ func (r *DefaultRuntime) handleError(ctx context.Context, state *RunState, stage
 	}
 	if hookErr := r.hooks.OnError(ctx, event, ctrl); hookErr != nil {
 		return wrapHookError(hookErr)
+	}
+	if result, resolveErr, handled := r.resolveControl(ctx, state, ctrl); handled {
+		if resolveErr != nil {
+			return resolveErr
+		}
+		return runtimeResolvedControlError{result: result}
 	}
 	return wrapped
 }
@@ -431,6 +456,14 @@ func (r *DefaultRuntime) persistShortCircuit(ctx context.Context, state *RunStat
 		return nil, err
 	}
 	return &result, nil
+}
+
+type runtimeResolvedControlError struct {
+	result *RunResult
+}
+
+func (e runtimeResolvedControlError) Error() string {
+	return "runtime control resolved"
 }
 
 func (r *DefaultRuntime) persistFailureState(ctx context.Context, state *RunState, err error) error {
