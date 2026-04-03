@@ -73,10 +73,14 @@ func (p *Provider) Name() string {
 
 // Generate returns the next scripted result.
 func (p *Provider) Generate(context.Context, *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	if p == nil {
+		return nil, fmt.Errorf("mock provider exhausted")
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p == nil || p.index >= len(p.steps) {
+	if p.index >= len(p.steps) {
 		return nil, fmt.Errorf("mock provider exhausted")
 	}
 
@@ -135,7 +139,29 @@ func cloneMap(src map[string]any) map[string]any {
 	}
 	dst := make(map[string]any, len(src))
 	for k, v := range src {
-		dst[k] = v
+		dst[k] = cloneValue(v)
 	}
 	return dst
+}
+
+func cloneSlice(src []any) []any {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make([]any, len(src))
+	for i, v := range src {
+		dst[i] = cloneValue(v)
+	}
+	return dst
+}
+
+func cloneValue(v any) any {
+	switch typed := v.(type) {
+	case map[string]any:
+		return cloneMap(typed)
+	case []any:
+		return cloneSlice(typed)
+	default:
+		return v
+	}
 }

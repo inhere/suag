@@ -3,6 +3,7 @@ package mock
 import (
 	stdctx "context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/inhere/axon/pkg/agentcore"
@@ -122,6 +123,84 @@ func TestMockProvider_ErrorsWhenExhausted(t *testing.T) {
 	}
 }
 
+func TestMockProvider_ClonesNestedInputsAndResults(t *testing.T) {
+	arguments := map[string]any{
+		"payload": map[string]any{
+			"message": "original",
+			"items":   []any{"first", map[string]any{"nested": "value"}},
+		},
+	}
+	metadata := map[string]any{
+		"trace": map[string]any{
+			"steps": []any{"a", map[string]any{"state": "ready"}},
+		},
+	}
+
+	step := Step{
+		result: &agentcore.GenerateResult{
+			ToolCalls: []agentcore.ToolCall{{
+				CallID:    "call-1",
+				Name:      "echo",
+				Arguments: arguments,
+			}},
+			FinishReason: agentcore.FinishToolCalls,
+			Metadata:     metadata,
+		},
+	}
+
+	provider := NewProvider(step, step)
+
+	arguments["payload"].(map[string]any)["message"] = "mutated outside"
+	arguments["payload"].(map[string]any)["items"].([]any)[1].(map[string]any)["nested"] = "changed outside"
+	metadata["trace"].(map[string]any)["steps"].([]any)[1].(map[string]any)["state"] = "changed outside"
+
+	first, err := provider.Generate(stdctx.Background(), &agentcore.GenerateRequest{})
+	if err != nil {
+		t.Fatalf("expected first scripted step to succeed, got %v", err)
+	}
+
+	if got := first.ToolCalls[0].Arguments["payload"].(map[string]any)["message"]; got != "original" {
+		t.Fatalf("expected provider to clone nested input maps, got %#v", got)
+	}
+	if got := first.ToolCalls[0].Arguments["payload"].(map[string]any)["items"].([]any)[1].(map[string]any)["nested"]; got != "value" {
+		t.Fatalf("expected provider to clone nested input slices, got %#v", got)
+	}
+	if got := first.Metadata["trace"].(map[string]any)["steps"].([]any)[1].(map[string]any)["state"]; got != "ready" {
+		t.Fatalf("expected provider metadata to be isolated from caller mutations, got %#v", got)
+	}
+
+	first.ToolCalls[0].Arguments["payload"].(map[string]any)["message"] = "mutated return"
+	first.ToolCalls[0].Arguments["payload"].(map[string]any)["items"].([]any)[1].(map[string]any)["nested"] = "mutated return"
+	first.Metadata["trace"].(map[string]any)["steps"].([]any)[1].(map[string]any)["state"] = "mutated return"
+
+	second, err := provider.Generate(stdctx.Background(), &agentcore.GenerateRequest{})
+	if err != nil {
+		t.Fatalf("expected second scripted step to succeed, got %v", err)
+	}
+
+	if got := second.ToolCalls[0].Arguments["payload"].(map[string]any)["message"]; got != "original" {
+		t.Fatalf("expected returned tool call arguments to be cloned on each read, got %#v", got)
+	}
+	if got := second.ToolCalls[0].Arguments["payload"].(map[string]any)["items"].([]any)[1].(map[string]any)["nested"]; got != "value" {
+		t.Fatalf("expected returned nested slice values to stay isolated, got %#v", got)
+	}
+	if got := second.Metadata["trace"].(map[string]any)["steps"].([]any)[1].(map[string]any)["state"]; got != "ready" {
+		t.Fatalf("expected returned metadata to be cloned on each read, got %#v", got)
+	}
+}
+
+func TestMockProvider_GenerateHandlesNilReceiver(t *testing.T) {
+	var provider *Provider
+
+	result, err := provider.Generate(stdctx.Background(), &agentcore.GenerateRequest{})
+	if err == nil || err.Error() != "mock provider exhausted" {
+		t.Fatalf("expected exhausted error for nil provider, got result=%#v err=%v", result, err)
+	}
+	if result != nil {
+		t.Fatalf("expected nil result for nil provider, got %#v", result)
+	}
+}
+
 func TestMockTool_EchoesTextArgument(t *testing.T) {
 	tool := NewTool("echo")
 
@@ -135,5 +214,53 @@ func TestMockTool_EchoesTextArgument(t *testing.T) {
 	}
 	if result.Content != "hello" {
 		t.Fatalf("expected echoed text, got %q", result.Content)
+	}
+}
+
+func TestMockTool_SchemaClonesNestedInputAndReturnValues(t *testing.T) {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"payload": map[string]any{
+				"type": "object",
+				"items": []any{
+					"first",
+					map[string]any{"type": "string"},
+				},
+			},
+		},
+		"required": []any{"payload"},
+	}
+
+	tool := NewTool("echo", WithSchema(schema))
+
+	schema["properties"].(map[string]any)["payload"].(map[string]any)["type"] = "array"
+	schema["properties"].(map[string]any)["payload"].(map[string]any)["items"].([]any)[1].(map[string]any)["type"] = "number"
+	schema["required"].([]any)[0] = "changed"
+
+	first := tool.Schema()
+	if got := first.InputSchema["properties"].(map[string]any)["payload"].(map[string]any)["type"]; got != "object" {
+		t.Fatalf("expected tool schema to clone nested input maps, got %#v", got)
+	}
+	if got := first.InputSchema["properties"].(map[string]any)["payload"].(map[string]any)["items"].([]any)[1].(map[string]any)["type"]; got != "string" {
+		t.Fatalf("expected tool schema to clone nested input slices, got %#v", got)
+	}
+	if !reflect.DeepEqual(first.InputSchema["required"], []any{"payload"}) {
+		t.Fatalf("expected required list to remain unchanged, got %#v", first.InputSchema["required"])
+	}
+
+	first.InputSchema["properties"].(map[string]any)["payload"].(map[string]any)["type"] = "mutated return"
+	first.InputSchema["properties"].(map[string]any)["payload"].(map[string]any)["items"].([]any)[1].(map[string]any)["type"] = "mutated return"
+	first.InputSchema["required"].([]any)[0] = "mutated return"
+
+	second := tool.Schema()
+	if got := second.InputSchema["properties"].(map[string]any)["payload"].(map[string]any)["type"]; got != "object" {
+		t.Fatalf("expected returned tool schema maps to be cloned on each read, got %#v", got)
+	}
+	if got := second.InputSchema["properties"].(map[string]any)["payload"].(map[string]any)["items"].([]any)[1].(map[string]any)["type"]; got != "string" {
+		t.Fatalf("expected returned tool schema slices to be cloned on each read, got %#v", got)
+	}
+	if !reflect.DeepEqual(second.InputSchema["required"], []any{"payload"}) {
+		t.Fatalf("expected returned required list to stay isolated, got %#v", second.InputSchema["required"])
 	}
 }
