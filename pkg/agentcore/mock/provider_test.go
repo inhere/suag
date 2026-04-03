@@ -280,3 +280,37 @@ func TestMockTool_SchemaClonesNestedInputAndReturnValues(t *testing.T) {
 		t.Fatalf("expected returned required list to stay isolated, got %#v", second.InputSchema["required"])
 	}
 }
+
+func TestMockTool_SchemaClonesTypedSlices(t *testing.T) {
+	schema := map[string]any{
+		"type":     "object",
+		"required": []string{"payload"},
+		"examples": []map[string]any{
+			{"kind": "first"},
+		},
+	}
+
+	tool := NewTool("echo", WithSchema(schema))
+
+	schema["required"].([]string)[0] = "changed"
+	schema["examples"].([]map[string]any)[0]["kind"] = "changed"
+
+	first := tool.Schema()
+	if got := first.InputSchema["required"].([]string)[0]; got != "payload" {
+		t.Fatalf("expected typed string slice to be cloned from input, got %#v", got)
+	}
+	if got := first.InputSchema["examples"].([]map[string]any)[0]["kind"]; got != "first" {
+		t.Fatalf("expected typed slice of maps to be cloned from input, got %#v", got)
+	}
+
+	first.InputSchema["required"].([]string)[0] = "mutated return"
+	first.InputSchema["examples"].([]map[string]any)[0]["kind"] = "mutated return"
+
+	second := tool.Schema()
+	if got := second.InputSchema["required"].([]string)[0]; got != "payload" {
+		t.Fatalf("expected typed string slice to be cloned on each read, got %#v", got)
+	}
+	if got := second.InputSchema["examples"].([]map[string]any)[0]["kind"]; got != "first" {
+		t.Fatalf("expected typed slice of maps to be cloned on each read, got %#v", got)
+	}
+}

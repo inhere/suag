@@ -3,6 +3,7 @@ package mock
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/inhere/axon/pkg/agentcore"
@@ -163,11 +164,40 @@ func cloneSlice(src []any) []any {
 }
 
 func cloneValue(v any) any {
+	if v == nil {
+		return nil
+	}
+
 	switch typed := v.(type) {
 	case map[string]any:
 		return cloneMap(typed)
 	case []any:
 		return cloneSlice(typed)
+	}
+
+	value := reflect.ValueOf(v)
+	switch value.Kind() {
+	case reflect.Slice:
+		if value.IsNil() {
+			return v
+		}
+
+		cloned := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		for i := 0; i < value.Len(); i++ {
+			cloned.Index(i).Set(reflect.ValueOf(cloneValue(value.Index(i).Interface())))
+		}
+		return cloned.Interface()
+	case reflect.Map:
+		if value.IsNil() {
+			return v
+		}
+
+		cloned := reflect.MakeMapWithSize(value.Type(), value.Len())
+		iter := value.MapRange()
+		for iter.Next() {
+			cloned.SetMapIndex(iter.Key(), reflect.ValueOf(cloneValue(iter.Value().Interface())))
+		}
+		return cloned.Interface()
 	default:
 		return v
 	}
