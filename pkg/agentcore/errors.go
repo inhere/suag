@@ -91,4 +91,10 @@ var (
 	ErrMissingToolName = errors.New("missing tool name")
 	// ErrMissingFinishReason indicates the provider omitted the result finish reason.
 	ErrMissingFinishReason = errors.New("missing finish reason")
+	// ErrProviderRequired indicates a runtime cannot execute without a configured provider.
+	ErrProviderRequired = errors.New("provider is required")
+	// ErrRunNotResumable indicates a terminal run cannot be continued.
+	ErrRunNotResumable = errors.New("run cannot be resumed from terminal state")
+	// ErrToolCallsNotImplemented indicates the runtime does not yet support tool-call loops.
+	ErrToolCallsNotImplemented = errors.New("tool call loop not implemented yet")
 )
