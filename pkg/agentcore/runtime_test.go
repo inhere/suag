@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 )
 
@@ -452,6 +453,59 @@ func TestRuntime_Run_RunIDNotFoundTreatsInputAsNewRun(t *testing.T) {
 	}
 	if len(provider.calls) != 1 || len(provider.calls[0].Messages) != 1 || provider.calls[0].Messages[0].Content != "start anyway" {
 		t.Fatalf("expected new-run instruction to be appended, got %#v", provider.calls)
+	}
+}
+
+func TestRuntime_Run_RunIDStorageMissErrorTreatsInputAsNewRun(t *testing.T) {
+	tests := []struct {
+		name       string
+		loadRunErr error
+	}{
+		{
+			name:       "bare os err not exist",
+			loadRunErr: os.ErrNotExist,
+		},
+		{
+			name:       "wrapped storage err not exist",
+			loadRunErr: &StorageError{Err: fmt.Errorf("load run: %w", os.ErrNotExist)},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newRuntimeTestStorage()
+			store.loadRunErr = tc.loadRunErr
+			provider := &runtimeTestProvider{
+				results: []*GenerateResult{{
+					Content:      "fresh",
+					FinishReason: FinishFinal,
+				}},
+			}
+
+			rt := New(Config{
+				Provider:       provider,
+				Storage:        store,
+				Tools:          NewToolRegistry(),
+				PromptBuilder:  runtimeTestPromptBuilder{},
+				ContextBuilder: runtimeTestContextBuilder{},
+			})
+
+			result, err := rt.Run(context.Background(), RunInput{
+				RunID:       "existing-id",
+				AgentID:     "agent-1",
+				Instruction: "start anyway",
+				ResumeMode:  ResumeFromState,
+			})
+			if err != nil {
+				t.Fatalf("expected storage miss to be treated as a new run, got %v", err)
+			}
+			if result.RunID != "existing-id" {
+				t.Fatalf("expected provided run id to be reused for the new run, got %#v", result)
+			}
+			if len(provider.calls) != 1 || len(provider.calls[0].Messages) != 1 || provider.calls[0].Messages[0].Content != "start anyway" {
+				t.Fatalf("expected new-run instruction to be appended, got %#v", provider.calls)
+			}
+		})
 	}
 }
 

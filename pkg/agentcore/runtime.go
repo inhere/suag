@@ -171,8 +171,7 @@ func (r *DefaultRuntime) prepareState(ctx context.Context, input RunInput) (*Run
 
 	loaded, err := r.storage.LoadRun(ctx, runID)
 	if err != nil {
-		var storageErr *StorageError
-		if errors.As(err, &storageErr) && errors.Is(err, os.ErrNotExist) {
+		if isStorageMiss(err) {
 			return newRunState(runID, input), true, nil
 		}
 		return nil, false, wrapStorageError(err)
@@ -415,6 +414,10 @@ func wrapHookError(err error) error {
 		return err
 	}
 	return &HookError{Err: err}
+}
+
+func isStorageMiss(err error) bool {
+	return errors.Is(err, os.ErrNotExist)
 }
 
 func classifyRuntimeError(err error) error {
