@@ -85,6 +85,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	}
 
 	newMessages := make([]Message, 0, 2)
+	preInputState := cloneRunStateValue(state)
 	if appendInstruction {
 		userMessage := Message{Role: "user", Content: input.Instruction}
 		state.Messages = append(state.Messages, userMessage)
@@ -92,7 +93,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	}
 
 	if err := r.saveState(ctx, state, newMessages); err != nil {
-		return r.returnWithHandledError(ctx, state, "persist_input", err, ctrl)
+		return r.returnWithHandledError(ctx, preInputState, "persist_input", err, ctrl)
 	}
 
 	systemPrompt, err := r.buildPrompt(ctx, state, ctrl)
@@ -432,6 +433,8 @@ func (r *DefaultRuntime) persistShortCircuit(ctx context.Context, state *RunStat
 	if result.Steps == 0 {
 		result.Steps = state.Step
 	}
+	state.Usage = result.Usage
+	state.Step = result.Steps
 
 	var newMessages []Message
 	switch result.Status {
@@ -447,20 +450,29 @@ func (r *DefaultRuntime) persistShortCircuit(ctx context.Context, state *RunStat
 	case RunCompleted:
 		state.Status = RunCompleted
 		state.LastError = ""
+		preMessageState := cloneRunStateValue(state)
 		if result.Output != "" {
 			assistantMessage := Message{Role: "assistant", Content: result.Output}
 			state.Messages = append(state.Messages, assistantMessage)
 			newMessages = []Message{assistantMessage}
 		}
+		if err := r.saveState(ctx, state, newMessages); err != nil {
+			handledErr := r.handleError(ctx, preMessageState, "short_circuit", err, NewControl())
+			var resolved runtimeResolvedControlError
+			if errors.As(handledErr, &resolved) {
+				return resolved.result, nil
+			}
+			return nil, handledErr
+		}
 	default:
 		state.Status = result.Status
 		state.LastError = ""
 	}
-	state.Usage = result.Usage
-	state.Step = result.Steps
 
-	if err := r.saveState(ctx, state, newMessages); err != nil {
-		return nil, err
+	if result.Status != RunCompleted {
+		if err := r.saveState(ctx, state, newMessages); err != nil {
+			return nil, err
+		}
 	}
 	return &result, nil
 }

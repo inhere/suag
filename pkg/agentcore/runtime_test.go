@@ -1124,6 +1124,105 @@ func TestRuntime_Run_PersistOutputFailureOnErrorYieldDoesNotForkAuthorityState(t
 	}
 }
 
+func TestRuntime_Run_PersistInputAppendFailureDoesNotForkAuthorityState(t *testing.T) {
+	store := newRuntimeTestStorage()
+	store.appendErr = errors.New("append input failed")
+	store.appendErrOnCall = 1
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "should-not-run",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	rt := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+	})
+
+	_, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-persist-input-fail",
+		AgentID:     "agent-1",
+		Instruction: "input that should roll back",
+	})
+
+	var storageErr *StorageError
+	if !errors.As(err, &storageErr) {
+		t.Fatalf("expected storage error from input append failure, got %T %v", err, err)
+	}
+	if len(provider.calls) != 0 {
+		t.Fatalf("expected provider not to run after persist_input failure, got %#v", provider.calls)
+	}
+
+	saved := store.runs["run-persist-input-fail"]
+	if saved == nil || saved.Status != RunFailed {
+		t.Fatalf("expected failed state to be persisted after input append failure, got %#v", saved)
+	}
+	if len(saved.Messages) != 0 {
+		t.Fatalf("expected snapshot to roll back unlogged input message, got %#v", saved.Messages)
+	}
+	if len(store.messages["run-persist-input-fail"]) != 0 {
+		t.Fatalf("expected authority log to remain empty after input append failure, got %#v", store.messages["run-persist-input-fail"])
+	}
+}
+
+func TestRuntime_Run_ShortCircuitCompletedAppendFailureDoesNotForkAuthorityState(t *testing.T) {
+	store := newRuntimeTestStorage()
+	store.appendErr = errors.New("append short-circuit output failed")
+	store.appendErrOnCall = 2
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "should-not-run",
+			FinishReason: FinishFinal,
+		}},
+	}
+	hook := &runtimeTestHook{
+		beforeModel: func(ctrl *Control) {
+			ctrl.ShortCircuit(&RunResult{
+				Status: RunCompleted,
+				Output: "short-circuit answer",
+			})
+		},
+	}
+
+	rt := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{hook},
+	})
+
+	_, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-short-circuit-append-fail",
+		AgentID:     "agent-1",
+		Instruction: "trigger short circuit",
+	})
+
+	var storageErr *StorageError
+	if !errors.As(err, &storageErr) {
+		t.Fatalf("expected storage error from short-circuit append failure, got %T %v", err, err)
+	}
+	if len(provider.calls) != 0 {
+		t.Fatalf("expected provider not to run after short-circuit, got %#v", provider.calls)
+	}
+
+	saved := store.runs["run-short-circuit-append-fail"]
+	if saved == nil {
+		t.Fatalf("expected snapshot to be saved, got %#v", saved)
+	}
+	if len(saved.Messages) != 1 || saved.Messages[0].Content != "trigger short circuit" {
+		t.Fatalf("expected snapshot to roll back unlogged assistant output, got %#v", saved.Messages)
+	}
+	if len(store.messages["run-short-circuit-append-fail"]) != 1 || store.messages["run-short-circuit-append-fail"][0].Content != "trigger short circuit" {
+		t.Fatalf("expected authority log to keep only the logged user input, got %#v", store.messages["run-short-circuit-append-fail"])
+	}
+}
+
 func TestRuntime_Run_ToolCallsNotImplemented(t *testing.T) {
 	store := newRuntimeTestStorage()
 	provider := &runtimeTestProvider{
