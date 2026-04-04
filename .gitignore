@@ -1,5 +1,8 @@
 .claude/
+.agents/
 .omc/
+.worktrees/
+.superpowers/
 .env
 *.exe
 .xenv.*

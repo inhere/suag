@@ -51,3 +51,18 @@ s12   "各干各的目录, 互不干扰" — 任务管目标, worktree 管目录
 - 可以通过 CLI/WEB/IM/Channel 等方式与用户进行交互，支持文本、图片、视频等多种格式
 
 > 文档之间可以互相引用，不要过多赘述重复性的东西。有任何不明确的地方，需要及时询问我确认后再继续。
+
+
+## 先思考规划帮我实现一个最小但是可扩展的 agent core loop
+
+先思考规划帮我实现一个最小但是可扩展的 agent core loop，直接开始 v1 的产品功能太大了，外界的发展变化也很迅速。
+
+- 它是任何一个 agent 启动运行的必须核心
+- 通过接口、Hooks 方式提供任意的扩展能力
+  - 通过 llm provider inteface 连接使用各家LLM
+  - hooks 可拦截，修改执行中的关键节点
+  - 通过 storage interface 提供存储 默认内置使用 files
+  - more: prompt, context eng, tool interface
+- 它是可以独立的包，可以嵌入到任何地方使用
+
+see docs/superpowers/specs/2026-04-02-agentcore-design.md
