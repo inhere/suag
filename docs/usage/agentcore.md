@@ -294,3 +294,15 @@ assistant("final answer")
 - 一组可替换的 runtime 扩展接口
 
 后续更高层能力应优先复用 `agentcore` 的公共契约，而不是重新定义一套 runtime loop。
+
+---
+
+## 11. 对外阅读顺序
+
+如果你是第一次接触 `agentcore`，推荐按这个顺序阅读：
+
+1. [`docs/usage/agentcore-quickstart.md`](./agentcore-quickstart.md)
+2. [`docs/usage/agentcore-api.md`](./agentcore-api.md)
+3. `examples/agentcore/minimal`
+4. `examples/agentcore/custom`
+5. `examples/agentcore/bridge`
