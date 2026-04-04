@@ -7,7 +7,7 @@ import (
 	"github.com/inhere/axon/internal/llm"
 	"github.com/inhere/axon/internal/tools"
 	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/adapters/internaltools"
+	"github.com/inhere/axon/internal/agentcoreadapters/internaltools"
 )
 
 type echoTool struct {

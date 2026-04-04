@@ -37,13 +37,14 @@ func main() {
 
 If you want to bridge Axon's existing internal stacks into `agentcore`, use the adapters in:
 
-- `pkg/agentcore/adapters/internalllm`
-- `pkg/agentcore/adapters/internaltools`
+- `internal/agentcoreadapters/internalllm`
+- `internal/agentcoreadapters/internaltools`
 
 ## Agentcore Docs
 
 - Quickstart: `docs/usage/agentcore-quickstart.md`
 - API and extensibility guide: `docs/usage/agentcore-api.md`
 - Implementation-oriented design note: `docs/usage/agentcore.md`
+- Package README: `pkg/agentcore/README.md`
 - Runnable examples: `examples/agentcore/`
 - Long-term v1 agent core blueprint: `docs/v1/01-agent-core.md`

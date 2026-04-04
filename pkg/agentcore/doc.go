@@ -31,12 +31,14 @@ Built-in companion packages:
   - prompt: static prompt builder
   - hooks: ordered hook-chain helper
   - mock: test provider and tool implementations
-  - adapters/internalllm: bridge internal llm.Provider into agentcore.Provider
-  - adapters/internaltools: bridge internal tools.Registry into agentcore.ToolRegistry
 
 Transcript semantics are explicit. When the provider returns tool calls, the
 runtime persists both the assistant tool-call message and the tool result
 message so runs can be resumed, replayed, and bridged across providers through a
 single Message contract.
+
+Repository-specific adapters that bridge Axon's internal packages into
+agentcore live under internal/agentcoreadapters so this package can stay
+independent from repository-private runtime layers.
 */
 package agentcore

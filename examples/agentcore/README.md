@@ -7,7 +7,7 @@
 - `custom`
   - 自定义 tool 和 hook，展示常见扩展路径
 - `bridge`
-  - 用 `internalllm` 和 `internaltools` adapters 桥接内部实现
+  - 用 `internal/agentcoreadapters` 桥接内部实现
 
 运行方式：
 

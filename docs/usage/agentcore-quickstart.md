@@ -118,8 +118,8 @@ func main() {
 
 推荐组合：
 
-- `adapters/internalllm`
-- `adapters/internaltools`
+- `internal/agentcoreadapters/internalllm`
+- `internal/agentcoreadapters/internaltools`
 - `files.NewStorage(...)`
 
 适合：
@@ -199,4 +199,3 @@ assistant("final answer")
 2. 看 `examples/agentcore/minimal`
 3. 看 `examples/agentcore/custom`
 4. 如果你要桥接内部栈，再看 `examples/agentcore/bridge`
-

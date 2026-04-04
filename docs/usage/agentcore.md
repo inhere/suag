@@ -49,8 +49,9 @@
   - 默认空 tool registry
 - 测试/集成辅助
   - `mock` provider / tool
-  - `adapters/internalllm`
-  - `adapters/internaltools`
+- 仓库内部桥接
+  - `internal/agentcoreadapters/internalllm`
+  - `internal/agentcoreadapters/internaltools`
 
 当前明确不包含：
 
@@ -255,8 +256,8 @@ assistant("final answer")
 
 如果你要桥接当前 Axon 内部实现：
 
-- LLM: `pkg/agentcore/adapters/internalllm`
-- Tools: `pkg/agentcore/adapters/internaltools`
+- LLM: `internal/agentcoreadapters/internalllm`
+- Tools: `internal/agentcoreadapters/internaltools`
 
 ---
 
@@ -276,9 +277,9 @@ assistant("final answer")
   - hook chain 辅助实现
 - `pkg/agentcore/mock`
   - provider / tool mock
-- `pkg/agentcore/adapters/internalllm`
+- `internal/agentcoreadapters/internalllm`
   - internal `llm.Provider` -> `agentcore.Provider`
-- `pkg/agentcore/adapters/internaltools`
+- `internal/agentcoreadapters/internaltools`
   - internal `tools.Registry` -> `agentcore.ToolRegistry`
 
 ---

@@ -5,12 +5,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/inhere/axon/internal/llm"
+	"github.com/inhere/axon/internal/agentcoreadapters/internalllm"
+	adapterinternaltools "github.com/inhere/axon/internal/agentcoreadapters/internaltools"
 	internaltools "github.com/inhere/axon/internal/tools"
 	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/adapters/internalllm"
-	adapterinternaltools "github.com/inhere/axon/pkg/agentcore/adapters/internaltools"
 	"github.com/inhere/axon/pkg/agentcore/files"
 )
 
@@ -51,7 +52,7 @@ func main() {
 	})
 
 	result, err := runtime.Run(context.Background(), agentcore.RunInput{
-		RunID:       "example-bridge",
+		RunID:       "example-bridge-" + time.Now().Format("20060102150405"),
 		AgentID:     "bridge-agent",
 		Instruction: "use the internal echo tool",
 	})

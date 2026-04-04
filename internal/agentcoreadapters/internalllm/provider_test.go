@@ -7,7 +7,7 @@ import (
 
 	"github.com/inhere/axon/internal/llm"
 	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/adapters/internalllm"
+	"github.com/inhere/axon/internal/agentcoreadapters/internalllm"
 )
 
 type stubProvider struct {

@@ -1,4 +1,4 @@
-package adapters_test
+package agentcoreadapters_test
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"github.com/inhere/axon/internal/llm"
 	internaltools "github.com/inhere/axon/internal/tools"
 	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/adapters/internalllm"
-	adapterinternaltools "github.com/inhere/axon/pkg/agentcore/adapters/internaltools"
+	"github.com/inhere/axon/internal/agentcoreadapters/internalllm"
+	adapterinternaltools "github.com/inhere/axon/internal/agentcoreadapters/internaltools"
 	"github.com/inhere/axon/pkg/agentcore/files"
 )
 
