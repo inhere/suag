@@ -34,6 +34,15 @@ func (c Chain) runStage(call func(agentcore.Hook) error, ctrl *agentcore.Control
 	return nil
 }
 
+func (c Chain) runStageWithoutControlStop(call func(agentcore.Hook) error) error {
+	for _, hook := range c.hooks {
+		if err := call(hook); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c Chain) BeforeRun(ctx context.Context, event *agentcore.RunEvent, ctrl *agentcore.Control) error {
 	return c.runStage(func(hook agentcore.Hook) error {
 		return hook.BeforeRun(ctx, event, ctrl)
@@ -71,9 +80,9 @@ func (c Chain) BeforeTool(ctx context.Context, event *agentcore.ToolEvent, ctrl 
 }
 
 func (c Chain) AfterTool(ctx context.Context, event *agentcore.ToolEvent, ctrl *agentcore.Control) error {
-	return c.runStage(func(hook agentcore.Hook) error {
+	return c.runStageWithoutControlStop(func(hook agentcore.Hook) error {
 		return hook.AfterTool(ctx, event, ctrl)
-	}, ctrl)
+	})
 }
 
 func (c Chain) AfterRun(ctx context.Context, event *agentcore.RunEvent, ctrl *agentcore.Control) error {
@@ -86,4 +95,10 @@ func (c Chain) OnError(ctx context.Context, event *agentcore.ErrorEvent, ctrl *a
 	return c.runStage(func(hook agentcore.Hook) error {
 		return hook.OnError(ctx, event, ctrl)
 	}, ctrl)
+}
+
+func (c Chain) OnErrorObserved(ctx context.Context, event *agentcore.ErrorEvent, ctrl *agentcore.Control) error {
+	return c.runStageWithoutControlStop(func(hook agentcore.Hook) error {
+		return hook.OnError(ctx, event, ctrl)
+	})
 }

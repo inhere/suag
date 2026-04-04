@@ -78,10 +78,10 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	}
 
 	if err := r.runBeforeRun(ctx, runEvent, ctrl); err != nil {
-		return r.returnWithHandledError(ctx, state, "before_run", err, ctrl)
+		return r.returnWithHandledError(ctx, input, state, "before_run", err, ctrl)
 	}
 	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
-		return result, err
+		return r.finishRun(ctx, input, state, result, err)
 	}
 
 	newMessages := make([]Message, 0, 2)
@@ -93,98 +93,117 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	}
 
 	if err := r.saveState(ctx, state, newMessages); err != nil {
-		return r.returnWithHandledError(ctx, preInputState, "persist_input", err, ctrl)
+		return r.returnWithHandledError(ctx, input, preInputState, "persist_input", err, ctrl)
 	}
 
-	systemPrompt, err := r.buildPrompt(ctx, state, ctrl)
-	if err != nil {
-		return r.returnWithHandledError(ctx, state, "prompt", err, ctrl)
-	}
-	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
-		return result, err
-	}
+	maxSteps := r.effectiveMaxSteps(input)
 
-	messages, err := r.buildContext(ctx, state, ctrl)
-	if err != nil {
-		return r.returnWithHandledError(ctx, state, "context", err, ctrl)
-	}
-	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
-		return result, err
-	}
-
-	tools, err := r.listTools(ctx)
-	if err != nil {
-		return r.returnWithHandledError(ctx, state, "tools", err, ctrl)
-	}
-
-	req := &GenerateRequest{
-		System:   systemPrompt,
-		Messages: messages,
-		Tools:    tools,
-		Metadata: cloneMetadata(state.Metadata),
-	}
-
-	res, err := r.callModel(ctx, state, req, ctrl)
-	if err != nil {
-		return r.returnWithHandledError(ctx, state, "model", err, ctrl)
-	}
-	if res == nil {
-		if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
-			return result, err
+	for {
+		if maxSteps > 0 && state.Step >= maxSteps {
+			return r.returnWithHandledError(ctx, input, state, "max_steps", fmt.Errorf("max steps exceeded: %d", maxSteps), NewControl())
 		}
-		return r.returnWithHandledError(ctx, state, "model", fmt.Errorf("model execution returned no result"), ctrl)
-	}
 
-	state.Step++
-	state.Usage = res.Usage
-	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
-		return result, err
-	}
+		systemPrompt, err := r.buildPrompt(ctx, state, ctrl)
+		if err != nil {
+			return r.returnWithHandledError(ctx, input, state, "prompt", err, ctrl)
+		}
+		if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+			return r.finishRun(ctx, input, state, result, err)
+		}
 
-	if res.FinishReason == FinishToolCalls {
-		return r.returnWithHandledError(ctx, state, "tool_loop", ErrToolCallsNotImplemented, ctrl)
-	}
-	if res.FinishReason != FinishFinal {
-		return r.returnWithHandledError(ctx, state, "model", ErrInvalidFinishReason, ctrl)
-	}
+		messages, err := r.buildContext(ctx, state, ctrl)
+		if err != nil {
+			return r.returnWithHandledError(ctx, input, state, "context", err, ctrl)
+		}
+		if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+			return r.finishRun(ctx, input, state, result, err)
+		}
 
-	preOutputState := cloneRunStateValue(state)
-	assistantMessage := Message{Role: "assistant", Content: res.Content}
-	state.Messages = append(state.Messages, assistantMessage)
-	state.Status = RunCompleted
-	state.LastError = ""
+		tools, err := r.listTools(ctx)
+		if err != nil {
+			return r.returnWithHandledError(ctx, input, state, "tools", err, ctrl)
+		}
 
-	if err := r.saveState(ctx, state, []Message{assistantMessage}); err != nil {
-		return r.returnWithHandledError(ctx, preOutputState, "persist_output", err, ctrl)
-	}
+		req := &GenerateRequest{
+			System:   systemPrompt,
+			Messages: messages,
+			Tools:    tools,
+			Metadata: cloneMetadata(state.Metadata),
+		}
 
-	result := &RunResult{
-		RunID:  state.RunID,
-		Status: RunCompleted,
-		Output: res.Content,
-		Steps:  state.Step,
-		Usage:  state.Usage,
-	}
-	runEvent.Result = result
-	runEvent.Metadata = cloneMetadata(state.Metadata)
+		res, err := r.callModel(ctx, state, req, ctrl)
+		if err != nil {
+			return r.returnWithHandledError(ctx, input, state, "model", err, ctrl)
+		}
+		if res == nil {
+			if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+				return r.finishRun(ctx, input, state, result, err)
+			}
+			return r.returnWithHandledError(ctx, input, state, "model", fmt.Errorf("model execution returned no result"), ctrl)
+		}
 
-	if err := r.runAfterRun(ctx, runEvent, ctrl); err != nil {
-		return r.returnWithHandledError(ctx, state, "after_run", err, ctrl)
-	}
-	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
-		return result, err
-	}
+		state.Step++
+		state.Usage = res.Usage
+		if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+			return r.finishRun(ctx, input, state, result, err)
+		}
 
-	return result, nil
+		switch res.FinishReason {
+		case FinishToolCalls:
+			if result, err, handled := r.executeToolCalls(ctx, state, res.ToolCalls); handled {
+				return r.finishRun(ctx, input, state, result, err)
+			}
+			continue
+		case FinishFinal:
+			result, err := r.persistFinalAnswer(ctx, input, state, res.Content)
+			if err != nil {
+				return nil, err
+			}
+			return r.finishRun(ctx, input, state, result, nil)
+		default:
+			return r.returnWithHandledError(ctx, input, state, "model", ErrInvalidFinishReason, ctrl)
+		}
+	}
 }
 
-func (r *DefaultRuntime) returnWithHandledError(ctx context.Context, state *RunState, stage string, err error, ctrl *Control) (*RunResult, error) {
+func (r *DefaultRuntime) returnWithHandledError(ctx context.Context, input RunInput, state *RunState, stage string, err error, ctrl *Control) (*RunResult, error) {
 	handledErr := r.handleError(ctx, state, stage, err, ctrl)
 	var resolved runtimeResolvedControlError
 	if errors.As(handledErr, &resolved) {
-		return resolved.result, nil
+		return r.finishRun(ctx, input, state, resolved.result, nil)
 	}
-	return nil, handledErr
+	return r.finishRun(ctx, input, state, nil, handledErr)
+}
+
+func (r *DefaultRuntime) finishRun(ctx context.Context, input RunInput, state *RunState, result *RunResult, runErr error) (*RunResult, error) {
+	afterCtrl := NewControl()
+	event := &RunEvent{
+		RunID:     state.RunID,
+		AgentID:   state.AgentID,
+		Input:     cloneRunInput(input),
+		Result:    result,
+		Metadata:  cloneMetadata(state.Metadata),
+		Timestamp: time.Now(),
+	}
+
+	if err := r.runAfterRun(ctx, event, afterCtrl); err != nil {
+		if runErr != nil {
+			return nil, runErr
+		}
+		handledErr := r.handleError(ctx, state, "after_run", err, afterCtrl)
+		var resolved runtimeResolvedControlError
+		if errors.As(handledErr, &resolved) {
+			return resolved.result, nil
+		}
+		return nil, handledErr
+	}
+	if runErr != nil {
+		return nil, runErr
+	}
+	if resolvedResult, resolvedErr, handled := r.resolveControl(ctx, state, afterCtrl); handled {
+		return resolvedResult, resolvedErr
+	}
+	return result, nil
 }
 
 func (r *DefaultRuntime) prepareState(ctx context.Context, input RunInput) (*RunState, bool, error) {
@@ -349,6 +368,158 @@ func (r *DefaultRuntime) saveState(ctx context.Context, state *RunState, message
 		return wrapStorageError(err)
 	}
 	return nil
+}
+
+func (r *DefaultRuntime) effectiveMaxSteps(input RunInput) int {
+	if input.MaxSteps > 0 {
+		return input.MaxSteps
+	}
+	return r.maxSteps
+}
+
+func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, calls []ToolCall) (*RunResult, error, bool) {
+	if limit := r.maxToolCallsPerStep; limit > 0 && len(calls) > limit {
+		return r.handleErrorResult(ctx, state, "max_tool_calls", fmt.Errorf("max tool calls per step exceeded: %d > %d", len(calls), limit), NewControl())
+	}
+
+	for _, call := range calls {
+		result, err, handled := r.executeSingleTool(ctx, state, call)
+		if handled {
+			return result, err, true
+		}
+	}
+	return nil, nil, false
+}
+
+func (r *DefaultRuntime) executeSingleTool(ctx context.Context, state *RunState, call ToolCall) (*RunResult, error, bool) {
+	ctrl := NewControl()
+	event := &ToolEvent{
+		RunID:     state.RunID,
+		AgentID:   state.AgentID,
+		Call:      cloneToolCallValue(&call),
+		Metadata:  cloneMetadata(state.Metadata),
+		Timestamp: time.Now(),
+	}
+	if err := r.hooks.BeforeTool(ctx, event, ctrl); err != nil {
+		return r.handleErrorResult(ctx, state, "before_tool", wrapHookError(err), ctrl)
+	}
+	if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+		return result, err, true
+	}
+
+	activeCall := call
+	if event.Call != nil {
+		activeCall = *cloneToolCallValue(event.Call)
+	}
+
+	result, err := r.tools.ExecuteTool(ctx, activeCall)
+	if err != nil {
+		result = toolErrorAsResult(activeCall, err)
+	} else {
+		result = normalizeToolResult(activeCall, result)
+	}
+
+	event.Call = cloneToolCallValue(&activeCall)
+	event.Result = cloneToolResultValue(result)
+	if err := r.hooks.AfterTool(ctx, event, ctrl); err != nil {
+		finalCall := activeCall
+		if event.Call != nil {
+			finalCall = *cloneToolCallValue(event.Call)
+		}
+		finalResult := normalizeToolResult(finalCall, event.Result)
+		if result, persistErr, handled := r.persistToolTranscript(ctx, state, finalCall, finalResult); handled {
+			return result, persistErr, true
+		}
+		return r.handleErrorResult(ctx, state, "after_tool", wrapHookError(err), NewControl())
+	}
+	finalCall := activeCall
+	if event.Call != nil {
+		finalCall = *cloneToolCallValue(event.Call)
+	}
+	finalResult := normalizeToolResult(finalCall, event.Result)
+	if ctrl.ShouldYield() || ctrl.ShouldShortCircuit() {
+		if result, persistErr, handled := r.persistToolTranscript(ctx, state, finalCall, finalResult); handled {
+			return result, persistErr, true
+		}
+		return r.handleErrorResult(ctx, state, "after_tool", wrapHookError(errors.New("after_tool control is not supported")), NewControl())
+	}
+
+	if result, err, handled := r.persistToolTranscript(ctx, state, finalCall, finalResult); handled {
+		return result, err, true
+	}
+	return nil, nil, false
+}
+
+func (r *DefaultRuntime) persistToolTranscript(ctx context.Context, state *RunState, call ToolCall, result *ToolResult) (*RunResult, error, bool) {
+	assistantMessage := Message{
+		Role:     "assistant",
+		ToolCall: cloneToolCallValue(&call),
+	}
+	toolMessage := Message{
+		Role:       "tool",
+		Content:    result.Content,
+		ToolCall:   cloneToolCallValue(&call),
+		ToolResult: cloneToolResultValue(result),
+	}
+	state.Messages = append(state.Messages, assistantMessage, toolMessage)
+	if len(result.Artifacts) > 0 {
+		state.Artifacts = append(state.Artifacts, result.Artifacts...)
+	}
+
+	if err := r.saveState(ctx, state, []Message{assistantMessage, toolMessage}); err != nil {
+		return nil, r.handleNonRecoverableError(ctx, state, "persist_tool_output", err), true
+	}
+	return nil, nil, false
+}
+
+func (r *DefaultRuntime) persistFinalAnswer(ctx context.Context, input RunInput, state *RunState, content string) (*RunResult, error) {
+	preOutputState := cloneRunStateValue(state)
+	assistantMessage := Message{Role: "assistant", Content: content}
+	state.Messages = append(state.Messages, assistantMessage)
+	state.Status = RunCompleted
+	state.LastError = ""
+
+	if err := r.saveState(ctx, state, []Message{assistantMessage}); err != nil {
+		return r.returnWithHandledError(ctx, input, preOutputState, "persist_output", err, NewControl())
+	}
+
+	return &RunResult{
+		RunID:  state.RunID,
+		Status: RunCompleted,
+		Output: content,
+		Steps:  state.Step,
+		Usage:  state.Usage,
+	}, nil
+}
+
+func (r *DefaultRuntime) handleErrorResult(ctx context.Context, state *RunState, stage string, err error, ctrl *Control) (*RunResult, error, bool) {
+	handledErr := r.handleError(ctx, state, stage, err, ctrl)
+	var resolved runtimeResolvedControlError
+	if errors.As(handledErr, &resolved) {
+		return resolved.result, nil, true
+	}
+	return nil, handledErr, true
+}
+
+func (r *DefaultRuntime) handleNonRecoverableError(ctx context.Context, state *RunState, stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	wrapped := classifyRuntimeError(err)
+	if persistErr := r.persistFailureState(ctx, state, wrapped); persistErr != nil {
+		wrapped = persistErr
+	}
+	event := &ErrorEvent{
+		RunID:     state.RunID,
+		AgentID:   state.AgentID,
+		Stage:     stage,
+		Err:       wrapped,
+		Metadata:  cloneMetadata(state.Metadata),
+		Timestamp: time.Now(),
+	}
+	_ = r.hooks.OnErrorObserved(ctx, event, NewControl())
+	return wrapped
 }
 
 func (r *DefaultRuntime) resolveControl(ctx context.Context, state *RunState, ctrl *Control) (*RunResult, error, bool) {
@@ -542,7 +713,7 @@ func shouldAppendInstruction(input RunInput) bool {
 	case ResumeFromState:
 		return false
 	case ResumeWithInput:
-		return strings.TrimSpace(input.Instruction) != ""
+		return true
 	case ResumeAuto, "":
 		return strings.TrimSpace(input.Instruction) != ""
 	default:
@@ -609,6 +780,35 @@ func classifyRuntimeError(err error) error {
 		return err
 	default:
 		return err
+	}
+}
+
+func normalizeToolResult(call ToolCall, result *ToolResult) *ToolResult {
+	if result == nil {
+		result = &ToolResult{}
+	}
+	cloned := cloneToolResultValue(result)
+	if cloned == nil {
+		cloned = &ToolResult{}
+	}
+	if cloned.CallID == "" {
+		cloned.CallID = call.CallID
+	}
+	if cloned.Name == "" {
+		cloned.Name = call.Name
+	}
+	return cloned
+}
+
+func toolErrorAsResult(call ToolCall, err error) *ToolResult {
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) {
+		err = &ToolError{Err: err}
+	}
+	return &ToolResult{
+		CallID:  call.CallID,
+		Name:    call.Name,
+		Content: err.Error(),
 	}
 }
 
@@ -770,6 +970,15 @@ func (c runtimeHookChain) runStage(call func(Hook) error, ctrl *Control) error {
 	return nil
 }
 
+func (c runtimeHookChain) runStageWithoutControlStop(call func(Hook) error) error {
+	for _, hook := range c.hooks {
+		if err := call(hook); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c runtimeHookChain) BeforeRun(ctx context.Context, event *RunEvent, ctrl *Control) error {
 	return c.runStage(func(h Hook) error { return h.BeforeRun(ctx, event, ctrl) }, ctrl)
 }
@@ -790,12 +999,24 @@ func (c runtimeHookChain) AfterModel(ctx context.Context, event *ModelEvent, ctr
 	return c.runStage(func(h Hook) error { return h.AfterModel(ctx, event, ctrl) }, ctrl)
 }
 
+func (c runtimeHookChain) BeforeTool(ctx context.Context, event *ToolEvent, ctrl *Control) error {
+	return c.runStage(func(h Hook) error { return h.BeforeTool(ctx, event, ctrl) }, ctrl)
+}
+
+func (c runtimeHookChain) AfterTool(ctx context.Context, event *ToolEvent, ctrl *Control) error {
+	return c.runStageWithoutControlStop(func(h Hook) error { return h.AfterTool(ctx, event, ctrl) })
+}
+
 func (c runtimeHookChain) AfterRun(ctx context.Context, event *RunEvent, ctrl *Control) error {
 	return c.runStage(func(h Hook) error { return h.AfterRun(ctx, event, ctrl) }, ctrl)
 }
 
 func (c runtimeHookChain) OnError(ctx context.Context, event *ErrorEvent, ctrl *Control) error {
 	return c.runStage(func(h Hook) error { return h.OnError(ctx, event, ctrl) }, ctrl)
+}
+
+func (c runtimeHookChain) OnErrorObserved(ctx context.Context, event *ErrorEvent, ctrl *Control) error {
+	return c.runStageWithoutControlStop(func(h Hook) error { return h.OnError(ctx, event, ctrl) })
 }
 
 type defaultFileStorage struct {

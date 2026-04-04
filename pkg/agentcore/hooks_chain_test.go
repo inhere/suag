@@ -184,6 +184,22 @@ func (h controlStopHook) BeforePromptBuild(_ context.Context, _ *agentcore.Promp
 	return nil
 }
 
+func (h controlStopHook) AfterTool(_ context.Context, _ *agentcore.ToolEvent, ctrl *agentcore.Control) error {
+	*h.order = append(*h.order, h.name)
+	if h.stop != nil {
+		h.stop(ctrl)
+	}
+	return nil
+}
+
+func (h controlStopHook) OnError(_ context.Context, _ *agentcore.ErrorEvent, ctrl *agentcore.Control) error {
+	*h.order = append(*h.order, h.name)
+	if h.stop != nil {
+		h.stop(ctrl)
+	}
+	return nil
+}
+
 func TestHookChain_MethodsRunHooksInOrder(t *testing.T) {
 	type testCase struct {
 		name   string
@@ -320,5 +336,57 @@ func TestHookChain_BeforePromptBuildYieldStopsLaterSameStageHooks(t *testing.T) 
 	}
 	if !ctrl.ShouldYield() || ctrl.YieldReason != "await_approval" {
 		t.Fatalf("expected yield control to be preserved, got %#v", ctrl)
+	}
+}
+
+func TestHookChain_AfterToolControlDoesNotStopLaterHooks(t *testing.T) {
+	var order []string
+	ctrl := agentcore.NewControl()
+	chain := hookchain.NewChain(
+		controlStopHook{
+			name:  "first",
+			order: &order,
+			stop: func(ctrl *agentcore.Control) {
+				ctrl.ShortCircuit("replacement")
+			},
+		},
+		controlStopHook{name: "second", order: &order},
+	)
+
+	err := chain.AfterTool(context.Background(), &agentcore.ToolEvent{}, ctrl)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !reflect.DeepEqual(order, []string{"first", "second"}) {
+		t.Fatalf("expected after-tool hooks to keep running after control, got %#v", order)
+	}
+	if !ctrl.ShouldShortCircuit() || ctrl.Replacement != "replacement" {
+		t.Fatalf("expected control to still be observable after full after-tool stage, got %#v", ctrl)
+	}
+}
+
+func TestHookChain_OnErrorObservedDoesNotStopLaterHooks(t *testing.T) {
+	var order []string
+	ctrl := agentcore.NewControl()
+	chain := hookchain.NewChain(
+		controlStopHook{
+			name:  "first",
+			order: &order,
+			stop: func(ctrl *agentcore.Control) {
+				ctrl.Yield("observe_only", nil)
+			},
+		},
+		controlStopHook{name: "second", order: &order},
+	)
+
+	err := chain.OnErrorObserved(context.Background(), &agentcore.ErrorEvent{}, ctrl)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !reflect.DeepEqual(order, []string{"first", "second"}) {
+		t.Fatalf("expected observed on-error hooks to keep running after control, got %#v", order)
+	}
+	if !ctrl.ShouldYield() || ctrl.YieldReason != "observe_only" {
+		t.Fatalf("expected control to still be preserved for observation, got %#v", ctrl)
 	}
 }
