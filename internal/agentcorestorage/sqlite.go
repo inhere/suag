@@ -20,6 +20,9 @@ type SQLiteStorage struct {
 }
 
 func NewSQLiteStorage(dbPath string) (*SQLiteStorage, error) {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return nil, wrapError("create sqlite storage directory", "", err)
+	}
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, wrapError("open sqlite storage", "", err)

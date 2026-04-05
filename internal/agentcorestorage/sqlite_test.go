@@ -178,6 +178,23 @@ func TestSQLiteStorage_RejectsEmptyRunID(t *testing.T) {
 	assertStorageError(t, err)
 }
 
+func TestSQLiteStorage_CreatesParentDirectory(t *testing.T) {
+	t.Parallel()
+
+	dbPath := t.TempDir() + "/nested/agentcore.db"
+	store, err := agentcorestorage.NewSQLiteStorage(dbPath)
+	if err != nil {
+		t.Fatalf("expected sqlite storage to create parent directory, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("expected db file to exist, got %v", err)
+	}
+}
+
 func assertStorageError(t *testing.T, err error) {
 	t.Helper()
 

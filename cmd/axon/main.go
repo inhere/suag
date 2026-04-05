@@ -118,7 +118,11 @@ func buildApp() (*app, error) {
 	})
 
 	// ── Team manager ──────────────────────────────────────────────────────────
-	teamMgr := team.NewManager(provider, registry, tracer, hitlMgr, workspace)
+	teamMgr := team.NewManager(provider, registry, tracer, hitlMgr, workspace, team.ManagerConfig{
+		Runtime:          config.String("agent.runtime"),
+		AgentcoreRunRoot: config.String("agentcore.run_root"),
+		FailThreshold:    config.Int("hitl.fail_threshold", 3),
+	})
 
 	// ── Memory (SQLite if path configured, else in-memory) ───────────────────
 	_ = memory.NewInMemStore(memory.InMemConfig{}) // default; orchestrator creates per-task

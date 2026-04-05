@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/inhere/axon/internal/agent"
+	"github.com/inhere/axon/internal/agentcorestorage"
 	"github.com/inhere/axon/internal/hitl"
 	"github.com/inhere/axon/internal/llm"
 	"github.com/inhere/axon/internal/memory"
@@ -48,6 +51,13 @@ type TeamEvent struct {
 // AgentFactory creates agents for the team.
 type AgentFactory func(cfg agent.Config) (*agent.Agent, error)
 
+// ManagerConfig controls how team tasks instantiate single-agent runtimes.
+type ManagerConfig struct {
+	Runtime          string
+	AgentcoreRunRoot string
+	FailThreshold    int
+}
+
 // Manager creates and coordinates teams.
 type Manager struct {
 	mu        sync.Mutex
@@ -57,6 +67,7 @@ type Manager struct {
 	tracer    tracing.Tracer
 	hitlMgr   hitl.Manager
 	workspace string
+	cfg       ManagerConfig
 }
 
 // NewManager creates a Manager.
@@ -66,7 +77,12 @@ func NewManager(
 	tracer tracing.Tracer,
 	hitlMgr hitl.Manager,
 	workspace string,
+	cfg ...ManagerConfig,
 ) *Manager {
+	var resolved ManagerConfig
+	if len(cfg) > 0 {
+		resolved = cfg[0]
+	}
 	return &Manager{
 		teams:     make(map[string]*Team),
 		llm:       provider,
@@ -74,6 +90,7 @@ func NewManager(
 		tracer:    tracer,
 		hitlMgr:   hitlMgr,
 		workspace: workspace,
+		cfg:       resolved,
 	}
 }
 
@@ -202,7 +219,19 @@ func (m *Manager) runDAG(ctx context.Context, team *Team, evCh chan<- TeamEvent)
 					CreatedAt:   task.CreatedAt,
 				}
 
-				runner := agent.NewReactRunner(a, 0, m.tracer, m.hitlMgr)
+				runner, cleanup, err := m.newRunner(a)
+				if err != nil {
+					task.Status = TaskFailed
+					task.Result = err.Error()
+					mu.Lock()
+					done[task.ID] = true
+					mu.Unlock()
+					evCh <- TeamEvent{Type: "task_failed", TeamID: team.ID, TaskID: task.ID, Message: err.Error()}
+					return
+				}
+				if cleanup != nil {
+					defer cleanup()
+				}
 				result, err := runner.Run(ctx, agentTask)
 
 				mu.Lock()
@@ -249,4 +278,50 @@ func (m *Manager) DisbandTeam(teamID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.teams, teamID)
+}
+
+func (m *Manager) newRunner(a *agent.Agent) (agent.Runner, func(), error) {
+	switch m.runtime() {
+	case "react":
+		return agent.NewReactRunner(a, 0, m.effectiveTracer(), m.hitlMgr), nil, nil
+	case "agentcore":
+		storage, err := m.newAgentcoreStorage()
+		if err != nil {
+			return nil, nil, err
+		}
+		cleanup := func() {
+			_ = storage.Close()
+		}
+		return agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
+			Storage:       storage,
+			Tracer:        m.effectiveTracer(),
+			HITL:          m.hitlMgr,
+			FailThreshold: m.cfg.FailThreshold,
+		}), cleanup, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported team runtime %q", m.cfg.Runtime)
+	}
+}
+
+func (m *Manager) runtime() string {
+	runtime := strings.ToLower(strings.TrimSpace(m.cfg.Runtime))
+	if runtime != "" {
+		return runtime
+	}
+	return "agentcore"
+}
+
+func (m *Manager) effectiveTracer() tracing.Tracer {
+	if m.tracer != nil {
+		return m.tracer
+	}
+	return tracing.NewInMemoryTracer(nil)
+}
+
+func (m *Manager) newAgentcoreStorage() (*agentcorestorage.SQLiteStorage, error) {
+	root := m.cfg.AgentcoreRunRoot
+	if root == "" {
+		root = filepath.Join(m.workspace, ".agentcore")
+	}
+	return agentcorestorage.NewSQLiteStorage(filepath.Join(root, "runs.db"))
 }

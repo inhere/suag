@@ -145,6 +145,7 @@
 
 - `orchestrator` 的默认单 agent runtime 使用 `agentcore`
 - 同时保留显式回退到旧 `ReactRunner` 的入口
+- `team.Manager` 也开始沿同一 runtime 选择策略收敛，默认走 `agentcore`，显式可回退 `react`
 
 也就是说：
 
