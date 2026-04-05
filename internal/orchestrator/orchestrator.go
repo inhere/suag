@@ -52,7 +52,6 @@ func (o *Orchestrator) RunTask(ctx context.Context, description string) (*agent.
 	slog.Info("orchestrator run task", "trace", traceID, "desc", description[:min(60, len(description))])
 
 	mem := memory.NewInMemStore(memory.InMemConfig{})
-	tracer := o.effectiveTracer()
 	a, err := agent.New(agent.Config{
 		Name:      "default",
 		LLM:       o.cfg.LLM,
@@ -78,7 +77,15 @@ func (o *Orchestrator) RunTask(ctx context.Context, description string) (*agent.
 
 	switch o.singleAgentRuntime() {
 	case "react":
-		runner := agent.NewReactRunner(a, o.cfg.MaxSteps, tracer, o.cfg.HITL)
+		runner, err := agent.NewRunner(a, agent.RunnerFactoryConfig{
+			RuntimeKind: agent.RuntimeReact,
+			Tracer:      o.cfg.Tracer,
+			HITL:        o.cfg.HITL,
+			MaxSteps:    o.cfg.MaxSteps,
+		})
+		if err != nil {
+			return nil, err
+		}
 		return runner.Run(ctx, task)
 	case "agentcore":
 		storage, err := o.newAgentcoreStorage()
@@ -89,13 +96,17 @@ func (o *Orchestrator) RunTask(ctx context.Context, description string) (*agent.
 			_ = storage.Close()
 		}()
 
-		runner := agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
+		runner, err := agent.NewRunner(a, agent.RunnerFactoryConfig{
+			RuntimeKind:   agent.RuntimeAgentcore,
 			Storage:       storage,
-			Tracer:        tracer,
+			Tracer:        o.cfg.Tracer,
 			HITL:          o.cfg.HITL,
 			FailThreshold: o.cfg.FailThreshold,
 			MaxSteps:      o.cfg.MaxSteps,
 		})
+		if err != nil {
+			return nil, err
+		}
 		return runner.Run(ctx, task)
 	default:
 		return nil, fmt.Errorf("unsupported single agent runtime %q", o.cfg.SingleAgentRuntime)
@@ -135,11 +146,4 @@ func (o *Orchestrator) singleAgentRuntime() string {
 		return "agentcore"
 	}
 	return "agentcore"
-}
-
-func (o *Orchestrator) effectiveTracer() tracing.Tracer {
-	if o.cfg.Tracer != nil {
-		return o.cfg.Tracer
-	}
-	return tracing.NewInMemoryTracer(nil)
 }

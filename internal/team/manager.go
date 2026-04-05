@@ -283,7 +283,12 @@ func (m *Manager) DisbandTeam(teamID string) {
 func (m *Manager) newRunner(a *agent.Agent) (agent.Runner, func(), error) {
 	switch m.runtime() {
 	case "react":
-		return agent.NewReactRunner(a, 0, m.effectiveTracer(), m.hitlMgr), nil, nil
+		runner, err := agent.NewRunner(a, agent.RunnerFactoryConfig{
+			RuntimeKind: agent.RuntimeReact,
+			Tracer:      m.tracer,
+			HITL:        m.hitlMgr,
+		})
+		return runner, nil, err
 	case "agentcore":
 		storage, err := m.newAgentcoreStorage()
 		if err != nil {
@@ -292,12 +297,14 @@ func (m *Manager) newRunner(a *agent.Agent) (agent.Runner, func(), error) {
 		cleanup := func() {
 			_ = storage.Close()
 		}
-		return agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
+		runner, err := agent.NewRunner(a, agent.RunnerFactoryConfig{
+			RuntimeKind:   agent.RuntimeAgentcore,
 			Storage:       storage,
-			Tracer:        m.effectiveTracer(),
+			Tracer:        m.tracer,
 			HITL:          m.hitlMgr,
 			FailThreshold: m.cfg.FailThreshold,
-		}), cleanup, nil
+		})
+		return runner, cleanup, err
 	default:
 		return nil, nil, fmt.Errorf("unsupported team runtime %q", m.cfg.Runtime)
 	}
@@ -309,13 +316,6 @@ func (m *Manager) runtime() string {
 		return runtime
 	}
 	return "agentcore"
-}
-
-func (m *Manager) effectiveTracer() tracing.Tracer {
-	if m.tracer != nil {
-		return m.tracer
-	}
-	return tracing.NewInMemoryTracer(nil)
 }
 
 func (m *Manager) newAgentcoreStorage() (*agentcorestorage.SQLiteStorage, error) {
