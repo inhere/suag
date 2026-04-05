@@ -45,7 +45,7 @@ func BuildAgentcoreConfig(a *Agent, cfg AgentcoreRunnerConfig) agentcore.Config 
 		PromptBuilder:       resolvePromptBuilder(a, cfg.PromptBuilder),
 		ContextBuilder:      cfg.ContextBuilder,
 		Hooks:               buildAgentcoreHooks(a, cfg),
-		MaxSteps:            cfg.MaxSteps,
+		MaxSteps:            normalizeMaxSteps(cfg.MaxSteps),
 		MaxToolCallsPerStep: cfg.MaxToolCallsPerStep,
 	}
 }
@@ -97,7 +97,7 @@ func (r *AgentcoreRunner) Run(ctx context.Context, task *Task) (*TaskResult, err
 		AgentID:     r.agent.ID,
 		Instruction: task.Description,
 		Metadata:    buildRunMetadata(r.agent, task),
-		MaxSteps:    r.cfg.MaxSteps,
+		MaxSteps:    normalizeMaxSteps(r.cfg.MaxSteps),
 	})
 	if err != nil {
 		_ = r.sm.Transition(AgentFailed)

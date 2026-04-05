@@ -36,9 +36,7 @@ type ReactRunner struct {
 // Deprecated: prefer NewAgentcoreRunner for new integrations. Keep this
 // constructor only for explicit fallback wiring and parity tests.
 func NewReactRunner(a *Agent, maxSteps int, tracer tracing.Tracer, hitlMgr hitl.Manager) *ReactRunner {
-	if maxSteps <= 0 {
-		maxSteps = defaultMaxSteps
-	}
+	maxSteps = normalizeMaxSteps(maxSteps)
 	return &ReactRunner{
 		agent:      a,
 		sm:         newStateMachine(a.State),
