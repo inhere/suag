@@ -17,7 +17,11 @@ const (
 	defaultFailThresh = 3 // HITL trigger after N consecutive tool failures
 )
 
-// ReactRunner drives the ReAct (Reason + Act) loop for a single Agent.
+// ReactRunner drives the legacy ReAct (Reason + Act) loop for a single Agent.
+//
+// Deprecated: prefer AgentcoreRunner for new integrations. ReactRunner remains
+// as an explicit fallback path and parity baseline while internal callers
+// finish converging on agentcore.
 type ReactRunner struct {
 	agent      *Agent
 	sm         *stateMachine
@@ -27,7 +31,10 @@ type ReactRunner struct {
 	hitlMgr    hitl.Manager
 }
 
-// NewReactRunner creates a ReactRunner for the given agent.
+// NewReactRunner creates a legacy ReactRunner for the given agent.
+//
+// Deprecated: prefer NewAgentcoreRunner for new integrations. Keep this
+// constructor only for explicit fallback wiring and parity tests.
 func NewReactRunner(a *Agent, maxSteps int, tracer tracing.Tracer, hitlMgr hitl.Manager) *ReactRunner {
 	if maxSteps <= 0 {
 		maxSteps = defaultMaxSteps

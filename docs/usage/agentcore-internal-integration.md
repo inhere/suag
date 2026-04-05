@@ -224,15 +224,15 @@
 
 如果用一句话总结当前状态：
 
-> `internal/llm` 和 `internal/tools` 已经可以接入新的 `agentcore`；`internal/agent` 与 `internal/orchestrator` 也已经具备最小桥接与可选切换能力，但默认执行路径仍未完全切到 `agentcore`。
+> `internal/llm` 和 `internal/tools` 已经可以接入新的 `agentcore`；`internal/agent`、`internal/orchestrator` 与 `internal/team` 也已经开始以 `agentcore` 为默认或首选路径收敛，而旧 `ReactRunner` 更适合作为 legacy fallback 与 parity baseline 保留。
 
 这意味着下一阶段如果要继续推进，重点不该是继续往 `pkg/agentcore` 里塞内部桥接逻辑，而是开始规划：
 
 - 扩大 `AgentcoreRunner` 的能力面（如 hooks / context / tracing / HITL）
-- 决定 `orchestrator` 默认切换策略
-- 逐步缩减旧 `ReactRunner` 的直接职责
-- 继续补齐与旧路径的行为对齐用例，降低默认切换风险
+- 继续清理剩余直接依赖 `ReactRunner` 的业务入口
+- 把旧 `ReactRunner` 明确收敛为 fallback / test baseline
+- 继续补齐与旧路径的行为对齐用例，降低未来删除成本
 
 如果只问“现在能不能开始准备默认切换”，当前答案已经可以更新为：
 
-> 已经适合在单 agent 路径上做受控默认切换，但还不适合立即删除旧 `ReactRunner`。
+> 已经适合把 `agentcore` 作为内部默认执行核心继续推进，但还不适合立即删除旧 `ReactRunner`。
