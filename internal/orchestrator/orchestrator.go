@@ -5,8 +5,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 
 	"github.com/inhere/axon/internal/agent"
+	"github.com/inhere/axon/internal/agentcorestorage"
 	"github.com/inhere/axon/internal/hitl"
 	"github.com/inhere/axon/internal/llm"
 	"github.com/inhere/axon/internal/memory"
@@ -17,13 +19,15 @@ import (
 
 // Config holds all dependencies for the Orchestrator.
 type Config struct {
-	LLM       llm.Provider
-	Registry  *tools.Registry
-	Tracer    tracing.Tracer
-	HITL      hitl.Manager
-	Team      *team.Manager
-	Workspace string
-	MaxSteps  int
+	LLM              llm.Provider
+	Registry         *tools.Registry
+	Tracer           tracing.Tracer
+	HITL             hitl.Manager
+	Team             *team.Manager
+	Workspace        string
+	MaxSteps         int
+	UseAgentcore     bool
+	AgentcoreRunRoot string
 }
 
 // Orchestrator is the top-level coordinator. It receives tasks, decides whether
@@ -64,6 +68,22 @@ func (o *Orchestrator) RunTask(ctx context.Context, description string) (*agent.
 		TraceID:     traceID,
 	}
 
+	if o.cfg.UseAgentcore {
+		storage, err := o.newAgentcoreStorage()
+		if err != nil {
+			return nil, fmt.Errorf("create agentcore storage: %w", err)
+		}
+		defer func() {
+			_ = storage.Close()
+		}()
+
+		runner := agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
+			Storage:  storage,
+			MaxSteps: o.cfg.MaxSteps,
+		})
+		return runner.Run(ctx, task)
+	}
+
 	runner := agent.NewReactRunner(a, o.cfg.MaxSteps, o.cfg.Tracer, o.cfg.HITL)
 	return runner.Run(ctx, task)
 }
@@ -82,4 +102,12 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (o *Orchestrator) newAgentcoreStorage() (*agentcorestorage.SQLiteStorage, error) {
+	root := o.cfg.AgentcoreRunRoot
+	if root == "" {
+		root = filepath.Join(o.cfg.Workspace, ".agentcore")
+	}
+	return agentcorestorage.NewSQLiteStorage(filepath.Join(root, "runs.db"))
 }

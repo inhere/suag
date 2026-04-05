@@ -125,13 +125,15 @@ func buildApp() (*app, error) {
 
 	// ── Orchestrator ──────────────────────────────────────────────────────────
 	orch := orchestrator.New(orchestrator.Config{
-		LLM:       provider,
-		Registry:  registry,
-		Tracer:    tracer,
-		HITL:      hitlMgr,
-		Team:      teamMgr,
-		Workspace: workspace,
-		MaxSteps:  config.Int("max_steps", 10),
+		LLM:              provider,
+		Registry:         registry,
+		Tracer:           tracer,
+		HITL:             hitlMgr,
+		Team:             teamMgr,
+		Workspace:        workspace,
+		MaxSteps:         config.Int("max_steps", 10),
+		UseAgentcore:     config.Bool("agentcore.enabled", false),
+		AgentcoreRunRoot: config.String("agentcore.run_root"),
 	})
 
 	// ── Cron scheduler ────────────────────────────────────────────────────────

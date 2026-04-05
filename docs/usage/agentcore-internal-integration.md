@@ -14,9 +14,9 @@
 - `internal/memory`
   - 还不能直接作为 `agentcore.Storage` 使用
 - `internal/agent`
-  - 还没有直接复用 `agentcore`，目前仍是并行的一套 loop
+  - 已新增最小 `AgentcoreRunner` 桥接层，但默认执行路径仍保留旧 loop
 - `internal/orchestrator`
-  - 也还没有直接建立在 `agentcore` 之上
+  - 已支持通过开关选择性走 `agentcore` runtime，但默认仍保留旧路径
 
 也就是说，当前最适合的方式是：
 
@@ -83,7 +83,7 @@
 
 所以当前不能简单说“`internal/memory` 已经可以作为 `agentcore` 的 storage”。如果要接，需要额外做一层新的 run-state persistence 适配，而不是直接复用现有 `memory.Store`。
 
-### 2.2 `internal/agent.ReactRunner` 仍然是并行实现
+### 2.2 `internal/agent` 已有最小 bridge，但旧 `ReactRunner` 仍并存
 
 当前 `internal/agent/runner.go` 里，`ReactRunner` 自己负责：
 
@@ -94,25 +94,26 @@
 - HITL 挂起与恢复
 - tracing span 打点
 
-这说明它还没有把 `agentcore` 当成执行内核，而是自己保留了一套运行循环。
+这说明旧执行器还没有被直接移除，仍然保留着一套并行运行循环。
 
 所以现状更准确的说法是：
 
-- `internal/agent` 和 `pkg/agentcore` 在概念上已经接近
-- 但还没有完成 runtime 收敛
+- `internal/agent` 已经可以通过 `AgentcoreRunner` 把 `LLM`、`Tools`、`Soul`、`Storage` 映射到 `agentcore.Config`
+- 但默认实现仍未完全收敛到单一 runtime
 
-### 2.3 `internal/orchestrator` 还没有切到 `agentcore`
+### 2.3 `internal/orchestrator` 已支持选择性切换
 
-当前 `internal/orchestrator` 创建的仍然是：
+当前 `internal/orchestrator` 默认仍创建：
 
 - `agent.Agent`
 - `agent.ReactRunner`
 
-而不是：
+但当启用配置开关时，也可以改为：
 
-- `agentcore.Runtime`
+- `agent.Agent`
+- `agent.AgentcoreRunner`
 
-所以它也还不算“已经建立在新的 agentcore 上”。
+也就是说，它已经具备渐进切换能力，但还没有完成默认路径替换。
 
 ---
 
@@ -139,7 +140,7 @@
 
 这一层不应该直接等同于 `internal/memory.Store`。
 
-### 阶段 3：让 `internal/agent` 退化为“角色/配置模型”
+### 阶段 3：继续让 `internal/agent` 退化为“角色/配置模型”
 
 把 `internal/agent` 从“自己执行 loop”改成更薄的一层：
 
@@ -152,7 +153,7 @@
 - 保留 agent 身份和角色概念
 - 把真正执行交给 `agentcore.Runtime`
 
-### 阶段 4：让 `internal/orchestrator` 调度 `agentcore.Runtime`
+### 阶段 4：扩大 `internal/orchestrator` 对 `agentcore` 的默认使用面
 
 最终 `orchestrator` 负责：
 
@@ -185,10 +186,10 @@
 
 如果用一句话总结当前状态：
 
-> `internal/llm` 和 `internal/tools` 已经可以接入新的 `agentcore`；但 `internal/agent` 和 `internal/orchestrator` 还没有真正切换到以 `agentcore` 为执行内核。
+> `internal/llm` 和 `internal/tools` 已经可以接入新的 `agentcore`；`internal/agent` 与 `internal/orchestrator` 也已经具备最小桥接与可选切换能力，但默认执行路径仍未完全切到 `agentcore`。
 
 这意味着下一阶段如果要继续推进，重点不该是继续往 `pkg/agentcore` 里塞内部桥接逻辑，而是开始规划：
 
-- run-state persistence adapter
-- `internal/agent` 到 `agentcore.Config` 的映射
-- `orchestrator` 的 runtime 切换路径
+- 扩大 `AgentcoreRunner` 的能力面（如 hooks / context / tracing / HITL）
+- 决定 `orchestrator` 默认切换策略
+- 逐步缩减旧 `ReactRunner` 的直接职责

@@ -19,6 +19,11 @@ serpapi_key: ""              # set via env: AXON_SERPAPI_KEY
 # Max ReAct loop steps per agent task
 max_steps: 30
 
+# Optional agentcore runtime switch for single-agent task execution
+agentcore:
+  enabled: false
+  run_root: ""               # defaults to <workspace>/.agentcore when enabled
+
 # HTTP server settings (server mode)
 server:
   addr: ":8080"
