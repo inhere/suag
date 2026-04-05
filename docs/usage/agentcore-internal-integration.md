@@ -17,6 +17,7 @@
   - 已新增最小 `AgentcoreRunner` 桥接层，但默认执行路径仍保留旧 loop
 - `internal/orchestrator`
   - 已支持通过开关选择性走 `agentcore` runtime，但默认仍保留旧路径
+  - 新路径已可承接 tracing / HITL / fail-threshold 配置透传
 
 也就是说，当前最适合的方式是：
 
@@ -113,7 +114,43 @@
 - `agent.Agent`
 - `agent.AgentcoreRunner`
 
-也就是说，它已经具备渐进切换能力，但还没有完成默认路径替换。
+也就是说，它已经具备渐进切换能力，并且关键运行时能力已能沿新路径透传，但还没有完成默认路径替换。
+
+### 2.4 当前对齐进度
+
+目前已经有一组新旧 runner 的并行对照测试，验证 `ReactRunner` 与 `AgentcoreRunner` 在这些场景下能够保持一致或等价：
+
+- direct answer
+- one tool call
+- multi-step tool chain
+- HITL continue
+- HITL dismiss
+- max steps exceeded
+- context canceled
+- manual step-through
+
+这些用例说明：
+
+- `internal/agent` 基于 `agentcore` 的最小执行链路已经不只是“能跑”
+- 它已经开始具备替换默认单 agent loop 的验证基础
+
+但这还不等于“可以无条件默认切换”。当前仍应把它视为：
+
+- 已具备较强信心的渐进迁移入口
+- 还需要继续观察与补齐更细粒度行为差异的候选默认路径
+
+### 2.5 当前默认策略
+
+当前推荐并已实现的单 agent 策略是：
+
+- `orchestrator` 的默认单 agent runtime 使用 `agentcore`
+- 同时保留显式回退到旧 `ReactRunner` 的入口
+
+也就是说：
+
+- 默认路径已经开始向 `agentcore` 收敛
+- 旧实现还没有被移除
+- 如需回退，可以通过配置把 runtime 明确切回 `react`
 
 ---
 
@@ -193,3 +230,8 @@
 - 扩大 `AgentcoreRunner` 的能力面（如 hooks / context / tracing / HITL）
 - 决定 `orchestrator` 默认切换策略
 - 逐步缩减旧 `ReactRunner` 的直接职责
+- 继续补齐与旧路径的行为对齐用例，降低默认切换风险
+
+如果只问“现在能不能开始准备默认切换”，当前答案已经可以更新为：
+
+> 已经适合在单 agent 路径上做受控默认切换，但还不适合立即删除旧 `ReactRunner`。

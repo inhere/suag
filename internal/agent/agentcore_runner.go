@@ -8,7 +8,9 @@ import (
 
 	"github.com/inhere/axon/internal/agentcoreadapters/internalllm"
 	"github.com/inhere/axon/internal/agentcoreadapters/internaltools"
+	"github.com/inhere/axon/internal/hitl"
 	"github.com/inhere/axon/internal/memory"
+	"github.com/inhere/axon/internal/tracing"
 	"github.com/inhere/axon/pkg/agentcore"
 )
 
@@ -19,6 +21,9 @@ type AgentcoreRunnerConfig struct {
 	PromptBuilder       agentcore.PromptBuilder
 	ContextBuilder      agentcore.ContextBuilder
 	Hooks               []agentcore.Hook
+	Tracer              tracing.Tracer
+	HITL                hitl.Manager
+	FailThreshold       int
 	MaxSteps            int
 	MaxToolCallsPerStep int
 }
@@ -39,7 +44,7 @@ func BuildAgentcoreConfig(a *Agent, cfg AgentcoreRunnerConfig) agentcore.Config 
 		Tools:               internaltools.NewRegistry(a.Tools),
 		PromptBuilder:       resolvePromptBuilder(a, cfg.PromptBuilder),
 		ContextBuilder:      cfg.ContextBuilder,
-		Hooks:               append([]agentcore.Hook(nil), cfg.Hooks...),
+		Hooks:               buildAgentcoreHooks(a, cfg),
 		MaxSteps:            cfg.MaxSteps,
 		MaxToolCallsPerStep: cfg.MaxToolCallsPerStep,
 	}
@@ -212,6 +217,9 @@ func resolvePromptBuilder(a *Agent, builder agentcore.PromptBuilder) agentcore.P
 func buildRunMetadata(a *Agent, task *Task) map[string]any {
 	metadata := map[string]any{}
 	if task != nil {
+		if strings.TrimSpace(task.ID) != "" {
+			metadata["task_id"] = task.ID
+		}
 		if strings.TrimSpace(task.Title) != "" {
 			metadata["task_title"] = task.Title
 		}
@@ -246,12 +254,13 @@ func compactMessages(messages []agentcore.Message) []memory.Message {
 
 	out := make([]memory.Message, 0, len(messages))
 	for _, msg := range messages {
-		if strings.TrimSpace(msg.Content) == "" {
+		content := compactMessageContent(msg)
+		if strings.TrimSpace(content) == "" {
 			continue
 		}
 		out = append(out, memory.Message{
 			Role:    msg.Role,
-			Content: msg.Content,
+			Content: content,
 		})
 	}
 	return out
@@ -275,4 +284,262 @@ type soulPromptBuilder struct {
 
 func (b soulPromptBuilder) BuildSystemPrompt(context.Context, *agentcore.RunState) (string, error) {
 	return b.persona, nil
+}
+
+func buildAgentcoreHooks(a *Agent, cfg AgentcoreRunnerConfig) []agentcore.Hook {
+	hooks := make([]agentcore.Hook, 0, len(cfg.Hooks)+2)
+	if cfg.Tracer != nil && a != nil {
+		hooks = append(hooks, newTracingHook(a.ID, cfg.Tracer))
+	}
+	if cfg.HITL != nil {
+		hooks = append(hooks, newHITLHook(a, cfg))
+	}
+	hooks = append(hooks, cfg.Hooks...)
+	return hooks
+}
+
+type tracingHook struct {
+	agentcore.NopHook
+	agentID  string
+	tracer   tracing.Tracer
+	taskCtx  context.Context
+	taskSpan *tracing.Span
+	llmSpan  *tracing.Span
+	toolSpan *tracing.Span
+}
+
+func newTracingHook(agentID string, tracer tracing.Tracer) agentcore.Hook {
+	return &tracingHook{
+		agentID: agentID,
+		tracer:  tracer,
+	}
+}
+
+func (h *tracingHook) BeforeRun(ctx context.Context, event *agentcore.RunEvent, _ *agentcore.Control) error {
+	if h == nil || h.tracer == nil {
+		return nil
+	}
+	h.taskCtx, h.taskSpan = h.tracer.StartSpan(ctx, h.agentID, "task")
+	if h.taskSpan != nil && event != nil && event.Input != nil {
+		h.taskSpan.Input = event.Input.Instruction
+	}
+	return nil
+}
+
+func (h *tracingHook) BeforeModel(ctx context.Context, event *agentcore.ModelEvent, _ *agentcore.Control) error {
+	if h == nil || h.tracer == nil {
+		return nil
+	}
+	baseCtx := ctx
+	if h.taskCtx != nil {
+		baseCtx = h.taskCtx
+	}
+	_, h.llmSpan = h.tracer.StartSpan(baseCtx, h.agentID, "llm_call")
+	if h.llmSpan != nil && event != nil && event.Request != nil {
+		h.llmSpan.Input = summarizeMessages(event.Request.Messages)
+	}
+	return nil
+}
+
+func (h *tracingHook) AfterModel(_ context.Context, event *agentcore.ModelEvent, _ *agentcore.Control) error {
+	if h == nil || h.tracer == nil || h.llmSpan == nil {
+		return nil
+	}
+	if event != nil && event.Result != nil {
+		h.llmSpan.Output = event.Result.Content
+	}
+	h.tracer.FinishSpan(h.llmSpan, nil)
+	h.llmSpan = nil
+	return nil
+}
+
+func (h *tracingHook) BeforeTool(ctx context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
+	if h == nil || h.tracer == nil {
+		return nil
+	}
+	baseCtx := ctx
+	if h.taskCtx != nil {
+		baseCtx = h.taskCtx
+	}
+	_, h.toolSpan = h.tracer.StartSpan(baseCtx, h.agentID, "tool_call")
+	if h.toolSpan != nil && event != nil && event.Call != nil {
+		h.toolSpan.Meta["tool"] = event.Call.Name
+	}
+	return nil
+}
+
+func (h *tracingHook) AfterTool(_ context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
+	if h == nil || h.tracer == nil || h.toolSpan == nil {
+		return nil
+	}
+	var toolErr error
+	if event != nil && event.Result != nil {
+		h.toolSpan.Output = event.Result.Content
+		if isToolErrorResult(event.Result) {
+			toolErr = fmt.Errorf("%s", event.Result.Content)
+		}
+	}
+	h.tracer.FinishSpan(h.toolSpan, toolErr)
+	h.toolSpan = nil
+	return nil
+}
+
+func (h *tracingHook) AfterRun(_ context.Context, event *agentcore.RunEvent, _ *agentcore.Control) error {
+	if h == nil || h.tracer == nil || h.taskSpan == nil {
+		return nil
+	}
+	if event != nil && event.Result != nil {
+		h.taskSpan.Output = event.Result.Output
+	}
+	h.tracer.FinishSpan(h.taskSpan, nil)
+	h.taskSpan = nil
+	return nil
+}
+
+func (h *tracingHook) OnError(_ context.Context, event *agentcore.ErrorEvent, _ *agentcore.Control) error {
+	if h == nil || h.tracer == nil {
+		return nil
+	}
+	if h.llmSpan != nil {
+		h.tracer.FinishSpan(h.llmSpan, event.Err)
+		h.llmSpan = nil
+	}
+	if h.toolSpan != nil {
+		h.tracer.FinishSpan(h.toolSpan, event.Err)
+		h.toolSpan = nil
+	}
+	if h.taskSpan != nil {
+		h.tracer.FinishSpan(h.taskSpan, event.Err)
+		h.taskSpan = nil
+	}
+	return nil
+}
+
+type hitlHook struct {
+	agentcore.NopHook
+	agent        *Agent
+	storage      agentcore.Storage
+	manager      hitl.Manager
+	failThresh   int
+	failureCount int
+	pendingCall  *agentcore.ToolCall
+}
+
+func newHITLHook(a *Agent, cfg AgentcoreRunnerConfig) agentcore.Hook {
+	threshold := cfg.FailThreshold
+	if threshold <= 0 {
+		threshold = defaultFailThresh
+	}
+	return &hitlHook{
+		agent:      a,
+		storage:    cfg.Storage,
+		manager:    cfg.HITL,
+		failThresh: threshold,
+	}
+}
+
+func (h *hitlHook) AfterTool(_ context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
+	if h == nil || event == nil || event.Call == nil || event.Result == nil {
+		return nil
+	}
+	if isToolErrorResult(event.Result) {
+		h.failureCount++
+		copied := *event.Call
+		h.pendingCall = &copied
+		return nil
+	}
+
+	h.failureCount = 0
+	h.pendingCall = nil
+	return nil
+}
+
+func (h *hitlHook) BeforeContextBuild(ctx context.Context, event *agentcore.ContextEvent, _ *agentcore.Control) error {
+	if h == nil || h.manager == nil || h.pendingCall == nil || h.failureCount < h.failThresh || event == nil || event.State == nil {
+		return nil
+	}
+
+	taskID, _ := event.State.Metadata["task_id"].(string)
+	reason := fmt.Sprintf("tool %q failed %d times in a row", h.pendingCall.Name, h.failThresh)
+	if h.agent != nil {
+		h.agent.State = AgentSuspended
+	}
+	resp, err := h.manager.RequestIntervention(ctx, event.AgentID, taskID, reason, pendingToolErrorMessage(event))
+	if err != nil {
+		return err
+	}
+
+	h.failureCount = 0
+	h.pendingCall = nil
+	if h.agent != nil {
+		h.agent.State = AgentRunning
+	}
+
+	switch resp.Action {
+	case hitl.ActionAbandon:
+		return fmt.Errorf("task abandoned by operator: %s", resp.Instruction)
+	default:
+		instruction := strings.TrimSpace(resp.Instruction)
+		if instruction == "" {
+			return nil
+		}
+		msg := agentcore.Message{
+			Role:    "system",
+			Content: "[Human instruction]: " + instruction,
+		}
+		event.State.Messages = append(event.State.Messages, msg)
+		if h.storage != nil {
+			if err := h.storage.AppendMessages(ctx, event.RunID, msg); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func summarizeMessages(messages []agentcore.Message) string {
+	if len(messages) == 0 {
+		return ""
+	}
+	last := messages[len(messages)-1]
+	return last.Content
+}
+
+func isToolErrorResult(result *agentcore.ToolResult) bool {
+	if result == nil {
+		return false
+	}
+	if flag, _ := result.Metadata["tool_error"].(bool); flag {
+		return true
+	}
+	return strings.HasPrefix(result.Content, "tool error:")
+}
+
+func pendingToolErrorMessage(event *agentcore.ContextEvent) string {
+	if event == nil || event.State == nil || len(event.State.Messages) == 0 {
+		return ""
+	}
+	for i := len(event.State.Messages) - 1; i >= 0; i-- {
+		msg := event.State.Messages[i]
+		if msg.Role == "tool" && strings.TrimSpace(msg.Content) != "" {
+			return msg.Content
+		}
+	}
+	return ""
+}
+
+func compactMessageContent(msg agentcore.Message) string {
+	if msg.Role == "tool" && msg.ToolResult != nil && isToolErrorResult(msg.ToolResult) {
+		name := msg.ToolResult.Name
+		if name == "" && msg.ToolCall != nil {
+			name = msg.ToolCall.Name
+		}
+		content := strings.TrimSpace(msg.ToolResult.Content)
+		content = strings.TrimPrefix(content, "tool error: ")
+		if name != "" {
+			return fmt.Sprintf("tool %q error: %s", name, content)
+		}
+		return content
+	}
+	return msg.Content
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 
 	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/agentcorestorage"
@@ -19,15 +20,17 @@ import (
 
 // Config holds all dependencies for the Orchestrator.
 type Config struct {
-	LLM              llm.Provider
-	Registry         *tools.Registry
-	Tracer           tracing.Tracer
-	HITL             hitl.Manager
-	Team             *team.Manager
-	Workspace        string
-	MaxSteps         int
-	UseAgentcore     bool
-	AgentcoreRunRoot string
+	LLM                llm.Provider
+	Registry           *tools.Registry
+	Tracer             tracing.Tracer
+	HITL               hitl.Manager
+	Team               *team.Manager
+	Workspace          string
+	MaxSteps           int
+	FailThreshold      int
+	UseAgentcore       bool
+	SingleAgentRuntime string
+	AgentcoreRunRoot   string
 }
 
 // Orchestrator is the top-level coordinator. It receives tasks, decides whether
@@ -49,6 +52,7 @@ func (o *Orchestrator) RunTask(ctx context.Context, description string) (*agent.
 	slog.Info("orchestrator run task", "trace", traceID, "desc", description[:min(60, len(description))])
 
 	mem := memory.NewInMemStore(memory.InMemConfig{})
+	tracer := o.effectiveTracer()
 	a, err := agent.New(agent.Config{
 		Name:      "default",
 		LLM:       o.cfg.LLM,
@@ -69,6 +73,14 @@ func (o *Orchestrator) RunTask(ctx context.Context, description string) (*agent.
 	}
 
 	if o.cfg.UseAgentcore {
+		// Backward-compatible hint; explicit runtime selector takes precedence below.
+	}
+
+	switch o.singleAgentRuntime() {
+	case "react":
+		runner := agent.NewReactRunner(a, o.cfg.MaxSteps, tracer, o.cfg.HITL)
+		return runner.Run(ctx, task)
+	case "agentcore":
 		storage, err := o.newAgentcoreStorage()
 		if err != nil {
 			return nil, fmt.Errorf("create agentcore storage: %w", err)
@@ -78,14 +90,16 @@ func (o *Orchestrator) RunTask(ctx context.Context, description string) (*agent.
 		}()
 
 		runner := agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
-			Storage:  storage,
-			MaxSteps: o.cfg.MaxSteps,
+			Storage:       storage,
+			Tracer:        tracer,
+			HITL:          o.cfg.HITL,
+			FailThreshold: o.cfg.FailThreshold,
+			MaxSteps:      o.cfg.MaxSteps,
 		})
 		return runner.Run(ctx, task)
+	default:
+		return nil, fmt.Errorf("unsupported single agent runtime %q", o.cfg.SingleAgentRuntime)
 	}
-
-	runner := agent.NewReactRunner(a, o.cfg.MaxSteps, o.cfg.Tracer, o.cfg.HITL)
-	return runner.Run(ctx, task)
 }
 
 // RunTeamTask creates a team from soul paths and executes tasks as a DAG.
@@ -110,4 +124,22 @@ func (o *Orchestrator) newAgentcoreStorage() (*agentcorestorage.SQLiteStorage, e
 		root = filepath.Join(o.cfg.Workspace, ".agentcore")
 	}
 	return agentcorestorage.NewSQLiteStorage(filepath.Join(root, "runs.db"))
+}
+
+func (o *Orchestrator) singleAgentRuntime() string {
+	runtime := strings.ToLower(strings.TrimSpace(o.cfg.SingleAgentRuntime))
+	if runtime != "" {
+		return runtime
+	}
+	if o.cfg.UseAgentcore {
+		return "agentcore"
+	}
+	return "agentcore"
+}
+
+func (o *Orchestrator) effectiveTracer() tracing.Tracer {
+	if o.cfg.Tracer != nil {
+		return o.cfg.Tracer
+	}
+	return tracing.NewInMemoryTracer(nil)
 }

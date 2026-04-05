@@ -19,6 +19,10 @@ serpapi_key: ""              # set via env: AXON_SERPAPI_KEY
 # Max ReAct loop steps per agent task
 max_steps: 30
 
+# Single-agent runtime selection
+agent:
+  runtime: ""               # default uses agentcore; set "react" to force legacy runner
+
 # Optional agentcore runtime switch for single-agent task execution
 agentcore:
   enabled: false
