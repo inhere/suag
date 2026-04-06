@@ -461,6 +461,19 @@ func (h *yieldBeforeSecondModelAgentHook) BeforeModel(_ context.Context, _ *agen
 	return nil
 }
 
+type yieldOnSecondAndThirdModelHook struct {
+	agentcore.NopHook
+	beforeModelCalls int
+}
+
+func (h *yieldOnSecondAndThirdModelHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
+	h.beforeModelCalls++
+	if h.beforeModelCalls == 2 || h.beforeModelCalls == 3 {
+		ctrl.Yield("await_resume", map[string]any{"call": h.beforeModelCalls})
+	}
+	return nil
+}
+
 func TestAgentcoreRunner_Run_CanResumeYieldedRunFromState(t *testing.T) {
 	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
@@ -569,6 +582,217 @@ func TestAgentcoreRunner_Resume_UsesInstructionOnNextRun(t *testing.T) {
 		t.Fatalf("second Run() error: %v", outcome.err)
 	}
 	if outcome.result.Output != "done after instruction" {
+		t.Fatalf("output = %q, want resumed completion", outcome.result.Output)
+	}
+}
+
+func TestAgentcoreRunner_Resume_RejectsWhenNotSuspended(t *testing.T) {
+	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	if err != nil {
+		t.Fatalf("expected sqlite storage to initialize, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	a := newTestAgent(llm.NewMockProvider("mock").QueueText("done"), newTestRegistry())
+	runner := agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
+		Storage:  store,
+		MaxSteps: 3,
+	})
+
+	if err := runner.Resume("should fail before first suspension"); err == nil {
+		t.Fatal("expected Resume() to fail when runner is not suspended")
+	}
+
+	if _, err := runner.Run(context.Background(), newTask("finish")); err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if err := runner.Resume("should fail after completion"); err == nil {
+		t.Fatal("expected Resume() to fail after completion")
+	}
+}
+
+func TestAgentcoreRunner_Resume_LastInstructionWins(t *testing.T) {
+	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	if err != nil {
+		t.Fatalf("expected sqlite storage to initialize, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	hook := &yieldBeforeSecondModelAgentHook{}
+	mock := llm.NewMockProvider("manual").
+		QueueToolCall("echo", map[string]any{"msg": "ping"})
+	a := newTestAgent(mock, newTestRegistry(&coreEchoTool{}))
+	runner := agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
+		Storage:  store,
+		MaxSteps: 5,
+		Hooks:    []agentcore.Hook{hook},
+	})
+
+	firstResult, err := runner.Run(context.Background(), newTask("resume overwrite"))
+	if err != nil {
+		t.Fatalf("first Run() error: %v", err)
+	}
+	if firstResult.Summary != "await_resume" {
+		t.Fatalf("first result summary = %q, want yield reason", firstResult.Summary)
+	}
+
+	if err := runner.Resume("first instruction"); err != nil {
+		t.Fatalf("first Resume() error: %v", err)
+	}
+	if err := runner.Resume("final instruction"); err != nil {
+		t.Fatalf("second Resume() error: %v", err)
+	}
+
+	secondDone := make(chan parityRunOutcome, 1)
+	go func() {
+		r, runErr := runner.Run(context.Background(), newTask("resume overwrite"))
+		secondDone <- parityRunOutcome{result: r, err: runErr}
+	}()
+
+	req, reply, err := mock.WaitForCall(context.Background())
+	if err != nil {
+		t.Fatalf("WaitForCall error: %v", err)
+	}
+	foundFinalInstruction := false
+	foundOldInstruction := false
+	for _, msg := range req.Messages {
+		if msg.Role == "user" && msg.Content == "final instruction" {
+			foundFinalInstruction = true
+		}
+		if msg.Role == "user" && msg.Content == "first instruction" {
+			foundOldInstruction = true
+		}
+	}
+	if !foundFinalInstruction {
+		t.Fatalf("request messages = %#v, want latest resume instruction", req.Messages)
+	}
+	if foundOldInstruction {
+		t.Fatalf("request messages = %#v, should not include overwritten resume instruction", req.Messages)
+	}
+	reply(llm.MockResponse{Content: "done"})
+
+	outcome := waitAgentcoreOutcome(t, secondDone)
+	if outcome.err != nil {
+		t.Fatalf("second Run() error: %v", outcome.err)
+	}
+	if outcome.result.Output != "done" {
+		t.Fatalf("output = %q, want resumed completion", outcome.result.Output)
+	}
+}
+
+func TestAgentcoreRunner_Run_CanYieldAgainAfterResume(t *testing.T) {
+	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	if err != nil {
+		t.Fatalf("expected sqlite storage to initialize, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	hook := &yieldOnSecondAndThirdModelHook{}
+	mock := llm.NewMockProvider("mock").
+		QueueToolCall("echo", map[string]any{"msg": "step1"}).
+		QueueText("done after second resume")
+
+	a := newTestAgent(mock, newTestRegistry(&coreEchoTool{}))
+	runner := agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
+		Storage:  store,
+		MaxSteps: 6,
+		Hooks:    []agentcore.Hook{hook},
+	})
+
+	firstResult, err := runner.Run(context.Background(), newTask("yield twice"))
+	if err != nil {
+		t.Fatalf("first Run() error: %v", err)
+	}
+	if firstResult.Summary != "await_resume" {
+		t.Fatalf("first summary = %q, want yield reason", firstResult.Summary)
+	}
+
+	secondResult, err := runner.Run(context.Background(), newTask("yield twice"))
+	if err != nil {
+		t.Fatalf("second Run() error: %v", err)
+	}
+	if secondResult.Summary != "await_resume" {
+		t.Fatalf("second summary = %q, want second yield reason", secondResult.Summary)
+	}
+	if runner.GetState() != agent.AgentSuspended {
+		t.Fatalf("state after second run = %s, want suspended", runner.GetState())
+	}
+
+	thirdResult, err := runner.Run(context.Background(), newTask("yield twice"))
+	if err != nil {
+		t.Fatalf("third Run() error: %v", err)
+	}
+	if thirdResult.Output != "done after second resume" {
+		t.Fatalf("output = %q, want resumed completion", thirdResult.Output)
+	}
+	if runner.GetState() != agent.AgentCompleted {
+		t.Fatalf("state after third run = %s, want completed", runner.GetState())
+	}
+}
+
+func TestAgentcoreRunner_Suspend_ThenRun_ResumesFromState(t *testing.T) {
+	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	if err != nil {
+		t.Fatalf("expected sqlite storage to initialize, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	hook := &yieldBeforeSecondModelAgentHook{}
+	mock := llm.NewMockProvider("manual").
+		QueueToolCall("echo", map[string]any{"msg": "ping"})
+	a := newTestAgent(mock, newTestRegistry(&coreEchoTool{}))
+	runner := agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
+		Storage:  store,
+		MaxSteps: 5,
+		Hooks:    []agentcore.Hook{hook},
+	})
+
+	firstResult, err := runner.Run(context.Background(), newTask("suspend and continue"))
+	if err != nil {
+		t.Fatalf("first Run() error: %v", err)
+	}
+	if firstResult.Summary != "await_resume" {
+		t.Fatalf("first summary = %q, want yield reason", firstResult.Summary)
+	}
+
+	if err := runner.Suspend("manual pause"); err == nil {
+		t.Fatal("expected Suspend() from suspended state to fail")
+	}
+
+	done := make(chan parityRunOutcome, 1)
+	go func() {
+		r, runErr := runner.Run(context.Background(), newTask("suspend and continue"))
+		done <- parityRunOutcome{result: r, err: runErr}
+	}()
+
+	req, reply, err := mock.WaitForCall(context.Background())
+	if err != nil {
+		t.Fatalf("WaitForCall error: %v", err)
+	}
+	var userMessages []string
+	for _, msg := range req.Messages {
+		if msg.Role == "user" {
+			userMessages = append(userMessages, msg.Content)
+		}
+	}
+	if len(userMessages) != 1 || userMessages[0] != "suspend and continue" {
+		t.Fatalf("request messages = %#v, expected ResumeFromState without appending a new user message", req.Messages)
+	}
+	reply(llm.MockResponse{Content: "completed from suspended state"})
+
+	outcome := waitAgentcoreOutcome(t, done)
+	if outcome.err != nil {
+		t.Fatalf("second Run() error: %v", outcome.err)
+	}
+	if outcome.result.Output != "completed from suspended state" {
 		t.Fatalf("output = %q, want resumed completion", outcome.result.Output)
 	}
 }

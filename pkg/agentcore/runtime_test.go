@@ -1237,6 +1237,101 @@ func TestRuntime_Run_ResumeFromState_WithFilesStorageAndAdapters(t *testing.T) {
 	}
 }
 
+func TestRuntime_Run_ResumeAutoAfterYieldWithoutInstruction_ReusesState(t *testing.T) {
+	runID := "resume-auto-after-yield"
+	store := newRuntimeTestStorage()
+	hook := &runtimeTestHook{}
+	beforeModelCalls := 0
+	hook.beforeModel = func(ctrl *Control) {
+		beforeModelCalls++
+		if beforeModelCalls == 2 {
+			ctrl.Yield("await_resume", map[string]any{"step": "after_tool"})
+		}
+	}
+
+	firstProvider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			ToolCalls: []ToolCall{{
+				CallID:    "call-1",
+				Name:      "echo",
+				Arguments: map[string]any{"msg": "ping"},
+			}},
+			FinishReason: FinishToolCalls,
+		}},
+	}
+	registry := NewToolRegistry()
+	registry.Register(&runtimeTestTool{
+		name:   "echo",
+		result: &ToolResult{Content: "tool:ping"},
+	})
+
+	firstResult, err := New(Config{
+		Provider:       firstProvider,
+		Storage:        store,
+		Tools:          registry,
+		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{hook},
+	}).Run(context.Background(), RunInput{
+		RunID:       runID,
+		AgentID:     "agent-1",
+		Instruction: "resume me later",
+	})
+	if err != nil {
+		t.Fatalf("expected first run to yield, got %v", err)
+	}
+	if firstResult.Status != RunYielded || firstResult.Yield == nil || firstResult.Yield.Reason != "await_resume" {
+		t.Fatalf("expected yielded first result, got %#v", firstResult)
+	}
+
+	resumeProvider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done after auto resume",
+			FinishReason: FinishFinal,
+		}},
+	}
+	resumed, err := New(Config{
+		Provider:       resumeProvider,
+		Storage:        store,
+		Tools:          registry,
+		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
+		ContextBuilder: runtimeTestContextBuilder{},
+	}).Run(context.Background(), RunInput{
+		RunID:      runID,
+		ResumeMode: ResumeAuto,
+	})
+	if err != nil {
+		t.Fatalf("expected auto resume to complete, got %v", err)
+	}
+	if resumed.Status != RunCompleted || resumed.Output != "done after auto resume" {
+		t.Fatalf("expected completed resumed result, got %#v", resumed)
+	}
+
+	if len(resumeProvider.calls) != 1 {
+		t.Fatalf("resume provider calls = %d, want 1", len(resumeProvider.calls))
+	}
+	if len(resumeProvider.calls[0].Messages) != 3 {
+		t.Fatalf("expected auto resume to reuse prior transcript only, got %#v", resumeProvider.calls[0].Messages)
+	}
+	if resumeProvider.calls[0].Messages[0].Role != "user" || resumeProvider.calls[0].Messages[0].Content != "resume me later" {
+		t.Fatalf("expected original user instruction to remain authoritative, got %#v", resumeProvider.calls[0].Messages[0])
+	}
+
+	finalMessages := store.messages[runID]
+	if len(finalMessages) != 4 {
+		t.Fatalf("expected yielded transcript plus final assistant output, got %#v", finalMessages)
+	}
+	userCount := 0
+	for _, msg := range finalMessages {
+		if msg.Role == "user" && msg.Content == "resume me later" {
+			userCount++
+		}
+	}
+	if userCount != 1 {
+		t.Fatalf("expected auto resume not to append a duplicate user message, got %#v", finalMessages)
+	}
+}
+
 func TestRuntime_Run_RejectsResumeForCompletedOrFailed(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -2309,15 +2404,15 @@ func TestRuntime_Run_BeforeToolControlHonoredAndAfterToolControlRejected(t *test
 		if !strings.Contains(err.Error(), "after_tool control is not supported") {
 			t.Fatalf("expected explicit after-tool control rejection, got %v", err)
 		}
-	if len(store.messages["run-after-tool-short-circuit"]) != 3 {
-		t.Fatalf("expected assistant tool-call and tool execution to be persisted before after-tool rejection, got %#v", store.messages["run-after-tool-short-circuit"])
-	}
-	if store.messages["run-after-tool-short-circuit"][1].Role != "assistant" || store.messages["run-after-tool-short-circuit"][1].ToolCall == nil {
-		t.Fatalf("expected persisted assistant tool-call authority message before after-tool rejection, got %#v", store.messages["run-after-tool-short-circuit"][1])
-	}
-	if store.messages["run-after-tool-short-circuit"][2].Role != "tool" {
-		t.Fatalf("expected persisted tool authority message before after-tool rejection, got %#v", store.messages["run-after-tool-short-circuit"][2])
-	}
+		if len(store.messages["run-after-tool-short-circuit"]) != 3 {
+			t.Fatalf("expected assistant tool-call and tool execution to be persisted before after-tool rejection, got %#v", store.messages["run-after-tool-short-circuit"])
+		}
+		if store.messages["run-after-tool-short-circuit"][1].Role != "assistant" || store.messages["run-after-tool-short-circuit"][1].ToolCall == nil {
+			t.Fatalf("expected persisted assistant tool-call authority message before after-tool rejection, got %#v", store.messages["run-after-tool-short-circuit"][1])
+		}
+		if store.messages["run-after-tool-short-circuit"][2].Role != "tool" {
+			t.Fatalf("expected persisted tool authority message before after-tool rejection, got %#v", store.messages["run-after-tool-short-circuit"][2])
+		}
 	})
 }
 

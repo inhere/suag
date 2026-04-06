@@ -87,6 +87,7 @@ func (r *AgentcoreRunner) Run(ctx context.Context, task *Task) (*TaskResult, err
 		return nil, fmt.Errorf("agentcore runner: runtime is nil")
 	}
 
+	prevState := r.GetState()
 	if err := r.sm.Transition(AgentRunning); err != nil {
 		return nil, fmt.Errorf("start agent: %w", err)
 	}
@@ -104,7 +105,7 @@ func (r *AgentcoreRunner) Run(ctx context.Context, task *Task) (*TaskResult, err
 	if r.hasPendingResume {
 		resumeMode = r.resumeMode
 		inputInstruction = r.pendingResumeInput
-	} else if r.GetState() == AgentSuspended && strings.TrimSpace(r.lastRunID) != "" {
+	} else if prevState == AgentSuspended && strings.TrimSpace(r.lastRunID) != "" {
 		resumeMode = agentcore.ResumeFromState
 		inputInstruction = ""
 	}
@@ -184,6 +185,9 @@ func (r *AgentcoreRunner) Suspend(reason string) error {
 func (r *AgentcoreRunner) Resume(instruction string) error {
 	if r == nil || r.sm == nil || r.agent == nil {
 		return fmt.Errorf("agentcore runner is not initialized")
+	}
+	if r.sm.Current() != AgentSuspended {
+		return fmt.Errorf("agentcore runner can only resume from suspended state")
 	}
 	instruction = strings.TrimSpace(instruction)
 	if instruction != "" {

@@ -211,6 +211,15 @@ type ContextBuilder interface {
 - `ResumeFromState`
 - `ResumeWithInput`
 
+当前推荐按下面理解：
+
+- `ResumeFromState`
+  无论是否传入 `Instruction`，都只从已持久化的 state / transcript 继续。
+- `ResumeWithInput`
+  恢复前显式追加一条新的 user message，再继续执行。
+- `ResumeAuto`
+  默认走“有输入就追加、无输入就直接继续”的语义。
+
 需要特别注意：
 
 - tool loop 会持久化 `assistant(tool_call)` 与 `tool(result)` 两条消息
@@ -240,4 +249,3 @@ runtime 会把错误分类成稳定的公开类型：
 3. 加一个 `Hook`
 4. 再替换 `PromptBuilder` / `ContextBuilder`
 5. 最后接真实 `Provider` 和自定义 `Storage`
-

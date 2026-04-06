@@ -116,6 +116,13 @@ type Memory interface {
 
 `agentcore` 的恢复模型基于稳定 `RunID` 和显式 `ResumeMode`：
 
+- `ResumeFromState`
+  明确表示“只从已有 state / transcript 继续”，即使传了 `Instruction` 也不会追加新的 user message。
+- `ResumeWithInput`
+  明确表示“恢复时再追加一条新的 user input”。
+- `ResumeAuto`
+  采用默认语义：有非空 `Instruction` 时追加新 user message；没有 `Instruction` 时直接从已有 state 继续。
+
 ```go
 first, err := runtime.Run(ctx, agentcore.RunInput{
     RunID:       "task-123",
