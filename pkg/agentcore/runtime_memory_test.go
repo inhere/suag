@@ -2,6 +2,7 @@ package agentcore
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -149,5 +150,80 @@ func TestRuntime_Run_ResumeHydratesMemoryBeforeBuildingContext(t *testing.T) {
 	}
 	if provider.calls[0].Messages[0].Content != "[Memory summary]: resumed summary" {
 		t.Fatalf("provider first message = %#v, want hydrated memory context", provider.calls[0].Messages[0])
+	}
+}
+
+func TestRuntime_Run_HydrateFailureReturnsMemoryErrorAndSkipsProvider(t *testing.T) {
+	store := newRuntimeTestStorage()
+	store.runs["run-memory-hydrate-error"] = &RunState{
+		RunID:   "run-memory-hydrate-error",
+		AgentID: "agent-1",
+		Status:  RunYielded,
+	}
+	store.messages["run-memory-hydrate-error"] = []Message{
+		{Role: "user", Content: "persisted"},
+	}
+	mem := &runtimeTestMemory{
+		hydrateErr: errors.New("hydrate failed"),
+	}
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "should not run",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	_, err := New(Config{
+		Provider:      provider,
+		Storage:       store,
+		Memory:        mem,
+		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
+	}).Run(context.Background(), RunInput{
+		RunID:      "run-memory-hydrate-error",
+		ResumeMode: ResumeFromState,
+	})
+	if err == nil {
+		t.Fatal("expected hydrate failure, got nil")
+	}
+	var memoryErr *MemoryError
+	if !errors.As(err, &memoryErr) {
+		t.Fatalf("expected memory error wrapper, got %T %v", err, err)
+	}
+	if len(provider.calls) != 0 {
+		t.Fatalf("expected provider to be skipped on hydrate failure, got %#v", provider.calls)
+	}
+}
+
+func TestRuntime_Run_DefaultContextBuildFailureReturnsMemoryError(t *testing.T) {
+	store := newRuntimeTestStorage()
+	mem := &runtimeTestMemory{
+		buildErr: errors.New("build context failed"),
+	}
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "should not run",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	_, err := New(Config{
+		Provider:      provider,
+		Storage:       store,
+		Memory:        mem,
+		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
+	}).Run(context.Background(), RunInput{
+		RunID:       "run-memory-build-error",
+		AgentID:     "agent-1",
+		Instruction: "hello",
+	})
+	if err == nil {
+		t.Fatal("expected context build failure, got nil")
+	}
+	var memoryErr *MemoryError
+	if !errors.As(err, &memoryErr) {
+		t.Fatalf("expected memory error wrapper, got %T %v", err, err)
+	}
+	if len(provider.calls) != 0 {
+		t.Fatalf("expected provider to be skipped on memory build failure, got %#v", provider.calls)
 	}
 }

@@ -314,11 +314,16 @@ func (r *DefaultRuntime) buildContext(ctx context.Context, state *RunState, ctrl
 		return event.Messages, nil
 	}
 	builder := r.contextBuilder
+	usingDefaultMemoryContext := false
 	if builder == nil {
 		builder = defaultContextBuilder(r.memory)
+		usingDefaultMemoryContext = true
 	}
 	messages, err := builder.BuildMessages(ctx, state)
 	if err != nil {
+		if usingDefaultMemoryContext {
+			return nil, wrapMemoryError(err)
+		}
 		return nil, err
 	}
 	event.Messages = cloneMessagesValue(messages)

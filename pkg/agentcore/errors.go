@@ -114,6 +114,8 @@ var (
 	ErrProviderRequired = errors.New("provider is required")
 	// ErrRunNotResumable indicates a terminal run cannot be continued.
 	ErrRunNotResumable = errors.New("run cannot be resumed from terminal state")
+	// ErrMemoryStateConflict indicates the configured memory view conflicts with authoritative transcript state.
+	ErrMemoryStateConflict = errors.New("memory state conflicts with transcript")
 	// ErrToolCallsNotImplemented indicates the runtime does not yet support tool-call loops.
 	ErrToolCallsNotImplemented = errors.New("tool call loop not implemented yet")
 )

@@ -26,11 +26,11 @@ func (a *Adapter) Hydrate(_ context.Context, state *agentcore.RunState) error {
 	transcript := compactMessages(state.Messages)
 	existing := a.store.GetMessages()
 	if len(existing) > len(transcript) {
-		return nil
+		return &agentcore.MemoryError{Err: agentcore.ErrMemoryStateConflict}
 	}
 	for i := range existing {
 		if existing[i].Role != transcript[i].Role || existing[i].Content != transcript[i].Content {
-			return nil
+			return &agentcore.MemoryError{Err: agentcore.ErrMemoryStateConflict}
 		}
 	}
 	for _, msg := range transcript[len(existing):] {
