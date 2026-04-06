@@ -1,0 +1,240 @@
+# Agentcore API Guide
+
+这份文档面向要扩展 `agentcore` 的开发者，重点解释公共接口各自负责什么，以及这些接口之间的边界关系。
+
+## 1. Runtime 入口
+
+最主要的构造入口是：
+
+```go
+runtime := agentcore.New(agentcore.Config{...})
+```
+
+`Config` 当前主要包含：
+
+- `Provider`
+- `Storage`
+- `Memory`
+- `Tools`
+- `PromptBuilder`
+- `ContextBuilder`
+- `Hooks`
+- `MaxSteps`
+- `MaxToolCallsPerStep`
+
+其中：
+
+- `Provider` 是必需的
+- 其他组件如果没有显式提供，runtime 会尽量补默认实现
+
+## 2. RunInput 与 RunResult
+
+`RunInput` 是每次执行或恢复一次 run 的公共入口：
+
+```go
+type RunInput struct {
+	RunID       string
+	AgentID     string
+	Instruction string
+	Metadata    map[string]any
+	MaxSteps    int
+	ResumeMode  ResumeMode
+}
+```
+
+建议这样理解：
+
+- `RunID`
+  同一次 run 的稳定标识；resume 时应该复用
+- `AgentID`
+  当前 agent 的稳定标识
+- `Instruction`
+  本次新增输入；是否会被追加到 transcript，取决于 `ResumeMode`
+- `Metadata`
+  附加元数据
+- `MaxSteps`
+  覆盖默认 step 上限
+- `ResumeMode`
+  定义恢复语义
+
+`RunResult` 是这次调用返回给 embedding host 的出口：
+
+- `RunCompleted`
+- `RunYielded`
+- `RunFailed`
+
+但真正用于恢复和 replay 的事实层仍然在 `Storage` 里。
+
+## 3. Provider
+
+`Provider` 负责把 runtime 已经准备好的模型请求，转换成一次稳定生成结果。
+
+```go
+type Provider interface {
+	Name() string
+	Generate(ctx context.Context, req *GenerateRequest) (*GenerateResult, error)
+}
+```
+
+适合自己实现 `Provider` 的场景：
+
+- 接 OpenAI / Anthropic / Gemini / Ollama
+- 包一层现有内部 LLM SDK
+- 在 provider 层做路由、审计、限流或重试
+
+## 4. Storage
+
+`Storage` 是 authority layer，负责保存：
+
+- 最新 run snapshot
+- append-only transcript
+
+```go
+type Storage interface {
+	LoadRun(ctx context.Context, runID string) (*RunState, error)
+	LoadMessages(ctx context.Context, runID string) ([]Message, error)
+	SaveRun(ctx context.Context, state *RunState) error
+	AppendMessages(ctx context.Context, runID string, msgs ...Message) error
+}
+```
+
+建议：
+
+- `LoadMessages` 保持追加顺序
+- `AppendMessages` 保持 append 语义，不要做覆盖
+- 即使底层用同一张表或同一份文件，也不要把 snapshot 和 transcript 混成一个公共对象
+
+## 5. Memory
+
+`Memory` 是上下文派生层，不是 authority transcript。
+
+```go
+type Memory interface {
+	Hydrate(ctx context.Context, state *RunState) error
+	ObserveMessages(ctx context.Context, state *RunState, messages ...Message) error
+	BuildContext(ctx context.Context, state *RunState) ([]Message, error)
+}
+```
+
+推荐职责拆分：
+
+- `Hydrate`
+  在 resume 或重新加载 state 后，把 transcript 同步到 memory 派生层
+- `ObserveMessages`
+  在 runtime 提交新消息后，增量更新 memory
+- `BuildContext`
+  输出最终给模型的上下文消息
+
+如果你需要 summary、recent window、recall 或 context compaction，这一层最适合承载这些能力。
+
+## 6. ToolRegistry
+
+`ToolRegistry` 暴露可用 tool schema，并执行 provider 请求的 tool call。
+
+```go
+type ToolRegistry interface {
+	ListTools(ctx context.Context) ([]ToolSchema, error)
+	ExecuteTool(ctx context.Context, call ToolCall) (*ToolResult, error)
+}
+```
+
+建议：
+
+- `ListTools` 输出保持稳定顺序
+- `ToolResult` 尽量补齐 `CallID` / `Name`
+- 工具失败直接返回原始错误，让 runtime 包装成 `ToolError`
+
+## 7. PromptBuilder 与 ContextBuilder
+
+`PromptBuilder` 负责生成 system prompt：
+
+```go
+type PromptBuilder interface {
+	BuildSystemPrompt(ctx context.Context, state *RunState) (string, error)
+}
+```
+
+`ContextBuilder` 负责生成 provider messages：
+
+```go
+type ContextBuilder interface {
+	BuildMessages(ctx context.Context, state *RunState) ([]Message, error)
+}
+```
+
+可以把它们和 `Memory` 的关系理解成：
+
+- `Memory`
+  负责上下文派生内容
+- `ContextBuilder`
+  负责这些内容如何被组织成最终 messages
+
+简单场景下，只有 `Memory` 就够了。
+只有需要更强的消息排布控制时，才需要自定义 `ContextBuilder`。
+
+## 8. Hook
+
+`Hook` 是运行时生命周期扩展点。
+
+当前主要节点：
+
+- `BeforeRun`
+- `BeforePromptBuild`
+- `BeforeContextBuild`
+- `BeforeModel`
+- `AfterModel`
+- `BeforeTool`
+- `AfterTool`
+- `AfterRun`
+- `OnError`
+
+它最适合做：
+
+- 观测
+- 审计
+- 注入 metadata
+- 轻量控制
+- 局部修改 prompt / context / tool call / tool result
+
+如果大量核心业务逻辑都只能藏在 hook 里，通常意味着核心 contract 需要升级。
+
+## 9. ResumeMode
+
+`ResumeMode` 定义恢复时是否追加新的 user input：
+
+- `ResumeFromState`
+  只从已持久化状态继续
+- `ResumeWithInput`
+  先追加一条新的 user message 再继续
+- `ResumeAuto`
+  有输入就追加，没有输入就直接继续
+
+推荐恢复流程理解为：
+
+1. 用稳定 `RunID` 找回同一次 run
+2. 加载 snapshot 与 transcript
+3. 根据 `ResumeMode` 决定是否追加新的 user message
+4. 再进入 runtime loop
+
+## 10. 错误包装
+
+runtime 会对错误做稳定分类：
+
+- `ProviderError`
+- `ToolError`
+- `HookError`
+- `StorageError`
+- `MemoryError`
+
+推荐在 embedding host 中围绕这些错误类型做统一策略，而不是依赖字符串匹配。
+
+## 11. 最小扩展路径
+
+推荐按这个顺序扩展：
+
+1. `mock + files`
+2. 自定义 `Tool`
+3. 自定义 `Hook`
+4. 跑通 `yield -> resume`
+5. 接入 `Memory`
+6. 最后接真实 `Provider` 和自定义 `Storage`

@@ -15,6 +15,10 @@ The public contracts are provider-neutral and storage-neutral so the runtime can
 be embedded into different products, CLIs, servers, or higher-level multi-agent
 systems.
 
+The package should be thought of as a runtime kernel, not a complete agent
+platform. It intentionally keeps planner, orchestration, channel integration,
+governance, and product-level memory policy out of core.
+
 Core extension points:
 
   - Provider: connect any LLM backend
@@ -37,6 +41,10 @@ Transcript semantics are explicit. When the provider returns tool calls, the
 runtime persists both the assistant tool-call message and the tool result
 message so runs can be resumed, replayed, and bridged across providers through a
 single Message contract.
+
+Resume semantics are also explicit. A stable RunID identifies the run being
+continued, and ResumeMode controls whether a new user input is appended or the
+runtime should continue strictly from persisted state.
 
 Repository-specific adapters that bridge Axon's internal packages into
 agentcore live under internal/agentcoreadapters so this package can stay

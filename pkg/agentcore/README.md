@@ -8,6 +8,12 @@
 - 通过公共接口暴露扩展点，而不是把上层产品逻辑耦合进 core
 - 保持对外可嵌入、可替换、可逐步增长
 
+当前阶段可以把它理解成：
+
+- 一个已经可用的 `v0` kernel
+- 一个强调稳定 contract 而不是大而全功能的 runtime core
+- 一个允许上层系统逐步 build on top 的独立基础包
+
 它负责任何 agent 运行都绕不开的那条核心链路：
 
 - 准备或恢复 run state
@@ -25,6 +31,74 @@
 - tracing 控制面
 - Web / API / 渠道接入
 - governance / review / evolution workflow
+
+## Status
+
+`agentcore` 当前更适合被理解为：
+
+- 可嵌入的 runtime kernel
+- 仍在持续收紧 contract 的 `v0`
+- 已经可以承接单-agent 执行闭环，但默认实现仍然保持克制
+
+这意味着：
+
+- 核心运行语义已经值得围绕它扩展
+- 边界会优先通过测试和文档逐步稳定
+- 一些“开箱即用”的默认能力还会继续补，但不会为了省几步接入成本把 kernel 做重
+
+## What You Get
+
+接入 `agentcore` 后，最小可以获得这些能力：
+
+- 稳定 `RunInput -> RunResult` 执行入口
+- `RunID + ResumeMode` 驱动的恢复模型
+- append-only transcript 与 run snapshot
+- provider-neutral 的 tool loop
+- provider、storage、memory、tools、prompt、context、hooks 的扩展面
+- 稳定错误包装类型，便于 embedding host 做统一策略
+
+如果你正在构建自己的 agent runtime，`agentcore` 更适合承担：
+
+- 单 agent 执行内核
+- transcript authority layer
+- 可测试、可替换的 runtime contract
+
+而不是承担：
+
+- 产品工作流编排器
+- planner / orchestrator / reviewer 系统
+- 渠道接入与控制面
+- 产品级长期记忆治理
+
+## Quick Start
+
+最小可运行组合通常是：
+
+- provider: `pkg/agentcore/mock`
+- storage: `pkg/agentcore/files`
+- tools: 默认空 registry
+
+下面是一个最小可运行示例：
+
+```go
+runtime := agentcore.New(agentcore.Config{
+    Provider: mock.NewProvider(mock.Final("hello")),
+    Storage:  files.NewStorage(".agentcore-runs"),
+})
+
+result, err := runtime.Run(ctx, agentcore.RunInput{
+    RunID:       "example-run",
+    AgentID:     "example-agent",
+    Instruction: "say hello",
+})
+```
+
+这个最小例子已经具备：
+
+- 稳定 `RunID`
+- 可落盘的 run snapshot
+- append-only transcript
+- 后续可继续接入 tool、hook、memory、resume
 
 ## Core Contracts
 
@@ -50,6 +124,29 @@
 
 这两个层次可以使用同一个底层系统，也可以完全分离，但语义上不应混为一谈。
 
+## Default Building Blocks
+
+`agentcore` 自己只带少量默认构件，用来帮助你以较低成本起步：
+
+- `files/`
+  文件系统存储，适合本地开发、测试和简单嵌入
+- `context/`
+  默认消息窗口上下文构建器
+- `prompt/`
+  静态 prompt builder
+- `hooks/`
+  有序 hook chain 辅助
+- `mock/`
+  provider / tool 的测试与示例实现
+
+推荐扩展顺序通常是：
+
+1. 先用 `mock + files` 跑通最小链路
+2. 再加入 `ToolRegistry` 和 `Hook`
+3. 再接入 `Memory`
+4. 只有需要更强控制时再替换 `PromptBuilder` / `ContextBuilder`
+5. 最后接真实 `Provider` 和自定义 `Storage`
+
 ## Package Layout
 
 - `.`  
@@ -72,42 +169,31 @@
 
 ## Docs
 
-- Quickstart: `docs/usage/agentcore-quickstart.md`
-- API guide: `docs/usage/agentcore-api.md`
-- Design note: `docs/usage/agentcore.md`
+- Docs index: `pkg/agentcore/docs/README.md`
+- Getting started: `pkg/agentcore/docs/getting-started.md`
+- API guide: `pkg/agentcore/docs/api.md`
 - Roadmap: `pkg/agentcore/docs/roadmap.md`
 - Examples: `examples/agentcore/`
+- Package overview: `pkg/agentcore/doc.go`
+
+在当前 Axon 仓库里，还可以继续读这些仓库级文档：
+
+- `docs/usage/agentcore-quickstart.md`
+- `docs/usage/agentcore-api.md`
+- `docs/usage/agentcore.md`
 
 推荐阅读顺序：
 
-1. Quickstart
-2. API guide
-3. `examples/agentcore/minimal`
-4. `examples/agentcore/custom`
-5. `examples/agentcore/resume`
-6. `examples/agentcore/bridge`
-
-## Quick Example
-
-```go
-runtime := agentcore.New(agentcore.Config{
-    Provider: mock.NewProvider(mock.Final("hello")),
-    Storage:  files.NewStorage(".agentcore-runs"),
-})
-
-result, err := runtime.Run(ctx, agentcore.RunInput{
-    RunID:       "example-run",
-    AgentID:     "example-agent",
-    Instruction: "say hello",
-})
-```
-
-这个最小例子已经具备：
-
-- 稳定 `RunID`
-- 可落盘的 run snapshot
-- append-only transcript
-- 后续可继续接入 tool、hook、memory、resume
+1. `pkg/agentcore/README.md`
+2. `pkg/agentcore/docs/README.md`
+3. `pkg/agentcore/docs/getting-started.md`
+4. `pkg/agentcore/docs/api.md`
+5. `pkg/agentcore/doc.go`
+6. `examples/agentcore/minimal`
+7. `examples/agentcore/custom`
+8. `examples/agentcore/resume`
+9. `examples/agentcore/bridge`
+10. `pkg/agentcore/docs/roadmap.md`
 
 ## Memory And Context
 
@@ -140,7 +226,7 @@ type Memory interface {
 2. 再把 `Memory` 当作上下文派生层接进来
 3. 只有当你需要特殊 message 组装时，再自定义 `ContextBuilder`
 
-## Resume Example
+## Resume Model
 
 `agentcore` 的恢复模型基于稳定 `RunID` 和显式 `ResumeMode`：
 
@@ -150,6 +236,12 @@ type Memory interface {
   明确表示“恢复时再追加一条新的 user input”。
 - `ResumeAuto`
   采用默认语义：有非空 `Instruction` 时追加新 user message；没有 `Instruction` 时直接从已有 state 继续。
+
+恢复时最重要的判断标准是：
+
+- 想“严格从暂停点继续” -> `ResumeFromState`
+- 想“继续执行前追加一条新的人工输入” -> `ResumeWithInput`
+- 想“默认有输入就追加、没输入就直接继续” -> `ResumeAuto`
 
 ```go
 first, err := runtime.Run(ctx, agentcore.RunInput{
@@ -200,6 +292,23 @@ go run ./examples/agentcore/bridge
 - `bridge`
   关注 internal adapter 桥接
 
+## Transcript Contract
+
+`agentcore` 当前最关键的稳定语义之一是 transcript。
+
+一次完整 tool 交互会持久化：
+
+1. `assistant(tool_call)`
+2. `tool(result)`
+
+而不只是最终工具输出。
+
+这保证了：
+
+- resume 时 provider 能看到完整上下文
+- replay 时不会丢失模型当时的工具决策
+- 不同 provider / adapter 可以围绕统一的 `Message` 契约工作
+
 ## Axon Internal Adapters
 
 如果你想桥接 Axon 仓库当前内部实现，请看：
@@ -227,3 +336,15 @@ go run ./examples/agentcore/bridge
 
 也就是说，它不应该依赖仓库的 `internal/*` 作为公共能力前提；
 internal 侧应通过 adapter 使用它，而不是反过来让 `agentcore` 依赖 internal。
+
+更具体一点说，未来对外发布时更应该承诺的是：
+
+- 稳定的 runtime contract
+- 清晰的 transcript / resume 语义
+- 少量但可靠的默认构件
+
+而不是：
+
+- 绑定某个具体 provider
+- 绑定某个具体存储后端
+- 绑定 Axon 内部运行时实现
