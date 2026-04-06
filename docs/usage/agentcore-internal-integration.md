@@ -12,7 +12,8 @@
 - `internal/tools`
   - 可以通过 `internal/agentcoreadapters/internaltools` 接入
 - `internal/memory`
-  - 还不能直接作为 `agentcore.Storage` 使用
+  - 不应作为 `agentcore.Storage` 使用
+  - 现在更适合作为 `agentcore.Memory` 接入
 - `internal/agent`
   - 已新增最小 `AgentcoreRunner` 桥接层，但默认执行路径仍保留旧 loop
 - `internal/orchestrator`
@@ -59,7 +60,7 @@
 
 ## 2. 当前还不满足直接接入的部分
 
-### 2.1 `internal/memory` 不是 `agentcore.Storage`
+### 2.1 `internal/memory` 不是 `agentcore.Storage`，但现在可以作为 `agentcore.Memory`
 
 `agentcore.Storage` 的核心职责是：
 
@@ -84,7 +85,29 @@
 
 所以当前不能简单说“`internal/memory` 已经可以作为 `agentcore` 的 storage”。如果要接，需要额外做一层新的 run-state persistence 适配，而不是直接复用现有 `memory.Store`。
 
-### 2.2 `internal/agent` 已有最小 bridge，但旧 `ReactRunner` 仍并存
+但 `internal/memory.Store` 非常适合桥接到 `agentcore.Memory`：
+
+- `GetContext`
+  对应 `Memory.BuildContext`
+- 会话消息追加
+  对应 `Memory.ObserveMessages`
+- 已持久化 transcript 重新加载后的对齐
+  对应 `Memory.Hydrate`
+
+当前仓库已经新增：
+
+- `internal/agentcoreadapters/internalmemory`
+
+用来把 `internal/memory.Store` 接到 `agentcore.Memory` 上。
+
+这也让边界更清晰了：
+
+- `agentcore.Storage`
+  保存 authoritative run state / transcript
+- `agentcore.Memory`
+  构造 model-facing context
+
+### 2.2 `internal/agent` 已有 bridge，且恢复语义开始对齐 `agentcore`
 
 当前 `internal/agent/runner.go` 里，`ReactRunner` 自己负责：
 
@@ -100,7 +123,18 @@
 所以现状更准确的说法是：
 
 - `internal/agent` 已经可以通过 `AgentcoreRunner` 把 `LLM`、`Tools`、`Soul`、`Storage` 映射到 `agentcore.Config`
+- 同时也已经把 `Memory` 映射到 `agentcore.Memory`
 - 但默认实现仍未完全收敛到单一 runtime
+
+另外，`AgentcoreRunner` 的恢复语义也已开始收敛到 `agentcore` 的公共模型：
+
+- 首次运行使用 `RunID + Instruction`
+- yield 后的继续运行复用同一个 `RunID`
+- 外部 `Resume()` 不再只是本地 memory 标记，而是会在下一次 `Run()` 时映射为：
+  - `ResumeFromState`
+  - 或 `ResumeWithInput`
+
+这意味着 internal 的 `Runner` 接口已经不再只是“看起来像能恢复”，而是开始真实复用 `agentcore` 的恢复机制。
 
 ### 2.3 `internal/orchestrator` 已支持选择性切换
 
@@ -168,7 +202,7 @@
 
 这是当前已经具备的阶段。
 
-### 阶段 2：抽出 internal 的 run-state persistence
+### 阶段 2：抽出 internal 的 run-state persistence，并分离 memory/context 层
 
 补一层适配，满足 `agentcore.Storage`：
 
@@ -177,6 +211,12 @@
 - resume 所需状态
 
 这一层不应该直接等同于 `internal/memory.Store`。
+
+同时保留一条独立的 memory 接入层，满足 `agentcore.Memory`：
+
+- message observe
+- resume hydrate
+- context recall / summary
 
 ### 阶段 3：继续让 `internal/agent` 退化为“角色/配置模型”
 
@@ -212,7 +252,7 @@
   - 只放公共 contract、默认实现、纯公共辅助包
 - `internal/agentcoreadapters`
   - 放仓库内部桥接层
-  - 允许依赖 `internal/llm`、`internal/tools`
+  - 允许依赖 `internal/llm`、`internal/tools`、`internal/memory`
 - `internal/agent`
   - 逐步退化为更高层 agent 角色与配置模型
 - `internal/orchestrator`

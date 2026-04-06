@@ -12,6 +12,7 @@ import (
 	"github.com/inhere/axon/internal/llm"
 	"github.com/inhere/axon/internal/tools"
 	"github.com/inhere/axon/internal/tracing"
+	"github.com/inhere/axon/pkg/agentcore"
 )
 
 type coreEchoTool struct{}
@@ -385,7 +386,8 @@ func TestAgentcoreRunner_Run_ManualStepThrough(t *testing.T) {
 		_ = store.Close()
 	})
 
-	mock := llm.NewMockProvider("manual")
+	mock := llm.NewMockProvider("manual").
+		QueueToolCall("echo", map[string]any{"msg": "ping"})
 	a := newTestAgent(mock, newTestRegistry(&coreEchoTool{}))
 	runner := agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
 		Storage:  store,
@@ -443,5 +445,130 @@ func TestAgentcoreRunner_Run_ManualStepThrough(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timeout")
+	}
+}
+
+type yieldBeforeSecondModelAgentHook struct {
+	agentcore.NopHook
+	beforeModelCalls int
+}
+
+func (h *yieldBeforeSecondModelAgentHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
+	h.beforeModelCalls++
+	if h.beforeModelCalls == 2 {
+		ctrl.Yield("await_resume", map[string]any{"step": "after_tool"})
+	}
+	return nil
+}
+
+func TestAgentcoreRunner_Run_CanResumeYieldedRunFromState(t *testing.T) {
+	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	if err != nil {
+		t.Fatalf("expected sqlite storage to initialize, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	hook := &yieldBeforeSecondModelAgentHook{}
+	mock := llm.NewMockProvider("mock").
+		QueueToolCall("echo", map[string]any{"msg": "persisted"}).
+		QueueText("completed after resume")
+
+	a := newTestAgent(mock, newTestRegistry(&coreEchoTool{}))
+	runner := agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
+		Storage:  store,
+		MaxSteps: 5,
+		Hooks:    []agentcore.Hook{hook},
+	})
+
+	firstResult, err := runner.Run(context.Background(), newTask("resume from state"))
+	if err != nil {
+		t.Fatalf("first Run() error: %v", err)
+	}
+	if runner.GetState() != agent.AgentSuspended {
+		t.Fatalf("state after first run = %s, want suspended", runner.GetState())
+	}
+	if firstResult.Summary != "await_resume" {
+		t.Fatalf("summary = %q, want yield reason", firstResult.Summary)
+	}
+
+	secondResult, err := runner.Run(context.Background(), newTask("resume from state"))
+	if err != nil {
+		t.Fatalf("second Run() error: %v", err)
+	}
+	if secondResult.Output != "completed after resume" {
+		t.Fatalf("output = %q, want resumed completion", secondResult.Output)
+	}
+	if runner.GetState() != agent.AgentCompleted {
+		t.Fatalf("state after resume = %s, want completed", runner.GetState())
+	}
+	if mock.CallCount() != 2 {
+		t.Fatalf("LLM called %d times, want 2 total across yield + resume", mock.CallCount())
+	}
+}
+
+func TestAgentcoreRunner_Resume_UsesInstructionOnNextRun(t *testing.T) {
+	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	if err != nil {
+		t.Fatalf("expected sqlite storage to initialize, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	hook := &yieldBeforeSecondModelAgentHook{}
+	mock := llm.NewMockProvider("manual").
+		QueueToolCall("echo", map[string]any{"msg": "ping"})
+	a := newTestAgent(mock, newTestRegistry(&coreEchoTool{}))
+	runner := agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
+		Storage:  store,
+		MaxSteps: 5,
+		Hooks:    []agentcore.Hook{hook},
+	})
+
+	firstResult, err := runner.Run(context.Background(), newTask("resume with instruction"))
+	if err != nil {
+		t.Fatalf("first Run() error: %v", err)
+	}
+	if firstResult.Summary != "await_resume" {
+		t.Fatalf("first result summary = %q, want yield reason", firstResult.Summary)
+	}
+	if runner.GetState() != agent.AgentSuspended {
+		t.Fatalf("state after yield = %s, want suspended", runner.GetState())
+	}
+
+	if err := runner.Resume("Please finish using the persisted tool result."); err != nil {
+		t.Fatalf("Resume() error: %v", err)
+	}
+
+	secondDone := make(chan parityRunOutcome, 1)
+	go func() {
+		r, runErr := runner.Run(context.Background(), newTask("resume with instruction"))
+		secondDone <- parityRunOutcome{result: r, err: runErr}
+	}()
+
+	req2, reply2, err := mock.WaitForCall(context.Background())
+	if err != nil {
+		t.Fatalf("second WaitForCall error: %v", err)
+	}
+	foundHumanInstruction := false
+	for _, msg := range req2.Messages {
+		if msg.Role == "user" && msg.Content == "Please finish using the persisted tool result." {
+			foundHumanInstruction = true
+			break
+		}
+	}
+	if !foundHumanInstruction {
+		t.Fatalf("second request messages = %#v, want resume instruction in model input", req2.Messages)
+	}
+	reply2(llm.MockResponse{Content: "done after instruction"})
+
+	outcome := waitAgentcoreOutcome(t, secondDone)
+	if outcome.err != nil {
+		t.Fatalf("second Run() error: %v", outcome.err)
+	}
+	if outcome.result.Output != "done after instruction" {
+		t.Fatalf("output = %q, want resumed completion", outcome.result.Output)
 	}
 }

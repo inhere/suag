@@ -30,10 +30,14 @@ type AgentcoreRunnerConfig struct {
 
 // AgentcoreRunner executes an internal agent by delegating the core loop to agentcore.
 type AgentcoreRunner struct {
-	agent   *Agent
-	runtime agentcore.Runtime
-	sm      *stateMachine
-	cfg     AgentcoreRunnerConfig
+	agent              *Agent
+	runtime            agentcore.Runtime
+	sm                 *stateMachine
+	cfg                AgentcoreRunnerConfig
+	lastRunID          string
+	resumeMode         agentcore.ResumeMode
+	pendingResumeInput string
+	hasPendingResume   bool
 }
 
 // BuildAgentcoreConfig maps an internal Agent plus runner config to a public agentcore.Config.
@@ -92,15 +96,30 @@ func (r *AgentcoreRunner) Run(ctx context.Context, task *Task) (*TaskResult, err
 	if runID == "" {
 		runID = fmt.Sprintf("task-%d", time.Now().UnixNano())
 	}
+	inputInstruction := task.Description
+	resumeMode := agentcore.ResumeAuto
+	if strings.TrimSpace(r.lastRunID) != "" {
+		runID = r.lastRunID
+	}
+	if r.hasPendingResume {
+		resumeMode = r.resumeMode
+		inputInstruction = r.pendingResumeInput
+	} else if r.GetState() == AgentSuspended && strings.TrimSpace(r.lastRunID) != "" {
+		resumeMode = agentcore.ResumeFromState
+		inputInstruction = ""
+	}
+	r.lastRunID = runID
 
 	result, err := r.runtime.Run(ctx, agentcore.RunInput{
 		RunID:       runID,
 		AgentID:     r.agent.ID,
-		Instruction: task.Description,
+		Instruction: inputInstruction,
 		Metadata:    buildRunMetadata(r.agent, task),
 		MaxSteps:    normalizeMaxSteps(r.cfg.MaxSteps),
+		ResumeMode:  resumeMode,
 	})
 	if err != nil {
+		r.clearPendingResume()
 		_ = r.sm.Transition(AgentFailed)
 		r.agent.State = AgentFailed
 		return nil, err
@@ -108,6 +127,7 @@ func (r *AgentcoreRunner) Run(ctx context.Context, task *Task) (*TaskResult, err
 
 	switch result.Status {
 	case agentcore.RunCompleted:
+		r.clearPendingResume()
 		_ = r.sm.Transition(AgentCompleted)
 		r.agent.State = AgentCompleted
 		return &TaskResult{
@@ -116,6 +136,9 @@ func (r *AgentcoreRunner) Run(ctx context.Context, task *Task) (*TaskResult, err
 			Output:  result.Output,
 		}, nil
 	case agentcore.RunYielded:
+		r.resumeMode = agentcore.ResumeFromState
+		r.pendingResumeInput = ""
+		r.hasPendingResume = false
 		_ = r.sm.Transition(AgentSuspended)
 		r.agent.State = AgentSuspended
 		yieldReason := ""
@@ -162,14 +185,23 @@ func (r *AgentcoreRunner) Resume(instruction string) error {
 	if r == nil || r.sm == nil || r.agent == nil {
 		return fmt.Errorf("agentcore runner is not initialized")
 	}
-	if err := r.sm.Transition(AgentRunning); err != nil {
-		return err
+	instruction = strings.TrimSpace(instruction)
+	if instruction != "" {
+		r.resumeMode = agentcore.ResumeWithInput
+		r.pendingResumeInput = instruction
+		r.hasPendingResume = true
+		return nil
 	}
-	r.agent.State = AgentRunning
-	if strings.TrimSpace(instruction) != "" && r.agent.Memory != nil {
-		r.agent.Memory.AddMessage("system", "[Human instruction]: "+instruction)
-	}
+	r.resumeMode = agentcore.ResumeFromState
+	r.pendingResumeInput = ""
+	r.hasPendingResume = true
 	return nil
+}
+
+func (r *AgentcoreRunner) clearPendingResume() {
+	r.resumeMode = agentcore.ResumeAuto
+	r.pendingResumeInput = ""
+	r.hasPendingResume = false
 }
 
 func resolvePromptBuilder(a *Agent, builder agentcore.PromptBuilder) agentcore.PromptBuilder {
