@@ -16,6 +16,12 @@ type MemoryFirstConfig struct {
 	MaxMessages int
 }
 
+// MemoryThenRecentConfig controls the appended transcript window for the
+// memory-then-recent preset.
+type MemoryThenRecentConfig struct {
+	MaxMessages int
+}
+
 // DefaultBuilder assembles recent run messages for model context.
 type DefaultBuilder struct {
 	MaxMessages int
@@ -40,6 +46,15 @@ func TranscriptWindow(cfg WindowConfig) agentcore.ContextBuilder {
 // falls back to transcript window only when memory is nil.
 func MemoryFirst(mem agentcore.Memory, cfg MemoryFirstConfig) agentcore.ContextBuilder {
 	return memoryFirstBuilder{
+		mem:         mem,
+		maxMessages: cfg.MaxMessages,
+	}
+}
+
+// MemoryThenRecent returns a first-party preset that uses memory output first
+// and then appends a recent transcript window without deduplicating messages.
+func MemoryThenRecent(mem agentcore.Memory, cfg MemoryThenRecentConfig) agentcore.ContextBuilder {
+	return memoryThenRecentBuilder{
 		mem:         mem,
 		maxMessages: cfg.MaxMessages,
 	}
@@ -78,4 +93,31 @@ func (b memoryFirstBuilder) BuildMessages(ctx context.Context, state *agentcore.
 		return transcriptWindowBuilder{maxMessages: b.maxMessages}.BuildMessages(ctx, state)
 	}
 	return b.mem.BuildContext(ctx, state)
+}
+
+type memoryThenRecentBuilder struct {
+	mem         agentcore.Memory
+	maxMessages int
+}
+
+func (b memoryThenRecentBuilder) BuildMessages(ctx context.Context, state *agentcore.RunState) ([]agentcore.Message, error) {
+	recent, err := transcriptWindowBuilder{maxMessages: b.maxMessages}.BuildMessages(ctx, state)
+	if err != nil {
+		return nil, err
+	}
+	if b.mem == nil {
+		return recent, nil
+	}
+
+	messages, err := b.mem.BuildContext(ctx, state)
+	if err != nil {
+		return nil, err
+	}
+	if len(messages) == 0 {
+		return recent, nil
+	}
+	out := make([]agentcore.Message, 0, len(messages)+len(recent))
+	out = append(out, messages...)
+	out = append(out, recent...)
+	return out, nil
 }

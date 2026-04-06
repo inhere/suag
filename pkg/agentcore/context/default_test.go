@@ -131,6 +131,76 @@ func TestMemoryFirst_PropagatesMemoryErrors(t *testing.T) {
 	}
 }
 
+func TestMemoryThenRecent_AppendsRecentTranscriptAfterMemory(t *testing.T) {
+	mem := &contextTestMemory{
+		context: []agentcore.Message{{Role: "system", Content: "from-memory"}},
+	}
+	state := &agentcore.RunState{
+		Messages: []agentcore.Message{
+			{Role: "user", Content: "message-1"},
+			{Role: "assistant", Content: "message-2"},
+			{Role: "user", Content: "message-3"},
+			{Role: "assistant", Content: "message-4"},
+		},
+	}
+	builder := builderctx.MemoryThenRecent(mem, builderctx.MemoryThenRecentConfig{MaxMessages: 2})
+
+	msgs, err := builder.BuildMessages(stdctx.Background(), state)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected memory + 2 recent transcript messages, got %#v", msgs)
+	}
+	if msgs[0].Content != "from-memory" {
+		t.Fatalf("expected memory message first, got %#v", msgs)
+	}
+	if msgs[1].Content != "message-3" || msgs[2].Content != "message-4" {
+		t.Fatalf("expected recent transcript window after memory output, got %#v", msgs)
+	}
+}
+
+func TestMemoryThenRecent_UsesTranscriptWindowWhenMemoryNil(t *testing.T) {
+	builder := builderctx.MemoryThenRecent(nil, builderctx.MemoryThenRecentConfig{MaxMessages: 2})
+
+	msgs, err := builder.BuildMessages(stdctx.Background(), stateWithMessages(4))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected transcript fallback, got %#v", msgs)
+	}
+	if msgs[0].Content != "message-3" || msgs[1].Content != "message-4" {
+		t.Fatalf("expected transcript fallback to preserve latest messages, got %#v", msgs)
+	}
+}
+
+func TestMemoryThenRecent_DoesNotDeduplicateMessages(t *testing.T) {
+	mem := &contextTestMemory{
+		context: []agentcore.Message{{Role: "user", Content: "message-4"}},
+	}
+	state := &agentcore.RunState{
+		Messages: []agentcore.Message{
+			{Role: "user", Content: "message-1"},
+			{Role: "assistant", Content: "message-2"},
+			{Role: "user", Content: "message-3"},
+			{Role: "user", Content: "message-4"},
+		},
+	}
+	builder := builderctx.MemoryThenRecent(mem, builderctx.MemoryThenRecentConfig{MaxMessages: 2})
+
+	msgs, err := builder.BuildMessages(stdctx.Background(), state)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected duplicate content to be preserved, got %#v", msgs)
+	}
+	if msgs[0].Content != "message-4" || msgs[2].Content != "message-4" {
+		t.Fatalf("expected duplicate content from memory and transcript to remain, got %#v", msgs)
+	}
+}
+
 func stateWithMessages(count int) *agentcore.RunState {
 	state := &agentcore.RunState{
 		RunID:    "run-1",

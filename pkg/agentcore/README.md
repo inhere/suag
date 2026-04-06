@@ -267,12 +267,20 @@ builder := context.MemoryFirst(mem, context.MemoryFirstConfig{
 })
 ```
 
+```go
+builder := context.MemoryThenRecent(mem, context.MemoryThenRecentConfig{
+    MaxMessages: 6,
+})
+```
+
 其中：
 
 - `TranscriptWindow`
   适合 transcript-only 场景
 - `MemoryFirst`
   适合默认 `WorkingMemory` 路径
+- `MemoryThenRecent`
+  适合希望先使用 memory，再显式追加最近原始消息的场景
 
 ## Resume Model
 

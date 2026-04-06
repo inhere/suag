@@ -124,11 +124,13 @@ func main() {
 
 - `context.TranscriptWindow(...)`
 - `context.MemoryFirst(...)`
+- `context.MemoryThenRecent(...)`
 
 推荐理解为：
 
 - 没有 memory 时，先用 `TranscriptWindow`
 - 有默认 `WorkingMemory` 时，优先用 `MemoryFirst`
+- 如果你想保留 summary/derived context 再显式补最近几条原始消息，用 `MemoryThenRecent`
 
 ## 6. 下一步看哪里
 

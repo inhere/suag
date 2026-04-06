@@ -186,11 +186,13 @@ type ContextBuilder interface {
 
 - `context.TranscriptWindow(...)`
 - `context.MemoryFirst(...)`
+- `context.MemoryThenRecent(...)`
 
 它们分别覆盖：
 
 - transcript-only 路径
 - default memory 路径
+- memory + recent transcript 路径
 
 ## 8. Hook
 
