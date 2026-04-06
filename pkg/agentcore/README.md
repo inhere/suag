@@ -133,7 +133,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - `memory/`
   第一方默认 memory 实现，提供 summary slot 与 recent transcript window
 - `context/`
-  默认消息窗口上下文构建器
+  第一方 context presets，例如 transcript-only 与 memory-first
 - `prompt/`
   静态 prompt builder
 - `hooks/`
@@ -146,7 +146,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 1. 先用 `mock + files` 跑通最小链路
 2. 再加入 `ToolRegistry` 和 `Hook`
 3. 如果不想自己从零实现 memory，先接入 `pkg/agentcore/memory`
-4. 只有需要更强控制时再替换 `PromptBuilder` / `ContextBuilder`
+4. 默认 `ContextBuilder` 优先从 `pkg/agentcore/context` 的 presets 起步
 5. 最后接真实 `Provider` 和自定义 `Storage`
 
 ## Package Layout
@@ -158,7 +158,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - `memory/`  
   Default working-memory implementation
 - `context/`  
-  Default message-window context builder
+  First-party context presets and default message-window builder
 - `prompt/`  
   Static prompt builder
 - `hooks/`  
@@ -178,6 +178,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - API guide: `pkg/agentcore/docs/api.md`
 - Embedding patterns: `pkg/agentcore/docs/embedding-patterns.md`
 - Working memory design: `pkg/agentcore/docs/working-memory-design.md`
+- Context presets design: `pkg/agentcore/docs/context-presets-design.md`
 - Roadmap: `pkg/agentcore/docs/roadmap.md`
 - Examples: `examples/agentcore/`
 - Package overview: `pkg/agentcore/doc.go`
@@ -196,12 +197,13 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 4. `pkg/agentcore/docs/api.md`
 5. `pkg/agentcore/docs/embedding-patterns.md`
 6. `pkg/agentcore/docs/working-memory-design.md`
-7. `pkg/agentcore/doc.go`
-8. `examples/agentcore/minimal`
-9. `examples/agentcore/custom`
-10. `examples/agentcore/resume`
-11. `examples/agentcore/bridge`
-12. `pkg/agentcore/docs/roadmap.md`
+7. `pkg/agentcore/docs/context-presets-design.md`
+8. `pkg/agentcore/doc.go`
+9. `examples/agentcore/minimal`
+10. `examples/agentcore/custom`
+11. `examples/agentcore/resume`
+12. `examples/agentcore/bridge`
+13. `pkg/agentcore/docs/roadmap.md`
 
 ## Memory And Context
 
@@ -232,7 +234,8 @@ type Memory interface {
 
 1. 先把 `Storage` 当作事实层跑通
 2. 再把 `pkg/agentcore/memory` 当作默认上下文派生层接进来
-3. 只有当你需要特殊 message 组装时，再自定义 `ContextBuilder`
+3. 先尝试 `pkg/agentcore/context` 的第一方 presets
+4. 只有当你需要特殊 message 组装时，再自定义 `ContextBuilder`
 
 如果你只需要一个最小但可用的默认 memory，可以直接这样起步：
 
@@ -249,6 +252,27 @@ mem.SetSummary("User is debugging agentcore resume behavior.")
 - summary slot
 - recent transcript window
 - 可配置的 system/tool 消息过滤
+
+如果你希望直接使用第一方 context 组合，可以从这些入口开始：
+
+```go
+builder := context.TranscriptWindow(context.WindowConfig{
+    MaxMessages: 20,
+})
+```
+
+```go
+builder := context.MemoryFirst(mem, context.MemoryFirstConfig{
+    MaxMessages: 12,
+})
+```
+
+其中：
+
+- `TranscriptWindow`
+  适合 transcript-only 场景
+- `MemoryFirst`
+  适合默认 `WorkingMemory` 路径
 
 ## Resume Model
 

@@ -14,7 +14,9 @@
    直接嵌入与 adapter 桥接两种常见接法
 5. `working-memory-design.md`
    下一轮默认 memory kernel 演进设计
-6. `roadmap.md`
+6. `context-presets-design.md`
+   下一轮默认 context 组合演进设计
+7. `roadmap.md`
    后续演进路线
 
 ## 这组文档回答什么问题
@@ -26,6 +28,7 @@
 - 如何理解 transcript、resume、memory 等核心语义
 - 如何围绕公共 contract 做扩展
 - 下一轮 kernel 演进准备做什么
+- 默认 builder 组合下一步怎么长
 
 ## 相关示例
 

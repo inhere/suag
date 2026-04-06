@@ -182,6 +182,16 @@ type ContextBuilder interface {
 简单场景下，只有 `Memory` 就够了。
 只有需要更强的消息排布控制时，才需要自定义 `ContextBuilder`。
 
+如果你只是想直接使用第一方默认组合，而不是自己写 builder，当前可以看：
+
+- `context.TranscriptWindow(...)`
+- `context.MemoryFirst(...)`
+
+它们分别覆盖：
+
+- transcript-only 路径
+- default memory 路径
+
 ## 8. Hook
 
 `Hook` 是运行时生命周期扩展点。

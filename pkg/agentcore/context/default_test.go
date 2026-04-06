@@ -2,12 +2,36 @@ package context_test
 
 import (
 	stdctx "context"
+	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/inhere/axon/pkg/agentcore"
 	builderctx "github.com/inhere/axon/pkg/agentcore/context"
 )
+
+type contextTestMemory struct {
+	context  []agentcore.Message
+	buildErr error
+}
+
+func (m *contextTestMemory) Hydrate(stdctx.Context, *agentcore.RunState) error { return nil }
+
+func (m *contextTestMemory) ObserveMessages(stdctx.Context, *agentcore.RunState, ...agentcore.Message) error {
+	return nil
+}
+
+func (m *contextTestMemory) BuildContext(stdctx.Context, *agentcore.RunState) ([]agentcore.Message, error) {
+	if m.buildErr != nil {
+		return nil, m.buildErr
+	}
+	if len(m.context) == 0 {
+		return nil, nil
+	}
+	msgs := make([]agentcore.Message, len(m.context))
+	copy(msgs, m.context)
+	return msgs, nil
+}
 
 func TestDefaultContextBuilder_Truncates(t *testing.T) {
 	builder := builderctx.DefaultBuilder{MaxMessages: 3}
@@ -21,6 +45,89 @@ func TestDefaultContextBuilder_Truncates(t *testing.T) {
 	}
 	if msgs[0].Content != "message-3" || msgs[2].Content != "message-5" {
 		t.Fatalf("expected the latest messages, got %#v", msgs)
+	}
+}
+
+func TestTranscriptWindow_TruncatesLatestMessages(t *testing.T) {
+	builder := builderctx.TranscriptWindow(builderctx.WindowConfig{MaxMessages: 2})
+
+	msgs, err := builder.BuildMessages(stdctx.Background(), stateWithMessages(4))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %#v", msgs)
+	}
+	if msgs[0].Content != "message-3" || msgs[1].Content != "message-4" {
+		t.Fatalf("expected the last 2 messages, got %#v", msgs)
+	}
+}
+
+func TestTranscriptWindow_ReturnsCopies(t *testing.T) {
+	state := stateWithMessages(2)
+	builder := builderctx.TranscriptWindow(builderctx.WindowConfig{})
+
+	msgs, err := builder.BuildMessages(stdctx.Background(), state)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	msgs[0].Content = "mutated"
+
+	if state.Messages[0].Content != "message-1" {
+		t.Fatalf("expected original state to remain unchanged, got %#v", state.Messages)
+	}
+}
+
+func TestMemoryFirst_UsesMemoryWhenPresent(t *testing.T) {
+	mem := &contextTestMemory{
+		context: []agentcore.Message{{Role: "system", Content: "from-memory"}},
+	}
+	builder := builderctx.MemoryFirst(mem, builderctx.MemoryFirstConfig{MaxMessages: 2})
+
+	msgs, err := builder.BuildMessages(stdctx.Background(), stateWithMessages(4))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(msgs) != 1 || msgs[0].Content != "from-memory" {
+		t.Fatalf("expected memory output to win, got %#v", msgs)
+	}
+}
+
+func TestMemoryFirst_FallsBackOnlyWhenMemoryNil(t *testing.T) {
+	builder := builderctx.MemoryFirst(nil, builderctx.MemoryFirstConfig{MaxMessages: 2})
+
+	msgs, err := builder.BuildMessages(stdctx.Background(), stateWithMessages(4))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected fallback transcript window, got %#v", msgs)
+	}
+	if msgs[0].Content != "message-3" || msgs[1].Content != "message-4" {
+		t.Fatalf("expected latest transcript messages, got %#v", msgs)
+	}
+}
+
+func TestMemoryFirst_DoesNotFallbackOnEmptyMemoryContext(t *testing.T) {
+	mem := &contextTestMemory{}
+	builder := builderctx.MemoryFirst(mem, builderctx.MemoryFirstConfig{MaxMessages: 2})
+
+	msgs, err := builder.BuildMessages(stdctx.Background(), stateWithMessages(4))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if msgs != nil {
+		t.Fatalf("expected empty memory result to be preserved, got %#v", msgs)
+	}
+}
+
+func TestMemoryFirst_PropagatesMemoryErrors(t *testing.T) {
+	mem := &contextTestMemory{buildErr: errors.New("memory failed")}
+	builder := builderctx.MemoryFirst(mem, builderctx.MemoryFirstConfig{})
+
+	_, err := builder.BuildMessages(stdctx.Background(), stateWithMessages(1))
+	if err == nil || err.Error() != "memory failed" {
+		t.Fatalf("expected memory error to be returned, got %v", err)
 	}
 }
 

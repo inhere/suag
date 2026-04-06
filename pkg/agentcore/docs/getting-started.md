@@ -120,6 +120,16 @@ func main() {
 
 它适合作为默认起点，再逐步演进成更强的自定义 memory。
 
+对应的第一方 context 组合入口是：
+
+- `context.TranscriptWindow(...)`
+- `context.MemoryFirst(...)`
+
+推荐理解为：
+
+- 没有 memory 时，先用 `TranscriptWindow`
+- 有默认 `WorkingMemory` 时，优先用 `MemoryFirst`
+
 ## 6. 下一步看哪里
 
 - API guide: `pkg/agentcore/docs/api.md`
