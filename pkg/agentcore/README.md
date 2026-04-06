@@ -69,6 +69,7 @@
 - Quickstart: `docs/usage/agentcore-quickstart.md`
 - API guide: `docs/usage/agentcore-api.md`
 - Design note: `docs/usage/agentcore.md`
+- Roadmap: `pkg/agentcore/docs/roadmap.md`
 - Examples: `examples/agentcore/`
 
 ## Quick Example
