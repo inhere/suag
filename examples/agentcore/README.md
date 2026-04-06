@@ -6,6 +6,8 @@
   - 用 `mock + files` 跑通最小 runtime
 - `custom`
   - 自定义 tool 和 hook，展示常见扩展路径
+- `memory`
+  - 演示第一方 `WorkingMemory` 如何构建 `summary + recent window` 上下文
 - `resume`
   - 演示 `yield -> resume` 的最小恢复链路
 - `bridge`
@@ -16,9 +18,15 @@
 ```bash
 go run ./examples/agentcore/minimal
 go run ./examples/agentcore/custom
+go run ./examples/agentcore/memory
 go run ./examples/agentcore/resume
 go run ./examples/agentcore/bridge
 ```
+
+其中 `memory` 示例重点展示两件事：
+
+- 从已持久化 transcript hydrate 第一方 `WorkingMemory`
+- 用 summary + recent window 构建模型上下文
 
 其中 `resume` 示例重点展示两件事：
 
