@@ -158,3 +158,104 @@ func TestWorkingMemory_BuildContext_UsesCustomSummaryInjector(t *testing.T) {
 		t.Fatalf("custom summary message = %#v, want custom injector output", msgs[0])
 	}
 }
+
+func TestWorkingMemory_ObserveMessages_AppendsInOrderAndTruncates(t *testing.T) {
+	mem := memorypkg.New(memorypkg.Config{
+		MaxRecentMessages:   3,
+		IncludeToolMessages: true,
+	})
+
+	if err := mem.Hydrate(context.Background(), &agentcore.RunState{
+		Messages: []agentcore.Message{
+			{Role: "user", Content: "one"},
+			{Role: "assistant", Content: "two"},
+		},
+	}); err != nil {
+		t.Fatalf("Hydrate() error = %v", err)
+	}
+
+	err := mem.ObserveMessages(context.Background(), nil,
+		agentcore.Message{Role: "assistant", ToolCall: &agentcore.ToolCall{CallID: "call-1", Name: "lookup"}},
+		agentcore.Message{Role: "tool", ToolResult: &agentcore.ToolResult{CallID: "call-1", Name: "lookup", Content: "result"}},
+		agentcore.Message{Role: "assistant", Content: "final"},
+	)
+	if err != nil {
+		t.Fatalf("ObserveMessages() error = %v", err)
+	}
+
+	msgs, err := mem.BuildContext(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("BuildContext() error = %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("context messages = %#v, want last 3 observed messages", msgs)
+	}
+	if msgs[0].Role != "assistant" || msgs[0].ToolCall == nil || msgs[0].ToolCall.Name != "lookup" {
+		t.Fatalf("first observed message = %#v, want assistant tool call", msgs[0])
+	}
+	if msgs[1].Role != "tool" || msgs[1].ToolResult == nil || msgs[1].ToolResult.Content != "result" {
+		t.Fatalf("second observed message = %#v, want tool result", msgs[1])
+	}
+	if msgs[2].Role != "assistant" || msgs[2].Content != "final" {
+		t.Fatalf("third observed message = %#v, want final assistant output", msgs[2])
+	}
+}
+
+func TestWorkingMemory_ObserveMessages_MatchesHydrateSemantics(t *testing.T) {
+	cfg := memorypkg.Config{
+		MaxRecentMessages:     3,
+		IncludeSystemMessages: false,
+		IncludeToolMessages:   false,
+	}
+	base := []agentcore.Message{
+		{Role: "system", Content: "internal"},
+		{Role: "user", Content: "one"},
+	}
+	appended := []agentcore.Message{
+		{Role: "assistant", ToolCall: &agentcore.ToolCall{CallID: "call-1", Name: "lookup"}},
+		{Role: "tool", ToolResult: &agentcore.ToolResult{CallID: "call-1", Name: "lookup", Content: "result"}},
+		{Role: "assistant", Content: "two"},
+		{Role: "user", Content: "three"},
+	}
+
+	incremental := memorypkg.New(cfg)
+	if err := incremental.Hydrate(context.Background(), &agentcore.RunState{Messages: base}); err != nil {
+		t.Fatalf("incremental Hydrate() error = %v", err)
+	}
+	if err := incremental.ObserveMessages(context.Background(), nil, appended...); err != nil {
+		t.Fatalf("ObserveMessages() error = %v", err)
+	}
+	incrementalContext, err := incremental.BuildContext(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("incremental BuildContext() error = %v", err)
+	}
+
+	rebuilt := memorypkg.New(cfg)
+	fullTranscript := append(append([]agentcore.Message{}, base...), appended...)
+	if err := rebuilt.Hydrate(context.Background(), &agentcore.RunState{Messages: fullTranscript}); err != nil {
+		t.Fatalf("rebuilt Hydrate() error = %v", err)
+	}
+	rebuiltContext, err := rebuilt.BuildContext(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("rebuilt BuildContext() error = %v", err)
+	}
+
+	if !reflect.DeepEqual(incrementalContext, rebuiltContext) {
+		t.Fatalf("observe/hydrate mismatch: incremental=%#v rebuilt=%#v", incrementalContext, rebuiltContext)
+	}
+}
+
+func TestWorkingMemory_ObserveMessages_DoesNotOverwriteSummary(t *testing.T) {
+	mem := memorypkg.New(memorypkg.Config{})
+	mem.SetSummary("keep summary")
+
+	if err := mem.ObserveMessages(context.Background(), nil,
+		agentcore.Message{Role: "user", Content: "hello"},
+	); err != nil {
+		t.Fatalf("ObserveMessages() error = %v", err)
+	}
+
+	if got := mem.Summary(); got != "keep summary" {
+		t.Fatalf("summary = %q, want preserved summary", got)
+	}
+}
