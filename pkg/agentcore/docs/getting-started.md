@@ -108,9 +108,17 @@ func main() {
 2. 接一个自定义 `Tool`
 3. 接一个 `Hook`
 4. 跑通一次 `yield -> resume`
-5. 接入 `Memory`
+5. 如果你不想从零实现 `Memory`，先接入 `pkg/agentcore/memory`
 6. 只有需要更强消息编排时，再替换 `PromptBuilder` / `ContextBuilder`
 7. 最后接真实 `Provider` 和自定义 `Storage`
+
+当前第一方默认 memory 实现已经提供：
+
+- summary slot
+- recent transcript window
+- system/tool 消息过滤
+
+它适合作为默认起点，再逐步演进成更强的自定义 memory。
 
 ## 6. 下一步看哪里
 

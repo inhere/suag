@@ -127,6 +127,16 @@ type Memory interface {
 
 如果你需要 summary、recent window、recall 或 context compaction，这一层最适合承载这些能力。
 
+如果你只是想先用一个默认实现，而不是从零写自己的 `Memory`，当前可以直接看：
+
+- `pkg/agentcore/memory`
+
+它现在提供一个第一方 `WorkingMemory`，包含：
+
+- summary slot
+- recent transcript window
+- 可配置的 system/tool 消息过滤
+
 ## 6. ToolRegistry
 
 `ToolRegistry` 暴露可用 tool schema，并执行 provider 请求的 tool call。

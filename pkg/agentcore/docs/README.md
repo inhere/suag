@@ -12,7 +12,9 @@
    公共接口职责与边界
 4. `embedding-patterns.md`
    直接嵌入与 adapter 桥接两种常见接法
-5. `roadmap.md`
+5. `working-memory-design.md`
+   下一轮默认 memory kernel 演进设计
+6. `roadmap.md`
    后续演进路线
 
 ## 这组文档回答什么问题
@@ -23,6 +25,7 @@
 - 如何把 `agentcore` 嵌进自己的系统
 - 如何理解 transcript、resume、memory 等核心语义
 - 如何围绕公共 contract 做扩展
+- 下一轮 kernel 演进准备做什么
 
 ## 相关示例
 
