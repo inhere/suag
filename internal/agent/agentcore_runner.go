@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/inhere/axon/internal/agentcoreadapters/internalllm"
+	"github.com/inhere/axon/internal/agentcoreadapters/internalmemory"
 	"github.com/inhere/axon/internal/agentcoreadapters/internaltools"
 	"github.com/inhere/axon/internal/hitl"
-	"github.com/inhere/axon/internal/memory"
 	"github.com/inhere/axon/internal/tracing"
 	"github.com/inhere/axon/pkg/agentcore"
 )
@@ -41,6 +41,7 @@ func BuildAgentcoreConfig(a *Agent, cfg AgentcoreRunnerConfig) agentcore.Config 
 	return agentcore.Config{
 		Provider:            internalllm.NewProvider(a.LLM),
 		Storage:             cfg.Storage,
+		Memory:              resolveMemory(a),
 		Tools:               internaltools.NewRegistry(a.Tools),
 		PromptBuilder:       resolvePromptBuilder(a, cfg.PromptBuilder),
 		ContextBuilder:      cfg.ContextBuilder,
@@ -100,12 +101,6 @@ func (r *AgentcoreRunner) Run(ctx context.Context, task *Task) (*TaskResult, err
 		MaxSteps:    normalizeMaxSteps(r.cfg.MaxSteps),
 	})
 	if err != nil {
-		_ = r.sm.Transition(AgentFailed)
-		r.agent.State = AgentFailed
-		return nil, err
-	}
-
-	if err := r.syncMemory(ctx, runID); err != nil {
 		_ = r.sm.Transition(AgentFailed)
 		r.agent.State = AgentFailed
 		return nil, err
@@ -177,33 +172,6 @@ func (r *AgentcoreRunner) Resume(instruction string) error {
 	return nil
 }
 
-func (r *AgentcoreRunner) syncMemory(ctx context.Context, runID string) error {
-	if r == nil || r.agent == nil || r.agent.Memory == nil {
-		return nil
-	}
-
-	cfg := BuildAgentcoreConfig(r.agent, r.cfg)
-	if cfg.Storage == nil {
-		return nil
-	}
-
-	messages, err := cfg.Storage.LoadMessages(ctx, runID)
-	if err != nil {
-		return err
-	}
-
-	transcript := compactMessages(messages)
-	existing := r.agent.Memory.GetMessages()
-	if !isMemoryPrefix(existing, transcript) {
-		return nil
-	}
-
-	for _, msg := range transcript[len(existing):] {
-		r.agent.Memory.AddMessage(msg.Role, msg.Content)
-	}
-	return nil
-}
-
 func resolvePromptBuilder(a *Agent, builder agentcore.PromptBuilder) agentcore.PromptBuilder {
 	if builder != nil {
 		return builder
@@ -247,35 +215,11 @@ func buildRunMetadata(a *Agent, task *Task) map[string]any {
 	return metadata
 }
 
-func compactMessages(messages []agentcore.Message) []memory.Message {
-	if len(messages) == 0 {
+func resolveMemory(a *Agent) agentcore.Memory {
+	if a == nil || a.Memory == nil {
 		return nil
 	}
-
-	out := make([]memory.Message, 0, len(messages))
-	for _, msg := range messages {
-		content := compactMessageContent(msg)
-		if strings.TrimSpace(content) == "" {
-			continue
-		}
-		out = append(out, memory.Message{
-			Role:    msg.Role,
-			Content: content,
-		})
-	}
-	return out
-}
-
-func isMemoryPrefix(existing []memory.Message, transcript []memory.Message) bool {
-	if len(existing) > len(transcript) {
-		return false
-	}
-	for i := range existing {
-		if existing[i].Role != transcript[i].Role || existing[i].Content != transcript[i].Content {
-			return false
-		}
-	}
-	return true
+	return internalmemory.New(a.Memory)
 }
 
 type soulPromptBuilder struct {
@@ -419,6 +363,7 @@ type hitlHook struct {
 	agentcore.NopHook
 	agent        *Agent
 	storage      agentcore.Storage
+	memory       agentcore.Memory
 	manager      hitl.Manager
 	failThresh   int
 	failureCount int
@@ -433,6 +378,7 @@ func newHITLHook(a *Agent, cfg AgentcoreRunnerConfig) agentcore.Hook {
 	return &hitlHook{
 		agent:      a,
 		storage:    cfg.Storage,
+		memory:     resolveMemory(a),
 		manager:    cfg.HITL,
 		failThresh: threshold,
 	}
@@ -493,6 +439,11 @@ func (h *hitlHook) BeforeContextBuild(ctx context.Context, event *agentcore.Cont
 				return err
 			}
 		}
+		if h.memory != nil {
+			if err := h.memory.ObserveMessages(ctx, event.State, msg); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 }
@@ -526,20 +477,4 @@ func pendingToolErrorMessage(event *agentcore.ContextEvent) string {
 		}
 	}
 	return ""
-}
-
-func compactMessageContent(msg agentcore.Message) string {
-	if msg.Role == "tool" && msg.ToolResult != nil && isToolErrorResult(msg.ToolResult) {
-		name := msg.ToolResult.Name
-		if name == "" && msg.ToolCall != nil {
-			name = msg.ToolCall.Name
-		}
-		content := strings.TrimSpace(msg.ToolResult.Content)
-		content = strings.TrimPrefix(content, "tool error: ")
-		if name != "" {
-			return fmt.Sprintf("tool %q error: %s", name, content)
-		}
-		return content
-	}
-	return msg.Content
 }

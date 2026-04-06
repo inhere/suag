@@ -22,6 +22,7 @@ type Runtime interface {
 type Config struct {
 	Provider            Provider
 	Storage             Storage
+	Memory              Memory
 	Tools               ToolRegistry
 	PromptBuilder       PromptBuilder
 	ContextBuilder      ContextBuilder
@@ -34,6 +35,7 @@ type Config struct {
 type DefaultRuntime struct {
 	provider            Provider
 	storage             Storage
+	memory              Memory
 	tools               ToolRegistry
 	promptBuilder       PromptBuilder
 	contextBuilder      ContextBuilder
@@ -47,9 +49,10 @@ func New(cfg Config) *DefaultRuntime {
 	return &DefaultRuntime{
 		provider:            cfg.Provider,
 		storage:             defaultStorage(cfg.Storage),
+		memory:              defaultMemory(cfg.Memory),
 		tools:               defaultTools(cfg.Tools),
 		promptBuilder:       defaultPromptBuilder(cfg.PromptBuilder),
-		contextBuilder:      defaultContextBuilder(cfg.ContextBuilder),
+		contextBuilder:      cfg.ContextBuilder,
 		hooks:               newRuntimeHookChain(cfg.Hooks...),
 		maxSteps:            cfg.MaxSteps,
 		maxToolCallsPerStep: cfg.MaxToolCallsPerStep,
@@ -75,6 +78,10 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 		Result:    nil,
 		Metadata:  cloneMetadata(state.Metadata),
 		Timestamp: time.Now(),
+	}
+
+	if err := r.memory.Hydrate(ctx, cloneRunStateValue(state)); err != nil {
+		return r.returnWithHandledError(ctx, input, state, "memory_hydrate", wrapMemoryError(err), ctrl)
 	}
 
 	if err := r.runBeforeRun(ctx, runEvent, ctrl); err != nil {
@@ -306,7 +313,11 @@ func (r *DefaultRuntime) buildContext(ctx context.Context, state *RunState, ctrl
 	if ctrl != nil && (ctrl.ShouldYield() || ctrl.ShouldShortCircuit()) {
 		return event.Messages, nil
 	}
-	messages, err := r.contextBuilder.BuildMessages(ctx, state)
+	builder := r.contextBuilder
+	if builder == nil {
+		builder = defaultContextBuilder(r.memory)
+	}
+	messages, err := builder.BuildMessages(ctx, state)
 	if err != nil {
 		return nil, err
 	}
@@ -366,6 +377,9 @@ func (r *DefaultRuntime) saveState(ctx context.Context, state *RunState, message
 	}
 	if err := r.storage.AppendMessages(ctx, state.RunID, messages...); err != nil {
 		return wrapStorageError(err)
+	}
+	if err := r.memory.ObserveMessages(ctx, cloneRunStateValue(state), cloneMessagesValue(messages)...); err != nil {
+		return wrapMemoryError(err)
 	}
 	return nil
 }
@@ -685,6 +699,13 @@ func defaultTools(tools ToolRegistry) ToolRegistry {
 	return NewToolRegistry()
 }
 
+func defaultMemory(memory Memory) Memory {
+	if memory != nil {
+		return memory
+	}
+	return noopMemory{}
+}
+
 func defaultPromptBuilder(builder PromptBuilder) PromptBuilder {
 	if builder != nil {
 		return builder
@@ -692,11 +713,8 @@ func defaultPromptBuilder(builder PromptBuilder) PromptBuilder {
 	return defaultStaticPromptBuilder{}
 }
 
-func defaultContextBuilder(builder ContextBuilder) ContextBuilder {
-	if builder != nil {
-		return builder
-	}
-	return defaultContextBuilderImpl{}
+func defaultContextBuilder(memory Memory) ContextBuilder {
+	return defaultContextBuilderImpl{memory: memory}
 }
 
 func newRunState(runID string, input RunInput) *RunState {
@@ -747,6 +765,17 @@ func wrapStorageError(err error) error {
 	return &StorageError{Err: err}
 }
 
+func wrapMemoryError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var memoryErr *MemoryError
+	if errors.As(err, &memoryErr) {
+		return err
+	}
+	return &MemoryError{Err: err}
+}
+
 func wrapHookError(err error) error {
 	if err == nil {
 		return nil
@@ -771,6 +800,8 @@ func classifyRuntimeError(err error) error {
 	case errors.As(err, new(*ProviderError)):
 		return err
 	case errors.As(err, new(*StorageError)):
+		return err
+	case errors.As(err, new(*MemoryError)):
 		return err
 	case errors.As(err, new(*ToolError)):
 		return err
@@ -935,13 +966,12 @@ func (defaultStaticPromptBuilder) BuildSystemPrompt(context.Context, *RunState) 
 	return "", nil
 }
 
-type defaultContextBuilderImpl struct{}
+type defaultContextBuilderImpl struct {
+	memory Memory
+}
 
-func (defaultContextBuilderImpl) BuildMessages(_ context.Context, state *RunState) ([]Message, error) {
-	if state == nil || len(state.Messages) == 0 {
-		return nil, nil
-	}
-	return cloneMessagesValue(state.Messages), nil
+func (b defaultContextBuilderImpl) BuildMessages(ctx context.Context, state *RunState) ([]Message, error) {
+	return b.memory.BuildContext(ctx, state)
 }
 
 type runtimeHookChain struct {

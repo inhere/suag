@@ -78,6 +78,25 @@ func (e *StorageError) Unwrap() error {
 	return e.Err
 }
 
+// MemoryError classifies memory-layer runtime failures while preserving the wrapped cause.
+type MemoryError struct {
+	Err error
+}
+
+func (e *MemoryError) Error() string {
+	if e == nil || e.Err == nil {
+		return "memory error"
+	}
+	return "memory error: " + e.Err.Error()
+}
+
+func (e *MemoryError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 var (
 	// ErrEmptyGenerateResult indicates the provider returned no content and no tool calls.
 	ErrEmptyGenerateResult = errors.New("empty result")
