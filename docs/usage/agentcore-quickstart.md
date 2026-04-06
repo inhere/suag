@@ -81,6 +81,9 @@ func main() {
 - 一份落在 storage 里的 run state snapshot
 - 一份 append-only 的 message transcript
 
+如果你只是第一次接入，先停在这里是对的。
+先确认最小链路能跑，再继续加 tool、hook、memory、resume，会比一开始就堆所有能力更稳。
+
 ---
 
 ## 3. 最常见的三种接法
@@ -127,6 +130,25 @@ func main() {
 - 把当前内部 `llm.Provider` / `tools.Registry` 接进公共 runtime
 - 先稳定 runtime contract，再逐步替换更高层系统
 
+### 3.4 想先跑通 yield / resume
+
+推荐组合：
+
+- 一个会在中途 `Yield` 的 hook
+- 稳定 `RunID`
+- 同一份 `Storage`
+- 第二次运行时显式传 `ResumeMode`
+
+适合：
+
+- 接人工中断 / HITL
+- 接审批 / wait-for-input 场景
+- 验证 transcript 与恢复语义
+
+可以直接参考：
+
+- `examples/agentcore/resume`
+
 ---
 
 ## 4. RunResult 和 transcript 怎么看
@@ -157,6 +179,12 @@ assistant("final answer")
 - resume 时 provider 能看到完整上下文
 - replay 时不会丢失“模型当时决定调用什么工具”
 - adapter / provider 之间围绕同一个 `Message` 契约工作
+
+`RunYielded` 的含义是：
+
+- 这次 run 暂停了
+- 当前 transcript 和 snapshot 已经是下一次恢复的事实基础
+- 下一次是否追加新输入，由 `ResumeMode` 决定
 
 ---
 
@@ -198,4 +226,10 @@ assistant("final answer")
 1. 读 [`docs/usage/agentcore-api.md`](./agentcore-api.md)
 2. 看 `examples/agentcore/minimal`
 3. 看 `examples/agentcore/custom`
-4. 如果你要桥接内部栈，再看 `examples/agentcore/bridge`
+4. 看 `examples/agentcore/resume`
+5. 如果你要桥接内部栈，再看 `examples/agentcore/bridge`
+
+如果你已经明确要做上下文工程，下一步优先看两件事：
+
+1. `agentcore.Memory`
+2. `docs/usage/agentcore-api.md` 里的 `ContextBuilder` / `ResumeMode`

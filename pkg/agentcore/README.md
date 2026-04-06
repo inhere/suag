@@ -2,6 +2,12 @@
 
 `pkg/agentcore` 是 Axon 中抽离出来的最小 Agent Runtime Core，目标是将来可以作为独立包发布和嵌入使用。
 
+它的定位更接近一个 runtime kernel，而不是一个完整 agent framework：
+
+- 提供任何 agent 都绕不开的最小执行闭环
+- 通过公共接口暴露扩展点，而不是把上层产品逻辑耦合进 core
+- 保持对外可嵌入、可替换、可逐步增长
+
 它负责任何 agent 运行都绕不开的那条核心链路：
 
 - 准备或恢复 run state
@@ -72,6 +78,15 @@
 - Roadmap: `pkg/agentcore/docs/roadmap.md`
 - Examples: `examples/agentcore/`
 
+推荐阅读顺序：
+
+1. Quickstart
+2. API guide
+3. `examples/agentcore/minimal`
+4. `examples/agentcore/custom`
+5. `examples/agentcore/resume`
+6. `examples/agentcore/bridge`
+
 ## Quick Example
 
 ```go
@@ -86,6 +101,13 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
     Instruction: "say hello",
 })
 ```
+
+这个最小例子已经具备：
+
+- 稳定 `RunID`
+- 可落盘的 run snapshot
+- append-only transcript
+- 后续可继续接入 tool、hook、memory、resume
 
 ## Memory And Context
 
@@ -111,6 +133,12 @@ type Memory interface {
   生成最终喂给模型的上下文消息。
 
 如果没有显式配置 `ContextBuilder`，默认上下文路径会直接使用 `Memory.BuildContext(...)`。
+
+这意味着一个很重要的扩展顺序：
+
+1. 先把 `Storage` 当作事实层跑通
+2. 再把 `Memory` 当作上下文派生层接进来
+3. 只有当你需要特殊 message 组装时，再自定义 `ContextBuilder`
 
 ## Resume Example
 
@@ -152,6 +180,26 @@ resumed, err := runtime.Run(ctx, agentcore.RunInput{
 })
 ```
 
+如果你想直接看可运行示例，可以运行：
+
+```bash
+go run ./examples/agentcore/minimal
+go run ./examples/agentcore/custom
+go run ./examples/agentcore/resume
+go run ./examples/agentcore/bridge
+```
+
+其中：
+
+- `minimal`
+  关注最小 runtime
+- `custom`
+  关注 tool 与 hook 扩展
+- `resume`
+  关注 `yield -> resume`
+- `bridge`
+  关注 internal adapter 桥接
+
 ## Axon Internal Adapters
 
 如果你想桥接 Axon 仓库当前内部实现，请看：
@@ -168,3 +216,14 @@ resumed, err := runtime.Run(ctx, agentcore.RunInput{
   通过 `internal/agentcoreadapters/internalmemory` 提供 `agentcore.Memory`
 - `internal/agent.AgentcoreRunner`
   把 external `Suspend/Resume` 语义映射到 `RunID + ResumeMode`
+
+## Release Posture
+
+如果未来单独发布 `pkg/agentcore`，建议把它看成下面这类包：
+
+- 一个稳定的 runtime contract 包
+- 一个带少量默认实现的 kernel 包
+- 一个允许不同 provider / storage / memory / tool 适配器接入的嵌入式内核
+
+也就是说，它不应该依赖仓库的 `internal/*` 作为公共能力前提；
+internal 侧应通过 adapter 使用它，而不是反过来让 `agentcore` 依赖 internal。

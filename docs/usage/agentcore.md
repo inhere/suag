@@ -38,6 +38,7 @@
 - 扩展接口
   - `Provider`
   - `Storage`
+  - `Memory`
   - `ToolRegistry`
   - `PromptBuilder`
   - `ContextBuilder`
@@ -51,6 +52,7 @@
   - `mock` provider / tool
 - 仓库内部桥接
   - `internal/agentcoreadapters/internalllm`
+  - `internal/agentcoreadapters/internalmemory`
   - `internal/agentcoreadapters/internaltools`
 
 当前明确不包含：
@@ -105,6 +107,15 @@ prepare state
          finish
   -> hooks(after_run)
 ```
+
+其中当前有一个很重要的边界：
+
+- `Storage`
+  保存 authoritative transcript 与 run snapshot
+- `Memory`
+  保存 model-facing context 的派生层
+
+这两个层次可以共享底层系统，但不应共享语义。
 
 ---
 
@@ -250,6 +261,7 @@ assistant("final answer")
 
 - provider: `pkg/agentcore/mock` 或你自己的 provider 实现
 - storage: `pkg/agentcore/files`
+- memory: 可以先不接；需要上下文工程时再实现 `agentcore.Memory`
 - tools: 默认空 registry 或自定义 registry
 - prompt: 默认空 prompt，或 `pkg/agentcore/prompt.StaticBuilder`
 - context: 默认 builder，或 `pkg/agentcore/context.DefaultBuilder`
@@ -306,4 +318,5 @@ assistant("final answer")
 2. [`docs/usage/agentcore-api.md`](./agentcore-api.md)
 3. `examples/agentcore/minimal`
 4. `examples/agentcore/custom`
-5. `examples/agentcore/bridge`
+5. `examples/agentcore/resume`
+6. `examples/agentcore/bridge`
