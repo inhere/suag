@@ -172,6 +172,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - Docs index: `pkg/agentcore/docs/README.md`
 - Getting started: `pkg/agentcore/docs/getting-started.md`
 - API guide: `pkg/agentcore/docs/api.md`
+- Embedding patterns: `pkg/agentcore/docs/embedding-patterns.md`
 - Roadmap: `pkg/agentcore/docs/roadmap.md`
 - Examples: `examples/agentcore/`
 - Package overview: `pkg/agentcore/doc.go`
@@ -188,12 +189,13 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 2. `pkg/agentcore/docs/README.md`
 3. `pkg/agentcore/docs/getting-started.md`
 4. `pkg/agentcore/docs/api.md`
-5. `pkg/agentcore/doc.go`
-6. `examples/agentcore/minimal`
-7. `examples/agentcore/custom`
-8. `examples/agentcore/resume`
-9. `examples/agentcore/bridge`
-10. `pkg/agentcore/docs/roadmap.md`
+5. `pkg/agentcore/docs/embedding-patterns.md`
+6. `pkg/agentcore/doc.go`
+7. `examples/agentcore/minimal`
+8. `examples/agentcore/custom`
+9. `examples/agentcore/resume`
+10. `examples/agentcore/bridge`
+11. `pkg/agentcore/docs/roadmap.md`
 
 ## Memory And Context
 
