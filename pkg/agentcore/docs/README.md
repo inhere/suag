@@ -5,25 +5,27 @@
 ## 阅读顺序
 
 1. [../README.md](../README.md) 包首页，说明定位、边界、默认构件和稳定语义
-2. [getting-started.md](./getting-started.md) 第一次接入时的最小上手路径
-3. [architecture.md](./architecture.md) kernel 分层、数据流与边界说明
-4. [api.md](./api.md) 公共接口职责与边界
-5. [embedding-patterns.md](./embedding-patterns.md) 直接嵌入与 adapter 桥接两种常见接法
-6. [compatibility.md](./compatibility.md) 当前兼容性预期、发布姿态与检查清单
-7. [versioning.md](./versioning.md) 当前版本策略与变更分级建议
-8. [release-readiness.md](./release-readiness.md) 独立发布前的 contract matrix 与检查清单
-9. [recommended-runtime.md](./recommended-runtime.md) 当前更推荐的外嵌 starter path
-10. [host-integration.md](./host-integration.md) embedding host 应该承担哪些职责、如何接 run/stream/yield
-11. [migration.md](./migration.md) 从已有 runtime 或 adapter 逐步迁到更原生 agentcore 的顺序与风险点
-12. [working-memory-design.md](./working-memory-design.md) 下一轮默认 memory kernel 演进设计
-13. [context-presets-design.md](./context-presets-design.md) 下一轮默认 context 组合演进设计
-14. [prompt-layered-design.md](./prompt-layered-design.md) 下一轮默认 prompt 组合演进设计
-15. [streaming-design.md](./streaming-design.md) 下一轮 streaming contract 设计
-16. [roadmap.md](./roadmap.md) 后续演进路线
+2. [adoption-paths.md](./adoption-paths.md) 不同类型使用者应该从哪条路线进入
+3. [getting-started.md](./getting-started.md) 第一次接入时的最小上手路径
+4. [architecture.md](./architecture.md) kernel 分层、数据流与边界说明
+5. [api.md](./api.md) 公共接口职责与边界
+6. [embedding-patterns.md](./embedding-patterns.md) 直接嵌入与 adapter 桥接两种常见接法
+7. [compatibility.md](./compatibility.md) 当前兼容性预期、发布姿态与检查清单
+8. [versioning.md](./versioning.md) 当前版本策略与变更分级建议
+9. [release-readiness.md](./release-readiness.md) 独立发布前的 contract matrix 与检查清单
+10. [recommended-runtime.md](./recommended-runtime.md) 当前更推荐的外嵌 starter path
+11. [host-integration.md](./host-integration.md) embedding host 应该承担哪些职责、如何接 run/stream/yield
+12. [migration.md](./migration.md) 从已有 runtime 或 adapter 逐步迁到更原生 agentcore 的顺序与风险点
+13. [working-memory-design.md](./working-memory-design.md) 下一轮默认 memory kernel 演进设计
+14. [context-presets-design.md](./context-presets-design.md) 下一轮默认 context 组合演进设计
+15. [prompt-layered-design.md](./prompt-layered-design.md) 下一轮默认 prompt 组合演进设计
+16. [streaming-design.md](./streaming-design.md) 下一轮 streaming contract 设计
+17. [roadmap.md](./roadmap.md) 后续演进路线
 
 ## 这组文档回答什么问题
 
 - `agentcore` 是什么，解决什么问题
+- 不同类型使用者应该先走哪条接入路径
 - 哪些能力应该进入 core，哪些应该放在 core 之上
 - 如何接入最小 runtime
 - 如何把 `agentcore` 嵌进自己的系统
@@ -49,5 +51,7 @@
 - `examples/context`
 - `examples/custom`
 - `examples/prompt`
+- `examples/recommended`
+- `examples/host`
 - `examples/resume`
 - `../../examples/agentcore/bridge`

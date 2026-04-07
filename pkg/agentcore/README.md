@@ -161,6 +161,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 ## Docs
 
 - Docs index: [docs/README.md](./docs/README.md)
+- Adoption paths: [docs/adoption-paths.md](./docs/adoption-paths.md)
 - Getting started: [docs/getting-started.md](./docs/getting-started.md)
 - Architecture: [docs/architecture.md](./docs/architecture.md)
 - API guide: [docs/api.md](./docs/api.md)
@@ -183,28 +184,29 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 1. [README.md](./README.md)
 2. [docs/README.md](./docs/README.md)
-3. [docs/getting-started.md](./docs/getting-started.md)
-4. [docs/architecture.md](./docs/architecture.md)
-5. [docs/api.md](./docs/api.md)
-6. [docs/embedding-patterns.md](./docs/embedding-patterns.md)
-7. [docs/compatibility.md](./docs/compatibility.md)
-8. [docs/versioning.md](./docs/versioning.md)
-9. [docs/release-readiness.md](./docs/release-readiness.md)
-10. [docs/recommended-runtime.md](./docs/recommended-runtime.md)
-11. [docs/host-integration.md](./docs/host-integration.md)
-12. [docs/migration.md](./docs/migration.md)
-13. [docs/working-memory-design.md](./docs/working-memory-design.md)
-14. [docs/context-presets-design.md](./docs/context-presets-design.md)
-15. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
-16. [docs/streaming-design.md](./docs/streaming-design.md)
-17. `doc.go`
-18. `examples/README.md`
-19. `examples/minimal`
-20. `examples/custom`
-21. `examples/prompt`
-22. `examples/host`
-23. `examples/resume`
-24. [docs/roadmap.md](./docs/roadmap.md)
+3. [docs/adoption-paths.md](./docs/adoption-paths.md)
+4. [docs/getting-started.md](./docs/getting-started.md)
+5. [docs/architecture.md](./docs/architecture.md)
+6. [docs/api.md](./docs/api.md)
+7. [docs/embedding-patterns.md](./docs/embedding-patterns.md)
+8. [docs/compatibility.md](./docs/compatibility.md)
+9. [docs/versioning.md](./docs/versioning.md)
+10. [docs/release-readiness.md](./docs/release-readiness.md)
+11. [docs/recommended-runtime.md](./docs/recommended-runtime.md)
+12. [docs/host-integration.md](./docs/host-integration.md)
+13. [docs/migration.md](./docs/migration.md)
+14. [docs/working-memory-design.md](./docs/working-memory-design.md)
+15. [docs/context-presets-design.md](./docs/context-presets-design.md)
+16. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
+17. [docs/streaming-design.md](./docs/streaming-design.md)
+18. `doc.go`
+19. `examples/README.md`
+20. `examples/minimal`
+21. `examples/custom`
+22. `examples/prompt`
+23. `examples/host`
+24. `examples/resume`
+25. [docs/roadmap.md](./docs/roadmap.md)
 
 ## Memory And Context
 

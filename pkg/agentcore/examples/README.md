@@ -2,6 +2,10 @@
 
 这组示例面向 `agentcore` 的外部使用者，覆盖几条最常见接法：
 
+如果你还不确定应该先看哪组示例，可以先看：
+
+- [../docs/adoption-paths.md](../docs/adoption-paths.md)
+
 - `minimal`
   - 用 `mock + files` 跑通最小 runtime
 - `custom`

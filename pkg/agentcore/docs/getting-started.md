@@ -2,6 +2,10 @@
 
 这份文档面向第一次接入 `agentcore` 的使用者，目标是用最小概念把 runtime 跑起来，并快速理解下一步应该从哪里扩展。
 
+如果你还不确定自己属于哪条采用路径，可以先看：
+
+- [adoption-paths.md](./adoption-paths.md)
+
 ## 1. 什么时候适合用 Agentcore
 
 `agentcore` 适合承担：
