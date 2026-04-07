@@ -230,6 +230,7 @@ Hooks 应该负责：
 - 设计 streaming contract
   - stream callback / event model
   - 与 transcript / resume 的兼容关系
+  - optional streaming provider capability
 - 强化 artifact story
   - tool artifact persistence
   - artifact replay

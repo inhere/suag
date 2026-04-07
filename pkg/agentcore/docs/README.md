@@ -4,26 +4,17 @@
 
 ## 阅读顺序
 
-1. [../README.md](../README.md)
-   包首页，说明定位、边界、默认构件和稳定语义
-2. [getting-started.md](./getting-started.md)
-   第一次接入时的最小上手路径
-3. [architecture.md](./architecture.md)
-   kernel 分层、数据流与边界说明
-4. [api.md](./api.md)
-   公共接口职责与边界
-5. [embedding-patterns.md](./embedding-patterns.md)
-   直接嵌入与 adapter 桥接两种常见接法
-6. [compatibility.md](./compatibility.md)
-   当前兼容性预期、发布姿态与检查清单
-7. [working-memory-design.md](./working-memory-design.md)
-   下一轮默认 memory kernel 演进设计
-8. [context-presets-design.md](./context-presets-design.md)
-   下一轮默认 context 组合演进设计
-9. [prompt-layered-design.md](./prompt-layered-design.md)
-   下一轮默认 prompt 组合演进设计
-10. [roadmap.md](./roadmap.md)
-   后续演进路线
+1. [../README.md](../README.md) 包首页，说明定位、边界、默认构件和稳定语义
+2. [getting-started.md](./getting-started.md) 第一次接入时的最小上手路径
+3. [architecture.md](./architecture.md) kernel 分层、数据流与边界说明
+4. [api.md](./api.md) 公共接口职责与边界
+5. [embedding-patterns.md](./embedding-patterns.md) 直接嵌入与 adapter 桥接两种常见接法
+6. [compatibility.md](./compatibility.md) 当前兼容性预期、发布姿态与检查清单
+7. [working-memory-design.md](./working-memory-design.md) 下一轮默认 memory kernel 演进设计
+8. [context-presets-design.md](./context-presets-design.md) 下一轮默认 context 组合演进设计
+9. [prompt-layered-design.md](./prompt-layered-design.md) 下一轮默认 prompt 组合演进设计
+10. [streaming-design.md](./streaming-design.md) 下一轮 streaming contract 设计
+11. [roadmap.md](./roadmap.md) 后续演进路线
 
 ## 这组文档回答什么问题
 
@@ -37,6 +28,7 @@
 - 下一轮 kernel 演进准备做什么
 - 默认 builder 组合下一步怎么长
 - 默认 prompt 组合下一步怎么长
+- streaming contract 应该如何进入 kernel
 
 ## 相关示例
 

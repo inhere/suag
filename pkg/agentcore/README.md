@@ -102,20 +102,13 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 ## Core Contracts
 
-- `Provider`
-  连接任意 LLM backend，返回 final answer 或 tool calls。
-- `Storage`
-  保存 run snapshot 与 append-only transcript，是恢复和审计的事实来源。
-- `Memory`
-  保存上下文工程所需的派生视图，例如 summary、window、retrieval recall。
-- `ToolRegistry`
-  暴露 tool schema 并执行工具调用。
-- `PromptBuilder`
-  生成 system prompt。
-- `ContextBuilder`
-  组装最终发给模型的消息；不显式提供时，默认走 `Memory.BuildContext(...)`。
-- `Hook`
-  拦截和修改关键生命周期节点。
+- `Provider` 连接任意 LLM backend，返回 final answer 或 tool calls。
+- `Storage` 保存 run snapshot 与 append-only transcript，是恢复和审计的事实来源。
+- `Memory` 保存上下文工程所需的派生视图，例如 summary、window、retrieval recall。
+- `ToolRegistry` 暴露 tool schema 并执行工具调用。
+- `PromptBuilder` 生成 system prompt。
+- `ContextBuilder` 组装最终发给模型的消息；不显式提供时，默认走 `Memory.BuildContext(...)`。
+- `Hook` 拦截和修改关键生命周期节点。
 
 其中一个关键边界是：
 
@@ -128,18 +121,12 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 `agentcore` 自己只带少量默认构件，用来帮助你以较低成本起步：
 
-- `files/`
-  文件系统存储，适合本地开发、测试和简单嵌入
-- `memory/`
-  第一方默认 memory 实现，提供 summary slot 与 recent transcript window
-- `context/`
-  第一方 context presets，例如 transcript-only 与 memory-first
-- `prompt/`
-  第一方 prompt builders，例如 `StaticBuilder` 与 `Layered(...)`
-- `hooks/`
-  有序 hook chain 辅助
-- `mock/`
-  provider / tool 的测试与示例实现
+- `files/` 文件系统存储，适合本地开发、测试和简单嵌入
+- `memory/` 第一方默认 memory 实现，提供 summary slot 与 recent transcript window
+- `context/` 第一方 context presets，例如 transcript-only 与 memory-first
+- `prompt/` 第一方 prompt builders，例如 `StaticBuilder` 与 `Layered(...)`
+- `hooks/` 有序 hook chain 辅助
+- `mock/` provider / tool 的测试与示例实现
 
 推荐扩展顺序通常是：
 
@@ -152,20 +139,13 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 ## Package Layout
 
-- `.`  
-  Public runtime contracts and default runtime implementation
-- `files/`  
-  Filesystem-backed storage
-- `memory/`  
-  Default working-memory implementation
-- `context/`  
-  First-party context presets and default message-window builder
-- `prompt/`  
-  First-party prompt builders
-- `hooks/`  
-  Ordered hook-chain helper
-- `mock/`  
-  Test provider and tool implementations
+- `.` Public runtime contracts and default runtime implementation
+- `files/` Filesystem-backed storage
+- `memory/` Default working-memory implementation
+- `context/` First-party context presets and default message-window builder
+- `prompt/` First-party prompt builders
+- `hooks/` Ordered hook-chain helper
+- `mock/` Test provider and tool implementations
 
 注意：
 
@@ -183,6 +163,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - Working memory design: [docs/working-memory-design.md](./docs/working-memory-design.md)
 - Context presets design: [docs/context-presets-design.md](./docs/context-presets-design.md)
 - Prompt layered design: [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
+- Streaming design: [docs/streaming-design.md](./docs/streaming-design.md)
 - Roadmap: [docs/roadmap.md](./docs/roadmap.md)
 - Examples: `examples/`
 - Package overview: `doc.go`
@@ -199,13 +180,14 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 8. [docs/working-memory-design.md](./docs/working-memory-design.md)
 9. [docs/context-presets-design.md](./docs/context-presets-design.md)
 10. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
-11. `doc.go`
-12. `examples/README.md`
-13. `examples/minimal`
-14. `examples/custom`
-15. `examples/prompt`
-16. `examples/resume`
-17. [docs/roadmap.md](./docs/roadmap.md)
+11. [docs/streaming-design.md](./docs/streaming-design.md)
+12. `doc.go`
+13. `examples/README.md`
+14. `examples/minimal`
+15. `examples/custom`
+16. `examples/prompt`
+17. `examples/resume`
+18. [docs/roadmap.md](./docs/roadmap.md)
 
 ## Memory And Context
 
@@ -277,12 +259,9 @@ builder := context.MemoryThenRecent(mem, context.MemoryThenRecentConfig{
 
 其中：
 
-- `TranscriptWindow`
-  适合 transcript-only 场景
-- `MemoryFirst`
-  适合默认 `WorkingMemory` 路径
-- `MemoryThenRecent`
-  适合希望先使用 memory，再显式追加最近原始消息的场景
+- `TranscriptWindow` 适合 transcript-only 场景
+- `MemoryFirst` 适合默认 `WorkingMemory` 路径
+- `MemoryThenRecent` 适合希望先使用 memory，再显式追加最近原始消息的场景
 
 如果你需要在 system prompt 中组合固定 base 文本、run metadata 与附加段落，可以直接使用第一方 prompt builder：
 
@@ -307,21 +286,16 @@ builder := prompt.Layered(prompt.Config{
 
 其中：
 
-- `StaticBuilder`
-  适合完全静态的 system prompt
-- `Layered`
-  适合把 base prompt、`RunState.Metadata` 和固定补充段落稳定拼接起来
+- `StaticBuilder` 适合完全静态的 system prompt
+- `Layered` 适合把 base prompt、`RunState.Metadata` 和固定补充段落稳定拼接起来
 
 ## Resume Model
 
 `agentcore` 的恢复模型基于稳定 `RunID` 和显式 `ResumeMode`：
 
-- `ResumeFromState`
-  明确表示“只从已有 state / transcript 继续”，即使传了 `Instruction` 也不会追加新的 user message。
-- `ResumeWithInput`
-  明确表示“恢复时再追加一条新的 user input”。
-- `ResumeAuto`
-  采用默认语义：有非空 `Instruction` 时追加新 user message；没有 `Instruction` 时直接从已有 state 继续。
+- `ResumeFromState` 明确表示“只从已有 state / transcript 继续”，即使传了 `Instruction` 也不会追加新的 user message。
+- `ResumeWithInput` 明确表示“恢复时再追加一条新的 user input”。
+- `ResumeAuto` 采用默认语义：有非空 `Instruction` 时追加新 user message；没有 `Instruction` 时直接从已有 state 继续。
 
 恢复时最重要的判断标准是：
 
@@ -369,14 +343,10 @@ go run ./examples/prompt
 
 其中：
 
-- `minimal`
-  关注最小 runtime
-- `custom`
-  关注 tool 与 hook 扩展
-- `resume`
-  关注 `yield -> resume`
-- `prompt`
-  关注第一方 prompt 组合
+- `minimal` 关注最小 runtime
+- `custom` 关注 tool 与 hook 扩展
+- `resume` 关注 `yield -> resume`
+- `prompt` 关注第一方 prompt 组合
 
 如果你要看仓库内部桥接路径，再额外运行：
 
@@ -411,12 +381,9 @@ go run ./examples/agentcore/bridge
 
 当前 internal 集成已经遵循同样的边界：
 
-- `internal/agentcorestorage`
-  提供 `agentcore.Storage`
-- `internal/memory`
-  通过 `internal/agentcoreadapters/internalmemory` 提供 `agentcore.Memory`
-- `internal/agent.AgentcoreRunner`
-  把 external `Suspend/Resume` 语义映射到 `RunID + ResumeMode`
+- `internal/agentcorestorage` 提供 `agentcore.Storage`
+- `internal/memory` 通过 `internal/agentcoreadapters/internalmemory` 提供 `agentcore.Memory`
+- `internal/agent.AgentcoreRunner` 把 external `Suspend/Resume` 语义映射到 `RunID + ResumeMode`
 
 ## Release Posture
 
