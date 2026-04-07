@@ -179,6 +179,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - Embedding patterns: `pkg/agentcore/docs/embedding-patterns.md`
 - Working memory design: `pkg/agentcore/docs/working-memory-design.md`
 - Context presets design: `pkg/agentcore/docs/context-presets-design.md`
+- Prompt layered design: `pkg/agentcore/docs/prompt-layered-design.md`
 - Roadmap: `pkg/agentcore/docs/roadmap.md`
 - Examples: `examples/agentcore/`
 - Package overview: `pkg/agentcore/doc.go`
@@ -198,12 +199,13 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 5. `pkg/agentcore/docs/embedding-patterns.md`
 6. `pkg/agentcore/docs/working-memory-design.md`
 7. `pkg/agentcore/docs/context-presets-design.md`
-8. `pkg/agentcore/doc.go`
-9. `examples/agentcore/minimal`
-10. `examples/agentcore/custom`
-11. `examples/agentcore/resume`
-12. `examples/agentcore/bridge`
-13. `pkg/agentcore/docs/roadmap.md`
+8. `pkg/agentcore/docs/prompt-layered-design.md`
+9. `pkg/agentcore/doc.go`
+10. `examples/agentcore/minimal`
+11. `examples/agentcore/custom`
+12. `examples/agentcore/resume`
+13. `examples/agentcore/bridge`
+14. `pkg/agentcore/docs/roadmap.md`
 
 ## Memory And Context
 
