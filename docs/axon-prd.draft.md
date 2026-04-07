@@ -39,6 +39,8 @@ s09   "任务太大一个人干不完, 要能分给队友" — 持久化队友 +
 s10   "队友之间要有统一的沟通规矩" — 一个 request-response 模式驱动所有协商
 s11   "队友自己看看板, 有活就认领" — 不需要领导逐个分配, 自组织
 s12   "各干各的目录, 互不干扰" — 任务管目标, worktree 管目录, 按 ID 绑定
+
+> tip: 有可能已经过时
 ```
 
 ### 2026.03.17 补充
@@ -149,6 +151,9 @@ refer:
   - 一个子节点可能是一个专业的 agent team，负责执行特定类型的任务。
 - A2A 用作多个agent时，允许agent是远程运行的，这时 编排或者agent 直接可以通过A2A交互通信
 - ACP 是想让 agent 可以发现并操作本地已有的 claude-code, codex, opencode
+  - https://agentclientprotocol.com/get-started/introduction
+  - go sdk: https://github.com/coder/acp-go-sdk, https://github.com/ironpark/acp-go
+  - ts: @agentclientprotocol/sdk , https://github.com/openclaw/acpx
 
 ### 2026.03.28 补充
 
@@ -165,9 +170,25 @@ refer:
 - 参考 https://github.com/paperclipai/paperclip
 - 参考 https://github.com/ComposioHQ/agent-orchestrator
 
+### 2026.04.05 补充
+
+- https://github.com/NousResearch/hermes-agent
+  - 项目架构 https://hermes-agent.nousresearch.com/docs/developer-guide/architecture
+- 自进化能力 每次会话后总结经验，写入Agent记忆当中
+  - MEMORY.md Agent 自己的总结记忆记录
+  - USER.md 关于用户的偏好记忆记录
+- go 编写核心 + ts/js 对接实现扩展能力
+  - go <-> js 通过通信协议来交互
+  - 基于 ts/js 可以直接使用社区的 IM渠道对接 等能力（避免创建一些无意义的轮子）
+
+先快速实现可自用：
+- 服务端和自有的 Web 客户端等通过 ws 连接管理会话，交互等 sse 不再作为主要方式
+- 服务端通过 ag-ui 协议推送 Agent 事件到客户端渲染显示和交互处理
+- 三方IM channel 通过支持他们的 openclaw 插件处理
+
 ## 核心架构分层
 
-- **接入层 (Gateway/UI)：** 网页端仪表盘，通过 **SSE (Server-Sent Events)** 实现毫秒级追踪展示，支持“上帝模式”指令注入。
+- **接入层 (Gateway/UI)：** 网页端仪表盘，通过 ws/sse 实现毫秒级追踪展示，支持“上帝模式”指令注入。
 - **编排层 (Orchestrator)：** 基于 Go 协程的 ReAct Loop 循环，支持多智能体（Architect/Coder/Reviewer）并发协作与状态机管理。
 - **追踪层 (Tracing)：** 全链路 TraceID/SpanID 埋点，记录 Agent 的因果关系。
 - **连接LLM(Provider)**:  实现一个支持 OpenAI、Claude、DeepSeek 等多家供应商的统一LLM接口。
@@ -213,27 +234,6 @@ refer:
 - 围绕 core 可以提供 TUI, server, webUI, 多渠道IM
   - webUI 可以 chat, 查看任务等
 
-代码结构设想参考：
-
-```txt
-agent/
-├── core/
-│   ├── agent.go
-│   ├── loop.go
-│   ├── memory.go
-│   └── planner.go
-├── tools/
-│   ├── registry.go
-│   ├── web_search.go
-│   └── code_executor.go
-├── llm/
-│   ├── client.go
-│   └── prompt.go
-└── main.go
-```
-
-> 示例代码参考 [code-refer.v0.1.draft.md](code-refer.v0.1.draft.md)
-
 #### 基础工具
 
 1. Web Search（SerpAPI 等）
@@ -253,6 +253,7 @@ agent/
 Golang:
 
 - <https://github.com/smallnest/goclaw> 多智能体 AI 网关与编排引擎。专注于“团队”概念，它不仅仅是一个简单的聊天机器人，而是一个能够调度多个智能体（Agents）的中心枢纽。
+- https://github.com/nextlevelbuilder/goclaw 用 Go 重建的 OpenClaw - 具有多租户隔离、5 层安全性和本机并发性。在不影响安全性的情况下大规模部署人工智能代理团队
 - <https://github.com/sipeed/picoclaw> 极致轻量化的边缘计算 AI 助手。
 - <https://github.com/mosaxiv/clawlet> 具备本地语义记忆的单机全能助手，可以参考代码逻辑
 
