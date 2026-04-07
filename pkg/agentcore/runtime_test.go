@@ -2000,6 +2000,126 @@ func TestRuntime_Run_TerminalResumeDoesNotMergeInputMetadata(t *testing.T) {
 	}
 }
 
+func TestRuntime_Run_ResumePreservesMutatedToolResultMetadataAndArtifacts(t *testing.T) {
+	runID := "run-resume-mutated-tool-result"
+	store := newRuntimeTestStorage()
+	tools := NewToolRegistry()
+	tools.Register(&runtimeTestTool{
+		name: "lookup",
+		result: &ToolResult{
+			Content: "tool-output",
+		},
+	})
+
+	yieldHook := &runtimeTestHook{}
+	beforeModelCalls := 0
+	yieldHook.beforeModel = func(ctrl *Control) {
+		beforeModelCalls++
+		if beforeModelCalls == 2 {
+			ctrl.Yield("await_resume", map[string]any{"step": "after_tool"})
+		}
+	}
+	yieldHook.afterToolEvent = func(event *ToolEvent, _ *Control) {
+		event.Result = &ToolResult{
+			CallID:  "call-1",
+			Name:    "lookup",
+			Content: "mutated-output",
+			Artifacts: []Artifact{{
+				Kind: "file",
+				URI:  "artifact://mutated.txt",
+			}},
+			Metadata: map[string]any{
+				"source": "after_tool",
+			},
+		}
+	}
+
+	firstProvider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			ToolCalls: []ToolCall{{
+				CallID: "call-1",
+				Name:   "lookup",
+				Arguments: map[string]any{
+					"query": "original",
+				},
+			}},
+			FinishReason: FinishToolCalls,
+		}},
+	}
+
+	firstResult, err := New(Config{
+		Provider:       firstProvider,
+		Storage:        store,
+		Tools:          tools,
+		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{yieldHook},
+	}).Run(context.Background(), RunInput{
+		RunID:       runID,
+		AgentID:     "agent-1",
+		Instruction: "collect mutated artifact and resume later",
+	})
+	if err != nil {
+		t.Fatalf("expected first run to yield, got %v", err)
+	}
+	if firstResult.Status != RunYielded || firstResult.Yield == nil || firstResult.Yield.Reason != "await_resume" {
+		t.Fatalf("expected yielded first result, got %#v", firstResult)
+	}
+
+	persisted := store.messages[runID]
+	if len(persisted) != 3 {
+		t.Fatalf("expected yielded transcript with user, assistant tool-call, and tool result, got %#v", persisted)
+	}
+	if persisted[2].ToolResult == nil || persisted[2].ToolResult.Metadata["source"] != "after_tool" {
+		t.Fatalf("expected persisted tool result metadata to survive before resume, got %#v", persisted[2].ToolResult)
+	}
+	if len(persisted[2].ToolResult.Artifacts) != 1 || persisted[2].ToolResult.Artifacts[0].URI != "artifact://mutated.txt" {
+		t.Fatalf("expected persisted tool result artifacts to survive before resume, got %#v", persisted[2].ToolResult)
+	}
+
+	resumeProvider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done after resume with mutated tool result",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	resumed, err := New(Config{
+		Provider:       resumeProvider,
+		Storage:        store,
+		Tools:          tools,
+		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
+		ContextBuilder: runtimeTestContextBuilder{},
+	}).Run(context.Background(), RunInput{
+		RunID:      runID,
+		ResumeMode: ResumeFromState,
+	})
+	if err != nil {
+		t.Fatalf("expected resumed run to complete, got %v", err)
+	}
+	if resumed.Status != RunCompleted || resumed.Output != "done after resume with mutated tool result" {
+		t.Fatalf("expected completed resumed result, got %#v", resumed)
+	}
+	if len(resumeProvider.calls) != 1 || len(resumeProvider.calls[0].Messages) != 3 {
+		t.Fatalf("expected resumed provider to receive yielded transcript, got %#v", resumeProvider.calls)
+	}
+	toolMsg := resumeProvider.calls[0].Messages[2]
+	if toolMsg.ToolResult == nil || toolMsg.ToolResult.Content != "mutated-output" {
+		t.Fatalf("expected resumed provider to receive mutated tool result, got %#v", toolMsg)
+	}
+	if toolMsg.ToolResult.Metadata["source"] != "after_tool" {
+		t.Fatalf("expected resumed provider to receive mutated tool result metadata, got %#v", toolMsg.ToolResult)
+	}
+	if len(toolMsg.ToolResult.Artifacts) != 1 || toolMsg.ToolResult.Artifacts[0].URI != "artifact://mutated.txt" {
+		t.Fatalf("expected resumed provider to receive mutated tool artifacts, got %#v", toolMsg.ToolResult)
+	}
+
+	saved := store.runs[runID]
+	if saved == nil || len(saved.Artifacts) != 1 || saved.Artifacts[0].URI != "artifact://mutated.txt" {
+		t.Fatalf("expected run state artifacts to remain authoritative across resume, got %#v", saved)
+	}
+}
+
 func TestRuntime_Run_HookYieldReturnsYieldedResult(t *testing.T) {
 	store := newRuntimeTestStorage()
 	provider := &runtimeTestProvider{

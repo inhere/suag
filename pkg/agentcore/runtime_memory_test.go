@@ -325,3 +325,191 @@ func TestRuntime_Run_PersistOutputObserveFailureKeepsAuthorityAligned(t *testing
 		t.Fatalf("expected authority log to keep final assistant output, got %#v", store.messages["run-memory-observe-output-fail"])
 	}
 }
+
+func TestRuntime_Run_PersistToolOutputObserveFailureKeepsToolTranscriptAuthoritative(t *testing.T) {
+	store := newRuntimeTestStorage()
+	mem := &runtimeTestMemory{
+		observeErr:   errors.New("observe failed after tool transcript append"),
+		observeErrOn: 2,
+	}
+	tools := NewToolRegistry()
+	tools.Register(&runtimeTestTool{
+		name: "lookup",
+		result: &ToolResult{
+			Content: "tool-output",
+			Artifacts: []Artifact{{
+				Kind: "file",
+				URI:  "artifact://report.txt",
+			}},
+			Metadata: map[string]any{
+				"source": "tool",
+			},
+		},
+	})
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			ToolCalls: []ToolCall{{
+				CallID: "call-1",
+				Name:   "lookup",
+			}},
+			FinishReason: FinishToolCalls,
+		}},
+	}
+
+	_, err := New(Config{
+		Provider:      provider,
+		Storage:       store,
+		Memory:        mem,
+		Tools:         tools,
+		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
+	}).Run(context.Background(), RunInput{
+		RunID:       "run-memory-observe-tool-fail",
+		AgentID:     "agent-1",
+		Instruction: "collect tool facts",
+	})
+	if err == nil {
+		t.Fatal("expected observe failure during tool transcript persistence, got nil")
+	}
+	var memoryErr *MemoryError
+	if !errors.As(err, &memoryErr) {
+		t.Fatalf("expected memory error wrapper, got %T %v", err, err)
+	}
+	if len(provider.calls) != 1 {
+		t.Fatalf("expected provider to run once before tool transcript observe failure, got %#v", provider.calls)
+	}
+
+	saved := store.runs["run-memory-observe-tool-fail"]
+	if saved == nil || saved.Status != RunFailed {
+		t.Fatalf("expected failed state after tool transcript observe failure, got %#v", saved)
+	}
+	if len(saved.Messages) != 3 {
+		t.Fatalf("expected failed snapshot to keep user, assistant tool-call, and tool result, got %#v", saved.Messages)
+	}
+	if len(saved.Artifacts) != 1 || saved.Artifacts[0].URI != "artifact://report.txt" {
+		t.Fatalf("expected failed snapshot to keep tool artifacts, got %#v", saved)
+	}
+
+	logged := store.messages["run-memory-observe-tool-fail"]
+	if len(logged) != 3 {
+		t.Fatalf("expected authority log to keep full tool transcript, got %#v", logged)
+	}
+	if logged[1].Role != "assistant" || logged[1].ToolCall == nil || logged[1].ToolCall.Name != "lookup" {
+		t.Fatalf("expected assistant tool-call to remain authoritative, got %#v", logged[1])
+	}
+	if logged[2].ToolResult == nil || logged[2].ToolResult.Content != "tool-output" {
+		t.Fatalf("expected tool result content to remain authoritative, got %#v", logged[2])
+	}
+	if logged[2].ToolResult.Metadata["source"] != "tool" {
+		t.Fatalf("expected tool result metadata to remain authoritative, got %#v", logged[2].ToolResult)
+	}
+	if len(logged[2].ToolResult.Artifacts) != 1 || logged[2].ToolResult.Artifacts[0].URI != "artifact://report.txt" {
+		t.Fatalf("expected tool result artifacts to remain authoritative, got %#v", logged[2].ToolResult)
+	}
+}
+
+func TestRuntime_Run_PersistMutatedToolOutputObserveFailureKeepsMutatedFactsAuthoritative(t *testing.T) {
+	store := newRuntimeTestStorage()
+	mem := &runtimeTestMemory{
+		observeErr:   errors.New("observe failed after mutated tool transcript append"),
+		observeErrOn: 2,
+	}
+	tools := NewToolRegistry()
+	tools.Register(&runtimeTestTool{
+		name: "lookup",
+		result: &ToolResult{
+			Content: "tool-output",
+		},
+	})
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			ToolCalls: []ToolCall{{
+				CallID: "call-1",
+				Name:   "lookup",
+				Arguments: map[string]any{
+					"query": "original",
+				},
+			}},
+			FinishReason: FinishToolCalls,
+		}},
+	}
+	hook := &runtimeTestHook{
+		afterToolEvent: func(event *ToolEvent, _ *Control) {
+			event.Call = &ToolCall{
+				CallID: "call-1-mutated",
+				Name:   "lookup-mutated",
+				Arguments: map[string]any{
+					"query": "mutated",
+				},
+			}
+			event.Result = &ToolResult{
+				CallID:  "call-1-mutated",
+				Name:    "lookup-mutated",
+				Content: "mutated-output",
+				Artifacts: []Artifact{{
+					Kind: "file",
+					URI:  "artifact://mutated.txt",
+				}},
+				Metadata: map[string]any{
+					"source": "after_tool",
+				},
+			}
+		},
+	}
+
+	_, err := New(Config{
+		Provider:      provider,
+		Storage:       store,
+		Memory:        mem,
+		Tools:         tools,
+		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
+		Hooks:         []Hook{hook},
+	}).Run(context.Background(), RunInput{
+		RunID:       "run-memory-observe-mutated-tool-fail",
+		AgentID:     "agent-1",
+		Instruction: "collect mutated tool facts",
+	})
+	if err == nil {
+		t.Fatal("expected observe failure during mutated tool transcript persistence, got nil")
+	}
+	var memoryErr *MemoryError
+	if !errors.As(err, &memoryErr) {
+		t.Fatalf("expected memory error wrapper, got %T %v", err, err)
+	}
+
+	saved := store.runs["run-memory-observe-mutated-tool-fail"]
+	if saved == nil || saved.Status != RunFailed {
+		t.Fatalf("expected failed state after mutated tool transcript observe failure, got %#v", saved)
+	}
+	if len(saved.Messages) != 3 {
+		t.Fatalf("expected failed snapshot to keep mutated assistant tool-call and tool result, got %#v", saved.Messages)
+	}
+	if saved.Messages[1].ToolCall == nil || saved.Messages[1].ToolCall.Name != "lookup-mutated" || saved.Messages[1].ToolCall.CallID != "call-1-mutated" {
+		t.Fatalf("expected failed snapshot to keep mutated assistant tool-call, got %#v", saved.Messages[1])
+	}
+	if saved.Messages[2].ToolResult == nil || saved.Messages[2].ToolResult.Content != "mutated-output" {
+		t.Fatalf("expected failed snapshot to keep mutated tool result content, got %#v", saved.Messages[2])
+	}
+	if saved.Messages[2].ToolResult.Metadata["source"] != "after_tool" {
+		t.Fatalf("expected failed snapshot to keep mutated tool result metadata, got %#v", saved.Messages[2].ToolResult)
+	}
+	if len(saved.Artifacts) != 1 || saved.Artifacts[0].URI != "artifact://mutated.txt" {
+		t.Fatalf("expected failed snapshot to keep mutated artifacts, got %#v", saved)
+	}
+
+	logged := store.messages["run-memory-observe-mutated-tool-fail"]
+	if len(logged) != 3 {
+		t.Fatalf("expected authority log to keep mutated tool transcript, got %#v", logged)
+	}
+	if logged[1].ToolCall == nil || logged[1].ToolCall.Name != "lookup-mutated" || logged[1].ToolCall.CallID != "call-1-mutated" {
+		t.Fatalf("expected authority log to keep mutated assistant tool-call, got %#v", logged[1])
+	}
+	if logged[2].ToolResult == nil || logged[2].ToolResult.Content != "mutated-output" {
+		t.Fatalf("expected authority log to keep mutated tool result content, got %#v", logged[2])
+	}
+	if logged[2].ToolResult.Metadata["source"] != "after_tool" {
+		t.Fatalf("expected authority log to keep mutated tool result metadata, got %#v", logged[2].ToolResult)
+	}
+	if len(logged[2].ToolResult.Artifacts) != 1 || logged[2].ToolResult.Artifacts[0].URI != "artifact://mutated.txt" {
+		t.Fatalf("expected authority log to keep mutated tool artifacts, got %#v", logged[2].ToolResult)
+	}
+}
