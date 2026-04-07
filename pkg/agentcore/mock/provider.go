@@ -11,8 +11,9 @@ import (
 
 // Step is a deterministic provider script step.
 type Step struct {
-	result *agentcore.GenerateResult
-	err    error
+	result       *agentcore.GenerateResult
+	err          error
+	streamEvents []agentcore.StreamEvent
 }
 
 // Final scripts a final model response.
@@ -42,6 +43,12 @@ func ToolCall(callID, name string, arguments map[string]any) Step {
 // Error scripts a provider failure.
 func Error(err error) Step {
 	return Step{err: err}
+}
+
+// Stream attaches streaming events to a scripted step.
+func Stream(step Step, events ...agentcore.StreamEvent) Step {
+	step.streamEvents = cloneStreamEvents(events)
+	return step
 }
 
 // Provider returns scripted responses in order.
@@ -96,10 +103,66 @@ func (p *Provider) Generate(context.Context, *agentcore.GenerateRequest) (*agent
 	return step.result, nil
 }
 
+// Stream emits scripted streaming events before returning the final scripted result.
+func (p *Provider) Stream(ctx context.Context, req *agentcore.GenerateRequest, emit agentcore.StreamFunc) (*agentcore.GenerateResult, error) {
+	_ = req
+
+	if p == nil {
+		return nil, fmt.Errorf("mock provider exhausted")
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.index >= len(p.steps) {
+		return nil, fmt.Errorf("mock provider exhausted")
+	}
+
+	step := cloneStep(p.steps[p.index])
+	p.index++
+
+	for _, event := range step.streamEvents {
+		if emit == nil {
+			continue
+		}
+		if err := emit(ctx, cloneStreamEvent(event)); err != nil {
+			return nil, err
+		}
+	}
+
+	if step.err != nil {
+		return nil, step.err
+	}
+	if err := step.result.Validate(); err != nil {
+		return nil, err
+	}
+	return step.result, nil
+}
+
 func cloneStep(step Step) Step {
 	return Step{
-		result: cloneResult(step.result),
-		err:    step.err,
+		result:       cloneResult(step.result),
+		err:          step.err,
+		streamEvents: cloneStreamEvents(step.streamEvents),
+	}
+}
+
+func cloneStreamEvents(events []agentcore.StreamEvent) []agentcore.StreamEvent {
+	if len(events) == 0 {
+		return nil
+	}
+	cloned := make([]agentcore.StreamEvent, len(events))
+	for i, event := range events {
+		cloned[i] = cloneStreamEvent(event)
+	}
+	return cloned
+}
+
+func cloneStreamEvent(event agentcore.StreamEvent) agentcore.StreamEvent {
+	return agentcore.StreamEvent{
+		Kind:     event.Kind,
+		Delta:    event.Delta,
+		Metadata: cloneMap(event.Metadata),
 	}
 }
 

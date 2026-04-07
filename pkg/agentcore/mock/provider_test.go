@@ -89,6 +89,53 @@ func TestMockProvider_ReturnsScriptedErrorStep(t *testing.T) {
 	}
 }
 
+func TestMockProvider_StreamEmitsEventsBeforeFinalResult(t *testing.T) {
+	provider := NewProvider(
+		Stream(
+			Final("hello"),
+			agentcore.StreamEvent{Kind: agentcore.StreamEventTextDelta, Delta: "hel"},
+			agentcore.StreamEvent{Kind: agentcore.StreamEventTextDelta, Delta: "lo"},
+			agentcore.StreamEvent{Kind: agentcore.StreamEventMessageStop},
+		),
+	)
+
+	var seen []agentcore.StreamEvent
+	result, err := provider.Stream(stdctx.Background(), &agentcore.GenerateRequest{}, func(_ stdctx.Context, event agentcore.StreamEvent) error {
+		seen = append(seen, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("expected no error from streaming step, got %v", err)
+	}
+	if result == nil || result.Content != "hello" {
+		t.Fatalf("expected final streamed result, got %#v", result)
+	}
+	if len(seen) != 3 {
+		t.Fatalf("expected 3 stream events, got %#v", seen)
+	}
+}
+
+func TestMockProvider_StreamPropagatesEmitterError(t *testing.T) {
+	provider := NewProvider(
+		Stream(
+			Final("hello"),
+			agentcore.StreamEvent{Kind: agentcore.StreamEventTextDelta, Delta: "hel"},
+		),
+	)
+
+	wantErr := errors.New("emit failed")
+	result, err := provider.Stream(stdctx.Background(), &agentcore.GenerateRequest{}, func(_ stdctx.Context, event agentcore.StreamEvent) error {
+		_ = event
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected emitter error, got result=%#v err=%v", result, err)
+	}
+	if result != nil {
+		t.Fatalf("expected no result when emitter fails, got %#v", result)
+	}
+}
+
 func TestMockProvider_RejectsInvalidScriptedResult(t *testing.T) {
 	provider := NewProvider(Step{
 		result: &agentcore.GenerateResult{

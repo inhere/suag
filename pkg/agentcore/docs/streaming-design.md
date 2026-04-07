@@ -338,3 +338,22 @@ hooks 仍然有价值，但定位应是：
 - transcript / resume 语义不因 streaming 变模糊
 
 如果达到这些目标，下一轮就可以安全进入 streaming 的最小实现阶段，而不会把 `agentcore` 从 kernel 方向拉偏。
+
+---
+
+## 14. Phase 1 Scope Lock
+
+当前 Phase 1 实现范围进一步收窄为：
+
+- `text_delta`
+- `message_stop`
+- optional `StreamingProvider`
+- `RunInput.Stream`
+
+这一轮刻意不包含：
+
+- `tool_call` stream event 的 runtime 消费
+- stream-aware transcript persistence
+- stream-specific hook lifecycle
+
+这样做是为了先把最小 host-facing streaming contract 稳住，再继续向 tool-aware streaming 推进。

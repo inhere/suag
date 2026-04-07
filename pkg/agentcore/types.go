@@ -6,6 +6,7 @@ type RunInput struct {
 	AgentID     string
 	Instruction string
 	Metadata    map[string]any
+	Stream      StreamFunc
 	MaxSteps    int
 	ResumeMode  ResumeMode
 }

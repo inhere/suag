@@ -97,6 +97,12 @@
 - `mock/`
 - `files/` 的非 contract 细节
 
+以及新引入的最小 streaming surface：
+
+- `text_delta`
+- `message_stop`
+- host-facing stream callback 形状
+
 原因不是它们不重要，而是它们仍然处在“默认体验打磨期”。
 
 只要不破坏核心 contract，这些默认实现还可以继续增强：
@@ -164,6 +170,16 @@ internal adapter 如何组织、如何放在仓库级位置，目前也仍然可
 - 尽量渐进
 
 来推进，而不是静默改行为。
+
+### 4.5 Streaming Authority Rules
+
+当前 streaming phase 1 已经形成的关键预期是：
+
+- stream delta 用于 host 渐进观测
+- final `GenerateResult` 仍然是 authority completion
+- authority transcript 仍然只从最终 completion 写入
+
+后续如果继续增强 streaming，也不应轻易破坏这组规则。
 
 ---
 

@@ -285,6 +285,39 @@ func (p *runtimeTestProvider) Generate(_ context.Context, req *GenerateRequest) 
 	return result, nil
 }
 
+type runtimeTestStreamingProvider struct {
+	runtimeTestProvider
+	streamEvents []StreamEvent
+	streamCalls  int
+}
+
+func (p *runtimeTestStreamingProvider) Stream(ctx context.Context, req *GenerateRequest, emit StreamFunc) (*GenerateResult, error) {
+	p.streamCalls++
+	p.calls = append(p.calls, cloneGenerateRequest(req))
+
+	for _, event := range p.streamEvents {
+		if emit == nil {
+			continue
+		}
+		if err := emit(ctx, event); err != nil {
+			return nil, err
+		}
+	}
+
+	if len(p.errs) > 0 {
+		err := p.errs[0]
+		p.errs = p.errs[1:]
+		return nil, err
+	}
+	if len(p.results) == 0 {
+		return nil, fmt.Errorf("no scripted provider result")
+	}
+
+	result := cloneGenerateResult(p.results[0])
+	p.results = p.results[1:]
+	return result, nil
+}
+
 type runtimeTestTool struct {
 	name        string
 	description string
@@ -552,6 +585,182 @@ func TestRuntime_Run_FinalAnswer(t *testing.T) {
 	}
 	if store.messages[result.RunID][1].Role != "assistant" || store.messages[result.RunID][1].Content != "done" {
 		t.Fatalf("expected assistant final answer to be appended, got %#v", store.messages[result.RunID])
+	}
+}
+
+func TestRuntime_Run_UsesGenerateWhenProviderDoesNotStream(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	rt := New(Config{Provider: provider, Storage: store})
+
+	result, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-non-stream",
+		AgentID:     "agent-1",
+		Instruction: "hello",
+		Stream: func(context.Context, StreamEvent) error {
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if result.Output != "done" {
+		t.Fatalf("expected final output done, got %#v", result)
+	}
+	if len(provider.calls) != 1 {
+		t.Fatalf("expected generate path to be used once, got %d calls", len(provider.calls))
+	}
+}
+
+func TestRuntime_Run_UsesGenerateWithoutStreamHandler(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestStreamingProvider{
+		runtimeTestProvider: runtimeTestProvider{
+			results: []*GenerateResult{{
+				Content:      "done",
+				FinishReason: FinishFinal,
+			}},
+		},
+	}
+
+	rt := New(Config{Provider: provider, Storage: store})
+
+	result, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-generate-fallback",
+		AgentID:     "agent-1",
+		Instruction: "hello",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if result.Output != "done" {
+		t.Fatalf("expected final output done, got %#v", result)
+	}
+	if len(provider.calls) != 1 {
+		t.Fatalf("expected one provider call, got %d", len(provider.calls))
+	}
+	if provider.streamCalls != 0 {
+		t.Fatalf("expected stream path to stay unused, got %d calls", provider.streamCalls)
+	}
+}
+
+func TestRuntime_Run_StreamsTextDeltasAndReturnsFinalResult(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestStreamingProvider{
+		runtimeTestProvider: runtimeTestProvider{
+			results: []*GenerateResult{{
+				Content:      "hello",
+				FinishReason: FinishFinal,
+			}},
+		},
+		streamEvents: []StreamEvent{
+			{Kind: StreamEventTextDelta, Delta: "hel"},
+			{Kind: StreamEventTextDelta, Delta: "lo"},
+			{Kind: StreamEventMessageStop},
+		},
+	}
+
+	var seen []StreamEvent
+	rt := New(Config{Provider: provider, Storage: store})
+
+	result, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-stream",
+		AgentID:     "agent-1",
+		Instruction: "hello",
+		Stream: func(_ context.Context, event StreamEvent) error {
+			seen = append(seen, event)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if result.Output != "hello" {
+		t.Fatalf("expected final output hello, got %#v", result)
+	}
+	if provider.streamCalls != 1 {
+		t.Fatalf("expected one stream call, got %d", provider.streamCalls)
+	}
+	if len(provider.calls) != 1 {
+		t.Fatalf("expected one provider request, got %d", len(provider.calls))
+	}
+	if len(seen) != 3 {
+		t.Fatalf("expected 3 stream events, got %#v", seen)
+	}
+}
+
+func TestRuntime_Run_StreamHandlerErrorFailsRun(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestStreamingProvider{
+		runtimeTestProvider: runtimeTestProvider{
+			results: []*GenerateResult{{
+				Content:      "hello",
+				FinishReason: FinishFinal,
+			}},
+		},
+		streamEvents: []StreamEvent{
+			{Kind: StreamEventTextDelta, Delta: "hel"},
+		},
+	}
+
+	streamErr := errors.New("stream handler failed")
+	rt := New(Config{Provider: provider, Storage: store})
+
+	_, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-stream-error",
+		AgentID:     "agent-1",
+		Instruction: "hello",
+		Stream: func(context.Context, StreamEvent) error {
+			return streamErr
+		},
+	})
+	if !errors.Is(err, streamErr) {
+		t.Fatalf("expected stream handler error, got %v", err)
+	}
+}
+
+func TestRuntime_Run_StreamingStillPersistsOnlyFinalAssistantMessage(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestStreamingProvider{
+		runtimeTestProvider: runtimeTestProvider{
+			results: []*GenerateResult{{
+				Content:      "hello",
+				FinishReason: FinishFinal,
+			}},
+		},
+		streamEvents: []StreamEvent{
+			{Kind: StreamEventTextDelta, Delta: "hel"},
+			{Kind: StreamEventTextDelta, Delta: "lo"},
+			{Kind: StreamEventMessageStop},
+		},
+	}
+
+	rt := New(Config{Provider: provider, Storage: store})
+
+	result, err := rt.Run(context.Background(), RunInput{
+		RunID:       "run-stream-persist",
+		AgentID:     "agent-1",
+		Instruction: "hello",
+		Stream: func(context.Context, StreamEvent) error {
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	msgs := store.messages[result.RunID]
+	if len(msgs) != 2 {
+		t.Fatalf("expected only user and final assistant messages to persist, got %#v", msgs)
+	}
+	if msgs[1].Role != "assistant" || msgs[1].Content != "hello" {
+		t.Fatalf("expected final assistant message to persist, got %#v", msgs[1])
 	}
 }
 

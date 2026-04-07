@@ -8,6 +8,30 @@ type Provider interface {
 	Generate(ctx context.Context, req *GenerateRequest) (*GenerateResult, error)
 }
 
+// StreamEventKind identifies the public streaming event shape emitted by a provider.
+type StreamEventKind string
+
+const (
+	StreamEventTextDelta   StreamEventKind = "text_delta"
+	StreamEventMessageStop StreamEventKind = "message_stop"
+)
+
+// StreamEvent is the minimal host-facing streaming event contract.
+type StreamEvent struct {
+	Kind     StreamEventKind
+	Delta    string
+	Metadata map[string]any
+}
+
+// StreamFunc consumes a model streaming event.
+type StreamFunc func(ctx context.Context, event StreamEvent) error
+
+// StreamingProvider is an optional provider capability for incremental output delivery.
+type StreamingProvider interface {
+	Provider
+	Stream(ctx context.Context, req *GenerateRequest, emit StreamFunc) (*GenerateResult, error)
+}
+
 // GenerateRequest is the portable model request contract for agentcore runtimes.
 type GenerateRequest struct {
 	Model       string

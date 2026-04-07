@@ -138,7 +138,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 			Metadata: cloneMetadata(state.Metadata),
 		}
 
-		res, err := r.callModel(ctx, state, req, ctrl)
+		res, err := r.callModel(ctx, state, req, ctrl, input.Stream)
 		if err != nil {
 			return r.returnWithHandledError(ctx, input, state, "model", err, ctrl)
 		}
@@ -342,7 +342,7 @@ func (r *DefaultRuntime) listTools(ctx context.Context) ([]ToolSchema, error) {
 	return tools, nil
 }
 
-func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *GenerateRequest, ctrl *Control) (*GenerateResult, error) {
+func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *GenerateRequest, ctrl *Control, stream StreamFunc) (*GenerateResult, error) {
 	event := &ModelEvent{
 		RunID:     state.RunID,
 		AgentID:   state.AgentID,
@@ -357,7 +357,7 @@ func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *Ge
 		return nil, nil
 	}
 
-	result, err := r.provider.Generate(ctx, event.Request)
+	result, err := r.invokeProvider(ctx, event.Request, stream)
 	if err != nil {
 		return nil, wrapProviderError(err)
 	}
@@ -371,6 +371,18 @@ func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *Ge
 	}
 	result = event.Result
 	return result, nil
+}
+
+func (r *DefaultRuntime) invokeProvider(ctx context.Context, req *GenerateRequest, stream StreamFunc) (*GenerateResult, error) {
+	if stream != nil {
+		if provider, ok := r.provider.(StreamingProvider); ok {
+			return provider.Stream(ctx, req, func(ctx context.Context, event StreamEvent) error {
+				return stream(ctx, cloneStreamEventValue(event))
+			})
+		}
+	}
+
+	return r.provider.Generate(ctx, req)
 }
 
 func (r *DefaultRuntime) saveState(ctx context.Context, state *RunState, messages []Message) error {
@@ -949,6 +961,14 @@ func cloneGenerateResultValue(result *GenerateResult) *GenerateResult {
 	}
 	cloned.Metadata = cloneMetadata(result.Metadata)
 	return &cloned
+}
+
+func cloneStreamEventValue(event StreamEvent) StreamEvent {
+	return StreamEvent{
+		Kind:     event.Kind,
+		Delta:    event.Delta,
+		Metadata: cloneMetadata(event.Metadata),
+	}
 }
 
 func mergeMetadata(base, overlay map[string]any) map[string]any {

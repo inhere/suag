@@ -249,7 +249,50 @@ type Config struct {
 
 如果大量核心业务逻辑都只能藏在 hook 里，通常意味着核心 contract 需要升级。
 
-## 9. ResumeMode
+## 9. Streaming
+
+`agentcore` 当前已经支持一个最小 streaming contract。
+
+基础事件模型是：
+
+```go
+type StreamEventKind string
+
+const (
+	StreamEventTextDelta   StreamEventKind = "text_delta"
+	StreamEventMessageStop StreamEventKind = "message_stop"
+)
+
+type StreamEvent struct {
+	Kind     StreamEventKind
+	Delta    string
+	Metadata map[string]any
+}
+```
+
+host 侧通过 `RunInput.Stream` 接收事件：
+
+```go
+type StreamFunc func(ctx context.Context, event StreamEvent) error
+```
+
+provider 侧可以选择实现额外能力：
+
+```go
+type StreamingProvider interface {
+	Provider
+	Stream(ctx context.Context, req *GenerateRequest, emit StreamFunc) (*GenerateResult, error)
+}
+```
+
+当前规则是：
+
+- 只有当 provider 实现 `StreamingProvider` 且 caller 提供 `RunInput.Stream` 时，runtime 才走 streaming 路径
+- 否则继续沿用现有 `Provider.Generate(...)`
+- streaming delta 默认不直接进入 authority transcript
+- 最终 `GenerateResult` 仍然是 authoritative completion
+
+## 10. ResumeMode
 
 `ResumeMode` 定义恢复时是否追加新的 user input：
 
@@ -267,7 +310,7 @@ type Config struct {
 3. 根据 `ResumeMode` 决定是否追加新的 user message
 4. 再进入 runtime loop
 
-## 10. 错误包装
+## 11. 错误包装
 
 runtime 会对错误做稳定分类：
 
@@ -284,7 +327,7 @@ runtime 会对错误做稳定分类：
 - provider 失败后，即使后续观察型 hook 继续上报错误，返回值仍应保留原始 provider root cause
 - transcript append / 持久化失败属于更高优先级问题，因为它影响 authority transcript 的可信度
 
-## 11. 最小扩展路径
+## 12. 最小扩展路径
 
 推荐按这个顺序扩展：
 
