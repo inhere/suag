@@ -14,13 +14,15 @@
    公共接口职责与边界
 5. [embedding-patterns.md](./embedding-patterns.md)
    直接嵌入与 adapter 桥接两种常见接法
-6. [working-memory-design.md](./working-memory-design.md)
+6. [compatibility.md](./compatibility.md)
+   当前兼容性预期、发布姿态与检查清单
+7. [working-memory-design.md](./working-memory-design.md)
    下一轮默认 memory kernel 演进设计
-7. [context-presets-design.md](./context-presets-design.md)
+8. [context-presets-design.md](./context-presets-design.md)
    下一轮默认 context 组合演进设计
-8. [prompt-layered-design.md](./prompt-layered-design.md)
+9. [prompt-layered-design.md](./prompt-layered-design.md)
    下一轮默认 prompt 组合演进设计
-9. [roadmap.md](./roadmap.md)
+10. [roadmap.md](./roadmap.md)
    后续演进路线
 
 ## 这组文档回答什么问题
@@ -31,6 +33,7 @@
 - 如何把 `agentcore` 嵌进自己的系统
 - 如何理解 transcript、resume、memory 等核心语义
 - 如何围绕公共 contract 做扩展
+- 当前哪些 public surface 已经适合依赖，哪些仍在演进
 - 下一轮 kernel 演进准备做什么
 - 默认 builder 组合下一步怎么长
 - 默认 prompt 组合下一步怎么长

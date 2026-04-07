@@ -257,6 +257,7 @@ Hooks 应该负责：
 
 重点事项：
 
+- 明确 compatibility / release posture
 - 更稳定的 package docs
 - 更清晰的 versioning / compatibility policy
 - examples 与 adapter story 完整化

@@ -179,6 +179,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - Architecture: [docs/architecture.md](./docs/architecture.md)
 - API guide: [docs/api.md](./docs/api.md)
 - Embedding patterns: [docs/embedding-patterns.md](./docs/embedding-patterns.md)
+- Compatibility: [docs/compatibility.md](./docs/compatibility.md)
 - Working memory design: [docs/working-memory-design.md](./docs/working-memory-design.md)
 - Context presets design: [docs/context-presets-design.md](./docs/context-presets-design.md)
 - Prompt layered design: [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
@@ -194,16 +195,17 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 4. [docs/architecture.md](./docs/architecture.md)
 5. [docs/api.md](./docs/api.md)
 6. [docs/embedding-patterns.md](./docs/embedding-patterns.md)
-7. [docs/working-memory-design.md](./docs/working-memory-design.md)
-8. [docs/context-presets-design.md](./docs/context-presets-design.md)
-9. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
-10. `doc.go`
-11. `examples/README.md`
-12. `examples/minimal`
-13. `examples/custom`
-14. `examples/prompt`
-15. `examples/resume`
-16. [docs/roadmap.md](./docs/roadmap.md)
+7. [docs/compatibility.md](./docs/compatibility.md)
+8. [docs/working-memory-design.md](./docs/working-memory-design.md)
+9. [docs/context-presets-design.md](./docs/context-presets-design.md)
+10. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
+11. `doc.go`
+12. `examples/README.md`
+13. `examples/minimal`
+14. `examples/custom`
+15. `examples/prompt`
+16. `examples/resume`
+17. [docs/roadmap.md](./docs/roadmap.md)
 
 ## Memory And Context
 
