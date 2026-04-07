@@ -10,6 +10,8 @@
   - 演示第一方 `WorkingMemory` 如何构建 `summary + recent window` 上下文
 - `context`
   - 演示第一方 context presets 如何组合 transcript 与 memory
+- `prompt`
+  - 演示第一方 prompt builders 如何组合 base prompt、run metadata 与附加段落
 - `resume`
   - 演示 `yield -> resume` 的最小恢复链路
 - `bridge`
@@ -22,6 +24,7 @@ go run ./examples/agentcore/minimal
 go run ./examples/agentcore/custom
 go run ./examples/agentcore/memory
 go run ./examples/agentcore/context
+go run ./examples/agentcore/prompt
 go run ./examples/agentcore/resume
 go run ./examples/agentcore/bridge
 ```
@@ -36,6 +39,11 @@ go run ./examples/agentcore/bridge
 - `TranscriptWindow`
 - `MemoryFirst`
 - `MemoryThenRecent`
+
+其中 `prompt` 示例重点展示两件事：
+
+- `prompt.Layered(...)` 的固定输出顺序
+- `RunState.Metadata` 如何进入第一方 prompt 组合
 
 其中 `resume` 示例重点展示两件事：
 

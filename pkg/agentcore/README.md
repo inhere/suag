@@ -135,7 +135,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - `context/`
   第一方 context presets，例如 transcript-only 与 memory-first
 - `prompt/`
-  静态 prompt builder
+  第一方 prompt builders，例如 `StaticBuilder` 与 `Layered(...)`
 - `hooks/`
   有序 hook chain 辅助
 - `mock/`
@@ -147,7 +147,8 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 2. 再加入 `ToolRegistry` 和 `Hook`
 3. 如果不想自己从零实现 memory，先接入 `pkg/agentcore/memory`
 4. 默认 `ContextBuilder` 优先从 `pkg/agentcore/context` 的 presets 起步
-5. 最后接真实 `Provider` 和自定义 `Storage`
+5. 需要组合 system prompt 时，优先从 `pkg/agentcore/prompt` 的 builders 起步
+6. 最后接真实 `Provider` 和自定义 `Storage`
 
 ## Package Layout
 
@@ -160,7 +161,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - `context/`  
   First-party context presets and default message-window builder
 - `prompt/`  
-  Static prompt builder
+  First-party prompt builders
 - `hooks/`  
   Ordered hook-chain helper
 - `mock/`  
@@ -283,6 +284,34 @@ builder := context.MemoryThenRecent(mem, context.MemoryThenRecentConfig{
   适合默认 `WorkingMemory` 路径
 - `MemoryThenRecent`
   适合希望先使用 memory，再显式追加最近原始消息的场景
+
+如果你需要在 system prompt 中组合固定 base 文本、run metadata 与附加段落，可以直接使用第一方 prompt builder：
+
+```go
+builder := prompt.StaticBuilder{
+    Prompt: "You are a focused repository assistant.",
+}
+```
+
+```go
+builder := prompt.Layered(prompt.Config{
+    Base: "You are a focused repository assistant.",
+    Metadata: prompt.MetadataConfig{
+        Enabled: true,
+    },
+    Sections: []string{
+        "Prefer grounded answers based on the current run state.",
+        "Keep tool usage minimal and explicit.",
+    },
+})
+```
+
+其中：
+
+- `StaticBuilder`
+  适合完全静态的 system prompt
+- `Layered`
+  适合把 base prompt、`RunState.Metadata` 和固定补充段落稳定拼接起来
 
 ## Resume Model
 

@@ -132,6 +132,43 @@ func main() {
 - 有默认 `WorkingMemory` 时，优先用 `MemoryFirst`
 - 如果你想保留 summary/derived context 再显式补最近几条原始消息，用 `MemoryThenRecent`
 
+如果你还需要一个更实用的默认 prompt 组合层，当前第一方 prompt 入口有两个：
+
+- `prompt.StaticBuilder`
+- `prompt.Layered(...)`
+
+推荐理解为：
+
+- 只需要固定 system prompt 时，用 `StaticBuilder`
+- 想把 base prompt、`RunState.Metadata` 和固定段落稳定拼接时，用 `Layered(...)`
+
+例如：
+
+```go
+runtime := agentcore.New(agentcore.Config{
+	Provider: mock.NewProvider(mock.Final("hello from agentcore")),
+	Storage:  files.NewStorage(".agentcore-runs"),
+	PromptBuilder: prompt.Layered(prompt.Config{
+		Base: "You are a focused repository assistant.",
+		Metadata: prompt.MetadataConfig{
+			Enabled: true,
+		},
+		Sections: []string{
+			"Prefer grounded answers based on the current run state.",
+			"Keep tool usage minimal and explicit.",
+		},
+	}),
+})
+```
+
+它的输出顺序固定为：
+
+1. `Base`
+2. `[Run metadata]`
+3. `Sections...`
+
+各段之间使用空行分隔，metadata key 会按字典序稳定输出。
+
 ## 6. 下一步看哪里
 
 - API guide: `pkg/agentcore/docs/api.md`
@@ -141,6 +178,7 @@ func main() {
 建议顺序：
 
 1. `examples/agentcore/minimal`
-2. `examples/agentcore/custom`
-3. `examples/agentcore/resume`
-4. `examples/agentcore/bridge`
+2. `examples/agentcore/prompt`
+3. `examples/agentcore/custom`
+4. `examples/agentcore/resume`
+5. `examples/agentcore/bridge`

@@ -184,15 +184,44 @@ type ContextBuilder interface {
 
 如果你只是想直接使用第一方默认组合，而不是自己写 builder，当前可以看：
 
+- `prompt.StaticBuilder`
+- `prompt.Layered(...)`
 - `context.TranscriptWindow(...)`
 - `context.MemoryFirst(...)`
 - `context.MemoryThenRecent(...)`
 
-它们分别覆盖：
+其中 prompt 侧分别覆盖：
+
+- 完全静态 prompt
+- `Base + Metadata + Sections` 的稳定文本组合
+
+context 侧分别覆盖：
 
 - transcript-only 路径
 - default memory 路径
 - memory + recent transcript 路径
+
+`prompt.Layered(...)` 当前建议配置是：
+
+```go
+type MetadataConfig struct {
+	Enabled bool
+}
+
+type Config struct {
+	Base     string
+	Metadata MetadataConfig
+	Sections []string
+}
+```
+
+稳定输出规则是：
+
+- 顺序固定为 `Base -> metadata block -> Sections...`
+- metadata block 标题固定为 `[Run metadata]`
+- metadata key 按字典序排序
+- 空 section 跳过
+- 所有内容都为空时返回空字符串
 
 ## 8. Hook
 
