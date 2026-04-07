@@ -1,6 +1,6 @@
 # agentcore
 
-`pkg/agentcore` 是 Axon 中抽离出来的最小 Agent Runtime Core，目标是将来可以作为独立包发布和嵌入使用。
+`agentcore` 是 Axon 中抽离出来的最小 Agent Runtime Core，目标是将来可以作为独立包发布和嵌入使用。
 
 它的定位更接近一个 runtime kernel，而不是一个完整 agent framework：
 
@@ -169,7 +169,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 注意：
 
-- `pkg/agentcore` 本身不应依赖仓库的 `internal/*` 包
+- `agentcore` 本身不应依赖仓库的 `internal/*` 包
 - 与 Axon 内部 `llm`、`tools` 等实现的桥接 adapter 放在 `internal/agentcoreadapters/`
 
 ## Docs
@@ -356,7 +356,7 @@ resumed, err := runtime.Run(ctx, agentcore.RunInput{
 })
 ```
 
-如果你在 `pkg/agentcore` 目录下直接看包内示例，可以运行：
+如果你在包目录下直接看包内示例，可以运行：
 
 ```bash
 go run ./examples/minimal
@@ -418,7 +418,7 @@ go run ./examples/agentcore/bridge
 
 ## Release Posture
 
-如果未来单独发布 `pkg/agentcore`，建议把它看成下面这类包：
+如果未来单独发布 `agentcore`，建议把它看成下面这类包：
 
 - 一个稳定的 runtime contract 包
 - 一个带少量默认实现的 kernel 包

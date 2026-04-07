@@ -45,4 +45,4 @@
 - `examples/custom`
 - `examples/prompt`
 - `examples/resume`
-- `examples/agentcore/bridge`
+- `../../examples/agentcore/bridge`
