@@ -337,3 +337,7 @@ runtime 会对错误做稳定分类：
 4. 跑通 `yield -> resume`
 5. 接入 `Memory`
 6. 最后接真实 `Provider` 和自定义 `Storage`
+
+如果你不只是想看单个接口，而是想直接从当前更推荐的组合起步，再继续看：
+
+- [recommended-runtime.md](./recommended-runtime.md)

@@ -265,6 +265,11 @@ go test ./pkg/agentcore/... ./examples/agentcore/bridge
 - default builder 组合示例
 - example 与 docs 的互相跳转
 
+当前对应入口：
+
+- [recommended-runtime.md](./recommended-runtime.md)
+- [../examples/recommended/main.go](../examples/recommended/main.go)
+
 ### 4.3 Streaming Contract Growth Discipline
 
 原因：

@@ -112,6 +112,10 @@ func main() {
 6. 只有需要更强消息编排时，再替换 `PromptBuilder` / `ContextBuilder`
 7. 最后接真实 `Provider` 和自定义 `Storage`
 
+如果你想直接从一个更接近真实 embedding host 的组合起步，当前更推荐继续看：
+
+- [recommended-runtime.md](./recommended-runtime.md)
+
 当前第一方默认 memory 实现已经提供：
 
 - summary slot
@@ -175,6 +179,7 @@ runtime := agentcore.New(agentcore.Config{
 - Compatibility: [docs/compatibility.md](./compatibility.md)
 - Versioning: [docs/versioning.md](./versioning.md)
 - Release readiness: [docs/release-readiness.md](./release-readiness.md)
+- Recommended runtime path: [docs/recommended-runtime.md](./recommended-runtime.md)
 - Roadmap: [docs/roadmap.md](./roadmap.md)
 - Examples: `examples/`
 
