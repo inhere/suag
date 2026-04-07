@@ -14,6 +14,8 @@
   - 演示第一方 prompt builders 如何组合 base prompt、run metadata 与附加段落
 - `recommended`
   - 演示当前更推荐的 starter path：`files + memory + context + prompt + explicit resume + optional streaming`
+- `host`
+  - 演示 embedding host 如何封装 `Start/Continue` 入口并转发 streaming 到上层 UI
 - `stream`
   - 演示最小 streaming contract 如何向 host 转发 text delta
 - `resume`
@@ -28,6 +30,7 @@ go run ./examples/memory
 go run ./examples/context
 go run ./examples/prompt
 go run ./examples/recommended
+go run ./examples/host
 go run ./examples/stream
 go run ./examples/resume
 ```
@@ -55,6 +58,12 @@ go run ./examples/resume
 - yield / resume 与 tool loop 如何放在同一个主路径里
 - optional streaming 如何与 authority final answer 共存
 
+其中 `host` 示例重点展示三件事：
+
+- host 如何把 `agentcore.RunInput` 收敛到 `Start/Continue` 业务入口
+- `RunID` 如何稳定映射到 host 的 session ID
+- streaming event 如何继续向上转发给 UI 层
+
 如果你希望按“先单点、再组合”的方式阅读，推荐顺序是：
 
 1. `minimal`
@@ -62,8 +71,9 @@ go run ./examples/resume
 3. `context`
 4. `prompt`
 5. `recommended`
-6. `stream`
-7. `resume`
+6. `host`
+7. `stream`
+8. `resume`
 
 其中 `stream` 示例重点展示两件事：
 

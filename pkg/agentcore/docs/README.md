@@ -13,11 +13,13 @@
 7. [versioning.md](./versioning.md) 当前版本策略与变更分级建议
 8. [release-readiness.md](./release-readiness.md) 独立发布前的 contract matrix 与检查清单
 9. [recommended-runtime.md](./recommended-runtime.md) 当前更推荐的外嵌 starter path
-10. [working-memory-design.md](./working-memory-design.md) 下一轮默认 memory kernel 演进设计
-11. [context-presets-design.md](./context-presets-design.md) 下一轮默认 context 组合演进设计
-12. [prompt-layered-design.md](./prompt-layered-design.md) 下一轮默认 prompt 组合演进设计
-13. [streaming-design.md](./streaming-design.md) 下一轮 streaming contract 设计
-14. [roadmap.md](./roadmap.md) 后续演进路线
+10. [host-integration.md](./host-integration.md) embedding host 应该承担哪些职责、如何接 run/stream/yield
+11. [migration.md](./migration.md) 从已有 runtime 或 adapter 逐步迁到更原生 agentcore 的顺序与风险点
+12. [working-memory-design.md](./working-memory-design.md) 下一轮默认 memory kernel 演进设计
+13. [context-presets-design.md](./context-presets-design.md) 下一轮默认 context 组合演进设计
+14. [prompt-layered-design.md](./prompt-layered-design.md) 下一轮默认 prompt 组合演进设计
+15. [streaming-design.md](./streaming-design.md) 下一轮 streaming contract 设计
+16. [roadmap.md](./roadmap.md) 后续演进路线
 
 ## 这组文档回答什么问题
 
@@ -31,6 +33,8 @@
 - 变更应该如何分级、如何避免无意破坏兼容性
 - 独立发布前还需要检查哪些 contract、docs、examples 边界
 - 当前更推荐从哪条 starter path 起步，以及为什么
+- 外部宿主应该如何围绕 `RunInput -> RunResult` 组织集成代码
+- 已有系统应该如何逐步迁移，而不是一次性重写
 - 下一轮 kernel 演进准备做什么
 - 默认 builder 组合下一步怎么长
 - 默认 prompt 组合下一步怎么长

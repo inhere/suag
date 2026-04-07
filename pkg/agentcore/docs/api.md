@@ -341,3 +341,5 @@ runtime 会对错误做稳定分类：
 如果你不只是想看单个接口，而是想直接从当前更推荐的组合起步，再继续看：
 
 - [recommended-runtime.md](./recommended-runtime.md)
+- [host-integration.md](./host-integration.md)
+- [migration.md](./migration.md)

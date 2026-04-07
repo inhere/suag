@@ -51,6 +51,11 @@ runtime := agentcore.New(agentcore.Config{
 - 推荐从 `mock + files + empty tools` 起步
 - `Storage` 和 `Memory` 要严格区分 authority layer 与 context layer
 
+如果你不是在比较大方向，而是已经准备开始写 host 接入代码，继续看：
+
+- [recommended-runtime.md](./recommended-runtime.md)
+- [host-integration.md](./host-integration.md)
+
 ## 2. Pattern B: 通过 Adapter 桥接已有系统
 
 这是对已有 runtime 逐步迁移时更现实的方式。
@@ -134,3 +139,12 @@ runtime := agentcore.New(agentcore.Config{
 - `agentcore` 提供长期稳定 contract
 - internal adapter 只承担过渡和桥接作用
 - 更高层系统逐步直接围绕 `agentcore` 构建
+
+---
+
+## 6. 下一步看哪里
+
+- 如果你要直接嵌入 `agentcore`：看 [recommended-runtime.md](./recommended-runtime.md)
+- 如果你要给聊天服务、worker、CLI 封装 host：看 [host-integration.md](./host-integration.md)
+- 如果你要从已有 runtime / adapter 逐步迁移：看 [migration.md](./migration.md)
+- 如果你要评估当前发布姿态：看 [release-readiness.md](./release-readiness.md)

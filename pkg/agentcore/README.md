@@ -100,6 +100,12 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - append-only transcript
 - 后续可继续接入 tool、hook、memory、resume
 
+如果你不是只想跑最小 demo，而是准备真正接入自己的系统，可以这样选阅读路径：
+
+- 新项目直接嵌入：看 [docs/recommended-runtime.md](./docs/recommended-runtime.md)
+- 给聊天服务、worker、CLI 封装宿主层：看 [docs/host-integration.md](./docs/host-integration.md)
+- 从已有 runtime 或 adapter 逐步迁移：看 [docs/migration.md](./docs/migration.md)
+
 ## Core Contracts
 
 - `Provider` 连接任意 LLM backend，返回 final answer 或 tool calls。
@@ -163,6 +169,8 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - Versioning: [docs/versioning.md](./docs/versioning.md)
 - Release readiness: [docs/release-readiness.md](./docs/release-readiness.md)
 - Recommended runtime path: [docs/recommended-runtime.md](./docs/recommended-runtime.md)
+- Host integration: [docs/host-integration.md](./docs/host-integration.md)
+- Migration guide: [docs/migration.md](./docs/migration.md)
 - Working memory design: [docs/working-memory-design.md](./docs/working-memory-design.md)
 - Context presets design: [docs/context-presets-design.md](./docs/context-presets-design.md)
 - Prompt layered design: [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
@@ -183,17 +191,20 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 8. [docs/versioning.md](./docs/versioning.md)
 9. [docs/release-readiness.md](./docs/release-readiness.md)
 10. [docs/recommended-runtime.md](./docs/recommended-runtime.md)
-11. [docs/working-memory-design.md](./docs/working-memory-design.md)
-12. [docs/context-presets-design.md](./docs/context-presets-design.md)
-13. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
-14. [docs/streaming-design.md](./docs/streaming-design.md)
-15. `doc.go`
-16. `examples/README.md`
-17. `examples/minimal`
-18. `examples/custom`
-19. `examples/prompt`
-20. `examples/resume`
-21. [docs/roadmap.md](./docs/roadmap.md)
+11. [docs/host-integration.md](./docs/host-integration.md)
+12. [docs/migration.md](./docs/migration.md)
+13. [docs/working-memory-design.md](./docs/working-memory-design.md)
+14. [docs/context-presets-design.md](./docs/context-presets-design.md)
+15. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
+16. [docs/streaming-design.md](./docs/streaming-design.md)
+17. `doc.go`
+18. `examples/README.md`
+19. `examples/minimal`
+20. `examples/custom`
+21. `examples/prompt`
+22. `examples/host`
+23. `examples/resume`
+24. [docs/roadmap.md](./docs/roadmap.md)
 
 ## Memory And Context
 

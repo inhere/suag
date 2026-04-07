@@ -245,3 +245,7 @@
 - 更多围绕 `recommended` example 的 host integration 文档
 - 更清晰的 release checklist
 - 更多 resume / transcript edge coverage
+
+如果你下一步就是把它接进自己的聊天服务、任务执行器或 CLI host，继续看：
+
+- [host-integration.md](./host-integration.md)

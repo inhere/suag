@@ -268,7 +268,9 @@ go test ./pkg/agentcore/... ./examples/agentcore/bridge
 当前对应入口：
 
 - [recommended-runtime.md](./recommended-runtime.md)
+- [host-integration.md](./host-integration.md)
 - [../examples/recommended/main.go](../examples/recommended/main.go)
+- [../examples/host/main.go](../examples/host/main.go)
 
 ### 4.3 Streaming Contract Growth Discipline
 

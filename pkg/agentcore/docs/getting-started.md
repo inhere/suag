@@ -115,6 +115,8 @@ func main() {
 如果你想直接从一个更接近真实 embedding host 的组合起步，当前更推荐继续看：
 
 - [recommended-runtime.md](./recommended-runtime.md)
+- [host-integration.md](./host-integration.md)
+- [migration.md](./migration.md)
 
 当前第一方默认 memory 实现已经提供：
 
@@ -187,6 +189,8 @@ runtime := agentcore.New(agentcore.Config{
 
 1. `examples/minimal`
 2. `examples/prompt`
-3. `examples/custom`
-4. `examples/resume`
-5. `examples/agentcore/bridge`
+3. `examples/recommended`
+4. `examples/host`
+5. `examples/custom`
+6. `examples/resume`
+7. `examples/agentcore/bridge`
