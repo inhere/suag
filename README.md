@@ -42,10 +42,10 @@ If you want to bridge Axon's existing internal stacks into `agentcore`, use the 
 
 ## Agentcore Docs
 
-- Quickstart: `pkg/agentcore/docs/usage/agentcore-quickstart.md`
-- API and extensibility guide: `pkg/agentcore/docs/usage/agentcore-api.md`
-- Implementation-oriented design note: `pkg/agentcore/docs/usage/agentcore.md`
 - Package README: `pkg/agentcore/README.md`
+- Docs index: `pkg/agentcore/docs/README.md`
+- Getting started: `pkg/agentcore/docs/getting-started.md`
+- API and extensibility guide: `pkg/agentcore/docs/api.md`
 - Runnable examples: `pkg/agentcore/examples/`
 - Internal bridge example: `examples/agentcore/bridge`
 - Long-term v1 agent core blueprint: `docs/v1/01-agent-core.md`

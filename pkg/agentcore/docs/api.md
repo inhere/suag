@@ -279,6 +279,11 @@ runtime 会对错误做稳定分类：
 
 推荐在 embedding host 中围绕这些错误类型做统一策略，而不是依赖字符串匹配。
 
+需要特别注意两点运行语义：
+
+- provider 失败后，即使后续观察型 hook 继续上报错误，返回值仍应保留原始 provider root cause
+- transcript append / 持久化失败属于更高优先级问题，因为它影响 authority transcript 的可信度
+
 ## 11. 最小扩展路径
 
 推荐按这个顺序扩展：

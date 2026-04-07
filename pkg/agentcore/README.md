@@ -182,15 +182,8 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - Context presets design: `pkg/agentcore/docs/context-presets-design.md`
 - Prompt layered design: `pkg/agentcore/docs/prompt-layered-design.md`
 - Roadmap: `pkg/agentcore/docs/roadmap.md`
-- Package-local usage docs: `pkg/agentcore/docs/usage/`
 - Examples: `pkg/agentcore/examples/`
 - Package overview: `pkg/agentcore/doc.go`
-
-如果你想继续看更偏使用导向的 package-local 文档，可以读：
-
-- `pkg/agentcore/docs/usage/agentcore-quickstart.md`
-- `pkg/agentcore/docs/usage/agentcore-api.md`
-- `pkg/agentcore/docs/usage/agentcore.md`
 
 推荐阅读顺序：
 
@@ -203,15 +196,12 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 7. `pkg/agentcore/docs/context-presets-design.md`
 8. `pkg/agentcore/docs/prompt-layered-design.md`
 9. `pkg/agentcore/doc.go`
-10. `pkg/agentcore/docs/usage/agentcore-quickstart.md`
-11. `pkg/agentcore/docs/usage/agentcore-api.md`
-12. `pkg/agentcore/docs/usage/agentcore.md`
-13. `pkg/agentcore/examples/README.md`
-14. `pkg/agentcore/examples/minimal`
-15. `pkg/agentcore/examples/custom`
-16. `pkg/agentcore/examples/prompt`
-17. `pkg/agentcore/examples/resume`
-18. `pkg/agentcore/docs/roadmap.md`
+10. `pkg/agentcore/examples/README.md`
+11. `pkg/agentcore/examples/minimal`
+12. `pkg/agentcore/examples/custom`
+13. `pkg/agentcore/examples/prompt`
+14. `pkg/agentcore/examples/resume`
+15. `pkg/agentcore/docs/roadmap.md`
 
 ## Memory And Context
 
