@@ -295,3 +295,7 @@ go test ./pkg/agentcore/... ./examples/agentcore/bridge
 进一步的版本与变更分级建议，继续看：
 
 - [versioning.md](./versioning.md)
+
+如果想把当前状态当成独立包发布候选来评估，再继续看：
+
+- [release-readiness.md](./release-readiness.md)

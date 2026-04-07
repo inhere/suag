@@ -160,6 +160,8 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - API guide: [docs/api.md](./docs/api.md)
 - Embedding patterns: [docs/embedding-patterns.md](./docs/embedding-patterns.md)
 - Compatibility: [docs/compatibility.md](./docs/compatibility.md)
+- Versioning: [docs/versioning.md](./docs/versioning.md)
+- Release readiness: [docs/release-readiness.md](./docs/release-readiness.md)
 - Working memory design: [docs/working-memory-design.md](./docs/working-memory-design.md)
 - Context presets design: [docs/context-presets-design.md](./docs/context-presets-design.md)
 - Prompt layered design: [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
@@ -178,17 +180,18 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 6. [docs/embedding-patterns.md](./docs/embedding-patterns.md)
 7. [docs/compatibility.md](./docs/compatibility.md)
 8. [docs/versioning.md](./docs/versioning.md)
-9. [docs/working-memory-design.md](./docs/working-memory-design.md)
-10. [docs/context-presets-design.md](./docs/context-presets-design.md)
-11. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
-12. [docs/streaming-design.md](./docs/streaming-design.md)
-13. `doc.go`
-14. `examples/README.md`
-15. `examples/minimal`
-16. `examples/custom`
-17. `examples/prompt`
-18. `examples/resume`
-19. [docs/roadmap.md](./docs/roadmap.md)
+9. [docs/release-readiness.md](./docs/release-readiness.md)
+10. [docs/working-memory-design.md](./docs/working-memory-design.md)
+11. [docs/context-presets-design.md](./docs/context-presets-design.md)
+12. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
+13. [docs/streaming-design.md](./docs/streaming-design.md)
+14. `doc.go`
+15. `examples/README.md`
+16. `examples/minimal`
+17. `examples/custom`
+18. `examples/prompt`
+19. `examples/resume`
+20. [docs/roadmap.md](./docs/roadmap.md)
 
 ## Memory And Context
 

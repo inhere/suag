@@ -172,6 +172,9 @@ runtime := agentcore.New(agentcore.Config{
 ## 6. 下一步看哪里
 
 - API guide: [docs/api.md](./api.md)
+- Compatibility: [docs/compatibility.md](./compatibility.md)
+- Versioning: [docs/versioning.md](./versioning.md)
+- Release readiness: [docs/release-readiness.md](./release-readiness.md)
 - Roadmap: [docs/roadmap.md](./roadmap.md)
 - Examples: `examples/`
 
