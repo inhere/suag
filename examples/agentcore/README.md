@@ -8,6 +8,8 @@
   - 自定义 tool 和 hook，展示常见扩展路径
 - `memory`
   - 演示第一方 `WorkingMemory` 如何构建 `summary + recent window` 上下文
+- `context`
+  - 演示第一方 context presets 如何组合 transcript 与 memory
 - `resume`
   - 演示 `yield -> resume` 的最小恢复链路
 - `bridge`
@@ -19,6 +21,7 @@
 go run ./examples/agentcore/minimal
 go run ./examples/agentcore/custom
 go run ./examples/agentcore/memory
+go run ./examples/agentcore/context
 go run ./examples/agentcore/resume
 go run ./examples/agentcore/bridge
 ```
@@ -27,6 +30,12 @@ go run ./examples/agentcore/bridge
 
 - 从已持久化 transcript hydrate 第一方 `WorkingMemory`
 - 用 summary + recent window 构建模型上下文
+
+其中 `context` 示例重点展示三种默认组合的差异：
+
+- `TranscriptWindow`
+- `MemoryFirst`
+- `MemoryThenRecent`
 
 其中 `resume` 示例重点展示两件事：
 
