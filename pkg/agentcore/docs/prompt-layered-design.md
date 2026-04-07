@@ -296,9 +296,9 @@ project: agentcore
 
 这一轮如果落地实现，建议同步更新：
 
-- `pkg/agentcore/README.md`
-- `pkg/agentcore/docs/getting-started.md`
-- `pkg/agentcore/docs/api.md`
+- [pkg/agentcore/README.md](../README.md)
+- [pkg/agentcore/docs/getting-started.md](./getting-started.md)
+- [pkg/agentcore/docs/api.md](./api.md)
 
 必要时新增或更新 example，展示：
 

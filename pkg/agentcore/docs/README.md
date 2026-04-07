@@ -4,21 +4,23 @@
 
 ## 阅读顺序
 
-1. `../README.md`
+1. [../README.md](../README.md)
    包首页，说明定位、边界、默认构件和稳定语义
-2. `getting-started.md`
+2. [getting-started.md](./getting-started.md)
    第一次接入时的最小上手路径
-3. `api.md`
+3. [architecture.md](./architecture.md)
+   kernel 分层、数据流与边界说明
+4. [api.md](./api.md)
    公共接口职责与边界
-4. `embedding-patterns.md`
+5. [embedding-patterns.md](./embedding-patterns.md)
    直接嵌入与 adapter 桥接两种常见接法
-5. `working-memory-design.md`
+6. [working-memory-design.md](./working-memory-design.md)
    下一轮默认 memory kernel 演进设计
-6. `context-presets-design.md`
+7. [context-presets-design.md](./context-presets-design.md)
    下一轮默认 context 组合演进设计
-7. `prompt-layered-design.md`
+8. [prompt-layered-design.md](./prompt-layered-design.md)
    下一轮默认 prompt 组合演进设计
-8. `roadmap.md`
+9. [roadmap.md](./roadmap.md)
    后续演进路线
 
 ## 这组文档回答什么问题

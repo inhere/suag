@@ -171,8 +171,8 @@ runtime := agentcore.New(agentcore.Config{
 
 ## 6. 下一步看哪里
 
-- API guide: `pkg/agentcore/docs/api.md`
-- Roadmap: `pkg/agentcore/docs/roadmap.md`
+- API guide: [pkg/agentcore/docs/api.md](./api.md)
+- Roadmap: [pkg/agentcore/docs/roadmap.md](./roadmap.md)
 - Examples: `pkg/agentcore/examples/`
 
 建议顺序：

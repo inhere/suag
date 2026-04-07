@@ -32,8 +32,9 @@ Core extension points:
 Built-in companion packages:
 
   - files: filesystem-backed storage
-  - context: default message-window context builder
-  - prompt: static prompt builder
+  - memory: default working-memory implementation
+  - context: default context presets and message-window builders
+  - prompt: first-party prompt builders
   - hooks: ordered hook-chain helper
   - mock: test provider and tool implementations
 

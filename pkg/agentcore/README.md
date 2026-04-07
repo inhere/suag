@@ -174,34 +174,36 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 ## Docs
 
-- Docs index: `pkg/agentcore/docs/README.md`
-- Getting started: `pkg/agentcore/docs/getting-started.md`
-- API guide: `pkg/agentcore/docs/api.md`
-- Embedding patterns: `pkg/agentcore/docs/embedding-patterns.md`
-- Working memory design: `pkg/agentcore/docs/working-memory-design.md`
-- Context presets design: `pkg/agentcore/docs/context-presets-design.md`
-- Prompt layered design: `pkg/agentcore/docs/prompt-layered-design.md`
-- Roadmap: `pkg/agentcore/docs/roadmap.md`
+- Docs index: [pkg/agentcore/docs/README.md](./docs/README.md)
+- Getting started: [pkg/agentcore/docs/getting-started.md](./docs/getting-started.md)
+- Architecture: [pkg/agentcore/docs/architecture.md](./docs/architecture.md)
+- API guide: [pkg/agentcore/docs/api.md](./docs/api.md)
+- Embedding patterns: [pkg/agentcore/docs/embedding-patterns.md](./docs/embedding-patterns.md)
+- Working memory design: [pkg/agentcore/docs/working-memory-design.md](./docs/working-memory-design.md)
+- Context presets design: [pkg/agentcore/docs/context-presets-design.md](./docs/context-presets-design.md)
+- Prompt layered design: [pkg/agentcore/docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
+- Roadmap: [pkg/agentcore/docs/roadmap.md](./docs/roadmap.md)
 - Examples: `pkg/agentcore/examples/`
 - Package overview: `pkg/agentcore/doc.go`
 
 推荐阅读顺序：
 
-1. `pkg/agentcore/README.md`
-2. `pkg/agentcore/docs/README.md`
-3. `pkg/agentcore/docs/getting-started.md`
-4. `pkg/agentcore/docs/api.md`
-5. `pkg/agentcore/docs/embedding-patterns.md`
-6. `pkg/agentcore/docs/working-memory-design.md`
-7. `pkg/agentcore/docs/context-presets-design.md`
-8. `pkg/agentcore/docs/prompt-layered-design.md`
-9. `pkg/agentcore/doc.go`
-10. `pkg/agentcore/examples/README.md`
-11. `pkg/agentcore/examples/minimal`
-12. `pkg/agentcore/examples/custom`
-13. `pkg/agentcore/examples/prompt`
-14. `pkg/agentcore/examples/resume`
-15. `pkg/agentcore/docs/roadmap.md`
+1. [pkg/agentcore/README.md](./README.md)
+2. [pkg/agentcore/docs/README.md](./docs/README.md)
+3. [pkg/agentcore/docs/getting-started.md](./docs/getting-started.md)
+4. [pkg/agentcore/docs/architecture.md](./docs/architecture.md)
+5. [pkg/agentcore/docs/api.md](./docs/api.md)
+6. [pkg/agentcore/docs/embedding-patterns.md](./docs/embedding-patterns.md)
+7. [pkg/agentcore/docs/working-memory-design.md](./docs/working-memory-design.md)
+8. [pkg/agentcore/docs/context-presets-design.md](./docs/context-presets-design.md)
+9. [pkg/agentcore/docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
+10. `pkg/agentcore/doc.go`
+11. `pkg/agentcore/examples/README.md`
+12. `pkg/agentcore/examples/minimal`
+13. `pkg/agentcore/examples/custom`
+14. `pkg/agentcore/examples/prompt`
+15. `pkg/agentcore/examples/resume`
+16. [pkg/agentcore/docs/roadmap.md](./docs/roadmap.md)
 
 ## Memory And Context
 
