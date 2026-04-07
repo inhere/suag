@@ -1541,6 +1541,243 @@ func TestRuntime_Run_ResumeAutoAfterYieldWithoutInstruction_ReusesState(t *testi
 	}
 }
 
+func TestRuntime_Run_ResumeFromStateCanYieldAgainWithoutForkingTranscript(t *testing.T) {
+	runID := "resume-from-state-yield-again"
+	store := newRuntimeTestStorage()
+
+	firstHook := &runtimeTestHook{}
+	firstBeforeModelCalls := 0
+	firstHook.beforeModel = func(ctrl *Control) {
+		firstBeforeModelCalls++
+		if firstBeforeModelCalls == 2 {
+			ctrl.Yield("await_resume", map[string]any{"step": "after_tool"})
+		}
+	}
+
+	registry := NewToolRegistry()
+	registry.Register(&runtimeTestTool{
+		name:   "echo",
+		result: &ToolResult{Content: "tool:ping"},
+	})
+
+	firstProvider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			ToolCalls: []ToolCall{{
+				CallID:    "call-1",
+				Name:      "echo",
+				Arguments: map[string]any{"msg": "ping"},
+			}},
+			FinishReason: FinishToolCalls,
+		}},
+	}
+
+	firstResult, err := New(Config{
+		Provider:       firstProvider,
+		Storage:        store,
+		Tools:          registry,
+		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{firstHook},
+	}).Run(context.Background(), RunInput{
+		RunID:       runID,
+		AgentID:     "agent-1",
+		Instruction: "resume me twice",
+	})
+	if err != nil {
+		t.Fatalf("expected first run to yield, got %v", err)
+	}
+	if firstResult.Status != RunYielded || firstResult.Yield == nil || firstResult.Yield.Reason != "await_resume" {
+		t.Fatalf("expected yielded first result, got %#v", firstResult)
+	}
+
+	secondHook := &runtimeTestHook{}
+	secondHook.beforeModel = func(ctrl *Control) {
+		ctrl.Yield("await_resume_again", map[string]any{"step": "before_model"})
+	}
+	secondProvider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "should-not-run",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	secondResult, err := New(Config{
+		Provider:       secondProvider,
+		Storage:        store,
+		Tools:          registry,
+		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{secondHook},
+	}).Run(context.Background(), RunInput{
+		RunID:      runID,
+		ResumeMode: ResumeFromState,
+	})
+	if err != nil {
+		t.Fatalf("expected second resume to yield again, got %v", err)
+	}
+	if secondResult.Status != RunYielded || secondResult.Yield == nil || secondResult.Yield.Reason != "await_resume_again" {
+		t.Fatalf("expected second yielded result, got %#v", secondResult)
+	}
+	if len(secondProvider.calls) != 0 {
+		t.Fatalf("expected provider not to run on second yield, got %#v", secondProvider.calls)
+	}
+
+	resumeProvider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done after repeated resume",
+			FinishReason: FinishFinal,
+		}},
+	}
+	resumed, err := New(Config{
+		Provider:       resumeProvider,
+		Storage:        store,
+		Tools:          registry,
+		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
+		ContextBuilder: runtimeTestContextBuilder{},
+	}).Run(context.Background(), RunInput{
+		RunID:      runID,
+		ResumeMode: ResumeFromState,
+	})
+	if err != nil {
+		t.Fatalf("expected final resume to complete, got %v", err)
+	}
+	if resumed.Status != RunCompleted || resumed.Output != "done after repeated resume" {
+		t.Fatalf("expected completed result after repeated resume, got %#v", resumed)
+	}
+	if len(resumeProvider.calls) != 1 || len(resumeProvider.calls[0].Messages) != 3 {
+		t.Fatalf("expected final resume to reuse yielded transcript only, got %#v", resumeProvider.calls)
+	}
+
+	finalMessages := store.messages[runID]
+	if len(finalMessages) != 4 {
+		t.Fatalf("expected yielded transcript plus final answer without duplicates, got %#v", finalMessages)
+	}
+	if finalMessages[0].Role != "user" || finalMessages[1].Role != "assistant" || finalMessages[2].Role != "tool" || finalMessages[3].Role != "assistant" {
+		t.Fatalf("unexpected repeated-resume transcript shape, got %#v", finalMessages)
+	}
+}
+
+func TestRuntime_Run_ResumeWithInputThenYieldAgainKeepsAppendedInputAuthoritative(t *testing.T) {
+	runID := "resume-with-input-yield-again"
+	store := newRuntimeTestStorage()
+
+	firstHook := &runtimeTestHook{}
+	firstBeforeModelCalls := 0
+	firstHook.beforeModel = func(ctrl *Control) {
+		firstBeforeModelCalls++
+		if firstBeforeModelCalls == 2 {
+			ctrl.Yield("await_human", map[string]any{"step": "after_tool"})
+		}
+	}
+
+	registry := NewToolRegistry()
+	registry.Register(&runtimeTestTool{
+		name:   "echo",
+		result: &ToolResult{Content: "tool:ping"},
+	})
+
+	firstProvider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			ToolCalls: []ToolCall{{
+				CallID:    "call-1",
+				Name:      "echo",
+				Arguments: map[string]any{"msg": "ping"},
+			}},
+			FinishReason: FinishToolCalls,
+		}},
+	}
+
+	_, err := New(Config{
+		Provider:       firstProvider,
+		Storage:        store,
+		Tools:          registry,
+		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{firstHook},
+	}).Run(context.Background(), RunInput{
+		RunID:       runID,
+		AgentID:     "agent-1",
+		Instruction: "wait for my follow-up",
+	})
+	if err != nil {
+		t.Fatalf("expected first run to yield, got %v", err)
+	}
+
+	secondHook := &runtimeTestHook{}
+	secondHook.beforeModel = func(ctrl *Control) {
+		ctrl.Yield("await_confirmation", map[string]any{"step": "before_model"})
+	}
+	secondProvider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "should-not-run",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	secondResult, err := New(Config{
+		Provider:       secondProvider,
+		Storage:        store,
+		Tools:          registry,
+		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
+		ContextBuilder: runtimeTestContextBuilder{},
+		Hooks:          []Hook{secondHook},
+	}).Run(context.Background(), RunInput{
+		RunID:       runID,
+		Instruction: "continue with my approved input",
+		ResumeMode:  ResumeWithInput,
+	})
+	if err != nil {
+		t.Fatalf("expected second run to yield again, got %v", err)
+	}
+	if secondResult.Status != RunYielded || secondResult.Yield == nil || secondResult.Yield.Reason != "await_confirmation" {
+		t.Fatalf("expected second yielded result, got %#v", secondResult)
+	}
+	if len(secondProvider.calls) != 0 {
+		t.Fatalf("expected provider not to run before second yield, got %#v", secondProvider.calls)
+	}
+
+	resumeProvider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done after human follow-up",
+			FinishReason: FinishFinal,
+		}},
+	}
+	resumed, err := New(Config{
+		Provider:       resumeProvider,
+		Storage:        store,
+		Tools:          registry,
+		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
+		ContextBuilder: runtimeTestContextBuilder{},
+	}).Run(context.Background(), RunInput{
+		RunID:      runID,
+		ResumeMode: ResumeFromState,
+	})
+	if err != nil {
+		t.Fatalf("expected final resume to complete, got %v", err)
+	}
+	if resumed.Status != RunCompleted || resumed.Output != "done after human follow-up" {
+		t.Fatalf("expected final completed result, got %#v", resumed)
+	}
+	if len(resumeProvider.calls) != 1 || len(resumeProvider.calls[0].Messages) != 4 {
+		t.Fatalf("expected final resume to include appended human input exactly once, got %#v", resumeProvider.calls)
+	}
+	lastInput := resumeProvider.calls[0].Messages[3]
+	if lastInput.Role != "user" || lastInput.Content != "continue with my approved input" {
+		t.Fatalf("expected appended human input to remain authoritative before final answer, got %#v", resumeProvider.calls[0].Messages)
+	}
+
+	finalMessages := store.messages[runID]
+	if len(finalMessages) != 5 {
+		t.Fatalf("expected transcript to keep tool transcript, appended user input, and final answer, got %#v", finalMessages)
+	}
+	if finalMessages[3].Role != "user" || finalMessages[3].Content != "continue with my approved input" {
+		t.Fatalf("expected appended user input to remain in authority transcript, got %#v", finalMessages)
+	}
+	if finalMessages[4].Role != "assistant" || finalMessages[4].Content != "done after human follow-up" {
+		t.Fatalf("expected final assistant answer after appended user input, got %#v", finalMessages)
+	}
+}
+
 func TestRuntime_Run_RejectsResumeForCompletedOrFailed(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -1587,6 +1824,179 @@ func TestRuntime_Run_RejectsResumeForCompletedOrFailed(t *testing.T) {
 				t.Fatalf("expected provider not to be called for terminal resume, got %#v", provider.calls)
 			}
 		})
+	}
+}
+
+func TestRuntime_Run_RejectsTerminalResumeAcrossResumeModes(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     RunStatus
+		resumeMode ResumeMode
+	}{
+		{name: "completed_auto", status: RunCompleted, resumeMode: ResumeAuto},
+		{name: "completed_with_input", status: RunCompleted, resumeMode: ResumeWithInput},
+		{name: "failed_auto", status: RunFailed, resumeMode: ResumeAuto},
+		{name: "failed_with_input", status: RunFailed, resumeMode: ResumeWithInput},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runID := "run-terminal-" + tc.name
+			store := newRuntimeTestStorage()
+			store.runs[runID] = &RunState{
+				RunID:   runID,
+				AgentID: "agent-1",
+				Status:  tc.status,
+			}
+			store.messages[runID] = []Message{{Role: "assistant", Content: "terminal"}}
+			provider := &runtimeTestProvider{
+				results: []*GenerateResult{{
+					Content:      "should-not-run",
+					FinishReason: FinishFinal,
+				}},
+			}
+
+			result, err := New(Config{
+				Provider:       provider,
+				Storage:        store,
+				Tools:          NewToolRegistry(),
+				PromptBuilder:  runtimeTestPromptBuilder{},
+				ContextBuilder: runtimeTestContextBuilder{},
+			}).Run(context.Background(), RunInput{
+				RunID:       runID,
+				Instruction: "try to continue terminal run",
+				ResumeMode:  tc.resumeMode,
+			})
+			if !errors.Is(err, ErrRunNotResumable) {
+				t.Fatalf("expected terminal resume to be rejected, got result=%#v err=%v", result, err)
+			}
+			if len(provider.calls) != 0 {
+				t.Fatalf("expected provider not to be called for terminal resume, got %#v", provider.calls)
+			}
+			if len(store.messages[runID]) != 1 || store.messages[runID][0].Content != "terminal" {
+				t.Fatalf("expected authority transcript to remain unchanged, got %#v", store.messages[runID])
+			}
+		})
+	}
+}
+
+func TestRuntime_Run_ResumeMergesInputMetadataIntoStateAndProviderRequest(t *testing.T) {
+	runID := "run-resume-metadata-merge"
+	store := newRuntimeTestStorage()
+	store.runs[runID] = &RunState{
+		RunID:   runID,
+		AgentID: "agent-1",
+		Status:  RunYielded,
+		Step:    1,
+		Metadata: map[string]any{
+			"existing": "keep",
+			"override": "old",
+		},
+	}
+	store.messages[runID] = []Message{
+		{Role: "user", Content: "persisted question"},
+		{Role: "assistant", Content: "persisted draft"},
+	}
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done with merged metadata",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	result, err := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
+		ContextBuilder: runtimeTestContextBuilder{},
+	}).Run(context.Background(), RunInput{
+		RunID:      runID,
+		ResumeMode: ResumeFromState,
+		Metadata: map[string]any{
+			"override": "new",
+			"added":    "fresh",
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected resumed run to succeed, got %v", err)
+	}
+	if result.Status != RunCompleted || result.Output != "done with merged metadata" {
+		t.Fatalf("expected completed result, got %#v", result)
+	}
+	if len(provider.calls) != 1 {
+		t.Fatalf("provider calls = %d, want 1", len(provider.calls))
+	}
+	if got := provider.calls[0].Metadata["existing"]; got != "keep" {
+		t.Fatalf("expected provider request to keep existing metadata, got %#v", provider.calls[0].Metadata)
+	}
+	if got := provider.calls[0].Metadata["override"]; got != "new" {
+		t.Fatalf("expected provider request to use overridden metadata, got %#v", provider.calls[0].Metadata)
+	}
+	if got := provider.calls[0].Metadata["added"]; got != "fresh" {
+		t.Fatalf("expected provider request to include added metadata, got %#v", provider.calls[0].Metadata)
+	}
+
+	saved := store.runs[runID]
+	if saved == nil {
+		t.Fatal("expected saved state after resume")
+	}
+	if got := saved.Metadata["existing"]; got != "keep" {
+		t.Fatalf("expected saved state to keep existing metadata, got %#v", saved.Metadata)
+	}
+	if got := saved.Metadata["override"]; got != "new" {
+		t.Fatalf("expected saved state to override metadata, got %#v", saved.Metadata)
+	}
+	if got := saved.Metadata["added"]; got != "fresh" {
+		t.Fatalf("expected saved state to include added metadata, got %#v", saved.Metadata)
+	}
+}
+
+func TestRuntime_Run_TerminalResumeDoesNotMergeInputMetadata(t *testing.T) {
+	runID := "run-terminal-resume-metadata"
+	store := newRuntimeTestStorage()
+	store.runs[runID] = &RunState{
+		RunID:   runID,
+		AgentID: "agent-1",
+		Status:  RunCompleted,
+		Metadata: map[string]any{
+			"existing": "keep",
+		},
+	}
+	store.messages[runID] = []Message{{Role: "assistant", Content: "terminal"}}
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "should-not-run",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	_, err := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+	}).Run(context.Background(), RunInput{
+		RunID:      runID,
+		ResumeMode: ResumeWithInput,
+		Metadata: map[string]any{
+			"override": "should-not-stick",
+		},
+		Instruction: "try to continue",
+	})
+	if !errors.Is(err, ErrRunNotResumable) {
+		t.Fatalf("expected terminal resume to be rejected, got %v", err)
+	}
+	if len(provider.calls) != 0 {
+		t.Fatalf("expected provider not to be called, got %#v", provider.calls)
+	}
+	saved := store.runs[runID]
+	if saved == nil {
+		t.Fatal("expected saved terminal state to stay present")
+	}
+	if len(saved.Metadata) != 1 || saved.Metadata["existing"] != "keep" {
+		t.Fatalf("expected terminal state metadata to stay unchanged, got %#v", saved.Metadata)
 	}
 }
 
