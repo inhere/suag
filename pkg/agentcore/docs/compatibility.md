@@ -291,3 +291,7 @@ go test ./pkg/agentcore/... ./examples/agentcore/bridge
 - migration guidance
 
 而不是长期停留在“宽泛姿态说明”。
+
+进一步的版本与变更分级建议，继续看：
+
+- [versioning.md](./versioning.md)

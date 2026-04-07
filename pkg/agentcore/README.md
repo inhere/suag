@@ -177,17 +177,18 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 5. [docs/api.md](./docs/api.md)
 6. [docs/embedding-patterns.md](./docs/embedding-patterns.md)
 7. [docs/compatibility.md](./docs/compatibility.md)
-8. [docs/working-memory-design.md](./docs/working-memory-design.md)
-9. [docs/context-presets-design.md](./docs/context-presets-design.md)
-10. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
-11. [docs/streaming-design.md](./docs/streaming-design.md)
-12. `doc.go`
-13. `examples/README.md`
-14. `examples/minimal`
-15. `examples/custom`
-16. `examples/prompt`
-17. `examples/resume`
-18. [docs/roadmap.md](./docs/roadmap.md)
+8. [docs/versioning.md](./docs/versioning.md)
+9. [docs/working-memory-design.md](./docs/working-memory-design.md)
+10. [docs/context-presets-design.md](./docs/context-presets-design.md)
+11. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
+12. [docs/streaming-design.md](./docs/streaming-design.md)
+13. `doc.go`
+14. `examples/README.md`
+15. `examples/minimal`
+16. `examples/custom`
+17. `examples/prompt`
+18. `examples/resume`
+19. [docs/roadmap.md](./docs/roadmap.md)
 
 ## Memory And Context
 

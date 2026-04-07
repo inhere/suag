@@ -10,11 +10,12 @@
 4. [api.md](./api.md) 公共接口职责与边界
 5. [embedding-patterns.md](./embedding-patterns.md) 直接嵌入与 adapter 桥接两种常见接法
 6. [compatibility.md](./compatibility.md) 当前兼容性预期、发布姿态与检查清单
-7. [working-memory-design.md](./working-memory-design.md) 下一轮默认 memory kernel 演进设计
-8. [context-presets-design.md](./context-presets-design.md) 下一轮默认 context 组合演进设计
-9. [prompt-layered-design.md](./prompt-layered-design.md) 下一轮默认 prompt 组合演进设计
-10. [streaming-design.md](./streaming-design.md) 下一轮 streaming contract 设计
-11. [roadmap.md](./roadmap.md) 后续演进路线
+7. [versioning.md](./versioning.md) 当前版本策略与变更分级建议
+8. [working-memory-design.md](./working-memory-design.md) 下一轮默认 memory kernel 演进设计
+9. [context-presets-design.md](./context-presets-design.md) 下一轮默认 context 组合演进设计
+10. [prompt-layered-design.md](./prompt-layered-design.md) 下一轮默认 prompt 组合演进设计
+11. [streaming-design.md](./streaming-design.md) 下一轮 streaming contract 设计
+12. [roadmap.md](./roadmap.md) 后续演进路线
 
 ## 这组文档回答什么问题
 
@@ -25,6 +26,7 @@
 - 如何理解 transcript、resume、memory 等核心语义
 - 如何围绕公共 contract 做扩展
 - 当前哪些 public surface 已经适合依赖，哪些仍在演进
+- 变更应该如何分级、如何避免无意破坏兼容性
 - 下一轮 kernel 演进准备做什么
 - 默认 builder 组合下一步怎么长
 - 默认 prompt 组合下一步怎么长
