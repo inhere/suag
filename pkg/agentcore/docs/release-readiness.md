@@ -211,6 +211,8 @@
 ### 3.4 Documentation Check
 
 - `README` 是否能独立解释包定位
+- `README` 是否已经能快速回答它适合谁、当前能做什么、从哪条采用路径开始
+- `README` 是否已经提供足够直接的 starter matrix，帮助新使用者快速选主路径
 - `getting-started.md` 是否能带新使用者跑通最小链路
 - `api.md` 是否能解释公共扩展面
 - `compatibility.md` / `versioning.md` / `release-readiness.md` 是否相互衔接

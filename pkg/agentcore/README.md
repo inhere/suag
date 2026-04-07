@@ -46,6 +46,65 @@
 - 边界会优先通过测试和文档逐步稳定
 - 一些“开箱即用”的默认能力还会继续补，但不会为了省几步接入成本把 kernel 做重
 
+## At A Glance
+
+如果你只想快速判断 `agentcore` 现在是不是适合自己，可以先看这张摘要：
+
+| 维度 | 当前状态 | 适合怎么理解 |
+| --- | --- | --- |
+| 核心定位 | 最小但可扩展的单 agent runtime kernel | 负责 runtime semantics，不负责完整产品工作流 |
+| 发布姿态 | `v0`，但 core contract 正在收紧 | 已可依赖核心语义，仍不承诺所有 public surface 都冻结 |
+| 核心 contract | `RunInput` / `RunState` / `RunResult` / transcript / resume | 这些是最值得围绕其扩展和稳定依赖的部分 |
+| 第一方默认构件 | `files` / `memory` / `context` / `prompt` / `mock` | 推荐起步路径，不等于唯一正确实现 |
+| streaming | 已有最小 phase 1 contract | host-facing 渐进输出，不改变 final completion authority |
+| 对外嵌入方式 | 直接嵌入、host 封装、adapter 迁移 | 三条路径都已在 package-local docs 中收拢 |
+
+如果你更想按自己当前处境选路径，而不是通读首页，直接看：
+
+- [docs/adoption-paths.md](./docs/adoption-paths.md)
+
+## Who It Fits
+
+`agentcore` 当前最适合这几类使用者：
+
+- 想从零搭一个单 agent runtime，但不想先被完整平台绑死
+- 想把 provider、storage、memory、tools 边界做干净，未来还能替换实现
+- 想先收敛 resume / transcript / tool loop 这类核心 runtime 语义
+- 想让内部系统逐步迁到更公共的 agent contract，而不是一直依赖仓库私有实现
+
+当前不太适合把它当成：
+
+- 多 agent orchestration 平台
+- planner / workflow / review / governance 系统
+- 开箱即用的大而全 agent framework
+
+## Capability Snapshot
+
+当前更应该把 `agentcore` 的能力分成三层来看：
+
+### 已形成主路径的能力
+
+- 稳定 `RunInput -> RunResult` 执行入口
+- `RunID + ResumeMode` 恢复模型
+- append-only transcript 与 run snapshot
+- tool loop 与 authority transcript 持久化
+- provider、storage、memory、tools、prompt、context、hooks 的公共扩展面
+
+### 已有推荐起步路径的能力
+
+- `files/` 作为 authority storage 起点
+- `memory/` 作为默认 derived context 起点
+- `context/` 作为第一方 context presets
+- `prompt/` 作为第一方 system prompt 组合层
+- `examples/recommended` 和 `examples/host` 作为当前长期主路径示例
+
+### 仍在谨慎演进的能力
+
+- 更完整的 streaming 事件模型
+- 更强的 artifact story
+- 更系统的 release checklist / migration guidance 收紧
+- 更多 resume / transcript edge coverage
+
 ## What You Get
 
 接入 `agentcore` 后，最小可以获得这些能力：
@@ -105,6 +164,19 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - 新项目直接嵌入：看 [docs/recommended-runtime.md](./docs/recommended-runtime.md)
 - 给聊天服务、worker、CLI 封装宿主层：看 [docs/host-integration.md](./docs/host-integration.md)
 - 从已有 runtime 或 adapter 逐步迁移：看 [docs/migration.md](./docs/migration.md)
+- 还不确定自己属于哪类采用路径：看 [docs/adoption-paths.md](./docs/adoption-paths.md)
+
+## Starter Matrix
+
+如果你更关心“我第一版到底该怎么起步”，可以直接看这张矩阵：
+
+| 目标 | 推荐起步组合 | 先看 | 先跑 |
+| --- | --- | --- | --- |
+| 跑通最小 runtime | `mock + files` | [docs/getting-started.md](./docs/getting-started.md) | `examples/minimal` |
+| 跑通更像真实 host 的默认主路径 | `files + memory + context + prompt` | [docs/recommended-runtime.md](./docs/recommended-runtime.md) | `examples/recommended` |
+| 给聊天服务 / CLI / worker 做宿主封装 | `recommended path + host wrapper` | [docs/host-integration.md](./docs/host-integration.md) | `examples/host` |
+| 从已有系统逐步迁移 | `adapter + host wrapper + contract alignment` | [docs/migration.md](./docs/migration.md) | `examples/host` 和 `examples/agentcore/bridge` |
+| 评估当前是否值得依赖 | `compatibility + versioning + release readiness` | [docs/adoption-paths.md](./docs/adoption-paths.md) | package docs 为主 |
 
 ## Core Contracts
 

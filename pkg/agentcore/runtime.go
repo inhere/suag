@@ -100,7 +100,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	}
 
 	if err := r.saveState(ctx, state, newMessages); err != nil {
-		return r.returnWithHandledError(ctx, input, preInputState, "persist_input", err, ctrl)
+		return r.returnWithHandledError(ctx, input, stateForSaveStateFailure(preInputState, state, err), "persist_input", err, ctrl)
 	}
 
 	maxSteps := r.effectiveMaxSteps(input)
@@ -401,6 +401,14 @@ func (r *DefaultRuntime) saveState(ctx context.Context, state *RunState, message
 	return nil
 }
 
+func stateForSaveStateFailure(preState *RunState, currentState *RunState, err error) *RunState {
+	var memoryErr *MemoryError
+	if errors.As(err, &memoryErr) {
+		return currentState
+	}
+	return preState
+}
+
 func (r *DefaultRuntime) effectiveMaxSteps(input RunInput) int {
 	if input.MaxSteps > 0 {
 		return input.MaxSteps
@@ -511,7 +519,7 @@ func (r *DefaultRuntime) persistFinalAnswer(ctx context.Context, input RunInput,
 	state.LastError = ""
 
 	if err := r.saveState(ctx, state, []Message{assistantMessage}); err != nil {
-		return r.returnWithHandledError(ctx, input, preOutputState, "persist_output", err, NewControl())
+		return r.returnWithHandledError(ctx, input, stateForSaveStateFailure(preOutputState, state, err), "persist_output", err, NewControl())
 	}
 
 	return &RunResult{
@@ -659,7 +667,7 @@ func (r *DefaultRuntime) persistShortCircuit(ctx context.Context, state *RunStat
 			newMessages = []Message{assistantMessage}
 		}
 		if err := r.saveState(ctx, state, newMessages); err != nil {
-			handledErr := r.handleError(ctx, preMessageState, "short_circuit", err, NewControl())
+			handledErr := r.handleError(ctx, stateForSaveStateFailure(preMessageState, state, err), "short_circuit", err, NewControl())
 			var resolved runtimeResolvedControlError
 			if errors.As(handledErr, &resolved) {
 				return resolved.result, nil

@@ -166,3 +166,11 @@
 
 - [README.md](../README.md)
 - [README.md](./README.md)
+
+如果你想先看一页更浓缩的首页摘要，再回到：
+
+- [../README.md](../README.md)
+
+如果你想先看一张更直接的 starter 组合矩阵，也可以直接跳到：
+
+- [../README.md](../README.md)

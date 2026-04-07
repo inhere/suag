@@ -9,10 +9,12 @@ import (
 type runtimeTestMemory struct {
 	hydrateCalls [][]Message
 	observeCalls [][]Message
+	observeCount int
 	buildCalls   int
 	context      []Message
 	hydrateErr   error
 	observeErr   error
+	observeErrOn int
 	buildErr     error
 }
 
@@ -29,7 +31,11 @@ func (m *runtimeTestMemory) Hydrate(_ context.Context, state *RunState) error {
 }
 
 func (m *runtimeTestMemory) ObserveMessages(_ context.Context, _ *RunState, messages ...Message) error {
-	if m.observeErr != nil {
+	m.observeCount++
+	if m.observeErr != nil && m.observeErrOn > 0 && m.observeCount == m.observeErrOn {
+		return m.observeErr
+	}
+	if m.observeErr != nil && m.observeErrOn == 0 {
 		return m.observeErr
 	}
 	m.observeCalls = append(m.observeCalls, cloneMessages(messages))
@@ -225,5 +231,97 @@ func TestRuntime_Run_DefaultContextBuildFailureReturnsMemoryError(t *testing.T) 
 	}
 	if len(provider.calls) != 0 {
 		t.Fatalf("expected provider to be skipped on memory build failure, got %#v", provider.calls)
+	}
+}
+
+func TestRuntime_Run_PersistInputObserveFailureKeepsAuthorityAligned(t *testing.T) {
+	store := newRuntimeTestStorage()
+	mem := &runtimeTestMemory{
+		observeErr:   errors.New("observe failed after input append"),
+		observeErrOn: 1,
+	}
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "should not run",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	_, err := New(Config{
+		Provider:      provider,
+		Storage:       store,
+		Memory:        mem,
+		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
+	}).Run(context.Background(), RunInput{
+		RunID:       "run-memory-observe-input-fail",
+		AgentID:     "agent-1",
+		Instruction: "input that should remain authoritative",
+	})
+	if err == nil {
+		t.Fatal("expected observe failure during input persistence, got nil")
+	}
+	var memoryErr *MemoryError
+	if !errors.As(err, &memoryErr) {
+		t.Fatalf("expected memory error wrapper, got %T %v", err, err)
+	}
+	if len(provider.calls) != 0 {
+		t.Fatalf("expected provider not to run after input observe failure, got %#v", provider.calls)
+	}
+
+	saved := store.runs["run-memory-observe-input-fail"]
+	if saved == nil || saved.Status != RunFailed {
+		t.Fatalf("expected failed state after input observe failure, got %#v", saved)
+	}
+	if len(saved.Messages) != 1 || saved.Messages[0].Role != "user" || saved.Messages[0].Content != "input that should remain authoritative" {
+		t.Fatalf("expected failed snapshot to keep authority input message, got %#v", saved.Messages)
+	}
+	if len(store.messages["run-memory-observe-input-fail"]) != 1 || store.messages["run-memory-observe-input-fail"][0].Content != "input that should remain authoritative" {
+		t.Fatalf("expected authority log to retain appended user input, got %#v", store.messages["run-memory-observe-input-fail"])
+	}
+}
+
+func TestRuntime_Run_PersistOutputObserveFailureKeepsAuthorityAligned(t *testing.T) {
+	store := newRuntimeTestStorage()
+	mem := &runtimeTestMemory{
+		observeErr:   errors.New("observe failed after final output append"),
+		observeErrOn: 2,
+	}
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "final answer that should remain authoritative",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	_, err := New(Config{
+		Provider:      provider,
+		Storage:       store,
+		Memory:        mem,
+		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
+	}).Run(context.Background(), RunInput{
+		RunID:       "run-memory-observe-output-fail",
+		AgentID:     "agent-1",
+		Instruction: "produce final output",
+	})
+	if err == nil {
+		t.Fatal("expected observe failure during output persistence, got nil")
+	}
+	var memoryErr *MemoryError
+	if !errors.As(err, &memoryErr) {
+		t.Fatalf("expected memory error wrapper, got %T %v", err, err)
+	}
+	if len(provider.calls) != 1 {
+		t.Fatalf("expected provider to run before output observe failure, got %#v", provider.calls)
+	}
+
+	saved := store.runs["run-memory-observe-output-fail"]
+	if saved == nil || saved.Status != RunFailed {
+		t.Fatalf("expected failed state after output observe failure, got %#v", saved)
+	}
+	if len(saved.Messages) != 2 || saved.Messages[1].Role != "assistant" || saved.Messages[1].Content != "final answer that should remain authoritative" {
+		t.Fatalf("expected failed snapshot to keep final authoritative answer, got %#v", saved.Messages)
+	}
+	if len(store.messages["run-memory-observe-output-fail"]) != 2 || store.messages["run-memory-observe-output-fail"][1].Content != "final answer that should remain authoritative" {
+		t.Fatalf("expected authority log to keep final assistant output, got %#v", store.messages["run-memory-observe-output-fail"])
 	}
 }
