@@ -20,6 +20,12 @@
    下一轮默认 prompt 组合演进设计
 8. `roadmap.md`
    后续演进路线
+9. `usage/agentcore-quickstart.md`
+   更偏使用导向的 package-local quickstart
+10. `usage/agentcore-api.md`
+   更偏扩展导向的 package-local API 指南
+11. `usage/agentcore.md`
+   更偏实现与边界视角的 package-local 说明
 
 ## 这组文档回答什么问题
 
@@ -37,7 +43,10 @@
 
 如果你想直接看运行中的最小示例，继续看：
 
-- `examples/agentcore/minimal`
-- `examples/agentcore/custom`
-- `examples/agentcore/resume`
+- `pkg/agentcore/examples/minimal`
+- `pkg/agentcore/examples/memory`
+- `pkg/agentcore/examples/context`
+- `pkg/agentcore/examples/custom`
+- `pkg/agentcore/examples/prompt`
+- `pkg/agentcore/examples/resume`
 - `examples/agentcore/bridge`

@@ -14,19 +14,16 @@
   - 演示第一方 prompt builders 如何组合 base prompt、run metadata 与附加段落
 - `resume`
   - 演示 `yield -> resume` 的最小恢复链路
-- `bridge`
-  - 用 `internal/agentcoreadapters` 桥接内部实现
 
 运行方式：
 
 ```bash
-go run ./examples/agentcore/minimal
-go run ./examples/agentcore/custom
-go run ./examples/agentcore/memory
-go run ./examples/agentcore/context
-go run ./examples/agentcore/prompt
-go run ./examples/agentcore/resume
-go run ./examples/agentcore/bridge
+go run ./pkg/agentcore/examples/minimal
+go run ./pkg/agentcore/examples/custom
+go run ./pkg/agentcore/examples/memory
+go run ./pkg/agentcore/examples/context
+go run ./pkg/agentcore/examples/prompt
+go run ./pkg/agentcore/examples/resume
 ```
 
 其中 `memory` 示例重点展示两件事：
@@ -49,3 +46,9 @@ go run ./examples/agentcore/bridge
 
 - 第一次 run 用稳定 `RunID` 执行并进入 `RunYielded`
 - 第二次 run 使用相同 `RunID` 和显式 `ResumeMode` 继续，而不是重新开始
+
+依赖 `internal/agentcoreadapters/*` 的桥接示例不属于 package-local examples，仍保留在仓库根：
+
+```bash
+go run ./examples/agentcore/bridge
+```

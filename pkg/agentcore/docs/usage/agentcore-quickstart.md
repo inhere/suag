@@ -2,8 +2,8 @@
 
 这份文档面向第一次接入 `pkg/agentcore` 的使用者，目标是用最少的概念把 runtime 跑起来，然后知道下一步该去哪里扩展。
 
-如果你想先理解设计边界，读 [`docs/usage/agentcore.md`](./agentcore.md)。
-如果你想直接看接口职责，读 [`docs/usage/agentcore-api.md`](./agentcore-api.md)。
+如果你想先理解设计边界，读 [`agentcore.md`](./agentcore.md)。
+如果你想直接看接口职责，读 [`agentcore-api.md`](./agentcore-api.md)。
 
 ---
 
@@ -117,20 +117,7 @@ func main() {
 - 为 agent 增加本地工具能力
 - 在 prompt / context / tool result 上做局部扩展
 
-### 3.3 想桥接 Axon 内部实现
-
-推荐组合：
-
-- `internal/agentcoreadapters/internalllm`
-- `internal/agentcoreadapters/internaltools`
-- `files.NewStorage(...)`
-
-适合：
-
-- 把当前内部 `llm.Provider` / `tools.Registry` 接进公共 runtime
-- 先稳定 runtime contract，再逐步替换更高层系统
-
-### 3.4 想先跑通 yield / resume
+### 3.3 想先跑通 yield / resume
 
 推荐组合：
 
@@ -147,7 +134,7 @@ func main() {
 
 可以直接参考：
 
-- `examples/agentcore/resume`
+- `pkg/agentcore/examples/resume`
 
 ---
 
@@ -223,13 +210,13 @@ assistant("final answer")
 
 如果你已经跑通了最小示例，推荐按这个顺序继续：
 
-1. 读 [`docs/usage/agentcore-api.md`](./agentcore-api.md)
-2. 看 `examples/agentcore/minimal`
-3. 看 `examples/agentcore/custom`
-4. 看 `examples/agentcore/resume`
-5. 如果你要桥接内部栈，再看 `examples/agentcore/bridge`
+1. 读 [`agentcore-api.md`](./agentcore-api.md)
+2. 看 `pkg/agentcore/examples/minimal`
+3. 看 `pkg/agentcore/examples/custom`
+4. 看 `pkg/agentcore/examples/prompt`
+5. 看 `pkg/agentcore/examples/resume`
 
 如果你已经明确要做上下文工程，下一步优先看两件事：
 
 1. `agentcore.Memory`
-2. `docs/usage/agentcore-api.md` 里的 `ContextBuilder` / `ResumeMode`
+2. [`agentcore-api.md`](./agentcore-api.md) 里的 `ContextBuilder` / `ResumeMode`

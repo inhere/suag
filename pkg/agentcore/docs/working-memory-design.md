@@ -391,7 +391,7 @@ assistant("I summarized the structure")
 
 - package-local 文档补充
 - 使用示例补充
-- 必要时新增 `examples/agentcore/memory`
+- 必要时新增 `pkg/agentcore/examples/memory`
 
 目标：
 

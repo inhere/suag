@@ -2,7 +2,7 @@
 
 > 所属层级：编排层 | 相关文档：[架构总纲](./00-overview.md) | [Orchestrator](./02-orchestrator.md)
 
-> 注：本文档描述的是 Axon 长期演进中的 Agent Core 蓝图。当前已经落地、可独立嵌入使用的最小实现，请优先参考 [`docs/usage/agentcore.md`](../usage/agentcore.md) 与 `pkg/agentcore` 包文档。
+> 注：本文档描述的是 Axon 长期演进中的 Agent Core 蓝图。当前已经落地、可独立嵌入使用的最小实现，请优先参考 [`pkg/agentcore/docs/usage/agentcore.md`](../../pkg/agentcore/docs/usage/agentcore.md) 与 `pkg/agentcore` 包文档。
 
 ---
 

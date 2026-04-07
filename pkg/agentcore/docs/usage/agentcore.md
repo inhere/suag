@@ -2,7 +2,7 @@
 
 `pkg/agentcore` 是 Axon 当前已经落地的最小 Agent Core Loop。它不是完整产品层，不负责团队编排、长期记忆治理、Tracing 平台或渠道接入，而是把任何 Agent 运行都绕不开的那条核心执行链路独立成一个可嵌入的包。
 
-这份文档描述的是“当前实现了什么”，不是长期蓝图。长期演进方向仍然参考 [`docs/v1/01-agent-core.md`](../v1/01-agent-core.md)。
+这份文档描述的是“当前实现了什么”，不是长期蓝图。长期演进方向仍然参考 [`docs/v1/01-agent-core.md`](../../../../docs/v1/01-agent-core.md)。
 
 ---
 
@@ -50,10 +50,6 @@
   - 默认空 tool registry
 - 测试/集成辅助
   - `mock` provider / tool
-- 仓库内部桥接
-  - `internal/agentcoreadapters/internalllm`
-  - `internal/agentcoreadapters/internalmemory`
-  - `internal/agentcoreadapters/internaltools`
 
 当前明确不包含：
 
@@ -266,10 +262,11 @@ assistant("final answer")
 - prompt: 默认空 prompt，或 `pkg/agentcore/prompt.StaticBuilder`
 - context: 默认 builder，或 `pkg/agentcore/context.DefaultBuilder`
 
-如果你要桥接当前 Axon 内部实现：
+如果你只是想从第一方默认构件起步，而不是从零实现这些层，也可以继续看：
 
-- LLM: `internal/agentcoreadapters/internalllm`
-- Tools: `internal/agentcoreadapters/internaltools`
+- `pkg/agentcore/memory`
+- `pkg/agentcore/context`
+- `pkg/agentcore/prompt`
 
 ---
 
@@ -281,24 +278,22 @@ assistant("final answer")
   - 核心运行时与公共契约
 - `pkg/agentcore/files`
   - 文件存储实现
+- `pkg/agentcore/memory`
+  - 默认 working memory 实现
 - `pkg/agentcore/context`
   - 默认上下文构建器
 - `pkg/agentcore/prompt`
-  - 静态 prompt builder
+  - 第一方 prompt builders
 - `pkg/agentcore/hooks`
   - hook chain 辅助实现
 - `pkg/agentcore/mock`
   - provider / tool mock
-- `internal/agentcoreadapters/internalllm`
-  - internal `llm.Provider` -> `agentcore.Provider`
-- `internal/agentcoreadapters/internaltools`
-  - internal `tools.Registry` -> `agentcore.ToolRegistry`
 
 ---
 
 ## 10. 与长期蓝图的关系
 
-[`docs/v1/01-agent-core.md`](../v1/01-agent-core.md) 讨论的是 Axon 最终 Agent Core 的演进路线，包括 planner、subagent、长期记忆、后台异步、多 agent 协作等更大范围能力。
+[`docs/v1/01-agent-core.md`](../../../../docs/v1/01-agent-core.md) 讨论的是 Axon 最终 Agent Core 的演进路线，包括 planner、subagent、长期记忆、后台异步、多 agent 协作等更大范围能力。
 
 `pkg/agentcore` 当前承担的是其中更小、更基础、更稳定的那一层：
 
@@ -314,9 +309,9 @@ assistant("final answer")
 
 如果你是第一次接触 `agentcore`，推荐按这个顺序阅读：
 
-1. [`docs/usage/agentcore-quickstart.md`](./agentcore-quickstart.md)
-2. [`docs/usage/agentcore-api.md`](./agentcore-api.md)
-3. `examples/agentcore/minimal`
-4. `examples/agentcore/custom`
-5. `examples/agentcore/resume`
-6. `examples/agentcore/bridge`
+1. [`agentcore-quickstart.md`](./agentcore-quickstart.md)
+2. [`agentcore-api.md`](./agentcore-api.md)
+3. `pkg/agentcore/examples/minimal`
+4. `pkg/agentcore/examples/custom`
+5. `pkg/agentcore/examples/prompt`
+6. `pkg/agentcore/examples/resume`

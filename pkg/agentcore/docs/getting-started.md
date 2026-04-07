@@ -173,12 +173,12 @@ runtime := agentcore.New(agentcore.Config{
 
 - API guide: `pkg/agentcore/docs/api.md`
 - Roadmap: `pkg/agentcore/docs/roadmap.md`
-- Examples: `examples/agentcore/`
+- Examples: `pkg/agentcore/examples/`
 
 建议顺序：
 
-1. `examples/agentcore/minimal`
-2. `examples/agentcore/prompt`
-3. `examples/agentcore/custom`
-4. `examples/agentcore/resume`
+1. `pkg/agentcore/examples/minimal`
+2. `pkg/agentcore/examples/prompt`
+3. `pkg/agentcore/examples/custom`
+4. `pkg/agentcore/examples/resume`
 5. `examples/agentcore/bridge`

@@ -264,7 +264,11 @@ type ContextBuilder interface {
 - 上下文裁剪
 - 记忆结果注入成 messages
 
-当前默认实现是 `pkg/agentcore/context.DefaultBuilder`。
+当前如果你想直接用第一方 builder，而不是自己实现，优先看：
+
+- `pkg/agentcore/context.TranscriptWindow(...)`
+- `pkg/agentcore/context.MemoryFirst(...)`
+- `pkg/agentcore/context.MemoryThenRecent(...)`
 
 ### 它和 `Memory` 的关系
 

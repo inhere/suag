@@ -182,14 +182,15 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - Context presets design: `pkg/agentcore/docs/context-presets-design.md`
 - Prompt layered design: `pkg/agentcore/docs/prompt-layered-design.md`
 - Roadmap: `pkg/agentcore/docs/roadmap.md`
-- Examples: `examples/agentcore/`
+- Package-local usage docs: `pkg/agentcore/docs/usage/`
+- Examples: `pkg/agentcore/examples/`
 - Package overview: `pkg/agentcore/doc.go`
 
-在当前 Axon 仓库里，还可以继续读这些仓库级文档：
+如果你想继续看更偏使用导向的 package-local 文档，可以读：
 
-- `docs/usage/agentcore-quickstart.md`
-- `docs/usage/agentcore-api.md`
-- `docs/usage/agentcore.md`
+- `pkg/agentcore/docs/usage/agentcore-quickstart.md`
+- `pkg/agentcore/docs/usage/agentcore-api.md`
+- `pkg/agentcore/docs/usage/agentcore.md`
 
 推荐阅读顺序：
 
@@ -202,11 +203,15 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 7. `pkg/agentcore/docs/context-presets-design.md`
 8. `pkg/agentcore/docs/prompt-layered-design.md`
 9. `pkg/agentcore/doc.go`
-10. `examples/agentcore/minimal`
-11. `examples/agentcore/custom`
-12. `examples/agentcore/resume`
-13. `examples/agentcore/bridge`
-14. `pkg/agentcore/docs/roadmap.md`
+10. `pkg/agentcore/docs/usage/agentcore-quickstart.md`
+11. `pkg/agentcore/docs/usage/agentcore-api.md`
+12. `pkg/agentcore/docs/usage/agentcore.md`
+13. `pkg/agentcore/examples/README.md`
+14. `pkg/agentcore/examples/minimal`
+15. `pkg/agentcore/examples/custom`
+16. `pkg/agentcore/examples/prompt`
+17. `pkg/agentcore/examples/resume`
+18. `pkg/agentcore/docs/roadmap.md`
 
 ## Memory And Context
 
@@ -362,10 +367,10 @@ resumed, err := runtime.Run(ctx, agentcore.RunInput{
 如果你想直接看可运行示例，可以运行：
 
 ```bash
-go run ./examples/agentcore/minimal
-go run ./examples/agentcore/custom
-go run ./examples/agentcore/resume
-go run ./examples/agentcore/bridge
+go run ./pkg/agentcore/examples/minimal
+go run ./pkg/agentcore/examples/custom
+go run ./pkg/agentcore/examples/resume
+go run ./pkg/agentcore/examples/prompt
 ```
 
 其中：
@@ -376,8 +381,14 @@ go run ./examples/agentcore/bridge
   关注 tool 与 hook 扩展
 - `resume`
   关注 `yield -> resume`
-- `bridge`
-  关注 internal adapter 桥接
+- `prompt`
+  关注第一方 prompt 组合
+
+如果你要看仓库内部桥接路径，再额外运行：
+
+```bash
+go run ./examples/agentcore/bridge
+```
 
 ## Transcript Contract
 
