@@ -291,7 +291,7 @@ hooks 可以观察、注入、拦截，但不应该长期承载核心业务主�
 
 ### 6.1 Root Package
 
-`pkg/agentcore`
+`agentcore`
 
 提供：
 
@@ -302,12 +302,12 @@ hooks 可以观察、注入、拦截，但不应该长期承载核心业务主�
 
 ### 6.2 First-Party Companion Packages
 
-- `pkg/agentcore/files`
-- `pkg/agentcore/memory`
-- `pkg/agentcore/context`
-- `pkg/agentcore/prompt`
-- `pkg/agentcore/hooks`
-- `pkg/agentcore/mock`
+- `files`
+- `memory`
+- `context`
+- `prompt`
+- `hooks`
+- `mock`
 
 它们的目标不是做成大而全 framework，而是提供：
 
@@ -317,8 +317,8 @@ hooks 可以观察、注入、拦截，但不应该长期承载核心业务主�
 
 ### 6.3 Package-Local Docs And Examples
 
-- `pkg/agentcore/docs`
-- `pkg/agentcore/examples`
+- `docs`
+- `examples`
 
 它们的目标是让 `agentcore` 即使离开当前仓库，也能保持自解释性。
 
@@ -326,9 +326,9 @@ hooks 可以观察、注入、拦截，但不应该长期承载核心业务主�
 
 ## 7. 对外发布视角
 
-如果把 `pkg/agentcore` 当成未来可单独发布的包，架构上最重要的约束是：
+如果把 `agentcore` 当成未来可单独发布的包，架构上最重要的约束是：
 
-- `pkg/agentcore` 不依赖仓库的 `internal/*`
+- `agentcore` 不依赖仓库的 `internal/*`
 - internal 集成通过 adapter 完成
 - package-local docs 和 examples 尽量围绕公共 contract 自洽
 

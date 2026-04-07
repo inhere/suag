@@ -1,6 +1,6 @@
 # Agentcore Working Memory Design
 
-这份设计文档描述 `pkg/agentcore/memory` 的第一版目标与边界。
+这份设计文档描述 `memory/` 的第一版目标与边界。
 
 目标不是做完整的记忆系统，而是为 `agentcore` 提供一个最小、稳定、可扩展的默认 `Memory` 实现，让外部使用者可以在不自己从零实现 `agentcore.Memory` 的前提下，跑通一个真正可用的 context-aware runtime。
 
@@ -35,7 +35,7 @@
 
 这一轮明确要达成的目标：
 
-- 新增 `pkg/agentcore/memory`
+- 新增 `memory/`
 - 提供默认 `WorkingMemory`，直接实现 `agentcore.Memory`
 - 支持两个最小但真实有用的 context 组成部分
   - summary slot
@@ -99,7 +99,7 @@
 
 第一版建议新增：
 
-- `pkg/agentcore/memory`
+- `memory/`
 
 初始文件建议：
 
@@ -391,7 +391,7 @@ assistant("I summarized the structure")
 
 - package-local 文档补充
 - 使用示例补充
-- 必要时新增 `pkg/agentcore/examples/memory`
+- 必要时新增 `examples/memory`
 
 目标：
 

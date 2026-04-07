@@ -74,8 +74,8 @@
 
 最小可运行组合通常是：
 
-- provider: `pkg/agentcore/mock`
-- storage: `pkg/agentcore/files`
+- provider: `mock/`
+- storage: `files/`
 - tools: 默认空 registry
 
 下面是一个最小可运行示例：
@@ -145,9 +145,9 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 1. 先用 `mock + files` 跑通最小链路
 2. 再加入 `ToolRegistry` 和 `Hook`
-3. 如果不想自己从零实现 memory，先接入 `pkg/agentcore/memory`
-4. 默认 `ContextBuilder` 优先从 `pkg/agentcore/context` 的 presets 起步
-5. 需要组合 system prompt 时，优先从 `pkg/agentcore/prompt` 的 builders 起步
+3. 如果不想自己从零实现 memory，先接入 `memory/`
+4. 默认 `ContextBuilder` 优先从 `context/` 的 presets 起步
+5. 需要组合 system prompt 时，优先从 `prompt/` 的 builders 起步
 6. 最后接真实 `Provider` 和自定义 `Storage`
 
 ## Package Layout
@@ -174,36 +174,36 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 ## Docs
 
-- Docs index: [pkg/agentcore/docs/README.md](./docs/README.md)
-- Getting started: [pkg/agentcore/docs/getting-started.md](./docs/getting-started.md)
-- Architecture: [pkg/agentcore/docs/architecture.md](./docs/architecture.md)
-- API guide: [pkg/agentcore/docs/api.md](./docs/api.md)
-- Embedding patterns: [pkg/agentcore/docs/embedding-patterns.md](./docs/embedding-patterns.md)
-- Working memory design: [pkg/agentcore/docs/working-memory-design.md](./docs/working-memory-design.md)
-- Context presets design: [pkg/agentcore/docs/context-presets-design.md](./docs/context-presets-design.md)
-- Prompt layered design: [pkg/agentcore/docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
-- Roadmap: [pkg/agentcore/docs/roadmap.md](./docs/roadmap.md)
-- Examples: `pkg/agentcore/examples/`
-- Package overview: `pkg/agentcore/doc.go`
+- Docs index: [docs/README.md](./docs/README.md)
+- Getting started: [docs/getting-started.md](./docs/getting-started.md)
+- Architecture: [docs/architecture.md](./docs/architecture.md)
+- API guide: [docs/api.md](./docs/api.md)
+- Embedding patterns: [docs/embedding-patterns.md](./docs/embedding-patterns.md)
+- Working memory design: [docs/working-memory-design.md](./docs/working-memory-design.md)
+- Context presets design: [docs/context-presets-design.md](./docs/context-presets-design.md)
+- Prompt layered design: [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
+- Roadmap: [docs/roadmap.md](./docs/roadmap.md)
+- Examples: `examples/`
+- Package overview: `doc.go`
 
 推荐阅读顺序：
 
-1. [pkg/agentcore/README.md](./README.md)
-2. [pkg/agentcore/docs/README.md](./docs/README.md)
-3. [pkg/agentcore/docs/getting-started.md](./docs/getting-started.md)
-4. [pkg/agentcore/docs/architecture.md](./docs/architecture.md)
-5. [pkg/agentcore/docs/api.md](./docs/api.md)
-6. [pkg/agentcore/docs/embedding-patterns.md](./docs/embedding-patterns.md)
-7. [pkg/agentcore/docs/working-memory-design.md](./docs/working-memory-design.md)
-8. [pkg/agentcore/docs/context-presets-design.md](./docs/context-presets-design.md)
-9. [pkg/agentcore/docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
-10. `pkg/agentcore/doc.go`
-11. `pkg/agentcore/examples/README.md`
-12. `pkg/agentcore/examples/minimal`
-13. `pkg/agentcore/examples/custom`
-14. `pkg/agentcore/examples/prompt`
-15. `pkg/agentcore/examples/resume`
-16. [pkg/agentcore/docs/roadmap.md](./docs/roadmap.md)
+1. [README.md](./README.md)
+2. [docs/README.md](./docs/README.md)
+3. [docs/getting-started.md](./docs/getting-started.md)
+4. [docs/architecture.md](./docs/architecture.md)
+5. [docs/api.md](./docs/api.md)
+6. [docs/embedding-patterns.md](./docs/embedding-patterns.md)
+7. [docs/working-memory-design.md](./docs/working-memory-design.md)
+8. [docs/context-presets-design.md](./docs/context-presets-design.md)
+9. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
+10. `doc.go`
+11. `examples/README.md`
+12. `examples/minimal`
+13. `examples/custom`
+14. `examples/prompt`
+15. `examples/resume`
+16. [docs/roadmap.md](./docs/roadmap.md)
 
 ## Memory And Context
 
@@ -233,8 +233,8 @@ type Memory interface {
 这意味着一个很重要的扩展顺序：
 
 1. 先把 `Storage` 当作事实层跑通
-2. 再把 `pkg/agentcore/memory` 当作默认上下文派生层接进来
-3. 先尝试 `pkg/agentcore/context` 的第一方 presets
+2. 再把 `memory/` 当作默认上下文派生层接进来
+3. 先尝试 `context/` 的第一方 presets
 4. 只有当你需要特殊 message 组装时，再自定义 `ContextBuilder`
 
 如果你只需要一个最小但可用的默认 memory，可以直接这样起步：
@@ -356,13 +356,13 @@ resumed, err := runtime.Run(ctx, agentcore.RunInput{
 })
 ```
 
-如果你想直接看可运行示例，可以运行：
+如果你在 `pkg/agentcore` 目录下直接看包内示例，可以运行：
 
 ```bash
-go run ./pkg/agentcore/examples/minimal
-go run ./pkg/agentcore/examples/custom
-go run ./pkg/agentcore/examples/resume
-go run ./pkg/agentcore/examples/prompt
+go run ./examples/minimal
+go run ./examples/custom
+go run ./examples/resume
+go run ./examples/prompt
 ```
 
 其中：

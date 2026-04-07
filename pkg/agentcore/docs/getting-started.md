@@ -25,8 +25,8 @@
 
 最小组合通常是：
 
-- `Provider`: `pkg/agentcore/mock`
-- `Storage`: `pkg/agentcore/files`
+- `Provider`: `mock/`
+- `Storage`: `files/`
 - `Tools`: 默认空 registry
 
 示例：
@@ -108,7 +108,7 @@ func main() {
 2. 接一个自定义 `Tool`
 3. 接一个 `Hook`
 4. 跑通一次 `yield -> resume`
-5. 如果你不想从零实现 `Memory`，先接入 `pkg/agentcore/memory`
+5. 如果你不想从零实现 `Memory`，先接入 `memory/`
 6. 只有需要更强消息编排时，再替换 `PromptBuilder` / `ContextBuilder`
 7. 最后接真实 `Provider` 和自定义 `Storage`
 
@@ -171,14 +171,14 @@ runtime := agentcore.New(agentcore.Config{
 
 ## 6. 下一步看哪里
 
-- API guide: [pkg/agentcore/docs/api.md](./api.md)
-- Roadmap: [pkg/agentcore/docs/roadmap.md](./roadmap.md)
-- Examples: `pkg/agentcore/examples/`
+- API guide: [docs/api.md](./api.md)
+- Roadmap: [docs/roadmap.md](./roadmap.md)
+- Examples: `examples/`
 
 建议顺序：
 
-1. `pkg/agentcore/examples/minimal`
-2. `pkg/agentcore/examples/prompt`
-3. `pkg/agentcore/examples/custom`
-4. `pkg/agentcore/examples/resume`
+1. `examples/minimal`
+2. `examples/prompt`
+3. `examples/custom`
+4. `examples/resume`
 5. `examples/agentcore/bridge`

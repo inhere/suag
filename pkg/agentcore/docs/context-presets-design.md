@@ -1,6 +1,6 @@
 # Agentcore Context Presets Design
 
-这份设计文档描述 `pkg/agentcore/context` 下一轮默认组合能力的目标与边界。
+这份设计文档描述 `context/` 下一轮默认组合能力的目标与边界。
 
 这轮的目标不是设计一套新的 context framework，而是为 `agentcore` 提供几种第一方、可直接使用、边界清晰的默认 `ContextBuilder` 组合，让外部使用者不需要自己手搓最常见的 context 拼装方式。
 
@@ -11,8 +11,8 @@
 当前 `agentcore` 已经具备：
 
 - `PromptBuilder` / `ContextBuilder` 公共接口
-- `pkg/agentcore/context.DefaultBuilder`
-- `pkg/agentcore/memory.WorkingMemory`
+- `context.DefaultBuilder`
+- `memory.WorkingMemory`
 - `RunID + ResumeMode` 驱动的恢复语义
 
 但默认 context story 仍然偏底层：
@@ -29,7 +29,7 @@
 
 因此，这一轮的目标是：
 
-- 在 `pkg/agentcore/context` 中新增命名清晰的第一方预置组合
+- 在 `context/` 中新增命名清晰的第一方预置组合
 - 让“不用 memory”和“用默认 memory”两条路径都拥有可直接使用的 builder
 - 不引入新的 runtime preset 层，不把 `Runtime.Config` 做胖
 
@@ -39,7 +39,7 @@
 
 这一轮明确要达成的目标：
 
-- 在 `pkg/agentcore/context` 提供第一方预置 `ContextBuilder`
+- 在 `context/` 提供第一方预置 `ContextBuilder`
 - 至少覆盖两条核心路径
   - transcript window
   - memory-first
@@ -337,9 +337,9 @@ func MemoryThenRecent(mem agentcore.Memory, cfg MemoryThenRecentConfig) agentcor
 
 这一轮如果落地实现，建议同步更新：
 
-- [pkg/agentcore/README.md](../README.md)
-- [pkg/agentcore/docs/getting-started.md](./getting-started.md)
-- [pkg/agentcore/docs/api.md](./api.md)
+- [README.md](../README.md)
+- [docs/getting-started.md](./getting-started.md)
+- [docs/api.md](./api.md)
 
 必要时新增或更新 example，展示：
 

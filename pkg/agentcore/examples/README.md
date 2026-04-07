@@ -1,6 +1,6 @@
 # Agentcore Examples
 
-这组示例面向 `pkg/agentcore` 的外部使用者，覆盖几条最常见接法：
+这组示例面向 `agentcore` 的外部使用者，覆盖几条最常见接法：
 
 - `minimal`
   - 用 `mock + files` 跑通最小 runtime
@@ -18,12 +18,12 @@
 运行方式：
 
 ```bash
-go run ./pkg/agentcore/examples/minimal
-go run ./pkg/agentcore/examples/custom
-go run ./pkg/agentcore/examples/memory
-go run ./pkg/agentcore/examples/context
-go run ./pkg/agentcore/examples/prompt
-go run ./pkg/agentcore/examples/resume
+go run ./examples/minimal
+go run ./examples/custom
+go run ./examples/memory
+go run ./examples/context
+go run ./examples/prompt
+go run ./examples/resume
 ```
 
 其中 `memory` 示例重点展示两件事：

@@ -129,7 +129,7 @@ type Memory interface {
 
 如果你只是想先用一个默认实现，而不是从零写自己的 `Memory`，当前可以直接看：
 
-- `pkg/agentcore/memory`
+- `memory/`
 
 它现在提供一个第一方 `WorkingMemory`，包含：
 

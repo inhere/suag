@@ -1,6 +1,6 @@
 # Agentcore Docs
 
-这里是 `pkg/agentcore` 随包携带的文档入口，目标是让 `agentcore` 在未来独立发布时，也能拥有一套自解释的 package-local 文档。
+这里是 `agentcore` 随包携带的文档入口，目标是让它在未来独立发布时，也能拥有一套自解释的 package-local 文档。
 
 ## 阅读顺序
 
@@ -39,10 +39,10 @@
 
 如果你想直接看运行中的最小示例，继续看：
 
-- `pkg/agentcore/examples/minimal`
-- `pkg/agentcore/examples/memory`
-- `pkg/agentcore/examples/context`
-- `pkg/agentcore/examples/custom`
-- `pkg/agentcore/examples/prompt`
-- `pkg/agentcore/examples/resume`
+- `examples/minimal`
+- `examples/memory`
+- `examples/context`
+- `examples/custom`
+- `examples/prompt`
+- `examples/resume`
 - `examples/agentcore/bridge`

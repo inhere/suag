@@ -1,6 +1,6 @@
 # Agentcore Prompt Layered Builder Design
 
-这份设计文档描述 `pkg/agentcore/prompt` 下一轮默认组合能力的目标与边界。
+这份设计文档描述 `prompt/` 下一轮默认组合能力的目标与边界。
 
 这轮的目标不是设计一套 prompt policy engine，而是为 `agentcore` 提供一个第一方、可直接使用、边界清晰的默认 `PromptBuilder` 组合，让外部使用者不需要自己手写 base prompt、run metadata 与附加段落的拼接逻辑。
 
@@ -26,7 +26,7 @@
 
 因此，这一轮的目标是：
 
-- 在 `pkg/agentcore/prompt` 提供一个第一方 layered builder
+- 在 `prompt/` 提供一个第一方 layered builder
 - 支持静态 base prompt
 - 支持可选 run metadata 注入
 - 支持按顺序拼接附加段落
@@ -296,9 +296,9 @@ project: agentcore
 
 这一轮如果落地实现，建议同步更新：
 
-- [pkg/agentcore/README.md](../README.md)
-- [pkg/agentcore/docs/getting-started.md](./getting-started.md)
-- [pkg/agentcore/docs/api.md](./api.md)
+- [README.md](../README.md)
+- [docs/getting-started.md](./getting-started.md)
+- [docs/api.md](./api.md)
 
 必要时新增或更新 example，展示：
 
