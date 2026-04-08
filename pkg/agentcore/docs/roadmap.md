@@ -183,11 +183,15 @@ Hooks 应该负责：
 - 明确 transcript 规范
   - tool error 消息形状
   - assistant(tool_call) / tool(result) 成对语义
+- 建立 package-local conformance/testing 套件
+  - 先覆盖 `Storage` / `ToolRegistry` 这类最容易做独立兼容验证的接口
+  - 为外部实现提供可复用 contract tests，而不只是文档说明
 
 完成标志：
 
 - 核心 contract 与边界测试足够稳定
 - 外部实现 `Provider` / `Storage` / `Memory` 时不需要猜行为
+- 外部适配器可以通过 package-local contract tests 自证兼容性
 
 ### v0.3 Useful Default Implementations
 
@@ -249,6 +253,26 @@ Hooks 应该负责：
 
 - `agentcore` 能承载更复杂的 runtime 形态
 - 但 kernel 边界仍然清晰
+
+### v0.4.1 Runtime Policy Promotion
+
+目标：
+
+- 把反复出现、已经不适合继续只靠 hook 表达的 runtime 策略，提升成正式 contract
+
+重点事项：
+
+- 识别当前最容易在 hook 中失控的策略域
+  - resume input append policy
+  - tool execution policy
+  - error-to-yield / error-to-fail policy
+- 优先设计小接口，而不是新增“大而全 policy framework”
+- 让 hook 回到观察、注入、局部拦截角色，而不是承担主路径业务逻辑
+
+完成标志：
+
+- 常见策略不需要再通过隐式 hook 协议表达
+- hook 与正式 contract 的边界重新变清楚
 
 ### v0.5+ Platform Readiness
 
@@ -322,7 +346,25 @@ Hooks 继续是关键扩展机制，但需要避免两种风险：
 - 继续把仓库内部依赖留在 adapter 层
 - 不把 internal history 反向压回 core
 
-### 5.5 Documentation
+### 5.5 Conformance Testing
+
+如果 `agentcore` 未来要独立发布，仅靠 README、API guide 和 examples 还不够。
+
+还需要一层 package-local 的 contract verification story：
+
+- 外部 `Storage` 实现能否验证自己满足 append-only transcript 预期
+- 外部 `ToolRegistry` 实现能否验证 schema / execute 行为符合 kernel 预期
+- provider / streaming 相关实现至少应有可复用的测试 helper
+
+这层能力的定位是：
+
+- 它不是 runtime 主逻辑
+- 它也不是 mock-only 辅助代码
+- 它是独立发布姿态的一部分
+
+第一步应优先做最小 conformance suite，而不是一开始就做完整测试框架。
+
+### 5.6 Documentation
 
 `agentcore` 如果要独立发布，文档不是附属品，而是核心质量的一部分。
 
@@ -398,20 +440,22 @@ Hooks 继续是关键扩展机制，但需要避免两种风险：
 
 如果只看“接下来最值得做什么”，推荐顺序是：
 
-1. 完成 `v0.2`
-   - 核心契约稳定化
-   - 测试矩阵补齐
-2. 进入 `v0.3`
-   - 提供一个默认 `memory/` 子包
-   - 补默认 `context/` 与 `prompt/` 组合
-3. 再开启 `v0.4`
-   - streaming
-   - artifacts
-   - 高级扩展
+1. 先补 `conformance/testing`
+   - 先做 `Storage` / `ToolRegistry` contract tests
+   - 给外部实现一个真正可复用的兼容验证入口
+2. 再推进 runtime policy promotion
+   - 把常见 hook 模式收敛成正式 policy contract
+3. 然后扩展 storage optional capabilities
+   - artifact store
+   - checkpoint / listing / transactional capability
+4. 最后进入 streaming phase 2
+   - additive event model
+   - 更清晰的 host-facing incremental contract
+   - 继续守住 authority transcript 边界
 
 一句话总结：
 
-> `agentcore` 的下一阶段，不是变得更大，而是先变得更稳、更清晰、更容易被别人真正依赖。
+> `agentcore` 的下一阶段，不是变得更大，而是先变得更稳、更清晰、更容易被别人真正依赖，再谨慎打开新的能力面。
 
 ---
 

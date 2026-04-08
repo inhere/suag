@@ -19,8 +19,9 @@
 13. [working-memory-design.md](./working-memory-design.md) 下一轮默认 memory kernel 演进设计
 14. [context-presets-design.md](./context-presets-design.md) 下一轮默认 context 组合演进设计
 15. [prompt-layered-design.md](./prompt-layered-design.md) 下一轮默认 prompt 组合演进设计
-16. [streaming-design.md](./streaming-design.md) 下一轮 streaming contract 设计
-17. [roadmap.md](./roadmap.md) 后续演进路线
+16. [conformance-testing.md](./conformance-testing.md) 为什么要补 package-local contract tests，以及第一阶段优先覆盖什么
+17. [streaming-design.md](./streaming-design.md) 下一轮 streaming contract 设计
+18. [roadmap.md](./roadmap.md) 后续演进路线
 
 ## 这组文档回答什么问题
 
@@ -40,6 +41,7 @@
 - 下一轮 kernel 演进准备做什么
 - 默认 builder 组合下一步怎么长
 - 默认 prompt 组合下一步怎么长
+- package-local conformance/testing 应该如何进入 `agentcore`
 - streaming contract 应该如何进入 kernel
 
 ## 相关示例
@@ -55,3 +57,7 @@
 - `examples/host`
 - `examples/resume`
 - `../../examples/agentcore/bridge`
+
+如果你想直接看 package-local conformance helper 与可复制用法，继续看：
+
+- [../testing/README.md](../testing/README.md)

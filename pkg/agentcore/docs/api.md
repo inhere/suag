@@ -343,3 +343,65 @@ runtime 会对错误做稳定分类：
 - [recommended-runtime.md](./recommended-runtime.md)
 - [host-integration.md](./host-integration.md)
 - [migration.md](./migration.md)
+
+## 13. 下一阶段 API 演进重点
+
+如果从未来独立发布和长期演进角度看，当前更值得关注的不是继续堆更多默认实现，而是先把下面几类 public surface 稳住。
+
+### 13.1 Conformance Testing
+
+仅有接口定义还不够，外部实现还需要验证自己是否真正满足 contract。
+
+下一阶段推荐补一层 package-local conformance/testing：
+
+- `Storage` 的 append-only transcript contract tests
+- `ToolRegistry` 的 schema / execute contract tests
+- provider / streaming 的最小兼容 helper
+
+这层能力的定位是：
+
+- 只依赖 public API
+- 帮助外部实现自证兼容
+- 不把仓库内部测试工具直接暴露为正式 runtime 功能
+
+### 13.2 Policy Promotion
+
+当前 runtime 中已经存在一些稳定但尚未显式抽象的策略语义，例如：
+
+- resume 时是否追加输入
+- tool call 的执行上限
+- 某些错误是否应该 yield 而不是 fail
+
+如果这些策略未来频繁依赖 hook 才能表达，更合理的方向通常不是继续堆 hook，而是提升为更小、更明确的正式 contract。
+
+### 13.3 Storage Optional Capabilities
+
+`Storage` 当前保持最小接口是对的，但随着独立 embedding 增加，后续很可能需要 additive optional capabilities，例如：
+
+- artifact store
+- run listing
+- checkpoint store
+- transactional / compare-and-swap 能力
+
+推荐做法是：
+
+- 保持当前主接口不膨胀
+- 通过 optional interface 向上增长
+- 继续守住 `Storage = authority` 的边界
+
+### 13.4 Streaming Phase 2
+
+当前 streaming contract 已经够最小，但还不是最终形态。
+
+下一阶段更合理的方向是：
+
+- additive 扩展 event model
+- 明确 host-facing 增量输出语义
+- 不让 stream delta 进入 authority transcript
+- 不让 streaming 改写 `resume` 与 `final completion` 的核心规则
+
+如果你准备围绕这些方向扩展 `agentcore`，推荐同时参考：
+
+- [streaming-design.md](./streaming-design.md)
+- [release-readiness.md](./release-readiness.md)
+- [roadmap.md](./roadmap.md)

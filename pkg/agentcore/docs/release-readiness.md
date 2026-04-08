@@ -91,6 +91,7 @@
 - 新能力能否通过 optional interface 完成
 - 是否把某个 default implementation 误做成了事实标准
 - hook 是否开始承担本应进入正式 contract 的能力
+- 是否已经存在 package-local conformance tests，帮助外部实现验证兼容性
 
 ### 2.3 Authority And Recovery Semantics
 
@@ -162,7 +163,28 @@
 - examples 是否把 default behavior 误写成唯一语义
 - default package 命名与入口是否足够自解释
 
-### 2.6 Package Docs And Examples
+### 2.6 Conformance And Compatibility Tooling
+
+状态：`Needed for independent package posture`
+
+范围：
+
+- `testing/` 或等价的 package-local conformance helpers
+- `Storage` / `ToolRegistry` / `Provider` 的 contract verification utilities
+
+当前判断：
+
+- 如果 `agentcore` 要长期对外发布，单靠文档和 mock 示例还不够
+- 外部实现需要一个“如何验证自己满足 contract”的正式入口
+- 这层能力本身也属于 package surface，需要保持最小且稳定
+
+发布前检查：
+
+- conformance helpers 是否只依赖 public contract
+- 是否优先覆盖 authority 风险最高的接口
+- 是否避免把内部测试工具直接暴露成外部 API
+
+### 2.7 Package Docs And Examples
 
 状态：`Important release surface`
 
@@ -234,6 +256,12 @@ go test ./pkg/agentcore/... ./examples/agentcore/bridge
 
 如果这条命令不稳定，就还不适合把当前状态描述成“release-ready candidate”。
 
+如果已经引入 package-local conformance helpers，还应补充：
+
+```bash
+go test ./pkg/agentcore/testing/...
+```
+
 ---
 
 ## 4. 当前最接近发布阻塞点的事项
@@ -299,6 +327,20 @@ go test ./pkg/agentcore/... ./examples/agentcore/bridge
 - release-readiness 文档
 - versioning/change policy
 - package-local examples consistency
+- package-local conformance/testing story
+
+### 4.5 Policy Surface Discipline
+
+原因：
+
+- 当前 kernel 已经有一些清晰但仍隐含在 runtime 流程里的策略语义
+- 如果长期只允许通过 hook 间接表达，核心边界会逐渐变模糊
+
+优先补：
+
+- 把高频 hook 策略使用模式整理出来
+- 判断哪些应该升级成正式 policy contract
+- 避免形成“hooks 才是真正 runtime”的长期形态
 
 ---
 

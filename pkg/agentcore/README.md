@@ -225,6 +225,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - `prompt/` First-party prompt builders
 - `hooks/` Ordered hook-chain helper
 - `mock/` Test provider and tool implementations
+- `testing/` Package-local conformance helpers for external adapters
 
 注意：
 
@@ -250,10 +251,12 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - Working memory design: [docs/working-memory-design.md](./docs/working-memory-design.md)
 - Context presets design: [docs/context-presets-design.md](./docs/context-presets-design.md)
 - Prompt layered design: [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
+- Conformance testing: [docs/conformance-testing.md](./docs/conformance-testing.md)
 - Streaming design: [docs/streaming-design.md](./docs/streaming-design.md)
 - Roadmap: [docs/roadmap.md](./docs/roadmap.md)
 - Examples: `examples/`
 - Package overview: `doc.go`
+- Conformance helper package: `testing/README.md`
 
 推荐阅读顺序：
 
