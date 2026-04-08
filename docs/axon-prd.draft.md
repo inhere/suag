@@ -150,7 +150,7 @@ refer:
   - 主节点负责协调和管理所有智能体，可以调度指定从节点负责执行具体任务。
   - 一个子节点可能是一个专业的 agent team，负责执行特定类型的任务。
 - A2A 用作多个agent时，允许agent是远程运行的，这时 编排或者agent 直接可以通过A2A交互通信
-- ACP 是想让 agent 可以发现并操作本地已有的 claude-code, codex, opencode
+- ACP(Agent Client Protocol) 是想让 agent 可以发现并操作本地已有的 claude-code, codex, opencode
   - https://agentclientprotocol.com/get-started/introduction
   - go sdk: https://github.com/coder/acp-go-sdk, https://github.com/ironpark/acp-go
   - ts: @agentclientprotocol/sdk , https://github.com/openclaw/acpx
