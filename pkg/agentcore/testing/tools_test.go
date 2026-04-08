@@ -1,6 +1,8 @@
 package agentcoretesting
 
 import (
+	"context"
+	"errors"
 	stdtesting "testing"
 
 	"github.com/inhere/axon/pkg/agentcore"
@@ -8,6 +10,8 @@ import (
 )
 
 func TestRunToolRegistrySuite_WithDefaultRegistry(t *stdtesting.T) {
+	execErr := errors.New("tool boom")
+
 	RunToolRegistrySuite(t, func(t *stdtesting.T) ToolRegistryFixture {
 		t.Helper()
 
@@ -20,6 +24,12 @@ func TestRunToolRegistrySuite_WithDefaultRegistry(t *stdtesting.T) {
 				"properties": map[string]any{
 					"text": map[string]any{"type": "string"},
 				},
+			}),
+		))
+		registry.Register(mock.NewTool(
+			"fail",
+			mock.WithHandler(func(_ context.Context, _ agentcore.ToolCall) (*agentcore.ToolResult, error) {
+				return nil, execErr
 			}),
 		))
 
@@ -45,6 +55,21 @@ func TestRunToolRegistrySuite_WithDefaultRegistry(t *stdtesting.T) {
 				Name:    "echo",
 				Content: "hello",
 			},
+		).WithExpectedSchema(agentcore.ToolSchema{
+			Name:        "fail",
+			Description: "mock tool fail",
+			InputSchema: map[string]any{
+				"type":                 "object",
+				"additionalProperties": true,
+			},
+		}).WithExecuteError(
+			"execute_error",
+			agentcore.ToolCall{
+				CallID:    "call-2",
+				Name:      "fail",
+				Arguments: map[string]any{"text": "boom"},
+			},
+			execErr,
 		)
 	})
 }

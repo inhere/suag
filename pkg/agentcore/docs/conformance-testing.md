@@ -32,12 +32,14 @@
    - append-only transcript 预期
    - snapshot 与 messages 的基本读写一致性
    - tool transcript 在存储层的可恢复性
+   - SaveRun / LoadRun / AppendMessages / LoadMessages 的最小错误传播 contract
 2. `ToolRegistry`
    - `ListTools` 的基本 schema contract
    - `ExecuteTool` 的结果 shape 与错误传播
 3. `Provider`
    - 最小 final/tool-calls result contract
    - 可选 streaming capability 的基本验证 helper
+   - streaming success / provider error / host callback error 的最小 contract
 
 原因很直接：
 
@@ -60,6 +62,13 @@
 - 清晰约定
 - 明确需要调用方提供哪些实现
 - 失败时给出 contract 级别的错误信息
+
+对于 `Storage`，当前可以把 conformance 分成两层：
+
+- `RunStorageSuite(...)`
+  验证最小 happy path
+- `RunStorageFixtureSuite(...)`
+  在需要时补上错误传播 contract
 
 ## 4. 建议入口形态
 
@@ -97,7 +106,70 @@ func TestMyRegistryContract(t *testing.T) {
 - [../testing/provider_test.go](../testing/provider_test.go)
 - [../testing/external_examples_test.go](../testing/external_examples_test.go)
 
-## 5. 与其他文档的关系
+其中 storage 侧现在建议这样理解：
+
+- happy-path 优先从 [../testing/storage_test.go](../testing/storage_test.go) 里的 `RunStorageSuite(...)` 用法开始
+- 需要覆盖错误传播时，再看同一文件里的 `RunStorageFixtureSuite(...)`
+
+## 5. Streaming contract tests 目前怎么理解
+
+对 `Provider` 来说，streaming conformance 现在推荐至少分成三类情况：
+
+1. streaming success
+   - stream events 按预期发出
+   - 最终返回合法 `GenerateResult`
+2. stream provider error
+   - provider 在 stream 过程中返回错误
+   - 已发出的 events 仍然可以被断言
+3. stream handler error
+   - host 侧 callback 返回错误
+   - provider 应把这个错误向上传播，而不是吞掉
+
+`agentcore/testing` 当前对应的最小表达方式是：
+
+- `WithStreamingProvider(...)`
+  用于把 streaming 脚本源与普通 `Generate(...)` 脚本源分开
+- `StreamingCase.WantErr`
+  表示 `Stream(...)` 最终应该返回什么错误
+- `StreamingCase.EmitErr`
+  表示 host callback 主动返回错误
+
+这样做的好处是：
+
+- 外部适配器可以分别验证 generate 与 stream contract
+- 脚本化 mock provider 不会因为共用一步步消费的状态而让测试相互污染
+- suite 可以覆盖最值钱的 streaming error-path，而不必一开始就做成重量级测试框架
+
+## 6. Storage contract tests 目前怎么理解
+
+对 `Storage` 来说，当前 suite 建议至少区分两类目标：
+
+1. authority happy path
+   - run snapshot 能 round-trip
+   - append-only transcript 顺序稳定
+   - resume 能重放 authoritative transcript
+2. storage error propagation
+   - `SaveRun` 错误不会被吞掉
+   - `LoadRun` / `LoadMessages` 错误不会被吞掉
+   - `AppendMessages` 错误不会被吞掉
+   - 明显无效输入，例如缺失 `RunID`，可以被断言
+
+`agentcore/testing` 当前对应的最小表达方式是：
+
+- `RunStorageSuite(...)`
+  最小 happy path
+- `RunStorageFixtureSuite(...)`
+  happy path + error path 的扩展入口
+- `StorageFixture`
+  用于为不同子场景提供不同 storage，实现“正常路径”和“错误 stub”分离
+
+这样做的好处是：
+
+- 不会因为一组 error stub 把所有 happy-path 子测一起打红
+- 外部实现者可以先验证最小 contract，再逐步补错误路径
+- storage / tool / provider 三条 suite 逐渐形成更对称的 contract story
+
+## 7. 与其他文档的关系
 
 - [api.md](./api.md)
   解释 public contract 本身

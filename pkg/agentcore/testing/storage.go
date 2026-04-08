@@ -2,6 +2,7 @@ package agentcoretesting
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	stdtesting "testing"
 
@@ -11,6 +12,9 @@ import (
 
 // StorageFactory creates an isolated storage implementation for one test case.
 type StorageFactory func(t *stdtesting.T) agentcore.Storage
+
+// StorageCaseFactory returns a fresh storage-conformance fixture for one test case.
+type StorageCaseFactory func(t *stdtesting.T) StorageFixture
 
 // StoragePathFactory creates a storage rooted at an isolated directory path.
 type StoragePathFactory func(t *stdtesting.T, root string) agentcore.Storage
@@ -27,18 +31,81 @@ func NewStorageFactoryFromPath(factory StoragePathFactory) StorageFactory {
 	}
 }
 
+// StorageFixture configures storage conformance checks.
+type StorageFixture struct {
+	Storage             agentcore.Storage
+	RoundTripStorage    agentcore.Storage
+	MessagesStorage     agentcore.Storage
+	ResumeStorage       agentcore.Storage
+	SaveRunErr          error
+	LoadRunErr          error
+	AppendMessagesErr   error
+	LoadMessagesErr     error
+	SaveRunMissingIDErr error
+}
+
+// NewStorageFixture creates a minimal storage conformance fixture.
+func NewStorageFixture(storage agentcore.Storage) StorageFixture {
+	return StorageFixture{Storage: storage}
+}
+
+// WithSaveRunError appends one expected SaveRun failure case.
+func (f StorageFixture) WithSaveRunError(err error) StorageFixture {
+	f.SaveRunErr = err
+	return f
+}
+
+// WithLoadRunError appends one expected LoadRun failure case.
+func (f StorageFixture) WithLoadRunError(err error) StorageFixture {
+	f.LoadRunErr = err
+	return f
+}
+
+// WithAppendMessagesError appends one expected AppendMessages failure case.
+func (f StorageFixture) WithAppendMessagesError(err error) StorageFixture {
+	f.AppendMessagesErr = err
+	return f
+}
+
+// WithLoadMessagesError appends one expected LoadMessages failure case.
+func (f StorageFixture) WithLoadMessagesError(err error) StorageFixture {
+	f.LoadMessagesErr = err
+	return f
+}
+
+// WithSaveRunMissingIDError appends one expected SaveRun invalid-input case.
+func (f StorageFixture) WithSaveRunMissingIDError(err error) StorageFixture {
+	f.SaveRunMissingIDErr = err
+	return f
+}
+
 // RunStorageSuite runs the minimal public storage conformance checks.
 func RunStorageSuite(t *stdtesting.T, factory StorageFactory) {
+	RunStorageFixtureSuite(t, func(t *stdtesting.T) StorageFixture {
+		t.Helper()
+		if factory == nil {
+			t.Fatal("agentcoretesting: storage factory is nil")
+		}
+		return NewStorageFixture(factory(t))
+	})
+}
+
+// RunStorageFixtureSuite runs the storage conformance checks against one fixture.
+func RunStorageFixtureSuite(t *stdtesting.T, factory StorageCaseFactory) {
 	t.Helper()
 	if factory == nil {
-		t.Fatal("agentcoretesting: storage factory is nil")
+		t.Fatal("agentcoretesting: storage case factory is nil")
 	}
 
 	t.Run("save_and_load_run_round_trip", func(t *stdtesting.T) {
 		t.Helper()
-		store := factory(t)
+		fixture := factory(t)
+		store := fixture.RoundTripStorage
 		if store == nil {
-			t.Fatal("agentcoretesting: storage factory returned nil")
+			store = fixture.Storage
+		}
+		if store == nil {
+			t.Fatal("agentcoretesting: storage fixture returned nil storage")
 		}
 
 		state := &agentcore.RunState{
@@ -90,9 +157,13 @@ func RunStorageSuite(t *stdtesting.T, factory StorageFactory) {
 
 	t.Run("append_and_load_messages_preserves_order", func(t *stdtesting.T) {
 		t.Helper()
-		store := factory(t)
+		fixture := factory(t)
+		store := fixture.MessagesStorage
 		if store == nil {
-			t.Fatal("agentcoretesting: storage factory returned nil")
+			store = fixture.Storage
+		}
+		if store == nil {
+			t.Fatal("agentcoretesting: storage fixture returned nil storage")
 		}
 
 		runID := "run-message-round-trip"
@@ -140,9 +211,13 @@ func RunStorageSuite(t *stdtesting.T, factory StorageFactory) {
 
 	t.Run("runtime_resume_replays_authority_transcript", func(t *stdtesting.T) {
 		t.Helper()
-		store := factory(t)
+		fixture := factory(t)
+		store := fixture.ResumeStorage
 		if store == nil {
-			t.Fatal("agentcoretesting: storage factory returned nil")
+			store = fixture.Storage
+		}
+		if store == nil {
+			t.Fatal("agentcoretesting: storage fixture returned nil storage")
 		}
 
 		runID := "run-storage-runtime-resume"
@@ -212,6 +287,96 @@ func RunStorageSuite(t *stdtesting.T, factory StorageFactory) {
 		}
 		if messages[3].Role != "assistant" || messages[3].Content != "done after resume" {
 			t.Fatalf("expected final assistant answer appended after resume, got %#v", messages[3])
+		}
+	})
+
+	t.Run("save_run_error_is_propagated", func(t *stdtesting.T) {
+		t.Helper()
+		fixture := factory(t)
+		if fixture.SaveRunErr == nil {
+			t.Skip("agentcoretesting: no SaveRun error case configured")
+		}
+		if fixture.Storage == nil {
+			t.Fatal("agentcoretesting: storage fixture returned nil storage")
+		}
+
+		err := fixture.Storage.SaveRun(context.Background(), &agentcore.RunState{
+			RunID:   "run-save-error",
+			AgentID: "agent-1",
+			Status:  agentcore.RunRunning,
+		})
+		if !errors.Is(err, fixture.SaveRunErr) {
+			t.Fatalf("expected SaveRun error %v, got %v", fixture.SaveRunErr, err)
+		}
+	})
+
+	t.Run("load_run_error_is_propagated", func(t *stdtesting.T) {
+		t.Helper()
+		fixture := factory(t)
+		if fixture.LoadRunErr == nil {
+			t.Skip("agentcoretesting: no LoadRun error case configured")
+		}
+		if fixture.Storage == nil {
+			t.Fatal("agentcoretesting: storage fixture returned nil storage")
+		}
+
+		_, err := fixture.Storage.LoadRun(context.Background(), "run-load-error")
+		if !errors.Is(err, fixture.LoadRunErr) {
+			t.Fatalf("expected LoadRun error %v, got %v", fixture.LoadRunErr, err)
+		}
+	})
+
+	t.Run("append_messages_error_is_propagated", func(t *stdtesting.T) {
+		t.Helper()
+		fixture := factory(t)
+		if fixture.AppendMessagesErr == nil {
+			t.Skip("agentcoretesting: no AppendMessages error case configured")
+		}
+		if fixture.Storage == nil {
+			t.Fatal("agentcoretesting: storage fixture returned nil storage")
+		}
+
+		err := fixture.Storage.AppendMessages(context.Background(), "run-append-error", agentcore.Message{
+			Role:    "user",
+			Content: "hello",
+		})
+		if !errors.Is(err, fixture.AppendMessagesErr) {
+			t.Fatalf("expected AppendMessages error %v, got %v", fixture.AppendMessagesErr, err)
+		}
+	})
+
+	t.Run("load_messages_error_is_propagated", func(t *stdtesting.T) {
+		t.Helper()
+		fixture := factory(t)
+		if fixture.LoadMessagesErr == nil {
+			t.Skip("agentcoretesting: no LoadMessages error case configured")
+		}
+		if fixture.Storage == nil {
+			t.Fatal("agentcoretesting: storage fixture returned nil storage")
+		}
+
+		_, err := fixture.Storage.LoadMessages(context.Background(), "run-load-messages-error")
+		if !errors.Is(err, fixture.LoadMessagesErr) {
+			t.Fatalf("expected LoadMessages error %v, got %v", fixture.LoadMessagesErr, err)
+		}
+	})
+
+	t.Run("save_run_missing_id_error_is_propagated", func(t *stdtesting.T) {
+		t.Helper()
+		fixture := factory(t)
+		if fixture.SaveRunMissingIDErr == nil {
+			t.Skip("agentcoretesting: no SaveRun missing-id case configured")
+		}
+		if fixture.Storage == nil {
+			t.Fatal("agentcoretesting: storage fixture returned nil storage")
+		}
+
+		err := fixture.Storage.SaveRun(context.Background(), &agentcore.RunState{
+			AgentID: "agent-1",
+			Status:  agentcore.RunRunning,
+		})
+		if !errors.Is(err, fixture.SaveRunMissingIDErr) {
+			t.Fatalf("expected SaveRun missing-id error %v, got %v", fixture.SaveRunMissingIDErr, err)
 		}
 	})
 }
