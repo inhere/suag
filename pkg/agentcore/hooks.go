@@ -3,6 +3,8 @@ package agentcore
 import (
 	"context"
 	"time"
+
+	internalutils "github.com/inhere/axon/pkg/agentcore/internal/utils"
 )
 
 // Hook defines the public lifecycle extension points for agentcore.
@@ -135,12 +137,5 @@ type ErrorEvent struct {
 }
 
 func cloneMetadata(src map[string]any) map[string]any {
-	if len(src) == 0 {
-		return nil
-	}
-	dst := make(map[string]any, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
+	return internalutils.CloneMetadata(src)
 }

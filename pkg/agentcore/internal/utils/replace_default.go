@@ -1,9 +1,9 @@
 //go:build !windows
 
-package files
+package utils
 
 import "os"
 
-func replaceFile(src, dst string) error {
+func ReplaceFile(src, dst string) error {
 	return os.Rename(src, dst)
 }

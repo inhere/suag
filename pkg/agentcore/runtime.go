@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	internalutils "github.com/inhere/axon/pkg/agentcore/internal/utils"
 )
 
 // Runtime executes agent runs using the public agentcore contracts.
@@ -1284,7 +1286,7 @@ func (s *defaultFileStorage) writeFileAtomically(runID, path string, data []byte
 	if err := tempFile.Close(); err != nil {
 		return s.wrapError("close temp run snapshot", runID, err)
 	}
-	if err := runtimeReplaceFile(tempPath, path); err != nil {
+	if err := internalutils.ReplaceFile(tempPath, path); err != nil {
 		return s.wrapError("replace run snapshot", runID, err)
 	}
 

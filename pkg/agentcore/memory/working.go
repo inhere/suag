@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/inhere/axon/pkg/agentcore"
+	internalutils "github.com/inhere/axon/pkg/agentcore/internal/utils"
 )
 
 // Config controls how WorkingMemory filters and emits model-facing context.
@@ -161,27 +162,5 @@ func cloneArtifacts(artifacts []agentcore.Artifact) []agentcore.Artifact {
 }
 
 func cloneMetadata(src map[string]any) map[string]any {
-	if len(src) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(src))
-	for k, v := range src {
-		out[k] = cloneValue(v)
-	}
-	return out
-}
-
-func cloneValue(v any) any {
-	switch val := v.(type) {
-	case map[string]any:
-		return cloneMetadata(val)
-	case []any:
-		out := make([]any, len(val))
-		for i, item := range val {
-			out[i] = cloneValue(item)
-		}
-		return out
-	default:
-		return v
-	}
+	return internalutils.CloneMetadata(src)
 }

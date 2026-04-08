@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/inhere/axon/pkg/agentcore"
+	internalutils "github.com/inhere/axon/pkg/agentcore/internal/utils"
 )
 
 const (
@@ -240,7 +241,7 @@ func (s *Storage) writeFileAtomically(runID, path string, data []byte, perm os.F
 	if err := tempFile.Close(); err != nil {
 		return s.wrapError("close temp run snapshot", runID, err)
 	}
-	if err := replaceFile(tempPath, path); err != nil {
+	if err := internalutils.ReplaceFile(tempPath, path); err != nil {
 		return s.wrapError("replace run snapshot", runID, err)
 	}
 

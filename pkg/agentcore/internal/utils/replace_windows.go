@@ -1,12 +1,10 @@
 //go:build windows
 
-package files
+package utils
 
-import (
-	"golang.org/x/sys/windows"
-)
+import "golang.org/x/sys/windows"
 
-func replaceFile(src, dst string) error {
+func ReplaceFile(src, dst string) error {
 	from, err := windows.UTF16PtrFromString(src)
 	if err != nil {
 		return err
