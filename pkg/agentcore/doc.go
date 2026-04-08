@@ -29,6 +29,11 @@ Core extension points:
   - ContextBuilder: assemble model-facing messages
   - Hook: observe or modify key lifecycle stages
 
+Package shape:
+
+  - agentcore: current public runtime entrypoint and root facade
+  - api: stable contracts and shared runtime data types
+
 Built-in companion packages:
 
   - files: filesystem-backed storage

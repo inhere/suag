@@ -295,10 +295,15 @@ hooks 可以观察、注入、拦截，但不应该长期承载核心业务主�
 
 提供：
 
-- runtime
-- public types
-- public contracts
-- default orchestration
+- 当前对外 runtime 入口
+- root public types
+- 兼容 facade
+- 默认 orchestration
+
+同时现在已经存在一个更明确的 contract 层：
+
+- `api/`
+  承接稳定公共 contract 与共享 runtime 数据类型
 
 ### 6.2 First-Party Companion Packages
 

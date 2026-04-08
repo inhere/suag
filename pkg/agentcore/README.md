@@ -217,7 +217,8 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 ## Package Layout
 
-- `.` Public runtime contracts and default runtime implementation
+- `.` Current public runtime entrypoint, compatibility facade, and root public types
+- `api/` Stable public contracts and shared runtime data types
 - `files/` Filesystem-backed storage
 - `memory/` Default working-memory implementation
 - `context/` First-party context presets and default message-window builder
@@ -227,6 +228,8 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 注意：
 
+- 当前对外最直接的 runtime 构造入口仍然是 `agentcore.New(...)`
+- `api/` 主要面向扩展实现和 adapter，承接稳定 contract
 - `agentcore` 本身不应依赖仓库的 `internal/*` 包
 - 与 Axon 内部 `llm`、`tools` 等实现的桥接 adapter 放在 `internal/agentcoreadapters/`
 
