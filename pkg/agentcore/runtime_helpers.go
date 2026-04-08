@@ -1,0 +1,401 @@
+package agentcore
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/inhere/axon/pkg/agentcore/files"
+)
+
+func stateForSaveStateFailure(preState *RunState, currentState *RunState, err error) *RunState {
+	var memoryErr *MemoryError
+	if errors.As(err, &memoryErr) {
+		return currentState
+	}
+	return preState
+}
+
+type runtimeResolvedControlError struct {
+	result *RunResult
+}
+
+func (e runtimeResolvedControlError) Error() string {
+	return "runtime control resolved"
+}
+
+func defaultStorage(storage Storage) Storage {
+	if storage != nil {
+		return storage
+	}
+	return files.NewStorage(filepath.Join(os.TempDir(), "agentcore-runs"))
+}
+
+func defaultTools(tools ToolRegistry) ToolRegistry {
+	if tools != nil {
+		return tools
+	}
+	return NewToolRegistry()
+}
+
+func defaultMemory(memory Memory) Memory {
+	if memory != nil {
+		return memory
+	}
+	return noopMemory{}
+}
+
+func defaultPromptBuilder(builder PromptBuilder) PromptBuilder {
+	if builder != nil {
+		return builder
+	}
+	return defaultStaticPromptBuilder{}
+}
+
+func defaultContextBuilder(memory Memory) ContextBuilder {
+	return defaultContextBuilderImpl{memory: memory}
+}
+
+func newRunState(runID string, input RunInput) *RunState {
+	return &RunState{
+		RunID:    runID,
+		AgentID:  input.AgentID,
+		Status:   RunRunning,
+		Metadata: cloneMetadata(input.Metadata),
+	}
+}
+
+func shouldAppendInstruction(input RunInput) bool {
+	switch input.ResumeMode {
+	case ResumeFromState:
+		return false
+	case ResumeWithInput:
+		return true
+	case ResumeAuto, "":
+		return strings.TrimSpace(input.Instruction) != ""
+	default:
+		return strings.TrimSpace(input.Instruction) != ""
+	}
+}
+
+func newRunID() string {
+	return fmt.Sprintf("run-%d", time.Now().UnixNano())
+}
+
+func wrapProviderError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var providerErr *ProviderError
+	if errors.As(err, &providerErr) {
+		return err
+	}
+	return &ProviderError{Err: err}
+}
+
+func wrapStorageError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var storageErr *StorageError
+	if errors.As(err, &storageErr) {
+		return err
+	}
+	return &StorageError{Err: err}
+}
+
+func wrapMemoryError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var memoryErr *MemoryError
+	if errors.As(err, &memoryErr) {
+		return err
+	}
+	return &MemoryError{Err: err}
+}
+
+func wrapHookError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var hookErr *HookError
+	if errors.As(err, &hookErr) {
+		return err
+	}
+	return &HookError{Err: err}
+}
+
+func isStorageMiss(err error) bool {
+	return errors.Is(err, os.ErrNotExist)
+}
+
+func classifyRuntimeError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, new(*HookError)):
+		return err
+	case errors.As(err, new(*ProviderError)):
+		return err
+	case errors.As(err, new(*StorageError)):
+		return err
+	case errors.As(err, new(*MemoryError)):
+		return err
+	case errors.As(err, new(*ToolError)):
+		return err
+	case errors.Is(err, ErrToolCallsNotImplemented):
+		return err
+	case errors.Is(err, ErrRunNotResumable):
+		return err
+	default:
+		return err
+	}
+}
+
+func normalizeToolResult(call ToolCall, result *ToolResult) *ToolResult {
+	if result == nil {
+		result = &ToolResult{}
+	}
+	cloned := cloneToolResultValue(result)
+	if cloned == nil {
+		cloned = &ToolResult{}
+	}
+	if cloned.CallID == "" {
+		cloned.CallID = call.CallID
+	}
+	if cloned.Name == "" {
+		cloned.Name = call.Name
+	}
+	return cloned
+}
+
+func toolErrorAsResult(call ToolCall, err error) *ToolResult {
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) {
+		err = &ToolError{Err: err}
+	}
+	return &ToolResult{
+		CallID:  call.CallID,
+		Name:    call.Name,
+		Content: err.Error(),
+	}
+}
+
+func cloneRunInput(input RunInput) *RunInput {
+	cloned := input
+	cloned.Metadata = cloneMetadata(input.Metadata)
+	return &cloned
+}
+
+func cloneRunStateValue(state *RunState) *RunState {
+	if state == nil {
+		return nil
+	}
+	cloned := *state
+	cloned.Messages = cloneMessagesValue(state.Messages)
+	if len(state.Artifacts) > 0 {
+		cloned.Artifacts = make([]Artifact, len(state.Artifacts))
+		copy(cloned.Artifacts, state.Artifacts)
+	}
+	cloned.Metadata = cloneMetadata(state.Metadata)
+	cloned.Scratch = cloneMetadata(state.Scratch)
+	return &cloned
+}
+
+func cloneMessagesValue(messages []Message) []Message {
+	if len(messages) == 0 {
+		return nil
+	}
+	cloned := make([]Message, len(messages))
+	for i, msg := range messages {
+		cloned[i] = Message{
+			Role:       msg.Role,
+			Content:    msg.Content,
+			Metadata:   cloneMetadata(msg.Metadata),
+			ToolCall:   cloneToolCallValue(msg.ToolCall),
+			ToolResult: cloneToolResultValue(msg.ToolResult),
+		}
+	}
+	return cloned
+}
+
+func cloneToolCallValue(call *ToolCall) *ToolCall {
+	if call == nil {
+		return nil
+	}
+	cloned := *call
+	cloned.Arguments = cloneMetadata(call.Arguments)
+	return &cloned
+}
+
+func cloneToolResultValue(result *ToolResult) *ToolResult {
+	if result == nil {
+		return nil
+	}
+	cloned := *result
+	if len(result.Artifacts) > 0 {
+		cloned.Artifacts = make([]Artifact, len(result.Artifacts))
+		copy(cloned.Artifacts, result.Artifacts)
+	}
+	cloned.Metadata = cloneMetadata(result.Metadata)
+	return &cloned
+}
+
+func cloneGenerateRequestValue(req *GenerateRequest) *GenerateRequest {
+	if req == nil {
+		return nil
+	}
+	cloned := *req
+	cloned.Messages = cloneMessagesValue(req.Messages)
+	if len(req.Tools) > 0 {
+		cloned.Tools = make([]ToolSchema, len(req.Tools))
+		for i, tool := range req.Tools {
+			cloned.Tools[i] = ToolSchema{
+				Name:        tool.Name,
+				Description: tool.Description,
+				InputSchema: cloneMetadata(tool.InputSchema),
+			}
+		}
+	}
+	cloned.Metadata = cloneMetadata(req.Metadata)
+	return &cloned
+}
+
+func cloneGenerateResultValue(result *GenerateResult) *GenerateResult {
+	if result == nil {
+		return nil
+	}
+	cloned := *result
+	if len(result.ToolCalls) > 0 {
+		cloned.ToolCalls = make([]ToolCall, len(result.ToolCalls))
+		for i, call := range result.ToolCalls {
+			cloned.ToolCalls[i] = ToolCall{
+				CallID:    call.CallID,
+				Name:      call.Name,
+				Arguments: cloneMetadata(call.Arguments),
+			}
+		}
+	}
+	if len(result.Artifacts) > 0 {
+		cloned.Artifacts = make([]Artifact, len(result.Artifacts))
+		copy(cloned.Artifacts, result.Artifacts)
+	}
+	cloned.Metadata = cloneMetadata(result.Metadata)
+	return &cloned
+}
+
+func cloneStreamEventValue(event StreamEvent) StreamEvent {
+	return StreamEvent{
+		Kind:     event.Kind,
+		Delta:    event.Delta,
+		Metadata: cloneMetadata(event.Metadata),
+	}
+}
+
+func mergeMetadata(base, overlay map[string]any) map[string]any {
+	if len(base) == 0 && len(overlay) == 0 {
+		return nil
+	}
+	merged := cloneMetadata(base)
+	if merged == nil {
+		merged = make(map[string]any, len(overlay))
+	}
+	for k, v := range overlay {
+		merged[k] = v
+	}
+	return merged
+}
+
+type defaultStaticPromptBuilder struct{}
+
+func (defaultStaticPromptBuilder) BuildSystemPrompt(context.Context, *RunState) (string, error) {
+	return "", nil
+}
+
+type defaultContextBuilderImpl struct {
+	memory Memory
+}
+
+func (b defaultContextBuilderImpl) BuildMessages(ctx context.Context, state *RunState) ([]Message, error) {
+	return b.memory.BuildContext(ctx, state)
+}
+
+type runtimeHookChain struct {
+	hooks []Hook
+}
+
+func newRuntimeHookChain(hooks ...Hook) runtimeHookChain {
+	filtered := make([]Hook, 0, len(hooks))
+	for _, hook := range hooks {
+		if hook != nil {
+			filtered = append(filtered, hook)
+		}
+	}
+	return runtimeHookChain{hooks: filtered}
+}
+
+func (c runtimeHookChain) runStage(call func(Hook) error, ctrl *Control) error {
+	for _, hook := range c.hooks {
+		if err := call(hook); err != nil {
+			return err
+		}
+		if ctrl != nil && (ctrl.ShouldShortCircuit() || ctrl.ShouldYield()) {
+			return nil
+		}
+	}
+	return nil
+}
+
+func (c runtimeHookChain) runStageWithoutControlStop(call func(Hook) error) error {
+	for _, hook := range c.hooks {
+		if err := call(hook); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c runtimeHookChain) BeforeRun(ctx context.Context, event *RunEvent, ctrl *Control) error {
+	return c.runStage(func(h Hook) error { return h.BeforeRun(ctx, event, ctrl) }, ctrl)
+}
+
+func (c runtimeHookChain) BeforePromptBuild(ctx context.Context, event *PromptEvent, ctrl *Control) error {
+	return c.runStage(func(h Hook) error { return h.BeforePromptBuild(ctx, event, ctrl) }, ctrl)
+}
+
+func (c runtimeHookChain) BeforeContextBuild(ctx context.Context, event *ContextEvent, ctrl *Control) error {
+	return c.runStage(func(h Hook) error { return h.BeforeContextBuild(ctx, event, ctrl) }, ctrl)
+}
+
+func (c runtimeHookChain) BeforeModel(ctx context.Context, event *ModelEvent, ctrl *Control) error {
+	return c.runStage(func(h Hook) error { return h.BeforeModel(ctx, event, ctrl) }, ctrl)
+}
+
+func (c runtimeHookChain) AfterModel(ctx context.Context, event *ModelEvent, ctrl *Control) error {
+	return c.runStage(func(h Hook) error { return h.AfterModel(ctx, event, ctrl) }, ctrl)
+}
+
+func (c runtimeHookChain) BeforeTool(ctx context.Context, event *ToolEvent, ctrl *Control) error {
+	return c.runStage(func(h Hook) error { return h.BeforeTool(ctx, event, ctrl) }, ctrl)
+}
+
+func (c runtimeHookChain) AfterTool(ctx context.Context, event *ToolEvent, ctrl *Control) error {
+	return c.runStageWithoutControlStop(func(h Hook) error { return h.AfterTool(ctx, event, ctrl) })
+}
+
+func (c runtimeHookChain) AfterRun(ctx context.Context, event *RunEvent, ctrl *Control) error {
+	return c.runStage(func(h Hook) error { return h.AfterRun(ctx, event, ctrl) }, ctrl)
+}
+
+func (c runtimeHookChain) OnError(ctx context.Context, event *ErrorEvent, ctrl *Control) error {
+	return c.runStage(func(h Hook) error { return h.OnError(ctx, event, ctrl) }, ctrl)
+}
+
+func (c runtimeHookChain) OnErrorObserved(ctx context.Context, event *ErrorEvent, ctrl *Control) error {
+	return c.runStageWithoutControlStop(func(h Hook) error { return h.OnError(ctx, event, ctrl) })
+}
