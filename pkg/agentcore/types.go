@@ -37,6 +37,36 @@ type Yield = api.Yield
 type RunState = api.RunState
 type RunResult = api.RunResult
 
+// ---------------- Tools ----------------
+
+type ToolCall = api.ToolCall
+type ToolResult = api.ToolResult
+type ToolSchema = api.ToolSchema
+type Tool = api.Tool
+type ToolRegistry = api.ToolRegistry
+
+// ---------------- Provider ----------------
+
+type Provider = api.Provider
+type StreamEventKind = api.StreamEventKind
+
+const (
+	StreamEventTextDelta   = api.StreamEventTextDelta
+	StreamEventMessageStop = api.StreamEventMessageStop
+)
+
+type StreamEvent = api.StreamEvent
+type StreamFunc = api.StreamFunc
+type StreamingProvider = api.StreamingProvider
+type GenerateRequest = api.GenerateRequest
+type GenerateResult = api.GenerateResult
+type FinishReason = api.FinishReason
+
+const (
+	FinishFinal     = api.FinishFinal
+	FinishToolCalls = api.FinishToolCalls
+)
+
 // ---------------- Memory ----------------
 
 type Memory = api.Memory

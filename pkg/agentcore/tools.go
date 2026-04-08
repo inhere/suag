@@ -5,15 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-
-	"github.com/inhere/axon/pkg/agentcore/api"
 )
-
-type ToolCall = api.ToolCall
-type ToolResult = api.ToolResult
-type ToolSchema = api.ToolSchema
-type Tool = api.Tool
-type ToolRegistry = api.ToolRegistry
 
 // Registry is the default in-memory implementation of ToolRegistry.
 type Registry struct {
