@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/inhere/axon/internal/memory"
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
 type testStore struct {
@@ -43,13 +43,13 @@ func TestAdapter_Hydrate_ReturnsConflictOnDivergedPrefix(t *testing.T) {
 	}
 	adapter := New(store)
 
-	err := adapter.Hydrate(context.Background(), &agentcore.RunState{
+	err := adapter.Hydrate(context.Background(), &api.RunState{
 		RunID: "run-1",
-		Messages: []agentcore.Message{
+		Messages: []api.Message{
 			{Role: "user", Content: "authoritative"},
 		},
 	})
-	if !errors.Is(err, agentcore.ErrMemoryStateConflict) {
+	if !errors.Is(err, api.ErrMemoryStateConflict) {
 		t.Fatalf("expected memory state conflict, got %v", err)
 	}
 }
@@ -62,9 +62,9 @@ func TestAdapter_Hydrate_AppendsMissingTranscriptTail(t *testing.T) {
 	}
 	adapter := New(store)
 
-	err := adapter.Hydrate(context.Background(), &agentcore.RunState{
+	err := adapter.Hydrate(context.Background(), &api.RunState{
 		RunID: "run-1",
-		Messages: []agentcore.Message{
+		Messages: []api.Message{
 			{Role: "user", Content: "hello"},
 			{Role: "assistant", Content: "world"},
 		},

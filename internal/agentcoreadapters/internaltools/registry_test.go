@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/inhere/axon/internal/agentcoreadapters/internaltools"
 	"github.com/inhere/axon/internal/llm"
 	"github.com/inhere/axon/internal/tools"
-	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/internal/agentcoreadapters/internaltools"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
 type echoTool struct {
@@ -68,7 +68,7 @@ func TestInternalToolsAdapter_ListsSchemasAndExecutes(t *testing.T) {
 		t.Fatalf("expected enum constraint to be preserved, got %#v", textProp)
 	}
 
-	result, err := adapter.ExecuteTool(context.Background(), agentcore.ToolCall{
+	result, err := adapter.ExecuteTool(context.Background(), api.ToolCall{
 		CallID: "call-1",
 		Name:   "echo",
 		Arguments: map[string]any{
@@ -127,7 +127,7 @@ func (t *namedEchoTool) Schema() llm.ToolSchema {
 	return llm.ToolSchema{
 		Name:        t.name,
 		Description: t.name,
-		Parameters: llm.SchemaProperty{Type: "object"},
+		Parameters:  llm.SchemaProperty{Type: "object"},
 	}
 }
 func (t *namedEchoTool) Execute(context.Context, map[string]any) (string, error) {

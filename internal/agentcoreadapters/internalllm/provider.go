@@ -5,16 +5,16 @@ import (
 	"fmt"
 
 	"github.com/inhere/axon/internal/llm"
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
-// Provider adapts an internal llm.Provider into the public agentcore.Provider contract.
+// Provider adapts an internal llm.Provider into the public agentcore api.Provider contract.
 type Provider struct {
 	inner llm.Provider
 }
 
-// NewProvider wraps an internal provider with the public agentcore contract.
-func NewProvider(inner llm.Provider) agentcore.Provider {
+// NewProvider wraps an internal provider with the public agentcore api contract.
+func NewProvider(inner llm.Provider) api.Provider {
 	return &Provider{inner: inner}
 }
 
@@ -27,9 +27,9 @@ func (p *Provider) Name() string {
 }
 
 // Generate maps an agentcore request/response pair onto the internal llm provider.
-func (p *Provider) Generate(ctx context.Context, req *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+func (p *Provider) Generate(ctx context.Context, req *api.GenerateRequest) (*api.GenerateResult, error) {
 	if p == nil || p.inner == nil {
-		return nil, &agentcore.ProviderError{Err: fmt.Errorf("internal provider is nil")}
+		return nil, &api.ProviderError{Err: fmt.Errorf("internal provider is nil")}
 	}
 
 	resp, err := p.inner.Complete(ctx, &llm.CompletionRequest{
@@ -41,16 +41,16 @@ func (p *Provider) Generate(ctx context.Context, req *agentcore.GenerateRequest)
 		System:      req.System,
 	})
 	if err != nil {
-		return nil, &agentcore.ProviderError{Err: err}
+		return nil, &api.ProviderError{Err: err}
 	}
 	if resp == nil {
-		return nil, &agentcore.ProviderError{Err: fmt.Errorf("internal provider returned nil response")}
+		return nil, &api.ProviderError{Err: fmt.Errorf("internal provider returned nil response")}
 	}
 
-	result := &agentcore.GenerateResult{
+	result := &api.GenerateResult{
 		Content:   resp.Content,
 		ToolCalls: toAgentcoreToolCalls(resp.ToolCalls),
-		Usage: agentcore.Usage{
+		Usage: api.Usage{
 			InputTokens:  resp.Usage.PromptTokens,
 			OutputTokens: resp.Usage.CompletionTokens,
 			TotalTokens:  resp.Usage.TotalTokens,
@@ -59,22 +59,22 @@ func (p *Provider) Generate(ctx context.Context, req *agentcore.GenerateRequest)
 
 	switch resp.FinishReason {
 	case "", "stop":
-		result.FinishReason = agentcore.FinishFinal
+		result.FinishReason = api.FinishFinal
 	case "tool_calls":
-		result.FinishReason = agentcore.FinishToolCalls
+		result.FinishReason = api.FinishToolCalls
 	case "length":
-		return nil, &agentcore.ProviderError{Err: fmt.Errorf("unsupported finish reason: %s", resp.FinishReason)}
+		return nil, &api.ProviderError{Err: fmt.Errorf("unsupported finish reason: %s", resp.FinishReason)}
 	default:
-		return nil, &agentcore.ProviderError{Err: fmt.Errorf("unknown finish reason: %s", resp.FinishReason)}
+		return nil, &api.ProviderError{Err: fmt.Errorf("unknown finish reason: %s", resp.FinishReason)}
 	}
 
 	if err := result.Validate(); err != nil {
-		return nil, &agentcore.ProviderError{Err: err}
+		return nil, &api.ProviderError{Err: err}
 	}
 	return result, nil
 }
 
-func toInternalMessages(messages []agentcore.Message) []llm.Message {
+func toInternalMessages(messages []api.Message) []llm.Message {
 	if len(messages) == 0 {
 		return nil
 	}
@@ -106,7 +106,7 @@ func toInternalMessages(messages []agentcore.Message) []llm.Message {
 	return out
 }
 
-func toInternalTools(tools []agentcore.ToolSchema) []llm.ToolSchema {
+func toInternalTools(tools []api.ToolSchema) []llm.ToolSchema {
 	if len(tools) == 0 {
 		return nil
 	}
@@ -122,14 +122,14 @@ func toInternalTools(tools []agentcore.ToolSchema) []llm.ToolSchema {
 	return out
 }
 
-func toAgentcoreToolCalls(calls []llm.ToolCall) []agentcore.ToolCall {
+func toAgentcoreToolCalls(calls []llm.ToolCall) []api.ToolCall {
 	if len(calls) == 0 {
 		return nil
 	}
 
-	out := make([]agentcore.ToolCall, len(calls))
+	out := make([]api.ToolCall, len(calls))
 	for i, call := range calls {
-		out[i] = agentcore.ToolCall{
+		out[i] = api.ToolCall{
 			CallID:    call.ID,
 			Name:      call.Name,
 			Arguments: cloneMap(call.Arguments),

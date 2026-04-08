@@ -4,12 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/inhere/axon/internal/agentcoreadapters/internalllm"
+	adapterinternaltools "github.com/inhere/axon/internal/agentcoreadapters/internaltools"
 	"github.com/inhere/axon/internal/llm"
 	internaltools "github.com/inhere/axon/internal/tools"
 	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/internal/agentcoreadapters/internalllm"
-	adapterinternaltools "github.com/inhere/axon/internal/agentcoreadapters/internaltools"
 	"github.com/inhere/axon/pkg/agentcore/files"
+	"github.com/inhere/axon/pkg/agentcore/runtime"
 )
 
 type echoTool struct{}
@@ -77,7 +78,7 @@ func TestRuntime_WithRealAdapterPackages_PersistsAndReplaysCompleteToolTranscrip
 
 	yieldHook := &yieldBeforeSecondModelHook{}
 
-	firstRuntime := agentcore.New(agentcore.Config{
+	firstRuntime := runtime.New(runtime.Config{
 		Provider: internalllm.NewProvider(
 			llm.NewMockProvider("internal-mock").QueueToolCall("echo", map[string]any{"text": "persisted"}),
 		),
@@ -115,7 +116,7 @@ func TestRuntime_WithRealAdapterPackages_PersistsAndReplaysCompleteToolTranscrip
 	}
 
 	resumeProvider := llm.NewMockProvider("internal-mock").QueueText("final after resume")
-	resumeRuntime := agentcore.New(agentcore.Config{
+	resumeRuntime := runtime.New(runtime.Config{
 		Provider:       internalllm.NewProvider(resumeProvider),
 		Storage:        store,
 		Tools:          adapterinternaltools.NewRegistry(reg),

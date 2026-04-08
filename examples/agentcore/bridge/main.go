@@ -7,18 +7,19 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/inhere/axon/internal/llm"
 	"github.com/inhere/axon/internal/agentcoreadapters/internalllm"
 	adapterinternaltools "github.com/inhere/axon/internal/agentcoreadapters/internaltools"
+	"github.com/inhere/axon/internal/llm"
 	internaltools "github.com/inhere/axon/internal/tools"
 	"github.com/inhere/axon/pkg/agentcore"
 	"github.com/inhere/axon/pkg/agentcore/files"
+	"github.com/inhere/axon/pkg/agentcore/runtime"
 )
 
 type echoTool struct{}
 
-func (echoTool) Name() string        { return "echo" }
-func (echoTool) Description() string { return "Echoes a message" }
+func (echoTool) Name() string             { return "echo" }
+func (echoTool) Description() string      { return "Echoes a message" }
 func (echoTool) Kind() internaltools.Kind { return internaltools.KindNative }
 func (echoTool) Schema() llm.ToolSchema {
 	return llm.ToolSchema{
@@ -45,7 +46,7 @@ func main() {
 		QueueToolCall("echo", map[string]any{"text": "hello from bridge example"}).
 		QueueText("bridge example completed")
 
-	runtime := agentcore.New(agentcore.Config{
+	runtime := runtime.New(runtime.Config{
 		Provider: internalllm.NewProvider(provider),
 		Storage:  files.NewStorage(filepath.Join(os.TempDir(), "axon-agentcore-examples", "bridge")),
 		Tools:    adapterinternaltools.NewRegistry(reg),

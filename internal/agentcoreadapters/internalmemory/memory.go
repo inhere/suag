@@ -6,31 +6,31 @@ import (
 	"strings"
 
 	"github.com/inhere/axon/internal/memory"
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
-// Adapter bridges an internal memory.Store into the public agentcore.Memory contract.
+// Adapter bridges an internal memory.Store into the public agentcore api.Memory contract.
 type Adapter struct {
 	store memory.Store
 }
 
-// New adapts an internal memory.Store into agentcore.Memory.
-func New(store memory.Store) agentcore.Memory {
+// New adapts an internal memory.Store into agentcore api.Memory.
+func New(store memory.Store) api.Memory {
 	return &Adapter{store: store}
 }
 
-func (a *Adapter) Hydrate(_ context.Context, state *agentcore.RunState) error {
+func (a *Adapter) Hydrate(_ context.Context, state *api.RunState) error {
 	if a == nil || a.store == nil || state == nil {
 		return nil
 	}
 	transcript := compactMessages(state.Messages)
 	existing := a.store.GetMessages()
 	if len(existing) > len(transcript) {
-		return &agentcore.MemoryError{Err: agentcore.ErrMemoryStateConflict}
+		return &api.MemoryError{Err: api.ErrMemoryStateConflict}
 	}
 	for i := range existing {
 		if existing[i].Role != transcript[i].Role || existing[i].Content != transcript[i].Content {
-			return &agentcore.MemoryError{Err: agentcore.ErrMemoryStateConflict}
+			return &api.MemoryError{Err: api.ErrMemoryStateConflict}
 		}
 	}
 	for _, msg := range transcript[len(existing):] {
@@ -39,7 +39,7 @@ func (a *Adapter) Hydrate(_ context.Context, state *agentcore.RunState) error {
 	return nil
 }
 
-func (a *Adapter) ObserveMessages(_ context.Context, _ *agentcore.RunState, messages ...agentcore.Message) error {
+func (a *Adapter) ObserveMessages(_ context.Context, _ *api.RunState, messages ...api.Message) error {
 	if a == nil || a.store == nil {
 		return nil
 	}
@@ -53,7 +53,7 @@ func (a *Adapter) ObserveMessages(_ context.Context, _ *agentcore.RunState, mess
 	return nil
 }
 
-func (a *Adapter) BuildContext(ctx context.Context, _ *agentcore.RunState) ([]agentcore.Message, error) {
+func (a *Adapter) BuildContext(ctx context.Context, _ *api.RunState) ([]api.Message, error) {
 	if a == nil || a.store == nil {
 		return nil, nil
 	}
@@ -61,9 +61,9 @@ func (a *Adapter) BuildContext(ctx context.Context, _ *agentcore.RunState) ([]ag
 	if err != nil {
 		return nil, err
 	}
-	out := make([]agentcore.Message, 0, len(messages))
+	out := make([]api.Message, 0, len(messages))
 	for _, msg := range messages {
-		out = append(out, agentcore.Message{
+		out = append(out, api.Message{
 			Role:    msg.Role,
 			Content: msg.Content,
 		})
@@ -71,7 +71,7 @@ func (a *Adapter) BuildContext(ctx context.Context, _ *agentcore.RunState) ([]ag
 	return out, nil
 }
 
-func compactContent(msg agentcore.Message) string {
+func compactContent(msg api.Message) string {
 	if msg.Role == "tool" && msg.ToolResult != nil {
 		content := msg.ToolResult.Content
 		if flag, _ := msg.ToolResult.Metadata["tool_error"].(bool); flag || strings.HasPrefix(content, "tool error:") {
@@ -97,7 +97,7 @@ func trimToolErrorPrefix(content string) string {
 	return content
 }
 
-func compactMessages(messages []agentcore.Message) []memory.Message {
+func compactMessages(messages []api.Message) []memory.Message {
 	if len(messages) == 0 {
 		return nil
 	}

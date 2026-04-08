@@ -7,29 +7,29 @@ import (
 
 	"github.com/inhere/axon/internal/llm"
 	internaltools "github.com/inhere/axon/internal/tools"
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
-// Registry adapts an internal tools.Registry into the public agentcore.ToolRegistry contract.
+// Registry adapts an internal tools.Registry into the public agentcore api.ToolRegistry contract.
 type Registry struct {
 	inner *internaltools.Registry
 }
 
-// NewRegistry wraps an internal tool registry with the public agentcore contract.
-func NewRegistry(inner *internaltools.Registry) agentcore.ToolRegistry {
+// NewRegistry wraps an internal tool registry with the public agentcore api contract.
+func NewRegistry(inner *internaltools.Registry) api.ToolRegistry {
 	return &Registry{inner: inner}
 }
 
 // ListTools returns public tool schemas converted from the internal registry.
-func (r *Registry) ListTools(context.Context) ([]agentcore.ToolSchema, error) {
+func (r *Registry) ListTools(context.Context) ([]api.ToolSchema, error) {
 	if r == nil || r.inner == nil {
 		return nil, nil
 	}
 
 	schemas := r.inner.Schemas()
-	out := make([]agentcore.ToolSchema, len(schemas))
+	out := make([]api.ToolSchema, len(schemas))
 	for i, schema := range schemas {
-		out[i] = agentcore.ToolSchema{
+		out[i] = api.ToolSchema{
 			Name:        schema.Name,
 			Description: schema.Description,
 			InputSchema: fromSchemaProperty(schema.Parameters),
@@ -42,17 +42,17 @@ func (r *Registry) ListTools(context.Context) ([]agentcore.ToolSchema, error) {
 }
 
 // ExecuteTool dispatches a public tool call through the internal registry.
-func (r *Registry) ExecuteTool(ctx context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
+func (r *Registry) ExecuteTool(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	if r == nil || r.inner == nil {
-		return nil, &agentcore.ToolError{Err: fmt.Errorf("internal tool registry is nil")}
+		return nil, &api.ToolError{Err: fmt.Errorf("internal tool registry is nil")}
 	}
 
 	content, err := r.inner.Execute(ctx, call.Name, cloneMap(call.Arguments))
 	if err != nil {
-		return nil, &agentcore.ToolError{Err: err}
+		return nil, &api.ToolError{Err: err}
 	}
 
-	return &agentcore.ToolResult{
+	return &api.ToolResult{
 		CallID:  call.CallID,
 		Name:    call.Name,
 		Content: content,

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/inhere/axon/internal/llm"
-	"github.com/inhere/axon/pkg/agentcore"
 	"github.com/inhere/axon/internal/agentcoreadapters/internalllm"
+	"github.com/inhere/axon/internal/llm"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
 type stubProvider struct {
@@ -41,12 +41,12 @@ func TestInternalLLMAdapter_MapsFinishReasons(t *testing.T) {
 	tests := []struct {
 		name         string
 		finishReason string
-		wantReason   agentcore.FinishReason
+		wantReason   api.FinishReason
 		wantErr      bool
 	}{
-		{name: "stop maps to final", finishReason: "stop", wantReason: agentcore.FinishFinal},
-		{name: "empty maps to final", finishReason: "", wantReason: agentcore.FinishFinal},
-		{name: "tool calls map through", finishReason: "tool_calls", wantReason: agentcore.FinishToolCalls},
+		{name: "stop maps to final", finishReason: "stop", wantReason: api.FinishFinal},
+		{name: "empty maps to final", finishReason: "", wantReason: api.FinishFinal},
+		{name: "tool calls map through", finishReason: "tool_calls", wantReason: api.FinishToolCalls},
 		{name: "length returns provider error", finishReason: "length", wantErr: true},
 		{name: "unknown returns provider error", finishReason: "content_filter", wantErr: true},
 	}
@@ -71,15 +71,15 @@ func TestInternalLLMAdapter_MapsFinishReasons(t *testing.T) {
 			}
 
 			provider := internalllm.NewProvider(internal)
-			result, err := provider.Generate(context.Background(), &agentcore.GenerateRequest{
-				Messages: []agentcore.Message{{Role: "user", Content: "hi"}},
+			result, err := provider.Generate(context.Background(), &api.GenerateRequest{
+				Messages: []api.Message{{Role: "user", Content: "hi"}},
 			})
 
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error for finish reason %q", tc.finishReason)
 				}
-				var providerErr *agentcore.ProviderError
+				var providerErr *api.ProviderError
 				if !errors.As(err, &providerErr) {
 					t.Fatalf("expected provider error wrapper, got %T %v", err, err)
 				}
@@ -117,27 +117,27 @@ func TestInternalLLMAdapter_MapsMessagesAndToolCalls(t *testing.T) {
 	}
 
 	provider := internalllm.NewProvider(internal)
-	result, err := provider.Generate(context.Background(), &agentcore.GenerateRequest{
+	result, err := provider.Generate(context.Background(), &api.GenerateRequest{
 		Model:       "internal-test",
 		System:      "system prompt",
 		MaxTokens:   256,
 		Temperature: 0.3,
 		Metadata:    map[string]any{"trace_id": "trace-1"},
-		Messages: []agentcore.Message{
+		Messages: []api.Message{
 			{Role: "system", Content: "system message"},
 			{Role: "user", Content: "find weather"},
 			{
 				Role:     "assistant",
-				ToolCall: &agentcore.ToolCall{CallID: "call-0", Name: "lookup", Arguments: map[string]any{"topic": "history"}},
+				ToolCall: &api.ToolCall{CallID: "call-0", Name: "lookup", Arguments: map[string]any{"topic": "history"}},
 			},
 			{
 				Role:       "tool",
 				Content:    "sunny",
-				ToolCall:   &agentcore.ToolCall{CallID: "call-0", Name: "lookup"},
-				ToolResult: &agentcore.ToolResult{CallID: "call-0", Name: "lookup", Content: "sunny"},
+				ToolCall:   &api.ToolCall{CallID: "call-0", Name: "lookup"},
+				ToolResult: &api.ToolResult{CallID: "call-0", Name: "lookup", Content: "sunny"},
 			},
 		},
-		Tools: []agentcore.ToolSchema{{
+		Tools: []api.ToolSchema{{
 			Name:        "lookup",
 			Description: "Look up data",
 			InputSchema: map[string]any{
@@ -196,7 +196,7 @@ func TestInternalLLMAdapter_MapsMessagesAndToolCalls(t *testing.T) {
 		t.Fatalf("required fields = %#v, want [topic]", internal.lastReq.Tools[0].Parameters.Required)
 	}
 
-	if result.FinishReason != agentcore.FinishToolCalls {
+	if result.FinishReason != api.FinishToolCalls {
 		t.Fatalf("finish reason = %q, want tool_calls", result.FinishReason)
 	}
 	if len(result.ToolCalls) != 1 {
