@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/api"
 	internalutils "github.com/inhere/axon/pkg/agentcore/internal/utils"
 )
 
@@ -33,7 +33,7 @@ func NewStorage(root string) *Storage {
 }
 
 // LoadRun loads the latest run snapshot from state.json.
-func (s *Storage) LoadRun(_ context.Context, runID string) (*agentcore.RunState, error) {
+func (s *Storage) LoadRun(_ context.Context, runID string) (*api.RunState, error) {
 	if err := s.validateRunID(runID); err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func (s *Storage) LoadRun(_ context.Context, runID string) (*agentcore.RunState,
 		return nil, s.wrapError("load run snapshot", runID, err)
 	}
 
-	var state agentcore.RunState
+	var state api.RunState
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, s.wrapError("decode run snapshot", runID, err)
 	}
@@ -51,7 +51,7 @@ func (s *Storage) LoadRun(_ context.Context, runID string) (*agentcore.RunState,
 }
 
 // LoadMessages loads the append-only authoritative message history from messages.jsonl.
-func (s *Storage) LoadMessages(_ context.Context, runID string) ([]agentcore.Message, error) {
+func (s *Storage) LoadMessages(_ context.Context, runID string) ([]api.Message, error) {
 	if err := s.validateRunID(runID); err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func (s *Storage) LoadMessages(_ context.Context, runID string) ([]agentcore.Mes
 	defer file.Close()
 
 	reader := bufio.NewReader(file)
-	messages := make([]agentcore.Message, 0)
+	messages := make([]api.Message, 0)
 	lineNo := 0
 
 	for {
@@ -73,7 +73,7 @@ func (s *Storage) LoadMessages(_ context.Context, runID string) ([]agentcore.Mes
 
 			trimmed := strings.TrimSpace(string(line))
 			if trimmed != "" {
-				var msg agentcore.Message
+				var msg api.Message
 				if unmarshalErr := json.Unmarshal([]byte(trimmed), &msg); unmarshalErr != nil {
 					return nil, s.wrapError("decode messages log", runID, fmt.Errorf("line %d: %w", lineNo, unmarshalErr))
 				}
@@ -94,7 +94,7 @@ func (s *Storage) LoadMessages(_ context.Context, runID string) ([]agentcore.Mes
 }
 
 // SaveRun writes the current run snapshot to state.json and initializes the base layout.
-func (s *Storage) SaveRun(_ context.Context, state *agentcore.RunState) error {
+func (s *Storage) SaveRun(_ context.Context, state *api.RunState) error {
 	if state == nil {
 		return s.wrapError("save run snapshot", "", errors.New("run state is nil"))
 	}
@@ -116,7 +116,7 @@ func (s *Storage) SaveRun(_ context.Context, state *agentcore.RunState) error {
 }
 
 // AppendMessages appends new messages to the authoritative jsonl log.
-func (s *Storage) AppendMessages(_ context.Context, runID string, msgs ...agentcore.Message) error {
+func (s *Storage) AppendMessages(_ context.Context, runID string, msgs ...api.Message) error {
 	if err := s.validateRunID(runID); err != nil {
 		return err
 	}
@@ -270,7 +270,7 @@ func (s *Storage) wrapError(action, runID string, err error) error {
 		return nil
 	}
 	if runID == "" {
-		return &agentcore.StorageError{Err: fmt.Errorf("%s: %w", action, err)}
+		return &api.StorageError{Err: fmt.Errorf("%s: %w", action, err)}
 	}
-	return &agentcore.StorageError{Err: fmt.Errorf("%s for run %q: %w", action, runID, err)}
+	return &api.StorageError{Err: fmt.Errorf("%s for run %q: %w", action, runID, err)}
 }

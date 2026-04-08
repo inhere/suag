@@ -3,7 +3,7 @@ package memory
 import (
 	"context"
 
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/api"
 	internalutils "github.com/inhere/axon/pkg/agentcore/internal/utils"
 )
 
@@ -15,13 +15,13 @@ type Config struct {
 	SummaryInjector       SummaryInjector
 }
 
-// WorkingMemory is a small first-party implementation of agentcore.Memory.
+// WorkingMemory is a small first-party implementation of api.Memory.
 //
 // It keeps an optional summary string plus a filtered recent-message window.
 type WorkingMemory struct {
 	config  Config
 	summary string
-	recent  []agentcore.Message
+	recent  []api.Message
 }
 
 // New creates a WorkingMemory with the provided config.
@@ -49,7 +49,7 @@ func (m *WorkingMemory) Summary() string {
 }
 
 // Hydrate rebuilds the recent-message window from the authoritative transcript.
-func (m *WorkingMemory) Hydrate(_ context.Context, state *agentcore.RunState) error {
+func (m *WorkingMemory) Hydrate(_ context.Context, state *api.RunState) error {
 	if m == nil {
 		return nil
 	}
@@ -62,7 +62,7 @@ func (m *WorkingMemory) Hydrate(_ context.Context, state *agentcore.RunState) er
 }
 
 // ObserveMessages incrementally updates the recent-message window.
-func (m *WorkingMemory) ObserveMessages(_ context.Context, _ *agentcore.RunState, messages ...agentcore.Message) error {
+func (m *WorkingMemory) ObserveMessages(_ context.Context, _ *api.RunState, messages ...api.Message) error {
 	if m == nil || len(messages) == 0 {
 		return nil
 	}
@@ -72,7 +72,7 @@ func (m *WorkingMemory) ObserveMessages(_ context.Context, _ *agentcore.RunState
 }
 
 // BuildContext emits summary messages first, then the recent-message window.
-func (m *WorkingMemory) BuildContext(_ context.Context, state *agentcore.RunState) ([]agentcore.Message, error) {
+func (m *WorkingMemory) BuildContext(_ context.Context, state *api.RunState) ([]api.Message, error) {
 	if m == nil {
 		return nil, nil
 	}
@@ -81,12 +81,12 @@ func (m *WorkingMemory) BuildContext(_ context.Context, state *agentcore.RunStat
 	return out, nil
 }
 
-func (m *WorkingMemory) filterAndTruncate(messages []agentcore.Message) []agentcore.Message {
+func (m *WorkingMemory) filterAndTruncate(messages []api.Message) []api.Message {
 	if len(messages) == 0 {
 		return nil
 	}
 
-	filtered := make([]agentcore.Message, 0, len(messages))
+	filtered := make([]api.Message, 0, len(messages))
 	for _, msg := range messages {
 		if !m.config.IncludeSystemMessages && msg.Role == "system" {
 			continue
@@ -103,23 +103,23 @@ func (m *WorkingMemory) filterAndTruncate(messages []agentcore.Message) []agentc
 	return filtered
 }
 
-func isToolMessage(msg agentcore.Message) bool {
+func isToolMessage(msg api.Message) bool {
 	return msg.Role == "tool" || msg.ToolCall != nil || msg.ToolResult != nil
 }
 
-func cloneMessages(messages []agentcore.Message) []agentcore.Message {
+func cloneMessages(messages []api.Message) []api.Message {
 	if len(messages) == 0 {
 		return nil
 	}
-	cloned := make([]agentcore.Message, len(messages))
+	cloned := make([]api.Message, len(messages))
 	for i, msg := range messages {
 		cloned[i] = cloneMessage(msg)
 	}
 	return cloned
 }
 
-func cloneMessage(msg agentcore.Message) agentcore.Message {
-	cloned := agentcore.Message{
+func cloneMessage(msg api.Message) api.Message {
+	cloned := api.Message{
 		Role:    msg.Role,
 		Content: msg.Content,
 	}
@@ -127,14 +127,14 @@ func cloneMessage(msg agentcore.Message) agentcore.Message {
 		cloned.Metadata = cloneMetadata(msg.Metadata)
 	}
 	if msg.ToolCall != nil {
-		cloned.ToolCall = &agentcore.ToolCall{
+		cloned.ToolCall = &api.ToolCall{
 			CallID:    msg.ToolCall.CallID,
 			Name:      msg.ToolCall.Name,
 			Arguments: cloneMetadata(msg.ToolCall.Arguments),
 		}
 	}
 	if msg.ToolResult != nil {
-		cloned.ToolResult = &agentcore.ToolResult{
+		cloned.ToolResult = &api.ToolResult{
 			CallID:    msg.ToolResult.CallID,
 			Name:      msg.ToolResult.Name,
 			Content:   msg.ToolResult.Content,
@@ -145,13 +145,13 @@ func cloneMessage(msg agentcore.Message) agentcore.Message {
 	return cloned
 }
 
-func cloneArtifacts(artifacts []agentcore.Artifact) []agentcore.Artifact {
+func cloneArtifacts(artifacts []api.Artifact) []api.Artifact {
 	if len(artifacts) == 0 {
 		return nil
 	}
-	cloned := make([]agentcore.Artifact, len(artifacts))
+	cloned := make([]api.Artifact, len(artifacts))
 	for i, artifact := range artifacts {
-		cloned[i] = agentcore.Artifact{
+		cloned[i] = api.Artifact{
 			Kind:     artifact.Kind,
 			URI:      artifact.URI,
 			Content:  artifact.Content,

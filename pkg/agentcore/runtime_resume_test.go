@@ -414,7 +414,7 @@ func runtimeToAgentcoreToolCalls(calls []llm.ToolCall) []ToolCall {
 
 func TestRuntime_Run_ResumeFromState_WithFilesStorageAndAdapters(t *testing.T) {
 	runID := "resume-with-adapters"
-	store := newDefaultFileStorage(t.TempDir())
+	store := NewFileStorage(t.TempDir())
 
 	reg := internaltoolsimpl.NewRegistry()
 	reg.MustRegister(runtimeAdapterEchoTool{})

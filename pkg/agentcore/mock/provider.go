@@ -6,22 +6,22 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
 // Step is a deterministic provider script step.
 type Step struct {
-	result       *agentcore.GenerateResult
+	result       *api.GenerateResult
 	err          error
-	streamEvents []agentcore.StreamEvent
+	streamEvents []api.StreamEvent
 }
 
 // Final scripts a final model response.
 func Final(content string) Step {
 	return Step{
-		result: &agentcore.GenerateResult{
+		result: &api.GenerateResult{
 			Content:      content,
-			FinishReason: agentcore.FinishFinal,
+			FinishReason: api.FinishFinal,
 		},
 	}
 }
@@ -29,13 +29,13 @@ func Final(content string) Step {
 // ToolCall scripts a single tool call response.
 func ToolCall(callID, name string, arguments map[string]any) Step {
 	return Step{
-		result: &agentcore.GenerateResult{
-			ToolCalls: []agentcore.ToolCall{{
+		result: &api.GenerateResult{
+			ToolCalls: []api.ToolCall{{
 				CallID:    callID,
 				Name:      name,
 				Arguments: cloneMap(arguments),
 			}},
-			FinishReason: agentcore.FinishToolCalls,
+			FinishReason: api.FinishToolCalls,
 		},
 	}
 }
@@ -46,7 +46,7 @@ func Error(err error) Step {
 }
 
 // Stream attaches streaming events to a scripted step.
-func Stream(step Step, events ...agentcore.StreamEvent) Step {
+func Stream(step Step, events ...api.StreamEvent) Step {
 	step.streamEvents = cloneStreamEvents(events)
 	return step
 }
@@ -80,7 +80,7 @@ func (p *Provider) Name() string {
 }
 
 // Generate returns the next scripted result.
-func (p *Provider) Generate(context.Context, *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+func (p *Provider) Generate(context.Context, *api.GenerateRequest) (*api.GenerateResult, error) {
 	if p == nil {
 		return nil, fmt.Errorf("mock provider exhausted")
 	}
@@ -104,7 +104,7 @@ func (p *Provider) Generate(context.Context, *agentcore.GenerateRequest) (*agent
 }
 
 // Stream emits scripted streaming events before returning the final scripted result.
-func (p *Provider) Stream(ctx context.Context, req *agentcore.GenerateRequest, emit agentcore.StreamFunc) (*agentcore.GenerateResult, error) {
+func (p *Provider) Stream(ctx context.Context, req *api.GenerateRequest, emit api.StreamFunc) (*api.GenerateResult, error) {
 	_ = req
 
 	if p == nil {
@@ -147,31 +147,31 @@ func cloneStep(step Step) Step {
 	}
 }
 
-func cloneStreamEvents(events []agentcore.StreamEvent) []agentcore.StreamEvent {
+func cloneStreamEvents(events []api.StreamEvent) []api.StreamEvent {
 	if len(events) == 0 {
 		return nil
 	}
-	cloned := make([]agentcore.StreamEvent, len(events))
+	cloned := make([]api.StreamEvent, len(events))
 	for i, event := range events {
 		cloned[i] = cloneStreamEvent(event)
 	}
 	return cloned
 }
 
-func cloneStreamEvent(event agentcore.StreamEvent) agentcore.StreamEvent {
-	return agentcore.StreamEvent{
+func cloneStreamEvent(event api.StreamEvent) api.StreamEvent {
+	return api.StreamEvent{
 		Kind:     event.Kind,
 		Delta:    event.Delta,
 		Metadata: cloneMap(event.Metadata),
 	}
 }
 
-func cloneResult(result *agentcore.GenerateResult) *agentcore.GenerateResult {
+func cloneResult(result *api.GenerateResult) *api.GenerateResult {
 	if result == nil {
 		return nil
 	}
 
-	cloned := &agentcore.GenerateResult{
+	cloned := &api.GenerateResult{
 		Content:      result.Content,
 		FinishReason: result.FinishReason,
 		Usage:        result.Usage,
@@ -179,9 +179,9 @@ func cloneResult(result *agentcore.GenerateResult) *agentcore.GenerateResult {
 	}
 
 	if len(result.ToolCalls) > 0 {
-		cloned.ToolCalls = make([]agentcore.ToolCall, len(result.ToolCalls))
+		cloned.ToolCalls = make([]api.ToolCall, len(result.ToolCalls))
 		for i, call := range result.ToolCalls {
-			cloned.ToolCalls[i] = agentcore.ToolCall{
+			cloned.ToolCalls[i] = api.ToolCall{
 				CallID:    call.CallID,
 				Name:      call.Name,
 				Arguments: cloneMap(call.Arguments),
@@ -190,9 +190,9 @@ func cloneResult(result *agentcore.GenerateResult) *agentcore.GenerateResult {
 	}
 
 	if len(result.Artifacts) > 0 {
-		cloned.Artifacts = make([]agentcore.Artifact, len(result.Artifacts))
+		cloned.Artifacts = make([]api.Artifact, len(result.Artifacts))
 		for i, artifact := range result.Artifacts {
-			cloned.Artifacts[i] = agentcore.Artifact{
+			cloned.Artifacts[i] = api.Artifact{
 				Kind:     artifact.Kind,
 				URI:      artifact.URI,
 				Content:  artifact.Content,

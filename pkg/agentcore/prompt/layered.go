@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
 // MetadataConfig controls whether run metadata is injected into the prompt.
@@ -22,7 +22,7 @@ type Config struct {
 }
 
 // Layered builds a system prompt from base text, optional metadata, and extra sections.
-func Layered(cfg Config) agentcore.PromptBuilder {
+func Layered(cfg Config) api.PromptBuilder {
 	sections := append([]string(nil), cfg.Sections...)
 	cfg.Sections = sections
 
@@ -34,7 +34,7 @@ type layeredBuilder struct {
 }
 
 // BuildSystemPrompt satisfies the agentcore prompt builder contract.
-func (b layeredBuilder) BuildSystemPrompt(_ context.Context, state *agentcore.RunState) (string, error) {
+func (b layeredBuilder) BuildSystemPrompt(_ context.Context, state *api.RunState) (string, error) {
 	parts := make([]string, 0, 2+len(b.config.Sections))
 
 	if strings.TrimSpace(b.config.Base) != "" {
@@ -56,7 +56,7 @@ func (b layeredBuilder) BuildSystemPrompt(_ context.Context, state *agentcore.Ru
 	return strings.Join(parts, "\n\n"), nil
 }
 
-func (b layeredBuilder) buildMetadataBlock(state *agentcore.RunState) string {
+func (b layeredBuilder) buildMetadataBlock(state *api.RunState) string {
 	if !b.config.Metadata.Enabled || state == nil || len(state.Metadata) == 0 {
 		return ""
 	}

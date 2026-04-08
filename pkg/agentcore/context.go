@@ -1,8 +1,5 @@
 package agentcore
 
-import "context"
+import "github.com/inhere/axon/pkg/agentcore/api"
 
-// ContextBuilder assembles model-facing messages from the current public run state.
-type ContextBuilder interface {
-	BuildMessages(ctx context.Context, state *RunState) ([]Message, error)
-}
+type ContextBuilder = api.ContextBuilder

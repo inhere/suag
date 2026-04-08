@@ -83,6 +83,12 @@ func TestGenerateResultValidate_RejectsMissingFinishReason(t *testing.T) {
 	}
 }
 
+func TestDefaultStorage_UsesFilesStorage(t *testing.T) {
+	if got := fmt.Sprintf("%T", defaultStorage(nil)); got != "*files.Storage" {
+		t.Fatalf("expected default storage to use files.Storage, got %s", got)
+	}
+}
+
 func TestGenerateResultValidate_RejectsFinalContentWithToolFinishReason(t *testing.T) {
 	res := &GenerateResult{
 		Content:      "done",

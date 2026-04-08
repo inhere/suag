@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
 // ToolOption customizes the default mock tool.
@@ -15,7 +15,7 @@ type Tool struct {
 	name        string
 	description string
 	schema      map[string]any
-	handler     func(context.Context, agentcore.ToolCall) (*agentcore.ToolResult, error)
+	handler     func(context.Context, api.ToolCall) (*api.ToolResult, error)
 }
 
 // NewTool creates a mock tool with a default echo-style handler.
@@ -51,7 +51,7 @@ func WithSchema(schema map[string]any) ToolOption {
 }
 
 // WithHandler overrides the mock tool execution behavior.
-func WithHandler(handler func(context.Context, agentcore.ToolCall) (*agentcore.ToolResult, error)) ToolOption {
+func WithHandler(handler func(context.Context, api.ToolCall) (*api.ToolResult, error)) ToolOption {
 	return func(tool *Tool) {
 		tool.handler = handler
 	}
@@ -68,8 +68,8 @@ func (t *Tool) Description() string {
 }
 
 // Schema returns a stable, provider-neutral tool schema.
-func (t *Tool) Schema() agentcore.ToolSchema {
-	return agentcore.ToolSchema{
+func (t *Tool) Schema() api.ToolSchema {
+	return api.ToolSchema{
 		Name:        t.name,
 		Description: t.description,
 		InputSchema: cloneMap(t.schema),
@@ -77,12 +77,12 @@ func (t *Tool) Schema() agentcore.ToolSchema {
 }
 
 // Execute runs the configured handler or a default echo-style result.
-func (t *Tool) Execute(ctx context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
+func (t *Tool) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	if t.handler != nil {
 		return t.handler(ctx, call)
 	}
 
-	return &agentcore.ToolResult{
+	return &api.ToolResult{
 		CallID:  call.CallID,
 		Name:    t.name,
 		Content: defaultToolContent(call.Arguments),

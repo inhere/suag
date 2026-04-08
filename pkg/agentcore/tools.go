@@ -5,44 +5,15 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
-// ToolCall is a model-requested invocation of a named tool.
-type ToolCall struct {
-	CallID    string
-	Name      string
-	Arguments map[string]any
-}
-
-// ToolResult is the public result returned after executing a tool call.
-type ToolResult struct {
-	CallID    string
-	Name      string
-	Content   string
-	Artifacts []Artifact
-	Metadata  map[string]any
-}
-
-// ToolSchema describes a callable tool in a provider-neutral way.
-type ToolSchema struct {
-	Name        string
-	Description string
-	InputSchema map[string]any
-}
-
-// Tool exposes a concrete executable tool.
-type Tool interface {
-	Name() string
-	Description() string
-	Schema() ToolSchema
-	Execute(ctx context.Context, call ToolCall) (*ToolResult, error)
-}
-
-// ToolRegistry exposes lookup and execution contracts for tools.
-type ToolRegistry interface {
-	ListTools(ctx context.Context) ([]ToolSchema, error)
-	ExecuteTool(ctx context.Context, call ToolCall) (*ToolResult, error)
-}
+type ToolCall = api.ToolCall
+type ToolResult = api.ToolResult
+type ToolSchema = api.ToolSchema
+type Tool = api.Tool
+type ToolRegistry = api.ToolRegistry
 
 // Registry is the default in-memory implementation of ToolRegistry.
 type Registry struct {

@@ -1,11 +1,5 @@
 package agentcore
 
-import "context"
+import "github.com/inhere/axon/pkg/agentcore/api"
 
-// Storage persists and reloads public run state snapshots.
-type Storage interface {
-	LoadRun(ctx context.Context, runID string) (*RunState, error)
-	LoadMessages(ctx context.Context, runID string) ([]Message, error)
-	SaveRun(ctx context.Context, state *RunState) error
-	AppendMessages(ctx context.Context, runID string, msgs ...Message) error
-}
+type Storage = api.Storage

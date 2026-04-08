@@ -3,7 +3,7 @@ package context
 import (
 	"context"
 
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
 // WindowConfig controls transcript-window preset behavior.
@@ -28,23 +28,23 @@ type DefaultBuilder struct {
 }
 
 // BuildMessages returns a shallow copy of the current run messages, optionally truncated.
-func (b DefaultBuilder) BuildMessages(_ context.Context, state *agentcore.RunState) ([]agentcore.Message, error) {
+func (b DefaultBuilder) BuildMessages(_ context.Context, state *api.RunState) ([]api.Message, error) {
 	return TranscriptWindow(WindowConfig{MaxMessages: b.MaxMessages}).BuildMessages(context.Background(), state)
 }
 
 // Messages returns a shallow copy of the most recent run messages.
-func (b DefaultBuilder) Messages(state *agentcore.RunState) []agentcore.Message {
+func (b DefaultBuilder) Messages(state *api.RunState) []api.Message {
 	return transcriptWindowBuilder{maxMessages: b.MaxMessages}.messages(state)
 }
 
 // TranscriptWindow returns a first-party transcript-only context preset.
-func TranscriptWindow(cfg WindowConfig) agentcore.ContextBuilder {
+func TranscriptWindow(cfg WindowConfig) api.ContextBuilder {
 	return transcriptWindowBuilder{maxMessages: cfg.MaxMessages}
 }
 
 // MemoryFirst returns a first-party preset that prefers memory output and
 // falls back to transcript window only when memory is nil.
-func MemoryFirst(mem agentcore.Memory, cfg MemoryFirstConfig) agentcore.ContextBuilder {
+func MemoryFirst(mem api.Memory, cfg MemoryFirstConfig) api.ContextBuilder {
 	return memoryFirstBuilder{
 		mem:         mem,
 		maxMessages: cfg.MaxMessages,
@@ -53,7 +53,7 @@ func MemoryFirst(mem agentcore.Memory, cfg MemoryFirstConfig) agentcore.ContextB
 
 // MemoryThenRecent returns a first-party preset that uses memory output first
 // and then appends a recent transcript window without deduplicating messages.
-func MemoryThenRecent(mem agentcore.Memory, cfg MemoryThenRecentConfig) agentcore.ContextBuilder {
+func MemoryThenRecent(mem api.Memory, cfg MemoryThenRecentConfig) api.ContextBuilder {
 	return memoryThenRecentBuilder{
 		mem:         mem,
 		maxMessages: cfg.MaxMessages,
@@ -64,11 +64,11 @@ type transcriptWindowBuilder struct {
 	maxMessages int
 }
 
-func (b transcriptWindowBuilder) BuildMessages(_ context.Context, state *agentcore.RunState) ([]agentcore.Message, error) {
+func (b transcriptWindowBuilder) BuildMessages(_ context.Context, state *api.RunState) ([]api.Message, error) {
 	return b.messages(state), nil
 }
 
-func (b transcriptWindowBuilder) messages(state *agentcore.RunState) []agentcore.Message {
+func (b transcriptWindowBuilder) messages(state *api.RunState) []api.Message {
 	if state == nil || len(state.Messages) == 0 {
 		return nil
 	}
@@ -78,17 +78,17 @@ func (b transcriptWindowBuilder) messages(state *agentcore.RunState) []agentcore
 		start = len(state.Messages) - b.maxMessages
 	}
 
-	messages := make([]agentcore.Message, len(state.Messages[start:]))
+	messages := make([]api.Message, len(state.Messages[start:]))
 	copy(messages, state.Messages[start:])
 	return messages
 }
 
 type memoryFirstBuilder struct {
-	mem         agentcore.Memory
+	mem         api.Memory
 	maxMessages int
 }
 
-func (b memoryFirstBuilder) BuildMessages(ctx context.Context, state *agentcore.RunState) ([]agentcore.Message, error) {
+func (b memoryFirstBuilder) BuildMessages(ctx context.Context, state *api.RunState) ([]api.Message, error) {
 	if b.mem == nil {
 		return transcriptWindowBuilder{maxMessages: b.maxMessages}.BuildMessages(ctx, state)
 	}
@@ -96,11 +96,11 @@ func (b memoryFirstBuilder) BuildMessages(ctx context.Context, state *agentcore.
 }
 
 type memoryThenRecentBuilder struct {
-	mem         agentcore.Memory
+	mem         api.Memory
 	maxMessages int
 }
 
-func (b memoryThenRecentBuilder) BuildMessages(ctx context.Context, state *agentcore.RunState) ([]agentcore.Message, error) {
+func (b memoryThenRecentBuilder) BuildMessages(ctx context.Context, state *api.RunState) ([]api.Message, error) {
 	recent, err := transcriptWindowBuilder{maxMessages: b.maxMessages}.BuildMessages(ctx, state)
 	if err != nil {
 		return nil, err
@@ -116,7 +116,7 @@ func (b memoryThenRecentBuilder) BuildMessages(ctx context.Context, state *agent
 	if len(messages) == 0 {
 		return recent, nil
 	}
-	out := make([]agentcore.Message, 0, len(messages)+len(recent))
+	out := make([]api.Message, 0, len(messages)+len(recent))
 	out = append(out, messages...)
 	out = append(out, recent...)
 	return out, nil

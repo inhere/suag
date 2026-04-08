@@ -1,18 +1,15 @@
 package agentcore
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	internalutils "github.com/inhere/axon/pkg/agentcore/internal/utils"
+	"github.com/inhere/axon/pkg/agentcore/files"
 )
 
 // Runtime executes agent runs using the public agentcore contracts.
@@ -716,7 +713,7 @@ func defaultStorage(storage Storage) Storage {
 	if storage != nil {
 		return storage
 	}
-	return newDefaultFileStorage(filepath.Join(os.TempDir(), "agentcore-runs"))
+	return files.NewStorage(filepath.Join(os.TempDir(), "agentcore-runs"))
 }
 
 func defaultTools(tools ToolRegistry) ToolRegistry {
@@ -1082,224 +1079,4 @@ func (c runtimeHookChain) OnError(ctx context.Context, event *ErrorEvent, ctrl *
 
 func (c runtimeHookChain) OnErrorObserved(ctx context.Context, event *ErrorEvent, ctrl *Control) error {
 	return c.runStageWithoutControlStop(func(h Hook) error { return h.OnError(ctx, event, ctrl) })
-}
-
-type defaultFileStorage struct {
-	root string
-}
-
-func newDefaultFileStorage(root string) *defaultFileStorage {
-	return &defaultFileStorage{root: root}
-}
-
-func (s *defaultFileStorage) LoadRun(_ context.Context, runID string) (*RunState, error) {
-	if err := s.validateRunID(runID); err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(filepath.Join(s.root, runID, "state.json"))
-	if err != nil {
-		return nil, s.wrapError("load run snapshot", runID, err)
-	}
-	var state RunState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, s.wrapError("decode run snapshot", runID, err)
-	}
-	return &state, nil
-}
-
-func (s *defaultFileStorage) LoadMessages(_ context.Context, runID string) ([]Message, error) {
-	if err := s.validateRunID(runID); err != nil {
-		return nil, err
-	}
-	file, err := os.Open(filepath.Join(s.root, runID, "messages.jsonl"))
-	if err != nil {
-		return nil, s.wrapError("load messages log", runID, err)
-	}
-	defer file.Close()
-
-	messages := make([]Message, 0)
-	lineNo := 0
-	reader := bufio.NewReader(file)
-	for {
-		line, err := reader.ReadBytes('\n')
-		if len(line) > 0 {
-			lineNo++
-			var msg Message
-			if trimmed := strings.TrimSpace(string(line)); trimmed != "" {
-				if unmarshalErr := json.Unmarshal([]byte(trimmed), &msg); unmarshalErr != nil {
-					return nil, s.wrapError("decode messages log", runID, fmt.Errorf("line %d: %w", lineNo, unmarshalErr))
-				}
-				messages = append(messages, msg)
-			}
-		}
-		if err == nil {
-			continue
-		}
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		return nil, s.wrapError("read messages log", runID, err)
-	}
-	return messages, nil
-}
-
-func (s *defaultFileStorage) SaveRun(_ context.Context, state *RunState) error {
-	if state == nil {
-		return s.wrapError("save run snapshot", "", errors.New("run state is nil"))
-	}
-	if err := s.validateRunID(state.RunID); err != nil {
-		return err
-	}
-	runDir := filepath.Join(s.root, state.RunID)
-	if err := s.ensureLayout(state.RunID); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return s.wrapError("encode run snapshot", state.RunID, err)
-	}
-	if err := s.writeFileAtomically(state.RunID, filepath.Join(runDir, "state.json"), data, 0o644); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *defaultFileStorage) AppendMessages(_ context.Context, runID string, msgs ...Message) error {
-	if err := s.validateRunID(runID); err != nil {
-		return err
-	}
-	if err := s.ensureLayout(runID); err != nil {
-		return err
-	}
-	if len(msgs) == 0 {
-		return nil
-	}
-	file, err := os.OpenFile(filepath.Join(s.root, runID, "messages.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return s.wrapError("open messages log", runID, err)
-	}
-
-	enc := json.NewEncoder(file)
-	for _, msg := range msgs {
-		if err := enc.Encode(msg); err != nil {
-			_ = file.Close()
-			return s.wrapError("append messages log", runID, err)
-		}
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return s.wrapError("sync messages log", runID, err)
-	}
-	if err := file.Close(); err != nil {
-		return s.wrapError("close messages log", runID, err)
-	}
-	return nil
-}
-
-func (s *defaultFileStorage) ensureLayout(runID string) error {
-	runDir := filepath.Join(s.root, runID)
-	if err := os.MkdirAll(runDir, 0o755); err != nil {
-		return s.wrapError("create run directory", runID, err)
-	}
-	if err := os.MkdirAll(filepath.Join(runDir, "artifacts"), 0o755); err != nil {
-		return s.wrapError("create artifacts directory", runID, err)
-	}
-	if err := s.ensureJSONFile(runID, filepath.Join(runDir, "meta.json")); err != nil {
-		return err
-	}
-	if err := s.ensureFile(runID, filepath.Join(runDir, "messages.jsonl")); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *defaultFileStorage) ensureJSONFile(runID, path string) error {
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return s.wrapError("stat file", runID, err)
-	}
-	if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
-		return s.wrapError("initialize file", runID, err)
-	}
-	return nil
-}
-
-func (s *defaultFileStorage) ensureFile(runID, path string) error {
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return s.wrapError("stat file", runID, err)
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return s.wrapError("initialize file", runID, err)
-	}
-	return file.Close()
-}
-
-func (s *defaultFileStorage) validateRunID(runID string) error {
-	if strings.TrimSpace(runID) == "" {
-		return s.wrapError("validate run id", runID, errors.New("run id is required"))
-	}
-	if filepath.IsAbs(runID) || filepath.VolumeName(runID) != "" {
-		return s.wrapError("validate run id", runID, errors.New("run id must not be an absolute path"))
-	}
-	if runID == "." || runID == ".." {
-		return s.wrapError("validate run id", runID, errors.New("run id must not reference the current or parent directory"))
-	}
-	if strings.ContainsAny(runID, `/\`) {
-		return s.wrapError("validate run id", runID, errors.New("run id must not contain path separators"))
-	}
-	if cleaned := filepath.Clean(runID); cleaned != runID || cleaned == "." || cleaned == ".." {
-		return s.wrapError("validate run id", runID, errors.New("run id must resolve to a single safe path segment"))
-	}
-	return nil
-}
-
-func (s *defaultFileStorage) writeFileAtomically(runID, path string, data []byte, perm os.FileMode) error {
-	tempFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return s.wrapError("create temp run snapshot", runID, err)
-	}
-
-	tempPath := tempFile.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tempPath)
-		}
-	}()
-
-	if err := tempFile.Chmod(perm); err != nil {
-		_ = tempFile.Close()
-		return s.wrapError("set temp run snapshot mode", runID, err)
-	}
-	if _, err := tempFile.Write(data); err != nil {
-		_ = tempFile.Close()
-		return s.wrapError("write temp run snapshot", runID, err)
-	}
-	if err := tempFile.Sync(); err != nil {
-		_ = tempFile.Close()
-		return s.wrapError("sync temp run snapshot", runID, err)
-	}
-	if err := tempFile.Close(); err != nil {
-		return s.wrapError("close temp run snapshot", runID, err)
-	}
-	if err := internalutils.ReplaceFile(tempPath, path); err != nil {
-		return s.wrapError("replace run snapshot", runID, err)
-	}
-
-	cleanup = false
-	return nil
-}
-
-func (s *defaultFileStorage) wrapError(action, runID string, err error) error {
-	if err == nil {
-		return nil
-	}
-	if runID == "" {
-		return &StorageError{Err: fmt.Errorf("%s: %w", action, err)}
-	}
-	return &StorageError{Err: fmt.Errorf("%s for run %q: %w", action, runID, err)}
 }
