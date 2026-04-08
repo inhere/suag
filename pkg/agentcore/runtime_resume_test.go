@@ -3,11 +3,7 @@ package agentcore
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
-
-	"github.com/inhere/axon/internal/llm"
-	internaltoolsimpl "github.com/inhere/axon/internal/tools"
 )
 
 func TestRuntime_Run_ResumeMatrix(t *testing.T) {
@@ -165,259 +161,26 @@ func TestRuntime_Run_ResumeMatrix(t *testing.T) {
 	}
 }
 
-type runtimeAdapterEchoTool struct{}
-
-func (runtimeAdapterEchoTool) Name() string        { return "echo" }
-func (runtimeAdapterEchoTool) Description() string { return "Echo input text" }
-func (runtimeAdapterEchoTool) Kind() internaltoolsimpl.Kind {
-	return internaltoolsimpl.KindNative
-}
-func (runtimeAdapterEchoTool) Schema() llm.ToolSchema {
-	return llm.ToolSchema{
-		Name:        "echo",
-		Description: "Echo input text",
-		Parameters: llm.SchemaProperty{
-			Type: "object",
-			Properties: map[string]*llm.SchemaProperty{
-				"text": {Type: "string", Description: "text to echo"},
-			},
-			Required: []string{"text"},
-		},
-	}
-}
-func (runtimeAdapterEchoTool) Execute(_ context.Context, args map[string]any) (string, error) {
-	text, _ := args["text"].(string)
-	return "tool:" + text, nil
-}
-
-type runtimeInternalProviderAdapter struct {
-	inner llm.Provider
-}
-
-func (p runtimeInternalProviderAdapter) Name() string {
-	if p.inner == nil {
-		return ""
-	}
-	return p.inner.Name()
-}
-
-func (p runtimeInternalProviderAdapter) Generate(ctx context.Context, req *GenerateRequest) (*GenerateResult, error) {
-	resp, err := p.inner.Complete(ctx, &llm.CompletionRequest{
-		Model:       req.Model,
-		Messages:    runtimeToInternalMessages(req.Messages),
-		Tools:       runtimeToInternalTools(req.Tools),
-		MaxTokens:   req.MaxTokens,
-		Temperature: req.Temperature,
-		System:      req.System,
-	})
-	if err != nil {
-		return nil, &ProviderError{Err: err}
-	}
-
-	result := &GenerateResult{
-		Content:   resp.Content,
-		ToolCalls: runtimeToAgentcoreToolCalls(resp.ToolCalls),
-		Usage: Usage{
-			InputTokens:  resp.Usage.PromptTokens,
-			OutputTokens: resp.Usage.CompletionTokens,
-			TotalTokens:  resp.Usage.TotalTokens,
-		},
-	}
-	switch resp.FinishReason {
-	case "", "stop":
-		result.FinishReason = FinishFinal
-	case "tool_calls":
-		result.FinishReason = FinishToolCalls
-	case "length":
-		return nil, &ProviderError{Err: fmt.Errorf("unsupported finish reason: %s", resp.FinishReason)}
-	default:
-		return nil, &ProviderError{Err: fmt.Errorf("unknown finish reason: %s", resp.FinishReason)}
-	}
-	if err := result.Validate(); err != nil {
-		return nil, &ProviderError{Err: err}
-	}
-	return result, nil
-}
-
-type runtimeInternalToolsAdapter struct {
-	inner *internaltoolsimpl.Registry
-}
-
-func (r runtimeInternalToolsAdapter) ListTools(context.Context) ([]ToolSchema, error) {
-	if r.inner == nil {
-		return nil, nil
-	}
-	schemas := r.inner.Schemas()
-	out := make([]ToolSchema, len(schemas))
-	for i, schema := range schemas {
-		out[i] = ToolSchema{
-			Name:        schema.Name,
-			Description: schema.Description,
-			InputSchema: runtimeFromSchemaProperty(schema.Parameters),
-		}
-	}
-	return out, nil
-}
-
-func (r runtimeInternalToolsAdapter) ExecuteTool(ctx context.Context, call ToolCall) (*ToolResult, error) {
-	content, err := r.inner.Execute(ctx, call.Name, cloneMetadata(call.Arguments))
-	if err != nil {
-		return nil, err
-	}
-	return &ToolResult{
-		CallID:  call.CallID,
-		Name:    call.Name,
-		Content: content,
-	}, nil
-}
-
-func runtimeToInternalMessages(messages []Message) []llm.Message {
-	if len(messages) == 0 {
-		return nil
-	}
-	out := make([]llm.Message, len(messages))
-	for i, msg := range messages {
-		out[i] = llm.Message{
-			Role:    msg.Role,
-			Content: msg.Content,
-		}
-		if msg.ToolCall != nil {
-			out[i].ToolCall = &llm.ToolCall{
-				ID:        msg.ToolCall.CallID,
-				Name:      msg.ToolCall.Name,
-				Arguments: cloneMetadata(msg.ToolCall.Arguments),
-			}
-		}
-		if msg.ToolResult != nil {
-			callID := msg.ToolResult.CallID
-			if callID == "" && msg.ToolCall != nil {
-				callID = msg.ToolCall.CallID
-			}
-			out[i].ToolResult = &llm.ToolResult{
-				ToolCallID: callID,
-				Content:    msg.ToolResult.Content,
-			}
-		}
-	}
-	return out
-}
-
-func runtimeToInternalTools(tools []ToolSchema) []llm.ToolSchema {
-	if len(tools) == 0 {
-		return nil
-	}
-	out := make([]llm.ToolSchema, len(tools))
-	for i, tool := range tools {
-		out[i] = llm.ToolSchema{
-			Name:        tool.Name,
-			Description: tool.Description,
-			Parameters:  runtimeToSchemaProperty(tool.InputSchema),
-		}
-	}
-	return out
-}
-
-func runtimeToSchemaProperty(schema map[string]any) llm.SchemaProperty {
-	prop := llm.SchemaProperty{}
-	if len(schema) == 0 {
-		return prop
-	}
-	if value, ok := schema["type"].(string); ok {
-		prop.Type = value
-	}
-	if value, ok := schema["description"].(string); ok {
-		prop.Description = value
-	}
-	switch enum := schema["enum"].(type) {
-	case []string:
-		prop.Enum = append([]string(nil), enum...)
-	case []any:
-		prop.Enum = make([]string, 0, len(enum))
-		for _, item := range enum {
-			if text, ok := item.(string); ok {
-				prop.Enum = append(prop.Enum, text)
-			}
-		}
-	}
-	switch required := schema["required"].(type) {
-	case []string:
-		prop.Required = append([]string(nil), required...)
-	case []any:
-		prop.Required = make([]string, 0, len(required))
-		for _, item := range required {
-			if text, ok := item.(string); ok {
-				prop.Required = append(prop.Required, text)
-			}
-		}
-	}
-	if properties, ok := schema["properties"].(map[string]any); ok {
-		prop.Properties = make(map[string]*llm.SchemaProperty, len(properties))
-		for name, raw := range properties {
-			if nested, ok := raw.(map[string]any); ok {
-				child := runtimeToSchemaProperty(nested)
-				prop.Properties[name] = &child
-			}
-		}
-	}
-	return prop
-}
-
-func runtimeFromSchemaProperty(prop llm.SchemaProperty) map[string]any {
-	out := map[string]any{}
-	if prop.Type != "" {
-		out["type"] = prop.Type
-	}
-	if prop.Description != "" {
-		out["description"] = prop.Description
-	}
-	if len(prop.Enum) > 0 {
-		enum := make([]any, len(prop.Enum))
-		for i, item := range prop.Enum {
-			enum[i] = item
-		}
-		out["enum"] = enum
-	}
-	if len(prop.Required) > 0 {
-		required := make([]any, len(prop.Required))
-		for i, item := range prop.Required {
-			required[i] = item
-		}
-		out["required"] = required
-	}
-	if len(prop.Properties) > 0 {
-		properties := make(map[string]any, len(prop.Properties))
-		for name, child := range prop.Properties {
-			if child == nil {
-				continue
-			}
-			properties[name] = runtimeFromSchemaProperty(*child)
-		}
-		out["properties"] = properties
-	}
-	return out
-}
-
-func runtimeToAgentcoreToolCalls(calls []llm.ToolCall) []ToolCall {
-	if len(calls) == 0 {
-		return nil
-	}
-	out := make([]ToolCall, len(calls))
-	for i, call := range calls {
-		out[i] = ToolCall{
-			CallID:    call.ID,
-			Name:      call.Name,
-			Arguments: cloneMetadata(call.Arguments),
-		}
-	}
-	return out
-}
-
-func TestRuntime_Run_ResumeFromState_WithFilesStorageAndAdapters(t *testing.T) {
-	runID := "resume-with-adapters"
+func TestRuntime_Run_ResumeFromState_WithPublicContracts(t *testing.T) {
+	runID := "resume-with-public-contracts"
 	store := NewFileStorage(t.TempDir())
-
-	reg := internaltoolsimpl.NewRegistry()
-	reg.MustRegister(runtimeAdapterEchoTool{})
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			ToolCalls: []ToolCall{{
+				CallID:    "call-echo",
+				Name:      "echo",
+				Arguments: map[string]any{"text": "persisted"},
+			}},
+			FinishReason: FinishToolCalls,
+		}},
+	}
+	tools := NewToolRegistry()
+	tools.Register(&runtimeTestTool{
+		name: "echo",
+		result: &ToolResult{
+			Content: "tool:persisted",
+		},
+	})
 
 	yieldAfterSecondModel := &runtimeTestHook{}
 	beforeModelCalls := 0
@@ -429,12 +192,9 @@ func TestRuntime_Run_ResumeFromState_WithFilesStorageAndAdapters(t *testing.T) {
 	}
 
 	firstRuntime := New(Config{
-		Provider: runtimeInternalProviderAdapter{
-			inner: llm.NewMockProvider("internal-mock").
-				QueueToolCall("echo", map[string]any{"text": "persisted"}),
-		},
+		Provider:       provider,
 		Storage:        store,
-		Tools:          runtimeInternalToolsAdapter{inner: reg},
+		Tools:          tools,
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{yieldAfterSecondModel},
@@ -474,11 +234,16 @@ func TestRuntime_Run_ResumeFromState_WithFilesStorageAndAdapters(t *testing.T) {
 		t.Fatalf("expected persisted tool result content, got %#v", messages[2])
 	}
 
-	resumeProvider := llm.NewMockProvider("internal-mock").QueueText("final after resume")
+	resumeProvider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "final after resume",
+			FinishReason: FinishFinal,
+		}},
+	}
 	resumeRuntime := New(Config{
-		Provider:       runtimeInternalProviderAdapter{inner: resumeProvider},
+		Provider:       resumeProvider,
 		Storage:        store,
-		Tools:          runtimeInternalToolsAdapter{inner: reg},
+		Tools:          tools,
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 	})
@@ -497,21 +262,21 @@ func TestRuntime_Run_ResumeFromState_WithFilesStorageAndAdapters(t *testing.T) {
 		t.Fatalf("expected resumed run to continue from step 1 to 2, got %#v", result)
 	}
 
-	providerCalls := resumeProvider.Calls()
+	providerCalls := resumeProvider.calls
 	if len(providerCalls) != 1 {
 		t.Fatalf("expected one resumed provider call, got %d", len(providerCalls))
 	}
 	if len(providerCalls[0].Messages) != 3 {
 		t.Fatalf("expected resumed provider to receive prior user, assistant tool-call, and tool messages, got %#v", providerCalls[0].Messages)
 	}
-	if providerCalls[0].Messages[1].Role != "assistant" || providerCalls[0].Messages[1].ToolCall == nil || providerCalls[0].Messages[1].ToolCall.ID != "call-echo" {
+	if providerCalls[0].Messages[1].Role != "assistant" || providerCalls[0].Messages[1].ToolCall == nil || providerCalls[0].Messages[1].ToolCall.CallID != "call-echo" {
 		t.Fatalf("expected resumed provider to receive assistant tool-call message, got %#v", providerCalls[0].Messages[1])
 	}
 	if providerCalls[0].Messages[2].ToolResult == nil || providerCalls[0].Messages[2].ToolResult.Content != "tool:persisted" {
 		t.Fatalf("expected resumed provider to receive persisted tool result, got %#v", providerCalls[0].Messages[2])
 	}
 	if len(providerCalls[0].Tools) != 1 || providerCalls[0].Tools[0].Name != "echo" {
-		t.Fatalf("expected resumed provider to receive adapted tool schema, got %#v", providerCalls[0].Tools)
+		t.Fatalf("expected resumed provider to receive public tool schema, got %#v", providerCalls[0].Tools)
 	}
 
 	finalState, err := store.LoadRun(context.Background(), runID)
