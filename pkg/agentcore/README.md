@@ -242,6 +242,12 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - `agentcore` 本身不应依赖仓库的 `internal/*` 包
 - 与 Axon 内部 `llm`、`tools` 等实现的桥接 adapter 放在 `internal/agentcoreadapters/`
 
+如果你想看 authority helpers 的实际消费方式，当前可以直接看：
+
+- `examples/authority`
+- `examples/policies`
+- `examples/policyhost`
+
 ## Docs
 
 - Docs index: [docs/README.md](./docs/README.md)

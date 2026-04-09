@@ -201,12 +201,15 @@ func main() {
 	}
 	log.Printf("continue: status=%s output=%q", second.Status, second.Output)
 
-	messages, err := store.LoadMessages(ctx, "session-policy-host")
+	bundle, err := agentcore.LoadAuthorityBundle(ctx, store, "session-policy-host")
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("persisted messages=%d", len(messages))
-	for i, msg := range messages {
+	if bundle == nil {
+		log.Fatal("expected authority bundle after policy host run")
+	}
+	log.Printf("persisted messages=%d", len(bundle.Messages))
+	for i, msg := range bundle.Messages {
 		switch {
 		case msg.ToolCall != nil && msg.ToolResult == nil:
 			log.Printf("message[%d]: role=%s tool_call=%s", i, msg.Role, msg.ToolCall.Name)

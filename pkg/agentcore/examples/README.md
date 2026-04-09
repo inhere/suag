@@ -12,6 +12,8 @@
   - 自定义 tool 和 hook，展示常见扩展路径
 - `policyhost`
   - 演示宿主如何把 policy 收拢进自己的 host wrapper，而不是散落在 handler 里
+- `authority`
+  - 演示宿主如何通过 `LoadAuthorityBundle(...)` 读取 authoritative messages 与 artifacts
 - `memory`
   - 演示第一方 `WorkingMemory` 如何构建 `summary + recent window` 上下文
 - `context`
@@ -35,6 +37,7 @@
 go run ./examples/minimal
 go run ./examples/custom
 go run ./examples/policyhost
+go run ./examples/authority
 go run ./examples/memory
 go run ./examples/context
 go run ./examples/prompt
@@ -67,6 +70,12 @@ go run ./examples/resume
 - host 如何通过 policy 控制 resume / tool error / recoverable error
 - host 如何保持 authority transcript 与宿主流程一致
 
+其中 `authority` 示例重点展示三件事：
+
+- artifact capability 如何作为 authority persistence / replay 的一部分工作
+- host 如何通过 `LoadAuthorityBundle(...)` 一次拿到 state/messages/artifacts
+- `AuthorityBundle` 的只读 helper 如何减少宿主样板代码
+
 其中 `policies` 示例重点展示三件事：
 
 - `ErrorPolicy` 如何把 recoverable provider error 转成 yield
@@ -89,15 +98,16 @@ go run ./examples/resume
 如果你希望按“先单点、再组合”的方式阅读，推荐顺序是：
 
 1. `minimal`
-2. `memory`
-3. `context`
-4. `prompt`
-5. `policies`
-6. `policyhost`
-7. `recommended`
-8. `host`
-9. `stream`
-10. `resume`
+2. `authority`
+3. `memory`
+4. `context`
+5. `prompt`
+6. `policies`
+7. `policyhost`
+8. `recommended`
+9. `host`
+10. `stream`
+11. `resume`
 
 其中 `stream` 示例重点展示两件事：
 

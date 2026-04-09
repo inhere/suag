@@ -156,18 +156,17 @@ func main() {
 	}
 	log.Printf("second run: status=%s output=%q", secondResult.Status, secondResult.Output)
 
-	saved, err := store.LoadRun(ctx, runID)
+	bundle, err := agentcore.LoadAuthorityBundle(ctx, store, runID)
 	if err != nil {
 		log.Fatal(err)
 	}
-	msgs, err := store.LoadMessages(ctx, runID)
-	if err != nil {
-		log.Fatal(err)
+	if bundle == nil || bundle.State == nil {
+		log.Fatal("expected authority bundle after completed run")
 	}
 
-	log.Printf("persisted metadata resume_policy=%v resume_requested_by=%v", saved.Metadata["resume_policy"], saved.Metadata["resume_requested_by"])
-	log.Printf("persisted messages=%d", len(msgs))
-	for i, msg := range msgs {
+	log.Printf("persisted metadata resume_policy=%v resume_requested_by=%v", bundle.State.Metadata["resume_policy"], bundle.State.Metadata["resume_requested_by"])
+	log.Printf("persisted messages=%d", len(bundle.Messages))
+	for i, msg := range bundle.Messages {
 		switch {
 		case msg.ToolCall != nil && msg.ToolResult == nil:
 			log.Printf("message[%d]: role=%s tool_call=%s", i, msg.Role, msg.ToolCall.Name)
