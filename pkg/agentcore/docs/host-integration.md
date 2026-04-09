@@ -161,6 +161,12 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 而不是把这些逻辑散落到每个 handler 或 hook 里。
 
+当前仓库里的 first-party host wrapper 也已经围绕这三类 contract 做了行为级验证。
+
+如果你想先看“哪些 host 行为已经被验证，哪些地方仍然只是 contract 等价但 lifecycle 不同”，继续看：
+
+- [host-conformance.md](./host-conformance.md)
+
 ---
 
 ## 5. Streaming 应该怎么接到 Host

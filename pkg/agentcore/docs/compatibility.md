@@ -87,6 +87,10 @@
 - 默认实现已经有测试回归基线
 - embedding host 很可能围绕它们做正式定制
 
+而且当前仓库已经不只在 runtime 内部测试它们，也已经在 first-party host wrapper 上验证了它们的行为承接。
+
+这让这三类 contract 更接近真正的 kernel-stable public surface，而不是“仅运行时内部使用的小接口”。
+
 ### 2.5 Error Categories
 
 - `ProviderError`
@@ -205,6 +209,18 @@ internal adapter 如何组织、如何放在仓库级位置，目前也仍然可
   承担观察、注入和局部拦截
 
 后续如果继续演进，也不应再让核心默认语义不断回流到 hook 协议里。
+
+### 4.7 Host Contract Conformance
+
+当前还应继续保持稳定预期的一点是：
+
+- 核心 policy contract 应该能被 first-party host wrapper 自然承接
+
+如果某个 contract 只能在 runtime 内部自洽，但 host wrapper 无法自然使用，那它还不能算真正稳定。
+
+当前已经有明确验证的覆盖面，继续看：
+
+- [host-conformance.md](./host-conformance.md)
 
 ---
 

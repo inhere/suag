@@ -96,6 +96,48 @@ func TestExternalProviderContractExample(t *testing.T) {
 	})
 }
 
+func TestExternalContractChecklistExample(t *testing.T) {
+	items := agentcoretesting.ContractChecklist()
+	if len(items) == 0 {
+		t.Fatal("expected contract checklist to expose public conformance metadata")
+	}
+
+	var foundStorage bool
+	for _, item := range items {
+		if item.Surface == "Storage authority contract" {
+			foundStorage = true
+			if len(item.RecommendedSuites) == 0 {
+				t.Fatal("expected storage checklist entry to recommend at least one suite")
+			}
+			break
+		}
+	}
+	if !foundStorage {
+		t.Fatal("expected storage checklist entry")
+	}
+}
+
+func TestExternalOnboardingChecklistExample(t *testing.T) {
+	items := agentcoretesting.OnboardingChecklist()
+	if len(items) == 0 {
+		t.Fatal("expected onboarding checklist to expose navigation metadata")
+	}
+
+	var foundProvider bool
+	for _, item := range items {
+		if item.Kind == "Provider" {
+			foundProvider = true
+			if len(item.RecommendedSuites) == 0 || len(item.Docs) == 0 || len(item.Examples) == 0 {
+				t.Fatalf("expected provider onboarding item to include suites, docs, and examples, got %#v", item)
+			}
+			break
+		}
+	}
+	if !foundProvider {
+		t.Fatal("expected provider onboarding entry")
+	}
+}
+
 type exampleStorage struct {
 	mu       sync.Mutex
 	runs     map[string]*agentcore.RunState

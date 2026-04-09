@@ -70,6 +70,20 @@
 
 如果未来还要继续提升 policy，也应该沿着这个原则走，而不是引入统一大 policy framework。
 
+### 2.5 First-Party Host Conformance
+
+当前仓库里的 first-party host wrapper，已经开始围绕同一组 kernel contract 做行为级验证，尤其是：
+
+- `ResumePolicy`
+- `ToolExecutionPolicy`
+- `ErrorPolicy`
+
+这很重要，因为它说明这些 contract 已经不只是 runtime 内部自洽，而是已经具备 host-facing 的现实意义。
+
+更具体的覆盖面与仍保留的 host 差异，继续看：
+
+- [host-conformance.md](./host-conformance.md)
+
 ### 2.4 Error Categories
 
 下面这些错误分类已经不再只是内部实现细节：
@@ -156,3 +170,4 @@
 - [versioning.md](./versioning.md)
 - [runtime-policies.md](./runtime-policies.md)
 - [host-integration.md](./host-integration.md)
+- [host-conformance.md](./host-conformance.md)

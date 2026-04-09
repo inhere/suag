@@ -184,7 +184,34 @@
 - 是否优先覆盖 authority 风险最高的接口
 - 是否避免把内部测试工具直接暴露成外部 API
 
-### 2.7 Package Docs And Examples
+### 2.7 First-Party Host Conformance
+
+状态：`Important before calling contracts host-ready`
+
+范围：
+
+- first-party host wrapper 是否能自然承接 kernel contract
+- `AgentcoreRunner`
+- legacy `ReactRunner`
+- host-facing policy parity
+
+当前判断：
+
+- 如果某个 contract 只能在 runtime 内部自洽，但 first-party host wrapper 无法自然承接，它还不适合被描述成真正 host-ready 的 kernel surface
+- 当前已经有明确行为级验证的重点区域，是：
+  - `ResumePolicy`
+  - `ToolExecutionPolicy`
+  - `ErrorPolicy`
+- 这层验证让这些 contract 更接近可独立发布时的真实依赖点，而不只是 runtime 内部抽象
+
+发布前检查：
+
+- first-party host wrapper 是否已经覆盖核心 policy contract
+- parity tests 是否区分了“contract parity”和“lifecycle parity”
+- host wrapper 是否仍然依赖分散 hook 协议去承载默认主路径语义
+- 文档是否已经清楚说明 host 间仍保留的实现差异
+
+### 2.8 Package Docs And Examples
 
 状态：`Important release surface`
 
@@ -246,7 +273,18 @@
 - `examples/stream` 是否代表当前 streaming 能力边界
 - 根目录 `examples/agentcore/bridge` 是否仍明确属于 bridge example，而不是 package-local main path
 
-### 3.6 Verification Check
+### 3.6 Host Conformance Check
+
+- first-party host wrapper 是否已经验证核心 policy contract 的行为承接
+- `AgentcoreRunner` 是否仍然是当前推荐主路径承接者
+- legacy host wrapper 是否已经至少进入 contract 对照体系
+- docs 是否已经明确说明 host 间仍然存在的 lifecycle / 实现差异
+
+当前已整理的说明，继续看：
+
+- [host-conformance.md](./host-conformance.md)
+
+### 3.7 Verification Check
 
 至少保证下面命令持续通过：
 
@@ -329,7 +367,20 @@ go test ./pkg/agentcore/testing/...
 - package-local examples consistency
 - package-local conformance/testing story
 
-### 4.5 Policy Surface Discipline
+### 4.5 Host-Ready Contract Confidence
+
+原因：
+
+- 对外发布时，外部使用者依赖的不只是 runtime 本身
+- 他们通常也会写自己的 host wrapper、runner wrapper 或 orchestration layer
+
+优先补：
+
+- 更系统的 host conformance matrix
+- 更明确的 host parity 边界说明
+- 持续减少 first-party host wrapper 中与 kernel 默认语义重复的分散逻辑
+
+### 4.6 Policy Surface Discipline
 
 原因：
 
@@ -382,6 +433,8 @@ go test ./pkg/agentcore/testing/...
   看包定位与主入口
 - [compatibility.md](./compatibility.md)
   看当前兼容姿态
+- [host-conformance.md](./host-conformance.md)
+  看 first-party host wrapper 已经验证到哪些 kernel contract
 - [versioning.md](./versioning.md)
   看变更分级与版本策略
 - [roadmap.md](./roadmap.md)
@@ -391,6 +444,7 @@ go test ./pkg/agentcore/testing/...
 
 - `README` 解释它是什么
 - `compatibility` 解释现在能依赖到什么程度
+- `host-conformance` 解释 first-party host 已经验证到什么程度
 - `versioning` 解释以后怎么改
 - `release-readiness` 解释发布前还要核对什么
 - `roadmap` 解释接下来往哪里长

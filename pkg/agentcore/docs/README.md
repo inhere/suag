@@ -11,19 +11,21 @@
 5. [api.md](./api.md) 公共接口职责与边界
 6. [runtime-policies.md](./runtime-policies.md) 三类 runtime policy 的边界、顺序与使用建议
 7. [kernel-stability.md](./kernel-stability.md) 当前哪些 surface 已形成 kernel-stable 姿态
-8. [embedding-patterns.md](./embedding-patterns.md) 直接嵌入与 adapter 桥接两种常见接法
-9. [compatibility.md](./compatibility.md) 当前兼容性预期、发布姿态与检查清单
-10. [versioning.md](./versioning.md) 当前版本策略与变更分级建议
-11. [release-readiness.md](./release-readiness.md) 独立发布前的 contract matrix 与检查清单
-12. [recommended-runtime.md](./recommended-runtime.md) 当前更推荐的外嵌 starter path
-13. [host-integration.md](./host-integration.md) embedding host 应该承担哪些职责、如何接 run/stream/yield
-14. [migration.md](./migration.md) 从已有 runtime 或 adapter 逐步迁到更原生 agentcore 的顺序与风险点
-15. [working-memory-design.md](./working-memory-design.md) 下一轮默认 memory kernel 演进设计
-16. [context-presets-design.md](./context-presets-design.md) 下一轮默认 context 组合演进设计
-17. [prompt-layered-design.md](./prompt-layered-design.md) 下一轮默认 prompt 组合演进设计
-18. [conformance-testing.md](./conformance-testing.md) 为什么要补 package-local contract tests，以及第一阶段优先覆盖什么
-19. [streaming-design.md](./streaming-design.md) 下一轮 streaming contract 设计
-20. [roadmap.md](./roadmap.md) 后续演进路线
+8. [contract-matrix.md](./contract-matrix.md) runtime contract、host conformance、default path 的一页矩阵总览
+9. [host-conformance.md](./host-conformance.md) first-party host wrapper 已验证的 kernel contract 覆盖面与现存语义差异
+10. [embedding-patterns.md](./embedding-patterns.md) 直接嵌入与 adapter 桥接两种常见接法
+11. [compatibility.md](./compatibility.md) 当前兼容性预期、发布姿态与检查清单
+12. [versioning.md](./versioning.md) 当前版本策略与变更分级建议
+13. [release-readiness.md](./release-readiness.md) 独立发布前的 contract matrix 与检查清单
+14. [recommended-runtime.md](./recommended-runtime.md) 当前更推荐的外嵌 starter path
+15. [host-integration.md](./host-integration.md) embedding host 应该承担哪些职责、如何接 run/stream/yield
+16. [migration.md](./migration.md) 从已有 runtime 或 adapter 逐步迁到更原生 agentcore 的顺序与风险点
+17. [working-memory-design.md](./working-memory-design.md) 下一轮默认 memory kernel 演进设计
+18. [context-presets-design.md](./context-presets-design.md) 下一轮默认 context 组合演进设计
+19. [prompt-layered-design.md](./prompt-layered-design.md) 下一轮默认 prompt 组合演进设计
+20. [conformance-testing.md](./conformance-testing.md) 为什么要补 package-local contract tests，以及第一阶段优先覆盖什么
+21. [streaming-design.md](./streaming-design.md) 下一轮 streaming contract 设计
+22. [roadmap.md](./roadmap.md) 后续演进路线
 
 ## 这组文档回答什么问题
 
@@ -36,6 +38,8 @@
 - 如何围绕公共 contract 做扩展
 - runtime policy 和 hook 应该如何分工
 - 当前哪些 surface 已经接近 kernel-stable
+- runtime contract、host conformance、default path 当前分别稳定到什么程度
+- first-party host wrapper 已经验证到哪些 kernel contract，哪些地方仍保留不同 lifecycle
 - 当前哪些 public surface 已经适合依赖，哪些仍在演进
 - 变更应该如何分级、如何避免无意破坏兼容性
 - 独立发布前还需要检查哪些 contract、docs、examples 边界

@@ -98,6 +98,12 @@ func TestMyRegistryContract(t *testing.T) {
 - 直接围绕 public contract 工作
 - 可以自然复用到独立仓库
 
+如果你想先从“一页结构化总览”判断当前该验证哪组 surface，再进入 suites，也可以先看：
+
+- [../testing/README.md](../testing/README.md) 里的 `ContractChecklist()`
+- [../testing/README.md](../testing/README.md) 里的 `OnboardingChecklist()`
+- [contract-matrix.md](./contract-matrix.md)
+
 如果你想直接看 package-local 入口与自测样例，可以继续看：
 
 - [../testing/README.md](../testing/README.md)

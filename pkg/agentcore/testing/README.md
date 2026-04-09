@@ -25,6 +25,44 @@
 - `RunProviderSuite`
   验证 `GenerateResult` 的最小合法性，以及可选 streaming provider 的基本行为
 
+## Contract Checklist
+
+如果你不确定“应该先跑哪组 suite，或者某个 surface 目前属于哪一层证据”，可以先看 package-local checklist：
+
+- `ContractChecklist()`
+
+它会返回一组结构化条目，描述：
+
+- 哪些 surface 当前已经属于 runtime contract
+- 哪些 surface 已经到 `Runtime + Host` 证据层
+- 哪些 suite 适合优先拿来验证外部实现
+
+这不是新的测试框架，而是一层更接近文档矩阵的公开元数据入口。
+
+## Onboarding Checklist
+
+如果你是外部适配器作者，想从“我应该先看什么、跑什么、参考什么”这个角度进入，也可以先看：
+
+- `OnboardingChecklist()`
+
+它会按实现类别给出一组最小导航：
+
+- 推荐先跑的 suites
+- 推荐先看的 docs
+- 推荐参考的 package-local examples
+
+当前覆盖：
+
+- `Storage`
+- `ToolRegistry`
+- `Provider`
+
+一个很实用的使用顺序是：
+
+1. 先读 `OnboardingChecklist()`，确定你属于哪一类实现者
+2. 再读 `ContractChecklist()`，确认当前这个 surface 的证据层与推荐 suites
+3. 最后按对应 suite 和 example test 开始落你的自定义实现验证
+
 ## 最小使用方式
 
 ### Storage
@@ -271,8 +309,14 @@ agentcoretesting.RunStorageFixtureSuite(t, func(t *testing.T) agentcoretesting.S
 
 - [../docs/api.md](../docs/api.md)
 - [../docs/conformance-testing.md](../docs/conformance-testing.md)
+- [../docs/contract-matrix.md](../docs/contract-matrix.md)
 - [../docs/release-readiness.md](../docs/release-readiness.md)
 
 如果你想直接看“外部适配器作者”的最小示例测试，继续看：
 
 - [external_examples_test.go](./external_examples_test.go)
+
+其中也包含了如何读取：
+
+- `ContractChecklist()`
+- `OnboardingChecklist()`
