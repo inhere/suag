@@ -154,6 +154,21 @@
 
 这一项建议作为本轮后半步增强，而不是最先实现的内容。
 
+### 5.4 `ArtifactsThenRecent`
+
+用途：
+
+- 先保留 recent transcript window
+- 再把选中的 artifacts 投影成 message 追加到 context
+
+适合：
+
+- artifact 已经进入 authority state
+- host 希望显式控制哪些 artifact 可进入模型上下文
+- 调用方不想把 artifact 注入逻辑塞进 runtime 主循环
+
+这一项的重点不是“自动变聪明”，而是提供一个很轻、可组合、边界清楚的 projection path。
+
 ---
 
 ## 6. API 草图
@@ -180,6 +195,14 @@ type MemoryThenRecentConfig struct {
 }
 
 func MemoryThenRecent(mem agentcore.Memory, cfg MemoryThenRecentConfig) agentcore.ContextBuilder
+
+type ArtifactContextConfig struct {
+    MaxMessages int
+    Filter      func(agentcore.Artifact) bool
+    Formatter   func(agentcore.Artifact) agentcore.Message
+}
+
+func ArtifactsThenRecent(cfg ArtifactContextConfig) agentcore.ContextBuilder
 ```
 
 这里刻意使用构造函数返回 `agentcore.ContextBuilder`，而不是强调很多 exported struct，原因是：
@@ -193,6 +216,7 @@ func MemoryThenRecent(mem agentcore.Memory, cfg MemoryThenRecentConfig) agentcor
 - `transcriptWindowBuilder`
 - `memoryFirstBuilder`
 - `memoryThenRecentBuilder`
+- `artifactsThenRecentBuilder`
 
 ---
 

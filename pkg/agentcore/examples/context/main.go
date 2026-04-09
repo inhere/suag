@@ -40,6 +40,7 @@ func main() {
 	log.Println("running TranscriptWindow preset")
 	runPreset("context-transcript-window", transcript, nil,
 		contextpkg.TranscriptWindow(contextpkg.WindowConfig{MaxMessages: 2}),
+		nil,
 		logContextHook{label: "TranscriptWindow"},
 	)
 
@@ -48,6 +49,7 @@ func main() {
 	memFirst.SetSummary("The run is focused on agentcore kernel evolution and the user wants to inspect context presets.")
 	runPreset("context-memory-first", transcript, memFirst,
 		contextpkg.MemoryFirst(memFirst, contextpkg.MemoryFirstConfig{MaxMessages: 2}),
+		nil,
 		logContextHook{label: "MemoryFirst"},
 	)
 
@@ -56,19 +58,41 @@ func main() {
 	memThenRecent.SetSummary("The run is focused on agentcore kernel evolution and the user wants to inspect context presets.")
 	runPreset("context-memory-then-recent", transcript, memThenRecent,
 		contextpkg.MemoryThenRecent(memThenRecent, contextpkg.MemoryThenRecentConfig{MaxMessages: 2}),
+		nil,
 		logContextHook{label: "MemoryThenRecent"},
+	)
+
+	log.Println("running ArtifactsThenRecent preset")
+	runPreset("context-artifacts-then-recent", transcript, nil,
+		contextpkg.ArtifactsThenRecent(contextpkg.ArtifactContextConfig{
+			MaxMessages: 2,
+			Filter: func(artifact agentcore.Artifact) bool {
+				return artifact.Kind == "file"
+			},
+		}),
+		[]agentcore.Artifact{
+			{Kind: "file", URI: "artifact://release.txt", Content: "release summary draft"},
+			{Kind: "image", URI: "artifact://diagram.png", Content: "ignored diagram"},
+		},
+		logContextHook{label: "ArtifactsThenRecent"},
 	)
 }
 
-func runPreset(runID string, transcript []agentcore.Message, mem agentcore.Memory, builder agentcore.ContextBuilder, hook agentcore.Hook) {
+func runPreset(runID string, transcript []agentcore.Message, mem agentcore.Memory, builder agentcore.ContextBuilder, artifacts []agentcore.Artifact, hook agentcore.Hook) {
 	store := files.NewStorage(filepath.Join(os.TempDir(), "axon-agentcore-examples", runID))
 	if err := store.SaveRun(context.Background(), &agentcore.RunState{
-		RunID:   runID,
-		AgentID: "context-agent",
-		Status:  agentcore.RunYielded,
-		Step:    1,
+		RunID:     runID,
+		AgentID:   "context-agent",
+		Status:    agentcore.RunYielded,
+		Step:      1,
+		Artifacts: artifacts,
 	}); err != nil {
 		log.Fatal(err)
+	}
+	if artifactStore, ok := any(store).(agentcore.ArtifactStorage); ok && len(artifacts) > 0 {
+		if err := artifactStore.SaveArtifacts(context.Background(), runID, artifacts); err != nil {
+			log.Fatal(err)
+		}
 	}
 	if err := store.AppendMessages(context.Background(), runID, transcript...); err != nil {
 		log.Fatal(err)

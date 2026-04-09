@@ -58,6 +58,7 @@ go run ./examples/resume
 - `TranscriptWindow`
 - `MemoryFirst`
 - `MemoryThenRecent`
+- `ArtifactsThenRecent`
 
 其中 `prompt` 示例重点展示两件事：
 

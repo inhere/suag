@@ -22,6 +22,13 @@ type MemoryThenRecentConfig struct {
 	MaxMessages int
 }
 
+// ArtifactContextConfig controls how artifacts are projected into model context.
+type ArtifactContextConfig struct {
+	MaxMessages int
+	Filter      func(api.Artifact) bool
+	Formatter   func(api.Artifact) api.Message
+}
+
 // DefaultBuilder assembles recent run messages for model context.
 type DefaultBuilder struct {
 	MaxMessages int
@@ -57,6 +64,16 @@ func MemoryThenRecent(mem api.Memory, cfg MemoryThenRecentConfig) api.ContextBui
 	return memoryThenRecentBuilder{
 		mem:         mem,
 		maxMessages: cfg.MaxMessages,
+	}
+}
+
+// ArtifactsThenRecent returns a first-party preset that appends projected
+// artifact messages after a recent transcript window.
+func ArtifactsThenRecent(cfg ArtifactContextConfig) api.ContextBuilder {
+	return artifactsThenRecentBuilder{
+		maxMessages: cfg.MaxMessages,
+		filter:      cfg.Filter,
+		formatter:   cfg.Formatter,
 	}
 }
 
@@ -120,4 +137,108 @@ func (b memoryThenRecentBuilder) BuildMessages(ctx context.Context, state *api.R
 	out = append(out, messages...)
 	out = append(out, recent...)
 	return out, nil
+}
+
+type artifactsThenRecentBuilder struct {
+	maxMessages int
+	filter      func(api.Artifact) bool
+	formatter   func(api.Artifact) api.Message
+}
+
+func (b artifactsThenRecentBuilder) BuildMessages(ctx context.Context, state *api.RunState) ([]api.Message, error) {
+	recent, err := transcriptWindowBuilder{maxMessages: b.maxMessages}.BuildMessages(ctx, state)
+	if err != nil {
+		return nil, err
+	}
+	projected := b.projectArtifacts(state)
+	if len(projected) == 0 {
+		return recent, nil
+	}
+	out := make([]api.Message, 0, len(recent)+len(projected))
+	out = append(out, recent...)
+	out = append(out, projected...)
+	return out, nil
+}
+
+func (b artifactsThenRecentBuilder) projectArtifacts(state *api.RunState) []api.Message {
+	if state == nil || len(state.Artifacts) == 0 {
+		return nil
+	}
+	out := make([]api.Message, 0, len(state.Artifacts))
+	for _, artifact := range state.Artifacts {
+		if b.filter != nil && !b.filter(cloneArtifact(artifact)) {
+			continue
+		}
+		msg := b.formatArtifact(artifact)
+		out = append(out, cloneMessage(msg))
+	}
+	return out
+}
+
+func (b artifactsThenRecentBuilder) formatArtifact(artifact api.Artifact) api.Message {
+	if b.formatter != nil {
+		return b.formatter(cloneArtifact(artifact))
+	}
+	content := "Artifact(" + artifact.Kind + "): " + artifact.URI
+	if artifact.Content != "" {
+		content += "\n" + artifact.Content
+	}
+	return api.Message{
+		Role:    "system",
+		Content: content,
+	}
+}
+
+func cloneArtifact(artifact api.Artifact) api.Artifact {
+	return api.Artifact{
+		Kind:     artifact.Kind,
+		URI:      artifact.URI,
+		Content:  artifact.Content,
+		Metadata: cloneMetadata(artifact.Metadata),
+	}
+}
+
+func cloneMessage(msg api.Message) api.Message {
+	return api.Message{
+		Role:       msg.Role,
+		Content:    msg.Content,
+		ToolCall:   cloneToolCall(msg.ToolCall),
+		ToolResult: cloneToolResult(msg.ToolResult),
+		Metadata:   cloneMetadata(msg.Metadata),
+	}
+}
+
+func cloneToolCall(call *api.ToolCall) *api.ToolCall {
+	if call == nil {
+		return nil
+	}
+	cloned := *call
+	cloned.Arguments = cloneMetadata(call.Arguments)
+	return &cloned
+}
+
+func cloneToolResult(result *api.ToolResult) *api.ToolResult {
+	if result == nil {
+		return nil
+	}
+	cloned := *result
+	if len(result.Artifacts) > 0 {
+		cloned.Artifacts = make([]api.Artifact, len(result.Artifacts))
+		for i, artifact := range result.Artifacts {
+			cloned.Artifacts[i] = cloneArtifact(artifact)
+		}
+	}
+	cloned.Metadata = cloneMetadata(result.Metadata)
+	return &cloned
+}
+
+func cloneMetadata(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }

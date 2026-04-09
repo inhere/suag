@@ -201,6 +201,106 @@ func TestMemoryThenRecent_DoesNotDeduplicateMessages(t *testing.T) {
 	}
 }
 
+func TestArtifactsThenRecent_AppendsProjectedArtifactsAfterTranscript(t *testing.T) {
+	state := &agentcore.RunState{
+		Messages: []agentcore.Message{
+			{Role: "user", Content: "message-1"},
+			{Role: "assistant", Content: "message-2"},
+		},
+		Artifacts: []agentcore.Artifact{
+			{Kind: "file", URI: "artifact://one.txt", Content: "first artifact"},
+			{Kind: "file", URI: "artifact://two.txt", Content: "second artifact"},
+		},
+	}
+	builder := builderctx.ArtifactsThenRecent(builderctx.ArtifactContextConfig{
+		MaxMessages: 2,
+	})
+
+	msgs, err := builder.BuildMessages(stdctx.Background(), state)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(msgs) != 4 {
+		t.Fatalf("expected transcript plus two projected artifact messages, got %#v", msgs)
+	}
+	if msgs[0].Content != "message-1" || msgs[1].Content != "message-2" {
+		t.Fatalf("expected transcript to stay first, got %#v", msgs)
+	}
+	if msgs[2].Role != "system" || msgs[2].Content != "Artifact(file): artifact://one.txt\nfirst artifact" {
+		t.Fatalf("expected first projected artifact message, got %#v", msgs[2])
+	}
+	if msgs[3].Role != "system" || msgs[3].Content != "Artifact(file): artifact://two.txt\nsecond artifact" {
+		t.Fatalf("expected second projected artifact message, got %#v", msgs[3])
+	}
+}
+
+func TestArtifactsThenRecent_FiltersArtifacts(t *testing.T) {
+	state := &agentcore.RunState{
+		Messages: []agentcore.Message{
+			{Role: "user", Content: "message-1"},
+		},
+		Artifacts: []agentcore.Artifact{
+			{Kind: "file", URI: "artifact://keep.txt", Content: "keep"},
+			{Kind: "image", URI: "artifact://skip.png", Content: "skip"},
+		},
+	}
+	builder := builderctx.ArtifactsThenRecent(builderctx.ArtifactContextConfig{
+		Filter: func(artifact agentcore.Artifact) bool {
+			return artifact.Kind == "file"
+		},
+	})
+
+	msgs, err := builder.BuildMessages(stdctx.Background(), state)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected transcript plus one filtered artifact, got %#v", msgs)
+	}
+	if msgs[1].Content != "Artifact(file): artifact://keep.txt\nkeep" {
+		t.Fatalf("expected only filtered artifact to be projected, got %#v", msgs[1])
+	}
+}
+
+func TestArtifactsThenRecent_UsesCustomFormatterAndReturnsCopies(t *testing.T) {
+	state := &agentcore.RunState{
+		Messages: []agentcore.Message{
+			{Role: "user", Content: "message-1"},
+		},
+		Artifacts: []agentcore.Artifact{
+			{Kind: "file", URI: "artifact://report.txt", Metadata: map[string]any{"topic": "authority"}},
+		},
+	}
+	builder := builderctx.ArtifactsThenRecent(builderctx.ArtifactContextConfig{
+		Formatter: func(artifact agentcore.Artifact) agentcore.Message {
+			return agentcore.Message{
+				Role:    "system",
+				Content: fmt.Sprintf("Artifact topic=%v uri=%s", artifact.Metadata["topic"], artifact.URI),
+				Metadata: map[string]any{
+					"source": "artifact_projection",
+				},
+			}
+		},
+	})
+
+	msgs, err := builder.BuildMessages(stdctx.Background(), state)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected transcript plus one formatted artifact, got %#v", msgs)
+	}
+	if msgs[1].Content != "Artifact topic=authority uri=artifact://report.txt" || msgs[1].Metadata["source"] != "artifact_projection" {
+		t.Fatalf("expected custom artifact formatting, got %#v", msgs[1])
+	}
+
+	msgs[1].Content = "mutated"
+	msgs[1].Metadata["source"] = "changed"
+	if state.Artifacts[0].URI != "artifact://report.txt" || state.Artifacts[0].Metadata["topic"] != "authority" {
+		t.Fatalf("expected artifact state to remain unchanged, got %#v", state.Artifacts[0])
+	}
+}
+
 func stateWithMessages(count int) *agentcore.RunState {
 	state := &agentcore.RunState{
 		RunID:    "run-1",
