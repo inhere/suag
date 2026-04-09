@@ -10,6 +10,11 @@ import (
 
 type ContextBuilder = api.ContextBuilder
 type PromptBuilder = api.PromptBuilder
+type ResumePolicy = api.ResumePolicy
+type ToolExecutionPolicy = api.ToolExecutionPolicy
+type ToolErrorDecision = api.ToolErrorDecision
+type ErrorPolicy = api.ErrorPolicy
+type ErrorDecision = api.ErrorDecision
 
 type RunInput = api.RunInput
 type RunStatus = api.RunStatus

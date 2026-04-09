@@ -10,12 +10,16 @@
   - 用 `mock + files` 跑通最小 runtime
 - `custom`
   - 自定义 tool 和 hook，展示常见扩展路径
+- `policyhost`
+  - 演示宿主如何把 policy 收拢进自己的 host wrapper，而不是散落在 handler 里
 - `memory`
   - 演示第一方 `WorkingMemory` 如何构建 `summary + recent window` 上下文
 - `context`
   - 演示第一方 context presets 如何组合 transcript 与 memory
 - `prompt`
   - 演示第一方 prompt builders 如何组合 base prompt、run metadata 与附加段落
+- `policies`
+  - 演示 `ResumePolicy`、`ToolExecutionPolicy`、`ErrorPolicy` 如何组合成更正式的 runtime 主路径策略
 - `recommended`
   - 演示当前更推荐的 starter path：`files + memory + context + prompt + explicit resume + optional streaming`
 - `host`
@@ -30,9 +34,11 @@
 ```bash
 go run ./examples/minimal
 go run ./examples/custom
+go run ./examples/policyhost
 go run ./examples/memory
 go run ./examples/context
 go run ./examples/prompt
+go run ./examples/policies
 go run ./examples/recommended
 go run ./examples/host
 go run ./examples/stream
@@ -55,6 +61,18 @@ go run ./examples/resume
 - `prompt.Layered(...)` 的固定输出顺序
 - `RunState.Metadata` 如何进入第一方 prompt 组合
 
+其中 `policyhost` 示例重点展示三件事：
+
+- host 如何用 `Start/Continue` 包住 runtime，而不是暴露全部底层细节
+- host 如何通过 policy 控制 resume / tool error / recoverable error
+- host 如何保持 authority transcript 与宿主流程一致
+
+其中 `policies` 示例重点展示三件事：
+
+- `ErrorPolicy` 如何把 recoverable provider error 转成 yield
+- `ResumePolicy` 如何在 resume 时抑制新的 instruction append
+- `ToolExecutionPolicy` 如何放宽 tool batch 校验并给 tool error 提供 fallback result
+
 其中 `recommended` 示例重点展示四件事：
 
 - 第一方 starter path 如何组合 `files + memory + context + prompt`
@@ -74,10 +92,12 @@ go run ./examples/resume
 2. `memory`
 3. `context`
 4. `prompt`
-5. `recommended`
-6. `host`
-7. `stream`
-8. `resume`
+5. `policies`
+6. `policyhost`
+7. `recommended`
+8. `host`
+9. `stream`
+10. `resume`
 
 其中 `stream` 示例重点展示两件事：
 

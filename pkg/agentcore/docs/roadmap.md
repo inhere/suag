@@ -260,6 +260,16 @@ Hooks 应该负责：
 
 - 把反复出现、已经不适合继续只靠 hook 表达的 runtime 策略，提升成正式 contract
 
+当前进展：
+
+- 已先把 `resume` 域提升出第一个正式策略接口：`ResumePolicy`
+- 已把 `tool execution` 域提升出第二个正式策略接口：`ToolExecutionPolicy`
+- 已把 recoverable error 域提升出第三个正式策略接口：`ErrorPolicy`
+- 默认实现继续保持现有 `RunID + ResumeMode` 语义不变
+- 默认实现继续保持现有 max-tool-calls 与 tool-error-to-message 语义不变
+- 默认实现继续保持现有 recoverable-error-by-default 语义不变
+- 下一步仍应沿着“小接口、单策略域”的方式继续推进，而不是引入统一大 policy framework
+
 重点事项：
 
 - 识别当前最容易在 hook 中失控的策略域

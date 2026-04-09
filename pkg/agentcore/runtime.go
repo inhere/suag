@@ -21,6 +21,9 @@ type Config struct {
 	Tools               ToolRegistry
 	PromptBuilder       PromptBuilder
 	ContextBuilder      ContextBuilder
+	ResumePolicy        ResumePolicy
+	ToolExecutionPolicy ToolExecutionPolicy
+	ErrorPolicy         ErrorPolicy
 	Hooks               []Hook
 	MaxSteps            int
 	MaxToolCallsPerStep int
@@ -34,6 +37,9 @@ type DefaultRuntime struct {
 	tools               ToolRegistry
 	promptBuilder       PromptBuilder
 	contextBuilder      ContextBuilder
+	resumePolicy        ResumePolicy
+	toolPolicy          ToolExecutionPolicy
+	errorPolicy         ErrorPolicy
 	hooks               runtimeHookChain
 	maxSteps            int
 	maxToolCallsPerStep int
@@ -48,6 +54,9 @@ func New(cfg Config) *DefaultRuntime {
 		tools:               defaultTools(cfg.Tools),
 		promptBuilder:       defaultPromptBuilder(cfg.PromptBuilder),
 		contextBuilder:      cfg.ContextBuilder,
+		resumePolicy:        defaultResumePolicy(cfg.ResumePolicy),
+		toolPolicy:          defaultToolExecutionPolicy(cfg.ToolExecutionPolicy, cfg.MaxToolCallsPerStep),
+		errorPolicy:         defaultErrorPolicy(cfg.ErrorPolicy),
 		hooks:               newRuntimeHookChain(cfg.Hooks...),
 		maxSteps:            cfg.MaxSteps,
 		maxToolCallsPerStep: cfg.MaxToolCallsPerStep,
@@ -233,10 +242,6 @@ func (r *DefaultRuntime) prepareState(ctx context.Context, input RunInput) (*Run
 		return newRunState(runID, input), true, nil
 	}
 
-	if loaded.Status == RunCompleted || loaded.Status == RunFailed {
-		return nil, false, fmt.Errorf("%w: status=%s", ErrRunNotResumable, loaded.Status)
-	}
-
 	messages, err := r.storage.LoadMessages(ctx, runID)
 	if err != nil {
 		return nil, false, wrapStorageError(err)
@@ -245,12 +250,16 @@ func (r *DefaultRuntime) prepareState(ctx context.Context, input RunInput) (*Run
 	state := cloneRunStateValue(loaded)
 	state.Messages = messages
 
-	appendInstruction := shouldAppendInstruction(input)
+	if err := r.resumePolicy.AllowResume(ctx, input, state); err != nil {
+		return nil, false, err
+	}
+
+	appendInstruction := r.resumePolicy.ShouldAppendInstruction(input, state)
 	if state.AgentID == "" {
 		state.AgentID = input.AgentID
 	}
 	if len(input.Metadata) > 0 {
-		state.Metadata = mergeMetadata(state.Metadata, input.Metadata)
+		state.Metadata = r.resumePolicy.MergeMetadata(state.Metadata, input.Metadata)
 	}
 
 	return state, appendInstruction, nil
@@ -404,8 +413,8 @@ func (r *DefaultRuntime) effectiveMaxSteps(input RunInput) int {
 }
 
 func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, calls []ToolCall) (*RunResult, error, bool) {
-	if limit := r.maxToolCallsPerStep; limit > 0 && len(calls) > limit {
-		return r.handleErrorResult(ctx, state, "max_tool_calls", fmt.Errorf("max tool calls per step exceeded: %d > %d", len(calls), limit), NewControl())
+	if err := r.toolPolicy.ValidateToolCalls(ctx, state, cloneToolCallsValue(calls)); err != nil {
+		return r.handleErrorResult(ctx, state, "max_tool_calls", err, NewControl())
 	}
 
 	for _, call := range calls {
@@ -440,7 +449,11 @@ func (r *DefaultRuntime) executeSingleTool(ctx context.Context, state *RunState,
 
 	result, err := r.tools.ExecuteTool(ctx, activeCall)
 	if err != nil {
-		result = toolErrorAsResult(activeCall, err)
+		decision := r.toolPolicy.HandleToolError(ctx, state, activeCall, err)
+		if decision.Fail != nil {
+			return r.handleErrorResult(ctx, state, "tool", decision.Fail, NewControl())
+		}
+		result = normalizeToolResult(activeCall, decision.Result)
 	} else {
 		result = normalizeToolResult(activeCall, result)
 	}
@@ -579,6 +592,27 @@ func (r *DefaultRuntime) handleError(ctx context.Context, state *RunState, stage
 		Err:       wrapped,
 		Metadata:  cloneMetadata(state.Metadata),
 		Timestamp: time.Now(),
+	}
+	if decision := r.errorPolicy.HandleRecoverable(ctx, state, event); decision.Result != nil || decision.Fail != nil {
+		if decision.Fail != nil {
+			wrapped = classifyRuntimeError(decision.Fail)
+			if persistErr := r.persistFailureState(ctx, state, wrapped); persistErr != nil {
+				wrapped = persistErr
+			}
+			return wrapped
+		}
+
+		replacement := cloneRunResultValue(decision.Result)
+		if replacement == nil {
+			replacement = &RunResult{}
+		}
+		policyCtrl := NewControl()
+		policyCtrl.ShortCircuit(replacement)
+		if result, resolveErr := r.persistShortCircuit(ctx, state, policyCtrl); resolveErr != nil {
+			return resolveErr
+		} else if result != nil {
+			return runtimeResolvedControlError{result: result}
+		}
 	}
 	if hookErr := r.hooks.OnError(ctx, event, ctrl); hookErr != nil {
 		return wrapHookError(hookErr)

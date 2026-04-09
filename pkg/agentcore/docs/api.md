@@ -18,6 +18,9 @@ runtime := agentcore.New(agentcore.Config{...})
 - `Tools`
 - `PromptBuilder`
 - `ContextBuilder`
+- `ResumePolicy`
+- `ToolExecutionPolicy`
+- `ErrorPolicy`
 - `Hooks`
 - `MaxSteps`
 - `MaxToolCallsPerStep`
@@ -26,6 +29,60 @@ runtime := agentcore.New(agentcore.Config{...})
 
 - `Provider` 是必需的
 - 其他组件如果没有显式提供，runtime 会尽量补默认实现
+
+如果你需要调整恢复策略，而不是把这类逻辑塞进 hook，可以提供一个自定义 `ResumePolicy`：
+
+```go
+type ResumePolicy interface {
+    AllowResume(ctx context.Context, input RunInput, state *RunState) error
+    ShouldAppendInstruction(input RunInput, state *RunState) bool
+    MergeMetadata(stateMetadata, inputMetadata map[string]any) map[string]any
+}
+```
+
+当前内置默认实现是 `agentcore.DefaultResumePolicy`，它保留现有 v0 语义：
+
+- terminal state 不允许 resume
+- `ResumeMode` 决定是否追加新的 user input
+- input metadata 覆盖同名 persisted metadata
+
+如果你需要调整 tool loop 主路径策略，而不是把这些语义塞进 hook，也可以提供自定义 `ToolExecutionPolicy`：
+
+```go
+type ToolExecutionPolicy interface {
+    ValidateToolCalls(ctx context.Context, state *RunState, calls []ToolCall) error
+    HandleToolError(ctx context.Context, state *RunState, call ToolCall, err error) ToolErrorDecision
+}
+
+type ToolErrorDecision struct {
+    Result *ToolResult
+    Fail   error
+}
+```
+
+当前内置默认实现是 `agentcore.DefaultToolExecutionPolicy`，它保留现有 v0 语义：
+
+- 使用 `MaxToolCallsPerStep` 约束单步 tool call 数量
+- tool 执行错误默认转成 `tool` transcript message，再继续下一轮模型调用
+
+如果你需要把某些 recoverable runtime error 正式提升成“yield 给 host”或“返回替代结果”，也可以提供自定义 `ErrorPolicy`：
+
+```go
+type ErrorPolicy interface {
+    HandleRecoverable(ctx context.Context, state *RunState, event *ErrorEvent) ErrorDecision
+}
+
+type ErrorDecision struct {
+    Result *RunResult
+    Fail   error
+}
+```
+
+当前内置默认实现是 `agentcore.DefaultErrorPolicy`，它保留现有 v0 语义：
+
+- 不主动覆盖 recoverable error 的默认处理
+- 仍允许现有 `OnError` hook 做 yield / short-circuit
+- `persist_tool_output` 这类 non-recoverable authority 风险路径仍不走这条策略
 
 ## 2. RunInput 与 RunResult
 
@@ -154,7 +211,34 @@ type ToolRegistry interface {
 - `ToolResult` 尽量补齐 `CallID` / `Name`
 - 工具失败直接返回原始错误，让 runtime 包装成 `ToolError`
 
-## 7. PromptBuilder 与 ContextBuilder
+## 7. ToolExecutionPolicy
+
+`ToolExecutionPolicy` 负责 tool loop 中两类最容易继续扩散进 hook 的主路径语义：
+
+- 一批 tool calls 当前是否允许执行
+- 某次 tool 执行失败后，runtime 应该继续还是直接失败
+
+推荐边界是：
+
+- `ToolRegistry`
+  负责“有哪些工具”和“如何执行工具”
+- `ToolExecutionPolicy`
+  负责“当前能不能执行这些工具”和“执行失败后 runtime 如何处理”
+
+默认 `agentcore.DefaultToolExecutionPolicy` 会：
+
+- 在 `ValidateToolCalls(...)` 中沿用 `MaxToolCallsPerStep`
+- 在 `HandleToolError(...)` 中把错误转成 `ToolResult`，让 runtime 持久化 `assistant(tool_call)` 与 `tool(result)`，再继续下一轮
+
+如果你的 host 需要更严格或更宽松的策略，例如：
+
+- 某些场景允许更多并发 tool calls
+- 某些工具错误应该直接 fail run
+- 某些工具错误需要被映射成稳定的业务结果
+
+优先扩展这个 policy，而不是把 runtime 主路径语义散落到 `BeforeTool` / `AfterTool` hooks 中。
+
+## 8. PromptBuilder 与 ContextBuilder
 
 `PromptBuilder` 负责生成 system prompt：
 
@@ -223,7 +307,7 @@ type Config struct {
 - 空 section 跳过
 - 所有内容都为空时返回空字符串
 
-## 8. Hook
+## 9. Hook
 
 `Hook` 是运行时生命周期扩展点。
 
@@ -249,7 +333,7 @@ type Config struct {
 
 如果大量核心业务逻辑都只能藏在 hook 里，通常意味着核心 contract 需要升级。
 
-## 9. Streaming
+## 10. Streaming
 
 `agentcore` 当前已经支持一个最小 streaming contract。
 
@@ -292,7 +376,7 @@ type StreamingProvider interface {
 - streaming delta 默认不直接进入 authority transcript
 - 最终 `GenerateResult` 仍然是 authoritative completion
 
-## 10. ResumeMode
+## 11. ResumeMode
 
 `ResumeMode` 定义恢复时是否追加新的 user input：
 
@@ -310,7 +394,31 @@ type StreamingProvider interface {
 3. 根据 `ResumeMode` 决定是否追加新的 user message
 4. 再进入 runtime loop
 
-## 11. 错误包装
+如果你只是想调整“能不能恢复”“要不要追加输入”“metadata 怎么合并”，优先扩展 `ResumePolicy`，而不是把这些主路径语义分散到 hook 中。
+
+一个最小例子：
+
+```go
+type permissiveResumePolicy struct {
+    agentcore.DefaultResumePolicy
+}
+
+func (p permissiveResumePolicy) AllowResume(ctx context.Context, input agentcore.RunInput, state *agentcore.RunState) error {
+    return nil
+}
+
+func (p permissiveResumePolicy) ShouldAppendInstruction(input agentcore.RunInput, state *agentcore.RunState) bool {
+    return false
+}
+
+runtime := agentcore.New(agentcore.Config{
+    Provider:     provider,
+    Storage:      storage,
+    ResumePolicy: permissiveResumePolicy{},
+})
+```
+
+## 12. 错误包装
 
 runtime 会对错误做稳定分类：
 
@@ -327,7 +435,15 @@ runtime 会对错误做稳定分类：
 - provider 失败后，即使后续观察型 hook 继续上报错误，返回值仍应保留原始 provider root cause
 - transcript append / 持久化失败属于更高优先级问题，因为它影响 authority transcript 的可信度
 
-## 12. 最小扩展路径
+如果你的 host 需要把部分 recoverable error 变成正式产品语义，例如：
+
+- provider 暂时失败时先 yield，等待人工或外部重试
+- 某类 builder error 返回一个稳定的 fallback `RunResult`
+- 某些 recoverable error 必须保持 terminal，不能再被 hook 恢复
+
+优先考虑扩展 `ErrorPolicy`，而不是继续把这些主路径语义全部压到 `OnError` hook 中。
+
+## 13. 最小扩展路径
 
 推荐按这个顺序扩展：
 
@@ -344,7 +460,7 @@ runtime 会对错误做稳定分类：
 - [host-integration.md](./host-integration.md)
 - [migration.md](./migration.md)
 
-## 13. 下一阶段 API 演进重点
+## 14. 下一阶段 API 演进重点
 
 如果从未来独立发布和长期演进角度看，当前更值得关注的不是继续堆更多默认实现，而是先把下面几类 public surface 稳住。
 

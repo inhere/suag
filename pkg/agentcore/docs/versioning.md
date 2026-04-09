@@ -64,6 +64,9 @@
 
 - `prompt.Layered(...)`
 - `StreamingProvider`
+- `ResumePolicy`
+- `ToolExecutionPolicy`
+- `ErrorPolicy`
 
 这类变更的原则是：
 
@@ -137,6 +140,16 @@
 
 它们就不再只是内部细节，而是对外 contract 的一部分。
 
+### 3.4 Runtime Policy Contracts
+
+下面这些 policy 当前也应该开始按公共 contract 对待：
+
+- `ResumePolicy`
+- `ToolExecutionPolicy`
+- `ErrorPolicy`
+
+它们虽然仍处在 `v0` 阶段，但已经承接 runtime 主路径语义，不应被视为可以随意改写的辅助接口。
+
 ---
 
 ## 4. 哪些区域可以继续快一点
@@ -173,13 +186,14 @@
 
 如果后续继续沿独立包方向演进，建议团队按下面的规则看待改动。
 
-### 5.1 先问三个问题
+### 5.1 先问四个问题
 
 每个改动先判断：
 
 1. 它是 core contract 变更，还是 default implementation 变更
 2. 它会不会改变 transcript / resume / authority 语义
 3. 它能不能通过新增 optional surface 完成，而不是破坏已有 surface
+4. 它会不会改变 policy 和 hook 之间已经形成的边界
 
 ### 5.2 默认优先 additive
 

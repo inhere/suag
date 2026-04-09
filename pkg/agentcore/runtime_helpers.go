@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/inhere/axon/pkg/agentcore/files"
@@ -56,6 +55,27 @@ func defaultPromptBuilder(builder PromptBuilder) PromptBuilder {
 	return defaultStaticPromptBuilder{}
 }
 
+func defaultResumePolicy(policy ResumePolicy) ResumePolicy {
+	if policy != nil {
+		return policy
+	}
+	return DefaultResumePolicy{}
+}
+
+func defaultToolExecutionPolicy(policy ToolExecutionPolicy, maxCallsPerStep int) ToolExecutionPolicy {
+	if policy != nil {
+		return policy
+	}
+	return DefaultToolExecutionPolicy{MaxCallsPerStep: maxCallsPerStep}
+}
+
+func defaultErrorPolicy(policy ErrorPolicy) ErrorPolicy {
+	if policy != nil {
+		return policy
+	}
+	return DefaultErrorPolicy{}
+}
+
 func defaultContextBuilder(memory Memory) ContextBuilder {
 	return defaultContextBuilderImpl{memory: memory}
 }
@@ -66,19 +86,6 @@ func newRunState(runID string, input RunInput) *RunState {
 		AgentID:  input.AgentID,
 		Status:   RunRunning,
 		Metadata: cloneMetadata(input.Metadata),
-	}
-}
-
-func shouldAppendInstruction(input RunInput) bool {
-	switch input.ResumeMode {
-	case ResumeFromState:
-		return false
-	case ResumeWithInput:
-		return true
-	case ResumeAuto, "":
-		return strings.TrimSpace(input.Instruction) != ""
-	default:
-		return strings.TrimSpace(input.Instruction) != ""
 	}
 }
 
@@ -233,6 +240,17 @@ func cloneToolCallValue(call *ToolCall) *ToolCall {
 	return &cloned
 }
 
+func cloneToolCallsValue(calls []ToolCall) []ToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	cloned := make([]ToolCall, len(calls))
+	for i := range calls {
+		cloned[i] = *cloneToolCallValue(&calls[i])
+	}
+	return cloned
+}
+
 func cloneToolResultValue(result *ToolResult) *ToolResult {
 	if result == nil {
 		return nil
@@ -286,6 +304,19 @@ func cloneGenerateResultValue(result *GenerateResult) *GenerateResult {
 		copy(cloned.Artifacts, result.Artifacts)
 	}
 	cloned.Metadata = cloneMetadata(result.Metadata)
+	return &cloned
+}
+
+func cloneRunResultValue(result *RunResult) *RunResult {
+	if result == nil {
+		return nil
+	}
+	cloned := *result
+	if result.Yield != nil {
+		yield := *result.Yield
+		yield.Metadata = cloneMetadata(result.Yield.Metadata)
+		cloned.Yield = &yield
+	}
 	return &cloned
 }
 

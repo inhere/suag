@@ -154,6 +154,13 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 如果你把这三种入口在 host 层区分清楚，整个 runtime 语义会干净很多。
 
+如果你的 host 还需要稳定控制恢复、tool loop 或 recoverable error 语义，推荐再进一步：
+
+- host 负责决定产品流程
+- `ResumePolicy` / `ToolExecutionPolicy` / `ErrorPolicy` 负责承接 runtime 主路径决策
+
+而不是把这些逻辑散落到每个 handler 或 hook 里。
+
 ---
 
 ## 5. Streaming 应该怎么接到 Host
@@ -223,6 +230,10 @@ return nil
 - `yield` 是 runtime outcome
 - 不是 provider error
 - 也不是 host 失败
+
+如果你想直接看一个更贴近宿主包装方式、并且显式接入三类 policy 的示例，继续看：
+
+- [../examples/policyhost/main.go](../examples/policyhost/main.go)
 
 ---
 

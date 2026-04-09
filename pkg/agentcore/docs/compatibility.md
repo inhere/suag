@@ -73,7 +73,21 @@
 
 这些接口本身仍然可以继续微调，但不应该轻易做“重命名级别”或“职责重写级别”的大改。
 
-### 2.4 Error Categories
+### 2.4 Runtime Policy Contracts
+
+- `ResumePolicy`
+- `ToolExecutionPolicy`
+- `ErrorPolicy`
+
+这三类 policy 当前已经不只是“可选小接口”，而是 runtime kernel 主路径语义的一部分。
+
+它们值得被视为对外公共面，原因是：
+
+- 它们已经覆盖恢复、tool loop、recoverable error 三个关键策略域
+- 默认实现已经有测试回归基线
+- embedding host 很可能围绕它们做正式定制
+
+### 2.5 Error Categories
 
 - `ProviderError`
 - `ToolError`
@@ -181,6 +195,17 @@ internal adapter 如何组织、如何放在仓库级位置，目前也仍然可
 
 后续如果继续增强 streaming，也不应轻易破坏这组规则。
 
+### 4.6 Policy / Hook Boundary
+
+下面这组分工当前也已经开始形成稳定预期：
+
+- `Policy`
+  承担主路径决策
+- `Hook`
+  承担观察、注入和局部拦截
+
+后续如果继续演进，也不应再让核心默认语义不断回流到 hook 协议里。
+
 ---
 
 ## 5. 推荐的兼容性策略
@@ -229,6 +254,7 @@ internal adapter 如何组织、如何放在仓库级位置，目前也仍然可
 - `RunInput` / `RunState` / `RunResult` 是否有不必要的仓库私有语义
 - 扩展接口职责是否清晰
 - 错误分类是否足够稳定
+- runtime policy contract 是否仍然小而明确
 
 ### 6.2 Boundary Check
 

@@ -86,6 +86,9 @@
 
 - 稳定 `RunInput -> RunResult` 执行入口
 - `RunID + ResumeMode` 恢复模型
+- `ResumePolicy` 可扩展恢复策略入口
+- `ToolExecutionPolicy` 可扩展 tool loop 策略入口
+- `ErrorPolicy` 可扩展 recoverable error 策略入口
 - append-only transcript 与 run snapshot
 - tool loop 与 authority transcript 持久化
 - provider、storage、memory、tools、prompt、context、hooks 的公共扩展面
@@ -399,6 +402,24 @@ builder := prompt.Layered(prompt.Config{
 - 想“严格从暂停点继续” -> `ResumeFromState`
 - 想“继续执行前追加一条新的人工输入” -> `ResumeWithInput`
 - 想“默认有输入就追加、没输入就直接继续” -> `ResumeAuto`
+
+如果默认恢复语义不够用，runtime 现在也暴露了一个更小的正式扩展点：
+
+```go
+type ResumePolicy interface {
+    AllowResume(ctx context.Context, input RunInput, state *RunState) error
+    ShouldAppendInstruction(input RunInput, state *RunState) bool
+    MergeMetadata(stateMetadata, inputMetadata map[string]any) map[string]any
+}
+```
+
+默认使用 `agentcore.DefaultResumePolicy`，也就是：
+
+- terminal state 不能继续 resume
+- `ResumeMode` 决定是否追加新的 user input
+- 本次输入 metadata 覆盖同名 persisted metadata
+
+这让恢复策略可以走正式 contract，而不必把主路径语义散落到 hooks 里。
 
 ```go
 first, err := runtime.Run(ctx, agentcore.RunInput{
