@@ -203,6 +203,9 @@ type ArtifactContextConfig struct {
 }
 
 func ArtifactsThenRecent(cfg ArtifactContextConfig) agentcore.ContextBuilder
+func DefaultArtifactFormatter(agentcore.Artifact) agentcore.Message
+func CompactArtifactFormatter(agentcore.Artifact) agentcore.Message
+func ArtifactKindFilter(kinds ...string) func(agentcore.Artifact) bool
 ```
 
 这里刻意使用构造函数返回 `agentcore.ContextBuilder`，而不是强调很多 exported struct，原因是：
@@ -217,6 +220,12 @@ func ArtifactsThenRecent(cfg ArtifactContextConfig) agentcore.ContextBuilder
 - `memoryFirstBuilder`
 - `memoryThenRecentBuilder`
 - `artifactsThenRecentBuilder`
+
+同时保留少量第一方 helper，降低最常见接法的样板成本，例如：
+
+- `DefaultArtifactFormatter`
+- `CompactArtifactFormatter`
+- `ArtifactKindFilter`
 
 ---
 

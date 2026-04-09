@@ -2,6 +2,7 @@ package context
 
 import (
 	"context"
+	"strings"
 
 	"github.com/inhere/axon/pkg/agentcore/api"
 )
@@ -74,6 +75,46 @@ func ArtifactsThenRecent(cfg ArtifactContextConfig) api.ContextBuilder {
 		maxMessages: cfg.MaxMessages,
 		filter:      cfg.Filter,
 		formatter:   cfg.Formatter,
+	}
+}
+
+// DefaultArtifactFormatter projects an artifact into a system message and
+// includes inline content when available.
+func DefaultArtifactFormatter(artifact api.Artifact) api.Message {
+	content := "Artifact(" + artifact.Kind + "): " + artifact.URI
+	if artifact.Content != "" {
+		content += "\n" + artifact.Content
+	}
+	return api.Message{
+		Role:    "system",
+		Content: content,
+	}
+}
+
+// CompactArtifactFormatter projects only artifact identity without inline content.
+func CompactArtifactFormatter(artifact api.Artifact) api.Message {
+	return api.Message{
+		Role:    "system",
+		Content: "Artifact(" + artifact.Kind + "): " + artifact.URI,
+	}
+}
+
+// ArtifactKindFilter returns a filter that matches only the provided kinds.
+func ArtifactKindFilter(kinds ...string) func(api.Artifact) bool {
+	allowed := make(map[string]struct{}, len(kinds))
+	for _, kind := range kinds {
+		trimmed := strings.TrimSpace(kind)
+		if trimmed == "" {
+			continue
+		}
+		allowed[trimmed] = struct{}{}
+	}
+	return func(artifact api.Artifact) bool {
+		if len(allowed) == 0 {
+			return true
+		}
+		_, ok := allowed[artifact.Kind]
+		return ok
 	}
 }
 
@@ -179,14 +220,7 @@ func (b artifactsThenRecentBuilder) formatArtifact(artifact api.Artifact) api.Me
 	if b.formatter != nil {
 		return b.formatter(cloneArtifact(artifact))
 	}
-	content := "Artifact(" + artifact.Kind + "): " + artifact.URI
-	if artifact.Content != "" {
-		content += "\n" + artifact.Content
-	}
-	return api.Message{
-		Role:    "system",
-		Content: content,
-	}
+	return DefaultArtifactFormatter(artifact)
 }
 
 func cloneArtifact(artifact api.Artifact) api.Artifact {

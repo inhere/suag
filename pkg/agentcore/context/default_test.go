@@ -301,6 +301,47 @@ func TestArtifactsThenRecent_UsesCustomFormatterAndReturnsCopies(t *testing.T) {
 	}
 }
 
+func TestDefaultArtifactFormatter_IncludesContent(t *testing.T) {
+	msg := builderctx.DefaultArtifactFormatter(agentcore.Artifact{
+		Kind:    "file",
+		URI:     "artifact://report.txt",
+		Content: "report body",
+	})
+
+	if msg.Role != "system" {
+		t.Fatalf("expected system role, got %#v", msg)
+	}
+	if msg.Content != "Artifact(file): artifact://report.txt\nreport body" {
+		t.Fatalf("unexpected formatted content: %#v", msg)
+	}
+}
+
+func TestCompactArtifactFormatter_OmitsContent(t *testing.T) {
+	msg := builderctx.CompactArtifactFormatter(agentcore.Artifact{
+		Kind:    "file",
+		URI:     "artifact://report.txt",
+		Content: "report body",
+	})
+
+	if msg.Content != "Artifact(file): artifact://report.txt" {
+		t.Fatalf("expected compact formatter to omit artifact content, got %#v", msg)
+	}
+}
+
+func TestArtifactKindFilter_MatchesConfiguredKinds(t *testing.T) {
+	filter := builderctx.ArtifactKindFilter("file", "text")
+
+	if !filter(agentcore.Artifact{Kind: "file"}) {
+		t.Fatal("expected file artifact to match filter")
+	}
+	if !filter(agentcore.Artifact{Kind: "text"}) {
+		t.Fatal("expected text artifact to match filter")
+	}
+	if filter(agentcore.Artifact{Kind: "image"}) {
+		t.Fatal("expected image artifact to be filtered out")
+	}
+}
+
 func stateWithMessages(count int) *agentcore.RunState {
 	state := &agentcore.RunState{
 		RunID:    "run-1",
