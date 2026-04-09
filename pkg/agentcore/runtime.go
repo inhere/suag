@@ -166,7 +166,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 			}
 			continue
 		case FinishFinal:
-			result, err := r.persistFinalAnswer(ctx, input, state, res.Content)
+			result, err := r.persistFinalAnswer(ctx, input, state, res)
 			if err != nil {
 				return nil, err
 			}
@@ -511,10 +511,17 @@ func (r *DefaultRuntime) persistToolTranscript(ctx context.Context, state *RunSt
 	return nil, nil, false
 }
 
-func (r *DefaultRuntime) persistFinalAnswer(ctx context.Context, input RunInput, state *RunState, content string) (*RunResult, error) {
+func (r *DefaultRuntime) persistFinalAnswer(ctx context.Context, input RunInput, state *RunState, result *GenerateResult) (*RunResult, error) {
 	preOutputState := cloneRunStateValue(state)
-	assistantMessage := Message{Role: "assistant", Content: content}
+	assistantMessage := Message{
+		Role:     "assistant",
+		Content:  result.Content,
+		Metadata: cloneMetadata(result.Metadata),
+	}
 	state.Messages = append(state.Messages, assistantMessage)
+	if len(result.Artifacts) > 0 {
+		state.Artifacts = append(state.Artifacts, result.Artifacts...)
+	}
 	state.Status = RunCompleted
 	state.LastError = ""
 
@@ -525,7 +532,7 @@ func (r *DefaultRuntime) persistFinalAnswer(ctx context.Context, input RunInput,
 	return &RunResult{
 		RunID:  state.RunID,
 		Status: RunCompleted,
-		Output: content,
+		Output: result.Content,
 		Steps:  state.Step,
 		Usage:  state.Usage,
 	}, nil

@@ -290,6 +290,14 @@ func TestRuntime_Run_PersistOutputObserveFailureKeepsAuthorityAligned(t *testing
 		results: []*GenerateResult{{
 			Content:      "final answer that should remain authoritative",
 			FinishReason: FinishFinal,
+			Artifacts: []Artifact{{
+				Kind: "file",
+				URI:  "artifact://final-authority.txt",
+			}},
+			Metadata: map[string]any{
+				"provider": "mock",
+				"reason":   "authority",
+			},
 		}},
 	}
 
@@ -321,8 +329,17 @@ func TestRuntime_Run_PersistOutputObserveFailureKeepsAuthorityAligned(t *testing
 	if len(saved.Messages) != 2 || saved.Messages[1].Role != "assistant" || saved.Messages[1].Content != "final answer that should remain authoritative" {
 		t.Fatalf("expected failed snapshot to keep final authoritative answer, got %#v", saved.Messages)
 	}
+	if saved.Messages[1].Metadata["provider"] != "mock" || saved.Messages[1].Metadata["reason"] != "authority" {
+		t.Fatalf("expected failed snapshot to keep final message metadata, got %#v", saved.Messages[1].Metadata)
+	}
+	if len(saved.Artifacts) != 1 || saved.Artifacts[0].URI != "artifact://final-authority.txt" {
+		t.Fatalf("expected failed snapshot to keep final artifacts, got %#v", saved)
+	}
 	if len(store.messages["run-memory-observe-output-fail"]) != 2 || store.messages["run-memory-observe-output-fail"][1].Content != "final answer that should remain authoritative" {
 		t.Fatalf("expected authority log to keep final assistant output, got %#v", store.messages["run-memory-observe-output-fail"])
+	}
+	if store.messages["run-memory-observe-output-fail"][1].Metadata["provider"] != "mock" || store.messages["run-memory-observe-output-fail"][1].Metadata["reason"] != "authority" {
+		t.Fatalf("expected authority log to keep final message metadata, got %#v", store.messages["run-memory-observe-output-fail"][1].Metadata)
 	}
 }
 

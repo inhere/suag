@@ -139,6 +139,22 @@ type Provider interface {
 - 包一层现有内部 LLM SDK
 - 在 provider 层做路由、审计、限流或重试
 
+`GenerateResult` 里的几个字段，推荐按 authority 边界这样理解：
+
+- `Content`
+  最终 assistant completion 的正文
+- `Artifacts`
+  这次 completion 产出的附属结果；runtime 会把它们追加到 `RunState.Artifacts`
+- `Metadata`
+  这次 completion 自身的事实元数据；runtime 会把它写到最终 assistant message 的 `Message.Metadata`
+
+也就是说：
+
+- `RunState.Metadata` 更适合 run-level / host-level 状态
+- `GenerateResult.Metadata` 更适合 completion-level 事实
+
+不要默认把 provider 返回的 final metadata 直接并入 `RunState.Metadata`，否则容易把一次 completion 的局部事实污染成整个 run 的长期状态。
+
 ## 4. Storage
 
 `Storage` 是 authority layer，负责保存：

@@ -298,6 +298,92 @@ func TestRuntime_Run_ToolArtifactsPersisted(t *testing.T) {
 	}
 }
 
+func TestRuntime_Run_FinalArtifactsPersistedOnRunState(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done",
+			FinishReason: FinishFinal,
+			Artifacts: []Artifact{{
+				Kind: "file",
+				URI:  "artifact://final-report.txt",
+			}},
+		}},
+	}
+
+	result, err := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+	}).Run(context.Background(), RunInput{
+		RunID:       "run-final-artifacts",
+		AgentID:     "agent-1",
+		Instruction: "produce final artifact",
+	})
+	if err != nil {
+		t.Fatalf("expected final artifact run to succeed, got %v", err)
+	}
+	if result.Status != RunCompleted || result.Output != "done" {
+		t.Fatalf("expected completed final result, got %#v", result)
+	}
+	saved := store.runs["run-final-artifacts"]
+	if saved == nil || len(saved.Artifacts) != 1 || saved.Artifacts[0].URI != "artifact://final-report.txt" {
+		t.Fatalf("expected final artifacts to be persisted on run state, got %#v", saved)
+	}
+}
+
+func TestRuntime_Run_FinalMetadataPersistedOnAssistantMessage(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done",
+			FinishReason: FinishFinal,
+			Metadata: map[string]any{
+				"provider": "mock",
+				"reason":   "final_authority",
+			},
+		}},
+	}
+
+	result, err := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+	}).Run(context.Background(), RunInput{
+		RunID:       "run-final-metadata",
+		AgentID:     "agent-1",
+		Instruction: "produce final metadata",
+	})
+	if err != nil {
+		t.Fatalf("expected final metadata run to succeed, got %v", err)
+	}
+	if result.Status != RunCompleted || result.Output != "done" {
+		t.Fatalf("expected completed final result, got %#v", result)
+	}
+	persisted := store.messages["run-final-metadata"]
+	if len(persisted) != 2 {
+		t.Fatalf("expected user and final assistant messages, got %#v", persisted)
+	}
+	finalMsg := persisted[1]
+	if finalMsg.Role != "assistant" || finalMsg.Content != "done" {
+		t.Fatalf("expected final assistant authority message, got %#v", finalMsg)
+	}
+	if finalMsg.Metadata["provider"] != "mock" || finalMsg.Metadata["reason"] != "final_authority" {
+		t.Fatalf("expected final message metadata to remain authoritative, got %#v", finalMsg.Metadata)
+	}
+	saved := store.runs["run-final-metadata"]
+	if saved == nil {
+		t.Fatal("expected saved run state after final metadata result")
+	}
+	if len(saved.Metadata) != 0 {
+		t.Fatalf("expected final result metadata not to overwrite run metadata, got %#v", saved.Metadata)
+	}
+}
+
 func TestRuntime_Run_AfterToolRunsBeforeSuccessfulToolPersist(t *testing.T) {
 	store := newRuntimeTestStorage()
 	afterToolObserved := false
