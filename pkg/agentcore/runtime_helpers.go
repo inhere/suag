@@ -256,12 +256,25 @@ func cloneToolResultValue(result *ToolResult) *ToolResult {
 		return nil
 	}
 	cloned := *result
-	if len(result.Artifacts) > 0 {
-		cloned.Artifacts = make([]Artifact, len(result.Artifacts))
-		copy(cloned.Artifacts, result.Artifacts)
-	}
+	cloned.Artifacts = cloneArtifactsValue(result.Artifacts)
 	cloned.Metadata = cloneMetadata(result.Metadata)
 	return &cloned
+}
+
+func cloneArtifactsValue(artifacts []Artifact) []Artifact {
+	if len(artifacts) == 0 {
+		return nil
+	}
+	cloned := make([]Artifact, len(artifacts))
+	for i, artifact := range artifacts {
+		cloned[i] = Artifact{
+			Kind:     artifact.Kind,
+			URI:      artifact.URI,
+			Content:  artifact.Content,
+			Metadata: cloneMetadata(artifact.Metadata),
+		}
+	}
+	return cloned
 }
 
 func cloneGenerateRequestValue(req *GenerateRequest) *GenerateRequest {
@@ -300,8 +313,7 @@ func cloneGenerateResultValue(result *GenerateResult) *GenerateResult {
 		}
 	}
 	if len(result.Artifacts) > 0 {
-		cloned.Artifacts = make([]Artifact, len(result.Artifacts))
-		copy(cloned.Artifacts, result.Artifacts)
+		cloned.Artifacts = cloneArtifactsValue(result.Artifacts)
 	}
 	cloned.Metadata = cloneMetadata(result.Metadata)
 	return &cloned

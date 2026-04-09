@@ -20,6 +20,7 @@ const (
 	messagesFileName = "messages.jsonl"
 	metaFileName     = "meta.json"
 	artifactsDirName = "artifacts"
+	artifactsFileName = "index.json"
 )
 
 // Storage persists run state snapshots and append-only message history on disk.
@@ -149,6 +150,46 @@ func (s *Storage) AppendMessages(_ context.Context, runID string, msgs ...api.Me
 	return nil
 }
 
+// SaveArtifacts persists the latest artifact index for a run.
+func (s *Storage) SaveArtifacts(_ context.Context, runID string, artifacts []api.Artifact) error {
+	if err := s.validateRunID(runID); err != nil {
+		return err
+	}
+	if err := s.ensureLayout(runID); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(artifacts, "", "  ")
+	if err != nil {
+		return s.wrapError("encode artifacts index", runID, err)
+	}
+	if err := s.writeFileAtomically(runID, s.artifactsPath(runID), data, 0o644); err != nil {
+		return err
+	}
+	return nil
+}
+
+// LoadArtifacts loads the latest artifact index for a run.
+func (s *Storage) LoadArtifacts(_ context.Context, runID string) ([]api.Artifact, error) {
+	if err := s.validateRunID(runID); err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(s.artifactsPath(runID))
+	if err != nil {
+		return nil, s.wrapError("load artifacts index", runID, err)
+	}
+
+	var artifacts []api.Artifact
+	if err := json.Unmarshal(data, &artifacts); err != nil {
+		return nil, s.wrapError("decode artifacts index", runID, err)
+	}
+	if artifacts == nil {
+		return []api.Artifact{}, nil
+	}
+	return artifacts, nil
+}
+
 func (s *Storage) ensureLayout(runID string) error {
 	runDir := s.runDir(runID)
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
@@ -160,6 +201,9 @@ func (s *Storage) ensureLayout(runID string) error {
 	if err := s.ensureJSONFile(runID, s.metaPath(runID)); err != nil {
 		return err
 	}
+	if err := s.ensureJSONFileWithContents(runID, s.artifactsPath(runID), []byte("[]\n")); err != nil {
+		return err
+	}
 	if err := s.ensureFile(runID, s.messagesPath(runID)); err != nil {
 		return err
 	}
@@ -167,13 +211,17 @@ func (s *Storage) ensureLayout(runID string) error {
 }
 
 func (s *Storage) ensureJSONFile(runID, path string) error {
+	return s.ensureJSONFileWithContents(runID, path, []byte("{}\n"))
+}
+
+func (s *Storage) ensureJSONFileWithContents(runID, path string, contents []byte) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return s.wrapError("stat file", runID, err)
 	}
 
-	if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, contents, 0o644); err != nil {
 		return s.wrapError("initialize file", runID, err)
 	}
 	return nil
@@ -263,6 +311,10 @@ func (s *Storage) messagesPath(runID string) string {
 
 func (s *Storage) metaPath(runID string) string {
 	return filepath.Join(s.runDir(runID), metaFileName)
+}
+
+func (s *Storage) artifactsPath(runID string) string {
+	return filepath.Join(s.runDir(runID), artifactsDirName, artifactsFileName)
 }
 
 func (s *Storage) wrapError(action, runID string, err error) error {

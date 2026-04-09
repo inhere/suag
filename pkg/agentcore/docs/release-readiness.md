@@ -184,6 +184,29 @@
 - 是否优先覆盖 authority 风险最高的接口
 - 是否避免把内部测试工具直接暴露成外部 API
 
+### 2.6.1 Storage Optional Capabilities
+
+状态：`Next kernel growth point`
+
+范围：
+
+- artifact store / replay
+- checkpoint / listing / transactional capability
+- 不膨胀主 `Storage` 接口的可选能力层
+
+当前判断：
+
+- `Storage` 主接口现在是合适的最小 authority contract
+- 但 artifact 已经进入 `RunState` 与 completion authority，说明这条线需要更完整的 persistence story
+- 更合理的方向不是直接把主接口做大，而是引入 additive optional capability
+- 当前第一方 `files` 实现已经开始提供 artifact persistence / replay 的 capability 示例
+
+发布前检查：
+
+- optional capability 是否没有反向污染主 `Storage` contract
+- runtime 在 capability 缺失时是否仍保持当前最小语义
+- files 等第一方实现是否能作为清晰示范实现
+
 ### 2.7 First-Party Host Conformance
 
 状态：`Important before calling contracts host-ready`

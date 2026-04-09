@@ -341,6 +341,49 @@ func TestStorageLoadMessagesWrapsDecodeErrorsWithLineNumbers(t *testing.T) {
 	}
 }
 
+func TestStorageSaveAndLoadArtifactsRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store := files.NewStorage(root)
+	artifacts := []agentcore.Artifact{{
+		Kind:    "file",
+		URI:     "artifact://report.txt",
+		Content: "report body",
+		Metadata: map[string]any{
+			"source": "tool",
+		},
+	}}
+
+	if err := store.SaveArtifacts(context.Background(), "run-artifacts", artifacts); err != nil {
+		t.Fatalf("expected artifact save to succeed, got %v", err)
+	}
+
+	got, err := store.LoadArtifacts(context.Background(), "run-artifacts")
+	if err != nil {
+		t.Fatalf("expected artifact load to succeed, got %v", err)
+	}
+	if len(got) != 1 || got[0].URI != "artifact://report.txt" || got[0].Content != "report body" {
+		t.Fatalf("expected artifact round-trip, got %#v", got)
+	}
+	if got[0].Metadata["source"] != "tool" {
+		t.Fatalf("expected artifact metadata round-trip, got %#v", got[0].Metadata)
+	}
+}
+
+func TestStorageLoadArtifactsMissingRunReturnsWrappedNotExist(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store := files.NewStorage(root)
+
+	_, err := store.LoadArtifacts(context.Background(), "missing-artifacts")
+	assertStorageError(t, err)
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected missing artifacts to wrap os.ErrNotExist, got %v", err)
+	}
+}
+
 func assertStorageError(t *testing.T, err error) {
 	t.Helper()
 

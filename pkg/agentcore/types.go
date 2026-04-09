@@ -92,6 +92,7 @@ func (noopMemory) BuildContext(_ context.Context, state *RunState) ([]Message, e
 // ---------------- Storage ----------------
 
 type Storage = api.Storage
+type ArtifactStorage = api.ArtifactStorage
 
 // FileStorage is kept as a compatibility alias for the first-party filesystem storage.
 type FileStorage = files.Storage

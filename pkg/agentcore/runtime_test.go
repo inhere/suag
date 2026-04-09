@@ -372,19 +372,25 @@ func (t *runtimeTestTool) Execute(_ context.Context, call ToolCall) (*ToolResult
 type runtimeTestStorage struct {
 	runs            map[string]*RunState
 	messages        map[string][]Message
+	artifacts       map[string][]Artifact
 	loadRunErr      error
 	loadMsgsErr     error
 	saveRunErr      error
 	appendErr       error
+	artifactLoadErr error
+	artifactSaveErr error
 	appendErrOnCall int
 	appendCalls     int
+	artifactLoadCalls int
+	artifactSaveCalls int
 	appendHook      func(string, []Message)
 }
 
 func newRuntimeTestStorage() *runtimeTestStorage {
 	return &runtimeTestStorage{
-		runs:     make(map[string]*RunState),
-		messages: make(map[string][]Message),
+		runs:      make(map[string]*RunState),
+		messages:  make(map[string][]Message),
+		artifacts: make(map[string][]Artifact),
 	}
 }
 
@@ -426,6 +432,26 @@ func (s *runtimeTestStorage) AppendMessages(_ context.Context, runID string, msg
 	}
 	s.messages[runID] = append(s.messages[runID], cloneMessages(msgs)...)
 	return nil
+}
+
+func (s *runtimeTestStorage) SaveArtifacts(_ context.Context, runID string, artifacts []Artifact) error {
+	s.artifactSaveCalls++
+	if s.artifactSaveErr != nil {
+		return s.artifactSaveErr
+	}
+	s.artifacts[runID] = append([]Artifact(nil), artifacts...)
+	return nil
+}
+
+func (s *runtimeTestStorage) LoadArtifacts(_ context.Context, runID string) ([]Artifact, error) {
+	s.artifactLoadCalls++
+	if s.artifactLoadErr != nil {
+		return nil, s.artifactLoadErr
+	}
+	if artifacts, ok := s.artifacts[runID]; ok {
+		return append([]Artifact(nil), artifacts...), nil
+	}
+	return nil, os.ErrNotExist
 }
 
 type runtimeTestHook struct {

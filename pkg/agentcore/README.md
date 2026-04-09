@@ -198,6 +198,11 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 这两个层次可以使用同一个底层系统，也可以完全分离，但语义上不应混为一谈。
 
+如果你需要在 host 或调试工具里直接读取某次 run 的 authority 视图，而不想自己拼接 snapshot、messages 和可选 artifact capability，当前可以直接使用：
+
+- `agentcore.LoadRunAuthority(ctx, store, runID)`
+- `agentcore.LoadAuthorityBundle(ctx, store, runID)`
+
 ## Default Building Blocks
 
 `agentcore` 自己只带少量默认构件，用来帮助你以较低成本起步：

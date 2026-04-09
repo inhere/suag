@@ -384,6 +384,44 @@ func TestRuntime_Run_FinalMetadataPersistedOnAssistantMessage(t *testing.T) {
 	}
 }
 
+func TestRuntime_Run_PersistsArtifactsToOptionalArtifactStorage(t *testing.T) {
+	store := newRuntimeTestStorage()
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done",
+			FinishReason: FinishFinal,
+			Artifacts: []Artifact{{
+				Kind: "file",
+				URI:  "artifact://optional-store.txt",
+			}},
+		}},
+	}
+
+	result, err := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+	}).Run(context.Background(), RunInput{
+		RunID:       "run-artifact-capability-save",
+		AgentID:     "agent-1",
+		Instruction: "persist artifact through capability",
+	})
+	if err != nil {
+		t.Fatalf("expected run with artifact capability to succeed, got %v", err)
+	}
+	if result.Status != RunCompleted {
+		t.Fatalf("expected completed result, got %#v", result)
+	}
+	if store.artifactSaveCalls != 2 {
+		t.Fatalf("expected artifact capability to be updated on each save, got %d calls", store.artifactSaveCalls)
+	}
+	if len(store.artifacts["run-artifact-capability-save"]) != 1 || store.artifacts["run-artifact-capability-save"][0].URI != "artifact://optional-store.txt" {
+		t.Fatalf("expected artifact capability store to receive final artifacts, got %#v", store.artifacts["run-artifact-capability-save"])
+	}
+}
+
 func TestRuntime_Run_AfterToolRunsBeforeSuccessfulToolPersist(t *testing.T) {
 	store := newRuntimeTestStorage()
 	afterToolObserved := false

@@ -231,24 +231,16 @@ func (r *DefaultRuntime) prepareState(ctx context.Context, input RunInput) (*Run
 		return newRunState(runID, input), true, nil
 	}
 
-	loaded, err := r.storage.LoadRun(ctx, runID)
+	state, err := LoadRunAuthority(ctx, r.storage, runID)
 	if err != nil {
 		if isStorageMiss(err) {
 			return newRunState(runID, input), true, nil
 		}
-		return nil, false, wrapStorageError(err)
+		return nil, false, err
 	}
-	if loaded == nil {
+	if state == nil {
 		return newRunState(runID, input), true, nil
 	}
-
-	messages, err := r.storage.LoadMessages(ctx, runID)
-	if err != nil {
-		return nil, false, wrapStorageError(err)
-	}
-
-	state := cloneRunStateValue(loaded)
-	state.Messages = messages
 
 	if err := r.resumePolicy.AllowResume(ctx, input, state); err != nil {
 		return nil, false, err
@@ -392,6 +384,11 @@ func (r *DefaultRuntime) invokeProvider(ctx context.Context, req *GenerateReques
 func (r *DefaultRuntime) saveState(ctx context.Context, state *RunState, messages []Message) error {
 	if err := r.storage.SaveRun(ctx, state); err != nil {
 		return wrapStorageError(err)
+	}
+	if artifactStore, ok := r.storage.(ArtifactStorage); ok {
+		if err := artifactStore.SaveArtifacts(ctx, state.RunID, state.Artifacts); err != nil {
+			return wrapStorageError(err)
+		}
 	}
 	if len(messages) == 0 {
 		return nil

@@ -177,6 +177,79 @@ type Storage interface {
 - `AppendMessages` 保持 append 语义，不要做覆盖
 - 即使底层用同一张表或同一份文件，也不要把 snapshot 和 transcript 混成一个公共对象
 
+如果你需要比最小 `Storage` 更多的能力，推荐沿 optional capability 增长，而不是直接把主接口做大。
+
+下一阶段最值得优先考虑的一类可选能力是 artifact persistence / replay：
+
+```go
+type ArtifactStorage interface {
+	SaveArtifacts(ctx context.Context, runID string, artifacts []Artifact) error
+	LoadArtifacts(ctx context.Context, runID string) ([]Artifact, error)
+}
+```
+
+推荐理解方式：
+
+- `Storage`
+  继续承接最小 authority contract
+- `ArtifactStorage`
+  承接 artifact 这类 additive capability
+
+这样做的目的不是把 artifact 从 authority 层剥离出去，而是：
+
+- 不让主 `Storage` 接口过早膨胀
+- 让 runtime 能在支持该 capability 时做 artifact replay / lookup
+- 保持 files / db / remote store 等不同实现的增长路径一致
+
+当前更推荐的边界是：
+
+- artifact persistence / replay 更接近 `Storage` optional capability
+- artifact-to-context 是否注入模型上下文，仍属于 `Memory` / `ContextBuilder` 决策
+
+当前第一方 `files` 实现已经可以作为这个 capability 的最小示范：
+
+- runtime 持久化 `RunState` 时，会在检测到 `ArtifactStorage` 时同步保存 artifacts
+- runtime 恢复 run 时，会优先从该 capability 重新载入 artifacts
+- capability 缺失时，runtime 仍保持当前最小语义，不要求所有 `Storage` 实现都支持 artifact replay
+
+如果 host / context layer 想直接拿到同一套 authority 视图，而不是自己分别调用 `LoadRun`、`LoadMessages` 和 `LoadArtifacts` 再手动拼装，当前也可以直接复用：
+
+```go
+state, err := agentcore.LoadRunAuthority(ctx, store, runID)
+```
+
+这个 helper 的语义是：
+
+- 以 snapshot 作为 run-level 基础
+- 以 append-only messages 作为 authoritative transcript
+- 在存在 `ArtifactStorage` 时，用 capability 层重建 artifacts
+
+如果你希望显式区分这三部分，而不是直接拿一个已经 hydrate 完成的 `RunState`，也可以使用：
+
+```go
+bundle, err := agentcore.LoadAuthorityBundle(ctx, store, runID)
+state := bundle.HydratedState()
+```
+
+推荐理解：
+
+- `LoadAuthorityBundle`
+  适合 host / debug / custom context 侧按部分消费 authority 数据
+- `LoadRunAuthority`
+  适合想直接复用官方 hydrate 规则、拿一份完整 `RunState` 的场景
+
+当前 `AuthorityBundle` 也开始提供少量只读 helper，帮助 host 避免重复写样板查询逻辑，例如：
+
+- `LastAssistantMessage()`
+- `ToolMessages()`
+- `FindArtifactByURI(uri)`
+
+这类 helper 的设计目标是：
+
+- 只服务 authority 读取
+- 返回 clone 结果，避免外部修改底层 authority 视图
+- 不把它演进成大而全查询框架
+
 ## 5. Memory
 
 `Memory` 是上下文派生层，不是 authority transcript。

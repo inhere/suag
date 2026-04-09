@@ -969,6 +969,68 @@ func TestRuntime_Run_ResumePreservesMutatedToolResultMetadataAndArtifacts(t *tes
 	}
 }
 
+func TestRuntime_Run_ResumeLoadsArtifactsFromOptionalArtifactStorage(t *testing.T) {
+	runID := "run-resume-artifact-capability"
+	store := newRuntimeTestStorage()
+	store.runs[runID] = &RunState{
+		RunID:   runID,
+		AgentID: "agent-1",
+		Status:  RunYielded,
+		Step:    1,
+	}
+	store.messages[runID] = []Message{
+		{Role: "user", Content: "persisted question"},
+		{
+			Role: "tool",
+			Content: "tool-output",
+			ToolCall: &ToolCall{
+				CallID: "call-1",
+				Name:   "lookup",
+			},
+			ToolResult: &ToolResult{
+				CallID:  "call-1",
+				Name:    "lookup",
+				Content: "tool-output",
+			},
+		},
+	}
+	store.artifacts[runID] = []Artifact{{
+		Kind: "file",
+		URI:  "artifact://from-capability.txt",
+	}}
+
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content:      "done",
+			FinishReason: FinishFinal,
+		}},
+	}
+
+	result, err := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          NewToolRegistry(),
+		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
+		ContextBuilder: runtimeTestContextBuilder{},
+	}).Run(context.Background(), RunInput{
+		RunID:      runID,
+		ResumeMode: ResumeFromState,
+	})
+	if err != nil {
+		t.Fatalf("expected resumed run with artifact capability to complete, got %v", err)
+	}
+	if result.Status != RunCompleted || result.Output != "done" {
+		t.Fatalf("expected completed resumed result, got %#v", result)
+	}
+	if store.artifactLoadCalls != 1 {
+		t.Fatalf("expected runtime to load artifacts from capability on resume, got %d calls", store.artifactLoadCalls)
+	}
+	saved := store.runs[runID]
+	if saved == nil || len(saved.Artifacts) != 1 || saved.Artifacts[0].URI != "artifact://from-capability.txt" {
+		t.Fatalf("expected saved state to hydrate artifacts from capability, got %#v", saved)
+	}
+}
+
 func TestRuntime_Run_ResumeFromOnErrorYieldReusesAuthoritativeTranscript(t *testing.T) {
 	store := newRuntimeTestStorage()
 	firstProvider := &runtimeTestProvider{

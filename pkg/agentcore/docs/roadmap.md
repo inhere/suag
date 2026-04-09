@@ -438,6 +438,25 @@ Hooks 继续是关键扩展机制，但需要避免两种风险：
 - artifact recall 是否属于 memory
 - artifact 注入 context 的权责边界在哪里
 
+当前更推荐的收敛方向是：
+
+- 保持主 `Storage` 接口最小不变
+- 通过 optional capability 增长 artifact persistence / replay
+- 不把 artifact-to-context 直接塞回 runtime 主流程
+
+也就是说，下一步更像：
+
+- `Storage = authority` 继续成立
+- artifact replay 作为 `Storage` 的可选能力进入 kernel
+- artifact 注入模型上下文仍由 `Memory` / `ContextBuilder` 决定
+
+这样可以先把 artifact 的 authority story 补完整，再继续推进：
+
+- artifact lookup
+- authority helper / hydrated run view
+- artifact-to-context strategy
+- 更强的 parent/child run 关联
+
 ### 7.4 Versioning Policy 何时引入
 
 如果 `agentcore` 真要独立发布，公共 contract 的变更策略会越来越重要。
@@ -453,11 +472,11 @@ Hooks 继续是关键扩展机制，但需要避免两种风险：
 1. 先补 `conformance/testing`
    - 先做 `Storage` / `ToolRegistry` contract tests
    - 给外部实现一个真正可复用的兼容验证入口
-2. 再推进 runtime policy promotion
+2. 然后优先扩展 storage optional capabilities
+   - 先做 artifact store / replay
+   - 再看 checkpoint / listing / transactional capability
+3. 再推进 runtime policy promotion
    - 把常见 hook 模式收敛成正式 policy contract
-3. 然后扩展 storage optional capabilities
-   - artifact store
-   - checkpoint / listing / transactional capability
 4. 最后进入 streaming phase 2
    - additive event model
    - 更清晰的 host-facing incremental contract
