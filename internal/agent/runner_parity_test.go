@@ -9,7 +9,9 @@ import (
 	"github.com/inhere/axon/internal/agentcorestorage"
 	"github.com/inhere/axon/internal/hitl"
 	"github.com/inhere/axon/internal/llm"
+	"github.com/inhere/axon/internal/memory"
 	"github.com/inhere/axon/internal/tracing"
+	"github.com/inhere/axon/pkg/agentcore"
 )
 
 type parityRunOutcome struct {
@@ -325,6 +327,161 @@ func TestRunnerParity_MaxStepsExceeded(t *testing.T) {
 	}
 }
 
+func TestRunnerParity_ToolPolicyEscalatesFailure(t *testing.T) {
+	reactMock := llm.NewMockProvider("react").
+		QueueToolCall("fail_tool", nil)
+	coreMock := llm.NewMockProvider("core").
+		QueueToolCall("fail_tool", nil)
+
+	reactAgent := newTestAgent(reactMock, newTestRegistry(&failTool{}))
+	coreAgent := newTestAgent(coreMock, newTestRegistry(&failTool{}))
+
+	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	if err != nil {
+		t.Fatalf("expected sqlite storage to initialize, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	reactRunner := agent.NewReactRunnerWithConfig(reactAgent, agent.ReactRunnerConfig{
+		MaxSteps:            5,
+		Tracer:              tracing.NewInMemoryTracer(nil),
+		ToolExecutionPolicy: failOnToolErrorPolicy{},
+	})
+	coreRunner := agent.NewAgentcoreRunner(coreAgent, agent.AgentcoreRunnerConfig{
+		Storage:             store,
+		MaxSteps:            5,
+		ToolExecutionPolicy: failOnToolErrorPolicy{},
+	})
+
+	_, reactErr := reactRunner.Run(context.Background(), newTask("tool policy parity"))
+	_, coreErr := coreRunner.Run(context.Background(), newTask("tool policy parity"))
+	if reactErr == nil || coreErr == nil {
+		t.Fatalf("expected both runners to fail, got react=%v agentcore=%v", reactErr, coreErr)
+	}
+	if reactErr.Error() != coreErr.Error() {
+		t.Fatalf("error mismatch: react=%v agentcore=%v", reactErr, coreErr)
+	}
+	if reactRunner.GetState() != coreRunner.GetState() {
+		t.Fatalf("state mismatch: react=%s agentcore=%s", reactRunner.GetState(), coreRunner.GetState())
+	}
+}
+
+func TestRunnerParity_ErrorPolicyYieldsRecoverableFailure(t *testing.T) {
+	reactMock := llm.NewMockProvider("react").QueueError(context.Canceled)
+	coreMock := llm.NewMockProvider("core").QueueError(context.Canceled)
+
+	reactAgent := newTestAgent(reactMock, newTestRegistry())
+	coreAgent := newTestAgent(coreMock, newTestRegistry())
+
+	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	if err != nil {
+		t.Fatalf("expected sqlite storage to initialize, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	reactRunner := agent.NewReactRunnerWithConfig(reactAgent, agent.ReactRunnerConfig{
+		MaxSteps:    5,
+		Tracer:      tracing.NewInMemoryTracer(nil),
+		ErrorPolicy: yieldOnRecoverableErrorPolicy{},
+	})
+	coreRunner := agent.NewAgentcoreRunner(coreAgent, agent.AgentcoreRunnerConfig{
+		Storage:     store,
+		MaxSteps:    5,
+		ErrorPolicy: yieldOnRecoverableErrorPolicy{},
+	})
+
+	reactResult, reactErr := reactRunner.Run(context.Background(), newTask("error policy parity"))
+	coreResult, coreErr := coreRunner.Run(context.Background(), newTask("error policy parity"))
+	if reactErr != nil || coreErr != nil {
+		t.Fatalf("expected both runners to yield via error policy, got react=%v agentcore=%v", reactErr, coreErr)
+	}
+	if reactResult == nil || coreResult == nil {
+		t.Fatalf("expected non-nil yielded results, got react=%#v agentcore=%#v", reactResult, coreResult)
+	}
+	if reactResult.Summary != coreResult.Summary {
+		t.Fatalf("summary mismatch: react=%q agentcore=%q", reactResult.Summary, coreResult.Summary)
+	}
+	if reactRunner.GetState() != coreRunner.GetState() {
+		t.Fatalf("state mismatch: react=%s agentcore=%s", reactRunner.GetState(), coreRunner.GetState())
+	}
+}
+
+func TestRunnerParity_ResumePolicySuppressesResumeInstruction(t *testing.T) {
+	const resumeInstruction = "do not append this instruction"
+
+	reactMock := llm.NewMockProvider("react").QueueText("react done")
+	coreMock := llm.NewMockProvider("core").
+		QueueToolCall("echo", map[string]any{"msg": "persisted"}).
+		QueueText("core done")
+
+	reactAgent := newTestAgent(reactMock, newTestRegistry())
+	coreAgent := newTestAgent(coreMock, newTestRegistry(&coreEchoTool{}))
+
+	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	if err != nil {
+		t.Fatalf("expected sqlite storage to initialize, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	reactAgent.State = agent.AgentRunning
+	reactRunner := agent.NewReactRunnerWithConfig(reactAgent, agent.ReactRunnerConfig{
+		MaxSteps:     5,
+		Tracer:       tracing.NewInMemoryTracer(nil),
+		ResumePolicy: suppressResumeInstructionPolicy{},
+	})
+	if err := reactRunner.Suspend("pause"); err != nil {
+		t.Fatalf("react Suspend() error: %v", err)
+	}
+	if err := reactRunner.Resume(resumeInstruction); err != nil {
+		t.Fatalf("react Resume() error: %v", err)
+	}
+	if reactMessages := reactAgent.Memory.GetMessages(); containsUserInstruction(reactMessages, resumeInstruction) {
+		t.Fatalf("react memory should not include suppressed resume instruction: %#v", reactMessages)
+	}
+
+	hook := &yieldBeforeSecondModelAgentHook{}
+	coreRunner := agent.NewAgentcoreRunner(coreAgent, agent.AgentcoreRunnerConfig{
+		Storage:      store,
+		MaxSteps:     5,
+		ResumePolicy: suppressResumeInstructionPolicy{},
+		Hooks:        []agentcore.Hook{hook},
+	})
+
+	firstCoreResult, err := coreRunner.Run(context.Background(), newTask("core resume parity"))
+	if err != nil {
+		t.Fatalf("agentcore first Run() error: %v", err)
+	}
+	if firstCoreResult == nil || firstCoreResult.Summary != "await_resume" {
+		t.Fatalf("expected agentcore yield before resume, got %#v", firstCoreResult)
+	}
+	if err := coreRunner.Resume(resumeInstruction); err != nil {
+		t.Fatalf("agentcore Resume() error: %v", err)
+	}
+
+	coreResult, err := coreRunner.Run(context.Background(), newTask("core resume parity"))
+	if err != nil {
+		t.Fatalf("agentcore resumed Run() error: %v", err)
+	}
+	if coreResult == nil || coreResult.Output != "core done" {
+		t.Fatalf("unexpected agentcore resumed result: %#v", coreResult)
+	}
+	if coreMessages := coreAgent.Memory.GetMessages(); containsUserInstruction(coreMessages, resumeInstruction) {
+		t.Fatalf("agentcore memory should not include suppressed resume instruction: %#v", coreMessages)
+	}
+	if reactRunner.GetState() != agent.AgentRunning {
+		t.Fatalf("unexpected react state after Resume(): %s", reactRunner.GetState())
+	}
+	if coreRunner.GetState() != agent.AgentCompleted {
+		t.Fatalf("unexpected agentcore state after resumed completion: %s", coreRunner.GetState())
+	}
+}
+
 func assertMemoryTranscriptEqual(t *testing.T, reactAgent, coreAgent *agent.Agent) {
 	t.Helper()
 
@@ -382,4 +539,13 @@ func waitError(t *testing.T, ch <-chan error) error {
 		t.Fatal("timeout waiting for runner error")
 		return nil
 	}
+}
+
+func containsUserInstruction(messages []memory.Message, instruction string) bool {
+	for _, msg := range messages {
+		if msg.Role == "user" && msg.Content == instruction {
+			return true
+		}
+	}
+	return false
 }

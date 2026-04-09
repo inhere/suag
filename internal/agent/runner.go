@@ -10,6 +10,7 @@ import (
 	"github.com/inhere/axon/internal/llm"
 	"github.com/inhere/axon/internal/memory"
 	"github.com/inhere/axon/internal/tracing"
+	"github.com/inhere/axon/pkg/agentcore"
 )
 
 const (
@@ -23,12 +24,26 @@ const (
 // as an explicit fallback path and parity baseline while internal callers
 // finish converging on agentcore.
 type ReactRunner struct {
-	agent      *Agent
-	sm         *stateMachine
-	maxSteps   int
-	failThresh int
-	tracer     tracing.Tracer
-	hitlMgr    hitl.Manager
+	agent               *Agent
+	sm                  *stateMachine
+	maxSteps            int
+	failThresh          int
+	tracer              tracing.Tracer
+	hitlMgr             hitl.Manager
+	resumePolicy        agentcore.ResumePolicy
+	toolExecutionPolicy agentcore.ToolExecutionPolicy
+	errorPolicy         agentcore.ErrorPolicy
+}
+
+// ReactRunnerConfig configures the legacy ReactRunner bridge behavior.
+type ReactRunnerConfig struct {
+	MaxSteps            int
+	FailThreshold       int
+	Tracer              tracing.Tracer
+	HITL                hitl.Manager
+	ResumePolicy        agentcore.ResumePolicy
+	ToolExecutionPolicy agentcore.ToolExecutionPolicy
+	ErrorPolicy         agentcore.ErrorPolicy
 }
 
 // NewReactRunner creates a legacy ReactRunner for the given agent.
@@ -36,14 +51,30 @@ type ReactRunner struct {
 // Deprecated: prefer NewAgentcoreRunner for new integrations. Keep this
 // constructor only for explicit fallback wiring and parity tests.
 func NewReactRunner(a *Agent, maxSteps int, tracer tracing.Tracer, hitlMgr hitl.Manager) *ReactRunner {
-	maxSteps = normalizeMaxSteps(maxSteps)
+	return NewReactRunnerWithConfig(a, ReactRunnerConfig{
+		MaxSteps: maxSteps,
+		Tracer:   tracer,
+		HITL:     hitlMgr,
+	})
+}
+
+// NewReactRunnerWithConfig creates a legacy ReactRunner with optional agentcore-compatible contracts.
+func NewReactRunnerWithConfig(a *Agent, cfg ReactRunnerConfig) *ReactRunner {
+	maxSteps := normalizeMaxSteps(cfg.MaxSteps)
+	failThreshold := cfg.FailThreshold
+	if failThreshold <= 0 {
+		failThreshold = defaultFailThresh
+	}
 	return &ReactRunner{
-		agent:      a,
-		sm:         newStateMachine(a.State),
-		maxSteps:   maxSteps,
-		failThresh: defaultFailThresh,
-		tracer:     tracer,
-		hitlMgr:    hitlMgr,
+		agent:               a,
+		sm:                  newStateMachine(a.State),
+		maxSteps:            maxSteps,
+		failThresh:          failThreshold,
+		tracer:              cfg.Tracer,
+		hitlMgr:             cfg.HITL,
+		resumePolicy:        resolveReactResumePolicy(cfg.ResumePolicy),
+		toolExecutionPolicy: resolveReactToolExecutionPolicy(cfg.ToolExecutionPolicy),
+		errorPolicy:         resolveReactErrorPolicy(cfg.ErrorPolicy),
 	}
 }
 
@@ -69,6 +100,7 @@ func (r *ReactRunner) Run(ctx context.Context, task *Task) (*TaskResult, error) 
 	}
 
 	consecutiveFails := 0
+	lastFailedTool := ""
 
 	for step := 0; step < r.maxSteps; step++ {
 		slog.Debug("react step", "agent", r.agent.ID, "step", step)
@@ -90,6 +122,10 @@ func (r *ReactRunner) Run(ctx context.Context, task *Task) (*TaskResult, error) 
 		})
 		if llmErr != nil {
 			r.tracer.FinishSpan(llmSpan, llmErr)
+			result, handledErr := r.handleRecoverableError(ctx, task, step, "model", &agentcore.ProviderError{Err: llmErr})
+			if result != nil || handledErr != nil {
+				return result, handledErr
+			}
 			return nil, fmt.Errorf("llm call step %d: %w", step, llmErr)
 		}
 		llmSpan.Output = llmResp.Content
@@ -97,9 +133,29 @@ func (r *ReactRunner) Run(ctx context.Context, task *Task) (*TaskResult, error) 
 
 		// ── Tool call branch ──────────────────────────────────────────────────
 		if llmResp.IsToolCall() {
+			if err := r.toolExecutionPolicy.ValidateToolCalls(ctx, r.currentRunState(step), toAgentcoreToolCalls(llmResp.ToolCalls)); err != nil {
+				_ = r.sm.Transition(AgentFailed)
+				r.agent.State = AgentFailed
+				return nil, err
+			}
 			for _, tc := range llmResp.ToolCalls {
 				result, toolErr := r.executeToolCall(ctx, tc)
 				if toolErr != nil {
+					decision := r.toolExecutionPolicy.HandleToolError(ctx, r.currentRunState(step), toAgentcoreToolCall(tc), toolErr)
+					if decision.Fail != nil {
+						_ = r.sm.Transition(AgentFailed)
+						r.agent.State = AgentFailed
+						return nil, decision.Fail
+					}
+
+					errMsg := fmt.Sprintf("tool %q error: %s", tc.Name, toolErr.Error())
+					if decision.Result != nil && strings.TrimSpace(decision.Result.Content) != "" {
+						errMsg = decision.Result.Content
+					}
+					if lastFailedTool != tc.Name {
+						consecutiveFails = 0
+					}
+					lastFailedTool = tc.Name
 					consecutiveFails++
 					slog.Warn("tool call failed",
 						"agent", r.agent.ID,
@@ -108,7 +164,6 @@ func (r *ReactRunner) Run(ctx context.Context, task *Task) (*TaskResult, error) 
 						"consecutive", consecutiveFails,
 					)
 
-					errMsg := fmt.Sprintf("tool %q error: %s", tc.Name, toolErr.Error())
 					r.agent.Memory.AddMessage("tool", errMsg)
 
 					if consecutiveFails >= r.failThresh && r.hitlMgr != nil {
@@ -122,6 +177,7 @@ func (r *ReactRunner) Run(ctx context.Context, task *Task) (*TaskResult, error) 
 					continue
 				}
 				consecutiveFails = 0
+				lastFailedTool = ""
 				r.agent.Memory.AddMessage("tool", result)
 			}
 			continue
@@ -165,11 +221,23 @@ func (r *ReactRunner) Suspend(reason string) error {
 
 // Resume implements Runner.
 func (r *ReactRunner) Resume(instruction string) error {
+	input := agentcore.RunInput{
+		Instruction: instruction,
+		ResumeMode:  agentcore.ResumeFromState,
+	}
+	if strings.TrimSpace(instruction) != "" {
+		input.ResumeMode = agentcore.ResumeWithInput
+	}
+	if err := r.resumePolicy.AllowResume(context.Background(), input, r.currentRunState(0)); err != nil {
+		return err
+	}
 	if err := r.sm.Transition(AgentRunning); err != nil {
 		return err
 	}
 	r.agent.State = AgentRunning
-	r.agent.Memory.AddMessage("system", "[Human instruction]: "+instruction)
+	if r.resumePolicy.ShouldAppendInstruction(input, r.currentRunState(0)) {
+		r.agent.Memory.AddMessage("system", "[Human instruction]: "+instruction)
+	}
 	return nil
 }
 
@@ -207,6 +275,140 @@ func (r *ReactRunner) triggerHITL(ctx context.Context, task *Task, toolName, err
 		return fmt.Errorf("task abandoned by operator: %s", resp.Instruction)
 	default:
 		return r.Resume(resp.Instruction)
+	}
+}
+
+func (r *ReactRunner) handleRecoverableError(ctx context.Context, task *Task, step int, stage string, err error) (*TaskResult, error) {
+	if r == nil {
+		return nil, err
+	}
+	state := r.currentRunState(step)
+	decision := r.errorPolicy.HandleRecoverable(ctx, state, &agentcore.ErrorEvent{
+		RunID:   state.RunID,
+		AgentID: state.AgentID,
+		Stage:   stage,
+		Err:     err,
+	})
+	if decision.Fail != nil {
+		_ = r.sm.Transition(AgentFailed)
+		r.agent.State = AgentFailed
+		return nil, decision.Fail
+	}
+	if decision.Result == nil {
+		return nil, nil
+	}
+	if decision.Result.Status == agentcore.RunYielded {
+		_ = r.sm.Transition(AgentSuspended)
+		r.agent.State = AgentSuspended
+		yieldReason := ""
+		if decision.Result.Yield != nil {
+			yieldReason = decision.Result.Yield.Reason
+		}
+		return &TaskResult{
+			TaskID:  task.ID,
+			Summary: yieldReason,
+			Output:  "",
+		}, nil
+	}
+	if decision.Result.Status == agentcore.RunCompleted {
+		_ = r.sm.Transition(AgentCompleted)
+		r.agent.State = AgentCompleted
+		return &TaskResult{
+			TaskID:  task.ID,
+			Summary: extractSummary(decision.Result.Output),
+			Output:  decision.Result.Output,
+		}, nil
+	}
+	return nil, nil
+}
+
+func (r *ReactRunner) currentRunState(step int) *agentcore.RunState {
+	if r == nil || r.agent == nil {
+		return &agentcore.RunState{}
+	}
+	status := agentcore.RunIdle
+	switch r.GetState() {
+	case AgentRunning:
+		status = agentcore.RunRunning
+	case AgentSuspended:
+		status = agentcore.RunYielded
+	case AgentCompleted:
+		status = agentcore.RunCompleted
+	case AgentFailed:
+		status = agentcore.RunFailed
+	}
+	state := &agentcore.RunState{
+		RunID:   r.agent.ID,
+		AgentID: r.agent.ID,
+		Status:  status,
+		Step:    step,
+	}
+	if r.agent.Memory != nil {
+		msgs := r.agent.Memory.GetMessages()
+		state.Messages = make([]agentcore.Message, 0, len(msgs))
+		for _, msg := range msgs {
+			state.Messages = append(state.Messages, agentcore.Message{
+				Role:    msg.Role,
+				Content: msg.Content,
+			})
+		}
+	}
+	return state
+}
+
+func resolveReactResumePolicy(policy agentcore.ResumePolicy) agentcore.ResumePolicy {
+	if policy != nil {
+		return policy
+	}
+	return agentcore.DefaultResumePolicy{}
+}
+
+func resolveReactToolExecutionPolicy(policy agentcore.ToolExecutionPolicy) agentcore.ToolExecutionPolicy {
+	if policy != nil {
+		return policy
+	}
+	return reactDefaultToolExecutionPolicy{}
+}
+
+func resolveReactErrorPolicy(policy agentcore.ErrorPolicy) agentcore.ErrorPolicy {
+	if policy != nil {
+		return policy
+	}
+	return agentcore.DefaultErrorPolicy{}
+}
+
+func toAgentcoreToolCalls(toolCalls []llm.ToolCall) []agentcore.ToolCall {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+	out := make([]agentcore.ToolCall, 0, len(toolCalls))
+	for _, tc := range toolCalls {
+		out = append(out, toAgentcoreToolCall(tc))
+	}
+	return out
+}
+
+func toAgentcoreToolCall(tc llm.ToolCall) agentcore.ToolCall {
+	return agentcore.ToolCall{
+		CallID:    tc.ID,
+		Name:      tc.Name,
+		Arguments: tc.Arguments,
+	}
+}
+
+type reactDefaultToolExecutionPolicy struct{}
+
+func (reactDefaultToolExecutionPolicy) ValidateToolCalls(context.Context, *agentcore.RunState, []agentcore.ToolCall) error {
+	return nil
+}
+
+func (reactDefaultToolExecutionPolicy) HandleToolError(_ context.Context, _ *agentcore.RunState, call agentcore.ToolCall, err error) agentcore.ToolErrorDecision {
+	return agentcore.ToolErrorDecision{
+		Result: &agentcore.ToolResult{
+			CallID:  call.CallID,
+			Name:    call.Name,
+			Content: fmt.Sprintf("tool %q error: %s", call.Name, err.Error()),
+		},
 	}
 }
 

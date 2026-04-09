@@ -20,6 +20,9 @@ type AgentcoreRunnerConfig struct {
 	Storage             agentcore.Storage
 	PromptBuilder       agentcore.PromptBuilder
 	ContextBuilder      agentcore.ContextBuilder
+	ResumePolicy        agentcore.ResumePolicy
+	ToolExecutionPolicy agentcore.ToolExecutionPolicy
+	ErrorPolicy         agentcore.ErrorPolicy
 	Hooks               []agentcore.Hook
 	Tracer              tracing.Tracer
 	HITL                hitl.Manager
@@ -42,6 +45,7 @@ type AgentcoreRunner struct {
 
 // BuildAgentcoreConfig maps an internal Agent plus runner config to a public agentcore.Config.
 func BuildAgentcoreConfig(a *Agent, cfg AgentcoreRunnerConfig) agentcore.Config {
+	hitlTracker := buildHITLTracker(cfg)
 	return agentcore.Config{
 		Provider:            internalllm.NewProvider(a.LLM),
 		Storage:             cfg.Storage,
@@ -49,7 +53,10 @@ func BuildAgentcoreConfig(a *Agent, cfg AgentcoreRunnerConfig) agentcore.Config 
 		Tools:               internaltools.NewRegistry(a.Tools),
 		PromptBuilder:       resolvePromptBuilder(a, cfg.PromptBuilder),
 		ContextBuilder:      cfg.ContextBuilder,
-		Hooks:               buildAgentcoreHooks(a, cfg),
+		ResumePolicy:        cfg.ResumePolicy,
+		ToolExecutionPolicy: buildAgentcoreToolExecutionPolicy(cfg, hitlTracker),
+		ErrorPolicy:         cfg.ErrorPolicy,
+		Hooks:               buildAgentcoreHooks(a, cfg, hitlTracker),
 		MaxSteps:            normalizeMaxSteps(cfg.MaxSteps),
 		MaxToolCallsPerStep: cfg.MaxToolCallsPerStep,
 	}
@@ -266,16 +273,43 @@ func (b soulPromptBuilder) BuildSystemPrompt(context.Context, *agentcore.RunStat
 	return b.persona, nil
 }
 
-func buildAgentcoreHooks(a *Agent, cfg AgentcoreRunnerConfig) []agentcore.Hook {
+func buildAgentcoreHooks(a *Agent, cfg AgentcoreRunnerConfig, hitlTracker *hitlFailureTracker) []agentcore.Hook {
 	hooks := make([]agentcore.Hook, 0, len(cfg.Hooks)+2)
 	if cfg.Tracer != nil && a != nil {
 		hooks = append(hooks, newTracingHook(a.ID, cfg.Tracer))
 	}
 	if cfg.HITL != nil {
-		hooks = append(hooks, newHITLHook(a, cfg))
+		hooks = append(hooks, newHITLHook(a, cfg, hitlTracker))
 	}
 	hooks = append(hooks, cfg.Hooks...)
 	return hooks
+}
+
+func buildAgentcoreToolExecutionPolicy(cfg AgentcoreRunnerConfig, tracker *hitlFailureTracker) agentcore.ToolExecutionPolicy {
+	base := cfg.ToolExecutionPolicy
+	if tracker == nil {
+		return base
+	}
+	if base == nil {
+		base = agentcore.DefaultToolExecutionPolicy{MaxCallsPerStep: cfg.MaxToolCallsPerStep}
+	}
+	return hitlAwareToolExecutionPolicy{
+		base:    base,
+		tracker: tracker,
+	}
+}
+
+func buildHITLTracker(cfg AgentcoreRunnerConfig) *hitlFailureTracker {
+	if cfg.HITL == nil {
+		return nil
+	}
+	threshold := cfg.FailThreshold
+	if threshold <= 0 {
+		threshold = defaultFailThresh
+	}
+	return &hitlFailureTracker{
+		failThresh: threshold,
+	}
 }
 
 type tracingHook struct {
@@ -397,62 +431,52 @@ func (h *tracingHook) OnError(_ context.Context, event *agentcore.ErrorEvent, _ 
 
 type hitlHook struct {
 	agentcore.NopHook
-	agent        *Agent
-	storage      agentcore.Storage
-	memory       agentcore.Memory
-	manager      hitl.Manager
-	failThresh   int
-	failureCount int
-	pendingCall  *agentcore.ToolCall
+	agent   *Agent
+	storage agentcore.Storage
+	memory  agentcore.Memory
+	manager hitl.Manager
+	tracker *hitlFailureTracker
 }
 
-func newHITLHook(a *Agent, cfg AgentcoreRunnerConfig) agentcore.Hook {
-	threshold := cfg.FailThreshold
-	if threshold <= 0 {
-		threshold = defaultFailThresh
-	}
+func newHITLHook(a *Agent, cfg AgentcoreRunnerConfig, tracker *hitlFailureTracker) agentcore.Hook {
 	return &hitlHook{
-		agent:      a,
-		storage:    cfg.Storage,
-		memory:     resolveMemory(a),
-		manager:    cfg.HITL,
-		failThresh: threshold,
+		agent:   a,
+		storage: cfg.Storage,
+		memory:  resolveMemory(a),
+		manager: cfg.HITL,
+		tracker: tracker,
 	}
 }
 
 func (h *hitlHook) AfterTool(_ context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
-	if h == nil || event == nil || event.Call == nil || event.Result == nil {
+	if h == nil || h.tracker == nil || event == nil || event.Result == nil {
 		return nil
 	}
-	if isToolErrorResult(event.Result) {
-		h.failureCount++
-		copied := *event.Call
-		h.pendingCall = &copied
-		return nil
+	if !isToolErrorResult(event.Result) {
+		h.tracker.reset()
 	}
-
-	h.failureCount = 0
-	h.pendingCall = nil
 	return nil
 }
 
 func (h *hitlHook) BeforeContextBuild(ctx context.Context, event *agentcore.ContextEvent, _ *agentcore.Control) error {
-	if h == nil || h.manager == nil || h.pendingCall == nil || h.failureCount < h.failThresh || event == nil || event.State == nil {
+	if h == nil || h.manager == nil || h.tracker == nil || event == nil || event.State == nil {
+		return nil
+	}
+	req, ok := h.tracker.snapshotIntervention()
+	if !ok || req == nil {
 		return nil
 	}
 
 	taskID, _ := event.State.Metadata["task_id"].(string)
-	reason := fmt.Sprintf("tool %q failed %d times in a row", h.pendingCall.Name, h.failThresh)
 	if h.agent != nil {
 		h.agent.State = AgentSuspended
 	}
-	resp, err := h.manager.RequestIntervention(ctx, event.AgentID, taskID, reason, pendingToolErrorMessage(event))
+	resp, err := h.manager.RequestIntervention(ctx, event.AgentID, taskID, req.Reason, req.Context)
 	if err != nil {
 		return err
 	}
 
-	h.failureCount = 0
-	h.pendingCall = nil
+	h.tracker.reset()
 	if h.agent != nil {
 		h.agent.State = AgentRunning
 	}
@@ -484,6 +508,82 @@ func (h *hitlHook) BeforeContextBuild(ctx context.Context, event *agentcore.Cont
 	}
 }
 
+type hitlFailureTracker struct {
+	failThresh   int
+	failureCount int
+	lastCall     *agentcore.ToolCall
+	pending      *hitlInterventionRequest
+}
+
+type hitlInterventionRequest struct {
+	Call         agentcore.ToolCall
+	FailureCount int
+	Reason       string
+	Context      string
+}
+
+func (t *hitlFailureTracker) markFailure(call agentcore.ToolCall, decision agentcore.ToolErrorDecision) {
+	if t == nil {
+		return
+	}
+	copied := call
+	if t.lastCall == nil || !sameHITLTool(*t.lastCall, copied) {
+		t.failureCount = 0
+		t.pending = nil
+	}
+	t.failureCount++
+	t.lastCall = &copied
+	failureMsg := hitlFailureMessage(call, decision)
+	if t.failureCount >= t.failThresh {
+		t.pending = &hitlInterventionRequest{
+			Call:         copied,
+			FailureCount: t.failureCount,
+			Reason:       fmt.Sprintf("tool %q failed %d times in a row", copied.Name, t.failureCount),
+			Context:      failureMsg,
+		}
+	}
+}
+
+func (t *hitlFailureTracker) reset() {
+	if t == nil {
+		return
+	}
+	t.failureCount = 0
+	t.lastCall = nil
+	t.pending = nil
+}
+
+func (t *hitlFailureTracker) snapshotIntervention() (*hitlInterventionRequest, bool) {
+	if t == nil || t.pending == nil {
+		return nil, false
+	}
+	req := *t.pending
+	return &req, true
+}
+
+type hitlAwareToolExecutionPolicy struct {
+	base    agentcore.ToolExecutionPolicy
+	tracker *hitlFailureTracker
+}
+
+func (p hitlAwareToolExecutionPolicy) ValidateToolCalls(ctx context.Context, state *agentcore.RunState, calls []agentcore.ToolCall) error {
+	if p.base == nil {
+		return nil
+	}
+	return p.base.ValidateToolCalls(ctx, state, calls)
+}
+
+func (p hitlAwareToolExecutionPolicy) HandleToolError(ctx context.Context, state *agentcore.RunState, call agentcore.ToolCall, err error) agentcore.ToolErrorDecision {
+	decision := agentcore.ToolErrorDecision{}
+	if p.base != nil {
+		decision = p.base.HandleToolError(ctx, state, call, err)
+	}
+	if p.tracker != nil && decision.Fail == nil {
+		p.tracker.markFailure(call, decision)
+	}
+	return decision
+}
+
 func summarizeMessages(messages []agentcore.Message) string {
 	if len(messages) == 0 {
 		return ""
@@ -502,15 +602,24 @@ func isToolErrorResult(result *agentcore.ToolResult) bool {
 	return strings.HasPrefix(result.Content, "tool error:")
 }
 
-func pendingToolErrorMessage(event *agentcore.ContextEvent) string {
-	if event == nil || event.State == nil || len(event.State.Messages) == 0 {
-		return ""
+func hitlFailureMessage(call agentcore.ToolCall, decision agentcore.ToolErrorDecision) string {
+	if decision.Result != nil && strings.TrimSpace(decision.Result.Content) != "" {
+		return decision.Result.Content
 	}
-	for i := len(event.State.Messages) - 1; i >= 0; i-- {
-		msg := event.State.Messages[i]
-		if msg.Role == "tool" && strings.TrimSpace(msg.Content) != "" {
-			return msg.Content
-		}
+	if decision.Fail != nil {
+		return decision.Fail.Error()
 	}
-	return ""
+	if call.Name != "" {
+		return fmt.Sprintf("tool %q failed", call.Name)
+	}
+	return "tool failed"
+}
+
+func sameHITLTool(prev, current agentcore.ToolCall) bool {
+	prevName := strings.TrimSpace(prev.Name)
+	currName := strings.TrimSpace(current.Name)
+	if prevName != "" || currName != "" {
+		return prevName == currName
+	}
+	return strings.TrimSpace(prev.CallID) == strings.TrimSpace(current.CallID)
 }

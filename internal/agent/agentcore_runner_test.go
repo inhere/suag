@@ -184,6 +184,76 @@ func TestAgentcoreRunner_Run_EmitsTracingSpans(t *testing.T) {
 	}
 }
 
+type testResumePolicy struct{}
+
+func (testResumePolicy) AllowResume(context.Context, agentcore.RunInput, *agentcore.RunState) error {
+	return nil
+}
+
+func (testResumePolicy) ShouldAppendInstruction(agentcore.RunInput, *agentcore.RunState) bool {
+	return false
+}
+
+func (testResumePolicy) MergeMetadata(stateMetadata, inputMetadata map[string]any) map[string]any {
+	if len(stateMetadata) == 0 && len(inputMetadata) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(stateMetadata)+len(inputMetadata))
+	for k, v := range stateMetadata {
+		out[k] = v
+	}
+	for k, v := range inputMetadata {
+		out[k] = v
+	}
+	return out
+}
+
+type testToolExecutionPolicy struct{}
+
+func (testToolExecutionPolicy) ValidateToolCalls(context.Context, *agentcore.RunState, []agentcore.ToolCall) error {
+	return nil
+}
+
+func (testToolExecutionPolicy) HandleToolError(_ context.Context, _ *agentcore.RunState, call agentcore.ToolCall, err error) agentcore.ToolErrorDecision {
+	return agentcore.ToolErrorDecision{
+		Result: &agentcore.ToolResult{
+			CallID:  call.CallID,
+			Name:    call.Name,
+			Content: err.Error(),
+		},
+	}
+}
+
+type testErrorPolicy struct{}
+
+func (testErrorPolicy) HandleRecoverable(context.Context, *agentcore.RunState, *agentcore.ErrorEvent) agentcore.ErrorDecision {
+	return agentcore.ErrorDecision{}
+}
+
+func TestBuildAgentcoreConfig_PassesThroughPolicies(t *testing.T) {
+	a := newTestAgent(llm.NewMockProvider("mock").QueueText("ok"), newTestRegistry())
+
+	resumePolicy := testResumePolicy{}
+	toolPolicy := testToolExecutionPolicy{}
+	errorPolicy := testErrorPolicy{}
+
+	cfg := agent.BuildAgentcoreConfig(a, agent.AgentcoreRunnerConfig{
+		ResumePolicy:        resumePolicy,
+		ToolExecutionPolicy: toolPolicy,
+		ErrorPolicy:         errorPolicy,
+	})
+
+	if cfg.ResumePolicy != resumePolicy {
+		t.Fatalf("resume policy not passed through: got %#v want %#v", cfg.ResumePolicy, resumePolicy)
+	}
+	if cfg.ToolExecutionPolicy != toolPolicy {
+		t.Fatalf("tool execution policy not passed through: got %#v want %#v", cfg.ToolExecutionPolicy, toolPolicy)
+	}
+	if cfg.ErrorPolicy != errorPolicy {
+		t.Fatalf("error policy not passed through: got %#v want %#v", cfg.ErrorPolicy, errorPolicy)
+	}
+}
+
 func TestAgentcoreRunner_Run_TriggersHITLOnConsecutiveToolFailures(t *testing.T) {
 	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {

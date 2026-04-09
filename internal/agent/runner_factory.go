@@ -28,6 +28,9 @@ type RunnerFactoryConfig struct {
 	MaxToolCallsPerStep int
 	PromptBuilder       agentcore.PromptBuilder
 	ContextBuilder      agentcore.ContextBuilder
+	ResumePolicy        agentcore.ResumePolicy
+	ToolExecutionPolicy agentcore.ToolExecutionPolicy
+	ErrorPolicy         agentcore.ErrorPolicy
 	Hooks               []agentcore.Hook
 }
 
@@ -35,12 +38,23 @@ type RunnerFactoryConfig struct {
 func NewRunner(a *Agent, cfg RunnerFactoryConfig) (Runner, error) {
 	switch resolveRuntimeKind(cfg.RuntimeKind) {
 	case RuntimeReact:
-		return NewReactRunner(a, cfg.MaxSteps, ensureTracer(cfg.Tracer), cfg.HITL), nil
+		return NewReactRunnerWithConfig(a, ReactRunnerConfig{
+			MaxSteps:            cfg.MaxSteps,
+			FailThreshold:       cfg.FailThreshold,
+			Tracer:              ensureTracer(cfg.Tracer),
+			HITL:                cfg.HITL,
+			ResumePolicy:        cfg.ResumePolicy,
+			ToolExecutionPolicy: cfg.ToolExecutionPolicy,
+			ErrorPolicy:         cfg.ErrorPolicy,
+		}), nil
 	case RuntimeAgentcore:
 		return NewAgentcoreRunner(a, AgentcoreRunnerConfig{
 			Storage:             cfg.Storage,
 			PromptBuilder:       cfg.PromptBuilder,
 			ContextBuilder:      cfg.ContextBuilder,
+			ResumePolicy:        cfg.ResumePolicy,
+			ToolExecutionPolicy: cfg.ToolExecutionPolicy,
+			ErrorPolicy:         cfg.ErrorPolicy,
 			Hooks:               cfg.Hooks,
 			Tracer:              ensureTracer(cfg.Tracer),
 			HITL:                cfg.HITL,

@@ -82,3 +82,52 @@ func TestNewRunner_ZeroMaxStepsDefaultsConsistently(t *testing.T) {
 		t.Fatalf("agentcore Run() error: %v", err)
 	}
 }
+
+func TestNewRunner_PassesThroughPoliciesToAgentcoreRunner(t *testing.T) {
+	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	if err != nil {
+		t.Fatalf("expected sqlite storage to initialize, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	a := newTestAgent(llm.NewMockProvider("mock").QueueText("hello"), newTestRegistry())
+
+	resumePolicy := testResumePolicy{}
+	toolPolicy := testToolExecutionPolicy{}
+	errorPolicy := testErrorPolicy{}
+
+	runner, err := agent.NewRunner(a, agent.RunnerFactoryConfig{
+		Storage:             store,
+		ResumePolicy:        resumePolicy,
+		ToolExecutionPolicy: toolPolicy,
+		ErrorPolicy:         errorPolicy,
+	})
+	if err != nil {
+		t.Fatalf("NewRunner() error: %v", err)
+	}
+
+	coreRunner, ok := runner.(*agent.AgentcoreRunner)
+	if !ok {
+		t.Fatalf("runner type = %T, want *agent.AgentcoreRunner", runner)
+	}
+
+	cfg := agent.BuildAgentcoreConfig(a, agent.AgentcoreRunnerConfig{
+		Storage:             store,
+		ResumePolicy:        resumePolicy,
+		ToolExecutionPolicy: toolPolicy,
+		ErrorPolicy:         errorPolicy,
+	})
+	_ = coreRunner
+
+	if cfg.ResumePolicy != resumePolicy {
+		t.Fatalf("resume policy not forwarded")
+	}
+	if cfg.ToolExecutionPolicy != toolPolicy {
+		t.Fatalf("tool execution policy not forwarded")
+	}
+	if cfg.ErrorPolicy != errorPolicy {
+		t.Fatalf("error policy not forwarded")
+	}
+}
