@@ -39,7 +39,7 @@
 - `docs/superpowers/plans/2026-04-07-agentcore-prompt-layered-phase1.md`
 - `docs/superpowers/plans/2026-04-07-agentcore-streaming-phase1.md`
 
-如果这些文档与旧 `PRD / SPEC / docs/archive/v1-old/*` 有冲突，以当前主线文档为准。
+如果这些文档与旧归档文档有冲突，以当前主线文档为准。
 
 ---
 
@@ -78,8 +78,8 @@
 
 以下文档基于旧的 `v1 foundation` 假设撰写，当前仅作为历史参考：
 
-- `docs/PRD.md`
-- `docs/SPEC.md`
+- `docs/archive/v1-old/legacy-prd-v1-foundation.md`
+- `docs/archive/v1-old/legacy-spec-v1-foundation.md`
 - `docs/axon-v1-process.md`
 - `docs/archive/v1-old/00-overview.md`
 - `docs/archive/v1-old/01-agent-core.md`

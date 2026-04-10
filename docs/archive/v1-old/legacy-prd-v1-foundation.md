@@ -1,10 +1,11 @@
 # Axon PRD
 
-> 状态：Draft for review
+> 状态：Legacy reference
 > 版本：2026-03-26
-> 适用范围：产品愿景与阶段边界
-> 配套技术文档：[SPEC.md](./SPEC.md)
-> 参考资料：[`docs/v1/00-overview.md`](./v1/00-overview.md)、[`docs/v1/01-agent-core.md`](./v1/01-agent-core.md)、[`docs/v1/02-orchestrator.md`](./v1/02-orchestrator.md)、[`docs/v1/03-team.md`](./v1/03-team.md)、[`docs/v1/04-tools-skills.md`](./v1/04-tools-skills.md)、[`docs/v1/05-memory-tracing.md`](./v1/05-memory-tracing.md)、[`docs/v1/06-gateway-api.md`](./v1/06-gateway-api.md)、[`docs/axon-v1-prd.draft.md`](./axon-v1-prd.draft.md)
+> 适用范围：旧 `v1 foundation` 产品愿景与阶段边界
+> 说明：本文档基于旧的 `v1 foundation` 方案撰写。当前新的 `v0` 开发不再以本文档为直接实现依据，仅作为历史参考。当前入口请先看 `docs/README.md`。
+> 配套技术文档：[legacy-spec-v1-foundation.md](./legacy-spec-v1-foundation.md)
+> 参考资料：[`00-overview.md`](./00-overview.md)、[`01-agent-core.md`](./01-agent-core.md)、[`02-orchestrator.md`](./02-orchestrator.md)、[`03-team.md`](./03-team.md)、[`04-tools-skills.md`](./04-tools-skills.md)、[`05-memory-tracing.md`](./05-memory-tracing.md)、[`06-gateway-api.md`](./06-gateway-api.md)、[`docs/axon-prd.draft.md`](../../axon-prd.draft.md)
 
 ---
 
@@ -12,7 +13,7 @@
 
 本文档定义 Axon 的产品目标、目标用户、核心场景、版本边界和成功标准。
 
-本文档不承担详细技术实现说明，所有实现级约束统一收敛到 [SPEC.md](./SPEC.md)。现有 `docs/v1/*.md` 保留为专题分册和历史设计参考，不再作为主 PRD。
+本文档不承担详细技术实现说明，所有实现级约束统一收敛到 [legacy-spec-v1-foundation.md](./legacy-spec-v1-foundation.md)。现有 `docs/archive/v1-old/*.md` 保留为专题分册和历史设计参考，不再作为主 PRD。
 
 ---
 
@@ -169,11 +170,11 @@ Axon 是一个面向个人或小团队的 AI Agent 控制平面与执行系统�
 
 ### 7.4 人工干预与审核
 
-当工具连续失败、高风险操作待确认、策略不明确或系统建议调整配置时，任务进入待审核状态，用户通过 Web 控制台处理。
+当工具连续失败、高风险操作待确认、策略不明确或系统建议调整配置时，任务进入待审核状态，用户通过 Web 控制台处理。(下推事件AG-UI, 交互 A2UI)
 
 ### 7.5 外部 Agent 协作
 
-系统既能把远程 Agent 当作协作节点接入，也能调用本机已有 `claude-code`、`codex`、`opencode`。外部协作结果被纳入统一任务与追踪体系。
+系统既能（通过A2A）把远程 Agent 当作协作节点接入，也能（通过ACP）调用本机已有 `claude-code`、`codex`、`opencode`。外部协作结果被纳入统一任务与追踪体系。
 
 ### 7.6 渠道接入
 
@@ -384,10 +385,10 @@ Web 控制台是主产品形态，CLI 是运维和调试辅助，不把 CLI 作�
 
 ## 15. 与历史文档关系
 
-- [SPEC.md](./SPEC.md) 是本 PRD 对应的唯一主技术文档
-- `docs/v1/*.md` 作为专题设计分册保留
+- [legacy-spec-v1-foundation.md](./legacy-spec-v1-foundation.md) 是本 PRD 对应的旧主技术文档
+- `docs/archive/v1-old/*.md` 作为专题设计分册保留
 - `docs/axon-v1-prd.draft.md` 作为需求素材来源保留，不再作为主 PRD
-- 后续新增文档应优先引用 `PRD.md` 和 `SPEC.md`，而不是绕开主文档直接扩展旧草稿
+- 后续新增文档不应再以本文档为主入口，当前主线请回到 `docs/README.md`
 
 ---
 
