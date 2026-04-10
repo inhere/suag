@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the first backend foundation slice for `v0.self-host`: persistent `session / turn / run / event` host state, a session runtime skeleton, and a WebSocket-first gateway path that can drive and observe agentcore-backed runs.
+**Goal:** Build the first backend foundation slice for `v0.self-host`: persistent `session / turn / run / event` host state, a host-session runtime skeleton, and a WebSocket-first gateway path that can drive and observe agentcore-backed runs.
 
-**Architecture:** Keep `pkg/agentcore` unchanged as the runtime kernel and add a host-side `internal/sessionruntime` package responsible for product-layer lifecycle and persistence. Reuse the existing SQLite experience in `internal/agentcorestorage`, reuse `internal/gateway` as the transport shell, and refactor the current trace-oriented event bus into session-aware event streaming with room for later AG-UI mapping and ACP integration.
+**Architecture:** Keep `pkg/agentcore` unchanged as the runtime kernel and add a host-side `internal/host/session` package responsible for product-layer lifecycle and persistence. Reuse the existing SQLite experience in `internal/acstore`, reuse `internal/host/gateway` as the transport shell, and refactor the current trace-oriented event bus into session-aware event streaming with room for later AG-UI mapping and ACP integration.
 
-**Tech Stack:** Go 1.24, `modernc.org/sqlite`, existing `internal/gateway`, existing `internal/orchestrator`, existing `pkg/agentcore`, `go test`
+**Tech Stack:** Go 1.24, `modernc.org/sqlite`, `github.com/coder/websocket`, existing `pkg/agentcore`, `go test`
 
 ---
 
@@ -14,40 +14,40 @@
 
 ### New package: host state and runtime
 
-- Create: `internal/sessionruntime/doc.go`
+- Create: `internal/host/session/doc.go`
   Responsibility: package overview and first-stage scope notes
-- Create: `internal/sessionruntime/types.go`
+- Create: `internal/host/session/types.go`
   Responsibility: public internal models for `Session`, `Turn`, `Run`, `RunEvent`, `ExternalTask`, `Recap`, state enums, and ID helpers
-- Create: `internal/sessionruntime/store.go`
+- Create: `internal/host/session/store.go`
   Responsibility: store interfaces for host state persistence and read/query helpers
-- Create: `internal/sessionruntime/sqlite.go`
+- Create: `internal/host/session/sqlite.go`
   Responsibility: SQLite-backed implementation, schema bootstrap, CRUD operations, append-only event persistence
-- Create: `internal/sessionruntime/sqlite_test.go`
+- Create: `internal/host/session/sqlite_test.go`
   Responsibility: schema and persistence contract tests
-- Create: `internal/sessionruntime/service.go`
+- Create: `internal/host/session/service.go`
   Responsibility: session runtime service, create/continue session-turn-run flow, runtime state transitions, event publishing
-- Create: `internal/sessionruntime/service_test.go`
+- Create: `internal/host/session/service_test.go`
   Responsibility: service orchestration tests with a fake runner and fake clock
 
 ### Gateway refactor for session-aware streaming
 
-- Modify: `internal/gateway/eventbus.go`
+- Modify: `internal/host/gateway/eventbus.go`
   Responsibility: evolve the bus from trace-oriented pub/sub into session-aware typed event pub/sub while preserving wildcard support
-- Create: `internal/gateway/ws.go`
+- Create: `internal/host/gateway/ws.go`
   Responsibility: WebSocket connection handler for session subscriptions and command input
-- Modify: `internal/gateway/server.go`
+- Modify: `internal/host/gateway/server.go`
   Responsibility: register WebSocket endpoint and new session APIs while keeping current health endpoint
-- Modify: `internal/gateway/handler.go`
+- Modify: `internal/host/gateway/handler.go`
   Responsibility: add session-oriented handlers and keep old task endpoint working or mark it transitional
-- Create: `internal/gateway/ws_test.go`
+- Create: `internal/host/gateway/ws_test.go`
   Responsibility: connection lifecycle, subscription, and basic command handling tests
 
 ### App wiring
 
 - Modify: `cmd/axon/main.go`
   Responsibility: wire the new session runtime store/service into server mode without breaking existing chat mode
-- Modify: `internal/orchestrator/orchestrator.go`
-  Responsibility: expose a narrow entry point that the new session runtime can call, or add a small adapter if needed
+- Modify: `internal/acadapters/...`
+  Responsibility: expose narrow adapters that let the new host session layer call existing internal capabilities without reviving the old orchestration model
 
 ### Documentation
 
@@ -61,11 +61,11 @@
 ### Task 1: Define Host State Models and SQLite Schema
 
 **Files:**
-- Create: `internal/sessionruntime/doc.go`
-- Create: `internal/sessionruntime/types.go`
-- Create: `internal/sessionruntime/store.go`
-- Create: `internal/sessionruntime/sqlite.go`
-- Test: `internal/sessionruntime/sqlite_test.go`
+- Create: `internal/host/session/doc.go`
+- Create: `internal/host/session/types.go`
+- Create: `internal/host/session/store.go`
+- Create: `internal/host/session/sqlite.go`
+- Test: `internal/host/session/sqlite_test.go`
 
 - [ ] **Step 1: Write the failing schema contract tests**
 
@@ -91,7 +91,7 @@ func TestSQLiteStore_CreateSessionTurnRunAndEvent(t *testing.T) {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `go test ./internal/sessionruntime -run TestSQLiteStore_CreateSessionTurnRunAndEvent -v`
+Run: `go test ./internal/host/session -run TestSQLiteStore_CreateSessionTurnRunAndEvent -v`
 Expected: FAIL with missing package or missing store/type errors
 
 - [ ] **Step 3: Define the core host-side models and enums**
@@ -186,13 +186,13 @@ CREATE TABLE IF NOT EXISTS run_events (
 
 - [ ] **Step 6: Run the package tests**
 
-Run: `go test ./internal/sessionruntime/...`
+Run: `go test ./internal/host/session/...`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add internal/sessionruntime
+git add internal/host/session
 git commit -m "feat: add self-host session runtime store foundation"
 ```
 
@@ -201,9 +201,9 @@ git commit -m "feat: add self-host session runtime store foundation"
 ### Task 2: Implement Session Runtime Service Skeleton
 
 **Files:**
-- Create: `internal/sessionruntime/service.go`
-- Test: `internal/sessionruntime/service_test.go`
-- Modify: `internal/orchestrator/orchestrator.go`
+- Create: `internal/host/session/service.go`
+- Test: `internal/host/session/service_test.go`
+- Modify: `internal/acadapters/...`
 
 - [ ] **Step 1: Write the failing service orchestration test**
 
@@ -231,7 +231,7 @@ func TestService_StartTurnCreatesQueuedRunAndPublishesEvent(t *testing.T) {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `go test ./internal/sessionruntime -run TestService_StartTurnCreatesQueuedRunAndPublishesEvent -v`
+Run: `go test ./internal/host/session -run TestService_StartTurnCreatesQueuedRunAndPublishesEvent -v`
 Expected: FAIL with missing service types or methods
 
 - [ ] **Step 3: Implement service inputs, outputs, and narrow runtime dependency**
@@ -263,7 +263,7 @@ func (s *Service) StartTurn(ctx context.Context, in StartTurnInput) (StartTurnRe
 }
 ```
 
-- [ ] **Step 5: Add a narrow orchestrator adapter instead of leaking product-layer logic into `pkg/agentcore`**
+- [ ] **Step 5: Add narrow adapters instead of reviving the old orchestrator as the new host backbone**
 
 ```go
 type RuntimeRequest struct {
@@ -277,14 +277,14 @@ type RuntimeRequest struct {
 
 - [ ] **Step 6: Run the service tests**
 
-Run: `go test ./internal/sessionruntime/... ./internal/orchestrator/...`
+Run: `go test ./internal/host/session/... ./internal/acadapters/...`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add internal/sessionruntime internal/orchestrator/orchestrator.go
-git commit -m "feat: add self-host session runtime service skeleton"
+git add internal/host/session internal/acadapters
+git commit -m "feat: add host session service skeleton"
 ```
 
 ---
@@ -292,8 +292,8 @@ git commit -m "feat: add self-host session runtime service skeleton"
 ### Task 3: Refactor Event Bus for Session-Aware Streaming
 
 **Files:**
-- Modify: `internal/gateway/eventbus.go`
-- Test: `internal/gateway/ws_test.go`
+- Modify: `internal/host/gateway/eventbus.go`
+- Test: `internal/host/gateway/ws_test.go`
 
 - [ ] **Step 1: Write the failing bus behavior tests**
 
@@ -313,7 +313,7 @@ func TestEventBus_SubscribeSessionReceivesMatchingEventsOnly(t *testing.T) {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `go test ./internal/gateway -run TestEventBus_SubscribeSessionReceivesMatchingEventsOnly -v`
+Run: `go test ./internal/host/gateway -run TestEventBus_SubscribeSessionReceivesMatchingEventsOnly -v`
 Expected: FAIL because current bus only keys on `TraceID`
 
 - [ ] **Step 3: Introduce session-aware event identity while keeping wildcard subscribers**
@@ -341,13 +341,13 @@ type Subscription struct {
 
 - [ ] **Step 5: Verify bus tests and existing gateway tests**
 
-Run: `go test ./internal/gateway/...`
+Run: `go test ./internal/host/gateway/...`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add internal/gateway/eventbus.go internal/gateway/ws_test.go
+git add internal/host/gateway/eventbus.go internal/host/gateway/ws_test.go
 git commit -m "refactor: make gateway event bus session-aware"
 ```
 
@@ -356,10 +356,10 @@ git commit -m "refactor: make gateway event bus session-aware"
 ### Task 4: Add WebSocket Session Endpoint and Session APIs
 
 **Files:**
-- Create: `internal/gateway/ws.go`
-- Modify: `internal/gateway/server.go`
-- Modify: `internal/gateway/handler.go`
-- Test: `internal/gateway/ws_test.go`
+- Create: `internal/host/gateway/ws.go`
+- Modify: `internal/host/gateway/server.go`
+- Modify: `internal/host/gateway/handler.go`
+- Test: `internal/host/gateway/ws_test.go`
 - Modify: `cmd/axon/main.go`
 
 - [ ] **Step 1: Write failing gateway tests for session creation and WebSocket subscription**
@@ -376,7 +376,7 @@ func TestServer_CreateSessionAndStreamEventsOverWebSocket(t *testing.T) {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `go test ./internal/gateway -run TestServer_CreateSessionAndStreamEventsOverWebSocket -v`
+Run: `go test ./internal/host/gateway -run TestServer_CreateSessionAndStreamEventsOverWebSocket -v`
 Expected: FAIL with missing routes or missing websocket handler
 
 - [ ] **Step 3: Add transitional REST endpoints for the new host model**
@@ -399,20 +399,20 @@ GET  /ws?session_id=<id>
 - [ ] **Step 5: Wire the new service into server mode**
 
 ```go
-sessionStore, err := sessionruntime.NewSQLiteStore(...)
-sessionSvc := sessionruntime.NewService(sessionStore, bus, runtimeAdapter, cfg)
+sessionStore, err := session.NewSQLiteStore(...)
+sessionSvc := session.NewService(sessionStore, bus, runtimeAdapter, cfg)
 handler := gateway.NewHandler(a.orch, sessionSvc, bus, a.hitlMgr)
 ```
 
 - [ ] **Step 6: Run gateway and server tests**
 
-Run: `go test ./internal/gateway/... ./cmd/axon/...`
+Run: `go test ./internal/host/gateway/... ./cmd/axon/...`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add internal/gateway cmd/axon/main.go
+git add internal/host/gateway cmd/axon/main.go
 git commit -m "feat: add websocket session gateway foundation"
 ```
 
@@ -434,12 +434,12 @@ git commit -m "feat: add websocket session gateway foundation"
 - [ ] **Step 2: Add a short README note for the new foundation slice**
 
 ```md
-- `internal/sessionruntime` provides the first host-side runtime foundation for `v0.self-host`
+- `internal/host/session` provides the first host-side runtime foundation for `v0.self-host`
 ```
 
 - [ ] **Step 3: Run the focused verification suite**
 
-Run: `go test ./internal/sessionruntime/... ./internal/gateway/... ./internal/orchestrator/...`
+Run: `go test ./internal/host/session/... ./internal/host/gateway/... ./internal/acadapters/...`
 Expected: PASS
 
 - [ ] **Step 4: Run a full repository smoke test**
@@ -458,7 +458,7 @@ git commit -m "docs: document self-host foundation plan"
 
 ## Notes for Execution
 
-- Do not move ACP bridge implementation into `pkg/agentcore`; keep it for a follow-up plan on top of this foundation.
+- Do not move ACP bridge implementation into `pkg/agentcore`; keep it for a follow-up plan under `internal/host/acpbridge`.
 - Keep `turnId` as a first-class field from day one. A single turn can fan out into multiple agent runs later.
 - Treat `run_events` as append-only. Corrections should be represented by later events, not in-place mutation.
 - Prefer SQLite for host state now, but keep interfaces narrow so `state.db` and future memory retrieval can evolve independently.
