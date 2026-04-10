@@ -262,20 +262,159 @@
 具体来说：
 
 - 新主干优先进入新的包边界，例如：
-  - `internal/sessionruntime`
-  - `internal/acpbridge`
-  - `internal/agui`
-  - `internal/wsgateway`
+  - `internal/host/session`
+  - `internal/host/acpbridge`
+  - `internal/host/agui`
+  - `internal/host/gateway`
 - 不要一开始就在旧 `orchestrator / team / agent` 上直接加层
 - 旧模块如果要继续使用，应先通过窄接口或 adapter 被吸纳
 
 ---
 
-## 8. 推荐后续动作
+## 8. 目标结构迁移映射
+
+本节用于回答一个更具体的问题：
+
+**如果后续要把现有 `internal/*` 朝目标结构收敛，每个包优先迁到哪里。**
+
+建议按下面 4 种迁移类型理解：
+
+1. 直接迁移/重命名优先
+2. 目录收敛，语义大体保留
+3. 保留代码资产，按新主线重构迁入
+4. 暂不迁移，先留作历史参考
+
+### 8.1 直接迁移/重命名优先
+
+#### `internal/agentcorestorage -> internal/acstore`
+
+类型：`直接迁移/重命名优先`
+
+原因：
+
+- 语义已经比较聚焦
+- 新名字更短，也更符合当前冻结结构
+- 仍然是 `agentcore` 周边的具体实现层
+
+#### `internal/agentcoreadapters -> internal/acadapters`
+
+类型：`直接迁移/重命名优先`
+
+原因：
+
+- 当前定位本就是 adapter 层
+- 新名字更短，且与 `acstore` 保持并列关系
+- 不需要重新定义职责，只需要更清晰地落位
+
+### 8.2 目录收敛，语义大体保留
+
+#### `internal/llm -> internal/platform/llm`
+
+类型：`目录收敛，语义大体保留`
+
+原因：
+
+- 基础 provider 能力仍成立
+- 更适合作为 `platform` 层基础能力收拢
+
+#### `internal/tools -> internal/platform/tools`
+
+类型：`目录收敛，语义大体保留`
+
+原因：
+
+- 工具能力仍可保留
+- 但后续应按当前 host/runtime 边界逐项重审具体工具
+
+#### `internal/memory -> internal/platform/memory`
+
+类型：`目录收敛，语义大体保留`
+
+原因：
+
+- 模块仍有基础价值
+- 但设计必须重新对齐当前 `authority / host state / recap retrieval` 三层边界
+
+#### `internal/tracing -> internal/platform/tracing`
+
+类型：`目录收敛，语义大体保留`
+
+原因：
+
+- Trace / Span 的基础抽象仍有价值
+- 但 trace 与 `session / turn / run` 的关系需要重新对齐
+
+#### `internal/hitl -> internal/ops/hitl`
+
+类型：`目录收敛，语义大体保留`
+
+原因：
+
+- 更适合作为运行治理模块放进 `ops`
+- 但要避免让旧 HITL 语义继续主导新的 host 状态机
+
+#### `internal/cron -> internal/ops/cron`
+
+类型：`目录收敛，语义大体保留`
+
+原因：
+
+- 更适合作为运行治理/系统操作相关能力放进 `ops`
+- 当前可先迁目录，不急着立即深入重构
+
+### 8.3 保留代码资产，按新主线重构迁入
+
+#### `internal/gateway -> internal/host/gateway`
+
+类型：`保留代码资产，按新主线重构迁入`
+
+原因：
+
+- 现有 server、router、eventbus 外壳仍有复用价值
+- 但核心语义要从 `REST + SSE + trace` 迁到 `WS + session-aware event flow`
+
+### 8.4 暂不迁移，先留作历史参考
+
+#### `internal/agent`
+
+类型：`暂不迁移`
+
+原因：
+
+- 当前仍围绕 `Agent / Task / Runner`
+- 与新的 `Session / Turn / Run` 主线不一致
+
+#### `internal/orchestrator`
+
+类型：`暂不迁移`
+
+原因：
+
+- 旧总协调器语义太重
+- 不适合作为新 host 主干的直接延续
+
+#### `internal/team`
+
+类型：`暂不迁移`
+
+原因：
+
+- 属于后续多 Agent 阶段能力
+- 当前若过早迁入，会把 `v0.self-host` 重新拉回旧 v1 路线
+
+### 8.5 一句话迁移策略
+
+如果把迁移策略压缩成一句话，建议是：
+
+**先迁 agentcore 周边与基础能力层，再迁 host 接入层，最后再决定是否吸纳旧 `agent / orchestrator / team`。**
+
+---
+
+## 9. 推荐后续动作
 
 为了减少后续误判，建议后面继续做两件事：
 
-1. 当 `internal/sessionruntime` 真正建立后，在本文档中补一节“新主干模块”说明
+1. 当 `internal/host/session` 真正建立后，在本文档中补一节“新主干模块”说明
 2. 当某个旧模块已经被明确替代后，在本文档中标注“已被新模块取代”
 
 这样 `internal/*` 的可信度会随着项目演进逐步更新，而不是一直停留在模糊状态。
