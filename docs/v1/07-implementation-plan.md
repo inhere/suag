@@ -1,5 +1,8 @@
 # 开发实施方案
 
+> 状态：Legacy reference
+> 说明：本文档基于旧 `v1 foundation` 假设撰写，当前仅作为历史参考。新的 `v0` 主线请先看 `docs/README.md`。
+
 > 相关文档：[架构总纲](./00-overview.md) | 用途：开发任务跟踪，适合映射为 GitHub Issues
 
 ---

@@ -1,5 +1,8 @@
 # Agent Core 设计
 
+> 状态：Legacy reference
+> 说明：本文档基于旧 `v1 foundation` 假设撰写，当前仅作为历史参考。新的 `v0` 主线请先看 `docs/README.md`。
+
 > 所属层级：编排层 | 相关文档：[架构总纲](./00-overview.md) | [Orchestrator](./02-orchestrator.md)
 
 > 注：本文档描述的是 Axon 长期演进中的 Agent Core 蓝图。当前已经落地、可独立嵌入使用的最小实现，请优先参考 [`pkg/agentcore/README.md`](../../pkg/agentcore/README.md)、[`pkg/agentcore/docs/README.md`](../../pkg/agentcore/docs/README.md) 与对应包文档。

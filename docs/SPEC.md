@@ -1,8 +1,9 @@
 # Axon SPEC
 
-> 状态：Draft for review
+> 状态：Legacy reference
 > 版本：2026-03-26
-> 适用范围：v1 foundation 技术规范
+> 适用范围：旧 `v1 foundation` 技术规范
+> 说明：本文档基于旧的 `v1 foundation` 方案撰写。当前新的 `v0` 开发不再以本文档为直接实现依据，仅作为历史参考。当前入口请先看 `docs/README.md`。
 > 上游产品文档：[PRD.md](./PRD.md)
 > 参考资料：[`docs/v1/00-overview.md`](./v1/00-overview.md)、[`docs/v1/01-agent-core.md`](./v1/01-agent-core.md)、[`docs/v1/02-orchestrator.md`](./v1/02-orchestrator.md)、[`docs/v1/03-team.md`](./v1/03-team.md)、[`docs/v1/04-tools-skills.md`](./v1/04-tools-skills.md)、[`docs/v1/05-memory-tracing.md`](./v1/05-memory-tracing.md)、[`docs/v1/06-gateway-api.md`](./v1/06-gateway-api.md)、[`docs/axon-v1-process.md`](./axon-v1-process.md)
 

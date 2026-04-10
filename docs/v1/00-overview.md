@@ -1,5 +1,8 @@
 # axon v1 架构总纲
 
+> 状态：Legacy reference
+> 说明：本文档基于旧 `v1 foundation` 假设撰写，当前仅作为历史参考。新的 `v0` 主线请先看 `docs/README.md`。
+
 > 版本: v1.0 | 日期: 2026-03-16 | 状态: 设计稿
 
 ***
@@ -193,4 +196,3 @@ axon/
 | Agent 无限循环             | 低  | maxSteps 硬限制 + token 预算限制           |
 
 > 详细技术风险与待确认问题，见 [开发实施方案](./07-implementation-plan.md)。
-

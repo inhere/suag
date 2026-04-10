@@ -1,5 +1,8 @@
 # 开发进度记录
 
+> 状态：Legacy reference
+> 说明：本文档记录的是旧 `v1` 路线下的开发进度，当前仅作为历史参考。新的 `v0` 主线请先看 `docs/README.md`。
+
 > 项目开始时间：2026-03-14 22:00
 
 - 原始需求文档 [axon-prd.md](axon-prd.md)
@@ -61,4 +64,3 @@ Architecture decisions
 - Interface-driven — swap LLM/Memory/VectorStore without changing agent logic
 - HITL via channels — agents block on chan *Response; operators unblock via REST or CLI
 - Tracing via context propagation — TraceID/SpanID thread through every call; pushed to SSE on span completion
-

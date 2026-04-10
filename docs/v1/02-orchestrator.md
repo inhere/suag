@@ -1,5 +1,8 @@
 # Orchestrator 设计
 
+> 状态：Legacy reference
+> 说明：本文档基于旧 `v1 foundation` 假设撰写，当前仅作为历史参考。新的 `v0` 主线请先看 `docs/README.md`。
+
 > 所属层级：编排层 | 相关文档：[架构总纲](./00-overview.md) | [Agent Core](./01-agent-core.md) | [Team 协作](./03-team.md)
 
 ---
