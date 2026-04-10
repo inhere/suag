@@ -5,4 +5,11 @@
 // agentcore.Provider, agentcore.Storage, and agentcore.ToolRegistry. They are
 // deliberately small and only rely on the public agentcore contracts so they
 // can be reused outside this repository.
+//
+// Beyond runnable suites such as RunStorageSuite, RunToolRegistrySuite, and
+// RunProviderSuite, the package also exposes lightweight navigation metadata:
+//
+//   - ContractChecklist reports the current contract/evidence matrix
+//   - OnboardingChecklist reports recommended docs, suites, and examples for
+//     common external implementer roles
 package agentcoretesting
