@@ -3,7 +3,7 @@
 > 状态：Draft for review
 > 日期：2026-04-02
 > 范围：`pkg/agentcore` 最小但可扩展的运行时内核
-> 相关文档：`docs/PRD.md`、`docs/SPEC.md`、`docs/v1/01-agent-core.md`、`docs/v1/04-tools-skills.md`
+> 相关文档：`docs/PRD.md`、`docs/SPEC.md`、`docs/archive/v1-old/01-agent-core.md`、`docs/archive/v1-old/04-tools-skills.md`
 
 ---
 

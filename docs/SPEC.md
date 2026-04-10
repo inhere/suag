@@ -5,7 +5,7 @@
 > 适用范围：旧 `v1 foundation` 技术规范
 > 说明：本文档基于旧的 `v1 foundation` 方案撰写。当前新的 `v0` 开发不再以本文档为直接实现依据，仅作为历史参考。当前入口请先看 `docs/README.md`。
 > 上游产品文档：[PRD.md](./PRD.md)
-> 参考资料：[`docs/v1/00-overview.md`](./v1/00-overview.md)、[`docs/v1/01-agent-core.md`](./v1/01-agent-core.md)、[`docs/v1/02-orchestrator.md`](./v1/02-orchestrator.md)、[`docs/v1/03-team.md`](./v1/03-team.md)、[`docs/v1/04-tools-skills.md`](./v1/04-tools-skills.md)、[`docs/v1/05-memory-tracing.md`](./v1/05-memory-tracing.md)、[`docs/v1/06-gateway-api.md`](./v1/06-gateway-api.md)、[`docs/axon-v1-process.md`](./axon-v1-process.md)
+> 参考资料：[`docs/archive/v1-old/00-overview.md`](./archive/v1-old/00-overview.md)、[`docs/archive/v1-old/01-agent-core.md`](./archive/v1-old/01-agent-core.md)、[`docs/archive/v1-old/02-orchestrator.md`](./archive/v1-old/02-orchestrator.md)、[`docs/archive/v1-old/03-team.md`](./archive/v1-old/03-team.md)、[`docs/archive/v1-old/04-tools-skills.md`](./archive/v1-old/04-tools-skills.md)、[`docs/archive/v1-old/05-memory-tracing.md`](./archive/v1-old/05-memory-tracing.md)、[`docs/archive/v1-old/06-gateway-api.md`](./archive/v1-old/06-gateway-api.md)、[`docs/axon-v1-process.md`](./axon-v1-process.md)
 
 ---
 
@@ -955,7 +955,7 @@ Web 至少应能展示：
 
 ## 18. 与历史设计文档关系
 
-- `docs/v1/00-overview.md` 及其分册继续保留，作为专题设计说明
+- `docs/archive/v1-old/00-overview.md` 及其分册继续保留，作为专题设计说明
 - 本 SPEC 是 `v1 foundation` 的主规范，优先级高于旧草稿叙事
 - 若专题分册与本 SPEC 冲突，以本 SPEC 为准
 - 后续新增详细技术文档应从本 SPEC 派生，而不是重新回到旧草稿分叉

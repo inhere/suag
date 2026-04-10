@@ -39,7 +39,7 @@
 - `docs/superpowers/plans/2026-04-07-agentcore-prompt-layered-phase1.md`
 - `docs/superpowers/plans/2026-04-07-agentcore-streaming-phase1.md`
 
-如果这些文档与旧 `PRD / SPEC / docs/v1/*` 有冲突，以当前主线文档为准。
+如果这些文档与旧 `PRD / SPEC / docs/archive/v1-old/*` 有冲突，以当前主线文档为准。
 
 ---
 
@@ -81,14 +81,14 @@
 - `docs/PRD.md`
 - `docs/SPEC.md`
 - `docs/axon-v1-process.md`
-- `docs/v1/00-overview.md`
-- `docs/v1/01-agent-core.md`
-- `docs/v1/02-orchestrator.md`
-- `docs/v1/03-team.md`
-- `docs/v1/04-tools-skills.md`
-- `docs/v1/05-memory-tracing.md`
-- `docs/v1/06-gateway-api.md`
-- `docs/v1/07-implementation-plan.md`
+- `docs/archive/v1-old/00-overview.md`
+- `docs/archive/v1-old/01-agent-core.md`
+- `docs/archive/v1-old/02-orchestrator.md`
+- `docs/archive/v1-old/03-team.md`
+- `docs/archive/v1-old/04-tools-skills.md`
+- `docs/archive/v1-old/05-memory-tracing.md`
+- `docs/archive/v1-old/06-gateway-api.md`
+- `docs/archive/v1-old/07-implementation-plan.md`
 
 这些文档可以用于：
 
