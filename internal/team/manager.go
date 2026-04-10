@@ -9,13 +9,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/internal/agent"
-	"github.com/inhere/axon/internal/agentcorestorage"
-	"github.com/inhere/axon/internal/hitl"
-	"github.com/inhere/axon/internal/llm"
-	"github.com/inhere/axon/internal/memory"
-	"github.com/inhere/axon/internal/tools"
-	"github.com/inhere/axon/internal/tracing"
+	"github.com/inhere/axon/internal/ops/hitl"
+	"github.com/inhere/axon/internal/platform/llm"
+	"github.com/inhere/axon/internal/platform/memory"
+	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/internal/platform/tracing"
 )
 
 // TeamState represents the lifecycle of a team.

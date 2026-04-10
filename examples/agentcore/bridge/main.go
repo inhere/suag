@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/inhere/axon/internal/agentcoreadapters/internalllm"
-	adapterinternaltools "github.com/inhere/axon/internal/agentcoreadapters/internaltools"
-	"github.com/inhere/axon/internal/llm"
-	internaltools "github.com/inhere/axon/internal/tools"
+	"github.com/inhere/axon/internal/acadapters/internalllm"
+	adapterinternaltools "github.com/inhere/axon/internal/acadapters/internaltools"
+	"github.com/inhere/axon/internal/platform/llm"
+	internaltools "github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/pkg/agentcore"
 	"github.com/inhere/axon/pkg/agentcore/files"
 )

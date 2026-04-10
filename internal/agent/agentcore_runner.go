@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/agentcoreadapters/internalllm"
-	"github.com/inhere/axon/internal/agentcoreadapters/internalmemory"
-	"github.com/inhere/axon/internal/agentcoreadapters/internaltools"
-	"github.com/inhere/axon/internal/hitl"
-	"github.com/inhere/axon/internal/tracing"
+	"github.com/inhere/axon/internal/acadapters/internalllm"
+	"github.com/inhere/axon/internal/acadapters/internalmemory"
+	"github.com/inhere/axon/internal/acadapters/internaltools"
+	"github.com/inhere/axon/internal/ops/hitl"
+	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/pkg/agentcore"
 )
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inhere/axon/internal/hitl"
-	"github.com/inhere/axon/internal/tracing"
+	"github.com/inhere/axon/internal/ops/hitl"
+	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/pkg/agentcore"
 )
 

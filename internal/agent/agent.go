@@ -5,10 +5,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/inhere/axon/internal/llm"
-	"github.com/inhere/axon/internal/memory"
-	"github.com/inhere/axon/internal/tools"
-	"github.com/inhere/axon/internal/tracing"
+	"github.com/inhere/axon/internal/platform/llm"
+	"github.com/inhere/axon/internal/platform/memory"
+	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/internal/platform/tracing"
 )
 
 // AgentState represents the lifecycle state of an agent.

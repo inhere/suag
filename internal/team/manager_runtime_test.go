@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inhere/axon/internal/hitl"
-	"github.com/inhere/axon/internal/llm"
+	"github.com/inhere/axon/internal/ops/hitl"
+	"github.com/inhere/axon/internal/platform/llm"
+	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/internal/team"
-	"github.com/inhere/axon/internal/tools"
-	"github.com/inhere/axon/internal/tracing"
 )
 
 func TestRunTeam_DefaultsToAgentcoreRuntime(t *testing.T) {

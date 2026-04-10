@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/internal/agent"
-	"github.com/inhere/axon/internal/agentcorestorage"
-	"github.com/inhere/axon/internal/llm"
+	"github.com/inhere/axon/internal/platform/llm"
 )
 
 func TestNewRunner_DefaultsToAgentcore(t *testing.T) {

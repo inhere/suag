@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/inhere/axon/internal/agent"
-	"github.com/inhere/axon/internal/hitl"
-	"github.com/inhere/axon/internal/llm"
-	"github.com/inhere/axon/internal/memory"
-	"github.com/inhere/axon/internal/tools"
-	"github.com/inhere/axon/internal/tracing"
+	"github.com/inhere/axon/internal/ops/hitl"
+	"github.com/inhere/axon/internal/platform/llm"
+	"github.com/inhere/axon/internal/platform/memory"
+	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/internal/platform/tracing"
 )
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -20,10 +20,10 @@ import (
 // echoTool returns its "msg" argument as output. Used to simulate successful tool calls.
 type echoTool struct{}
 
-func (e *echoTool) Name() string             { return "echo" }
-func (e *echoTool) Description() string      { return "echo the msg argument" }
-func (e *echoTool) Kind() tools.Kind         { return tools.KindNative }
-func (e *echoTool) Schema() llm.ToolSchema   { return llm.ToolSchema{Name: "echo"} }
+func (e *echoTool) Name() string           { return "echo" }
+func (e *echoTool) Description() string    { return "echo the msg argument" }
+func (e *echoTool) Kind() tools.Kind       { return tools.KindNative }
+func (e *echoTool) Schema() llm.ToolSchema { return llm.ToolSchema{Name: "echo"} }
 func (e *echoTool) Execute(_ context.Context, args map[string]any) (string, error) {
 	msg, _ := args["msg"].(string)
 	return "echo: " + msg, nil
@@ -32,10 +32,10 @@ func (e *echoTool) Execute(_ context.Context, args map[string]any) (string, erro
 // failTool always returns an error. Used to trigger HITL.
 type failTool struct{ callCount int }
 
-func (f *failTool) Name() string             { return "fail_tool" }
-func (f *failTool) Description() string      { return "always fails" }
-func (f *failTool) Kind() tools.Kind         { return tools.KindNative }
-func (f *failTool) Schema() llm.ToolSchema   { return llm.ToolSchema{Name: "fail_tool"} }
+func (f *failTool) Name() string           { return "fail_tool" }
+func (f *failTool) Description() string    { return "always fails" }
+func (f *failTool) Kind() tools.Kind       { return tools.KindNative }
+func (f *failTool) Schema() llm.ToolSchema { return llm.ToolSchema{Name: "fail_tool"} }
 func (f *failTool) Execute(_ context.Context, _ map[string]any) (string, error) {
 	f.callCount++
 	return "", fmt.Errorf("tool error #%d", f.callCount)

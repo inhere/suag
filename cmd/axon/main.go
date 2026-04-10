@@ -14,16 +14,16 @@ import (
 	"github.com/gookit/config/v2"
 	"github.com/gookit/ini/v2/dotenv"
 
-	"github.com/inhere/axon/internal/cron"
-	"github.com/inhere/axon/internal/gateway"
-	"github.com/inhere/axon/internal/hitl"
-	"github.com/inhere/axon/internal/llm"
-	"github.com/inhere/axon/internal/memory"
+	"github.com/inhere/axon/internal/host/gateway"
+	"github.com/inhere/axon/internal/ops/cron"
+	"github.com/inhere/axon/internal/ops/hitl"
 	"github.com/inhere/axon/internal/orchestrator"
+	"github.com/inhere/axon/internal/platform/llm"
+	"github.com/inhere/axon/internal/platform/memory"
+	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/internal/platform/tools/native"
+	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/internal/team"
-	"github.com/inhere/axon/internal/tools"
-	"github.com/inhere/axon/internal/tools/native"
-	"github.com/inhere/axon/internal/tracing"
 )
 
 func main() {

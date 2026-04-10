@@ -25,7 +25,7 @@ type TeamTask struct {
 	AssignedTo  string // Agent ID
 	Status      TaskStatus
 	Result      string
-	DependsOn   []string  // IDs of tasks that must complete before this one
+	DependsOn   []string // IDs of tasks that must complete before this one
 	TraceID     string
 	SpanID      string
 	CreatedAt   time.Time

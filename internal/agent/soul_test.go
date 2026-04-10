@@ -76,10 +76,10 @@ persona: "You are a helpful bot."
 
 func TestStateMachine(t *testing.T) {
 	tests := []struct {
-		name        string
-		from        AgentState
-		to          AgentState
-		wantErr     bool
+		name    string
+		from    AgentState
+		to      AgentState
+		wantErr bool
 	}{
 		{"pending→running ok", AgentPending, AgentRunning, false},
 		{"running→completed ok", AgentRunning, AgentCompleted, false},

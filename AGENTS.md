@@ -11,6 +11,7 @@
 <!-- 需要实时更新: 正在进行的工作和关键md文档链接 -->
 - Axon v0 自用主线规划与阶段架构设计进行中，设计总纲见 `docs/v0-self-host-design.md`
 - Axon v0 self-host 基础骨架实施计划进行中，计划文档见 `docs/superpowers/plans/2026-04-10-axon-v0-self-host-foundation-plan.md`
+- internal 目录结构调整进行中，目标结构见 `docs/internal-code-status.md`
 
 <!-- PROCESSING WORKS:END -->
 
