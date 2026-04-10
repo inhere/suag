@@ -349,6 +349,9 @@ Axon 第一阶段不追求自己直接具备最强编码能力，而是先稳定
 - CLI 后续准备迁移到 `gookit/gcli`，但当前阶段先不改 `cmd/axon`
 - WebSocket 实现使用 `github.com/coder/websocket`
 - ID 方案使用 `前缀 + ULID`
+- 数据库迁移使用 `gookit/miglite`
+  - 本地使用已安装的 `miglite` CLI
+  - 迁移文件采用原始 SQL 文件
 - 前端使用 `React + Vite`
 
 建议的 ID 前缀包括：
@@ -376,6 +379,9 @@ docs/
   archive/
   research/
   superpowers/
+
+db/
+  migrations/
 
 pkg/
   agentcore/
@@ -428,6 +434,21 @@ web/
 3. 仓库外复用是合理且真实的
 
 在这三个条件未同时满足之前，优先继续放在 `internal/`。
+
+#### 数据库迁移约束
+
+当前 SQLite schema 不再建议通过应用代码中的大段 `initSchema()` 字符串来长期维护，而应统一走：
+
+- `gookit/miglite`
+- `db/migrations/` 下的 SQL 文件
+
+这样做的好处是：
+
+- schema 变更可审计
+- 与 `session / turn / run / event` 结构演进更匹配
+- 后续本地开发、测试环境和部署环境的升级路径更清晰
+
+应用代码中的存储实现可以保留必要的迁移状态检查或最小防御性初始化，但不应再把完整 schema 定义散落在 Go 代码中。
 
 同时，为了减少 `internal/` 顶层目录数量，建议做一层内部收敛：
 

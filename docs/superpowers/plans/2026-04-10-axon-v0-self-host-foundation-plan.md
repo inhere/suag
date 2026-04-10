@@ -4,9 +4,9 @@
 
 **Goal:** Build the first backend foundation slice for `v0.self-host`: persistent `session / turn / run / event` host state, a host-session runtime skeleton, and a WebSocket-first gateway path that can drive and observe agentcore-backed runs.
 
-**Architecture:** Keep `pkg/agentcore` unchanged as the runtime kernel and add a host-side `internal/host/session` package responsible for product-layer lifecycle and persistence. Reuse the existing SQLite experience in `internal/acstore`, reuse `internal/host/gateway` as the transport shell, and refactor the current trace-oriented event bus into session-aware event streaming with room for later AG-UI mapping and ACP integration.
+**Architecture:** Keep `pkg/agentcore` unchanged as the runtime kernel and add a host-side `internal/host/session` package responsible for product-layer lifecycle and persistence. Reuse the existing SQLite experience in `internal/acstore`, manage schema changes with `gookit/miglite` SQL migrations under `db/migrations/`, reuse `internal/host/gateway` as the transport shell, and refactor the current trace-oriented event bus into session-aware event streaming with room for later AG-UI mapping and ACP integration.
 
-**Tech Stack:** Go 1.24, `modernc.org/sqlite`, `github.com/coder/websocket`, existing `pkg/agentcore`, `go test`
+**Tech Stack:** Go 1.24, `modernc.org/sqlite`, `github.com/coder/websocket`, `gookit/miglite` CLI, raw SQL migrations, existing `pkg/agentcore`, `go test`
 
 ---
 
@@ -21,13 +21,20 @@
 - Create: `internal/host/session/store.go`
   Responsibility: store interfaces for host state persistence and read/query helpers
 - Create: `internal/host/session/sqlite.go`
-  Responsibility: SQLite-backed implementation, schema bootstrap, CRUD operations, append-only event persistence
+  Responsibility: SQLite-backed implementation, migration-aware store wiring, CRUD operations, append-only event persistence
 - Create: `internal/host/session/sqlite_test.go`
   Responsibility: schema and persistence contract tests
 - Create: `internal/host/session/service.go`
   Responsibility: session runtime service, create/continue session-turn-run flow, runtime state transitions, event publishing
 - Create: `internal/host/session/service_test.go`
   Responsibility: service orchestration tests with a fake runner and fake clock
+
+### Database migrations
+
+- Create: `db/migrations/`
+  Responsibility: miglite-managed raw SQL migrations for host-state schema changes
+- Create: `db/migrations/<timestamp>-create-host-session-foundation.sql`
+  Responsibility: create `sessions`, `turns`, `runs`, `run_events`, `external_tasks`, and `recaps` tables
 
 ### Gateway refactor for session-aware streaming
 
@@ -66,6 +73,7 @@
 - Create: `internal/host/session/store.go`
 - Create: `internal/host/session/sqlite.go`
 - Test: `internal/host/session/sqlite_test.go`
+- Create: `db/migrations/<timestamp>-create-host-session-foundation.sql`
 
 - [ ] **Step 1: Write the failing schema contract tests**
 
@@ -133,9 +141,10 @@ type Store interface {
 }
 ```
 
-- [ ] **Step 5: Implement SQLite schema bootstrap and CRUD methods**
+- [ ] **Step 5: Create the first miglite SQL migration and wire store code to assume migrations are the source of truth**
 
 ```sql
+-- Migrate:UP
 CREATE TABLE IF NOT EXISTS sessions (
     session_id   TEXT PRIMARY KEY,
     title        TEXT NOT NULL,
@@ -182,6 +191,20 @@ CREATE TABLE IF NOT EXISTS run_events (
     source        TEXT NOT NULL,
     created_at    TEXT NOT NULL
 );
+
+-- Migrate:DOWN
+DROP TABLE IF EXISTS run_events;
+DROP TABLE IF EXISTS runs;
+DROP TABLE IF EXISTS turns;
+DROP TABLE IF EXISTS sessions;
+```
+
+And keep `sqlite.go` limited to:
+
+```go
+// open DB
+// verify connectivity
+// rely on miglite-managed tables instead of embedding the full schema in Go strings
 ```
 
 - [ ] **Step 6: Run the package tests**
@@ -192,7 +215,7 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add internal/host/session
+git add internal/host/session db/migrations
 git commit -m "feat: add self-host session runtime store foundation"
 ```
 

@@ -124,9 +124,19 @@ internal/host/session/
 
 职责：
 
-- SQLite schema 初始化
+- SQLite 连接与存储实现
 - `sessions / turns / runs / run_events / external_tasks / recaps` 的具体存取实现
 - append-only event persistence
+
+不负责：
+
+- 长期维护完整 schema 字符串
+- 替代迁移系统
+
+当前 schema 变更来源应固定为：
+
+- `gookit/miglite`
+- `db/migrations/` 下的 SQL 文件
 
 不要放：
 
@@ -137,6 +147,7 @@ internal/host/session/
 
 - 面向 `store.go` 里的接口实现
 - 不要直接长出高层 service 行为
+- 不要把完整迁移 SQL 长期塞回 Go 源码
 
 ### `service.go`
 
