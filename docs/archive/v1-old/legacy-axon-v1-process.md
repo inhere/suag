@@ -5,8 +5,7 @@
 
 > 项目开始时间：2026-03-14 22:00
 
-- 原始需求文档 [axon-prd.md](axon-prd.md)
-- 设计文档参考 [axon-design-v0.1.md](axon-design-v0.1.md)
+- 原始需求文档 [axon-prd.md](/docs/axon-prd.md)
 
 ## Phase 1 MVP Complete ✓
 

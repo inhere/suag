@@ -52,7 +52,6 @@ s12   "各干各的目录, 互不干扰" — 任务管目标, worktree 管目录
 
 > 文档之间可以互相引用，不要过多赘述重复性的东西。有任何不明确的地方，需要及时询问我确认后再继续。
 
-
 ## 2026.04.03 先思考规划帮我实现一个最小但是可扩展的 agent core loop
 
 先思考规划帮我实现一个最小但是可扩展的 agent core loop，直接开始 v1 的产品功能太大了，外界的发展变化也很迅速。
@@ -70,3 +69,31 @@ see docs/superpowers/specs/2026-04-02-agentcore-design.md
 ## 2026.04.06 重新规划产品和实现计划
 
 现在我将 agent 核心抽离为了一个独立的 pkg/agentcore 包。而且有一些新的想法记录在了 axon-prd.draft.md
+
+重新思考并调整方案设计和开发准备
+
+- 版本回退到 v0, 还无法定位为 v1，等演进一段时间后在定出v1版本
+- 与外部Agent APP对接 可以通过ACP协议，指挥 claude-code, codex 等工具实现功能，并可以持续跟进协作
+- 基于 Harness Engine 工程，保证Agent 可以稳定持续的运行
+- go 编写核心 + ts/js 对接实现扩展能力
+  - go <-> js 通过通信协议来交互
+  - 基于 ts/js 可以直接使用社区的 IM渠道对接 等能力（避免创建一些无意义的轮子）
+
+自进化能力：
+- 闭环学习循环 通过系统提示引导 + 后台 review 流程，推动 Agent 把复杂任务沉淀成可复用的 Skill 文件，且在使用中自我迭代。这是 best-effort 机制，不是硬编码必达动作。
+- 记忆体系走的是 SQLite + FTS5 全文检索路线。 
+  分三块：MEMORY.md 存 Agent 笔记、USER.md 存用户画像、state.db 存全量对话历史。按需搜索召回，不是每次全量注入。
+- 每次会话后总结经验，写入Agent记忆当中
+  - MEMORY.md Agent 自己的总结记忆记录
+  - USER.md 关于用户的偏好记忆记录
+- 参考：https://mp.weixin.qq.com/s/dyamkjN7w-3q2ggzxRq0sg
+
+先快速实现可自用：
+- 服务端和自有的 Web 客户端等通过 ws 连接管理会话，交互等. sse 不再作为主要方式
+- 服务端通过 ag-ui 协议推送 Agent 事件到客户端渲染显示和交互处理
+- 三方IM channel 通过支持他们的 openclaw 插件处理
+
+## 2026.04.10
+
+- 大致规划一下接下来要用的组件，技术栈选型
+- 规划一下项目结构，避免让 internal 下的文件夹过多或者导致后期大调整
