@@ -227,9 +227,13 @@ Axon 第一阶段不追求自己直接具备最强编码能力，而是先稳定
 
 它解决通用运行语义，不感知产品层协议和平台对象。
 
-### 5.2 Session Runtime
+### 5.2 Host Session Runtime
 
 这是第一阶段真正的产品核心。
+
+第一阶段建议的代码落位是：
+
+- `internal/host/session`
 
 它负责：
 
@@ -248,6 +252,10 @@ Axon 第一阶段不追求自己直接具备最强编码能力，而是先稳定
 ### 5.3 ACP Bridge
 
 这一层是第一阶段差异化核心之一。
+
+第一阶段建议的代码落位是：
+
+- `internal/host/acpbridge`
 
 它不应只是“执行一个外部命令”，而应成为统一的外部 Agent 代理层，负责：
 
@@ -268,6 +276,10 @@ Axon 第一阶段不追求自己直接具备最强编码能力，而是先稳定
 ### 5.4 Event Bus / AG-UI Adapter
 
 服务端内部先统一事件模型，再适配为 AG-UI 推给前端。
+
+第一阶段可以先不急着单独拆包；当 AG-UI 映射真正开始落代码时，建议代码落位为：
+
+- `internal/host/agui`
 
 不要让内部代码直接绑定在前端展示格式上。
 
@@ -299,6 +311,10 @@ Axon 第一阶段不追求自己直接具备最强编码能力，而是先稳定
 
 这一层是外部入口层，职责应保持很薄：
 
+第一阶段建议的代码落位是：
+
+- `internal/host/gateway`
+
 - 接收客户端连接
 - 管理认证和 session 绑定
 - 接收用户输入
@@ -309,6 +325,11 @@ Axon 第一阶段不追求自己直接具备最强编码能力，而是先稳定
 
 第一阶段 Web 客户端最重要的是把过程看清楚，而不是堆太多页面。
 
+前端目录建议固定为：
+
+- `web/app`：React + Vite 源码
+- `web/dist`：构建产物
+
 至少需要：
 
 - 会话列表
@@ -317,6 +338,128 @@ Axon 第一阶段不追求自己直接具备最强编码能力，而是先稳定
 - 事件流
 - 人工介入输入框
 - 最终产出与 recap 区
+
+### 5.8 开工前技术与目录冻结
+
+为避免真正开始开发后频繁改目录或重复争论选型，当前先冻结以下决策。
+
+#### 已确认的技术选型
+
+- Go 继续使用当前 `1.24`
+- CLI 后续准备迁移到 `gookit/gcli`，但当前阶段先不改 `cmd/axon`
+- WebSocket 实现使用 `github.com/coder/websocket`
+- ID 方案使用 `前缀 + ULID`
+- 前端使用 `React + Vite`
+
+建议的 ID 前缀包括：
+
+- `sess_`
+- `turn_`
+- `run_`
+- `evt_`
+- `ext_`
+
+#### 目录结构冻结原则
+
+当前不建议再新增大量并列顶层目录，而应按“稳定业务边界”收拢。
+
+建议的目标结构如下：
+
+```text
+cmd/
+  axon/
+
+docs/
+  README.md
+  v0-self-host-design.md
+  internal-code-status.md
+  archive/
+  research/
+  superpowers/
+
+pkg/
+  agentcore/
+
+internal/
+  host/
+    session/
+    gateway/
+    acpbridge/
+    agui/          # 可后置，等真正落 AG-UI 映射时再创建
+  platform/
+    llm/
+    tools/
+    memory/
+    tracing/
+  ops/
+    hitl/
+    cron/
+  acadapters/
+  acstore/
+
+web/
+  app/
+  dist/
+```
+
+#### 命名与分层说明
+
+- `agentcoreadapters` 建议统一收敛为 `acadapters`
+- `agentcorestorage` 建议统一收敛为 `acstore`
+- `acstore` 不放到 `acadapters` 下面
+
+原因是：
+
+- `acadapters` 是桥接层，负责把旧能力适配到 `pkg/agentcore`
+- `acstore` 是 `agentcore.Storage` 的具体实现层，不属于适配器
+
+因此两者应保持并列，而不是包含关系。
+
+#### `pkg/` 与 `internal/` 的边界
+
+当前只有 `pkg/agentcore` 明确满足“独立、可复用、contract 已成形”的条件。
+
+对于 `llm`、`cron`、`memory`、`tools` 等模块，虽然带有基础能力属性，但当前仍然和产品语义绑定较深，因此暂不因为“看起来更通用”而提前迁入 `pkg/`。
+
+采用标准应是：
+
+1. 不依赖当前产品业务模型
+2. 对外 API 已相对稳定
+3. 仓库外复用是合理且真实的
+
+在这三个条件未同时满足之前，优先继续放在 `internal/`。
+
+同时，为了减少 `internal/` 顶层目录数量，建议做一层内部收敛：
+
+- `internal/platform/*`
+  - 放相对基础的能力模块：`llm`、`tools`、`memory`、`tracing`
+- `internal/ops/*`
+  - 放更偏运行治理和系统操作的模块：`hitl`、`cron`
+
+不建议使用 `internal/pkg/*` 这类命名，因为它会让“内部基础设施”和“对外可复用包”的语义混在一起，后续容易误导目录边界。
+
+#### 目录增长约束
+
+后续开发中，除非新目录承担明确且长期稳定的边界，否则：
+
+- 优先新增文件
+- 不优先新增目录
+
+同时不建议建立全局性的：
+
+- `internal/model`
+- `internal/service`
+- `internal/dto`
+
+更推荐每个业务边界自己携带：
+
+- `types.go`
+- `service.go`
+- `dto.go`
+- `sqlite.go`
+- `events.go`
+
+避免后期出现“什么都往公共目录里塞”的杂物间结构。
 
 ---
 
@@ -667,6 +810,10 @@ ACP、A2A、AG-UI、IM、review、team 都不进 core。
 
 传输和事件语义保持分离。
 
+当前主链路的 WebSocket 实现选择固定为：
+
+- `github.com/coder/websocket`
+
 ### 10.4 Go 保持内核与治理，TS/JS 保持生态与扩展速度
 
 避免两边职责打架。
@@ -700,7 +847,7 @@ Agent 可以建议沉淀、建议生成 skill、建议优化流程，但不应�
 
 基于本文档，下一步不应立刻把所有后续阶段拆成大量文档，而应优先围绕第一阶段继续往下收敛成实现计划：
 
-1. `v0.self-host` 的模块拆分与目录规划
+1. 按已冻结结构细化 `internal/host/session` 的文件拆分
 2. `session / turn / run / event` 的 SQLite schema 草案
 3. `ACP bridge` 的 host-facing contract
 4. `WS + AG-UI` 的事件映射草案
