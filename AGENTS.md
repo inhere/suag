@@ -8,6 +8,7 @@
 
 <!-- PROCESSING WORKS:START -->
 <!-- 需要实时更新: 正在进行的工作和关键md文档链接 -->
+- Axon v0 自用主线规划与阶段架构设计进行中，设计总纲见 `docs/superpowers/specs/2026-04-10-axon-v0-self-host-design.md`
 
 <!-- PROCESSING WORKS:END -->
 
@@ -15,5 +16,4 @@
 
 - 关键的方法或逻辑点需要添加注释说明
 - 单个go文件最大行数不能操作1000行，超过时需要按情况进行拆分
-
 
