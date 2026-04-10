@@ -51,7 +51,7 @@
 
 ### Documentation
 
-- Modify: `docs/superpowers/specs/2026-04-10-axon-v0-self-host-design.md`
+- Modify: `docs/v0-self-host-design.md`
   Responsibility: link the implementation plan in the “下一步建议” section after the plan lands
 - Modify: `README.md`
   Responsibility: mention the new `v0.self-host` backend foundation slice at a high level
@@ -421,7 +421,7 @@ git commit -m "feat: add websocket session gateway foundation"
 ### Task 5: Add Documentation and Verification Notes
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-04-10-axon-v0-self-host-design.md`
+- Modify: `docs/v0-self-host-design.md`
 - Modify: `README.md`
 
 - [ ] **Step 1: Update the design spec with the plan link and scope note**
@@ -450,7 +450,7 @@ Expected: PASS, or capture known unrelated failures before landing
 - [ ] **Step 5: Commit**
 
 ```bash
-git add README.md docs/superpowers/specs/2026-04-10-axon-v0-self-host-design.md
+git add README.md docs/v0-self-host-design.md
 git commit -m "docs: document self-host foundation plan"
 ```
 

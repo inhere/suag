@@ -26,7 +26,7 @@
 
 当前新的 `v0` 开发，以以下文档作为主要依据：
 
-- `docs/superpowers/specs/2026-04-10-axon-v0-self-host-design.md`
+- `docs/v0-self-host-design.md`
   - 当前 `v0.self-host` 总纲
 - `docs/superpowers/plans/2026-04-10-axon-v0-self-host-foundation-plan.md`
   - 当前第一阶段基础骨架实施计划
