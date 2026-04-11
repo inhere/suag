@@ -47,15 +47,22 @@ func NewRunner(cfg FactoryConfig) (session.Runner, error) {
 	case "acp_stdio":
 		acpCommand := cfg.ACPCommand
 		if len(acpCommand.Command) == 0 {
-			preset, ok := defaultACPCommand(strings.TrimSpace(cfg.AdapterName))
-			if !ok {
-				return nil, fmt.Errorf("acp command config is required for acp_stdio mode")
-			}
-			acpCommand = preset
+			return nil, fmt.Errorf("acp command config is required for acp_stdio mode")
 		}
 		return NewRunnerAdapter(NewACPStdioBridge(ACPStdioBridgeConfig{
 			Commands: map[string]CommandConfig{
 				strings.TrimSpace(cfg.AdapterName): acpCommand,
+			},
+			SessionStarter: cfg.ACPStdioStarter,
+		}), runnerCfg), nil
+	case "codex_app_server":
+		codexCommand := cfg.ACPCommand
+		if len(codexCommand.Command) == 0 {
+			codexCommand = defaultCodexAppServerCommand()
+		}
+		return NewRunnerAdapter(NewACPStdioBridge(ACPStdioBridgeConfig{
+			Commands: map[string]CommandConfig{
+				strings.TrimSpace(cfg.AdapterName): codexCommand,
 			},
 			SessionStarter: cfg.ACPStdioStarter,
 		}), runnerCfg), nil
@@ -78,13 +85,13 @@ func NewLocalCommandTestRunner(adapterName, workspace string, cmdCfg CommandConf
 	return runner
 }
 
-func defaultACPCommand(adapterName string) (CommandConfig, bool) {
-	switch strings.TrimSpace(strings.ToLower(adapterName)) {
-	case "codex":
-		return CommandConfig{Command: []string{"acp-adapter", "--adapter", "codex"}}, true
-	case "claude", "claude-code":
-		return CommandConfig{Command: []string{"acp-adapter", "--adapter", "claude"}}, true
-	default:
-		return CommandConfig{}, false
+func defaultCodexAppServerCommand() CommandConfig {
+	return CommandConfig{
+		Command: []string{
+			"codex",
+			"app-server",
+			"-c",
+			`model_reasoning_summary="detailed"`,
+		},
 	}
 }

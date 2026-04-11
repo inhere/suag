@@ -258,8 +258,8 @@ func buildSessionRunner() (session.Runner, error) {
 
 	localCommand := strings.Fields(strings.TrimSpace(config.String("host.acp.local_command")))
 	acpCommand := strings.Fields(strings.TrimSpace(config.String("host.acp.acp_command")))
-	if mode == "acp_stdio" && len(acpCommand) == 0 {
-		slog.Info("host acp acp_command not configured, using adapter preset", "adapter", adapterName)
+	if mode == "codex_app_server" && len(acpCommand) == 0 {
+		slog.Info("host acp acp_command not configured, using codex app-server default")
 	}
 
 	// The server keeps ACP bridge selection at the edge and only passes the

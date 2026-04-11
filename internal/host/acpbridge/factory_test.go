@@ -133,7 +133,23 @@ func TestNewRunner_ACPStdioModeBuildsRunner(t *testing.T) {
 	}
 }
 
-func TestNewRunner_ACPStdioModeUsesAdapterPresetWhenCommandOmitted(t *testing.T) {
+func TestNewRunner_ACPStdioModeRequiresCommandWhenOmitted(t *testing.T) {
+	t.Parallel()
+
+	runner, err := NewRunner(FactoryConfig{
+		Mode:        "acp_stdio",
+		AdapterName: "codex",
+		Workspace:   "workspace/demo",
+	})
+	if err == nil {
+		t.Fatal("NewRunner() error = nil, want missing acp command error")
+	}
+	if runner != nil {
+		t.Fatalf("NewRunner() = %T, want nil", runner)
+	}
+}
+
+func TestNewRunner_CodexAppServerModeUsesDefaultCommandWhenOmitted(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeACPStdioSession{
@@ -147,7 +163,7 @@ func TestNewRunner_ACPStdioModeUsesAdapterPresetWhenCommandOmitted(t *testing.T)
 
 	var gotSpec CommandSpec
 	runner, err := NewRunner(FactoryConfig{
-		Mode:        "acp_stdio",
+		Mode:        "codex_app_server",
 		AdapterName: "codex",
 		Workspace:   "workspace/demo",
 		ACPStdioStarter: func(_ context.Context, spec CommandSpec) (ACPStdioSession, error) {
@@ -169,54 +185,13 @@ func TestNewRunner_ACPStdioModeUsesAdapterPresetWhenCommandOmitted(t *testing.T)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if len(gotSpec.Args) != 3 {
-		t.Fatalf("starter args len = %d, want 3", len(gotSpec.Args))
+	if gotSpec.Args[0] != "codex" || gotSpec.Args[1] != "app-server" || gotSpec.Args[2] != "-c" {
+		t.Fatalf("starter args prefix = %v, want [codex app-server -c]", gotSpec.Args)
 	}
-	if gotSpec.Args[0] != "acp-adapter" || gotSpec.Args[1] != "--adapter" || gotSpec.Args[2] != "codex" {
-		t.Fatalf("starter args = %v, want [acp-adapter --adapter codex]", gotSpec.Args)
+	if len(gotSpec.Args) != 4 {
+		t.Fatalf("starter args len = %d, want 4", len(gotSpec.Args))
 	}
-}
-
-func TestNewRunner_ACPStdioModeUsesClaudePresetAlias(t *testing.T) {
-	t.Parallel()
-
-	fake := &fakeACPStdioSession{
-		readLines: [][]byte{
-			[]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}` + "\n"),
-			[]byte(`{"jsonrpc":"2.0","id":2,"result":{"sessionId":"remote_sess_001"}}` + "\n"),
-			[]byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"remote_sess_001","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"preset result"}}}}` + "\n"),
-			[]byte(`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","userMessageId":"msg_001"}}` + "\n"),
-		},
-	}
-
-	var gotSpec CommandSpec
-	runner, err := NewRunner(FactoryConfig{
-		Mode:        "acp_stdio",
-		AdapterName: "claude-code",
-		Workspace:   "workspace/demo",
-		ACPStdioStarter: func(_ context.Context, spec CommandSpec) (ACPStdioSession, error) {
-			gotSpec = spec
-			return fake, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewRunner() error = %v", err)
-	}
-
-	_, err = runner.Run(context.Background(), session.RuntimeRequest{
-		SessionID:   "sess_001",
-		TurnID:      "turn_001",
-		RunID:       "run_001",
-		AgentID:     "default",
-		Instruction: "implement feature x",
-	})
-	if err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if len(gotSpec.Args) != 3 {
-		t.Fatalf("starter args len = %d, want 3", len(gotSpec.Args))
-	}
-	if gotSpec.Args[0] != "acp-adapter" || gotSpec.Args[1] != "--adapter" || gotSpec.Args[2] != "claude" {
-		t.Fatalf("starter args = %v, want [acp-adapter --adapter claude]", gotSpec.Args)
+	if gotSpec.Args[3] != `model_reasoning_summary="detailed"` {
+		t.Fatalf("starter args[3] = %q, want %q", gotSpec.Args[3], `model_reasoning_summary="detailed"`)
 	}
 }
