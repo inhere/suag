@@ -25,6 +25,7 @@
 - `internal/host/acpbridge` 已补齐最小 stub/local bridge，当前可生成 remote session/task 占位结果并回写 host runtime
 - `internal/host/acpbridge` 已补齐 local command bridge 骨架与 runner factory，server 可按配置切换 stub / local_command 模式
 - `internal/host/acpbridge` 已补齐 ACP stdio 最小链路，当前支持 initialize/session-new/session-prompt 与 agent_message_chunk 聚合
+- `internal/host/acpbridge` 已参考 `tmp/acp-adapter` 增加 ACP stdio adapter preset，未显式配置 acp_command 时可默认走 `acp-adapter --adapter <backend>`
 - `internal/host/session` 已补齐 external_tasks 存储读写，ACP bridge 返回的外部任务快照会写入 run 关联记录
 - `internal/host/gateway` session 查询与 WS STATE_SNAPSHOT 已补齐 external_tasks 视图，前端首屏与重连可直接拿到外部任务状态
 
