@@ -63,7 +63,16 @@ func TestBuildStateSnapshot(t *testing.T) {
 			SessionID: "sess_001",
 			TurnID:    "turn_002",
 			RunID:     "run_002",
+			AgentID:   "default",
 			Sequence:  2,
+		},
+		{
+			Type:      "run.started",
+			SessionID: "sess_001",
+			TurnID:    "turn_002",
+			RunID:     "run_002",
+			AgentID:   "default",
+			Sequence:  3,
 		},
 	}
 
@@ -82,16 +91,28 @@ func TestBuildStateSnapshot(t *testing.T) {
 	if snapshot["turnId"] != "turn_002" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.turnId = %v, want %q", snapshot["turnId"], "turn_002")
 	}
+	if snapshot["currentRunId"] != "run_002" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.currentRunId = %v, want %q", snapshot["currentRunId"], "run_002")
+	}
+	if snapshot["currentAgentId"] != "default" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.currentAgentId = %v, want %q", snapshot["currentAgentId"], "default")
+	}
+	if snapshot["latestEventType"] != "run.started" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.latestEventType = %v, want %q", snapshot["latestEventType"], "run.started")
+	}
+	if snapshot["eventCount"] != 2 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.eventCount = %v, want %d", snapshot["eventCount"], 2)
+	}
 
 	rawEvents, ok := snapshot["events"].([]map[string]any)
 	if !ok {
 		t.Fatalf("BuildStateSnapshot().Snapshot.events type = %T, want []map[string]any", snapshot["events"])
 	}
-	if len(rawEvents) != 1 {
-		t.Fatalf("BuildStateSnapshot().Snapshot.events len = %d, want 1", len(rawEvents))
+	if len(rawEvents) != 2 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.events len = %d, want 2", len(rawEvents))
 	}
-	if rawEvents[0]["type"] != "run.queued" {
-		t.Fatalf("BuildStateSnapshot().Snapshot.events[0].type = %v, want %q", rawEvents[0]["type"], "run.queued")
+	if rawEvents[1]["type"] != "run.started" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.events[1].type = %v, want %q", rawEvents[1]["type"], "run.started")
 	}
 }
 

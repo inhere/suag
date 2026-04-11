@@ -66,7 +66,14 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent) StateS
 	now := time.Now().UnixMilli()
 
 	mappedEvents := make([]map[string]any, 0, len(events))
+	currentRunID := ""
+	currentAgentID := ""
+	latestEventType := ""
 	for _, event := range events {
+		currentRunID = event.RunID
+		currentAgentID = event.AgentID
+		latestEventType = event.Type
+
 		mappedEvents = append(mappedEvents, map[string]any{
 			"type":      event.Type,
 			"sessionId": event.SessionID,
@@ -82,13 +89,17 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent) StateS
 		Type:      EventTypeStateSnapshot,
 		Timestamp: now,
 		Snapshot: map[string]any{
-			"threadId":   sessionModel.SessionID,
-			"sessionId":  sessionModel.SessionID,
-			"title":      sessionModel.Title,
-			"status":     string(sessionModel.Status),
-			"turnId":     sessionModel.LastTurnID,
-			"lastTurnId": sessionModel.LastTurnID,
-			"events":     mappedEvents,
+			"threadId":        sessionModel.SessionID,
+			"sessionId":       sessionModel.SessionID,
+			"title":           sessionModel.Title,
+			"status":          string(sessionModel.Status),
+			"turnId":          sessionModel.LastTurnID,
+			"lastTurnId":      sessionModel.LastTurnID,
+			"currentRunId":    currentRunID,
+			"currentAgentId":  currentAgentID,
+			"latestEventType": latestEventType,
+			"eventCount":      len(mappedEvents),
+			"events":          mappedEvents,
 		},
 	}
 }
