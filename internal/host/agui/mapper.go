@@ -6,11 +6,42 @@ import (
 	"github.com/inhere/axon/internal/host/session"
 )
 
-func MapEvent(event HostEvent) CustomEvent {
+func MapEvent(event HostEvent) any {
 	now := time.Now().UnixMilli()
 
+	switch event.Type {
+	case session.EventRunStarted:
+		return RunStartedEvent{
+			Type:      EventTypeRunStarted,
+			Timestamp: now,
+			ThreadID:  event.SessionID,
+			RunID:     event.RunID,
+		}
+	case session.EventRunFinished:
+		return RunFinishedEvent{
+			Type:      EventTypeRunFinished,
+			Timestamp: now,
+			ThreadID:  event.SessionID,
+			RunID:     event.RunID,
+			Result:    event.Payload,
+		}
+	case session.EventRunFailed:
+		message := "run failed"
+		if payload, ok := event.Payload.(map[string]any); ok {
+			if raw, ok := payload["error"].(string); ok && raw != "" {
+				message = raw
+			}
+		}
+		return RunErrorEvent{
+			Type:      EventTypeRunError,
+			Timestamp: now,
+			RunID:     event.RunID,
+			Message:   message,
+		}
+	}
+
 	name := "axon.event"
-	if event.Type == "run.queued" {
+	if event.Type == session.EventRunQueued {
 		name = "axon.run.queued"
 	}
 

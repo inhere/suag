@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -48,6 +49,15 @@ func TestService_StartTurnCreatesQueuedRunAndPublishesEvent(t *testing.T) {
 	if bus.events[0].EventType != EventRunQueued {
 		t.Fatalf("first published event type = %q, want %q", bus.events[0].EventType, EventRunQueued)
 	}
+	if len(bus.events) != 3 {
+		t.Fatalf("published events len = %d, want 3", len(bus.events))
+	}
+	if bus.events[1].EventType != EventRunStarted {
+		t.Fatalf("second published event type = %q, want %q", bus.events[1].EventType, EventRunStarted)
+	}
+	if bus.events[2].EventType != EventRunFinished {
+		t.Fatalf("third published event type = %q, want %q", bus.events[2].EventType, EventRunFinished)
+	}
 	if runner.lastRequest.SessionID != "sess_001" {
 		t.Fatalf("runner request SessionID = %q, want %q", runner.lastRequest.SessionID, "sess_001")
 	}
@@ -70,11 +80,11 @@ func TestService_StartTurnCreatesQueuedRunAndPublishesEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListEventsBySession() error = %v", err)
 	}
-	if len(events) != 1 {
-		t.Fatalf("ListEventsBySession() len = %d, want 1", len(events))
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
 	}
-	if events[0].RunID != result.RunID {
-		t.Fatalf("ListEventsBySession()[0].RunID = %q, want %q", events[0].RunID, result.RunID)
+	if events[2].RunID != result.RunID {
+		t.Fatalf("ListEventsBySession()[2].RunID = %q, want %q", events[2].RunID, result.RunID)
 	}
 }
 
@@ -130,8 +140,40 @@ func TestService_ContinueTurnCreatesNewTurnForExistingSession(t *testing.T) {
 	if gotSession.LastTurnID != result.TurnID {
 		t.Fatalf("GetSession().LastTurnID = %q, want %q", gotSession.LastTurnID, result.TurnID)
 	}
-	if len(bus.events) != 1 {
-		t.Fatalf("published events len = %d, want 1", len(bus.events))
+	if len(bus.events) != 3 {
+		t.Fatalf("published events len = %d, want 3", len(bus.events))
+	}
+}
+
+func TestService_StartTurnPublishesFailedLifecycleWhenRunnerFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		err: errors.New("runner failed"),
+	}
+	now := time.Date(2026, 4, 11, 11, 10, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	_, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_002",
+		AgentID:       "default",
+		UserMessage:   "implement broken feature",
+		InitiatorType: InitiatorUser,
+	})
+	if err == nil {
+		t.Fatal("StartTurn() error = nil, want runner failure")
+	}
+	if len(bus.events) != 3 {
+		t.Fatalf("published events len = %d, want 3", len(bus.events))
+	}
+	if bus.events[2].EventType != EventRunFailed {
+		t.Fatalf("third published event type = %q, want %q", bus.events[2].EventType, EventRunFailed)
 	}
 }
 

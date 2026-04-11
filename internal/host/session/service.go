@@ -161,9 +161,31 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			return StartTurnResult{}, fmt.Errorf("publish queued event: %w", err)
 		}
 	}
+	startedEvent := RunEvent{
+		EventID:   NewEventID(),
+		SessionID: sessionID,
+		TurnID:    turnID,
+		RunID:     runID,
+		AgentID:   agentID,
+		EventType: EventRunStarted,
+		Sequence:  2,
+		Payload: map[string]any{
+			"message": message,
+		},
+		Source:    "host.session.service",
+		CreatedAt: now,
+	}
+	if err := s.store.AppendEvent(ctx, startedEvent); err != nil {
+		return StartTurnResult{}, fmt.Errorf("append started event: %w", err)
+	}
+	if s.pub != nil {
+		if err := s.pub.PublishSessionEvent(ctx, startedEvent); err != nil {
+			return StartTurnResult{}, fmt.Errorf("publish started event: %w", err)
+		}
+	}
 
 	if s.runner != nil {
-		_, err := s.runner.Run(ctx, RuntimeRequest{
+		result, err := s.runner.Run(ctx, RuntimeRequest{
 			SessionID:   sessionID,
 			TurnID:      turnID,
 			RunID:       runID,
@@ -171,7 +193,52 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			Instruction: message,
 		})
 		if err != nil {
+			failedEvent := RunEvent{
+				EventID:   NewEventID(),
+				SessionID: sessionID,
+				TurnID:    turnID,
+				RunID:     runID,
+				AgentID:   agentID,
+				EventType: EventRunFailed,
+				Sequence:  3,
+				Payload: map[string]any{
+					"error": err.Error(),
+				},
+				Source:    "host.session.service",
+				CreatedAt: now,
+			}
+			if appendErr := s.store.AppendEvent(ctx, failedEvent); appendErr != nil {
+				return StartTurnResult{}, fmt.Errorf("append failed event: %w", appendErr)
+			}
+			if s.pub != nil {
+				if publishErr := s.pub.PublishSessionEvent(ctx, failedEvent); publishErr != nil {
+					return StartTurnResult{}, fmt.Errorf("publish failed event: %w", publishErr)
+				}
+			}
 			return StartTurnResult{}, fmt.Errorf("run runtime request: %w", err)
+		}
+
+		finishedEvent := RunEvent{
+			EventID:   NewEventID(),
+			SessionID: sessionID,
+			TurnID:    turnID,
+			RunID:     runID,
+			AgentID:   agentID,
+			EventType: EventRunFinished,
+			Sequence:  3,
+			Payload: map[string]any{
+				"summary": result.Summary,
+			},
+			Source:    "host.session.service",
+			CreatedAt: now,
+		}
+		if err := s.store.AppendEvent(ctx, finishedEvent); err != nil {
+			return StartTurnResult{}, fmt.Errorf("append finished event: %w", err)
+		}
+		if s.pub != nil {
+			if err := s.pub.PublishSessionEvent(ctx, finishedEvent); err != nil {
+				return StartTurnResult{}, fmt.Errorf("publish finished event: %w", err)
+			}
 		}
 	}
 

@@ -77,13 +77,7 @@ func TestServer_CreateSessionAndStreamEventsOverWebSocket(t *testing.T) {
 		t.Fatal("start turn response missing run_id")
 	}
 
-	var event map[string]any
-	if err := wsjson.Read(ctx, conn, &event); err != nil {
-		t.Fatalf("wsjson.Read() event error = %v", err)
-	}
-	if event["type"] != "CUSTOM" {
-		t.Fatalf("event type = %v, want CUSTOM", event["type"])
-	}
+	event := readUntilEventType(t, ctx, conn, "CUSTOM")
 	if event["name"] != "axon.run.queued" {
 		t.Fatalf("event name = %v, want axon.run.queued", event["name"])
 	}
@@ -108,8 +102,8 @@ func TestServer_CreateSessionAndStreamEventsOverWebSocket(t *testing.T) {
 	}
 
 	events := getJSON[[]Event](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/events")
-	if len(events) != 1 {
-		t.Fatalf("events len = %d, want 1", len(events))
+	if len(events) != 3 {
+		t.Fatalf("events len = %d, want 3", len(events))
 	}
 	if events[0].Type != "run.queued" {
 		t.Fatalf("events[0].type = %q, want %q", events[0].Type, "run.queued")
@@ -175,13 +169,7 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 		t.Fatalf("ack type = %v, want command.accepted", ack["type"])
 	}
 
-	var event map[string]any
-	if err := wsjson.Read(ctx, conn, &event); err != nil {
-		t.Fatalf("wsjson.Read() event error = %v", err)
-	}
-	if event["type"] != "CUSTOM" {
-		t.Fatalf("event type = %v, want CUSTOM", event["type"])
-	}
+	event := readUntilEventType(t, ctx, conn, "CUSTOM")
 
 	value, ok := event["value"].(map[string]any)
 	if !ok {
@@ -197,9 +185,26 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 	}
 
 	events := getJSON[[]Event](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/events")
-	if len(events) != 1 {
-		t.Fatalf("events len = %d, want 1", len(events))
+	if len(events) != 3 {
+		t.Fatalf("events len = %d, want 3", len(events))
 	}
+}
+
+func readUntilEventType(t *testing.T, ctx context.Context, conn *websocket.Conn, wantType string) map[string]any {
+	t.Helper()
+
+	for i := 0; i < 4; i++ {
+		var message map[string]any
+		if err := wsjson.Read(ctx, conn, &message); err != nil {
+			t.Fatalf("wsjson.Read() error = %v", err)
+		}
+		if message["type"] == wantType {
+			return message
+		}
+	}
+
+	t.Fatalf("did not receive event type %q within expected reads", wantType)
+	return nil
 }
 
 type fakeGatewayRunner struct{}

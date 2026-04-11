@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -45,10 +46,11 @@ func WSHandler(bus *EventBus, sessionStore wsSessionStore, sessionSvc wsCommandR
 		defer conn.Close(websocket.StatusNormalClosure, "closed")
 
 		ctx := r.Context()
+		var writeMu sync.Mutex
 		ch := bus.Subscribe(sub)
 		defer bus.Unsubscribe(sub, ch)
 
-		if err := wsjson.Write(ctx, conn, map[string]any{
+		if err := writeWSJSON(ctx, conn, &writeMu, map[string]any{
 			"type":       "connected",
 			"session_id": sub.SessionID,
 			"trace_id":   sub.TraceID,
@@ -60,7 +62,7 @@ func WSHandler(bus *EventBus, sessionStore wsSessionStore, sessionSvc wsCommandR
 		if sub.SessionID != "" && sessionStore != nil {
 			snapshot, err := buildWSStateSnapshot(ctx, sessionStore, sub.SessionID)
 			if err == nil {
-				if err := wsjson.Write(ctx, conn, snapshot); err != nil {
+				if err := writeWSJSON(ctx, conn, &writeMu, snapshot); err != nil {
 					return
 				}
 			}
@@ -72,8 +74,8 @@ func WSHandler(bus *EventBus, sessionStore wsSessionStore, sessionSvc wsCommandR
 				if err := wsjson.Read(ctx, conn, &cmd); err != nil {
 					return
 				}
-				if err := handleWSCommand(ctx, conn, sub, sessionSvc, cmd); err != nil {
-					_ = wsjson.Write(ctx, conn, map[string]any{
+				if err := handleWSCommand(ctx, conn, &writeMu, sub, sessionSvc, cmd); err != nil {
+					_ = writeWSJSON(ctx, conn, &writeMu, map[string]any{
 						"type":  "command.error",
 						"error": err.Error(),
 					})
@@ -132,7 +134,7 @@ func buildWSStateSnapshot(ctx context.Context, store wsSessionStore, sessionID s
 	return agui.BuildStateSnapshot(sessionModel, events), nil
 }
 
-func handleWSCommand(ctx context.Context, conn *websocket.Conn, sub Subscription, sessionSvc wsCommandRunner, cmd wsCommand) error {
+func handleWSCommand(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, sub Subscription, sessionSvc wsCommandRunner, cmd wsCommand) error {
 	switch strings.TrimSpace(cmd.Type) {
 	case "", "subscribe":
 		return nil
@@ -146,7 +148,15 @@ func handleWSCommand(ctx context.Context, conn *websocket.Conn, sub Subscription
 			sessionID = sub.SessionID
 		}
 
-		result, err := sessionSvc.ContinueTurn(ctx, session.ContinueTurnInput{
+		if err := writeWSJSON(ctx, conn, writeMu, map[string]any{
+			"type":       "command.accepted",
+			"command":    "continue_turn",
+			"session_id": sessionID,
+		}); err != nil {
+			return err
+		}
+
+		_, err := sessionSvc.ContinueTurn(ctx, session.ContinueTurnInput{
 			SessionID:     sessionID,
 			AgentID:       cmd.AgentID,
 			Message:       cmd.Message,
@@ -155,14 +165,14 @@ func handleWSCommand(ctx context.Context, conn *websocket.Conn, sub Subscription
 		if err != nil {
 			return err
 		}
-		return wsjson.Write(ctx, conn, map[string]any{
-			"type":       "command.accepted",
-			"command":    "continue_turn",
-			"session_id": result.SessionID,
-			"turn_id":    result.TurnID,
-			"run_id":     result.RunID,
-		})
+		return nil
 	default:
 		return nil
 	}
+}
+
+func writeWSJSON(ctx context.Context, conn *websocket.Conn, mu *sync.Mutex, payload any) error {
+	mu.Lock()
+	defer mu.Unlock()
+	return wsjson.Write(ctx, conn, payload)
 }

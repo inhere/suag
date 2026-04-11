@@ -22,16 +22,20 @@ func TestMapGatewayEvent_RunQueuedToCustom(t *testing.T) {
 	}
 
 	got := MapEvent(event)
-	if got.Type != EventTypeCustom {
-		t.Fatalf("MapEvent().Type = %q, want %q", got.Type, EventTypeCustom)
+	customEvent, ok := got.(CustomEvent)
+	if !ok {
+		t.Fatalf("MapEvent() type = %T, want %T", got, CustomEvent{})
 	}
-	if got.Name != "axon.run.queued" {
-		t.Fatalf("MapEvent().Name = %q, want %q", got.Name, "axon.run.queued")
+	if customEvent.Type != EventTypeCustom {
+		t.Fatalf("MapEvent().Type = %q, want %q", customEvent.Type, EventTypeCustom)
+	}
+	if customEvent.Name != "axon.run.queued" {
+		t.Fatalf("MapEvent().Name = %q, want %q", customEvent.Name, "axon.run.queued")
 	}
 
-	value, ok := got.Value.(map[string]any)
+	value, ok := customEvent.Value.(map[string]any)
 	if !ok {
-		t.Fatalf("MapEvent().Value type = %T, want map[string]any", got.Value)
+		t.Fatalf("MapEvent().Value type = %T, want map[string]any", customEvent.Value)
 	}
 	if value["threadId"] != "sess_001" {
 		t.Fatalf("MapEvent().Value.threadId = %v, want %q", value["threadId"], "sess_001")
@@ -88,5 +92,89 @@ func TestBuildStateSnapshot(t *testing.T) {
 	}
 	if rawEvents[0]["type"] != "run.queued" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.events[0].type = %v, want %q", rawEvents[0]["type"], "run.queued")
+	}
+}
+
+func TestMapEvent_RunStartedToStandardRunStarted(t *testing.T) {
+	t.Parallel()
+
+	event := HostEvent{
+		Type:      "run.started",
+		SessionID: "sess_001",
+		TurnID:    "turn_001",
+		RunID:     "run_001",
+	}
+
+	got := MapEvent(event)
+	runEvent, ok := got.(RunStartedEvent)
+	if !ok {
+		t.Fatalf("MapEvent() type = %T, want %T", got, RunStartedEvent{})
+	}
+	if runEvent.Type != EventTypeRunStarted {
+		t.Fatalf("MapEvent().Type = %q, want %q", runEvent.Type, EventTypeRunStarted)
+	}
+	if runEvent.ThreadID != "sess_001" {
+		t.Fatalf("MapEvent().ThreadID = %q, want %q", runEvent.ThreadID, "sess_001")
+	}
+	if runEvent.RunID != "run_001" {
+		t.Fatalf("MapEvent().RunID = %q, want %q", runEvent.RunID, "run_001")
+	}
+}
+
+func TestMapEvent_RunFinishedToStandardRunFinished(t *testing.T) {
+	t.Parallel()
+
+	event := HostEvent{
+		Type:      "run.finished",
+		SessionID: "sess_001",
+		TurnID:    "turn_001",
+		RunID:     "run_001",
+		Payload: map[string]any{
+			"summary": "done",
+		},
+	}
+
+	got := MapEvent(event)
+	runEvent, ok := got.(RunFinishedEvent)
+	if !ok {
+		t.Fatalf("MapEvent() type = %T, want %T", got, RunFinishedEvent{})
+	}
+	if runEvent.Type != EventTypeRunFinished {
+		t.Fatalf("MapEvent().Type = %q, want %q", runEvent.Type, EventTypeRunFinished)
+	}
+	if runEvent.ThreadID != "sess_001" {
+		t.Fatalf("MapEvent().ThreadID = %q, want %q", runEvent.ThreadID, "sess_001")
+	}
+	if runEvent.RunID != "run_001" {
+		t.Fatalf("MapEvent().RunID = %q, want %q", runEvent.RunID, "run_001")
+	}
+}
+
+func TestMapEvent_RunFailedToStandardRunError(t *testing.T) {
+	t.Parallel()
+
+	event := HostEvent{
+		Type:      "run.failed",
+		SessionID: "sess_001",
+		TurnID:    "turn_001",
+		RunID:     "run_001",
+		Payload: map[string]any{
+			"error": "runner failed",
+		},
+	}
+
+	got := MapEvent(event)
+	runEvent, ok := got.(RunErrorEvent)
+	if !ok {
+		t.Fatalf("MapEvent() type = %T, want %T", got, RunErrorEvent{})
+	}
+	if runEvent.Type != EventTypeRunError {
+		t.Fatalf("MapEvent().Type = %q, want %q", runEvent.Type, EventTypeRunError)
+	}
+	if runEvent.RunID != "run_001" {
+		t.Fatalf("MapEvent().RunID = %q, want %q", runEvent.RunID, "run_001")
+	}
+	if runEvent.Message != "runner failed" {
+		t.Fatalf("MapEvent().Message = %q, want %q", runEvent.Message, "runner failed")
 	}
 }
