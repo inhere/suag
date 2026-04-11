@@ -1,11 +1,12 @@
 package agui
 
 const (
-	EventTypeStateSnapshot = "STATE_SNAPSHOT"
-	EventTypeCustom        = "CUSTOM"
-	EventTypeRunStarted    = "RUN_STARTED"
-	EventTypeRunFinished   = "RUN_FINISHED"
-	EventTypeRunError      = "RUN_ERROR"
+	EventTypeStateSnapshot    = "STATE_SNAPSHOT"
+	EventTypeCustom           = "CUSTOM"
+	EventTypeRunStarted       = "RUN_STARTED"
+	EventTypeRunFinished      = "RUN_FINISHED"
+	EventTypeRunError         = "RUN_ERROR"
+	EventTypeActivitySnapshot = "ACTIVITY_SNAPSHOT"
 )
 
 type Event struct {
@@ -56,4 +57,12 @@ type RunErrorEvent struct {
 	Timestamp int64  `json:"timestamp,omitempty"`
 	RunID     string `json:"runId,omitempty"`
 	Message   string `json:"message"`
+}
+
+type ActivitySnapshotEvent struct {
+	Type         string `json:"type"`
+	Timestamp    int64  `json:"timestamp,omitempty"`
+	MessageID    string `json:"messageId"`
+	ActivityType string `json:"activityType"`
+	Content      any    `json:"content"`
 }

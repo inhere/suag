@@ -19,6 +19,7 @@
 - `internal/host/agui` 已完成第一版薄映射层，当前 WS 下行已切到 AG-UI 风格输出
 - `internal/host/agui` 已补齐 run 标准生命周期映射，当前支持 RUN_STARTED / RUN_FINISHED / RUN_ERROR
 - `internal/host/agui` STATE_SNAPSHOT 结构已完成第一轮收敛，前端可依赖 currentRunId/currentAgentId/latestEventType/eventCount
+- `internal/host/agui` 已补齐 run_status ACTIVITY_SNAPSHOT，当前前端可直接渲染排队/运行/完成/失败状态卡
 
 <!-- PROCESSING WORKS:END -->
 
@@ -26,7 +27,21 @@
 
 - 使用 git worktree 进行开发时，在 `.worktrees` 目录下创建分支
 
-## 项目规范限制
+## 项目编码规范
 
 - 关键的方法或逻辑点需要添加注释说明
 - 单个go文件最大行数不能操作1000行，超过时需要按情况进行拆分
+
+### 单元测试编写
+
+- 使用 `github.com/gookit/goutil/testutil/assert` 断言结果
+- 同一个方法的多个用例使用 `t.Run()` 包裹
+
+require 断言结果的写法：
+
+```go
+Require(t, assert.Eq(t, 1, res.ID))
+
+// Standard assertion
+assert.Eq(t, expected, actual)
+```

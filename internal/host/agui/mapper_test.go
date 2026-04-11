@@ -22,9 +22,12 @@ func TestMapGatewayEvent_RunQueuedToCustom(t *testing.T) {
 	}
 
 	got := MapEvent(event)
-	customEvent, ok := got.(CustomEvent)
+	if len(got) != 2 {
+		t.Fatalf("MapEvent() len = %d, want 2", len(got))
+	}
+	customEvent, ok := got[0].(CustomEvent)
 	if !ok {
-		t.Fatalf("MapEvent() type = %T, want %T", got, CustomEvent{})
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], CustomEvent{})
 	}
 	if customEvent.Type != EventTypeCustom {
 		t.Fatalf("MapEvent().Type = %q, want %q", customEvent.Type, EventTypeCustom)
@@ -45,6 +48,14 @@ func TestMapGatewayEvent_RunQueuedToCustom(t *testing.T) {
 	}
 	if value["runId"] != "run_001" {
 		t.Fatalf("MapEvent().Value.runId = %v, want %q", value["runId"], "run_001")
+	}
+
+	activityEvent, ok := got[1].(ActivitySnapshotEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], ActivitySnapshotEvent{})
+	}
+	if activityEvent.ActivityType != "run_status" {
+		t.Fatalf("MapEvent().ActivityType = %q, want %q", activityEvent.ActivityType, "run_status")
 	}
 }
 
@@ -127,9 +138,13 @@ func TestMapEvent_RunStartedToStandardRunStarted(t *testing.T) {
 	}
 
 	got := MapEvent(event)
-	runEvent, ok := got.(RunStartedEvent)
+	if len(got) != 2 {
+		t.Fatalf("MapEvent() len = %d, want 2", len(got))
+	}
+
+	runEvent, ok := got[0].(RunStartedEvent)
 	if !ok {
-		t.Fatalf("MapEvent() type = %T, want %T", got, RunStartedEvent{})
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], RunStartedEvent{})
 	}
 	if runEvent.Type != EventTypeRunStarted {
 		t.Fatalf("MapEvent().Type = %q, want %q", runEvent.Type, EventTypeRunStarted)
@@ -139,6 +154,14 @@ func TestMapEvent_RunStartedToStandardRunStarted(t *testing.T) {
 	}
 	if runEvent.RunID != "run_001" {
 		t.Fatalf("MapEvent().RunID = %q, want %q", runEvent.RunID, "run_001")
+	}
+
+	activityEvent, ok := got[1].(ActivitySnapshotEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], ActivitySnapshotEvent{})
+	}
+	if activityEvent.ActivityType != "run_status" {
+		t.Fatalf("MapEvent().ActivityType = %q, want %q", activityEvent.ActivityType, "run_status")
 	}
 }
 
@@ -156,9 +179,13 @@ func TestMapEvent_RunFinishedToStandardRunFinished(t *testing.T) {
 	}
 
 	got := MapEvent(event)
-	runEvent, ok := got.(RunFinishedEvent)
+	if len(got) != 2 {
+		t.Fatalf("MapEvent() len = %d, want 2", len(got))
+	}
+
+	runEvent, ok := got[0].(RunFinishedEvent)
 	if !ok {
-		t.Fatalf("MapEvent() type = %T, want %T", got, RunFinishedEvent{})
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], RunFinishedEvent{})
 	}
 	if runEvent.Type != EventTypeRunFinished {
 		t.Fatalf("MapEvent().Type = %q, want %q", runEvent.Type, EventTypeRunFinished)
@@ -168,6 +195,18 @@ func TestMapEvent_RunFinishedToStandardRunFinished(t *testing.T) {
 	}
 	if runEvent.RunID != "run_001" {
 		t.Fatalf("MapEvent().RunID = %q, want %q", runEvent.RunID, "run_001")
+	}
+
+	activityEvent, ok := got[1].(ActivitySnapshotEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], ActivitySnapshotEvent{})
+	}
+	content, ok := activityEvent.Content.(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent().Content type = %T, want map[string]any", activityEvent.Content)
+	}
+	if content["status"] != "completed" {
+		t.Fatalf("MapEvent().Content.status = %v, want %q", content["status"], "completed")
 	}
 }
 
@@ -185,9 +224,13 @@ func TestMapEvent_RunFailedToStandardRunError(t *testing.T) {
 	}
 
 	got := MapEvent(event)
-	runEvent, ok := got.(RunErrorEvent)
+	if len(got) != 2 {
+		t.Fatalf("MapEvent() len = %d, want 2", len(got))
+	}
+
+	runEvent, ok := got[0].(RunErrorEvent)
 	if !ok {
-		t.Fatalf("MapEvent() type = %T, want %T", got, RunErrorEvent{})
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], RunErrorEvent{})
 	}
 	if runEvent.Type != EventTypeRunError {
 		t.Fatalf("MapEvent().Type = %q, want %q", runEvent.Type, EventTypeRunError)
@@ -197,5 +240,46 @@ func TestMapEvent_RunFailedToStandardRunError(t *testing.T) {
 	}
 	if runEvent.Message != "runner failed" {
 		t.Fatalf("MapEvent().Message = %q, want %q", runEvent.Message, "runner failed")
+	}
+
+	activityEvent, ok := got[1].(ActivitySnapshotEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], ActivitySnapshotEvent{})
+	}
+	content, ok := activityEvent.Content.(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent().Content type = %T, want map[string]any", activityEvent.Content)
+	}
+	if content["status"] != "failed" {
+		t.Fatalf("MapEvent().Content.status = %v, want %q", content["status"], "failed")
+	}
+}
+
+func TestMapEvent_RunQueuedIncludesActivitySnapshot(t *testing.T) {
+	t.Parallel()
+
+	event := HostEvent{
+		Type:      "run.queued",
+		SessionID: "sess_001",
+		TurnID:    "turn_001",
+		RunID:     "run_001",
+		AgentID:   "default",
+		Sequence:  1,
+	}
+
+	got := MapEvent(event)
+	if len(got) != 2 {
+		t.Fatalf("MapEvent() len = %d, want 2", len(got))
+	}
+	activityEvent, ok := got[1].(ActivitySnapshotEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], ActivitySnapshotEvent{})
+	}
+	content, ok := activityEvent.Content.(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent().Content type = %T, want map[string]any", activityEvent.Content)
+	}
+	if content["status"] != "queued" {
+		t.Fatalf("MapEvent().Content.status = %v, want %q", content["status"], "queued")
 	}
 }

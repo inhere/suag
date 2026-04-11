@@ -91,7 +91,7 @@ func WSHandler(bus *EventBus, sessionStore wsSessionStore, sessionSvc wsCommandR
 				if !ok {
 					return
 				}
-				if err := wsjson.Write(ctx, conn, agui.MapEvent(agui.HostEvent{
+				mappedEvents := agui.MapEvent(agui.HostEvent{
 					Type:      ev.Type,
 					SessionID: ev.SessionID,
 					TurnID:    ev.TurnID,
@@ -99,8 +99,11 @@ func WSHandler(bus *EventBus, sessionStore wsSessionStore, sessionSvc wsCommandR
 					AgentID:   ev.AgentID,
 					Sequence:  ev.Sequence,
 					Payload:   ev.Payload,
-				})); err != nil {
-					return
+				})
+				for _, mapped := range mappedEvents {
+					if err := writeWSJSON(ctx, conn, &writeMu, mapped); err != nil {
+						return
+					}
 				}
 			}
 		}

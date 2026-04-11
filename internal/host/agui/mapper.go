@@ -6,24 +6,30 @@ import (
 	"github.com/inhere/axon/internal/host/session"
 )
 
-func MapEvent(event HostEvent) any {
+func MapEvent(event HostEvent) []any {
 	now := time.Now().UnixMilli()
 
 	switch event.Type {
 	case session.EventRunStarted:
-		return RunStartedEvent{
-			Type:      EventTypeRunStarted,
-			Timestamp: now,
-			ThreadID:  event.SessionID,
-			RunID:     event.RunID,
+		return []any{
+			RunStartedEvent{
+				Type:      EventTypeRunStarted,
+				Timestamp: now,
+				ThreadID:  event.SessionID,
+				RunID:     event.RunID,
+			},
+			buildRunActivitySnapshot(now, event, "running"),
 		}
 	case session.EventRunFinished:
-		return RunFinishedEvent{
-			Type:      EventTypeRunFinished,
-			Timestamp: now,
-			ThreadID:  event.SessionID,
-			RunID:     event.RunID,
-			Result:    event.Payload,
+		return []any{
+			RunFinishedEvent{
+				Type:      EventTypeRunFinished,
+				Timestamp: now,
+				ThreadID:  event.SessionID,
+				RunID:     event.RunID,
+				Result:    event.Payload,
+			},
+			buildRunActivitySnapshot(now, event, "completed"),
 		}
 	case session.EventRunFailed:
 		message := "run failed"
@@ -32,11 +38,14 @@ func MapEvent(event HostEvent) any {
 				message = raw
 			}
 		}
-		return RunErrorEvent{
-			Type:      EventTypeRunError,
-			Timestamp: now,
-			RunID:     event.RunID,
-			Message:   message,
+		return []any{
+			RunErrorEvent{
+				Type:      EventTypeRunError,
+				Timestamp: now,
+				RunID:     event.RunID,
+				Message:   message,
+			},
+			buildRunActivitySnapshot(now, event, "failed"),
 		}
 	}
 
@@ -45,20 +54,23 @@ func MapEvent(event HostEvent) any {
 		name = "axon.run.queued"
 	}
 
-	return CustomEvent{
-		Type:      EventTypeCustom,
-		Timestamp: now,
-		Name:      name,
-		Value: map[string]any{
-			"threadId":  event.SessionID,
-			"sessionId": event.SessionID,
-			"turnId":    event.TurnID,
-			"runId":     event.RunID,
-			"agentId":   event.AgentID,
-			"sequence":  event.Sequence,
-			"type":      event.Type,
-			"payload":   event.Payload,
+	return []any{
+		CustomEvent{
+			Type:      EventTypeCustom,
+			Timestamp: now,
+			Name:      name,
+			Value: map[string]any{
+				"threadId":  event.SessionID,
+				"sessionId": event.SessionID,
+				"turnId":    event.TurnID,
+				"runId":     event.RunID,
+				"agentId":   event.AgentID,
+				"sequence":  event.Sequence,
+				"type":      event.Type,
+				"payload":   event.Payload,
+			},
 		},
+		buildRunActivitySnapshot(now, event, "queued"),
 	}
 }
 
@@ -100,6 +112,22 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent) StateS
 			"latestEventType": latestEventType,
 			"eventCount":      len(mappedEvents),
 			"events":          mappedEvents,
+		},
+	}
+}
+
+func buildRunActivitySnapshot(now int64, event HostEvent, status string) ActivitySnapshotEvent {
+	return ActivitySnapshotEvent{
+		Type:         EventTypeActivitySnapshot,
+		Timestamp:    now,
+		MessageID:    event.RunID,
+		ActivityType: "run_status",
+		Content: map[string]any{
+			"threadId": event.SessionID,
+			"turnId":   event.TurnID,
+			"runId":    event.RunID,
+			"agentId":  event.AgentID,
+			"status":   status,
 		},
 	}
 }
