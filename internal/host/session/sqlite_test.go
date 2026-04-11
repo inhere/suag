@@ -153,6 +153,17 @@ func TestSQLiteStore_CreateUpdateAndListExternalTasks(t *testing.T) {
 	if tasks[0].ResultSummary != "delegated task completed" {
 		t.Fatalf("ListExternalTasksByRun()[0].ResultSummary = %q, want %q", tasks[0].ResultSummary, "delegated task completed")
 	}
+
+	sessionTasks, err := store.ListExternalTasksBySession(ctx, "sess_001")
+	if err != nil {
+		t.Fatalf("ListExternalTasksBySession() error = %v", err)
+	}
+	if len(sessionTasks) != 1 {
+		t.Fatalf("ListExternalTasksBySession() len = %d, want 1", len(sessionTasks))
+	}
+	if sessionTasks[0].ExternalTaskID != "ext_001" {
+		t.Fatalf("ListExternalTasksBySession()[0].ExternalTaskID = %q, want %q", sessionTasks[0].ExternalTaskID, "ext_001")
+	}
 }
 
 func newTestStore(t *testing.T) *SQLiteStore {

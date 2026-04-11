@@ -110,10 +110,11 @@ func buildFinishedTextEvents(now int64, event HostEvent) []any {
 	}
 }
 
-func BuildStateSnapshot(sessionModel session.Session, events []HostEvent) StateSnapshotEvent {
+func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, externalTasks []session.ExternalTask) StateSnapshotEvent {
 	now := time.Now().UnixMilli()
 
 	mappedEvents := make([]map[string]any, 0, len(events))
+	mappedExternalTasks := make([]map[string]any, 0, len(externalTasks))
 	currentRunID := ""
 	currentAgentID := ""
 	latestEventType := ""
@@ -132,6 +133,22 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent) StateS
 			"payload":   event.Payload,
 		})
 	}
+	for _, task := range externalTasks {
+		mappedExternalTasks = append(mappedExternalTasks, map[string]any{
+			"externalTaskId":  task.ExternalTaskID,
+			"sessionId":       task.SessionID,
+			"turnId":          task.TurnID,
+			"runId":           task.RunID,
+			"adapter":         task.Adapter,
+			"remoteAgentName": task.RemoteAgentName,
+			"remoteSessionId": task.RemoteSessionID,
+			"remoteTaskId":    task.RemoteTaskID,
+			"state":           task.State,
+			"lastHeartbeatAt": task.LastHeartbeatAt.UTC().Format(time.RFC3339Nano),
+			"resultSummary":   task.ResultSummary,
+			"metadata":        task.Metadata,
+		})
+	}
 
 	return StateSnapshotEvent{
 		Type:      EventTypeStateSnapshot,
@@ -147,6 +164,7 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent) StateS
 			"currentAgentId":  currentAgentID,
 			"latestEventType": latestEventType,
 			"eventCount":      len(mappedEvents),
+			"externalTasks":   mappedExternalTasks,
 			"events":          mappedEvents,
 		},
 	}

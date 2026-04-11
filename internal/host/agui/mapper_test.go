@@ -86,8 +86,25 @@ func TestBuildStateSnapshot(t *testing.T) {
 			Sequence:  3,
 		},
 	}
+	externalTasks := []session.ExternalTask{
+		{
+			ExternalTaskID:  "ext_001",
+			SessionID:       "sess_001",
+			TurnID:          "turn_002",
+			RunID:           "run_002",
+			Adapter:         "codex",
+			RemoteAgentName: "codex-cli",
+			RemoteSessionID: "remote_sess_001",
+			RemoteTaskID:    "remote_task_001",
+			State:           "completed",
+			ResultSummary:   "delegated task completed",
+			Metadata: map[string]any{
+				"workspace": "workspace/demo",
+			},
+		},
+	}
 
-	got := BuildStateSnapshot(sessionModel, events)
+	got := BuildStateSnapshot(sessionModel, events, externalTasks)
 	if got.Type != EventTypeStateSnapshot {
 		t.Fatalf("BuildStateSnapshot().Type = %q, want %q", got.Type, EventTypeStateSnapshot)
 	}
@@ -113,6 +130,19 @@ func TestBuildStateSnapshot(t *testing.T) {
 	}
 	if snapshot["eventCount"] != 2 {
 		t.Fatalf("BuildStateSnapshot().Snapshot.eventCount = %v, want %d", snapshot["eventCount"], 2)
+	}
+	rawExternalTasks, ok := snapshot["externalTasks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalTasks type = %T, want []map[string]any", snapshot["externalTasks"])
+	}
+	if len(rawExternalTasks) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalTasks len = %d, want 1", len(rawExternalTasks))
+	}
+	if rawExternalTasks[0]["externalTaskId"] != "ext_001" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalTasks[0].externalTaskId = %v, want %q", rawExternalTasks[0]["externalTaskId"], "ext_001")
+	}
+	if rawExternalTasks[0]["remoteAgentName"] != "codex-cli" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalTasks[0].remoteAgentName = %v, want %q", rawExternalTasks[0]["remoteAgentName"], "codex-cli")
 	}
 
 	rawEvents, ok := snapshot["events"].([]map[string]any)

@@ -20,6 +20,7 @@ type wsCommandRunner interface {
 type wsSessionStore interface {
 	GetSession(ctx context.Context, sessionID string) (session.Session, error)
 	ListEventsBySession(ctx context.Context, sessionID string, afterSequence int64) ([]session.RunEvent, error)
+	ListExternalTasksBySession(ctx context.Context, sessionID string) ([]session.ExternalTask, error)
 }
 
 type wsCommand struct {
@@ -120,6 +121,10 @@ func buildWSStateSnapshot(ctx context.Context, store wsSessionStore, sessionID s
 	if err != nil {
 		return agui.StateSnapshotEvent{}, err
 	}
+	externalTasks, err := store.ListExternalTasksBySession(ctx, sessionID)
+	if err != nil {
+		return agui.StateSnapshotEvent{}, err
+	}
 
 	events := make([]agui.HostEvent, 0, len(runEvents))
 	for _, event := range runEvents {
@@ -134,7 +139,7 @@ func buildWSStateSnapshot(ctx context.Context, store wsSessionStore, sessionID s
 		})
 	}
 
-	return agui.BuildStateSnapshot(sessionModel, events), nil
+	return agui.BuildStateSnapshot(sessionModel, events, externalTasks), nil
 }
 
 func handleWSCommand(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, sub Subscription, sessionSvc wsCommandRunner, cmd wsCommand) error {

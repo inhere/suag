@@ -16,6 +16,7 @@ type Store interface {
 	ListEventsBySession(ctx context.Context, sessionID string, afterSequence int64) ([]RunEvent, error)
 	CreateExternalTask(ctx context.Context, task ExternalTask) error
 	UpdateExternalTask(ctx context.Context, task ExternalTask) error
+	ListExternalTasksBySession(ctx context.Context, sessionID string) ([]ExternalTask, error)
 	ListExternalTasksByRun(ctx context.Context, runID string) ([]ExternalTask, error)
 	Close() error
 }

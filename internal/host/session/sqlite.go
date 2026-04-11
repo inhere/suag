@@ -331,16 +331,36 @@ func (s *SQLiteStore) ListExternalTasksByRun(ctx context.Context, runID string) 
 		return nil, err
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	return s.listExternalTasks(ctx, `
 		SELECT external_task_id, session_id, turn_id, run_id, adapter,
 		       remote_agent_name, remote_session_id, remote_task_id, state,
 		       last_heartbeat_at, result_summary, metadata_json
 		FROM external_tasks
 		WHERE run_id = ?
 		ORDER BY external_task_id ASC
-	`, runID)
+	`, runID, "list external tasks by run")
+}
+
+func (s *SQLiteStore) ListExternalTasksBySession(ctx context.Context, sessionID string) ([]ExternalTask, error) {
+	if err := validateID("session", sessionID); err != nil {
+		return nil, err
+	}
+
+	return s.listExternalTasks(ctx, `
+		SELECT external_task_id, session_id, turn_id, run_id, adapter,
+		       remote_agent_name, remote_session_id, remote_task_id, state,
+		       last_heartbeat_at, result_summary, metadata_json
+		FROM external_tasks
+		WHERE session_id = ?
+		ORDER BY external_task_id ASC
+	`, sessionID, "list external tasks by session")
+}
+
+func (s *SQLiteStore) listExternalTasks(ctx context.Context, query string, arg string, op string) ([]ExternalTask, error) {
+	rows, err := s.db.QueryContext(ctx, `
+	`+strings.TrimSpace(query), arg)
 	if err != nil {
-		return nil, fmt.Errorf("list external tasks by run: %w", err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer rows.Close()
 

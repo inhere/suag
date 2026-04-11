@@ -7,7 +7,7 @@
 ## 正在进行的工作
 
 <!-- PROCESSING WORKS:START -->
-<!-- 需要实时更新: 正在进行的工作和关键md文档链接 -->
+<!-- 需要实时更新: 正在进行的工作和关键md文档链接，已处理的注意去除 -->
 - Axon v0 自用主线规划与阶段架构设计进行中，设计总纲见 `docs/v0-self-host-design.md`
 - Axon v0 self-host 基础骨架实施计划进行中，计划文档见 `docs/superpowers/plans/2026-04-10-axon-v0-self-host-foundation-plan.md`
 - internal 目录结构调整已完成首轮收敛，迁移映射见 `docs/internal-code-status.md`
@@ -24,6 +24,7 @@
 - `internal/host/acpbridge` 已完成第一版 host-facing contract 与 runner adapter，session 可通过窄接口接入外部 Agent bridge
 - `internal/host/acpbridge` 已补齐最小 stub/local bridge，当前可生成 remote session/task 占位结果并回写 host runtime
 - `internal/host/session` 已补齐 external_tasks 存储读写，ACP bridge 返回的外部任务快照会写入 run 关联记录
+- `internal/host/gateway` session 查询与 WS STATE_SNAPSHOT 已补齐 external_tasks 视图，前端首屏与重连可直接拿到外部任务状态
 
 <!-- PROCESSING WORKS:END -->
 

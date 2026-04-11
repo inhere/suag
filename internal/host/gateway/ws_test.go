@@ -17,6 +17,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/inhere/axon/internal/host/acpbridge"
 	"github.com/inhere/axon/internal/host/session"
 	_ "modernc.org/sqlite"
 )
@@ -117,6 +118,90 @@ func TestServer_CreateSessionAndStreamEventsOverWebSocket(t *testing.T) {
 	}
 	if events[0].Type != "run.queued" {
 		t.Fatalf("events[0].type = %q, want %q", events[0].Type, "run.queued")
+	}
+}
+
+func TestServer_SessionSnapshotIncludesExternalTasks(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	bridge := acpbridge.NewStubBridge(acpbridge.StubBridgeConfig{
+		RemoteAgentName: "codex-cli",
+	})
+	runner := acpbridge.NewRunnerAdapter(bridge, acpbridge.RunnerAdapterConfig{
+		AdapterName: "codex",
+		Workspace:   "workspace/demo",
+	})
+	svc := session.NewService(store, bus, runner, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 11, 19, 0, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "snapshot external tasks",
+	})
+	turnResp := postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "delegate to codex",
+		"initiator_type": "user",
+	})
+	if turnResp.RunID == "" {
+		t.Fatal("start turn response missing run_id")
+	}
+
+	sessionResp := getJSON[getSessionResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID)
+	if len(sessionResp.ExternalTasks) != 1 {
+		t.Fatalf("get session external_tasks len = %d, want 1", len(sessionResp.ExternalTasks))
+	}
+	if sessionResp.ExternalTasks[0].RunID != turnResp.RunID {
+		t.Fatalf("get session external_tasks[0].run_id = %q, want %q", sessionResp.ExternalTasks[0].RunID, turnResp.RunID)
+	}
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial() error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+	if snapshot["type"] != "STATE_SNAPSHOT" {
+		t.Fatalf("snapshot type = %v, want STATE_SNAPSHOT", snapshot["type"])
+	}
+
+	rawSnapshot, ok := snapshot["snapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot type = %T, want map[string]any", snapshot["snapshot"])
+	}
+	rawExternalTasks, ok := rawSnapshot["externalTasks"].([]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.externalTasks type = %T, want []any", rawSnapshot["externalTasks"])
+	}
+	if len(rawExternalTasks) != 1 {
+		t.Fatalf("snapshot.snapshot.externalTasks len = %d, want 1", len(rawExternalTasks))
+	}
+	task, ok := rawExternalTasks[0].(map[string]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.externalTasks[0] type = %T, want map[string]any", rawExternalTasks[0])
+	}
+	if task["remoteAgentName"] != "codex-cli" {
+		t.Fatalf("snapshot.snapshot.externalTasks[0].remoteAgentName = %v, want %q", task["remoteAgentName"], "codex-cli")
 	}
 }
 

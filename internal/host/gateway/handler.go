@@ -174,10 +174,26 @@ func (h *Handler) HandleStartTurn(w http.ResponseWriter, r *http.Request) {
 // ─── GET /api/sessions/{id} ──────────────────────────────────────────────────
 
 type getSessionResponse struct {
-	SessionID  string `json:"session_id"`
-	Title      string `json:"title"`
-	Status     string `json:"status"`
-	LastTurnID string `json:"last_turn_id"`
+	SessionID     string                 `json:"session_id"`
+	Title         string                 `json:"title"`
+	Status        string                 `json:"status"`
+	LastTurnID    string                 `json:"last_turn_id"`
+	ExternalTasks []externalTaskResponse `json:"external_tasks"`
+}
+
+type externalTaskResponse struct {
+	ExternalTaskID  string         `json:"external_task_id"`
+	SessionID       string         `json:"session_id"`
+	TurnID          string         `json:"turn_id"`
+	RunID           string         `json:"run_id"`
+	Adapter         string         `json:"adapter"`
+	RemoteAgentName string         `json:"remote_agent_name"`
+	RemoteSessionID string         `json:"remote_session_id"`
+	RemoteTaskID    string         `json:"remote_task_id"`
+	State           string         `json:"state"`
+	LastHeartbeatAt string         `json:"last_heartbeat_at"`
+	ResultSummary   string         `json:"result_summary"`
+	Metadata        map[string]any `json:"metadata"`
 }
 
 func (h *Handler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
@@ -196,12 +212,18 @@ func (h *Handler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	externalTasks, err := h.sessionStore.ListExternalTasksBySession(r.Context(), sessionID)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	respondJSON(w, http.StatusOK, getSessionResponse{
-		SessionID:  sessionModel.SessionID,
-		Title:      sessionModel.Title,
-		Status:     string(sessionModel.Status),
-		LastTurnID: sessionModel.LastTurnID,
+		SessionID:     sessionModel.SessionID,
+		Title:         sessionModel.Title,
+		Status:        string(sessionModel.Status),
+		LastTurnID:    sessionModel.LastTurnID,
+		ExternalTasks: mapExternalTaskResponses(externalTasks),
 	})
 }
 
@@ -306,4 +328,25 @@ func respondJSON(w http.ResponseWriter, status int, v any) {
 
 func httpError(w http.ResponseWriter, msg string, code int) {
 	respondJSON(w, code, map[string]string{"error": msg})
+}
+
+func mapExternalTaskResponses(tasks []session.ExternalTask) []externalTaskResponse {
+	resp := make([]externalTaskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		resp = append(resp, externalTaskResponse{
+			ExternalTaskID:  task.ExternalTaskID,
+			SessionID:       task.SessionID,
+			TurnID:          task.TurnID,
+			RunID:           task.RunID,
+			Adapter:         task.Adapter,
+			RemoteAgentName: task.RemoteAgentName,
+			RemoteSessionID: task.RemoteSessionID,
+			RemoteTaskID:    task.RemoteTaskID,
+			State:           task.State,
+			LastHeartbeatAt: task.LastHeartbeatAt.UTC().Format(time.RFC3339Nano),
+			ResultSummary:   task.ResultSummary,
+			Metadata:        task.Metadata,
+		})
+	}
+	return resp
 }
