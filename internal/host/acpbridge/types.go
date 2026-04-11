@@ -26,6 +26,7 @@ type DispatchResult struct {
 	Summary         string
 	Error           string
 	Artifacts       []string
+	Metadata        map[string]any
 	RemoteAgentName string
 	RemoteSessionID string
 	RemoteTaskID    string

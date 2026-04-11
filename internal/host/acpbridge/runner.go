@@ -62,10 +62,23 @@ func (r *RunnerAdapter) Run(ctx context.Context, in session.RuntimeRequest) (ses
 			State:           string(result.State),
 			LastHeartbeatAt: result.LastHeartbeatAt,
 			ResultSummary:   result.Summary,
-			Metadata: map[string]any{
+			Metadata: mergeMetadata(map[string]any{
 				"workspace": r.workspace,
 				"artifacts": result.Artifacts,
-			},
+			}, result.Metadata),
 		},
 	}, nil
+}
+
+func mergeMetadata(dst map[string]any, src map[string]any) map[string]any {
+	if dst == nil && src == nil {
+		return map[string]any{}
+	}
+	if dst == nil {
+		dst = map[string]any{}
+	}
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
 }

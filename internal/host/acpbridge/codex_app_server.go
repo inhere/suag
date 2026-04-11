@@ -78,6 +78,60 @@ type codexErrorNotification struct {
 	WillRetry bool           `json:"willRetry"`
 }
 
+type codexItemStartedNotification struct {
+	ThreadID string             `json:"threadId"`
+	TurnID   string             `json:"turnId"`
+	ItemID   string             `json:"itemId,omitempty"`
+	ItemType string             `json:"itemType,omitempty"`
+	Item     *codexItemSnapshot `json:"item,omitempty"`
+}
+
+type codexItemCompletedNotification struct {
+	ThreadID string             `json:"threadId"`
+	TurnID   string             `json:"turnId"`
+	ItemID   string             `json:"itemId,omitempty"`
+	ItemType string             `json:"itemType,omitempty"`
+	Item     *codexItemSnapshot `json:"item,omitempty"`
+}
+
+type codexCommandExecutionDeltaNotification struct {
+	ThreadID string `json:"threadId"`
+	TurnID   string `json:"turnId"`
+	ItemID   string `json:"itemId"`
+	Delta    string `json:"delta,omitempty"`
+}
+
+type codexItemSnapshot struct {
+	ID               string `json:"id,omitempty"`
+	Type             string `json:"type,omitempty"`
+	Text             string `json:"text,omitempty"`
+	Command          string `json:"command,omitempty"`
+	CWD              string `json:"cwd,omitempty"`
+	Status           string `json:"status,omitempty"`
+	AggregatedOutput string `json:"aggregatedOutput,omitempty"`
+	ExitCode         *int   `json:"exitCode,omitempty"`
+}
+
+type codexItemTrace struct {
+	ItemID        string
+	ItemType      string
+	Command       string
+	CWD           string
+	Status        string
+	OutputPreview string
+	Started       bool
+	Completed     bool
+	CommandDeltas int
+}
+
+type codexTurnTrace struct {
+	StopReason        string
+	LastError         string
+	MessageDeltaCount int
+	CommandDeltaCount int
+	Items             map[string]*codexItemTrace
+}
+
 func NewCodexAppServerBridge(cfg CodexAppServerBridgeConfig) *CodexAppServerBridge {
 	nowFn := cfg.Now
 	if nowFn == nil {
@@ -255,6 +309,12 @@ func (b *CodexAppServerBridge) collectTurnResult(
 		RemoteSessionID: threadID,
 		RemoteTaskID:    turnID,
 		LastHeartbeatAt: b.now().UTC(),
+		Metadata: map[string]any{
+			"protocol": "codex_app_server",
+		},
+	}
+	trace := codexTurnTrace{
+		Items: map[string]*codexItemTrace{},
 	}
 
 	for {
@@ -283,7 +343,36 @@ func (b *CodexAppServerBridge) collectTurnResult(
 			if strings.TrimSpace(note.TurnID) != "" && result.RemoteTaskID == "" {
 				result.RemoteTaskID = strings.TrimSpace(note.TurnID)
 			}
+			trace.MessageDeltaCount++
 			summaryBuilder.WriteString(note.Delta)
+		case "item/started":
+			var note codexItemStartedNotification
+			if err := json.Unmarshal(msg.Params, &note); err != nil {
+				return DispatchResult{}, fmt.Errorf("decode item/started notification: %w", err)
+			}
+			itemTrace := ensureCodexItemTrace(trace.Items, firstNonEmpty(strings.TrimSpace(note.ItemID), itemIDFromSnapshot(note.Item)))
+			itemTrace.Started = true
+			itemTrace.ItemType = firstNonEmpty(strings.TrimSpace(note.ItemType), itemTypeFromSnapshot(note.Item), itemTrace.ItemType)
+			mergeCodexItemSnapshot(itemTrace, note.Item)
+		case "item/completed":
+			var note codexItemCompletedNotification
+			if err := json.Unmarshal(msg.Params, &note); err != nil {
+				return DispatchResult{}, fmt.Errorf("decode item/completed notification: %w", err)
+			}
+			itemTrace := ensureCodexItemTrace(trace.Items, firstNonEmpty(strings.TrimSpace(note.ItemID), itemIDFromSnapshot(note.Item)))
+			itemTrace.Completed = true
+			itemTrace.ItemType = firstNonEmpty(strings.TrimSpace(note.ItemType), itemTypeFromSnapshot(note.Item), itemTrace.ItemType)
+			mergeCodexItemSnapshot(itemTrace, note.Item)
+		case "item/commandExecution/outputDelta":
+			var note codexCommandExecutionDeltaNotification
+			if err := json.Unmarshal(msg.Params, &note); err != nil {
+				return DispatchResult{}, fmt.Errorf("decode item/commandExecution/outputDelta notification: %w", err)
+			}
+			itemTrace := ensureCodexItemTrace(trace.Items, strings.TrimSpace(note.ItemID))
+			itemTrace.ItemType = firstNonEmpty(itemTrace.ItemType, "commandExecution")
+			itemTrace.CommandDeltas++
+			itemTrace.OutputPreview = trimPreview(firstNonEmpty(itemTrace.OutputPreview, note.Delta))
+			trace.CommandDeltaCount++
 		case "error":
 			var note codexErrorNotification
 			if err := json.Unmarshal(msg.Params, &note); err != nil {
@@ -293,6 +382,7 @@ func (b *CodexAppServerBridge) collectTurnResult(
 				result.RemoteTaskID = strings.TrimSpace(note.TurnID)
 			}
 			latestError = formatCodexTurnError(note.Error)
+			trace.LastError = latestError
 		case "turn/completed":
 			var note codexTurnCompletedNotification
 			if err := json.Unmarshal(msg.Params, &note); err != nil {
@@ -315,13 +405,97 @@ func (b *CodexAppServerBridge) collectTurnResult(
 				result.State = StateFailed
 				result.Error = latestError
 			}
+			trace.StopReason = strings.TrimSpace(note.StopReason)
 			result.Summary = strings.TrimSpace(summaryBuilder.String())
+			result.Metadata = mergeMetadata(result.Metadata, buildCodexTurnMetadata(trace))
 			if result.RemoteTaskID == "" {
 				result.RemoteTaskID = session.NewExternalTaskID()
 			}
 			return result, nil
 		}
 	}
+}
+
+func ensureCodexItemTrace(items map[string]*codexItemTrace, itemID string) *codexItemTrace {
+	itemID = strings.TrimSpace(itemID)
+	if itemID == "" {
+		itemID = "unknown"
+	}
+	if trace, ok := items[itemID]; ok {
+		return trace
+	}
+	trace := &codexItemTrace{
+		ItemID: itemID,
+	}
+	items[itemID] = trace
+	return trace
+}
+
+func mergeCodexItemSnapshot(dst *codexItemTrace, snapshot *codexItemSnapshot) {
+	if dst == nil || snapshot == nil {
+		return
+	}
+	dst.ItemID = firstNonEmpty(dst.ItemID, strings.TrimSpace(snapshot.ID))
+	dst.ItemType = firstNonEmpty(strings.TrimSpace(snapshot.Type), dst.ItemType)
+	dst.Command = firstNonEmpty(strings.TrimSpace(snapshot.Command), dst.Command)
+	dst.CWD = firstNonEmpty(strings.TrimSpace(snapshot.CWD), dst.CWD)
+	dst.Status = firstNonEmpty(strings.TrimSpace(snapshot.Status), dst.Status)
+	dst.OutputPreview = trimPreview(firstNonEmpty(strings.TrimSpace(snapshot.AggregatedOutput), dst.OutputPreview))
+}
+
+func itemIDFromSnapshot(snapshot *codexItemSnapshot) string {
+	if snapshot == nil {
+		return ""
+	}
+	return strings.TrimSpace(snapshot.ID)
+}
+
+func itemTypeFromSnapshot(snapshot *codexItemSnapshot) string {
+	if snapshot == nil {
+		return ""
+	}
+	return strings.TrimSpace(snapshot.Type)
+}
+
+func buildCodexTurnMetadata(trace codexTurnTrace) map[string]any {
+	items := make([]map[string]any, 0, len(trace.Items))
+	for _, item := range trace.Items {
+		items = append(items, map[string]any{
+			"itemId":        item.ItemID,
+			"type":          item.ItemType,
+			"command":       item.Command,
+			"cwd":           item.CWD,
+			"status":        item.Status,
+			"started":       item.Started,
+			"completed":     item.Completed,
+			"commandDeltas": item.CommandDeltas,
+			"outputPreview": item.OutputPreview,
+		})
+	}
+
+	metadata := map[string]any{
+		"eventSummary": map[string]any{
+			"messageDeltaCount": trace.MessageDeltaCount,
+			"commandDeltaCount": trace.CommandDeltaCount,
+			"itemCount":         len(items),
+		},
+		"items": items,
+	}
+	if trace.StopReason != "" {
+		metadata["stopReason"] = trace.StopReason
+	}
+	if trace.LastError != "" {
+		metadata["lastError"] = trace.LastError
+	}
+	return metadata
+}
+
+func trimPreview(text string) string {
+	text = strings.TrimSpace(text)
+	if len(text) <= 240 {
+		return text
+	}
+	return strings.TrimSpace(text[:240])
 }
 
 func effectiveCodexTurnID(turnID string, turn *codexTurnRef) string {

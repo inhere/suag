@@ -15,6 +15,15 @@ func TestRunnerAdapter_RunDispatchesTaskToBridge(t *testing.T) {
 		result: DispatchResult{
 			State:   StateCompleted,
 			Summary: "external work done",
+			Metadata: map[string]any{
+				"protocol": "codex_app_server",
+				"items": []any{
+					map[string]any{
+						"itemId": "item_001",
+						"type":   "agent_message",
+					},
+				},
+			},
 		},
 	}
 	adapter := NewRunnerAdapter(fakeBridge, RunnerAdapterConfig{
@@ -34,6 +43,15 @@ func TestRunnerAdapter_RunDispatchesTaskToBridge(t *testing.T) {
 	}
 	if result.Summary != "external work done" {
 		t.Fatalf("Run().Summary = %q, want %q", result.Summary, "external work done")
+	}
+	if result.ExternalTask == nil {
+		t.Fatal("Run().ExternalTask is nil")
+	}
+	if result.ExternalTask.Metadata["workspace"] != "workspace/demo" {
+		t.Fatalf("Run().ExternalTask.Metadata[workspace] = %v, want %q", result.ExternalTask.Metadata["workspace"], "workspace/demo")
+	}
+	if result.ExternalTask.Metadata["protocol"] != "codex_app_server" {
+		t.Fatalf("Run().ExternalTask.Metadata[protocol] = %v, want %q", result.ExternalTask.Metadata["protocol"], "codex_app_server")
 	}
 	if fakeBridge.lastRequest.RunID != "run_001" {
 		t.Fatalf("Dispatch().RunID = %q, want %q", fakeBridge.lastRequest.RunID, "run_001")

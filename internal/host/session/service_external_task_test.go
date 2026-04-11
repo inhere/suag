@@ -58,3 +58,92 @@ func TestService_StartTurnWithACPBridgeStubPersistsExternalTask(t *testing.T) {
 		t.Fatal("ListExternalTasksByRun()[0].ResultSummary is empty")
 	}
 }
+
+func TestService_StartTurnWithACPBridgePersistsExternalTaskMetadata(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newIntegrationStore(t)
+	bus := newIntegrationPublisher()
+	runner := acpbridge.NewRunnerAdapter(&serviceMetadataBridge{}, acpbridge.RunnerAdapterConfig{
+		AdapterName: "codex",
+		Workspace:   "workspace/demo",
+	})
+
+	now := time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC)
+	svc := session.NewService(store, bus, runner, session.ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	result, err := svc.StartTurn(ctx, session.StartTurnInput{
+		SessionID:     "sess_001",
+		AgentID:       "default",
+		UserMessage:   "delegate with metadata",
+		InitiatorType: session.InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	tasks, err := store.ListExternalTasksByRun(ctx, result.RunID)
+	if err != nil {
+		t.Fatalf("ListExternalTasksByRun() error = %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("ListExternalTasksByRun() len = %d, want 1", len(tasks))
+	}
+	if tasks[0].Metadata["protocol"] != "codex_app_server" {
+		t.Fatalf("ListExternalTasksByRun()[0].Metadata[protocol] = %v, want %q", tasks[0].Metadata["protocol"], "codex_app_server")
+	}
+	if tasks[0].Metadata["workspace"] != "workspace/demo" {
+		t.Fatalf("ListExternalTasksByRun()[0].Metadata[workspace] = %v, want %q", tasks[0].Metadata["workspace"], "workspace/demo")
+	}
+	eventSummary, ok := tasks[0].Metadata["eventSummary"].(map[string]any)
+	if !ok {
+		t.Fatalf("ListExternalTasksByRun()[0].Metadata[eventSummary] type = %T, want map[string]any", tasks[0].Metadata["eventSummary"])
+	}
+	if !isNumericValue(eventSummary["messageDeltaCount"], 2) {
+		t.Fatalf("ListExternalTasksByRun()[0].Metadata[eventSummary][messageDeltaCount] = %v, want %d", eventSummary["messageDeltaCount"], 2)
+	}
+}
+
+type serviceMetadataBridge struct{}
+
+func (b *serviceMetadataBridge) Dispatch(_ context.Context, _ acpbridge.DispatchRequest) (acpbridge.DispatchResult, error) {
+	return acpbridge.DispatchResult{
+		State:           acpbridge.StateCompleted,
+		Summary:         "done",
+		RemoteAgentName: "codex-cli",
+		RemoteSessionID: "thread_001",
+		RemoteTaskID:    "turn_remote_001",
+		LastHeartbeatAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+		Metadata: map[string]any{
+			"protocol": "codex_app_server",
+			"eventSummary": map[string]any{
+				"messageDeltaCount": 2,
+				"commandDeltaCount": 1,
+			},
+			"items": []any{
+				map[string]any{
+					"itemId":        "item_cmd_001",
+					"type":          "commandExecution",
+					"command":       "go test ./...",
+					"outputPreview": "ok github.com/inhere/axon/internal/host/acpbridge",
+				},
+			},
+		},
+	}, nil
+}
+
+func isNumericValue(value any, want int) bool {
+	switch raw := value.(type) {
+	case int:
+		return raw == want
+	case int64:
+		return raw == int64(want)
+	case float64:
+		return raw == float64(want)
+	default:
+		return false
+	}
+}

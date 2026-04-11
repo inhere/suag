@@ -205,6 +205,101 @@ func TestServer_SessionSnapshotIncludesExternalTasks(t *testing.T) {
 	}
 }
 
+func TestServer_SessionSnapshotIncludesExternalTaskMetadata(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	runner := acpbridge.NewRunnerAdapter(&gatewayMetadataBridge{}, acpbridge.RunnerAdapterConfig{
+		AdapterName: "codex",
+		Workspace:   "workspace/demo",
+	})
+	svc := session.NewService(store, bus, runner, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "snapshot external task metadata",
+	})
+	postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "delegate with metadata",
+		"initiator_type": "user",
+	})
+
+	sessionResp := getJSON[getSessionResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID)
+	if len(sessionResp.ExternalTasks) != 1 {
+		t.Fatalf("get session external_tasks len = %d, want 1", len(sessionResp.ExternalTasks))
+	}
+	if sessionResp.ExternalTasks[0].Metadata["protocol"] != "codex_app_server" {
+		t.Fatalf("get session external_tasks[0].metadata[protocol] = %v, want %q", sessionResp.ExternalTasks[0].Metadata["protocol"], "codex_app_server")
+	}
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial() error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+
+	rawSnapshot, ok := snapshot["snapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot type = %T, want map[string]any", snapshot["snapshot"])
+	}
+	rawExternalTasks, ok := rawSnapshot["externalTasks"].([]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.externalTasks type = %T, want []any", rawSnapshot["externalTasks"])
+	}
+	task, ok := rawExternalTasks[0].(map[string]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.externalTasks[0] type = %T, want map[string]any", rawExternalTasks[0])
+	}
+	metadata, ok := task["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.externalTasks[0].metadata type = %T, want map[string]any", task["metadata"])
+	}
+	if metadata["protocol"] != "codex_app_server" {
+		t.Fatalf("snapshot.snapshot.externalTasks[0].metadata[protocol] = %v, want %q", metadata["protocol"], "codex_app_server")
+	}
+}
+
+type gatewayMetadataBridge struct{}
+
+func (b *gatewayMetadataBridge) Dispatch(_ context.Context, _ acpbridge.DispatchRequest) (acpbridge.DispatchResult, error) {
+	return acpbridge.DispatchResult{
+		State:           acpbridge.StateCompleted,
+		Summary:         "done",
+		RemoteAgentName: "codex-cli",
+		RemoteSessionID: "thread_001",
+		RemoteTaskID:    "turn_remote_001",
+		LastHeartbeatAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+		Metadata: map[string]any{
+			"protocol": "codex_app_server",
+			"eventSummary": map[string]any{
+				"messageDeltaCount": 2,
+			},
+		},
+	}, nil
+}
+
 func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 	t.Parallel()
 

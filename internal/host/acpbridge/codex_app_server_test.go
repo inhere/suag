@@ -16,6 +16,9 @@ func TestCodexAppServerBridge_DispatchRunsCodexProtocol(t *testing.T) {
 			[]byte(`{"jsonrpc":"2.0","id":2,"result":{"threadId":"thread_001"}}` + "\n"),
 			[]byte(`{"jsonrpc":"2.0","id":3,"result":{"turnId":"turn_remote_001"}}` + "\n"),
 			[]byte(`{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread_001","turnId":"turn_remote_001"}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_cmd_001","itemType":"commandExecution","item":{"id":"item_cmd_001","type":"commandExecution","command":"go test ./...","cwd":"workspace/demo","status":"in_progress"}}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","method":"item/commandExecution/outputDelta","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_cmd_001","delta":"ok github.com/inhere/axon/internal/host/acpbridge"}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_cmd_001","itemType":"commandExecution","item":{"id":"item_cmd_001","type":"commandExecution","command":"go test ./...","cwd":"workspace/demo","status":"completed","aggregatedOutput":"ok github.com/inhere/axon/internal/host/acpbridge","exitCode":0}}}` + "\n"),
 			[]byte(`{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_001","delta":"hello "}}` + "\n"),
 			[]byte(`{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_001","delta":"codex"}}` + "\n"),
 			[]byte(`{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread_001","turnId":"turn_remote_001","stopReason":"end_turn"}}` + "\n"),
@@ -67,6 +70,35 @@ func TestCodexAppServerBridge_DispatchRunsCodexProtocol(t *testing.T) {
 	}
 	if result.RemoteTaskID != "turn_remote_001" {
 		t.Fatalf("Dispatch().RemoteTaskID = %q, want %q", result.RemoteTaskID, "turn_remote_001")
+	}
+	if result.Metadata["protocol"] != "codex_app_server" {
+		t.Fatalf("Dispatch().Metadata[protocol] = %v, want %q", result.Metadata["protocol"], "codex_app_server")
+	}
+	if result.Metadata["stopReason"] != "end_turn" {
+		t.Fatalf("Dispatch().Metadata[stopReason] = %v, want %q", result.Metadata["stopReason"], "end_turn")
+	}
+	items, ok := result.Metadata["items"].([]map[string]any)
+	if !ok {
+		t.Fatalf("Dispatch().Metadata[items] type = %T, want []map[string]any", result.Metadata["items"])
+	}
+	if len(items) != 1 {
+		t.Fatalf("Dispatch().Metadata[items] len = %d, want 1", len(items))
+	}
+	if items[0]["command"] != "go test ./..." {
+		t.Fatalf("Dispatch().Metadata[items][0][command] = %v, want %q", items[0]["command"], "go test ./...")
+	}
+	if items[0]["outputPreview"] != "ok github.com/inhere/axon/internal/host/acpbridge" {
+		t.Fatalf("Dispatch().Metadata[items][0][outputPreview] = %v, want preview text", items[0]["outputPreview"])
+	}
+	eventSummary, ok := result.Metadata["eventSummary"].(map[string]any)
+	if !ok {
+		t.Fatalf("Dispatch().Metadata[eventSummary] type = %T, want map[string]any", result.Metadata["eventSummary"])
+	}
+	if eventSummary["commandDeltaCount"] != 1 {
+		t.Fatalf("Dispatch().Metadata[eventSummary][commandDeltaCount] = %v, want %d", eventSummary["commandDeltaCount"], 1)
+	}
+	if eventSummary["messageDeltaCount"] != 2 {
+		t.Fatalf("Dispatch().Metadata[eventSummary][messageDeltaCount] = %v, want %d", eventSummary["messageDeltaCount"], 2)
 	}
 
 	if len(fake.writtenLines) != 4 {
@@ -153,5 +185,8 @@ func TestCodexAppServerBridge_DispatchReturnsFailedStateOnTurnError(t *testing.T
 	}
 	if result.RemoteTaskID != "turn_remote_001" {
 		t.Fatalf("Dispatch().RemoteTaskID = %q, want %q", result.RemoteTaskID, "turn_remote_001")
+	}
+	if result.Metadata["lastError"] != "permission denied" {
+		t.Fatalf("Dispatch().Metadata[lastError] = %v, want %q", result.Metadata["lastError"], "permission denied")
 	}
 }
