@@ -100,6 +100,79 @@ func TestServer_CreateSessionAndStreamEventsOverWebSocket(t *testing.T) {
 	}
 }
 
+func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	svc := session.NewService(store, bus, &fakeGatewayRunner{}, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 11, 12, 30, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "continued session",
+	})
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial() error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":           "continue_turn",
+		"session_id":     createResp.SessionID,
+		"message":        "please continue",
+		"agent_id":       "default",
+		"initiator_type": "user",
+	}); err != nil {
+		t.Fatalf("wsjson.Write() command error = %v", err)
+	}
+
+	var ack map[string]any
+	if err := wsjson.Read(ctx, conn, &ack); err != nil {
+		t.Fatalf("wsjson.Read() ack error = %v", err)
+	}
+	if ack["type"] != "command.accepted" {
+		t.Fatalf("ack type = %v, want command.accepted", ack["type"])
+	}
+
+	var event Event
+	if err := wsjson.Read(ctx, conn, &event); err != nil {
+		t.Fatalf("wsjson.Read() event error = %v", err)
+	}
+	if event.Type != "run.queued" {
+		t.Fatalf("event type = %q, want %q", event.Type, "run.queued")
+	}
+	if event.SessionID != createResp.SessionID {
+		t.Fatalf("event session_id = %q, want %q", event.SessionID, createResp.SessionID)
+	}
+
+	gotSession := getJSON[getSessionResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID)
+	if gotSession.LastTurnID == "" {
+		t.Fatal("get session last_turn_id is empty after continue_turn")
+	}
+
+	events := getJSON[[]Event](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/events")
+	if len(events) != 1 {
+		t.Fatalf("events len = %d, want 1", len(events))
+	}
+}
+
 type fakeGatewayRunner struct{}
 
 func (fakeGatewayRunner) Run(context.Context, session.RuntimeRequest) (session.RuntimeResult, error) {

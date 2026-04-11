@@ -41,6 +41,13 @@ type StartTurnInput struct {
 	InitiatorType InitiatorType
 }
 
+type ContinueTurnInput struct {
+	SessionID     string
+	AgentID       string
+	Message       string
+	InitiatorType InitiatorType
+}
+
 type StartTurnResult struct {
 	SessionID string
 	TurnID    string
@@ -76,9 +83,22 @@ func (s *Service) StartTurn(ctx context.Context, in StartTurnInput) (StartTurnRe
 	if err := validateStartTurnInput(in); err != nil {
 		return StartTurnResult{}, err
 	}
+	return s.startTurn(ctx, in.SessionID, in.AgentID, in.UserMessage, in.InitiatorType, true)
+}
 
+func (s *Service) ContinueTurn(ctx context.Context, in ContinueTurnInput) (StartTurnResult, error) {
+	if s == nil {
+		return StartTurnResult{}, fmt.Errorf("service is required")
+	}
+	if err := validateContinueTurnInput(in); err != nil {
+		return StartTurnResult{}, err
+	}
+	return s.startTurn(ctx, in.SessionID, in.AgentID, in.Message, in.InitiatorType, false)
+}
+
+func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message string, initiatorType InitiatorType, createIfMissing bool) (StartTurnResult, error) {
 	now := s.now().UTC()
-	sessionModel, err := s.ensureSession(ctx, in.SessionID, now)
+	sessionModel, err := s.ensureSession(ctx, sessionID, now, createIfMissing)
 	if err != nil {
 		return StartTurnResult{}, err
 	}
@@ -89,9 +109,9 @@ func (s *Service) StartTurn(ctx context.Context, in StartTurnInput) (StartTurnRe
 
 	turnModel := Turn{
 		TurnID:        turnID,
-		SessionID:     in.SessionID,
-		InitiatorType: in.InitiatorType,
-		InputSummary:  in.UserMessage,
+		SessionID:     sessionID,
+		InitiatorType: initiatorType,
+		InputSummary:  message,
 		Status:        TurnRunning,
 		PrimaryRunID:  runID,
 		CreatedAt:     now,
@@ -102,9 +122,9 @@ func (s *Service) StartTurn(ctx context.Context, in StartTurnInput) (StartTurnRe
 
 	runModel := Run{
 		RunID:     runID,
-		SessionID: in.SessionID,
+		SessionID: sessionID,
 		TurnID:    turnID,
-		AgentID:   in.AgentID,
+		AgentID:   agentID,
 		State:     RunQueued,
 		StartedAt: now,
 	}
@@ -121,14 +141,14 @@ func (s *Service) StartTurn(ctx context.Context, in StartTurnInput) (StartTurnRe
 
 	eventModel := RunEvent{
 		EventID:   eventID,
-		SessionID: in.SessionID,
+		SessionID: sessionID,
 		TurnID:    turnID,
 		RunID:     runID,
-		AgentID:   in.AgentID,
+		AgentID:   agentID,
 		EventType: EventRunQueued,
 		Sequence:  1,
 		Payload: map[string]any{
-			"message": in.UserMessage,
+			"message": message,
 		},
 		Source:    "host.session.service",
 		CreatedAt: now,
@@ -144,11 +164,11 @@ func (s *Service) StartTurn(ctx context.Context, in StartTurnInput) (StartTurnRe
 
 	if s.runner != nil {
 		_, err := s.runner.Run(ctx, RuntimeRequest{
-			SessionID:   in.SessionID,
+			SessionID:   sessionID,
 			TurnID:      turnID,
 			RunID:       runID,
-			AgentID:     in.AgentID,
-			Instruction: in.UserMessage,
+			AgentID:     agentID,
+			Instruction: message,
 		})
 		if err != nil {
 			return StartTurnResult{}, fmt.Errorf("run runtime request: %w", err)
@@ -156,19 +176,22 @@ func (s *Service) StartTurn(ctx context.Context, in StartTurnInput) (StartTurnRe
 	}
 
 	return StartTurnResult{
-		SessionID: in.SessionID,
+		SessionID: sessionID,
 		TurnID:    turnID,
 		RunID:     runID,
 	}, nil
 }
 
-func (s *Service) ensureSession(ctx context.Context, sessionID string, now time.Time) (Session, error) {
+func (s *Service) ensureSession(ctx context.Context, sessionID string, now time.Time, createIfMissing bool) (Session, error) {
 	sessionModel, err := s.store.GetSession(ctx, sessionID)
 	if err == nil {
 		return sessionModel, nil
 	}
 	if !errors.Is(err, ErrSessionNotFound) {
 		return Session{}, err
+	}
+	if !createIfMissing {
+		return Session{}, ErrSessionNotFound
 	}
 
 	sessionModel = Session{
@@ -186,16 +209,24 @@ func (s *Service) ensureSession(ctx context.Context, sessionID string, now time.
 }
 
 func validateStartTurnInput(in StartTurnInput) error {
-	if strings.TrimSpace(in.SessionID) == "" {
+	return validateTurnRequest(in.SessionID, in.AgentID, in.UserMessage, in.InitiatorType)
+}
+
+func validateContinueTurnInput(in ContinueTurnInput) error {
+	return validateTurnRequest(in.SessionID, in.AgentID, in.Message, in.InitiatorType)
+}
+
+func validateTurnRequest(sessionID, agentID, message string, initiatorType InitiatorType) error {
+	if strings.TrimSpace(sessionID) == "" {
 		return fmt.Errorf("session id is required")
 	}
-	if strings.TrimSpace(in.AgentID) == "" {
+	if strings.TrimSpace(agentID) == "" {
 		return fmt.Errorf("agent id is required")
 	}
-	if strings.TrimSpace(in.UserMessage) == "" {
+	if strings.TrimSpace(message) == "" {
 		return fmt.Errorf("user message is required")
 	}
-	if strings.TrimSpace(string(in.InitiatorType)) == "" {
+	if strings.TrimSpace(string(initiatorType)) == "" {
 		return fmt.Errorf("initiator type is required")
 	}
 	return nil

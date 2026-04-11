@@ -78,6 +78,63 @@ func TestService_StartTurnCreatesQueuedRunAndPublishesEvent(t *testing.T) {
 	}
 }
 
+func TestService_ContinueTurnCreatesNewTurnForExistingSession(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	now := time.Date(2026, 4, 11, 11, 30, 0, 0, time.UTC)
+
+	if err := store.CreateSession(ctx, Session{
+		SessionID: "sess_001",
+		Title:     "existing session",
+		Status:    SessionOpen,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Metadata:  map[string]any{},
+	}); err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{Summary: "continued"},
+	}
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now.Add(5 * time.Minute) },
+	})
+
+	result, err := svc.ContinueTurn(ctx, ContinueTurnInput{
+		SessionID:     "sess_001",
+		AgentID:       "default",
+		Message:       "please continue",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("ContinueTurn() error = %v", err)
+	}
+	if result.SessionID != "sess_001" {
+		t.Fatalf("ContinueTurn().SessionID = %q, want %q", result.SessionID, "sess_001")
+	}
+	if result.TurnID == "" {
+		t.Fatal("ContinueTurn().TurnID is empty")
+	}
+	if runner.lastRequest.Instruction != "please continue" {
+		t.Fatalf("runner request Instruction = %q, want %q", runner.lastRequest.Instruction, "please continue")
+	}
+
+	gotSession, err := store.GetSession(ctx, "sess_001")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if gotSession.LastTurnID != result.TurnID {
+		t.Fatalf("GetSession().LastTurnID = %q, want %q", gotSession.LastTurnID, result.TurnID)
+	}
+	if len(bus.events) != 1 {
+		t.Fatalf("published events len = %d, want 1", len(bus.events))
+	}
+}
+
 type fakeRunner struct {
 	result      RuntimeResult
 	err         error
