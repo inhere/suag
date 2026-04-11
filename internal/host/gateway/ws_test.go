@@ -380,6 +380,83 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 	}
 }
 
+func TestServer_ContinueTurnReusesPreviousRemoteSession(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	runner := &resumeAwareGatewayRunner{}
+	svc := session.NewService(store, bus, runner, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 12, 12, 0, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "continue turn remote session reuse",
+	})
+
+	postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "start delegated turn",
+		"initiator_type": "user",
+	})
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial() error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+	if snapshot["type"] != "STATE_SNAPSHOT" {
+		t.Fatalf("snapshot type = %v, want STATE_SNAPSHOT", snapshot["type"])
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":           "continue_turn",
+		"session_id":     createResp.SessionID,
+		"message":        "continue delegated turn",
+		"agent_id":       "default",
+		"initiator_type": "user",
+	}); err != nil {
+		t.Fatalf("wsjson.Write() command error = %v", err)
+	}
+
+	var ack map[string]any
+	if err := wsjson.Read(ctx, conn, &ack); err != nil {
+		t.Fatalf("wsjson.Read() ack error = %v", err)
+	}
+	if ack["type"] != "command.accepted" {
+		t.Fatalf("ack type = %v, want command.accepted", ack["type"])
+	}
+
+	readUntilEventType(t, ctx, conn, "CUSTOM")
+
+	waitForGatewayRunnerRequests(t, runner, 2)
+	if runner.requests[1].Context["resume_turn_id"] == nil {
+		t.Fatal("continue request missing resume_turn_id")
+	}
+	if runner.requests[1].Context["resume_external_tasks"] == nil {
+		t.Fatal("continue request missing resume_external_tasks")
+	}
+}
+
 func readUntilEventType(t *testing.T, ctx context.Context, conn *websocket.Conn, wantType string) map[string]any {
 	t.Helper()
 
@@ -401,6 +478,51 @@ type fakeGatewayRunner struct{}
 
 func (fakeGatewayRunner) Run(context.Context, session.RuntimeRequest) (session.RuntimeResult, error) {
 	return session.RuntimeResult{Summary: "ok"}, nil
+}
+
+type resumeAwareGatewayRunner struct {
+	requests []session.RuntimeRequest
+}
+
+func (r *resumeAwareGatewayRunner) Run(_ context.Context, in session.RuntimeRequest) (session.RuntimeResult, error) {
+	r.requests = append(r.requests, in)
+
+	if len(r.requests) == 1 {
+		return session.RuntimeResult{
+			Summary: "started",
+			ExternalTask: &session.ExternalTask{
+				Adapter:         "codex",
+				RemoteAgentName: "codex-cli",
+				RemoteSessionID: "thread_001",
+				RemoteTaskID:    "turn_remote_001",
+				State:           "completed",
+			},
+		}, nil
+	}
+
+	return session.RuntimeResult{
+		Summary: "continued",
+		ExternalTask: &session.ExternalTask{
+			Adapter:         "codex",
+			RemoteAgentName: "codex-cli",
+			RemoteSessionID: "thread_001",
+			RemoteTaskID:    "turn_remote_002",
+			State:           "completed",
+		},
+	}, nil
+}
+
+func waitForGatewayRunnerRequests(t *testing.T, runner *resumeAwareGatewayRunner, want int) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(runner.requests) >= want {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("runner requests len = %d, want at least %d", len(runner.requests), want)
 }
 
 func newGatewaySessionStore(t *testing.T) *session.SQLiteStore {

@@ -145,6 +145,76 @@ func TestService_ContinueTurnCreatesNewTurnForExistingSession(t *testing.T) {
 	}
 }
 
+func TestService_ContinueTurnPassesResumeExternalTasksFromPreviousTurn(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	firstRunner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "delegated",
+			ExternalTask: &ExternalTask{
+				Adapter:         "codex",
+				RemoteAgentName: "codex-cli",
+				RemoteSessionID: "thread_001",
+				RemoteTaskID:    "turn_remote_001",
+				State:           "completed",
+				Metadata: map[string]any{
+					"protocol": "codex_app_server",
+				},
+			},
+		},
+	}
+	now := time.Date(2026, 4, 12, 11, 0, 0, 0, time.UTC)
+	svc := NewService(store, bus, firstRunner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	firstResult, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_001",
+		AgentID:       "default",
+		UserMessage:   "delegate first turn",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	secondRunner := &fakeRunner{
+		result: RuntimeResult{Summary: "continued"},
+	}
+	svc.runner = secondRunner
+	svc.now = func() time.Time { return now.Add(5 * time.Minute) }
+
+	_, err = svc.ContinueTurn(ctx, ContinueTurnInput{
+		SessionID:     "sess_001",
+		AgentID:       "default",
+		Message:       "please continue with same remote thread",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("ContinueTurn() error = %v", err)
+	}
+
+	if secondRunner.lastRequest.Context == nil {
+		t.Fatal("runner request Context is nil")
+	}
+	if secondRunner.lastRequest.Context["resume_turn_id"] != firstResult.TurnID {
+		t.Fatalf("runner request Context[resume_turn_id] = %v, want %q", secondRunner.lastRequest.Context["resume_turn_id"], firstResult.TurnID)
+	}
+	resumeTasks, ok := secondRunner.lastRequest.Context["resume_external_tasks"].([]ExternalTask)
+	if !ok {
+		t.Fatalf("runner request Context[resume_external_tasks] type = %T, want []ExternalTask", secondRunner.lastRequest.Context["resume_external_tasks"])
+	}
+	if len(resumeTasks) != 1 {
+		t.Fatalf("runner request Context[resume_external_tasks] len = %d, want 1", len(resumeTasks))
+	}
+	if resumeTasks[0].RemoteSessionID != "thread_001" {
+		t.Fatalf("runner request Context[resume_external_tasks][0].RemoteSessionID = %q, want %q", resumeTasks[0].RemoteSessionID, "thread_001")
+	}
+}
+
 func TestService_StartTurnPublishesFailedLifecycleWhenRunnerFails(t *testing.T) {
 	t.Parallel()
 

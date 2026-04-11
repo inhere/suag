@@ -24,6 +24,7 @@ type RuntimeRequest struct {
 	RunID       string
 	AgentID     string
 	Instruction string
+	Context     map[string]any
 }
 
 type RuntimeResult struct {
@@ -103,6 +104,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 	if err != nil {
 		return StartTurnResult{}, err
 	}
+	previousTurnID := sessionModel.LastTurnID
 
 	turnID := NewTurnID()
 	runID := NewRunID()
@@ -192,6 +194,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			RunID:       runID,
 			AgentID:     agentID,
 			Instruction: message,
+			Context:     s.buildRuntimeContext(ctx, sessionID, previousTurnID),
 		})
 		if err != nil {
 			failedEvent := RunEvent{
@@ -255,6 +258,39 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 		TurnID:    turnID,
 		RunID:     runID,
 	}, nil
+}
+
+func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, previousTurnID string) map[string]any {
+	if s == nil || s.store == nil {
+		return map[string]any{}
+	}
+	if strings.TrimSpace(previousTurnID) == "" {
+		return map[string]any{}
+	}
+
+	tasks, err := s.store.ListExternalTasksBySession(ctx, sessionID)
+	if err != nil {
+		return map[string]any{}
+	}
+
+	resumeTasks := make([]ExternalTask, 0, len(tasks))
+	for _, task := range tasks {
+		if task.TurnID != previousTurnID {
+			continue
+		}
+		if strings.TrimSpace(task.RemoteSessionID) == "" {
+			continue
+		}
+		resumeTasks = append(resumeTasks, task)
+	}
+	if len(resumeTasks) == 0 {
+		return map[string]any{}
+	}
+
+	return map[string]any{
+		"resume_turn_id":        previousTurnID,
+		"resume_external_tasks": resumeTasks,
+	}
 }
 
 func (s *Service) persistExternalTask(ctx context.Context, sessionID, turnID, runID string, task *ExternalTask) error {

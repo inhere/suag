@@ -188,7 +188,7 @@ func (b *CodexAppServerBridge) Dispatch(ctx context.Context, req DispatchRequest
 		return DispatchResult{}, err
 	}
 
-	threadID, err := b.sendThreadStart(ctx, sess, req.Workspace)
+	threadID, resumed, err := b.sendThreadStart(ctx, sess, req)
 	if err != nil {
 		return DispatchResult{}, err
 	}
@@ -201,6 +201,11 @@ func (b *CodexAppServerBridge) Dispatch(ctx context.Context, req DispatchRequest
 	result, err := b.collectTurnResult(ctx, sess, req, threadID, turnID)
 	if err != nil {
 		return DispatchResult{}, err
+	}
+	if resumed {
+		result.Metadata = mergeMetadata(result.Metadata, map[string]any{
+			"resumedFromRemoteSessionId": threadID,
+		})
 	}
 	return result, nil
 }
@@ -238,19 +243,30 @@ func (b *CodexAppServerBridge) sendInitialized(ctx context.Context, sess ACPStdi
 	return nil
 }
 
-func (b *CodexAppServerBridge) sendThreadStart(ctx context.Context, sess ACPStdioSession, workdir string) (string, error) {
-	req := acpRPCRequest{
+func (b *CodexAppServerBridge) sendThreadStart(ctx context.Context, sess ACPStdioSession, req DispatchRequest) (string, bool, error) {
+	resumeThreadID := strings.TrimSpace(stringMapValue(req.Context, "resume_remote_session_id"))
+
+	rpcReq := acpRPCRequest{
 		JSONRPC: "2.0",
 		ID:      2,
 		Method:  "thread/start",
 		Params: map[string]any{
-			"cwd": workdir,
+			"cwd": req.Workspace,
 		},
+	}
+	resumed := false
+	if resumeThreadID != "" {
+		rpcReq.Method = "thread/resume"
+		rpcReq.Params = map[string]any{
+			"threadId": resumeThreadID,
+			"cwd":      req.Workspace,
+		}
+		resumed = true
 	}
 
 	var result codexThreadStartResult
-	if err := sendRPCRequestExpectResult(ctx, sess, req, &result, nil); err != nil {
-		return "", err
+	if err := sendRPCRequestExpectResult(ctx, sess, rpcReq, &result, nil); err != nil {
+		return "", false, err
 	}
 
 	threadID := strings.TrimSpace(result.ThreadID)
@@ -258,9 +274,9 @@ func (b *CodexAppServerBridge) sendThreadStart(ctx context.Context, sess ACPStdi
 		threadID = strings.TrimSpace(result.Thread.ID)
 	}
 	if threadID == "" {
-		return "", fmt.Errorf("thread/start returned empty thread id")
+		return "", false, fmt.Errorf("%s returned empty thread id", rpcReq.Method)
 	}
-	return threadID, nil
+	return threadID, resumed, nil
 }
 
 func (b *CodexAppServerBridge) sendTurnStart(ctx context.Context, sess ACPStdioSession, threadID, instruction string) (string, error) {
@@ -496,6 +512,18 @@ func trimPreview(text string) string {
 		return text
 	}
 	return strings.TrimSpace(text[:240])
+}
+
+func stringMapValue(values map[string]any, key string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	raw, ok := values[key]
+	if !ok {
+		return ""
+	}
+	text, _ := raw.(string)
+	return text
 }
 
 func effectiveCodexTurnID(turnID string, turn *codexTurnRef) string {

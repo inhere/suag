@@ -190,3 +190,66 @@ func TestCodexAppServerBridge_DispatchReturnsFailedStateOnTurnError(t *testing.T
 		t.Fatalf("Dispatch().Metadata[lastError] = %v, want %q", result.Metadata["lastError"], "permission denied")
 	}
 }
+
+func TestCodexAppServerBridge_DispatchResumesExistingThreadWhenProvided(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeACPStdioSession{
+		readLines: [][]byte{
+			[]byte(`{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"codex","version":"0.1.0"}}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread_existing_001"}}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","id":3,"result":{"turnId":"turn_remote_002"}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread_existing_001","turnId":"turn_remote_002"}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread_existing_001","turnId":"turn_remote_002","itemId":"item_002","delta":"continued"}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread_existing_001","turnId":"turn_remote_002","stopReason":"end_turn"}}` + "\n"),
+		},
+	}
+
+	bridge := NewCodexAppServerBridge(CodexAppServerBridgeConfig{
+		Commands: map[string]CommandConfig{
+			"codex": {
+				Command: []string{"codex", "app-server"},
+			},
+		},
+		SessionStarter: func(_ context.Context, _ CommandSpec) (ACPStdioSession, error) {
+			return fake, nil
+		},
+	})
+
+	result, err := bridge.Dispatch(context.Background(), DispatchRequest{
+		SessionID:   "sess_001",
+		TurnID:      "turn_002",
+		RunID:       "run_002",
+		AgentID:     "default",
+		Adapter:     "codex",
+		Instruction: "continue task",
+		Workspace:   "workspace/demo",
+		Context: map[string]any{
+			"resume_remote_session_id": "thread_existing_001",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
+	}
+	if result.RemoteSessionID != "thread_existing_001" {
+		t.Fatalf("Dispatch().RemoteSessionID = %q, want %q", result.RemoteSessionID, "thread_existing_001")
+	}
+	if len(fake.writtenLines) != 4 {
+		t.Fatalf("written lines len = %d, want 4", len(fake.writtenLines))
+	}
+
+	var threadReq map[string]any
+	if err := json.Unmarshal(fake.writtenLines[2], &threadReq); err != nil {
+		t.Fatalf("json.Unmarshal() thread request error = %v", err)
+	}
+	if threadReq["method"] != "thread/resume" {
+		t.Fatalf("thread request method = %v, want thread/resume", threadReq["method"])
+	}
+	params, ok := threadReq["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("thread request params type = %T, want map[string]any", threadReq["params"])
+	}
+	if params["threadId"] != "thread_existing_001" {
+		t.Fatalf("thread request params.threadId = %v, want %q", params["threadId"], "thread_existing_001")
+	}
+}

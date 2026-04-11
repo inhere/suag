@@ -90,6 +90,51 @@ func TestRunnerAdapter_RunReturnsErrorForFailedDispatch(t *testing.T) {
 	}
 }
 
+func TestRunnerAdapter_RunPassesResumeRemoteSessionToBridge(t *testing.T) {
+	t.Parallel()
+
+	fakeBridge := &fakeBridge{
+		result: DispatchResult{
+			State:   StateCompleted,
+			Summary: "continued",
+		},
+	}
+	adapter := NewRunnerAdapter(fakeBridge, RunnerAdapterConfig{
+		AdapterName: "codex",
+		Workspace:   "workspace/demo",
+	})
+
+	_, err := adapter.Run(context.Background(), session.RuntimeRequest{
+		SessionID:   "sess_001",
+		TurnID:      "turn_002",
+		RunID:       "run_002",
+		AgentID:     "default",
+		Instruction: "continue task",
+		Context: map[string]any{
+			"resume_external_tasks": []session.ExternalTask{
+				{
+					Adapter:         "claude-code",
+					RemoteSessionID: "claude_thread_001",
+				},
+				{
+					Adapter:         "codex",
+					RemoteSessionID: "thread_001",
+					RemoteTaskID:    "turn_remote_001",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if fakeBridge.lastRequest.Context["resume_remote_session_id"] != "thread_001" {
+		t.Fatalf("Dispatch().Context[resume_remote_session_id] = %v, want %q", fakeBridge.lastRequest.Context["resume_remote_session_id"], "thread_001")
+	}
+	if fakeBridge.lastRequest.Context["resume_remote_task_id"] != "turn_remote_001" {
+		t.Fatalf("Dispatch().Context[resume_remote_task_id] = %v, want %q", fakeBridge.lastRequest.Context["resume_remote_task_id"], "turn_remote_001")
+	}
+}
+
 func TestLocalCommandBridge_DispatchParsesJSONResult(t *testing.T) {
 	t.Parallel()
 

@@ -40,7 +40,7 @@ func (r *RunnerAdapter) Run(ctx context.Context, in session.RuntimeRequest) (ses
 		Adapter:     r.adapterName,
 		Instruction: in.Instruction,
 		Workspace:   r.workspace,
-		Context:     map[string]any{},
+		Context:     r.buildDispatchContext(in.Context),
 	})
 	if err != nil {
 		return session.RuntimeResult{}, err
@@ -81,4 +81,32 @@ func mergeMetadata(dst map[string]any, src map[string]any) map[string]any {
 		dst[key] = value
 	}
 	return dst
+}
+
+func (r *RunnerAdapter) buildDispatchContext(src map[string]any) map[string]any {
+	out := mergeMetadata(map[string]any{}, src)
+
+	rawTasks, ok := src["resume_external_tasks"]
+	if !ok {
+		return out
+	}
+	tasks, ok := rawTasks.([]session.ExternalTask)
+	if !ok {
+		return out
+	}
+
+	for _, task := range tasks {
+		if strings.TrimSpace(task.Adapter) != r.adapterName {
+			continue
+		}
+		if strings.TrimSpace(task.RemoteSessionID) == "" {
+			continue
+		}
+		out["resume_remote_session_id"] = task.RemoteSessionID
+		if strings.TrimSpace(task.RemoteTaskID) != "" {
+			out["resume_remote_task_id"] = task.RemoteTaskID
+		}
+		out["resume_external_task_id"] = task.ExternalTaskID
+	}
+	return out
 }
