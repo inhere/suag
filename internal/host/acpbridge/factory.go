@@ -13,7 +13,9 @@ type FactoryConfig struct {
 	Workspace           string
 	StubRemoteAgentName string
 	LocalCommand        CommandConfig
+	ACPCommand          CommandConfig
 	CommandExecutor     CommandExecutor
+	ACPStdioStarter     ACPStdioSessionStarter
 }
 
 func NewRunner(cfg FactoryConfig) (session.Runner, error) {
@@ -41,6 +43,16 @@ func NewRunner(cfg FactoryConfig) (session.Runner, error) {
 				strings.TrimSpace(cfg.AdapterName): cfg.LocalCommand,
 			},
 			Executor: cfg.CommandExecutor,
+		}), runnerCfg), nil
+	case "acp_stdio":
+		if len(cfg.ACPCommand.Command) == 0 {
+			return nil, fmt.Errorf("acp command config is required for acp_stdio mode")
+		}
+		return NewRunnerAdapter(NewACPStdioBridge(ACPStdioBridgeConfig{
+			Commands: map[string]CommandConfig{
+				strings.TrimSpace(cfg.AdapterName): cfg.ACPCommand,
+			},
+			SessionStarter: cfg.ACPStdioStarter,
 		}), runnerCfg), nil
 	default:
 		return nil, fmt.Errorf("unsupported acp bridge mode %q", mode)

@@ -257,6 +257,7 @@ func buildSessionRunner() (session.Runner, error) {
 	}
 
 	localCommand := strings.Fields(strings.TrimSpace(config.String("host.acp.local_command")))
+	acpCommand := strings.Fields(strings.TrimSpace(config.String("host.acp.acp_command")))
 
 	// The server keeps ACP bridge selection at the edge and only passes the
 	// resulting narrow session.Runner into the host runtime.
@@ -267,6 +268,9 @@ func buildSessionRunner() (session.Runner, error) {
 		StubRemoteAgentName: strings.TrimSpace(config.String("host.acp.stub_remote_agent_name")),
 		LocalCommand: acpbridge.CommandConfig{
 			Command: localCommand,
+		},
+		ACPCommand: acpbridge.CommandConfig{
+			Command: acpCommand,
 		},
 	})
 }

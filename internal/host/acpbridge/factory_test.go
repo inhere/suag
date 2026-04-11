@@ -84,3 +84,51 @@ func TestNewRunner_LocalCommandModeBuildsRunner(t *testing.T) {
 		t.Fatalf("Run().Summary = %q, want %q", result.Summary, "done by local command")
 	}
 }
+
+func TestNewRunner_ACPStdioModeBuildsRunner(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeACPStdioSession{
+		readLines: [][]byte{
+			[]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","id":2,"result":{"sessionId":"remote_sess_001"}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"remote_sess_001","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"acp result"}}}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","userMessageId":"msg_001"}}` + "\n"),
+		},
+	}
+
+	runner, err := NewRunner(FactoryConfig{
+		Mode:        "acp_stdio",
+		AdapterName: "codex",
+		Workspace:   "workspace/demo",
+		ACPCommand: CommandConfig{
+			Command: []string{"codex", "acp"},
+		},
+		ACPStdioStarter: func(_ context.Context, _ CommandSpec) (ACPStdioSession, error) {
+			return fake, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRunner() error = %v", err)
+	}
+
+	result, err := runner.Run(context.Background(), session.RuntimeRequest{
+		SessionID:   "sess_001",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "implement feature x",
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Summary != "acp result" {
+		t.Fatalf("Run().Summary = %q, want %q", result.Summary, "acp result")
+	}
+	if result.ExternalTask == nil {
+		t.Fatal("Run().ExternalTask is nil")
+	}
+	if result.ExternalTask.RemoteSessionID != "remote_sess_001" {
+		t.Fatalf("Run().ExternalTask.RemoteSessionID = %q, want %q", result.ExternalTask.RemoteSessionID, "remote_sess_001")
+	}
+}
