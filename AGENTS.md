@@ -12,6 +12,7 @@
 - Axon v0 self-host 基础骨架实施计划进行中，计划文档见 `docs/superpowers/plans/2026-04-10-axon-v0-self-host-foundation-plan.md`
 - internal 目录结构调整已完成首轮收敛，迁移映射见 `docs/internal-code-status.md`
 - `internal/host/session` 首批基础骨架进行中，文件拆分说明见 `docs/superpowers/plans/2026-04-10-host-session-layout-note.md`
+- `internal/host/session` service skeleton 已完成首轮最小主链，下一步将继续推进 gateway 与事件总线改造
 
 <!-- PROCESSING WORKS:END -->
 

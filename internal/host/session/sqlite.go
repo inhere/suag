@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -87,6 +88,9 @@ func (s *SQLiteStore) GetSession(ctx context.Context, sessionID string) (Session
 		&rawMetadataJSON,
 	)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Session{}, fmt.Errorf("get session: %w", ErrSessionNotFound)
+		}
 		return Session{}, fmt.Errorf("get session: %w", err)
 	}
 
@@ -104,6 +108,34 @@ func (s *SQLiteStore) GetSession(ctx context.Context, sessionID string) (Session
 	}
 
 	return session, nil
+}
+
+func (s *SQLiteStore) UpdateSession(ctx context.Context, session Session) error {
+	if err := validateID("session", session.SessionID); err != nil {
+		return err
+	}
+	metadata, err := marshalJSON(session.Metadata)
+	if err != nil {
+		return err
+	}
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE sessions
+		SET title = ?, status = ?, last_turn_id = ?, updated_at = ?, metadata_json = ?
+		WHERE session_id = ?
+	`, session.Title, session.Status, session.LastTurnID, formatTime(session.UpdatedAt), metadata, session.SessionID)
+	if err != nil {
+		return fmt.Errorf("update session: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update session rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrSessionNotFound
+	}
+	return nil
 }
 
 func (s *SQLiteStore) CreateTurn(ctx context.Context, turn Turn) error {

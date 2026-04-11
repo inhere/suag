@@ -8,6 +8,7 @@ import (
 type Store interface {
 	CreateSession(ctx context.Context, session Session) error
 	GetSession(ctx context.Context, sessionID string) (Session, error)
+	UpdateSession(ctx context.Context, session Session) error
 	CreateTurn(ctx context.Context, turn Turn) error
 	CreateRun(ctx context.Context, run Run) error
 	UpdateRunState(ctx context.Context, runID string, state RunState, endedAt *time.Time) error
