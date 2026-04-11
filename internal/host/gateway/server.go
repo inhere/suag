@@ -42,7 +42,7 @@ func (s *Server) router() http.Handler {
 
 	// Streaming endpoints.
 	r.Get("/events", SSEHandler(s.bus))
-	r.Get("/ws", WSHandler(s.bus, s.handler.sessionSvc))
+	r.Get("/ws", WSHandler(s.bus, s.handler.sessionStore, s.handler.sessionSvc))
 
 	// Health check.
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {

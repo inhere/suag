@@ -60,6 +60,14 @@ func TestServer_CreateSessionAndStreamEventsOverWebSocket(t *testing.T) {
 		t.Fatalf("connected event type = %v, want connected", connected["type"])
 	}
 
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+	if snapshot["type"] != "STATE_SNAPSHOT" {
+		t.Fatalf("snapshot type = %v, want STATE_SNAPSHOT", snapshot["type"])
+	}
+
 	turnResp := postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
 		"agent_id":       "default",
 		"message":        "implement feature x",
@@ -69,18 +77,26 @@ func TestServer_CreateSessionAndStreamEventsOverWebSocket(t *testing.T) {
 		t.Fatal("start turn response missing run_id")
 	}
 
-	var event Event
+	var event map[string]any
 	if err := wsjson.Read(ctx, conn, &event); err != nil {
 		t.Fatalf("wsjson.Read() event error = %v", err)
 	}
-	if event.Type != "run.queued" {
-		t.Fatalf("event type = %q, want %q", event.Type, "run.queued")
+	if event["type"] != "CUSTOM" {
+		t.Fatalf("event type = %v, want CUSTOM", event["type"])
 	}
-	if event.SessionID != createResp.SessionID {
-		t.Fatalf("event session_id = %q, want %q", event.SessionID, createResp.SessionID)
+	if event["name"] != "axon.run.queued" {
+		t.Fatalf("event name = %v, want axon.run.queued", event["name"])
 	}
-	if event.RunID != turnResp.RunID {
-		t.Fatalf("event run_id = %q, want %q", event.RunID, turnResp.RunID)
+
+	value, ok := event["value"].(map[string]any)
+	if !ok {
+		t.Fatalf("event value type = %T, want map[string]any", event["value"])
+	}
+	if value["threadId"] != createResp.SessionID {
+		t.Fatalf("event value threadId = %v, want %q", value["threadId"], createResp.SessionID)
+	}
+	if value["runId"] != turnResp.RunID {
+		t.Fatalf("event value runId = %v, want %q", value["runId"], turnResp.RunID)
 	}
 
 	gotSession := getJSON[getSessionResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID)
@@ -133,6 +149,14 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 		t.Fatalf("wsjson.Read() connected error = %v", err)
 	}
 
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+	if snapshot["type"] != "STATE_SNAPSHOT" {
+		t.Fatalf("snapshot type = %v, want STATE_SNAPSHOT", snapshot["type"])
+	}
+
 	if err := wsjson.Write(ctx, conn, map[string]any{
 		"type":           "continue_turn",
 		"session_id":     createResp.SessionID,
@@ -151,15 +175,20 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 		t.Fatalf("ack type = %v, want command.accepted", ack["type"])
 	}
 
-	var event Event
+	var event map[string]any
 	if err := wsjson.Read(ctx, conn, &event); err != nil {
 		t.Fatalf("wsjson.Read() event error = %v", err)
 	}
-	if event.Type != "run.queued" {
-		t.Fatalf("event type = %q, want %q", event.Type, "run.queued")
+	if event["type"] != "CUSTOM" {
+		t.Fatalf("event type = %v, want CUSTOM", event["type"])
 	}
-	if event.SessionID != createResp.SessionID {
-		t.Fatalf("event session_id = %q, want %q", event.SessionID, createResp.SessionID)
+
+	value, ok := event["value"].(map[string]any)
+	if !ok {
+		t.Fatalf("event value type = %T, want map[string]any", event["value"])
+	}
+	if value["threadId"] != createResp.SessionID {
+		t.Fatalf("event value threadId = %v, want %q", value["threadId"], createResp.SessionID)
 	}
 
 	gotSession := getJSON[getSessionResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID)

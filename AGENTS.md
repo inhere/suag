@@ -16,6 +16,7 @@
 - `internal/host/gateway` event bus 已完成 session-aware 第一轮改造，下一步继续推进 WS 与 session API
 - `internal/host/gateway` 最小 session API 与 WS 订阅链路已打通，下一步继续推进 continue_turn 与 AG-UI 映射
 - `internal/host/gateway` continue_turn 已打通最小闭环，下一步继续推进 AG-UI 映射与 ACP bridge 接线
+- `internal/host/agui` 已完成第一版薄映射层，当前 WS 下行已切到 AG-UI 风格输出
 
 <!-- PROCESSING WORKS:END -->
 
