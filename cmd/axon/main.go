@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/gookit/ini/v2/dotenv"
 
 	"github.com/inhere/axon/internal/host/gateway"
+	"github.com/inhere/axon/internal/host/session"
 	"github.com/inhere/axon/internal/ops/cron"
 	"github.com/inhere/axon/internal/ops/hitl"
 	"github.com/inhere/axon/internal/orchestrator"
@@ -188,7 +190,19 @@ func buildLLMProvider() (llm.Provider, error) {
 // ─── run modes ────────────────────────────────────────────────────────────────
 
 func runServer(ctx context.Context, a *app) {
-	h := gateway.NewHandler(a.orch, a.bus, a.hitlMgr)
+	sessionStore, err := session.NewSQLiteStore(resolveSessionDBPath())
+	if err != nil {
+		slog.Error("failed to initialize session store", "err", err)
+		return
+	}
+	defer func() {
+		if err := sessionStore.Close(); err != nil {
+			slog.Warn("failed to close session store", "err", err)
+		}
+	}()
+
+	sessionSvc := session.NewService(sessionStore, a.bus, nil, session.ServiceConfig{})
+	h := gateway.NewHandler(a.orch, sessionStore, sessionSvc, a.bus, a.hitlMgr)
 	addr := config.String("server.addr", ":8180")
 	if addr == "" {
 		addr = ":8180"
@@ -201,6 +215,27 @@ func runServer(ctx context.Context, a *app) {
 	if err := srv.Start(ctx); err != nil {
 		slog.Error("server stopped", "err", err)
 	}
+}
+
+func resolveSessionDBPath() string {
+	raw := strings.TrimSpace(config.String("database_url"))
+	if raw == "" {
+		raw = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	}
+	if raw == "" {
+		return filepath.Join("db", "axon.db")
+	}
+	if strings.HasPrefix(raw, "sqlite://") {
+		raw = strings.TrimPrefix(raw, "sqlite://")
+		if idx := strings.Index(raw, "?"); idx >= 0 {
+			raw = raw[:idx]
+		}
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return filepath.Join("db", "axon.db")
+	}
+	return filepath.Clean(filepath.FromSlash(raw))
 }
 
 func runChat(ctx context.Context, a *app) {

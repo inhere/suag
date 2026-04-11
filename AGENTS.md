@@ -14,6 +14,7 @@
 - `internal/host/session` 首批基础骨架进行中，文件拆分说明见 `docs/superpowers/plans/2026-04-10-host-session-layout-note.md`
 - `internal/host/session` service skeleton 已完成首轮最小主链，下一步将继续推进 gateway 与事件总线改造
 - `internal/host/gateway` event bus 已完成 session-aware 第一轮改造，下一步继续推进 WS 与 session API
+- `internal/host/gateway` 最小 session API 与 WS 订阅链路已打通，下一步继续推进 continue_turn 与 AG-UI 映射
 
 <!-- PROCESSING WORKS:END -->
 

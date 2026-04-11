@@ -20,6 +20,30 @@ func newID(prefix string) string {
 	return prefix + id
 }
 
+func NewSessionID() string {
+	return newID("sess_")
+}
+
+func NewTurnID() string {
+	return newID("turn_")
+}
+
+func NewRunID() string {
+	return newID("run_")
+}
+
+func NewEventID() string {
+	return newID("evt_")
+}
+
+func NewExternalTaskID() string {
+	return newID("ext_")
+}
+
+func NewRecapID() string {
+	return newID("recap_")
+}
+
 type cryptoReader struct{}
 
 func (cryptoReader) Read(p []byte) (int, error) {

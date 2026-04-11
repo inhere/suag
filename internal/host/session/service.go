@@ -83,9 +83,9 @@ func (s *Service) StartTurn(ctx context.Context, in StartTurnInput) (StartTurnRe
 		return StartTurnResult{}, err
 	}
 
-	turnID := newID("turn_")
-	runID := newID("run_")
-	eventID := newID("evt_")
+	turnID := NewTurnID()
+	runID := NewRunID()
+	eventID := NewEventID()
 
 	turnModel := Turn{
 		TurnID:        turnID,

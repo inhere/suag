@@ -24,8 +24,7 @@ func NewServer(addr string, handler *Handler, bus *EventBus) *Server {
 	return &Server{addr: addr, handler: handler, bus: bus}
 }
 
-// Start builds the router and starts listening. Blocks until ctx is cancelled.
-func (s *Server) Start(ctx context.Context) error {
+func (s *Server) router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -36,18 +35,28 @@ func (s *Server) Start(ctx context.Context) error {
 	r.Get("/api/hitl", s.handler.HandleListHITL)
 	r.Post("/api/hitl/{id}/respond", s.handler.HandleHITLRespond)
 	r.Post("/api/hitl/{id}/dismiss", s.handler.HandleHITLDismiss)
+	r.Post("/api/sessions", s.handler.HandleCreateSession)
+	r.Get("/api/sessions/{id}", s.handler.HandleGetSession)
+	r.Get("/api/sessions/{id}/events", s.handler.HandleListSessionEvents)
+	r.Post("/api/sessions/{id}/turns", s.handler.HandleStartTurn)
 
-	// SSE event stream.
+	// Streaming endpoints.
 	r.Get("/events", SSEHandler(s.bus))
+	r.Get("/ws", WSHandler(s.bus))
 
 	// Health check.
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]string{"status": "ok", "ts": time.Now().UTC().Format(time.RFC3339)})
 	})
 
+	return r
+}
+
+// Start builds the router and starts listening. Blocks until ctx is cancelled.
+func (s *Server) Start(ctx context.Context) error {
 	s.srv = &http.Server{
 		Addr:         s.addr,
-		Handler:      r,
+		Handler:      s.router(),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 0, // SSE streams need unlimited write time
 		IdleTimeout:  120 * time.Second,

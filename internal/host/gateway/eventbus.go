@@ -2,8 +2,11 @@
 package gateway
 
 import (
+	"context"
 	"strings"
 	"sync"
+
+	"github.com/inhere/axon/internal/host/session"
 )
 
 // Event is a generic event published to the bus.
@@ -81,6 +84,19 @@ func (b *EventBus) Publish(ev Event) {
 			// Drop if slow subscriber; avoid blocking.
 		}
 	}
+}
+
+func (b *EventBus) PublishSessionEvent(_ context.Context, event session.RunEvent) error {
+	b.Publish(Event{
+		Type:      event.EventType,
+		SessionID: event.SessionID,
+		TurnID:    event.TurnID,
+		RunID:     event.RunID,
+		AgentID:   event.AgentID,
+		Sequence:  event.Sequence,
+		Payload:   event.Payload,
+	})
+	return nil
 }
 
 func subscriptionKey(sub Subscription) string {

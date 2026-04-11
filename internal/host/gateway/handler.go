@@ -2,23 +2,36 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
+	"github.com/inhere/axon/internal/host/session"
 	"github.com/inhere/axon/internal/ops/hitl"
 	"github.com/inhere/axon/internal/orchestrator"
 )
 
 // Handler exposes the REST API for the axon server.
 type Handler struct {
-	orch    *orchestrator.Orchestrator
-	bus     *EventBus
-	hitlMgr hitl.Manager
+	orch         *orchestrator.Orchestrator
+	sessionStore session.Store
+	sessionSvc   *session.Service
+	bus          *EventBus
+	hitlMgr      hitl.Manager
 }
 
 // NewHandler creates a Handler.
-func NewHandler(orch *orchestrator.Orchestrator, bus *EventBus, hitlMgr hitl.Manager) *Handler {
-	return &Handler{orch: orch, bus: bus, hitlMgr: hitlMgr}
+func NewHandler(orch *orchestrator.Orchestrator, sessionStore session.Store, sessionSvc *session.Service, bus *EventBus, hitlMgr hitl.Manager) *Handler {
+	return &Handler{
+		orch:         orch,
+		sessionStore: sessionStore,
+		sessionSvc:   sessionSvc,
+		bus:          bus,
+		hitlMgr:      hitlMgr,
+	}
 }
 
 // ─── POST /api/tasks ──────────────────────────────────────────────────────────
@@ -35,6 +48,11 @@ type createTaskResponse struct {
 
 // HandleCreateTask handles POST /api/tasks.
 func (h *Handler) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
+	if h.orch == nil {
+		httpError(w, "task service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	var req createTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpError(w, "invalid request body", http.StatusBadRequest)
@@ -56,6 +74,175 @@ func (h *Handler) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
 		TraceID: result.TaskID,
 		Output:  result.Output,
 	})
+}
+
+// ─── POST /api/sessions ──────────────────────────────────────────────────────
+
+type createSessionRequest struct {
+	Title string `json:"title"`
+}
+
+type createSessionResponse struct {
+	SessionID string `json:"session_id"`
+	Title     string `json:"title"`
+	Status    string `json:"status"`
+}
+
+func (h *Handler) HandleCreateSession(w http.ResponseWriter, r *http.Request) {
+	if h.sessionStore == nil {
+		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req createSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, http.ErrBodyNotAllowed) && err.Error() != "EOF" {
+		httpError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	now := time.Now().UTC()
+	sessionModel := session.Session{
+		SessionID: session.NewSessionID(),
+		Title:     strings.TrimSpace(req.Title),
+		Status:    session.SessionOpen,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Metadata:  map[string]any{},
+	}
+	if sessionModel.Title == "" {
+		sessionModel.Title = "Session " + sessionModel.SessionID
+	}
+
+	if err := h.sessionStore.CreateSession(r.Context(), sessionModel); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, createSessionResponse{
+		SessionID: sessionModel.SessionID,
+		Title:     sessionModel.Title,
+		Status:    string(sessionModel.Status),
+	})
+}
+
+// ─── POST /api/sessions/{id}/turns ───────────────────────────────────────────
+
+type startTurnRequest struct {
+	AgentID       string `json:"agent_id"`
+	Message       string `json:"message"`
+	InitiatorType string `json:"initiator_type"`
+}
+
+type startTurnResponse struct {
+	SessionID string `json:"session_id"`
+	TurnID    string `json:"turn_id"`
+	RunID     string `json:"run_id"`
+}
+
+func (h *Handler) HandleStartTurn(w http.ResponseWriter, r *http.Request) {
+	if h.sessionSvc == nil {
+		httpError(w, "session service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	sessionID := r.PathValue("id")
+	if strings.TrimSpace(sessionID) == "" {
+		httpError(w, "session id required", http.StatusBadRequest)
+		return
+	}
+
+	var req startTurnRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	result, err := h.sessionSvc.StartTurn(r.Context(), session.StartTurnInput{
+		SessionID:     sessionID,
+		AgentID:       req.AgentID,
+		UserMessage:   req.Message,
+		InitiatorType: session.InitiatorType(req.InitiatorType),
+	})
+	if err != nil {
+		httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, startTurnResponse(result))
+}
+
+// ─── GET /api/sessions/{id} ──────────────────────────────────────────────────
+
+type getSessionResponse struct {
+	SessionID  string `json:"session_id"`
+	Title      string `json:"title"`
+	Status     string `json:"status"`
+	LastTurnID string `json:"last_turn_id"`
+}
+
+func (h *Handler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
+	if h.sessionStore == nil {
+		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	sessionID := r.PathValue("id")
+	sessionModel, err := h.sessionStore.GetSession(r.Context(), sessionID)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			httpError(w, "session not found", http.StatusNotFound)
+			return
+		}
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, getSessionResponse{
+		SessionID:  sessionModel.SessionID,
+		Title:      sessionModel.Title,
+		Status:     string(sessionModel.Status),
+		LastTurnID: sessionModel.LastTurnID,
+	})
+}
+
+// ─── GET /api/sessions/{id}/events ───────────────────────────────────────────
+
+func (h *Handler) HandleListSessionEvents(w http.ResponseWriter, r *http.Request) {
+	if h.sessionStore == nil {
+		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	sessionID := r.PathValue("id")
+	afterSequence := int64(0)
+	if raw := strings.TrimSpace(r.URL.Query().Get("after_seq")); raw != "" {
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			httpError(w, "invalid after_seq", http.StatusBadRequest)
+			return
+		}
+		afterSequence = value
+	}
+
+	events, err := h.sessionStore.ListEventsBySession(r.Context(), sessionID, afterSequence)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := make([]Event, 0, len(events))
+	for _, event := range events {
+		resp = append(resp, Event{
+			Type:      event.EventType,
+			SessionID: event.SessionID,
+			TurnID:    event.TurnID,
+			RunID:     event.RunID,
+			AgentID:   event.AgentID,
+			Sequence:  event.Sequence,
+			Payload:   event.Payload,
+		})
+	}
+	respondJSON(w, http.StatusOK, resp)
 }
 
 // ─── GET /api/hitl ────────────────────────────────────────────────────────────
