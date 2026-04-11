@@ -1,12 +1,15 @@
 package agui
 
 const (
-	EventTypeStateSnapshot    = "STATE_SNAPSHOT"
-	EventTypeCustom           = "CUSTOM"
-	EventTypeRunStarted       = "RUN_STARTED"
-	EventTypeRunFinished      = "RUN_FINISHED"
-	EventTypeRunError         = "RUN_ERROR"
-	EventTypeActivitySnapshot = "ACTIVITY_SNAPSHOT"
+	EventTypeStateSnapshot      = "STATE_SNAPSHOT"
+	EventTypeCustom             = "CUSTOM"
+	EventTypeRunStarted         = "RUN_STARTED"
+	EventTypeRunFinished        = "RUN_FINISHED"
+	EventTypeRunError           = "RUN_ERROR"
+	EventTypeActivitySnapshot   = "ACTIVITY_SNAPSHOT"
+	EventTypeTextMessageStart   = "TEXT_MESSAGE_START"
+	EventTypeTextMessageContent = "TEXT_MESSAGE_CONTENT"
+	EventTypeTextMessageEnd     = "TEXT_MESSAGE_END"
 )
 
 type Event struct {
@@ -65,4 +68,24 @@ type ActivitySnapshotEvent struct {
 	MessageID    string `json:"messageId"`
 	ActivityType string `json:"activityType"`
 	Content      any    `json:"content"`
+}
+
+type TextMessageStartEvent struct {
+	Type      string `json:"type"`
+	Timestamp int64  `json:"timestamp,omitempty"`
+	MessageID string `json:"messageId"`
+	Role      string `json:"role,omitempty"`
+}
+
+type TextMessageContentEvent struct {
+	Type      string `json:"type"`
+	Timestamp int64  `json:"timestamp,omitempty"`
+	MessageID string `json:"messageId"`
+	Delta     string `json:"delta"`
+}
+
+type TextMessageEndEvent struct {
+	Type      string `json:"type"`
+	Timestamp int64  `json:"timestamp,omitempty"`
+	MessageID string `json:"messageId"`
 }

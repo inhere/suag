@@ -21,7 +21,8 @@ func MapEvent(event HostEvent) []any {
 			buildRunActivitySnapshot(now, event, "running"),
 		}
 	case session.EventRunFinished:
-		return []any{
+		textEvents := buildFinishedTextEvents(now, event)
+		out := []any{
 			RunFinishedEvent{
 				Type:      EventTypeRunFinished,
 				Timestamp: now,
@@ -31,6 +32,8 @@ func MapEvent(event HostEvent) []any {
 			},
 			buildRunActivitySnapshot(now, event, "completed"),
 		}
+		out = append(out, textEvents...)
+		return out
 	case session.EventRunFailed:
 		message := "run failed"
 		if payload, ok := event.Payload.(map[string]any); ok {
@@ -71,6 +74,39 @@ func MapEvent(event HostEvent) []any {
 			},
 		},
 		buildRunActivitySnapshot(now, event, "queued"),
+	}
+}
+
+func buildFinishedTextEvents(now int64, event HostEvent) []any {
+	payload, ok := event.Payload.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	summary, ok := payload["summary"].(string)
+	if !ok || summary == "" {
+		return nil
+	}
+
+	messageID := event.RunID + ":assistant"
+	return []any{
+		TextMessageStartEvent{
+			Type:      EventTypeTextMessageStart,
+			Timestamp: now,
+			MessageID: messageID,
+			Role:      "assistant",
+		},
+		TextMessageContentEvent{
+			Type:      EventTypeTextMessageContent,
+			Timestamp: now,
+			MessageID: messageID,
+			Delta:     summary,
+		},
+		TextMessageEndEvent{
+			Type:      EventTypeTextMessageEnd,
+			Timestamp: now,
+			MessageID: messageID,
+		},
 	}
 }
 

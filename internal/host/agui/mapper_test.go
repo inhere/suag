@@ -179,8 +179,8 @@ func TestMapEvent_RunFinishedToStandardRunFinished(t *testing.T) {
 	}
 
 	got := MapEvent(event)
-	if len(got) != 2 {
-		t.Fatalf("MapEvent() len = %d, want 2", len(got))
+	if len(got) != 5 {
+		t.Fatalf("MapEvent() len = %d, want 5", len(got))
 	}
 
 	runEvent, ok := got[0].(RunFinishedEvent)
@@ -207,6 +207,30 @@ func TestMapEvent_RunFinishedToStandardRunFinished(t *testing.T) {
 	}
 	if content["status"] != "completed" {
 		t.Fatalf("MapEvent().Content.status = %v, want %q", content["status"], "completed")
+	}
+
+	startEvent, ok := got[2].(TextMessageStartEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[2] type = %T, want %T", got[2], TextMessageStartEvent{})
+	}
+	if startEvent.Role != "assistant" {
+		t.Fatalf("MapEvent().Role = %q, want %q", startEvent.Role, "assistant")
+	}
+
+	contentEvent, ok := got[3].(TextMessageContentEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[3] type = %T, want %T", got[3], TextMessageContentEvent{})
+	}
+	if contentEvent.Delta != "done" {
+		t.Fatalf("MapEvent().Delta = %q, want %q", contentEvent.Delta, "done")
+	}
+
+	endEvent, ok := got[4].(TextMessageEndEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[4] type = %T, want %T", got[4], TextMessageEndEvent{})
+	}
+	if endEvent.MessageID != startEvent.MessageID {
+		t.Fatalf("MapEvent().End.MessageID = %q, want %q", endEvent.MessageID, startEvent.MessageID)
 	}
 }
 

@@ -20,6 +20,7 @@
 - `internal/host/agui` 已补齐 run 标准生命周期映射，当前支持 RUN_STARTED / RUN_FINISHED / RUN_ERROR
 - `internal/host/agui` STATE_SNAPSHOT 结构已完成第一轮收敛，前端可依赖 currentRunId/currentAgentId/latestEventType/eventCount
 - `internal/host/agui` 已补齐 run_status ACTIVITY_SNAPSHOT，当前前端可直接渲染排队/运行/完成/失败状态卡
+- `internal/host/agui` 已补齐最小 TEXT_MESSAGE_* 输出，当前 run.finished.summary 会映射为 assistant 文本消息
 
 <!-- PROCESSING WORKS:END -->
 

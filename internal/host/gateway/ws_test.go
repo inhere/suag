@@ -93,6 +93,16 @@ func TestServer_CreateSessionAndStreamEventsOverWebSocket(t *testing.T) {
 		t.Fatalf("event value runId = %v, want %q", value["runId"], turnResp.RunID)
 	}
 
+	textStart := readUntilEventType(t, ctx, conn, "TEXT_MESSAGE_START")
+	if textStart["messageId"] == nil {
+		t.Fatal("TEXT_MESSAGE_START messageId is nil")
+	}
+
+	textContent := readUntilEventType(t, ctx, conn, "TEXT_MESSAGE_CONTENT")
+	if textContent["delta"] != "ok" {
+		t.Fatalf("TEXT_MESSAGE_CONTENT delta = %v, want %q", textContent["delta"], "ok")
+	}
+
 	gotSession := getJSON[getSessionResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID)
 	if gotSession.SessionID != createResp.SessionID {
 		t.Fatalf("get session session_id = %q, want %q", gotSession.SessionID, createResp.SessionID)
@@ -193,7 +203,7 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 func readUntilEventType(t *testing.T, ctx context.Context, conn *websocket.Conn, wantType string) map[string]any {
 	t.Helper()
 
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 12; i++ {
 		var message map[string]any
 		if err := wsjson.Read(ctx, conn, &message); err != nil {
 			t.Fatalf("wsjson.Read() error = %v", err)
