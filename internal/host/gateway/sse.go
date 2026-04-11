@@ -8,7 +8,8 @@ import (
 )
 
 // SSEHandler streams events from the EventBus to an HTTP client via Server-Sent Events.
-// Clients connect to GET /events?trace_id=<id> (or trace_id=* for all events).
+// Clients connect to GET /events?session_id=<id>, GET /events?trace_id=<id>,
+// or use * to subscribe to all events during the transition period.
 func SSEHandler(bus *EventBus) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Verify the client supports flushing.
@@ -18,21 +19,18 @@ func SSEHandler(bus *EventBus) http.HandlerFunc {
 			return
 		}
 
-		traceID := r.URL.Query().Get("trace_id")
-		if traceID == "" {
-			traceID = "*"
-		}
+		sub := readSSESubscription(r)
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 
-		ch := bus.Subscribe(traceID)
-		defer bus.Unsubscribe(traceID, ch)
+		ch := bus.Subscribe(sub)
+		defer bus.Unsubscribe(sub, ch)
 
 		// Send an initial "connected" event.
-		writeSSE(w, flusher, "connected", map[string]string{"trace_id": traceID})
+		writeSSE(w, flusher, "connected", sseConnectedPayload(sub))
 
 		ctx := r.Context()
 		for {
@@ -47,6 +45,35 @@ func SSEHandler(bus *EventBus) http.HandlerFunc {
 			}
 		}
 	}
+}
+
+func readSSESubscription(r *http.Request) Subscription {
+	sessionID := r.URL.Query().Get("session_id")
+	if sessionID == "*" {
+		return Subscription{Wildcard: true}
+	}
+	if sessionID != "" {
+		return Subscription{SessionID: sessionID}
+	}
+
+	traceID := r.URL.Query().Get("trace_id")
+	if traceID == "*" || traceID == "" {
+		return Subscription{Wildcard: true}
+	}
+	return Subscription{TraceID: traceID}
+}
+
+func sseConnectedPayload(sub Subscription) map[string]any {
+	payload := map[string]any{
+		"wildcard": sub.Wildcard,
+	}
+	if sub.SessionID != "" {
+		payload["session_id"] = sub.SessionID
+	}
+	if sub.TraceID != "" {
+		payload["trace_id"] = sub.TraceID
+	}
+	return payload
 }
 
 func writeSSE(w http.ResponseWriter, f http.Flusher, event string, data any) {
