@@ -154,10 +154,12 @@ func TestNewRunner_CodexAppServerModeUsesDefaultCommandWhenOmitted(t *testing.T)
 
 	fake := &fakeACPStdioSession{
 		readLines: [][]byte{
-			[]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}` + "\n"),
-			[]byte(`{"jsonrpc":"2.0","id":2,"result":{"sessionId":"remote_sess_001"}}` + "\n"),
-			[]byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"remote_sess_001","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"preset result"}}}}` + "\n"),
-			[]byte(`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","userMessageId":"msg_001"}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"codex","version":"0.1.0"}}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","id":2,"result":{"threadId":"thread_001"}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","id":3,"result":{"turnId":"turn_remote_001"}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread_001","turnId":"turn_remote_001"}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_001","delta":"preset result"}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread_001","turnId":"turn_remote_001","stopReason":"end_turn"}}` + "\n"),
 		},
 	}
 
@@ -184,6 +186,9 @@ func TestNewRunner_CodexAppServerModeUsesDefaultCommandWhenOmitted(t *testing.T)
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
+	}
+	if len(fake.writtenLines) != 4 {
+		t.Fatalf("written lines len = %d, want 4", len(fake.writtenLines))
 	}
 	if gotSpec.Args[0] != "codex" || gotSpec.Args[1] != "app-server" || gotSpec.Args[2] != "-c" {
 		t.Fatalf("starter args prefix = %v, want [codex app-server -c]", gotSpec.Args)

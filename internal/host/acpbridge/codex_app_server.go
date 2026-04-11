@@ -1,0 +1,392 @@
+package acpbridge
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/inhere/axon/internal/host/session"
+)
+
+type CodexAppServerBridgeConfig struct {
+	Commands       map[string]CommandConfig
+	SessionStarter ACPStdioSessionStarter
+	Now            func() time.Time
+}
+
+type CodexAppServerBridge struct {
+	commands map[string]CommandConfig
+	starter  ACPStdioSessionStarter
+	now      func() time.Time
+}
+
+type codexInitializeResult struct {
+	ServerInfo map[string]any `json:"serverInfo,omitempty"`
+}
+
+type codexThreadStartResult struct {
+	ThreadID string          `json:"threadId,omitempty"`
+	Thread   *codexThreadRef `json:"thread,omitempty"`
+}
+
+type codexTurnStartResult struct {
+	TurnID string        `json:"turnId,omitempty"`
+	Turn   *codexTurnRef `json:"turn,omitempty"`
+}
+
+type codexThreadRef struct {
+	ID string `json:"id,omitempty"`
+}
+
+type codexTurnRef struct {
+	ID     string          `json:"id,omitempty"`
+	Status string          `json:"status,omitempty"`
+	Error  *codexTurnError `json:"error,omitempty"`
+}
+
+type codexTurnError struct {
+	Message           string `json:"message,omitempty"`
+	AdditionalDetails string `json:"additionalDetails,omitempty"`
+}
+
+type codexTurnStartedNotification struct {
+	ThreadID string        `json:"threadId"`
+	TurnID   string        `json:"turnId,omitempty"`
+	Turn     *codexTurnRef `json:"turn,omitempty"`
+}
+
+type codexAgentMessageDeltaNotification struct {
+	ThreadID string `json:"threadId"`
+	TurnID   string `json:"turnId"`
+	ItemID   string `json:"itemId,omitempty"`
+	Delta    string `json:"delta,omitempty"`
+}
+
+type codexTurnCompletedNotification struct {
+	ThreadID   string        `json:"threadId"`
+	TurnID     string        `json:"turnId,omitempty"`
+	StopReason string        `json:"stopReason,omitempty"`
+	Turn       *codexTurnRef `json:"turn,omitempty"`
+}
+
+type codexErrorNotification struct {
+	ThreadID  string         `json:"threadId"`
+	TurnID    string         `json:"turnId"`
+	Error     codexTurnError `json:"error"`
+	WillRetry bool           `json:"willRetry"`
+}
+
+func NewCodexAppServerBridge(cfg CodexAppServerBridgeConfig) *CodexAppServerBridge {
+	nowFn := cfg.Now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+
+	starter := cfg.SessionStarter
+	if starter == nil {
+		starter = startACPStdioSession
+	}
+
+	return &CodexAppServerBridge{
+		commands: copyCommandConfigs(cfg.Commands),
+		starter:  starter,
+		now:      nowFn,
+	}
+}
+
+func (b *CodexAppServerBridge) Dispatch(ctx context.Context, req DispatchRequest) (DispatchResult, error) {
+	if b == nil {
+		return DispatchResult{}, fmt.Errorf("codex app-server bridge is required")
+	}
+	if strings.TrimSpace(req.Adapter) == "" {
+		return DispatchResult{}, fmt.Errorf("adapter is required")
+	}
+	if strings.TrimSpace(req.Instruction) == "" {
+		return DispatchResult{}, fmt.Errorf("instruction is required")
+	}
+
+	cmdCfg, ok := b.commands[strings.TrimSpace(req.Adapter)]
+	if !ok {
+		return DispatchResult{}, fmt.Errorf("adapter %q is not configured", req.Adapter)
+	}
+	if len(cmdCfg.Command) == 0 {
+		return DispatchResult{}, fmt.Errorf("adapter %q command is empty", req.Adapter)
+	}
+
+	spec := CommandSpec{
+		Args:    expandCommandArgs(cmdCfg.Command, req),
+		Workdir: strings.TrimSpace(req.Workspace),
+		Env:     buildCommandEnv(cmdCfg.Env, req),
+	}
+
+	sess, err := b.starter(ctx, spec)
+	if err != nil {
+		return DispatchResult{}, fmt.Errorf("start codex app-server session: %w", err)
+	}
+	defer sess.Close()
+
+	if err := b.sendInitialize(ctx, sess); err != nil {
+		return DispatchResult{}, err
+	}
+	if err := b.sendInitialized(ctx, sess); err != nil {
+		return DispatchResult{}, err
+	}
+
+	threadID, err := b.sendThreadStart(ctx, sess, req.Workspace)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+
+	turnID, err := b.sendTurnStart(ctx, sess, threadID, req.Instruction)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+
+	result, err := b.collectTurnResult(ctx, sess, req, threadID, turnID)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	return result, nil
+}
+
+func (b *CodexAppServerBridge) sendInitialize(ctx context.Context, sess ACPStdioSession) error {
+	req := acpRPCRequest{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "initialize",
+		Params: map[string]any{
+			"clientInfo": map[string]string{
+				"name":    "axon",
+				"version": "v0",
+			},
+			"capabilities": map[string]any{},
+		},
+	}
+
+	var result codexInitializeResult
+	if err := sendRPCRequestExpectResult(ctx, sess, req, &result, nil); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (b *CodexAppServerBridge) sendInitialized(ctx context.Context, sess ACPStdioSession) error {
+	req := acpRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "initialized",
+		Params:  map[string]any{},
+	}
+	if err := writeACPLine(ctx, sess, req); err != nil {
+		return fmt.Errorf("write initialized notification: %w", err)
+	}
+	return nil
+}
+
+func (b *CodexAppServerBridge) sendThreadStart(ctx context.Context, sess ACPStdioSession, workdir string) (string, error) {
+	req := acpRPCRequest{
+		JSONRPC: "2.0",
+		ID:      2,
+		Method:  "thread/start",
+		Params: map[string]any{
+			"cwd": workdir,
+		},
+	}
+
+	var result codexThreadStartResult
+	if err := sendRPCRequestExpectResult(ctx, sess, req, &result, nil); err != nil {
+		return "", err
+	}
+
+	threadID := strings.TrimSpace(result.ThreadID)
+	if threadID == "" && result.Thread != nil {
+		threadID = strings.TrimSpace(result.Thread.ID)
+	}
+	if threadID == "" {
+		return "", fmt.Errorf("thread/start returned empty thread id")
+	}
+	return threadID, nil
+}
+
+func (b *CodexAppServerBridge) sendTurnStart(ctx context.Context, sess ACPStdioSession, threadID, instruction string) (string, error) {
+	req := acpRPCRequest{
+		JSONRPC: "2.0",
+		ID:      3,
+		Method:  "turn/start",
+		Params: map[string]any{
+			"threadId": threadID,
+			"input": []map[string]any{
+				{
+					"type": "text",
+					"text": instruction,
+				},
+			},
+		},
+	}
+
+	var result codexTurnStartResult
+	if err := sendRPCRequestExpectResult(ctx, sess, req, &result, nil); err != nil {
+		return "", err
+	}
+
+	turnID := strings.TrimSpace(result.TurnID)
+	if turnID == "" && result.Turn != nil {
+		turnID = strings.TrimSpace(result.Turn.ID)
+	}
+	if turnID == "" {
+		return "", fmt.Errorf("turn/start returned empty turn id")
+	}
+	return turnID, nil
+}
+
+func (b *CodexAppServerBridge) collectTurnResult(
+	ctx context.Context,
+	sess ACPStdioSession,
+	req DispatchRequest,
+	threadID string,
+	turnID string,
+) (DispatchResult, error) {
+	var summaryBuilder strings.Builder
+	latestError := ""
+	result := DispatchResult{
+		State:           StateCompleted,
+		RemoteAgentName: req.Adapter,
+		RemoteSessionID: threadID,
+		RemoteTaskID:    turnID,
+		LastHeartbeatAt: b.now().UTC(),
+	}
+
+	for {
+		msg, err := readACPResponse(ctx, sess)
+		if err != nil {
+			return DispatchResult{}, fmt.Errorf("read codex turn stream: %w", err)
+		}
+		if msg.Method == "" {
+			continue
+		}
+
+		switch msg.Method {
+		case "turn/started":
+			var note codexTurnStartedNotification
+			if err := json.Unmarshal(msg.Params, &note); err != nil {
+				return DispatchResult{}, fmt.Errorf("decode turn/started notification: %w", err)
+			}
+			if effectiveCodexTurnID(note.TurnID, note.Turn) != "" {
+				result.RemoteTaskID = effectiveCodexTurnID(note.TurnID, note.Turn)
+			}
+		case "item/agentMessage/delta":
+			var note codexAgentMessageDeltaNotification
+			if err := json.Unmarshal(msg.Params, &note); err != nil {
+				return DispatchResult{}, fmt.Errorf("decode item/agentMessage/delta notification: %w", err)
+			}
+			if strings.TrimSpace(note.TurnID) != "" && result.RemoteTaskID == "" {
+				result.RemoteTaskID = strings.TrimSpace(note.TurnID)
+			}
+			summaryBuilder.WriteString(note.Delta)
+		case "error":
+			var note codexErrorNotification
+			if err := json.Unmarshal(msg.Params, &note); err != nil {
+				return DispatchResult{}, fmt.Errorf("decode error notification: %w", err)
+			}
+			if strings.TrimSpace(note.TurnID) != "" {
+				result.RemoteTaskID = strings.TrimSpace(note.TurnID)
+			}
+			latestError = formatCodexTurnError(note.Error)
+		case "turn/completed":
+			var note codexTurnCompletedNotification
+			if err := json.Unmarshal(msg.Params, &note); err != nil {
+				return DispatchResult{}, fmt.Errorf("decode turn/completed notification: %w", err)
+			}
+			if strings.TrimSpace(note.ThreadID) != "" {
+				result.RemoteSessionID = strings.TrimSpace(note.ThreadID)
+			}
+			if effectiveCodexTurnID(note.TurnID, note.Turn) != "" {
+				result.RemoteTaskID = effectiveCodexTurnID(note.TurnID, note.Turn)
+			}
+			if note.Turn != nil && strings.EqualFold(strings.TrimSpace(note.Turn.Status), "failed") {
+				result.State = StateFailed
+				result.Error = firstNonEmpty(
+					formatCodexTurnErrorPtr(note.Turn.Error),
+					latestError,
+					"codex turn failed",
+				)
+			} else if latestError != "" && strings.EqualFold(strings.TrimSpace(note.StopReason), "error") {
+				result.State = StateFailed
+				result.Error = latestError
+			}
+			result.Summary = strings.TrimSpace(summaryBuilder.String())
+			if result.RemoteTaskID == "" {
+				result.RemoteTaskID = session.NewExternalTaskID()
+			}
+			return result, nil
+		}
+	}
+}
+
+func effectiveCodexTurnID(turnID string, turn *codexTurnRef) string {
+	id := strings.TrimSpace(turnID)
+	if id != "" {
+		return id
+	}
+	if turn == nil {
+		return ""
+	}
+	return strings.TrimSpace(turn.ID)
+}
+
+func formatCodexTurnErrorPtr(turnErr *codexTurnError) string {
+	if turnErr == nil {
+		return ""
+	}
+	return formatCodexTurnError(*turnErr)
+}
+
+func formatCodexTurnError(turnErr codexTurnError) string {
+	message := strings.TrimSpace(turnErr.Message)
+	additional := strings.TrimSpace(turnErr.AdditionalDetails)
+	if additional == "" || strings.EqualFold(additional, message) {
+		return message
+	}
+	if message == "" {
+		return additional
+	}
+	return message + ": " + additional
+}
+
+func sendRPCRequestExpectResult(
+	ctx context.Context,
+	sess ACPStdioSession,
+	req acpRPCRequest,
+	out any,
+	ignoreNotification func(acpRPCResponse) bool,
+) error {
+	if err := writeACPLine(ctx, sess, req); err != nil {
+		return fmt.Errorf("write %s request: %w", req.Method, err)
+	}
+
+	for {
+		msg, err := readACPResponse(ctx, sess)
+		if err != nil {
+			return fmt.Errorf("read %s response: %w", req.Method, err)
+		}
+		if msg.Method != "" {
+			if ignoreNotification != nil && ignoreNotification(msg) {
+				continue
+			}
+			continue
+		}
+		if msg.ID != req.ID {
+			continue
+		}
+		if msg.Error != nil {
+			return fmt.Errorf("%s error: %s", req.Method, strings.TrimSpace(msg.Error.Message))
+		}
+		if out != nil && len(msg.Result) > 0 {
+			if err := json.Unmarshal(msg.Result, out); err != nil {
+				return fmt.Errorf("decode %s result: %w", req.Method, err)
+			}
+		}
+		return nil
+	}
+}

@@ -60,7 +60,7 @@ func NewRunner(cfg FactoryConfig) (session.Runner, error) {
 		if len(codexCommand.Command) == 0 {
 			codexCommand = defaultCodexAppServerCommand()
 		}
-		return NewRunnerAdapter(NewACPStdioBridge(ACPStdioBridgeConfig{
+		return NewRunnerAdapter(NewCodexAppServerBridge(CodexAppServerBridgeConfig{
 			Commands: map[string]CommandConfig{
 				strings.TrimSpace(cfg.AdapterName): codexCommand,
 			},
