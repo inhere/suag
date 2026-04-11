@@ -256,6 +256,7 @@ Golang:
 - https://github.com/nextlevelbuilder/goclaw 用 Go 重建的 OpenClaw - 具有多租户隔离、5 层安全性和本机并发性。在不影响安全性的情况下大规模部署人工智能代理团队
 - <https://github.com/sipeed/picoclaw> 极致轻量化的边缘计算 AI 助手。
 - <https://github.com/mosaxiv/clawlet> 具备本地语义记忆的单机全能助手，可以参考代码逻辑
+- https://github.com/beyond5959/ngent 兼容 ACP 协议 Agent 的 Web 服务封装. Ngent 将支持智能体客户端协议（ACP）的命令行智能体封装为 Web 服务，让你可以通过 HTTP API 与 Web 界面轻松调用
 
 Rust:
 

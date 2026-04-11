@@ -3,6 +3,7 @@
 .omc/
 .worktrees/
 .superpowers/
+tmp/
 .env
 *.exe
 .xenv.*
