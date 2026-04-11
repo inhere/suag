@@ -1,5 +1,7 @@
 package acpbridge
 
+import "time"
+
 type DispatchState string
 
 const (
@@ -20,8 +22,12 @@ type DispatchRequest struct {
 }
 
 type DispatchResult struct {
-	State     DispatchState
-	Summary   string
-	Error     string
-	Artifacts []string
+	State           DispatchState
+	Summary         string
+	Error           string
+	Artifacts       []string
+	RemoteAgentName string
+	RemoteSessionID string
+	RemoteTaskID    string
+	LastHeartbeatAt time.Time
 }

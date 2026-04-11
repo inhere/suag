@@ -103,6 +103,58 @@ func TestSQLiteStore_CreateSessionTurnRunAndEvent(t *testing.T) {
 	}
 }
 
+func TestSQLiteStore_CreateUpdateAndListExternalTasks(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newTestStore(t)
+	now := time.Date(2026, 4, 11, 18, 0, 0, 0, time.UTC)
+
+	externalTask := ExternalTask{
+		ExternalTaskID:  "ext_001",
+		SessionID:       "sess_001",
+		TurnID:          "turn_001",
+		RunID:           "run_001",
+		Adapter:         "codex",
+		RemoteAgentName: "codex-cli",
+		RemoteSessionID: "remote_sess_001",
+		RemoteTaskID:    "remote_task_001",
+		State:           "running",
+		LastHeartbeatAt: now,
+		ResultSummary:   "",
+		Metadata: map[string]any{
+			"workspace": "workspace/demo",
+		},
+	}
+
+	if err := store.CreateExternalTask(ctx, externalTask); err != nil {
+		t.Fatalf("CreateExternalTask() error = %v", err)
+	}
+
+	externalTask.State = "completed"
+	externalTask.ResultSummary = "delegated task completed"
+	externalTask.LastHeartbeatAt = now.Add(2 * time.Minute)
+	externalTask.Metadata["artifacts"] = []any{"artifact://summary"}
+
+	if err := store.UpdateExternalTask(ctx, externalTask); err != nil {
+		t.Fatalf("UpdateExternalTask() error = %v", err)
+	}
+
+	tasks, err := store.ListExternalTasksByRun(ctx, "run_001")
+	if err != nil {
+		t.Fatalf("ListExternalTasksByRun() error = %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("ListExternalTasksByRun() len = %d, want 1", len(tasks))
+	}
+	if tasks[0].State != "completed" {
+		t.Fatalf("ListExternalTasksByRun()[0].State = %q, want %q", tasks[0].State, "completed")
+	}
+	if tasks[0].ResultSummary != "delegated task completed" {
+		t.Fatalf("ListExternalTasksByRun()[0].ResultSummary = %q, want %q", tasks[0].ResultSummary, "delegated task completed")
+	}
+}
+
 func newTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 

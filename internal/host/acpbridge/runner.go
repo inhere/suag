@@ -54,5 +54,18 @@ func (r *RunnerAdapter) Run(ctx context.Context, in session.RuntimeRequest) (ses
 
 	return session.RuntimeResult{
 		Summary: result.Summary,
+		ExternalTask: &session.ExternalTask{
+			Adapter:         r.adapterName,
+			RemoteAgentName: result.RemoteAgentName,
+			RemoteSessionID: result.RemoteSessionID,
+			RemoteTaskID:    result.RemoteTaskID,
+			State:           string(result.State),
+			LastHeartbeatAt: result.LastHeartbeatAt,
+			ResultSummary:   result.Summary,
+			Metadata: map[string]any{
+				"workspace": r.workspace,
+				"artifacts": result.Artifacts,
+			},
+		},
 	}, nil
 }

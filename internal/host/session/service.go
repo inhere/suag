@@ -27,7 +27,8 @@ type RuntimeRequest struct {
 }
 
 type RuntimeResult struct {
-	Summary string
+	Summary      string
+	ExternalTask *ExternalTask
 }
 
 type ServiceConfig struct {
@@ -217,6 +218,13 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			}
 			return StartTurnResult{}, fmt.Errorf("run runtime request: %w", err)
 		}
+		if result.ExternalTask != nil {
+			// External task snapshots are written before the finished event so the
+			// client can immediately query run-linked delegation state.
+			if err := s.persistExternalTask(ctx, sessionID, turnID, runID, result.ExternalTask); err != nil {
+				return StartTurnResult{}, fmt.Errorf("persist external task: %w", err)
+			}
+		}
 
 		finishedEvent := RunEvent{
 			EventID:   NewEventID(),
@@ -247,6 +255,31 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 		TurnID:    turnID,
 		RunID:     runID,
 	}, nil
+}
+
+func (s *Service) persistExternalTask(ctx context.Context, sessionID, turnID, runID string, task *ExternalTask) error {
+	if task == nil {
+		return nil
+	}
+
+	taskModel := *task
+	if strings.TrimSpace(taskModel.ExternalTaskID) == "" {
+		taskModel.ExternalTaskID = NewExternalTaskID()
+	}
+	if strings.TrimSpace(taskModel.SessionID) == "" {
+		taskModel.SessionID = sessionID
+	}
+	if strings.TrimSpace(taskModel.TurnID) == "" {
+		taskModel.TurnID = turnID
+	}
+	if strings.TrimSpace(taskModel.RunID) == "" {
+		taskModel.RunID = runID
+	}
+	if taskModel.Metadata == nil {
+		taskModel.Metadata = map[string]any{}
+	}
+
+	return s.store.CreateExternalTask(ctx, taskModel)
 }
 
 func (s *Service) ensureSession(ctx context.Context, sessionID string, now time.Time, createIfMissing bool) (Session, error) {

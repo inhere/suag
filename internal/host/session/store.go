@@ -14,5 +14,8 @@ type Store interface {
 	UpdateRunState(ctx context.Context, runID string, state RunState, endedAt *time.Time) error
 	AppendEvent(ctx context.Context, event RunEvent) error
 	ListEventsBySession(ctx context.Context, sessionID string, afterSequence int64) ([]RunEvent, error)
+	CreateExternalTask(ctx context.Context, task ExternalTask) error
+	UpdateExternalTask(ctx context.Context, task ExternalTask) error
+	ListExternalTasksByRun(ctx context.Context, runID string) ([]ExternalTask, error)
 	Close() error
 }

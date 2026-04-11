@@ -22,6 +22,8 @@
 - `internal/host/agui` 已补齐 run_status ACTIVITY_SNAPSHOT，当前前端可直接渲染排队/运行/完成/失败状态卡
 - `internal/host/agui` 已补齐最小 TEXT_MESSAGE_* 输出，当前 run.finished.summary 会映射为 assistant 文本消息
 - `internal/host/acpbridge` 已完成第一版 host-facing contract 与 runner adapter，session 可通过窄接口接入外部 Agent bridge
+- `internal/host/acpbridge` 已补齐最小 stub/local bridge，当前可生成 remote session/task 占位结果并回写 host runtime
+- `internal/host/session` 已补齐 external_tasks 存储读写，ACP bridge 返回的外部任务快照会写入 run 关联记录
 
 <!-- PROCESSING WORKS:END -->
 
