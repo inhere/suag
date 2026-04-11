@@ -15,6 +15,7 @@ import (
 	"github.com/gookit/config/v2"
 	"github.com/gookit/ini/v2/dotenv"
 
+	"github.com/inhere/axon/internal/host/acpbridge"
 	"github.com/inhere/axon/internal/host/gateway"
 	"github.com/inhere/axon/internal/host/session"
 	"github.com/inhere/axon/internal/ops/cron"
@@ -201,7 +202,13 @@ func runServer(ctx context.Context, a *app) {
 		}
 	}()
 
-	sessionSvc := session.NewService(sessionStore, a.bus, nil, session.ServiceConfig{})
+	sessionRunner, err := buildSessionRunner()
+	if err != nil {
+		slog.Error("failed to build session runner", "err", err)
+		return
+	}
+
+	sessionSvc := session.NewService(sessionStore, a.bus, sessionRunner, session.ServiceConfig{})
 	h := gateway.NewHandler(a.orch, sessionStore, sessionSvc, a.bus, a.hitlMgr)
 	addr := config.String("server.addr", ":8180")
 	if addr == "" {
@@ -236,6 +243,40 @@ func resolveSessionDBPath() string {
 		return filepath.Join("db", "axon.db")
 	}
 	return filepath.Clean(filepath.FromSlash(raw))
+}
+
+func buildSessionRunner() (session.Runner, error) {
+	mode := strings.TrimSpace(config.String("host.acp.mode"))
+	if mode == "" {
+		return nil, nil
+	}
+
+	adapterName := strings.TrimSpace(config.String("host.acp.adapter"))
+	if adapterName == "" {
+		adapterName = "codex"
+	}
+
+	localCommand := strings.Fields(strings.TrimSpace(config.String("host.acp.local_command")))
+
+	// The server keeps ACP bridge selection at the edge and only passes the
+	// resulting narrow session.Runner into the host runtime.
+	return acpbridge.NewRunner(acpbridge.FactoryConfig{
+		Mode:                mode,
+		AdapterName:         adapterName,
+		Workspace:           resolveWorkspacePath(),
+		StubRemoteAgentName: strings.TrimSpace(config.String("host.acp.stub_remote_agent_name")),
+		LocalCommand: acpbridge.CommandConfig{
+			Command: localCommand,
+		},
+	})
+}
+
+func resolveWorkspacePath() string {
+	workspace := config.String("workspace", "~/.axon/workspace")
+	if workspace == "" {
+		workspace, _ = os.Getwd()
+	}
+	return workspace
 }
 
 func runChat(ctx context.Context, a *app) {

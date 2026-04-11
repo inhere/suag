@@ -23,6 +23,7 @@
 - `internal/host/agui` 已补齐最小 TEXT_MESSAGE_* 输出，当前 run.finished.summary 会映射为 assistant 文本消息
 - `internal/host/acpbridge` 已完成第一版 host-facing contract 与 runner adapter，session 可通过窄接口接入外部 Agent bridge
 - `internal/host/acpbridge` 已补齐最小 stub/local bridge，当前可生成 remote session/task 占位结果并回写 host runtime
+- `internal/host/acpbridge` 已补齐 local command bridge 骨架与 runner factory，server 可按配置切换 stub / local_command 模式
 - `internal/host/session` 已补齐 external_tasks 存储读写，ACP bridge 返回的外部任务快照会写入 run 关联记录
 - `internal/host/gateway` session 查询与 WS STATE_SNAPSHOT 已补齐 external_tasks 视图，前端首屏与重连可直接拿到外部任务状态
 
