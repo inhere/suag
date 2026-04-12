@@ -183,9 +183,14 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 					"sessionId":       event.SessionID,
 					"latestRunId":     "",
 					"latestAgentId":   "",
+					"displayState":    "",
 					"latestEventType": "",
 					"eventCount":      0,
 					"runCount":        0,
+					"activeRunIds":    []string{},
+					"completedRunIds": []string{},
+					"failedRunIds":    []string{},
+					"hasExternalWork": false,
 					"updatedAt":       "",
 				})
 				idx = len(mappedTurns) - 1
@@ -410,9 +415,25 @@ func payloadString(payload any, key string) string {
 func mergeTurnSnapshot(target map[string]any, event HostEvent) {
 	target["latestRunId"] = event.RunID
 	target["latestAgentId"] = event.AgentID
+	target["displayState"] = displayStateForEvent(event)
 	target["latestEventType"] = event.Type
 	target["eventCount"] = target["eventCount"].(int) + 1
 	target["updatedAt"] = formatEventTime(event.CreatedAt)
+
+	switch displayStateForEvent(event) {
+	case "completed":
+		removeStringFieldValue(target, "activeRunIds", event.RunID)
+		appendUniqueStringField(target, "completedRunIds", event.RunID)
+	case "failed":
+		removeStringFieldValue(target, "activeRunIds", event.RunID)
+		appendUniqueStringField(target, "failedRunIds", event.RunID)
+	case "queued", "running", "external_running":
+		appendUniqueStringField(target, "activeRunIds", event.RunID)
+	}
+
+	if event.Type == session.EventRunExternalActivity || event.Type == session.EventRunExternalMessageDelta || event.Type == session.EventRunExternalMessageEnd {
+		target["hasExternalWork"] = true
+	}
 }
 
 func mergeRunSnapshot(target map[string]any, event HostEvent) {
@@ -455,6 +476,34 @@ func mergeRunExternalTask(target map[string]any, task session.ExternalTask) {
 		}
 	}
 	target["externalTaskIds"] = append(ids, task.ExternalTaskID)
+}
+
+func appendUniqueStringField(target map[string]any, key, value string) {
+	if value == "" {
+		return
+	}
+	values, _ := target[key].([]string)
+	for _, existing := range values {
+		if existing == value {
+			return
+		}
+	}
+	target[key] = append(values, value)
+}
+
+func removeStringFieldValue(target map[string]any, key, value string) {
+	values, _ := target[key].([]string)
+	if len(values) == 0 || value == "" {
+		return
+	}
+
+	filtered := values[:0]
+	for _, existing := range values {
+		if existing != value {
+			filtered = append(filtered, existing)
+		}
+	}
+	target[key] = append([]string{}, filtered...)
 }
 
 func mergeRunExternalMessage(runs []map[string]any, runIndex map[string]int, message map[string]any) {

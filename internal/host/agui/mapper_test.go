@@ -292,6 +292,33 @@ func TestBuildStateSnapshot(t *testing.T) {
 	if rawTurns[0]["latestEventType"] != session.EventRunExternalMessageEnd {
 		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].latestEventType = %v, want %q", rawTurns[0]["latestEventType"], session.EventRunExternalMessageEnd)
 	}
+	if rawTurns[0]["displayState"] != "external_running" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].displayState = %v, want %q", rawTurns[0]["displayState"], "external_running")
+	}
+	activeRunIDs, ok := rawTurns[0]["activeRunIds"].([]string)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].activeRunIds type = %T, want []string", rawTurns[0]["activeRunIds"])
+	}
+	if len(activeRunIDs) != 2 || activeRunIDs[0] != "run_002" || activeRunIDs[1] != "run_003" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].activeRunIds = %v, want [run_002 run_003]", activeRunIDs)
+	}
+	completedRunIDs, ok := rawTurns[0]["completedRunIds"].([]string)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].completedRunIds type = %T, want []string", rawTurns[0]["completedRunIds"])
+	}
+	if len(completedRunIDs) != 0 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].completedRunIds len = %d, want 0", len(completedRunIDs))
+	}
+	failedRunIDs, ok := rawTurns[0]["failedRunIds"].([]string)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].failedRunIds type = %T, want []string", rawTurns[0]["failedRunIds"])
+	}
+	if len(failedRunIDs) != 0 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].failedRunIds len = %d, want 0", len(failedRunIDs))
+	}
+	if rawTurns[0]["hasExternalWork"] != true {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].hasExternalWork = %v, want true", rawTurns[0]["hasExternalWork"])
+	}
 
 	rawRuns, ok := snapshot["runs"].([]map[string]any)
 	if !ok {

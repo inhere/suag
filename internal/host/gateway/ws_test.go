@@ -388,6 +388,33 @@ func TestServer_SessionSnapshotAggregatesExternalStreamState(t *testing.T) {
 	if turn["latestEventType"] != session.EventRunFinished {
 		t.Fatalf("snapshot.snapshot.turns[0].latestEventType = %v, want %q", turn["latestEventType"], session.EventRunFinished)
 	}
+	if turn["displayState"] != "completed" {
+		t.Fatalf("snapshot.snapshot.turns[0].displayState = %v, want %q", turn["displayState"], "completed")
+	}
+	if turn["hasExternalWork"] != true {
+		t.Fatalf("snapshot.snapshot.turns[0].hasExternalWork = %v, want true", turn["hasExternalWork"])
+	}
+	activeRunIDs, ok := turn["activeRunIds"].([]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.turns[0].activeRunIds type = %T, want []any", turn["activeRunIds"])
+	}
+	if len(activeRunIDs) != 0 {
+		t.Fatalf("snapshot.snapshot.turns[0].activeRunIds len = %d, want 0", len(activeRunIDs))
+	}
+	completedRunIDs, ok := turn["completedRunIds"].([]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.turns[0].completedRunIds type = %T, want []any", turn["completedRunIds"])
+	}
+	if len(completedRunIDs) != 1 {
+		t.Fatalf("snapshot.snapshot.turns[0].completedRunIds len = %d, want 1", len(completedRunIDs))
+	}
+	failedRunIDs, ok := turn["failedRunIds"].([]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.turns[0].failedRunIds type = %T, want []any", turn["failedRunIds"])
+	}
+	if len(failedRunIDs) != 0 {
+		t.Fatalf("snapshot.snapshot.turns[0].failedRunIds len = %d, want 0", len(failedRunIDs))
+	}
 
 	rawRuns, ok := rawSnapshot["runs"].([]any)
 	if !ok {
