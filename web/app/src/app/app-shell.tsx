@@ -1,8 +1,28 @@
+import { SessionList } from "../features/session-list/session-list";
+
 export function AppShell() {
+  const sessions = [
+    {
+      sessionId: "sess_001",
+      title: "host runtime",
+      status: "RUNNING",
+      updatedAt: "2m",
+      preview: "正在整理页面结构",
+    },
+  ] as const;
+
   return (
     <div className="app-shell">
       <aside className="app-shell__panel" aria-label="Sessions panel">
-        <h1>Sessions</h1>
+        <SessionList
+          sessions={[...sessions]}
+          currentSessionId="sess_001"
+          filter="all"
+          searchQuery=""
+          onSelect={() => {}}
+          onSearchChange={() => {}}
+          onFilterChange={() => {}}
+        />
       </aside>
       <main className="app-shell__panel" aria-label="Conversation panel">
         <h1>Conversation</h1>

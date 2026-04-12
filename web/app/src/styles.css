@@ -44,6 +44,78 @@ body {
   font-size: 1.125rem;
 }
 
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.session-list__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.session-list__new-button,
+.session-list__filter,
+.session-item {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.7);
+  color: inherit;
+}
+
+.session-list__new-button,
+.session-list__filter {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+}
+
+.session-list__search {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.88);
+  color: inherit;
+  padding: 10px 12px;
+}
+
+.session-list__filters {
+  display: flex;
+  gap: 8px;
+}
+
+.session-list__filter--active,
+.session-item--selected {
+  border-color: rgba(56, 189, 248, 0.8);
+  background: rgba(14, 116, 144, 0.28);
+}
+
+.session-list__items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.session-item {
+  width: 100%;
+  padding: 14px;
+  text-align: left;
+}
+
+.session-item__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.session-item__meta,
+.session-item__preview {
+  margin-top: 4px;
+  color: rgba(226, 232, 240, 0.75);
+  font-size: 0.875rem;
+}
+
 @media (max-width: 960px) {
   .app-shell {
     grid-template-columns: 1fr;
