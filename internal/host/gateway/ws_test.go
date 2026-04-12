@@ -385,6 +385,13 @@ func TestServer_SessionSnapshotAggregatesExternalStreamState(t *testing.T) {
 	if turn["runCount"] != float64(1) {
 		t.Fatalf("snapshot.snapshot.turns[0].runCount = %v, want %v", turn["runCount"], float64(1))
 	}
+	runIDForTurn, _ := turn["latestRunId"].(string)
+	if turn["primaryRunId"] != runIDForTurn {
+		t.Fatalf("snapshot.snapshot.turns[0].primaryRunId = %v, want %q", turn["primaryRunId"], runIDForTurn)
+	}
+	if turn["currentRunId"] != runIDForTurn {
+		t.Fatalf("snapshot.snapshot.turns[0].currentRunId = %v, want %q", turn["currentRunId"], runIDForTurn)
+	}
 	if turn["latestEventType"] != session.EventRunFinished {
 		t.Fatalf("snapshot.snapshot.turns[0].latestEventType = %v, want %q", turn["latestEventType"], session.EventRunFinished)
 	}
@@ -401,6 +408,9 @@ func TestServer_SessionSnapshotAggregatesExternalStreamState(t *testing.T) {
 	if len(activeRunIDs) != 0 {
 		t.Fatalf("snapshot.snapshot.turns[0].activeRunIds len = %d, want 0", len(activeRunIDs))
 	}
+	if turn["activeRunCount"] != float64(0) {
+		t.Fatalf("snapshot.snapshot.turns[0].activeRunCount = %v, want %v", turn["activeRunCount"], float64(0))
+	}
 	completedRunIDs, ok := turn["completedRunIds"].([]any)
 	if !ok {
 		t.Fatalf("snapshot.snapshot.turns[0].completedRunIds type = %T, want []any", turn["completedRunIds"])
@@ -408,12 +418,21 @@ func TestServer_SessionSnapshotAggregatesExternalStreamState(t *testing.T) {
 	if len(completedRunIDs) != 1 {
 		t.Fatalf("snapshot.snapshot.turns[0].completedRunIds len = %d, want 1", len(completedRunIDs))
 	}
+	if turn["completedRunCount"] != float64(1) {
+		t.Fatalf("snapshot.snapshot.turns[0].completedRunCount = %v, want %v", turn["completedRunCount"], float64(1))
+	}
 	failedRunIDs, ok := turn["failedRunIds"].([]any)
 	if !ok {
 		t.Fatalf("snapshot.snapshot.turns[0].failedRunIds type = %T, want []any", turn["failedRunIds"])
 	}
 	if len(failedRunIDs) != 0 {
 		t.Fatalf("snapshot.snapshot.turns[0].failedRunIds len = %d, want 0", len(failedRunIDs))
+	}
+	if turn["failedRunCount"] != float64(0) {
+		t.Fatalf("snapshot.snapshot.turns[0].failedRunCount = %v, want %v", turn["failedRunCount"], float64(0))
+	}
+	if turn["latestMessagePreview"] != "done" {
+		t.Fatalf("snapshot.snapshot.turns[0].latestMessagePreview = %v, want %q", turn["latestMessagePreview"], "done")
 	}
 
 	rawRuns, ok := rawSnapshot["runs"].([]any)

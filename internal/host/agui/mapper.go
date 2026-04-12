@@ -179,19 +179,25 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 			idx, ok := turnIndex[turnKey]
 			if !ok {
 				mappedTurns = append(mappedTurns, map[string]any{
-					"turnId":          event.TurnID,
-					"sessionId":       event.SessionID,
-					"latestRunId":     "",
-					"latestAgentId":   "",
-					"displayState":    "",
-					"latestEventType": "",
-					"eventCount":      0,
-					"runCount":        0,
-					"activeRunIds":    []string{},
-					"completedRunIds": []string{},
-					"failedRunIds":    []string{},
-					"hasExternalWork": false,
-					"updatedAt":       "",
+					"turnId":               event.TurnID,
+					"sessionId":            event.SessionID,
+					"primaryRunId":         "",
+					"currentRunId":         "",
+					"latestRunId":          "",
+					"latestAgentId":        "",
+					"displayState":         "",
+					"latestEventType":      "",
+					"latestMessagePreview": "",
+					"eventCount":           0,
+					"runCount":             0,
+					"activeRunCount":       0,
+					"completedRunCount":    0,
+					"failedRunCount":       0,
+					"activeRunIds":         []string{},
+					"completedRunIds":      []string{},
+					"failedRunIds":         []string{},
+					"hasExternalWork":      false,
+					"updatedAt":            "",
 				})
 				idx = len(mappedTurns) - 1
 				turnIndex[turnKey] = idx
@@ -290,6 +296,10 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 
 	for _, message := range mappedExternalMessages {
 		mergeRunExternalMessage(mappedRuns, runIndex, message)
+		mergeTurnMessagePreview(mappedTurns, turnIndex, message)
+	}
+	for _, run := range mappedRuns {
+		mergeTurnSummaryPreview(mappedTurns, turnIndex, run)
 	}
 
 	return *withTimestamp(NewStateSnapshotEvent(map[string]any{
@@ -413,6 +423,10 @@ func payloadString(payload any, key string) string {
 }
 
 func mergeTurnSnapshot(target map[string]any, event HostEvent) {
+	if target["primaryRunId"].(string) == "" {
+		target["primaryRunId"] = event.RunID
+	}
+	target["currentRunId"] = event.RunID
 	target["latestRunId"] = event.RunID
 	target["latestAgentId"] = event.AgentID
 	target["displayState"] = displayStateForEvent(event)
@@ -434,6 +448,9 @@ func mergeTurnSnapshot(target map[string]any, event HostEvent) {
 	if event.Type == session.EventRunExternalActivity || event.Type == session.EventRunExternalMessageDelta || event.Type == session.EventRunExternalMessageEnd {
 		target["hasExternalWork"] = true
 	}
+	target["activeRunCount"] = len(target["activeRunIds"].([]string))
+	target["completedRunCount"] = len(target["completedRunIds"].([]string))
+	target["failedRunCount"] = len(target["failedRunIds"].([]string))
 }
 
 func mergeRunSnapshot(target map[string]any, event HostEvent) {
@@ -525,6 +542,33 @@ func mergeRunExternalMessage(runs []map[string]any, runIndex map[string]int, mes
 	if runs[idx]["displayState"] == "" {
 		runs[idx]["displayState"] = "running"
 	}
+}
+
+func mergeTurnMessagePreview(turns []map[string]any, turnIndex map[string]int, message map[string]any) {
+	turnID, _ := message["turnId"].(string)
+	if turnID == "" {
+		return
+	}
+	idx, ok := turnIndex[turnID]
+	if !ok {
+		return
+	}
+
+	turns[idx]["latestMessagePreview"] = message["content"]
+}
+
+func mergeTurnSummaryPreview(turns []map[string]any, turnIndex map[string]int, run map[string]any) {
+	turnID, _ := run["turnId"].(string)
+	summary, _ := run["summary"].(string)
+	if turnID == "" || summary == "" {
+		return
+	}
+	idx, ok := turnIndex[turnID]
+	if !ok {
+		return
+	}
+
+	turns[idx]["latestMessagePreview"] = summary
 }
 
 func displayStateForEvent(event HostEvent) string {

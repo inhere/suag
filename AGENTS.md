@@ -37,6 +37,7 @@
 - `internal/host/agui` 已为 STATE_SNAPSHOT 补齐 `turns` / `runs` 聚合视图，并改为使用事件真实时间产出 `createdAt` / `updatedAt`，为后续一个 turn 下多 run 并发协作预留结构
 - `internal/host/agui` 已为 `runs` 聚合视图补齐 `displayState`、`latestMessageId/latestMessageText`、`summary`、`externalTaskIds`，前端可直接基于 run 视图渲染多 agent 面板
 - `internal/host/agui` 已为 `turns` 聚合视图补齐 `displayState`、`activeRunIds/completedRunIds/failedRunIds`、`hasExternalWork`，前端可直接渲染 turn 级协作概览
+- `internal/host/agui` 已为 `turns` 聚合视图补齐 `primaryRunId/currentRunId`、各类 run count 与 `latestMessagePreview`，前端 turn 概览无需回查 runs 列表即可决定展示
 
 <!-- PROCESSING WORKS:END -->
 
