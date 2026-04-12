@@ -4,6 +4,7 @@ import type { ConversationMessage } from "../features/conversation/conversation-
 import {
   emptySessionViewState,
   type SessionFilter,
+  type SessionListItem,
   type SessionViewState,
   reduceSessionMessage,
 } from "../features/session/session-store";
@@ -15,6 +16,14 @@ import {
 import type { SessionSocketMessage } from "../lib/host-types";
 import { createSession, getSession, startTurn } from "../lib/session-client";
 import { connectSessionSocket, type SessionSocketConnection } from "../lib/session-ws";
+
+const workbenchStorageKey = "axon.web.workbench";
+
+type PersistedWorkbenchState = {
+  recentSessions: SessionListItem[];
+  currentSessionId: string | null;
+  focusedRunId: string | null;
+};
 
 function buildConversationMessages(state: SessionViewState): ConversationMessage[] {
   const messages: ConversationMessage[] = [];
@@ -59,12 +68,64 @@ function isWaitingForInput(state: SessionViewState): boolean {
   return currentTurn.displayState.toLowerCase().includes("waiting");
 }
 
+function loadPersistedWorkbenchState(): PersistedWorkbenchState | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(workbenchStorageKey);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<PersistedWorkbenchState>;
+    return {
+      recentSessions: Array.isArray(parsed.recentSessions) ? parsed.recentSessions : [],
+      currentSessionId:
+        typeof parsed.currentSessionId === "string" ? parsed.currentSessionId : null,
+      focusedRunId: typeof parsed.focusedRunId === "string" ? parsed.focusedRunId : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildInitialViewState(): SessionViewState {
+  const persisted = loadPersistedWorkbenchState();
+  if (!persisted) {
+    return emptySessionViewState;
+  }
+
+  return {
+    ...emptySessionViewState,
+    recentSessions: persisted.recentSessions,
+    currentSessionId: persisted.currentSessionId,
+    focusedRunId: persisted.focusedRunId,
+  };
+}
+
+function persistWorkbenchState(state: SessionViewState) {
+  try {
+    globalThis.localStorage?.setItem(
+      workbenchStorageKey,
+      JSON.stringify({
+        recentSessions: state.recentSessions,
+        currentSessionId: state.currentSessionId,
+        focusedRunId: state.focusedRunId,
+      } satisfies PersistedWorkbenchState),
+    );
+  } catch {
+    // Ignore persistence failures in v0 so the workbench stays usable.
+  }
+}
+
 export function App() {
-  const [viewState, setViewState] = useState<SessionViewState>(emptySessionViewState);
+  const [viewState, setViewState] = useState<SessionViewState>(buildInitialViewState);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [debugOpen, setDebugOpen] = useState(false);
   const socketRef = useRef<SessionSocketConnection | null>(null);
+
+  useEffect(() => {
+    persistWorkbenchState(viewState);
+  }, [viewState]);
 
   useEffect(() => {
     if (!viewState.currentSessionId) {

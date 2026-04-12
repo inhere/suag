@@ -114,9 +114,11 @@ function makeSnapshot(overrides: Partial<StateSnapshotV0> = {}): StateSnapshotV0
 
 describe("App", () => {
   let onMessage: ((message: SessionSocketMessage) => void) | null;
+  let storage: Record<string, string>;
 
   beforeEach(() => {
     onMessage = null;
+    storage = {};
     createSessionMock.mockReset();
     getSessionMock.mockReset();
     startTurnMock.mockReset();
@@ -147,6 +149,16 @@ describe("App", () => {
         close: closeSocketMock,
         sendContinueTurn: sendContinueTurnMock,
       };
+    });
+
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn((key: string) => storage[key] ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        storage[key] = value;
+      }),
+      removeItem: vi.fn((key: string) => {
+        delete storage[key];
+      }),
     });
   });
 
@@ -184,5 +196,90 @@ describe("App", () => {
     expect(await screen.findByText("host runtime")).toBeInTheDocument();
     expect(await screen.findByText("thinking...")).toBeInTheDocument();
     expect(screen.getByText("run_001")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(storage["axon.web.workbench"]).toContain("\"currentSessionId\":\"sess_001\""),
+    );
+  });
+
+  it("restores recent sessions and focused run from local storage on load", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_002",
+      focusedRunId: "run_201",
+      recentSessions: [
+        {
+          sessionId: "sess_002",
+          title: "restored session",
+          status: "RUNNING",
+          updatedAt: "2026-04-12T12:00:00Z",
+          preview: "restored preview",
+        },
+      ],
+    });
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(connectSessionSocketMock).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "sess_002" }),
+      ),
+    );
+
+    await act(async () => {
+      onMessage?.({
+        type: "STATE_SNAPSHOT",
+        snapshot: makeSnapshot({
+          sessionId: "sess_002",
+          threadId: "sess_002",
+          title: "restored session",
+          currentRunId: "run_201",
+          turnId: "turn_201",
+          lastTurnId: "turn_201",
+          turns: [
+            {
+              turnId: "turn_201",
+              sessionId: "sess_002",
+              primaryRunId: "run_201",
+              currentRunId: "run_201",
+              latestRunId: "run_201",
+              latestAgentId: "reviewer",
+              displayState: "running",
+              latestEventType: "run.started",
+              latestMessagePreview: "restored preview",
+              eventCount: 1,
+              runCount: 1,
+              activeRunCount: 1,
+              completedRunCount: 0,
+              failedRunCount: 0,
+              activeRunIds: ["run_201"],
+              completedRunIds: [],
+              failedRunIds: [],
+              hasExternalWork: false,
+              updatedAt: "2026-04-12T12:00:00Z",
+            },
+          ],
+          runs: [
+            {
+              runId: "run_201",
+              turnId: "turn_201",
+              sessionId: "sess_002",
+              agentId: "reviewer",
+              displayState: "running",
+              latestEventType: "run.started",
+              latestMessageId: "msg_201",
+              latestMessageText: "restored preview",
+              summary: "",
+              externalTaskIds: [],
+              eventCount: 1,
+              updatedAt: "2026-04-12T12:00:00Z",
+            },
+          ],
+          externalTasks: [],
+          externalMessages: [],
+        }),
+      });
+    });
+
+    expect(await screen.findByText("restored session")).toBeInTheDocument();
+    expect(screen.getByText("run_201")).toBeInTheDocument();
   });
 });
