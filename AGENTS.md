@@ -21,6 +21,7 @@
 - `web/app/src/features/session` 已补齐最小状态层与 selectors，当前前端可基于 `STATE_SNAPSHOT v0` 选择 current turn、active runs、focused run，并在水合时同步 recent sessions
 - `web/app/src/features/session-list` 已补齐左栏紧凑工作列表组件并接入 `AppShell`，当前最小前端骨架已可展示 recent sessions、搜索框与状态过滤按钮
 - `web/app/src/features/conversation` 与 `web/app/src/features/run-inspector` 已补齐中栏会话区和右栏运行检查区，当前三栏工作台可展示消息流、turn 摘要、active run 列表、focused run 细节与外部任务概览
+- `web/app/src/app/App.tsx`、`web/app/src/features/debug` 与 `web/app/src/features/session/session-store.ts` 已完成真实 Host 主链接线，当前前端可创建 session、启动 turn、接收 `STATE_SNAPSHOT` 与部分增量事件，并通过 debug drawer 查看原始事件
 - `web/app` 已完成第一阶段脚手架落地，当前 `pnpm + React + Vite + TypeScript + Vitest` 最小三栏工作台壳子、测试与构建链路已打通
 
 <!-- PROCESSING WORKS:END -->

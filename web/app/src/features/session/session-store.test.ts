@@ -153,4 +153,19 @@ describe("session-store", () => {
       },
     ]);
   });
+
+  it("merges incremental text updates into the hydrated snapshot", () => {
+    const next = reduceSessionMessage(
+      hydrateFromSnapshot(emptySessionViewState, makeSnapshot()),
+      {
+        type: "TEXT_MESSAGE_CONTENT",
+        messageId: "msg_002",
+        delta: " done",
+      },
+    );
+
+    expect(next.snapshot?.runs[0]?.latestMessageText).toBe("正在整理页面结构 done");
+    expect(next.snapshot?.turns[0]?.latestMessagePreview).toBe("正在整理页面结构 done");
+    expect(next.snapshot?.externalMessages[0]?.content).toBe("正在整理页面结构 done");
+  });
 });

@@ -2,9 +2,13 @@ import type { ExternalTaskSummary } from "../../lib/host-types";
 
 type ExternalTaskPanelProps = {
   externalTasks: ExternalTaskSummary[];
+  onOpenDebug: () => void;
 };
 
-export function ExternalTaskPanel({ externalTasks }: ExternalTaskPanelProps) {
+export function ExternalTaskPanel({
+  externalTasks,
+  onOpenDebug,
+}: ExternalTaskPanelProps) {
   return (
     <section className="run-panel">
       <h2>External Task + Actions</h2>
@@ -19,14 +23,18 @@ export function ExternalTaskPanel({ externalTasks }: ExternalTaskPanelProps) {
         <p>No external task linked.</p>
       )}
       <div className="run-actions">
-        <button type="button">Continue</button>
+        <button type="button" disabled>
+          Continue
+        </button>
         <button type="button" disabled>
           Stop
         </button>
         <button type="button" disabled>
           Add Hint
         </button>
-        <button type="button">Debug</button>
+        <button type="button" onClick={onOpenDebug}>
+          Debug
+        </button>
       </div>
     </section>
   );

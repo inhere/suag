@@ -111,6 +111,11 @@ export type HostEvent = {
   messageId?: string;
   delta?: string;
   sequence?: number;
+  timestamp?: number;
+  runId?: string;
+  threadId?: string;
+  role?: string;
+  result?: Record<string, unknown>;
   value?: Record<string, unknown>;
   snapshot?: StateSnapshotV0;
 };
@@ -142,6 +147,34 @@ export type StateSnapshotEvent = {
   snapshot: StateSnapshotV0;
 };
 
+export type RunFinishedEvent = {
+  type: "RUN_FINISHED";
+  runId: string;
+  threadId: string;
+  timestamp?: number;
+  result?: Record<string, unknown>;
+};
+
+export type TextMessageStartEvent = {
+  type: "TEXT_MESSAGE_START";
+  messageId: string;
+  role?: string;
+  timestamp?: number;
+};
+
+export type TextMessageContentEvent = {
+  type: "TEXT_MESSAGE_CONTENT";
+  messageId: string;
+  delta: string;
+  timestamp?: number;
+};
+
+export type TextMessageEndEvent = {
+  type: "TEXT_MESSAGE_END";
+  messageId: string;
+  timestamp?: number;
+};
+
 export type ConnectedEvent = {
   type: "connected";
   session_id: string;
@@ -165,4 +198,8 @@ export type SessionSocketMessage =
   | CommandAcceptedEvent
   | CommandErrorEvent
   | StateSnapshotEvent
+  | RunFinishedEvent
+  | TextMessageStartEvent
+  | TextMessageContentEvent
+  | TextMessageEndEvent
   | HostEvent;

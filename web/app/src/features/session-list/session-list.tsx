@@ -6,6 +6,7 @@ type SessionListProps = {
   currentSessionId: string | null;
   filter: SessionFilter;
   searchQuery: string;
+  onCreateSession: () => void;
   onSelect: (sessionId: string) => void;
   onSearchChange: (value: string) => void;
   onFilterChange: (filter: SessionFilter) => void;
@@ -24,6 +25,7 @@ export function SessionList({
   currentSessionId,
   filter,
   searchQuery,
+  onCreateSession,
   onSelect,
   onSearchChange,
   onFilterChange,
@@ -48,7 +50,7 @@ export function SessionList({
     <div className="session-list">
       <div className="session-list__header">
         <h1>Sessions</h1>
-        <button type="button" className="session-list__new-button">
+        <button type="button" className="session-list__new-button" onClick={onCreateSession}>
           + New Session
         </button>
       </div>

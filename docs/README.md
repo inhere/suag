@@ -70,7 +70,7 @@
 - `docs/superpowers/specs/2026-04-12-axon-web-foundation-design.md`
   - Axon Web 基础工作台第一阶段设计
 - `docs/superpowers/plans/2026-04-12-axon-web-foundation-implementation-plan.md`
-  - Axon Web 基础工作台第一阶段实现计划
+  - Web 基础工作台第一阶段实现计划，覆盖 `web/app` 的三栏工作台、HTTP/WS 接线与调试抽屉
 
 ---
 

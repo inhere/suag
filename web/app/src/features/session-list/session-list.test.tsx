@@ -16,6 +16,7 @@ it("renders compact session items from recent known sessions with title, status,
       currentSessionId="sess_001"
       filter="all"
       searchQuery=""
+      onCreateSession={() => {}}
       onSelect={() => {}}
       onSearchChange={() => {}}
       onFilterChange={() => {}}

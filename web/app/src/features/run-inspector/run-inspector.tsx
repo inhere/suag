@@ -10,6 +10,7 @@ type RunInspectorProps = {
   externalTasks: ExternalTaskSummary[];
   focusedRunId: string | null;
   onFocusRun: (runId: string) => void;
+  onOpenDebug: () => void;
 };
 
 function getFocusedRun(
@@ -29,6 +30,7 @@ export function RunInspector({
   externalTasks,
   focusedRunId,
   onFocusRun,
+  onOpenDebug,
 }: RunInspectorProps) {
   const focusedRun = getFocusedRun(runs, focusedRunId);
 
@@ -41,7 +43,7 @@ export function RunInspector({
         onFocusRun={onFocusRun}
       />
       <FocusedRunPanel focusedRun={focusedRun} />
-      <ExternalTaskPanel externalTasks={externalTasks} />
+      <ExternalTaskPanel externalTasks={externalTasks} onOpenDebug={onOpenDebug} />
     </div>
   );
 }

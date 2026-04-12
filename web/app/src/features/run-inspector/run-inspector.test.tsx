@@ -45,6 +45,7 @@ it("shows summary first for a completed focused run", () => {
       externalTasks={[]}
       focusedRunId="run_001"
       onFocusRun={vi.fn()}
+      onOpenDebug={vi.fn()}
     />,
   );
 
