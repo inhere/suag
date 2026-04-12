@@ -149,6 +149,20 @@ running · 2m ago
 - 搜索
 - 过滤：`All / Running / Waiting`
 
+第一阶段需要补一个现实约束：
+
+- 后端当前还没有 `GET /api/sessions` 列表接口
+- 因此左栏 v0 先承载“最近已知 session / 当前工作列表”
+- 数据来源可以是：
+  - 当前客户端新建过的 session
+  - 用户主动重新打开过的 session
+  - 本地持久化恢复的最近会话
+
+也就是说：
+
+- v0 先保证“已知 session 的切换和恢复”
+- 不把“全局 session 检索”作为第一阶段阻塞项
+
 排序建议：
 
 1. `Running`
@@ -277,6 +291,17 @@ summary: 已完成前端基础工作台结构设计
 - `Stop`
 - `Add Hint`
 - `Debug`
+
+其中第一阶段的可执行范围再收紧为：
+
+- `Continue`
+  - 通过现有 WebSocket `continue_turn` 命令落地
+- `Debug`
+  - 直接可用
+- `Stop`
+  - 当前后端尚无对应命令，第一阶段先禁用或放到调试态
+- `Add Hint`
+  - 当前后端尚无对应命令，第一阶段先禁用或放到调试态
 
 ---
 

@@ -6,8 +6,9 @@
 
 ## 正在进行的工作
 
-<!-- PROCESSING WORKS:START -->
 <!-- 需要实时更新: 正在进行的工作和关键md文档链接，已完成的注意移除 -->
+
+<!-- PROCESSING WORKS:START -->
 - Axon v0 自用主线规划与阶段架构设计进行中，设计总纲见 `docs/v0-self-host-design.md`
 - Axon v0 self-host 基础骨架实施计划进行中，计划文档见 `docs/superpowers/plans/2026-04-10-axon-v0-self-host-foundation-plan.md`
 - internal 目录结构调整已完成首轮收敛，迁移映射见 `docs/internal-code-status.md`
@@ -43,6 +44,7 @@
 - `docs/usage/host-state-snapshot-v0.md` 已补齐当前 `STATE_SNAPSHOT v0` 的消费约定，前后端可基于同一份 schema 文档推进对接
 - `docs/superpowers/specs/2026-04-12-axon-web-foundation-design.md` 已补齐前端基础工作台设计，当前以三栏单页工作台为第一阶段前端实现基线
 - `docs/superpowers/plans/2026-04-12-axon-web-foundation-implementation-plan.md` 已补齐前端基础工作台实现计划，可据此开始拆分 `web/app` 脚手架、HTTP/WS 接线与三栏 UI 实施
+- 前端基础工作台计划已完成一轮工程收口，已明确 `pnpm`、现有 Host API 约束、v0 的已知 session 列表策略，以及 `continue_turn`/`Stop`/`Add Hint` 的阶段边界
 
 <!-- PROCESSING WORKS:END -->
 
@@ -68,3 +70,7 @@ Require(t, assert.Eq(t, 1, res.ID))
 // Standard assertion
 assert.Eq(t, expected, actual)
 ```
+
+## 前端项目开发
+
+- 包管理使用 pnpm

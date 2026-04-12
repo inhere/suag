@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the first Axon Web foundation slice: a React + Vite single-page workbench that can create and switch sessions, render `STATE_SNAPSHOT v0`, stream updates over WebSocket, send new turns, and continue existing turns.
+**Goal:** Build the first Axon Web foundation slice: a React + Vite single-page workbench that can create sessions, reconnect to a chosen session, render `STATE_SNAPSHOT v0`, stream updates over WebSocket, send new turns, and continue existing turns.
 
-**Architecture:** Start from an empty `web/app` and build a thin frontend around the current Host APIs instead of inventing new frontend-side state semantics. Keep the UI as a three-column workbench: left `Session List`, middle `Conversation`, right `Run Inspector`, with data flowing from HTTP bootstrap + `STATE_SNAPSHOT v0` + incremental WS events.
+**Architecture:** Start from an empty `web/app` and build a thin frontend around the current Host APIs instead of inventing new frontend-side state semantics. Keep the UI as a three-column workbench: left `Session List`, middle `Conversation`, right `Run Inspector`, with data flowing from HTTP bootstrap + `STATE_SNAPSHOT v0` + incremental WS events. Respect current backend reality: `POST /api/sessions`, `GET /api/sessions/{id}`, `POST /api/sessions/{id}/turns`, `GET /api/sessions/{id}/events`, and `GET /ws?session_id=<id>` already exist, while a REST session list endpoint and dedicated REST continue-turn endpoint do not.
 
-**Tech Stack:** React, Vite, TypeScript, Vitest, Testing Library, `github.com/coder/websocket`-compatible browser WebSocket, existing Host HTTP/WS APIs, `docs/usage/host-state-snapshot-v0.md`
+**Tech Stack:** React, Vite, TypeScript, Vitest, Testing Library, `pnpm`, browser WebSocket, existing Host HTTP/WS APIs, `docs/usage/host-state-snapshot-v0.md`
 
 ---
 
@@ -113,6 +113,47 @@
 - Modify: `docs/superpowers/specs/2026-04-12-axon-web-foundation-design.md`
   Responsibility: link the implementation plan after it lands
 
+## Existing Backend Constraints
+
+- Existing REST routes:
+  - `POST /api/sessions`
+  - `GET /api/sessions/{id}`
+  - `GET /api/sessions/{id}/events`
+  - `POST /api/sessions/{id}/turns`
+- Existing WebSocket route:
+  - `GET /ws?session_id=<id>`
+- Existing WS command:
+  - `continue_turn`
+- Existing snapshot contract:
+  - `STATE_SNAPSHOT` first packet for session subscriptions
+  - root fields include `turnId`, `lastTurnId`, `currentRunId`, `currentAgentId`, `turns`, `runs`, `externalTasks`, `externalMessages`, `events`
+- Missing today:
+  - `GET /api/sessions` session list endpoint
+  - REST endpoint dedicated to continue turn
+  - REST endpoints for `Stop` and `Add Hint`
+
+## Scope Tightening for v0
+
+- `Session List` in this phase should be treated as a compact recent-work list backed by frontend-known sessions plus optional local persistence; do not block the whole frontend on a backend session index route.
+- `Continue` is supported in v0 through the existing WebSocket `continue_turn` command, not a new REST endpoint.
+- `Stop` and `Add Hint` stay as disabled or debug-only placeholders until backend commands exist.
+- The first frontend slice should target reconnect-and-continue for known sessions; a global cross-session inbox can follow after backend list/search support lands.
+
+## NOT in Scope
+
+- Backend `GET /api/sessions` search/list API in this plan.
+- Backend command APIs for `Stop`, `Add Hint`, or richer run intervention.
+- Multi-workspace or project-level modeling beyond the current top context.
+- Standalone Tools / Skills / MCP pages.
+- Full timeline replay from raw `events`.
+
+## What Already Exists
+
+- `internal/host/gateway` already exposes the base session REST routes and `/ws` session subscription flow; this plan should reuse them rather than invent new transport contracts.
+- `internal/host/gateway/ws.go` already emits `STATE_SNAPSHOT` on connect and accepts `continue_turn`; frontend should align to this instead of adding a second continue path.
+- `internal/host/agui` already aggregates `turns`, `runs`, `externalTasks`, and `externalMessages`; frontend should consume those directly instead of replaying raw events.
+- `internal/host/session` already treats `turnId` as first-class and allows one turn to evolve toward multiple runs; selectors should preserve that shape.
+
 ---
 
 ### Task 1: Scaffold the React + Vite App
@@ -144,7 +185,7 @@ it("renders the three-column workbench shell", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd web/app && npm test -- app-shell.test.tsx`
+Run: `cd web/app && pnpm test app-shell.test.tsx`
 Expected: FAIL with missing package or missing component/module errors
 
 - [ ] **Step 3: Create the Vite + React + TypeScript scaffold**
@@ -163,6 +204,11 @@ Expected: FAIL with missing package or missing component/module errors
 }
 ```
 
+- [ ] **Step 3.1: Use `pnpm` as the package manager from day one**
+
+Run: `cd web/app && pnpm install`
+Expected: `pnpm-lock.yaml` generated and dependencies installed
+
 - [ ] **Step 4: Add the minimal app shell and base styles**
 
 ```tsx
@@ -179,12 +225,12 @@ export function AppShell() {
 
 - [ ] **Step 5: Run the focused test to verify it passes**
 
-Run: `cd web/app && npm test -- app-shell.test.tsx`
+Run: `cd web/app && pnpm test app-shell.test.tsx`
 Expected: PASS
 
 - [ ] **Step 6: Run the frontend build**
 
-Run: `cd web/app && npm run build`
+Run: `cd web/app && pnpm build`
 Expected: PASS and `web/app/dist` generated
 
 - [ ] **Step 7: Commit**
@@ -205,11 +251,11 @@ git commit -m "feat: scaffold axon web foundation app"
 - Create: `web/app/src/lib/session-ws.ts`
 - Create: `web/app/src/lib/session-ws.test.ts`
 
-- [ ] **Step 1: Write the failing REST client test**
+- [ ] **Step 1: Write the failing REST client tests for the routes that actually exist**
 
 ```ts
 import { describe, expect, it, vi } from "vitest";
-import { createSession } from "./session-client";
+import { createSession, getSession } from "./session-client";
 
 describe("createSession", () => {
   it("posts to /api/sessions and returns parsed session data", async () => {
@@ -221,6 +267,20 @@ describe("createSession", () => {
     const result = await createSession({ title: "demo" });
 
     expect(result.sessionId).toBe("sess_001");
+  });
+});
+
+describe("getSession", () => {
+  it("loads /api/sessions/{id} and returns parsed session detail", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ session_id: "sess_001", title: "demo", status: "RUNNING", last_turn_id: "turn_001", external_tasks: [] })
+    }));
+
+    const result = await getSession("sess_001");
+
+    expect(result.sessionId).toBe("sess_001");
+    expect(result.lastTurnId).toBe("turn_001");
   });
 });
 ```
@@ -248,7 +308,7 @@ it("subscribes to a session websocket and forwards parsed messages", () => {
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `cd web/app && npm test -- session-client.test.ts session-ws.test.ts`
+Run: `cd web/app && pnpm test session-client.test.ts session-ws.test.ts`
 Expected: FAIL with missing modules or missing exported functions
 
 - [ ] **Step 4: Define exact frontend types from `STATE_SNAPSHOT v0`**
@@ -258,10 +318,18 @@ export type StateSnapshotV0 = {
   snapshotVersion: "v0";
   snapshotSchema: "axon.host.state.v0";
   generatedAt: string;
+  threadId: string;
   sessionId: string;
+  turnId: string;
+  lastTurnId: string;
+  currentRunId: string;
+  currentAgentId: string;
+  latestEventType: string;
+  eventCount: number;
   turns: TurnSnapshot[];
   runs: RunSnapshot[];
   externalTasks: ExternalTaskSnapshot[];
+  externalActivities: ExternalActivitySnapshot[];
   externalMessages: ExternalMessageSnapshot[];
   events: HostEvent[];
 };
@@ -278,6 +346,11 @@ export async function createSession(input: { title: string }) {
   });
   return mapSessionResponse(await response.json());
 }
+
+export async function getSession(sessionId: string) {
+  const response = await fetch(`/api/sessions/${sessionId}`);
+  return mapSessionDetailResponse(await response.json());
+}
 ```
 
 - [ ] **Step 6: Implement the thin WS client**
@@ -292,7 +365,7 @@ export function connectSessionSocket(opts: ConnectSessionSocketOptions) {
 
 - [ ] **Step 7: Run the focused tests**
 
-Run: `cd web/app && npm test -- session-client.test.ts session-ws.test.ts`
+Run: `cd web/app && pnpm test session-client.test.ts session-ws.test.ts`
 Expected: PASS
 
 - [ ] **Step 8: Commit**
@@ -330,14 +403,14 @@ it("selects the current active run from the snapshot", () => {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd web/app && npm test -- session-selectors.test.ts session-store.test.ts`
+Run: `cd web/app && pnpm test session-selectors.test.ts session-store.test.ts`
 Expected: FAIL with missing selectors or missing store
 
 - [ ] **Step 3: Implement a thin session store**
 
 ```ts
 export type SessionViewState = {
-  sessions: SessionListItem[];
+  recentSessions: SessionListItem[];
   currentSessionId: string | null;
   snapshot: StateSnapshotV0 | null;
   focusedRunId: string | null;
@@ -368,7 +441,7 @@ export function selectSessionPreview(snapshot: StateSnapshotV0 | null) { /* ... 
 
 - [ ] **Step 6: Run the focused tests**
 
-Run: `cd web/app && npm test -- session-selectors.test.ts session-store.test.ts`
+Run: `cd web/app && pnpm test session-selectors.test.ts session-store.test.ts`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
@@ -386,12 +459,13 @@ git commit -m "feat: add session snapshot view state"
 - Create: `web/app/src/features/session-list/session-list.tsx`
 - Create: `web/app/src/features/session-list/session-list-item.tsx`
 - Create: `web/app/src/features/session-list/session-list.test.tsx`
+- Modify: `web/app/src/features/session/session-store.ts`
 - Modify: `web/app/src/app/app-shell.tsx`
 
 - [ ] **Step 1: Write the failing session list render test**
 
 ```tsx
-it("renders compact session items with title, status, and preview", () => {
+it("renders compact session items from recent known sessions with title, status, and preview", () => {
   render(
     <SessionList
       sessions={[
@@ -409,7 +483,7 @@ it("renders compact session items with title, status, and preview", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd web/app && npm test -- session-list.test.tsx`
+Run: `cd web/app && pnpm test session-list.test.tsx`
 Expected: FAIL with missing component errors
 
 - [ ] **Step 3: Implement the compact session list UI**
@@ -426,13 +500,21 @@ export function SessionListItem({ item, selected, onSelect }: Props) {
 }
 ```
 
-- [ ] **Step 4: Add search box and status filter controls**
+- [ ] **Step 4: Add local search box and status filter controls**
 
 ```tsx
 <input placeholder="Search sessions" />
 <button>All</button>
 <button>Running</button>
 <button>Waiting</button>
+```
+
+- [ ] **Step 4.1: Keep data source explicit in v0**
+
+```ts
+// v0 note: until GET /api/sessions exists, this list is fed by
+// sessions created or reopened in the current client, optionally
+// restored from local storage for convenience.
 ```
 
 - [ ] **Step 5: Wire the left column into `AppShell`**
@@ -445,7 +527,7 @@ export function SessionListItem({ item, selected, onSelect }: Props) {
 
 - [ ] **Step 6: Run the focused tests**
 
-Run: `cd web/app && npm test -- session-list.test.tsx app-shell.test.tsx`
+Run: `cd web/app && pnpm test session-list.test.tsx app-shell.test.tsx`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
@@ -481,7 +563,7 @@ it("renders user messages, assistant summaries, and turn summary cards", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd web/app && npm test -- conversation-pane.test.tsx`
+Run: `cd web/app && pnpm test conversation-pane.test.tsx`
 Expected: FAIL with missing component errors
 
 - [ ] **Step 3: Implement the message list with only the allowed block types**
@@ -507,7 +589,7 @@ export function TurnSummaryCard({ turn }: { turn: TurnSnapshot }) {
 }
 ```
 
-- [ ] **Step 5: Implement the composer with new-turn and continue intent**
+- [ ] **Step 5: Implement the composer with new-turn and WS continue intent**
 
 ```tsx
 export function Composer({ waitingForInput, onSubmit }: Props) {
@@ -520,6 +602,8 @@ export function Composer({ waitingForInput, onSubmit }: Props) {
 }
 ```
 
+Note: when `waitingForInput` is true, submit should map to WebSocket `continue_turn` instead of inventing a second REST path.
+
 - [ ] **Step 6: Wire the conversation pane into the middle column**
 
 ```tsx
@@ -530,7 +614,7 @@ export function Composer({ waitingForInput, onSubmit }: Props) {
 
 - [ ] **Step 7: Run the focused tests**
 
-Run: `cd web/app && npm test -- conversation-pane.test.tsx app-shell.test.tsx`
+Run: `cd web/app && pnpm test conversation-pane.test.tsx app-shell.test.tsx`
 Expected: PASS
 
 - [ ] **Step 8: Commit**
@@ -574,7 +658,7 @@ it("shows summary first for a completed focused run", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd web/app && npm test -- run-inspector.test.tsx`
+Run: `cd web/app && pnpm test run-inspector.test.tsx`
 Expected: FAIL with missing component errors
 
 - [ ] **Step 3: Implement the four fixed inspector regions**
@@ -598,6 +682,15 @@ const content = focusedRun.summary || focusedRun.latestMessageText || "Waiting f
 <button onClick={() => onFocusRun(run.runId)}>{run.agentId}</button>
 ```
 
+- [ ] **Step 5.1: Keep unsupported actions visibly out of the critical path**
+
+```tsx
+<button disabled>Stop</button>
+<button disabled>Add Hint</button>
+```
+
+Note: only wire live actions in this phase if backend commands already exist; otherwise render explicit disabled placeholders or move them under Debug.
+
 - [ ] **Step 6: Wire the inspector into the right column**
 
 ```tsx
@@ -608,7 +701,7 @@ const content = focusedRun.summary || focusedRun.latestMessageText || "Waiting f
 
 - [ ] **Step 7: Run the focused tests**
 
-Run: `cd web/app && npm test -- run-inspector.test.tsx app-shell.test.tsx`
+Run: `cd web/app && pnpm test run-inspector.test.tsx app-shell.test.tsx`
 Expected: PASS
 
 - [ ] **Step 8: Commit**
@@ -627,6 +720,7 @@ git commit -m "feat: add run inspector workbench column"
 - Modify: `web/app/src/features/session/session-store.ts`
 - Modify: `web/app/src/lib/session-client.ts`
 - Modify: `web/app/src/lib/session-ws.ts`
+- Modify: `web/app/src/features/session-list/session-list.tsx`
 - Test: `web/app/src/features/session/session-store.test.ts`
 - Test: `web/app/src/app/app-shell.test.tsx`
 
@@ -646,25 +740,37 @@ it("hydrates the workbench from STATE_SNAPSHOT v0 and keeps current active run f
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd web/app && npm test -- session-store.test.ts`
+Run: `cd web/app && pnpm test session-store.test.ts`
 Expected: FAIL with missing reducer or wrong focus behavior
 
-- [ ] **Step 3: Add initial load flow**
-
-```tsx
-useEffect(() => {
-  void loadSessions();
-}, []);
-```
-
-- [ ] **Step 4: Load session details and connect the session WebSocket**
+- [ ] **Step 3: Add initial load flow for a known or newly-created session**
 
 ```tsx
 useEffect(() => {
   if (!currentSessionId) return;
   void loadSession(currentSessionId);
+}, [currentSessionId]);
+```
+
+- [ ] **Step 4: Connect the session WebSocket and keep continue-turn on the same socket**
+
+```tsx
+useEffect(() => {
+  if (!currentSessionId) return;
   return connectSessionSocket({ sessionId: currentSessionId, onMessage: handleSocketMessage });
 }, [currentSessionId]);
+```
+
+- [ ] **Step 4.1: Keep recent sessions in sync without requiring a backend list endpoint**
+
+```ts
+upsertRecentSession({
+  sessionId,
+  title: snapshot.title || existing.title,
+  status: snapshot.status,
+  updatedAt: snapshot.generatedAt,
+  preview: selectSessionPreview(snapshot),
+});
 ```
 
 - [ ] **Step 5: Reduce `STATE_SNAPSHOT` and incrementals into the same store**
@@ -680,12 +786,12 @@ switch (message.type) {
 
 - [ ] **Step 6: Run integration-level frontend tests**
 
-Run: `cd web/app && npm test -- session-store.test.ts app-shell.test.tsx`
+Run: `cd web/app && pnpm test session-store.test.ts app-shell.test.tsx`
 Expected: PASS
 
 - [ ] **Step 7: Run the frontend build**
 
-Run: `cd web/app && npm run build`
+Run: `cd web/app && pnpm build`
 Expected: PASS
 
 - [ ] **Step 8: Commit**
@@ -716,7 +822,7 @@ it("renders raw events only when the drawer is open", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd web/app && npm test -- debug-drawer.test.tsx`
+Run: `cd web/app && pnpm test debug-drawer.test.tsx`
 Expected: FAIL with missing component errors
 
 - [ ] **Step 3: Implement the drawer as the only raw event surface**
@@ -744,10 +850,10 @@ export function DebugDrawer({ open, events, onClose }: Props) {
 
 - [ ] **Step 6: Run focused frontend tests and build**
 
-Run: `cd web/app && npm test -- debug-drawer.test.tsx`
+Run: `cd web/app && pnpm test debug-drawer.test.tsx`
 Expected: PASS
 
-Run: `cd web/app && npm run build`
+Run: `cd web/app && pnpm build`
 Expected: PASS
 
 - [ ] **Step 7: Run the repository verification**
@@ -771,6 +877,9 @@ git commit -m "docs: link web foundation implementation plan"
 - Keep the conversation pane human-readable. Raw events belong in the debug drawer only.
 - Keep `summary`-first behavior consistent in `turns`, `runs`, and any focused-run detail surface.
 - `tools`, `skills`, and `mcp` should remain secondary surfaces in this phase. Do not create standalone product pages for them yet.
+- Do not block the first frontend slice on backend session-list/search APIs. Recent known sessions are enough for v0.
+- Treat `turnId` as a first-class focus anchor even when the immediate UI defaults to `currentRunId`.
+- Keep unsupported intervention actions explicit. Disabled UI is better than fake working buttons.
 
 ## Suggested Follow-Up Plans
 
