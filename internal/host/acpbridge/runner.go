@@ -56,6 +56,7 @@ func (r *RunnerAdapter) Run(ctx context.Context, in session.RuntimeRequest) (ses
 	return session.RuntimeResult{
 		Summary: result.Summary,
 		ExternalTask: &session.ExternalTask{
+			ExternalTaskID:  contextStringValue(in.Context, "external_task_id"),
 			Adapter:         r.adapterName,
 			RemoteAgentName: result.RemoteAgentName,
 			RemoteSessionID: result.RemoteSessionID,
@@ -146,4 +147,16 @@ func mapDispatchEvent(event DispatchEvent) (session.RuntimeEvent, bool) {
 	default:
 		return session.RuntimeEvent{}, false
 	}
+}
+
+func contextStringValue(values map[string]any, key string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	raw, ok := values[key]
+	if !ok {
+		return ""
+	}
+	text, _ := raw.(string)
+	return strings.TrimSpace(text)
 }

@@ -455,6 +455,9 @@ func TestServer_ContinueTurnReusesPreviousRemoteSession(t *testing.T) {
 	if runner.requests[1].Context["resume_external_tasks"] == nil {
 		t.Fatal("continue request missing resume_external_tasks")
 	}
+	if runner.requests[1].Context["external_task_id"] == nil {
+		t.Fatal("continue request missing external_task_id")
+	}
 }
 
 func TestServer_StartTurnStreamsExternalRuntimeEvents(t *testing.T) {
@@ -509,7 +512,10 @@ func TestServer_StartTurnStreamsExternalRuntimeEvents(t *testing.T) {
 			t.Fatalf("wsjson.Read() event error = %v", err)
 		}
 		if message["type"] == "CUSTOM" && message["name"] == "axon.run.external.activity" {
-			foundExternalActivity = true
+			value, _ := message["value"].(map[string]any)
+			if value != nil && value["externalTaskId"] != "" {
+				foundExternalActivity = true
+			}
 		}
 		if message["type"] == "TEXT_MESSAGE_CONTENT" && message["delta"] == "thinking..." {
 			foundExternalText = true

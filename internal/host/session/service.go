@@ -115,6 +115,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 	turnID := NewTurnID()
 	runID := NewRunID()
 	eventID := NewEventID()
+	externalTaskID := NewExternalTaskID()
 
 	turnModel := Turn{
 		TurnID:        turnID,
@@ -201,11 +202,14 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			RunID:       runID,
 			AgentID:     agentID,
 			Instruction: message,
-			Context:     s.buildRuntimeContext(ctx, sessionID, previousTurnID),
+			Context:     s.buildRuntimeContext(ctx, sessionID, previousTurnID, externalTaskID),
 			Emit: func(runtimeEvent RuntimeEvent) error {
 				if strings.TrimSpace(runtimeEvent.EventType) == "" {
 					return nil
 				}
+				payload := mergeRuntimePayload(runtimeEvent.Payload, map[string]any{
+					"externalTaskId": externalTaskID,
+				})
 
 				event := RunEvent{
 					EventID:   NewEventID(),
@@ -215,7 +219,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 					AgentID:   agentID,
 					EventType: runtimeEvent.EventType,
 					Sequence:  nextSequence,
-					Payload:   runtimeEvent.Payload,
+					Payload:   payload,
 					Source:    "host.session.runtime",
 					CreatedAt: s.now().UTC(),
 				}
@@ -295,17 +299,21 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 	}, nil
 }
 
-func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, previousTurnID string) map[string]any {
+func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, previousTurnID, externalTaskID string) map[string]any {
+	ctxMap := map[string]any{}
+	if strings.TrimSpace(externalTaskID) != "" {
+		ctxMap["external_task_id"] = externalTaskID
+	}
 	if s == nil || s.store == nil {
-		return map[string]any{}
+		return ctxMap
 	}
 	if strings.TrimSpace(previousTurnID) == "" {
-		return map[string]any{}
+		return ctxMap
 	}
 
 	tasks, err := s.store.ListExternalTasksBySession(ctx, sessionID)
 	if err != nil {
-		return map[string]any{}
+		return ctxMap
 	}
 
 	resumeTasks := make([]ExternalTask, 0, len(tasks))
@@ -319,13 +327,29 @@ func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, previousTu
 		resumeTasks = append(resumeTasks, task)
 	}
 	if len(resumeTasks) == 0 {
-		return map[string]any{}
+		return ctxMap
 	}
 
-	return map[string]any{
-		"resume_turn_id":        previousTurnID,
-		"resume_external_tasks": resumeTasks,
+	ctxMap["resume_turn_id"] = previousTurnID
+	ctxMap["resume_external_tasks"] = resumeTasks
+	return ctxMap
+}
+
+func mergeRuntimePayload(payload map[string]any, extra map[string]any) map[string]any {
+	if payload == nil && extra == nil {
+		return map[string]any{}
 	}
+	out := map[string]any{}
+	for key, value := range payload {
+		out[key] = value
+	}
+	for key, value := range extra {
+		if _, ok := out[key]; ok {
+			continue
+		}
+		out[key] = value
+	}
+	return out
 }
 
 func (s *Service) persistExternalTask(ctx context.Context, sessionID, turnID, runID string, task *ExternalTask) error {

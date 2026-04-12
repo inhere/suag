@@ -6,30 +6,19 @@ import (
 	"github.com/inhere/axon/internal/host/session"
 )
 
-func MapEvent(event HostEvent) []any {
+func MapEvent(event HostEvent) []Event {
 	now := time.Now().UnixMilli()
 
 	switch event.Type {
 	case session.EventRunStarted:
-		return []any{
-			RunStartedEvent{
-				Type:      EventTypeRunStarted,
-				Timestamp: now,
-				ThreadID:  event.SessionID,
-				RunID:     event.RunID,
-			},
+		return []Event{
+			withTimestamp(NewRunStartedEvent(event.SessionID, event.RunID), now),
 			buildRunActivitySnapshot(now, event, "running"),
 		}
 	case session.EventRunFinished:
 		textEvents := buildFinishedTextEvents(now, event)
-		out := []any{
-			RunFinishedEvent{
-				Type:      EventTypeRunFinished,
-				Timestamp: now,
-				ThreadID:  event.SessionID,
-				RunID:     event.RunID,
-				Result:    event.Payload,
-			},
+		out := []Event{
+			withTimestamp(NewRunFinishedEvent(event.SessionID, event.RunID, event.Payload), now),
 			buildRunActivitySnapshot(now, event, "completed"),
 		}
 		out = append(out, textEvents...)
@@ -41,46 +30,32 @@ func MapEvent(event HostEvent) []any {
 				message = raw
 			}
 		}
-		return []any{
-			RunErrorEvent{
-				Type:      EventTypeRunError,
-				Timestamp: now,
-				RunID:     event.RunID,
-				Message:   message,
-			},
+		return []Event{
+			withTimestamp(NewRunErrorEvent(event.RunID, message), now),
 			buildRunActivitySnapshot(now, event, "failed"),
 		}
 	case session.EventRunExternalActivity:
-		return []any{
-			CustomEvent{
-				Type:      EventTypeCustom,
-				Timestamp: now,
-				Name:      "axon.run.external.activity",
-				Value: map[string]any{
-					"threadId":  event.SessionID,
-					"sessionId": event.SessionID,
-					"turnId":    event.TurnID,
-					"runId":     event.RunID,
-					"agentId":   event.AgentID,
-					"sequence":  event.Sequence,
-					"type":      event.Type,
-					"payload":   event.Payload,
-				},
-			},
-			ActivitySnapshotEvent{
-				Type:         EventTypeActivitySnapshot,
-				Timestamp:    now,
-				MessageID:    event.RunID + ":external",
-				ActivityType: "external_activity",
-				Content: map[string]any{
-					"threadId": event.SessionID,
-					"turnId":   event.TurnID,
-					"runId":    event.RunID,
-					"agentId":  event.AgentID,
-					"status":   "running",
-					"payload":  event.Payload,
-				},
-			},
+		return []Event{
+			withTimestamp(NewCustomEvent("axon.run.external.activity", map[string]any{
+				"threadId":       event.SessionID,
+				"sessionId":      event.SessionID,
+				"turnId":         event.TurnID,
+				"runId":          event.RunID,
+				"agentId":        event.AgentID,
+				"sequence":       event.Sequence,
+				"type":           event.Type,
+				"payload":        event.Payload,
+				"externalTaskId": externalTaskIDFromPayload(event.Payload),
+			}), now),
+			withTimestamp(NewActivitySnapshotEvent(event.RunID+":external", "external_activity", map[string]any{
+				"threadId":       event.SessionID,
+				"turnId":         event.TurnID,
+				"runId":          event.RunID,
+				"agentId":        event.AgentID,
+				"status":         "running",
+				"payload":        event.Payload,
+				"externalTaskId": externalTaskIDFromPayload(event.Payload),
+			}), now),
 		}
 	case session.EventRunExternalMessageDelta:
 		return buildExternalMessageDeltaEvents(now, event)
@@ -93,27 +68,23 @@ func MapEvent(event HostEvent) []any {
 		name = "axon.run.queued"
 	}
 
-	return []any{
-		CustomEvent{
-			Type:      EventTypeCustom,
-			Timestamp: now,
-			Name:      name,
-			Value: map[string]any{
-				"threadId":  event.SessionID,
-				"sessionId": event.SessionID,
-				"turnId":    event.TurnID,
-				"runId":     event.RunID,
-				"agentId":   event.AgentID,
-				"sequence":  event.Sequence,
-				"type":      event.Type,
-				"payload":   event.Payload,
-			},
-		},
+	return []Event{
+		withTimestamp(NewCustomEvent(name, map[string]any{
+			"threadId":       event.SessionID,
+			"sessionId":      event.SessionID,
+			"turnId":         event.TurnID,
+			"runId":          event.RunID,
+			"agentId":        event.AgentID,
+			"sequence":       event.Sequence,
+			"type":           event.Type,
+			"payload":        event.Payload,
+			"externalTaskId": externalTaskIDFromPayload(event.Payload),
+		}), now),
 		buildRunActivitySnapshot(now, event, "queued"),
 	}
 }
 
-func buildExternalMessageDeltaEvents(now int64, event HostEvent) []any {
+func buildExternalMessageDeltaEvents(now int64, event HostEvent) []Event {
 	payload, ok := event.Payload.(map[string]any)
 	if !ok {
 		return nil
@@ -126,27 +97,17 @@ func buildExternalMessageDeltaEvents(now int64, event HostEvent) []any {
 	delta, _ := payload["delta"].(string)
 	isFirstChunk, _ := payload["isFirstChunk"].(bool)
 
-	out := make([]any, 0, 2)
+	out := make([]Event, 0, 2)
 	if isFirstChunk {
-		out = append(out, TextMessageStartEvent{
-			Type:      EventTypeTextMessageStart,
-			Timestamp: now,
-			MessageID: messageID,
-			Role:      "assistant",
-		})
+		out = append(out, withTimestamp(NewTextMessageStartEvent(messageID, "assistant"), now))
 	}
 	if delta != "" {
-		out = append(out, TextMessageContentEvent{
-			Type:      EventTypeTextMessageContent,
-			Timestamp: now,
-			MessageID: messageID,
-			Delta:     delta,
-		})
+		out = append(out, withTimestamp(NewTextMessageContentEvent(messageID, delta), now))
 	}
 	return out
 }
 
-func buildExternalMessageEndEvents(now int64, event HostEvent) []any {
+func buildExternalMessageEndEvents(now int64, event HostEvent) []Event {
 	payload, ok := event.Payload.(map[string]any)
 	if !ok {
 		return nil
@@ -157,16 +118,12 @@ func buildExternalMessageEndEvents(now int64, event HostEvent) []any {
 		return nil
 	}
 
-	return []any{
-		TextMessageEndEvent{
-			Type:      EventTypeTextMessageEnd,
-			Timestamp: now,
-			MessageID: messageID,
-		},
+	return []Event{
+		withTimestamp(NewTextMessageEndEvent(messageID), now),
 	}
 }
 
-func buildFinishedTextEvents(now int64, event HostEvent) []any {
+func buildFinishedTextEvents(now int64, event HostEvent) []Event {
 	payload, ok := event.Payload.(map[string]any)
 	if !ok {
 		return nil
@@ -178,24 +135,10 @@ func buildFinishedTextEvents(now int64, event HostEvent) []any {
 	}
 
 	messageID := event.RunID + ":assistant"
-	return []any{
-		TextMessageStartEvent{
-			Type:      EventTypeTextMessageStart,
-			Timestamp: now,
-			MessageID: messageID,
-			Role:      "assistant",
-		},
-		TextMessageContentEvent{
-			Type:      EventTypeTextMessageContent,
-			Timestamp: now,
-			MessageID: messageID,
-			Delta:     summary,
-		},
-		TextMessageEndEvent{
-			Type:      EventTypeTextMessageEnd,
-			Timestamp: now,
-			MessageID: messageID,
-		},
+	return []Event{
+		withTimestamp(NewTextMessageStartEvent(messageID, "assistant"), now),
+		withTimestamp(NewTextMessageContentEvent(messageID, summary), now),
+		withTimestamp(NewTextMessageEndEvent(messageID), now),
 	}
 }
 
@@ -239,38 +182,48 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 		})
 	}
 
-	return StateSnapshotEvent{
-		Type:      EventTypeStateSnapshot,
-		Timestamp: now,
-		Snapshot: map[string]any{
-			"threadId":        sessionModel.SessionID,
-			"sessionId":       sessionModel.SessionID,
-			"title":           sessionModel.Title,
-			"status":          string(sessionModel.Status),
-			"turnId":          sessionModel.LastTurnID,
-			"lastTurnId":      sessionModel.LastTurnID,
-			"currentRunId":    currentRunID,
-			"currentAgentId":  currentAgentID,
-			"latestEventType": latestEventType,
-			"eventCount":      len(mappedEvents),
-			"externalTasks":   mappedExternalTasks,
-			"events":          mappedEvents,
-		},
-	}
+	return *withTimestamp(NewStateSnapshotEvent(map[string]any{
+		"threadId":        sessionModel.SessionID,
+		"sessionId":       sessionModel.SessionID,
+		"title":           sessionModel.Title,
+		"status":          string(sessionModel.Status),
+		"turnId":          sessionModel.LastTurnID,
+		"lastTurnId":      sessionModel.LastTurnID,
+		"currentRunId":    currentRunID,
+		"currentAgentId":  currentAgentID,
+		"latestEventType": latestEventType,
+		"eventCount":      len(mappedEvents),
+		"externalTasks":   mappedExternalTasks,
+		"events":          mappedEvents,
+	}), now)
 }
 
-func buildRunActivitySnapshot(now int64, event HostEvent, status string) ActivitySnapshotEvent {
-	return ActivitySnapshotEvent{
-		Type:         EventTypeActivitySnapshot,
-		Timestamp:    now,
-		MessageID:    event.RunID,
-		ActivityType: "run_status",
-		Content: map[string]any{
-			"threadId": event.SessionID,
-			"turnId":   event.TurnID,
-			"runId":    event.RunID,
-			"agentId":  event.AgentID,
-			"status":   status,
-		},
+func buildRunActivitySnapshot(now int64, event HostEvent, status string) *ActivitySnapshotEvent {
+	return withTimestamp(NewActivitySnapshotEvent(event.RunID, "run_status", map[string]any{
+		"threadId": event.SessionID,
+		"turnId":   event.TurnID,
+		"runId":    event.RunID,
+		"agentId":  event.AgentID,
+		"status":   status,
+	}), now)
+}
+
+func withTimestamp[T interface {
+	SetTimestamp(timestamp int64)
+}](event T, timestamp int64) T {
+	event.SetTimestamp(timestamp)
+	return event
+}
+
+func externalTaskIDFromPayload(payload any) string {
+	values, ok := payload.(map[string]any)
+	if !ok || len(values) == 0 {
+		return ""
 	}
+	raw, ok := values["externalTaskId"]
+	if !ok {
+		return ""
+	}
+	text, _ := raw.(string)
+	return text
 }

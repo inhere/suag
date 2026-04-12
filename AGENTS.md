@@ -30,6 +30,7 @@
 - `internal/host/acpbridge` 已补齐 codex app-server 流式事件摘要沉淀，当前 external_tasks.metadata 可携带 protocol/stopReason/eventSummary/items 等桥接元数据
 - `internal/host/session` 与 `internal/host/acpbridge` 已打通 continue-turn 远端会话复用，后续 turn 可基于上一轮 external task 的 remoteSessionID 继续协作
 - `internal/host/session`、`internal/host/acpbridge`、`internal/host/agui` 已打通外部 agent 流式事件透传，当前 WS 可实时收到 external activity 与 assistant message delta/end
+- `internal/host/agui` 已按 Go SDK 风格收敛基础 Event interface，mapper 现返回 `[]Event`；外部流式事件也已补齐 `externalTaskId` 绑定
 - `internal/host/session` 已补齐 external_tasks 存储读写，ACP bridge 返回的外部任务快照会写入 run 关联记录
 - `internal/host/gateway` session 查询与 WS STATE_SNAPSHOT 已补齐 external_tasks 视图，前端首屏与重连可直接拿到外部任务状态
 

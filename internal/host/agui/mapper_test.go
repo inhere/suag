@@ -25,12 +25,12 @@ func TestMapGatewayEvent_RunQueuedToCustom(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("MapEvent() len = %d, want 2", len(got))
 	}
-	customEvent, ok := got[0].(CustomEvent)
+	customEvent, ok := got[0].(*CustomEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], CustomEvent{})
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], &CustomEvent{})
 	}
-	if customEvent.Type != EventTypeCustom {
-		t.Fatalf("MapEvent().Type = %q, want %q", customEvent.Type, EventTypeCustom)
+	if customEvent.Type() != EventTypeCustom {
+		t.Fatalf("MapEvent().Type = %q, want %q", customEvent.Type(), EventTypeCustom)
 	}
 	if customEvent.Name != "axon.run.queued" {
 		t.Fatalf("MapEvent().Name = %q, want %q", customEvent.Name, "axon.run.queued")
@@ -50,9 +50,9 @@ func TestMapGatewayEvent_RunQueuedToCustom(t *testing.T) {
 		t.Fatalf("MapEvent().Value.runId = %v, want %q", value["runId"], "run_001")
 	}
 
-	activityEvent, ok := got[1].(ActivitySnapshotEvent)
+	activityEvent, ok := got[1].(*ActivitySnapshotEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], ActivitySnapshotEvent{})
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], &ActivitySnapshotEvent{})
 	}
 	if activityEvent.ActivityType != "run_status" {
 		t.Fatalf("MapEvent().ActivityType = %q, want %q", activityEvent.ActivityType, "run_status")
@@ -105,8 +105,8 @@ func TestBuildStateSnapshot(t *testing.T) {
 	}
 
 	got := BuildStateSnapshot(sessionModel, events, externalTasks)
-	if got.Type != EventTypeStateSnapshot {
-		t.Fatalf("BuildStateSnapshot().Type = %q, want %q", got.Type, EventTypeStateSnapshot)
+	if got.Type() != EventTypeStateSnapshot {
+		t.Fatalf("BuildStateSnapshot().Type = %q, want %q", got.Type(), EventTypeStateSnapshot)
 	}
 
 	snapshot, ok := got.Snapshot.(map[string]any)
@@ -172,23 +172,23 @@ func TestMapEvent_RunStartedToStandardRunStarted(t *testing.T) {
 		t.Fatalf("MapEvent() len = %d, want 2", len(got))
 	}
 
-	runEvent, ok := got[0].(RunStartedEvent)
+	runEvent, ok := got[0].(*RunStartedEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], RunStartedEvent{})
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], &RunStartedEvent{})
 	}
-	if runEvent.Type != EventTypeRunStarted {
-		t.Fatalf("MapEvent().Type = %q, want %q", runEvent.Type, EventTypeRunStarted)
+	if runEvent.Type() != EventTypeRunStarted {
+		t.Fatalf("MapEvent().Type = %q, want %q", runEvent.Type(), EventTypeRunStarted)
 	}
-	if runEvent.ThreadID != "sess_001" {
-		t.Fatalf("MapEvent().ThreadID = %q, want %q", runEvent.ThreadID, "sess_001")
+	if runEvent.ThreadID() != "sess_001" {
+		t.Fatalf("MapEvent().ThreadID = %q, want %q", runEvent.ThreadID(), "sess_001")
 	}
-	if runEvent.RunID != "run_001" {
-		t.Fatalf("MapEvent().RunID = %q, want %q", runEvent.RunID, "run_001")
+	if runEvent.RunID() != "run_001" {
+		t.Fatalf("MapEvent().RunID = %q, want %q", runEvent.RunID(), "run_001")
 	}
 
-	activityEvent, ok := got[1].(ActivitySnapshotEvent)
+	activityEvent, ok := got[1].(*ActivitySnapshotEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], ActivitySnapshotEvent{})
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], &ActivitySnapshotEvent{})
 	}
 	if activityEvent.ActivityType != "run_status" {
 		t.Fatalf("MapEvent().ActivityType = %q, want %q", activityEvent.ActivityType, "run_status")
@@ -213,23 +213,23 @@ func TestMapEvent_RunFinishedToStandardRunFinished(t *testing.T) {
 		t.Fatalf("MapEvent() len = %d, want 5", len(got))
 	}
 
-	runEvent, ok := got[0].(RunFinishedEvent)
+	runEvent, ok := got[0].(*RunFinishedEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], RunFinishedEvent{})
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], &RunFinishedEvent{})
 	}
-	if runEvent.Type != EventTypeRunFinished {
-		t.Fatalf("MapEvent().Type = %q, want %q", runEvent.Type, EventTypeRunFinished)
+	if runEvent.Type() != EventTypeRunFinished {
+		t.Fatalf("MapEvent().Type = %q, want %q", runEvent.Type(), EventTypeRunFinished)
 	}
-	if runEvent.ThreadID != "sess_001" {
-		t.Fatalf("MapEvent().ThreadID = %q, want %q", runEvent.ThreadID, "sess_001")
+	if runEvent.ThreadID() != "sess_001" {
+		t.Fatalf("MapEvent().ThreadID = %q, want %q", runEvent.ThreadID(), "sess_001")
 	}
-	if runEvent.RunID != "run_001" {
-		t.Fatalf("MapEvent().RunID = %q, want %q", runEvent.RunID, "run_001")
+	if runEvent.RunID() != "run_001" {
+		t.Fatalf("MapEvent().RunID = %q, want %q", runEvent.RunID(), "run_001")
 	}
 
-	activityEvent, ok := got[1].(ActivitySnapshotEvent)
+	activityEvent, ok := got[1].(*ActivitySnapshotEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], ActivitySnapshotEvent{})
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], &ActivitySnapshotEvent{})
 	}
 	content, ok := activityEvent.Content.(map[string]any)
 	if !ok {
@@ -239,25 +239,25 @@ func TestMapEvent_RunFinishedToStandardRunFinished(t *testing.T) {
 		t.Fatalf("MapEvent().Content.status = %v, want %q", content["status"], "completed")
 	}
 
-	startEvent, ok := got[2].(TextMessageStartEvent)
+	startEvent, ok := got[2].(*TextMessageStartEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[2] type = %T, want %T", got[2], TextMessageStartEvent{})
+		t.Fatalf("MapEvent()[2] type = %T, want %T", got[2], &TextMessageStartEvent{})
 	}
-	if startEvent.Role != "assistant" {
-		t.Fatalf("MapEvent().Role = %q, want %q", startEvent.Role, "assistant")
+	if startEvent.Role == nil || *startEvent.Role != "assistant" {
+		t.Fatalf("MapEvent().Role = %v, want %q", startEvent.Role, "assistant")
 	}
 
-	contentEvent, ok := got[3].(TextMessageContentEvent)
+	contentEvent, ok := got[3].(*TextMessageContentEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[3] type = %T, want %T", got[3], TextMessageContentEvent{})
+		t.Fatalf("MapEvent()[3] type = %T, want %T", got[3], &TextMessageContentEvent{})
 	}
 	if contentEvent.Delta != "done" {
 		t.Fatalf("MapEvent().Delta = %q, want %q", contentEvent.Delta, "done")
 	}
 
-	endEvent, ok := got[4].(TextMessageEndEvent)
+	endEvent, ok := got[4].(*TextMessageEndEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[4] type = %T, want %T", got[4], TextMessageEndEvent{})
+		t.Fatalf("MapEvent()[4] type = %T, want %T", got[4], &TextMessageEndEvent{})
 	}
 	if endEvent.MessageID != startEvent.MessageID {
 		t.Fatalf("MapEvent().End.MessageID = %q, want %q", endEvent.MessageID, startEvent.MessageID)
@@ -282,23 +282,23 @@ func TestMapEvent_RunFailedToStandardRunError(t *testing.T) {
 		t.Fatalf("MapEvent() len = %d, want 2", len(got))
 	}
 
-	runEvent, ok := got[0].(RunErrorEvent)
+	runEvent, ok := got[0].(*RunErrorEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], RunErrorEvent{})
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], &RunErrorEvent{})
 	}
-	if runEvent.Type != EventTypeRunError {
-		t.Fatalf("MapEvent().Type = %q, want %q", runEvent.Type, EventTypeRunError)
+	if runEvent.Type() != EventTypeRunError {
+		t.Fatalf("MapEvent().Type = %q, want %q", runEvent.Type(), EventTypeRunError)
 	}
-	if runEvent.RunID != "run_001" {
-		t.Fatalf("MapEvent().RunID = %q, want %q", runEvent.RunID, "run_001")
+	if runEvent.RunID() != "run_001" {
+		t.Fatalf("MapEvent().RunID = %q, want %q", runEvent.RunID(), "run_001")
 	}
 	if runEvent.Message != "runner failed" {
 		t.Fatalf("MapEvent().Message = %q, want %q", runEvent.Message, "runner failed")
 	}
 
-	activityEvent, ok := got[1].(ActivitySnapshotEvent)
+	activityEvent, ok := got[1].(*ActivitySnapshotEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], ActivitySnapshotEvent{})
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], &ActivitySnapshotEvent{})
 	}
 	content, ok := activityEvent.Content.(map[string]any)
 	if !ok {
@@ -325,9 +325,9 @@ func TestMapEvent_RunQueuedIncludesActivitySnapshot(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("MapEvent() len = %d, want 2", len(got))
 	}
-	activityEvent, ok := got[1].(ActivitySnapshotEvent)
+	activityEvent, ok := got[1].(*ActivitySnapshotEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], ActivitySnapshotEvent{})
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], &ActivitySnapshotEvent{})
 	}
 	content, ok := activityEvent.Content.(map[string]any)
 	if !ok {
@@ -358,16 +358,16 @@ func TestMapEvent_RunExternalActivityMapsToCustomAndSnapshot(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("MapEvent() len = %d, want 2", len(got))
 	}
-	customEvent, ok := got[0].(CustomEvent)
+	customEvent, ok := got[0].(*CustomEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], CustomEvent{})
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], &CustomEvent{})
 	}
 	if customEvent.Name != "axon.run.external.activity" {
 		t.Fatalf("MapEvent()[0].Name = %q, want %q", customEvent.Name, "axon.run.external.activity")
 	}
-	activityEvent, ok := got[1].(ActivitySnapshotEvent)
+	activityEvent, ok := got[1].(*ActivitySnapshotEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], ActivitySnapshotEvent{})
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], &ActivitySnapshotEvent{})
 	}
 	if activityEvent.ActivityType != "external_activity" {
 		t.Fatalf("MapEvent()[1].ActivityType = %q, want %q", activityEvent.ActivityType, "external_activity")
@@ -393,12 +393,12 @@ func TestMapEvent_RunExternalMessageDeltaMapsToTextEvents(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("MapEvent() len = %d, want 2", len(got))
 	}
-	if _, ok := got[0].(TextMessageStartEvent); !ok {
-		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], TextMessageStartEvent{})
+	if _, ok := got[0].(*TextMessageStartEvent); !ok {
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], &TextMessageStartEvent{})
 	}
-	contentEvent, ok := got[1].(TextMessageContentEvent)
+	contentEvent, ok := got[1].(*TextMessageContentEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], TextMessageContentEvent{})
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], &TextMessageContentEvent{})
 	}
 	if contentEvent.Delta != "hello" {
 		t.Fatalf("MapEvent()[1].Delta = %q, want %q", contentEvent.Delta, "hello")
@@ -422,9 +422,9 @@ func TestMapEvent_RunExternalMessageEndMapsToTextEnd(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("MapEvent() len = %d, want 1", len(got))
 	}
-	endEvent, ok := got[0].(TextMessageEndEvent)
+	endEvent, ok := got[0].(*TextMessageEndEvent)
 	if !ok {
-		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], TextMessageEndEvent{})
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], &TextMessageEndEvent{})
 	}
 	if endEvent.MessageID != "turn_remote_001:item_001" {
 		t.Fatalf("MapEvent()[0].MessageID = %q, want %q", endEvent.MessageID, "turn_remote_001:item_001")

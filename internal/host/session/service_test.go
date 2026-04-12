@@ -213,6 +213,9 @@ func TestService_ContinueTurnPassesResumeExternalTasksFromPreviousTurn(t *testin
 	if resumeTasks[0].RemoteSessionID != "thread_001" {
 		t.Fatalf("runner request Context[resume_external_tasks][0].RemoteSessionID = %q, want %q", resumeTasks[0].RemoteSessionID, "thread_001")
 	}
+	if secondRunner.lastRequest.Context["external_task_id"] == nil {
+		t.Fatal("runner request Context[external_task_id] is nil")
+	}
 }
 
 func TestService_StartTurnPublishesFailedLifecycleWhenRunnerFails(t *testing.T) {
@@ -299,6 +302,9 @@ func TestService_StartTurnPublishesRuntimeEventsFromRunner(t *testing.T) {
 	}
 	if events[2].EventType != EventRunExternalActivity {
 		t.Fatalf("events[2].EventType = %q, want %q", events[2].EventType, EventRunExternalActivity)
+	}
+	if events[2].Payload["externalTaskId"] == "" {
+		t.Fatal("events[2].Payload[externalTaskId] is empty")
 	}
 	if events[3].EventType != EventRunExternalMessageDelta {
 		t.Fatalf("events[3].EventType = %q, want %q", events[3].EventType, EventRunExternalMessageDelta)

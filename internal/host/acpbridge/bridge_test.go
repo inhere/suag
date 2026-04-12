@@ -37,6 +37,9 @@ func TestRunnerAdapter_RunDispatchesTaskToBridge(t *testing.T) {
 		RunID:       "run_001",
 		AgentID:     "default",
 		Instruction: "implement feature x",
+		Context: map[string]any{
+			"external_task_id": "ext_001",
+		},
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -46,6 +49,9 @@ func TestRunnerAdapter_RunDispatchesTaskToBridge(t *testing.T) {
 	}
 	if result.ExternalTask == nil {
 		t.Fatal("Run().ExternalTask is nil")
+	}
+	if result.ExternalTask.ExternalTaskID != "ext_001" {
+		t.Fatalf("Run().ExternalTask.ExternalTaskID = %q, want %q", result.ExternalTask.ExternalTaskID, "ext_001")
 	}
 	if result.ExternalTask.Metadata["workspace"] != "workspace/demo" {
 		t.Fatalf("Run().ExternalTask.Metadata[workspace] = %v, want %q", result.ExternalTask.Metadata["workspace"], "workspace/demo")
@@ -111,6 +117,7 @@ func TestRunnerAdapter_RunPassesResumeRemoteSessionToBridge(t *testing.T) {
 		AgentID:     "default",
 		Instruction: "continue task",
 		Context: map[string]any{
+			"external_task_id": "ext_002",
 			"resume_external_tasks": []session.ExternalTask{
 				{
 					Adapter:         "claude-code",
@@ -132,6 +139,9 @@ func TestRunnerAdapter_RunPassesResumeRemoteSessionToBridge(t *testing.T) {
 	}
 	if fakeBridge.lastRequest.Context["resume_remote_task_id"] != "turn_remote_001" {
 		t.Fatalf("Dispatch().Context[resume_remote_task_id] = %v, want %q", fakeBridge.lastRequest.Context["resume_remote_task_id"], "turn_remote_001")
+	}
+	if fakeBridge.lastRequest.Context["external_task_id"] == nil {
+		t.Fatal("Dispatch().Context[external_task_id] is nil")
 	}
 }
 
