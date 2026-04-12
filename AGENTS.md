@@ -40,6 +40,7 @@
 - `internal/host/agui` 已为 `turns` 聚合视图补齐 `primaryRunId/currentRunId`、各类 run count 与 `latestMessagePreview`，前端 turn 概览无需回查 runs 列表即可决定展示
 - `internal/host/agui` 已为 STATE_SNAPSHOT 根层补齐 `snapshotVersion`、`snapshotSchema`、`generatedAt`，前端与后续多端接入可基于固定 schema 标识演进
 - `internal/host/agui` 已将 STATE_SNAPSHOT 的 schema/version 标识收敛为共享常量，避免实现、测试与后续接入端各自手写字符串产生漂移
+- `docs/usage/host-state-snapshot-v0.md` 已补齐当前 `STATE_SNAPSHOT v0` 的消费约定，前后端可基于同一份 schema 文档推进对接
 
 <!-- PROCESSING WORKS:END -->
 

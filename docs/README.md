@@ -59,6 +59,17 @@
 
 ---
 
+## 3.1 当前使用约定
+
+部分已经落地到代码的当前使用约定，放在 `docs/usage/` 下，供开发和客户端对接时直接参考，例如：
+
+- `docs/usage/host-state-snapshot-v0.md`
+  - 当前 Host `STATE_SNAPSHOT` 的 `v0` 消费约定
+- `docs/usage/agentcore-internal-integration.md`
+  - `internal/*` 接入 `pkg/agentcore` 的当前结论
+
+---
+
 ## 4. 草稿与想法池
 
 以下文档保留为想法沉淀和方向记录，不应直接视为当前实现任务单：
