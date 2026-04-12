@@ -4,6 +4,7 @@ import type {
   HostEvent,
   RunErrorEvent,
   RunStartedEvent,
+  SessionDetail,
   SessionSocketMessage,
   SessionStatus,
   StateSnapshotExternalActivity,
@@ -68,6 +69,33 @@ function appendSnapshotEvent(
   return {
     ...snapshot,
     events: [...snapshot.events, normalizedEvent],
+  };
+}
+
+function createBootstrapSnapshot(
+  detail: SessionDetail,
+  generatedAt: string,
+): StateSnapshotV0 {
+  return {
+    snapshotVersion: "v0",
+    snapshotSchema: "axon.host.state.v0",
+    generatedAt,
+    threadId: detail.sessionId,
+    sessionId: detail.sessionId,
+    title: detail.title,
+    status: detail.status,
+    turnId: detail.lastTurnId,
+    lastTurnId: detail.lastTurnId,
+    currentRunId: detail.externalTasks[0]?.runId ?? "",
+    currentAgentId: "",
+    latestEventType: "",
+    eventCount: 0,
+    turns: [],
+    runs: [],
+    externalTasks: detail.externalTasks,
+    externalActivities: [],
+    externalMessages: [],
+    events: [],
   };
 }
 
@@ -712,6 +740,39 @@ export function hydrateFromSnapshot(
       status: snapshot.status,
       updatedAt: snapshot.generatedAt,
       preview: selectSessionPreview(snapshot),
+    }),
+  };
+}
+
+export function mergeSessionDetail(
+  state: SessionViewState,
+  detail: SessionDetail,
+  observedAt: string,
+): SessionViewState {
+  const nextSnapshot = state.snapshot
+    ? {
+        ...state.snapshot,
+        sessionId: detail.sessionId,
+        threadId: detail.sessionId,
+        title: detail.title,
+        status: detail.status,
+        lastTurnId: detail.lastTurnId,
+        externalTasks: detail.externalTasks,
+        generatedAt: observedAt,
+      }
+    : createBootstrapSnapshot(detail, observedAt);
+
+  return {
+    ...state,
+    currentSessionId: detail.sessionId,
+    snapshot: nextSnapshot,
+    recentSessions: upsertRecentSession(state.recentSessions, {
+      sessionId: detail.sessionId,
+      title: detail.title,
+      status: detail.status,
+      updatedAt: observedAt,
+      preview:
+        state.recentSessions.find((item) => item.sessionId === detail.sessionId)?.preview ?? "",
     }),
   };
 }

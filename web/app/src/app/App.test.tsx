@@ -282,4 +282,47 @@ describe("App", () => {
     expect(await screen.findByText("restored session")).toBeInTheDocument();
     expect(screen.getByText("run_201")).toBeInTheDocument();
   });
+
+  it("applies HTTP session bootstrap details before the websocket snapshot arrives", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_003",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_003",
+          title: "stale title",
+          status: "OPEN",
+          updatedAt: "2026-04-12T12:30:00Z",
+          preview: "stale preview",
+        },
+      ],
+    });
+    getSessionMock.mockResolvedValueOnce({
+      sessionId: "sess_003",
+      title: "bootstrap title",
+      status: "WAITING",
+      lastTurnId: "turn_900",
+      externalTasks: [
+        {
+          externalTaskId: "ext_bootstrap",
+          sessionId: "sess_003",
+          turnId: "turn_900",
+          runId: "run_bootstrap",
+          adapter: "codex",
+          remoteAgentName: "bootstrap-codex",
+          remoteSessionId: "remote_bootstrap_session",
+          remoteTaskId: "remote_bootstrap_task",
+          state: "running",
+          lastHeartbeatAt: "2026-04-12T12:31:00Z",
+          resultSummary: "",
+          metadata: {},
+        },
+      ],
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("bootstrap title")).toBeInTheDocument();
+    expect(screen.getByText("bootstrap-codex")).toBeInTheDocument();
+  });
 });

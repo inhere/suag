@@ -24,6 +24,7 @@
 - `web/app/src/app/App.tsx`、`web/app/src/features/debug` 与 `web/app/src/features/session/session-store.ts` 已完成真实 Host 主链接线，当前前端可创建 session、启动 turn、接收 `STATE_SNAPSHOT` 与部分增量事件，并通过 debug drawer 查看原始事件
 - `web/app/src/features/session/session-store.ts` 已继续补齐增量事件归并，当前前端在不等待新 snapshot 的情况下，也可消费 `RUN_STARTED`、`RUN_ERROR`、`CUSTOM(axon.run.external.activity)` 与 `ACTIVITY_SNAPSHOT` 推进 run / turn / external activity 状态
 - `web/app/src/app/App.tsx` 已补齐最近会话与焦点的本地持久化，当前前端刷新后可恢复 recent sessions、current session 与 focused run，不再每次都从空白工作台开始
+- `web/app/src/app/App.tsx` 与 `web/app/src/features/session/session-store.ts` 已补齐 `getSession()` 的 HTTP bootstrap 合并，当前恢复出来的 session 在 WS 首包到来前也可先刷新标题、状态和 external task 基础明细
 - `web/app` 已完成第一阶段脚手架落地，当前 `pnpm + React + Vite + TypeScript + Vitest` 最小三栏工作台壳子、测试与构建链路已打通
 
 <!-- PROCESSING WORKS:END -->

@@ -3,6 +3,7 @@ import { AppShell } from "./app-shell";
 import type { ConversationMessage } from "../features/conversation/conversation-pane";
 import {
   emptySessionViewState,
+  mergeSessionDetail,
   type SessionFilter,
   type SessionListItem,
   type SessionViewState,
@@ -134,9 +135,19 @@ export function App() {
 
     let cancelled = false;
 
-    void getSession(viewState.currentSessionId).catch(() => {
-      // v0 keeps the shell usable even when the detail bootstrap fails temporarily.
-    });
+    void getSession(viewState.currentSessionId)
+      .then((detail) => {
+        if (cancelled) {
+          return;
+        }
+
+        setViewState((current) =>
+          mergeSessionDetail(current, detail, new Date().toISOString()),
+        );
+      })
+      .catch(() => {
+        // v0 keeps the shell usable even when the detail bootstrap fails temporarily.
+      });
 
     socketRef.current?.close();
     socketRef.current = connectSessionSocket({

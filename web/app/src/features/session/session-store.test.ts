@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { SessionSummary, StateSnapshotV0 } from "../../lib/host-types";
+import type { SessionDetail, SessionSummary, StateSnapshotV0 } from "../../lib/host-types";
 import {
   emptySessionViewState,
   hydrateFromSnapshot,
+  mergeSessionDetail,
   reduceSessionMessage,
   type SessionListItem,
   type SessionViewState,
@@ -81,6 +82,34 @@ function makeSessionItem(
     status: "RUNNING",
     updatedAt: "2026-04-12T09:00:00Z",
     preview: "正在整理页面结构",
+    ...overrides,
+  };
+}
+
+function makeSessionDetail(
+  overrides: Partial<SessionDetail> = {},
+): SessionDetail {
+  return {
+    sessionId: "sess_001",
+    title: "bootstrap title",
+    status: "WAITING",
+    lastTurnId: "turn_900",
+    externalTasks: [
+      {
+        externalTaskId: "ext_bootstrap",
+        sessionId: "sess_001",
+        turnId: "turn_900",
+        runId: "run_bootstrap",
+        adapter: "codex",
+        remoteAgentName: "bootstrap-codex",
+        remoteSessionId: "remote_bootstrap_session",
+        remoteTaskId: "remote_bootstrap_task",
+        state: "running",
+        lastHeartbeatAt: "2026-04-12T12:31:00Z",
+        resultSummary: "",
+        metadata: {},
+      },
+    ],
     ...overrides,
   };
 }
@@ -239,5 +268,34 @@ describe("session-store", () => {
     expect(next.snapshot?.runs[0]?.latestMessageText).toBe("permission denied");
     expect(next.snapshot?.turns[0]?.displayState).toBe("failed");
     expect(next.snapshot?.turns[0]?.failedRunIds).toEqual(["run_002"]);
+  });
+
+  it("merges HTTP session detail into the workbench before a websocket snapshot arrives", () => {
+    const next = mergeSessionDetail(
+      {
+        ...emptySessionViewState,
+        currentSessionId: "sess_001",
+        recentSessions: [
+          makeSessionItem({
+            title: "stale title",
+            status: "OPEN",
+            preview: "stale preview",
+          }),
+        ],
+      },
+      makeSessionDetail(),
+      "2026-04-12T12:32:00Z",
+    );
+
+    expect(next.recentSessions[0]).toEqual({
+      sessionId: "sess_001",
+      title: "bootstrap title",
+      status: "WAITING",
+      updatedAt: "2026-04-12T12:32:00Z",
+      preview: "stale preview",
+    });
+    expect(next.snapshot?.title).toBe("bootstrap title");
+    expect(next.snapshot?.externalTasks[0]?.remoteAgentName).toBe("bootstrap-codex");
+    expect(next.snapshot?.lastTurnId).toBe("turn_900");
   });
 });
