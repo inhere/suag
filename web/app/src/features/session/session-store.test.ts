@@ -168,4 +168,76 @@ describe("session-store", () => {
     expect(next.snapshot?.turns[0]?.latestMessagePreview).toBe("正在整理页面结构 done");
     expect(next.snapshot?.externalMessages[0]?.content).toBe("正在整理页面结构 done");
   });
+
+  it("adds a new active run when RUN_STARTED arrives without waiting for a new snapshot", () => {
+    const next = reduceSessionMessage(
+      hydrateFromSnapshot(emptySessionViewState, makeSnapshot()),
+      {
+        type: "RUN_STARTED",
+        runId: "run_003",
+        threadId: "sess_001",
+      },
+    );
+
+    expect(next.snapshot?.currentRunId).toBe("run_003");
+    expect(next.snapshot?.runs.map((run) => run.runId)).toEqual(["run_002", "run_003"]);
+    expect(next.snapshot?.turns[0]?.activeRunIds).toEqual(["run_002", "run_003"]);
+    expect(next.snapshot?.turns[0]?.activeRunCount).toBe(2);
+  });
+
+  it("tracks external activity and links the current run to external work from incrementals", () => {
+    const state = hydrateFromSnapshot(emptySessionViewState, makeSnapshot());
+    const withCustom = reduceSessionMessage(state, {
+      type: "CUSTOM",
+      name: "axon.run.external.activity",
+      value: {
+        threadId: "sess_001",
+        turnId: "turn_002",
+        runId: "run_002",
+        agentId: "default",
+        externalTaskId: "ext_002",
+        type: "run.external.activity",
+        payload: {
+          externalTaskId: "ext_002",
+          kind: "delegate",
+          title: "delegate to codex",
+        },
+      },
+    });
+    const next = reduceSessionMessage(withCustom, {
+      type: "ACTIVITY_SNAPSHOT",
+      messageId: "run_002:external",
+      activityType: "run_status",
+      content: {
+        threadId: "sess_001",
+        turnId: "turn_002",
+        runId: "run_002",
+        agentId: "default",
+        status: "external_running",
+        externalTaskId: "ext_002",
+      },
+      replace: true,
+    });
+
+    expect(next.snapshot?.runs[0]?.displayState).toBe("external_running");
+    expect(next.snapshot?.runs[0]?.externalTaskIds).toEqual(["ext_002"]);
+    expect(next.snapshot?.turns[0]?.hasExternalWork).toBe(true);
+    expect(next.snapshot?.externalActivities[0]?.externalTaskId).toBe("ext_002");
+  });
+
+  it("marks the current run as failed when RUN_ERROR arrives", () => {
+    const next = reduceSessionMessage(
+      hydrateFromSnapshot(emptySessionViewState, makeSnapshot()),
+      {
+        type: "RUN_ERROR",
+        runId: "run_002",
+        message: "permission denied",
+      },
+    );
+
+    expect(next.snapshot?.runs[0]?.displayState).toBe("failed");
+    expect(next.snapshot?.runs[0]?.latestMessageText).toBe("permission denied");
+    expect(next.snapshot?.turns[0]?.displayState).toBe("failed");
+    expect(next.snapshot?.turns[0]?.failedRunIds).toEqual(["run_002"]);
+  });
 });

@@ -1,7 +1,12 @@
 import type {
+  ActivitySnapshotEvent,
+  CustomEvent,
   HostEvent,
+  RunErrorEvent,
+  RunStartedEvent,
   SessionSocketMessage,
   SessionStatus,
+  StateSnapshotExternalActivity,
   StateSnapshotExternalMessage,
   StateSnapshotRun,
   StateSnapshotTurn,
@@ -96,6 +101,30 @@ function isRunFinishedMessage(
   return message.type === "RUN_FINISHED" && "runId" in message;
 }
 
+function isRunStartedMessage(
+  message: SessionSocketMessage,
+): message is RunStartedEvent {
+  return message.type === "RUN_STARTED" && "runId" in message && "threadId" in message;
+}
+
+function isRunErrorMessage(
+  message: SessionSocketMessage,
+): message is RunErrorEvent {
+  return message.type === "RUN_ERROR" && "runId" in message && "message" in message;
+}
+
+function isActivitySnapshotMessage(
+  message: SessionSocketMessage,
+): message is ActivitySnapshotEvent {
+  return message.type === "ACTIVITY_SNAPSHOT" && "messageId" in message && "content" in message;
+}
+
+function isCustomMessage(
+  message: SessionSocketMessage,
+): message is CustomEvent {
+  return message.type === "CUSTOM" && "name" in message;
+}
+
 function cloneRun(run: StateSnapshotRun): StateSnapshotRun {
   return {
     ...run,
@@ -118,6 +147,12 @@ function cloneExternalMessage(
   return { ...message };
 }
 
+function cloneExternalActivity(
+  activity: StateSnapshotExternalActivity,
+): StateSnapshotExternalActivity {
+  return { ...activity };
+}
+
 function getTargetRun(snapshot: StateSnapshotV0): StateSnapshotRun | null {
   if (!snapshot.runs.length) {
     return null;
@@ -132,6 +167,67 @@ function getTargetTurn(snapshot: StateSnapshotV0): StateSnapshotTurn | null {
   }
 
   return snapshot.turns.find((turn) => turn.turnId === snapshot.turnId) ?? snapshot.turns[0] ?? null;
+}
+
+function ensureRunExists(
+  runs: StateSnapshotRun[],
+  turn: StateSnapshotTurn,
+  snapshot: StateSnapshotV0,
+  runId: string,
+  agentId: string,
+): StateSnapshotRun {
+  const existing = runs.find((run) => run.runId === runId);
+  if (existing) {
+    return existing;
+  }
+
+  const nextRun: StateSnapshotRun = {
+    runId,
+    turnId: turn.turnId,
+    sessionId: snapshot.sessionId,
+    agentId,
+    displayState: "running",
+    latestEventType: "run.started",
+    latestMessageId: "",
+    latestMessageText: "",
+    summary: "",
+    externalTaskIds: [],
+    eventCount: 0,
+    updatedAt: snapshot.generatedAt,
+  };
+  runs.push(nextRun);
+  turn.runCount += 1;
+  return nextRun;
+}
+
+function markRunActive(turn: StateSnapshotTurn, runId: string) {
+  if (!turn.activeRunIds.includes(runId)) {
+    turn.activeRunIds.push(runId);
+  }
+  turn.completedRunIds = turn.completedRunIds.filter((id) => id !== runId);
+  turn.failedRunIds = turn.failedRunIds.filter((id) => id !== runId);
+  turn.activeRunCount = turn.activeRunIds.length;
+  turn.completedRunCount = turn.completedRunIds.length;
+  turn.failedRunCount = turn.failedRunIds.length;
+}
+
+function markRunFailed(turn: StateSnapshotTurn, runId: string) {
+  turn.activeRunIds = turn.activeRunIds.filter((id) => id !== runId);
+  if (!turn.failedRunIds.includes(runId)) {
+    turn.failedRunIds.push(runId);
+  }
+  turn.activeRunCount = turn.activeRunIds.length;
+  turn.failedRunCount = turn.failedRunIds.length;
+}
+
+function addExternalTaskID(run: StateSnapshotRun, externalTaskId: string) {
+  if (!externalTaskId) {
+    return;
+  }
+
+  if (!run.externalTaskIds.includes(externalTaskId)) {
+    run.externalTaskIds.push(externalTaskId);
+  }
 }
 
 function reduceTextMessageStart(
@@ -256,6 +352,51 @@ function reduceTextMessageEnd(
   );
 }
 
+function reduceRunStarted(
+  snapshot: StateSnapshotV0,
+  message: RunStartedEvent,
+): StateSnapshotV0 {
+  const runs = snapshot.runs.map(cloneRun);
+  const turns = snapshot.turns.map(cloneTurn);
+  const targetTurn = getTargetTurn({ ...snapshot, turns });
+  if (!targetTurn) {
+    return appendSnapshotEvent(snapshot, message);
+  }
+
+  const nextRun = ensureRunExists(
+    runs,
+    targetTurn,
+    snapshot,
+    message.runId,
+    snapshot.currentAgentId || "default",
+  );
+
+  nextRun.displayState = "running";
+  nextRun.latestEventType = "run.started";
+  nextRun.updatedAt = snapshot.generatedAt;
+  nextRun.eventCount += 1;
+
+  targetTurn.currentRunId = nextRun.runId;
+  targetTurn.latestRunId = nextRun.runId;
+  targetTurn.displayState = "running";
+  targetTurn.latestEventType = "run.started";
+  targetTurn.updatedAt = snapshot.generatedAt;
+  targetTurn.eventCount += 1;
+  markRunActive(targetTurn, nextRun.runId);
+
+  return appendSnapshotEvent(
+    {
+      ...snapshot,
+      currentRunId: nextRun.runId,
+      currentAgentId: nextRun.agentId,
+      latestEventType: "run.started",
+      runs,
+      turns,
+    },
+    message,
+  );
+}
+
 function reduceRunFinished(
   snapshot: StateSnapshotV0,
   message: Extract<SessionSocketMessage, { type: "RUN_FINISHED" }>,
@@ -299,10 +440,230 @@ function reduceRunFinished(
   );
 }
 
+function reduceRunError(
+  snapshot: StateSnapshotV0,
+  message: RunErrorEvent,
+): StateSnapshotV0 {
+  const runs = snapshot.runs.map(cloneRun);
+  const turns = snapshot.turns.map(cloneTurn);
+  const targetRun =
+    runs.find((run) => run.runId === message.runId) ?? getTargetRun({ ...snapshot, runs, turns });
+  const targetTurn = getTargetTurn({ ...snapshot, runs, turns });
+  if (!targetRun || !targetTurn) {
+    return appendSnapshotEvent(snapshot, message);
+  }
+
+  targetRun.displayState = "failed";
+  targetRun.latestEventType = "run.error";
+  targetRun.latestMessageText = message.message;
+  targetRun.updatedAt = snapshot.generatedAt;
+  targetRun.eventCount += 1;
+
+  targetTurn.displayState = "failed";
+  targetTurn.latestEventType = "run.error";
+  targetTurn.latestMessagePreview = message.message;
+  targetTurn.updatedAt = snapshot.generatedAt;
+  targetTurn.eventCount += 1;
+  markRunFailed(targetTurn, targetRun.runId);
+
+  return appendSnapshotEvent(
+    {
+      ...snapshot,
+      latestEventType: "run.error",
+      runs,
+      turns,
+    },
+    message,
+  );
+}
+
+function reduceCustomExternalActivity(
+  snapshot: StateSnapshotV0,
+  message: CustomEvent,
+): StateSnapshotV0 {
+  if (message.name !== "axon.run.external.activity" || !message.value) {
+    return appendSnapshotEvent(snapshot, message);
+  }
+
+  const runs = snapshot.runs.map(cloneRun);
+  const turns = snapshot.turns.map(cloneTurn);
+  const externalActivities = snapshot.externalActivities.map(cloneExternalActivity);
+  const runId = typeof message.value.runId === "string" ? message.value.runId : "";
+  const turnId = typeof message.value.turnId === "string" ? message.value.turnId : snapshot.turnId;
+  const agentId =
+    typeof message.value.agentId === "string" ? message.value.agentId : snapshot.currentAgentId;
+  const externalTaskId =
+    typeof message.value.externalTaskId === "string" ? message.value.externalTaskId : "";
+
+  const targetTurn =
+    turns.find((turn) => turn.turnId === turnId) ?? getTargetTurn({ ...snapshot, turns });
+  if (!targetTurn) {
+    return appendSnapshotEvent(snapshot, message);
+  }
+
+  const targetRun = ensureRunExists(
+    runs,
+    targetTurn,
+    snapshot,
+    runId || targetTurn.currentRunId,
+    agentId || "default",
+  );
+  targetRun.displayState = "external_running";
+  targetRun.latestEventType = "run.external.activity";
+  targetRun.updatedAt = snapshot.generatedAt;
+  targetRun.eventCount += 1;
+  addExternalTaskID(targetRun, externalTaskId);
+
+  targetTurn.displayState = "external_running";
+  targetTurn.latestEventType = "run.external.activity";
+  targetTurn.currentRunId = targetRun.runId;
+  targetTurn.latestRunId = targetRun.runId;
+  targetTurn.hasExternalWork = true;
+  targetTurn.updatedAt = snapshot.generatedAt;
+  targetTurn.eventCount += 1;
+  markRunActive(targetTurn, targetRun.runId);
+
+  const existingIndex = externalActivities.findIndex(
+    (activity) => activity.runId === targetRun.runId && activity.externalTaskId === externalTaskId,
+  );
+  const payload =
+    typeof message.value.payload === "object" && message.value.payload
+      ? (message.value.payload as Record<string, unknown>)
+      : {};
+  const nextActivity: StateSnapshotExternalActivity = {
+    externalTaskId,
+    sessionId: snapshot.sessionId,
+    turnId: targetTurn.turnId,
+    runId: targetRun.runId,
+    agentId: targetRun.agentId,
+    activityId:
+      typeof message.value.sequence === "number"
+        ? `seq_${message.value.sequence}`
+        : `${targetRun.runId}:external`,
+    kind: typeof payload.kind === "string" ? payload.kind : "external_activity",
+    status: "running",
+    title: typeof payload.title === "string" ? payload.title : "External activity",
+    detail:
+      typeof message.value.type === "string" ? message.value.type : "run.external.activity",
+    startedAt: snapshot.generatedAt,
+    updatedAt: snapshot.generatedAt,
+  };
+
+  if (existingIndex >= 0) {
+    externalActivities[existingIndex] = {
+      ...externalActivities[existingIndex],
+      ...nextActivity,
+    };
+  } else {
+    externalActivities.push(nextActivity);
+  }
+
+  return appendSnapshotEvent(
+    {
+      ...snapshot,
+      currentRunId: targetRun.runId,
+      latestEventType: "run.external.activity",
+      runs,
+      turns,
+      externalActivities,
+    },
+    message,
+  );
+}
+
+function reduceActivitySnapshot(
+  snapshot: StateSnapshotV0,
+  message: ActivitySnapshotEvent,
+): StateSnapshotV0 {
+  const runs = snapshot.runs.map(cloneRun);
+  const turns = snapshot.turns.map(cloneTurn);
+  const externalActivities = snapshot.externalActivities.map(cloneExternalActivity);
+  const runId = typeof message.content.runId === "string" ? message.content.runId : "";
+  const turnId = typeof message.content.turnId === "string" ? message.content.turnId : snapshot.turnId;
+  const agentId =
+    typeof message.content.agentId === "string" ? message.content.agentId : snapshot.currentAgentId;
+  const externalTaskId =
+    typeof message.content.externalTaskId === "string" ? message.content.externalTaskId : "";
+  const status = typeof message.content.status === "string" ? message.content.status : "running";
+
+  const targetTurn =
+    turns.find((turn) => turn.turnId === turnId) ?? getTargetTurn({ ...snapshot, turns });
+  if (!targetTurn) {
+    return appendSnapshotEvent(snapshot, message);
+  }
+
+  const targetRun = ensureRunExists(
+    runs,
+    targetTurn,
+    snapshot,
+    runId || targetTurn.currentRunId,
+    agentId || "default",
+  );
+  targetRun.displayState = status;
+  targetRun.latestEventType = "activity.snapshot";
+  targetRun.updatedAt = snapshot.generatedAt;
+  targetRun.eventCount += 1;
+  addExternalTaskID(targetRun, externalTaskId);
+
+  targetTurn.displayState = status;
+  targetTurn.latestEventType = "activity.snapshot";
+  targetTurn.currentRunId = targetRun.runId;
+  targetTurn.latestRunId = targetRun.runId;
+  targetTurn.updatedAt = snapshot.generatedAt;
+  targetTurn.eventCount += 1;
+  if (status === "external_running") {
+    targetTurn.hasExternalWork = true;
+  }
+  markRunActive(targetTurn, targetRun.runId);
+
+  const existingIndex = externalActivities.findIndex(
+    (activity) => activity.activityId === message.messageId,
+  );
+  const nextActivity: StateSnapshotExternalActivity = {
+    externalTaskId,
+    sessionId: snapshot.sessionId,
+    turnId: targetTurn.turnId,
+    runId: targetRun.runId,
+    agentId: targetRun.agentId,
+    activityId: message.messageId,
+    kind: message.activityType,
+    status,
+    title: message.activityType,
+    detail: status,
+    startedAt: snapshot.generatedAt,
+    updatedAt: snapshot.generatedAt,
+  };
+
+  if (existingIndex >= 0) {
+    externalActivities[existingIndex] = {
+      ...externalActivities[existingIndex],
+      ...nextActivity,
+    };
+  } else {
+    externalActivities.push(nextActivity);
+  }
+
+  return appendSnapshotEvent(
+    {
+      ...snapshot,
+      currentRunId: targetRun.runId,
+      latestEventType: "activity.snapshot",
+      runs,
+      turns,
+      externalActivities,
+    },
+    message,
+  );
+}
+
 function reduceIncrementalMessage(
   snapshot: StateSnapshotV0,
   message: SessionSocketMessage,
 ): StateSnapshotV0 {
+  if (isRunStartedMessage(message)) {
+    return reduceRunStarted(snapshot, message);
+  }
+
   if (isTextMessageStart(message)) {
     return reduceTextMessageStart(snapshot, message);
   }
@@ -317,6 +678,18 @@ function reduceIncrementalMessage(
 
   if (isRunFinishedMessage(message)) {
     return reduceRunFinished(snapshot, message);
+  }
+
+  if (isRunErrorMessage(message)) {
+    return reduceRunError(snapshot, message);
+  }
+
+  if (isCustomMessage(message)) {
+    return reduceCustomExternalActivity(snapshot, message);
+  }
+
+  if (isActivitySnapshotMessage(message)) {
+    return reduceActivitySnapshot(snapshot, message);
   }
 
   return appendSnapshotEvent(snapshot, message);
