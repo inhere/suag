@@ -323,6 +323,9 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("bootstrap title")).toBeInTheDocument();
-    expect(screen.getByText("bootstrap-codex")).toBeInTheDocument();
+    expect(screen.getAllByText("bootstrap-codex")).toHaveLength(3);
+    expect(screen.getByText("Turn turn_900")).toBeInTheDocument();
+    expect(screen.getByText("run_bootstrap")).toBeInTheDocument();
+    expect(screen.getAllByText("Waiting for websocket snapshot...").length).toBeGreaterThan(0);
   });
 });

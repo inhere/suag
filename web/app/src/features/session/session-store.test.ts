@@ -297,5 +297,40 @@ describe("session-store", () => {
     expect(next.snapshot?.title).toBe("bootstrap title");
     expect(next.snapshot?.externalTasks[0]?.remoteAgentName).toBe("bootstrap-codex");
     expect(next.snapshot?.lastTurnId).toBe("turn_900");
+    expect(next.snapshot?.turns[0]).toEqual({
+      turnId: "turn_900",
+      sessionId: "sess_001",
+      primaryRunId: "run_bootstrap",
+      currentRunId: "run_bootstrap",
+      latestRunId: "run_bootstrap",
+      latestAgentId: "bootstrap-codex",
+      displayState: "waiting",
+      latestEventType: "session.detail.bootstrap",
+      latestMessagePreview: "Waiting for websocket snapshot...",
+      eventCount: 0,
+      runCount: 1,
+      activeRunCount: 1,
+      completedRunCount: 0,
+      failedRunCount: 0,
+      activeRunIds: ["run_bootstrap"],
+      completedRunIds: [],
+      failedRunIds: [],
+      hasExternalWork: true,
+      updatedAt: "2026-04-12T12:32:00Z",
+    });
+    expect(next.snapshot?.runs[0]).toEqual({
+      runId: "run_bootstrap",
+      turnId: "turn_900",
+      sessionId: "sess_001",
+      agentId: "bootstrap-codex",
+      displayState: "external_running",
+      latestEventType: "session.detail.bootstrap",
+      latestMessageId: "",
+      latestMessageText: "Waiting for websocket snapshot...",
+      summary: "",
+      externalTaskIds: ["ext_bootstrap"],
+      eventCount: 0,
+      updatedAt: "2026-04-12T12:32:00Z",
+    });
   });
 });

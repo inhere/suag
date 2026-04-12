@@ -76,6 +76,11 @@ function createBootstrapSnapshot(
   detail: SessionDetail,
   generatedAt: string,
 ): StateSnapshotV0 {
+  const bootstrapTask = detail.externalTasks[0] ?? null;
+  const bootstrapRunId = bootstrapTask?.runId ?? "";
+  const bootstrapAgentID = bootstrapTask?.remoteAgentName ?? "";
+  const bootstrapTurnID = detail.lastTurnId;
+
   return {
     snapshotVersion: "v0",
     snapshotSchema: "axon.host.state.v0",
@@ -84,14 +89,57 @@ function createBootstrapSnapshot(
     sessionId: detail.sessionId,
     title: detail.title,
     status: detail.status,
-    turnId: detail.lastTurnId,
-    lastTurnId: detail.lastTurnId,
-    currentRunId: detail.externalTasks[0]?.runId ?? "",
-    currentAgentId: "",
+    turnId: bootstrapTurnID,
+    lastTurnId: bootstrapTurnID,
+    currentRunId: bootstrapRunId,
+    currentAgentId: bootstrapAgentID,
     latestEventType: "",
     eventCount: 0,
-    turns: [],
-    runs: [],
+    // Build a minimal turn/run scaffold from HTTP detail so the workbench
+    // does not stay blank before the websocket sends the first snapshot.
+    turns: bootstrapTurnID
+      ? [
+          {
+            turnId: bootstrapTurnID,
+            sessionId: detail.sessionId,
+            primaryRunId: bootstrapRunId,
+            currentRunId: bootstrapRunId,
+            latestRunId: bootstrapRunId,
+            latestAgentId: bootstrapAgentID,
+            displayState: detail.status.toLowerCase(),
+            latestEventType: "session.detail.bootstrap",
+            latestMessagePreview: "Waiting for websocket snapshot...",
+            eventCount: 0,
+            runCount: bootstrapRunId ? 1 : 0,
+            activeRunCount: bootstrapRunId ? 1 : 0,
+            completedRunCount: 0,
+            failedRunCount: 0,
+            activeRunIds: bootstrapRunId ? [bootstrapRunId] : [],
+            completedRunIds: [],
+            failedRunIds: [],
+            hasExternalWork: detail.externalTasks.length > 0,
+            updatedAt: generatedAt,
+          },
+        ]
+      : [],
+    runs: bootstrapRunId
+      ? [
+          {
+            runId: bootstrapRunId,
+            turnId: bootstrapTurnID,
+            sessionId: detail.sessionId,
+            agentId: bootstrapAgentID,
+            displayState: detail.externalTasks.length ? "external_running" : detail.status.toLowerCase(),
+            latestEventType: "session.detail.bootstrap",
+            latestMessageId: "",
+            latestMessageText: "Waiting for websocket snapshot...",
+            summary: "",
+            externalTaskIds: bootstrapTask ? [bootstrapTask.externalTaskId] : [],
+            eventCount: 0,
+            updatedAt: generatedAt,
+          },
+        ]
+      : [],
     externalTasks: detail.externalTasks,
     externalActivities: [],
     externalMessages: [],
@@ -756,9 +804,21 @@ export function mergeSessionDetail(
         threadId: detail.sessionId,
         title: detail.title,
         status: detail.status,
+        turnId: state.snapshot.turnId || detail.lastTurnId,
         lastTurnId: detail.lastTurnId,
+        currentRunId: state.snapshot.currentRunId || detail.externalTasks[0]?.runId || "",
+        currentAgentId:
+          state.snapshot.currentAgentId || detail.externalTasks[0]?.remoteAgentName || "",
         externalTasks: detail.externalTasks,
         generatedAt: observedAt,
+        turns:
+          state.snapshot.turns.length > 0
+            ? state.snapshot.turns
+            : createBootstrapSnapshot(detail, observedAt).turns,
+        runs:
+          state.snapshot.runs.length > 0
+            ? state.snapshot.runs
+            : createBootstrapSnapshot(detail, observedAt).runs,
       }
     : createBootstrapSnapshot(detail, observedAt);
 
