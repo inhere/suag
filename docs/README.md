@@ -67,6 +67,10 @@
   - 当前 Host `STATE_SNAPSHOT` 的 `v0` 消费约定
 - `docs/usage/agentcore-internal-integration.md`
   - `internal/*` 接入 `pkg/agentcore` 的当前结论
+- `docs/superpowers/specs/2026-04-12-axon-web-foundation-design.md`
+  - Axon Web 基础工作台第一阶段设计
+- `docs/superpowers/plans/2026-04-12-axon-web-foundation-implementation-plan.md`
+  - Axon Web 基础工作台第一阶段实现计划
 
 ---
 

@@ -4,6 +4,7 @@
 > 日期：2026-04-12
 > 范围：Axon `v0` Web 客户端第一阶段基础工作台
 > 相关文档：`docs/v0-self-host-design.md`、`docs/usage/host-state-snapshot-v0.md`
+> 实现计划：`docs/superpowers/plans/2026-04-12-axon-web-foundation-implementation-plan.md`
 
 ---
 
