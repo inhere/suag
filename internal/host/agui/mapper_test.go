@@ -85,6 +85,58 @@ func TestBuildStateSnapshot(t *testing.T) {
 			AgentID:   "default",
 			Sequence:  3,
 		},
+		{
+			Type:      session.EventRunExternalActivity,
+			SessionID: "sess_001",
+			TurnID:    "turn_002",
+			RunID:     "run_002",
+			AgentID:   "default",
+			Sequence:  4,
+			Payload: map[string]any{
+				"externalTaskId": "ext_001",
+				"kind":           "item_started",
+				"itemId":         "item_001",
+			},
+		},
+		{
+			Type:      session.EventRunExternalMessageDelta,
+			SessionID: "sess_001",
+			TurnID:    "turn_002",
+			RunID:     "run_002",
+			AgentID:   "default",
+			Sequence:  5,
+			Payload: map[string]any{
+				"externalTaskId": "ext_001",
+				"messageId":      "msg_001",
+				"delta":          "hello ",
+				"isFirstChunk":   true,
+			},
+		},
+		{
+			Type:      session.EventRunExternalMessageDelta,
+			SessionID: "sess_001",
+			TurnID:    "turn_002",
+			RunID:     "run_002",
+			AgentID:   "default",
+			Sequence:  6,
+			Payload: map[string]any{
+				"externalTaskId": "ext_001",
+				"messageId":      "msg_001",
+				"delta":          "world",
+			},
+		},
+		{
+			Type:      session.EventRunExternalMessageEnd,
+			SessionID: "sess_001",
+			TurnID:    "turn_002",
+			RunID:     "run_002",
+			AgentID:   "default",
+			Sequence:  7,
+			Payload: map[string]any{
+				"externalTaskId": "ext_001",
+				"messageId":      "msg_001",
+			},
+		},
 	}
 	externalTasks := []session.ExternalTask{
 		{
@@ -125,11 +177,11 @@ func TestBuildStateSnapshot(t *testing.T) {
 	if snapshot["currentAgentId"] != "default" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.currentAgentId = %v, want %q", snapshot["currentAgentId"], "default")
 	}
-	if snapshot["latestEventType"] != "run.started" {
-		t.Fatalf("BuildStateSnapshot().Snapshot.latestEventType = %v, want %q", snapshot["latestEventType"], "run.started")
+	if snapshot["latestEventType"] != session.EventRunExternalMessageEnd {
+		t.Fatalf("BuildStateSnapshot().Snapshot.latestEventType = %v, want %q", snapshot["latestEventType"], session.EventRunExternalMessageEnd)
 	}
-	if snapshot["eventCount"] != 2 {
-		t.Fatalf("BuildStateSnapshot().Snapshot.eventCount = %v, want %d", snapshot["eventCount"], 2)
+	if snapshot["eventCount"] != 6 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.eventCount = %v, want %d", snapshot["eventCount"], 6)
 	}
 	rawExternalTasks, ok := snapshot["externalTasks"].([]map[string]any)
 	if !ok {
@@ -149,11 +201,48 @@ func TestBuildStateSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatalf("BuildStateSnapshot().Snapshot.events type = %T, want []map[string]any", snapshot["events"])
 	}
-	if len(rawEvents) != 2 {
-		t.Fatalf("BuildStateSnapshot().Snapshot.events len = %d, want 2", len(rawEvents))
+	if len(rawEvents) != 6 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.events len = %d, want 6", len(rawEvents))
 	}
-	if rawEvents[1]["type"] != "run.started" {
-		t.Fatalf("BuildStateSnapshot().Snapshot.events[1].type = %v, want %q", rawEvents[1]["type"], "run.started")
+	if rawEvents[5]["type"] != session.EventRunExternalMessageEnd {
+		t.Fatalf("BuildStateSnapshot().Snapshot.events[5].type = %v, want %q", rawEvents[5]["type"], session.EventRunExternalMessageEnd)
+	}
+
+	rawExternalActivities, ok := snapshot["externalActivities"].([]map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalActivities type = %T, want []map[string]any", snapshot["externalActivities"])
+	}
+	if len(rawExternalActivities) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalActivities len = %d, want 1", len(rawExternalActivities))
+	}
+	if rawExternalActivities[0]["externalTaskId"] != "ext_001" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalActivities[0].externalTaskId = %v, want %q", rawExternalActivities[0]["externalTaskId"], "ext_001")
+	}
+	if rawExternalActivities[0]["lastKind"] != "item_started" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalActivities[0].lastKind = %v, want %q", rawExternalActivities[0]["lastKind"], "item_started")
+	}
+
+	rawExternalMessages, ok := snapshot["externalMessages"].([]map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalMessages type = %T, want []map[string]any", snapshot["externalMessages"])
+	}
+	if len(rawExternalMessages) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalMessages len = %d, want 1", len(rawExternalMessages))
+	}
+	if rawExternalMessages[0]["externalTaskId"] != "ext_001" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalMessages[0].externalTaskId = %v, want %q", rawExternalMessages[0]["externalTaskId"], "ext_001")
+	}
+	if rawExternalMessages[0]["messageId"] != "msg_001" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalMessages[0].messageId = %v, want %q", rawExternalMessages[0]["messageId"], "msg_001")
+	}
+	if rawExternalMessages[0]["content"] != "hello world" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalMessages[0].content = %v, want %q", rawExternalMessages[0]["content"], "hello world")
+	}
+	if rawExternalMessages[0]["started"] != true {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalMessages[0].started = %v, want true", rawExternalMessages[0]["started"])
+	}
+	if rawExternalMessages[0]["completed"] != true {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalMessages[0].completed = %v, want true", rawExternalMessages[0]["completed"])
 	}
 }
 

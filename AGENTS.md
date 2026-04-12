@@ -33,6 +33,7 @@
 - `internal/host/agui` 已按 Go SDK 风格收敛基础 Event interface，mapper 现返回 `[]Event`；外部流式事件也已补齐 `externalTaskId` 绑定
 - `internal/host/session` 已补齐 external_tasks 存储读写，ACP bridge 返回的外部任务快照会写入 run 关联记录
 - `internal/host/gateway` session 查询与 WS STATE_SNAPSHOT 已补齐 external_tasks 视图，前端首屏与重连可直接拿到外部任务状态
+- `internal/host/agui` 已为 STATE_SNAPSHOT 增加 `externalActivities` / `externalMessages` 聚合视图，前端重连恢复无需自行重放外部流式事件
 
 <!-- PROCESSING WORKS:END -->
 

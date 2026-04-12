@@ -281,6 +281,91 @@ func TestServer_SessionSnapshotIncludesExternalTaskMetadata(t *testing.T) {
 	}
 }
 
+func TestServer_SessionSnapshotAggregatesExternalStreamState(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	svc := session.NewService(store, bus, &emittingGatewayRunner{}, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 12, 15, 0, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "snapshot external stream state",
+	})
+	postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "stream runtime events",
+		"initiator_type": "user",
+	})
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial() error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+
+	rawSnapshot, ok := snapshot["snapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot type = %T, want map[string]any", snapshot["snapshot"])
+	}
+
+	rawExternalActivities, ok := rawSnapshot["externalActivities"].([]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.externalActivities type = %T, want []any", rawSnapshot["externalActivities"])
+	}
+	if len(rawExternalActivities) != 1 {
+		t.Fatalf("snapshot.snapshot.externalActivities len = %d, want 1", len(rawExternalActivities))
+	}
+	activity, ok := rawExternalActivities[0].(map[string]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.externalActivities[0] type = %T, want map[string]any", rawExternalActivities[0])
+	}
+	if activity["lastKind"] != "item_started" {
+		t.Fatalf("snapshot.snapshot.externalActivities[0].lastKind = %v, want %q", activity["lastKind"], "item_started")
+	}
+
+	rawExternalMessages, ok := rawSnapshot["externalMessages"].([]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.externalMessages type = %T, want []any", rawSnapshot["externalMessages"])
+	}
+	if len(rawExternalMessages) != 1 {
+		t.Fatalf("snapshot.snapshot.externalMessages len = %d, want 1", len(rawExternalMessages))
+	}
+	message, ok := rawExternalMessages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.externalMessages[0] type = %T, want map[string]any", rawExternalMessages[0])
+	}
+	if message["content"] != "thinking..." {
+		t.Fatalf("snapshot.snapshot.externalMessages[0].content = %v, want %q", message["content"], "thinking...")
+	}
+	if message["started"] != true {
+		t.Fatalf("snapshot.snapshot.externalMessages[0].started = %v, want true", message["started"])
+	}
+	if message["completed"] != true {
+		t.Fatalf("snapshot.snapshot.externalMessages[0].completed = %v, want true", message["completed"])
+	}
+}
+
 type gatewayMetadataBridge struct{}
 
 func (b *gatewayMetadataBridge) Dispatch(_ context.Context, _ acpbridge.DispatchRequest) (acpbridge.DispatchResult, error) {

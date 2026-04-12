@@ -147,6 +147,10 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 
 	mappedEvents := make([]map[string]any, 0, len(events))
 	mappedExternalTasks := make([]map[string]any, 0, len(externalTasks))
+	mappedExternalActivities := make([]map[string]any, 0)
+	mappedExternalMessages := make([]map[string]any, 0)
+	externalActivityIndex := make(map[string]int)
+	externalMessageIndex := make(map[string]int)
 	currentRunID := ""
 	currentAgentID := ""
 	latestEventType := ""
@@ -164,6 +168,46 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 			"sequence":  event.Sequence,
 			"payload":   event.Payload,
 		})
+
+		switch event.Type {
+		case session.EventRunExternalActivity:
+			key := externalActivityKey(event)
+			idx, ok := externalActivityIndex[key]
+			if !ok {
+				mappedExternalActivities = append(mappedExternalActivities, map[string]any{
+					"externalTaskId": externalTaskIDFromPayload(event.Payload),
+					"sessionId":      event.SessionID,
+					"turnId":         event.TurnID,
+					"runId":          event.RunID,
+					"agentId":        event.AgentID,
+				})
+				idx = len(mappedExternalActivities) - 1
+				externalActivityIndex[key] = idx
+			}
+			mergeExternalActivity(mappedExternalActivities[idx], event)
+		case session.EventRunExternalMessageDelta, session.EventRunExternalMessageEnd:
+			key := externalMessageKey(event)
+			if key == "" {
+				continue
+			}
+			idx, ok := externalMessageIndex[key]
+			if !ok {
+				mappedExternalMessages = append(mappedExternalMessages, map[string]any{
+					"externalTaskId": externalTaskIDFromPayload(event.Payload),
+					"messageId":      payloadString(event.Payload, "messageId"),
+					"sessionId":      event.SessionID,
+					"turnId":         event.TurnID,
+					"runId":          event.RunID,
+					"agentId":        event.AgentID,
+					"content":        "",
+					"started":        false,
+					"completed":      false,
+				})
+				idx = len(mappedExternalMessages) - 1
+				externalMessageIndex[key] = idx
+			}
+			mergeExternalMessage(mappedExternalMessages[idx], event)
+		}
 	}
 	for _, task := range externalTasks {
 		mappedExternalTasks = append(mappedExternalTasks, map[string]any{
@@ -183,18 +227,20 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 	}
 
 	return *withTimestamp(NewStateSnapshotEvent(map[string]any{
-		"threadId":        sessionModel.SessionID,
-		"sessionId":       sessionModel.SessionID,
-		"title":           sessionModel.Title,
-		"status":          string(sessionModel.Status),
-		"turnId":          sessionModel.LastTurnID,
-		"lastTurnId":      sessionModel.LastTurnID,
-		"currentRunId":    currentRunID,
-		"currentAgentId":  currentAgentID,
-		"latestEventType": latestEventType,
-		"eventCount":      len(mappedEvents),
-		"externalTasks":   mappedExternalTasks,
-		"events":          mappedEvents,
+		"threadId":           sessionModel.SessionID,
+		"sessionId":          sessionModel.SessionID,
+		"title":              sessionModel.Title,
+		"status":             string(sessionModel.Status),
+		"turnId":             sessionModel.LastTurnID,
+		"lastTurnId":         sessionModel.LastTurnID,
+		"currentRunId":       currentRunID,
+		"currentAgentId":     currentAgentID,
+		"latestEventType":    latestEventType,
+		"eventCount":         len(mappedEvents),
+		"externalTasks":      mappedExternalTasks,
+		"externalActivities": mappedExternalActivities,
+		"externalMessages":   mappedExternalMessages,
+		"events":             mappedEvents,
 	}), now)
 }
 
@@ -225,5 +271,75 @@ func externalTaskIDFromPayload(payload any) string {
 		return ""
 	}
 	text, _ := raw.(string)
+	return text
+}
+
+func externalActivityKey(event HostEvent) string {
+	externalTaskID := externalTaskIDFromPayload(event.Payload)
+	if externalTaskID != "" {
+		return externalTaskID
+	}
+	if event.RunID != "" {
+		return event.RunID
+	}
+	return event.SessionID + ":" + event.Type
+}
+
+func externalMessageKey(event HostEvent) string {
+	messageID := payloadString(event.Payload, "messageId")
+	if messageID == "" {
+		return ""
+	}
+	externalTaskID := externalTaskIDFromPayload(event.Payload)
+	if externalTaskID == "" {
+		return messageID
+	}
+	return externalTaskID + ":" + messageID
+}
+
+func mergeExternalActivity(target map[string]any, event HostEvent) {
+	target["lastSequence"] = event.Sequence
+	target["updatedAt"] = event.Sequence
+	target["lastEventType"] = event.Type
+	target["payload"] = event.Payload
+
+	values, ok := event.Payload.(map[string]any)
+	if !ok {
+		return
+	}
+	if kind, _ := values["kind"].(string); kind != "" {
+		target["lastKind"] = kind
+	}
+	target["lastPayload"] = values
+}
+
+func mergeExternalMessage(target map[string]any, event HostEvent) {
+	target["lastSequence"] = event.Sequence
+	target["updatedAt"] = event.Sequence
+	target["lastEventType"] = event.Type
+
+	values, ok := event.Payload.(map[string]any)
+	if !ok {
+		return
+	}
+
+	if isFirstChunk, _ := values["isFirstChunk"].(bool); isFirstChunk {
+		target["started"] = true
+	}
+	if event.Type == session.EventRunExternalMessageEnd {
+		target["completed"] = true
+	}
+	if delta, _ := values["delta"].(string); delta != "" {
+		content, _ := target["content"].(string)
+		target["content"] = content + delta
+	}
+}
+
+func payloadString(payload any, key string) string {
+	values, ok := payload.(map[string]any)
+	if !ok || len(values) == 0 {
+		return ""
+	}
+	text, _ := values[key].(string)
 	return text
 }
