@@ -41,6 +41,7 @@ func (r *RunnerAdapter) Run(ctx context.Context, in session.RuntimeRequest) (ses
 		Instruction: in.Instruction,
 		Workspace:   r.workspace,
 		Context:     r.buildDispatchContext(in.Context),
+		Emit:        r.buildDispatchEmitter(in.Emit),
 	})
 	if err != nil {
 		return session.RuntimeResult{}, err
@@ -83,6 +84,20 @@ func mergeMetadata(dst map[string]any, src map[string]any) map[string]any {
 	return dst
 }
 
+func (r *RunnerAdapter) buildDispatchEmitter(emit func(event session.RuntimeEvent) error) func(event DispatchEvent) error {
+	if emit == nil {
+		return nil
+	}
+
+	return func(event DispatchEvent) error {
+		runtimeEvent, ok := mapDispatchEvent(event)
+		if !ok {
+			return nil
+		}
+		return emit(runtimeEvent)
+	}
+}
+
 func (r *RunnerAdapter) buildDispatchContext(src map[string]any) map[string]any {
 	out := mergeMetadata(map[string]any{}, src)
 
@@ -109,4 +124,26 @@ func (r *RunnerAdapter) buildDispatchContext(src map[string]any) map[string]any 
 		out["resume_external_task_id"] = task.ExternalTaskID
 	}
 	return out
+}
+
+func mapDispatchEvent(event DispatchEvent) (session.RuntimeEvent, bool) {
+	switch strings.TrimSpace(event.Type) {
+	case "external.activity":
+		return session.RuntimeEvent{
+			EventType: session.EventRunExternalActivity,
+			Payload:   event.Payload,
+		}, true
+	case "external.message.delta":
+		return session.RuntimeEvent{
+			EventType: session.EventRunExternalMessageDelta,
+			Payload:   event.Payload,
+		}, true
+	case "external.message.end":
+		return session.RuntimeEvent{
+			EventType: session.EventRunExternalMessageEnd,
+			Payload:   event.Payload,
+		}, true
+	default:
+		return session.RuntimeEvent{}, false
+	}
 }

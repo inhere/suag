@@ -337,3 +337,96 @@ func TestMapEvent_RunQueuedIncludesActivitySnapshot(t *testing.T) {
 		t.Fatalf("MapEvent().Content.status = %v, want %q", content["status"], "queued")
 	}
 }
+
+func TestMapEvent_RunExternalActivityMapsToCustomAndSnapshot(t *testing.T) {
+	t.Parallel()
+
+	event := HostEvent{
+		Type:      "run.external.activity",
+		SessionID: "sess_001",
+		TurnID:    "turn_001",
+		RunID:     "run_001",
+		AgentID:   "default",
+		Sequence:  4,
+		Payload: map[string]any{
+			"kind":   "item_started",
+			"itemId": "item_001",
+		},
+	}
+
+	got := MapEvent(event)
+	if len(got) != 2 {
+		t.Fatalf("MapEvent() len = %d, want 2", len(got))
+	}
+	customEvent, ok := got[0].(CustomEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], CustomEvent{})
+	}
+	if customEvent.Name != "axon.run.external.activity" {
+		t.Fatalf("MapEvent()[0].Name = %q, want %q", customEvent.Name, "axon.run.external.activity")
+	}
+	activityEvent, ok := got[1].(ActivitySnapshotEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], ActivitySnapshotEvent{})
+	}
+	if activityEvent.ActivityType != "external_activity" {
+		t.Fatalf("MapEvent()[1].ActivityType = %q, want %q", activityEvent.ActivityType, "external_activity")
+	}
+}
+
+func TestMapEvent_RunExternalMessageDeltaMapsToTextEvents(t *testing.T) {
+	t.Parallel()
+
+	event := HostEvent{
+		Type:      "run.external.message.delta",
+		SessionID: "sess_001",
+		TurnID:    "turn_001",
+		RunID:     "run_001",
+		Payload: map[string]any{
+			"messageId":    "turn_remote_001:item_001",
+			"delta":        "hello",
+			"isFirstChunk": true,
+		},
+	}
+
+	got := MapEvent(event)
+	if len(got) != 2 {
+		t.Fatalf("MapEvent() len = %d, want 2", len(got))
+	}
+	if _, ok := got[0].(TextMessageStartEvent); !ok {
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], TextMessageStartEvent{})
+	}
+	contentEvent, ok := got[1].(TextMessageContentEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], TextMessageContentEvent{})
+	}
+	if contentEvent.Delta != "hello" {
+		t.Fatalf("MapEvent()[1].Delta = %q, want %q", contentEvent.Delta, "hello")
+	}
+}
+
+func TestMapEvent_RunExternalMessageEndMapsToTextEnd(t *testing.T) {
+	t.Parallel()
+
+	event := HostEvent{
+		Type:      "run.external.message.end",
+		SessionID: "sess_001",
+		TurnID:    "turn_001",
+		RunID:     "run_001",
+		Payload: map[string]any{
+			"messageId": "turn_remote_001:item_001",
+		},
+	}
+
+	got := MapEvent(event)
+	if len(got) != 1 {
+		t.Fatalf("MapEvent() len = %d, want 1", len(got))
+	}
+	endEvent, ok := got[0].(TextMessageEndEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], TextMessageEndEvent{})
+	}
+	if endEvent.MessageID != "turn_remote_001:item_001" {
+		t.Fatalf("MapEvent()[0].MessageID = %q, want %q", endEvent.MessageID, "turn_remote_001:item_001")
+	}
+}

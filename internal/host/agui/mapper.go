@@ -50,6 +50,42 @@ func MapEvent(event HostEvent) []any {
 			},
 			buildRunActivitySnapshot(now, event, "failed"),
 		}
+	case session.EventRunExternalActivity:
+		return []any{
+			CustomEvent{
+				Type:      EventTypeCustom,
+				Timestamp: now,
+				Name:      "axon.run.external.activity",
+				Value: map[string]any{
+					"threadId":  event.SessionID,
+					"sessionId": event.SessionID,
+					"turnId":    event.TurnID,
+					"runId":     event.RunID,
+					"agentId":   event.AgentID,
+					"sequence":  event.Sequence,
+					"type":      event.Type,
+					"payload":   event.Payload,
+				},
+			},
+			ActivitySnapshotEvent{
+				Type:         EventTypeActivitySnapshot,
+				Timestamp:    now,
+				MessageID:    event.RunID + ":external",
+				ActivityType: "external_activity",
+				Content: map[string]any{
+					"threadId": event.SessionID,
+					"turnId":   event.TurnID,
+					"runId":    event.RunID,
+					"agentId":  event.AgentID,
+					"status":   "running",
+					"payload":  event.Payload,
+				},
+			},
+		}
+	case session.EventRunExternalMessageDelta:
+		return buildExternalMessageDeltaEvents(now, event)
+	case session.EventRunExternalMessageEnd:
+		return buildExternalMessageEndEvents(now, event)
 	}
 
 	name := "axon.event"
@@ -74,6 +110,59 @@ func MapEvent(event HostEvent) []any {
 			},
 		},
 		buildRunActivitySnapshot(now, event, "queued"),
+	}
+}
+
+func buildExternalMessageDeltaEvents(now int64, event HostEvent) []any {
+	payload, ok := event.Payload.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	messageID, _ := payload["messageId"].(string)
+	if messageID == "" {
+		return nil
+	}
+	delta, _ := payload["delta"].(string)
+	isFirstChunk, _ := payload["isFirstChunk"].(bool)
+
+	out := make([]any, 0, 2)
+	if isFirstChunk {
+		out = append(out, TextMessageStartEvent{
+			Type:      EventTypeTextMessageStart,
+			Timestamp: now,
+			MessageID: messageID,
+			Role:      "assistant",
+		})
+	}
+	if delta != "" {
+		out = append(out, TextMessageContentEvent{
+			Type:      EventTypeTextMessageContent,
+			Timestamp: now,
+			MessageID: messageID,
+			Delta:     delta,
+		})
+	}
+	return out
+}
+
+func buildExternalMessageEndEvents(now int64, event HostEvent) []any {
+	payload, ok := event.Payload.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	messageID, _ := payload["messageId"].(string)
+	if messageID == "" {
+		return nil
+	}
+
+	return []any{
+		TextMessageEndEvent{
+			Type:      EventTypeTextMessageEnd,
+			Timestamp: now,
+			MessageID: messageID,
+		},
 	}
 }
 

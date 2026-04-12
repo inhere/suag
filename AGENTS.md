@@ -29,6 +29,7 @@
 - `internal/host/acpbridge` 已切出独立 `codex_app_server` bridge，当前最小支持 initialize/initialized/thread-start/turn-start 与 turn 流式结果聚合
 - `internal/host/acpbridge` 已补齐 codex app-server 流式事件摘要沉淀，当前 external_tasks.metadata 可携带 protocol/stopReason/eventSummary/items 等桥接元数据
 - `internal/host/session` 与 `internal/host/acpbridge` 已打通 continue-turn 远端会话复用，后续 turn 可基于上一轮 external task 的 remoteSessionID 继续协作
+- `internal/host/session`、`internal/host/acpbridge`、`internal/host/agui` 已打通外部 agent 流式事件透传，当前 WS 可实时收到 external activity 与 assistant message delta/end
 - `internal/host/session` 已补齐 external_tasks 存储读写，ACP bridge 返回的外部任务快照会写入 run 关联记录
 - `internal/host/gateway` session 查询与 WS STATE_SNAPSHOT 已补齐 external_tasks 视图，前端首屏与重连可直接拿到外部任务状态
 

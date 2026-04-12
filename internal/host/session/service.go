@@ -25,11 +25,17 @@ type RuntimeRequest struct {
 	AgentID     string
 	Instruction string
 	Context     map[string]any
+	Emit        func(event RuntimeEvent) error
 }
 
 type RuntimeResult struct {
 	Summary      string
 	ExternalTask *ExternalTask
+}
+
+type RuntimeEvent struct {
+	EventType string
+	Payload   map[string]any
 }
 
 type ServiceConfig struct {
@@ -188,6 +194,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 	}
 
 	if s.runner != nil {
+		nextSequence := int64(3)
 		result, err := s.runner.Run(ctx, RuntimeRequest{
 			SessionID:   sessionID,
 			TurnID:      turnID,
@@ -195,6 +202,34 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			AgentID:     agentID,
 			Instruction: message,
 			Context:     s.buildRuntimeContext(ctx, sessionID, previousTurnID),
+			Emit: func(runtimeEvent RuntimeEvent) error {
+				if strings.TrimSpace(runtimeEvent.EventType) == "" {
+					return nil
+				}
+
+				event := RunEvent{
+					EventID:   NewEventID(),
+					SessionID: sessionID,
+					TurnID:    turnID,
+					RunID:     runID,
+					AgentID:   agentID,
+					EventType: runtimeEvent.EventType,
+					Sequence:  nextSequence,
+					Payload:   runtimeEvent.Payload,
+					Source:    "host.session.runtime",
+					CreatedAt: s.now().UTC(),
+				}
+				nextSequence++
+				if err := s.store.AppendEvent(ctx, event); err != nil {
+					return fmt.Errorf("append runtime event: %w", err)
+				}
+				if s.pub != nil {
+					if err := s.pub.PublishSessionEvent(ctx, event); err != nil {
+						return fmt.Errorf("publish runtime event: %w", err)
+					}
+				}
+				return nil
+			},
 		})
 		if err != nil {
 			failedEvent := RunEvent{
@@ -204,7 +239,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				RunID:     runID,
 				AgentID:   agentID,
 				EventType: EventRunFailed,
-				Sequence:  3,
+				Sequence:  nextSequence,
 				Payload: map[string]any{
 					"error": err.Error(),
 				},
@@ -236,7 +271,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			RunID:     runID,
 			AgentID:   agentID,
 			EventType: EventRunFinished,
-			Sequence:  3,
+			Sequence:  nextSequence,
 			Payload: map[string]any{
 				"summary": result.Summary,
 			},

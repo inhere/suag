@@ -247,14 +247,87 @@ func TestService_StartTurnPublishesFailedLifecycleWhenRunnerFails(t *testing.T) 
 	}
 }
 
+func TestService_StartTurnPublishesRuntimeEventsFromRunner(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "done",
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunExternalActivity,
+				Payload: map[string]any{
+					"kind": "item_started",
+				},
+			},
+			{
+				EventType: EventRunExternalMessageDelta,
+				Payload: map[string]any{
+					"messageId":    "turn_remote_001:item_001",
+					"delta":        "hello",
+					"isFirstChunk": true,
+				},
+			},
+		},
+	}
+	now := time.Date(2026, 4, 12, 13, 0, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_100",
+		AgentID:       "default",
+		UserMessage:   "emit runtime events",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_100", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 5 {
+		t.Fatalf("ListEventsBySession() len = %d, want 5", len(events))
+	}
+	if events[2].EventType != EventRunExternalActivity {
+		t.Fatalf("events[2].EventType = %q, want %q", events[2].EventType, EventRunExternalActivity)
+	}
+	if events[3].EventType != EventRunExternalMessageDelta {
+		t.Fatalf("events[3].EventType = %q, want %q", events[3].EventType, EventRunExternalMessageDelta)
+	}
+	if events[4].EventType != EventRunFinished {
+		t.Fatalf("events[4].EventType = %q, want %q", events[4].EventType, EventRunFinished)
+	}
+	if events[4].RunID != result.RunID {
+		t.Fatalf("events[4].RunID = %q, want %q", events[4].RunID, result.RunID)
+	}
+}
+
 type fakeRunner struct {
 	result      RuntimeResult
 	err         error
 	lastRequest RuntimeRequest
+	emitEvents  []RuntimeEvent
 }
 
 func (f *fakeRunner) Run(_ context.Context, in RuntimeRequest) (RuntimeResult, error) {
 	f.lastRequest = in
+	for _, event := range f.emitEvents {
+		if in.Emit == nil {
+			continue
+		}
+		if err := in.Emit(event); err != nil {
+			return RuntimeResult{}, err
+		}
+	}
 	return f.result, f.err
 }
 

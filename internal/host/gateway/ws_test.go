@@ -457,6 +457,75 @@ func TestServer_ContinueTurnReusesPreviousRemoteSession(t *testing.T) {
 	}
 }
 
+func TestServer_StartTurnStreamsExternalRuntimeEvents(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	svc := session.NewService(store, bus, &emittingGatewayRunner{}, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "stream external runtime events",
+	})
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial() error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+
+	postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "stream runtime events",
+		"initiator_type": "user",
+	})
+
+	foundExternalActivity := false
+	foundExternalText := false
+	for i := 0; i < 12; i++ {
+		var message map[string]any
+		if err := wsjson.Read(ctx, conn, &message); err != nil {
+			t.Fatalf("wsjson.Read() event error = %v", err)
+		}
+		if message["type"] == "CUSTOM" && message["name"] == "axon.run.external.activity" {
+			foundExternalActivity = true
+		}
+		if message["type"] == "TEXT_MESSAGE_CONTENT" && message["delta"] == "thinking..." {
+			foundExternalText = true
+		}
+		if foundExternalActivity && foundExternalText {
+			break
+		}
+	}
+	if !foundExternalActivity {
+		t.Fatal("did not receive external activity event")
+	}
+	if !foundExternalText {
+		t.Fatal("did not receive external text delta event")
+	}
+}
+
 func readUntilEventType(t *testing.T, ctx context.Context, conn *websocket.Conn, wantType string) map[string]any {
 	t.Helper()
 
@@ -509,6 +578,37 @@ func (r *resumeAwareGatewayRunner) Run(_ context.Context, in session.RuntimeRequ
 			RemoteTaskID:    "turn_remote_002",
 			State:           "completed",
 		},
+	}, nil
+}
+
+type emittingGatewayRunner struct{}
+
+func (r *emittingGatewayRunner) Run(_ context.Context, in session.RuntimeRequest) (session.RuntimeResult, error) {
+	if in.Emit != nil {
+		_ = in.Emit(session.RuntimeEvent{
+			EventType: session.EventRunExternalActivity,
+			Payload: map[string]any{
+				"kind":   "item_started",
+				"itemId": "item_001",
+			},
+		})
+		_ = in.Emit(session.RuntimeEvent{
+			EventType: session.EventRunExternalMessageDelta,
+			Payload: map[string]any{
+				"messageId":    "turn_remote_001:item_001",
+				"delta":        "thinking...",
+				"isFirstChunk": true,
+			},
+		})
+		_ = in.Emit(session.RuntimeEvent{
+			EventType: session.EventRunExternalMessageEnd,
+			Payload: map[string]any{
+				"messageId": "turn_remote_001:item_001",
+			},
+		})
+	}
+	return session.RuntimeResult{
+		Summary: "done",
 	}, nil
 }
 

@@ -135,6 +135,75 @@ func TestRunnerAdapter_RunPassesResumeRemoteSessionToBridge(t *testing.T) {
 	}
 }
 
+func TestRunnerAdapter_RunMapsDispatchEventsToRuntimeEvents(t *testing.T) {
+	t.Parallel()
+
+	fakeBridge := &fakeBridge{
+		result: DispatchResult{
+			State:   StateCompleted,
+			Summary: "continued",
+		},
+	}
+	fakeBridge.dispatch = func(req DispatchRequest) {
+		if req.Emit == nil {
+			return
+		}
+		_ = req.Emit(DispatchEvent{
+			Type: "external.activity",
+			Payload: map[string]any{
+				"kind": "item_started",
+			},
+		})
+		_ = req.Emit(DispatchEvent{
+			Type: "external.message.delta",
+			Payload: map[string]any{
+				"messageId":    "turn_remote_001:item_001",
+				"delta":        "hello",
+				"isFirstChunk": true,
+			},
+		})
+		_ = req.Emit(DispatchEvent{
+			Type: "external.message.end",
+			Payload: map[string]any{
+				"messageId": "turn_remote_001:item_001",
+			},
+		})
+	}
+
+	adapter := NewRunnerAdapter(fakeBridge, RunnerAdapterConfig{
+		AdapterName: "codex",
+		Workspace:   "workspace/demo",
+	})
+
+	var runtimeEvents []session.RuntimeEvent
+	_, err := adapter.Run(context.Background(), session.RuntimeRequest{
+		SessionID:   "sess_001",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "continue task",
+		Emit: func(event session.RuntimeEvent) error {
+			runtimeEvents = append(runtimeEvents, event)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(runtimeEvents) != 3 {
+		t.Fatalf("runtime events len = %d, want 3", len(runtimeEvents))
+	}
+	if runtimeEvents[0].EventType != session.EventRunExternalActivity {
+		t.Fatalf("runtime events[0].EventType = %q, want %q", runtimeEvents[0].EventType, session.EventRunExternalActivity)
+	}
+	if runtimeEvents[1].EventType != session.EventRunExternalMessageDelta {
+		t.Fatalf("runtime events[1].EventType = %q, want %q", runtimeEvents[1].EventType, session.EventRunExternalMessageDelta)
+	}
+	if runtimeEvents[2].EventType != session.EventRunExternalMessageEnd {
+		t.Fatalf("runtime events[2].EventType = %q, want %q", runtimeEvents[2].EventType, session.EventRunExternalMessageEnd)
+	}
+}
+
 func TestLocalCommandBridge_DispatchParsesJSONResult(t *testing.T) {
 	t.Parallel()
 
@@ -253,9 +322,13 @@ type fakeBridge struct {
 	lastRequest DispatchRequest
 	result      DispatchResult
 	err         error
+	dispatch    func(req DispatchRequest)
 }
 
 func (f *fakeBridge) Dispatch(_ context.Context, req DispatchRequest) (DispatchResult, error) {
 	f.lastRequest = req
+	if f.dispatch != nil {
+		f.dispatch(req)
+	}
 	return f.result, f.err
 }

@@ -19,6 +19,7 @@ type DispatchRequest struct {
 	Instruction string
 	Workspace   string
 	Context     map[string]any
+	Emit        func(event DispatchEvent) error
 }
 
 type DispatchResult struct {
@@ -31,4 +32,9 @@ type DispatchResult struct {
 	RemoteSessionID string
 	RemoteTaskID    string
 	LastHeartbeatAt time.Time
+}
+
+type DispatchEvent struct {
+	Type    string
+	Payload map[string]any
 }

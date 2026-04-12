@@ -130,6 +130,7 @@ type codexTurnTrace struct {
 	MessageDeltaCount int
 	CommandDeltaCount int
 	Items             map[string]*codexItemTrace
+	MessageItemIDs    map[string]struct{}
 }
 
 func NewCodexAppServerBridge(cfg CodexAppServerBridgeConfig) *CodexAppServerBridge {
@@ -330,7 +331,8 @@ func (b *CodexAppServerBridge) collectTurnResult(
 		},
 	}
 	trace := codexTurnTrace{
-		Items: map[string]*codexItemTrace{},
+		Items:          map[string]*codexItemTrace{},
+		MessageItemIDs: map[string]struct{}{},
 	}
 
 	for {
@@ -351,6 +353,14 @@ func (b *CodexAppServerBridge) collectTurnResult(
 			if effectiveCodexTurnID(note.TurnID, note.Turn) != "" {
 				result.RemoteTaskID = effectiveCodexTurnID(note.TurnID, note.Turn)
 			}
+			emitDispatchEvent(req, DispatchEvent{
+				Type: "external.activity",
+				Payload: map[string]any{
+					"kind":            "turn_started",
+					"remoteSessionId": result.RemoteSessionID,
+					"remoteTaskId":    result.RemoteTaskID,
+				},
+			})
 		case "item/agentMessage/delta":
 			var note codexAgentMessageDeltaNotification
 			if err := json.Unmarshal(msg.Params, &note); err != nil {
@@ -360,6 +370,20 @@ func (b *CodexAppServerBridge) collectTurnResult(
 				result.RemoteTaskID = strings.TrimSpace(note.TurnID)
 			}
 			trace.MessageDeltaCount++
+			messageID := buildExternalMessageID(result.RemoteTaskID, note.ItemID)
+			_, seen := trace.MessageItemIDs[messageID]
+			trace.MessageItemIDs[messageID] = struct{}{}
+			emitDispatchEvent(req, DispatchEvent{
+				Type: "external.message.delta",
+				Payload: map[string]any{
+					"messageId":       messageID,
+					"itemId":          strings.TrimSpace(note.ItemID),
+					"delta":           note.Delta,
+					"isFirstChunk":    !seen,
+					"remoteSessionId": result.RemoteSessionID,
+					"remoteTaskId":    firstNonEmpty(strings.TrimSpace(note.TurnID), result.RemoteTaskID),
+				},
+			})
 			summaryBuilder.WriteString(note.Delta)
 		case "item/started":
 			var note codexItemStartedNotification
@@ -370,6 +394,19 @@ func (b *CodexAppServerBridge) collectTurnResult(
 			itemTrace.Started = true
 			itemTrace.ItemType = firstNonEmpty(strings.TrimSpace(note.ItemType), itemTypeFromSnapshot(note.Item), itemTrace.ItemType)
 			mergeCodexItemSnapshot(itemTrace, note.Item)
+			emitDispatchEvent(req, DispatchEvent{
+				Type: "external.activity",
+				Payload: map[string]any{
+					"kind":            "item_started",
+					"itemId":          itemTrace.ItemID,
+					"itemType":        itemTrace.ItemType,
+					"command":         itemTrace.Command,
+					"cwd":             itemTrace.CWD,
+					"status":          itemTrace.Status,
+					"remoteSessionId": result.RemoteSessionID,
+					"remoteTaskId":    firstNonEmpty(strings.TrimSpace(note.TurnID), result.RemoteTaskID),
+				},
+			})
 		case "item/completed":
 			var note codexItemCompletedNotification
 			if err := json.Unmarshal(msg.Params, &note); err != nil {
@@ -379,6 +416,20 @@ func (b *CodexAppServerBridge) collectTurnResult(
 			itemTrace.Completed = true
 			itemTrace.ItemType = firstNonEmpty(strings.TrimSpace(note.ItemType), itemTypeFromSnapshot(note.Item), itemTrace.ItemType)
 			mergeCodexItemSnapshot(itemTrace, note.Item)
+			emitDispatchEvent(req, DispatchEvent{
+				Type: "external.activity",
+				Payload: map[string]any{
+					"kind":            "item_completed",
+					"itemId":          itemTrace.ItemID,
+					"itemType":        itemTrace.ItemType,
+					"command":         itemTrace.Command,
+					"cwd":             itemTrace.CWD,
+					"status":          itemTrace.Status,
+					"outputPreview":   itemTrace.OutputPreview,
+					"remoteSessionId": result.RemoteSessionID,
+					"remoteTaskId":    firstNonEmpty(strings.TrimSpace(note.TurnID), result.RemoteTaskID),
+				},
+			})
 		case "item/commandExecution/outputDelta":
 			var note codexCommandExecutionDeltaNotification
 			if err := json.Unmarshal(msg.Params, &note); err != nil {
@@ -389,6 +440,17 @@ func (b *CodexAppServerBridge) collectTurnResult(
 			itemTrace.CommandDeltas++
 			itemTrace.OutputPreview = trimPreview(firstNonEmpty(itemTrace.OutputPreview, note.Delta))
 			trace.CommandDeltaCount++
+			emitDispatchEvent(req, DispatchEvent{
+				Type: "external.activity",
+				Payload: map[string]any{
+					"kind":            "command_output_delta",
+					"itemId":          itemTrace.ItemID,
+					"itemType":        itemTrace.ItemType,
+					"delta":           trimPreview(note.Delta),
+					"remoteSessionId": result.RemoteSessionID,
+					"remoteTaskId":    firstNonEmpty(strings.TrimSpace(note.TurnID), result.RemoteTaskID),
+				},
+			})
 		case "error":
 			var note codexErrorNotification
 			if err := json.Unmarshal(msg.Params, &note); err != nil {
@@ -399,6 +461,15 @@ func (b *CodexAppServerBridge) collectTurnResult(
 			}
 			latestError = formatCodexTurnError(note.Error)
 			trace.LastError = latestError
+			emitDispatchEvent(req, DispatchEvent{
+				Type: "external.activity",
+				Payload: map[string]any{
+					"kind":            "turn_error",
+					"message":         latestError,
+					"remoteSessionId": result.RemoteSessionID,
+					"remoteTaskId":    firstNonEmpty(strings.TrimSpace(note.TurnID), result.RemoteTaskID),
+				},
+			})
 		case "turn/completed":
 			var note codexTurnCompletedNotification
 			if err := json.Unmarshal(msg.Params, &note); err != nil {
@@ -422,6 +493,25 @@ func (b *CodexAppServerBridge) collectTurnResult(
 				result.Error = latestError
 			}
 			trace.StopReason = strings.TrimSpace(note.StopReason)
+			emitDispatchEvent(req, DispatchEvent{
+				Type: "external.activity",
+				Payload: map[string]any{
+					"kind":            "turn_completed",
+					"stopReason":      trace.StopReason,
+					"remoteSessionId": result.RemoteSessionID,
+					"remoteTaskId":    result.RemoteTaskID,
+				},
+			})
+			for messageID := range trace.MessageItemIDs {
+				emitDispatchEvent(req, DispatchEvent{
+					Type: "external.message.end",
+					Payload: map[string]any{
+						"messageId":       messageID,
+						"remoteSessionId": result.RemoteSessionID,
+						"remoteTaskId":    result.RemoteTaskID,
+					},
+				})
+			}
 			result.Summary = strings.TrimSpace(summaryBuilder.String())
 			result.Metadata = mergeMetadata(result.Metadata, buildCodexTurnMetadata(trace))
 			if result.RemoteTaskID == "" {
@@ -524,6 +614,21 @@ func stringMapValue(values map[string]any, key string) string {
 	}
 	text, _ := raw.(string)
 	return text
+}
+
+func emitDispatchEvent(req DispatchRequest, event DispatchEvent) {
+	if req.Emit == nil {
+		return
+	}
+	_ = req.Emit(event)
+}
+
+func buildExternalMessageID(remoteTaskID, itemID string) string {
+	itemID = strings.TrimSpace(itemID)
+	if itemID == "" {
+		itemID = "message"
+	}
+	return firstNonEmpty(strings.TrimSpace(remoteTaskID), "external") + ":" + itemID
 }
 
 func effectiveCodexTurnID(turnID string, turn *codexTurnRef) string {
