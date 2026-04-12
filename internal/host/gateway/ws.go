@@ -136,6 +136,7 @@ func buildWSStateSnapshot(ctx context.Context, store wsSessionStore, sessionID s
 			AgentID:   event.AgentID,
 			Sequence:  event.Sequence,
 			Payload:   event.Payload,
+			CreatedAt: event.CreatedAt,
 		})
 	}
 

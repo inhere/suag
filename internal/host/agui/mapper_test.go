@@ -2,6 +2,7 @@ package agui
 
 import (
 	"testing"
+	"time"
 
 	"github.com/inhere/axon/internal/host/session"
 )
@@ -76,6 +77,7 @@ func TestBuildStateSnapshot(t *testing.T) {
 			RunID:     "run_002",
 			AgentID:   "default",
 			Sequence:  2,
+			CreatedAt: time.Date(2026, 4, 12, 8, 0, 0, 0, time.UTC),
 		},
 		{
 			Type:      "run.started",
@@ -84,14 +86,25 @@ func TestBuildStateSnapshot(t *testing.T) {
 			RunID:     "run_002",
 			AgentID:   "default",
 			Sequence:  3,
+			CreatedAt: time.Date(2026, 4, 12, 8, 0, 1, 0, time.UTC),
+		},
+		{
+			Type:      "run.started",
+			SessionID: "sess_001",
+			TurnID:    "turn_002",
+			RunID:     "run_003",
+			AgentID:   "reviewer",
+			Sequence:  4,
+			CreatedAt: time.Date(2026, 4, 12, 8, 0, 2, 0, time.UTC),
 		},
 		{
 			Type:      session.EventRunExternalActivity,
 			SessionID: "sess_001",
 			TurnID:    "turn_002",
-			RunID:     "run_002",
+			RunID:     "run_003",
 			AgentID:   "default",
-			Sequence:  4,
+			Sequence:  5,
+			CreatedAt: time.Date(2026, 4, 12, 8, 0, 3, 0, time.UTC),
 			Payload: map[string]any{
 				"externalTaskId": "ext_001",
 				"kind":           "item_started",
@@ -102,9 +115,10 @@ func TestBuildStateSnapshot(t *testing.T) {
 			Type:      session.EventRunExternalMessageDelta,
 			SessionID: "sess_001",
 			TurnID:    "turn_002",
-			RunID:     "run_002",
+			RunID:     "run_003",
 			AgentID:   "default",
-			Sequence:  5,
+			Sequence:  6,
+			CreatedAt: time.Date(2026, 4, 12, 8, 0, 4, 0, time.UTC),
 			Payload: map[string]any{
 				"externalTaskId": "ext_001",
 				"messageId":      "msg_001",
@@ -116,9 +130,10 @@ func TestBuildStateSnapshot(t *testing.T) {
 			Type:      session.EventRunExternalMessageDelta,
 			SessionID: "sess_001",
 			TurnID:    "turn_002",
-			RunID:     "run_002",
+			RunID:     "run_003",
 			AgentID:   "default",
-			Sequence:  6,
+			Sequence:  7,
+			CreatedAt: time.Date(2026, 4, 12, 8, 0, 5, 0, time.UTC),
 			Payload: map[string]any{
 				"externalTaskId": "ext_001",
 				"messageId":      "msg_001",
@@ -129,9 +144,10 @@ func TestBuildStateSnapshot(t *testing.T) {
 			Type:      session.EventRunExternalMessageEnd,
 			SessionID: "sess_001",
 			TurnID:    "turn_002",
-			RunID:     "run_002",
+			RunID:     "run_003",
 			AgentID:   "default",
-			Sequence:  7,
+			Sequence:  8,
+			CreatedAt: time.Date(2026, 4, 12, 8, 0, 6, 0, time.UTC),
 			Payload: map[string]any{
 				"externalTaskId": "ext_001",
 				"messageId":      "msg_001",
@@ -171,8 +187,8 @@ func TestBuildStateSnapshot(t *testing.T) {
 	if snapshot["turnId"] != "turn_002" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.turnId = %v, want %q", snapshot["turnId"], "turn_002")
 	}
-	if snapshot["currentRunId"] != "run_002" {
-		t.Fatalf("BuildStateSnapshot().Snapshot.currentRunId = %v, want %q", snapshot["currentRunId"], "run_002")
+	if snapshot["currentRunId"] != "run_003" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.currentRunId = %v, want %q", snapshot["currentRunId"], "run_003")
 	}
 	if snapshot["currentAgentId"] != "default" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.currentAgentId = %v, want %q", snapshot["currentAgentId"], "default")
@@ -180,8 +196,8 @@ func TestBuildStateSnapshot(t *testing.T) {
 	if snapshot["latestEventType"] != session.EventRunExternalMessageEnd {
 		t.Fatalf("BuildStateSnapshot().Snapshot.latestEventType = %v, want %q", snapshot["latestEventType"], session.EventRunExternalMessageEnd)
 	}
-	if snapshot["eventCount"] != 6 {
-		t.Fatalf("BuildStateSnapshot().Snapshot.eventCount = %v, want %d", snapshot["eventCount"], 6)
+	if snapshot["eventCount"] != 7 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.eventCount = %v, want %d", snapshot["eventCount"], 7)
 	}
 	rawExternalTasks, ok := snapshot["externalTasks"].([]map[string]any)
 	if !ok {
@@ -201,11 +217,14 @@ func TestBuildStateSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatalf("BuildStateSnapshot().Snapshot.events type = %T, want []map[string]any", snapshot["events"])
 	}
-	if len(rawEvents) != 6 {
-		t.Fatalf("BuildStateSnapshot().Snapshot.events len = %d, want 6", len(rawEvents))
+	if len(rawEvents) != 7 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.events len = %d, want 7", len(rawEvents))
 	}
-	if rawEvents[5]["type"] != session.EventRunExternalMessageEnd {
-		t.Fatalf("BuildStateSnapshot().Snapshot.events[5].type = %v, want %q", rawEvents[5]["type"], session.EventRunExternalMessageEnd)
+	if rawEvents[6]["type"] != session.EventRunExternalMessageEnd {
+		t.Fatalf("BuildStateSnapshot().Snapshot.events[6].type = %v, want %q", rawEvents[6]["type"], session.EventRunExternalMessageEnd)
+	}
+	if rawEvents[6]["createdAt"] != "2026-04-12T08:00:06Z" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.events[6].createdAt = %v, want %q", rawEvents[6]["createdAt"], "2026-04-12T08:00:06Z")
 	}
 
 	rawExternalActivities, ok := snapshot["externalActivities"].([]map[string]any)
@@ -220,6 +239,9 @@ func TestBuildStateSnapshot(t *testing.T) {
 	}
 	if rawExternalActivities[0]["lastKind"] != "item_started" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.externalActivities[0].lastKind = %v, want %q", rawExternalActivities[0]["lastKind"], "item_started")
+	}
+	if rawExternalActivities[0]["updatedAt"] != "2026-04-12T08:00:03Z" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalActivities[0].updatedAt = %v, want %q", rawExternalActivities[0]["updatedAt"], "2026-04-12T08:00:03Z")
 	}
 
 	rawExternalMessages, ok := snapshot["externalMessages"].([]map[string]any)
@@ -243,6 +265,58 @@ func TestBuildStateSnapshot(t *testing.T) {
 	}
 	if rawExternalMessages[0]["completed"] != true {
 		t.Fatalf("BuildStateSnapshot().Snapshot.externalMessages[0].completed = %v, want true", rawExternalMessages[0]["completed"])
+	}
+	if rawExternalMessages[0]["runId"] != "run_003" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalMessages[0].runId = %v, want %q", rawExternalMessages[0]["runId"], "run_003")
+	}
+	if rawExternalMessages[0]["updatedAt"] != "2026-04-12T08:00:06Z" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.externalMessages[0].updatedAt = %v, want %q", rawExternalMessages[0]["updatedAt"], "2026-04-12T08:00:06Z")
+	}
+
+	rawTurns, ok := snapshot["turns"].([]map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns type = %T, want []map[string]any", snapshot["turns"])
+	}
+	if len(rawTurns) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns len = %d, want 1", len(rawTurns))
+	}
+	if rawTurns[0]["turnId"] != "turn_002" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].turnId = %v, want %q", rawTurns[0]["turnId"], "turn_002")
+	}
+	if rawTurns[0]["runCount"] != 2 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].runCount = %v, want %d", rawTurns[0]["runCount"], 2)
+	}
+	if rawTurns[0]["latestRunId"] != "run_003" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].latestRunId = %v, want %q", rawTurns[0]["latestRunId"], "run_003")
+	}
+	if rawTurns[0]["latestEventType"] != session.EventRunExternalMessageEnd {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].latestEventType = %v, want %q", rawTurns[0]["latestEventType"], session.EventRunExternalMessageEnd)
+	}
+
+	rawRuns, ok := snapshot["runs"].([]map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs type = %T, want []map[string]any", snapshot["runs"])
+	}
+	if len(rawRuns) != 2 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs len = %d, want 2", len(rawRuns))
+	}
+	if rawRuns[0]["runId"] != "run_002" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].runId = %v, want %q", rawRuns[0]["runId"], "run_002")
+	}
+	if rawRuns[1]["runId"] != "run_003" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].runId = %v, want %q", rawRuns[1]["runId"], "run_003")
+	}
+	if rawRuns[1]["turnId"] != "turn_002" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].turnId = %v, want %q", rawRuns[1]["turnId"], "turn_002")
+	}
+	if rawRuns[1]["eventCount"] != 5 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].eventCount = %v, want %d", rawRuns[1]["eventCount"], 5)
+	}
+	if rawRuns[1]["latestEventType"] != session.EventRunExternalMessageEnd {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].latestEventType = %v, want %q", rawRuns[1]["latestEventType"], session.EventRunExternalMessageEnd)
+	}
+	if rawRuns[1]["updatedAt"] != "2026-04-12T08:00:06Z" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].updatedAt = %v, want %q", rawRuns[1]["updatedAt"], "2026-04-12T08:00:06Z")
 	}
 }
 

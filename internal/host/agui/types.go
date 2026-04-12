@@ -87,6 +87,7 @@ type HostEvent struct {
 	AgentID   string
 	Sequence  int64
 	Payload   any
+	CreatedAt time.Time
 }
 
 type StateSnapshotEvent struct {

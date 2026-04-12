@@ -149,8 +149,12 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 	mappedExternalTasks := make([]map[string]any, 0, len(externalTasks))
 	mappedExternalActivities := make([]map[string]any, 0)
 	mappedExternalMessages := make([]map[string]any, 0)
+	mappedTurns := make([]map[string]any, 0)
+	mappedRuns := make([]map[string]any, 0)
 	externalActivityIndex := make(map[string]int)
 	externalMessageIndex := make(map[string]int)
+	turnIndex := make(map[string]int)
+	runIndex := make(map[string]int)
 	currentRunID := ""
 	currentAgentID := ""
 	latestEventType := ""
@@ -166,8 +170,52 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 			"runId":     event.RunID,
 			"agentId":   event.AgentID,
 			"sequence":  event.Sequence,
+			"createdAt": formatEventTime(event.CreatedAt),
 			"payload":   event.Payload,
 		})
+
+		turnKey := event.TurnID
+		if turnKey != "" {
+			idx, ok := turnIndex[turnKey]
+			if !ok {
+				mappedTurns = append(mappedTurns, map[string]any{
+					"turnId":          event.TurnID,
+					"sessionId":       event.SessionID,
+					"latestRunId":     "",
+					"latestAgentId":   "",
+					"latestEventType": "",
+					"eventCount":      0,
+					"runCount":        0,
+					"updatedAt":       "",
+				})
+				idx = len(mappedTurns) - 1
+				turnIndex[turnKey] = idx
+			}
+			mergeTurnSnapshot(mappedTurns[idx], event)
+		}
+
+		runKey := event.RunID
+		if runKey != "" {
+			idx, ok := runIndex[runKey]
+			if !ok {
+				mappedRuns = append(mappedRuns, map[string]any{
+					"runId":           event.RunID,
+					"turnId":          event.TurnID,
+					"sessionId":       event.SessionID,
+					"agentId":         event.AgentID,
+					"latestEventType": "",
+					"eventCount":      0,
+					"updatedAt":       "",
+				})
+				idx = len(mappedRuns) - 1
+				runIndex[runKey] = idx
+				if turnKey != "" {
+					turnSnapshot := mappedTurns[turnIndex[turnKey]]
+					turnSnapshot["runCount"] = turnSnapshot["runCount"].(int) + 1
+				}
+			}
+			mergeRunSnapshot(mappedRuns[idx], event)
+		}
 
 		switch event.Type {
 		case session.EventRunExternalActivity:
@@ -240,6 +288,8 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 		"externalTasks":      mappedExternalTasks,
 		"externalActivities": mappedExternalActivities,
 		"externalMessages":   mappedExternalMessages,
+		"turns":              mappedTurns,
+		"runs":               mappedRuns,
 		"events":             mappedEvents,
 	}), now)
 }
@@ -299,7 +349,7 @@ func externalMessageKey(event HostEvent) string {
 
 func mergeExternalActivity(target map[string]any, event HostEvent) {
 	target["lastSequence"] = event.Sequence
-	target["updatedAt"] = event.Sequence
+	target["updatedAt"] = formatEventTime(event.CreatedAt)
 	target["lastEventType"] = event.Type
 	target["payload"] = event.Payload
 
@@ -315,7 +365,7 @@ func mergeExternalActivity(target map[string]any, event HostEvent) {
 
 func mergeExternalMessage(target map[string]any, event HostEvent) {
 	target["lastSequence"] = event.Sequence
-	target["updatedAt"] = event.Sequence
+	target["updatedAt"] = formatEventTime(event.CreatedAt)
 	target["lastEventType"] = event.Type
 
 	values, ok := event.Payload.(map[string]any)
@@ -342,4 +392,26 @@ func payloadString(payload any, key string) string {
 	}
 	text, _ := values[key].(string)
 	return text
+}
+
+func mergeTurnSnapshot(target map[string]any, event HostEvent) {
+	target["latestRunId"] = event.RunID
+	target["latestAgentId"] = event.AgentID
+	target["latestEventType"] = event.Type
+	target["eventCount"] = target["eventCount"].(int) + 1
+	target["updatedAt"] = formatEventTime(event.CreatedAt)
+}
+
+func mergeRunSnapshot(target map[string]any, event HostEvent) {
+	target["agentId"] = event.AgentID
+	target["latestEventType"] = event.Type
+	target["eventCount"] = target["eventCount"].(int) + 1
+	target["updatedAt"] = formatEventTime(event.CreatedAt)
+}
+
+func formatEventTime(ts time.Time) string {
+	if ts.IsZero() {
+		return ""
+	}
+	return ts.UTC().Format(time.RFC3339Nano)
 }

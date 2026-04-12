@@ -343,6 +343,9 @@ func TestServer_SessionSnapshotAggregatesExternalStreamState(t *testing.T) {
 	if activity["lastKind"] != "item_started" {
 		t.Fatalf("snapshot.snapshot.externalActivities[0].lastKind = %v, want %q", activity["lastKind"], "item_started")
 	}
+	if activity["updatedAt"] != "2026-04-12T15:00:00Z" {
+		t.Fatalf("snapshot.snapshot.externalActivities[0].updatedAt = %v, want %q", activity["updatedAt"], "2026-04-12T15:00:00Z")
+	}
 
 	rawExternalMessages, ok := rawSnapshot["externalMessages"].([]any)
 	if !ok {
@@ -363,6 +366,45 @@ func TestServer_SessionSnapshotAggregatesExternalStreamState(t *testing.T) {
 	}
 	if message["completed"] != true {
 		t.Fatalf("snapshot.snapshot.externalMessages[0].completed = %v, want true", message["completed"])
+	}
+	if message["updatedAt"] != "2026-04-12T15:00:00Z" {
+		t.Fatalf("snapshot.snapshot.externalMessages[0].updatedAt = %v, want %q", message["updatedAt"], "2026-04-12T15:00:00Z")
+	}
+
+	rawTurns, ok := rawSnapshot["turns"].([]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.turns type = %T, want []any", rawSnapshot["turns"])
+	}
+	if len(rawTurns) != 1 {
+		t.Fatalf("snapshot.snapshot.turns len = %d, want 1", len(rawTurns))
+	}
+	turn, ok := rawTurns[0].(map[string]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.turns[0] type = %T, want map[string]any", rawTurns[0])
+	}
+	if turn["runCount"] != float64(1) {
+		t.Fatalf("snapshot.snapshot.turns[0].runCount = %v, want %v", turn["runCount"], float64(1))
+	}
+	if turn["latestEventType"] != session.EventRunFinished {
+		t.Fatalf("snapshot.snapshot.turns[0].latestEventType = %v, want %q", turn["latestEventType"], session.EventRunFinished)
+	}
+
+	rawRuns, ok := rawSnapshot["runs"].([]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.runs type = %T, want []any", rawSnapshot["runs"])
+	}
+	if len(rawRuns) != 1 {
+		t.Fatalf("snapshot.snapshot.runs len = %d, want 1", len(rawRuns))
+	}
+	run, ok := rawRuns[0].(map[string]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.runs[0] type = %T, want map[string]any", rawRuns[0])
+	}
+	if run["eventCount"] != float64(6) {
+		t.Fatalf("snapshot.snapshot.runs[0].eventCount = %v, want %v", run["eventCount"], float64(6))
+	}
+	if run["updatedAt"] != "2026-04-12T15:00:00Z" {
+		t.Fatalf("snapshot.snapshot.runs[0].updatedAt = %v, want %q", run["updatedAt"], "2026-04-12T15:00:00Z")
 	}
 }
 
