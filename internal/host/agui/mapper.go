@@ -303,6 +303,9 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 	}
 
 	return *withTimestamp(NewStateSnapshotEvent(map[string]any{
+		"snapshotVersion":    "v0",
+		"snapshotSchema":     "axon.host.state.v0",
+		"generatedAt":        time.Now().UTC().Format(time.RFC3339Nano),
 		"threadId":           sessionModel.SessionID,
 		"sessionId":          sessionModel.SessionID,
 		"title":              sessionModel.Title,

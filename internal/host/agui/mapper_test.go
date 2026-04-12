@@ -184,6 +184,15 @@ func TestBuildStateSnapshot(t *testing.T) {
 	if snapshot["threadId"] != "sess_001" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.threadId = %v, want %q", snapshot["threadId"], "sess_001")
 	}
+	if snapshot["snapshotVersion"] != "v0" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.snapshotVersion = %v, want %q", snapshot["snapshotVersion"], "v0")
+	}
+	if snapshot["snapshotSchema"] != "axon.host.state.v0" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.snapshotSchema = %v, want %q", snapshot["snapshotSchema"], "axon.host.state.v0")
+	}
+	if snapshot["generatedAt"] == "" {
+		t.Fatal("BuildStateSnapshot().Snapshot.generatedAt is empty")
+	}
 	if snapshot["turnId"] != "turn_002" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.turnId = %v, want %q", snapshot["turnId"], "turn_002")
 	}
