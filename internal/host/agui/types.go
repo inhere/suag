@@ -20,6 +20,11 @@ const (
 	EventTypeTextMessageEnd     EventType = "TEXT_MESSAGE_END"
 )
 
+const (
+	StateSnapshotVersionV0 = "v0"
+	StateSnapshotSchemaV0  = "axon.host.state.v0"
+)
+
 type Event interface {
 	Type() EventType
 	Timestamp() *int64

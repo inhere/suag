@@ -18,6 +18,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/inhere/axon/internal/host/acpbridge"
+	"github.com/inhere/axon/internal/host/agui"
 	"github.com/inhere/axon/internal/host/session"
 	_ "modernc.org/sqlite"
 )
@@ -328,11 +329,11 @@ func TestServer_SessionSnapshotAggregatesExternalStreamState(t *testing.T) {
 	if !ok {
 		t.Fatalf("snapshot.snapshot type = %T, want map[string]any", snapshot["snapshot"])
 	}
-	if rawSnapshot["snapshotVersion"] != "v0" {
-		t.Fatalf("snapshot.snapshot.snapshotVersion = %v, want %q", rawSnapshot["snapshotVersion"], "v0")
+	if rawSnapshot["snapshotVersion"] != agui.StateSnapshotVersionV0 {
+		t.Fatalf("snapshot.snapshot.snapshotVersion = %v, want %q", rawSnapshot["snapshotVersion"], agui.StateSnapshotVersionV0)
 	}
-	if rawSnapshot["snapshotSchema"] != "axon.host.state.v0" {
-		t.Fatalf("snapshot.snapshot.snapshotSchema = %v, want %q", rawSnapshot["snapshotSchema"], "axon.host.state.v0")
+	if rawSnapshot["snapshotSchema"] != agui.StateSnapshotSchemaV0 {
+		t.Fatalf("snapshot.snapshot.snapshotSchema = %v, want %q", rawSnapshot["snapshotSchema"], agui.StateSnapshotSchemaV0)
 	}
 	if rawSnapshot["generatedAt"] == "" {
 		t.Fatal("snapshot.snapshot.generatedAt is empty")
