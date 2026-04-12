@@ -199,13 +199,18 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 			idx, ok := runIndex[runKey]
 			if !ok {
 				mappedRuns = append(mappedRuns, map[string]any{
-					"runId":           event.RunID,
-					"turnId":          event.TurnID,
-					"sessionId":       event.SessionID,
-					"agentId":         event.AgentID,
-					"latestEventType": "",
-					"eventCount":      0,
-					"updatedAt":       "",
+					"runId":             event.RunID,
+					"turnId":            event.TurnID,
+					"sessionId":         event.SessionID,
+					"agentId":           event.AgentID,
+					"displayState":      "",
+					"latestEventType":   "",
+					"latestMessageId":   "",
+					"latestMessageText": "",
+					"summary":           "",
+					"externalTaskIds":   []string{},
+					"eventCount":        0,
+					"updatedAt":         "",
 				})
 				idx = len(mappedRuns) - 1
 				runIndex[runKey] = idx
@@ -272,6 +277,14 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 			"resultSummary":   task.ResultSummary,
 			"metadata":        task.Metadata,
 		})
+
+		if idx, ok := runIndex[task.RunID]; ok {
+			mergeRunExternalTask(mappedRuns[idx], task)
+		}
+	}
+
+	for _, message := range mappedExternalMessages {
+		mergeRunExternalMessage(mappedRuns, runIndex, message)
 	}
 
 	return *withTimestamp(NewStateSnapshotEvent(map[string]any{
@@ -404,9 +417,27 @@ func mergeTurnSnapshot(target map[string]any, event HostEvent) {
 
 func mergeRunSnapshot(target map[string]any, event HostEvent) {
 	target["agentId"] = event.AgentID
+	target["displayState"] = displayStateForEvent(event)
 	target["latestEventType"] = event.Type
 	target["eventCount"] = target["eventCount"].(int) + 1
 	target["updatedAt"] = formatEventTime(event.CreatedAt)
+
+	if event.Type != session.EventRunFinished {
+		return
+	}
+
+	values, ok := event.Payload.(map[string]any)
+	if !ok {
+		return
+	}
+	summary, _ := values["summary"].(string)
+	if summary == "" {
+		return
+	}
+
+	target["summary"] = summary
+	target["latestMessageId"] = event.RunID + ":assistant"
+	target["latestMessageText"] = summary
 }
 
 func formatEventTime(ts time.Time) string {
@@ -414,4 +445,52 @@ func formatEventTime(ts time.Time) string {
 		return ""
 	}
 	return ts.UTC().Format(time.RFC3339Nano)
+}
+
+func mergeRunExternalTask(target map[string]any, task session.ExternalTask) {
+	ids, _ := target["externalTaskIds"].([]string)
+	for _, id := range ids {
+		if id == task.ExternalTaskID {
+			return
+		}
+	}
+	target["externalTaskIds"] = append(ids, task.ExternalTaskID)
+}
+
+func mergeRunExternalMessage(runs []map[string]any, runIndex map[string]int, message map[string]any) {
+	runID, _ := message["runId"].(string)
+	if runID == "" {
+		return
+	}
+	idx, ok := runIndex[runID]
+	if !ok {
+		return
+	}
+
+	if summary, _ := runs[idx]["summary"].(string); summary != "" {
+		return
+	}
+
+	runs[idx]["latestMessageId"] = message["messageId"]
+	runs[idx]["latestMessageText"] = message["content"]
+	if runs[idx]["displayState"] == "" {
+		runs[idx]["displayState"] = "running"
+	}
+}
+
+func displayStateForEvent(event HostEvent) string {
+	switch event.Type {
+	case session.EventRunQueued:
+		return "queued"
+	case session.EventRunStarted:
+		return "running"
+	case session.EventRunFinished:
+		return "completed"
+	case session.EventRunFailed:
+		return "failed"
+	case session.EventRunExternalActivity, session.EventRunExternalMessageDelta, session.EventRunExternalMessageEnd:
+		return "external_running"
+	default:
+		return ""
+	}
 }

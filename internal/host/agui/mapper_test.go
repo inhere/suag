@@ -159,7 +159,7 @@ func TestBuildStateSnapshot(t *testing.T) {
 			ExternalTaskID:  "ext_001",
 			SessionID:       "sess_001",
 			TurnID:          "turn_002",
-			RunID:           "run_002",
+			RunID:           "run_003",
 			Adapter:         "codex",
 			RemoteAgentName: "codex-cli",
 			RemoteSessionID: "remote_sess_001",
@@ -312,8 +312,27 @@ func TestBuildStateSnapshot(t *testing.T) {
 	if rawRuns[1]["eventCount"] != 5 {
 		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].eventCount = %v, want %d", rawRuns[1]["eventCount"], 5)
 	}
+	if rawRuns[1]["displayState"] != "external_running" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].displayState = %v, want %q", rawRuns[1]["displayState"], "external_running")
+	}
 	if rawRuns[1]["latestEventType"] != session.EventRunExternalMessageEnd {
 		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].latestEventType = %v, want %q", rawRuns[1]["latestEventType"], session.EventRunExternalMessageEnd)
+	}
+	if rawRuns[1]["latestMessageId"] != "msg_001" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].latestMessageId = %v, want %q", rawRuns[1]["latestMessageId"], "msg_001")
+	}
+	if rawRuns[1]["latestMessageText"] != "hello world" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].latestMessageText = %v, want %q", rawRuns[1]["latestMessageText"], "hello world")
+	}
+	if rawRuns[1]["summary"] != "" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].summary = %v, want empty", rawRuns[1]["summary"])
+	}
+	externalTaskIDs, ok := rawRuns[1]["externalTaskIds"].([]string)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].externalTaskIds type = %T, want []string", rawRuns[1]["externalTaskIds"])
+	}
+	if len(externalTaskIDs) != 1 || externalTaskIDs[0] != "ext_001" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].externalTaskIds = %v, want [%q]", externalTaskIDs, "ext_001")
 	}
 	if rawRuns[1]["updatedAt"] != "2026-04-12T08:00:06Z" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.runs[1].updatedAt = %v, want %q", rawRuns[1]["updatedAt"], "2026-04-12T08:00:06Z")

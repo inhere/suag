@@ -35,6 +35,7 @@
 - `internal/host/gateway` session 查询与 WS STATE_SNAPSHOT 已补齐 external_tasks 视图，前端首屏与重连可直接拿到外部任务状态
 - `internal/host/agui` 已为 STATE_SNAPSHOT 增加 `externalActivities` / `externalMessages` 聚合视图，前端重连恢复无需自行重放外部流式事件
 - `internal/host/agui` 已为 STATE_SNAPSHOT 补齐 `turns` / `runs` 聚合视图，并改为使用事件真实时间产出 `createdAt` / `updatedAt`，为后续一个 turn 下多 run 并发协作预留结构
+- `internal/host/agui` 已为 `runs` 聚合视图补齐 `displayState`、`latestMessageId/latestMessageText`、`summary`、`externalTaskIds`，前端可直接基于 run 视图渲染多 agent 面板
 
 <!-- PROCESSING WORKS:END -->
 

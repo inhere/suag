@@ -403,6 +403,27 @@ func TestServer_SessionSnapshotAggregatesExternalStreamState(t *testing.T) {
 	if run["eventCount"] != float64(6) {
 		t.Fatalf("snapshot.snapshot.runs[0].eventCount = %v, want %v", run["eventCount"], float64(6))
 	}
+	if run["displayState"] != "completed" {
+		t.Fatalf("snapshot.snapshot.runs[0].displayState = %v, want %q", run["displayState"], "completed")
+	}
+	runID, _ := run["runId"].(string)
+	wantMessageID := runID + ":assistant"
+	if run["latestMessageId"] != wantMessageID {
+		t.Fatalf("snapshot.snapshot.runs[0].latestMessageId = %v, want %q", run["latestMessageId"], wantMessageID)
+	}
+	if run["latestMessageText"] != "done" {
+		t.Fatalf("snapshot.snapshot.runs[0].latestMessageText = %v, want %q", run["latestMessageText"], "done")
+	}
+	if run["summary"] != "done" {
+		t.Fatalf("snapshot.snapshot.runs[0].summary = %v, want %q", run["summary"], "done")
+	}
+	externalTaskIDs, ok := run["externalTaskIds"].([]any)
+	if !ok {
+		t.Fatalf("snapshot.snapshot.runs[0].externalTaskIds type = %T, want []any", run["externalTaskIds"])
+	}
+	if len(externalTaskIDs) != 0 {
+		t.Fatalf("snapshot.snapshot.runs[0].externalTaskIds len = %d, want 0", len(externalTaskIDs))
+	}
 	if run["updatedAt"] != "2026-04-12T15:00:00Z" {
 		t.Fatalf("snapshot.snapshot.runs[0].updatedAt = %v, want %q", run["updatedAt"], "2026-04-12T15:00:00Z")
 	}
