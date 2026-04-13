@@ -6,6 +6,7 @@ import type { SessionSocketMessage, StateSnapshotV0 } from "../lib/host-types";
 const createSessionMock = vi.fn();
 const getSessionMock = vi.fn();
 const startTurnMock = vi.fn();
+const getRunDetailMock = vi.fn();
 const sendContinueTurnMock = vi.fn();
 const closeSocketMock = vi.fn();
 const connectSessionSocketMock = vi.fn();
@@ -13,6 +14,7 @@ const connectSessionSocketMock = vi.fn();
 vi.mock("../lib/session-client", () => ({
   createSession: (...args: unknown[]) => createSessionMock(...args),
   getSession: (...args: unknown[]) => getSessionMock(...args),
+  getRunDetail: (...args: unknown[]) => getRunDetailMock(...args),
   startTurn: (...args: unknown[]) => startTurnMock(...args),
 }));
 
@@ -121,6 +123,7 @@ describe("App", () => {
     storage = {};
     createSessionMock.mockReset();
     getSessionMock.mockReset();
+    getRunDetailMock.mockReset();
     startTurnMock.mockReset();
     sendContinueTurnMock.mockReset();
     closeSocketMock.mockReset();
@@ -146,6 +149,15 @@ describe("App", () => {
       sessionId: "sess_001",
       turnId: "turn_001",
       runId: "run_001",
+    });
+    getRunDetailMock.mockResolvedValue({
+      sessionId: "sess_001",
+      turnId: "turn_001",
+      turn: null,
+      run: null,
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
     });
     connectSessionSocketMock.mockImplementation((options: { onMessage: (message: SessionSocketMessage) => void }) => {
       onMessage = options.onMessage;
@@ -430,5 +442,174 @@ describe("App", () => {
     expect(screen.getAllByText("detail summary").length).toBeGreaterThan(0);
     expect(screen.getAllByText("detail thinking...").length).toBeGreaterThan(0);
     expect(screen.queryByText("Waiting for websocket snapshot...")).not.toBeInTheDocument();
+  });
+
+  it("loads focused run detail on demand and refreshes the inspector with detailed content", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_005",
+      focusedRunId: null,
+      recentSessions: [],
+    });
+    getSessionMock.mockResolvedValueOnce({
+      sessionId: "sess_005",
+      title: "history session",
+      status: "RUNNING",
+      lastTurnId: "turn_current",
+      turns: [
+        {
+          turnId: "turn_current",
+          sessionId: "sess_005",
+          primaryRunId: "run_current",
+          currentRunId: "run_current",
+          latestRunId: "run_current",
+          latestAgentId: "default",
+          displayState: "running",
+          latestEventType: "run.started",
+          latestMessagePreview: "当前在跑",
+          eventCount: 2,
+          runCount: 2,
+          activeRunCount: 1,
+          completedRunCount: 1,
+          failedRunCount: 0,
+          activeRunIds: ["run_current"],
+          completedRunIds: ["run_hist"],
+          failedRunIds: [],
+          hasExternalWork: false,
+          updatedAt: "2026-04-12T15:00:00Z",
+        },
+      ],
+      runs: [
+        {
+          runId: "run_current",
+          turnId: "turn_current",
+          sessionId: "sess_005",
+          agentId: "default",
+          displayState: "running",
+          latestEventType: "run.started",
+          latestMessageId: "msg_current",
+          latestMessageText: "当前在跑",
+          summary: "",
+          externalTaskIds: [],
+          eventCount: 2,
+          updatedAt: "2026-04-12T15:00:00Z",
+        },
+        {
+          runId: "run_hist",
+          turnId: "turn_hist",
+          sessionId: "sess_005",
+          agentId: "reviewer",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessageId: "",
+          latestMessageText: "",
+          summary: "",
+          externalTaskIds: [],
+          eventCount: 1,
+          updatedAt: "2026-04-12T14:00:00Z",
+        },
+      ],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    });
+    getRunDetailMock.mockResolvedValueOnce({
+      sessionId: "sess_005",
+      turnId: "turn_hist",
+      turn: {
+        turnId: "turn_hist",
+        sessionId: "sess_005",
+        primaryRunId: "run_hist",
+        currentRunId: "run_hist",
+        latestRunId: "run_hist",
+        latestAgentId: "reviewer",
+        displayState: "completed",
+        latestEventType: "run.finished",
+        latestMessagePreview: "历史摘要",
+        eventCount: 8,
+        runCount: 1,
+        activeRunCount: 0,
+        completedRunCount: 1,
+        failedRunCount: 0,
+        activeRunIds: [],
+        completedRunIds: ["run_hist"],
+        failedRunIds: [],
+        hasExternalWork: true,
+        updatedAt: "2026-04-12T15:01:00Z",
+      },
+      run: {
+        runId: "run_hist",
+        turnId: "turn_hist",
+        sessionId: "sess_005",
+        agentId: "reviewer",
+        displayState: "completed",
+        latestEventType: "run.finished",
+        latestMessageId: "msg_hist",
+        latestMessageText: "done",
+        summary: "历史摘要",
+        externalTaskIds: ["ext_hist"],
+        eventCount: 8,
+        updatedAt: "2026-04-12T15:01:00Z",
+      },
+      externalActivities: [
+        {
+          externalTaskId: "ext_hist",
+          sessionId: "sess_005",
+          turnId: "turn_hist",
+          runId: "run_hist",
+          agentId: "reviewer",
+          activityId: "run_hist:external",
+          kind: "delegate",
+          status: "completed",
+          title: "delegate",
+          detail: "completed",
+          startedAt: "2026-04-12T15:00:30Z",
+          updatedAt: "2026-04-12T15:01:00Z",
+        },
+      ],
+      externalMessages: [
+        {
+          externalTaskId: "ext_hist",
+          messageId: "msg_hist",
+          sessionId: "sess_005",
+          turnId: "turn_hist",
+          runId: "run_hist",
+          agentId: "reviewer",
+          content: "历史详细正文",
+          started: true,
+          completed: true,
+          lastEventType: "run.external.message.end",
+          lastSequence: 8,
+          updatedAt: "2026-04-12T15:01:00Z",
+        },
+      ],
+      externalTasks: [
+        {
+          externalTaskId: "ext_hist",
+          sessionId: "sess_005",
+          turnId: "turn_hist",
+          runId: "run_hist",
+          adapter: "codex",
+          remoteAgentName: "codex-reviewer",
+          remoteSessionId: "remote_hist",
+          remoteTaskId: "task_hist",
+          state: "completed",
+          lastHeartbeatAt: "2026-04-12T15:01:00Z",
+          resultSummary: "历史任务完成",
+          metadata: {},
+        },
+      ],
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("history session")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /reviewercompletedWaiting for output\.\.\./ }));
+
+    await waitFor(() =>
+      expect(getRunDetailMock).toHaveBeenCalledWith("sess_005", "run_hist"),
+    );
+    expect((await screen.findAllByText("历史摘要")).length).toBeGreaterThan(0);
+    expect(screen.getByText("codex-reviewer")).toBeInTheDocument();
+    expect(screen.getByText("历史任务完成")).toBeInTheDocument();
   });
 });

@@ -31,6 +31,7 @@
 - `internal/host/gateway` 与 `web/app` 已补齐第二轮恢复闭环，当前 `GET /api/sessions/{id}` 会直接返回聚合后的 turns/runs，前端恢复 session 时优先使用真实 detail 状态，不再总是退回 HTTP bootstrap 占位
 - `internal/host/gateway` 与 `web/app` 已继续补齐恢复明细，当前 `GET /api/sessions/{id}` 也会返回 external activities/messages，前端刷新后可直接恢复外部流式内容与活动态，不必完全等待 WS 首包重建
 - `internal/host/gateway` 与 `web/app` 已补齐最小 run detail 查询骨架，当前可通过 `GET /api/sessions/{id}/runs/{runId}` 单独拉取 run / turn / external 明细，为后续前端按需补明细打下基础
+- `web/app/src/app/App.tsx` 与 `web/app/src/features/session/session-store.ts` 已补齐 focused run 按需明细恢复，当前切换到历史/概要 run 时会调用 `GET /api/sessions/{id}/runs/{runId}` 拉取单 run 明细并合并回工作台状态
 
 <!-- PROCESSING WORKS:END -->
 

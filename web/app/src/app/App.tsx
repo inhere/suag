@@ -3,6 +3,7 @@ import { AppShell } from "./app-shell";
 import type { ConversationMessage } from "../features/conversation/conversation-pane";
 import {
   emptySessionViewState,
+  mergeRunDetail,
   mergeSessionDetail,
   type SessionFilter,
   type SessionListItem,
@@ -15,7 +16,7 @@ import {
   selectFocusedRun,
 } from "../features/session/session-selectors";
 import type { SessionSocketMessage } from "../lib/host-types";
-import { createSession, getSession, startTurn } from "../lib/session-client";
+import { createSession, getRunDetail, getSession, startTurn } from "../lib/session-client";
 import { connectSessionSocket, type SessionSocketConnection } from "../lib/session-ws";
 
 const workbenchStorageKey = "axon.web.workbench";
@@ -123,6 +124,7 @@ export function App() {
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [debugOpen, setDebugOpen] = useState(false);
   const socketRef = useRef<SessionSocketConnection | null>(null);
+  const fetchedRunDetailsRef = useRef<Record<string, true>>({});
 
   useEffect(() => {
     persistWorkbenchState(viewState);
@@ -134,6 +136,7 @@ export function App() {
     }
 
     let cancelled = false;
+    fetchedRunDetailsRef.current = {};
 
     void getSession(viewState.currentSessionId)
       .then((detail) => {
@@ -167,6 +170,46 @@ export function App() {
       socketRef.current = null;
     };
   }, [viewState.currentSessionId]);
+
+  useEffect(() => {
+    const sessionId = viewState.currentSessionId;
+    const focusedRunId = viewState.focusedRunId;
+    const snapshot = viewState.snapshot;
+    if (!sessionId || !focusedRunId || !snapshot) {
+      return;
+    }
+
+    const alreadyLoaded = fetchedRunDetailsRef.current[focusedRunId];
+    const hasDetailedExternalState =
+      snapshot.externalMessages.some((message) => message.runId === focusedRunId) ||
+      snapshot.externalActivities.some((activity) => activity.runId === focusedRunId) ||
+      snapshot.externalTasks.some((task) => task.runId === focusedRunId);
+
+    if (alreadyLoaded || hasDetailedExternalState) {
+      return;
+    }
+
+    let cancelled = false;
+    fetchedRunDetailsRef.current[focusedRunId] = true;
+
+    void getRunDetail(sessionId, focusedRunId)
+      .then((detail) => {
+        if (cancelled) {
+          return;
+        }
+
+        setViewState((current) =>
+          mergeRunDetail(current, detail, new Date().toISOString()),
+        );
+      })
+      .catch(() => {
+        delete fetchedRunDetailsRef.current[focusedRunId];
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewState.currentSessionId, viewState.focusedRunId, viewState.snapshot]);
 
   const snapshot = viewState.snapshot;
   const currentTurn = selectCurrentTurn(snapshot);
@@ -230,7 +273,7 @@ export function App() {
       messages={conversationMessages}
       currentTurn={currentTurn}
       waitingForInput={waitingForInput}
-      runs={activeRuns.length ? activeRuns : snapshot?.runs ?? []}
+      runs={snapshot?.runs.length ? snapshot.runs : activeRuns}
       externalTasks={snapshot?.externalTasks ?? []}
       focusedRunId={focusedRun?.runId ?? viewState.focusedRunId}
       debugOpen={debugOpen}

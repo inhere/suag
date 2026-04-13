@@ -2,6 +2,7 @@ import type {
   ActivitySnapshotEvent,
   CustomEvent,
   HostEvent,
+  RunDetail,
   RunErrorEvent,
   RunStartedEvent,
   SessionDetail,
@@ -270,6 +271,42 @@ function cloneExternalActivity(
   activity: StateSnapshotExternalActivity,
 ): StateSnapshotExternalActivity {
   return { ...activity };
+}
+
+function upsertRun(
+  runs: StateSnapshotRun[],
+  nextRun: StateSnapshotRun,
+): StateSnapshotRun[] {
+  const existingIndex = runs.findIndex((run) => run.runId === nextRun.runId);
+  if (existingIndex < 0) {
+    return [...runs, nextRun];
+  }
+
+  const mergedRuns = [...runs];
+  mergedRuns[existingIndex] = nextRun;
+  return mergedRuns;
+}
+
+function upsertTurn(
+  turns: StateSnapshotTurn[],
+  nextTurn: StateSnapshotTurn,
+): StateSnapshotTurn[] {
+  const existingIndex = turns.findIndex((turn) => turn.turnId === nextTurn.turnId);
+  if (existingIndex < 0) {
+    return [...turns, nextTurn];
+  }
+
+  const mergedTurns = [...turns];
+  mergedTurns[existingIndex] = nextTurn;
+  return mergedTurns;
+}
+
+function replaceItemsByRunID<T extends { runId: string }>(
+  items: T[],
+  runId: string,
+  nextItems: T[],
+): T[] {
+  return [...items.filter((item) => item.runId !== runId), ...nextItems];
 }
 
 function getTargetRun(snapshot: StateSnapshotV0): StateSnapshotRun | null {
@@ -888,6 +925,51 @@ export function mergeSessionDetail(
       preview:
         state.recentSessions.find((item) => item.sessionId === detail.sessionId)?.preview ?? "",
     }),
+  };
+}
+
+export function mergeRunDetail(
+  state: SessionViewState,
+  detail: RunDetail,
+  observedAt: string,
+): SessionViewState {
+  if (!state.snapshot || !detail.run) {
+    return state;
+  }
+
+  const turns = detail.turn
+    ? upsertTurn(state.snapshot.turns, detail.turn)
+    : state.snapshot.turns;
+  const runs = upsertRun(state.snapshot.runs, detail.run);
+  const externalActivities = replaceItemsByRunID(
+    state.snapshot.externalActivities,
+    detail.run.runId,
+    detail.externalActivities,
+  );
+  const externalMessages = replaceItemsByRunID(
+    state.snapshot.externalMessages,
+    detail.run.runId,
+    detail.externalMessages,
+  );
+  const externalTasks = replaceItemsByRunID(
+    state.snapshot.externalTasks,
+    detail.run.runId,
+    detail.externalTasks,
+  );
+
+  return {
+    ...state,
+    focusedRunId: detail.run.runId,
+    snapshot: {
+      ...state.snapshot,
+      generatedAt: observedAt,
+      lastTurnId: detail.turnId || state.snapshot.lastTurnId,
+      turns,
+      runs,
+      externalActivities,
+      externalMessages,
+      externalTasks,
+    },
   };
 }
 

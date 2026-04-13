@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { SessionDetail, SessionSummary, StateSnapshotV0 } from "../../lib/host-types";
+import type {
+  RunDetail,
+  SessionDetail,
+  SessionSummary,
+  StateSnapshotV0,
+} from "../../lib/host-types";
 import {
   emptySessionViewState,
   hydrateFromSnapshot,
+  mergeRunDetail,
   mergeSessionDetail,
   reduceSessionMessage,
   type SessionListItem,
@@ -114,6 +120,97 @@ function makeSessionDetail(
     ],
     ...overrides,
   } as SessionDetail;
+}
+
+function makeRunDetail(overrides: Partial<RunDetail> = {}): RunDetail {
+  return {
+    sessionId: "sess_001",
+    turnId: "turn_hist",
+    turn: {
+      turnId: "turn_hist",
+      sessionId: "sess_001",
+      primaryRunId: "run_hist",
+      currentRunId: "run_hist",
+      latestRunId: "run_hist",
+      latestAgentId: "reviewer",
+      displayState: "completed",
+      latestEventType: "run.finished",
+      latestMessagePreview: "历史 run 摘要",
+      eventCount: 8,
+      runCount: 1,
+      activeRunCount: 0,
+      completedRunCount: 1,
+      failedRunCount: 0,
+      activeRunIds: [],
+      completedRunIds: ["run_hist"],
+      failedRunIds: [],
+      hasExternalWork: true,
+      updatedAt: "2026-04-12T14:00:00Z",
+    },
+    run: {
+      runId: "run_hist",
+      turnId: "turn_hist",
+      sessionId: "sess_001",
+      agentId: "reviewer",
+      displayState: "completed",
+      latestEventType: "run.finished",
+      latestMessageId: "msg_hist",
+      latestMessageText: "done",
+      summary: "历史 run 摘要",
+      externalTaskIds: ["ext_hist"],
+      eventCount: 8,
+      updatedAt: "2026-04-12T14:00:00Z",
+    },
+    externalActivities: [
+      {
+        externalTaskId: "ext_hist",
+        sessionId: "sess_001",
+        turnId: "turn_hist",
+        runId: "run_hist",
+        agentId: "reviewer",
+        activityId: "run_hist:external",
+        kind: "delegate",
+        status: "completed",
+        title: "delegate",
+        detail: "completed",
+        startedAt: "2026-04-12T13:59:00Z",
+        updatedAt: "2026-04-12T14:00:00Z",
+      },
+    ],
+    externalMessages: [
+      {
+        externalTaskId: "ext_hist",
+        messageId: "msg_hist",
+        sessionId: "sess_001",
+        turnId: "turn_hist",
+        runId: "run_hist",
+        agentId: "reviewer",
+        content: "历史详细正文",
+        started: true,
+        completed: true,
+        lastEventType: "run.external.message.end",
+        lastSequence: 8,
+        updatedAt: "2026-04-12T14:00:00Z",
+      },
+    ],
+    externalTasks: [
+      {
+        externalTaskId: "ext_hist",
+        sessionId: "sess_001",
+        turnId: "turn_hist",
+        runId: "run_hist",
+        adapter: "codex",
+        remoteAgentName: "codex-reviewer",
+        remoteSessionId: "remote_hist",
+        remoteTaskId: "task_hist",
+        state: "completed",
+        lastHeartbeatAt: "2026-04-12T14:00:00Z",
+        resultSummary: "历史任务已完成",
+        metadata: {},
+      },
+    ],
+    ...overrides,
+  };
 }
 
 describe("session-store", () => {
@@ -479,5 +576,83 @@ describe("session-store", () => {
     expect((next.snapshot as StateSnapshotV0)?.externalActivities[0]?.activityId).toBe("run_live:external");
     expect((next.snapshot as StateSnapshotV0)?.externalMessages[0]?.messageId).toBe("msg_live");
     expect((next.snapshot as StateSnapshotV0)?.externalMessages[0]?.content).toBe("thinking...");
+  });
+
+  it("merges on-demand run detail into the current snapshot and focuses the restored run", () => {
+    const next = mergeRunDetail(
+      hydrateFromSnapshot(
+        {
+          ...emptySessionViewState,
+          focusedRunId: "run_hist",
+        },
+        makeSnapshot({
+          turnId: "turn_current",
+          lastTurnId: "turn_current",
+          currentRunId: "run_current",
+          turns: [
+            {
+              turnId: "turn_current",
+              sessionId: "sess_001",
+              primaryRunId: "run_current",
+              currentRunId: "run_current",
+              latestRunId: "run_current",
+              latestAgentId: "default",
+              displayState: "running",
+              latestEventType: "run.started",
+              latestMessagePreview: "当前运行中",
+              eventCount: 2,
+              runCount: 1,
+              activeRunCount: 1,
+              completedRunCount: 0,
+              failedRunCount: 0,
+              activeRunIds: ["run_current"],
+              completedRunIds: [],
+              failedRunIds: [],
+              hasExternalWork: false,
+              updatedAt: "2026-04-12T13:50:00Z",
+            },
+          ],
+          runs: [
+            {
+              runId: "run_current",
+              turnId: "turn_current",
+              sessionId: "sess_001",
+              agentId: "default",
+              displayState: "running",
+              latestEventType: "run.started",
+              latestMessageId: "msg_current",
+              latestMessageText: "当前运行中",
+              summary: "",
+              externalTaskIds: [],
+              eventCount: 2,
+              updatedAt: "2026-04-12T13:50:00Z",
+            },
+            {
+              runId: "run_hist",
+              turnId: "turn_hist",
+              sessionId: "sess_001",
+              agentId: "reviewer",
+              displayState: "completed",
+              latestEventType: "run.finished",
+              latestMessageId: "",
+              latestMessageText: "",
+              summary: "",
+              externalTaskIds: [],
+              eventCount: 0,
+              updatedAt: "2026-04-12T13:40:00Z",
+            },
+          ],
+        }),
+      ),
+      makeRunDetail(),
+      "2026-04-12T14:01:00Z",
+    );
+
+    expect(next.focusedRunId).toBe("run_hist");
+    expect(next.snapshot?.runs.map((run) => run.runId)).toEqual(["run_current", "run_hist"]);
+    expect(next.snapshot?.runs.find((run) => run.runId === "run_hist")?.summary).toBe("历史 run 摘要");
+    expect(next.snapshot?.turns.find((turn) => turn.turnId === "turn_hist")?.latestMessagePreview).toBe("历史 run 摘要");
+    expect(next.snapshot?.externalMessages.find((message) => message.runId === "run_hist")?.content).toBe("历史详细正文");
+    expect(next.snapshot?.externalTasks.find((task) => task.runId === "run_hist")?.remoteAgentName).toBe("codex-reviewer");
   });
 });
