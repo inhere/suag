@@ -3,6 +3,7 @@ import type {
   HITLTicket,
   RunDetail,
   SessionDetail,
+  SessionListEntry,
   SessionSummary,
   StateSnapshotExternalActivity,
   StateSnapshotExternalMessage,
@@ -45,6 +46,15 @@ type GetSessionResponse = {
   external_activities?: StateSnapshotExternalActivity[];
   external_messages?: StateSnapshotExternalMessage[];
   external_tasks: ExternalTaskResponse[];
+};
+
+type ListSessionsResponseItem = {
+  session_id: string;
+  title: string;
+  status: SessionSummary["status"];
+  last_turn_id: string;
+  updated_at: string;
+  preview: string;
 };
 
 type StartTurnResponse = {
@@ -106,6 +116,17 @@ function mapSessionResponse(input: CreateSessionResponse): SessionSummary {
     sessionId: input.session_id,
     title: input.title,
     status: input.status,
+  };
+}
+
+function mapSessionListResponse(input: ListSessionsResponseItem): SessionListEntry {
+  return {
+    sessionId: input.session_id,
+    title: input.title,
+    status: input.status,
+    lastTurnId: input.last_turn_id,
+    updatedAt: input.updated_at,
+    preview: input.preview,
   };
 }
 
@@ -177,6 +198,14 @@ export async function getSession(
 ): Promise<SessionDetail> {
   const response = await fetchImpl(`/api/sessions/${sessionId}`);
   return mapSessionDetailResponse(await parseJSON<GetSessionResponse>(response));
+}
+
+export async function listSessions(
+  fetchImpl: FetchLike = fetch,
+): Promise<SessionListEntry[]> {
+  const response = await fetchImpl("/api/sessions");
+  const payload = await parseJSON<ListSessionsResponseItem[]>(response);
+  return payload.map(mapSessionListResponse);
 }
 
 export async function startTurn(

@@ -103,6 +103,49 @@ func TestSQLiteStore_CreateSessionTurnRunAndEvent(t *testing.T) {
 	}
 }
 
+func TestSQLiteStore_ListSessionsReturnsLatestFirst(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newTestStore(t)
+	now := time.Date(2026, 4, 13, 11, 0, 0, 0, time.UTC)
+
+	if err := store.CreateSession(ctx, Session{
+		SessionID: "sess_001",
+		Title:     "older session",
+		Status:    SessionOpen,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Metadata:  map[string]any{},
+	}); err != nil {
+		t.Fatalf("CreateSession() older error = %v", err)
+	}
+	if err := store.CreateSession(ctx, Session{
+		SessionID: "sess_002",
+		Title:     "latest session",
+		Status:    SessionWaiting,
+		CreatedAt: now.Add(time.Minute),
+		UpdatedAt: now.Add(2 * time.Minute),
+		Metadata:  map[string]any{},
+	}); err != nil {
+		t.Fatalf("CreateSession() latest error = %v", err)
+	}
+
+	sessions, err := store.ListSessions(ctx)
+	if err != nil {
+		t.Fatalf("ListSessions() error = %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("ListSessions() len = %d, want 2", len(sessions))
+	}
+	if sessions[0].SessionID != "sess_002" {
+		t.Fatalf("ListSessions()[0].SessionID = %q, want %q", sessions[0].SessionID, "sess_002")
+	}
+	if sessions[1].SessionID != "sess_001" {
+		t.Fatalf("ListSessions()[1].SessionID = %q, want %q", sessions[1].SessionID, "sess_001")
+	}
+}
+
 func TestSQLiteStore_CreateUpdateAndListExternalTasks(t *testing.T) {
 	t.Parallel()
 

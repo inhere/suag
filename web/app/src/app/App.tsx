@@ -24,6 +24,7 @@ import {
   dismissHITLTicket,
   getRunDetail,
   getSession,
+  listSessions,
   listHITLTickets,
   respondHITLTicket,
   startTurn,
@@ -164,6 +165,26 @@ function buildRecentSessionPlaceholder(
   };
 }
 
+function mergeRecentSessions(
+  currentSessions: SessionListItem[],
+  incomingSessions: SessionListItem[],
+): SessionListItem[] {
+  const merged = [...currentSessions];
+  for (const session of incomingSessions) {
+    const existingIndex = merged.findIndex((item) => item.sessionId === session.sessionId);
+    if (existingIndex >= 0) {
+      merged[existingIndex] = {
+        ...merged[existingIndex],
+        ...session,
+      };
+      continue;
+    }
+    merged.push(session);
+  }
+
+  return merged.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
 function switchSessionContext(
   state: SessionViewState,
   sessionId: string,
@@ -223,6 +244,55 @@ export function App() {
 
   useEffect(() => {
     void refreshHITLTickets();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void listSessions()
+      .then((sessions) => {
+        if (cancelled || !sessions.length) {
+          return;
+        }
+
+        const mappedSessions: SessionListItem[] = sessions.map((session) => ({
+          sessionId: session.sessionId,
+          title: session.title,
+          status: session.status,
+          updatedAt: session.updatedAt,
+          preview: session.preview,
+        }));
+
+        setViewState((current) => {
+          const mergedSessions = mergeRecentSessions(current.recentSessions, mappedSessions);
+          if (current.currentSessionId) {
+            return {
+              ...current,
+              recentSessions: mergedSessions,
+            };
+          }
+
+          return switchSessionContext(
+            {
+              ...current,
+              recentSessions: mergedSessions,
+            },
+            mappedSessions[0].sessionId,
+            {
+              focusedRunId: null,
+              fallbackTitle: mappedSessions[0].title,
+              fallbackStatus: mappedSessions[0].status,
+            },
+          );
+        });
+      })
+      .catch(() => {
+        // Keep v0 usable even when the session list endpoint is temporarily unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

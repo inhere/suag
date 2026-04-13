@@ -89,6 +89,15 @@ type createSessionResponse struct {
 	Status    string `json:"status"`
 }
 
+type listSessionsResponseItem struct {
+	SessionID  string `json:"session_id"`
+	Title      string `json:"title"`
+	Status     string `json:"status"`
+	LastTurnID string `json:"last_turn_id"`
+	UpdatedAt  string `json:"updated_at"`
+	Preview    string `json:"preview"`
+}
+
 func (h *Handler) HandleCreateSession(w http.ResponseWriter, r *http.Request) {
 	if h.sessionStore == nil {
 		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
@@ -124,6 +133,39 @@ func (h *Handler) HandleCreateSession(w http.ResponseWriter, r *http.Request) {
 		Title:     sessionModel.Title,
 		Status:    string(sessionModel.Status),
 	})
+}
+
+func (h *Handler) HandleListSessions(w http.ResponseWriter, r *http.Request) {
+	if h.sessionStore == nil {
+		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	sessions, err := h.sessionStore.ListSessions(r.Context())
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := make([]listSessionsResponseItem, 0, len(sessions))
+	for _, sessionModel := range sessions {
+		preview, err := h.buildSessionPreview(r, sessionModel)
+		if err != nil {
+			httpError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		resp = append(resp, listSessionsResponseItem{
+			SessionID:  sessionModel.SessionID,
+			Title:      sessionModel.Title,
+			Status:     string(sessionModel.Status),
+			LastTurnID: sessionModel.LastTurnID,
+			UpdatedAt:  sessionModel.UpdatedAt.UTC().Format(time.RFC3339Nano),
+			Preview:    preview,
+		})
+	}
+
+	respondJSON(w, http.StatusOK, resp)
 }
 
 // ─── POST /api/sessions/{id}/turns ───────────────────────────────────────────
@@ -500,4 +542,58 @@ func filterExternalTaskResponsesByRunID(tasks []externalTaskResponse, runID stri
 		}
 	}
 	return filtered
+}
+
+func (h *Handler) buildSessionPreview(r *http.Request, sessionModel session.Session) (string, error) {
+	externalTasks, err := h.sessionStore.ListExternalTasksBySession(r.Context(), sessionModel.SessionID)
+	if err != nil {
+		return "", err
+	}
+	runEvents, err := h.sessionStore.ListEventsBySession(r.Context(), sessionModel.SessionID, 0)
+	if err != nil {
+		return "", err
+	}
+
+	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(runEvents), externalTasks)
+	snapshotPayload, _ := snapshot.Snapshot.(map[string]any)
+	return snapshotPreview(snapshotPayload), nil
+}
+
+func snapshotPreview(snapshot map[string]any) string {
+	if snapshot == nil {
+		return ""
+	}
+
+	turns := snapshotSliceField(snapshot, "turns")
+	turnID, _ := snapshot["turnId"].(string)
+	lastTurnID, _ := snapshot["lastTurnId"].(string)
+	currentTurn := findTurnSnapshot(turns, turnID)
+	if currentTurn == nil {
+		currentTurn = findTurnSnapshot(turns, lastTurnID)
+	}
+	if currentTurn == nil && len(turns) > 0 {
+		currentTurn = turns[0]
+	}
+	if currentTurn != nil {
+		if preview, _ := currentTurn["latestMessagePreview"].(string); strings.TrimSpace(preview) != "" {
+			return preview
+		}
+	}
+
+	runs := snapshotSliceField(snapshot, "runs")
+	currentRunID, _ := snapshot["currentRunId"].(string)
+	currentRun := findRunSnapshot(runs, currentRunID)
+	if currentRun == nil && len(runs) > 0 {
+		currentRun = runs[0]
+	}
+	if currentRun == nil {
+		return ""
+	}
+	if summary, _ := currentRun["summary"].(string); strings.TrimSpace(summary) != "" {
+		return summary
+	}
+	if latestMessage, _ := currentRun["latestMessageText"].(string); strings.TrimSpace(latestMessage) != "" {
+		return latestMessage
+	}
+	return ""
 }

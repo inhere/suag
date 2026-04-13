@@ -4,6 +4,7 @@ import {
   dismissHITLTicket,
   getRunDetail,
   getSession,
+  listSessions,
   listHITLTickets,
   respondHITLTicket,
   startTurn,
@@ -149,6 +150,53 @@ describe("session-client", () => {
     expect(result.externalActivities[0]?.kind).toBe("run_status");
     expect(result.externalMessages[0]?.content).toBe("thinking...");
     expect(result.externalTasks[0]?.remoteAgentName).toBe("codex-cli");
+  });
+
+  it("loads /api/sessions and returns parsed session summaries", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        {
+          session_id: "sess_002",
+          title: "latest session",
+          status: "WAITING",
+          last_turn_id: "turn_002",
+          updated_at: "2026-04-13T07:00:00Z",
+          preview: "needs review",
+        },
+        {
+          session_id: "sess_001",
+          title: "older session",
+          status: "OPEN",
+          last_turn_id: "turn_001",
+          updated_at: "2026-04-13T06:00:00Z",
+          preview: "done",
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await listSessions();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions");
+    expect(result).toEqual([
+      {
+        sessionId: "sess_002",
+        title: "latest session",
+        status: "WAITING",
+        lastTurnId: "turn_002",
+        updatedAt: "2026-04-13T07:00:00Z",
+        preview: "needs review",
+      },
+      {
+        sessionId: "sess_001",
+        title: "older session",
+        status: "OPEN",
+        lastTurnId: "turn_001",
+        updatedAt: "2026-04-13T06:00:00Z",
+        preview: "done",
+      },
+    ]);
   });
 
   it("posts to /api/sessions/{id}/turns and returns parsed turn identifiers", async () => {

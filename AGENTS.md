@@ -42,6 +42,7 @@
 - `web/app` 已补齐第一版 HITL 工作台面板，当前前端可调用 `/api/hitl` 查看 pending tickets，并在右栏直接执行 `respond` / `dismiss`，形成最小人工干预入口
 - `internal/ops/hitl`、`internal/host/session` 与 `web/app` 已补齐第一版 HITL 上下文关联，当前 host 主链触发的 ticket 会自动携带 `sessionId/turnId/runId`，前端右栏可直接展示并高亮与当前会话关联的人工干预项
 - `web/app/src/features/hitl` 与 `web/app/src/app/App.tsx` 已补齐 `Open Context` 入口，当前可从 HITL 卡片直接切回对应 session/run，上下文切换后会触发既有 HTTP bootstrap、WS 重连与 run detail 恢复链路
+- `internal/host/gateway`、`internal/host/session` 与 `web/app` 已补齐第一版服务端 session list，当前 Host 可通过 `GET /api/sessions` 返回按更新时间排序的会话摘要，前端左栏首次打开时也可从服务端恢复已有会话，而不再只依赖本地 recentSessions
 
 <!-- PROCESSING WORKS:END -->
 

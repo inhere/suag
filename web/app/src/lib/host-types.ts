@@ -34,6 +34,12 @@ export type SessionSummary = {
   status: SessionStatus;
 };
 
+export type SessionListEntry = SessionSummary & {
+  lastTurnId: string;
+  updatedAt: string;
+  preview: string;
+};
+
 export type SessionDetail = SessionSummary & {
   lastTurnId: string;
   turns: StateSnapshotTurn[];

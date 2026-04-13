@@ -1079,6 +1079,69 @@ func (fakeGatewayRunner) Run(context.Context, session.RuntimeRequest) (session.R
 	return session.RuntimeResult{Summary: "ok"}, nil
 }
 
+func TestServer_ListSessionsReturnsLatestSessionsWithPreview(t *testing.T) {
+	t.Parallel()
+
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	svc := session.NewService(store, bus, &emittingGatewayRunner{}, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 13, 10, 0, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	first := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "first session",
+	})
+	postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+first.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "first turn",
+		"initiator_type": "user",
+	})
+
+	second := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "second session",
+	})
+	postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+second.SessionID+"/turns", map[string]any{
+		"agent_id":       "reviewer",
+		"message":        "second turn",
+		"initiator_type": "user",
+	})
+
+	sessions := getJSON[[]map[string]any](t, ts.URL+"/api/sessions")
+	if len(sessions) != 2 {
+		t.Fatalf("GET /api/sessions len = %d, want 2", len(sessions))
+	}
+
+	if sessions[0]["session_id"] != second.SessionID {
+		t.Fatalf("GET /api/sessions[0].session_id = %v, want %q", sessions[0]["session_id"], second.SessionID)
+	}
+	if sessions[0]["title"] != "second session" {
+		t.Fatalf("GET /api/sessions[0].title = %v, want %q", sessions[0]["title"], "second session")
+	}
+	if sessions[0]["status"] != string(session.SessionWaiting) {
+		t.Fatalf("GET /api/sessions[0].status = %v, want %q", sessions[0]["status"], session.SessionWaiting)
+	}
+	if sessions[0]["preview"] != "done" {
+		t.Fatalf("GET /api/sessions[0].preview = %v, want %q", sessions[0]["preview"], "done")
+	}
+	if sessions[0]["last_turn_id"] == "" {
+		t.Fatal("GET /api/sessions[0].last_turn_id is empty")
+	}
+	if sessions[0]["updated_at"] == "" {
+		t.Fatal("GET /api/sessions[0].updated_at is empty")
+	}
+
+	if sessions[1]["session_id"] != first.SessionID {
+		t.Fatalf("GET /api/sessions[1].session_id = %v, want %q", sessions[1]["session_id"], first.SessionID)
+	}
+}
+
 type blockingGatewayRunner struct {
 	mu          sync.Mutex
 	lastRequest session.RuntimeRequest

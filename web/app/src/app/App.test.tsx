@@ -4,6 +4,7 @@ import { App } from "./App";
 import type { SessionSocketMessage, StateSnapshotV0 } from "../lib/host-types";
 
 const createSessionMock = vi.fn();
+const listSessionsMock = vi.fn();
 const listHITLTicketsMock = vi.fn();
 const respondHITLTicketMock = vi.fn();
 const dismissHITLTicketMock = vi.fn();
@@ -17,6 +18,7 @@ const connectSessionSocketMock = vi.fn();
 
 vi.mock("../lib/session-client", () => ({
   createSession: (...args: unknown[]) => createSessionMock(...args),
+  listSessions: (...args: unknown[]) => listSessionsMock(...args),
   listHITLTickets: (...args: unknown[]) => listHITLTicketsMock(...args),
   respondHITLTicket: (...args: unknown[]) => respondHITLTicketMock(...args),
   dismissHITLTicket: (...args: unknown[]) => dismissHITLTicketMock(...args),
@@ -133,6 +135,7 @@ describe("App", () => {
     onMessage = null;
     storage = {};
     createSessionMock.mockReset();
+    listSessionsMock.mockReset();
     listHITLTicketsMock.mockReset();
     respondHITLTicketMock.mockReset();
     dismissHITLTicketMock.mockReset();
@@ -149,6 +152,7 @@ describe("App", () => {
       title: "host runtime",
       status: "OPEN",
     });
+    listSessionsMock.mockResolvedValue([]);
     listHITLTicketsMock.mockResolvedValue([]);
     respondHITLTicketMock.mockResolvedValue(undefined);
     dismissHITLTicketMock.mockResolvedValue(undefined);
@@ -317,6 +321,49 @@ describe("App", () => {
 
     expect(await screen.findByText("restored session")).toBeInTheDocument();
     expect(screen.getByText("run_201")).toBeInTheDocument();
+  });
+
+  it("loads server-side sessions and restores the latest one when local storage is empty", async () => {
+    listSessionsMock.mockResolvedValueOnce([
+      {
+        sessionId: "sess_010",
+        title: "server latest",
+        status: "WAITING",
+        lastTurnId: "turn_010",
+        updatedAt: "2026-04-13T08:00:00Z",
+        preview: "server preview",
+      },
+      {
+        sessionId: "sess_009",
+        title: "server older",
+        status: "WAITING",
+        lastTurnId: "turn_009",
+        updatedAt: "2026-04-13T07:00:00Z",
+        preview: "older preview",
+      },
+    ]);
+    getSessionMock.mockImplementation(async (sessionId: string) => ({
+      sessionId,
+      title: sessionId === "sess_010" ? "server latest" : "server older",
+      status: "WAITING",
+      lastTurnId: sessionId === "sess_010" ? "turn_010" : "turn_009",
+      turns: [],
+      runs: [],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    }));
+
+    render(<App />);
+
+    await waitFor(() => expect(listSessionsMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(connectSessionSocketMock).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "sess_010" }),
+      ),
+    );
+    expect(await screen.findByText("server latest")).toBeInTheDocument();
+    expect(screen.getByText("server older")).toBeInTheDocument();
   });
 
   it("applies HTTP session bootstrap details before the websocket snapshot arrives", async () => {
