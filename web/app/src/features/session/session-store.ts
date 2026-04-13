@@ -3,6 +3,7 @@ import type {
   CustomEvent,
   HostEvent,
   RunDetail,
+  RunCanceledEvent,
   RunErrorEvent,
   RunStartedEvent,
   SessionDetail,
@@ -233,6 +234,12 @@ function isRunErrorMessage(
   message: SessionSocketMessage,
 ): message is RunErrorEvent {
   return message.type === "RUN_ERROR" && "runId" in message && "message" in message;
+}
+
+function isRunCanceledMessage(
+  message: SessionSocketMessage,
+): message is RunCanceledEvent {
+  return message.type === "RUN_CANCELED" && "runId" in message && "message" in message;
 }
 
 function isActivitySnapshotMessage(
@@ -647,6 +654,46 @@ function reduceRunError(
   );
 }
 
+function reduceRunCanceled(
+  snapshot: StateSnapshotV0,
+  message: RunCanceledEvent,
+): StateSnapshotV0 {
+  const runs = snapshot.runs.map(cloneRun);
+  const turns = snapshot.turns.map(cloneTurn);
+  const targetRun =
+    runs.find((run) => run.runId === message.runId) ?? getTargetRun({ ...snapshot, runs, turns });
+  const targetTurn = getTargetTurn({ ...snapshot, runs, turns });
+  if (!targetRun || !targetTurn) {
+    return appendSnapshotEvent(snapshot, message);
+  }
+
+  targetRun.displayState = "canceled";
+  targetRun.latestEventType = "run.canceled";
+  targetRun.latestMessageText = message.message;
+  targetRun.updatedAt = snapshot.generatedAt;
+  targetRun.eventCount += 1;
+
+  targetTurn.displayState = "canceled";
+  targetTurn.latestEventType = "run.canceled";
+  targetTurn.latestMessagePreview = message.message;
+  targetTurn.updatedAt = snapshot.generatedAt;
+  targetTurn.eventCount += 1;
+  targetTurn.activeRunIds = targetTurn.activeRunIds.filter((id) => id !== targetRun.runId);
+  targetTurn.activeRunCount = targetTurn.activeRunIds.length;
+  targetTurn.currentRunId = targetRun.runId;
+  targetTurn.latestRunId = targetRun.runId;
+
+  return appendSnapshotEvent(
+    {
+      ...snapshot,
+      latestEventType: "run.canceled",
+      runs,
+      turns,
+    },
+    message,
+  );
+}
+
 function reduceCustomExternalActivity(
   snapshot: StateSnapshotV0,
   message: CustomEvent,
@@ -852,6 +899,10 @@ function reduceIncrementalMessage(
 
   if (isRunErrorMessage(message)) {
     return reduceRunError(snapshot, message);
+  }
+
+  if (isRunCanceledMessage(message)) {
+    return reduceRunCanceled(snapshot, message);
   }
 
   if (isCustomMessage(message)) {

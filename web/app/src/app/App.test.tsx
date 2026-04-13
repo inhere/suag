@@ -8,6 +8,7 @@ const getSessionMock = vi.fn();
 const startTurnMock = vi.fn();
 const getRunDetailMock = vi.fn();
 const sendContinueTurnMock = vi.fn();
+const sendStopTurnMock = vi.fn();
 const closeSocketMock = vi.fn();
 const connectSessionSocketMock = vi.fn();
 
@@ -130,6 +131,7 @@ describe("App", () => {
     getRunDetailMock.mockReset();
     startTurnMock.mockReset();
     sendContinueTurnMock.mockReset();
+    sendStopTurnMock.mockReset();
     closeSocketMock.mockReset();
     connectSessionSocketMock.mockReset();
 
@@ -168,6 +170,7 @@ describe("App", () => {
       return {
         close: closeSocketMock,
         sendContinueTurn: sendContinueTurnMock,
+        sendStopTurn: sendStopTurnMock,
       };
     });
 
@@ -678,6 +681,62 @@ describe("App", () => {
       message: "请补充错误边界和回退策略",
       agentId: "default",
       initiatorType: "user",
+    });
+  });
+
+  it("sends stop_turn for the current turn from the inspector", async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("给 Axon 发送下一条任务说明..."), {
+      target: { value: "先启动一个可以停止的回合" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(connectSessionSocketMock).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "sess_001" }),
+      ),
+    );
+
+    await act(async () => {
+      onMessage?.({
+        type: "STATE_SNAPSHOT",
+        snapshot: makeSnapshot({
+          status: "RUNNING",
+          turns: [
+            {
+              turnId: "turn_001",
+              sessionId: "sess_001",
+              primaryRunId: "run_001",
+              currentRunId: "run_001",
+              latestRunId: "run_001",
+              latestAgentId: "default",
+              displayState: "external_running",
+              latestEventType: "run.external.activity",
+              latestMessagePreview: "正在执行外部协作",
+              eventCount: 4,
+              runCount: 1,
+              activeRunCount: 1,
+              completedRunCount: 0,
+              failedRunCount: 0,
+              activeRunIds: ["run_001"],
+              completedRunIds: [],
+              failedRunIds: [],
+              hasExternalWork: true,
+              updatedAt: "2026-04-12T11:02:00Z",
+            },
+          ],
+        }),
+      });
+    });
+
+    const stopButton = await screen.findByRole("button", { name: "Stop" });
+    expect(stopButton).toBeEnabled();
+
+    fireEvent.click(stopButton);
+
+    expect(sendStopTurnMock).toHaveBeenCalledWith({
+      turnId: "turn_001",
     });
   });
 });

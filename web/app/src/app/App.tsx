@@ -73,6 +73,16 @@ function isWaitingForInput(state: SessionViewState): boolean {
   return currentTurn.displayState.toLowerCase().includes("waiting");
 }
 
+function canStopCurrentTurn(state: SessionViewState): boolean {
+  const currentTurn = selectCurrentTurn(state.snapshot);
+  if (!currentTurn) {
+    return false;
+  }
+
+  const displayState = currentTurn.displayState.toLowerCase();
+  return !["completed", "failed", "canceled", "waiting", "waiting_input"].includes(displayState);
+}
+
 function buildHintMessage(): string | null {
   const nextHint = globalThis.prompt?.("Add a hint for the current turn");
   if (!nextHint) {
@@ -225,6 +235,7 @@ export function App() {
   const focusedRun = selectFocusedRun(snapshot, viewState.focusedRunId);
   const conversationMessages = buildConversationMessages(viewState);
   const waitingForInput = isWaitingForInput(viewState);
+  const stopEnabled = canStopCurrentTurn(viewState);
 
   async function createNewSession(): Promise<string> {
     const created = await createSession({ title: "host runtime" });
@@ -289,6 +300,16 @@ export function App() {
     });
   }
 
+  function handleStopTurn() {
+    if (!stopEnabled || !currentTurn) {
+      return;
+    }
+
+    socketRef.current?.sendStopTurn({
+      turnId: currentTurn.turnId,
+    });
+  }
+
   return (
     <AppShell
       sessions={viewState.recentSessions}
@@ -303,6 +324,7 @@ export function App() {
       externalActivities={snapshot?.externalActivities ?? []}
       externalMessages={snapshot?.externalMessages ?? []}
       focusedRunId={focusedRun?.runId ?? viewState.focusedRunId}
+      canStop={stopEnabled}
       canAddHint={waitingForInput}
       debugOpen={debugOpen}
       debugEvents={snapshot?.events ?? []}
@@ -326,6 +348,7 @@ export function App() {
           focusedRunId: runId,
         }));
       }}
+      onStop={handleStopTurn}
       onAddHint={handleAddHint}
       onOpenDebug={() => setDebugOpen(true)}
       onCloseDebug={() => setDebugOpen(false)}

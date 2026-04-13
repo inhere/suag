@@ -34,6 +34,17 @@ func MapEvent(event HostEvent) []Event {
 			withTimestamp(NewRunErrorEvent(event.RunID, message), now),
 			buildRunActivitySnapshot(now, event, "failed"),
 		}
+	case session.EventRunCanceled:
+		message := "run canceled"
+		if payload, ok := event.Payload.(map[string]any); ok {
+			if raw, ok := payload["reason"].(string); ok && raw != "" {
+				message = raw
+			}
+		}
+		return []Event{
+			withTimestamp(NewRunCanceledEvent(event.RunID, message), now),
+			buildRunActivitySnapshot(now, event, "canceled"),
+		}
 	case session.EventRunExternalActivity:
 		return []Event{
 			withTimestamp(NewCustomEvent("axon.run.external.activity", map[string]any{
@@ -584,6 +595,8 @@ func displayStateForEvent(event HostEvent) string {
 		return "completed"
 	case session.EventRunFailed:
 		return "failed"
+	case session.EventRunCanceled:
+		return "canceled"
 	case session.EventRunExternalActivity, session.EventRunExternalMessageDelta, session.EventRunExternalMessageEnd:
 		return "external_running"
 	default:

@@ -26,6 +26,7 @@ type AppShellProps = {
   externalActivities?: StateSnapshotExternalActivity[];
   externalMessages?: StateSnapshotExternalMessage[];
   focusedRunId?: string | null;
+  canStop?: boolean;
   canAddHint?: boolean;
   debugOpen?: boolean;
   debugEvents?: SessionSocketMessage[];
@@ -35,6 +36,7 @@ type AppShellProps = {
   onFilterChange?: (filter: SessionFilter) => void;
   onSubmitMessage?: (message: string) => void;
   onFocusRun?: (runId: string) => void;
+  onStop?: () => void;
   onAddHint?: () => void;
   onOpenDebug?: () => void;
   onCloseDebug?: () => void;
@@ -53,6 +55,7 @@ export function AppShell({
   externalActivities = [],
   externalMessages = [],
   focusedRunId = null,
+  canStop = false,
   canAddHint = false,
   debugOpen = false,
   debugEvents = [],
@@ -62,6 +65,7 @@ export function AppShell({
   onFilterChange = () => {},
   onSubmitMessage = () => {},
   onFocusRun = () => {},
+  onStop = () => {},
   onAddHint = () => {},
   onOpenDebug = () => {},
   onCloseDebug = () => {},
@@ -101,6 +105,8 @@ export function AppShell({
             externalMessages={externalMessages}
             focusedRunId={focusedRunId}
             onFocusRun={onFocusRun}
+            canStop={canStop}
+            onStop={onStop}
             canAddHint={canAddHint}
             onAddHint={onAddHint}
             onOpenDebug={onOpenDebug}

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 type wsCommandRunner interface {
 	ContinueTurn(ctx context.Context, in session.ContinueTurnInput) (session.StartTurnResult, error)
+	StopTurn(ctx context.Context, in session.StopTurnInput) error
 }
 
 type wsSessionStore interface {
@@ -26,9 +28,11 @@ type wsSessionStore interface {
 type wsCommand struct {
 	Type          string `json:"type"`
 	SessionID     string `json:"session_id"`
+	TurnID        string `json:"turn_id"`
 	Message       string `json:"message"`
 	AgentID       string `json:"agent_id"`
 	InitiatorType string `json:"initiator_type"`
+	Reason        string `json:"reason"`
 }
 
 func WSHandler(bus *EventBus, sessionStore wsSessionStore, sessionSvc wsCommandRunner) http.HandlerFunc {
@@ -75,12 +79,14 @@ func WSHandler(bus *EventBus, sessionStore wsSessionStore, sessionSvc wsCommandR
 				if err := wsjson.Read(ctx, conn, &cmd); err != nil {
 					return
 				}
-				if err := handleWSCommand(ctx, conn, &writeMu, sub, sessionSvc, cmd); err != nil {
-					_ = writeWSJSON(ctx, conn, &writeMu, map[string]any{
-						"type":  "command.error",
-						"error": err.Error(),
-					})
-				}
+				go func(command wsCommand) {
+					if err := handleWSCommand(ctx, conn, &writeMu, sub, sessionSvc, command); err != nil {
+						_ = writeWSJSON(ctx, conn, &writeMu, map[string]any{
+							"type":  "command.error",
+							"error": err.Error(),
+						})
+					}
+				}(cmd)
 			}
 		}()
 
@@ -175,6 +181,33 @@ func handleWSCommand(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mu
 			return err
 		}
 		return nil
+	case "stop_turn":
+		if sessionSvc == nil {
+			return http.ErrNotSupported
+		}
+
+		sessionID := strings.TrimSpace(cmd.SessionID)
+		if sessionID == "" {
+			sessionID = sub.SessionID
+		}
+		turnID := strings.TrimSpace(cmd.TurnID)
+		if turnID == "" {
+			return fmt.Errorf("turn id is required")
+		}
+
+		if err := writeWSJSON(ctx, conn, writeMu, map[string]any{
+			"type":       "command.accepted",
+			"command":    "stop_turn",
+			"session_id": sessionID,
+		}); err != nil {
+			return err
+		}
+
+		return sessionSvc.StopTurn(ctx, session.StopTurnInput{
+			SessionID: sessionID,
+			TurnID:    turnID,
+			Reason:    cmd.Reason,
+		})
 	default:
 		return nil
 	}

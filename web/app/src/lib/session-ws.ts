@@ -6,6 +6,11 @@ export type ContinueTurnCommand = {
   initiatorType: string;
 };
 
+export type StopTurnCommand = {
+  turnId: string;
+  reason?: string;
+};
+
 export type ConnectSessionSocketOptions = {
   sessionId: string;
   onMessage: (message: SessionSocketMessage) => void;
@@ -15,6 +20,7 @@ export type ConnectSessionSocketOptions = {
 export type SessionSocketConnection = {
   close: () => void;
   sendContinueTurn: (command: ContinueTurnCommand) => void;
+  sendStopTurn: (command: StopTurnCommand) => void;
 };
 
 function buildSocketURL(sessionId: string): string {
@@ -41,6 +47,16 @@ export function connectSessionSocket(
           message: command.message,
           agent_id: command.agentId,
           initiator_type: command.initiatorType,
+        }),
+      );
+    },
+    sendStopTurn: (command) => {
+      ws.send(
+        JSON.stringify({
+          type: "stop_turn",
+          session_id: options.sessionId,
+          turn_id: command.turnId,
+          reason: command.reason,
         }),
       );
     },

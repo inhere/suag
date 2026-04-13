@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -317,6 +318,80 @@ func TestService_StartTurnPublishesRuntimeEventsFromRunner(t *testing.T) {
 	}
 }
 
+func TestService_StopTurnCancelsActiveRunAndPublishesCanceledLifecycle(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := newBlockingRunner()
+	now := time.Date(2026, 4, 13, 8, 0, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	startDone := make(chan error, 1)
+	go func() {
+		_, err := svc.StartTurn(ctx, StartTurnInput{
+			SessionID:     "sess_stop",
+			AgentID:       "default",
+			UserMessage:   "run until stopped",
+			InitiatorType: InitiatorUser,
+		})
+		startDone <- err
+	}()
+
+	runner.WaitUntilRunning(t)
+
+	if err := svc.StopTurn(ctx, StopTurnInput{
+		SessionID: "sess_stop",
+		TurnID:    runner.LastRequest().TurnID,
+		Reason:    "stopped by operator",
+	}); err != nil {
+		t.Fatalf("StopTurn() error = %v", err)
+	}
+
+	select {
+	case err := <-startDone:
+		if err != nil {
+			t.Fatalf("StartTurn() error after stop = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartTurn() did not return after stop")
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_stop", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+	if events[2].EventType != EventRunCanceled {
+		t.Fatalf("events[2].EventType = %q, want %q", events[2].EventType, EventRunCanceled)
+	}
+	if events[2].Payload["reason"] != "stopped by operator" {
+		t.Fatalf("events[2].Payload[reason] = %v, want %q", events[2].Payload["reason"], "stopped by operator")
+	}
+
+	row := store.db.QueryRowContext(ctx, `
+		SELECT state, ended_at
+		FROM runs
+		WHERE run_id = ?
+	`, runner.LastRequest().RunID)
+	var runState, endedAt string
+	if err := row.Scan(&runState, &endedAt); err != nil {
+		t.Fatalf("query canceled run error = %v", err)
+	}
+	if runState != string(RunCanceled) {
+		t.Fatalf("persisted run state = %q, want %q", runState, RunCanceled)
+	}
+	if endedAt != now.Format(time.RFC3339Nano) {
+		t.Fatalf("persisted run ended_at = %q, want %q", endedAt, now.Format(time.RFC3339Nano))
+	}
+}
+
 func TestService_StartTurnPersistsCompletedLifecycleState(t *testing.T) {
 	t.Parallel()
 
@@ -483,6 +558,49 @@ func (f *fakeRunner) Run(_ context.Context, in RuntimeRequest) (RuntimeResult, e
 		}
 	}
 	return f.result, f.err
+}
+
+type blockingRunner struct {
+	mu          sync.Mutex
+	lastRequest RuntimeRequest
+	startedCh   chan struct{}
+}
+
+func newBlockingRunner() *blockingRunner {
+	return &blockingRunner{
+		startedCh: make(chan struct{}),
+	}
+}
+
+func (r *blockingRunner) Run(ctx context.Context, in RuntimeRequest) (RuntimeResult, error) {
+	r.mu.Lock()
+	r.lastRequest = in
+	r.mu.Unlock()
+
+	select {
+	case <-r.startedCh:
+	default:
+		close(r.startedCh)
+	}
+
+	<-ctx.Done()
+	return RuntimeResult{}, ctx.Err()
+}
+
+func (r *blockingRunner) WaitUntilRunning(t *testing.T) {
+	t.Helper()
+
+	select {
+	case <-r.startedCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocking runner did not start")
+	}
+}
+
+func (r *blockingRunner) LastRequest() RuntimeRequest {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastRequest
 }
 
 type fakePublisher struct {

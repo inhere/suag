@@ -183,6 +183,13 @@ export type RunErrorEvent = {
   timestamp?: number;
 };
 
+export type RunCanceledEvent = {
+  type: "RUN_CANCELED";
+  runId: string;
+  message: string;
+  timestamp?: number;
+};
+
 export type ActivitySnapshotEvent = {
   type: "ACTIVITY_SNAPSHOT";
   messageId: string;
@@ -245,6 +252,7 @@ export type SessionSocketMessage =
   | RunStartedEvent
   | RunFinishedEvent
   | RunErrorEvent
+  | RunCanceledEvent
   | ActivitySnapshotEvent
   | TextMessageStartEvent
   | TextMessageContentEvent

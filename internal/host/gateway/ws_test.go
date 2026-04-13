@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -776,10 +778,7 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 		t.Fatalf("wsjson.Write() command error = %v", err)
 	}
 
-	var ack map[string]any
-	if err := wsjson.Read(ctx, conn, &ack); err != nil {
-		t.Fatalf("wsjson.Read() ack error = %v", err)
-	}
+	ack := readUntilEventType(t, ctx, conn, "command.accepted")
 	if ack["type"] != "command.accepted" {
 		t.Fatalf("ack type = %v, want command.accepted", ack["type"])
 	}
@@ -863,10 +862,7 @@ func TestServer_ContinueTurnReusesPreviousRemoteSession(t *testing.T) {
 		t.Fatalf("wsjson.Write() command error = %v", err)
 	}
 
-	var ack map[string]any
-	if err := wsjson.Read(ctx, conn, &ack); err != nil {
-		t.Fatalf("wsjson.Read() ack error = %v", err)
-	}
+	ack := readUntilEventType(t, ctx, conn, "command.accepted")
 	if ack["type"] != "command.accepted" {
 		t.Fatalf("ack type = %v, want command.accepted", ack["type"])
 	}
@@ -882,6 +878,109 @@ func TestServer_ContinueTurnReusesPreviousRemoteSession(t *testing.T) {
 	}
 	if runner.requests[1].Context["external_task_id"] == nil {
 		t.Fatal("continue request missing external_task_id")
+	}
+}
+
+func TestServer_StopTurnOverWebSocketCancelsActiveRun(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	runner := newBlockingGatewayRunner()
+	svc := session.NewService(store, bus, runner, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 13, 8, 30, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "stoppable session",
+	})
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial() error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+
+	startDone := make(chan error, 1)
+	go func() {
+		resp, err := json.Marshal(map[string]any{
+			"agent_id":       "default",
+			"message":        "run until stop",
+			"initiator_type": "user",
+		})
+		if err != nil {
+			startDone <- err
+			return
+		}
+
+		httpResp, err := http.Post(
+			ts.URL+"/api/sessions/"+createResp.SessionID+"/turns",
+			"application/json",
+			bytes.NewReader(resp),
+		)
+		if err != nil {
+			startDone <- err
+			return
+		}
+		defer httpResp.Body.Close()
+
+		if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+			startDone <- errors.New("start turn request failed")
+			return
+		}
+		startDone <- nil
+	}()
+
+	runner.WaitUntilRunning(t)
+	req := runner.LastRequest()
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "stop_turn",
+		"session_id": createResp.SessionID,
+		"turn_id":    req.TurnID,
+	}); err != nil {
+		t.Fatalf("wsjson.Write() stop command error = %v", err)
+	}
+
+	ack := readUntilEventType(t, ctx, conn, "command.accepted")
+	if ack["type"] != "command.accepted" {
+		t.Fatalf("ack type = %v, want command.accepted", ack["type"])
+	}
+	if ack["command"] != "stop_turn" {
+		t.Fatalf("ack command = %v, want stop_turn", ack["command"])
+	}
+
+	event := readUntilEventType(t, ctx, conn, "RUN_CANCELED")
+	if event["runId"] != req.RunID {
+		t.Fatalf("RUN_CANCELED runId = %v, want %q", event["runId"], req.RunID)
+	}
+
+	select {
+	case err := <-startDone:
+		if err != nil {
+			t.Fatalf("start turn request error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("start turn request did not finish after stop")
 	}
 }
 
@@ -978,6 +1077,49 @@ type fakeGatewayRunner struct{}
 
 func (fakeGatewayRunner) Run(context.Context, session.RuntimeRequest) (session.RuntimeResult, error) {
 	return session.RuntimeResult{Summary: "ok"}, nil
+}
+
+type blockingGatewayRunner struct {
+	mu          sync.Mutex
+	lastRequest session.RuntimeRequest
+	startedCh   chan struct{}
+}
+
+func newBlockingGatewayRunner() *blockingGatewayRunner {
+	return &blockingGatewayRunner{
+		startedCh: make(chan struct{}),
+	}
+}
+
+func (r *blockingGatewayRunner) Run(ctx context.Context, in session.RuntimeRequest) (session.RuntimeResult, error) {
+	r.mu.Lock()
+	r.lastRequest = in
+	r.mu.Unlock()
+
+	select {
+	case <-r.startedCh:
+	default:
+		close(r.startedCh)
+	}
+
+	<-ctx.Done()
+	return session.RuntimeResult{}, ctx.Err()
+}
+
+func (r *blockingGatewayRunner) WaitUntilRunning(t *testing.T) {
+	t.Helper()
+
+	select {
+	case <-r.startedCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocking gateway runner did not start")
+	}
+}
+
+func (r *blockingGatewayRunner) LastRequest() session.RuntimeRequest {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastRequest
 }
 
 type resumeAwareGatewayRunner struct {

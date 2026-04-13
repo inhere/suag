@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -56,10 +57,26 @@ type ContinueTurnInput struct {
 	InitiatorType InitiatorType
 }
 
+type StopTurnInput struct {
+	SessionID string
+	TurnID    string
+	Reason    string
+}
+
 type StartTurnResult struct {
 	SessionID string
 	TurnID    string
 	RunID     string
+}
+
+type activeExecution struct {
+	sessionID string
+	turnID    string
+	runID     string
+	agentID   string
+	cancel    context.CancelFunc
+	stopped   bool
+	reason    string
 }
 
 // Service owns the host-side lifecycle orchestration for session turns and runs.
@@ -68,6 +85,9 @@ type Service struct {
 	pub    Publisher
 	runner Runner
 	now    func() time.Time
+
+	activeMu          sync.Mutex
+	activeExecutions  map[string]*activeExecution
 }
 
 func NewService(store Store, pub Publisher, runner Runner, cfg ServiceConfig) *Service {
@@ -81,6 +101,7 @@ func NewService(store Store, pub Publisher, runner Runner, cfg ServiceConfig) *S
 		pub:    pub,
 		runner: runner,
 		now:    nowFn,
+		activeExecutions: make(map[string]*activeExecution),
 	}
 }
 
@@ -102,6 +123,27 @@ func (s *Service) ContinueTurn(ctx context.Context, in ContinueTurnInput) (Start
 		return StartTurnResult{}, err
 	}
 	return s.startTurn(ctx, in.SessionID, in.AgentID, in.Message, in.InitiatorType, false)
+}
+
+func (s *Service) StopTurn(ctx context.Context, in StopTurnInput) error {
+	if s == nil {
+		return fmt.Errorf("service is required")
+	}
+	if err := validateStopTurnInput(in); err != nil {
+		return err
+	}
+
+	execution, ok := s.stopActiveExecution(in.SessionID, in.TurnID, in.Reason)
+	if !ok {
+		return fmt.Errorf("active turn not found")
+	}
+
+	if execution == nil {
+		return fmt.Errorf("active turn not found")
+	}
+
+	_ = ctx
+	return nil
 }
 
 func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message string, initiatorType InitiatorType, createIfMissing bool) (StartTurnResult, error) {
@@ -196,7 +238,8 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 
 	if s.runner != nil {
 		nextSequence := int64(3)
-		result, err := s.runner.Run(ctx, RuntimeRequest{
+		runCtx, execution := s.registerActiveExecution(ctx, sessionID, turnID, runID, agentID)
+		result, err := s.runner.Run(runCtx, RuntimeRequest{
 			SessionID:   sessionID,
 			TurnID:      turnID,
 			RunID:       runID,
@@ -235,6 +278,44 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				return nil
 			},
 		})
+		execution = s.finishActiveExecution(sessionID, turnID, runID)
+		if execution != nil && execution.stopped && errors.Is(err, context.Canceled) {
+			canceledAt := s.now().UTC()
+			reason := strings.TrimSpace(execution.reason)
+			if reason == "" {
+				reason = "stopped by operator"
+			}
+			if lifecycleErr := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunCanceled, TurnWaiting, "", reason, canceledAt); lifecycleErr != nil {
+				return StartTurnResult{}, fmt.Errorf("persist canceled lifecycle: %w", lifecycleErr)
+			}
+			canceledEvent := RunEvent{
+				EventID:   NewEventID(),
+				SessionID: sessionID,
+				TurnID:    turnID,
+				RunID:     runID,
+				AgentID:   agentID,
+				EventType: EventRunCanceled,
+				Sequence:  nextSequence,
+				Payload: map[string]any{
+					"reason": reason,
+				},
+				Source:    "host.session.service",
+				CreatedAt: canceledAt,
+			}
+			if appendErr := s.store.AppendEvent(ctx, canceledEvent); appendErr != nil {
+				return StartTurnResult{}, fmt.Errorf("append canceled event: %w", appendErr)
+			}
+			if s.pub != nil {
+				if publishErr := s.pub.PublishSessionEvent(ctx, canceledEvent); publishErr != nil {
+					return StartTurnResult{}, fmt.Errorf("publish canceled event: %w", publishErr)
+				}
+			}
+			return StartTurnResult{
+				SessionID: sessionID,
+				TurnID:    turnID,
+				RunID:     runID,
+			}, nil
+		}
 		if err != nil {
 			failedAt := s.now().UTC()
 			if lifecycleErr := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunFailed, TurnFailed, "", err.Error(), failedAt); lifecycleErr != nil {
@@ -305,6 +386,63 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 		TurnID:    turnID,
 		RunID:     runID,
 	}, nil
+}
+
+func (s *Service) registerActiveExecution(
+	ctx context.Context,
+	sessionID string,
+	turnID string,
+	runID string,
+	agentID string,
+) (context.Context, *activeExecution) {
+	runCtx, cancel := context.WithCancel(ctx)
+	execution := &activeExecution{
+		sessionID: sessionID,
+		turnID:    turnID,
+		runID:     runID,
+		agentID:   agentID,
+		cancel:    cancel,
+	}
+
+	s.activeMu.Lock()
+	s.activeExecutions[activeExecutionKey(sessionID, turnID, runID)] = execution
+	s.activeMu.Unlock()
+
+	return runCtx, execution
+}
+
+func (s *Service) stopActiveExecution(sessionID, turnID, reason string) (*activeExecution, bool) {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+
+	for _, execution := range s.activeExecutions {
+		if execution.sessionID != sessionID || execution.turnID != turnID {
+			continue
+		}
+		execution.stopped = true
+		execution.reason = strings.TrimSpace(reason)
+		execution.cancel()
+		return execution, true
+	}
+
+	return nil, false
+}
+
+func (s *Service) finishActiveExecution(sessionID, turnID, runID string) *activeExecution {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+
+	key := activeExecutionKey(sessionID, turnID, runID)
+	execution := s.activeExecutions[key]
+	if execution == nil {
+		return nil
+	}
+	delete(s.activeExecutions, key)
+	return execution
+}
+
+func activeExecutionKey(sessionID, turnID, runID string) string {
+	return sessionID + ":" + turnID + ":" + runID
 }
 
 func (s *Service) persistLifecycleState(
@@ -449,6 +587,16 @@ func validateStartTurnInput(in StartTurnInput) error {
 
 func validateContinueTurnInput(in ContinueTurnInput) error {
 	return validateTurnRequest(in.SessionID, in.AgentID, in.Message, in.InitiatorType)
+}
+
+func validateStopTurnInput(in StopTurnInput) error {
+	if strings.TrimSpace(in.SessionID) == "" {
+		return fmt.Errorf("session id is required")
+	}
+	if strings.TrimSpace(in.TurnID) == "" {
+		return fmt.Errorf("turn id is required")
+	}
+	return nil
 }
 
 func validateTurnRequest(sessionID, agentID, message string, initiatorType InitiatorType) error {

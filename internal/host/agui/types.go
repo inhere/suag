@@ -14,6 +14,7 @@ const (
 	EventTypeRunStarted         EventType = "RUN_STARTED"
 	EventTypeRunFinished        EventType = "RUN_FINISHED"
 	EventTypeRunError           EventType = "RUN_ERROR"
+	EventTypeRunCanceled        EventType = "RUN_CANCELED"
 	EventTypeActivitySnapshot   EventType = "ACTIVITY_SNAPSHOT"
 	EventTypeTextMessageStart   EventType = "TEXT_MESSAGE_START"
 	EventTypeTextMessageContent EventType = "TEXT_MESSAGE_CONTENT"
@@ -252,6 +253,38 @@ func (e *RunErrorEvent) Validate() error {
 }
 
 func (e *RunErrorEvent) ToJSON() ([]byte, error) {
+	return json.Marshal(e)
+}
+
+type RunCanceledEvent struct {
+	*BaseEvent
+	RunIDValue string `json:"runId,omitempty"`
+	Message    string `json:"message"`
+}
+
+func NewRunCanceledEvent(runID, message string) *RunCanceledEvent {
+	return &RunCanceledEvent{
+		BaseEvent:  NewBaseEvent(EventTypeRunCanceled),
+		RunIDValue: runID,
+		Message:    message,
+	}
+}
+
+func (e *RunCanceledEvent) RunID() string {
+	return e.RunIDValue
+}
+
+func (e *RunCanceledEvent) Validate() error {
+	if err := e.BaseEvent.Validate(); err != nil {
+		return err
+	}
+	if e.Message == "" {
+		return fmt.Errorf("message is required")
+	}
+	return nil
+}
+
+func (e *RunCanceledEvent) ToJSON() ([]byte, error) {
 	return json.Marshal(e)
 }
 

@@ -94,4 +94,26 @@ describe("session-ws", () => {
       }),
     ]);
   });
+
+  it("sends stop_turn commands over the existing websocket", () => {
+    const ws = new FakeWebSocket();
+
+    const socket = connectSessionSocket({
+      sessionId: "sess_001",
+      createWebSocket: () => ws as unknown as WebSocket,
+      onMessage: vi.fn(),
+    });
+
+    socket.sendStopTurn({
+      turnId: "turn_001",
+    });
+
+    expect(ws.sent).toEqual([
+      JSON.stringify({
+        type: "stop_turn",
+        session_id: "sess_001",
+        turn_id: "turn_001",
+      }),
+    ]);
+  });
 });

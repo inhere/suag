@@ -18,6 +18,8 @@ type RunInspectorProps = {
   externalMessages: StateSnapshotExternalMessage[];
   focusedRunId: string | null;
   onFocusRun: (runId: string) => void;
+  canStop: boolean;
+  onStop: () => void;
   canAddHint: boolean;
   onAddHint: () => void;
   onOpenDebug: () => void;
@@ -42,6 +44,8 @@ export function RunInspector({
   externalMessages,
   focusedRunId,
   onFocusRun,
+  canStop,
+  onStop,
   canAddHint,
   onAddHint,
   onOpenDebug,
@@ -64,6 +68,8 @@ export function RunInspector({
       <ExternalTaskPanel
         externalTasks={externalTasks}
         focusedRunId={focusedRun?.runId ?? null}
+        canStop={canStop}
+        onStop={onStop}
         canAddHint={canAddHint}
         onAddHint={onAddHint}
         onOpenDebug={onOpenDebug}
