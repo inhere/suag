@@ -225,6 +225,11 @@ export function App() {
   const [viewState, setViewState] = useState<SessionViewState>(buildInitialViewState);
   const [hitlTickets, setHITLTickets] = useState<HITLTicket[]>([]);
   const [hitlLoading, setHITLLoading] = useState(false);
+  const [createSessionPending, setCreateSessionPending] = useState(false);
+  const [startTurnPending, setStartTurnPending] = useState(false);
+  const [pendingWSCommand, setPendingWSCommand] = useState<
+    null | "continue_composer" | "continue_hint" | "stop"
+  >(null);
   const [socketStatus, setSocketStatus] = useState<SessionSocketStatus | "idle">("idle");
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [sessionListReloadKey, setSessionListReloadKey] = useState(0);
@@ -391,11 +396,16 @@ export function App() {
         if (cancelled) {
           return;
         }
+        setPendingWSCommand(null);
         setConnectionError(message);
       },
       onMessage: (message: SessionSocketMessage) => {
         if (cancelled) {
           return;
+        }
+
+        if (message.type === "command.accepted" || message.type === "command.error") {
+          setPendingWSCommand(null);
         }
 
         setViewState((current) => reduceSessionMessage(current, message));
@@ -435,6 +445,9 @@ export function App() {
   const conversationMessages = buildConversationMessages(viewState);
   const waitingForInput = isWaitingForInput(viewState);
   const stopEnabled = canStopCurrentTurn(viewState);
+  const submitPending = startTurnPending || pendingWSCommand === "continue_composer";
+  const stopPending = pendingWSCommand === "stop";
+  const addHintPending = pendingWSCommand === "continue_hint";
   const contextSessionLabel = `Session ${viewState.currentSessionId ?? "none"}`;
   const contextTurnLabel = `Turn ${currentTurn?.turnId ?? "none"}`;
   const contextRunLabel = `Run ${focusedRun?.runId ?? viewState.focusedRunId ?? "none"}`;
@@ -454,15 +467,20 @@ export function App() {
         : `Session ${viewState.currentSessionId} connecting...`;
 
   async function createNewSession(): Promise<string> {
-    const created = await createSession({ title: "host runtime" });
-    setViewState((current) =>
-      switchSessionContext(current, created.sessionId, {
-        focusedRunId: null,
-        fallbackTitle: created.title,
-        fallbackStatus: created.status,
-      }),
-    );
-    return created.sessionId;
+    setCreateSessionPending(true);
+    try {
+      const created = await createSession({ title: "host runtime" });
+      setViewState((current) =>
+        switchSessionContext(current, created.sessionId, {
+          focusedRunId: null,
+          fallbackTitle: created.title,
+          fallbackStatus: created.status,
+        }),
+      );
+      return created.sessionId;
+    } finally {
+      setCreateSessionPending(false);
+    }
   }
 
   async function ensureSession(): Promise<string> {
@@ -474,9 +492,14 @@ export function App() {
   }
 
   async function handleSubmit(message: string) {
+    if (submitPending) {
+      return;
+    }
+
     const sessionId = await ensureSession();
 
     if (waitingForInput) {
+      setPendingWSCommand("continue_composer");
       socketRef.current?.sendContinueTurn({
         message,
         agentId: "default",
@@ -485,15 +508,20 @@ export function App() {
       return;
     }
 
-    await startTurn(sessionId, {
-      agentId: "default",
-      message,
-      initiatorType: "user",
-    });
+    setStartTurnPending(true);
+    try {
+      await startTurn(sessionId, {
+        agentId: "default",
+        message,
+        initiatorType: "user",
+      });
+    } finally {
+      setStartTurnPending(false);
+    }
   }
 
   function handleAddHint() {
-    if (!waitingForInput) {
+    if (!waitingForInput || addHintPending) {
       return;
     }
 
@@ -502,6 +530,7 @@ export function App() {
       return;
     }
 
+    setPendingWSCommand("continue_hint");
     socketRef.current?.sendContinueTurn({
       message,
       agentId: "default",
@@ -510,10 +539,11 @@ export function App() {
   }
 
   function handleStopTurn() {
-    if (!stopEnabled || !currentTurn) {
+    if (!stopEnabled || !currentTurn || stopPending) {
       return;
     }
 
+    setPendingWSCommand("stop");
     socketRef.current?.sendStopTurn({
       turnId: currentTurn.turnId,
     });
@@ -570,6 +600,7 @@ export function App() {
     <AppShell
       sessions={viewState.recentSessions}
       currentSessionId={viewState.currentSessionId}
+      createSessionPending={createSessionPending}
       contextSessionLabel={contextSessionLabel}
       contextTurnLabel={contextTurnLabel}
       contextRunLabel={contextRunLabel}
@@ -585,6 +616,7 @@ export function App() {
       currentTurn={currentTurn}
       recentTurns={recentTurns}
       waitingForInput={waitingForInput}
+      submitPending={submitPending}
       runs={snapshot?.runs.length ? snapshot.runs : activeRuns}
       externalTasks={snapshot?.externalTasks ?? []}
       externalActivities={snapshot?.externalActivities ?? []}
@@ -596,7 +628,9 @@ export function App() {
       hitlTickets={hitlTickets}
       hitlLoading={hitlLoading}
       canStop={stopEnabled}
+      stopPending={stopPending}
       canAddHint={waitingForInput}
+      addHintPending={addHintPending}
       debugOpen={debugOpen}
       debugEvents={snapshot?.events ?? []}
       onCreateSession={() => {

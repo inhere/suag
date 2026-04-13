@@ -4,8 +4,10 @@ type ExternalTaskPanelProps = {
   externalTasks: ExternalTaskSummary[];
   focusedRunId: string | null;
   canStop: boolean;
+  stopPending?: boolean;
   onStop: () => void;
   canAddHint: boolean;
+  addHintPending?: boolean;
   onAddHint: () => void;
   onOpenDebug: () => void;
 };
@@ -14,8 +16,10 @@ export function ExternalTaskPanel({
   externalTasks,
   focusedRunId,
   canStop,
+  stopPending = false,
   onStop,
   canAddHint,
+  addHintPending = false,
   onAddHint,
   onOpenDebug,
 }: ExternalTaskPanelProps) {
@@ -35,15 +39,17 @@ export function ExternalTaskPanel({
       ) : (
         <p>No external task linked.</p>
       )}
+      {stopPending ? <p className="action-status">正在停止当前 turn...</p> : null}
+      {addHintPending ? <p className="action-status">正在追加提示...</p> : null}
       <div className="run-actions">
         <button type="button" disabled>
           Continue
         </button>
-        <button type="button" disabled={!canStop} onClick={onStop}>
-          Stop
+        <button type="button" disabled={!canStop || stopPending} onClick={onStop}>
+          {stopPending ? "Stopping..." : "Stop"}
         </button>
-        <button type="button" disabled={!canAddHint} onClick={onAddHint}>
-          Add Hint
+        <button type="button" disabled={!canAddHint || addHintPending} onClick={onAddHint}>
+          {addHintPending ? "Adding Hint..." : "Add Hint"}
         </button>
         <button type="button" onClick={onOpenDebug}>
           Debug

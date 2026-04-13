@@ -124,6 +124,17 @@ function makeSnapshot(overrides: Partial<StateSnapshotV0> = {}): StateSnapshotV0
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
 describe("App", () => {
   let onMessage: ((message: SessionSocketMessage) => void) | null;
   let onStatusChange: ((status: SessionSocketStatus) => void) | null;
@@ -252,6 +263,62 @@ describe("App", () => {
     expect(screen.getByText("Run run_001")).toBeInTheDocument();
     await waitFor(() =>
       expect(storage["axon.web.workbench"]).toContain("\"currentSessionId\":\"sess_001\""),
+    );
+  });
+
+  it("shows pending feedback while creating a session from the sidebar", async () => {
+    const createDeferred = deferred<{
+      sessionId: string;
+      title: string;
+      status: string;
+    }>();
+    createSessionMock.mockReturnValueOnce(createDeferred.promise);
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "+ New Session" }));
+    expect(await screen.findByRole("button", { name: "Creating..." })).toBeDisabled();
+
+    await act(async () => {
+      createDeferred.resolve({
+        sessionId: "sess_100",
+        title: "manual session",
+        status: "OPEN",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "+ New Session" })).toBeEnabled(),
+    );
+  });
+
+  it("shows pending feedback while starting a new turn", async () => {
+    const startDeferred = deferred<{
+      sessionId: string;
+      turnId: string;
+      runId: string;
+    }>();
+    startTurnMock.mockReturnValueOnce(startDeferred.promise);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("给 Axon 发送下一条任务说明..."), {
+      target: { value: "先启动一个带提交反馈的新回合" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByRole("button", { name: "Starting..." })).toBeDisabled();
+
+    await act(async () => {
+      startDeferred.resolve({
+        sessionId: "sess_001",
+        turnId: "turn_001",
+        runId: "run_001",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Starting..." })).not.toBeInTheDocument(),
     );
   });
 
@@ -1215,11 +1282,123 @@ describe("App", () => {
 
     fireEvent.click(addHintButton);
 
+    expect(await screen.findByRole("button", { name: "Adding Hint..." })).toBeDisabled();
     expect(globalThis.prompt).toHaveBeenCalled();
     expect(sendContinueTurnMock).toHaveBeenCalledWith({
       message: "请补充错误边界和回退策略",
       agentId: "default",
       initiatorType: "user",
+    });
+
+    await act(async () => {
+      onMessage?.({
+        type: "command.accepted",
+        command: "continue_turn",
+        session_id: "sess_001",
+      });
+    });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Add Hint" })).toBeEnabled());
+  });
+
+  it("shows pending feedback while continuing a waiting turn from the composer", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "waiting session",
+          status: "WAITING",
+          updatedAt: "2026-04-13T10:00:00Z",
+          preview: "waiting preview",
+        },
+      ],
+    });
+    getSessionMock.mockResolvedValueOnce({
+      sessionId: "sess_001",
+      title: "waiting session",
+      status: "WAITING",
+      lastTurnId: "turn_001",
+      turns: [],
+      runs: [],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    });
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(connectSessionSocketMock).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "sess_001" }),
+      ),
+    );
+
+    await act(async () => {
+      onMessage?.({
+        type: "STATE_SNAPSHOT",
+        snapshot: makeSnapshot({
+          status: "WAITING",
+          turns: [
+            {
+              turnId: "turn_001",
+              sessionId: "sess_001",
+              primaryRunId: "run_001",
+              currentRunId: "run_001",
+              latestRunId: "run_001",
+              latestAgentId: "default",
+              displayState: "waiting_input",
+              latestEventType: "turn.waiting",
+              latestMessagePreview: "继续补充信息",
+              eventCount: 3,
+              runCount: 1,
+              activeRunCount: 1,
+              completedRunCount: 0,
+              failedRunCount: 0,
+              activeRunIds: ["run_001"],
+              completedRunIds: [],
+              failedRunIds: [],
+              hasExternalWork: true,
+              updatedAt: "2026-04-12T11:00:00Z",
+            },
+          ],
+        }),
+      });
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("当前任务在等待你的补充说明..."), {
+      target: { value: "这里补充一条新的人工说明" },
+    });
+    const continueButton = screen
+      .getAllByRole("button", { name: "Continue" })
+      .find((button) => !button.hasAttribute("disabled"));
+    expect(continueButton).toBeDefined();
+    fireEvent.click(continueButton as HTMLButtonElement);
+
+    expect(await screen.findByRole("button", { name: "Continuing..." })).toBeDisabled();
+    expect(sendContinueTurnMock).toHaveBeenCalledWith({
+      message: "这里补充一条新的人工说明",
+      agentId: "default",
+      initiatorType: "user",
+    });
+
+    await act(async () => {
+      onMessage?.({
+        type: "command.accepted",
+        command: "continue_turn",
+        session_id: "sess_001",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Continuing..." })).not.toBeInTheDocument(),
+    );
+    await waitFor(() => {
+      const enabledContinue = screen
+        .getAllByRole("button", { name: "Continue" })
+        .find((button) => !button.hasAttribute("disabled"));
+      expect(enabledContinue).toBeDefined();
     });
   });
 
@@ -1274,12 +1453,24 @@ describe("App", () => {
 
     fireEvent.click(stopButton);
 
+    expect(await screen.findByRole("button", { name: "Stopping..." })).toBeDisabled();
     expect(sendStopTurnMock).toHaveBeenCalledWith({
       turnId: "turn_001",
     });
+
+    await act(async () => {
+      onMessage?.({
+        type: "command.accepted",
+        command: "stop_turn",
+        session_id: "sess_001",
+      });
+    });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled());
   });
 
   it("loads pending HITL tickets and can respond from the workbench", async () => {
+    const respondDeferred = deferred<void>();
     listHITLTicketsMock
       .mockResolvedValueOnce([
         {
@@ -1296,6 +1487,7 @@ describe("App", () => {
         },
       ])
       .mockResolvedValueOnce([]);
+    respondHITLTicketMock.mockReturnValueOnce(respondDeferred.promise);
 
     render(<App />);
 
@@ -1311,16 +1503,24 @@ describe("App", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Respond" }));
 
+    expect(await screen.findByRole("button", { name: "Responding..." })).toBeDisabled();
+
     await waitFor(() =>
       expect(respondHITLTicketMock).toHaveBeenCalledWith(
         "hitl-001",
         "继续执行，但不要写入生产环境",
       ),
     );
+
+    await act(async () => {
+      respondDeferred.resolve();
+    });
+
     await waitFor(() => expect(listHITLTicketsMock).toHaveBeenCalledTimes(2));
   });
 
   it("dismisses a pending HITL ticket from the workbench", async () => {
+    const dismissDeferred = deferred<void>();
     listHITLTicketsMock
       .mockResolvedValueOnce([
         {
@@ -1337,15 +1537,23 @@ describe("App", () => {
         },
       ])
       .mockResolvedValueOnce([]);
+    dismissHITLTicketMock.mockReturnValueOnce(dismissDeferred.promise);
 
     render(<App />);
 
     expect(await screen.findByText("need manual decision")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
 
+    expect(await screen.findByRole("button", { name: "Dismissing..." })).toBeDisabled();
+
     await waitFor(() =>
       expect(dismissHITLTicketMock).toHaveBeenCalledWith("hitl-002"),
     );
+
+    await act(async () => {
+      dismissDeferred.resolve();
+    });
+
     await waitFor(() => expect(listHITLTicketsMock).toHaveBeenCalledTimes(2));
   });
 

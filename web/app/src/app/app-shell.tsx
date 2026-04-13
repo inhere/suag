@@ -19,6 +19,7 @@ import type { SessionSocketStatus } from "../lib/session-ws";
 type AppShellProps = {
   sessions?: SessionListItem[];
   currentSessionId?: string | null;
+  createSessionPending?: boolean;
   contextSessionLabel?: string;
   contextTurnLabel?: string;
   contextRunLabel?: string;
@@ -33,6 +34,7 @@ type AppShellProps = {
   messages?: ConversationMessage[];
   currentTurn?: StateSnapshotTurn | null;
   waitingForInput?: boolean;
+  submitPending?: boolean;
   runs?: StateSnapshotRun[];
   externalTasks?: ExternalTaskSummary[];
   externalActivities?: StateSnapshotExternalActivity[];
@@ -43,7 +45,9 @@ type AppShellProps = {
   hitlTickets?: HITLTicket[];
   hitlLoading?: boolean;
   canStop?: boolean;
+  stopPending?: boolean;
   canAddHint?: boolean;
+  addHintPending?: boolean;
   debugOpen?: boolean;
   debugEvents?: SessionSocketMessage[];
   onCreateSession?: () => void;
@@ -67,6 +71,7 @@ type AppShellProps = {
 export function AppShell({
   sessions = [],
   currentSessionId = null,
+  createSessionPending = false,
   contextSessionLabel = "Session none",
   contextTurnLabel = "Turn none",
   contextRunLabel = "Run none",
@@ -81,6 +86,7 @@ export function AppShell({
   messages = [],
   currentTurn = null,
   waitingForInput = false,
+  submitPending = false,
   runs = [],
   externalTasks = [],
   externalActivities = [],
@@ -91,7 +97,9 @@ export function AppShell({
   hitlTickets = [],
   hitlLoading = false,
   canStop = false,
+  stopPending = false,
   canAddHint = false,
+  addHintPending = false,
   debugOpen = false,
   debugEvents = [],
   onCreateSession = () => {},
@@ -130,6 +138,7 @@ export function AppShell({
             <SessionList
               sessions={sessions}
               currentSessionId={currentSessionId}
+              createPending={createSessionPending}
               connectionStatus={connectionStatus}
               statusMessage={connectionStatusMessage}
               errorMessage={connectionError}
@@ -150,6 +159,7 @@ export function AppShell({
               recentTurns={recentTurns}
               onSelectTurn={onSelectConversationTurn}
               waitingForInput={waitingForInput}
+              submitPending={submitPending}
               onSubmit={onSubmitMessage}
             />
           </main>
@@ -167,8 +177,10 @@ export function AppShell({
                 onFocusRun={onFocusRun}
                 onRetryFocusedRunDetail={onRetryFocusedRunDetail}
                 canStop={canStop}
+                stopPending={stopPending}
                 onStop={onStop}
                 canAddHint={canAddHint}
+                addHintPending={addHintPending}
                 onAddHint={onAddHint}
                 onOpenDebug={onOpenDebug}
               />

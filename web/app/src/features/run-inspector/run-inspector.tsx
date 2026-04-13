@@ -21,8 +21,10 @@ type RunInspectorProps = {
   onFocusRun: (runId: string) => void;
   onRetryFocusedRunDetail?: () => void;
   canStop: boolean;
+  stopPending?: boolean;
   onStop: () => void;
   canAddHint: boolean;
+  addHintPending?: boolean;
   onAddHint: () => void;
   onOpenDebug: () => void;
 };
@@ -49,8 +51,10 @@ export function RunInspector({
   onFocusRun,
   onRetryFocusedRunDetail = () => {},
   canStop,
+  stopPending = false,
   onStop,
   canAddHint,
+  addHintPending = false,
   onAddHint,
   onOpenDebug,
 }: RunInspectorProps) {
@@ -75,8 +79,10 @@ export function RunInspector({
         externalTasks={externalTasks}
         focusedRunId={focusedRun?.runId ?? null}
         canStop={canStop}
+        stopPending={stopPending}
         onStop={onStop}
         canAddHint={canAddHint}
+        addHintPending={addHintPending}
         onAddHint={onAddHint}
         onOpenDebug={onOpenDebug}
       />

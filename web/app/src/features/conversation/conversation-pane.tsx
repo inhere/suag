@@ -16,6 +16,7 @@ type ConversationPaneProps = {
   recentTurns?: StateSnapshotTurn[];
   onSelectTurn?: (turn: StateSnapshotTurn) => void;
   waitingForInput: boolean;
+  submitPending?: boolean;
   onSubmit: (message: string) => void;
 };
 
@@ -25,6 +26,7 @@ export function ConversationPane({
   recentTurns = [],
   onSelectTurn = () => {},
   waitingForInput,
+  submitPending = false,
   onSubmit,
 }: ConversationPaneProps) {
   return (
@@ -40,7 +42,11 @@ export function ConversationPane({
           onSelectTurn={onSelectTurn}
         />
       </div>
-      <Composer waitingForInput={waitingForInput} onSubmit={onSubmit} />
+      <Composer
+        waitingForInput={waitingForInput}
+        submitPending={submitPending}
+        onSubmit={onSubmit}
+      />
     </div>
   );
 }

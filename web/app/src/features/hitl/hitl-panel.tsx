@@ -123,7 +123,7 @@ export function HITLPanel({
                     }}
                     disabled={busy || !(drafts[ticket.id]?.trim() ?? "")}
                   >
-                    Respond
+                    {busy ? "Responding..." : "Respond"}
                   </button>
                   <button
                     type="button"
@@ -132,7 +132,7 @@ export function HITLPanel({
                     }}
                     disabled={busy}
                   >
-                    Dismiss
+                    {busy ? "Dismissing..." : "Dismiss"}
                   </button>
                 </div>
               </article>

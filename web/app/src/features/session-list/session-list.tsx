@@ -5,6 +5,7 @@ import { SessionListItem } from "./session-list-item";
 type SessionListProps = {
   sessions: SessionListItemModel[];
   currentSessionId: string | null;
+  createPending?: boolean;
   connectionStatus?: SessionSocketStatus | "idle";
   statusMessage?: string;
   errorMessage?: string | null;
@@ -28,6 +29,7 @@ function matchesFilter(status: string, filter: SessionFilter): boolean {
 export function SessionList({
   sessions,
   currentSessionId,
+  createPending = false,
   connectionStatus = "idle",
   statusMessage = "No active session selected.",
   errorMessage = null,
@@ -59,8 +61,13 @@ export function SessionList({
     <div className="session-list">
       <div className="session-list__header">
         <h1>Sessions</h1>
-        <button type="button" className="session-list__new-button" onClick={onCreateSession}>
-          + New Session
+        <button
+          type="button"
+          className="session-list__new-button"
+          onClick={onCreateSession}
+          disabled={createPending}
+        >
+          {createPending ? "Creating..." : "+ New Session"}
         </button>
       </div>
 

@@ -344,6 +344,13 @@ body {
   gap: 10px;
 }
 
+.composer__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .composer textarea {
   min-height: 108px;
   resize: vertical;
@@ -356,12 +363,23 @@ body {
 }
 
 .composer button {
-  align-self: flex-end;
   border: 1px solid rgba(56, 189, 248, 0.48);
   border-radius: 12px;
   background: rgba(8, 145, 178, 0.26);
   color: inherit;
   padding: 10px 16px;
+}
+
+.action-status {
+  color: rgba(148, 163, 184, 0.84);
+  font-size: 0.82rem;
+}
+
+button:disabled,
+textarea:disabled,
+input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .run-inspector {
