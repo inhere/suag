@@ -6,6 +6,7 @@ type SessionListProps = {
   sessions: SessionListItemModel[];
   currentSessionId: string | null;
   createPending?: boolean;
+  actionError?: string | null;
   connectionStatus?: SessionSocketStatus | "idle";
   statusMessage?: string;
   errorMessage?: string | null;
@@ -30,6 +31,7 @@ export function SessionList({
   sessions,
   currentSessionId,
   createPending = false,
+  actionError = null,
   connectionStatus = "idle",
   statusMessage = "No active session selected.",
   errorMessage = null,
@@ -70,6 +72,7 @@ export function SessionList({
           {createPending ? "Creating..." : "+ New Session"}
         </button>
       </div>
+      {actionError ? <p className="inline-feedback inline-feedback--error">{actionError}</p> : null}
 
       <div
         className={`session-list__status session-list__status--${connectionStatus}`}

@@ -25,6 +25,7 @@ type RunInspectorProps = {
   onStop: () => void;
   canAddHint: boolean;
   addHintPending?: boolean;
+  actionError?: string | null;
   onAddHint: () => void;
   onOpenDebug: () => void;
 };
@@ -55,6 +56,7 @@ export function RunInspector({
   onStop,
   canAddHint,
   addHintPending = false,
+  actionError = null,
   onAddHint,
   onOpenDebug,
 }: RunInspectorProps) {
@@ -83,6 +85,7 @@ export function RunInspector({
         onStop={onStop}
         canAddHint={canAddHint}
         addHintPending={addHintPending}
+        actionError={actionError}
         onAddHint={onAddHint}
         onOpenDebug={onOpenDebug}
       />

@@ -226,10 +226,14 @@ export function App() {
   const [hitlTickets, setHITLTickets] = useState<HITLTicket[]>([]);
   const [hitlLoading, setHITLLoading] = useState(false);
   const [createSessionPending, setCreateSessionPending] = useState(false);
+  const [createSessionError, setCreateSessionError] = useState<string | null>(null);
   const [startTurnPending, setStartTurnPending] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [pendingWSCommand, setPendingWSCommand] = useState<
     null | "continue_composer" | "continue_hint" | "stop"
   >(null);
+  const [runActionError, setRunActionError] = useState<string | null>(null);
+  const [hitlError, setHITLError] = useState<string | null>(null);
   const [socketStatus, setSocketStatus] = useState<SessionSocketStatus | "idle">("idle");
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [sessionListReloadKey, setSessionListReloadKey] = useState(0);
@@ -238,11 +242,25 @@ export function App() {
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [debugOpen, setDebugOpen] = useState(false);
   const socketRef = useRef<SessionSocketConnection | null>(null);
+  const pendingWSCommandRef = useRef<null | "continue_composer" | "continue_hint" | "stop">(null);
+  const lastWSCommandRef = useRef<null | "continue_composer" | "continue_hint" | "stop">(null);
   const runDetailRequestIDRef = useRef(0);
 
   useEffect(() => {
     persistWorkbenchState(viewState);
   }, [viewState]);
+
+  useEffect(() => {
+    pendingWSCommandRef.current = pendingWSCommand;
+  }, [pendingWSCommand]);
+
+  function setPendingWSCommandState(command: null | "continue_composer" | "continue_hint" | "stop") {
+    pendingWSCommandRef.current = command;
+    if (command) {
+      lastWSCommandRef.current = command;
+    }
+    setPendingWSCommand(command);
+  }
 
   function requestRunDetail(sessionId: string, runId: string) {
     const requestID = runDetailRequestIDRef.current + 1;
@@ -396,7 +414,9 @@ export function App() {
         if (cancelled) {
           return;
         }
-        setPendingWSCommand(null);
+        setPendingWSCommandState(null);
+        setSubmitError(null);
+        setRunActionError(null);
         setConnectionError(message);
       },
       onMessage: (message: SessionSocketMessage) => {
@@ -404,8 +424,25 @@ export function App() {
           return;
         }
 
-        if (message.type === "command.accepted" || message.type === "command.error") {
-          setPendingWSCommand(null);
+        if (message.type === "command.accepted") {
+          setSubmitError(null);
+          setRunActionError(null);
+          setPendingWSCommandState(null);
+          lastWSCommandRef.current = null;
+        }
+        if (message.type === "command.error") {
+          const pendingCommand = pendingWSCommandRef.current ?? lastWSCommandRef.current;
+          if (pendingCommand === "continue_composer") {
+            setSubmitError("Failed to continue turn.");
+          }
+          if (pendingCommand === "continue_hint") {
+            setRunActionError("Failed to add hint.");
+          }
+          if (pendingCommand === "stop") {
+            setRunActionError("Failed to stop turn.");
+          }
+          setPendingWSCommandState(null);
+          lastWSCommandRef.current = null;
         }
 
         setViewState((current) => reduceSessionMessage(current, message));
@@ -467,6 +504,7 @@ export function App() {
         : `Session ${viewState.currentSessionId} connecting...`;
 
   async function createNewSession(): Promise<string> {
+    setCreateSessionError(null);
     setCreateSessionPending(true);
     try {
       const created = await createSession({ title: "host runtime" });
@@ -478,6 +516,9 @@ export function App() {
         }),
       );
       return created.sessionId;
+    } catch (error) {
+      setCreateSessionError("Failed to create session.");
+      throw error;
     } finally {
       setCreateSessionPending(false);
     }
@@ -496,15 +537,25 @@ export function App() {
       return;
     }
 
-    const sessionId = await ensureSession();
-
+    setSubmitError(null);
     if (waitingForInput) {
-      setPendingWSCommand("continue_composer");
+      setRunActionError(null);
+      setPendingWSCommandState("continue_composer");
+      const sessionId = await ensureSession().catch(() => null);
+      if (!sessionId) {
+        setPendingWSCommandState(null);
+        return;
+      }
       socketRef.current?.sendContinueTurn({
         message,
         agentId: "default",
         initiatorType: "user",
       });
+      return;
+    }
+
+    const sessionId = await ensureSession().catch(() => null);
+    if (!sessionId) {
       return;
     }
 
@@ -515,6 +566,9 @@ export function App() {
         message,
         initiatorType: "user",
       });
+    } catch (error) {
+      setSubmitError("Failed to start turn.");
+      throw error;
     } finally {
       setStartTurnPending(false);
     }
@@ -530,7 +584,8 @@ export function App() {
       return;
     }
 
-    setPendingWSCommand("continue_hint");
+    setRunActionError(null);
+    setPendingWSCommandState("continue_hint");
     socketRef.current?.sendContinueTurn({
       message,
       agentId: "default",
@@ -543,20 +598,31 @@ export function App() {
       return;
     }
 
-    setPendingWSCommand("stop");
+    setRunActionError(null);
+    setPendingWSCommandState("stop");
     socketRef.current?.sendStopTurn({
       turnId: currentTurn.turnId,
     });
   }
 
   async function handleRespondHITL(ticketId: string, instruction: string) {
-    await respondHITLTicket(ticketId, instruction);
-    await refreshHITLTickets();
+    setHITLError(null);
+    try {
+      await respondHITLTicket(ticketId, instruction);
+      await refreshHITLTickets();
+    } catch (error) {
+      setHITLError("Failed to respond to HITL ticket.");
+    }
   }
 
   async function handleDismissHITL(ticketId: string) {
-    await dismissHITLTicket(ticketId);
-    await refreshHITLTickets();
+    setHITLError(null);
+    try {
+      await dismissHITLTicket(ticketId);
+      await refreshHITLTickets();
+    } catch (error) {
+      setHITLError("Failed to dismiss HITL ticket.");
+    }
   }
 
   function handleOpenHITLContext(ticket: HITLTicket) {
@@ -565,6 +631,7 @@ export function App() {
       return;
     }
 
+    setHITLError(null);
     setViewState((current) =>
       switchSessionContext(current, targetSessionId, {
         focusedRunId: ticket.runId || null,
@@ -601,6 +668,7 @@ export function App() {
       sessions={viewState.recentSessions}
       currentSessionId={viewState.currentSessionId}
       createSessionPending={createSessionPending}
+      createSessionError={createSessionError}
       contextSessionLabel={contextSessionLabel}
       contextTurnLabel={contextTurnLabel}
       contextRunLabel={contextRunLabel}
@@ -617,6 +685,7 @@ export function App() {
       recentTurns={recentTurns}
       waitingForInput={waitingForInput}
       submitPending={submitPending}
+      submitError={submitError}
       runs={snapshot?.runs.length ? snapshot.runs : activeRuns}
       externalTasks={snapshot?.externalTasks ?? []}
       externalActivities={snapshot?.externalActivities ?? []}
@@ -631,10 +700,12 @@ export function App() {
       stopPending={stopPending}
       canAddHint={waitingForInput}
       addHintPending={addHintPending}
+      runActionError={runActionError}
+      hitlError={hitlError}
       debugOpen={debugOpen}
       debugEvents={snapshot?.events ?? []}
       onCreateSession={() => {
-        void createNewSession();
+        void createNewSession().catch(() => {});
       }}
       onSelectSession={(sessionId) => {
         setViewState((current) =>
@@ -646,7 +717,7 @@ export function App() {
       onSearchChange={setSearchQuery}
       onFilterChange={setFilter}
       onSubmitMessage={(message) => {
-        void handleSubmit(message);
+        void handleSubmit(message).catch(() => {});
       }}
       onSelectConversationTurn={handleSelectConversationTurn}
       onFocusRun={(runId) => {

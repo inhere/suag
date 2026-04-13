@@ -3,12 +3,14 @@ import { useState } from "react";
 type ComposerProps = {
   waitingForInput: boolean;
   submitPending?: boolean;
+  submitError?: string | null;
   onSubmit: (message: string) => void;
 };
 
 export function Composer({
   waitingForInput,
   submitPending = false,
+  submitError = null,
   onSubmit,
 }: ComposerProps) {
   const [value, setValue] = useState("");
@@ -36,9 +38,6 @@ export function Composer({
         }
 
         onSubmit(nextValue);
-        if (!waitingForInput) {
-          setValue("");
-        }
       }}
     >
       <textarea
@@ -57,6 +56,7 @@ export function Composer({
           {submitLabel}
         </button>
       </div>
+      {submitError ? <p className="inline-feedback inline-feedback--error">{submitError}</p> : null}
     </form>
   );
 }

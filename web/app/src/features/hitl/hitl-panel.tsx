@@ -5,6 +5,7 @@ type HITLPanelProps = {
   tickets: HITLTicket[];
   loading: boolean;
   currentSessionId?: string | null;
+  errorMessage?: string | null;
   onRefresh: () => void;
   onOpenContext?: (ticket: HITLTicket) => void;
   onRespond: (ticketId: string, instruction: string) => Promise<void> | void;
@@ -15,6 +16,7 @@ export function HITLPanel({
   tickets,
   loading,
   currentSessionId = null,
+  errorMessage = null,
   onRefresh,
   onOpenContext = () => {},
   onRespond,
@@ -71,6 +73,9 @@ export function HITLPanel({
           {loading ? "Refreshing..." : "Refresh"}
         </button>
       </div>
+      {errorMessage ? (
+        <p className="inline-feedback inline-feedback--error">{errorMessage}</p>
+      ) : null}
       {tickets.length ? (
         <div className="hitl-panel__list">
           {tickets.map((ticket) => {

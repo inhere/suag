@@ -8,6 +8,7 @@ type ExternalTaskPanelProps = {
   onStop: () => void;
   canAddHint: boolean;
   addHintPending?: boolean;
+  actionError?: string | null;
   onAddHint: () => void;
   onOpenDebug: () => void;
 };
@@ -20,6 +21,7 @@ export function ExternalTaskPanel({
   onStop,
   canAddHint,
   addHintPending = false,
+  actionError = null,
   onAddHint,
   onOpenDebug,
 }: ExternalTaskPanelProps) {
@@ -41,6 +43,7 @@ export function ExternalTaskPanel({
       )}
       {stopPending ? <p className="action-status">正在停止当前 turn...</p> : null}
       {addHintPending ? <p className="action-status">正在追加提示...</p> : null}
+      {actionError ? <p className="inline-feedback inline-feedback--error">{actionError}</p> : null}
       <div className="run-actions">
         <button type="button" disabled>
           Continue

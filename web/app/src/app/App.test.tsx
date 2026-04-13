@@ -292,6 +292,17 @@ describe("App", () => {
     );
   });
 
+  it("shows inline feedback when creating a session fails", async () => {
+    createSessionMock.mockRejectedValueOnce(new Error("create failed"));
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "+ New Session" }));
+
+    expect(await screen.findByText("Failed to create session.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ New Session" })).toBeEnabled();
+  });
+
   it("shows pending feedback while starting a new turn", async () => {
     const startDeferred = deferred<{
       sessionId: string;
@@ -320,6 +331,20 @@ describe("App", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Starting..." })).not.toBeInTheDocument(),
     );
+  });
+
+  it("shows inline feedback when starting a turn fails", async () => {
+    startTurnMock.mockRejectedValueOnce(new Error("start failed"));
+
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("给 Axon 发送下一条任务说明..."), {
+      target: { value: "启动失败提示用例" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Failed to start turn.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
   });
 
   it("shows websocket connection lifecycle status for the active session", async () => {
@@ -1402,6 +1427,91 @@ describe("App", () => {
     });
   });
 
+  it("shows inline feedback when continue_turn is rejected", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "waiting session",
+          status: "WAITING",
+          updatedAt: "2026-04-13T10:00:00Z",
+          preview: "waiting preview",
+        },
+      ],
+    });
+    getSessionMock.mockResolvedValueOnce({
+      sessionId: "sess_001",
+      title: "waiting session",
+      status: "WAITING",
+      lastTurnId: "turn_001",
+      turns: [],
+      runs: [],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    });
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(connectSessionSocketMock).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "sess_001" }),
+      ),
+    );
+
+    await act(async () => {
+      onMessage?.({
+        type: "STATE_SNAPSHOT",
+        snapshot: makeSnapshot({
+          status: "WAITING",
+          turns: [
+            {
+              turnId: "turn_001",
+              sessionId: "sess_001",
+              primaryRunId: "run_001",
+              currentRunId: "run_001",
+              latestRunId: "run_001",
+              latestAgentId: "default",
+              displayState: "waiting_input",
+              latestEventType: "turn.waiting",
+              latestMessagePreview: "继续补充信息",
+              eventCount: 3,
+              runCount: 1,
+              activeRunCount: 1,
+              completedRunCount: 0,
+              failedRunCount: 0,
+              activeRunIds: ["run_001"],
+              completedRunIds: [],
+              failedRunIds: [],
+              hasExternalWork: true,
+              updatedAt: "2026-04-12T11:00:00Z",
+            },
+          ],
+        }),
+      });
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("当前任务在等待你的补充说明..."), {
+      target: { value: "这里补充一条新的人工说明" },
+    });
+    const continueButton = screen
+      .getAllByRole("button", { name: "Continue" })
+      .find((button) => !button.hasAttribute("disabled"));
+    expect(continueButton).toBeDefined();
+    fireEvent.click(continueButton as HTMLButtonElement);
+
+    await act(async () => {
+      onMessage?.({
+        type: "command.error",
+        error: "continue rejected",
+      });
+    });
+
+    expect(await screen.findByText("Failed to continue turn.")).toBeInTheDocument();
+  });
+
   it("sends stop_turn for the current turn from the inspector", async () => {
     render(<App />);
 
@@ -1469,6 +1579,64 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled());
   });
 
+  it("shows inline feedback when stop_turn is rejected", async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("给 Axon 发送下一条任务说明..."), {
+      target: { value: "先启动一个可以停止的回合" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(connectSessionSocketMock).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "sess_001" }),
+      ),
+    );
+
+    await act(async () => {
+      onMessage?.({
+        type: "STATE_SNAPSHOT",
+        snapshot: makeSnapshot({
+          status: "RUNNING",
+          turns: [
+            {
+              turnId: "turn_001",
+              sessionId: "sess_001",
+              primaryRunId: "run_001",
+              currentRunId: "run_001",
+              latestRunId: "run_001",
+              latestAgentId: "default",
+              displayState: "external_running",
+              latestEventType: "run.external.activity",
+              latestMessagePreview: "正在执行外部协作",
+              eventCount: 4,
+              runCount: 1,
+              activeRunCount: 1,
+              completedRunCount: 0,
+              failedRunCount: 0,
+              activeRunIds: ["run_001"],
+              completedRunIds: [],
+              failedRunIds: [],
+              hasExternalWork: true,
+              updatedAt: "2026-04-12T11:02:00Z",
+            },
+          ],
+        }),
+      });
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+
+    await act(async () => {
+      onMessage?.({
+        type: "command.error",
+        error: "stop rejected",
+      });
+    });
+
+    expect(await screen.findByText("Failed to stop turn.")).toBeInTheDocument();
+  });
+
   it("loads pending HITL tickets and can respond from the workbench", async () => {
     const respondDeferred = deferred<void>();
     listHITLTicketsMock
@@ -1517,6 +1685,34 @@ describe("App", () => {
     });
 
     await waitFor(() => expect(listHITLTicketsMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows inline feedback when HITL respond fails", async () => {
+    respondHITLTicketMock.mockRejectedValueOnce(new Error("respond failed"));
+    listHITLTicketsMock.mockResolvedValueOnce([
+      {
+        id: "hitl-010",
+        agentId: "reviewer",
+        taskId: "task_010",
+        sessionId: "sess_010",
+        turnId: "turn_010",
+        runId: "run_010",
+        reason: "need approval",
+        context: "需要失败反馈",
+        status: "waiting",
+        createdAt: "2026-04-13T06:00:00Z",
+      },
+    ]);
+
+    render(<App />);
+
+    fireEvent.change(
+      await screen.findByPlaceholderText("给这个等待中的 ticket 一条人工指令..."),
+      { target: { value: "继续执行" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Respond" }));
+
+    expect(await screen.findByText("Failed to respond to HITL ticket.")).toBeInTheDocument();
   });
 
   it("dismisses a pending HITL ticket from the workbench", async () => {

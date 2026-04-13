@@ -375,6 +375,16 @@ body {
   font-size: 0.82rem;
 }
 
+.inline-feedback {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.inline-feedback--error {
+  color: rgba(254, 202, 202, 0.96);
+}
+
 button:disabled,
 textarea:disabled,
 input:disabled {
