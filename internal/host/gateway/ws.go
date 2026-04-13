@@ -14,6 +14,14 @@ import (
 	"github.com/inhere/axon/internal/host/session"
 )
 
+var wsAcceptOptions = &websocket.AcceptOptions{
+	OriginPatterns: []string{
+		"localhost:*",
+		"127.0.0.1:*",
+		"[::1]:*",
+	},
+}
+
 type wsCommandRunner interface {
 	ContinueTurn(ctx context.Context, in session.ContinueTurnInput) (session.StartTurnResult, error)
 	StopTurn(ctx context.Context, in session.StopTurnInput) error
@@ -43,7 +51,7 @@ func WSHandler(bus *EventBus, sessionStore wsSessionStore, sessionSvc wsCommandR
 			return
 		}
 
-		conn, err := websocket.Accept(w, r, nil)
+		conn, err := websocket.Accept(w, r, wsAcceptOptions)
 		if err != nil {
 			slog.Warn("websocket accept error", "err", err)
 			return

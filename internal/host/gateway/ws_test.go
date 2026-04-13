@@ -124,6 +124,47 @@ func TestServer_CreateSessionAndStreamEventsOverWebSocket(t *testing.T) {
 	}
 }
 
+func TestServer_WebSocketAllowsLocalDevOrigin(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	svc := session.NewService(store, bus, &fakeGatewayRunner{}, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 13, 10, 0, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "local dev websocket origin",
+	})
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Origin": []string{"http://localhost:5173"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("websocket.Dial() with localhost origin error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+	if connected["type"] != "connected" {
+		t.Fatalf("connected event type = %v, want connected", connected["type"])
+	}
+}
+
 func TestServer_SessionSnapshotIncludesExternalTasks(t *testing.T) {
 	t.Parallel()
 

@@ -48,6 +48,7 @@
 - `web/app/src/app/App.tsx`、`web/app/src/features/session/session-store.ts` 与 `web/app/src/features/run-inspector` 已补齐 focused run detail 加载反馈闭环，当前右栏会显式展示 run 明细的 `loading / error` 状态，并可在单 run 明细加载失败后直接 `Retry Detail` 重新拉取
 - `web/app/src/features/conversation`、`web/app/src/features/session/session-selectors.ts` 与 `web/app/src/app/App.tsx` 已补齐最近 turn 摘要带，当前中间会话区会展示最近几轮 turn 的紧凑卡片，并可点击某个 turn 直接聚焦其 latest run 进入回看
 - `web/app/src/app/App.tsx`、`web/app/src/app/app-shell.tsx` 与 `web/app/src/styles.css` 已补齐顶部 context/status strip，当前工作台顶部可快速扫读 `session / turn / focused run / socket` 四项上下文，便于第一轮真机联调时快速定位当前视角
+- `internal/host/gateway/ws.go` 与 `internal/host/gateway/ws_test.go` 已补齐本地开发 WS origin 放行，当前 `localhost/127.0.0.1/[::1]` 的前端联调地址可跨 host 连接 Host WebSocket，不再被默认 Origin 校验拦截
 
 <!-- PROCESSING WORKS:END -->
 
