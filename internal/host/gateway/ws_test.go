@@ -358,6 +358,67 @@ func TestServer_GetSessionReturnsAggregatedTurnAndRunState(t *testing.T) {
 	}
 }
 
+func TestServer_GetSessionReturnsAggregatedExternalStreamState(t *testing.T) {
+	t.Parallel()
+
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	svc := session.NewService(store, bus, &emittingGatewayRunner{}, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 12, 16, 30, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "rest detail external stream state",
+	})
+	postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "stream runtime events",
+		"initiator_type": "user",
+	})
+
+	sessionResp := getJSON[map[string]any](t, ts.URL+"/api/sessions/"+createResp.SessionID)
+
+	rawActivities, ok := sessionResp["external_activities"].([]any)
+	if !ok {
+		t.Fatalf("get session external_activities type = %T, want []any", sessionResp["external_activities"])
+	}
+	if len(rawActivities) != 1 {
+		t.Fatalf("get session external_activities len = %d, want 1", len(rawActivities))
+	}
+	activity, ok := rawActivities[0].(map[string]any)
+	if !ok {
+		t.Fatalf("get session external_activities[0] type = %T, want map[string]any", rawActivities[0])
+	}
+	if activity["lastKind"] != "item_started" {
+		t.Fatalf("get session external_activities[0].lastKind = %v, want %q", activity["lastKind"], "item_started")
+	}
+
+	rawMessages, ok := sessionResp["external_messages"].([]any)
+	if !ok {
+		t.Fatalf("get session external_messages type = %T, want []any", sessionResp["external_messages"])
+	}
+	if len(rawMessages) != 1 {
+		t.Fatalf("get session external_messages len = %d, want 1", len(rawMessages))
+	}
+	message, ok := rawMessages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("get session external_messages[0] type = %T, want map[string]any", rawMessages[0])
+	}
+	if message["content"] != "thinking..." {
+		t.Fatalf("get session external_messages[0].content = %v, want %q", message["content"], "thinking...")
+	}
+	if message["completed"] != true {
+		t.Fatalf("get session external_messages[0].completed = %v, want true", message["completed"])
+	}
+}
+
 func TestServer_SessionSnapshotAggregatesExternalStreamState(t *testing.T) {
 	t.Parallel()
 

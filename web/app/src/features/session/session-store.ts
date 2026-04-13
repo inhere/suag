@@ -151,7 +151,12 @@ function createDetailSnapshot(
   detail: SessionDetail,
   generatedAt: string,
 ): StateSnapshotV0 | null {
-  if (!detail.turns.length && !detail.runs.length) {
+  if (
+    !detail.turns.length &&
+    !detail.runs.length &&
+    !detail.externalActivities.length &&
+    !detail.externalMessages.length
+  ) {
     return null;
   }
 
@@ -179,8 +184,8 @@ function createDetailSnapshot(
     turns: detail.turns,
     runs: detail.runs,
     externalTasks: detail.externalTasks,
-    externalActivities: [],
-    externalMessages: [],
+    externalActivities: detail.externalActivities,
+    externalMessages: detail.externalMessages,
     events: [],
   };
 }
@@ -851,6 +856,14 @@ export function mergeSessionDetail(
           state.snapshot.currentAgentId || detailSnapshot.currentAgentId,
         latestEventType: state.snapshot.latestEventType || detailSnapshot.latestEventType,
         externalTasks: detail.externalTasks,
+        externalActivities:
+          state.snapshot.externalActivities.length > 0
+            ? state.snapshot.externalActivities
+            : detailSnapshot.externalActivities,
+        externalMessages:
+          state.snapshot.externalMessages.length > 0
+            ? state.snapshot.externalMessages
+            : detailSnapshot.externalMessages,
         generatedAt: observedAt,
         turns:
           state.snapshot.turns.length > 0

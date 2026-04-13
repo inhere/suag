@@ -181,6 +181,8 @@ type getSessionResponse struct {
 	LastTurnID    string                 `json:"last_turn_id"`
 	Turns         []map[string]any       `json:"turns"`
 	Runs          []map[string]any       `json:"runs"`
+	ExternalActivities []map[string]any  `json:"external_activities"`
+	ExternalMessages   []map[string]any  `json:"external_messages"`
 	ExternalTasks []externalTaskResponse `json:"external_tasks"`
 }
 
@@ -235,6 +237,8 @@ func (h *Handler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 		LastTurnID:    sessionModel.LastTurnID,
 		Turns:         snapshotSliceField(snapshotPayload, "turns"),
 		Runs:          snapshotSliceField(snapshotPayload, "runs"),
+		ExternalActivities: snapshotSliceField(snapshotPayload, "externalActivities"),
+		ExternalMessages:   snapshotSliceField(snapshotPayload, "externalMessages"),
 		ExternalTasks: mapExternalTaskResponses(externalTasks),
 	})
 }

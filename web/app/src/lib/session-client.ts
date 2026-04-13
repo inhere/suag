@@ -2,6 +2,8 @@ import type {
   ExternalTaskSummary,
   SessionDetail,
   SessionSummary,
+  StateSnapshotExternalActivity,
+  StateSnapshotExternalMessage,
   StateSnapshotRun,
   StateSnapshotTurn,
   StartTurnInput,
@@ -38,6 +40,8 @@ type GetSessionResponse = {
   last_turn_id: string;
   turns?: StateSnapshotTurn[];
   runs?: StateSnapshotRun[];
+  external_activities?: StateSnapshotExternalActivity[];
+  external_messages?: StateSnapshotExternalMessage[];
   external_tasks: ExternalTaskResponse[];
 };
 
@@ -88,6 +92,8 @@ function mapSessionDetailResponse(input: GetSessionResponse): SessionDetail {
     lastTurnId: input.last_turn_id,
     turns: input.turns ?? [],
     runs: input.runs ?? [],
+    externalActivities: input.external_activities ?? [],
+    externalMessages: input.external_messages ?? [],
     externalTasks: input.external_tasks.map(mapExternalTaskResponse),
   };
 }

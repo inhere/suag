@@ -113,7 +113,7 @@ function makeSessionDetail(
       },
     ],
     ...overrides,
-  };
+  } as SessionDetail;
 }
 
 describe("session-store", () => {
@@ -285,7 +285,10 @@ describe("session-store", () => {
           }),
         ],
       },
-      makeSessionDetail(),
+      makeSessionDetail({
+        externalActivities: [],
+        externalMessages: [],
+      } as Partial<SessionDetail>),
       "2026-04-12T12:32:00Z",
     );
 
@@ -391,5 +394,90 @@ describe("session-store", () => {
     expect(next.snapshot?.turns[0]?.latestMessagePreview).toBe("detail summary");
     expect(next.snapshot?.runs[0]?.summary).toBe("detail summary");
     expect(next.snapshot?.runs[0]?.latestMessageText).toBe("detail summary");
+  });
+
+  it("hydrates external messages and activities from HTTP session detail when available", () => {
+    const next = mergeSessionDetail(
+      emptySessionViewState,
+      Object.assign(makeSessionDetail({
+        turns: [
+          {
+            turnId: "turn_live",
+            sessionId: "sess_001",
+            primaryRunId: "run_live",
+            currentRunId: "run_live",
+            latestRunId: "run_live",
+            latestAgentId: "default",
+            displayState: "external_running",
+            latestEventType: "run.external.message.end",
+            latestMessagePreview: "thinking...",
+            eventCount: 4,
+            runCount: 1,
+            activeRunCount: 1,
+            completedRunCount: 0,
+            failedRunCount: 0,
+            activeRunIds: ["run_live"],
+            completedRunIds: [],
+            failedRunIds: [],
+            hasExternalWork: true,
+            updatedAt: "2026-04-12T13:10:00Z",
+          },
+        ],
+        runs: [
+          {
+            runId: "run_live",
+            turnId: "turn_live",
+            sessionId: "sess_001",
+            agentId: "default",
+            displayState: "external_running",
+            latestEventType: "run.external.message.end",
+            latestMessageId: "msg_live",
+            latestMessageText: "thinking...",
+            summary: "",
+            externalTaskIds: ["ext_live"],
+            eventCount: 4,
+            updatedAt: "2026-04-12T13:10:00Z",
+          },
+        ],
+      }), {
+        externalActivities: [
+          {
+            externalTaskId: "ext_live",
+            sessionId: "sess_001",
+            turnId: "turn_live",
+            runId: "run_live",
+            agentId: "default",
+            activityId: "run_live:external",
+            kind: "run_status",
+            status: "external_running",
+            title: "run_status",
+            detail: "external_running",
+            startedAt: "2026-04-12T13:09:00Z",
+            updatedAt: "2026-04-12T13:10:00Z",
+          },
+        ],
+        externalMessages: [
+          {
+            externalTaskId: "ext_live",
+            messageId: "msg_live",
+            sessionId: "sess_001",
+            turnId: "turn_live",
+            runId: "run_live",
+            agentId: "default",
+            content: "thinking...",
+            started: true,
+            completed: true,
+            lastEventType: "run.external.message.end",
+            lastSequence: 5,
+            updatedAt: "2026-04-12T13:10:00Z",
+          },
+        ],
+      }),
+      "2026-04-12T13:11:00Z",
+    );
+
+    expect((next.snapshot as StateSnapshotV0)?.externalActivities[0]?.activityId).toBe("run_live:external");
+    expect((next.snapshot as StateSnapshotV0)?.externalMessages[0]?.messageId).toBe("msg_live");
+    expect((next.snapshot as StateSnapshotV0)?.externalMessages[0]?.content).toBe("thinking...");
   });
 });

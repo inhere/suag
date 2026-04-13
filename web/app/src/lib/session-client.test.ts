@@ -80,6 +80,38 @@ describe("session-client", () => {
               updatedAt: "2026-04-12T08:00:01Z",
             },
           ],
+          external_activities: [
+            {
+              externalTaskId: "ext_001",
+              sessionId: "sess_001",
+              turnId: "turn_001",
+              runId: "run_001",
+              agentId: "default",
+              activityId: "run_001:external",
+              kind: "run_status",
+              status: "completed",
+              title: "run_status",
+              detail: "completed",
+              startedAt: "2026-04-12T08:00:00Z",
+              updatedAt: "2026-04-12T08:00:01Z",
+            },
+          ],
+          external_messages: [
+            {
+              externalTaskId: "ext_001",
+              messageId: "msg_001",
+              sessionId: "sess_001",
+              turnId: "turn_001",
+              runId: "run_001",
+              agentId: "default",
+              content: "thinking...",
+              started: true,
+              completed: true,
+              lastEventType: "run.external.message.end",
+              lastSequence: 3,
+              updatedAt: "2026-04-12T08:00:01Z",
+            },
+          ],
           external_tasks: [
             {
               external_task_id: "ext_001",
@@ -106,6 +138,8 @@ describe("session-client", () => {
     expect(result.lastTurnId).toBe("turn_001");
     expect(result.turns[0]?.displayState).toBe("completed");
     expect(result.runs[0]?.summary).toBe("done");
+    expect(result.externalActivities[0]?.kind).toBe("run_status");
+    expect(result.externalMessages[0]?.content).toBe("thinking...");
     expect(result.externalTasks[0]?.remoteAgentName).toBe("codex-cli");
   });
 

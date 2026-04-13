@@ -138,6 +138,8 @@ describe("App", () => {
       lastTurnId: "",
       turns: [],
       runs: [],
+      externalActivities: [],
+      externalMessages: [],
       externalTasks: [],
     });
     startTurnMock.mockResolvedValue({
@@ -306,6 +308,8 @@ describe("App", () => {
       lastTurnId: "turn_900",
       turns: [],
       runs: [],
+      externalActivities: [],
+      externalMessages: [],
       externalTasks: [
         {
           externalTaskId: "ext_bootstrap",
@@ -375,11 +379,43 @@ describe("App", () => {
           agentId: "default",
           displayState: "completed",
           latestEventType: "run.finished",
-          latestMessageId: "run_detail:assistant",
-          latestMessageText: "detail summary",
-          summary: "detail summary",
+          latestMessageId: "msg_detail",
+          latestMessageText: "detail thinking...",
+          summary: "",
           externalTaskIds: [],
           eventCount: 4,
+          updatedAt: "2026-04-12T12:40:00Z",
+        },
+      ],
+      externalActivities: [
+        {
+          externalTaskId: "",
+          sessionId: "sess_004",
+          turnId: "turn_detail",
+          runId: "run_detail",
+          agentId: "default",
+          activityId: "run_detail:external",
+          kind: "run_status",
+          status: "completed",
+          title: "run_status",
+          detail: "completed",
+          startedAt: "2026-04-12T12:39:00Z",
+          updatedAt: "2026-04-12T12:40:00Z",
+        },
+      ],
+      externalMessages: [
+        {
+          externalTaskId: "",
+          messageId: "msg_detail",
+          sessionId: "sess_004",
+          turnId: "turn_detail",
+          runId: "run_detail",
+          agentId: "default",
+          content: "detail thinking...",
+          started: true,
+          completed: true,
+          lastEventType: "run.external.message.end",
+          lastSequence: 4,
           updatedAt: "2026-04-12T12:40:00Z",
         },
       ],
@@ -392,6 +428,7 @@ describe("App", () => {
     expect(screen.getByText("Turn turn_detail")).toBeInTheDocument();
     expect(screen.getByText("run_detail")).toBeInTheDocument();
     expect(screen.getAllByText("detail summary").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("detail thinking...").length).toBeGreaterThan(0);
     expect(screen.queryByText("Waiting for websocket snapshot...")).not.toBeInTheDocument();
   });
 });

@@ -25,6 +25,8 @@ export type SessionDetail = SessionSummary & {
   lastTurnId: string;
   turns: StateSnapshotTurn[];
   runs: StateSnapshotRun[];
+  externalActivities: StateSnapshotExternalActivity[];
+  externalMessages: StateSnapshotExternalMessage[];
   externalTasks: ExternalTaskSummary[];
 };
 
