@@ -7,3 +7,5 @@ tmp/
 .env
 *.exe
 .xenv.*
+db/*.db
+db/*.db*

@@ -30,7 +30,7 @@ agentcore:
 
 # HTTP server settings (server mode)
 server:
-  addr: ":8080"
+  addr: ":8180"
 
 # SQLite database path for persistent memory
 # Leave empty to use in-memory storage

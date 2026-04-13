@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/gookit/config/v2"
+	"github.com/gookit/config/v2/yaml"
 	"github.com/gookit/ini/v2/dotenv"
 
 	"github.com/inhere/axon/internal/host/acpbridge"
@@ -352,6 +353,7 @@ func loadConfig() {
 	// config.SetEnvPrefix("AXON")
 	dotenv.LoadExists(".")
 
+	config.AddDriver(yaml.Driver)
 	err := config.LoadExists("./config/config.yaml", "~/.axon/config.yaml", "config.yaml")
 	if err != nil {
 		slog.Error("loading config file", "err", err)
