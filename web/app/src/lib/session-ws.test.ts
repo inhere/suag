@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { connectSessionSocket } from "./session-ws";
 
 class FakeWebSocket {
+  onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
   sent: string[] = [];
   closed = false;
 
@@ -12,6 +15,7 @@ class FakeWebSocket {
 
   close() {
     this.closed = true;
+    this.onclose?.();
   }
 
   emitMessage(payload: string) {
@@ -20,6 +24,18 @@ class FakeWebSocket {
     }
 
     this.onmessage({ data: payload } as MessageEvent<string>);
+  }
+
+  emitOpen() {
+    this.onopen?.();
+  }
+
+  emitClose() {
+    this.onclose?.();
+  }
+
+  emitError() {
+    this.onerror?.();
   }
 }
 
@@ -67,6 +83,30 @@ describe("session-ws", () => {
 
     socket.close();
     expect(ws.closed).toBe(true);
+  });
+
+  it("reports websocket connection lifecycle status and errors", () => {
+    const onStatusChange = vi.fn();
+    const onError = vi.fn();
+    const ws = new FakeWebSocket();
+
+    connectSessionSocket({
+      sessionId: "sess_001",
+      createWebSocket: () => ws as unknown as WebSocket,
+      onMessage: vi.fn(),
+      onStatusChange,
+      onError,
+    });
+
+    expect(onStatusChange).toHaveBeenNthCalledWith(1, "connecting");
+
+    ws.emitOpen();
+    ws.emitError();
+    ws.emitClose();
+
+    expect(onStatusChange).toHaveBeenNthCalledWith(2, "connected");
+    expect(onStatusChange).toHaveBeenNthCalledWith(3, "disconnected");
+    expect(onError).toHaveBeenCalledWith("WebSocket connection error.");
   });
 
   it("sends continue_turn commands over the existing websocket", () => {

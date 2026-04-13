@@ -14,10 +14,14 @@ import type {
   StateSnapshotRun,
   StateSnapshotTurn,
 } from "../lib/host-types";
+import type { SessionSocketStatus } from "../lib/session-ws";
 
 type AppShellProps = {
   sessions?: SessionListItem[];
   currentSessionId?: string | null;
+  connectionStatus?: SessionSocketStatus | "idle";
+  connectionStatusMessage?: string;
+  connectionError?: string | null;
   filter?: SessionFilter;
   searchQuery?: string;
   messages?: ConversationMessage[];
@@ -53,6 +57,9 @@ type AppShellProps = {
 export function AppShell({
   sessions = [],
   currentSessionId = null,
+  connectionStatus = "idle",
+  connectionStatusMessage = "No active session selected.",
+  connectionError = null,
   filter = "all",
   searchQuery = "",
   messages = [],
@@ -92,6 +99,9 @@ export function AppShell({
         <SessionList
           sessions={sessions}
           currentSessionId={currentSessionId}
+          connectionStatus={connectionStatus}
+          statusMessage={connectionStatusMessage}
+          errorMessage={connectionError}
           filter={filter}
           searchQuery={searchQuery}
           onCreateSession={onCreateSession}

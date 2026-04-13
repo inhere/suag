@@ -1,5 +1,7 @@
 import type { SessionSocketMessage } from "./host-types";
 
+export type SessionSocketStatus = "connecting" | "connected" | "disconnected";
+
 export type ContinueTurnCommand = {
   message: string;
   agentId: string;
@@ -14,6 +16,8 @@ export type StopTurnCommand = {
 export type ConnectSessionSocketOptions = {
   sessionId: string;
   onMessage: (message: SessionSocketMessage) => void;
+  onStatusChange?: (status: SessionSocketStatus) => void;
+  onError?: (message: string) => void;
   createWebSocket?: () => WebSocket;
 };
 
@@ -30,11 +34,21 @@ function buildSocketURL(sessionId: string): string {
 export function connectSessionSocket(
   options: ConnectSessionSocketOptions,
 ): SessionSocketConnection {
+  options.onStatusChange?.("connecting");
   const ws =
     options.createWebSocket?.() ?? new WebSocket(buildSocketURL(options.sessionId));
 
+  ws.onopen = () => {
+    options.onStatusChange?.("connected");
+  };
   ws.onmessage = (event) => {
     options.onMessage(JSON.parse(event.data) as SessionSocketMessage);
+  };
+  ws.onerror = () => {
+    options.onError?.("WebSocket connection error.");
+  };
+  ws.onclose = () => {
+    options.onStatusChange?.("disconnected");
   };
 
   return {

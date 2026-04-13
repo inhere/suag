@@ -1,9 +1,13 @@
+import type { SessionSocketStatus } from "../../lib/session-ws";
 import type { SessionFilter, SessionListItem as SessionListItemModel } from "../session/session-store";
 import { SessionListItem } from "./session-list-item";
 
 type SessionListProps = {
   sessions: SessionListItemModel[];
   currentSessionId: string | null;
+  connectionStatus?: SessionSocketStatus | "idle";
+  statusMessage?: string;
+  errorMessage?: string | null;
   filter: SessionFilter;
   searchQuery: string;
   onCreateSession: () => void;
@@ -23,6 +27,9 @@ function matchesFilter(status: string, filter: SessionFilter): boolean {
 export function SessionList({
   sessions,
   currentSessionId,
+  connectionStatus = "idle",
+  statusMessage = "No active session selected.",
+  errorMessage = null,
   filter,
   searchQuery,
   onCreateSession,
@@ -54,6 +61,19 @@ export function SessionList({
           + New Session
         </button>
       </div>
+
+      <div
+        className={`session-list__status session-list__status--${connectionStatus}`}
+        aria-live="polite"
+      >
+        <span className="session-list__status-dot" aria-hidden="true" />
+        <span>{statusMessage}</span>
+      </div>
+      {errorMessage ? (
+        <div className="session-list__error" role="alert">
+          {errorMessage}
+        </div>
+      ) : null}
 
       <input
         className="session-list__search"

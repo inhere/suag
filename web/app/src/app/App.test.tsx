@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { SessionSocketMessage, StateSnapshotV0 } from "../lib/host-types";
+import type { SessionSocketStatus } from "../lib/session-ws";
 
 const createSessionMock = vi.fn();
 const listSessionsMock = vi.fn();
@@ -125,6 +126,8 @@ function makeSnapshot(overrides: Partial<StateSnapshotV0> = {}): StateSnapshotV0
 
 describe("App", () => {
   let onMessage: ((message: SessionSocketMessage) => void) | null;
+  let onStatusChange: ((status: SessionSocketStatus) => void) | null;
+  let onSocketError: ((message: string) => void) | null;
   let storage: Record<string, string>;
 
   afterEach(() => {
@@ -133,6 +136,8 @@ describe("App", () => {
 
   beforeEach(() => {
     onMessage = null;
+    onStatusChange = null;
+    onSocketError = null;
     storage = {};
     createSessionMock.mockReset();
     listSessionsMock.mockReset();
@@ -181,8 +186,14 @@ describe("App", () => {
       externalMessages: [],
       externalTasks: [],
     });
-    connectSessionSocketMock.mockImplementation((options: { onMessage: (message: SessionSocketMessage) => void }) => {
+    connectSessionSocketMock.mockImplementation((options: {
+      onMessage: (message: SessionSocketMessage) => void;
+      onStatusChange?: (status: SessionSocketStatus) => void;
+      onError?: (message: string) => void;
+    }) => {
       onMessage = options.onMessage;
+      onStatusChange = options.onStatusChange ?? null;
+      onSocketError = options.onError ?? null;
       return {
         close: closeSocketMock,
         sendContinueTurn: sendContinueTurnMock,
@@ -239,6 +250,73 @@ describe("App", () => {
     await waitFor(() =>
       expect(storage["axon.web.workbench"]).toContain("\"currentSessionId\":\"sess_001\""),
     );
+  });
+
+  it("shows websocket connection lifecycle status for the active session", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_002",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_002",
+          title: "status session",
+          status: "RUNNING",
+          updatedAt: "2026-04-13T09:00:00Z",
+          preview: "status preview",
+        },
+      ],
+    });
+    getSessionMock.mockResolvedValueOnce({
+      sessionId: "sess_002",
+      title: "status session",
+      status: "RUNNING",
+      lastTurnId: "",
+      turns: [],
+      runs: [],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Session sess_002 connecting...")).toBeInTheDocument();
+
+    await act(async () => {
+      onStatusChange?.("connected");
+    });
+    expect(await screen.findByText("Session sess_002 connected.")).toBeInTheDocument();
+
+    await act(async () => {
+      onStatusChange?.("disconnected");
+    });
+    expect(await screen.findByText("Session sess_002 disconnected.")).toBeInTheDocument();
+  });
+
+  it("shows connection error feedback when session bootstrap fails", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_003",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_003",
+          title: "broken session",
+          status: "WAITING",
+          updatedAt: "2026-04-13T09:10:00Z",
+          preview: "broken preview",
+        },
+      ],
+    });
+    getSessionMock.mockRejectedValueOnce(new Error("boom"));
+
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Failed to load session details.");
+
+    await act(async () => {
+      onSocketError?.("WebSocket connection error.");
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent("WebSocket connection error.");
   });
 
   it("restores recent sessions and focused run from local storage on load", async () => {

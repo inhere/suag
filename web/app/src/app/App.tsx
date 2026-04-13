@@ -30,6 +30,7 @@ import {
   startTurn,
 } from "../lib/session-client";
 import { connectSessionSocket, type SessionSocketConnection } from "../lib/session-ws";
+import type { SessionSocketStatus } from "../lib/session-ws";
 
 const workbenchStorageKey = "axon.web.workbench";
 
@@ -222,6 +223,8 @@ export function App() {
   const [viewState, setViewState] = useState<SessionViewState>(buildInitialViewState);
   const [hitlTickets, setHITLTickets] = useState<HITLTicket[]>([]);
   const [hitlLoading, setHITLLoading] = useState(false);
+  const [socketStatus, setSocketStatus] = useState<SessionSocketStatus | "idle">("idle");
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [debugOpen, setDebugOpen] = useState(false);
@@ -288,6 +291,9 @@ export function App() {
       })
       .catch(() => {
         // Keep v0 usable even when the session list endpoint is temporarily unavailable.
+        if (!cancelled) {
+          setConnectionError("Failed to load session list.");
+        }
       });
 
     return () => {
@@ -297,10 +303,14 @@ export function App() {
 
   useEffect(() => {
     if (!viewState.currentSessionId) {
+      setSocketStatus("idle");
+      setConnectionError(null);
       return undefined;
     }
 
     let cancelled = false;
+    setSocketStatus("connecting");
+    setConnectionError(null);
     void getSession(viewState.currentSessionId)
       .then((detail) => {
         if (cancelled) {
@@ -312,12 +322,28 @@ export function App() {
         );
       })
       .catch(() => {
+        if (cancelled) {
+          return;
+        }
         // v0 keeps the shell usable even when the detail bootstrap fails temporarily.
+        setConnectionError("Failed to load session details.");
       });
 
     socketRef.current?.close();
     socketRef.current = connectSessionSocket({
       sessionId: viewState.currentSessionId,
+      onStatusChange: (status) => {
+        if (cancelled) {
+          return;
+        }
+        setSocketStatus(status);
+      },
+      onError: (message) => {
+        if (cancelled) {
+          return;
+        }
+        setConnectionError(message);
+      },
       onMessage: (message: SessionSocketMessage) => {
         if (cancelled) {
           return;
@@ -379,6 +405,13 @@ export function App() {
   const conversationMessages = buildConversationMessages(viewState);
   const waitingForInput = isWaitingForInput(viewState);
   const stopEnabled = canStopCurrentTurn(viewState);
+  const connectionStatusMessage = !viewState.currentSessionId
+    ? "No active session selected."
+    : socketStatus === "connected"
+      ? `Session ${viewState.currentSessionId} connected.`
+      : socketStatus === "disconnected"
+        ? `Session ${viewState.currentSessionId} disconnected.`
+        : `Session ${viewState.currentSessionId} connecting...`;
 
   async function createNewSession(): Promise<string> {
     const created = await createSession({ title: "host runtime" });
@@ -473,6 +506,9 @@ export function App() {
     <AppShell
       sessions={viewState.recentSessions}
       currentSessionId={viewState.currentSessionId}
+      connectionStatus={socketStatus}
+      connectionStatusMessage={connectionStatusMessage}
+      connectionError={connectionError}
       filter={filter}
       searchQuery={searchQuery}
       messages={conversationMessages}

@@ -14,6 +14,8 @@ it("renders compact session items from recent known sessions with title, status,
         },
       ]}
       currentSessionId="sess_001"
+      connectionStatus="connected"
+      statusMessage="Session sess_001 connected."
       filter="all"
       searchQuery=""
       onCreateSession={() => {}}
@@ -25,4 +27,5 @@ it("renders compact session items from recent known sessions with title, status,
 
   expect(screen.getByText("host runtime")).toBeInTheDocument();
   expect(screen.getByText(/正在整理页面结构/)).toBeInTheDocument();
+  expect(screen.getByText("Session sess_001 connected.")).toBeInTheDocument();
 });
