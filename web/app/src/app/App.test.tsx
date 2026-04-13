@@ -136,6 +136,8 @@ describe("App", () => {
       title: "host runtime",
       status: "OPEN",
       lastTurnId: "",
+      turns: [],
+      runs: [],
       externalTasks: [],
     });
     startTurnMock.mockResolvedValue({
@@ -302,6 +304,8 @@ describe("App", () => {
       title: "bootstrap title",
       status: "WAITING",
       lastTurnId: "turn_900",
+      turns: [],
+      runs: [],
       externalTasks: [
         {
           externalTaskId: "ext_bootstrap",
@@ -327,5 +331,67 @@ describe("App", () => {
     expect(screen.getByText("Turn turn_900")).toBeInTheDocument();
     expect(screen.getByText("run_bootstrap")).toBeInTheDocument();
     expect(screen.getAllByText("Waiting for websocket snapshot...").length).toBeGreaterThan(0);
+  });
+
+  it("uses aggregated HTTP session detail to restore real turn and run content before websocket snapshot", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_004",
+      focusedRunId: null,
+      recentSessions: [],
+    });
+    getSessionMock.mockResolvedValueOnce({
+      sessionId: "sess_004",
+      title: "detail restored",
+      status: "WAITING",
+      lastTurnId: "turn_detail",
+      turns: [
+        {
+          turnId: "turn_detail",
+          sessionId: "sess_004",
+          primaryRunId: "run_detail",
+          currentRunId: "run_detail",
+          latestRunId: "run_detail",
+          latestAgentId: "default",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessagePreview: "detail summary",
+          eventCount: 4,
+          runCount: 1,
+          activeRunCount: 0,
+          completedRunCount: 1,
+          failedRunCount: 0,
+          activeRunIds: [],
+          completedRunIds: ["run_detail"],
+          failedRunIds: [],
+          hasExternalWork: false,
+          updatedAt: "2026-04-12T12:40:00Z",
+        },
+      ],
+      runs: [
+        {
+          runId: "run_detail",
+          turnId: "turn_detail",
+          sessionId: "sess_004",
+          agentId: "default",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessageId: "run_detail:assistant",
+          latestMessageText: "detail summary",
+          summary: "detail summary",
+          externalTaskIds: [],
+          eventCount: 4,
+          updatedAt: "2026-04-12T12:40:00Z",
+        },
+      ],
+      externalTasks: [],
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("detail restored")).toBeInTheDocument();
+    expect(screen.getByText("Turn turn_detail")).toBeInTheDocument();
+    expect(screen.getByText("run_detail")).toBeInTheDocument();
+    expect(screen.getAllByText("detail summary").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Waiting for websocket snapshot...")).not.toBeInTheDocument();
   });
 });

@@ -147,6 +147,44 @@ function createBootstrapSnapshot(
   };
 }
 
+function createDetailSnapshot(
+  detail: SessionDetail,
+  generatedAt: string,
+): StateSnapshotV0 | null {
+  if (!detail.turns.length && !detail.runs.length) {
+    return null;
+  }
+
+  const currentTurn = detail.turns.find((turn) => turn.turnId === detail.lastTurnId) ?? detail.turns[0] ?? null;
+  const currentRun =
+    detail.runs.find((run) => run.runId === currentTurn?.currentRunId) ??
+    detail.runs.find((run) => run.turnId === currentTurn?.turnId) ??
+    detail.runs[0] ??
+    null;
+
+  return {
+    snapshotVersion: "v0",
+    snapshotSchema: "axon.host.state.v0",
+    generatedAt,
+    threadId: detail.sessionId,
+    sessionId: detail.sessionId,
+    title: detail.title,
+    status: detail.status,
+    turnId: currentTurn?.turnId ?? detail.lastTurnId,
+    lastTurnId: detail.lastTurnId,
+    currentRunId: currentRun?.runId ?? "",
+    currentAgentId: currentRun?.agentId ?? currentTurn?.latestAgentId ?? "",
+    latestEventType: currentRun?.latestEventType ?? currentTurn?.latestEventType ?? "",
+    eventCount: 0,
+    turns: detail.turns,
+    runs: detail.runs,
+    externalTasks: detail.externalTasks,
+    externalActivities: [],
+    externalMessages: [],
+    events: [],
+  };
+}
+
 function isStateSnapshotMessage(
   message: SessionSocketMessage,
 ): message is Extract<SessionSocketMessage, { type: "STATE_SNAPSHOT" }> {
@@ -797,6 +835,8 @@ export function mergeSessionDetail(
   detail: SessionDetail,
   observedAt: string,
 ): SessionViewState {
+  const detailSnapshot =
+    createDetailSnapshot(detail, observedAt) ?? createBootstrapSnapshot(detail, observedAt);
   const nextSnapshot = state.snapshot
     ? {
         ...state.snapshot,
@@ -804,23 +844,24 @@ export function mergeSessionDetail(
         threadId: detail.sessionId,
         title: detail.title,
         status: detail.status,
-        turnId: state.snapshot.turnId || detail.lastTurnId,
+        turnId: state.snapshot.turnId || detailSnapshot.turnId,
         lastTurnId: detail.lastTurnId,
-        currentRunId: state.snapshot.currentRunId || detail.externalTasks[0]?.runId || "",
+        currentRunId: state.snapshot.currentRunId || detailSnapshot.currentRunId,
         currentAgentId:
-          state.snapshot.currentAgentId || detail.externalTasks[0]?.remoteAgentName || "",
+          state.snapshot.currentAgentId || detailSnapshot.currentAgentId,
+        latestEventType: state.snapshot.latestEventType || detailSnapshot.latestEventType,
         externalTasks: detail.externalTasks,
         generatedAt: observedAt,
         turns:
           state.snapshot.turns.length > 0
             ? state.snapshot.turns
-            : createBootstrapSnapshot(detail, observedAt).turns,
+            : detailSnapshot.turns,
         runs:
           state.snapshot.runs.length > 0
             ? state.snapshot.runs
-            : createBootstrapSnapshot(detail, observedAt).runs,
+            : detailSnapshot.runs,
       }
-    : createBootstrapSnapshot(detail, observedAt);
+    : detailSnapshot;
 
   return {
     ...state,

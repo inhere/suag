@@ -23,6 +23,8 @@ export type SessionSummary = {
 
 export type SessionDetail = SessionSummary & {
   lastTurnId: string;
+  turns: StateSnapshotTurn[];
+  runs: StateSnapshotRun[];
   externalTasks: ExternalTaskSummary[];
 };
 

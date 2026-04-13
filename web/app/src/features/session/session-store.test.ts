@@ -94,6 +94,8 @@ function makeSessionDetail(
     title: "bootstrap title",
     status: "WAITING",
     lastTurnId: "turn_900",
+    turns: [],
+    runs: [],
     externalTasks: [
       {
         externalTaskId: "ext_bootstrap",
@@ -332,5 +334,62 @@ describe("session-store", () => {
       eventCount: 0,
       updatedAt: "2026-04-12T12:32:00Z",
     });
+  });
+
+  it("prefers aggregated turns and runs from HTTP session detail when they are available", () => {
+    const next = mergeSessionDetail(
+      emptySessionViewState,
+      makeSessionDetail({
+        status: "RUNNING",
+        turns: [
+          {
+            turnId: "turn_live",
+            sessionId: "sess_001",
+            primaryRunId: "run_live",
+            currentRunId: "run_live",
+            latestRunId: "run_live",
+            latestAgentId: "default",
+            displayState: "completed",
+            latestEventType: "run.finished",
+            latestMessagePreview: "detail summary",
+            eventCount: 4,
+            runCount: 1,
+            activeRunCount: 0,
+            completedRunCount: 1,
+            failedRunCount: 0,
+            activeRunIds: [],
+            completedRunIds: ["run_live"],
+            failedRunIds: [],
+            hasExternalWork: false,
+            updatedAt: "2026-04-12T13:00:00Z",
+          },
+        ],
+        runs: [
+          {
+            runId: "run_live",
+            turnId: "turn_live",
+            sessionId: "sess_001",
+            agentId: "default",
+            displayState: "completed",
+            latestEventType: "run.finished",
+            latestMessageId: "run_live:assistant",
+            latestMessageText: "detail summary",
+            summary: "detail summary",
+            externalTaskIds: [],
+            eventCount: 4,
+            updatedAt: "2026-04-12T13:00:00Z",
+          },
+        ],
+        externalTasks: [],
+      }),
+      "2026-04-12T13:01:00Z",
+    );
+
+    expect(next.snapshot?.turnId).toBe("turn_live");
+    expect(next.snapshot?.currentRunId).toBe("run_live");
+    expect(next.snapshot?.turns[0]?.displayState).toBe("completed");
+    expect(next.snapshot?.turns[0]?.latestMessagePreview).toBe("detail summary");
+    expect(next.snapshot?.runs[0]?.summary).toBe("detail summary");
+    expect(next.snapshot?.runs[0]?.latestMessageText).toBe("detail summary");
   });
 });

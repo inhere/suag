@@ -282,6 +282,82 @@ func TestServer_SessionSnapshotIncludesExternalTaskMetadata(t *testing.T) {
 	}
 }
 
+func TestServer_GetSessionReturnsAggregatedTurnAndRunState(t *testing.T) {
+	t.Parallel()
+
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	svc := session.NewService(store, bus, &emittingGatewayRunner{}, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 12, 16, 0, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "rest detail aggregate state",
+	})
+	turnResp := postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "stream runtime events",
+		"initiator_type": "user",
+	})
+
+	sessionResp := getJSON[map[string]any](t, ts.URL+"/api/sessions/"+createResp.SessionID)
+
+	rawTurns, ok := sessionResp["turns"].([]any)
+	if !ok {
+		t.Fatalf("get session turns type = %T, want []any", sessionResp["turns"])
+	}
+	if len(rawTurns) != 1 {
+		t.Fatalf("get session turns len = %d, want 1", len(rawTurns))
+	}
+	turn, ok := rawTurns[0].(map[string]any)
+	if !ok {
+		t.Fatalf("get session turns[0] type = %T, want map[string]any", rawTurns[0])
+	}
+	if turn["turnId"] != turnResp.TurnID {
+		t.Fatalf("get session turns[0].turnId = %v, want %q", turn["turnId"], turnResp.TurnID)
+	}
+	if turn["displayState"] != "completed" {
+		t.Fatalf("get session turns[0].displayState = %v, want %q", turn["displayState"], "completed")
+	}
+	if turn["latestMessagePreview"] != "done" {
+		t.Fatalf("get session turns[0].latestMessagePreview = %v, want %q", turn["latestMessagePreview"], "done")
+	}
+
+	rawRuns, ok := sessionResp["runs"].([]any)
+	if !ok {
+		t.Fatalf("get session runs type = %T, want []any", sessionResp["runs"])
+	}
+	if len(rawRuns) != 1 {
+		t.Fatalf("get session runs len = %d, want 1", len(rawRuns))
+	}
+	run, ok := rawRuns[0].(map[string]any)
+	if !ok {
+		t.Fatalf("get session runs[0] type = %T, want map[string]any", rawRuns[0])
+	}
+	if run["runId"] != turnResp.RunID {
+		t.Fatalf("get session runs[0].runId = %v, want %q", run["runId"], turnResp.RunID)
+	}
+	if run["displayState"] != "completed" {
+		t.Fatalf("get session runs[0].displayState = %v, want %q", run["displayState"], "completed")
+	}
+	if run["summary"] != "done" {
+		t.Fatalf("get session runs[0].summary = %v, want %q", run["summary"], "done")
+	}
+	if run["latestMessageText"] != "done" {
+		t.Fatalf("get session runs[0].latestMessageText = %v, want %q", run["latestMessageText"], "done")
+	}
+	if run["eventCount"] != float64(6) {
+		t.Fatalf("get session runs[0].eventCount = %v, want %v", run["eventCount"], float64(6))
+	}
+}
+
 func TestServer_SessionSnapshotAggregatesExternalStreamState(t *testing.T) {
 	t.Parallel()
 

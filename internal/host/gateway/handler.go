@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/inhere/axon/internal/host/agui"
 	"github.com/inhere/axon/internal/host/session"
 	"github.com/inhere/axon/internal/ops/hitl"
 	"github.com/inhere/axon/internal/orchestrator"
@@ -178,6 +179,8 @@ type getSessionResponse struct {
 	Title         string                 `json:"title"`
 	Status        string                 `json:"status"`
 	LastTurnID    string                 `json:"last_turn_id"`
+	Turns         []map[string]any       `json:"turns"`
+	Runs          []map[string]any       `json:"runs"`
 	ExternalTasks []externalTaskResponse `json:"external_tasks"`
 }
 
@@ -217,12 +220,21 @@ func (h *Handler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	runEvents, err := h.sessionStore.ListEventsBySession(r.Context(), sessionID, 0)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(runEvents), externalTasks)
+	snapshotPayload, _ := snapshot.Snapshot.(map[string]any)
 
 	respondJSON(w, http.StatusOK, getSessionResponse{
 		SessionID:     sessionModel.SessionID,
 		Title:         sessionModel.Title,
 		Status:        string(sessionModel.Status),
 		LastTurnID:    sessionModel.LastTurnID,
+		Turns:         snapshotSliceField(snapshotPayload, "turns"),
+		Runs:          snapshotSliceField(snapshotPayload, "runs"),
 		ExternalTasks: mapExternalTaskResponses(externalTasks),
 	})
 }
@@ -349,4 +361,32 @@ func mapExternalTaskResponses(tasks []session.ExternalTask) []externalTaskRespon
 		})
 	}
 	return resp
+}
+
+func mapSessionEventsForSnapshot(events []session.RunEvent) []agui.HostEvent {
+	out := make([]agui.HostEvent, 0, len(events))
+	for _, event := range events {
+		out = append(out, agui.HostEvent{
+			Type:      event.EventType,
+			SessionID: event.SessionID,
+			TurnID:    event.TurnID,
+			RunID:     event.RunID,
+			AgentID:   event.AgentID,
+			Sequence:  event.Sequence,
+			Payload:   event.Payload,
+			CreatedAt: event.CreatedAt,
+		})
+	}
+	return out
+}
+
+func snapshotSliceField(snapshot map[string]any, key string) []map[string]any {
+	if snapshot == nil {
+		return []map[string]any{}
+	}
+	values, ok := snapshot[key].([]map[string]any)
+	if !ok {
+		return []map[string]any{}
+	}
+	return values
 }

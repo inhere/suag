@@ -2,6 +2,8 @@ import type {
   ExternalTaskSummary,
   SessionDetail,
   SessionSummary,
+  StateSnapshotRun,
+  StateSnapshotTurn,
   StartTurnInput,
   StartTurnResult,
 } from "./host-types";
@@ -34,6 +36,8 @@ type GetSessionResponse = {
   title: string;
   status: SessionSummary["status"];
   last_turn_id: string;
+  turns?: StateSnapshotTurn[];
+  runs?: StateSnapshotRun[];
   external_tasks: ExternalTaskResponse[];
 };
 
@@ -82,6 +86,8 @@ function mapSessionDetailResponse(input: GetSessionResponse): SessionDetail {
     title: input.title,
     status: input.status,
     lastTurnId: input.last_turn_id,
+    turns: input.turns ?? [],
+    runs: input.runs ?? [],
     externalTasks: input.external_tasks.map(mapExternalTaskResponse),
   };
 }

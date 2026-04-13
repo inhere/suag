@@ -41,6 +41,45 @@ describe("session-client", () => {
           title: "demo",
           status: "RUNNING",
           last_turn_id: "turn_001",
+          turns: [
+            {
+              turnId: "turn_001",
+              sessionId: "sess_001",
+              primaryRunId: "run_001",
+              currentRunId: "run_001",
+              latestRunId: "run_001",
+              latestAgentId: "default",
+              displayState: "completed",
+              latestEventType: "run.finished",
+              latestMessagePreview: "done",
+              eventCount: 3,
+              runCount: 1,
+              activeRunCount: 0,
+              completedRunCount: 1,
+              failedRunCount: 0,
+              activeRunIds: [],
+              completedRunIds: ["run_001"],
+              failedRunIds: [],
+              hasExternalWork: false,
+              updatedAt: "2026-04-12T08:00:01Z",
+            },
+          ],
+          runs: [
+            {
+              runId: "run_001",
+              turnId: "turn_001",
+              sessionId: "sess_001",
+              agentId: "default",
+              displayState: "completed",
+              latestEventType: "run.finished",
+              latestMessageId: "run_001:assistant",
+              latestMessageText: "done",
+              summary: "done",
+              externalTaskIds: [],
+              eventCount: 3,
+              updatedAt: "2026-04-12T08:00:01Z",
+            },
+          ],
           external_tasks: [
             {
               external_task_id: "ext_001",
@@ -65,6 +104,8 @@ describe("session-client", () => {
 
     expect(result.sessionId).toBe("sess_001");
     expect(result.lastTurnId).toBe("turn_001");
+    expect(result.turns[0]?.displayState).toBe("completed");
+    expect(result.runs[0]?.summary).toBe("done");
     expect(result.externalTasks[0]?.remoteAgentName).toBe("codex-cli");
   });
 
