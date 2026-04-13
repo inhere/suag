@@ -36,6 +36,7 @@
 - `web/app/src/features/run-inspector` 已补齐 focused run 明细展示，当前右栏在 summary 优先的同时，也会展示该 run 的 external messages / activities，并按 focused run 切换 external task 详情
 - `web/app/src/features/run-inspector/focused-run-panel.tsx` 已继续结构化 focused run 视图，当前右栏按 `Summary / Run Meta / External Messages / External Activities` 分区展示，联调时更易扫读 run 明细
 - `web/app/src/app/App.tsx` 与 `web/app/src/features/run-inspector/external-task-panel.tsx` 已补齐 `Add Hint -> continue_turn` 最小操作链路，当前 waiting turn 下可从右栏直接追加提示到后端 WS 会话
+- `web/app/vite.config.ts` 已补齐本地联调代理，当前 `pnpm dev` 可将 `/api`、`/events`、`/ws` 转发到 Host `:8180`，前后端已具备本地真机联调基础
 
 <!-- PROCESSING WORKS:END -->
 
