@@ -435,6 +435,16 @@ export function App() {
   const conversationMessages = buildConversationMessages(viewState);
   const waitingForInput = isWaitingForInput(viewState);
   const stopEnabled = canStopCurrentTurn(viewState);
+  const contextSessionLabel = `Session ${viewState.currentSessionId ?? "none"}`;
+  const contextTurnLabel = `Turn ${currentTurn?.turnId ?? "none"}`;
+  const contextRunLabel = `Run ${focusedRun?.runId ?? viewState.focusedRunId ?? "none"}`;
+  const contextConnectionLabel = !viewState.currentSessionId
+    ? "Socket idle"
+    : socketStatus === "connected"
+      ? "Socket connected"
+      : socketStatus === "disconnected"
+        ? "Socket disconnected"
+        : "Socket connecting";
   const connectionStatusMessage = !viewState.currentSessionId
     ? "No active session selected."
     : socketStatus === "connected"
@@ -560,6 +570,11 @@ export function App() {
     <AppShell
       sessions={viewState.recentSessions}
       currentSessionId={viewState.currentSessionId}
+      contextSessionLabel={contextSessionLabel}
+      contextTurnLabel={contextTurnLabel}
+      contextRunLabel={contextRunLabel}
+      contextConnectionLabel={contextConnectionLabel}
+      contextConnectionTone={viewState.currentSessionId ? socketStatus : "idle"}
       connectionStatus={socketStatus}
       connectionStatusMessage={connectionStatusMessage}
       connectionError={connectionError}

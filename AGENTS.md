@@ -47,6 +47,7 @@
 - `web/app/src/lib/session-ws.ts`、`web/app/src/app/App.tsx` 与 `web/app/src/features/session-list` 已补齐第一版连接重试闭环，当前 active session 在 websocket 断开后会自动重连，session list / session bootstrap 失败时也可从左栏直接手动 Retry 恢复
 - `web/app/src/app/App.tsx`、`web/app/src/features/session/session-store.ts` 与 `web/app/src/features/run-inspector` 已补齐 focused run detail 加载反馈闭环，当前右栏会显式展示 run 明细的 `loading / error` 状态，并可在单 run 明细加载失败后直接 `Retry Detail` 重新拉取
 - `web/app/src/features/conversation`、`web/app/src/features/session/session-selectors.ts` 与 `web/app/src/app/App.tsx` 已补齐最近 turn 摘要带，当前中间会话区会展示最近几轮 turn 的紧凑卡片，并可点击某个 turn 直接聚焦其 latest run 进入回看
+- `web/app/src/app/App.tsx`、`web/app/src/app/app-shell.tsx` 与 `web/app/src/styles.css` 已补齐顶部 context/status strip，当前工作台顶部可快速扫读 `session / turn / focused run / socket` 四项上下文，便于第一轮真机联调时快速定位当前视角
 
 <!-- PROCESSING WORKS:END -->
 

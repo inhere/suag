@@ -19,6 +19,11 @@ import type { SessionSocketStatus } from "../lib/session-ws";
 type AppShellProps = {
   sessions?: SessionListItem[];
   currentSessionId?: string | null;
+  contextSessionLabel?: string;
+  contextTurnLabel?: string;
+  contextRunLabel?: string;
+  contextConnectionLabel?: string;
+  contextConnectionTone?: "idle" | "connecting" | "connected" | "disconnected";
   connectionStatus?: SessionSocketStatus | "idle";
   connectionStatusMessage?: string;
   connectionError?: string | null;
@@ -62,6 +67,11 @@ type AppShellProps = {
 export function AppShell({
   sessions = [],
   currentSessionId = null,
+  contextSessionLabel = "Session none",
+  contextTurnLabel = "Turn none",
+  contextRunLabel = "Run none",
+  contextConnectionLabel = "Socket idle",
+  contextConnectionTone = "idle",
   connectionStatus = "idle",
   connectionStatusMessage = "No active session selected.",
   connectionError = null,
@@ -104,64 +114,76 @@ export function AppShell({
 
   return (
     <>
-      <div className="app-shell">
-        <aside className="app-shell__panel" aria-label="Sessions panel">
-        <SessionList
-          sessions={sessions}
-          currentSessionId={currentSessionId}
-          connectionStatus={connectionStatus}
-          statusMessage={connectionStatusMessage}
-          errorMessage={connectionError}
-          onRetry={onRetryConnection}
-          filter={filter}
-          searchQuery={searchQuery}
-          onCreateSession={onCreateSession}
-          onSelect={onSelectSession}
-          onSearchChange={onSearchChange}
-          onFilterChange={onFilterChange}
-        />
-        </aside>
-        <main className="app-shell__panel" aria-label="Conversation panel">
-          <h1>Conversation</h1>
-          <ConversationPane
-            messages={messages}
-            currentTurn={currentTurn}
-            recentTurns={recentTurns}
-            onSelectTurn={onSelectConversationTurn}
-            waitingForInput={waitingForInput}
-            onSubmit={onSubmitMessage}
-          />
-        </main>
-        <section className="app-shell__panel" aria-label="Run Inspector panel">
-          <h1>Run Inspector</h1>
-          <div className="app-shell__stack">
-            <RunInspector
-              currentTurn={currentTurn}
-              runs={runs}
-              externalTasks={externalTasks}
-              externalActivities={externalActivities}
-              externalMessages={externalMessages}
-              focusedRunId={focusedRunId}
-              focusedRunDetailStatus={focusedRunDetailStatus}
-              onFocusRun={onFocusRun}
-              onRetryFocusedRunDetail={onRetryFocusedRunDetail}
-              canStop={canStop}
-              onStop={onStop}
-              canAddHint={canAddHint}
-              onAddHint={onAddHint}
-              onOpenDebug={onOpenDebug}
-            />
-            <HITLPanel
-              tickets={hitlTickets}
-              loading={hitlLoading}
+      <div className="app-frame">
+        <header className="app-context-bar" aria-label="Workbench context">
+          <span className="app-context-bar__item">{contextSessionLabel}</span>
+          <span className="app-context-bar__item">{contextTurnLabel}</span>
+          <span className="app-context-bar__item">{contextRunLabel}</span>
+          <span
+            className={`app-context-bar__item app-context-bar__item--status app-context-bar__item--${contextConnectionTone}`}
+          >
+            {contextConnectionLabel}
+          </span>
+        </header>
+        <div className="app-shell">
+          <aside className="app-shell__panel" aria-label="Sessions panel">
+            <SessionList
+              sessions={sessions}
               currentSessionId={currentSessionId}
-              onRefresh={onRefreshHITL}
-              onOpenContext={onOpenHITLContext}
-              onRespond={onRespondHITL}
-              onDismiss={onDismissHITL}
+              connectionStatus={connectionStatus}
+              statusMessage={connectionStatusMessage}
+              errorMessage={connectionError}
+              onRetry={onRetryConnection}
+              filter={filter}
+              searchQuery={searchQuery}
+              onCreateSession={onCreateSession}
+              onSelect={onSelectSession}
+              onSearchChange={onSearchChange}
+              onFilterChange={onFilterChange}
             />
-          </div>
-        </section>
+          </aside>
+          <main className="app-shell__panel" aria-label="Conversation panel">
+            <h1>Conversation</h1>
+            <ConversationPane
+              messages={messages}
+              currentTurn={currentTurn}
+              recentTurns={recentTurns}
+              onSelectTurn={onSelectConversationTurn}
+              waitingForInput={waitingForInput}
+              onSubmit={onSubmitMessage}
+            />
+          </main>
+          <section className="app-shell__panel" aria-label="Run Inspector panel">
+            <h1>Run Inspector</h1>
+            <div className="app-shell__stack">
+              <RunInspector
+                currentTurn={currentTurn}
+                runs={runs}
+                externalTasks={externalTasks}
+                externalActivities={externalActivities}
+                externalMessages={externalMessages}
+                focusedRunId={focusedRunId}
+                focusedRunDetailStatus={focusedRunDetailStatus}
+                onFocusRun={onFocusRun}
+                onRetryFocusedRunDetail={onRetryFocusedRunDetail}
+                canStop={canStop}
+                onStop={onStop}
+                canAddHint={canAddHint}
+                onAddHint={onAddHint}
+                onOpenDebug={onOpenDebug}
+              />
+              <HITLPanel
+                tickets={hitlTickets}
+                loading={hitlLoading}
+                currentSessionId={currentSessionId}
+                onRefresh={onRefreshHITL}
+                onOpenContext={onOpenHITLContext}
+                onRespond={onRespondHITL}
+                onDismiss={onDismissHITL}
+              />
+            </div>
+          </section>
+        </div>
       </div>
       <DebugDrawer open={debugOpen} events={debugEvents} onClose={onCloseDebug} />
     </>

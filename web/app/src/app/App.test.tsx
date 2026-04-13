@@ -248,6 +248,8 @@ describe("App", () => {
     expect(await screen.findByText("host runtime")).toBeInTheDocument();
     expect((await screen.findAllByText("thinking...")).length).toBeGreaterThan(0);
     expect(screen.getByText("run_001")).toBeInTheDocument();
+    expect(screen.getAllByText("Turn turn_001").length).toBeGreaterThan(0);
+    expect(screen.getByText("Run run_001")).toBeInTheDocument();
     await waitFor(() =>
       expect(storage["axon.web.workbench"]).toContain("\"currentSessionId\":\"sess_001\""),
     );
@@ -281,16 +283,22 @@ describe("App", () => {
 
     render(<App />);
 
+    expect(await screen.findByText("Session sess_002")).toBeInTheDocument();
+    expect(screen.getByText("Turn none")).toBeInTheDocument();
+    expect(screen.getByText("Run none")).toBeInTheDocument();
+    expect(screen.getByText("Socket connecting")).toBeInTheDocument();
     expect(await screen.findByText("Session sess_002 connecting...")).toBeInTheDocument();
 
     await act(async () => {
       onStatusChange?.("connected");
     });
+    expect(await screen.findByText("Socket connected")).toBeInTheDocument();
     expect(await screen.findByText("Session sess_002 connected.")).toBeInTheDocument();
 
     await act(async () => {
       onStatusChange?.("disconnected");
     });
+    expect(await screen.findByText("Socket disconnected")).toBeInTheDocument();
     expect(await screen.findByText("Session sess_002 disconnected.")).toBeInTheDocument();
   });
 

@@ -23,12 +23,57 @@ body {
   min-height: 100vh;
 }
 
+.app-frame {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 14px 20px 20px;
+  gap: 14px;
+}
+
+.app-context-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.app-context-bar__item {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.6);
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 0.82rem;
+  letter-spacing: 0.01em;
+}
+
+.app-context-bar__item--status {
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+.app-context-bar__item--connecting {
+  border-color: rgba(250, 204, 21, 0.3);
+  color: rgba(254, 240, 138, 0.96);
+}
+
+.app-context-bar__item--connected {
+  border-color: rgba(34, 197, 94, 0.3);
+  color: rgba(187, 247, 208, 0.96);
+}
+
+.app-context-bar__item--disconnected {
+  border-color: rgba(248, 113, 113, 0.32);
+  color: rgba(254, 202, 202, 0.96);
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 320px;
   gap: 16px;
-  min-height: 100vh;
-  padding: 20px;
+  min-height: 0;
 }
 
 .app-shell__panel {
@@ -667,6 +712,10 @@ body {
 }
 
 @media (max-width: 960px) {
+  .app-frame {
+    padding: 12px;
+  }
+
   .app-shell {
     grid-template-columns: 1fr;
   }
