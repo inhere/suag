@@ -273,6 +273,8 @@ export function App() {
       waitingForInput={waitingForInput}
       runs={snapshot?.runs.length ? snapshot.runs : activeRuns}
       externalTasks={snapshot?.externalTasks ?? []}
+      externalActivities={snapshot?.externalActivities ?? []}
+      externalMessages={snapshot?.externalMessages ?? []}
       focusedRunId={focusedRun?.runId ?? viewState.focusedRunId}
       debugOpen={debugOpen}
       debugEvents={snapshot?.events ?? []}

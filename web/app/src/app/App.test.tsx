@@ -210,7 +210,7 @@ describe("App", () => {
     });
 
     expect(await screen.findByText("host runtime")).toBeInTheDocument();
-    expect(await screen.findByText("thinking...")).toBeInTheDocument();
+    expect((await screen.findAllByText("thinking...")).length).toBeGreaterThan(0);
     expect(screen.getByText("run_001")).toBeInTheDocument();
     await waitFor(() =>
       expect(storage["axon.web.workbench"]).toContain("\"currentSessionId\":\"sess_001\""),
@@ -609,6 +609,8 @@ describe("App", () => {
       expect(getRunDetailMock).toHaveBeenCalledWith("sess_005", "run_hist"),
     );
     expect((await screen.findAllByText("历史摘要")).length).toBeGreaterThan(0);
+    expect(screen.getByText("历史详细正文")).toBeInTheDocument();
+    expect(screen.getByText("delegate: completed")).toBeInTheDocument();
     expect(screen.getByText("codex-reviewer")).toBeInTheDocument();
     expect(screen.getByText("历史任务完成")).toBeInTheDocument();
   });

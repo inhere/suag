@@ -42,7 +42,54 @@ it("shows summary first for a completed focused run", () => {
           updatedAt: "2026-04-12T10:30:00Z",
         },
       ]}
-      externalTasks={[]}
+      externalTasks={[
+        {
+          externalTaskId: "ext_001",
+          sessionId: "sess_001",
+          turnId: "turn_002",
+          runId: "run_001",
+          adapter: "codex",
+          remoteAgentName: "codex-reviewer",
+          remoteSessionId: "remote_001",
+          remoteTaskId: "task_001",
+          state: "completed",
+          lastHeartbeatAt: "2026-04-12T10:30:00Z",
+          resultSummary: "任务已完成",
+          metadata: {},
+        },
+      ]}
+      externalActivities={[
+        {
+          externalTaskId: "ext_001",
+          sessionId: "sess_001",
+          turnId: "turn_002",
+          runId: "run_001",
+          agentId: "default",
+          activityId: "act_001",
+          kind: "delegate",
+          status: "completed",
+          title: "delegate",
+          detail: "completed",
+          startedAt: "2026-04-12T10:29:00Z",
+          updatedAt: "2026-04-12T10:30:00Z",
+        },
+      ]}
+      externalMessages={[
+        {
+          externalTaskId: "ext_001",
+          messageId: "msg_001",
+          sessionId: "sess_001",
+          turnId: "turn_002",
+          runId: "run_001",
+          agentId: "default",
+          content: "详细流式正文",
+          started: true,
+          completed: true,
+          lastEventType: "run.external.message.end",
+          lastSequence: 3,
+          updatedAt: "2026-04-12T10:30:00Z",
+        },
+      ]}
       focusedRunId="run_001"
       onFocusRun={vi.fn()}
       onOpenDebug={vi.fn()}
@@ -55,4 +102,7 @@ it("shows summary first for a completed focused run", () => {
   expect(focusedRunPanel).not.toBeNull();
   expect(within(focusedRunPanel as HTMLElement).getByText("已完成基础方案")).toBeInTheDocument();
   expect(within(focusedRunPanel as HTMLElement).queryByText("older text")).not.toBeInTheDocument();
+  expect(within(focusedRunPanel as HTMLElement).getByText("详细流式正文")).toBeInTheDocument();
+  expect(within(focusedRunPanel as HTMLElement).getByText("delegate: completed")).toBeInTheDocument();
+  expect(screen.getByText("codex-reviewer")).toBeInTheDocument();
 });

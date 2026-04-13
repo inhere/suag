@@ -7,6 +7,8 @@ import type { SessionFilter, SessionListItem } from "../features/session/session
 import type {
   ExternalTaskSummary,
   SessionSocketMessage,
+  StateSnapshotExternalActivity,
+  StateSnapshotExternalMessage,
   StateSnapshotRun,
   StateSnapshotTurn,
 } from "../lib/host-types";
@@ -21,6 +23,8 @@ type AppShellProps = {
   waitingForInput?: boolean;
   runs?: StateSnapshotRun[];
   externalTasks?: ExternalTaskSummary[];
+  externalActivities?: StateSnapshotExternalActivity[];
+  externalMessages?: StateSnapshotExternalMessage[];
   focusedRunId?: string | null;
   debugOpen?: boolean;
   debugEvents?: SessionSocketMessage[];
@@ -44,6 +48,8 @@ export function AppShell({
   waitingForInput = false,
   runs = [],
   externalTasks = [],
+  externalActivities = [],
+  externalMessages = [],
   focusedRunId = null,
   debugOpen = false,
   debugEvents = [],
@@ -87,6 +93,8 @@ export function AppShell({
             currentTurn={currentTurn}
             runs={runs}
             externalTasks={externalTasks}
+            externalActivities={externalActivities}
+            externalMessages={externalMessages}
             focusedRunId={focusedRunId}
             onFocusRun={onFocusRun}
             onOpenDebug={onOpenDebug}

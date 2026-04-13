@@ -1,4 +1,10 @@
-import type { ExternalTaskSummary, StateSnapshotRun, StateSnapshotTurn } from "../../lib/host-types";
+import type {
+  ExternalTaskSummary,
+  StateSnapshotExternalActivity,
+  StateSnapshotExternalMessage,
+  StateSnapshotRun,
+  StateSnapshotTurn,
+} from "../../lib/host-types";
 import { ActiveRunsPanel } from "./active-runs-panel";
 import { CurrentTurnPanel } from "./current-turn-panel";
 import { ExternalTaskPanel } from "./external-task-panel";
@@ -8,6 +14,8 @@ type RunInspectorProps = {
   currentTurn: StateSnapshotTurn | null;
   runs: StateSnapshotRun[];
   externalTasks: ExternalTaskSummary[];
+  externalActivities: StateSnapshotExternalActivity[];
+  externalMessages: StateSnapshotExternalMessage[];
   focusedRunId: string | null;
   onFocusRun: (runId: string) => void;
   onOpenDebug: () => void;
@@ -28,6 +36,8 @@ export function RunInspector({
   currentTurn,
   runs,
   externalTasks,
+  externalActivities,
+  externalMessages,
   focusedRunId,
   onFocusRun,
   onOpenDebug,
@@ -42,8 +52,16 @@ export function RunInspector({
         focusedRunId={focusedRun?.runId ?? null}
         onFocusRun={onFocusRun}
       />
-      <FocusedRunPanel focusedRun={focusedRun} />
-      <ExternalTaskPanel externalTasks={externalTasks} onOpenDebug={onOpenDebug} />
+      <FocusedRunPanel
+        focusedRun={focusedRun}
+        externalActivities={externalActivities}
+        externalMessages={externalMessages}
+      />
+      <ExternalTaskPanel
+        externalTasks={externalTasks}
+        focusedRunId={focusedRun?.runId ?? null}
+        onOpenDebug={onOpenDebug}
+      />
     </div>
   );
 }

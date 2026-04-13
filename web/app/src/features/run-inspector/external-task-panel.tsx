@@ -2,22 +2,27 @@ import type { ExternalTaskSummary } from "../../lib/host-types";
 
 type ExternalTaskPanelProps = {
   externalTasks: ExternalTaskSummary[];
+  focusedRunId: string | null;
   onOpenDebug: () => void;
 };
 
 export function ExternalTaskPanel({
   externalTasks,
+  focusedRunId,
   onOpenDebug,
 }: ExternalTaskPanelProps) {
+  const focusedTask =
+    externalTasks.find((task) => task.runId === focusedRunId) ?? externalTasks[0] ?? null;
+
   return (
     <section className="run-panel">
       <h2>External Task + Actions</h2>
-      {externalTasks[0] ? (
+      {focusedTask ? (
         <>
-          <p>{externalTasks[0].adapter}</p>
-          <p>{externalTasks[0].remoteAgentName}</p>
-          <p>{externalTasks[0].state}</p>
-          <p>{externalTasks[0].resultSummary || "No result summary yet."}</p>
+          <p>{focusedTask.adapter}</p>
+          <p>{focusedTask.remoteAgentName}</p>
+          <p>{focusedTask.state}</p>
+          <p>{focusedTask.resultSummary || "No result summary yet."}</p>
         </>
       ) : (
         <p>No external task linked.</p>
