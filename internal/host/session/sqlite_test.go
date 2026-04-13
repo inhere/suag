@@ -166,6 +166,92 @@ func TestSQLiteStore_CreateUpdateAndListExternalTasks(t *testing.T) {
 	}
 }
 
+func TestSQLiteStore_UpdateTurnStatusAndRunLifecycle(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newTestStore(t)
+	now := time.Date(2026, 4, 13, 10, 0, 0, 0, time.UTC)
+
+	if err := store.CreateSession(ctx, Session{
+		SessionID: "sess_010",
+		Title:     "lifecycle session",
+		Status:    SessionRunning,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Metadata:  map[string]any{},
+	}); err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	if err := store.CreateTurn(ctx, Turn{
+		TurnID:        "turn_010",
+		SessionID:     "sess_010",
+		InitiatorType: InitiatorUser,
+		Status:        TurnRunning,
+		InputSummary:  "finish task",
+		PrimaryRunID:  "run_010",
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("CreateTurn() error = %v", err)
+	}
+	if err := store.CreateRun(ctx, Run{
+		RunID:     "run_010",
+		SessionID: "sess_010",
+		TurnID:    "turn_010",
+		AgentID:   "default",
+		State:     RunQueued,
+		StartedAt: now,
+	}); err != nil {
+		t.Fatalf("CreateRun() error = %v", err)
+	}
+
+	finishedAt := now.Add(2 * time.Minute)
+	if err := store.UpdateTurnStatus(ctx, "turn_010", TurnCompleted, &finishedAt); err != nil {
+		t.Fatalf("UpdateTurnStatus() error = %v", err)
+	}
+	if err := store.UpdateRunLifecycle(ctx, "run_010", RunCompleted, "done", "", &finishedAt); err != nil {
+		t.Fatalf("UpdateRunLifecycle() error = %v", err)
+	}
+
+	turnRow := store.db.QueryRowContext(ctx, `
+		SELECT status, completed_at
+		FROM turns
+		WHERE turn_id = ?
+	`, "turn_010")
+	var turnStatus, completedAt string
+	if err := turnRow.Scan(&turnStatus, &completedAt); err != nil {
+		t.Fatalf("query turn lifecycle error = %v", err)
+	}
+	if turnStatus != string(TurnCompleted) {
+		t.Fatalf("persisted turn status = %q, want %q", turnStatus, TurnCompleted)
+	}
+	if completedAt != finishedAt.Format(time.RFC3339Nano) {
+		t.Fatalf("persisted turn completed_at = %q, want %q", completedAt, finishedAt.Format(time.RFC3339Nano))
+	}
+
+	runRow := store.db.QueryRowContext(ctx, `
+		SELECT state, summary, failure_code, ended_at
+		FROM runs
+		WHERE run_id = ?
+	`, "run_010")
+	var runState, runSummary, failureCode, endedAt string
+	if err := runRow.Scan(&runState, &runSummary, &failureCode, &endedAt); err != nil {
+		t.Fatalf("query run lifecycle error = %v", err)
+	}
+	if runState != string(RunCompleted) {
+		t.Fatalf("persisted run state = %q, want %q", runState, RunCompleted)
+	}
+	if runSummary != "done" {
+		t.Fatalf("persisted run summary = %q, want %q", runSummary, "done")
+	}
+	if failureCode != "" {
+		t.Fatalf("persisted run failure_code = %q, want empty", failureCode)
+	}
+	if endedAt != finishedAt.Format(time.RFC3339Nano) {
+		t.Fatalf("persisted run ended_at = %q, want %q", endedAt, finishedAt.Format(time.RFC3339Nano))
+	}
+}
+
 func newTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 

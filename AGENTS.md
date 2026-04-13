@@ -27,6 +27,7 @@
 - `web/app/src/app/App.tsx` 与 `web/app/src/features/session/session-store.ts` 已补齐 `getSession()` 的 HTTP bootstrap 合并，当前恢复出来的 session 在 WS 首包到来前也可先刷新标题、状态和 external task 基础明细
 - `web/app/src/app/App.tsx` 与 `web/app/src/features/session/session-store.ts` 已继续补齐 session detail bootstrap 占位，当前恢复 session 时会先生成临时 turn/run 视图，避免 WS snapshot 到来前中栏和右栏空白
 - `web/app` 已完成第一阶段脚手架落地，当前 `pnpm + React + Vite + TypeScript + Vitest` 最小三栏工作台壳子、测试与构建链路已打通
+- `internal/host/session` 已补齐第一轮会话闭环持久化，当前 run 完成/失败时会同步推进 run / turn / session 实体状态，避免刷新恢复时只看到事件已结束但底层状态仍停留在 queued/running
 
 <!-- PROCESSING WORKS:END -->
 

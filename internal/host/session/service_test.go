@@ -317,6 +317,154 @@ func TestService_StartTurnPublishesRuntimeEventsFromRunner(t *testing.T) {
 	}
 }
 
+func TestService_StartTurnPersistsCompletedLifecycleState(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "final summary",
+			ExternalTask: &ExternalTask{
+				ExternalTaskID:  "ext_complete_001",
+				Adapter:         "codex",
+				RemoteAgentName: "codex-cli",
+				RemoteSessionID: "remote_sess_001",
+				RemoteTaskID:    "remote_task_001",
+				State:           "completed",
+				ResultSummary:   "remote task done",
+			},
+		},
+	}
+	now := time.Date(2026, 4, 13, 9, 0, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_done",
+		AgentID:       "default",
+		UserMessage:   "finish the task",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	row := store.db.QueryRowContext(ctx, `
+		SELECT state, summary, ended_at
+		FROM runs
+		WHERE run_id = ?
+	`, result.RunID)
+	var runState, runSummary, runEndedAt string
+	if err := row.Scan(&runState, &runSummary, &runEndedAt); err != nil {
+		t.Fatalf("query run state error = %v", err)
+	}
+	if runState != string(RunCompleted) {
+		t.Fatalf("persisted run state = %q, want %q", runState, RunCompleted)
+	}
+	if runSummary != "final summary" {
+		t.Fatalf("persisted run summary = %q, want %q", runSummary, "final summary")
+	}
+	if runEndedAt != now.Format(time.RFC3339Nano) {
+		t.Fatalf("persisted run ended_at = %q, want %q", runEndedAt, now.Format(time.RFC3339Nano))
+	}
+
+	sessionRow := store.db.QueryRowContext(ctx, `
+		SELECT status
+		FROM sessions
+		WHERE session_id = ?
+	`, result.SessionID)
+	var sessionStatus string
+	if err := sessionRow.Scan(&sessionStatus); err != nil {
+		t.Fatalf("query session status error = %v", err)
+	}
+	if sessionStatus != string(SessionWaiting) {
+		t.Fatalf("persisted session status = %q, want %q", sessionStatus, SessionWaiting)
+	}
+
+	taskRow := store.db.QueryRowContext(ctx, `
+		SELECT state, result_summary
+		FROM external_tasks
+		WHERE external_task_id = ?
+	`, "ext_complete_001")
+	var taskState, taskSummary string
+	if err := taskRow.Scan(&taskState, &taskSummary); err != nil {
+		t.Fatalf("query external task error = %v", err)
+	}
+	if taskState != "completed" {
+		t.Fatalf("persisted external task state = %q, want %q", taskState, "completed")
+	}
+	if taskSummary != "remote task done" {
+		t.Fatalf("persisted external task result summary = %q, want %q", taskSummary, "remote task done")
+	}
+}
+
+func TestService_StartTurnPersistsFailedLifecycleState(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		err: errors.New("runner failed"),
+	}
+	now := time.Date(2026, 4, 13, 9, 30, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	_, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_failed",
+		AgentID:       "default",
+		UserMessage:   "break the task",
+		InitiatorType: InitiatorUser,
+	})
+	if err == nil {
+		t.Fatal("StartTurn() error = nil, want runner failure")
+	}
+
+	row := store.db.QueryRowContext(ctx, `
+		SELECT run_id, state, summary, ended_at
+		FROM runs
+		WHERE session_id = ?
+		ORDER BY started_at DESC
+		LIMIT 1
+	`, "sess_failed")
+	var runID, runState, runSummary, runEndedAt string
+	if err := row.Scan(&runID, &runState, &runSummary, &runEndedAt); err != nil {
+		t.Fatalf("query failed run state error = %v", err)
+	}
+	if runID == "" {
+		t.Fatal("persisted failed run id is empty")
+	}
+	if runState != string(RunFailed) {
+		t.Fatalf("persisted failed run state = %q, want %q", runState, RunFailed)
+	}
+	if runSummary != "" {
+		t.Fatalf("persisted failed run summary = %q, want empty", runSummary)
+	}
+	if runEndedAt != now.Format(time.RFC3339Nano) {
+		t.Fatalf("persisted failed run ended_at = %q, want %q", runEndedAt, now.Format(time.RFC3339Nano))
+	}
+
+	sessionRow := store.db.QueryRowContext(ctx, `
+		SELECT status
+		FROM sessions
+		WHERE session_id = ?
+	`, "sess_failed")
+	var sessionStatus string
+	if err := sessionRow.Scan(&sessionStatus); err != nil {
+		t.Fatalf("query failed session status error = %v", err)
+	}
+	if sessionStatus != string(SessionWaiting) {
+		t.Fatalf("persisted failed session status = %q, want %q", sessionStatus, SessionWaiting)
+	}
+}
+
 type fakeRunner struct {
 	result      RuntimeResult
 	err         error

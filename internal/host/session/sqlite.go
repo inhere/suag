@@ -160,6 +160,27 @@ func (s *SQLiteStore) CreateTurn(ctx context.Context, turn Turn) error {
 	return nil
 }
 
+func (s *SQLiteStore) UpdateTurnStatus(ctx context.Context, turnID string, status TurnStatus, completedAt *time.Time) error {
+	if err := validateID("turn", turnID); err != nil {
+		return err
+	}
+
+	completed := ""
+	if completedAt != nil {
+		completed = formatTime(*completedAt)
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE turns
+		SET status = ?, completed_at = ?
+		WHERE turn_id = ?
+	`, status, completed, turnID)
+	if err != nil {
+		return fmt.Errorf("update turn status: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) CreateRun(ctx context.Context, run Run) error {
 	if err := validateID("run", run.RunID); err != nil {
 		return err
@@ -182,7 +203,7 @@ func (s *SQLiteStore) CreateRun(ctx context.Context, run Run) error {
 	return nil
 }
 
-func (s *SQLiteStore) UpdateRunState(ctx context.Context, runID string, state RunState, endedAt *time.Time) error {
+func (s *SQLiteStore) UpdateRunLifecycle(ctx context.Context, runID string, state RunState, summary string, failureCode string, endedAt *time.Time) error {
 	if err := validateID("run", runID); err != nil {
 		return err
 	}
@@ -194,11 +215,11 @@ func (s *SQLiteStore) UpdateRunState(ctx context.Context, runID string, state Ru
 
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE runs
-		SET state = ?, ended_at = ?
+		SET state = ?, summary = ?, failure_code = ?, ended_at = ?
 		WHERE run_id = ?
-	`, state, ended, runID)
+	`, state, summary, failureCode, ended, runID)
 	if err != nil {
-		return fmt.Errorf("update run state: %w", err)
+		return fmt.Errorf("update run lifecycle: %w", err)
 	}
 	return nil
 }

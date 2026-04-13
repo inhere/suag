@@ -236,6 +236,10 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			},
 		})
 		if err != nil {
+			failedAt := s.now().UTC()
+			if lifecycleErr := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunFailed, TurnFailed, "", err.Error(), failedAt); lifecycleErr != nil {
+				return StartTurnResult{}, fmt.Errorf("persist failed lifecycle: %w", lifecycleErr)
+			}
 			failedEvent := RunEvent{
 				EventID:   NewEventID(),
 				SessionID: sessionID,
@@ -267,6 +271,10 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				return StartTurnResult{}, fmt.Errorf("persist external task: %w", err)
 			}
 		}
+		finishedAt := s.now().UTC()
+		if err := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunCompleted, TurnCompleted, result.Summary, "", finishedAt); err != nil {
+			return StartTurnResult{}, fmt.Errorf("persist finished lifecycle: %w", err)
+		}
 
 		finishedEvent := RunEvent{
 			EventID:   NewEventID(),
@@ -297,6 +305,38 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 		TurnID:    turnID,
 		RunID:     runID,
 	}, nil
+}
+
+func (s *Service) persistLifecycleState(
+	ctx context.Context,
+	sessionModel Session,
+	turnID string,
+	runID string,
+	runState RunState,
+	turnStatus TurnStatus,
+	summary string,
+	failureCode string,
+	finishedAt time.Time,
+) error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+
+	// Keep the entity tables aligned with the emitted lifecycle events so
+	// REST recovery and websocket snapshots do not disagree after reload.
+	if err := s.store.UpdateRunLifecycle(ctx, runID, runState, summary, failureCode, &finishedAt); err != nil {
+		return fmt.Errorf("update run lifecycle: %w", err)
+	}
+	if err := s.store.UpdateTurnStatus(ctx, turnID, turnStatus, &finishedAt); err != nil {
+		return fmt.Errorf("update turn status: %w", err)
+	}
+
+	sessionModel.Status = SessionWaiting
+	sessionModel.UpdatedAt = finishedAt
+	if err := s.store.UpdateSession(ctx, sessionModel); err != nil {
+		return fmt.Errorf("update session status: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, previousTurnID, externalTaskID string) map[string]any {
