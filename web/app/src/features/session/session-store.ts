@@ -32,6 +32,7 @@ export type SessionViewState = {
   snapshot: StateSnapshotV0 | null;
   focusedRunId: string | null;
   filter: SessionFilter;
+  runDetailStatus: Record<string, "idle" | "loading" | "loaded" | "error">;
 };
 
 export const emptySessionViewState: SessionViewState = {
@@ -40,6 +41,7 @@ export const emptySessionViewState: SessionViewState = {
   snapshot: null,
   focusedRunId: null,
   filter: "all",
+  runDetailStatus: {},
 };
 
 function upsertRecentSession(
@@ -307,6 +309,18 @@ function replaceItemsByRunID<T extends { runId: string }>(
   nextItems: T[],
 ): T[] {
   return [...items.filter((item) => item.runId !== runId), ...nextItems];
+}
+
+function hasRunDetailState(
+  snapshot: Pick<StateSnapshotV0, "externalActivities" | "externalMessages">,
+  runID: string,
+): boolean {
+  const externalActivities = snapshot.externalActivities ?? [];
+  const externalMessages = snapshot.externalMessages ?? [];
+  return (
+    externalActivities.some((activity) => activity.runId === runID) ||
+    externalMessages.some((message) => message.runId === runID)
+  );
 }
 
 function getTargetRun(snapshot: StateSnapshotV0): StateSnapshotRun | null {
@@ -862,6 +876,11 @@ export function hydrateFromSnapshot(
     currentSessionId: snapshot.sessionId,
     snapshot,
     focusedRunId: focusedRun?.runId ?? null,
+    runDetailStatus: Object.fromEntries(
+      Object.entries(state.runDetailStatus).filter(([runId]) =>
+        snapshot.runs.some((run) => run.runId === runId),
+      ),
+    ),
     recentSessions: upsertRecentSession(state.recentSessions, {
       sessionId: snapshot.sessionId,
       title: snapshot.title,
@@ -879,6 +898,8 @@ export function mergeSessionDetail(
 ): SessionViewState {
   const detailSnapshot =
     createDetailSnapshot(detail, observedAt) ?? createBootstrapSnapshot(detail, observedAt);
+  const detailExternalActivities = detailSnapshot.externalActivities ?? [];
+  const detailExternalMessages = detailSnapshot.externalMessages ?? [];
   const nextSnapshot = state.snapshot
     ? {
         ...state.snapshot,
@@ -896,11 +917,11 @@ export function mergeSessionDetail(
         externalActivities:
           state.snapshot.externalActivities.length > 0
             ? state.snapshot.externalActivities
-            : detailSnapshot.externalActivities,
+            : detailExternalActivities,
         externalMessages:
           state.snapshot.externalMessages.length > 0
             ? state.snapshot.externalMessages
-            : detailSnapshot.externalMessages,
+            : detailExternalMessages,
         generatedAt: observedAt,
         turns:
           state.snapshot.turns.length > 0
@@ -917,6 +938,14 @@ export function mergeSessionDetail(
     ...state,
     currentSessionId: detail.sessionId,
     snapshot: nextSnapshot,
+    runDetailStatus: nextSnapshot.runs.reduce<Record<string, "idle" | "loading" | "loaded" | "error">>(
+      (acc, run) => {
+        const hasDetailedExternalState = hasRunDetailState(nextSnapshot, run.runId);
+        acc[run.runId] = hasDetailedExternalState ? "loaded" : state.runDetailStatus[run.runId] ?? "idle";
+        return acc;
+      },
+      {},
+    ),
     recentSessions: upsertRecentSession(state.recentSessions, {
       sessionId: detail.sessionId,
       title: detail.title,
@@ -960,6 +989,10 @@ export function mergeRunDetail(
   return {
     ...state,
     focusedRunId: detail.run.runId,
+    runDetailStatus: {
+      ...state.runDetailStatus,
+      [detail.run.runId]: "loaded",
+    },
     snapshot: {
       ...state.snapshot,
       generatedAt: observedAt,
@@ -971,6 +1004,63 @@ export function mergeRunDetail(
       externalTasks,
     },
   };
+}
+
+export function markRunDetailRequested(
+  state: SessionViewState,
+  runId: string,
+): SessionViewState {
+  if (!runId) {
+    return state;
+  }
+
+  return {
+    ...state,
+    runDetailStatus: {
+      ...state.runDetailStatus,
+      [runId]: "loading",
+    },
+  };
+}
+
+export function markRunDetailFailed(
+  state: SessionViewState,
+  runId: string,
+): SessionViewState {
+  if (!runId) {
+    return state;
+  }
+
+  return {
+    ...state,
+    runDetailStatus: {
+      ...state.runDetailStatus,
+      [runId]: "error",
+    },
+  };
+}
+
+export function shouldLoadRunDetail(
+  state: SessionViewState,
+  runId: string | null,
+): boolean {
+  if (!state.snapshot || !runId) {
+    return false;
+  }
+
+  const status = state.runDetailStatus[runId] ?? "idle";
+  if (status !== "idle") {
+    return false;
+  }
+
+  const runExists = state.snapshot.runs.some((run) => run.runId === runId);
+  if (!runExists) {
+    return false;
+  }
+
+  const hasDetailedExternalState = hasRunDetailState(state.snapshot, runId);
+
+  return !hasDetailedExternalState;
 }
 
 export function reduceSessionMessage(

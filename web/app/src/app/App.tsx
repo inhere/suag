@@ -3,8 +3,11 @@ import { AppShell } from "./app-shell";
 import type { ConversationMessage } from "../features/conversation/conversation-pane";
 import {
   emptySessionViewState,
+  markRunDetailFailed,
+  markRunDetailRequested,
   mergeRunDetail,
   mergeSessionDetail,
+  shouldLoadRunDetail,
   type SessionFilter,
   type SessionListItem,
   type SessionViewState,
@@ -124,7 +127,6 @@ export function App() {
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [debugOpen, setDebugOpen] = useState(false);
   const socketRef = useRef<SessionSocketConnection | null>(null);
-  const fetchedRunDetailsRef = useRef<Record<string, true>>({});
 
   useEffect(() => {
     persistWorkbenchState(viewState);
@@ -136,8 +138,6 @@ export function App() {
     }
 
     let cancelled = false;
-    fetchedRunDetailsRef.current = {};
-
     void getSession(viewState.currentSessionId)
       .then((detail) => {
         if (cancelled) {
@@ -179,18 +179,12 @@ export function App() {
       return;
     }
 
-    const alreadyLoaded = fetchedRunDetailsRef.current[focusedRunId];
-    const hasDetailedExternalState =
-      snapshot.externalMessages.some((message) => message.runId === focusedRunId) ||
-      snapshot.externalActivities.some((activity) => activity.runId === focusedRunId) ||
-      snapshot.externalTasks.some((task) => task.runId === focusedRunId);
-
-    if (alreadyLoaded || hasDetailedExternalState) {
+    if (!shouldLoadRunDetail(viewState, focusedRunId)) {
       return;
     }
 
     let cancelled = false;
-    fetchedRunDetailsRef.current[focusedRunId] = true;
+    setViewState((current) => markRunDetailRequested(current, focusedRunId));
 
     void getRunDetail(sessionId, focusedRunId)
       .then((detail) => {
@@ -203,7 +197,11 @@ export function App() {
         );
       })
       .catch(() => {
-        delete fetchedRunDetailsRef.current[focusedRunId];
+        if (cancelled) {
+          return;
+        }
+
+        setViewState((current) => markRunDetailFailed(current, focusedRunId));
       });
 
     return () => {

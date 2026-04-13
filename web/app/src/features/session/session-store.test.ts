@@ -8,9 +8,11 @@ import type {
 import {
   emptySessionViewState,
   hydrateFromSnapshot,
+  markRunDetailRequested,
   mergeRunDetail,
   mergeSessionDetail,
   reduceSessionMessage,
+  shouldLoadRunDetail,
   type SessionListItem,
   type SessionViewState,
 } from "./session-store";
@@ -580,69 +582,72 @@ describe("session-store", () => {
 
   it("merges on-demand run detail into the current snapshot and focuses the restored run", () => {
     const next = mergeRunDetail(
-      hydrateFromSnapshot(
-        {
-          ...emptySessionViewState,
-          focusedRunId: "run_hist",
-        },
-        makeSnapshot({
-          turnId: "turn_current",
-          lastTurnId: "turn_current",
-          currentRunId: "run_current",
-          turns: [
-            {
-              turnId: "turn_current",
-              sessionId: "sess_001",
-              primaryRunId: "run_current",
-              currentRunId: "run_current",
-              latestRunId: "run_current",
-              latestAgentId: "default",
-              displayState: "running",
-              latestEventType: "run.started",
-              latestMessagePreview: "当前运行中",
-              eventCount: 2,
-              runCount: 1,
-              activeRunCount: 1,
-              completedRunCount: 0,
-              failedRunCount: 0,
-              activeRunIds: ["run_current"],
-              completedRunIds: [],
-              failedRunIds: [],
-              hasExternalWork: false,
-              updatedAt: "2026-04-12T13:50:00Z",
-            },
-          ],
-          runs: [
-            {
-              runId: "run_current",
-              turnId: "turn_current",
-              sessionId: "sess_001",
-              agentId: "default",
-              displayState: "running",
-              latestEventType: "run.started",
-              latestMessageId: "msg_current",
-              latestMessageText: "当前运行中",
-              summary: "",
-              externalTaskIds: [],
-              eventCount: 2,
-              updatedAt: "2026-04-12T13:50:00Z",
-            },
-            {
-              runId: "run_hist",
-              turnId: "turn_hist",
-              sessionId: "sess_001",
-              agentId: "reviewer",
-              displayState: "completed",
-              latestEventType: "run.finished",
-              latestMessageId: "",
-              latestMessageText: "",
-              summary: "",
-              externalTaskIds: [],
-              eventCount: 0,
-              updatedAt: "2026-04-12T13:40:00Z",
-            },
-          ],
-        }),
+      markRunDetailRequested(
+        hydrateFromSnapshot(
+          {
+            ...emptySessionViewState,
+            focusedRunId: "run_hist",
+          },
+          makeSnapshot({
+            turnId: "turn_current",
+            lastTurnId: "turn_current",
+            currentRunId: "run_current",
+            turns: [
+              {
+                turnId: "turn_current",
+                sessionId: "sess_001",
+                primaryRunId: "run_current",
+                currentRunId: "run_current",
+                latestRunId: "run_current",
+                latestAgentId: "default",
+                displayState: "running",
+                latestEventType: "run.started",
+                latestMessagePreview: "当前运行中",
+                eventCount: 2,
+                runCount: 1,
+                activeRunCount: 1,
+                completedRunCount: 0,
+                failedRunCount: 0,
+                activeRunIds: ["run_current"],
+                completedRunIds: [],
+                failedRunIds: [],
+                hasExternalWork: false,
+                updatedAt: "2026-04-12T13:50:00Z",
+              },
+            ],
+            runs: [
+              {
+                runId: "run_current",
+                turnId: "turn_current",
+                sessionId: "sess_001",
+                agentId: "default",
+                displayState: "running",
+                latestEventType: "run.started",
+                latestMessageId: "msg_current",
+                latestMessageText: "当前运行中",
+                summary: "",
+                externalTaskIds: [],
+                eventCount: 2,
+                updatedAt: "2026-04-12T13:50:00Z",
+              },
+              {
+                runId: "run_hist",
+                turnId: "turn_hist",
+                sessionId: "sess_001",
+                agentId: "reviewer",
+                displayState: "completed",
+                latestEventType: "run.finished",
+                latestMessageId: "",
+                latestMessageText: "",
+                summary: "",
+                externalTaskIds: [],
+                eventCount: 0,
+                updatedAt: "2026-04-12T13:40:00Z",
+              },
+            ],
+          }),
+        ),
+        "run_hist",
       ),
       makeRunDetail(),
       "2026-04-12T14:01:00Z",
@@ -654,5 +659,72 @@ describe("session-store", () => {
     expect(next.snapshot?.turns.find((turn) => turn.turnId === "turn_hist")?.latestMessagePreview).toBe("历史 run 摘要");
     expect(next.snapshot?.externalMessages.find((message) => message.runId === "run_hist")?.content).toBe("历史详细正文");
     expect(next.snapshot?.externalTasks.find((task) => task.runId === "run_hist")?.remoteAgentName).toBe("codex-reviewer");
+    expect(shouldLoadRunDetail(next, "run_hist")).toBe(false);
+  });
+
+  it("tracks whether a focused run still needs on-demand detail loading", () => {
+    const bootstrapState = mergeSessionDetail(
+      {
+        ...emptySessionViewState,
+        currentSessionId: "sess_001",
+      },
+      makeSessionDetail({
+        turns: [],
+        runs: [],
+        externalActivities: [],
+        externalMessages: [],
+      }),
+      "2026-04-12T12:32:00Z",
+    );
+
+    expect(shouldLoadRunDetail(bootstrapState, "run_bootstrap")).toBe(true);
+
+    const requested = markRunDetailRequested(bootstrapState, "run_bootstrap");
+    expect(shouldLoadRunDetail(requested, "run_bootstrap")).toBe(false);
+
+    const restored = mergeRunDetail(
+      requested,
+      makeRunDetail({
+        turnId: "turn_900",
+        turn: {
+          turnId: "turn_900",
+          sessionId: "sess_001",
+          primaryRunId: "run_bootstrap",
+          currentRunId: "run_bootstrap",
+          latestRunId: "run_bootstrap",
+          latestAgentId: "bootstrap-codex",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessagePreview: "bootstrap restored",
+          eventCount: 4,
+          runCount: 1,
+          activeRunCount: 0,
+          completedRunCount: 1,
+          failedRunCount: 0,
+          activeRunIds: [],
+          completedRunIds: ["run_bootstrap"],
+          failedRunIds: [],
+          hasExternalWork: true,
+          updatedAt: "2026-04-12T12:40:00Z",
+        },
+        run: {
+          runId: "run_bootstrap",
+          turnId: "turn_900",
+          sessionId: "sess_001",
+          agentId: "bootstrap-codex",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessageId: "msg_bootstrap",
+          latestMessageText: "done",
+          summary: "bootstrap restored",
+          externalTaskIds: ["ext_bootstrap"],
+          eventCount: 4,
+          updatedAt: "2026-04-12T12:40:00Z",
+        },
+      }),
+      "2026-04-12T12:41:00Z",
+    );
+
+    expect(shouldLoadRunDetail(restored, "run_bootstrap")).toBe(false);
   });
 });
