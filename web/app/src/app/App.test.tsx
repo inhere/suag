@@ -131,6 +131,7 @@ describe("App", () => {
   let storage: Record<string, string>;
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -317,6 +318,122 @@ describe("App", () => {
       onSocketError?.("WebSocket connection error.");
     });
     expect(await screen.findByRole("alert")).toHaveTextContent("WebSocket connection error.");
+  });
+
+  it("retries the active session websocket automatically after disconnect", async () => {
+    vi.useFakeTimers();
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_020",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_020",
+          title: "retry session",
+          status: "RUNNING",
+          updatedAt: "2026-04-13T10:00:00Z",
+          preview: "retry preview",
+        },
+      ],
+    });
+    getSessionMock.mockResolvedValue({
+      sessionId: "sess_020",
+      title: "retry session",
+      status: "RUNNING",
+      lastTurnId: "",
+      turns: [],
+      runs: [],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    });
+
+    render(<App />);
+
+    expect(connectSessionSocketMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "sess_020" }),
+    );
+
+    await act(async () => {
+      onStatusChange?.("disconnected");
+    });
+    expect(screen.getByText("Session sess_020 disconnected.")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+
+    expect(connectSessionSocketMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries session list loading when retry is clicked without an active session", async () => {
+    listSessionsMock
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce([
+        {
+          sessionId: "sess_030",
+          title: "recovered list session",
+          status: "WAITING",
+          lastTurnId: "turn_030",
+          updatedAt: "2026-04-13T10:10:00Z",
+          preview: "recovered preview",
+        },
+      ]);
+    getSessionMock.mockResolvedValueOnce({
+      sessionId: "sess_030",
+      title: "recovered list session",
+      status: "WAITING",
+      lastTurnId: "turn_030",
+      turns: [],
+      runs: [],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Failed to load session list.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(listSessionsMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("recovered list session")).toBeInTheDocument();
+  });
+
+  it("retries active session bootstrap when retry is clicked", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_040",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_040",
+          title: "retry bootstrap",
+          status: "WAITING",
+          updatedAt: "2026-04-13T10:20:00Z",
+          preview: "retry bootstrap preview",
+        },
+      ],
+    });
+    getSessionMock
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce({
+        sessionId: "sess_040",
+        title: "retry bootstrap",
+        status: "WAITING",
+        lastTurnId: "turn_040",
+        turns: [],
+        runs: [],
+        externalActivities: [],
+        externalMessages: [],
+        externalTasks: [],
+      });
+
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Failed to load session details.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(getSessionMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(connectSessionSocketMock).toHaveBeenCalledTimes(2));
   });
 
   it("restores recent sessions and focused run from local storage on load", async () => {

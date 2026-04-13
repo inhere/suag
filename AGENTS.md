@@ -44,6 +44,7 @@
 - `web/app/src/features/hitl` 与 `web/app/src/app/App.tsx` 已补齐 `Open Context` 入口，当前可从 HITL 卡片直接切回对应 session/run，上下文切换后会触发既有 HTTP bootstrap、WS 重连与 run detail 恢复链路
 - `internal/host/gateway`、`internal/host/session` 与 `web/app` 已补齐第一版服务端 session list，当前 Host 可通过 `GET /api/sessions` 返回按更新时间排序的会话摘要，前端左栏首次打开时也可从服务端恢复已有会话，而不再只依赖本地 recentSessions
 - `web/app/src/lib/session-ws.ts`、`web/app/src/app/App.tsx` 与 `web/app/src/features/session-list` 已补齐第一版连接状态与错误反馈，当前左栏可展示 active session 的 `connecting / connected / disconnected` 状态，以及 session list / session bootstrap / websocket 失败提示，联调时更容易判断当前链路卡在哪一层
+- `web/app/src/lib/session-ws.ts`、`web/app/src/app/App.tsx` 与 `web/app/src/features/session-list` 已补齐第一版连接重试闭环，当前 active session 在 websocket 断开后会自动重连，session list / session bootstrap 失败时也可从左栏直接手动 Retry 恢复
 
 <!-- PROCESSING WORKS:END -->
 

@@ -35,6 +35,7 @@ export function connectSessionSocket(
   options: ConnectSessionSocketOptions,
 ): SessionSocketConnection {
   options.onStatusChange?.("connecting");
+  let manualClose = false;
   const ws =
     options.createWebSocket?.() ?? new WebSocket(buildSocketURL(options.sessionId));
 
@@ -48,11 +49,17 @@ export function connectSessionSocket(
     options.onError?.("WebSocket connection error.");
   };
   ws.onclose = () => {
+    if (manualClose) {
+      return;
+    }
     options.onStatusChange?.("disconnected");
   };
 
   return {
-    close: () => ws.close(),
+    close: () => {
+      manualClose = true;
+      ws.close();
+    },
     sendContinueTurn: (command) => {
       ws.send(
         JSON.stringify({

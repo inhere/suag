@@ -22,6 +22,7 @@ type AppShellProps = {
   connectionStatus?: SessionSocketStatus | "idle";
   connectionStatusMessage?: string;
   connectionError?: string | null;
+  onRetryConnection?: () => void;
   filter?: SessionFilter;
   searchQuery?: string;
   messages?: ConversationMessage[];
@@ -60,6 +61,7 @@ export function AppShell({
   connectionStatus = "idle",
   connectionStatusMessage = "No active session selected.",
   connectionError = null,
+  onRetryConnection = () => {},
   filter = "all",
   searchQuery = "",
   messages = [],
@@ -102,6 +104,7 @@ export function AppShell({
           connectionStatus={connectionStatus}
           statusMessage={connectionStatusMessage}
           errorMessage={connectionError}
+          onRetry={onRetryConnection}
           filter={filter}
           searchQuery={searchQuery}
           onCreateSession={onCreateSession}

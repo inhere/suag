@@ -8,6 +8,7 @@ type SessionListProps = {
   connectionStatus?: SessionSocketStatus | "idle";
   statusMessage?: string;
   errorMessage?: string | null;
+  onRetry?: () => void;
   filter: SessionFilter;
   searchQuery: string;
   onCreateSession: () => void;
@@ -30,6 +31,7 @@ export function SessionList({
   connectionStatus = "idle",
   statusMessage = "No active session selected.",
   errorMessage = null,
+  onRetry = () => {},
   filter,
   searchQuery,
   onCreateSession,
@@ -71,7 +73,10 @@ export function SessionList({
       </div>
       {errorMessage ? (
         <div className="session-list__error" role="alert">
-          {errorMessage}
+          <span>{errorMessage}</span>
+          <button type="button" className="session-list__retry" onClick={onRetry}>
+            Retry
+          </button>
         </div>
       ) : null}
 

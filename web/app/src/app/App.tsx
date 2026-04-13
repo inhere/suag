@@ -33,6 +33,7 @@ import { connectSessionSocket, type SessionSocketConnection } from "../lib/sessi
 import type { SessionSocketStatus } from "../lib/session-ws";
 
 const workbenchStorageKey = "axon.web.workbench";
+const socketReconnectDelayMs = 1500;
 
 type PersistedWorkbenchState = {
   recentSessions: SessionListItem[];
@@ -225,6 +226,8 @@ export function App() {
   const [hitlLoading, setHITLLoading] = useState(false);
   const [socketStatus, setSocketStatus] = useState<SessionSocketStatus | "idle">("idle");
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [sessionListReloadKey, setSessionListReloadKey] = useState(0);
+  const [connectionReloadKey, setConnectionReloadKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [debugOpen, setDebugOpen] = useState(false);
@@ -251,6 +254,9 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
+    setConnectionError((current) =>
+      current === "Failed to load session list." ? null : current,
+    );
 
     void listSessions()
       .then((sessions) => {
@@ -299,7 +305,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sessionListReloadKey]);
 
   useEffect(() => {
     if (!viewState.currentSessionId) {
@@ -309,6 +315,7 @@ export function App() {
     }
 
     let cancelled = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     setSocketStatus("connecting");
     setConnectionError(null);
     void getSession(viewState.currentSessionId)
@@ -337,6 +344,14 @@ export function App() {
           return;
         }
         setSocketStatus(status);
+        if (status === "disconnected") {
+          reconnectTimer = setTimeout(() => {
+            if (cancelled) {
+              return;
+            }
+            setConnectionReloadKey((current) => current + 1);
+          }, socketReconnectDelayMs);
+        }
       },
       onError: (message) => {
         if (cancelled) {
@@ -355,10 +370,13 @@ export function App() {
 
     return () => {
       cancelled = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+      }
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [viewState.currentSessionId]);
+  }, [viewState.currentSessionId, connectionReloadKey]);
 
   useEffect(() => {
     const sessionId = viewState.currentSessionId;
@@ -502,6 +520,15 @@ export function App() {
     );
   }
 
+  function handleRetryConnection() {
+    if (viewState.currentSessionId) {
+      setConnectionReloadKey((current) => current + 1);
+      return;
+    }
+
+    setSessionListReloadKey((current) => current + 1);
+  }
+
   return (
     <AppShell
       sessions={viewState.recentSessions}
@@ -509,6 +536,7 @@ export function App() {
       connectionStatus={socketStatus}
       connectionStatusMessage={connectionStatusMessage}
       connectionError={connectionError}
+      onRetryConnection={handleRetryConnection}
       filter={filter}
       searchQuery={searchQuery}
       messages={conversationMessages}

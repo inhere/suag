@@ -97,9 +97,20 @@ body {
 }
 
 .session-list__error {
+  justify-content: space-between;
   background: rgba(127, 29, 29, 0.24);
   border-color: rgba(248, 113, 113, 0.3);
   color: rgba(254, 226, 226, 0.92);
+}
+
+.session-list__retry {
+  flex-shrink: 0;
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.28);
+  color: inherit;
+  padding: 6px 10px;
+  font: inherit;
 }
 
 .session-list__header {

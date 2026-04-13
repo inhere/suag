@@ -109,6 +109,23 @@ describe("session-ws", () => {
     expect(onError).toHaveBeenCalledWith("WebSocket connection error.");
   });
 
+  it("does not report disconnected when the socket is closed intentionally", () => {
+    const onStatusChange = vi.fn();
+    const ws = new FakeWebSocket();
+
+    const socket = connectSessionSocket({
+      sessionId: "sess_001",
+      createWebSocket: () => ws as unknown as WebSocket,
+      onMessage: vi.fn(),
+      onStatusChange,
+    });
+
+    socket.close();
+
+    expect(onStatusChange).toHaveBeenCalledTimes(1);
+    expect(onStatusChange).toHaveBeenCalledWith("connecting");
+  });
+
   it("sends continue_turn commands over the existing websocket", () => {
     const ws = new FakeWebSocket();
 
