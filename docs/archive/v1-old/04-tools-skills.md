@@ -229,7 +229,7 @@ Skills 文件按以下顺序查找：
 
 1. `./skills/` 项目本地目录
 2. `~/.axon/skills/` 用户全局目录
-3. `configs/skills/` 内置默认 Skills
+3. `config/skills/` 内置默认 Skills
 
 ---
 

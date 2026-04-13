@@ -352,7 +352,7 @@ func loadConfig() {
 	// config.SetEnvPrefix("AXON")
 	dotenv.LoadExists(".")
 
-	err := config.LoadExists("./configs/config.yaml", "~/.axon/config.yaml", "config.yaml")
+	err := config.LoadExists("./config/config.yaml", "~/.axon/config.yaml", "config.yaml")
 	if err != nil {
 		slog.Error("loading config file", "err", err)
 	}

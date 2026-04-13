@@ -33,7 +33,7 @@ D:/work/aidev/axon/
 │   ├── orchestrator/           # Top-level task router (single agent or team)
 │   ├── cron/                   # Agentic cron: sense → decide → act loop
 │   └── gateway/                # chi HTTP server, SSE stream, REST API, EventBus
-├── configs/
+├── config/
 │   ├── config.yaml             # Viper config template
 │   └── souls/                  # architect.md, coder.md, reviewer.md
 └── Makefile

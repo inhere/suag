@@ -99,7 +99,7 @@
 ### MCP Client
 
 - [ ] P2-030 实现 MCP 协议客户端（JSON-RPC 2.0 over stdio）
-- [ ] P2-031 实现 MCP Server 配置解析（`configs/mcp.yaml`）
+- [ ] P2-031 实现 MCP Server 配置解析（`config/mcp.yaml`）
 - [ ] P2-032 实现 MCP 工具自动注册到 ToolRegistry
 
 ### 工具扩展

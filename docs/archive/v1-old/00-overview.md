@@ -140,7 +140,7 @@ axon/
 │
 ├── pkg/                 # 可对外暴露的包
 ├── web/                 # 前端资源 (go:embed 打包)
-├── configs/             # 配置文件模板 + 默认 SOUL.md 模板
+├── config/             # 配置文件模板 + 默认 SOUL.md 模板
 ├── skills/              # 内置 SKILL.md 文件
 ├── go.mod
 └── Makefile
