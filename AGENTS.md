@@ -34,6 +34,7 @@
 - `web/app/src/app/App.tsx` 与 `web/app/src/features/session/session-store.ts` 已补齐 focused run 按需明细恢复，当前切换到历史/概要 run 时会调用 `GET /api/sessions/{id}/runs/{runId}` 拉取单 run 明细并合并回工作台状态
 - `web/app/src/features/session/session-store.ts` 已继续收拢 run detail 加载状态，当前 store 会显式跟踪 `idle/loading/loaded/error`，避免 `App.tsx` 内散落 run 明细请求判断逻辑
 - `web/app/src/features/run-inspector` 已补齐 focused run 明细展示，当前右栏在 summary 优先的同时，也会展示该 run 的 external messages / activities，并按 focused run 切换 external task 详情
+- `web/app/src/features/run-inspector/focused-run-panel.tsx` 已继续结构化 focused run 视图，当前右栏按 `Summary / Run Meta / External Messages / External Activities` 分区展示，联调时更易扫读 run 明细
 
 <!-- PROCESSING WORKS:END -->
 

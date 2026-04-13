@@ -100,9 +100,15 @@ it("shows summary first for a completed focused run", () => {
   const focusedRunPanel = focusedRunHeading.closest("section");
 
   expect(focusedRunPanel).not.toBeNull();
+  expect(within(focusedRunPanel as HTMLElement).getByRole("heading", { name: "Summary" })).toBeInTheDocument();
+  expect(within(focusedRunPanel as HTMLElement).getByRole("heading", { name: "Run Meta" })).toBeInTheDocument();
+  expect(within(focusedRunPanel as HTMLElement).getByRole("heading", { name: "External Messages" })).toBeInTheDocument();
+  expect(within(focusedRunPanel as HTMLElement).getByRole("heading", { name: "External Activities" })).toBeInTheDocument();
   expect(within(focusedRunPanel as HTMLElement).getByText("已完成基础方案")).toBeInTheDocument();
   expect(within(focusedRunPanel as HTMLElement).queryByText("older text")).not.toBeInTheDocument();
   expect(within(focusedRunPanel as HTMLElement).getByText("详细流式正文")).toBeInTheDocument();
   expect(within(focusedRunPanel as HTMLElement).getByText("delegate: completed")).toBeInTheDocument();
+  expect(within(focusedRunPanel as HTMLElement).getByText("run_001")).toBeInTheDocument();
+  expect(within(focusedRunPanel as HTMLElement).getAllByText("completed").length).toBeGreaterThan(0);
   expect(screen.getByText("codex-reviewer")).toBeInTheDocument();
 });
