@@ -821,4 +821,115 @@ describe("App", () => {
     );
     await waitFor(() => expect(listHITLTicketsMock).toHaveBeenCalledTimes(2));
   });
+
+  it("opens ticket context and switches the workbench to the linked session and run", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: "run_001",
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "current session",
+          status: "RUNNING",
+          updatedAt: "2026-04-13T05:59:00Z",
+          preview: "current preview",
+        },
+      ],
+    });
+
+    getSessionMock.mockImplementation(async (sessionId: string) => {
+      if (sessionId === "sess_002") {
+        return {
+          sessionId: "sess_002",
+          title: "linked session",
+          status: "WAITING",
+          lastTurnId: "turn_200",
+          turns: [
+            {
+              turnId: "turn_200",
+              sessionId: "sess_002",
+              primaryRunId: "run_200",
+              currentRunId: "run_200",
+              latestRunId: "run_200",
+              latestAgentId: "reviewer",
+              displayState: "waiting",
+              latestEventType: "turn.waiting",
+              latestMessagePreview: "需要人工确认",
+              eventCount: 4,
+              runCount: 1,
+              activeRunCount: 1,
+              completedRunCount: 0,
+              failedRunCount: 0,
+              activeRunIds: ["run_200"],
+              completedRunIds: [],
+              failedRunIds: [],
+              hasExternalWork: false,
+              updatedAt: "2026-04-13T06:00:00Z",
+            },
+          ],
+          runs: [
+            {
+              runId: "run_200",
+              turnId: "turn_200",
+              sessionId: "sess_002",
+              agentId: "reviewer",
+              displayState: "waiting",
+              latestEventType: "turn.waiting",
+              latestMessageId: "",
+              latestMessageText: "需要人工确认",
+              summary: "",
+              externalTaskIds: [],
+              eventCount: 4,
+              updatedAt: "2026-04-13T06:00:00Z",
+            },
+          ],
+          externalActivities: [],
+          externalMessages: [],
+          externalTasks: [],
+        };
+      }
+
+      return {
+        sessionId,
+        title: "current session",
+        status: "OPEN",
+        lastTurnId: "",
+        turns: [],
+        runs: [],
+        externalActivities: [],
+        externalMessages: [],
+        externalTasks: [],
+      };
+    });
+
+    listHITLTicketsMock.mockResolvedValue([
+      {
+        id: "hitl-003",
+        agentId: "reviewer",
+        taskId: "task_003",
+        sessionId: "sess_002",
+        turnId: "turn_200",
+        runId: "run_200",
+        reason: "open linked context",
+        context: "请切到这个 ticket 对应的会话上下文",
+        status: "waiting",
+        createdAt: "2026-04-13T06:20:00Z",
+      },
+    ]);
+
+    render(<App />);
+
+    expect(await screen.findByText("open linked context")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open Context" }));
+
+    await waitFor(() =>
+      expect(connectSessionSocketMock).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "sess_002" }),
+      ),
+    );
+    expect(await screen.findByText("linked session")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(getRunDetailMock).toHaveBeenCalledWith("sess_002", "run_200"),
+    );
+  });
 });

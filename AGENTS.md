@@ -41,6 +41,7 @@
 - `internal/host/session`、`internal/host/gateway/ws.go` 与 `web/app` 已补齐第一版 `Stop` 闭环，当前前端可通过 `stop_turn` WebSocket 命令停止当前 turn，Host 会取消活动 run、落库 `run.canceled` 并把取消状态实时回推到工作台
 - `web/app` 已补齐第一版 HITL 工作台面板，当前前端可调用 `/api/hitl` 查看 pending tickets，并在右栏直接执行 `respond` / `dismiss`，形成最小人工干预入口
 - `internal/ops/hitl`、`internal/host/session` 与 `web/app` 已补齐第一版 HITL 上下文关联，当前 host 主链触发的 ticket 会自动携带 `sessionId/turnId/runId`，前端右栏可直接展示并高亮与当前会话关联的人工干预项
+- `web/app/src/features/hitl` 与 `web/app/src/app/App.tsx` 已补齐 `Open Context` 入口，当前可从 HITL 卡片直接切回对应 session/run，上下文切换后会触发既有 HTTP bootstrap、WS 重连与 run detail 恢复链路
 
 <!-- PROCESSING WORKS:END -->
 

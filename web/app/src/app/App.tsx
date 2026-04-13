@@ -18,7 +18,7 @@ import {
   selectCurrentTurn,
   selectFocusedRun,
 } from "../features/session/session-selectors";
-import type { SessionSocketMessage } from "../lib/host-types";
+import type { HITLTicket, SessionSocketMessage } from "../lib/host-types";
 import {
   createSession,
   dismissHITLTicket,
@@ -149,20 +149,57 @@ function persistWorkbenchState(state: SessionViewState) {
   }
 }
 
+function buildRecentSessionPlaceholder(
+  sessions: SessionListItem[],
+  sessionId: string,
+  fallback?: Partial<Omit<SessionListItem, "sessionId">>,
+): SessionListItem {
+  const existing = sessions.find((item) => item.sessionId === sessionId);
+  return {
+    sessionId,
+    title: fallback?.title ?? existing?.title ?? `Session ${sessionId}`,
+    status: fallback?.status ?? existing?.status ?? "OPEN",
+    updatedAt: fallback?.updatedAt ?? new Date().toISOString(),
+    preview: fallback?.preview ?? existing?.preview ?? "",
+  };
+}
+
+function switchSessionContext(
+  state: SessionViewState,
+  sessionId: string,
+  options?: {
+    focusedRunId?: string | null;
+    fallbackTitle?: string;
+    fallbackStatus?: string;
+  },
+): SessionViewState {
+  const sessionChanged = state.currentSessionId !== sessionId;
+  const hasFocusedRunOverride = !!options && "focusedRunId" in options;
+
+  return {
+    ...state,
+    currentSessionId: sessionId,
+    focusedRunId: hasFocusedRunOverride
+      ? options?.focusedRunId ?? null
+      : sessionChanged
+        ? null
+        : state.focusedRunId,
+    // Clear stale cross-session data before the new bootstrap / snapshot arrives.
+    snapshot: sessionChanged ? null : state.snapshot,
+    runDetailStatus: sessionChanged ? {} : state.runDetailStatus,
+    recentSessions: [
+      buildRecentSessionPlaceholder(state.recentSessions, sessionId, {
+        title: options?.fallbackTitle,
+        status: options?.fallbackStatus,
+      }),
+      ...state.recentSessions.filter((item) => item.sessionId !== sessionId),
+    ],
+  };
+}
+
 export function App() {
   const [viewState, setViewState] = useState<SessionViewState>(buildInitialViewState);
-  const [hitlTickets, setHITLTickets] = useState<Array<{
-    id: string;
-    agentId: string;
-    taskId: string;
-    sessionId: string;
-    turnId: string;
-    runId: string;
-    reason: string;
-    context: string;
-    status: string;
-    createdAt: string;
-  }>>([]);
+  const [hitlTickets, setHITLTickets] = useState<HITLTicket[]>([]);
   const [hitlLoading, setHITLLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<SessionFilter>("all");
@@ -275,20 +312,13 @@ export function App() {
 
   async function createNewSession(): Promise<string> {
     const created = await createSession({ title: "host runtime" });
-    setViewState((current) => ({
-      ...current,
-      currentSessionId: created.sessionId,
-      recentSessions: [
-        {
-          sessionId: created.sessionId,
-          title: created.title,
-          status: created.status,
-          updatedAt: new Date().toISOString(),
-          preview: "",
-        },
-        ...current.recentSessions.filter((item) => item.sessionId !== created.sessionId),
-      ],
-    }));
+    setViewState((current) =>
+      switchSessionContext(current, created.sessionId, {
+        focusedRunId: null,
+        fallbackTitle: created.title,
+        fallbackStatus: created.status,
+      }),
+    );
     return created.sessionId;
   }
 
@@ -356,6 +386,19 @@ export function App() {
     await refreshHITLTickets();
   }
 
+  function handleOpenHITLContext(ticket: HITLTicket) {
+    const targetSessionId = ticket.sessionId || viewState.currentSessionId;
+    if (!targetSessionId) {
+      return;
+    }
+
+    setViewState((current) =>
+      switchSessionContext(current, targetSessionId, {
+        focusedRunId: ticket.runId || null,
+      }),
+    );
+  }
+
   return (
     <AppShell
       sessions={viewState.recentSessions}
@@ -380,10 +423,11 @@ export function App() {
         void createNewSession();
       }}
       onSelectSession={(sessionId) => {
-        setViewState((current) => ({
-          ...current,
-          currentSessionId: sessionId,
-        }));
+        setViewState((current) =>
+          switchSessionContext(current, sessionId, {
+            focusedRunId: null,
+          }),
+        );
       }}
       onSearchChange={setSearchQuery}
       onFilterChange={setFilter}
@@ -399,6 +443,7 @@ export function App() {
       onRefreshHITL={() => {
         void refreshHITLTickets();
       }}
+      onOpenHITLContext={handleOpenHITLContext}
       onRespondHITL={(ticketId, instruction) => handleRespondHITL(ticketId, instruction)}
       onDismissHITL={(ticketId) => handleDismissHITL(ticketId)}
       onStop={handleStopTurn}

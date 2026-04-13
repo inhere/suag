@@ -6,6 +6,7 @@ type HITLPanelProps = {
   loading: boolean;
   currentSessionId?: string | null;
   onRefresh: () => void;
+  onOpenContext?: (ticket: HITLTicket) => void;
   onRespond: (ticketId: string, instruction: string) => Promise<void> | void;
   onDismiss: (ticketId: string) => Promise<void> | void;
 };
@@ -15,6 +16,7 @@ export function HITLPanel({
   loading,
   currentSessionId = null,
   onRefresh,
+  onOpenContext = () => {},
   onRespond,
   onDismiss,
 }: HITLPanelProps) {
@@ -105,6 +107,15 @@ export function HITLPanel({
                   disabled={busy}
                 />
                 <div className="run-actions">
+                  {(ticket.sessionId || ticket.runId) ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenContext(ticket)}
+                      disabled={busy}
+                    >
+                      Open Context
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => {

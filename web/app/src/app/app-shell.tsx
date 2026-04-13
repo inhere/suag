@@ -41,6 +41,7 @@ type AppShellProps = {
   onSubmitMessage?: (message: string) => void;
   onFocusRun?: (runId: string) => void;
   onRefreshHITL?: () => void;
+  onOpenHITLContext?: (ticket: HITLTicket) => void;
   onRespondHITL?: (ticketId: string, instruction: string) => Promise<void> | void;
   onDismissHITL?: (ticketId: string) => Promise<void> | void;
   onStop?: () => void;
@@ -75,6 +76,7 @@ export function AppShell({
   onSubmitMessage = () => {},
   onFocusRun = () => {},
   onRefreshHITL = () => {},
+  onOpenHITLContext = () => {},
   onRespondHITL = () => {},
   onDismissHITL = () => {},
   onStop = () => {},
@@ -129,6 +131,7 @@ export function AppShell({
               loading={hitlLoading}
               currentSessionId={currentSessionId}
               onRefresh={onRefreshHITL}
+              onOpenContext={onOpenHITLContext}
               onRespond={onRespondHITL}
               onDismiss={onDismissHITL}
             />
