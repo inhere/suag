@@ -155,6 +155,9 @@ export function App() {
     id: string;
     agentId: string;
     taskId: string;
+    sessionId: string;
+    turnId: string;
+    runId: string;
     reason: string;
     context: string;
     status: string;

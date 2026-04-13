@@ -67,6 +67,9 @@ type HITLTicketResponse = {
   ID: string;
   AgentID: string;
   TaskID: string;
+  SessionID?: string;
+  TurnID?: string;
+  RunID?: string;
   Reason: string;
   Context: string;
   Status: string;
@@ -145,6 +148,9 @@ function mapHITLTicketResponse(input: HITLTicketResponse): HITLTicket {
     id: input.ID,
     agentId: input.AgentID,
     taskId: input.TaskID,
+    sessionId: input.SessionID ?? "",
+    turnId: input.TurnID ?? "",
+    runId: input.RunID ?? "",
     reason: input.Reason,
     context: input.Context,
     status: input.Status,

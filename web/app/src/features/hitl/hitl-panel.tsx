@@ -4,6 +4,7 @@ import type { HITLTicket } from "../../lib/host-types";
 type HITLPanelProps = {
   tickets: HITLTicket[];
   loading: boolean;
+  currentSessionId?: string | null;
   onRefresh: () => void;
   onRespond: (ticketId: string, instruction: string) => Promise<void> | void;
   onDismiss: (ticketId: string) => Promise<void> | void;
@@ -12,6 +13,7 @@ type HITLPanelProps = {
 export function HITLPanel({
   tickets,
   loading,
+  currentSessionId = null,
   onRefresh,
   onRespond,
   onDismiss,
@@ -71,13 +73,25 @@ export function HITLPanel({
         <div className="hitl-panel__list">
           {tickets.map((ticket) => {
             const busy = busyTicketId === ticket.id;
+            const linkedToCurrentSession =
+              !!currentSessionId && !!ticket.sessionId && currentSessionId === ticket.sessionId;
             return (
-              <article key={ticket.id} className="hitl-card">
+              <article
+                key={ticket.id}
+                className={`hitl-card${linkedToCurrentSession ? " hitl-card--linked" : ""}`}
+              >
                 <div className="hitl-card__meta">
                   <strong>{ticket.reason}</strong>
                   <span>{ticket.agentId}</span>
                   <span>{ticket.taskId}</span>
                 </div>
+                {(ticket.sessionId || ticket.turnId || ticket.runId) ? (
+                  <div className="hitl-card__links">
+                    {ticket.sessionId ? <span>Session {ticket.sessionId}</span> : null}
+                    {ticket.turnId ? <span>Turn {ticket.turnId}</span> : null}
+                    {ticket.runId ? <span>Run {ticket.runId}</span> : null}
+                  </div>
+                ) : null}
                 <p className="hitl-card__context">{ticket.context || "No extra context provided."}</p>
                 <textarea
                   value={drafts[ticket.id] ?? ""}

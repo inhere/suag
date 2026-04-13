@@ -127,6 +127,7 @@ export function AppShell({
             <HITLPanel
               tickets={hitlTickets}
               loading={hitlLoading}
+              currentSessionId={currentSessionId}
               onRefresh={onRefreshHITL}
               onRespond={onRespondHITL}
               onDismiss={onDismissHITL}

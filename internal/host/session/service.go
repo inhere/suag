@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/inhere/axon/internal/ops/hitl"
 )
 
 var ErrSessionNotFound = errors.New("session not found")
@@ -239,6 +241,11 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 	if s.runner != nil {
 		nextSequence := int64(3)
 		runCtx, execution := s.registerActiveExecution(ctx, sessionID, turnID, runID, agentID)
+		runCtx = hitl.WithTicketContext(runCtx, hitl.TicketContext{
+			SessionID: sessionID,
+			TurnID:    turnID,
+			RunID:     runID,
+		})
 		result, err := s.runner.Run(runCtx, RuntimeRequest{
 			SessionID:   sessionID,
 			TurnID:      turnID,

@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/inhere/axon/internal/ops/hitl"
 )
 
 func TestService_StartTurnCreatesQueuedRunAndPublishesEvent(t *testing.T) {
@@ -318,6 +320,79 @@ func TestService_StartTurnPublishesRuntimeEventsFromRunner(t *testing.T) {
 	}
 }
 
+func TestService_StartTurnPassesSessionTurnRunContextIntoHITL(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	hitlMgr := hitl.NewInMemoryManager(nil)
+	runner := &hitlTriggerRunner{manager: hitlMgr}
+	now := time.Date(2026, 4, 13, 14, 0, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	resultCh := make(chan StartTurnResult, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := svc.StartTurn(ctx, StartTurnInput{
+			SessionID:     "sess_hitl",
+			AgentID:       "default",
+			UserMessage:   "run with hitl context",
+			InitiatorType: InitiatorUser,
+		})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- result
+	}()
+
+	var ticket *hitl.Ticket
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		pending := hitlMgr.ListPending()
+		if len(pending) > 0 {
+			ticket = pending[0]
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if ticket == nil {
+		t.Fatal("HITL ticket was never created")
+	}
+
+	if ticket.SessionID != "sess_hitl" {
+		t.Fatalf("ticket.SessionID = %q, want %q", ticket.SessionID, "sess_hitl")
+	}
+	if ticket.TurnID == "" {
+		t.Fatal("ticket.TurnID is empty")
+	}
+	if ticket.RunID == "" {
+		t.Fatal("ticket.RunID is empty")
+	}
+
+	if err := hitlMgr.Respond(ticket.ID, "continue with context"); err != nil {
+		t.Fatalf("Respond() error = %v", err)
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("StartTurn() error = %v", err)
+	case result := <-resultCh:
+		if result.TurnID != ticket.TurnID {
+			t.Fatalf("StartTurn().TurnID = %q, want %q", result.TurnID, ticket.TurnID)
+		}
+		if result.RunID != ticket.RunID {
+			t.Fatalf("StartTurn().RunID = %q, want %q", result.RunID, ticket.RunID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartTurn() did not return after HITL response")
+	}
+}
+
 func TestService_StopTurnCancelsActiveRunAndPublishesCanceledLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -601,6 +676,31 @@ func (r *blockingRunner) LastRequest() RuntimeRequest {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lastRequest
+}
+
+type hitlTriggerRunner struct {
+	manager hitl.Manager
+}
+
+func (r *hitlTriggerRunner) Run(ctx context.Context, in RuntimeRequest) (RuntimeResult, error) {
+	if r == nil || r.manager == nil {
+		return RuntimeResult{}, errors.New("hitl manager is required")
+	}
+
+	resp, err := r.manager.RequestIntervention(
+		ctx,
+		in.AgentID,
+		"task_001",
+		"need human confirmation",
+		"tool execution needs approval",
+	)
+	if err != nil {
+		return RuntimeResult{}, err
+	}
+
+	return RuntimeResult{
+		Summary: resp.Instruction,
+	}, nil
 }
 
 type fakePublisher struct {

@@ -17,6 +17,9 @@ type Ticket struct {
 	ID        string
 	AgentID   string
 	TaskID    string
+	SessionID string
+	TurnID    string
+	RunID     string
 	Reason    string // why HITL was triggered
 	Context   string // relevant context (e.g. failed tool call + args)
 	Status    TicketStatus

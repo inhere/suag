@@ -43,10 +43,14 @@ func NewInMemoryManager(notify func(*Ticket)) *InMemoryManager {
 
 // RequestIntervention implements Manager.
 func (m *InMemoryManager) RequestIntervention(ctx context.Context, agentID, taskID, reason, ctxMsg string) (*Response, error) {
+	ticketCtx, _ := TicketContextFromContext(ctx)
 	ticket := &Ticket{
 		ID:        newTicketID(),
 		AgentID:   agentID,
 		TaskID:    taskID,
+		SessionID: ticketCtx.SessionID,
+		TurnID:    ticketCtx.TurnID,
+		RunID:     ticketCtx.RunID,
 		Reason:    reason,
 		Context:   ctxMsg,
 		Status:    TicketWaiting,

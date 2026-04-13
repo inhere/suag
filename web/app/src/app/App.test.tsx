@@ -759,6 +759,9 @@ describe("App", () => {
           id: "hitl-001",
           agentId: "reviewer",
           taskId: "task_001",
+          sessionId: "sess_001",
+          turnId: "turn_001",
+          runId: "run_001",
           reason: "need approval",
           context: "请确认是否继续执行危险工具调用",
           status: "waiting",
@@ -771,6 +774,9 @@ describe("App", () => {
 
     expect(await screen.findByText("need approval")).toBeInTheDocument();
     expect(screen.getByText("请确认是否继续执行危险工具调用")).toBeInTheDocument();
+    expect(screen.getByText("Session sess_001")).toBeInTheDocument();
+    expect(screen.getByText("Turn turn_001")).toBeInTheDocument();
+    expect(screen.getByText("Run run_001")).toBeInTheDocument();
 
     fireEvent.change(
       screen.getByPlaceholderText("给这个等待中的 ticket 一条人工指令..."),
@@ -794,6 +800,9 @@ describe("App", () => {
           id: "hitl-002",
           agentId: "reviewer",
           taskId: "task_002",
+          sessionId: "sess_002",
+          turnId: "turn_002",
+          runId: "run_002",
           reason: "need manual decision",
           context: "请决定是否中止当前任务",
           status: "waiting",
