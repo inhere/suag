@@ -30,6 +30,16 @@ export type SessionDetail = SessionSummary & {
   externalTasks: ExternalTaskSummary[];
 };
 
+export type RunDetail = {
+  sessionId: string;
+  turnId: string;
+  turn: StateSnapshotTurn | null;
+  run: StateSnapshotRun | null;
+  externalActivities: StateSnapshotExternalActivity[];
+  externalMessages: StateSnapshotExternalMessage[];
+  externalTasks: ExternalTaskSummary[];
+};
+
 export type StartTurnInput = {
   agentId: string;
   message: string;

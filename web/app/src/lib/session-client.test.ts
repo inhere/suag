@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSession, getSession, startTurn } from "./session-client";
+import { createSession, getRunDetail, getSession, startTurn } from "./session-client";
 
 describe("session-client", () => {
   afterEach(() => {
@@ -170,5 +170,93 @@ describe("session-client", () => {
       }),
     });
     expect(result.runId).toBe("run_002");
+  });
+
+  it("loads /api/sessions/{id}/runs/{runId} and returns parsed run detail", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          session_id: "sess_001",
+          turn_id: "turn_001",
+          run: {
+            runId: "run_001",
+            turnId: "turn_001",
+            sessionId: "sess_001",
+            agentId: "default",
+            displayState: "completed",
+            latestEventType: "run.finished",
+            latestMessageId: "msg_001",
+            latestMessageText: "thinking...",
+            summary: "",
+            externalTaskIds: [],
+            eventCount: 4,
+            updatedAt: "2026-04-12T08:00:01Z",
+          },
+          turn: {
+            turnId: "turn_001",
+            sessionId: "sess_001",
+            primaryRunId: "run_001",
+            currentRunId: "run_001",
+            latestRunId: "run_001",
+            latestAgentId: "default",
+            displayState: "completed",
+            latestEventType: "run.finished",
+            latestMessagePreview: "thinking...",
+            eventCount: 4,
+            runCount: 1,
+            activeRunCount: 0,
+            completedRunCount: 1,
+            failedRunCount: 0,
+            activeRunIds: [],
+            completedRunIds: ["run_001"],
+            failedRunIds: [],
+            hasExternalWork: true,
+            updatedAt: "2026-04-12T08:00:01Z",
+          },
+          external_activities: [
+            {
+              externalTaskId: "",
+              sessionId: "sess_001",
+              turnId: "turn_001",
+              runId: "run_001",
+              agentId: "default",
+              activityId: "run_001:external",
+              kind: "run_status",
+              status: "completed",
+              title: "run_status",
+              detail: "completed",
+              startedAt: "2026-04-12T08:00:00Z",
+              updatedAt: "2026-04-12T08:00:01Z",
+            },
+          ],
+          external_messages: [
+            {
+              externalTaskId: "",
+              messageId: "msg_001",
+              sessionId: "sess_001",
+              turnId: "turn_001",
+              runId: "run_001",
+              agentId: "default",
+              content: "thinking...",
+              started: true,
+              completed: true,
+              lastEventType: "run.external.message.end",
+              lastSequence: 3,
+              updatedAt: "2026-04-12T08:00:01Z",
+            },
+          ],
+          external_tasks: [],
+        }),
+      }),
+    );
+
+    const result = await getRunDetail("sess_001", "run_001");
+
+    expect(result.sessionId).toBe("sess_001");
+    expect(result.turn?.turnId).toBe("turn_001");
+    expect(result.run?.runId).toBe("run_001");
+    expect(result.externalMessages[0]?.content).toBe("thinking...");
   });
 });

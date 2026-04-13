@@ -37,6 +37,7 @@ func (s *Server) router() http.Handler {
 	r.Post("/api/hitl/{id}/dismiss", s.handler.HandleHITLDismiss)
 	r.Post("/api/sessions", s.handler.HandleCreateSession)
 	r.Get("/api/sessions/{id}", s.handler.HandleGetSession)
+	r.Get("/api/sessions/{id}/runs/{runId}", s.handler.HandleGetRunDetail)
 	r.Get("/api/sessions/{id}/events", s.handler.HandleListSessionEvents)
 	r.Post("/api/sessions/{id}/turns", s.handler.HandleStartTurn)
 

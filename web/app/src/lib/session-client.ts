@@ -1,5 +1,6 @@
 import type {
   ExternalTaskSummary,
+  RunDetail,
   SessionDetail,
   SessionSummary,
   StateSnapshotExternalActivity,
@@ -49,6 +50,16 @@ type StartTurnResponse = {
   session_id: string;
   turn_id: string;
   run_id: string;
+};
+
+type GetRunDetailResponse = {
+  session_id: string;
+  turn_id: string;
+  turn?: StateSnapshotTurn | null;
+  run?: StateSnapshotRun | null;
+  external_activities?: StateSnapshotExternalActivity[];
+  external_messages?: StateSnapshotExternalMessage[];
+  external_tasks?: ExternalTaskResponse[];
 };
 
 async function parseJSON<T>(response: Response): Promise<T> {
@@ -106,6 +117,18 @@ function mapStartTurnResponse(input: StartTurnResponse): StartTurnResult {
   };
 }
 
+function mapRunDetailResponse(input: GetRunDetailResponse): RunDetail {
+  return {
+    sessionId: input.session_id,
+    turnId: input.turn_id,
+    turn: input.turn ?? null,
+    run: input.run ?? null,
+    externalActivities: input.external_activities ?? [],
+    externalMessages: input.external_messages ?? [],
+    externalTasks: (input.external_tasks ?? []).map(mapExternalTaskResponse),
+  };
+}
+
 export async function createSession(
   input: { title: string },
   fetchImpl: FetchLike = fetch,
@@ -143,4 +166,13 @@ export async function startTurn(
   });
 
   return mapStartTurnResponse(await parseJSON<StartTurnResponse>(response));
+}
+
+export async function getRunDetail(
+  sessionId: string,
+  runId: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<RunDetail> {
+  const response = await fetchImpl(`/api/sessions/${sessionId}/runs/${runId}`);
+  return mapRunDetailResponse(await parseJSON<GetRunDetailResponse>(response));
 }

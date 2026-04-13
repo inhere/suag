@@ -186,6 +186,16 @@ type getSessionResponse struct {
 	ExternalTasks []externalTaskResponse `json:"external_tasks"`
 }
 
+type getRunDetailResponse struct {
+	SessionID          string                 `json:"session_id"`
+	TurnID             string                 `json:"turn_id"`
+	Turn               map[string]any         `json:"turn"`
+	Run                map[string]any         `json:"run"`
+	ExternalActivities []map[string]any       `json:"external_activities"`
+	ExternalMessages   []map[string]any       `json:"external_messages"`
+	ExternalTasks      []externalTaskResponse `json:"external_tasks"`
+}
+
 type externalTaskResponse struct {
 	ExternalTaskID  string         `json:"external_task_id"`
 	SessionID       string         `json:"session_id"`
@@ -240,6 +250,65 @@ func (h *Handler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 		ExternalActivities: snapshotSliceField(snapshotPayload, "externalActivities"),
 		ExternalMessages:   snapshotSliceField(snapshotPayload, "externalMessages"),
 		ExternalTasks: mapExternalTaskResponses(externalTasks),
+	})
+}
+
+func (h *Handler) HandleGetRunDetail(w http.ResponseWriter, r *http.Request) {
+	if h.sessionStore == nil {
+		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	sessionID := r.PathValue("id")
+	runID := r.PathValue("runId")
+	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(runID) == "" {
+		httpError(w, "session id and run id are required", http.StatusBadRequest)
+		return
+	}
+
+	sessionModel, err := h.sessionStore.GetSession(r.Context(), sessionID)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			httpError(w, "session not found", http.StatusNotFound)
+			return
+		}
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	externalTasks, err := h.sessionStore.ListExternalTasksBySession(r.Context(), sessionID)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	runEvents, err := h.sessionStore.ListEventsBySession(r.Context(), sessionID, 0)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(runEvents), externalTasks)
+	snapshotPayload, _ := snapshot.Snapshot.(map[string]any)
+	runs := snapshotSliceField(snapshotPayload, "runs")
+	run := findRunSnapshot(runs, runID)
+	if run == nil {
+		httpError(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	turnID, _ := run["turnId"].(string)
+	turn := findTurnSnapshot(snapshotSliceField(snapshotPayload, "turns"), turnID)
+	filteredActivities := filterSnapshotByRunID(snapshotSliceField(snapshotPayload, "externalActivities"), runID)
+	filteredMessages := filterSnapshotByRunID(snapshotSliceField(snapshotPayload, "externalMessages"), runID)
+	filteredTasks := filterExternalTaskResponsesByRunID(mapExternalTaskResponses(externalTasks), runID)
+
+	respondJSON(w, http.StatusOK, getRunDetailResponse{
+		SessionID:          sessionID,
+		TurnID:             turnID,
+		Turn:               turn,
+		Run:                run,
+		ExternalActivities: filteredActivities,
+		ExternalMessages:   filteredMessages,
+		ExternalTasks:      filteredTasks,
 	})
 }
 
@@ -393,4 +462,42 @@ func snapshotSliceField(snapshot map[string]any, key string) []map[string]any {
 		return []map[string]any{}
 	}
 	return values
+}
+
+func findRunSnapshot(runs []map[string]any, runID string) map[string]any {
+	for _, run := range runs {
+		if run["runId"] == runID {
+			return run
+		}
+	}
+	return nil
+}
+
+func findTurnSnapshot(turns []map[string]any, turnID string) map[string]any {
+	for _, turn := range turns {
+		if turn["turnId"] == turnID {
+			return turn
+		}
+	}
+	return nil
+}
+
+func filterSnapshotByRunID(items []map[string]any, runID string) []map[string]any {
+	filtered := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if item["runId"] == runID {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func filterExternalTaskResponsesByRunID(tasks []externalTaskResponse, runID string) []externalTaskResponse {
+	filtered := make([]externalTaskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		if task.RunID == runID {
+			filtered = append(filtered, task)
+		}
+	}
+	return filtered
 }
