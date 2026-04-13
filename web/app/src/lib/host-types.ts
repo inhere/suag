@@ -1,5 +1,15 @@
 export type SessionStatus = "OPEN" | "RUNNING" | "WAITING" | "ARCHIVED";
 
+export type HITLTicket = {
+  id: string;
+  agentId: string;
+  taskId: string;
+  reason: string;
+  context: string;
+  status: string;
+  createdAt: string;
+};
+
 export type ExternalTaskSummary = {
   externalTaskId: string;
   sessionId: string;

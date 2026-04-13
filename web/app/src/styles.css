@@ -39,6 +39,13 @@ body {
   padding: 20px;
 }
 
+.app-shell__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+}
+
 .app-shell__panel h1 {
   margin: 0;
   font-size: 1.125rem;
@@ -338,6 +345,93 @@ body {
   background: rgba(30, 41, 59, 0.7);
   color: inherit;
   padding: 8px 12px;
+}
+
+.hitl-panel {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.86);
+  padding: 14px;
+}
+
+.hitl-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hitl-panel__header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.hitl-panel__header p {
+  margin: 6px 0 0;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 0.86rem;
+}
+
+.hitl-panel__header button,
+.hitl-card textarea,
+.hitl-card button {
+  font: inherit;
+}
+
+.hitl-panel__header button {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.7);
+  color: inherit;
+  padding: 8px 12px;
+}
+
+.hitl-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.hitl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.38);
+}
+
+.hitl-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hitl-card__meta strong {
+  color: rgba(226, 232, 240, 0.96);
+}
+
+.hitl-card__meta span,
+.hitl-card__context {
+  color: rgba(226, 232, 240, 0.75);
+  font-size: 0.86rem;
+}
+
+.hitl-card__context {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.hitl-card textarea {
+  min-height: 84px;
+  resize: vertical;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.88);
+  color: inherit;
+  padding: 12px;
 }
 
 .debug-drawer {

@@ -1,5 +1,6 @@
 import type {
   ExternalTaskSummary,
+  HITLTicket,
   RunDetail,
   SessionDetail,
   SessionSummary,
@@ -60,6 +61,16 @@ type GetRunDetailResponse = {
   external_activities?: StateSnapshotExternalActivity[];
   external_messages?: StateSnapshotExternalMessage[];
   external_tasks?: ExternalTaskResponse[];
+};
+
+type HITLTicketResponse = {
+  ID: string;
+  AgentID: string;
+  TaskID: string;
+  Reason: string;
+  Context: string;
+  Status: string;
+  CreatedAt: string;
 };
 
 async function parseJSON<T>(response: Response): Promise<T> {
@@ -129,6 +140,18 @@ function mapRunDetailResponse(input: GetRunDetailResponse): RunDetail {
   };
 }
 
+function mapHITLTicketResponse(input: HITLTicketResponse): HITLTicket {
+  return {
+    id: input.ID,
+    agentId: input.AgentID,
+    taskId: input.TaskID,
+    reason: input.Reason,
+    context: input.Context,
+    status: input.Status,
+    createdAt: input.CreatedAt,
+  };
+}
+
 export async function createSession(
   input: { title: string },
   fetchImpl: FetchLike = fetch,
@@ -175,4 +198,36 @@ export async function getRunDetail(
 ): Promise<RunDetail> {
   const response = await fetchImpl(`/api/sessions/${sessionId}/runs/${runId}`);
   return mapRunDetailResponse(await parseJSON<GetRunDetailResponse>(response));
+}
+
+export async function listHITLTickets(
+  fetchImpl: FetchLike = fetch,
+): Promise<HITLTicket[]> {
+  const response = await fetchImpl("/api/hitl");
+  const payload = await parseJSON<HITLTicketResponse[]>(response);
+  return payload.map(mapHITLTicketResponse);
+}
+
+export async function respondHITLTicket(
+  ticketId: string,
+  instruction: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<void> {
+  const response = await fetchImpl(`/api/hitl/${ticketId}/respond`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ instruction }),
+  });
+  await parseJSON<{ status: string }>(response);
+}
+
+export async function dismissHITLTicket(
+  ticketId: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<void> {
+  const response = await fetchImpl(`/api/hitl/${ticketId}/dismiss`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+  });
+  await parseJSON<{ status: string }>(response);
 }

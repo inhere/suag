@@ -4,6 +4,9 @@ import { App } from "./App";
 import type { SessionSocketMessage, StateSnapshotV0 } from "../lib/host-types";
 
 const createSessionMock = vi.fn();
+const listHITLTicketsMock = vi.fn();
+const respondHITLTicketMock = vi.fn();
+const dismissHITLTicketMock = vi.fn();
 const getSessionMock = vi.fn();
 const startTurnMock = vi.fn();
 const getRunDetailMock = vi.fn();
@@ -14,6 +17,9 @@ const connectSessionSocketMock = vi.fn();
 
 vi.mock("../lib/session-client", () => ({
   createSession: (...args: unknown[]) => createSessionMock(...args),
+  listHITLTickets: (...args: unknown[]) => listHITLTicketsMock(...args),
+  respondHITLTicket: (...args: unknown[]) => respondHITLTicketMock(...args),
+  dismissHITLTicket: (...args: unknown[]) => dismissHITLTicketMock(...args),
   getSession: (...args: unknown[]) => getSessionMock(...args),
   getRunDetail: (...args: unknown[]) => getRunDetailMock(...args),
   startTurn: (...args: unknown[]) => startTurnMock(...args),
@@ -127,6 +133,9 @@ describe("App", () => {
     onMessage = null;
     storage = {};
     createSessionMock.mockReset();
+    listHITLTicketsMock.mockReset();
+    respondHITLTicketMock.mockReset();
+    dismissHITLTicketMock.mockReset();
     getSessionMock.mockReset();
     getRunDetailMock.mockReset();
     startTurnMock.mockReset();
@@ -140,6 +149,9 @@ describe("App", () => {
       title: "host runtime",
       status: "OPEN",
     });
+    listHITLTicketsMock.mockResolvedValue([]);
+    respondHITLTicketMock.mockResolvedValue(undefined);
+    dismissHITLTicketMock.mockResolvedValue(undefined);
     getSessionMock.mockResolvedValue({
       sessionId: "sess_001",
       title: "host runtime",
@@ -738,5 +750,66 @@ describe("App", () => {
     expect(sendStopTurnMock).toHaveBeenCalledWith({
       turnId: "turn_001",
     });
+  });
+
+  it("loads pending HITL tickets and can respond from the workbench", async () => {
+    listHITLTicketsMock
+      .mockResolvedValueOnce([
+        {
+          id: "hitl-001",
+          agentId: "reviewer",
+          taskId: "task_001",
+          reason: "need approval",
+          context: "请确认是否继续执行危险工具调用",
+          status: "waiting",
+          createdAt: "2026-04-13T06:00:00Z",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    render(<App />);
+
+    expect(await screen.findByText("need approval")).toBeInTheDocument();
+    expect(screen.getByText("请确认是否继续执行危险工具调用")).toBeInTheDocument();
+
+    fireEvent.change(
+      screen.getByPlaceholderText("给这个等待中的 ticket 一条人工指令..."),
+      { target: { value: "继续执行，但不要写入生产环境" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Respond" }));
+
+    await waitFor(() =>
+      expect(respondHITLTicketMock).toHaveBeenCalledWith(
+        "hitl-001",
+        "继续执行，但不要写入生产环境",
+      ),
+    );
+    await waitFor(() => expect(listHITLTicketsMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("dismisses a pending HITL ticket from the workbench", async () => {
+    listHITLTicketsMock
+      .mockResolvedValueOnce([
+        {
+          id: "hitl-002",
+          agentId: "reviewer",
+          taskId: "task_002",
+          reason: "need manual decision",
+          context: "请决定是否中止当前任务",
+          status: "waiting",
+          createdAt: "2026-04-13T06:10:00Z",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    render(<App />);
+
+    expect(await screen.findByText("need manual decision")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+
+    await waitFor(() =>
+      expect(dismissHITLTicketMock).toHaveBeenCalledWith("hitl-002"),
+    );
+    await waitFor(() => expect(listHITLTicketsMock).toHaveBeenCalledTimes(2));
   });
 });

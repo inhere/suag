@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSession, getRunDetail, getSession, startTurn } from "./session-client";
+import {
+  createSession,
+  dismissHITLTicket,
+  getRunDetail,
+  getSession,
+  listHITLTickets,
+  respondHITLTicket,
+  startTurn,
+} from "./session-client";
 
 describe("session-client", () => {
   afterEach(() => {
@@ -258,5 +266,69 @@ describe("session-client", () => {
     expect(result.turn?.turnId).toBe("turn_001");
     expect(result.run?.runId).toBe("run_001");
     expect(result.externalMessages[0]?.content).toBe("thinking...");
+  });
+
+  it("loads /api/hitl and returns parsed pending tickets", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        {
+          ID: "hitl-001",
+          AgentID: "default",
+          TaskID: "task_001",
+          Reason: "need approval",
+          Context: "tool call needs confirmation",
+          Status: "waiting",
+          CreatedAt: "2026-04-13T06:00:00Z",
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await listHITLTickets();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/hitl");
+    expect(result).toEqual([
+      {
+        id: "hitl-001",
+        agentId: "default",
+        taskId: "task_001",
+        reason: "need approval",
+        context: "tool call needs confirmation",
+        status: "waiting",
+        createdAt: "2026-04-13T06:00:00Z",
+      },
+    ]);
+  });
+
+  it("posts a response to /api/hitl/{id}/respond", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "ok" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await respondHITLTicket("hitl-001", "retry with safer args");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/hitl/hitl-001/respond", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ instruction: "retry with safer args" }),
+    });
+  });
+
+  it("posts a dismiss request to /api/hitl/{id}/dismiss", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "ok" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await dismissHITLTicket("hitl-001");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/hitl/hitl-001/dismiss", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
   });
 });

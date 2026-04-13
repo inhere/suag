@@ -39,6 +39,7 @@
 - `web/app/vite.config.ts` 已补齐本地联调代理，当前 `pnpm dev` 可将 `/api`、`/events`、`/ws` 转发到 Host `:8180`，前后端已具备本地真机联调基础
 - `docs/usage/web-host-local-dev.md` 已补齐最小本地联调说明，当前可按统一步骤完成迁移、启动 Host/Web，并验证 create session、start turn、snapshot 增量同步与 `Add Hint`
 - `internal/host/session`、`internal/host/gateway/ws.go` 与 `web/app` 已补齐第一版 `Stop` 闭环，当前前端可通过 `stop_turn` WebSocket 命令停止当前 turn，Host 会取消活动 run、落库 `run.canceled` 并把取消状态实时回推到工作台
+- `web/app` 已补齐第一版 HITL 工作台面板，当前前端可调用 `/api/hitl` 查看 pending tickets，并在右栏直接执行 `respond` / `dismiss`，形成最小人工干预入口
 
 <!-- PROCESSING WORKS:END -->
 

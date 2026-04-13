@@ -19,7 +19,15 @@ import {
   selectFocusedRun,
 } from "../features/session/session-selectors";
 import type { SessionSocketMessage } from "../lib/host-types";
-import { createSession, getRunDetail, getSession, startTurn } from "../lib/session-client";
+import {
+  createSession,
+  dismissHITLTicket,
+  getRunDetail,
+  getSession,
+  listHITLTickets,
+  respondHITLTicket,
+  startTurn,
+} from "../lib/session-client";
 import { connectSessionSocket, type SessionSocketConnection } from "../lib/session-ws";
 
 const workbenchStorageKey = "axon.web.workbench";
@@ -143,6 +151,16 @@ function persistWorkbenchState(state: SessionViewState) {
 
 export function App() {
   const [viewState, setViewState] = useState<SessionViewState>(buildInitialViewState);
+  const [hitlTickets, setHITLTickets] = useState<Array<{
+    id: string;
+    agentId: string;
+    taskId: string;
+    reason: string;
+    context: string;
+    status: string;
+    createdAt: string;
+  }>>([]);
+  const [hitlLoading, setHITLLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [debugOpen, setDebugOpen] = useState(false);
@@ -151,6 +169,21 @@ export function App() {
   useEffect(() => {
     persistWorkbenchState(viewState);
   }, [viewState]);
+
+  async function refreshHITLTickets() {
+    setHITLLoading(true);
+    try {
+      setHITLTickets(await listHITLTickets());
+    } catch {
+      // Keep the workbench usable even if HITL listing is temporarily unavailable.
+    } finally {
+      setHITLLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void refreshHITLTickets();
+  }, []);
 
   useEffect(() => {
     if (!viewState.currentSessionId) {
@@ -310,6 +343,16 @@ export function App() {
     });
   }
 
+  async function handleRespondHITL(ticketId: string, instruction: string) {
+    await respondHITLTicket(ticketId, instruction);
+    await refreshHITLTickets();
+  }
+
+  async function handleDismissHITL(ticketId: string) {
+    await dismissHITLTicket(ticketId);
+    await refreshHITLTickets();
+  }
+
   return (
     <AppShell
       sessions={viewState.recentSessions}
@@ -324,6 +367,8 @@ export function App() {
       externalActivities={snapshot?.externalActivities ?? []}
       externalMessages={snapshot?.externalMessages ?? []}
       focusedRunId={focusedRun?.runId ?? viewState.focusedRunId}
+      hitlTickets={hitlTickets}
+      hitlLoading={hitlLoading}
       canStop={stopEnabled}
       canAddHint={waitingForInput}
       debugOpen={debugOpen}
@@ -348,6 +393,11 @@ export function App() {
           focusedRunId: runId,
         }));
       }}
+      onRefreshHITL={() => {
+        void refreshHITLTickets();
+      }}
+      onRespondHITL={(ticketId, instruction) => handleRespondHITL(ticketId, instruction)}
+      onDismissHITL={(ticketId) => handleDismissHITL(ticketId)}
       onStop={handleStopTurn}
       onAddHint={handleAddHint}
       onOpenDebug={() => setDebugOpen(true)}
