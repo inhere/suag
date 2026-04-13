@@ -606,7 +606,7 @@ describe("App", () => {
 
     expect(await screen.findByText("bootstrap title")).toBeInTheDocument();
     expect(screen.getAllByText("bootstrap-codex")).toHaveLength(3);
-    expect(screen.getByText("Turn turn_900")).toBeInTheDocument();
+    expect(screen.getAllByText("Turn turn_900").length).toBeGreaterThan(0);
     expect(screen.getByText("run_bootstrap")).toBeInTheDocument();
     expect(screen.getAllByText("Waiting for websocket snapshot...").length).toBeGreaterThan(0);
   });
@@ -699,7 +699,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("detail restored")).toBeInTheDocument();
-    expect(screen.getByText("Turn turn_detail")).toBeInTheDocument();
+    expect(screen.getAllByText("Turn turn_detail").length).toBeGreaterThan(0);
     expect(screen.getByText("run_detail")).toBeInTheDocument();
     expect(screen.getAllByText("detail summary").length).toBeGreaterThan(0);
     expect(screen.getAllByText("detail thinking...").length).toBeGreaterThan(0);
@@ -1005,6 +1005,152 @@ describe("App", () => {
     await waitFor(() => expect(getRunDetailMock).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(screen.getAllByText("已重试恢复").length).toBeGreaterThan(0),
+    );
+  });
+
+  it("shows recent turns in the conversation pane and focuses the selected turn run", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_007",
+      focusedRunId: null,
+      recentSessions: [],
+    });
+    getSessionMock.mockResolvedValueOnce({
+      sessionId: "sess_007",
+      title: "turn history session",
+      status: "RUNNING",
+      lastTurnId: "turn_202",
+      turns: [
+        {
+          turnId: "turn_201",
+          sessionId: "sess_007",
+          primaryRunId: "run_201",
+          currentRunId: "run_201",
+          latestRunId: "run_201",
+          latestAgentId: "planner",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessagePreview: "历史规划已完成",
+          eventCount: 3,
+          runCount: 1,
+          activeRunCount: 0,
+          completedRunCount: 1,
+          failedRunCount: 0,
+          activeRunIds: [],
+          completedRunIds: ["run_201"],
+          failedRunIds: [],
+          hasExternalWork: false,
+          updatedAt: "2026-04-12T14:00:00Z",
+        },
+        {
+          turnId: "turn_202",
+          sessionId: "sess_007",
+          primaryRunId: "run_202",
+          currentRunId: "run_202",
+          latestRunId: "run_202",
+          latestAgentId: "reviewer",
+          displayState: "running",
+          latestEventType: "run.started",
+          latestMessagePreview: "当前在继续评审",
+          eventCount: 2,
+          runCount: 1,
+          activeRunCount: 1,
+          completedRunCount: 0,
+          failedRunCount: 0,
+          activeRunIds: ["run_202"],
+          completedRunIds: [],
+          failedRunIds: [],
+          hasExternalWork: false,
+          updatedAt: "2026-04-12T15:00:00Z",
+        },
+      ],
+      runs: [
+        {
+          runId: "run_201",
+          turnId: "turn_201",
+          sessionId: "sess_007",
+          agentId: "planner",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessageId: "msg_201",
+          latestMessageText: "历史规划已完成",
+          summary: "历史规划已完成",
+          externalTaskIds: [],
+          eventCount: 3,
+          updatedAt: "2026-04-12T14:00:00Z",
+        },
+        {
+          runId: "run_202",
+          turnId: "turn_202",
+          sessionId: "sess_007",
+          agentId: "reviewer",
+          displayState: "running",
+          latestEventType: "run.started",
+          latestMessageId: "msg_202",
+          latestMessageText: "当前在继续评审",
+          summary: "",
+          externalTaskIds: [],
+          eventCount: 2,
+          updatedAt: "2026-04-12T15:00:00Z",
+        },
+      ],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    });
+    getRunDetailMock.mockResolvedValueOnce({
+      sessionId: "sess_007",
+      turnId: "turn_201",
+      turn: {
+        turnId: "turn_201",
+        sessionId: "sess_007",
+        primaryRunId: "run_201",
+        currentRunId: "run_201",
+        latestRunId: "run_201",
+        latestAgentId: "planner",
+        displayState: "completed",
+        latestEventType: "run.finished",
+        latestMessagePreview: "历史规划已完成",
+        eventCount: 3,
+        runCount: 1,
+        activeRunCount: 0,
+        completedRunCount: 1,
+        failedRunCount: 0,
+        activeRunIds: [],
+        completedRunIds: ["run_201"],
+        failedRunIds: [],
+        hasExternalWork: false,
+        updatedAt: "2026-04-12T14:00:00Z",
+      },
+      run: {
+        runId: "run_201",
+        turnId: "turn_201",
+        sessionId: "sess_007",
+        agentId: "planner",
+        displayState: "completed",
+        latestEventType: "run.finished",
+        latestMessageId: "msg_201",
+        latestMessageText: "历史规划已完成",
+        summary: "历史规划已完成",
+        externalTaskIds: [],
+        eventCount: 3,
+        updatedAt: "2026-04-12T14:00:00Z",
+      },
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("turn history session")).toBeInTheDocument();
+    expect(screen.getByText("Recent Turns")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Turn turn_201/ }));
+
+    await waitFor(() =>
+      expect(getRunDetailMock).toHaveBeenCalledWith("sess_007", "run_201"),
+    );
+    await waitFor(() =>
+      expect(screen.getAllByText("历史规划已完成").length).toBeGreaterThan(0),
     );
   });
 

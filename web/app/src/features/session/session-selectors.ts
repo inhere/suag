@@ -69,3 +69,16 @@ export function selectSessionPreview(snapshot: StateSnapshotV0 | null): string {
 
   return focusedRun?.latestMessageText ?? "";
 }
+
+export function selectRecentTurns(
+  snapshot: StateSnapshotV0 | null,
+  limit = 5,
+): StateSnapshotTurn[] {
+  if (!snapshot) {
+    return [];
+  }
+
+  return [...snapshot.turns]
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .slice(0, limit);
+}

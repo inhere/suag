@@ -32,6 +32,7 @@ type AppShellProps = {
   externalTasks?: ExternalTaskSummary[];
   externalActivities?: StateSnapshotExternalActivity[];
   externalMessages?: StateSnapshotExternalMessage[];
+  recentTurns?: StateSnapshotTurn[];
   focusedRunId?: string | null;
   focusedRunDetailStatus?: "idle" | "loading" | "loaded" | "error";
   hitlTickets?: HITLTicket[];
@@ -45,6 +46,7 @@ type AppShellProps = {
   onSearchChange?: (value: string) => void;
   onFilterChange?: (filter: SessionFilter) => void;
   onSubmitMessage?: (message: string) => void;
+  onSelectConversationTurn?: (turn: StateSnapshotTurn) => void;
   onFocusRun?: (runId: string) => void;
   onRetryFocusedRunDetail?: () => void;
   onRefreshHITL?: () => void;
@@ -73,6 +75,7 @@ export function AppShell({
   externalTasks = [],
   externalActivities = [],
   externalMessages = [],
+  recentTurns = [],
   focusedRunId = null,
   focusedRunDetailStatus = "idle",
   hitlTickets = [],
@@ -86,6 +89,7 @@ export function AppShell({
   onSearchChange = () => {},
   onFilterChange = () => {},
   onSubmitMessage = () => {},
+  onSelectConversationTurn = () => {},
   onFocusRun = () => {},
   onRetryFocusedRunDetail = () => {},
   onRefreshHITL = () => {},
@@ -122,6 +126,8 @@ export function AppShell({
           <ConversationPane
             messages={messages}
             currentTurn={currentTurn}
+            recentTurns={recentTurns}
+            onSelectTurn={onSelectConversationTurn}
             waitingForInput={waitingForInput}
             onSubmit={onSubmitMessage}
           />

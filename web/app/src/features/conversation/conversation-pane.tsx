@@ -1,6 +1,7 @@
 import type { StateSnapshotTurn } from "../../lib/host-types";
 import { Composer } from "./composer";
 import { MessageItem } from "./message-item";
+import { RecentTurnsStrip } from "./recent-turns-strip";
 import { TurnSummaryCard } from "./turn-summary-card";
 
 export type ConversationMessage = {
@@ -12,6 +13,8 @@ export type ConversationMessage = {
 type ConversationPaneProps = {
   messages: ConversationMessage[];
   currentTurn: StateSnapshotTurn | null;
+  recentTurns?: StateSnapshotTurn[];
+  onSelectTurn?: (turn: StateSnapshotTurn) => void;
   waitingForInput: boolean;
   onSubmit: (message: string) => void;
 };
@@ -19,6 +22,8 @@ type ConversationPaneProps = {
 export function ConversationPane({
   messages,
   currentTurn,
+  recentTurns = [],
+  onSelectTurn = () => {},
   waitingForInput,
   onSubmit,
 }: ConversationPaneProps) {
@@ -29,6 +34,11 @@ export function ConversationPane({
           <MessageItem key={message.id} role={message.role} text={message.text} />
         ))}
         {currentTurn ? <TurnSummaryCard turn={currentTurn} /> : null}
+        <RecentTurnsStrip
+          turns={recentTurns}
+          currentTurnId={currentTurn?.turnId ?? null}
+          onSelectTurn={onSelectTurn}
+        />
       </div>
       <Composer waitingForInput={waitingForInput} onSubmit={onSubmit} />
     </div>

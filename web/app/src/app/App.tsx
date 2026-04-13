@@ -17,8 +17,9 @@ import {
   selectActiveRuns,
   selectCurrentTurn,
   selectFocusedRun,
+  selectRecentTurns,
 } from "../features/session/session-selectors";
-import type { HITLTicket, SessionSocketMessage } from "../lib/host-types";
+import type { HITLTicket, SessionSocketMessage, StateSnapshotTurn } from "../lib/host-types";
 import {
   createSession,
   dismissHITLTicket,
@@ -430,6 +431,7 @@ export function App() {
   const currentTurn = selectCurrentTurn(snapshot);
   const activeRuns = selectActiveRuns(snapshot);
   const focusedRun = selectFocusedRun(snapshot, viewState.focusedRunId);
+  const recentTurns = selectRecentTurns(snapshot, 4);
   const conversationMessages = buildConversationMessages(viewState);
   const waitingForInput = isWaitingForInput(viewState);
   const stopEnabled = canStopCurrentTurn(viewState);
@@ -547,6 +549,13 @@ export function App() {
     requestRunDetail(viewState.currentSessionId, viewState.focusedRunId);
   }
 
+  function handleSelectConversationTurn(turn: StateSnapshotTurn) {
+    setViewState((current) => ({
+      ...current,
+      focusedRunId: turn.latestRunId || turn.currentRunId || turn.primaryRunId || null,
+    }));
+  }
+
   return (
     <AppShell
       sessions={viewState.recentSessions}
@@ -559,6 +568,7 @@ export function App() {
       searchQuery={searchQuery}
       messages={conversationMessages}
       currentTurn={currentTurn}
+      recentTurns={recentTurns}
       waitingForInput={waitingForInput}
       runs={snapshot?.runs.length ? snapshot.runs : activeRuns}
       externalTasks={snapshot?.externalTasks ?? []}
@@ -589,6 +599,7 @@ export function App() {
       onSubmitMessage={(message) => {
         void handleSubmit(message);
       }}
+      onSelectConversationTurn={handleSelectConversationTurn}
       onFocusRun={(runId) => {
         setViewState((current) => ({
           ...current,

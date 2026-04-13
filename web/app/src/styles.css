@@ -193,6 +193,67 @@ body {
   gap: 12px;
 }
 
+.recent-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.recent-turns__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recent-turns__header h2 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.recent-turns__header span {
+  color: rgba(148, 163, 184, 0.82);
+  font-size: 0.78rem;
+}
+
+.recent-turns__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recent-turns__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.38);
+  color: inherit;
+  text-align: left;
+}
+
+.recent-turns__item strong {
+  font-size: 0.88rem;
+}
+
+.recent-turns__item span {
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+}
+
+.recent-turns__item--active {
+  border-color: rgba(56, 189, 248, 0.52);
+  background: linear-gradient(180deg, rgba(8, 47, 73, 0.34), rgba(30, 41, 59, 0.4));
+}
+
 .conversation-message,
 .turn-summary-card {
   border: 1px solid rgba(148, 163, 184, 0.2);

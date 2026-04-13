@@ -4,6 +4,7 @@ import {
   selectActiveRuns,
   selectCurrentTurn,
   selectFocusedRun,
+  selectRecentTurns,
   selectSessionPreview,
 } from "./session-selectors";
 
@@ -149,5 +150,59 @@ describe("session-selectors", () => {
     const snapshot = makeSnapshot();
 
     expect(selectSessionPreview(snapshot)).toBe("review in progress");
+  });
+
+  it("returns recent turns ordered by updatedAt descending", () => {
+    const snapshot = makeSnapshot({
+      turns: [
+        {
+          turnId: "turn_001",
+          sessionId: "sess_001",
+          primaryRunId: "run_001",
+          currentRunId: "run_001",
+          latestRunId: "run_001",
+          latestAgentId: "default",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessagePreview: "older turn",
+          eventCount: 3,
+          runCount: 1,
+          activeRunCount: 0,
+          completedRunCount: 1,
+          failedRunCount: 0,
+          activeRunIds: [],
+          completedRunIds: ["run_001"],
+          failedRunIds: [],
+          hasExternalWork: false,
+          updatedAt: "2026-04-12T07:55:00Z",
+        },
+        {
+          turnId: "turn_003",
+          sessionId: "sess_001",
+          primaryRunId: "run_004",
+          currentRunId: "run_004",
+          latestRunId: "run_004",
+          latestAgentId: "planner",
+          displayState: "waiting",
+          latestEventType: "turn.waiting",
+          latestMessagePreview: "newer turn",
+          eventCount: 1,
+          runCount: 1,
+          activeRunCount: 1,
+          completedRunCount: 0,
+          failedRunCount: 0,
+          activeRunIds: ["run_004"],
+          completedRunIds: [],
+          failedRunIds: [],
+          hasExternalWork: false,
+          updatedAt: "2026-04-12T08:05:00Z",
+        },
+      ],
+    });
+
+    expect(selectRecentTurns(snapshot, 2).map((turn) => turn.turnId)).toEqual([
+      "turn_003",
+      "turn_001",
+    ]);
   });
 });
