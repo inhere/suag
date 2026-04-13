@@ -3,12 +3,16 @@ import type { ExternalTaskSummary } from "../../lib/host-types";
 type ExternalTaskPanelProps = {
   externalTasks: ExternalTaskSummary[];
   focusedRunId: string | null;
+  canAddHint: boolean;
+  onAddHint: () => void;
   onOpenDebug: () => void;
 };
 
 export function ExternalTaskPanel({
   externalTasks,
   focusedRunId,
+  canAddHint,
+  onAddHint,
   onOpenDebug,
 }: ExternalTaskPanelProps) {
   const focusedTask =
@@ -34,7 +38,7 @@ export function ExternalTaskPanel({
         <button type="button" disabled>
           Stop
         </button>
-        <button type="button" disabled>
+        <button type="button" disabled={!canAddHint} onClick={onAddHint}>
           Add Hint
         </button>
         <button type="button" onClick={onOpenDebug}>

@@ -35,6 +35,7 @@
 - `web/app/src/features/session/session-store.ts` 已继续收拢 run detail 加载状态，当前 store 会显式跟踪 `idle/loading/loaded/error`，避免 `App.tsx` 内散落 run 明细请求判断逻辑
 - `web/app/src/features/run-inspector` 已补齐 focused run 明细展示，当前右栏在 summary 优先的同时，也会展示该 run 的 external messages / activities，并按 focused run 切换 external task 详情
 - `web/app/src/features/run-inspector/focused-run-panel.tsx` 已继续结构化 focused run 视图，当前右栏按 `Summary / Run Meta / External Messages / External Activities` 分区展示，联调时更易扫读 run 明细
+- `web/app/src/app/App.tsx` 与 `web/app/src/features/run-inspector/external-task-panel.tsx` 已补齐 `Add Hint -> continue_turn` 最小操作链路，当前 waiting turn 下可从右栏直接追加提示到后端 WS 会话
 
 <!-- PROCESSING WORKS:END -->
 

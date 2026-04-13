@@ -92,6 +92,8 @@ it("shows summary first for a completed focused run", () => {
       ]}
       focusedRunId="run_001"
       onFocusRun={vi.fn()}
+      canAddHint={false}
+      onAddHint={vi.fn()}
       onOpenDebug={vi.fn()}
     />,
   );

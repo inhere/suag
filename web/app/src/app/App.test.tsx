@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { SessionSocketMessage, StateSnapshotV0 } from "../lib/host-types";
 
@@ -118,6 +118,10 @@ describe("App", () => {
   let onMessage: ((message: SessionSocketMessage) => void) | null;
   let storage: Record<string, string>;
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
     onMessage = null;
     storage = {};
@@ -176,6 +180,7 @@ describe("App", () => {
         delete storage[key];
       }),
     });
+    vi.stubGlobal("prompt", vi.fn());
   });
 
   it("creates a session, starts a turn, and hydrates the workbench from websocket snapshots", async () => {
@@ -613,5 +618,66 @@ describe("App", () => {
     expect(screen.getByText("delegate: completed")).toBeInTheDocument();
     expect(screen.getByText("codex-reviewer")).toBeInTheDocument();
     expect(screen.getByText("历史任务完成")).toBeInTheDocument();
+  });
+
+  it("sends continue_turn from Add Hint when the current turn is waiting for input", async () => {
+    vi.stubGlobal("prompt", vi.fn().mockReturnValue("请补充错误边界和回退策略"));
+
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("给 Axon 发送下一条任务说明..."), {
+      target: { value: "先启动一个等待输入的回合" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(connectSessionSocketMock).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "sess_001" }),
+      ),
+    );
+
+    await act(async () => {
+      onMessage?.({
+        type: "STATE_SNAPSHOT",
+        snapshot: makeSnapshot({
+          status: "WAITING",
+          turns: [
+            {
+              turnId: "turn_001",
+              sessionId: "sess_001",
+              primaryRunId: "run_001",
+              currentRunId: "run_001",
+              latestRunId: "run_001",
+              latestAgentId: "default",
+              displayState: "waiting_input",
+              latestEventType: "turn.waiting",
+              latestMessagePreview: "需要更多约束",
+              eventCount: 3,
+              runCount: 1,
+              activeRunCount: 1,
+              completedRunCount: 0,
+              failedRunCount: 0,
+              activeRunIds: ["run_001"],
+              completedRunIds: [],
+              failedRunIds: [],
+              hasExternalWork: true,
+              updatedAt: "2026-04-12T11:00:00Z",
+            },
+          ],
+        }),
+      });
+    });
+
+    const addHintButton = await screen.findByRole("button", { name: "Add Hint" });
+    expect(addHintButton).toBeEnabled();
+
+    fireEvent.click(addHintButton);
+
+    expect(globalThis.prompt).toHaveBeenCalled();
+    expect(sendContinueTurnMock).toHaveBeenCalledWith({
+      message: "请补充错误边界和回退策略",
+      agentId: "default",
+      initiatorType: "user",
+    });
   });
 });

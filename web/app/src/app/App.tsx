@@ -73,6 +73,16 @@ function isWaitingForInput(state: SessionViewState): boolean {
   return currentTurn.displayState.toLowerCase().includes("waiting");
 }
 
+function buildHintMessage(): string | null {
+  const nextHint = globalThis.prompt?.("Add a hint for the current turn");
+  if (!nextHint) {
+    return null;
+  }
+
+  const trimmed = nextHint.trim();
+  return trimmed ? trimmed : null;
+}
+
 function loadPersistedWorkbenchState(): PersistedWorkbenchState | null {
   try {
     const raw = globalThis.localStorage?.getItem(workbenchStorageKey);
@@ -262,6 +272,23 @@ export function App() {
     });
   }
 
+  function handleAddHint() {
+    if (!waitingForInput) {
+      return;
+    }
+
+    const message = buildHintMessage();
+    if (!message) {
+      return;
+    }
+
+    socketRef.current?.sendContinueTurn({
+      message,
+      agentId: "default",
+      initiatorType: "user",
+    });
+  }
+
   return (
     <AppShell
       sessions={viewState.recentSessions}
@@ -276,6 +303,7 @@ export function App() {
       externalActivities={snapshot?.externalActivities ?? []}
       externalMessages={snapshot?.externalMessages ?? []}
       focusedRunId={focusedRun?.runId ?? viewState.focusedRunId}
+      canAddHint={waitingForInput}
       debugOpen={debugOpen}
       debugEvents={snapshot?.events ?? []}
       onCreateSession={() => {
@@ -298,6 +326,7 @@ export function App() {
           focusedRunId: runId,
         }));
       }}
+      onAddHint={handleAddHint}
       onOpenDebug={() => setDebugOpen(true)}
       onCloseDebug={() => setDebugOpen(false)}
     />
