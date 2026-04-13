@@ -1091,6 +1091,23 @@ export function markRunDetailFailed(
   };
 }
 
+export function markRunDetailIdle(
+  state: SessionViewState,
+  runId: string,
+): SessionViewState {
+  if (!runId) {
+    return state;
+  }
+
+  return {
+    ...state,
+    runDetailStatus: {
+      ...state.runDetailStatus,
+      [runId]: "idle",
+    },
+  };
+}
+
 export function shouldLoadRunDetail(
   state: SessionViewState,
   runId: string | null,

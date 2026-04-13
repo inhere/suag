@@ -8,7 +8,9 @@ import type {
 import {
   emptySessionViewState,
   hydrateFromSnapshot,
+  markRunDetailFailed,
   markRunDetailRequested,
+  markRunDetailIdle,
   mergeRunDetail,
   mergeSessionDetail,
   reduceSessionMessage,
@@ -726,5 +728,20 @@ describe("session-store", () => {
     );
 
     expect(shouldLoadRunDetail(restored, "run_bootstrap")).toBe(false);
+  });
+
+  it("can reset a failed run detail back to idle so it can be retried", () => {
+    const failed = markRunDetailFailed(
+      {
+        ...emptySessionViewState,
+        snapshot: makeSnapshot(),
+      },
+      "run_002",
+    );
+
+    expect(shouldLoadRunDetail(failed, "run_002")).toBe(false);
+
+    const retriable = markRunDetailIdle(failed, "run_002");
+    expect(shouldLoadRunDetail(retriable, "run_002")).toBe(true);
   });
 });

@@ -91,7 +91,9 @@ it("shows summary first for a completed focused run", () => {
         },
       ]}
       focusedRunId="run_001"
+      focusedRunDetailStatus="loaded"
       onFocusRun={vi.fn()}
+      onRetryFocusedRunDetail={vi.fn()}
       canStop={false}
       onStop={vi.fn()}
       canAddHint={false}
@@ -115,4 +117,81 @@ it("shows summary first for a completed focused run", () => {
   expect(within(focusedRunPanel as HTMLElement).getByText("run_001")).toBeInTheDocument();
   expect(within(focusedRunPanel as HTMLElement).getAllByText("completed").length).toBeGreaterThan(0);
   expect(screen.getByText("codex-reviewer")).toBeInTheDocument();
+});
+
+it("shows loading and retry feedback for focused run detail states", () => {
+  const onRetryFocusedRunDetail = vi.fn();
+  const { rerender } = render(
+    <RunInspector
+      currentTurn={null}
+      runs={[
+        {
+          runId: "run_010",
+          turnId: "turn_010",
+          sessionId: "sess_010",
+          agentId: "reviewer",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessageId: "",
+          latestMessageText: "",
+          summary: "",
+          externalTaskIds: [],
+          eventCount: 1,
+          updatedAt: "2026-04-12T10:30:00Z",
+        },
+      ]}
+      externalTasks={[]}
+      externalActivities={[]}
+      externalMessages={[]}
+      focusedRunId="run_010"
+      focusedRunDetailStatus="loading"
+      onFocusRun={vi.fn()}
+      onRetryFocusedRunDetail={onRetryFocusedRunDetail}
+      canStop={false}
+      onStop={vi.fn()}
+      canAddHint={false}
+      onAddHint={vi.fn()}
+      onOpenDebug={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByText("Loading run detail...")).toBeInTheDocument();
+
+  rerender(
+    <RunInspector
+      currentTurn={null}
+      runs={[
+        {
+          runId: "run_010",
+          turnId: "turn_010",
+          sessionId: "sess_010",
+          agentId: "reviewer",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessageId: "",
+          latestMessageText: "",
+          summary: "",
+          externalTaskIds: [],
+          eventCount: 1,
+          updatedAt: "2026-04-12T10:30:00Z",
+        },
+      ]}
+      externalTasks={[]}
+      externalActivities={[]}
+      externalMessages={[]}
+      focusedRunId="run_010"
+      focusedRunDetailStatus="error"
+      onFocusRun={vi.fn()}
+      onRetryFocusedRunDetail={onRetryFocusedRunDetail}
+      canStop={false}
+      onStop={vi.fn()}
+      canAddHint={false}
+      onAddHint={vi.fn()}
+      onOpenDebug={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByText("Failed to load run detail.")).toBeInTheDocument();
+  screen.getByRole("button", { name: "Retry Detail" }).click();
+  expect(onRetryFocusedRunDetail).toHaveBeenCalledTimes(1);
 });

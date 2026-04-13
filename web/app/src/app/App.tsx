@@ -232,10 +232,43 @@ export function App() {
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [debugOpen, setDebugOpen] = useState(false);
   const socketRef = useRef<SessionSocketConnection | null>(null);
+  const runDetailRequestIDRef = useRef(0);
 
   useEffect(() => {
     persistWorkbenchState(viewState);
   }, [viewState]);
+
+  function requestRunDetail(sessionId: string, runId: string) {
+    const requestID = runDetailRequestIDRef.current + 1;
+    runDetailRequestIDRef.current = requestID;
+    setViewState((current) => markRunDetailRequested(current, runId));
+
+    void getRunDetail(sessionId, runId)
+      .then((detail) => {
+        setViewState((current) => {
+          if (runDetailRequestIDRef.current !== requestID) {
+            return current;
+          }
+          if (current.currentSessionId !== sessionId || current.focusedRunId !== runId) {
+            return current;
+          }
+
+          return mergeRunDetail(current, detail, new Date().toISOString());
+        });
+      })
+      .catch(() => {
+        setViewState((current) => {
+          if (runDetailRequestIDRef.current !== requestID) {
+            return current;
+          }
+          if (current.currentSessionId !== sessionId || current.focusedRunId !== runId) {
+            return current;
+          }
+
+          return markRunDetailFailed(current, runId);
+        });
+      });
+  }
 
   async function refreshHITLTickets() {
     setHITLLoading(true);
@@ -390,30 +423,7 @@ export function App() {
       return;
     }
 
-    let cancelled = false;
-    setViewState((current) => markRunDetailRequested(current, focusedRunId));
-
-    void getRunDetail(sessionId, focusedRunId)
-      .then((detail) => {
-        if (cancelled) {
-          return;
-        }
-
-        setViewState((current) =>
-          mergeRunDetail(current, detail, new Date().toISOString()),
-        );
-      })
-      .catch(() => {
-        if (cancelled) {
-          return;
-        }
-
-        setViewState((current) => markRunDetailFailed(current, focusedRunId));
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    requestRunDetail(sessionId, focusedRunId);
   }, [viewState.currentSessionId, viewState.focusedRunId, viewState.snapshot]);
 
   const snapshot = viewState.snapshot;
@@ -529,6 +539,14 @@ export function App() {
     setSessionListReloadKey((current) => current + 1);
   }
 
+  function handleRetryFocusedRunDetail() {
+    if (!viewState.currentSessionId || !viewState.focusedRunId) {
+      return;
+    }
+
+    requestRunDetail(viewState.currentSessionId, viewState.focusedRunId);
+  }
+
   return (
     <AppShell
       sessions={viewState.recentSessions}
@@ -547,6 +565,9 @@ export function App() {
       externalActivities={snapshot?.externalActivities ?? []}
       externalMessages={snapshot?.externalMessages ?? []}
       focusedRunId={focusedRun?.runId ?? viewState.focusedRunId}
+      focusedRunDetailStatus={
+        focusedRun ? viewState.runDetailStatus[focusedRun.runId] ?? "idle" : "idle"
+      }
       hitlTickets={hitlTickets}
       hitlLoading={hitlLoading}
       canStop={stopEnabled}
@@ -574,6 +595,7 @@ export function App() {
           focusedRunId: runId,
         }));
       }}
+      onRetryFocusedRunDetail={handleRetryFocusedRunDetail}
       onRefreshHITL={() => {
         void refreshHITLTickets();
       }}

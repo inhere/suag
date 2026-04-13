@@ -17,7 +17,9 @@ type RunInspectorProps = {
   externalActivities: StateSnapshotExternalActivity[];
   externalMessages: StateSnapshotExternalMessage[];
   focusedRunId: string | null;
+  focusedRunDetailStatus?: "idle" | "loading" | "loaded" | "error";
   onFocusRun: (runId: string) => void;
+  onRetryFocusedRunDetail?: () => void;
   canStop: boolean;
   onStop: () => void;
   canAddHint: boolean;
@@ -43,7 +45,9 @@ export function RunInspector({
   externalActivities,
   externalMessages,
   focusedRunId,
+  focusedRunDetailStatus = "idle",
   onFocusRun,
+  onRetryFocusedRunDetail = () => {},
   canStop,
   onStop,
   canAddHint,
@@ -64,6 +68,8 @@ export function RunInspector({
         focusedRun={focusedRun}
         externalActivities={externalActivities}
         externalMessages={externalMessages}
+        detailStatus={focusedRunDetailStatus}
+        onRetryDetail={onRetryFocusedRunDetail}
       />
       <ExternalTaskPanel
         externalTasks={externalTasks}

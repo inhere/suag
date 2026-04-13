@@ -45,6 +45,7 @@
 - `internal/host/gateway`、`internal/host/session` 与 `web/app` 已补齐第一版服务端 session list，当前 Host 可通过 `GET /api/sessions` 返回按更新时间排序的会话摘要，前端左栏首次打开时也可从服务端恢复已有会话，而不再只依赖本地 recentSessions
 - `web/app/src/lib/session-ws.ts`、`web/app/src/app/App.tsx` 与 `web/app/src/features/session-list` 已补齐第一版连接状态与错误反馈，当前左栏可展示 active session 的 `connecting / connected / disconnected` 状态，以及 session list / session bootstrap / websocket 失败提示，联调时更容易判断当前链路卡在哪一层
 - `web/app/src/lib/session-ws.ts`、`web/app/src/app/App.tsx` 与 `web/app/src/features/session-list` 已补齐第一版连接重试闭环，当前 active session 在 websocket 断开后会自动重连，session list / session bootstrap 失败时也可从左栏直接手动 Retry 恢复
+- `web/app/src/app/App.tsx`、`web/app/src/features/session/session-store.ts` 与 `web/app/src/features/run-inspector` 已补齐 focused run detail 加载反馈闭环，当前右栏会显式展示 run 明细的 `loading / error` 状态，并可在单 run 明细加载失败后直接 `Retry Detail` 重新拉取
 
 <!-- PROCESSING WORKS:END -->
 

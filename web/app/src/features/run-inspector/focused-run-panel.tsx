@@ -8,6 +8,8 @@ type FocusedRunPanelProps = {
   focusedRun: StateSnapshotRun | null;
   externalActivities: StateSnapshotExternalActivity[];
   externalMessages: StateSnapshotExternalMessage[];
+  detailStatus?: "idle" | "loading" | "loaded" | "error";
+  onRetryDetail?: () => void;
 };
 
 function getFocusedRunContent(run: StateSnapshotRun | null): string {
@@ -36,10 +38,14 @@ export function FocusedRunPanel({
   focusedRun,
   externalActivities,
   externalMessages,
+  detailStatus = "idle",
+  onRetryDetail = () => {},
 }: FocusedRunPanelProps) {
   const focusedRunID = focusedRun?.runId ?? "";
   const runActivities = externalActivities.filter((activity) => activity.runId === focusedRunID);
   const runMessages = externalMessages.filter((message) => message.runId === focusedRunID);
+  const showLoadingState = !!focusedRun && detailStatus === "loading" && !runMessages.length && !runActivities.length;
+  const showErrorState = !!focusedRun && detailStatus === "error" && !runMessages.length && !runActivities.length;
 
   return (
     <section className="run-panel">
@@ -68,6 +74,23 @@ export function FocusedRunPanel({
       ) : (
         <p className="run-summary">{getFocusedRunContent(focusedRun)}</p>
       )}
+      {showLoadingState ? (
+        <div className="run-section">
+          <h3>Run Detail</h3>
+          <p className="run-detail-hint">Loading run detail...</p>
+        </div>
+      ) : null}
+      {showErrorState ? (
+        <div className="run-section">
+          <h3>Run Detail</h3>
+          <div className="run-detail-error" role="alert">
+            <span>Failed to load run detail.</span>
+            <button type="button" className="run-detail-error__retry" onClick={onRetryDetail}>
+              Retry Detail
+            </button>
+          </div>
+        </div>
+      ) : null}
       {runMessages.length > 0 ? (
         <div className="run-section">
           <h3>External Messages</h3>

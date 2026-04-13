@@ -877,6 +877,137 @@ describe("App", () => {
     expect(screen.getByText("历史任务完成")).toBeInTheDocument();
   });
 
+  it("retries focused run detail loading from the inspector after a failure", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_006",
+      focusedRunId: null,
+      recentSessions: [],
+    });
+    getSessionMock.mockResolvedValueOnce({
+      sessionId: "sess_006",
+      title: "detail retry session",
+      status: "RUNNING",
+      lastTurnId: "turn_current",
+      turns: [
+        {
+          turnId: "turn_current",
+          sessionId: "sess_006",
+          primaryRunId: "run_current",
+          currentRunId: "run_current",
+          latestRunId: "run_current",
+          latestAgentId: "default",
+          displayState: "running",
+          latestEventType: "run.started",
+          latestMessagePreview: "当前执行中",
+          eventCount: 2,
+          runCount: 2,
+          activeRunCount: 1,
+          completedRunCount: 1,
+          failedRunCount: 0,
+          activeRunIds: ["run_current"],
+          completedRunIds: ["run_hist"],
+          failedRunIds: [],
+          hasExternalWork: false,
+          updatedAt: "2026-04-12T16:00:00Z",
+        },
+      ],
+      runs: [
+        {
+          runId: "run_current",
+          turnId: "turn_current",
+          sessionId: "sess_006",
+          agentId: "default",
+          displayState: "running",
+          latestEventType: "run.started",
+          latestMessageId: "msg_current",
+          latestMessageText: "当前执行中",
+          summary: "",
+          externalTaskIds: [],
+          eventCount: 2,
+          updatedAt: "2026-04-12T16:00:00Z",
+        },
+        {
+          runId: "run_hist",
+          turnId: "turn_hist",
+          sessionId: "sess_006",
+          agentId: "reviewer",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessageId: "",
+          latestMessageText: "",
+          summary: "",
+          externalTaskIds: [],
+          eventCount: 1,
+          updatedAt: "2026-04-12T15:00:00Z",
+        },
+      ],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    });
+    getRunDetailMock
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce({
+        sessionId: "sess_006",
+        turnId: "turn_hist",
+        turn: {
+          turnId: "turn_hist",
+          sessionId: "sess_006",
+          primaryRunId: "run_hist",
+          currentRunId: "run_hist",
+          latestRunId: "run_hist",
+          latestAgentId: "reviewer",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessagePreview: "已重试恢复",
+          eventCount: 5,
+          runCount: 1,
+          activeRunCount: 0,
+          completedRunCount: 1,
+          failedRunCount: 0,
+          activeRunIds: [],
+          completedRunIds: ["run_hist"],
+          failedRunIds: [],
+          hasExternalWork: false,
+          updatedAt: "2026-04-12T16:01:00Z",
+        },
+        run: {
+          runId: "run_hist",
+          turnId: "turn_hist",
+          sessionId: "sess_006",
+          agentId: "reviewer",
+          displayState: "completed",
+          latestEventType: "run.finished",
+          latestMessageId: "msg_hist",
+          latestMessageText: "done",
+          summary: "已重试恢复",
+          externalTaskIds: [],
+          eventCount: 5,
+          updatedAt: "2026-04-12T16:01:00Z",
+        },
+        externalActivities: [],
+        externalMessages: [],
+        externalTasks: [],
+      });
+
+    render(<App />);
+
+    expect(await screen.findByText("detail retry session")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /reviewercompletedWaiting for output\.\.\./ }));
+
+    await waitFor(() =>
+      expect(getRunDetailMock).toHaveBeenCalledWith("sess_006", "run_hist"),
+    );
+    expect(await screen.findByText("Failed to load run detail.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry Detail" }));
+
+    await waitFor(() => expect(getRunDetailMock).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getAllByText("已重试恢复").length).toBeGreaterThan(0),
+    );
+  });
+
   it("sends continue_turn from Add Hint when the current turn is waiting for input", async () => {
     vi.stubGlobal("prompt", vi.fn().mockReturnValue("请补充错误边界和回退策略"));
 

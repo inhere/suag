@@ -33,6 +33,7 @@ type AppShellProps = {
   externalActivities?: StateSnapshotExternalActivity[];
   externalMessages?: StateSnapshotExternalMessage[];
   focusedRunId?: string | null;
+  focusedRunDetailStatus?: "idle" | "loading" | "loaded" | "error";
   hitlTickets?: HITLTicket[];
   hitlLoading?: boolean;
   canStop?: boolean;
@@ -45,6 +46,7 @@ type AppShellProps = {
   onFilterChange?: (filter: SessionFilter) => void;
   onSubmitMessage?: (message: string) => void;
   onFocusRun?: (runId: string) => void;
+  onRetryFocusedRunDetail?: () => void;
   onRefreshHITL?: () => void;
   onOpenHITLContext?: (ticket: HITLTicket) => void;
   onRespondHITL?: (ticketId: string, instruction: string) => Promise<void> | void;
@@ -72,6 +74,7 @@ export function AppShell({
   externalActivities = [],
   externalMessages = [],
   focusedRunId = null,
+  focusedRunDetailStatus = "idle",
   hitlTickets = [],
   hitlLoading = false,
   canStop = false,
@@ -84,6 +87,7 @@ export function AppShell({
   onFilterChange = () => {},
   onSubmitMessage = () => {},
   onFocusRun = () => {},
+  onRetryFocusedRunDetail = () => {},
   onRefreshHITL = () => {},
   onOpenHITLContext = () => {},
   onRespondHITL = () => {},
@@ -132,7 +136,9 @@ export function AppShell({
               externalActivities={externalActivities}
               externalMessages={externalMessages}
               focusedRunId={focusedRunId}
+              focusedRunDetailStatus={focusedRunDetailStatus}
               onFocusRun={onFocusRun}
+              onRetryFocusedRunDetail={onRetryFocusedRunDetail}
               canStop={canStop}
               onStop={onStop}
               canAddHint={canAddHint}
