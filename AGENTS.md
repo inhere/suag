@@ -52,6 +52,7 @@
 - `web/app/src/app/App.tsx`、`web/app/src/features/conversation`、`web/app/src/features/run-inspector` 与 `web/app/src/features/hitl` 已补齐第一轮提交中状态反馈，当前创建 session、发起 turn、继续输入、停止 turn、HITL respond/dismiss 都会展示按钮禁用与提交中文案，减少联调时的重复点击和卡住误判
 - `web/app/src/app/App.tsx`、`web/app/src/features/session-list`、`web/app/src/features/conversation`、`web/app/src/features/run-inspector` 与 `web/app/src/features/hitl` 已补齐第一轮失败反馈闭环，当前创建 session、发起/继续/停止 turn 以及 HITL respond 失败时都会在原位置展示内联错误提示，不再只剩按钮恢复导致联调时难以判断失败原因
 - `docs/superpowers/specs/2026-04-14-agentcore-platform-contract-alignment-design.md` 已补齐 agentcore 与 platform contract 收口设计，当前已明确在构建 Host internal `session runner` 之前，先完成 `llm / tools / memory` 围绕 `pkg/agentcore/api` 的第一方收口，并同步规划 `llm.api_type` 配置演进
+- `docs/superpowers/plans/2026-04-14-agentcore-llm-contract-alignment-phase1.md` 已补齐第一阶段实施计划，当前先聚焦 `agentcore/api + platform/llm + agentcore runner + llm.api_type/provider_name` 收口，不提前进入 Host internal `session runner` 实装
 
 <!-- PROCESSING WORKS:END -->
 
