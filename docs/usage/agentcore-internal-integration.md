@@ -23,12 +23,8 @@
 补充判断：
 
 - `internaltools`、`internalmemory`
-  - 已不再是主路径依赖
-  - 现在主要承担旧 import path 的兼容职责
-- `internalllm`
-  - 也已不再是主路径依赖
-  - 但仍作为 legacy bridge 保留，尚未删除
-
+  - 原先是迁移期桥接层
+  - 现在已经删除，相关能力已迁回第一方实现
 也就是说，当前最适合的方式是：
 
 - 先把 `internal/llm`、`internal/tools` 与 runtime-facing `memory` 收口到 `agentcore`
@@ -48,7 +44,7 @@
 - 都有 message / tool schema / finish reason
 - 差异主要在类型形状和 finish reason 枚举
 
-因此现在主路径已经可以直接把 `internal/llm.Provider` 接到 `agentcore.Runtime` 上，`internal/acadapters/internalllm` 主要保留给旧 import path 和迁移期兼容调用。
+因此现在主路径已经可以直接把 `internal/llm.Provider` 接到 `agentcore.Runtime` 上，不再需要额外的迁移期 provider bridge。
 
 ### 1.2 `internal/tools`
 
@@ -57,7 +53,7 @@
 - 能列出 schema
 - 能按工具名执行
 
-因此现在主路径已经可以直接把 `internal/tools.Registry` 接到 `agentcore.ToolRegistry` 上，`internal/acadapters/internaltools` 只保留为兼容旧 import path 的薄 shim。
+因此现在主路径已经可以直接把 `internal/tools.Registry` 接到 `agentcore.ToolRegistry` 上，不再需要额外的迁移期 tools bridge。
 
 ---
 
@@ -102,8 +98,6 @@
 - `memory.RuntimeMemory`
 
 用来把 richer `memory.Store` 暴露成第一方 `agentcore.Memory` 实现。
-
-`internal/acadapters/internalmemory` 现在只保留为兼容旧 import path 的薄 wrapper。
 
 这也让边界更清晰了：
 
@@ -195,7 +189,6 @@
 
 当前还没有完全完成的部分主要是：
 
-- `internal/acadapters/internalllm` 仍作为兼容 bridge 保留，尚未删除
 - `ReactRunner` 仍保留为 fallback / parity baseline
 - Host internal `session runner` 尚未开始接线
 - 关于 `ToolSchema` authority 与 `agentcore.Memory` 语义的文档说明还可以继续压实
@@ -210,10 +203,10 @@
 
 - 保持 `internal/llm` 不动
 - 保持 `internal/tools` 不动
-- 通过 `internal/acadapters/*` 连接 `agentcore`
+- 先通过迁移期桥接层验证 `agentcore`
 - 先在新入口或实验入口中验证 runtime 行为
 
-这是已经完成并经过当前主路径演进验证的阶段记录。
+这是已经完成的历史阶段记录；相关迁移期 `internal/acadapters` 已在后续收口中删除。
 
 ### 阶段 2：抽出 internal 的 run-state persistence，并分离 memory/context 层
 
@@ -263,9 +256,6 @@
 - `pkg/agentcore`
   - 不依赖任何 `internal/*`
   - 只放公共 contract、默认实现、纯公共辅助包
-- `internal/acadapters`
-  - 放仓库内部桥接层
-  - 允许依赖 `internal/llm`、`internal/tools`、`internal/memory`
 - `internal/agent`
   - 逐步退化为更高层 agent 角色与配置模型
 - `internal/orchestrator`

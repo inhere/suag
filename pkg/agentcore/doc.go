@@ -52,8 +52,7 @@ Resume semantics are also explicit. A stable RunID identifies the run being
 continued, and ResumeMode controls whether a new user input is appended or the
 runtime should continue strictly from persisted state.
 
-Repository-specific adapters that bridge Axon's internal packages into
-agentcore live under internal/agentcoreadapters so this package can stay
-independent from repository-private runtime layers.
+Repository-specific first-party implementations can live in repository-private
+packages while agentcore itself stays independent from internal runtime layers.
 */
 package agentcore

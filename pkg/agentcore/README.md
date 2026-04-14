@@ -240,7 +240,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - 当前对外最直接的 runtime 构造入口仍然是 `agentcore.New(...)`
 - `api/` 主要面向扩展实现和 adapter，承接稳定 contract
 - `agentcore` 本身不应依赖仓库的 `internal/*` 包
-- 与 Axon 内部 `llm`、`tools` 等实现的桥接 adapter 放在 `internal/agentcoreadapters/`
+- 与 Axon 内部实现相关的第一方集成代码放在仓库私有 `internal/*` 下
 
 如果你想看 authority helpers 的实际消费方式，当前可以直接看：
 
@@ -500,18 +500,18 @@ go run ./examples/agentcore/bridge
 - replay 时不会丢失模型当时的工具决策
 - 不同 provider / adapter 可以围绕统一的 `Message` 契约工作
 
-## Axon Internal Adapters
+## Axon Internal Integration
 
-如果你想桥接 Axon 仓库当前内部实现，请看：
+如果你想复用 Axon 仓库当前内部实现，请看：
 
-- `internal/agentcoreadapters/internalllm`
-- `internal/agentcoreadapters/internalmemory`
-- `internal/agentcoreadapters/internaltools`
+- `internal/platform/llm`
+- `internal/platform/memory`
+- `internal/platform/tools`
 
 当前 internal 集成已经遵循同样的边界：
 
 - `internal/agentcorestorage` 提供 `agentcore.Storage`
-- `internal/memory` 通过 `internal/agentcoreadapters/internalmemory` 提供 `agentcore.Memory`
+- `internal/platform/memory` 通过 `RuntimeMemory` 提供 `agentcore.Memory`
 - `internal/agent.AgentcoreRunner` 把 external `Suspend/Resume` 语义映射到 `RunID + ResumeMode`
 
 ## Release Posture
@@ -523,7 +523,7 @@ go run ./examples/agentcore/bridge
 - 一个允许不同 provider / storage / memory / tool 适配器接入的嵌入式内核
 
 也就是说，它不应该依赖仓库的 `internal/*` 作为公共能力前提；
-internal 侧应通过 adapter 使用它，而不是反过来让 `agentcore` 依赖 internal。
+internal 侧可以基于第一方实现复用它，但不应该反过来让 `agentcore` 依赖 internal。
 
 更具体一点说，未来对外发布时更应该承诺的是：
 

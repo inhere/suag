@@ -161,6 +161,53 @@ func TestRegistry_Schemas_PreserveMetadataAndListStaysComplete(t *testing.T) {
 	}
 }
 
+func TestRegistry_ListTools_IsStableAndSortedByName(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(&schemaTool{name: "z-last"})
+	reg.Register(&schemaTool{name: "a-first"})
+	reg.Register(&schemaTool{name: "m-middle"})
+
+	for i := 0; i < 50; i++ {
+		schemas, err := reg.ListTools(context.Background())
+		if err != nil {
+			t.Fatalf("ListTools error: %v", err)
+		}
+		if len(schemas) != 3 {
+			t.Fatalf("schemas = %d, want 3", len(schemas))
+		}
+
+		got := []string{schemas[0].Name, schemas[1].Name, schemas[2].Name}
+		want := []string{"a-first", "m-middle", "z-last"}
+		for j := range want {
+			if got[j] != want[j] {
+				t.Fatalf("schemas order = %#v, want %#v", got, want)
+			}
+		}
+	}
+}
+
+func TestRegistry_ExecuteTool_PreservesRichResults(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(&richTool{name: "rich_echo"})
+
+	result, err := reg.ExecuteTool(context.Background(), api.ToolCall{
+		CallID: "call-rich",
+		Name:   "rich_echo",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool error: %v", err)
+	}
+	if result.CallID != "call-rich" || result.Name != "rich_echo" || result.Content != "rich:rich_echo" {
+		t.Fatalf("result = %#v, want original registry result metadata", result)
+	}
+	if len(result.Artifacts) != 1 || result.Artifacts[0].Content != "artifact body" {
+		t.Fatalf("artifacts = %#v, want preserved artifacts", result.Artifacts)
+	}
+	if result.Metadata["origin"] != "platform" {
+		t.Fatalf("metadata = %#v, want preserved metadata", result.Metadata)
+	}
+}
+
 func TestRegistry_AgentcoreToolRegistryContract(t *testing.T) {
 	agentcoretesting.RunToolRegistrySuite(t, func(t *testing.T) agentcoretesting.ToolRegistryFixture {
 		reg := NewRegistry()
@@ -251,6 +298,35 @@ func (m *schemaTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolRes
 		CallID:  call.CallID,
 		Name:    call.Name,
 		Content: fmt.Sprintf("schema:%s", m.name),
+	}, nil
+}
+
+type richTool struct {
+	name string
+}
+
+func (m *richTool) Name() string        { return m.name }
+func (m *richTool) Description() string { return "rich " + m.name }
+func (m *richTool) Kind() Kind          { return KindNative }
+func (m *richTool) Schema() llm.ToolSchema {
+	return llm.ToolSchema{
+		Name:        m.name,
+		Description: "rich " + m.name,
+		Parameters:  llm.SchemaProperty{Type: "object"},
+	}
+}
+func (m *richTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    call.Name,
+		Content: "rich:" + m.name,
+		Artifacts: []api.Artifact{{
+			Kind:    "text",
+			Content: "artifact body",
+		}},
+		Metadata: map[string]any{
+			"origin": "platform",
+		},
 	}, nil
 }
 

@@ -33,9 +33,9 @@
 - `internal/platform/llm`
 - `internal/platform/tools`
 - `internal/platform/memory`
-- `internal/acadapters/internalllm`
-- `internal/acadapters/internaltools`
-- `internal/acadapters/internalmemory`
+- 迁移期 `internal/acadapters/internalllm`
+- 迁移期 `internal/acadapters/internaltools`
+- 迁移期 `internal/acadapters/internalmemory`
 
 这组结构在迁移初期是合理的，因为它让旧 `internal/*` 能力可以快速桥接到 `agentcore` runtime。
 
@@ -96,7 +96,7 @@
 
 ### 3.3 `internal/acadapters/internal*` 是迁移期结构
 
-当前 `internalllm`、`internaltools`、`internalmemory` 三个 bridge 不作为长期架构层保留。
+原先的 `internalllm`、`internaltools`、`internalmemory` 三个 bridge 不作为长期架构层保留。
 
 它们的职责是：
 
@@ -128,12 +128,11 @@ Host Session internal runner 的实装排在 contract 收口之后。
 - `internal/platform/tools.Registry` 已直接实现 `agentcore/api.ToolRegistry`
 - 代表性 native tools 已升级到 `api.ToolResult` 返回形态
 - `internal/platform/memory` 已新增第一方 `RuntimeMemory`，直接实现 `agentcore/api.Memory`
-- `internal/acadapters/internaltools` 与 `internal/acadapters/internalmemory` 已缩成迁移期薄 shim
 - `internal/agent/AgentcoreRunner` 主路径已直接使用 `platform/tools` 与 `platform/memory`，不再依赖 `internaltools` / `internalmemory`
+- 迁移期 `internal/acadapters` 已完成删除，相关测试与文档已迁回第一方实现路径
 
 仍未完成、但已经缩到较小范围的项有：
 
-- `internal/acadapters/internalllm` 仍保留为旧 import path / 迁移期兼容层，还未删除
 - 文档层面对 `ToolSchema` authority 和 `ToolResult / Memory` contract 语义的说明仍可继续精炼
 - Host internal `session runner` 仍未开始实现，这本来就不在本轮范围内
 
@@ -171,7 +170,7 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 - `internal/platform/llm` 直接围绕 `agentcore/api.Provider` 组织
 - `OpenAIProvider`、`ClaudeProvider`、`DeepSeekProvider` 直接实现新的 contract
-- `internalllm` bridge 仍保留为兼容层，但已经不再是主路径依赖
+- 原有 `internalllm` bridge 已完成删除，主路径与测试都已改为直接使用第一方 provider
 
 #### 5.1.1 `llm` 侧对 `agentcore/api` 的缺口判断
 
@@ -239,7 +238,7 @@ Host Session internal runner 的实装排在 contract 收口之后。
   - 运行时视图
   - 直接实现 `agentcore/api.Memory`
 
-也就是说，原来由 `internalmemory` adapter 承载的 runtime-facing 语义已经回收到 `internal/platform/memory` 模块内部，`acadapters/internalmemory` 只剩兼容层职责。
+也就是说，原来由 `internalmemory` adapter 承载的 runtime-facing 语义已经回收到 `internal/platform/memory` 模块内部，兼容层职责也已完成移除。
 
 ---
 
@@ -442,8 +441,7 @@ llm:
 - 已完成：`internal/platform/llm` 直接实现 `agentcore/api.Provider`
 - 已完成：`internal/platform/tools` 直接实现 `agentcore/api.ToolRegistry`
 - 已完成：`internal/platform/memory` 模块内直接提供 `api.Memory` 实现
-- 部分完成：`internal/acadapters/internalllm`、`internaltools`、`internalmemory` 不再是主路径依赖
-  当前 `internaltools` / `internalmemory` 已退出主路径，`internalllm` 也已退出主路径，但仍保留兼容实现和测试覆盖
+- 已完成：迁移期 `internal/acadapters` 已不再保留，相关行为验证已迁回第一方实现路径
 - 已完成：`buildLLMProvider()` 已切到 `api_type + provider_name` 的配置模型
 - 已完成：`internal/agent`、`internal/orchestrator`、`internal/team` 已不需要依赖 `internaltools` / `internalmemory` 才能使用 `agentcore`
 
@@ -453,9 +451,9 @@ llm:
 
 这份设计在当前阶段的直接后续工作，不再是继续大规模收口 `tools / memory`，而是：
 
-1. 视需要继续缩减 `internalllm` 的存在感或明确其长期兼容策略
-2. 补齐剩余 contract 文档说明
-3. 在进入 Host internal `session runner` 前，先完成兼容层定位与文档语义收尾
+1. 补齐剩余 contract 文档说明
+2. 开始 Host internal `session runner` 设计与接线
+3. 继续压实与旧 `ReactRunner` 的行为对照和删除前置条件
 
 原始计划顺序如下，现保留为阶段记录：
 

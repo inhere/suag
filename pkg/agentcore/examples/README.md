@@ -120,7 +120,7 @@ go run ./examples/resume
 - 第一次 run 用稳定 `RunID` 执行并进入 `RunYielded`
 - 第二次 run 使用相同 `RunID` 和显式 `ResumeMode` 继续，而不是重新开始
 
-依赖 `internal/agentcoreadapters/*` 的桥接示例不属于 package-local examples，仍保留在仓库根：
+依赖仓库内部实现的集成示例不属于 package-local examples，仍保留在仓库根：
 
 ```bash
 go run ./examples/agentcore/bridge

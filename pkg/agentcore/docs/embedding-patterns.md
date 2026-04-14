@@ -56,26 +56,26 @@ runtime := agentcore.New(agentcore.Config{
 - [recommended-runtime.md](./recommended-runtime.md)
 - [host-integration.md](./host-integration.md)
 
-## 2. Pattern B: 通过 Adapter 桥接已有系统
+## 2. Pattern B: 复用已有第一方实现
 
 这是对已有 runtime 逐步迁移时更现实的方式。
 
-思路不是重写全部组件，而是把已有内部实现桥接到 `agentcore` 的公共 contract。
+思路不是重写全部组件，而是让已有实现直接围绕 `agentcore` 的公共 contract 组织。
 
-在 Axon 里，目前对应的 adapter 包包括：
+在 Axon 当前仓库里，更推荐直接复用这些第一方实现：
 
-- `internal/agentcoreadapters/internalllm`
-- `internal/agentcoreadapters/internalmemory`
-- `internal/agentcoreadapters/internaltools`
+- `internal/platform/llm`
+- `internal/platform/memory`
+- `internal/platform/tools`
 
 典型形态：
 
 ```go
 runtime := agentcore.New(agentcore.Config{
-	Provider: internalllm.NewProvider(existingProvider),
+	Provider: existingProvider,
 	Storage:  storage,
-	Memory:   internalmemory.New(existingMemoryStore),
-	Tools:    internaltools.NewRegistry(existingRegistry),
+	Memory:   memory.NewRuntimeMemory(existingMemoryStore),
+	Tools:    existingRegistry,
 })
 ```
 
@@ -93,9 +93,9 @@ runtime := agentcore.New(agentcore.Config{
 
 ### 注意点
 
-- adapter 应该依赖 `agentcore`，不要反向让 `agentcore` 依赖内部实现
-- 桥接层负责语义映射，不应该偷偷改写 core contract
-- 如果 adapter 逻辑越来越重，往往说明公共 contract 还需要升级
+- 第一方实现应该直接满足 `agentcore` contract，不要长期保留过渡桥接层
+- `agentcore` 仍不应该反向依赖内部实现
+- 如果一层兼容胶水越来越重，往往说明公共 contract 还需要升级，或者实现应该直接收口
 
 ## 3. 如何选择
 
@@ -113,16 +113,15 @@ runtime := agentcore.New(agentcore.Config{
 
 如果你当前在已有系统里引入 `agentcore`，推荐按这个顺序：
 
-1. 先桥接 `Provider`
-2. 再桥接 `ToolRegistry`
-3. 再桥接 `Storage`
-4. 再桥接 `Memory`
-5. 最后把外层 `Suspend/Resume` 语义对齐到 `RunID + ResumeMode`
+1. 先让 `Provider` 直接满足公共 contract
+2. 再让 `ToolRegistry` 直接满足公共 contract
+3. 明确 `Storage` 与 `Memory` 的职责分层
+4. 再把 `Suspend/Resume` 语义对齐到 `RunID + ResumeMode`
 
 这样做的原因是：
 
-- provider / tools 更容易桥接
-- transcript / resume 的 contract 收紧后，memory 桥接会更稳
+- provider / tools 更容易先收口
+- transcript / resume 的 contract 收紧后，memory 分层会更稳
 - 一开始先保证 core loop 语义一致，比一开始追求 feature parity 更重要
 
 ## 5. 什么时候该从 Adapter 走向原生实现
@@ -137,7 +136,6 @@ runtime := agentcore.New(agentcore.Config{
 理想状态是：
 
 - `agentcore` 提供长期稳定 contract
-- internal adapter 只承担过渡和桥接作用
 - 更高层系统逐步直接围绕 `agentcore` 构建
 
 ---

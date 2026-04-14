@@ -73,7 +73,7 @@
 
 ### `internal/agentcoreadapters`
 
-状态：`可复用候选`
+状态：`历史迁移层`
 
 原因：
 
@@ -298,7 +298,7 @@
 
 #### `internal/agentcoreadapters -> internal/acadapters`
 
-类型：`直接迁移/重命名优先`
+类型：`已完成并删除`
 
 原因：
 

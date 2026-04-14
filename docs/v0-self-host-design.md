@@ -400,7 +400,6 @@ internal/
   ops/
     hitl/
     cron/
-  acadapters/
   acstore/
 
 web/
@@ -410,16 +409,15 @@ web/
 
 #### 命名与分层说明
 
-- `agentcoreadapters` 建议统一收敛为 `acadapters`
 - `agentcorestorage` 建议统一收敛为 `acstore`
-- `acstore` 不放到 `acadapters` 下面
+- `acstore` 不作为桥接层目录的一部分
 
 原因是：
 
-- `acadapters` 是桥接层，负责把旧能力适配到 `pkg/agentcore`
 - `acstore` 是 `agentcore.Storage` 的具体实现层，不属于适配器
+- 迁移期桥接层已经完成历史使命，不再作为当前推荐目录保留
 
-因此两者应保持并列，而不是包含关系。
+因此当前结构里直接保留 `acstore` 与第一方实现层即可，不再继续扩展独立 adapter 目录。
 
 #### `pkg/` 与 `internal/` 的边界
 
