@@ -59,6 +59,7 @@
 - Phase 1 已完成 `internal/platform/llm` 到 `agentcore/api` 的第一轮收口，当前第一方 provider 已直接实现公共 contract，同时保留 `Complete / StreamText` 兼容 facade 以维持 `ReactRunner / cron / Pool` 等 legacy caller 正常工作
 - Phase 1 已完成 `internal/agent/agentcore_runner.go` 主路径去 adapter 化，当前 `BuildAgentcoreConfig()` 已直接使用 `platform/llm` provider，`internalllm` 回退为迁移期兼容层
 - Phase 1 已完成 `cmd/axon/main.go` 的 LLM 配置迁移，当前 `buildLLMProvider()` 优先使用 `llm.api_type + llm.provider_name`，并保留对旧 `llm.provider` 的兼容回退，同时已补齐 `cmd/axon/main_test.go` 与 `docs/usage/llm-config-v0.md`
+- 后续阶段已完成先计划再实施的范围收敛，当前已新增 `docs/superpowers/plans/2026-04-14-agentcore-tools-memory-alignment-phase2.md`，下一步先聚焦 `platform/tools` 与 `platform/memory` 的第一方收口，再进入 Host internal `session runner`
 
 <!-- PROCESSING WORKS:END -->
 
