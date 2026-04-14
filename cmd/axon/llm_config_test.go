@@ -11,21 +11,17 @@ func TestNormalizeLLMProviderSettings_PrefersAPITypeAndProviderName(t *testing.T
 	settings := normalizeLLMProviderSettings(llmProviderSettings{
 		APIType:      "openai",
 		ProviderName: "deepseek",
-		LegacyName:   "claude",
 	})
 
 	assert.Eq(t, "openai", settings.APIType)
 	assert.Eq(t, "deepseek", settings.ProviderName)
-	assert.Eq(t, "claude", settings.LegacyName)
 }
 
-func TestNormalizeLLMProviderSettings_FallsBackFromLegacyProvider(t *testing.T) {
-	settings := normalizeLLMProviderSettings(llmProviderSettings{
-		LegacyName: "deepseek",
-	})
+func TestNormalizeLLMProviderSettings_DefaultsAPITypeToOpenAI(t *testing.T) {
+	settings := normalizeLLMProviderSettings(llmProviderSettings{})
 
 	assert.Eq(t, "openai", settings.APIType)
-	assert.Eq(t, "deepseek", settings.ProviderName)
+	assert.Eq(t, "openai", settings.ProviderName)
 }
 
 func TestNormalizeLLMProviderSettings_DefaultsAnthropicProviderName(t *testing.T) {

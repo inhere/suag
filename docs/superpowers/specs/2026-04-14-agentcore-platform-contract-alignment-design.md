@@ -123,7 +123,7 @@ Host Session internal runner 的实装排在 contract 收口之后。
 截至当前阶段，这份设计里的 Phase 2 已完成下面几项：
 
 - `pkg/agentcore/api` 已补齐可选 `EmbeddingProvider` 扩展接口
-- `cmd/axon/main.go` 已切到 `llm.api_type + llm.provider_name` 配置模型，并保留旧 `llm.provider` 兼容回退
+- `cmd/axon/main.go` 已切到 `llm.api_type + llm.provider_name` 配置模型
 - `internal/platform/llm` 已直接围绕 `agentcore/api.Provider` 组织，主路径不再依赖 `internalllm`
 - `internal/platform/tools.Registry` 已直接实现 `agentcore/api.ToolRegistry`
 - 代表性 native tools 已升级到 `api.ToolResult` 返回形态
@@ -299,16 +299,9 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 ### 7.1 当前问题
 
-当前配置仍然是：
+当前 v0 的目标配置形态是将协议类型和厂商标签拆开，而不是继续维持单一 `llm.provider` 顶层枚举。
 
-- `llm.provider: openai | claude | deepseek`
-
-这会把两类维度混在一起：
-
-- 协议类型
-- 厂商名字
-
-但未来实际接入时会出现很多“同协议、不同品牌”的情况，例如：
+未来实际接入时会出现很多“同协议、不同品牌”的情况，例如：
 
 - OpenAI
 - DeepSeek

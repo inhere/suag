@@ -1,13 +1,14 @@
 # axon configuration
 # Override any value with AXON_<KEY> environment variables
-# e.g. AXON_LLM_API_KEY, AXON_LLM_PROVIDER
+# e.g. AXON_LLM_API_KEY, AXON_LLM_API_TYPE, AXON_LLM_PROVIDER_NAME
 
 # LLM provider settings
 llm:
-  provider: openai           # openai | claude | deepseek
+  api_type: openai          # openai | anthropic
+  provider_name: openai     # openai | deepseek | claude | custom
   model: glm-5              # model name
   api_key: "${BAILIAN_API_KEY}"                # set via env: OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY
-  base_url: "${BAILIAN_BASE_URL}"               # optional override (e.g. for Ollama: http://localhost:11434/v1)
+  base_url: "${BAILIAN_BASE_URL}"              # optional override (e.g. for OpenAI-compatible gateways)
 
 # Workspace directory for file and shell tools
 # Defaults to current working directory

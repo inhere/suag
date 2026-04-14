@@ -81,10 +81,12 @@ func buildApp() (*app, error) {
 	}
 
 	// ── LLM provider ──────────────────────────────────────────────────────────
-	provider, err := buildLLMProvider()
+	llmSettings := readLLMProviderSettings()
+	provider, err := buildLLMProviderFromSettings(llmSettings)
 	if err != nil {
 		return nil, err
 	}
+	slog.Info("llm provider configured", llmSettings.logArgs()...)
 
 	// ── Tool registry ─────────────────────────────────────────────────────────
 	registry := tools.NewRegistry()

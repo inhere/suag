@@ -41,27 +41,9 @@ llm:
 - `llm.base_url`
   用于覆盖协议默认 endpoint，适合 OpenAI-compatible 网关或自建代理。
 
-## 兼容迁移规则
-
-当前 `cmd/axon` 仍保留对旧配置 `llm.provider` 的兼容回退：
-
-- `llm.provider: openai`
-  会映射为：
-  - `api_type: openai`
-  - `provider_name: openai`
-- `llm.provider: deepseek`
-  会映射为：
-  - `api_type: openai`
-  - `provider_name: deepseek`
-- `llm.provider: claude`
-  会映射为：
-  - `api_type: anthropic`
-  - `provider_name: claude`
-
-也就是说，旧配置暂时还能跑，但新的 v0 文档和后续扩展都应以 `api_type + provider_name` 为准。
-
 ## 说明
 
 - 统一使用 `anthropic` 拼写，不使用 `authropic`。
 - `provider_name` 主要是兼容和标识维度，不替代 `api_type` 的协议选择职责。
-- 后续如果新增 `openrouter`、自建 OpenAI-compatible gateway 等，优先扩展 `provider_name`，而不是继续膨胀顶层 `llm.provider` 分支。
+- v0 当前只认 `api_type + provider_name`，不再推荐也不再维护旧 `llm.provider` 配置写法。
+- 后续如果新增 `openrouter`、自建 OpenAI-compatible gateway 等，优先扩展 `provider_name`，而不是重新引入顶层 `llm.provider` 分支。

@@ -12,21 +12,33 @@ import (
 
 // llmProviderSettings is the normalized provider configuration used by the CLI
 // app wiring. It keeps protocol selection and vendor labeling separate so the
-// rest of the runtime does not need to understand legacy config fallbacks.
+// rest of the runtime can assemble providers from a single v0 config shape.
 type llmProviderSettings struct {
 	APIType      string
 	ProviderName string
-	LegacyName   string
 	Model        string
 	APIKey       string
 	BaseURL      string
+}
+
+func (s llmProviderSettings) logArgs() []any {
+	args := []any{
+		"api_type", s.APIType,
+		"provider_name", s.ProviderName,
+	}
+	if s.Model != "" {
+		args = append(args, "model", s.Model)
+	}
+	if s.BaseURL != "" {
+		args = append(args, "base_url", s.BaseURL)
+	}
+	return args
 }
 
 func readLLMProviderSettings() llmProviderSettings {
 	settings := llmProviderSettings{
 		APIType:      normalizeConfigToken(config.String("llm.api_type")),
 		ProviderName: normalizeConfigToken(config.String("llm.provider_name")),
-		LegacyName:   normalizeConfigToken(config.String("llm.provider", "openai")),
 		Model:        strings.TrimSpace(config.String("llm.model")),
 		APIKey:       strings.TrimSpace(config.String("llm.api_key")),
 		BaseURL:      strings.TrimSpace(config.String("llm.base_url")),
@@ -38,23 +50,7 @@ func normalizeLLMProviderSettings(settings llmProviderSettings) llmProviderSetti
 	normalized := settings
 
 	if normalized.APIType == "" {
-		switch normalized.LegacyName {
-		case "claude":
-			normalized.APIType = "anthropic"
-			if normalized.ProviderName == "" {
-				normalized.ProviderName = "claude"
-			}
-		case "deepseek":
-			normalized.APIType = "openai"
-			if normalized.ProviderName == "" {
-				normalized.ProviderName = "deepseek"
-			}
-		default:
-			normalized.APIType = "openai"
-			if normalized.ProviderName == "" {
-				normalized.ProviderName = firstNonEmpty(normalized.LegacyName, "openai")
-			}
-		}
+		normalized.APIType = "openai"
 	}
 
 	if normalized.ProviderName == "" {
