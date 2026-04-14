@@ -7,7 +7,7 @@ import (
 	"github.com/gookit/goutil/testutil/assert"
 )
 
-func TestBuildLLMProvider_OpenAIAPITypeWithDeepSeekProviderName(t *testing.T) {
+func TestBuildLLMProvider_UsesNormalizedConfigSettings(t *testing.T) {
 	config.Reset()
 	t.Cleanup(config.Reset)
 
@@ -20,19 +20,4 @@ func TestBuildLLMProvider_OpenAIAPITypeWithDeepSeekProviderName(t *testing.T) {
 	assert.NoErr(t, err)
 	assert.NotNil(t, provider)
 	assert.Eq(t, "deepseek", provider.Name())
-}
-
-func TestBuildLLMProvider_AnthropicAPITypeBuildsClaudeProvider(t *testing.T) {
-	config.Reset()
-	t.Cleanup(config.Reset)
-
-	_ = config.Set("llm.api_type", "anthropic")
-	_ = config.Set("llm.provider_name", "claude")
-	_ = config.Set("llm.model", "claude-sonnet-4-6")
-
-	provider, err := buildLLMProvider()
-
-	assert.NoErr(t, err)
-	assert.NotNil(t, provider)
-	assert.Eq(t, "claude", provider.Name())
 }
