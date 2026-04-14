@@ -118,6 +118,16 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 **先收口 contract，再构建 Host internal `session runner`。**
 
+### 3.5 当前实现进度
+
+截至当前阶段，这份设计里的 Phase 2 已完成下面几项：
+
+- `internal/platform/tools.Registry` 已直接实现 `agentcore/api.ToolRegistry`
+- 代表性 native tools 已升级到 `api.ToolResult` 返回形态
+- `internal/platform/memory` 已新增第一方 `RuntimeMemory`，直接实现 `agentcore/api.Memory`
+- `internal/acadapters/internaltools` 与 `internal/acadapters/internalmemory` 已缩成迁移期薄 shim
+- `internal/agent/AgentcoreRunner` 主路径已直接使用 `platform/tools` 与 `platform/memory`，不再依赖 `internaltools` / `internalmemory`
+
 ---
 
 ## 4. 非目标

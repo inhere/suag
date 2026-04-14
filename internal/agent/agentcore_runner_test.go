@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inhere/axon/internal/acadapters/internalmemory"
-	"github.com/inhere/axon/internal/acadapters/internaltools"
 	"github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/ops/hitl"
@@ -281,16 +279,16 @@ func TestBuildAgentcoreConfig_WiresCompatibleToolsAndMemory(t *testing.T) {
 
 	cfg := agent.BuildAgentcoreConfig(a, agent.AgentcoreRunnerConfig{})
 
-	toolAdapter, ok := cfg.Tools.(*internaltools.Registry)
+	toolRegistry, ok := cfg.Tools.(*tools.Registry)
 	if !ok {
-		t.Fatalf("tools type = %T, want *internaltools.Registry", cfg.Tools)
+		t.Fatalf("tools type = %T, want *tools.Registry", cfg.Tools)
 	}
-	memoryAdapter, ok := cfg.Memory.(*internalmemory.Adapter)
+	memoryAdapter, ok := cfg.Memory.(*memory.RuntimeMemory)
 	if !ok {
-		t.Fatalf("memory type = %T, want *internalmemory.Adapter", cfg.Memory)
+		t.Fatalf("memory type = %T, want *memory.RuntimeMemory", cfg.Memory)
 	}
 
-	schemas, err := toolAdapter.ListTools(context.Background())
+	schemas, err := toolRegistry.ListTools(context.Background())
 	if err != nil {
 		t.Fatalf("ListTools error: %v", err)
 	}
@@ -298,7 +296,7 @@ func TestBuildAgentcoreConfig_WiresCompatibleToolsAndMemory(t *testing.T) {
 		t.Fatalf("schemas = %#v, want echo schema", schemas)
 	}
 
-	toolResult, err := toolAdapter.ExecuteTool(context.Background(), agentcore.ToolCall{
+	toolResult, err := toolRegistry.ExecuteTool(context.Background(), agentcore.ToolCall{
 		CallID: "call-1",
 		Name:   "echo",
 		Arguments: map[string]any{

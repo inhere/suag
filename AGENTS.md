@@ -62,6 +62,7 @@
 - 后续阶段已完成先计划再实施的范围收敛，当前已新增 `docs/superpowers/plans/2026-04-14-agentcore-tools-memory-alignment-phase2.md`，下一步先聚焦 `platform/tools` 与 `platform/memory` 的第一方收口，再进入 Host internal `session runner`
 - Phase 2 已完成 `Task 0` 兼容护栏补齐，当前 `internal/platform/tools`、`internal/acadapters/internaltools`、`internal/platform/memory`、`internal/acadapters/internalmemory` 与 `internal/agent` 已有 no-regression 测试覆盖 schema/result、hydrate/context 与 `BuildAgentcoreConfig()` 现状 wiring
 - Phase 2 已完成 `Task 1-2` 的 tools 收口，当前 `internal/platform/tools` 已直接实现 `agentcore.ToolRegistry`，代表性 native tools 已升级为 `ToolResult` 返回，`internal/acadapters/internaltools` 已缩成直接委托 platform registry 的薄 shim
+- Phase 2 已完成 `Task 3-5` 的 memory 与主路径收口，当前 `internal/platform/memory` 已新增第一方 `RuntimeMemory`，`internal/acadapters/internalmemory` 已缩成薄 wrapper，`internal/agent/AgentcoreRunner` 主路径已直接使用 `platform/tools + platform/memory`，并同步更新 `docs/usage/agentcore-internal-integration.md` 与收口设计文档
 
 <!-- PROCESSING WORKS:END -->
 

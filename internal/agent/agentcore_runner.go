@@ -6,10 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/acadapters/internalmemory"
-	"github.com/inhere/axon/internal/acadapters/internaltools"
 	"github.com/inhere/axon/internal/ops/hitl"
 	"github.com/inhere/axon/internal/platform/llm"
+	"github.com/inhere/axon/internal/platform/memory"
 	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/pkg/agentcore"
 )
@@ -54,7 +53,7 @@ func BuildAgentcoreConfig(a *Agent, cfg AgentcoreRunnerConfig) agentcore.Config 
 		Provider:            provider,
 		Storage:             cfg.Storage,
 		Memory:              resolveMemory(a),
-		Tools:               internaltools.NewRegistry(a.Tools),
+		Tools:               resolveTools(a),
 		PromptBuilder:       resolvePromptBuilder(a, cfg.PromptBuilder),
 		ContextBuilder:      cfg.ContextBuilder,
 		ResumePolicy:        cfg.ResumePolicy,
@@ -273,7 +272,14 @@ func resolveMemory(a *Agent) agentcore.Memory {
 	if a == nil || a.Memory == nil {
 		return nil
 	}
-	return internalmemory.New(a.Memory)
+	return memory.NewRuntimeMemory(a.Memory)
+}
+
+func resolveTools(a *Agent) agentcore.ToolRegistry {
+	if a == nil || a.Tools == nil {
+		return nil
+	}
+	return a.Tools
 }
 
 type soulPromptBuilder struct {

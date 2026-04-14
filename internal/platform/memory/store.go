@@ -28,7 +28,9 @@ type SearchResult struct {
 	Score    float32
 }
 
-// Store is the unified memory interface used by agents.
+// Store is the richer backend memory interface used by internal agents.
+// It intentionally remains broader than agentcore api.Memory, which only
+// models the runtime-facing context layer.
 type Store interface {
 	// AddMessage appends a message to the conversation history.
 	AddMessage(role, content string)

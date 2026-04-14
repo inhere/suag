@@ -8,12 +8,12 @@
 结论先行：
 
 - `internal/llm`
-  - 可以通过 `internal/acadapters/internalllm` 接入
+  - 现在主路径已直接对齐 `agentcore.Provider`
 - `internal/tools`
-  - 可以通过 `internal/acadapters/internaltools` 接入
+  - 现在主路径已直接对齐 `agentcore.ToolRegistry`
 - `internal/memory`
   - 不应作为 `agentcore.Storage` 使用
-  - 现在更适合作为 `agentcore.Memory` 接入
+  - 现在已在 `internal/platform/memory` 模块内提供第一方 `agentcore.Memory` 实现
 - `internal/agent`
   - 已新增最小 `AgentcoreRunner` 桥接层，但默认执行路径仍保留旧 loop
 - `internal/orchestrator`
@@ -22,7 +22,7 @@
 
 也就是说，当前最适合的方式是：
 
-- 先把 `internal/llm` 和 `internal/tools` 桥接进 `agentcore`
+- 先把 `internal/llm`、`internal/tools` 与 runtime-facing `memory` 收口到 `agentcore`
 - 再决定是否逐步让 `internal/agent` / `internal/orchestrator` 改为基于 `agentcore` 运行
 
 ---
@@ -37,24 +37,16 @@
 - 都有 message / tool schema / finish reason
 - 差异主要在类型形状和 finish reason 枚举
 
-因此现在已经可以通过：
-
-- `internal/acadapters/internalllm`
-
-把 `internal/llm.Provider` 接到 `agentcore.Runtime` 上。
+因此现在主路径已经可以直接把 `internal/llm.Provider` 接到 `agentcore.Runtime` 上，`internal/acadapters/internalllm` 主要保留给旧 import path 和迁移期兼容调用。
 
 ### 1.2 `internal/tools`
 
-当前 `internal/tools.Registry` 也已经满足最关键的桥接条件：
+当前 `internal/tools.Registry` 已直接满足 `agentcore.ToolRegistry` 的关键 contract：
 
 - 能列出 schema
 - 能按工具名执行
 
-因此现在已经可以通过：
-
-- `internal/acadapters/internaltools`
-
-把 `internal/tools.Registry` 接到 `agentcore.ToolRegistry` 上。
+因此现在主路径已经可以直接把 `internal/tools.Registry` 接到 `agentcore.ToolRegistry` 上，`internal/acadapters/internaltools` 只保留为兼容旧 import path 的薄 shim。
 
 ---
 
@@ -94,11 +86,13 @@
 - 已持久化 transcript 重新加载后的对齐
   对应 `Memory.Hydrate`
 
-当前仓库已经新增：
+当前仓库已经在 `internal/platform/memory` 模块内新增：
 
-- `internal/acadapters/internalmemory`
+- `memory.RuntimeMemory`
 
-用来把 `internal/memory.Store` 接到 `agentcore.Memory` 上。
+用来把 richer `memory.Store` 暴露成第一方 `agentcore.Memory` 实现。
+
+`internal/acadapters/internalmemory` 现在只保留为兼容旧 import path 的薄 wrapper。
 
 这也让边界更清晰了：
 
@@ -123,7 +117,7 @@
 所以现状更准确的说法是：
 
 - `internal/agent` 已经可以通过 `AgentcoreRunner` 把 `LLM`、`Tools`、`Soul`、`Storage` 映射到 `agentcore.Config`
-- 同时也已经把 `Memory` 映射到 `agentcore.Memory`
+- 同时主路径里的 `Tools` 与 `Memory` 已直接使用 `internal/platform/tools` 和 `internal/platform/memory` 的第一方实现
 - 但默认实现仍未完全收敛到单一 runtime
 
 另外，`AgentcoreRunner` 的恢复语义也已开始收敛到 `agentcore` 的公共模型：
