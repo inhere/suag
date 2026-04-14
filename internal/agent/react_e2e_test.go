@@ -13,6 +13,7 @@ import (
 	"github.com/inhere/axon/internal/platform/memory"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
+	"github.com/inhere/axon/pkg/agentcore"
 )
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -24,9 +25,13 @@ func (e *echoTool) Name() string           { return "echo" }
 func (e *echoTool) Description() string    { return "echo the msg argument" }
 func (e *echoTool) Kind() tools.Kind       { return tools.KindNative }
 func (e *echoTool) Schema() llm.ToolSchema { return llm.ToolSchema{Name: "echo"} }
-func (e *echoTool) Execute(_ context.Context, args map[string]any) (string, error) {
-	msg, _ := args["msg"].(string)
-	return "echo: " + msg, nil
+func (e *echoTool) Execute(_ context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
+	msg, _ := call.Arguments["msg"].(string)
+	return &agentcore.ToolResult{
+		CallID:  call.CallID,
+		Name:    call.Name,
+		Content: "echo: " + msg,
+	}, nil
 }
 
 // failTool always returns an error. Used to trigger HITL.
@@ -36,9 +41,9 @@ func (f *failTool) Name() string           { return "fail_tool" }
 func (f *failTool) Description() string    { return "always fails" }
 func (f *failTool) Kind() tools.Kind       { return tools.KindNative }
 func (f *failTool) Schema() llm.ToolSchema { return llm.ToolSchema{Name: "fail_tool"} }
-func (f *failTool) Execute(_ context.Context, _ map[string]any) (string, error) {
+func (f *failTool) Execute(_ context.Context, _ agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	f.callCount++
-	return "", fmt.Errorf("tool error #%d", f.callCount)
+	return nil, fmt.Errorf("tool error #%d", f.callCount)
 }
 
 func newTestRegistry(ts ...tools.Tool) *tools.Registry {

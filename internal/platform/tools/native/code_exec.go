@@ -10,6 +10,7 @@ import (
 
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
 const defaultExecTimeout = 30 * time.Second
@@ -48,10 +49,10 @@ func (t *ShellExecTool) Schema() llm.ToolSchema {
 	}
 }
 
-func (t *ShellExecTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	command, _ := args["command"].(string)
+func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	command, _ := call.Arguments["command"].(string)
 	if command == "" {
-		return "", fmt.Errorf("shell_exec: command is required")
+		return nil, fmt.Errorf("shell_exec: command is required")
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, t.timeout)
@@ -79,9 +80,13 @@ func (t *ShellExecTool) Execute(ctx context.Context, args map[string]any) (strin
 
 	if err != nil {
 		if ctx.Err() != nil {
-			return output, fmt.Errorf("shell_exec: timeout after %s", t.timeout)
+			return nil, fmt.Errorf("shell_exec: timeout after %s", t.timeout)
 		}
-		return output, fmt.Errorf("shell_exec exit %w: %s", err, output)
+		return nil, fmt.Errorf("shell_exec exit %w: %s", err, output)
 	}
-	return output, nil
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    t.Name(),
+		Content: output,
+	}, nil
 }

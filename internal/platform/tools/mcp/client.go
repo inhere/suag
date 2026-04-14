@@ -16,6 +16,7 @@ import (
 
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
 // ServerConfig describes an MCP server to connect to.
@@ -206,13 +207,13 @@ func (a *mcpToolAdapter) Schema() llm.ToolSchema {
 	}
 }
 
-func (a *mcpToolAdapter) Execute(ctx context.Context, args map[string]any) (string, error) {
+func (a *mcpToolAdapter) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	result, err := a.client.call(ctx, "tools/call", map[string]any{
 		"name":      a.def.Name,
-		"arguments": args,
+		"arguments": call.Arguments,
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	var resp struct {
 		Content []struct {
@@ -221,11 +222,19 @@ func (a *mcpToolAdapter) Execute(ctx context.Context, args map[string]any) (stri
 		} `json:"content"`
 	}
 	if err := json.Unmarshal(result, &resp); err != nil {
-		return string(result), nil
+		return &api.ToolResult{
+			CallID:  call.CallID,
+			Name:    a.def.Name,
+			Content: string(result),
+		}, nil
 	}
 	var buf bytes.Buffer
 	for _, c := range resp.Content {
 		buf.WriteString(c.Text)
 	}
-	return buf.String(), nil
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    a.def.Name,
+		Content: buf.String(),
+	}, nil
 }

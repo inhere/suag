@@ -30,9 +30,42 @@ func (t *echoTool) Schema() llm.ToolSchema {
 		},
 	}
 }
-func (t *echoTool) Execute(_ context.Context, args map[string]any) (string, error) {
-	t.lastArgs = cloneArgs(args)
-	return "echo:" + args["text"].(string), nil
+func (t *echoTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	t.lastArgs = cloneArgs(call.Arguments)
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    call.Name,
+		Content: "echo:" + call.Arguments["text"].(string),
+	}, nil
+}
+
+type richEchoTool struct{}
+
+func (t *richEchoTool) Name() string        { return "rich_echo" }
+func (t *richEchoTool) Description() string { return "Returns rich tool metadata" }
+func (t *richEchoTool) Kind() tools.Kind    { return tools.KindNative }
+func (t *richEchoTool) Schema() llm.ToolSchema {
+	return llm.ToolSchema{
+		Name:        "rich_echo",
+		Description: "Returns rich tool metadata",
+		Parameters: llm.SchemaProperty{
+			Type: "object",
+		},
+	}
+}
+func (t *richEchoTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    call.Name,
+		Content: "rich:" + call.Name,
+		Artifacts: []api.Artifact{{
+			Kind:    "text",
+			Content: "artifact body",
+		}},
+		Metadata: map[string]any{
+			"origin": "platform",
+		},
+	}, nil
 }
 
 func TestRegistryAdapter_ListsSchemasAndExecutes(t *testing.T) {
@@ -116,6 +149,30 @@ func TestRegistryAdapter_ListTools_IsStableAndSortedByName(t *testing.T) {
 	}
 }
 
+func TestRegistryAdapter_DelegatesRichToolResultsWithoutRemapping(t *testing.T) {
+	reg := tools.NewRegistry()
+	reg.Register(&richEchoTool{})
+
+	adapter := internaltools.NewRegistry(reg)
+
+	result, err := adapter.ExecuteTool(context.Background(), api.ToolCall{
+		CallID: "call-rich",
+		Name:   "rich_echo",
+	})
+	if err != nil {
+		t.Fatalf("expected execute tool to succeed, got %v", err)
+	}
+	if result.CallID != "call-rich" || result.Name != "rich_echo" || result.Content != "rich:rich_echo" {
+		t.Fatalf("result = %#v, want original platform result metadata", result)
+	}
+	if len(result.Artifacts) != 1 || result.Artifacts[0].Content != "artifact body" {
+		t.Fatalf("artifacts = %#v, want preserved platform artifacts", result.Artifacts)
+	}
+	if result.Metadata["origin"] != "platform" {
+		t.Fatalf("metadata = %#v, want preserved platform metadata", result.Metadata)
+	}
+}
+
 type namedEchoTool struct {
 	name string
 }
@@ -130,8 +187,12 @@ func (t *namedEchoTool) Schema() llm.ToolSchema {
 		Parameters:  llm.SchemaProperty{Type: "object"},
 	}
 }
-func (t *namedEchoTool) Execute(context.Context, map[string]any) (string, error) {
-	return t.name, nil
+func (t *namedEchoTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    call.Name,
+		Content: t.name,
+	}, nil
 }
 
 func cloneArgs(src map[string]any) map[string]any {

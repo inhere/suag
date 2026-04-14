@@ -10,6 +10,7 @@ import (
 
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
 // FileReadTool reads a file within the workspace.
@@ -49,16 +50,20 @@ func (t *FileReadTool) Schema() llm.ToolSchema {
 	}
 }
 
-func (t *FileReadTool) Execute(_ context.Context, args map[string]any) (string, error) {
-	path, err := sandboxedPath(t.workspace, args, "path")
+func (t *FileReadTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	path, err := sandboxedPath(t.workspace, call.Arguments, "path")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("file_read: %w", err)
+		return nil, fmt.Errorf("file_read: %w", err)
 	}
-	return string(data), nil
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    t.Name(),
+		Content: string(data),
+	}, nil
 }
 
 // ─── FileWriteTool ────────────────────────────────────────────────────────────
@@ -83,20 +88,24 @@ func (t *FileWriteTool) Schema() llm.ToolSchema {
 	}
 }
 
-func (t *FileWriteTool) Execute(_ context.Context, args map[string]any) (string, error) {
-	path, err := sandboxedPath(t.workspace, args, "path")
+func (t *FileWriteTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	path, err := sandboxedPath(t.workspace, call.Arguments, "path")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	content, _ := args["content"].(string)
+	content, _ := call.Arguments["content"].(string)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", fmt.Errorf("file_write mkdir: %w", err)
+		return nil, fmt.Errorf("file_write mkdir: %w", err)
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return "", fmt.Errorf("file_write: %w", err)
+		return nil, fmt.Errorf("file_write: %w", err)
 	}
-	return fmt.Sprintf("wrote %d bytes to %s", len(content), path), nil
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    t.Name(),
+		Content: fmt.Sprintf("wrote %d bytes to %s", len(content), path),
+	}, nil
 }
 
 // ─── FileListTool ─────────────────────────────────────────────────────────────
@@ -117,19 +126,19 @@ func (t *FileListTool) Schema() llm.ToolSchema {
 	}
 }
 
-func (t *FileListTool) Execute(_ context.Context, args map[string]any) (string, error) {
-	dirArg, _ := args["dir"].(string)
+func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	dirArg, _ := call.Arguments["dir"].(string)
 	if dirArg == "" {
 		dirArg = "."
 	}
 	base := filepath.Join(t.workspace, filepath.Clean(dirArg))
 	if !strings.HasPrefix(base, t.workspace) {
-		return "", fmt.Errorf("path escape: %q is outside workspace", dirArg)
+		return nil, fmt.Errorf("path escape: %q is outside workspace", dirArg)
 	}
 
 	entries, err := os.ReadDir(base)
 	if err != nil {
-		return "", fmt.Errorf("file_list: %w", err)
+		return nil, fmt.Errorf("file_list: %w", err)
 	}
 	var sb strings.Builder
 	for _, e := range entries {
@@ -139,7 +148,11 @@ func (t *FileListTool) Execute(_ context.Context, args map[string]any) (string, 
 			sb.WriteString(e.Name() + "\n")
 		}
 	}
-	return sb.String(), nil
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    t.Name(),
+		Content: sb.String(),
+	}, nil
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import (
 
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
 const skillTimeout = 60 * time.Second
@@ -43,14 +44,14 @@ func (t *SkillTool) Schema() llm.ToolSchema {
 	}
 }
 
-func (t *SkillTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+func (t *SkillTool) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	command := t.skill.Command
 
 	// Replace {{workspace}} placeholder.
 	command = strings.ReplaceAll(command, "{{workspace}}", t.workspace)
 
 	// Replace {{args.KEY}} placeholders.
-	for k, v := range args {
+	for k, v := range call.Arguments {
 		val, _ := v.(string)
 		command = strings.ReplaceAll(command, "{{args."+k+"}}", val)
 	}
@@ -73,12 +74,15 @@ func (t *SkillTool) Execute(ctx context.Context, args map[string]any) (string, e
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("skill %q timed out", t.skill.Name)
+			return nil, fmt.Errorf("skill %q timed out", t.skill.Name)
 		}
-		return strings.TrimSpace(stdout.String() + "\n" + stderr.String()),
-			fmt.Errorf("skill %q failed: %w", t.skill.Name, err)
+		return nil, fmt.Errorf("skill %q failed: %w", t.skill.Name, err)
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    t.skill.Name,
+		Content: strings.TrimSpace(stdout.String()),
+	}, nil
 }
 
 // LoadSkillsFromFile parses a SKILL.md file and returns ready-to-register SkillTools.

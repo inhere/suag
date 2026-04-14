@@ -12,6 +12,7 @@ import (
 
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
 // WebSearchTool performs web searches via SerpAPI.
@@ -49,13 +50,13 @@ func (t *WebSearchTool) Schema() llm.ToolSchema {
 	}
 }
 
-func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	query, _ := args["query"].(string)
+func (t *WebSearchTool) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	query, _ := call.Arguments["query"].(string)
 	if query == "" {
-		return "", fmt.Errorf("web_search: query is required")
+		return nil, fmt.Errorf("web_search: query is required")
 	}
 	num := "5"
-	if n, ok := args["num"].(string); ok && n != "" {
+	if n, ok := call.Arguments["num"].(string); ok && n != "" {
 		num = n
 	}
 
@@ -68,21 +69,29 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) (strin
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://serpapi.com/search?"+params.Encode(), nil)
 	if err != nil {
-		return "", fmt.Errorf("web_search build request: %w", err)
+		return nil, fmt.Errorf("web_search build request: %w", err)
 	}
 
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("web_search request: %w", err)
+		return nil, fmt.Errorf("web_search request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("web_search read response: %w", err)
+		return nil, fmt.Errorf("web_search read response: %w", err)
 	}
 
-	return t.formatResults(body)
+	content, err := t.formatResults(body)
+	if err != nil {
+		return nil, err
+	}
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    t.Name(),
+		Content: content,
+	}, nil
 }
 
 func (t *WebSearchTool) formatResults(data []byte) (string, error) {

@@ -32,8 +32,12 @@ func (echoTool) Schema() llm.ToolSchema {
 		},
 	}
 }
-func (echoTool) Execute(_ context.Context, args map[string]any) (string, error) {
-	return "tool:" + args["text"].(string), nil
+func (echoTool) Execute(_ context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
+	return &agentcore.ToolResult{
+		CallID:  call.CallID,
+		Name:    call.Name,
+		Content: "tool:" + call.Arguments["text"].(string),
+	}, nil
 }
 
 type yieldBeforeSecondModelHook struct {
