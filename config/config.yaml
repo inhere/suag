@@ -5,9 +5,9 @@
 # LLM provider settings
 llm:
   provider: openai           # openai | claude | deepseek
-  model: gpt-4o              # model name
-  api_key: ""                # set via env: OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY
-  base_url: ""               # optional override (e.g. for Ollama: http://localhost:11434/v1)
+  model: glm-5              # model name
+  api_key: "${BAILIAN_API_KEY}"                # set via env: OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY
+  base_url: "${BAILIAN_BASE_URL}"               # optional override (e.g. for Ollama: http://localhost:11434/v1)
 
 # Workspace directory for file and shell tools
 # Defaults to current working directory

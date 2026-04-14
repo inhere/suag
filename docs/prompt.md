@@ -99,3 +99,11 @@ see docs/superpowers/specs/2026-04-02-agentcore-design.md
 
 - 大致规划一下接下来要用的组件，技术栈选型 有一些我可能要考虑指定
 - 规划一下项目结构，避免让 internal 下的文件夹过多或者导致后期大调整
+
+vscode cc调用参数参考：
+
+```bash
+$ claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens 31999 \
+ --permission-prompt-tool stdio --setting-sources=user,project,local --permission-mode default --include-partial-messages \
+ --debug --debug-to-stderr --enable-auth-status --no-chrome --replay-user-messages
+```
