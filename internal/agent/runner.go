@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/inhere/axon/internal/ops/hitl"
-	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/memory"
 	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/pkg/agentcore"
@@ -110,12 +109,16 @@ func (r *ReactRunner) Run(ctx context.Context, task *Task) (*TaskResult, error) 
 		if err != nil {
 			return nil, fmt.Errorf("get context: %w", err)
 		}
+		toolSchemas, err := r.agent.Tools.ListTools(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list tools: %w", err)
+		}
 
 		// ── LLM call ──────────────────────────────────────────────────────────
 		ctx, llmSpan := r.tracer.StartSpan(ctx, r.agent.ID, "llm_call")
-		llmResp, llmErr := r.agent.LLM.Complete(ctx, &llm.CompletionRequest{
-			Messages:    memToLLMMessages(messages),
-			Tools:       r.agent.Tools.Schemas(),
+		llmResp, llmErr := r.agent.LLM.Generate(ctx, &agentcore.GenerateRequest{
+			Messages:    memToAgentcoreMessages(messages),
+			Tools:       toolSchemas,
 			MaxTokens:   4096,
 			Temperature: 0.2,
 			System:      system,
@@ -132,8 +135,8 @@ func (r *ReactRunner) Run(ctx context.Context, task *Task) (*TaskResult, error) 
 		r.tracer.FinishSpan(llmSpan, nil)
 
 		// ── Tool call branch ──────────────────────────────────────────────────
-		if llmResp.IsToolCall() {
-			if err := r.toolExecutionPolicy.ValidateToolCalls(ctx, r.currentRunState(step), toAgentcoreToolCalls(llmResp.ToolCalls)); err != nil {
+		if llmResp.FinishReason == agentcore.FinishToolCalls {
+			if err := r.toolExecutionPolicy.ValidateToolCalls(ctx, r.currentRunState(step), llmResp.ToolCalls); err != nil {
 				_ = r.sm.Transition(AgentFailed)
 				r.agent.State = AgentFailed
 				return nil, err
@@ -141,7 +144,7 @@ func (r *ReactRunner) Run(ctx context.Context, task *Task) (*TaskResult, error) 
 			for _, tc := range llmResp.ToolCalls {
 				result, toolErr := r.executeToolCall(ctx, tc)
 				if toolErr != nil {
-					decision := r.toolExecutionPolicy.HandleToolError(ctx, r.currentRunState(step), toAgentcoreToolCall(tc), toolErr)
+					decision := r.toolExecutionPolicy.HandleToolError(ctx, r.currentRunState(step), tc, toolErr)
 					if decision.Fail != nil {
 						_ = r.sm.Transition(AgentFailed)
 						r.agent.State = AgentFailed
@@ -188,7 +191,7 @@ func (r *ReactRunner) Run(ctx context.Context, task *Task) (*TaskResult, error) 
 			r.agent.Memory.AddMessage("assistant", llmResp.Content)
 		}
 
-		if llmResp.IsComplete() {
+		if llmResp.FinishReason == agentcore.FinishFinal {
 			_ = r.sm.Transition(AgentCompleted)
 			r.agent.State = AgentCompleted
 			taskSpan.Output = llmResp.Content
@@ -243,7 +246,7 @@ func (r *ReactRunner) Resume(instruction string) error {
 
 // ─── internals ────────────────────────────────────────────────────────────────
 
-func (r *ReactRunner) executeToolCall(ctx context.Context, tc llm.ToolCall) (string, error) {
+func (r *ReactRunner) executeToolCall(ctx context.Context, tc agentcore.ToolCall) (string, error) {
 	ctx, span := r.tracer.StartSpan(ctx, r.agent.ID, "tool_call")
 	span.Meta["tool"] = tc.Name
 	result, err := r.agent.Tools.Execute(ctx, tc.Name, tc.Arguments)
@@ -377,25 +380,6 @@ func resolveReactErrorPolicy(policy agentcore.ErrorPolicy) agentcore.ErrorPolicy
 	return agentcore.DefaultErrorPolicy{}
 }
 
-func toAgentcoreToolCalls(toolCalls []llm.ToolCall) []agentcore.ToolCall {
-	if len(toolCalls) == 0 {
-		return nil
-	}
-	out := make([]agentcore.ToolCall, 0, len(toolCalls))
-	for _, tc := range toolCalls {
-		out = append(out, toAgentcoreToolCall(tc))
-	}
-	return out
-}
-
-func toAgentcoreToolCall(tc llm.ToolCall) agentcore.ToolCall {
-	return agentcore.ToolCall{
-		CallID:    tc.ID,
-		Name:      tc.Name,
-		Arguments: tc.Arguments,
-	}
-}
-
 type reactDefaultToolExecutionPolicy struct{}
 
 func (reactDefaultToolExecutionPolicy) ValidateToolCalls(context.Context, *agentcore.RunState, []agentcore.ToolCall) error {
@@ -412,11 +396,11 @@ func (reactDefaultToolExecutionPolicy) HandleToolError(_ context.Context, _ *age
 	}
 }
 
-// memToLLMMessages converts memory.Message slice to llm.Message slice.
-func memToLLMMessages(msgs []memory.Message) []llm.Message {
-	out := make([]llm.Message, len(msgs))
+// memToAgentcoreMessages converts memory.Message slice to agentcore.Message slice.
+func memToAgentcoreMessages(msgs []memory.Message) []agentcore.Message {
+	out := make([]agentcore.Message, len(msgs))
 	for i, m := range msgs {
-		out[i] = llm.Message{Role: m.Role, Content: m.Content}
+		out[i] = agentcore.Message{Role: m.Role, Content: m.Content}
 	}
 	return out
 }

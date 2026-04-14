@@ -363,9 +363,11 @@ func TestReactLoop_ManualStepThrough(t *testing.T) {
 	}
 	reply1(llm.MockResponse{
 		ToolCalls: []llm.ToolCall{{
-			ID:        "c1",
-			Name:      "echo",
-			Arguments: map[string]any{"msg": "ping"},
+			ID:   "c1",
+			Name: "echo",
+			Arguments: map[string]any{
+				"msg": "ping",
+			},
 		}},
 	})
 

@@ -33,6 +33,13 @@ func TestScheduler_RunJob_CanParseNoActionDecision(t *testing.T) {
 	if provider.CallCount() != 1 {
 		t.Fatalf("provider call count = %d, want 1", provider.CallCount())
 	}
+	calls := provider.Calls()
+	if len(calls) != 1 {
+		t.Fatalf("provider calls = %d, want 1", len(calls))
+	}
+	if len(calls[0].Messages) != 1 || calls[0].Messages[0].Role != "user" {
+		t.Fatalf("decision request messages = %#v, want single user prompt", calls[0].Messages)
+	}
 }
 
 func TestScheduler_RunJob_CanTriggerOrchestratorExecution(t *testing.T) {

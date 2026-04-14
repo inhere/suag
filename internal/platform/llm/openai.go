@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net/http"
 	"time"
@@ -79,15 +78,6 @@ func (p *OpenAIProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 	return p.parseResponse(respBody)
 }
 
-// Complete keeps the legacy completion facade for pre-agentcore callers.
-func (p *OpenAIProvider) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
-	res, err := p.Generate(ctx, toGenerateRequest(req))
-	if err != nil {
-		return nil, err
-	}
-	return fromGenerateResult(res), nil
-}
-
 // Stream implements the public streaming contract. This first iteration keeps
 // behavior simple by emitting the final content as a single delta.
 func (p *OpenAIProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
@@ -107,21 +97,6 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateR
 		}
 	}
 	return resp, nil
-}
-
-// StreamText keeps the legacy channel-based streaming facade for migration callers.
-func (p *OpenAIProvider) StreamText(ctx context.Context, req *CompletionRequest) (<-chan string, error) {
-	ch := make(chan string, 1)
-	go func() {
-		defer close(ch)
-		resp, err := p.Complete(ctx, req)
-		if err != nil {
-			slog.Error("stream complete error", "err", err)
-			return
-		}
-		ch <- resp.Content
-	}()
-	return ch, nil
 }
 
 // Embed implements Provider.

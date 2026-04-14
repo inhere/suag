@@ -12,6 +12,7 @@ import (
 	"github.com/inhere/axon/internal/orchestrator"
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/pkg/agentcore"
 )
 
 // Scheduler runs agentic cron jobs on their configured schedules.
@@ -89,8 +90,8 @@ func (s *Scheduler) runJob(ctx context.Context, job *Job) {
 		prompt = fmt.Sprintf("Based on the following data, should I take action? Respond with JSON {\"action\": bool, \"reason\": string}.\n\nData:\n%s", senseData)
 	}
 
-	decResp, err := s.llm.Complete(ctx, &llm.CompletionRequest{
-		Messages:    []llm.Message{{Role: "user", Content: prompt}},
+	decResp, err := s.llm.Generate(ctx, &agentcore.GenerateRequest{
+		Messages:    []agentcore.Message{{Role: "user", Content: prompt}},
 		MaxTokens:   256,
 		Temperature: 0.1,
 	})

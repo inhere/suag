@@ -46,15 +46,6 @@ func (p *Pool) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) 
 	return nil, fmt.Errorf("all providers failed: %w", lastErr)
 }
 
-// Complete keeps the legacy completion facade for migration callers.
-func (p *Pool) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
-	resp, err := p.Generate(ctx, toGenerateRequest(req))
-	if err != nil {
-		return nil, err
-	}
-	return fromGenerateResult(resp), nil
-}
-
 // Stream implements the public streaming contract.
 func (p *Pool) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 	p.mu.RLock()
@@ -75,20 +66,6 @@ func (p *Pool) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, em
 		lastErr = err
 	}
 	return nil, fmt.Errorf("all providers failed for stream: %w", lastErr)
-}
-
-// StreamText keeps the legacy channel-based streaming helper.
-func (p *Pool) StreamText(ctx context.Context, req *CompletionRequest) (<-chan string, error) {
-	ch := make(chan string, 1)
-	go func() {
-		defer close(ch)
-		resp, err := p.Complete(ctx, req)
-		if err != nil || resp == nil {
-			return
-		}
-		ch <- resp.Content
-	}()
-	return ch, nil
 }
 
 // Embed uses the dedicated embed provider if set, otherwise tries the pool.

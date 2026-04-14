@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	agentcoreapi "github.com/inhere/axon/pkg/agentcore/api"
 )
 
 // ── scripted mode ─────────────────────────────────────────────────────────────
@@ -15,20 +17,20 @@ func TestMockProvider_ScriptedText(t *testing.T) {
 		QueueText("second reply")
 
 	ctx := context.Background()
-	req := &CompletionRequest{Messages: []Message{{Role: "user", Content: "hi"}}}
+	req := &agentcoreapi.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "hi"}}}
 
-	resp, err := m.Complete(ctx, req)
+	resp, err := m.Generate(ctx, req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if resp.Content != "hello world" {
 		t.Errorf("content = %q, want %q", resp.Content, "hello world")
 	}
-	if resp.FinishReason != "stop" {
-		t.Errorf("finish_reason = %q, want stop", resp.FinishReason)
+	if resp.FinishReason != agentcoreapi.FinishFinal {
+		t.Errorf("finish_reason = %q, want final", resp.FinishReason)
 	}
 
-	resp2, _ := m.Complete(ctx, req)
+	resp2, _ := m.Generate(ctx, req)
 	if resp2.Content != "second reply" {
 		t.Errorf("content = %q, want %q", resp2.Content, "second reply")
 	}
@@ -44,15 +46,15 @@ func TestMockProvider_ScriptedToolCall(t *testing.T) {
 		QueueText("done")
 
 	ctx := context.Background()
-	req := &CompletionRequest{}
+	req := &agentcoreapi.GenerateRequest{}
 
 	// First call → tool call.
-	resp, err := m.Complete(ctx, req)
+	resp, err := m.Generate(ctx, req)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	if !resp.IsToolCall() {
-		t.Fatal("expected tool call response")
+	if resp.FinishReason != agentcoreapi.FinishToolCalls {
+		t.Fatalf("finish reason = %q, want tool_calls", resp.FinishReason)
 	}
 	if resp.ToolCalls[0].Name != "file_read" {
 		t.Errorf("tool name = %q, want file_read", resp.ToolCalls[0].Name)
@@ -62,12 +64,12 @@ func TestMockProvider_ScriptedToolCall(t *testing.T) {
 	}
 
 	// Second call → completion.
-	resp2, _ := m.Complete(ctx, req)
-	if resp2.IsToolCall() {
+	resp2, _ := m.Generate(ctx, req)
+	if len(resp2.ToolCalls) != 0 {
 		t.Error("expected non-tool response")
 	}
-	if !resp2.IsComplete() {
-		t.Error("expected IsComplete() == true")
+	if resp2.FinishReason != agentcoreapi.FinishFinal {
+		t.Errorf("finish reason = %q, want final", resp2.FinishReason)
 	}
 }
 
@@ -75,7 +77,7 @@ func TestMockProvider_ScriptedError(t *testing.T) {
 	sentinel := errors.New("rate limited")
 	m := NewMockProvider("test").QueueError(sentinel)
 
-	_, err := m.Complete(context.Background(), &CompletionRequest{})
+	_, err := m.Generate(context.Background(), &agentcoreapi.GenerateRequest{})
 	if !errors.Is(err, sentinel) {
 		t.Errorf("err = %v, want %v", err, sentinel)
 	}
@@ -101,21 +103,18 @@ func TestMockProvider_ManualMode(t *testing.T) {
 	m := NewMockProvider("manual")
 	ctx := context.Background()
 
-	// Fire Complete() asynchronously — it will block until we reply.
 	type result struct {
-		resp *CompletionResponse
+		resp *agentcoreapi.GenerateResult
 		err  error
 	}
 	ch := make(chan result, 1)
 	go func() {
-		resp, err := m.Complete(ctx, &CompletionRequest{
-			Messages: []Message{{Role: "user", Content: "what time is it?"}},
+		resp, err := m.Generate(ctx, &agentcoreapi.GenerateRequest{
+			Messages: []agentcoreapi.Message{{Role: "user", Content: "what time is it?"}},
 		})
 		ch <- result{resp, err}
 	}()
 
-	// The goroutine is now blocked in manual mode.
-	// WaitForCall receives it and we inject a reply.
 	req, reply, err := m.WaitForCall(ctx)
 	if err != nil {
 		t.Fatalf("WaitForCall error: %v", err)
@@ -129,13 +128,13 @@ func TestMockProvider_ManualMode(t *testing.T) {
 	select {
 	case r := <-ch:
 		if r.err != nil {
-			t.Fatalf("Complete error: %v", r.err)
+			t.Fatalf("Generate error: %v", r.err)
 		}
 		if r.resp.Content != "It's go time!" {
 			t.Errorf("content = %q", r.resp.Content)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for Complete() to return")
+		t.Fatal("timeout waiting for Generate() to return")
 	}
 }
 
@@ -144,12 +143,12 @@ func TestMockProvider_ManualMode_Error(t *testing.T) {
 	ctx := context.Background()
 
 	type result struct {
-		resp *CompletionResponse
+		resp *agentcoreapi.GenerateResult
 		err  error
 	}
 	ch := make(chan result, 1)
 	go func() {
-		resp, err := m.Complete(ctx, &CompletionRequest{})
+		resp, err := m.Generate(ctx, &agentcoreapi.GenerateRequest{})
 		ch <- result{resp, err}
 	}()
 
@@ -175,12 +174,12 @@ func TestMockProvider_ManualMode_ToolCall(t *testing.T) {
 	ctx := context.Background()
 
 	type result struct {
-		resp *CompletionResponse
+		resp *agentcoreapi.GenerateResult
 		err  error
 	}
 	ch := make(chan result, 1)
 	go func() {
-		resp, err := m.Complete(ctx, &CompletionRequest{})
+		resp, err := m.Generate(ctx, &agentcoreapi.GenerateRequest{})
 		ch <- result{resp, err}
 	}()
 
@@ -198,8 +197,8 @@ func TestMockProvider_ManualMode_ToolCall(t *testing.T) {
 		if r.err != nil {
 			t.Fatal(r.err)
 		}
-		if !r.resp.IsToolCall() {
-			t.Error("expected tool call")
+		if r.resp.FinishReason != agentcoreapi.FinishToolCalls {
+			t.Errorf("finish reason = %q, want tool_calls", r.resp.FinishReason)
 		}
 		if r.resp.ToolCalls[0].Name != "shell_exec" {
 			t.Errorf("tool = %q", r.resp.ToolCalls[0].Name)
@@ -212,7 +211,7 @@ func TestMockProvider_ManualMode_ToolCall(t *testing.T) {
 func TestMockProvider_WaitForCall_CtxCancel(t *testing.T) {
 	m := NewMockProvider("manual")
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // already cancelled
+	cancel()
 
 	_, _, err := m.WaitForCall(ctx)
 	if err == nil {
@@ -225,18 +224,16 @@ func TestMockProvider_WaitForCall_CtxCancel(t *testing.T) {
 func TestMockProvider_ScriptedExhaustedFallsToManual(t *testing.T) {
 	m := NewMockProvider("hybrid").QueueText("scripted")
 	ctx := context.Background()
-	req := &CompletionRequest{}
+	req := &agentcoreapi.GenerateRequest{}
 
-	// First call: scripted.
-	r1, _ := m.Complete(ctx, req)
+	r1, _ := m.Generate(ctx, req)
 	if r1.Content != "scripted" {
 		t.Errorf("got %q", r1.Content)
 	}
 
-	// Second call: queue empty → manual mode.
-	ch := make(chan *CompletionResponse, 1)
+	ch := make(chan *agentcoreapi.GenerateResult, 1)
 	go func() {
-		r, _ := m.Complete(ctx, req)
+		r, _ := m.Generate(ctx, req)
 		ch <- r
 	}()
 
@@ -271,12 +268,24 @@ func TestMockProvider_Embed(t *testing.T) {
 
 func TestMockProvider_Stream(t *testing.T) {
 	m := NewMockProvider("test").QueueText("streamed")
-	ch, err := m.StreamText(context.Background(), &CompletionRequest{})
+	var events []agentcoreapi.StreamEvent
+	resp, err := m.Stream(context.Background(), &agentcoreapi.GenerateRequest{}, func(_ context.Context, event agentcoreapi.StreamEvent) error {
+		events = append(events, event)
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := <-ch
-	if got != "streamed" {
-		t.Errorf("stream content = %q, want streamed", got)
+	if resp.Content != "streamed" {
+		t.Fatalf("response content = %q, want streamed", resp.Content)
+	}
+	if len(events) != 2 {
+		t.Fatalf("event count = %d, want 2", len(events))
+	}
+	if events[0].Kind != agentcoreapi.StreamEventTextDelta || events[0].Delta != "streamed" {
+		t.Fatalf("first event = %#v, want text delta", events[0])
+	}
+	if events[1].Kind != agentcoreapi.StreamEventMessageStop {
+		t.Fatalf("second event = %#v, want message stop", events[1])
 	}
 }

@@ -25,26 +25,26 @@ type MockResponse struct {
 // Two usage modes:
 //
 //  1. Scripted – pre-load responses with QueueResponse / QueueToolCall / QueueText.
-//     Each Complete() call pops the next queued response in FIFO order.
+//     Each Generate() call pops the next queued response in FIFO order.
 //
-//  2. Manual – call WaitForCall() to block until Complete() is invoked, then
+//  2. Manual – call WaitForCall() to block until Generate() is invoked, then
 //     call Reply() or ReplyError() to unblock it with a custom response.
 //     Useful for stepping through a ReAct loop interactively in tests.
 type MockProvider struct {
 	mu      sync.Mutex
-	queue   []MockResponse      // scripted responses (mode 1)
-	pending chan pendingCall    // manual mode channel (mode 2)
-	calls   []CompletionRequest // all recorded calls
+	queue   []MockResponse               // scripted responses (mode 1)
+	pending chan pendingCall             // manual mode channel (mode 2)
+	calls   []agentcoreapi.GenerateRequest // all recorded calls
 	name    string
 }
 
 type pendingCall struct {
-	req    CompletionRequest
+	req    agentcoreapi.GenerateRequest
 	respCh chan mockResult
 }
 
 type mockResult struct {
-	resp *CompletionResponse
+	resp *agentcoreapi.GenerateResult
 	err  error
 }
 
@@ -90,22 +90,22 @@ func (m *MockProvider) QueueError(err error) *MockProvider {
 
 // ── Manual mode ───────────────────────────────────────────────────────────────
 
-// WaitForCall blocks until the next Complete() call arrives and returns the
-// request plus a reply function. Call the reply function to unblock Complete().
+// WaitForCall blocks until the next Generate() call arrives and returns the
+// request plus a reply function. Call the reply function to unblock Generate().
 //
 //	req, reply := mock.WaitForCall(ctx)
 //	reply(llm.MockResponse{Content: "done"})
-func (m *MockProvider) WaitForCall(ctx context.Context) (CompletionRequest, func(MockResponse), error) {
+func (m *MockProvider) WaitForCall(ctx context.Context) (agentcoreapi.GenerateRequest, func(MockResponse), error) {
 	select {
 	case <-ctx.Done():
-		return CompletionRequest{}, nil, ctx.Err()
+		return agentcoreapi.GenerateRequest{}, nil, ctx.Err()
 	case call := <-m.pending:
 		reply := func(r MockResponse) {
 			if r.Err != nil {
 				call.respCh <- mockResult{err: r.Err}
 				return
 			}
-			resp := toCompletionResponse(r)
+			resp := toGenerateResult(r)
 			call.respCh <- mockResult{resp: resp}
 		}
 		return call.req, reply, nil
@@ -115,18 +115,9 @@ func (m *MockProvider) WaitForCall(ctx context.Context) (CompletionRequest, func
 // ── Provider interface ────────────────────────────────────────────────────────
 
 // Generate implements the public agentcore provider contract.
-func (m *MockProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
-	resp, err := m.Complete(ctx, fromGenerateRequest(req))
-	if err != nil {
-		return nil, err
-	}
-	return toGenerateResult(resp), nil
-}
-
-// Complete keeps the legacy completion facade for migration callers.
 // In scripted mode it pops the next queued response.
 // If the queue is empty it switches to manual mode and blocks until Reply is called.
-func (m *MockProvider) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
+func (m *MockProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
 	m.mu.Lock()
 	m.calls = append(m.calls, *req)
 
@@ -137,7 +128,7 @@ func (m *MockProvider) Complete(ctx context.Context, req *CompletionRequest) (*C
 		if r.Err != nil {
 			return nil, r.Err
 		}
-		return toCompletionResponse(r), nil
+		return toGenerateResult(r), nil
 	}
 	m.mu.Unlock()
 
@@ -177,20 +168,6 @@ func (m *MockProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateReq
 	return resp, nil
 }
 
-// StreamText keeps the legacy channel-based streaming helper.
-func (m *MockProvider) StreamText(ctx context.Context, req *CompletionRequest) (<-chan string, error) {
-	ch := make(chan string, 1)
-	go func() {
-		defer close(ch)
-		resp, err := m.Complete(ctx, req)
-		if err != nil || resp == nil {
-			return
-		}
-		ch <- resp.Content
-	}()
-	return ch, nil
-}
-
 // Embed implements Provider — returns a fixed-length zero vector.
 func (m *MockProvider) Embed(_ context.Context, _ string) ([]float32, error) {
 	return make([]float32, 8), nil
@@ -198,16 +175,16 @@ func (m *MockProvider) Embed(_ context.Context, _ string) ([]float32, error) {
 
 // ── Introspection ─────────────────────────────────────────────────────────────
 
-// Calls returns all CompletionRequests received so far (thread-safe copy).
-func (m *MockProvider) Calls() []CompletionRequest {
+// Calls returns all GenerateRequests received so far (thread-safe copy).
+func (m *MockProvider) Calls() []agentcoreapi.GenerateRequest {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := make([]CompletionRequest, len(m.calls))
+	out := make([]agentcoreapi.GenerateRequest, len(m.calls))
 	copy(out, m.calls)
 	return out
 }
 
-// CallCount returns the number of Complete() calls made.
+// CallCount returns the number of Generate() calls made.
 func (m *MockProvider) CallCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -231,7 +208,10 @@ func (m *MockProvider) Reset() {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func toCompletionResponse(r MockResponse) *CompletionResponse {
+func toGenerateResult(r MockResponse) *agentcoreapi.GenerateResult {
+	out := &agentcoreapi.GenerateResult{
+		Content: r.Content,
+	}
 	reason := r.FinishReason
 	if reason == "" {
 		if len(r.ToolCalls) > 0 {
@@ -240,26 +220,7 @@ func toCompletionResponse(r MockResponse) *CompletionResponse {
 			reason = "stop"
 		}
 	}
-	return &CompletionResponse{
-		Content:      r.Content,
-		ToolCalls:    r.ToolCalls,
-		FinishReason: reason,
-	}
-}
-
-func toGenerateResult(r *CompletionResponse) *agentcoreapi.GenerateResult {
-	if r == nil {
-		return nil
-	}
-	out := &agentcoreapi.GenerateResult{
-		Content: r.Content,
-		Usage: agentcoreapi.Usage{
-			InputTokens:  r.Usage.PromptTokens,
-			OutputTokens: r.Usage.CompletionTokens,
-			TotalTokens:  r.Usage.TotalTokens,
-		},
-	}
-	switch r.FinishReason {
+	switch reason {
 	case "tool_calls":
 		out.FinishReason = agentcoreapi.FinishToolCalls
 	default:
@@ -272,51 +233,6 @@ func toGenerateResult(r *CompletionResponse) *agentcoreapi.GenerateResult {
 				CallID:    call.ID,
 				Name:      call.Name,
 				Arguments: cloneMap(call.Arguments),
-			}
-		}
-	}
-	return out
-}
-
-func fromGenerateRequest(req *agentcoreapi.GenerateRequest) *CompletionRequest {
-	if req == nil {
-		return nil
-	}
-	out := &CompletionRequest{
-		Model:       req.Model,
-		System:      req.System,
-		MaxTokens:   req.MaxTokens,
-		Temperature: req.Temperature,
-	}
-	if len(req.Messages) > 0 {
-		out.Messages = make([]Message, len(req.Messages))
-		for i, msg := range req.Messages {
-			out.Messages[i] = Message{
-				Role:    msg.Role,
-				Content: msg.Content,
-			}
-			if msg.ToolCall != nil {
-				out.Messages[i].ToolCall = &ToolCall{
-					ID:        msg.ToolCall.CallID,
-					Name:      msg.ToolCall.Name,
-					Arguments: cloneMap(msg.ToolCall.Arguments),
-				}
-			}
-			if msg.ToolResult != nil {
-				out.Messages[i].ToolResult = &ToolResult{
-					ToolCallID: msg.ToolResult.CallID,
-					Content:    msg.ToolResult.Content,
-				}
-			}
-		}
-	}
-	if len(req.Tools) > 0 {
-		out.Tools = make([]ToolSchema, len(req.Tools))
-		for i, tool := range req.Tools {
-			out.Tools[i] = ToolSchema{
-				Name:        tool.Name,
-				Description: tool.Description,
-				Parameters:  mapToSchemaProperty(tool.InputSchema),
 			}
 		}
 	}

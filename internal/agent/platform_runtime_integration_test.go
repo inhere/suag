@@ -101,10 +101,10 @@ func TestAgentcoreRuntime_WithPlatformComponents_PersistsAndReplaysCompleteToolT
 	if len(providerCalls[0].Messages) != 3 {
 		t.Fatalf("expected resumed provider to receive prior user, assistant tool-call, and tool messages, got %#v", providerCalls[0].Messages)
 	}
-	if providerCalls[0].Messages[1].Role != "assistant" || providerCalls[0].Messages[1].ToolCall == nil || providerCalls[0].Messages[1].ToolCall.ID != "call-echo" {
+	if providerCalls[0].Messages[1].Role != "assistant" || providerCalls[0].Messages[1].ToolCall == nil || providerCalls[0].Messages[1].ToolCall.CallID != "call-echo" {
 		t.Fatalf("expected resumed provider to receive assistant tool-call message from platform components, got %#v", providerCalls[0].Messages[1])
 	}
-	if providerCalls[0].Messages[2].ToolResult == nil || providerCalls[0].Messages[2].ToolResult.ToolCallID != "call-echo" || providerCalls[0].Messages[2].ToolResult.Content != "echo: persisted" {
+	if providerCalls[0].Messages[2].ToolResult == nil || providerCalls[0].Messages[2].ToolResult.CallID != "call-echo" || providerCalls[0].Messages[2].ToolResult.Content != "echo: persisted" {
 		t.Fatalf("expected resumed provider to receive persisted tool result from platform components, got %#v", providerCalls[0].Messages[2])
 	}
 }
