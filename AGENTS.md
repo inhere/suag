@@ -16,6 +16,7 @@
 - `docs/usage/host-state-snapshot-v0.md` 与 `docs/usage/llm-config-v0.md` 已作为当前 v0 协议与配置基线文档
 - `docs/superpowers/specs/2026-04-14-agentcore-platform-contract-alignment-design.md` 与 `docs/usage/agentcore-internal-integration.md` 已同步到当前代码现状，作为 Phase 2 收口记录
 - Phase 1 已完成 `platform/llm -> pkg/agentcore/api` 的第一方收口，`cmd/axon` 现已补齐仅基于 `llm.api_type + llm.provider_name` 的归一化配置入口与测试覆盖
+- `internal/platform/llm` 已开始清理迁移期 `Legacy*` 命名，保留兼容能力但收拢为中性接口名称，减少后续阅读干扰
 - Phase 2 已完成 `platform/tools + platform/memory -> pkg/agentcore/api` 的第一方收口，迁移期 `internal/acadapters` 已删除，相关测试与文档已迁回第一方实现路径
 - 下一步继续聚焦 Host internal session runner、旧 `ReactRunner` fallback 收敛与更细的运行时能力补齐
 <!-- PROCESSING WORKS:END -->

@@ -12,7 +12,7 @@ import (
 // existing internal callers can migrate gradually.
 type Provider interface {
 	agentcoreapi.Provider
-	LegacyCompleteProvider
+	CompletionProvider
 }
 
 // StreamingProvider adds both the public streaming contract and the legacy
@@ -20,7 +20,7 @@ type Provider interface {
 type StreamingProvider interface {
 	Provider
 	agentcoreapi.StreamingProvider
-	LegacyStreamingProvider
+	CompletionStreamingProvider
 }
 
 // EmbeddingProvider is the optional public embedding capability.
@@ -91,17 +91,17 @@ type TokenUsage struct {
 	TotalTokens      int
 }
 
-// LegacyCompleteProvider preserves the pre-alignment completion surface for
-// callers that have not moved to agentcore/api yet.
-type LegacyCompleteProvider interface {
+// CompletionProvider preserves the completion-oriented facade that older
+// internal callers still use while the runtime converges on agentcore/api.
+type CompletionProvider interface {
 	Name() string
 	Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error)
 }
 
-// LegacyStreamingProvider preserves the old channel-based stream contract for
-// migration callers such as ReactRunner-era helpers and pool implementations.
-type LegacyStreamingProvider interface {
-	LegacyCompleteProvider
+// CompletionStreamingProvider preserves the channel-based text stream helper
+// still used by migration callers such as ReactRunner-era helpers and pools.
+type CompletionStreamingProvider interface {
+	CompletionProvider
 	StreamText(ctx context.Context, req *CompletionRequest) (<-chan string, error)
 }
 
