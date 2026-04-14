@@ -1,6 +1,6 @@
 # Agentcore 与 Platform Contract 对齐设计
 
-> 状态：Draft for review
+> 状态：Partially implemented
 > 日期：2026-04-14
 > 范围：`pkg/agentcore/api` 与 `internal/platform/{llm,tools,memory}` 的 contract 收口
 > 相关文档：`docs/v0-self-host-design.md`、`docs/usage/agentcore-internal-integration.md`、`docs/superpowers/specs/2026-04-02-agentcore-design.md`
@@ -122,11 +122,20 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 截至当前阶段，这份设计里的 Phase 2 已完成下面几项：
 
+- `pkg/agentcore/api` 已补齐可选 `EmbeddingProvider` 扩展接口
+- `cmd/axon/main.go` 已切到 `llm.api_type + llm.provider_name` 配置模型，并保留旧 `llm.provider` 兼容回退
+- `internal/platform/llm` 已直接围绕 `agentcore/api.Provider` 组织，主路径不再依赖 `internalllm`
 - `internal/platform/tools.Registry` 已直接实现 `agentcore/api.ToolRegistry`
 - 代表性 native tools 已升级到 `api.ToolResult` 返回形态
 - `internal/platform/memory` 已新增第一方 `RuntimeMemory`，直接实现 `agentcore/api.Memory`
 - `internal/acadapters/internaltools` 与 `internal/acadapters/internalmemory` 已缩成迁移期薄 shim
 - `internal/agent/AgentcoreRunner` 主路径已直接使用 `platform/tools` 与 `platform/memory`，不再依赖 `internaltools` / `internalmemory`
+
+仍未完成、但已经缩到较小范围的项有：
+
+- `internal/acadapters/internalllm` 仍保留为旧 import path / 迁移期兼容层，还未删除
+- 文档层面对 `ToolSchema` authority 和 `ToolResult / Memory` contract 语义的说明仍可继续精炼
+- Host internal `session runner` 仍未开始实现，这本来就不在本轮范围内
 
 ---
 
@@ -158,11 +167,11 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 这说明 `llm` 更适合作为 `agentcore/api.Provider` 的第一方实现，而不是长期保留平行 contract。
 
-本轮建议：
+当前状态：
 
 - `internal/platform/llm` 直接围绕 `agentcore/api.Provider` 组织
 - `OpenAIProvider`、`ClaudeProvider`、`DeepSeekProvider` 直接实现新的 contract
-- `internalllm` bridge 在迁移完成后删除
+- `internalllm` bridge 仍保留为兼容层，但已经不再是主路径依赖
 
 #### 5.1.1 `llm` 侧对 `agentcore/api` 的缺口判断
 
@@ -170,7 +179,7 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 这会导致后续如果记忆检索、摘要或向量召回要复用同一 provider，就不得不重新引入 internal-only `llm.Provider`。
 
-因此建议在 `agentcore/api` 中增加一个可选扩展接口，例如：
+这部分已经落地，`agentcore/api` 中已新增可选扩展接口：
 
 - `EmbeddingProvider`
 
@@ -190,7 +199,7 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 这说明如果继续让 internal tool 以“仅返回字符串”为中心，后面很容易再做一轮工具结果 contract 升级。
 
-本轮建议：
+当前状态：
 
 - `internal/platform/tools.Tool` 直接兼容 `api.Tool`
 - `Registry` 直接兼容 `api.ToolRegistry`
@@ -222,7 +231,7 @@ Host Session internal runner 的实装排在 contract 收口之后。
 - `ObserveMessages`
 - `BuildContext`
 
-因此这轮建议不是删除 `Store`，而是明确双层关系：
+这轮已经按双层结构落地：
 
 - `memory.Store`
   - richer memory backend
@@ -230,17 +239,17 @@ Host Session internal runner 的实装排在 contract 收口之后。
   - 运行时视图
   - 直接实现 `agentcore/api.Memory`
 
-也就是说，把今天 `internalmemory` adapter 的能力回收到 `internal/platform/memory` 模块内部，而不是让 `acadapters` 长期承载这层关系。
+也就是说，原来由 `internalmemory` adapter 承载的 runtime-facing 语义已经回收到 `internal/platform/memory` 模块内部，`acadapters/internalmemory` 只剩兼容层职责。
 
 ---
 
 ## 6. `agentcore/api` 需要先补的点
 
-在正式迁移 `platform/*` 之前，建议先补齐下面几类 contract 缺口。
+在正式迁移 `platform/*` 之前，原本建议先补齐下面几类 contract 缺口。当前状态如下。
 
 ### 6.1 Provider 扩展能力
 
-建议新增可选扩展接口：
+已完成：
 
 - `EmbeddingProvider`
 
@@ -252,14 +261,16 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 ### 6.2 Tool schema 统一表达
 
-当前 `ToolSchema` 在 internal 和 `agentcore` 之间存在表达差异。
+当前 `ToolSchema` 仍然使用 `map[string]any` 作为 runtime authority，没有再额外引入共享 schema node 类型。
 
-本轮需要明确：
+这部分当前结论是：
 
 - 是否继续使用 `map[string]any` 作为 schema authority
 - 或者引入一个共享的 schema node 定义
 
-无论选哪种，目标都应是：
+当前实现等价于选择了第一种，并且已经把主路径里的双向 schema 转换压缩到了兼容层和边界转换函数中。后续如果没有明确痛点，可以继续维持这一选择。
+
+无论后续是否调整，目标仍应是：
 
 - internal 与 `agentcore` 之间不再长期做双向 schema 转换
 
@@ -267,7 +278,7 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 `api.ToolResult` 已经具备较好的 authority 形态。
 
-本轮需要明确文档约定：
+这部分代码形态已经基本落地，剩余主要是文档约定补齐：
 
 - `Content` 是人类和模型都可读的主要结果
 - `Metadata` 是执行事实附属信息
@@ -277,7 +288,7 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 ### 6.4 Memory 分层说明
 
-`agentcore/api.Memory` 需要在文档语义上进一步明确：
+`agentcore/api.Memory` 的实现方向已经明确，剩余主要是文档语义进一步补齐：
 
 - 它不是长期记忆系统的全部 contract
 - 它只是 runtime-facing context layer
@@ -309,7 +320,7 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 ### 7.2 建议配置形态
 
-建议把配置收敛成：
+这部分已经基本落地，当前配置已收敛成：
 
 - `llm.api_type: openai | anthropic`
 - `llm.provider_name: openai | deepseek | openrouter | claude | custom`
@@ -357,7 +368,7 @@ llm:
 
 ### 7.4 `buildLLMProvider()` 的目标形态
 
-后续 `cmd/axon/main.go` 中的 `buildLLMProvider()` 需要改成：
+当前 `cmd/axon/main.go` 中的 `buildLLMProvider()` 已改成：
 
 1. 先按 `api_type` 选择协议实现
 2. 再按 `provider_name` 决定默认标签、默认 base URL 或兼容分支
@@ -426,20 +437,27 @@ llm:
 
 ## 10. 完成状态的判断标准
 
-如果达到下面这些条件，就说明这轮 contract 收口已经成功，可以开始规划 Host internal run 接线：
+如果达到下面这些条件，就说明这轮 contract 收口已经成功，可以开始规划 Host internal run 接线。当前完成情况如下：
 
-- `internal/platform/llm` 直接实现 `agentcore/api.Provider`
-- `internal/platform/tools` 直接实现 `agentcore/api.ToolRegistry`
-- `internal/platform/memory` 模块内直接提供 `api.Memory` 实现
-- `internal/acadapters/internalllm`、`internaltools`、`internalmemory` 不再是主路径依赖
-- `buildLLMProvider()` 已切到 `api_type + provider_name` 的配置模型
-- `internal/agent`、`internal/orchestrator`、`internal/team` 不再需要依赖迁移期 internal adapter 才能使用 `agentcore`
+- 已完成：`internal/platform/llm` 直接实现 `agentcore/api.Provider`
+- 已完成：`internal/platform/tools` 直接实现 `agentcore/api.ToolRegistry`
+- 已完成：`internal/platform/memory` 模块内直接提供 `api.Memory` 实现
+- 部分完成：`internal/acadapters/internalllm`、`internaltools`、`internalmemory` 不再是主路径依赖
+  当前 `internaltools` / `internalmemory` 已退出主路径，`internalllm` 也已退出主路径，但仍保留兼容实现和测试覆盖
+- 已完成：`buildLLMProvider()` 已切到 `api_type + provider_name` 的配置模型
+- 已完成：`internal/agent`、`internal/orchestrator`、`internal/team` 已不需要依赖 `internaltools` / `internalmemory` 才能使用 `agentcore`
 
 ---
 
 ## 11. 下一步
 
-这份设计确认后，下一步不直接开发 Host internal `session runner`，而是先进入一份专门的 implementation plan，计划顺序应为：
+这份设计在当前阶段的直接后续工作，不再是继续大规模收口 `tools / memory`，而是：
+
+1. 视需要继续缩减 `internalllm` 的存在感或明确其长期兼容策略
+2. 补齐剩余 contract 文档说明
+3. 在进入 Host internal `session runner` 前，先完成兼容层定位与文档语义收尾
+
+原始计划顺序如下，现保留为阶段记录：
 
 1. `agentcore/api` contract patch
 2. `llm` 收口与配置调整

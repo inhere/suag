@@ -17,13 +17,24 @@
 - `internal/agent`
   - 已新增最小 `AgentcoreRunner` 桥接层，但默认执行路径仍保留旧 loop
 - `internal/orchestrator`
-  - 已支持通过开关选择性走 `agentcore` runtime，但默认仍保留旧路径
+  - 默认已优先走 `agentcore` runtime，同时保留显式回退旧路径的入口
   - 新路径已可承接 tracing / HITL / fail-threshold 配置透传
+
+补充判断：
+
+- `internaltools`、`internalmemory`
+  - 已不再是主路径依赖
+  - 现在主要承担旧 import path 的兼容职责
+- `internalllm`
+  - 也已不再是主路径依赖
+  - 但仍作为 legacy bridge 保留，尚未删除
 
 也就是说，当前最适合的方式是：
 
 - 先把 `internal/llm`、`internal/tools` 与 runtime-facing `memory` 收口到 `agentcore`
-- 再决定是否逐步让 `internal/agent` / `internal/orchestrator` 改为基于 `agentcore` 运行
+- 再继续扩大默认 `agentcore` 路径的覆盖面，并逐步压缩旧 runtime 的职责
+
+而这一步里，`llm/tools/memory` 的主收口已经基本完成，当前剩余更多是兼容层与文档尾项。
 
 ---
 
@@ -132,15 +143,14 @@
 
 ### 2.3 `internal/orchestrator` 已支持选择性切换
 
-当前 `internal/orchestrator` 默认仍创建：
-
-- `agent.Agent`
-- `agent.ReactRunner`
-
-但当启用配置开关时，也可以改为：
+当前 `internal/orchestrator` 默认已经优先创建：
 
 - `agent.Agent`
 - `agent.AgentcoreRunner`
+
+同时保留显式回退到：
+
+- `agent.ReactRunner`
 
 也就是说，它已经具备渐进切换能力，并且关键运行时能力已能沿新路径透传，但还没有完成默认路径替换。
 
@@ -181,20 +191,29 @@
 - 旧实现还没有被移除
 - 如需回退，可以通过配置把 runtime 明确切回 `react`
 
+## 2.6 仍待收尾的项
+
+当前还没有完全完成的部分主要是：
+
+- `internal/acadapters/internalllm` 仍作为兼容 bridge 保留，尚未删除
+- `ReactRunner` 仍保留为 fallback / parity baseline
+- Host internal `session runner` 尚未开始接线
+- 关于 `ToolSchema` authority 与 `agentcore.Memory` 语义的文档说明还可以继续压实
+
 ---
 
 ## 3. 最小迁移路径
 
 如果目标是“让 internal 下的包开始使用新的 agentcore”，推荐按下面顺序做，而不是一次性重写：
 
-### 阶段 1：桥接现有能力，不动 orchestrator
+### 阶段 1：桥接现有能力，先建立最小迁移入口
 
 - 保持 `internal/llm` 不动
 - 保持 `internal/tools` 不动
 - 通过 `internal/acadapters/*` 连接 `agentcore`
 - 先在新入口或实验入口中验证 runtime 行为
 
-这是当前已经具备的阶段。
+这是已经完成并经过当前主路径演进验证的阶段记录。
 
 ### 阶段 2：抽出 internal 的 run-state persistence，并分离 memory/context 层
 
