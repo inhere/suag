@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	agentcoreapi "github.com/inhere/axon/pkg/agentcore/api"
 )
 
 // MockResponse is a single canned response returned by MockProvider.
@@ -112,7 +114,16 @@ func (m *MockProvider) WaitForCall(ctx context.Context) (CompletionRequest, func
 
 // ── Provider interface ────────────────────────────────────────────────────────
 
-// Complete implements Provider.
+// Generate implements the public agentcore provider contract.
+func (m *MockProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
+	resp, err := m.Complete(ctx, fromGenerateRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return toGenerateResult(resp), nil
+}
+
+// Complete keeps the legacy completion facade for migration callers.
 // In scripted mode it pops the next queued response.
 // If the queue is empty it switches to manual mode and blocks until Reply is called.
 func (m *MockProvider) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
@@ -146,8 +157,28 @@ func (m *MockProvider) Complete(ctx context.Context, req *CompletionRequest) (*C
 	}
 }
 
-// Stream implements Provider — delegates to Complete and wraps result in a channel.
-func (m *MockProvider) Stream(ctx context.Context, req *CompletionRequest) (<-chan string, error) {
+// Stream implements the public streaming contract.
+func (m *MockProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	resp, err := m.Generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if emit != nil && resp != nil && resp.Content != "" {
+		if err := emit(ctx, agentcoreapi.StreamEvent{
+			Kind:  agentcoreapi.StreamEventTextDelta,
+			Delta: resp.Content,
+		}); err != nil {
+			return nil, err
+		}
+		if err := emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventMessageStop}); err != nil {
+			return nil, err
+		}
+	}
+	return resp, nil
+}
+
+// StreamText keeps the legacy channel-based streaming helper.
+func (m *MockProvider) StreamText(ctx context.Context, req *CompletionRequest) (<-chan string, error) {
 	ch := make(chan string, 1)
 	go func() {
 		defer close(ch)
@@ -214,4 +245,125 @@ func toCompletionResponse(r MockResponse) *CompletionResponse {
 		ToolCalls:    r.ToolCalls,
 		FinishReason: reason,
 	}
+}
+
+func toGenerateResult(r *CompletionResponse) *agentcoreapi.GenerateResult {
+	if r == nil {
+		return nil
+	}
+	out := &agentcoreapi.GenerateResult{
+		Content: r.Content,
+		Usage: agentcoreapi.Usage{
+			InputTokens:  r.Usage.PromptTokens,
+			OutputTokens: r.Usage.CompletionTokens,
+			TotalTokens:  r.Usage.TotalTokens,
+		},
+	}
+	switch r.FinishReason {
+	case "tool_calls":
+		out.FinishReason = agentcoreapi.FinishToolCalls
+	default:
+		out.FinishReason = agentcoreapi.FinishFinal
+	}
+	if len(r.ToolCalls) > 0 {
+		out.ToolCalls = make([]agentcoreapi.ToolCall, len(r.ToolCalls))
+		for i, call := range r.ToolCalls {
+			out.ToolCalls[i] = agentcoreapi.ToolCall{
+				CallID:    call.ID,
+				Name:      call.Name,
+				Arguments: cloneMap(call.Arguments),
+			}
+		}
+	}
+	return out
+}
+
+func fromGenerateRequest(req *agentcoreapi.GenerateRequest) *CompletionRequest {
+	if req == nil {
+		return nil
+	}
+	out := &CompletionRequest{
+		Model:       req.Model,
+		System:      req.System,
+		MaxTokens:   req.MaxTokens,
+		Temperature: req.Temperature,
+	}
+	if len(req.Messages) > 0 {
+		out.Messages = make([]Message, len(req.Messages))
+		for i, msg := range req.Messages {
+			out.Messages[i] = Message{
+				Role:    msg.Role,
+				Content: msg.Content,
+			}
+			if msg.ToolCall != nil {
+				out.Messages[i].ToolCall = &ToolCall{
+					ID:        msg.ToolCall.CallID,
+					Name:      msg.ToolCall.Name,
+					Arguments: cloneMap(msg.ToolCall.Arguments),
+				}
+			}
+			if msg.ToolResult != nil {
+				out.Messages[i].ToolResult = &ToolResult{
+					ToolCallID: msg.ToolResult.CallID,
+					Content:    msg.ToolResult.Content,
+				}
+			}
+		}
+	}
+	if len(req.Tools) > 0 {
+		out.Tools = make([]ToolSchema, len(req.Tools))
+		for i, tool := range req.Tools {
+			out.Tools[i] = ToolSchema{
+				Name:        tool.Name,
+				Description: tool.Description,
+				Parameters:  mapToSchemaProperty(tool.InputSchema),
+			}
+		}
+	}
+	return out
+}
+
+func mapToSchemaProperty(schema map[string]any) SchemaProperty {
+	prop := SchemaProperty{}
+	if len(schema) == 0 {
+		return prop
+	}
+	if value, ok := schema["type"].(string); ok {
+		prop.Type = value
+	}
+	if value, ok := schema["description"].(string); ok {
+		prop.Description = value
+	}
+	switch enum := schema["enum"].(type) {
+	case []string:
+		prop.Enum = append([]string(nil), enum...)
+	case []any:
+		prop.Enum = make([]string, 0, len(enum))
+		for _, item := range enum {
+			if text, ok := item.(string); ok {
+				prop.Enum = append(prop.Enum, text)
+			}
+		}
+	}
+	switch required := schema["required"].(type) {
+	case []string:
+		prop.Required = append([]string(nil), required...)
+	case []any:
+		prop.Required = make([]string, 0, len(required))
+		for _, item := range required {
+			if text, ok := item.(string); ok {
+				prop.Required = append(prop.Required, text)
+			}
+		}
+	}
+	if properties, ok := schema["properties"].(map[string]any); ok {
+		prop.Properties = make(map[string]*SchemaProperty, len(properties))
+		for name, raw := range properties {
+			if nested, ok := raw.(map[string]any); ok {
+				child := mapToSchemaProperty(nested)
+				prop.Properties[name] = &child
+			}
+		}
+	}
+	return prop
 }

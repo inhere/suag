@@ -159,9 +159,40 @@ func buildApp() (*app, error) {
 }
 
 func buildLLMProvider() (llm.Provider, error) {
-	prov := config.String("llm.provider", "openai")
-	switch prov {
-	case "claude":
+	apiType := strings.ToLower(strings.TrimSpace(config.String("llm.api_type")))
+	providerName := strings.ToLower(strings.TrimSpace(config.String("llm.provider_name")))
+	legacyProvider := strings.ToLower(strings.TrimSpace(config.String("llm.provider", "openai")))
+
+	if apiType == "" {
+		switch legacyProvider {
+		case "claude":
+			apiType = "anthropic"
+			if providerName == "" {
+				providerName = "claude"
+			}
+		case "deepseek":
+			apiType = "openai"
+			if providerName == "" {
+				providerName = "deepseek"
+			}
+		default:
+			apiType = "openai"
+			if providerName == "" {
+				providerName = legacyProvider
+			}
+		}
+	}
+	if providerName == "" {
+		switch apiType {
+		case "anthropic":
+			providerName = "claude"
+		default:
+			providerName = "openai"
+		}
+	}
+
+	switch apiType {
+	case "anthropic":
 		key := config.String("llm.api_key")
 		if key == "" {
 			key = os.Getenv("ANTHROPIC_API_KEY")
@@ -170,22 +201,38 @@ func buildLLMProvider() (llm.Provider, error) {
 			APIKey: key,
 			Model:  config.String("llm.model"),
 		}), nil
-	case "deepseek":
+	case "openai":
 		key := config.String("llm.api_key")
-		if key == "" {
-			key = os.Getenv("DEEPSEEK_API_KEY")
+		baseURL := config.String("llm.base_url")
+		switch providerName {
+		case "deepseek":
+			if key == "" {
+				key = os.Getenv("DEEPSEEK_API_KEY")
+			}
+			provider := llm.NewDeepSeekProvider(key, config.String("llm.model"))
+			if baseURL != "" {
+				provider = llm.NewDeepSeekProvider(key, config.String("llm.model"))
+				provider.OpenAIProvider = llm.NewOpenAIProvider(llm.OpenAIConfig{
+					APIKey:  key,
+					BaseURL: baseURL,
+					Model:   config.String("llm.model"),
+					Name:    "deepseek",
+				})
+			}
+			return provider, nil
+		default:
+			if key == "" {
+				key = os.Getenv("OPENAI_API_KEY")
+			}
+			return llm.NewOpenAIProvider(llm.OpenAIConfig{
+				APIKey:  key,
+				Model:   config.String("llm.model"),
+				BaseURL: baseURL,
+				Name:    providerName,
+			}), nil
 		}
-		return llm.NewDeepSeekProvider(key, config.String("llm.model")), nil
-	default: // "openai"
-		key := config.String("llm.api_key")
-		if key == "" {
-			key = os.Getenv("OPENAI_API_KEY")
-		}
-		return llm.NewOpenAIProvider(llm.OpenAIConfig{
-			APIKey:  key,
-			Model:   config.String("llm.model"),
-			BaseURL: config.String("llm.base_url"),
-		}), nil
+	default:
+		return nil, fmt.Errorf("unsupported llm.api_type %q", apiType)
 	}
 }
 

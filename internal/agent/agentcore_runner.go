@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/acadapters/internalllm"
 	"github.com/inhere/axon/internal/acadapters/internalmemory"
 	"github.com/inhere/axon/internal/acadapters/internaltools"
 	"github.com/inhere/axon/internal/ops/hitl"
+	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/pkg/agentcore"
 )
@@ -46,8 +46,12 @@ type AgentcoreRunner struct {
 // BuildAgentcoreConfig maps an internal Agent plus runner config to a public agentcore.Config.
 func BuildAgentcoreConfig(a *Agent, cfg AgentcoreRunnerConfig) agentcore.Config {
 	hitlTracker := buildHITLTracker(cfg)
+	var provider agentcore.Provider
+	if a != nil {
+		provider = resolveAgentcoreProvider(a.LLM)
+	}
 	return agentcore.Config{
-		Provider:            internalllm.NewProvider(a.LLM),
+		Provider:            provider,
 		Storage:             cfg.Storage,
 		Memory:              resolveMemory(a),
 		Tools:               internaltools.NewRegistry(a.Tools),
@@ -60,6 +64,13 @@ func BuildAgentcoreConfig(a *Agent, cfg AgentcoreRunnerConfig) agentcore.Config 
 		MaxSteps:            normalizeMaxSteps(cfg.MaxSteps),
 		MaxToolCallsPerStep: cfg.MaxToolCallsPerStep,
 	}
+}
+
+func resolveAgentcoreProvider(provider llm.Provider) agentcore.Provider {
+	if provider == nil {
+		return nil
+	}
+	return provider
 }
 
 // NewAgentcoreRunner creates a Runner backed by the public agentcore runtime.

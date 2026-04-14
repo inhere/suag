@@ -6,7 +6,7 @@
 
 ## 正在进行的工作
 
-> NOTE: 需要实时更新，正在进行的工作和关键md文档链接，已完成的需要移除
+> **IMPORTANT**: 需要实时更新，正在进行的工作和关键md文档链接；**已完成的需要移除**，不能一直累计，总数不能超过10条。
 
 <!-- PROCESSING WORKS:START -->
 - Axon v0 自用主线规划与阶段架构设计进行中，设计总纲见 `docs/v0-self-host-design.md`
@@ -56,6 +56,9 @@
 - Phase 1 计划已补做一轮工程复核，当前已明确 `internal/platform/llm` 收口需要显式兼容 `ReactRunner`、`cron` 与 `Pool`，同时已开始清理文档中的旧 `internal/agentcoreadapters/*` 路径，避免后续实现判断继续被旧结构干扰
 - Phase 1 实施已开始第一步，`internal/ops/cron/scheduler_test.go` 已补齐 cron 的 LLM 决策兼容回归测试，当前 `ReactRunner / cron / team` 的 legacy caller 基线已具备首轮 no-regression 护栏
 - Phase 1 实施已完成 `pkg/agentcore/api` 第一轮 contract patch，当前已新增可选 `EmbeddingProvider` 扩展接口，并补齐 `provider_test.go` 覆盖基础 provider contract 行为
+- Phase 1 已完成 `internal/platform/llm` 到 `agentcore/api` 的第一轮收口，当前第一方 provider 已直接实现公共 contract，同时保留 `Complete / StreamText` 兼容 facade 以维持 `ReactRunner / cron / Pool` 等 legacy caller 正常工作
+- Phase 1 已完成 `internal/agent/agentcore_runner.go` 主路径去 adapter 化，当前 `BuildAgentcoreConfig()` 已直接使用 `platform/llm` provider，`internalllm` 回退为迁移期兼容层
+- Phase 1 已完成 `cmd/axon/main.go` 的 LLM 配置迁移，当前 `buildLLMProvider()` 优先使用 `llm.api_type + llm.provider_name`，并保留对旧 `llm.provider` 的兼容回退，同时已补齐 `cmd/axon/main_test.go` 与 `docs/usage/llm-config-v0.md`
 
 <!-- PROCESSING WORKS:END -->
 

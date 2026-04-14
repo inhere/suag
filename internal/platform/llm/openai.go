@@ -10,6 +10,8 @@ import (
 	"math"
 	"net/http"
 	"time"
+
+	agentcoreapi "github.com/inhere/axon/pkg/agentcore/api"
 )
 
 const defaultOpenAIBase = "https://api.openai.com/v1"
@@ -61,8 +63,8 @@ func NewOpenAIProvider(cfg OpenAIConfig) *OpenAIProvider {
 // Name implements Provider.
 func (p *OpenAIProvider) Name() string { return p.name }
 
-// Complete implements Provider.
-func (p *OpenAIProvider) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
+// Generate implements the public agentcore provider contract.
+func (p *OpenAIProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
 	model := req.Model
 	if model == "" {
 		model = p.model
@@ -77,8 +79,38 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *CompletionRequest) (
 	return p.parseResponse(respBody)
 }
 
-// Stream implements Provider (simplified: returns full content in one chunk).
-func (p *OpenAIProvider) Stream(ctx context.Context, req *CompletionRequest) (<-chan string, error) {
+// Complete keeps the legacy completion facade for pre-agentcore callers.
+func (p *OpenAIProvider) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
+	res, err := p.Generate(ctx, toGenerateRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return fromGenerateResult(res), nil
+}
+
+// Stream implements the public streaming contract. This first iteration keeps
+// behavior simple by emitting the final content as a single delta.
+func (p *OpenAIProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	resp, err := p.Generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if emit != nil && resp != nil && resp.Content != "" {
+		if err := emit(ctx, agentcoreapi.StreamEvent{
+			Kind:  agentcoreapi.StreamEventTextDelta,
+			Delta: resp.Content,
+		}); err != nil {
+			return nil, err
+		}
+		if err := emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventMessageStop}); err != nil {
+			return nil, err
+		}
+	}
+	return resp, nil
+}
+
+// StreamText keeps the legacy channel-based streaming facade for migration callers.
+func (p *OpenAIProvider) StreamText(ctx context.Context, req *CompletionRequest) (<-chan string, error) {
 	ch := make(chan string, 1)
 	go func() {
 		defer close(ch)
@@ -118,7 +150,7 @@ func (p *OpenAIProvider) Embed(ctx context.Context, text string) ([]float32, err
 }
 
 // buildRequestBody constructs the OpenAI chat completion request payload.
-func (p *OpenAIProvider) buildRequestBody(req *CompletionRequest, model string, stream bool) map[string]any {
+func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, model string, stream bool) map[string]any {
 	msgs := make([]map[string]any, 0, len(req.Messages)+1)
 
 	// System prompt injection.
@@ -131,7 +163,7 @@ func (p *OpenAIProvider) buildRequestBody(req *CompletionRequest, model string, 
 		msg := map[string]any{"role": m.Role, "content": m.Content}
 		if m.ToolCall != nil {
 			msg["tool_calls"] = []map[string]any{{
-				"id":   m.ToolCall.ID,
+				"id":   m.ToolCall.CallID,
 				"type": "function",
 				"function": map[string]any{
 					"name":      m.ToolCall.Name,
@@ -142,7 +174,7 @@ func (p *OpenAIProvider) buildRequestBody(req *CompletionRequest, model string, 
 		}
 		if m.ToolResult != nil {
 			msg["role"] = "tool"
-			msg["tool_call_id"] = m.ToolResult.ToolCallID
+			msg["tool_call_id"] = m.ToolResult.CallID
 			msg["content"] = m.ToolResult.Content
 		}
 		msgs = append(msgs, msg)
@@ -167,7 +199,7 @@ func (p *OpenAIProvider) buildRequestBody(req *CompletionRequest, model string, 
 				"function": map[string]any{
 					"name":        t.Name,
 					"description": t.Description,
-					"parameters":  t.Parameters,
+					"parameters":  t.InputSchema,
 				},
 			}
 		}
@@ -177,7 +209,7 @@ func (p *OpenAIProvider) buildRequestBody(req *CompletionRequest, model string, 
 }
 
 // parseResponse decodes an OpenAI chat completion response.
-func (p *OpenAIProvider) parseResponse(data []byte) (*CompletionResponse, error) {
+func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResult, error) {
 	var raw struct {
 		Choices []struct {
 			Message struct {
@@ -213,27 +245,28 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*CompletionResponse, error)
 	}
 
 	choice := raw.Choices[0]
-	resp := &CompletionResponse{
+	resp := &agentcoreapi.GenerateResult{
 		Content:      choice.Message.Content,
-		FinishReason: choice.FinishReason,
-		Usage: TokenUsage{
-			PromptTokens:     raw.Usage.PromptTokens,
-			CompletionTokens: raw.Usage.CompletionTokens,
-			TotalTokens:      raw.Usage.TotalTokens,
+		Usage: agentcoreapi.Usage{
+			InputTokens:  raw.Usage.PromptTokens,
+			OutputTokens: raw.Usage.CompletionTokens,
+			TotalTokens:  raw.Usage.TotalTokens,
 		},
 	}
 
 	for _, tc := range choice.Message.ToolCalls {
 		var args map[string]any
 		_ = json.Unmarshal(tc.Function.Arguments, &args)
-		resp.ToolCalls = append(resp.ToolCalls, ToolCall{
-			ID:        tc.ID,
+		resp.ToolCalls = append(resp.ToolCalls, agentcoreapi.ToolCall{
+			CallID:    tc.ID,
 			Name:      tc.Function.Name,
 			Arguments: args,
 		})
 	}
 	if len(resp.ToolCalls) > 0 {
-		resp.FinishReason = "tool_calls"
+		resp.FinishReason = agentcoreapi.FinishToolCalls
+	} else {
+		resp.FinishReason = agentcoreapi.FinishFinal
 	}
 
 	return resp, nil

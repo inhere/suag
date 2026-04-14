@@ -10,6 +10,8 @@ import (
 	"math"
 	"net/http"
 	"time"
+
+	agentcoreapi "github.com/inhere/axon/pkg/agentcore/api"
 )
 
 const (
@@ -45,8 +47,8 @@ func NewClaudeProvider(cfg ClaudeConfig) *ClaudeProvider {
 // Name implements Provider.
 func (p *ClaudeProvider) Name() string { return "claude" }
 
-// Complete implements Provider.
-func (p *ClaudeProvider) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
+// Generate implements the public agentcore provider contract.
+func (p *ClaudeProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
 	model := req.Model
 	if model == "" {
 		model = p.model
@@ -60,8 +62,38 @@ func (p *ClaudeProvider) Complete(ctx context.Context, req *CompletionRequest) (
 	return p.parseResponse(respData)
 }
 
-// Stream implements Provider (simplified: calls Complete).
-func (p *ClaudeProvider) Stream(ctx context.Context, req *CompletionRequest) (<-chan string, error) {
+// Complete keeps the legacy completion facade for pre-agentcore callers.
+func (p *ClaudeProvider) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
+	res, err := p.Generate(ctx, toGenerateRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return fromGenerateResult(res), nil
+}
+
+// Stream implements the public streaming contract. This first iteration keeps
+// behavior simple by emitting the final content as a single delta.
+func (p *ClaudeProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	resp, err := p.Generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if emit != nil && resp != nil && resp.Content != "" {
+		if err := emit(ctx, agentcoreapi.StreamEvent{
+			Kind:  agentcoreapi.StreamEventTextDelta,
+			Delta: resp.Content,
+		}); err != nil {
+			return nil, err
+		}
+		if err := emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventMessageStop}); err != nil {
+			return nil, err
+		}
+	}
+	return resp, nil
+}
+
+// StreamText keeps the legacy channel-based streaming facade for migration callers.
+func (p *ClaudeProvider) StreamText(ctx context.Context, req *CompletionRequest) (<-chan string, error) {
 	ch := make(chan string, 1)
 	go func() {
 		defer close(ch)
@@ -80,7 +112,7 @@ func (p *ClaudeProvider) Embed(_ context.Context, _ string) ([]float32, error) {
 	return nil, fmt.Errorf("claude provider does not support embeddings: use an OpenAI-compatible provider for embeddings")
 }
 
-func (p *ClaudeProvider) buildRequestBody(req *CompletionRequest, model string) map[string]any {
+func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, model string) map[string]any {
 	msgs := make([]map[string]any, 0, len(req.Messages))
 
 	for _, m := range req.Messages {
@@ -90,7 +122,7 @@ func (p *ClaudeProvider) buildRequestBody(req *CompletionRequest, model string) 
 				"role": "assistant",
 				"content": []map[string]any{{
 					"type":  "tool_use",
-					"id":    m.ToolCall.ID,
+					"id":    m.ToolCall.CallID,
 					"name":  m.ToolCall.Name,
 					"input": m.ToolCall.Arguments,
 				}},
@@ -100,7 +132,7 @@ func (p *ClaudeProvider) buildRequestBody(req *CompletionRequest, model string) 
 				"role": "user",
 				"content": []map[string]any{{
 					"type":        "tool_result",
-					"tool_use_id": m.ToolResult.ToolCallID,
+					"tool_use_id": m.ToolResult.CallID,
 					"content":     m.ToolResult.Content,
 				}},
 			})
@@ -127,7 +159,7 @@ func (p *ClaudeProvider) buildRequestBody(req *CompletionRequest, model string) 
 			tools[i] = map[string]any{
 				"name":         t.Name,
 				"description":  t.Description,
-				"input_schema": t.Parameters,
+				"input_schema": t.InputSchema,
 			}
 		}
 		body["tools"] = tools
@@ -136,7 +168,7 @@ func (p *ClaudeProvider) buildRequestBody(req *CompletionRequest, model string) 
 	return body
 }
 
-func (p *ClaudeProvider) parseResponse(data []byte) (*CompletionResponse, error) {
+func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResult, error) {
 	var raw struct {
 		Content []struct {
 			Type  string          `json:"type"`
@@ -162,12 +194,11 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*CompletionResponse, error)
 		return nil, fmt.Errorf("claude api error: %s", raw.Error.Message)
 	}
 
-	resp := &CompletionResponse{
-		FinishReason: raw.StopReason,
-		Usage: TokenUsage{
-			PromptTokens:     raw.Usage.InputTokens,
-			CompletionTokens: raw.Usage.OutputTokens,
-			TotalTokens:      raw.Usage.InputTokens + raw.Usage.OutputTokens,
+	resp := &agentcoreapi.GenerateResult{
+		Usage: agentcoreapi.Usage{
+			InputTokens:  raw.Usage.InputTokens,
+			OutputTokens: raw.Usage.OutputTokens,
+			TotalTokens:  raw.Usage.InputTokens + raw.Usage.OutputTokens,
 		},
 	}
 
@@ -178,15 +209,17 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*CompletionResponse, error)
 		case "tool_use":
 			var args map[string]any
 			_ = json.Unmarshal(block.Input, &args)
-			resp.ToolCalls = append(resp.ToolCalls, ToolCall{
-				ID:        block.ID,
+			resp.ToolCalls = append(resp.ToolCalls, agentcoreapi.ToolCall{
+				CallID:    block.ID,
 				Name:      block.Name,
 				Arguments: args,
 			})
 		}
 	}
 	if len(resp.ToolCalls) > 0 {
-		resp.FinishReason = "tool_calls"
+		resp.FinishReason = agentcoreapi.FinishToolCalls
+	} else {
+		resp.FinishReason = agentcoreapi.FinishFinal
 	}
 	return resp, nil
 }

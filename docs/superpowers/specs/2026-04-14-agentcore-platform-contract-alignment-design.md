@@ -445,6 +445,7 @@ llm:
 当前已补齐第一阶段实施计划：
 
 - `docs/superpowers/plans/2026-04-14-agentcore-llm-contract-alignment-phase1.md`
+- `docs/usage/llm-config-v0.md`
 
 在进入真实编码前，需要明确一个实现约束：
 

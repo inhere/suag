@@ -271,7 +271,7 @@ func TestMockProvider_Embed(t *testing.T) {
 
 func TestMockProvider_Stream(t *testing.T) {
 	m := NewMockProvider("test").QueueText("streamed")
-	ch, err := m.Stream(context.Background(), &CompletionRequest{})
+	ch, err := m.StreamText(context.Background(), &CompletionRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}

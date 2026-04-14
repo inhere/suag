@@ -20,6 +20,48 @@ type stubProvider struct {
 
 func (s *stubProvider) Name() string { return s.name }
 
+func (s *stubProvider) Generate(ctx context.Context, req *api.GenerateRequest) (*api.GenerateResult, error) {
+	resp, err := s.Complete(ctx, &llm.CompletionRequest{
+		Model:       req.Model,
+		MaxTokens:   req.MaxTokens,
+		Temperature: req.Temperature,
+		System:      req.System,
+		Messages:    toLegacyMessages(req.Messages),
+		Tools:       toLegacyTools(req.Tools),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return nil, nil
+	}
+	result := &api.GenerateResult{
+		Content: resp.Content,
+		Usage: api.Usage{
+			InputTokens:  resp.Usage.PromptTokens,
+			OutputTokens: resp.Usage.CompletionTokens,
+			TotalTokens:  resp.Usage.TotalTokens,
+		},
+	}
+	switch resp.FinishReason {
+	case "tool_calls":
+		result.FinishReason = api.FinishToolCalls
+	default:
+		result.FinishReason = api.FinishFinal
+	}
+	if len(resp.ToolCalls) > 0 {
+		result.ToolCalls = make([]api.ToolCall, len(resp.ToolCalls))
+		for i, call := range resp.ToolCalls {
+			result.ToolCalls[i] = api.ToolCall{
+				CallID:    call.ID,
+				Name:      call.Name,
+				Arguments: cloneMap(call.Arguments),
+			}
+		}
+	}
+	return result, nil
+}
+
 func (s *stubProvider) Complete(_ context.Context, req *llm.CompletionRequest) (*llm.CompletionResponse, error) {
 	s.callCount++
 	s.lastReq = cloneCompletionRequest(req)
@@ -29,7 +71,7 @@ func (s *stubProvider) Complete(_ context.Context, req *llm.CompletionRequest) (
 	return cloneCompletionResponse(s.resp), nil
 }
 
-func (s *stubProvider) Stream(context.Context, *llm.CompletionRequest) (<-chan string, error) {
+func (s *stubProvider) StreamText(context.Context, *llm.CompletionRequest) (<-chan string, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -308,4 +350,91 @@ func cloneMap(src map[string]any) map[string]any {
 		}
 	}
 	return dst
+}
+
+func toLegacyMessages(messages []api.Message) []llm.Message {
+	if len(messages) == 0 {
+		return nil
+	}
+	out := make([]llm.Message, len(messages))
+	for i, msg := range messages {
+		out[i] = llm.Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
+		if msg.ToolCall != nil {
+			out[i].ToolCall = &llm.ToolCall{
+				ID:        msg.ToolCall.CallID,
+				Name:      msg.ToolCall.Name,
+				Arguments: cloneMap(msg.ToolCall.Arguments),
+			}
+		}
+		if msg.ToolResult != nil {
+			out[i].ToolResult = &llm.ToolResult{
+				ToolCallID: msg.ToolResult.CallID,
+				Content:    msg.ToolResult.Content,
+			}
+		}
+	}
+	return out
+}
+
+func toLegacyTools(tools []api.ToolSchema) []llm.ToolSchema {
+	if len(tools) == 0 {
+		return nil
+	}
+	out := make([]llm.ToolSchema, len(tools))
+	for i, tool := range tools {
+		out[i] = llm.ToolSchema{
+			Name:        tool.Name,
+			Description: tool.Description,
+			Parameters:  toSchemaProperty(tool.InputSchema),
+		}
+	}
+	return out
+}
+
+func toSchemaProperty(schema map[string]any) llm.SchemaProperty {
+	prop := llm.SchemaProperty{}
+	if len(schema) == 0 {
+		return prop
+	}
+	if value, ok := schema["type"].(string); ok {
+		prop.Type = value
+	}
+	if value, ok := schema["description"].(string); ok {
+		prop.Description = value
+	}
+	switch enum := schema["enum"].(type) {
+	case []string:
+		prop.Enum = append([]string(nil), enum...)
+	case []any:
+		prop.Enum = make([]string, 0, len(enum))
+		for _, item := range enum {
+			if text, ok := item.(string); ok {
+				prop.Enum = append(prop.Enum, text)
+			}
+		}
+	}
+	switch required := schema["required"].(type) {
+	case []string:
+		prop.Required = append([]string(nil), required...)
+	case []any:
+		prop.Required = make([]string, 0, len(required))
+		for _, item := range required {
+			if text, ok := item.(string); ok {
+				prop.Required = append(prop.Required, text)
+			}
+		}
+	}
+	if properties, ok := schema["properties"].(map[string]any); ok {
+		prop.Properties = make(map[string]*llm.SchemaProperty, len(properties))
+		for name, raw := range properties {
+			if nested, ok := raw.(map[string]any); ok {
+				child := toSchemaProperty(nested)
+				prop.Properties[name] = &child
+			}
+		}
+	}
+	return prop
 }

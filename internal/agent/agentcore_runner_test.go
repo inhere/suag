@@ -254,6 +254,17 @@ func TestBuildAgentcoreConfig_PassesThroughPolicies(t *testing.T) {
 	}
 }
 
+func TestBuildAgentcoreConfig_UsesPlatformProviderDirectly(t *testing.T) {
+	mock := llm.NewMockProvider("mock").QueueText("ok")
+	a := newTestAgent(mock, newTestRegistry())
+
+	cfg := agent.BuildAgentcoreConfig(a, agent.AgentcoreRunnerConfig{})
+
+	if cfg.Provider != mock {
+		t.Fatalf("provider = %T, want original platform provider %T", cfg.Provider, mock)
+	}
+}
+
 func TestAgentcoreRunner_Run_TriggersHITLOnConsecutiveToolFailures(t *testing.T) {
 	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
