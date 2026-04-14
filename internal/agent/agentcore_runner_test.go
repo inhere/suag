@@ -3,13 +3,17 @@ package agent_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/inhere/axon/internal/acadapters/internalmemory"
+	"github.com/inhere/axon/internal/acadapters/internaltools"
 	"github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/ops/hitl"
 	"github.com/inhere/axon/internal/platform/llm"
+	"github.com/inhere/axon/internal/platform/memory"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/pkg/agentcore"
@@ -265,6 +269,68 @@ func TestBuildAgentcoreConfig_UsesPlatformProviderDirectly(t *testing.T) {
 	}
 }
 
+func TestBuildAgentcoreConfig_WiresCompatibleToolsAndMemory(t *testing.T) {
+	store := memory.NewInMemStore(memory.InMemConfig{})
+	reg := newTestRegistry(&coreEchoTool{})
+	a := newTestAgent(llm.NewMockProvider("mock").QueueText("ok"), reg)
+	a.Memory = store
+
+	cfg := agent.BuildAgentcoreConfig(a, agent.AgentcoreRunnerConfig{})
+
+	toolAdapter, ok := cfg.Tools.(*internaltools.Registry)
+	if !ok {
+		t.Fatalf("tools type = %T, want *internaltools.Registry", cfg.Tools)
+	}
+	memoryAdapter, ok := cfg.Memory.(*internalmemory.Adapter)
+	if !ok {
+		t.Fatalf("memory type = %T, want *internalmemory.Adapter", cfg.Memory)
+	}
+
+	schemas, err := toolAdapter.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("ListTools error: %v", err)
+	}
+	if len(schemas) != 1 || schemas[0].Name != "echo" {
+		t.Fatalf("schemas = %#v, want echo schema", schemas)
+	}
+
+	toolResult, err := toolAdapter.ExecuteTool(context.Background(), agentcore.ToolCall{
+		CallID: "call-1",
+		Name:   "echo",
+		Arguments: map[string]any{
+			"msg": "bridge",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool error: %v", err)
+	}
+	if toolResult.CallID != "call-1" || toolResult.Name != "echo" || toolResult.Content != "echo: bridge" {
+		t.Fatalf("tool result = %#v, want bridged metadata + content", toolResult)
+	}
+
+	runState := &agentcore.RunState{
+		RunID: "run-build-config",
+		Messages: []agentcore.Message{
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "world"},
+		},
+	}
+	if err := memoryAdapter.Hydrate(context.Background(), runState); err != nil {
+		t.Fatalf("Hydrate error: %v", err)
+	}
+
+	ctxMessages, err := memoryAdapter.BuildContext(context.Background(), runState)
+	if err != nil {
+		t.Fatalf("BuildContext error: %v", err)
+	}
+	if len(ctxMessages) != 2 {
+		t.Fatalf("context messages = %#v, want hydrated transcript", ctxMessages)
+	}
+	if ctxMessages[0].Role != "user" || ctxMessages[0].Content != "hello" {
+		t.Fatalf("first context message = %#v, want user hello", ctxMessages[0])
+	}
+}
+
 func TestAgentcoreRunner_Run_TriggersHITLOnConsecutiveToolFailures(t *testing.T) {
 	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
@@ -274,7 +340,7 @@ func TestAgentcoreRunner_Run_TriggersHITLOnConsecutiveToolFailures(t *testing.T)
 		_ = store.Close()
 	})
 
-	ft := &failTool{}
+	ft := &coreFailTool{}
 	mock := llm.NewMockProvider("mock").
 		QueueToolCall("fail_tool", nil).
 		QueueToolCall("fail_tool", nil).
@@ -331,6 +397,26 @@ func TestAgentcoreRunner_Run_TriggersHITLOnConsecutiveToolFailures(t *testing.T)
 	}
 }
 
+func TestBuildAgentcoreConfig_MemoryHydrateDetectsDivergedPrefix(t *testing.T) {
+	store := memory.NewInMemStore(memory.InMemConfig{})
+	store.AddMessage("user", "local")
+
+	a := newTestAgent(llm.NewMockProvider("mock").QueueText("ok"), newTestRegistry())
+	a.Memory = store
+
+	cfg := agent.BuildAgentcoreConfig(a, agent.AgentcoreRunnerConfig{})
+
+	err := cfg.Memory.Hydrate(context.Background(), &agentcore.RunState{
+		RunID: "run-diverged",
+		Messages: []agentcore.Message{
+			{Role: "user", Content: "authoritative"},
+		},
+	})
+	if !errors.Is(err, agentcore.ErrMemoryStateConflict) {
+		t.Fatalf("err = %v, want %v", err, agentcore.ErrMemoryStateConflict)
+	}
+}
+
 func TestAgentcoreRunner_Run_HITLDismissed(t *testing.T) {
 	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
@@ -345,7 +431,7 @@ func TestAgentcoreRunner_Run_HITLDismissed(t *testing.T) {
 		QueueToolCall("fail_tool", nil).
 		QueueToolCall("fail_tool", nil)
 
-	a := newTestAgent(mock, newTestRegistry(&failTool{}))
+	a := newTestAgent(mock, newTestRegistry(&coreFailTool{}))
 	hitlMgr := hitl.NewInMemoryManager(nil)
 	runner := agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
 		Storage:       store,
@@ -532,6 +618,16 @@ func TestAgentcoreRunner_Run_ManualStepThrough(t *testing.T) {
 type yieldBeforeSecondModelAgentHook struct {
 	agentcore.NopHook
 	beforeModelCalls int
+}
+
+type coreFailTool struct{}
+
+func (f *coreFailTool) Name() string           { return "fail_tool" }
+func (f *coreFailTool) Description() string    { return "always fails" }
+func (f *coreFailTool) Kind() tools.Kind       { return tools.KindNative }
+func (f *coreFailTool) Schema() llm.ToolSchema { return llm.ToolSchema{Name: "fail_tool"} }
+func (f *coreFailTool) Execute(context.Context, map[string]any) (string, error) {
+	return "", fmt.Errorf("fail_tool exploded")
 }
 
 func (h *yieldBeforeSecondModelAgentHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {

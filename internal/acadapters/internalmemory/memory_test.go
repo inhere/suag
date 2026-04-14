@@ -35,7 +35,7 @@ func (s *testStore) SearchSimilar(context.Context, string, int) ([]memory.Fragme
 
 func (s *testStore) Close() error { return nil }
 
-func TestAdapter_Hydrate_ReturnsConflictOnDivergedPrefix(t *testing.T) {
+func TestMemoryAdapter_Hydrate_ReturnsConflictOnDivergedPrefix(t *testing.T) {
 	store := &testStore{
 		messages: []memory.Message{
 			{Role: "user", Content: "local"},
@@ -54,7 +54,7 @@ func TestAdapter_Hydrate_ReturnsConflictOnDivergedPrefix(t *testing.T) {
 	}
 }
 
-func TestAdapter_Hydrate_AppendsMissingTranscriptTail(t *testing.T) {
+func TestMemoryAdapter_Hydrate_AppendsMissingTranscriptTail(t *testing.T) {
 	store := &testStore{
 		messages: []memory.Message{
 			{Role: "user", Content: "hello"},
@@ -75,5 +75,74 @@ func TestAdapter_Hydrate_AppendsMissingTranscriptTail(t *testing.T) {
 	got := store.GetMessages()
 	if len(got) != 2 || got[1].Role != "assistant" || got[1].Content != "world" {
 		t.Fatalf("messages = %#v, want appended transcript tail", got)
+	}
+}
+
+func TestMemoryAdapter_ObserveMessages_CompactsToolResultsAndSkipsEmpty(t *testing.T) {
+	store := &testStore{}
+	adapter := New(store)
+
+	err := adapter.ObserveMessages(context.Background(), &api.RunState{RunID: "run-1"},
+		api.Message{Role: "assistant", Content: "done"},
+		api.Message{
+			Role: "tool",
+			ToolResult: &api.ToolResult{
+				Name:    "search",
+				Content: "hit-1",
+			},
+		},
+		api.Message{
+			Role: "tool",
+			ToolResult: &api.ToolResult{
+				Name:    "bash",
+				Content: "tool error: permission denied",
+				Metadata: map[string]any{
+					"tool_error": true,
+				},
+			},
+		},
+		api.Message{Role: "system", Content: ""},
+	)
+	if err != nil {
+		t.Fatalf("ObserveMessages error: %v", err)
+	}
+
+	got := store.GetMessages()
+	if len(got) != 3 {
+		t.Fatalf("messages = %#v, want 3 compacted messages", got)
+	}
+	if got[0].Role != "assistant" || got[0].Content != "done" {
+		t.Fatalf("first message = %#v, want assistant content", got[0])
+	}
+	if got[1].Role != "tool" || got[1].Content != "hit-1" {
+		t.Fatalf("second message = %#v, want tool result content", got[1])
+	}
+	if got[2].Role != "tool" || got[2].Content != `tool "bash" error: permission denied` {
+		t.Fatalf("third message = %#v, want normalized tool error", got[2])
+	}
+}
+
+func TestMemoryAdapter_BuildContext_MapsStoreMessages(t *testing.T) {
+	store := &testStore{
+		messages: []memory.Message{
+			{Role: "system", Content: "[Memory summary]: earlier"},
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "world"},
+		},
+	}
+	adapter := New(store)
+
+	got, err := adapter.BuildContext(context.Background(), &api.RunState{RunID: "run-1"})
+	if err != nil {
+		t.Fatalf("BuildContext error: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("context messages = %#v, want 3", got)
+	}
+	if got[0].Role != "system" || got[0].Content != "[Memory summary]: earlier" {
+		t.Fatalf("first context message = %#v, want summary", got[0])
+	}
+	if got[2].Role != "assistant" || got[2].Content != "world" {
+		t.Fatalf("last context message = %#v, want assistant world", got[2])
 	}
 }

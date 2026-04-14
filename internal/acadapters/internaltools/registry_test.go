@@ -35,7 +35,7 @@ func (t *echoTool) Execute(_ context.Context, args map[string]any) (string, erro
 	return "echo:" + args["text"].(string), nil
 }
 
-func TestInternalToolsAdapter_ListsSchemasAndExecutes(t *testing.T) {
+func TestRegistryAdapter_ListsSchemasAndExecutes(t *testing.T) {
 	reg := tools.NewRegistry()
 	tool := &echoTool{}
 	reg.Register(tool)
@@ -89,7 +89,7 @@ func TestInternalToolsAdapter_ListsSchemasAndExecutes(t *testing.T) {
 	}
 }
 
-func TestInternalToolsAdapter_ListTools_IsStableAndSortedByName(t *testing.T) {
+func TestRegistryAdapter_ListTools_IsStableAndSortedByName(t *testing.T) {
 	reg := tools.NewRegistry()
 	reg.Register(&namedEchoTool{name: "z-last"})
 	reg.Register(&namedEchoTool{name: "a-first"})

@@ -2,10 +2,11 @@ package memory
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
-func TestInMemStore_AddAndGetMessages(t *testing.T) {
+func TestInMemStoreMemory_AddAndGetMessages(t *testing.T) {
 	s := NewInMemStore(InMemConfig{})
 	s.AddMessage("user", "hello")
 	s.AddMessage("assistant", "hi there")
@@ -19,7 +20,7 @@ func TestInMemStore_AddAndGetMessages(t *testing.T) {
 	}
 }
 
-func TestInMemStore_GetContext_NilSummarizer(t *testing.T) {
+func TestInMemStoreMemory_GetContext_NilSummarizer(t *testing.T) {
 	s := NewInMemStore(InMemConfig{MaxMessages: 5, KeepRecent: 3})
 
 	// Fill beyond the threshold.
@@ -43,7 +44,7 @@ func TestInMemStore_GetContext_NilSummarizer(t *testing.T) {
 	}
 }
 
-func TestInMemStore_SearchSimilar_Empty(t *testing.T) {
+func TestInMemStoreMemory_SearchSimilar_Empty(t *testing.T) {
 	s := NewInMemStore(InMemConfig{})
 	results, err := s.SearchSimilar(context.Background(), "anything", 5)
 	if err != nil {
@@ -51,5 +52,31 @@ func TestInMemStore_SearchSimilar_Empty(t *testing.T) {
 	}
 	if results != nil {
 		t.Errorf("expected nil results, got %v", results)
+	}
+}
+
+func TestInMemStoreMemory_GetContext_PrependsSummaryAndKeepsRecentWindow(t *testing.T) {
+	s := NewInMemStore(InMemConfig{MaxMessages: 3, KeepRecent: 2})
+
+	s.AddMessage("user", "one")
+	s.AddMessage("assistant", "two")
+	s.AddMessage("user", "three")
+	s.AddMessage("assistant", "four")
+
+	msgs, err := s.GetContext(context.Background(), 8000)
+	if err != nil {
+		t.Fatalf("GetContext error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("context messages = %d, want 3", len(msgs))
+	}
+	if msgs[0].Role != "system" {
+		t.Fatalf("first context role = %q, want system summary", msgs[0].Role)
+	}
+	if !strings.Contains(msgs[0].Content, "user: one") || !strings.Contains(msgs[0].Content, "assistant: two") {
+		t.Fatalf("summary content = %q, want compacted older messages", msgs[0].Content)
+	}
+	if msgs[1].Content != "three" || msgs[2].Content != "four" {
+		t.Fatalf("recent window = %#v, want [three four]", msgs[1:])
 	}
 }
