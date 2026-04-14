@@ -54,6 +54,7 @@
 - `docs/superpowers/specs/2026-04-14-agentcore-platform-contract-alignment-design.md` 已补齐 agentcore 与 platform contract 收口设计，当前已明确在构建 Host internal `session runner` 之前，先完成 `llm / tools / memory` 围绕 `pkg/agentcore/api` 的第一方收口，并同步规划 `llm.api_type` 配置演进
 - `docs/superpowers/plans/2026-04-14-agentcore-llm-contract-alignment-phase1.md` 已补齐第一阶段实施计划，当前先聚焦 `agentcore/api + platform/llm + agentcore runner + llm.api_type/provider_name` 收口，不提前进入 Host internal `session runner` 实装
 - Phase 1 计划已补做一轮工程复核，当前已明确 `internal/platform/llm` 收口需要显式兼容 `ReactRunner`、`cron` 与 `Pool`，同时已开始清理文档中的旧 `internal/agentcoreadapters/*` 路径，避免后续实现判断继续被旧结构干扰
+- Phase 1 实施已开始第一步，`internal/ops/cron/scheduler_test.go` 已补齐 cron 的 LLM 决策兼容回归测试，当前 `ReactRunner / cron / team` 的 legacy caller 基线已具备首轮 no-regression 护栏
 
 <!-- PROCESSING WORKS:END -->
 
