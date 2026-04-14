@@ -37,8 +37,8 @@ func main() {
 
 If you want to bridge Axon's existing internal stacks into `agentcore`, use the adapters in:
 
-- `internal/agentcoreadapters/internalllm`
-- `internal/agentcoreadapters/internaltools`
+- `internal/acadapters/internalllm`
+- `internal/acadapters/internaltools`
 
 ## Agentcore Docs
 

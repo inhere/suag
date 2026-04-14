@@ -4,7 +4,7 @@
 
 **Goal:** Make `pkg/agentcore/api` the primary LLM runtime contract by patching missing provider extensions, aligning `internal/platform/llm` to implement it directly, and evolving the top-level LLM config from vendor-first to `api_type`-first.
 
-**Architecture:** Keep `pkg/agentcore` as the kernel contract owner, add only the minimal contract additions needed for first-party provider support, and refactor `internal/platform/llm` so OpenAI-compatible and Anthropic providers implement the public agentcore provider interfaces directly. Preserve migration safety by keeping `internal/acadapters/internalllm` temporarily compilable until all first-party call sites move, then leave adapter cleanup for a later phase.
+**Architecture:** Keep `pkg/agentcore` as the kernel contract owner, add only the minimal contract additions needed for first-party provider support, and refactor `internal/platform/llm` so OpenAI-compatible and Anthropic providers implement the public agentcore provider interfaces directly. Phase 1 is not a big-bang rewrite: preserve a narrow compatibility surface for existing `ReactRunner`, `cron`, and pool call sites while moving `agentcore` paths to the public contract first, then schedule the remaining legacy call-site cleanup in a later phase.
 
 **Tech Stack:** Go 1.24, existing `pkg/agentcore/api`, `internal/platform/llm`, `cmd/axon`, `gookit/config`, `go test`
 
@@ -24,7 +24,7 @@
 ### First-party LLM implementation alignment
 
 - Modify: `internal/platform/llm/provider.go`
-  Responsibility: redefine the package-level contract around `pkg/agentcore/api` instead of maintaining a parallel request/response model
+  Responsibility: redefine the package-level contract around `pkg/agentcore/api` while explicitly preserving a minimal migration-safe facade for legacy callers that still use `Complete`-style entry points
 - Modify: `internal/platform/llm/openai.go`
   Responsibility: implement `agentcore/api.Provider`, `StreamingProvider`, and embedding extension for OpenAI-compatible backends
 - Modify: `internal/platform/llm/claude.go`
@@ -35,6 +35,8 @@
   Responsibility: keep the test/mock provider compatible with the aligned contract so internal tests still have a first-party fake
 - Modify: `internal/platform/llm/mock_test.go`
   Responsibility: update expectations around the new contract shape
+- Modify: `internal/platform/llm/pool.go`
+  Responsibility: keep provider failover behavior working after the primary contract shifts toward `agentcore/api`
 
 ### Migration bridge and call sites
 
@@ -44,6 +46,12 @@
   Responsibility: keep the end-to-end adapter regression test passing while the migration bridge is thinned down
 - Modify: `internal/agent/agentcore_runner.go`
   Responsibility: stop wrapping internal providers through `internalllm` once `internal/platform/llm` implements the public contract directly
+- Modify: `internal/agent/agent.go`
+  Responsibility: only if needed, narrow or alias the stored LLM type so `Agent` can feed both agentcore-first and legacy runner call sites during the transition
+- Modify: `internal/agent/runner.go`
+  Responsibility: keep the legacy `ReactRunner` compiling and behaviorally stable while `platform/llm` shifts toward the public contract
+- Modify: `internal/ops/cron/scheduler.go`
+  Responsibility: preserve cron decision-phase LLM usage if `platform/llm` request/response types or helper methods change
 - Modify: `internal/team/manager.go`
   Responsibility: verify that team-created agents still receive the aligned first-party provider cleanly and only change this file if constructor signatures actually shift
 
@@ -57,6 +65,65 @@
   Responsibility: document the new `llm.api_type` / `llm.provider_name` shape without depending on local checked-in config changes
 - Modify: `docs/superpowers/specs/2026-04-14-agentcore-platform-contract-alignment-design.md`
   Responsibility: mark Phase 1 implementation linkage once the plan lands
+
+---
+
+## Existing Reuse And Compatibility Boundary
+
+### What already exists
+
+- `internal/agent/agentcore_runner.go`
+  Already moves one important runtime path onto `pkg/agentcore`, so Phase 1 should expand from this seam instead of introducing a second migration seam.
+- `internal/acadapters/internalllm/provider.go`
+  Already proves the request/response mapping between internal LLM types and `agentcore/api`; Phase 1 should reuse that knowledge when collapsing duplicate contracts.
+- `internal/agent/runner.go`
+  Still drives the legacy `ReactRunner` path via `Complete`, `CompletionRequest`, and `CompletionResponse`, so this file defines the minimum compatibility boundary.
+- `internal/ops/cron/scheduler.go`
+  Still uses `llm.Provider.Complete(...)` directly for cron decision prompts, so it is another hidden legacy caller that must not silently break during Phase 1.
+- `internal/platform/llm/pool.go`
+  Already centralizes provider failover and embed fallback behavior, so the plan should preserve this logic rather than re-implementing it elsewhere.
+
+### Not in scope
+
+- Migrating `ReactRunner` onto pure `agentcore/api` in this phase
+  Rationale: this would enlarge the blast radius beyond the LLM contract seam and should be handled as a separate follow-up once the first-party provider contract is stable.
+- Refactoring cron orchestration behavior beyond compile-safe compatibility
+  Rationale: Phase 1 only needs to preserve its existing decision prompt flow, not redesign cron execution.
+- Removing every `CompletionRequest` / `CompletionResponse` helper on day one
+  Rationale: a minimal compatibility facade may be the safest strangler path while agentcore-first call sites are being adopted.
+
+---
+
+### Task 0: Lock The Compatibility Boundary Before Refactoring
+
+**Files:**
+- Modify: `internal/platform/llm/mock_test.go`
+- Modify: `internal/agent/react_runner_policy_behavior_test.go`
+- Create or Modify: `internal/ops/cron/scheduler_test.go`
+- Modify: `internal/team/manager_runtime_test.go`
+
+- [ ] **Step 1: Add regression coverage for legacy callers that must keep working through Phase 1**
+
+Cover at least:
+
+- `ReactRunner` can still complete a simple text-only task through the current agent LLM field
+- cron decision flow can still call the LLM and parse a JSON action response
+- team manager runtime selection still works with the same mock provider in both `agentcore` and `react` modes
+- [ ] **Step 2: Run the compatibility-focused tests and verify the current baseline passes**
+
+Run: `go test ./internal/agent ./internal/ops/cron ./internal/team -run "React|Cron|Team" -v`
+Expected: PASS on the pre-refactor baseline
+
+- [ ] **Step 3: Treat these tests as a no-regression fence for the rest of Phase 1**
+
+Do not start refactoring `internal/platform/llm` until this fence exists.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add internal/platform/llm/mock_test.go internal/agent/react_runner_policy_behavior_test.go internal/ops/cron/scheduler_test.go internal/team/manager_runtime_test.go
+git commit -m "test: lock llm compatibility boundary before contract alignment"
+```
 
 ---
 
@@ -127,6 +194,7 @@ git commit -m "feat: extend agentcore provider contract for embeddings"
 - Modify: `internal/platform/llm/deepseek.go`
 - Modify: `internal/platform/llm/mock.go`
 - Modify: `internal/platform/llm/mock_test.go`
+- Modify: `internal/platform/llm/pool.go`
 
 - [ ] **Step 1: Write the failing first-party provider compatibility tests**
 
@@ -149,7 +217,7 @@ Expected: FAIL with interface mismatch or missing methods
 
 - [ ] **Step 3: Refactor `internal/platform/llm/provider.go` to use `agentcore/api` request and response types**
 
-Keep the package focused on first-party implementation logic. Remove or deprecate duplicate request/response structs once first-party providers use public `GenerateRequest` / `GenerateResult`.
+Keep the package focused on first-party implementation logic. Remove or deprecate duplicate request/response structs once first-party providers use public `GenerateRequest` / `GenerateResult`, but preserve the smallest possible compatibility shim for legacy `Complete` callers until a later cleanup phase.
 
 - [ ] **Step 4: Update OpenAI-compatible providers to implement the public contract directly**
 
@@ -174,15 +242,19 @@ Claude should:
 
 Make sure internal tests still have a deterministic first-party fake aligned with the new contract.
 
-- [ ] **Step 7: Run tests to verify they pass**
+- [ ] **Step 7: Update provider pool compatibility**
 
-Run: `go test ./internal/platform/llm -v`
+Keep `Pool` failover and embed fallback behavior intact after the underlying provider contract changes.
+
+- [ ] **Step 8: Run tests to verify they pass**
+
+Run: `go test ./internal/platform/llm ./internal/agent ./internal/ops/cron -v`
 Expected: PASS
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add internal/platform/llm
+git add internal/platform/llm internal/agent/runner.go internal/ops/cron/scheduler.go
 git commit -m "refactor: align platform llm with agentcore provider api"
 ```
 
@@ -304,7 +376,7 @@ Expected: PASS
 
 - [ ] **Step 6: Run broader verification**
 
-Run: `go test ./pkg/agentcore/api ./internal/platform/llm ./internal/agent ./cmd/axon -v`
+Run: `go test ./pkg/agentcore/api ./internal/platform/llm ./internal/agent ./internal/ops/cron ./internal/team ./cmd/axon -v`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
@@ -322,3 +394,4 @@ git commit -m "feat: add api-type based llm provider configuration"
 - Do not delete `internal/acadapters/internalllm` unless all compile paths have moved and a follow-up cleanup step is explicitly added.
 - Keep `agentcore/api` contract additions minimal; avoid sliding provider-specific policy into the kernel.
 - Do not modify the user's local `config/config.yaml` as part of this phase unless a separate explicit config migration task is requested.
+- Treat `ReactRunner`, cron, and provider-pool compatibility as explicit migration constraints, not incidental side effects.

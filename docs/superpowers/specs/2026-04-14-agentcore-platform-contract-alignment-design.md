@@ -439,3 +439,23 @@ llm:
 6. Host internal `session runner` 设计与接线
 
 这样可以最大限度避免“先接主链，再回头拆 contract”的返工。
+
+### 11.1 Phase 1 计划约束补充
+
+当前已补齐第一阶段实施计划：
+
+- `docs/superpowers/plans/2026-04-14-agentcore-llm-contract-alignment-phase1.md`
+
+在进入真实编码前，需要明确一个实现约束：
+
+- `internal/platform/llm` 的 contract 收口不能被当作一次纯粹的包内重命名
+- 现有 `ReactRunner`、`cron.Scheduler`、`llm.Pool` 仍直接依赖 `Complete / CompletionRequest / CompletionResponse / Embed`
+- 因此 Phase 1 应优先让 `agentcore` 主路径直接使用公共 contract，同时保留一个最小兼容面给 legacy caller
+
+也就是说，这轮更适合采用：
+
+- `agentcore` 主路径先切到公共 contract
+- 旧调用点维持 compile-safe compatibility
+- legacy `llm` facade 与 `acadapters` 清理放到后续 phase
+
+而不是一次性把所有 `internal/platform/llm` 调用点一起重写。

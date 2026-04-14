@@ -8,9 +8,9 @@
 结论先行：
 
 - `internal/llm`
-  - 可以通过 `internal/agentcoreadapters/internalllm` 接入
+  - 可以通过 `internal/acadapters/internalllm` 接入
 - `internal/tools`
-  - 可以通过 `internal/agentcoreadapters/internaltools` 接入
+  - 可以通过 `internal/acadapters/internaltools` 接入
 - `internal/memory`
   - 不应作为 `agentcore.Storage` 使用
   - 现在更适合作为 `agentcore.Memory` 接入
@@ -39,7 +39,7 @@
 
 因此现在已经可以通过：
 
-- `internal/agentcoreadapters/internalllm`
+- `internal/acadapters/internalllm`
 
 把 `internal/llm.Provider` 接到 `agentcore.Runtime` 上。
 
@@ -52,7 +52,7 @@
 
 因此现在已经可以通过：
 
-- `internal/agentcoreadapters/internaltools`
+- `internal/acadapters/internaltools`
 
 把 `internal/tools.Registry` 接到 `agentcore.ToolRegistry` 上。
 
@@ -96,7 +96,7 @@
 
 当前仓库已经新增：
 
-- `internal/agentcoreadapters/internalmemory`
+- `internal/acadapters/internalmemory`
 
 用来把 `internal/memory.Store` 接到 `agentcore.Memory` 上。
 
@@ -197,7 +197,7 @@
 
 - 保持 `internal/llm` 不动
 - 保持 `internal/tools` 不动
-- 通过 `internal/agentcoreadapters/*` 连接 `agentcore`
+- 通过 `internal/acadapters/*` 连接 `agentcore`
 - 先在新入口或实验入口中验证 runtime 行为
 
 这是当前已经具备的阶段。
@@ -250,7 +250,7 @@
 - `pkg/agentcore`
   - 不依赖任何 `internal/*`
   - 只放公共 contract、默认实现、纯公共辅助包
-- `internal/agentcoreadapters`
+- `internal/acadapters`
   - 放仓库内部桥接层
   - 允许依赖 `internal/llm`、`internal/tools`、`internal/memory`
 - `internal/agent`
