@@ -18,6 +18,7 @@ import (
 
 	"github.com/inhere/axon/internal/host/acpbridge"
 	"github.com/inhere/axon/internal/host/gateway"
+	"github.com/inhere/axon/internal/host/intrunner"
 	"github.com/inhere/axon/internal/host/session"
 	"github.com/inhere/axon/internal/ops/cron"
 	"github.com/inhere/axon/internal/ops/hitl"
@@ -63,11 +64,14 @@ func main() {
 // ─── app wiring ───────────────────────────────────────────────────────────────
 
 type app struct {
+	provider  llm.Provider
+	registry  *tools.Registry
 	orch      *orchestrator.Orchestrator
 	bus       *gateway.EventBus
 	hitlMgr   hitl.Manager
 	tracer    tracing.Tracer
 	scheduler *cron.Scheduler
+	workspace string
 }
 
 func buildApp() (*app, error) {
@@ -152,11 +156,14 @@ func buildApp() (*app, error) {
 	scheduler := cron.NewScheduler(orch, provider, registry)
 
 	return &app{
+		provider:  provider,
+		registry:  registry,
 		orch:      orch,
 		bus:       bus,
 		hitlMgr:   hitlMgr,
 		tracer:    tracer,
 		scheduler: scheduler,
+		workspace: workspace,
 	}, nil
 }
 
@@ -178,7 +185,7 @@ func runServer(ctx context.Context, a *app) {
 		}
 	}()
 
-	sessionRunner, err := buildSessionRunner()
+	sessionRunner, err := buildSessionRunner(a)
 	if err != nil {
 		slog.Error("failed to build session runner", "err", err)
 		return
@@ -221,10 +228,19 @@ func resolveSessionDBPath() string {
 	return filepath.Clean(filepath.FromSlash(raw))
 }
 
-func buildSessionRunner() (session.Runner, error) {
+func buildSessionRunner(a *app) (session.Runner, error) {
 	mode := strings.TrimSpace(config.String("host.acp.mode"))
 	if mode == "" {
-		return nil, nil
+		return intrunner.New(intrunner.Config{
+			Provider:      a.provider,
+			Registry:      a.registry,
+			Tracer:        a.tracer,
+			HITL:          a.hitlMgr,
+			RunRoot:       filepath.Join(a.workspace, ".agentcore", "host"),
+			Runtime:       config.String("agent.runtime"),
+			FailThreshold: config.Int("hitl.fail_threshold", 3),
+			MaxSteps:      config.Int("max_steps", 10),
+		})
 	}
 
 	adapterName := strings.TrimSpace(config.String("host.acp.adapter"))

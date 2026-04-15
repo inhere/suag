@@ -15,6 +15,7 @@
 
 - 创建 session
 - 启动 turn
+- 未配置 `host.acp.mode` 时，Host 默认走 internal runner 执行单 agent 回合
 - Web 通过 `/ws` 接收会话快照与增量事件
 - 刷新后按需恢复 focused run detail
 - 当前 turn 进入 waiting 状态时，通过 `Add Hint` 发送 `continue_turn`
@@ -147,5 +148,8 @@ http://127.0.0.1:5173
 - `STATE_SNAPSHOT v0` 的消费契约见 `docs/usage/host-state-snapshot-v0.md`
 - `/api/sessions/{id}/events?after_seq=` 使用的是 session 级单调递增 `sequence` 游标，不会在新 turn 时重置
 - Host 当前已开始下发 `run.status` 非终态事件，可用于在联调时观察 `dispatching`、`external_running`、`input_required`、`auth_required`
+- 当前 Host server 的 session runner 选择规则是：
+  - 配置了 `host.acp.mode` 时，走 `internal/host/acpbridge`
+  - 未配置 `host.acp.mode` 时，默认走 `internal/host/intrunner`，并按 `sessionId` 复用本地上下文历史
 - `vite` 代理仅用于本地开发，不影响生产构建输出
 - 本地 `db/axon.db`、`db/axon.db-shm`、`db/axon.db-wal` 都属于开发产物，不应作为功能变更提交

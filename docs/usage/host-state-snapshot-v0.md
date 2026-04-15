@@ -187,6 +187,9 @@
   - `displayState` 通常会是 `external_running`
 - 如果 run 正在等待继续输入或授权
   - `displayState` 可能会是 `input_required` 或 `auth_required`
+- 如果 Host 当前走的是默认 internal runner
+  - 运行前会先经过 `preparing -> thinking`
+  - 当前尚未补齐更细粒度的内部 tool / reasoning 映射，先以这两个中间态作为最小可视反馈
 - `externalTaskIds`
   - 允许一个 run 关联多个外部任务
 
