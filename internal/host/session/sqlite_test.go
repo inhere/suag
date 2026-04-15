@@ -79,8 +79,12 @@ func TestSQLiteStore_CreateSessionTurnRunAndEvent(t *testing.T) {
 	if err := store.CreateRun(ctx, runModel); err != nil {
 		t.Fatalf("CreateRun() error = %v", err)
 	}
-	if err := store.AppendEvent(ctx, eventModel); err != nil {
+	storedEvent, err := store.AppendEvent(ctx, eventModel)
+	if err != nil {
 		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	if storedEvent.Sequence != 1 {
+		t.Fatalf("AppendEvent().Sequence = %d, want %d", storedEvent.Sequence, 1)
 	}
 
 	gotSession, err := store.GetSession(ctx, sessionModel.SessionID)
@@ -100,6 +104,73 @@ func TestSQLiteStore_CreateSessionTurnRunAndEvent(t *testing.T) {
 	}
 	if events[0].EventType != "run.queued" {
 		t.Fatalf("ListEventsBySession()[0].EventType = %q, want %q", events[0].EventType, "run.queued")
+	}
+}
+
+func TestSQLiteStore_AppendEventAssignsSessionWideIncreasingSequence(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newTestStore(t)
+	now := time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC)
+
+	if err := store.CreateSession(ctx, Session{
+		SessionID: "sess_seq",
+		Title:     "sequence session",
+		Status:    SessionOpen,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Metadata:  map[string]any{},
+	}); err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+
+	firstEvent, err := store.AppendEvent(ctx, RunEvent{
+		EventID:   "evt_seq_001",
+		SessionID: "sess_seq",
+		TurnID:    "turn_seq_001",
+		RunID:     "run_seq_001",
+		AgentID:   "default",
+		EventType: EventRunQueued,
+		Sequence:  99,
+		Source:    "test",
+		CreatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent() first error = %v", err)
+	}
+
+	secondEvent, err := store.AppendEvent(ctx, RunEvent{
+		EventID:   "evt_seq_002",
+		SessionID: "sess_seq",
+		TurnID:    "turn_seq_002",
+		RunID:     "run_seq_002",
+		AgentID:   "default",
+		EventType: EventRunStarted,
+		Sequence:  1,
+		Source:    "test",
+		CreatedAt: now.Add(time.Second),
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent() second error = %v", err)
+	}
+
+	if firstEvent.Sequence != 1 {
+		t.Fatalf("first AppendEvent().Sequence = %d, want %d", firstEvent.Sequence, 1)
+	}
+	if secondEvent.Sequence != 2 {
+		t.Fatalf("second AppendEvent().Sequence = %d, want %d", secondEvent.Sequence, 2)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_seq", 1)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("ListEventsBySession() len = %d, want 1", len(events))
+	}
+	if events[0].EventID != "evt_seq_002" {
+		t.Fatalf("ListEventsBySession()[0].EventID = %q, want %q", events[0].EventID, "evt_seq_002")
 	}
 }
 

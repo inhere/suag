@@ -1,7 +1,7 @@
 # Host State Snapshot v0
 
 > 状态：Current
-> 更新时间：2026-04-12
+> 更新时间：2026-04-15
 > Schema：`axon.host.state.v0`
 > Version：`v0`
 
@@ -261,6 +261,12 @@
 
 - 直接把它作为主 UI 数据源
 - 每次重连都重新从 `events` 重放生成页面状态
+
+当前实现补充约定：
+
+- `events[].sequence` 是 session 维度的单调递增序号
+- `GET /api/sessions/{id}/events?after_seq=N` 与 WS 首包后的增量消费，都应把这个序号当作 session 级游标
+- 不要把 `sequence` 视为 turn 内局部序号，也不要假设新 turn 会重新从 `1` 开始
 
 如果某个页面必须读 `events`，也建议把它视为：
 

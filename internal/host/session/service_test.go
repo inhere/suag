@@ -146,6 +146,15 @@ func TestService_ContinueTurnCreatesNewTurnForExistingSession(t *testing.T) {
 	if len(bus.events) != 3 {
 		t.Fatalf("published events len = %d, want 3", len(bus.events))
 	}
+	if bus.events[0].Sequence != 1 {
+		t.Fatalf("bus.events[0].Sequence = %d, want %d", bus.events[0].Sequence, 1)
+	}
+	if bus.events[1].Sequence != 2 {
+		t.Fatalf("bus.events[1].Sequence = %d, want %d", bus.events[1].Sequence, 2)
+	}
+	if bus.events[2].Sequence != 3 {
+		t.Fatalf("bus.events[2].Sequence = %d, want %d", bus.events[2].Sequence, 3)
+	}
 }
 
 func TestService_ContinueTurnPassesResumeExternalTasksFromPreviousTurn(t *testing.T) {
@@ -612,6 +621,67 @@ func TestService_StartTurnPersistsFailedLifecycleState(t *testing.T) {
 	}
 	if sessionStatus != string(SessionWaiting) {
 		t.Fatalf("persisted failed session status = %q, want %q", sessionStatus, SessionWaiting)
+	}
+}
+
+func TestService_ContinueTurnKeepsSessionEventSequenceIncreasingAcrossTurns(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{Summary: "done"},
+	}
+	now := time.Date(2026, 4, 14, 14, 0, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	firstResult, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_sequence",
+		AgentID:       "default",
+		UserMessage:   "first turn",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	svc.now = func() time.Time { return now.Add(2 * time.Minute) }
+	secondResult, err := svc.ContinueTurn(ctx, ContinueTurnInput{
+		SessionID:     "sess_sequence",
+		AgentID:       "default",
+		Message:       "second turn",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("ContinueTurn() error = %v", err)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_sequence", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 6 {
+		t.Fatalf("ListEventsBySession() len = %d, want 6", len(events))
+	}
+
+	for idx, event := range events {
+		want := int64(idx + 1)
+		if event.Sequence != want {
+			t.Fatalf("events[%d].Sequence = %d, want %d", idx, event.Sequence, want)
+		}
+	}
+	if events[2].RunID != firstResult.RunID {
+		t.Fatalf("events[2].RunID = %q, want %q", events[2].RunID, firstResult.RunID)
+	}
+	if events[3].RunID != secondResult.RunID {
+		t.Fatalf("events[3].RunID = %q, want %q", events[3].RunID, secondResult.RunID)
+	}
+	if bus.events[5].Sequence != 6 {
+		t.Fatalf("bus.events[5].Sequence = %d, want %d", bus.events[5].Sequence, 6)
 	}
 }
 

@@ -278,26 +278,52 @@ func (s *SQLiteStore) UpdateRunLifecycle(ctx context.Context, runID string, stat
 	return nil
 }
 
-func (s *SQLiteStore) AppendEvent(ctx context.Context, event RunEvent) error {
+func (s *SQLiteStore) AppendEvent(ctx context.Context, event RunEvent) (RunEvent, error) {
 	if err := validateID("event", event.EventID); err != nil {
-		return err
+		return RunEvent{}, err
 	}
 	payload, err := marshalJSON(event.Payload)
 	if err != nil {
-		return err
+		return RunEvent{}, err
 	}
 
-	_, err = s.db.ExecContext(ctx, `
+	// Session event sequence is assigned by the store so websocket incremental
+	// reads and snapshot recovery share one session-scoped ordering authority.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return RunEvent{}, fmt.Errorf("begin append event tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO run_events (
 			event_id, session_id, turn_id, run_id, agent_id, event_type,
 			sequence, payload_json, source, created_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, event.EventID, event.SessionID, event.TurnID, event.RunID, event.AgentID, event.EventType, event.Sequence, payload, event.Source, formatTime(event.CreatedAt))
+		VALUES (
+			?, ?, ?, ?, ?, ?,
+			COALESCE((SELECT MAX(sequence) + 1 FROM run_events WHERE session_id = ?), 1),
+			?, ?, ?
+		)
+	`, event.EventID, event.SessionID, event.TurnID, event.RunID, event.AgentID, event.EventType, event.SessionID, payload, event.Source, formatTime(event.CreatedAt))
 	if err != nil {
-		return fmt.Errorf("append event: %w", err)
+		return RunEvent{}, fmt.Errorf("append event: %w", err)
 	}
-	return nil
+
+	if err := tx.QueryRowContext(ctx, `
+		SELECT sequence
+		FROM run_events
+		WHERE event_id = ?
+	`, event.EventID).Scan(&event.Sequence); err != nil {
+		return RunEvent{}, fmt.Errorf("query appended event sequence: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return RunEvent{}, fmt.Errorf("commit append event tx: %w", err)
+	}
+	return event, nil
 }
 
 func (s *SQLiteStore) ListEventsBySession(ctx context.Context, sessionID string, afterSequence int64) ([]RunEvent, error) {

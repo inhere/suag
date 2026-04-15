@@ -88,8 +88,8 @@ type Service struct {
 	runner Runner
 	now    func() time.Time
 
-	activeMu          sync.Mutex
-	activeExecutions  map[string]*activeExecution
+	activeMu         sync.Mutex
+	activeExecutions map[string]*activeExecution
 }
 
 func NewService(store Store, pub Publisher, runner Runner, cfg ServiceConfig) *Service {
@@ -99,10 +99,10 @@ func NewService(store Store, pub Publisher, runner Runner, cfg ServiceConfig) *S
 	}
 
 	return &Service{
-		store:  store,
-		pub:    pub,
-		runner: runner,
-		now:    nowFn,
+		store:            store,
+		pub:              pub,
+		runner:           runner,
+		now:              nowFn,
 		activeExecutions: make(map[string]*activeExecution),
 	}
 }
@@ -207,13 +207,9 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 		Source:    "host.session.service",
 		CreatedAt: now,
 	}
-	if err := s.store.AppendEvent(ctx, eventModel); err != nil {
+	eventModel, err = s.appendAndPublishEvent(ctx, eventModel)
+	if err != nil {
 		return StartTurnResult{}, fmt.Errorf("append queued event: %w", err)
-	}
-	if s.pub != nil {
-		if err := s.pub.PublishSessionEvent(ctx, eventModel); err != nil {
-			return StartTurnResult{}, fmt.Errorf("publish queued event: %w", err)
-		}
 	}
 	startedEvent := RunEvent{
 		EventID:   NewEventID(),
@@ -229,17 +225,12 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 		Source:    "host.session.service",
 		CreatedAt: now,
 	}
-	if err := s.store.AppendEvent(ctx, startedEvent); err != nil {
+	startedEvent, err = s.appendAndPublishEvent(ctx, startedEvent)
+	if err != nil {
 		return StartTurnResult{}, fmt.Errorf("append started event: %w", err)
-	}
-	if s.pub != nil {
-		if err := s.pub.PublishSessionEvent(ctx, startedEvent); err != nil {
-			return StartTurnResult{}, fmt.Errorf("publish started event: %w", err)
-		}
 	}
 
 	if s.runner != nil {
-		nextSequence := int64(3)
 		runCtx, execution := s.registerActiveExecution(ctx, sessionID, turnID, runID, agentID)
 		runCtx = hitl.WithTicketContext(runCtx, hitl.TicketContext{
 			SessionID: sessionID,
@@ -268,19 +259,12 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 					RunID:     runID,
 					AgentID:   agentID,
 					EventType: runtimeEvent.EventType,
-					Sequence:  nextSequence,
 					Payload:   payload,
 					Source:    "host.session.runtime",
 					CreatedAt: s.now().UTC(),
 				}
-				nextSequence++
-				if err := s.store.AppendEvent(ctx, event); err != nil {
+				if _, err := s.appendAndPublishEvent(ctx, event); err != nil {
 					return fmt.Errorf("append runtime event: %w", err)
-				}
-				if s.pub != nil {
-					if err := s.pub.PublishSessionEvent(ctx, event); err != nil {
-						return fmt.Errorf("publish runtime event: %w", err)
-					}
 				}
 				return nil
 			},
@@ -302,20 +286,14 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				RunID:     runID,
 				AgentID:   agentID,
 				EventType: EventRunCanceled,
-				Sequence:  nextSequence,
 				Payload: map[string]any{
 					"reason": reason,
 				},
 				Source:    "host.session.service",
 				CreatedAt: canceledAt,
 			}
-			if appendErr := s.store.AppendEvent(ctx, canceledEvent); appendErr != nil {
+			if _, appendErr := s.appendAndPublishEvent(ctx, canceledEvent); appendErr != nil {
 				return StartTurnResult{}, fmt.Errorf("append canceled event: %w", appendErr)
-			}
-			if s.pub != nil {
-				if publishErr := s.pub.PublishSessionEvent(ctx, canceledEvent); publishErr != nil {
-					return StartTurnResult{}, fmt.Errorf("publish canceled event: %w", publishErr)
-				}
 			}
 			return StartTurnResult{
 				SessionID: sessionID,
@@ -335,20 +313,14 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				RunID:     runID,
 				AgentID:   agentID,
 				EventType: EventRunFailed,
-				Sequence:  nextSequence,
 				Payload: map[string]any{
 					"error": err.Error(),
 				},
 				Source:    "host.session.service",
 				CreatedAt: now,
 			}
-			if appendErr := s.store.AppendEvent(ctx, failedEvent); appendErr != nil {
+			if _, appendErr := s.appendAndPublishEvent(ctx, failedEvent); appendErr != nil {
 				return StartTurnResult{}, fmt.Errorf("append failed event: %w", appendErr)
-			}
-			if s.pub != nil {
-				if publishErr := s.pub.PublishSessionEvent(ctx, failedEvent); publishErr != nil {
-					return StartTurnResult{}, fmt.Errorf("publish failed event: %w", publishErr)
-				}
 			}
 			return StartTurnResult{}, fmt.Errorf("run runtime request: %w", err)
 		}
@@ -371,20 +343,14 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			RunID:     runID,
 			AgentID:   agentID,
 			EventType: EventRunFinished,
-			Sequence:  nextSequence,
 			Payload: map[string]any{
 				"summary": result.Summary,
 			},
 			Source:    "host.session.service",
 			CreatedAt: now,
 		}
-		if err := s.store.AppendEvent(ctx, finishedEvent); err != nil {
+		if _, err := s.appendAndPublishEvent(ctx, finishedEvent); err != nil {
 			return StartTurnResult{}, fmt.Errorf("append finished event: %w", err)
-		}
-		if s.pub != nil {
-			if err := s.pub.PublishSessionEvent(ctx, finishedEvent); err != nil {
-				return StartTurnResult{}, fmt.Errorf("publish finished event: %w", err)
-			}
 		}
 	}
 
@@ -535,6 +501,23 @@ func mergeRuntimePayload(payload map[string]any, extra map[string]any) map[strin
 		out[key] = value
 	}
 	return out
+}
+
+func (s *Service) appendAndPublishEvent(ctx context.Context, event RunEvent) (RunEvent, error) {
+	if s == nil || s.store == nil {
+		return event, nil
+	}
+
+	storedEvent, err := s.store.AppendEvent(ctx, event)
+	if err != nil {
+		return RunEvent{}, err
+	}
+	if s.pub != nil {
+		if err := s.pub.PublishSessionEvent(ctx, storedEvent); err != nil {
+			return RunEvent{}, err
+		}
+	}
+	return storedEvent, nil
 }
 
 func (s *Service) persistExternalTask(ctx context.Context, sessionID, turnID, runID string, task *ExternalTask) error {

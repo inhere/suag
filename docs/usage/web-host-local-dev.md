@@ -1,7 +1,7 @@
 # Web + Host 本地联调
 
 > 状态：Current
-> 更新时间：2026-04-13
+> 更新时间：2026-04-15
 
 本文档只描述 Axon v0 当前最小可用的本地联调流程。
 
@@ -145,5 +145,6 @@ http://127.0.0.1:5173
 ## 7. 当前已知说明
 
 - `STATE_SNAPSHOT v0` 的消费契约见 `docs/usage/host-state-snapshot-v0.md`
+- `/api/sessions/{id}/events?after_seq=` 使用的是 session 级单调递增 `sequence` 游标，不会在新 turn 时重置
 - `vite` 代理仅用于本地开发，不影响生产构建输出
 - 本地 `db/axon.db`、`db/axon.db-shm`、`db/axon.db-wal` 都属于开发产物，不应作为功能变更提交
