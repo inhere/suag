@@ -160,9 +160,9 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 当前问题：
 
-- `internal/platform/llm` 自己维护一套 `Provider / CompletionRequest / CompletionResponse`
-- `agentcore/api` 也维护了一套 `Provider / GenerateRequest / GenerateResult`
-- 现有差异更多是命名与细节表达，而不是层次本质不同
+- 历史上 `internal/platform/llm` 曾维护一套 `Provider / CompletionRequest / CompletionResponse`
+- `agentcore/api` 则维护 `Provider / GenerateRequest / GenerateResult`
+- 当时两边差异更多是命名与细节表达，而不是层次本质不同
 
 这说明 `llm` 更适合作为 `agentcore/api.Provider` 的第一方实现，而不是长期保留平行 contract。
 
@@ -469,13 +469,13 @@ llm:
 在进入真实编码前，需要明确一个实现约束：
 
 - `internal/platform/llm` 的 contract 收口不能被当作一次纯粹的包内重命名
-- 现有 `ReactRunner`、`cron.Scheduler`、`llm.Pool` 仍直接依赖 `Complete / CompletionRequest / CompletionResponse / Embed`
-- 因此 Phase 1 应优先让 `agentcore` 主路径直接使用公共 contract，同时保留一个最小兼容面给 legacy caller
+- 早期阶段里，`ReactRunner`、`cron.Scheduler`、`llm.Pool` 都曾直接依赖 `Complete / CompletionRequest / CompletionResponse / Embed`
+- 因此 Phase 1 当时采用了“先让 `agentcore` 主路径切到公共 contract，再逐步移除 legacy facade”的策略
 
-也就是说，这轮更适合采用：
+当前这部分已经继续完成收尾：
 
-- `agentcore` 主路径先切到公共 contract
-- 旧调用点维持 compile-safe compatibility
-- legacy `llm` facade 与 `acadapters` 清理放到后续 phase
+- `ReactRunner`、`cron.Scheduler`、`llm.Pool` 已切到 `Generate`
+- `internal/platform/llm` 中的 `Completion* / Complete / StreamText` 兼容面已删除
+- `MockProvider` 也已直接转向 `agentcore` 类型表达
 
-而不是一次性把所有 `internal/platform/llm` 调用点一起重写。
+因此这里保留为阶段性设计记录，不再代表当前代码现状。

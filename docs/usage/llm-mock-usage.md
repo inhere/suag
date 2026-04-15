@@ -1,6 +1,6 @@
 # MockProvider 使用指南
 
-`internal/llm.MockProvider` 是一个零网络依赖的假 LLM，专为测试 Agent 执行流程设计。
+`internal/platform/llm.MockProvider` 是一个零网络依赖的假 LLM，专为测试 Agent 执行流程设计。
 
 支持两种互补的控制模式：
 
@@ -16,7 +16,8 @@
 ## 快速上手
 
 ```go
-import "github.com/axon/axon/internal/llm"
+import "github.com/inhere/axon/pkg/agentcore"
+import "github.com/inhere/axon/internal/platform/llm"
 
 m := llm.NewMockProvider("my-test")
 ```
@@ -197,8 +198,12 @@ func (e *echoTool) Name() string      { return "echo" }
 func (e *echoTool) Description() string { return "echo" }
 func (e *echoTool) Kind() tools.Kind  { return tools.KindNative }
 func (e *echoTool) Schema() agentcore.ToolSchema { return agentcore.ToolSchema{Name: "echo"} }
-func (e *echoTool) Execute(_ context.Context, args map[string]any) (string, error) {
-    return fmt.Sprint(args["msg"]), nil
+func (e *echoTool) Execute(_ context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
+    return &agentcore.ToolResult{
+        CallID:  call.CallID,
+        Name:    call.Name,
+        Content: fmt.Sprint(call.Arguments["msg"]),
+    }, nil
 }
 
 reg := tools.NewRegistry()

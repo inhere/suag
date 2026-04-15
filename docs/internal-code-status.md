@@ -86,7 +86,7 @@
 - 后续若新主线仍需复用旧 `llm / tools / memory` 能力，可以优先从这里走 adapter 路径
 - 不要反向让 adapter 成为产品层主入口
 
-### `internal/llm`
+### `internal/platform/llm`
 
 状态：`可复用候选`
 
@@ -156,7 +156,7 @@
 - 可保留局部实现经验，尤其是 SQLite 与短期窗口机制
 - 但不要直接把旧 `memory.Store` 当作新的长期记忆主设计
 
-### `internal/tools`
+### `internal/platform/tools`
 
 状态：`需重审后复用`
 

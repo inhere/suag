@@ -7,9 +7,9 @@
 
 结论先行：
 
-- `internal/llm`
+- `internal/platform/llm`
   - 现在主路径已直接对齐 `agentcore.Provider`
-- `internal/tools`
+- `internal/platform/tools`
   - 现在主路径已直接对齐 `agentcore.ToolRegistry`
 - `internal/memory`
   - 不应作为 `agentcore.Storage` 使用
@@ -27,7 +27,7 @@
   - 现在已经删除，相关能力已迁回第一方实现
 也就是说，当前最适合的方式是：
 
-- 先把 `internal/llm`、`internal/tools` 与 runtime-facing `memory` 收口到 `agentcore`
+- 先把 `internal/platform/llm`、`internal/platform/tools` 与 runtime-facing `memory` 收口到 `agentcore`
 - 再继续扩大默认 `agentcore` 路径的覆盖面，并逐步压缩旧 runtime 的职责
 
 而这一步里，`llm/tools/memory` 的主收口已经基本完成，当前剩余更多是兼容层与文档尾项。
@@ -36,24 +36,24 @@
 
 ## 1. 当前已满足的部分
 
-### 1.1 `internal/llm`
+### 1.1 `internal/platform/llm`
 
-当前 `internal/llm.Provider` 与 `agentcore.Provider` 的职责已经足够接近：
+当前 `internal/platform/llm.Provider` 与 `agentcore.Provider` 的职责已经足够接近：
 
 - 都表达一次模型调用
 - 都有 message / tool schema / finish reason
 - 差异主要在类型形状和 finish reason 枚举
 
-因此现在主路径已经可以直接把 `internal/llm.Provider` 接到 `agentcore.Runtime` 上，不再需要额外的迁移期 provider bridge。
+因此现在主路径已经可以直接把 `internal/platform/llm.Provider` 接到 `agentcore.Runtime` 上，不再需要额外的迁移期 provider bridge。
 
-### 1.2 `internal/tools`
+### 1.2 `internal/platform/tools`
 
-当前 `internal/tools.Registry` 已直接满足 `agentcore.ToolRegistry` 的关键 contract：
+当前 `internal/platform/tools.Registry` 已直接满足 `agentcore.ToolRegistry` 的关键 contract：
 
 - 能列出 schema
 - 能按工具名执行
 
-因此现在主路径已经可以直接把 `internal/tools.Registry` 接到 `agentcore.ToolRegistry` 上，不再需要额外的迁移期 tools bridge。
+因此现在主路径已经可以直接把 `internal/platform/tools.Registry` 接到 `agentcore.ToolRegistry` 上，不再需要额外的迁移期 tools bridge。
 
 ---
 
@@ -201,8 +201,7 @@
 
 ### 阶段 1：桥接现有能力，先建立最小迁移入口
 
-- 保持 `internal/llm` 不动
-- 保持 `internal/tools` 不动
+- 先以 `internal/platform/llm` 与 `internal/platform/tools` 作为第一方实现接入点
 - 先通过迁移期桥接层验证 `agentcore`
 - 先在新入口或实验入口中验证 runtime 行为
 
@@ -267,7 +266,7 @@
 
 如果用一句话总结当前状态：
 
-> `internal/llm` 和 `internal/tools` 已经可以接入新的 `agentcore`；`internal/agent`、`internal/orchestrator` 与 `internal/team` 也已经开始以 `agentcore` 为默认或首选路径收敛，而旧 `ReactRunner` 更适合作为 legacy fallback 与 parity baseline 保留。
+> `internal/platform/llm` 和 `internal/platform/tools` 已经可以接入新的 `agentcore`；`internal/agent`、`internal/orchestrator` 与 `internal/team` 也已经开始以 `agentcore` 为默认或首选路径收敛，而旧 `ReactRunner` 更适合作为 legacy fallback 与 parity baseline 保留。
 
 这意味着下一阶段如果要继续推进，重点不该是继续往 `pkg/agentcore` 里塞内部桥接逻辑，而是开始规划：
 
