@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/pkg/agentcore/api"
 )
@@ -36,16 +35,19 @@ func NewFileTools(workspace string) []tools.Tool {
 func (t *FileReadTool) Name() string        { return "file_read" }
 func (t *FileReadTool) Kind() tools.Kind    { return tools.KindNative }
 func (t *FileReadTool) Description() string { return "Read the contents of a file in the workspace." }
-func (t *FileReadTool) Schema() llm.ToolSchema {
-	return llm.ToolSchema{
+func (t *FileReadTool) Schema() api.ToolSchema {
+	return api.ToolSchema{
 		Name:        t.Name(),
 		Description: t.Description(),
-		Parameters: llm.SchemaProperty{
-			Type: "object",
-			Properties: map[string]*llm.SchemaProperty{
-				"path": {Type: "string", Description: "Relative path within workspace"},
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "Relative path within workspace",
+				},
 			},
-			Required: []string{"path"},
+			"required": []any{"path"},
 		},
 	}
 }
@@ -73,17 +75,23 @@ func (t *FileWriteTool) Kind() tools.Kind { return tools.KindNative }
 func (t *FileWriteTool) Description() string {
 	return "Write content to a file in the workspace. Creates parent directories as needed."
 }
-func (t *FileWriteTool) Schema() llm.ToolSchema {
-	return llm.ToolSchema{
+func (t *FileWriteTool) Schema() api.ToolSchema {
+	return api.ToolSchema{
 		Name:        t.Name(),
 		Description: t.Description(),
-		Parameters: llm.SchemaProperty{
-			Type: "object",
-			Properties: map[string]*llm.SchemaProperty{
-				"path":    {Type: "string", Description: "Relative path within workspace"},
-				"content": {Type: "string", Description: "File content to write"},
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "Relative path within workspace",
+				},
+				"content": map[string]any{
+					"type":        "string",
+					"description": "File content to write",
+				},
 			},
-			Required: []string{"path", "content"},
+			"required": []any{"path", "content"},
 		},
 	}
 }
@@ -113,14 +121,17 @@ func (t *FileWriteTool) Execute(_ context.Context, call api.ToolCall) (*api.Tool
 func (t *FileListTool) Name() string        { return "file_list" }
 func (t *FileListTool) Kind() tools.Kind    { return tools.KindNative }
 func (t *FileListTool) Description() string { return "List files in a workspace directory." }
-func (t *FileListTool) Schema() llm.ToolSchema {
-	return llm.ToolSchema{
+func (t *FileListTool) Schema() api.ToolSchema {
+	return api.ToolSchema{
 		Name:        t.Name(),
 		Description: t.Description(),
-		Parameters: llm.SchemaProperty{
-			Type: "object",
-			Properties: map[string]*llm.SchemaProperty{
-				"dir": {Type: "string", Description: "Relative directory path (empty = workspace root)"},
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"dir": map[string]any{
+					"type":        "string",
+					"description": "Relative directory path (empty = workspace root)",
+				},
 			},
 		},
 	}

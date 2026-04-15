@@ -22,7 +22,7 @@ type coreEchoTool struct{}
 func (e *coreEchoTool) Name() string           { return "echo" }
 func (e *coreEchoTool) Description() string    { return "echo the msg argument" }
 func (e *coreEchoTool) Kind() tools.Kind       { return tools.KindNative }
-func (e *coreEchoTool) Schema() llm.ToolSchema { return llm.ToolSchema{Name: "echo"} }
+func (e *coreEchoTool) Schema() agentcore.ToolSchema { return agentcore.ToolSchema{Name: "echo"} }
 func (e *coreEchoTool) Execute(_ context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	msg, _ := call.Arguments["msg"].(string)
 	return &agentcore.ToolResult{
@@ -627,7 +627,7 @@ type coreFailTool struct{}
 func (f *coreFailTool) Name() string           { return "fail_tool" }
 func (f *coreFailTool) Description() string    { return "always fails" }
 func (f *coreFailTool) Kind() tools.Kind       { return tools.KindNative }
-func (f *coreFailTool) Schema() llm.ToolSchema { return llm.ToolSchema{Name: "fail_tool"} }
+func (f *coreFailTool) Schema() agentcore.ToolSchema { return agentcore.ToolSchema{Name: "fail_tool"} }
 func (f *coreFailTool) Execute(_ context.Context, _ agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	return nil, fmt.Errorf("fail_tool exploded")
 }

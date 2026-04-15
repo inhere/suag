@@ -14,7 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/pkg/agentcore/api"
 )
@@ -197,13 +196,13 @@ type mcpToolAdapter struct {
 func (a *mcpToolAdapter) Name() string        { return a.def.Name }
 func (a *mcpToolAdapter) Description() string { return a.def.Description }
 func (a *mcpToolAdapter) Kind() tools.Kind    { return tools.KindMCP }
-func (a *mcpToolAdapter) Schema() llm.ToolSchema {
-	var params llm.SchemaProperty
+func (a *mcpToolAdapter) Schema() api.ToolSchema {
+	params := map[string]any{}
 	_ = json.Unmarshal(a.def.InputSchema, &params)
-	return llm.ToolSchema{
+	return api.ToolSchema{
 		Name:        a.def.Name,
 		Description: a.def.Description,
-		Parameters:  params,
+		InputSchema: params,
 	}
 }
 

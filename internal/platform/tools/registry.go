@@ -7,7 +7,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
@@ -29,7 +28,7 @@ type Tool interface {
 	// Description returns a short human/LLM readable description.
 	Description() string
 	// Schema returns the JSON Schema for the tool's parameters.
-	Schema() llm.ToolSchema
+	Schema() api.ToolSchema
 	// Execute runs the tool with the given arguments.
 	Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error)
 	// Kind returns the tool's runtime kind.
@@ -90,8 +89,8 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 	return result.Content, nil
 }
 
-// Schemas returns the ToolSchema list for all registered tools, suitable for LLM function-calling.
-func (r *Registry) Schemas() []llm.ToolSchema {
+// Schemas returns the ToolSchema list for all registered tools in deterministic order.
+func (r *Registry) Schemas() []api.ToolSchema {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -105,7 +104,7 @@ func (r *Registry) Schemas() []llm.ToolSchema {
 	}
 	sort.Strings(names)
 
-	schemas := make([]llm.ToolSchema, 0, len(names))
+	schemas := make([]api.ToolSchema, 0, len(names))
 	for _, name := range names {
 		schema := r.tools[name].Schema()
 		if schema.Name == "" {
@@ -121,20 +120,7 @@ func (r *Registry) Schemas() []llm.ToolSchema {
 
 // ListTools exposes registered schemas through the agentcore tool-registry contract.
 func (r *Registry) ListTools(context.Context) ([]api.ToolSchema, error) {
-	schemas := r.Schemas()
-	if len(schemas) == 0 {
-		return nil, nil
-	}
-
-	out := make([]api.ToolSchema, 0, len(schemas))
-	for _, schema := range schemas {
-		out = append(out, api.ToolSchema{
-			Name:        schema.Name,
-			Description: schema.Description,
-			InputSchema: fromSchemaProperty(schema.Parameters),
-		})
-	}
-	return out, nil
+	return r.Schemas(), nil
 }
 
 // ExecuteTool dispatches a public tool call to a registered tool.
@@ -169,41 +155,6 @@ func (r *Registry) List() []string {
 		names = append(names, name)
 	}
 	return names
-}
-
-func fromSchemaProperty(prop llm.SchemaProperty) map[string]any {
-	out := map[string]any{}
-	if prop.Type != "" {
-		out["type"] = prop.Type
-	}
-	if prop.Description != "" {
-		out["description"] = prop.Description
-	}
-	if len(prop.Enum) > 0 {
-		enum := make([]any, len(prop.Enum))
-		for i, item := range prop.Enum {
-			enum[i] = item
-		}
-		out["enum"] = enum
-	}
-	if len(prop.Required) > 0 {
-		required := make([]any, len(prop.Required))
-		for i, item := range prop.Required {
-			required[i] = item
-		}
-		out["required"] = required
-	}
-	if len(prop.Properties) > 0 {
-		properties := make(map[string]any, len(prop.Properties))
-		for name, child := range prop.Properties {
-			if child == nil {
-				continue
-			}
-			properties[name] = fromSchemaProperty(*child)
-		}
-		out["properties"] = properties
-	}
-	return out
 }
 
 func cloneToolCall(call api.ToolCall) api.ToolCall {

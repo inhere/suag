@@ -7,7 +7,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/pkg/agentcore/api"
 	agentcoretesting "github.com/inhere/axon/pkg/agentcore/testing"
 )
@@ -22,7 +21,7 @@ type mockTool struct {
 func (m *mockTool) Name() string           { return m.name }
 func (m *mockTool) Description() string    { return "mock tool" }
 func (m *mockTool) Kind() Kind             { return KindNative }
-func (m *mockTool) Schema() llm.ToolSchema { return llm.ToolSchema{Name: m.name} }
+func (m *mockTool) Schema() api.ToolSchema { return api.ToolSchema{Name: m.name} }
 func (m *mockTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	return &api.ToolResult{
 		CallID:  call.CallID,
@@ -252,14 +251,17 @@ type captureTool struct {
 func (m *captureTool) Name() string           { return m.name }
 func (m *captureTool) Description() string    { return "capture tool" }
 func (m *captureTool) Kind() Kind             { return KindNative }
-func (m *captureTool) Schema() llm.ToolSchema {
-	return llm.ToolSchema{
+func (m *captureTool) Schema() api.ToolSchema {
+	return api.ToolSchema{
 		Name:        m.name,
 		Description: m.Description(),
-		Parameters: llm.SchemaProperty{
-			Type: "object",
-			Properties: map[string]*llm.SchemaProperty{
-				"msg": {Type: "string", Description: "message"},
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"msg": map[string]any{
+					"type":        "string",
+					"description": "message",
+				},
 			},
 		},
 	}
@@ -280,16 +282,19 @@ type schemaTool struct {
 func (m *schemaTool) Name() string        { return m.name }
 func (m *schemaTool) Description() string { return "schema " + m.name }
 func (m *schemaTool) Kind() Kind          { return KindNative }
-func (m *schemaTool) Schema() llm.ToolSchema {
-	return llm.ToolSchema{
+func (m *schemaTool) Schema() api.ToolSchema {
+	return api.ToolSchema{
 		Name:        m.name,
 		Description: "schema " + m.name,
-		Parameters: llm.SchemaProperty{
-			Type: "object",
-			Properties: map[string]*llm.SchemaProperty{
-				"query": {Type: "string", Description: "query text"},
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "query text",
+				},
 			},
-			Required: []string{"query"},
+			"required": []any{"query"},
 		},
 	}
 }
@@ -308,11 +313,11 @@ type richTool struct {
 func (m *richTool) Name() string        { return m.name }
 func (m *richTool) Description() string { return "rich " + m.name }
 func (m *richTool) Kind() Kind          { return KindNative }
-func (m *richTool) Schema() llm.ToolSchema {
-	return llm.ToolSchema{
+func (m *richTool) Schema() api.ToolSchema {
+	return api.ToolSchema{
 		Name:        m.name,
 		Description: "rich " + m.name,
-		Parameters:  llm.SchemaProperty{Type: "object"},
+		InputSchema: map[string]any{"type": "object"},
 	}
 }
 func (m *richTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {

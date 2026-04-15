@@ -24,7 +24,7 @@ type echoTool struct{}
 func (e *echoTool) Name() string           { return "echo" }
 func (e *echoTool) Description() string    { return "echo the msg argument" }
 func (e *echoTool) Kind() tools.Kind       { return tools.KindNative }
-func (e *echoTool) Schema() llm.ToolSchema { return llm.ToolSchema{Name: "echo"} }
+func (e *echoTool) Schema() agentcore.ToolSchema { return agentcore.ToolSchema{Name: "echo"} }
 func (e *echoTool) Execute(_ context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	msg, _ := call.Arguments["msg"].(string)
 	return &agentcore.ToolResult{
@@ -40,7 +40,7 @@ type failTool struct{ callCount int }
 func (f *failTool) Name() string           { return "fail_tool" }
 func (f *failTool) Description() string    { return "always fails" }
 func (f *failTool) Kind() tools.Kind       { return tools.KindNative }
-func (f *failTool) Schema() llm.ToolSchema { return llm.ToolSchema{Name: "fail_tool"} }
+func (f *failTool) Schema() agentcore.ToolSchema { return agentcore.ToolSchema{Name: "fail_tool"} }
 func (f *failTool) Execute(_ context.Context, _ agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	f.callCount++
 	return nil, fmt.Errorf("tool error #%d", f.callCount)

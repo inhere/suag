@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/pkg/agentcore/api"
 )
@@ -29,17 +28,20 @@ func NewSkillTool(skill Skill, workspace string) *SkillTool {
 func (t *SkillTool) Name() string        { return t.skill.Name }
 func (t *SkillTool) Description() string { return t.skill.Description }
 func (t *SkillTool) Kind() tools.Kind    { return tools.KindSkill }
-func (t *SkillTool) Schema() llm.ToolSchema {
-	props := make(map[string]*llm.SchemaProperty)
+func (t *SkillTool) Schema() api.ToolSchema {
+	props := make(map[string]any, len(t.skill.InputSchema))
 	for name, desc := range t.skill.InputSchema {
-		props[name] = &llm.SchemaProperty{Type: "string", Description: desc}
+		props[name] = map[string]any{
+			"type":        "string",
+			"description": desc,
+		}
 	}
-	return llm.ToolSchema{
+	return api.ToolSchema{
 		Name:        t.skill.Name,
 		Description: t.skill.Description,
-		Parameters: llm.SchemaProperty{
-			Type:       "object",
-			Properties: props,
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": props,
 		},
 	}
 }

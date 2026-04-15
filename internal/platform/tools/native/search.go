@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/pkg/agentcore/api"
 )
@@ -35,17 +34,23 @@ func (t *WebSearchTool) Kind() tools.Kind { return tools.KindNative }
 func (t *WebSearchTool) Description() string {
 	return "Search the web using SerpAPI. Returns top organic results."
 }
-func (t *WebSearchTool) Schema() llm.ToolSchema {
-	return llm.ToolSchema{
+func (t *WebSearchTool) Schema() api.ToolSchema {
+	return api.ToolSchema{
 		Name:        t.Name(),
 		Description: t.Description(),
-		Parameters: llm.SchemaProperty{
-			Type: "object",
-			Properties: map[string]*llm.SchemaProperty{
-				"query": {Type: "string", Description: "Search query"},
-				"num":   {Type: "string", Description: "Number of results (default 5)"},
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Search query",
+				},
+				"num": map[string]any{
+					"type":        "string",
+					"description": "Number of results (default 5)",
+				},
 			},
-			Required: []string{"query"},
+			"required": []any{"query"},
 		},
 	}
 }

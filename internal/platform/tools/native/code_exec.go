@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/pkg/agentcore/api"
 )
@@ -35,16 +34,19 @@ func (t *ShellExecTool) Kind() tools.Kind { return tools.KindNative }
 func (t *ShellExecTool) Description() string {
 	return "Execute a shell command in the workspace directory. Returns stdout+stderr. Max " + t.timeout.String() + " timeout."
 }
-func (t *ShellExecTool) Schema() llm.ToolSchema {
-	return llm.ToolSchema{
+func (t *ShellExecTool) Schema() api.ToolSchema {
+	return api.ToolSchema{
 		Name:        t.Name(),
 		Description: t.Description(),
-		Parameters: llm.SchemaProperty{
-			Type: "object",
-			Properties: map[string]*llm.SchemaProperty{
-				"command": {Type: "string", Description: "Shell command to execute"},
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"command": map[string]any{
+					"type":        "string",
+					"description": "Shell command to execute",
+				},
 			},
-			Required: []string{"command"},
+			"required": []any{"command"},
 		},
 	}
 }
