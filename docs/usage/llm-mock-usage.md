@@ -34,7 +34,7 @@ m := llm.NewMockProvider("scripted").
     QueueText("构建成功，任务完成")                                             // 第3次调用
 ```
 
-每次 `Complete()` 按 FIFO 顺序消耗一个响应。
+每次 `Generate()` 按 FIFO 顺序消耗一个响应。
 
 ### QueueResponse — 完整控制
 
@@ -47,8 +47,8 @@ m.QueueResponse(llm.MockResponse{
 // 同时包含文本和工具调用（模拟复杂 LLM 行为）
 m.QueueResponse(llm.MockResponse{
     Content: "我需要先读一下文件",
-    ToolCalls: []llm.ToolCall{{
-        ID:        "call-001",
+    ToolCalls: []agentcore.ToolCall{{
+        CallID:    "call-001",
         Name:      "file_read",
         Arguments: map[string]any{"path": "README.md"},
     }},
@@ -60,7 +60,7 @@ m.QueueResponse(llm.MockResponse{
 
 ```go
 m.QueueError(errors.New("rate limited"))
-// → 下一次 Complete() 返回该 error，可测试 Agent 的重试/HITL 逻辑
+// → 下一次 Generate() 返回该 error，可测试 Agent 的重试/HITL 逻辑
 ```
 
 ### 断言调用历史
@@ -81,7 +81,7 @@ assert.Contains(t, calls[2].Messages[0].Content, "go.mod")
 
 ## 模式二：手动模式
 
-当队列为空时，`Complete()` 会阻塞，等待 `WaitForCall()` 接收并 `reply()`。
+当队列为空时，`Generate()` 会阻塞，等待 `WaitForCall()` 接收并 `reply()`。
 
 ### 基本步进
 
@@ -90,7 +90,7 @@ func TestManual(t *testing.T) {
     m := llm.NewMockProvider("manual")
     ctx := context.Background()
 
-    // 在 goroutine 里跑 Agent（它会多次调用 Complete）
+    // 在 goroutine 里跑 Agent（它会多次调用 Generate）
     results := make(chan *agent.TaskResult, 1)
     go func() {
         r, _ := runner.Run(ctx, task)
@@ -102,8 +102,8 @@ func TestManual(t *testing.T) {
     t.Logf("Agent 请求 #1，消息数: %d", len(req.Messages))
 
     reply(llm.MockResponse{
-        ToolCalls: []llm.ToolCall{{
-            ID:        "c1",
+        ToolCalls: []agentcore.ToolCall{{
+            CallID:    "c1",
             Name:      "file_read",
             Arguments: map[string]any{"path": "README.md"},
         }},
@@ -129,7 +129,7 @@ func TestManual(t *testing.T) {
 for range 3 {
     _, reply, _ := m.WaitForCall(ctx)
     reply(llm.MockResponse{
-        ToolCalls: []llm.ToolCall{{Name: "shell_exec", Arguments: map[string]any{"command": "bad"}}},
+        ToolCalls: []agentcore.ToolCall{{Name: "shell_exec", Arguments: map[string]any{"command": "bad"}}},
     })
     // 注：工具本身执行失败由 ToolRegistry mock 控制，见下文
 }
@@ -154,8 +154,8 @@ _, _, err := m.WaitForCall(ctx)
 m := llm.NewMockProvider("hybrid").
     QueueText("先用脚本走完已知步骤")
 
-// 第 1 次 Complete() 消耗队列
-// 第 2 次 Complete() 队列已空，自动进入手动模式
+// 第 1 次 Generate() 消耗队列
+// 第 2 次 Generate() 队列已空，自动进入手动模式
 _, reply, _ := m.WaitForCall(ctx)
 reply(llm.MockResponse{Content: "手动控制的步骤"})
 ```
@@ -176,9 +176,9 @@ req, reply, err := m.WaitForCall(ctx)
 reply(llm.MockResponse{...})  // 注入文本、工具调用或错误
 
 // 检查
-m.CallCount()        // 累计 Complete() 调用次数
+m.CallCount()        // 累计 Generate() 调用次数
 m.QueueLen()         // 剩余脚本响应数
-m.Calls()            // []CompletionRequest 历史副本
+m.Calls()            // []GenerateRequest 历史副本
 
 // 重置（子测试间隔离）
 m.Reset()
@@ -196,7 +196,7 @@ type echoTool struct{}
 func (e *echoTool) Name() string      { return "echo" }
 func (e *echoTool) Description() string { return "echo" }
 func (e *echoTool) Kind() tools.Kind  { return tools.KindNative }
-func (e *echoTool) Schema() llm.ToolSchema { return llm.ToolSchema{Name: "echo"} }
+func (e *echoTool) Schema() agentcore.ToolSchema { return agentcore.ToolSchema{Name: "echo"} }
 func (e *echoTool) Execute(_ context.Context, args map[string]any) (string, error) {
     return fmt.Sprint(args["msg"]), nil
 }

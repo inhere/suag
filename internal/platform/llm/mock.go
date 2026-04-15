@@ -13,7 +13,7 @@ type MockResponse struct {
 	// Content is the text reply (used when no ToolCalls).
 	Content string
 	// ToolCalls is the list of tool calls the mock LLM "requests".
-	ToolCalls []ToolCall
+	ToolCalls []agentcoreapi.ToolCall
 	// FinishReason overrides the default ("stop" or "tool_calls").
 	FinishReason string
 	// Err makes the mock return an error instead of a response.
@@ -78,7 +78,7 @@ func (m *MockProvider) QueueText(content string) *MockProvider {
 // QueueToolCall enqueues a response that requests a single tool call.
 func (m *MockProvider) QueueToolCall(name string, args map[string]any) *MockProvider {
 	return m.QueueResponse(MockResponse{
-		ToolCalls:    []ToolCall{{ID: fmt.Sprintf("call-%s", name), Name: name, Arguments: args}},
+		ToolCalls:    []agentcoreapi.ToolCall{{CallID: fmt.Sprintf("call-%s", name), Name: name, Arguments: args}},
 		FinishReason: "tool_calls",
 	})
 }
@@ -230,56 +230,11 @@ func toGenerateResult(r MockResponse) *agentcoreapi.GenerateResult {
 		out.ToolCalls = make([]agentcoreapi.ToolCall, len(r.ToolCalls))
 		for i, call := range r.ToolCalls {
 			out.ToolCalls[i] = agentcoreapi.ToolCall{
-				CallID:    call.ID,
+				CallID:    call.CallID,
 				Name:      call.Name,
 				Arguments: cloneMap(call.Arguments),
 			}
 		}
 	}
 	return out
-}
-
-func mapToSchemaProperty(schema map[string]any) SchemaProperty {
-	prop := SchemaProperty{}
-	if len(schema) == 0 {
-		return prop
-	}
-	if value, ok := schema["type"].(string); ok {
-		prop.Type = value
-	}
-	if value, ok := schema["description"].(string); ok {
-		prop.Description = value
-	}
-	switch enum := schema["enum"].(type) {
-	case []string:
-		prop.Enum = append([]string(nil), enum...)
-	case []any:
-		prop.Enum = make([]string, 0, len(enum))
-		for _, item := range enum {
-			if text, ok := item.(string); ok {
-				prop.Enum = append(prop.Enum, text)
-			}
-		}
-	}
-	switch required := schema["required"].(type) {
-	case []string:
-		prop.Required = append([]string(nil), required...)
-	case []any:
-		prop.Required = make([]string, 0, len(required))
-		for _, item := range required {
-			if text, ok := item.(string); ok {
-				prop.Required = append(prop.Required, text)
-			}
-		}
-	}
-	if properties, ok := schema["properties"].(map[string]any); ok {
-		prop.Properties = make(map[string]*SchemaProperty, len(properties))
-		for name, raw := range properties {
-			if nested, ok := raw.(map[string]any); ok {
-				child := mapToSchemaProperty(nested)
-				prop.Properties[name] = &child
-			}
-		}
-	}
-	return prop
 }

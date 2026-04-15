@@ -191,7 +191,7 @@
 
 - `ReactRunner` 仍保留为 fallback / parity baseline
 - Host internal `session runner` 尚未开始接线
-- 关于 `ToolSchema` authority 与 `agentcore.Memory` 语义的文档说明还可以继续压实
+- 当前 `ToolSchema` authority 已明确继续使用 `map[string]any`，`internal/platform/tools` 也已直接返回 `agentcore/api.ToolSchema`；后续主要剩下文档表述精炼
 
 ---
 

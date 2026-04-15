@@ -582,8 +582,8 @@ func TestAgentcoreRunner_Run_ManualStepThrough(t *testing.T) {
 		t.Fatal("expected at least one message in first request")
 	}
 	reply1(llm.MockResponse{
-		ToolCalls: []llm.ToolCall{{
-			ID:        "c1",
+		ToolCalls: []agentcore.ToolCall{{
+			CallID:    "c1",
 			Name:      "echo",
 			Arguments: map[string]any{"msg": "ping"},
 		}},

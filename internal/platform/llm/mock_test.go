@@ -185,8 +185,8 @@ func TestMockProvider_ManualMode_ToolCall(t *testing.T) {
 
 	_, reply, _ := m.WaitForCall(ctx)
 	reply(MockResponse{
-		ToolCalls: []ToolCall{{
-			ID:        "call-1",
+		ToolCalls: []agentcoreapi.ToolCall{{
+			CallID:    "call-1",
 			Name:      "shell_exec",
 			Arguments: map[string]any{"command": "ls"},
 		}},

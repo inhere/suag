@@ -1,12 +1,16 @@
 package llm
 
-import "testing"
+import (
+	"testing"
+
+	agentcoreapi "github.com/inhere/axon/pkg/agentcore/api"
+)
 
 func TestToGenerateResult_MapsToolCallsAndUsage(t *testing.T) {
 	result := toGenerateResult(MockResponse{
-		ToolCalls: []ToolCall{{
-			ID:   "call-1",
-			Name: "lookup",
+		ToolCalls: []agentcoreapi.ToolCall{{
+			CallID: "call-1",
+			Name:   "lookup",
 			Arguments: map[string]any{
 				"topic": "weather",
 			},

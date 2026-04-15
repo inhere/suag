@@ -19,6 +19,7 @@
 - `internal/platform/llm` 已切除迁移期 `Completion* / Complete / StreamText` 兼容面，内部调用统一转向 `agentcore Generate` contract
 - Phase 2 已完成 `platform/tools + platform/memory -> pkg/agentcore/api` 的第一方收口，迁移期 `internal/acadapters` 已删除，相关测试与文档已迁回第一方实现路径
 - `internal/platform/tools` 已进一步改为直接返回 `agentcore/api.ToolSchema`，继续保留 `map[string]any` 作为 schema authority，不再依赖 `llm.SchemaProperty`
+- `internal/platform/llm` 已继续收薄为 provider 实现层，`MockProvider` 测试辅助结构已直接转向 `agentcore` 类型，文档示例同步更新
 - 下一步继续聚焦 Host internal session runner、旧 `ReactRunner` fallback 收敛与更细的运行时能力补齐
 <!-- PROCESSING WORKS:END -->
 

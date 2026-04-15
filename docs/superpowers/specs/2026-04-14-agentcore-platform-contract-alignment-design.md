@@ -133,7 +133,7 @@ Host Session internal runner 的实装排在 contract 收口之后。
 
 仍未完成、但已经缩到较小范围的项有：
 
-- 文档层面对 `ToolSchema` authority 和 `ToolResult / Memory` contract 语义的说明仍可继续精炼
+- 文档层面对 `ToolResult / Memory` contract 语义的说明仍可继续精炼；`ToolSchema` authority 已明确保留为 `map[string]any`
 - Host internal `session runner` 仍未开始实现，这本来就不在本轮范围内
 
 ---
