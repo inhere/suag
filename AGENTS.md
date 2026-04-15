@@ -20,6 +20,7 @@
 - Phase 2 已完成 `platform/tools + platform/memory -> pkg/agentcore/api` 的第一方收口，迁移期 `internal/acadapters` 已删除，相关测试与文档已迁回第一方实现路径
 - `internal/platform/tools` 已进一步改为直接返回 `agentcore/api.ToolSchema`，继续保留 `map[string]any` 作为 schema authority，不再依赖 `llm.SchemaProperty`
 - `MockProvider` 测试辅助结构已直接转向 `agentcore` 类型，接入与 mock 使用文档也已同步更新
+- `docs/internal-code-status.md`、`docs/usage/agentcore-internal-integration.md`、`docs/usage/llm-mock-usage.md` 已完成当前实现口径同步，后续回到 Host session runner 主线
 - 下一步继续聚焦 Host internal session runner、旧 `ReactRunner` fallback 收敛与更细的运行时能力补齐
 <!-- PROCESSING WORKS:END -->
 
