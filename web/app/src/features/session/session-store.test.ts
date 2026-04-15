@@ -317,6 +317,56 @@ describe("session-store", () => {
     expect(next.snapshot?.turns[0]?.activeRunCount).toBe(2);
   });
 
+  it("builds the first turn and run from incremental activity after an empty session bootstrap", () => {
+    const bootstrap = mergeSessionDetail(
+      emptySessionViewState,
+      {
+        sessionId: "sess_001",
+        title: "host runtime",
+        status: "OPEN",
+        lastTurnId: "",
+        turns: [],
+        runs: [],
+        externalActivities: [],
+        externalMessages: [],
+        externalTasks: [],
+      },
+      "2026-04-12T10:00:00Z",
+    );
+
+    const withQueued = reduceSessionMessage(bootstrap, {
+      type: "ACTIVITY_SNAPSHOT",
+      messageId: "run_100",
+      activityType: "run_status",
+      content: {
+        threadId: "sess_001",
+        turnId: "turn_100",
+        runId: "run_100",
+        agentId: "default",
+        status: "queued",
+      },
+      replace: true,
+    });
+
+    const next = reduceSessionMessage(withQueued, {
+      type: "RUN_FINISHED",
+      threadId: "sess_001",
+      runId: "run_100",
+      result: {
+        summary: "hello from incremental run",
+      },
+    });
+
+    expect(next.snapshot?.turnId).toBe("turn_100");
+    expect(next.snapshot?.lastTurnId).toBe("turn_100");
+    expect(next.snapshot?.currentRunId).toBe("run_100");
+    expect(next.snapshot?.turns[0]?.turnId).toBe("turn_100");
+    expect(next.snapshot?.turns[0]?.displayState).toBe("completed");
+    expect(next.snapshot?.turns[0]?.latestMessagePreview).toBe("hello from incremental run");
+    expect(next.snapshot?.runs[0]?.runId).toBe("run_100");
+    expect(next.snapshot?.runs[0]?.summary).toBe("hello from incremental run");
+  });
+
   it("tracks external activity and links the current run to external work from incrementals", () => {
     const state = hydrateFromSnapshot(emptySessionViewState, makeSnapshot());
     const withCustom = reduceSessionMessage(state, {

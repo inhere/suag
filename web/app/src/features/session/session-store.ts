@@ -346,6 +346,44 @@ function getTargetTurn(snapshot: StateSnapshotV0): StateSnapshotTurn | null {
   return snapshot.turns.find((turn) => turn.turnId === snapshot.turnId) ?? snapshot.turns[0] ?? null;
 }
 
+function ensureTurnExists(
+  turns: StateSnapshotTurn[],
+  snapshot: StateSnapshotV0,
+  turnId: string,
+  runId: string,
+  agentId: string,
+): StateSnapshotTurn {
+  const normalizedTurnId = turnId || snapshot.turnId || snapshot.lastTurnId;
+  const existing = turns.find((turn) => turn.turnId === normalizedTurnId);
+  if (existing) {
+    return existing;
+  }
+
+  const nextTurn: StateSnapshotTurn = {
+    turnId: normalizedTurnId,
+    sessionId: snapshot.sessionId,
+    primaryRunId: runId,
+    currentRunId: runId,
+    latestRunId: runId,
+    latestAgentId: agentId,
+    displayState: "running",
+    latestEventType: "run.started",
+    latestMessagePreview: "",
+    eventCount: 0,
+    runCount: runId ? 1 : 0,
+    activeRunCount: runId ? 1 : 0,
+    completedRunCount: 0,
+    failedRunCount: 0,
+    activeRunIds: runId ? [runId] : [],
+    completedRunIds: [],
+    failedRunIds: [],
+    hasExternalWork: false,
+    updatedAt: snapshot.generatedAt,
+  };
+  turns.push(nextTurn);
+  return nextTurn;
+}
+
 function ensureRunExists(
   runs: StateSnapshotRun[],
   turn: StateSnapshotTurn,
@@ -535,10 +573,9 @@ function reduceRunStarted(
 ): StateSnapshotV0 {
   const runs = snapshot.runs.map(cloneRun);
   const turns = snapshot.turns.map(cloneTurn);
-  const targetTurn = getTargetTurn({ ...snapshot, turns });
-  if (!targetTurn) {
-    return appendSnapshotEvent(snapshot, message);
-  }
+  const targetTurn =
+    getTargetTurn({ ...snapshot, turns }) ??
+    ensureTurnExists(turns, snapshot, snapshot.turnId || snapshot.lastTurnId, message.runId, snapshot.currentAgentId || "default");
 
   const nextRun = ensureRunExists(
     runs,
@@ -564,6 +601,8 @@ function reduceRunStarted(
   return appendSnapshotEvent(
     {
       ...snapshot,
+      turnId: targetTurn.turnId,
+      lastTurnId: targetTurn.turnId,
       currentRunId: nextRun.runId,
       currentAgentId: nextRun.agentId,
       latestEventType: "run.started",
@@ -713,10 +752,9 @@ function reduceCustomExternalActivity(
     typeof message.value.externalTaskId === "string" ? message.value.externalTaskId : "";
 
   const targetTurn =
-    turns.find((turn) => turn.turnId === turnId) ?? getTargetTurn({ ...snapshot, turns });
-  if (!targetTurn) {
-    return appendSnapshotEvent(snapshot, message);
-  }
+    turns.find((turn) => turn.turnId === turnId) ??
+    getTargetTurn({ ...snapshot, turns }) ??
+    ensureTurnExists(turns, snapshot, turnId, runId, agentId || "default");
 
   const targetRun = ensureRunExists(
     runs,
@@ -778,7 +816,10 @@ function reduceCustomExternalActivity(
   return appendSnapshotEvent(
     {
       ...snapshot,
+      turnId: targetTurn.turnId,
+      lastTurnId: targetTurn.turnId,
       currentRunId: targetRun.runId,
+      currentAgentId: targetRun.agentId,
       latestEventType: "run.external.activity",
       runs,
       turns,
@@ -804,10 +845,9 @@ function reduceActivitySnapshot(
   const status = typeof message.content.status === "string" ? message.content.status : "running";
 
   const targetTurn =
-    turns.find((turn) => turn.turnId === turnId) ?? getTargetTurn({ ...snapshot, turns });
-  if (!targetTurn) {
-    return appendSnapshotEvent(snapshot, message);
-  }
+    turns.find((turn) => turn.turnId === turnId) ??
+    getTargetTurn({ ...snapshot, turns }) ??
+    ensureTurnExists(turns, snapshot, turnId, runId, agentId || "default");
 
   const targetRun = ensureRunExists(
     runs,
@@ -863,7 +903,10 @@ function reduceActivitySnapshot(
   return appendSnapshotEvent(
     {
       ...snapshot,
+      turnId: targetTurn.turnId,
+      lastTurnId: targetTurn.turnId,
       currentRunId: targetRun.runId,
+      currentAgentId: targetRun.agentId,
       latestEventType: "activity.snapshot",
       runs,
       turns,
