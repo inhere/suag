@@ -82,7 +82,17 @@ function isWaitingForInput(state: SessionViewState): boolean {
     return false;
   }
 
-  return currentTurn.displayState.toLowerCase().includes("waiting");
+  const displayState = currentTurn.displayState.toLowerCase();
+  return displayState === "input_required" || displayState === "waiting_input";
+}
+
+function isWaitingForApproval(state: SessionViewState): boolean {
+  const currentTurn = selectCurrentTurn(state.snapshot);
+  if (!currentTurn) {
+    return false;
+  }
+
+  return currentTurn.displayState.toLowerCase() === "auth_required";
 }
 
 function canStopCurrentTurn(state: SessionViewState): boolean {
@@ -481,6 +491,7 @@ export function App() {
   const recentTurns = selectRecentTurns(snapshot, 4);
   const conversationMessages = buildConversationMessages(viewState);
   const waitingForInput = isWaitingForInput(viewState);
+  const waitingForApproval = isWaitingForApproval(viewState);
   const stopEnabled = canStopCurrentTurn(viewState);
   const submitPending = startTurnPending || pendingWSCommand === "continue_composer";
   const stopPending = pendingWSCommand === "stop";
@@ -699,6 +710,7 @@ export function App() {
       canStop={stopEnabled}
       stopPending={stopPending}
       canAddHint={waitingForInput}
+      waitingForApproval={waitingForApproval}
       addHintPending={addHintPending}
       runActionError={runActionError}
       hitlError={hitlError}

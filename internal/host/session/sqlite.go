@@ -278,6 +278,63 @@ func (s *SQLiteStore) UpdateRunLifecycle(ctx context.Context, runID string, stat
 	return nil
 }
 
+func (s *SQLiteStore) GetRun(ctx context.Context, runID string) (Run, error) {
+	if err := validateID("run", runID); err != nil {
+		return Run{}, err
+	}
+
+	var (
+		run             Run
+		startedAt       string
+		endedAt         string
+		rawMetadataJSON []byte
+	)
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT run_id, session_id, turn_id, agent_id, role, parent_run_id,
+		       resume_from_run_id, state, started_at, ended_at, failure_code, summary, metadata_json
+		FROM runs
+		WHERE run_id = ?
+	`, runID).Scan(
+		&run.RunID,
+		&run.SessionID,
+		&run.TurnID,
+		&run.AgentID,
+		&run.Role,
+		&run.ParentRunID,
+		&run.ResumeFromRunID,
+		&run.State,
+		&startedAt,
+		&endedAt,
+		&run.FailureCode,
+		&run.Summary,
+		&rawMetadataJSON,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Run{}, fmt.Errorf("get run: %w", os.ErrNotExist)
+		}
+		return Run{}, fmt.Errorf("get run: %w", err)
+	}
+
+	run.StartedAt, err = parseTime(startedAt)
+	if err != nil {
+		return Run{}, err
+	}
+	if strings.TrimSpace(endedAt) != "" {
+		run.EndedAt, err = parseTime(endedAt)
+		if err != nil {
+			return Run{}, err
+		}
+	}
+	run.Metadata, err = unmarshalJSONMap(rawMetadataJSON)
+	if err != nil {
+		return Run{}, err
+	}
+
+	return run, nil
+}
+
 func (s *SQLiteStore) AppendEvent(ctx context.Context, event RunEvent) (RunEvent, error) {
 	if err := validateID("event", event.EventID); err != nil {
 		return RunEvent{}, err

@@ -7,6 +7,7 @@ type ExternalTaskPanelProps = {
   stopPending?: boolean;
   onStop: () => void;
   canAddHint: boolean;
+  waitingForApproval?: boolean;
   addHintPending?: boolean;
   actionError?: string | null;
   onAddHint: () => void;
@@ -20,6 +21,7 @@ export function ExternalTaskPanel({
   stopPending = false,
   onStop,
   canAddHint,
+  waitingForApproval = false,
   addHintPending = false,
   actionError = null,
   onAddHint,
@@ -41,13 +43,18 @@ export function ExternalTaskPanel({
       ) : (
         <p>No external task linked.</p>
       )}
+      {waitingForApproval ? (
+        <p className="action-status">当前 run 在等待审批，请通过 HITL 面板响应。</p>
+      ) : null}
       {stopPending ? <p className="action-status">正在停止当前 turn...</p> : null}
       {addHintPending ? <p className="action-status">正在追加提示...</p> : null}
       {actionError ? <p className="inline-feedback inline-feedback--error">{actionError}</p> : null}
       <div className="run-actions">
-        <button type="button" disabled>
-          Continue
-        </button>
+        {!waitingForApproval ? (
+          <button type="button" disabled>
+            Continue
+          </button>
+        ) : null}
         <button type="button" disabled={!canStop || stopPending} onClick={onStop}>
           {stopPending ? "Stopping..." : "Stop"}
         </button>

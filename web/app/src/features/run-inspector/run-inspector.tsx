@@ -24,6 +24,7 @@ type RunInspectorProps = {
   stopPending?: boolean;
   onStop: () => void;
   canAddHint: boolean;
+  waitingForApproval?: boolean;
   addHintPending?: boolean;
   actionError?: string | null;
   onAddHint: () => void;
@@ -55,6 +56,7 @@ export function RunInspector({
   stopPending = false,
   onStop,
   canAddHint,
+  waitingForApproval = false,
   addHintPending = false,
   actionError = null,
   onAddHint,
@@ -84,6 +86,7 @@ export function RunInspector({
         stopPending={stopPending}
         onStop={onStop}
         canAddHint={canAddHint}
+        waitingForApproval={waitingForApproval}
         addHintPending={addHintPending}
         actionError={actionError}
         onAddHint={onAddHint}

@@ -125,6 +125,9 @@ func (s *Service) ContinueTurn(ctx context.Context, in ContinueTurnInput) (Start
 	if err := validateContinueTurnInput(in); err != nil {
 		return StartTurnResult{}, err
 	}
+	if err := s.validateContinueTurnState(ctx, in.SessionID); err != nil {
+		return StartTurnResult{}, err
+	}
 	return s.startTurn(ctx, in.SessionID, in.AgentID, in.Message, in.InitiatorType, false)
 }
 
@@ -643,6 +646,49 @@ func (s *Service) ensureSession(ctx context.Context, sessionID string, now time.
 		return Session{}, fmt.Errorf("create missing session: %w", err)
 	}
 	return sessionModel, nil
+}
+
+func (s *Service) validateContinueTurnState(ctx context.Context, sessionID string) error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+
+	sessionModel, err := s.store.GetSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if sessionModel.LastTurnID == "" {
+		return nil
+	}
+
+	events, err := s.store.ListEventsBySession(ctx, sessionID, 0)
+	if err != nil {
+		return err
+	}
+
+	var latestRunID string
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].TurnID != sessionModel.LastTurnID {
+			continue
+		}
+		if strings.TrimSpace(events[i].RunID) == "" {
+			continue
+		}
+		latestRunID = events[i].RunID
+		break
+	}
+	if latestRunID == "" {
+		return nil
+	}
+
+	runModel, err := s.store.GetRun(ctx, latestRunID)
+	if err != nil {
+		return nil
+	}
+	if runModel.State == RunAuthRequired {
+		return fmt.Errorf("session is waiting for approval; respond via HITL instead of continue_turn")
+	}
+	return nil
 }
 
 func validateStartTurnInput(in StartTurnInput) error {

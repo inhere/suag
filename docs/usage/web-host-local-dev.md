@@ -21,6 +21,7 @@
 - Web 通过 `/ws` 接收会话快照与增量事件
 - 刷新后按需恢复 focused run detail
 - 当前 turn 进入 waiting 状态时，通过 `Add Hint` 发送 `continue_turn`
+- `continue_turn` 当前仅适用于 `INPUT_REQUIRED`；如果 turn 进入 `AUTH_REQUIRED`，需要通过 HITL 面板响应审批，而不是继续走 Continue / Add Hint
 
 当前还未收口的内容：
 

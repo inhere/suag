@@ -11,7 +11,7 @@
 <!-- PROCESSING WORKS:START -->
 
 - Axon v0 自用主线规划持续推进中，设计总纲见 `docs/v0-self-host-design.md`
-- Host 会话与 Web 工作台基础闭环已打通，当前继续围绕可自用联调、默认 internal runner 与状态反馈做收尾，联调说明见 `docs/usage/web-host-local-dev.md`
+- Host 会话与 Web 工作台基础闭环已打通，当前继续围绕可自用联调、默认 internal runner 与 wait-state/HITL 交互约束做收尾，联调说明见 `docs/usage/web-host-local-dev.md`
 - `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复与查询链路，且 `run_events.sequence` 已收敛为 session 级单调递增基线；当前 `DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态也已开始贯通到快照与事件流
 - `docs/usage/host-state-snapshot-v0.md` 与 `docs/usage/llm-config-v0.md` 已作为当前 v0 协议与配置基线文档
 - Phase 1 已完成 `platform/llm -> pkg/agentcore/api` 的第一方收口，`cmd/axon` 现已补齐仅基于 `llm.api_type + llm.provider_name` 的归一化配置入口与测试覆盖
@@ -19,7 +19,7 @@
 - Phase 2 已完成 `platform/tools + platform/memory -> pkg/agentcore/api` 的第一方收口，迁移期 `internal/acadapters` 已删除，相关测试与文档已迁回第一方实现路径
 - `internal/platform/tools` 已进一步改为直接返回 `agentcore/api.ToolSchema`，继续保留 `map[string]any` 作为 schema authority，不再依赖 `llm.SchemaProperty`
 - `cmd/axon server` 在未配置 `host.acp.mode` 时已默认接入 `internal/host/intrunner`，并按 `sessionId` 复用本地上下文历史；下一步继续聚焦 `ContinueTurn/HITL` 深化、旧 `ReactRunner` fallback 收敛与更细的运行时能力补齐
-- `internal/host/session` 已补齐 waiting 非终态收口，避免 `INPUT_REQUIRED/AUTH_REQUIRED` 被错误收尾为 completed；`internal/host/intrunner` 现已开始复用 suspended runner 以承接同 session 的 resume/continue
+- `internal/host/session` 已补齐 waiting 非终态收口，避免 `INPUT_REQUIRED/AUTH_REQUIRED` 被错误收尾为 completed；当前 `continue_turn` 仅允许继续 `INPUT_REQUIRED` run，`AUTH_REQUIRED` 已切到 HITL/approval 响应路径
 - `internal/host/intrunner` 已开始按 `yield reason` 将 waiting 态粗分到 `INPUT_REQUIRED / AUTH_REQUIRED`，后续继续收敛为统一 Host wait-state contract
 <!-- PROCESSING WORKS:END -->
 

@@ -35,6 +35,7 @@ type AppShellProps = {
   messages?: ConversationMessage[];
   currentTurn?: StateSnapshotTurn | null;
   waitingForInput?: boolean;
+  waitingForApproval?: boolean;
   submitPending?: boolean;
   submitError?: string | null;
   runs?: StateSnapshotRun[];
@@ -91,6 +92,7 @@ export function AppShell({
   messages = [],
   currentTurn = null,
   waitingForInput = false,
+  waitingForApproval = false,
   submitPending = false,
   submitError = null,
   runs = [],
@@ -190,6 +192,7 @@ export function AppShell({
                 stopPending={stopPending}
                 onStop={onStop}
                 canAddHint={canAddHint}
+                waitingForApproval={waitingForApproval}
                 addHintPending={addHintPending}
                 actionError={runActionError}
                 onAddHint={onAddHint}

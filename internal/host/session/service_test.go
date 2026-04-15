@@ -518,6 +518,72 @@ func TestService_StartTurnDoesNotFinalizeWhenRunnerReturnsWaitState(t *testing.T
 	}
 }
 
+func TestService_ContinueTurnRejectsAuthRequiredWaitState(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_approval",
+			WaitState: RunAuthRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunAuthRequired),
+				},
+			},
+		},
+	}
+	now := time.Date(2026, 4, 15, 11, 0, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	firstResult, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_auth_wait",
+		AgentID:       "default",
+		UserMessage:   "wait for approval",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	_, err = svc.ContinueTurn(ctx, ContinueTurnInput{
+		SessionID:     "sess_auth_wait",
+		AgentID:       "default",
+		Message:       "this should be rejected",
+		InitiatorType: InitiatorUser,
+	})
+	if err == nil {
+		t.Fatal("ContinueTurn() error = nil, want auth-required rejection")
+	}
+	if got := err.Error(); got != "session is waiting for approval; respond via HITL instead of continue_turn" {
+		t.Fatalf("ContinueTurn() error = %q, want auth-required rejection", got)
+	}
+
+	sessionModel, err := store.GetSession(ctx, "sess_auth_wait")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if sessionModel.LastTurnID != firstResult.TurnID {
+		t.Fatalf("GetSession().LastTurnID = %q, want %q", sessionModel.LastTurnID, firstResult.TurnID)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_auth_wait", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+}
+
 func TestService_StartTurnPassesSessionTurnRunContextIntoHITL(t *testing.T) {
 	t.Parallel()
 

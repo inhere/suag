@@ -1512,6 +1512,77 @@ describe("App", () => {
     expect(await screen.findByText("Failed to continue turn.")).toBeInTheDocument();
   });
 
+  it("does not enter continue mode for auth_required turns", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "auth session",
+          status: "WAITING",
+          updatedAt: "2026-04-13T10:00:00Z",
+          preview: "auth preview",
+        },
+      ],
+    });
+    getSessionMock.mockResolvedValueOnce({
+      sessionId: "sess_001",
+      title: "auth session",
+      status: "WAITING",
+      lastTurnId: "turn_001",
+      turns: [],
+      runs: [],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    });
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(connectSessionSocketMock).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "sess_001" }),
+      ),
+    );
+
+    await act(async () => {
+      onMessage?.({
+        type: "STATE_SNAPSHOT",
+        snapshot: makeSnapshot({
+          status: "WAITING",
+          turns: [
+            {
+              turnId: "turn_001",
+              sessionId: "sess_001",
+              primaryRunId: "run_001",
+              currentRunId: "run_001",
+              latestRunId: "run_001",
+              latestAgentId: "default",
+              displayState: "auth_required",
+              latestEventType: "run.status",
+              latestMessagePreview: "需要审批后继续",
+              eventCount: 3,
+              runCount: 1,
+              activeRunCount: 1,
+              completedRunCount: 0,
+              failedRunCount: 0,
+              activeRunIds: ["run_001"],
+              completedRunIds: [],
+              failedRunIds: [],
+              hasExternalWork: true,
+              updatedAt: "2026-04-12T11:00:00Z",
+            },
+          ],
+        }),
+      });
+    });
+
+    expect(screen.getByPlaceholderText("给 Axon 发送下一条任务说明...")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add Hint" })).toBeDisabled();
+  });
+
   it("sends stop_turn for the current turn from the inspector", async () => {
     render(<App />);
 
