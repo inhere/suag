@@ -7,11 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/inhere/axon/internal/acadapters/internalllm"
-	adapterinternaltools "github.com/inhere/axon/internal/acadapters/internaltools"
 	"github.com/inhere/axon/internal/platform/llm"
-	internaltools "github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/api"
 	"github.com/inhere/axon/pkg/agentcore/files"
 )
 
@@ -19,26 +18,33 @@ type echoTool struct{}
 
 func (echoTool) Name() string             { return "echo" }
 func (echoTool) Description() string      { return "Echoes a message" }
-func (echoTool) Kind() internaltools.Kind { return internaltools.KindNative }
-func (echoTool) Schema() llm.ToolSchema {
-	return llm.ToolSchema{
+func (echoTool) Kind() tools.Kind { return tools.KindNative }
+func (echoTool) Schema() api.ToolSchema {
+	return api.ToolSchema{
 		Name:        "echo",
 		Description: "Echoes a message",
-		Parameters: llm.SchemaProperty{
-			Type: "object",
-			Properties: map[string]*llm.SchemaProperty{
-				"text": {Type: "string"},
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"text": map[string]any{
+					"type": "string",
+				},
 			},
-			Required: []string{"text"},
+			"required": []any{"text"},
 		},
+
 	}
 }
-func (echoTool) Execute(_ context.Context, args map[string]any) (string, error) {
-	return "tool:" + args["text"].(string), nil
+func (echoTool) Execute(_ context.Context, args api.ToolCall) (*api.ToolResult, error) {
+	return &api.ToolResult{
+		CallID:  args.CallID,
+		Name:    args.Name,
+		Content: "tool:" + args.Name,
+	}, nil
 }
 
 func main() {
-	reg := internaltools.NewRegistry()
+	reg := tools.NewRegistry()
 	reg.MustRegister(echoTool{})
 
 	provider := llm.NewMockProvider("internal-mock").
@@ -46,9 +52,9 @@ func main() {
 		QueueText("bridge example completed")
 
 	runtime := agentcore.New(agentcore.Config{
-		Provider: internalllm.NewProvider(provider),
+		Provider: llm.NewProvider(provider),
 		Storage:  files.NewStorage(filepath.Join(os.TempDir(), "axon-agentcore-examples", "bridge")),
-		Tools:    adapterinternaltools.NewRegistry(reg),
+		Tools:    reg,
 	})
 
 	result, err := runtime.Run(context.Background(), agentcore.RunInput{

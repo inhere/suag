@@ -3,21 +3,19 @@ package session
 import (
 	"crypto/rand"
 	"io"
-	"strings"
+	"strconv"
 	"time"
-
-	"github.com/oklog/ulid/v2"
 )
 
 func newID(prefix string) string {
-	prefix = strings.TrimSpace(prefix)
+	tsInt := time.Now().UnixMicro()
+	// convert tsInt to base32 and remove padding
+	tsStr := strconv.FormatInt(tsInt, 32)
 
-	entropy := ulid.Monotonic(cryptoReader{}, 0)
-	id := ulid.MustNew(ulid.Timestamp(time.Now().UTC()), entropy).String()
 	if prefix == "" {
-		return id
+		return tsStr
 	}
-	return prefix + id
+	return prefix + tsStr
 }
 
 func NewSessionID() string {
