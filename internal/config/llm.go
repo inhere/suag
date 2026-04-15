@@ -1,19 +1,19 @@
-package main
+package axconfig
 
 import (
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/gookit/config/v2"
+	gkconfig "github.com/gookit/config/v2"
 
 	"github.com/inhere/axon/internal/platform/llm"
 )
 
-// llmProviderSettings is the normalized provider configuration used by the CLI
-// app wiring. It keeps protocol selection and vendor labeling separate so the
-// rest of the runtime can assemble providers from a single v0 config shape.
-type llmProviderSettings struct {
+// LLMProviderSettings is the normalized provider configuration used by app
+// wiring. It keeps protocol selection and vendor labeling separate so the rest
+// of the runtime can assemble providers from a single v0 config shape.
+type LLMProviderSettings struct {
 	APIType      string
 	ProviderName string
 	Model        string
@@ -21,7 +21,7 @@ type llmProviderSettings struct {
 	BaseURL      string
 }
 
-func (s llmProviderSettings) logArgs() []any {
+func (s LLMProviderSettings) LogArgs() []any {
 	args := []any{
 		"api_type", s.APIType,
 		"provider_name", s.ProviderName,
@@ -35,37 +35,22 @@ func (s llmProviderSettings) logArgs() []any {
 	return args
 }
 
-func readLLMProviderSettings() llmProviderSettings {
-	settings := llmProviderSettings{
-		APIType:      normalizeConfigToken(config.String("llm.api_type")),
-		ProviderName: normalizeConfigToken(config.String("llm.provider_name")),
-		Model:        strings.TrimSpace(config.String("llm.model")),
-		APIKey:       strings.TrimSpace(config.String("llm.api_key")),
-		BaseURL:      strings.TrimSpace(config.String("llm.base_url")),
+func ReadLLMProviderSettings() LLMProviderSettings {
+	settings := LLMProviderSettings{
+		APIType:      normalizeConfigToken(gkconfig.String("llm.api_type")),
+		ProviderName: normalizeConfigToken(gkconfig.String("llm.provider_name")),
+		Model:        strings.TrimSpace(gkconfig.String("llm.model")),
+		APIKey:       strings.TrimSpace(gkconfig.String("llm.api_key")),
+		BaseURL:      strings.TrimSpace(gkconfig.String("llm.base_url")),
 	}
 	return normalizeLLMProviderSettings(settings)
 }
 
-func normalizeLLMProviderSettings(settings llmProviderSettings) llmProviderSettings {
-	normalized := settings
-
-	if normalized.APIType == "" {
-		normalized.APIType = "openai"
-	}
-
-	if normalized.ProviderName == "" {
-		switch normalized.APIType {
-		case "anthropic":
-			normalized.ProviderName = "claude"
-		default:
-			normalized.ProviderName = "openai"
-		}
-	}
-
-	return normalized
+func BuildLLMProvider() (llm.Provider, error) {
+	return BuildLLMProviderFromSettings(ReadLLMProviderSettings())
 }
 
-func buildLLMProviderFromSettings(settings llmProviderSettings) (llm.Provider, error) {
+func BuildLLMProviderFromSettings(settings LLMProviderSettings) (llm.Provider, error) {
 	settings = normalizeLLMProviderSettings(settings)
 
 	switch settings.APIType {
@@ -100,6 +85,25 @@ func buildLLMProviderFromSettings(settings llmProviderSettings) (llm.Provider, e
 	default:
 		return nil, fmt.Errorf("unsupported llm.api_type %q", settings.APIType)
 	}
+}
+
+func normalizeLLMProviderSettings(settings LLMProviderSettings) LLMProviderSettings {
+	normalized := settings
+
+	if normalized.APIType == "" {
+		normalized.APIType = "openai"
+	}
+
+	if normalized.ProviderName == "" {
+		switch normalized.APIType {
+		case "anthropic":
+			normalized.ProviderName = "claude"
+		default:
+			normalized.ProviderName = "openai"
+		}
+	}
+
+	return normalized
 }
 
 func normalizeConfigToken(value string) string {

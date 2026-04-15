@@ -14,6 +14,7 @@
 - Host 会话与 Web 工作台基础闭环已打通，当前继续围绕可自用联调、默认 internal runner 与 wait-state/HITL 交互约束做收尾，联调说明见 `docs/usage/web-host-local-dev.md`
 - Web 已修复“空 session 首次 start turn 仅收到 WS 增量事件时不渲染 turn/run”的状态聚合缺口，当前继续做真机联调收尾
 - Host internal runner 的 runtime 数据目录已开始收口到统一配置；默认改为 `db/agentcore/host`，避免继续散落到工作目录 `.agentcore/`
+- `cmd/axon` 逻辑已开始向 `internal/app` 与 `internal/config` 收拢，CLI 入口后续保持薄封装，避免命令层继续承载业务组装细节
 - `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复与查询链路，且 `run_events.sequence` 已收敛为 session 级单调递增基线；当前 `DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态也已开始贯通到快照与事件流
 - `docs/usage/host-state-snapshot-v0.md` 与 `docs/usage/llm-config-v0.md` 已作为当前 v0 协议与配置基线文档
 - Phase 1 已完成 `platform/llm -> pkg/agentcore/api` 的第一方收口，`cmd/axon` 现已补齐仅基于 `llm.api_type + llm.provider_name` 的归一化配置入口与测试覆盖

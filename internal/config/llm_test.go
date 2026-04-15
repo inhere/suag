@@ -1,14 +1,14 @@
-package main
+package axconfig
 
 import (
 	"testing"
 
-	"github.com/gookit/config/v2"
+	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/testutil/assert"
 )
 
 func TestNormalizeLLMProviderSettings_PrefersAPITypeAndProviderName(t *testing.T) {
-	settings := normalizeLLMProviderSettings(llmProviderSettings{
+	settings := normalizeLLMProviderSettings(LLMProviderSettings{
 		APIType:      "openai",
 		ProviderName: "deepseek",
 	})
@@ -18,14 +18,14 @@ func TestNormalizeLLMProviderSettings_PrefersAPITypeAndProviderName(t *testing.T
 }
 
 func TestNormalizeLLMProviderSettings_DefaultsAPITypeToOpenAI(t *testing.T) {
-	settings := normalizeLLMProviderSettings(llmProviderSettings{})
+	settings := normalizeLLMProviderSettings(LLMProviderSettings{})
 
 	assert.Eq(t, "openai", settings.APIType)
 	assert.Eq(t, "openai", settings.ProviderName)
 }
 
 func TestNormalizeLLMProviderSettings_DefaultsAnthropicProviderName(t *testing.T) {
-	settings := normalizeLLMProviderSettings(llmProviderSettings{
+	settings := normalizeLLMProviderSettings(LLMProviderSettings{
 		APIType: "anthropic",
 	})
 
@@ -34,7 +34,7 @@ func TestNormalizeLLMProviderSettings_DefaultsAnthropicProviderName(t *testing.T
 }
 
 func TestBuildLLMProvider_OpenAIAPITypeWithDeepSeekProviderName(t *testing.T) {
-	provider, err := buildLLMProviderFromSettings(llmProviderSettings{
+	provider, err := BuildLLMProviderFromSettings(LLMProviderSettings{
 		APIType:      "openai",
 		ProviderName: "deepseek",
 		Model:        "deepseek-chat",
@@ -46,7 +46,7 @@ func TestBuildLLMProvider_OpenAIAPITypeWithDeepSeekProviderName(t *testing.T) {
 }
 
 func TestBuildLLMProvider_AnthropicAPITypeBuildsClaudeProvider(t *testing.T) {
-	provider, err := buildLLMProviderFromSettings(llmProviderSettings{
+	provider, err := BuildLLMProviderFromSettings(LLMProviderSettings{
 		APIType:      "anthropic",
 		ProviderName: "claude",
 		Model:        "claude-sonnet-4-6",
@@ -58,7 +58,7 @@ func TestBuildLLMProvider_AnthropicAPITypeBuildsClaudeProvider(t *testing.T) {
 }
 
 func TestBuildLLMProvider_UnsupportedAPITypeReturnsError(t *testing.T) {
-	provider, err := buildLLMProviderFromSettings(llmProviderSettings{
+	provider, err := BuildLLMProviderFromSettings(LLMProviderSettings{
 		APIType:      "custom",
 		ProviderName: "demo",
 	})
@@ -68,18 +68,33 @@ func TestBuildLLMProvider_UnsupportedAPITypeReturnsError(t *testing.T) {
 }
 
 func TestReadLLMProviderSettings_NormalizesConfigValues(t *testing.T) {
-	config.Reset()
-	t.Cleanup(config.Reset)
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
 
-	_ = config.Set("llm.api_type", " OpenAI ")
-	_ = config.Set("llm.provider_name", " DeepSeek ")
-	_ = config.Set("llm.model", "deepseek-chat")
-	_ = config.Set("llm.base_url", " https://api.deepseek.com/v1 ")
+	_ = gkconfig.Set("llm.api_type", " OpenAI ")
+	_ = gkconfig.Set("llm.provider_name", " DeepSeek ")
+	_ = gkconfig.Set("llm.model", "deepseek-chat")
+	_ = gkconfig.Set("llm.base_url", " https://api.deepseek.com/v1 ")
 
-	settings := readLLMProviderSettings()
+	settings := ReadLLMProviderSettings()
 
 	assert.Eq(t, "openai", settings.APIType)
 	assert.Eq(t, "deepseek", settings.ProviderName)
 	assert.Eq(t, "deepseek-chat", settings.Model)
 	assert.Eq(t, "https://api.deepseek.com/v1", settings.BaseURL)
+}
+
+func TestBuildLLMProvider_UsesNormalizedConfigSettings(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	_ = gkconfig.Set("llm.api_type", "openai")
+	_ = gkconfig.Set("llm.provider_name", "deepseek")
+	_ = gkconfig.Set("llm.model", "deepseek-chat")
+
+	provider, err := BuildLLMProvider()
+
+	assert.NoErr(t, err)
+	assert.NotNil(t, provider)
+	assert.Eq(t, "deepseek", provider.Name())
 }
