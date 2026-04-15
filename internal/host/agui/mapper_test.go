@@ -666,3 +666,109 @@ func TestMapEvent_RunExternalMessageEndMapsToTextEnd(t *testing.T) {
 		t.Fatalf("MapEvent()[0].MessageID = %q, want %q", endEvent.MessageID, "turn_remote_001:item_001")
 	}
 }
+
+func TestMapEvent_RunStatusMapsToCustomAndSnapshot(t *testing.T) {
+	t.Parallel()
+
+	event := HostEvent{
+		Type:      session.EventRunStatus,
+		SessionID: "sess_001",
+		TurnID:    "turn_001",
+		RunID:     "run_001",
+		AgentID:   "default",
+		Sequence:  3,
+		Payload: map[string]any{
+			"state": string(session.RunInputRequired),
+		},
+	}
+
+	got := MapEvent(event)
+	if len(got) != 2 {
+		t.Fatalf("MapEvent() len = %d, want 2", len(got))
+	}
+
+	customEvent, ok := got[0].(*CustomEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], &CustomEvent{})
+	}
+	if customEvent.Name != "axon.run.status" {
+		t.Fatalf("MapEvent()[0].Name = %q, want %q", customEvent.Name, "axon.run.status")
+	}
+
+	activityEvent, ok := got[1].(*ActivitySnapshotEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], &ActivitySnapshotEvent{})
+	}
+	content, ok := activityEvent.Content.(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent()[1].Content type = %T, want map[string]any", activityEvent.Content)
+	}
+	if content["status"] != "input_required" {
+		t.Fatalf("MapEvent()[1].Content.status = %v, want %q", content["status"], "input_required")
+	}
+}
+
+func TestBuildStateSnapshotUsesRunStatusDisplayState(t *testing.T) {
+	t.Parallel()
+
+	sessionModel := session.Session{
+		SessionID:  "sess_status",
+		Title:      "status session",
+		Status:     session.SessionWaiting,
+		LastTurnID: "turn_status",
+	}
+	events := []HostEvent{
+		{
+			Type:      session.EventRunQueued,
+			SessionID: "sess_status",
+			TurnID:    "turn_status",
+			RunID:     "run_status",
+			AgentID:   "default",
+			Sequence:  1,
+			CreatedAt: time.Date(2026, 4, 15, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			Type:      session.EventRunStarted,
+			SessionID: "sess_status",
+			TurnID:    "turn_status",
+			RunID:     "run_status",
+			AgentID:   "default",
+			Sequence:  2,
+			CreatedAt: time.Date(2026, 4, 15, 10, 0, 1, 0, time.UTC),
+		},
+		{
+			Type:      session.EventRunStatus,
+			SessionID: "sess_status",
+			TurnID:    "turn_status",
+			RunID:     "run_status",
+			AgentID:   "default",
+			Sequence:  3,
+			CreatedAt: time.Date(2026, 4, 15, 10, 0, 2, 0, time.UTC),
+			Payload: map[string]any{
+				"state": string(session.RunAuthRequired),
+			},
+		},
+	}
+
+	got := BuildStateSnapshot(sessionModel, events, nil)
+	snapshot, ok := got.Snapshot.(map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot type = %T, want map[string]any", got.Snapshot)
+	}
+
+	rawTurns, ok := snapshot["turns"].([]map[string]any)
+	if !ok || len(rawTurns) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns = %T/%d, want []map[string]any len 1", snapshot["turns"], len(rawTurns))
+	}
+	if rawTurns[0]["displayState"] != "auth_required" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].displayState = %v, want %q", rawTurns[0]["displayState"], "auth_required")
+	}
+
+	rawRuns, ok := snapshot["runs"].([]map[string]any)
+	if !ok || len(rawRuns) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs = %T/%d, want []map[string]any len 1", snapshot["runs"], len(rawRuns))
+	}
+	if rawRuns[0]["displayState"] != "auth_required" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].displayState = %v, want %q", rawRuns[0]["displayState"], "auth_required")
+	}
+}

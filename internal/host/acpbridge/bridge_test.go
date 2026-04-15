@@ -200,17 +200,90 @@ func TestRunnerAdapter_RunMapsDispatchEventsToRuntimeEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
+	if len(runtimeEvents) != 5 {
+		t.Fatalf("runtime events len = %d, want 5", len(runtimeEvents))
+	}
+	if runtimeEvents[0].EventType != session.EventRunStatus {
+		t.Fatalf("runtime events[0].EventType = %q, want %q", runtimeEvents[0].EventType, session.EventRunStatus)
+	}
+	if runtimeEvents[0].Payload["state"] != string(session.RunDispatching) {
+		t.Fatalf("runtime events[0].Payload[state] = %v, want %q", runtimeEvents[0].Payload["state"], session.RunDispatching)
+	}
+	if runtimeEvents[1].EventType != session.EventRunStatus {
+		t.Fatalf("runtime events[1].EventType = %q, want %q", runtimeEvents[1].EventType, session.EventRunStatus)
+	}
+	if runtimeEvents[1].Payload["state"] != string(session.RunExternal) {
+		t.Fatalf("runtime events[1].Payload[state] = %v, want %q", runtimeEvents[1].Payload["state"], session.RunExternal)
+	}
+	if runtimeEvents[2].EventType != session.EventRunExternalActivity {
+		t.Fatalf("runtime events[2].EventType = %q, want %q", runtimeEvents[2].EventType, session.EventRunExternalActivity)
+	}
+	if runtimeEvents[3].EventType != session.EventRunExternalMessageDelta {
+		t.Fatalf("runtime events[3].EventType = %q, want %q", runtimeEvents[3].EventType, session.EventRunExternalMessageDelta)
+	}
+	if runtimeEvents[4].EventType != session.EventRunExternalMessageEnd {
+		t.Fatalf("runtime events[4].EventType = %q, want %q", runtimeEvents[4].EventType, session.EventRunExternalMessageEnd)
+	}
+}
+
+func TestRunnerAdapter_RunEmitsDispatchingAndExternalRunningStatus(t *testing.T) {
+	t.Parallel()
+
+	fakeBridge := &fakeBridge{
+		result: DispatchResult{
+			State:   StateCompleted,
+			Summary: "continued",
+		},
+	}
+	fakeBridge.dispatch = func(req DispatchRequest) {
+		if req.Emit == nil {
+			return
+		}
+		_ = req.Emit(DispatchEvent{
+			Type: "external.activity",
+			Payload: map[string]any{
+				"kind": "item_started",
+			},
+		})
+	}
+
+	adapter := NewRunnerAdapter(fakeBridge, RunnerAdapterConfig{
+		AdapterName: "codex",
+		Workspace:   "workspace/demo",
+	})
+
+	var runtimeEvents []session.RuntimeEvent
+	_, err := adapter.Run(context.Background(), session.RuntimeRequest{
+		SessionID:   "sess_001",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "continue task",
+		Emit: func(event session.RuntimeEvent) error {
+			runtimeEvents = append(runtimeEvents, event)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
 	if len(runtimeEvents) != 3 {
 		t.Fatalf("runtime events len = %d, want 3", len(runtimeEvents))
 	}
-	if runtimeEvents[0].EventType != session.EventRunExternalActivity {
-		t.Fatalf("runtime events[0].EventType = %q, want %q", runtimeEvents[0].EventType, session.EventRunExternalActivity)
+	if runtimeEvents[0].EventType != session.EventRunStatus {
+		t.Fatalf("runtime events[0].EventType = %q, want %q", runtimeEvents[0].EventType, session.EventRunStatus)
 	}
-	if runtimeEvents[1].EventType != session.EventRunExternalMessageDelta {
-		t.Fatalf("runtime events[1].EventType = %q, want %q", runtimeEvents[1].EventType, session.EventRunExternalMessageDelta)
+	if runtimeEvents[0].Payload["state"] != string(session.RunDispatching) {
+		t.Fatalf("runtime events[0].Payload[state] = %v, want %q", runtimeEvents[0].Payload["state"], session.RunDispatching)
 	}
-	if runtimeEvents[2].EventType != session.EventRunExternalMessageEnd {
-		t.Fatalf("runtime events[2].EventType = %q, want %q", runtimeEvents[2].EventType, session.EventRunExternalMessageEnd)
+	if runtimeEvents[1].EventType != session.EventRunStatus {
+		t.Fatalf("runtime events[1].EventType = %q, want %q", runtimeEvents[1].EventType, session.EventRunStatus)
+	}
+	if runtimeEvents[1].Payload["state"] != string(session.RunExternal) {
+		t.Fatalf("runtime events[1].Payload[state] = %v, want %q", runtimeEvents[1].Payload["state"], session.RunExternal)
+	}
+	if runtimeEvents[2].EventType != session.EventRunExternalActivity {
+		t.Fatalf("runtime events[2].EventType = %q, want %q", runtimeEvents[2].EventType, session.EventRunExternalActivity)
 	}
 }
 

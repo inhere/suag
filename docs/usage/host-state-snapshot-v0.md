@@ -112,7 +112,7 @@
   - 与当前实现下的 `currentRunId` 含义接近，保留作兼容字段
 - `latestAgentId`
 - `displayState`
-  - 当前推荐值：`queued` / `running` / `external_running` / `completed` / `failed`
+  - 当前推荐值：`queued` / `running` / `dispatching` / `external_running` / `input_required` / `auth_required` / `completed` / `failed` / `canceled`
 - `latestEventType`
 - `latestMessagePreview`
   - 当前推荐作为 turn 卡片上的一句摘要
@@ -185,6 +185,8 @@
   - `latestMessageText` 也会被收敛到最终 summary
 - 如果 run 仍处于外部协作阶段
   - `displayState` 通常会是 `external_running`
+- 如果 run 正在等待继续输入或授权
+  - `displayState` 可能会是 `input_required` 或 `auth_required`
 - `externalTaskIds`
   - 允许一个 run 关联多个外部任务
 
@@ -267,6 +269,9 @@
 - `events[].sequence` 是 session 维度的单调递增序号
 - `GET /api/sessions/{id}/events?after_seq=N` 与 WS 首包后的增量消费，都应把这个序号当作 session 级游标
 - 不要把 `sequence` 视为 turn 内局部序号，也不要假设新 turn 会重新从 `1` 开始
+- `events` 中已开始出现 `run.status`
+  - 当前用于表达 `DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 这类非终态运行语义
+  - 客户端如果直接消费 `events`，应优先读取 payload 里的 `state`
 
 如果某个页面必须读 `events`，也建议把它视为：
 

@@ -3,6 +3,7 @@ package session
 const (
 	EventRunQueued   = "run.queued"
 	EventRunStarted  = "run.started"
+	EventRunStatus   = "run.status"
 	EventRunFinished = "run.finished"
 	EventRunFailed   = "run.failed"
 	EventRunCanceled = "run.canceled"

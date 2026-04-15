@@ -329,6 +329,112 @@ func TestService_StartTurnPublishesRuntimeEventsFromRunner(t *testing.T) {
 	}
 }
 
+func TestService_StartTurnPersistsRuntimeWaitingStateBeforeRunFinishes(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := newStatusBlockingRunner(RuntimeEvent{
+		EventType: EventRunStatus,
+		Payload: map[string]any{
+			"state": string(RunInputRequired),
+		},
+	})
+	now := time.Date(2026, 4, 13, 13, 0, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	startDone := make(chan error, 1)
+	go func() {
+		_, err := svc.StartTurn(ctx, StartTurnInput{
+			SessionID:     "sess_waiting",
+			AgentID:       "default",
+			UserMessage:   "wait for extra input",
+			InitiatorType: InitiatorUser,
+		})
+		startDone <- err
+	}()
+
+	runner.WaitUntilStatusPersisted(t)
+	request := runner.LastRequest()
+
+	runRow := store.db.QueryRowContext(ctx, `
+		SELECT state, ended_at
+		FROM runs
+		WHERE run_id = ?
+	`, request.RunID)
+	var runState, endedAt string
+	if err := runRow.Scan(&runState, &endedAt); err != nil {
+		t.Fatalf("query waiting run error = %v", err)
+	}
+	if runState != string(RunInputRequired) {
+		t.Fatalf("persisted waiting run state = %q, want %q", runState, RunInputRequired)
+	}
+	if endedAt != "" {
+		t.Fatalf("persisted waiting run ended_at = %q, want empty", endedAt)
+	}
+
+	turnRow := store.db.QueryRowContext(ctx, `
+		SELECT status, completed_at
+		FROM turns
+		WHERE turn_id = ?
+	`, request.TurnID)
+	var turnStatus, completedAt string
+	if err := turnRow.Scan(&turnStatus, &completedAt); err != nil {
+		t.Fatalf("query waiting turn error = %v", err)
+	}
+	if turnStatus != string(TurnWaiting) {
+		t.Fatalf("persisted waiting turn status = %q, want %q", turnStatus, TurnWaiting)
+	}
+	if completedAt != "" {
+		t.Fatalf("persisted waiting turn completed_at = %q, want empty", completedAt)
+	}
+
+	sessionRow := store.db.QueryRowContext(ctx, `
+		SELECT status
+		FROM sessions
+		WHERE session_id = ?
+	`, "sess_waiting")
+	var sessionStatus string
+	if err := sessionRow.Scan(&sessionStatus); err != nil {
+		t.Fatalf("query waiting session status error = %v", err)
+	}
+	if sessionStatus != string(SessionWaiting) {
+		t.Fatalf("persisted waiting session status = %q, want %q", sessionStatus, SessionWaiting)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_waiting", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+	if events[2].EventType != EventRunStatus {
+		t.Fatalf("events[2].EventType = %q, want %q", events[2].EventType, EventRunStatus)
+	}
+
+	if err := svc.StopTurn(ctx, StopTurnInput{
+		SessionID: "sess_waiting",
+		TurnID:    request.TurnID,
+		Reason:    "stop after waiting assertion",
+	}); err != nil {
+		t.Fatalf("StopTurn() error = %v", err)
+	}
+
+	select {
+	case err := <-startDone:
+		if err != nil {
+			t.Fatalf("StartTurn() error after stop = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartTurn() did not finish after stop")
+	}
+}
+
 func TestService_StartTurnPassesSessionTurnRunContextIntoHITL(t *testing.T) {
 	t.Parallel()
 
@@ -743,6 +849,64 @@ func (r *blockingRunner) WaitUntilRunning(t *testing.T) {
 }
 
 func (r *blockingRunner) LastRequest() RuntimeRequest {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastRequest
+}
+
+type statusBlockingRunner struct {
+	mu          sync.Mutex
+	lastRequest RuntimeRequest
+	statusEvent RuntimeEvent
+	startedCh   chan struct{}
+	emittedCh   chan struct{}
+}
+
+func newStatusBlockingRunner(statusEvent RuntimeEvent) *statusBlockingRunner {
+	return &statusBlockingRunner{
+		statusEvent: statusEvent,
+		startedCh:   make(chan struct{}),
+		emittedCh:   make(chan struct{}),
+	}
+}
+
+func (r *statusBlockingRunner) Run(ctx context.Context, in RuntimeRequest) (RuntimeResult, error) {
+	r.mu.Lock()
+	r.lastRequest = in
+	r.mu.Unlock()
+
+	select {
+	case <-r.startedCh:
+	default:
+		close(r.startedCh)
+	}
+
+	if in.Emit != nil {
+		if err := in.Emit(r.statusEvent); err != nil {
+			return RuntimeResult{}, err
+		}
+	}
+	select {
+	case <-r.emittedCh:
+	default:
+		close(r.emittedCh)
+	}
+
+	<-ctx.Done()
+	return RuntimeResult{}, ctx.Err()
+}
+
+func (r *statusBlockingRunner) WaitUntilStatusPersisted(t *testing.T) {
+	t.Helper()
+
+	select {
+	case <-r.emittedCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("status blocking runner did not emit status")
+	}
+}
+
+func (r *statusBlockingRunner) LastRequest() RuntimeRequest {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lastRequest

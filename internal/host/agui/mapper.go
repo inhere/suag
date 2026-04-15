@@ -1,6 +1,7 @@
 package agui
 
 import (
+	"strings"
 	"time"
 
 	"github.com/inhere/axon/internal/host/session"
@@ -14,6 +15,25 @@ func MapEvent(event HostEvent) []Event {
 		return []Event{
 			withTimestamp(NewRunStartedEvent(event.SessionID, event.RunID), now),
 			buildRunActivitySnapshot(now, event, "running"),
+		}
+	case session.EventRunStatus:
+		status := displayStateForEvent(event)
+		if status == "" {
+			status = "running"
+		}
+		return []Event{
+			withTimestamp(NewCustomEvent("axon.run.status", map[string]any{
+				"threadId":       event.SessionID,
+				"sessionId":      event.SessionID,
+				"turnId":         event.TurnID,
+				"runId":          event.RunID,
+				"agentId":        event.AgentID,
+				"sequence":       event.Sequence,
+				"type":           event.Type,
+				"payload":        event.Payload,
+				"externalTaskId": externalTaskIDFromPayload(event.Payload),
+			}), now),
+			buildRunActivitySnapshot(now, event, status),
 		}
 	case session.EventRunFinished:
 		textEvents := buildFinishedTextEvents(now, event)
@@ -455,8 +475,10 @@ func mergeTurnSnapshot(target map[string]any, event HostEvent) {
 	case "failed":
 		removeStringFieldValue(target, "activeRunIds", event.RunID)
 		appendUniqueStringField(target, "failedRunIds", event.RunID)
-	case "queued", "running", "external_running":
+	case "queued", "running", "dispatching", "external_running", "input_required", "auth_required":
 		appendUniqueStringField(target, "activeRunIds", event.RunID)
+	case "canceled":
+		removeStringFieldValue(target, "activeRunIds", event.RunID)
 	}
 
 	if event.Type == session.EventRunExternalActivity || event.Type == session.EventRunExternalMessageDelta || event.Type == session.EventRunExternalMessageEnd {
@@ -591,6 +613,8 @@ func displayStateForEvent(event HostEvent) string {
 		return "queued"
 	case session.EventRunStarted:
 		return "running"
+	case session.EventRunStatus:
+		return displayStateForRuntimeState(payloadString(event.Payload, "state"))
 	case session.EventRunFinished:
 		return "completed"
 	case session.EventRunFailed:
@@ -599,6 +623,27 @@ func displayStateForEvent(event HostEvent) string {
 		return "canceled"
 	case session.EventRunExternalActivity, session.EventRunExternalMessageDelta, session.EventRunExternalMessageEnd:
 		return "external_running"
+	default:
+		return ""
+	}
+}
+
+func displayStateForRuntimeState(raw string) string {
+	switch session.RunState(strings.TrimSpace(raw)) {
+	case session.RunPreparing:
+		return "preparing"
+	case session.RunThinking:
+		return "running"
+	case session.RunDispatching:
+		return "dispatching"
+	case session.RunExternal:
+		return "external_running"
+	case session.RunInputRequired:
+		return "input_required"
+	case session.RunAuthRequired:
+		return "auth_required"
+	case session.RunSummarizing:
+		return "running"
 	default:
 		return ""
 	}

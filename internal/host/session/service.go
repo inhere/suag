@@ -252,6 +252,10 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 					"externalTaskId": externalTaskID,
 				})
 
+				if err := s.applyRuntimeStatus(ctx, sessionModel, turnID, runID, runtimeEvent); err != nil {
+					return fmt.Errorf("apply runtime status: %w", err)
+				}
+
 				event := RunEvent{
 					EventID:   NewEventID(),
 					SessionID: sessionID,
@@ -518,6 +522,57 @@ func (s *Service) appendAndPublishEvent(ctx context.Context, event RunEvent) (Ru
 		}
 	}
 	return storedEvent, nil
+}
+
+func (s *Service) applyRuntimeStatus(ctx context.Context, sessionModel Session, turnID, runID string, event RuntimeEvent) error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	if strings.TrimSpace(event.EventType) != EventRunStatus {
+		return nil
+	}
+
+	runState, ok := runtimeRunState(event.Payload)
+	if !ok {
+		return nil
+	}
+
+	switch runState {
+	case RunDispatching, RunExternal:
+		if err := s.store.UpdateRunLifecycle(ctx, runID, runState, "", "", nil); err != nil {
+			return fmt.Errorf("update run runtime state: %w", err)
+		}
+		return nil
+	case RunInputRequired, RunAuthRequired:
+		if err := s.store.UpdateRunLifecycle(ctx, runID, runState, "", "", nil); err != nil {
+			return fmt.Errorf("update waiting run state: %w", err)
+		}
+		if err := s.store.UpdateTurnStatus(ctx, turnID, TurnWaiting, nil); err != nil {
+			return fmt.Errorf("update waiting turn status: %w", err)
+		}
+		sessionModel.Status = SessionWaiting
+		sessionModel.UpdatedAt = s.now().UTC()
+		if err := s.store.UpdateSession(ctx, sessionModel); err != nil {
+			return fmt.Errorf("update waiting session status: %w", err)
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func runtimeRunState(payload map[string]any) (RunState, bool) {
+	if len(payload) == 0 {
+		return "", false
+	}
+	raw, _ := payload["state"].(string)
+	state := RunState(strings.TrimSpace(raw))
+	switch state {
+	case RunPreparing, RunThinking, RunDispatching, RunExternal, RunInputRequired, RunAuthRequired, RunSummarizing:
+		return state, true
+	default:
+		return "", false
+	}
 }
 
 func (s *Service) persistExternalTask(ctx context.Context, sessionID, turnID, runID string, task *ExternalTask) error {

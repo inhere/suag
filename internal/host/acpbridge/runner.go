@@ -31,6 +31,16 @@ func (r *RunnerAdapter) Run(ctx context.Context, in session.RuntimeRequest) (ses
 	if r == nil || r.bridge == nil {
 		return session.RuntimeResult{}, fmt.Errorf("acp bridge is required")
 	}
+	if in.Emit != nil {
+		if err := in.Emit(session.RuntimeEvent{
+			EventType: session.EventRunStatus,
+			Payload: map[string]any{
+				"state": string(session.RunDispatching),
+			},
+		}); err != nil {
+			return session.RuntimeResult{}, err
+		}
+	}
 
 	result, err := r.bridge.Dispatch(ctx, DispatchRequest{
 		SessionID:   in.SessionID,
@@ -91,11 +101,13 @@ func (r *RunnerAdapter) buildDispatchEmitter(emit func(event session.RuntimeEven
 	}
 
 	return func(event DispatchEvent) error {
-		runtimeEvent, ok := mapDispatchEvent(event)
-		if !ok {
-			return nil
+		runtimeEvents := mapDispatchEvents(event)
+		for _, runtimeEvent := range runtimeEvents {
+			if err := emit(runtimeEvent); err != nil {
+				return err
+			}
 		}
-		return emit(runtimeEvent)
+		return nil
 	}
 }
 
@@ -127,25 +139,34 @@ func (r *RunnerAdapter) buildDispatchContext(src map[string]any) map[string]any 
 	return out
 }
 
-func mapDispatchEvent(event DispatchEvent) (session.RuntimeEvent, bool) {
+func mapDispatchEvents(event DispatchEvent) []session.RuntimeEvent {
 	switch strings.TrimSpace(event.Type) {
 	case "external.activity":
-		return session.RuntimeEvent{
-			EventType: session.EventRunExternalActivity,
-			Payload:   event.Payload,
-		}, true
+		activityPayload := mergeMetadata(map[string]any{}, event.Payload)
+		return []session.RuntimeEvent{
+			{
+				EventType: session.EventRunStatus,
+				Payload: map[string]any{
+					"state": string(session.RunExternal),
+				},
+			},
+			{
+				EventType: session.EventRunExternalActivity,
+				Payload:   activityPayload,
+			},
+		}
 	case "external.message.delta":
-		return session.RuntimeEvent{
+		return []session.RuntimeEvent{{
 			EventType: session.EventRunExternalMessageDelta,
 			Payload:   event.Payload,
-		}, true
+		}}
 	case "external.message.end":
-		return session.RuntimeEvent{
+		return []session.RuntimeEvent{{
 			EventType: session.EventRunExternalMessageEnd,
 			Payload:   event.Payload,
-		}, true
+		}}
 	default:
-		return session.RuntimeEvent{}, false
+		return nil
 	}
 }
 

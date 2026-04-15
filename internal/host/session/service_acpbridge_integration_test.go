@@ -55,11 +55,14 @@ func TestService_StartTurnWithACPBridgeRunnerPublishesFinishedLifecycle(t *testi
 	if bridge.lastRequest.Adapter != "codex" {
 		t.Fatalf("Dispatch().Adapter = %q, want %q", bridge.lastRequest.Adapter, "codex")
 	}
-	if len(bus.events) != 3 {
-		t.Fatalf("published events len = %d, want 3", len(bus.events))
+	if len(bus.events) != 4 {
+		t.Fatalf("published events len = %d, want 4", len(bus.events))
 	}
-	if bus.events[2].EventType != session.EventRunFinished {
-		t.Fatalf("last published event type = %q, want %q", bus.events[2].EventType, session.EventRunFinished)
+	if bus.events[2].EventType != session.EventRunStatus {
+		t.Fatalf("published events[2] type = %q, want %q", bus.events[2].EventType, session.EventRunStatus)
+	}
+	if bus.events[3].EventType != session.EventRunFinished {
+		t.Fatalf("last published event type = %q, want %q", bus.events[3].EventType, session.EventRunFinished)
 	}
 }
 
