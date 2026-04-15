@@ -11,6 +11,7 @@ import (
 // Load initializes environment and YAML-backed configuration sources for the
 // current process. Call it once near process startup before reading settings.
 func Load() error {
+	// Load .env files if they exist. This allows environment variables to override
 	dotenv.LoadExists(".", ".env", ".env.local", "~/.axon/.env")
 
 	gkconfig.AddDriver(yaml.Driver)

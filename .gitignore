@@ -9,3 +9,4 @@ tmp/
 .xenv.*
 db/*.db
 db/*.db*
+.agentcore/

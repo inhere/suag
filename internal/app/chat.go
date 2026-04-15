@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/gookit/goutil/x/ccolor"
 )
 
+// RunChat starts an interactive chat session in the terminal, allowing the user to enter tasks and receive results.
+// It also supports HITL ticket management commands.
 func (a *App) RunChat(ctx context.Context) {
-	fmt.Println("axon chat mode — type your task and press Enter. Ctrl+C to exit.")
-	fmt.Println("Commands: :quit, :hitl (list pending tickets), :respond <id> <instruction>")
+	ccolor.Infoln("axon chat mode — type your task and press Enter. Ctrl+C to exit.")
+	ccolor.Infoln("Commands: :quit, :hitl (list pending tickets), :respond <id> <instruction>")
 	fmt.Println()
 
 	scanner := bufio.NewScanner(os.Stdin)

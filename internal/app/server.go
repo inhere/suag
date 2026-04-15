@@ -14,6 +14,7 @@ import (
 	"github.com/inhere/axon/internal/host/session"
 )
 
+// RunServer starts the axon server, which listens for incoming API requests and manages agent sessions.
 func (a *App) RunServer(ctx context.Context) error {
 	sessionStore, err := session.NewSQLiteStore(appconfig.ResolveSessionDBPath())
 	if err != nil {
