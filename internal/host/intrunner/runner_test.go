@@ -145,6 +145,49 @@ func TestRunner_RunReusesSuspendedRunnerOnContinue(t *testing.T) {
 	assert.True(t, containsMessage(calls[1].Messages, "user", "continue with human input"))
 }
 
+func TestRunner_RunMapsApprovalYieldToAuthRequired(t *testing.T) {
+	t.Parallel()
+
+	hook := &yieldApprovalHostHook{}
+	mock := llm.NewMockProvider("mock")
+
+	runner, err := New(Config{
+		Provider: mock,
+		Registry: tools.NewRegistry(),
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+		Hooks:    []agentcore.Hook{hook},
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	var states []string
+	result, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_auth",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "request approval",
+		Emit: func(event Event) error {
+			if event.EventType != session.EventRunStatus {
+				return nil
+			}
+			state, _ := event.Payload["state"].(string)
+			states = append(states, state)
+			return nil
+		},
+	})
+	assert.NoErr(t, err)
+	assert.Eq(t, "await_approval", result.Summary)
+	assert.Eq(t, session.RunAuthRequired, result.WaitState)
+	assert.Eq(t, 3, len(states))
+	assert.Eq(t, "PREPARING", states[0])
+	assert.Eq(t, "THINKING", states[1])
+	assert.Eq(t, "AUTH_REQUIRED", states[2])
+}
+
 type yieldBeforeSecondModelHostHook struct {
 	agentcore.NopHook
 	beforeModelCalls int
@@ -155,6 +198,15 @@ func (h *yieldBeforeSecondModelHostHook) BeforeModel(_ context.Context, _ *agent
 	if h.beforeModelCalls == 2 {
 		ctrl.Yield("await_resume", map[string]any{"step": "after_tool"})
 	}
+	return nil
+}
+
+type yieldApprovalHostHook struct {
+	agentcore.NopHook
+}
+
+func (h *yieldApprovalHostHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
+	ctrl.Yield("await_approval", map[string]any{"policy": "manual"})
 	return nil
 }
 

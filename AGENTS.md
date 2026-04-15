@@ -20,6 +20,7 @@
 - `internal/platform/tools` 已进一步改为直接返回 `agentcore/api.ToolSchema`，继续保留 `map[string]any` 作为 schema authority，不再依赖 `llm.SchemaProperty`
 - `cmd/axon server` 在未配置 `host.acp.mode` 时已默认接入 `internal/host/intrunner`，并按 `sessionId` 复用本地上下文历史；下一步继续聚焦 `ContinueTurn/HITL` 深化、旧 `ReactRunner` fallback 收敛与更细的运行时能力补齐
 - `internal/host/session` 已补齐 waiting 非终态收口，避免 `INPUT_REQUIRED/AUTH_REQUIRED` 被错误收尾为 completed；`internal/host/intrunner` 现已开始复用 suspended runner 以承接同 session 的 resume/continue
+- `internal/host/intrunner` 已开始按 `yield reason` 将 waiting 态粗分到 `INPUT_REQUIRED / AUTH_REQUIRED`，后续继续收敛为统一 Host wait-state contract
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

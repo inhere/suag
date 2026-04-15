@@ -124,15 +124,17 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 	}
 
 	// Current internal yields are effectively human-input waits, so surface them
-	// as host waiting states until finer-grained yield reasons land.
+	// as host waiting states. We derive a coarse host-facing wait bucket from the
+	// yielded summary/reason so web + gateway can distinguish approval/auth flows.
 	if runner.GetState() == agent.AgentSuspended {
-		if err := emitStatus(in.Emit, session.RunInputRequired); err != nil {
+		waitState := deriveWaitState(summary)
+		if err := emitStatus(in.Emit, waitState); err != nil {
 			return session.RuntimeResult{}, err
 		}
 		r.storeActiveRuntime(in.SessionID, a, runner)
 		return session.RuntimeResult{
 			Summary:   summary,
-			WaitState: session.RunInputRequired,
+			WaitState: waitState,
 		}, nil
 	}
 	r.clearActiveRuntime(in.SessionID)
@@ -314,6 +316,19 @@ func cloneMemoryMessages(messages []memory.Message) []memory.Message {
 	out := make([]memory.Message, len(messages))
 	copy(out, messages)
 	return out
+}
+
+func deriveWaitState(summary string) session.RunState {
+	reason := strings.ToLower(strings.TrimSpace(summary))
+	if reason == "" {
+		return session.RunInputRequired
+	}
+	if strings.Contains(reason, "auth") ||
+		strings.Contains(reason, "approval") ||
+		strings.Contains(reason, "authorize") {
+		return session.RunAuthRequired
+	}
+	return session.RunInputRequired
 }
 
 func newSessionMemory(history []memory.Message) *sessionMemory {

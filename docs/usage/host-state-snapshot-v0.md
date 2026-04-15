@@ -192,6 +192,9 @@
   - 当前尚未补齐更细粒度的内部 tool / reasoning 映射，先以这两个中间态作为最小可视反馈
   - 当 runtime 返回 waiting 态时，Host 不会再补发 `run.finished`
   - 同一 `sessionId` 的下一次继续请求会优先尝试复用 suspended runtime 的 resume 语义
+  - 当前已开始按 `yield reason` 做一层粗粒度归类：
+    - 包含 `auth` / `approval` / `authorize` 的 yield，会映射为 `auth_required`
+    - 其他 yield 先统一映射为 `input_required`
 - `externalTaskIds`
   - 允许一个 run 关联多个外部任务
 
