@@ -43,6 +43,7 @@
 
 - SQLite 文件：`db/axon.db`
 - migration 目录：`db/migrations`
+- Host internal runner runtime 数据默认目录：`db/agentcore/host/<sessionId>/runs.db`
 - Host 默认监听：`http://127.0.0.1:8180`
 - Web 默认监听：`http://127.0.0.1:5173`
 
@@ -153,6 +154,8 @@ http://127.0.0.1:5173
 - Host 当前已开始下发 `run.status` 非终态事件，可用于在联调时观察 `dispatching`、`external_running`、`input_required`、`auth_required`
 - 当前 Host server 的 session runner 选择规则是：
   - 配置了 `host.acp.mode` 时，走 `internal/host/acpbridge`
-  - 未配置 `host.acp.mode` 时，默认走 `internal/host/intrunner`，并按 `sessionId` 复用本地上下文历史
+- 未配置 `host.acp.mode` 时，默认走 `internal/host/intrunner`，并按 `sessionId` 复用本地上下文历史
+- 未显式配置 `agentcore.run_root` 时，Host internal runner 的 runtime 数据默认收纳到 `db/agentcore/host`
+- 如果显式配置了 `agentcore.run_root`，Host internal runner 会改为使用 `<agentcore.run_root>/host`
 - `vite` 代理仅用于本地开发，不影响生产构建输出
 - 本地 `db/axon.db`、`db/axon.db-shm`、`db/axon.db-wal` 都属于开发产物，不应作为功能变更提交

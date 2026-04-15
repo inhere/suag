@@ -27,7 +27,7 @@ agent:
 # Optional agentcore runtime switch for single-agent task execution
 agentcore:
   enabled: false
-  run_root: ""               # defaults to <workspace>/.agentcore when enabled
+  run_root: ""               # optional runtime root; host defaults to db/agentcore/host, and when set host uses <run_root>/host
 
 # HTTP server settings (server mode)
 server:

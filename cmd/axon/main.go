@@ -236,7 +236,7 @@ func buildSessionRunner(a *app) (session.Runner, error) {
 			Registry:      a.registry,
 			Tracer:        a.tracer,
 			HITL:          a.hitlMgr,
-			RunRoot:       filepath.Join(a.workspace, ".agentcore", "host"),
+			RunRoot:       resolveHostAgentcoreRunRoot(),
 			Runtime:       config.String("agent.runtime"),
 			FailThreshold: config.Int("hitl.fail_threshold", 3),
 			MaxSteps:      config.Int("max_steps", 10),
@@ -342,9 +342,11 @@ func setupLogging() {
 
 func loadConfig() {
 	// config.SetEnvPrefix("AXON")
-	dotenv.LoadExists(".")
+	dotenv.LoadExists(".", ".env", ".env.local", "~/.axon/.env")
 
+	// load YAML config files in order of precedence
 	config.AddDriver(yaml.Driver)
+	config.WithOptions(config.ParseEnv)
 	err := config.LoadExists("./config/config.yaml", "~/.axon/config.yaml", "config.yaml")
 	if err != nil {
 		slog.Error("loading config file", "err", err)
