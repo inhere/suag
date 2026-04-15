@@ -190,6 +190,8 @@
 - 如果 Host 当前走的是默认 internal runner
   - 运行前会先经过 `preparing -> thinking`
   - 当前尚未补齐更细粒度的内部 tool / reasoning 映射，先以这两个中间态作为最小可视反馈
+  - 当 runtime 返回 waiting 态时，Host 不会再补发 `run.finished`
+  - 同一 `sessionId` 的下一次继续请求会优先尝试复用 suspended runtime 的 resume 语义
 - `externalTaskIds`
   - 允许一个 run 关联多个外部任务
 

@@ -16,6 +16,7 @@ import (
 	"github.com/inhere/axon/internal/platform/memory"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
+	"github.com/inhere/axon/pkg/agentcore"
 )
 
 type Request = session.RuntimeRequest
@@ -28,6 +29,7 @@ type Config struct {
 	Registry      *tools.Registry
 	Tracer        tracing.Tracer
 	HITL          hitl.Manager
+	Hooks         []agentcore.Hook
 	RunRoot       string
 	Runtime       string
 	FailThreshold int
@@ -37,6 +39,8 @@ type Config struct {
 type sessionState struct {
 	history []memory.Message
 	storage *agentcorestorage.SQLiteStorage
+	agent   *agent.Agent
+	runner  agent.Runner
 }
 
 type sessionMemory struct {
@@ -89,18 +93,9 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 	}
 
 	runMemory := newSessionMemory(state.history)
-	a := r.newAgent(in.AgentID, runMemory)
-	runnerCfg := agent.RunnerFactoryConfig{
-		RuntimeKind:   r.runtimeKind(),
-		Storage:       state.storage,
-		Tracer:        r.cfg.Tracer,
-		HITL:          r.cfg.HITL,
-		FailThreshold: r.cfg.FailThreshold,
-		MaxSteps:      r.cfg.MaxSteps,
-	}
-	runner, err := agent.NewRunner(a, runnerCfg)
+	a, runner, err := r.resolveRuntime(state, in, runMemory)
 	if err != nil {
-		return session.RuntimeResult{}, fmt.Errorf("build internal agent runner: %w", err)
+		return session.RuntimeResult{}, err
 	}
 	if err := emitStatus(in.Emit, session.RunThinking); err != nil {
 		return session.RuntimeResult{}, err
@@ -116,6 +111,7 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 	})
 	r.storeHistory(in.SessionID, runMemory.Snapshot())
 	if err != nil {
+		r.storeActiveRuntime(in.SessionID, a, runner)
 		return session.RuntimeResult{}, err
 	}
 
@@ -133,7 +129,13 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 		if err := emitStatus(in.Emit, session.RunInputRequired); err != nil {
 			return session.RuntimeResult{}, err
 		}
+		r.storeActiveRuntime(in.SessionID, a, runner)
+		return session.RuntimeResult{
+			Summary:   summary,
+			WaitState: session.RunInputRequired,
+		}, nil
 	}
+	r.clearActiveRuntime(in.SessionID)
 
 	return session.RuntimeResult{
 		Summary: summary,
@@ -212,6 +214,30 @@ func (r *SessionRunner) storeHistory(sessionID string, messages []memory.Message
 	state.history = cloneMemoryMessages(messages)
 }
 
+func (r *SessionRunner) storeActiveRuntime(sessionID string, a *agent.Agent, runner agent.Runner) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	state := r.sessions[sessionID]
+	if state == nil {
+		return
+	}
+	state.agent = a
+	state.runner = runner
+}
+
+func (r *SessionRunner) clearActiveRuntime(sessionID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	state := r.sessions[sessionID]
+	if state == nil {
+		return
+	}
+	state.agent = nil
+	state.runner = nil
+}
+
 func (r *SessionRunner) runtimeKind() agent.RuntimeKind {
 	switch strings.ToLower(strings.TrimSpace(r.cfg.Runtime)) {
 	case "react":
@@ -219,6 +245,35 @@ func (r *SessionRunner) runtimeKind() agent.RuntimeKind {
 	default:
 		return agent.RuntimeAgentcore
 	}
+}
+
+func (r *SessionRunner) resolveRuntime(
+	state *sessionState,
+	in session.RuntimeRequest,
+	runMemory *sessionMemory,
+) (*agent.Agent, agent.Runner, error) {
+	if state != nil && state.agent != nil && state.runner != nil && state.runner.GetState() == agent.AgentSuspended {
+		if err := state.runner.Resume(strings.TrimSpace(in.Instruction)); err != nil {
+			return nil, nil, fmt.Errorf("resume suspended runner: %w", err)
+		}
+		return state.agent, state.runner, nil
+	}
+
+	a := r.newAgent(in.AgentID, runMemory)
+	runnerCfg := agent.RunnerFactoryConfig{
+		RuntimeKind:   r.runtimeKind(),
+		Storage:       state.storage,
+		Tracer:        r.cfg.Tracer,
+		HITL:          r.cfg.HITL,
+		FailThreshold: r.cfg.FailThreshold,
+		MaxSteps:      r.cfg.MaxSteps,
+		Hooks:         r.cfg.Hooks,
+	}
+	runner, err := agent.NewRunner(a, runnerCfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build internal agent runner: %w", err)
+	}
+	return a, runner, nil
 }
 
 func emitStatus(emit func(event session.RuntimeEvent) error, state session.RunState) error {

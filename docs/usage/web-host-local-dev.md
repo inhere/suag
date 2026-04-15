@@ -16,6 +16,7 @@
 - 创建 session
 - 启动 turn
 - 未配置 `host.acp.mode` 时，Host 默认走 internal runner 执行单 agent 回合
+- internal runner 在返回 waiting 态时不会被错误收尾为 completed，同一 `sessionId` 的下一次 `continue_turn` 会优先尝试复用 suspended runtime
 - Web 通过 `/ws` 接收会话快照与增量事件
 - 刷新后按需恢复 focused run detail
 - 当前 turn 进入 waiting 状态时，通过 `Add Hint` 发送 `continue_turn`

@@ -435,6 +435,89 @@ func TestService_StartTurnPersistsRuntimeWaitingStateBeforeRunFinishes(t *testin
 	}
 }
 
+func TestService_StartTurnDoesNotFinalizeWhenRunnerReturnsWaitState(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
+				},
+			},
+		},
+	}
+	now := time.Date(2026, 4, 15, 10, 0, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_wait_return",
+		AgentID:       "default",
+		UserMessage:   "pause and wait",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_wait_return", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+	if events[2].EventType != EventRunStatus {
+		t.Fatalf("events[2].EventType = %q, want %q", events[2].EventType, EventRunStatus)
+	}
+
+	runRow := store.db.QueryRowContext(ctx, `
+		SELECT state, summary, ended_at
+		FROM runs
+		WHERE run_id = ?
+	`, result.RunID)
+	var runState, runSummary, endedAt string
+	if err := runRow.Scan(&runState, &runSummary, &endedAt); err != nil {
+		t.Fatalf("query waiting run error = %v", err)
+	}
+	if runState != string(RunInputRequired) {
+		t.Fatalf("persisted run state = %q, want %q", runState, RunInputRequired)
+	}
+	if runSummary != "" {
+		t.Fatalf("persisted run summary = %q, want empty", runSummary)
+	}
+	if endedAt != "" {
+		t.Fatalf("persisted run ended_at = %q, want empty", endedAt)
+	}
+
+	turnRow := store.db.QueryRowContext(ctx, `
+		SELECT status, completed_at
+		FROM turns
+		WHERE turn_id = ?
+	`, result.TurnID)
+	var turnStatus, completedAt string
+	if err := turnRow.Scan(&turnStatus, &completedAt); err != nil {
+		t.Fatalf("query waiting turn error = %v", err)
+	}
+	if turnStatus != string(TurnWaiting) {
+		t.Fatalf("persisted turn status = %q, want %q", turnStatus, TurnWaiting)
+	}
+	if completedAt != "" {
+		t.Fatalf("persisted turn completed_at = %q, want empty", completedAt)
+	}
+}
+
 func TestService_StartTurnPassesSessionTurnRunContextIntoHITL(t *testing.T) {
 	t.Parallel()
 

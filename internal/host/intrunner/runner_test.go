@@ -6,6 +6,8 @@ import (
 
 	"github.com/gookit/goutil/testutil/assert"
 
+	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/axon/pkg/agentcore"
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
@@ -90,6 +92,87 @@ func TestRunner_RunEmitsPreparingAndThinkingStates(t *testing.T) {
 	assert.Eq(t, 2, len(states))
 	assert.Eq(t, "PREPARING", states[0])
 	assert.Eq(t, "THINKING", states[1])
+}
+
+func TestRunner_RunReusesSuspendedRunnerOnContinue(t *testing.T) {
+	t.Parallel()
+
+	hook := &yieldBeforeSecondModelHostHook{}
+	mock := llm.NewMockProvider("mock").
+		QueueToolCall("echo", map[string]any{"msg": "persisted"}).
+		QueueText("done after continue")
+
+	registry := tools.NewRegistry()
+	registry.MustRegister(&hostEchoTool{})
+
+	runner, err := New(Config{
+		Provider: mock,
+		Registry: registry,
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+		Hooks:    []agentcore.Hook{hook},
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	first, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_resume",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "first task",
+	})
+	assert.NoErr(t, err)
+	assert.Eq(t, "await_resume", first.Summary)
+	assert.Eq(t, session.RunInputRequired, first.WaitState)
+
+	second, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_resume",
+		TurnID:      "turn_002",
+		RunID:       "run_002",
+		AgentID:     "default",
+		Instruction: "continue with human input",
+	})
+	assert.NoErr(t, err)
+	assert.Eq(t, "", string(second.WaitState))
+	assert.Eq(t, "done after continue", second.Summary)
+
+	calls := mock.Calls()
+	assert.Eq(t, 2, len(calls))
+	assert.True(t, containsMessage(calls[1].Messages, "tool", "echo: persisted"))
+	assert.True(t, containsMessage(calls[1].Messages, "user", "continue with human input"))
+}
+
+type yieldBeforeSecondModelHostHook struct {
+	agentcore.NopHook
+	beforeModelCalls int
+}
+
+func (h *yieldBeforeSecondModelHostHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
+	h.beforeModelCalls++
+	if h.beforeModelCalls == 2 {
+		ctrl.Yield("await_resume", map[string]any{"step": "after_tool"})
+	}
+	return nil
+}
+
+type hostEchoTool struct{}
+
+func (e *hostEchoTool) Name() string        { return "echo" }
+func (e *hostEchoTool) Description() string { return "echo the msg argument" }
+func (e *hostEchoTool) Kind() tools.Kind    { return tools.KindNative }
+func (e *hostEchoTool) Schema() api.ToolSchema {
+	return api.ToolSchema{Name: "echo"}
+}
+func (e *hostEchoTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	msg, _ := call.Arguments["msg"].(string)
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    call.Name,
+		Content: "echo: " + msg,
+	}, nil
 }
 
 func containsMessage(messages []api.Message, role, content string) bool {

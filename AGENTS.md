@@ -19,6 +19,7 @@
 - Phase 2 已完成 `platform/tools + platform/memory -> pkg/agentcore/api` 的第一方收口，迁移期 `internal/acadapters` 已删除，相关测试与文档已迁回第一方实现路径
 - `internal/platform/tools` 已进一步改为直接返回 `agentcore/api.ToolSchema`，继续保留 `map[string]any` 作为 schema authority，不再依赖 `llm.SchemaProperty`
 - `cmd/axon server` 在未配置 `host.acp.mode` 时已默认接入 `internal/host/intrunner`，并按 `sessionId` 复用本地上下文历史；下一步继续聚焦 `ContinueTurn/HITL` 深化、旧 `ReactRunner` fallback 收敛与更细的运行时能力补齐
+- `internal/host/session` 已补齐 waiting 非终态收口，避免 `INPUT_REQUIRED/AUTH_REQUIRED` 被错误收尾为 completed；`internal/host/intrunner` 现已开始复用 suspended runner 以承接同 session 的 resume/continue
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

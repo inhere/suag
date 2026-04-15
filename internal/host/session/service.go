@@ -33,6 +33,7 @@ type RuntimeRequest struct {
 
 type RuntimeResult struct {
 	Summary      string
+	WaitState    RunState
 	ExternalTask *ExternalTask
 }
 
@@ -335,6 +336,15 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				return StartTurnResult{}, fmt.Errorf("persist external task: %w", err)
 			}
 		}
+		if isWaitingRunState(result.WaitState) {
+			// Waiting states are non-terminal host outcomes. The runtime is expected
+			// to have emitted the matching run.status event before returning.
+			return StartTurnResult{
+				SessionID: sessionID,
+				TurnID:    turnID,
+				RunID:     runID,
+			}, nil
+		}
 		finishedAt := s.now().UTC()
 		if err := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunCompleted, TurnCompleted, result.Summary, "", finishedAt); err != nil {
 			return StartTurnResult{}, fmt.Errorf("persist finished lifecycle: %w", err)
@@ -572,6 +582,15 @@ func runtimeRunState(payload map[string]any) (RunState, bool) {
 		return state, true
 	default:
 		return "", false
+	}
+}
+
+func isWaitingRunState(state RunState) bool {
+	switch state {
+	case RunInputRequired, RunAuthRequired:
+		return true
+	default:
+		return false
 	}
 }
 
