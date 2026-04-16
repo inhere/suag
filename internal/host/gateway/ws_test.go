@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -1411,6 +1412,110 @@ func TestServer_ListSessionsReturnsLatestSessionsWithPreview(t *testing.T) {
 	}
 }
 
+func TestServer_ListMemoryCandidatesBySession(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	handler := NewHandler(nil, store, session.NewService(store, bus, nil, session.ServiceConfig{}), bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "memory candidates",
+	})
+
+	now := time.Date(2026, 4, 16, 18, 0, 0, 0, time.UTC)
+	for _, candidate := range []session.MemoryCandidate{
+		{
+			CandidateID:   "mcand_gateway_001",
+			SessionID:     createResp.SessionID,
+			TurnID:        "turn_001",
+			RunID:         "run_001",
+			SourceRecapID: "recap_001",
+			Target:        "MEMORY",
+			Kind:          "turn_learning",
+			Content:       "Keep updates concise.",
+			Score:         0.8,
+			Status:        session.MemoryCandidateDraft,
+			CreatedAt:     now,
+		},
+		{
+			CandidateID:   "mcand_gateway_002",
+			SessionID:     createResp.SessionID,
+			TurnID:        "turn_002",
+			RunID:         "run_002",
+			SourceRecapID: "recap_002",
+			Target:        "USER",
+			Kind:          "user_preference",
+			Content:       "User prefers direct answers.",
+			Score:         0.7,
+			Status:        session.MemoryCandidateRendered,
+			CreatedAt:     now.Add(time.Minute),
+		},
+	} {
+		if err := store.CreateMemoryCandidate(ctx, candidate); err != nil {
+			t.Fatalf("CreateMemoryCandidate(%s) error = %v", candidate.CandidateID, err)
+		}
+	}
+
+	resp := getJSON[[]map[string]any](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/memory-candidates")
+	if len(resp) != 2 {
+		t.Fatalf("GET /api/sessions/{id}/memory-candidates len = %d, want 2", len(resp))
+	}
+	if resp[0]["candidate_id"] != "mcand_gateway_001" {
+		t.Fatalf("resp[0].candidate_id = %v, want %q", resp[0]["candidate_id"], "mcand_gateway_001")
+	}
+	if resp[1]["status"] != string(session.MemoryCandidateRendered) {
+		t.Fatalf("resp[1].status = %v, want %q", resp[1]["status"], session.MemoryCandidateRendered)
+	}
+}
+
+func TestServer_UpdateMemoryCandidateActions(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	handler := NewHandler(nil, store, session.NewService(store, bus, nil, session.ServiceConfig{}), bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "memory candidate actions",
+	})
+
+	now := time.Date(2026, 4, 16, 18, 30, 0, 0, time.UTC)
+	if err := store.CreateMemoryCandidate(ctx, session.MemoryCandidate{
+		CandidateID:   "mcand_gateway_action",
+		SessionID:     createResp.SessionID,
+		TurnID:        "turn_001",
+		RunID:         "run_001",
+		SourceRecapID: "recap_001",
+		Target:        "MEMORY",
+		Kind:          "turn_learning",
+		Content:       "Candidate to accept and reject.",
+		Score:         0.8,
+		Status:        session.MemoryCandidateDraft,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("CreateMemoryCandidate() error = %v", err)
+	}
+
+	applied := postJSON[map[string]any](t, ts.URL+"/api/memory-candidates/mcand_gateway_action/accept", map[string]any{})
+	if applied["status"] != string(session.MemoryCandidateApplied) {
+		t.Fatalf("accept status = %v, want %q", applied["status"], session.MemoryCandidateApplied)
+	}
+
+	rejected := postJSON[map[string]any](t, ts.URL+"/api/memory-candidates/mcand_gateway_action/reject", map[string]any{})
+	if rejected["status"] != string(session.MemoryCandidateRejected) {
+		t.Fatalf("reject status = %v, want %q", rejected["status"], session.MemoryCandidateRejected)
+	}
+}
+
 type blockingGatewayRunner struct {
 	mu          sync.Mutex
 	lastRequest session.RuntimeRequest
@@ -1572,13 +1677,14 @@ func applyGatewaySessionMigration(t *testing.T, dbPath string) {
 		}
 	}()
 
-	upSQL := readGatewaySessionMigrationUp(t)
-	if _, err := db.Exec(upSQL); err != nil {
-		t.Fatalf("db.Exec() migration error = %v", err)
+	for _, upSQL := range readGatewaySessionMigrationUps(t) {
+		if _, err := db.Exec(upSQL); err != nil {
+			t.Fatalf("db.Exec() migration error = %v", err)
+		}
 	}
 }
 
-func readGatewaySessionMigrationUp(t *testing.T) string {
+func readGatewaySessionMigrationUps(t *testing.T) []string {
 	t.Helper()
 
 	_, file, _, ok := runtime.Caller(0)
@@ -1586,26 +1692,39 @@ func readGatewaySessionMigrationUp(t *testing.T) string {
 		t.Fatal("runtime.Caller() failed")
 	}
 
-	migrationPath := filepath.Join(
+	migrationDir := filepath.Join(
 		filepath.Dir(file),
 		"..", "..", "..",
-		"db", "migrations", "20260411-100000-create-host-session-foundation.sql",
+		"db", "migrations",
 	)
-	content, err := os.ReadFile(migrationPath)
+	entries, err := filepath.Glob(filepath.Join(migrationDir, "*.sql"))
 	if err != nil {
-		t.Fatalf("os.ReadFile() error = %v", err)
+		t.Fatalf("filepath.Glob() error = %v", err)
+	}
+	sort.Strings(entries)
+	if len(entries) == 0 {
+		t.Fatalf("no migration files found in %s", migrationDir)
 	}
 
-	parts := strings.Split(string(content), "-- Migrate:DOWN")
-	if len(parts) != 2 {
-		t.Fatalf("unexpected migration format in %s", migrationPath)
-	}
+	ups := make([]string, 0, len(entries))
+	for _, migrationPath := range entries {
+		content, err := os.ReadFile(migrationPath)
+		if err != nil {
+			t.Fatalf("os.ReadFile() error = %v", err)
+		}
 
-	upSQL := strings.TrimSpace(strings.TrimPrefix(parts[0], "-- Migrate:UP"))
-	if upSQL == "" {
-		t.Fatalf("empty migration up section in %s", migrationPath)
+		parts := strings.Split(string(content), "-- Migrate:DOWN")
+		if len(parts) != 2 {
+			t.Fatalf("unexpected migration format in %s", migrationPath)
+		}
+
+		upSQL := strings.TrimSpace(strings.TrimPrefix(parts[0], "-- Migrate:UP"))
+		if upSQL == "" {
+			t.Fatalf("empty migration up section in %s", migrationPath)
+		}
+		ups = append(ups, upSQL)
 	}
-	return upSQL
+	return ups
 }
 
 func postJSON[T any](t *testing.T, endpoint string, payload any) T {

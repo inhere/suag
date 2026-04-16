@@ -110,6 +110,12 @@
 - `rejected`
   - 已被人工拒绝，不应继续停留在 draft 文件里
 
+当前 Host 也已补最小 REST 操作入口，便于 Web 或脚本先做人审流转：
+
+- `GET /api/sessions/{sessionId}/memory-candidates`
+- `POST /api/memory-candidates/{candidateId}/accept`
+- `POST /api/memory-candidates/{candidateId}/reject`
+
 这里的设计重点是：
 
 - 先把候选写入单独表

@@ -24,6 +24,7 @@
 - 当前 recap 主线已继续推进到 `memory_candidates + *.draft.md`；默认 server wiring 会将 turn 终态沉淀到 `recaps + memory_candidates`，并渲染 `MEMORY.draft.md / USER.draft.md`
 - 当前 `*.draft.md` 已收敛到 session 级聚合视图；默认会对 `memory_candidates` 做去重与状态过滤，便于后续继续接 review / adopt 流程
 - `memory_candidates` 当前已具备最小后端状态流转能力，可在服务层执行 `applied/rejected`，为后续 Web 采纳/拒绝交互留出稳定接口
+- Gateway 已补最小 `memory candidate` REST 入口，可查询候选并执行 `accept/reject`，下一步可直接接 Web 按钮与面板
 - Phase 3 / Task 5 已完成一轮联调文档与验证项收口；`docs/usage/web-host-local-dev.md`、`docs/usage/host-state-snapshot-v0.md` 已同步到当前代码现状
 <!-- PROCESSING WORKS:END -->
 

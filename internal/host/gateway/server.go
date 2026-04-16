@@ -40,7 +40,10 @@ func (s *Server) router() http.Handler {
 	r.Get("/api/sessions/{id}", s.handler.HandleGetSession)
 	r.Get("/api/sessions/{id}/runs/{runId}", s.handler.HandleGetRunDetail)
 	r.Get("/api/sessions/{id}/events", s.handler.HandleListSessionEvents)
+	r.Get("/api/sessions/{id}/memory-candidates", s.handler.HandleListMemoryCandidates)
 	r.Post("/api/sessions/{id}/turns", s.handler.HandleStartTurn)
+	r.Post("/api/memory-candidates/{id}/accept", s.handler.HandleAcceptMemoryCandidate)
+	r.Post("/api/memory-candidates/{id}/reject", s.handler.HandleRejectMemoryCandidate)
 
 	// Streaming endpoints.
 	r.Get("/events", SSEHandler(s.bus))

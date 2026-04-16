@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -253,6 +254,21 @@ type externalTaskResponse struct {
 	Metadata        map[string]any `json:"metadata"`
 }
 
+type memoryCandidateResponse struct {
+	CandidateID   string         `json:"candidate_id"`
+	SessionID     string         `json:"session_id"`
+	TurnID        string         `json:"turn_id"`
+	RunID         string         `json:"run_id"`
+	SourceRecapID string         `json:"source_recap_id"`
+	Target        string         `json:"target"`
+	Kind          string         `json:"kind"`
+	Content       string         `json:"content"`
+	Score         float64        `json:"score"`
+	Status        string         `json:"status"`
+	CreatedAt     string         `json:"created_at"`
+	Metadata      map[string]any `json:"metadata"`
+}
+
 func (h *Handler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 	if h.sessionStore == nil {
 		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
@@ -352,6 +368,63 @@ func (h *Handler) HandleGetRunDetail(w http.ResponseWriter, r *http.Request) {
 		ExternalMessages:   filteredMessages,
 		ExternalTasks:      filteredTasks,
 	})
+}
+
+func (h *Handler) HandleListMemoryCandidates(w http.ResponseWriter, r *http.Request) {
+	if h.sessionStore == nil {
+		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	sessionID := strings.TrimSpace(r.PathValue("id"))
+	if sessionID == "" {
+		httpError(w, "session id required", http.StatusBadRequest)
+		return
+	}
+
+	candidates, err := h.sessionStore.ListMemoryCandidatesBySession(r.Context(), sessionID)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, mapMemoryCandidateResponses(candidates))
+}
+
+func (h *Handler) HandleAcceptMemoryCandidate(w http.ResponseWriter, r *http.Request) {
+	h.handleUpdateMemoryCandidate(w, r, session.MemoryCandidateApplied)
+}
+
+func (h *Handler) HandleRejectMemoryCandidate(w http.ResponseWriter, r *http.Request) {
+	h.handleUpdateMemoryCandidate(w, r, session.MemoryCandidateRejected)
+}
+
+func (h *Handler) handleUpdateMemoryCandidate(w http.ResponseWriter, r *http.Request, status session.MemoryCandidateStatus) {
+	if h.sessionSvc == nil {
+		httpError(w, "session service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	candidateID := strings.TrimSpace(r.PathValue("id"))
+	if candidateID == "" {
+		httpError(w, "candidate id required", http.StatusBadRequest)
+		return
+	}
+
+	candidate, err := h.sessionSvc.UpdateMemoryCandidate(r.Context(), session.UpdateMemoryCandidateInput{
+		CandidateID: candidateID,
+		Status:      status,
+	})
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			httpError(w, "memory candidate not found", http.StatusNotFound)
+			return
+		}
+		httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, mapMemoryCandidateResponse(candidate))
 }
 
 // ─── GET /api/sessions/{id}/events ───────────────────────────────────────────
@@ -476,6 +549,31 @@ func mapExternalTaskResponses(tasks []session.ExternalTask) []externalTaskRespon
 		})
 	}
 	return resp
+}
+
+func mapMemoryCandidateResponses(candidates []session.MemoryCandidate) []memoryCandidateResponse {
+	resp := make([]memoryCandidateResponse, 0, len(candidates))
+	for _, candidate := range candidates {
+		resp = append(resp, mapMemoryCandidateResponse(candidate))
+	}
+	return resp
+}
+
+func mapMemoryCandidateResponse(candidate session.MemoryCandidate) memoryCandidateResponse {
+	return memoryCandidateResponse{
+		CandidateID:   candidate.CandidateID,
+		SessionID:     candidate.SessionID,
+		TurnID:        candidate.TurnID,
+		RunID:         candidate.RunID,
+		SourceRecapID: candidate.SourceRecapID,
+		Target:        candidate.Target,
+		Kind:          candidate.Kind,
+		Content:       candidate.Content,
+		Score:         candidate.Score,
+		Status:        string(candidate.Status),
+		CreatedAt:     candidate.CreatedAt.UTC().Format(time.RFC3339Nano),
+		Metadata:      candidate.Metadata,
+	}
 }
 
 func mapSessionEventsForSnapshot(events []session.RunEvent) []agui.HostEvent {
