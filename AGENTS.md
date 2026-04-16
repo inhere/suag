@@ -11,19 +11,16 @@
 <!-- PROCESSING WORKS:START -->
 
 - Axon v0 自用主线规划持续推进中，设计总纲见 `docs/v0-self-host-design.md`
-- Host 会话与 Web 工作台基础闭环已打通，当前继续围绕可自用联调、默认 internal runner 与 wait-state/HITL 交互约束做收尾，联调说明见 `docs/usage/web-host-local-dev.md`
-- Web 已修复“空 session 首次 start turn 仅收到 WS 增量事件时不渲染 turn/run”的状态聚合缺口，当前继续做真机联调收尾
-- Host internal runner 的 runtime 数据目录已开始收口到统一配置；默认改为 `db/agentcore/host`，避免继续散落到工作目录 `.agentcore/`
-- `cmd/axon` 逻辑已开始向 `internal/app` 与 `internal/config` 收拢，CLI 入口后续保持薄封装，避免命令层继续承载业务组装细节
-- `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复与查询链路，且 `run_events.sequence` 已收敛为 session 级单调递增基线；当前 `DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态也已开始贯通到快照与事件流
+- Host 会话与 Web 工作台基础闭环已打通，当前继续围绕可自用联调与 Host runtime 主链稳定性做收尾，联调说明见 `docs/usage/web-host-local-dev.md`
+- 下一阶段开发已整理为 `docs/superpowers/plans/2026-04-16-host-runtime-stabilization-phase3.md`，后续按该计划继续推进 Host Go 主线
+- Phase 3 / Task 1 已完成 `wait-state / continue_turn / stop_turn / HITL` 合同收口；当前 `continue_turn` 仅允许继续 `INPUT_REQUIRED` run，`AUTH_REQUIRED` 已切到 HITL/approval 响应路径，且 WS `command.accepted / command.error` 时序已与真实执行结果对齐
+- `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复与查询链路，`run_events.sequence` 已收敛为 session 级单调递增基线；当前 `DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态已贯通到快照与事件流
+- Phase 3 / Task 2 已完成 internal runner / ACP runner 的第一轮 Host contract 对齐；ACP `StateRunning` 现已稳定映射为 Host `EXTERNAL_RUNNING` 非终态，且 `externalTaskId` 会贯穿 runtime 事件与 AG-UI 映射
+- Host internal runner 的 runtime 数据目录已收口到统一配置；默认使用 `db/agentcore/host`，避免继续散落到工作目录 `.agentcore/`
+- `cmd/axon` 逻辑已收拢到 `internal/app` 与 `internal/config`，CLI 入口后续保持薄封装，避免命令层继续承载业务组装细节
 - `docs/usage/host-state-snapshot-v0.md` 与 `docs/usage/llm-config-v0.md` 已作为当前 v0 协议与配置基线文档
 - Phase 1 已完成 `platform/llm -> pkg/agentcore/api` 的第一方收口，`cmd/axon` 现已补齐仅基于 `llm.api_type + llm.provider_name` 的归一化配置入口与测试覆盖
-- `internal/platform/llm` 已切除迁移期 `Completion* / Complete / StreamText` 兼容面，内部调用统一转向 `agentcore Generate` contract，且继续收薄为 provider 实现层
-- Phase 2 已完成 `platform/tools + platform/memory -> pkg/agentcore/api` 的第一方收口，迁移期 `internal/acadapters` 已删除，相关测试与文档已迁回第一方实现路径
-- `internal/platform/tools` 已进一步改为直接返回 `agentcore/api.ToolSchema`，继续保留 `map[string]any` 作为 schema authority，不再依赖 `llm.SchemaProperty`
-- `cmd/axon server` 在未配置 `host.acp.mode` 时已默认接入 `internal/host/intrunner`，并按 `sessionId` 复用本地上下文历史；下一步继续聚焦 `ContinueTurn/HITL` 深化、旧 `ReactRunner` fallback 收敛与更细的运行时能力补齐
-- `internal/host/session` 已补齐 waiting 非终态收口，避免 `INPUT_REQUIRED/AUTH_REQUIRED` 被错误收尾为 completed；当前 `continue_turn` 仅允许继续 `INPUT_REQUIRED` run，`AUTH_REQUIRED` 已切到 HITL/approval 响应路径
-- `internal/host/intrunner` 已开始按 `yield reason` 将 waiting 态粗分到 `INPUT_REQUIRED / AUTH_REQUIRED`，后续继续收敛为统一 Host wait-state contract
+- 当前继续推进的主线已切到 Task 3-5：收窄旧 `ReactRunner` fallback、补 post-turn recap/memory hook 骨架，并完善本地联调与恢复验证文档/测试
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

@@ -774,7 +774,8 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 	ctx := context.Background()
 	store := newGatewaySessionStore(t)
 	bus := NewEventBus()
-	svc := session.NewService(store, bus, &fakeGatewayRunner{}, session.ServiceConfig{
+	runner := &waitingThenDoneGatewayRunner{}
+	svc := session.NewService(store, bus, runner, session.ServiceConfig{
 		Now: func() time.Time {
 			return time.Date(2026, 4, 11, 12, 30, 0, 0, time.UTC)
 		},
@@ -809,6 +810,15 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 		t.Fatalf("snapshot type = %v, want STATE_SNAPSHOT", snapshot["type"])
 	}
 
+	firstTurn := postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "need more input",
+		"initiator_type": "user",
+	})
+	if firstTurn.RunID == "" {
+		t.Fatal("first start turn response missing run_id")
+	}
+
 	if err := wsjson.Write(ctx, conn, map[string]any{
 		"type":           "continue_turn",
 		"session_id":     createResp.SessionID,
@@ -819,12 +829,10 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 		t.Fatalf("wsjson.Write() command error = %v", err)
 	}
 
-	ack := readUntilEventType(t, ctx, conn, "command.accepted")
+	ack, event := readUntilCommandResultAndCustom(t, ctx, conn)
 	if ack["type"] != "command.accepted" {
-		t.Fatalf("ack type = %v, want command.accepted", ack["type"])
+		t.Fatalf("first command result type = %v, want command.accepted", ack["type"])
 	}
-
-	event := readUntilEventType(t, ctx, conn, "CUSTOM")
 
 	value, ok := event["value"].(map[string]any)
 	if !ok {
@@ -838,10 +846,13 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 	if gotSession.LastTurnID == "" {
 		t.Fatal("get session last_turn_id is empty after continue_turn")
 	}
+	if gotSession.LastTurnID == firstTurn.TurnID {
+		t.Fatal("get session last_turn_id did not advance after continue_turn")
+	}
 
 	events := getJSON[[]Event](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/events")
-	if len(events) != 3 {
-		t.Fatalf("events len = %d, want 3", len(events))
+	if len(events) != 6 {
+		t.Fatalf("events len = %d, want 6", len(events))
 	}
 }
 
@@ -903,12 +914,10 @@ func TestServer_ContinueTurnReusesPreviousRemoteSession(t *testing.T) {
 		t.Fatalf("wsjson.Write() command error = %v", err)
 	}
 
-	ack := readUntilEventType(t, ctx, conn, "command.accepted")
+	ack, _ := readUntilCommandResultAndCustom(t, ctx, conn)
 	if ack["type"] != "command.accepted" {
-		t.Fatalf("ack type = %v, want command.accepted", ack["type"])
+		t.Fatalf("first command result type = %v, want command.accepted", ack["type"])
 	}
-
-	readUntilEventType(t, ctx, conn, "CUSTOM")
 
 	waitForGatewayRunnerRequests(t, runner, 2)
 	if runner.requests[1].Context["resume_turn_id"] == nil {
@@ -1025,6 +1034,125 @@ func TestServer_StopTurnOverWebSocketCancelsActiveRun(t *testing.T) {
 	}
 }
 
+func TestServer_ContinueTurnOverWebSocketReturnsCommandErrorWhenRejected(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	runner := &authRequiredGatewayRunner{}
+	svc := session.NewService(store, bus, runner, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 13, 9, 0, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "auth required continue rejection",
+	})
+
+	postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "wait for approval",
+		"initiator_type": "user",
+	})
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial() error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":           "continue_turn",
+		"session_id":     createResp.SessionID,
+		"message":        "this should fail",
+		"agent_id":       "default",
+		"initiator_type": "user",
+	}); err != nil {
+		t.Fatalf("wsjson.Write() command error = %v", err)
+	}
+
+	message := readUntilFirstEventType(t, ctx, conn, "command.accepted", "command.error")
+	if message["type"] != "command.error" {
+		t.Fatalf("first command result type = %v, want command.error", message["type"])
+	}
+	if message["error"] != "session is waiting for approval; respond via HITL instead of continue_turn" {
+		t.Fatalf("command.error error = %v, want auth-required rejection", message["error"])
+	}
+}
+
+func TestServer_StopTurnOverWebSocketReturnsCommandErrorWhenTurnMissing(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	svc := session.NewService(store, bus, &fakeGatewayRunner{}, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 13, 9, 30, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "missing stop target",
+	})
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial() error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "stop_turn",
+		"session_id": createResp.SessionID,
+		"turn_id":    "turn_missing",
+	}); err != nil {
+		t.Fatalf("wsjson.Write() stop command error = %v", err)
+	}
+
+	message := readUntilFirstEventType(t, ctx, conn, "command.accepted", "command.error")
+	if message["type"] != "command.error" {
+		t.Fatalf("first command result type = %v, want command.error", message["type"])
+	}
+	if message["error"] != "active turn not found" {
+		t.Fatalf("command.error error = %v, want %q", message["error"], "active turn not found")
+	}
+}
+
 func TestServer_StartTurnStreamsExternalRuntimeEvents(t *testing.T) {
 	t.Parallel()
 
@@ -1114,9 +1242,109 @@ func readUntilEventType(t *testing.T, ctx context.Context, conn *websocket.Conn,
 	return nil
 }
 
+func readUntilFirstEventType(t *testing.T, ctx context.Context, conn *websocket.Conn, wantTypes ...string) map[string]any {
+	t.Helper()
+
+	want := make(map[string]struct{}, len(wantTypes))
+	for _, item := range wantTypes {
+		want[item] = struct{}{}
+	}
+
+	for i := 0; i < 12; i++ {
+		var message map[string]any
+		if err := wsjson.Read(ctx, conn, &message); err != nil {
+			t.Fatalf("wsjson.Read() error = %v", err)
+		}
+		msgType, _ := message["type"].(string)
+		if _, ok := want[msgType]; ok {
+			return message
+		}
+	}
+
+	t.Fatalf("did not receive any event type in %v within expected reads", wantTypes)
+	return nil
+}
+
+func readUntilCommandResultAndCustom(t *testing.T, ctx context.Context, conn *websocket.Conn) (map[string]any, map[string]any) {
+	t.Helper()
+
+	var commandResult map[string]any
+	var customEvent map[string]any
+	for i := 0; i < 16; i++ {
+		var message map[string]any
+		if err := wsjson.Read(ctx, conn, &message); err != nil {
+			t.Fatalf("wsjson.Read() error = %v", err)
+		}
+
+		switch message["type"] {
+		case "command.accepted", "command.error":
+			if commandResult == nil {
+				commandResult = message
+			}
+		case "CUSTOM":
+			if customEvent == nil {
+				customEvent = message
+			}
+		}
+
+		if commandResult != nil && customEvent != nil {
+			return commandResult, customEvent
+		}
+	}
+
+	t.Fatalf("did not receive both command result and custom event within expected reads")
+	return nil, nil
+}
+
 type fakeGatewayRunner struct{}
 
 func (fakeGatewayRunner) Run(context.Context, session.RuntimeRequest) (session.RuntimeResult, error) {
+	return session.RuntimeResult{Summary: "ok"}, nil
+}
+
+type authRequiredGatewayRunner struct{}
+
+func (authRequiredGatewayRunner) Run(ctx context.Context, in session.RuntimeRequest) (session.RuntimeResult, error) {
+	if in.Emit != nil {
+		if err := in.Emit(session.RuntimeEvent{
+			EventType: session.EventRunStatus,
+			Payload: map[string]any{
+				"state": string(session.RunAuthRequired),
+			},
+		}); err != nil {
+			return session.RuntimeResult{}, err
+		}
+	}
+
+	return session.RuntimeResult{
+		Summary:   "await_approval",
+		WaitState: session.RunAuthRequired,
+	}, nil
+}
+
+type waitingThenDoneGatewayRunner struct {
+	requests []session.RuntimeRequest
+}
+
+func (r *waitingThenDoneGatewayRunner) Run(_ context.Context, in session.RuntimeRequest) (session.RuntimeResult, error) {
+	r.requests = append(r.requests, in)
+	if len(r.requests) == 1 {
+		if in.Emit != nil {
+			if err := in.Emit(session.RuntimeEvent{
+				EventType: session.EventRunStatus,
+				Payload: map[string]any{
+					"state": string(session.RunInputRequired),
+				},
+			}); err != nil {
+				return session.RuntimeResult{}, err
+			}
+		}
+		return session.RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: session.RunInputRequired,
+		}, nil
+	}
+
 	return session.RuntimeResult{Summary: "ok"}, nil
 }
 
@@ -1234,8 +1462,19 @@ func (r *resumeAwareGatewayRunner) Run(_ context.Context, in session.RuntimeRequ
 	r.requests = append(r.requests, in)
 
 	if len(r.requests) == 1 {
+		if in.Emit != nil {
+			if err := in.Emit(session.RuntimeEvent{
+				EventType: session.EventRunStatus,
+				Payload: map[string]any{
+					"state": string(session.RunInputRequired),
+				},
+			}); err != nil {
+				return session.RuntimeResult{}, err
+			}
+		}
 		return session.RuntimeResult{
-			Summary: "started",
+			Summary:   "await_resume",
+			WaitState: session.RunInputRequired,
 			ExternalTask: &session.ExternalTask{
 				Adapter:         "codex",
 				RemoteAgentName: "codex-cli",

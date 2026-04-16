@@ -91,7 +91,7 @@ func TestService_StartTurnCreatesQueuedRunAndPublishesEvent(t *testing.T) {
 	}
 }
 
-func TestService_ContinueTurnCreatesNewTurnForExistingSession(t *testing.T) {
+func TestService_ContinueTurnCreatesNewTurnForExistingWaitingSession(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -110,12 +110,39 @@ func TestService_ContinueTurnCreatesNewTurnForExistingSession(t *testing.T) {
 	}
 
 	bus := newFakePublisher()
-	runner := &fakeRunner{
+	firstRunner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, firstRunner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	_, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_001",
+		AgentID:       "default",
+		UserMessage:   "need more input",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	secondRunner := &fakeRunner{
 		result: RuntimeResult{Summary: "continued"},
 	}
-	svc := NewService(store, bus, runner, ServiceConfig{
-		Now: func() time.Time { return now.Add(5 * time.Minute) },
-	})
+	svc.runner = secondRunner
+	svc.now = func() time.Time { return now.Add(5 * time.Minute) }
 
 	result, err := svc.ContinueTurn(ctx, ContinueTurnInput{
 		SessionID:     "sess_001",
@@ -132,8 +159,8 @@ func TestService_ContinueTurnCreatesNewTurnForExistingSession(t *testing.T) {
 	if result.TurnID == "" {
 		t.Fatal("ContinueTurn().TurnID is empty")
 	}
-	if runner.lastRequest.Instruction != "please continue" {
-		t.Fatalf("runner request Instruction = %q, want %q", runner.lastRequest.Instruction, "please continue")
+	if secondRunner.lastRequest.Instruction != "please continue" {
+		t.Fatalf("runner request Instruction = %q, want %q", secondRunner.lastRequest.Instruction, "please continue")
 	}
 
 	gotSession, err := store.GetSession(ctx, "sess_001")
@@ -143,8 +170,8 @@ func TestService_ContinueTurnCreatesNewTurnForExistingSession(t *testing.T) {
 	if gotSession.LastTurnID != result.TurnID {
 		t.Fatalf("GetSession().LastTurnID = %q, want %q", gotSession.LastTurnID, result.TurnID)
 	}
-	if len(bus.events) != 3 {
-		t.Fatalf("published events len = %d, want 3", len(bus.events))
+	if len(bus.events) != 6 {
+		t.Fatalf("published events len = %d, want 6", len(bus.events))
 	}
 	if bus.events[0].Sequence != 1 {
 		t.Fatalf("bus.events[0].Sequence = %d, want %d", bus.events[0].Sequence, 1)
@@ -152,8 +179,8 @@ func TestService_ContinueTurnCreatesNewTurnForExistingSession(t *testing.T) {
 	if bus.events[1].Sequence != 2 {
 		t.Fatalf("bus.events[1].Sequence = %d, want %d", bus.events[1].Sequence, 2)
 	}
-	if bus.events[2].Sequence != 3 {
-		t.Fatalf("bus.events[2].Sequence = %d, want %d", bus.events[2].Sequence, 3)
+	if bus.events[5].Sequence != 6 {
+		t.Fatalf("bus.events[5].Sequence = %d, want %d", bus.events[5].Sequence, 6)
 	}
 }
 
@@ -165,7 +192,8 @@ func TestService_ContinueTurnPassesResumeExternalTasksFromPreviousTurn(t *testin
 	bus := newFakePublisher()
 	firstRunner := &fakeRunner{
 		result: RuntimeResult{
-			Summary: "delegated",
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
 			ExternalTask: &ExternalTask{
 				Adapter:         "codex",
 				RemoteAgentName: "codex-cli",
@@ -174,6 +202,14 @@ func TestService_ContinueTurnPassesResumeExternalTasksFromPreviousTurn(t *testin
 				State:           "completed",
 				Metadata: map[string]any{
 					"protocol": "codex_app_server",
+				},
+			},
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
 				},
 			},
 		},
@@ -584,6 +620,63 @@ func TestService_ContinueTurnRejectsAuthRequiredWaitState(t *testing.T) {
 	}
 }
 
+func TestService_ContinueTurnRejectsNonWaitingLatestTurn(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "done",
+		},
+	}
+	now := time.Date(2026, 4, 15, 11, 30, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	firstResult, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_done_turn",
+		AgentID:       "default",
+		UserMessage:   "finish this turn",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	_, err = svc.ContinueTurn(ctx, ContinueTurnInput{
+		SessionID:     "sess_done_turn",
+		AgentID:       "default",
+		Message:       "continue completed turn",
+		InitiatorType: InitiatorUser,
+	})
+	if err == nil {
+		t.Fatal("ContinueTurn() error = nil, want non-waiting rejection")
+	}
+	if got := err.Error(); got != "session is not waiting for continue_turn" {
+		t.Fatalf("ContinueTurn() error = %q, want %q", got, "session is not waiting for continue_turn")
+	}
+
+	sessionModel, err := store.GetSession(ctx, "sess_done_turn")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if sessionModel.LastTurnID != firstResult.TurnID {
+		t.Fatalf("GetSession().LastTurnID = %q, want %q", sessionModel.LastTurnID, firstResult.TurnID)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_done_turn", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+}
+
 func TestService_StartTurnPassesSessionTurnRunContextIntoHITL(t *testing.T) {
 	t.Parallel()
 
@@ -885,12 +978,23 @@ func TestService_ContinueTurnKeepsSessionEventSequenceIncreasingAcrossTurns(t *t
 	ctx := context.Background()
 	store := newServiceTestStore(t)
 	bus := newFakePublisher()
-	runner := &fakeRunner{
-		result: RuntimeResult{Summary: "done"},
-	}
 	now := time.Date(2026, 4, 14, 14, 0, 0, 0, time.UTC)
 
-	svc := NewService(store, bus, runner, ServiceConfig{
+	waitingRunner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, waitingRunner, ServiceConfig{
 		Now: func() time.Time { return now },
 	})
 
@@ -904,6 +1008,10 @@ func TestService_ContinueTurnKeepsSessionEventSequenceIncreasingAcrossTurns(t *t
 		t.Fatalf("StartTurn() error = %v", err)
 	}
 
+	completingRunner := &fakeRunner{
+		result: RuntimeResult{Summary: "done"},
+	}
+	svc.runner = completingRunner
 	svc.now = func() time.Time { return now.Add(2 * time.Minute) }
 	secondResult, err := svc.ContinueTurn(ctx, ContinueTurnInput{
 		SessionID:     "sess_sequence",

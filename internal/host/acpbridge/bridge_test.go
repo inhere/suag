@@ -192,6 +192,9 @@ func TestRunnerAdapter_RunMapsDispatchEventsToRuntimeEvents(t *testing.T) {
 		RunID:       "run_001",
 		AgentID:     "default",
 		Instruction: "continue task",
+		Context: map[string]any{
+			"external_task_id": "ext_001",
+		},
 		Emit: func(event session.RuntimeEvent) error {
 			runtimeEvents = append(runtimeEvents, event)
 			return nil
@@ -218,11 +221,20 @@ func TestRunnerAdapter_RunMapsDispatchEventsToRuntimeEvents(t *testing.T) {
 	if runtimeEvents[2].EventType != session.EventRunExternalActivity {
 		t.Fatalf("runtime events[2].EventType = %q, want %q", runtimeEvents[2].EventType, session.EventRunExternalActivity)
 	}
+	if runtimeEvents[2].Payload["externalTaskId"] != "ext_001" {
+		t.Fatalf("runtime events[2].Payload[externalTaskId] = %v, want %q", runtimeEvents[2].Payload["externalTaskId"], "ext_001")
+	}
 	if runtimeEvents[3].EventType != session.EventRunExternalMessageDelta {
 		t.Fatalf("runtime events[3].EventType = %q, want %q", runtimeEvents[3].EventType, session.EventRunExternalMessageDelta)
 	}
+	if runtimeEvents[3].Payload["externalTaskId"] != "ext_001" {
+		t.Fatalf("runtime events[3].Payload[externalTaskId] = %v, want %q", runtimeEvents[3].Payload["externalTaskId"], "ext_001")
+	}
 	if runtimeEvents[4].EventType != session.EventRunExternalMessageEnd {
 		t.Fatalf("runtime events[4].EventType = %q, want %q", runtimeEvents[4].EventType, session.EventRunExternalMessageEnd)
+	}
+	if runtimeEvents[4].Payload["externalTaskId"] != "ext_001" {
+		t.Fatalf("runtime events[4].Payload[externalTaskId] = %v, want %q", runtimeEvents[4].Payload["externalTaskId"], "ext_001")
 	}
 }
 
@@ -284,6 +296,47 @@ func TestRunnerAdapter_RunEmitsDispatchingAndExternalRunningStatus(t *testing.T)
 	}
 	if runtimeEvents[2].EventType != session.EventRunExternalActivity {
 		t.Fatalf("runtime events[2].EventType = %q, want %q", runtimeEvents[2].EventType, session.EventRunExternalActivity)
+	}
+}
+
+func TestRunnerAdapter_RunReturnsExternalWaitingStateForRunningDispatch(t *testing.T) {
+	t.Parallel()
+
+	fakeBridge := &fakeBridge{
+		result: DispatchResult{
+			State:           StateRunning,
+			Summary:         "still running remotely",
+			RemoteAgentName: "codex-cli",
+			RemoteSessionID: "thread_001",
+			RemoteTaskID:    "turn_remote_001",
+		},
+	}
+	adapter := NewRunnerAdapter(fakeBridge, RunnerAdapterConfig{
+		AdapterName: "codex",
+		Workspace:   "workspace/demo",
+	})
+
+	result, err := adapter.Run(context.Background(), session.RuntimeRequest{
+		SessionID:   "sess_001",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "continue task",
+		Context: map[string]any{
+			"external_task_id": "ext_001",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.WaitState != session.RunExternal {
+		t.Fatalf("Run().WaitState = %q, want %q", result.WaitState, session.RunExternal)
+	}
+	if result.ExternalTask == nil {
+		t.Fatal("Run().ExternalTask is nil")
+	}
+	if result.ExternalTask.State != string(StateRunning) {
+		t.Fatalf("Run().ExternalTask.State = %q, want %q", result.ExternalTask.State, StateRunning)
 	}
 }
 

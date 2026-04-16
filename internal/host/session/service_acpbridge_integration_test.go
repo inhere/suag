@@ -66,6 +66,57 @@ func TestService_StartTurnWithACPBridgeRunnerPublishesFinishedLifecycle(t *testi
 	}
 }
 
+func TestService_StartTurnWithACPBridgeRunnerPublishesExternalTaskBeforeFinish(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newIntegrationStore(t)
+	bus := newIntegrationPublisher()
+	bridge := &fakeACPBridge{
+		result: acpbridge.DispatchResult{
+			State:           acpbridge.StateCompleted,
+			Summary:         "completed by codex",
+			RemoteAgentName: "codex-cli",
+			RemoteSessionID: "thread_001",
+			RemoteTaskID:    "turn_remote_001",
+		},
+	}
+	runner := acpbridge.NewRunnerAdapter(bridge, acpbridge.RunnerAdapterConfig{
+		AdapterName: "codex",
+		Workspace:   "workspace/demo",
+	})
+
+	now := time.Date(2026, 4, 11, 17, 30, 0, 0, time.UTC)
+	svc := session.NewService(store, bus, runner, session.ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	result, err := svc.StartTurn(ctx, session.StartTurnInput{
+		SessionID:     "sess_finish_order",
+		AgentID:       "default",
+		UserMessage:   "delegate to codex",
+		InitiatorType: session.InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	tasks, err := store.ListExternalTasksByRun(ctx, result.RunID)
+	if err != nil {
+		t.Fatalf("ListExternalTasksByRun() error = %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("ListExternalTasksByRun() len = %d, want 1", len(tasks))
+	}
+	if tasks[0].RemoteSessionID != "thread_001" {
+		t.Fatalf("ListExternalTasksByRun()[0].RemoteSessionID = %q, want %q", tasks[0].RemoteSessionID, "thread_001")
+	}
+
+	if bus.events[len(bus.events)-1].EventType != session.EventRunFinished {
+		t.Fatalf("last published event type = %q, want %q", bus.events[len(bus.events)-1].EventType, session.EventRunFinished)
+	}
+}
+
 type fakeACPBridge struct {
 	lastRequest acpbridge.DispatchRequest
 	result      acpbridge.DispatchResult

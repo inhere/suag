@@ -590,7 +590,7 @@ func runtimeRunState(payload map[string]any) (RunState, bool) {
 
 func isWaitingRunState(state RunState) bool {
 	switch state {
-	case RunInputRequired, RunAuthRequired:
+	case RunExternal, RunInputRequired, RunAuthRequired:
 		return true
 	default:
 		return false
@@ -685,10 +685,18 @@ func (s *Service) validateContinueTurnState(ctx context.Context, sessionID strin
 	if err != nil {
 		return nil
 	}
-	if runModel.State == RunAuthRequired {
+
+	// continue_turn is only valid for the latest waiting run. Approval waits
+	// must be resumed through HITL so we keep that path separate from free-form
+	// follow-up input.
+	switch runModel.State {
+	case RunInputRequired:
+		return nil
+	case RunAuthRequired:
 		return fmt.Errorf("session is waiting for approval; respond via HITL instead of continue_turn")
+	default:
+		return fmt.Errorf("session is not waiting for continue_turn")
 	}
-	return nil
 }
 
 func validateStartTurnInput(in StartTurnInput) error {

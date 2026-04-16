@@ -585,6 +585,7 @@ func TestMapEvent_RunExternalActivityMapsToCustomAndSnapshot(t *testing.T) {
 		AgentID:   "default",
 		Sequence:  4,
 		Payload: map[string]any{
+			"externalTaskId": "ext_001",
 			"kind":   "item_started",
 			"itemId": "item_001",
 		},
@@ -601,12 +602,26 @@ func TestMapEvent_RunExternalActivityMapsToCustomAndSnapshot(t *testing.T) {
 	if customEvent.Name != "axon.run.external.activity" {
 		t.Fatalf("MapEvent()[0].Name = %q, want %q", customEvent.Name, "axon.run.external.activity")
 	}
+	value, ok := customEvent.Value.(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent()[0].Value type = %T, want map[string]any", customEvent.Value)
+	}
+	if value["externalTaskId"] != "ext_001" {
+		t.Fatalf("MapEvent()[0].Value.externalTaskId = %v, want %q", value["externalTaskId"], "ext_001")
+	}
 	activityEvent, ok := got[1].(*ActivitySnapshotEvent)
 	if !ok {
 		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], &ActivitySnapshotEvent{})
 	}
 	if activityEvent.ActivityType != "external_activity" {
 		t.Fatalf("MapEvent()[1].ActivityType = %q, want %q", activityEvent.ActivityType, "external_activity")
+	}
+	content, ok := activityEvent.Content.(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent()[1].Content type = %T, want map[string]any", activityEvent.Content)
+	}
+	if content["externalTaskId"] != "ext_001" {
+		t.Fatalf("MapEvent()[1].Content.externalTaskId = %v, want %q", content["externalTaskId"], "ext_001")
 	}
 }
 

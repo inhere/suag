@@ -171,14 +171,6 @@ func handleWSCommand(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mu
 			sessionID = sub.SessionID
 		}
 
-		if err := writeWSJSON(ctx, conn, writeMu, map[string]any{
-			"type":       "command.accepted",
-			"command":    "continue_turn",
-			"session_id": sessionID,
-		}); err != nil {
-			return err
-		}
-
 		_, err := sessionSvc.ContinueTurn(ctx, session.ContinueTurnInput{
 			SessionID:     sessionID,
 			AgentID:       cmd.AgentID,
@@ -188,7 +180,11 @@ func handleWSCommand(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mu
 		if err != nil {
 			return err
 		}
-		return nil
+		return writeWSJSON(ctx, conn, writeMu, map[string]any{
+			"type":       "command.accepted",
+			"command":    "continue_turn",
+			"session_id": sessionID,
+		})
 	case "stop_turn":
 		if sessionSvc == nil {
 			return http.ErrNotSupported
@@ -203,18 +199,18 @@ func handleWSCommand(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mu
 			return fmt.Errorf("turn id is required")
 		}
 
-		if err := writeWSJSON(ctx, conn, writeMu, map[string]any{
-			"type":       "command.accepted",
-			"command":    "stop_turn",
-			"session_id": sessionID,
+		if err := sessionSvc.StopTurn(ctx, session.StopTurnInput{
+			SessionID: sessionID,
+			TurnID:    turnID,
+			Reason:    cmd.Reason,
 		}); err != nil {
 			return err
 		}
 
-		return sessionSvc.StopTurn(ctx, session.StopTurnInput{
-			SessionID: sessionID,
-			TurnID:    turnID,
-			Reason:    cmd.Reason,
+		return writeWSJSON(ctx, conn, writeMu, map[string]any{
+			"type":       "command.accepted",
+			"command":    "stop_turn",
+			"session_id": sessionID,
 		})
 	default:
 		return nil

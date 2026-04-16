@@ -42,6 +42,7 @@ func (r *RunnerAdapter) Run(ctx context.Context, in session.RuntimeRequest) (ses
 		}
 	}
 
+	emittedExternal := false
 	result, err := r.bridge.Dispatch(ctx, DispatchRequest{
 		SessionID:   in.SessionID,
 		TurnID:      in.TurnID,
@@ -51,7 +52,7 @@ func (r *RunnerAdapter) Run(ctx context.Context, in session.RuntimeRequest) (ses
 		Instruction: in.Instruction,
 		Workspace:   r.workspace,
 		Context:     r.buildDispatchContext(in.Context),
-		Emit:        r.buildDispatchEmitter(in.Emit),
+		Emit:        r.buildDispatchEmitter(in.Emit, contextStringValue(in.Context, "external_task_id"), &emittedExternal),
 	})
 	if err != nil {
 		return session.RuntimeResult{}, err
@@ -63,8 +64,24 @@ func (r *RunnerAdapter) Run(ctx context.Context, in session.RuntimeRequest) (ses
 		return session.RuntimeResult{}, fmt.Errorf("acp dispatch failed")
 	}
 
+	waitState := session.RunState("")
+	if result.State == StateRunning {
+		waitState = session.RunExternal
+		if !emittedExternal && in.Emit != nil {
+			if err := in.Emit(session.RuntimeEvent{
+				EventType: session.EventRunStatus,
+				Payload: map[string]any{
+					"state": string(session.RunExternal),
+				},
+			}); err != nil {
+				return session.RuntimeResult{}, err
+			}
+		}
+	}
+
 	return session.RuntimeResult{
-		Summary: result.Summary,
+		Summary:   result.Summary,
+		WaitState: waitState,
 		ExternalTask: &session.ExternalTask{
 			ExternalTaskID:  contextStringValue(in.Context, "external_task_id"),
 			Adapter:         r.adapterName,
@@ -95,13 +112,16 @@ func mergeMetadata(dst map[string]any, src map[string]any) map[string]any {
 	return dst
 }
 
-func (r *RunnerAdapter) buildDispatchEmitter(emit func(event session.RuntimeEvent) error) func(event DispatchEvent) error {
+func (r *RunnerAdapter) buildDispatchEmitter(emit func(event session.RuntimeEvent) error, externalTaskID string, emittedExternal *bool) func(event DispatchEvent) error {
 	if emit == nil {
 		return nil
 	}
 
 	return func(event DispatchEvent) error {
-		runtimeEvents := mapDispatchEvents(event)
+		runtimeEvents := mapDispatchEvents(event, externalTaskID)
+		if len(runtimeEvents) > 0 && emittedExternal != nil {
+			*emittedExternal = true
+		}
 		for _, runtimeEvent := range runtimeEvents {
 			if err := emit(runtimeEvent); err != nil {
 				return err
@@ -139,10 +159,14 @@ func (r *RunnerAdapter) buildDispatchContext(src map[string]any) map[string]any 
 	return out
 }
 
-func mapDispatchEvents(event DispatchEvent) []session.RuntimeEvent {
+func mapDispatchEvents(event DispatchEvent, externalTaskID string) []session.RuntimeEvent {
+	payload := mergeMetadata(map[string]any{}, event.Payload)
+	if strings.TrimSpace(externalTaskID) != "" {
+		payload["externalTaskId"] = externalTaskID
+	}
+
 	switch strings.TrimSpace(event.Type) {
 	case "external.activity":
-		activityPayload := mergeMetadata(map[string]any{}, event.Payload)
 		return []session.RuntimeEvent{
 			{
 				EventType: session.EventRunStatus,
@@ -152,18 +176,18 @@ func mapDispatchEvents(event DispatchEvent) []session.RuntimeEvent {
 			},
 			{
 				EventType: session.EventRunExternalActivity,
-				Payload:   activityPayload,
+				Payload:   payload,
 			},
 		}
 	case "external.message.delta":
 		return []session.RuntimeEvent{{
 			EventType: session.EventRunExternalMessageDelta,
-			Payload:   event.Payload,
+			Payload:   payload,
 		}}
 	case "external.message.end":
 		return []session.RuntimeEvent{{
 			EventType: session.EventRunExternalMessageEnd,
-			Payload:   event.Payload,
+			Payload:   payload,
 		}}
 	default:
 		return nil
