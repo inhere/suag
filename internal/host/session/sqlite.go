@@ -669,6 +669,54 @@ func (s *SQLiteStore) CreateMemoryCandidate(ctx context.Context, candidate Memor
 	return nil
 }
 
+func (s *SQLiteStore) GetMemoryCandidate(ctx context.Context, candidateID string) (MemoryCandidate, error) {
+	if err := validateID("memory candidate", candidateID); err != nil {
+		return MemoryCandidate{}, err
+	}
+
+	var (
+		candidate       MemoryCandidate
+		createdAt       string
+		rawMetadataJSON []byte
+	)
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT candidate_id, session_id, turn_id, run_id, source_recap_id,
+		       target, kind, content, score, status, created_at, metadata_json
+		FROM memory_candidates
+		WHERE candidate_id = ?
+	`, candidateID).Scan(
+		&candidate.CandidateID,
+		&candidate.SessionID,
+		&candidate.TurnID,
+		&candidate.RunID,
+		&candidate.SourceRecapID,
+		&candidate.Target,
+		&candidate.Kind,
+		&candidate.Content,
+		&candidate.Score,
+		&candidate.Status,
+		&createdAt,
+		&rawMetadataJSON,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return MemoryCandidate{}, fmt.Errorf("get memory candidate: %w", os.ErrNotExist)
+		}
+		return MemoryCandidate{}, fmt.Errorf("get memory candidate: %w", err)
+	}
+
+	candidate.CreatedAt, err = parseTime(createdAt)
+	if err != nil {
+		return MemoryCandidate{}, err
+	}
+	candidate.Metadata, err = unmarshalJSONMap(rawMetadataJSON)
+	if err != nil {
+		return MemoryCandidate{}, err
+	}
+	return candidate, nil
+}
+
 func (s *SQLiteStore) ListMemoryCandidatesByTurn(ctx context.Context, sessionID string, turnID string) ([]MemoryCandidate, error) {
 	if err := validateID("session", sessionID); err != nil {
 		return nil, err
@@ -784,7 +832,7 @@ func (s *SQLiteStore) ListMemoryCandidatesBySession(ctx context.Context, session
 	return candidates, nil
 }
 
-func (s *SQLiteStore) UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status string) error {
+func (s *SQLiteStore) UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status MemoryCandidateStatus) error {
 	if err := validateID("memory candidate", candidateID); err != nil {
 		return err
 	}
@@ -793,7 +841,7 @@ func (s *SQLiteStore) UpdateMemoryCandidateStatus(ctx context.Context, candidate
 		UPDATE memory_candidates
 		SET status = ?
 		WHERE candidate_id = ?
-	`, strings.TrimSpace(status), candidateID)
+	`, strings.TrimSpace(string(status)), candidateID)
 	if err != nil {
 		return fmt.Errorf("update memory candidate status: %w", err)
 	}

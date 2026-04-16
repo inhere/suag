@@ -88,6 +88,11 @@ type StopTurnInput struct {
 	Reason    string
 }
 
+type UpdateMemoryCandidateInput struct {
+	CandidateID string
+	Status      MemoryCandidateStatus
+}
+
 type StartTurnResult struct {
 	SessionID string
 	TurnID    string
@@ -174,6 +179,30 @@ func (s *Service) StopTurn(ctx context.Context, in StopTurnInput) error {
 
 	_ = ctx
 	return nil
+}
+
+func (s *Service) UpdateMemoryCandidate(ctx context.Context, in UpdateMemoryCandidateInput) (MemoryCandidate, error) {
+	if s == nil || s.store == nil {
+		return MemoryCandidate{}, fmt.Errorf("service is required")
+	}
+	if err := validateUpdateMemoryCandidateInput(in); err != nil {
+		return MemoryCandidate{}, err
+	}
+
+	candidate, err := s.store.GetMemoryCandidate(ctx, in.CandidateID)
+	if err != nil {
+		return MemoryCandidate{}, err
+	}
+	if candidate.Status == in.Status {
+		return candidate, nil
+	}
+
+	if err := s.store.UpdateMemoryCandidateStatus(ctx, in.CandidateID, in.Status); err != nil {
+		return MemoryCandidate{}, err
+	}
+	candidate.Status = in.Status
+
+	return candidate, nil
 }
 
 func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message string, initiatorType InitiatorType, createIfMissing bool) (StartTurnResult, error) {
@@ -777,6 +806,18 @@ func validateStopTurnInput(in StopTurnInput) error {
 		return fmt.Errorf("turn id is required")
 	}
 	return nil
+}
+
+func validateUpdateMemoryCandidateInput(in UpdateMemoryCandidateInput) error {
+	if strings.TrimSpace(in.CandidateID) == "" {
+		return fmt.Errorf("candidate id is required")
+	}
+	switch in.Status {
+	case MemoryCandidateApplied, MemoryCandidateRejected:
+		return nil
+	default:
+		return fmt.Errorf("memory candidate status must be applied or rejected")
+	}
 }
 
 func validateTurnRequest(sessionID, agentID, message string, initiatorType InitiatorType) error {

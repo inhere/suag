@@ -11,10 +11,11 @@ import (
 type recapStore interface {
 	CreateRecap(ctx context.Context, recap Recap) error
 	CreateMemoryCandidate(ctx context.Context, candidate MemoryCandidate) error
+	GetMemoryCandidate(ctx context.Context, candidateID string) (MemoryCandidate, error)
 	ListRecapsByTurn(ctx context.Context, sessionID string, turnID string) ([]Recap, error)
 	ListMemoryCandidatesBySession(ctx context.Context, sessionID string) ([]MemoryCandidate, error)
 	ListMemoryCandidatesByTurn(ctx context.Context, sessionID string, turnID string) ([]MemoryCandidate, error)
-	UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status string) error
+	UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status MemoryCandidateStatus) error
 }
 
 type StructuredRecapHook struct {
@@ -138,7 +139,7 @@ func buildMemoryCandidatesFromRecap(input RecapInput, sourceRecapID string, now 
 		Kind:          "turn_learning",
 		Content:       content,
 		Score:         0.8,
-		Status:        "draft",
+		Status:        MemoryCandidateDraft,
 		CreatedAt:     now,
 		Metadata:      cloneMap(baseMetadata),
 	})
@@ -154,7 +155,7 @@ func buildMemoryCandidatesFromRecap(input RecapInput, sourceRecapID string, now 
 			Kind:          "user_preference",
 			Content:       content,
 			Score:         0.7,
-			Status:        "draft",
+			Status:        MemoryCandidateDraft,
 			CreatedAt:     now,
 			Metadata:      cloneMap(baseMetadata),
 		})
@@ -220,10 +221,10 @@ func (h *MemoryDraftHook) OnTurnRecap(ctx context.Context, input RecapInput) err
 		if candidate.SessionID != input.Session.SessionID {
 			continue
 		}
-		if candidate.Status != "draft" {
+		if candidate.Status != MemoryCandidateDraft {
 			continue
 		}
-		if err := h.store.UpdateMemoryCandidateStatus(ctx, candidate.CandidateID, "rendered"); err != nil {
+		if err := h.store.UpdateMemoryCandidateStatus(ctx, candidate.CandidateID, MemoryCandidateRendered); err != nil {
 			return err
 		}
 	}
@@ -244,7 +245,7 @@ func writeMemoryDraft(path string, target string, candidates []MemoryCandidate, 
 		if candidate.Target != target {
 			continue
 		}
-		if candidate.Status != "draft" && candidate.Status != "rendered" {
+		if candidate.Status != MemoryCandidateDraft && candidate.Status != MemoryCandidateRendered {
 			continue
 		}
 		key := strings.ToLower(strings.TrimSpace(candidate.Kind) + "\x00" + strings.TrimSpace(candidate.Content))

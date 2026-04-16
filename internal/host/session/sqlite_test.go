@@ -427,7 +427,7 @@ func TestSQLiteStore_CreateAndListMemoryCandidatesByTurn(t *testing.T) {
 		Kind:          "turn_learning",
 		Content:       "Prefer stable host state contracts for waiting turns.",
 		Score:         0.8,
-		Status:        "draft",
+		Status:        MemoryCandidateDraft,
 		CreatedAt:     now,
 		Metadata: map[string]any{
 			"phase": "completed",
@@ -477,7 +477,7 @@ func TestSQLiteStore_ListMemoryCandidatesBySession(t *testing.T) {
 			Kind:          "turn_learning",
 			Content:       "first",
 			Score:         0.8,
-			Status:        "draft",
+			Status:        MemoryCandidateDraft,
 			CreatedAt:     now,
 		},
 		{
@@ -490,7 +490,7 @@ func TestSQLiteStore_ListMemoryCandidatesBySession(t *testing.T) {
 			Kind:          "user_preference",
 			Content:       "second",
 			Score:         0.7,
-			Status:        "rendered",
+			Status:        MemoryCandidateRendered,
 			CreatedAt:     now.Add(time.Minute),
 		},
 		{
@@ -503,7 +503,7 @@ func TestSQLiteStore_ListMemoryCandidatesBySession(t *testing.T) {
 			Kind:          "turn_learning",
 			Content:       "other",
 			Score:         0.6,
-			Status:        "draft",
+			Status:        MemoryCandidateDraft,
 			CreatedAt:     now.Add(2 * time.Minute),
 		},
 	} {
@@ -524,6 +524,52 @@ func TestSQLiteStore_ListMemoryCandidatesBySession(t *testing.T) {
 	}
 	if candidates[1].CandidateID != "mcand_sess_002" {
 		t.Fatalf("ListMemoryCandidatesBySession()[1].CandidateID = %q, want %q", candidates[1].CandidateID, "mcand_sess_002")
+	}
+}
+
+func TestSQLiteStore_GetAndUpdateMemoryCandidateStatus(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newTestStore(t)
+	now := time.Date(2026, 4, 16, 12, 0, 0, 0, time.UTC)
+
+	candidate := MemoryCandidate{
+		CandidateID:   "mcand_status_001",
+		SessionID:     "sess_001",
+		TurnID:        "turn_001",
+		RunID:         "run_001",
+		SourceRecapID: "recap_001",
+		Target:        "MEMORY",
+		Kind:          "turn_learning",
+		Content:       "status candidate",
+		Score:         0.8,
+		Status:        MemoryCandidateDraft,
+		CreatedAt:     now,
+	}
+
+	if err := store.CreateMemoryCandidate(ctx, candidate); err != nil {
+		t.Fatalf("CreateMemoryCandidate() error = %v", err)
+	}
+
+	got, err := store.GetMemoryCandidate(ctx, "mcand_status_001")
+	if err != nil {
+		t.Fatalf("GetMemoryCandidate() error = %v", err)
+	}
+	if got.Status != MemoryCandidateDraft {
+		t.Fatalf("GetMemoryCandidate().Status = %q, want %q", got.Status, MemoryCandidateDraft)
+	}
+
+	if err := store.UpdateMemoryCandidateStatus(ctx, "mcand_status_001", MemoryCandidateApplied); err != nil {
+		t.Fatalf("UpdateMemoryCandidateStatus() error = %v", err)
+	}
+
+	got, err = store.GetMemoryCandidate(ctx, "mcand_status_001")
+	if err != nil {
+		t.Fatalf("GetMemoryCandidate() after update error = %v", err)
+	}
+	if got.Status != MemoryCandidateApplied {
+		t.Fatalf("GetMemoryCandidate().Status after update = %q, want %q", got.Status, MemoryCandidateApplied)
 	}
 }
 

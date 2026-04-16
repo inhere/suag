@@ -166,6 +166,7 @@ http://127.0.0.1:5173
 - `session.Service` 当前已具备 post-turn recap hook，默认会把 turn 终态写入 `recaps` 与 `memory_candidates`
 - `memory_candidates` 当前是候选中间层，默认还会继续聚合渲染到 `db/agentcore/host/memory/MEMORY.draft.md` 与 `db/agentcore/host/memory/USER.draft.md`
 - `*.draft.md` 当前按 session 聚合、去重，并过滤掉不再需要继续处理的候选状态
+- 后端当前已具备最小 `memory candidate` 状态流转能力：`draft -> rendered -> applied/rejected`
 - 当前仍未真正自动写入 `MEMORY.md` / `USER.md`
 - `vite` 代理仅用于本地开发，不影响生产构建输出
 - 本地 `db/axon.db`、`db/axon.db-shm`、`db/axon.db-wal` 都属于开发产物，不应作为功能变更提交

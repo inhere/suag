@@ -6,6 +6,7 @@ type SessionStatus string
 type TurnStatus string
 type RunState string
 type InitiatorType string
+type MemoryCandidateStatus string
 
 const (
 	SessionOpen     SessionStatus = "OPEN"
@@ -40,6 +41,13 @@ const (
 	InitiatorUser   InitiatorType = "user"
 	InitiatorSystem InitiatorType = "system"
 	InitiatorAgent  InitiatorType = "agent"
+)
+
+const (
+	MemoryCandidateDraft    MemoryCandidateStatus = "draft"
+	MemoryCandidateRendered MemoryCandidateStatus = "rendered"
+	MemoryCandidateApplied  MemoryCandidateStatus = "applied"
+	MemoryCandidateRejected MemoryCandidateStatus = "rejected"
 )
 
 type Session struct {
@@ -132,7 +140,7 @@ type MemoryCandidate struct {
 	Kind          string
 	Content       string
 	Score         float64
-	Status        string
+	Status        MemoryCandidateStatus
 	CreatedAt     time.Time
 	Metadata      map[string]any
 }

@@ -99,6 +99,17 @@
    - 当前会将同一 session 的 draft/rendered 候选聚合后渲染成可人工检查的草稿文件
    - 默认会按 `kind + content` 去重，并过滤 `rejected` / `applied`
 
+当前 memory candidate 状态语义约定为：
+
+- `draft`
+  - 新生成、尚未进入 draft 文件渲染前
+- `rendered`
+  - 已进入当前 draft 聚合视图
+- `applied`
+  - 已被人工采纳，不应继续停留在 draft 文件里
+- `rejected`
+  - 已被人工拒绝，不应继续停留在 draft 文件里
+
 这里的设计重点是：
 
 - 先把候选写入单独表

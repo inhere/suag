@@ -1217,8 +1217,8 @@ func TestService_StartTurnRecapHookPersistsMemoryCandidates(t *testing.T) {
 	if candidates[0].SourceRecapID == "" {
 		t.Fatal("ListMemoryCandidatesByTurn()[0].SourceRecapID is empty")
 	}
-	if candidates[0].Status != "draft" {
-		t.Fatalf("ListMemoryCandidatesByTurn()[0].Status = %q, want %q", candidates[0].Status, "draft")
+	if candidates[0].Status != MemoryCandidateDraft {
+		t.Fatalf("ListMemoryCandidatesByTurn()[0].Status = %q, want %q", candidates[0].Status, MemoryCandidateDraft)
 	}
 	if candidates[0].Metadata["phase"] != string(RecapPhaseCompleted) {
 		t.Fatalf("ListMemoryCandidatesByTurn()[0].Metadata[phase] = %v, want %q", candidates[0].Metadata["phase"], RecapPhaseCompleted)
@@ -1239,6 +1239,72 @@ func TestService_StartTurnRecapHookPersistsMemoryCandidates(t *testing.T) {
 	}
 	if !foundUser {
 		t.Fatal("expected USER candidate")
+	}
+}
+
+func TestService_UpdateMemoryCandidateAcceptsAndRejects(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	svc := NewService(store, nil, nil, ServiceConfig{})
+	now := time.Date(2026, 4, 16, 16, 0, 0, 0, time.UTC)
+
+	if err := store.CreateMemoryCandidate(ctx, MemoryCandidate{
+		CandidateID:   "mcand_service_001",
+		SessionID:     "sess_001",
+		TurnID:        "turn_001",
+		RunID:         "run_001",
+		SourceRecapID: "recap_001",
+		Target:        "MEMORY",
+		Kind:          "turn_learning",
+		Content:       "candidate for action",
+		Score:         0.8,
+		Status:        MemoryCandidateDraft,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("CreateMemoryCandidate() error = %v", err)
+	}
+
+	applied, err := svc.UpdateMemoryCandidate(ctx, UpdateMemoryCandidateInput{
+		CandidateID: "mcand_service_001",
+		Status:      MemoryCandidateApplied,
+	})
+	if err != nil {
+		t.Fatalf("UpdateMemoryCandidate(applied) error = %v", err)
+	}
+	if applied.Status != MemoryCandidateApplied {
+		t.Fatalf("UpdateMemoryCandidate(applied).Status = %q, want %q", applied.Status, MemoryCandidateApplied)
+	}
+
+	rejected, err := svc.UpdateMemoryCandidate(ctx, UpdateMemoryCandidateInput{
+		CandidateID: "mcand_service_001",
+		Status:      MemoryCandidateRejected,
+	})
+	if err != nil {
+		t.Fatalf("UpdateMemoryCandidate(rejected) error = %v", err)
+	}
+	if rejected.Status != MemoryCandidateRejected {
+		t.Fatalf("UpdateMemoryCandidate(rejected).Status = %q, want %q", rejected.Status, MemoryCandidateRejected)
+	}
+}
+
+func TestService_UpdateMemoryCandidateRejectsUnsupportedStatus(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	svc := NewService(store, nil, nil, ServiceConfig{})
+
+	_, err := svc.UpdateMemoryCandidate(ctx, UpdateMemoryCandidateInput{
+		CandidateID: "mcand_service_invalid",
+		Status:      MemoryCandidateRendered,
+	})
+	if err == nil {
+		t.Fatal("UpdateMemoryCandidate() error = nil, want validation error")
+	}
+	if got := err.Error(); got != "memory candidate status must be applied or rejected" {
+		t.Fatalf("UpdateMemoryCandidate() error = %q, want validation error", got)
 	}
 }
 
