@@ -228,10 +228,12 @@ describe("App", () => {
   it("creates a session, starts a turn, and hydrates the workbench from websocket snapshots", async () => {
     render(<App />);
 
-    fireEvent.change(screen.getByPlaceholderText("给 Axon 发送下一条任务说明..."), {
+    const composer = screen.getByPlaceholderText("给 Axon 发送下一条任务说明...");
+    fireEvent.change(composer, {
       target: { value: "请整理当前页面结构" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(composer).toHaveValue("");
 
     await waitFor(() =>
       expect(createSessionMock).toHaveBeenCalledWith({ title: "host runtime" }),
@@ -261,6 +263,7 @@ describe("App", () => {
     expect(screen.getByText("run_001")).toBeInTheDocument();
     expect(screen.getAllByText("Turn turn_001").length).toBeGreaterThan(0);
     expect(screen.getByText("Run run_001")).toBeInTheDocument();
+    expect(screen.getAllByText("19:00").length).toBeGreaterThan(0);
     await waitFor(() =>
       expect(storage["axon.web.workbench"]).toContain("\"currentSessionId\":\"sess_001\""),
     );
@@ -344,7 +347,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(await screen.findByText("Failed to start turn.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(screen.getByPlaceholderText("给 Axon 发送下一条任务说明...")).toHaveValue("");
   });
 
   it("shows websocket connection lifecycle status for the active session", async () => {
@@ -1419,12 +1423,9 @@ describe("App", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Continuing..." })).not.toBeInTheDocument(),
     );
-    await waitFor(() => {
-      const enabledContinue = screen
-        .getAllByRole("button", { name: "Continue" })
-        .find((button) => !button.hasAttribute("disabled"));
-      expect(enabledContinue).toBeDefined();
-    });
+    expect(screen.getByPlaceholderText("当前任务在等待你的补充说明...")).toHaveValue("");
+    const continueButtons = screen.getAllByRole("button", { name: "Continue" });
+    expect(continueButtons.every((button) => button.hasAttribute("disabled"))).toBe(true);
   });
 
   it("shows inline feedback when continue_turn is rejected", async () => {

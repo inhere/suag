@@ -55,13 +55,16 @@ function buildConversationMessages(state: SessionViewState): ConversationMessage
       id: `${currentTurn.turnId}:user`,
       role: "user",
       text: currentTurn.latestMessagePreview,
+      timestamp: formatConversationTimestamp(currentTurn.updatedAt || snapshot.generatedAt),
     });
   }
 
   const focusedRun = selectFocusedRun(snapshot, state.focusedRunId);
+  const focusedExternalMessage =
+    snapshot.externalMessages.find((message) => message.runId === focusedRun?.runId) ?? null;
   const assistantText =
     focusedRun?.summary ||
-    snapshot.externalMessages.find((message) => message.runId === focusedRun?.runId)?.content ||
+    focusedExternalMessage?.content ||
     focusedRun?.latestMessageText ||
     "";
 
@@ -70,10 +73,30 @@ function buildConversationMessages(state: SessionViewState): ConversationMessage
       id: `${focusedRun?.runId ?? snapshot.sessionId}:assistant`,
       role: "assistant",
       text: assistantText,
+      timestamp: formatConversationTimestamp(
+        focusedExternalMessage?.updatedAt || focusedRun?.updatedAt || snapshot.generatedAt,
+      ),
     });
   }
 
   return messages;
+}
+
+function formatConversationTimestamp(value: string | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(parsed);
 }
 
 function isWaitingForInput(state: SessionViewState): boolean {

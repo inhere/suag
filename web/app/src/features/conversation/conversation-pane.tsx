@@ -8,6 +8,7 @@ export type ConversationMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
+  timestamp?: string;
 };
 
 type ConversationPaneProps = {
@@ -35,7 +36,12 @@ export function ConversationPane({
     <div className="conversation-pane">
       <div className="conversation-pane__content">
         {messages.map((message) => (
-          <MessageItem key={message.id} role={message.role} text={message.text} />
+          <MessageItem
+            key={message.id}
+            role={message.role}
+            text={message.text}
+            timestamp={message.timestamp}
+          />
         ))}
         {currentTurn ? <TurnSummaryCard turn={currentTurn} /> : null}
         <RecentTurnsStrip

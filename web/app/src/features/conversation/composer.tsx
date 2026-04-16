@@ -38,6 +38,7 @@ export function Composer({
         }
 
         onSubmit(nextValue);
+        setValue("");
       }}
     >
       <textarea

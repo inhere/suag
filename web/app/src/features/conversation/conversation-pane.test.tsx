@@ -6,8 +6,18 @@ it("renders user messages, assistant summaries, and turn summary cards", () => {
   render(
     <ConversationPane
       messages={[
-        { id: "user-1", role: "user", text: "请整理当前页面结构" },
-        { id: "assistant-1", role: "assistant", text: "已开始处理这个任务" },
+        {
+          id: "user-1",
+          role: "user",
+          text: "请整理当前页面结构",
+          timestamp: "10:00",
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "已开始处理这个任务",
+          timestamp: "10:01",
+        },
       ]}
       currentTurn={{
         turnId: "turn_012",
@@ -85,4 +95,6 @@ it("renders user messages, assistant summaries, and turn summary cards", () => {
   expect(screen.getByText("Recent Turns")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Turn turn_011/ })).toBeInTheDocument();
   expect(screen.getByRole("textbox")).toBeInTheDocument();
+  expect(screen.getByText("10:00")).toBeInTheDocument();
+  expect(screen.getByText("10:01")).toBeInTheDocument();
 });
