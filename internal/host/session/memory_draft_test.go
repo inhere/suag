@@ -106,3 +106,102 @@ func TestMemoryDraftHook_WritesDraftFilesFromCandidates(t *testing.T) {
 		}
 	}
 }
+
+func TestMemoryDraftHook_AggregatesAndDeduplicatesDraftCandidates(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newTestStore(t)
+	root := t.TempDir()
+	now := time.Date(2026, 4, 16, 14, 0, 0, 0, time.UTC)
+
+	candidates := []MemoryCandidate{
+		{
+			CandidateID:   "mcand_101",
+			SessionID:     "sess_agg",
+			TurnID:        "turn_001",
+			RunID:         "run_001",
+			SourceRecapID: "recap_001",
+			Target:        "MEMORY",
+			Kind:          "turn_learning",
+			Content:       "Keep status updates concise.",
+			Score:         0.8,
+			Status:        "draft",
+			CreatedAt:     now,
+		},
+		{
+			CandidateID:   "mcand_102",
+			SessionID:     "sess_agg",
+			TurnID:        "turn_002",
+			RunID:         "run_002",
+			SourceRecapID: "recap_002",
+			Target:        "MEMORY",
+			Kind:          "turn_learning",
+			Content:       "Keep status updates concise.",
+			Score:         0.8,
+			Status:        "rendered",
+			CreatedAt:     now.Add(time.Minute),
+		},
+		{
+			CandidateID:   "mcand_103",
+			SessionID:     "sess_agg",
+			TurnID:        "turn_003",
+			RunID:         "run_003",
+			SourceRecapID: "recap_003",
+			Target:        "USER",
+			Kind:          "user_preference",
+			Content:       "User prefers bullet summaries.",
+			Score:         0.7,
+			Status:        "draft",
+			CreatedAt:     now.Add(2 * time.Minute),
+		},
+		{
+			CandidateID:   "mcand_104",
+			SessionID:     "sess_agg",
+			TurnID:        "turn_004",
+			RunID:         "run_004",
+			SourceRecapID: "recap_004",
+			Target:        "USER",
+			Kind:          "user_preference",
+			Content:       "User prefers bullet summaries.",
+			Score:         0.7,
+			Status:        "rejected",
+			CreatedAt:     now.Add(3 * time.Minute),
+		},
+	}
+	for _, candidate := range candidates {
+		if err := store.CreateMemoryCandidate(ctx, candidate); err != nil {
+			t.Fatalf("CreateMemoryCandidate(%s) error = %v", candidate.CandidateID, err)
+		}
+	}
+
+	hook := NewMemoryDraftHook(store, root, func() time.Time { return now.Add(4 * time.Minute) })
+	if err := hook.OnTurnRecap(ctx, RecapInput{
+		Session: Session{SessionID: "sess_agg"},
+		TurnID:  "turn_004",
+		RunID:   "run_004",
+		Phase:   RecapPhaseCompleted,
+		Summary: "aggregate drafts",
+	}); err != nil {
+		t.Fatalf("OnTurnRecap() error = %v", err)
+	}
+
+	memoryDraft, err := os.ReadFile(filepath.Join(root, "memory", "MEMORY.draft.md"))
+	if err != nil {
+		t.Fatalf("os.ReadFile(MEMORY.draft.md) error = %v", err)
+	}
+	if strings.Count(string(memoryDraft), "Keep status updates concise.") != 1 {
+		t.Fatalf("MEMORY.draft.md = %q, want deduplicated memory candidate", string(memoryDraft))
+	}
+
+	userDraft, err := os.ReadFile(filepath.Join(root, "memory", "USER.draft.md"))
+	if err != nil {
+		t.Fatalf("os.ReadFile(USER.draft.md) error = %v", err)
+	}
+	if strings.Count(string(userDraft), "User prefers bullet summaries.") != 1 {
+		t.Fatalf("USER.draft.md = %q, want filtered and deduplicated user candidate", string(userDraft))
+	}
+	if strings.Contains(string(userDraft), "rejected") {
+		t.Fatalf("USER.draft.md = %q, should not include rejected candidate markers", string(userDraft))
+	}
+}

@@ -728,6 +728,62 @@ func (s *SQLiteStore) ListMemoryCandidatesByTurn(ctx context.Context, sessionID 
 	return candidates, nil
 }
 
+func (s *SQLiteStore) ListMemoryCandidatesBySession(ctx context.Context, sessionID string) ([]MemoryCandidate, error) {
+	if err := validateID("session", sessionID); err != nil {
+		return nil, err
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT candidate_id, session_id, turn_id, run_id, source_recap_id,
+		       target, kind, content, score, status, created_at, metadata_json
+		FROM memory_candidates
+		WHERE session_id = ?
+		ORDER BY created_at ASC, candidate_id ASC
+	`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("list memory candidates by session: %w", err)
+	}
+	defer rows.Close()
+
+	candidates := make([]MemoryCandidate, 0)
+	for rows.Next() {
+		var (
+			candidate       MemoryCandidate
+			createdAt       string
+			rawMetadataJSON []byte
+		)
+		if err := rows.Scan(
+			&candidate.CandidateID,
+			&candidate.SessionID,
+			&candidate.TurnID,
+			&candidate.RunID,
+			&candidate.SourceRecapID,
+			&candidate.Target,
+			&candidate.Kind,
+			&candidate.Content,
+			&candidate.Score,
+			&candidate.Status,
+			&createdAt,
+			&rawMetadataJSON,
+		); err != nil {
+			return nil, fmt.Errorf("scan memory candidate: %w", err)
+		}
+		candidate.CreatedAt, err = parseTime(createdAt)
+		if err != nil {
+			return nil, err
+		}
+		candidate.Metadata, err = unmarshalJSONMap(rawMetadataJSON)
+		if err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate memory candidates: %w", err)
+	}
+	return candidates, nil
+}
+
 func (s *SQLiteStore) UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status string) error {
 	if err := validateID("memory candidate", candidateID); err != nil {
 		return err

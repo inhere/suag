@@ -459,6 +459,74 @@ func TestSQLiteStore_CreateAndListMemoryCandidatesByTurn(t *testing.T) {
 	}
 }
 
+func TestSQLiteStore_ListMemoryCandidatesBySession(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newTestStore(t)
+	now := time.Date(2026, 4, 16, 11, 30, 0, 0, time.UTC)
+
+	for _, candidate := range []MemoryCandidate{
+		{
+			CandidateID:   "mcand_sess_001",
+			SessionID:     "sess_agg",
+			TurnID:        "turn_001",
+			RunID:         "run_001",
+			SourceRecapID: "recap_001",
+			Target:        "MEMORY",
+			Kind:          "turn_learning",
+			Content:       "first",
+			Score:         0.8,
+			Status:        "draft",
+			CreatedAt:     now,
+		},
+		{
+			CandidateID:   "mcand_sess_002",
+			SessionID:     "sess_agg",
+			TurnID:        "turn_002",
+			RunID:         "run_002",
+			SourceRecapID: "recap_002",
+			Target:        "USER",
+			Kind:          "user_preference",
+			Content:       "second",
+			Score:         0.7,
+			Status:        "rendered",
+			CreatedAt:     now.Add(time.Minute),
+		},
+		{
+			CandidateID:   "mcand_other_001",
+			SessionID:     "sess_other",
+			TurnID:        "turn_003",
+			RunID:         "run_003",
+			SourceRecapID: "recap_003",
+			Target:        "MEMORY",
+			Kind:          "turn_learning",
+			Content:       "other",
+			Score:         0.6,
+			Status:        "draft",
+			CreatedAt:     now.Add(2 * time.Minute),
+		},
+	} {
+		if err := store.CreateMemoryCandidate(ctx, candidate); err != nil {
+			t.Fatalf("CreateMemoryCandidate(%s) error = %v", candidate.CandidateID, err)
+		}
+	}
+
+	candidates, err := store.ListMemoryCandidatesBySession(ctx, "sess_agg")
+	if err != nil {
+		t.Fatalf("ListMemoryCandidatesBySession() error = %v", err)
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("ListMemoryCandidatesBySession() len = %d, want 2", len(candidates))
+	}
+	if candidates[0].CandidateID != "mcand_sess_001" {
+		t.Fatalf("ListMemoryCandidatesBySession()[0].CandidateID = %q, want %q", candidates[0].CandidateID, "mcand_sess_001")
+	}
+	if candidates[1].CandidateID != "mcand_sess_002" {
+		t.Fatalf("ListMemoryCandidatesBySession()[1].CandidateID = %q, want %q", candidates[1].CandidateID, "mcand_sess_002")
+	}
+}
+
 func newTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 

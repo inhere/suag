@@ -96,12 +96,14 @@
 2. `memory_candidates`
    - 保留后续可能写入 `MEMORY.md` / `USER.md` 的候选草案
 3. `MEMORY.draft.md` / `USER.draft.md`
-   - 当前会将同一 turn 的 draft 候选渲染成可人工检查的草稿文件
+   - 当前会将同一 session 的 draft/rendered 候选聚合后渲染成可人工检查的草稿文件
+   - 默认会按 `kind + content` 去重，并过滤 `rejected` / `applied`
 
 这里的设计重点是：
 
 - 先把候选写入单独表
 - 先渲染 draft 文件，不直接改正式记忆文件
+- draft 文件当前是 session 级聚合视图，不是单 turn 原样转储
 - 后续可以做人审、去重、合并、拒绝或二次润色
 
 也就是说，当前 v0 已经从“只有 hook 骨架”前进到“候选落库 + draft 渲染”，但仍未进入正式记忆写入阶段。

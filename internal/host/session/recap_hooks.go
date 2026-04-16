@@ -12,6 +12,7 @@ type recapStore interface {
 	CreateRecap(ctx context.Context, recap Recap) error
 	CreateMemoryCandidate(ctx context.Context, candidate MemoryCandidate) error
 	ListRecapsByTurn(ctx context.Context, sessionID string, turnID string) ([]Recap, error)
+	ListMemoryCandidatesBySession(ctx context.Context, sessionID string) ([]MemoryCandidate, error)
 	ListMemoryCandidatesByTurn(ctx context.Context, sessionID string, turnID string) ([]MemoryCandidate, error)
 	UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status string) error
 }
@@ -195,7 +196,7 @@ func (h *MemoryDraftHook) OnTurnRecap(ctx context.Context, input RecapInput) err
 		return nil
 	}
 
-	candidates, err := h.store.ListMemoryCandidatesByTurn(ctx, input.Session.SessionID, input.TurnID)
+	candidates, err := h.store.ListMemoryCandidatesBySession(ctx, input.Session.SessionID)
 	if err != nil {
 		return err
 	}
@@ -216,6 +217,9 @@ func (h *MemoryDraftHook) OnTurnRecap(ctx context.Context, input RecapInput) err
 	}
 
 	for _, candidate := range candidates {
+		if candidate.SessionID != input.Session.SessionID {
+			continue
+		}
 		if candidate.Status != "draft" {
 			continue
 		}
@@ -234,11 +238,20 @@ func writeMemoryDraft(path string, target string, candidates []MemoryCandidate, 
 		"",
 	}
 
+	seen := make(map[string]struct{}, len(candidates))
 	count := 0
 	for _, candidate := range candidates {
 		if candidate.Target != target {
 			continue
 		}
+		if candidate.Status != "draft" && candidate.Status != "rendered" {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(candidate.Kind) + "\x00" + strings.TrimSpace(candidate.Content))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
 		lines = append(lines, "- ["+candidate.Kind+"] "+candidate.Content)
 		count++
 	}

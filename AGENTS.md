@@ -22,6 +22,7 @@
 - Phase 3 / Task 3 已完成旧 `ReactRunner` 的保留边界收口；当前默认明确保持 `agentcore`，`react` 只作为显式 fallback 与 parity baseline 保留
 - Phase 3 / Task 4 已补齐 post-turn recap hook 骨架，说明文档见 `docs/usage/host-recap-memory-hooks-v0.md`；当前默认已通过 `StructuredRecapHook` 写入 `recaps` 表，但仍未真正落到 `MEMORY.md` / `USER.md`
 - 当前 recap 主线已继续推进到 `memory_candidates + *.draft.md`；默认 server wiring 会将 turn 终态沉淀到 `recaps + memory_candidates`，并渲染 `MEMORY.draft.md / USER.draft.md`
+- 当前 `*.draft.md` 已收敛到 session 级聚合视图；默认会对 `memory_candidates` 做去重与状态过滤，便于后续继续接 review / adopt 流程
 - Phase 3 / Task 5 已完成一轮联调文档与验证项收口；`docs/usage/web-host-local-dev.md`、`docs/usage/host-state-snapshot-v0.md` 已同步到当前代码现状
 <!-- PROCESSING WORKS:END -->
 
