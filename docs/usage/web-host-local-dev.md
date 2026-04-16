@@ -29,6 +29,7 @@
 - HITL 面板与响应入口
 - 一键启动的根级联调脚本
 - 终态 recap / memory hook 的真实 sink 接入
+  - 当前已具备 `recaps + memory_candidates` 落库，但尚未真正写入 `MEMORY.md / USER.md`
 
 ---
 
@@ -162,6 +163,8 @@ http://127.0.0.1:5173
 - 未配置 `host.acp.mode` 时，默认走 `internal/host/intrunner`，并按 `sessionId` 复用本地上下文历史
 - 未显式配置 `agentcore.run_root` 时，Host internal runner 的 runtime 数据默认收纳到 `db/agentcore/host`
 - 如果显式配置了 `agentcore.run_root`，Host internal runner 会改为使用 `<agentcore.run_root>/host`
-- `session.Service` 当前已具备 post-turn recap hook 骨架；但它仍是 best-effort 挂点，尚未真正写入 `MEMORY.md` / `USER.md`
+- `session.Service` 当前已具备 post-turn recap hook，默认会把 turn 终态写入 `recaps` 与 `memory_candidates`
+- `memory_candidates` 当前只是候选中间层，便于后续去重、审核和渲染 `MEMORY.draft.md / USER.draft.md`
+- 当前仍未真正自动写入 `MEMORY.md` / `USER.md`
 - `vite` 代理仅用于本地开发，不影响生产构建输出
 - 本地 `db/axon.db`、`db/axon.db-shm`、`db/axon.db-wal` 都属于开发产物，不应作为功能变更提交

@@ -18,6 +18,8 @@
 - best-effort 调用约束
 - 默认 structured recap 落库
   - 当前默认通过 `StructuredRecapHook` 写入 `recaps` 表
+- 默认 memory candidate 落库
+  - 当前默认通过 `MemoryCandidateHook` 写入 `memory_candidates` 表
 
 当前还不具备：
 
@@ -76,10 +78,35 @@
   - `target = assistant | host`
   - `content = summary 或 failure`
   - `metadata.phase`
+- 当前默认 memory candidate sink 会写入：
+  - `target = MEMORY | USER`
+  - `status = draft`
+  - `source_recap_id = recap_id`
+  - `kind = turn_learning | user_preference`
+  - `metadata.phase`
 
 ---
 
-## 4. 失败策略
+## 4. 当前落库路径
+
+当前默认 server wiring 已接入两层 sink：
+
+1. `recaps`
+   - 保留 turn 终态 recap 的结构化事实
+2. `memory_candidates`
+   - 保留后续可能写入 `MEMORY.md` / `USER.md` 的候选草案
+
+这里的设计重点是：
+
+- 先把候选写入单独表
+- 不直接改正式记忆文件
+- 后续可以做人审、去重、合并、拒绝或二次润色
+
+也就是说，当前 v0 已经从“只有 hook 骨架”前进到“有可审查的候选落库中间层”，但仍未进入正式记忆写入阶段。
+
+---
+
+## 5. 失败策略
 
 当前 hook 是 best-effort：
 
@@ -91,7 +118,7 @@
 
 ---
 
-## 5. 后续接入建议
+## 6. 后续接入建议
 
 下一步如果要继续增强，可以优先接下面几类 sink：
 
@@ -100,7 +127,8 @@
 2. structured recap store
    - 已完成最小版本，当前默认写入 `recaps` 表
 3. memory candidate sink
-   - 生成候选 `MEMORY.md` / `USER.md` 更新草案
+   - 已完成最小版本，当前默认写入 `memory_candidates` 表
+   - 下一步再把候选渲染成 `MEMORY.draft.md` / `USER.draft.md`
 4. background review sink
    - 把复杂任务结果送到后台 review / skill 提炼流程
 

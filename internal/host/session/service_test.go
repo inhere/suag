@@ -1176,6 +1176,72 @@ func TestService_StartTurnStructuredRecapHookPersistsRecap(t *testing.T) {
 	}
 }
 
+func TestService_StartTurnRecapHookPersistsMemoryCandidates(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "Need to keep wait/resume rules stable and user prefers concise host status feedback.",
+		},
+	}
+	now := time.Date(2026, 4, 16, 11, 30, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+		RecapHooks: []RecapHook{
+			NewStructuredRecapHook(store, func() time.Time { return now }),
+			NewMemoryCandidateHook(store, func() time.Time { return now }),
+		},
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_memory_candidates",
+		AgentID:       "default",
+		UserMessage:   "finish with memory candidates",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	candidates, err := store.ListMemoryCandidatesByTurn(ctx, "sess_memory_candidates", result.TurnID)
+	if err != nil {
+		t.Fatalf("ListMemoryCandidatesByTurn() error = %v", err)
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("ListMemoryCandidatesByTurn() len = %d, want 2", len(candidates))
+	}
+	if candidates[0].SourceRecapID == "" {
+		t.Fatal("ListMemoryCandidatesByTurn()[0].SourceRecapID is empty")
+	}
+	if candidates[0].Status != "draft" {
+		t.Fatalf("ListMemoryCandidatesByTurn()[0].Status = %q, want %q", candidates[0].Status, "draft")
+	}
+	if candidates[0].Metadata["phase"] != string(RecapPhaseCompleted) {
+		t.Fatalf("ListMemoryCandidatesByTurn()[0].Metadata[phase] = %v, want %q", candidates[0].Metadata["phase"], RecapPhaseCompleted)
+	}
+
+	foundMemory := false
+	foundUser := false
+	for _, candidate := range candidates {
+		if candidate.Target == "MEMORY" {
+			foundMemory = true
+		}
+		if candidate.Target == "USER" {
+			foundUser = true
+		}
+	}
+	if !foundMemory {
+		t.Fatal("expected MEMORY candidate")
+	}
+	if !foundUser {
+		t.Fatal("expected USER candidate")
+	}
+}
+
 func TestService_StartTurnPersistsFailedLifecycleState(t *testing.T) {
 	t.Parallel()
 

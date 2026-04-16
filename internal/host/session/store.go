@@ -23,5 +23,7 @@ type Store interface {
 	ListExternalTasksByRun(ctx context.Context, runID string) ([]ExternalTask, error)
 	CreateRecap(ctx context.Context, recap Recap) error
 	ListRecapsByTurn(ctx context.Context, sessionID string, turnID string) ([]Recap, error)
+	CreateMemoryCandidate(ctx context.Context, candidate MemoryCandidate) error
+	ListMemoryCandidatesByTurn(ctx context.Context, sessionID string, turnID string) ([]MemoryCandidate, error)
 	Close() error
 }

@@ -36,6 +36,7 @@ func (a *App) RunServer(ctx context.Context) error {
 	sessionSvc := session.NewService(sessionStore, a.bus, sessionRunner, session.ServiceConfig{
 		RecapHooks: []session.RecapHook{
 			session.NewStructuredRecapHook(sessionStore, nil),
+			session.NewMemoryCandidateHook(sessionStore, nil),
 		},
 	})
 	h := gateway.NewHandler(a.orch, sessionStore, sessionSvc, a.bus, a.hitlMgr)

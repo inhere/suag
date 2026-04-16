@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -409,6 +410,55 @@ func TestSQLiteStore_CreateAndListRecapsByTurn(t *testing.T) {
 	}
 }
 
+func TestSQLiteStore_CreateAndListMemoryCandidatesByTurn(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newTestStore(t)
+	now := time.Date(2026, 4, 16, 11, 0, 0, 0, time.UTC)
+
+	candidate := MemoryCandidate{
+		CandidateID:   "mcand_001",
+		SessionID:     "sess_001",
+		TurnID:        "turn_001",
+		RunID:         "run_001",
+		SourceRecapID: "recap_001",
+		Target:        "MEMORY",
+		Kind:          "turn_learning",
+		Content:       "Prefer stable host state contracts for waiting turns.",
+		Score:         0.8,
+		Status:        "draft",
+		CreatedAt:     now,
+		Metadata: map[string]any{
+			"phase": "completed",
+		},
+	}
+
+	if err := store.CreateMemoryCandidate(ctx, candidate); err != nil {
+		t.Fatalf("CreateMemoryCandidate() error = %v", err)
+	}
+
+	candidates, err := store.ListMemoryCandidatesByTurn(ctx, "sess_001", "turn_001")
+	if err != nil {
+		t.Fatalf("ListMemoryCandidatesByTurn() error = %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("ListMemoryCandidatesByTurn() len = %d, want 1", len(candidates))
+	}
+	if candidates[0].CandidateID != "mcand_001" {
+		t.Fatalf("ListMemoryCandidatesByTurn()[0].CandidateID = %q, want %q", candidates[0].CandidateID, "mcand_001")
+	}
+	if candidates[0].SourceRecapID != "recap_001" {
+		t.Fatalf("ListMemoryCandidatesByTurn()[0].SourceRecapID = %q, want %q", candidates[0].SourceRecapID, "recap_001")
+	}
+	if candidates[0].Target != "MEMORY" {
+		t.Fatalf("ListMemoryCandidatesByTurn()[0].Target = %q, want %q", candidates[0].Target, "MEMORY")
+	}
+	if candidates[0].Metadata["phase"] != "completed" {
+		t.Fatalf("ListMemoryCandidatesByTurn()[0].Metadata[phase] = %v, want %q", candidates[0].Metadata["phase"], "completed")
+	}
+}
+
 func newTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 
@@ -447,13 +497,14 @@ func applyHostSessionMigration(t *testing.T, dbPath string) {
 		}
 	}()
 
-	upSQL := readHostSessionMigrationUp(t)
-	if _, err := db.Exec(upSQL); err != nil {
-		t.Fatalf("db.Exec() migration error = %v", err)
+	for _, upSQL := range readHostSessionMigrationUps(t) {
+		if _, err := db.Exec(upSQL); err != nil {
+			t.Fatalf("db.Exec() migration error = %v", err)
+		}
 	}
 }
 
-func readHostSessionMigrationUp(t *testing.T) string {
+func readHostSessionMigrationUps(t *testing.T) []string {
 	t.Helper()
 
 	_, file, _, ok := runtime.Caller(0)
@@ -461,24 +512,37 @@ func readHostSessionMigrationUp(t *testing.T) string {
 		t.Fatal("runtime.Caller() failed")
 	}
 
-	migrationPath := filepath.Join(
+	migrationDir := filepath.Join(
 		filepath.Dir(file),
 		"..", "..", "..",
-		"db", "migrations", "20260411-100000-create-host-session-foundation.sql",
+		"db", "migrations",
 	)
-	content, err := os.ReadFile(migrationPath)
+	entries, err := filepath.Glob(filepath.Join(migrationDir, "*.sql"))
 	if err != nil {
-		t.Fatalf("os.ReadFile() error = %v", err)
+		t.Fatalf("filepath.Glob() error = %v", err)
+	}
+	sort.Strings(entries)
+	if len(entries) == 0 {
+		t.Fatalf("no migration files found in %s", migrationDir)
 	}
 
-	parts := strings.Split(string(content), "-- Migrate:DOWN")
-	if len(parts) != 2 {
-		t.Fatalf("unexpected migration format in %s", migrationPath)
-	}
+	ups := make([]string, 0, len(entries))
+	for _, migrationPath := range entries {
+		content, err := os.ReadFile(migrationPath)
+		if err != nil {
+			t.Fatalf("os.ReadFile() error = %v", err)
+		}
 
-	upSQL := strings.TrimSpace(strings.TrimPrefix(parts[0], "-- Migrate:UP"))
-	if upSQL == "" {
-		t.Fatalf("empty migration up section in %s", migrationPath)
+		parts := strings.Split(string(content), "-- Migrate:DOWN")
+		if len(parts) != 2 {
+			t.Fatalf("unexpected migration format in %s", migrationPath)
+		}
+
+		upSQL := strings.TrimSpace(strings.TrimPrefix(parts[0], "-- Migrate:UP"))
+		if upSQL == "" {
+			t.Fatalf("empty migration up section in %s", migrationPath)
+		}
+		ups = append(ups, upSQL)
 	}
-	return upSQL
+	return ups
 }

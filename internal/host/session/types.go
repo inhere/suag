@@ -121,3 +121,18 @@ type Recap struct {
 	CreatedAt time.Time
 	Metadata  map[string]any
 }
+
+type MemoryCandidate struct {
+	CandidateID   string
+	SessionID     string
+	TurnID        string
+	RunID         string
+	SourceRecapID string
+	Target        string
+	Kind          string
+	Content       string
+	Score         float64
+	Status        string
+	CreatedAt     time.Time
+	Metadata      map[string]any
+}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -172,13 +173,14 @@ func applyIntegrationMigration(t *testing.T, dbPath string) {
 		}
 	}()
 
-	upSQL := readIntegrationMigrationUp(t)
-	if _, err := db.Exec(upSQL); err != nil {
-		t.Fatalf("db.Exec() migration error = %v", err)
+	for _, upSQL := range readIntegrationMigrationUps(t) {
+		if _, err := db.Exec(upSQL); err != nil {
+			t.Fatalf("db.Exec() migration error = %v", err)
+		}
 	}
 }
 
-func readIntegrationMigrationUp(t *testing.T) string {
+func readIntegrationMigrationUps(t *testing.T) []string {
 	t.Helper()
 
 	_, file, _, ok := runtime.Caller(0)
@@ -186,24 +188,37 @@ func readIntegrationMigrationUp(t *testing.T) string {
 		t.Fatal("runtime.Caller() failed")
 	}
 
-	migrationPath := filepath.Join(
+	migrationDir := filepath.Join(
 		filepath.Dir(file),
 		"..", "..", "..",
-		"db", "migrations", "20260411-100000-create-host-session-foundation.sql",
+		"db", "migrations",
 	)
-	content, err := os.ReadFile(migrationPath)
+	entries, err := filepath.Glob(filepath.Join(migrationDir, "*.sql"))
 	if err != nil {
-		t.Fatalf("os.ReadFile() error = %v", err)
+		t.Fatalf("filepath.Glob() error = %v", err)
+	}
+	sort.Strings(entries)
+	if len(entries) == 0 {
+		t.Fatalf("no migration files found in %s", migrationDir)
 	}
 
-	parts := strings.Split(string(content), "-- Migrate:DOWN")
-	if len(parts) != 2 {
-		t.Fatalf("unexpected migration format in %s", migrationPath)
-	}
+	ups := make([]string, 0, len(entries))
+	for _, migrationPath := range entries {
+		content, err := os.ReadFile(migrationPath)
+		if err != nil {
+			t.Fatalf("os.ReadFile() error = %v", err)
+		}
 
-	upSQL := strings.TrimSpace(strings.TrimPrefix(parts[0], "-- Migrate:UP"))
-	if upSQL == "" {
-		t.Fatalf("empty migration up section in %s", migrationPath)
+		parts := strings.Split(string(content), "-- Migrate:DOWN")
+		if len(parts) != 2 {
+			t.Fatalf("unexpected migration format in %s", migrationPath)
+		}
+
+		upSQL := strings.TrimSpace(strings.TrimPrefix(parts[0], "-- Migrate:UP"))
+		if upSQL == "" {
+			t.Fatalf("empty migration up section in %s", migrationPath)
+		}
+		ups = append(ups, upSQL)
 	}
-	return upSQL
+	return ups
 }
