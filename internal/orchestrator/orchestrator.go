@@ -28,6 +28,8 @@ type Config struct {
 	Workspace          string
 	MaxSteps           int
 	FailThreshold      int
+	// Deprecated: keep only as a legacy config shim. Runtime selection should
+	// use SingleAgentRuntime explicitly.
 	UseAgentcore       bool
 	SingleAgentRuntime string
 	AgentcoreRunRoot   string
@@ -69,10 +71,6 @@ func (o *Orchestrator) RunTask(ctx context.Context, description string) (*agent.
 		Title:       "user task",
 		Description: description,
 		TraceID:     traceID,
-	}
-
-	if o.cfg.UseAgentcore {
-		// Backward-compatible hint; explicit runtime selector takes precedence below.
 	}
 
 	switch o.singleAgentRuntime() {
@@ -142,8 +140,7 @@ func (o *Orchestrator) singleAgentRuntime() string {
 	if runtime != "" {
 		return runtime
 	}
-	if o.cfg.UseAgentcore {
-		return "agentcore"
-	}
+	// The orchestrator now treats agentcore as the only default path. The old
+	// UseAgentcore hint is ignored so React cannot become implicit again.
 	return "agentcore"
 }

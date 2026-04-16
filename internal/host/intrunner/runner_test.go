@@ -6,6 +6,7 @@ import (
 
 	"github.com/gookit/goutil/testutil/assert"
 
+	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/host/session"
 	"github.com/inhere/axon/pkg/agentcore"
 	"github.com/inhere/axon/internal/platform/llm"
@@ -186,6 +187,41 @@ func TestRunner_RunMapsApprovalYieldToAuthRequired(t *testing.T) {
 	assert.Eq(t, "PREPARING", states[0])
 	assert.Eq(t, "THINKING", states[1])
 	assert.Eq(t, "AUTH_REQUIRED", states[2])
+}
+
+func TestRunner_RuntimeKindDefaultsToAgentcore(t *testing.T) {
+	t.Parallel()
+
+	runner, err := New(Config{
+		Provider: llm.NewMockProvider("mock"),
+		Registry: tools.NewRegistry(),
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	assert.Eq(t, agent.RuntimeAgentcore, runner.runtimeKind())
+}
+
+func TestRunner_RuntimeKindAllowsExplicitReactFallback(t *testing.T) {
+	t.Parallel()
+
+	runner, err := New(Config{
+		Provider: llm.NewMockProvider("mock"),
+		Registry: tools.NewRegistry(),
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+		Runtime:  " react ",
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	assert.Eq(t, agent.RuntimeReact, runner.runtimeKind())
 }
 
 type yieldBeforeSecondModelHostHook struct {

@@ -243,6 +243,7 @@ func (r *SessionRunner) clearActiveRuntime(sessionID string) {
 func (r *SessionRunner) runtimeKind() agent.RuntimeKind {
 	switch strings.ToLower(strings.TrimSpace(r.cfg.Runtime)) {
 	case "react":
+		// Host internal runner keeps React only as an explicit local fallback.
 		return agent.RuntimeReact
 	default:
 		return agent.RuntimeAgentcore

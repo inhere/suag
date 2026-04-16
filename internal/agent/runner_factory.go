@@ -14,6 +14,8 @@ type RuntimeKind string
 
 const (
 	RuntimeAgentcore RuntimeKind = "agentcore"
+	// RuntimeReact is a legacy fallback kept for explicit opt-in usage and
+	// parity verification while callers continue converging on agentcore.
 	RuntimeReact     RuntimeKind = "react"
 )
 
@@ -35,6 +37,7 @@ type RunnerFactoryConfig struct {
 }
 
 // NewRunner chooses the active runner implementation for an agent.
+// Agentcore is the default; React remains an explicit fallback only.
 func NewRunner(a *Agent, cfg RunnerFactoryConfig) (Runner, error) {
 	switch resolveRuntimeKind(cfg.RuntimeKind) {
 	case RuntimeReact:

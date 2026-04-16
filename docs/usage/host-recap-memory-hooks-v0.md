@@ -1,0 +1,101 @@
+# Host Recap / Memory Hooks v0
+
+> 状态：Current
+> 更新时间：2026-04-16
+
+本文档说明当前 Host v0 在 `internal/host/session.Service` 中新增的 recap hook 骨架。
+
+它的目标不是现在就定义完整记忆系统，而是先把“会话终态后如何挂 recap / memory / review sink”这件事收成一个稳定入口，避免后面接 `MEMORY.md`、`USER.md`、SQLite FTS5 时回头改主状态机。
+
+---
+
+## 1. 当前能力边界
+
+当前 Host recap hook 只具备：
+
+- turn 终态后的统一触发入口
+- completed / failed / canceled 三类 phase 区分
+- best-effort 调用约束
+
+当前还不具备：
+
+- 自动写入 `MEMORY.md`
+- 自动写入 `USER.md`
+- 自动生成结构化 recap 记录表
+- 自动触发 review agent 或后台学习循环
+
+也就是说，这一层现在只是 hook，不是完整产品能力。
+
+---
+
+## 2. 触发时机
+
+当前 `session.Service` 只会在下面三种终态后触发 recap hook：
+
+- run completed
+- run failed
+- run canceled
+
+当前明确不会触发的场景：
+
+- `INPUT_REQUIRED`
+- `AUTH_REQUIRED`
+- `EXTERNAL_RUNNING`
+- 其他 waiting 非终态
+
+这保证：
+
+- recap 只针对一次真正结束的轮次
+- 等待态不会误写总结
+- 后续继续执行时不会出现重复 recap
+
+---
+
+## 3. 输入模型
+
+当前 hook 接收的最小输入为：
+
+- `Session`
+- `TurnID`
+- `RunID`
+- `Phase`
+  - `completed`
+  - `failed`
+  - `canceled`
+- `Summary`
+- `Failure`
+
+当前约定：
+
+- `completed` 时优先看 `Summary`
+- `failed` / `canceled` 时优先看 `Failure`
+- hook 自己决定后续是否生成更丰富的 recap 文本或结构化记录
+
+---
+
+## 4. 失败策略
+
+当前 hook 是 best-effort：
+
+- hook 报错不会中断主 turn 结果
+- hook 报错不会回滚 session / turn / run 生命周期
+- hook 报错不会改变 WS / REST 对外可见状态
+
+这样设计是为了让后续 memory / review sink 可以渐进接入，而不会把 Host 主链变成脆弱依赖图。
+
+---
+
+## 5. 后续接入建议
+
+下一步如果要继续增强，可以优先接下面几类 sink：
+
+1. recap logger
+   - 先把 recap 输入落到日志或调试输出，便于人工观察
+2. structured recap store
+   - 把终态 recap 存成独立记录，便于后续检索和 review
+3. memory candidate sink
+   - 生成候选 `MEMORY.md` / `USER.md` 更新草案
+4. background review sink
+   - 把复杂任务结果送到后台 review / skill 提炼流程
+
+建议顺序是先有“稳定 hook”，再有“候选写入”，最后再考虑“自动学习闭环”。

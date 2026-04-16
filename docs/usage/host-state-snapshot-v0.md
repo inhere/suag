@@ -1,7 +1,7 @@
 # Host State Snapshot v0
 
 > 状态：Current
-> 更新时间：2026-04-15
+> 更新时间：2026-04-16
 > Schema：`axon.host.state.v0`
 > Version：`v0`
 
@@ -185,6 +185,7 @@
   - `latestMessageText` 也会被收敛到最终 summary
 - 如果 run 仍处于外部协作阶段
   - `displayState` 通常会是 `external_running`
+  - 当前当 ACP / bridge 直接返回远端仍在运行中的结果时，Host 也会将其收口为 `external_running`，不会错误补发 `run.finished`
 - 如果 run 正在等待继续输入或授权
   - `displayState` 可能会是 `input_required` 或 `auth_required`
   - `input_required` 表示可继续通过 `continue_turn` 追加用户输入
@@ -199,6 +200,8 @@
     - 其他 yield 先统一映射为 `input_required`
 - `externalTaskIds`
   - 允许一个 run 关联多个外部任务
+- `externalTaskId`
+  - 当前增量 runtime 事件与 AG-UI 映射会尽量携带稳定的 `externalTaskId`，便于把 `externalActivities` / `externalMessages` 与 `externalTasks` 对齐
 
 ---
 

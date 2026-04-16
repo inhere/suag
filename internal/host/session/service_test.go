@@ -909,6 +909,225 @@ func TestService_StartTurnPersistsCompletedLifecycleState(t *testing.T) {
 	}
 }
 
+func TestService_StartTurnRunsRecapHookForCompletedTurn(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "final summary",
+		},
+	}
+	recap := &recapRecorder{}
+	now := time.Date(2026, 4, 13, 9, 15, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now:        func() time.Time { return now },
+		RecapHooks: []RecapHook{recap},
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_recap_done",
+		AgentID:       "default",
+		UserMessage:   "finish with recap",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	if len(recap.inputs) != 1 {
+		t.Fatalf("recap inputs len = %d, want 1", len(recap.inputs))
+	}
+	if recap.inputs[0].Phase != RecapPhaseCompleted {
+		t.Fatalf("recap phase = %q, want %q", recap.inputs[0].Phase, RecapPhaseCompleted)
+	}
+	if recap.inputs[0].TurnID != result.TurnID {
+		t.Fatalf("recap turn id = %q, want %q", recap.inputs[0].TurnID, result.TurnID)
+	}
+	if recap.inputs[0].RunID != result.RunID {
+		t.Fatalf("recap run id = %q, want %q", recap.inputs[0].RunID, result.RunID)
+	}
+	if recap.inputs[0].Summary != "final summary" {
+		t.Fatalf("recap summary = %q, want %q", recap.inputs[0].Summary, "final summary")
+	}
+}
+
+func TestService_StartTurnRunsRecapHookForFailedTurn(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		err: errors.New("runner failed"),
+	}
+	recap := &recapRecorder{}
+	now := time.Date(2026, 4, 13, 9, 20, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now:        func() time.Time { return now },
+		RecapHooks: []RecapHook{recap},
+	})
+
+	_, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_recap_failed",
+		AgentID:       "default",
+		UserMessage:   "fail with recap",
+		InitiatorType: InitiatorUser,
+	})
+	if err == nil {
+		t.Fatal("StartTurn() error = nil, want failure")
+	}
+
+	if len(recap.inputs) != 1 {
+		t.Fatalf("recap inputs len = %d, want 1", len(recap.inputs))
+	}
+	if recap.inputs[0].Phase != RecapPhaseFailed {
+		t.Fatalf("recap phase = %q, want %q", recap.inputs[0].Phase, RecapPhaseFailed)
+	}
+	if recap.inputs[0].Failure != "runner failed" {
+		t.Fatalf("recap failure = %q, want %q", recap.inputs[0].Failure, "runner failed")
+	}
+}
+
+func TestService_StartTurnRunsRecapHookForCanceledTurn(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := newBlockingRunner()
+	recap := &recapRecorder{}
+	now := time.Date(2026, 4, 13, 9, 25, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now:        func() time.Time { return now },
+		RecapHooks: []RecapHook{recap},
+	})
+
+	startDone := make(chan error, 1)
+	go func() {
+		_, err := svc.StartTurn(ctx, StartTurnInput{
+			SessionID:     "sess_recap_cancel",
+			AgentID:       "default",
+			UserMessage:   "cancel with recap",
+			InitiatorType: InitiatorUser,
+		})
+		startDone <- err
+	}()
+
+	runner.WaitUntilRunning(t)
+
+	if err := svc.StopTurn(ctx, StopTurnInput{
+		SessionID: "sess_recap_cancel",
+		TurnID:    runner.LastRequest().TurnID,
+		Reason:    "operator canceled",
+	}); err != nil {
+		t.Fatalf("StopTurn() error = %v", err)
+	}
+
+	select {
+	case err := <-startDone:
+		if err != nil {
+			t.Fatalf("StartTurn() error after stop = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartTurn() did not finish after stop")
+	}
+
+	if len(recap.inputs) != 1 {
+		t.Fatalf("recap inputs len = %d, want 1", len(recap.inputs))
+	}
+	if recap.inputs[0].Phase != RecapPhaseCanceled {
+		t.Fatalf("recap phase = %q, want %q", recap.inputs[0].Phase, RecapPhaseCanceled)
+	}
+	if recap.inputs[0].Failure != "operator canceled" {
+		t.Fatalf("recap failure = %q, want %q", recap.inputs[0].Failure, "operator canceled")
+	}
+}
+
+func TestService_StartTurnWaitingStateDoesNotRunRecapHook(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
+				},
+			},
+		},
+	}
+	recap := &recapRecorder{}
+	now := time.Date(2026, 4, 13, 9, 30, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now:        func() time.Time { return now },
+		RecapHooks: []RecapHook{recap},
+	})
+
+	_, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_recap_wait",
+		AgentID:       "default",
+		UserMessage:   "wait without recap",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	if len(recap.inputs) != 0 {
+		t.Fatalf("recap inputs len = %d, want 0", len(recap.inputs))
+	}
+}
+
+func TestService_StartTurnIgnoresRecapHookError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "final summary",
+		},
+	}
+	recap := &recapRecorder{err: errors.New("recap sink failed")}
+	now := time.Date(2026, 4, 13, 9, 35, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now:        func() time.Time { return now },
+		RecapHooks: []RecapHook{recap},
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_recap_best_effort",
+		AgentID:       "default",
+		UserMessage:   "finish despite recap error",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+	if result.RunID == "" {
+		t.Fatal("StartTurn().RunID is empty")
+	}
+	if len(recap.inputs) != 1 {
+		t.Fatalf("recap inputs len = %d, want 1", len(recap.inputs))
+	}
+}
+
 func TestService_StartTurnPersistsFailedLifecycleState(t *testing.T) {
 	t.Parallel()
 
@@ -1066,6 +1285,16 @@ func (f *fakeRunner) Run(_ context.Context, in RuntimeRequest) (RuntimeResult, e
 		}
 	}
 	return f.result, f.err
+}
+
+type recapRecorder struct {
+	inputs []RecapInput
+	err    error
+}
+
+func (r *recapRecorder) OnTurnRecap(_ context.Context, input RecapInput) error {
+	r.inputs = append(r.inputs, input)
+	return r.err
 }
 
 type blockingRunner struct {

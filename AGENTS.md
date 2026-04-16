@@ -19,8 +19,9 @@
 - Host internal runner 的 runtime 数据目录已收口到统一配置；默认使用 `db/agentcore/host`，避免继续散落到工作目录 `.agentcore/`
 - `cmd/axon` 逻辑已收拢到 `internal/app` 与 `internal/config`，CLI 入口后续保持薄封装，避免命令层继续承载业务组装细节
 - `docs/usage/host-state-snapshot-v0.md` 与 `docs/usage/llm-config-v0.md` 已作为当前 v0 协议与配置基线文档
-- Phase 1 已完成 `platform/llm -> pkg/agentcore/api` 的第一方收口，`cmd/axon` 现已补齐仅基于 `llm.api_type + llm.provider_name` 的归一化配置入口与测试覆盖
-- 当前继续推进的主线已切到 Task 3-5：收窄旧 `ReactRunner` fallback、补 post-turn recap/memory hook 骨架，并完善本地联调与恢复验证文档/测试
+- Phase 3 / Task 3 已完成旧 `ReactRunner` 的保留边界收口；当前默认明确保持 `agentcore`，`react` 只作为显式 fallback 与 parity baseline 保留
+- Phase 3 / Task 4 已补齐 post-turn recap hook 骨架，说明文档见 `docs/usage/host-recap-memory-hooks-v0.md`；当前仍是 best-effort 挂点，尚未真正落到 `MEMORY.md` / `USER.md`
+- Phase 3 / Task 5 已完成一轮联调文档与验证项收口；`docs/usage/web-host-local-dev.md`、`docs/usage/host-state-snapshot-v0.md` 已同步到当前代码现状
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

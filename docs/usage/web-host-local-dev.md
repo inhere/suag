@@ -1,7 +1,7 @@
 # Web + Host 本地联调
 
 > 状态：Current
-> 更新时间：2026-04-15
+> 更新时间：2026-04-16
 
 本文档只描述 Axon v0 当前最小可用的本地联调流程。
 
@@ -18,6 +18,7 @@
 - 未配置 `host.acp.mode` 时，Host 默认走 internal runner 执行单 agent 回合
 - internal runner 在返回 waiting 态时不会被错误收尾为 completed，同一 `sessionId` 的下一次 `continue_turn` 会优先尝试复用 suspended runtime
 - internal runner 已开始按 `yield reason` 区分等待态；包含 `auth` / `approval` / `authorize` 的 yield 会下发为 `AUTH_REQUIRED`
+- ACP runner 当前也已收口到同一 Host contract：远端仍在运行中的 dispatch 会落为 `EXTERNAL_RUNNING` 非终态，而不是错误收尾为 completed
 - Web 通过 `/ws` 接收会话快照与增量事件
 - 刷新后按需恢复 focused run detail
 - 当前 turn 进入 waiting 状态时，通过 `Add Hint` 发送 `continue_turn`
@@ -25,9 +26,9 @@
 
 当前还未收口的内容：
 
-- `Stop` 的前后端闭环
 - HITL 面板与响应入口
 - 一键启动的根级联调脚本
+- 终态 recap / memory hook 的真实 sink 接入
 
 ---
 
@@ -143,7 +144,8 @@ http://127.0.0.1:5173
 3. 输入一条任务消息并启动 turn
 4. 观察中栏 turn/runs 与右栏 focused run detail 是否持续更新
 5. 如果 turn 进入 waiting 状态，点击右栏 `Add Hint`
-6. 刷新页面，确认 current session 与 focused run detail 可恢复
+6. 如果 turn 处于运行中，尝试 `Stop`
+7. 刷新页面，确认 current session 与 focused run detail 可恢复
 
 ---
 
@@ -152,10 +154,14 @@ http://127.0.0.1:5173
 - `STATE_SNAPSHOT v0` 的消费契约见 `docs/usage/host-state-snapshot-v0.md`
 - `/api/sessions/{id}/events?after_seq=` 使用的是 session 级单调递增 `sequence` 游标，不会在新 turn 时重置
 - Host 当前已开始下发 `run.status` 非终态事件，可用于在联调时观察 `dispatching`、`external_running`、`input_required`、`auth_required`
+- WS command 当前已收口为：
+  - 命令成功时再下发 `command.accepted`
+  - 命令失败时直接下发 `command.error`
 - 当前 Host server 的 session runner 选择规则是：
   - 配置了 `host.acp.mode` 时，走 `internal/host/acpbridge`
 - 未配置 `host.acp.mode` 时，默认走 `internal/host/intrunner`，并按 `sessionId` 复用本地上下文历史
 - 未显式配置 `agentcore.run_root` 时，Host internal runner 的 runtime 数据默认收纳到 `db/agentcore/host`
 - 如果显式配置了 `agentcore.run_root`，Host internal runner 会改为使用 `<agentcore.run_root>/host`
+- `session.Service` 当前已具备 post-turn recap hook 骨架；但它仍是 best-effort 挂点，尚未真正写入 `MEMORY.md` / `USER.md`
 - `vite` 代理仅用于本地开发，不影响生产构建输出
 - 本地 `db/axon.db`、`db/axon.db-shm`、`db/axon.db-wal` 都属于开发产物，不应作为功能变更提交

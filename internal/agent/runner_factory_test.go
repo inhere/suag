@@ -47,6 +47,21 @@ func TestNewRunner_CanSelectReact(t *testing.T) {
 	}
 }
 
+func TestNewRunner_TrimmedReactSelectionRemainsExplicit(t *testing.T) {
+	a := newTestAgent(llm.NewMockProvider("mock").QueueText("hello"), newTestRegistry())
+	runner, err := agent.NewRunner(a, agent.RunnerFactoryConfig{
+		RuntimeKind: agent.RuntimeKind(" React "),
+		MaxSteps:    5,
+	})
+	if err != nil {
+		t.Fatalf("NewRunner() error: %v", err)
+	}
+
+	if _, ok := runner.(*agent.ReactRunner); !ok {
+		t.Fatalf("runner type = %T, want *agent.ReactRunner", runner)
+	}
+}
+
 func TestNewRunner_ZeroMaxStepsDefaultsConsistently(t *testing.T) {
 	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {

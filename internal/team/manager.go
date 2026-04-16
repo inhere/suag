@@ -283,6 +283,7 @@ func (m *Manager) DisbandTeam(teamID string) {
 func (m *Manager) newRunner(a *agent.Agent) (agent.Runner, func(), error) {
 	switch m.runtime() {
 	case "react":
+		// React remains an explicit fallback for legacy callers only.
 		runner, err := agent.NewRunner(a, agent.RunnerFactoryConfig{
 			RuntimeKind: agent.RuntimeReact,
 			Tracer:      m.tracer,
@@ -315,6 +316,8 @@ func (m *Manager) runtime() string {
 	if runtime != "" {
 		return runtime
 	}
+	// Team execution defaults to agentcore unless a legacy fallback is
+	// explicitly requested.
 	return "agentcore"
 }
 

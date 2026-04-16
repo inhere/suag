@@ -43,7 +43,29 @@ type RuntimeEvent struct {
 }
 
 type ServiceConfig struct {
-	Now func() time.Time
+	Now        func() time.Time
+	RecapHooks []RecapHook
+}
+
+type RecapPhase string
+
+const (
+	RecapPhaseCompleted RecapPhase = "completed"
+	RecapPhaseFailed    RecapPhase = "failed"
+	RecapPhaseCanceled  RecapPhase = "canceled"
+)
+
+type RecapInput struct {
+	Session Session
+	TurnID   string
+	RunID    string
+	Phase    RecapPhase
+	Summary  string
+	Failure  string
+}
+
+type RecapHook interface {
+	OnTurnRecap(ctx context.Context, input RecapInput) error
 }
 
 type StartTurnInput struct {
@@ -88,6 +110,7 @@ type Service struct {
 	pub    Publisher
 	runner Runner
 	now    func() time.Time
+	recaps []RecapHook
 
 	activeMu         sync.Mutex
 	activeExecutions map[string]*activeExecution
@@ -104,6 +127,7 @@ func NewService(store Store, pub Publisher, runner Runner, cfg ServiceConfig) *S
 		pub:              pub,
 		runner:           runner,
 		now:              nowFn,
+		recaps:           append([]RecapHook(nil), cfg.RecapHooks...),
 		activeExecutions: make(map[string]*activeExecution),
 	}
 }
@@ -303,6 +327,13 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			if _, appendErr := s.appendAndPublishEvent(ctx, canceledEvent); appendErr != nil {
 				return StartTurnResult{}, fmt.Errorf("append canceled event: %w", appendErr)
 			}
+			s.runRecapHooks(ctx, RecapInput{
+				Session: sessionModel,
+				TurnID:  turnID,
+				RunID:   runID,
+				Phase:   RecapPhaseCanceled,
+				Failure: reason,
+			})
 			return StartTurnResult{
 				SessionID: sessionID,
 				TurnID:    turnID,
@@ -330,6 +361,13 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			if _, appendErr := s.appendAndPublishEvent(ctx, failedEvent); appendErr != nil {
 				return StartTurnResult{}, fmt.Errorf("append failed event: %w", appendErr)
 			}
+			s.runRecapHooks(ctx, RecapInput{
+				Session: sessionModel,
+				TurnID:  turnID,
+				RunID:   runID,
+				Phase:   RecapPhaseFailed,
+				Failure: err.Error(),
+			})
 			return StartTurnResult{}, fmt.Errorf("run runtime request: %w", err)
 		}
 		if result.ExternalTask != nil {
@@ -369,6 +407,13 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 		if _, err := s.appendAndPublishEvent(ctx, finishedEvent); err != nil {
 			return StartTurnResult{}, fmt.Errorf("append finished event: %w", err)
 		}
+		s.runRecapHooks(ctx, RecapInput{
+			Session: sessionModel,
+			TurnID:  turnID,
+			RunID:   runID,
+			Phase:   RecapPhaseCompleted,
+			Summary: result.Summary,
+		})
 	}
 
 	return StartTurnResult{
@@ -535,6 +580,23 @@ func (s *Service) appendAndPublishEvent(ctx context.Context, event RunEvent) (Ru
 		}
 	}
 	return storedEvent, nil
+}
+
+func (s *Service) runRecapHooks(ctx context.Context, input RecapInput) {
+	if s == nil || len(s.recaps) == 0 {
+		return
+	}
+
+	for _, hook := range s.recaps {
+		if hook == nil {
+			continue
+		}
+		if err := hook.OnTurnRecap(ctx, input); err != nil {
+			// Recap hooks are best-effort. They must never break the host main
+			// lifecycle because later memory/review sinks may be optional.
+			continue
+		}
+	}
 }
 
 func (s *Service) applyRuntimeStatus(ctx context.Context, sessionModel Session, turnID, runID string, event RuntimeEvent) error {
