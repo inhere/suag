@@ -11,17 +11,18 @@
 
 ## 1. 当前能力边界
 
-当前 Host recap hook 只具备：
+当前 Host recap hook 已具备：
 
 - turn 终态后的统一触发入口
 - completed / failed / canceled 三类 phase 区分
 - best-effort 调用约束
+- 默认 structured recap 落库
+  - 当前默认通过 `StructuredRecapHook` 写入 `recaps` 表
 
 当前还不具备：
 
 - 自动写入 `MEMORY.md`
 - 自动写入 `USER.md`
-- 自动生成结构化 recap 记录表
 - 自动触发 review agent 或后台学习循环
 
 也就是说，这一层现在只是 hook，不是完整产品能力。
@@ -70,6 +71,11 @@
 - `completed` 时优先看 `Summary`
 - `failed` / `canceled` 时优先看 `Failure`
 - hook 自己决定后续是否生成更丰富的 recap 文本或结构化记录
+- 当前默认 structured sink 会写入：
+  - `kind = turn_recap`
+  - `target = assistant | host`
+  - `content = summary 或 failure`
+  - `metadata.phase`
 
 ---
 
@@ -92,7 +98,7 @@
 1. recap logger
    - 先把 recap 输入落到日志或调试输出，便于人工观察
 2. structured recap store
-   - 把终态 recap 存成独立记录，便于后续检索和 review
+   - 已完成最小版本，当前默认写入 `recaps` 表
 3. memory candidate sink
    - 生成候选 `MEMORY.md` / `USER.md` 更新草案
 4. background review sink

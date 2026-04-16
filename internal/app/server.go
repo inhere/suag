@@ -33,7 +33,11 @@ func (a *App) RunServer(ctx context.Context) error {
 		return err
 	}
 
-	sessionSvc := session.NewService(sessionStore, a.bus, sessionRunner, session.ServiceConfig{})
+	sessionSvc := session.NewService(sessionStore, a.bus, sessionRunner, session.ServiceConfig{
+		RecapHooks: []session.RecapHook{
+			session.NewStructuredRecapHook(sessionStore, nil),
+		},
+	})
 	h := gateway.NewHandler(a.orch, sessionStore, sessionSvc, a.bus, a.hitlMgr)
 	addr := gkconfig.String("server.addr", ":8180")
 	if addr == "" {

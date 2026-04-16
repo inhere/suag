@@ -1128,6 +1128,54 @@ func TestService_StartTurnIgnoresRecapHookError(t *testing.T) {
 	}
 }
 
+func TestService_StartTurnStructuredRecapHookPersistsRecap(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "final summary",
+		},
+	}
+	now := time.Date(2026, 4, 16, 10, 30, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+		RecapHooks: []RecapHook{
+			NewStructuredRecapHook(store, func() time.Time { return now }),
+		},
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_structured_recap",
+		AgentID:       "default",
+		UserMessage:   "finish with structured recap",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	recaps, err := store.ListRecapsByTurn(ctx, "sess_structured_recap", result.TurnID)
+	if err != nil {
+		t.Fatalf("ListRecapsByTurn() error = %v", err)
+	}
+	if len(recaps) != 1 {
+		t.Fatalf("ListRecapsByTurn() len = %d, want 1", len(recaps))
+	}
+	if recaps[0].RunID != result.RunID {
+		t.Fatalf("ListRecapsByTurn()[0].RunID = %q, want %q", recaps[0].RunID, result.RunID)
+	}
+	if recaps[0].Content != "final summary" {
+		t.Fatalf("ListRecapsByTurn()[0].Content = %q, want %q", recaps[0].Content, "final summary")
+	}
+	if recaps[0].Metadata["phase"] != string(RecapPhaseCompleted) {
+		t.Fatalf("ListRecapsByTurn()[0].Metadata[phase] = %v, want %q", recaps[0].Metadata["phase"], RecapPhaseCompleted)
+	}
+}
+
 func TestService_StartTurnPersistsFailedLifecycleState(t *testing.T) {
 	t.Parallel()
 

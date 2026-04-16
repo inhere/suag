@@ -21,5 +21,7 @@ type Store interface {
 	UpdateExternalTask(ctx context.Context, task ExternalTask) error
 	ListExternalTasksBySession(ctx context.Context, sessionID string) ([]ExternalTask, error)
 	ListExternalTasksByRun(ctx context.Context, runID string) ([]ExternalTask, error)
+	CreateRecap(ctx context.Context, recap Recap) error
+	ListRecapsByTurn(ctx context.Context, sessionID string, turnID string) ([]Recap, error)
 	Close() error
 }

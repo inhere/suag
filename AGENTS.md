@@ -20,7 +20,7 @@
 - `cmd/axon` 逻辑已收拢到 `internal/app` 与 `internal/config`，CLI 入口后续保持薄封装，避免命令层继续承载业务组装细节
 - `docs/usage/host-state-snapshot-v0.md` 与 `docs/usage/llm-config-v0.md` 已作为当前 v0 协议与配置基线文档
 - Phase 3 / Task 3 已完成旧 `ReactRunner` 的保留边界收口；当前默认明确保持 `agentcore`，`react` 只作为显式 fallback 与 parity baseline 保留
-- Phase 3 / Task 4 已补齐 post-turn recap hook 骨架，说明文档见 `docs/usage/host-recap-memory-hooks-v0.md`；当前仍是 best-effort 挂点，尚未真正落到 `MEMORY.md` / `USER.md`
+- Phase 3 / Task 4 已补齐 post-turn recap hook 骨架，说明文档见 `docs/usage/host-recap-memory-hooks-v0.md`；当前默认已通过 `StructuredRecapHook` 写入 `recaps` 表，但仍未真正落到 `MEMORY.md` / `USER.md`
 - Phase 3 / Task 5 已完成一轮联调文档与验证项收口；`docs/usage/web-host-local-dev.md`、`docs/usage/host-state-snapshot-v0.md` 已同步到当前代码现状
 <!-- PROCESSING WORKS:END -->
 

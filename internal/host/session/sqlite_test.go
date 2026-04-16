@@ -366,6 +366,49 @@ func TestSQLiteStore_UpdateTurnStatusAndRunLifecycle(t *testing.T) {
 	}
 }
 
+func TestSQLiteStore_CreateAndListRecapsByTurn(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newTestStore(t)
+	now := time.Date(2026, 4, 16, 10, 0, 0, 0, time.UTC)
+
+	recap := Recap{
+		RecapID:   "recap_001",
+		SessionID: "sess_001",
+		TurnID:    "turn_001",
+		RunID:     "run_001",
+		Kind:      "turn_recap",
+		Target:    "assistant",
+		Content:   "final summary",
+		CreatedAt: now,
+		Metadata: map[string]any{
+			"phase": "completed",
+		},
+	}
+
+	if err := store.CreateRecap(ctx, recap); err != nil {
+		t.Fatalf("CreateRecap() error = %v", err)
+	}
+
+	recaps, err := store.ListRecapsByTurn(ctx, "sess_001", "turn_001")
+	if err != nil {
+		t.Fatalf("ListRecapsByTurn() error = %v", err)
+	}
+	if len(recaps) != 1 {
+		t.Fatalf("ListRecapsByTurn() len = %d, want 1", len(recaps))
+	}
+	if recaps[0].RecapID != "recap_001" {
+		t.Fatalf("ListRecapsByTurn()[0].RecapID = %q, want %q", recaps[0].RecapID, "recap_001")
+	}
+	if recaps[0].Content != "final summary" {
+		t.Fatalf("ListRecapsByTurn()[0].Content = %q, want %q", recaps[0].Content, "final summary")
+	}
+	if recaps[0].Metadata["phase"] != "completed" {
+		t.Fatalf("ListRecapsByTurn()[0].Metadata[phase] = %v, want %q", recaps[0].Metadata["phase"], "completed")
+	}
+}
+
 func newTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 

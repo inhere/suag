@@ -561,6 +561,86 @@ func (s *SQLiteStore) listExternalTasks(ctx context.Context, query string, arg s
 	return tasks, nil
 }
 
+func (s *SQLiteStore) CreateRecap(ctx context.Context, recap Recap) error {
+	if err := validateID("recap", recap.RecapID); err != nil {
+		return err
+	}
+	if err := validateID("session", recap.SessionID); err != nil {
+		return err
+	}
+	if err := validateID("turn", recap.TurnID); err != nil {
+		return err
+	}
+	metadata, err := marshalJSON(recap.Metadata)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO recaps (recap_id, session_id, turn_id, run_id, kind, target, content, created_at, metadata_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, recap.RecapID, recap.SessionID, recap.TurnID, recap.RunID, recap.Kind, recap.Target, recap.Content, formatTime(recap.CreatedAt), metadata)
+	if err != nil {
+		return fmt.Errorf("create recap: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ListRecapsByTurn(ctx context.Context, sessionID string, turnID string) ([]Recap, error) {
+	if err := validateID("session", sessionID); err != nil {
+		return nil, err
+	}
+	if err := validateID("turn", turnID); err != nil {
+		return nil, err
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT recap_id, session_id, turn_id, run_id, kind, target, content, created_at, metadata_json
+		FROM recaps
+		WHERE session_id = ? AND turn_id = ?
+		ORDER BY created_at ASC, recap_id ASC
+	`, sessionID, turnID)
+	if err != nil {
+		return nil, fmt.Errorf("list recaps by turn: %w", err)
+	}
+	defer rows.Close()
+
+	recaps := make([]Recap, 0)
+	for rows.Next() {
+		var (
+			recap           Recap
+			createdAt       string
+			rawMetadataJSON []byte
+		)
+		if err := rows.Scan(
+			&recap.RecapID,
+			&recap.SessionID,
+			&recap.TurnID,
+			&recap.RunID,
+			&recap.Kind,
+			&recap.Target,
+			&recap.Content,
+			&createdAt,
+			&rawMetadataJSON,
+		); err != nil {
+			return nil, fmt.Errorf("scan recap: %w", err)
+		}
+		recap.CreatedAt, err = parseTime(createdAt)
+		if err != nil {
+			return nil, err
+		}
+		recap.Metadata, err = unmarshalJSONMap(rawMetadataJSON)
+		if err != nil {
+			return nil, err
+		}
+		recaps = append(recaps, recap)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate recaps: %w", err)
+	}
+	return recaps, nil
+}
+
 func (s *SQLiteStore) Close() error {
 	if s == nil || s.db == nil {
 		return nil
