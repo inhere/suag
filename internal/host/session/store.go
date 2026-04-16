@@ -25,5 +25,6 @@ type Store interface {
 	ListRecapsByTurn(ctx context.Context, sessionID string, turnID string) ([]Recap, error)
 	CreateMemoryCandidate(ctx context.Context, candidate MemoryCandidate) error
 	ListMemoryCandidatesByTurn(ctx context.Context, sessionID string, turnID string) ([]MemoryCandidate, error)
+	UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status string) error
 	Close() error
 }

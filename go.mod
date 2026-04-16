@@ -9,7 +9,6 @@ require (
 	github.com/gookit/config/v2 v2.2.7
 	github.com/gookit/goutil v0.7.4
 	github.com/gookit/ini/v2 v2.3.2
-	github.com/oklog/ulid/v2 v2.1.1
 	golang.org/x/sys v0.30.0
 	modernc.org/sqlite v1.31.1
 )

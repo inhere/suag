@@ -27,3 +27,23 @@ func TestResolveHostAgentcoreRunRoot_AppendsHostToConfiguredRoot(t *testing.T) {
 
 	assert.Eq(t, filepath.Join("data", "runtime", "host"), root)
 }
+
+func TestResolveHostMemoryDraftRoot_DefaultsUnderHostRuntimeRoot(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	root := ResolveHostMemoryDraftRoot()
+
+	assert.Eq(t, filepath.Join("db", "agentcore", "host"), root)
+}
+
+func TestResolveHostMemoryDraftRoot_UsesConfiguredRoot(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	_ = gkconfig.Set("host.memory.root", filepath.Join("data", "memory"))
+
+	root := ResolveHostMemoryDraftRoot()
+
+	assert.Eq(t, filepath.Join("data", "memory"), root)
+}

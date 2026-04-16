@@ -728,6 +728,22 @@ func (s *SQLiteStore) ListMemoryCandidatesByTurn(ctx context.Context, sessionID 
 	return candidates, nil
 }
 
+func (s *SQLiteStore) UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status string) error {
+	if err := validateID("memory candidate", candidateID); err != nil {
+		return err
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE memory_candidates
+		SET status = ?
+		WHERE candidate_id = ?
+	`, strings.TrimSpace(status), candidateID)
+	if err != nil {
+		return fmt.Errorf("update memory candidate status: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) Close() error {
 	if s == nil || s.db == nil {
 		return nil

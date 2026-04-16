@@ -44,3 +44,11 @@ func ResolveHostAgentcoreRunRoot() string {
 	}
 	return filepath.Join(filepath.Clean(filepath.FromSlash(root)), "host")
 }
+
+func ResolveHostMemoryDraftRoot() string {
+	root := strings.TrimSpace(gkconfig.String("host.memory.root"))
+	if root == "" {
+		return filepath.Join("db", "agentcore", "host")
+	}
+	return filepath.Clean(filepath.FromSlash(root))
+}

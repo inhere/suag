@@ -164,7 +164,7 @@ http://127.0.0.1:5173
 - 未显式配置 `agentcore.run_root` 时，Host internal runner 的 runtime 数据默认收纳到 `db/agentcore/host`
 - 如果显式配置了 `agentcore.run_root`，Host internal runner 会改为使用 `<agentcore.run_root>/host`
 - `session.Service` 当前已具备 post-turn recap hook，默认会把 turn 终态写入 `recaps` 与 `memory_candidates`
-- `memory_candidates` 当前只是候选中间层，便于后续去重、审核和渲染 `MEMORY.draft.md / USER.draft.md`
+- `memory_candidates` 当前是候选中间层，默认还会继续渲染到 `db/agentcore/host/memory/MEMORY.draft.md` 与 `db/agentcore/host/memory/USER.draft.md`
 - 当前仍未真正自动写入 `MEMORY.md` / `USER.md`
 - `vite` 代理仅用于本地开发，不影响生产构建输出
 - 本地 `db/axon.db`、`db/axon.db-shm`、`db/axon.db-wal` 都属于开发产物，不应作为功能变更提交

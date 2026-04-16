@@ -2,6 +2,8 @@ package session
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -10,6 +12,8 @@ type recapStore interface {
 	CreateRecap(ctx context.Context, recap Recap) error
 	CreateMemoryCandidate(ctx context.Context, candidate MemoryCandidate) error
 	ListRecapsByTurn(ctx context.Context, sessionID string, turnID string) ([]Recap, error)
+	ListMemoryCandidatesByTurn(ctx context.Context, sessionID string, turnID string) ([]MemoryCandidate, error)
+	UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status string) error
 }
 
 type StructuredRecapHook struct {
@@ -167,4 +171,81 @@ func cloneMap(src map[string]any) map[string]any {
 		dst[k] = v
 	}
 	return dst
+}
+
+type MemoryDraftHook struct {
+	store recapStore
+	root  string
+	now   func() time.Time
+}
+
+func NewMemoryDraftHook(store Store, root string, now func() time.Time) *MemoryDraftHook {
+	if now == nil {
+		now = time.Now
+	}
+	return &MemoryDraftHook{
+		store: store,
+		root:  strings.TrimSpace(root),
+		now:   now,
+	}
+}
+
+func (h *MemoryDraftHook) OnTurnRecap(ctx context.Context, input RecapInput) error {
+	if h == nil || h.store == nil || strings.TrimSpace(h.root) == "" {
+		return nil
+	}
+
+	candidates, err := h.store.ListMemoryCandidatesByTurn(ctx, input.Session.SessionID, input.TurnID)
+	if err != nil {
+		return err
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	draftDir := filepath.Join(h.root, "memory")
+	if err := os.MkdirAll(draftDir, 0o755); err != nil {
+		return err
+	}
+
+	if err := writeMemoryDraft(filepath.Join(draftDir, "MEMORY.draft.md"), "MEMORY", candidates, h.now().UTC()); err != nil {
+		return err
+	}
+	if err := writeMemoryDraft(filepath.Join(draftDir, "USER.draft.md"), "USER", candidates, h.now().UTC()); err != nil {
+		return err
+	}
+
+	for _, candidate := range candidates {
+		if candidate.Status != "draft" {
+			continue
+		}
+		if err := h.store.UpdateMemoryCandidateStatus(ctx, candidate.CandidateID, "rendered"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeMemoryDraft(path string, target string, candidates []MemoryCandidate, now time.Time) error {
+	lines := []string{
+		"# " + target + ".draft",
+		"",
+		"Updated: " + now.Format(time.RFC3339),
+		"",
+	}
+
+	count := 0
+	for _, candidate := range candidates {
+		if candidate.Target != target {
+			continue
+		}
+		lines = append(lines, "- ["+candidate.Kind+"] "+candidate.Content)
+		count++
+	}
+	if count == 0 {
+		lines = append(lines, "_No draft candidates yet._")
+	}
+	lines = append(lines, "")
+
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
 }

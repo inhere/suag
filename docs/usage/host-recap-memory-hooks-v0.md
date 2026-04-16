@@ -95,14 +95,16 @@
    - 保留 turn 终态 recap 的结构化事实
 2. `memory_candidates`
    - 保留后续可能写入 `MEMORY.md` / `USER.md` 的候选草案
+3. `MEMORY.draft.md` / `USER.draft.md`
+   - 当前会将同一 turn 的 draft 候选渲染成可人工检查的草稿文件
 
 这里的设计重点是：
 
 - 先把候选写入单独表
-- 不直接改正式记忆文件
+- 先渲染 draft 文件，不直接改正式记忆文件
 - 后续可以做人审、去重、合并、拒绝或二次润色
 
-也就是说，当前 v0 已经从“只有 hook 骨架”前进到“有可审查的候选落库中间层”，但仍未进入正式记忆写入阶段。
+也就是说，当前 v0 已经从“只有 hook 骨架”前进到“候选落库 + draft 渲染”，但仍未进入正式记忆写入阶段。
 
 ---
 
@@ -128,7 +130,8 @@
    - 已完成最小版本，当前默认写入 `recaps` 表
 3. memory candidate sink
    - 已完成最小版本，当前默认写入 `memory_candidates` 表
-   - 下一步再把候选渲染成 `MEMORY.draft.md` / `USER.draft.md`
+4. memory draft renderer
+   - 已完成最小版本，当前默认渲染 `MEMORY.draft.md` / `USER.draft.md`
 4. background review sink
    - 把复杂任务结果送到后台 review / skill 提炼流程
 
