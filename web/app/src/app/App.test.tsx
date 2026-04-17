@@ -2177,4 +2177,62 @@ describe("App", () => {
     expect(await screen.findByText("Failed to update candidate.")).toBeInTheDocument();
     await waitFor(() => expect(listMemoryCandidatesMock).toHaveBeenCalledTimes(1));
   });
+
+  it("clears previous session memory candidates when switching sessions", async () => {
+    const secondSessionCandidates = deferred<MemoryCandidate[]>();
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "session one",
+          status: "WAITING",
+          updatedAt: "2026-04-17T10:00:00Z",
+          preview: "session one preview",
+        },
+        {
+          sessionId: "sess_002",
+          title: "session two",
+          status: "WAITING",
+          updatedAt: "2026-04-17T10:01:00Z",
+          preview: "session two preview",
+        },
+      ],
+    });
+    getSessionMock.mockImplementation(async (sessionId: string) => ({
+      sessionId,
+      title: sessionId === "sess_001" ? "session one" : "session two",
+      status: "WAITING",
+      lastTurnId: "",
+      turns: [],
+      runs: [],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    }));
+    listMemoryCandidatesMock
+      .mockResolvedValueOnce([
+        createMemoryCandidate("cand_001", "MEMORY", "session one candidate", "sess_001"),
+      ])
+      .mockReturnValueOnce(secondSessionCandidates.promise);
+
+    render(<App />);
+
+    expect(await screen.findByText("session one candidate")).toBeInTheDocument();
+    const secondSessionItem = screen.getByText("session two").closest("button");
+    expect(secondSessionItem).not.toBeNull();
+    fireEvent.click(secondSessionItem as HTMLButtonElement);
+
+    await waitFor(() => expect(listMemoryCandidatesMock).toHaveBeenNthCalledWith(2, "sess_002"));
+    expect(screen.queryByText("session one candidate")).not.toBeInTheDocument();
+
+    await act(async () => {
+      secondSessionCandidates.resolve([
+        createMemoryCandidate("cand_002", "USER", "session two candidate", "sess_002"),
+      ]);
+    });
+
+    expect(await screen.findByText("session two candidate")).toBeInTheDocument();
+  });
 });
