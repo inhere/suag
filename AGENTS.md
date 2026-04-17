@@ -19,7 +19,7 @@
 - `cmd/axon` 逻辑已收拢到 `internal/app` 与 `internal/config`，CLI 入口后续保持薄封装
 - `docs/usage/host-state-snapshot-v0.md`、`docs/usage/llm-config-v0.md`、`docs/usage/host-recap-memory-hooks-v0.md` 已作为当前 v0 协议、配置与 recap/memory 基线文档
 - 当前 recap 主线已推进到 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md`，且后端已具备 `memory candidate` 查询与 `accept/reject` REST 入口
-- Web 侧下一步聚焦 `Memory Candidates` 右侧面板接入，设计草案见 `docs/superpowers/specs/2026-04-17-web-memory-candidates-panel-design.md`
+- Web 侧已完成 `Memory Candidates` 右侧面板设计与实现计划，见 `docs/superpowers/specs/2026-04-17-web-memory-candidates-panel-design.md` 与 `docs/superpowers/plans/2026-04-17-web-memory-candidates-panel-implementation-plan.md`
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范
