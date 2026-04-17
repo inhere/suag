@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import type { SessionSocketMessage, StateSnapshotV0 } from "../lib/host-types";
+import type { MemoryCandidate, SessionSocketMessage, StateSnapshotV0 } from "../lib/host-types";
 import type { SessionSocketStatus } from "../lib/session-ws";
 
 const createSessionMock = vi.fn();
@@ -9,6 +9,9 @@ const listSessionsMock = vi.fn();
 const listHITLTicketsMock = vi.fn();
 const respondHITLTicketMock = vi.fn();
 const dismissHITLTicketMock = vi.fn();
+const listMemoryCandidatesMock = vi.fn();
+const acceptMemoryCandidateMock = vi.fn();
+const rejectMemoryCandidateMock = vi.fn();
 const getSessionMock = vi.fn();
 const startTurnMock = vi.fn();
 const getRunDetailMock = vi.fn();
@@ -23,6 +26,9 @@ vi.mock("../lib/session-client", () => ({
   listHITLTickets: (...args: unknown[]) => listHITLTicketsMock(...args),
   respondHITLTicket: (...args: unknown[]) => respondHITLTicketMock(...args),
   dismissHITLTicket: (...args: unknown[]) => dismissHITLTicketMock(...args),
+  listMemoryCandidates: (...args: unknown[]) => listMemoryCandidatesMock(...args),
+  acceptMemoryCandidate: (...args: unknown[]) => acceptMemoryCandidateMock(...args),
+  rejectMemoryCandidate: (...args: unknown[]) => rejectMemoryCandidateMock(...args),
   getSession: (...args: unknown[]) => getSessionMock(...args),
   getRunDetail: (...args: unknown[]) => getRunDetailMock(...args),
   startTurn: (...args: unknown[]) => startTurnMock(...args),
@@ -135,6 +141,28 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function createMemoryCandidate(
+  candidateId: string,
+  target: string,
+  content: string,
+  sessionId = "sess_001",
+): MemoryCandidate {
+  return {
+    candidateId,
+    sessionId,
+    turnId: `${sessionId}_turn_001`,
+    runId: `${sessionId}_run_001`,
+    sourceRecapId: `${sessionId}_recap_001`,
+    target,
+    kind: "fact",
+    content,
+    score: 0.9,
+    status: "pending",
+    createdAt: "2026-04-17T10:00:00Z",
+    metadata: {},
+  };
+}
+
 describe("App", () => {
   let onMessage: ((message: SessionSocketMessage) => void) | null;
   let onStatusChange: ((status: SessionSocketStatus) => void) | null;
@@ -156,6 +184,9 @@ describe("App", () => {
     listHITLTicketsMock.mockReset();
     respondHITLTicketMock.mockReset();
     dismissHITLTicketMock.mockReset();
+    listMemoryCandidatesMock.mockReset();
+    acceptMemoryCandidateMock.mockReset();
+    rejectMemoryCandidateMock.mockReset();
     getSessionMock.mockReset();
     getRunDetailMock.mockReset();
     startTurnMock.mockReset();
@@ -173,6 +204,9 @@ describe("App", () => {
     listHITLTicketsMock.mockResolvedValue([]);
     respondHITLTicketMock.mockResolvedValue(undefined);
     dismissHITLTicketMock.mockResolvedValue(undefined);
+    listMemoryCandidatesMock.mockResolvedValue([]);
+    acceptMemoryCandidateMock.mockResolvedValue(undefined);
+    rejectMemoryCandidateMock.mockResolvedValue(undefined);
     getSessionMock.mockResolvedValue({
       sessionId: "sess_001",
       title: "host runtime",
@@ -1934,5 +1968,213 @@ describe("App", () => {
     await waitFor(() =>
       expect(getRunDetailMock).toHaveBeenCalledWith("sess_002", "run_200"),
     );
+  });
+
+  it("loads memory candidates for current session and shows MEMORY/USER groups", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "memory session",
+          status: "WAITING",
+          updatedAt: "2026-04-17T10:00:00Z",
+          preview: "memory preview",
+        },
+      ],
+    });
+    getSessionMock.mockResolvedValueOnce({
+      sessionId: "sess_001",
+      title: "memory session",
+      status: "WAITING",
+      lastTurnId: "turn_001",
+      turns: [],
+      runs: [],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    });
+    listMemoryCandidatesMock.mockResolvedValueOnce([
+      createMemoryCandidate("cand_memory", "MEMORY", "memory content", "sess_001"),
+      createMemoryCandidate("cand_user", "USER", "user content", "sess_001"),
+    ]);
+
+    render(<App />);
+
+    await waitFor(() => expect(listMemoryCandidatesMock).toHaveBeenCalledWith("sess_001"));
+    expect(await screen.findByRole("heading", { name: "MEMORY" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "USER" })).toBeInTheDocument();
+  });
+
+  it("refreshes memory candidates after accept and updates list", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "memory session",
+          status: "WAITING",
+          updatedAt: "2026-04-17T10:00:00Z",
+          preview: "memory preview",
+        },
+      ],
+    });
+    listMemoryCandidatesMock
+      .mockResolvedValueOnce([
+        createMemoryCandidate("cand_001", "MEMORY", "before accept", "sess_001"),
+      ])
+      .mockResolvedValueOnce([
+        createMemoryCandidate("cand_002", "MEMORY", "after accept", "sess_001"),
+      ]);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Accept" }));
+
+    await waitFor(() => expect(acceptMemoryCandidateMock).toHaveBeenCalledWith("cand_001"));
+    await waitFor(() => expect(listMemoryCandidatesMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("after accept")).toBeInTheDocument();
+    expect(screen.queryByText("before accept")).not.toBeInTheDocument();
+  });
+
+  it("refreshes memory candidates after reject and updates list", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "memory session",
+          status: "WAITING",
+          updatedAt: "2026-04-17T10:00:00Z",
+          preview: "memory preview",
+        },
+      ],
+    });
+    listMemoryCandidatesMock
+      .mockResolvedValueOnce([
+        createMemoryCandidate("cand_001", "USER", "before reject", "sess_001"),
+      ])
+      .mockResolvedValueOnce([
+        createMemoryCandidate("cand_002", "USER", "after reject", "sess_001"),
+      ]);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reject" }));
+
+    await waitFor(() => expect(rejectMemoryCandidateMock).toHaveBeenCalledWith("cand_001"));
+    await waitFor(() => expect(listMemoryCandidatesMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("after reject")).toBeInTheDocument();
+    expect(screen.queryByText("before reject")).not.toBeInTheDocument();
+  });
+
+  it("shows list loading error and retries loading memory candidates", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "memory session",
+          status: "WAITING",
+          updatedAt: "2026-04-17T10:00:00Z",
+          preview: "memory preview",
+        },
+      ],
+    });
+    listMemoryCandidatesMock
+      .mockRejectedValueOnce(new Error("load failed"))
+      .mockResolvedValueOnce([
+        createMemoryCandidate("cand_001", "MEMORY", "loaded after retry", "sess_001"),
+      ]);
+
+    render(<App />);
+
+    expect(await screen.findByText("Failed to load memory candidates.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(listMemoryCandidatesMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("loaded after retry")).toBeInTheDocument();
+  });
+
+  it("disables only clicked candidate action while pending", async () => {
+    const acceptDeferred = deferred<void>();
+    acceptMemoryCandidateMock.mockReturnValueOnce(acceptDeferred.promise);
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "memory session",
+          status: "WAITING",
+          updatedAt: "2026-04-17T10:00:00Z",
+          preview: "memory preview",
+        },
+      ],
+    });
+    listMemoryCandidatesMock
+      .mockResolvedValueOnce([
+        createMemoryCandidate("cand_001", "MEMORY", "first candidate", "sess_001"),
+        createMemoryCandidate("cand_002", "MEMORY", "second candidate", "sess_001"),
+      ])
+      .mockResolvedValueOnce([
+        createMemoryCandidate("cand_002", "MEMORY", "second candidate", "sess_001"),
+      ]);
+
+    render(<App />);
+
+    const firstCard = (await screen.findByText("first candidate")).closest("article");
+    const secondCard = screen.getByText("second candidate").closest("article");
+    expect(firstCard).not.toBeNull();
+    expect(secondCard).not.toBeNull();
+
+    const firstAcceptButton = firstCard?.querySelector("button:nth-of-type(1)") as HTMLButtonElement;
+    const firstRejectButton = firstCard?.querySelector("button:nth-of-type(2)") as HTMLButtonElement;
+    const secondAcceptButton = secondCard?.querySelector("button:nth-of-type(1)") as HTMLButtonElement;
+    const secondRejectButton = secondCard?.querySelector("button:nth-of-type(2)") as HTMLButtonElement;
+
+    fireEvent.click(firstAcceptButton);
+
+    await waitFor(() => expect(firstAcceptButton).toBeDisabled());
+    expect(firstRejectButton).toBeDisabled();
+    expect(secondAcceptButton).not.toBeDisabled();
+    expect(secondRejectButton).not.toBeDisabled();
+
+    await act(async () => {
+      acceptDeferred.resolve();
+    });
+
+    await waitFor(() => expect(secondAcceptButton).not.toBeDisabled());
+  });
+
+  it("shows action error when updating memory candidate fails", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "memory session",
+          status: "WAITING",
+          updatedAt: "2026-04-17T10:00:00Z",
+          preview: "memory preview",
+        },
+      ],
+    });
+    listMemoryCandidatesMock.mockResolvedValueOnce([
+      createMemoryCandidate("cand_001", "MEMORY", "candidate", "sess_001"),
+    ]);
+    acceptMemoryCandidateMock.mockRejectedValueOnce(new Error("update failed"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Accept" }));
+
+    expect(await screen.findByText("Failed to update candidate.")).toBeInTheDocument();
+    await waitFor(() => expect(listMemoryCandidatesMock).toHaveBeenCalledTimes(1));
   });
 });

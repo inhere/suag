@@ -19,14 +19,22 @@ import {
   selectFocusedRun,
   selectRecentTurns,
 } from "../features/session/session-selectors";
-import type { HITLTicket, SessionSocketMessage, StateSnapshotTurn } from "../lib/host-types";
+import type {
+  HITLTicket,
+  MemoryCandidate,
+  SessionSocketMessage,
+  StateSnapshotTurn,
+} from "../lib/host-types";
 import {
+  acceptMemoryCandidate,
   createSession,
   dismissHITLTicket,
   getRunDetail,
   getSession,
+  listMemoryCandidates,
   listSessions,
   listHITLTickets,
+  rejectMemoryCandidate,
   respondHITLTicket,
   startTurn,
 } from "../lib/session-client";
@@ -257,6 +265,13 @@ function switchSessionContext(
 export function App() {
   const [viewState, setViewState] = useState<SessionViewState>(buildInitialViewState);
   const [hitlTickets, setHITLTickets] = useState<HITLTicket[]>([]);
+  const [memoryCandidates, setMemoryCandidates] = useState<MemoryCandidate[]>([]);
+  const [memoryCandidatesLoading, setMemoryCandidatesLoading] = useState(false);
+  const [memoryCandidatesError, setMemoryCandidatesError] = useState<string | null>(null);
+  const [memoryCandidateActionPendingId, setMemoryCandidateActionPendingId] = useState<
+    string | null
+  >(null);
+  const [memoryCandidateActionError, setMemoryCandidateActionError] = useState<string | null>(null);
   const [hitlLoading, setHITLLoading] = useState(false);
   const [createSessionPending, setCreateSessionPending] = useState(false);
   const [createSessionError, setCreateSessionError] = useState<string | null>(null);
@@ -275,6 +290,7 @@ export function App() {
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [debugOpen, setDebugOpen] = useState(false);
   const socketRef = useRef<SessionSocketConnection | null>(null);
+  const currentSessionIDRef = useRef<string | null>(viewState.currentSessionId);
   const pendingWSCommandRef = useRef<null | "continue_composer" | "continue_hint" | "stop">(null);
   const lastWSCommandRef = useRef<null | "continue_composer" | "continue_hint" | "stop">(null);
   const runDetailRequestIDRef = useRef(0);
@@ -286,6 +302,10 @@ export function App() {
   useEffect(() => {
     pendingWSCommandRef.current = pendingWSCommand;
   }, [pendingWSCommand]);
+
+  useEffect(() => {
+    currentSessionIDRef.current = viewState.currentSessionId;
+  }, [viewState.currentSessionId]);
 
   function setPendingWSCommandState(command: null | "continue_composer" | "continue_hint" | "stop") {
     pendingWSCommandRef.current = command;
@@ -335,6 +355,28 @@ export function App() {
       // Keep the workbench usable even if HITL listing is temporarily unavailable.
     } finally {
       setHITLLoading(false);
+    }
+  }
+
+  async function refreshMemoryCandidates(sessionId: string) {
+    setMemoryCandidatesLoading(true);
+    setMemoryCandidatesError(null);
+
+    try {
+      const candidates = await listMemoryCandidates(sessionId);
+      if (currentSessionIDRef.current !== sessionId) {
+        return;
+      }
+      setMemoryCandidates(candidates);
+    } catch {
+      if (currentSessionIDRef.current !== sessionId) {
+        return;
+      }
+      setMemoryCandidatesError("Failed to load memory candidates.");
+    } finally {
+      if (currentSessionIDRef.current === sessionId) {
+        setMemoryCandidatesLoading(false);
+      }
     }
   }
 
@@ -491,6 +533,21 @@ export function App() {
       socketRef.current = null;
     };
   }, [viewState.currentSessionId, connectionReloadKey]);
+
+  useEffect(() => {
+    const sessionId = viewState.currentSessionId;
+    setMemoryCandidates([]);
+    setMemoryCandidatesError(null);
+    setMemoryCandidatesLoading(false);
+    setMemoryCandidateActionPendingId(null);
+    setMemoryCandidateActionError(null);
+
+    if (!sessionId) {
+      return;
+    }
+
+    void refreshMemoryCandidates(sessionId);
+  }, [viewState.currentSessionId]);
 
   useEffect(() => {
     const sessionId = viewState.currentSessionId;
@@ -659,6 +716,58 @@ export function App() {
     }
   }
 
+  async function handleAcceptMemoryCandidate(candidateId: string) {
+    const sessionId = viewState.currentSessionId;
+    if (!sessionId || memoryCandidateActionPendingId) {
+      return;
+    }
+
+    setMemoryCandidateActionError(null);
+    setMemoryCandidateActionPendingId(candidateId);
+    try {
+      await acceptMemoryCandidate(candidateId);
+      if (currentSessionIDRef.current !== sessionId) {
+        return;
+      }
+      await refreshMemoryCandidates(sessionId);
+    } catch {
+      if (currentSessionIDRef.current !== sessionId) {
+        return;
+      }
+      setMemoryCandidateActionError("Failed to update candidate.");
+    } finally {
+      if (currentSessionIDRef.current === sessionId) {
+        setMemoryCandidateActionPendingId(null);
+      }
+    }
+  }
+
+  async function handleRejectMemoryCandidate(candidateId: string) {
+    const sessionId = viewState.currentSessionId;
+    if (!sessionId || memoryCandidateActionPendingId) {
+      return;
+    }
+
+    setMemoryCandidateActionError(null);
+    setMemoryCandidateActionPendingId(candidateId);
+    try {
+      await rejectMemoryCandidate(candidateId);
+      if (currentSessionIDRef.current !== sessionId) {
+        return;
+      }
+      await refreshMemoryCandidates(sessionId);
+    } catch {
+      if (currentSessionIDRef.current !== sessionId) {
+        return;
+      }
+      setMemoryCandidateActionError("Failed to update candidate.");
+    } finally {
+      if (currentSessionIDRef.current === sessionId) {
+        setMemoryCandidateActionPendingId(null);
+      }
+    }
+  }
+
   function handleOpenHITLContext(ticket: HITLTicket) {
     const targetSessionId = ticket.sessionId || viewState.currentSessionId;
     if (!targetSessionId) {
@@ -730,6 +839,11 @@ export function App() {
       }
       hitlTickets={hitlTickets}
       hitlLoading={hitlLoading}
+      memoryCandidates={memoryCandidates}
+      memoryCandidatesLoading={memoryCandidatesLoading}
+      memoryCandidatesError={memoryCandidatesError}
+      memoryCandidateActionError={memoryCandidateActionError}
+      memoryCandidateActionPendingId={memoryCandidateActionPendingId}
       canStop={stopEnabled}
       stopPending={stopPending}
       canAddHint={waitingForInput}
@@ -762,6 +876,18 @@ export function App() {
         }));
       }}
       onRetryFocusedRunDetail={handleRetryFocusedRunDetail}
+      onRetryMemoryCandidates={() => {
+        if (!viewState.currentSessionId) {
+          return;
+        }
+        void refreshMemoryCandidates(viewState.currentSessionId);
+      }}
+      onAcceptMemoryCandidate={(candidateId) => {
+        void handleAcceptMemoryCandidate(candidateId);
+      }}
+      onRejectMemoryCandidate={(candidateId) => {
+        void handleRejectMemoryCandidate(candidateId);
+      }}
       onRefreshHITL={() => {
         void refreshHITLTickets();
       }}

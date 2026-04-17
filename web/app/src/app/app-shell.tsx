@@ -2,12 +2,14 @@ import type { ConversationMessage } from "../features/conversation/conversation-
 import { ConversationPane } from "../features/conversation/conversation-pane";
 import { DebugDrawer } from "../features/debug/debug-drawer";
 import { HITLPanel } from "../features/hitl/hitl-panel";
+import { MemoryCandidatesPanel } from "../features/memory-candidates/memory-candidates-panel";
 import { RunInspector } from "../features/run-inspector/run-inspector";
 import { SessionList } from "../features/session-list/session-list";
 import type { SessionFilter, SessionListItem } from "../features/session/session-store";
 import type {
   ExternalTaskSummary,
   HITLTicket,
+  MemoryCandidate,
   SessionSocketMessage,
   StateSnapshotExternalActivity,
   StateSnapshotExternalMessage,
@@ -47,6 +49,11 @@ type AppShellProps = {
   focusedRunDetailStatus?: "idle" | "loading" | "loaded" | "error";
   hitlTickets?: HITLTicket[];
   hitlLoading?: boolean;
+  memoryCandidates?: MemoryCandidate[];
+  memoryCandidatesLoading?: boolean;
+  memoryCandidatesError?: string | null;
+  memoryCandidateActionError?: string | null;
+  memoryCandidateActionPendingId?: string | null;
   canStop?: boolean;
   stopPending?: boolean;
   canAddHint?: boolean;
@@ -63,6 +70,9 @@ type AppShellProps = {
   onSelectConversationTurn?: (turn: StateSnapshotTurn) => void;
   onFocusRun?: (runId: string) => void;
   onRetryFocusedRunDetail?: () => void;
+  onRetryMemoryCandidates?: () => void;
+  onAcceptMemoryCandidate?: (candidateId: string) => void;
+  onRejectMemoryCandidate?: (candidateId: string) => void;
   onRefreshHITL?: () => void;
   onOpenHITLContext?: (ticket: HITLTicket) => void;
   onRespondHITL?: (ticketId: string, instruction: string) => Promise<void> | void;
@@ -104,6 +114,11 @@ export function AppShell({
   focusedRunDetailStatus = "idle",
   hitlTickets = [],
   hitlLoading = false,
+  memoryCandidates = [],
+  memoryCandidatesLoading = false,
+  memoryCandidatesError = null,
+  memoryCandidateActionError = null,
+  memoryCandidateActionPendingId = null,
   canStop = false,
   stopPending = false,
   canAddHint = false,
@@ -120,6 +135,9 @@ export function AppShell({
   onSelectConversationTurn = () => {},
   onFocusRun = () => {},
   onRetryFocusedRunDetail = () => {},
+  onRetryMemoryCandidates = () => {},
+  onAcceptMemoryCandidate = () => {},
+  onRejectMemoryCandidate = () => {},
   onRefreshHITL = () => {},
   onOpenHITLContext = () => {},
   onRespondHITL = () => {},
@@ -197,6 +215,16 @@ export function AppShell({
                 actionError={runActionError}
                 onAddHint={onAddHint}
                 onOpenDebug={onOpenDebug}
+              />
+              <MemoryCandidatesPanel
+                candidates={memoryCandidates}
+                loading={memoryCandidatesLoading}
+                errorMessage={memoryCandidatesError}
+                actionError={memoryCandidateActionError}
+                pendingCandidateId={memoryCandidateActionPendingId}
+                onRetry={onRetryMemoryCandidates}
+                onAccept={onAcceptMemoryCandidate}
+                onReject={onRejectMemoryCandidate}
               />
               <HITLPanel
                 tickets={hitlTickets}
