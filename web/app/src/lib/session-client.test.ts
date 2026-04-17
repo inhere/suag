@@ -431,11 +431,34 @@ describe("session-client", () => {
     ]);
   });
 
-  it("posts accept request to /api/memory-candidates/{id}/accept", async () => {
+  it("falls back to empty metadata when memory candidate metadata is omitted", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ status: "ok" }),
+      json: async () => [
+        {
+          candidate_id: "cand_002",
+          session_id: "sess_001",
+          turn_id: "turn_002",
+          run_id: "run_002",
+          source_recap_id: "recap_002",
+          target: "MEMORY",
+          kind: "preference",
+          content: "prefers chinese output",
+          score: 0.8,
+          status: "pending",
+          created_at: "2026-04-17T10:00:00Z",
+        },
+      ],
     });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await listMemoryCandidates("sess_001");
+
+    expect(result[0]?.metadata).toEqual({});
+  });
+
+  it("posts accept request to /api/memory-candidates/{id}/accept", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
 
     await acceptMemoryCandidate("cand_001");
@@ -449,11 +472,17 @@ describe("session-client", () => {
     );
   });
 
+  it("rejects when /api/memory-candidates/{id}/accept returns non-2xx", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(acceptMemoryCandidate("cand_001")).rejects.toThrow(
+      "request failed: 500",
+    );
+  });
+
   it("posts reject request to /api/memory-candidates/{id}/reject", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ status: "ok" }),
-    });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
 
     await rejectMemoryCandidate("cand_001");
@@ -464,6 +493,15 @@ describe("session-client", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
       },
+    );
+  });
+
+  it("rejects when /api/memory-candidates/{id}/reject returns non-2xx", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 400 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(rejectMemoryCandidate("cand_001")).rejects.toThrow(
+      "request failed: 400",
     );
   });
 });

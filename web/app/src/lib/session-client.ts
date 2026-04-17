@@ -110,6 +110,12 @@ async function parseJSON<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
+function assertResponseOK(response: Response): void {
+  if (!response.ok) {
+    throw new Error(`request failed: ${response.status}`);
+  }
+}
+
 function mapExternalTaskResponse(input: ExternalTaskResponse): ExternalTaskSummary {
   return {
     externalTaskId: input.external_task_id,
@@ -324,7 +330,7 @@ export async function acceptMemoryCandidate(
       headers: { "content-type": "application/json" },
     },
   );
-  await parseJSON<{ status: string }>(response);
+  assertResponseOK(response);
 }
 
 export async function rejectMemoryCandidate(
@@ -338,5 +344,5 @@ export async function rejectMemoryCandidate(
       headers: { "content-type": "application/json" },
     },
   );
-  await parseJSON<{ status: string }>(response);
+  assertResponseOK(response);
 }
