@@ -13,19 +13,13 @@
 - Axon v0 自用主线规划持续推进中，设计总纲见 `docs/v0-self-host-design.md`
 - Host 会话与 Web 工作台基础闭环已打通，当前继续围绕可自用联调与 Host runtime 主链稳定性做收尾，联调说明见 `docs/usage/web-host-local-dev.md`
 - 下一阶段开发已整理为 `docs/superpowers/plans/2026-04-16-host-runtime-stabilization-phase3.md`，后续按该计划继续推进 Host Go 主线
-- Phase 3 / Task 1 已完成 `wait-state / continue_turn / stop_turn / HITL` 合同收口；当前 `continue_turn` 仅允许继续 `INPUT_REQUIRED` run，`AUTH_REQUIRED` 已切到 HITL/approval 响应路径，且 WS `command.accepted / command.error` 时序已与真实执行结果对齐
-- `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复与查询链路，`run_events.sequence` 已收敛为 session 级单调递增基线；当前 `DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态已贯通到快照与事件流
-- Phase 3 / Task 2 已完成 internal runner / ACP runner 的第一轮 Host contract 对齐；ACP `StateRunning` 现已稳定映射为 Host `EXTERNAL_RUNNING` 非终态，且 `externalTaskId` 会贯穿 runtime 事件与 AG-UI 映射
+- `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复与查询链路；`DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态已贯通到快照与事件流
+- internal runner / ACP runner 第一轮 Host contract 对齐已完成；ACP `StateRunning` 已稳定映射为 Host `EXTERNAL_RUNNING`，`externalTaskId` 也已贯穿 runtime 事件与 AG-UI 映射
 - Host internal runner 的 runtime 数据目录已收口到统一配置；默认使用 `db/agentcore/host`，避免继续散落到工作目录 `.agentcore/`
-- `cmd/axon` 逻辑已收拢到 `internal/app` 与 `internal/config`，CLI 入口后续保持薄封装，避免命令层继续承载业务组装细节
-- `docs/usage/host-state-snapshot-v0.md` 与 `docs/usage/llm-config-v0.md` 已作为当前 v0 协议与配置基线文档
-- Phase 3 / Task 3 已完成旧 `ReactRunner` 的保留边界收口；当前默认明确保持 `agentcore`，`react` 只作为显式 fallback 与 parity baseline 保留
-- Phase 3 / Task 4 已补齐 post-turn recap hook 骨架，说明文档见 `docs/usage/host-recap-memory-hooks-v0.md`；当前默认已通过 `StructuredRecapHook` 写入 `recaps` 表，但仍未真正落到 `MEMORY.md` / `USER.md`
-- 当前 recap 主线已继续推进到 `memory_candidates + *.draft.md`；默认 server wiring 会将 turn 终态沉淀到 `recaps + memory_candidates`，并渲染 `MEMORY.draft.md / USER.draft.md`
-- 当前 `*.draft.md` 已收敛到 session 级聚合视图；默认会对 `memory_candidates` 做去重与状态过滤，便于后续继续接 review / adopt 流程
-- `memory_candidates` 当前已具备最小后端状态流转能力，可在服务层执行 `applied/rejected`，为后续 Web 采纳/拒绝交互留出稳定接口
-- Gateway 已补最小 `memory candidate` REST 入口，可查询候选并执行 `accept/reject`，下一步可直接接 Web 按钮与面板
-- Phase 3 / Task 5 已完成一轮联调文档与验证项收口；`docs/usage/web-host-local-dev.md`、`docs/usage/host-state-snapshot-v0.md` 已同步到当前代码现状
+- `cmd/axon` 逻辑已收拢到 `internal/app` 与 `internal/config`，CLI 入口后续保持薄封装
+- `docs/usage/host-state-snapshot-v0.md`、`docs/usage/llm-config-v0.md`、`docs/usage/host-recap-memory-hooks-v0.md` 已作为当前 v0 协议、配置与 recap/memory 基线文档
+- 当前 recap 主线已推进到 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md`，且后端已具备 `memory candidate` 查询与 `accept/reject` REST 入口
+- Web 侧下一步聚焦 `Memory Candidates` 右侧面板接入，设计草案见 `docs/superpowers/specs/2026-04-17-web-memory-candidates-panel-design.md`
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范
