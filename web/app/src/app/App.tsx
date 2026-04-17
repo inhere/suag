@@ -50,6 +50,14 @@ type PersistedWorkbenchState = {
   focusedRunId: string | null;
 };
 
+const pendingMemoryCandidateStatuses = new Set(["draft", "rendered"]);
+
+function filterPendingMemoryCandidates(candidates: MemoryCandidate[]): MemoryCandidate[] {
+  return candidates.filter((candidate) =>
+    pendingMemoryCandidateStatuses.has(candidate.status.toLowerCase()),
+  );
+}
+
 function buildConversationMessages(state: SessionViewState): ConversationMessage[] {
   const messages: ConversationMessage[] = [];
   const snapshot = state.snapshot;
@@ -268,9 +276,9 @@ export function App() {
   const [memoryCandidates, setMemoryCandidates] = useState<MemoryCandidate[]>([]);
   const [memoryCandidatesLoading, setMemoryCandidatesLoading] = useState(false);
   const [memoryCandidatesError, setMemoryCandidatesError] = useState<string | null>(null);
-  const [memoryCandidateActionPendingId, setMemoryCandidateActionPendingId] = useState<
-    string | null
-  >(null);
+  const [memoryCandidateActionPendingIds, setMemoryCandidateActionPendingIDs] = useState<string[]>(
+    [],
+  );
   const [memoryCandidateActionError, setMemoryCandidateActionError] = useState<string | null>(null);
   const [hitlLoading, setHITLLoading] = useState(false);
   const [createSessionPending, setCreateSessionPending] = useState(false);
@@ -291,6 +299,7 @@ export function App() {
   const [debugOpen, setDebugOpen] = useState(false);
   const socketRef = useRef<SessionSocketConnection | null>(null);
   const currentSessionIDRef = useRef<string | null>(viewState.currentSessionId);
+  const memoryCandidateActionPendingIDsRef = useRef<Set<string>>(new Set());
   const pendingWSCommandRef = useRef<null | "continue_composer" | "continue_hint" | "stop">(null);
   const lastWSCommandRef = useRef<null | "continue_composer" | "continue_hint" | "stop">(null);
   const runDetailRequestIDRef = useRef(0);
@@ -367,7 +376,7 @@ export function App() {
       if (currentSessionIDRef.current !== sessionId) {
         return;
       }
-      setMemoryCandidates(candidates);
+      setMemoryCandidates(filterPendingMemoryCandidates(candidates));
     } catch {
       if (currentSessionIDRef.current !== sessionId) {
         return;
@@ -539,7 +548,8 @@ export function App() {
     setMemoryCandidates([]);
     setMemoryCandidatesError(null);
     setMemoryCandidatesLoading(false);
-    setMemoryCandidateActionPendingId(null);
+    memoryCandidateActionPendingIDsRef.current = new Set();
+    setMemoryCandidateActionPendingIDs([]);
     setMemoryCandidateActionError(null);
 
     if (!sessionId) {
@@ -718,12 +728,17 @@ export function App() {
 
   async function handleAcceptMemoryCandidate(candidateId: string) {
     const sessionId = viewState.currentSessionId;
-    if (!sessionId || memoryCandidateActionPendingId) {
+    if (!sessionId) {
       return;
     }
 
+    if (memoryCandidateActionPendingIDsRef.current.has(candidateId)) {
+      return;
+    }
+    memoryCandidateActionPendingIDsRef.current.add(candidateId);
+    setMemoryCandidateActionPendingIDs(Array.from(memoryCandidateActionPendingIDsRef.current));
+
     setMemoryCandidateActionError(null);
-    setMemoryCandidateActionPendingId(candidateId);
     try {
       await acceptMemoryCandidate(candidateId);
       if (currentSessionIDRef.current !== sessionId) {
@@ -737,19 +752,25 @@ export function App() {
       setMemoryCandidateActionError("Failed to update candidate.");
     } finally {
       if (currentSessionIDRef.current === sessionId) {
-        setMemoryCandidateActionPendingId(null);
+        memoryCandidateActionPendingIDsRef.current.delete(candidateId);
+        setMemoryCandidateActionPendingIDs(Array.from(memoryCandidateActionPendingIDsRef.current));
       }
     }
   }
 
   async function handleRejectMemoryCandidate(candidateId: string) {
     const sessionId = viewState.currentSessionId;
-    if (!sessionId || memoryCandidateActionPendingId) {
+    if (!sessionId) {
       return;
     }
 
+    if (memoryCandidateActionPendingIDsRef.current.has(candidateId)) {
+      return;
+    }
+    memoryCandidateActionPendingIDsRef.current.add(candidateId);
+    setMemoryCandidateActionPendingIDs(Array.from(memoryCandidateActionPendingIDsRef.current));
+
     setMemoryCandidateActionError(null);
-    setMemoryCandidateActionPendingId(candidateId);
     try {
       await rejectMemoryCandidate(candidateId);
       if (currentSessionIDRef.current !== sessionId) {
@@ -763,7 +784,8 @@ export function App() {
       setMemoryCandidateActionError("Failed to update candidate.");
     } finally {
       if (currentSessionIDRef.current === sessionId) {
-        setMemoryCandidateActionPendingId(null);
+        memoryCandidateActionPendingIDsRef.current.delete(candidateId);
+        setMemoryCandidateActionPendingIDs(Array.from(memoryCandidateActionPendingIDsRef.current));
       }
     }
   }
@@ -843,7 +865,7 @@ export function App() {
       memoryCandidatesLoading={memoryCandidatesLoading}
       memoryCandidatesError={memoryCandidatesError}
       memoryCandidateActionError={memoryCandidateActionError}
-      memoryCandidateActionPendingId={memoryCandidateActionPendingId}
+      memoryCandidateActionPendingIds={memoryCandidateActionPendingIds}
       canStop={stopEnabled}
       stopPending={stopPending}
       canAddHint={waitingForInput}

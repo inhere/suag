@@ -5,7 +5,7 @@ type MemoryCandidatesPanelProps = {
   loading?: boolean;
   errorMessage?: string | null;
   actionError?: string | null;
-  pendingCandidateId?: string | null;
+  pendingCandidateIds?: string[];
   onRetry?: () => void;
   onAccept?: (candidateId: string) => void;
   onReject?: (candidateId: string) => void;
@@ -52,12 +52,13 @@ export function MemoryCandidatesPanel({
   loading = false,
   errorMessage = null,
   actionError = null,
-  pendingCandidateId = null,
+  pendingCandidateIds = [],
   onRetry = () => {},
   onAccept = () => {},
   onReject = () => {},
 }: MemoryCandidatesPanelProps) {
   const groupedCandidates = groupCandidates(candidates);
+  const pendingIDs = new Set(pendingCandidateIds);
 
   return (
     <section className="memory-candidates-panel run-panel" aria-label="Memory candidates panel">
@@ -90,7 +91,7 @@ export function MemoryCandidatesPanel({
             <section key={group.target} className="memory-candidates-panel__group">
               <h3>{group.target}</h3>
               {group.items.map((candidate) => {
-                const actionPending = pendingCandidateId === candidate.candidateId;
+                const actionPending = pendingIDs.has(candidate.candidateId);
                 return (
                   <article key={candidate.candidateId} className="memory-candidate-card hitl-card">
                     <div className="memory-candidate-card__meta">

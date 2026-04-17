@@ -53,7 +53,7 @@ type AppShellProps = {
   memoryCandidatesLoading?: boolean;
   memoryCandidatesError?: string | null;
   memoryCandidateActionError?: string | null;
-  memoryCandidateActionPendingId?: string | null;
+  memoryCandidateActionPendingIds?: string[];
   canStop?: boolean;
   stopPending?: boolean;
   canAddHint?: boolean;
@@ -118,7 +118,7 @@ export function AppShell({
   memoryCandidatesLoading = false,
   memoryCandidatesError = null,
   memoryCandidateActionError = null,
-  memoryCandidateActionPendingId = null,
+  memoryCandidateActionPendingIds = [],
   canStop = false,
   stopPending = false,
   canAddHint = false,
@@ -221,7 +221,7 @@ export function AppShell({
                 loading={memoryCandidatesLoading}
                 errorMessage={memoryCandidatesError}
                 actionError={memoryCandidateActionError}
-                pendingCandidateId={memoryCandidateActionPendingId}
+                pendingCandidateIds={memoryCandidateActionPendingIds}
                 onRetry={onRetryMemoryCandidates}
                 onAccept={onAcceptMemoryCandidate}
                 onReject={onRejectMemoryCandidate}

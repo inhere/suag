@@ -146,6 +146,7 @@ function createMemoryCandidate(
   target: string,
   content: string,
   sessionId = "sess_001",
+  status = "draft",
 ): MemoryCandidate {
   return {
     candidateId,
@@ -157,7 +158,7 @@ function createMemoryCandidate(
     kind: "fact",
     content,
     score: 0.9,
-    status: "pending",
+    status,
     createdAt: "2026-04-17T10:00:00Z",
     metadata: {},
   };
@@ -2007,6 +2008,35 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "USER" })).toBeInTheDocument();
   });
 
+  it("shows only draft/rendered memory candidates", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "memory session",
+          status: "WAITING",
+          updatedAt: "2026-04-17T10:00:00Z",
+          preview: "memory preview",
+        },
+      ],
+    });
+    listMemoryCandidatesMock.mockResolvedValueOnce([
+      createMemoryCandidate("cand_draft", "MEMORY", "draft candidate", "sess_001", "draft"),
+      createMemoryCandidate("cand_rendered", "USER", "rendered candidate", "sess_001", "rendered"),
+      createMemoryCandidate("cand_accepted", "MEMORY", "accepted candidate", "sess_001", "accepted"),
+      createMemoryCandidate("cand_rejected", "USER", "rejected candidate", "sess_001", "rejected"),
+    ]);
+
+    render(<App />);
+
+    expect(await screen.findByText("draft candidate")).toBeInTheDocument();
+    expect(await screen.findByText("rendered candidate")).toBeInTheDocument();
+    expect(screen.queryByText("accepted candidate")).not.toBeInTheDocument();
+    expect(screen.queryByText("rejected candidate")).not.toBeInTheDocument();
+  });
+
   it("refreshes memory candidates after accept and updates list", async () => {
     storage["axon.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
@@ -2100,9 +2130,11 @@ describe("App", () => {
     expect(await screen.findByText("loaded after retry")).toBeInTheDocument();
   });
 
-  it("disables only clicked candidate action while pending", async () => {
+  it("allows triggering another candidate action while first one is pending", async () => {
     const acceptDeferred = deferred<void>();
+    const rejectDeferred = deferred<void>();
     acceptMemoryCandidateMock.mockReturnValueOnce(acceptDeferred.promise);
+    rejectMemoryCandidateMock.mockReturnValueOnce(rejectDeferred.promise);
     storage["axon.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
@@ -2116,14 +2148,10 @@ describe("App", () => {
         },
       ],
     });
-    listMemoryCandidatesMock
-      .mockResolvedValueOnce([
-        createMemoryCandidate("cand_001", "MEMORY", "first candidate", "sess_001"),
-        createMemoryCandidate("cand_002", "MEMORY", "second candidate", "sess_001"),
-      ])
-      .mockResolvedValueOnce([
-        createMemoryCandidate("cand_002", "MEMORY", "second candidate", "sess_001"),
-      ]);
+    listMemoryCandidatesMock.mockResolvedValue([
+      createMemoryCandidate("cand_001", "MEMORY", "first candidate", "sess_001"),
+      createMemoryCandidate("cand_002", "MEMORY", "second candidate", "sess_001"),
+    ]);
 
     render(<App />);
 
@@ -2144,8 +2172,12 @@ describe("App", () => {
     expect(secondAcceptButton).not.toBeDisabled();
     expect(secondRejectButton).not.toBeDisabled();
 
+    fireEvent.click(secondRejectButton);
+    await waitFor(() => expect(rejectMemoryCandidateMock).toHaveBeenCalledWith("cand_002"));
+
     await act(async () => {
       acceptDeferred.resolve();
+      rejectDeferred.resolve();
     });
 
     await waitFor(() => expect(secondAcceptButton).not.toBeDisabled());

@@ -67,14 +67,14 @@ it("shows list error and retry button when errorMessage exists", () => {
   expect(onRetry).toHaveBeenCalledTimes(1);
 });
 
-it("disables only matched candidate actions when pendingCandidateId is set", () => {
+it("disables only matched candidate actions when pendingCandidateIds is set", () => {
   render(
     <MemoryCandidatesPanel
       candidates={[
         createCandidate("cand_1", "MEMORY", "first"),
         createCandidate("cand_2", "USER", "second"),
       ]}
-      pendingCandidateId="cand_1"
+      pendingCandidateIds={["cand_1"]}
     />,
   );
 
