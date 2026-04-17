@@ -583,34 +583,54 @@ input:disabled {
   padding: 8px 12px;
 }
 
-.hitl-panel {
+.hitl-panel,
+.memory-candidates-panel {
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 14px;
   background: rgba(15, 23, 42, 0.86);
   padding: 14px;
 }
 
-.hitl-panel__header {
+.hitl-panel__header,
+.memory-candidates-panel__header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
   gap: 12px;
 }
 
-.hitl-panel__header h2 {
+.hitl-panel__header {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.memory-candidates-panel__header {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hitl-panel__header h2,
+.memory-candidates-panel__header h2 {
   margin: 0;
   font-size: 0.95rem;
 }
 
-.hitl-panel__header p {
-  margin: 6px 0 0;
+.hitl-panel__header p,
+.memory-candidates-panel__header p {
   color: rgba(226, 232, 240, 0.72);
   font-size: 0.86rem;
 }
 
+.hitl-panel__header p {
+  margin: 6px 0 0;
+}
+
+.memory-candidates-panel__header p {
+  margin: 0;
+}
+
 .hitl-panel__header button,
 .hitl-card textarea,
-.hitl-card button {
+.hitl-card button,
+.memory-candidate-card button {
   font: inherit;
 }
 
@@ -629,7 +649,8 @@ input:disabled {
   margin-top: 12px;
 }
 
-.hitl-card {
+.hitl-card,
+.memory-candidate-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -690,30 +711,6 @@ input:disabled {
   padding: 12px;
 }
 
-.memory-candidates-panel {
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.86);
-  padding: 14px;
-}
-
-.memory-candidates-panel__header {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.memory-candidates-panel__header h2 {
-  margin: 0;
-  font-size: 0.95rem;
-}
-
-.memory-candidates-panel__header p {
-  margin: 0;
-  color: rgba(226, 232, 240, 0.72);
-  font-size: 0.86rem;
-}
-
 .memory-candidates-panel__group {
   margin-top: 12px;
 }
@@ -725,16 +722,6 @@ input:disabled {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.memory-candidate-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 12px;
-  background: rgba(30, 41, 59, 0.38);
 }
 
 .memory-candidate-card + .memory-candidate-card {
@@ -757,18 +744,7 @@ input:disabled {
 }
 
 .memory-candidate-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.memory-candidate-card__actions button {
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 12px;
-  background: rgba(30, 41, 59, 0.7);
-  color: inherit;
-  padding: 8px 12px;
-  font: inherit;
+  margin-top: 0;
 }
 
 .debug-drawer {

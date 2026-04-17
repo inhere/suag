@@ -60,7 +60,7 @@ export function MemoryCandidatesPanel({
   const groupedCandidates = groupCandidates(candidates);
 
   return (
-    <section className="memory-candidates-panel" aria-label="Memory candidates panel">
+    <section className="memory-candidates-panel run-panel" aria-label="Memory candidates panel">
       <div className="memory-candidates-panel__header">
         <h2>Memory Candidates</h2>
         <p>{candidates.length} candidate(s) pending</p>
@@ -73,7 +73,7 @@ export function MemoryCandidatesPanel({
       {!loading && errorMessage ? (
         <div className="memory-candidates-panel__group">
           <p className="inline-feedback inline-feedback--error">Failed to load memory candidates.</p>
-          <div className="memory-candidate-card__actions">
+          <div className="memory-candidate-card__actions run-actions">
             <button type="button" onClick={onRetry}>
               Retry
             </button>
@@ -92,13 +92,13 @@ export function MemoryCandidatesPanel({
               {group.items.map((candidate) => {
                 const actionPending = pendingCandidateId === candidate.candidateId;
                 return (
-                  <article key={candidate.candidateId} className="memory-candidate-card">
+                  <article key={candidate.candidateId} className="memory-candidate-card hitl-card">
                     <div className="memory-candidate-card__meta">
                       <span>{candidate.kind}</span>
                       <span>{candidate.status}</span>
                     </div>
                     <p>{candidate.content}</p>
-                    <div className="memory-candidate-card__actions">
+                    <div className="memory-candidate-card__actions run-actions">
                       <button
                         type="button"
                         disabled={actionPending}

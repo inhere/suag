@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { vi } from "vitest";
 import type { MemoryCandidate } from "../../lib/host-types";
 import { MemoryCandidatesPanel } from "./memory-candidates-panel";
@@ -63,7 +63,7 @@ it("shows list error and retry button when errorMessage exists", () => {
   expect(screen.getByText("Failed to load memory candidates.")).toBeInTheDocument();
   const retryButton = screen.getByRole("button", { name: "Retry" });
   expect(retryButton).toBeInTheDocument();
-  retryButton.click();
+  fireEvent.click(retryButton);
   expect(onRetry).toHaveBeenCalledTimes(1);
 });
 
@@ -78,13 +78,17 @@ it("disables only matched candidate actions when pendingCandidateId is set", () 
     />,
   );
 
-  const acceptButtons = screen.getAllByRole("button", { name: "Accept" });
-  const rejectButtons = screen.getAllByRole("button", { name: "Reject" });
+  const firstCard = screen.getByText("first").closest("article");
+  const secondCard = screen.getByText("second").closest("article");
 
-  expect(acceptButtons).toHaveLength(2);
-  expect(rejectButtons).toHaveLength(2);
-  expect(acceptButtons[0]).toBeDisabled();
-  expect(rejectButtons[0]).toBeDisabled();
-  expect(acceptButtons[1]).not.toBeDisabled();
-  expect(rejectButtons[1]).not.toBeDisabled();
+  expect(firstCard).not.toBeNull();
+  expect(secondCard).not.toBeNull();
+  expect(within(firstCard as HTMLElement).getByRole("button", { name: "Accept" })).toBeDisabled();
+  expect(within(firstCard as HTMLElement).getByRole("button", { name: "Reject" })).toBeDisabled();
+  expect(
+    within(secondCard as HTMLElement).getByRole("button", { name: "Accept" }),
+  ).not.toBeDisabled();
+  expect(
+    within(secondCard as HTMLElement).getByRole("button", { name: "Reject" }),
+  ).not.toBeDisabled();
 });
