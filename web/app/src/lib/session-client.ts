@@ -1,6 +1,7 @@
 import type {
   ExternalTaskSummary,
   HITLTicket,
+  MemoryCandidate,
   RunDetail,
   SessionDetail,
   SessionListEntry,
@@ -84,6 +85,21 @@ type HITLTicketResponse = {
   Context: string;
   Status: string;
   CreatedAt: string;
+};
+
+type MemoryCandidateResponse = {
+  candidate_id: string;
+  session_id: string;
+  turn_id: string;
+  run_id: string;
+  source_recap_id: string;
+  target: string;
+  kind: string;
+  content: string;
+  score: number;
+  status: string;
+  created_at: string;
+  metadata?: Record<string, unknown>;
 };
 
 async function parseJSON<T>(response: Response): Promise<T> {
@@ -179,6 +195,25 @@ function mapHITLTicketResponse(input: HITLTicketResponse): HITLTicket {
   };
 }
 
+function mapMemoryCandidateResponse(
+  input: MemoryCandidateResponse,
+): MemoryCandidate {
+  return {
+    candidateId: input.candidate_id,
+    sessionId: input.session_id,
+    turnId: input.turn_id,
+    runId: input.run_id,
+    sourceRecapId: input.source_recap_id,
+    target: input.target,
+    kind: input.kind,
+    content: input.content,
+    score: input.score,
+    status: input.status,
+    createdAt: input.created_at,
+    metadata: input.metadata ?? {},
+  };
+}
+
 export async function createSession(
   input: { title: string },
   fetchImpl: FetchLike = fetch,
@@ -264,5 +299,44 @@ export async function dismissHITLTicket(
     method: "POST",
     headers: { "content-type": "application/json" },
   });
+  await parseJSON<{ status: string }>(response);
+}
+
+export async function listMemoryCandidates(
+  sessionId: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<MemoryCandidate[]> {
+  const response = await fetchImpl(
+    `/api/sessions/${sessionId}/memory-candidates`,
+  );
+  const payload = await parseJSON<MemoryCandidateResponse[]>(response);
+  return payload.map(mapMemoryCandidateResponse);
+}
+
+export async function acceptMemoryCandidate(
+  candidateId: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<void> {
+  const response = await fetchImpl(
+    `/api/memory-candidates/${candidateId}/accept`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    },
+  );
+  await parseJSON<{ status: string }>(response);
+}
+
+export async function rejectMemoryCandidate(
+  candidateId: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<void> {
+  const response = await fetchImpl(
+    `/api/memory-candidates/${candidateId}/reject`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    },
+  );
   await parseJSON<{ status: string }>(response);
 }

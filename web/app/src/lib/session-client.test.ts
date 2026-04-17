@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  acceptMemoryCandidate,
   createSession,
   dismissHITLTicket,
   getRunDetail,
   getSession,
+  listMemoryCandidates,
   listSessions,
   listHITLTickets,
+  rejectMemoryCandidate,
   respondHITLTicket,
   startTurn,
 } from "./session-client";
@@ -381,5 +384,86 @@ describe("session-client", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
     });
+  });
+
+  it("loads /api/sessions/{id}/memory-candidates and returns parsed candidates", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        {
+          candidate_id: "cand_001",
+          session_id: "sess_001",
+          turn_id: "turn_001",
+          run_id: "run_001",
+          source_recap_id: "recap_001",
+          target: "MEMORY",
+          kind: "fact",
+          content: "user prefers concise responses",
+          score: 0.9,
+          status: "pending",
+          created_at: "2026-04-17T09:00:00Z",
+          metadata: { source: "recap" },
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await listMemoryCandidates("sess_001");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sessions/sess_001/memory-candidates",
+    );
+    expect(result).toEqual([
+      {
+        candidateId: "cand_001",
+        sessionId: "sess_001",
+        turnId: "turn_001",
+        runId: "run_001",
+        sourceRecapId: "recap_001",
+        target: "MEMORY",
+        kind: "fact",
+        content: "user prefers concise responses",
+        score: 0.9,
+        status: "pending",
+        createdAt: "2026-04-17T09:00:00Z",
+        metadata: { source: "recap" },
+      },
+    ]);
+  });
+
+  it("posts accept request to /api/memory-candidates/{id}/accept", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "ok" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await acceptMemoryCandidate("cand_001");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/memory-candidates/cand_001/accept",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      },
+    );
+  });
+
+  it("posts reject request to /api/memory-candidates/{id}/reject", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "ok" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await rejectMemoryCandidate("cand_001");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/memory-candidates/cand_001/reject",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      },
+    );
   });
 });

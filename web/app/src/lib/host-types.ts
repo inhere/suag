@@ -28,6 +28,21 @@ export type ExternalTaskSummary = {
   metadata: Record<string, unknown>;
 };
 
+export type MemoryCandidate = {
+  candidateId: string;
+  sessionId: string;
+  turnId: string;
+  runId: string;
+  sourceRecapId: string;
+  target: string;
+  kind: string;
+  content: string;
+  score: number;
+  status: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+};
+
 export type SessionSummary = {
   sessionId: string;
   title: string;
