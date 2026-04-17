@@ -43,6 +43,7 @@ import type { SessionSocketStatus } from "../lib/session-ws";
 
 const workbenchStorageKey = "axon.web.workbench";
 const socketReconnectDelayMs = 1500;
+const hitlPollIntervalMs = 3000;
 
 type PersistedWorkbenchState = {
   recentSessions: SessionListItem[];
@@ -357,14 +358,18 @@ export function App() {
       });
   }
 
-  async function refreshHITLTickets() {
-    setHITLLoading(true);
+  async function refreshHITLTickets(showLoading = true) {
+    if (showLoading) {
+      setHITLLoading(true);
+    }
     try {
       setHITLTickets(await listHITLTickets());
     } catch {
       // Keep the workbench usable even if HITL listing is temporarily unavailable.
     } finally {
-      setHITLLoading(false);
+      if (showLoading) {
+        setHITLLoading(false);
+      }
     }
   }
 
@@ -403,6 +408,16 @@ export function App() {
 
   useEffect(() => {
     void refreshHITLTickets();
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      void refreshHITLTickets(false);
+    }, hitlPollIntervalMs);
+
+    return () => {
+      clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {

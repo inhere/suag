@@ -20,6 +20,7 @@
 - `docs/usage/host-state-snapshot-v0.md`、`docs/usage/llm-config-v0.md`、`docs/usage/host-recap-memory-hooks-v0.md` 已作为当前 v0 协议、配置与 recap/memory 基线文档
 - 当前 recap 主线已推进到 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md`，且后端已具备 `memory candidate` 查询与 `accept/reject` REST 入口
 - Web 侧已完成 `Memory Candidates` 右侧面板接入，当前支持 session 级候选加载、`draft/rendered` 过滤、Accept/Reject、错误与 pending 状态反馈，见 `docs/superpowers/specs/2026-04-17-web-memory-candidates-panel-design.md` 与 `docs/superpowers/plans/2026-04-17-web-memory-candidates-panel-implementation-plan.md`
+- Web 工作台已补齐 `Pending HITL` 自动轮询刷新，新增 ticket 无需手动点 `Refresh` 即可在面板出现，当前继续排查 `file_read` 缺 `path` 的上游 runtime/tool-call 根因
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

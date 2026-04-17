@@ -1801,6 +1801,40 @@ describe("App", () => {
     await waitFor(() => expect(listHITLTicketsMock).toHaveBeenCalledTimes(2));
   });
 
+  it("automatically refreshes HITL tickets and shows newly created ticket", async () => {
+    vi.useFakeTimers();
+    listHITLTicketsMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "hitl-auto-001",
+          agentId: "default",
+          taskId: "task_auto_001",
+          sessionId: "sess_001",
+          turnId: "turn_001",
+          runId: "run_001",
+          reason: "tool failed repeatedly",
+          context: "tool error: \"path\" arg is required",
+          status: "waiting",
+          createdAt: "2026-04-17T15:54:09Z",
+        },
+      ]);
+
+    render(<App />);
+
+    await act(async () => {});
+    expect(listHITLTicketsMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("No pending tickets.")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    expect(listHITLTicketsMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("tool failed repeatedly")).toBeInTheDocument();
+    expect(screen.getByText("tool error: \"path\" arg is required")).toBeInTheDocument();
+  }, 10000);
+
   it("shows inline feedback when HITL respond fails", async () => {
     respondHITLTicketMock.mockRejectedValueOnce(new Error("respond failed"));
     listHITLTicketsMock.mockResolvedValueOnce([
