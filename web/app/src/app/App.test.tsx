@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { MemoryCandidate, SessionSocketMessage, StateSnapshotV0 } from "../lib/host-types";
@@ -162,6 +162,13 @@ function createMemoryCandidate(
     createdAt: "2026-04-17T10:00:00Z",
     metadata: {},
   };
+}
+
+function findMemoryCandidateCard(content: string): HTMLElement {
+  const cards = screen.getAllByRole("article");
+  const matchedCard = cards.find((card) => within(card).queryByText(content));
+  expect(matchedCard).toBeDefined();
+  return matchedCard as HTMLElement;
 }
 
 describe("App", () => {
@@ -2155,15 +2162,14 @@ describe("App", () => {
 
     render(<App />);
 
-    const firstCard = (await screen.findByText("first candidate")).closest("article");
-    const secondCard = screen.getByText("second candidate").closest("article");
-    expect(firstCard).not.toBeNull();
-    expect(secondCard).not.toBeNull();
+    await screen.findByText("first candidate");
+    const firstCard = findMemoryCandidateCard("first candidate");
+    const secondCard = findMemoryCandidateCard("second candidate");
 
-    const firstAcceptButton = firstCard?.querySelector("button:nth-of-type(1)") as HTMLButtonElement;
-    const firstRejectButton = firstCard?.querySelector("button:nth-of-type(2)") as HTMLButtonElement;
-    const secondAcceptButton = secondCard?.querySelector("button:nth-of-type(1)") as HTMLButtonElement;
-    const secondRejectButton = secondCard?.querySelector("button:nth-of-type(2)") as HTMLButtonElement;
+    const firstAcceptButton = within(firstCard).getByRole("button", { name: "Accept" });
+    const firstRejectButton = within(firstCard).getByRole("button", { name: "Reject" });
+    const secondAcceptButton = within(secondCard).getByRole("button", { name: "Accept" });
+    const secondRejectButton = within(secondCard).getByRole("button", { name: "Reject" });
 
     fireEvent.click(firstAcceptButton);
 
@@ -2181,6 +2187,70 @@ describe("App", () => {
     });
 
     await waitFor(() => expect(secondAcceptButton).not.toBeDisabled());
+  });
+
+  it("keeps latest memory candidate refresh result when older refresh resolves later", async () => {
+    const acceptDeferred = deferred<void>();
+    const rejectDeferred = deferred<void>();
+    const staleRefreshDeferred = deferred<MemoryCandidate[]>();
+    const latestRefreshDeferred = deferred<MemoryCandidate[]>();
+    acceptMemoryCandidateMock.mockReturnValueOnce(acceptDeferred.promise);
+    rejectMemoryCandidateMock.mockReturnValueOnce(rejectDeferred.promise);
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_001",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_001",
+          title: "memory session",
+          status: "WAITING",
+          updatedAt: "2026-04-17T10:00:00Z",
+          preview: "memory preview",
+        },
+      ],
+    });
+    listMemoryCandidatesMock
+      .mockResolvedValueOnce([
+        createMemoryCandidate("cand_001", "MEMORY", "initial first", "sess_001"),
+        createMemoryCandidate("cand_002", "MEMORY", "initial second", "sess_001"),
+      ])
+      .mockReturnValueOnce(staleRefreshDeferred.promise)
+      .mockReturnValueOnce(latestRefreshDeferred.promise);
+
+    render(<App />);
+
+    await screen.findByText("initial first");
+    const firstCard = findMemoryCandidateCard("initial first");
+    const secondCard = findMemoryCandidateCard("initial second");
+
+    fireEvent.click(within(firstCard).getByRole("button", { name: "Accept" }));
+    fireEvent.click(within(secondCard).getByRole("button", { name: "Reject" }));
+
+    await act(async () => {
+      acceptDeferred.resolve();
+    });
+    await waitFor(() => expect(listMemoryCandidatesMock).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      rejectDeferred.resolve();
+    });
+    await waitFor(() => expect(listMemoryCandidatesMock).toHaveBeenCalledTimes(3));
+
+    await act(async () => {
+      latestRefreshDeferred.resolve([
+        createMemoryCandidate("cand_latest", "MEMORY", "latest refreshed candidate", "sess_001"),
+      ]);
+    });
+    expect(await screen.findByText("latest refreshed candidate")).toBeInTheDocument();
+
+    await act(async () => {
+      staleRefreshDeferred.resolve([
+        createMemoryCandidate("cand_stale", "MEMORY", "stale refreshed candidate", "sess_001"),
+      ]);
+    });
+
+    expect(screen.queryByText("stale refreshed candidate")).not.toBeInTheDocument();
+    expect(screen.getByText("latest refreshed candidate")).toBeInTheDocument();
   });
 
   it("shows action error when updating memory candidate fails", async () => {

@@ -299,6 +299,7 @@ export function App() {
   const [debugOpen, setDebugOpen] = useState(false);
   const socketRef = useRef<SessionSocketConnection | null>(null);
   const currentSessionIDRef = useRef<string | null>(viewState.currentSessionId);
+  const memoryCandidatesRefreshRequestIDRef = useRef(0);
   const memoryCandidateActionPendingIDsRef = useRef<Set<string>>(new Set());
   const pendingWSCommandRef = useRef<null | "continue_composer" | "continue_hint" | "stop">(null);
   const lastWSCommandRef = useRef<null | "continue_composer" | "continue_hint" | "stop">(null);
@@ -368,22 +369,33 @@ export function App() {
   }
 
   async function refreshMemoryCandidates(sessionId: string) {
+    const requestID = memoryCandidatesRefreshRequestIDRef.current + 1;
+    memoryCandidatesRefreshRequestIDRef.current = requestID;
     setMemoryCandidatesLoading(true);
     setMemoryCandidatesError(null);
 
     try {
       const candidates = await listMemoryCandidates(sessionId);
-      if (currentSessionIDRef.current !== sessionId) {
+      if (
+        currentSessionIDRef.current !== sessionId ||
+        memoryCandidatesRefreshRequestIDRef.current !== requestID
+      ) {
         return;
       }
       setMemoryCandidates(filterPendingMemoryCandidates(candidates));
     } catch {
-      if (currentSessionIDRef.current !== sessionId) {
+      if (
+        currentSessionIDRef.current !== sessionId ||
+        memoryCandidatesRefreshRequestIDRef.current !== requestID
+      ) {
         return;
       }
       setMemoryCandidatesError("Failed to load memory candidates.");
     } finally {
-      if (currentSessionIDRef.current === sessionId) {
+      if (
+        currentSessionIDRef.current === sessionId &&
+        memoryCandidatesRefreshRequestIDRef.current === requestID
+      ) {
         setMemoryCandidatesLoading(false);
       }
     }
@@ -545,6 +557,7 @@ export function App() {
 
   useEffect(() => {
     const sessionId = viewState.currentSessionId;
+    memoryCandidatesRefreshRequestIDRef.current = 0;
     setMemoryCandidates([]);
     setMemoryCandidatesError(null);
     setMemoryCandidatesLoading(false);
