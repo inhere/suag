@@ -620,16 +620,18 @@ func isToolErrorResult(result *agentcore.ToolResult) bool {
 }
 
 func hitlFailureMessage(call agentcore.ToolCall, decision agentcore.ToolErrorDecision) string {
-	if decision.Result != nil && strings.TrimSpace(decision.Result.Content) != "" {
-		return decision.Result.Content
+	if decision.Result != nil {
+		if message := normalizeHITLFailureContext(call, decision.Result.Content); message != "" {
+			return message
+		}
 	}
 	if decision.Fail != nil {
-		return decision.Fail.Error()
+		return normalizeHITLFailureContext(call, decision.Fail.Error())
 	}
 	if call.Name != "" {
-		return fmt.Sprintf("tool %q failed", call.Name)
+		return fmt.Sprintf("工具 %q 执行失败，请检查参数或改用其他方式继续。", call.Name)
 	}
-	return "tool failed"
+	return "工具执行失败，请检查参数或改用其他方式继续。"
 }
 
 func sameHITLTool(prev, current agentcore.ToolCall) bool {
@@ -639,4 +641,34 @@ func sameHITLTool(prev, current agentcore.ToolCall) bool {
 		return prevName == currName
 	}
 	return strings.TrimSpace(prev.CallID) == strings.TrimSpace(current.CallID)
+}
+
+func normalizeHITLFailureContext(call agentcore.ToolCall, raw string) string {
+	message := strings.TrimSpace(raw)
+	if message == "" {
+		if call.Name != "" {
+			return fmt.Sprintf("工具 %q 执行失败，请检查参数或改用其他方式继续。", call.Name)
+		}
+		return "工具执行失败，请检查参数或改用其他方式继续。"
+	}
+
+	message = strings.TrimPrefix(message, "tool error: ")
+	message = strings.TrimSpace(message)
+	if message == "" {
+		if call.Name != "" {
+			return fmt.Sprintf("工具 %q 执行失败，请检查参数或改用其他方式继续。", call.Name)
+		}
+		return "工具执行失败，请检查参数或改用其他方式继续。"
+	}
+
+	if call.Name != "" {
+		if strings.Contains(message, "missing required argument") ||
+			strings.Contains(message, "arg is required") ||
+			strings.Contains(message, "arguments must be a JSON object") ||
+			strings.Contains(message, "invalid tool call arguments") {
+			return fmt.Sprintf("工具 %q 的调用参数不完整或格式不正确：%s。", call.Name, message)
+		}
+		return fmt.Sprintf("工具 %q 执行失败：%s。", call.Name, message)
+	}
+	return message
 }

@@ -45,7 +45,7 @@ func TestHITLFailureTracker_BuildsPendingInterventionAfterThreshold(t *testing.T
 	if req.Reason != `tool "fail_tool" failed 2 times in a row` {
 		t.Fatalf("reason = %q", req.Reason)
 	}
-	if req.Context != "tool error: boom" {
+	if req.Context != `工具 "fail_tool" 执行失败：boom。` {
 		t.Fatalf("context = %q, want tool error message", req.Context)
 	}
 }
@@ -119,4 +119,33 @@ func TestHITLFailureTracker_DoesNotAccumulateAcrossDifferentTools(t *testing.T) 
 	if req.FailureCount != 2 {
 		t.Fatalf("failure count = %d, want 2", req.FailureCount)
 	}
+}
+
+func TestNormalizeHITLFailureContext(t *testing.T) {
+	t.Run("normalizes missing required argument errors", func(t *testing.T) {
+		call := agentcore.ToolCall{Name: "file_read"}
+		got := normalizeHITLFailureContext(call, `tool error: "path" arg is required`)
+		want := `工具 "file_read" 的调用参数不完整或格式不正确："path" arg is required。`
+		if got != want {
+			t.Fatalf("normalizeHITLFailureContext() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("normalizes invalid argument object errors", func(t *testing.T) {
+		call := agentcore.ToolCall{Name: "file_read"}
+		got := normalizeHITLFailureContext(call, `tool error: tool call "file_read" arguments must be a JSON object`)
+		want := `工具 "file_read" 的调用参数不完整或格式不正确：tool call "file_read" arguments must be a JSON object。`
+		if got != want {
+			t.Fatalf("normalizeHITLFailureContext() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("keeps general tool failure readable", func(t *testing.T) {
+		call := agentcore.ToolCall{Name: "file_read"}
+		got := normalizeHITLFailureContext(call, `tool error: permission denied`)
+		want := `工具 "file_read" 执行失败：permission denied。`
+		if got != want {
+			t.Fatalf("normalizeHITLFailureContext() = %q, want %q", got, want)
+		}
+	})
 }
