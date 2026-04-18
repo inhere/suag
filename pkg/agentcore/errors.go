@@ -14,6 +14,7 @@ var (
 	ErrInvalidFinishReason     = api.ErrInvalidFinishReason
 	ErrMissingToolCallID       = api.ErrMissingToolCallID
 	ErrMissingToolName         = api.ErrMissingToolName
+	ErrToolArgumentsInvalid    = api.ErrToolArgumentsInvalid
 	ErrMissingFinishReason     = api.ErrMissingFinishReason
 	ErrProviderRequired        = api.ErrProviderRequired
 	ErrRunNotResumable         = api.ErrRunNotResumable

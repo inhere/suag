@@ -221,7 +221,7 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 
 	choice := raw.Choices[0]
 	resp := &agentcoreapi.GenerateResult{
-		Content:      choice.Message.Content,
+		Content: choice.Message.Content,
 		Usage: agentcoreapi.Usage{
 			InputTokens:  raw.Usage.PromptTokens,
 			OutputTokens: raw.Usage.CompletionTokens,
@@ -230,8 +230,10 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 	}
 
 	for _, tc := range choice.Message.ToolCalls {
-		var args map[string]any
-		_ = json.Unmarshal(tc.Function.Arguments, &args)
+		args, err := decodeToolArguments(tc.Function.Arguments, tc.Function.Name)
+		if err != nil {
+			return nil, err
+		}
 		resp.ToolCalls = append(resp.ToolCalls, agentcoreapi.ToolCall{
 			CallID:    tc.ID,
 			Name:      tc.Function.Name,

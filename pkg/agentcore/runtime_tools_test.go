@@ -140,6 +140,69 @@ func TestRuntime_Run_ToolErrorBecomesMessage(t *testing.T) {
 	}
 }
 
+func TestRuntime_Run_RejectsToolCallMissingRequiredArgumentsBeforeExecution(t *testing.T) {
+	store := newRuntimeTestStorage()
+	tools := NewToolRegistry()
+	tool := &runtimeTestToolWithSchema{
+		runtimeTestTool: runtimeTestTool{
+			name:        "file_read",
+			description: "Read file",
+		},
+		inputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type": "string",
+				},
+			},
+			"required": []any{"path"},
+		},
+	}
+	tools.Register(tool)
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			ToolCalls: []ToolCall{{
+				CallID:    "call-1",
+				Name:      "file_read",
+				Arguments: nil,
+			}},
+			FinishReason: FinishToolCalls,
+		}},
+	}
+
+	result, err := New(Config{
+		Provider:       provider,
+		Storage:        store,
+		Tools:          tools,
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+	}).Run(context.Background(), RunInput{
+		RunID:       "run-missing-required-tool-args",
+		AgentID:     "agent-1",
+		Instruction: "read file without path",
+	})
+	if result != nil {
+		t.Fatalf("expected run to fail before tool execution, got %#v", result)
+	}
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) {
+		t.Fatalf("expected missing required args to surface as ToolError, got %T %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "missing required argument \"path\"") {
+		t.Fatalf("expected required-argument failure, got %v", err)
+	}
+	if len(tool.calls) != 0 {
+		t.Fatalf("expected tool execution to be skipped for invalid call, got %#v", tool.calls)
+	}
+	if len(store.messages["run-missing-required-tool-args"]) != 1 || store.messages["run-missing-required-tool-args"][0].Role != "user" {
+		t.Fatalf("expected invalid tool call not to persist tool transcript, got %#v", store.messages["run-missing-required-tool-args"])
+	}
+	saved := store.runs["run-missing-required-tool-args"]
+	if saved == nil || saved.Status != RunFailed || !strings.Contains(saved.LastError, "missing required argument \"path\"") {
+		t.Fatalf("expected failed run state with required argument error, got %#v", saved)
+	}
+}
+
 func TestRuntime_Run_MaxStepsExceededFailsRun(t *testing.T) {
 	store := newRuntimeTestStorage()
 	tools := NewToolRegistry()

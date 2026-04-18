@@ -182,8 +182,10 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		case "text":
 			resp.Content += block.Text
 		case "tool_use":
-			var args map[string]any
-			_ = json.Unmarshal(block.Input, &args)
+			args, err := decodeToolArguments(block.Input, block.Name)
+			if err != nil {
+				return nil, err
+			}
 			resp.ToolCalls = append(resp.ToolCalls, agentcoreapi.ToolCall{
 				CallID:    block.ID,
 				Name:      block.Name,

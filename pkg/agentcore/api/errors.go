@@ -103,6 +103,7 @@ var (
 	ErrInvalidFinishReason     = errors.New("invalid finish reason for generate result payload")
 	ErrMissingToolCallID       = errors.New("missing tool call id")
 	ErrMissingToolName         = errors.New("missing tool name")
+	ErrToolArgumentsInvalid    = errors.New("invalid tool call arguments")
 	ErrMissingFinishReason     = errors.New("missing finish reason")
 	ErrProviderRequired        = errors.New("provider is required")
 	ErrRunNotResumable         = errors.New("run cannot be resumed from terminal state")

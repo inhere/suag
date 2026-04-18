@@ -161,7 +161,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 
 		switch res.FinishReason {
 		case FinishToolCalls:
-			if result, err, handled := r.executeToolCalls(ctx, state, res.ToolCalls); handled {
+			if result, err, handled := r.executeToolCalls(ctx, state, tools, res.ToolCalls); handled {
 				return r.finishRun(ctx, input, state, result, err)
 			}
 			continue
@@ -409,7 +409,10 @@ func (r *DefaultRuntime) effectiveMaxSteps(input RunInput) int {
 	return r.maxSteps
 }
 
-func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, calls []ToolCall) (*RunResult, error, bool) {
+func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, schemas []ToolSchema, calls []ToolCall) (*RunResult, error, bool) {
+	if err := validateToolCallsAgainstSchemas(schemas, calls); err != nil {
+		return r.handleErrorResult(ctx, state, "tool_validation", err, NewControl())
+	}
 	if err := r.toolPolicy.ValidateToolCalls(ctx, state, cloneToolCallsValue(calls)); err != nil {
 		return r.handleErrorResult(ctx, state, "max_tool_calls", err, NewControl())
 	}

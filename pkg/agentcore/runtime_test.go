@@ -348,6 +348,19 @@ func (t *runtimeTestTool) Schema() ToolSchema {
 	}
 }
 
+type runtimeTestToolWithSchema struct {
+	runtimeTestTool
+	inputSchema map[string]any
+}
+
+func (t *runtimeTestToolWithSchema) Schema() ToolSchema {
+	return ToolSchema{
+		Name:        t.name,
+		Description: t.Description(),
+		InputSchema: cloneMetadata(t.inputSchema),
+	}
+}
+
 func (t *runtimeTestTool) Execute(_ context.Context, call ToolCall) (*ToolResult, error) {
 	t.calls = append(t.calls, call)
 	if t.handler != nil {
@@ -370,20 +383,20 @@ func (t *runtimeTestTool) Execute(_ context.Context, call ToolCall) (*ToolResult
 }
 
 type runtimeTestStorage struct {
-	runs            map[string]*RunState
-	messages        map[string][]Message
-	artifacts       map[string][]Artifact
-	loadRunErr      error
-	loadMsgsErr     error
-	saveRunErr      error
-	appendErr       error
-	artifactLoadErr error
-	artifactSaveErr error
-	appendErrOnCall int
-	appendCalls     int
+	runs              map[string]*RunState
+	messages          map[string][]Message
+	artifacts         map[string][]Artifact
+	loadRunErr        error
+	loadMsgsErr       error
+	saveRunErr        error
+	appendErr         error
+	artifactLoadErr   error
+	artifactSaveErr   error
+	appendErrOnCall   int
+	appendCalls       int
 	artifactLoadCalls int
 	artifactSaveCalls int
-	appendHook      func(string, []Message)
+	appendHook        func(string, []Message)
 }
 
 func newRuntimeTestStorage() *runtimeTestStorage {
