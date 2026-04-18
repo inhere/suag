@@ -44,8 +44,8 @@ type sessionState struct {
 }
 
 type sessionMemory struct {
-	mu        sync.Mutex
-	history   []memory.Message
+	mu         sync.Mutex
+	history    []memory.Message
 	transcript []memory.Message
 }
 
@@ -127,14 +127,15 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 	// as host waiting states. We derive a coarse host-facing wait bucket from the
 	// yielded summary/reason so web + gateway can distinguish approval/auth flows.
 	if runner.GetState() == agent.AgentSuspended {
-		waitState := deriveWaitState(summary)
+		waitState := deriveWaitState(summary, resultMetadata(result))
 		if err := emitStatus(in.Emit, waitState); err != nil {
 			return session.RuntimeResult{}, err
 		}
 		r.storeActiveRuntime(in.SessionID, a, runner)
 		return session.RuntimeResult{
-			Summary:   summary,
-			WaitState: waitState,
+			Summary:      summary,
+			WaitState:    waitState,
+			WaitMetadata: cloneWaitMetadata(resultMetadata(result)),
 		}, nil
 	}
 	r.clearActiveRuntime(in.SessionID)
@@ -319,7 +320,14 @@ func cloneMemoryMessages(messages []memory.Message) []memory.Message {
 	return out
 }
 
-func deriveWaitState(summary string) session.RunState {
+func deriveWaitState(summary string, metadata map[string]any) session.RunState {
+	switch normalizeWaitKind(metadata) {
+	case "auth_required":
+		return session.RunAuthRequired
+	case "input_required":
+		return session.RunInputRequired
+	}
+
 	reason := strings.ToLower(strings.TrimSpace(summary))
 	if reason == "" {
 		return session.RunInputRequired
@@ -330,6 +338,32 @@ func deriveWaitState(summary string) session.RunState {
 		return session.RunAuthRequired
 	}
 	return session.RunInputRequired
+}
+
+func resultMetadata(result *agent.TaskResult) map[string]any {
+	if result == nil || len(result.Metadata) == 0 {
+		return nil
+	}
+	return result.Metadata
+}
+
+func normalizeWaitKind(metadata map[string]any) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	raw, _ := metadata["wait_kind"].(string)
+	return strings.ToLower(strings.TrimSpace(raw))
+}
+
+func cloneWaitMetadata(metadata map[string]any) map[string]any {
+	if len(metadata) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		out[key] = value
+	}
+	return out
 }
 
 func newSessionMemory(history []memory.Message) *sessionMemory {

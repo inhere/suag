@@ -34,6 +34,7 @@ type RuntimeRequest struct {
 type RuntimeResult struct {
 	Summary      string
 	WaitState    RunState
+	WaitMetadata map[string]any
 	ExternalTask *ExternalTask
 }
 

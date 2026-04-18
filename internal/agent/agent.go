@@ -74,11 +74,12 @@ const (
 
 // TaskResult is the structured output from a completed task.
 type TaskResult struct {
-	TaskID  string
-	Summary string
-	Output  string
-	Error   string
-	Spans   []*tracing.Span
+	TaskID   string
+	Summary  string
+	Output   string
+	Error    string
+	Metadata map[string]any
+	Spans    []*tracing.Span
 }
 
 // Config holds configuration for creating a new agent.

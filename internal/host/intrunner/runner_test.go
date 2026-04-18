@@ -8,10 +8,10 @@ import (
 
 	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/host/session"
-	"github.com/inhere/axon/pkg/agentcore"
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
+	"github.com/inhere/axon/pkg/agentcore"
 	"github.com/inhere/axon/pkg/agentcore/api"
 )
 
@@ -189,6 +189,66 @@ func TestRunner_RunMapsApprovalYieldToAuthRequired(t *testing.T) {
 	assert.Eq(t, "AUTH_REQUIRED", states[2])
 }
 
+func TestRunner_RunUsesStructuredWaitKindBeforeSummaryFallback(t *testing.T) {
+	t.Parallel()
+
+	hook := &yieldStructuredInputHostHook{}
+	mock := llm.NewMockProvider("mock")
+
+	runner, err := New(Config{
+		Provider: mock,
+		Registry: tools.NewRegistry(),
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+		Hooks:    []agentcore.Hook{hook},
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	result, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_wait_kind",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "needs more info",
+	})
+	assert.NoErr(t, err)
+	assert.Eq(t, "await_review", result.Summary)
+	assert.Eq(t, session.RunAuthRequired, result.WaitState)
+}
+
+func TestRunner_RunKeepsSummaryFallbackWhenWaitKindMissing(t *testing.T) {
+	t.Parallel()
+
+	hook := &yieldApprovalHostHook{}
+	mock := llm.NewMockProvider("mock")
+
+	runner, err := New(Config{
+		Provider: mock,
+		Registry: tools.NewRegistry(),
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+		Hooks:    []agentcore.Hook{hook},
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	result, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_wait_fallback",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "request approval",
+	})
+	assert.NoErr(t, err)
+	assert.Eq(t, "await_approval", result.Summary)
+	assert.Eq(t, session.RunAuthRequired, result.WaitState)
+}
+
 func TestRunner_RuntimeKindDefaultsToAgentcore(t *testing.T) {
 	t.Parallel()
 
@@ -243,6 +303,18 @@ type yieldApprovalHostHook struct {
 
 func (h *yieldApprovalHostHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
 	ctrl.Yield("await_approval", map[string]any{"policy": "manual"})
+	return nil
+}
+
+type yieldStructuredInputHostHook struct {
+	agentcore.NopHook
+}
+
+func (h *yieldStructuredInputHostHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
+	ctrl.Yield("await_review", map[string]any{
+		"wait_kind": "auth_required",
+		"policy":    "manual_review",
+	})
 	return nil
 }
 

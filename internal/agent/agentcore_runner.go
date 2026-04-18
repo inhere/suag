@@ -149,9 +149,10 @@ func (r *AgentcoreRunner) Run(ctx context.Context, task *Task) (*TaskResult, err
 		_ = r.sm.Transition(AgentCompleted)
 		r.agent.State = AgentCompleted
 		return &TaskResult{
-			TaskID:  task.ID,
-			Summary: extractSummary(result.Output),
-			Output:  result.Output,
+			TaskID:   task.ID,
+			Summary:  extractSummary(result.Output),
+			Output:   result.Output,
+			Metadata: nil,
 		}, nil
 	case agentcore.RunYielded:
 		r.resumeMode = agentcore.ResumeFromState
@@ -164,9 +165,10 @@ func (r *AgentcoreRunner) Run(ctx context.Context, task *Task) (*TaskResult, err
 			yieldReason = result.Yield.Reason
 		}
 		return &TaskResult{
-			TaskID:  task.ID,
-			Summary: yieldReason,
-			Output:  "",
+			TaskID:   task.ID,
+			Summary:  yieldReason,
+			Output:   "",
+			Metadata: cloneTaskResultMetadata(result.Yield.Metadata),
 		}, nil
 	default:
 		_ = r.sm.Transition(AgentFailed)
@@ -266,6 +268,17 @@ func buildRunMetadata(a *Agent, task *Task) map[string]any {
 		return nil
 	}
 	return metadata
+}
+
+func cloneTaskResultMetadata(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(src))
+	for key, value := range src {
+		out[key] = value
+	}
+	return out
 }
 
 func resolveMemory(a *Agent) agentcore.Memory {

@@ -25,6 +25,7 @@
 - Host `BuildStateSnapshot()` 与 Web `Focused Run` 已补齐失败原因透传，run.failed 在刷新后仍能稳定显示具体错误，而不只剩 `failed` 状态
 - HITL ticket 的 `context` 文案已开始做归一化收口，重复 tool 失败时会优先提示“参数不完整/格式错误”或更清晰的工具失败原因，降低直接暴露底层 `tool error:` 文本的噪音
 - Host internal self-loop Phase 1 已开始收口 run lineage：`continue_turn` 新建的 Host run 会显式写入 `ResumeFromRunID`，为后续 waiting/resume contract 和 runtime run 对齐打基础
+- Host internal self-loop Phase 2 已开始收口结构化 waiting contract：`agentcore yield metadata -> TaskResult.Metadata -> intrunner wait_kind` 已贯通，`wait_kind` 会优先于 summary fallback 决定 `INPUT_REQUIRED / AUTH_REQUIRED`
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

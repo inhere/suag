@@ -19,9 +19,9 @@ import (
 
 type coreEchoTool struct{}
 
-func (e *coreEchoTool) Name() string           { return "echo" }
-func (e *coreEchoTool) Description() string    { return "echo the msg argument" }
-func (e *coreEchoTool) Kind() tools.Kind       { return tools.KindNative }
+func (e *coreEchoTool) Name() string                 { return "echo" }
+func (e *coreEchoTool) Description() string          { return "echo the msg argument" }
+func (e *coreEchoTool) Kind() tools.Kind             { return tools.KindNative }
 func (e *coreEchoTool) Schema() agentcore.ToolSchema { return agentcore.ToolSchema{Name: "echo"} }
 func (e *coreEchoTool) Execute(_ context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	msg, _ := call.Arguments["msg"].(string)
@@ -624,9 +624,9 @@ type yieldBeforeSecondModelAgentHook struct {
 
 type coreFailTool struct{}
 
-func (f *coreFailTool) Name() string           { return "fail_tool" }
-func (f *coreFailTool) Description() string    { return "always fails" }
-func (f *coreFailTool) Kind() tools.Kind       { return tools.KindNative }
+func (f *coreFailTool) Name() string                 { return "fail_tool" }
+func (f *coreFailTool) Description() string          { return "always fails" }
+func (f *coreFailTool) Kind() tools.Kind             { return tools.KindNative }
 func (f *coreFailTool) Schema() agentcore.ToolSchema { return agentcore.ToolSchema{Name: "fail_tool"} }
 func (f *coreFailTool) Execute(_ context.Context, _ agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	return nil, fmt.Errorf("fail_tool exploded")
@@ -650,6 +650,18 @@ func (h *yieldOnSecondAndThirdModelHook) BeforeModel(_ context.Context, _ *agent
 	if h.beforeModelCalls == 2 || h.beforeModelCalls == 3 {
 		ctrl.Yield("await_resume", map[string]any{"call": h.beforeModelCalls})
 	}
+	return nil
+}
+
+type yieldStructuredWaitAgentHook struct {
+	agentcore.NopHook
+}
+
+func (h *yieldStructuredWaitAgentHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
+	ctrl.Yield("await_review", map[string]any{
+		"wait_kind": "auth_required",
+		"policy":    "manual_review",
+	})
 	return nil
 }
 
@@ -684,6 +696,9 @@ func TestAgentcoreRunner_Run_CanResumeYieldedRunFromState(t *testing.T) {
 	if firstResult.Summary != "await_resume" {
 		t.Fatalf("summary = %q, want yield reason", firstResult.Summary)
 	}
+	if firstResult.Metadata["step"] != "after_tool" {
+		t.Fatalf("metadata step = %v, want %q", firstResult.Metadata["step"], "after_tool")
+	}
 
 	secondResult, err := runner.Run(context.Background(), newTask("resume from state"))
 	if err != nil {
@@ -697,6 +712,39 @@ func TestAgentcoreRunner_Run_CanResumeYieldedRunFromState(t *testing.T) {
 	}
 	if mock.CallCount() != 2 {
 		t.Fatalf("LLM called %d times, want 2 total across yield + resume", mock.CallCount())
+	}
+}
+
+func TestAgentcoreRunner_Run_ExposesYieldMetadataOnStructuredWait(t *testing.T) {
+	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	if err != nil {
+		t.Fatalf("expected sqlite storage to initialize, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	hook := &yieldStructuredWaitAgentHook{}
+	mock := llm.NewMockProvider("mock")
+	a := newTestAgent(mock, newTestRegistry())
+	runner := agent.NewAgentcoreRunner(a, agent.AgentcoreRunnerConfig{
+		Storage:  store,
+		MaxSteps: 3,
+		Hooks:    []agentcore.Hook{hook},
+	})
+
+	result, err := runner.Run(context.Background(), newTask("structured wait"))
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if result.Summary != "await_review" {
+		t.Fatalf("summary = %q, want yield reason", result.Summary)
+	}
+	if result.Metadata["wait_kind"] != "auth_required" {
+		t.Fatalf("metadata wait_kind = %v, want %q", result.Metadata["wait_kind"], "auth_required")
+	}
+	if result.Metadata["policy"] != "manual_review" {
+		t.Fatalf("metadata policy = %v, want %q", result.Metadata["policy"], "manual_review")
 	}
 }
 
