@@ -24,6 +24,7 @@
 - `file_read` 缺 `path` 的主因已收口：LLM provider 对空/坏 `arguments` 改为显式报错，agentcore runtime 也会在执行前按 tool schema 校验 required 参数，避免继续重复失败并错误触发 HITL
 - Host `BuildStateSnapshot()` 与 Web `Focused Run` 已补齐失败原因透传，run.failed 在刷新后仍能稳定显示具体错误，而不只剩 `failed` 状态
 - HITL ticket 的 `context` 文案已开始做归一化收口，重复 tool 失败时会优先提示“参数不完整/格式错误”或更清晰的工具失败原因，降低直接暴露底层 `tool error:` 文本的噪音
+- Host internal self-loop Phase 1 已开始收口 run lineage：`continue_turn` 新建的 Host run 会显式写入 `ResumeFromRunID`，为后续 waiting/resume contract 和 runtime run 对齐打基础
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

@@ -57,11 +57,11 @@ const (
 
 type RecapInput struct {
 	Session Session
-	TurnID   string
-	RunID    string
-	Phase    RecapPhase
-	Summary  string
-	Failure  string
+	TurnID  string
+	RunID   string
+	Phase   RecapPhase
+	Summary string
+	Failure string
 }
 
 type RecapHook interface {
@@ -212,6 +212,13 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 		return StartTurnResult{}, err
 	}
 	previousTurnID := sessionModel.LastTurnID
+	resumeFromRunID := ""
+	if !createIfMissing && strings.TrimSpace(previousTurnID) != "" {
+		resumeFromRunID, err = s.latestRunIDForTurn(ctx, sessionID, previousTurnID)
+		if err != nil {
+			return StartTurnResult{}, err
+		}
+	}
 
 	turnID := NewTurnID()
 	runID := NewRunID()
@@ -232,12 +239,13 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 	}
 
 	runModel := Run{
-		RunID:     runID,
-		SessionID: sessionID,
-		TurnID:    turnID,
-		AgentID:   agentID,
-		State:     RunQueued,
-		StartedAt: now,
+		RunID:           runID,
+		SessionID:       sessionID,
+		TurnID:          turnID,
+		AgentID:         agentID,
+		ResumeFromRunID: resumeFromRunID,
+		State:           RunQueued,
+		StartedAt:       now,
 	}
 	if err := s.store.CreateRun(ctx, runModel); err != nil {
 		return StartTurnResult{}, fmt.Errorf("create run: %w", err)
@@ -752,21 +760,9 @@ func (s *Service) validateContinueTurnState(ctx context.Context, sessionID strin
 		return nil
 	}
 
-	events, err := s.store.ListEventsBySession(ctx, sessionID, 0)
+	latestRunID, err := s.latestRunIDForTurn(ctx, sessionID, sessionModel.LastTurnID)
 	if err != nil {
 		return err
-	}
-
-	var latestRunID string
-	for i := len(events) - 1; i >= 0; i-- {
-		if events[i].TurnID != sessionModel.LastTurnID {
-			continue
-		}
-		if strings.TrimSpace(events[i].RunID) == "" {
-			continue
-		}
-		latestRunID = events[i].RunID
-		break
 	}
 	if latestRunID == "" {
 		return nil
@@ -788,6 +784,31 @@ func (s *Service) validateContinueTurnState(ctx context.Context, sessionID strin
 	default:
 		return fmt.Errorf("session is not waiting for continue_turn")
 	}
+}
+
+func (s *Service) latestRunIDForTurn(ctx context.Context, sessionID, turnID string) (string, error) {
+	if s == nil || s.store == nil {
+		return "", nil
+	}
+	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(turnID) == "" {
+		return "", nil
+	}
+
+	events, err := s.store.ListEventsBySession(ctx, sessionID, 0)
+	if err != nil {
+		return "", err
+	}
+
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].TurnID != turnID {
+			continue
+		}
+		if strings.TrimSpace(events[i].RunID) == "" {
+			continue
+		}
+		return events[i].RunID, nil
+	}
+	return "", nil
 }
 
 func validateStartTurnInput(in StartTurnInput) error {

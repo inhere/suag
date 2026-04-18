@@ -1445,6 +1445,96 @@ func TestService_ContinueTurnKeepsSessionEventSequenceIncreasingAcrossTurns(t *t
 	if bus.events[5].Sequence != 6 {
 		t.Fatalf("bus.events[5].Sequence = %d, want %d", bus.events[5].Sequence, 6)
 	}
+
+	firstRun, err := store.GetRun(ctx, firstResult.RunID)
+	if err != nil {
+		t.Fatalf("GetRun(first) error = %v", err)
+	}
+	if firstRun.ResumeFromRunID != "" {
+		t.Fatalf("first run ResumeFromRunID = %q, want empty", firstRun.ResumeFromRunID)
+	}
+
+	secondRun, err := store.GetRun(ctx, secondResult.RunID)
+	if err != nil {
+		t.Fatalf("GetRun(second) error = %v", err)
+	}
+	if secondRun.ResumeFromRunID != firstResult.RunID {
+		t.Fatalf("second run ResumeFromRunID = %q, want %q", secondRun.ResumeFromRunID, firstResult.RunID)
+	}
+	if secondRun.TurnID != secondResult.TurnID {
+		t.Fatalf("second run TurnID = %q, want %q", secondRun.TurnID, secondResult.TurnID)
+	}
+}
+
+func TestService_ContinueTurnStoresResumeFromLatestWaitingRun(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 18, 9, 0, 0, 0, time.UTC)
+
+	waitingRunner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, waitingRunner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	firstResult, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_resume_from",
+		AgentID:       "default",
+		UserMessage:   "first turn",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	svc.runner = &fakeRunner{
+		result: RuntimeResult{Summary: "done"},
+	}
+	svc.now = func() time.Time { return now.Add(1 * time.Minute) }
+
+	secondResult, err := svc.ContinueTurn(ctx, ContinueTurnInput{
+		SessionID:     "sess_resume_from",
+		AgentID:       "default",
+		Message:       "continue turn",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("ContinueTurn() error = %v", err)
+	}
+
+	firstRun, err := store.GetRun(ctx, firstResult.RunID)
+	if err != nil {
+		t.Fatalf("GetRun(first) error = %v", err)
+	}
+	if firstRun.ResumeFromRunID != "" {
+		t.Fatalf("first run ResumeFromRunID = %q, want empty", firstRun.ResumeFromRunID)
+	}
+
+	secondRun, err := store.GetRun(ctx, secondResult.RunID)
+	if err != nil {
+		t.Fatalf("GetRun(second) error = %v", err)
+	}
+	if secondRun.ResumeFromRunID != firstResult.RunID {
+		t.Fatalf("second run ResumeFromRunID = %q, want %q", secondRun.ResumeFromRunID, firstResult.RunID)
+	}
+	if secondRun.SessionID != "sess_resume_from" {
+		t.Fatalf("second run SessionID = %q, want %q", secondRun.SessionID, "sess_resume_from")
+	}
 }
 
 type fakeRunner struct {
