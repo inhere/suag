@@ -484,6 +484,11 @@ func mergeTurnSnapshot(target map[string]any, event HostEvent) {
 	if event.Type == session.EventRunExternalActivity || event.Type == session.EventRunExternalMessageDelta || event.Type == session.EventRunExternalMessageEnd {
 		target["hasExternalWork"] = true
 	}
+	if event.Type == session.EventRunFailed {
+		if failureText := failedMessageFromEvent(event); failureText != "" {
+			target["latestMessagePreview"] = failureText
+		}
+	}
 	target["activeRunCount"] = len(target["activeRunIds"].([]string))
 	target["completedRunCount"] = len(target["completedRunIds"].([]string))
 	target["failedRunCount"] = len(target["failedRunIds"].([]string))
@@ -497,6 +502,11 @@ func mergeRunSnapshot(target map[string]any, event HostEvent) {
 	target["updatedAt"] = formatEventTime(event.CreatedAt)
 
 	if event.Type != session.EventRunFinished {
+		if event.Type == session.EventRunFailed {
+			if failureText := failedMessageFromEvent(event); failureText != "" {
+				target["latestMessageText"] = failureText
+			}
+		}
 		return
 	}
 
@@ -512,6 +522,15 @@ func mergeRunSnapshot(target map[string]any, event HostEvent) {
 	target["summary"] = summary
 	target["latestMessageId"] = event.RunID + ":assistant"
 	target["latestMessageText"] = summary
+}
+
+func failedMessageFromEvent(event HostEvent) string {
+	values, ok := event.Payload.(map[string]any)
+	if !ok {
+		return ""
+	}
+	message, _ := values["error"].(string)
+	return strings.TrimSpace(message)
 }
 
 func formatEventTime(ts time.Time) string {

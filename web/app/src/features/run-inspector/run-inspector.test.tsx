@@ -195,3 +195,45 @@ it("shows loading and retry feedback for focused run detail states", () => {
   screen.getByRole("button", { name: "Retry Detail" }).click();
   expect(onRetryFocusedRunDetail).toHaveBeenCalledTimes(1);
 });
+
+it("shows failed run error text in the focused summary when no summary exists", () => {
+  render(
+    <RunInspector
+      currentTurn={null}
+      runs={[
+        {
+          runId: "run_failed",
+          turnId: "turn_failed",
+          sessionId: "sess_001",
+          agentId: "default",
+          displayState: "failed",
+          latestEventType: "run.failed",
+          latestMessageId: "",
+          latestMessageText: "tool call \"file_read\" arguments must be a JSON object",
+          summary: "",
+          externalTaskIds: [],
+          eventCount: 2,
+          updatedAt: "2026-04-18T10:00:01Z",
+        },
+      ]}
+      externalTasks={[]}
+      externalActivities={[]}
+      externalMessages={[]}
+      focusedRunId="run_failed"
+      focusedRunDetailStatus="loaded"
+      onFocusRun={vi.fn()}
+      onRetryFocusedRunDetail={vi.fn()}
+      canStop={false}
+      onStop={vi.fn()}
+      canAddHint={false}
+      onAddHint={vi.fn()}
+      onOpenDebug={vi.fn()}
+    />,
+  );
+
+  const focusedRunHeading = screen.getByRole("heading", { name: "Focused Run" });
+  const focusedRunPanel = focusedRunHeading.closest("section");
+  expect(focusedRunPanel).not.toBeNull();
+  expect(within(focusedRunPanel as HTMLElement).getByText("tool call \"file_read\" arguments must be a JSON object")).toBeInTheDocument();
+  expect(within(focusedRunPanel as HTMLElement).getByText("failed")).toBeInTheDocument();
+});

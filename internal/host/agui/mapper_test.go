@@ -586,8 +586,8 @@ func TestMapEvent_RunExternalActivityMapsToCustomAndSnapshot(t *testing.T) {
 		Sequence:  4,
 		Payload: map[string]any{
 			"externalTaskId": "ext_001",
-			"kind":   "item_started",
-			"itemId": "item_001",
+			"kind":           "item_started",
+			"itemId":         "item_001",
 		},
 	}
 
@@ -785,5 +785,70 @@ func TestBuildStateSnapshotUsesRunStatusDisplayState(t *testing.T) {
 	}
 	if rawRuns[0]["displayState"] != "auth_required" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].displayState = %v, want %q", rawRuns[0]["displayState"], "auth_required")
+	}
+}
+
+func TestBuildStateSnapshotIncludesFailedRunErrorMessage(t *testing.T) {
+	t.Parallel()
+
+	sessionModel := session.Session{
+		SessionID:  "sess_failed",
+		Title:      "failed session",
+		Status:     session.SessionWaiting,
+		LastTurnID: "turn_failed",
+	}
+	events := []HostEvent{
+		{
+			Type:      session.EventRunStarted,
+			SessionID: "sess_failed",
+			TurnID:    "turn_failed",
+			RunID:     "run_failed",
+			AgentID:   "default",
+			Sequence:  1,
+			CreatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			Type:      session.EventRunFailed,
+			SessionID: "sess_failed",
+			TurnID:    "turn_failed",
+			RunID:     "run_failed",
+			AgentID:   "default",
+			Sequence:  2,
+			CreatedAt: time.Date(2026, 4, 18, 10, 0, 1, 0, time.UTC),
+			Payload: map[string]any{
+				"error": "tool call \"file_read\" arguments must be a JSON object",
+			},
+		},
+	}
+
+	got := BuildStateSnapshot(sessionModel, events, nil)
+	snapshot, ok := got.Snapshot.(map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot type = %T, want map[string]any", got.Snapshot)
+	}
+
+	rawTurns, ok := snapshot["turns"].([]map[string]any)
+	if !ok || len(rawTurns) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns = %T/%d, want []map[string]any len 1", snapshot["turns"], len(rawTurns))
+	}
+	if rawTurns[0]["displayState"] != "failed" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].displayState = %v, want %q", rawTurns[0]["displayState"], "failed")
+	}
+	if rawTurns[0]["latestMessagePreview"] != "tool call \"file_read\" arguments must be a JSON object" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].latestMessagePreview = %v, want failure message", rawTurns[0]["latestMessagePreview"])
+	}
+
+	rawRuns, ok := snapshot["runs"].([]map[string]any)
+	if !ok || len(rawRuns) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs = %T/%d, want []map[string]any len 1", snapshot["runs"], len(rawRuns))
+	}
+	if rawRuns[0]["displayState"] != "failed" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].displayState = %v, want %q", rawRuns[0]["displayState"], "failed")
+	}
+	if rawRuns[0]["summary"] != "" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].summary = %v, want empty", rawRuns[0]["summary"])
+	}
+	if rawRuns[0]["latestMessageText"] != "tool call \"file_read\" arguments must be a JSON object" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].latestMessageText = %v, want failure message", rawRuns[0]["latestMessageText"])
 	}
 }

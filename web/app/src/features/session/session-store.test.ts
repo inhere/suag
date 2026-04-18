@@ -423,6 +423,59 @@ describe("session-store", () => {
     expect(next.snapshot?.turns[0]?.failedRunIds).toEqual(["run_002"]);
   });
 
+  it("hydrates failed run error text from a refreshed snapshot", () => {
+    const next = hydrateFromSnapshot(
+      emptySessionViewState,
+      makeSnapshot({
+        status: "WAITING",
+        latestEventType: "run.failed",
+        turns: [
+          {
+            turnId: "turn_002",
+            sessionId: "sess_001",
+            primaryRunId: "run_002",
+            currentRunId: "run_002",
+            latestRunId: "run_002",
+            latestAgentId: "default",
+            displayState: "failed",
+            latestEventType: "run.failed",
+            latestMessagePreview: "tool call \"file_read\" arguments must be a JSON object",
+            eventCount: 4,
+            runCount: 1,
+            activeRunCount: 0,
+            completedRunCount: 0,
+            failedRunCount: 1,
+            activeRunIds: [],
+            completedRunIds: [],
+            failedRunIds: ["run_002"],
+            hasExternalWork: false,
+            updatedAt: "2026-04-18T10:00:01Z",
+          },
+        ],
+        runs: [
+          {
+            runId: "run_002",
+            turnId: "turn_002",
+            sessionId: "sess_001",
+            agentId: "default",
+            displayState: "failed",
+            latestEventType: "run.failed",
+            latestMessageId: "",
+            latestMessageText: "tool call \"file_read\" arguments must be a JSON object",
+            summary: "",
+            externalTaskIds: [],
+            eventCount: 4,
+            updatedAt: "2026-04-18T10:00:01Z",
+          },
+        ],
+      }),
+    );
+
+    expect(next.snapshot?.runs[0]?.displayState).toBe("failed");
+    expect(next.snapshot?.runs[0]?.latestMessageText).toBe("tool call \"file_read\" arguments must be a JSON object");
+    expect(next.snapshot?.turns[0]?.latestMessagePreview).toBe("tool call \"file_read\" arguments must be a JSON object");
+  });
+
   it("merges HTTP session detail into the workbench before a websocket snapshot arrives", () => {
     const next = mergeSessionDetail(
       {

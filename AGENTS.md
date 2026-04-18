@@ -22,6 +22,7 @@
 - Web 侧已完成 `Memory Candidates` 右侧面板接入，当前支持 session 级候选加载、`draft/rendered` 过滤、Accept/Reject、错误与 pending 状态反馈，见 `docs/superpowers/specs/2026-04-17-web-memory-candidates-panel-design.md` 与 `docs/superpowers/plans/2026-04-17-web-memory-candidates-panel-implementation-plan.md`
 - Web 工作台已补齐 `Pending HITL` 自动轮询刷新，新增 ticket 无需手动点 `Refresh` 即可在面板出现
 - `file_read` 缺 `path` 的主因已收口：LLM provider 对空/坏 `arguments` 改为显式报错，agentcore runtime 也会在执行前按 tool schema 校验 required 参数，避免继续重复失败并错误触发 HITL
+- Host `BuildStateSnapshot()` 与 Web `Focused Run` 已补齐失败原因透传，run.failed 在刷新后仍能稳定显示具体错误，而不只剩 `failed` 状态
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范
