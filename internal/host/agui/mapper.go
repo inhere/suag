@@ -489,6 +489,11 @@ func mergeTurnSnapshot(target map[string]any, event HostEvent) {
 			target["latestMessagePreview"] = failureText
 		}
 	}
+	if event.Type == session.EventRunCanceled {
+		if cancelText := canceledMessageFromEvent(event); cancelText != "" {
+			target["latestMessagePreview"] = cancelText
+		}
+	}
 	target["activeRunCount"] = len(target["activeRunIds"].([]string))
 	target["completedRunCount"] = len(target["completedRunIds"].([]string))
 	target["failedRunCount"] = len(target["failedRunIds"].([]string))
@@ -505,6 +510,11 @@ func mergeRunSnapshot(target map[string]any, event HostEvent) {
 		if event.Type == session.EventRunFailed {
 			if failureText := failedMessageFromEvent(event); failureText != "" {
 				target["latestMessageText"] = failureText
+			}
+		}
+		if event.Type == session.EventRunCanceled {
+			if cancelText := canceledMessageFromEvent(event); cancelText != "" {
+				target["latestMessageText"] = cancelText
 			}
 		}
 		return
@@ -530,6 +540,15 @@ func failedMessageFromEvent(event HostEvent) string {
 		return ""
 	}
 	message, _ := values["error"].(string)
+	return strings.TrimSpace(message)
+}
+
+func canceledMessageFromEvent(event HostEvent) string {
+	values, ok := event.Payload.(map[string]any)
+	if !ok {
+		return ""
+	}
+	message, _ := values["reason"].(string)
 	return strings.TrimSpace(message)
 }
 

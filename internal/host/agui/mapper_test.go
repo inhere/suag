@@ -852,3 +852,65 @@ func TestBuildStateSnapshotIncludesFailedRunErrorMessage(t *testing.T) {
 		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].latestMessageText = %v, want failure message", rawRuns[0]["latestMessageText"])
 	}
 }
+
+func TestBuildStateSnapshotIncludesCanceledRunReason(t *testing.T) {
+	t.Parallel()
+
+	sessionModel := session.Session{
+		SessionID:  "sess_canceled",
+		Title:      "canceled session",
+		Status:     session.SessionOpen,
+		LastTurnID: "turn_canceled",
+	}
+	events := []HostEvent{
+		{
+			Type:      session.EventRunStarted,
+			SessionID: "sess_canceled",
+			TurnID:    "turn_canceled",
+			RunID:     "run_canceled",
+			AgentID:   "default",
+			Sequence:  1,
+			CreatedAt: time.Date(2026, 4, 19, 14, 0, 0, 0, time.UTC),
+		},
+		{
+			Type:      session.EventRunCanceled,
+			SessionID: "sess_canceled",
+			TurnID:    "turn_canceled",
+			RunID:     "run_canceled",
+			AgentID:   "default",
+			Sequence:  2,
+			CreatedAt: time.Date(2026, 4, 19, 14, 0, 1, 0, time.UTC),
+			Payload: map[string]any{
+				"reason": "stopped by operator",
+			},
+		},
+	}
+
+	got := BuildStateSnapshot(sessionModel, events, nil)
+	snapshot, ok := got.Snapshot.(map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot type = %T, want map[string]any", got.Snapshot)
+	}
+
+	rawTurns, ok := snapshot["turns"].([]map[string]any)
+	if !ok || len(rawTurns) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns = %T/%d, want []map[string]any len 1", snapshot["turns"], len(rawTurns))
+	}
+	if rawTurns[0]["displayState"] != "canceled" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].displayState = %v, want %q", rawTurns[0]["displayState"], "canceled")
+	}
+	if rawTurns[0]["latestMessagePreview"] != "stopped by operator" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].latestMessagePreview = %v, want cancel reason", rawTurns[0]["latestMessagePreview"])
+	}
+
+	rawRuns, ok := snapshot["runs"].([]map[string]any)
+	if !ok || len(rawRuns) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs = %T/%d, want []map[string]any len 1", snapshot["runs"], len(rawRuns))
+	}
+	if rawRuns[0]["displayState"] != "canceled" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].displayState = %v, want %q", rawRuns[0]["displayState"], "canceled")
+	}
+	if rawRuns[0]["latestMessageText"] != "stopped by operator" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].latestMessageText = %v, want cancel reason", rawRuns[0]["latestMessageText"])
+	}
+}

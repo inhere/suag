@@ -476,6 +476,61 @@ describe("session-store", () => {
     expect(next.snapshot?.turns[0]?.latestMessagePreview).toBe("tool call \"file_read\" arguments must be a JSON object");
   });
 
+  it("hydrates canceled run reason from a refreshed snapshot", () => {
+    const next = hydrateFromSnapshot(
+      emptySessionViewState,
+      makeSnapshot({
+        status: "OPEN",
+        latestEventType: "run.canceled",
+        turns: [
+          {
+            turnId: "turn_002",
+            sessionId: "sess_001",
+            primaryRunId: "run_002",
+            currentRunId: "run_002",
+            latestRunId: "run_002",
+            latestAgentId: "default",
+            displayState: "canceled",
+            latestEventType: "run.canceled",
+            latestMessagePreview: "stopped by operator",
+            eventCount: 4,
+            runCount: 1,
+            activeRunCount: 0,
+            completedRunCount: 0,
+            failedRunCount: 0,
+            activeRunIds: [],
+            completedRunIds: [],
+            failedRunIds: [],
+            hasExternalWork: false,
+            updatedAt: "2026-04-19T14:00:01Z",
+          },
+        ],
+        runs: [
+          {
+            runId: "run_002",
+            turnId: "turn_002",
+            sessionId: "sess_001",
+            agentId: "default",
+            displayState: "canceled",
+            latestEventType: "run.canceled",
+            latestMessageId: "",
+            latestMessageText: "stopped by operator",
+            summary: "",
+            externalTaskIds: [],
+            eventCount: 4,
+            updatedAt: "2026-04-19T14:00:01Z",
+          },
+        ],
+      }),
+    );
+
+    expect(next.snapshot?.status).toBe("OPEN");
+    expect(next.snapshot?.runs[0]?.displayState).toBe("canceled");
+    expect(next.snapshot?.runs[0]?.latestMessageText).toBe("stopped by operator");
+    expect(next.snapshot?.turns[0]?.displayState).toBe("canceled");
+    expect(next.snapshot?.turns[0]?.latestMessagePreview).toBe("stopped by operator");
+  });
+
   it("merges HTTP session detail into the workbench before a websocket snapshot arrives", () => {
     const next = mergeSessionDetail(
       {

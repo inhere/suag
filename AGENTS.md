@@ -22,6 +22,7 @@
 - Gateway command 入口已补一段外显收口：未知 WS command 不再静默忽略，而是统一返回 `command.error`，避免前端发起误命令后无反馈卡住
 - terminal lifecycle 的 session 状态已开始收口：completed / failed / canceled 后的 `session.Status` 改回 `OPEN`，不再让 `/api/sessions` 与刷新后的初始快照把已结束会话误显示成 `WAITING`
 - stop/cancel 的 turn 级状态已开始收口：Host 新增 `TurnCanceled`，`stop_turn` 后 turn 不再沿用 `WAITING`，而是与 run 一样明确标记为 `CANCELED`
+- canceled 的 reload 语义已补一层回归：`BuildStateSnapshot()` 与前端 `hydrateFromSnapshot()` 在纯快照恢复时都会保留 canceled 的 displayState 与取消原因，避免刷新后丢失 `stopped by operator` 文案
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范
