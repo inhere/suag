@@ -282,7 +282,7 @@ func TestService_StartTurnPublishesFailedLifecycleWhenRunnerFails(t *testing.T) 
 		Now: func() time.Time { return now },
 	})
 
-	_, err := svc.StartTurn(ctx, StartTurnInput{
+	result, err := svc.StartTurn(ctx, StartTurnInput{
 		SessionID:     "sess_002",
 		AgentID:       "default",
 		UserMessage:   "implement broken feature",
@@ -290,6 +290,15 @@ func TestService_StartTurnPublishesFailedLifecycleWhenRunnerFails(t *testing.T) 
 	})
 	if err == nil {
 		t.Fatal("StartTurn() error = nil, want runner failure")
+	}
+	if result.SessionID != "sess_002" {
+		t.Fatalf("StartTurn().SessionID = %q, want %q", result.SessionID, "sess_002")
+	}
+	if result.TurnID == "" {
+		t.Fatal("StartTurn().TurnID is empty")
+	}
+	if result.RunID == "" {
+		t.Fatal("StartTurn().RunID is empty")
 	}
 	if len(bus.events) != 3 {
 		t.Fatalf("published events len = %d, want 3", len(bus.events))

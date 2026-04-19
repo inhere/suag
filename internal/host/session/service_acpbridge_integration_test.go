@@ -118,6 +118,76 @@ func TestService_StartTurnWithACPBridgeRunnerPublishesExternalTaskBeforeFinish(t
 	}
 }
 
+func TestService_StartTurnWithACPBridgeRunnerPersistsExternalTaskOnFailedDispatch(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newIntegrationStore(t)
+	bus := newIntegrationPublisher()
+	bridge := &fakeACPBridge{
+		result: acpbridge.DispatchResult{
+			State:           acpbridge.StateFailed,
+			Error:           "codex execution failed",
+			RemoteAgentName: "codex-cli",
+			RemoteSessionID: "thread_failed_001",
+			RemoteTaskID:    "turn_failed_001",
+			Metadata: map[string]any{
+				"protocol": "codex_app_server",
+			},
+		},
+	}
+	runner := acpbridge.NewRunnerAdapter(bridge, acpbridge.RunnerAdapterConfig{
+		AdapterName: "codex",
+		Workspace:   "workspace/demo",
+	})
+
+	now := time.Date(2026, 4, 19, 19, 0, 0, 0, time.UTC)
+	svc := session.NewService(store, bus, runner, session.ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	result, err := svc.StartTurn(ctx, session.StartTurnInput{
+		SessionID:     "sess_failed_bridge",
+		AgentID:       "default",
+		UserMessage:   "delegate to failed codex run",
+		InitiatorType: session.InitiatorUser,
+	})
+	if err == nil {
+		t.Fatal("StartTurn() error = nil, want failed dispatch error")
+	}
+
+	tasks, listErr := store.ListExternalTasksByRun(ctx, result.RunID)
+	if listErr != nil {
+		t.Fatalf("ListExternalTasksByRun() error = %v", listErr)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("ListExternalTasksByRun() len = %d, want 1", len(tasks))
+	}
+	if tasks[0].State != string(acpbridge.StateFailed) {
+		t.Fatalf("ListExternalTasksByRun()[0].State = %q, want %q", tasks[0].State, acpbridge.StateFailed)
+	}
+	if tasks[0].RemoteSessionID != "thread_failed_001" {
+		t.Fatalf("ListExternalTasksByRun()[0].RemoteSessionID = %q, want %q", tasks[0].RemoteSessionID, "thread_failed_001")
+	}
+	if tasks[0].RemoteTaskID != "turn_failed_001" {
+		t.Fatalf("ListExternalTasksByRun()[0].RemoteTaskID = %q, want %q", tasks[0].RemoteTaskID, "turn_failed_001")
+	}
+
+	events, listEventsErr := store.ListEventsBySession(ctx, "sess_failed_bridge", 0)
+	if listEventsErr != nil {
+		t.Fatalf("ListEventsBySession() error = %v", listEventsErr)
+	}
+	if len(events) != 4 {
+		t.Fatalf("ListEventsBySession() len = %d, want 4", len(events))
+	}
+	if events[3].EventType != session.EventRunFailed {
+		t.Fatalf("events[3].EventType = %q, want %q", events[3].EventType, session.EventRunFailed)
+	}
+	if events[3].Payload["externalTaskId"] != tasks[0].ExternalTaskID {
+		t.Fatalf("events[3].Payload[externalTaskId] = %v, want %q", events[3].Payload["externalTaskId"], tasks[0].ExternalTaskID)
+	}
+}
+
 type fakeACPBridge struct {
 	lastRequest acpbridge.DispatchRequest
 	result      acpbridge.DispatchResult

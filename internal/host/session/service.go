@@ -404,6 +404,15 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			}, nil
 		}
 		if err != nil {
+			failedExternalTaskID := externalTaskID
+			if result.ExternalTask != nil {
+				if persistErr := s.persistExternalTask(ctx, sessionID, turnID, runID, result.ExternalTask); persistErr != nil {
+					return StartTurnResult{}, fmt.Errorf("persist failed external task: %w", persistErr)
+				}
+				if strings.TrimSpace(result.ExternalTask.ExternalTaskID) != "" {
+					failedExternalTaskID = strings.TrimSpace(result.ExternalTask.ExternalTaskID)
+				}
+			}
 			failedAt := s.now().UTC()
 			if lifecycleErr := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunFailed, TurnFailed, "", err.Error(), failedAt); lifecycleErr != nil {
 				return StartTurnResult{}, fmt.Errorf("persist failed lifecycle: %w", lifecycleErr)
@@ -418,7 +427,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 					EventType: EventRunFailed,
 					Payload: withExternalTaskID(map[string]any{
 						"error": err.Error(),
-					}, externalTaskID),
+					}, failedExternalTaskID),
 					Source:    "host.session.service",
 					CreatedAt: now,
 				}
@@ -433,7 +442,11 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				Phase:   RecapPhaseFailed,
 				Failure: err.Error(),
 			})
-			return StartTurnResult{}, fmt.Errorf("run runtime request: %w", err)
+			return StartTurnResult{
+				SessionID: sessionID,
+				TurnID:    turnID,
+				RunID:     runID,
+			}, fmt.Errorf("run runtime request: %w", err)
 		}
 		if result.ExternalTask != nil {
 			// External task snapshots are written before the finished event so the

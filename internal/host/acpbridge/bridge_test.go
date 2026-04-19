@@ -96,6 +96,59 @@ func TestRunnerAdapter_RunReturnsErrorForFailedDispatch(t *testing.T) {
 	}
 }
 
+func TestRunnerAdapter_RunReturnsExternalTaskForFailedDispatch(t *testing.T) {
+	t.Parallel()
+
+	fakeBridge := &fakeBridge{
+		result: DispatchResult{
+			State:           StateFailed,
+			Error:           "external failed",
+			RemoteAgentName: "codex-cli",
+			RemoteSessionID: "thread_001",
+			RemoteTaskID:    "turn_remote_001",
+			Metadata: map[string]any{
+				"protocol": "codex_app_server",
+			},
+		},
+	}
+	adapter := NewRunnerAdapter(fakeBridge, RunnerAdapterConfig{
+		AdapterName: "claude-code",
+		Workspace:   "workspace/demo",
+	})
+
+	result, err := adapter.Run(context.Background(), session.RuntimeRequest{
+		SessionID:   "sess_001",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "implement broken feature",
+		Context: map[string]any{
+			"external_task_id": "ext_001",
+		},
+	})
+	if err == nil {
+		t.Fatal("Run() error = nil, want failed dispatch error")
+	}
+	if result.ExternalTask == nil {
+		t.Fatal("Run().ExternalTask is nil")
+	}
+	if result.ExternalTask.ExternalTaskID != "ext_001" {
+		t.Fatalf("Run().ExternalTask.ExternalTaskID = %q, want %q", result.ExternalTask.ExternalTaskID, "ext_001")
+	}
+	if result.ExternalTask.RemoteSessionID != "thread_001" {
+		t.Fatalf("Run().ExternalTask.RemoteSessionID = %q, want %q", result.ExternalTask.RemoteSessionID, "thread_001")
+	}
+	if result.ExternalTask.RemoteTaskID != "turn_remote_001" {
+		t.Fatalf("Run().ExternalTask.RemoteTaskID = %q, want %q", result.ExternalTask.RemoteTaskID, "turn_remote_001")
+	}
+	if result.ExternalTask.State != string(StateFailed) {
+		t.Fatalf("Run().ExternalTask.State = %q, want %q", result.ExternalTask.State, StateFailed)
+	}
+	if result.ExternalTask.Metadata["protocol"] != "codex_app_server" {
+		t.Fatalf("Run().ExternalTask.Metadata[protocol] = %v, want %q", result.ExternalTask.Metadata["protocol"], "codex_app_server")
+	}
+}
+
 func TestRunnerAdapter_RunPassesResumeRemoteSessionToBridge(t *testing.T) {
 	t.Parallel()
 

@@ -57,31 +57,9 @@ func (r *RunnerAdapter) Run(ctx context.Context, in session.RuntimeRequest) (ses
 	if err != nil {
 		return session.RuntimeResult{}, err
 	}
-	if result.State == StateFailed {
-		if strings.TrimSpace(result.Error) != "" {
-			return session.RuntimeResult{}, fmt.Errorf("%s", result.Error)
-		}
-		return session.RuntimeResult{}, fmt.Errorf("acp dispatch failed")
-	}
-
-	waitState := session.RunState("")
-	if result.State == StateRunning {
-		waitState = session.RunExternal
-		if !emittedExternal && in.Emit != nil {
-			if err := in.Emit(session.RuntimeEvent{
-				EventType: session.EventRunStatus,
-				Payload: map[string]any{
-					"state": string(session.RunExternal),
-				},
-			}); err != nil {
-				return session.RuntimeResult{}, err
-			}
-		}
-	}
-
-	return session.RuntimeResult{
+	runtimeResult := session.RuntimeResult{
 		Summary:   result.Summary,
-		WaitState: waitState,
+		WaitState: "",
 		ExternalTask: &session.ExternalTask{
 			ExternalTaskID:  contextStringValue(in.Context, "external_task_id"),
 			Adapter:         r.adapterName,
@@ -96,7 +74,29 @@ func (r *RunnerAdapter) Run(ctx context.Context, in session.RuntimeRequest) (ses
 				"artifacts": result.Artifacts,
 			}, result.Metadata),
 		},
-	}, nil
+	}
+	if result.State == StateFailed {
+		if strings.TrimSpace(result.Error) != "" {
+			return runtimeResult, fmt.Errorf("%s", result.Error)
+		}
+		return runtimeResult, fmt.Errorf("acp dispatch failed")
+	}
+
+	if result.State == StateRunning {
+		runtimeResult.WaitState = session.RunExternal
+		if !emittedExternal && in.Emit != nil {
+			if err := in.Emit(session.RuntimeEvent{
+				EventType: session.EventRunStatus,
+				Payload: map[string]any{
+					"state": string(session.RunExternal),
+				},
+			}); err != nil {
+				return session.RuntimeResult{}, err
+			}
+		}
+	}
+
+	return runtimeResult, nil
 }
 
 func mergeMetadata(dst map[string]any, src map[string]any) map[string]any {

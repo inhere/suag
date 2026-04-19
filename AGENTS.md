@@ -26,6 +26,7 @@
 - latest waiting run 解析已开始统一：`validateContinueTurnState()` 与 `buildContinueRuntimeContext()` 现在都走同一个 `latestContinuableRun()` helper，避免 continue 校验与 runtime resume context 再次漂移
 - Task 2 已开始做 Host contract 对齐：AG-UI 对 `run.external.activity` 的 activity snapshot 状态已从 `running` 收口到 `external_running`，避免增量事件与 Host 其它状态语义不一致
 - Task 2 本轮继续收口 terminal contract：Host service 自补的 `run.finished / run.failed / run.canceled` 事件与 AG-UI `run_status` activity snapshot 现在都会稳定透传 `externalTaskId`，避免前端/客户端只能靠 runner 特判或刷新快照来关联 external task
+- Task 2 本轮继续补齐失败态 contract：ACP dispatch 失败时如果已有 remote session/task 上下文，Host 也会先持久化 failed `ExternalTask` 再落失败生命周期；同时 `StartTurn()` 失败返回保留 `sessionId/turnId/runId`，便于上层继续查询失败 run
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范
