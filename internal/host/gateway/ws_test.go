@@ -929,6 +929,67 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 	}
 }
 
+func TestServer_ContinueTurnOverWebSocketSendsAckBeforeRunEvents(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	runner := &waitingThenDoneGatewayRunner{}
+	svc := session.NewService(store, bus, runner, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 19, 12, 30, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "continue ack order",
+	})
+
+	postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "need more input",
+		"initiator_type": "user",
+	})
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial() error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":           "continue_turn",
+		"session_id":     createResp.SessionID,
+		"message":        "please continue",
+		"agent_id":       "default",
+		"initiator_type": "user",
+	}); err != nil {
+		t.Fatalf("wsjson.Write() command error = %v", err)
+	}
+
+	first := readUntilFirstEventType(t, ctx, conn, "command.accepted", "CUSTOM")
+	if first["type"] != "command.accepted" {
+		t.Fatalf("first message type = %v, want command.accepted before run events", first["type"])
+	}
+}
+
 func TestServer_ContinueTurnReusesPreviousRemoteSession(t *testing.T) {
 	t.Parallel()
 

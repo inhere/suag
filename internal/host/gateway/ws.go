@@ -88,12 +88,21 @@ func WSHandler(bus *EventBus, sessionStore wsSessionStore, sessionSvc wsCommandR
 					return
 				}
 				go func(command wsCommand) {
-					if err := handleWSCommand(ctx, conn, &writeMu, sub, sessionSvc, command); err != nil {
-						_ = writeWSJSON(ctx, conn, &writeMu, map[string]any{
+					writeMu.Lock()
+					defer writeMu.Unlock()
+
+					response, err := handleWSCommand(ctx, sub, sessionSvc, command)
+					if err != nil {
+						_ = wsjson.Write(ctx, conn, map[string]any{
 							"type":  "command.error",
 							"error": err.Error(),
 						})
+						return
 					}
+					if response == nil {
+						return
+					}
+					_ = wsjson.Write(ctx, conn, response)
 				}(cmd)
 			}
 		}()
@@ -157,13 +166,13 @@ func buildWSStateSnapshot(ctx context.Context, store wsSessionStore, sessionID s
 	return agui.BuildStateSnapshot(sessionModel, events, externalTasks), nil
 }
 
-func handleWSCommand(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, sub Subscription, sessionSvc wsCommandRunner, cmd wsCommand) error {
+func handleWSCommand(ctx context.Context, sub Subscription, sessionSvc wsCommandRunner, cmd wsCommand) (map[string]any, error) {
 	switch strings.TrimSpace(cmd.Type) {
 	case "", "subscribe":
-		return nil
+		return nil, nil
 	case "continue_turn":
 		if sessionSvc == nil {
-			return http.ErrNotSupported
+			return nil, http.ErrNotSupported
 		}
 
 		sessionID := strings.TrimSpace(cmd.SessionID)
@@ -178,16 +187,16 @@ func handleWSCommand(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mu
 			InitiatorType: session.InitiatorType(cmd.InitiatorType),
 		})
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return writeWSJSON(ctx, conn, writeMu, map[string]any{
+		return map[string]any{
 			"type":       "command.accepted",
 			"command":    "continue_turn",
 			"session_id": sessionID,
-		})
+		}, nil
 	case "stop_turn":
 		if sessionSvc == nil {
-			return http.ErrNotSupported
+			return nil, http.ErrNotSupported
 		}
 
 		sessionID := strings.TrimSpace(cmd.SessionID)
@@ -196,7 +205,7 @@ func handleWSCommand(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mu
 		}
 		turnID := strings.TrimSpace(cmd.TurnID)
 		if turnID == "" {
-			return fmt.Errorf("turn id is required")
+			return nil, fmt.Errorf("turn id is required")
 		}
 
 		if err := sessionSvc.StopTurn(ctx, session.StopTurnInput{
@@ -204,16 +213,16 @@ func handleWSCommand(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mu
 			TurnID:    turnID,
 			Reason:    cmd.Reason,
 		}); err != nil {
-			return err
+			return nil, err
 		}
 
-		return writeWSJSON(ctx, conn, writeMu, map[string]any{
+		return map[string]any{
 			"type":       "command.accepted",
 			"command":    "stop_turn",
 			"session_id": sessionID,
-		})
+		}, nil
 	default:
-		return fmt.Errorf("unsupported websocket command: %s", strings.TrimSpace(cmd.Type))
+		return nil, fmt.Errorf("unsupported websocket command: %s", strings.TrimSpace(cmd.Type))
 	}
 }
 
