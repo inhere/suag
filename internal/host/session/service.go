@@ -17,6 +17,10 @@ type Runner interface {
 	Run(ctx context.Context, in RuntimeRequest) (RuntimeResult, error)
 }
 
+type ContinueValidator interface {
+	ValidateContinue(ctx context.Context, in RuntimeRequest) error
+}
+
 type Publisher interface {
 	PublishSessionEvent(ctx context.Context, event RunEvent) error
 }
@@ -157,6 +161,20 @@ func (s *Service) ContinueTurn(ctx context.Context, in ContinueTurnInput) (Start
 	}
 	if err := s.validateContinueTurnState(ctx, in.SessionID); err != nil {
 		return StartTurnResult{}, err
+	}
+	if validator, ok := s.runner.(ContinueValidator); ok {
+		runtimeContext, err := s.buildContinueRuntimeContext(ctx, in.SessionID)
+		if err != nil {
+			return StartTurnResult{}, err
+		}
+		if err := validator.ValidateContinue(ctx, RuntimeRequest{
+			SessionID:   in.SessionID,
+			AgentID:     in.AgentID,
+			Instruction: in.Message,
+			Context:     runtimeContext,
+		}); err != nil {
+			return StartTurnResult{}, err
+		}
 	}
 	return s.startTurn(ctx, in.SessionID, in.AgentID, in.Message, in.InitiatorType, false)
 }
@@ -309,7 +327,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			RunID:       runID,
 			AgentID:     agentID,
 			Instruction: message,
-			Context:     s.buildRuntimeContext(ctx, sessionID, previousTurnID, externalTaskID),
+			Context:     s.buildRuntimeContext(ctx, sessionID, previousTurnID, resumeFromRunID, externalTaskID, !createIfMissing),
 			Emit: func(runtimeEvent RuntimeEvent) error {
 				if strings.TrimSpace(runtimeEvent.EventType) == "" {
 					return nil
@@ -550,10 +568,18 @@ func (s *Service) persistLifecycleState(
 	return nil
 }
 
-func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, previousTurnID, externalTaskID string) map[string]any {
+func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, previousTurnID, resumeFromRunID, externalTaskID string, isContinue bool) map[string]any {
 	ctxMap := map[string]any{}
 	if strings.TrimSpace(externalTaskID) != "" {
 		ctxMap["external_task_id"] = externalTaskID
+	}
+	if isContinue {
+		if strings.TrimSpace(previousTurnID) != "" {
+			ctxMap["resume_turn_id"] = previousTurnID
+		}
+		if strings.TrimSpace(resumeFromRunID) != "" {
+			ctxMap["resume_from_run_id"] = resumeFromRunID
+		}
 	}
 	if s == nil || s.store == nil {
 		return ctxMap
@@ -584,6 +610,28 @@ func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, previousTu
 	ctxMap["resume_turn_id"] = previousTurnID
 	ctxMap["resume_external_tasks"] = resumeTasks
 	return ctxMap
+}
+
+func (s *Service) buildContinueRuntimeContext(ctx context.Context, sessionID string) (map[string]any, error) {
+	if s == nil || s.store == nil {
+		return map[string]any{}, nil
+	}
+
+	sessionModel, err := s.store.GetSession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	previousTurnID := strings.TrimSpace(sessionModel.LastTurnID)
+	if previousTurnID == "" {
+		return map[string]any{}, nil
+	}
+
+	latestRunID, err := s.latestRunIDForTurn(ctx, sessionID, previousTurnID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.buildRuntimeContext(ctx, sessionID, previousTurnID, latestRunID, "", true), nil
 }
 
 func mergeRuntimePayload(payload map[string]any, extra map[string]any) map[string]any {

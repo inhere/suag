@@ -249,6 +249,31 @@ func TestRunner_RunKeepsSummaryFallbackWhenWaitKindMissing(t *testing.T) {
 	assert.Eq(t, session.RunAuthRequired, result.WaitState)
 }
 
+func TestRunner_ValidateContinueRejectsWhenSuspendedRuntimeIsMissing(t *testing.T) {
+	t.Parallel()
+
+	runner, err := New(Config{
+		Provider: llm.NewMockProvider("mock"),
+		Registry: tools.NewRegistry(),
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	err = runner.ValidateContinue(context.Background(), Request{
+		SessionID: "sess_resume_missing",
+		Context: map[string]any{
+			"resume_turn_id":     "turn_001",
+			"resume_from_run_id": "run_001",
+		},
+	})
+	assert.Err(t, err)
+	assert.Eq(t, "waiting runtime is no longer available; start a new turn or reissue the task", err.Error())
+}
+
 func TestRunner_RuntimeKindDefaultsToAgentcore(t *testing.T) {
 	t.Parallel()
 

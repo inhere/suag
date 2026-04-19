@@ -26,6 +26,7 @@
 - HITL ticket 的 `context` 文案已开始做归一化收口，重复 tool 失败时会优先提示“参数不完整/格式错误”或更清晰的工具失败原因，降低直接暴露底层 `tool error:` 文本的噪音
 - Host internal self-loop Phase 1 已开始收口 run lineage：`continue_turn` 新建的 Host run 会显式写入 `ResumeFromRunID`，为后续 waiting/resume contract 和 runtime run 对齐打基础
 - Host internal self-loop Phase 2 已开始收口结构化 waiting contract：`agentcore yield metadata -> TaskResult.Metadata -> intrunner wait_kind` 已贯通，`wait_kind` 会优先于 summary fallback 决定 `INPUT_REQUIRED / AUTH_REQUIRED`
+- Host internal self-loop Phase 3 已开始明确恢复边界：`intrunner` 只支持同进程 suspended runtime resume；Host 在重启后继续历史 waiting run 时会直接返回明确错误，而不是静默新开继续链路
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

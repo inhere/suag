@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1099,6 +1100,70 @@ func TestServer_ContinueTurnOverWebSocketReturnsCommandErrorWhenRejected(t *test
 	}
 }
 
+func TestServer_ContinueTurnOverWebSocketReturnsCommandErrorWhenResumeStateUnavailable(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	runner := &resumeStateUnavailableGatewayRunner{}
+	svc := session.NewService(store, bus, runner, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 19, 9, 30, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "resume state unavailable",
+	})
+
+	postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "need more input",
+		"initiator_type": "user",
+	})
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial() error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":           "continue_turn",
+		"session_id":     createResp.SessionID,
+		"message":        "continue after restart",
+		"agent_id":       "default",
+		"initiator_type": "user",
+	}); err != nil {
+		t.Fatalf("wsjson.Write() command error = %v", err)
+	}
+
+	message := readUntilFirstEventType(t, ctx, conn, "command.accepted", "command.error")
+	if message["type"] != "command.error" {
+		t.Fatalf("first command result type = %v, want command.error", message["type"])
+	}
+	if message["error"] != "waiting runtime is no longer available; start a new turn or reissue the task" {
+		t.Fatalf("command.error error = %v, want resume-state rejection", message["error"])
+	}
+}
+
 func TestServer_StopTurnOverWebSocketReturnsCommandErrorWhenTurnMissing(t *testing.T) {
 	t.Parallel()
 
@@ -1347,6 +1412,14 @@ func (r *waitingThenDoneGatewayRunner) Run(_ context.Context, in session.Runtime
 	}
 
 	return session.RuntimeResult{Summary: "ok"}, nil
+}
+
+type resumeStateUnavailableGatewayRunner struct {
+	waitingThenDoneGatewayRunner
+}
+
+func (r *resumeStateUnavailableGatewayRunner) ValidateContinue(context.Context, session.RuntimeRequest) error {
+	return fmt.Errorf("waiting runtime is no longer available; start a new turn or reissue the task")
 }
 
 func TestServer_ListSessionsReturnsLatestSessionsWithPreview(t *testing.T) {

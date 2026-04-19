@@ -57,6 +57,8 @@ type SessionRunner struct {
 	sessions map[string]*sessionState
 }
 
+var errResumeStateUnavailable = fmt.Errorf("waiting runtime is no longer available; start a new turn or reissue the task")
+
 // New creates a host runner backed by the internal agent runtimes.
 func New(cfg Config) (*SessionRunner, error) {
 	if cfg.Provider == nil {
@@ -278,6 +280,30 @@ func (r *SessionRunner) resolveRuntime(
 		return nil, nil, fmt.Errorf("build internal agent runner: %w", err)
 	}
 	return a, runner, nil
+}
+
+// ValidateContinue lets the host reject historical waiting runs that lost their
+// in-memory suspended runtime, instead of creating a new continue turn that can
+// never actually resume the previous execution.
+func (r *SessionRunner) ValidateContinue(_ context.Context, in session.RuntimeRequest) error {
+	if r == nil {
+		return errResumeStateUnavailable
+	}
+
+	resumeTurnID, _ := in.Context["resume_turn_id"].(string)
+	resumeFromRunID, _ := in.Context["resume_from_run_id"].(string)
+	if strings.TrimSpace(resumeTurnID) == "" && strings.TrimSpace(resumeFromRunID) == "" {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	state := r.sessions[in.SessionID]
+	if state == nil || state.agent == nil || state.runner == nil || state.runner.GetState() != agent.AgentSuspended {
+		return errResumeStateUnavailable
+	}
+	return nil
 }
 
 func emitStatus(emit func(event session.RuntimeEvent) error, state session.RunState) error {

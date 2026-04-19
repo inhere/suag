@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -669,6 +670,75 @@ func TestService_ContinueTurnRejectsNonWaitingLatestTurn(t *testing.T) {
 	}
 
 	events, err := store.ListEventsBySession(ctx, "sess_done_turn", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+}
+
+func TestService_ContinueTurnRejectsWhenResumeStateUnavailable(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 19, 9, 0, 0, 0, time.UTC)
+
+	waitingRunner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, waitingRunner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	firstResult, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_resume_missing",
+		AgentID:       "default",
+		UserMessage:   "need more input",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	svc.runner = &resumeStateUnavailableRunner{}
+	svc.now = func() time.Time { return now.Add(2 * time.Minute) }
+
+	_, err = svc.ContinueTurn(ctx, ContinueTurnInput{
+		SessionID:     "sess_resume_missing",
+		AgentID:       "default",
+		Message:       "continue after restart",
+		InitiatorType: InitiatorUser,
+	})
+	if err == nil {
+		t.Fatal("ContinueTurn() error = nil, want resume-state rejection")
+	}
+	if got := err.Error(); got != "waiting runtime is no longer available; start a new turn or reissue the task" {
+		t.Fatalf("ContinueTurn() error = %q, want resume-state rejection", got)
+	}
+
+	sessionModel, err := store.GetSession(ctx, "sess_resume_missing")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if sessionModel.LastTurnID != firstResult.TurnID {
+		t.Fatalf("GetSession().LastTurnID = %q, want %q", sessionModel.LastTurnID, firstResult.TurnID)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_resume_missing", 0)
 	if err != nil {
 		t.Fatalf("ListEventsBySession() error = %v", err)
 	}
@@ -1555,6 +1625,16 @@ func (f *fakeRunner) Run(_ context.Context, in RuntimeRequest) (RuntimeResult, e
 		}
 	}
 	return f.result, f.err
+}
+
+type resumeStateUnavailableRunner struct{}
+
+func (r *resumeStateUnavailableRunner) Run(context.Context, RuntimeRequest) (RuntimeResult, error) {
+	return RuntimeResult{}, nil
+}
+
+func (r *resumeStateUnavailableRunner) ValidateContinue(context.Context, RuntimeRequest) error {
+	return fmt.Errorf("waiting runtime is no longer available; start a new turn or reissue the task")
 }
 
 type recapRecorder struct {
