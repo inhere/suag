@@ -84,12 +84,15 @@ func (r *RunnerAdapter) Run(ctx context.Context, in session.RuntimeRequest) (ses
 
 	if result.State == StateRunning {
 		runtimeResult.WaitState = session.RunExternal
+		runtimeResult.WaitMetadata = externalWaitMetadata(r.adapterName, runtimeResult.ExternalTask)
 		if !emittedExternal && in.Emit != nil {
 			if err := in.Emit(session.RuntimeEvent{
 				EventType: session.EventRunStatus,
-				Payload: map[string]any{
+				Payload: mergeMetadata(map[string]any{
 					"state": string(session.RunExternal),
-				},
+				}, map[string]any{
+					"waitMetadata": cloneMetadata(runtimeResult.WaitMetadata),
+				}),
 			}); err != nil {
 				return session.RuntimeResult{}, err
 			}
@@ -164,15 +167,18 @@ func mapDispatchEvents(event DispatchEvent, externalTaskID string) []session.Run
 	if strings.TrimSpace(externalTaskID) != "" {
 		payload["externalTaskId"] = externalTaskID
 	}
+	waitMetadata := externalWaitMetadataFromPayload(payload)
 
 	switch strings.TrimSpace(event.Type) {
 	case "external.activity":
 		return []session.RuntimeEvent{
 			{
 				EventType: session.EventRunStatus,
-				Payload: map[string]any{
+				Payload: mergeMetadata(map[string]any{
 					"state": string(session.RunExternal),
-				},
+				}, map[string]any{
+					"waitMetadata": waitMetadata,
+				}),
 			},
 			{
 				EventType: session.EventRunExternalActivity,
@@ -204,4 +210,64 @@ func contextStringValue(values map[string]any, key string) string {
 	}
 	text, _ := raw.(string)
 	return strings.TrimSpace(text)
+}
+
+func externalWaitMetadata(adapterName string, task *session.ExternalTask) map[string]any {
+	metadata := map[string]any{
+		"wait_kind": "external_running",
+		"policy":    "delegate_followup",
+	}
+	if strings.TrimSpace(adapterName) != "" {
+		metadata["adapter"] = strings.TrimSpace(adapterName)
+	}
+	if task == nil {
+		return metadata
+	}
+	if strings.TrimSpace(task.ExternalTaskID) != "" {
+		metadata["external_task_id"] = strings.TrimSpace(task.ExternalTaskID)
+	}
+	if strings.TrimSpace(task.RemoteAgentName) != "" {
+		metadata["remote_agent_name"] = strings.TrimSpace(task.RemoteAgentName)
+	}
+	if strings.TrimSpace(task.RemoteSessionID) != "" {
+		metadata["remote_session_id"] = strings.TrimSpace(task.RemoteSessionID)
+	}
+	if strings.TrimSpace(task.RemoteTaskID) != "" {
+		metadata["remote_task_id"] = strings.TrimSpace(task.RemoteTaskID)
+	}
+	if strings.TrimSpace(task.State) != "" {
+		metadata["remote_state"] = strings.TrimSpace(task.State)
+	}
+	return metadata
+}
+
+func externalWaitMetadataFromPayload(payload map[string]any) map[string]any {
+	metadata := map[string]any{
+		"wait_kind": "external_running",
+		"policy":    "delegate_followup",
+	}
+	if payload == nil {
+		return metadata
+	}
+	if externalTaskID, _ := payload["externalTaskId"].(string); strings.TrimSpace(externalTaskID) != "" {
+		metadata["external_task_id"] = strings.TrimSpace(externalTaskID)
+	}
+	if kind, _ := payload["kind"].(string); strings.TrimSpace(kind) != "" {
+		metadata["activity_kind"] = strings.TrimSpace(kind)
+	}
+	if itemID, _ := payload["itemId"].(string); strings.TrimSpace(itemID) != "" {
+		metadata["activity_item_id"] = strings.TrimSpace(itemID)
+	}
+	return metadata
+}
+
+func cloneMetadata(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(src))
+	for key, value := range src {
+		out[key] = value
+	}
+	return out
 }

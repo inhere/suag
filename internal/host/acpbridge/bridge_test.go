@@ -271,6 +271,16 @@ func TestRunnerAdapter_RunMapsDispatchEventsToRuntimeEvents(t *testing.T) {
 	if runtimeEvents[1].Payload["state"] != string(session.RunExternal) {
 		t.Fatalf("runtime events[1].Payload[state] = %v, want %q", runtimeEvents[1].Payload["state"], session.RunExternal)
 	}
+	waitMetadata, ok := runtimeEvents[1].Payload["waitMetadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("runtime events[1].Payload[waitMetadata] type = %T, want map[string]any", runtimeEvents[1].Payload["waitMetadata"])
+	}
+	if waitMetadata["wait_kind"] != "external_running" {
+		t.Fatalf("runtime events[1].Payload[waitMetadata][wait_kind] = %v, want %q", waitMetadata["wait_kind"], "external_running")
+	}
+	if waitMetadata["activity_kind"] != "item_started" {
+		t.Fatalf("runtime events[1].Payload[waitMetadata][activity_kind] = %v, want %q", waitMetadata["activity_kind"], "item_started")
+	}
 	if runtimeEvents[2].EventType != session.EventRunExternalActivity {
 		t.Fatalf("runtime events[2].EventType = %q, want %q", runtimeEvents[2].EventType, session.EventRunExternalActivity)
 	}
@@ -347,6 +357,13 @@ func TestRunnerAdapter_RunEmitsDispatchingAndExternalRunningStatus(t *testing.T)
 	if runtimeEvents[1].Payload["state"] != string(session.RunExternal) {
 		t.Fatalf("runtime events[1].Payload[state] = %v, want %q", runtimeEvents[1].Payload["state"], session.RunExternal)
 	}
+	waitMetadata, ok := runtimeEvents[1].Payload["waitMetadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("runtime events[1].Payload[waitMetadata] type = %T, want map[string]any", runtimeEvents[1].Payload["waitMetadata"])
+	}
+	if waitMetadata["wait_kind"] != "external_running" {
+		t.Fatalf("runtime events[1].Payload[waitMetadata][wait_kind] = %v, want %q", waitMetadata["wait_kind"], "external_running")
+	}
 	if runtimeEvents[2].EventType != session.EventRunExternalActivity {
 		t.Fatalf("runtime events[2].EventType = %q, want %q", runtimeEvents[2].EventType, session.EventRunExternalActivity)
 	}
@@ -384,6 +401,12 @@ func TestRunnerAdapter_RunReturnsExternalWaitingStateForRunningDispatch(t *testi
 	}
 	if result.WaitState != session.RunExternal {
 		t.Fatalf("Run().WaitState = %q, want %q", result.WaitState, session.RunExternal)
+	}
+	if result.WaitMetadata["wait_kind"] != "external_running" {
+		t.Fatalf("Run().WaitMetadata[wait_kind] = %v, want %q", result.WaitMetadata["wait_kind"], "external_running")
+	}
+	if result.WaitMetadata["remote_session_id"] != "thread_001" {
+		t.Fatalf("Run().WaitMetadata[remote_session_id] = %v, want %q", result.WaitMetadata["remote_session_id"], "thread_001")
 	}
 	if result.ExternalTask == nil {
 		t.Fatal("Run().ExternalTask is nil")

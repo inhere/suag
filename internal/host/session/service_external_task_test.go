@@ -166,6 +166,13 @@ func TestService_StartTurnWithACPBridgeRunningDispatchDoesNotFinalizeRun(t *test
 	if events[3].Payload["state"] != string(session.RunExternal) {
 		t.Fatalf("events[3].Payload[state] = %v, want %q", events[3].Payload["state"], session.RunExternal)
 	}
+	waitMetadata, ok := events[3].Payload["waitMetadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("events[3].Payload[waitMetadata] type = %T, want map[string]any", events[3].Payload["waitMetadata"])
+	}
+	if waitMetadata["wait_kind"] != "external_running" {
+		t.Fatalf("events[3].Payload[waitMetadata][wait_kind] = %v, want %q", waitMetadata["wait_kind"], "external_running")
+	}
 }
 
 func TestService_NonTerminalRunnerStatesPersistCurrentHostViewConsistently(t *testing.T) {
@@ -272,6 +279,13 @@ func TestService_NonTerminalRunnerStatesPersistCurrentHostViewConsistently(t *te
 		}
 		if events[3].EventType != session.EventRunStatus || events[3].Payload["state"] != string(session.RunExternal) {
 			t.Fatalf("events[3] = %q/%v, want run.status EXTERNAL_RUNNING", events[3].EventType, events[3].Payload["state"])
+		}
+		waitMetadata, ok := events[3].Payload["waitMetadata"].(map[string]any)
+		if !ok {
+			t.Fatalf("events[3].Payload[waitMetadata] type = %T, want map[string]any", events[3].Payload["waitMetadata"])
+		}
+		if waitMetadata["remote_session_id"] != "thread_001" {
+			t.Fatalf("events[3].Payload[waitMetadata][remote_session_id] = %v, want %q", waitMetadata["remote_session_id"], "thread_001")
 		}
 	})
 }

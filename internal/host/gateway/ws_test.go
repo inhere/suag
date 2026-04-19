@@ -507,6 +507,13 @@ func TestServer_GetRunDetailReturnsFilteredAggregatedState(t *testing.T) {
 	if run["latestMessageText"] != "done" {
 		t.Fatalf("get run detail run.latestMessageText = %v, want %q", run["latestMessageText"], "done")
 	}
+	waitMetadata, ok := run["waitMetadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("get run detail run.waitMetadata type = %T, want map[string]any", run["waitMetadata"])
+	}
+	if len(waitMetadata) != 0 {
+		t.Fatalf("get run detail run.waitMetadata len = %d, want 0", len(waitMetadata))
+	}
 
 	turn, ok := runResp["turn"].(map[string]any)
 	if !ok {
@@ -545,6 +552,57 @@ func TestServer_GetRunDetailReturnsFilteredAggregatedState(t *testing.T) {
 	}
 	if len(rawTasks) != 0 {
 		t.Fatalf("get run detail external_tasks len = %d, want 0", len(rawTasks))
+	}
+}
+
+func TestServer_GetRunDetailPreservesExternalWaitMetadata(t *testing.T) {
+	t.Parallel()
+
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	svc := session.NewService(store, bus, acpbridge.NewRunnerAdapter(&gatewayRunningBridge{}, acpbridge.RunnerAdapterConfig{
+		AdapterName: "codex",
+		Workspace:   "workspace/demo",
+	}), session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 19, 21, 30, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "run detail external wait metadata",
+	})
+	turnResp := postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "delegate and keep following",
+		"initiator_type": "user",
+	})
+
+	runResp := getJSON[map[string]any](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/runs/"+turnResp.RunID)
+	run, ok := runResp["run"].(map[string]any)
+	if !ok {
+		t.Fatalf("get run detail run type = %T, want map[string]any", runResp["run"])
+	}
+	if run["displayState"] != "external_running" {
+		t.Fatalf("get run detail run.displayState = %v, want %q", run["displayState"], "external_running")
+	}
+	waitMetadata, ok := run["waitMetadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("get run detail run.waitMetadata type = %T, want map[string]any", run["waitMetadata"])
+	}
+	if waitMetadata["wait_kind"] != "external_running" {
+		t.Fatalf("get run detail run.waitMetadata[wait_kind] = %v, want %q", waitMetadata["wait_kind"], "external_running")
+	}
+	if waitMetadata["remote_session_id"] != "thread_001" {
+		t.Fatalf("get run detail run.waitMetadata[remote_session_id] = %v, want %q", waitMetadata["remote_session_id"], "thread_001")
+	}
+	if waitMetadata["adapter"] != "codex" {
+		t.Fatalf("get run detail run.waitMetadata[adapter] = %v, want %q", waitMetadata["adapter"], "codex")
 	}
 }
 
@@ -767,6 +825,19 @@ func (b *gatewayMetadataBridge) Dispatch(_ context.Context, _ acpbridge.Dispatch
 				"messageDeltaCount": 2,
 			},
 		},
+	}, nil
+}
+
+type gatewayRunningBridge struct{}
+
+func (b *gatewayRunningBridge) Dispatch(_ context.Context, _ acpbridge.DispatchRequest) (acpbridge.DispatchResult, error) {
+	return acpbridge.DispatchResult{
+		State:           acpbridge.StateRunning,
+		Summary:         "still running remotely",
+		RemoteAgentName: "codex-cli",
+		RemoteSessionID: "thread_001",
+		RemoteTaskID:    "turn_remote_001",
+		LastHeartbeatAt: time.Date(2026, 4, 19, 21, 30, 0, 0, time.UTC),
 	}, nil
 }
 
