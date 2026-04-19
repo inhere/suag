@@ -127,3 +127,40 @@ func TestService_ContinueTurnReturnsLatestRunLoadError(t *testing.T) {
 		t.Fatalf("ContinueTurn() error = %q, want wrapped latest-run load failure", got)
 	}
 }
+
+func TestService_ContinueTurnRejectsSessionWithoutTurns(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 19, 11, 10, 0, 0, time.UTC)
+
+	if err := store.CreateSession(ctx, Session{
+		SessionID: "sess_continue_empty",
+		Title:     "empty session",
+		Status:    SessionOpen,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Metadata:  map[string]any{},
+	}); err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+
+	svc := NewService(store, bus, &fakeRunner{}, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	_, err := svc.ContinueTurn(ctx, ContinueTurnInput{
+		SessionID:     "sess_continue_empty",
+		AgentID:       "default",
+		Message:       "continue anyway",
+		InitiatorType: InitiatorUser,
+	})
+	if err == nil {
+		t.Fatal("ContinueTurn() error = nil, want empty-session rejection")
+	}
+	if got := err.Error(); got != "session is not waiting for continue_turn" {
+		t.Fatalf("ContinueTurn() error = %q, want empty-session rejection", got)
+	}
+}

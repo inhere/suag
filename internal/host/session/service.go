@@ -826,7 +826,7 @@ func (s *Service) validateContinueTurnState(ctx context.Context, sessionID strin
 		return err
 	}
 	if sessionModel.LastTurnID == "" {
-		return nil
+		return fmt.Errorf("session is not waiting for continue_turn")
 	}
 
 	latestRunID, err := s.latestRunIDForTurn(ctx, sessionID, sessionModel.LastTurnID)

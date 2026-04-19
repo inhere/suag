@@ -18,7 +18,7 @@
 - 当前 recap 主线已推进到 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md`，且后端已具备 `memory candidate` 查询与 `accept/reject` REST 入口
 - Web 侧已完成 `Memory Candidates` 右侧面板接入，当前支持 session 级候选加载、`draft/rendered` 过滤、Accept/Reject、错误与 pending 状态反馈，见 `docs/superpowers/specs/2026-04-17-web-memory-candidates-panel-design.md` 与 `docs/superpowers/plans/2026-04-17-web-memory-candidates-panel-implementation-plan.md`
 - Host internal self-loop Phase 1-4 正持续收口：`ResumeFromRunID`、结构化 `wait_kind`、同进程 resume 边界、terminal event 去重 都已开始落地，当前重点是把 waiting/resume/stop 的状态机一致性继续压稳
-- Task 1 当前已补一段 continue state guard：`continue_turn` 遇到 latest waiting run 丢失或加载失败时不再静默放行，而是返回明确错误，避免异常状态下错误续跑
+- Task 1 当前已补一段 continue state guard：`continue_turn` 遇到空 session、latest waiting run 丢失或加载失败时都不再静默放行，而是返回明确错误，避免异常状态下错误续跑
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范
