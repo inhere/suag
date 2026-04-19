@@ -76,6 +76,90 @@ func TestService_StartTurnDoesNotAppendDuplicateCanceledEventWhenRuntimeAlreadyE
 	}
 }
 
+func TestService_StartTurnPreservesRuntimeCanceledTerminalState(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 19, 10, 45, 0, 0, time.UTC)
+
+	runner := &fakeRunner{
+		result: RuntimeResult{},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunCanceled,
+				Payload: map[string]any{
+					"reason": "runtime canceled directly",
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_runtime_canceled",
+		AgentID:       "default",
+		UserMessage:   "runtime cancels itself",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_runtime_canceled", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+	if events[2].EventType != EventRunCanceled {
+		t.Fatalf("events[2].EventType = %q, want %q", events[2].EventType, EventRunCanceled)
+	}
+
+	finishedCount := 0
+	for _, event := range events {
+		if event.EventType == EventRunFinished {
+			finishedCount++
+		}
+	}
+	if finishedCount != 0 {
+		t.Fatalf("finished event count = %d, want 0", finishedCount)
+	}
+
+	runModel, err := store.GetRun(ctx, result.RunID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if runModel.State != RunCanceled {
+		t.Fatalf("persisted run state = %q, want %q", runModel.State, RunCanceled)
+	}
+
+	row := store.db.QueryRowContext(ctx, `
+		SELECT status
+		FROM turns
+		WHERE turn_id = ?
+	`, result.TurnID)
+	var turnStatus string
+	if err := row.Scan(&turnStatus); err != nil {
+		t.Fatalf("query turn status error = %v", err)
+	}
+	if turnStatus != string(TurnCanceled) {
+		t.Fatalf("persisted turn status = %q, want %q", turnStatus, TurnCanceled)
+	}
+
+	sessionModel, err := store.GetSession(ctx, result.SessionID)
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if sessionModel.Status != SessionOpen {
+		t.Fatalf("persisted session status = %q, want %q", sessionModel.Status, SessionOpen)
+	}
+}
+
 type canceledEventBlockingRunner struct {
 	blockingRunner
 	canceledEvent RuntimeEvent

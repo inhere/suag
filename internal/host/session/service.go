@@ -317,6 +317,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 
 	if s.runner != nil {
 		emittedTerminalEventTypes := make(map[string]bool, 3)
+		emittedTerminalPayloads := make(map[string]map[string]any, 3)
 		runCtx, execution := s.registerActiveExecution(ctx, sessionID, turnID, runID, agentID)
 		runCtx = hitl.WithTicketContext(runCtx, hitl.TicketContext{
 			SessionID: sessionID,
@@ -336,6 +337,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				}
 				if isTerminalRuntimeEvent(runtimeEvent.EventType) {
 					emittedTerminalEventTypes[runtimeEvent.EventType] = true
+					emittedTerminalPayloads[runtimeEvent.EventType] = mergeRuntimePayload(runtimeEvent.Payload, nil)
 				}
 				payload := mergeRuntimePayload(runtimeEvent.Payload, map[string]any{
 					"externalTaskId": externalTaskID,
@@ -454,6 +456,30 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			if err := s.persistExternalTask(ctx, sessionID, turnID, runID, result.ExternalTask); err != nil {
 				return StartTurnResult{}, fmt.Errorf("persist external task: %w", err)
 			}
+		}
+		if emittedTerminalEventTypes[EventRunCanceled] {
+			canceledAt := s.now().UTC()
+			canceledPayload := emittedTerminalPayloads[EventRunCanceled]
+			reason, _ := canceledPayload["reason"].(string)
+			reason = strings.TrimSpace(reason)
+			if reason == "" {
+				reason = "canceled"
+			}
+			if err := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunCanceled, TurnCanceled, "", reason, canceledAt); err != nil {
+				return StartTurnResult{}, fmt.Errorf("persist runtime canceled lifecycle: %w", err)
+			}
+			s.runRecapHooks(ctx, RecapInput{
+				Session: sessionModel,
+				TurnID:  turnID,
+				RunID:   runID,
+				Phase:   RecapPhaseCanceled,
+				Failure: reason,
+			})
+			return StartTurnResult{
+				SessionID: sessionID,
+				TurnID:    turnID,
+				RunID:     runID,
+			}, nil
 		}
 		if isWaitingRunState(result.WaitState) {
 			// Waiting states are non-terminal host outcomes. The runtime is expected
