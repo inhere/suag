@@ -14,19 +14,10 @@
 - Host 会话与 Web 工作台基础闭环已打通，当前继续围绕可自用联调与 Host runtime 主链稳定性做收尾，联调说明见 `docs/usage/web-host-local-dev.md`
 - 下一阶段开发已整理为 `docs/superpowers/plans/2026-04-16-host-runtime-stabilization-phase3.md`，后续按该计划继续推进 Host Go 主线
 - `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复与查询链路；`DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态已贯通到快照与事件流
-- internal runner / ACP runner 第一轮 Host contract 对齐已完成；ACP `StateRunning` 已稳定映射为 Host `EXTERNAL_RUNNING`，`externalTaskId` 也已贯穿 runtime 事件与 AG-UI 映射
-- Host internal runner 的 runtime 数据目录已收口到统一配置；默认使用 `db/agentcore/host`，避免继续散落到工作目录 `.agentcore/`
-- `cmd/axon` 逻辑已收拢到 `internal/app` 与 `internal/config`，CLI 入口后续保持薄封装
 - `docs/usage/host-state-snapshot-v0.md`、`docs/usage/llm-config-v0.md`、`docs/usage/host-recap-memory-hooks-v0.md` 已作为当前 v0 协议、配置与 recap/memory 基线文档
 - 当前 recap 主线已推进到 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md`，且后端已具备 `memory candidate` 查询与 `accept/reject` REST 入口
 - Web 侧已完成 `Memory Candidates` 右侧面板接入，当前支持 session 级候选加载、`draft/rendered` 过滤、Accept/Reject、错误与 pending 状态反馈，见 `docs/superpowers/specs/2026-04-17-web-memory-candidates-panel-design.md` 与 `docs/superpowers/plans/2026-04-17-web-memory-candidates-panel-implementation-plan.md`
-- Web 工作台已补齐 `Pending HITL` 自动轮询刷新，新增 ticket 无需手动点 `Refresh` 即可在面板出现
-- `file_read` 缺 `path` 的主因已收口：LLM provider 对空/坏 `arguments` 改为显式报错，agentcore runtime 也会在执行前按 tool schema 校验 required 参数，避免继续重复失败并错误触发 HITL
-- Host `BuildStateSnapshot()` 与 Web `Focused Run` 已补齐失败原因透传，run.failed 在刷新后仍能稳定显示具体错误，而不只剩 `failed` 状态
-- HITL ticket 的 `context` 文案已开始做归一化收口，重复 tool 失败时会优先提示“参数不完整/格式错误”或更清晰的工具失败原因，降低直接暴露底层 `tool error:` 文本的噪音
-- Host internal self-loop Phase 1 已开始收口 run lineage：`continue_turn` 新建的 Host run 会显式写入 `ResumeFromRunID`，为后续 waiting/resume contract 和 runtime run 对齐打基础
-- Host internal self-loop Phase 2 已开始收口结构化 waiting contract：`agentcore yield metadata -> TaskResult.Metadata -> intrunner wait_kind` 已贯通，`wait_kind` 会优先于 summary fallback 决定 `INPUT_REQUIRED / AUTH_REQUIRED`
-- Host internal self-loop Phase 3 已开始明确恢复边界：`intrunner` 只支持同进程 suspended runtime resume；Host 在重启后继续历史 waiting run 时会直接返回明确错误，而不是静默新开继续链路
+- Host internal self-loop Phase 1-4 正持续收口：`ResumeFromRunID`、结构化 `wait_kind`、同进程 resume 边界、terminal event 去重 都已开始落地，当前重点是把 waiting/resume/stop 的状态机一致性继续压稳
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

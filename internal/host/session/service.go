@@ -315,6 +315,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 	}
 
 	if s.runner != nil {
+		emittedTerminalEventTypes := make(map[string]bool, 3)
 		runCtx, execution := s.registerActiveExecution(ctx, sessionID, turnID, runID, agentID)
 		runCtx = hitl.WithTicketContext(runCtx, hitl.TicketContext{
 			SessionID: sessionID,
@@ -331,6 +332,9 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			Emit: func(runtimeEvent RuntimeEvent) error {
 				if strings.TrimSpace(runtimeEvent.EventType) == "" {
 					return nil
+				}
+				if isTerminalRuntimeEvent(runtimeEvent.EventType) {
+					emittedTerminalEventTypes[runtimeEvent.EventType] = true
 				}
 				payload := mergeRuntimePayload(runtimeEvent.Payload, map[string]any{
 					"externalTaskId": externalTaskID,
@@ -367,21 +371,23 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			if lifecycleErr := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunCanceled, TurnWaiting, "", reason, canceledAt); lifecycleErr != nil {
 				return StartTurnResult{}, fmt.Errorf("persist canceled lifecycle: %w", lifecycleErr)
 			}
-			canceledEvent := RunEvent{
-				EventID:   NewEventID(),
-				SessionID: sessionID,
-				TurnID:    turnID,
-				RunID:     runID,
-				AgentID:   agentID,
-				EventType: EventRunCanceled,
-				Payload: map[string]any{
-					"reason": reason,
-				},
-				Source:    "host.session.service",
-				CreatedAt: canceledAt,
-			}
-			if _, appendErr := s.appendAndPublishEvent(ctx, canceledEvent); appendErr != nil {
-				return StartTurnResult{}, fmt.Errorf("append canceled event: %w", appendErr)
+			if !emittedTerminalEventTypes[EventRunCanceled] {
+				canceledEvent := RunEvent{
+					EventID:   NewEventID(),
+					SessionID: sessionID,
+					TurnID:    turnID,
+					RunID:     runID,
+					AgentID:   agentID,
+					EventType: EventRunCanceled,
+					Payload: map[string]any{
+						"reason": reason,
+					},
+					Source:    "host.session.service",
+					CreatedAt: canceledAt,
+				}
+				if _, appendErr := s.appendAndPublishEvent(ctx, canceledEvent); appendErr != nil {
+					return StartTurnResult{}, fmt.Errorf("append canceled event: %w", appendErr)
+				}
 			}
 			s.runRecapHooks(ctx, RecapInput{
 				Session: sessionModel,
@@ -401,21 +407,23 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			if lifecycleErr := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunFailed, TurnFailed, "", err.Error(), failedAt); lifecycleErr != nil {
 				return StartTurnResult{}, fmt.Errorf("persist failed lifecycle: %w", lifecycleErr)
 			}
-			failedEvent := RunEvent{
-				EventID:   NewEventID(),
-				SessionID: sessionID,
-				TurnID:    turnID,
-				RunID:     runID,
-				AgentID:   agentID,
-				EventType: EventRunFailed,
-				Payload: map[string]any{
-					"error": err.Error(),
-				},
-				Source:    "host.session.service",
-				CreatedAt: now,
-			}
-			if _, appendErr := s.appendAndPublishEvent(ctx, failedEvent); appendErr != nil {
-				return StartTurnResult{}, fmt.Errorf("append failed event: %w", appendErr)
+			if !emittedTerminalEventTypes[EventRunFailed] {
+				failedEvent := RunEvent{
+					EventID:   NewEventID(),
+					SessionID: sessionID,
+					TurnID:    turnID,
+					RunID:     runID,
+					AgentID:   agentID,
+					EventType: EventRunFailed,
+					Payload: map[string]any{
+						"error": err.Error(),
+					},
+					Source:    "host.session.service",
+					CreatedAt: now,
+				}
+				if _, appendErr := s.appendAndPublishEvent(ctx, failedEvent); appendErr != nil {
+					return StartTurnResult{}, fmt.Errorf("append failed event: %w", appendErr)
+				}
 			}
 			s.runRecapHooks(ctx, RecapInput{
 				Session: sessionModel,
@@ -447,21 +455,23 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			return StartTurnResult{}, fmt.Errorf("persist finished lifecycle: %w", err)
 		}
 
-		finishedEvent := RunEvent{
-			EventID:   NewEventID(),
-			SessionID: sessionID,
-			TurnID:    turnID,
-			RunID:     runID,
-			AgentID:   agentID,
-			EventType: EventRunFinished,
-			Payload: map[string]any{
-				"summary": result.Summary,
-			},
-			Source:    "host.session.service",
-			CreatedAt: now,
-		}
-		if _, err := s.appendAndPublishEvent(ctx, finishedEvent); err != nil {
-			return StartTurnResult{}, fmt.Errorf("append finished event: %w", err)
+		if !emittedTerminalEventTypes[EventRunFinished] {
+			finishedEvent := RunEvent{
+				EventID:   NewEventID(),
+				SessionID: sessionID,
+				TurnID:    turnID,
+				RunID:     runID,
+				AgentID:   agentID,
+				EventType: EventRunFinished,
+				Payload: map[string]any{
+					"summary": result.Summary,
+				},
+				Source:    "host.session.service",
+				CreatedAt: now,
+			}
+			if _, err := s.appendAndPublishEvent(ctx, finishedEvent); err != nil {
+				return StartTurnResult{}, fmt.Errorf("append finished event: %w", err)
+			}
 		}
 		s.runRecapHooks(ctx, RecapInput{
 			Session: sessionModel,
@@ -649,6 +659,15 @@ func mergeRuntimePayload(payload map[string]any, extra map[string]any) map[strin
 		out[key] = value
 	}
 	return out
+}
+
+func isTerminalRuntimeEvent(eventType string) bool {
+	switch strings.TrimSpace(eventType) {
+	case EventRunFinished, EventRunFailed, EventRunCanceled:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) appendAndPublishEvent(ctx context.Context, event RunEvent) (RunEvent, error) {

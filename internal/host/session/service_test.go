@@ -555,6 +555,127 @@ func TestService_StartTurnDoesNotFinalizeWhenRunnerReturnsWaitState(t *testing.T
 	}
 }
 
+func TestService_StartTurnDoesNotAppendDuplicateFinishedEventWhenRuntimeAlreadyEmittedOne(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 19, 10, 0, 0, 0, time.UTC)
+
+	runner := &fakeRunner{
+		result: RuntimeResult{Summary: "done"},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunFinished,
+				Payload: map[string]any{
+					"summary": "done",
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_finished_once",
+		AgentID:       "default",
+		UserMessage:   "finish once",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_finished_once", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+	if events[2].EventType != EventRunFinished {
+		t.Fatalf("events[2].EventType = %q, want %q", events[2].EventType, EventRunFinished)
+	}
+
+	finishedCount := 0
+	for _, event := range events {
+		if event.EventType == EventRunFinished {
+			finishedCount++
+		}
+	}
+	if finishedCount != 1 {
+		t.Fatalf("finished event count = %d, want 1", finishedCount)
+	}
+
+	runModel, err := store.GetRun(ctx, result.RunID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if runModel.State != RunCompleted {
+		t.Fatalf("persisted run state = %q, want %q", runModel.State, RunCompleted)
+	}
+	if runModel.Summary != "done" {
+		t.Fatalf("persisted run summary = %q, want %q", runModel.Summary, "done")
+	}
+}
+
+func TestService_StartTurnDoesNotAppendDuplicateFailedEventWhenRuntimeAlreadyEmittedOne(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 19, 10, 15, 0, 0, time.UTC)
+
+	runner := &fakeRunner{
+		err: fmt.Errorf("boom"),
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunFailed,
+				Payload: map[string]any{
+					"error": "boom",
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	_, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_failed_once",
+		AgentID:       "default",
+		UserMessage:   "fail once",
+		InitiatorType: InitiatorUser,
+	})
+	if err == nil {
+		t.Fatal("StartTurn() error = nil, want runtime failure")
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_failed_once", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+	if events[2].EventType != EventRunFailed {
+		t.Fatalf("events[2].EventType = %q, want %q", events[2].EventType, EventRunFailed)
+	}
+
+	failedCount := 0
+	for _, event := range events {
+		if event.EventType == EventRunFailed {
+			failedCount++
+		}
+	}
+	if failedCount != 1 {
+		t.Fatalf("failed event count = %d, want 1", failedCount)
+	}
+}
+
 func TestService_ContinueTurnRejectsAuthRequiredWaitState(t *testing.T) {
 	t.Parallel()
 
