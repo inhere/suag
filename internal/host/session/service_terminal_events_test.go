@@ -160,6 +160,149 @@ func TestService_StartTurnPreservesRuntimeCanceledTerminalState(t *testing.T) {
 	}
 }
 
+func TestService_StartTurnPreservesRuntimeFailedTerminalState(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 19, 11, 0, 0, 0, time.UTC)
+
+	runner := &fakeRunner{
+		result: RuntimeResult{},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunFailed,
+				Payload: map[string]any{
+					"error": "runtime failed directly",
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_runtime_failed",
+		AgentID:       "default",
+		UserMessage:   "runtime fails itself",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_runtime_failed", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+	if events[2].EventType != EventRunFailed {
+		t.Fatalf("events[2].EventType = %q, want %q", events[2].EventType, EventRunFailed)
+	}
+
+	finishedCount := 0
+	for _, event := range events {
+		if event.EventType == EventRunFinished {
+			finishedCount++
+		}
+	}
+	if finishedCount != 0 {
+		t.Fatalf("finished event count = %d, want 0", finishedCount)
+	}
+
+	runModel, err := store.GetRun(ctx, result.RunID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if runModel.State != RunFailed {
+		t.Fatalf("persisted run state = %q, want %q", runModel.State, RunFailed)
+	}
+	if runModel.FailureCode != "runtime failed directly" {
+		t.Fatalf("persisted run failure = %q, want %q", runModel.FailureCode, "runtime failed directly")
+	}
+
+	row := store.db.QueryRowContext(ctx, `
+		SELECT status
+		FROM turns
+		WHERE turn_id = ?
+	`, result.TurnID)
+	var turnStatus string
+	if err := row.Scan(&turnStatus); err != nil {
+		t.Fatalf("query turn status error = %v", err)
+	}
+	if turnStatus != string(TurnFailed) {
+		t.Fatalf("persisted turn status = %q, want %q", turnStatus, TurnFailed)
+	}
+
+	sessionModel, err := store.GetSession(ctx, result.SessionID)
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if sessionModel.Status != SessionOpen {
+		t.Fatalf("persisted session status = %q, want %q", sessionModel.Status, SessionOpen)
+	}
+}
+
+func TestService_StartTurnPreservesRuntimeFinishedSummary(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 19, 11, 15, 0, 0, time.UTC)
+
+	runner := &fakeRunner{
+		result: RuntimeResult{},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunFinished,
+				Payload: map[string]any{
+					"summary": "runtime finished directly",
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_runtime_finished",
+		AgentID:       "default",
+		UserMessage:   "runtime finishes itself",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_runtime_finished", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+	if events[2].EventType != EventRunFinished {
+		t.Fatalf("events[2].EventType = %q, want %q", events[2].EventType, EventRunFinished)
+	}
+
+	runModel, err := store.GetRun(ctx, result.RunID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if runModel.State != RunCompleted {
+		t.Fatalf("persisted run state = %q, want %q", runModel.State, RunCompleted)
+	}
+	if runModel.Summary != "runtime finished directly" {
+		t.Fatalf("persisted run summary = %q, want %q", runModel.Summary, "runtime finished directly")
+	}
+}
+
 type canceledEventBlockingRunner struct {
 	blockingRunner
 	canceledEvent RuntimeEvent

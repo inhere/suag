@@ -481,6 +481,54 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				RunID:     runID,
 			}, nil
 		}
+		if emittedTerminalEventTypes[EventRunFailed] {
+			failedAt := s.now().UTC()
+			failedPayload := emittedTerminalPayloads[EventRunFailed]
+			failure, _ := failedPayload["error"].(string)
+			failure = strings.TrimSpace(failure)
+			if failure == "" {
+				failure = "runtime failed"
+			}
+			if err := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunFailed, TurnFailed, "", failure, failedAt); err != nil {
+				return StartTurnResult{}, fmt.Errorf("persist runtime failed lifecycle: %w", err)
+			}
+			s.runRecapHooks(ctx, RecapInput{
+				Session: sessionModel,
+				TurnID:  turnID,
+				RunID:   runID,
+				Phase:   RecapPhaseFailed,
+				Failure: failure,
+			})
+			return StartTurnResult{
+				SessionID: sessionID,
+				TurnID:    turnID,
+				RunID:     runID,
+			}, nil
+		}
+		if emittedTerminalEventTypes[EventRunFinished] {
+			finishedAt := s.now().UTC()
+			finishedPayload := emittedTerminalPayloads[EventRunFinished]
+			summary, _ := finishedPayload["summary"].(string)
+			summary = strings.TrimSpace(summary)
+			if summary == "" {
+				summary = strings.TrimSpace(result.Summary)
+			}
+			if err := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunCompleted, TurnCompleted, summary, "", finishedAt); err != nil {
+				return StartTurnResult{}, fmt.Errorf("persist runtime finished lifecycle: %w", err)
+			}
+			s.runRecapHooks(ctx, RecapInput{
+				Session: sessionModel,
+				TurnID:  turnID,
+				RunID:   runID,
+				Phase:   RecapPhaseCompleted,
+				Summary: summary,
+			})
+			return StartTurnResult{
+				SessionID: sessionID,
+				TurnID:    turnID,
+				RunID:     runID,
+			}, nil
+		}
 		if isWaitingRunState(result.WaitState) {
 			// Waiting states are non-terminal host outcomes. The runtime is expected
 			// to have emitted the matching run.status event before returning.
