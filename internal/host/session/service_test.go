@@ -621,6 +621,99 @@ func TestService_StartTurnDoesNotAppendDuplicateFinishedEventWhenRuntimeAlreadyE
 	}
 }
 
+func TestService_StartTurnAddsExternalTaskIDToFinishedEvent(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 19, 16, 0, 0, 0, time.UTC)
+
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "external work done",
+			ExternalTask: &ExternalTask{
+				ExternalTaskID:  "ext_complete_001",
+				Adapter:         "codex",
+				RemoteAgentName: "codex-cli",
+				RemoteSessionID: "thread_001",
+				RemoteTaskID:    "turn_remote_001",
+				State:           "completed",
+			},
+		},
+	}
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_finish_external_id",
+		AgentID:       "default",
+		UserMessage:   "finish with external task",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_finish_external_id", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+	if events[2].EventType != EventRunFinished {
+		t.Fatalf("events[2].EventType = %q, want %q", events[2].EventType, EventRunFinished)
+	}
+	if events[2].RunID != result.RunID {
+		t.Fatalf("events[2].RunID = %q, want %q", events[2].RunID, result.RunID)
+	}
+	if events[2].Payload["externalTaskId"] != "ext_complete_001" {
+		t.Fatalf("events[2].Payload[externalTaskId] = %v, want %q", events[2].Payload["externalTaskId"], "ext_complete_001")
+	}
+}
+
+func TestService_StartTurnAddsExternalTaskIDToFailedEvent(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 19, 16, 10, 0, 0, time.UTC)
+
+	runner := &fakeRunner{
+		err: errors.New("external execution failed"),
+	}
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	_, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_failed_external_id",
+		AgentID:       "default",
+		UserMessage:   "fail after external dispatch",
+		InitiatorType: InitiatorUser,
+	})
+	if err == nil {
+		t.Fatal("StartTurn() error = nil, want runner failure")
+	}
+
+	events, err := store.ListEventsBySession(ctx, "sess_failed_external_id", 0)
+	if err != nil {
+		t.Fatalf("ListEventsBySession() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("ListEventsBySession() len = %d, want 3", len(events))
+	}
+	if events[2].EventType != EventRunFailed {
+		t.Fatalf("events[2].EventType = %q, want %q", events[2].EventType, EventRunFailed)
+	}
+	if events[2].Payload["externalTaskId"] == "" {
+		t.Fatal("events[2].Payload[externalTaskId] is empty")
+	}
+}
+
 func TestService_StartTurnDoesNotAppendDuplicateFailedEventWhenRuntimeAlreadyEmittedOne(t *testing.T) {
 	t.Parallel()
 

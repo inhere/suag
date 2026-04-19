@@ -25,6 +25,7 @@
 - canceled 的 reload 语义已补一层回归：`BuildStateSnapshot()` 与前端 `hydrateFromSnapshot()` 在纯快照恢复时都会保留 canceled 的 displayState 与取消原因，避免刷新后丢失 `stopped by operator` 文案
 - latest waiting run 解析已开始统一：`validateContinueTurnState()` 与 `buildContinueRuntimeContext()` 现在都走同一个 `latestContinuableRun()` helper，避免 continue 校验与 runtime resume context 再次漂移
 - Task 2 已开始做 Host contract 对齐：AG-UI 对 `run.external.activity` 的 activity snapshot 状态已从 `running` 收口到 `external_running`，避免增量事件与 Host 其它状态语义不一致
+- Task 2 本轮继续收口 terminal contract：Host service 自补的 `run.finished / run.failed / run.canceled` 事件与 AG-UI `run_status` activity snapshot 现在都会稳定透传 `externalTaskId`，避免前端/客户端只能靠 runner 特判或刷新快照来关联 external task
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

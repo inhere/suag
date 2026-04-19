@@ -380,9 +380,9 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 					RunID:     runID,
 					AgentID:   agentID,
 					EventType: EventRunCanceled,
-					Payload: map[string]any{
+					Payload: withExternalTaskID(map[string]any{
 						"reason": reason,
-					},
+					}, externalTaskID),
 					Source:    "host.session.service",
 					CreatedAt: canceledAt,
 				}
@@ -416,9 +416,9 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 					RunID:     runID,
 					AgentID:   agentID,
 					EventType: EventRunFailed,
-					Payload: map[string]any{
+					Payload: withExternalTaskID(map[string]any{
 						"error": err.Error(),
-					},
+					}, externalTaskID),
 					Source:    "host.session.service",
 					CreatedAt: now,
 				}
@@ -457,6 +457,10 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 		}
 
 		if !emittedTerminalEventTypes[EventRunFinished] {
+			finishedExternalTaskID := externalTaskID
+			if result.ExternalTask != nil && strings.TrimSpace(result.ExternalTask.ExternalTaskID) != "" {
+				finishedExternalTaskID = strings.TrimSpace(result.ExternalTask.ExternalTaskID)
+			}
 			finishedEvent := RunEvent{
 				EventID:   NewEventID(),
 				SessionID: sessionID,
@@ -464,9 +468,9 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				RunID:     runID,
 				AgentID:   agentID,
 				EventType: EventRunFinished,
-				Payload: map[string]any{
+				Payload: withExternalTaskID(map[string]any{
 					"summary": result.Summary,
-				},
+				}, finishedExternalTaskID),
 				Source:    "host.session.service",
 				CreatedAt: now,
 			}
@@ -651,6 +655,15 @@ func mergeRuntimePayload(payload map[string]any, extra map[string]any) map[strin
 		out[key] = value
 	}
 	return out
+}
+
+func withExternalTaskID(payload map[string]any, externalTaskID string) map[string]any {
+	if strings.TrimSpace(externalTaskID) == "" {
+		return payload
+	}
+	return mergeRuntimePayload(payload, map[string]any{
+		"externalTaskId": strings.TrimSpace(externalTaskID),
+	})
 }
 
 func isTerminalRuntimeEvent(eventType string) bool {

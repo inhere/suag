@@ -440,7 +440,8 @@ func TestMapEvent_RunFinishedToStandardRunFinished(t *testing.T) {
 		TurnID:    "turn_001",
 		RunID:     "run_001",
 		Payload: map[string]any{
-			"summary": "done",
+			"summary":        "done",
+			"externalTaskId": "ext_001",
 		},
 	}
 
@@ -498,6 +499,17 @@ func TestMapEvent_RunFinishedToStandardRunFinished(t *testing.T) {
 	if endEvent.MessageID != startEvent.MessageID {
 		t.Fatalf("MapEvent().End.MessageID = %q, want %q", endEvent.MessageID, startEvent.MessageID)
 	}
+
+	activityContent, ok := activityEvent.Content.(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent().ActivitySnapshot.Content type = %T, want map[string]any", activityEvent.Content)
+	}
+	if activityContent["runId"] != "run_001" {
+		t.Fatalf("MapEvent().ActivitySnapshot.Content.runId = %v, want %q", activityContent["runId"], "run_001")
+	}
+	if activityContent["externalTaskId"] != "ext_001" {
+		t.Fatalf("MapEvent().ActivitySnapshot.Content.externalTaskId = %v, want %q", activityContent["externalTaskId"], "ext_001")
+	}
 }
 
 func TestMapEvent_RunFailedToStandardRunError(t *testing.T) {
@@ -509,7 +521,8 @@ func TestMapEvent_RunFailedToStandardRunError(t *testing.T) {
 		TurnID:    "turn_001",
 		RunID:     "run_001",
 		Payload: map[string]any{
-			"error": "runner failed",
+			"error":          "runner failed",
+			"externalTaskId": "ext_001",
 		},
 	}
 
@@ -542,6 +555,12 @@ func TestMapEvent_RunFailedToStandardRunError(t *testing.T) {
 	}
 	if content["status"] != "failed" {
 		t.Fatalf("MapEvent().Content.status = %v, want %q", content["status"], "failed")
+	}
+	if content["runId"] != "run_001" {
+		t.Fatalf("MapEvent().Content.runId = %v, want %q", content["runId"], "run_001")
+	}
+	if content["externalTaskId"] != "ext_001" {
+		t.Fatalf("MapEvent().Content.externalTaskId = %v, want %q", content["externalTaskId"], "ext_001")
 	}
 }
 

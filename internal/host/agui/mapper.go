@@ -358,11 +358,12 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 
 func buildRunActivitySnapshot(now int64, event HostEvent, status string) *ActivitySnapshotEvent {
 	return withTimestamp(NewActivitySnapshotEvent(event.RunID, "run_status", map[string]any{
-		"threadId": event.SessionID,
-		"turnId":   event.TurnID,
-		"runId":    event.RunID,
-		"agentId":  event.AgentID,
-		"status":   status,
+		"threadId":       event.SessionID,
+		"turnId":         event.TurnID,
+		"runId":          event.RunID,
+		"agentId":        event.AgentID,
+		"status":         status,
+		"externalTaskId": externalTaskIDFromPayload(event.Payload),
 	}), now)
 }
 
