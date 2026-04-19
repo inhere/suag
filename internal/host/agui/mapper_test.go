@@ -623,6 +623,9 @@ func TestMapEvent_RunExternalActivityMapsToCustomAndSnapshot(t *testing.T) {
 	if content["externalTaskId"] != "ext_001" {
 		t.Fatalf("MapEvent()[1].Content.externalTaskId = %v, want %q", content["externalTaskId"], "ext_001")
 	}
+	if content["status"] != "external_running" {
+		t.Fatalf("MapEvent()[1].Content.status = %v, want %q", content["status"], "external_running")
+	}
 }
 
 func TestMapEvent_RunExternalMessageDeltaMapsToTextEvents(t *testing.T) {

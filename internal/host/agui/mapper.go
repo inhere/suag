@@ -83,7 +83,7 @@ func MapEvent(event HostEvent) []Event {
 				"turnId":         event.TurnID,
 				"runId":          event.RunID,
 				"agentId":        event.AgentID,
-				"status":         "running",
+				"status":         "external_running",
 				"payload":        event.Payload,
 				"externalTaskId": externalTaskIDFromPayload(event.Payload),
 			}), now),

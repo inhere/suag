@@ -405,6 +405,7 @@ describe("session-store", () => {
     expect(next.snapshot?.runs[0]?.externalTaskIds).toEqual(["ext_002"]);
     expect(next.snapshot?.turns[0]?.hasExternalWork).toBe(true);
     expect(next.snapshot?.externalActivities[0]?.externalTaskId).toBe("ext_002");
+    expect(next.snapshot?.externalActivities[0]?.status).toBe("external_running");
   });
 
   it("marks the current run as failed when RUN_ERROR arrives", () => {
