@@ -168,6 +168,114 @@ func TestService_StartTurnWithACPBridgeRunningDispatchDoesNotFinalizeRun(t *test
 	}
 }
 
+func TestService_NonTerminalRunnerStatesPersistCurrentHostViewConsistently(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	t.Run("internal thinking", func(t *testing.T) {
+		store := newIntegrationStore(t)
+		bus := newIntegrationPublisher()
+		now := time.Date(2026, 4, 19, 20, 10, 0, 0, time.UTC)
+		runner := &serviceRuntimeResultRunner{
+			result: session.RuntimeResult{
+				Summary:   "keep thinking",
+				WaitState: session.RunThinking,
+			},
+			events: []session.RuntimeEvent{
+				{
+					EventType: session.EventRunStatus,
+					Payload: map[string]any{
+						"state": string(session.RunThinking),
+					},
+				},
+			},
+		}
+
+		svc := session.NewService(store, bus, runner, session.ServiceConfig{
+			Now: func() time.Time { return now },
+		})
+
+		result, err := svc.StartTurn(ctx, session.StartTurnInput{
+			SessionID:     "sess_internal_thinking",
+			AgentID:       "default",
+			UserMessage:   "keep thinking",
+			InitiatorType: session.InitiatorUser,
+		})
+		if err != nil {
+			t.Fatalf("StartTurn() error = %v", err)
+		}
+
+		runModel, err := store.GetRun(ctx, result.RunID)
+		if err != nil {
+			t.Fatalf("GetRun() error = %v", err)
+		}
+		if runModel.State != session.RunCompleted {
+			t.Fatalf("persisted run state = %q, want %q", runModel.State, session.RunCompleted)
+		}
+
+		events, err := store.ListEventsBySession(ctx, "sess_internal_thinking", 0)
+		if err != nil {
+			t.Fatalf("ListEventsBySession() error = %v", err)
+		}
+		if len(events) != 4 {
+			t.Fatalf("ListEventsBySession() len = %d, want 4", len(events))
+		}
+		if events[2].EventType != session.EventRunStatus || events[2].Payload["state"] != string(session.RunThinking) {
+			t.Fatalf("events[2] = %q/%v, want run.status THINKING", events[2].EventType, events[2].Payload["state"])
+		}
+		if events[3].EventType != session.EventRunFinished {
+			t.Fatalf("events[3].EventType = %q, want %q", events[3].EventType, session.EventRunFinished)
+		}
+	})
+
+	t.Run("acp external waiting", func(t *testing.T) {
+		store := newIntegrationStore(t)
+		bus := newIntegrationPublisher()
+		now := time.Date(2026, 4, 19, 20, 11, 0, 0, time.UTC)
+		runner := acpbridge.NewRunnerAdapter(&serviceRunningBridge{}, acpbridge.RunnerAdapterConfig{
+			AdapterName: "codex",
+			Workspace:   "workspace/demo",
+		})
+
+		svc := session.NewService(store, bus, runner, session.ServiceConfig{
+			Now: func() time.Time { return now },
+		})
+
+		result, err := svc.StartTurn(ctx, session.StartTurnInput{
+			SessionID:     "sess_acp_external",
+			AgentID:       "default",
+			UserMessage:   "delegate and keep following",
+			InitiatorType: session.InitiatorUser,
+		})
+		if err != nil {
+			t.Fatalf("StartTurn() error = %v", err)
+		}
+
+		runModel, err := store.GetRun(ctx, result.RunID)
+		if err != nil {
+			t.Fatalf("GetRun() error = %v", err)
+		}
+		if runModel.State != session.RunExternal {
+			t.Fatalf("persisted run state = %q, want %q", runModel.State, session.RunExternal)
+		}
+
+		events, err := store.ListEventsBySession(ctx, "sess_acp_external", 0)
+		if err != nil {
+			t.Fatalf("ListEventsBySession() error = %v", err)
+		}
+		if len(events) != 4 {
+			t.Fatalf("ListEventsBySession() len = %d, want 4", len(events))
+		}
+		if events[2].EventType != session.EventRunStatus || events[2].Payload["state"] != string(session.RunDispatching) {
+			t.Fatalf("events[2] = %q/%v, want run.status DISPATCHING", events[2].EventType, events[2].Payload["state"])
+		}
+		if events[3].EventType != session.EventRunStatus || events[3].Payload["state"] != string(session.RunExternal) {
+			t.Fatalf("events[3] = %q/%v, want run.status EXTERNAL_RUNNING", events[3].EventType, events[3].Payload["state"])
+		}
+	})
+}
+
 type serviceMetadataBridge struct{}
 
 func (b *serviceMetadataBridge) Dispatch(_ context.Context, _ acpbridge.DispatchRequest) (acpbridge.DispatchResult, error) {
@@ -207,6 +315,23 @@ func (b *serviceRunningBridge) Dispatch(_ context.Context, _ acpbridge.DispatchR
 		RemoteTaskID:    "turn_remote_001",
 		LastHeartbeatAt: time.Date(2026, 4, 12, 9, 30, 0, 0, time.UTC),
 	}, nil
+}
+
+type serviceRuntimeResultRunner struct {
+	result session.RuntimeResult
+	events []session.RuntimeEvent
+}
+
+func (r *serviceRuntimeResultRunner) Run(_ context.Context, in session.RuntimeRequest) (session.RuntimeResult, error) {
+	for _, event := range r.events {
+		if in.Emit == nil {
+			continue
+		}
+		if err := in.Emit(event); err != nil {
+			return session.RuntimeResult{}, err
+		}
+	}
+	return r.result, nil
 }
 
 func isNumericValue(value any, want int) bool {

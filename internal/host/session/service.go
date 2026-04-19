@@ -736,7 +736,7 @@ func (s *Service) applyRuntimeStatus(ctx context.Context, sessionModel Session, 
 	}
 
 	switch runState {
-	case RunDispatching, RunExternal:
+	case RunPreparing, RunThinking, RunDispatching, RunExternal, RunSummarizing:
 		if err := s.store.UpdateRunLifecycle(ctx, runID, runState, "", "", nil); err != nil {
 			return fmt.Errorf("update run runtime state: %w", err)
 		}

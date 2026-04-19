@@ -481,6 +481,82 @@ func TestService_StartTurnPersistsRuntimeWaitingStateBeforeRunFinishes(t *testin
 	}
 }
 
+func TestService_StartTurnPersistsNonWaitingRuntimeStateBeforeRunFinishes(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := newStatusBlockingRunner(RuntimeEvent{
+		EventType: EventRunStatus,
+		Payload: map[string]any{
+			"state": string(RunThinking),
+		},
+	})
+	now := time.Date(2026, 4, 19, 20, 0, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	startDone := make(chan StartTurnResult, 1)
+	startErr := make(chan error, 1)
+	go func() {
+		result, err := svc.StartTurn(ctx, StartTurnInput{
+			SessionID:     "sess_thinking",
+			AgentID:       "default",
+			UserMessage:   "keep thinking",
+			InitiatorType: InitiatorUser,
+		})
+		if err != nil {
+			startErr <- err
+			return
+		}
+		startDone <- result
+	}()
+
+	runner.WaitUntilStatusPersisted(t)
+	request := runner.LastRequest()
+
+	runModel, err := store.GetRun(ctx, request.RunID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if runModel.State != RunThinking {
+		t.Fatalf("persisted run state = %q, want %q", runModel.State, RunThinking)
+	}
+	if runModel.Summary != "" {
+		t.Fatalf("persisted run summary = %q, want empty", runModel.Summary)
+	}
+	if !runModel.EndedAt.IsZero() {
+		t.Fatalf("persisted run ended_at = %q, want zero", runModel.EndedAt)
+	}
+
+	sessionModel, err := store.GetSession(ctx, "sess_thinking")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if sessionModel.Status != SessionRunning {
+		t.Fatalf("persisted session status = %q, want %q", sessionModel.Status, SessionRunning)
+	}
+
+	if err := svc.StopTurn(ctx, StopTurnInput{
+		SessionID: "sess_thinking",
+		TurnID:    request.TurnID,
+		Reason:    "stop after thinking assertion",
+	}); err != nil {
+		t.Fatalf("StopTurn() error = %v", err)
+	}
+
+	select {
+	case err := <-startErr:
+		t.Fatalf("StartTurn() error after stop = %v", err)
+	case <-startDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartTurn() did not finish after stop")
+	}
+}
+
 func TestService_StartTurnDoesNotFinalizeWhenRunnerReturnsWaitState(t *testing.T) {
 	t.Parallel()
 
