@@ -571,7 +571,11 @@ func (s *Service) persistLifecycleState(
 		return fmt.Errorf("update turn status: %w", err)
 	}
 
-	sessionModel.Status = SessionWaiting
+	// Waiting is reserved for non-terminal runs that still expect another
+	// operator/user action. Once a run finishes, fails, or is canceled, the
+	// session itself should fall back to OPEN so list/detail views do not look
+	// like the session is still blocked on unfinished work.
+	sessionModel.Status = SessionOpen
 	sessionModel.UpdatedAt = finishedAt
 	if err := s.store.UpdateSession(ctx, sessionModel); err != nil {
 		return fmt.Errorf("update session status: %w", err)

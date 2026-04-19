@@ -1079,8 +1079,8 @@ func TestService_StartTurnPersistsCompletedLifecycleState(t *testing.T) {
 	if err := sessionRow.Scan(&sessionStatus); err != nil {
 		t.Fatalf("query session status error = %v", err)
 	}
-	if sessionStatus != string(SessionWaiting) {
-		t.Fatalf("persisted session status = %q, want %q", sessionStatus, SessionWaiting)
+	if sessionStatus != string(SessionOpen) {
+		t.Fatalf("persisted session status = %q, want %q", sessionStatus, SessionOpen)
 	}
 
 	taskRow := store.db.QueryRowContext(ctx, `
@@ -1557,8 +1557,8 @@ func TestService_StartTurnPersistsFailedLifecycleState(t *testing.T) {
 	if err := sessionRow.Scan(&sessionStatus); err != nil {
 		t.Fatalf("query failed session status error = %v", err)
 	}
-	if sessionStatus != string(SessionWaiting) {
-		t.Fatalf("persisted failed session status = %q, want %q", sessionStatus, SessionWaiting)
+	if sessionStatus != string(SessionOpen) {
+		t.Fatalf("persisted failed session status = %q, want %q", sessionStatus, SessionOpen)
 	}
 }
 

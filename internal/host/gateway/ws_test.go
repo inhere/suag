@@ -1521,8 +1521,8 @@ func TestServer_ListSessionsReturnsLatestSessionsWithPreview(t *testing.T) {
 	if sessions[0]["title"] != "second session" {
 		t.Fatalf("GET /api/sessions[0].title = %v, want %q", sessions[0]["title"], "second session")
 	}
-	if sessions[0]["status"] != string(session.SessionWaiting) {
-		t.Fatalf("GET /api/sessions[0].status = %v, want %q", sessions[0]["status"], session.SessionWaiting)
+	if sessions[0]["status"] != string(session.SessionOpen) {
+		t.Fatalf("GET /api/sessions[0].status = %v, want %q", sessions[0]["status"], session.SessionOpen)
 	}
 	if sessions[0]["preview"] != "done" {
 		t.Fatalf("GET /api/sessions[0].preview = %v, want %q", sessions[0]["preview"], "done")
