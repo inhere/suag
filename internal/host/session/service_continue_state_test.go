@@ -164,3 +164,83 @@ func TestService_ContinueTurnRejectsSessionWithoutTurns(t *testing.T) {
 		t.Fatalf("ContinueTurn() error = %q, want empty-session rejection", got)
 	}
 }
+
+func TestService_BuildContinueRuntimeContextRejectsSessionWithoutTurns(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	now := time.Date(2026, 4, 19, 11, 15, 0, 0, time.UTC)
+
+	if err := store.CreateSession(ctx, Session{
+		SessionID: "sess_continue_context_empty",
+		Title:     "empty session",
+		Status:    SessionOpen,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Metadata:  map[string]any{},
+	}); err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+
+	svc := NewService(store, nil, nil, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	_, err := svc.buildContinueRuntimeContext(ctx, "sess_continue_context_empty")
+	if err == nil {
+		t.Fatal("buildContinueRuntimeContext() error = nil, want empty-session rejection")
+	}
+	if got := err.Error(); got != "session is not waiting for continue_turn" {
+		t.Fatalf("buildContinueRuntimeContext() error = %q, want empty-session rejection", got)
+	}
+}
+
+func TestService_BuildContinueRuntimeContextRejectsMissingLatestWaitingRun(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 19, 11, 20, 0, 0, time.UTC)
+
+	waitingRunner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, waitingRunner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	firstResult, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_continue_context_gap",
+		AgentID:       "default",
+		UserMessage:   "need more input",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	if _, err := store.db.ExecContext(ctx, `DELETE FROM runs WHERE run_id = ?`, firstResult.RunID); err != nil {
+		t.Fatalf("delete waiting run error = %v", err)
+	}
+
+	_, err = svc.buildContinueRuntimeContext(ctx, "sess_continue_context_gap")
+	if err == nil {
+		t.Fatal("buildContinueRuntimeContext() error = nil, want missing-latest-run rejection")
+	}
+	if got := err.Error(); got != "latest waiting run is unavailable; start a new turn or reissue the task" {
+		t.Fatalf("buildContinueRuntimeContext() error = %q, want missing-latest-run rejection", got)
+	}
+}

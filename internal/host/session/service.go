@@ -628,25 +628,12 @@ func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, previousTu
 }
 
 func (s *Service) buildContinueRuntimeContext(ctx context.Context, sessionID string) (map[string]any, error) {
-	if s == nil || s.store == nil {
-		return map[string]any{}, nil
-	}
-
-	sessionModel, err := s.store.GetSession(ctx, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	previousTurnID := strings.TrimSpace(sessionModel.LastTurnID)
-	if previousTurnID == "" {
-		return map[string]any{}, nil
-	}
-
-	latestRunID, err := s.latestRunIDForTurn(ctx, sessionID, previousTurnID)
+	waiting, err := s.latestContinuableRun(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.buildRuntimeContext(ctx, sessionID, previousTurnID, latestRunID, "", true), nil
+	return s.buildRuntimeContext(ctx, sessionID, waiting.turnID, waiting.runID, "", true), nil
 }
 
 func mergeRuntimePayload(payload map[string]any, extra map[string]any) map[string]any {
@@ -821,35 +808,11 @@ func (s *Service) ensureSession(ctx context.Context, sessionID string, now time.
 }
 
 func (s *Service) validateContinueTurnState(ctx context.Context, sessionID string) error {
-	if s == nil || s.store == nil {
-		return nil
-	}
-
-	sessionModel, err := s.store.GetSession(ctx, sessionID)
+	waiting, err := s.latestContinuableRun(ctx, sessionID)
 	if err != nil {
 		return err
 	}
-	if sessionModel.LastTurnID == "" {
-		return fmt.Errorf("session is not waiting for continue_turn")
-	}
-
-	latestRunID, err := s.latestRunIDForTurn(ctx, sessionID, sessionModel.LastTurnID)
-	if err != nil {
-		return err
-	}
-	if latestRunID == "" {
-		return fmt.Errorf("latest waiting run is unavailable; start a new turn or reissue the task")
-	}
-
-	runModel, err := s.store.GetRun(ctx, latestRunID)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("latest waiting run is unavailable; start a new turn or reissue the task")
-		}
-		return fmt.Errorf("load latest run: %w", err)
-	}
-
-	return validateContinueRunState(runModel.State)
+	return validateContinueRunState(waiting.state)
 }
 
 func (s *Service) latestRunIDForTurn(ctx context.Context, sessionID, turnID string) (string, error) {
@@ -875,6 +838,50 @@ func (s *Service) latestRunIDForTurn(ctx context.Context, sessionID, turnID stri
 		return events[i].RunID, nil
 	}
 	return "", nil
+}
+
+type waitingRunRef struct {
+	turnID string
+	runID  string
+	state  RunState
+}
+
+func (s *Service) latestContinuableRun(ctx context.Context, sessionID string) (waitingRunRef, error) {
+	if s == nil || s.store == nil {
+		return waitingRunRef{}, nil
+	}
+
+	sessionModel, err := s.store.GetSession(ctx, sessionID)
+	if err != nil {
+		return waitingRunRef{}, err
+	}
+
+	turnID := strings.TrimSpace(sessionModel.LastTurnID)
+	if turnID == "" {
+		return waitingRunRef{}, fmt.Errorf("session is not waiting for continue_turn")
+	}
+
+	runID, err := s.latestRunIDForTurn(ctx, sessionID, turnID)
+	if err != nil {
+		return waitingRunRef{}, err
+	}
+	if runID == "" {
+		return waitingRunRef{}, fmt.Errorf("latest waiting run is unavailable; start a new turn or reissue the task")
+	}
+
+	runModel, err := s.store.GetRun(ctx, runID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return waitingRunRef{}, fmt.Errorf("latest waiting run is unavailable; start a new turn or reissue the task")
+		}
+		return waitingRunRef{}, fmt.Errorf("load latest run: %w", err)
+	}
+
+	return waitingRunRef{
+		turnID: turnID,
+		runID:  runID,
+		state:  runModel.State,
+	}, nil
 }
 
 func validateContinueRunState(state RunState) error {
