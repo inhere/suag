@@ -369,7 +369,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			if reason == "" {
 				reason = "stopped by operator"
 			}
-			if lifecycleErr := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunCanceled, TurnWaiting, "", reason, canceledAt); lifecycleErr != nil {
+			if lifecycleErr := s.persistLifecycleState(ctx, sessionModel, turnID, runID, RunCanceled, TurnCanceled, "", reason, canceledAt); lifecycleErr != nil {
 				return StartTurnResult{}, fmt.Errorf("persist canceled lifecycle: %w", lifecycleErr)
 			}
 			if !emittedTerminalEventTypes[EventRunCanceled] {

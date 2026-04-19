@@ -19,6 +19,7 @@ const (
 	TurnPending   TurnStatus = "PENDING"
 	TurnRunning   TurnStatus = "RUNNING"
 	TurnWaiting   TurnStatus = "WAITING"
+	TurnCanceled  TurnStatus = "CANCELED"
 	TurnCompleted TurnStatus = "COMPLETED"
 	TurnFailed    TurnStatus = "FAILED"
 )

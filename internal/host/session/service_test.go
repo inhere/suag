@@ -1013,6 +1013,22 @@ func TestService_StopTurnCancelsActiveRunAndPublishesCanceledLifecycle(t *testin
 	if endedAt != now.Format(time.RFC3339Nano) {
 		t.Fatalf("persisted run ended_at = %q, want %q", endedAt, now.Format(time.RFC3339Nano))
 	}
+
+	turnRow := store.db.QueryRowContext(ctx, `
+		SELECT status, completed_at
+		FROM turns
+		WHERE turn_id = ?
+	`, runner.LastRequest().TurnID)
+	var turnStatus, completedAt string
+	if err := turnRow.Scan(&turnStatus, &completedAt); err != nil {
+		t.Fatalf("query canceled turn error = %v", err)
+	}
+	if turnStatus != string(TurnCanceled) {
+		t.Fatalf("persisted turn status = %q, want %q", turnStatus, TurnCanceled)
+	}
+	if completedAt != now.Format(time.RFC3339Nano) {
+		t.Fatalf("persisted turn completed_at = %q, want %q", completedAt, now.Format(time.RFC3339Nano))
+	}
 }
 
 func TestService_StartTurnPersistsCompletedLifecycleState(t *testing.T) {

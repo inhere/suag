@@ -21,6 +21,7 @@
 - Task 1 当前已补一段 continue state guard：`continue_turn` 遇到空 session、latest waiting run 丢失或加载失败时都不再静默放行，而是返回明确错误，避免异常状态下错误续跑
 - Gateway command 入口已补一段外显收口：未知 WS command 不再静默忽略，而是统一返回 `command.error`，避免前端发起误命令后无反馈卡住
 - terminal lifecycle 的 session 状态已开始收口：completed / failed / canceled 后的 `session.Status` 改回 `OPEN`，不再让 `/api/sessions` 与刷新后的初始快照把已结束会话误显示成 `WAITING`
+- stop/cancel 的 turn 级状态已开始收口：Host 新增 `TurnCanceled`，`stop_turn` 后 turn 不再沿用 `WAITING`，而是与 run 一样明确标记为 `CANCELED`
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范
