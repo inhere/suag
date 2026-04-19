@@ -165,6 +165,7 @@ func TestRunner_RunMapsApprovalYieldToAuthRequired(t *testing.T) {
 	})
 
 	var states []string
+	var statusPayloads []map[string]any
 	result, err := runner.Run(context.Background(), Request{
 		SessionID:   "sess_auth",
 		TurnID:      "turn_001",
@@ -177,12 +178,23 @@ func TestRunner_RunMapsApprovalYieldToAuthRequired(t *testing.T) {
 			}
 			state, _ := event.Payload["state"].(string)
 			states = append(states, state)
+			payload := map[string]any{}
+			for key, value := range event.Payload {
+				payload[key] = value
+			}
+			statusPayloads = append(statusPayloads, payload)
 			return nil
 		},
 	})
 	assert.NoErr(t, err)
 	assert.Eq(t, "await_approval", result.Summary)
 	assert.Eq(t, session.RunAuthRequired, result.WaitState)
+	assert.Eq(t, "manual", result.WaitMetadata["policy"])
+	if payload, ok := statusPayloads[2]["waitMetadata"].(map[string]any); ok {
+		assert.Eq(t, "manual", payload["policy"])
+	} else {
+		t.Fatalf("states[2].Payload[waitMetadata] type = %T, want map[string]any", statusPayloads[2]["waitMetadata"])
+	}
 	assert.Eq(t, 3, len(states))
 	assert.Eq(t, "PREPARING", states[0])
 	assert.Eq(t, "THINKING", states[1])

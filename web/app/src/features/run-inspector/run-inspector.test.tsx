@@ -38,6 +38,7 @@ it("shows summary first for a completed focused run", () => {
           latestMessageText: "older text",
           summary: "已完成基础方案",
           externalTaskIds: [],
+          waitMetadata: {},
           eventCount: 3,
           updatedAt: "2026-04-12T10:30:00Z",
         },
@@ -136,6 +137,7 @@ it("shows loading and retry feedback for focused run detail states", () => {
           latestMessageText: "",
           summary: "",
           externalTaskIds: [],
+          waitMetadata: {},
           eventCount: 1,
           updatedAt: "2026-04-12T10:30:00Z",
         },
@@ -172,6 +174,7 @@ it("shows loading and retry feedback for focused run detail states", () => {
           latestMessageText: "",
           summary: "",
           externalTaskIds: [],
+          waitMetadata: {},
           eventCount: 1,
           updatedAt: "2026-04-12T10:30:00Z",
         },
@@ -212,6 +215,7 @@ it("shows failed run error text in the focused summary when no summary exists", 
           latestMessageText: "tool call \"file_read\" arguments must be a JSON object",
           summary: "",
           externalTaskIds: [],
+          waitMetadata: {},
           eventCount: 2,
           updatedAt: "2026-04-18T10:00:01Z",
         },
@@ -236,4 +240,51 @@ it("shows failed run error text in the focused summary when no summary exists", 
   expect(focusedRunPanel).not.toBeNull();
   expect(within(focusedRunPanel as HTMLElement).getByText("tool call \"file_read\" arguments must be a JSON object")).toBeInTheDocument();
   expect(within(focusedRunPanel as HTMLElement).getByText("failed")).toBeInTheDocument();
+});
+
+it("shows structured wait metadata for waiting runs", () => {
+  render(
+    <RunInspector
+      currentTurn={null}
+      runs={[
+        {
+          runId: "run_wait",
+          turnId: "turn_wait",
+          sessionId: "sess_001",
+          agentId: "default",
+          displayState: "auth_required",
+          latestEventType: "run.status",
+          latestMessageId: "",
+          latestMessageText: "waiting for approval",
+          summary: "",
+          externalTaskIds: [],
+          waitMetadata: {
+            wait_kind: "auth_required",
+            policy: "manual_review",
+          },
+          eventCount: 2,
+          updatedAt: "2026-04-19T21:00:00Z",
+        },
+      ]}
+      externalTasks={[]}
+      externalActivities={[]}
+      externalMessages={[]}
+      focusedRunId="run_wait"
+      focusedRunDetailStatus="loaded"
+      onFocusRun={vi.fn()}
+      onRetryFocusedRunDetail={vi.fn()}
+      canStop={false}
+      onStop={vi.fn()}
+      canAddHint={false}
+      onAddHint={vi.fn()}
+      onOpenDebug={vi.fn()}
+    />,
+  );
+
+  const waitInfoHeading = screen.getByRole("heading", { name: "Wait Info" });
+  const waitInfoSection = waitInfoHeading.closest(".run-section");
+  expect(waitInfoSection).not.toBeNull();
+  expect(within(waitInfoSection as HTMLElement).getByText("wait_kind")).toBeInTheDocument();
+  expect(within(waitInfoSection as HTMLElement).getByText("auth_required")).toBeInTheDocument();
+  expect(within(waitInfoSection as HTMLElement).getByText("manual_review")).toBeInTheDocument();
 });

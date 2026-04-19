@@ -84,13 +84,14 @@ describe("session-client", () => {
               agentId: "default",
               displayState: "completed",
               latestEventType: "run.finished",
-              latestMessageId: "run_001:assistant",
-              latestMessageText: "done",
-              summary: "done",
-              externalTaskIds: [],
-              eventCount: 3,
-              updatedAt: "2026-04-12T08:00:01Z",
-            },
+            latestMessageId: "run_001:assistant",
+            latestMessageText: "done",
+            summary: "done",
+            externalTaskIds: [],
+            waitMetadata: {},
+            eventCount: 3,
+            updatedAt: "2026-04-12T08:00:01Z",
+          },
           ],
           external_activities: [
             {
@@ -250,6 +251,10 @@ describe("session-client", () => {
             latestMessageText: "thinking...",
             summary: "",
             externalTaskIds: [],
+            waitMetadata: {
+              wait_kind: "auth_required",
+              policy: "manual_review",
+            },
             eventCount: 4,
             updatedAt: "2026-04-12T08:00:01Z",
           },
@@ -317,6 +322,10 @@ describe("session-client", () => {
     expect(result.turn?.turnId).toBe("turn_001");
     expect(result.run?.runId).toBe("run_001");
     expect(result.externalMessages[0]?.content).toBe("thinking...");
+    expect(result.run?.waitMetadata).toEqual({
+      wait_kind: "auth_required",
+      policy: "manual_review",
+    });
   });
 
   it("loads /api/hitl and returns parsed pending tickets", async () => {

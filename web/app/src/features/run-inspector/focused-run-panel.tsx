@@ -20,6 +20,16 @@ function getFocusedRunContent(run: StateSnapshotRun | null): string {
   return run.summary || run.latestMessageText || "Waiting for output...";
 }
 
+function getWaitMetadataEntries(run: StateSnapshotRun | null): Array<[string, string]> {
+  if (!run) {
+    return [];
+  }
+
+  return Object.entries(run.waitMetadata ?? {})
+    .filter(([, value]) => value !== undefined && value !== null && `${value}`.trim() !== "")
+    .map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value)]);
+}
+
 type MetaItemProps = {
   label: string;
   value: string;
@@ -44,6 +54,7 @@ export function FocusedRunPanel({
   const focusedRunID = focusedRun?.runId ?? "";
   const runActivities = externalActivities.filter((activity) => activity.runId === focusedRunID);
   const runMessages = externalMessages.filter((message) => message.runId === focusedRunID);
+  const waitMetadataEntries = getWaitMetadataEntries(focusedRun);
   const showLoadingState = !!focusedRun && detailStatus === "loading" && !runMessages.length && !runActivities.length;
   const showErrorState = !!focusedRun && detailStatus === "error" && !runMessages.length && !runActivities.length;
 
@@ -70,6 +81,17 @@ export function FocusedRunPanel({
               />
             </div>
           </div>
+
+          {waitMetadataEntries.length > 0 ? (
+            <div className="run-section">
+              <h3>Wait Info</h3>
+              <div className="run-meta">
+                {waitMetadataEntries.map(([key, value]) => (
+                  <MetaItem key={key} label={key} value={value} />
+                ))}
+              </div>
+            </div>
+          ) : null}
         </>
       ) : (
         <p className="run-summary">{getFocusedRunContent(focusedRun)}</p>

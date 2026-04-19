@@ -119,6 +119,7 @@ export type StateSnapshotRun = {
   latestMessageText: string;
   summary: string;
   externalTaskIds: string[];
+  waitMetadata?: Record<string, unknown>;
   eventCount: number;
   updatedAt: string;
 };

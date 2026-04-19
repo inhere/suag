@@ -71,6 +71,7 @@ function makeSnapshot(
         latestMessageText: "正在整理页面结构",
         summary: "",
         externalTaskIds: [],
+        waitMetadata: {},
         eventCount: 4,
         updatedAt: "2026-04-12T09:00:00Z",
       },
@@ -408,6 +409,35 @@ describe("session-store", () => {
     expect(next.snapshot?.externalActivities[0]?.status).toBe("external_running");
   });
 
+  it("hydrates wait metadata from an activity snapshot", () => {
+    const next = reduceSessionMessage(
+      hydrateFromSnapshot(emptySessionViewState, makeSnapshot()),
+      {
+        type: "ACTIVITY_SNAPSHOT",
+        messageId: "run_002",
+        activityType: "run_status",
+        content: {
+          threadId: "sess_001",
+          turnId: "turn_002",
+          runId: "run_002",
+          agentId: "default",
+          status: "auth_required",
+          waitMetadata: {
+            wait_kind: "auth_required",
+            policy: "manual_review",
+          },
+        },
+        replace: true,
+      },
+    );
+
+    expect(next.snapshot?.runs[0]?.displayState).toBe("auth_required");
+    expect(next.snapshot?.runs[0]?.waitMetadata).toEqual({
+      wait_kind: "auth_required",
+      policy: "manual_review",
+    });
+  });
+
   it("marks the current run as failed when RUN_ERROR arrives", () => {
     const next = reduceSessionMessage(
       hydrateFromSnapshot(emptySessionViewState, makeSnapshot()),
@@ -594,6 +624,7 @@ describe("session-store", () => {
       latestMessageText: "Waiting for websocket snapshot...",
       summary: "",
       externalTaskIds: ["ext_bootstrap"],
+      waitMetadata: {},
       eventCount: 0,
       updatedAt: "2026-04-12T12:32:00Z",
     });

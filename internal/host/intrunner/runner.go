@@ -129,15 +129,16 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 	// as host waiting states. We derive a coarse host-facing wait bucket from the
 	// yielded summary/reason so web + gateway can distinguish approval/auth flows.
 	if runner.GetState() == agent.AgentSuspended {
-		waitState := deriveWaitState(summary, resultMetadata(result))
-		if err := emitStatus(in.Emit, waitState); err != nil {
+		waitMetadata := cloneWaitMetadata(resultMetadata(result))
+		waitState := deriveWaitState(summary, waitMetadata)
+		if err := emitStatusWithMetadata(in.Emit, waitState, waitMetadata); err != nil {
 			return session.RuntimeResult{}, err
 		}
 		r.storeActiveRuntime(in.SessionID, a, runner)
 		return session.RuntimeResult{
 			Summary:      summary,
 			WaitState:    waitState,
-			WaitMetadata: cloneWaitMetadata(resultMetadata(result)),
+			WaitMetadata: waitMetadata,
 		}, nil
 	}
 	r.clearActiveRuntime(in.SessionID)
@@ -307,14 +308,22 @@ func (r *SessionRunner) ValidateContinue(_ context.Context, in session.RuntimeRe
 }
 
 func emitStatus(emit func(event session.RuntimeEvent) error, state session.RunState) error {
+	return emitStatusWithMetadata(emit, state, nil)
+}
+
+func emitStatusWithMetadata(emit func(event session.RuntimeEvent) error, state session.RunState, metadata map[string]any) error {
 	if emit == nil {
 		return nil
 	}
+	payload := map[string]any{
+		"state": string(state),
+	}
+	if len(metadata) > 0 {
+		payload["waitMetadata"] = cloneWaitMetadata(metadata)
+	}
 	return emit(session.RuntimeEvent{
 		EventType: session.EventRunStatus,
-		Payload: map[string]any{
-			"state": string(state),
-		},
+		Payload:   payload,
 	})
 }
 

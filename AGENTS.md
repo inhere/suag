@@ -28,6 +28,7 @@
 - Task 2 本轮继续收口 terminal contract：Host service 自补的 `run.finished / run.failed / run.canceled` 事件与 AG-UI `run_status` activity snapshot 现在都会稳定透传 `externalTaskId`，避免前端/客户端只能靠 runner 特判或刷新快照来关联 external task
 - Task 2 本轮继续补齐失败态 contract：ACP dispatch 失败时如果已有 remote session/task 上下文，Host 也会先持久化 failed `ExternalTask` 再落失败生命周期；同时 `StartTurn()` 失败返回保留 `sessionId/turnId/runId`，便于上层继续查询失败 run
 - Task 2 本轮继续压平中间态 contract：internal runner 的 `PREPARING / THINKING / SUMMARIZING` 现在也会像 ACP 的 `DISPATCHING / EXTERNAL_RUNNING` 一样回写到 `runs.state`，避免事件流与库中当前 run state 再次割裂
+- Task 2 本轮继续补齐 waiting metadata contract：internal runner suspend 产出的 `waitMetadata` 已贯通到 `run.status` payload、AG-UI snapshot/activity 以及 Web `Focused Run > Wait Info`，`wait_kind / policy` 不再只停留在 runtime 内部
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

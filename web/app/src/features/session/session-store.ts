@@ -139,6 +139,7 @@ function createBootstrapSnapshot(
             latestMessageText: "Waiting for websocket snapshot...",
             summary: "",
             externalTaskIds: bootstrapTask ? [bootstrapTask.externalTaskId] : [],
+            waitMetadata: {},
             eventCount: 0,
             updatedAt: generatedAt,
           },
@@ -258,6 +259,7 @@ function cloneRun(run: StateSnapshotRun): StateSnapshotRun {
   return {
     ...run,
     externalTaskIds: [...run.externalTaskIds],
+    waitMetadata: { ...run.waitMetadata },
   };
 }
 
@@ -407,6 +409,7 @@ function ensureRunExists(
     latestMessageText: "",
     summary: "",
     externalTaskIds: [],
+    waitMetadata: {},
     eventCount: 0,
     updatedAt: snapshot.generatedAt,
   };
@@ -843,6 +846,10 @@ function reduceActivitySnapshot(
   const externalTaskId =
     typeof message.content.externalTaskId === "string" ? message.content.externalTaskId : "";
   const status = typeof message.content.status === "string" ? message.content.status : "running";
+  const waitMetadata =
+    typeof message.content.waitMetadata === "object" && message.content.waitMetadata
+      ? (message.content.waitMetadata as Record<string, unknown>)
+      : {};
 
   const targetTurn =
     turns.find((turn) => turn.turnId === turnId) ??
@@ -861,6 +868,7 @@ function reduceActivitySnapshot(
   targetRun.updatedAt = snapshot.generatedAt;
   targetRun.eventCount += 1;
   addExternalTaskID(targetRun, externalTaskId);
+  targetRun.waitMetadata = { ...waitMetadata };
 
   targetTurn.displayState = status;
   targetTurn.latestEventType = "activity.snapshot";

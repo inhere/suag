@@ -716,6 +716,10 @@ func TestMapEvent_RunStatusMapsToCustomAndSnapshot(t *testing.T) {
 		Sequence:  3,
 		Payload: map[string]any{
 			"state": string(session.RunInputRequired),
+			"waitMetadata": map[string]any{
+				"wait_kind": "input_required",
+				"policy":    "manual",
+			},
 		},
 	}
 
@@ -742,6 +746,13 @@ func TestMapEvent_RunStatusMapsToCustomAndSnapshot(t *testing.T) {
 	}
 	if content["status"] != "input_required" {
 		t.Fatalf("MapEvent()[1].Content.status = %v, want %q", content["status"], "input_required")
+	}
+	waitMetadata, ok := content["waitMetadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent()[1].Content.waitMetadata type = %T, want map[string]any", content["waitMetadata"])
+	}
+	if waitMetadata["policy"] != "manual" {
+		t.Fatalf("MapEvent()[1].Content.waitMetadata[policy] = %v, want %q", waitMetadata["policy"], "manual")
 	}
 }
 
@@ -783,6 +794,10 @@ func TestBuildStateSnapshotUsesRunStatusDisplayState(t *testing.T) {
 			CreatedAt: time.Date(2026, 4, 15, 10, 0, 2, 0, time.UTC),
 			Payload: map[string]any{
 				"state": string(session.RunAuthRequired),
+				"waitMetadata": map[string]any{
+					"wait_kind": "auth_required",
+					"policy":    "manual_review",
+				},
 			},
 		},
 	}
@@ -807,6 +822,13 @@ func TestBuildStateSnapshotUsesRunStatusDisplayState(t *testing.T) {
 	}
 	if rawRuns[0]["displayState"] != "auth_required" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].displayState = %v, want %q", rawRuns[0]["displayState"], "auth_required")
+	}
+	waitMetadata, ok := rawRuns[0]["waitMetadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].waitMetadata type = %T, want map[string]any", rawRuns[0]["waitMetadata"])
+	}
+	if waitMetadata["policy"] != "manual_review" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].waitMetadata[policy] = %v, want %q", waitMetadata["policy"], "manual_review")
 	}
 }
 

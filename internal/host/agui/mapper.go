@@ -31,6 +31,7 @@ func MapEvent(event HostEvent) []Event {
 				"sequence":       event.Sequence,
 				"type":           event.Type,
 				"payload":        event.Payload,
+				"waitMetadata":   waitMetadataFromPayload(event.Payload),
 				"externalTaskId": externalTaskIDFromPayload(event.Payload),
 			}), now),
 			buildRunActivitySnapshot(now, event, status),
@@ -251,6 +252,7 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 					"latestMessageText": "",
 					"summary":           "",
 					"externalTaskIds":   []string{},
+					"waitMetadata":      map[string]any{},
 					"eventCount":        0,
 					"updatedAt":         "",
 				})
@@ -363,6 +365,7 @@ func buildRunActivitySnapshot(now int64, event HostEvent, status string) *Activi
 		"runId":          event.RunID,
 		"agentId":        event.AgentID,
 		"status":         status,
+		"waitMetadata":   waitMetadataFromPayload(event.Payload),
 		"externalTaskId": externalTaskIDFromPayload(event.Payload),
 	}), now)
 }
@@ -385,6 +388,26 @@ func externalTaskIDFromPayload(payload any) string {
 	}
 	text, _ := raw.(string)
 	return text
+}
+
+func waitMetadataFromPayload(payload any) map[string]any {
+	values, ok := payload.(map[string]any)
+	if !ok || len(values) == 0 {
+		return map[string]any{}
+	}
+	raw, ok := values["waitMetadata"]
+	if !ok {
+		return map[string]any{}
+	}
+	metadata, ok := raw.(map[string]any)
+	if !ok || len(metadata) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		out[key] = value
+	}
+	return out
 }
 
 func externalActivityKey(event HostEvent) string {
@@ -506,6 +529,10 @@ func mergeRunSnapshot(target map[string]any, event HostEvent) {
 	target["latestEventType"] = event.Type
 	target["eventCount"] = target["eventCount"].(int) + 1
 	target["updatedAt"] = formatEventTime(event.CreatedAt)
+
+	if event.Type == session.EventRunStatus {
+		target["waitMetadata"] = waitMetadataFromPayload(event.Payload)
+	}
 
 	if event.Type != session.EventRunFinished {
 		if event.Type == session.EventRunFailed {
