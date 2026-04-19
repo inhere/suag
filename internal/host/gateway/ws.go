@@ -213,7 +213,7 @@ func handleWSCommand(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mu
 			"session_id": sessionID,
 		})
 	default:
-		return nil
+		return fmt.Errorf("unsupported websocket command: %s", strings.TrimSpace(cmd.Type))
 	}
 }
 
