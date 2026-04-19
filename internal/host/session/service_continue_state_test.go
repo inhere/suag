@@ -1,0 +1,129 @@
+package session
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+)
+
+func TestService_ContinueTurnRejectsWhenLatestWaitingRunCannotBeLoaded(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 19, 11, 0, 0, 0, time.UTC)
+
+	waitingRunner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, waitingRunner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	firstResult, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_continue_state_gap",
+		AgentID:       "default",
+		UserMessage:   "need more input",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	if _, err := store.db.ExecContext(ctx, `DELETE FROM runs WHERE run_id = ?`, firstResult.RunID); err != nil {
+		t.Fatalf("delete waiting run error = %v", err)
+	}
+
+	_, err = svc.ContinueTurn(ctx, ContinueTurnInput{
+		SessionID:     "sess_continue_state_gap",
+		AgentID:       "default",
+		Message:       "continue anyway",
+		InitiatorType: InitiatorUser,
+	})
+	if err == nil {
+		t.Fatal("ContinueTurn() error = nil, want missing-latest-run rejection")
+	}
+	if got := err.Error(); got != "latest waiting run is unavailable; start a new turn or reissue the task" {
+		t.Fatalf("ContinueTurn() error = %q, want missing-latest-run rejection", got)
+	}
+}
+
+type continueStateStore struct {
+	Store
+	getRunErr error
+}
+
+func (s *continueStateStore) GetRun(ctx context.Context, runID string) (Run, error) {
+	if s.getRunErr != nil {
+		return Run{}, s.getRunErr
+	}
+	return s.Store.GetRun(ctx, runID)
+}
+
+func TestService_ContinueTurnReturnsLatestRunLoadError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	baseStore := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 19, 11, 5, 0, 0, time.UTC)
+
+	waitingRunner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
+				},
+			},
+		},
+	}
+	svc := NewService(baseStore, bus, waitingRunner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	_, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_continue_state_err",
+		AgentID:       "default",
+		UserMessage:   "need more input",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	svc.store = &continueStateStore{
+		Store:     baseStore,
+		getRunErr: fmt.Errorf("get run: boom"),
+	}
+
+	_, err = svc.ContinueTurn(ctx, ContinueTurnInput{
+		SessionID:     "sess_continue_state_err",
+		AgentID:       "default",
+		Message:       "continue anyway",
+		InitiatorType: InitiatorUser,
+	})
+	if err == nil {
+		t.Fatal("ContinueTurn() error = nil, want latest-run load failure")
+	}
+	if got := err.Error(); got != "load latest run: get run: boom" {
+		t.Fatalf("ContinueTurn() error = %q, want wrapped latest-run load failure", got)
+	}
+}

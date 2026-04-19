@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -833,25 +834,18 @@ func (s *Service) validateContinueTurnState(ctx context.Context, sessionID strin
 		return err
 	}
 	if latestRunID == "" {
-		return nil
+		return fmt.Errorf("latest waiting run is unavailable; start a new turn or reissue the task")
 	}
 
 	runModel, err := s.store.GetRun(ctx, latestRunID)
 	if err != nil {
-		return nil
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("latest waiting run is unavailable; start a new turn or reissue the task")
+		}
+		return fmt.Errorf("load latest run: %w", err)
 	}
 
-	// continue_turn is only valid for the latest waiting run. Approval waits
-	// must be resumed through HITL so we keep that path separate from free-form
-	// follow-up input.
-	switch runModel.State {
-	case RunInputRequired:
-		return nil
-	case RunAuthRequired:
-		return fmt.Errorf("session is waiting for approval; respond via HITL instead of continue_turn")
-	default:
-		return fmt.Errorf("session is not waiting for continue_turn")
-	}
+	return validateContinueRunState(runModel.State)
 }
 
 func (s *Service) latestRunIDForTurn(ctx context.Context, sessionID, turnID string) (string, error) {
@@ -877,6 +871,20 @@ func (s *Service) latestRunIDForTurn(ctx context.Context, sessionID, turnID stri
 		return events[i].RunID, nil
 	}
 	return "", nil
+}
+
+func validateContinueRunState(state RunState) error {
+	// continue_turn is only valid for the latest waiting run that is expecting
+	// free-form human input. Approval waits must go through HITL so we do not
+	// mix operator approval with normal conversational continuation.
+	switch state {
+	case RunInputRequired:
+		return nil
+	case RunAuthRequired:
+		return fmt.Errorf("session is waiting for approval; respond via HITL instead of continue_turn")
+	default:
+		return fmt.Errorf("session is not waiting for continue_turn")
+	}
 }
 
 func validateStartTurnInput(in StartTurnInput) error {
