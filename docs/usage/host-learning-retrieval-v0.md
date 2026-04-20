@@ -17,13 +17,20 @@
 - 读取来源固定为：
   - `host.memory.root/memory/MEMORY.md`
   - `host.memory.root/memory/USER.md`
+- 会基于当前 turn `Instruction` 做最小 query-aware recall：
+  - 命中时优先只注入匹配条目
+  - 无命中时回退到每个来源的少量 baseline
 - 读取后会转成前置 `system` messages 注入运行上下文
 - provider 最终能看到：
   - `[Host MEMORY]`
   - `[Host USER]`
 - 当前 run metadata / snapshot 还会保留一份最小 recall 观测信息：
   - `memory_recall.enabled`
+  - `memory_recall.strategy`
   - `memory_recall.entry_count`
+  - `memory_recall.matched_entry_count`
+  - `memory_recall.fallback_used`
+  - `memory_recall.fallback_limit`
   - `memory_recall.sources`
   - 每个 source 当前包含 `name`、`entry_count`、简短 `preview`
 
@@ -31,7 +38,6 @@
 
 - 读取 `*.draft.md`
 - SQLite / FTS5 检索
-- query-aware retrieval
 - 运行中动态刷新
 - ACP runner 远端 retrieval 对齐
 
@@ -57,7 +63,7 @@
 
 ---
 
-## 3. 文件内容处理规则
+## 3. 文件内容处理与 recall 规则
 
 当前解析规则保持极简：
 
@@ -73,7 +79,20 @@
   - entry_count
   - 最多前 2 条 preview，用于 run detail 观测
 
-其余内容会按原始顺序拼接到 `system` message 中。
+在此基础上，当前 recall 规则为：
+
+- 当前 `Instruction` 会先做：
+  - 小写化
+  - 按非字母数字边界切词
+  - 过滤较短噪音 token
+- 只要 memory line 包含任一有效 token，即视为 matched
+- 若某个来源存在 matched 条目：
+  - 当前只注入该来源的 matched lines
+- 若所有来源都没有 matched 条目：
+  - 当前会按来源回退到少量 baseline
+  - 目前默认每个来源最多回退 1 条
+
+最终被选中的内容会按原始顺序拼接到 `system` message 中。
 
 ---
 
@@ -102,9 +121,8 @@
 
 当前 retrieval 仍然只是 baseline：
 
-- 所有 formal memory 都会整文件注入
-- 不会按 query 做筛选
-- 不会做 relevance 排序
+- 当前只支持 file-based query-aware lite
+- 不做 relevance 排序，只做命中 / fallback 两段式选择
 - 不会区分 workspace / project 范围
 - 当前 `memory_recall.preview` 只用于观测，不应被误解为真实注入内容的完整镜像
 
@@ -113,6 +131,6 @@
 后续如果继续演进，建议优先考虑：
 
 1. SQLite + FTS5 检索
-2. query-aware recall
+2. 更完整的 query-aware recall / ranking
 3. memory scope 与 workspace/project 绑定
 4. ACP runner 与 intrunner 的 retrieval 语义对齐

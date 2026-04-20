@@ -5,10 +5,17 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/inhere/axon/internal/platform/memory"
+)
+
+const (
+	formalMemoryFallbackPerSource = 1
+	minQueryTokenLength           = 3
 )
 
 type formalMemoryRecall struct {
@@ -26,19 +33,20 @@ type formalMemoryLoad struct {
 	Metadata map[string]any
 }
 
+type formalMemoryFile struct {
+	Label string
+	Lines []string
+}
+
 func newFormalMemoryRecall(root string) *formalMemoryRecall {
 	return &formalMemoryRecall{root: strings.TrimSpace(root)}
 }
 
-func (r *formalMemoryRecall) Load() formalMemoryLoad {
+func (r *formalMemoryRecall) Load(instruction string) formalMemoryLoad {
 	if r == nil || r.root == "" {
 		return formalMemoryLoad{
 			Metadata: map[string]any{
-				"memory_recall": map[string]any{
-					"enabled":     false,
-					"entry_count": 0,
-					"sources":     []map[string]any{},
-				},
+				"memory_recall": memoryRecallMetadata(false, 0, 0, false, nil),
 			},
 		}
 	}
@@ -52,51 +60,79 @@ func (r *formalMemoryRecall) Load() formalMemoryLoad {
 		{name: "USER.md", label: "USER", prefix: "[Host USER]"},
 	}
 
+	loaded := make([]formalMemoryFile, 0, len(files))
+	for _, item := range files {
+		lines, ok := r.loadFile(item.name)
+		if !ok {
+			continue
+		}
+		loaded = append(loaded, formalMemoryFile{
+			Label: item.label,
+			Lines: lines,
+		})
+	}
+
+	queryTokens := extractQueryTokens(instruction)
+	matchBySource := selectFormalMemoryLines(loaded, queryTokens)
+	fallbackUsed := false
+	matchedEntryCount := countSelectedLines(matchBySource)
+	if matchedEntryCount == 0 {
+		fallbackUsed = true
+		matchBySource = fallbackFormalMemoryLines(loaded, formalMemoryFallbackPerSource)
+	}
+
 	var messages []memory.Message
-	sources := make([]formalMemorySource, 0, len(files))
+	sources := make([]formalMemorySource, 0, len(matchBySource))
 	totalEntries := 0
 	for _, item := range files {
-		msg, source, ok := r.loadFile(item.name, item.label, item.prefix)
-		if ok {
-			messages = append(messages, msg)
-			sources = append(sources, source)
-			totalEntries += source.EntryCount
+		lines := matchBySource[item.label]
+		if len(lines) == 0 {
+			continue
 		}
+		totalEntries += len(lines)
+		messages = append(messages, memory.Message{
+			Role:      "system",
+			Content:   fmt.Sprintf("%s\n%s", item.prefix, strings.Join(lines, "\n")),
+			Timestamp: time.Now().UTC(),
+		})
+		sources = append(sources, formalMemorySource{
+			Name:       item.label,
+			EntryCount: len(lines),
+			Preview:    previewFormalMemoryLines(lines, 2),
+		})
 	}
 
 	return formalMemoryLoad{
 		Messages: messages,
 		Metadata: map[string]any{
-			"memory_recall": memoryRecallMetadata(len(messages) > 0, totalEntries, sources),
+			"memory_recall": memoryRecallMetadata(
+				len(messages) > 0,
+				totalEntries,
+				matchedEntryCount,
+				fallbackUsed,
+				sources,
+			),
 		},
 	}
 }
 
-func (r *formalMemoryRecall) loadFile(name, label, prefix string) (memory.Message, formalMemorySource, bool) {
+func (r *formalMemoryRecall) loadFile(name string) ([]string, bool) {
 	path := filepath.Join(r.root, "memory", name)
 	content, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return memory.Message{}, formalMemorySource{}, false
+			return nil, false
 		}
 		slog.Warn("host formal memory recall read failed", "path", path, "err", err)
-		return memory.Message{}, formalMemorySource{}, false
+		return nil, false
 	}
 
 	lines := normalizeFormalMemoryLines(string(content))
 	if len(lines) == 0 {
-		return memory.Message{}, formalMemorySource{}, false
+		return nil, false
 	}
 
-	return memory.Message{
-			Role:      "system",
-			Content:   fmt.Sprintf("%s\n%s", prefix, strings.Join(lines, "\n")),
-			Timestamp: time.Now().UTC(),
-		}, formalMemorySource{
-			Name:       label,
-			EntryCount: len(lines),
-			Preview:    previewFormalMemoryLines(lines, 2),
-		}, true
+	return lines, true
 }
 
 func normalizeFormalMemoryLines(content string) []string {
@@ -136,7 +172,81 @@ func previewFormalMemoryLines(lines []string, limit int) []string {
 	return out
 }
 
-func memoryRecallMetadata(enabled bool, totalEntries int, sources []formalMemorySource) map[string]any {
+func extractQueryTokens(instruction string) []string {
+	fields := strings.FieldsFunc(strings.ToLower(instruction), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	if len(fields) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(fields))
+	tokens := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if utfLen := len([]rune(field)); utfLen < minQueryTokenLength {
+			continue
+		}
+		if _, ok := seen[field]; ok {
+			continue
+		}
+		seen[field] = struct{}{}
+		tokens = append(tokens, field)
+	}
+	sort.Strings(tokens)
+	return tokens
+}
+
+func selectFormalMemoryLines(files []formalMemoryFile, queryTokens []string) map[string][]string {
+	selected := make(map[string][]string, len(files))
+	if len(queryTokens) == 0 {
+		return selected
+	}
+
+	for _, file := range files {
+		for _, line := range file.Lines {
+			normalized := strings.ToLower(line)
+			for _, token := range queryTokens {
+				if strings.Contains(normalized, token) {
+					selected[file.Label] = append(selected[file.Label], line)
+					break
+				}
+			}
+		}
+	}
+	return selected
+}
+
+func fallbackFormalMemoryLines(files []formalMemoryFile, limit int) map[string][]string {
+	selected := make(map[string][]string, len(files))
+	for _, file := range files {
+		if len(file.Lines) == 0 {
+			continue
+		}
+		fileLimit := limit
+		if len(file.Lines) < fileLimit {
+			fileLimit = len(file.Lines)
+		}
+		selected[file.Label] = append([]string(nil), file.Lines[:fileLimit]...)
+	}
+	return selected
+}
+
+func countSelectedLines(selected map[string][]string) int {
+	total := 0
+	for _, lines := range selected {
+		total += len(lines)
+	}
+	return total
+}
+
+func memoryRecallMetadata(
+	enabled bool,
+	totalEntries int,
+	matchedEntryCount int,
+	fallbackUsed bool,
+	sources []formalMemorySource,
+) map[string]any {
 	serializedSources := make([]map[string]any, 0, len(sources))
 	for _, source := range sources {
 		serializedSources = append(serializedSources, map[string]any{
@@ -146,8 +256,12 @@ func memoryRecallMetadata(enabled bool, totalEntries int, sources []formalMemory
 		})
 	}
 	return map[string]any{
-		"enabled":     enabled,
-		"entry_count": totalEntries,
-		"sources":     serializedSources,
+		"enabled":             enabled,
+		"strategy":            "query_aware_lite",
+		"entry_count":         totalEntries,
+		"matched_entry_count": matchedEntryCount,
+		"fallback_used":       fallbackUsed,
+		"sources":             serializedSources,
+		"fallback_limit":      formalMemoryFallbackPerSource,
 	}
 }

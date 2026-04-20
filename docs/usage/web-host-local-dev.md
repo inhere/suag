@@ -30,7 +30,7 @@
 - 一键启动的根级联调脚本
 - retrieval / FTS5 / 自动学习闭环
   - 当前已具备 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md + MEMORY.md / USER.md`
-  - intrunner 当前也已开始按最小 file-based 方式读取 `MEMORY.md / USER.md` 注入 turn context
+  - intrunner 当前已开始按最小 file-based query-aware lite 方式读取 `MEMORY.md / USER.md` 注入 turn context
 
 ---
 
@@ -233,7 +233,7 @@ curl http://127.0.0.1:8180/api/sessions/<sessionId>/memory-candidates
 - `accept/reject` 当前也会刷新 `db/agentcore/host/memory/MEMORY.md` 与 `db/agentcore/host/memory/USER.md`
 - `*.draft.md` 当前按 session 聚合、去重，并过滤掉不再需要继续处理的候选状态
 - `MEMORY.md` / `USER.md` 当前按 session 聚合 `applied` 候选，并按 `kind + content` 去重
-- `internal/host/intrunner` 当前会在每次新 turn 启动时重新读取 `MEMORY.md` / `USER.md`，并以 `[Host MEMORY]` / `[Host USER]` 的 `system` context 注入 provider request
+- `internal/host/intrunner` 当前会在每次新 turn 启动时重新读取 `MEMORY.md` / `USER.md`，并以最小 query-aware lite 策略选择条目后，再以 `[Host MEMORY]` / `[Host USER]` 的 `system` context 注入 provider request
 - recalled formal memory 当前只参与运行上下文，不会被回写进 session history snapshot
 - 后端当前已具备最小 `memory candidate` 状态流转能力：`draft -> rendered -> applied/rejected`
 - REST 当前已补最小入口：

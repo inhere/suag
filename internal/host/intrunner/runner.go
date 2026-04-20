@@ -99,7 +99,7 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 		return session.RuntimeResult{}, err
 	}
 
-	recalled := newFormalMemoryRecall(r.cfg.MemoryRoot).Load()
+	recalled := newFormalMemoryRecall(r.cfg.MemoryRoot).Load(in.Instruction)
 	runMemory := newSessionMemory(recalled.Messages, state.history)
 	a, runner, err := r.resolveRuntime(state, in, runMemory)
 	if err != nil {

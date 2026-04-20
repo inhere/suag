@@ -273,16 +273,135 @@ func TestRunner_RunReturnsFormalMemoryRecallMetadata(t *testing.T) {
 		t.Fatalf("Run().Metadata[memory_recall] type = %T, want map[string]any", result.Metadata["memory_recall"])
 	}
 	assert.Eq(t, true, recall["enabled"])
-	assert.Eq(t, 3, recall["entry_count"])
+	assert.Eq(t, "query_aware_lite", recall["strategy"])
+	assert.Eq(t, 2, recall["entry_count"])
+	assert.Eq(t, 0, recall["matched_entry_count"])
+	assert.Eq(t, true, recall["fallback_used"])
 	sources, ok := recall["sources"].([]map[string]any)
 	if !ok {
 		t.Fatalf("Run().Metadata[memory_recall][sources] type = %T, want []map[string]any", recall["sources"])
 	}
 	assert.Eq(t, 2, len(sources))
 	assert.Eq(t, "MEMORY", sources[0]["name"])
-	assert.Eq(t, 2, sources[0]["entry_count"])
+	assert.Eq(t, 1, sources[0]["entry_count"])
 	assert.Eq(t, "USER", sources[1]["name"])
 	assert.Eq(t, 1, sources[1]["entry_count"])
+}
+
+func TestRunner_RunUsesQueryAwareRecallWhenInstructionMatches(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	err := os.MkdirAll(filepath.Join(memoryRoot, "memory"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(memoryRoot, "memory", "MEMORY.md"),
+		[]byte("# MEMORY\n\nUpdated: 2026-04-20T00:00:00Z\n\n- [turn_learning] database migration should be verified before release\n- [turn_learning] ui spacing should stay compact\n"),
+		0o644,
+	)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(memoryRoot, "memory", "USER.md"),
+		[]byte("# USER\n\nUpdated: 2026-04-20T00:00:00Z\n\n- [user_preference] prefers concise updates\n"),
+		0o644,
+	)
+	assert.NoErr(t, err)
+
+	mock := llm.NewMockProvider("mock").QueueText("done")
+
+	runner, err := New(Config{
+		Provider:   mock,
+		Registry:   tools.NewRegistry(),
+		Tracer:     tracing.NewInMemoryTracer(nil),
+		RunRoot:    t.TempDir(),
+		MemoryRoot: memoryRoot,
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	result, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_query_aware_match",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "please verify the database migration flow",
+	})
+	assert.NoErr(t, err)
+
+	calls := mock.Calls()
+	assert.Eq(t, 1, len(calls))
+	assert.True(t, containsMessageContains(calls[0].Messages, "system", "database migration should be verified before release"))
+	assert.False(t, containsMessageContains(calls[0].Messages, "system", "ui spacing should stay compact"))
+
+	recall, ok := result.Metadata["memory_recall"].(map[string]any)
+	if !ok {
+		t.Fatalf("Run().Metadata[memory_recall] type = %T, want map[string]any", result.Metadata["memory_recall"])
+	}
+	assert.Eq(t, "query_aware_lite", recall["strategy"])
+	assert.Eq(t, 1, recall["matched_entry_count"])
+	assert.Eq(t, false, recall["fallback_used"])
+	assert.Eq(t, 1, recall["entry_count"])
+}
+
+func TestRunner_RunFallsBackWhenInstructionHasNoMemoryMatch(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	err := os.MkdirAll(filepath.Join(memoryRoot, "memory"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(memoryRoot, "memory", "MEMORY.md"),
+		[]byte("# MEMORY\n\nUpdated: 2026-04-20T00:00:00Z\n\n- [turn_learning] database migration should be verified before release\n- [turn_learning] ui spacing should stay compact\n- [turn_learning] cron cleanup should stay idempotent\n"),
+		0o644,
+	)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(memoryRoot, "memory", "USER.md"),
+		[]byte("# USER\n\nUpdated: 2026-04-20T00:00:00Z\n\n- [user_preference] prefers concise updates\n- [user_preference] prefers Chinese answers\n"),
+		0o644,
+	)
+	assert.NoErr(t, err)
+
+	mock := llm.NewMockProvider("mock").QueueText("done")
+
+	runner, err := New(Config{
+		Provider:   mock,
+		Registry:   tools.NewRegistry(),
+		Tracer:     tracing.NewInMemoryTracer(nil),
+		RunRoot:    t.TempDir(),
+		MemoryRoot: memoryRoot,
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	result, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_query_aware_fallback",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "please handle websocket origin issue",
+	})
+	assert.NoErr(t, err)
+
+	calls := mock.Calls()
+	assert.Eq(t, 1, len(calls))
+	assert.True(t, containsMessageContains(calls[0].Messages, "system", "database migration should be verified before release"))
+	assert.False(t, containsMessageContains(calls[0].Messages, "system", "cron cleanup should stay idempotent"))
+	assert.True(t, containsMessageContains(calls[0].Messages, "system", "prefers concise updates"))
+	assert.False(t, containsMessageContains(calls[0].Messages, "system", "prefers Chinese answers"))
+
+	recall, ok := result.Metadata["memory_recall"].(map[string]any)
+	if !ok {
+		t.Fatalf("Run().Metadata[memory_recall] type = %T, want map[string]any", result.Metadata["memory_recall"])
+	}
+	assert.Eq(t, "query_aware_lite", recall["strategy"])
+	assert.Eq(t, 0, recall["matched_entry_count"])
+	assert.Eq(t, true, recall["fallback_used"])
+	assert.Eq(t, 2, recall["entry_count"])
 }
 
 func TestRunner_RunReusesSuspendedRunnerOnContinue(t *testing.T) {

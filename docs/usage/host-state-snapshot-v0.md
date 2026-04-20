@@ -214,12 +214,20 @@
   - 当前是 Host retrieval baseline 的观测字段
   - 典型包含：
     - `enabled`
+    - `strategy`
     - `entry_count`
+    - `matched_entry_count`
+    - `fallback_used`
+    - `fallback_limit`
     - `sources`
   - `sources` 当前每项包含：
     - `name`
     - `entry_count`
     - `preview`
+  - 当前 `strategy` 已落到 `query_aware_lite`
+  - `entry_count` 表示这一轮实际注入的 recall 条目数
+  - `matched_entry_count` 表示其中有多少条来自 query 命中
+  - `fallback_used` 表示本轮是否走了“无命中 -> baseline 回退”
   - 它用于说明“这一轮 run 启动前 recall 了哪些 formal memory 来源”，不是 transcript 本身
 
 当前 Host 还会在 run 持久化层维护一组 self-loop metadata，作为后续 snapshot / AG-UI 映射的稳定来源：
