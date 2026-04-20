@@ -24,6 +24,7 @@ import (
 	"github.com/inhere/axon/internal/host/acpbridge"
 	"github.com/inhere/axon/internal/host/agui"
 	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/axon/internal/ops/hitl"
 	_ "modernc.org/sqlite"
 )
 
@@ -1405,6 +1406,102 @@ func TestServer_UnknownWebSocketCommandReturnsCommandError(t *testing.T) {
 	}
 }
 
+func TestServer_HITLRespondEndpointResumesWaitingRun(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	hitlMgr := hitl.NewInMemoryManager(nil)
+	svc := session.NewService(store, bus, &gatewayHITLRunner{manager: hitlMgr}, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 20, 10, 0, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, hitlMgr)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "hitl respond resume",
+	})
+
+	startResultCh := make(chan session.StartTurnResult, 1)
+	startErrCh := make(chan error, 1)
+	go func() {
+		result, err := svc.StartTurn(ctx, session.StartTurnInput{
+			SessionID:     createResp.SessionID,
+			AgentID:       "default",
+			UserMessage:   "needs approval",
+			InitiatorType: session.InitiatorUser,
+		})
+		if err != nil {
+			startErrCh <- err
+			return
+		}
+		startResultCh <- result
+	}()
+
+	var tickets []*hitl.Ticket
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		tickets = getJSON[[]*hitl.Ticket](t, ts.URL+"/api/hitl")
+		if len(tickets) > 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(tickets) != 1 {
+		t.Fatalf("GET /api/hitl len = %d, want 1", len(tickets))
+	}
+	if tickets[0].SessionID != createResp.SessionID {
+		t.Fatalf("GET /api/hitl[0].SessionID = %q, want %q", tickets[0].SessionID, createResp.SessionID)
+	}
+	if tickets[0].Reason != "need human confirmation" {
+		t.Fatalf("GET /api/hitl[0].Reason = %q, want %q", tickets[0].Reason, "need human confirmation")
+	}
+
+	ticketID := tickets[0].ID
+	if ticketID == "" {
+		t.Fatal("GET /api/hitl[0].ID is empty")
+	}
+
+	postJSON[map[string]any](t, ts.URL+"/api/hitl/"+ticketID+"/respond", map[string]any{
+		"instruction": "approved by operator",
+	})
+
+	select {
+	case err := <-startErrCh:
+		t.Fatalf("StartTurn() error = %v", err)
+	case <-startResultCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartTurn() did not finish after HITL respond")
+	}
+
+	remaining := getJSON[[]*hitl.Ticket](t, ts.URL+"/api/hitl")
+	if len(remaining) != 0 {
+		t.Fatalf("GET /api/hitl len after respond = %d, want 0", len(remaining))
+	}
+
+	sessionResp := getJSON[map[string]any](t, ts.URL+"/api/sessions/"+createResp.SessionID)
+	rawRuns, ok := sessionResp["runs"].([]any)
+	if !ok || len(rawRuns) != 1 {
+		t.Fatalf("get session runs = %T/%d, want []any len 1", sessionResp["runs"], len(rawRuns))
+	}
+	run, ok := rawRuns[0].(map[string]any)
+	if !ok {
+		t.Fatalf("get session runs[0] type = %T, want map[string]any", rawRuns[0])
+	}
+	if run["displayState"] != "completed" {
+		t.Fatalf("get session runs[0].displayState = %v, want %q", run["displayState"], "completed")
+	}
+	if run["summary"] != "approved by operator" {
+		t.Fatalf("get session runs[0].summary = %v, want %q", run["summary"], "approved by operator")
+	}
+}
+
 func TestServer_StartTurnStreamsExternalRuntimeEvents(t *testing.T) {
 	t.Parallel()
 
@@ -1903,6 +2000,31 @@ func waitForGatewayRunnerRequests(t *testing.T, runner *resumeAwareGatewayRunner
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("runner requests len = %d, want at least %d", len(runner.requests), want)
+}
+
+type gatewayHITLRunner struct {
+	manager hitl.Manager
+}
+
+func (r *gatewayHITLRunner) Run(ctx context.Context, in session.RuntimeRequest) (session.RuntimeResult, error) {
+	if r == nil || r.manager == nil {
+		return session.RuntimeResult{}, errors.New("hitl manager is required")
+	}
+
+	resp, err := r.manager.RequestIntervention(
+		ctx,
+		in.AgentID,
+		"task_001",
+		"need human confirmation",
+		"tool execution needs approval",
+	)
+	if err != nil {
+		return session.RuntimeResult{}, err
+	}
+
+	return session.RuntimeResult{
+		Summary: resp.Instruction,
+	}, nil
 }
 
 func newGatewaySessionStore(t *testing.T) *session.SQLiteStore {

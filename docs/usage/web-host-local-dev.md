@@ -144,9 +144,73 @@ http://127.0.0.1:5173
 2. 创建一个新 session
 3. 输入一条任务消息并启动 turn
 4. 观察中栏 turn/runs 与右栏 focused run detail 是否持续更新
-5. 如果 turn 进入 waiting 状态，点击右栏 `Add Hint`
+5. 如果 turn 进入 `INPUT_REQUIRED`，点击右栏 `Add Hint`
 6. 如果 turn 处于运行中，尝试 `Stop`
 7. 刷新页面，确认 current session 与 focused run detail 可恢复
+
+### 6.1 最小手测清单
+
+建议每次本地联调至少走完下面一轮：
+
+1. `Create Session`
+   预期：
+   Web 左侧出现新 session；`GET /api/sessions` 与 `GET /api/sessions/{id}` 能看到同一个 `session_id`
+
+2. `Start Turn`
+   预期：
+   Web 中栏出现新的 turn/run；右侧 focused run 开始滚动；WS 先收到 `STATE_SNAPSHOT`，随后持续收到该 session 的增量事件
+
+3. `INPUT_REQUIRED -> continue_turn`
+   触发方式：
+   使用会进入 input wait 的任务，或用当前 internal runner 的等待场景
+   预期：
+   run `displayState` 进入 `input_required`
+   点击 `Add Hint` 后，当前连接会先收到 `command.accepted`
+   然后才收到这次 continue 产生的新 run 事件
+
+4. `AUTH_REQUIRED -> HITL respond`
+   触发方式：
+   使用会触发 approval/auth wait 的任务
+   预期：
+   run `displayState` 进入 `auth_required`
+   `continue_turn` 不应继续该 turn，而应返回 `command.error`
+   `Pending HITL` 面板或 `GET /api/hitl` 能看到对应 ticket
+   `POST /api/hitl/{id}/respond` 成功后，waiting run 会继续推进并结束
+
+5. `Stop Active Turn`
+   触发方式：
+   在 turn 仍运行时点击 `Stop`
+   预期：
+   当前连接先收到 `command.accepted`
+   随后收到 `RUN_CANCELED`
+   run/turn 刷新后保持 `canceled`，并保留取消原因
+
+6. `Refresh And Recover`
+   触发方式：
+   在 waiting、failed、canceled 或 completed 之后刷新页面
+   预期：
+   当前 session 会恢复
+   focused run 会恢复到最近 active / focused run
+   failed / canceled 的原因文案在刷新后仍可见，而不是只剩空状态
+
+7. `Memory Candidates`
+   触发方式：
+   完成一轮 turn 后打开右侧 `Memory Candidates`
+   预期：
+   `GET /api/sessions/{id}/memory-candidates` 能返回候选
+   Accept / Reject 后列表会刷新，且草稿文件重新渲染
+
+### 6.2 推荐辅助请求
+
+联调时如果需要直接确认后端状态，可配合下面几类请求：
+
+```bash
+curl http://127.0.0.1:8180/api/sessions
+curl http://127.0.0.1:8180/api/sessions/<sessionId>
+curl "http://127.0.0.1:8180/api/sessions/<sessionId>/events?after_seq=0"
+curl http://127.0.0.1:8180/api/hitl
+curl http://127.0.0.1:8180/api/sessions/<sessionId>/memory-candidates
+```
 
 ---
 

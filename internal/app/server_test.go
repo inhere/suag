@@ -1,15 +1,31 @@
 package app
 
 import (
+	"context"
+	"database/sql"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strings"
 	"testing"
+	"time"
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/testutil/assert"
 
+	"github.com/inhere/axon/internal/ops/cron"
+	"github.com/inhere/axon/internal/ops/hitl"
+	"github.com/inhere/axon/internal/orchestrator"
+	"github.com/inhere/axon/internal/host/gateway"
 	"github.com/inhere/axon/internal/host/intrunner"
+	"github.com/inhere/axon/internal/host/session"
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
+	_ "modernc.org/sqlite"
 )
 
 func TestBuildSessionRunner_DefaultsToInternalRunnerWithoutACP(t *testing.T) {
@@ -29,4 +45,151 @@ func TestBuildSessionRunner_DefaultsToInternalRunnerWithoutACP(t *testing.T) {
 
 	_, ok := runner.(*intrunner.SessionRunner)
 	assert.True(t, ok)
+}
+
+func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	dbPath := filepath.Join(t.TempDir(), "server-session.db")
+	applyAppSessionMigration(t, dbPath)
+	_ = gkconfig.Set("database_url", dbPath)
+	_ = gkconfig.Set("workspace", t.TempDir())
+	_ = gkconfig.Set("agentcore.run_root", filepath.Join(t.TempDir(), "runtime"))
+	_ = gkconfig.Set("host.memory.root", filepath.Join(t.TempDir(), "memory"))
+
+	addr := reserveLocalAddr(t)
+	_ = gkconfig.Set("server.addr", addr)
+
+	provider := llm.NewMockProvider("mock")
+	registry := tools.NewRegistry()
+	tracer := tracing.NewInMemoryTracer(nil)
+	bus := gateway.NewEventBus()
+	hitlMgr := hitl.NewInMemoryManager(nil)
+	orch := orchestrator.New(orchestrator.Config{
+		LLM:              provider,
+		Registry:         registry,
+		Tracer:           tracer,
+		HITL:             hitlMgr,
+		Workspace:        t.TempDir(),
+		AgentcoreRunRoot: t.TempDir(),
+	})
+
+	a := &App{
+		provider:  provider,
+		registry:  registry,
+		orch:      orch,
+		bus:       bus,
+		hitlMgr:   hitlMgr,
+		tracer:    tracer,
+		scheduler: cron.NewScheduler(orch, provider, registry),
+		workspace: t.TempDir(),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- a.RunServer(ctx)
+	}()
+
+	deadline := time.Now().Add(3 * time.Second)
+	var resp *http.Response
+	var err error
+	for time.Now().Before(deadline) {
+		resp, err = http.Get("http://" + addr + "/health")
+		if err == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("GET /health error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	assert.Eq(t, 200, resp.StatusCode)
+
+	cancel()
+	select {
+	case runErr := <-errCh:
+		assert.NoErr(t, runErr)
+	case <-time.After(3 * time.Second):
+		t.Fatal("RunServer() did not stop after context cancel")
+	}
+}
+
+func newAppSessionStore(t *testing.T) *session.SQLiteStore {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "app-session.db")
+	applyAppSessionMigration(t, dbPath)
+
+	store, err := session.NewSQLiteStore(dbPath)
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, store.Close())
+	})
+	return store
+}
+
+func applyAppSessionMigration(t *testing.T, dbPath string) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", dbPath)
+	assert.NoErr(t, err)
+	defer func() {
+		assert.NoErr(t, db.Close())
+	}()
+
+	for _, upSQL := range readAppSessionMigrationUps(t) {
+		_, err := db.Exec(upSQL)
+		assert.NoErr(t, err)
+	}
+}
+
+func readAppSessionMigrationUps(t *testing.T) []string {
+	t.Helper()
+
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller() failed")
+	}
+
+	migrationDir := filepath.Join(filepath.Dir(file), "..", "..", "db", "migrations")
+	entries, err := filepath.Glob(filepath.Join(migrationDir, "*.sql"))
+	assert.NoErr(t, err)
+	sort.Strings(entries)
+	if len(entries) == 0 {
+		t.Fatalf("no migration files found in %s", migrationDir)
+	}
+
+	ups := make([]string, 0, len(entries))
+	for _, migrationPath := range entries {
+		content, err := os.ReadFile(migrationPath)
+		assert.NoErr(t, err)
+
+		parts := strings.Split(string(content), "-- Migrate:DOWN")
+		if len(parts) != 2 {
+			t.Fatalf("unexpected migration format in %s", migrationPath)
+		}
+
+		upSQL := strings.TrimSpace(strings.TrimPrefix(parts[0], "-- Migrate:UP"))
+		if upSQL == "" {
+			t.Fatalf("empty migration up section in %s", migrationPath)
+		}
+		ups = append(ups, upSQL)
+	}
+	return ups
+}
+
+func reserveLocalAddr(t *testing.T) string {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoErr(t, err)
+	addr := ln.Addr().String()
+	assert.NoErr(t, ln.Close())
+	return addr
 }
