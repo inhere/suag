@@ -39,6 +39,7 @@ func (a *App) RunServer(ctx context.Context) error {
 			session.NewMemoryCandidateHook(sessionStore, nil),
 			session.NewMemoryDraftHook(sessionStore, appconfig.ResolveHostMemoryDraftRoot(), nil),
 		},
+		MemoryFileSync: session.NewMemoryFileWriter(sessionStore, appconfig.ResolveHostMemoryDraftRoot(), nil),
 	})
 	h := gateway.NewHandler(a.orch, sessionStore, sessionSvc, a.bus, a.hitlMgr)
 	addr := gkconfig.String("server.addr", ":8180")

@@ -1,7 +1,7 @@
 # Host Recap / Memory Hooks v0
 
 > 状态：Current
-> 更新时间：2026-04-16
+> 更新时间：2026-04-20
 
 本文档说明当前 Host v0 在 `internal/host/session.Service` 中新增的 recap hook 骨架。
 
@@ -20,11 +20,12 @@
   - 当前默认通过 `StructuredRecapHook` 写入 `recaps` 表
 - 默认 memory candidate 落库
   - 当前默认通过 `MemoryCandidateHook` 写入 `memory_candidates` 表
+- memory 文件刷新
+  - 当前默认通过共享 memory file writer 刷新 `MEMORY.draft.md` / `USER.draft.md`
+  - `accept/reject` 后也会刷新 `MEMORY.md` / `USER.md`
 
 当前还不具备：
 
-- 自动写入 `MEMORY.md`
-- 自动写入 `USER.md`
 - 自动触发 review agent 或后台学习循环
 
 也就是说，这一层现在只是 hook，不是完整产品能力。
@@ -98,6 +99,9 @@
 3. `MEMORY.draft.md` / `USER.draft.md`
    - 当前会将同一 session 的 draft/rendered 候选聚合后渲染成可人工检查的草稿文件
    - 默认会按 `kind + content` 去重，并过滤 `rejected` / `applied`
+4. `MEMORY.md` / `USER.md`
+   - 当前会将同一 session 的 `applied` 候选聚合后渲染成正式记忆文件
+   - 默认也按 `kind + content` 去重
 
 当前 memory candidate 状态语义约定为：
 
@@ -119,11 +123,11 @@
 这里的设计重点是：
 
 - 先把候选写入单独表
-- 先渲染 draft 文件，不直接改正式记忆文件
+- draft 文件与 formal 文件都由 host memory writer 统一刷新
 - draft 文件当前是 session 级聚合视图，不是单 turn 原样转储
 - 后续可以做人审、去重、合并、拒绝或二次润色
 
-也就是说，当前 v0 已经从“只有 hook 骨架”前进到“候选落库 + draft 渲染”，但仍未进入正式记忆写入阶段。
+也就是说，当前 v0 已经从“只有 hook 骨架”前进到“候选落库 + draft 渲染 + applied 正式写入”，但还未进入 retrieval / review loop 阶段。
 
 ---
 
@@ -149,9 +153,9 @@
    - 已完成最小版本，当前默认写入 `recaps` 表
 3. memory candidate sink
    - 已完成最小版本，当前默认写入 `memory_candidates` 表
-4. memory draft renderer
-   - 已完成最小版本，当前默认渲染 `MEMORY.draft.md` / `USER.draft.md`
-4. background review sink
+4. memory draft / formal renderer
+   - 已完成最小版本，当前默认渲染 `MEMORY.draft.md` / `USER.draft.md` 与 `MEMORY.md` / `USER.md`
+5. background review sink
    - 把复杂任务结果送到后台 review / skill 提炼流程
 
 建议顺序是先有“稳定 hook”，再有“候选写入”，最后再考虑“自动学习闭环”。

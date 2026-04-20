@@ -108,8 +108,8 @@
 
 ## Task 1: Formal Memory File Writer
 
-- [ ] 提取共享 memory file writer，支持 `draft` 与 `formal` 两类文件刷新
-- [ ] 新增测试覆盖：
+- [x] 提取共享 memory file writer，支持 `draft` 与 `formal` 两类文件刷新
+- [x] 新增测试覆盖：
   - `applied` 候选会进入 `MEMORY.md` / `USER.md`
   - `rejected` 候选不会进入正式文件
   - 重复候选按 `kind + content` 去重
@@ -120,10 +120,10 @@ Run: `go test ./internal/host/session -run "MemoryDraft|FormalMemory" -v`
 
 ## Task 2: Wire Candidate Accept/Reject To Formal Memory Refresh
 
-- [ ] 在 `session.Service.UpdateMemoryCandidate()` 后挂接 memory file refresh
-- [ ] 保持 `accept/reject` 对外 API 不变
-- [ ] 失败策略保持 best-effort，但需要可观察日志
-- [ ] 覆盖 service / gateway 回归测试
+- [x] 在 `session.Service.UpdateMemoryCandidate()` 后挂接 memory file refresh
+- [x] 保持 `accept/reject` 对外 API 不变
+- [x] 失败策略保持 best-effort，但需要可观察日志
+- [x] 覆盖 service / gateway 回归测试
 
 Run: `go test ./internal/host/session ./internal/host/gateway`
 
@@ -131,9 +131,9 @@ Run: `go test ./internal/host/session ./internal/host/gateway`
 
 ## Task 3: Update Docs And Local Dev Flow
 
-- [ ] 更新 `docs/usage/host-recap-memory-hooks-v0.md`
-- [ ] 更新 `docs/usage/web-host-local-dev.md`
-- [ ] 补充最小手测：
+- [x] 更新 `docs/usage/host-recap-memory-hooks-v0.md`
+- [x] 更新 `docs/usage/web-host-local-dev.md`
+- [x] 补充最小手测：
   - 创建 session / turn
   - 生成 memory candidates
   - Accept 一个候选后确认 `MEMORY.md` 或 `USER.md` 已更新

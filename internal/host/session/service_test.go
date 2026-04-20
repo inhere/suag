@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1943,8 +1946,11 @@ func TestService_UpdateMemoryCandidateAcceptsAndRejects(t *testing.T) {
 
 	ctx := context.Background()
 	store := newServiceTestStore(t)
-	svc := NewService(store, nil, nil, ServiceConfig{})
+	root := t.TempDir()
 	now := time.Date(2026, 4, 16, 16, 0, 0, 0, time.UTC)
+	svc := NewService(store, nil, nil, ServiceConfig{
+		MemoryFileSync: NewMemoryFileWriter(store, root, func() time.Time { return now }),
+	})
 
 	if err := store.CreateMemoryCandidate(ctx, MemoryCandidate{
 		CandidateID:   "mcand_service_001",
@@ -1972,6 +1978,13 @@ func TestService_UpdateMemoryCandidateAcceptsAndRejects(t *testing.T) {
 	if applied.Status != MemoryCandidateApplied {
 		t.Fatalf("UpdateMemoryCandidate(applied).Status = %q, want %q", applied.Status, MemoryCandidateApplied)
 	}
+	memoryFormal, err := os.ReadFile(filepath.Join(root, "memory", "MEMORY.md"))
+	if err != nil {
+		t.Fatalf("os.ReadFile(MEMORY.md) after accept error = %v", err)
+	}
+	if !strings.Contains(string(memoryFormal), "candidate for action") {
+		t.Fatalf("MEMORY.md after accept = %q, want applied candidate content", string(memoryFormal))
+	}
 
 	rejected, err := svc.UpdateMemoryCandidate(ctx, UpdateMemoryCandidateInput{
 		CandidateID: "mcand_service_001",
@@ -1982,6 +1995,13 @@ func TestService_UpdateMemoryCandidateAcceptsAndRejects(t *testing.T) {
 	}
 	if rejected.Status != MemoryCandidateRejected {
 		t.Fatalf("UpdateMemoryCandidate(rejected).Status = %q, want %q", rejected.Status, MemoryCandidateRejected)
+	}
+	memoryFormal, err = os.ReadFile(filepath.Join(root, "memory", "MEMORY.md"))
+	if err != nil {
+		t.Fatalf("os.ReadFile(MEMORY.md) after reject error = %v", err)
+	}
+	if strings.Contains(string(memoryFormal), "candidate for action") {
+		t.Fatalf("MEMORY.md after reject = %q, should not include rejected candidate", string(memoryFormal))
 	}
 }
 

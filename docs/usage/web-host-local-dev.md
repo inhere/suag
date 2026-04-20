@@ -1,7 +1,7 @@
 # Web + Host 本地联调
 
 > 状态：Current
-> 更新时间：2026-04-16
+> 更新时间：2026-04-20
 
 本文档只描述 Axon v0 当前最小可用的本地联调流程。
 
@@ -28,8 +28,8 @@
 
 - HITL 面板与响应入口
 - 一键启动的根级联调脚本
-- 终态 recap / memory hook 的真实 sink 接入
-  - 当前已具备 `recaps + memory_candidates` 落库，但尚未真正写入 `MEMORY.md / USER.md`
+- retrieval / FTS5 / 自动学习闭环
+  - 当前已具备 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md + MEMORY.md / USER.md`
 
 ---
 
@@ -198,7 +198,7 @@ http://127.0.0.1:5173
    完成一轮 turn 后打开右侧 `Memory Candidates`
    预期：
    `GET /api/sessions/{id}/memory-candidates` 能返回候选
-   Accept / Reject 后列表会刷新，且草稿文件重新渲染
+   Accept / Reject 后列表会刷新，且草稿文件与正式记忆文件都会重新渲染
 
 ### 6.2 推荐辅助请求
 
@@ -229,12 +229,13 @@ curl http://127.0.0.1:8180/api/sessions/<sessionId>/memory-candidates
 - 如果显式配置了 `agentcore.run_root`，Host internal runner 会改为使用 `<agentcore.run_root>/host`
 - `session.Service` 当前已具备 post-turn recap hook，默认会把 turn 终态写入 `recaps` 与 `memory_candidates`
 - `memory_candidates` 当前是候选中间层，默认还会继续聚合渲染到 `db/agentcore/host/memory/MEMORY.draft.md` 与 `db/agentcore/host/memory/USER.draft.md`
+- `accept/reject` 当前也会刷新 `db/agentcore/host/memory/MEMORY.md` 与 `db/agentcore/host/memory/USER.md`
 - `*.draft.md` 当前按 session 聚合、去重，并过滤掉不再需要继续处理的候选状态
+- `MEMORY.md` / `USER.md` 当前按 session 聚合 `applied` 候选，并按 `kind + content` 去重
 - 后端当前已具备最小 `memory candidate` 状态流转能力：`draft -> rendered -> applied/rejected`
 - REST 当前已补最小入口：
   - `GET /api/sessions/{id}/memory-candidates`
   - `POST /api/memory-candidates/{id}/accept`
   - `POST /api/memory-candidates/{id}/reject`
-- 当前仍未真正自动写入 `MEMORY.md` / `USER.md`
 - `vite` 代理仅用于本地开发，不影响生产构建输出
 - 本地 `db/axon.db`、`db/axon.db-shm`、`db/axon.db-wal` 都属于开发产物，不应作为功能变更提交

@@ -291,3 +291,95 @@ func TestMemoryDraftHook_RefreshesAfterCandidateStatusChange(t *testing.T) {
 		t.Fatalf("USER.draft.md = %q, should not include rejected candidate", string(userDraft))
 	}
 }
+
+func TestMemoryFileWriter_WritesFormalMemoryFilesFromAppliedCandidates(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newTestStore(t)
+	root := t.TempDir()
+	now := time.Date(2026, 4, 20, 15, 30, 0, 0, time.UTC)
+
+	for _, candidate := range []MemoryCandidate{
+		{
+			CandidateID:   "mcand_formal_001",
+			SessionID:     "sess_formal",
+			TurnID:        "turn_001",
+			RunID:         "run_001",
+			SourceRecapID: "recap_001",
+			Target:        "MEMORY",
+			Kind:          "turn_learning",
+			Content:       "Keep host updates concise.",
+			Score:         0.8,
+			Status:        MemoryCandidateApplied,
+			CreatedAt:     now,
+		},
+		{
+			CandidateID:   "mcand_formal_002",
+			SessionID:     "sess_formal",
+			TurnID:        "turn_002",
+			RunID:         "run_002",
+			SourceRecapID: "recap_002",
+			Target:        "USER",
+			Kind:          "user_preference",
+			Content:       "User prefers short answers.",
+			Score:         0.7,
+			Status:        MemoryCandidateApplied,
+			CreatedAt:     now.Add(time.Minute),
+		},
+		{
+			CandidateID:   "mcand_formal_003",
+			SessionID:     "sess_formal",
+			TurnID:        "turn_003",
+			RunID:         "run_003",
+			SourceRecapID: "recap_003",
+			Target:        "MEMORY",
+			Kind:          "turn_learning",
+			Content:       "Keep host updates concise.",
+			Score:         0.8,
+			Status:        MemoryCandidateApplied,
+			CreatedAt:     now.Add(2 * time.Minute),
+		},
+		{
+			CandidateID:   "mcand_formal_004",
+			SessionID:     "sess_formal",
+			TurnID:        "turn_004",
+			RunID:         "run_004",
+			SourceRecapID: "recap_004",
+			Target:        "MEMORY",
+			Kind:          "turn_learning",
+			Content:       "Do not include draft-only items.",
+			Score:         0.8,
+			Status:        MemoryCandidateRendered,
+			CreatedAt:     now.Add(3 * time.Minute),
+		},
+	} {
+		if err := store.CreateMemoryCandidate(ctx, candidate); err != nil {
+			t.Fatalf("CreateMemoryCandidate(%s) error = %v", candidate.CandidateID, err)
+		}
+	}
+
+	writer := NewMemoryFileWriter(store, root, func() time.Time { return now.Add(4 * time.Minute) })
+	if err := writer.RefreshSessionFiles(ctx, "sess_formal"); err != nil {
+		t.Fatalf("RefreshSessionFiles() error = %v", err)
+	}
+
+	memoryFormal, err := os.ReadFile(filepath.Join(root, "memory", "MEMORY.md"))
+	if err != nil {
+		t.Fatalf("os.ReadFile(MEMORY.md) error = %v", err)
+	}
+	if strings.Count(string(memoryFormal), "Keep host updates concise.") != 1 {
+		t.Fatalf("MEMORY.md = %q, want deduplicated applied memory entry", string(memoryFormal))
+	}
+	if strings.Contains(string(memoryFormal), "Do not include draft-only items.") {
+		t.Fatalf("MEMORY.md = %q, should not include non-applied candidate", string(memoryFormal))
+	}
+
+	userFormal, err := os.ReadFile(filepath.Join(root, "memory", "USER.md"))
+	if err != nil {
+		t.Fatalf("os.ReadFile(USER.md) error = %v", err)
+	}
+	if !strings.Contains(string(userFormal), "User prefers short answers.") {
+		t.Fatalf("USER.md = %q, want applied user memory entry", string(userFormal))
+	}
+}

@@ -20,7 +20,7 @@
 - internal runner / ACP runner 的 Host contract 已完成一轮对齐：`externalTaskId`、失败态 external task 持久化、internal suspend `waitMetadata`、ACP `EXTERNAL_RUNNING` waiting metadata 与 AG-UI run detail / snapshot 已贯通
 - legacy React runtime 边界已收窄：team/orchestrator 的空 runtime 默认稳定走 `agentcore`，`UseAgentcore` legacy shim 不再影响默认单 agent 路径，parity tests 仅作为遗留对照保留
 - Host internal self-loop Phase 4 已完成 Task 1-4：run 级 `loop_phase / resume_source / continue_mode / turn_outcome` metadata contract、intrunner `resume_count / resume_source` waiting metadata、terminal `post-turn action hooks + planner_hint / next_action_hint`，以及 AG-UI / gateway 对 `loopMetadata / turnOutcome / plannerHint / nextActionHint` 的映射已形成当前基线，文档见 `docs/usage/host-internal-self-loop-v0.md` 与 `docs/usage/host-state-snapshot-v0.md`
-- Host learning-system 下一阶段已收敛为小范围 Phase 5 计划：先补 `memory candidate -> accept/reject -> MEMORY.md / USER.md` 正式记忆文件闭环，计划见 `docs/superpowers/plans/2026-04-20-host-learning-system-phase5.md`
+- Host learning-system Phase 5 第一刀已完成：`memory candidate -> accept/reject -> MEMORY.md / USER.md` 正式记忆文件闭环已打通，当前 draft/formal memory 文件都会随候选状态刷新，计划见 `docs/superpowers/plans/2026-04-20-host-learning-system-phase5.md`
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

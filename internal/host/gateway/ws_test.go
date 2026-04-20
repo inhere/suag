@@ -2077,7 +2077,11 @@ func TestServer_UpdateMemoryCandidateActions(t *testing.T) {
 	ctx := context.Background()
 	store := newGatewaySessionStore(t)
 	bus := NewEventBus()
-	handler := NewHandler(nil, store, session.NewService(store, bus, nil, session.ServiceConfig{}), bus, nil)
+	root := t.TempDir()
+	now := time.Date(2026, 4, 16, 18, 30, 0, 0, time.UTC)
+	handler := NewHandler(nil, store, session.NewService(store, bus, nil, session.ServiceConfig{
+		MemoryFileSync: session.NewMemoryFileWriter(store, root, func() time.Time { return now }),
+	}), bus, nil)
 	server := NewServer(":0", handler, bus)
 	ts := httptest.NewServer(server.router())
 	defer ts.Close()
@@ -2086,7 +2090,6 @@ func TestServer_UpdateMemoryCandidateActions(t *testing.T) {
 		"title": "memory candidate actions",
 	})
 
-	now := time.Date(2026, 4, 16, 18, 30, 0, 0, time.UTC)
 	if err := store.CreateMemoryCandidate(ctx, session.MemoryCandidate{
 		CandidateID:   "mcand_gateway_action",
 		SessionID:     createResp.SessionID,
@@ -2107,10 +2110,24 @@ func TestServer_UpdateMemoryCandidateActions(t *testing.T) {
 	if applied["status"] != string(session.MemoryCandidateApplied) {
 		t.Fatalf("accept status = %v, want %q", applied["status"], session.MemoryCandidateApplied)
 	}
+	memoryFormal, err := os.ReadFile(filepath.Join(root, "memory", "MEMORY.md"))
+	if err != nil {
+		t.Fatalf("os.ReadFile(MEMORY.md) after accept error = %v", err)
+	}
+	if !strings.Contains(string(memoryFormal), "Candidate to accept and reject.") {
+		t.Fatalf("MEMORY.md after accept = %q, want applied content", string(memoryFormal))
+	}
 
 	rejected := postJSON[map[string]any](t, ts.URL+"/api/memory-candidates/mcand_gateway_action/reject", map[string]any{})
 	if rejected["status"] != string(session.MemoryCandidateRejected) {
 		t.Fatalf("reject status = %v, want %q", rejected["status"], session.MemoryCandidateRejected)
+	}
+	memoryFormal, err = os.ReadFile(filepath.Join(root, "memory", "MEMORY.md"))
+	if err != nil {
+		t.Fatalf("os.ReadFile(MEMORY.md) after reject error = %v", err)
+	}
+	if strings.Contains(string(memoryFormal), "Candidate to accept and reject.") {
+		t.Fatalf("MEMORY.md after reject = %q, should not include rejected candidate", string(memoryFormal))
 	}
 }
 

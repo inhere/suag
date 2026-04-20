@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -176,44 +175,28 @@ func cloneMap(src map[string]any) map[string]any {
 }
 
 type MemoryDraftHook struct {
-	store recapStore
-	root  string
-	now   func() time.Time
+	writer *MemoryFileWriter
 }
 
 func NewMemoryDraftHook(store Store, root string, now func() time.Time) *MemoryDraftHook {
-	if now == nil {
-		now = time.Now
-	}
 	return &MemoryDraftHook{
-		store: store,
-		root:  strings.TrimSpace(root),
-		now:   now,
+		writer: NewMemoryFileWriter(store, root, now),
 	}
 }
 
 func (h *MemoryDraftHook) OnTurnRecap(ctx context.Context, input RecapInput) error {
-	if h == nil || h.store == nil || strings.TrimSpace(h.root) == "" {
+	if h == nil || h.writer == nil {
 		return nil
 	}
 
-	candidates, err := h.store.ListMemoryCandidatesBySession(ctx, input.Session.SessionID)
+	candidates, err := h.writer.store.ListMemoryCandidatesBySession(ctx, input.Session.SessionID)
 	if err != nil {
 		return err
 	}
 	if len(candidates) == 0 {
 		return nil
 	}
-
-	draftDir := filepath.Join(h.root, "memory")
-	if err := os.MkdirAll(draftDir, 0o755); err != nil {
-		return err
-	}
-
-	if err := writeMemoryDraft(filepath.Join(draftDir, "MEMORY.draft.md"), "MEMORY", candidates, h.now().UTC()); err != nil {
-		return err
-	}
-	if err := writeMemoryDraft(filepath.Join(draftDir, "USER.draft.md"), "USER", candidates, h.now().UTC()); err != nil {
+	if err := h.writer.RefreshSessionFiles(ctx, input.Session.SessionID); err != nil {
 		return err
 	}
 
@@ -224,11 +207,11 @@ func (h *MemoryDraftHook) OnTurnRecap(ctx context.Context, input RecapInput) err
 		if candidate.Status != MemoryCandidateDraft {
 			continue
 		}
-		if err := h.store.UpdateMemoryCandidateStatus(ctx, candidate.CandidateID, MemoryCandidateRendered); err != nil {
+		if err := h.writer.store.UpdateMemoryCandidateStatus(ctx, candidate.CandidateID, MemoryCandidateRendered); err != nil {
 			return err
 		}
 	}
-	return nil
+	return h.writer.RefreshSessionFiles(ctx, input.Session.SessionID)
 }
 
 func writeMemoryDraft(path string, target string, candidates []MemoryCandidate, now time.Time) error {
@@ -239,23 +222,9 @@ func writeMemoryDraft(path string, target string, candidates []MemoryCandidate, 
 		"",
 	}
 
-	seen := make(map[string]struct{}, len(candidates))
-	count := 0
-	for _, candidate := range candidates {
-		if candidate.Target != target {
-			continue
-		}
-		if candidate.Status != MemoryCandidateDraft && candidate.Status != MemoryCandidateRendered {
-			continue
-		}
-		key := strings.ToLower(strings.TrimSpace(candidate.Kind) + "\x00" + strings.TrimSpace(candidate.Content))
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		lines = append(lines, "- ["+candidate.Kind+"] "+candidate.Content)
-		count++
-	}
+	count := appendMemoryLines(&lines, target, candidates, func(candidate MemoryCandidate) bool {
+		return candidate.Status == MemoryCandidateDraft || candidate.Status == MemoryCandidateRendered
+	})
 	if count == 0 {
 		lines = append(lines, "_No draft candidates yet._")
 	}
