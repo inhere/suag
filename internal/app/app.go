@@ -10,6 +10,7 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
+	"github.com/inhere/axon/internal/capabilities/runtimecaps"
 	appconfig "github.com/inhere/axon/internal/config"
 	"github.com/inhere/axon/internal/host/gateway"
 	"github.com/inhere/axon/internal/ops/cron"
@@ -18,7 +19,6 @@ import (
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/memory"
 	"github.com/inhere/axon/internal/platform/tools"
-	"github.com/inhere/axon/internal/platform/tools/native"
 	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/internal/team"
 )
@@ -26,14 +26,15 @@ import (
 var ErrUnknownMode = errors.New("unknown mode")
 
 type App struct {
-	provider  llm.Provider
-	registry  *tools.Registry
-	orch      *orchestrator.Orchestrator
-	bus       *gateway.EventBus
-	hitlMgr   hitl.Manager
-	tracer    tracing.Tracer
-	scheduler *cron.Scheduler
-	workspace string
+	provider          llm.Provider
+	registry          *tools.Registry
+	capabilityManager *runtimecaps.CapabilityManager
+	orch              *orchestrator.Orchestrator
+	bus               *gateway.EventBus
+	hitlMgr           hitl.Manager
+	tracer            tracing.Tracer
+	scheduler         *cron.Scheduler
+	workspace         string
 }
 
 func SetupLogging() {
@@ -54,14 +55,8 @@ func New() (*App, error) {
 	}
 	slog.Info("llm provider configured", llmSettings.LogArgs()...)
 
-	registry := tools.NewRegistry()
-	for _, t := range native.NewFileTools(workspace) {
-		registry.MustRegister(t)
-	}
-	registry.MustRegister(native.NewShellExecTool(workspace, 0))
-	if serpKey := gkconfig.String("serpapi_key"); serpKey != "" {
-		registry.MustRegister(native.NewWebSearchTool(serpKey))
-	}
+	caps := buildDefaultCapabilities(workspace)
+	registry := caps.Registry
 
 	bus := gateway.NewEventBus()
 	tracer := tracing.NewInMemoryTracer(func(span *tracing.Span) {
@@ -111,14 +106,15 @@ func New() (*App, error) {
 	scheduler := cron.NewScheduler(orch, provider, registry)
 
 	return &App{
-		provider:  provider,
-		registry:  registry,
-		orch:      orch,
-		bus:       bus,
-		hitlMgr:   hitlMgr,
-		tracer:    tracer,
-		scheduler: scheduler,
-		workspace: workspace,
+		provider:          provider,
+		registry:          registry,
+		capabilityManager: caps.Manager,
+		orch:              orch,
+		bus:               bus,
+		hitlMgr:           hitlMgr,
+		tracer:            tracer,
+		scheduler:         scheduler,
+		workspace:         workspace,
 	}, nil
 }
 

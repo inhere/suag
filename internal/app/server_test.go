@@ -16,6 +16,7 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/testutil/assert"
 
+	"github.com/inhere/axon/internal/capabilities/runtimecaps"
 	"github.com/inhere/axon/internal/ops/cron"
 	"github.com/inhere/axon/internal/ops/hitl"
 	"github.com/inhere/axon/internal/orchestrator"
@@ -27,6 +28,45 @@ import (
 	"github.com/inhere/axon/internal/platform/tracing"
 	_ "modernc.org/sqlite"
 )
+
+func TestNew_UsesDefaultCapabilityBuilderForRegistry(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	workspace := t.TempDir()
+	_ = gkconfig.Set("workspace", workspace)
+	_ = gkconfig.Set("llm.api_type", "openai")
+	_ = gkconfig.Set("llm.provider_name", "openai")
+	_ = gkconfig.Set("llm.api_key", "test-key")
+	_ = gkconfig.Set("llm.base_url", "http://127.0.0.1")
+	_ = gkconfig.Set("serpapi_key", "search-key")
+
+	app, err := New()
+	assert.NoErr(t, err)
+	assert.NotNil(t, app)
+	assert.NotNil(t, app.capabilityManager)
+
+	assert.NotNil(t, mustGetTool(t, app.registry, "file_read"))
+	assert.NotNil(t, mustGetTool(t, app.registry, "file_write"))
+	assert.NotNil(t, mustGetTool(t, app.registry, "file_list"))
+	assert.NotNil(t, mustGetTool(t, app.registry, "shell_exec"))
+	assert.NotNil(t, mustGetTool(t, app.registry, "web_search"))
+}
+
+func TestBuildDefaultCapabilities_ProducesSubsetUsableByAppDependents(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	built := buildDefaultCapabilities(t.TempDir())
+	set := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
+	resolved := built.Manager.ResolveTurnCapabilities(set)
+	subset := built.Registry.Subset(resolved.ToolNames)
+
+	for _, name := range resolved.ToolNames {
+		_, err := subset.Get(name)
+		assert.NoErr(t, err)
+	}
+}
 
 func TestBuildSessionRunner_DefaultsToInternalRunnerWithoutACP(t *testing.T) {
 	gkconfig.Reset()
