@@ -37,7 +37,7 @@
 - Test: `internal/host/intrunner/runner_test.go`
 - Test: `internal/host/gateway/ws_test.go`
 
-- [ ] **Step 1: 写出等待态与恢复态缺口测试**
+- [x] **Step 1: 写出等待态与恢复态缺口测试**
 
 补充下面几类测试：
 
@@ -49,7 +49,7 @@
 Run: `go test ./internal/host/session ./internal/host/intrunner ./internal/host/gateway`
 Expected: 至少一组新增用例先失败，暴露当前 contract 缺口
 
-- [ ] **Step 2: 收口 service 层状态判断**
+- [x] **Step 2: 收口 service 层状态判断**
 
 在 `internal/host/session/service.go` 中把 wait/resume 的判断集中到清晰的辅助方法里：
 
@@ -63,7 +63,7 @@ Expected: 至少一组新增用例先失败，暴露当前 contract 缺口
 - 注释说明为什么 `INPUT_REQUIRED` 和 `AUTH_REQUIRED` 不能走同一路径
 - 避免把更多状态机判断继续散落在 gateway 或 runner 中
 
-- [ ] **Step 3: 收口 intrunner 的 waiting 语义**
+- [x] **Step 3: 收口 intrunner 的 waiting 语义**
 
 在 `internal/host/intrunner/runner.go` 中明确 internal runtime 对 Host 暴露的 wait-state contract：
 
@@ -76,7 +76,7 @@ Expected: 至少一组新增用例先失败，暴露当前 contract 缺口
 - 保持 Host 看到的是粗粒度稳定状态，不泄漏过多 runtime 内部细节
 - 关键归类逻辑前加简短注释
 
-- [ ] **Step 4: 校准 WS 命令入口**
+- [x] **Step 4: 校准 WS 命令入口**
 
 在 `internal/host/gateway/ws.go` 中保证：
 
@@ -84,7 +84,7 @@ Expected: 至少一组新增用例先失败，暴露当前 contract 缺口
 - 错误清晰返回给前端
 - 不在 gateway 层重复实现状态机规则
 
-- [ ] **Step 5: 跑测试并提交**
+- [x] **Step 5: 跑测试并提交**
 
 Run: `go test ./internal/host/session ./internal/host/intrunner ./internal/host/gateway`
 Expected: PASS
@@ -106,7 +106,7 @@ git commit -m "feat: harden host wait-state contract"
 - Test: `internal/host/acpbridge/bridge_test.go`
 - Test: `internal/host/agui/mapper_test.go`
 
-- [ ] **Step 1: 写出 runner contract 差异测试**
+- [x] **Step 1: 写出 runner contract 差异测试**
 
 补充测试覆盖：
 
@@ -117,7 +117,7 @@ git commit -m "feat: harden host wait-state contract"
 Run: `go test ./internal/host/session ./internal/host/acpbridge ./internal/host/agui`
 Expected: 新增 contract 用例先失败或暴露当前不一致
 
-- [ ] **Step 2: 收口 RuntimeResult 与外部任务落库语义**
+- [x] **Step 2: 收口 RuntimeResult 与外部任务落库语义**
 
 在 `internal/host/session/service.go` 中明确：
 
@@ -125,7 +125,7 @@ Expected: 新增 contract 用例先失败或暴露当前不一致
 - waiting 与 terminal event 的发布顺序
 - summary / latestMessage / external stream 对 snapshot 的影响边界
 
-- [ ] **Step 3: 收口 ACP bridge 到 Host 的状态表达**
+- [x] **Step 3: 收口 ACP bridge 到 Host 的状态表达**
 
 在 `internal/host/acpbridge/runner.go` 和 `internal/host/acpbridge/types.go` 中整理：
 
@@ -133,7 +133,7 @@ Expected: 新增 contract 用例先失败或暴露当前不一致
 - remote session resume 所需字段
 - 返回给 Host 的 metadata 最小闭包
 
-- [ ] **Step 4: 校准 AG-UI 映射**
+- [x] **Step 4: 校准 AG-UI 映射**
 
 在 `internal/host/agui/mapper.go` 中保证：
 
@@ -141,7 +141,7 @@ Expected: 新增 contract 用例先失败或暴露当前不一致
 - `turnId`、`runId`、`externalTaskId` 这些关联键稳定存在
 - wait-state 在 snapshot 与增量事件上的展示语义一致
 
-- [ ] **Step 5: 跑测试并提交**
+- [x] **Step 5: 跑测试并提交**
 
 Run: `go test ./internal/host/session ./internal/host/acpbridge ./internal/host/agui`
 Expected: PASS
@@ -161,7 +161,7 @@ git commit -m "refactor: align host runner contracts"
 - Test: `internal/agent/runner_factory_test.go`
 - Test: `internal/agent/runner_parity_test.go`
 
-- [ ] **Step 1: 先补清楚保留边界测试**
+- [x] **Step 1: 先补清楚保留边界测试**
 
 补测试明确：
 
@@ -172,7 +172,7 @@ git commit -m "refactor: align host runner contracts"
 Run: `go test ./internal/agent ./internal/team ./internal/orchestrator`
 Expected: 新的默认行为断言先失败或暴露歧义点
 
-- [ ] **Step 2: 收窄 ReactRunner 选择逻辑**
+- [x] **Step 2: 收窄 ReactRunner 选择逻辑**
 
 实现目标：
 
@@ -180,14 +180,14 @@ Expected: 新的默认行为断言先失败或暴露歧义点
 - Host internal runner 不再隐式受 `ReactRunner` 影响
 - team/orchestrator 对遗留 runtime 的引用有清晰注释
 
-- [ ] **Step 3: 清理注释与命名歧义**
+- [x] **Step 3: 清理注释与命名歧义**
 
 重点处理：
 
 - 让 `ReactRunner` 的遗留性质更明显
 - 避免新代码误把它当作 Host v0 推荐路径
 
-- [ ] **Step 4: 跑测试并提交**
+- [x] **Step 4: 跑测试并提交**
 
 Run: `go test ./internal/agent ./internal/team ./internal/orchestrator`
 Expected: PASS
@@ -207,7 +207,7 @@ git commit -m "refactor: narrow legacy react runtime usage"
 - Add: `docs/usage/host-recap-memory-hooks-v0.md`
 - Test: `internal/host/session/service_test.go`
 
-- [ ] **Step 1: 先补 hook 行为测试**
+- [x] **Step 1: 先补 hook 行为测试**
 
 补充测试覆盖：
 
@@ -218,7 +218,7 @@ git commit -m "refactor: narrow legacy react runtime usage"
 Run: `go test ./internal/host/session`
 Expected: 新增 hook 行为用例先失败
 
-- [ ] **Step 2: 加入 recap hook 骨架**
+- [x] **Step 2: 加入 recap hook 骨架**
 
 实现目标：
 
@@ -226,14 +226,14 @@ Expected: 新增 hook 行为用例先失败
 - 暂不引入完整记忆系统，只定义最小输入输出
 - 后续可接 `MEMORY.md` / `USER.md` / SQLite FTS，不需要再改主状态机
 
-- [ ] **Step 3: 更新文档**
+- [x] **Step 3: 更新文档**
 
 补充说明：
 
 - Host snapshot 与 recap hook 的关系
 - 当前只提供挂点，不承诺完整记忆产品语义
 
-- [ ] **Step 4: 跑测试并提交**
+- [x] **Step 4: 跑测试并提交**
 
 Run: `go test ./internal/host/session`
 Expected: PASS
@@ -250,7 +250,7 @@ git commit -m "feat: add host recap memory hooks"
 - Modify: `internal/app/server_test.go`
 - Modify: `internal/host/gateway/ws_test.go`
 
-- [ ] **Step 1: 补联调与恢复验证项**
+- [x] **Step 1: 补联调与恢复验证项**
 
 把下面场景写入文档和测试：
 
@@ -263,14 +263,14 @@ git commit -m "feat: add host recap memory hooks"
 - refresh page and recover focused state
 - stop active turn
 
-- [ ] **Step 2: 补最小 server 级集成测试**
+- [x] **Step 2: 补最小 server 级集成测试**
 
 确保：
 
 - server 默认 wiring 可跑通
 - 默认路径与配置假设不会再漂移
 
-- [ ] **Step 3: 跑回归并提交**
+- [x] **Step 3: 跑回归并提交**
 
 Run: `go test ./internal/app ./internal/host/gateway`
 Expected: PASS

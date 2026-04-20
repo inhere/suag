@@ -10,18 +10,16 @@
 
 <!-- PROCESSING WORKS:START -->
 
-- Axon v0 自用主线规划持续推进中，设计总纲见 `docs/v0-self-host-design.md`
-- Host 会话与 Web 工作台基础闭环已打通，当前继续围绕可自用联调与 Host runtime 主链稳定性做收尾，联调说明见 `docs/usage/web-host-local-dev.md`
-- 下一阶段开发已整理为 `docs/superpowers/plans/2026-04-16-host-runtime-stabilization-phase3.md`，后续按该计划继续推进 Host Go 主线
+- Axon v0 自用主线规划持续推进中，设计总纲见 `docs/v0-self-host-design.md`；Host 会话与 Web 工作台基础闭环已打通，联调说明见 `docs/usage/web-host-local-dev.md`
+- `docs/superpowers/plans/2026-04-16-host-runtime-stabilization-phase3.md` 的 Task 1-5 已全部落地并同步勾选，Host runtime stabilization Phase 3 现已收口完成
 - `docs/usage/host-state-snapshot-v0.md`、`docs/usage/llm-config-v0.md`、`docs/usage/host-recap-memory-hooks-v0.md` 已作为当前 v0 协议、配置与 recap/memory 基线文档
 - 当前 recap 主线已推进到 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md`，且后端已具备 `memory candidate` 查询与 `accept/reject` REST 入口
 - Web 侧已完成 `Memory Candidates` 右侧面板接入，当前支持 session 级候选加载、`draft/rendered` 过滤、Accept/Reject、错误与 pending 状态反馈，见 `docs/superpowers/specs/2026-04-17-web-memory-candidates-panel-design.md` 与 `docs/superpowers/plans/2026-04-17-web-memory-candidates-panel-implementation-plan.md`
-- Host internal self-loop Phase 1-4 正持续收口：`ResumeFromRunID`、结构化 `wait_kind`、同进程 resume 边界、terminal event 去重 已落地，当前重点是继续压稳 waiting/resume/stop 的状态机一致性
-- Host runtime 状态机主链已继续收口：continue 校验、continue runtime context、stop/cancel、session reopen 与 canceled reload 语义已基本对齐；`run.finished / run.failed / run.canceled` 现统一优先于 Host 自补 terminal lifecycle
-- `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复、查询与 WS 命令编排链路；`DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态已贯通到快照与事件流，未知 WS command 会明确返回 `command.error`，且成功 `continue_turn` 的 `command.accepted` 已保证先于该连接上的后续 run 事件流返回
-- internal runner / ACP runner 的 Host contract 第一轮已基本对齐：`externalTaskId`、失败态 external task 持久化、internal suspend `waitMetadata`、ACP `EXTERNAL_RUNNING` waiting metadata 与 AG-UI run detail / snapshot 已完成第一轮收口
-- 本地联调与恢复验证基线已补齐：`docs/usage/web-host-local-dev.md` 已整理为逐项手测清单，`AUTH_REQUIRED -> HITL respond` 后端链路与 `RunServer + /health` 默认 wiring 已有最小回归测试
-- Task 3 正在收口 legacy React runtime 边界：team/orchestrator 的空 runtime 默认稳定走 `agentcore`，`UseAgentcore` legacy shim 不再影响默认单 agent 路径，parity tests 已明确标注为遗留对照而非 Host v0 主链
+- Host internal self-loop Phase 1-4 已完成第一轮收口：`ResumeFromRunID`、结构化 `wait_kind`、同进程 resume 边界、terminal event 去重、waiting/resume/stop 状态机一致性 已形成当前基线
+- `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复、查询与 WS 命令编排链路；`DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态已贯通到快照与事件流，未知 WS command 会明确返回 `command.error`
+- internal runner / ACP runner 的 Host contract 已完成一轮对齐：`externalTaskId`、失败态 external task 持久化、internal suspend `waitMetadata`、ACP `EXTERNAL_RUNNING` waiting metadata 与 AG-UI run detail / snapshot 已贯通
+- legacy React runtime 边界已收窄：team/orchestrator 的空 runtime 默认稳定走 `agentcore`，`UseAgentcore` legacy shim 不再影响默认单 agent 路径，parity tests 仅作为遗留对照保留
+- 下一步回到 Host internal self-loop 主线，继续补强可持续运行所需的 planner / tool loop / resume after wait / 终态后续动作 等能力
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范
