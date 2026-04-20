@@ -146,6 +146,136 @@ func TestRunner_RunReusesSuspendedRunnerOnContinue(t *testing.T) {
 	assert.True(t, containsMessage(calls[1].Messages, "user", "continue with human input"))
 }
 
+func TestRunner_RunAddsInitialLoopMetadataToYieldedWait(t *testing.T) {
+	t.Parallel()
+
+	hook := &yieldOnFirstModelHostHook{}
+	mock := llm.NewMockProvider("mock")
+
+	runner, err := New(Config{
+		Provider: mock,
+		Registry: tools.NewRegistry(),
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+		Hooks:    []agentcore.Hook{hook},
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	var statusPayloads []map[string]any
+	result, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_initial_wait",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "pause immediately",
+		Emit: func(event Event) error {
+			if event.EventType != session.EventRunStatus {
+				return nil
+			}
+			payload := map[string]any{}
+			for key, value := range event.Payload {
+				payload[key] = value
+			}
+			statusPayloads = append(statusPayloads, payload)
+			return nil
+		},
+	})
+	assert.NoErr(t, err)
+	assert.Eq(t, session.RunInputRequired, result.WaitState)
+	assert.Eq(t, "initial", result.WaitMetadata["loop_phase"])
+	assert.Eq(t, 0, result.WaitMetadata["resume_count"])
+	if payload, ok := statusPayloads[2]["waitMetadata"].(map[string]any); ok {
+		assert.Eq(t, "initial", payload["loop_phase"])
+		assert.Eq(t, 0, payload["resume_count"])
+	} else {
+		t.Fatalf("status payload waitMetadata type = %T, want map[string]any", statusPayloads[2]["waitMetadata"])
+	}
+}
+
+func TestRunner_RunAddsResumedLoopMetadataForResumeModes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("resume with input", func(t *testing.T) {
+		hook := &yieldOnFirstTwoModelsHostHook{}
+		mock := llm.NewMockProvider("mock")
+
+		runner, err := New(Config{
+			Provider: mock,
+			Registry: tools.NewRegistry(),
+			Tracer:   tracing.NewInMemoryTracer(nil),
+			RunRoot:  t.TempDir(),
+			Hooks:    []agentcore.Hook{hook},
+		})
+		assert.NoErr(t, err)
+		t.Cleanup(func() {
+			assert.NoErr(t, runner.Close())
+		})
+
+		_, err = runner.Run(context.Background(), Request{
+			SessionID:   "sess_resume_wait_input",
+			TurnID:      "turn_001",
+			RunID:       "run_001",
+			AgentID:     "default",
+			Instruction: "first wait",
+		})
+		assert.NoErr(t, err)
+
+		result, err := runner.Run(context.Background(), Request{
+			SessionID:   "sess_resume_wait_input",
+			TurnID:      "turn_002",
+			RunID:       "run_002",
+			AgentID:     "default",
+			Instruction: "resume with message",
+		})
+		assert.NoErr(t, err)
+		assert.Eq(t, session.RunInputRequired, result.WaitState)
+		assert.Eq(t, "resumed", result.WaitMetadata["loop_phase"])
+		assert.Eq(t, "resume_with_input", result.WaitMetadata["resume_source"])
+		assert.Eq(t, 1, result.WaitMetadata["resume_count"])
+	})
+
+	t.Run("resume from state", func(t *testing.T) {
+		hook := &yieldOnFirstTwoModelsHostHook{}
+		mock := llm.NewMockProvider("mock")
+
+		runner, err := New(Config{
+			Provider: mock,
+			Registry: tools.NewRegistry(),
+			Tracer:   tracing.NewInMemoryTracer(nil),
+			RunRoot:  t.TempDir(),
+			Hooks:    []agentcore.Hook{hook},
+		})
+		assert.NoErr(t, err)
+		t.Cleanup(func() {
+			assert.NoErr(t, runner.Close())
+		})
+
+		_, err = runner.Run(context.Background(), Request{
+			SessionID:   "sess_resume_wait_state",
+			TurnID:      "turn_001",
+			RunID:       "run_001",
+			AgentID:     "default",
+			Instruction: "first wait",
+		})
+		assert.NoErr(t, err)
+
+		result, err := runner.Run(context.Background(), Request{
+			SessionID: "sess_resume_wait_state",
+			TurnID:    "turn_002",
+			RunID:     "run_002",
+			AgentID:   "default",
+		})
+		assert.NoErr(t, err)
+		assert.Eq(t, session.RunInputRequired, result.WaitState)
+		assert.Eq(t, "resumed", result.WaitMetadata["loop_phase"])
+		assert.Eq(t, "resume_from_state", result.WaitMetadata["resume_source"])
+		assert.Eq(t, 1, result.WaitMetadata["resume_count"])
+	})
+}
+
 func TestRunner_RunMapsApprovalYieldToAuthRequired(t *testing.T) {
 	t.Parallel()
 
@@ -345,6 +475,32 @@ func (h *yieldApprovalHostHook) BeforeModel(_ context.Context, _ *agentcore.Mode
 
 type yieldStructuredInputHostHook struct {
 	agentcore.NopHook
+}
+
+type yieldOnFirstModelHostHook struct {
+	agentcore.NopHook
+	beforeModelCalls int
+}
+
+func (h *yieldOnFirstModelHostHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
+	h.beforeModelCalls++
+	if h.beforeModelCalls == 1 {
+		ctrl.Yield("await_resume", map[string]any{"wait_kind": "input_required"})
+	}
+	return nil
+}
+
+type yieldOnFirstTwoModelsHostHook struct {
+	agentcore.NopHook
+	beforeModelCalls int
+}
+
+func (h *yieldOnFirstTwoModelsHostHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
+	h.beforeModelCalls++
+	if h.beforeModelCalls == 1 || h.beforeModelCalls == 2 {
+		ctrl.Yield("await_resume", map[string]any{"wait_kind": "input_required"})
+	}
+	return nil
 }
 
 func (h *yieldStructuredInputHostHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {

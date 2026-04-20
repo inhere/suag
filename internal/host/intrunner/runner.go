@@ -37,10 +37,13 @@ type Config struct {
 }
 
 type sessionState struct {
-	history []memory.Message
-	storage *agentcorestorage.SQLiteStorage
-	agent   *agent.Agent
-	runner  agent.Runner
+	history      []memory.Message
+	storage      *agentcorestorage.SQLiteStorage
+	agent        *agent.Agent
+	runner       agent.Runner
+	loopPhase    string
+	resumeSource string
+	resumeCount  int
 }
 
 type sessionMemory struct {
@@ -130,6 +133,7 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 	// yielded summary/reason so web + gateway can distinguish approval/auth flows.
 	if runner.GetState() == agent.AgentSuspended {
 		waitMetadata := cloneWaitMetadata(resultMetadata(result))
+		waitMetadata = mergeLoopMetadata(waitMetadata, r.loopMetadata(in.SessionID))
 		waitState := deriveWaitState(summary, waitMetadata)
 		if err := emitStatusWithMetadata(in.Emit, waitState, waitMetadata); err != nil {
 			return session.RuntimeResult{}, err
@@ -242,6 +246,9 @@ func (r *SessionRunner) clearActiveRuntime(sessionID string) {
 	}
 	state.agent = nil
 	state.runner = nil
+	state.loopPhase = ""
+	state.resumeSource = ""
+	state.resumeCount = 0
 }
 
 func (r *SessionRunner) runtimeKind() agent.RuntimeKind {
@@ -261,9 +268,15 @@ func (r *SessionRunner) resolveRuntime(
 	runMemory *sessionMemory,
 ) (*agent.Agent, agent.Runner, error) {
 	if state != nil && state.agent != nil && state.runner != nil && state.runner.GetState() == agent.AgentSuspended {
-		if err := state.runner.Resume(strings.TrimSpace(in.Instruction)); err != nil {
+		resumeInstruction := strings.TrimSpace(in.Instruction)
+		resumeSource := "resume_from_state"
+		if resumeInstruction != "" {
+			resumeSource = "resume_with_input"
+		}
+		if err := state.runner.Resume(resumeInstruction); err != nil {
 			return nil, nil, fmt.Errorf("resume suspended runner: %w", err)
 		}
+		r.setLoopContext(in.SessionID, "resumed", resumeSource, state.resumeCount+1)
 		return state.agent, state.runner, nil
 	}
 
@@ -281,6 +294,7 @@ func (r *SessionRunner) resolveRuntime(
 	if err != nil {
 		return nil, nil, fmt.Errorf("build internal agent runner: %w", err)
 	}
+	r.setLoopContext(in.SessionID, "initial", "", 0)
 	return a, runner, nil
 }
 
@@ -400,6 +414,54 @@ func cloneWaitMetadata(metadata map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
+}
+
+func mergeLoopMetadata(metadata map[string]any, loop map[string]any) map[string]any {
+	if len(loop) == 0 {
+		return metadata
+	}
+	out := cloneWaitMetadata(metadata)
+	if out == nil {
+		out = make(map[string]any, len(loop))
+	}
+	for key, value := range loop {
+		out[key] = value
+	}
+	return out
+}
+
+func (r *SessionRunner) setLoopContext(sessionID, phase, resumeSource string, resumeCount int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	state := r.sessions[sessionID]
+	if state == nil {
+		return
+	}
+	state.loopPhase = strings.TrimSpace(phase)
+	state.resumeSource = strings.TrimSpace(resumeSource)
+	state.resumeCount = resumeCount
+}
+
+func (r *SessionRunner) loopMetadata(sessionID string) map[string]any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	state := r.sessions[sessionID]
+	if state == nil {
+		return nil
+	}
+
+	metadata := map[string]any{
+		"resume_count": state.resumeCount,
+	}
+	if phase := strings.TrimSpace(state.loopPhase); phase != "" {
+		metadata["loop_phase"] = phase
+	}
+	if source := strings.TrimSpace(state.resumeSource); source != "" {
+		metadata["resume_source"] = source
+	}
+	return metadata
 }
 
 func newSessionMemory(history []memory.Message) *sessionMemory {

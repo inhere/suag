@@ -23,8 +23,13 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/inhere/axon/internal/host/acpbridge"
 	"github.com/inhere/axon/internal/host/agui"
+	"github.com/inhere/axon/internal/host/intrunner"
 	"github.com/inhere/axon/internal/host/session"
 	"github.com/inhere/axon/internal/ops/hitl"
+	"github.com/inhere/axon/internal/platform/llm"
+	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/axon/internal/platform/tracing"
+	"github.com/inhere/axon/pkg/agentcore"
 	_ "modernc.org/sqlite"
 )
 
@@ -1066,6 +1071,148 @@ func TestServer_ContinueTurnReusesPreviousRemoteSession(t *testing.T) {
 	}
 }
 
+func TestServer_ContinueTurnRunDetailPreservesResumedLoopMetadata(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	runtimeRunner, err := intrunner.New(intrunner.Config{
+		Provider: llm.NewMockProvider("mock"),
+		Registry: tools.NewRegistry(),
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+		Hooks: []agentcore.Hook{
+			&gatewayYieldOnFirstTwoModelsHook{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("intrunner.New() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := runtimeRunner.Close(); err != nil {
+			t.Fatalf("runtimeRunner.Close() error = %v", err)
+		}
+	})
+
+	svc := session.NewService(store, bus, runtimeRunner, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 20, 11, 0, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "continue wait metadata",
+	})
+
+	firstTurn := postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "wait once",
+		"initiator_type": "user",
+	})
+	if firstTurn.RunID == "" {
+		t.Fatal("first start turn response missing run_id")
+	}
+
+	wsURL := mustHTTPToWS(t, ts.URL+"/ws?session_id="+url.QueryEscape(createResp.SessionID))
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial() error = %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	var connected map[string]any
+	if err := wsjson.Read(ctx, conn, &connected); err != nil {
+		t.Fatalf("wsjson.Read() connected error = %v", err)
+	}
+
+	var snapshot map[string]any
+	if err := wsjson.Read(ctx, conn, &snapshot); err != nil {
+		t.Fatalf("wsjson.Read() snapshot error = %v", err)
+	}
+	if snapshot["type"] != "STATE_SNAPSHOT" {
+		t.Fatalf("snapshot type = %v, want STATE_SNAPSHOT", snapshot["type"])
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":           "continue_turn",
+		"session_id":     createResp.SessionID,
+		"message":        "resume and wait again",
+		"agent_id":       "default",
+		"initiator_type": "user",
+	}); err != nil {
+		t.Fatalf("wsjson.Write() command error = %v", err)
+	}
+
+	ack, event := readUntilCommandResultAndCustom(t, ctx, conn)
+	if ack["type"] != "command.accepted" {
+		t.Fatalf("first command result type = %v, want command.accepted", ack["type"])
+	}
+
+	value, ok := event["value"].(map[string]any)
+	if !ok {
+		t.Fatalf("event value type = %T, want map[string]any", event["value"])
+	}
+	secondRunID, _ := value["runId"].(string)
+	if secondRunID == "" {
+		t.Fatal("continue custom event missing runId")
+	}
+	if secondRunID == firstTurn.RunID {
+		t.Fatal("continue custom event reused first run id")
+	}
+
+	runResp := getJSON[map[string]any](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/runs/"+secondRunID)
+	run, ok := runResp["run"].(map[string]any)
+	if !ok {
+		t.Fatalf("get run detail run type = %T, want map[string]any", runResp["run"])
+	}
+	if run["displayState"] != "input_required" {
+		t.Fatalf("get run detail run.displayState = %v, want %q", run["displayState"], "input_required")
+	}
+	waitMetadata, ok := run["waitMetadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("get run detail run.waitMetadata type = %T, want map[string]any", run["waitMetadata"])
+	}
+	if waitMetadata["loop_phase"] != "resumed" {
+		t.Fatalf("get run detail run.waitMetadata[loop_phase] = %v, want %q", waitMetadata["loop_phase"], "resumed")
+	}
+	if waitMetadata["resume_source"] != "resume_with_input" {
+		t.Fatalf("get run detail run.waitMetadata[resume_source] = %v, want %q", waitMetadata["resume_source"], "resume_with_input")
+	}
+	if waitMetadata["resume_count"] != float64(1) {
+		t.Fatalf("get run detail run.waitMetadata[resume_count] = %v, want %v", waitMetadata["resume_count"], float64(1))
+	}
+
+	sessionResp := getJSON[map[string]any](t, ts.URL+"/api/sessions/"+createResp.SessionID)
+	rawRuns, ok := sessionResp["runs"].([]any)
+	if !ok {
+		t.Fatalf("get session runs type = %T, want []any", sessionResp["runs"])
+	}
+	found := false
+	for _, raw := range rawRuns {
+		item, ok := raw.(map[string]any)
+		if !ok || item["runId"] != secondRunID {
+			continue
+		}
+		runWaitMetadata, ok := item["waitMetadata"].(map[string]any)
+		if !ok {
+			t.Fatalf("get session runs waitMetadata type = %T, want map[string]any", item["waitMetadata"])
+		}
+		if runWaitMetadata["loop_phase"] != "resumed" {
+			t.Fatalf("get session runs waitMetadata[loop_phase] = %v, want %q", runWaitMetadata["loop_phase"], "resumed")
+		}
+		found = true
+	}
+	if !found {
+		t.Fatalf("did not find resumed run %q in session snapshot", secondRunID)
+	}
+}
+
 func TestServer_StopTurnOverWebSocketCancelsActiveRun(t *testing.T) {
 	t.Parallel()
 
@@ -2004,6 +2151,21 @@ func waitForGatewayRunnerRequests(t *testing.T, runner *resumeAwareGatewayRunner
 
 type gatewayHITLRunner struct {
 	manager hitl.Manager
+}
+
+type gatewayYieldOnFirstTwoModelsHook struct {
+	agentcore.NopHook
+	beforeModelCalls int
+}
+
+func (h *gatewayYieldOnFirstTwoModelsHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
+	h.beforeModelCalls++
+	if h.beforeModelCalls == 1 || h.beforeModelCalls == 2 {
+		ctrl.Yield("await_resume", map[string]any{
+			"wait_kind": "input_required",
+		})
+	}
+	return nil
 }
 
 func (r *gatewayHITLRunner) Run(ctx context.Context, in session.RuntimeRequest) (session.RuntimeResult, error) {

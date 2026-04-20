@@ -118,7 +118,7 @@ git commit -m "feat: stabilize host self-loop metadata contract"
 - Test: `internal/host/intrunner/runner_test.go`
 - Test: `internal/host/gateway/ws_test.go`
 
-- [ ] **Step 1: 写出 internal runner 恢复语义测试**
+- [x] **Step 1: 写出 internal runner 恢复语义测试**
 
 补充测试覆盖：
 
@@ -130,7 +130,7 @@ git commit -m "feat: stabilize host self-loop metadata contract"
 Run: `go test ./internal/host/intrunner ./internal/host/gateway -run "Resume|WaitMetadata|LoopPhase" -v`
 Expected: 至少一组新增断言先失败
 
-- [ ] **Step 2: 在 intrunner 明确恢复来源与循环计数**
+- [x] **Step 2: 在 intrunner 明确恢复来源与循环计数**
 
 实现目标：
 
@@ -143,7 +143,7 @@ Expected: 至少一组新增断言先失败
 - 关键分支前补简短注释
 - 继续保持 React runtime 仅 explicit legacy fallback
 
-- [ ] **Step 3: 校准 gateway 继续命令的 metadata 断言**
+- [x] **Step 3: 校准 gateway 继续命令的 metadata 断言**
 
 在 `internal/host/gateway/ws_test.go` 中补充端到端断言：
 
@@ -151,7 +151,7 @@ Expected: 至少一组新增断言先失败
 - refresh 后获取 run detail / session snapshot 仍能看到恢复 metadata
 - `AUTH_REQUIRED` 的 HITL 恢复也能保留同样的结构化 contract
 
-- [ ] **Step 4: 跑测试并提交**
+- [x] **Step 4: 跑测试并提交**
 
 Run: `go test ./internal/host/intrunner ./internal/host/gateway`
 Expected: PASS
