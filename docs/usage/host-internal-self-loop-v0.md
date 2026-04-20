@@ -140,7 +140,31 @@
 
 ---
 
-## 6. Deferred 能力
+## 6. 与 Formal Memory Recall 的当前关系
+
+当前 self-loop 与 formal memory recall 的关系，先约定在 intrunner 内部：
+
+- 每次新 `Run()` 启动前，intrunner 会按当前 `Instruction` 读取并选择 formal `MEMORY.md / USER.md`
+- recalled formal memory 只作为 runtime-only context 注入，不进入 transcript
+- 当 run 进入 waiting 后，再通过 `continue_turn` 恢复：
+  - suspended runtime 仍会复用同一个 working memory / runtime
+  - 但 intrunner 现在会在 resume 前刷新 recalled formal memory
+  - 因此 resumed run 不会被首次挂起时的 recall 固定住
+
+当前已经验证到：
+
+- 首轮 run 的 recall 会影响最终 summary / output
+- resumed run 会基于新的 continue instruction 重新选择 recall
+- recalled memory 刷新后，仍不会污染 session history
+
+当前还没有承诺：
+
+- `planner_hint` / `next_action_hint` 主动消费 `memory_recall`
+- post-turn recap / learning hook 根据 recall 命中结果反向调整策略
+
+---
+
+## 7. Deferred 能力
 
 下面这些能力明确 defer 到后续阶段，不在当前 `v0` 主线内承诺：
 
@@ -156,7 +180,7 @@
 
 ---
 
-## 7. 手测建议
+## 8. 手测建议
 
 当前可按下面方式做最小手测：
 
@@ -167,7 +191,7 @@
 
 ---
 
-## 8. 后续演进建议
+## 9. 后续演进建议
 
 如果后续继续推进 self-loop，优先级建议如下：
 

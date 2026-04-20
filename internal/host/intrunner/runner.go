@@ -39,6 +39,7 @@ type Config struct {
 
 type sessionState struct {
 	history      []memory.Message
+	memory       *sessionMemory
 	storage      *agentcorestorage.SQLiteStorage
 	agent        *agent.Agent
 	runner       agent.Runner
@@ -239,6 +240,9 @@ func (r *SessionRunner) storeActiveRuntime(sessionID string, a *agent.Agent, run
 	}
 	state.agent = a
 	state.runner = runner
+	if mem, ok := a.Memory.(*sessionMemory); ok {
+		state.memory = mem
+	}
 }
 
 func (r *SessionRunner) clearActiveRuntime(sessionID string) {
@@ -251,6 +255,7 @@ func (r *SessionRunner) clearActiveRuntime(sessionID string) {
 	}
 	state.agent = nil
 	state.runner = nil
+	state.memory = nil
 	state.loopPhase = ""
 	state.resumeSource = ""
 	state.resumeCount = 0
@@ -273,6 +278,11 @@ func (r *SessionRunner) resolveRuntime(
 	runMemory *sessionMemory,
 ) (*agent.Agent, agent.Runner, error) {
 	if state != nil && state.agent != nil && state.runner != nil && state.runner.GetState() == agent.AgentSuspended {
+		// Suspended runtime keeps the same working memory instance, so refresh the
+		// runtime-only recalled context before resuming with a new instruction.
+		if state.memory != nil {
+			state.memory.SetRecalled(runMemory.recalled)
+		}
 		resumeInstruction := strings.TrimSpace(in.Instruction)
 		resumeSource := "resume_from_state"
 		if resumeInstruction != "" {
@@ -484,6 +494,15 @@ func (m *sessionMemory) AddMessage(role, content string) {
 		Content:   content,
 		Timestamp: time.Now().UTC(),
 	})
+}
+
+func (m *sessionMemory) SetRecalled(messages []memory.Message) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.recalled = cloneMemoryMessages(messages)
 }
 
 func (m *sessionMemory) GetMessages() []memory.Message {

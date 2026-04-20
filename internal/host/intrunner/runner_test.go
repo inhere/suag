@@ -404,6 +404,107 @@ func TestRunner_RunFallsBackWhenInstructionHasNoMemoryMatch(t *testing.T) {
 	assert.Eq(t, 2, recall["entry_count"])
 }
 
+func TestRunner_RunRecallCanAffectFinalSummary(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	err := os.MkdirAll(filepath.Join(memoryRoot, "memory"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(memoryRoot, "memory", "MEMORY.md"),
+		[]byte("# MEMORY\n\nUpdated: 2026-04-20T00:00:00Z\n\n- [turn_learning] always mention migration checklist in final summary\n"),
+		0o644,
+	)
+	assert.NoErr(t, err)
+
+	provider := &summaryFromContextProvider{}
+	runner, err := New(Config{
+		Provider:   provider,
+		Registry:   tools.NewRegistry(),
+		Tracer:     tracing.NewInMemoryTracer(nil),
+		RunRoot:    t.TempDir(),
+		MemoryRoot: memoryRoot,
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	result, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_recall_effect",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "please review the migration rollout",
+	})
+	assert.NoErr(t, err)
+	assert.Eq(t, "final summary uses recalled memory", result.Summary)
+}
+
+func TestRunner_RunReappliesRecallForResumedTurn(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	err := os.MkdirAll(filepath.Join(memoryRoot, "memory"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(memoryRoot, "memory", "MEMORY.md"),
+		[]byte("# MEMORY\n\nUpdated: 2026-04-20T00:00:00Z\n\n- [turn_learning] alphaonly migrationcheck\n- [turn_learning] betaonly websocketorigin\n"),
+		0o644,
+	)
+	assert.NoErr(t, err)
+
+	hook := &yieldBeforeSecondModelHostHook{}
+	mock := llm.NewMockProvider("mock").
+		QueueToolCall("echo", map[string]any{"msg": "persisted"}).
+		QueueText("done after continue")
+
+	registry := tools.NewRegistry()
+	registry.MustRegister(&hostEchoTool{})
+
+	runner, err := New(Config{
+		Provider:   mock,
+		Registry:   registry,
+		Tracer:     tracing.NewInMemoryTracer(nil),
+		RunRoot:    t.TempDir(),
+		MemoryRoot: memoryRoot,
+		Hooks:      []agentcore.Hook{hook},
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	first, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_resume_recall",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "please verify alphaonly",
+	})
+	assert.NoErr(t, err)
+	assert.Eq(t, session.RunInputRequired, first.WaitState)
+
+	second, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_resume_recall",
+		TurnID:      "turn_002",
+		RunID:       "run_002",
+		AgentID:     "default",
+		Instruction: "please continue betaonly",
+	})
+	assert.NoErr(t, err)
+	assert.Eq(t, "done after continue", second.Summary)
+
+	calls := mock.Calls()
+	assert.Eq(t, 2, len(calls))
+	assert.True(t, containsMessageContains(calls[0].Messages, "system", "alphaonly migrationcheck"))
+	assert.False(t, containsMessageContains(calls[0].Messages, "system", "betaonly websocketorigin"))
+	assert.True(t, containsMessageContains(calls[1].Messages, "system", "betaonly websocketorigin"))
+	assert.False(t, containsMessageContains(calls[1].Messages, "system", "alphaonly migrationcheck"))
+	assert.True(t, containsMessage(calls[1].Messages, "tool", "echo: persisted"))
+	assert.True(t, containsMessage(calls[1].Messages, "user", "please continue betaonly"))
+}
+
 func TestRunner_RunReusesSuspendedRunnerOnContinue(t *testing.T) {
 	t.Parallel()
 
@@ -853,4 +954,19 @@ func containsMessageContains(messages []api.Message, role, content string) bool 
 		}
 	}
 	return false
+}
+
+type summaryFromContextProvider struct{}
+
+func (p *summaryFromContextProvider) Name() string { return "summary-from-context" }
+
+func (p *summaryFromContextProvider) Generate(_ context.Context, req *api.GenerateRequest) (*api.GenerateResult, error) {
+	content := "baseline summary without recalled memory"
+	if containsMessageContains(req.Messages, "system", "always mention migration checklist in final summary") {
+		content = "final summary uses recalled memory"
+	}
+	return &api.GenerateResult{
+		Content:      content,
+		FinishReason: api.FinishFinal,
+	}, nil
 }

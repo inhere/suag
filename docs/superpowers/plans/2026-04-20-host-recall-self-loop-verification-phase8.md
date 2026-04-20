@@ -53,7 +53,7 @@
 **Files:**
 - Modify: `internal/host/intrunner/runner_test.go`
 
-- [ ] **Step 1: 先补一个“memory 影响最终输出”的失败测试**
+- [x] **Step 1: 先补一个“memory 影响最终输出”的失败测试**
 
 目标：
 
@@ -70,15 +70,15 @@
 
 - `TestRunner_RunRecallCanAffectFinalSummary`
 
-- [ ] **Step 2: 运行单测确认新增断言先失败**
+- [x] **Step 2: 运行单测确认新增断言先失败**
 
 Run: `go test ./internal/host/intrunner -run TestRunner_RunRecallCanAffectFinalSummary -v`
 
 Expected:
 
-- 先看到断言失败，证明当前测试确实覆盖了“消费效果”，而不是重复已有 metadata 测试
+- 当前测试先直接通过，说明首轮 run 的 recall 已经真实进入行为层，而不只是 metadata
 
-- [ ] **Step 3: 补最小测试支撑代码**
+- [x] **Step 3: 补最小测试支撑代码**
 
 实现方向：
 
@@ -88,7 +88,7 @@ Expected:
   - recalled memory 是否进入上下文
   - 最终返回是否受其影响
 
-- [ ] **Step 4: 重新运行单测确认通过**
+- [x] **Step 4: 重新运行单测确认通过**
 
 Run: `go test ./internal/host/intrunner -run TestRunner_RunRecallCanAffectFinalSummary -v`
 
@@ -96,7 +96,7 @@ Expected:
 
 - PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add internal/host/intrunner/runner_test.go
@@ -110,7 +110,7 @@ git commit -m "test: verify host recall affects final summary"
 **Files:**
 - Modify: `internal/host/intrunner/runner_test.go`
 
-- [ ] **Step 1: 补一个“continue / resumed run 仍会重新 recall”的失败测试**
+- [x] **Step 1: 补一个“continue / resumed run 仍会重新 recall”的失败测试**
 
 目标：
 
@@ -127,7 +127,7 @@ git commit -m "test: verify host recall affects final summary"
 - resumed run 使用新 instruction 后，provider context 改为命中另一条 memory
 - recalled memory 仍不会被写进 session history transcript
 
-- [ ] **Step 2: 运行单测确认失败点合理**
+- [x] **Step 2: 运行单测确认失败点合理**
 
 Run: `go test ./internal/host/intrunner -run TestRunner_RunReappliesRecallForResumedTurn -v`
 
@@ -135,14 +135,14 @@ Expected:
 
 - FAIL，且失败点落在 resumed run 的 recall 或 history 边界断言
 
-- [ ] **Step 3: 补最小实现或测试辅助逻辑**
+- [x] **Step 3: 补最小实现或测试辅助逻辑**
 
 实现方向：
 
 - 优先只改测试或 intrunner 内极小范围逻辑
 - 如果发现 resumed path 没有重新按 instruction recall，需要只在 `internal/host/intrunner` 内修正
 
-- [ ] **Step 4: 运行定向测试确认通过**
+- [x] **Step 4: 运行定向测试确认通过**
 
 Run: `go test ./internal/host/intrunner -run "TestRunner_RunReusesSuspendedRunnerOnContinue|TestRunner_RunReappliesRecallForResumedTurn" -v`
 
@@ -150,7 +150,7 @@ Expected:
 
 - PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add internal/host/intrunner/runner_test.go internal/host/intrunner/runner.go
@@ -167,7 +167,7 @@ git commit -m "test: verify resumed runs reapply host recall"
 - Modify: `docs/usage/host-internal-self-loop-v0.md`
 - Modify: `AGENTS.md`
 
-- [ ] **Step 1: 判断是否需要补 service 级测试**
+- [x] **Step 1: 判断是否需要补 service 级测试**
 
 判定标准：
 
@@ -178,7 +178,12 @@ git commit -m "test: verify resumed runs reapply host recall"
 
 - `TestService_ContinueTurnKeepsRecallRuntimeOnly`
 
-- [ ] **Step 2: 同步 usage 文档**
+结论：
+
+- 当前 intrunner tests 已经覆盖首轮 run、resumed run、history 不回写三条主断言
+- 本阶段不再额外补 `service_test.go`
+
+- [x] **Step 2: 同步 usage 文档**
 
 文档至少说明：
 
@@ -186,7 +191,7 @@ git commit -m "test: verify resumed runs reapply host recall"
 - 当前已验证 recall 在 resumed turn 会重新按 instruction 选择
 - 当前仍未验证“planner / post-turn hooks 主动消费 recall metadata”
 
-- [ ] **Step 3: 跑本阶段回归测试**
+- [x] **Step 3: 跑本阶段回归测试**
 
 Run:
 
@@ -198,7 +203,7 @@ Expected:
 
 - 全部 PASS
 
-- [ ] **Step 4: 更新进度并提交**
+- [x] **Step 4: 更新进度并提交**
 
 ```bash
 git add AGENTS.md docs/usage/host-learning-retrieval-v0.md docs/usage/host-internal-self-loop-v0.md internal/host/session/service_test.go
@@ -213,3 +218,12 @@ git commit -m "docs: record host recall self-loop verification baseline"
 - 至少有一条测试证明 resumed run 会重新按 instruction recall
 - 仍保持 recalled memory 不回写 session history 的边界
 - 文档明确写出“当前已验证行为”与“尚未承诺行为”
+
+---
+
+## Verification
+
+- [x] `go test ./internal/host/intrunner -run "TestRunner_RunRecallCanAffectFinalSummary|TestRunner_RunReappliesRecallForResumedTurn|TestRunner_RunReusesSuspendedRunnerOnContinue" -v`
+- [x] `go test ./internal/host/intrunner -v`
+- [x] `go test ./internal/host/session -run "ContinueTurn|PostTurn|Recap" -v`
+- [x] `go test ./internal/host/agui ./internal/host/gateway`

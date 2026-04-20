@@ -117,7 +117,27 @@
 
 ---
 
-## 5. 当前边界提醒
+## 5. 当前已验证行为
+
+当前基于 intrunner tests，已经明确验证到：
+
+- recalled formal memory 不只是“进入 metadata”，而是会真实进入 provider context，并影响最终 `summary / output`
+- 首轮 run 会按当前 `Instruction` 做 query-aware lite recall
+- waiting 后的 resumed run 也会在继续前刷新 runtime-only recalled context
+  - 也就是说，`continue_turn` 带来的新 instruction 会重新参与 recall 选择
+  - 不会一直沿用首次挂起时的 recalled lines
+- recalled formal memory 仍然只属于 runtime context
+  - 即使在 resumed run 中刷新 recall，也不会被写回 session history transcript
+
+这意味着当前 v0 已经具备一个最小但真实可用的行为链：
+
+- formal memory 被采纳并落盘
+- 新 turn / resumed turn 会按 instruction 选择 recall
+- recall 会进入模型上下文并影响结果
+
+---
+
+## 6. 当前边界提醒
 
 当前 retrieval 仍然只是 baseline：
 
