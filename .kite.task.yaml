@@ -1,6 +1,0 @@
-
-go-run-axon-server:
-  type: pwsh
-  run: go build ./cmd/axon && ./axon server
-  desc: Run the Axon web server
-
