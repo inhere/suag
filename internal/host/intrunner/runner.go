@@ -65,6 +65,8 @@ type SessionRunner struct {
 
 var errResumeStateUnavailable = fmt.Errorf("waiting runtime is no longer available; start a new turn or reissue the task")
 
+const runtimeContextResolvedToolNamesKey = "resolved_tool_names"
+
 // New creates a host runner backed by the internal agent runtimes.
 func New(cfg Config) (*SessionRunner, error) {
 	if cfg.Provider == nil {
@@ -181,10 +183,13 @@ func (r *SessionRunner) Close() error {
 	return firstErr
 }
 
-func (r *SessionRunner) newAgent(agentID string, mem memory.Store) *agent.Agent {
+func (r *SessionRunner) newAgent(agentID string, mem memory.Store, registry *tools.Registry) *agent.Agent {
 	agentID = strings.TrimSpace(agentID)
 	if agentID == "" {
 		agentID = "default"
+	}
+	if registry == nil {
+		registry = tools.NewRegistry()
 	}
 	return &agent.Agent{
 		ID:        agentID,
@@ -192,7 +197,7 @@ func (r *SessionRunner) newAgent(agentID string, mem memory.Store) *agent.Agent 
 		Soul:      &agent.Soul{Name: agentID},
 		State:     agent.AgentPending,
 		Memory:    mem,
-		Tools:     r.cfg.Registry,
+		Tools:     registry,
 		LLM:       r.cfg.Provider,
 		CreatedAt: time.Now().UTC(),
 	}
@@ -277,12 +282,17 @@ func (r *SessionRunner) resolveRuntime(
 	in session.RuntimeRequest,
 	runMemory *sessionMemory,
 ) (*agent.Agent, agent.Runner, error) {
+	runRegistry := r.resolveRegistry(in.Context)
+
 	if state != nil && state.agent != nil && state.runner != nil && state.runner.GetState() == agent.AgentSuspended {
 		// Suspended runtime keeps the same working memory instance, so refresh the
 		// runtime-only recalled context before resuming with a new instruction.
 		if state.memory != nil {
 			state.memory.SetRecalled(runMemory.recalled)
 		}
+		// Continue turns may narrow or expand the allowed tools. Update the live
+		// agent before resume so subsequent model steps see the resolved subset.
+		state.agent.Tools = runRegistry
 		resumeInstruction := strings.TrimSpace(in.Instruction)
 		resumeSource := "resume_from_state"
 		if resumeInstruction != "" {
@@ -295,7 +305,7 @@ func (r *SessionRunner) resolveRuntime(
 		return state.agent, state.runner, nil
 	}
 
-	a := r.newAgent(in.AgentID, runMemory)
+	a := r.newAgent(in.AgentID, runMemory, runRegistry)
 	runnerCfg := agent.RunnerFactoryConfig{
 		RuntimeKind:   r.runtimeKind(),
 		Storage:       state.storage,
@@ -311,6 +321,50 @@ func (r *SessionRunner) resolveRuntime(
 	}
 	r.setLoopContext(in.SessionID, "initial", "", 0)
 	return a, runner, nil
+}
+
+func (r *SessionRunner) resolveRegistry(ctxMap map[string]any) *tools.Registry {
+	if r == nil || r.cfg.Registry == nil {
+		return tools.NewRegistry()
+	}
+
+	names, ok := resolvedToolNamesFromContext(ctxMap)
+	if !ok {
+		return r.cfg.Registry
+	}
+	return r.cfg.Registry.Subset(names)
+}
+
+func resolvedToolNamesFromContext(ctxMap map[string]any) ([]string, bool) {
+	if len(ctxMap) == 0 {
+		return nil, false
+	}
+
+	raw, ok := ctxMap[runtimeContextResolvedToolNamesKey]
+	if !ok {
+		return nil, false
+	}
+
+	switch value := raw.(type) {
+	case []string:
+		return append([]string(nil), value...), true
+	case []any:
+		names := make([]string, 0, len(value))
+		for _, item := range value {
+			name, ok := item.(string)
+			if !ok {
+				continue
+			}
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			names = append(names, name)
+		}
+		return names, true
+	default:
+		return nil, false
+	}
 }
 
 // ValidateContinue lets the host reject historical waiting runs that lost their

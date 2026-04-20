@@ -7,11 +7,13 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
+	"github.com/inhere/axon/internal/capabilities/runtimecaps"
 	appconfig "github.com/inhere/axon/internal/config"
 	"github.com/inhere/axon/internal/host/acpbridge"
 	"github.com/inhere/axon/internal/host/gateway"
 	"github.com/inhere/axon/internal/host/intrunner"
 	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/axon/internal/platform/tools"
 )
 
 // RunServer starts the axon server, which listens for incoming API requests and manages agent sessions.
@@ -60,9 +62,14 @@ func (a *App) RunServer(ctx context.Context) error {
 func (a *App) buildSessionRunner() (session.Runner, error) {
 	mode := strings.TrimSpace(gkconfig.String("host.acp.mode"))
 	if mode == "" {
+		registry := a.registry
+		if registry == nil {
+			registry = tools.NewRegistry()
+		}
+		resolvedToolNames := a.defaultResolvedToolNames()
 		return intrunner.New(intrunner.Config{
 			Provider:      a.provider,
-			Registry:      a.registry,
+			Registry:      registry.Subset(resolvedToolNames),
 			Tracer:        a.tracer,
 			HITL:          a.hitlMgr,
 			RunRoot:       appconfig.ResolveHostAgentcoreRunRoot(),
@@ -96,4 +103,17 @@ func (a *App) buildSessionRunner() (session.Runner, error) {
 			Command: acpCommand,
 		},
 	})
+}
+
+func (a *App) defaultResolvedToolNames() []string {
+	if a == nil || a.capabilityManager == nil {
+		if a == nil || a.registry == nil {
+			return nil
+		}
+		return a.registry.List()
+	}
+
+	set := a.capabilityManager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
+	resolved := a.capabilityManager.ResolveTurnCapabilities(set)
+	return append([]string(nil), resolved.ToolNames...)
 }

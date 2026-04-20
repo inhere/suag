@@ -98,6 +98,43 @@ func TestRunner_RunEmitsPreparingAndThinkingStates(t *testing.T) {
 	assert.Eq(t, "THINKING", states[1])
 }
 
+func TestRunner_RunUsesResolvedToolSubset(t *testing.T) {
+	t.Parallel()
+
+	registry := tools.NewRegistry()
+	registry.MustRegister(&hostEchoTool{})
+	registry.MustRegister(&hostAnotherTool{})
+
+	mock := llm.NewMockProvider("mock").QueueText("done")
+	runner, err := New(Config{
+		Provider: mock,
+		Registry: registry,
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	_, err = runner.Run(context.Background(), Request{
+		SessionID:   "sess_subset",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "do something",
+		Context: map[string]any{
+			runtimeContextResolvedToolNamesKey: []string{"echo"},
+		},
+	})
+	assert.NoErr(t, err)
+
+	calls := mock.Calls()
+	assert.Eq(t, 1, len(calls))
+	assert.True(t, toolSchemaListed(calls[0].Tools, "echo"))
+	assert.False(t, toolSchemaListed(calls[0].Tools, "another"))
+}
+
 func TestRunner_RunInjectsFormalMemoryIntoProviderContext(t *testing.T) {
 	t.Parallel()
 
@@ -938,6 +975,22 @@ func (e *hostEchoTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	}, nil
 }
 
+type hostAnotherTool struct{}
+
+func (e *hostAnotherTool) Name() string        { return "another" }
+func (e *hostAnotherTool) Description() string { return "another test tool" }
+func (e *hostAnotherTool) Kind() tools.Kind    { return tools.KindNative }
+func (e *hostAnotherTool) Schema() api.ToolSchema {
+	return api.ToolSchema{Name: "another"}
+}
+func (e *hostAnotherTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    call.Name,
+		Content: "another",
+	}, nil
+}
+
 func containsMessage(messages []api.Message, role, content string) bool {
 	for _, msg := range messages {
 		if msg.Role == role && msg.Content == content {
@@ -950,6 +1003,15 @@ func containsMessage(messages []api.Message, role, content string) bool {
 func containsMessageContains(messages []api.Message, role, content string) bool {
 	for _, msg := range messages {
 		if msg.Role == role && strings.Contains(msg.Content, content) {
+			return true
+		}
+	}
+	return false
+}
+
+func toolSchemaListed(schemas []api.ToolSchema, name string) bool {
+	for _, schema := range schemas {
+		if schema.Name == name {
 			return true
 		}
 	}

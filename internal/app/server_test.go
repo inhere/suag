@@ -26,6 +26,7 @@ import (
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
+	agentcoreapi "github.com/inhere/axon/pkg/agentcore/api"
 	_ "modernc.org/sqlite"
 )
 
@@ -72,19 +73,35 @@ func TestBuildSessionRunner_DefaultsToInternalRunnerWithoutACP(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 
+	built := buildDefaultCapabilities(t.TempDir())
+	provider := llm.NewMockProvider("mock").QueueText("done")
 	a := &App{
-		provider:  llm.NewMockProvider("mock"),
-		registry:  tools.NewRegistry(),
-		tracer:    tracing.NewInMemoryTracer(nil),
-		workspace: t.TempDir(),
+		provider:          provider,
+		registry:          built.Registry,
+		capabilityManager: built.Manager,
+		tracer:            tracing.NewInMemoryTracer(nil),
+		workspace:         t.TempDir(),
 	}
 
 	runner, err := a.buildSessionRunner()
 	assert.NoErr(t, err)
 	assert.NotNil(t, runner)
 
-	_, ok := runner.(*intrunner.SessionRunner)
+	internalRunner, ok := runner.(*intrunner.SessionRunner)
 	assert.True(t, ok)
+
+	_, err = internalRunner.Run(context.Background(), session.RuntimeRequest{
+		SessionID:   "sess_runner_default_caps",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "say hi",
+	})
+	assert.NoErr(t, err)
+
+	calls := provider.Calls()
+	assert.Eq(t, 1, len(calls))
+	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "shell_exec"}, toolNamesFromSchemas(calls[0].Tools))
 }
 
 func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {
@@ -232,4 +249,12 @@ func reserveLocalAddr(t *testing.T) string {
 	addr := ln.Addr().String()
 	assert.NoErr(t, ln.Close())
 	return addr
+}
+
+func toolNamesFromSchemas(schemas []agentcoreapi.ToolSchema) []string {
+	names := make([]string, 0, len(schemas))
+	for _, schema := range schemas {
+		names = append(names, schema.Name)
+	}
+	return names
 }
