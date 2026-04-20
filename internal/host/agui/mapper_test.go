@@ -756,6 +756,128 @@ func TestMapEvent_RunStatusMapsToCustomAndSnapshot(t *testing.T) {
 	}
 }
 
+func TestMapEvent_RunStatusIncludesLoopPhaseMetadata(t *testing.T) {
+	t.Parallel()
+
+	event := HostEvent{
+		Type:      session.EventRunStatus,
+		SessionID: "sess_loop",
+		TurnID:    "turn_loop",
+		RunID:     "run_loop",
+		AgentID:   "default",
+		Sequence:  9,
+		Payload: map[string]any{
+			"state": string(session.RunInputRequired),
+			"waitMetadata": map[string]any{
+				"wait_kind": "input_required",
+			},
+		},
+		RunMetadata: map[string]any{
+			"loop_phase":    "resumed",
+			"resume_source": "continue_turn",
+			"continue_mode": "message",
+		},
+	}
+
+	got := MapEvent(event)
+	if len(got) != 2 {
+		t.Fatalf("MapEvent() len = %d, want 2", len(got))
+	}
+
+	customEvent, ok := got[0].(*CustomEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], &CustomEvent{})
+	}
+	customValue, ok := customEvent.Value.(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent()[0].Value type = %T, want map[string]any", customEvent.Value)
+	}
+	customLoop, ok := customValue["loopMetadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent()[0].Value.loopMetadata type = %T, want map[string]any", customValue["loopMetadata"])
+	}
+	if customLoop["loop_phase"] != "resumed" {
+		t.Fatalf("MapEvent()[0].Value.loopMetadata[loop_phase] = %v, want %q", customLoop["loop_phase"], "resumed")
+	}
+	if customLoop["resume_source"] != "continue_turn" {
+		t.Fatalf("MapEvent()[0].Value.loopMetadata[resume_source] = %v, want %q", customLoop["resume_source"], "continue_turn")
+	}
+
+	activityEvent, ok := got[1].(*ActivitySnapshotEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], &ActivitySnapshotEvent{})
+	}
+	content, ok := activityEvent.Content.(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent()[1].Content type = %T, want map[string]any", activityEvent.Content)
+	}
+	loopMetadata, ok := content["loopMetadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent()[1].Content.loopMetadata type = %T, want map[string]any", content["loopMetadata"])
+	}
+	if loopMetadata["continue_mode"] != "message" {
+		t.Fatalf("MapEvent()[1].Content.loopMetadata[continue_mode] = %v, want %q", loopMetadata["continue_mode"], "message")
+	}
+}
+
+func TestMapEvent_RunFinishedIncludesPostTurnHints(t *testing.T) {
+	t.Parallel()
+
+	event := HostEvent{
+		Type:      session.EventRunFinished,
+		SessionID: "sess_post",
+		TurnID:    "turn_post",
+		RunID:     "run_post",
+		AgentID:   "default",
+		Payload: map[string]any{
+			"summary": "final answer",
+		},
+		RunMetadata: map[string]any{
+			"turn_outcome": "completed",
+			"planner_hint": map[string]any{
+				"stage":   "review",
+				"summary": "review the turn",
+			},
+			"next_action_hint": map[string]any{
+				"kind":    "review",
+				"title":   "Review Needed",
+				"message": "Inspect the completed run.",
+			},
+		},
+	}
+
+	got := MapEvent(event)
+	if len(got) != 5 {
+		t.Fatalf("MapEvent() len = %d, want 5", len(got))
+	}
+
+	activityEvent, ok := got[1].(*ActivitySnapshotEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], &ActivitySnapshotEvent{})
+	}
+	content, ok := activityEvent.Content.(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent()[1].Content type = %T, want map[string]any", activityEvent.Content)
+	}
+	if content["turnOutcome"] != "completed" {
+		t.Fatalf("MapEvent()[1].Content.turnOutcome = %v, want %q", content["turnOutcome"], "completed")
+	}
+	plannerHint, ok := content["plannerHint"].(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent()[1].Content.plannerHint type = %T, want map[string]any", content["plannerHint"])
+	}
+	if plannerHint["stage"] != "review" {
+		t.Fatalf("MapEvent()[1].Content.plannerHint[stage] = %v, want %q", plannerHint["stage"], "review")
+	}
+	nextActionHint, ok := content["nextActionHint"].(map[string]any)
+	if !ok {
+		t.Fatalf("MapEvent()[1].Content.nextActionHint type = %T, want map[string]any", content["nextActionHint"])
+	}
+	if nextActionHint["message"] != "Inspect the completed run." {
+		t.Fatalf("MapEvent()[1].Content.nextActionHint[message] = %v, want message", nextActionHint["message"])
+	}
+}
+
 func TestBuildStateSnapshotUsesRunStatusDisplayState(t *testing.T) {
 	t.Parallel()
 
@@ -829,6 +951,158 @@ func TestBuildStateSnapshotUsesRunStatusDisplayState(t *testing.T) {
 	}
 	if waitMetadata["policy"] != "manual_review" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].waitMetadata[policy] = %v, want %q", waitMetadata["policy"], "manual_review")
+	}
+}
+
+func TestBuildStateSnapshotIncludesLoopPhaseMetadataForWaitingRun(t *testing.T) {
+	t.Parallel()
+
+	sessionModel := session.Session{
+		SessionID:  "sess_wait_loop",
+		Title:      "wait loop session",
+		Status:     session.SessionWaiting,
+		LastTurnID: "turn_wait_loop",
+	}
+	events := []HostEvent{
+		{
+			Type:      session.EventRunQueued,
+			SessionID: "sess_wait_loop",
+			TurnID:    "turn_wait_loop",
+			RunID:     "run_wait_loop",
+			AgentID:   "default",
+			Sequence:  1,
+			CreatedAt: time.Date(2026, 4, 20, 13, 0, 0, 0, time.UTC),
+			RunMetadata: map[string]any{
+				"loop_phase":    "resumed",
+				"resume_source": "continue_turn",
+				"continue_mode": "message",
+			},
+		},
+		{
+			Type:      session.EventRunStatus,
+			SessionID: "sess_wait_loop",
+			TurnID:    "turn_wait_loop",
+			RunID:     "run_wait_loop",
+			AgentID:   "default",
+			Sequence:  2,
+			CreatedAt: time.Date(2026, 4, 20, 13, 0, 1, 0, time.UTC),
+			Payload: map[string]any{
+				"state": string(session.RunInputRequired),
+				"waitMetadata": map[string]any{
+					"wait_kind": "input_required",
+				},
+			},
+			RunMetadata: map[string]any{
+				"loop_phase":    "resumed",
+				"resume_source": "continue_turn",
+				"continue_mode": "message",
+			},
+		},
+	}
+
+	got := BuildStateSnapshot(sessionModel, events, nil)
+	snapshot, ok := got.Snapshot.(map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot type = %T, want map[string]any", got.Snapshot)
+	}
+
+	rawRuns, ok := snapshot["runs"].([]map[string]any)
+	if !ok || len(rawRuns) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs = %T/%d, want []map[string]any len 1", snapshot["runs"], len(rawRuns))
+	}
+	loopMetadata, ok := rawRuns[0]["loopMetadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].loopMetadata type = %T, want map[string]any", rawRuns[0]["loopMetadata"])
+	}
+	if loopMetadata["loop_phase"] != "resumed" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].loopMetadata[loop_phase] = %v, want %q", loopMetadata["loop_phase"], "resumed")
+	}
+	if loopMetadata["resume_source"] != "continue_turn" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].loopMetadata[resume_source] = %v, want %q", loopMetadata["resume_source"], "continue_turn")
+	}
+	waitMetadata, ok := rawRuns[0]["waitMetadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].waitMetadata type = %T, want map[string]any", rawRuns[0]["waitMetadata"])
+	}
+	if waitMetadata["wait_kind"] != "input_required" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].waitMetadata[wait_kind] = %v, want %q", waitMetadata["wait_kind"], "input_required")
+	}
+}
+
+func TestBuildStateSnapshotIncludesPostTurnHintsForTerminalRun(t *testing.T) {
+	t.Parallel()
+
+	sessionModel := session.Session{
+		SessionID:  "sess_terminal_post",
+		Title:      "terminal post session",
+		Status:     session.SessionOpen,
+		LastTurnID: "turn_terminal_post",
+	}
+	events := []HostEvent{
+		{
+			Type:      session.EventRunStarted,
+			SessionID: "sess_terminal_post",
+			TurnID:    "turn_terminal_post",
+			RunID:     "run_terminal_post",
+			AgentID:   "default",
+			Sequence:  1,
+			CreatedAt: time.Date(2026, 4, 20, 13, 5, 0, 0, time.UTC),
+			RunMetadata: map[string]any{
+				"loop_phase":    "initial",
+				"continue_mode": "start",
+			},
+		},
+		{
+			Type:      session.EventRunFinished,
+			SessionID: "sess_terminal_post",
+			TurnID:    "turn_terminal_post",
+			RunID:     "run_terminal_post",
+			AgentID:   "default",
+			Sequence:  2,
+			CreatedAt: time.Date(2026, 4, 20, 13, 5, 1, 0, time.UTC),
+			Payload: map[string]any{
+				"summary": "terminal summary",
+			},
+			RunMetadata: map[string]any{
+				"loop_phase":   "initial",
+				"turn_outcome": "completed",
+				"planner_hint": map[string]any{
+					"stage": "review",
+				},
+				"next_action_hint": map[string]any{
+					"kind":    "review",
+					"message": "Inspect the completed run.",
+				},
+			},
+		},
+	}
+
+	got := BuildStateSnapshot(sessionModel, events, nil)
+	snapshot, ok := got.Snapshot.(map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot type = %T, want map[string]any", got.Snapshot)
+	}
+
+	rawRuns, ok := snapshot["runs"].([]map[string]any)
+	if !ok || len(rawRuns) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs = %T/%d, want []map[string]any len 1", snapshot["runs"], len(rawRuns))
+	}
+	if rawRuns[0]["turnOutcome"] != "completed" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].turnOutcome = %v, want %q", rawRuns[0]["turnOutcome"], "completed")
+	}
+	nextActionHint, ok := rawRuns[0]["nextActionHint"].(map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].nextActionHint type = %T, want map[string]any", rawRuns[0]["nextActionHint"])
+	}
+	if nextActionHint["kind"] != "review" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].nextActionHint[kind] = %v, want %q", nextActionHint["kind"], "review")
+	}
+	plannerHint, ok := rawRuns[0]["plannerHint"].(map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].plannerHint type = %T, want map[string]any", rawRuns[0]["plannerHint"])
+	}
+	if plannerHint["stage"] != "review" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].plannerHint[stage] = %v, want %q", plannerHint["stage"], "review")
 	}
 }
 

@@ -1,7 +1,7 @@
 # Host State Snapshot v0
 
 > 状态：Current
-> 更新时间：2026-04-16
+> 更新时间：2026-04-20
 > Schema：`axon.host.state.v0`
 > Version：`v0`
 
@@ -164,6 +164,11 @@
 - `latestMessageText`
 - `summary`
 - `externalTaskIds`
+- `waitMetadata`
+- `loopMetadata`
+- `turnOutcome`
+- `plannerHint`
+- `nextActionHint`
 - `eventCount`
 - `updatedAt`
 
@@ -219,6 +224,12 @@
 - `turn_outcome`
   - 当前值：`completed` / `failed` / `canceled`
   - 只在 terminal lifecycle 后写入
+- `planner_hint`
+  - 当前是轻量 planning 提示
+  - 主要用于后续 review / skill 沉淀 / follow-up 建议
+- `next_action_hint`
+  - 当前是 Host / UI 友好的下一步动作提示
+  - 当前不直接驱动自动编排
 
 边界说明：
 
@@ -231,9 +242,24 @@
 
 当前消费建议：
 
-- 在 Phase 4 的 AG-UI 映射收口完成前，客户端不要假设 `STATE_SNAPSHOT.runs` 已稳定直出全部 self-loop metadata
-- 当前可以把它视为 Host 持久化层与后续映射层的稳定字段约定
-- 已经直接暴露到快照中的，仍以 `displayState`、`summary`、`latestMessageText`、`waitMetadata` 为主
+- 当前 `STATE_SNAPSHOT.runs` 已开始稳定直出：
+  - `waitMetadata`
+  - `loopMetadata`
+  - `turnOutcome`
+  - `plannerHint`
+  - `nextActionHint`
+- 推荐的字段分层：
+  - `displayState`
+    - 用于主状态展示
+  - `waitMetadata`
+    - 用于 waiting 原因和恢复方式
+  - `loopMetadata`
+    - 用于 self-loop 阶段诊断，例如是否 resumed
+  - `turnOutcome`
+    - 用于 terminal 结果展示
+  - `plannerHint` / `nextActionHint`
+    - 当前更适合 secondary UI、调试面板、后续动作建议
+- 当前 `v0` 不承诺完整 planner UI，前端不要把 `plannerHint` / `nextActionHint` 当成强约束工作流
 
 ---
 

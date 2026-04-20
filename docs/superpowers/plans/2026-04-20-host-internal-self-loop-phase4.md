@@ -227,7 +227,7 @@ git commit -m "feat: add host post-turn action hooks"
 - Test: `internal/host/agui/mapper_test.go`
 - Modify: `docs/usage/host-state-snapshot-v0.md`
 
-- [ ] **Step 1: 写出 AG-UI 映射测试**
+- [x] **Step 1: 写出 AG-UI 映射测试**
 
 补充测试覆盖：
 
@@ -238,7 +238,7 @@ git commit -m "feat: add host post-turn action hooks"
 Run: `go test ./internal/host/agui -run "LoopPhase|PostTurn|NextAction" -v`
 Expected: 至少一组新增断言先失败
 
-- [ ] **Step 2: 在 mapper 中统一映射新字段**
+- [x] **Step 2: 在 mapper 中统一映射新字段**
 
 实现目标：
 
@@ -246,7 +246,7 @@ Expected: 至少一组新增断言先失败
 - `waitMetadata`、`loop metadata`、`post-turn hints` 的层次保持清晰
 - 不额外引入前端临时兼容字段
 
-- [ ] **Step 3: 更新快照文档**
+- [x] **Step 3: 更新快照文档**
 
 补充说明：
 
@@ -254,7 +254,7 @@ Expected: 至少一组新增断言先失败
 - 哪些字段只用于调试 / 诊断
 - 当前 v0 仍不承诺完整 planner UI
 
-- [ ] **Step 4: 跑测试并提交**
+- [x] **Step 4: 跑测试并提交**
 
 Run: `go test ./internal/host/agui`
 Expected: PASS

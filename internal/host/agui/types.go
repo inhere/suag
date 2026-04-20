@@ -93,6 +93,9 @@ type HostEvent struct {
 	AgentID   string
 	Sequence  int64
 	Payload   any
+	// RunMetadata mirrors host-persisted run metadata so AG-UI mapping can use
+	// the stable host contract instead of re-deriving loop semantics from events.
+	RunMetadata map[string]any
 	CreatedAt time.Time
 }
 

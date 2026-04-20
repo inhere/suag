@@ -29,6 +29,7 @@ type wsCommandRunner interface {
 
 type wsSessionStore interface {
 	GetSession(ctx context.Context, sessionID string) (session.Session, error)
+	GetRun(ctx context.Context, runID string) (session.Run, error)
 	ListEventsBySession(ctx context.Context, sessionID string, afterSequence int64) ([]session.RunEvent, error)
 	ListExternalTasksBySession(ctx context.Context, sessionID string) ([]session.ExternalTask, error)
 }
@@ -149,21 +150,7 @@ func buildWSStateSnapshot(ctx context.Context, store wsSessionStore, sessionID s
 		return agui.StateSnapshotEvent{}, err
 	}
 
-	events := make([]agui.HostEvent, 0, len(runEvents))
-	for _, event := range runEvents {
-		events = append(events, agui.HostEvent{
-			Type:      event.EventType,
-			SessionID: event.SessionID,
-			TurnID:    event.TurnID,
-			RunID:     event.RunID,
-			AgentID:   event.AgentID,
-			Sequence:  event.Sequence,
-			Payload:   event.Payload,
-			CreatedAt: event.CreatedAt,
-		})
-	}
-
-	return agui.BuildStateSnapshot(sessionModel, events, externalTasks), nil
+	return agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(store, ctx, runEvents), externalTasks), nil
 }
 
 func handleWSCommand(ctx context.Context, sub Subscription, sessionSvc wsCommandRunner, cmd wsCommand) (map[string]any, error) {

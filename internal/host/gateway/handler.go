@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -295,7 +296,7 @@ func (h *Handler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(runEvents), externalTasks)
+	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(h.sessionStore, r.Context(), runEvents), externalTasks)
 	snapshotPayload, _ := snapshot.Snapshot.(map[string]any)
 
 	respondJSON(w, http.StatusOK, getSessionResponse{
@@ -344,7 +345,7 @@ func (h *Handler) HandleGetRunDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(runEvents), externalTasks)
+	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(h.sessionStore, r.Context(), runEvents), externalTasks)
 	snapshotPayload, _ := snapshot.Snapshot.(map[string]any)
 	runs := snapshotSliceField(snapshotPayload, "runs")
 	run := findRunSnapshot(runs, runID)
@@ -576,18 +577,38 @@ func mapMemoryCandidateResponse(candidate session.MemoryCandidate) memoryCandida
 	}
 }
 
-func mapSessionEventsForSnapshot(events []session.RunEvent) []agui.HostEvent {
+func mapSessionEventsForSnapshot(store interface {
+	GetRun(ctx context.Context, runID string) (session.Run, error)
+}, ctx context.Context, events []session.RunEvent) []agui.HostEvent {
+	runMetadataByRunID := make(map[string]map[string]any)
+	if store != nil {
+		for _, event := range events {
+			if strings.TrimSpace(event.RunID) == "" {
+				continue
+			}
+			if _, ok := runMetadataByRunID[event.RunID]; ok {
+				continue
+			}
+			runModel, err := store.GetRun(ctx, event.RunID)
+			if err != nil || len(runModel.Metadata) == 0 {
+				continue
+			}
+			runMetadataByRunID[event.RunID] = cloneSnapshotMap(runModel.Metadata)
+		}
+	}
+
 	out := make([]agui.HostEvent, 0, len(events))
 	for _, event := range events {
 		out = append(out, agui.HostEvent{
-			Type:      event.EventType,
-			SessionID: event.SessionID,
-			TurnID:    event.TurnID,
-			RunID:     event.RunID,
-			AgentID:   event.AgentID,
-			Sequence:  event.Sequence,
-			Payload:   event.Payload,
-			CreatedAt: event.CreatedAt,
+			Type:        event.EventType,
+			SessionID:   event.SessionID,
+			TurnID:      event.TurnID,
+			RunID:       event.RunID,
+			AgentID:     event.AgentID,
+			Sequence:    event.Sequence,
+			Payload:     event.Payload,
+			RunMetadata: cloneSnapshotMap(runMetadataByRunID[event.RunID]),
+			CreatedAt:   event.CreatedAt,
 		})
 	}
 	return out
@@ -642,6 +663,17 @@ func filterExternalTaskResponsesByRunID(tasks []externalTaskResponse, runID stri
 	return filtered
 }
 
+func cloneSnapshotMap(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(src))
+	for key, value := range src {
+		out[key] = value
+	}
+	return out
+}
+
 func (h *Handler) buildSessionPreview(r *http.Request, sessionModel session.Session) (string, error) {
 	externalTasks, err := h.sessionStore.ListExternalTasksBySession(r.Context(), sessionModel.SessionID)
 	if err != nil {
@@ -652,7 +684,7 @@ func (h *Handler) buildSessionPreview(r *http.Request, sessionModel session.Sess
 		return "", err
 	}
 
-	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(runEvents), externalTasks)
+	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(h.sessionStore, r.Context(), runEvents), externalTasks)
 	snapshotPayload, _ := snapshot.Snapshot.(map[string]any)
 	return snapshotPreview(snapshotPayload), nil
 }

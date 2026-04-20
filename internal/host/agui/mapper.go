@@ -32,6 +32,7 @@ func MapEvent(event HostEvent) []Event {
 				"type":           event.Type,
 				"payload":        event.Payload,
 				"waitMetadata":   waitMetadataFromPayload(event.Payload),
+				"loopMetadata":   loopMetadataFromRunMetadata(event.RunMetadata),
 				"externalTaskId": externalTaskIDFromPayload(event.Payload),
 			}), now),
 			buildRunActivitySnapshot(now, event, status),
@@ -253,6 +254,10 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 					"summary":           "",
 					"externalTaskIds":   []string{},
 					"waitMetadata":      map[string]any{},
+					"loopMetadata":      map[string]any{},
+					"turnOutcome":       "",
+					"plannerHint":       map[string]any{},
+					"nextActionHint":    map[string]any{},
 					"eventCount":        0,
 					"updatedAt":         "",
 				})
@@ -366,6 +371,10 @@ func buildRunActivitySnapshot(now int64, event HostEvent, status string) *Activi
 		"agentId":        event.AgentID,
 		"status":         status,
 		"waitMetadata":   waitMetadataFromPayload(event.Payload),
+		"loopMetadata":   loopMetadataFromRunMetadata(event.RunMetadata),
+		"turnOutcome":    turnOutcomeFromRunMetadata(event.RunMetadata),
+		"plannerHint":    plannerHintFromRunMetadata(event.RunMetadata),
+		"nextActionHint": nextActionHintFromRunMetadata(event.RunMetadata),
 		"externalTaskId": externalTaskIDFromPayload(event.Payload),
 	}), now)
 }
@@ -406,6 +415,58 @@ func waitMetadataFromPayload(payload any) map[string]any {
 	out := make(map[string]any, len(metadata))
 	for key, value := range metadata {
 		out[key] = value
+	}
+	return out
+}
+
+func loopMetadataFromRunMetadata(metadata map[string]any) map[string]any {
+	if len(metadata) == 0 {
+		return map[string]any{}
+	}
+
+	out := map[string]any{}
+	for _, key := range []string{"loop_phase", "resume_source", "continue_mode"} {
+		if value, ok := metadata[key]; ok {
+			out[key] = value
+		}
+	}
+	if len(out) == 0 {
+		return map[string]any{}
+	}
+	return out
+}
+
+func turnOutcomeFromRunMetadata(metadata map[string]any) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	value, _ := metadata["turn_outcome"].(string)
+	return strings.TrimSpace(value)
+}
+
+func plannerHintFromRunMetadata(metadata map[string]any) map[string]any {
+	return hintMapFromMetadata(metadata, "planner_hint")
+}
+
+func nextActionHintFromRunMetadata(metadata map[string]any) map[string]any {
+	return hintMapFromMetadata(metadata, "next_action_hint")
+}
+
+func hintMapFromMetadata(metadata map[string]any, key string) map[string]any {
+	if len(metadata) == 0 {
+		return map[string]any{}
+	}
+	raw, ok := metadata[key]
+	if !ok {
+		return map[string]any{}
+	}
+	values, ok := raw.(map[string]any)
+	if !ok || len(values) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(values))
+	for field, value := range values {
+		out[field] = value
 	}
 	return out
 }
@@ -529,6 +590,10 @@ func mergeRunSnapshot(target map[string]any, event HostEvent) {
 	target["latestEventType"] = event.Type
 	target["eventCount"] = target["eventCount"].(int) + 1
 	target["updatedAt"] = formatEventTime(event.CreatedAt)
+	target["loopMetadata"] = loopMetadataFromRunMetadata(event.RunMetadata)
+	target["turnOutcome"] = turnOutcomeFromRunMetadata(event.RunMetadata)
+	target["plannerHint"] = plannerHintFromRunMetadata(event.RunMetadata)
+	target["nextActionHint"] = nextActionHintFromRunMetadata(event.RunMetadata)
 
 	if event.Type == session.EventRunStatus {
 		target["waitMetadata"] = waitMetadataFromPayload(event.Payload)

@@ -1213,6 +1213,85 @@ func TestServer_ContinueTurnRunDetailPreservesResumedLoopMetadata(t *testing.T) 
 	}
 }
 
+func TestServer_GetRunDetailIncludesPostTurnHints(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	svc := session.NewService(store, bus, &fakeGatewayRunner{}, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 20, 14, 0, 0, 0, time.UTC)
+		},
+		PostTurnActionHooks: []session.PostTurnActionHook{
+			&gatewayPostTurnHook{},
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "post turn hints",
+	})
+
+	turnResp := postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "finish with follow-up hints",
+		"initiator_type": "user",
+	})
+	if turnResp.RunID == "" {
+		t.Fatal("start turn response missing run_id")
+	}
+
+	runResp := getJSON[map[string]any](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/runs/"+turnResp.RunID)
+	run, ok := runResp["run"].(map[string]any)
+	if !ok {
+		t.Fatalf("get run detail run type = %T, want map[string]any", runResp["run"])
+	}
+	if run["turnOutcome"] != "completed" {
+		t.Fatalf("get run detail run.turnOutcome = %v, want %q", run["turnOutcome"], "completed")
+	}
+	plannerHint, ok := run["plannerHint"].(map[string]any)
+	if !ok {
+		t.Fatalf("get run detail run.plannerHint type = %T, want map[string]any", run["plannerHint"])
+	}
+	if plannerHint["stage"] != "review" {
+		t.Fatalf("get run detail run.plannerHint[stage] = %v, want %q", plannerHint["stage"], "review")
+	}
+	nextActionHint, ok := run["nextActionHint"].(map[string]any)
+	if !ok {
+		t.Fatalf("get run detail run.nextActionHint type = %T, want map[string]any", run["nextActionHint"])
+	}
+	if nextActionHint["message"] != "Inspect the completed run." {
+		t.Fatalf("get run detail run.nextActionHint[message] = %v, want message", nextActionHint["message"])
+	}
+
+	sessionResp := getJSON[map[string]any](t, ts.URL+"/api/sessions/"+createResp.SessionID)
+	rawRuns, ok := sessionResp["runs"].([]any)
+	if !ok {
+		t.Fatalf("get session runs type = %T, want []any", sessionResp["runs"])
+	}
+	found := false
+	for _, raw := range rawRuns {
+		item, ok := raw.(map[string]any)
+		if !ok || item["runId"] != turnResp.RunID {
+			continue
+		}
+		if item["turnOutcome"] != "completed" {
+			t.Fatalf("get session runs turnOutcome = %v, want %q", item["turnOutcome"], "completed")
+		}
+		found = true
+	}
+	if !found {
+		t.Fatalf("did not find terminal run %q in session snapshot", turnResp.RunID)
+	}
+
+	_ = ctx
+}
+
 func TestServer_StopTurnOverWebSocketCancelsActiveRun(t *testing.T) {
 	t.Parallel()
 
@@ -1796,6 +1875,22 @@ type fakeGatewayRunner struct{}
 
 func (fakeGatewayRunner) Run(context.Context, session.RuntimeRequest) (session.RuntimeResult, error) {
 	return session.RuntimeResult{Summary: "ok"}, nil
+}
+
+type gatewayPostTurnHook struct{}
+
+func (gatewayPostTurnHook) OnPostTurnAction(context.Context, session.PostTurnActionInput) (*session.PostTurnActionResult, error) {
+	return &session.PostTurnActionResult{
+		PlannerHint: &session.PlannerHint{
+			Stage:   "review",
+			Summary: "review the completed turn",
+		},
+		NextActionHint: &session.NextActionHint{
+			Kind:    "review",
+			Title:   "Review Needed",
+			Message: "Inspect the completed run.",
+		},
+	}, nil
 }
 
 type authRequiredGatewayRunner struct{}
