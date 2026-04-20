@@ -92,6 +92,48 @@ func TestService_StartTurnCreatesQueuedRunAndPublishesEvent(t *testing.T) {
 	}
 }
 
+func TestService_StartTurnStoresInitialLoopMetadataOnTerminalRun(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "run-output",
+		},
+	}
+	now := time.Date(2026, 4, 20, 9, 0, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_loop_initial",
+		AgentID:       "default",
+		UserMessage:   "first run",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	runModel, err := store.GetRun(ctx, result.RunID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if runModel.Metadata["loop_phase"] != "initial" {
+		t.Fatalf("run metadata loop_phase = %v, want %q", runModel.Metadata["loop_phase"], "initial")
+	}
+	if runModel.Metadata["continue_mode"] != "start" {
+		t.Fatalf("run metadata continue_mode = %v, want %q", runModel.Metadata["continue_mode"], "start")
+	}
+	if runModel.Metadata["turn_outcome"] != "completed" {
+		t.Fatalf("run metadata turn_outcome = %v, want %q", runModel.Metadata["turn_outcome"], "completed")
+	}
+}
+
 func TestService_ContinueTurnCreatesNewTurnForExistingWaitingSession(t *testing.T) {
 	t.Parallel()
 
@@ -182,6 +224,80 @@ func TestService_ContinueTurnCreatesNewTurnForExistingWaitingSession(t *testing.
 	}
 	if bus.events[5].Sequence != 6 {
 		t.Fatalf("bus.events[5].Sequence = %d, want %d", bus.events[5].Sequence, 6)
+	}
+}
+
+func TestService_ContinueTurnStoresResumedLoopMetadata(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 20, 9, 30, 0, 0, time.UTC)
+
+	waitingRunner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, waitingRunner, ServiceConfig{
+		Now: func() time.Time { return now },
+	})
+
+	firstResult, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_loop_resume",
+		AgentID:       "default",
+		UserMessage:   "need more input",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	svc.runner = &fakeRunner{
+		result: RuntimeResult{
+			Summary: "continued",
+		},
+	}
+	svc.now = func() time.Time { return now.Add(2 * time.Minute) }
+
+	secondResult, err := svc.ContinueTurn(ctx, ContinueTurnInput{
+		SessionID:     "sess_loop_resume",
+		AgentID:       "default",
+		Message:       "please continue",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("ContinueTurn() error = %v", err)
+	}
+
+	runModel, err := store.GetRun(ctx, secondResult.RunID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if runModel.ResumeFromRunID != firstResult.RunID {
+		t.Fatalf("run ResumeFromRunID = %q, want %q", runModel.ResumeFromRunID, firstResult.RunID)
+	}
+	if runModel.Metadata["loop_phase"] != "resumed" {
+		t.Fatalf("run metadata loop_phase = %v, want %q", runModel.Metadata["loop_phase"], "resumed")
+	}
+	if runModel.Metadata["resume_source"] != "continue_turn" {
+		t.Fatalf("run metadata resume_source = %v, want %q", runModel.Metadata["resume_source"], "continue_turn")
+	}
+	if runModel.Metadata["continue_mode"] != "message" {
+		t.Fatalf("run metadata continue_mode = %v, want %q", runModel.Metadata["continue_mode"], "message")
+	}
+	if runModel.Metadata["turn_outcome"] != "completed" {
+		t.Fatalf("run metadata turn_outcome = %v, want %q", runModel.Metadata["turn_outcome"], "completed")
 	}
 }
 

@@ -266,6 +266,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 		ResumeFromRunID: resumeFromRunID,
 		State:           RunQueued,
 		StartedAt:       now,
+		Metadata:        s.initialRunMetadata(createIfMissing),
 	}
 	if err := s.store.CreateRun(ctx, runModel); err != nil {
 		return StartTurnResult{}, fmt.Errorf("create run: %w", err)
@@ -658,6 +659,11 @@ func (s *Service) persistLifecycleState(
 	if err := s.store.UpdateRunLifecycle(ctx, runID, runState, summary, failureCode, &finishedAt); err != nil {
 		return fmt.Errorf("update run lifecycle: %w", err)
 	}
+	if err := s.updateRunMetadata(ctx, runID, map[string]any{
+		"turn_outcome": string(turnOutcomeFromRunState(runState)),
+	}); err != nil {
+		return fmt.Errorf("update run terminal metadata: %w", err)
+	}
 	if err := s.store.UpdateTurnStatus(ctx, turnID, turnStatus, &finishedAt); err != nil {
 		return fmt.Errorf("update turn status: %w", err)
 	}
@@ -1042,4 +1048,48 @@ func validateTurnRequest(sessionID, agentID, message string, initiatorType Initi
 		return fmt.Errorf("initiator type is required")
 	}
 	return nil
+}
+
+func (s *Service) initialRunMetadata(createIfMissing bool) map[string]any {
+	metadata := map[string]any{}
+	if createIfMissing {
+		metadata["loop_phase"] = string(LoopPhaseInitial)
+		metadata["continue_mode"] = string(ContinueModeStart)
+		return metadata
+	}
+	metadata["loop_phase"] = string(LoopPhaseResumed)
+	metadata["resume_source"] = "continue_turn"
+	metadata["continue_mode"] = string(ContinueModeMessage)
+	return metadata
+}
+
+func (s *Service) updateRunMetadata(ctx context.Context, runID string, extra map[string]any) error {
+	if s == nil || s.store == nil || len(extra) == 0 {
+		return nil
+	}
+
+	runModel, err := s.store.GetRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+	if runModel.Metadata == nil {
+		runModel.Metadata = map[string]any{}
+	}
+	for key, value := range extra {
+		runModel.Metadata[key] = value
+	}
+	return s.store.UpdateRunMetadata(ctx, runID, runModel.Metadata)
+}
+
+func turnOutcomeFromRunState(state RunState) TurnOutcome {
+	switch state {
+	case RunCompleted:
+		return TurnOutcomeCompleted
+	case RunFailed:
+		return TurnOutcomeFailed
+	case RunCanceled:
+		return TurnOutcomeCanceled
+	default:
+		return ""
+	}
 }

@@ -190,6 +190,8 @@
   - `displayState` 可能会是 `input_required` 或 `auth_required`
   - `input_required` 表示可继续通过 `continue_turn` 追加用户输入
   - `auth_required` 表示需要通过 HITL / approval 响应恢复，不应继续走 `continue_turn`
+  - 当前这类 waiting run 的结构化等待原因优先放在 `waitMetadata`
+  - `waitMetadata` 只表达“为什么现在停住了、如何恢复”，不负责表达整个 self-loop 生命周期
 - 如果 Host 当前走的是默认 internal runner
   - 运行前会先经过 `preparing -> thinking`
   - 当前尚未补齐更细粒度的内部 tool / reasoning 映射，先以这两个中间态作为最小可视反馈
@@ -202,6 +204,36 @@
   - 允许一个 run 关联多个外部任务
 - `externalTaskId`
   - 当前增量 runtime 事件与 AG-UI 映射会尽量携带稳定的 `externalTaskId`，便于把 `externalActivities` / `externalMessages` 与 `externalTasks` 对齐
+
+当前 Host 还会在 run 持久化层维护一组 self-loop metadata，作为后续 snapshot / AG-UI 映射的稳定来源：
+
+- `loop_phase`
+  - 当前值：`initial` / `resumed`
+  - 表示该 run 是首轮执行还是等待后的恢复执行
+- `resume_source`
+  - 当前首轮 run 为空
+  - `continue_turn` 创建的新 run 当前会写为 `continue_turn`
+- `continue_mode`
+  - 当前值：`start` / `message`
+  - 表示 run 是普通启动，还是由继续消息触发
+- `turn_outcome`
+  - 当前值：`completed` / `failed` / `canceled`
+  - 只在 terminal lifecycle 后写入
+
+边界说明：
+
+- `waitMetadata`
+  - 面向“当前为什么停住”
+  - 典型用于 `input_required` / `auth_required` / `external_running`
+- self-loop metadata
+  - 面向“这一轮 run 处在 self-loop 的哪个阶段”
+  - 典型用于恢复诊断、终态判断、后续 planner-lite / post-turn action hook
+
+当前消费建议：
+
+- 在 Phase 4 的 AG-UI 映射收口完成前，客户端不要假设 `STATE_SNAPSHOT.runs` 已稳定直出全部 self-loop metadata
+- 当前可以把它视为 Host 持久化层与后续映射层的稳定字段约定
+- 已经直接暴露到快照中的，仍以 `displayState`、`summary`、`latestMessageText`、`waitMetadata` 为主
 
 ---
 

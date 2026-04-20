@@ -278,6 +278,26 @@ func (s *SQLiteStore) UpdateRunLifecycle(ctx context.Context, runID string, stat
 	return nil
 }
 
+func (s *SQLiteStore) UpdateRunMetadata(ctx context.Context, runID string, metadata map[string]any) error {
+	if err := validateID("run", runID); err != nil {
+		return err
+	}
+	raw, err := marshalJSON(metadata)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE runs
+		SET metadata_json = ?
+		WHERE run_id = ?
+	`, raw, runID)
+	if err != nil {
+		return fmt.Errorf("update run metadata: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) GetRun(ctx context.Context, runID string) (Run, error) {
 	if err := validateID("run", runID); err != nil {
 		return Run{}, err

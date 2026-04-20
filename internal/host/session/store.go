@@ -14,6 +14,7 @@ type Store interface {
 	UpdateTurnStatus(ctx context.Context, turnID string, status TurnStatus, completedAt *time.Time) error
 	CreateRun(ctx context.Context, run Run) error
 	UpdateRunLifecycle(ctx context.Context, runID string, state RunState, summary string, failureCode string, endedAt *time.Time) error
+	UpdateRunMetadata(ctx context.Context, runID string, metadata map[string]any) error
 	GetRun(ctx context.Context, runID string) (Run, error)
 	AppendEvent(ctx context.Context, event RunEvent) (RunEvent, error)
 	ListEventsBySession(ctx context.Context, sessionID string, afterSequence int64) ([]RunEvent, error)

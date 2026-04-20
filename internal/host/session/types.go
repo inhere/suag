@@ -7,6 +7,14 @@ type TurnStatus string
 type RunState string
 type InitiatorType string
 type MemoryCandidateStatus string
+// LoopPhase tracks whether a host run is the first execution attempt or a
+// resume of a previously waiting turn.
+type LoopPhase string
+// ContinueMode records which host-side continue path produced the run.
+type ContinueMode string
+// TurnOutcome captures the final host outcome written after a run reaches a
+// terminal lifecycle state.
+type TurnOutcome string
 
 const (
 	SessionOpen     SessionStatus = "OPEN"
@@ -49,6 +57,22 @@ const (
 	MemoryCandidateRendered MemoryCandidateStatus = "rendered"
 	MemoryCandidateApplied  MemoryCandidateStatus = "applied"
 	MemoryCandidateRejected MemoryCandidateStatus = "rejected"
+)
+
+const (
+	LoopPhaseInitial LoopPhase = "initial"
+	LoopPhaseResumed LoopPhase = "resumed"
+)
+
+const (
+	ContinueModeStart   ContinueMode = "start"
+	ContinueModeMessage ContinueMode = "message"
+)
+
+const (
+	TurnOutcomeCompleted TurnOutcome = "completed"
+	TurnOutcomeFailed    TurnOutcome = "failed"
+	TurnOutcomeCanceled  TurnOutcome = "canceled"
 )
 
 type Session struct {
