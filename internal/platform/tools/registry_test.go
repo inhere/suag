@@ -185,6 +185,79 @@ func TestRegistry_ListTools_IsStableAndSortedByName(t *testing.T) {
 	}
 }
 
+func TestRegistry_Subset_ReturnsIndependentExecutableSubset(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(&captureTool{name: "search", result: "search:ok"})
+	reg.Register(&captureTool{name: "write_file", result: "write:ok"})
+	reg.Register(&captureTool{name: "shell", result: "shell:ok"})
+
+	subset := reg.Subset([]string{"write_file", "missing", "search"})
+	if subset == reg {
+		t.Fatal("Subset returned original registry, want a new registry")
+	}
+
+	schemas, err := subset.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("ListTools error: %v", err)
+	}
+	if len(schemas) != 2 {
+		t.Fatalf("subset schemas = %d, want 2", len(schemas))
+	}
+	if schemas[0].Name != "search" || schemas[1].Name != "write_file" {
+		t.Fatalf("subset schema names = [%s %s], want [search write_file]", schemas[0].Name, schemas[1].Name)
+	}
+
+	result, err := subset.ExecuteTool(context.Background(), api.ToolCall{
+		Name:      "write_file",
+		Arguments: map[string]any{"msg": "hello"},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool error: %v", err)
+	}
+	if result.Content != "write:ok" {
+		t.Fatalf("result content = %q, want write:ok", result.Content)
+	}
+
+	if _, err := subset.ExecuteTool(context.Background(), api.ToolCall{Name: "shell"}); err == nil {
+		t.Fatal("expected subset ExecuteTool to reject tools outside subset")
+	}
+
+	originalSchemas, err := reg.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("original ListTools error: %v", err)
+	}
+	if len(originalSchemas) != 3 {
+		t.Fatalf("original schemas = %d, want 3", len(originalSchemas))
+	}
+}
+
+func TestRegistry_Subset_SkipsUnknownToolsAndKeepsEmptySubsetUsable(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(&captureTool{name: "search", result: "search:ok"})
+
+	subset := reg.Subset([]string{"missing"})
+
+	schemas, err := subset.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("ListTools error: %v", err)
+	}
+	if len(schemas) != 0 {
+		t.Fatalf("subset schemas = %d, want 0", len(schemas))
+	}
+
+	if _, err := subset.ExecuteTool(context.Background(), api.ToolCall{Name: "search"}); err == nil {
+		t.Fatal("expected empty subset ExecuteTool to reject original tool")
+	}
+
+	originalSchemas, err := reg.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("original ListTools error: %v", err)
+	}
+	if len(originalSchemas) != 1 || originalSchemas[0].Name != "search" {
+		t.Fatalf("original schemas = %#v, want unchanged registry", originalSchemas)
+	}
+}
+
 func TestRegistry_ExecuteTool_PreservesRichResults(t *testing.T) {
 	reg := NewRegistry()
 	reg.Register(&richTool{name: "rich_echo"})

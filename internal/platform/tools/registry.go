@@ -157,6 +157,26 @@ func (r *Registry) List() []string {
 	return names
 }
 
+// Subset returns a new registry containing only the named tools that exist.
+func (r *Registry) Subset(names []string) *Registry {
+	subset := NewRegistry()
+	if len(names) == 0 {
+		return subset
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, name := range names {
+		tool, ok := r.tools[name]
+		if !ok {
+			continue
+		}
+		subset.tools[name] = tool
+	}
+	return subset
+}
+
 func cloneToolCall(call api.ToolCall) api.ToolCall {
 	return api.ToolCall{
 		CallID:    call.CallID,
