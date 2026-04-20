@@ -100,7 +100,7 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 	}
 
 	recalled := newFormalMemoryRecall(r.cfg.MemoryRoot).Load()
-	runMemory := newSessionMemory(recalled, state.history)
+	runMemory := newSessionMemory(recalled.Messages, state.history)
 	a, runner, err := r.resolveRuntime(state, in, runMemory)
 	if err != nil {
 		return session.RuntimeResult{}, err
@@ -146,12 +146,14 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 			Summary:      summary,
 			WaitState:    waitState,
 			WaitMetadata: waitMetadata,
+			Metadata:     cloneWaitMetadata(recalled.Metadata),
 		}, nil
 	}
 	r.clearActiveRuntime(in.SessionID)
 
 	return session.RuntimeResult{
-		Summary: summary,
+		Summary:  summary,
+		Metadata: cloneWaitMetadata(recalled.Metadata),
 	}, nil
 }
 

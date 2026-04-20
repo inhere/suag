@@ -120,6 +120,7 @@ export type StateSnapshotRun = {
   summary: string;
   externalTaskIds: string[];
   waitMetadata?: Record<string, unknown>;
+  memoryRecall?: Record<string, unknown>;
   eventCount: number;
   updatedAt: string;
 };

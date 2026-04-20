@@ -41,6 +41,7 @@ type RuntimeResult struct {
 	Summary      string
 	WaitState    RunState
 	WaitMetadata map[string]any
+	Metadata     map[string]any
 	ExternalTask *ExternalTask
 }
 
@@ -406,6 +407,11 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			},
 		})
 		execution = s.finishActiveExecution(sessionID, turnID, runID)
+		if err == nil && len(result.Metadata) > 0 {
+			if updateErr := s.updateRunMetadata(ctx, runID, result.Metadata); updateErr != nil {
+				return StartTurnResult{}, fmt.Errorf("update runtime metadata: %w", updateErr)
+			}
+		}
 		if execution != nil && execution.stopped && errors.Is(err, context.Canceled) {
 			canceledAt := s.now().UTC()
 			reason := strings.TrimSpace(execution.reason)

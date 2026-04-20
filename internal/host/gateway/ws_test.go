@@ -1395,6 +1395,49 @@ func TestServer_StopTurnOverWebSocketCancelsActiveRun(t *testing.T) {
 	}
 }
 
+func TestServer_GetRunDetailIncludesMemoryRecallMetadata(t *testing.T) {
+	t.Parallel()
+
+	store := newGatewaySessionStore(t)
+	bus := NewEventBus()
+	svc := session.NewService(store, bus, &memoryRecallGatewayRunner{}, session.ServiceConfig{
+		Now: func() time.Time {
+			return time.Date(2026, 4, 20, 15, 30, 0, 0, time.UTC)
+		},
+	})
+
+	handler := NewHandler(nil, store, svc, bus, nil)
+	server := NewServer(":0", handler, bus)
+	ts := httptest.NewServer(server.router())
+	defer ts.Close()
+
+	createResp := postJSON[createSessionResponse](t, ts.URL+"/api/sessions", map[string]any{
+		"title": "run detail memory recall",
+	})
+	turnResp := postJSON[startTurnResponse](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/turns", map[string]any{
+		"agent_id":       "default",
+		"message":        "use memory",
+		"initiator_type": "user",
+	})
+
+	runResp := getJSON[map[string]any](t, ts.URL+"/api/sessions/"+createResp.SessionID+"/runs/"+turnResp.RunID)
+	run, ok := runResp["run"].(map[string]any)
+	if !ok {
+		t.Fatalf("get run detail run type = %T, want map[string]any", runResp["run"])
+	}
+	recall, ok := run["memoryRecall"].(map[string]any)
+	if !ok {
+		t.Fatalf("get run detail run.memoryRecall type = %T, want map[string]any", run["memoryRecall"])
+	}
+	if recall["entry_count"] != float64(2) {
+		t.Fatalf("get run detail run.memoryRecall[entry_count] = %v, want %v", recall["entry_count"], float64(2))
+	}
+	sources, ok := recall["sources"].([]any)
+	if !ok || len(sources) != 2 {
+		t.Fatalf("get run detail run.memoryRecall[sources] = %T/%d, want []any len 2", recall["sources"], len(sources))
+	}
+}
+
 func TestServer_ContinueTurnOverWebSocketReturnsCommandErrorWhenRejected(t *testing.T) {
 	t.Parallel()
 
@@ -1875,6 +1918,32 @@ type fakeGatewayRunner struct{}
 
 func (fakeGatewayRunner) Run(context.Context, session.RuntimeRequest) (session.RuntimeResult, error) {
 	return session.RuntimeResult{Summary: "ok"}, nil
+}
+
+type memoryRecallGatewayRunner struct{}
+
+func (memoryRecallGatewayRunner) Run(context.Context, session.RuntimeRequest) (session.RuntimeResult, error) {
+	return session.RuntimeResult{
+		Summary: "done",
+		Metadata: map[string]any{
+			"memory_recall": map[string]any{
+				"enabled":     true,
+				"entry_count": 2,
+				"sources": []map[string]any{
+					{
+						"name":        "MEMORY",
+						"entry_count": 1,
+						"preview":     []string{"- [turn_learning] prefer concise notes"},
+					},
+					{
+						"name":        "USER",
+						"entry_count": 1,
+						"preview":     []string{"- [user_preference] 优先中文回复"},
+					},
+				},
+			},
+		},
+	}, nil
 }
 
 type gatewayPostTurnHook struct{}

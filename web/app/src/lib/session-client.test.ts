@@ -84,14 +84,18 @@ describe("session-client", () => {
               agentId: "default",
               displayState: "completed",
               latestEventType: "run.finished",
-            latestMessageId: "run_001:assistant",
-            latestMessageText: "done",
-            summary: "done",
-            externalTaskIds: [],
-            waitMetadata: {},
-            eventCount: 3,
-            updatedAt: "2026-04-12T08:00:01Z",
-          },
+              latestMessageId: "run_001:assistant",
+              latestMessageText: "done",
+              summary: "done",
+              externalTaskIds: [],
+              waitMetadata: {},
+              memoryRecall: {
+                enabled: true,
+                entry_count: 2,
+              },
+              eventCount: 3,
+              updatedAt: "2026-04-12T08:00:01Z",
+            },
           ],
           external_activities: [
             {
@@ -151,6 +155,10 @@ describe("session-client", () => {
     expect(result.lastTurnId).toBe("turn_001");
     expect(result.turns[0]?.displayState).toBe("completed");
     expect(result.runs[0]?.summary).toBe("done");
+    expect(result.runs[0]?.memoryRecall).toEqual({
+      enabled: true,
+      entry_count: 2,
+    });
     expect(result.externalActivities[0]?.kind).toBe("run_status");
     expect(result.externalMessages[0]?.content).toBe("thinking...");
     expect(result.externalTasks[0]?.remoteAgentName).toBe("codex-cli");
@@ -255,6 +263,16 @@ describe("session-client", () => {
               wait_kind: "auth_required",
               policy: "manual_review",
             },
+            memoryRecall: {
+              enabled: true,
+              entry_count: 2,
+              sources: [
+                {
+                  name: "MEMORY",
+                  entry_count: 1,
+                },
+              ],
+            },
             eventCount: 4,
             updatedAt: "2026-04-12T08:00:01Z",
           },
@@ -325,6 +343,16 @@ describe("session-client", () => {
     expect(result.run?.waitMetadata).toEqual({
       wait_kind: "auth_required",
       policy: "manual_review",
+    });
+    expect(result.run?.memoryRecall).toEqual({
+      enabled: true,
+      entry_count: 2,
+      sources: [
+        {
+          name: "MEMORY",
+          entry_count: 1,
+        },
+      ],
     });
   });
 

@@ -262,6 +262,16 @@ it("shows structured wait metadata for waiting runs", () => {
             wait_kind: "auth_required",
             policy: "manual_review",
           },
+          memoryRecall: {
+            enabled: true,
+            entry_count: 2,
+            sources: [
+              {
+                name: "MEMORY",
+                entry_count: 1,
+              },
+            ],
+          },
           eventCount: 2,
           updatedAt: "2026-04-19T21:00:00Z",
         },
@@ -287,4 +297,7 @@ it("shows structured wait metadata for waiting runs", () => {
   expect(within(waitInfoSection as HTMLElement).getByText("wait_kind")).toBeInTheDocument();
   expect(within(waitInfoSection as HTMLElement).getByText("auth_required")).toBeInTheDocument();
   expect(within(waitInfoSection as HTMLElement).getByText("manual_review")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Memory Recall" })).toBeInTheDocument();
+  expect(screen.getByText("entry_count")).toBeInTheDocument();
+  expect(screen.getByText(/"name":"MEMORY"/)).toBeInTheDocument();
 });

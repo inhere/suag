@@ -165,6 +165,7 @@
 - `summary`
 - `externalTaskIds`
 - `waitMetadata`
+- `memoryRecall`
 - `loopMetadata`
 - `turnOutcome`
 - `plannerHint`
@@ -209,6 +210,17 @@
   - 允许一个 run 关联多个外部任务
 - `externalTaskId`
   - 当前增量 runtime 事件与 AG-UI 映射会尽量携带稳定的 `externalTaskId`，便于把 `externalActivities` / `externalMessages` 与 `externalTasks` 对齐
+- `memoryRecall`
+  - 当前是 Host retrieval baseline 的观测字段
+  - 典型包含：
+    - `enabled`
+    - `entry_count`
+    - `sources`
+  - `sources` 当前每项包含：
+    - `name`
+    - `entry_count`
+    - `preview`
+  - 它用于说明“这一轮 run 启动前 recall 了哪些 formal memory 来源”，不是 transcript 本身
 
 当前 Host 还会在 run 持久化层维护一组 self-loop metadata，作为后续 snapshot / AG-UI 映射的稳定来源：
 
@@ -244,6 +256,7 @@
 
 - 当前 `STATE_SNAPSHOT.runs` 已开始稳定直出：
   - `waitMetadata`
+  - `memoryRecall`
   - `loopMetadata`
   - `turnOutcome`
   - `plannerHint`
@@ -253,6 +266,8 @@
     - 用于主状态展示
   - `waitMetadata`
     - 用于 waiting 原因和恢复方式
+  - `memoryRecall`
+    - 用于 retrieval 可观测性、联调排查、后续 query-aware recall 对比
   - `loopMetadata`
     - 用于 self-loop 阶段诊断，例如是否 resumed
   - `turnOutcome`

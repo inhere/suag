@@ -33,6 +33,7 @@ func MapEvent(event HostEvent) []Event {
 				"payload":        event.Payload,
 				"waitMetadata":   waitMetadataFromPayload(event.Payload),
 				"loopMetadata":   loopMetadataFromRunMetadata(event.RunMetadata),
+				"memoryRecall":   memoryRecallFromRunMetadata(event.RunMetadata),
 				"externalTaskId": externalTaskIDFromPayload(event.Payload),
 			}), now),
 			buildRunActivitySnapshot(now, event, status),
@@ -255,6 +256,7 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 					"externalTaskIds":   []string{},
 					"waitMetadata":      map[string]any{},
 					"loopMetadata":      map[string]any{},
+					"memoryRecall":      map[string]any{},
 					"turnOutcome":       "",
 					"plannerHint":       map[string]any{},
 					"nextActionHint":    map[string]any{},
@@ -372,6 +374,7 @@ func buildRunActivitySnapshot(now int64, event HostEvent, status string) *Activi
 		"status":         status,
 		"waitMetadata":   waitMetadataFromPayload(event.Payload),
 		"loopMetadata":   loopMetadataFromRunMetadata(event.RunMetadata),
+		"memoryRecall":   memoryRecallFromRunMetadata(event.RunMetadata),
 		"turnOutcome":    turnOutcomeFromRunMetadata(event.RunMetadata),
 		"plannerHint":    plannerHintFromRunMetadata(event.RunMetadata),
 		"nextActionHint": nextActionHintFromRunMetadata(event.RunMetadata),
@@ -450,6 +453,10 @@ func plannerHintFromRunMetadata(metadata map[string]any) map[string]any {
 
 func nextActionHintFromRunMetadata(metadata map[string]any) map[string]any {
 	return hintMapFromMetadata(metadata, "next_action_hint")
+}
+
+func memoryRecallFromRunMetadata(metadata map[string]any) map[string]any {
+	return hintMapFromMetadata(metadata, "memory_recall")
 }
 
 func hintMapFromMetadata(metadata map[string]any, key string) map[string]any {
@@ -591,6 +598,7 @@ func mergeRunSnapshot(target map[string]any, event HostEvent) {
 	target["eventCount"] = target["eventCount"].(int) + 1
 	target["updatedAt"] = formatEventTime(event.CreatedAt)
 	target["loopMetadata"] = loopMetadataFromRunMetadata(event.RunMetadata)
+	target["memoryRecall"] = memoryRecallFromRunMetadata(event.RunMetadata)
 	target["turnOutcome"] = turnOutcomeFromRunMetadata(event.RunMetadata)
 	target["plannerHint"] = plannerHintFromRunMetadata(event.RunMetadata)
 	target["nextActionHint"] = nextActionHintFromRunMetadata(event.RunMetadata)

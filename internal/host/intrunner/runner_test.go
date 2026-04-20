@@ -226,6 +226,65 @@ func TestRunner_RunRefreshesFormalMemoryAcrossTurns(t *testing.T) {
 	assert.False(t, containsMessageContains(calls[1].Messages, "system", "first memory"))
 }
 
+func TestRunner_RunReturnsFormalMemoryRecallMetadata(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	err := os.MkdirAll(filepath.Join(memoryRoot, "memory"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(memoryRoot, "memory", "MEMORY.md"),
+		[]byte("# MEMORY\n\nUpdated: 2026-04-20T00:00:00Z\n\n- [turn_learning] prefer concise notes\n- [turn_learning] capture next step\n"),
+		0o644,
+	)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(memoryRoot, "memory", "USER.md"),
+		[]byte("# USER\n\nUpdated: 2026-04-20T00:00:00Z\n\n- [user_preference] 优先中文回复\n"),
+		0o644,
+	)
+	assert.NoErr(t, err)
+
+	mock := llm.NewMockProvider("mock").QueueText("done")
+
+	runner, err := New(Config{
+		Provider:   mock,
+		Registry:   tools.NewRegistry(),
+		Tracer:     tracing.NewInMemoryTracer(nil),
+		RunRoot:    t.TempDir(),
+		MemoryRoot: memoryRoot,
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	result, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_recall_meta",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "say hi",
+	})
+	assert.NoErr(t, err)
+
+	recall, ok := result.Metadata["memory_recall"].(map[string]any)
+	if !ok {
+		t.Fatalf("Run().Metadata[memory_recall] type = %T, want map[string]any", result.Metadata["memory_recall"])
+	}
+	assert.Eq(t, true, recall["enabled"])
+	assert.Eq(t, 3, recall["entry_count"])
+	sources, ok := recall["sources"].([]map[string]any)
+	if !ok {
+		t.Fatalf("Run().Metadata[memory_recall][sources] type = %T, want []map[string]any", recall["sources"])
+	}
+	assert.Eq(t, 2, len(sources))
+	assert.Eq(t, "MEMORY", sources[0]["name"])
+	assert.Eq(t, 2, sources[0]["entry_count"])
+	assert.Eq(t, "USER", sources[1]["name"])
+	assert.Eq(t, 1, sources[1]["entry_count"])
+}
+
 func TestRunner_RunReusesSuspendedRunnerOnContinue(t *testing.T) {
 	t.Parallel()
 

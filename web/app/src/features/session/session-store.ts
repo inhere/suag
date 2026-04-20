@@ -260,6 +260,7 @@ function cloneRun(run: StateSnapshotRun): StateSnapshotRun {
     ...run,
     externalTaskIds: [...run.externalTaskIds],
     waitMetadata: { ...run.waitMetadata },
+    memoryRecall: { ...run.memoryRecall },
   };
 }
 
@@ -410,6 +411,7 @@ function ensureRunExists(
     summary: "",
     externalTaskIds: [],
     waitMetadata: {},
+    memoryRecall: {},
     eventCount: 0,
     updatedAt: snapshot.generatedAt,
   };

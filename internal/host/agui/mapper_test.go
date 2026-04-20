@@ -1106,6 +1106,74 @@ func TestBuildStateSnapshotIncludesPostTurnHintsForTerminalRun(t *testing.T) {
 	}
 }
 
+func TestBuildStateSnapshotIncludesMemoryRecallMetadata(t *testing.T) {
+	t.Parallel()
+
+	sessionModel := session.Session{
+		SessionID:  "sess_memory_recall",
+		Title:      "memory recall session",
+		Status:     session.SessionOpen,
+		LastTurnID: "turn_memory_recall",
+	}
+	events := []HostEvent{
+		{
+			Type:      session.EventRunFinished,
+			SessionID: "sess_memory_recall",
+			TurnID:    "turn_memory_recall",
+			RunID:     "run_memory_recall",
+			AgentID:   "default",
+			Sequence:  1,
+			CreatedAt: time.Date(2026, 4, 20, 15, 0, 0, 0, time.UTC),
+			Payload: map[string]any{
+				"summary": "done",
+			},
+			RunMetadata: map[string]any{
+				"memory_recall": map[string]any{
+					"enabled":     true,
+					"entry_count": 3,
+					"sources": []map[string]any{
+						{
+							"name":        "MEMORY",
+							"entry_count": 2,
+							"preview":     []string{"- [turn_learning] prefer concise notes"},
+						},
+						{
+							"name":        "USER",
+							"entry_count": 1,
+							"preview":     []string{"- [user_preference] 优先中文回复"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got := BuildStateSnapshot(sessionModel, events, nil)
+	snapshot, ok := got.Snapshot.(map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot type = %T, want map[string]any", got.Snapshot)
+	}
+
+	rawRuns, ok := snapshot["runs"].([]map[string]any)
+	if !ok || len(rawRuns) != 1 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs = %T/%d, want []map[string]any len 1", snapshot["runs"], len(rawRuns))
+	}
+	recall, ok := rawRuns[0]["memoryRecall"].(map[string]any)
+	if !ok {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].memoryRecall type = %T, want map[string]any", rawRuns[0]["memoryRecall"])
+	}
+	if recall["entry_count"] != 3 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].memoryRecall[entry_count] = %v, want %d", recall["entry_count"], 3)
+	}
+	sources, ok := recall["sources"].([]map[string]any)
+	if !ok || len(sources) != 2 {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].memoryRecall[sources] = %T/%d, want []map[string]any len 2", recall["sources"], len(sources))
+	}
+	if sources[0]["name"] != "MEMORY" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.runs[0].memoryRecall[sources][0][name] = %v, want %q", sources[0]["name"], "MEMORY")
+	}
+}
+
 func TestBuildStateSnapshotIncludesFailedRunErrorMessage(t *testing.T) {
 	t.Parallel()
 

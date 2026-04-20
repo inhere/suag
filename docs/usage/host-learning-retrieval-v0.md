@@ -21,6 +21,11 @@
 - provider 最终能看到：
   - `[Host MEMORY]`
   - `[Host USER]`
+- 当前 run metadata / snapshot 还会保留一份最小 recall 观测信息：
+  - `memory_recall.enabled`
+  - `memory_recall.entry_count`
+  - `memory_recall.sources`
+  - 每个 source 当前包含 `name`、`entry_count`、简短 `preview`
 
 当前明确不做：
 
@@ -42,6 +47,7 @@
 - formal memory 不会被写回会话 history snapshot
 - formal memory 不是“这一轮新产生的对话消息”
 - 每次 turn 都会重新从文件读取一次，而不是沿用上轮注入结果
+- recall 观测 metadata 会写入 Host run metadata，供 gateway / AG-UI / Web 调试展示
 
 这样做的原因是：
 
@@ -63,6 +69,9 @@
   - `Updated:` 行
   - 空行
   - `_No applied memory entries yet._`
+- 当前还会按文件产出：
+  - entry_count
+  - 最多前 2 条 preview，用于 run detail 观测
 
 其余内容会按原始顺序拼接到 `system` message 中。
 
@@ -97,6 +106,7 @@
 - 不会按 query 做筛选
 - 不会做 relevance 排序
 - 不会区分 workspace / project 范围
+- 当前 `memory_recall.preview` 只用于观测，不应被误解为真实注入内容的完整镜像
 
 所以它适合作为 v0 自用阶段的最小能力，但不是最终长期方案。
 

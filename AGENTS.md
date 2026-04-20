@@ -14,6 +14,7 @@
 - `docs/superpowers/plans/2026-04-16-host-runtime-stabilization-phase3.md` 的 Task 1-5 已全部落地并同步勾选，Host runtime stabilization Phase 3 现已收口完成
 - `docs/usage/host-state-snapshot-v0.md`、`docs/usage/llm-config-v0.md`、`docs/usage/host-recap-memory-hooks-v0.md` 已作为当前 v0 协议、配置与 recap/memory 基线文档
 - `docs/usage/host-learning-retrieval-v0.md` 已补齐当前 retrieval baseline 说明；Host intrunner 现会在每次新 turn 启动时读取 formal `MEMORY.md / USER.md`，以前置 `system` context 注入运行上下文，且不会回写进 session history
+- retrieval baseline 已补最小可观测性：Host run metadata / AG-UI snapshot / Web Focused Run 现可查看 `memoryRecall`，用于确认每轮注入了哪些 formal memory 来源与命中条数
 - 当前 recap 主线已推进到 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md`，且后端已具备 `memory candidate` 查询与 `accept/reject` REST 入口
 - Web 侧已完成 `Memory Candidates` 右侧面板接入，当前支持 session 级候选加载、`draft/rendered` 过滤、Accept/Reject、错误与 pending 状态反馈，见 `docs/superpowers/specs/2026-04-17-web-memory-candidates-panel-design.md` 与 `docs/superpowers/plans/2026-04-17-web-memory-candidates-panel-implementation-plan.md`
 - Host internal self-loop Phase 1-4 已完成第一轮收口：`ResumeFromRunID`、结构化 `wait_kind`、同进程 resume 边界、terminal event 去重、waiting/resume/stop 状态机一致性 已形成当前基线
