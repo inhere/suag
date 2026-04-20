@@ -50,7 +50,7 @@
 - Create: `internal/capabilities/runtimecaps/manager.go`
 - Create: `internal/capabilities/runtimecaps/manager_test.go`
 
-- [ ] **Step 1: 先写 provider 注册与 default capability set 的失败测试**
+- [x] **Step 1: 先写 provider 注册与 default capability set 的失败测试**
 
 测试目标：
 
@@ -83,7 +83,7 @@ func TestCapabilityManager_BuildDefaultSetIncludesRegisteredToolRefs(t *testing.
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `go test ./internal/capabilities/runtimecaps -run TestCapabilityManager_BuildDefaultSetIncludesRegisteredToolRefs -v`
 
@@ -91,7 +91,7 @@ Expected:
 
 - FAIL，报 `runtimecaps` 包或相关类型/函数不存在
 
-- [ ] **Step 3: 写最小 runtimecaps 类型与 manager 实现**
+- [x] **Step 3: 写最小 runtimecaps 类型与 manager 实现**
 
 实现要求：
 
@@ -131,7 +131,7 @@ type ResolvedTurnCapabilities struct {
 }
 ```
 
-- [ ] **Step 4: 运行 package tests 确认通过**
+- [x] **Step 4: 运行 package tests 确认通过**
 
 Run: `go test ./internal/capabilities/runtimecaps -v`
 
@@ -139,7 +139,7 @@ Expected:
 
 - PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/capabilities/runtimecaps/types.go internal/capabilities/runtimecaps/manager.go internal/capabilities/runtimecaps/manager_test.go
@@ -154,7 +154,7 @@ git commit -m "feat: add runtime capability manager skeleton"
 - Modify: `internal/platform/tools/registry.go`
 - Modify: `internal/platform/tools/registry_test.go`
 
-- [ ] **Step 1: 先写 registry 子集过滤的失败测试**
+- [x] **Step 1: 先写 registry 子集过滤的失败测试**
 
 测试目标：
 
@@ -188,7 +188,7 @@ func TestRegistry_SubsetKeepsOnlySelectedTools(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `go test ./internal/platform/tools -run TestRegistry_SubsetKeepsOnlySelectedTools -v`
 
@@ -196,7 +196,7 @@ Expected:
 
 - FAIL，报 `Subset` 不存在
 
-- [ ] **Step 3: 写最小实现**
+- [x] **Step 3: 写最小实现**
 
 实现要求：
 
@@ -205,7 +205,7 @@ Expected:
 - 未命中的 tool 不进入子集
 - 名称顺序不影响最终行为
 
-- [ ] **Step 4: 运行 tests 确认通过**
+- [x] **Step 4: 运行 tests 确认通过**
 
 Run: `go test ./internal/platform/tools -v`
 
@@ -213,7 +213,7 @@ Expected:
 
 - PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/platform/tools/registry.go internal/platform/tools/registry_test.go
@@ -230,7 +230,7 @@ git commit -m "feat: add tool registry subset filtering"
 - Create: `internal/app/capabilities.go`
 - Create: `internal/app/capabilities_test.go`
 
-- [ ] **Step 1: 先写 app 默认 capability manager 构建的失败测试**
+- [x] **Step 1: 先写 app 默认 capability manager 构建的失败测试**
 
 测试目标：
 
@@ -257,7 +257,7 @@ func TestBuildDefaultCapabilityManager_RegistersNativeTools(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `go test ./internal/app -run TestBuildDefaultCapabilityManager_RegistersNativeTools -v`
 
@@ -265,7 +265,7 @@ Expected:
 
 - FAIL，builder 不存在
 
-- [ ] **Step 3: 实现 app capability builder 并替换 scattered 注册**
+- [x] **Step 3: 实现 app capability builder 并替换 scattered 注册**
 
 实现要求：
 
@@ -276,7 +276,7 @@ Expected:
 - 当前先只注册 native tools
 - 保持现有 app 行为不回归
 
-- [ ] **Step 4: 运行 app tests 确认通过**
+- [x] **Step 4: 运行 app tests 确认通过**
 
 Run: `go test ./internal/app -v`
 
@@ -284,7 +284,7 @@ Expected:
 
 - PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/app/app.go internal/app/capabilities.go internal/app/capabilities_test.go internal/app/server_test.go
@@ -300,7 +300,7 @@ git commit -m "refactor: build app tools through capability manager"
 - Modify: `internal/host/intrunner/runner_test.go`
 - Modify: `internal/app/server.go`
 
-- [ ] **Step 1: 先写 intrunner 消费 resolved tool subset 的失败测试**
+- [x] **Step 1: 先写 intrunner 消费 resolved tool subset 的失败测试**
 
 测试目标：
 
@@ -348,7 +348,7 @@ func TestRunner_RunUsesResolvedToolSubset(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `go test ./internal/host/intrunner -run TestRunner_RunUsesResolvedToolSubset -v`
 
@@ -356,7 +356,7 @@ Expected:
 
 - FAIL，当前 intrunner 仍直接暴露全局 registry
 
-- [ ] **Step 3: 实现 intrunner resolved tool subset 接线**
+- [x] **Step 3: 实现 intrunner resolved tool subset 接线**
 
 实现要求：
 
@@ -366,7 +366,7 @@ Expected:
 - 如果没有，则保持当前默认全量 registry 行为
 - `internal/app/server.go` 先把 default resolved tools 以最小方式接进去
 
-- [ ] **Step 4: 运行 host tests 确认通过**
+- [x] **Step 4: 运行 host tests 确认通过**
 
 Run:
 
@@ -377,7 +377,7 @@ Expected:
 
 - PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/host/intrunner/runner.go internal/host/intrunner/runner_test.go internal/app/server.go
@@ -394,7 +394,7 @@ git commit -m "feat: let host intrunner consume resolved tool subsets"
 - Modify: `docs/usage/web-host-local-dev.md`
 - Modify: `docs/superpowers/specs/2026-04-20-host-capability-governance-design.md`
 
-- [ ] **Step 1: 同步 capability governance Phase A 落地状态**
+- [x] **Step 1: 同步 capability governance Phase A 落地状态**
 
 至少补充：
 
@@ -402,7 +402,7 @@ git commit -m "feat: let host intrunner consume resolved tool subsets"
 - intrunner 已支持 resolved tool subset
 - 本阶段仍未接 MCP provider / skills runtime
 
-- [ ] **Step 2: 跑回归测试**
+- [x] **Step 2: 跑回归测试**
 
 Run:
 
@@ -415,7 +415,7 @@ Expected:
 
 - 全部 PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add AGENTS.md docs/usage/agentcore-internal-integration.md docs/usage/web-host-local-dev.md docs/superpowers/specs/2026-04-20-host-capability-governance-design.md

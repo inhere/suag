@@ -16,6 +16,7 @@
 - 创建 session
 - 启动 turn
 - 未配置 `host.acp.mode` 时，Host 默认走 internal runner 执行单 agent 回合
+- internal runner 当前已经开始消费默认 resolved tool subset；也就是说 Host app 会先通过 capability builder 收口默认工具集合，再传给 intrunner
 - internal runner 在返回 waiting 态时不会被错误收尾为 completed，同一 `sessionId` 的下一次 `continue_turn` 会优先尝试复用 suspended runtime
 - internal runner 已开始按 `yield reason` 区分等待态；包含 `auth` / `approval` / `authorize` 的 yield 会下发为 `AUTH_REQUIRED`
 - ACP runner 当前也已收口到同一 Host contract：远端仍在运行中的 dispatch 会落为 `EXTERNAL_RUNNING` 非终态，而不是错误收尾为 completed
@@ -226,6 +227,7 @@ curl http://127.0.0.1:8180/api/sessions/<sessionId>/memory-candidates
 - 当前 Host server 的 session runner 选择规则是：
   - 配置了 `host.acp.mode` 时，走 `internal/host/acpbridge`
 - 未配置 `host.acp.mode` 时，默认走 `internal/host/intrunner`，并按 `sessionId` 复用本地上下文历史
+- `internal/host/intrunner` 当前已支持从 `RuntimeRequest.Context["resolved_tool_names"]` 消费 turn 级 tool subset；当前 app 侧先注入默认 resolved tools，后续再扩到 session/turn 动态 capability resolution
 - 未显式配置 `agentcore.run_root` 时，Host internal runner 的 runtime 数据默认收纳到 `db/agentcore/host`
 - 如果显式配置了 `agentcore.run_root`，Host internal runner 会改为使用 `<agentcore.run_root>/host`
 - `session.Service` 当前已具备 post-turn recap hook，默认会把 turn 终态写入 `recaps` 与 `memory_candidates`

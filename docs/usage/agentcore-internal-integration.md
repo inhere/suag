@@ -190,8 +190,37 @@
 当前还没有完全完成的部分主要是：
 
 - `ReactRunner` 仍保留为 fallback / parity baseline
-- Host internal `session runner` 尚未开始接线
+- Host internal `session runner` 已开始通过 capability governance 消费默认 resolved tool subset，但 session/turn 级 capability set 与动态 policy 还未完整接线
 - 当前 `ToolSchema` authority 已明确继续使用 `map[string]any`，`internal/platform/tools` 也已直接返回 `agentcore/api.ToolSchema`；后续主要剩下文档表述精炼
+
+### 2.7 Host capability governance 第一阶段基线
+
+2026-04-20 的 Phase A 已补上 Host 与 app 的最小接线：
+
+- `internal/app` 现在通过统一 capability builder 构建：
+  - app 默认 native tool registry
+  - `runtimecaps.CapabilityManager`
+- `internal/host/intrunner` 现在支持从 `session.RuntimeRequest.Context` 读取 `resolved_tool_names`
+- 如果上层传入了 `resolved_tool_names`，intrunner 会按 turn 级子集裁剪 registry，再把 subset 暴露给本轮 runtime
+- 如果没有传入，仍保持兼容行为，默认使用全量 registry
+
+这意味着当前已经形成一个清晰的最小能力治理边界：
+
+- `agentcore`
+  - 继续只消费标准 tool contract
+- `internal/platform/tools`
+  - 作为第一方 tool registry / executable tool 层
+- `internal/capabilities/runtimecaps`
+  - 作为 app/host 之间的 capability assembly 中枢
+- `internal/host/intrunner`
+  - 作为 resolved capability 的 runtime consumer
+
+本阶段仍然**没有**完成的内容：
+
+- MCP provider 正式接入 capability manager
+- `SKILL.md` loader / parser / resolver
+- session-stable `CapabilitySet`
+- turn-time recall + skills + policy 联动解析
 
 ---
 

@@ -506,6 +506,18 @@ MCP 应作为 `ToolProvider` 的一种来源。
 
 此阶段先不要求 skill 真正影响 runtime。
 
+当前 Phase A 已完成的最小基线：
+
+- `internal/capabilities/runtimecaps` 已提供最小 `CapabilityManager / ToolProvider / CapabilitySet / ResolvedTurnCapabilities`
+- `internal/app` 已通过统一 capability builder 构建默认 native tools 与 capability manager
+- `internal/host/intrunner` 已支持消费 `resolved_tool_names`，并在 turn 级按 registry subset 暴露本轮 tools
+
+当前 Phase A 仍未覆盖：
+
+- MCP provider 正式并入 capability manager
+- `SKILL.md` runtime / loader / resolver
+- recall / skill / policy 联动下的 turn-time dynamic resolution
+
 ### Phase B：统一 Tools 与 MCP
 
 先把 tool 主链做扎实：
