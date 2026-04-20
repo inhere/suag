@@ -20,6 +20,7 @@
 - Host learning-system Phase 5 第一刀已完成：`memory candidate -> accept/reject -> MEMORY.md / USER.md` 正式记忆文件闭环已打通，当前 draft/formal memory 文件都会随候选状态刷新，计划见 `docs/superpowers/plans/2026-04-20-host-learning-system-phase5.md`
 - Host recall self-loop verification Phase 8 已完成首轮收口：当前已验证首轮 recall 会影响最终结果，resumed run 也会在继续前刷新 runtime-only recall，且 recalled memory 仍不会回写 session history；计划见 `docs/superpowers/plans/2026-04-20-host-recall-self-loop-verification-phase8.md`
 - `tools / mcp / skills` 长线治理设计已整理为 `docs/superpowers/specs/2026-04-20-host-capability-governance-design.md`，当前按“agentcore 只保留 runtime kernel 与 tool contract，axon 负责 capability governance” 作为推荐方向推进
+- Capability governance 第一阶段实施计划已整理为 `docs/superpowers/plans/2026-04-20-capability-governance-phase-a-plan.md`，优先落 `CapabilityManager + ToolProvider + Host resolved tool subset` 主线，MCP/skills 延后到后续阶段
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范
