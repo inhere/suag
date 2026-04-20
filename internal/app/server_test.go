@@ -75,6 +75,8 @@ func TestBuildSessionRunner_DefaultsToInternalRunnerWithoutACP(t *testing.T) {
 
 	built := buildDefaultCapabilities(t.TempDir())
 	provider := llm.NewMockProvider("mock").QueueText("done")
+	_ = gkconfig.Set("agentcore.run_root", filepath.Join(t.TempDir(), "agentcore"))
+	_ = gkconfig.Set("host.memory.root", filepath.Join(t.TempDir(), "memory"))
 	a := &App{
 		provider:          provider,
 		registry:          built.Registry,
@@ -89,6 +91,9 @@ func TestBuildSessionRunner_DefaultsToInternalRunnerWithoutACP(t *testing.T) {
 
 	internalRunner, ok := runner.(*intrunner.SessionRunner)
 	assert.True(t, ok)
+	t.Cleanup(func() {
+		assert.NoErr(t, internalRunner.Close())
+	})
 
 	_, err = internalRunner.Run(context.Background(), session.RuntimeRequest{
 		SessionID:   "sess_runner_default_caps",
