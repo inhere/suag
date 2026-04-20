@@ -106,9 +106,9 @@
 
 ## Task 1: File-Based Formal Memory Recall
 
-- [ ] intrunner 在新 turn 启动时读取 `MEMORY.md` / `USER.md`
-- [ ] 转成前置 `system` messages 注入 `sessionMemory`
-- [ ] 不影响现有 transcript 追加顺序
+- [x] intrunner 在新 turn 启动时读取 `MEMORY.md` / `USER.md`
+- [x] 转成前置 `system` messages 注入 `sessionMemory`
+- [x] 不影响现有 transcript 追加顺序
 
 Run: `go test ./internal/host/intrunner -run "Memory|Retrieval" -v`
 
@@ -116,9 +116,9 @@ Run: `go test ./internal/host/intrunner -run "Memory|Retrieval" -v`
 
 ## Task 2: Keep Contract Minimal And Observable
 
-- [ ] 注入 message 前缀明确区分 `Host MEMORY` / `Host USER`
-- [ ] 文件缺失或读取错误不打断主链
-- [ ] 测试覆盖 mock provider 最终看到的 messages 顺序
+- [x] 注入 message 前缀明确区分 `Host MEMORY` / `Host USER`
+- [x] 文件缺失或读取错误不打断主链
+- [x] 测试覆盖 mock provider 最终看到的 messages 顺序
 
 Run: `go test ./internal/host/intrunner`
 
@@ -126,9 +126,9 @@ Run: `go test ./internal/host/intrunner`
 
 ## Task 3: Update Docs
 
-- [ ] 更新 `docs/usage/host-recap-memory-hooks-v0.md`
-- [ ] 补一份 retrieval 说明文档
-- [ ] 更新联调说明中“当前 retrieval 能力”的状态
+- [x] 更新 `docs/usage/host-recap-memory-hooks-v0.md`
+- [x] 补一份 retrieval 说明文档
+- [x] 更新联调说明中“当前 retrieval 能力”的状态
 
 ---
 
@@ -138,6 +138,11 @@ Run: `go test ./internal/host/intrunner`
 - 新会话回合的 provider request 中可看到 injected memory messages
 - `go test ./internal/host/intrunner` 通过
 - 文档与代码一致
+
+### Verification
+
+- `go test ./internal/host/intrunner`
+- `go test ./internal/app ./internal/config ./internal/host/intrunner`
 
 ---
 

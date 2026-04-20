@@ -31,6 +31,7 @@ type Config struct {
 	HITL          hitl.Manager
 	Hooks         []agentcore.Hook
 	RunRoot       string
+	MemoryRoot    string
 	Runtime       string
 	FailThreshold int
 	MaxSteps      int
@@ -48,6 +49,7 @@ type sessionState struct {
 
 type sessionMemory struct {
 	mu         sync.Mutex
+	recalled   []memory.Message
 	history    []memory.Message
 	transcript []memory.Message
 }
@@ -97,7 +99,8 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 		return session.RuntimeResult{}, err
 	}
 
-	runMemory := newSessionMemory(state.history)
+	recalled := newFormalMemoryRecall(r.cfg.MemoryRoot).Load()
+	runMemory := newSessionMemory(recalled, state.history)
 	a, runner, err := r.resolveRuntime(state, in, runMemory)
 	if err != nil {
 		return session.RuntimeResult{}, err
@@ -464,9 +467,10 @@ func (r *SessionRunner) loopMetadata(sessionID string) map[string]any {
 	return metadata
 }
 
-func newSessionMemory(history []memory.Message) *sessionMemory {
+func newSessionMemory(recalled []memory.Message, history []memory.Message) *sessionMemory {
 	return &sessionMemory{
-		history: cloneMemoryMessages(history),
+		recalled: cloneMemoryMessages(recalled),
+		history:  cloneMemoryMessages(history),
 	}
 }
 
@@ -490,7 +494,8 @@ func (m *sessionMemory) GetContext(_ context.Context, _ int) ([]memory.Message, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	out := make([]memory.Message, 0, len(m.history)+len(m.transcript))
+	out := make([]memory.Message, 0, len(m.recalled)+len(m.history)+len(m.transcript))
+	out = append(out, cloneMemoryMessages(m.recalled)...)
 	out = append(out, cloneMemoryMessages(m.history)...)
 	out = append(out, cloneMemoryMessages(m.transcript)...)
 	return out, nil
@@ -512,6 +517,8 @@ func (m *sessionMemory) Snapshot() []memory.Message {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Recalled formal memory is runtime-only context and should not be written
+	// back into session history, otherwise each turn would duplicate prior recall.
 	out := make([]memory.Message, 0, len(m.history)+len(m.transcript))
 	out = append(out, cloneMemoryMessages(m.history)...)
 	out = append(out, cloneMemoryMessages(m.transcript)...)

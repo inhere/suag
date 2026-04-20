@@ -66,6 +66,7 @@ func (a *App) buildSessionRunner() (session.Runner, error) {
 			Tracer:        a.tracer,
 			HITL:          a.hitlMgr,
 			RunRoot:       appconfig.ResolveHostAgentcoreRunRoot(),
+			MemoryRoot:    appconfig.ResolveHostMemoryDraftRoot(),
 			Runtime:       gkconfig.String("agent.runtime"),
 			FailThreshold: gkconfig.Int("hitl.fail_threshold", 3),
 			MaxSteps:      gkconfig.Int("max_steps", 10),

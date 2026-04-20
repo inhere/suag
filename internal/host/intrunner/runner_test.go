@@ -2,6 +2,9 @@ package intrunner
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gookit/goutil/testutil/assert"
@@ -93,6 +96,134 @@ func TestRunner_RunEmitsPreparingAndThinkingStates(t *testing.T) {
 	assert.Eq(t, 2, len(states))
 	assert.Eq(t, "PREPARING", states[0])
 	assert.Eq(t, "THINKING", states[1])
+}
+
+func TestRunner_RunInjectsFormalMemoryIntoProviderContext(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	err := os.MkdirAll(filepath.Join(memoryRoot, "memory"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(filepath.Join(memoryRoot, "memory", "MEMORY.md"), []byte("# MEMORY\n\nUpdated: 2026-04-20T00:00:00Z\n\n- [turn_learning] prefers concise execution notes\n"), 0o644)
+	assert.NoErr(t, err)
+	err = os.WriteFile(filepath.Join(memoryRoot, "memory", "USER.md"), []byte("# USER\n\nUpdated: 2026-04-20T00:00:00Z\n\n- [user_preference] 优先中文回复\n"), 0o644)
+	assert.NoErr(t, err)
+
+	mock := llm.NewMockProvider("mock").QueueText("done")
+
+	runner, err := New(Config{
+		Provider:   mock,
+		Registry:   tools.NewRegistry(),
+		Tracer:     tracing.NewInMemoryTracer(nil),
+		RunRoot:    t.TempDir(),
+		MemoryRoot: memoryRoot,
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	_, err = runner.Run(context.Background(), Request{
+		SessionID:   "sess_memory",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "say hi",
+	})
+	assert.NoErr(t, err)
+
+	calls := mock.Calls()
+	assert.Eq(t, 1, len(calls))
+	assert.True(t, containsMessageContains(calls[0].Messages, "system", "[Host MEMORY]\n- [turn_learning] prefers concise execution notes"))
+	assert.True(t, containsMessageContains(calls[0].Messages, "system", "[Host USER]\n- [user_preference] 优先中文回复"))
+}
+
+func TestRunner_RunSkipsMissingFormalMemoryFiles(t *testing.T) {
+	t.Parallel()
+
+	mock := llm.NewMockProvider("mock").QueueText("done")
+
+	runner, err := New(Config{
+		Provider:   mock,
+		Registry:   tools.NewRegistry(),
+		Tracer:     tracing.NewInMemoryTracer(nil),
+		RunRoot:    t.TempDir(),
+		MemoryRoot: t.TempDir(),
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	_, err = runner.Run(context.Background(), Request{
+		SessionID:   "sess_no_memory",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "say hi",
+	})
+	assert.NoErr(t, err)
+
+	calls := mock.Calls()
+	assert.Eq(t, 1, len(calls))
+	assert.False(t, containsMessageContains(calls[0].Messages, "system", "[Host MEMORY]"))
+	assert.False(t, containsMessageContains(calls[0].Messages, "system", "[Host USER]"))
+}
+
+func TestRunner_RunRefreshesFormalMemoryAcrossTurns(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	err := os.MkdirAll(filepath.Join(memoryRoot, "memory"), 0o755)
+	assert.NoErr(t, err)
+
+	writeFormal := func(content string) {
+		err := os.WriteFile(filepath.Join(memoryRoot, "memory", "MEMORY.md"), []byte(content), 0o644)
+		assert.NoErr(t, err)
+	}
+	writeFormal("# MEMORY\n\nUpdated: 2026-04-20T00:00:00Z\n\n- [turn_learning] first memory\n")
+
+	mock := llm.NewMockProvider("mock").
+		QueueText("first answer").
+		QueueText("second answer")
+
+	runner, err := New(Config{
+		Provider:   mock,
+		Registry:   tools.NewRegistry(),
+		Tracer:     tracing.NewInMemoryTracer(nil),
+		RunRoot:    t.TempDir(),
+		MemoryRoot: memoryRoot,
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	_, err = runner.Run(context.Background(), Request{
+		SessionID:   "sess_refresh",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "first task",
+	})
+	assert.NoErr(t, err)
+
+	writeFormal("# MEMORY\n\nUpdated: 2026-04-20T00:01:00Z\n\n- [turn_learning] second memory\n")
+
+	_, err = runner.Run(context.Background(), Request{
+		SessionID:   "sess_refresh",
+		TurnID:      "turn_002",
+		RunID:       "run_002",
+		AgentID:     "default",
+		Instruction: "second task",
+	})
+	assert.NoErr(t, err)
+
+	calls := mock.Calls()
+	assert.Eq(t, 2, len(calls))
+	assert.True(t, containsMessageContains(calls[0].Messages, "system", "first memory"))
+	assert.True(t, containsMessageContains(calls[1].Messages, "system", "second memory"))
+	assert.False(t, containsMessageContains(calls[1].Messages, "system", "first memory"))
 }
 
 func TestRunner_RunReusesSuspendedRunnerOnContinue(t *testing.T) {
@@ -531,6 +662,15 @@ func (e *hostEchoTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 func containsMessage(messages []api.Message, role, content string) bool {
 	for _, msg := range messages {
 		if msg.Role == role && msg.Content == content {
+			return true
+		}
+	}
+	return false
+}
+
+func containsMessageContains(messages []api.Message, role, content string) bool {
+	for _, msg := range messages {
+		if msg.Role == role && strings.Contains(msg.Content, content) {
 			return true
 		}
 	}

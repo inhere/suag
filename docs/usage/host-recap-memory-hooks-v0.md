@@ -23,6 +23,9 @@
 - memory 文件刷新
   - 当前默认通过共享 memory file writer 刷新 `MEMORY.draft.md` / `USER.draft.md`
   - `accept/reject` 后也会刷新 `MEMORY.md` / `USER.md`
+- intrunner retrieval baseline
+  - 当前 Host internal runner 已开始在新 turn 启动时读取正式 `MEMORY.md` / `USER.md`
+  - 读取后会作为前置 `system` context 注入，不会回写进 session history
 
 当前还不具备：
 
@@ -128,6 +131,11 @@
 - 后续可以做人审、去重、合并、拒绝或二次润色
 
 也就是说，当前 v0 已经从“只有 hook 骨架”前进到“候选落库 + draft 渲染 + applied 正式写入”，但还未进入 retrieval / review loop 阶段。
+
+补充说明：
+
+- retrieval baseline 已经落地
+- 但当前仍是整文件 file-based 注入，还不是 FTS5 / query-aware memory system
 
 ---
 
