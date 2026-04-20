@@ -19,7 +19,7 @@
 - `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复、查询与 WS 命令编排链路；`DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态已贯通到快照与事件流，未知 WS command 会明确返回 `command.error`
 - internal runner / ACP runner 的 Host contract 已完成一轮对齐：`externalTaskId`、失败态 external task 持久化、internal suspend `waitMetadata`、ACP `EXTERNAL_RUNNING` waiting metadata 与 AG-UI run detail / snapshot 已贯通
 - legacy React runtime 边界已收窄：team/orchestrator 的空 runtime 默认稳定走 `agentcore`，`UseAgentcore` legacy shim 不再影响默认单 agent 路径，parity tests 仅作为遗留对照保留
-- Host internal self-loop Phase 4 正在推进中：Task 1 已完成 run 级 `loop_phase / resume_source / continue_mode / turn_outcome` metadata contract，Task 2 也已补齐 intrunner 的 `resume_count / resume_source` waiting metadata，并贯通到 gateway run detail / session snapshot
+- Host internal self-loop Phase 4 已完成 Task 1-3：run 级 `loop_phase / resume_source / continue_mode / turn_outcome` metadata contract、intrunner `resume_count / resume_source` waiting metadata、以及 terminal `post-turn action hooks + planner_hint / next_action_hint` 已形成当前基线，文档见 `docs/usage/host-internal-self-loop-v0.md`
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

@@ -1629,6 +1629,201 @@ func TestService_StartTurnIgnoresRecapHookError(t *testing.T) {
 	}
 }
 
+func TestService_StartTurnRunsPostTurnActionHookForCompletedTurn(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "final summary",
+		},
+	}
+	post := &postTurnActionRecorder{}
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now:                 func() time.Time { return now },
+		PostTurnActionHooks: []PostTurnActionHook{post},
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_post_completed",
+		AgentID:       "default",
+		UserMessage:   "finish with post turn hook",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	if len(post.inputs) != 1 {
+		t.Fatalf("post turn inputs len = %d, want 1", len(post.inputs))
+	}
+	if post.inputs[0].Outcome != TurnOutcomeCompleted {
+		t.Fatalf("post turn outcome = %q, want %q", post.inputs[0].Outcome, TurnOutcomeCompleted)
+	}
+	if post.inputs[0].RunID != result.RunID {
+		t.Fatalf("post turn run id = %q, want %q", post.inputs[0].RunID, result.RunID)
+	}
+	if post.inputs[0].Summary != "final summary" {
+		t.Fatalf("post turn summary = %q, want %q", post.inputs[0].Summary, "final summary")
+	}
+	if post.inputs[0].LoopMetadata["loop_phase"] != "initial" {
+		t.Fatalf("post turn loop metadata loop_phase = %v, want %q", post.inputs[0].LoopMetadata["loop_phase"], "initial")
+	}
+}
+
+func TestService_StartTurnPersistsPostTurnPlannerHints(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "final summary",
+		},
+	}
+	post := &postTurnActionRecorder{
+		result: &PostTurnActionResult{
+			PlannerHint: &PlannerHint{
+				Stage:   "review",
+				Summary: "review the last turn",
+				Metadata: map[string]any{
+					"source": "hook",
+				},
+			},
+			NextActionHint: &NextActionHint{
+				Kind:    "review",
+				Title:   "Review Needed",
+				Message: "Please inspect the completed turn.",
+				Metadata: map[string]any{
+					"priority": "high",
+				},
+			},
+		},
+	}
+	now := time.Date(2026, 4, 20, 12, 2, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now:                 func() time.Time { return now },
+		PostTurnActionHooks: []PostTurnActionHook{post},
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_post_hints",
+		AgentID:       "default",
+		UserMessage:   "finish with hints",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	runModel, err := store.GetRun(ctx, result.RunID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	plannerHint, ok := runModel.Metadata["planner_hint"].(map[string]any)
+	if !ok {
+		t.Fatalf("run metadata planner_hint type = %T, want map[string]any", runModel.Metadata["planner_hint"])
+	}
+	if plannerHint["stage"] != "review" {
+		t.Fatalf("run metadata planner_hint.stage = %v, want %q", plannerHint["stage"], "review")
+	}
+	nextActionHint, ok := runModel.Metadata["next_action_hint"].(map[string]any)
+	if !ok {
+		t.Fatalf("run metadata next_action_hint type = %T, want map[string]any", runModel.Metadata["next_action_hint"])
+	}
+	if nextActionHint["kind"] != "review" {
+		t.Fatalf("run metadata next_action_hint.kind = %v, want %q", nextActionHint["kind"], "review")
+	}
+	if nextActionHint["message"] != "Please inspect the completed turn." {
+		t.Fatalf("run metadata next_action_hint.message = %v, want message", nextActionHint["message"])
+	}
+}
+
+func TestService_StartTurnWaitingStateDoesNotRunPostTurnActionHook(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
+				},
+			},
+		},
+	}
+	post := &postTurnActionRecorder{}
+	now := time.Date(2026, 4, 20, 12, 5, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now:                 func() time.Time { return now },
+		PostTurnActionHooks: []PostTurnActionHook{post},
+	})
+
+	_, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_post_waiting",
+		AgentID:       "default",
+		UserMessage:   "wait without post turn hook",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	if len(post.inputs) != 0 {
+		t.Fatalf("post turn inputs len = %d, want 0", len(post.inputs))
+	}
+}
+
+func TestService_StartTurnIgnoresPostTurnActionHookError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "final summary",
+		},
+	}
+	post := &postTurnActionRecorder{err: errors.New("post turn action failed")}
+	now := time.Date(2026, 4, 20, 12, 10, 0, 0, time.UTC)
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		Now:                 func() time.Time { return now },
+		PostTurnActionHooks: []PostTurnActionHook{post},
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_post_best_effort",
+		AgentID:       "default",
+		UserMessage:   "finish despite post turn error",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+	if result.RunID == "" {
+		t.Fatal("StartTurn().RunID is empty")
+	}
+	if len(post.inputs) != 1 {
+		t.Fatalf("post turn inputs len = %d, want 1", len(post.inputs))
+	}
+}
+
 func TestService_StartTurnStructuredRecapHookPersistsRecap(t *testing.T) {
 	t.Parallel()
 
@@ -2076,6 +2271,17 @@ type recapRecorder struct {
 func (r *recapRecorder) OnTurnRecap(_ context.Context, input RecapInput) error {
 	r.inputs = append(r.inputs, input)
 	return r.err
+}
+
+type postTurnActionRecorder struct {
+	inputs []PostTurnActionInput
+	err    error
+	result *PostTurnActionResult
+}
+
+func (r *postTurnActionRecorder) OnPostTurnAction(_ context.Context, input PostTurnActionInput) (*PostTurnActionResult, error) {
+	r.inputs = append(r.inputs, input)
+	return r.result, r.err
 }
 
 type blockingRunner struct {

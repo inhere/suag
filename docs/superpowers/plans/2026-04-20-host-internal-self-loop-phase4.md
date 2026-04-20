@@ -169,7 +169,7 @@ git commit -m "feat: harden internal runner resume metadata"
 - Test: `internal/host/session/service_test.go`
 - Add: `docs/usage/host-internal-self-loop-v0.md`
 
-- [ ] **Step 1: 写出 post-turn action hook 测试**
+- [x] **Step 1: 写出 post-turn action hook 测试**
 
 补充测试覆盖：
 
@@ -181,7 +181,7 @@ git commit -m "feat: harden internal runner resume metadata"
 Run: `go test ./internal/host/session -run "PostTurnAction|PlannerLite" -v`
 Expected: 至少一组新增断言先失败
 
-- [ ] **Step 2: 加 planner-lite 挂点，但不做重型 planner**
+- [x] **Step 2: 加 planner-lite 挂点，但不做重型 planner**
 
 实现目标：
 
@@ -189,7 +189,7 @@ Expected: 至少一组新增断言先失败
 - 只允许 hook 或 runner 写入 hint，不在 service 内硬编码复杂规划流程
 - hint 主要用于后续 review、skill 沉淀、自继续策略，不直接驱动多 agent
 
-- [ ] **Step 3: 加 post-turn action hooks 骨架**
+- [x] **Step 3: 加 post-turn action hooks 骨架**
 
 实现目标：
 
@@ -199,7 +199,7 @@ Expected: 至少一组新增断言先失败
   - recap 负责总结沉淀
   - post-turn action 负责“终态后下一步该干什么”的挂点
 
-- [ ] **Step 4: 补文档说明边界**
+- [x] **Step 4: 补文档说明边界**
 
 在 `docs/usage/host-internal-self-loop-v0.md` 中说明：
 
@@ -210,7 +210,7 @@ Expected: 至少一组新增断言先失败
   - subagents
   - external orchestration
 
-- [ ] **Step 5: 跑测试并提交**
+- [x] **Step 5: 跑测试并提交**
 
 Run: `go test ./internal/host/session`
 Expected: PASS

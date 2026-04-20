@@ -16,6 +16,22 @@ type ContinueMode string
 // terminal lifecycle state.
 type TurnOutcome string
 
+// PlannerHint is a lightweight planning artifact for post-turn follow-up.
+type PlannerHint struct {
+	Stage    string
+	Summary  string
+	Metadata map[string]any
+}
+
+// NextActionHint describes the most relevant host-facing next step after a
+// terminal run completes.
+type NextActionHint struct {
+	Kind     string
+	Title    string
+	Message  string
+	Metadata map[string]any
+}
+
 const (
 	SessionOpen     SessionStatus = "OPEN"
 	SessionRunning  SessionStatus = "RUNNING"

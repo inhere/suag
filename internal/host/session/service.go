@@ -49,8 +49,9 @@ type RuntimeEvent struct {
 }
 
 type ServiceConfig struct {
-	Now        func() time.Time
-	RecapHooks []RecapHook
+	Now                 func() time.Time
+	RecapHooks          []RecapHook
+	PostTurnActionHooks []PostTurnActionHook
 }
 
 type RecapPhase string
@@ -72,6 +73,27 @@ type RecapInput struct {
 
 type RecapHook interface {
 	OnTurnRecap(ctx context.Context, input RecapInput) error
+}
+
+type PostTurnActionInput struct {
+	Session        Session
+	TurnID         string
+	RunID          string
+	Outcome        TurnOutcome
+	Summary        string
+	Failure        string
+	LoopMetadata   map[string]any
+	PlannerHint    *PlannerHint
+	NextActionHint *NextActionHint
+}
+
+type PostTurnActionResult struct {
+	PlannerHint    *PlannerHint
+	NextActionHint *NextActionHint
+}
+
+type PostTurnActionHook interface {
+	OnPostTurnAction(ctx context.Context, input PostTurnActionInput) (*PostTurnActionResult, error)
 }
 
 type StartTurnInput struct {
@@ -122,6 +144,7 @@ type Service struct {
 	runner Runner
 	now    func() time.Time
 	recaps []RecapHook
+	posts  []PostTurnActionHook
 
 	activeMu         sync.Mutex
 	activeExecutions map[string]*activeExecution
@@ -139,6 +162,7 @@ func NewService(store Store, pub Publisher, runner Runner, cfg ServiceConfig) *S
 		runner:           runner,
 		now:              nowFn,
 		recaps:           append([]RecapHook(nil), cfg.RecapHooks...),
+		posts:            append([]PostTurnActionHook(nil), cfg.PostTurnActionHooks...),
 		activeExecutions: make(map[string]*activeExecution),
 	}
 }
@@ -400,6 +424,14 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				Phase:   RecapPhaseCanceled,
 				Failure: reason,
 			})
+			s.runPostTurnActionHooks(ctx, PostTurnActionInput{
+				Session:      sessionModel,
+				TurnID:       turnID,
+				RunID:        runID,
+				Outcome:      TurnOutcomeCanceled,
+				Failure:      reason,
+				LoopMetadata: s.loadRunMetadata(ctx, runID),
+			})
 			return StartTurnResult{
 				SessionID: sessionID,
 				TurnID:    turnID,
@@ -445,6 +477,14 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				Phase:   RecapPhaseFailed,
 				Failure: err.Error(),
 			})
+			s.runPostTurnActionHooks(ctx, PostTurnActionInput{
+				Session:      sessionModel,
+				TurnID:       turnID,
+				RunID:        runID,
+				Outcome:      TurnOutcomeFailed,
+				Failure:      err.Error(),
+				LoopMetadata: s.loadRunMetadata(ctx, runID),
+			})
 			return StartTurnResult{
 				SessionID: sessionID,
 				TurnID:    turnID,
@@ -476,6 +516,14 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				Phase:   RecapPhaseCanceled,
 				Failure: reason,
 			})
+			s.runPostTurnActionHooks(ctx, PostTurnActionInput{
+				Session:      sessionModel,
+				TurnID:       turnID,
+				RunID:        runID,
+				Outcome:      TurnOutcomeCanceled,
+				Failure:      reason,
+				LoopMetadata: s.loadRunMetadata(ctx, runID),
+			})
 			return StartTurnResult{
 				SessionID: sessionID,
 				TurnID:    turnID,
@@ -500,6 +548,14 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				Phase:   RecapPhaseFailed,
 				Failure: failure,
 			})
+			s.runPostTurnActionHooks(ctx, PostTurnActionInput{
+				Session:      sessionModel,
+				TurnID:       turnID,
+				RunID:        runID,
+				Outcome:      TurnOutcomeFailed,
+				Failure:      failure,
+				LoopMetadata: s.loadRunMetadata(ctx, runID),
+			})
 			return StartTurnResult{
 				SessionID: sessionID,
 				TurnID:    turnID,
@@ -523,6 +579,14 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				RunID:   runID,
 				Phase:   RecapPhaseCompleted,
 				Summary: summary,
+			})
+			s.runPostTurnActionHooks(ctx, PostTurnActionInput{
+				Session:      sessionModel,
+				TurnID:       turnID,
+				RunID:        runID,
+				Outcome:      TurnOutcomeCompleted,
+				Summary:      summary,
+				LoopMetadata: s.loadRunMetadata(ctx, runID),
 			})
 			return StartTurnResult{
 				SessionID: sessionID,
@@ -572,6 +636,14 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			RunID:   runID,
 			Phase:   RecapPhaseCompleted,
 			Summary: result.Summary,
+		})
+		s.runPostTurnActionHooks(ctx, PostTurnActionInput{
+			Session:      sessionModel,
+			TurnID:       turnID,
+			RunID:        runID,
+			Outcome:      TurnOutcomeCompleted,
+			Summary:      result.Summary,
+			LoopMetadata: s.loadRunMetadata(ctx, runID),
 		})
 	}
 
@@ -800,6 +872,99 @@ func (s *Service) runRecapHooks(ctx context.Context, input RecapInput) {
 			continue
 		}
 	}
+}
+
+func (s *Service) runPostTurnActionHooks(ctx context.Context, input PostTurnActionInput) {
+	if s == nil || len(s.posts) == 0 {
+		return
+	}
+
+	mergedPlannerHint := input.PlannerHint
+	mergedNextActionHint := input.NextActionHint
+	for _, hook := range s.posts {
+		if hook == nil {
+			continue
+		}
+		input.PlannerHint = mergedPlannerHint
+		input.NextActionHint = mergedNextActionHint
+
+		result, err := hook.OnPostTurnAction(ctx, input)
+		if err != nil {
+			// Post-turn follow-up is best-effort. It should never break the main
+			// session lifecycle because planner/review sinks remain optional in v0.
+			continue
+		}
+		if result == nil {
+			continue
+		}
+		// Keep the merge rule simple and deterministic for v0: later hooks may
+		// refine the lightweight hints produced by earlier hooks.
+		if result.PlannerHint != nil {
+			mergedPlannerHint = result.PlannerHint
+		}
+		if result.NextActionHint != nil {
+			mergedNextActionHint = result.NextActionHint
+		}
+	}
+
+	metadata := map[string]any{}
+	if mergedPlannerHint != nil {
+		metadata["planner_hint"] = plannerHintMetadata(mergedPlannerHint)
+	}
+	if mergedNextActionHint != nil {
+		metadata["next_action_hint"] = nextActionHintMetadata(mergedNextActionHint)
+	}
+	if len(metadata) == 0 {
+		return
+	}
+	if err := s.updateRunMetadata(ctx, input.RunID, metadata); err != nil {
+		// Persisting planner-lite hints is also best-effort; the main turn is
+		// already terminal and should not regress because of optional follow-up.
+		return
+	}
+}
+
+func plannerHintMetadata(hint *PlannerHint) map[string]any {
+	if hint == nil {
+		return nil
+	}
+
+	out := map[string]any{
+		"stage":   strings.TrimSpace(hint.Stage),
+		"summary": strings.TrimSpace(hint.Summary),
+	}
+	if len(hint.Metadata) > 0 {
+		out["metadata"] = cloneAnyMap(hint.Metadata)
+	}
+	return out
+}
+
+func nextActionHintMetadata(hint *NextActionHint) map[string]any {
+	if hint == nil {
+		return nil
+	}
+
+	out := map[string]any{
+		"kind":    strings.TrimSpace(hint.Kind),
+		"title":   strings.TrimSpace(hint.Title),
+		"message": strings.TrimSpace(hint.Message),
+	}
+	if len(hint.Metadata) > 0 {
+		out["metadata"] = cloneAnyMap(hint.Metadata)
+	}
+	return out
+}
+
+func cloneAnyMap(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return nil
+	}
+
+	out := make(map[string]any, len(src))
+	for key, value := range src {
+		out[key] = value
+	}
+	return out
 }
 
 func (s *Service) applyRuntimeStatus(ctx context.Context, sessionModel Session, turnID, runID string, event RuntimeEvent) error {
@@ -1079,6 +1244,23 @@ func (s *Service) updateRunMetadata(ctx context.Context, runID string, extra map
 		runModel.Metadata[key] = value
 	}
 	return s.store.UpdateRunMetadata(ctx, runID, runModel.Metadata)
+}
+
+func (s *Service) loadRunMetadata(ctx context.Context, runID string) map[string]any {
+	if s == nil || s.store == nil || strings.TrimSpace(runID) == "" {
+		return nil
+	}
+
+	runModel, err := s.store.GetRun(ctx, runID)
+	if err != nil || len(runModel.Metadata) == 0 {
+		return nil
+	}
+
+	out := make(map[string]any, len(runModel.Metadata))
+	for key, value := range runModel.Metadata {
+		out[key] = value
+	}
+	return out
 }
 
 func turnOutcomeFromRunState(state RunState) TurnOutcome {
