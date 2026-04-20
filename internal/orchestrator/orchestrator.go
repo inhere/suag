@@ -75,6 +75,8 @@ func (o *Orchestrator) RunTask(ctx context.Context, description string) (*agent.
 
 	switch o.singleAgentRuntime() {
 	case "react":
+		// React remains a legacy, explicit-only fallback while host v0 converges
+		// all default single-agent execution on agentcore.
 		runner, err := agent.NewRunner(a, agent.RunnerFactoryConfig{
 			RuntimeKind: agent.RuntimeReact,
 			Tracer:      o.cfg.Tracer,

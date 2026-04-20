@@ -59,6 +59,9 @@ func TestRunnerParity_DirectAnswer(t *testing.T) {
 	assertMemoryTranscriptEqual(t, reactAgent, coreAgent)
 }
 
+// These parity cases are a legacy safety net while older React behavior is
+// still available behind explicit opt-in. They are not the host v0 contract.
+
 func TestRunnerParity_OneToolCall(t *testing.T) {
 	reactMock := llm.NewMockProvider("react").
 		QueueToolCall("echo", map[string]any{"msg": "hello"}).

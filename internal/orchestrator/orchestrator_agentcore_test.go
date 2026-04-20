@@ -317,6 +317,47 @@ func TestOrchestrator_RunTask_DefaultsToAgentcoreRuntime(t *testing.T) {
 	}
 }
 
+func TestOrchestrator_RunTask_IgnoresLegacyUseAgentcoreFlagWhenRuntimeUnset(t *testing.T) {
+	mock := llm.NewMockProvider("mock").QueueText("hello from default runtime")
+	tracer := tracing.NewInMemoryTracer(nil)
+
+	orch := orchestrator.New(orchestrator.Config{
+		LLM:              mock,
+		Registry:         tools.NewRegistry(),
+		Tracer:           tracer,
+		UseAgentcore:     false,
+		AgentcoreRunRoot: t.TempDir(),
+	})
+
+	result, err := orch.RunTask(context.Background(), "say hello")
+	if err != nil {
+		t.Fatalf("RunTask() error: %v", err)
+	}
+	if result.Output != "hello from default runtime" {
+		t.Fatalf("output = %q, want final answer", result.Output)
+	}
+
+	traceIDs := tracer.AllTraces()
+	if len(traceIDs) != 1 {
+		t.Fatalf("trace count = %d, want 1", len(traceIDs))
+	}
+	spans, err := tracer.GetTrace(traceIDs[0])
+	if err != nil {
+		t.Fatalf("GetTrace() error: %v", err)
+	}
+
+	foundTaskSpan := false
+	for _, span := range spans {
+		if span.Operation == "task" {
+			foundTaskSpan = true
+			break
+		}
+	}
+	if !foundTaskSpan {
+		t.Fatal("expected legacy UseAgentcore=false to still default to agentcore task span")
+	}
+}
+
 func TestOrchestrator_RunTask_CanFallbackToReactRuntime(t *testing.T) {
 	mock := llm.NewMockProvider("mock").QueueText("hello from react runtime")
 

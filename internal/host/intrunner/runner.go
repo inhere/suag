@@ -247,7 +247,8 @@ func (r *SessionRunner) clearActiveRuntime(sessionID string) {
 func (r *SessionRunner) runtimeKind() agent.RuntimeKind {
 	switch strings.ToLower(strings.TrimSpace(r.cfg.Runtime)) {
 	case "react":
-		// Host internal runner keeps React only as an explicit local fallback.
+		// Host v0 keeps React only as an explicit legacy fallback for local
+		// debugging/parity. The recommended internal runner path is agentcore.
 		return agent.RuntimeReact
 	default:
 		return agent.RuntimeAgentcore

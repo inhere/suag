@@ -14,7 +14,7 @@ import (
 	"github.com/inhere/axon/internal/team"
 )
 
-func TestRunTeam_DefaultsToAgentcoreRuntime(t *testing.T) {
+func TestRunTeam_BlankRuntimeDefaultsToAgentcore(t *testing.T) {
 	soulPath := writeSoulFile(t, "runner")
 	runRoot := filepath.Join(t.TempDir(), "agentcore-runs")
 
@@ -24,7 +24,7 @@ func TestRunTeam_DefaultsToAgentcoreRuntime(t *testing.T) {
 		tracing.NewInMemoryTracer(nil),
 		hitl.NewInMemoryManager(nil),
 		t.TempDir(),
-		team.ManagerConfig{Runtime: "agentcore", AgentcoreRunRoot: runRoot},
+		team.ManagerConfig{AgentcoreRunRoot: runRoot},
 	)
 
 	tm, err := mgr.CreateTeam("ship it", []string{soulPath})

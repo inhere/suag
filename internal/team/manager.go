@@ -283,7 +283,8 @@ func (m *Manager) DisbandTeam(teamID string) {
 func (m *Manager) newRunner(a *agent.Agent) (agent.Runner, func(), error) {
 	switch m.runtime() {
 	case "react":
-		// React remains an explicit fallback for legacy callers only.
+		// Team execution keeps React only as an explicit legacy fallback. New
+		// host/runtime work should treat agentcore as the default path.
 		runner, err := agent.NewRunner(a, agent.RunnerFactoryConfig{
 			RuntimeKind: agent.RuntimeReact,
 			Tracer:      m.tracer,

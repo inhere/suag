@@ -17,10 +17,11 @@
 - 当前 recap 主线已推进到 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md`，且后端已具备 `memory candidate` 查询与 `accept/reject` REST 入口
 - Web 侧已完成 `Memory Candidates` 右侧面板接入，当前支持 session 级候选加载、`draft/rendered` 过滤、Accept/Reject、错误与 pending 状态反馈，见 `docs/superpowers/specs/2026-04-17-web-memory-candidates-panel-design.md` 与 `docs/superpowers/plans/2026-04-17-web-memory-candidates-panel-implementation-plan.md`
 - Host internal self-loop Phase 1-4 正持续收口：`ResumeFromRunID`、结构化 `wait_kind`、同进程 resume 边界、terminal event 去重 已落地，当前重点是继续压稳 waiting/resume/stop 的状态机一致性
-- Task 1 当前主线已收口到统一 helper：continue 校验、continue runtime context、stop/cancel、session reopen 与 canceled reload 语义已基本对齐；本轮继续把 runtime terminal contract 收口成一组，`run.finished / run.failed / run.canceled` 已统一优先于 Host 自补 terminal lifecycle
-- `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复与查询链路；`DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态已贯通到快照与事件流，未知 WS command 会明确返回 `command.error`，且成功 `continue_turn` 的 `command.accepted` 已保证先于该连接上的后续 run 事件流返回
-- Task 5 已开始收口本地联调与恢复验证：`docs/usage/web-host-local-dev.md` 已补成逐项手测清单，`AUTH_REQUIRED -> HITL respond` 后端链路与 `RunServer + /health` 默认 wiring 也已有最小回归测试
-- Task 2 当前继续对齐 internal runner / ACP runner Host contract：`externalTaskId`、失败态 external task 持久化、internal 中间态回写、internal suspend `waitMetadata` 已打通，正在继续补 ACP `EXTERNAL_RUNNING` 的结构化 waiting metadata 与 run detail / snapshot 回归
+- Host runtime 状态机主链已继续收口：continue 校验、continue runtime context、stop/cancel、session reopen 与 canceled reload 语义已基本对齐；`run.finished / run.failed / run.canceled` 现统一优先于 Host 自补 terminal lifecycle
+- `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复、查询与 WS 命令编排链路；`DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态已贯通到快照与事件流，未知 WS command 会明确返回 `command.error`，且成功 `continue_turn` 的 `command.accepted` 已保证先于该连接上的后续 run 事件流返回
+- internal runner / ACP runner 的 Host contract 第一轮已基本对齐：`externalTaskId`、失败态 external task 持久化、internal suspend `waitMetadata`、ACP `EXTERNAL_RUNNING` waiting metadata 与 AG-UI run detail / snapshot 已完成第一轮收口
+- 本地联调与恢复验证基线已补齐：`docs/usage/web-host-local-dev.md` 已整理为逐项手测清单，`AUTH_REQUIRED -> HITL respond` 后端链路与 `RunServer + /health` 默认 wiring 已有最小回归测试
+- Task 3 正在收口 legacy React runtime 边界：team/orchestrator 的空 runtime 默认稳定走 `agentcore`，`UseAgentcore` legacy shim 不再影响默认单 agent 路径，parity tests 已明确标注为遗留对照而非 Host v0 主链
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范
