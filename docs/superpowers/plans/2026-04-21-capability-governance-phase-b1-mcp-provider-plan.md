@@ -49,7 +49,7 @@
 - Create: `internal/config/mcp_test.go`
 - Modify: `config/config.yaml`
 
-- [ ] **Step 1: 先写 MCP 配置读取的失败测试**
+- [x] **Step 1: 先写 MCP 配置读取的失败测试**
 
 测试目标：
 
@@ -88,7 +88,7 @@ func TestReadMCPServerSettings_ReturnsNormalizedServers(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `go test ./internal/config -run TestReadMCPServerSettings_ReturnsNormalizedServers -v`
 
@@ -96,7 +96,7 @@ Expected:
 
 - FAIL，报 `ReadMCPServerSettings` 或相关类型不存在
 
-- [ ] **Step 3: 写最小 MCP 配置实现**
+- [x] **Step 3: 写最小 MCP 配置实现**
 
 实现要求：
 
@@ -121,7 +121,7 @@ mcp:
   - 忽略 `command` 为空的 server
   - `id` 为空时默认回退到 `command`
 
-- [ ] **Step 4: 运行 config tests 确认通过**
+- [x] **Step 4: 运行 config tests 确认通过**
 
 Run: `go test ./internal/config -v`
 
@@ -129,7 +129,7 @@ Expected:
 
 - PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/config/mcp.go internal/config/mcp_test.go config/config.yaml
@@ -144,7 +144,7 @@ git commit -m "feat: add mcp server config reader"
 - Create: `internal/platform/tools/mcp/provider.go`
 - Create: `internal/platform/tools/mcp/provider_test.go`
 
-- [ ] **Step 1: 先写 MCP provider 的失败测试**
+- [x] **Step 1: 先写 MCP provider 的失败测试**
 
 测试目标：
 
@@ -182,7 +182,7 @@ func TestProvider_RegisterToolsAndListToolRefs(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `go test ./internal/platform/tools/mcp -run TestProvider_RegisterToolsAndListToolRefs -v`
 
@@ -190,7 +190,7 @@ Expected:
 
 - FAIL，报 `Provider` 或相关方法不存在
 
-- [ ] **Step 3: 实现最小 MCP provider**
+- [x] **Step 3: 实现最小 MCP provider**
 
 实现要求：
 
@@ -208,7 +208,7 @@ Expected:
 - `ToolRef.Source` 固定使用：
   - `string(tools.KindMCP)`
 
-- [ ] **Step 4: 运行 MCP package tests 确认通过**
+- [x] **Step 4: 运行 MCP package tests 确认通过**
 
 Run: `go test ./internal/platform/tools/mcp -v`
 
@@ -216,7 +216,7 @@ Expected:
 
 - PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/platform/tools/mcp/provider.go internal/platform/tools/mcp/provider_test.go
@@ -233,7 +233,7 @@ git commit -m "feat: add mcp tool provider"
 - Modify: `internal/app/app.go`
 - Modify: `cmd/axon/main.go`
 
-- [ ] **Step 1: 先写 app builder 合并 MCP provider 的失败测试**
+- [x] **Step 1: 先写 app builder 合并 MCP provider 的失败测试**
 
 测试目标：
 
@@ -273,7 +273,7 @@ func TestBuildDefaultCapabilities_RegistersConfiguredMCPTools(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `go test ./internal/app -run TestBuildDefaultCapabilities_RegistersConfiguredMCPTools -v`
 
@@ -281,7 +281,7 @@ Expected:
 
 - FAIL，当前 builder 还未集成 MCP provider
 
-- [ ] **Step 3: 实现 app capability builder 的 MCP 接线**
+- [x] **Step 3: 实现 app capability builder 的 MCP 接线**
 
 实现要求：
 
@@ -293,7 +293,7 @@ Expected:
   - fail fast
   - 避免“配置了 MCP 但实际能力静默缺失”
 
-- [ ] **Step 4: 运行 app tests 确认通过**
+- [x] **Step 4: 运行 app tests 确认通过**
 
 Run: `go test ./internal/app -v`
 
@@ -301,7 +301,7 @@ Expected:
 
 - PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/app/capabilities.go internal/app/capabilities_test.go internal/app/app.go cmd/axon/main.go
@@ -318,7 +318,7 @@ git commit -m "feat: wire mcp providers into app capabilities"
 - Modify: `docs/usage/web-host-local-dev.md`
 - Modify: `docs/superpowers/specs/2026-04-20-host-capability-governance-design.md`
 
-- [ ] **Step 1: 同步 Phase B1 落地状态**
+- [x] **Step 1: 同步 Phase B1 落地状态**
 
 至少补充：
 
@@ -326,7 +326,7 @@ git commit -m "feat: wire mcp providers into app capabilities"
 - app 默认 capability builder 已可装配 configured MCP tools
 - 当前仍未接 skills runtime / turn-time dynamic resolution
 
-- [ ] **Step 2: 跑回归测试**
+- [x] **Step 2: 跑回归测试**
 
 Run:
 

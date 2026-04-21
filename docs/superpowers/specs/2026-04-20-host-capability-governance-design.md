@@ -531,6 +531,24 @@ MCP 应作为 `ToolProvider` 的一种来源。
 
 - native / mcp 在 runtime 看起来是同一种 tool source
 
+当前 Phase B1 已完成的最小基线：
+
+- `internal/config` 已具备 `mcp.servers` 读取与归一化
+- `internal/platform/tools/mcp.Provider` 已能作为正式 `ToolProvider` 来源：
+  - 启动 client
+  - 拉取 tool list
+  - 注册到 `tools.Registry`
+  - 导出 `runtimecaps.ToolRef`
+  - 在生命周期结束时关闭
+- `internal/app` 默认 capability builder 已能装配 native + configured MCP providers
+- `cmd/axon/main.go` 已接入 `App.Close()`，为 MCP provider 子进程回收留出统一出口
+
+当前 Phase B 仍未覆盖：
+
+- ToolCatalog
+- session/turn 级动态 capability resolution
+- recall / skill / policy 联动过滤 MCP/native tool subset
+
 ### Phase C：接入 Skills 最小闭环
 
 先做：

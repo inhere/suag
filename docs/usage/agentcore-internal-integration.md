@@ -217,10 +217,42 @@
 
 本阶段仍然**没有**完成的内容：
 
-- MCP provider 正式接入 capability manager
+- MCP provider 已开始正式接入 capability manager 与 app 默认 capability builder，但 session/turn 级动态 resolution 还未展开
 - `SKILL.md` loader / parser / resolver
 - session-stable `CapabilitySet`
 - turn-time recall + skills + policy 联动解析
+
+### 2.8 Host capability governance Phase B1 基线
+
+2026-04-21 的 Phase B1 已补上 MCP provider 的最小主链接线：
+
+- `internal/config` 已新增 `ReadMCPServerSettings()`，统一读取 `mcp.servers` 配置
+- `internal/platform/tools/mcp.Provider` 已能：
+  - 启动 MCP client
+  - 拉取 tool list
+  - 转成 `tools.Tool`
+  - 导出 `runtimecaps.ToolRef`
+  - 注册到 `tools.Registry`
+  - 在生命周期结束时关闭底层 client
+- `internal/app` 的默认 capability builder 现在会：
+  - 继续装配 native tools
+  - 按配置装配 MCP providers
+  - 把 native + mcp 一起写入默认 capability manager
+- `App.Close()` 已开始统一回收 capability runtime 资源，`cmd/axon/main.go` 也已接入退出时关闭
+
+这意味着当前 capability governance 主链已经从：
+
+- native-only provider registration
+
+推进到：
+
+- native provider + configurable MCP providers
+
+但这一阶段仍然**没有**完成：
+
+- session-stable `CapabilitySet` 的独立持久化与传递
+- turn-time dynamic resolution
+- `SKILL.md` runtime / loader / resolver
 
 ---
 

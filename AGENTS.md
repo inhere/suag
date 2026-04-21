@@ -21,7 +21,7 @@
 - Host recall self-loop verification Phase 8 已完成首轮收口：当前已验证首轮 recall 会影响最终结果，resumed run 也会在继续前刷新 runtime-only recall，且 recalled memory 仍不会回写 session history；计划见 `docs/superpowers/plans/2026-04-20-host-recall-self-loop-verification-phase8.md`
 - `tools / mcp / skills` 长线治理设计已整理为 `docs/superpowers/specs/2026-04-20-host-capability-governance-design.md`，当前按“agentcore 只保留 runtime kernel 与 tool contract，axon 负责 capability governance” 作为推荐方向推进
 - Capability governance Phase A 已完成最小主链：`internal/app` 已通过统一 capability builder 构建默认 native tool registry，`internal/host/intrunner` 已开始消费 resolved tool subset
-- Capability governance 当前继续推进 Phase B1：先把 MCP provider 并入 capability manager 与 app 默认 capability builder，计划见 `docs/superpowers/plans/2026-04-21-capability-governance-phase-b1-mcp-provider-plan.md`
+- Capability governance Phase B1 已完成代码基线：MCP server 配置读取、`tools/mcp.Provider`、app 默认 capability builder 接入 MCP provider 与 `App.Close()` 生命周期收口已落地；当前继续做文档同步并准备后续 Phase B 下一步
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范
