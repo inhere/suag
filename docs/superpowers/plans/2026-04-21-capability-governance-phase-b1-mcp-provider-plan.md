@@ -339,7 +339,7 @@ Expected:
 
 - 全部 PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add AGENTS.md docs/usage/agentcore-internal-integration.md docs/usage/web-host-local-dev.md docs/superpowers/specs/2026-04-20-host-capability-governance-design.md
