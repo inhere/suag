@@ -8,6 +8,31 @@ import (
 	"github.com/gookit/goutil/testutil/assert"
 )
 
+func TestParseSkillsBytes(t *testing.T) {
+	t.Parallel()
+
+	parsed, err := ParseSkillsBytes([]byte(`---
+name: office-hours
+description: Ask questions before implementation.
+type: shell
+command: echo hi
+inputs:
+  topic: Topic to discuss
+---
+name: review
+description: Review code changes for regressions.
+type: shell
+command: echo review
+inputs:
+  path: Path to review
+`))
+	assert.NoErr(t, err)
+	assert.Eq(t, 2, len(parsed))
+	assert.Eq(t, "office-hours", parsed[0].Name)
+	assert.Eq(t, "review", parsed[1].Name)
+	assert.Eq(t, "Topic to discuss", parsed[0].InputSchema["topic"])
+}
+
 func TestRegistry_ListReturnsCopies(t *testing.T) {
 	t.Parallel()
 

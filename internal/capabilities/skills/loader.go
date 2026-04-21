@@ -5,14 +5,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	platformskills "github.com/inhere/axon/internal/platform/tools/skills"
 )
 
 // LoadDescriptorsFromFile reuses the existing SKILL.md parser but converts the
 // result into capability descriptors instead of executable skill-tools.
 func LoadDescriptorsFromFile(path string) ([]Descriptor, error) {
-	parsed, err := platformskills.ParseSkillsFile(path)
+	parsed, err := ParseSkillsFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +34,7 @@ func LoadDescriptorsFromFile(path string) ([]Descriptor, error) {
 	return descriptors, nil
 }
 
-func inferTriggerHints(skill platformskills.Skill) []string {
+func inferTriggerHints(skill SkillSource) []string {
 	hints := []string{skill.Name}
 	if strings.TrimSpace(skill.Description) != "" {
 		hints = append(hints, skill.Description)
@@ -44,7 +42,7 @@ func inferTriggerHints(skill platformskills.Skill) []string {
 	return cloneStrings(hints)
 }
 
-func inferPromptParts(skill platformskills.Skill) []string {
+func inferPromptParts(skill SkillSource) []string {
 	if strings.TrimSpace(skill.Description) == "" {
 		return nil
 	}
@@ -53,7 +51,7 @@ func inferPromptParts(skill platformskills.Skill) []string {
 	}
 }
 
-func inferToolAllowlist(skill platformskills.Skill) []string {
+func inferToolAllowlist(skill SkillSource) []string {
 	desc := strings.ToLower(strings.TrimSpace(skill.Description))
 	if desc == "" {
 		return nil

@@ -315,7 +315,7 @@
   - `Registry`
   - `Resolver`
   - `LoadDescriptorsFromFile()`
-- 当前 loader 会复用已有 `internal/platform/tools/skills.ParseSkillsFile()`，但只提取：
+- 当前 loader/parser 已完全收口到 `internal/capabilities/skills`，只提取：
   - trigger hints
   - system prompt fragments
   - tool allowlist hints

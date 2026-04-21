@@ -22,6 +22,7 @@
 - 当前最小 turn-time dynamic resolution 已接上：`CapabilityPolicy` 已支持 `auto/full/read_only + allowlist/denylist`，并可结合消息文本与 formal memory recall preview 把本轮 tools 收敛为 read-only subset
 - Capability governance Phase C 已继续推进：新增 `internal/capabilities/skills` 的 `descriptor + registry + resolver`，skill 现作为 capability recipe 影响 `system fragments + resource hints + tool hints`，不再默认走 executable tool lane
 - 当前最小 skill resource hints 已打通：skill 相邻 `references/`、`assets/` 下的小型文本资源会被解析到 `resolved_resource_hints`，并在 `internal/host/intrunner` 中以 runtime-only `system` context 注入，不污染 session history
+- 旧的 `internal/platform/tools/skills` 已开始收口移除：SKILL parser 已迁入 `internal/capabilities/skills`，历史上的 executable skill-tool 残留已删除，避免继续混淆 `tool source` 与 `capability recipe` 边界
 - 下一步继续围绕 capability governance 主线推进 richer skill matching、tool catalog 与 recall/policy/skills/planner 联动
 <!-- PROCESSING WORKS:END -->
 
