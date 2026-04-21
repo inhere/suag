@@ -249,10 +249,19 @@ func refineCapabilityPolicy(policy CapabilityPolicy, input ResolveTurnInput) Cap
 
 	message := strings.ToLower(strings.TrimSpace(input.UserMessage))
 	if message == "" {
+		if recallLooksReadOnly(input.RecallMetadata) {
+			refined.ToolMode = TurnToolModeReadOnly
+			refined.ToolDenylist = mergeStringSets(refined.ToolDenylist, []string{"file_write", "shell_exec"})
+		}
 		return refined
 	}
 
 	if turnLooksReadOnly(message) {
+		refined.ToolMode = TurnToolModeReadOnly
+		refined.ToolDenylist = mergeStringSets(refined.ToolDenylist, []string{"file_write", "shell_exec"})
+		return refined
+	}
+	if recallLooksReadOnly(input.RecallMetadata) {
 		refined.ToolMode = TurnToolModeReadOnly
 		refined.ToolDenylist = mergeStringSets(refined.ToolDenylist, []string{"file_write", "shell_exec"})
 	}
@@ -299,6 +308,53 @@ func containsAny(message string, hints []string) bool {
 	for _, hint := range hints {
 		if strings.Contains(message, hint) {
 			return true
+		}
+	}
+	return false
+}
+
+func recallLooksReadOnly(metadata map[string]any) bool {
+	if len(metadata) == 0 {
+		return false
+	}
+
+	recall, ok := metadata["memory_recall"].(map[string]any)
+	if !ok || len(recall) == 0 {
+		return false
+	}
+	sources, ok := recall["sources"].([]map[string]any)
+	if ok {
+		return recallPreviewLooksReadOnly(sources)
+	}
+	rawSources, ok := recall["sources"].([]any)
+	if !ok {
+		return false
+	}
+	sources = make([]map[string]any, 0, len(rawSources))
+	for _, item := range rawSources {
+		itemMap, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		sources = append(sources, itemMap)
+	}
+	return recallPreviewLooksReadOnly(sources)
+}
+
+func recallPreviewLooksReadOnly(sources []map[string]any) bool {
+	for _, source := range sources {
+		preview := decodeStringSlice(source["preview"])
+		for _, line := range preview {
+			line = strings.ToLower(strings.TrimSpace(line))
+			if line == "" {
+				continue
+			}
+			if containsAny(line, []string{
+				"read-only", "read only", "inspect", "review", "analyze", "analysis",
+				"只读", "查看", "检查", "分析", "审查",
+			}) {
+				return true
+			}
 		}
 	}
 	return false

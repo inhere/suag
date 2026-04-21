@@ -202,6 +202,60 @@ func TestRuntimeContextBuilder_DerivesReadOnlyToolModeFromMessage(t *testing.T) 
 	assert.Eq(t, "read_only", mode)
 }
 
+func TestRuntimeContextBuilder_DerivesReadOnlyToolModeFromRecallMetadata(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	workspace := t.TempDir()
+	memoryRoot := filepath.Join(t.TempDir(), "memory")
+	err := os.MkdirAll(filepath.Join(memoryRoot, "memory"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(memoryRoot, "memory", "MEMORY.md"),
+		[]byte("# MEMORY\n\nUpdated: 2026-04-21T00:00:00Z\n\n- [turn_learning] 先查看相关文件并分析问题，不要直接修改\n"),
+		0o644,
+	)
+	assert.NoErr(t, err)
+
+	_ = gkconfig.Set("workspace", workspace)
+	_ = gkconfig.Set("host.memory.root", memoryRoot)
+
+	built, err := buildDefaultCapabilities(workspace)
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, built.Close())
+	})
+
+	defaultSet := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
+	a := &App{
+		registry:             built.Registry,
+		capabilityManager:    built.Manager,
+		defaultCapabilitySet: defaultSet,
+	}
+
+	sessionBuilder := a.newSessionMetadataBuilder()
+	metadata := sessionBuilder(session.SessionMetadataBuildInput{
+		SessionID: "sess_ctx_recall",
+		AgentID:   "default",
+		Message:   "hello",
+	})
+
+	runtimeBuilder := a.newRuntimeContextBuilder()
+	contextMap := runtimeBuilder(session.RuntimeContextBuildInput{
+		SessionID:       "sess_ctx_recall",
+		AgentID:         "default",
+		Message:         "继续处理一下",
+		SessionMetadata: metadata,
+	})
+
+	names, ok := contextMap["resolved_tool_names"].([]string)
+	assert.True(t, ok)
+	assertToolNamesEq(t, []string{"file_read", "file_list"}, names)
+	mode, ok := contextMap["resolved_tool_mode"].(string)
+	assert.True(t, ok)
+	assert.Eq(t, "read_only", mode)
+}
+
 func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)

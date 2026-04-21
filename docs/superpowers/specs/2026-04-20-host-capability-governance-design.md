@@ -568,6 +568,10 @@ MCP 应作为 `ToolProvider` 的一种来源。
   - `auto` 模式下会基于当前消息做轻量启发式判断
   - 对“查看 / 分析 / review / inspect / 不要修改”这类明显只读意图，自动把本轮 tools 收敛为 read-only subset
   - 当前默认会优先收掉 `file_write`、`shell_exec`
+- recall-aware filtering 也已接上最小主链：
+  - app runtime context builder 会复用 formal memory recall metadata
+  - turn-time resolver 现在不只看当前消息，还会参考 `memory_recall.sources[].preview`
+  - 如果 recall preview 里出现“查看 / 分析 / inspect / review / 不要直接修改”这类线索，也会把本轮 tools 收敛为 read-only subset
 
 这意味着当前 Host capability governance 主链已经从：
 
@@ -580,7 +584,7 @@ MCP 应作为 `ToolProvider` 的一种来源。
 当前 Phase B 仍未覆盖：
 
 - ToolCatalog
-- recall / richer message / policy 驱动的 session/turn 级动态 capability resolution
+- richer recall / message / policy 驱动的 session/turn 级动态 capability resolution
 - recall / skill / policy 联动过滤 MCP/native tool subset
 
 ### Phase C：接入 Skills 最小闭环

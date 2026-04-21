@@ -42,6 +42,11 @@ func newFormalMemoryRecall(root string) *formalMemoryRecall {
 	return &formalMemoryRecall{root: strings.TrimSpace(root)}
 }
 
+func LoadFormalMemoryRecallMetadata(root, instruction string) map[string]any {
+	loaded := newFormalMemoryRecall(root).Load(instruction)
+	return cloneRecallMetadataMap(loaded.Metadata)
+}
+
 func (r *formalMemoryRecall) Load(instruction string) formalMemoryLoad {
 	if r == nil || r.root == "" {
 		return formalMemoryLoad{
@@ -263,5 +268,40 @@ func memoryRecallMetadata(
 		"fallback_used":       fallbackUsed,
 		"sources":             serializedSources,
 		"fallback_limit":      formalMemoryFallbackPerSource,
+	}
+}
+
+func cloneRecallMetadataMap(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return nil
+	}
+
+	out := make(map[string]any, len(src))
+	for key, value := range src {
+		out[key] = cloneRecallMetadataValue(value)
+	}
+	return out
+}
+
+func cloneRecallMetadataValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneRecallMetadataMap(typed)
+	case []map[string]any:
+		out := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, cloneRecallMetadataMap(item))
+		}
+		return out
+	case []string:
+		return append([]string(nil), typed...)
+	case []any:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, cloneRecallMetadataValue(item))
+		}
+		return out
+	default:
+		return typed
 	}
 }

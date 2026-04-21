@@ -288,6 +288,11 @@
   - `auto` 模式下会根据当前消息判断是否属于明显只读轮次
   - 对“查看 / 分析 / inspect / review / 不要修改”类消息，会把本轮 tools 收敛为 read-only subset
   - 当前默认收掉 `file_write`、`shell_exec`
+- 当前 recall-aware filtering 也已接线：
+  - app runtime context builder 会复用 `internal/host/intrunner` 的 formal memory recall metadata
+  - `ResolveTurnInput` 已支持 `RecallMetadata`
+  - resolver 会参考 `memory_recall.sources[].preview`
+  - 如果 recall preview 出现“查看 / 分析 / inspect / review / 不要直接修改”等线索，也会继续把本轮 tools 收敛为 read-only subset
 
 这意味着当前 Host runtime 与 capability governance 的接线已经进一步稳定为：
 
@@ -297,7 +302,7 @@
 
 当前这一阶段仍然**没有**完成：
 
-- recall / richer message / policy 驱动的动态 capability filtering
+- richer recall / policy 驱动的动态 capability filtering
 - `SKILL.md` runtime / loader / resolver
 - tool catalog / provider policy / allow-deny 模型
 

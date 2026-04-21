@@ -207,3 +207,39 @@ func TestCapabilityManager_ResolveTurnCapabilitiesFromInputKeepsFullModeWhenPoli
 	assert.Eq(t, TurnToolModeFull, resolved.ToolMode)
 	assert.Eq(t, []string{"file_read", "file_write"}, resolved.ToolNames)
 }
+
+func TestCapabilityManager_ResolveTurnCapabilitiesFromInputDerivesReadOnlyModeFromRecallMetadata(t *testing.T) {
+	t.Parallel()
+
+	manager := NewManager()
+
+	resolved := manager.ResolveTurnCapabilitiesFromInput(ResolveTurnInput{
+		UserMessage: "继续处理一下",
+		SessionMetadata: map[string]any{
+			CapabilitySetSessionMetadataKey: map[string]any{
+				"tools": []map[string]any{
+					{"name": "file_read", "source": "native", "provider_id": "native"},
+					{"name": "file_write", "source": "native", "provider_id": "native"},
+					{"name": "shell_exec", "source": "native", "provider_id": "native"},
+				},
+				"policies": map[string]any{
+					"tool_mode": "auto",
+				},
+			},
+		},
+		RecallMetadata: map[string]any{
+			"memory_recall": map[string]any{
+				"sources": []map[string]any{
+					{
+						"name":        "MEMORY",
+						"entry_count": 1,
+						"preview":     []string{"- [turn_learning] 先查看相关文件并分析问题，不要直接修改"},
+					},
+				},
+			},
+		},
+	})
+
+	assert.Eq(t, TurnToolModeReadOnly, resolved.ToolMode)
+	assert.Eq(t, []string{"file_read"}, resolved.ToolNames)
+}

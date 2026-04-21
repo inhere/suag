@@ -482,6 +482,52 @@ func TestRunner_RunFallsBackWhenInstructionHasNoMemoryMatch(t *testing.T) {
 	assert.Eq(t, 2, recall["entry_count"])
 }
 
+func TestLoadFormalMemoryRecallMetadataReturnsClonedMetadata(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	err := os.MkdirAll(filepath.Join(memoryRoot, "memory"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(memoryRoot, "memory", "MEMORY.md"),
+		[]byte("# MEMORY\n\nUpdated: 2026-04-20T00:00:00Z\n\n- [turn_learning] 先查看相关文件并分析问题，不要直接修改\n"),
+		0o644,
+	)
+	assert.NoErr(t, err)
+
+	metadata := LoadFormalMemoryRecallMetadata(memoryRoot, "继续处理一下")
+	recall, ok := metadata["memory_recall"].(map[string]any)
+	if !ok {
+		t.Fatalf("LoadFormalMemoryRecallMetadata()[memory_recall] type = %T, want map[string]any", metadata["memory_recall"])
+	}
+	sources, ok := recall["sources"].([]map[string]any)
+	if !ok {
+		t.Fatalf("LoadFormalMemoryRecallMetadata()[memory_recall][sources] type = %T, want []map[string]any", recall["sources"])
+	}
+	assert.Eq(t, 1, len(sources))
+	preview, ok := sources[0]["preview"].([]string)
+	if !ok {
+		t.Fatalf("LoadFormalMemoryRecallMetadata()[memory_recall][sources][0][preview] type = %T, want []string", sources[0]["preview"])
+	}
+	assert.Eq(t, 1, len(preview))
+
+	preview[0] = "changed"
+	metadataAgain := LoadFormalMemoryRecallMetadata(memoryRoot, "继续处理一下")
+	recallAgain, ok := metadataAgain["memory_recall"].(map[string]any)
+	if !ok {
+		t.Fatalf("LoadFormalMemoryRecallMetadata() second call [memory_recall] type = %T, want map[string]any", metadataAgain["memory_recall"])
+	}
+	sourcesAgain, ok := recallAgain["sources"].([]map[string]any)
+	if !ok {
+		t.Fatalf("LoadFormalMemoryRecallMetadata() second call [memory_recall][sources] type = %T, want []map[string]any", recallAgain["sources"])
+	}
+	previewAgain, ok := sourcesAgain[0]["preview"].([]string)
+	if !ok {
+		t.Fatalf("LoadFormalMemoryRecallMetadata() second call preview type = %T, want []string", sourcesAgain[0]["preview"])
+	}
+	assert.True(t, containsText(previewAgain[0], "先查看相关文件并分析问题"))
+}
+
 func TestRunner_RunRecallCanAffectFinalSummary(t *testing.T) {
 	t.Parallel()
 
@@ -1075,6 +1121,10 @@ func toolSchemaListed(schemas []api.ToolSchema, name string) bool {
 		}
 	}
 	return false
+}
+
+func containsText(text, fragment string) bool {
+	return strings.Contains(text, fragment)
 }
 
 type summaryFromContextProvider struct{}

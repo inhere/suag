@@ -125,11 +125,13 @@ func (a *App) newRuntimeContextBuilder() session.RuntimeContextBuilder {
 	}
 
 	return func(input session.RuntimeContextBuildInput) map[string]any {
+		recallMetadata := intrunner.LoadFormalMemoryRecallMetadata(appconfig.ResolveHostMemoryDraftRoot(), input.Message)
 		resolved := a.capabilityManager.ResolveTurnCapabilitiesFromInput(runtimecaps.ResolveTurnInput{
 			SessionMetadata: input.SessionMetadata,
 			UserMessage:     input.Message,
 			AgentID:         input.AgentID,
 			IsContinue:      input.IsContinue,
+			RecallMetadata:  recallMetadata,
 		})
 
 		contextMap := map[string]any{
