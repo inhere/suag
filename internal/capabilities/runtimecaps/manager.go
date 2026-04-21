@@ -1,6 +1,9 @@
 package runtimecaps
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // CapabilityManager builds session capability sets from registered providers.
 type CapabilityManager struct {
@@ -34,10 +37,26 @@ func (m *CapabilityManager) BuildDefaultCapabilitySet(input BuildSetInput) Capab
 func (m *CapabilityManager) ResolveTurnCapabilities(set CapabilitySet) ResolvedTurnCapabilities {
 	resolved := ResolvedTurnCapabilities{
 		ToolRefs: cloneToolRefs(set.Tools),
+		ToolMode: normalizeTurnToolMode(set.Policies.ToolMode),
 	}
+	allowed := normalizeNameSet(set.Policies.ToolAllowlist)
+	denied := normalizeNameSet(set.Policies.ToolDenylist)
+	refs := resolved.ToolRefs[:0]
 	for _, ref := range resolved.ToolRefs {
-		resolved.ToolNames = append(resolved.ToolNames, ref.Name)
+		name := strings.TrimSpace(ref.Name)
+		if name == "" {
+			continue
+		}
+		if len(allowed) > 0 && !allowed[name] {
+			continue
+		}
+		if denied[name] {
+			continue
+		}
+		refs = append(refs, ref)
+		resolved.ToolNames = append(resolved.ToolNames, name)
 	}
+	resolved.ToolRefs = refs
 	return resolved
 }
 
@@ -45,6 +64,7 @@ func (m *CapabilityManager) ResolveTurnCapabilitiesFromInput(input ResolveTurnIn
 	set := m.BuildDefaultCapabilitySet(BuildSetInput{
 		SessionMetadata: input.SessionMetadata,
 	})
+	set.Policies = refineCapabilityPolicy(set.Policies, input)
 	return m.ResolveTurnCapabilities(set)
 }
 
@@ -55,7 +75,8 @@ func (m *CapabilityManager) EncodeCapabilitySetMetadata(set CapabilitySet) map[s
 
 	return map[string]any{
 		CapabilitySetSessionMetadataKey: map[string]any{
-			"tools": encodeToolRefs(set.Tools),
+			"tools":    encodeToolRefs(set.Tools),
+			"policies": encodeCapabilityPolicy(set.Policies),
 		},
 	}
 }
@@ -76,10 +97,14 @@ func (m *CapabilityManager) DecodeCapabilitySetMetadata(metadata map[string]any)
 	}
 
 	tools := decodeToolRefs(root["tools"])
+	policies := decodeCapabilityPolicy(root["policies"])
 	if len(tools) == 0 {
 		return CapabilitySet{}, false
 	}
-	return CapabilitySet{Tools: tools}, true
+	return CapabilitySet{
+		Tools:    tools,
+		Policies: policies,
+	}, true
 }
 
 func NewStaticToolProvider(id string, refs []ToolRef) ToolProvider {
@@ -171,4 +196,206 @@ func decodeToolRef(item map[string]any) (ToolRef, bool) {
 		Source:     source,
 		ProviderID: providerID,
 	}, true
+}
+
+func encodeCapabilityPolicy(policy CapabilityPolicy) map[string]any {
+	mode := normalizeTurnToolMode(policy.ToolMode)
+	allowlist := cloneStringSlice(policy.ToolAllowlist)
+	denylist := cloneStringSlice(policy.ToolDenylist)
+	if mode == "" && len(allowlist) == 0 && len(denylist) == 0 {
+		return nil
+	}
+
+	out := map[string]any{}
+	if mode != "" {
+		out["tool_mode"] = string(mode)
+	}
+	if len(allowlist) > 0 {
+		out["tool_allowlist"] = allowlist
+	}
+	if len(denylist) > 0 {
+		out["tool_denylist"] = denylist
+	}
+	return out
+}
+
+func decodeCapabilityPolicy(raw any) CapabilityPolicy {
+	root, ok := raw.(map[string]any)
+	if !ok || len(root) == 0 {
+		return CapabilityPolicy{}
+	}
+
+	mode, _ := root["tool_mode"].(string)
+	return CapabilityPolicy{
+		ToolMode:      normalizeTurnToolMode(TurnToolMode(mode)),
+		ToolAllowlist: decodeStringSlice(root["tool_allowlist"]),
+		ToolDenylist:  decodeStringSlice(root["tool_denylist"]),
+	}
+}
+
+func refineCapabilityPolicy(policy CapabilityPolicy, input ResolveTurnInput) CapabilityPolicy {
+	refined := CapabilityPolicy{
+		ToolMode:      normalizeTurnToolMode(policy.ToolMode),
+		ToolAllowlist: cloneStringSlice(policy.ToolAllowlist),
+		ToolDenylist:  cloneStringSlice(policy.ToolDenylist),
+	}
+
+	if refined.ToolMode == "" {
+		refined.ToolMode = TurnToolModeAuto
+	}
+	if refined.ToolMode != TurnToolModeAuto {
+		return refined
+	}
+
+	message := strings.ToLower(strings.TrimSpace(input.UserMessage))
+	if message == "" {
+		return refined
+	}
+
+	if turnLooksReadOnly(message) {
+		refined.ToolMode = TurnToolModeReadOnly
+		refined.ToolDenylist = mergeStringSets(refined.ToolDenylist, []string{"file_write", "shell_exec"})
+	}
+	return refined
+}
+
+func turnLooksReadOnly(message string) bool {
+	readOnlyHints := []string{
+		"read", "look at", "inspect", "analyze", "review", "check", "search",
+		"查看", "看看", "检查", "分析", "审查", "搜索", "读取", "只读",
+	}
+	readOnlyWriteGuards := []string{
+		"don't modify", "do not modify", "don't change", "do not change",
+		"不要修改", "不用修改", "无需修改", "先不要修改", "别修改",
+		"不要改", "先别改", "不要执行", "不要运行",
+	}
+	writeHints := []string{
+		"write", "edit", "change", "modify", "update", "create", "fix", "run", "execute",
+		"写", "改", "修改", "更新", "创建", "修复", "运行", "执行",
+	}
+
+	hasReadOnlyHint := false
+	for _, hint := range readOnlyHints {
+		if strings.Contains(message, hint) {
+			hasReadOnlyHint = true
+			break
+		}
+	}
+	if !hasReadOnlyHint {
+		return false
+	}
+	if containsAny(message, readOnlyWriteGuards) {
+		return true
+	}
+	for _, hint := range writeHints {
+		if strings.Contains(message, hint) {
+			return false
+		}
+	}
+	return true
+}
+
+func containsAny(message string, hints []string) bool {
+	for _, hint := range hints {
+		if strings.Contains(message, hint) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeTurnToolMode(mode TurnToolMode) TurnToolMode {
+	switch strings.ToLower(strings.TrimSpace(string(mode))) {
+	case "", "auto":
+		return TurnToolModeAuto
+	case "full":
+		return TurnToolModeFull
+	case "read_only":
+		return TurnToolModeReadOnly
+	default:
+		return TurnToolModeAuto
+	}
+}
+
+func normalizeNameSet(names []string) map[string]bool {
+	if len(names) == 0 {
+		return nil
+	}
+
+	out := make(map[string]bool, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		out[name] = true
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func decodeStringSlice(raw any) []string {
+	switch value := raw.(type) {
+	case []string:
+		return cloneStringSlice(value)
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			text, ok := item.(string)
+			if !ok {
+				continue
+			}
+			text = strings.TrimSpace(text)
+			if text == "" {
+				continue
+			}
+			out = append(out, text)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func cloneStringSlice(src []string) []string {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(src))
+	for _, item := range src {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func mergeStringSets(base []string, extra []string) []string {
+	if len(base) == 0 && len(extra) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]bool, len(base)+len(extra))
+	out := make([]string, 0, len(base)+len(extra))
+	for _, group := range [][]string{base, extra} {
+		for _, item := range group {
+			item = strings.TrimSpace(item)
+			if item == "" || seen[item] {
+				continue
+			}
+			seen[item] = true
+			out = append(out, item)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

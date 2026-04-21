@@ -560,6 +560,14 @@ MCP 应作为 `ToolProvider` 的一种来源。
   - `RuntimeContextBuilder`
   - session 创建前的 metadata 注入
   - continue/runtime context 对 session metadata 的回读入口
+- `CapabilityPolicy` 已开始进入最小可运行形态：
+  - `tool_mode = auto/full/read_only`
+  - `tool_allowlist`
+  - `tool_denylist`
+- 当前 turn-time resolver 已有第一条实际生效的动态策略：
+  - `auto` 模式下会基于当前消息做轻量启发式判断
+  - 对“查看 / 分析 / review / inspect / 不要修改”这类明显只读意图，自动把本轮 tools 收敛为 read-only subset
+  - 当前默认会优先收掉 `file_write`、`shell_exec`
 
 这意味着当前 Host capability governance 主链已经从：
 
@@ -567,12 +575,12 @@ MCP 应作为 `ToolProvider` 的一种来源。
 
 推进到：
 
-- startup-time registration + session-stable capability baseline + turn-time runtime context entry
+- startup-time registration + session-stable capability baseline + turn-time runtime context entry + minimal dynamic tool filtering
 
 当前 Phase B 仍未覆盖：
 
 - ToolCatalog
-- recall / message / policy 驱动的 session/turn 级动态 capability resolution
+- recall / richer message / policy 驱动的 session/turn 级动态 capability resolution
 - recall / skill / policy 联动过滤 MCP/native tool subset
 
 ### Phase C：接入 Skills 最小闭环

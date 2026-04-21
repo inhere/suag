@@ -135,6 +135,47 @@ func TestRunner_RunUsesResolvedToolSubset(t *testing.T) {
 	assert.False(t, toolSchemaListed(calls[0].Tools, "another"))
 }
 
+func TestRunner_RunUsesReadOnlyResolvedToolSubset(t *testing.T) {
+	t.Parallel()
+
+	registry := tools.NewRegistry()
+	registry.MustRegister(&hostNamedTool{name: "file_read"})
+	registry.MustRegister(&hostNamedTool{name: "file_write"})
+	registry.MustRegister(&hostNamedTool{name: "shell_exec"})
+	registry.MustRegister(&hostNamedTool{name: "file_list"})
+
+	mock := llm.NewMockProvider("mock").QueueText("done")
+	runner, err := New(Config{
+		Provider: mock,
+		Registry: registry,
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	_, err = runner.Run(context.Background(), Request{
+		SessionID:   "sess_read_only_subset",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "inspect only",
+		Context: map[string]any{
+			runtimeContextResolvedToolNamesKey: []string{"file_read", "file_list"},
+		},
+	})
+	assert.NoErr(t, err)
+
+	calls := mock.Calls()
+	assert.Eq(t, 1, len(calls))
+	assert.True(t, toolSchemaListed(calls[0].Tools, "file_read"))
+	assert.True(t, toolSchemaListed(calls[0].Tools, "file_list"))
+	assert.False(t, toolSchemaListed(calls[0].Tools, "file_write"))
+	assert.False(t, toolSchemaListed(calls[0].Tools, "shell_exec"))
+}
+
 func TestRunner_RunInjectsFormalMemoryIntoProviderContext(t *testing.T) {
 	t.Parallel()
 
@@ -988,6 +1029,24 @@ func (e *hostAnotherTool) Execute(_ context.Context, call api.ToolCall) (*api.To
 		CallID:  call.CallID,
 		Name:    call.Name,
 		Content: "another",
+	}, nil
+}
+
+type hostNamedTool struct {
+	name string
+}
+
+func (t *hostNamedTool) Name() string        { return t.name }
+func (t *hostNamedTool) Description() string { return t.name + " test tool" }
+func (t *hostNamedTool) Kind() tools.Kind    { return tools.KindNative }
+func (t *hostNamedTool) Schema() api.ToolSchema {
+	return api.ToolSchema{Name: t.name}
+}
+func (t *hostNamedTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    call.Name,
+		Content: t.name,
 	}, nil
 }
 

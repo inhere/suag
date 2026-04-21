@@ -4,6 +4,14 @@ import "context"
 
 const CapabilitySetSessionMetadataKey = "capability_set"
 
+type TurnToolMode string
+
+const (
+	TurnToolModeAuto     TurnToolMode = "auto"
+	TurnToolModeFull     TurnToolMode = "full"
+	TurnToolModeReadOnly TurnToolMode = "read_only"
+)
+
 // ToolRef describes a runtime tool exposed by a provider.
 type ToolRef struct {
 	Name       string
@@ -17,8 +25,13 @@ type ToolProvider interface {
 	ListToolRefs(ctx context.Context) ([]ToolRef, error)
 }
 
-// CapabilityPolicy reserves space for future allow/deny rules.
-type CapabilityPolicy struct{}
+// CapabilityPolicy is the session-stable tool governance baseline that can be
+// refined again at turn time using the current message.
+type CapabilityPolicy struct {
+	ToolMode      TurnToolMode
+	ToolAllowlist []string
+	ToolDenylist  []string
+}
 
 // CapabilityScope reserves space for future workspace/session scoping.
 type CapabilityScope struct{}
@@ -34,6 +47,7 @@ type CapabilitySet struct {
 type ResolvedTurnCapabilities struct {
 	ToolRefs  []ToolRef
 	ToolNames []string
+	ToolMode  TurnToolMode
 }
 
 // BuildSetInput carries future session-scoped capability inputs.

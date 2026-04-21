@@ -157,6 +157,49 @@ func TestRuntimeContextBuilder_UsesSessionCapabilityMetadata(t *testing.T) {
 	names, ok := contextMap["resolved_tool_names"].([]string)
 	assert.True(t, ok)
 	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "shell_exec"}, names)
+	mode, ok := contextMap["resolved_tool_mode"].(string)
+	assert.True(t, ok)
+	assert.Eq(t, "auto", mode)
+}
+
+func TestRuntimeContextBuilder_DerivesReadOnlyToolModeFromMessage(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	built, err := buildDefaultCapabilities(t.TempDir())
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, built.Close())
+	})
+
+	defaultSet := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
+	a := &App{
+		registry:             built.Registry,
+		capabilityManager:    built.Manager,
+		defaultCapabilitySet: defaultSet,
+	}
+
+	sessionBuilder := a.newSessionMetadataBuilder()
+	metadata := sessionBuilder(session.SessionMetadataBuildInput{
+		SessionID: "sess_ctx_ro",
+		AgentID:   "default",
+		Message:   "hello",
+	})
+
+	runtimeBuilder := a.newRuntimeContextBuilder()
+	contextMap := runtimeBuilder(session.RuntimeContextBuildInput{
+		SessionID:       "sess_ctx_ro",
+		AgentID:         "default",
+		Message:         "请查看并分析当前文件，不要修改",
+		SessionMetadata: metadata,
+	})
+
+	names, ok := contextMap["resolved_tool_names"].([]string)
+	assert.True(t, ok)
+	assertToolNamesEq(t, []string{"file_read", "file_list"}, names)
+	mode, ok := contextMap["resolved_tool_mode"].(string)
+	assert.True(t, ok)
+	assert.Eq(t, "read_only", mode)
 }
 
 func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {

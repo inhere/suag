@@ -18,18 +18,22 @@
 - `tools / mcp / skills` 长线治理设计见 `docs/superpowers/specs/2026-04-20-host-capability-governance-design.md`，当前按“agentcore 只保留 runtime kernel 与 tool contract，axon 负责 capability governance” 方向持续推进
 - Capability governance Phase A 已完成：`internal/app` 已通过统一 capability builder 构建默认 native tool registry，`internal/host/intrunner` 已开始消费 resolved tool subset
 - Capability governance Phase B1 已完成：MCP server 配置读取、`tools/mcp.Provider`、app 默认 capability builder 接入 MCP provider 与 `App.Close()` 生命周期收口已落地
-- Capability governance Phase B2 正在收口：默认 `CapabilitySet` 已写入 `session.metadata.capability_set`，`start_turn / continue_turn` 会从 session baseline 解析 `resolved_tool_names`，为后续 session/turn 动态 capability resolution 打底
-- 下一步继续围绕 capability governance 主线推进 session-stable capability set、turn-time resolution、skills/runtime 接线与 policy/recall 联动
+- Capability governance Phase B2 已继续推进：默认 `CapabilitySet` 已写入 `session.metadata.capability_set`，`start_turn / continue_turn` 会从 session baseline 解析 `resolved_tool_names`
+- 当前最小 turn-time dynamic resolution 已接上：`CapabilityPolicy` 已支持 `auto/full/read_only + allowlist/denylist`，`auto` 模式下会按当前消息把明显只读轮次收敛为 read-only tool subset
+- 下一步继续围绕 capability governance 主线推进 recall 驱动的 turn-time filtering、skills/runtime 接线与 policy/recall 联动
 <!-- PROCESSING WORKS:END -->
 
-## git worktree 开发规范
+## 核心原则
 
-- 使用 git worktree 进行开发时，在 `.worktrees` 目录下创建分支
 
 ## 项目编码规范
 
 - 关键的方法或逻辑点需要添加注释说明
 - 单个go文件最大行数不能操作1000行，超过时需要按情况进行拆分
+
+### git worktree 开发规范
+
+- 使用 git worktree 进行开发时，在 `.worktrees` 目录下创建分支
 
 ### 单元测试编写
 

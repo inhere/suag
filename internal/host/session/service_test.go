@@ -162,6 +162,7 @@ func TestService_StartTurnBuildsSessionMetadataBeforeRuntimeContext(t *testing.T
 			runtimeInput = input
 			return map[string]any{
 				"resolved_tool_names": []string{"file_read"},
+				"resolved_tool_mode":  "read_only",
 			}
 		},
 	})
@@ -213,6 +214,9 @@ func TestService_StartTurnBuildsSessionMetadataBeforeRuntimeContext(t *testing.T
 	}
 	if names, ok := runner.lastRequest.Context["resolved_tool_names"].([]string); !ok || len(names) != 1 || names[0] != "file_read" {
 		t.Fatalf("runner context resolved_tool_names = %#v, want [file_read]", runner.lastRequest.Context["resolved_tool_names"])
+	}
+	if mode, ok := runner.lastRequest.Context["resolved_tool_mode"].(string); !ok || mode != "read_only" {
+		t.Fatalf("runner context resolved_tool_mode = %#v, want %q", runner.lastRequest.Context["resolved_tool_mode"], "read_only")
 	}
 	if result.RunID == "" {
 		t.Fatal("StartTurn().RunID is empty")
@@ -425,6 +429,7 @@ func TestService_ContinueTurnBuildsRuntimeContextWithSessionMetadataAndMessage(t
 			runtimeInputs = append(runtimeInputs, input)
 			return map[string]any{
 				"resolved_tool_names": []string{"file_read", "mcp_echo"},
+				"resolved_tool_mode":  "auto",
 			}
 		},
 	})
@@ -473,6 +478,9 @@ func TestService_ContinueTurnBuildsRuntimeContextWithSessionMetadataAndMessage(t
 	}
 	if names, ok := secondRunner.lastRequest.Context["resolved_tool_names"].([]string); !ok || len(names) != 2 {
 		t.Fatalf("continue runner context resolved_tool_names = %#v, want [file_read mcp_echo]", secondRunner.lastRequest.Context["resolved_tool_names"])
+	}
+	if mode, ok := secondRunner.lastRequest.Context["resolved_tool_mode"].(string); !ok || mode != "auto" {
+		t.Fatalf("continue runner context resolved_tool_mode = %#v, want %q", secondRunner.lastRequest.Context["resolved_tool_mode"], "auto")
 	}
 }
 

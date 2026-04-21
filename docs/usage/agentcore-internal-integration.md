@@ -280,6 +280,14 @@
   - 当前 continue message
   - `AgentID`
   - `IsContinue`
+- `CapabilityPolicy` 现在已有最小可运行字段：
+  - `tool_mode = auto/full/read_only`
+  - `tool_allowlist`
+  - `tool_denylist`
+- 当前 turn-time resolver 已有第一条实际生效策略：
+  - `auto` 模式下会根据当前消息判断是否属于明显只读轮次
+  - 对“查看 / 分析 / inspect / review / 不要修改”类消息，会把本轮 tools 收敛为 read-only subset
+  - 当前默认收掉 `file_write`、`shell_exec`
 
 这意味着当前 Host runtime 与 capability governance 的接线已经进一步稳定为：
 
@@ -289,7 +297,7 @@
 
 当前这一阶段仍然**没有**完成：
 
-- recall / message / policy 驱动的动态 capability filtering
+- recall / richer message / policy 驱动的动态 capability filtering
 - `SKILL.md` runtime / loader / resolver
 - tool catalog / provider policy / allow-deny 模型
 

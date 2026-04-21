@@ -134,6 +134,7 @@ func (a *App) newRuntimeContextBuilder() session.RuntimeContextBuilder {
 
 		contextMap := map[string]any{
 			"resolved_tool_names": append([]string(nil), resolved.ToolNames...),
+			"resolved_tool_mode":  string(resolved.ToolMode),
 		}
 		return contextMap
 	}

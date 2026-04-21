@@ -231,6 +231,7 @@ curl http://127.0.0.1:8180/api/sessions/<sessionId>/memory-candidates
 - 未配置 `host.acp.mode` 时，默认走 `internal/host/intrunner`，并按 `sessionId` 复用本地上下文历史
 - `internal/host/intrunner` 当前已支持从 `RuntimeRequest.Context["resolved_tool_names"]` 消费 turn 级 tool subset；当前 app 侧先注入默认 resolved tools，后续再扩到 session/turn 动态 capability resolution
 - Host `session.Service` 现已在首轮 `start_turn` 时把默认 `CapabilitySet` 写入 `session.metadata.capability_set`，之后 `start_turn / continue_turn` 都会优先从这份 session baseline 解析 `resolved_tool_names`
+- 当前最小 turn-time dynamic resolution 已接线：如果消息明显是“查看 / 分析 / review / inspect / 不要修改”类只读意图，runtime context 会把本轮 tool subset 自动收敛到 read-only 模式，默认收掉 `file_write`、`shell_exec`
 - app 默认 capability builder 当前会在启动时尝试连接 `mcp.servers` 中配置的 stdio MCP server；如果配置了 MCP 但启动失败，当前采用 fail-fast，Host 进程不会静默带着缺失能力继续启动
 - 未显式配置 `agentcore.run_root` 时，Host internal runner 的 runtime 数据默认收纳到 `db/agentcore/host`
 - 如果显式配置了 `agentcore.run_root`，Host internal runner 会改为使用 `<agentcore.run_root>/host`
