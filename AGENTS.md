@@ -16,17 +16,8 @@
 - internal runner / ACP runner 的 Host contract 已完成一轮对齐：`externalTaskId`、失败态 external task 持久化、internal suspend `waitMetadata`、ACP `EXTERNAL_RUNNING` waiting metadata 与 AG-UI run detail / snapshot 已对齐
 - Host learning-system 当前已形成 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md + MEMORY.md / USER.md` 闭环，并已验证 recall 会影响 self-loop 结果且不会污染 session history
 - `tools / mcp / skills` 长线治理设计见 `docs/superpowers/specs/2026-04-20-host-capability-governance-design.md`，当前按“agentcore 只保留 runtime kernel 与 tool contract，axon 负责 capability governance” 方向持续推进
-- Capability governance Phase A 已完成：`internal/app` 已通过统一 capability builder 构建默认 native tool registry，`internal/host/intrunner` 已开始消费 resolved tool subset
-- Capability governance Phase B1 已完成：MCP server 配置读取、`tools/mcp.Provider`、app 默认 capability builder 接入 MCP provider 与 `App.Close()` 生命周期收口已落地
-- Capability governance Phase B2 已继续推进：默认 `CapabilitySet` 已写入 `session.metadata.capability_set`，`start_turn / continue_turn` 会从 session baseline 解析 `resolved_tool_names`
-- 当前最小 turn-time dynamic resolution 已接上：`CapabilityPolicy` 已支持 `auto/full/read_only + allowlist/denylist`，并可结合消息文本与 formal memory recall preview 把本轮 tools 收敛为 read-only subset
-- Capability governance Phase C 已继续推进：新增 `internal/capabilities/skills` 的 `descriptor + registry + resolver`，skill 现作为 capability recipe 影响 `system fragments + resource hints + tool hints`，不再默认走 executable tool lane
-- 当前最小 skill resource hints 已打通：skill 相邻 `references/`、`assets/` 下的小型文本资源会被解析到 `resolved_resource_hints`，并在 `internal/host/intrunner` 中以 runtime-only `system` context 注入，不污染 session history
-- Capability governance Phase C-D Task 1 已完成第一轮收口：`resolved_resource_hints` 已升级为带 `skill/kind/path/source_path/priority` 的结构化对象，且 runtime 侧会对 skill 根目录范围、子目录与扩展名做二次硬校验
-- Capability governance Phase C-D Task 2/3 已接上最小解释链路：skill matching 现在会产出 `resolved_skill_matches(score/match_sources/match_terms)`，默认 post-turn `CapabilityPlannerHook` 也会消费 `resolved_tool_mode`、`resolved_skill_names`、`resolved_skill_matches`、`resource_hint_count`、`recall_hit`
-- richer skill matching 继续推进了一步：`resolved_skill_matches` 已补 `scope_hints`，当前能表达 skill 更偏 `planning / analysis / edit / execution` 哪类工作，便于后续 planner / UI 消费
-- 旧的 `internal/platform/tools/skills` 已开始收口移除：SKILL parser 已迁入 `internal/capabilities/skills`，历史上的 executable skill-tool 残留已删除，避免继续混淆 `tool source` 与 `capability recipe` 边界
-- 下一步继续围绕 capability governance 主线推进 richer skill matching、tool catalog 与 recall/policy/skills/planner 联动
+- Capability governance 当前已完成到 Phase C-D：`CapabilityPolicy`、tool subset、skill matching、resource hints、planner hint 已贯通；后续继续推进 richer skill matching、tool catalog 与 recall/policy/skills/planner 联动
+- Web 默认界面当前开始从“偏工作台”收敛为 `Chat-first`，设计见 `docs/superpowers/specs/2026-04-21-web-chat-first-layout-design.md`；后续按该设计把默认视图聚焦到聊天主线，并为未来 `Workbench` 模式保留扩展位
 <!-- PROCESSING WORKS:END -->
 
 ## 项目编码规范
