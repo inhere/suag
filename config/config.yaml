@@ -17,6 +17,19 @@ workspace: ""
 # SerpAPI key for web_search tool
 serpapi_key: ""              # set via env: AXON_SERPAPI_KEY
 
+# Optional MCP servers exposed as additional tool providers
+mcp:
+  servers: []
+  # servers:
+  #   - id: filesystem
+  #     command: npx
+  #     args:
+  #       - -y
+  #       - "@modelcontextprotocol/server-filesystem"
+  #       - ./workspace
+  #     env:
+  #       NODE_ENV: development
+
 # Max ReAct loop steps per agent task
 max_steps: 30
 
