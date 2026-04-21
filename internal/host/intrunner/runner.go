@@ -107,7 +107,7 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 	runMemory := newSessionMemoryWithFragments(
 		recalled.Messages,
 		state.history,
-		resolvedSystemFragmentsFromContext(in.Context),
+		resolvedRuntimeContextMessages(in.Context),
 	)
 	a, runner, err := r.resolveRuntime(state, in, runMemory)
 	if err != nil {
@@ -545,12 +545,12 @@ func newSessionMemory(recalled []memory.Message, history []memory.Message) *sess
 	}
 }
 
-func newSessionMemoryWithFragments(recalled []memory.Message, history []memory.Message, systemFragments []string) *sessionMemory {
+func newSessionMemoryWithFragments(recalled []memory.Message, history []memory.Message, runtimeMessages []memory.Message) *sessionMemory {
 	mem := newSessionMemory(recalled, history)
-	if len(systemFragments) == 0 {
+	if len(runtimeMessages) == 0 {
 		return mem
 	}
-	mem.recalled = append(cloneMemoryMessages(systemFragmentMessages(systemFragments)), mem.recalled...)
+	mem.recalled = append(cloneMemoryMessages(runtimeMessages), mem.recalled...)
 	return mem
 }
 

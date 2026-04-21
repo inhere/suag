@@ -319,6 +319,7 @@
   - trigger hints
   - system prompt fragments
   - tool allowlist hints
+  - 相邻 `references/`、`assets/` 目录里的最小文本类 resource hints
 - `internal/app` 现在会：
   - 扫描 `<workspace>/skills/**/SKILL.md`
   - 扫描 `config/skills/**/SKILL.md`
@@ -326,19 +327,26 @@
   - 在 runtime context builder 中解析出：
     - `resolved_skill_names`
     - `resolved_system_fragments`
+    - `resolved_resource_hints`
     - skill-derived tool hints
-- `internal/host/intrunner` 现在会把 `resolved_system_fragments` 作为 runtime-only `system` messages 注入 provider request
+- `internal/host/intrunner` 现在会把 `resolved_system_fragments` 与 `resolved_resource_hints` 一并作为 runtime-only `system` messages 注入 provider request
+- 当前 resource hints 的消费仍保持最小化：
+  - 只读取小型文本文件
+  - 默认最多注入 4 个资源文件
+  - 单文件内容会做大小截断
+  - 不会回写 session history
 
 这意味着 skills 当前已经开始以“capability recipe”而不是“工具执行器”的方式影响一轮运行：
 
 - 影响当前 turn 的 prompt
+- 影响当前 turn 的最小参考资料上下文
 - 影响当前 turn 的 tool subset
 - 但不会直接变成 workflow engine 或独立 execution lane
 
 当前这一阶段仍然**没有**完成：
 
 - 更准确的 `SKILL.md` frontmatter / body 建模
-- references / assets / scripts 的按需 resource hint 消费
+- scripts / richer assets 的按需 resource hint 消费
 - skill matcher 与 recall / policy / planner 的更深联动
 
 ---

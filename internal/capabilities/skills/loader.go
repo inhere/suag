@@ -1,6 +1,9 @@
 package skills
 
 import (
+	"io/fs"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	platformskills "github.com/inhere/axon/internal/platform/tools/skills"
@@ -23,6 +26,7 @@ func LoadDescriptorsFromFile(path string) ([]Descriptor, error) {
 			TriggerHints:      inferTriggerHints(skill),
 			SystemPromptParts: inferPromptParts(skill),
 			ToolAllowlist:     inferToolAllowlist(skill),
+			ResourceHints:     inferResourceHints(path),
 		}
 		if desc.Name == "" {
 			continue
@@ -70,4 +74,45 @@ func inferToolAllowlist(skill platformskills.Skill) []string {
 		names = append(names, "shell_exec")
 	}
 	return cloneStrings(names)
+}
+
+func inferResourceHints(skillPath string) []string {
+	skillPath = strings.TrimSpace(skillPath)
+	if skillPath == "" {
+		return nil
+	}
+
+	skillDir := filepath.Dir(skillPath)
+	var hints []string
+	for _, subdir := range []string{"references", "assets"} {
+		root := filepath.Join(skillDir, subdir)
+		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil || d == nil || d.IsDir() {
+				return nil
+			}
+			if !isSkillResourceFile(path) {
+				return nil
+			}
+			absPath, err := filepath.Abs(path)
+			if err != nil {
+				return nil
+			}
+			hints = append(hints, absPath)
+			return nil
+		})
+	}
+	if len(hints) == 0 {
+		return nil
+	}
+	sort.Strings(hints)
+	return cloneStrings(hints)
+}
+
+func isSkillResourceFile(path string) bool {
+	switch strings.ToLower(filepath.Ext(strings.TrimSpace(path))) {
+	case ".md", ".txt", ".yaml", ".yml", ".json":
+		return true
+	default:
+		return false
+	}
 }

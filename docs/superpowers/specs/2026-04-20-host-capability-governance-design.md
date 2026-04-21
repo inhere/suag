@@ -599,19 +599,22 @@ MCP 应作为 `ToolProvider` 的一种来源。
 - 当前 skill 不再默认按 executable tool 注入 runtime，而是作为 capability recipe：
   - 匹配当前 message / recall preview
   - 产出 `resolved_system_fragments`
+  - 产出 `resolved_resource_hints`
   - 产出 `tool hints / allowlist`
   - 产出 `resolved_skill_names`
 - `internal/app` runtime context builder 已开始消费这条结果
-- `internal/host/intrunner` 也已开始把 `resolved_system_fragments` 作为 runtime-only `system` context 注入 provider request
+- `internal/host/intrunner` 也已开始把 `resolved_system_fragments` 与最小 `resolved_resource_hints` 作为 runtime-only `system` context 注入 provider request
+- 当前 resource hints 仍保持保守边界：
+  - 仅消费 skill 相邻 `references/`、`assets/` 下的小型文本文件
+  - 限制注入文件数量与单文件大小
+  - 不写回 transcript / session history
 
 当前 Phase C 下一步继续做：
 
-- `SKILL.md` loader
-- parser
-- descriptor
-- registry
-- resolver
-- 通过 prompt/context/tool allowlist 影响当前 run
+- 更准确的 `SKILL.md` frontmatter / body 建模
+- richer matcher / ranking / scope hints
+- scripts / richer assets 的按需 resource 消费
+- recall / policy / planner 更深联动
 
 明确不做：
 

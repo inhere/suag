@@ -83,6 +83,14 @@ func TestLoadDescriptorsFromFile(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "SKILL.md")
+	err := os.MkdirAll(filepath.Join(dir, "references"), 0o755)
+	assert.NoErr(t, err)
+	err = os.MkdirAll(filepath.Join(dir, "assets"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(filepath.Join(dir, "references", "guide.md"), []byte("# Guide\n\nAlways ask clarifying questions first.\n"), 0o644)
+	assert.NoErr(t, err)
+	err = os.WriteFile(filepath.Join(dir, "assets", "notes.txt"), []byte("Prefer compact summaries.\n"), 0o644)
+	assert.NoErr(t, err)
 	content := []byte(`---
 name: office-hours
 description: Ask questions before implementation and help brainstorm product ideas.
@@ -91,7 +99,7 @@ command: echo hi
 inputs:
   topic: Topic to discuss
 ---`)
-	err := os.WriteFile(path, content, 0o644)
+	err = os.WriteFile(path, content, 0o644)
 	assert.NoErr(t, err)
 
 	descriptors, err := LoadDescriptorsFromFile(path)
@@ -101,4 +109,7 @@ inputs:
 	assert.True(t, len(descriptors[0].TriggerHints) >= 1)
 	assert.True(t, len(descriptors[0].SystemPromptParts) >= 1)
 	assert.Eq(t, []string{"file_read", "file_list"}, descriptors[0].ToolAllowlist)
+	assert.Eq(t, 2, len(descriptors[0].ResourceHints))
+	assert.True(t, filepath.IsAbs(descriptors[0].ResourceHints[0]))
+	assert.True(t, filepath.IsAbs(descriptors[0].ResourceHints[1]))
 }

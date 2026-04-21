@@ -20,8 +20,9 @@
 - Capability governance Phase B1 已完成：MCP server 配置读取、`tools/mcp.Provider`、app 默认 capability builder 接入 MCP provider 与 `App.Close()` 生命周期收口已落地
 - Capability governance Phase B2 已继续推进：默认 `CapabilitySet` 已写入 `session.metadata.capability_set`，`start_turn / continue_turn` 会从 session baseline 解析 `resolved_tool_names`
 - 当前最小 turn-time dynamic resolution 已接上：`CapabilityPolicy` 已支持 `auto/full/read_only + allowlist/denylist`，并可结合消息文本与 formal memory recall preview 把本轮 tools 收敛为 read-only subset
-- Capability governance Phase C 已开始最小接线：新增 `internal/capabilities/skills` 的 `descriptor + registry + resolver`，skill 现作为 capability recipe 影响 `system fragments + tool hints`，不再默认走 executable tool lane
-- 下一步继续围绕 capability governance 主线推进 richer skill matching、resource hints 消费、tool catalog 与 recall/policy/skills 联动
+- Capability governance Phase C 已继续推进：新增 `internal/capabilities/skills` 的 `descriptor + registry + resolver`，skill 现作为 capability recipe 影响 `system fragments + resource hints + tool hints`，不再默认走 executable tool lane
+- 当前最小 skill resource hints 已打通：skill 相邻 `references/`、`assets/` 下的小型文本资源会被解析到 `resolved_resource_hints`，并在 `internal/host/intrunner` 中以 runtime-only `system` context 注入，不污染 session history
+- 下一步继续围绕 capability governance 主线推进 richer skill matching、tool catalog 与 recall/policy/skills/planner 联动
 <!-- PROCESSING WORKS:END -->
 
 ## 项目编码规范

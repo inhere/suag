@@ -273,6 +273,14 @@ func TestRuntimeContextBuilder_ResolvesSkillFragmentsAndToolHints(t *testing.T) 
 	assert.NoErr(t, err)
 	err = os.MkdirAll(filepath.Join(workspace, "skills", "office-hours"), 0o755)
 	assert.NoErr(t, err)
+	err = os.MkdirAll(filepath.Join(workspace, "skills", "office-hours", "references"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(workspace, "skills", "office-hours", "references", "guide.md"),
+		[]byte("# Guide\n\nAlways ask one question at a time.\n"),
+		0o644,
+	)
+	assert.NoErr(t, err)
 	err = os.WriteFile(
 		filepath.Join(workspace, "skills", "office-hours", "SKILL.md"),
 		[]byte(`---
@@ -329,6 +337,10 @@ inputs:
 	assert.True(t, ok)
 	assert.Eq(t, 1, len(fragments))
 	assert.True(t, strings.Contains(fragments[0], "Ask questions before writing code"))
+	resourceHints, ok := contextMap["resolved_resource_hints"].([]string)
+	assert.True(t, ok)
+	assert.Eq(t, 1, len(resourceHints))
+	assert.True(t, strings.HasSuffix(resourceHints[0], filepath.Join("skills", "office-hours", "references", "guide.md")))
 }
 
 func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {
