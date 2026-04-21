@@ -319,7 +319,7 @@
   - trigger hints
   - system prompt fragments
   - tool allowlist hints
-  - 相邻 `references/`、`assets/` 目录里的最小文本类 resource hints
+  - 相邻 `references/`、`assets/` 目录里的结构化 resource hints
 - `internal/app` 现在会：
   - 扫描 `<workspace>/skills/**/SKILL.md`
   - 扫描 `config/skills/**/SKILL.md`
@@ -331,9 +331,11 @@
     - skill-derived tool hints
 - `internal/host/intrunner` 现在会把 `resolved_system_fragments` 与 `resolved_resource_hints` 一并作为 runtime-only `system` messages 注入 provider request
 - 当前 resource hints 的消费仍保持最小化：
+  - `resolved_resource_hints` 已升级为结构化对象，至少包含 `skill`、`kind`、`path`、`source_path`、`priority`
   - 只读取小型文本文件
   - 默认最多注入 4 个资源文件
   - 单文件内容会做大小截断
+  - runtime 侧会再次校验路径必须位于 skill 根目录内，且只能落在 `references/`、`assets/` 子树与白名单扩展名内
   - 不会回写 session history
 
 这意味着 skills 当前已经开始以“capability recipe”而不是“工具执行器”的方式影响一轮运行：

@@ -39,7 +39,7 @@ func cloneDescriptor(desc Descriptor) Descriptor {
 		TriggerHints:      cloneStrings(desc.TriggerHints),
 		ToolAllowlist:     cloneStrings(desc.ToolAllowlist),
 		SystemPromptParts: cloneStrings(desc.SystemPromptParts),
-		ResourceHints:     cloneStrings(desc.ResourceHints),
+		ResourceHints:     cloneResourceHints(desc.ResourceHints),
 	}
 }
 
@@ -55,6 +55,31 @@ func cloneStrings(src []string) []string {
 			continue
 		}
 		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func cloneResourceHints(src []ResourceHint) []ResourceHint {
+	if len(src) == 0 {
+		return nil
+	}
+
+	out := make([]ResourceHint, 0, len(src))
+	for _, hint := range src {
+		path := strings.TrimSpace(hint.Path)
+		if path == "" {
+			continue
+		}
+		out = append(out, ResourceHint{
+			SkillName:  strings.TrimSpace(hint.SkillName),
+			Kind:       strings.TrimSpace(hint.Kind),
+			Path:       path,
+			SourcePath: strings.TrimSpace(hint.SourcePath),
+			Priority:   hint.Priority,
+		})
 	}
 	if len(out) == 0 {
 		return nil

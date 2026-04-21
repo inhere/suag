@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gookit/goutil/testutil/assert"
@@ -135,6 +136,12 @@ inputs:
 	assert.True(t, len(descriptors[0].SystemPromptParts) >= 1)
 	assert.Eq(t, []string{"file_read", "file_list"}, descriptors[0].ToolAllowlist)
 	assert.Eq(t, 2, len(descriptors[0].ResourceHints))
-	assert.True(t, filepath.IsAbs(descriptors[0].ResourceHints[0]))
-	assert.True(t, filepath.IsAbs(descriptors[0].ResourceHints[1]))
+	assert.Eq(t, "office-hours", descriptors[0].ResourceHints[0].SkillName)
+	assert.Eq(t, "reference", descriptors[0].ResourceHints[0].Kind)
+	assert.True(t, descriptors[0].ResourceHints[0].Priority > descriptors[0].ResourceHints[1].Priority)
+	assert.True(t, filepath.IsAbs(descriptors[0].ResourceHints[0].Path))
+	assert.True(t, filepath.IsAbs(descriptors[0].ResourceHints[1].Path))
+	assert.True(t, strings.HasSuffix(descriptors[0].ResourceHints[0].Path, filepath.Join("references", "guide.md")))
+	assert.True(t, strings.HasSuffix(descriptors[0].ResourceHints[1].Path, filepath.Join("assets", "notes.txt")))
+	assert.Eq(t, path, descriptors[0].ResourceHints[0].SourcePath)
 }

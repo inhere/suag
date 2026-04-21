@@ -213,11 +213,15 @@ func TestRunner_RunInjectsResolvedSystemFragmentsIntoProviderContext(t *testing.
 func TestRunner_RunInjectsResolvedResourceHintsIntoProviderContext(t *testing.T) {
 	t.Parallel()
 
-	resourceDir := filepath.Join(t.TempDir(), "skills", "office-hours", "references")
+	workspace := t.TempDir()
+	resourceDir := filepath.Join(workspace, "skills", "office-hours", "references")
 	err := os.MkdirAll(resourceDir, 0o755)
 	assert.NoErr(t, err)
 	resourcePath := filepath.Join(resourceDir, "guide.md")
 	err = os.WriteFile(resourcePath, []byte("# Guide\n\nAlways ask one clarifying question before implementation.\n"), 0o644)
+	assert.NoErr(t, err)
+	skillPath := filepath.Join(workspace, "skills", "office-hours", "SKILL.md")
+	err = os.WriteFile(skillPath, []byte("---\nname: office-hours\ndescription: Ask questions.\n"), 0o644)
 	assert.NoErr(t, err)
 
 	mock := llm.NewMockProvider("mock").QueueText("done")
@@ -239,15 +243,75 @@ func TestRunner_RunInjectsResolvedResourceHintsIntoProviderContext(t *testing.T)
 		AgentID:     "default",
 		Instruction: "brainstorm product direction",
 		Context: map[string]any{
-			"resolved_resource_hints": []string{resourcePath},
+			"resolved_resource_hints": []map[string]any{
+				{
+					"skill":       "office-hours",
+					"kind":        "reference",
+					"path":        resourcePath,
+					"source_path": skillPath,
+					"priority":    120,
+				},
+			},
 		},
 	})
 	assert.NoErr(t, err)
 
 	calls := mock.Calls()
 	assert.Eq(t, 1, len(calls))
-	assert.True(t, containsMessageContains(calls[0].Messages, "system", "[Skill Resource guide.md]"))
+	assert.True(t, containsMessageContains(calls[0].Messages, "system", "[Skill Resource office-hours/reference guide.md]"))
 	assert.True(t, containsMessageContains(calls[0].Messages, "system", "Always ask one clarifying question before implementation."))
+}
+
+func TestRunner_RunSkipsResolvedResourceHintsOutsideSkillRoot(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	resourceDir := filepath.Join(workspace, "skills", "office-hours", "references")
+	err := os.MkdirAll(resourceDir, 0o755)
+	assert.NoErr(t, err)
+	skillPath := filepath.Join(workspace, "skills", "office-hours", "SKILL.md")
+	err = os.WriteFile(skillPath, []byte("---\nname: office-hours\ndescription: Ask questions.\n"), 0o644)
+	assert.NoErr(t, err)
+	outsidePath := filepath.Join(t.TempDir(), "guide.md")
+	err = os.WriteFile(outsidePath, []byte("outside skill root\n"), 0o644)
+	assert.NoErr(t, err)
+
+	mock := llm.NewMockProvider("mock").QueueText("done")
+	runner, err := New(Config{
+		Provider: mock,
+		Registry: tools.NewRegistry(),
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	_, err = runner.Run(context.Background(), Request{
+		SessionID:   "sess_skill_resource_outside",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "brainstorm product direction",
+		Context: map[string]any{
+			"resolved_resource_hints": []map[string]any{
+				{
+					"skill":       "office-hours",
+					"kind":        "reference",
+					"path":        outsidePath,
+					"source_path": skillPath,
+					"priority":    120,
+				},
+			},
+		},
+	})
+	assert.NoErr(t, err)
+
+	calls := mock.Calls()
+	assert.Eq(t, 1, len(calls))
+	assert.False(t, containsMessageContains(calls[0].Messages, "system", "[Skill Resource office-hours/reference"))
+	assert.False(t, containsMessageContains(calls[0].Messages, "system", "outside skill root"))
 }
 
 func TestRunner_RunInjectsFormalMemoryIntoProviderContext(t *testing.T) {

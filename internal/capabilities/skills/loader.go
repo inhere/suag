@@ -2,6 +2,7 @@ package skills
 
 import (
 	"io/fs"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -24,7 +25,7 @@ func LoadDescriptorsFromFile(path string) ([]Descriptor, error) {
 			TriggerHints:      inferTriggerHints(skill),
 			SystemPromptParts: inferPromptParts(skill),
 			ToolAllowlist:     inferToolAllowlist(skill),
-			ResourceHints:     inferResourceHints(path),
+			ResourceHints:     inferResourceHints(path, skill.Name),
 		}
 		if desc.Name == "" {
 			continue
@@ -74,15 +75,17 @@ func inferToolAllowlist(skill SkillSource) []string {
 	return cloneStrings(names)
 }
 
-func inferResourceHints(skillPath string) []string {
+func inferResourceHints(skillPath string, skillName string) []ResourceHint {
 	skillPath = strings.TrimSpace(skillPath)
 	if skillPath == "" {
 		return nil
 	}
 
 	skillDir := filepath.Dir(skillPath)
-	var hints []string
+	skillName = strings.TrimSpace(skillName)
+	var hints []ResourceHint
 	for _, subdir := range []string{"references", "assets"} {
+		kind := inferResourceKind(subdir)
 		root := filepath.Join(skillDir, subdir)
 		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 			if walkErr != nil || d == nil || d.IsDir() {
@@ -95,15 +98,26 @@ func inferResourceHints(skillPath string) []string {
 			if err != nil {
 				return nil
 			}
-			hints = append(hints, absPath)
+			hints = append(hints, ResourceHint{
+				SkillName:  skillName,
+				Kind:       kind,
+				Path:       absPath,
+				SourcePath: skillPath,
+				Priority:   resourceHintPriority(kind, absPath),
+			})
 			return nil
 		})
 	}
 	if len(hints) == 0 {
 		return nil
 	}
-	sort.Strings(hints)
-	return cloneStrings(hints)
+	sort.SliceStable(hints, func(i, j int) bool {
+		if hints[i].Priority != hints[j].Priority {
+			return hints[i].Priority > hints[j].Priority
+		}
+		return hints[i].Path < hints[j].Path
+	})
+	return cloneResourceHints(hints)
 }
 
 func isSkillResourceFile(path string) bool {
@@ -113,4 +127,34 @@ func isSkillResourceFile(path string) bool {
 	default:
 		return false
 	}
+}
+
+func inferResourceKind(subdir string) string {
+	switch strings.ToLower(strings.TrimSpace(subdir)) {
+	case "references":
+		return "reference"
+	case "assets":
+		return "asset"
+	default:
+		return "resource"
+	}
+}
+
+func resourceHintPriority(kind, filePath string) int {
+	priority := 0
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "reference":
+		priority += 100
+	case "asset":
+		priority += 50
+	}
+
+	name := strings.ToLower(strings.TrimSpace(path.Base(filePath)))
+	for _, marker := range []string{"guide", "readme", "prompt"} {
+		if strings.Contains(name, marker) {
+			priority += 20
+			break
+		}
+	}
+	return priority
 }

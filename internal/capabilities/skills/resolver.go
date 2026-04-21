@@ -42,7 +42,7 @@ func (r *Resolver) Resolve(input MatchInput) ResolvedSkillSet {
 		result.Skills = append(result.Skills, cloneDescriptor(desc))
 		result.SystemPromptParts = mergeUniqueStrings(result.SystemPromptParts, desc.SystemPromptParts)
 		result.ToolAllowlist = mergeUniqueStrings(result.ToolAllowlist, desc.ToolAllowlist)
-		result.ResourceHints = mergeUniqueStrings(result.ResourceHints, desc.ResourceHints)
+		result.ResourceHints = mergeUniqueResourceHints(result.ResourceHints, desc.ResourceHints)
 	}
 	return result
 }
@@ -87,6 +87,38 @@ func mergeUniqueStrings(base, extra []string) []string {
 			}
 			seen[item] = true
 			out = append(out, item)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func mergeUniqueResourceHints(base, extra []ResourceHint) []ResourceHint {
+	if len(base) == 0 && len(extra) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]bool, len(base)+len(extra))
+	out := make([]ResourceHint, 0, len(base)+len(extra))
+	for _, group := range [][]ResourceHint{base, extra} {
+		for _, hint := range group {
+			key := strings.TrimSpace(hint.SkillName) + "|" +
+				strings.TrimSpace(hint.Kind) + "|" +
+				strings.TrimSpace(hint.Path) + "|" +
+				strings.TrimSpace(hint.SourcePath)
+			if key == "|||" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, ResourceHint{
+				SkillName:  strings.TrimSpace(hint.SkillName),
+				Kind:       strings.TrimSpace(hint.Kind),
+				Path:       strings.TrimSpace(hint.Path),
+				SourcePath: strings.TrimSpace(hint.SourcePath),
+				Priority:   hint.Priority,
+			})
 		}
 	}
 	if len(out) == 0 {

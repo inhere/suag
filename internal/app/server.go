@@ -145,7 +145,7 @@ func (a *App) newRuntimeContextBuilder() session.RuntimeContextBuilder {
 			contextMap["resolved_system_fragments"] = append([]string(nil), resolvedSkills.SystemPromptParts...)
 		}
 		if len(resolvedSkills.ResourceHints) > 0 {
-			contextMap["resolved_resource_hints"] = append([]string(nil), resolvedSkills.ResourceHints...)
+			contextMap["resolved_resource_hints"] = encodeResourceHints(resolvedSkills.ResourceHints)
 		}
 		if names := resolvedSkillNames(resolvedSkills.Skills); len(names) > 0 {
 			contextMap["resolved_skill_names"] = names
@@ -280,4 +280,28 @@ func resolvedSkillNames(skills []capskills.Descriptor) []string {
 		return nil
 	}
 	return names
+}
+
+func encodeResourceHints(hints []capskills.ResourceHint) []map[string]any {
+	if len(hints) == 0 {
+		return nil
+	}
+
+	out := make([]map[string]any, 0, len(hints))
+	for _, hint := range hints {
+		if strings.TrimSpace(hint.Path) == "" {
+			continue
+		}
+		out = append(out, map[string]any{
+			"skill":       strings.TrimSpace(hint.SkillName),
+			"kind":        strings.TrimSpace(hint.Kind),
+			"path":        strings.TrimSpace(hint.Path),
+			"source_path": strings.TrimSpace(hint.SourcePath),
+			"priority":    hint.Priority,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

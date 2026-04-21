@@ -337,10 +337,15 @@ inputs:
 	assert.True(t, ok)
 	assert.Eq(t, 1, len(fragments))
 	assert.True(t, strings.Contains(fragments[0], "Ask questions before writing code"))
-	resourceHints, ok := contextMap["resolved_resource_hints"].([]string)
+	resourceHints, ok := contextMap["resolved_resource_hints"].([]map[string]any)
 	assert.True(t, ok)
 	assert.Eq(t, 1, len(resourceHints))
-	assert.True(t, strings.HasSuffix(resourceHints[0], filepath.Join("skills", "office-hours", "references", "guide.md")))
+	assert.Eq(t, "office-hours", resourceHints[0]["skill"])
+	assert.Eq(t, "reference", resourceHints[0]["kind"])
+	pathValue, _ := resourceHints[0]["path"].(string)
+	assert.True(t, strings.HasSuffix(pathValue, filepath.Join("skills", "office-hours", "references", "guide.md")))
+	sourcePath, _ := resourceHints[0]["source_path"].(string)
+	assert.True(t, strings.HasSuffix(sourcePath, filepath.Join("skills", "office-hours", "SKILL.md")))
 }
 
 func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {
