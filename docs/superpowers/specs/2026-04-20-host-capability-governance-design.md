@@ -600,6 +600,7 @@ MCP 应作为 `ToolProvider` 的一种来源。
   - 匹配当前 message / recall preview
   - 产出 `resolved_system_fragments`
   - 产出 `resolved_resource_hints`
+  - 产出 `resolved_skill_matches`
   - 产出 `tool hints / allowlist`
   - 产出 `resolved_skill_names`
 - `internal/app` runtime context builder 已开始消费这条结果
@@ -608,6 +609,11 @@ MCP 应作为 `ToolProvider` 的一种来源。
   - 仅消费 skill 相邻 `references/`、`assets/` 下的小型文本文件
   - 限制注入文件数量与单文件大小
   - 不写回 transcript / session history
+- Phase D 的最小 planner-lite 联动也已开始接线：
+  - Host terminal post-turn hook 会消费 `resolved_tool_mode`
+  - 会消费 `resolved_skill_names` / `resolved_skill_matches`
+  - 会消费 `resolved_resource_hints` 计数与 recall hit
+  - 仍只产出 hint，不生成执行图
 
 当前 Phase C 下一步继续做：
 

@@ -326,9 +326,14 @@
   - 构建最小 skill registry / resolver
   - 在 runtime context builder 中解析出：
     - `resolved_skill_names`
+    - `resolved_skill_matches`
     - `resolved_system_fragments`
     - `resolved_resource_hints`
     - skill-derived tool hints
+- 当前 skill matching 已开始产出最小解释信号：
+  - `score`
+  - `match_sources`
+  - `match_terms`
 - `internal/host/intrunner` 现在会把 `resolved_system_fragments` 与 `resolved_resource_hints` 一并作为 runtime-only `system` messages 注入 provider request
 - 当前 resource hints 的消费仍保持最小化：
   - `resolved_resource_hints` 已升级为结构化对象，至少包含 `skill`、`kind`、`path`、`source_path`、`priority`
@@ -337,6 +342,10 @@
   - 单文件内容会做大小截断
   - runtime 侧会再次校验路径必须位于 skill 根目录内，且只能落在 `references/`、`assets/` 子树与白名单扩展名内
   - 不会回写 session history
+- `internal/host/session` 当前也已开始消费 runtime capability signals：
+  - 默认挂载最小 `CapabilityPlannerHook`
+  - terminal 后的 `planner_hint` / `next_action_hint` 会带上 `resolved_tool_mode`、`resolved_skill_names`、`resolved_skill_matches`、`resource_hint_count`、`recall_hit`
+  - 仍保持 best-effort，不会影响主 turn terminal flow
 
 这意味着 skills 当前已经开始以“capability recipe”而不是“工具执行器”的方式影响一轮运行：
 

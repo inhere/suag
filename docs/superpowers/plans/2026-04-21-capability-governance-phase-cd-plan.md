@@ -103,13 +103,13 @@ git commit -m "feat: add richer skill matching signals"
 - Modify: `internal/host/session/types.go`
 - Modify: `internal/app/server.go`
 
-- [ ] **Step 1: 写 failing tests，覆盖 planner hint 会消费 recall + skills + tool mode / subset**
-- [ ] **Step 2: 运行 `go test ./internal/host/session -run "Planner|PostTurn" -v`，确认失败**
-- [ ] **Step 3: 实现最小 capability-aware planner-lite hook**
+- [x] **Step 1: 写 failing tests，覆盖 planner hint 会消费 recall + skills + tool mode / subset**
+- [x] **Step 2: 运行 `go test ./internal/host/session -run "Planner|PostTurn" -v`，确认失败**
+- [x] **Step 3: 实现最小 capability-aware planner-lite hook**
 输出要求：
 `planner_hint.metadata` 至少包含 `resolved_skill_names`、`resolved_tool_mode`、`resource_hint_count`、`recall_hit`
-- [ ] **Step 4: 保持 best-effort，不影响主链 terminal flow**
-- [ ] **Step 5: 重新运行测试确认通过**
+- [x] **Step 4: 保持 best-effort，不影响主链 terminal flow**
+- [x] **Step 5: 重新运行测试确认通过**
 - [ ] **Step 6: 提交**
 
 ```bash

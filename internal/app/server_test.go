@@ -255,6 +255,9 @@ func TestRuntimeContextBuilder_DerivesReadOnlyToolModeFromRecallMetadata(t *test
 	mode, ok := contextMap["resolved_tool_mode"].(string)
 	assert.True(t, ok)
 	assert.Eq(t, "read_only", mode)
+	recallHit, ok := contextMap["memory_recall_hit"].(bool)
+	assert.True(t, ok)
+	assert.Eq(t, true, recallHit)
 }
 
 func TestRuntimeContextBuilder_ResolvesSkillFragmentsAndToolHints(t *testing.T) {
@@ -338,6 +341,9 @@ inputs:
 	assert.Eq(t, 1, len(skillMatches))
 	assert.Eq(t, "office-hours", skillMatches[0]["skill"])
 	assert.True(t, skillMatches[0]["score"].(int) > 0)
+	matchSources, ok := skillMatches[0]["match_sources"].([]string)
+	assert.True(t, ok)
+	assert.True(t, len(matchSources) >= 1)
 	fragments, ok := contextMap["resolved_system_fragments"].([]string)
 	assert.True(t, ok)
 	assert.Eq(t, 1, len(fragments))

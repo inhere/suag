@@ -44,6 +44,9 @@ func (a *App) RunServer(ctx context.Context) error {
 			session.NewMemoryCandidateHook(sessionStore, nil),
 			session.NewMemoryDraftHook(sessionStore, appconfig.ResolveHostMemoryDraftRoot(), nil),
 		},
+		PostTurnActionHooks: []session.PostTurnActionHook{
+			session.NewCapabilityPlannerHook(),
+		},
 		MemoryFileSync: session.NewMemoryFileWriter(sessionStore, appconfig.ResolveHostMemoryDraftRoot(), nil),
 	})
 	h := gateway.NewHandler(a.orch, sessionStore, sessionSvc, a.bus, a.hitlMgr)
@@ -140,6 +143,7 @@ func (a *App) newRuntimeContextBuilder() session.RuntimeContextBuilder {
 		contextMap := map[string]any{
 			"resolved_tool_names": append([]string(nil), resolved.ToolNames...),
 			"resolved_tool_mode":  string(resolved.ToolMode),
+			"memory_recall_hit":   recallHit(recallMetadata),
 		}
 		if len(resolvedSkills.SystemPromptParts) > 0 {
 			contextMap["resolved_system_fragments"] = append([]string(nil), resolvedSkills.SystemPromptParts...)
@@ -266,6 +270,10 @@ func decodeStringSlice(raw any) []string {
 	default:
 		return nil
 	}
+}
+
+func recallHit(metadata map[string]any) bool {
+	return len(recallPreviewLines(metadata)) > 0
 }
 
 func resolvedSkillNames(skills []capskills.Descriptor) []string {

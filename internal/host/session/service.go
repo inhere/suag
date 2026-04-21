@@ -105,6 +105,7 @@ type PostTurnActionInput struct {
 	Outcome        TurnOutcome
 	Summary        string
 	Failure        string
+	RuntimeContext map[string]any
 	LoopMetadata   map[string]any
 	PlannerHint    *PlannerHint
 	NextActionHint *NextActionHint
@@ -400,13 +401,14 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			TurnID:    turnID,
 			RunID:     runID,
 		})
+		runtimeContext := s.buildRuntimeContext(ctx, sessionID, agentID, message, previousTurnID, resumeFromRunID, externalTaskID, !createIfMissing)
 		result, err := s.runner.Run(runCtx, RuntimeRequest{
 			SessionID:   sessionID,
 			TurnID:      turnID,
 			RunID:       runID,
 			AgentID:     agentID,
 			Instruction: message,
-			Context:     s.buildRuntimeContext(ctx, sessionID, agentID, message, previousTurnID, resumeFromRunID, externalTaskID, !createIfMissing),
+			Context:     runtimeContext,
 			Emit: func(runtimeEvent RuntimeEvent) error {
 				if strings.TrimSpace(runtimeEvent.EventType) == "" {
 					return nil
@@ -481,12 +483,13 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				Failure: reason,
 			})
 			s.runPostTurnActionHooks(ctx, PostTurnActionInput{
-				Session:      sessionModel,
-				TurnID:       turnID,
-				RunID:        runID,
-				Outcome:      TurnOutcomeCanceled,
-				Failure:      reason,
-				LoopMetadata: s.loadRunMetadata(ctx, runID),
+				Session:        sessionModel,
+				TurnID:         turnID,
+				RunID:          runID,
+				Outcome:        TurnOutcomeCanceled,
+				Failure:        reason,
+				RuntimeContext: cloneAnyMap(runtimeContext),
+				LoopMetadata:   s.loadRunMetadata(ctx, runID),
 			})
 			return StartTurnResult{
 				SessionID: sessionID,
@@ -534,12 +537,13 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				Failure: err.Error(),
 			})
 			s.runPostTurnActionHooks(ctx, PostTurnActionInput{
-				Session:      sessionModel,
-				TurnID:       turnID,
-				RunID:        runID,
-				Outcome:      TurnOutcomeFailed,
-				Failure:      err.Error(),
-				LoopMetadata: s.loadRunMetadata(ctx, runID),
+				Session:        sessionModel,
+				TurnID:         turnID,
+				RunID:          runID,
+				Outcome:        TurnOutcomeFailed,
+				Failure:        err.Error(),
+				RuntimeContext: cloneAnyMap(runtimeContext),
+				LoopMetadata:   s.loadRunMetadata(ctx, runID),
 			})
 			return StartTurnResult{
 				SessionID: sessionID,
@@ -573,12 +577,13 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				Failure: reason,
 			})
 			s.runPostTurnActionHooks(ctx, PostTurnActionInput{
-				Session:      sessionModel,
-				TurnID:       turnID,
-				RunID:        runID,
-				Outcome:      TurnOutcomeCanceled,
-				Failure:      reason,
-				LoopMetadata: s.loadRunMetadata(ctx, runID),
+				Session:        sessionModel,
+				TurnID:         turnID,
+				RunID:          runID,
+				Outcome:        TurnOutcomeCanceled,
+				Failure:        reason,
+				RuntimeContext: cloneAnyMap(runtimeContext),
+				LoopMetadata:   s.loadRunMetadata(ctx, runID),
 			})
 			return StartTurnResult{
 				SessionID: sessionID,
@@ -605,12 +610,13 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				Failure: failure,
 			})
 			s.runPostTurnActionHooks(ctx, PostTurnActionInput{
-				Session:      sessionModel,
-				TurnID:       turnID,
-				RunID:        runID,
-				Outcome:      TurnOutcomeFailed,
-				Failure:      failure,
-				LoopMetadata: s.loadRunMetadata(ctx, runID),
+				Session:        sessionModel,
+				TurnID:         turnID,
+				RunID:          runID,
+				Outcome:        TurnOutcomeFailed,
+				Failure:        failure,
+				RuntimeContext: cloneAnyMap(runtimeContext),
+				LoopMetadata:   s.loadRunMetadata(ctx, runID),
 			})
 			return StartTurnResult{
 				SessionID: sessionID,
@@ -637,12 +643,13 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 				Summary: summary,
 			})
 			s.runPostTurnActionHooks(ctx, PostTurnActionInput{
-				Session:      sessionModel,
-				TurnID:       turnID,
-				RunID:        runID,
-				Outcome:      TurnOutcomeCompleted,
-				Summary:      summary,
-				LoopMetadata: s.loadRunMetadata(ctx, runID),
+				Session:        sessionModel,
+				TurnID:         turnID,
+				RunID:          runID,
+				Outcome:        TurnOutcomeCompleted,
+				Summary:        summary,
+				RuntimeContext: cloneAnyMap(runtimeContext),
+				LoopMetadata:   s.loadRunMetadata(ctx, runID),
 			})
 			return StartTurnResult{
 				SessionID: sessionID,
@@ -694,12 +701,13 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			Summary: result.Summary,
 		})
 		s.runPostTurnActionHooks(ctx, PostTurnActionInput{
-			Session:      sessionModel,
-			TurnID:       turnID,
-			RunID:        runID,
-			Outcome:      TurnOutcomeCompleted,
-			Summary:      result.Summary,
-			LoopMetadata: s.loadRunMetadata(ctx, runID),
+			Session:        sessionModel,
+			TurnID:         turnID,
+			RunID:          runID,
+			Outcome:        TurnOutcomeCompleted,
+			Summary:        result.Summary,
+			RuntimeContext: cloneAnyMap(runtimeContext),
+			LoopMetadata:   s.loadRunMetadata(ctx, runID),
 		})
 	}
 

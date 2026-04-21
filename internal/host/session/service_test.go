@@ -1928,6 +1928,108 @@ func TestService_StartTurnPersistsPostTurnPlannerHints(t *testing.T) {
 	}
 }
 
+func TestService_StartTurnPassesRuntimeContextToPostTurnHook(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{
+			Summary: "final summary",
+		},
+	}
+	post := &postTurnActionRecorder{}
+
+	svc := NewService(store, bus, runner, ServiceConfig{
+		RuntimeContextBuilder: func(input RuntimeContextBuildInput) map[string]any {
+			return map[string]any{
+				"resolved_tool_mode":   "read_only",
+				"resolved_tool_names":  []string{"file_read"},
+				"resolved_skill_names": []string{"office-hours"},
+				"resolved_resource_hints": []map[string]any{
+					{"skill": "office-hours", "kind": "reference", "path": "guide.md", "source_path": "SKILL.md", "priority": 120},
+				},
+				"memory_recall_hit": true,
+			}
+		},
+		PostTurnActionHooks: []PostTurnActionHook{post},
+	})
+
+	_, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_post_runtime_context",
+		AgentID:       "default",
+		UserMessage:   "finish with context-aware hints",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	if len(post.inputs) != 1 {
+		t.Fatalf("post turn inputs len = %d, want 1", len(post.inputs))
+	}
+	if mode, _ := post.inputs[0].RuntimeContext["resolved_tool_mode"].(string); mode != "read_only" {
+		t.Fatalf("post turn runtime context resolved_tool_mode = %#v, want %q", post.inputs[0].RuntimeContext["resolved_tool_mode"], "read_only")
+	}
+	if recallHit, _ := post.inputs[0].RuntimeContext["memory_recall_hit"].(bool); !recallHit {
+		t.Fatalf("post turn runtime context memory_recall_hit = %#v, want true", post.inputs[0].RuntimeContext["memory_recall_hit"])
+	}
+}
+
+func TestCapabilityPlannerHook_BuildsHintsFromCapabilitySignals(t *testing.T) {
+	t.Parallel()
+
+	hook := NewCapabilityPlannerHook()
+	result, err := hook.OnPostTurnAction(context.Background(), PostTurnActionInput{
+		RunID:   "run_001",
+		Outcome: TurnOutcomeCompleted,
+		Summary: "completed",
+		Failure: "",
+		RuntimeContext: map[string]any{
+			"resolved_tool_mode":   "read_only",
+			"resolved_tool_names":  []string{"file_read", "file_list"},
+			"resolved_skill_names": []string{"office-hours"},
+			"resolved_skill_matches": []map[string]any{
+				{
+					"skill":         "office-hours",
+					"score":         6,
+					"match_sources": []string{"message", "recall"},
+					"match_terms":   []string{"brainstorm"},
+				},
+			},
+			"resolved_resource_hints": []map[string]any{
+				{"skill": "office-hours", "kind": "reference", "path": "guide.md", "source_path": "SKILL.md", "priority": 120},
+			},
+			"memory_recall_hit": true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("OnPostTurnAction() error = %v", err)
+	}
+	if result == nil || result.PlannerHint == nil {
+		t.Fatal("OnPostTurnAction() planner hint is nil")
+	}
+	if result.PlannerHint.Stage != "capability_review" {
+		t.Fatalf("planner hint stage = %q, want %q", result.PlannerHint.Stage, "capability_review")
+	}
+	if result.PlannerHint.Metadata["resolved_tool_mode"] != "read_only" {
+		t.Fatalf("planner hint metadata resolved_tool_mode = %v, want %q", result.PlannerHint.Metadata["resolved_tool_mode"], "read_only")
+	}
+	if result.PlannerHint.Metadata["resource_hint_count"] != 1 {
+		t.Fatalf("planner hint metadata resource_hint_count = %v, want 1", result.PlannerHint.Metadata["resource_hint_count"])
+	}
+	if result.PlannerHint.Metadata["recall_hit"] != true {
+		t.Fatalf("planner hint metadata recall_hit = %v, want true", result.PlannerHint.Metadata["recall_hit"])
+	}
+	if result.NextActionHint == nil {
+		t.Fatal("OnPostTurnAction() next action hint is nil")
+	}
+	if result.NextActionHint.Kind != "review" {
+		t.Fatalf("next action kind = %q, want %q", result.NextActionHint.Kind, "review")
+	}
+}
+
 func TestService_StartTurnWaitingStateDoesNotRunPostTurnActionHook(t *testing.T) {
 	t.Parallel()
 
