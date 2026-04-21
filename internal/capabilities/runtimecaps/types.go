@@ -63,6 +63,7 @@ type ResolveTurnInput struct {
 	AgentID         string
 	IsContinue      bool
 	RecallMetadata  map[string]any
+	SkillToolHints  []string
 }
 
 type staticToolProvider struct {

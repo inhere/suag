@@ -19,13 +19,10 @@
 - Capability governance Phase A 已完成：`internal/app` 已通过统一 capability builder 构建默认 native tool registry，`internal/host/intrunner` 已开始消费 resolved tool subset
 - Capability governance Phase B1 已完成：MCP server 配置读取、`tools/mcp.Provider`、app 默认 capability builder 接入 MCP provider 与 `App.Close()` 生命周期收口已落地
 - Capability governance Phase B2 已继续推进：默认 `CapabilitySet` 已写入 `session.metadata.capability_set`，`start_turn / continue_turn` 会从 session baseline 解析 `resolved_tool_names`
-- 当前最小 turn-time dynamic resolution 已接上：`CapabilityPolicy` 已支持 `auto/full/read_only + allowlist/denylist`，`auto` 模式下会按当前消息把明显只读轮次收敛为 read-only tool subset
-- recall-aware turn-time filtering 已接线：runtime context builder 会复用 formal memory recall metadata，当前可按 recall preview 中的“查看/分析/不要直接修改”等线索继续把本轮 tools 收敛为 read-only subset
-- 下一步继续围绕 capability governance 主线推进更丰富的 recall/policy 联动、skills/runtime 接线与 tool catalog
+- 当前最小 turn-time dynamic resolution 已接上：`CapabilityPolicy` 已支持 `auto/full/read_only + allowlist/denylist`，并可结合消息文本与 formal memory recall preview 把本轮 tools 收敛为 read-only subset
+- Capability governance Phase C 已开始最小接线：新增 `internal/capabilities/skills` 的 `descriptor + registry + resolver`，skill 现作为 capability recipe 影响 `system fragments + tool hints`，不再默认走 executable tool lane
+- 下一步继续围绕 capability governance 主线推进 richer skill matching、resource hints 消费、tool catalog 与 recall/policy/skills 联动
 <!-- PROCESSING WORKS:END -->
-
-## 核心原则
-
 
 ## 项目编码规范
 

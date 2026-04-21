@@ -589,7 +589,22 @@ MCP 应作为 `ToolProvider` 的一种来源。
 
 ### Phase C：接入 Skills 最小闭环
 
-先做：
+当前 Phase C 最小骨架已开始接线：
+
+- `internal/capabilities/skills` 已新增：
+  - `Descriptor`
+  - `Registry`
+  - `Resolver`
+  - 复用现有 `SKILL.md` parser 的 lightweight loader
+- 当前 skill 不再默认按 executable tool 注入 runtime，而是作为 capability recipe：
+  - 匹配当前 message / recall preview
+  - 产出 `resolved_system_fragments`
+  - 产出 `tool hints / allowlist`
+  - 产出 `resolved_skill_names`
+- `internal/app` runtime context builder 已开始消费这条结果
+- `internal/host/intrunner` 也已开始把 `resolved_system_fragments` 作为 runtime-only `system` context 注入 provider request
+
+当前 Phase C 下一步继续做：
 
 - `SKILL.md` loader
 - parser

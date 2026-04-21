@@ -66,6 +66,7 @@ type SessionRunner struct {
 var errResumeStateUnavailable = fmt.Errorf("waiting runtime is no longer available; start a new turn or reissue the task")
 
 const runtimeContextResolvedToolNamesKey = "resolved_tool_names"
+const runtimeContextResolvedSystemFragmentsKey = "resolved_system_fragments"
 
 // New creates a host runner backed by the internal agent runtimes.
 func New(cfg Config) (*SessionRunner, error) {
@@ -103,7 +104,11 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 	}
 
 	recalled := newFormalMemoryRecall(r.cfg.MemoryRoot).Load(in.Instruction)
-	runMemory := newSessionMemory(recalled.Messages, state.history)
+	runMemory := newSessionMemoryWithFragments(
+		recalled.Messages,
+		state.history,
+		resolvedSystemFragmentsFromContext(in.Context),
+	)
 	a, runner, err := r.resolveRuntime(state, in, runMemory)
 	if err != nil {
 		return session.RuntimeResult{}, err
@@ -540,6 +545,15 @@ func newSessionMemory(recalled []memory.Message, history []memory.Message) *sess
 	}
 }
 
+func newSessionMemoryWithFragments(recalled []memory.Message, history []memory.Message, systemFragments []string) *sessionMemory {
+	mem := newSessionMemory(recalled, history)
+	if len(systemFragments) == 0 {
+		return mem
+	}
+	mem.recalled = append(cloneMemoryMessages(systemFragmentMessages(systemFragments)), mem.recalled...)
+	return mem
+}
+
 func (m *sessionMemory) AddMessage(role, content string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -598,4 +612,58 @@ func (m *sessionMemory) Snapshot() []memory.Message {
 	out = append(out, cloneMemoryMessages(m.history)...)
 	out = append(out, cloneMemoryMessages(m.transcript)...)
 	return out
+}
+
+func systemFragmentMessages(fragments []string) []memory.Message {
+	if len(fragments) == 0 {
+		return nil
+	}
+
+	out := make([]memory.Message, 0, len(fragments))
+	for _, fragment := range fragments {
+		fragment = strings.TrimSpace(fragment)
+		if fragment == "" {
+			continue
+		}
+		out = append(out, memory.Message{
+			Role:      "system",
+			Content:   fragment,
+			Timestamp: time.Now().UTC(),
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func resolvedSystemFragmentsFromContext(ctxMap map[string]any) []string {
+	if len(ctxMap) == 0 {
+		return nil
+	}
+
+	raw, ok := ctxMap[runtimeContextResolvedSystemFragmentsKey]
+	if !ok {
+		return nil
+	}
+	switch value := raw.(type) {
+	case []string:
+		return append([]string(nil), value...)
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			text, ok := item.(string)
+			if !ok {
+				continue
+			}
+			text = strings.TrimSpace(text)
+			if text == "" {
+				continue
+			}
+			out = append(out, text)
+		}
+		return out
+	default:
+		return nil
+	}
 }

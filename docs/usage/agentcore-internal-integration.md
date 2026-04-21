@@ -306,6 +306,41 @@
 - `SKILL.md` runtime / loader / resolver
 - tool catalog / provider policy / allow-deny 模型
 
+### 2.10 Host capability governance Phase C 最小骨架
+
+2026-04-21 的 Phase C 已开始把 skills 以 capability recipe 方式接入主线，而不是继续走 executable tool lane：
+
+- 新增 `internal/capabilities/skills`：
+  - `Descriptor`
+  - `Registry`
+  - `Resolver`
+  - `LoadDescriptorsFromFile()`
+- 当前 loader 会复用已有 `internal/platform/tools/skills.ParseSkillsFile()`，但只提取：
+  - trigger hints
+  - system prompt fragments
+  - tool allowlist hints
+- `internal/app` 现在会：
+  - 扫描 `<workspace>/skills/**/SKILL.md`
+  - 扫描 `config/skills/**/SKILL.md`
+  - 构建最小 skill registry / resolver
+  - 在 runtime context builder 中解析出：
+    - `resolved_skill_names`
+    - `resolved_system_fragments`
+    - skill-derived tool hints
+- `internal/host/intrunner` 现在会把 `resolved_system_fragments` 作为 runtime-only `system` messages 注入 provider request
+
+这意味着 skills 当前已经开始以“capability recipe”而不是“工具执行器”的方式影响一轮运行：
+
+- 影响当前 turn 的 prompt
+- 影响当前 turn 的 tool subset
+- 但不会直接变成 workflow engine 或独立 execution lane
+
+当前这一阶段仍然**没有**完成：
+
+- 更准确的 `SKILL.md` frontmatter / body 建模
+- references / assets / scripts 的按需 resource hint 消费
+- skill matcher 与 recall / policy / planner 的更深联动
+
 ---
 
 ## 3. 最小迁移路径

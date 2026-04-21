@@ -265,6 +265,9 @@ func refineCapabilityPolicy(policy CapabilityPolicy, input ResolveTurnInput) Cap
 		refined.ToolMode = TurnToolModeReadOnly
 		refined.ToolDenylist = mergeStringSets(refined.ToolDenylist, []string{"file_write", "shell_exec"})
 	}
+	if len(input.SkillToolHints) > 0 {
+		refined.ToolAllowlist = mergeStringSets(refined.ToolAllowlist, input.SkillToolHints)
+	}
 	return refined
 }
 

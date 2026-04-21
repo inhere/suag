@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
 
 	"github.com/inhere/axon/internal/capabilities/runtimecaps"
+	capskills "github.com/inhere/axon/internal/capabilities/skills"
 	appconfig "github.com/inhere/axon/internal/config"
 	"github.com/inhere/axon/internal/host/gateway"
 	"github.com/inhere/axon/internal/ops/cron"
@@ -29,6 +32,8 @@ type App struct {
 	provider             llm.Provider
 	registry             *tools.Registry
 	capabilityManager    *runtimecaps.CapabilityManager
+	skillRegistry        *capskills.Registry
+	skillResolver        *capskills.Resolver
 	defaultCapabilitySet runtimecaps.CapabilitySet
 	capabilityRuntime    defaultCapabilities
 	orch                 *orchestrator.Orchestrator
@@ -62,6 +67,7 @@ func New() (*App, error) {
 		return nil, err
 	}
 	registry := caps.Registry
+	skillRegistry := buildDefaultSkillRegistry(workspace)
 
 	bus := gateway.NewEventBus()
 	tracer := tracing.NewInMemoryTracer(func(span *tracing.Span) {
@@ -114,6 +120,8 @@ func New() (*App, error) {
 		provider:             provider,
 		registry:             registry,
 		capabilityManager:    caps.Manager,
+		skillRegistry:        skillRegistry,
+		skillResolver:        capskills.NewResolver(skillRegistry),
 		defaultCapabilitySet: caps.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{}),
 		capabilityRuntime:    caps,
 		orch:                 orch,
@@ -142,4 +150,46 @@ func (a *App) Run(ctx context.Context, mode string) error {
 	default:
 		return fmt.Errorf("%w %q", ErrUnknownMode, mode)
 	}
+}
+
+func buildDefaultSkillRegistry(workspace string) *capskills.Registry {
+	registry := capskills.NewRegistry()
+
+	roots := []string{
+		filepath.Join(workspace, "skills"),
+		filepath.Join("config", "skills"),
+	}
+	for _, root := range roots {
+		loadSkillDescriptorsIntoRegistry(registry, root)
+	}
+	return registry
+}
+
+func loadSkillDescriptorsIntoRegistry(registry *capskills.Registry, root string) {
+	if registry == nil {
+		return
+	}
+
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return
+	}
+
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil || d == nil || d.IsDir() {
+			return nil
+		}
+		if !strings.EqualFold(d.Name(), "SKILL.md") {
+			return nil
+		}
+
+		descriptors, err := capskills.LoadDescriptorsFromFile(path)
+		if err != nil {
+			return nil
+		}
+		for _, desc := range descriptors {
+			registry.Register(desc)
+		}
+		return nil
+	})
 }

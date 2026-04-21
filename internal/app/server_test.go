@@ -17,6 +17,7 @@ import (
 	"github.com/gookit/goutil/testutil/assert"
 
 	"github.com/inhere/axon/internal/capabilities/runtimecaps"
+	capskills "github.com/inhere/axon/internal/capabilities/skills"
 	"github.com/inhere/axon/internal/host/gateway"
 	"github.com/inhere/axon/internal/host/intrunner"
 	"github.com/inhere/axon/internal/host/session"
@@ -254,6 +255,80 @@ func TestRuntimeContextBuilder_DerivesReadOnlyToolModeFromRecallMetadata(t *test
 	mode, ok := contextMap["resolved_tool_mode"].(string)
 	assert.True(t, ok)
 	assert.Eq(t, "read_only", mode)
+}
+
+func TestRuntimeContextBuilder_ResolvesSkillFragmentsAndToolHints(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	workspace := t.TempDir()
+	memoryRoot := filepath.Join(t.TempDir(), "memory")
+	err := os.MkdirAll(filepath.Join(memoryRoot, "memory"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(memoryRoot, "memory", "MEMORY.md"),
+		[]byte("# MEMORY\n\nUpdated: 2026-04-21T00:00:00Z\n\n- [turn_learning] office-hours 更适合在实现前先 brainstorm\n"),
+		0o644,
+	)
+	assert.NoErr(t, err)
+	err = os.MkdirAll(filepath.Join(workspace, "skills", "office-hours"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(workspace, "skills", "office-hours", "SKILL.md"),
+		[]byte(`---
+name: office-hours
+description: Help brainstorm product ideas before implementation. Ask questions before writing code.
+type: shell
+command: echo hi
+inputs:
+  topic: topic
+---`),
+		0o644,
+	)
+	assert.NoErr(t, err)
+
+	_ = gkconfig.Set("workspace", workspace)
+	_ = gkconfig.Set("host.memory.root", memoryRoot)
+
+	built, err := buildDefaultCapabilities(workspace)
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, built.Close())
+	})
+
+	a := &App{
+		registry:             built.Registry,
+		capabilityManager:    built.Manager,
+		skillRegistry:        buildDefaultSkillRegistry(workspace),
+		defaultCapabilitySet: built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{}),
+	}
+	a.skillResolver = capskills.NewResolver(a.skillRegistry)
+
+	sessionBuilder := a.newSessionMetadataBuilder()
+	metadata := sessionBuilder(session.SessionMetadataBuildInput{
+		SessionID: "sess_ctx_skill",
+		AgentID:   "default",
+		Message:   "hello",
+	})
+
+	runtimeBuilder := a.newRuntimeContextBuilder()
+	contextMap := runtimeBuilder(session.RuntimeContextBuildInput{
+		SessionID:       "sess_ctx_skill",
+		AgentID:         "default",
+		Message:         "我们先 brainstorm 一下产品方案",
+		SessionMetadata: metadata,
+	})
+
+	names, ok := contextMap["resolved_tool_names"].([]string)
+	assert.True(t, ok)
+	assertToolNamesEq(t, []string{"file_read", "file_list"}, names)
+	skillNames, ok := contextMap["resolved_skill_names"].([]string)
+	assert.True(t, ok)
+	assert.Eq(t, []string{"office-hours"}, skillNames)
+	fragments, ok := contextMap["resolved_system_fragments"].([]string)
+	assert.True(t, ok)
+	assert.Eq(t, 1, len(fragments))
+	assert.True(t, strings.Contains(fragments[0], "Ask questions before writing code"))
 }
 
 func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {

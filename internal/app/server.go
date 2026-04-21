@@ -8,6 +8,7 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 
 	"github.com/inhere/axon/internal/capabilities/runtimecaps"
+	capskills "github.com/inhere/axon/internal/capabilities/skills"
 	appconfig "github.com/inhere/axon/internal/config"
 	"github.com/inhere/axon/internal/host/acpbridge"
 	"github.com/inhere/axon/internal/host/gateway"
@@ -126,17 +127,28 @@ func (a *App) newRuntimeContextBuilder() session.RuntimeContextBuilder {
 
 	return func(input session.RuntimeContextBuildInput) map[string]any {
 		recallMetadata := intrunner.LoadFormalMemoryRecallMetadata(appconfig.ResolveHostMemoryDraftRoot(), input.Message)
+		resolvedSkills := a.resolveRuntimeSkills(input.Message, recallMetadata)
 		resolved := a.capabilityManager.ResolveTurnCapabilitiesFromInput(runtimecaps.ResolveTurnInput{
 			SessionMetadata: input.SessionMetadata,
 			UserMessage:     input.Message,
 			AgentID:         input.AgentID,
 			IsContinue:      input.IsContinue,
 			RecallMetadata:  recallMetadata,
+			SkillToolHints:  resolvedSkills.ToolAllowlist,
 		})
 
 		contextMap := map[string]any{
 			"resolved_tool_names": append([]string(nil), resolved.ToolNames...),
 			"resolved_tool_mode":  string(resolved.ToolMode),
+		}
+		if len(resolvedSkills.SystemPromptParts) > 0 {
+			contextMap["resolved_system_fragments"] = append([]string(nil), resolvedSkills.SystemPromptParts...)
+		}
+		if len(resolvedSkills.ResourceHints) > 0 {
+			contextMap["resolved_resource_hints"] = append([]string(nil), resolvedSkills.ResourceHints...)
+		}
+		if names := resolvedSkillNames(resolvedSkills.Skills); len(names) > 0 {
+			contextMap["resolved_skill_names"] = names
 		}
 		return contextMap
 	}
@@ -185,4 +197,87 @@ func cloneMetadataValue(value any) any {
 	default:
 		return typed
 	}
+}
+
+func (a *App) resolveRuntimeSkills(message string, recallMetadata map[string]any) capskills.ResolvedSkillSet {
+	if a == nil || a.skillResolver == nil {
+		return capskills.ResolvedSkillSet{}
+	}
+
+	return a.skillResolver.Resolve(capskills.MatchInput{
+		UserMessage:   message,
+		RecallPreview: recallPreviewLines(recallMetadata),
+		MaxSkills:     2,
+	})
+}
+
+func recallPreviewLines(metadata map[string]any) []string {
+	if len(metadata) == 0 {
+		return nil
+	}
+
+	recall, ok := metadata["memory_recall"].(map[string]any)
+	if !ok || len(recall) == 0 {
+		return nil
+	}
+
+	lines := []string{}
+	switch sources := recall["sources"].(type) {
+	case []map[string]any:
+		for _, source := range sources {
+			lines = append(lines, decodeStringSlice(source["preview"])...)
+		}
+	case []any:
+		for _, item := range sources {
+			source, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			lines = append(lines, decodeStringSlice(source["preview"])...)
+		}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	return lines
+}
+
+func decodeStringSlice(raw any) []string {
+	switch value := raw.(type) {
+	case []string:
+		return append([]string(nil), value...)
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			text, ok := item.(string)
+			if !ok {
+				continue
+			}
+			text = strings.TrimSpace(text)
+			if text == "" {
+				continue
+			}
+			out = append(out, text)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func resolvedSkillNames(skills []capskills.Descriptor) []string {
+	if len(skills) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(skills))
+	for _, skill := range skills {
+		if name := strings.TrimSpace(skill.Name); name != "" {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	return names
 }

@@ -176,6 +176,40 @@ func TestRunner_RunUsesReadOnlyResolvedToolSubset(t *testing.T) {
 	assert.False(t, toolSchemaListed(calls[0].Tools, "shell_exec"))
 }
 
+func TestRunner_RunInjectsResolvedSystemFragmentsIntoProviderContext(t *testing.T) {
+	t.Parallel()
+
+	mock := llm.NewMockProvider("mock").QueueText("done")
+	runner, err := New(Config{
+		Provider: mock,
+		Registry: tools.NewRegistry(),
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	_, err = runner.Run(context.Background(), Request{
+		SessionID:   "sess_skill_fragment",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "brainstorm product direction",
+		Context: map[string]any{
+			runtimeContextResolvedSystemFragmentsKey: []string{
+				"[Skill office-hours] Ask questions before writing code.",
+			},
+		},
+	})
+	assert.NoErr(t, err)
+
+	calls := mock.Calls()
+	assert.Eq(t, 1, len(calls))
+	assert.True(t, containsMessageContains(calls[0].Messages, "system", "[Skill office-hours] Ask questions before writing code."))
+}
+
 func TestRunner_RunInjectsFormalMemoryIntoProviderContext(t *testing.T) {
 	t.Parallel()
 
