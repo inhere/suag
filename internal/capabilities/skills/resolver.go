@@ -1,6 +1,9 @@
 package skills
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // Resolver selects a small number of skills for the current turn. v0 keeps the
 // matching deliberately lightweight so capability governance can evolve without
@@ -31,36 +34,74 @@ func (r *Resolver) Resolve(input MatchInput) ResolvedSkillSet {
 	message := strings.ToLower(strings.TrimSpace(input.UserMessage))
 	recallJoined := strings.ToLower(strings.Join(input.RecallPreview, "\n"))
 
+	type rankedMatch struct {
+		desc  Descriptor
+		match SkillMatch
+	}
+	var ranked []rankedMatch
 	result := ResolvedSkillSet{}
 	for _, desc := range descriptors {
+		match, ok := matchDescriptor(desc, message, recallJoined)
+		if !ok {
+			continue
+		}
+		ranked = append(ranked, rankedMatch{
+			desc:  cloneDescriptor(desc),
+			match: match,
+		})
+	}
+
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return ranked[i].match.Score > ranked[j].match.Score
+	})
+
+	for _, item := range ranked {
 		if len(result.Skills) >= maxSkills {
 			break
 		}
-		if !matchesDescriptor(desc, message, recallJoined) {
-			continue
-		}
-		result.Skills = append(result.Skills, cloneDescriptor(desc))
-		result.SystemPromptParts = mergeUniqueStrings(result.SystemPromptParts, desc.SystemPromptParts)
-		result.ToolAllowlist = mergeUniqueStrings(result.ToolAllowlist, desc.ToolAllowlist)
-		result.ResourceHints = mergeUniqueResourceHints(result.ResourceHints, desc.ResourceHints)
+		result.Skills = append(result.Skills, item.desc)
+		result.Matches = append(result.Matches, item.match)
+		result.SystemPromptParts = mergeUniqueStrings(result.SystemPromptParts, item.desc.SystemPromptParts)
+		result.ToolAllowlist = mergeUniqueStrings(result.ToolAllowlist, item.desc.ToolAllowlist)
+		result.ResourceHints = mergeUniqueResourceHints(result.ResourceHints, item.desc.ResourceHints)
 	}
 	return result
 }
 
-func matchesDescriptor(desc Descriptor, message, recallJoined string) bool {
+func matchDescriptor(desc Descriptor, message, recallJoined string) (SkillMatch, bool) {
 	if strings.TrimSpace(desc.Name) == "" {
-		return false
+		return SkillMatch{}, false
 	}
 
-	if containsText(message, desc.Name) || containsText(recallJoined, desc.Name) {
-		return true
+	match := SkillMatch{
+		SkillName: strings.TrimSpace(desc.Name),
+	}
+	if containsText(message, desc.Name) {
+		match.Score += 3
+		match.MatchSources = mergeUniqueStrings(match.MatchSources, []string{"message"})
+		match.MatchTerms = mergeUniqueStrings(match.MatchTerms, []string{desc.Name})
+	}
+	if containsText(recallJoined, desc.Name) {
+		match.Score += 3
+		match.MatchSources = mergeUniqueStrings(match.MatchSources, []string{"recall"})
+		match.MatchTerms = mergeUniqueStrings(match.MatchTerms, []string{desc.Name})
 	}
 	for _, hint := range desc.TriggerHints {
-		if containsText(message, hint) || containsText(recallJoined, hint) {
-			return true
+		if containsText(message, hint) {
+			match.Score += 2
+			match.MatchSources = mergeUniqueStrings(match.MatchSources, []string{"message"})
+			match.MatchTerms = mergeUniqueStrings(match.MatchTerms, []string{hint})
+		}
+		if containsText(recallJoined, hint) {
+			match.Score += 1
+			match.MatchSources = mergeUniqueStrings(match.MatchSources, []string{"recall"})
+			match.MatchTerms = mergeUniqueStrings(match.MatchTerms, []string{hint})
 		}
 	}
-	return false
+	if match.Score == 0 {
+		return SkillMatch{}, false
+	}
+	return match, true
 }
 
 func containsText(target, needle string) bool {

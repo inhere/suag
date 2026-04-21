@@ -81,8 +81,43 @@ func TestResolver_ResolveMatchesMessageAndRecall(t *testing.T) {
 
 	assert.Eq(t, 1, len(resolved.Skills))
 	assert.Eq(t, "office-hours", resolved.Skills[0].Name)
+	assert.Eq(t, 1, len(resolved.Matches))
+	assert.Eq(t, "office-hours", resolved.Matches[0].SkillName)
+	assert.True(t, resolved.Matches[0].Score > 0)
+	assert.True(t, containsString(resolved.Matches[0].MatchSources, "message"))
+	assert.True(t, containsString(resolved.Matches[0].MatchSources, "recall"))
+	assert.True(t, containsString(resolved.Matches[0].MatchTerms, "brainstorm"))
 	assert.Eq(t, []string{"Ask one question at a time before implementation."}, resolved.SystemPromptParts)
 	assert.Eq(t, []string{"file_read", "file_list"}, resolved.ToolAllowlist)
+}
+
+func TestResolver_ResolveRanksStrongerMatchesFirst(t *testing.T) {
+	t.Parallel()
+
+	registry := NewRegistry()
+	registry.Register(Descriptor{
+		Name:         "office-hours",
+		Description:  "builder brainstorming skill",
+		TriggerHints: []string{"brainstorm", "idea"},
+	})
+	registry.Register(Descriptor{
+		Name:         "review",
+		Description:  "review code diffs",
+		TriggerHints: []string{"inspect"},
+	})
+
+	resolver := NewResolver(registry)
+	resolved := resolver.Resolve(MatchInput{
+		UserMessage:   "office-hours brainstorm this idea",
+		RecallPreview: []string{"office-hours works well before implementation"},
+		MaxSkills:     2,
+	})
+
+	assert.Eq(t, 1, len(resolved.Skills))
+	assert.Eq(t, "office-hours", resolved.Skills[0].Name)
+	assert.Eq(t, 1, len(resolved.Matches))
+	assert.Eq(t, "office-hours", resolved.Matches[0].SkillName)
+	assert.True(t, resolved.Matches[0].Score >= 6)
 }
 
 func TestResolver_ResolveHonorsMaxSkills(t *testing.T) {
@@ -144,4 +179,13 @@ inputs:
 	assert.True(t, strings.HasSuffix(descriptors[0].ResourceHints[0].Path, filepath.Join("references", "guide.md")))
 	assert.True(t, strings.HasSuffix(descriptors[0].ResourceHints[1].Path, filepath.Join("assets", "notes.txt")))
 	assert.Eq(t, path, descriptors[0].ResourceHints[0].SourcePath)
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if strings.TrimSpace(item) == strings.TrimSpace(target) {
+			return true
+		}
+	}
+	return false
 }

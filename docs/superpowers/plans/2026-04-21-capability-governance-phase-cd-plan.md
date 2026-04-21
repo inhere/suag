@@ -81,13 +81,13 @@ git commit -m "feat: harden skill resource hint consumption"
 - Modify: `internal/app/server.go`
 - Modify: `internal/app/server_test.go`
 
-- [ ] **Step 1: 写 failing tests，覆盖 message / recall / name / description 多源命中**
-- [ ] **Step 2: 运行 `go test ./internal/capabilities/skills ./internal/app`，确认失败原因正确**
-- [ ] **Step 3: 实现 richer match 输出**
+- [x] **Step 1: 写 failing tests，覆盖 message / recall / name / description 多源命中**
+- [x] **Step 2: 运行 `go test ./internal/capabilities/skills ./internal/app`，确认失败原因正确**
+- [x] **Step 3: 实现 richer match 输出**
 最小输出：
 `match_source`、`match_terms`、`score`
-- [ ] **Step 4: 在 runtime context builder 中透出最小 skill resolution metadata**
-- [ ] **Step 5: 重新运行测试确认通过**
+- [x] **Step 4: 在 runtime context builder 中透出最小 skill resolution metadata**
+- [x] **Step 5: 重新运行测试确认通过**
 - [ ] **Step 6: 提交**
 
 ```bash

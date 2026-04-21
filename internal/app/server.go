@@ -150,6 +150,9 @@ func (a *App) newRuntimeContextBuilder() session.RuntimeContextBuilder {
 		if names := resolvedSkillNames(resolvedSkills.Skills); len(names) > 0 {
 			contextMap["resolved_skill_names"] = names
 		}
+		if matches := encodeSkillMatches(resolvedSkills.Matches); len(matches) > 0 {
+			contextMap["resolved_skill_matches"] = matches
+		}
 		return contextMap
 	}
 }
@@ -298,6 +301,29 @@ func encodeResourceHints(hints []capskills.ResourceHint) []map[string]any {
 			"path":        strings.TrimSpace(hint.Path),
 			"source_path": strings.TrimSpace(hint.SourcePath),
 			"priority":    hint.Priority,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func encodeSkillMatches(matches []capskills.SkillMatch) []map[string]any {
+	if len(matches) == 0 {
+		return nil
+	}
+
+	out := make([]map[string]any, 0, len(matches))
+	for _, match := range matches {
+		if strings.TrimSpace(match.SkillName) == "" || match.Score <= 0 {
+			continue
+		}
+		out = append(out, map[string]any{
+			"skill":         strings.TrimSpace(match.SkillName),
+			"score":         match.Score,
+			"match_sources": append([]string(nil), match.MatchSources...),
+			"match_terms":   append([]string(nil), match.MatchTerms...),
 		})
 	}
 	if len(out) == 0 {

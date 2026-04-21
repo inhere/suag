@@ -10,6 +10,15 @@ type ResourceHint struct {
 	Priority   int
 }
 
+// SkillMatch captures the minimal ranking/provenance signal explaining why a
+// skill influenced the current turn.
+type SkillMatch struct {
+	SkillName    string
+	Score        int
+	MatchSources []string
+	MatchTerms   []string
+}
+
 // Descriptor is the runtime-facing capability recipe distilled from a SKILL.md
 // style source. It is intentionally smaller than any executable skill runner.
 type Descriptor struct {
@@ -33,6 +42,7 @@ type MatchInput struct {
 // ResolvedSkillSet is the turn-time skill selection result.
 type ResolvedSkillSet struct {
 	Skills            []Descriptor
+	Matches           []SkillMatch
 	SystemPromptParts []string
 	ToolAllowlist     []string
 	ResourceHints     []ResourceHint
