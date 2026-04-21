@@ -37,6 +37,7 @@ func cloneDescriptor(desc Descriptor) Descriptor {
 		Description:       strings.TrimSpace(desc.Description),
 		SourcePath:        strings.TrimSpace(desc.SourcePath),
 		TriggerHints:      cloneStrings(desc.TriggerHints),
+		ScopeHints:        cloneStrings(desc.ScopeHints),
 		ToolAllowlist:     cloneStrings(desc.ToolAllowlist),
 		SystemPromptParts: cloneStrings(desc.SystemPromptParts),
 		ResourceHints:     cloneResourceHints(desc.ResourceHints),

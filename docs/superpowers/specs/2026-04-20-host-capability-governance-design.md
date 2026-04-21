@@ -601,6 +601,7 @@ MCP 应作为 `ToolProvider` 的一种来源。
   - 产出 `resolved_system_fragments`
   - 产出 `resolved_resource_hints`
   - 产出 `resolved_skill_matches`
+    - 当前最小包含 `score / match_sources / match_terms / scope_hints`
   - 产出 `tool hints / allowlist`
   - 产出 `resolved_skill_names`
 - `internal/app` runtime context builder 已开始消费这条结果

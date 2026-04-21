@@ -332,6 +332,7 @@ func encodeSkillMatches(matches []capskills.SkillMatch) []map[string]any {
 			"score":         match.Score,
 			"match_sources": append([]string(nil), match.MatchSources...),
 			"match_terms":   append([]string(nil), match.MatchTerms...),
+			"scope_hints":   append([]string(nil), match.ScopeHints...),
 		})
 	}
 	if len(out) == 0 {

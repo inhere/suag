@@ -17,6 +17,7 @@ type SkillMatch struct {
 	Score        int
 	MatchSources []string
 	MatchTerms   []string
+	ScopeHints   []string
 }
 
 // Descriptor is the runtime-facing capability recipe distilled from a SKILL.md
@@ -26,6 +27,7 @@ type Descriptor struct {
 	Description       string
 	SourcePath        string
 	TriggerHints      []string
+	ScopeHints        []string
 	ToolAllowlist     []string
 	SystemPromptParts []string
 	ResourceHints     []ResourceHint

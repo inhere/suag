@@ -86,7 +86,9 @@ func TestResolver_ResolveMatchesMessageAndRecall(t *testing.T) {
 	assert.True(t, resolved.Matches[0].Score > 0)
 	assert.True(t, containsString(resolved.Matches[0].MatchSources, "message"))
 	assert.True(t, containsString(resolved.Matches[0].MatchSources, "recall"))
+	assert.True(t, containsString(resolved.Matches[0].MatchSources, "scope"))
 	assert.True(t, containsString(resolved.Matches[0].MatchTerms, "brainstorm"))
+	assert.True(t, containsString(resolved.Matches[0].ScopeHints, "planning"))
 	assert.Eq(t, []string{"Ask one question at a time before implementation."}, resolved.SystemPromptParts)
 	assert.Eq(t, []string{"file_read", "file_list"}, resolved.ToolAllowlist)
 }
@@ -118,6 +120,7 @@ func TestResolver_ResolveRanksStrongerMatchesFirst(t *testing.T) {
 	assert.Eq(t, 1, len(resolved.Matches))
 	assert.Eq(t, "office-hours", resolved.Matches[0].SkillName)
 	assert.True(t, resolved.Matches[0].Score >= 6)
+	assert.True(t, containsString(resolved.Matches[0].ScopeHints, "planning"))
 }
 
 func TestResolver_ResolveHonorsMaxSkills(t *testing.T) {
@@ -168,6 +171,7 @@ inputs:
 	assert.Eq(t, 1, len(descriptors))
 	assert.Eq(t, "office-hours", descriptors[0].Name)
 	assert.True(t, len(descriptors[0].TriggerHints) >= 1)
+	assert.True(t, containsString(descriptors[0].ScopeHints, "planning"))
 	assert.True(t, len(descriptors[0].SystemPromptParts) >= 1)
 	assert.Eq(t, []string{"file_read", "file_list"}, descriptors[0].ToolAllowlist)
 	assert.Eq(t, 2, len(descriptors[0].ResourceHints))

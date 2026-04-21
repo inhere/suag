@@ -23,6 +23,7 @@ func LoadDescriptorsFromFile(path string) ([]Descriptor, error) {
 			Description:       strings.TrimSpace(skill.Description),
 			SourcePath:        strings.TrimSpace(path),
 			TriggerHints:      inferTriggerHints(skill),
+			ScopeHints:        inferScopeHints(skill),
 			SystemPromptParts: inferPromptParts(skill),
 			ToolAllowlist:     inferToolAllowlist(skill),
 			ResourceHints:     inferResourceHints(path, skill.Name),
@@ -50,6 +51,36 @@ func inferPromptParts(skill SkillSource) []string {
 	return []string{
 		"[Skill " + strings.TrimSpace(skill.Name) + "] " + strings.TrimSpace(skill.Description),
 	}
+}
+
+func inferScopeHints(skill SkillSource) []string {
+	desc := strings.ToLower(strings.TrimSpace(skill.Description))
+	if desc == "" {
+		return nil
+	}
+
+	var scopes []string
+	if strings.Contains(desc, "brainstorm") || strings.Contains(desc, "idea") ||
+		strings.Contains(desc, "plan") || strings.Contains(desc, "planning") ||
+		strings.Contains(desc, "头脑风暴") || strings.Contains(desc, "规划") {
+		scopes = append(scopes, "planning")
+	}
+	if strings.Contains(desc, "review") || strings.Contains(desc, "inspect") ||
+		strings.Contains(desc, "analy") || strings.Contains(desc, "检查") ||
+		strings.Contains(desc, "分析") {
+		scopes = append(scopes, "analysis")
+	}
+	if strings.Contains(desc, "edit") || strings.Contains(desc, "write") ||
+		strings.Contains(desc, "modify") || strings.Contains(desc, "修复") ||
+		strings.Contains(desc, "修改") || strings.Contains(desc, "更新") {
+		scopes = append(scopes, "edit")
+	}
+	if strings.Contains(desc, "run") || strings.Contains(desc, "test") ||
+		strings.Contains(desc, "command") || strings.Contains(desc, "运行") ||
+		strings.Contains(desc, "命令") {
+		scopes = append(scopes, "execution")
+	}
+	return cloneStrings(scopes)
 }
 
 func inferToolAllowlist(skill SkillSource) []string {

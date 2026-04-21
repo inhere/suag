@@ -334,6 +334,7 @@
   - `score`
   - `match_sources`
   - `match_terms`
+  - `scope_hints`
 - `internal/host/intrunner` 现在会把 `resolved_system_fragments` 与 `resolved_resource_hints` 一并作为 runtime-only `system` messages 注入 provider request
 - 当前 resource hints 的消费仍保持最小化：
   - `resolved_resource_hints` 已升级为结构化对象，至少包含 `skill`、`kind`、`path`、`source_path`、`priority`

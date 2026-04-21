@@ -33,6 +33,7 @@ func (r *Resolver) Resolve(input MatchInput) ResolvedSkillSet {
 
 	message := strings.ToLower(strings.TrimSpace(input.UserMessage))
 	recallJoined := strings.ToLower(strings.Join(input.RecallPreview, "\n"))
+	turnScopes := detectTurnScopes(message, recallJoined)
 
 	type rankedMatch struct {
 		desc  Descriptor
@@ -41,7 +42,7 @@ func (r *Resolver) Resolve(input MatchInput) ResolvedSkillSet {
 	var ranked []rankedMatch
 	result := ResolvedSkillSet{}
 	for _, desc := range descriptors {
-		match, ok := matchDescriptor(desc, message, recallJoined)
+		match, ok := matchDescriptor(desc, message, recallJoined, turnScopes)
 		if !ok {
 			continue
 		}
@@ -68,7 +69,7 @@ func (r *Resolver) Resolve(input MatchInput) ResolvedSkillSet {
 	return result
 }
 
-func matchDescriptor(desc Descriptor, message, recallJoined string) (SkillMatch, bool) {
+func matchDescriptor(desc Descriptor, message, recallJoined string, turnScopes []string) (SkillMatch, bool) {
 	if strings.TrimSpace(desc.Name) == "" {
 		return SkillMatch{}, false
 	}
@@ -98,10 +99,38 @@ func matchDescriptor(desc Descriptor, message, recallJoined string) (SkillMatch,
 			match.MatchTerms = mergeUniqueStrings(match.MatchTerms, []string{hint})
 		}
 	}
+	matchedScopes := intersectStrings(descriptorScopeHints(desc), turnScopes)
+	if len(matchedScopes) > 0 {
+		match.Score += 2 * len(matchedScopes)
+		match.MatchSources = mergeUniqueStrings(match.MatchSources, []string{"scope"})
+		match.MatchTerms = mergeUniqueStrings(match.MatchTerms, matchedScopes)
+		match.ScopeHints = mergeUniqueStrings(match.ScopeHints, matchedScopes)
+	}
 	if match.Score == 0 {
 		return SkillMatch{}, false
 	}
 	return match, true
+}
+
+func detectTurnScopes(message, recallJoined string) []string {
+	var scopes []string
+	if hasAnyText(message, []string{"brainstorm", "idea", "plan", "planning", "头脑风暴", "规划"}) ||
+		hasAnyText(recallJoined, []string{"brainstorm", "idea", "plan", "planning", "头脑风暴", "规划"}) {
+		scopes = append(scopes, "planning")
+	}
+	if hasAnyText(message, []string{"review", "inspect", "analy", "检查", "分析", "查看"}) ||
+		hasAnyText(recallJoined, []string{"review", "inspect", "analy", "检查", "分析", "查看"}) {
+		scopes = append(scopes, "analysis")
+	}
+	if hasAnyText(message, []string{"edit", "write", "modify", "修复", "修改", "更新"}) ||
+		hasAnyText(recallJoined, []string{"edit", "write", "modify", "修复", "修改", "更新"}) {
+		scopes = append(scopes, "edit")
+	}
+	if hasAnyText(message, []string{"run", "test", "command", "运行", "命令"}) ||
+		hasAnyText(recallJoined, []string{"run", "test", "command", "运行", "命令"}) {
+		scopes = append(scopes, "execution")
+	}
+	return mergeUniqueStrings(nil, scopes)
 }
 
 func containsText(target, needle string) bool {
@@ -111,6 +140,25 @@ func containsText(target, needle string) bool {
 		return false
 	}
 	return strings.Contains(target, needle)
+}
+
+func hasAnyText(target string, needles []string) bool {
+	for _, needle := range needles {
+		if containsText(target, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func descriptorScopeHints(desc Descriptor) []string {
+	if scopes := mergeUniqueStrings(nil, desc.ScopeHints); len(scopes) > 0 {
+		return scopes
+	}
+	return inferScopeHints(SkillSource{
+		Name:        desc.Name,
+		Description: desc.Description,
+	})
 }
 
 func mergeUniqueStrings(base, extra []string) []string {
@@ -166,4 +214,32 @@ func mergeUniqueResourceHints(base, extra []ResourceHint) []ResourceHint {
 		return nil
 	}
 	return out
+}
+
+func intersectStrings(left, right []string) []string {
+	if len(left) == 0 || len(right) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]bool, len(left))
+	for _, item := range left {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		seen[item] = true
+	}
+
+	out := make([]string, 0, len(right))
+	for _, item := range right {
+		item = strings.TrimSpace(item)
+		if item == "" || !seen[item] {
+			continue
+		}
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return mergeUniqueStrings(nil, out)
 }

@@ -24,6 +24,7 @@
 - 当前最小 skill resource hints 已打通：skill 相邻 `references/`、`assets/` 下的小型文本资源会被解析到 `resolved_resource_hints`，并在 `internal/host/intrunner` 中以 runtime-only `system` context 注入，不污染 session history
 - Capability governance Phase C-D Task 1 已完成第一轮收口：`resolved_resource_hints` 已升级为带 `skill/kind/path/source_path/priority` 的结构化对象，且 runtime 侧会对 skill 根目录范围、子目录与扩展名做二次硬校验
 - Capability governance Phase C-D Task 2/3 已接上最小解释链路：skill matching 现在会产出 `resolved_skill_matches(score/match_sources/match_terms)`，默认 post-turn `CapabilityPlannerHook` 也会消费 `resolved_tool_mode`、`resolved_skill_names`、`resolved_skill_matches`、`resource_hint_count`、`recall_hit`
+- richer skill matching 继续推进了一步：`resolved_skill_matches` 已补 `scope_hints`，当前能表达 skill 更偏 `planning / analysis / edit / execution` 哪类工作，便于后续 planner / UI 消费
 - 旧的 `internal/platform/tools/skills` 已开始收口移除：SKILL parser 已迁入 `internal/capabilities/skills`，历史上的 executable skill-tool 残留已删除，避免继续混淆 `tool source` 与 `capability recipe` 边界
 - 下一步继续围绕 capability governance 主线推进 richer skill matching、tool catalog 与 recall/policy/skills/planner 联动
 <!-- PROCESSING WORKS:END -->
