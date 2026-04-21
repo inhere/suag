@@ -25,6 +25,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to build app: %v\n", err)
 		os.Exit(1)
 	}
+	defer func() {
+		if err := runtimeApp.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to close app: %v\n", err)
+		}
+	}()
 
 	// Determine run mode from args.
 	mode := "chat"

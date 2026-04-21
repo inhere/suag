@@ -28,6 +28,17 @@ type Provider struct {
 	tools  []tools.Tool
 }
 
+// NewProviderForTools constructs a Provider from already-materialized MCP tools.
+// It exists for higher-level wiring tests so app capability assembly can verify
+// provider composition without starting a real MCP subprocess.
+func NewProviderForTools(id string, toolsList []tools.Tool, client toolClient) *Provider {
+	return &Provider{
+		id:     providerID(id),
+		client: client,
+		tools:  append([]tools.Tool(nil), toolsList...),
+	}
+}
+
 func NewProvider(ctx context.Context, settings axconfig.MCPServerSettings) (*Provider, error) {
 	serverCfg := ServerConfig{
 		Name:    settings.ID,

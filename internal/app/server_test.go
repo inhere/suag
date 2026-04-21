@@ -58,7 +58,11 @@ func TestBuildDefaultCapabilities_ProducesSubsetUsableByAppDependents(t *testing
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 
-	built := buildDefaultCapabilities(t.TempDir())
+	built, err := buildDefaultCapabilities(t.TempDir())
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, built.Close())
+	})
 	set := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
 	resolved := built.Manager.ResolveTurnCapabilities(set)
 	subset := built.Registry.Subset(resolved.ToolNames)
@@ -73,7 +77,11 @@ func TestBuildSessionRunner_DefaultsToInternalRunnerWithoutACP(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 
-	built := buildDefaultCapabilities(t.TempDir())
+	built, err := buildDefaultCapabilities(t.TempDir())
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, built.Close())
+	})
 	provider := llm.NewMockProvider("mock").QueueText("done")
 	_ = gkconfig.Set("agentcore.run_root", filepath.Join(t.TempDir(), "agentcore"))
 	_ = gkconfig.Set("host.memory.root", filepath.Join(t.TempDir(), "memory"))

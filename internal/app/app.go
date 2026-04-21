@@ -29,6 +29,7 @@ type App struct {
 	provider          llm.Provider
 	registry          *tools.Registry
 	capabilityManager *runtimecaps.CapabilityManager
+	capabilityRuntime defaultCapabilities
 	orch              *orchestrator.Orchestrator
 	bus               *gateway.EventBus
 	hitlMgr           hitl.Manager
@@ -55,7 +56,10 @@ func New() (*App, error) {
 	}
 	slog.Info("llm provider configured", llmSettings.LogArgs()...)
 
-	caps := buildDefaultCapabilities(workspace)
+	caps, err := buildDefaultCapabilities(workspace)
+	if err != nil {
+		return nil, err
+	}
 	registry := caps.Registry
 
 	bus := gateway.NewEventBus()
@@ -109,6 +113,7 @@ func New() (*App, error) {
 		provider:          provider,
 		registry:          registry,
 		capabilityManager: caps.Manager,
+		capabilityRuntime: caps,
 		orch:              orch,
 		bus:               bus,
 		hitlMgr:           hitlMgr,
@@ -116,6 +121,13 @@ func New() (*App, error) {
 		scheduler:         scheduler,
 		workspace:         workspace,
 	}, nil
+}
+
+func (a *App) Close() error {
+	if a == nil {
+		return nil
+	}
+	return a.capabilityRuntime.Close()
 }
 
 func (a *App) Run(ctx context.Context, mode string) error {
