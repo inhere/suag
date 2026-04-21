@@ -62,3 +62,68 @@ func TestStaticToolProvider_ListToolRefsReturnsCopy(t *testing.T) {
 	assert.NoErr(t, err)
 	assert.Eq(t, "file_read", again[0].Name)
 }
+
+func TestCapabilityManager_BuildDefaultCapabilitySetPrefersSessionMetadata(t *testing.T) {
+	t.Parallel()
+
+	manager := NewManager()
+	manager.MustRegisterToolProvider(NewStaticToolProvider("native", []ToolRef{
+		{Name: "file_read", Source: "native", ProviderID: "native"},
+		{Name: "shell_exec", Source: "native", ProviderID: "native"},
+	}))
+
+	input := BuildSetInput{
+		SessionMetadata: map[string]any{
+			CapabilitySetSessionMetadataKey: map[string]any{
+				"tools": []map[string]any{
+					{"name": "file_read", "source": "native", "provider_id": "native"},
+				},
+			},
+		},
+	}
+
+	set := manager.BuildDefaultCapabilitySet(input)
+
+	assert.Eq(t, 1, len(set.Tools))
+	assert.Eq(t, "file_read", set.Tools[0].Name)
+}
+
+func TestCapabilityManager_EncodeAndDecodeCapabilitySetMetadata(t *testing.T) {
+	t.Parallel()
+
+	manager := NewManager()
+	metadata := manager.EncodeCapabilitySetMetadata(CapabilitySet{
+		Tools: []ToolRef{
+			{Name: "file_read", Source: "native", ProviderID: "native"},
+			{Name: "mcp_echo", Source: "mcp", ProviderID: "mcp.stub"},
+		},
+	})
+
+	set, ok := manager.DecodeCapabilitySetMetadata(metadata)
+	assert.True(t, ok)
+	assert.Eq(t, 2, len(set.Tools))
+	assert.Eq(t, "file_read", set.Tools[0].Name)
+	assert.Eq(t, "mcp_echo", set.Tools[1].Name)
+}
+
+func TestCapabilityManager_ResolveTurnCapabilitiesUsesSessionMetadataBaseline(t *testing.T) {
+	t.Parallel()
+
+	manager := NewManager()
+
+	resolved := manager.ResolveTurnCapabilitiesFromInput(ResolveTurnInput{
+		SessionMetadata: map[string]any{
+			CapabilitySetSessionMetadataKey: map[string]any{
+				"tools": []map[string]any{
+					{"name": "file_read", "source": "native", "provider_id": "native"},
+					{"name": "mcp_echo", "source": "mcp", "provider_id": "mcp.stub"},
+				},
+			},
+		},
+	})
+
+	assert.Eq(t, 2, len(resolved.ToolRefs))
+	assert.Eq(t, 2, len(resolved.ToolNames))
+	assert.Eq(t, "file_read", resolved.ToolNames[0])
+	assert.Eq(t, "mcp_echo", resolved.ToolNames[1])
+}

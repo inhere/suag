@@ -137,6 +137,88 @@ func TestService_StartTurnStoresInitialLoopMetadataOnTerminalRun(t *testing.T) {
 	}
 }
 
+func TestService_StartTurnBuildsSessionMetadataBeforeRuntimeContext(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	runner := &fakeRunner{
+		result: RuntimeResult{Summary: "run-output"},
+	}
+
+	var runtimeInput RuntimeContextBuildInput
+	svc := NewService(store, bus, runner, ServiceConfig{
+		SessionMetadataBuilder: func(input SessionMetadataBuildInput) map[string]any {
+			return map[string]any{
+				"capability_set": map[string]any{
+					"tools": []map[string]any{
+						{"name": "file_read", "source": "native", "provider_id": "native"},
+					},
+				},
+			}
+		},
+		RuntimeContextBuilder: func(input RuntimeContextBuildInput) map[string]any {
+			runtimeInput = input
+			return map[string]any{
+				"resolved_tool_names": []string{"file_read"},
+			}
+		},
+	})
+
+	result, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_capability_session",
+		AgentID:       "default",
+		UserMessage:   "first message",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+
+	sessionModel, err := store.GetSession(ctx, "sess_capability_session")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	capabilitySet, ok := sessionModel.Metadata["capability_set"].(map[string]any)
+	if !ok {
+		t.Fatalf("session metadata capability_set type = %T, want map[string]any", sessionModel.Metadata["capability_set"])
+	}
+	toolsMeta, ok := capabilitySet["tools"].([]any)
+	if !ok {
+		t.Fatalf("session metadata capability_set[tools] type = %T, want []any", capabilitySet["tools"])
+	}
+	firstTool, ok := toolsMeta[0].(map[string]any)
+	if !ok {
+		t.Fatalf("session metadata capability_set[tools][0] type = %T, want map[string]any", toolsMeta[0])
+	}
+	if len(toolsMeta) != 1 || firstTool["name"] != "file_read" {
+		t.Fatalf("session capability tools = %#v, want file_read", toolsMeta)
+	}
+
+	if runtimeInput.SessionID != "sess_capability_session" {
+		t.Fatalf("runtime builder SessionID = %q, want %q", runtimeInput.SessionID, "sess_capability_session")
+	}
+	if runtimeInput.AgentID != "default" {
+		t.Fatalf("runtime builder AgentID = %q, want %q", runtimeInput.AgentID, "default")
+	}
+	if runtimeInput.Message != "first message" {
+		t.Fatalf("runtime builder Message = %q, want %q", runtimeInput.Message, "first message")
+	}
+	if runtimeInput.IsContinue {
+		t.Fatal("runtime builder IsContinue = true, want false")
+	}
+	if _, ok := runtimeInput.SessionMetadata["capability_set"].(map[string]any); !ok {
+		t.Fatalf("runtime builder SessionMetadata[capability_set] type = %T, want map[string]any", runtimeInput.SessionMetadata["capability_set"])
+	}
+	if names, ok := runner.lastRequest.Context["resolved_tool_names"].([]string); !ok || len(names) != 1 || names[0] != "file_read" {
+		t.Fatalf("runner context resolved_tool_names = %#v, want [file_read]", runner.lastRequest.Context["resolved_tool_names"])
+	}
+	if result.RunID == "" {
+		t.Fatal("StartTurn().RunID is empty")
+	}
+}
+
 func TestService_ContinueTurnCreatesNewTurnForExistingWaitingSession(t *testing.T) {
 	t.Parallel()
 
@@ -301,6 +383,96 @@ func TestService_ContinueTurnStoresResumedLoopMetadata(t *testing.T) {
 	}
 	if runModel.Metadata["turn_outcome"] != "completed" {
 		t.Fatalf("run metadata turn_outcome = %v, want %q", runModel.Metadata["turn_outcome"], "completed")
+	}
+}
+
+func TestService_ContinueTurnBuildsRuntimeContextWithSessionMetadataAndMessage(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestStore(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 21, 11, 30, 0, 0, time.UTC)
+
+	var runtimeInputs []RuntimeContextBuildInput
+	waitingRunner := &fakeRunner{
+		result: RuntimeResult{
+			Summary:   "await_resume",
+			WaitState: RunInputRequired,
+		},
+		emitEvents: []RuntimeEvent{
+			{
+				EventType: EventRunStatus,
+				Payload: map[string]any{
+					"state": string(RunInputRequired),
+				},
+			},
+		},
+	}
+	svc := NewService(store, bus, waitingRunner, ServiceConfig{
+		Now: func() time.Time { return now },
+		SessionMetadataBuilder: func(input SessionMetadataBuildInput) map[string]any {
+			return map[string]any{
+				"capability_set": map[string]any{
+					"tools": []map[string]any{
+						{"name": "file_read", "source": "native", "provider_id": "native"},
+						{"name": "mcp_echo", "source": "mcp", "provider_id": "mcp.stub"},
+					},
+				},
+			}
+		},
+		RuntimeContextBuilder: func(input RuntimeContextBuildInput) map[string]any {
+			runtimeInputs = append(runtimeInputs, input)
+			return map[string]any{
+				"resolved_tool_names": []string{"file_read", "mcp_echo"},
+			}
+		},
+	})
+
+	firstResult, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_capability_continue",
+		AgentID:       "default",
+		UserMessage:   "first wait",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn() error = %v", err)
+	}
+	if firstResult.RunID == "" {
+		t.Fatal("StartTurn().RunID is empty")
+	}
+
+	secondRunner := &fakeRunner{
+		result: RuntimeResult{Summary: "continued"},
+	}
+	svc.runner = secondRunner
+	svc.now = func() time.Time { return now.Add(5 * time.Minute) }
+
+	_, err = svc.ContinueTurn(ctx, ContinueTurnInput{
+		SessionID:     "sess_capability_continue",
+		AgentID:       "default",
+		Message:       "continue with more detail",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("ContinueTurn() error = %v", err)
+	}
+
+	if len(runtimeInputs) != 2 {
+		t.Fatalf("runtime builder input len = %d, want 2", len(runtimeInputs))
+	}
+	continueInput := runtimeInputs[1]
+	if !continueInput.IsContinue {
+		t.Fatal("continue runtime builder IsContinue = false, want true")
+	}
+	if continueInput.Message != "continue with more detail" {
+		t.Fatalf("continue runtime builder Message = %q, want %q", continueInput.Message, "continue with more detail")
+	}
+	if _, ok := continueInput.SessionMetadata["capability_set"].(map[string]any); !ok {
+		t.Fatalf("continue runtime builder SessionMetadata[capability_set] type = %T, want map[string]any", continueInput.SessionMetadata["capability_set"])
+	}
+	if names, ok := secondRunner.lastRequest.Context["resolved_tool_names"].([]string); !ok || len(names) != 2 {
+		t.Fatalf("continue runner context resolved_tool_names = %#v, want [file_read mcp_echo]", secondRunner.lastRequest.Context["resolved_tool_names"])
 	}
 }
 

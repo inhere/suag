@@ -50,11 +50,31 @@ type RuntimeEvent struct {
 	Payload   map[string]any
 }
 
+type RuntimeContextBuildInput struct {
+	SessionID       string
+	AgentID         string
+	Message         string
+	IsContinue      bool
+	SessionMetadata map[string]any
+}
+
+type RuntimeContextBuilder func(input RuntimeContextBuildInput) map[string]any
+
+type SessionMetadataBuildInput struct {
+	SessionID string
+	AgentID   string
+	Message   string
+}
+
+type SessionMetadataBuilder func(input SessionMetadataBuildInput) map[string]any
+
 type ServiceConfig struct {
-	Now                 func() time.Time
-	RecapHooks          []RecapHook
-	PostTurnActionHooks []PostTurnActionHook
-	MemoryFileSync      MemoryFileSync
+	Now                    func() time.Time
+	SessionMetadataBuilder SessionMetadataBuilder
+	RuntimeContextBuilder  RuntimeContextBuilder
+	RecapHooks             []RecapHook
+	PostTurnActionHooks    []PostTurnActionHook
+	MemoryFileSync         MemoryFileSync
 }
 
 type RecapPhase string
@@ -142,13 +162,15 @@ type activeExecution struct {
 
 // Service owns the host-side lifecycle orchestration for session turns and runs.
 type Service struct {
-	store  Store
-	pub    Publisher
-	runner Runner
-	now    func() time.Time
-	recaps []RecapHook
-	posts  []PostTurnActionHook
-	memory MemoryFileSync
+	store                  Store
+	pub                    Publisher
+	runner                 Runner
+	now                    func() time.Time
+	sessionMetadataBuilder SessionMetadataBuilder
+	runtimeContextBuilder  RuntimeContextBuilder
+	recaps                 []RecapHook
+	posts                  []PostTurnActionHook
+	memory                 MemoryFileSync
 
 	activeMu         sync.Mutex
 	activeExecutions map[string]*activeExecution
@@ -161,14 +183,16 @@ func NewService(store Store, pub Publisher, runner Runner, cfg ServiceConfig) *S
 	}
 
 	return &Service{
-		store:            store,
-		pub:              pub,
-		runner:           runner,
-		now:              nowFn,
-		recaps:           append([]RecapHook(nil), cfg.RecapHooks...),
-		posts:            append([]PostTurnActionHook(nil), cfg.PostTurnActionHooks...),
-		memory:           cfg.MemoryFileSync,
-		activeExecutions: make(map[string]*activeExecution),
+		store:                  store,
+		pub:                    pub,
+		runner:                 runner,
+		now:                    nowFn,
+		sessionMetadataBuilder: cfg.SessionMetadataBuilder,
+		runtimeContextBuilder:  cfg.RuntimeContextBuilder,
+		recaps:                 append([]RecapHook(nil), cfg.RecapHooks...),
+		posts:                  append([]PostTurnActionHook(nil), cfg.PostTurnActionHooks...),
+		memory:                 cfg.MemoryFileSync,
+		activeExecutions:       make(map[string]*activeExecution),
 	}
 }
 
@@ -193,7 +217,7 @@ func (s *Service) ContinueTurn(ctx context.Context, in ContinueTurnInput) (Start
 		return StartTurnResult{}, err
 	}
 	if validator, ok := s.runner.(ContinueValidator); ok {
-		runtimeContext, err := s.buildContinueRuntimeContext(ctx, in.SessionID)
+		runtimeContext, err := s.buildContinueRuntimeContext(ctx, in.SessionID, in.AgentID, in.Message)
 		if err != nil {
 			return StartTurnResult{}, err
 		}
@@ -271,6 +295,16 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 	sessionModel, err := s.ensureSession(ctx, sessionID, now, createIfMissing)
 	if err != nil {
 		return StartTurnResult{}, err
+	}
+	if createIfMissing {
+		if metadata := s.buildInitialSessionMetadata(sessionID, agentID, message); len(metadata) > 0 {
+			if sessionModel.Metadata == nil {
+				sessionModel.Metadata = map[string]any{}
+			}
+			for key, value := range metadata {
+				sessionModel.Metadata[key] = value
+			}
+		}
 	}
 	previousTurnID := sessionModel.LastTurnID
 	resumeFromRunID := ""
@@ -372,7 +406,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 			RunID:       runID,
 			AgentID:     agentID,
 			Instruction: message,
-			Context:     s.buildRuntimeContext(ctx, sessionID, previousTurnID, resumeFromRunID, externalTaskID, !createIfMissing),
+			Context:     s.buildRuntimeContext(ctx, sessionID, agentID, message, previousTurnID, resumeFromRunID, externalTaskID, !createIfMissing),
 			Emit: func(runtimeEvent RuntimeEvent) error {
 				if strings.TrimSpace(runtimeEvent.EventType) == "" {
 					return nil
@@ -774,7 +808,7 @@ func (s *Service) persistLifecycleState(
 	return nil
 }
 
-func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, previousTurnID, resumeFromRunID, externalTaskID string, isContinue bool) map[string]any {
+func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, agentID, message, previousTurnID, resumeFromRunID, externalTaskID string, isContinue bool) map[string]any {
 	ctxMap := map[string]any{}
 	if strings.TrimSpace(externalTaskID) != "" {
 		ctxMap["external_task_id"] = externalTaskID
@@ -787,7 +821,13 @@ func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, previousTu
 			ctxMap["resume_from_run_id"] = resumeFromRunID
 		}
 	}
-	if s == nil || s.store == nil {
+	if s == nil {
+		return ctxMap
+	}
+	if built := s.buildCapabilityRuntimeContext(ctx, sessionID, agentID, message, isContinue); len(built) > 0 {
+		ctxMap = mergeRuntimePayload(ctxMap, built)
+	}
+	if s.store == nil {
 		return ctxMap
 	}
 	if strings.TrimSpace(previousTurnID) == "" {
@@ -818,13 +858,43 @@ func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, previousTu
 	return ctxMap
 }
 
-func (s *Service) buildContinueRuntimeContext(ctx context.Context, sessionID string) (map[string]any, error) {
+func (s *Service) buildInitialSessionMetadata(sessionID, agentID, message string) map[string]any {
+	if s == nil || s.sessionMetadataBuilder == nil {
+		return nil
+	}
+	return s.sessionMetadataBuilder(SessionMetadataBuildInput{
+		SessionID: sessionID,
+		AgentID:   agentID,
+		Message:   message,
+	})
+}
+
+func (s *Service) buildCapabilityRuntimeContext(ctx context.Context, sessionID, agentID, message string, isContinue bool) map[string]any {
+	if s == nil || s.runtimeContextBuilder == nil || s.store == nil {
+		return nil
+	}
+
+	sessionModel, err := s.store.GetSession(ctx, sessionID)
+	if err != nil {
+		return nil
+	}
+
+	return s.runtimeContextBuilder(RuntimeContextBuildInput{
+		SessionID:       sessionID,
+		AgentID:         agentID,
+		Message:         message,
+		IsContinue:      isContinue,
+		SessionMetadata: cloneAnyMap(sessionModel.Metadata),
+	})
+}
+
+func (s *Service) buildContinueRuntimeContext(ctx context.Context, sessionID, agentID, message string) (map[string]any, error) {
 	waiting, err := s.latestContinuableRun(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.buildRuntimeContext(ctx, sessionID, waiting.turnID, waiting.runID, "", true), nil
+	return s.buildRuntimeContext(ctx, sessionID, agentID, message, waiting.turnID, waiting.runID, "", true), nil
 }
 
 func mergeRuntimePayload(payload map[string]any, extra map[string]any) map[string]any {

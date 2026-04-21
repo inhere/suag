@@ -543,10 +543,36 @@ MCP 应作为 `ToolProvider` 的一种来源。
 - `internal/app` 默认 capability builder 已能装配 native + configured MCP providers
 - `cmd/axon/main.go` 已接入 `App.Close()`，为 MCP provider 子进程回收留出统一出口
 
+当前 Phase B2 已开始补上 session-stable capability baseline：
+
+- `runtimecaps.CapabilityManager` 已新增：
+  - `CapabilitySetSessionMetadataKey = "capability_set"`
+  - `EncodeCapabilitySetMetadata()`
+  - `DecodeCapabilitySetMetadata()`
+  - `ResolveTurnCapabilitiesFromInput()`
+- `internal/app` 现在会：
+  - 在启动时构建默认 `CapabilitySet`
+  - 在创建 session 时把默认 capability baseline 写入 `session.metadata.capability_set`
+  - 在 `start_turn / continue_turn` 时优先从 session metadata 反解 capability set
+  - 把 turn-time 解析结果继续下发为 `resolved_tool_names`
+- `internal/host/session.Service` 已新增：
+  - `SessionMetadataBuilder`
+  - `RuntimeContextBuilder`
+  - session 创建前的 metadata 注入
+  - continue/runtime context 对 session metadata 的回读入口
+
+这意味着当前 Host capability governance 主链已经从：
+
+- startup-time default capability registration
+
+推进到：
+
+- startup-time registration + session-stable capability baseline + turn-time runtime context entry
+
 当前 Phase B 仍未覆盖：
 
 - ToolCatalog
-- session/turn 级动态 capability resolution
+- recall / message / policy 驱动的 session/turn 级动态 capability resolution
 - recall / skill / policy 联动过滤 MCP/native tool subset
 
 ### Phase C：接入 Skills 最小闭环

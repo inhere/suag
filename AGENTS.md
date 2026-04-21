@@ -10,18 +10,16 @@
 
 <!-- PROCESSING WORKS:START -->
 
-- Axon v0 自用主线规划持续推进中，设计总纲见 `docs/v0-self-host-design.md`；Host 会话与 Web 工作台基础闭环已打通，联调说明见 `docs/usage/web-host-local-dev.md`
-- `docs/usage/host-state-snapshot-v0.md`、`docs/usage/llm-config-v0.md`、`docs/usage/host-recap-memory-hooks-v0.md`、`docs/usage/host-learning-retrieval-v0.md`、`docs/usage/host-internal-self-loop-v0.md` 已作为当前 v0 协议、配置与 recall/self-loop 基线文档；Host intrunner 当前已落到 query-aware lite recall，并可观测 `memoryRecall.strategy / matched_entry_count / fallback_used`
-- 当前 recap 主线已推进到 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md`，且后端已具备 `memory candidate` 查询与 `accept/reject` REST 入口
-- Web 侧已完成 `Memory Candidates` 右侧面板接入，当前支持 session 级候选加载、`draft/rendered` 过滤、Accept/Reject、错误与 pending 状态反馈，见 `docs/superpowers/specs/2026-04-17-web-memory-candidates-panel-design.md` 与 `docs/superpowers/plans/2026-04-17-web-memory-candidates-panel-implementation-plan.md`
-- Host internal self-loop Phase 1-4 已完成第一轮收口：`ResumeFromRunID`、结构化 `wait_kind`、同进程 resume 边界、terminal event 去重、waiting/resume/stop 状态机一致性，以及 run 级 `loop_phase / resume_source / continue_mode / turn_outcome / planner_hint / next_action_hint` contract 已形成当前基线
-- `internal/host/session` 与 `internal/host/gateway` 已具备 session/turn/run 基础恢复、查询与 WS 命令编排链路；`DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 非终态已贯通到快照与事件流，未知 WS command 会明确返回 `command.error`
-- internal runner / ACP runner 的 Host contract 已完成一轮对齐：`externalTaskId`、失败态 external task 持久化、internal suspend `waitMetadata`、ACP `EXTERNAL_RUNNING` waiting metadata 与 AG-UI run detail / snapshot 已贯通
-- Host learning-system Phase 5 第一刀已完成：`memory candidate -> accept/reject -> MEMORY.md / USER.md` 正式记忆文件闭环已打通，当前 draft/formal memory 文件都会随候选状态刷新，计划见 `docs/superpowers/plans/2026-04-20-host-learning-system-phase5.md`
-- Host recall self-loop verification Phase 8 已完成首轮收口：当前已验证首轮 recall 会影响最终结果，resumed run 也会在继续前刷新 runtime-only recall，且 recalled memory 仍不会回写 session history；计划见 `docs/superpowers/plans/2026-04-20-host-recall-self-loop-verification-phase8.md`
-- `tools / mcp / skills` 长线治理设计已整理为 `docs/superpowers/specs/2026-04-20-host-capability-governance-design.md`，当前按“agentcore 只保留 runtime kernel 与 tool contract，axon 负责 capability governance” 作为推荐方向推进
-- Capability governance Phase A 已完成最小主链：`internal/app` 已通过统一 capability builder 构建默认 native tool registry，`internal/host/intrunner` 已开始消费 resolved tool subset
-- Capability governance Phase B1 已完成代码基线：MCP server 配置读取、`tools/mcp.Provider`、app 默认 capability builder 接入 MCP provider 与 `App.Close()` 生命周期收口已落地；当前继续做文档同步并准备后续 Phase B 下一步
+- Axon v0 自用主线持续推进中，设计总纲见 `docs/v0-self-host-design.md`；当前 Host + Web 最小闭环已打通，联调说明见 `docs/usage/web-host-local-dev.md`
+- `docs/usage/host-state-snapshot-v0.md`、`docs/usage/llm-config-v0.md`、`docs/usage/host-recap-memory-hooks-v0.md`、`docs/usage/host-learning-retrieval-v0.md`、`docs/usage/host-internal-self-loop-v0.md` 共同构成当前 v0 协议、配置、learning/recall 与 self-loop 基线
+- `internal/host/session`、`internal/host/gateway`、Web 工作台已具备 session/turn/run 恢复、WS 命令编排、Pending HITL 自动刷新与 Focused Run 恢复链路；`DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 已贯通到快照与事件流
+- internal runner / ACP runner 的 Host contract 已完成一轮对齐：`externalTaskId`、失败态 external task 持久化、internal suspend `waitMetadata`、ACP `EXTERNAL_RUNNING` waiting metadata 与 AG-UI run detail / snapshot 已对齐
+- Host learning-system 当前已形成 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md + MEMORY.md / USER.md` 闭环，并已验证 recall 会影响 self-loop 结果且不会污染 session history
+- `tools / mcp / skills` 长线治理设计见 `docs/superpowers/specs/2026-04-20-host-capability-governance-design.md`，当前按“agentcore 只保留 runtime kernel 与 tool contract，axon 负责 capability governance” 方向持续推进
+- Capability governance Phase A 已完成：`internal/app` 已通过统一 capability builder 构建默认 native tool registry，`internal/host/intrunner` 已开始消费 resolved tool subset
+- Capability governance Phase B1 已完成：MCP server 配置读取、`tools/mcp.Provider`、app 默认 capability builder 接入 MCP provider 与 `App.Close()` 生命周期收口已落地
+- Capability governance Phase B2 正在收口：默认 `CapabilitySet` 已写入 `session.metadata.capability_set`，`start_turn / continue_turn` 会从 session baseline 解析 `resolved_tool_names`，为后续 session/turn 动态 capability resolution 打底
+- 下一步继续围绕 capability governance 主线推进 session-stable capability set、turn-time resolution、skills/runtime 接线与 policy/recall 联动
 <!-- PROCESSING WORKS:END -->
 
 ## git worktree 开发规范

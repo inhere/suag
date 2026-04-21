@@ -254,6 +254,45 @@
 - turn-time dynamic resolution
 - `SKILL.md` runtime / loader / resolver
 
+### 2.9 Host capability governance Phase B2 基线
+
+2026-04-21 的 Phase B2 已开始补上 session-scoped capability baseline 与 turn 输入接线：
+
+- `internal/capabilities/runtimecaps` 现在新增：
+  - `CapabilitySetSessionMetadataKey = "capability_set"`
+  - `BuildSetInput.SessionMetadata`
+  - `ResolveTurnInput`
+  - `EncodeCapabilitySetMetadata()`
+  - `DecodeCapabilitySetMetadata()`
+  - `ResolveTurnCapabilitiesFromInput()`
+- `CapabilityManager.BuildDefaultCapabilitySet()` 现在会优先尝试从 `session.metadata.capability_set` 反解 `CapabilitySet`
+- `internal/app` 现在会：
+  - 在启动时构建默认 `CapabilitySet`
+  - 在新 session 首次 start turn 前，把默认 capability baseline 写入 session metadata
+  - 在 turn-time 通过 runtime context builder，把 session-stable capability baseline 解析成 `resolved_tool_names`
+- `internal/host/session.Service` 现在新增：
+  - `SessionMetadataBuilder`
+  - `RuntimeContextBuilder`
+  - `buildInitialSessionMetadata()`
+  - `buildCapabilityRuntimeContext()`
+- `continue_turn` 现在也会带着：
+  - 最新 session metadata
+  - 当前 continue message
+  - `AgentID`
+  - `IsContinue`
+
+这意味着当前 Host runtime 与 capability governance 的接线已经进一步稳定为：
+
+- app 负责全局默认 capability registration
+- session 负责持久化 session-stable capability baseline
+- turn/runtime 负责读取 session metadata 并解析出本轮可消费的 runtime context
+
+当前这一阶段仍然**没有**完成：
+
+- recall / message / policy 驱动的动态 capability filtering
+- `SKILL.md` runtime / loader / resolver
+- tool catalog / provider policy / allow-deny 模型
+
 ---
 
 ## 3. 最小迁移路径

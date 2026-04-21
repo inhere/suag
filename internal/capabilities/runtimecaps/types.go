@@ -2,6 +2,8 @@ package runtimecaps
 
 import "context"
 
+const CapabilitySetSessionMetadataKey = "capability_set"
+
 // ToolRef describes a runtime tool exposed by a provider.
 type ToolRef struct {
 	Name       string
@@ -35,7 +37,18 @@ type ResolvedTurnCapabilities struct {
 }
 
 // BuildSetInput carries future session-scoped capability inputs.
-type BuildSetInput struct{}
+type BuildSetInput struct {
+	SessionMetadata map[string]any
+}
+
+// ResolveTurnInput carries the minimum turn-time inputs used to refine the
+// session-stable capability baseline into a per-turn snapshot.
+type ResolveTurnInput struct {
+	SessionMetadata map[string]any
+	UserMessage     string
+	AgentID         string
+	IsContinue      bool
+}
 
 type staticToolProvider struct {
 	id    string

@@ -17,12 +17,12 @@ import (
 	"github.com/gookit/goutil/testutil/assert"
 
 	"github.com/inhere/axon/internal/capabilities/runtimecaps"
-	"github.com/inhere/axon/internal/ops/cron"
-	"github.com/inhere/axon/internal/ops/hitl"
-	"github.com/inhere/axon/internal/orchestrator"
 	"github.com/inhere/axon/internal/host/gateway"
 	"github.com/inhere/axon/internal/host/intrunner"
 	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/axon/internal/ops/cron"
+	"github.com/inhere/axon/internal/ops/hitl"
+	"github.com/inhere/axon/internal/orchestrator"
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
@@ -86,11 +86,12 @@ func TestBuildSessionRunner_DefaultsToInternalRunnerWithoutACP(t *testing.T) {
 	_ = gkconfig.Set("agentcore.run_root", filepath.Join(t.TempDir(), "agentcore"))
 	_ = gkconfig.Set("host.memory.root", filepath.Join(t.TempDir(), "memory"))
 	a := &App{
-		provider:          provider,
-		registry:          built.Registry,
-		capabilityManager: built.Manager,
-		tracer:            tracing.NewInMemoryTracer(nil),
-		workspace:         t.TempDir(),
+		provider:             provider,
+		registry:             built.Registry,
+		capabilityManager:    built.Manager,
+		defaultCapabilitySet: built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{}),
+		tracer:               tracing.NewInMemoryTracer(nil),
+		workspace:            t.TempDir(),
 	}
 
 	runner, err := a.buildSessionRunner()
@@ -115,6 +116,47 @@ func TestBuildSessionRunner_DefaultsToInternalRunnerWithoutACP(t *testing.T) {
 	calls := provider.Calls()
 	assert.Eq(t, 1, len(calls))
 	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "shell_exec"}, toolNamesFromSchemas(calls[0].Tools))
+}
+
+func TestRuntimeContextBuilder_UsesSessionCapabilityMetadata(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	built, err := buildDefaultCapabilities(t.TempDir())
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, built.Close())
+	})
+
+	defaultSet := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
+	a := &App{
+		registry:             built.Registry,
+		capabilityManager:    built.Manager,
+		defaultCapabilitySet: defaultSet,
+	}
+
+	sessionBuilder := a.newSessionMetadataBuilder()
+	assert.NotNil(t, sessionBuilder)
+	metadata := sessionBuilder(session.SessionMetadataBuildInput{
+		SessionID: "sess_ctx_builder",
+		AgentID:   "default",
+		Message:   "hello",
+	})
+	_, ok := metadata[runtimecaps.CapabilitySetSessionMetadataKey].(map[string]any)
+	assert.True(t, ok)
+
+	runtimeBuilder := a.newRuntimeContextBuilder()
+	assert.NotNil(t, runtimeBuilder)
+	contextMap := runtimeBuilder(session.RuntimeContextBuildInput{
+		SessionID:       "sess_ctx_builder",
+		AgentID:         "default",
+		Message:         "hello",
+		SessionMetadata: metadata,
+	})
+
+	names, ok := contextMap["resolved_tool_names"].([]string)
+	assert.True(t, ok)
+	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "shell_exec"}, names)
 }
 
 func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {

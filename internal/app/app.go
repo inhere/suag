@@ -26,16 +26,17 @@ import (
 var ErrUnknownMode = errors.New("unknown mode")
 
 type App struct {
-	provider          llm.Provider
-	registry          *tools.Registry
-	capabilityManager *runtimecaps.CapabilityManager
-	capabilityRuntime defaultCapabilities
-	orch              *orchestrator.Orchestrator
-	bus               *gateway.EventBus
-	hitlMgr           hitl.Manager
-	tracer            tracing.Tracer
-	scheduler         *cron.Scheduler
-	workspace         string
+	provider             llm.Provider
+	registry             *tools.Registry
+	capabilityManager    *runtimecaps.CapabilityManager
+	defaultCapabilitySet runtimecaps.CapabilitySet
+	capabilityRuntime    defaultCapabilities
+	orch                 *orchestrator.Orchestrator
+	bus                  *gateway.EventBus
+	hitlMgr              hitl.Manager
+	tracer               tracing.Tracer
+	scheduler            *cron.Scheduler
+	workspace            string
 }
 
 func SetupLogging() {
@@ -110,16 +111,17 @@ func New() (*App, error) {
 	scheduler := cron.NewScheduler(orch, provider, registry)
 
 	return &App{
-		provider:          provider,
-		registry:          registry,
-		capabilityManager: caps.Manager,
-		capabilityRuntime: caps,
-		orch:              orch,
-		bus:               bus,
-		hitlMgr:           hitlMgr,
-		tracer:            tracer,
-		scheduler:         scheduler,
-		workspace:         workspace,
+		provider:             provider,
+		registry:             registry,
+		capabilityManager:    caps.Manager,
+		defaultCapabilitySet: caps.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{}),
+		capabilityRuntime:    caps,
+		orch:                 orch,
+		bus:                  bus,
+		hitlMgr:              hitlMgr,
+		tracer:               tracer,
+		scheduler:            scheduler,
+		workspace:            workspace,
 	}, nil
 }
 

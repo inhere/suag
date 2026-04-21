@@ -187,7 +187,7 @@ func TestService_BuildContinueRuntimeContextRejectsSessionWithoutTurns(t *testin
 		Now: func() time.Time { return now },
 	})
 
-	_, err := svc.buildContinueRuntimeContext(ctx, "sess_continue_context_empty")
+	_, err := svc.buildContinueRuntimeContext(ctx, "sess_continue_context_empty", "default", "continue anyway")
 	if err == nil {
 		t.Fatal("buildContinueRuntimeContext() error = nil, want empty-session rejection")
 	}
@@ -236,7 +236,7 @@ func TestService_BuildContinueRuntimeContextRejectsMissingLatestWaitingRun(t *te
 		t.Fatalf("delete waiting run error = %v", err)
 	}
 
-	_, err = svc.buildContinueRuntimeContext(ctx, "sess_continue_context_gap")
+	_, err = svc.buildContinueRuntimeContext(ctx, "sess_continue_context_gap", "default", "continue anyway")
 	if err == nil {
 		t.Fatal("buildContinueRuntimeContext() error = nil, want missing-latest-run rejection")
 	}

@@ -36,6 +36,8 @@ func (a *App) RunServer(ctx context.Context) error {
 	}
 
 	sessionSvc := session.NewService(sessionStore, a.bus, sessionRunner, session.ServiceConfig{
+		SessionMetadataBuilder: a.newSessionMetadataBuilder(),
+		RuntimeContextBuilder:  a.newRuntimeContextBuilder(),
 		RecapHooks: []session.RecapHook{
 			session.NewStructuredRecapHook(sessionStore, nil),
 			session.NewMemoryCandidateHook(sessionStore, nil),
@@ -113,7 +115,71 @@ func (a *App) defaultResolvedToolNames() []string {
 		return a.registry.List()
 	}
 
-	set := a.capabilityManager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
-	resolved := a.capabilityManager.ResolveTurnCapabilities(set)
+	resolved := a.capabilityManager.ResolveTurnCapabilities(a.defaultCapabilitySet)
 	return append([]string(nil), resolved.ToolNames...)
+}
+
+func (a *App) newRuntimeContextBuilder() session.RuntimeContextBuilder {
+	if a == nil || a.capabilityManager == nil {
+		return nil
+	}
+
+	return func(input session.RuntimeContextBuildInput) map[string]any {
+		resolved := a.capabilityManager.ResolveTurnCapabilitiesFromInput(runtimecaps.ResolveTurnInput{
+			SessionMetadata: input.SessionMetadata,
+			UserMessage:     input.Message,
+			AgentID:         input.AgentID,
+			IsContinue:      input.IsContinue,
+		})
+
+		contextMap := map[string]any{
+			"resolved_tool_names": append([]string(nil), resolved.ToolNames...),
+		}
+		return contextMap
+	}
+}
+
+func (a *App) newSessionMetadataBuilder() session.SessionMetadataBuilder {
+	if a == nil || a.capabilityManager == nil {
+		return nil
+	}
+
+	defaultMetadata := a.capabilityManager.EncodeCapabilitySetMetadata(a.defaultCapabilitySet)
+	return func(input session.SessionMetadataBuildInput) map[string]any {
+		_ = input
+		return cloneMetadataMap(defaultMetadata)
+	}
+}
+
+func cloneMetadataMap(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return nil
+	}
+
+	out := make(map[string]any, len(src))
+	for key, value := range src {
+		out[key] = cloneMetadataValue(value)
+	}
+	return out
+}
+
+func cloneMetadataValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneMetadataMap(typed)
+	case []map[string]any:
+		out := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, cloneMetadataMap(item))
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, cloneMetadataValue(item))
+		}
+		return out
+	default:
+		return typed
+	}
 }
