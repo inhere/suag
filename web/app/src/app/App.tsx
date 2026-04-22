@@ -17,13 +17,11 @@ import {
   selectActiveRuns,
   selectCurrentTurn,
   selectFocusedRun,
-  selectRecentTurns,
 } from "../features/session/session-selectors";
 import type {
   HITLTicket,
   MemoryCandidate,
   SessionSocketMessage,
-  StateSnapshotTurn,
 } from "../lib/host-types";
 import {
   acceptMemoryCandidate,
@@ -606,7 +604,6 @@ export function App() {
   const currentTurn = selectCurrentTurn(snapshot);
   const activeRuns = selectActiveRuns(snapshot);
   const focusedRun = selectFocusedRun(snapshot, viewState.focusedRunId);
-  const recentTurns = selectRecentTurns(snapshot, 4);
   const conversationMessages = buildConversationMessages(viewState);
   const waitingForInput = isWaitingForInput(viewState);
   const waitingForApproval = isWaitingForApproval(viewState);
@@ -849,13 +846,6 @@ export function App() {
     requestRunDetail(viewState.currentSessionId, viewState.focusedRunId);
   }
 
-  function handleSelectConversationTurn(turn: StateSnapshotTurn) {
-    setViewState((current) => ({
-      ...current,
-      focusedRunId: turn.latestRunId || turn.currentRunId || turn.primaryRunId || null,
-    }));
-  }
-
   return (
     <AppShell
       sessions={viewState.recentSessions}
@@ -875,7 +865,6 @@ export function App() {
       searchQuery={searchQuery}
       messages={conversationMessages}
       currentTurn={currentTurn}
-      recentTurns={recentTurns}
       waitingForInput={waitingForInput}
       submitPending={submitPending}
       submitError={submitError}
@@ -918,7 +907,6 @@ export function App() {
       onSubmitMessage={(message) => {
         void handleSubmit(message).catch(() => {});
       }}
-      onSelectConversationTurn={handleSelectConversationTurn}
       onFocusRun={(runId) => {
         setViewState((current) => ({
           ...current,
