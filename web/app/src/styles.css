@@ -256,6 +256,11 @@ body {
   font-size: 0.82rem;
 }
 
+.session-item__status {
+  color: rgba(226, 232, 240, 0.72);
+  text-transform: capitalize;
+}
+
 .session-item__dot {
   width: 8px;
   height: 8px;

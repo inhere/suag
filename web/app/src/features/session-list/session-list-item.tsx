@@ -6,9 +6,9 @@ type SessionListItemProps = {
   onSelect: () => void;
 };
 
-type SessionTone = "idle" | "running" | "waiting" | "attention";
+export type SessionTone = "idle" | "running" | "waiting" | "attention";
 
-function mapStatusToTone(status: string): SessionTone {
+export function mapStatusToTone(status: string): SessionTone {
   const normalizedStatus = status.toLowerCase();
   if (normalizedStatus.includes("running") || normalizedStatus.includes("dispatch")) {
     return "running";
@@ -33,6 +33,10 @@ function mapStatusToTone(status: string): SessionTone {
   return "idle";
 }
 
+export function formatSessionStatus(status: string): string {
+  return status.toLowerCase().replaceAll("_", " ");
+}
+
 export function SessionListItem({
   item,
   selected,
@@ -50,6 +54,8 @@ export function SessionListItem({
       <div className="session-item__preview">{item.preview}</div>
       <div className="session-item__meta">
         <span className={`session-item__dot session-item__dot--${tone}`} aria-hidden="true" />
+        <span className="session-item__status">{formatSessionStatus(item.status)}</span>
+        <span aria-hidden="true">·</span>
         <span>{item.updatedAt}</span>
       </div>
     </button>

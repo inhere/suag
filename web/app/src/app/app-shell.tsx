@@ -82,6 +82,8 @@ type AppShellProps = {
   onCloseDebug?: () => void;
 };
 
+// NOTE: run/external-task props are intentionally retained in Task 1.
+// Task 3 will replace the right-column run details placeholder and consume them.
 export function AppShell({
   sessions = [],
   currentSessionId = null,
@@ -219,7 +221,7 @@ export function AppShell({
               />
               <section className="run-panel app-shell__context-placeholder" aria-label="Run details panel">
                 <h2>Run details</h2>
-                <p className="inline-feedback">Compact run details will appear here.</p>
+                <p className="inline-feedback">Compact run details will appear here (runs wired for next task: {runs.length}).</p>
               </section>
             </div>
           </section>

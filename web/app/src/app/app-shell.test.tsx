@@ -25,13 +25,13 @@ it("renders the chat-first shell with sessions, chat, and context columns", () =
   const sessionSummaryHeading = screen.getByText("Session summary");
   const memoryCandidatesHeading = screen.getByText("Memory Candidates");
   const runDetailsHeading = screen.getByText("Run details");
-  expect(pendingHitlHeading.compareDocumentPosition(sessionSummaryHeading)).toBe(
-    Node.DOCUMENT_POSITION_FOLLOWING,
-  );
-  expect(sessionSummaryHeading.compareDocumentPosition(memoryCandidatesHeading)).toBe(
-    Node.DOCUMENT_POSITION_FOLLOWING,
-  );
-  expect(memoryCandidatesHeading.compareDocumentPosition(runDetailsHeading)).toBe(
-    Node.DOCUMENT_POSITION_FOLLOWING,
-  );
+  expect(
+    pendingHitlHeading.compareDocumentPosition(sessionSummaryHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+  expect(
+    sessionSummaryHeading.compareDocumentPosition(memoryCandidatesHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+  expect(
+    memoryCandidatesHeading.compareDocumentPosition(runDetailsHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
 });

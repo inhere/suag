@@ -1,6 +1,6 @@
 import type { SessionSocketStatus } from "../../lib/session-ws";
 import type { SessionFilter, SessionListItem as SessionListItemModel } from "../session/session-store";
-import { SessionListItem } from "./session-list-item";
+import { mapStatusToTone, SessionListItem } from "./session-list-item";
 
 type SessionListProps = {
   sessions: SessionListItemModel[];
@@ -24,7 +24,8 @@ function matchesFilter(status: string, filter: SessionFilter): boolean {
     return true;
   }
 
-  return status.toLowerCase() === filter;
+  const tone = mapStatusToTone(status);
+  return tone === filter;
 }
 
 export function SessionList({
