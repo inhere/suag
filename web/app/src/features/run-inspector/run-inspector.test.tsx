@@ -1,8 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import { RunInspector } from "./run-inspector";
 
-it("shows summary first for a completed focused run", () => {
+it("renders compact session summary and run details panels by default", () => {
   render(
     <RunInspector
       currentTurn={{
@@ -14,7 +14,7 @@ it("shows summary first for a completed focused run", () => {
         latestAgentId: "default",
         displayState: "completed",
         latestEventType: "run.finished",
-        latestMessagePreview: "已完成基础方案",
+        latestMessagePreview: "done",
         eventCount: 3,
         runCount: 1,
         activeRunCount: 0,
@@ -43,54 +43,9 @@ it("shows summary first for a completed focused run", () => {
           updatedAt: "2026-04-12T10:30:00Z",
         },
       ]}
-      externalTasks={[
-        {
-          externalTaskId: "ext_001",
-          sessionId: "sess_001",
-          turnId: "turn_002",
-          runId: "run_001",
-          adapter: "codex",
-          remoteAgentName: "codex-reviewer",
-          remoteSessionId: "remote_001",
-          remoteTaskId: "task_001",
-          state: "completed",
-          lastHeartbeatAt: "2026-04-12T10:30:00Z",
-          resultSummary: "任务已完成",
-          metadata: {},
-        },
-      ]}
-      externalActivities={[
-        {
-          externalTaskId: "ext_001",
-          sessionId: "sess_001",
-          turnId: "turn_002",
-          runId: "run_001",
-          agentId: "default",
-          activityId: "act_001",
-          kind: "delegate",
-          status: "completed",
-          title: "delegate",
-          detail: "completed",
-          startedAt: "2026-04-12T10:29:00Z",
-          updatedAt: "2026-04-12T10:30:00Z",
-        },
-      ]}
-      externalMessages={[
-        {
-          externalTaskId: "ext_001",
-          messageId: "msg_001",
-          sessionId: "sess_001",
-          turnId: "turn_002",
-          runId: "run_001",
-          agentId: "default",
-          content: "详细流式正文",
-          started: true,
-          completed: true,
-          lastEventType: "run.external.message.end",
-          lastSequence: 3,
-          updatedAt: "2026-04-12T10:30:00Z",
-        },
-      ]}
+      externalTasks={[]}
+      externalActivities={[]}
+      externalMessages={[]}
       focusedRunId="run_001"
       focusedRunDetailStatus="loaded"
       onFocusRun={vi.fn()}
@@ -103,103 +58,15 @@ it("shows summary first for a completed focused run", () => {
     />,
   );
 
-  const focusedRunHeading = screen.getByRole("heading", { name: "Focused Run" });
-  const focusedRunPanel = focusedRunHeading.closest("section");
-
-  expect(focusedRunPanel).not.toBeNull();
-  expect(within(focusedRunPanel as HTMLElement).getByRole("heading", { name: "Summary" })).toBeInTheDocument();
-  expect(within(focusedRunPanel as HTMLElement).getByRole("heading", { name: "Run Meta" })).toBeInTheDocument();
-  expect(within(focusedRunPanel as HTMLElement).getByRole("heading", { name: "External Messages" })).toBeInTheDocument();
-  expect(within(focusedRunPanel as HTMLElement).getByRole("heading", { name: "External Activities" })).toBeInTheDocument();
-  expect(within(focusedRunPanel as HTMLElement).getByText("已完成基础方案")).toBeInTheDocument();
-  expect(within(focusedRunPanel as HTMLElement).queryByText("older text")).not.toBeInTheDocument();
-  expect(within(focusedRunPanel as HTMLElement).getByText("详细流式正文")).toBeInTheDocument();
-  expect(within(focusedRunPanel as HTMLElement).getByText("delegate: completed")).toBeInTheDocument();
-  expect(within(focusedRunPanel as HTMLElement).getByText("run_001")).toBeInTheDocument();
-  expect(within(focusedRunPanel as HTMLElement).getAllByText("completed").length).toBeGreaterThan(0);
-  expect(screen.getByText("codex-reviewer")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Session summary" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Run details" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Focused Run" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "External Messages" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "External Activities" })).not.toBeInTheDocument();
+  expect(screen.getByText("已完成基础方案")).toBeInTheDocument();
 });
 
-it("shows loading and retry feedback for focused run detail states", () => {
-  const onRetryFocusedRunDetail = vi.fn();
-  const { rerender } = render(
-    <RunInspector
-      currentTurn={null}
-      runs={[
-        {
-          runId: "run_010",
-          turnId: "turn_010",
-          sessionId: "sess_010",
-          agentId: "reviewer",
-          displayState: "completed",
-          latestEventType: "run.finished",
-          latestMessageId: "",
-          latestMessageText: "",
-          summary: "",
-          externalTaskIds: [],
-          waitMetadata: {},
-          eventCount: 1,
-          updatedAt: "2026-04-12T10:30:00Z",
-        },
-      ]}
-      externalTasks={[]}
-      externalActivities={[]}
-      externalMessages={[]}
-      focusedRunId="run_010"
-      focusedRunDetailStatus="loading"
-      onFocusRun={vi.fn()}
-      onRetryFocusedRunDetail={onRetryFocusedRunDetail}
-      canStop={false}
-      onStop={vi.fn()}
-      canAddHint={false}
-      onAddHint={vi.fn()}
-      onOpenDebug={vi.fn()}
-    />,
-  );
-
-  expect(screen.getByText("Loading run detail...")).toBeInTheDocument();
-
-  rerender(
-    <RunInspector
-      currentTurn={null}
-      runs={[
-        {
-          runId: "run_010",
-          turnId: "turn_010",
-          sessionId: "sess_010",
-          agentId: "reviewer",
-          displayState: "completed",
-          latestEventType: "run.finished",
-          latestMessageId: "",
-          latestMessageText: "",
-          summary: "",
-          externalTaskIds: [],
-          waitMetadata: {},
-          eventCount: 1,
-          updatedAt: "2026-04-12T10:30:00Z",
-        },
-      ]}
-      externalTasks={[]}
-      externalActivities={[]}
-      externalMessages={[]}
-      focusedRunId="run_010"
-      focusedRunDetailStatus="error"
-      onFocusRun={vi.fn()}
-      onRetryFocusedRunDetail={onRetryFocusedRunDetail}
-      canStop={false}
-      onStop={vi.fn()}
-      canAddHint={false}
-      onAddHint={vi.fn()}
-      onOpenDebug={vi.fn()}
-    />,
-  );
-
-  expect(screen.getByText("Failed to load run detail.")).toBeInTheDocument();
-  screen.getByRole("button", { name: "Retry Detail" }).click();
-  expect(onRetryFocusedRunDetail).toHaveBeenCalledTimes(1);
-});
-
-it("shows failed run error text in the focused summary when no summary exists", () => {
+it("still prefers failure reason for failed focused runs in compact inspector", () => {
   render(
     <RunInspector
       currentTurn={null}
@@ -212,8 +79,8 @@ it("shows failed run error text in the focused summary when no summary exists", 
           displayState: "failed",
           latestEventType: "run.failed",
           latestMessageId: "",
-          latestMessageText: "tool call \"file_read\" arguments must be a JSON object",
-          summary: "",
+          latestMessageText: "tool call failed: bad payload",
+          summary: "summary should not be first",
           externalTaskIds: [],
           waitMetadata: {},
           eventCount: 2,
@@ -235,69 +102,6 @@ it("shows failed run error text in the focused summary when no summary exists", 
     />,
   );
 
-  const focusedRunHeading = screen.getByRole("heading", { name: "Focused Run" });
-  const focusedRunPanel = focusedRunHeading.closest("section");
-  expect(focusedRunPanel).not.toBeNull();
-  expect(within(focusedRunPanel as HTMLElement).getByText("tool call \"file_read\" arguments must be a JSON object")).toBeInTheDocument();
-  expect(within(focusedRunPanel as HTMLElement).getByText("failed")).toBeInTheDocument();
-});
-
-it("shows structured wait metadata for waiting runs", () => {
-  render(
-    <RunInspector
-      currentTurn={null}
-      runs={[
-        {
-          runId: "run_wait",
-          turnId: "turn_wait",
-          sessionId: "sess_001",
-          agentId: "default",
-          displayState: "auth_required",
-          latestEventType: "run.status",
-          latestMessageId: "",
-          latestMessageText: "waiting for approval",
-          summary: "",
-          externalTaskIds: [],
-          waitMetadata: {
-            wait_kind: "auth_required",
-            policy: "manual_review",
-          },
-          memoryRecall: {
-            enabled: true,
-            entry_count: 2,
-            sources: [
-              {
-                name: "MEMORY",
-                entry_count: 1,
-              },
-            ],
-          },
-          eventCount: 2,
-          updatedAt: "2026-04-19T21:00:00Z",
-        },
-      ]}
-      externalTasks={[]}
-      externalActivities={[]}
-      externalMessages={[]}
-      focusedRunId="run_wait"
-      focusedRunDetailStatus="loaded"
-      onFocusRun={vi.fn()}
-      onRetryFocusedRunDetail={vi.fn()}
-      canStop={false}
-      onStop={vi.fn()}
-      canAddHint={false}
-      onAddHint={vi.fn()}
-      onOpenDebug={vi.fn()}
-    />,
-  );
-
-  const waitInfoHeading = screen.getByRole("heading", { name: "Wait Info" });
-  const waitInfoSection = waitInfoHeading.closest(".run-section");
-  expect(waitInfoSection).not.toBeNull();
-  expect(within(waitInfoSection as HTMLElement).getByText("wait_kind")).toBeInTheDocument();
-  expect(within(waitInfoSection as HTMLElement).getByText("auth_required")).toBeInTheDocument();
-  expect(within(waitInfoSection as HTMLElement).getByText("manual_review")).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "Memory Recall" })).toBeInTheDocument();
-  expect(screen.getByText("entry_count")).toBeInTheDocument();
-  expect(screen.getByText(/"name":"MEMORY"/)).toBeInTheDocument();
+  expect(screen.getByText("tool call failed: bad payload")).toBeInTheDocument();
+  expect(screen.queryByText("summary should not be first")).not.toBeInTheDocument();
 });

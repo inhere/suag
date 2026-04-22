@@ -1,5 +1,7 @@
 import type { ConversationMessage } from "../features/conversation/conversation-pane";
 import { ConversationPane } from "../features/conversation/conversation-pane";
+import { RunDetailsCompactPanel } from "../features/context/run-details-compact-panel";
+import { SessionSummaryPanel } from "../features/context/session-summary-panel";
 import { DebugDrawer } from "../features/debug/debug-drawer";
 import { HITLPanel } from "../features/hitl/hitl-panel";
 import { MemoryCandidatesPanel } from "../features/memory-candidates/memory-candidates-panel";
@@ -199,10 +201,7 @@ export function AppShell({
                 onRespond={onRespondHITL}
                 onDismiss={onDismissHITL}
               />
-              <section className="run-panel app-shell__context-placeholder" aria-label="Session summary panel">
-                <h2>Session summary</h2>
-                <p className="inline-feedback">Session summary will appear here.</p>
-              </section>
+              <SessionSummaryPanel currentTurn={currentTurn} />
               <MemoryCandidatesPanel
                 candidates={memoryCandidates}
                 loading={memoryCandidatesLoading}
@@ -213,10 +212,7 @@ export function AppShell({
                 onAccept={onAcceptMemoryCandidate}
                 onReject={onRejectMemoryCandidate}
               />
-              <section className="run-panel app-shell__context-placeholder" aria-label="Run details panel">
-                <h2>Run details</h2>
-                <p className="inline-feedback">Compact run details will appear here (runs wired for next task: {runs.length}).</p>
-              </section>
+              <RunDetailsCompactPanel runs={runs} focusedRunId={focusedRunId} />
             </div>
           </section>
         </div>
