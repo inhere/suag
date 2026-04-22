@@ -18,8 +18,6 @@ export type ConversationMessage = {
 type ConversationPaneProps = {
   messages: ConversationMessage[];
   currentTurn: StateSnapshotTurn | null;
-  recentTurns?: StateSnapshotTurn[];
-  onSelectTurn?: (turn: StateSnapshotTurn) => void;
   waitingForInput: boolean;
   submitPending?: boolean;
   submitError?: string | null;
@@ -71,7 +69,10 @@ function deriveInlineState(displayState: string): InlineStatusCardState | null {
     return "auth_required";
   }
 
-  if (displayState.includes("input_required")) {
+  if (
+    displayState.includes("input_required") ||
+    displayState.includes("waiting_input")
+  ) {
     return "input_required";
   }
 

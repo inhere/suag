@@ -78,12 +78,28 @@ it("shows inline status card for input required and keeps composer error feedbac
   expect(screen.getByText("提交失败，请稍后重试。")).toBeInTheDocument();
 });
 
+it("maps waiting input to the same inline guidance as input required", () => {
+  render(
+    <ConversationPane
+      messages={[]}
+      currentTurn={buildTurn("waiting_input", "请补充部署环境变量")}
+      waitingForInput
+      onSubmit={vi.fn()}
+    />,
+  );
+
+  const statusCard = screen.getByText("Input required").closest(".inline-status-card");
+  expect(statusCard).not.toBeNull();
+  expect(within(statusCard as HTMLElement).getByText("请补充部署环境变量")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
+});
+
 it("shows inline status card for auth required only", () => {
   render(
     <ConversationPane
       messages={[]}
       currentTurn={buildTurn("auth_required", "等待管理员审批")}
-      waitingForInput
+      waitingForInput={false}
       onSubmit={vi.fn()}
     />,
   );
@@ -91,6 +107,7 @@ it("shows inline status card for auth required only", () => {
   const statusCard = screen.getByText("Approval required").closest(".inline-status-card");
   expect(statusCard).not.toBeNull();
   expect(within(statusCard as HTMLElement).getByText("等待管理员审批")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
 });
 
 it("does not show inline status card for running state", () => {
