@@ -71,12 +71,14 @@ body {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  grid-template-columns: 260px minmax(0, 1.8fr) 320px;
   gap: 16px;
   min-height: 0;
 }
 
-.app-shell__panel {
+.app-shell__sidebar,
+.app-shell__main,
+.app-shell__context {
   border: 1px solid rgba(148, 163, 184, 0.25);
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.72);
@@ -84,16 +86,31 @@ body {
   padding: 20px;
 }
 
+.app-shell__sidebar {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 0.72));
+}
+
+.app-shell__main {
+  background: rgba(15, 23, 42, 0.78);
+}
+
+.app-shell__context {
+  background: rgba(15, 23, 42, 0.64);
+}
+
 .app-shell__stack {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  margin-top: 16px;
 }
 
-.app-shell__panel h1 {
+.app-shell__context-placeholder p {
+  margin-top: 8px;
+}
+
+.app-shell__context h2 {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 0.95rem;
 }
 
 .session-list {
@@ -182,16 +199,23 @@ body {
 
 .session-list__search {
   width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.88);
-  color: inherit;
-  padding: 10px 12px;
+  color: rgba(226, 232, 240, 0.86);
+  padding: 9px 11px;
+}
+
+.session-list__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .session-list__filters {
   display: flex;
   gap: 8px;
+  opacity: 0.86;
 }
 
 .session-list__filter--active,
@@ -217,11 +241,47 @@ body {
   font-weight: 600;
 }
 
-.session-item__meta,
 .session-item__preview {
-  margin-top: 4px;
+  margin-top: 5px;
   color: rgba(226, 232, 240, 0.75);
   font-size: 0.875rem;
+}
+
+.session-item__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: rgba(226, 232, 240, 0.7);
+  font-size: 0.82rem;
+}
+
+.session-item__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.86);
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.1);
+}
+
+.session-item__dot--idle {
+  background: rgba(148, 163, 184, 0.86);
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.1);
+}
+
+.session-item__dot--running {
+  background: rgba(34, 197, 94, 0.95);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
+}
+
+.session-item__dot--waiting {
+  background: rgba(250, 204, 21, 0.95);
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.14);
+}
+
+.session-item__dot--attention {
+  background: rgba(248, 113, 113, 0.95);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.14);
 }
 
 .conversation-pane {

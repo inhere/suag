@@ -1,25 +1,25 @@
 import { render, screen } from "@testing-library/react";
 import { AppShell } from "./app-shell";
 
-it("renders the three-column workbench shell", () => {
+it("renders the chat-first shell with sessions, chat, and context columns", () => {
   render(
     <AppShell
-      contextSessionLabel="Session sess_001"
-      contextTurnLabel="Turn turn_001"
-      contextRunLabel="Run run_001"
-      contextConnectionLabel="Socket connected"
-      contextConnectionTone="connected"
-      connectionStatus="connected"
-      connectionStatusMessage="Session sess_001 connected."
+      sessions={[]}
+      messages={[]}
+      hitlTickets={[]}
+      memoryCandidates={[]}
+      currentTurn={null}
+      runs={[]}
     />,
   );
 
-  expect(screen.getByText("Sessions")).toBeInTheDocument();
-  expect(screen.getByText("Conversation")).toBeInTheDocument();
-  expect(screen.getByText("Run Inspector")).toBeInTheDocument();
-  expect(screen.getByText("Session sess_001")).toBeInTheDocument();
-  expect(screen.getByText("Turn turn_001")).toBeInTheDocument();
-  expect(screen.getByText("Run run_001")).toBeInTheDocument();
-  expect(screen.getByText("Socket connected")).toBeInTheDocument();
-  expect(screen.getByText("Session sess_001 connected.")).toBeInTheDocument();
+  expect(screen.getByRole("complementary", { name: /Sessions panel/i })).toBeInTheDocument();
+  expect(screen.getByRole("main", { name: /Chat panel/i })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: /Context panel/i })).toBeInTheDocument();
+  expect(screen.queryByText("Conversation")).not.toBeInTheDocument();
+  expect(screen.queryByText("Run Inspector")).not.toBeInTheDocument();
+  expect(screen.getByText("Pending HITL")).toBeInTheDocument();
+  expect(screen.getByText("Session summary")).toBeInTheDocument();
+  expect(screen.getByText("Memory Candidates")).toBeInTheDocument();
+  expect(screen.getByText("Run details")).toBeInTheDocument();
 });

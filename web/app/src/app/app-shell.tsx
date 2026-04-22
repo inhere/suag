@@ -3,7 +3,6 @@ import { ConversationPane } from "../features/conversation/conversation-pane";
 import { DebugDrawer } from "../features/debug/debug-drawer";
 import { HITLPanel } from "../features/hitl/hitl-panel";
 import { MemoryCandidatesPanel } from "../features/memory-candidates/memory-candidates-panel";
-import { RunInspector } from "../features/run-inspector/run-inspector";
 import { SessionList } from "../features/session-list/session-list";
 import type { SessionFilter, SessionListItem } from "../features/session/session-store";
 import type {
@@ -162,7 +161,7 @@ export function AppShell({
           </span>
         </header>
         <div className="app-shell">
-          <aside className="app-shell__panel" aria-label="Sessions panel">
+          <aside className="app-shell__sidebar" aria-label="Sessions panel">
             <SessionList
               sessions={sessions}
               currentSessionId={currentSessionId}
@@ -180,8 +179,7 @@ export function AppShell({
               onFilterChange={onFilterChange}
             />
           </aside>
-          <main className="app-shell__panel" aria-label="Conversation panel">
-            <h1>Conversation</h1>
+          <main className="app-shell__main" aria-label="Chat panel">
             <ConversationPane
               messages={messages}
               currentTurn={currentTurn}
@@ -193,39 +191,8 @@ export function AppShell({
               onSubmit={onSubmitMessage}
             />
           </main>
-          <section className="app-shell__panel" aria-label="Run Inspector panel">
-            <h1>Run Inspector</h1>
+          <section className="app-shell__context" aria-label="Context panel">
             <div className="app-shell__stack">
-              <RunInspector
-                currentTurn={currentTurn}
-                runs={runs}
-                externalTasks={externalTasks}
-                externalActivities={externalActivities}
-                externalMessages={externalMessages}
-                focusedRunId={focusedRunId}
-                focusedRunDetailStatus={focusedRunDetailStatus}
-                onFocusRun={onFocusRun}
-                onRetryFocusedRunDetail={onRetryFocusedRunDetail}
-                canStop={canStop}
-                stopPending={stopPending}
-                onStop={onStop}
-                canAddHint={canAddHint}
-                waitingForApproval={waitingForApproval}
-                addHintPending={addHintPending}
-                actionError={runActionError}
-                onAddHint={onAddHint}
-                onOpenDebug={onOpenDebug}
-              />
-              <MemoryCandidatesPanel
-                candidates={memoryCandidates}
-                loading={memoryCandidatesLoading}
-                errorMessage={memoryCandidatesError}
-                actionError={memoryCandidateActionError}
-                pendingCandidateIds={memoryCandidateActionPendingIds}
-                onRetry={onRetryMemoryCandidates}
-                onAccept={onAcceptMemoryCandidate}
-                onReject={onRejectMemoryCandidate}
-              />
               <HITLPanel
                 tickets={hitlTickets}
                 loading={hitlLoading}
@@ -236,6 +203,24 @@ export function AppShell({
                 onRespond={onRespondHITL}
                 onDismiss={onDismissHITL}
               />
+              <section className="run-panel app-shell__context-placeholder" aria-label="Session summary panel">
+                <h2>Session summary</h2>
+                <p className="inline-feedback">Session summary will appear here.</p>
+              </section>
+              <MemoryCandidatesPanel
+                candidates={memoryCandidates}
+                loading={memoryCandidatesLoading}
+                errorMessage={memoryCandidatesError}
+                actionError={memoryCandidateActionError}
+                pendingCandidateIds={memoryCandidateActionPendingIds}
+                onRetry={onRetryMemoryCandidates}
+                onAccept={onAcceptMemoryCandidate}
+                onReject={onRejectMemoryCandidate}
+              />
+              <section className="run-panel app-shell__context-placeholder" aria-label="Run details panel">
+                <h2>Run details</h2>
+                <p className="inline-feedback">Compact run details will appear here.</p>
+              </section>
             </div>
           </section>
         </div>

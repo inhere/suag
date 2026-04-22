@@ -90,28 +90,30 @@ export function SessionList({
         </div>
       ) : null}
 
-      <input
-        className="session-list__search"
-        placeholder="Search sessions"
-        value={searchQuery}
-        onChange={(event) => onSearchChange(event.target.value)}
-      />
+      <div className="session-list__controls">
+        <input
+          className="session-list__search"
+          placeholder="Search sessions"
+          value={searchQuery}
+          onChange={(event) => onSearchChange(event.target.value)}
+        />
 
-      <div className="session-list__filters" role="group" aria-label="Session filters">
-        {(["all", "running", "waiting"] as SessionFilter[]).map((option) => (
-          <button
-            key={option}
-            type="button"
-            className={
-              option === filter
-                ? "session-list__filter session-list__filter--active"
-                : "session-list__filter"
-            }
-            onClick={() => onFilterChange(option)}
-          >
-            {option === "all" ? "All" : option === "running" ? "Running" : "Waiting"}
-          </button>
-        ))}
+        <div className="session-list__filters" role="group" aria-label="Session filters">
+          {(["all", "running", "waiting"] as SessionFilter[]).map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={
+                option === filter
+                  ? "session-list__filter session-list__filter--active"
+                  : "session-list__filter"
+              }
+              onClick={() => onFilterChange(option)}
+            >
+              {option === "all" ? "All" : option === "running" ? "Running" : "Waiting"}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="session-list__items">
