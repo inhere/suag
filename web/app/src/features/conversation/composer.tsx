@@ -42,6 +42,7 @@ export function Composer({
       }}
     >
       <textarea
+        className="composer__input"
         value={value}
         onChange={(event) => setValue(event.target.value)}
         disabled={submitPending}
@@ -52,8 +53,8 @@ export function Composer({
         }
       />
       <div className="composer__footer">
-        {statusMessage ? <span className="action-status">{statusMessage}</span> : <span />}
-        <button type="submit" disabled={submitPending || !value.trim()}>
+        {statusMessage ? <span className="action-status composer__status">{statusMessage}</span> : <span />}
+        <button className="composer__submit" type="submit" disabled={submitPending || !value.trim()}>
           {submitLabel}
         </button>
       </div>

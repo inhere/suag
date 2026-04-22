@@ -292,8 +292,61 @@ body {
 .conversation-pane {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   height: 100%;
+  min-height: 0;
+}
+
+.chat-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-header__title {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.98);
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+}
+
+.chat-header__meta {
+  margin: 0;
+  color: rgba(148, 163, 184, 0.88);
+  font-size: 0.82rem;
+  text-transform: capitalize;
+}
+
+.summary-strip {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.75);
+  color: rgba(226, 232, 240, 0.94);
+  font-size: 0.86rem;
+}
+
+.summary-strip--running {
+  border-color: rgba(56, 189, 248, 0.26);
+  background: rgba(8, 47, 73, 0.42);
+}
+
+.summary-strip--waiting {
+  border-color: rgba(250, 204, 21, 0.3);
+  background: rgba(113, 63, 18, 0.28);
+}
+
+.summary-strip--attention {
+  border-color: rgba(248, 113, 113, 0.26);
+  background: rgba(69, 10, 10, 0.26);
+}
+
+.summary-strip--failed {
+  border-color: rgba(248, 113, 113, 0.34);
+  background: rgba(127, 29, 29, 0.3);
 }
 
 .conversation-pane__content {
@@ -301,6 +354,9 @@ body {
   flex: 1;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .recent-turns {
@@ -419,6 +475,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin-top: auto;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.82);
+  backdrop-filter: blur(4px);
 }
 
 .composer__footer {
@@ -428,7 +490,7 @@ body {
   gap: 12px;
 }
 
-.composer textarea {
+.composer__input {
   min-height: 108px;
   resize: vertical;
   border: 1px solid rgba(148, 163, 184, 0.24);
@@ -439,7 +501,7 @@ body {
   font: inherit;
 }
 
-.composer button {
+.composer__submit {
   border: 1px solid rgba(56, 189, 248, 0.48);
   border-radius: 12px;
   background: rgba(8, 145, 178, 0.26);
@@ -450,6 +512,34 @@ body {
 .action-status {
   color: rgba(148, 163, 184, 0.84);
   font-size: 0.82rem;
+}
+
+.composer__status {
+  min-height: 1.2em;
+}
+
+.inline-status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  border-radius: 12px;
+  background: rgba(113, 63, 18, 0.2);
+  padding: 12px;
+}
+
+.inline-status-card strong {
+  color: rgba(254, 240, 138, 0.96);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.inline-status-card p {
+  margin: 0;
+  color: rgba(254, 243, 199, 0.94);
+  font-size: 0.86rem;
 }
 
 .inline-feedback {
