@@ -974,6 +974,8 @@ export function hydrateFromSnapshot(
   snapshot: StateSnapshotV0,
 ): SessionViewState {
   const focusedRun = selectFocusedRun(snapshot, state.focusedRunId);
+  const existingRecentSession =
+    state.recentSessions.find((item) => item.sessionId === snapshot.sessionId) ?? null;
 
   return {
     ...state,
@@ -989,7 +991,9 @@ export function hydrateFromSnapshot(
       sessionId: snapshot.sessionId,
       title: snapshot.title,
       status: snapshot.status,
-      updatedAt: snapshot.generatedAt,
+      // Snapshot.generatedAt is the observation time, not the session's
+      // canonical updatedAt for sidebar ordering.
+      updatedAt: existingRecentSession?.updatedAt ?? snapshot.generatedAt,
       preview: selectSessionPreview(snapshot),
     }),
   };
