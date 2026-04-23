@@ -365,6 +365,7 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
+    expect(screen.getByText("先启动一个带提交反馈的新回合")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Starting..." })).toBeDisabled();
 
     await act(async () => {
@@ -390,6 +391,7 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
+    expect(screen.getByText("启动失败提示用例")).toBeInTheDocument();
     expect(await screen.findByText("Failed to start turn.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     expect(screen.getByPlaceholderText("给 Axon 发送下一条任务说明...")).toHaveValue("");
@@ -984,6 +986,7 @@ describe("App", () => {
     expect(continueButton).toBeDefined();
     fireEvent.click(continueButton as HTMLButtonElement);
 
+    expect(screen.getByText("这里补充一条新的人工说明")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Continuing..." })).toBeDisabled();
     expect(sendContinueTurnMock).toHaveBeenCalledWith({
       message: "这里补充一条新的人工说明",
@@ -1082,6 +1085,7 @@ describe("App", () => {
     expect(continueButton).toBeDefined();
     fireEvent.click(continueButton as HTMLButtonElement);
 
+    expect(screen.getByText("这里补充一条新的人工说明")).toBeInTheDocument();
     await act(async () => {
       onMessage?.({
         type: "command.error",

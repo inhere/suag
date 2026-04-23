@@ -51,6 +51,11 @@ type PersistedWorkbenchState = {
   focusedRunId: string | null;
 };
 
+type PendingOptimisticMessage = {
+  sessionId: string | null;
+  message: ConversationMessage;
+};
+
 const pendingMemoryCandidateStatuses = new Set(["draft", "rendered"]);
 
 function filterPendingMemoryCandidates(candidates: MemoryCandidate[]): MemoryCandidate[] {
@@ -59,9 +64,23 @@ function filterPendingMemoryCandidates(candidates: MemoryCandidate[]): MemoryCan
   );
 }
 
-function buildConversationMessages(state: SessionViewState): ConversationMessage[] {
+function buildConversationMessages(
+  state: SessionViewState,
+  optimisticMessage?: PendingOptimisticMessage | null,
+): ConversationMessage[] {
   const messages: ConversationMessage[] = [];
   const snapshot = state.snapshot;
+  const snapshotUserText = selectCurrentTurn(snapshot)?.inputSummary?.trim() ?? "";
+
+  if (
+    optimisticMessage &&
+    (optimisticMessage.sessionId == null || optimisticMessage.sessionId === state.currentSessionId) &&
+    optimisticMessage.message.text.trim() &&
+    optimisticMessage.message.text.trim() !== snapshotUserText
+  ) {
+    messages.push(optimisticMessage.message);
+  }
+
   if (!snapshot) {
     return messages;
   }
@@ -114,6 +133,16 @@ function formatConversationTimestamp(value: string | undefined): string {
     minute: "2-digit",
     hour12: false,
   }).format(parsed);
+}
+
+function createOptimisticUserMessage(text: string): ConversationMessage {
+  const now = new Date().toISOString();
+  return {
+    id: `optimistic:${now}:${Math.random().toString(36).slice(2, 8)}`,
+    role: "user",
+    text,
+    timestamp: formatConversationTimestamp(now),
+  };
 }
 
 function isWaitingForInput(state: SessionViewState): boolean {
@@ -402,6 +431,8 @@ function switchSessionContext(
 
 export function App() {
   const [viewState, setViewState] = useState<SessionViewState>(buildInitialViewState);
+  const [pendingOptimisticMessage, setPendingOptimisticMessage] =
+    useState<PendingOptimisticMessage | null>(null);
   const [hitlTickets, setHITLTickets] = useState<HITLTicket[]>([]);
   const [memoryCandidates, setMemoryCandidates] = useState<MemoryCandidate[]>([]);
   const [memoryCandidatesLoading, setMemoryCandidatesLoading] = useState(false);
@@ -443,6 +474,24 @@ export function App() {
   useEffect(() => {
     currentSessionIDRef.current = viewState.currentSessionId;
   }, [viewState.currentSessionId]);
+
+  useEffect(() => {
+    const sessionId = viewState.currentSessionId;
+    const snapshotUserText = selectCurrentTurn(viewState.snapshot)?.inputSummary?.trim() ?? "";
+    if (!snapshotUserText) {
+      return;
+    }
+
+    setPendingOptimisticMessage((current) => {
+      if (!current || current.message.text.trim() !== snapshotUserText) {
+        return current;
+      }
+      if (current.sessionId != null && current.sessionId !== sessionId) {
+        return current;
+      }
+      return null;
+    });
+  }, [viewState.currentSessionId, viewState.snapshot]);
 
   function setPendingWSCommandState(command: null | "continue_composer") {
     pendingWSCommandRef.current = command;
@@ -724,7 +773,7 @@ export function App() {
   const currentTurn = selectCurrentTurn(snapshot);
   const activeRuns = selectActiveRuns(snapshot);
   const focusedRun = selectFocusedRun(snapshot, viewState.focusedRunId);
-  const conversationMessages = buildConversationMessages(viewState);
+  const conversationMessages = buildConversationMessages(viewState, pendingOptimisticMessage);
   const waitingForInput = isWaitingForInput(viewState);
   const submitPending = startTurnPending || pendingWSCommand === "continue_composer";
   const contextSessionLabel = `Session ${viewState.currentSessionId ?? "none"}`;
@@ -785,6 +834,10 @@ export function App() {
       return;
     }
 
+    setPendingOptimisticMessage({
+      sessionId: viewState.currentSessionId,
+      message: createOptimisticUserMessage(message),
+    });
     setSubmitError(null);
     if (waitingForInput) {
       setPendingWSCommandState("continue_composer");
@@ -793,6 +846,9 @@ export function App() {
         setPendingWSCommandState(null);
         return;
       }
+      setPendingOptimisticMessage((current) =>
+        current ? { ...current, sessionId } : current,
+      );
       socketRef.current?.sendContinueTurn({
         message,
         agentId: "default",
@@ -806,6 +862,9 @@ export function App() {
       return;
     }
 
+    setPendingOptimisticMessage((current) =>
+      current ? { ...current, sessionId } : current,
+    );
     setStartTurnPending(true);
     try {
       await startTurn(sessionId, {
