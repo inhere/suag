@@ -14,8 +14,8 @@ import (
 )
 
 func main() {
-	app.SetupLogging()
 	_ = appconfig.Load()
+	app.SetupLogging()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

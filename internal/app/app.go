@@ -46,10 +46,15 @@ type App struct {
 
 func SetupLogging() {
 	level := slog.LevelInfo
-	if os.Getenv("AXON_DEBUG") != "" {
+	debugMode := os.Getenv("AXON_DEBUG") != ""
+	if debugMode {
 		level = slog.LevelDebug
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+
+	if debugMode {
+		slog.Debug("DEBUG MODE ENABLED - Verbose logging is active")
+	}
 }
 
 func New() (*App, error) {
