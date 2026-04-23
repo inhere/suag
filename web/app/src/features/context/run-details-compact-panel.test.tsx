@@ -90,3 +90,65 @@ it("prefers failure reason for failed runs", () => {
   expect(screen.getByText("tool failed: invalid payload")).toBeInTheDocument();
   expect(screen.queryByText("this summary should not be shown first")).not.toBeInTheDocument();
 });
+
+it("falls back to the first run and shows none when wait kind is missing", () => {
+  render(
+    <RunDetailsCompactPanel
+      focusedRunId="run_missing"
+      runs={[
+        {
+          runId: "run_first",
+          turnId: "turn_004",
+          sessionId: "sess_001",
+          agentId: "default",
+          displayState: "running",
+          latestEventType: "run.started",
+          latestMessageId: "msg_003",
+          latestMessageText: "",
+          summary: "",
+          externalTaskIds: [],
+          waitMetadata: {},
+          eventCount: 1,
+          updatedAt: "2026-04-21T10:05:00Z",
+        },
+      ]}
+    />,
+  );
+
+  expect(screen.getByText("run_first")).toBeInTheDocument();
+  expect(screen.getByText("default")).toBeInTheDocument();
+  expect(screen.getByText("running")).toBeInTheDocument();
+  expect(screen.getByText("none")).toBeInTheDocument();
+  expect(screen.getByText("No run summary yet.")).toBeInTheDocument();
+});
+
+it("falls back to first run and defaults wait kind to none when wait_kind is missing", () => {
+  render(
+    <RunDetailsCompactPanel
+      focusedRunId="run_not_found"
+      runs={[
+        {
+          runId: "run_first",
+          turnId: "turn_010",
+          sessionId: "sess_001",
+          agentId: "default",
+          displayState: "running",
+          latestEventType: "run.status",
+          latestMessageId: "msg_003",
+          latestMessageText: "still working",
+          summary: "",
+          externalTaskIds: [],
+          waitMetadata: {
+            policy: "manual_review",
+          },
+          eventCount: 3,
+          updatedAt: "2026-04-21T10:10:00Z",
+        },
+      ]}
+    />,
+  );
+
+  expect(screen.getByText("run_first")).toBeInTheDocument();
+  expect(screen.getByText("still working")).toBeInTheDocument();
+  expect(screen.getByText("none")).toBeInTheDocument();
+});

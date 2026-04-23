@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { SessionSummaryPanel } from "./session-summary-panel";
 
 it("shows status, turn, active runs, and updated time", () => {
@@ -31,7 +31,10 @@ it("shows status, turn, active runs, and updated time", () => {
   expect(screen.getByRole("heading", { name: "Session summary" })).toBeInTheDocument();
   expect(screen.getAllByText("input_required").length).toBeGreaterThan(0);
   expect(screen.getByText("turn_020")).toBeInTheDocument();
-  expect(screen.getByText("1")).toBeInTheDocument();
+  const activeRunsLabel = screen.getByText("Active runs");
+  const activeRunsValue = activeRunsLabel.closest(".context-panel__meta-item");
+  expect(activeRunsValue).not.toBeNull();
+  expect(within(activeRunsValue as HTMLElement).getByText("1")).toBeInTheDocument();
   expect(screen.getByText("2026-04-21T11:02:03Z")).toBeInTheDocument();
 });
 
@@ -41,6 +44,9 @@ it("shows fallback values when there is no current turn", () => {
   expect(screen.getByRole("heading", { name: "Session summary" })).toBeInTheDocument();
   expect(screen.getAllByText("idle").length).toBeGreaterThan(0);
   expect(screen.getByText("none")).toBeInTheDocument();
-  expect(screen.getByText("0")).toBeInTheDocument();
+  const activeRunsLabel = screen.getByText("Active runs");
+  const activeRunsValue = activeRunsLabel.closest(".context-panel__meta-item");
+  expect(activeRunsValue).not.toBeNull();
+  expect(within(activeRunsValue as HTMLElement).getByText("0")).toBeInTheDocument();
   expect(screen.getByText("-")).toBeInTheDocument();
 });

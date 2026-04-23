@@ -1,5 +1,4 @@
 import { render, screen } from "@testing-library/react";
-import { vi } from "vitest";
 import { RunInspector } from "./run-inspector";
 
 it("renders compact session summary and run details panels by default", () => {
@@ -43,18 +42,7 @@ it("renders compact session summary and run details panels by default", () => {
           updatedAt: "2026-04-12T10:30:00Z",
         },
       ]}
-      externalTasks={[]}
-      externalActivities={[]}
-      externalMessages={[]}
       focusedRunId="run_001"
-      focusedRunDetailStatus="loaded"
-      onFocusRun={vi.fn()}
-      onRetryFocusedRunDetail={vi.fn()}
-      canStop={false}
-      onStop={vi.fn()}
-      canAddHint={false}
-      onAddHint={vi.fn()}
-      onOpenDebug={vi.fn()}
     />,
   );
 
@@ -87,18 +75,7 @@ it("still prefers failure reason for failed focused runs in compact inspector", 
           updatedAt: "2026-04-18T10:00:01Z",
         },
       ]}
-      externalTasks={[]}
-      externalActivities={[]}
-      externalMessages={[]}
       focusedRunId="run_failed"
-      focusedRunDetailStatus="loaded"
-      onFocusRun={vi.fn()}
-      onRetryFocusedRunDetail={vi.fn()}
-      canStop={false}
-      onStop={vi.fn()}
-      canAddHint={false}
-      onAddHint={vi.fn()}
-      onOpenDebug={vi.fn()}
     />,
   );
 
