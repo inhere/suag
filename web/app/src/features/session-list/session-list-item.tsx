@@ -37,6 +37,22 @@ export function formatSessionStatus(status: string): string {
   return status.toLowerCase().replaceAll("_", " ");
 }
 
+export function formatSessionUpdatedAt(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(parsed);
+}
+
 export function SessionListItem({
   item,
   selected,
@@ -51,12 +67,14 @@ export function SessionListItem({
       onClick={onSelect}
     >
       <div className="session-item__title">{item.title}</div>
-      <div className="session-item__preview">{item.preview}</div>
+      <div className="session-item__preview" title={item.preview}>
+        {item.preview}
+      </div>
       <div className="session-item__meta">
         <span className={`session-item__dot session-item__dot--${tone}`} aria-hidden="true" />
         <span className="session-item__status">{formatSessionStatus(item.status)}</span>
         <span aria-hidden="true">·</span>
-        <span>{item.updatedAt}</span>
+        <span>{formatSessionUpdatedAt(item.updatedAt)}</span>
       </div>
     </button>
   );

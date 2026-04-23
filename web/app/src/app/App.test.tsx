@@ -667,6 +667,58 @@ describe("App", () => {
     expect(screen.getByText("run_201")).toBeInTheDocument();
   });
 
+  it("does not move a selected session to the top when switching sessions", async () => {
+    storage["axon.web.workbench"] = JSON.stringify({
+      currentSessionId: "sess_010",
+      focusedRunId: null,
+      recentSessions: [
+        {
+          sessionId: "sess_010",
+          title: "first session",
+          status: "WAITING",
+          updatedAt: "2026-04-13T08:00:00Z",
+          preview: "first preview",
+        },
+        {
+          sessionId: "sess_009",
+          title: "second session",
+          status: "RUNNING",
+          updatedAt: "2026-04-13T07:00:00Z",
+          preview: "second preview",
+        },
+      ],
+    });
+    getSessionMock.mockImplementation(async (sessionId: string) => ({
+      sessionId,
+      title: sessionId === "sess_010" ? "first session" : "second session",
+      status: "WAITING",
+      lastTurnId: "",
+      turns: [],
+      runs: [],
+      externalActivities: [],
+      externalMessages: [],
+      externalTasks: [],
+    }));
+
+    render(<App />);
+
+    const before = screen.getAllByRole("button").filter((node) =>
+      node.className.includes("session-item"),
+    );
+    expect(before[0]).toHaveTextContent("first session");
+    expect(before[1]).toHaveTextContent("second session");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /second session/i }));
+    });
+
+    const after = screen.getAllByRole("button").filter((node) =>
+      node.className.includes("session-item"),
+    );
+    expect(after[0]).toHaveTextContent("first session");
+    expect(after[1]).toHaveTextContent("second session");
+  });
+
   it("loads server-side sessions and restores the latest one when local storage is empty", async () => {
     listSessionsMock.mockResolvedValueOnce([
       {

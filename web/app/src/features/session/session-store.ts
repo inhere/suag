@@ -1038,6 +1038,9 @@ export function mergeSessionDetail(
       }
     : detailSnapshot;
 
+  const existingRecentSession =
+    state.recentSessions.find((item) => item.sessionId === detail.sessionId) ?? null;
+
   return {
     ...state,
     currentSessionId: detail.sessionId,
@@ -1054,9 +1057,10 @@ export function mergeSessionDetail(
       sessionId: detail.sessionId,
       title: detail.title,
       status: detail.status,
-      updatedAt: observedAt,
-      preview:
-        state.recentSessions.find((item) => item.sessionId === detail.sessionId)?.preview ?? "",
+      // Session bootstrap on selection should not make the item jump to the
+      // top of the list. Keep the existing updatedAt unless this session is new.
+      updatedAt: existingRecentSession?.updatedAt ?? observedAt,
+      preview: existingRecentSession?.preview ?? "",
     }),
   };
 }

@@ -365,10 +365,25 @@ function switchSessionContext(
     focusedRunId?: string | null;
     fallbackTitle?: string;
     fallbackStatus?: string;
+    preserveRecentSessionOrder?: boolean;
   },
 ): SessionViewState {
   const sessionChanged = state.currentSessionId !== sessionId;
   const hasFocusedRunOverride = !!options && "focusedRunId" in options;
+  const nextRecentSessions = options?.preserveRecentSessionOrder
+    ? state.recentSessions.some((item) => item.sessionId === sessionId)
+      ? state.recentSessions
+      : [...state.recentSessions, buildRecentSessionPlaceholder(state.recentSessions, sessionId, {
+          title: options?.fallbackTitle,
+          status: options?.fallbackStatus,
+        })]
+    : [
+        buildRecentSessionPlaceholder(state.recentSessions, sessionId, {
+          title: options?.fallbackTitle,
+          status: options?.fallbackStatus,
+        }),
+        ...state.recentSessions.filter((item) => item.sessionId !== sessionId),
+      ];
 
   return {
     ...state,
@@ -381,13 +396,7 @@ function switchSessionContext(
     // Clear stale cross-session data before the new bootstrap / snapshot arrives.
     snapshot: sessionChanged ? null : state.snapshot,
     runDetailStatus: sessionChanged ? {} : state.runDetailStatus,
-    recentSessions: [
-      buildRecentSessionPlaceholder(state.recentSessions, sessionId, {
-        title: options?.fallbackTitle,
-        status: options?.fallbackStatus,
-      }),
-      ...state.recentSessions.filter((item) => item.sessionId !== sessionId),
-    ],
+    recentSessions: nextRecentSessions,
   };
 }
 
@@ -965,6 +974,7 @@ export function App() {
         setViewState((current) =>
           switchSessionContext(current, sessionId, {
             focusedRunId: null,
+            preserveRecentSessionOrder: true,
           }),
         );
       }}

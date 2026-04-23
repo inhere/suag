@@ -117,6 +117,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  height: 100%;
+  min-height: 0;
 }
 
 .session-list__status,
@@ -228,6 +230,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .session-item {
@@ -245,6 +250,9 @@ body {
   margin-top: 5px;
   color: rgba(226, 232, 240, 0.75);
   font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-item__meta {
