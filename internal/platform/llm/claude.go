@@ -54,6 +54,7 @@ func (p *ClaudeProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 	}
 
 	body := p.buildRequestBody(req, model)
+	logProviderRequest(p.Name(), "/messages", body)
 	respData, err := p.doRequest(ctx, body)
 	if err != nil {
 		return nil, err
@@ -194,6 +195,9 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		}
 	}
 	if len(resp.ToolCalls) > 0 {
+		// Claude-style responses may interleave explanatory text with tool_use
+		// blocks. Agentcore requires a single step shape, so tool requests win.
+		resp.Content = ""
 		resp.FinishReason = agentcoreapi.FinishToolCalls
 	} else {
 		resp.FinishReason = agentcoreapi.FinishFinal
@@ -239,9 +243,11 @@ func (p *ClaudeProvider) doRequest(ctx context.Context, body map[string]any) ([]
 			continue
 		}
 		if httpResp.StatusCode >= 500 {
+			logProviderResponse(p.Name(), "/messages", httpResp.StatusCode, respData)
 			lastErr = fmt.Errorf("claude server error %d: %s", httpResp.StatusCode, string(respData))
 			continue
 		}
+		logProviderResponse(p.Name(), "/messages", httpResp.StatusCode, respData)
 		return respData, nil
 	}
 	return nil, fmt.Errorf("claude request failed after retries: %w", lastErr)

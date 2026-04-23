@@ -70,6 +70,7 @@ func (p *OpenAIProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 	}
 
 	body := p.buildRequestBody(req, model, false)
+	logProviderRequest(p.Name(), "/chat/completions", body)
 	respBody, err := p.doRequest(ctx, "/chat/completions", body)
 	if err != nil {
 		return nil, err
@@ -105,6 +106,7 @@ func (p *OpenAIProvider) Embed(ctx context.Context, text string) ([]float32, err
 		"model": p.embedModel,
 		"input": text,
 	}
+	logProviderRequest(p.Name(), "/embeddings", body)
 	respBody, err := p.doRequest(ctx, "/embeddings", body)
 	if err != nil {
 		return nil, err
@@ -241,6 +243,10 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		})
 	}
 	if len(resp.ToolCalls) > 0 {
+		// Some OpenAI-compatible providers emit a short assistant preamble
+		// alongside tool calls. The public agentcore contract models a step as
+		// either final text or tool requests, so prefer the actionable tool calls.
+		resp.Content = ""
 		resp.FinishReason = agentcoreapi.FinishToolCalls
 	} else {
 		resp.FinishReason = agentcoreapi.FinishFinal
@@ -288,10 +294,12 @@ func (p *OpenAIProvider) doRequest(ctx context.Context, path string, body map[st
 		}
 
 		if httpResp.StatusCode >= 500 {
+			logProviderResponse(p.Name(), path, httpResp.StatusCode, respData)
 			lastErr = fmt.Errorf("server error %d: %s", httpResp.StatusCode, string(respData))
 			continue
 		}
 
+		logProviderResponse(p.Name(), path, httpResp.StatusCode, respData)
 		return respData, nil
 	}
 	return nil, fmt.Errorf("openai request failed after retries: %w", lastErr)

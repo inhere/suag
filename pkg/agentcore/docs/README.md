@@ -25,7 +25,8 @@
 19. [prompt-layered-design.md](./prompt-layered-design.md) 下一轮默认 prompt 组合演进设计
 20. [conformance-testing.md](./conformance-testing.md) 为什么要补 package-local contract tests，以及第一阶段优先覆盖什么
 21. [streaming-design.md](./streaming-design.md) 下一轮 streaming contract 设计
-22. [roadmap.md](./roadmap.md) 后续演进路线
+22. [block-result-design.md](./block-result-design.md) 长期 mixed output / block-based GenerateResult 设计
+23. [roadmap.md](./roadmap.md) 后续演进路线
 
 ## 这组文档回答什么问题
 
@@ -52,6 +53,7 @@
 - package-local conformance/testing 应该如何进入 `agentcore`
 - runtime policies 应该如何进入 kernel
 - streaming contract 应该如何进入 kernel
+- mixed text + tool calls 应该如何长期进入 `GenerateResult`
 
 ## 相关示例
 

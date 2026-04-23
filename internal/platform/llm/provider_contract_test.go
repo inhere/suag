@@ -69,6 +69,68 @@ func TestOpenAIProvider_ParseResponse_RejectsInvalidToolArguments(t *testing.T) 
 	assert.Contains(t, err.Error(), "arguments")
 }
 
+func TestOpenAIProvider_ParseResponse_AcceptsStringifiedToolArguments(t *testing.T) {
+	provider := NewOpenAIProvider(OpenAIConfig{})
+
+	resp, err := provider.parseResponse([]byte(`{
+		"choices": [{
+			"message": {
+				"tool_calls": [{
+					"id": "call-1",
+					"function": {
+						"name": "file_list",
+						"arguments": "{\"path\":\".\"}"
+					}
+				}]
+			},
+			"finish_reason": "tool_calls"
+		}],
+		"usage": {
+			"prompt_tokens": 1,
+			"completion_tokens": 1,
+			"total_tokens": 2
+		}
+	}`))
+
+	assert.NoErr(t, err)
+	assert.NotNil(t, resp)
+	assert.Eq(t, FinishToolCalls, resp.FinishReason)
+	assert.Eq(t, 1, len(resp.ToolCalls))
+	assert.Eq(t, "file_list", resp.ToolCalls[0].Name)
+	assert.Eq(t, ".", resp.ToolCalls[0].Arguments["path"])
+}
+
+func TestOpenAIProvider_ParseResponse_PrefersToolCallsOverMixedContent(t *testing.T) {
+	provider := NewOpenAIProvider(OpenAIConfig{})
+
+	resp, err := provider.parseResponse([]byte(`{
+		"choices": [{
+			"message": {
+				"content": "我先看一下目录。",
+				"tool_calls": [{
+					"id": "call-1",
+					"function": {
+						"name": "file_list",
+						"arguments": "{\"path\":\".\"}"
+					}
+				}]
+			},
+			"finish_reason": "tool_calls"
+		}],
+		"usage": {
+			"prompt_tokens": 1,
+			"completion_tokens": 1,
+			"total_tokens": 2
+		}
+	}`))
+
+	assert.NoErr(t, err)
+	assert.NotNil(t, resp)
+	assert.Eq(t, FinishToolCalls, resp.FinishReason)
+	assert.Eq(t, "", resp.Content)
+	assert.Eq(t, 1, len(resp.ToolCalls))
+}
+
 func TestClaudeProvider_ParseResponse_RejectsInvalidToolArguments(t *testing.T) {
 	provider := NewClaudeProvider(ClaudeConfig{})
 
@@ -89,4 +151,35 @@ func TestClaudeProvider_ParseResponse_RejectsInvalidToolArguments(t *testing.T) 
 	assert.Contains(t, err.Error(), "tool call")
 	assert.Contains(t, err.Error(), "file_read")
 	assert.Contains(t, err.Error(), "arguments")
+}
+
+func TestClaudeProvider_ParseResponse_PrefersToolCallsOverMixedContent(t *testing.T) {
+	provider := NewClaudeProvider(ClaudeConfig{})
+
+	resp, err := provider.parseResponse([]byte(`{
+		"content": [
+			{
+				"type": "text",
+				"text": "我先看一下。"
+			},
+			{
+				"type": "tool_use",
+				"id": "call-1",
+				"name": "file_list",
+				"input": {"path":"."}
+			}
+		],
+		"usage": {
+			"input_tokens": 1,
+			"output_tokens": 1
+		}
+	}`))
+
+	assert.NoErr(t, err)
+	assert.NotNil(t, resp)
+	assert.Eq(t, FinishToolCalls, resp.FinishReason)
+	assert.Eq(t, "", resp.Content)
+	assert.Eq(t, 1, len(resp.ToolCalls))
+	assert.Eq(t, "file_list", resp.ToolCalls[0].Name)
+	assert.Eq(t, ".", resp.ToolCalls[0].Arguments["path"])
 }
