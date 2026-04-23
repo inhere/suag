@@ -488,7 +488,7 @@ git commit -m "feat: add compact context panels for chat-first view"
 - Modify: `AGENTS.md`
 - Optional Modify: `docs/usage/web-host-local-dev.md`
 
-- [ ] **Step 1: 写 App 级失败用例**
+- [x] **Step 1: 写 App 级失败用例**
 
 在 `web/app/src/app/App.test.tsx` 中补或更新断言：
 
@@ -508,7 +508,7 @@ expect(screen.queryByText("Run Inspector")).not.toBeInTheDocument();
 Run: `pnpm --dir web/app test -- App.test.tsx`
 Expected: FAIL，提示 `App.tsx` 还没有给新聊天组件和右栏块提供正确 props
 
-- [ ] **Step 2: 在 App.tsx 派生 chat-first 所需 props**
+- [x] **Step 2: 在 App.tsx 派生 chat-first 所需 props**
 
 在 `web/app/src/app/App.tsx` 中新增最小派生逻辑：
 
@@ -537,7 +537,7 @@ function buildInlineStatus(turn: StateSnapshotTurn | null, run: StateSnapshotRun
 }
 ```
 
-- [ ] **Step 3: 跑 App 测试并补回归验证**
+- [x] **Step 3: 跑 App 测试并补回归验证**
 
 Run: `pnpm --dir web/app test -- App.test.tsx`
 Expected: PASS
@@ -552,7 +552,7 @@ Expected: PASS
 Run: `pnpm --dir web/app build`
 Expected: PASS
 
-- [ ] **Step 4: 更新 AGENTS 与可选联调说明**
+- [x] **Step 4: 更新 AGENTS 与可选联调说明**
 
 更新 `AGENTS.md`，把“Web 默认界面当前开始从偏工作台收敛为 Chat-first”推进到“已进入实现 / 已完成第一阶段重构”的准确状态。
 
@@ -561,7 +561,7 @@ Expected: PASS
 - 默认中栏应看到 summary strip
 - 右栏不再是旧的大型 run inspector
 
-- [ ] **Step 5: 提交收尾**
+- [x] **Step 5: 提交收尾**
 
 ```bash
 git add AGENTS.md docs/usage/web-host-local-dev.md web/app/src/app/App.tsx web/app/src/app/App.test.tsx

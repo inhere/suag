@@ -8,16 +8,15 @@ import { MemoryCandidatesPanel } from "../features/memory-candidates/memory-cand
 import { SessionList } from "../features/session-list/session-list";
 import type { SessionFilter, SessionListItem } from "../features/session/session-store";
 import type {
-  ExternalTaskSummary,
   HITLTicket,
   MemoryCandidate,
   SessionSocketMessage,
-  StateSnapshotExternalActivity,
-  StateSnapshotExternalMessage,
   StateSnapshotRun,
   StateSnapshotTurn,
 } from "../lib/host-types";
 import type { SessionSocketStatus } from "../lib/session-ws";
+import type { InlineStatusCardState } from "../features/conversation/inline-status-card";
+import type { SummaryStripTone } from "../features/conversation/summary-strip";
 
 type AppShellProps = {
   sessions?: SessionListItem[];
@@ -38,15 +37,18 @@ type AppShellProps = {
   messages?: ConversationMessage[];
   currentTurn?: StateSnapshotTurn | null;
   waitingForInput?: boolean;
-  waitingForApproval?: boolean;
+  chatHeaderTitle?: string;
+  chatHeaderMeta?: string | null;
+  summaryStripStatus?: string;
+  summaryStripTone?: SummaryStripTone;
+  inlineStatus?: {
+    state: InlineStatusCardState;
+    detail?: string | null;
+  } | null;
   submitPending?: boolean;
   submitError?: string | null;
   runs?: StateSnapshotRun[];
-  externalTasks?: ExternalTaskSummary[];
-  externalActivities?: StateSnapshotExternalActivity[];
-  externalMessages?: StateSnapshotExternalMessage[];
   focusedRunId?: string | null;
-  focusedRunDetailStatus?: "idle" | "loading" | "loaded" | "error";
   hitlTickets?: HITLTicket[];
   hitlLoading?: boolean;
   memoryCandidates?: MemoryCandidate[];
@@ -54,11 +56,6 @@ type AppShellProps = {
   memoryCandidatesError?: string | null;
   memoryCandidateActionError?: string | null;
   memoryCandidateActionPendingIds?: string[];
-  canStop?: boolean;
-  stopPending?: boolean;
-  canAddHint?: boolean;
-  addHintPending?: boolean;
-  runActionError?: string | null;
   hitlError?: string | null;
   debugOpen?: boolean;
   debugEvents?: SessionSocketMessage[];
@@ -67,8 +64,6 @@ type AppShellProps = {
   onSearchChange?: (value: string) => void;
   onFilterChange?: (filter: SessionFilter) => void;
   onSubmitMessage?: (message: string) => void;
-  onFocusRun?: (runId: string) => void;
-  onRetryFocusedRunDetail?: () => void;
   onRetryMemoryCandidates?: () => void;
   onAcceptMemoryCandidate?: (candidateId: string) => void;
   onRejectMemoryCandidate?: (candidateId: string) => void;
@@ -76,14 +71,9 @@ type AppShellProps = {
   onOpenHITLContext?: (ticket: HITLTicket) => void;
   onRespondHITL?: (ticketId: string, instruction: string) => Promise<void> | void;
   onDismissHITL?: (ticketId: string) => Promise<void> | void;
-  onStop?: () => void;
-  onAddHint?: () => void;
-  onOpenDebug?: () => void;
   onCloseDebug?: () => void;
 };
 
-// NOTE: run/external-task props are intentionally retained in Task 1.
-// Task 3 will replace the right-column run details placeholder and consume them.
 export function AppShell({
   sessions = [],
   currentSessionId = null,
@@ -103,15 +93,15 @@ export function AppShell({
   messages = [],
   currentTurn = null,
   waitingForInput = false,
-  waitingForApproval = false,
+  chatHeaderTitle = "Chat",
+  chatHeaderMeta = null,
+  summaryStripStatus = "尚未开始，发送一条消息创建新的 turn。",
+  summaryStripTone = "attention",
+  inlineStatus = null,
   submitPending = false,
   submitError = null,
   runs = [],
-  externalTasks = [],
-  externalActivities = [],
-  externalMessages = [],
   focusedRunId = null,
-  focusedRunDetailStatus = "idle",
   hitlTickets = [],
   hitlLoading = false,
   memoryCandidates = [],
@@ -119,11 +109,6 @@ export function AppShell({
   memoryCandidatesError = null,
   memoryCandidateActionError = null,
   memoryCandidateActionPendingIds = [],
-  canStop = false,
-  stopPending = false,
-  canAddHint = false,
-  addHintPending = false,
-  runActionError = null,
   hitlError = null,
   debugOpen = false,
   debugEvents = [],
@@ -132,8 +117,6 @@ export function AppShell({
   onSearchChange = () => {},
   onFilterChange = () => {},
   onSubmitMessage = () => {},
-  onFocusRun = () => {},
-  onRetryFocusedRunDetail = () => {},
   onRetryMemoryCandidates = () => {},
   onAcceptMemoryCandidate = () => {},
   onRejectMemoryCandidate = () => {},
@@ -141,12 +124,8 @@ export function AppShell({
   onOpenHITLContext = () => {},
   onRespondHITL = () => {},
   onDismissHITL = () => {},
-  onStop = () => {},
-  onAddHint = () => {},
-  onOpenDebug = () => {},
   onCloseDebug = () => {},
 }: AppShellProps) {
-
   return (
     <>
       <div className="app-frame">
@@ -182,8 +161,12 @@ export function AppShell({
           <main className="app-shell__main" aria-label="Chat panel">
             <ConversationPane
               messages={messages}
-              currentTurn={currentTurn}
               waitingForInput={waitingForInput}
+              headerTitle={chatHeaderTitle}
+              headerMeta={chatHeaderMeta}
+              summaryStatus={summaryStripStatus}
+              summaryTone={summaryStripTone}
+              inlineStatus={inlineStatus}
               submitPending={submitPending}
               submitError={submitError}
               onSubmit={onSubmitMessage}

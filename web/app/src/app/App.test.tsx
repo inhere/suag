@@ -300,7 +300,7 @@ describe("App", () => {
       });
     });
 
-    expect(await screen.findByText("host runtime")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "host runtime" })).toBeInTheDocument();
     expect((await screen.findAllByText("thinking...")).length).toBeGreaterThan(0);
     expect(screen.getByText("run_001")).toBeInTheDocument();
     expect(screen.getAllByText("Turn turn_001").length).toBeGreaterThan(0);
@@ -425,19 +425,19 @@ describe("App", () => {
     expect(screen.getByText("Turn none")).toBeInTheDocument();
     expect(screen.getByText("Run none")).toBeInTheDocument();
     expect(screen.getByText("Socket connecting")).toBeInTheDocument();
-    expect(await screen.findByText("Session sess_002 connecting...")).toBeInTheDocument();
+    expect((await screen.findAllByText("Session sess_002 connecting...")).length).toBeGreaterThan(0);
 
     await act(async () => {
       onStatusChange?.("connected");
     });
     expect(await screen.findByText("Socket connected")).toBeInTheDocument();
-    expect(await screen.findByText("Session sess_002 connected.")).toBeInTheDocument();
+    expect((await screen.findAllByText("Session sess_002 connected.")).length).toBeGreaterThan(0);
 
     await act(async () => {
       onStatusChange?.("disconnected");
     });
     expect(await screen.findByText("Socket disconnected")).toBeInTheDocument();
-    expect(await screen.findByText("Session sess_002 disconnected.")).toBeInTheDocument();
+    expect((await screen.findAllByText("Session sess_002 disconnected.")).length).toBeGreaterThan(0);
   });
 
   it("shows connection error feedback when session bootstrap fails", async () => {
@@ -502,7 +502,7 @@ describe("App", () => {
     await act(async () => {
       onStatusChange?.("disconnected");
     });
-    expect(screen.getByText("Session sess_020 disconnected.")).toBeInTheDocument();
+    expect(screen.getAllByText("Session sess_020 disconnected.").length).toBeGreaterThan(0);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1500);
@@ -703,7 +703,7 @@ describe("App", () => {
         expect.objectContaining({ sessionId: "sess_010" }),
       ),
     );
-    expect(await screen.findByText("server latest")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "server latest" })).toBeInTheDocument();
     expect(screen.getByText("server older")).toBeInTheDocument();
   });
 
@@ -750,8 +750,8 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("bootstrap title")).toBeInTheDocument();
-    expect(screen.getAllByText("bootstrap-codex")).toHaveLength(3);
+    expect(await screen.findByRole("heading", { name: "bootstrap title" })).toBeInTheDocument();
+    expect(screen.getByText("bootstrap-codex")).toBeInTheDocument();
     expect(screen.getAllByText("Turn turn_900").length).toBeGreaterThan(0);
     expect(screen.getByText("run_bootstrap")).toBeInTheDocument();
     expect(screen.getAllByText("Waiting for websocket snapshot...").length).toBeGreaterThan(0);
@@ -844,532 +844,12 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("detail restored")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "detail restored" })).toBeInTheDocument();
     expect(screen.getAllByText("Turn turn_detail").length).toBeGreaterThan(0);
     expect(screen.getByText("run_detail")).toBeInTheDocument();
     expect(screen.getAllByText("detail summary").length).toBeGreaterThan(0);
     expect(screen.getAllByText("detail thinking...").length).toBeGreaterThan(0);
     expect(screen.queryByText("Waiting for websocket snapshot...")).not.toBeInTheDocument();
-  });
-
-  it("loads focused run detail on demand and refreshes the inspector with detailed content", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
-      currentSessionId: "sess_005",
-      focusedRunId: null,
-      recentSessions: [],
-    });
-    getSessionMock.mockResolvedValueOnce({
-      sessionId: "sess_005",
-      title: "history session",
-      status: "RUNNING",
-      lastTurnId: "turn_current",
-      turns: [
-        {
-          turnId: "turn_current",
-          sessionId: "sess_005",
-          primaryRunId: "run_current",
-          currentRunId: "run_current",
-          latestRunId: "run_current",
-          latestAgentId: "default",
-          displayState: "running",
-          latestEventType: "run.started",
-          latestMessagePreview: "当前在跑",
-          eventCount: 2,
-          runCount: 2,
-          activeRunCount: 1,
-          completedRunCount: 1,
-          failedRunCount: 0,
-          activeRunIds: ["run_current"],
-          completedRunIds: ["run_hist"],
-          failedRunIds: [],
-          hasExternalWork: false,
-          updatedAt: "2026-04-12T15:00:00Z",
-        },
-      ],
-      runs: [
-        {
-          runId: "run_current",
-          turnId: "turn_current",
-          sessionId: "sess_005",
-          agentId: "default",
-          displayState: "running",
-          latestEventType: "run.started",
-          latestMessageId: "msg_current",
-          latestMessageText: "当前在跑",
-          summary: "",
-          externalTaskIds: [],
-          eventCount: 2,
-          updatedAt: "2026-04-12T15:00:00Z",
-        },
-        {
-          runId: "run_hist",
-          turnId: "turn_hist",
-          sessionId: "sess_005",
-          agentId: "reviewer",
-          displayState: "completed",
-          latestEventType: "run.finished",
-          latestMessageId: "",
-          latestMessageText: "",
-          summary: "",
-          externalTaskIds: [],
-          eventCount: 1,
-          updatedAt: "2026-04-12T14:00:00Z",
-        },
-      ],
-      externalActivities: [],
-      externalMessages: [],
-      externalTasks: [],
-    });
-    getRunDetailMock.mockResolvedValueOnce({
-      sessionId: "sess_005",
-      turnId: "turn_hist",
-      turn: {
-        turnId: "turn_hist",
-        sessionId: "sess_005",
-        primaryRunId: "run_hist",
-        currentRunId: "run_hist",
-        latestRunId: "run_hist",
-        latestAgentId: "reviewer",
-        displayState: "completed",
-        latestEventType: "run.finished",
-        latestMessagePreview: "历史摘要",
-        eventCount: 8,
-        runCount: 1,
-        activeRunCount: 0,
-        completedRunCount: 1,
-        failedRunCount: 0,
-        activeRunIds: [],
-        completedRunIds: ["run_hist"],
-        failedRunIds: [],
-        hasExternalWork: true,
-        updatedAt: "2026-04-12T15:01:00Z",
-      },
-      run: {
-        runId: "run_hist",
-        turnId: "turn_hist",
-        sessionId: "sess_005",
-        agentId: "reviewer",
-        displayState: "completed",
-        latestEventType: "run.finished",
-        latestMessageId: "msg_hist",
-        latestMessageText: "done",
-        summary: "历史摘要",
-        externalTaskIds: ["ext_hist"],
-        eventCount: 8,
-        updatedAt: "2026-04-12T15:01:00Z",
-      },
-      externalActivities: [
-        {
-          externalTaskId: "ext_hist",
-          sessionId: "sess_005",
-          turnId: "turn_hist",
-          runId: "run_hist",
-          agentId: "reviewer",
-          activityId: "run_hist:external",
-          kind: "delegate",
-          status: "completed",
-          title: "delegate",
-          detail: "completed",
-          startedAt: "2026-04-12T15:00:30Z",
-          updatedAt: "2026-04-12T15:01:00Z",
-        },
-      ],
-      externalMessages: [
-        {
-          externalTaskId: "ext_hist",
-          messageId: "msg_hist",
-          sessionId: "sess_005",
-          turnId: "turn_hist",
-          runId: "run_hist",
-          agentId: "reviewer",
-          content: "历史详细正文",
-          started: true,
-          completed: true,
-          lastEventType: "run.external.message.end",
-          lastSequence: 8,
-          updatedAt: "2026-04-12T15:01:00Z",
-        },
-      ],
-      externalTasks: [
-        {
-          externalTaskId: "ext_hist",
-          sessionId: "sess_005",
-          turnId: "turn_hist",
-          runId: "run_hist",
-          adapter: "codex",
-          remoteAgentName: "codex-reviewer",
-          remoteSessionId: "remote_hist",
-          remoteTaskId: "task_hist",
-          state: "completed",
-          lastHeartbeatAt: "2026-04-12T15:01:00Z",
-          resultSummary: "历史任务完成",
-          metadata: {},
-        },
-      ],
-    });
-
-    render(<App />);
-
-    expect(await screen.findByText("history session")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /reviewercompletedWaiting for output\.\.\./ }));
-
-    await waitFor(() =>
-      expect(getRunDetailMock).toHaveBeenCalledWith("sess_005", "run_hist"),
-    );
-    expect((await screen.findAllByText("历史摘要")).length).toBeGreaterThan(0);
-    expect(screen.getByText("历史详细正文")).toBeInTheDocument();
-    expect(screen.getByText("delegate: completed")).toBeInTheDocument();
-    expect(screen.getByText("codex-reviewer")).toBeInTheDocument();
-    expect(screen.getByText("历史任务完成")).toBeInTheDocument();
-  });
-
-  it("retries focused run detail loading from the inspector after a failure", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
-      currentSessionId: "sess_006",
-      focusedRunId: null,
-      recentSessions: [],
-    });
-    getSessionMock.mockResolvedValueOnce({
-      sessionId: "sess_006",
-      title: "detail retry session",
-      status: "RUNNING",
-      lastTurnId: "turn_current",
-      turns: [
-        {
-          turnId: "turn_current",
-          sessionId: "sess_006",
-          primaryRunId: "run_current",
-          currentRunId: "run_current",
-          latestRunId: "run_current",
-          latestAgentId: "default",
-          displayState: "running",
-          latestEventType: "run.started",
-          latestMessagePreview: "当前执行中",
-          eventCount: 2,
-          runCount: 2,
-          activeRunCount: 1,
-          completedRunCount: 1,
-          failedRunCount: 0,
-          activeRunIds: ["run_current"],
-          completedRunIds: ["run_hist"],
-          failedRunIds: [],
-          hasExternalWork: false,
-          updatedAt: "2026-04-12T16:00:00Z",
-        },
-      ],
-      runs: [
-        {
-          runId: "run_current",
-          turnId: "turn_current",
-          sessionId: "sess_006",
-          agentId: "default",
-          displayState: "running",
-          latestEventType: "run.started",
-          latestMessageId: "msg_current",
-          latestMessageText: "当前执行中",
-          summary: "",
-          externalTaskIds: [],
-          eventCount: 2,
-          updatedAt: "2026-04-12T16:00:00Z",
-        },
-        {
-          runId: "run_hist",
-          turnId: "turn_hist",
-          sessionId: "sess_006",
-          agentId: "reviewer",
-          displayState: "completed",
-          latestEventType: "run.finished",
-          latestMessageId: "",
-          latestMessageText: "",
-          summary: "",
-          externalTaskIds: [],
-          eventCount: 1,
-          updatedAt: "2026-04-12T15:00:00Z",
-        },
-      ],
-      externalActivities: [],
-      externalMessages: [],
-      externalTasks: [],
-    });
-    getRunDetailMock
-      .mockRejectedValueOnce(new Error("boom"))
-      .mockResolvedValueOnce({
-        sessionId: "sess_006",
-        turnId: "turn_hist",
-        turn: {
-          turnId: "turn_hist",
-          sessionId: "sess_006",
-          primaryRunId: "run_hist",
-          currentRunId: "run_hist",
-          latestRunId: "run_hist",
-          latestAgentId: "reviewer",
-          displayState: "completed",
-          latestEventType: "run.finished",
-          latestMessagePreview: "已重试恢复",
-          eventCount: 5,
-          runCount: 1,
-          activeRunCount: 0,
-          completedRunCount: 1,
-          failedRunCount: 0,
-          activeRunIds: [],
-          completedRunIds: ["run_hist"],
-          failedRunIds: [],
-          hasExternalWork: false,
-          updatedAt: "2026-04-12T16:01:00Z",
-        },
-        run: {
-          runId: "run_hist",
-          turnId: "turn_hist",
-          sessionId: "sess_006",
-          agentId: "reviewer",
-          displayState: "completed",
-          latestEventType: "run.finished",
-          latestMessageId: "msg_hist",
-          latestMessageText: "done",
-          summary: "已重试恢复",
-          externalTaskIds: [],
-          eventCount: 5,
-          updatedAt: "2026-04-12T16:01:00Z",
-        },
-        externalActivities: [],
-        externalMessages: [],
-        externalTasks: [],
-      });
-
-    render(<App />);
-
-    expect(await screen.findByText("detail retry session")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /reviewercompletedWaiting for output\.\.\./ }));
-
-    await waitFor(() =>
-      expect(getRunDetailMock).toHaveBeenCalledWith("sess_006", "run_hist"),
-    );
-    expect(await screen.findByText("Failed to load run detail.")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Retry Detail" }));
-
-    await waitFor(() => expect(getRunDetailMock).toHaveBeenCalledTimes(2));
-    await waitFor(() =>
-      expect(screen.getAllByText("已重试恢复").length).toBeGreaterThan(0),
-    );
-  });
-
-  it("shows recent turns in the conversation pane and focuses the selected turn run", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
-      currentSessionId: "sess_007",
-      focusedRunId: null,
-      recentSessions: [],
-    });
-    getSessionMock.mockResolvedValueOnce({
-      sessionId: "sess_007",
-      title: "turn history session",
-      status: "RUNNING",
-      lastTurnId: "turn_202",
-      turns: [
-        {
-          turnId: "turn_201",
-          sessionId: "sess_007",
-          primaryRunId: "run_201",
-          currentRunId: "run_201",
-          latestRunId: "run_201",
-          latestAgentId: "planner",
-          displayState: "completed",
-          latestEventType: "run.finished",
-          latestMessagePreview: "历史规划已完成",
-          eventCount: 3,
-          runCount: 1,
-          activeRunCount: 0,
-          completedRunCount: 1,
-          failedRunCount: 0,
-          activeRunIds: [],
-          completedRunIds: ["run_201"],
-          failedRunIds: [],
-          hasExternalWork: false,
-          updatedAt: "2026-04-12T14:00:00Z",
-        },
-        {
-          turnId: "turn_202",
-          sessionId: "sess_007",
-          primaryRunId: "run_202",
-          currentRunId: "run_202",
-          latestRunId: "run_202",
-          latestAgentId: "reviewer",
-          displayState: "running",
-          latestEventType: "run.started",
-          latestMessagePreview: "当前在继续评审",
-          eventCount: 2,
-          runCount: 1,
-          activeRunCount: 1,
-          completedRunCount: 0,
-          failedRunCount: 0,
-          activeRunIds: ["run_202"],
-          completedRunIds: [],
-          failedRunIds: [],
-          hasExternalWork: false,
-          updatedAt: "2026-04-12T15:00:00Z",
-        },
-      ],
-      runs: [
-        {
-          runId: "run_201",
-          turnId: "turn_201",
-          sessionId: "sess_007",
-          agentId: "planner",
-          displayState: "completed",
-          latestEventType: "run.finished",
-          latestMessageId: "msg_201",
-          latestMessageText: "历史规划已完成",
-          summary: "历史规划已完成",
-          externalTaskIds: [],
-          eventCount: 3,
-          updatedAt: "2026-04-12T14:00:00Z",
-        },
-        {
-          runId: "run_202",
-          turnId: "turn_202",
-          sessionId: "sess_007",
-          agentId: "reviewer",
-          displayState: "running",
-          latestEventType: "run.started",
-          latestMessageId: "msg_202",
-          latestMessageText: "当前在继续评审",
-          summary: "",
-          externalTaskIds: [],
-          eventCount: 2,
-          updatedAt: "2026-04-12T15:00:00Z",
-        },
-      ],
-      externalActivities: [],
-      externalMessages: [],
-      externalTasks: [],
-    });
-    getRunDetailMock.mockResolvedValueOnce({
-      sessionId: "sess_007",
-      turnId: "turn_201",
-      turn: {
-        turnId: "turn_201",
-        sessionId: "sess_007",
-        primaryRunId: "run_201",
-        currentRunId: "run_201",
-        latestRunId: "run_201",
-        latestAgentId: "planner",
-        displayState: "completed",
-        latestEventType: "run.finished",
-        latestMessagePreview: "历史规划已完成",
-        eventCount: 3,
-        runCount: 1,
-        activeRunCount: 0,
-        completedRunCount: 1,
-        failedRunCount: 0,
-        activeRunIds: [],
-        completedRunIds: ["run_201"],
-        failedRunIds: [],
-        hasExternalWork: false,
-        updatedAt: "2026-04-12T14:00:00Z",
-      },
-      run: {
-        runId: "run_201",
-        turnId: "turn_201",
-        sessionId: "sess_007",
-        agentId: "planner",
-        displayState: "completed",
-        latestEventType: "run.finished",
-        latestMessageId: "msg_201",
-        latestMessageText: "历史规划已完成",
-        summary: "历史规划已完成",
-        externalTaskIds: [],
-        eventCount: 3,
-        updatedAt: "2026-04-12T14:00:00Z",
-      },
-      externalActivities: [],
-      externalMessages: [],
-      externalTasks: [],
-    });
-
-    render(<App />);
-
-    expect(await screen.findByText("turn history session")).toBeInTheDocument();
-    expect(screen.getByText("Recent Turns")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Turn turn_201/ }));
-
-    await waitFor(() =>
-      expect(getRunDetailMock).toHaveBeenCalledWith("sess_007", "run_201"),
-    );
-    await waitFor(() =>
-      expect(screen.getAllByText("历史规划已完成").length).toBeGreaterThan(0),
-    );
-  });
-
-  it("sends continue_turn from Add Hint when the current turn is waiting for input", async () => {
-    vi.stubGlobal("prompt", vi.fn().mockReturnValue("请补充错误边界和回退策略"));
-
-    render(<App />);
-
-    fireEvent.change(screen.getByPlaceholderText("给 Axon 发送下一条任务说明..."), {
-      target: { value: "先启动一个等待输入的回合" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-
-    await waitFor(() =>
-      expect(connectSessionSocketMock).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: "sess_001" }),
-      ),
-    );
-
-    await act(async () => {
-      onMessage?.({
-        type: "STATE_SNAPSHOT",
-        snapshot: makeSnapshot({
-          status: "WAITING",
-          turns: [
-            {
-              turnId: "turn_001",
-              sessionId: "sess_001",
-              primaryRunId: "run_001",
-              currentRunId: "run_001",
-              latestRunId: "run_001",
-              latestAgentId: "default",
-              displayState: "waiting_input",
-              latestEventType: "turn.waiting",
-              latestMessagePreview: "需要更多约束",
-              eventCount: 3,
-              runCount: 1,
-              activeRunCount: 1,
-              completedRunCount: 0,
-              failedRunCount: 0,
-              activeRunIds: ["run_001"],
-              completedRunIds: [],
-              failedRunIds: [],
-              hasExternalWork: true,
-              updatedAt: "2026-04-12T11:00:00Z",
-            },
-          ],
-        }),
-      });
-    });
-
-    const addHintButton = await screen.findByRole("button", { name: "Add Hint" });
-    expect(addHintButton).toBeEnabled();
-
-    fireEvent.click(addHintButton);
-
-    expect(await screen.findByRole("button", { name: "Adding Hint..." })).toBeDisabled();
-    expect(globalThis.prompt).toHaveBeenCalled();
-    expect(sendContinueTurnMock).toHaveBeenCalledWith({
-      message: "请补充错误边界和回退策略",
-      agentId: "default",
-      initiatorType: "user",
-    });
-
-    await act(async () => {
-      onMessage?.({
-        type: "command.accepted",
-        command: "continue_turn",
-        session_id: "sess_001",
-      });
-    });
-
-    await waitFor(() => expect(screen.getByRole("button", { name: "Add Hint" })).toBeEnabled());
   });
 
   it("shows pending feedback while continuing a waiting turn from the composer", async () => {
@@ -1623,132 +1103,8 @@ describe("App", () => {
 
     expect(screen.getByPlaceholderText("给 Axon 发送下一条任务说明...")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add Hint" })).toBeDisabled();
-  });
-
-  it("sends stop_turn for the current turn from the inspector", async () => {
-    render(<App />);
-
-    fireEvent.change(screen.getByPlaceholderText("给 Axon 发送下一条任务说明..."), {
-      target: { value: "先启动一个可以停止的回合" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-
-    await waitFor(() =>
-      expect(connectSessionSocketMock).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: "sess_001" }),
-      ),
-    );
-
-    await act(async () => {
-      onMessage?.({
-        type: "STATE_SNAPSHOT",
-        snapshot: makeSnapshot({
-          status: "RUNNING",
-          turns: [
-            {
-              turnId: "turn_001",
-              sessionId: "sess_001",
-              primaryRunId: "run_001",
-              currentRunId: "run_001",
-              latestRunId: "run_001",
-              latestAgentId: "default",
-              displayState: "external_running",
-              latestEventType: "run.external.activity",
-              latestMessagePreview: "正在执行外部协作",
-              eventCount: 4,
-              runCount: 1,
-              activeRunCount: 1,
-              completedRunCount: 0,
-              failedRunCount: 0,
-              activeRunIds: ["run_001"],
-              completedRunIds: [],
-              failedRunIds: [],
-              hasExternalWork: true,
-              updatedAt: "2026-04-12T11:02:00Z",
-            },
-          ],
-        }),
-      });
-    });
-
-    const stopButton = await screen.findByRole("button", { name: "Stop" });
-    expect(stopButton).toBeEnabled();
-
-    fireEvent.click(stopButton);
-
-    expect(await screen.findByRole("button", { name: "Stopping..." })).toBeDisabled();
-    expect(sendStopTurnMock).toHaveBeenCalledWith({
-      turnId: "turn_001",
-    });
-
-    await act(async () => {
-      onMessage?.({
-        type: "command.accepted",
-        command: "stop_turn",
-        session_id: "sess_001",
-      });
-    });
-
-    await waitFor(() => expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled());
-  });
-
-  it("shows inline feedback when stop_turn is rejected", async () => {
-    render(<App />);
-
-    fireEvent.change(screen.getByPlaceholderText("给 Axon 发送下一条任务说明..."), {
-      target: { value: "先启动一个可以停止的回合" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-
-    await waitFor(() =>
-      expect(connectSessionSocketMock).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: "sess_001" }),
-      ),
-    );
-
-    await act(async () => {
-      onMessage?.({
-        type: "STATE_SNAPSHOT",
-        snapshot: makeSnapshot({
-          status: "RUNNING",
-          turns: [
-            {
-              turnId: "turn_001",
-              sessionId: "sess_001",
-              primaryRunId: "run_001",
-              currentRunId: "run_001",
-              latestRunId: "run_001",
-              latestAgentId: "default",
-              displayState: "external_running",
-              latestEventType: "run.external.activity",
-              latestMessagePreview: "正在执行外部协作",
-              eventCount: 4,
-              runCount: 1,
-              activeRunCount: 1,
-              completedRunCount: 0,
-              failedRunCount: 0,
-              activeRunIds: ["run_001"],
-              completedRunIds: [],
-              failedRunIds: [],
-              hasExternalWork: true,
-              updatedAt: "2026-04-12T11:02:00Z",
-            },
-          ],
-        }),
-      });
-    });
-
-    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
-
-    await act(async () => {
-      onMessage?.({
-        type: "command.error",
-        error: "stop rejected",
-      });
-    });
-
-    expect(await screen.findByText("Failed to stop turn.")).toBeInTheDocument();
+    expect(screen.getByText("Approval required", { selector: "strong" })).toBeInTheDocument();
+    expect(screen.getAllByText("需要审批后继续").length).toBeGreaterThan(0);
   });
 
   it("loads pending HITL tickets and can respond from the workbench", async () => {
@@ -2006,7 +1362,7 @@ describe("App", () => {
         expect.objectContaining({ sessionId: "sess_002" }),
       ),
     );
-    expect(await screen.findByText("linked session")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "linked session" })).toBeInTheDocument();
     await waitFor(() =>
       expect(getRunDetailMock).toHaveBeenCalledWith("sess_002", "run_200"),
     );

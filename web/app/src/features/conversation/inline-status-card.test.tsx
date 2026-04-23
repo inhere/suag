@@ -15,3 +15,10 @@ it("renders auth required content", () => {
   expect(screen.getByText("Approval required")).toBeInTheDocument();
   expect(screen.getByText("等待团队负责人审批")).toBeInTheDocument();
 });
+
+it("renders failed content", () => {
+  render(<InlineStatusCard state="failed" detail="tool call failed" />);
+
+  expect(screen.getByText("Failed")).toBeInTheDocument();
+  expect(screen.getByText("tool call failed")).toBeInTheDocument();
+});

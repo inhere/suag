@@ -38,6 +38,8 @@ import {
 } from "../lib/session-client";
 import { connectSessionSocket, type SessionSocketConnection } from "../lib/session-ws";
 import type { SessionSocketStatus } from "../lib/session-ws";
+import type { InlineStatusCardState } from "../features/conversation/inline-status-card";
+import type { SummaryStripTone } from "../features/conversation/summary-strip";
 
 const workbenchStorageKey = "axon.web.workbench";
 const socketReconnectDelayMs = 1500;
@@ -124,35 +126,6 @@ function isWaitingForInput(state: SessionViewState): boolean {
   return displayState === "input_required" || displayState === "waiting_input";
 }
 
-function isWaitingForApproval(state: SessionViewState): boolean {
-  const currentTurn = selectCurrentTurn(state.snapshot);
-  if (!currentTurn) {
-    return false;
-  }
-
-  return currentTurn.displayState.toLowerCase() === "auth_required";
-}
-
-function canStopCurrentTurn(state: SessionViewState): boolean {
-  const currentTurn = selectCurrentTurn(state.snapshot);
-  if (!currentTurn) {
-    return false;
-  }
-
-  const displayState = currentTurn.displayState.toLowerCase();
-  return !["completed", "failed", "canceled", "waiting", "waiting_input"].includes(displayState);
-}
-
-function buildHintMessage(): string | null {
-  const nextHint = globalThis.prompt?.("Add a hint for the current turn");
-  if (!nextHint) {
-    return null;
-  }
-
-  const trimmed = nextHint.trim();
-  return trimmed ? trimmed : null;
-}
-
 function loadPersistedWorkbenchState(): PersistedWorkbenchState | null {
   try {
     const raw = globalThis.localStorage?.getItem(workbenchStorageKey);
@@ -184,6 +157,133 @@ function buildInitialViewState(): SessionViewState {
     currentSessionId: persisted.currentSessionId,
     focusedRunId: persisted.focusedRunId,
   };
+}
+
+function normalizeState(value: string | undefined): string {
+  return (value ?? "").toLowerCase();
+}
+
+function humanizeState(value: string | undefined): string {
+  const normalized = normalizeState(value);
+  if (!normalized) {
+    return "idle";
+  }
+
+  return normalized.replaceAll("_", " ");
+}
+
+function deriveSummaryTone(displayState: string): SummaryStripTone {
+  if (displayState.includes("failed") || displayState.includes("error")) {
+    return "failed";
+  }
+
+  if (displayState.includes("input_required") || displayState.includes("waiting")) {
+    return "waiting";
+  }
+
+  if (displayState.includes("auth_required") || displayState.includes("cancel")) {
+    return "attention";
+  }
+
+  if (displayState.includes("running") || displayState.includes("dispatch")) {
+    return "running";
+  }
+
+  return "attention";
+}
+
+function selectDisplayState(
+  currentTurn: ReturnType<typeof selectCurrentTurn>,
+  focusedRun: ReturnType<typeof selectFocusedRun>,
+): string {
+  const turnState = normalizeState(currentTurn?.displayState);
+  if (
+    turnState.includes("auth_required") ||
+    turnState.includes("input_required") ||
+    turnState.includes("waiting_input") ||
+    turnState.includes("failed") ||
+    turnState.includes("error") ||
+    turnState.includes("cancel") ||
+    turnState.includes("completed")
+  ) {
+    return turnState;
+  }
+
+  return normalizeState(focusedRun?.displayState || currentTurn?.displayState);
+}
+
+function buildSummaryStrip(
+  currentTurn: ReturnType<typeof selectCurrentTurn>,
+  focusedRun: ReturnType<typeof selectFocusedRun>,
+): { status: string; tone: SummaryStripTone } {
+  if (!currentTurn) {
+    return {
+      status: "尚未开始，发送一条消息创建新的 turn。",
+      tone: "attention",
+    };
+  }
+
+  const displayState = selectDisplayState(currentTurn, focusedRun);
+  const tone = deriveSummaryTone(displayState);
+
+  if (currentTurn.latestMessagePreview.trim()) {
+    return {
+      status: currentTurn.latestMessagePreview,
+      tone,
+    };
+  }
+
+  const parts = [`Turn ${currentTurn.turnId}`, humanizeState(displayState)];
+  if (focusedRun?.agentId) {
+    parts.push(focusedRun.agentId);
+  }
+  if (focusedRun?.runId) {
+    parts.push(focusedRun.runId);
+  }
+
+  return {
+    status: parts.join(" · "),
+    tone,
+  };
+}
+
+function buildInlineStatus(
+  currentTurn: ReturnType<typeof selectCurrentTurn>,
+  focusedRun: ReturnType<typeof selectFocusedRun>,
+  messages: ConversationMessage[],
+): { state: InlineStatusCardState; detail?: string | null } | null {
+  if (!currentTurn) {
+    return null;
+  }
+
+  const displayState = selectDisplayState(currentTurn, focusedRun);
+  const detail = currentTurn.latestMessagePreview || focusedRun?.latestMessageText || null;
+
+  if (displayState.includes("auth_required")) {
+    return { state: "auth_required", detail };
+  }
+
+  if (displayState.includes("input_required") || displayState.includes("waiting_input")) {
+    return { state: "input_required", detail };
+  }
+
+  if (displayState.includes("failed") || displayState.includes("error")) {
+    return { state: "failed", detail };
+  }
+
+  if (displayState.includes("cancel")) {
+    return { state: "canceled", detail };
+  }
+
+  const hasAssistantMessage = messages.some((message) => message.role === "assistant" && message.text.trim());
+  if (displayState.includes("completed") && !hasAssistantMessage) {
+    return {
+      state: "completed_empty",
+      detail: detail || "当前回合已完成，但还没有新的 assistant 文本。",
+    };
+  }
+
+  return null;
 }
 
 function persistWorkbenchState(state: SessionViewState) {
@@ -284,10 +384,7 @@ export function App() {
   const [createSessionError, setCreateSessionError] = useState<string | null>(null);
   const [startTurnPending, setStartTurnPending] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [pendingWSCommand, setPendingWSCommand] = useState<
-    null | "continue_composer" | "continue_hint" | "stop"
-  >(null);
-  const [runActionError, setRunActionError] = useState<string | null>(null);
+  const [pendingWSCommand, setPendingWSCommand] = useState<null | "continue_composer">(null);
   const [hitlError, setHITLError] = useState<string | null>(null);
   const [socketStatus, setSocketStatus] = useState<SessionSocketStatus | "idle">("idle");
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -300,8 +397,8 @@ export function App() {
   const currentSessionIDRef = useRef<string | null>(viewState.currentSessionId);
   const memoryCandidatesRefreshRequestIDRef = useRef(0);
   const memoryCandidateActionPendingIDsRef = useRef<Set<string>>(new Set());
-  const pendingWSCommandRef = useRef<null | "continue_composer" | "continue_hint" | "stop">(null);
-  const lastWSCommandRef = useRef<null | "continue_composer" | "continue_hint" | "stop">(null);
+  const pendingWSCommandRef = useRef<null | "continue_composer">(null);
+  const lastWSCommandRef = useRef<null | "continue_composer">(null);
   const runDetailRequestIDRef = useRef(0);
 
   useEffect(() => {
@@ -316,7 +413,7 @@ export function App() {
     currentSessionIDRef.current = viewState.currentSessionId;
   }, [viewState.currentSessionId]);
 
-  function setPendingWSCommandState(command: null | "continue_composer" | "continue_hint" | "stop") {
+  function setPendingWSCommandState(command: null | "continue_composer") {
     pendingWSCommandRef.current = command;
     if (command) {
       lastWSCommandRef.current = command;
@@ -525,7 +622,6 @@ export function App() {
         }
         setPendingWSCommandState(null);
         setSubmitError(null);
-        setRunActionError(null);
         setConnectionError(message);
       },
       onMessage: (message: SessionSocketMessage) => {
@@ -535,7 +631,6 @@ export function App() {
 
         if (message.type === "command.accepted") {
           setSubmitError(null);
-          setRunActionError(null);
           setPendingWSCommandState(null);
           lastWSCommandRef.current = null;
         }
@@ -543,12 +638,6 @@ export function App() {
           const pendingCommand = pendingWSCommandRef.current ?? lastWSCommandRef.current;
           if (pendingCommand === "continue_composer") {
             setSubmitError("Failed to continue turn.");
-          }
-          if (pendingCommand === "continue_hint") {
-            setRunActionError("Failed to add hint.");
-          }
-          if (pendingCommand === "stop") {
-            setRunActionError("Failed to stop turn.");
           }
           setPendingWSCommandState(null);
           lastWSCommandRef.current = null;
@@ -606,11 +695,7 @@ export function App() {
   const focusedRun = selectFocusedRun(snapshot, viewState.focusedRunId);
   const conversationMessages = buildConversationMessages(viewState);
   const waitingForInput = isWaitingForInput(viewState);
-  const waitingForApproval = isWaitingForApproval(viewState);
-  const stopEnabled = canStopCurrentTurn(viewState);
   const submitPending = startTurnPending || pendingWSCommand === "continue_composer";
-  const stopPending = pendingWSCommand === "stop";
-  const addHintPending = pendingWSCommand === "continue_hint";
   const contextSessionLabel = `Session ${viewState.currentSessionId ?? "none"}`;
   const contextTurnLabel = `Turn ${currentTurn?.turnId ?? "none"}`;
   const contextRunLabel = `Run ${focusedRun?.runId ?? viewState.focusedRunId ?? "none"}`;
@@ -628,6 +713,12 @@ export function App() {
       : socketStatus === "disconnected"
         ? `Session ${viewState.currentSessionId} disconnected.`
         : `Session ${viewState.currentSessionId} connecting...`;
+  const chatHeaderTitle = snapshot?.title || "Chat";
+  const chatHeaderMeta = currentTurn
+    ? `Turn ${currentTurn.turnId} · ${humanizeState(selectDisplayState(currentTurn, focusedRun))}`
+    : connectionStatusMessage;
+  const summaryStrip = buildSummaryStrip(currentTurn, focusedRun);
+  const inlineStatus = buildInlineStatus(currentTurn, focusedRun, conversationMessages);
 
   async function createNewSession(): Promise<string> {
     setCreateSessionError(null);
@@ -665,7 +756,6 @@ export function App() {
 
     setSubmitError(null);
     if (waitingForInput) {
-      setRunActionError(null);
       setPendingWSCommandState("continue_composer");
       const sessionId = await ensureSession().catch(() => null);
       if (!sessionId) {
@@ -698,37 +788,6 @@ export function App() {
     } finally {
       setStartTurnPending(false);
     }
-  }
-
-  function handleAddHint() {
-    if (!waitingForInput || addHintPending) {
-      return;
-    }
-
-    const message = buildHintMessage();
-    if (!message) {
-      return;
-    }
-
-    setRunActionError(null);
-    setPendingWSCommandState("continue_hint");
-    socketRef.current?.sendContinueTurn({
-      message,
-      agentId: "default",
-      initiatorType: "user",
-    });
-  }
-
-  function handleStopTurn() {
-    if (!stopEnabled || !currentTurn || stopPending) {
-      return;
-    }
-
-    setRunActionError(null);
-    setPendingWSCommandState("stop");
-    socketRef.current?.sendStopTurn({
-      turnId: currentTurn.turnId,
-    });
   }
 
   async function handleRespondHITL(ticketId: string, instruction: string) {
@@ -838,14 +897,6 @@ export function App() {
     setSessionListReloadKey((current) => current + 1);
   }
 
-  function handleRetryFocusedRunDetail() {
-    if (!viewState.currentSessionId || !viewState.focusedRunId) {
-      return;
-    }
-
-    requestRunDetail(viewState.currentSessionId, viewState.focusedRunId);
-  }
-
   return (
     <AppShell
       sessions={viewState.recentSessions}
@@ -866,16 +917,15 @@ export function App() {
       messages={conversationMessages}
       currentTurn={currentTurn}
       waitingForInput={waitingForInput}
+      chatHeaderTitle={chatHeaderTitle}
+      chatHeaderMeta={chatHeaderMeta}
+      summaryStripStatus={summaryStrip.status}
+      summaryStripTone={summaryStrip.tone}
+      inlineStatus={inlineStatus}
       submitPending={submitPending}
       submitError={submitError}
       runs={snapshot?.runs.length ? snapshot.runs : activeRuns}
-      externalTasks={snapshot?.externalTasks ?? []}
-      externalActivities={snapshot?.externalActivities ?? []}
-      externalMessages={snapshot?.externalMessages ?? []}
       focusedRunId={focusedRun?.runId ?? viewState.focusedRunId}
-      focusedRunDetailStatus={
-        focusedRun ? viewState.runDetailStatus[focusedRun.runId] ?? "idle" : "idle"
-      }
       hitlTickets={hitlTickets}
       hitlLoading={hitlLoading}
       memoryCandidates={memoryCandidates}
@@ -883,12 +933,6 @@ export function App() {
       memoryCandidatesError={memoryCandidatesError}
       memoryCandidateActionError={memoryCandidateActionError}
       memoryCandidateActionPendingIds={memoryCandidateActionPendingIds}
-      canStop={stopEnabled}
-      stopPending={stopPending}
-      canAddHint={waitingForInput}
-      waitingForApproval={waitingForApproval}
-      addHintPending={addHintPending}
-      runActionError={runActionError}
       hitlError={hitlError}
       debugOpen={debugOpen}
       debugEvents={snapshot?.events ?? []}
@@ -907,13 +951,6 @@ export function App() {
       onSubmitMessage={(message) => {
         void handleSubmit(message).catch(() => {});
       }}
-      onFocusRun={(runId) => {
-        setViewState((current) => ({
-          ...current,
-          focusedRunId: runId,
-        }));
-      }}
-      onRetryFocusedRunDetail={handleRetryFocusedRunDetail}
       onRetryMemoryCandidates={() => {
         if (!viewState.currentSessionId) {
           return;
@@ -932,9 +969,6 @@ export function App() {
       onOpenHITLContext={handleOpenHITLContext}
       onRespondHITL={(ticketId, instruction) => handleRespondHITL(ticketId, instruction)}
       onDismissHITL={(ticketId) => handleDismissHITL(ticketId)}
-      onStop={handleStopTurn}
-      onAddHint={handleAddHint}
-      onOpenDebug={() => setDebugOpen(true)}
       onCloseDebug={() => setDebugOpen(false)}
     />
   );
