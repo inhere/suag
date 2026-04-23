@@ -57,6 +57,7 @@ describe("session-client", () => {
             {
               turnId: "turn_001",
               sessionId: "sess_001",
+              inputSummary: "hello",
               primaryRunId: "run_001",
               currentRunId: "run_001",
               latestRunId: "run_001",
@@ -279,6 +280,7 @@ describe("session-client", () => {
           turn: {
             turnId: "turn_001",
             sessionId: "sess_001",
+            inputSummary: "hello",
             primaryRunId: "run_001",
             currentRunId: "run_001",
             latestRunId: "run_001",

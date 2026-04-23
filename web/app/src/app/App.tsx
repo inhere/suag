@@ -67,11 +67,11 @@ function buildConversationMessages(state: SessionViewState): ConversationMessage
   }
 
   const currentTurn = selectCurrentTurn(snapshot);
-  if (currentTurn?.latestMessagePreview) {
+  if (currentTurn?.inputSummary?.trim()) {
     messages.push({
       id: `${currentTurn.turnId}:user`,
       role: "user",
-      text: currentTurn.latestMessagePreview,
+      text: currentTurn.inputSummary,
       timestamp: formatConversationTimestamp(currentTurn.updatedAt || snapshot.generatedAt),
     });
   }
@@ -226,6 +226,19 @@ function buildSummaryStrip(
   const displayState = selectDisplayState(currentTurn, focusedRun);
   const tone = deriveSummaryTone(displayState);
 
+  if (displayState.includes("completed")) {
+    const assistantText = stringsFirstNonEmpty(
+      focusedRun?.summary,
+      focusedRun?.latestMessageText,
+    );
+    if (assistantText) {
+      return {
+        status: "已完成",
+        tone,
+      };
+    }
+  }
+
   if (currentTurn.latestMessagePreview.trim()) {
     return {
       status: currentTurn.latestMessagePreview,
@@ -245,6 +258,15 @@ function buildSummaryStrip(
     status: parts.join(" · "),
     tone,
   };
+}
+
+function stringsFirstNonEmpty(...values: Array<string | null | undefined>): string {
+  for (const value of values) {
+    if (value && value.trim()) {
+      return value;
+    }
+  }
+  return "";
 }
 
 function buildInlineStatus(

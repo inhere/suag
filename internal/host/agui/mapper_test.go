@@ -78,6 +78,9 @@ func TestBuildStateSnapshot(t *testing.T) {
 			AgentID:   "default",
 			Sequence:  2,
 			CreatedAt: time.Date(2026, 4, 12, 8, 0, 0, 0, time.UTC),
+			Payload: map[string]any{
+				"message": "implement feature x",
+			},
 		},
 		{
 			Type:      "run.started",
@@ -87,6 +90,9 @@ func TestBuildStateSnapshot(t *testing.T) {
 			AgentID:   "default",
 			Sequence:  3,
 			CreatedAt: time.Date(2026, 4, 12, 8, 0, 1, 0, time.UTC),
+			Payload: map[string]any{
+				"message": "implement feature x",
+			},
 		},
 		{
 			Type:      "run.started",
@@ -291,6 +297,9 @@ func TestBuildStateSnapshot(t *testing.T) {
 	}
 	if rawTurns[0]["turnId"] != "turn_002" {
 		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].turnId = %v, want %q", rawTurns[0]["turnId"], "turn_002")
+	}
+	if rawTurns[0]["inputSummary"] != "implement feature x" {
+		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].inputSummary = %v, want %q", rawTurns[0]["inputSummary"], "implement feature x")
 	}
 	if rawTurns[0]["runCount"] != 2 {
 		t.Fatalf("BuildStateSnapshot().Snapshot.turns[0].runCount = %v, want %d", rawTurns[0]["runCount"], 2)

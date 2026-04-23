@@ -89,6 +89,7 @@ export type StartTurnResult = {
 export type StateSnapshotTurn = {
   turnId: string;
   sessionId: string;
+  inputSummary?: string;
   primaryRunId: string;
   currentRunId: string;
   latestRunId: string;

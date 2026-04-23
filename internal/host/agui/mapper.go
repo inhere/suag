@@ -215,6 +215,7 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 				mappedTurns = append(mappedTurns, map[string]any{
 					"turnId":               event.TurnID,
 					"sessionId":            event.SessionID,
+					"inputSummary":         "",
 					"primaryRunId":         "",
 					"currentRunId":         "",
 					"latestRunId":          "",
@@ -549,6 +550,9 @@ func payloadString(payload any, key string) string {
 }
 
 func mergeTurnSnapshot(target map[string]any, event HostEvent) {
+	if inputSummary := payloadString(event.Payload, "message"); inputSummary != "" {
+		target["inputSummary"] = inputSummary
+	}
 	if target["primaryRunId"].(string) == "" {
 		target["primaryRunId"] = event.RunID
 	}

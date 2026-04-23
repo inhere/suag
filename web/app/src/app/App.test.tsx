@@ -57,6 +57,7 @@ function makeSnapshot(overrides: Partial<StateSnapshotV0> = {}): StateSnapshotV0
       {
         turnId: "turn_001",
         sessionId: "sess_001",
+        inputSummary: "请整理当前页面结构",
         primaryRunId: "run_001",
         currentRunId: "run_001",
         latestRunId: "run_001",
@@ -301,6 +302,7 @@ describe("App", () => {
     });
 
     expect(await screen.findByRole("heading", { name: "host runtime" })).toBeInTheDocument();
+    expect(screen.getByText("请整理当前页面结构")).toBeInTheDocument();
     expect((await screen.findAllByText("thinking...")).length).toBeGreaterThan(0);
     expect(screen.getByText("run_001")).toBeInTheDocument();
     expect(screen.getAllByText("Turn turn_001").length).toBeGreaterThan(0);
@@ -616,10 +618,11 @@ describe("App", () => {
           turnId: "turn_201",
           lastTurnId: "turn_201",
           turns: [
-            {
-              turnId: "turn_201",
-              sessionId: "sess_002",
-              primaryRunId: "run_201",
+        {
+          turnId: "turn_201",
+          sessionId: "sess_002",
+          inputSummary: "恢复历史上下文",
+          primaryRunId: "run_201",
               currentRunId: "run_201",
               latestRunId: "run_201",
               latestAgentId: "reviewer",
@@ -772,6 +775,7 @@ describe("App", () => {
         {
           turnId: "turn_detail",
           sessionId: "sess_004",
+          inputSummary: "restore from detail",
           primaryRunId: "run_detail",
           currentRunId: "run_detail",
           latestRunId: "run_detail",
@@ -847,7 +851,8 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "detail restored" })).toBeInTheDocument();
     expect(screen.getAllByText("Turn turn_detail").length).toBeGreaterThan(0);
     expect(screen.getByText("run_detail")).toBeInTheDocument();
-    expect(screen.getAllByText("detail summary").length).toBeGreaterThan(0);
+    expect(screen.getByText("restore from detail")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("已完成");
     expect(screen.getAllByText("detail thinking...").length).toBeGreaterThan(0);
     expect(screen.queryByText("Waiting for websocket snapshot...")).not.toBeInTheDocument();
   });
