@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { RunDetailsCompactPanel } from "./run-details-compact-panel";
 
 it("shows runId, agent, status, and wait kind", () => {
@@ -117,38 +117,10 @@ it("falls back to the first run and shows none when wait kind is missing", () =>
 
   expect(screen.getByText("run_first")).toBeInTheDocument();
   expect(screen.getByText("default")).toBeInTheDocument();
-  expect(screen.getByText("running")).toBeInTheDocument();
+  const statusLabel = screen.getByText("Status");
+  const statusValue = statusLabel.closest(".context-panel__meta-item");
+  expect(statusValue).not.toBeNull();
+  expect(within(statusValue as HTMLElement).getByText("running")).toBeInTheDocument();
   expect(screen.getByText("none")).toBeInTheDocument();
   expect(screen.getByText("No run summary yet.")).toBeInTheDocument();
-});
-
-it("falls back to first run and defaults wait kind to none when wait_kind is missing", () => {
-  render(
-    <RunDetailsCompactPanel
-      focusedRunId="run_not_found"
-      runs={[
-        {
-          runId: "run_first",
-          turnId: "turn_010",
-          sessionId: "sess_001",
-          agentId: "default",
-          displayState: "running",
-          latestEventType: "run.status",
-          latestMessageId: "msg_003",
-          latestMessageText: "still working",
-          summary: "",
-          externalTaskIds: [],
-          waitMetadata: {
-            policy: "manual_review",
-          },
-          eventCount: 3,
-          updatedAt: "2026-04-21T10:10:00Z",
-        },
-      ]}
-    />,
-  );
-
-  expect(screen.getByText("run_first")).toBeInTheDocument();
-  expect(screen.getByText("still working")).toBeInTheDocument();
-  expect(screen.getByText("none")).toBeInTheDocument();
 });

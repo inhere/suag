@@ -17,8 +17,8 @@
 - Host learning-system 当前已形成 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md + MEMORY.md / USER.md` 闭环，并已验证 recall 会影响 self-loop 结果且不会污染 session history
 - `tools / mcp / skills` 长线治理设计见 `docs/superpowers/specs/2026-04-20-host-capability-governance-design.md`，当前按“agentcore 只保留 runtime kernel 与 tool contract，axon 负责 capability governance” 方向持续推进
 - Capability governance 当前已完成到 Phase C-D：`CapabilityPolicy`、tool subset、skill matching、resource hints、planner hint 已贯通；后续继续推进 richer skill matching、tool catalog 与 recall/policy/skills/planner 联动
-- Web 默认界面的 `Chat-first` 设计见 `docs/superpowers/specs/2026-04-21-web-chat-first-layout-design.md`，当前已完成 Task 1 壳层重构与 Task 2 中栏聊天主视图改造；后续继续推进右栏紧凑 context 与 App 接线
-- `Chat-first` 默认界面的实现计划见 `docs/superpowers/plans/2026-04-21-web-chat-first-layout-implementation-plan.md`，当前按 `Task 1 -> Task 2 -> Task 3 -> Task 4` 顺序推进，Task 3（紧凑右栏 context 面板替换）已完成并通过测试，当前进入 Task 4 准备阶段
+- Web 默认界面的 `Chat-first` 设计见 `docs/superpowers/specs/2026-04-21-web-chat-first-layout-design.md`，当前已完成 Task 1 壳层重构、Task 2 中栏聊天主视图改造、Task 3 右栏紧凑 context 面板替换；后续继续推进 App 级接线与回归验证
+- `Chat-first` 默认界面的实现计划见 `docs/superpowers/plans/2026-04-21-web-chat-first-layout-implementation-plan.md`，当前按 `Task 1 -> Task 2 -> Task 3 -> Task 4` 顺序推进，Task 3 已通过定向测试与 build 验证，当前进入 Task 4（App state 接线与整体验证）
 <!-- PROCESSING WORKS:END -->
 
 ## 项目编码规范

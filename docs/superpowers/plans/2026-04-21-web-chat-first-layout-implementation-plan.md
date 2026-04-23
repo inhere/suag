@@ -381,7 +381,7 @@ git commit -m "feat: promote conversation pane to chat-first view"
 - Modify: `web/app/src/app/app-shell.tsx`
 - Modify: `web/app/src/styles.css`
 
-- [ ] **Step 1: 写右栏紧凑块失败测试**
+- [x] **Step 1: 写右栏紧凑块失败测试**
 
 新增两个组件测试：
 
@@ -399,7 +399,7 @@ git commit -m "feat: promote conversation pane to chat-first view"
 Run: `pnpm --dir web/app test -- session-summary-panel.test.tsx run-details-compact-panel.test.tsx run-inspector.test.tsx`
 Expected: FAIL，提示右栏仍是旧的重型 inspector
 
-- [ ] **Step 2: 实现 Session Summary 与 Compact Run Details**
+- [x] **Step 2: 实现 Session Summary 与 Compact Run Details**
 
 实现两个新组件：
 
@@ -430,7 +430,7 @@ type RunDetailsCompactPanelProps = {
 - 两个组件都保持“概览块”定位
 - `run-details-compact-panel` 只展示必要字段，不复刻旧 `FocusedRunPanel`
 
-- [ ] **Step 3: 降级 run-inspector 默认职责**
+- [x] **Step 3: 降级 run-inspector 默认职责**
 
 在 `web/app/src/features/run-inspector/run-inspector.tsx` 中二选一：
 
@@ -454,7 +454,7 @@ export function RunInspector(props: RunInspectorProps) {
 - 不删除 future `Workbench` 可能复用的旧子组件文件
 - 但默认壳层不再渲染它们
 
-- [ ] **Step 4: 调整 AppShell 右栏顺序与样式**
+- [x] **Step 4: 调整 AppShell 右栏顺序与样式**
 
 在 `web/app/src/app/app-shell.tsx` 和 `web/app/src/styles.css` 中确认右栏最终顺序：
 
@@ -470,7 +470,7 @@ export function RunInspector(props: RunInspectorProps) {
 - `.context-panel__meta`
 - `.run-inspector--compact`
 
-- [ ] **Step 5: 运行右栏测试并提交**
+- [x] **Step 5: 运行右栏测试并提交**
 
 Run: `pnpm --dir web/app test -- run-inspector.test.tsx session-summary-panel.test.tsx run-details-compact-panel.test.tsx`
 Expected: PASS
