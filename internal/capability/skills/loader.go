@@ -1,0 +1,191 @@
+package skills
+
+import (
+	"io/fs"
+	"path"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// LoadDescriptorsFromFile reuses the existing SKILL.md parser but converts the
+// result into capability descriptors instead of executable skill-tools.
+func LoadDescriptorsFromFile(path string) ([]Descriptor, error) {
+	parsed, err := ParseSkillsFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	descriptors := make([]Descriptor, 0, len(parsed))
+	for _, skill := range parsed {
+		desc := Descriptor{
+			Name:              strings.TrimSpace(skill.Name),
+			Description:       strings.TrimSpace(skill.Description),
+			SourcePath:        strings.TrimSpace(path),
+			TriggerHints:      inferTriggerHints(skill),
+			ScopeHints:        inferScopeHints(skill),
+			SystemPromptParts: inferPromptParts(skill),
+			ToolAllowlist:     inferToolAllowlist(skill),
+			ResourceHints:     inferResourceHints(path, skill.Name),
+		}
+		if desc.Name == "" {
+			continue
+		}
+		descriptors = append(descriptors, desc)
+	}
+	return descriptors, nil
+}
+
+func inferTriggerHints(skill SkillSource) []string {
+	hints := []string{skill.Name}
+	if strings.TrimSpace(skill.Description) != "" {
+		hints = append(hints, skill.Description)
+	}
+	return cloneStrings(hints)
+}
+
+func inferPromptParts(skill SkillSource) []string {
+	if strings.TrimSpace(skill.Description) == "" {
+		return nil
+	}
+	return []string{
+		"[Skill " + strings.TrimSpace(skill.Name) + "] " + strings.TrimSpace(skill.Description),
+	}
+}
+
+func inferScopeHints(skill SkillSource) []string {
+	desc := strings.ToLower(strings.TrimSpace(skill.Description))
+	if desc == "" {
+		return nil
+	}
+
+	var scopes []string
+	if strings.Contains(desc, "brainstorm") || strings.Contains(desc, "idea") ||
+		strings.Contains(desc, "plan") || strings.Contains(desc, "planning") ||
+		strings.Contains(desc, "头脑风暴") || strings.Contains(desc, "规划") {
+		scopes = append(scopes, "planning")
+	}
+	if strings.Contains(desc, "review") || strings.Contains(desc, "inspect") ||
+		strings.Contains(desc, "analy") || strings.Contains(desc, "检查") ||
+		strings.Contains(desc, "分析") {
+		scopes = append(scopes, "analysis")
+	}
+	if strings.Contains(desc, "edit") || strings.Contains(desc, "write") ||
+		strings.Contains(desc, "modify") || strings.Contains(desc, "修复") ||
+		strings.Contains(desc, "修改") || strings.Contains(desc, "更新") {
+		scopes = append(scopes, "edit")
+	}
+	if strings.Contains(desc, "run") || strings.Contains(desc, "test") ||
+		strings.Contains(desc, "command") || strings.Contains(desc, "运行") ||
+		strings.Contains(desc, "命令") {
+		scopes = append(scopes, "execution")
+	}
+	return cloneStrings(scopes)
+}
+
+func inferToolAllowlist(skill SkillSource) []string {
+	desc := strings.ToLower(strings.TrimSpace(skill.Description))
+	if desc == "" {
+		return nil
+	}
+
+	var names []string
+	if strings.Contains(desc, "read") || strings.Contains(desc, "inspect") || strings.Contains(desc, "review") ||
+		strings.Contains(desc, "brainstorm") || strings.Contains(desc, "ask questions") ||
+		strings.Contains(desc, "查看") || strings.Contains(desc, "检查") || strings.Contains(desc, "分析") {
+		names = append(names, "file_read", "file_list")
+	}
+	if strings.Contains(desc, "write") || strings.Contains(desc, "edit") || strings.Contains(desc, "modify") ||
+		strings.Contains(desc, "修复") || strings.Contains(desc, "修改") || strings.Contains(desc, "更新") {
+		names = append(names, "file_write")
+	}
+	if strings.Contains(desc, "shell") || strings.Contains(desc, "command") || strings.Contains(desc, "test") ||
+		strings.Contains(desc, "运行") || strings.Contains(desc, "命令") {
+		names = append(names, "shell_exec")
+	}
+	return cloneStrings(names)
+}
+
+func inferResourceHints(skillPath string, skillName string) []ResourceHint {
+	skillPath = strings.TrimSpace(skillPath)
+	if skillPath == "" {
+		return nil
+	}
+
+	skillDir := filepath.Dir(skillPath)
+	skillName = strings.TrimSpace(skillName)
+	var hints []ResourceHint
+	for _, subdir := range []string{"references", "assets"} {
+		kind := inferResourceKind(subdir)
+		root := filepath.Join(skillDir, subdir)
+		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil || d == nil || d.IsDir() {
+				return nil
+			}
+			if !isSkillResourceFile(path) {
+				return nil
+			}
+			absPath, err := filepath.Abs(path)
+			if err != nil {
+				return nil
+			}
+			hints = append(hints, ResourceHint{
+				SkillName:  skillName,
+				Kind:       kind,
+				Path:       absPath,
+				SourcePath: skillPath,
+				Priority:   resourceHintPriority(kind, absPath),
+			})
+			return nil
+		})
+	}
+	if len(hints) == 0 {
+		return nil
+	}
+	sort.SliceStable(hints, func(i, j int) bool {
+		if hints[i].Priority != hints[j].Priority {
+			return hints[i].Priority > hints[j].Priority
+		}
+		return hints[i].Path < hints[j].Path
+	})
+	return cloneResourceHints(hints)
+}
+
+func isSkillResourceFile(path string) bool {
+	switch strings.ToLower(filepath.Ext(strings.TrimSpace(path))) {
+	case ".md", ".txt", ".yaml", ".yml", ".json":
+		return true
+	default:
+		return false
+	}
+}
+
+func inferResourceKind(subdir string) string {
+	switch strings.ToLower(strings.TrimSpace(subdir)) {
+	case "references":
+		return "reference"
+	case "assets":
+		return "asset"
+	default:
+		return "resource"
+	}
+}
+
+func resourceHintPriority(kind, filePath string) int {
+	priority := 0
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "reference":
+		priority += 100
+	case "asset":
+		priority += 50
+	}
+
+	name := strings.ToLower(strings.TrimSpace(path.Base(filePath)))
+	for _, marker := range []string{"guide", "readme", "prompt"} {
+		if strings.Contains(name, marker) {
+			priority += 20
+			break
+		}
+	}
+	return priority
+}

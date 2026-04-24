@@ -12,8 +12,8 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	"github.com/inhere/axon/internal/capabilities/runtimecaps"
-	capskills "github.com/inhere/axon/internal/capabilities/skills"
+	"github.com/inhere/axon/internal/capability/runtimecaps"
+	capskills "github.com/inhere/axon/internal/capability/skills"
 	appconfig "github.com/inhere/axon/internal/config"
 	"github.com/inhere/axon/internal/host/gateway"
 	"github.com/inhere/axon/internal/ops/cron"

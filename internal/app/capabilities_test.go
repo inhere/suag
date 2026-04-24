@@ -8,7 +8,7 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/testutil/assert"
 
-	"github.com/inhere/axon/internal/capabilities/runtimecaps"
+	"github.com/inhere/axon/internal/capability/runtimecaps"
 	axconfig "github.com/inhere/axon/internal/config"
 	"github.com/inhere/axon/internal/platform/tools"
 	toolsmcp "github.com/inhere/axon/internal/platform/tools/mcp"

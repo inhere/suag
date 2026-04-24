@@ -4,23 +4,23 @@
 
 **Goal:** 收紧 skill resource hints 边界，并让 recall、skills、tool policy 开始共同影响 planner-lite 的 turn 级提示结果。
 
-**Architecture:** 继续保持 `agentcore` 只消费解析后的 runtime context，不把 capability governance 下沉到 kernel。先把 `resolved_resource_hints` 从路径列表升级为带来源信息的结构化 hint，并在 `intrunner` 消费时做硬边界校验；再增强 `internal/capabilities/skills` 的 matcher/ranking；最后补一个最小 `PostTurnActionHook`，让 planner-lite 消费 recall + skills + tool subset 信号并产出更可解释的 hint。
+**Architecture:** 继续保持 `agentcore` 只消费解析后的 runtime context，不把 capability governance 下沉到 kernel。先把 `resolved_resource_hints` 从路径列表升级为带来源信息的结构化 hint，并在 `intrunner` 消费时做硬边界校验；再增强 `internal/capability/skills` 的 matcher/ranking；最后补一个最小 `PostTurnActionHook`，让 planner-lite 消费 recall + skills + tool subset 信号并产出更可解释的 hint。
 
-**Tech Stack:** Go, `internal/capabilities/skills`, `internal/app`, `internal/host/intrunner`, `internal/host/session`, `gookit` test assertions
+**Tech Stack:** Go, `internal/capability/skills`, `internal/app`, `internal/host/intrunner`, `internal/host/session`, `gookit` test assertions
 
 ---
 
 ## File Structure
 
-- Modify: `internal/capabilities/skills/types.go`
+- Modify: `internal/capability/skills/types.go`
   Responsibility: 定义结构化 `ResourceHint` 与 richer skill resolution 输出。
-- Modify: `internal/capabilities/skills/loader.go`
+- Modify: `internal/capability/skills/loader.go`
   Responsibility: 推断 resource hint 来源、类型、优先级与排序。
-- Modify: `internal/capabilities/skills/resolver.go`
+- Modify: `internal/capability/skills/resolver.go`
   Responsibility: richer matching / ranking，输出更稳定的 skill 选择结果。
-- Modify: `internal/capabilities/skills/registry.go`
+- Modify: `internal/capability/skills/registry.go`
   Responsibility: 深拷贝结构化 resource hint。
-- Modify: `internal/capabilities/skills/skills_test.go`
+- Modify: `internal/capability/skills/skills_test.go`
   Responsibility: 验证 parser / loader / resolver 的结构化输出与排序。
 - Modify: `internal/app/server.go`
   Responsibility: 把 resolved capability signals 编码到 runtime context。
@@ -46,17 +46,17 @@
 ## Task 1: Resource Hints Hard Boundary And Provenance
 
 **Files:**
-- Modify: `internal/capabilities/skills/types.go`
-- Modify: `internal/capabilities/skills/loader.go`
-- Modify: `internal/capabilities/skills/registry.go`
-- Modify: `internal/capabilities/skills/skills_test.go`
+- Modify: `internal/capability/skills/types.go`
+- Modify: `internal/capability/skills/loader.go`
+- Modify: `internal/capability/skills/registry.go`
+- Modify: `internal/capability/skills/skills_test.go`
 - Modify: `internal/app/server.go`
 - Modify: `internal/app/server_test.go`
 - Modify: `internal/host/intrunner/runtime_context_resources.go`
 - Modify: `internal/host/intrunner/runner_test.go`
 
 - [x] **Step 1: 写 failing tests，锁定结构化 hint 与 runtime 校验边界**
-- [x] **Step 2: 运行 `go test ./internal/capabilities/skills ./internal/app ./internal/host/intrunner`，确认按预期失败**
+- [x] **Step 2: 运行 `go test ./internal/capability/skills ./internal/app ./internal/host/intrunner`，确认按预期失败**
 - [x] **Step 3: 实现 `ResourceHint` 结构，补充 skill 来源、kind、priority、source_path**
 - [x] **Step 4: 在 loader 中实现稳定排序**
 规则：
@@ -68,21 +68,21 @@
 - [ ] **Step 7: 提交**
 
 ```bash
-git add internal/capabilities/skills/types.go internal/capabilities/skills/loader.go internal/capabilities/skills/registry.go internal/capabilities/skills/skills_test.go internal/app/server.go internal/app/server_test.go internal/host/intrunner/runtime_context_resources.go internal/host/intrunner/runner_test.go
+git add internal/capability/skills/types.go internal/capability/skills/loader.go internal/capability/skills/registry.go internal/capability/skills/skills_test.go internal/app/server.go internal/app/server_test.go internal/host/intrunner/runtime_context_resources.go internal/host/intrunner/runner_test.go
 git commit -m "feat: harden skill resource hint consumption"
 ```
 
 ## Task 2: Richer Skill Matching And Ranking
 
 **Files:**
-- Modify: `internal/capabilities/skills/types.go`
-- Modify: `internal/capabilities/skills/resolver.go`
-- Modify: `internal/capabilities/skills/skills_test.go`
+- Modify: `internal/capability/skills/types.go`
+- Modify: `internal/capability/skills/resolver.go`
+- Modify: `internal/capability/skills/skills_test.go`
 - Modify: `internal/app/server.go`
 - Modify: `internal/app/server_test.go`
 
 - [x] **Step 1: 写 failing tests，覆盖 message / recall / name / description 多源命中**
-- [x] **Step 2: 运行 `go test ./internal/capabilities/skills ./internal/app`，确认失败原因正确**
+- [x] **Step 2: 运行 `go test ./internal/capability/skills ./internal/app`，确认失败原因正确**
 - [x] **Step 3: 实现 richer match 输出**
 最小输出：
 `match_source`、`match_terms`、`score`
@@ -91,7 +91,7 @@ git commit -m "feat: harden skill resource hint consumption"
 - [ ] **Step 6: 提交**
 
 ```bash
-git add internal/capabilities/skills/types.go internal/capabilities/skills/resolver.go internal/capabilities/skills/skills_test.go internal/app/server.go internal/app/server_test.go
+git add internal/capability/skills/types.go internal/capability/skills/resolver.go internal/capability/skills/skills_test.go internal/app/server.go internal/app/server_test.go
 git commit -m "feat: add richer skill matching signals"
 ```
 
@@ -129,7 +129,7 @@ git commit -m "feat: feed capability signals into planner hints"
 - [ ] **Step 2: 运行相关回归测试**
 
 ```bash
-go test ./internal/capabilities/skills ./internal/app ./internal/host/intrunner ./internal/host/session
+go test ./internal/capability/skills ./internal/app ./internal/host/intrunner ./internal/host/session
 ```
 
 - [ ] **Step 3: 提交**

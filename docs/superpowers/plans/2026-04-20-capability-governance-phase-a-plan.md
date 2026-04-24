@@ -4,7 +4,7 @@
 
 **Goal:** 为 Host capability governance 落第一阶段骨架：收口全局能力构建入口、定义最小 `CapabilityManager / CapabilitySet / ResolvedTurnCapabilities / ToolProvider` 对象，并让 Host intrunner 开始消费 resolved tool subset 而不是直接依赖 app 全局 registry。
 
-**Architecture:** 本阶段严格限制范围，只实现 capability governance 的最小骨架与 tools 主链接线，不实现 MCP provider、skill loader、skill resolution。实现上保持 `agentcore` 不变，新增 `internal/capabilities/runtimecaps` 作为能力装配中枢，`internal/app` 改为构建默认 capability manager，再由 Host server/intrunner 使用 turn 级 resolved tools。
+**Architecture:** 本阶段严格限制范围，只实现 capability governance 的最小骨架与 tools 主链接线，不实现 MCP provider、skill loader、skill resolution。实现上保持 `agentcore` 不变，新增 `internal/capability/runtimecaps` 作为能力装配中枢，`internal/app` 改为构建默认 capability manager，再由 Host server/intrunner 使用 turn 级 resolved tools。
 
 **Tech Stack:** Go 1.24, `internal/platform/tools`, `internal/app`, `internal/host`, `github.com/gookit/goutil/testutil/assert`, `go test`
 
@@ -14,11 +14,11 @@
 
 本阶段建议新增/修改的核心文件如下：
 
-- Create: `internal/capabilities/runtimecaps/types.go`
+- Create: `internal/capability/runtimecaps/types.go`
   - 定义 `CapabilityManager`、`CapabilitySet`、`ResolvedTurnCapabilities`、`ToolProvider`、`ToolRef`、`CapabilityPolicy`、`CapabilityScope`
-- Create: `internal/capabilities/runtimecaps/manager.go`
+- Create: `internal/capability/runtimecaps/manager.go`
   - 实现最小 capability manager、默认 capability set 生成、turn 级 resolved tools 选择
-- Create: `internal/capabilities/runtimecaps/manager_test.go`
+- Create: `internal/capability/runtimecaps/manager_test.go`
   - 覆盖 provider 注册、default set、resolved tool subset
 - Modify: `internal/platform/tools/registry.go`
   - 增加 clone/filter 支撑，保证 turn 级可以拿到 registry 子集
@@ -37,7 +37,7 @@
 
 说明：
 
-- 本阶段先不创建 `internal/capabilities/skills`
+- 本阶段先不创建 `internal/capability/skills`
 - 本阶段先不创建 `internal/platform/tools/mcp`
 - 本阶段不改 `pkg/agentcore`
 
@@ -46,9 +46,9 @@
 ### Task 1: RuntimeCaps Skeleton
 
 **Files:**
-- Create: `internal/capabilities/runtimecaps/types.go`
-- Create: `internal/capabilities/runtimecaps/manager.go`
-- Create: `internal/capabilities/runtimecaps/manager_test.go`
+- Create: `internal/capability/runtimecaps/types.go`
+- Create: `internal/capability/runtimecaps/manager.go`
+- Create: `internal/capability/runtimecaps/manager_test.go`
 
 - [x] **Step 1: 先写 provider 注册与 default capability set 的失败测试**
 
@@ -85,7 +85,7 @@ func TestCapabilityManager_BuildDefaultSetIncludesRegisteredToolRefs(t *testing.
 
 - [x] **Step 2: 运行测试确认失败**
 
-Run: `go test ./internal/capabilities/runtimecaps -run TestCapabilityManager_BuildDefaultSetIncludesRegisteredToolRefs -v`
+Run: `go test ./internal/capability/runtimecaps -run TestCapabilityManager_BuildDefaultSetIncludesRegisteredToolRefs -v`
 
 Expected:
 
@@ -133,7 +133,7 @@ type ResolvedTurnCapabilities struct {
 
 - [x] **Step 4: 运行 package tests 确认通过**
 
-Run: `go test ./internal/capabilities/runtimecaps -v`
+Run: `go test ./internal/capability/runtimecaps -v`
 
 Expected:
 
@@ -142,7 +142,7 @@ Expected:
 - [x] **Step 5: Commit**
 
 ```bash
-git add internal/capabilities/runtimecaps/types.go internal/capabilities/runtimecaps/manager.go internal/capabilities/runtimecaps/manager_test.go
+git add internal/capability/runtimecaps/types.go internal/capability/runtimecaps/manager.go internal/capability/runtimecaps/manager_test.go
 git commit -m "feat: add runtime capability manager skeleton"
 ```
 
@@ -406,7 +406,7 @@ git commit -m "feat: let host intrunner consume resolved tool subsets"
 
 Run:
 
-- `go test ./internal/capabilities/runtimecaps -v`
+- `go test ./internal/capability/runtimecaps -v`
 - `go test ./internal/platform/tools -v`
 - `go test ./internal/app -v`
 - `go test ./internal/host/intrunner ./internal/host/gateway`

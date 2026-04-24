@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inhere/axon/internal/capabilities/runtimecaps"
+	"github.com/inhere/axon/internal/capability/runtimecaps"
 	axconfig "github.com/inhere/axon/internal/config"
 	"github.com/inhere/axon/internal/platform/tools"
 )

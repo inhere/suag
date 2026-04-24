@@ -6,7 +6,7 @@
 
 **Architecture:** 本阶段只做 provider 来源统一，不提前实现 skills runtime、turn-time dynamic resolution 或复杂 policy。实现上新增一个 MCP tool provider，把 `tools/mcp.Client` 暴露成 `runtimecaps.ToolProvider + tools.Registry` 可消费的来源；`internal/app` 继续作为全局 capability builder，但开始按配置加载 MCP servers，并把其 tools 与 native tools 一起并入默认 capability set。
 
-**Tech Stack:** Go 1.24, `internal/platform/tools/mcp`, `internal/capabilities/runtimecaps`, `internal/app`, `internal/config`, `github.com/gookit/config/v2`, `github.com/gookit/goutil/testutil/assert`
+**Tech Stack:** Go 1.24, `internal/platform/tools/mcp`, `internal/capability/runtimecaps`, `internal/app`, `internal/config`, `github.com/gookit/config/v2`, `github.com/gookit/goutil/testutil/assert`
 
 ---
 
@@ -333,7 +333,7 @@ Run:
 - `go test ./internal/config -v`
 - `go test ./internal/platform/tools/mcp -v`
 - `go test ./internal/app -v`
-- `go test ./internal/capabilities/runtimecaps ./internal/host/intrunner ./internal/host/gateway`
+- `go test ./internal/capability/runtimecaps ./internal/host/intrunner ./internal/host/gateway`
 
 Expected:
 
@@ -373,7 +373,7 @@ git commit -m "docs: record capability governance phase b1 baseline"
   - 不改
 - `internal/platform/tools/mcp`
   - 负责 MCP tool source 封装
-- `internal/capabilities/runtimecaps`
+- `internal/capability/runtimecaps`
   - 继续只处理 provider -> tool refs -> resolved tool names
 - `internal/app`
   - 负责默认 provider 装配与生命周期管理

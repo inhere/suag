@@ -16,8 +16,8 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/testutil/assert"
 
-	"github.com/inhere/axon/internal/capabilities/runtimecaps"
-	capskills "github.com/inhere/axon/internal/capabilities/skills"
+	"github.com/inhere/axon/internal/capability/runtimecaps"
+	capskills "github.com/inhere/axon/internal/capability/skills"
 	"github.com/inhere/axon/internal/host/gateway"
 	"github.com/inhere/axon/internal/host/intrunner"
 	"github.com/inhere/axon/internal/host/session"

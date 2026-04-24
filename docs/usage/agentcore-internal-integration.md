@@ -210,7 +210,7 @@
   - 继续只消费标准 tool contract
 - `internal/platform/tools`
   - 作为第一方 tool registry / executable tool 层
-- `internal/capabilities/runtimecaps`
+- `internal/capability/runtimecaps`
   - 作为 app/host 之间的 capability assembly 中枢
 - `internal/host/intrunner`
   - 作为 resolved capability 的 runtime consumer
@@ -258,7 +258,7 @@
 
 2026-04-21 的 Phase B2 已开始补上 session-scoped capability baseline 与 turn 输入接线：
 
-- `internal/capabilities/runtimecaps` 现在新增：
+- `internal/capability/runtimecaps` 现在新增：
   - `CapabilitySetSessionMetadataKey = "capability_set"`
   - `BuildSetInput.SessionMetadata`
   - `ResolveTurnInput`
@@ -310,12 +310,12 @@
 
 2026-04-21 的 Phase C 已开始把 skills 以 capability recipe 方式接入主线，而不是继续走 executable tool lane：
 
-- 新增 `internal/capabilities/skills`：
+- 新增 `internal/capability/skills`：
   - `Descriptor`
   - `Registry`
   - `Resolver`
   - `LoadDescriptorsFromFile()`
-- 当前 loader/parser 已完全收口到 `internal/capabilities/skills`，只提取：
+- 当前 loader/parser 已完全收口到 `internal/capability/skills`，只提取：
   - trigger hints
   - system prompt fragments
   - tool allowlist hints

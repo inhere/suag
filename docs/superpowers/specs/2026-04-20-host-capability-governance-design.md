@@ -243,7 +243,7 @@ internal/
 
 它应该保持尽量贴近 `agentcore.ToolRegistry` 的 contract。
 
-### 4.2 `internal/capabilities/skills`
+### 4.2 `internal/capability/skills`
 
 这里放 skill 能力体系：
 
@@ -255,7 +255,7 @@ internal/
 
 它不应该挤进 `platform`，因为 skill 语义已经明显属于 agent/product capability，而不是纯基础设施。
 
-### 4.3 `internal/capabilities/runtimecaps`
+### 4.3 `internal/capability/runtimecaps`
 
 这个包建议放“运行时能力装配对象”：
 
@@ -508,7 +508,7 @@ MCP 应作为 `ToolProvider` 的一种来源。
 
 当前 Phase A 已完成的最小基线：
 
-- `internal/capabilities/runtimecaps` 已提供最小 `CapabilityManager / ToolProvider / CapabilitySet / ResolvedTurnCapabilities`
+- `internal/capability/runtimecaps` 已提供最小 `CapabilityManager / ToolProvider / CapabilitySet / ResolvedTurnCapabilities`
 - `internal/app` 已通过统一 capability builder 构建默认 native tools 与 capability manager
 - `internal/host/intrunner` 已支持消费 `resolved_tool_names`，并在 turn 级按 registry subset 暴露本轮 tools
 
@@ -591,7 +591,7 @@ MCP 应作为 `ToolProvider` 的一种来源。
 
 当前 Phase C 最小骨架已开始接线：
 
-- `internal/capabilities/skills` 已新增：
+- `internal/capability/skills` 已新增：
   - `Descriptor`
   - `Registry`
   - `Resolver`
