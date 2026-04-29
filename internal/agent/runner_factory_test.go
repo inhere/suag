@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
-	"github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/platform/llm"
+	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
 )
 
 func TestNewRunner_DefaultsToAgentcore(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -63,7 +63,7 @@ func TestNewRunner_TrimmedReactSelectionRemainsExplicit(t *testing.T) {
 }
 
 func TestNewRunner_ZeroMaxStepsDefaultsConsistently(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -99,7 +99,7 @@ func TestNewRunner_ZeroMaxStepsDefaultsConsistently(t *testing.T) {
 }
 
 func TestNewRunner_PassesThroughPoliciesToAgentcoreRunner(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}

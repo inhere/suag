@@ -56,9 +56,9 @@
 
 这类模块更偏基础设施或桥接层，和当前 `v0` 主线的冲突较小，可以优先评估复用。
 
-### `internal/agentcorestorage`
+### `pkg/agentcore/storage/sqlite`
 
-状态：`可复用候选`
+状态：`已迁入 pkg/agentcore storage 实现层`
 
 原因：
 
@@ -68,7 +68,7 @@
 
 建议：
 
-- 可以继续借鉴其 SQLite schema 初始化、序列化和错误包装方式
+- 可以继续沿用其 SQLite schema 初始化、序列化和错误包装方式
 - 但不要把它直接扩展成新的 `session / turn / run` host state store
 
 ### `internal/agentcoreadapters`
@@ -286,14 +286,14 @@
 
 ### 8.1 直接迁移/重命名优先
 
-#### `internal/agentcorestorage -> internal/acstore`
+#### `internal/agentcorestorage -> internal/acstore -> pkg/agentcore/storage/sqlite`
 
-类型：`直接迁移/重命名优先`
+类型：`已完成`
 
 原因：
 
 - 语义已经比较聚焦
-- 新名字更短，也更符合当前冻结结构
+- 当前路径更符合多 storage backend 的长期结构
 - 仍然是 `agentcore` 周边的具体实现层
 
 #### `internal/agentcoreadapters -> internal/acadapters`

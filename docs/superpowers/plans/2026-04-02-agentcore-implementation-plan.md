@@ -35,7 +35,7 @@
 
 ### Built-in defaults
 
-- Create: `pkg/agentcore/files/storage.go`
+- Create: `pkg/agentcore/storage/files/storage.go`
   Responsibility: file-based `Storage` implementation using `state.json`, `messages.jsonl`, `meta.json`, `artifacts/`
 - Create: `pkg/agentcore/prompt/static.go`
   Responsibility: static system prompt builder
@@ -54,7 +54,7 @@
   Responsibility: direct answer flow, multi-step loop, guardrails, error mapping
 - Create: `pkg/agentcore/hooks_test.go`
   Responsibility: hook ordering, mutation, short-circuit, yield semantics
-- Create: `pkg/agentcore/files/storage_test.go`
+- Create: `pkg/agentcore/storage/files/storage_test.go`
   Responsibility: persistence format, load/reload semantics, message authority rules
 - Create: `pkg/agentcore/context/default_test.go`
   Responsibility: default context selection and truncation behavior
@@ -322,8 +322,8 @@ git commit -m "feat: add agentcore built-in components"
 ### Task 3: Implement File Storage and Reload Semantics
 
 **Files:**
-- Create: `pkg/agentcore/files/storage.go`
-- Create: `pkg/agentcore/files/storage_test.go`
+- Create: `pkg/agentcore/storage/files/storage.go`
+- Create: `pkg/agentcore/storage/files/storage_test.go`
 - Test: `pkg/agentcore/runtime_test.go`
 
 - [ ] **Step 1: Write failing file storage tests**
@@ -346,7 +346,7 @@ func TestFileStorage_SaveAndReload(t *testing.T) {
 
 - [ ] **Step 2: Run the storage tests to verify they fail**
 
-Run: `go test ./pkg/agentcore/files -run TestFileStorage_SaveAndReload -v`
+Run: `go test ./pkg/agentcore/storage/files -run TestFileStorage_SaveAndReload -v`
 Expected: FAIL with missing files storage implementation
 
 - [ ] **Step 3: Implement directory layout and JSON helpers**
@@ -376,13 +376,13 @@ func TestFileStorage_LoadMessagesIsAuthoritative(t *testing.T) {
 
 - [ ] **Step 6: Run storage tests**
 
-Run: `go test ./pkg/agentcore/files -v`
+Run: `go test ./pkg/agentcore/storage/files -v`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add pkg/agentcore/files/storage.go pkg/agentcore/files/storage_test.go pkg/agentcore/runtime_test.go
+git add pkg/agentcore/storage/files/storage.go pkg/agentcore/storage/files/storage_test.go pkg/agentcore/runtime_test.go
 git commit -m "feat: add agentcore file storage"
 ```
 

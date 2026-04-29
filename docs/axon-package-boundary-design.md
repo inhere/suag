@@ -118,11 +118,13 @@ cmd/
 
 pkg/
   agentcore/
+    storage/
+      files/
+      sqlite/
   client/
   # 候选，待稳定后再抽：
   # llm/
   # tools/
-  # xsqlite/
   # xtrace/
 
 internal/
@@ -152,7 +154,6 @@ internal/
     tracing/
 
   agent/
-  acstore/
   orchestrator/
   team/
 ```
@@ -335,11 +336,11 @@ internal/
 - 判断：暂不需要进入 `pkg`
 - 处理：继续留在 `platform`
 
-### 5.9 `internal/acstore`
+### 5.9 `pkg/agentcore/storage/sqlite`
 
-- 现状：更像 agentcore SQLite storage adapter
-- 判断：优先级较高的迁出候选
-- 处理：如果确认它只表达 `agentcore` runtime storage，而不包含 Axon Host/session 业务语义，则后续优先考虑迁入 `pkg/agentcore` 生态
+- 现状：已作为 agentcore SQLite storage adapter 迁入 `pkg/agentcore/storage/sqlite`
+- 判断：属于 `agentcore.Storage` 的第一方实现层，不属于 Axon Host 业务仓储
+- 处理：后续 MySQL/PostgreSQL 等 runtime storage backend 也应放在 `pkg/agentcore/storage/*`
 
 ### 5.10 `internal/orchestrator`
 
@@ -435,21 +436,21 @@ cmd -> internal/app -> internal/domain -> pkg
 
 #### Batch 1B：先拆职责，再迁
 
-##### 4. `internal/acstore`
+##### 4. `pkg/agentcore/storage/sqlite`
 
-- 当前状态：包名和职责都更像 agentcore SQLite storage adapter
+- 当前状态：已从 `internal/acstore` 迁入 `pkg/agentcore/storage/sqlite`
 - 当前判断：
-  - 如果它只表达 `agentcore` runtime storage，就适合迁入 `pkg/agentcore` 生态
-  - 如果它已经混入 Axon Host/session 语义，则应继续留 `internal`
+  - 它只表达 `agentcore` runtime storage
+  - 没有混入 Axon Host/session 业务语义
 - 第一阶段动作：
-  - 先审查 public surface 和调用方
-  - 明确它是否只服务 `pkg/agentcore.Storage`
-  - 明确是否存在 host/session 特定 metadata 或表结构耦合
+  - 已迁入 `pkg/agentcore/storage/sqlite`
+  - 构造函数收敛为 `sqlite.NewStorage(...)`
+  - 调用方已改为依赖 `pkg/agentcore/storage/sqlite`
 - 第二阶段目标：
-  - 若纯净：迁为 `pkg/agentcore` 下的 sqlite storage adapter
-  - 若不纯净：拆出纯 agentcore adapter，剩余部分留 internal
-- 风险等级：中
-- 建议时机：作为第一批中最值得优先评估的拆分项
+  - 后续如支持 PostgreSQL/MySQL，放入 `pkg/agentcore/storage/postgres` 与 `pkg/agentcore/storage/mysql`
+  - 等第二个 SQL backend 出现后，再评估是否抽 shared `sqlstore`
+- 风险等级：已完成，后续观察
+- 建议时机：已完成
 
 ##### 5. `internal/platform/llm`
 
@@ -548,7 +549,7 @@ cmd -> internal/app -> internal/domain -> pkg
 
 优先候选顺序建议：
 
-1. `internal/acstore`
+1. `pkg/agentcore/storage/sqlite`，已完成
 2. `internal/platform/llm`
 3. `internal/platform/tools` 中真正通用的 registry/contract 部分
 4. `internal/platform/tracing`

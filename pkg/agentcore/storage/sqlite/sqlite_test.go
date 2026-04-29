@@ -1,4 +1,4 @@
-package agentcorestorage_test
+package sqlite_test
 
 import (
 	"context"
@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
 )
 
 func TestSQLiteStorage_SaveRunAndLoadRun(t *testing.T) {
 	t.Parallel()
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -53,7 +53,7 @@ func TestSQLiteStorage_SaveRunAndLoadRun(t *testing.T) {
 func TestSQLiteStorage_AppendAndLoadMessages(t *testing.T) {
 	t.Parallel()
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -88,7 +88,7 @@ func TestSQLiteStorage_AppendAndLoadMessages(t *testing.T) {
 func TestSQLiteStorage_LoadMessagesTreatsTranscriptAsAuthority(t *testing.T) {
 	t.Parallel()
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -133,7 +133,7 @@ func TestSQLiteStorage_LoadMessagesTreatsTranscriptAsAuthority(t *testing.T) {
 func TestSQLiteStorage_MissingRunReturnsWrappedNotExist(t *testing.T) {
 	t.Parallel()
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -157,7 +157,7 @@ func TestSQLiteStorage_MissingRunReturnsWrappedNotExist(t *testing.T) {
 func TestSQLiteStorage_RejectsEmptyRunID(t *testing.T) {
 	t.Parallel()
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -182,7 +182,7 @@ func TestSQLiteStorage_CreatesParentDirectory(t *testing.T) {
 	t.Parallel()
 
 	dbPath := t.TempDir() + "/nested/agentcore.db"
-	store, err := agentcorestorage.NewSQLiteStorage(dbPath)
+	store, err := sqlite.NewStorage(dbPath)
 	if err != nil {
 		t.Fatalf("expected sqlite storage to create parent directory, got %v", err)
 	}

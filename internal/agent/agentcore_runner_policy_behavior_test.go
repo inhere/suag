@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
 )
 
 type suppressResumeInstructionPolicy struct{}
@@ -62,7 +62,7 @@ func (yieldOnRecoverableErrorPolicy) HandleRecoverable(context.Context, *agentco
 }
 
 func TestAgentcoreRunner_Run_UsesConfiguredResumePolicyBehavior(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -120,7 +120,7 @@ func TestAgentcoreRunner_Run_UsesConfiguredResumePolicyBehavior(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Run_UsesConfiguredToolPolicyBehavior(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -153,7 +153,7 @@ func TestAgentcoreRunner_Run_UsesConfiguredToolPolicyBehavior(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Run_UsesConfiguredErrorPolicyBehavior(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}

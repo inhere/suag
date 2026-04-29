@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/ops/hitl"
 	"github.com/inhere/axon/internal/platform/llm"
@@ -16,18 +15,19 @@ import (
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/internal/team"
+	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
 )
 
 // Config holds all dependencies for the Orchestrator.
 type Config struct {
-	LLM                llm.Provider
-	Registry           *tools.Registry
-	Tracer             tracing.Tracer
-	HITL               hitl.Manager
-	Team               *team.Manager
-	Workspace          string
-	MaxSteps           int
-	FailThreshold      int
+	LLM           llm.Provider
+	Registry      *tools.Registry
+	Tracer        tracing.Tracer
+	HITL          hitl.Manager
+	Team          *team.Manager
+	Workspace     string
+	MaxSteps      int
+	FailThreshold int
 	// Deprecated: keep only as a legacy config shim. Runtime selection should
 	// use SingleAgentRuntime explicitly.
 	UseAgentcore       bool
@@ -129,12 +129,12 @@ func min(a, b int) int {
 	return b
 }
 
-func (o *Orchestrator) newAgentcoreStorage() (*agentcorestorage.SQLiteStorage, error) {
+func (o *Orchestrator) newAgentcoreStorage() (*sqlite.SQLiteStorage, error) {
 	root := o.cfg.AgentcoreRunRoot
 	if root == "" {
 		root = filepath.Join(o.cfg.Workspace, ".agentcore")
 	}
-	return agentcorestorage.NewSQLiteStorage(filepath.Join(root, "runs.db"))
+	return sqlite.NewStorage(filepath.Join(root, "runs.db"))
 }
 
 func (o *Orchestrator) singleAgentRuntime() string {

@@ -9,13 +9,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/ops/hitl"
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/memory"
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
+	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
 )
 
 // TeamState represents the lifecycle of a team.
@@ -322,10 +322,10 @@ func (m *Manager) runtime() string {
 	return "agentcore"
 }
 
-func (m *Manager) newAgentcoreStorage() (*agentcorestorage.SQLiteStorage, error) {
+func (m *Manager) newAgentcoreStorage() (*sqlite.SQLiteStorage, error) {
 	root := m.cfg.AgentcoreRunRoot
 	if root == "" {
 		root = filepath.Join(m.workspace, ".agentcore")
 	}
-	return agentcorestorage.NewSQLiteStorage(filepath.Join(root, "runs.db"))
+	return sqlite.NewStorage(filepath.Join(root, "runs.db"))
 }

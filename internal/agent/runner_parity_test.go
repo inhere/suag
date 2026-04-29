@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/ops/hitl"
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/memory"
 	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
 )
 
 type parityRunOutcome struct {
@@ -26,7 +26,7 @@ func TestRunnerParity_DirectAnswer(t *testing.T) {
 	reactAgent := newTestAgent(reactMock, newTestRegistry())
 	coreAgent := newTestAgent(coreMock, newTestRegistry())
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -74,7 +74,7 @@ func TestRunnerParity_OneToolCall(t *testing.T) {
 	reactAgent := newTestAgent(reactMock, reg)
 	coreAgent := newTestAgent(coreMock, reg)
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -123,7 +123,7 @@ func TestRunnerParity_MultiStepToolChain(t *testing.T) {
 	reactAgent := newTestAgent(reactMock, reg)
 	coreAgent := newTestAgent(coreMock, reg)
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -176,7 +176,7 @@ func TestRunnerParity_HITLContinue(t *testing.T) {
 	reactAgent := newTestAgent(reactMock, newTestRegistry(reactFailTool))
 	coreAgent := newTestAgent(coreMock, newTestRegistry(coreFailTool))
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -245,7 +245,7 @@ func TestRunnerParity_HITLDismissed(t *testing.T) {
 	reactAgent := newTestAgent(reactMock, newTestRegistry(&failTool{}))
 	coreAgent := newTestAgent(coreMock, newTestRegistry(&failTool{}))
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -306,7 +306,7 @@ func TestRunnerParity_MaxStepsExceeded(t *testing.T) {
 	reactAgent := newTestAgent(reactMock, reg)
 	coreAgent := newTestAgent(coreMock, reg)
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -339,7 +339,7 @@ func TestRunnerParity_ToolPolicyEscalatesFailure(t *testing.T) {
 	reactAgent := newTestAgent(reactMock, newTestRegistry(&failTool{}))
 	coreAgent := newTestAgent(coreMock, newTestRegistry(&failTool{}))
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -378,7 +378,7 @@ func TestRunnerParity_ErrorPolicyYieldsRecoverableFailure(t *testing.T) {
 	reactAgent := newTestAgent(reactMock, newTestRegistry())
 	coreAgent := newTestAgent(coreMock, newTestRegistry())
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -424,7 +424,7 @@ func TestRunnerParity_ResumePolicySuppressesResumeInstruction(t *testing.T) {
 	reactAgent := newTestAgent(reactMock, newTestRegistry())
 	coreAgent := newTestAgent(coreMock, newTestRegistry(&coreEchoTool{}))
 
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}

@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/platform/llm"
 	"github.com/inhere/axon/internal/platform/memory"
+	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
 )
 
 type contextAwareMemoryStore struct {
@@ -42,7 +42,7 @@ func (s *contextAwareMemoryStore) SearchSimilar(context.Context, string, int) ([
 func (s *contextAwareMemoryStore) Close() error { return nil }
 
 func TestAgentcoreRunner_Run_UsesInternalMemoryContextByDefault(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}

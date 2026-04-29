@@ -4,7 +4,7 @@
 
 **Goal:** Build the first backend foundation slice for `v0.self-host`: persistent `session / turn / run / event` host state, a host-session runtime skeleton, and a WebSocket-first gateway path that can drive and observe agentcore-backed runs.
 
-**Architecture:** Keep `pkg/agentcore` unchanged as the runtime kernel and add a host-side `internal/host/session` package responsible for product-layer lifecycle and persistence. Reuse the existing SQLite experience in `internal/acstore`, manage schema changes with `gookit/miglite` SQL migrations under `db/migrations/`, reuse `internal/host/gateway` as the transport shell, and refactor the current trace-oriented event bus into session-aware event streaming with room for later AG-UI mapping and ACP integration.
+**Architecture:** Keep `pkg/agentcore` unchanged as the runtime kernel and add a host-side `internal/host/session` package responsible for product-layer lifecycle and persistence. Reuse the existing SQLite experience in `pkg/agentcore/storage/sqlite`, manage schema changes with `gookit/miglite` SQL migrations under `db/migrations/`, reuse `internal/host/gateway` as the transport shell, and refactor the current trace-oriented event bus into session-aware event streaming with room for later AG-UI mapping and ACP integration.
 
 **Tech Stack:** Go 1.24, `modernc.org/sqlite`, `github.com/coder/websocket`, `gookit/miglite` CLI, raw SQL migrations, existing `pkg/agentcore`, `go test`
 

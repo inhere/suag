@@ -385,6 +385,9 @@ db/
 
 pkg/
   agentcore/
+    storage/
+      files/
+      sqlite/
 
 internal/
   host/
@@ -400,7 +403,6 @@ internal/
   ops/
     hitl/
     cron/
-  acstore/
 
 web/
   app/
@@ -409,15 +411,16 @@ web/
 
 #### 命名与分层说明
 
-- `agentcorestorage` 建议统一收敛为 `acstore`
-- `acstore` 不作为桥接层目录的一部分
+- `agentcore` 的第一方 storage 实现统一放在 `pkg/agentcore/storage/*`
+- `pkg/agentcore/storage/files` 是文件系统实现
+- `pkg/agentcore/storage/sqlite` 是 SQLite 实现
 
 原因是：
 
-- `acstore` 是 `agentcore.Storage` 的具体实现层，不属于适配器
+- storage implementation 是 `agentcore.Storage` 的具体实现层，不属于 Host adapter
 - 迁移期桥接层已经完成历史使命，不再作为当前推荐目录保留
 
-因此当前结构里直接保留 `acstore` 与第一方实现层即可，不再继续扩展独立 adapter 目录。
+因此当前结构里直接保留 `pkg/agentcore/storage/*` 作为第一方实现层，不再继续扩展独立 adapter 目录。
 
 #### `pkg/` 与 `internal/` 的边界
 

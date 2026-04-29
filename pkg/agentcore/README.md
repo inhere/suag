@@ -510,7 +510,7 @@ go run ./examples/agentcore/bridge
 
 当前 internal 集成已经遵循同样的边界：
 
-- `internal/agentcorestorage` 提供 `agentcore.Storage`
+- `pkg/agentcore/storage/files` 与 `pkg/agentcore/storage/sqlite` 提供第一方 `agentcore.Storage` 实现
 - `internal/platform/memory` 通过 `RuntimeMemory` 提供 `agentcore.Memory`
 - `internal/agent.AgentcoreRunner` 把 external `Suspend/Resume` 语义映射到 `RunID + ResumeMode`
 

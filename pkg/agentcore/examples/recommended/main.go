@@ -8,10 +8,10 @@ import (
 
 	"github.com/inhere/axon/pkg/agentcore"
 	contextpkg "github.com/inhere/axon/pkg/agentcore/context"
-	"github.com/inhere/axon/pkg/agentcore/files"
 	memorypkg "github.com/inhere/axon/pkg/agentcore/memory"
 	"github.com/inhere/axon/pkg/agentcore/mock"
 	promptpkg "github.com/inhere/axon/pkg/agentcore/prompt"
+	"github.com/inhere/axon/pkg/agentcore/storage/files"
 )
 
 type logModelShapeHook struct {
@@ -141,8 +141,8 @@ func main() {
 	})
 
 	resumedResult, err := resumeRuntime.Run(ctx, agentcore.RunInput{
-		RunID:      runID,
-		ResumeMode: agentcore.ResumeWithInput,
+		RunID:       runID,
+		ResumeMode:  agentcore.ResumeWithInput,
 		Instruction: "Continue and stream the final answer back to the host.",
 		Stream: func(_ context.Context, event agentcore.StreamEvent) error {
 			switch event.Kind {

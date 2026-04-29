@@ -11,14 +11,14 @@ import (
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/pkg/agentcore"
 	"github.com/inhere/axon/pkg/agentcore/api"
-	"github.com/inhere/axon/pkg/agentcore/files"
+	"github.com/inhere/axon/pkg/agentcore/storage/files"
 )
 
 type echoTool struct{}
 
-func (echoTool) Name() string             { return "echo" }
-func (echoTool) Description() string      { return "Echoes a message" }
-func (echoTool) Kind() tools.Kind { return tools.KindNative }
+func (echoTool) Name() string        { return "echo" }
+func (echoTool) Description() string { return "Echoes a message" }
+func (echoTool) Kind() tools.Kind    { return tools.KindNative }
 func (echoTool) Schema() api.ToolSchema {
 	return api.ToolSchema{
 		Name:        "echo",
@@ -32,7 +32,6 @@ func (echoTool) Schema() api.ToolSchema {
 			},
 			"required": []any{"text"},
 		},
-
 	}
 }
 func (echoTool) Execute(_ context.Context, args api.ToolCall) (*api.ToolResult, error) {

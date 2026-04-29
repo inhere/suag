@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/ops/hitl"
 	"github.com/inhere/axon/internal/platform/llm"
@@ -15,6 +14,7 @@ import (
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
 )
 
 type coreEchoTool struct{}
@@ -33,7 +33,7 @@ func (e *coreEchoTool) Execute(_ context.Context, call agentcore.ToolCall) (*age
 }
 
 func TestAgentcoreRunner_Run_UsesSoulPromptAndSyncsMemory(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -85,7 +85,7 @@ func TestAgentcoreRunner_Run_UsesSoulPromptAndSyncsMemory(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Run_BridgesInternalToolsAndPersistsTranscript(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -129,7 +129,7 @@ func TestAgentcoreRunner_Run_BridgesInternalToolsAndPersistsTranscript(t *testin
 }
 
 func TestAgentcoreRunner_Run_EmitsTracingSpans(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -334,7 +334,7 @@ func TestBuildAgentcoreConfig_WiresCompatibleToolsAndMemory(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Run_TriggersHITLOnConsecutiveToolFailures(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -420,7 +420,7 @@ func TestBuildAgentcoreConfig_MemoryHydrateDetectsDivergedPrefix(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Run_HITLDismissed(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -479,7 +479,7 @@ func TestAgentcoreRunner_Run_HITLDismissed(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Run_MaxStepsExceeded(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -508,7 +508,7 @@ func TestAgentcoreRunner_Run_MaxStepsExceeded(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Run_ContextCancelled(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -547,7 +547,7 @@ func TestAgentcoreRunner_Run_ContextCancelled(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Run_ManualStepThrough(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -666,7 +666,7 @@ func (h *yieldStructuredWaitAgentHook) BeforeModel(_ context.Context, _ *agentco
 }
 
 func TestAgentcoreRunner_Run_CanResumeYieldedRunFromState(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -716,7 +716,7 @@ func TestAgentcoreRunner_Run_CanResumeYieldedRunFromState(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Run_ExposesYieldMetadataOnStructuredWait(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -749,7 +749,7 @@ func TestAgentcoreRunner_Run_ExposesYieldMetadataOnStructuredWait(t *testing.T) 
 }
 
 func TestAgentcoreRunner_Resume_UsesInstructionOnNextRun(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -814,7 +814,7 @@ func TestAgentcoreRunner_Resume_UsesInstructionOnNextRun(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Resume_RejectsWhenNotSuspended(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -841,7 +841,7 @@ func TestAgentcoreRunner_Resume_RejectsWhenNotSuspended(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Resume_LastInstructionWins(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -912,7 +912,7 @@ func TestAgentcoreRunner_Resume_LastInstructionWins(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Run_CanYieldAgainAfterResume(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}
@@ -964,7 +964,7 @@ func TestAgentcoreRunner_Run_CanYieldAgainAfterResume(t *testing.T) {
 }
 
 func TestAgentcoreRunner_Suspend_ThenRun_ResumesFromState(t *testing.T) {
-	store, err := agentcorestorage.NewSQLiteStorage(t.TempDir() + "/agentcore.db")
+	store, err := sqlite.NewStorage(t.TempDir() + "/agentcore.db")
 	if err != nil {
 		t.Fatalf("expected sqlite storage to initialize, got %v", err)
 	}

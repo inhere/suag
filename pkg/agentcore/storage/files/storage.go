@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	stateFileName    = "state.json"
-	messagesFileName = "messages.jsonl"
-	metaFileName     = "meta.json"
-	artifactsDirName = "artifacts"
+	stateFileName     = "state.json"
+	messagesFileName  = "messages.jsonl"
+	metaFileName      = "meta.json"
+	artifactsDirName  = "artifacts"
 	artifactsFileName = "index.json"
 )
 

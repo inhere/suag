@@ -10,7 +10,7 @@ import (
 	"log"
 
 	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/files"
+	"github.com/inhere/axon/pkg/agentcore/storage/files"
 	"github.com/inhere/axon/pkg/agentcore/mock"
 )
 

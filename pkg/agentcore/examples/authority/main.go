@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/files"
+	"github.com/inhere/axon/pkg/agentcore/storage/files"
 )
 
 type staticPrompt string

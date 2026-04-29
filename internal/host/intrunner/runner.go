@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	agentcorestorage "github.com/inhere/axon/internal/acstore"
 	"github.com/inhere/axon/internal/agent"
 	"github.com/inhere/axon/internal/host/session"
 	"github.com/inhere/axon/internal/ops/hitl"
@@ -17,6 +16,7 @@ import (
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
 	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
 )
 
 type Request = session.RuntimeRequest
@@ -40,7 +40,7 @@ type Config struct {
 type sessionState struct {
 	history      []memory.Message
 	memory       *sessionMemory
-	storage      *agentcorestorage.SQLiteStorage
+	storage      *sqlite.SQLiteStorage
 	agent        *agent.Agent
 	runner       agent.Runner
 	loopPhase    string
@@ -217,7 +217,7 @@ func (r *SessionRunner) getOrCreateSessionState(sessionID string) (*sessionState
 	}
 
 	storagePath := filepath.Join(r.cfg.RunRoot, safeSegment(sessionID), "runs.db")
-	storage, err := agentcorestorage.NewSQLiteStorage(storagePath)
+	storage, err := sqlite.NewStorage(storagePath)
 	if err != nil {
 		return nil, fmt.Errorf("open agentcore storage for session %q: %w", sessionID, err)
 	}
