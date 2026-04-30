@@ -5,7 +5,13 @@ import (
 	"time"
 )
 
-type Store interface {
+// Repository persists Axon Host session lifecycle state.
+//
+// It is the product-layer authority for sessions, turns, runs, events,
+// external tasks, recaps, and memory candidates. It is intentionally separate
+// from agentcore.Storage, which only persists single-runtime run snapshots and
+// transcripts.
+type Repository interface {
 	CreateSession(ctx context.Context, session Session) error
 	GetSession(ctx context.Context, sessionID string) (Session, error)
 	ListSessions(ctx context.Context) ([]Session, error)
@@ -31,3 +37,7 @@ type Store interface {
 	UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status MemoryCandidateStatus) error
 	Close() error
 }
+
+// Store is kept as a short local alias while the host package migrates naming
+// toward Repository.
+type Store = Repository
