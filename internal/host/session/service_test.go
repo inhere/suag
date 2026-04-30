@@ -2231,7 +2231,7 @@ func TestService_UpdateMemoryCandidateAcceptsAndRejects(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 4, 16, 16, 0, 0, 0, time.UTC)
 	svc := NewService(store, nil, nil, ServiceConfig{
-		MemoryFileSync: NewMemoryFileWriter(store, root, func() time.Time { return now }),
+		MemoryProjectionSync: NewMemoryMarkdownProjector(store, root, func() time.Time { return now }),
 	})
 
 	if err := store.CreateMemoryCandidate(ctx, MemoryCandidate{

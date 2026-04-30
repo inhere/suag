@@ -93,7 +93,7 @@
   Responsibility: 在 `UpdateMemoryCandidate()` 后挂接正式记忆文件刷新
 - Modify: `internal/host/session/recap_hooks.go`
   Responsibility: 提取可复用的 draft / formal memory 文件渲染逻辑
-- Test: `internal/host/session/memory_draft_test.go`
+- Test: `internal/host/session/memory_projection_test.go`
   Responsibility: 覆盖 applied/rejected 后的 formal memory 文件刷新与去重
 - Test: `internal/host/session/service_test.go`
   Responsibility: 覆盖 `UpdateMemoryCandidate()` 触发 memory file 刷新的行为

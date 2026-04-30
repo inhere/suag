@@ -42,12 +42,12 @@ func (a *App) RunServer(ctx context.Context) error {
 		RecapHooks: []session.RecapHook{
 			session.NewStructuredRecapHook(sessionStore, nil),
 			session.NewMemoryCandidateHook(sessionStore, nil),
-			session.NewMemoryDraftHook(sessionStore, appconfig.ResolveHostMemoryDraftRoot(), nil),
+			session.NewMemoryProjectionHook(sessionStore, appconfig.ResolveHostMemoryDraftRoot(), nil),
 		},
 		PostTurnActionHooks: []session.PostTurnActionHook{
 			session.NewCapabilityPlannerHook(),
 		},
-		MemoryFileSync: session.NewMemoryFileWriter(sessionStore, appconfig.ResolveHostMemoryDraftRoot(), nil),
+		MemoryProjectionSync: session.NewMemoryMarkdownProjector(sessionStore, appconfig.ResolveHostMemoryDraftRoot(), nil),
 	})
 	h := gateway.NewHandler(a.orch, sessionStore, sessionSvc, a.bus, a.hitlMgr)
 	addr := gkconfig.String("server.addr", ":8180")

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestMemoryDraftHook_WritesDraftFilesFromCandidates(t *testing.T) {
+func TestMemoryProjectionHook_WritesDraftFilesFromCandidates(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -66,7 +66,7 @@ func TestMemoryDraftHook_WritesDraftFilesFromCandidates(t *testing.T) {
 		t.Fatalf("CreateMemoryCandidate() USER error = %v", err)
 	}
 
-	hook := NewMemoryDraftHook(store, root, func() time.Time { return now })
+	hook := NewMemoryProjectionHook(store, root, func() time.Time { return now })
 	if err := hook.OnTurnRecap(ctx, RecapInput{
 		Session: Session{SessionID: "sess_001"},
 		TurnID:  "turn_001",
@@ -107,7 +107,7 @@ func TestMemoryDraftHook_WritesDraftFilesFromCandidates(t *testing.T) {
 	}
 }
 
-func TestMemoryDraftHook_AggregatesAndDeduplicatesDraftCandidates(t *testing.T) {
+func TestMemoryProjectionHook_AggregatesAndDeduplicatesDraftCandidates(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -175,7 +175,7 @@ func TestMemoryDraftHook_AggregatesAndDeduplicatesDraftCandidates(t *testing.T) 
 		}
 	}
 
-	hook := NewMemoryDraftHook(store, root, func() time.Time { return now.Add(4 * time.Minute) })
+	hook := NewMemoryProjectionHook(store, root, func() time.Time { return now.Add(4 * time.Minute) })
 	if err := hook.OnTurnRecap(ctx, RecapInput{
 		Session: Session{SessionID: "sess_agg"},
 		TurnID:  "turn_004",
@@ -206,7 +206,7 @@ func TestMemoryDraftHook_AggregatesAndDeduplicatesDraftCandidates(t *testing.T) 
 	}
 }
 
-func TestMemoryDraftHook_RefreshesAfterCandidateStatusChange(t *testing.T) {
+func TestMemoryProjectionHook_RefreshesAfterCandidateStatusChange(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -247,7 +247,7 @@ func TestMemoryDraftHook_RefreshesAfterCandidateStatusChange(t *testing.T) {
 		}
 	}
 
-	hook := NewMemoryDraftHook(store, root, func() time.Time { return now.Add(2 * time.Minute) })
+	hook := NewMemoryProjectionHook(store, root, func() time.Time { return now.Add(2 * time.Minute) })
 	if err := hook.OnTurnRecap(ctx, RecapInput{
 		Session: Session{SessionID: "sess_apply"},
 		TurnID:  "turn_002",
@@ -292,7 +292,7 @@ func TestMemoryDraftHook_RefreshesAfterCandidateStatusChange(t *testing.T) {
 	}
 }
 
-func TestMemoryFileWriter_WritesFormalMemoryFilesFromAppliedCandidates(t *testing.T) {
+func TestMemoryMarkdownProjector_WritesFormalMemoryFilesFromAppliedCandidates(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -359,9 +359,9 @@ func TestMemoryFileWriter_WritesFormalMemoryFilesFromAppliedCandidates(t *testin
 		}
 	}
 
-	writer := NewMemoryFileWriter(store, root, func() time.Time { return now.Add(4 * time.Minute) })
-	if err := writer.RefreshSessionFiles(ctx, "sess_formal"); err != nil {
-		t.Fatalf("RefreshSessionFiles() error = %v", err)
+	writer := NewMemoryMarkdownProjector(store, root, func() time.Time { return now.Add(4 * time.Minute) })
+	if err := writer.RefreshSessionProjection(ctx, "sess_formal"); err != nil {
+		t.Fatalf("RefreshSessionProjection() error = %v", err)
 	}
 
 	memoryFormal, err := os.ReadFile(filepath.Join(root, "memory", "MEMORY.md"))

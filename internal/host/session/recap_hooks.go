@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"os"
 	"strings"
 	"time"
 )
@@ -172,63 +171,4 @@ func cloneMap(src map[string]any) map[string]any {
 		dst[k] = v
 	}
 	return dst
-}
-
-type MemoryDraftHook struct {
-	writer *MemoryFileWriter
-}
-
-func NewMemoryDraftHook(repo Repository, root string, now func() time.Time) *MemoryDraftHook {
-	return &MemoryDraftHook{
-		writer: NewMemoryFileWriter(repo, root, now),
-	}
-}
-
-func (h *MemoryDraftHook) OnTurnRecap(ctx context.Context, input RecapInput) error {
-	if h == nil || h.writer == nil {
-		return nil
-	}
-
-	candidates, err := h.writer.store.ListMemoryCandidatesBySession(ctx, input.Session.SessionID)
-	if err != nil {
-		return err
-	}
-	if len(candidates) == 0 {
-		return nil
-	}
-	if err := h.writer.RefreshSessionFiles(ctx, input.Session.SessionID); err != nil {
-		return err
-	}
-
-	for _, candidate := range candidates {
-		if candidate.SessionID != input.Session.SessionID {
-			continue
-		}
-		if candidate.Status != MemoryCandidateDraft {
-			continue
-		}
-		if err := h.writer.store.UpdateMemoryCandidateStatus(ctx, candidate.CandidateID, MemoryCandidateRendered); err != nil {
-			return err
-		}
-	}
-	return h.writer.RefreshSessionFiles(ctx, input.Session.SessionID)
-}
-
-func writeMemoryDraft(path string, target string, candidates []MemoryCandidate, now time.Time) error {
-	lines := []string{
-		"# " + target + ".draft",
-		"",
-		"Updated: " + now.Format(time.RFC3339),
-		"",
-	}
-
-	count := appendMemoryLines(&lines, target, candidates, func(candidate MemoryCandidate) bool {
-		return candidate.Status == MemoryCandidateDraft || candidate.Status == MemoryCandidateRendered
-	})
-	if count == 0 {
-		lines = append(lines, "_No draft candidates yet._")
-	}
-	lines = append(lines, "")
-
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
 }

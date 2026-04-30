@@ -2149,7 +2149,7 @@ func TestServer_UpdateMemoryCandidateActions(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 4, 16, 18, 30, 0, 0, time.UTC)
 	handler := NewHandler(nil, store, session.NewService(store, bus, nil, session.ServiceConfig{
-		MemoryFileSync: session.NewMemoryFileWriter(store, root, func() time.Time { return now }),
+		MemoryProjectionSync: session.NewMemoryMarkdownProjector(store, root, func() time.Time { return now }),
 	}), bus, nil)
 	server := NewServer(":0", handler, bus)
 	ts := httptest.NewServer(server.router())

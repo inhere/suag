@@ -14,7 +14,7 @@
 - `docs/usage/host-state-snapshot-v0.md`、`docs/usage/llm-config-v0.md`、`docs/usage/host-recap-memory-hooks-v0.md`、`docs/usage/host-learning-retrieval-v0.md`、`docs/usage/host-internal-self-loop-v0.md` 共同构成当前 v0 协议、配置、learning/recall 与 self-loop 基线
 - `internal/host/session`、`internal/host/gateway`、Web 工作台已具备 session/turn/run 恢复、WS 命令编排、Pending HITL 自动刷新与 Focused Run 恢复链路；`DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 已贯通到快照与事件流
 - internal runner / ACP runner 的 Host contract 已完成一轮对齐：`externalTaskId`、失败态 external task 持久化、internal suspend `waitMetadata`、ACP `EXTERNAL_RUNNING` waiting metadata 与 AG-UI run detail / snapshot 已对齐
-- Host learning-system 当前已形成 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md + MEMORY.md / USER.md` 闭环，并已验证 recall 会影响 self-loop 结果且不会污染 session history
+- Host learning-system 当前已形成 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md + MEMORY.md / USER.md` 闭环，并已验证 recall 会影响 self-loop 结果且不会污染 session history；markdown 侧已按 `MemoryProjection*` 命名收敛，避免与 memory backend/storage 混淆
 - `tools / mcp / skills` 长线治理设计见 `docs/superpowers/specs/2026-04-20-host-capability-governance-design.md`，当前按“agentcore 只保留 runtime kernel 与 tool contract，axon 负责 capability governance” 方向持续推进
 - Capability governance 当前已完成到 Phase C-D：`CapabilityPolicy`、tool subset、skill matching、resource hints、planner hint 已贯通；后续继续推进 richer skill matching、tool catalog 与 recall/policy/skills/planner 联动
 - Web 默认界面的 `Chat-first` 设计见 `docs/superpowers/specs/2026-04-21-web-chat-first-layout-design.md`，实现计划见 `docs/superpowers/plans/2026-04-21-web-chat-first-layout-implementation-plan.md`；当前默认左中右布局已切到 `Sessions / Chat / Context`，并已通过 `App.test.tsx`、全量 `pnpm --dir web/app test` 与 `pnpm --dir web/app build` 验证

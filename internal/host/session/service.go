@@ -73,7 +73,7 @@ type ServiceConfig struct {
 	RuntimeContextBuilder  RuntimeContextBuilder
 	RecapHooks             []RecapHook
 	PostTurnActionHooks    []PostTurnActionHook
-	MemoryFileSync         MemoryFileSync
+	MemoryProjectionSync   MemoryProjectionSync
 }
 
 type RecapPhase string
@@ -170,7 +170,7 @@ type Service struct {
 	runtimeContextBuilder  RuntimeContextBuilder
 	recaps                 []RecapHook
 	posts                  []PostTurnActionHook
-	memory                 MemoryFileSync
+	memory                 MemoryProjectionSync
 
 	activeMu         sync.Mutex
 	activeExecutions map[string]*activeExecution
@@ -191,7 +191,7 @@ func NewService(repo Repository, pub Publisher, runner Runner, cfg ServiceConfig
 		runtimeContextBuilder:  cfg.RuntimeContextBuilder,
 		recaps:                 append([]RecapHook(nil), cfg.RecapHooks...),
 		posts:                  append([]PostTurnActionHook(nil), cfg.PostTurnActionHooks...),
-		memory:                 cfg.MemoryFileSync,
+		memory:                 cfg.MemoryProjectionSync,
 		activeExecutions:       make(map[string]*activeExecution),
 	}
 }
@@ -275,7 +275,7 @@ func (s *Service) UpdateMemoryCandidate(ctx context.Context, in UpdateMemoryCand
 	}
 	candidate.Status = in.Status
 	if s.memory != nil {
-		if err := s.memory.RefreshSessionFiles(ctx, candidate.SessionID); err != nil {
+		if err := s.memory.RefreshSessionProjection(ctx, candidate.SessionID); err != nil {
 			// Memory file refresh is best-effort. Candidate status should not roll
 			// back when the markdown view cannot be updated immediately.
 			slog.Warn("refresh memory files after candidate update failed",
