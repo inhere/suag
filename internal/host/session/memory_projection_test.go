@@ -13,7 +13,7 @@ func TestMemoryProjectionHook_WritesDraftFilesFromCandidates(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 	root := t.TempDir()
 	now := time.Date(2026, 4, 16, 13, 0, 0, 0, time.UTC)
 
@@ -111,7 +111,7 @@ func TestMemoryProjectionHook_AggregatesAndDeduplicatesDraftCandidates(t *testin
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 	root := t.TempDir()
 	now := time.Date(2026, 4, 16, 14, 0, 0, 0, time.UTC)
 
@@ -210,7 +210,7 @@ func TestMemoryProjectionHook_RefreshesAfterCandidateStatusChange(t *testing.T) 
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 	root := t.TempDir()
 	now := time.Date(2026, 4, 16, 15, 0, 0, 0, time.UTC)
 
@@ -296,7 +296,7 @@ func TestMemoryMarkdownProjector_WritesFormalMemoryFilesFromAppliedCandidates(t 
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 	root := t.TempDir()
 	now := time.Date(2026, 4, 20, 15, 30, 0, 0, time.UTC)
 

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func (s *SQLiteStore) Close() error {
+func (s *SQLiteRepository) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}

@@ -14,24 +14,24 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestSQLiteStore_RequiresMigratedSchema(t *testing.T) {
+func TestSQLiteRepository_RequiresMigratedSchema(t *testing.T) {
 	t.Parallel()
 
 	dbPath := filepath.Join(t.TempDir(), "session.db")
-	_, err := NewSQLiteStore(dbPath)
+	_, err := NewSQLiteRepository(dbPath)
 	if err == nil {
-		t.Fatal("NewSQLiteStore() error = nil, want missing schema error")
+		t.Fatal("NewSQLiteRepository() error = nil, want missing schema error")
 	}
 	if !strings.Contains(err.Error(), "missing required tables") {
-		t.Fatalf("NewSQLiteStore() error = %v, want missing required tables", err)
+		t.Fatalf("NewSQLiteRepository() error = %v, want missing required tables", err)
 	}
 }
 
-func TestSQLiteStore_CreateSessionTurnRunAndEvent(t *testing.T) {
+func TestSQLiteRepository_CreateSessionTurnRunAndEvent(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 
 	now := time.Date(2026, 4, 11, 10, 0, 0, 0, time.UTC)
 	sessionModel := Session{
@@ -108,11 +108,11 @@ func TestSQLiteStore_CreateSessionTurnRunAndEvent(t *testing.T) {
 	}
 }
 
-func TestSQLiteStore_AppendEventAssignsSessionWideIncreasingSequence(t *testing.T) {
+func TestSQLiteRepository_AppendEventAssignsSessionWideIncreasingSequence(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 	now := time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC)
 
 	if err := store.CreateSession(ctx, Session{
@@ -175,11 +175,11 @@ func TestSQLiteStore_AppendEventAssignsSessionWideIncreasingSequence(t *testing.
 	}
 }
 
-func TestSQLiteStore_ListSessionsReturnsLatestFirst(t *testing.T) {
+func TestSQLiteRepository_ListSessionsReturnsLatestFirst(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 	now := time.Date(2026, 4, 13, 11, 0, 0, 0, time.UTC)
 
 	if err := store.CreateSession(ctx, Session{
@@ -218,11 +218,11 @@ func TestSQLiteStore_ListSessionsReturnsLatestFirst(t *testing.T) {
 	}
 }
 
-func TestSQLiteStore_CreateUpdateAndListExternalTasks(t *testing.T) {
+func TestSQLiteRepository_CreateUpdateAndListExternalTasks(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 	now := time.Date(2026, 4, 11, 18, 0, 0, 0, time.UTC)
 
 	externalTask := ExternalTask{
@@ -281,11 +281,11 @@ func TestSQLiteStore_CreateUpdateAndListExternalTasks(t *testing.T) {
 	}
 }
 
-func TestSQLiteStore_UpdateTurnStatusAndRunLifecycle(t *testing.T) {
+func TestSQLiteRepository_UpdateTurnStatusAndRunLifecycle(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 	now := time.Date(2026, 4, 13, 10, 0, 0, 0, time.UTC)
 
 	if err := store.CreateSession(ctx, Session{
@@ -367,11 +367,11 @@ func TestSQLiteStore_UpdateTurnStatusAndRunLifecycle(t *testing.T) {
 	}
 }
 
-func TestSQLiteStore_CreateAndListRecapsByTurn(t *testing.T) {
+func TestSQLiteRepository_CreateAndListRecapsByTurn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 	now := time.Date(2026, 4, 16, 10, 0, 0, 0, time.UTC)
 
 	recap := Recap{
@@ -410,11 +410,11 @@ func TestSQLiteStore_CreateAndListRecapsByTurn(t *testing.T) {
 	}
 }
 
-func TestSQLiteStore_CreateAndListMemoryCandidatesByTurn(t *testing.T) {
+func TestSQLiteRepository_CreateAndListMemoryCandidatesByTurn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 	now := time.Date(2026, 4, 16, 11, 0, 0, 0, time.UTC)
 
 	candidate := MemoryCandidate{
@@ -459,11 +459,11 @@ func TestSQLiteStore_CreateAndListMemoryCandidatesByTurn(t *testing.T) {
 	}
 }
 
-func TestSQLiteStore_ListMemoryCandidatesBySession(t *testing.T) {
+func TestSQLiteRepository_ListMemoryCandidatesBySession(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 	now := time.Date(2026, 4, 16, 11, 30, 0, 0, time.UTC)
 
 	for _, candidate := range []MemoryCandidate{
@@ -527,11 +527,11 @@ func TestSQLiteStore_ListMemoryCandidatesBySession(t *testing.T) {
 	}
 }
 
-func TestSQLiteStore_GetAndUpdateMemoryCandidateStatus(t *testing.T) {
+func TestSQLiteRepository_GetAndUpdateMemoryCandidateStatus(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	store := newTestRepository(t)
 	now := time.Date(2026, 4, 16, 12, 0, 0, 0, time.UTC)
 
 	candidate := MemoryCandidate{
@@ -573,14 +573,14 @@ func TestSQLiteStore_GetAndUpdateMemoryCandidateStatus(t *testing.T) {
 	}
 }
 
-func newTestStore(t *testing.T) *SQLiteStore {
+func newTestRepository(t *testing.T) *SQLiteRepository {
 	t.Helper()
 
 	dbPath := createMigratedTestDB(t)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewSQLiteRepository(dbPath)
 	if err != nil {
-		t.Fatalf("NewSQLiteStore() error = %v", err)
+		t.Fatalf("NewSQLiteRepository() error = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := store.Close(); err != nil {

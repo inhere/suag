@@ -19,14 +19,14 @@ import (
 
 // RunServer starts the axon server, which listens for incoming API requests and manages agent sessions.
 func (a *App) RunServer(ctx context.Context) error {
-	sessionStore, err := session.NewSQLiteStore(appconfig.ResolveSessionDBPath())
+	sessionRepo, err := session.NewSQLiteRepository(appconfig.ResolveSessionDBPath())
 	if err != nil {
-		slog.Error("failed to initialize session store", "err", err)
+		slog.Error("failed to initialize session repository", "err", err)
 		return err
 	}
 	defer func() {
-		if err := sessionStore.Close(); err != nil {
-			slog.Warn("failed to close session store", "err", err)
+		if err := sessionRepo.Close(); err != nil {
+			slog.Warn("failed to close session repository", "err", err)
 		}
 	}()
 
@@ -36,20 +36,20 @@ func (a *App) RunServer(ctx context.Context) error {
 		return err
 	}
 
-	sessionSvc := session.NewService(sessionStore, a.bus, sessionRunner, session.ServiceConfig{
+	sessionSvc := session.NewService(sessionRepo, a.bus, sessionRunner, session.ServiceConfig{
 		SessionMetadataBuilder: a.newSessionMetadataBuilder(),
 		RuntimeContextBuilder:  a.newRuntimeContextBuilder(),
 		RecapHooks: []session.RecapHook{
-			session.NewStructuredRecapHook(sessionStore, nil),
-			session.NewMemoryCandidateHook(sessionStore, nil),
-			session.NewMemoryProjectionHook(sessionStore, appconfig.ResolveHostMemoryDraftRoot(), nil),
+			session.NewStructuredRecapHook(sessionRepo, nil),
+			session.NewMemoryCandidateHook(sessionRepo, nil),
+			session.NewMemoryProjectionHook(sessionRepo, appconfig.ResolveHostMemoryDraftRoot(), nil),
 		},
 		PostTurnActionHooks: []session.PostTurnActionHook{
 			session.NewCapabilityPlannerHook(),
 		},
-		MemoryProjectionSync: session.NewMemoryMarkdownProjector(sessionStore, appconfig.ResolveHostMemoryDraftRoot(), nil),
+		MemoryProjectionSync: session.NewMemoryMarkdownProjector(sessionRepo, appconfig.ResolveHostMemoryDraftRoot(), nil),
 	})
-	h := gateway.NewHandler(a.orch, sessionStore, sessionSvc, a.bus, a.hitlMgr)
+	h := gateway.NewHandler(a.orch, sessionRepo, sessionSvc, a.bus, a.hitlMgr)
 	addr := gkconfig.String("server.addr", ":8180")
 	if addr == "" {
 		addr = ":8180"

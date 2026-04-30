@@ -37,7 +37,7 @@ func TestServer_CreateSessionAndStreamEventsOverWebSocket(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, &fakeGatewayRunner{}, session.ServiceConfig{
 		Now: func() time.Time {
@@ -136,7 +136,7 @@ func TestServer_WebSocketAllowsLocalDevOrigin(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, &fakeGatewayRunner{}, session.ServiceConfig{
 		Now: func() time.Time {
@@ -177,7 +177,7 @@ func TestServer_SessionSnapshotIncludesExternalTasks(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	bridge := acpbridge.NewStubBridge(acpbridge.StubBridgeConfig{
 		RemoteAgentName: "codex-cli",
@@ -261,7 +261,7 @@ func TestServer_SessionSnapshotIncludesExternalTaskMetadata(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	runner := acpbridge.NewRunnerAdapter(&gatewayMetadataBridge{}, acpbridge.RunnerAdapterConfig{
 		AdapterName: "codex",
@@ -336,7 +336,7 @@ func TestServer_SessionSnapshotIncludesExternalTaskMetadata(t *testing.T) {
 func TestServer_GetSessionReturnsAggregatedTurnAndRunState(t *testing.T) {
 	t.Parallel()
 
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, &emittingGatewayRunner{}, session.ServiceConfig{
 		Now: func() time.Time {
@@ -412,7 +412,7 @@ func TestServer_GetSessionReturnsAggregatedTurnAndRunState(t *testing.T) {
 func TestServer_GetSessionReturnsAggregatedExternalStreamState(t *testing.T) {
 	t.Parallel()
 
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, &emittingGatewayRunner{}, session.ServiceConfig{
 		Now: func() time.Time {
@@ -473,7 +473,7 @@ func TestServer_GetSessionReturnsAggregatedExternalStreamState(t *testing.T) {
 func TestServer_GetRunDetailReturnsFilteredAggregatedState(t *testing.T) {
 	t.Parallel()
 
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, &emittingGatewayRunner{}, session.ServiceConfig{
 		Now: func() time.Time {
@@ -564,7 +564,7 @@ func TestServer_GetRunDetailReturnsFilteredAggregatedState(t *testing.T) {
 func TestServer_GetRunDetailPreservesExternalWaitMetadata(t *testing.T) {
 	t.Parallel()
 
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, acpbridge.NewRunnerAdapter(&gatewayRunningBridge{}, acpbridge.RunnerAdapterConfig{
 		AdapterName: "codex",
@@ -616,7 +616,7 @@ func TestServer_SessionSnapshotAggregatesExternalStreamState(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, &emittingGatewayRunner{}, session.ServiceConfig{
 		Now: func() time.Time {
@@ -851,7 +851,7 @@ func TestServer_ContinueTurnOverWebSocketPublishesEvent(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	runner := &waitingThenDoneGatewayRunner{}
 	svc := session.NewService(store, bus, runner, session.ServiceConfig{
@@ -939,7 +939,7 @@ func TestServer_ContinueTurnOverWebSocketSendsAckBeforeRunEvents(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	runner := &waitingThenDoneGatewayRunner{}
 	svc := session.NewService(store, bus, runner, session.ServiceConfig{
@@ -1000,7 +1000,7 @@ func TestServer_ContinueTurnReusesPreviousRemoteSession(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	runner := &resumeAwareGatewayRunner{}
 	svc := session.NewService(store, bus, runner, session.ServiceConfig{
@@ -1075,7 +1075,7 @@ func TestServer_ContinueTurnRunDetailPreservesResumedLoopMetadata(t *testing.T) 
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	runtimeRunner, err := intrunner.New(intrunner.Config{
 		Provider: llm.NewMockProvider("mock"),
@@ -1217,7 +1217,7 @@ func TestServer_GetRunDetailIncludesPostTurnHints(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, &fakeGatewayRunner{}, session.ServiceConfig{
 		Now: func() time.Time {
@@ -1296,7 +1296,7 @@ func TestServer_StopTurnOverWebSocketCancelsActiveRun(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	runner := newBlockingGatewayRunner()
 	svc := session.NewService(store, bus, runner, session.ServiceConfig{
@@ -1398,7 +1398,7 @@ func TestServer_StopTurnOverWebSocketCancelsActiveRun(t *testing.T) {
 func TestServer_GetRunDetailIncludesMemoryRecallMetadata(t *testing.T) {
 	t.Parallel()
 
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, &memoryRecallGatewayRunner{}, session.ServiceConfig{
 		Now: func() time.Time {
@@ -1442,7 +1442,7 @@ func TestServer_ContinueTurnOverWebSocketReturnsCommandErrorWhenRejected(t *test
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	runner := &authRequiredGatewayRunner{}
 	svc := session.NewService(store, bus, runner, session.ServiceConfig{
@@ -1506,7 +1506,7 @@ func TestServer_ContinueTurnOverWebSocketReturnsCommandErrorWhenResumeStateUnava
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	runner := &resumeStateUnavailableGatewayRunner{}
 	svc := session.NewService(store, bus, runner, session.ServiceConfig{
@@ -1570,7 +1570,7 @@ func TestServer_StopTurnOverWebSocketReturnsCommandErrorWhenTurnMissing(t *testi
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, &fakeGatewayRunner{}, session.ServiceConfig{
 		Now: func() time.Time {
@@ -1625,7 +1625,7 @@ func TestServer_UnknownWebSocketCommandReturnsCommandError(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, &fakeGatewayRunner{}, session.ServiceConfig{
 		Now: func() time.Time {
@@ -1679,7 +1679,7 @@ func TestServer_HITLRespondEndpointResumesWaitingRun(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	hitlMgr := hitl.NewInMemoryManager(nil)
 	svc := session.NewService(store, bus, &gatewayHITLRunner{manager: hitlMgr}, session.ServiceConfig{
@@ -1775,7 +1775,7 @@ func TestServer_StartTurnStreamsExternalRuntimeEvents(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, &emittingGatewayRunner{}, session.ServiceConfig{
 		Now: func() time.Time {
@@ -2019,7 +2019,7 @@ func (r *resumeStateUnavailableGatewayRunner) ValidateContinue(context.Context, 
 func TestServer_ListSessionsReturnsLatestSessionsWithPreview(t *testing.T) {
 	t.Parallel()
 
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	svc := session.NewService(store, bus, &emittingGatewayRunner{}, session.ServiceConfig{
 		Now: func() time.Time {
@@ -2083,7 +2083,7 @@ func TestServer_ListMemoryCandidatesBySession(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	handler := NewHandler(nil, store, session.NewService(store, bus, nil, session.ServiceConfig{}), bus, nil)
 	server := NewServer(":0", handler, bus)
@@ -2144,7 +2144,7 @@ func TestServer_UpdateMemoryCandidateActions(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newGatewaySessionStore(t)
+	store := newGatewaySessionRepository(t)
 	bus := NewEventBus()
 	root := t.TempDir()
 	now := time.Date(2026, 4, 16, 18, 30, 0, 0, time.UTC)
@@ -2370,15 +2370,15 @@ func (r *gatewayHITLRunner) Run(ctx context.Context, in session.RuntimeRequest) 
 	}, nil
 }
 
-func newGatewaySessionStore(t *testing.T) *session.SQLiteStore {
+func newGatewaySessionRepository(t *testing.T) *session.SQLiteRepository {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "gateway-session.db")
 	applyGatewaySessionMigration(t, dbPath)
 
-	store, err := session.NewSQLiteStore(dbPath)
+	store, err := session.NewSQLiteRepository(dbPath)
 	if err != nil {
-		t.Fatalf("session.NewSQLiteStore() error = %v", err)
+		t.Fatalf("session.NewSQLiteRepository() error = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := store.Close(); err != nil {

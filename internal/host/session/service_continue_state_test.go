@@ -11,7 +11,7 @@ func TestService_ContinueTurnRejectsWhenLatestWaitingRunCannotBeLoaded(t *testin
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 11, 0, 0, 0, time.UTC)
 
@@ -77,7 +77,7 @@ func TestService_ContinueTurnReturnsLatestRunLoadError(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	baseStore := newServiceTestStore(t)
+	baseStore := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 11, 5, 0, 0, time.UTC)
 
@@ -132,7 +132,7 @@ func TestService_ContinueTurnRejectsSessionWithoutTurns(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 11, 10, 0, 0, time.UTC)
 
@@ -169,7 +169,7 @@ func TestService_BuildContinueRuntimeContextRejectsSessionWithoutTurns(t *testin
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	now := time.Date(2026, 4, 19, 11, 15, 0, 0, time.UTC)
 
 	if err := store.CreateSession(ctx, Session{
@@ -200,7 +200,7 @@ func TestService_BuildContinueRuntimeContextRejectsMissingLatestWaitingRun(t *te
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 11, 20, 0, 0, time.UTC)
 

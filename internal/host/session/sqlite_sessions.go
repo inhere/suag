@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-func (s *SQLiteStore) CreateSession(ctx context.Context, session Session) error {
+func (s *SQLiteRepository) CreateSession(ctx context.Context, session Session) error {
 	if err := validateID("session", session.SessionID); err != nil {
 		return err
 	}
@@ -26,7 +26,7 @@ func (s *SQLiteStore) CreateSession(ctx context.Context, session Session) error 
 	return nil
 }
 
-func (s *SQLiteStore) GetSession(ctx context.Context, sessionID string) (Session, error) {
+func (s *SQLiteRepository) GetSession(ctx context.Context, sessionID string) (Session, error) {
 	if err := validateID("session", sessionID); err != nil {
 		return Session{}, err
 	}
@@ -74,7 +74,7 @@ func (s *SQLiteStore) GetSession(ctx context.Context, sessionID string) (Session
 	return session, nil
 }
 
-func (s *SQLiteStore) ListSessions(ctx context.Context) ([]Session, error) {
+func (s *SQLiteRepository) ListSessions(ctx context.Context) ([]Session, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT session_id, title, status, last_turn_id, created_at, updated_at, metadata_json
 		FROM sessions
@@ -128,7 +128,7 @@ func (s *SQLiteStore) ListSessions(ctx context.Context) ([]Session, error) {
 	return sessions, nil
 }
 
-func (s *SQLiteStore) UpdateSession(ctx context.Context, session Session) error {
+func (s *SQLiteRepository) UpdateSession(ctx context.Context, session Session) error {
 	if err := validateID("session", session.SessionID); err != nil {
 		return err
 	}

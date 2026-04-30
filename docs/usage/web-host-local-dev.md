@@ -95,7 +95,7 @@ go run ./cmd/axon server
 
 默认会使用：
 
-- `db/axon.db` 作为 session store
+- `db/axon.db` 作为 session repository
 - `:8180` 作为 gateway 地址
 
 健康检查可用：

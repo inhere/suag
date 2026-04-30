@@ -7,11 +7,14 @@ type TurnStatus string
 type RunState string
 type InitiatorType string
 type MemoryCandidateStatus string
+
 // LoopPhase tracks whether a host run is the first execution attempt or a
 // resume of a previously waiting turn.
 type LoopPhase string
+
 // ContinueMode records which host-side continue path produced the run.
 type ContinueMode string
+
 // TurnOutcome captures the final host outcome written after a run reaches a
 // terminal lifecycle state.
 type TurnOutcome string

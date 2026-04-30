@@ -18,7 +18,7 @@ func TestService_StartTurnCreatesQueuedRunAndPublishesEvent(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -99,7 +99,7 @@ func TestService_StartTurnStoresInitialLoopMetadataOnTerminalRun(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -141,7 +141,7 @@ func TestService_StartTurnBuildsSessionMetadataBeforeRuntimeContext(t *testing.T
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{Summary: "run-output"},
@@ -227,7 +227,7 @@ func TestService_ContinueTurnCreatesNewTurnForExistingWaitingSession(t *testing.
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	now := time.Date(2026, 4, 11, 11, 30, 0, 0, time.UTC)
 
 	if err := store.CreateSession(ctx, Session{
@@ -320,7 +320,7 @@ func TestService_ContinueTurnStoresResumedLoopMetadata(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 20, 9, 30, 0, 0, time.UTC)
 
@@ -394,7 +394,7 @@ func TestService_ContinueTurnBuildsRuntimeContextWithSessionMetadataAndMessage(t
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 21, 11, 30, 0, 0, time.UTC)
 
@@ -488,7 +488,7 @@ func TestService_ContinueTurnPassesResumeExternalTasksFromPreviousTurn(t *testin
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	firstRunner := &fakeRunner{
 		result: RuntimeResult{
@@ -570,7 +570,7 @@ func TestService_StartTurnPublishesFailedLifecycleWhenRunnerFails(t *testing.T) 
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		err: errors.New("runner failed"),
@@ -611,7 +611,7 @@ func TestService_StartTurnPublishesRuntimeEventsFromRunner(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -678,7 +678,7 @@ func TestService_StartTurnPersistsRuntimeWaitingStateBeforeRunFinishes(t *testin
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := newStatusBlockingRunner(RuntimeEvent{
 		EventType: EventRunStatus,
@@ -784,7 +784,7 @@ func TestService_StartTurnPersistsNonWaitingRuntimeStateBeforeRunFinishes(t *tes
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := newStatusBlockingRunner(RuntimeEvent{
 		EventType: EventRunStatus,
@@ -860,7 +860,7 @@ func TestService_StartTurnDoesNotFinalizeWhenRunnerReturnsWaitState(t *testing.T
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -943,7 +943,7 @@ func TestService_StartTurnDoesNotAppendDuplicateFinishedEventWhenRuntimeAlreadyE
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 10, 0, 0, 0, time.UTC)
 
@@ -1009,7 +1009,7 @@ func TestService_StartTurnAddsExternalTaskIDToFinishedEvent(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 16, 0, 0, 0, time.UTC)
 
@@ -1062,7 +1062,7 @@ func TestService_StartTurnAddsExternalTaskIDToFailedEvent(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 16, 10, 0, 0, time.UTC)
 
@@ -1102,7 +1102,7 @@ func TestService_StartTurnDoesNotAppendDuplicateFailedEventWhenRuntimeAlreadyEmi
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 10, 15, 0, 0, time.UTC)
 
@@ -1157,7 +1157,7 @@ func TestService_ContinueTurnRejectsAuthRequiredWaitState(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -1223,7 +1223,7 @@ func TestService_ContinueTurnRejectsNonWaitingLatestTurn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -1280,7 +1280,7 @@ func TestService_ContinueTurnRejectsWhenResumeStateUnavailable(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 9, 0, 0, 0, time.UTC)
 
@@ -1349,7 +1349,7 @@ func TestService_StartTurnPassesSessionTurnRunContextIntoHITL(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	hitlMgr := hitl.NewInMemoryManager(nil)
 	runner := &hitlTriggerRunner{manager: hitlMgr}
@@ -1422,7 +1422,7 @@ func TestService_StopTurnCancelsActiveRunAndPublishesCanceledLifecycle(t *testin
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := newBlockingRunner()
 	now := time.Date(2026, 4, 13, 8, 0, 0, 0, time.UTC)
@@ -1512,7 +1512,7 @@ func TestService_StartTurnPersistsCompletedLifecycleState(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -1597,7 +1597,7 @@ func TestService_StartTurnRunsRecapHookForCompletedTurn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -1643,7 +1643,7 @@ func TestService_StartTurnRunsRecapHookForFailedTurn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		err: errors.New("runner failed"),
@@ -1681,7 +1681,7 @@ func TestService_StartTurnRunsRecapHookForCanceledTurn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := newBlockingRunner()
 	recap := &recapRecorder{}
@@ -1737,7 +1737,7 @@ func TestService_StartTurnWaitingStateDoesNotRunRecapHook(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -1780,7 +1780,7 @@ func TestService_StartTurnIgnoresRecapHookError(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -1816,7 +1816,7 @@ func TestService_StartTurnRunsPostTurnActionHookForCompletedTurn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -1862,7 +1862,7 @@ func TestService_StartTurnPersistsPostTurnPlannerHints(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -1932,7 +1932,7 @@ func TestService_StartTurnPassesRuntimeContextToPostTurnHook(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -2034,7 +2034,7 @@ func TestService_StartTurnWaitingStateDoesNotRunPostTurnActionHook(t *testing.T)
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -2077,7 +2077,7 @@ func TestService_StartTurnIgnoresPostTurnActionHookError(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -2113,7 +2113,7 @@ func TestService_StartTurnStructuredRecapHookPersistsRecap(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -2161,7 +2161,7 @@ func TestService_StartTurnRecapHookPersistsMemoryCandidates(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		result: RuntimeResult{
@@ -2227,7 +2227,7 @@ func TestService_UpdateMemoryCandidateAcceptsAndRejects(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	root := t.TempDir()
 	now := time.Date(2026, 4, 16, 16, 0, 0, 0, time.UTC)
 	svc := NewService(store, nil, nil, ServiceConfig{
@@ -2291,7 +2291,7 @@ func TestService_UpdateMemoryCandidateRejectsUnsupportedStatus(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	svc := NewService(store, nil, nil, ServiceConfig{})
 
 	_, err := svc.UpdateMemoryCandidate(ctx, UpdateMemoryCandidateInput{
@@ -2310,7 +2310,7 @@ func TestService_StartTurnPersistsFailedLifecycleState(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	runner := &fakeRunner{
 		err: errors.New("runner failed"),
@@ -2373,7 +2373,7 @@ func TestService_ContinueTurnKeepsSessionEventSequenceIncreasingAcrossTurns(t *t
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 14, 14, 0, 0, 0, time.UTC)
 
@@ -2468,7 +2468,7 @@ func TestService_ContinueTurnStoresResumeFromLatestWaitingRun(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 18, 9, 0, 0, 0, time.UTC)
 
@@ -2725,12 +2725,12 @@ func (f *fakePublisher) PublishSessionEvent(_ context.Context, event RunEvent) e
 	return nil
 }
 
-func newServiceTestStore(t *testing.T) *SQLiteStore {
+func newServiceTestRepository(t *testing.T) *SQLiteRepository {
 	t.Helper()
 	dbPath := createMigratedTestDB(t)
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewSQLiteRepository(dbPath)
 	if err != nil {
-		t.Fatalf("NewSQLiteStore() error = %v", err)
+		t.Fatalf("NewSQLiteRepository() error = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := store.Close(); err != nil {

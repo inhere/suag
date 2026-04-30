@@ -9,11 +9,11 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-type SQLiteStore struct {
+type SQLiteRepository struct {
 	db *sql.DB
 }
 
-func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
+func NewSQLiteRepository(dbPath string) (*SQLiteRepository, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return nil, fmt.Errorf("create sqlite directory: %w", err)
 	}
@@ -35,5 +35,5 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, err
 	}
 
-	return &SQLiteStore{db: db}, nil
+	return &SQLiteRepository{db: db}, nil
 }

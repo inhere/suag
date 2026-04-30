@@ -27,7 +27,7 @@ type wsCommandRunner interface {
 	StopTurn(ctx context.Context, in session.StopTurnInput) error
 }
 
-type wsSessionStore interface {
+type wsSessionRepository interface {
 	GetSession(ctx context.Context, sessionID string) (session.Session, error)
 	GetRun(ctx context.Context, runID string) (session.Run, error)
 	ListEventsBySession(ctx context.Context, sessionID string, afterSequence int64) ([]session.RunEvent, error)
@@ -44,7 +44,7 @@ type wsCommand struct {
 	Reason        string `json:"reason"`
 }
 
-func WSHandler(bus *EventBus, sessionStore wsSessionStore, sessionSvc wsCommandRunner) http.HandlerFunc {
+func WSHandler(bus *EventBus, sessionRepo wsSessionRepository, sessionSvc wsCommandRunner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sub := readSSESubscription(r)
 		if !sub.Wildcard && sub.SessionID == "" && sub.TraceID == "" {
@@ -73,8 +73,8 @@ func WSHandler(bus *EventBus, sessionStore wsSessionStore, sessionSvc wsCommandR
 			return
 		}
 
-		if sub.SessionID != "" && sessionStore != nil {
-			snapshot, err := buildWSStateSnapshot(ctx, sessionStore, sub.SessionID)
+		if sub.SessionID != "" && sessionRepo != nil {
+			snapshot, err := buildWSStateSnapshot(ctx, sessionRepo, sub.SessionID)
 			if err == nil {
 				if err := writeWSJSON(ctx, conn, &writeMu, snapshot); err != nil {
 					return
@@ -135,22 +135,22 @@ func WSHandler(bus *EventBus, sessionStore wsSessionStore, sessionSvc wsCommandR
 	}
 }
 
-func buildWSStateSnapshot(ctx context.Context, store wsSessionStore, sessionID string) (agui.StateSnapshotEvent, error) {
-	sessionModel, err := store.GetSession(ctx, sessionID)
+func buildWSStateSnapshot(ctx context.Context, repo wsSessionRepository, sessionID string) (agui.StateSnapshotEvent, error) {
+	sessionModel, err := repo.GetSession(ctx, sessionID)
 	if err != nil {
 		return agui.StateSnapshotEvent{}, err
 	}
 
-	runEvents, err := store.ListEventsBySession(ctx, sessionID, 0)
+	runEvents, err := repo.ListEventsBySession(ctx, sessionID, 0)
 	if err != nil {
 		return agui.StateSnapshotEvent{}, err
 	}
-	externalTasks, err := store.ListExternalTasksBySession(ctx, sessionID)
+	externalTasks, err := repo.ListExternalTasksBySession(ctx, sessionID)
 	if err != nil {
 		return agui.StateSnapshotEvent{}, err
 	}
 
-	return agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(store, ctx, runEvents), externalTasks), nil
+	return agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(repo, ctx, runEvents), externalTasks), nil
 }
 
 func handleWSCommand(ctx context.Context, sub Subscription, sessionSvc wsCommandRunner, cmd wsCommand) (map[string]any, error) {

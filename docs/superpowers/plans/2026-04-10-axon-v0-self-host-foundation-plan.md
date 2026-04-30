@@ -78,8 +78,8 @@
 - [ ] **Step 1: Write the failing schema contract tests**
 
 ```go
-func TestSQLiteStore_CreateSessionTurnRunAndEvent(t *testing.T) {
-    store := newTestStore(t)
+func TestSQLiteRepository_CreateSessionTurnRunAndEvent(t *testing.T) {
+    repo := newTestRepository(t)
 
     session := Session{SessionID: "sess_001", Status: SessionOpen}
     turn := Turn{TurnID: "turn_001", SessionID: session.SessionID, Status: TurnRunning}
@@ -99,7 +99,7 @@ func TestSQLiteStore_CreateSessionTurnRunAndEvent(t *testing.T) {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `go test ./internal/host/session -run TestSQLiteStore_CreateSessionTurnRunAndEvent -v`
+Run: `go test ./internal/host/session -run TestSQLiteRepository_CreateSessionTurnRunAndEvent -v`
 Expected: FAIL with missing package or missing store/type errors
 
 - [ ] **Step 3: Define the core host-side models and enums**
@@ -232,7 +232,7 @@ git commit -m "feat: add self-host session runtime store foundation"
 
 ```go
 func TestService_StartTurnCreatesQueuedRunAndPublishesEvent(t *testing.T) {
-    store := newTestStore(t)
+    repo := newTestRepository(t)
     bus := newFakePublisher()
     runner := newFakeRunner("run-output", nil)
     svc := NewService(store, bus, runner, Config{})
@@ -422,8 +422,8 @@ GET  /ws?session_id=<id>
 - [ ] **Step 5: Wire the new service into server mode**
 
 ```go
-sessionStore, err := session.NewSQLiteStore(...)
-sessionSvc := session.NewService(sessionStore, bus, runtimeAdapter, cfg)
+sessionRepo, err := session.NewSQLiteRepository(...)
+sessionSvc := session.NewService(sessionRepo, bus, runtimeAdapter, cfg)
 handler := gateway.NewHandler(a.orch, sessionSvc, bus, a.hitlMgr)
 ```
 

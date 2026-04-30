@@ -20,7 +20,7 @@ func TestService_StartTurnWithACPBridgeRunnerPublishesFinishedLifecycle(t *testi
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newIntegrationStore(t)
+	store := newIntegrationRepository(t)
 	bus := newIntegrationPublisher()
 	bridge := &fakeACPBridge{
 		result: acpbridge.DispatchResult{
@@ -71,7 +71,7 @@ func TestService_StartTurnWithACPBridgeRunnerPublishesExternalTaskBeforeFinish(t
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newIntegrationStore(t)
+	store := newIntegrationRepository(t)
 	bus := newIntegrationPublisher()
 	bridge := &fakeACPBridge{
 		result: acpbridge.DispatchResult{
@@ -122,7 +122,7 @@ func TestService_StartTurnWithACPBridgeRunnerPersistsExternalTaskOnFailedDispatc
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newIntegrationStore(t)
+	store := newIntegrationRepository(t)
 	bus := newIntegrationPublisher()
 	bridge := &fakeACPBridge{
 		result: acpbridge.DispatchResult{
@@ -212,15 +212,15 @@ func (p *integrationPublisher) PublishSessionEvent(_ context.Context, event sess
 	return nil
 }
 
-func newIntegrationStore(t *testing.T) *session.SQLiteStore {
+func newIntegrationRepository(t *testing.T) *session.SQLiteRepository {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "session.db")
 	applyIntegrationMigration(t, dbPath)
 
-	store, err := session.NewSQLiteStore(dbPath)
+	store, err := session.NewSQLiteRepository(dbPath)
 	if err != nil {
-		t.Fatalf("session.NewSQLiteStore() error = %v", err)
+		t.Fatalf("session.NewSQLiteRepository() error = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := store.Close(); err != nil {

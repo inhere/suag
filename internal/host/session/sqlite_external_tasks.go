@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func (s *SQLiteStore) CreateExternalTask(ctx context.Context, task ExternalTask) error {
+func (s *SQLiteRepository) CreateExternalTask(ctx context.Context, task ExternalTask) error {
 	if err := validateID("external task", task.ExternalTaskID); err != nil {
 		return err
 	}
@@ -29,7 +29,7 @@ func (s *SQLiteStore) CreateExternalTask(ctx context.Context, task ExternalTask)
 	return nil
 }
 
-func (s *SQLiteStore) UpdateExternalTask(ctx context.Context, task ExternalTask) error {
+func (s *SQLiteRepository) UpdateExternalTask(ctx context.Context, task ExternalTask) error {
 	if err := validateID("external task", task.ExternalTaskID); err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func (s *SQLiteStore) UpdateExternalTask(ctx context.Context, task ExternalTask)
 	return nil
 }
 
-func (s *SQLiteStore) ListExternalTasksByRun(ctx context.Context, runID string) ([]ExternalTask, error) {
+func (s *SQLiteRepository) ListExternalTasksByRun(ctx context.Context, runID string) ([]ExternalTask, error) {
 	if err := validateID("run", runID); err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (s *SQLiteStore) ListExternalTasksByRun(ctx context.Context, runID string) 
 	`, runID, "list external tasks by run")
 }
 
-func (s *SQLiteStore) ListExternalTasksBySession(ctx context.Context, sessionID string) ([]ExternalTask, error) {
+func (s *SQLiteRepository) ListExternalTasksBySession(ctx context.Context, sessionID string) ([]ExternalTask, error) {
 	if err := validateID("session", sessionID); err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (s *SQLiteStore) ListExternalTasksBySession(ctx context.Context, sessionID 
 	`, sessionID, "list external tasks by session")
 }
 
-func (s *SQLiteStore) listExternalTasks(ctx context.Context, query string, arg string, op string) ([]ExternalTask, error) {
+func (s *SQLiteRepository) listExternalTasks(ctx context.Context, query string, arg string, op string) ([]ExternalTask, error) {
 	rows, err := s.db.QueryContext(ctx, `
 	`+strings.TrimSpace(query), arg)
 	if err != nil {

@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-func (s *SQLiteStore) CreateRecap(ctx context.Context, recap Recap) error {
+func (s *SQLiteRepository) CreateRecap(ctx context.Context, recap Recap) error {
 	if err := validateID("recap", recap.RecapID); err != nil {
 		return err
 	}
@@ -34,7 +34,7 @@ func (s *SQLiteStore) CreateRecap(ctx context.Context, recap Recap) error {
 	return nil
 }
 
-func (s *SQLiteStore) ListRecapsByTurn(ctx context.Context, sessionID string, turnID string) ([]Recap, error) {
+func (s *SQLiteRepository) ListRecapsByTurn(ctx context.Context, sessionID string, turnID string) ([]Recap, error) {
 	if err := validateID("session", sessionID); err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (s *SQLiteStore) ListRecapsByTurn(ctx context.Context, sessionID string, tu
 	return recaps, nil
 }
 
-func (s *SQLiteStore) CreateMemoryCandidate(ctx context.Context, candidate MemoryCandidate) error {
+func (s *SQLiteRepository) CreateMemoryCandidate(ctx context.Context, candidate MemoryCandidate) error {
 	if err := validateID("memory candidate", candidate.CandidateID); err != nil {
 		return err
 	}
@@ -117,7 +117,7 @@ func (s *SQLiteStore) CreateMemoryCandidate(ctx context.Context, candidate Memor
 	return nil
 }
 
-func (s *SQLiteStore) GetMemoryCandidate(ctx context.Context, candidateID string) (MemoryCandidate, error) {
+func (s *SQLiteRepository) GetMemoryCandidate(ctx context.Context, candidateID string) (MemoryCandidate, error) {
 	if err := validateID("memory candidate", candidateID); err != nil {
 		return MemoryCandidate{}, err
 	}
@@ -165,7 +165,7 @@ func (s *SQLiteStore) GetMemoryCandidate(ctx context.Context, candidateID string
 	return candidate, nil
 }
 
-func (s *SQLiteStore) ListMemoryCandidatesByTurn(ctx context.Context, sessionID string, turnID string) ([]MemoryCandidate, error) {
+func (s *SQLiteRepository) ListMemoryCandidatesByTurn(ctx context.Context, sessionID string, turnID string) ([]MemoryCandidate, error) {
 	if err := validateID("session", sessionID); err != nil {
 		return nil, err
 	}
@@ -224,7 +224,7 @@ func (s *SQLiteStore) ListMemoryCandidatesByTurn(ctx context.Context, sessionID 
 	return candidates, nil
 }
 
-func (s *SQLiteStore) ListMemoryCandidatesBySession(ctx context.Context, sessionID string) ([]MemoryCandidate, error) {
+func (s *SQLiteRepository) ListMemoryCandidatesBySession(ctx context.Context, sessionID string) ([]MemoryCandidate, error) {
 	if err := validateID("session", sessionID); err != nil {
 		return nil, err
 	}
@@ -280,7 +280,7 @@ func (s *SQLiteStore) ListMemoryCandidatesBySession(ctx context.Context, session
 	return candidates, nil
 }
 
-func (s *SQLiteStore) UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status MemoryCandidateStatus) error {
+func (s *SQLiteRepository) UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status MemoryCandidateStatus) error {
 	if err := validateID("memory candidate", candidateID); err != nil {
 		return err
 	}

@@ -13,7 +13,7 @@ func TestService_StartTurnWithACPBridgeStubPersistsExternalTask(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newIntegrationStore(t)
+	store := newIntegrationRepository(t)
 	bus := newIntegrationPublisher()
 	bridge := acpbridge.NewStubBridge(acpbridge.StubBridgeConfig{
 		RemoteAgentName: "codex-cli",
@@ -63,7 +63,7 @@ func TestService_StartTurnWithACPBridgePersistsExternalTaskMetadata(t *testing.T
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newIntegrationStore(t)
+	store := newIntegrationRepository(t)
 	bus := newIntegrationPublisher()
 	runner := acpbridge.NewRunnerAdapter(&serviceMetadataBridge{}, acpbridge.RunnerAdapterConfig{
 		AdapterName: "codex",
@@ -111,7 +111,7 @@ func TestService_StartTurnWithACPBridgeRunningDispatchDoesNotFinalizeRun(t *test
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newIntegrationStore(t)
+	store := newIntegrationRepository(t)
 	bus := newIntegrationPublisher()
 	runner := acpbridge.NewRunnerAdapter(&serviceRunningBridge{}, acpbridge.RunnerAdapterConfig{
 		AdapterName: "codex",
@@ -181,7 +181,7 @@ func TestService_NonTerminalRunnerStatesPersistCurrentHostViewConsistently(t *te
 	ctx := context.Background()
 
 	t.Run("internal thinking", func(t *testing.T) {
-		store := newIntegrationStore(t)
+		store := newIntegrationRepository(t)
 		bus := newIntegrationPublisher()
 		now := time.Date(2026, 4, 19, 20, 10, 0, 0, time.UTC)
 		runner := &serviceRuntimeResultRunner{
@@ -237,7 +237,7 @@ func TestService_NonTerminalRunnerStatesPersistCurrentHostViewConsistently(t *te
 	})
 
 	t.Run("acp external waiting", func(t *testing.T) {
-		store := newIntegrationStore(t)
+		store := newIntegrationRepository(t)
 		bus := newIntegrationPublisher()
 		now := time.Date(2026, 4, 19, 20, 11, 0, 0, time.UTC)
 		runner := acpbridge.NewRunnerAdapter(&serviceRunningBridge{}, acpbridge.RunnerAdapterConfig{

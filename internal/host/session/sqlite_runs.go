@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func (s *SQLiteStore) CreateRun(ctx context.Context, run Run) error {
+func (s *SQLiteRepository) CreateRun(ctx context.Context, run Run) error {
 	if err := validateID("run", run.RunID); err != nil {
 		return err
 	}
@@ -32,7 +32,7 @@ func (s *SQLiteStore) CreateRun(ctx context.Context, run Run) error {
 	return nil
 }
 
-func (s *SQLiteStore) UpdateRunLifecycle(ctx context.Context, runID string, state RunState, summary string, failureCode string, endedAt *time.Time) error {
+func (s *SQLiteRepository) UpdateRunLifecycle(ctx context.Context, runID string, state RunState, summary string, failureCode string, endedAt *time.Time) error {
 	if err := validateID("run", runID); err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func (s *SQLiteStore) UpdateRunLifecycle(ctx context.Context, runID string, stat
 	return nil
 }
 
-func (s *SQLiteStore) UpdateRunMetadata(ctx context.Context, runID string, metadata map[string]any) error {
+func (s *SQLiteRepository) UpdateRunMetadata(ctx context.Context, runID string, metadata map[string]any) error {
 	if err := validateID("run", runID); err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func (s *SQLiteStore) UpdateRunMetadata(ctx context.Context, runID string, metad
 	return nil
 }
 
-func (s *SQLiteStore) GetRun(ctx context.Context, runID string) (Run, error) {
+func (s *SQLiteRepository) GetRun(ctx context.Context, runID string) (Run, error) {
 	if err := validateID("run", runID); err != nil {
 		return Run{}, err
 	}

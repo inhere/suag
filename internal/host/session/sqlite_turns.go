@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func (s *SQLiteStore) CreateTurn(ctx context.Context, turn Turn) error {
+func (s *SQLiteRepository) CreateTurn(ctx context.Context, turn Turn) error {
 	if err := validateID("turn", turn.TurnID); err != nil {
 		return err
 	}
@@ -28,7 +28,7 @@ func (s *SQLiteStore) CreateTurn(ctx context.Context, turn Turn) error {
 	return nil
 }
 
-func (s *SQLiteStore) UpdateTurnStatus(ctx context.Context, turnID string, status TurnStatus, completedAt *time.Time) error {
+func (s *SQLiteRepository) UpdateTurnStatus(ctx context.Context, turnID string, status TurnStatus, completedAt *time.Time) error {
 	if err := validateID("turn", turnID); err != nil {
 		return err
 	}

@@ -435,13 +435,13 @@ func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {
 	}
 }
 
-func newAppSessionStore(t *testing.T) *session.SQLiteStore {
+func newAppSessionRepository(t *testing.T) *session.SQLiteRepository {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "app-session.db")
 	applyAppSessionMigration(t, dbPath)
 
-	store, err := session.NewSQLiteStore(dbPath)
+	store, err := session.NewSQLiteRepository(dbPath)
 	assert.NoErr(t, err)
 	t.Cleanup(func() {
 		assert.NoErr(t, store.Close())

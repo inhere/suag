@@ -72,7 +72,7 @@ single-runtime snapshots.
 
 Current implementation:
 
-- `internal/host/session.SQLiteRepository` once the repository naming migration is complete
+- `internal/host/session.SQLiteRepository`
 
 Constructor behavior:
 
@@ -197,8 +197,6 @@ unless the owner and authority boundary is obvious from the package path.
 
 Near-term cleanup:
 
-- Rename Host session SQLite implementation from `SQLiteStore` to `SQLiteRepository`.
-- Rename `NewSQLiteStore` to `NewSQLiteRepository`.
 - Keep migrations outside the repository constructor.
 - Introduce `internal/data` only when app startup needs shared DB/migration orchestration.
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-func (s *SQLiteStore) AppendEvent(ctx context.Context, event RunEvent) (RunEvent, error) {
+func (s *SQLiteRepository) AppendEvent(ctx context.Context, event RunEvent) (RunEvent, error) {
 	if err := validateID("event", event.EventID); err != nil {
 		return RunEvent{}, err
 	}
@@ -53,7 +53,7 @@ func (s *SQLiteStore) AppendEvent(ctx context.Context, event RunEvent) (RunEvent
 	return event, nil
 }
 
-func (s *SQLiteStore) ListEventsBySession(ctx context.Context, sessionID string, afterSequence int64) ([]RunEvent, error) {
+func (s *SQLiteRepository) ListEventsBySession(ctx context.Context, sessionID string, afterSequence int64) ([]RunEvent, error) {
 	if err := validateID("session", sessionID); err != nil {
 		return nil, err
 	}

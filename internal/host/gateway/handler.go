@@ -19,21 +19,21 @@ import (
 
 // Handler exposes the REST API for the axon server.
 type Handler struct {
-	orch         *orchestrator.Orchestrator
-	sessionStore session.Repository
-	sessionSvc   *session.Service
-	bus          *EventBus
-	hitlMgr      hitl.Manager
+	orch        *orchestrator.Orchestrator
+	sessionRepo session.Repository
+	sessionSvc  *session.Service
+	bus         *EventBus
+	hitlMgr     hitl.Manager
 }
 
 // NewHandler creates a Handler.
-func NewHandler(orch *orchestrator.Orchestrator, sessionStore session.Repository, sessionSvc *session.Service, bus *EventBus, hitlMgr hitl.Manager) *Handler {
+func NewHandler(orch *orchestrator.Orchestrator, sessionRepo session.Repository, sessionSvc *session.Service, bus *EventBus, hitlMgr hitl.Manager) *Handler {
 	return &Handler{
-		orch:         orch,
-		sessionStore: sessionStore,
-		sessionSvc:   sessionSvc,
-		bus:          bus,
-		hitlMgr:      hitlMgr,
+		orch:        orch,
+		sessionRepo: sessionRepo,
+		sessionSvc:  sessionSvc,
+		bus:         bus,
+		hitlMgr:     hitlMgr,
 	}
 }
 
@@ -101,8 +101,8 @@ type listSessionsResponseItem struct {
 }
 
 func (h *Handler) HandleCreateSession(w http.ResponseWriter, r *http.Request) {
-	if h.sessionStore == nil {
-		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
+	if h.sessionRepo == nil {
+		httpError(w, "session repository is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -125,7 +125,7 @@ func (h *Handler) HandleCreateSession(w http.ResponseWriter, r *http.Request) {
 		sessionModel.Title = "Session " + sessionModel.SessionID
 	}
 
-	if err := h.sessionStore.CreateSession(r.Context(), sessionModel); err != nil {
+	if err := h.sessionRepo.CreateSession(r.Context(), sessionModel); err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -138,12 +138,12 @@ func (h *Handler) HandleCreateSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleListSessions(w http.ResponseWriter, r *http.Request) {
-	if h.sessionStore == nil {
-		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
+	if h.sessionRepo == nil {
+		httpError(w, "session repository is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
-	sessions, err := h.sessionStore.ListSessions(r.Context())
+	sessions, err := h.sessionRepo.ListSessions(r.Context())
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -271,13 +271,13 @@ type memoryCandidateResponse struct {
 }
 
 func (h *Handler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
-	if h.sessionStore == nil {
-		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
+	if h.sessionRepo == nil {
+		httpError(w, "session repository is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
 	sessionID := r.PathValue("id")
-	sessionModel, err := h.sessionStore.GetSession(r.Context(), sessionID)
+	sessionModel, err := h.sessionRepo.GetSession(r.Context(), sessionID)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			httpError(w, "session not found", http.StatusNotFound)
@@ -286,17 +286,17 @@ func (h *Handler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	externalTasks, err := h.sessionStore.ListExternalTasksBySession(r.Context(), sessionID)
+	externalTasks, err := h.sessionRepo.ListExternalTasksBySession(r.Context(), sessionID)
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	runEvents, err := h.sessionStore.ListEventsBySession(r.Context(), sessionID, 0)
+	runEvents, err := h.sessionRepo.ListEventsBySession(r.Context(), sessionID, 0)
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(h.sessionStore, r.Context(), runEvents), externalTasks)
+	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(h.sessionRepo, r.Context(), runEvents), externalTasks)
 	snapshotPayload, _ := snapshot.Snapshot.(map[string]any)
 
 	respondJSON(w, http.StatusOK, getSessionResponse{
@@ -313,8 +313,8 @@ func (h *Handler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleGetRunDetail(w http.ResponseWriter, r *http.Request) {
-	if h.sessionStore == nil {
-		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
+	if h.sessionRepo == nil {
+		httpError(w, "session repository is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -325,7 +325,7 @@ func (h *Handler) HandleGetRunDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionModel, err := h.sessionStore.GetSession(r.Context(), sessionID)
+	sessionModel, err := h.sessionRepo.GetSession(r.Context(), sessionID)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			httpError(w, "session not found", http.StatusNotFound)
@@ -334,18 +334,18 @@ func (h *Handler) HandleGetRunDetail(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	externalTasks, err := h.sessionStore.ListExternalTasksBySession(r.Context(), sessionID)
+	externalTasks, err := h.sessionRepo.ListExternalTasksBySession(r.Context(), sessionID)
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	runEvents, err := h.sessionStore.ListEventsBySession(r.Context(), sessionID, 0)
+	runEvents, err := h.sessionRepo.ListEventsBySession(r.Context(), sessionID, 0)
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(h.sessionStore, r.Context(), runEvents), externalTasks)
+	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(h.sessionRepo, r.Context(), runEvents), externalTasks)
 	snapshotPayload, _ := snapshot.Snapshot.(map[string]any)
 	runs := snapshotSliceField(snapshotPayload, "runs")
 	run := findRunSnapshot(runs, runID)
@@ -372,8 +372,8 @@ func (h *Handler) HandleGetRunDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleListMemoryCandidates(w http.ResponseWriter, r *http.Request) {
-	if h.sessionStore == nil {
-		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
+	if h.sessionRepo == nil {
+		httpError(w, "session repository is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -383,7 +383,7 @@ func (h *Handler) HandleListMemoryCandidates(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	candidates, err := h.sessionStore.ListMemoryCandidatesBySession(r.Context(), sessionID)
+	candidates, err := h.sessionRepo.ListMemoryCandidatesBySession(r.Context(), sessionID)
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -431,8 +431,8 @@ func (h *Handler) handleUpdateMemoryCandidate(w http.ResponseWriter, r *http.Req
 // ─── GET /api/sessions/{id}/events ───────────────────────────────────────────
 
 func (h *Handler) HandleListSessionEvents(w http.ResponseWriter, r *http.Request) {
-	if h.sessionStore == nil {
-		httpError(w, "session store is not configured", http.StatusServiceUnavailable)
+	if h.sessionRepo == nil {
+		httpError(w, "session repository is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -447,7 +447,7 @@ func (h *Handler) HandleListSessionEvents(w http.ResponseWriter, r *http.Request
 		afterSequence = value
 	}
 
-	events, err := h.sessionStore.ListEventsBySession(r.Context(), sessionID, afterSequence)
+	events, err := h.sessionRepo.ListEventsBySession(r.Context(), sessionID, afterSequence)
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -675,16 +675,16 @@ func cloneSnapshotMap(src map[string]any) map[string]any {
 }
 
 func (h *Handler) buildSessionPreview(r *http.Request, sessionModel session.Session) (string, error) {
-	externalTasks, err := h.sessionStore.ListExternalTasksBySession(r.Context(), sessionModel.SessionID)
+	externalTasks, err := h.sessionRepo.ListExternalTasksBySession(r.Context(), sessionModel.SessionID)
 	if err != nil {
 		return "", err
 	}
-	runEvents, err := h.sessionStore.ListEventsBySession(r.Context(), sessionModel.SessionID, 0)
+	runEvents, err := h.sessionRepo.ListEventsBySession(r.Context(), sessionModel.SessionID, 0)
 	if err != nil {
 		return "", err
 	}
 
-	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(h.sessionStore, r.Context(), runEvents), externalTasks)
+	snapshot := agui.BuildStateSnapshot(sessionModel, mapSessionEventsForSnapshot(h.sessionRepo, r.Context(), runEvents), externalTasks)
 	snapshotPayload, _ := snapshot.Snapshot.(map[string]any)
 	return snapshotPreview(snapshotPayload), nil
 }

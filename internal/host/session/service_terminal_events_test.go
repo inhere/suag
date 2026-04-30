@@ -10,7 +10,7 @@ func TestService_StartTurnDoesNotAppendDuplicateCanceledEventWhenRuntimeAlreadyE
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 10, 30, 0, 0, time.UTC)
 	runner := newCanceledEventBlockingRunner(RuntimeEvent{
@@ -80,7 +80,7 @@ func TestService_StartTurnPreservesRuntimeCanceledTerminalState(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 10, 45, 0, 0, time.UTC)
 
@@ -164,7 +164,7 @@ func TestService_StartTurnPreservesRuntimeFailedTerminalState(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 11, 0, 0, 0, time.UTC)
 
@@ -251,7 +251,7 @@ func TestService_StartTurnPreservesRuntimeFinishedSummary(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newServiceTestStore(t)
+	store := newServiceTestRepository(t)
 	bus := newFakePublisher()
 	now := time.Date(2026, 4, 19, 11, 15, 0, 0, time.UTC)
 
