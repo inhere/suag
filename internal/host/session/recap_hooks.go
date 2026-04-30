@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-type recapStore interface {
+type recapRepository interface {
 	CreateRecap(ctx context.Context, recap Recap) error
 	CreateMemoryCandidate(ctx context.Context, candidate MemoryCandidate) error
 	GetMemoryCandidate(ctx context.Context, candidateID string) (MemoryCandidate, error)
@@ -18,16 +18,16 @@ type recapStore interface {
 }
 
 type StructuredRecapHook struct {
-	store recapStore
+	store recapRepository
 	now   func() time.Time
 }
 
-func NewStructuredRecapHook(store Store, now func() time.Time) *StructuredRecapHook {
+func NewStructuredRecapHook(repo Repository, now func() time.Time) *StructuredRecapHook {
 	if now == nil {
 		now = time.Now
 	}
 	return &StructuredRecapHook{
-		store: store,
+		store: repo,
 		now:   now,
 	}
 }
@@ -65,16 +65,16 @@ func (h *StructuredRecapHook) OnTurnRecap(ctx context.Context, input RecapInput)
 }
 
 type MemoryCandidateHook struct {
-	store recapStore
+	store recapRepository
 	now   func() time.Time
 }
 
-func NewMemoryCandidateHook(store Store, now func() time.Time) *MemoryCandidateHook {
+func NewMemoryCandidateHook(repo Repository, now func() time.Time) *MemoryCandidateHook {
 	if now == nil {
 		now = time.Now
 	}
 	return &MemoryCandidateHook{
-		store: store,
+		store: repo,
 		now:   now,
 	}
 }
@@ -100,7 +100,7 @@ func (h *MemoryCandidateHook) OnTurnRecap(ctx context.Context, input RecapInput)
 	return nil
 }
 
-func latestRecapIDForTurn(ctx context.Context, store recapStore, sessionID string, turnID string) (string, error) {
+func latestRecapIDForTurn(ctx context.Context, store recapRepository, sessionID string, turnID string) (string, error) {
 	recaps, err := store.ListRecapsByTurn(ctx, sessionID, turnID)
 	if err != nil {
 		return "", err
@@ -178,9 +178,9 @@ type MemoryDraftHook struct {
 	writer *MemoryFileWriter
 }
 
-func NewMemoryDraftHook(store Store, root string, now func() time.Time) *MemoryDraftHook {
+func NewMemoryDraftHook(repo Repository, root string, now func() time.Time) *MemoryDraftHook {
 	return &MemoryDraftHook{
-		writer: NewMemoryFileWriter(store, root, now),
+		writer: NewMemoryFileWriter(repo, root, now),
 	}
 }
 

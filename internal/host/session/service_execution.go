@@ -75,13 +75,13 @@ func (s *Service) persistLifecycleState(
 	failureCode string,
 	finishedAt time.Time,
 ) error {
-	if s == nil || s.store == nil {
+	if s == nil || s.repo == nil {
 		return nil
 	}
 
 	// Keep the entity tables aligned with the emitted lifecycle events so
 	// REST recovery and websocket snapshots do not disagree after reload.
-	if err := s.store.UpdateRunLifecycle(ctx, runID, runState, summary, failureCode, &finishedAt); err != nil {
+	if err := s.repo.UpdateRunLifecycle(ctx, runID, runState, summary, failureCode, &finishedAt); err != nil {
 		return fmt.Errorf("update run lifecycle: %w", err)
 	}
 	if err := s.updateRunMetadata(ctx, runID, map[string]any{
@@ -89,7 +89,7 @@ func (s *Service) persistLifecycleState(
 	}); err != nil {
 		return fmt.Errorf("update run terminal metadata: %w", err)
 	}
-	if err := s.store.UpdateTurnStatus(ctx, turnID, turnStatus, &finishedAt); err != nil {
+	if err := s.repo.UpdateTurnStatus(ctx, turnID, turnStatus, &finishedAt); err != nil {
 		return fmt.Errorf("update turn status: %w", err)
 	}
 
@@ -99,7 +99,7 @@ func (s *Service) persistLifecycleState(
 	// like the session is still blocked on unfinished work.
 	sessionModel.Status = SessionOpen
 	sessionModel.UpdatedAt = finishedAt
-	if err := s.store.UpdateSession(ctx, sessionModel); err != nil {
+	if err := s.repo.UpdateSession(ctx, sessionModel); err != nil {
 		return fmt.Errorf("update session status: %w", err)
 	}
 	return nil

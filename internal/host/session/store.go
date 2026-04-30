@@ -37,7 +37,3 @@ type Repository interface {
 	UpdateMemoryCandidateStatus(ctx context.Context, candidateID string, status MemoryCandidateStatus) error
 	Close() error
 }
-
-// Store is kept as a short local alias while the host package migrates naming
-// toward Repository.
-type Store = Repository

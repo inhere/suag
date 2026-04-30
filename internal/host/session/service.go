@@ -162,7 +162,7 @@ type activeExecution struct {
 
 // Service owns the host-side lifecycle orchestration for session turns and runs.
 type Service struct {
-	store                  Store
+	repo                   Repository
 	pub                    Publisher
 	runner                 Runner
 	now                    func() time.Time
@@ -176,14 +176,14 @@ type Service struct {
 	activeExecutions map[string]*activeExecution
 }
 
-func NewService(store Store, pub Publisher, runner Runner, cfg ServiceConfig) *Service {
+func NewService(repo Repository, pub Publisher, runner Runner, cfg ServiceConfig) *Service {
 	nowFn := cfg.Now
 	if nowFn == nil {
 		nowFn = time.Now
 	}
 
 	return &Service{
-		store:                  store,
+		repo:                   repo,
 		pub:                    pub,
 		runner:                 runner,
 		now:                    nowFn,
@@ -255,14 +255,14 @@ func (s *Service) StopTurn(ctx context.Context, in StopTurnInput) error {
 }
 
 func (s *Service) UpdateMemoryCandidate(ctx context.Context, in UpdateMemoryCandidateInput) (MemoryCandidate, error) {
-	if s == nil || s.store == nil {
+	if s == nil || s.repo == nil {
 		return MemoryCandidate{}, fmt.Errorf("service is required")
 	}
 	if err := validateUpdateMemoryCandidateInput(in); err != nil {
 		return MemoryCandidate{}, err
 	}
 
-	candidate, err := s.store.GetMemoryCandidate(ctx, in.CandidateID)
+	candidate, err := s.repo.GetMemoryCandidate(ctx, in.CandidateID)
 	if err != nil {
 		return MemoryCandidate{}, err
 	}
@@ -270,7 +270,7 @@ func (s *Service) UpdateMemoryCandidate(ctx context.Context, in UpdateMemoryCand
 		return candidate, nil
 	}
 
-	if err := s.store.UpdateMemoryCandidateStatus(ctx, in.CandidateID, in.Status); err != nil {
+	if err := s.repo.UpdateMemoryCandidateStatus(ctx, in.CandidateID, in.Status); err != nil {
 		return MemoryCandidate{}, err
 	}
 	candidate.Status = in.Status
@@ -329,7 +329,7 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 		PrimaryRunID:  runID,
 		CreatedAt:     now,
 	}
-	if err := s.store.CreateTurn(ctx, turnModel); err != nil {
+	if err := s.repo.CreateTurn(ctx, turnModel); err != nil {
 		return StartTurnResult{}, fmt.Errorf("create turn: %w", err)
 	}
 
@@ -343,14 +343,14 @@ func (s *Service) startTurn(ctx context.Context, sessionID, agentID, message str
 		StartedAt:       now,
 		Metadata:        s.initialRunMetadata(createIfMissing),
 	}
-	if err := s.store.CreateRun(ctx, runModel); err != nil {
+	if err := s.repo.CreateRun(ctx, runModel); err != nil {
 		return StartTurnResult{}, fmt.Errorf("create run: %w", err)
 	}
 
 	sessionModel.LastTurnID = turnID
 	sessionModel.UpdatedAt = now
 	sessionModel.Status = SessionRunning
-	if err := s.store.UpdateSession(ctx, sessionModel); err != nil {
+	if err := s.repo.UpdateSession(ctx, sessionModel); err != nil {
 		return StartTurnResult{}, fmt.Errorf("update session head: %w", err)
 	}
 

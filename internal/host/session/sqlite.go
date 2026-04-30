@@ -29,7 +29,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	}
 
 	// Schema ownership is delegated to miglite SQL migrations under db/migrations.
-	// Store startup only verifies the expected tables are already present.
+	// Repository startup only verifies the expected tables are already present.
 	if err := ensureRequiredTables(db); err != nil {
 		_ = db.Close()
 		return nil, err

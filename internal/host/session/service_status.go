@@ -7,7 +7,7 @@ import (
 )
 
 func (s *Service) applyRuntimeStatus(ctx context.Context, sessionModel Session, turnID, runID string, event RuntimeEvent) error {
-	if s == nil || s.store == nil {
+	if s == nil || s.repo == nil {
 		return nil
 	}
 	if strings.TrimSpace(event.EventType) != EventRunStatus {
@@ -21,20 +21,20 @@ func (s *Service) applyRuntimeStatus(ctx context.Context, sessionModel Session, 
 
 	switch runState {
 	case RunPreparing, RunThinking, RunDispatching, RunExternal, RunSummarizing:
-		if err := s.store.UpdateRunLifecycle(ctx, runID, runState, "", "", nil); err != nil {
+		if err := s.repo.UpdateRunLifecycle(ctx, runID, runState, "", "", nil); err != nil {
 			return fmt.Errorf("update run runtime state: %w", err)
 		}
 		return nil
 	case RunInputRequired, RunAuthRequired:
-		if err := s.store.UpdateRunLifecycle(ctx, runID, runState, "", "", nil); err != nil {
+		if err := s.repo.UpdateRunLifecycle(ctx, runID, runState, "", "", nil); err != nil {
 			return fmt.Errorf("update waiting run state: %w", err)
 		}
-		if err := s.store.UpdateTurnStatus(ctx, turnID, TurnWaiting, nil); err != nil {
+		if err := s.repo.UpdateTurnStatus(ctx, turnID, TurnWaiting, nil); err != nil {
 			return fmt.Errorf("update waiting turn status: %w", err)
 		}
 		sessionModel.Status = SessionWaiting
 		sessionModel.UpdatedAt = s.now().UTC()
-		if err := s.store.UpdateSession(ctx, sessionModel); err != nil {
+		if err := s.repo.UpdateSession(ctx, sessionModel); err != nil {
 			return fmt.Errorf("update waiting session status: %w", err)
 		}
 		return nil
@@ -88,5 +88,5 @@ func (s *Service) persistExternalTask(ctx context.Context, sessionID, turnID, ru
 		taskModel.Metadata = map[string]any{}
 	}
 
-	return s.store.CreateExternalTask(ctx, taskModel)
+	return s.repo.CreateExternalTask(ctx, taskModel)
 }

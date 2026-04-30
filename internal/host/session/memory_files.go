@@ -13,17 +13,17 @@ type MemoryFileSync interface {
 }
 
 type MemoryFileWriter struct {
-	store recapStore
+	store recapRepository
 	root  string
 	now   func() time.Time
 }
 
-func NewMemoryFileWriter(store Store, root string, now func() time.Time) *MemoryFileWriter {
+func NewMemoryFileWriter(repo Repository, root string, now func() time.Time) *MemoryFileWriter {
 	if now == nil {
 		now = time.Now
 	}
 	return &MemoryFileWriter{
-		store: store,
+		store: repo,
 		root:  strings.TrimSpace(root),
 		now:   now,
 	}

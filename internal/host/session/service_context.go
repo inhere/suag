@@ -24,14 +24,14 @@ func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, agentID, m
 	if built := s.buildCapabilityRuntimeContext(ctx, sessionID, agentID, message, isContinue); len(built) > 0 {
 		ctxMap = mergeRuntimePayload(ctxMap, built)
 	}
-	if s.store == nil {
+	if s.repo == nil {
 		return ctxMap
 	}
 	if strings.TrimSpace(previousTurnID) == "" {
 		return ctxMap
 	}
 
-	tasks, err := s.store.ListExternalTasksBySession(ctx, sessionID)
+	tasks, err := s.repo.ListExternalTasksBySession(ctx, sessionID)
 	if err != nil {
 		return ctxMap
 	}
@@ -67,11 +67,11 @@ func (s *Service) buildInitialSessionMetadata(sessionID, agentID, message string
 }
 
 func (s *Service) buildCapabilityRuntimeContext(ctx context.Context, sessionID, agentID, message string, isContinue bool) map[string]any {
-	if s == nil || s.runtimeContextBuilder == nil || s.store == nil {
+	if s == nil || s.runtimeContextBuilder == nil || s.repo == nil {
 		return nil
 	}
 
-	sessionModel, err := s.store.GetSession(ctx, sessionID)
+	sessionModel, err := s.repo.GetSession(ctx, sessionID)
 	if err != nil {
 		return nil
 	}

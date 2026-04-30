@@ -20,14 +20,14 @@ import (
 // Handler exposes the REST API for the axon server.
 type Handler struct {
 	orch         *orchestrator.Orchestrator
-	sessionStore session.Store
+	sessionStore session.Repository
 	sessionSvc   *session.Service
 	bus          *EventBus
 	hitlMgr      hitl.Manager
 }
 
 // NewHandler creates a Handler.
-func NewHandler(orch *orchestrator.Orchestrator, sessionStore session.Store, sessionSvc *session.Service, bus *EventBus, hitlMgr hitl.Manager) *Handler {
+func NewHandler(orch *orchestrator.Orchestrator, sessionStore session.Repository, sessionSvc *session.Service, bus *EventBus, hitlMgr hitl.Manager) *Handler {
 	return &Handler{
 		orch:         orch,
 		sessionStore: sessionStore,
@@ -219,15 +219,15 @@ func (h *Handler) HandleStartTurn(w http.ResponseWriter, r *http.Request) {
 // ─── GET /api/sessions/{id} ──────────────────────────────────────────────────
 
 type getSessionResponse struct {
-	SessionID     string                 `json:"session_id"`
-	Title         string                 `json:"title"`
-	Status        string                 `json:"status"`
-	LastTurnID    string                 `json:"last_turn_id"`
-	Turns         []map[string]any       `json:"turns"`
-	Runs          []map[string]any       `json:"runs"`
-	ExternalActivities []map[string]any  `json:"external_activities"`
-	ExternalMessages   []map[string]any  `json:"external_messages"`
-	ExternalTasks []externalTaskResponse `json:"external_tasks"`
+	SessionID          string                 `json:"session_id"`
+	Title              string                 `json:"title"`
+	Status             string                 `json:"status"`
+	LastTurnID         string                 `json:"last_turn_id"`
+	Turns              []map[string]any       `json:"turns"`
+	Runs               []map[string]any       `json:"runs"`
+	ExternalActivities []map[string]any       `json:"external_activities"`
+	ExternalMessages   []map[string]any       `json:"external_messages"`
+	ExternalTasks      []externalTaskResponse `json:"external_tasks"`
 }
 
 type getRunDetailResponse struct {
@@ -300,15 +300,15 @@ func (h *Handler) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 	snapshotPayload, _ := snapshot.Snapshot.(map[string]any)
 
 	respondJSON(w, http.StatusOK, getSessionResponse{
-		SessionID:     sessionModel.SessionID,
-		Title:         sessionModel.Title,
-		Status:        string(sessionModel.Status),
-		LastTurnID:    sessionModel.LastTurnID,
-		Turns:         snapshotSliceField(snapshotPayload, "turns"),
-		Runs:          snapshotSliceField(snapshotPayload, "runs"),
+		SessionID:          sessionModel.SessionID,
+		Title:              sessionModel.Title,
+		Status:             string(sessionModel.Status),
+		LastTurnID:         sessionModel.LastTurnID,
+		Turns:              snapshotSliceField(snapshotPayload, "turns"),
+		Runs:               snapshotSliceField(snapshotPayload, "runs"),
 		ExternalActivities: snapshotSliceField(snapshotPayload, "externalActivities"),
 		ExternalMessages:   snapshotSliceField(snapshotPayload, "externalMessages"),
-		ExternalTasks: mapExternalTaskResponses(externalTasks),
+		ExternalTasks:      mapExternalTaskResponses(externalTasks),
 	})
 }
 

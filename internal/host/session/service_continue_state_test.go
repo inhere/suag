@@ -62,7 +62,7 @@ func TestService_ContinueTurnRejectsWhenLatestWaitingRunCannotBeLoaded(t *testin
 }
 
 type continueStateStore struct {
-	Store
+	Repository
 	getRunErr error
 }
 
@@ -70,7 +70,7 @@ func (s *continueStateStore) GetRun(ctx context.Context, runID string) (Run, err
 	if s.getRunErr != nil {
 		return Run{}, s.getRunErr
 	}
-	return s.Store.GetRun(ctx, runID)
+	return s.Repository.GetRun(ctx, runID)
 }
 
 func TestService_ContinueTurnReturnsLatestRunLoadError(t *testing.T) {
@@ -109,9 +109,9 @@ func TestService_ContinueTurnReturnsLatestRunLoadError(t *testing.T) {
 		t.Fatalf("StartTurn() error = %v", err)
 	}
 
-	svc.store = &continueStateStore{
-		Store:     baseStore,
-		getRunErr: fmt.Errorf("get run: boom"),
+	svc.repo = &continueStateStore{
+		Repository: baseStore,
+		getRunErr:  fmt.Errorf("get run: boom"),
 	}
 
 	_, err = svc.ContinueTurn(ctx, ContinueTurnInput{

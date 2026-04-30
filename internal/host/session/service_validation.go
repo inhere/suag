@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Service) ensureSession(ctx context.Context, sessionID string, now time.Time, createIfMissing bool) (Session, error) {
-	sessionModel, err := s.store.GetSession(ctx, sessionID)
+	sessionModel, err := s.repo.GetSession(ctx, sessionID)
 	if err == nil {
 		return sessionModel, nil
 	}
@@ -29,7 +29,7 @@ func (s *Service) ensureSession(ctx context.Context, sessionID string, now time.
 		UpdatedAt: now,
 		Metadata:  map[string]any{},
 	}
-	if err := s.store.CreateSession(ctx, sessionModel); err != nil {
+	if err := s.repo.CreateSession(ctx, sessionModel); err != nil {
 		return Session{}, fmt.Errorf("create missing session: %w", err)
 	}
 	return sessionModel, nil
@@ -44,14 +44,14 @@ func (s *Service) validateContinueTurnState(ctx context.Context, sessionID strin
 }
 
 func (s *Service) latestRunIDForTurn(ctx context.Context, sessionID, turnID string) (string, error) {
-	if s == nil || s.store == nil {
+	if s == nil || s.repo == nil {
 		return "", nil
 	}
 	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(turnID) == "" {
 		return "", nil
 	}
 
-	events, err := s.store.ListEventsBySession(ctx, sessionID, 0)
+	events, err := s.repo.ListEventsBySession(ctx, sessionID, 0)
 	if err != nil {
 		return "", err
 	}
@@ -75,11 +75,11 @@ type waitingRunRef struct {
 }
 
 func (s *Service) latestContinuableRun(ctx context.Context, sessionID string) (waitingRunRef, error) {
-	if s == nil || s.store == nil {
+	if s == nil || s.repo == nil {
 		return waitingRunRef{}, nil
 	}
 
-	sessionModel, err := s.store.GetSession(ctx, sessionID)
+	sessionModel, err := s.repo.GetSession(ctx, sessionID)
 	if err != nil {
 		return waitingRunRef{}, err
 	}
@@ -97,7 +97,7 @@ func (s *Service) latestContinuableRun(ctx context.Context, sessionID string) (w
 		return waitingRunRef{}, fmt.Errorf("latest waiting run is unavailable; start a new turn or reissue the task")
 	}
 
-	runModel, err := s.store.GetRun(ctx, runID)
+	runModel, err := s.repo.GetRun(ctx, runID)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return waitingRunRef{}, fmt.Errorf("latest waiting run is unavailable; start a new turn or reissue the task")
@@ -186,11 +186,11 @@ func (s *Service) initialRunMetadata(createIfMissing bool) map[string]any {
 }
 
 func (s *Service) updateRunMetadata(ctx context.Context, runID string, extra map[string]any) error {
-	if s == nil || s.store == nil || len(extra) == 0 {
+	if s == nil || s.repo == nil || len(extra) == 0 {
 		return nil
 	}
 
-	runModel, err := s.store.GetRun(ctx, runID)
+	runModel, err := s.repo.GetRun(ctx, runID)
 	if err != nil {
 		return err
 	}
@@ -200,15 +200,15 @@ func (s *Service) updateRunMetadata(ctx context.Context, runID string, extra map
 	for key, value := range extra {
 		runModel.Metadata[key] = value
 	}
-	return s.store.UpdateRunMetadata(ctx, runID, runModel.Metadata)
+	return s.repo.UpdateRunMetadata(ctx, runID, runModel.Metadata)
 }
 
 func (s *Service) loadRunMetadata(ctx context.Context, runID string) map[string]any {
-	if s == nil || s.store == nil || strings.TrimSpace(runID) == "" {
+	if s == nil || s.repo == nil || strings.TrimSpace(runID) == "" {
 		return nil
 	}
 
-	runModel, err := s.store.GetRun(ctx, runID)
+	runModel, err := s.repo.GetRun(ctx, runID)
 	if err != nil || len(runModel.Metadata) == 0 {
 		return nil
 	}

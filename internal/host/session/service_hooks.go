@@ -6,11 +6,11 @@ import (
 )
 
 func (s *Service) appendAndPublishEvent(ctx context.Context, event RunEvent) (RunEvent, error) {
-	if s == nil || s.store == nil {
+	if s == nil || s.repo == nil {
 		return event, nil
 	}
 
-	storedEvent, err := s.store.AppendEvent(ctx, event)
+	storedEvent, err := s.repo.AppendEvent(ctx, event)
 	if err != nil {
 		return RunEvent{}, err
 	}
