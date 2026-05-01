@@ -19,7 +19,7 @@
 - Capability governance 当前已完成到 Phase C-D：`CapabilityPolicy`、tool subset、skill matching、resource hints、planner hint 已贯通；后续继续推进 richer skill matching、tool catalog 与 recall/policy/skills/planner 联动
 - Web 默认界面的 `Chat-first` 设计见 `docs/superpowers/specs/2026-04-21-web-chat-first-layout-design.md`，实现计划见 `docs/superpowers/plans/2026-04-21-web-chat-first-layout-implementation-plan.md`；当前默认左中右布局已切到 `Sessions / Chat / Context`，并已通过 `App.test.tsx`、全量 `pnpm --dir web/app test` 与 `pnpm --dir web/app build` 验证
 - 正在收口 host turn 的 provider 兼容问题：已修复 OpenAI-compatible tool call `arguments` 的 JSON 字符串解析，并补充 provider 请求/响应 debug 日志；当前 v0 继续在 provider 映射层兼容“文本内容 + tool calls 混合返回”，长期 block-based `GenerateResult` 设计见 `pkg/agentcore/docs/block-result-design.md`
-- 目录治理与包边界设计已形成草案，见 `docs/axon-package-boundary-design.md`；Host data 边界见 `docs/host-data-boundary-v0.md`；当前确认采用“领域优先组织 internal、pkg 保守准入、internal/platform 作为只减不增的过渡区、session 暂留 host 下后续再择机提升”为主线，第一批已完成 `agentcore/storage` 迁移、`internal/host/session` 大文件同包拆分、Host `Repository`/`SQLiteRepository` 命名收敛、`internal/data` 最小基础设施骨架与顶层 `miglite.yaml` 本地迁移入口
+- 目录治理与包边界设计已形成草案，见 `docs/axon-package-boundary-design.md`；Host data 边界见 `docs/host-data-boundary-v0.md`；当前确认采用“领域优先组织 internal、pkg 保守准入、internal/platform 作为只减不增的过渡区、session 暂留 host 下后续再择机提升”为主线，第一批已完成 `agentcore/storage` 迁移、`internal/host/session` 大文件同包拆分、Host `Repository`/`SQLiteRepository` 命名收敛、`internal/data` 最小基础设施骨架、测试迁移 helper 与顶层 `miglite.yaml` 本地迁移入口
 <!-- PROCESSING WORKS:END -->
 
 ## 项目编码规范

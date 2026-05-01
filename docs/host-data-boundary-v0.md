@@ -153,6 +153,7 @@ internal/
   data/
     sqlite.go
     migrations.go
+    testutil/
 
   host/
     session/

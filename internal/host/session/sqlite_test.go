@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inhere/axon/internal/data"
+	datatestutil "github.com/inhere/axon/internal/data/testutil"
 )
 
 func TestSQLiteRepository_RequiresMigratedSchema(t *testing.T) {
@@ -589,29 +589,5 @@ func newTestRepository(t *testing.T) *SQLiteRepository {
 func createMigratedTestDB(t *testing.T) string {
 	t.Helper()
 
-	dbPath := filepath.Join(t.TempDir(), "session.db")
-	applyHostSessionMigration(t, dbPath)
-	return dbPath
-}
-
-func applyHostSessionMigration(t *testing.T, dbPath string) {
-	t.Helper()
-
-	db, err := data.OpenSQLite(dbPath)
-	if err != nil {
-		t.Fatalf("data.OpenSQLite() error = %v", err)
-	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			t.Fatalf("db.Close() error = %v", err)
-		}
-	}()
-
-	migrationDir := filepath.Join(
-		"..", "..", "..",
-		"db", "migrations",
-	)
-	if err := data.ApplyMigrationUps(context.Background(), db, migrationDir); err != nil {
-		t.Fatalf("data.ApplyMigrationUps() error = %v", err)
-	}
+	return datatestutil.NewMigratedSQLitePath(t, "session.db")
 }

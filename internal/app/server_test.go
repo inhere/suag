@@ -15,7 +15,7 @@ import (
 
 	"github.com/inhere/axon/internal/capability/runtimecaps"
 	capskills "github.com/inhere/axon/internal/capability/skills"
-	"github.com/inhere/axon/internal/data"
+	datatestutil "github.com/inhere/axon/internal/data/testutil"
 	"github.com/inhere/axon/internal/host/gateway"
 	"github.com/inhere/axon/internal/host/intrunner"
 	"github.com/inhere/axon/internal/host/session"
@@ -364,7 +364,7 @@ func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {
 	t.Cleanup(gkconfig.Reset)
 
 	dbPath := filepath.Join(t.TempDir(), "server-session.db")
-	applyAppSessionMigration(t, dbPath)
+	datatestutil.ApplyHostMigrations(t, dbPath)
 	_ = gkconfig.Set("database_url", dbPath)
 	_ = gkconfig.Set("workspace", t.TempDir())
 	_ = gkconfig.Set("agentcore.run_root", filepath.Join(t.TempDir(), "runtime"))
@@ -435,8 +435,7 @@ func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {
 func newAppSessionRepository(t *testing.T) *session.SQLiteRepository {
 	t.Helper()
 
-	dbPath := filepath.Join(t.TempDir(), "app-session.db")
-	applyAppSessionMigration(t, dbPath)
+	dbPath := datatestutil.NewMigratedSQLitePath(t, "app-session.db")
 
 	store, err := session.NewSQLiteRepository(dbPath)
 	assert.NoErr(t, err)
@@ -444,20 +443,6 @@ func newAppSessionRepository(t *testing.T) *session.SQLiteRepository {
 		assert.NoErr(t, store.Close())
 	})
 	return store
-}
-
-func applyAppSessionMigration(t *testing.T, dbPath string) {
-	t.Helper()
-
-	db, err := data.OpenSQLite(dbPath)
-	assert.NoErr(t, err)
-	defer func() {
-		assert.NoErr(t, db.Close())
-	}()
-
-	migrationDir := filepath.Join("..", "..", "db", "migrations")
-	err = data.ApplyMigrationUps(context.Background(), db, migrationDir)
-	assert.NoErr(t, err)
 }
 
 func reserveLocalAddr(t *testing.T) string {

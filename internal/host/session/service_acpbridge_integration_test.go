@@ -2,11 +2,10 @@ package session_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/inhere/axon/internal/data"
+	datatestutil "github.com/inhere/axon/internal/data/testutil"
 	"github.com/inhere/axon/internal/host/acpbridge"
 	"github.com/inhere/axon/internal/host/session"
 )
@@ -210,8 +209,7 @@ func (p *integrationPublisher) PublishSessionEvent(_ context.Context, event sess
 func newIntegrationRepository(t *testing.T) *session.SQLiteRepository {
 	t.Helper()
 
-	dbPath := filepath.Join(t.TempDir(), "session.db")
-	applyIntegrationMigration(t, dbPath)
+	dbPath := datatestutil.NewMigratedSQLitePath(t, "session.db")
 
 	store, err := session.NewSQLiteRepository(dbPath)
 	if err != nil {
@@ -223,26 +221,4 @@ func newIntegrationRepository(t *testing.T) *session.SQLiteRepository {
 		}
 	})
 	return store
-}
-
-func applyIntegrationMigration(t *testing.T, dbPath string) {
-	t.Helper()
-
-	db, err := data.OpenSQLite(dbPath)
-	if err != nil {
-		t.Fatalf("data.OpenSQLite() error = %v", err)
-	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			t.Fatalf("db.Close() error = %v", err)
-		}
-	}()
-
-	migrationDir := filepath.Join(
-		"..", "..", "..",
-		"db", "migrations",
-	)
-	if err := data.ApplyMigrationUps(context.Background(), db, migrationDir); err != nil {
-		t.Fatalf("data.ApplyMigrationUps() error = %v", err)
-	}
 }

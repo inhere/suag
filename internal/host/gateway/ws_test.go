@@ -18,7 +18,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
-	"github.com/inhere/axon/internal/data"
+	datatestutil "github.com/inhere/axon/internal/data/testutil"
 	"github.com/inhere/axon/internal/host/acpbridge"
 	"github.com/inhere/axon/internal/host/agui"
 	"github.com/inhere/axon/internal/host/intrunner"
@@ -2370,8 +2370,7 @@ func (r *gatewayHITLRunner) Run(ctx context.Context, in session.RuntimeRequest) 
 func newGatewaySessionRepository(t *testing.T) *session.SQLiteRepository {
 	t.Helper()
 
-	dbPath := filepath.Join(t.TempDir(), "gateway-session.db")
-	applyGatewaySessionMigration(t, dbPath)
+	dbPath := datatestutil.NewMigratedSQLitePath(t, "gateway-session.db")
 
 	store, err := session.NewSQLiteRepository(dbPath)
 	if err != nil {
@@ -2383,28 +2382,6 @@ func newGatewaySessionRepository(t *testing.T) *session.SQLiteRepository {
 		}
 	})
 	return store
-}
-
-func applyGatewaySessionMigration(t *testing.T, dbPath string) {
-	t.Helper()
-
-	db, err := data.OpenSQLite(dbPath)
-	if err != nil {
-		t.Fatalf("data.OpenSQLite() error = %v", err)
-	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			t.Fatalf("db.Close() error = %v", err)
-		}
-	}()
-
-	migrationDir := filepath.Join(
-		"..", "..", "..",
-		"db", "migrations",
-	)
-	if err := data.ApplyMigrationUps(context.Background(), db, migrationDir); err != nil {
-		t.Fatalf("data.ApplyMigrationUps() error = %v", err)
-	}
 }
 
 func postJSON[T any](t *testing.T, endpoint string, payload any) T {
