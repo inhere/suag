@@ -19,7 +19,13 @@ import (
 
 // RunServer starts the axon server, which listens for incoming API requests and manages agent sessions.
 func (a *App) RunServer(ctx context.Context) error {
-	sessionRepo, err := session.NewSQLiteRepository(appconfig.ResolveSessionDBPath())
+	sessionDBPath := appconfig.ResolveSessionDBPath()
+	if err := prepareHostSessionDatabase(ctx, sessionDBPath); err != nil {
+		slog.Error("failed to prepare session database", "err", err)
+		return err
+	}
+
+	sessionRepo, err := session.NewSQLiteRepository(sessionDBPath)
 	if err != nil {
 		slog.Error("failed to initialize session repository", "err", err)
 		return err

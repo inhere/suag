@@ -78,7 +78,8 @@ Constructor behavior:
 
 - repository startup may validate required tables
 - repository startup should not own schema migrations
-- migrations are handled by app/data startup through `gookit/miglite`
+- server startup explicitly prepares the Host DB before repository creation
+- migrations are handled by app/data startup using the miglite-format SQL files
 
 ### 2.3 `internal/platform/memory`
 
@@ -132,7 +133,7 @@ It owns:
 - DB open/close helpers
 - driver-specific connection setup
 - miglite-format SQL file loading/parsing
-- idempotent migration bootstrap helpers for tests/local setup
+- idempotent migration bootstrap helpers for app startup, tests, and local setup
 - the repository-level convention that local CLI migrations use `miglite.yaml`
 
 It may later own:
@@ -155,10 +156,13 @@ internal/
     migrations.go
     testutil/
 
+  app/
+    data.go
+
   host/
     session/
       repository.go
-      sqlite_repository.go
+      sqlite.go
       sqlite_sessions.go
       sqlite_turns.go
       sqlite_runs.go
@@ -205,7 +209,8 @@ unless the owner and authority boundary is obvious from the package path.
 Near-term cleanup:
 
 - Keep migrations outside the repository constructor.
-- Introduce `internal/data` only when app startup needs shared DB/migration orchestration.
+- Keep app startup responsible for preparing the Host DB before constructing repositories.
+- Use `miglite.yaml` for local CLI migration checks, while v0 server bootstrap can apply idempotent UP SQL for first-run startup.
 
 Deferred:
 

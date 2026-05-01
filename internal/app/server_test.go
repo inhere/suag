@@ -364,7 +364,6 @@ func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {
 	t.Cleanup(gkconfig.Reset)
 
 	dbPath := filepath.Join(t.TempDir(), "server-session.db")
-	datatestutil.ApplyHostMigrations(t, dbPath)
 	_ = gkconfig.Set("database_url", dbPath)
 	_ = gkconfig.Set("workspace", t.TempDir())
 	_ = gkconfig.Set("agentcore.run_root", filepath.Join(t.TempDir(), "runtime"))
@@ -423,6 +422,10 @@ func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {
 
 	assert.Eq(t, 200, resp.StatusCode)
 
+	repo, repoErr := session.NewSQLiteRepository(dbPath)
+	assert.NoErr(t, repoErr)
+	assert.NoErr(t, repo.Close())
+
 	cancel()
 	select {
 	case runErr := <-errCh:
@@ -430,6 +433,20 @@ func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("RunServer() did not stop after context cancel")
 	}
+}
+
+func TestPrepareHostSessionDatabase_AppliesDefaultMigrations(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	dbPath := filepath.Join(t.TempDir(), "host-session.db")
+
+	err := prepareHostSessionDatabase(context.Background(), dbPath)
+	assert.NoErr(t, err)
+
+	repo, err := session.NewSQLiteRepository(dbPath)
+	assert.NoErr(t, err)
+	assert.NoErr(t, repo.Close())
 }
 
 func newAppSessionRepository(t *testing.T) *session.SQLiteRepository {
