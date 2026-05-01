@@ -1,0 +1,7 @@
+database:
+  driver: sqlite
+  dsn: db/axon.db
+
+migrations:
+  path: ./db/migrations
+  recursive: true

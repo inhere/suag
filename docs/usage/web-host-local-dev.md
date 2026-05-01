@@ -61,26 +61,29 @@
 
 如果本地数据库还是空的，需要先初始化 migration 元数据表，再执行迁移。
 
-可参考下面的最小配置文件：
+仓库根目录已经提供 `miglite.yaml`：
 
 ```yaml
-driver: sqlite
-dsn: db/axon.db
+database:
+  driver: sqlite
+  dsn: db/axon.db
+
 migrations:
   path: ./db/migrations
+  recursive: true
 ```
 
-假设配置文件名为 `miglite.yaml`，执行：
+执行：
 
 ```bash
-miglite init -c ./miglite.yaml
-miglite up -c ./miglite.yaml -y
+miglite init
+miglite up -y
 ```
 
 如果已经初始化过，通常只需要再执行：
 
 ```bash
-miglite up -c ./miglite.yaml -y
+miglite up -y
 ```
 
 ---

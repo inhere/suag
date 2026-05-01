@@ -133,6 +133,7 @@ It owns:
 - driver-specific connection setup
 - miglite-format SQL file loading/parsing
 - idempotent migration bootstrap helpers for tests/local setup
+- the repository-level convention that local CLI migrations use `miglite.yaml`
 
 It may later own:
 
