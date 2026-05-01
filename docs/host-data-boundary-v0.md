@@ -123,16 +123,21 @@ The source of truth remains:
 The markdown projection is consumed by the Host internal runner as a pragmatic
 v0 recall input.
 
-## 3. Future `internal/data`
+## 3. Current `internal/data`
 
-`internal/data` may be introduced as a thin infrastructure layer.
+`internal/data` is a thin infrastructure layer.
 
-It may own:
+It owns:
 
 - DB open/close helpers
-- DSN normalization
 - driver-specific connection setup
-- migration execution via `gookit/miglite`
+- miglite-format SQL file loading/parsing
+- idempotent migration bootstrap helpers for tests/local setup
+
+It may later own:
+
+- DSN normalization
+- migration execution through the miglite library/CLI integration
 - optional transaction helpers once needed
 
 It must not own Host business repositories.
@@ -140,13 +145,13 @@ It must not own Host business repositories.
 Do not move `session.Repository` into `internal/data`. Product-state queries and
 commands should stay close to the owning domain.
 
-Recommended future shape:
+Current shape:
 
 ```text
 internal/
   data/
-    db.go
-    migrate.go
+    sqlite.go
+    migrations.go
 
   host/
     session/

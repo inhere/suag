@@ -2,16 +2,12 @@ package session
 
 import (
 	"context"
-	"database/sql"
-	"os"
 	"path/filepath"
-	"runtime"
-	"sort"
 	"strings"
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"github.com/inhere/axon/internal/data"
 )
 
 func TestSQLiteRepository_RequiresMigratedSchema(t *testing.T) {
@@ -601,9 +597,9 @@ func createMigratedTestDB(t *testing.T) string {
 func applyHostSessionMigration(t *testing.T, dbPath string) {
 	t.Helper()
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := data.OpenSQLite(dbPath)
 	if err != nil {
-		t.Fatalf("sql.Open() error = %v", err)
+		t.Fatalf("data.OpenSQLite() error = %v", err)
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
@@ -611,52 +607,11 @@ func applyHostSessionMigration(t *testing.T, dbPath string) {
 		}
 	}()
 
-	for _, upSQL := range readHostSessionMigrationUps(t) {
-		if _, err := db.Exec(upSQL); err != nil {
-			t.Fatalf("db.Exec() migration error = %v", err)
-		}
-	}
-}
-
-func readHostSessionMigrationUps(t *testing.T) []string {
-	t.Helper()
-
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller() failed")
-	}
-
 	migrationDir := filepath.Join(
-		filepath.Dir(file),
 		"..", "..", "..",
 		"db", "migrations",
 	)
-	entries, err := filepath.Glob(filepath.Join(migrationDir, "*.sql"))
-	if err != nil {
-		t.Fatalf("filepath.Glob() error = %v", err)
+	if err := data.ApplyMigrationUps(context.Background(), db, migrationDir); err != nil {
+		t.Fatalf("data.ApplyMigrationUps() error = %v", err)
 	}
-	sort.Strings(entries)
-	if len(entries) == 0 {
-		t.Fatalf("no migration files found in %s", migrationDir)
-	}
-
-	ups := make([]string, 0, len(entries))
-	for _, migrationPath := range entries {
-		content, err := os.ReadFile(migrationPath)
-		if err != nil {
-			t.Fatalf("os.ReadFile() error = %v", err)
-		}
-
-		parts := strings.Split(string(content), "-- Migrate:DOWN")
-		if len(parts) != 2 {
-			t.Fatalf("unexpected migration format in %s", migrationPath)
-		}
-
-		upSQL := strings.TrimSpace(strings.TrimPrefix(parts[0], "-- Migrate:UP"))
-		if upSQL == "" {
-			t.Fatalf("empty migration up section in %s", migrationPath)
-		}
-		ups = append(ups, upSQL)
-	}
-	return ups
 }

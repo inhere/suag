@@ -2,13 +2,10 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +15,7 @@ import (
 
 	"github.com/inhere/axon/internal/capability/runtimecaps"
 	capskills "github.com/inhere/axon/internal/capability/skills"
+	"github.com/inhere/axon/internal/data"
 	"github.com/inhere/axon/internal/host/gateway"
 	"github.com/inhere/axon/internal/host/intrunner"
 	"github.com/inhere/axon/internal/host/session"
@@ -28,7 +26,6 @@ import (
 	"github.com/inhere/axon/internal/platform/tools"
 	"github.com/inhere/axon/internal/platform/tracing"
 	agentcoreapi "github.com/inhere/axon/pkg/agentcore/api"
-	_ "modernc.org/sqlite"
 )
 
 func TestNew_UsesDefaultCapabilityBuilderForRegistry(t *testing.T) {
@@ -452,51 +449,15 @@ func newAppSessionRepository(t *testing.T) *session.SQLiteRepository {
 func applyAppSessionMigration(t *testing.T, dbPath string) {
 	t.Helper()
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := data.OpenSQLite(dbPath)
 	assert.NoErr(t, err)
 	defer func() {
 		assert.NoErr(t, db.Close())
 	}()
 
-	for _, upSQL := range readAppSessionMigrationUps(t) {
-		_, err := db.Exec(upSQL)
-		assert.NoErr(t, err)
-	}
-}
-
-func readAppSessionMigrationUps(t *testing.T) []string {
-	t.Helper()
-
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller() failed")
-	}
-
-	migrationDir := filepath.Join(filepath.Dir(file), "..", "..", "db", "migrations")
-	entries, err := filepath.Glob(filepath.Join(migrationDir, "*.sql"))
+	migrationDir := filepath.Join("..", "..", "db", "migrations")
+	err = data.ApplyMigrationUps(context.Background(), db, migrationDir)
 	assert.NoErr(t, err)
-	sort.Strings(entries)
-	if len(entries) == 0 {
-		t.Fatalf("no migration files found in %s", migrationDir)
-	}
-
-	ups := make([]string, 0, len(entries))
-	for _, migrationPath := range entries {
-		content, err := os.ReadFile(migrationPath)
-		assert.NoErr(t, err)
-
-		parts := strings.Split(string(content), "-- Migrate:DOWN")
-		if len(parts) != 2 {
-			t.Fatalf("unexpected migration format in %s", migrationPath)
-		}
-
-		upSQL := strings.TrimSpace(strings.TrimPrefix(parts[0], "-- Migrate:UP"))
-		if upSQL == "" {
-			t.Fatalf("empty migration up section in %s", migrationPath)
-		}
-		ups = append(ups, upSQL)
-	}
-	return ups
 }
 
 func reserveLocalAddr(t *testing.T) string {
