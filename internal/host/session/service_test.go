@@ -2022,6 +2022,24 @@ func TestCapabilityPlannerHook_BuildsHintsFromCapabilitySignals(t *testing.T) {
 	if result.PlannerHint.Metadata["recall_hit"] != true {
 		t.Fatalf("planner hint metadata recall_hit = %v, want true", result.PlannerHint.Metadata["recall_hit"])
 	}
+	nextTurnPlan, ok := result.PlannerHint.Metadata["next_turn_plan"].(map[string]any)
+	if !ok {
+		t.Fatalf("planner hint metadata next_turn_plan type = %T, want map[string]any", result.PlannerHint.Metadata["next_turn_plan"])
+	}
+	toolAllowlist, ok := nextTurnPlan["tool_allowlist"].([]string)
+	if !ok || len(toolAllowlist) != 2 || toolAllowlist[0] != "file_read" || toolAllowlist[1] != "file_list" {
+		t.Fatalf("next_turn_plan.tool_allowlist = %#v, want [file_read file_list]", nextTurnPlan["tool_allowlist"])
+	}
+	skillNames, ok := nextTurnPlan["skill_names"].([]string)
+	if !ok || len(skillNames) != 1 || skillNames[0] != "office-hours" {
+		t.Fatalf("next_turn_plan.skill_names = %#v, want [office-hours]", nextTurnPlan["skill_names"])
+	}
+	if nextTurnPlan["recall_hit"] != true {
+		t.Fatalf("next_turn_plan.recall_hit = %#v, want true", nextTurnPlan["recall_hit"])
+	}
+	if nextTurnPlan["resource_hint_count"] != 1 {
+		t.Fatalf("next_turn_plan.resource_hint_count = %#v, want 1", nextTurnPlan["resource_hint_count"])
+	}
 	if result.NextActionHint == nil {
 		t.Fatal("OnPostTurnAction() next action hint is nil")
 	}

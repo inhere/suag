@@ -614,6 +614,7 @@ MCP 应作为 `ToolProvider` 的一种来源。
   - Host terminal post-turn hook 会消费 `resolved_tool_mode`
   - 会消费 `resolved_skill_names` / `resolved_skill_matches`
   - 会消费 `resolved_resource_hints` 计数与 recall hit
+  - 会把上述信号收敛为结构化 `next_turn_plan`
   - 仍只产出 hint，不生成执行图
 
 当前 Phase C 下一步继续做：
@@ -634,6 +635,7 @@ MCP 应作为 `ToolProvider` 的一种来源。
 等 tool/mcp/skill 都进入治理链后，再做：
 
 - planner 消费 recall + matched skills + tool subset
+  - 当前已具备最小 `next_turn_plan` metadata，可作为后续 planner / UI / review flow 的结构化输入
 - post-turn learning 产出 skill candidate
 - review flow 把 candidate skill 转成正式 skill
 

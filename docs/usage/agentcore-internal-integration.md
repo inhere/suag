@@ -346,6 +346,7 @@
 - `internal/host/session` 当前也已开始消费 runtime capability signals：
   - 默认挂载最小 `CapabilityPlannerHook`
   - terminal 后的 `planner_hint` / `next_action_hint` 会带上 `resolved_tool_mode`、`resolved_skill_names`、`resolved_skill_matches`、`resource_hint_count`、`recall_hit`
+  - `planner_hint.metadata.next_turn_plan` 会把下一轮建议的 `tool_mode`、`tool_allowlist`、`skill_names`、`resource_hint_count`、`recall_hit` 收敛成结构化对象
   - 仍保持 best-effort，不会影响主 turn terminal flow
 
 这意味着 skills 当前已经开始以“capability recipe”而不是“工具执行器”的方式影响一轮运行：

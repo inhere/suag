@@ -18,17 +18,31 @@ func (h *CapabilityPlannerHook) OnPostTurnAction(_ context.Context, input PostTu
 		return nil, nil
 	}
 
+	resolvedToolMode := decodeStringAny(input.RuntimeContext["resolved_tool_mode"])
+	resolvedSkillNames := decodeStringSliceAny(input.RuntimeContext["resolved_skill_names"])
+	resourceHintCount := len(decodeMapSliceAny(input.RuntimeContext["resolved_resource_hints"]))
+	recallHit := decodeBoolAny(input.RuntimeContext["memory_recall_hit"])
+	resolvedToolNames := decodeStringSliceAny(input.RuntimeContext["resolved_tool_names"])
+	resolvedSkillMatches := decodeMapSliceAny(input.RuntimeContext["resolved_skill_matches"])
+
 	metadata := map[string]any{
-		"resolved_tool_mode":   decodeStringAny(input.RuntimeContext["resolved_tool_mode"]),
-		"resolved_skill_names": decodeStringSliceAny(input.RuntimeContext["resolved_skill_names"]),
-		"resource_hint_count":  len(decodeMapSliceAny(input.RuntimeContext["resolved_resource_hints"])),
-		"recall_hit":           decodeBoolAny(input.RuntimeContext["memory_recall_hit"]),
+		"resolved_tool_mode":   resolvedToolMode,
+		"resolved_skill_names": resolvedSkillNames,
+		"resource_hint_count":  resourceHintCount,
+		"recall_hit":           recallHit,
+		"next_turn_plan": nextTurnPlanMetadata(
+			resolvedToolMode,
+			resolvedToolNames,
+			resolvedSkillNames,
+			resourceHintCount,
+			recallHit,
+		),
 	}
-	if tools := decodeStringSliceAny(input.RuntimeContext["resolved_tool_names"]); len(tools) > 0 {
-		metadata["resolved_tool_names"] = tools
+	if len(resolvedToolNames) > 0 {
+		metadata["resolved_tool_names"] = resolvedToolNames
 	}
-	if matches := decodeMapSliceAny(input.RuntimeContext["resolved_skill_matches"]); len(matches) > 0 {
-		metadata["resolved_skill_matches"] = matches
+	if len(resolvedSkillMatches) > 0 {
+		metadata["resolved_skill_matches"] = resolvedSkillMatches
 	}
 
 	stage := "capability_review"
@@ -50,6 +64,17 @@ func (h *CapabilityPlannerHook) OnPostTurnAction(_ context.Context, input PostTu
 		},
 		NextActionHint: next,
 	}, nil
+}
+
+func nextTurnPlanMetadata(toolMode string, toolNames []string, skillNames []string, resourceHintCount int, recallHit bool) map[string]any {
+	plan := map[string]any{
+		"tool_mode":           strings.TrimSpace(toolMode),
+		"tool_allowlist":      append([]string(nil), toolNames...),
+		"skill_names":         append([]string(nil), skillNames...),
+		"resource_hint_count": resourceHintCount,
+		"recall_hit":          recallHit,
+	}
+	return plan
 }
 
 func plannerSummaryFromCapabilityMetadata(metadata map[string]any, input PostTurnActionInput) string {
