@@ -12,8 +12,8 @@ var idSequence uint32
 
 func newID(prefix string) string {
 	tsPart := strconv.FormatInt(time.Now().UTC().UnixMicro(), 32)
-	seqPart := encodeBase32Fixed(uint64(atomic.AddUint32(&idSequence, 1)&1023), 2)
-	randPart := shortRandomBase32(2)
+	seqPart := encodeBase32Fixed(uint64(atomic.AddUint32(&idSequence, 1)&32767), 3)
+	randPart := shortRandomBase32(1)
 	idStr := tsPart + seqPart + randPart
 
 	if prefix == "" {
