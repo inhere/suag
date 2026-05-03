@@ -281,7 +281,7 @@ describe("session-store", () => {
         sessionId: "sess_001",
         title: "host runtime",
         status: "RUNNING",
-        updatedAt: "2026-04-12T09:00:00Z",
+        updatedAt: "2026-04-12T08:00:00Z",
         preview: "正在整理页面结构",
       },
     ]);
@@ -586,7 +586,7 @@ describe("session-store", () => {
       sessionId: "sess_001",
       title: "bootstrap title",
       status: "WAITING",
-      updatedAt: "2026-04-12T12:32:00Z",
+      updatedAt: "2026-04-12T09:00:00Z",
       preview: "stale preview",
     });
     expect(next.snapshot?.title).toBe("bootstrap title");

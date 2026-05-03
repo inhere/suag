@@ -48,11 +48,23 @@ function getRunSummary(run: StateSnapshotRun | null): string {
   return "No run summary yet.";
 }
 
+function getNextTurnPlan(run: StateSnapshotRun | null) {
+  return run?.plannerHint?.metadata?.next_turn_plan ?? null;
+}
+
+function formatList(values: string[] | undefined): string {
+  if (!values?.length) {
+    return "none";
+  }
+  return values.join(", ");
+}
+
 export function RunDetailsCompactPanel({
   runs,
   focusedRunId = null,
 }: RunDetailsCompactPanelProps) {
   const focusedRun = getFocusedRun(runs, focusedRunId);
+  const nextTurnPlan = getNextTurnPlan(focusedRun);
 
   return (
     <section className="context-panel" aria-label="Run details panel">
@@ -79,6 +91,32 @@ export function RunDetailsCompactPanel({
         </div>
       </div>
       <p className="inline-feedback">{getRunSummary(focusedRun)}</p>
+      {nextTurnPlan ? (
+        <div className="context-panel__plan" aria-label="Next turn plan">
+          <div className="context-panel__plan-header">
+            <h3>Next turn plan</h3>
+            <span>{nextTurnPlan.recall_hit ? "recall hit" : "no recall"}</span>
+          </div>
+          <div className="context-panel__meta context-panel__meta--stacked">
+            <div className="context-panel__meta-item">
+              <span className="context-panel__label">Tool mode</span>
+              <span className="context-panel__value">{nextTurnPlan.tool_mode || "auto"}</span>
+            </div>
+            <div className="context-panel__meta-item">
+              <span className="context-panel__label">Tools</span>
+              <span className="context-panel__value">{formatList(nextTurnPlan.tool_allowlist)}</span>
+            </div>
+            <div className="context-panel__meta-item">
+              <span className="context-panel__label">Skills</span>
+              <span className="context-panel__value">{formatList(nextTurnPlan.skill_names)}</span>
+            </div>
+            <div className="context-panel__meta-item">
+              <span className="context-panel__label">Resources</span>
+              <span className="context-panel__value">{nextTurnPlan.resource_hint_count ?? 0}</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

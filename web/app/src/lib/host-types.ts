@@ -121,9 +121,32 @@ export type StateSnapshotRun = {
   summary: string;
   externalTaskIds: string[];
   waitMetadata?: Record<string, unknown>;
+  loopMetadata?: Record<string, unknown>;
   memoryRecall?: Record<string, unknown>;
+  turnOutcome?: string;
+  plannerHint?: PlannerHint;
+  nextActionHint?: Record<string, unknown>;
   eventCount: number;
   updatedAt: string;
+};
+
+export type PlannerHint = {
+  stage?: string;
+  summary?: string;
+  metadata?: {
+    next_turn_plan?: NextTurnPlan;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
+export type NextTurnPlan = {
+  tool_mode?: string;
+  tool_allowlist?: string[];
+  skill_names?: string[];
+  resource_hint_count?: number;
+  recall_hit?: boolean;
+  [key: string]: unknown;
 };
 
 export type StateSnapshotExternalActivity = {

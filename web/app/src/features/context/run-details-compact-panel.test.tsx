@@ -52,6 +52,19 @@ it("prefers summary for completed runs", () => {
           summary: "final summary text",
           externalTaskIds: [],
           waitMetadata: {},
+          plannerHint: {
+            stage: "capability_review",
+            summary: "review capability signals",
+            metadata: {
+              next_turn_plan: {
+                tool_mode: "read_only",
+                tool_allowlist: ["file_read", "file_list"],
+                skill_names: ["office-hours"],
+                resource_hint_count: 1,
+                recall_hit: true,
+              },
+            },
+          },
           eventCount: 3,
           updatedAt: "2026-04-21T10:00:00Z",
         },
@@ -61,6 +74,11 @@ it("prefers summary for completed runs", () => {
 
   expect(screen.getByText("final summary text")).toBeInTheDocument();
   expect(screen.queryByText("older text")).not.toBeInTheDocument();
+  expect(screen.getByText("Next turn plan")).toBeInTheDocument();
+  expect(screen.getByText("read_only")).toBeInTheDocument();
+  expect(screen.getByText("file_read, file_list")).toBeInTheDocument();
+  expect(screen.getByText("office-hours")).toBeInTheDocument();
+  expect(screen.getByText("recall hit")).toBeInTheDocument();
 });
 
 it("prefers failure reason for failed runs", () => {
