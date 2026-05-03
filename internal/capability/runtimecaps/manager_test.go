@@ -243,3 +243,61 @@ func TestCapabilityManager_ResolveTurnCapabilitiesFromInputDerivesReadOnlyModeFr
 	assert.Eq(t, TurnToolModeReadOnly, resolved.ToolMode)
 	assert.Eq(t, []string{"file_read"}, resolved.ToolNames)
 }
+
+func TestCapabilityManager_ResolveTurnCapabilitiesFromInputUsesPreviousNextTurnPlan(t *testing.T) {
+	t.Parallel()
+
+	manager := NewManager()
+
+	resolved := manager.ResolveTurnCapabilitiesFromInput(ResolveTurnInput{
+		UserMessage: "继续处理一下",
+		SessionMetadata: map[string]any{
+			CapabilitySetSessionMetadataKey: map[string]any{
+				"tools": []map[string]any{
+					{"name": "file_read", "source": "native", "provider_id": "native"},
+					{"name": "file_list", "source": "native", "provider_id": "native"},
+					{"name": "file_write", "source": "native", "provider_id": "native"},
+					{"name": "shell_exec", "source": "native", "provider_id": "native"},
+				},
+				"policies": map[string]any{
+					"tool_mode": "auto",
+				},
+			},
+		},
+		PreviousNextTurnPlan: map[string]any{
+			"tool_mode":      "read_only",
+			"tool_allowlist": []string{"file_read", "file_list"},
+		},
+	})
+
+	assert.Eq(t, TurnToolModeReadOnly, resolved.ToolMode)
+	assert.Eq(t, []string{"file_read", "file_list"}, resolved.ToolNames)
+}
+
+func TestCapabilityManager_ResolveTurnCapabilitiesFromInputIgnoresPreviousReadOnlyPlanForWriteIntent(t *testing.T) {
+	t.Parallel()
+
+	manager := NewManager()
+
+	resolved := manager.ResolveTurnCapabilitiesFromInput(ResolveTurnInput{
+		UserMessage: "继续修改这个文件",
+		SessionMetadata: map[string]any{
+			CapabilitySetSessionMetadataKey: map[string]any{
+				"tools": []map[string]any{
+					{"name": "file_read", "source": "native", "provider_id": "native"},
+					{"name": "file_write", "source": "native", "provider_id": "native"},
+				},
+				"policies": map[string]any{
+					"tool_mode": "auto",
+				},
+			},
+		},
+		PreviousNextTurnPlan: map[string]any{
+			"tool_mode":      "read_only",
+			"tool_allowlist": []string{"file_read"},
+		},
+	})
+
+	assert.Eq(t, TurnToolModeAuto, resolved.ToolMode)
+	assert.Eq(t, []string{"file_read", "file_write"}, resolved.ToolNames)
+}

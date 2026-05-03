@@ -58,12 +58,13 @@ type BuildSetInput struct {
 // ResolveTurnInput carries the minimum turn-time inputs used to refine the
 // session-stable capability baseline into a per-turn snapshot.
 type ResolveTurnInput struct {
-	SessionMetadata map[string]any
-	UserMessage     string
-	AgentID         string
-	IsContinue      bool
-	RecallMetadata  map[string]any
-	SkillToolHints  []string
+	SessionMetadata      map[string]any
+	UserMessage          string
+	AgentID              string
+	IsContinue           bool
+	RecallMetadata       map[string]any
+	SkillToolHints       []string
+	PreviousNextTurnPlan map[string]any
 }
 
 type staticToolProvider struct {

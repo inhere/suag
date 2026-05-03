@@ -50,11 +50,12 @@ type RuntimeEvent struct {
 }
 
 type RuntimeContextBuildInput struct {
-	SessionID       string
-	AgentID         string
-	Message         string
-	IsContinue      bool
-	SessionMetadata map[string]any
+	SessionID            string
+	AgentID              string
+	Message              string
+	IsContinue           bool
+	SessionMetadata      map[string]any
+	PreviousNextTurnPlan map[string]any
 }
 
 type RuntimeContextBuilder func(input RuntimeContextBuildInput) map[string]any

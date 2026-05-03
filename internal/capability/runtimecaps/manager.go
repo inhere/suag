@@ -248,6 +248,9 @@ func refineCapabilityPolicy(policy CapabilityPolicy, input ResolveTurnInput) Cap
 	}
 
 	message := strings.ToLower(strings.TrimSpace(input.UserMessage))
+	if applyPreviousNextTurnPlan(&refined, input.PreviousNextTurnPlan, message) {
+		return refined
+	}
 	if message == "" {
 		if recallLooksReadOnly(input.RecallMetadata) {
 			refined.ToolMode = TurnToolModeReadOnly
@@ -269,6 +272,28 @@ func refineCapabilityPolicy(policy CapabilityPolicy, input ResolveTurnInput) Cap
 		refined.ToolAllowlist = mergeStringSets(refined.ToolAllowlist, input.SkillToolHints)
 	}
 	return refined
+}
+
+func applyPreviousNextTurnPlan(policy *CapabilityPolicy, plan map[string]any, message string) bool {
+	if policy == nil || len(plan) == 0 {
+		return false
+	}
+	mode, _ := plan["tool_mode"].(string)
+	if normalizeTurnToolMode(TurnToolMode(mode)) != TurnToolModeReadOnly {
+		return false
+	}
+	if turnLooksWriteIntent(message) {
+		return false
+	}
+
+	policy.ToolMode = TurnToolModeReadOnly
+	allowlist := decodeStringSlice(plan["tool_allowlist"])
+	if len(allowlist) > 0 {
+		policy.ToolAllowlist = mergeStringSets(policy.ToolAllowlist, allowlist)
+		return true
+	}
+	policy.ToolDenylist = mergeStringSets(policy.ToolDenylist, []string{"file_write", "shell_exec"})
+	return true
 }
 
 func turnLooksReadOnly(message string) bool {
@@ -305,6 +330,17 @@ func turnLooksReadOnly(message string) bool {
 		}
 	}
 	return true
+}
+
+func turnLooksWriteIntent(message string) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	if message == "" {
+		return false
+	}
+	return containsAny(message, []string{
+		"write", "edit", "change", "modify", "update", "create", "fix", "run", "execute",
+		"写", "改", "修改", "更新", "创建", "修复", "运行", "执行",
+	})
 }
 
 func containsAny(message string, hints []string) bool {

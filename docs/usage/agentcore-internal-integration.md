@@ -347,6 +347,8 @@
   - 默认挂载最小 `CapabilityPlannerHook`
   - terminal 后的 `planner_hint` / `next_action_hint` 会带上 `resolved_tool_mode`、`resolved_skill_names`、`resolved_skill_matches`、`resource_hint_count`、`recall_hit`
   - `planner_hint.metadata.next_turn_plan` 会把下一轮建议的 `tool_mode`、`tool_allowlist`、`skill_names`、`resource_hint_count`、`recall_hit` 收敛成结构化对象
+  - 下一轮 turn 会读取上一轮 terminal run 的 `next_turn_plan`，并把它作为 `previous_next_turn_plan` 注入 runtime context
+  - capability resolver 会最小消费 `previous_next_turn_plan`：当上一轮建议 `read_only` 且当前消息没有明显写入意图时，沿用其 tool allowlist / read-only mode
   - 仍保持 best-effort，不会影响主 turn terminal flow
 
 这意味着 skills 当前已经开始以“capability recipe”而不是“工具执行器”的方式影响一轮运行：
@@ -354,6 +356,7 @@
 - 影响当前 turn 的 prompt
 - 影响当前 turn 的最小参考资料上下文
 - 影响当前 turn 的 tool subset
+- 通过 `next_turn_plan` 最小影响下一轮 turn 的 tool subset
 - 但不会直接变成 workflow engine 或独立 execution lane
 
 当前这一阶段仍然**没有**完成：

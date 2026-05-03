@@ -257,6 +257,50 @@ func TestRuntimeContextBuilder_DerivesReadOnlyToolModeFromRecallMetadata(t *test
 	assert.Eq(t, true, recallHit)
 }
 
+func TestRuntimeContextBuilder_DerivesToolModeFromPreviousNextTurnPlan(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	built, err := buildDefaultCapabilities(t.TempDir())
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, built.Close())
+	})
+
+	defaultSet := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
+	a := &App{
+		registry:             built.Registry,
+		capabilityManager:    built.Manager,
+		defaultCapabilitySet: defaultSet,
+	}
+
+	sessionBuilder := a.newSessionMetadataBuilder()
+	metadata := sessionBuilder(session.SessionMetadataBuildInput{
+		SessionID: "sess_ctx_previous_plan",
+		AgentID:   "default",
+		Message:   "hello",
+	})
+
+	runtimeBuilder := a.newRuntimeContextBuilder()
+	contextMap := runtimeBuilder(session.RuntimeContextBuildInput{
+		SessionID:       "sess_ctx_previous_plan",
+		AgentID:         "default",
+		Message:         "继续处理一下",
+		SessionMetadata: metadata,
+		PreviousNextTurnPlan: map[string]any{
+			"tool_mode":      "read_only",
+			"tool_allowlist": []string{"file_read", "file_list"},
+		},
+	})
+
+	names, ok := contextMap["resolved_tool_names"].([]string)
+	assert.True(t, ok)
+	assertToolNamesEq(t, []string{"file_read", "file_list"}, names)
+	mode, ok := contextMap["resolved_tool_mode"].(string)
+	assert.True(t, ok)
+	assert.Eq(t, "read_only", mode)
+}
+
 func TestRuntimeContextBuilder_ResolvesSkillFragmentsAndToolHints(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)

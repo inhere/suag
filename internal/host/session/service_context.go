@@ -7,6 +7,10 @@ import (
 
 func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, agentID, message, previousTurnID, resumeFromRunID, externalTaskID string, isContinue bool) map[string]any {
 	ctxMap := map[string]any{}
+	previousNextTurnPlan := s.loadPreviousNextTurnPlan(ctx, sessionID, previousTurnID)
+	if len(previousNextTurnPlan) > 0 {
+		ctxMap["previous_next_turn_plan"] = cloneAnyMap(previousNextTurnPlan)
+	}
 	if strings.TrimSpace(externalTaskID) != "" {
 		ctxMap["external_task_id"] = externalTaskID
 	}
@@ -21,7 +25,7 @@ func (s *Service) buildRuntimeContext(ctx context.Context, sessionID, agentID, m
 	if s == nil {
 		return ctxMap
 	}
-	if built := s.buildCapabilityRuntimeContext(ctx, sessionID, agentID, message, isContinue); len(built) > 0 {
+	if built := s.buildCapabilityRuntimeContext(ctx, sessionID, agentID, message, isContinue, previousNextTurnPlan); len(built) > 0 {
 		ctxMap = mergeRuntimePayload(ctxMap, built)
 	}
 	if s.repo == nil {
@@ -66,7 +70,7 @@ func (s *Service) buildInitialSessionMetadata(sessionID, agentID, message string
 	})
 }
 
-func (s *Service) buildCapabilityRuntimeContext(ctx context.Context, sessionID, agentID, message string, isContinue bool) map[string]any {
+func (s *Service) buildCapabilityRuntimeContext(ctx context.Context, sessionID, agentID, message string, isContinue bool, previousNextTurnPlan map[string]any) map[string]any {
 	if s == nil || s.runtimeContextBuilder == nil || s.repo == nil {
 		return nil
 	}
@@ -77,11 +81,12 @@ func (s *Service) buildCapabilityRuntimeContext(ctx context.Context, sessionID, 
 	}
 
 	return s.runtimeContextBuilder(RuntimeContextBuildInput{
-		SessionID:       sessionID,
-		AgentID:         agentID,
-		Message:         message,
-		IsContinue:      isContinue,
-		SessionMetadata: cloneAnyMap(sessionModel.Metadata),
+		SessionID:            sessionID,
+		AgentID:              agentID,
+		Message:              message,
+		IsContinue:           isContinue,
+		SessionMetadata:      cloneAnyMap(sessionModel.Metadata),
+		PreviousNextTurnPlan: cloneAnyMap(previousNextTurnPlan),
 	})
 }
 
@@ -92,6 +97,31 @@ func (s *Service) buildContinueRuntimeContext(ctx context.Context, sessionID, ag
 	}
 
 	return s.buildRuntimeContext(ctx, sessionID, agentID, message, waiting.turnID, waiting.runID, "", true), nil
+}
+
+func (s *Service) loadPreviousNextTurnPlan(ctx context.Context, sessionID, previousTurnID string) map[string]any {
+	if s == nil || s.repo == nil || strings.TrimSpace(previousTurnID) == "" {
+		return nil
+	}
+	runID, err := s.latestRunIDForTurn(ctx, sessionID, previousTurnID)
+	if err != nil || strings.TrimSpace(runID) == "" {
+		return nil
+	}
+
+	metadata := s.loadRunMetadata(ctx, runID)
+	plannerHint, ok := metadata["planner_hint"].(map[string]any)
+	if !ok || len(plannerHint) == 0 {
+		return nil
+	}
+	hintMetadata, ok := plannerHint["metadata"].(map[string]any)
+	if !ok || len(hintMetadata) == 0 {
+		return nil
+	}
+	nextTurnPlan, ok := hintMetadata["next_turn_plan"].(map[string]any)
+	if !ok || len(nextTurnPlan) == 0 {
+		return nil
+	}
+	return cloneAnyMap(nextTurnPlan)
 }
 
 func mergeRuntimePayload(payload map[string]any, extra map[string]any) map[string]any {

@@ -223,6 +223,98 @@ func TestService_StartTurnBuildsSessionMetadataBeforeRuntimeContext(t *testing.T
 	}
 }
 
+func TestService_StartTurnPassesPreviousNextTurnPlanToRuntimeContext(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newServiceTestRepository(t)
+	bus := newFakePublisher()
+	now := time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)
+
+	var runtimeInputs []RuntimeContextBuildInput
+	firstRunner := &fakeRunner{
+		result: RuntimeResult{Summary: "first complete"},
+	}
+	svc := NewService(store, bus, firstRunner, ServiceConfig{
+		Now: func() time.Time { return now },
+		RuntimeContextBuilder: func(input RuntimeContextBuildInput) map[string]any {
+			runtimeInputs = append(runtimeInputs, input)
+			return nil
+		},
+		PostTurnActionHooks: []PostTurnActionHook{
+			&postTurnActionRecorder{
+				result: &PostTurnActionResult{
+					PlannerHint: &PlannerHint{
+						Stage:   "capability_review",
+						Summary: "next turn should stay read-only",
+						Metadata: map[string]any{
+							"next_turn_plan": map[string]any{
+								"tool_mode":           "read_only",
+								"tool_allowlist":      []string{"file_read", "file_list"},
+								"skill_names":         []string{"office-hours"},
+								"resource_hint_count": 1,
+								"recall_hit":          true,
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	firstResult, err := svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_next_turn_plan",
+		AgentID:       "default",
+		UserMessage:   "first message",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn(first) error = %v", err)
+	}
+	if firstResult.RunID == "" {
+		t.Fatal("StartTurn(first).RunID is empty")
+	}
+
+	secondRunner := &fakeRunner{
+		result: RuntimeResult{Summary: "second complete"},
+	}
+	svc.runner = secondRunner
+	svc.now = func() time.Time { return now.Add(2 * time.Minute) }
+
+	_, err = svc.StartTurn(ctx, StartTurnInput{
+		SessionID:     "sess_next_turn_plan",
+		AgentID:       "default",
+		UserMessage:   "continue with the plan",
+		InitiatorType: InitiatorUser,
+	})
+	if err != nil {
+		t.Fatalf("StartTurn(second) error = %v", err)
+	}
+
+	if len(runtimeInputs) != 2 {
+		t.Fatalf("runtime builder input len = %d, want 2", len(runtimeInputs))
+	}
+	previousPlan := runtimeInputs[1].PreviousNextTurnPlan
+	if previousPlan == nil {
+		t.Fatal("runtime builder PreviousNextTurnPlan is nil")
+	}
+	if previousPlan["tool_mode"] != "read_only" {
+		t.Fatalf("PreviousNextTurnPlan.tool_mode = %#v, want read_only", previousPlan["tool_mode"])
+	}
+	tools, ok := previousPlan["tool_allowlist"].([]any)
+	if !ok || len(tools) != 2 || tools[0] != "file_read" || tools[1] != "file_list" {
+		t.Fatalf("PreviousNextTurnPlan.tool_allowlist = %#v, want [file_read file_list]", previousPlan["tool_allowlist"])
+	}
+
+	rawContextPlan, ok := secondRunner.lastRequest.Context["previous_next_turn_plan"].(map[string]any)
+	if !ok {
+		t.Fatalf("runner context previous_next_turn_plan type = %T, want map[string]any", secondRunner.lastRequest.Context["previous_next_turn_plan"])
+	}
+	if rawContextPlan["recall_hit"] != true {
+		t.Fatalf("runner context previous_next_turn_plan.recall_hit = %#v, want true", rawContextPlan["recall_hit"])
+	}
+}
+
 func TestService_ContinueTurnCreatesNewTurnForExistingWaitingSession(t *testing.T) {
 	t.Parallel()
 

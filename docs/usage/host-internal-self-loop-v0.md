@@ -104,6 +104,7 @@
 - `planner_hint`
   - 轻量 planning 提示
   - 当前默认 capability hook 会在 `metadata.next_turn_plan` 中记录下一轮建议的 tool/skill/recall 信号
+  - 后续 turn 会把上一轮 terminal run 的 `metadata.next_turn_plan` 作为 `previous_next_turn_plan` 注入 runtime context
 - `next_action_hint`
   - Host / UI 友好的下一步提示
 
@@ -160,8 +161,8 @@
 
 当前还没有承诺：
 
-- `planner_hint` / `next_action_hint` 主动消费 `memory_recall`
 - post-turn recap / learning hook 根据 recall 命中结果反向调整策略
+- 真正 planner engine 根据 `next_turn_plan` 自动生成执行图
 
 ---
 
