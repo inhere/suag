@@ -142,6 +142,40 @@ func TestResolver_ResolveHonorsMaxSkills(t *testing.T) {
 	assert.Eq(t, "two", resolved.Skills[1].Name)
 }
 
+func TestResolver_ResolveUsesPreferredSkillNamesFromPreviousPlan(t *testing.T) {
+	t.Parallel()
+
+	registry := NewRegistry()
+	registry.Register(Descriptor{
+		Name:              "office-hours",
+		Description:       "builder brainstorming skill",
+		SystemPromptParts: []string{"Ask one question at a time before implementation."},
+		ToolAllowlist:     []string{"file_read", "file_list"},
+	})
+	registry.Register(Descriptor{
+		Name:              "review",
+		Description:       "review code diffs",
+		SystemPromptParts: []string{"Prioritize regressions."},
+		ToolAllowlist:     []string{"file_read"},
+	})
+
+	resolver := NewResolver(registry)
+	resolved := resolver.Resolve(MatchInput{
+		UserMessage:         "继续",
+		PreferredSkillNames: []string{"office-hours"},
+		MaxSkills:           2,
+	})
+
+	assert.Eq(t, 1, len(resolved.Skills))
+	assert.Eq(t, "office-hours", resolved.Skills[0].Name)
+	assert.Eq(t, 1, len(resolved.Matches))
+	assert.Eq(t, "office-hours", resolved.Matches[0].SkillName)
+	assert.True(t, containsString(resolved.Matches[0].MatchSources, "previous_plan"))
+	assert.True(t, containsString(resolved.Matches[0].MatchTerms, "office-hours"))
+	assert.Eq(t, []string{"Ask one question at a time before implementation."}, resolved.SystemPromptParts)
+	assert.Eq(t, []string{"file_read", "file_list"}, resolved.ToolAllowlist)
+}
+
 func TestLoadDescriptorsFromFile(t *testing.T) {
 	t.Parallel()
 

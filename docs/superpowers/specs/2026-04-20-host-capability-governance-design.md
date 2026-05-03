@@ -636,7 +636,7 @@ MCP 应作为 `ToolProvider` 的一种来源。
 
 - planner 消费 recall + matched skills + tool subset
   - 当前已具备最小 `next_turn_plan` metadata，可作为后续 planner / UI / review flow 的结构化输入
-  - 当前下一轮 turn 已会读取上一轮 terminal run 的 `next_turn_plan`，并最小影响 tool mode / tool allowlist
+  - 当前下一轮 turn 已会读取上一轮 terminal run 的 `next_turn_plan`，并最小影响 tool mode / tool allowlist 与 skill matching 偏好
 - post-turn learning 产出 skill candidate
 - review flow 把 candidate skill 转成正式 skill
 

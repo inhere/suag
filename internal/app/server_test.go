@@ -301,6 +301,75 @@ func TestRuntimeContextBuilder_DerivesToolModeFromPreviousNextTurnPlan(t *testin
 	assert.Eq(t, "read_only", mode)
 }
 
+func TestRuntimeContextBuilder_ResolvesSkillsFromPreviousNextTurnPlan(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	workspace := t.TempDir()
+	err := os.MkdirAll(filepath.Join(workspace, "skills", "office-hours"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(workspace, "skills", "office-hours", "SKILL.md"),
+		[]byte(`---
+name: office-hours
+description: Help brainstorm product ideas before implementation.
+type: shell
+command: echo hi
+inputs:
+  topic: topic
+---`),
+		0o644,
+	)
+	assert.NoErr(t, err)
+
+	_ = gkconfig.Set("workspace", workspace)
+
+	built, err := buildDefaultCapabilities(workspace)
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, built.Close())
+	})
+
+	a := &App{
+		registry:             built.Registry,
+		capabilityManager:    built.Manager,
+		skillRegistry:        buildDefaultSkillRegistry(workspace),
+		defaultCapabilitySet: built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{}),
+	}
+	a.skillResolver = capskills.NewResolver(a.skillRegistry)
+
+	sessionBuilder := a.newSessionMetadataBuilder()
+	metadata := sessionBuilder(session.SessionMetadataBuildInput{
+		SessionID: "sess_ctx_previous_skill",
+		AgentID:   "default",
+		Message:   "hello",
+	})
+
+	runtimeBuilder := a.newRuntimeContextBuilder()
+	contextMap := runtimeBuilder(session.RuntimeContextBuildInput{
+		SessionID:       "sess_ctx_previous_skill",
+		AgentID:         "default",
+		Message:         "继续",
+		SessionMetadata: metadata,
+		PreviousNextTurnPlan: map[string]any{
+			"skill_names": []string{"office-hours"},
+		},
+	})
+
+	skillNames, ok := contextMap["resolved_skill_names"].([]string)
+	assert.True(t, ok)
+	assert.Eq(t, []string{"office-hours"}, skillNames)
+	matches, ok := contextMap["resolved_skill_matches"].([]map[string]any)
+	assert.True(t, ok)
+	assert.Eq(t, 1, len(matches))
+	matchSources, ok := matches[0]["match_sources"].([]string)
+	assert.True(t, ok)
+	assert.True(t, containsString(matchSources, "previous_plan"))
+	fragments, ok := contextMap["resolved_system_fragments"].([]string)
+	assert.True(t, ok)
+	assert.True(t, len(fragments) >= 1)
+}
+
 func TestRuntimeContextBuilder_ResolvesSkillFragmentsAndToolHints(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
@@ -522,4 +591,13 @@ func toolNamesFromSchemas(schemas []agentcoreapi.ToolSchema) []string {
 		names = append(names, schema.Name)
 	}
 	return names
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }

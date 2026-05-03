@@ -34,6 +34,7 @@ func (r *Resolver) Resolve(input MatchInput) ResolvedSkillSet {
 	message := strings.ToLower(strings.TrimSpace(input.UserMessage))
 	recallJoined := strings.ToLower(strings.Join(input.RecallPreview, "\n"))
 	turnScopes := detectTurnScopes(message, recallJoined)
+	preferredSkillNames := normalizeStringSet(input.PreferredSkillNames)
 
 	type rankedMatch struct {
 		desc  Descriptor
@@ -42,7 +43,7 @@ func (r *Resolver) Resolve(input MatchInput) ResolvedSkillSet {
 	var ranked []rankedMatch
 	result := ResolvedSkillSet{}
 	for _, desc := range descriptors {
-		match, ok := matchDescriptor(desc, message, recallJoined, turnScopes)
+		match, ok := matchDescriptor(desc, message, recallJoined, turnScopes, preferredSkillNames)
 		if !ok {
 			continue
 		}
@@ -69,13 +70,19 @@ func (r *Resolver) Resolve(input MatchInput) ResolvedSkillSet {
 	return result
 }
 
-func matchDescriptor(desc Descriptor, message, recallJoined string, turnScopes []string) (SkillMatch, bool) {
+func matchDescriptor(desc Descriptor, message, recallJoined string, turnScopes []string, preferredSkillNames map[string]bool) (SkillMatch, bool) {
 	if strings.TrimSpace(desc.Name) == "" {
 		return SkillMatch{}, false
 	}
 
 	match := SkillMatch{
 		SkillName: strings.TrimSpace(desc.Name),
+	}
+	normalizedName := strings.ToLower(strings.TrimSpace(desc.Name))
+	if preferredSkillNames[normalizedName] {
+		match.Score += 4
+		match.MatchSources = mergeUniqueStrings(match.MatchSources, []string{"previous_plan"})
+		match.MatchTerms = mergeUniqueStrings(match.MatchTerms, []string{desc.Name})
 	}
 	if containsText(message, desc.Name) {
 		match.Score += 3
@@ -110,6 +117,21 @@ func matchDescriptor(desc Descriptor, message, recallJoined string, turnScopes [
 		return SkillMatch{}, false
 	}
 	return match, true
+}
+
+func normalizeStringSet(items []string) map[string]bool {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(items))
+	for _, item := range items {
+		item = strings.ToLower(strings.TrimSpace(item))
+		if item == "" {
+			continue
+		}
+		out[item] = true
+	}
+	return out
 }
 
 func detectTurnScopes(message, recallJoined string) []string {

@@ -36,9 +36,10 @@ type Descriptor struct {
 // MatchInput carries the minimal turn signals used to decide whether a skill
 // should influence the current run.
 type MatchInput struct {
-	UserMessage   string
-	RecallPreview []string
-	MaxSkills     int
+	UserMessage         string
+	RecallPreview       []string
+	PreferredSkillNames []string
+	MaxSkills           int
 }
 
 // ResolvedSkillSet is the turn-time skill selection result.

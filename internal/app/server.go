@@ -136,7 +136,7 @@ func (a *App) newRuntimeContextBuilder() session.RuntimeContextBuilder {
 
 	return func(input session.RuntimeContextBuildInput) map[string]any {
 		recallMetadata := intrunner.LoadFormalMemoryRecallMetadata(appconfig.ResolveHostMemoryDraftRoot(), input.Message)
-		resolvedSkills := a.resolveRuntimeSkills(input.Message, recallMetadata)
+		resolvedSkills := a.resolveRuntimeSkills(input.Message, recallMetadata, input.PreviousNextTurnPlan)
 		resolved := a.capabilityManager.ResolveTurnCapabilitiesFromInput(runtimecaps.ResolveTurnInput{
 			SessionMetadata:      input.SessionMetadata,
 			UserMessage:          input.Message,
@@ -213,16 +213,24 @@ func cloneMetadataValue(value any) any {
 	}
 }
 
-func (a *App) resolveRuntimeSkills(message string, recallMetadata map[string]any) capskills.ResolvedSkillSet {
+func (a *App) resolveRuntimeSkills(message string, recallMetadata map[string]any, previousNextTurnPlan map[string]any) capskills.ResolvedSkillSet {
 	if a == nil || a.skillResolver == nil {
 		return capskills.ResolvedSkillSet{}
 	}
 
 	return a.skillResolver.Resolve(capskills.MatchInput{
-		UserMessage:   message,
-		RecallPreview: recallPreviewLines(recallMetadata),
-		MaxSkills:     2,
+		UserMessage:         message,
+		RecallPreview:       recallPreviewLines(recallMetadata),
+		PreferredSkillNames: previousPlanSkillNames(previousNextTurnPlan),
+		MaxSkills:           2,
 	})
+}
+
+func previousPlanSkillNames(plan map[string]any) []string {
+	if len(plan) == 0 {
+		return nil
+	}
+	return decodeStringSlice(plan["skill_names"])
 }
 
 func recallPreviewLines(metadata map[string]any) []string {
