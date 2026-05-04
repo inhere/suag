@@ -23,6 +23,7 @@ func (h *CapabilityPlannerHook) OnPostTurnAction(_ context.Context, input PostTu
 	resourceHintCount := len(decodeMapSliceAny(input.RuntimeContext["resolved_resource_hints"]))
 	recallHit := decodeBoolAny(input.RuntimeContext["memory_recall_hit"])
 	resolvedToolNames := decodeStringSliceAny(input.RuntimeContext["resolved_tool_names"])
+	resolvedToolRefs := decodeMapSliceAny(input.RuntimeContext["resolved_tool_refs"])
 	resolvedSkillMatches := decodeMapSliceAny(input.RuntimeContext["resolved_skill_matches"])
 
 	metadata := map[string]any{
@@ -40,6 +41,9 @@ func (h *CapabilityPlannerHook) OnPostTurnAction(_ context.Context, input PostTu
 	}
 	if len(resolvedToolNames) > 0 {
 		metadata["resolved_tool_names"] = resolvedToolNames
+	}
+	if len(resolvedToolRefs) > 0 {
+		metadata["resolved_tool_refs"] = resolvedToolRefs
 	}
 	if len(resolvedSkillMatches) > 0 {
 		metadata["resolved_skill_matches"] = resolvedSkillMatches

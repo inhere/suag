@@ -555,6 +555,7 @@ MCP 应作为 `ToolProvider` 的一种来源。
   - 在创建 session 时把默认 capability baseline 写入 `session.metadata.capability_set`
   - 在 `start_turn / continue_turn` 时优先从 session metadata 反解 capability set
   - 把 turn-time 解析结果继续下发为 `resolved_tool_names`
+  - 同时下发结构化 `resolved_tool_refs`，为 UI / planner / policy 保留 tool source 与 provider identity
 - `internal/host/session.Service` 已新增：
   - `SessionMetadataBuilder`
   - `RuntimeContextBuilder`
@@ -612,6 +613,7 @@ MCP 应作为 `ToolProvider` 的一种来源。
   - 不写回 transcript / session history
 - Phase D 的最小 planner-lite 联动也已开始接线：
   - Host terminal post-turn hook 会消费 `resolved_tool_mode`
+  - 会透传 `resolved_tool_names` / `resolved_tool_refs`
   - 会消费 `resolved_skill_names` / `resolved_skill_matches`
   - 会消费 `resolved_resource_hints` 计数与 recall hit
   - 会把上述信号收敛为结构化 `next_turn_plan`

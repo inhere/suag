@@ -149,6 +149,7 @@ func (a *App) newRuntimeContextBuilder() session.RuntimeContextBuilder {
 
 		contextMap := map[string]any{
 			"resolved_tool_names": append([]string(nil), resolved.ToolNames...),
+			"resolved_tool_refs":  encodeRuntimeToolRefs(resolved.ToolRefs),
 			"resolved_tool_mode":  string(resolved.ToolMode),
 			"memory_recall_hit":   recallHit(recallMetadata),
 		}
@@ -166,6 +167,25 @@ func (a *App) newRuntimeContextBuilder() session.RuntimeContextBuilder {
 		}
 		return contextMap
 	}
+}
+
+func encodeRuntimeToolRefs(refs []runtimecaps.ToolRef) []map[string]any {
+	if len(refs) == 0 {
+		return nil
+	}
+
+	out := make([]map[string]any, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Name == "" {
+			continue
+		}
+		out = append(out, map[string]any{
+			"name":        ref.Name,
+			"source":      ref.Source,
+			"provider_id": ref.ProviderID,
+		})
+	}
+	return out
 }
 
 func (a *App) newSessionMetadataBuilder() session.SessionMetadataBuilder {

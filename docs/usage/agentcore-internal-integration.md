@@ -202,6 +202,7 @@
   - `runtimecaps.CapabilityManager`
 - `internal/host/intrunner` 现在支持从 `session.RuntimeRequest.Context` 读取 `resolved_tool_names`
 - 如果上层传入了 `resolved_tool_names`，intrunner 会按 turn 级子集裁剪 registry，再把 subset 暴露给本轮 runtime
+- `resolved_tool_refs` 当前作为结构化 tool catalog 信号随 runtime context 下发，至少包含 `name`、`source`、`provider_id`，供 planner / UI / 后续 policy 使用；intrunner 执行层仍只消费 `resolved_tool_names`
 - 如果没有传入，仍保持兼容行为，默认使用全量 registry
 
 这意味着当前已经形成一个清晰的最小能力治理边界：
@@ -270,6 +271,7 @@
   - 在启动时构建默认 `CapabilitySet`
   - 在新 session 首次 start turn 前，把默认 capability baseline 写入 session metadata
   - 在 turn-time 通过 runtime context builder，把 session-stable capability baseline 解析成 `resolved_tool_names`
+  - 同时解析出结构化 `resolved_tool_refs`，为后续 MCP / native / 外部工具治理保留来源信息
 - `internal/host/session.Service` 现在新增：
   - `SessionMetadataBuilder`
   - `RuntimeContextBuilder`
@@ -345,7 +347,7 @@
   - 不会回写 session history
 - `internal/host/session` 当前也已开始消费 runtime capability signals：
   - 默认挂载最小 `CapabilityPlannerHook`
-  - terminal 后的 `planner_hint` / `next_action_hint` 会带上 `resolved_tool_mode`、`resolved_skill_names`、`resolved_skill_matches`、`resource_hint_count`、`recall_hit`
+  - terminal 后的 `planner_hint` / `next_action_hint` 会带上 `resolved_tool_mode`、`resolved_tool_names`、`resolved_tool_refs`、`resolved_skill_names`、`resolved_skill_matches`、`resource_hint_count`、`recall_hit`
   - `planner_hint.metadata.next_turn_plan` 会把下一轮建议的 `tool_mode`、`tool_allowlist`、`skill_names`、`resource_hint_count`、`recall_hit` 收敛成结构化对象
   - 下一轮 turn 会读取上一轮 terminal run 的 `next_turn_plan`，并把它作为 `previous_next_turn_plan` 注入 runtime context
   - capability resolver 会最小消费 `previous_next_turn_plan`：当上一轮建议 `read_only` 且当前消息没有明显写入意图时，沿用其 tool allowlist / read-only mode；同时会把 `skill_names` 作为下一轮 skill matching 的偏好信号

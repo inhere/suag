@@ -2081,6 +2081,7 @@ func TestCapabilityPlannerHook_BuildsHintsFromCapabilitySignals(t *testing.T) {
 		RuntimeContext: map[string]any{
 			"resolved_tool_mode":   "read_only",
 			"resolved_tool_names":  []string{"file_read", "file_list"},
+			"resolved_tool_refs":   []map[string]any{{"name": "file_read", "source": "native", "provider_id": "native"}, {"name": "file_list", "source": "native", "provider_id": "native"}},
 			"resolved_skill_names": []string{"office-hours"},
 			"resolved_skill_matches": []map[string]any{
 				{
@@ -2113,6 +2114,10 @@ func TestCapabilityPlannerHook_BuildsHintsFromCapabilitySignals(t *testing.T) {
 	}
 	if result.PlannerHint.Metadata["recall_hit"] != true {
 		t.Fatalf("planner hint metadata recall_hit = %v, want true", result.PlannerHint.Metadata["recall_hit"])
+	}
+	toolRefs, ok := result.PlannerHint.Metadata["resolved_tool_refs"].([]map[string]any)
+	if !ok || len(toolRefs) != 2 || toolRefs[0]["name"] != "file_read" || toolRefs[0]["source"] != "native" {
+		t.Fatalf("planner hint metadata resolved_tool_refs = %#v, want structured file_read ref", result.PlannerHint.Metadata["resolved_tool_refs"])
 	}
 	nextTurnPlan, ok := result.PlannerHint.Metadata["next_turn_plan"].(map[string]any)
 	if !ok {

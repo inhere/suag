@@ -103,7 +103,7 @@
   - `completed` / `failed` / `canceled`
 - `planner_hint`
   - 轻量 planning 提示
-  - 当前默认 capability hook 会在 `metadata.next_turn_plan` 中记录下一轮建议的 tool/skill/recall 信号
+  - 当前默认 capability hook 会在 `metadata.next_turn_plan` 中记录下一轮建议的 tool/skill/recall 信号，并在 metadata 中保留结构化 `resolved_tool_refs`
   - 后续 turn 会把上一轮 terminal run 的 `metadata.next_turn_plan` 作为 `previous_next_turn_plan` 注入 runtime context，并最小影响下一轮 tool subset 与 skill matching 偏好
 - `next_action_hint`
   - Host / UI 友好的下一步提示
