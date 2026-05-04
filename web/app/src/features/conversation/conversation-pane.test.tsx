@@ -8,15 +8,25 @@ it("renders chat-first layout with summary strip and composer feedback", () => {
       messages={[
         {
           id: "user-1",
+          kind: "message",
           role: "user",
           text: "请整理当前页面结构",
           timestamp: "10:00",
         },
         {
           id: "assistant-1",
+          kind: "message",
           role: "assistant",
           text: "已开始处理这个任务",
           timestamp: "10:01",
+        },
+        {
+          id: "activity-1",
+          kind: "activity",
+          title: "Thinking",
+          detail: "正在分析工具调用",
+          tone: "running",
+          timestamp: "10:02",
         },
       ]}
       waitingForInput={false}
@@ -30,6 +40,7 @@ it("renders chat-first layout with summary strip and composer feedback", () => {
   );
 
   expect(screen.getByRole("heading", { name: "Chat" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Chat history")).toHaveClass("conversation-pane__content");
   expect(screen.getByText("正在生成页面草图")).toBeInTheDocument();
   expect(screen.queryByText("Recent Turns")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Starting..." })).toBeInTheDocument();
@@ -37,6 +48,10 @@ it("renders chat-first layout with summary strip and composer feedback", () => {
   expect(screen.getByRole("textbox")).toBeInTheDocument();
   expect(screen.getByText("10:00")).toBeInTheDocument();
   expect(screen.getByText("10:01")).toBeInTheDocument();
+  const activityCard = screen.getByText("Thinking").closest(".conversation-activity");
+  expect(activityCard).not.toBeNull();
+  expect(within(activityCard as HTMLElement).getByText("正在分析工具调用")).toBeInTheDocument();
+  expect(screen.getByText("10:02")).toBeInTheDocument();
 });
 
 it("shows inline status card for input required and keeps composer error feedback", () => {

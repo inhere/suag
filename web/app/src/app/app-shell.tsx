@@ -1,5 +1,5 @@
-import type { ConversationMessage } from "../features/conversation/conversation-pane";
 import { ConversationPane } from "../features/conversation/conversation-pane";
+import type { ConversationTimelineEntry } from "../features/conversation/conversation-timeline";
 import { RunDetailsCompactPanel } from "../features/context/run-details-compact-panel";
 import { SessionSummaryPanel } from "../features/context/session-summary-panel";
 import { DebugDrawer } from "../features/debug/debug-drawer";
@@ -34,7 +34,7 @@ type AppShellProps = {
   onRetryConnection?: () => void;
   filter?: SessionFilter;
   searchQuery?: string;
-  messages?: ConversationMessage[];
+  messages?: ConversationTimelineEntry[];
   currentTurn?: StateSnapshotTurn | null;
   waitingForInput?: boolean;
   chatHeaderTitle?: string;

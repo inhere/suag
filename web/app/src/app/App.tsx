@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { AppShell } from "./app-shell";
-import type { ConversationMessage } from "../features/conversation/conversation-pane";
+import {
+  buildConversationTimeline,
+  formatConversationTimestamp,
+  type ConversationMessageEntry,
+  type ConversationTimelineEntry,
+} from "../features/conversation/conversation-timeline";
 import {
   emptySessionViewState,
   markRunDetailFailed,
@@ -53,7 +58,7 @@ type PersistedWorkbenchState = {
 
 type PendingOptimisticMessage = {
   sessionId: string | null;
-  message: ConversationMessage;
+  message: ConversationMessageEntry;
 };
 
 const pendingMemoryCandidateStatuses = new Set(["draft", "rendered"]);
@@ -64,81 +69,11 @@ function filterPendingMemoryCandidates(candidates: MemoryCandidate[]): MemoryCan
   );
 }
 
-function buildConversationMessages(
-  state: SessionViewState,
-  optimisticMessage?: PendingOptimisticMessage | null,
-): ConversationMessage[] {
-  const messages: ConversationMessage[] = [];
-  const snapshot = state.snapshot;
-  const snapshotUserText = selectCurrentTurn(snapshot)?.inputSummary?.trim() ?? "";
-
-  if (
-    optimisticMessage &&
-    (optimisticMessage.sessionId == null || optimisticMessage.sessionId === state.currentSessionId) &&
-    optimisticMessage.message.text.trim() &&
-    optimisticMessage.message.text.trim() !== snapshotUserText
-  ) {
-    messages.push(optimisticMessage.message);
-  }
-
-  if (!snapshot) {
-    return messages;
-  }
-
-  const currentTurn = selectCurrentTurn(snapshot);
-  if (currentTurn?.inputSummary?.trim()) {
-    messages.push({
-      id: `${currentTurn.turnId}:user`,
-      role: "user",
-      text: currentTurn.inputSummary,
-      timestamp: formatConversationTimestamp(currentTurn.updatedAt || snapshot.generatedAt),
-    });
-  }
-
-  const focusedRun = selectFocusedRun(snapshot, state.focusedRunId);
-  const focusedExternalMessage =
-    snapshot.externalMessages.find((message) => message.runId === focusedRun?.runId) ?? null;
-  const assistantText =
-    focusedRun?.summary ||
-    focusedExternalMessage?.content ||
-    focusedRun?.latestMessageText ||
-    "";
-
-  if (assistantText) {
-    messages.push({
-      id: `${focusedRun?.runId ?? snapshot.sessionId}:assistant`,
-      role: "assistant",
-      text: assistantText,
-      timestamp: formatConversationTimestamp(
-        focusedExternalMessage?.updatedAt || focusedRun?.updatedAt || snapshot.generatedAt,
-      ),
-    });
-  }
-
-  return messages;
-}
-
-function formatConversationTimestamp(value: string | undefined): string {
-  if (!value) {
-    return "";
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "";
-  }
-
-  return new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(parsed);
-}
-
-function createOptimisticUserMessage(text: string): ConversationMessage {
+function createOptimisticUserMessage(text: string): ConversationMessageEntry {
   const now = new Date().toISOString();
   return {
     id: `optimistic:${now}:${Math.random().toString(36).slice(2, 8)}`,
+    kind: "message",
     role: "user",
     text,
     timestamp: formatConversationTimestamp(now),
@@ -301,7 +236,7 @@ function stringsFirstNonEmpty(...values: Array<string | null | undefined>): stri
 function buildInlineStatus(
   currentTurn: ReturnType<typeof selectCurrentTurn>,
   focusedRun: ReturnType<typeof selectFocusedRun>,
-  messages: ConversationMessage[],
+  messages: ConversationTimelineEntry[],
 ): { state: InlineStatusCardState; detail?: string | null } | null {
   if (!currentTurn) {
     return null;
@@ -326,8 +261,10 @@ function buildInlineStatus(
     return { state: "canceled", detail };
   }
 
-  const hasAssistantMessage = messages.some((message) => message.role === "assistant" && message.text.trim());
-  if (displayState.includes("completed") && !hasAssistantMessage) {
+  const hasVisibleRunOutput = messages.some((message) =>
+    message.kind === "message" ? message.role === "assistant" && message.text.trim() : message.detail.trim(),
+  );
+  if (displayState.includes("completed") && !hasVisibleRunOutput) {
     return {
       state: "completed_empty",
       detail: detail || "当前回合已完成，但还没有新的 assistant 文本。",
@@ -773,7 +710,11 @@ export function App() {
   const currentTurn = selectCurrentTurn(snapshot);
   const activeRuns = selectActiveRuns(snapshot);
   const focusedRun = selectFocusedRun(snapshot, viewState.focusedRunId);
-  const conversationMessages = buildConversationMessages(viewState, pendingOptimisticMessage);
+  const conversationMessages = buildConversationTimeline(
+    viewState.snapshot,
+    pendingOptimisticMessage,
+    viewState.currentSessionId,
+  );
   const waitingForInput = isWaitingForInput(viewState);
   const submitPending = startTurnPending || pendingWSCommand === "continue_composer";
   const contextSessionLabel = `Session ${viewState.currentSessionId ?? "none"}`;

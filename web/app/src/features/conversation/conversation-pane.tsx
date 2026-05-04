@@ -1,22 +1,16 @@
-import type { StateSnapshotTurn } from "../../lib/host-types";
 import { ChatHeader } from "./chat-header";
 import { Composer } from "./composer";
+import { ActivityItem } from "./activity-item";
 import {
   type InlineStatusCardState,
   InlineStatusCard,
 } from "./inline-status-card";
 import { MessageItem } from "./message-item";
 import { SummaryStrip, type SummaryStripTone } from "./summary-strip";
-
-export type ConversationMessage = {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  timestamp?: string;
-};
+import type { ConversationTimelineEntry } from "./conversation-timeline";
 
 type ConversationPaneProps = {
-  messages: ConversationMessage[];
+  messages: ConversationTimelineEntry[];
   waitingForInput: boolean;
   headerTitle?: string;
   headerMeta?: string | null;
@@ -47,15 +41,19 @@ export function ConversationPane({
     <div className="conversation-pane">
       <ChatHeader title={headerTitle} meta={headerMeta} />
       <SummaryStrip status={summaryStatus} tone={summaryTone} />
-      <div className="conversation-pane__content">
-        {messages.map((message) => (
-          <MessageItem
-            key={message.id}
-            role={message.role}
-            text={message.text}
-            timestamp={message.timestamp}
-          />
-        ))}
+      <div className="conversation-pane__content" aria-label="Chat history">
+        {messages.map((message) =>
+          message.kind === "activity" ? (
+            <ActivityItem key={message.id} activity={message} />
+          ) : (
+            <MessageItem
+              key={message.id}
+              role={message.role}
+              text={message.text}
+              timestamp={message.timestamp}
+            />
+          ),
+        )}
         {inlineStatus ? (
           <InlineStatusCard
             state={inlineStatus.state}
