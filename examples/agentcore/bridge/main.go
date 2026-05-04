@@ -51,7 +51,7 @@ func main() {
 		QueueText("bridge example completed")
 
 	runtime := agentcore.New(agentcore.Config{
-		Provider: llm.NewProvider(provider),
+		Provider: provider,
 		Storage:  files.NewStorage(filepath.Join(os.TempDir(), "axon-agentcore-examples", "bridge")),
 		Tools:    reg,
 	})

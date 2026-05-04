@@ -56,6 +56,10 @@ it("prefers summary for completed runs", () => {
             stage: "capability_review",
             summary: "review capability signals",
             metadata: {
+              resolved_tool_refs: [
+                { name: "file_read", source: "native", provider_id: "native" },
+                { name: "mcp_echo", source: "mcp", provider_id: "mcp.stub" },
+              ],
               next_turn_plan: {
                 tool_mode: "read_only",
                 tool_allowlist: ["file_read", "file_list"],
@@ -77,6 +81,7 @@ it("prefers summary for completed runs", () => {
   expect(screen.getByText("Next turn plan")).toBeInTheDocument();
   expect(screen.getByText("read_only")).toBeInTheDocument();
   expect(screen.getByText("file_read, file_list")).toBeInTheDocument();
+  expect(screen.getByText("native:file_read, mcp.stub:mcp_echo")).toBeInTheDocument();
   expect(screen.getByText("office-hours")).toBeInTheDocument();
   expect(screen.getByText("recall hit")).toBeInTheDocument();
 });

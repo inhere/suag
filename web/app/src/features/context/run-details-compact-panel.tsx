@@ -1,4 +1,4 @@
-import type { StateSnapshotRun } from "../../lib/host-types";
+import type { StateSnapshotRun, ToolRefHint } from "../../lib/host-types";
 
 type RunDetailsCompactPanelProps = {
   runs: StateSnapshotRun[];
@@ -52,11 +52,34 @@ function getNextTurnPlan(run: StateSnapshotRun | null) {
   return run?.plannerHint?.metadata?.next_turn_plan ?? null;
 }
 
+function getResolvedToolRefs(run: StateSnapshotRun | null): ToolRefHint[] {
+  const refs = run?.plannerHint?.metadata?.resolved_tool_refs;
+  return Array.isArray(refs) ? refs : [];
+}
+
 function formatList(values: string[] | undefined): string {
   if (!values?.length) {
     return "none";
   }
   return values.join(", ");
+}
+
+function formatToolRefs(refs: ToolRefHint[]): string {
+  if (!refs.length) {
+    return "none";
+  }
+
+  return refs
+    .map((ref) => {
+      const name = ref.name?.trim();
+      if (!name) {
+        return "";
+      }
+      const provider = ref.provider_id?.trim() || ref.source?.trim();
+      return provider ? `${provider}:${name}` : name;
+    })
+    .filter(Boolean)
+    .join(", ");
 }
 
 export function RunDetailsCompactPanel({
@@ -65,6 +88,7 @@ export function RunDetailsCompactPanel({
 }: RunDetailsCompactPanelProps) {
   const focusedRun = getFocusedRun(runs, focusedRunId);
   const nextTurnPlan = getNextTurnPlan(focusedRun);
+  const toolRefs = getResolvedToolRefs(focusedRun);
 
   return (
     <section className="context-panel" aria-label="Run details panel">
@@ -106,6 +130,12 @@ export function RunDetailsCompactPanel({
               <span className="context-panel__label">Tools</span>
               <span className="context-panel__value">{formatList(nextTurnPlan.tool_allowlist)}</span>
             </div>
+            {toolRefs.length ? (
+              <div className="context-panel__meta-item">
+                <span className="context-panel__label">Tool refs</span>
+                <span className="context-panel__value">{formatToolRefs(toolRefs)}</span>
+              </div>
+            ) : null}
             <div className="context-panel__meta-item">
               <span className="context-panel__label">Skills</span>
               <span className="context-panel__value">{formatList(nextTurnPlan.skill_names)}</span>

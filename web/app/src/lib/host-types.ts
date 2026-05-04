@@ -135,8 +135,16 @@ export type PlannerHint = {
   summary?: string;
   metadata?: {
     next_turn_plan?: NextTurnPlan;
+    resolved_tool_refs?: ToolRefHint[];
     [key: string]: unknown;
   };
+  [key: string]: unknown;
+};
+
+export type ToolRefHint = {
+  name?: string;
+  source?: string;
+  provider_id?: string;
   [key: string]: unknown;
 };
 
