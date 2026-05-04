@@ -137,6 +137,7 @@ func (a *App) newRuntimeContextBuilder() session.RuntimeContextBuilder {
 	return func(input session.RuntimeContextBuildInput) map[string]any {
 		recallMetadata := intrunner.LoadFormalMemoryRecallMetadata(appconfig.ResolveHostMemoryDraftRoot(), input.Message)
 		resolvedSkills := a.resolveRuntimeSkills(input.Message, recallMetadata, input.PreviousNextTurnPlan)
+		registeredSkillInventory := a.registeredSkillInventory(input.Message)
 		resolved := a.capabilityManager.ResolveTurnCapabilitiesFromInput(runtimecaps.ResolveTurnInput{
 			SessionMetadata:      input.SessionMetadata,
 			UserMessage:          input.Message,
@@ -153,8 +154,12 @@ func (a *App) newRuntimeContextBuilder() session.RuntimeContextBuilder {
 			"resolved_tool_mode":  string(resolved.ToolMode),
 			"memory_recall_hit":   recallHit(recallMetadata),
 		}
-		if len(resolvedSkills.SystemPromptParts) > 0 {
-			contextMap["resolved_system_fragments"] = append([]string(nil), resolvedSkills.SystemPromptParts...)
+		systemFragments := append([]string(nil), resolvedSkills.SystemPromptParts...)
+		if registeredSkillInventory != "" {
+			systemFragments = append(systemFragments, registeredSkillInventory)
+		}
+		if len(systemFragments) > 0 {
+			contextMap["resolved_system_fragments"] = systemFragments
 		}
 		if len(resolvedSkills.ResourceHints) > 0 {
 			contextMap["resolved_resource_hints"] = encodeResourceHints(resolvedSkills.ResourceHints)
@@ -244,6 +249,52 @@ func (a *App) resolveRuntimeSkills(message string, recallMetadata map[string]any
 		PreferredSkillNames: previousPlanSkillNames(previousNextTurnPlan),
 		MaxSkills:           2,
 	})
+}
+
+func (a *App) registeredSkillInventory(message string) string {
+	if a == nil || a.skillRegistry == nil || !isSkillInventoryQuestion(message) {
+		return ""
+	}
+	descriptors := a.skillRegistry.List()
+	if len(descriptors) == 0 {
+		return "[Registered Skills]\nNo registered skills were discovered from configured skill roots."
+	}
+
+	lines := []string{
+		"[Registered Skills]",
+		"These skills are registered and available for matching. They are not necessarily injected into every turn unless selected by capability matching.",
+	}
+	for _, desc := range descriptors {
+		name := strings.TrimSpace(desc.Name)
+		if name == "" {
+			continue
+		}
+		description := strings.TrimSpace(desc.Description)
+		source := strings.TrimSpace(desc.SourcePath)
+		line := "- " + name
+		if description != "" {
+			line += ": " + description
+		}
+		if source != "" {
+			line += " (" + source + ")"
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) <= 2 {
+		return ""
+	}
+	return strings.Join(lines, "\n")
+}
+
+func isSkillInventoryQuestion(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	if normalized == "" {
+		return false
+	}
+	return strings.Contains(normalized, "skill") ||
+		strings.Contains(normalized, "技能") ||
+		strings.Contains(normalized, "能力") ||
+		strings.Contains(normalized, "加载")
 }
 
 func previousPlanSkillNames(plan map[string]any) []string {

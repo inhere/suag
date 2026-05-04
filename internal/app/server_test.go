@@ -478,6 +478,52 @@ inputs:
 	assert.True(t, strings.HasSuffix(sourcePath, filepath.Join("skills", "office-hours", "SKILL.md")))
 }
 
+func TestRuntimeContextBuilder_IncludesRegisteredSkillInventoryWhenAsked(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+
+	workspace := t.TempDir()
+	err := os.MkdirAll(filepath.Join(workspace, ".agents", "skills", "project-review"), 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(
+		filepath.Join(workspace, ".agents", "skills", "project-review", "SKILL.md"),
+		[]byte(`---
+name: project-review
+description: Review project changes before handoff.
+---`),
+		0o644,
+	)
+	assert.NoErr(t, err)
+	_ = gkconfig.Set("workspace", workspace)
+
+	built, err := buildDefaultCapabilities(workspace)
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, built.Close())
+	})
+
+	a := &App{
+		registry:             built.Registry,
+		capabilityManager:    built.Manager,
+		skillRegistry:        buildSkillRegistry(workspace, ""),
+		defaultCapabilitySet: built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{}),
+	}
+	a.skillResolver = capskills.NewResolver(a.skillRegistry)
+
+	contextMap := a.newRuntimeContextBuilder()(session.RuntimeContextBuildInput{
+		SessionID: "sess_ctx_skill_inventory",
+		AgentID:   "default",
+		Message:   "当前加载了哪些 skills",
+	})
+
+	fragments, ok := contextMap["resolved_system_fragments"].([]string)
+	assert.True(t, ok)
+	assert.True(t, containsStringContains(fragments, "[Registered Skills]"))
+	assert.True(t, containsStringContains(fragments, "project-review"))
+	_, hasResolvedSkills := contextMap["resolved_skill_names"]
+	assert.False(t, hasResolvedSkills)
+}
+
 func TestServerRouter_HealthEndpointReturnsOK(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
@@ -602,6 +648,15 @@ func toolNamesFromSchemas(schemas []agentcoreapi.ToolSchema) []string {
 func containsString(items []string, target string) bool {
 	for _, item := range items {
 		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func containsStringContains(items []string, target string) bool {
+	for _, item := range items {
+		if strings.Contains(item, target) {
 			return true
 		}
 	}
