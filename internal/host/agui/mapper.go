@@ -69,6 +69,10 @@ func MapEvent(event HostEvent) []Event {
 			buildRunActivitySnapshot(now, event, "canceled"),
 		}
 	case session.EventRunExternalActivity:
+		activityID := payloadString(event.Payload, "activityId")
+		if activityID == "" {
+			activityID = event.RunID + ":external"
+		}
 		return []Event{
 			withTimestamp(NewCustomEvent("axon.run.external.activity", map[string]any{
 				"threadId":       event.SessionID,
@@ -81,14 +85,17 @@ func MapEvent(event HostEvent) []Event {
 				"payload":        event.Payload,
 				"externalTaskId": externalTaskIDFromPayload(event.Payload),
 			}), now),
-			withTimestamp(NewActivitySnapshotEvent(event.RunID+":external", "external_activity", map[string]any{
+			withTimestamp(NewActivitySnapshotEvent(activityID, "external_activity", map[string]any{
 				"threadId":       event.SessionID,
 				"turnId":         event.TurnID,
 				"runId":          event.RunID,
 				"agentId":        event.AgentID,
-				"status":         "external_running",
+				"status":         firstPayloadString(event.Payload, "status", "external_running"),
 				"payload":        event.Payload,
 				"externalTaskId": externalTaskIDFromPayload(event.Payload),
+				"title":          payloadString(event.Payload, "title"),
+				"detail":         payloadString(event.Payload, "detail"),
+				"kind":           payloadString(event.Payload, "kind"),
 			}), now),
 		}
 	case session.EventRunExternalMessageDelta:
@@ -285,6 +292,13 @@ func BuildStateSnapshot(sessionModel session.Session, events []HostEvent, extern
 					"turnId":         event.TurnID,
 					"runId":          event.RunID,
 					"agentId":        event.AgentID,
+					"activityId":     "",
+					"kind":           "",
+					"status":         "",
+					"title":          "",
+					"detail":         "",
+					"startedAt":      formatEventTime(event.CreatedAt),
+					"updatedAt":      "",
 				})
 				idx = len(mappedExternalActivities) - 1
 				externalActivityIndex[key] = idx
@@ -403,6 +417,14 @@ func externalTaskIDFromPayload(payload any) string {
 	return text
 }
 
+func firstPayloadString(payload any, key string, fallback string) string {
+	value := payloadString(payload, key)
+	if value != "" {
+		return value
+	}
+	return fallback
+}
+
 func waitMetadataFromPayload(payload any) map[string]any {
 	values, ok := payload.(map[string]any)
 	if !ok || len(values) == 0 {
@@ -480,6 +502,9 @@ func hintMapFromMetadata(metadata map[string]any, key string) map[string]any {
 }
 
 func externalActivityKey(event HostEvent) string {
+	if activityID := payloadString(event.Payload, "activityId"); activityID != "" {
+		return activityID
+	}
 	externalTaskID := externalTaskIDFromPayload(event.Payload)
 	if externalTaskID != "" {
 		return externalTaskID
@@ -514,6 +539,19 @@ func mergeExternalActivity(target map[string]any, event HostEvent) {
 	}
 	if kind, _ := values["kind"].(string); kind != "" {
 		target["lastKind"] = kind
+		target["kind"] = kind
+	}
+	if status, _ := values["status"].(string); status != "" {
+		target["status"] = status
+	}
+	if title, _ := values["title"].(string); title != "" {
+		target["title"] = title
+	}
+	if detail, _ := values["detail"].(string); detail != "" {
+		target["detail"] = detail
+	}
+	if activityID, _ := values["activityId"].(string); activityID != "" {
+		target["activityId"] = activityID
 	}
 	target["lastPayload"] = values
 }

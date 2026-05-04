@@ -50,7 +50,7 @@ function makeSnapshot(): StateSnapshotV0 {
         latestAgentId: "default",
         displayState: "external_running",
         latestEventType: "run.external.message.delta",
-        latestMessagePreview: "thinking...",
+        latestMessagePreview: "正在整理已加载 skills...",
         eventCount: 3,
         runCount: 1,
         activeRunCount: 1,
@@ -101,7 +101,7 @@ function makeSnapshot(): StateSnapshotV0 {
         displayState: "external_running",
         latestEventType: "run.external.message.delta",
         latestMessageId: "msg_002",
-        latestMessageText: "thinking...",
+        latestMessageText: "正在整理已加载 skills...",
         summary: "",
         externalTaskIds: ["ext_001"],
         eventCount: 3,
@@ -121,6 +121,12 @@ function makeSnapshot(): StateSnapshotV0 {
         status: "running",
         title: "file_read",
         detail: "reading package files",
+        payload: {
+          toolName: "file_read",
+          arguments: {
+            path: "README.md",
+          },
+        },
         startedAt: "2026-04-12T11:01:00Z",
         updatedAt: "2026-04-12T11:02:00Z",
       },
@@ -133,7 +139,7 @@ function makeSnapshot(): StateSnapshotV0 {
         turnId: "turn_002",
         runId: "run_002",
         agentId: "default",
-        content: "thinking...",
+        content: "正在整理已加载 skills...",
         started: true,
         completed: false,
         lastEventType: "run.external.message.delta",
@@ -156,7 +162,7 @@ describe("buildConversationTimeline", () => {
       "run_001:capability-plan",
       "turn_002:user",
       "run_002:status",
-      "msg_002:thinking",
+      "msg_002:assistant",
       "act_001:activity",
     ]);
     expect(timeline).toContainEqual(
@@ -168,9 +174,9 @@ describe("buildConversationTimeline", () => {
     );
     expect(timeline).toContainEqual(
       expect.objectContaining({
-        kind: "activity",
-        title: "Thinking",
-        detail: "thinking...",
+        kind: "message",
+        role: "assistant",
+        text: "正在整理已加载 skills...",
       }),
     );
     expect(timeline).toContainEqual(
@@ -178,6 +184,12 @@ describe("buildConversationTimeline", () => {
         kind: "activity",
         title: "file_read",
         detail: "reading package files",
+        details: {
+          toolName: "file_read",
+          arguments: {
+            path: "README.md",
+          },
+        },
       }),
     );
   });
@@ -196,6 +208,72 @@ describe("buildConversationTimeline", () => {
 
     const timeline = buildConversationTimeline(makeSnapshot(), pending, "sess_001");
 
-    expect(timeline[0]).toEqual(pending.message);
+    expect(timeline.at(-1)).toEqual(pending.message);
+  });
+
+  it("uses queued custom event payload as turn input fallback", () => {
+    const snapshot = makeSnapshot();
+    snapshot.turns[1] = {
+      ...snapshot.turns[1],
+      inputSummary: "",
+    };
+    snapshot.events = [
+      {
+        type: "CUSTOM",
+        name: "axon.run.queued",
+        value: {
+          type: "run.queued",
+          sessionId: "sess_001",
+          turnId: "turn_002",
+          runId: "run_002",
+          payload: {
+            message: "加载了哪些 skills",
+          },
+        },
+      },
+    ];
+
+    const timeline = buildConversationTimeline(snapshot);
+
+    expect(timeline).toContainEqual(
+      expect.objectContaining({
+        id: "turn_002:user",
+        kind: "message",
+        role: "user",
+        text: "加载了哪些 skills",
+      }),
+    );
+  });
+
+  it("prefers final run summary over partial external message content", () => {
+    const snapshot = makeSnapshot();
+    snapshot.runs[1] = {
+      ...snapshot.runs[1],
+      displayState: "completed",
+      summary: "完整回答：当前加载了 office-hours 和 skill-creator。",
+      latestMessageText: "完整回答：当前加载了 office-hours 和 skill-creator。",
+    };
+    snapshot.externalMessages[0] = {
+      ...snapshot.externalMessages[0],
+      content: "完整回答：当前加载了",
+      completed: true,
+    };
+
+    const timeline = buildConversationTimeline(snapshot);
+
+    expect(timeline).toContainEqual(
+      expect.objectContaining({
+        id: "run_002:assistant",
+        kind: "message",
+        role: "assistant",
+        text: "完整回答：当前加载了 office-hours 和 skill-creator。",
+      }),
+    );
+    expect(timeline).not.toContainEqual(
+      expect.objectContaining({
+        id: "msg_002:assistant",
+        text: "完整回答：当前加载了",
+      }),
+    );
   });
 });

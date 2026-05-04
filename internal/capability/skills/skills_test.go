@@ -53,6 +53,24 @@ func TestRegistry_ListReturnsCopies(t *testing.T) {
 	assert.Eq(t, "office-hours", again[0].Name)
 }
 
+func TestRegistry_RegisterKeepsFirstDescriptorForSameName(t *testing.T) {
+	t.Parallel()
+
+	registry := NewRegistry()
+	registry.Register(Descriptor{
+		Name:       "brainstorming",
+		SourcePath: filepath.Join("user", "brainstorming", "SKILL.md"),
+	})
+	registry.Register(Descriptor{
+		Name:       " brainstorming ",
+		SourcePath: filepath.Join("workspace", "brainstorming", "SKILL.md"),
+	})
+
+	listed := registry.List()
+	assert.Eq(t, 1, len(listed))
+	assert.True(t, strings.Contains(listed[0].SourcePath, "user"))
+}
+
 func TestResolver_ResolveMatchesMessageAndRecall(t *testing.T) {
 	t.Parallel()
 

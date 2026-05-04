@@ -98,6 +98,56 @@ func TestRunner_RunEmitsPreparingAndThinkingStates(t *testing.T) {
 	assert.Eq(t, "THINKING", states[1])
 }
 
+func TestRunner_RunEmitsModelAndToolProgressActivities(t *testing.T) {
+	t.Parallel()
+
+	mock := llm.NewMockProvider("mock").
+		QueueToolCall("echo", map[string]any{"msg": "hello"}).
+		QueueText("done")
+	registry := tools.NewRegistry()
+	registry.MustRegister(&hostEchoTool{})
+
+	runner, err := New(Config{
+		Provider: mock,
+		Registry: registry,
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	var activities []map[string]any
+	_, err = runner.Run(context.Background(), Request{
+		SessionID:   "sess_progress",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "use echo",
+		Emit: func(event Event) error {
+			if event.EventType != session.EventRunExternalActivity {
+				return nil
+			}
+			activities = append(activities, event.Payload)
+			return nil
+		},
+	})
+	assert.NoErr(t, err)
+
+	assert.Eq(t, 6, len(activities))
+	assert.Eq(t, "model", activities[0]["kind"])
+	assert.Eq(t, "LLM request", activities[0]["title"])
+	assert.Eq(t, "running", activities[0]["status"])
+	assert.Eq(t, "LLM returned tool calls", activities[1]["title"])
+	assert.Eq(t, "tool", activities[2]["kind"])
+	assert.Eq(t, "Tool echo", activities[2]["title"])
+	assert.Eq(t, "running", activities[2]["status"])
+	assert.Eq(t, "completed", activities[3]["status"])
+	assert.Eq(t, "LLM request", activities[4]["title"])
+	assert.Eq(t, "LLM completed", activities[5]["title"])
+}
+
 func TestRunner_RunUsesResolvedToolSubset(t *testing.T) {
 	t.Parallel()
 

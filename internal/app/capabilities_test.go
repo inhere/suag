@@ -157,12 +157,52 @@ description: Review project changes before handoff.
 `), 0o644)
 	assert.NoErr(t, err)
 
-	registry := buildDefaultSkillRegistry(workspace)
+	registry := buildSkillRegistry(workspace, "")
 	descriptors := registry.List()
 
 	assert.Eq(t, 1, len(descriptors))
 	assert.Eq(t, "project-review", descriptors[0].Name)
 	assert.True(t, strings.Contains(descriptors[0].SourcePath, filepath.Join(".agents", "skills", "project-review", "SKILL.md")))
+}
+
+func TestDefaultSkillRootsPreferUserAgentsSkills(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	home := t.TempDir()
+
+	roots := defaultSkillRoots(workspace, home)
+
+	assert.True(t, len(roots) >= 2)
+	assert.Eq(t, filepath.Join(home, ".agents", "skills"), roots[0])
+	assert.Eq(t, filepath.Join(workspace, ".agents", "skills"), roots[1])
+}
+
+func TestBuildSkillRegistry_UserAgentsSkillsWinDuplicateNames(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	home := t.TempDir()
+	userSkillDir := filepath.Join(home, ".agents", "skills", "brainstorming")
+	workspaceSkillDir := filepath.Join(workspace, ".agents", "skills", "brainstorming")
+	assert.NoErr(t, os.MkdirAll(userSkillDir, 0o755))
+	assert.NoErr(t, os.MkdirAll(workspaceSkillDir, 0o755))
+	assert.NoErr(t, os.WriteFile(filepath.Join(userSkillDir, "SKILL.md"), []byte(`---
+name: brainstorming
+description: User brainstorming skill.
+---
+`), 0o644))
+	assert.NoErr(t, os.WriteFile(filepath.Join(workspaceSkillDir, "SKILL.md"), []byte(`---
+name: brainstorming
+description: Workspace brainstorming skill.
+---
+`), 0o644))
+
+	descriptors := buildSkillRegistry(workspace, home).List()
+
+	assert.Eq(t, 1, len(descriptors))
+	assert.True(t, strings.HasPrefix(descriptors[0].SourcePath, userSkillDir))
+	assert.Eq(t, "User brainstorming skill.", descriptors[0].Description)
 }
 
 func assertToolNamesEq(t *testing.T, expected []string, actual []string) {

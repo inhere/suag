@@ -25,6 +25,13 @@ it("renders chat-first layout with summary strip and composer feedback", () => {
           kind: "activity",
           title: "Thinking",
           detail: "正在分析工具调用",
+          details: {
+            activityId: "activity-1",
+            toolName: "file_read",
+            arguments: {
+              path: "README.md",
+            },
+          },
           tone: "running",
           timestamp: "10:02",
         },
@@ -51,6 +58,8 @@ it("renders chat-first layout with summary strip and composer feedback", () => {
   const activityCard = screen.getByText("Thinking").closest(".conversation-activity");
   expect(activityCard).not.toBeNull();
   expect(within(activityCard as HTMLElement).getByText("正在分析工具调用")).toBeInTheDocument();
+  expect(within(activityCard as HTMLElement).getByText("Details")).toBeInTheDocument();
+  expect(within(activityCard as HTMLElement).getByText(/"toolName": "file_read"/)).toBeInTheDocument();
   expect(screen.getByText("10:02")).toBeInTheDocument();
 });
 

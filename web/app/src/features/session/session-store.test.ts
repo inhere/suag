@@ -438,6 +438,46 @@ describe("session-store", () => {
     });
   });
 
+  it("hydrates readable progress activity fields from activity snapshots", () => {
+    const next = reduceSessionMessage(
+      hydrateFromSnapshot(emptySessionViewState, makeSnapshot()),
+      {
+        type: "ACTIVITY_SNAPSHOT",
+        messageId: "run_002:model:1",
+        activityType: "external_activity",
+        content: {
+          threadId: "sess_001",
+          turnId: "turn_002",
+          runId: "run_002",
+          agentId: "default",
+          status: "running",
+          kind: "model",
+          title: "LLM request",
+          detail: "messages=2 tools=4",
+          payload: {
+            activityId: "run_002:model:1",
+            messageCount: 2,
+            toolNames: ["file_read", "file_list"],
+          },
+        },
+        replace: true,
+      },
+    );
+
+    expect(next.snapshot?.externalActivities[0]).toMatchObject({
+      activityId: "run_002:model:1",
+      kind: "model",
+      status: "running",
+      title: "LLM request",
+      detail: "messages=2 tools=4",
+      payload: {
+        activityId: "run_002:model:1",
+        messageCount: 2,
+        toolNames: ["file_read", "file_list"],
+      },
+    });
+  });
+
   it("marks the current run as failed when RUN_ERROR arrives", () => {
     const next = reduceSessionMessage(
       hydrateFromSnapshot(emptySessionViewState, makeSnapshot()),

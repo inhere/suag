@@ -168,6 +168,8 @@ export type StateSnapshotExternalActivity = {
   status: string;
   title: string;
   detail: string;
+  payload?: Record<string, unknown>;
+  lastPayload?: Record<string, unknown>;
   startedAt: string;
   updatedAt: string;
 };
@@ -195,8 +197,12 @@ export type HostEvent = {
   sequence?: number;
   timestamp?: number;
   runId?: string;
+  turnId?: string;
+  sessionId?: string;
+  agentId?: string;
   threadId?: string;
   role?: string;
+  payload?: Record<string, unknown>;
   result?: Record<string, unknown>;
   value?: Record<string, unknown>;
   snapshot?: StateSnapshotV0;

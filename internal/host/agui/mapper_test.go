@@ -60,6 +60,37 @@ func TestMapGatewayEvent_RunQueuedToCustom(t *testing.T) {
 	}
 }
 
+func TestMapEvent_ExternalActivitySnapshotUsesPayloadActivityID(t *testing.T) {
+	t.Parallel()
+
+	got := MapEvent(HostEvent{
+		Type:      session.EventRunExternalActivity,
+		SessionID: "sess_001",
+		TurnID:    "turn_001",
+		RunID:     "run_001",
+		AgentID:   "default",
+		Sequence:  7,
+		Payload: map[string]any{
+			"activityId": "run_001:model:2",
+			"kind":       "model",
+			"status":     "running",
+			"title":      "LLM request",
+			"detail":     "messages=3 tools=5",
+		},
+	})
+
+	if len(got) != 2 {
+		t.Fatalf("MapEvent() len = %d, want 2", len(got))
+	}
+	activityEvent, ok := got[1].(*ActivitySnapshotEvent)
+	if !ok {
+		t.Fatalf("MapEvent()[1] type = %T, want %T", got[1], &ActivitySnapshotEvent{})
+	}
+	if activityEvent.MessageID != "run_001:model:2" {
+		t.Fatalf("MapEvent().MessageID = %q, want %q", activityEvent.MessageID, "run_001:model:2")
+	}
+}
+
 func TestBuildStateSnapshot(t *testing.T) {
 	t.Parallel()
 

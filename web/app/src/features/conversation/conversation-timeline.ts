@@ -19,6 +19,7 @@ export type ConversationActivityEntry = {
   kind: "activity";
   title: string;
   detail: string;
+  details?: Record<string, unknown>;
   tone?: "running" | "waiting" | "success" | "attention" | "muted";
   timestamp?: string;
 };
@@ -38,22 +39,22 @@ export function buildConversationTimeline(
   currentSessionId?: string | null,
 ): ConversationTimelineEntry[] {
   const entries: ConversationTimelineEntry[] = [];
+  const turnInputFallbacks = buildTurnInputFallbacks(snapshot?.events ?? []);
   const snapshotUserTexts = new Set(
     snapshot?.turns
-      .map((turn) => turn.inputSummary?.trim())
+      .map((turn) => turnUserText(turn, turnInputFallbacks))
       .filter((text): text is string => !!text) ?? [],
   );
-
-  if (
+  const shouldShowOptimistic =
     optimisticMessage &&
     (optimisticMessage.sessionId == null || optimisticMessage.sessionId === currentSessionId) &&
     optimisticMessage.message.text.trim() &&
-    !snapshotUserTexts.has(optimisticMessage.message.text.trim())
-  ) {
-    entries.push(optimisticMessage.message);
-  }
+    !snapshotUserTexts.has(optimisticMessage.message.text.trim());
 
   if (!snapshot) {
+    if (shouldShowOptimistic) {
+      entries.push(optimisticMessage.message);
+    }
     return entries;
   }
 
@@ -63,12 +64,13 @@ export function buildConversationTimeline(
 
   const sortedTurns = [...snapshot.turns].sort(compareByUpdatedAt);
   for (const turn of sortedTurns) {
-    if (turn.inputSummary?.trim()) {
+    const userText = turnUserText(turn, turnInputFallbacks);
+    if (userText) {
       entries.push({
         id: `${turn.turnId}:user`,
         kind: "message",
         role: "user",
-        text: turn.inputSummary,
+        text: userText,
         timestamp: formatConversationTimestamp(turn.updatedAt || snapshot.generatedAt),
       });
     }
@@ -78,18 +80,20 @@ export function buildConversationTimeline(
       entries.push(runStatusEntry(run));
 
       const runMessages = [...(messagesByRun.get(run.runId) ?? [])].sort(compareByUpdatedAt);
-      for (const message of runMessages) {
-        if (!message.content.trim()) {
-          continue;
+      if (!run.summary?.trim()) {
+        for (const message of runMessages) {
+          const content = message.content.trim();
+          if (!content) {
+            continue;
+          }
+          entries.push({
+            id: `${message.messageId}:assistant`,
+            kind: "message",
+            role: "assistant",
+            text: message.content,
+            timestamp: formatConversationTimestamp(message.updatedAt || snapshot.generatedAt),
+          });
         }
-        entries.push({
-          id: `${message.messageId}:thinking`,
-          kind: "activity",
-          title: message.completed ? "Thought" : "Thinking",
-          detail: message.content,
-          tone: message.completed ? "muted" : "running",
-          timestamp: formatConversationTimestamp(message.updatedAt || snapshot.generatedAt),
-        });
       }
 
       const runActivities = [...(activitiesByRun.get(run.runId) ?? [])].sort(compareByUpdatedAt);
@@ -98,7 +102,7 @@ export function buildConversationTimeline(
       }
 
       const assistantText = firstNonEmpty(run.summary, run.latestMessageText);
-      if (assistantText && !runMessages.some((message) => message.content.trim() === assistantText)) {
+      if (assistantText && shouldUseRunAssistantText(run, runMessages)) {
         entries.push({
           id: `${run.runId}:assistant`,
           kind: "message",
@@ -113,6 +117,10 @@ export function buildConversationTimeline(
         entries.push(planEntry);
       }
     }
+  }
+
+  if (shouldShowOptimistic) {
+    entries.push(optimisticMessage.message);
   }
 
   return entries;
@@ -155,9 +163,28 @@ function externalActivityEntry(
     kind: "activity",
     title: activity.title || activity.kind || "Activity",
     detail: activity.detail || activity.status,
+    details: activityDetails(activity),
     tone: toneFromRunState(activity.status),
     timestamp: formatConversationTimestamp(activity.updatedAt || fallbackTime),
   };
+}
+
+function activityDetails(activity: StateSnapshotExternalActivity): Record<string, unknown> | undefined {
+  const details = activity.lastPayload ?? activity.payload;
+  if (!details || !Object.keys(details).length) {
+    return undefined;
+  }
+  return details;
+}
+
+function shouldUseRunAssistantText(
+  run: StateSnapshotRun,
+  messages: StateSnapshotExternalMessage[],
+): boolean {
+  if (run.summary?.trim()) {
+    return true;
+  }
+  return !messages.some((message) => message.content.trim());
 }
 
 function capabilityPlanEntry(run: StateSnapshotRun): ConversationActivityEntry | null {
@@ -237,6 +264,41 @@ function firstNonEmpty(...values: Array<string | null | undefined>): string {
     }
   }
   return "";
+}
+
+function turnUserText(
+  turn: { turnId: string; inputSummary?: string },
+  fallbacks: Map<string, string>,
+): string {
+  return firstNonEmpty(turn.inputSummary, fallbacks.get(turn.turnId));
+}
+
+function buildTurnInputFallbacks(events: StateSnapshotV0["events"]): Map<string, string> {
+  const inputs = new Map<string, string>();
+  for (const event of events) {
+    const value = objectValue(event.value);
+    const payload = objectValue(event.payload) ?? objectValue(value?.payload);
+    const turnId = firstNonEmpty(event.turnId, stringValue(value?.turnId));
+    const message = firstNonEmpty(
+      stringValue(payload?.message),
+      stringValue(value?.message),
+    );
+    if (turnId && message && !inputs.has(turnId)) {
+      inputs.set(turnId, message);
+    }
+  }
+  return inputs;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 function groupBy<T>(items: T[], keyOf: (item: T) => string): Map<string, T[]> {

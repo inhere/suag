@@ -1346,6 +1346,32 @@ body {
   white-space: pre-wrap;
 }
 
+.conversation-activity__details {
+  margin-top: 8px;
+}
+
+.conversation-activity__details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #0f766e;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.conversation-activity__details pre {
+  max-height: 260px;
+  margin: 8px 0 0;
+  overflow: auto;
+  border: 1px solid rgba(100, 116, 139, 0.16);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(15, 23, 42, 0.04);
+  color: #334155;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .conversation-activity--running .conversation-activity__rail {
   background: #0ea5e9;
 }

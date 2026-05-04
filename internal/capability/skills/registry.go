@@ -13,8 +13,15 @@ func NewRegistry() *Registry {
 }
 
 func (r *Registry) Register(desc Descriptor) {
-	if strings.TrimSpace(desc.Name) == "" {
+	name := strings.TrimSpace(desc.Name)
+	if name == "" {
 		return
+	}
+	normalizedName := strings.ToLower(name)
+	for _, existing := range r.descriptors {
+		if strings.ToLower(strings.TrimSpace(existing.Name)) == normalizedName {
+			return
+		}
 	}
 	r.descriptors = append(r.descriptors, cloneDescriptor(desc))
 }

@@ -43,6 +43,7 @@ type sessionState struct {
 	storage      *sqlite.SQLiteStorage
 	agent        *agent.Agent
 	runner       agent.Runner
+	progress     *hostProgressEmitter
 	loopPhase    string
 	resumeSource string
 	resumeCount  int
@@ -223,7 +224,8 @@ func (r *SessionRunner) getOrCreateSessionState(sessionID string) (*sessionState
 	}
 
 	state := &sessionState{
-		storage: storage,
+		storage:  storage,
+		progress: &hostProgressEmitter{},
 	}
 	r.sessions[sessionID] = state
 	return state, nil
@@ -288,6 +290,10 @@ func (r *SessionRunner) resolveRuntime(
 	runMemory *sessionMemory,
 ) (*agent.Agent, agent.Runner, error) {
 	runRegistry := r.resolveRegistry(in.Context)
+	if state.progress == nil {
+		state.progress = &hostProgressEmitter{}
+	}
+	state.progress.Set(in.Emit)
 
 	if state != nil && state.agent != nil && state.runner != nil && state.runner.GetState() == agent.AgentSuspended {
 		// Suspended runtime keeps the same working memory instance, so refresh the
@@ -318,7 +324,7 @@ func (r *SessionRunner) resolveRuntime(
 		HITL:          r.cfg.HITL,
 		FailThreshold: r.cfg.FailThreshold,
 		MaxSteps:      r.cfg.MaxSteps,
-		Hooks:         r.cfg.Hooks,
+		Hooks:         withHostProgressHook(r.cfg.Hooks, state.progress),
 	}
 	runner, err := agent.NewRunner(a, runnerCfg)
 	if err != nil {

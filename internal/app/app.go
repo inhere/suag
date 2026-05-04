@@ -158,17 +158,31 @@ func (a *App) Run(ctx context.Context, mode string) error {
 }
 
 func buildDefaultSkillRegistry(workspace string) *capskills.Registry {
-	registry := capskills.NewRegistry()
+	homeDir, _ := os.UserHomeDir()
+	return buildSkillRegistry(workspace, homeDir)
+}
 
-	roots := []string{
-		filepath.Join(workspace, "skills"),
-		filepath.Join(workspace, ".agents", "skills"),
-		filepath.Join("config", "skills"),
-	}
-	for _, root := range roots {
+func buildSkillRegistry(workspace, homeDir string) *capskills.Registry {
+	registry := capskills.NewRegistry()
+	for _, root := range defaultSkillRoots(workspace, homeDir) {
 		loadSkillDescriptorsIntoRegistry(registry, root)
 	}
 	return registry
+}
+
+func defaultSkillRoots(workspace, homeDir string) []string {
+	roots := make([]string, 0, 4)
+	if strings.TrimSpace(homeDir) != "" {
+		roots = append(roots, filepath.Join(homeDir, ".agents", "skills"))
+	}
+	if strings.TrimSpace(workspace) != "" {
+		roots = append(roots,
+			filepath.Join(workspace, ".agents", "skills"),
+			filepath.Join(workspace, "skills"),
+		)
+	}
+	roots = append(roots, filepath.Join("config", "skills"))
+	return roots
 }
 
 func loadSkillDescriptorsIntoRegistry(registry *capskills.Registry, root string) {

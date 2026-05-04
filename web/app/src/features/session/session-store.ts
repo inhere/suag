@@ -783,13 +783,16 @@ function reduceCustomExternalActivity(
   targetTurn.eventCount += 1;
   markRunActive(targetTurn, targetRun.runId);
 
-  const existingIndex = externalActivities.findIndex(
-    (activity) => activity.runId === targetRun.runId && activity.externalTaskId === externalTaskId,
-  );
   const payload =
     typeof message.value.payload === "object" && message.value.payload
       ? (message.value.payload as Record<string, unknown>)
       : {};
+  const payloadActivityId = typeof payload.activityId === "string" ? payload.activityId : "";
+  const existingIndex = externalActivities.findIndex(
+    (activity) =>
+      activity.activityId === payloadActivityId ||
+      (!payloadActivityId && activity.runId === targetRun.runId && activity.externalTaskId === externalTaskId),
+  );
   const nextActivity: StateSnapshotExternalActivity = {
     externalTaskId,
     sessionId: snapshot.sessionId,
@@ -797,14 +800,22 @@ function reduceCustomExternalActivity(
     runId: targetRun.runId,
     agentId: targetRun.agentId,
     activityId:
-      typeof message.value.sequence === "number"
-        ? `seq_${message.value.sequence}`
-        : `${targetRun.runId}:external`,
+      payloadActivityId
+        ? payloadActivityId
+        : typeof message.value.sequence === "number"
+          ? `seq_${message.value.sequence}`
+          : `${targetRun.runId}:external`,
     kind: typeof payload.kind === "string" ? payload.kind : "external_activity",
-    status: "running",
+    status: typeof payload.status === "string" ? payload.status : "running",
     title: typeof payload.title === "string" ? payload.title : "External activity",
     detail:
-      typeof message.value.type === "string" ? message.value.type : "run.external.activity",
+      typeof payload.detail === "string"
+        ? payload.detail
+        : typeof message.value.type === "string"
+          ? message.value.type
+          : "run.external.activity",
+    payload,
+    lastPayload: payload,
     startedAt: snapshot.generatedAt,
     updatedAt: snapshot.generatedAt,
   };
@@ -848,9 +859,23 @@ function reduceActivitySnapshot(
   const externalTaskId =
     typeof message.content.externalTaskId === "string" ? message.content.externalTaskId : "";
   const status = typeof message.content.status === "string" ? message.content.status : "running";
+  const kind =
+    typeof message.content.kind === "string" ? message.content.kind : message.activityType;
+  const title =
+    typeof message.content.title === "string" ? message.content.title : message.activityType;
+  const detail =
+    typeof message.content.detail === "string" ? message.content.detail : status;
   const waitMetadata =
     typeof message.content.waitMetadata === "object" && message.content.waitMetadata
       ? (message.content.waitMetadata as Record<string, unknown>)
+      : {};
+  const payload =
+    typeof message.content.payload === "object" && message.content.payload
+      ? (message.content.payload as Record<string, unknown>)
+      : {};
+  const lastPayload =
+    typeof message.content.lastPayload === "object" && message.content.lastPayload
+      ? (message.content.lastPayload as Record<string, unknown>)
       : {};
 
   const targetTurn =
@@ -893,10 +918,12 @@ function reduceActivitySnapshot(
     runId: targetRun.runId,
     agentId: targetRun.agentId,
     activityId: message.messageId,
-    kind: message.activityType,
+    kind,
     status,
-    title: message.activityType,
-    detail: status,
+    title,
+    detail,
+    payload,
+    lastPayload,
     startedAt: snapshot.generatedAt,
     updatedAt: snapshot.generatedAt,
   };
