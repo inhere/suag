@@ -48,7 +48,6 @@ import type { SummaryStripTone } from "../features/conversation/summary-strip";
 
 const workbenchStorageKey = "axon.web.workbench";
 const socketReconnectDelayMs = 1500;
-const hitlPollIntervalMs = 3000;
 
 type PersistedWorkbenchState = {
   recentSessions: SessionListItem[];
@@ -523,16 +522,6 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      void refreshHITLTickets(false);
-    }, hitlPollIntervalMs);
-
-    return () => {
-      clearInterval(timer);
-    };
-  }, []);
-
-  useEffect(() => {
     let cancelled = false;
     setConnectionError((current) =>
       current === "Failed to load session list." ? null : current,
@@ -658,6 +647,9 @@ export function App() {
           }
           setPendingWSCommandState(null);
           lastWSCommandRef.current = null;
+        }
+        if (message.type === "CUSTOM" && message.name === "axon.hitl.ticket") {
+          void refreshHITLTickets(false);
         }
 
         setViewState((current) => reduceSessionMessage(current, message));

@@ -134,9 +134,9 @@ func (r *SessionRunner) Run(ctx context.Context, in session.RuntimeRequest) (ses
 
 	summary := ""
 	if result != nil {
-		summary = strings.TrimSpace(result.Summary)
-		if summary == "" {
-			summary = strings.TrimSpace(result.Output)
+		summary = strings.TrimSpace(result.Output)
+		if runner.GetState() == agent.AgentSuspended || summary == "" {
+			summary = strings.TrimSpace(result.Summary)
 		}
 	}
 

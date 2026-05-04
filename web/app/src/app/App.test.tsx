@@ -1218,8 +1218,17 @@ describe("App", () => {
     await waitFor(() => expect(listHITLTicketsMock).toHaveBeenCalledTimes(2));
   });
 
-  it("automatically refreshes HITL tickets and shows newly created ticket", async () => {
-    vi.useFakeTimers();
+  it("refreshes HITL tickets when the session websocket reports a new ticket", async () => {
+    listSessionsMock.mockResolvedValueOnce([
+      {
+        sessionId: "sess_001",
+        title: "host runtime",
+        status: "RUNNING",
+        lastTurnId: "turn_001",
+        updatedAt: "2026-04-17T15:54:00Z",
+        preview: "running",
+      },
+    ]);
     listHITLTicketsMock
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
@@ -1242,9 +1251,21 @@ describe("App", () => {
     await act(async () => {});
     expect(listHITLTicketsMock).toHaveBeenCalledTimes(1);
     expect(screen.getByText("No pending tickets.")).toBeInTheDocument();
+    await waitFor(() => expect(connectSessionSocketMock).toHaveBeenCalled());
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3000);
+      onMessage?.({
+        type: "CUSTOM",
+        name: "axon.hitl.ticket",
+        value: {
+          sessionId: "sess_001",
+          turnId: "turn_001",
+          runId: "run_001",
+          payload: {
+            id: "hitl-auto-001",
+          },
+        },
+      });
     });
 
     expect(listHITLTicketsMock).toHaveBeenCalledTimes(2);

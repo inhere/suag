@@ -408,8 +408,9 @@ func memToAgentcoreMessages(msgs []memory.Message) []agentcore.Message {
 // extractSummary returns the first 200 chars of content as a summary.
 func extractSummary(content string) string {
 	content = strings.TrimSpace(content)
-	if len(content) <= 200 {
+	runes := []rune(content)
+	if len(runes) <= 200 {
 		return content
 	}
-	return content[:200] + "…"
+	return string(runes[:200]) + "…"
 }

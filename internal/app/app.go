@@ -86,9 +86,12 @@ func New() (*App, error) {
 
 	hitlMgr := hitl.NewInMemoryManager(func(ticket *hitl.Ticket) {
 		bus.Publish(gateway.Event{
-			Type:    "hitl_ticket",
-			AgentID: ticket.AgentID,
-			Payload: ticket,
+			Type:      "hitl_ticket",
+			SessionID: ticket.SessionID,
+			TurnID:    ticket.TurnID,
+			RunID:     ticket.RunID,
+			AgentID:   ticket.AgentID,
+			Payload:   ticket,
 		})
 		slog.Warn("HITL intervention required",
 			"ticket", ticket.ID,

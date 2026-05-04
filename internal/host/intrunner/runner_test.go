@@ -98,6 +98,34 @@ func TestRunner_RunEmitsPreparingAndThinkingStates(t *testing.T) {
 	assert.Eq(t, "THINKING", states[1])
 }
 
+func TestRunner_RunReturnsCompleteFinalOutputForHostSummary(t *testing.T) {
+	t.Parallel()
+
+	answer := strings.Repeat("当前可以使用以下工具：\n", 16) + "最后一行也应该完整显示。"
+	mock := llm.NewMockProvider("mock").QueueText(answer)
+	runner, err := New(Config{
+		Provider: mock,
+		Registry: tools.NewRegistry(),
+		Tracer:   tracing.NewInMemoryTracer(nil),
+		RunRoot:  t.TempDir(),
+	})
+	assert.NoErr(t, err)
+	t.Cleanup(func() {
+		assert.NoErr(t, runner.Close())
+	})
+
+	result, err := runner.Run(context.Background(), Request{
+		SessionID:   "sess_full_output",
+		TurnID:      "turn_001",
+		RunID:       "run_001",
+		AgentID:     "default",
+		Instruction: "列出工具",
+	})
+
+	assert.NoErr(t, err)
+	assert.Eq(t, answer, result.Summary)
+}
+
 func TestRunner_RunEmitsModelAndToolProgressActivities(t *testing.T) {
 	t.Parallel()
 
@@ -146,6 +174,15 @@ func TestRunner_RunEmitsModelAndToolProgressActivities(t *testing.T) {
 	assert.Eq(t, "completed", activities[3]["status"])
 	assert.Eq(t, "LLM request", activities[4]["title"])
 	assert.Eq(t, "LLM completed", activities[5]["title"])
+}
+
+func TestTruncateTextKeepsUTF8Boundaries(t *testing.T) {
+	t.Parallel()
+
+	got := truncateText("向工作空间写入内容", 8)
+
+	assert.Eq(t, "向工作空间...", got)
+	assert.False(t, strings.Contains(got, "\uFFFD"))
 }
 
 func TestRunner_RunUsesResolvedToolSubset(t *testing.T) {

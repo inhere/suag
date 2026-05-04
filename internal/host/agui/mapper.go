@@ -104,6 +104,19 @@ func MapEvent(event HostEvent) []Event {
 		return buildExternalMessageEndEvents(now, event)
 	}
 
+	if event.Type == "hitl_ticket" {
+		return []Event{
+			withTimestamp(NewCustomEvent("axon.hitl.ticket", map[string]any{
+				"threadId":  event.SessionID,
+				"sessionId": event.SessionID,
+				"turnId":    event.TurnID,
+				"runId":     event.RunID,
+				"agentId":   event.AgentID,
+				"payload":   event.Payload,
+			}), now),
+		}
+	}
+
 	name := "axon.event"
 	if event.Type == session.EventRunQueued {
 		name = "axon.run.queued"

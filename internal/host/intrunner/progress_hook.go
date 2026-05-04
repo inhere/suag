@@ -296,8 +296,12 @@ func cloneAnyMap(src map[string]any) map[string]any {
 
 func truncateText(text string, limit int) string {
 	text = strings.TrimSpace(text)
-	if limit <= 0 || len(text) <= limit {
+	runes := []rune(text)
+	if limit <= 0 || len(runes) <= limit {
 		return text
 	}
-	return text[:limit-3] + "..."
+	if limit <= 3 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-3]) + "..."
 }
