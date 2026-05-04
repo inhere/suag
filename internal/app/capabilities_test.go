@@ -2,7 +2,10 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	gkconfig "github.com/gookit/config/v2"
@@ -138,6 +141,28 @@ func TestBuildDefaultCapabilities_RegistersConfiguredMCPTools(t *testing.T) {
 	set := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
 	resolved := built.Manager.ResolveTurnCapabilities(set)
 	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "shell_exec", "mcp_echo"}, resolved.ToolNames)
+}
+
+func TestBuildDefaultSkillRegistry_LoadsWorkspaceAgentsSkills(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	skillDir := filepath.Join(workspace, ".agents", "skills", "project-review")
+	err := os.MkdirAll(skillDir, 0o755)
+	assert.NoErr(t, err)
+	err = os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: project-review
+description: Review project changes before handoff.
+---
+`), 0o644)
+	assert.NoErr(t, err)
+
+	registry := buildDefaultSkillRegistry(workspace)
+	descriptors := registry.List()
+
+	assert.Eq(t, 1, len(descriptors))
+	assert.Eq(t, "project-review", descriptors[0].Name)
+	assert.True(t, strings.Contains(descriptors[0].SourcePath, filepath.Join(".agents", "skills", "project-review", "SKILL.md")))
 }
 
 func assertToolNamesEq(t *testing.T, expected []string, actual []string) {

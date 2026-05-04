@@ -324,6 +324,7 @@
   - 相邻 `references/`、`assets/` 目录里的结构化 resource hints
 - `internal/app` 现在会：
   - 扫描 `<workspace>/skills/**/SKILL.md`
+  - 扫描 `<workspace>/.agents/skills/**/SKILL.md`
   - 扫描 `config/skills/**/SKILL.md`
   - 构建最小 skill registry / resolver
   - 在 runtime context builder 中解析出：

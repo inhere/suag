@@ -162,6 +162,7 @@ func buildDefaultSkillRegistry(workspace string) *capskills.Registry {
 
 	roots := []string{
 		filepath.Join(workspace, "skills"),
+		filepath.Join(workspace, ".agents", "skills"),
 		filepath.Join("config", "skills"),
 	}
 	for _, root := range roots {
