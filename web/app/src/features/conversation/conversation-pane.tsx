@@ -1,4 +1,3 @@
-import { ChatHeader } from "./chat-header";
 import { Composer } from "./composer";
 import { ActivityItem } from "./activity-item";
 import {
@@ -6,16 +5,11 @@ import {
   InlineStatusCard,
 } from "./inline-status-card";
 import { MessageItem } from "./message-item";
-import { SummaryStrip, type SummaryStripTone } from "./summary-strip";
 import type { ConversationTimelineEntry } from "./conversation-timeline";
 
 type ConversationPaneProps = {
   messages: ConversationTimelineEntry[];
   waitingForInput: boolean;
-  headerTitle?: string;
-  headerMeta?: string | null;
-  summaryStatus: string;
-  summaryTone: SummaryStripTone;
   inlineStatus?: {
     state: InlineStatusCardState;
     detail?: string | null;
@@ -28,10 +22,6 @@ type ConversationPaneProps = {
 export function ConversationPane({
   messages,
   waitingForInput,
-  headerTitle = "Chat",
-  headerMeta = null,
-  summaryStatus,
-  summaryTone,
   inlineStatus = null,
   submitPending = false,
   submitError = null,
@@ -39,8 +29,6 @@ export function ConversationPane({
 }: ConversationPaneProps) {
   return (
     <div className="conversation-pane">
-      <ChatHeader title={headerTitle} meta={headerMeta} />
-      <SummaryStrip status={summaryStatus} tone={summaryTone} />
       <div className="conversation-pane__content" aria-label="Chat history">
         {messages.map((message) =>
           message.kind === "activity" ? (

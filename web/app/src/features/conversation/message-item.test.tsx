@@ -17,6 +17,25 @@ it("renders assistant replies as markdown", () => {
   expect(screen.getByText("pnpm test")).toBeInTheDocument();
 });
 
+it("renders ordered markdown steps as compact list items", () => {
+  render(
+    <MessageItem
+      role="assistant"
+      text={
+        "### 方法一：修改设置\n\n1. 打开 VS Code 设置：按 `Ctrl + ,`\n\n2. 搜索 `openFoldersInNewWindow`\n\n3. 找到 **Window: Open Folders In New Window** 设置，将其改为 `on`"
+      }
+      timestamp="10:02"
+    />,
+  );
+
+  const list = screen.getByRole("list");
+  const items = within(list).getAllByRole("listitem");
+  expect(items).toHaveLength(3);
+  expect(items[0]).toHaveTextContent("打开 VS Code 设置：按 Ctrl + ,");
+  expect(items[1]).toHaveTextContent("搜索 openFoldersInNewWindow");
+  expect(items[2]).toHaveTextContent("Window: Open Folders In New Window 设置，将其改为 on");
+});
+
 it("keeps user messages as plain text instead of markdown", () => {
   render(
     <MessageItem

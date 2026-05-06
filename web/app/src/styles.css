@@ -467,7 +467,16 @@ body {
 .conversation-message__text,
 .turn-summary-card p {
   margin: 0;
+}
+
+.conversation-message--user .conversation-message__text,
+.turn-summary-card p {
   white-space: pre-wrap;
+}
+
+.conversation-message--assistant .conversation-message__text {
+  line-height: 1.65;
+  white-space: normal;
 }
 
 .conversation-message__text > :first-child {
@@ -506,12 +515,34 @@ body {
 
 .conversation-message__text ul,
 .conversation-message__text ol {
-  margin: 0.58em 0;
-  padding-left: 1.35rem;
+  margin: 0.62em 0 0.78em;
+  padding-left: 1.55rem;
+}
+
+.conversation-message__text li {
+  margin: 0.18em 0;
+  padding-left: 0.15rem;
 }
 
 .conversation-message__text li + li {
-  margin-top: 0.24em;
+  margin-top: 0.34em;
+}
+
+.conversation-message__text li > p {
+  margin: 0.2em 0;
+}
+
+.conversation-message__text li > p:first-child {
+  margin-top: 0;
+}
+
+.conversation-message__text li > p:last-child {
+  margin-bottom: 0;
+}
+
+.conversation-message__text li::marker {
+  color: #64748b;
+  font-weight: 600;
 }
 
 .conversation-message__text blockquote {
@@ -606,6 +637,19 @@ body {
   color: inherit;
   padding: 14px;
   font: inherit;
+}
+
+.composer__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.composer__shortcut-hint {
+  color: rgba(148, 163, 184, 0.84);
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .composer__submit {
@@ -1587,5 +1631,15 @@ body {
 
   .context-panel__meta {
     grid-template-columns: 1fr;
+  }
+
+  .composer__footer {
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .composer__actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 }

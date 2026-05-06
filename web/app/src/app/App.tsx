@@ -44,7 +44,6 @@ import {
 import { connectSessionSocket, type SessionSocketConnection } from "../lib/session-ws";
 import type { SessionSocketStatus } from "../lib/session-ws";
 import type { InlineStatusCardState } from "../features/conversation/inline-status-card";
-import type { SummaryStripTone } from "../features/conversation/summary-strip";
 
 const workbenchStorageKey = "axon.web.workbench";
 const socketReconnectDelayMs = 1500;
@@ -126,35 +125,6 @@ function normalizeState(value: string | undefined): string {
   return (value ?? "").toLowerCase();
 }
 
-function humanizeState(value: string | undefined): string {
-  const normalized = normalizeState(value);
-  if (!normalized) {
-    return "idle";
-  }
-
-  return normalized.replaceAll("_", " ");
-}
-
-function deriveSummaryTone(displayState: string): SummaryStripTone {
-  if (displayState.includes("failed") || displayState.includes("error")) {
-    return "failed";
-  }
-
-  if (displayState.includes("input_required") || displayState.includes("waiting")) {
-    return "waiting";
-  }
-
-  if (displayState.includes("auth_required") || displayState.includes("cancel")) {
-    return "attention";
-  }
-
-  if (displayState.includes("running") || displayState.includes("dispatch")) {
-    return "running";
-  }
-
-  return "attention";
-}
-
 function selectDisplayState(
   currentTurn: ReturnType<typeof selectCurrentTurn>,
   focusedRun: ReturnType<typeof selectFocusedRun>,
@@ -173,63 +143,6 @@ function selectDisplayState(
   }
 
   return normalizeState(focusedRun?.displayState || currentTurn?.displayState);
-}
-
-function buildSummaryStrip(
-  currentTurn: ReturnType<typeof selectCurrentTurn>,
-  focusedRun: ReturnType<typeof selectFocusedRun>,
-): { status: string; tone: SummaryStripTone } {
-  if (!currentTurn) {
-    return {
-      status: "尚未开始，发送一条消息创建新的 turn。",
-      tone: "attention",
-    };
-  }
-
-  const displayState = selectDisplayState(currentTurn, focusedRun);
-  const tone = deriveSummaryTone(displayState);
-
-  if (displayState.includes("completed")) {
-    const assistantText = stringsFirstNonEmpty(
-      focusedRun?.summary,
-      focusedRun?.latestMessageText,
-    );
-    if (assistantText) {
-      return {
-        status: "已完成",
-        tone,
-      };
-    }
-  }
-
-  if (currentTurn.latestMessagePreview.trim()) {
-    return {
-      status: currentTurn.latestMessagePreview,
-      tone,
-    };
-  }
-
-  const parts = [`Turn ${currentTurn.turnId}`, humanizeState(displayState)];
-  if (focusedRun?.agentId) {
-    parts.push(focusedRun.agentId);
-  }
-  if (focusedRun?.runId) {
-    parts.push(focusedRun.runId);
-  }
-
-  return {
-    status: parts.join(" · "),
-    tone,
-  };
-}
-
-function stringsFirstNonEmpty(...values: Array<string | null | undefined>): string {
-  for (const value of values) {
-    if (value && value.trim()) {
-      return value;
-    }
-  }
-  return "";
 }
 
 function buildInlineStatus(
@@ -726,11 +639,6 @@ export function App() {
       : socketStatus === "disconnected"
         ? `Session ${viewState.currentSessionId} disconnected.`
         : `Session ${viewState.currentSessionId} connecting...`;
-  const chatHeaderTitle = snapshot?.title || "Chat";
-  const chatHeaderMeta = currentTurn
-    ? `Turn ${currentTurn.turnId} · ${humanizeState(selectDisplayState(currentTurn, focusedRun))}`
-    : connectionStatusMessage;
-  const summaryStrip = buildSummaryStrip(currentTurn, focusedRun);
   const inlineStatus = buildInlineStatus(currentTurn, focusedRun, conversationMessages);
 
   async function createNewSession(): Promise<string> {
@@ -940,10 +848,6 @@ export function App() {
       messages={conversationMessages}
       currentTurn={currentTurn}
       waitingForInput={waitingForInput}
-      chatHeaderTitle={chatHeaderTitle}
-      chatHeaderMeta={chatHeaderMeta}
-      summaryStripStatus={summaryStrip.status}
-      summaryStripTone={summaryStrip.tone}
       inlineStatus={inlineStatus}
       submitPending={submitPending}
       submitError={submitError}

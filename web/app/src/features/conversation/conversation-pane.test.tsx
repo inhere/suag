@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { vi } from "vitest";
 import { ConversationPane } from "./conversation-pane";
 
-it("renders chat-first layout with summary strip and composer feedback", () => {
+it("renders chat history directly with composer feedback", () => {
   render(
     <ConversationPane
       messages={[
@@ -37,18 +37,15 @@ it("renders chat-first layout with summary strip and composer feedback", () => {
         },
       ]}
       waitingForInput={false}
-      headerTitle="Chat"
-      headerMeta="Turn turn_012 · external running"
-      summaryStatus="正在生成页面草图"
-      summaryTone="running"
       submitPending
       onSubmit={vi.fn()}
     />,
   );
 
-  expect(screen.getByRole("heading", { name: "Chat" })).toBeInTheDocument();
   expect(screen.getByLabelText("Chat history")).toHaveClass("conversation-pane__content");
-  expect(screen.getByText("正在生成页面草图")).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Chat" })).not.toBeInTheDocument();
+  expect(screen.queryByText("正在生成页面草图")).not.toBeInTheDocument();
+  expect(screen.queryByText("Turn turn_012 · external running")).not.toBeInTheDocument();
   expect(screen.queryByText("Recent Turns")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Starting..." })).toBeInTheDocument();
   expect(screen.getByText("正在创建新 turn...")).toBeInTheDocument();
@@ -68,9 +65,6 @@ it("shows inline status card for input required and keeps composer error feedbac
     <ConversationPane
       messages={[]}
       waitingForInput
-      headerMeta="Turn turn_012 · input required"
-      summaryStatus="请补充部署环境变量"
-      summaryTone="waiting"
       inlineStatus={{ state: "input_required", detail: "请补充部署环境变量" }}
       submitError="提交失败，请稍后重试。"
       onSubmit={vi.fn()}
@@ -89,9 +83,6 @@ it("maps waiting input to the same inline guidance as input required", () => {
     <ConversationPane
       messages={[]}
       waitingForInput
-      headerMeta="Turn turn_012 · waiting input"
-      summaryStatus="请补充部署环境变量"
-      summaryTone="waiting"
       inlineStatus={{ state: "input_required", detail: "请补充部署环境变量" }}
       onSubmit={vi.fn()}
     />,
@@ -108,9 +99,6 @@ it("shows inline status card for auth required only", () => {
     <ConversationPane
       messages={[]}
       waitingForInput={false}
-      headerMeta="Turn turn_012 · auth required"
-      summaryStatus="等待管理员审批"
-      summaryTone="attention"
       inlineStatus={{ state: "auth_required", detail: "等待管理员审批" }}
       onSubmit={vi.fn()}
     />,
@@ -127,9 +115,6 @@ it("does not show inline status card for running state", () => {
     <ConversationPane
       messages={[]}
       waitingForInput={false}
-      headerMeta="Turn turn_012 · external running"
-      summaryStatus="正在处理任务"
-      summaryTone="running"
       onSubmit={vi.fn()}
     />,
   );

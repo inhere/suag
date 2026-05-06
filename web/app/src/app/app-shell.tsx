@@ -16,7 +16,6 @@ import type {
 } from "../lib/host-types";
 import type { SessionSocketStatus } from "../lib/session-ws";
 import type { InlineStatusCardState } from "../features/conversation/inline-status-card";
-import type { SummaryStripTone } from "../features/conversation/summary-strip";
 
 type AppShellProps = {
   sessions?: SessionListItem[];
@@ -37,10 +36,6 @@ type AppShellProps = {
   messages?: ConversationTimelineEntry[];
   currentTurn?: StateSnapshotTurn | null;
   waitingForInput?: boolean;
-  chatHeaderTitle?: string;
-  chatHeaderMeta?: string | null;
-  summaryStripStatus?: string;
-  summaryStripTone?: SummaryStripTone;
   inlineStatus?: {
     state: InlineStatusCardState;
     detail?: string | null;
@@ -93,10 +88,6 @@ export function AppShell({
   messages = [],
   currentTurn = null,
   waitingForInput = false,
-  chatHeaderTitle = "Chat",
-  chatHeaderMeta = null,
-  summaryStripStatus = "尚未开始，发送一条消息创建新的 turn。",
-  summaryStripTone = "attention",
   inlineStatus = null,
   submitPending = false,
   submitError = null,
@@ -162,10 +153,6 @@ export function AppShell({
             <ConversationPane
               messages={messages}
               waitingForInput={waitingForInput}
-              headerTitle={chatHeaderTitle}
-              headerMeta={chatHeaderMeta}
-              summaryStatus={summaryStripStatus}
-              summaryTone={summaryStripTone}
               inlineStatus={inlineStatus}
               submitPending={submitPending}
               submitError={submitError}

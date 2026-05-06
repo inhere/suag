@@ -301,7 +301,7 @@ describe("App", () => {
       });
     });
 
-    expect(await screen.findByRole("heading", { name: "host runtime" })).toBeInTheDocument();
+    expect(await screen.findByText("host runtime")).toBeInTheDocument();
     expect(screen.getByText("请整理当前页面结构")).toBeInTheDocument();
     expect((await screen.findAllByText("thinking...")).length).toBeGreaterThan(0);
     expect(screen.getByText("run_001")).toBeInTheDocument();
@@ -760,7 +760,7 @@ describe("App", () => {
         expect.objectContaining({ sessionId: "sess_010" }),
       ),
     );
-    expect(await screen.findByRole("heading", { name: "server latest" })).toBeInTheDocument();
+    expect(await screen.findByText("server latest")).toBeInTheDocument();
     expect(screen.getByText("server older")).toBeInTheDocument();
   });
 
@@ -807,7 +807,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "bootstrap title" })).toBeInTheDocument();
+    expect(await screen.findByText("bootstrap title")).toBeInTheDocument();
     expect(screen.getByText("bootstrap-codex")).toBeInTheDocument();
     expect(screen.getAllByText("Turn turn_900").length).toBeGreaterThan(0);
     expect(screen.getByText("run_bootstrap")).toBeInTheDocument();
@@ -902,11 +902,11 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "detail restored" })).toBeInTheDocument();
+    expect(await screen.findByText("detail restored")).toBeInTheDocument();
     expect(screen.getAllByText("Turn turn_detail").length).toBeGreaterThan(0);
     expect(screen.getByText("run_detail")).toBeInTheDocument();
     expect(screen.getByText("restore from detail")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("已完成");
+    expect(screen.getAllByText("completed").length).toBeGreaterThan(0);
     expect(screen.getAllByText("detail thinking...").length).toBeGreaterThan(0);
     expect(screen.queryByText("Waiting for websocket snapshot...")).not.toBeInTheDocument();
   });
@@ -1444,7 +1444,7 @@ describe("App", () => {
         expect.objectContaining({ sessionId: "sess_002" }),
       ),
     );
-    expect(await screen.findByRole("heading", { name: "linked session" })).toBeInTheDocument();
+    expect(await screen.findByText("linked session")).toBeInTheDocument();
     await waitFor(() =>
       expect(getRunDetailMock).toHaveBeenCalledWith("sess_002", "run_200"),
     );
