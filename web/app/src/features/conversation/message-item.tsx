@@ -1,16 +1,19 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { TokenUsage } from "./conversation-timeline";
 
 type MessageItemProps = {
   role: "user" | "assistant";
   text: string;
   timestamp?: string;
+  tokenUsage?: TokenUsage | null;
 };
 
 const markdownPlugins = [remarkGfm];
 
-export function MessageItem({ role, text, timestamp }: MessageItemProps) {
+export function MessageItem({ role, text, timestamp, tokenUsage = null }: MessageItemProps) {
   const isAssistant = role === "assistant";
+  const tokenUsageLabel = isAssistant ? formatTokenUsage(tokenUsage) : "";
 
   return (
     <article
@@ -33,6 +36,31 @@ export function MessageItem({ role, text, timestamp }: MessageItemProps) {
           text
         )}
       </div>
+      {tokenUsageLabel ? (
+        <div className="conversation-message__usage">{tokenUsageLabel}</div>
+      ) : null}
     </article>
   );
+}
+
+function formatTokenUsage(usage: TokenUsage | null): string {
+  if (!usage) {
+    return "";
+  }
+
+  const parts: string[] = [];
+  if (usage.inputTokens != null) {
+    parts.push(`input ${formatNumber(usage.inputTokens)}`);
+  }
+  if (usage.outputTokens != null) {
+    parts.push(`output ${formatNumber(usage.outputTokens)}`);
+  }
+  if (usage.totalTokens != null) {
+    parts.push(`total ${formatNumber(usage.totalTokens)}`);
+  }
+  return parts.length ? `Tokens · ${parts.join(" · ")}` : "";
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
 }

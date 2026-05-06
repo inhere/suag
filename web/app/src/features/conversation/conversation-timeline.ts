@@ -12,6 +12,13 @@ export type ConversationMessageEntry = {
   role: "user" | "assistant";
   text: string;
   timestamp?: string;
+  tokenUsage?: TokenUsage | null;
+};
+
+export type TokenUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
 };
 
 export type ConversationActivityEntry = {
@@ -78,6 +85,8 @@ export function buildConversationTimeline(
     const sortedRuns = [...(runsByTurn.get(turn.turnId) ?? [])].sort(compareByUpdatedAt);
     for (const run of sortedRuns) {
       entries.push(runStatusEntry(run));
+      const runActivities = [...(activitiesByRun.get(run.runId) ?? [])].sort(compareByUpdatedAt);
+      const tokenUsage = tokenUsageFromActivities(runActivities);
 
       const runMessages = [...(messagesByRun.get(run.runId) ?? [])].sort(compareByUpdatedAt);
       if (!run.summary?.trim()) {
@@ -92,11 +101,11 @@ export function buildConversationTimeline(
             role: "assistant",
             text: message.content,
             timestamp: formatConversationTimestamp(message.updatedAt || snapshot.generatedAt),
+            tokenUsage,
           });
         }
       }
 
-      const runActivities = [...(activitiesByRun.get(run.runId) ?? [])].sort(compareByUpdatedAt);
       for (const activity of runActivities) {
         entries.push(externalActivityEntry(activity, snapshot.generatedAt));
       }
@@ -109,6 +118,7 @@ export function buildConversationTimeline(
           role: "assistant",
           text: assistantText,
           timestamp: formatConversationTimestamp(run.updatedAt || snapshot.generatedAt),
+          tokenUsage,
         });
       }
 
@@ -266,6 +276,33 @@ function firstNonEmpty(...values: Array<string | null | undefined>): string {
   return "";
 }
 
+function tokenUsageFromActivities(
+  activities: StateSnapshotExternalActivity[],
+): TokenUsage | null {
+  for (let idx = activities.length - 1; idx >= 0; idx--) {
+    const activity = activities[idx];
+    const payload = objectValue(activity.lastPayload) ?? objectValue(activity.payload);
+    const usage = objectValue(payload?.usage);
+    if (!usage) {
+      continue;
+    }
+
+    const tokenUsage: TokenUsage = {
+      inputTokens: numberValue(usage.inputTokens),
+      outputTokens: numberValue(usage.outputTokens),
+      totalTokens: numberValue(usage.totalTokens),
+    };
+    if (
+      tokenUsage.inputTokens != null ||
+      tokenUsage.outputTokens != null ||
+      tokenUsage.totalTokens != null
+    ) {
+      return tokenUsage;
+    }
+  }
+  return null;
+}
+
 function turnUserText(
   turn: { turnId: string; inputSummary?: string },
   fallbacks: Map<string, string>,
@@ -299,6 +336,13 @@ function objectValue(value: unknown): Record<string, unknown> | null {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function numberValue(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return undefined;
 }
 
 function groupBy<T>(items: T[], keyOf: (item: T) => string): Map<string, T[]> {

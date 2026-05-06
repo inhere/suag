@@ -39,6 +39,7 @@ export function ConversationPane({
               role={message.role}
               text={message.text}
               timestamp={message.timestamp}
+              tokenUsage={message.tokenUsage}
             />
           ),
         )}

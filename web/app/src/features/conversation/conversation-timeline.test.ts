@@ -130,6 +130,27 @@ function makeSnapshot(): StateSnapshotV0 {
         startedAt: "2026-04-12T11:01:00Z",
         updatedAt: "2026-04-12T11:02:00Z",
       },
+      {
+        externalTaskId: "",
+        sessionId: "sess_001",
+        turnId: "turn_001",
+        runId: "run_001",
+        agentId: "default",
+        activityId: "act_usage_001",
+        kind: "model",
+        status: "completed",
+        title: "LLM completed",
+        detail: "content ready",
+        lastPayload: {
+          usage: {
+            inputTokens: 11,
+            outputTokens: 7,
+            totalTokens: 18,
+          },
+        },
+        startedAt: "2026-04-12T10:00:30Z",
+        updatedAt: "2026-04-12T10:00:40Z",
+      },
     ],
     externalMessages: [
       {
@@ -158,6 +179,7 @@ describe("buildConversationTimeline", () => {
     expect(timeline.map((entry) => entry.id)).toEqual([
       "turn_001:user",
       "run_001:status",
+      "act_usage_001:activity",
       "run_001:assistant",
       "run_001:capability-plan",
       "turn_002:user",
@@ -176,7 +198,12 @@ describe("buildConversationTimeline", () => {
       expect.objectContaining({
         kind: "message",
         role: "assistant",
-        text: "正在整理已加载 skills...",
+        text: "第一轮完成",
+        tokenUsage: {
+          inputTokens: 11,
+          outputTokens: 7,
+          totalTokens: 18,
+        },
       }),
     );
     expect(timeline).toContainEqual(

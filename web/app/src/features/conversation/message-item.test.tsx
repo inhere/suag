@@ -36,6 +36,23 @@ it("renders ordered markdown steps as compact list items", () => {
   expect(items[2]).toHaveTextContent("Window: Open Folders In New Window 设置，将其改为 on");
 });
 
+it("renders assistant token usage below the markdown body", () => {
+  render(
+    <MessageItem
+      role="assistant"
+      text="已完成。"
+      tokenUsage={{
+        inputTokens: 1200,
+        outputTokens: 345,
+        totalTokens: 1545,
+      }}
+      timestamp="10:03"
+    />,
+  );
+
+  expect(screen.getByText("Tokens · input 1,200 · output 345 · total 1,545")).toBeInTheDocument();
+});
+
 it("keeps user messages as plain text instead of markdown", () => {
   render(
     <MessageItem
@@ -49,4 +66,5 @@ it("keeps user messages as plain text instead of markdown", () => {
   expect(message).not.toBeNull();
   expect(within(message as HTMLElement).queryByRole("heading")).not.toBeInTheDocument();
   expect(within(message as HTMLElement).queryByRole("list")).not.toBeInTheDocument();
+  expect(screen.queryByText(/Tokens/)).not.toBeInTheDocument();
 });
