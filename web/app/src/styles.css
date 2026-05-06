@@ -470,6 +470,105 @@ body {
   white-space: pre-wrap;
 }
 
+.conversation-message__text > :first-child {
+  margin-top: 0;
+}
+
+.conversation-message__text > :last-child {
+  margin-bottom: 0;
+}
+
+.conversation-message__text p {
+  margin: 0.62em 0;
+}
+
+.conversation-message__text h1,
+.conversation-message__text h2,
+.conversation-message__text h3,
+.conversation-message__text h4 {
+  margin: 0.88em 0 0.45em;
+  color: inherit;
+  line-height: 1.28;
+}
+
+.conversation-message__text h1 {
+  font-size: 1.28rem;
+}
+
+.conversation-message__text h2 {
+  font-size: 1.14rem;
+}
+
+.conversation-message__text h3,
+.conversation-message__text h4 {
+  font-size: 1rem;
+}
+
+.conversation-message__text ul,
+.conversation-message__text ol {
+  margin: 0.58em 0;
+  padding-left: 1.35rem;
+}
+
+.conversation-message__text li + li {
+  margin-top: 0.24em;
+}
+
+.conversation-message__text blockquote {
+  margin: 0.72em 0;
+  border-left: 3px solid rgba(20, 184, 166, 0.45);
+  padding: 0.12em 0 0.12em 0.8rem;
+  color: #64748b;
+}
+
+.conversation-message__text code {
+  border: 1px solid rgba(100, 116, 139, 0.18);
+  border-radius: 7px;
+  padding: 0.08em 0.35em;
+  background: rgba(15, 23, 42, 0.06);
+  color: #0f766e;
+  font-size: 0.9em;
+}
+
+.conversation-message__text pre {
+  max-width: 100%;
+  margin: 0.82em 0;
+  overflow: auto;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 14px;
+  padding: 12px;
+  background: #0f172a;
+  color: #e2e8f0;
+  white-space: pre;
+}
+
+.conversation-message__text pre code {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.conversation-message__text table {
+  display: block;
+  max-width: 100%;
+  margin: 0.82em 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.conversation-message__text th,
+.conversation-message__text td {
+  border: 1px solid rgba(100, 116, 139, 0.18);
+  padding: 0.45rem 0.58rem;
+  text-align: left;
+}
+
+.conversation-message__text th {
+  background: rgba(15, 23, 42, 0.04);
+  color: #334155;
+}
+
 .turn-summary-card strong {
   display: block;
   margin-bottom: 8px;
