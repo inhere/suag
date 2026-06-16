@@ -1,21 +1,21 @@
-# axon configuration
+# suag configuration
 # Override any value with AXON_<KEY> environment variables
 # e.g. AXON_LLM_API_KEY, AXON_LLM_API_TYPE, AXON_LLM_PROVIDER_NAME
 
 # LLM provider settings
 llm:
-  api_type: openai          # openai | anthropic
-  provider_name: openai     # openai | deepseek | claude | custom
-  model: glm-5              # model name
-  api_key: "${BAILIAN_API_KEY}"                # set via env: OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY
-  base_url: "${BAILIAN_BASE_URL}"              # optional override (e.g. for OpenAI-compatible gateways)
+  api_type: openai # openai | anthropic
+  provider_name: bailian # openai | deepseek | claude | custom
+  model: glm-5 # model name
+  api_key: "${BAILIAN_API_KEY}" # set via env: OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY
+  base_url: "${BAILIAN_BASE_URL}" # optional override (e.g. for OpenAI-compatible gateways)
 
 # Workspace directory for file and shell tools
 # Defaults to current working directory
 workspace: ""
 
 # SerpAPI key for web_search tool
-serpapi_key: ""              # set via env: AXON_SERPAPI_KEY
+serpapi_key: "" # set via env: AXON_SERPAPI_KEY
 
 # Optional MCP servers exposed as additional tool providers
 mcp:
@@ -35,12 +35,12 @@ max_steps: 30
 
 # Single-agent runtime selection
 agent:
-  runtime: ""               # default uses agentcore; set "react" to force legacy runner
+  runtime: "" # default uses agentcore; set "react" to force legacy runner
 
 # Optional agentcore runtime switch for single-agent task execution
 agentcore:
   enabled: false
-  run_root: ""               # optional runtime root; host defaults to db/agentcore/host, and when set host uses <run_root>/host
+  run_root: "" # optional runtime root; host defaults to db/agentcore/host, and when set host uses <run_root>/host
 
 # HTTP server settings (server mode)
 server:
@@ -49,12 +49,12 @@ server:
 # SQLite database path for persistent memory
 # Leave empty to use in-memory storage
 database:
-  path: ""                   # e.g. ~/.axon/memory.db
+  path: "" # e.g. ~/.suag/memory.db
 
 # HITL settings
 hitl:
-  fail_threshold: 3          # trigger HITL after N consecutive tool failures
+  fail_threshold: 3 # trigger HITL after N consecutive tool failures
 
 # Logging
 log:
-  level: info                # debug | info | warn | error
+  level: info # debug | info | warn | error

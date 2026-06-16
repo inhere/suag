@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	internalutils "github.com/inhere/axon/pkg/agentcore/internal/utils"
+	internalutils "github.com/inhere/suag/pkg/agentcore/internal/utils"
 )
 
 // Hook defines the public lifecycle extension points for agentcore.

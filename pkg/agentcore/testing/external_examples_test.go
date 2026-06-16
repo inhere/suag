@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	agentcoretesting "github.com/inhere/axon/pkg/agentcore/testing"
+	"github.com/inhere/suag/pkg/agentcore"
+	agentcoretesting "github.com/inhere/suag/pkg/agentcore/testing"
 )
 
 func TestExternalStorageContractExample(t *testing.T) {

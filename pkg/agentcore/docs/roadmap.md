@@ -1,6 +1,6 @@
 # Agentcore Roadmap
 
-`pkg/agentcore` 的目标不是成为 Axon 全部 agent 能力的集合，而是成为一个可以长期演进、稳定嵌入、对外可发布的 agent runtime kernel。
+`pkg/agentcore` 的目标不是成为 Suag 全部 agent 能力的集合，而是成为一个可以长期演进、稳定嵌入、对外可发布的 agent runtime kernel。
 
 这份 roadmap 关注的是：
 

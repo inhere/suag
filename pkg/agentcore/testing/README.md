@@ -73,8 +73,8 @@ package mystorage_test
 import (
     "testing"
 
-    "github.com/inhere/axon/pkg/agentcore"
-    agentcoretesting "github.com/inhere/axon/pkg/agentcore/testing"
+    "github.com/inhere/suag/pkg/agentcore"
+    agentcoretesting "github.com/inhere/suag/pkg/agentcore/testing"
 )
 
 func TestStorageContract(t *testing.T) {
@@ -118,8 +118,8 @@ package mytools_test
 import (
     "testing"
 
-    "github.com/inhere/axon/pkg/agentcore"
-    agentcoretesting "github.com/inhere/axon/pkg/agentcore/testing"
+    "github.com/inhere/suag/pkg/agentcore"
+    agentcoretesting "github.com/inhere/suag/pkg/agentcore/testing"
 )
 
 func TestRegistryContract(t *testing.T) {
@@ -162,8 +162,8 @@ package myprovider_test
 import (
     "testing"
 
-    "github.com/inhere/axon/pkg/agentcore"
-    agentcoretesting "github.com/inhere/axon/pkg/agentcore/testing"
+    "github.com/inhere/suag/pkg/agentcore"
+    agentcoretesting "github.com/inhere/suag/pkg/agentcore/testing"
 )
 
 func TestProviderContract(t *testing.T) {

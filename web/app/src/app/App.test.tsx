@@ -41,7 +41,7 @@ vi.mock("../lib/session-ws", () => ({
 function makeSnapshot(overrides: Partial<StateSnapshotV0> = {}): StateSnapshotV0 {
   return {
     snapshotVersion: "v0",
-    snapshotSchema: "axon.host.state.v0",
+    snapshotSchema: "suag.host.state.v0",
     generatedAt: "2026-04-12T11:00:00Z",
     threadId: "sess_001",
     sessionId: "sess_001",
@@ -271,7 +271,7 @@ describe("App", () => {
   it("creates a session, starts a turn, and hydrates the workbench from websocket snapshots", async () => {
     render(<App />);
 
-    const composer = screen.getByPlaceholderText("给 Axon 发送下一条任务说明...");
+    const composer = screen.getByPlaceholderText("给 Suag 发送下一条任务说明...");
     fireEvent.change(composer, {
       target: { value: "请整理当前页面结构" },
     });
@@ -309,7 +309,7 @@ describe("App", () => {
     expect(screen.getByText("Run run_001")).toBeInTheDocument();
     expect(screen.getAllByText("19:00").length).toBeGreaterThan(0);
     await waitFor(() =>
-      expect(storage["axon.web.workbench"]).toContain("\"currentSessionId\":\"sess_001\""),
+      expect(storage["suag.web.workbench"]).toContain("\"currentSessionId\":\"sess_001\""),
     );
   });
 
@@ -360,7 +360,7 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.change(screen.getByPlaceholderText("给 Axon 发送下一条任务说明..."), {
+    fireEvent.change(screen.getByPlaceholderText("给 Suag 发送下一条任务说明..."), {
       target: { value: "先启动一个带提交反馈的新回合" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -386,7 +386,7 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.change(screen.getByPlaceholderText("给 Axon 发送下一条任务说明..."), {
+    fireEvent.change(screen.getByPlaceholderText("给 Suag 发送下一条任务说明..."), {
       target: { value: "启动失败提示用例" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -394,11 +394,11 @@ describe("App", () => {
     expect(screen.getByText("启动失败提示用例")).toBeInTheDocument();
     expect(await screen.findByText("Failed to start turn.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
-    expect(screen.getByPlaceholderText("给 Axon 发送下一条任务说明...")).toHaveValue("");
+    expect(screen.getByPlaceholderText("给 Suag 发送下一条任务说明...")).toHaveValue("");
   });
 
   it("shows websocket connection lifecycle status for the active session", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_002",
       focusedRunId: null,
       recentSessions: [
@@ -445,7 +445,7 @@ describe("App", () => {
   });
 
   it("shows connection error feedback when session bootstrap fails", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_003",
       focusedRunId: null,
       recentSessions: [
@@ -472,7 +472,7 @@ describe("App", () => {
 
   it("retries the active session websocket automatically after disconnect", async () => {
     vi.useFakeTimers();
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_020",
       focusedRunId: null,
       recentSessions: [
@@ -550,7 +550,7 @@ describe("App", () => {
   });
 
   it("retries active session bootstrap when retry is clicked", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_040",
       focusedRunId: null,
       recentSessions: [
@@ -587,7 +587,7 @@ describe("App", () => {
   });
 
   it("restores recent sessions and focused run from local storage on load", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_002",
       focusedRunId: "run_201",
       recentSessions: [
@@ -620,11 +620,11 @@ describe("App", () => {
           turnId: "turn_201",
           lastTurnId: "turn_201",
           turns: [
-        {
-          turnId: "turn_201",
-          sessionId: "sess_002",
-          inputSummary: "恢复历史上下文",
-          primaryRunId: "run_201",
+            {
+              turnId: "turn_201",
+              sessionId: "sess_002",
+              inputSummary: "恢复历史上下文",
+              primaryRunId: "run_201",
               currentRunId: "run_201",
               latestRunId: "run_201",
               latestAgentId: "reviewer",
@@ -670,7 +670,7 @@ describe("App", () => {
   });
 
   it("does not move a selected session to the top when switching sessions", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_010",
       focusedRunId: null,
       recentSessions: [
@@ -765,7 +765,7 @@ describe("App", () => {
   });
 
   it("applies HTTP session bootstrap details before the websocket snapshot arrives", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_003",
       focusedRunId: null,
       recentSessions: [
@@ -815,7 +815,7 @@ describe("App", () => {
   });
 
   it("uses aggregated HTTP session detail to restore real turn and run content before websocket snapshot", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_004",
       focusedRunId: null,
       recentSessions: [],
@@ -912,7 +912,7 @@ describe("App", () => {
   });
 
   it("shows pending feedback while continuing a waiting turn from the composer", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
       recentSessions: [
@@ -1011,7 +1011,7 @@ describe("App", () => {
   });
 
   it("shows inline feedback when continue_turn is rejected", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
       recentSessions: [
@@ -1097,7 +1097,7 @@ describe("App", () => {
   });
 
   it("does not enter continue mode for auth_required turns", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
       recentSessions: [
@@ -1162,7 +1162,7 @@ describe("App", () => {
       });
     });
 
-    expect(screen.getByPlaceholderText("给 Axon 发送下一条任务说明...")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("给 Suag 发送下一条任务说明...")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
     expect(screen.getByText("Approval required", { selector: "strong" })).toBeInTheDocument();
     expect(screen.getAllByText("需要审批后继续").length).toBeGreaterThan(0);
@@ -1248,7 +1248,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await act(async () => {});
+    await act(async () => { });
     expect(listHITLTicketsMock).toHaveBeenCalledTimes(1);
     expect(screen.getByText("No pending tickets.")).toBeInTheDocument();
     await waitFor(() => expect(connectSessionSocketMock).toHaveBeenCalled());
@@ -1256,7 +1256,7 @@ describe("App", () => {
     await act(async () => {
       onMessage?.({
         type: "CUSTOM",
-        name: "axon.hitl.ticket",
+        name: "suag.hitl.ticket",
         value: {
           sessionId: "sess_001",
           turnId: "turn_001",
@@ -1340,7 +1340,7 @@ describe("App", () => {
   });
 
   it("opens ticket context and switches the workbench to the linked session and run", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: "run_001",
       recentSessions: [
@@ -1451,7 +1451,7 @@ describe("App", () => {
   });
 
   it("loads memory candidates for current session and shows MEMORY/USER groups", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
       recentSessions: [
@@ -1488,7 +1488,7 @@ describe("App", () => {
   });
 
   it("shows only draft/rendered memory candidates", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
       recentSessions: [
@@ -1517,7 +1517,7 @@ describe("App", () => {
   });
 
   it("refreshes memory candidates after accept and updates list", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
       recentSessions: [
@@ -1549,7 +1549,7 @@ describe("App", () => {
   });
 
   it("refreshes memory candidates after reject and updates list", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
       recentSessions: [
@@ -1581,7 +1581,7 @@ describe("App", () => {
   });
 
   it("shows list loading error and retries loading memory candidates", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
       recentSessions: [
@@ -1614,7 +1614,7 @@ describe("App", () => {
     const rejectDeferred = deferred<void>();
     acceptMemoryCandidateMock.mockReturnValueOnce(acceptDeferred.promise);
     rejectMemoryCandidateMock.mockReturnValueOnce(rejectDeferred.promise);
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
       recentSessions: [
@@ -1668,7 +1668,7 @@ describe("App", () => {
     const latestRefreshDeferred = deferred<MemoryCandidate[]>();
     acceptMemoryCandidateMock.mockReturnValueOnce(acceptDeferred.promise);
     rejectMemoryCandidateMock.mockReturnValueOnce(rejectDeferred.promise);
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
       recentSessions: [
@@ -1726,7 +1726,7 @@ describe("App", () => {
   });
 
   it("shows action error when updating memory candidate fails", async () => {
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
       recentSessions: [
@@ -1754,7 +1754,7 @@ describe("App", () => {
 
   it("clears previous session memory candidates when switching sessions", async () => {
     const secondSessionCandidates = deferred<MemoryCandidate[]>();
-    storage["axon.web.workbench"] = JSON.stringify({
+    storage["suag.web.workbench"] = JSON.stringify({
       currentSessionId: "sess_001",
       focusedRunId: null,
       recentSessions: [

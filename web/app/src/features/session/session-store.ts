@@ -61,14 +61,14 @@ function appendSnapshotEvent(
 ): StateSnapshotV0 {
   const normalizedEvent: HostEvent = "snapshot" in event
     ? {
-        type: event.type,
-        snapshot: event.snapshot,
-      }
+      type: event.type,
+      snapshot: event.snapshot,
+    }
     : ("value" in event || "sequence" in event || "delta" in event || "messageId" in event)
       ? (event as HostEvent)
       : {
-          type: event.type,
-        };
+        type: event.type,
+      };
 
   return {
     ...snapshot,
@@ -87,7 +87,7 @@ function createBootstrapSnapshot(
 
   return {
     snapshotVersion: "v0",
-    snapshotSchema: "axon.host.state.v0",
+    snapshotSchema: "suag.host.state.v0",
     generatedAt,
     threadId: detail.sessionId,
     sessionId: detail.sessionId,
@@ -103,47 +103,47 @@ function createBootstrapSnapshot(
     // does not stay blank before the websocket sends the first snapshot.
     turns: bootstrapTurnID
       ? [
-          {
-            turnId: bootstrapTurnID,
-            sessionId: detail.sessionId,
-            primaryRunId: bootstrapRunId,
-            currentRunId: bootstrapRunId,
-            latestRunId: bootstrapRunId,
-            latestAgentId: bootstrapAgentID,
-            displayState: detail.status.toLowerCase(),
-            latestEventType: "session.detail.bootstrap",
-            latestMessagePreview: "Waiting for websocket snapshot...",
-            eventCount: 0,
-            runCount: bootstrapRunId ? 1 : 0,
-            activeRunCount: bootstrapRunId ? 1 : 0,
-            completedRunCount: 0,
-            failedRunCount: 0,
-            activeRunIds: bootstrapRunId ? [bootstrapRunId] : [],
-            completedRunIds: [],
-            failedRunIds: [],
-            hasExternalWork: detail.externalTasks.length > 0,
-            updatedAt: generatedAt,
-          },
-        ]
+        {
+          turnId: bootstrapTurnID,
+          sessionId: detail.sessionId,
+          primaryRunId: bootstrapRunId,
+          currentRunId: bootstrapRunId,
+          latestRunId: bootstrapRunId,
+          latestAgentId: bootstrapAgentID,
+          displayState: detail.status.toLowerCase(),
+          latestEventType: "session.detail.bootstrap",
+          latestMessagePreview: "Waiting for websocket snapshot...",
+          eventCount: 0,
+          runCount: bootstrapRunId ? 1 : 0,
+          activeRunCount: bootstrapRunId ? 1 : 0,
+          completedRunCount: 0,
+          failedRunCount: 0,
+          activeRunIds: bootstrapRunId ? [bootstrapRunId] : [],
+          completedRunIds: [],
+          failedRunIds: [],
+          hasExternalWork: detail.externalTasks.length > 0,
+          updatedAt: generatedAt,
+        },
+      ]
       : [],
     runs: bootstrapRunId
       ? [
-          {
-            runId: bootstrapRunId,
-            turnId: bootstrapTurnID,
-            sessionId: detail.sessionId,
-            agentId: bootstrapAgentID,
-            displayState: detail.externalTasks.length ? "external_running" : detail.status.toLowerCase(),
-            latestEventType: "session.detail.bootstrap",
-            latestMessageId: "",
-            latestMessageText: "Waiting for websocket snapshot...",
-            summary: "",
-            externalTaskIds: bootstrapTask ? [bootstrapTask.externalTaskId] : [],
-            waitMetadata: {},
-            eventCount: 0,
-            updatedAt: generatedAt,
-          },
-        ]
+        {
+          runId: bootstrapRunId,
+          turnId: bootstrapTurnID,
+          sessionId: detail.sessionId,
+          agentId: bootstrapAgentID,
+          displayState: detail.externalTasks.length ? "external_running" : detail.status.toLowerCase(),
+          latestEventType: "session.detail.bootstrap",
+          latestMessageId: "",
+          latestMessageText: "Waiting for websocket snapshot...",
+          summary: "",
+          externalTaskIds: bootstrapTask ? [bootstrapTask.externalTaskId] : [],
+          waitMetadata: {},
+          eventCount: 0,
+          updatedAt: generatedAt,
+        },
+      ]
       : [],
     externalTasks: detail.externalTasks,
     externalActivities: [],
@@ -174,7 +174,7 @@ function createDetailSnapshot(
 
   return {
     snapshotVersion: "v0",
-    snapshotSchema: "axon.host.state.v0",
+    snapshotSchema: "suag.host.state.v0",
     generatedAt,
     threadId: detail.sessionId,
     sessionId: detail.sessionId,
@@ -505,19 +505,19 @@ function reduceTextMessageContent(
     messageIndex >= 0
       ? externalMessages[messageIndex]
       : {
-          externalTaskId: targetRun.externalTaskIds[0] ?? "",
-          messageId: message.messageId,
-          sessionId: snapshot.sessionId,
-          turnId: targetTurn.turnId,
-          runId: targetRun.runId,
-          agentId: targetRun.agentId,
-          content: targetRun.latestMessageText,
-          started: true,
-          completed: false,
-          lastEventType: message.type,
-          lastSequence: message.timestamp ?? 0,
-          updatedAt: snapshot.generatedAt,
-        };
+        externalTaskId: targetRun.externalTaskIds[0] ?? "",
+        messageId: message.messageId,
+        sessionId: snapshot.sessionId,
+        turnId: targetTurn.turnId,
+        runId: targetRun.runId,
+        agentId: targetRun.agentId,
+        content: targetRun.latestMessageText,
+        started: true,
+        completed: false,
+        lastEventType: message.type,
+        lastSequence: message.timestamp ?? 0,
+        updatedAt: snapshot.generatedAt,
+      };
 
   nextExternalMessage.content += message.delta;
   nextExternalMessage.lastEventType = message.type;
@@ -742,7 +742,7 @@ function reduceCustomExternalActivity(
   snapshot: StateSnapshotV0,
   message: CustomEvent,
 ): StateSnapshotV0 {
-  if (message.name !== "axon.run.external.activity" || !message.value) {
+  if (message.name !== "suag.run.external.activity" || !message.value) {
     return appendSnapshotEvent(snapshot, message);
   }
 
@@ -1037,36 +1037,36 @@ export function mergeSessionDetail(
   const detailExternalMessages = detailSnapshot.externalMessages ?? [];
   const nextSnapshot = state.snapshot
     ? {
-        ...state.snapshot,
-        sessionId: detail.sessionId,
-        threadId: detail.sessionId,
-        title: detail.title,
-        status: detail.status,
-        turnId: state.snapshot.turnId || detailSnapshot.turnId,
-        lastTurnId: detail.lastTurnId,
-        currentRunId: state.snapshot.currentRunId || detailSnapshot.currentRunId,
-        currentAgentId:
-          state.snapshot.currentAgentId || detailSnapshot.currentAgentId,
-        latestEventType: state.snapshot.latestEventType || detailSnapshot.latestEventType,
-        externalTasks: detail.externalTasks,
-        externalActivities:
-          state.snapshot.externalActivities.length > 0
-            ? state.snapshot.externalActivities
-            : detailExternalActivities,
-        externalMessages:
-          state.snapshot.externalMessages.length > 0
-            ? state.snapshot.externalMessages
-            : detailExternalMessages,
-        generatedAt: observedAt,
-        turns:
-          state.snapshot.turns.length > 0
-            ? state.snapshot.turns
-            : detailSnapshot.turns,
-        runs:
-          state.snapshot.runs.length > 0
-            ? state.snapshot.runs
-            : detailSnapshot.runs,
-      }
+      ...state.snapshot,
+      sessionId: detail.sessionId,
+      threadId: detail.sessionId,
+      title: detail.title,
+      status: detail.status,
+      turnId: state.snapshot.turnId || detailSnapshot.turnId,
+      lastTurnId: detail.lastTurnId,
+      currentRunId: state.snapshot.currentRunId || detailSnapshot.currentRunId,
+      currentAgentId:
+        state.snapshot.currentAgentId || detailSnapshot.currentAgentId,
+      latestEventType: state.snapshot.latestEventType || detailSnapshot.latestEventType,
+      externalTasks: detail.externalTasks,
+      externalActivities:
+        state.snapshot.externalActivities.length > 0
+          ? state.snapshot.externalActivities
+          : detailExternalActivities,
+      externalMessages:
+        state.snapshot.externalMessages.length > 0
+          ? state.snapshot.externalMessages
+          : detailExternalMessages,
+      generatedAt: observedAt,
+      turns:
+        state.snapshot.turns.length > 0
+          ? state.snapshot.turns
+          : detailSnapshot.turns,
+      runs:
+        state.snapshot.runs.length > 0
+          ? state.snapshot.runs
+          : detailSnapshot.runs,
+    }
     : detailSnapshot;
 
   const existingRecentSession =

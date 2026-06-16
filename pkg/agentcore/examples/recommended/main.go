@@ -6,12 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	contextpkg "github.com/inhere/axon/pkg/agentcore/context"
-	memorypkg "github.com/inhere/axon/pkg/agentcore/memory"
-	"github.com/inhere/axon/pkg/agentcore/mock"
-	promptpkg "github.com/inhere/axon/pkg/agentcore/prompt"
-	"github.com/inhere/axon/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore"
+	contextpkg "github.com/inhere/suag/pkg/agentcore/context"
+	memorypkg "github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suag/pkg/agentcore/mock"
+	promptpkg "github.com/inhere/suag/pkg/agentcore/prompt"
+	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 type logModelShapeHook struct {
@@ -45,7 +45,7 @@ func (h *yieldAfterToolHook) BeforeModel(_ context.Context, _ *agentcore.ModelEv
 func main() {
 	ctx := context.Background()
 	runID := "example-recommended"
-	storageDir := filepath.Join(os.TempDir(), "axon-agentcore-examples", "recommended")
+	storageDir := filepath.Join(os.TempDir(), "suag-agentcore-examples", "recommended")
 	if err := os.RemoveAll(storageDir); err != nil {
 		log.Fatal(err)
 	}

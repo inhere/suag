@@ -6,12 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	contextpkg "github.com/inhere/axon/pkg/agentcore/context"
-	memorypkg "github.com/inhere/axon/pkg/agentcore/memory"
-	"github.com/inhere/axon/pkg/agentcore/mock"
-	promptpkg "github.com/inhere/axon/pkg/agentcore/prompt"
-	"github.com/inhere/axon/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore"
+	contextpkg "github.com/inhere/suag/pkg/agentcore/context"
+	memorypkg "github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suag/pkg/agentcore/mock"
+	promptpkg "github.com/inhere/suag/pkg/agentcore/prompt"
+	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 type StartRequest struct {
@@ -104,7 +104,7 @@ func newRuntime(provider agentcore.Provider, storage agentcore.Storage, tools ag
 
 func main() {
 	ctx := context.Background()
-	storageDir := filepath.Join(os.TempDir(), "axon-agentcore-examples", "host")
+	storageDir := filepath.Join(os.TempDir(), "suag-agentcore-examples", "host")
 	if err := os.RemoveAll(storageDir); err != nil {
 		log.Fatal(err)
 	}

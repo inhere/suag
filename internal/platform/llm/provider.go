@@ -1,4 +1,4 @@
-// Package llm implements first-party model providers for Axon.
+// Package llm implements first-party model providers for Suag.
 package llm
 
 import agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"

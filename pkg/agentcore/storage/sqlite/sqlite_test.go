@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
+	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/storage/sqlite"
 )
 
 func TestSQLiteStorage_SaveRunAndLoadRun(t *testing.T) {

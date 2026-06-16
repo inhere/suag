@@ -210,7 +210,7 @@ export type HostEvent = {
 
 export type StateSnapshotV0 = {
   snapshotVersion: "v0";
-  snapshotSchema: "axon.host.state.v0";
+  snapshotSchema: "suag.host.state.v0";
   generatedAt: string;
   threadId: string;
   sessionId: string;

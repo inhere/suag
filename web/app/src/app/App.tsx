@@ -45,7 +45,7 @@ import { connectSessionSocket, type SessionSocketConnection } from "../lib/sessi
 import type { SessionSocketStatus } from "../lib/session-ws";
 import type { InlineStatusCardState } from "../features/conversation/inline-status-card";
 
-const workbenchStorageKey = "axon.web.workbench";
+const workbenchStorageKey = "suag.web.workbench";
 const socketReconnectDelayMs = 1500;
 
 type PersistedWorkbenchState = {
@@ -252,16 +252,16 @@ function switchSessionContext(
     ? state.recentSessions.some((item) => item.sessionId === sessionId)
       ? state.recentSessions
       : [...state.recentSessions, buildRecentSessionPlaceholder(state.recentSessions, sessionId, {
-          title: options?.fallbackTitle,
-          status: options?.fallbackStatus,
-        })]
+        title: options?.fallbackTitle,
+        status: options?.fallbackStatus,
+      })]
     : [
-        buildRecentSessionPlaceholder(state.recentSessions, sessionId, {
-          title: options?.fallbackTitle,
-          status: options?.fallbackStatus,
-        }),
-        ...state.recentSessions.filter((item) => item.sessionId !== sessionId),
-      ];
+      buildRecentSessionPlaceholder(state.recentSessions, sessionId, {
+        title: options?.fallbackTitle,
+        status: options?.fallbackStatus,
+      }),
+      ...state.recentSessions.filter((item) => item.sessionId !== sessionId),
+    ];
 
   return {
     ...state,
@@ -561,7 +561,7 @@ export function App() {
           setPendingWSCommandState(null);
           lastWSCommandRef.current = null;
         }
-        if (message.type === "CUSTOM" && message.name === "axon.hitl.ticket") {
+        if (message.type === "CUSTOM" && message.name === "suag.hitl.ticket") {
           void refreshHITLTickets(false);
         }
 
@@ -864,7 +864,7 @@ export function App() {
       debugOpen={debugOpen}
       debugEvents={snapshot?.events ?? []}
       onCreateSession={() => {
-        void createNewSession().catch(() => {});
+        void createNewSession().catch(() => { });
       }}
       onSelectSession={(sessionId) => {
         setViewState((current) =>
@@ -877,7 +877,7 @@ export function App() {
       onSearchChange={setSearchQuery}
       onFilterChange={setFilter}
       onSubmitMessage={(message) => {
-        void handleSubmit(message).catch(() => {});
+        void handleSubmit(message).catch(() => { });
       }}
       onRetryMemoryCandidates={() => {
         if (!viewState.currentSessionId) {

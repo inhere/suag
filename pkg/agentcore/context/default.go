@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/inhere/axon/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
 // WindowConfig controls transcript-window preset behavior.

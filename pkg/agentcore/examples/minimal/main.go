@@ -6,15 +6,15 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/mock"
-	"github.com/inhere/axon/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 func main() {
 	runtime := agentcore.New(agentcore.Config{
 		Provider: mock.NewProvider(mock.Final("hello from minimal example")),
-		Storage:  files.NewStorage(filepath.Join(os.TempDir(), "axon-agentcore-examples", "minimal")),
+		Storage:  files.NewStorage(filepath.Join(os.TempDir(), "suag-agentcore-examples", "minimal")),
 	})
 
 	result, err := runtime.Run(context.Background(), agentcore.RunInput{

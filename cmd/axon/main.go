@@ -1,4 +1,4 @@
-// Command axon is the main entry point for the axon AI agent orchestration engine.
+// Command suag is the main entry point for the suag AI agent orchestration engine.
 package main
 
 import (
@@ -9,8 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	appconfig "github.com/inhere/axon/internal/config"
-	"github.com/inhere/axon/internal/app"
+	"github.com/inhere/suag/internal/app"
+	appconfig "github.com/inhere/suag/internal/config"
 )
 
 func main() {
@@ -40,7 +40,7 @@ func main() {
 	if err := runtimeApp.Run(ctx, mode); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		if errors.Is(err, app.ErrUnknownMode) {
-			fmt.Fprintln(os.Stderr, "Usage: axon [chat|server]")
+			fmt.Fprintln(os.Stderr, "Usage: suag [chat|server]")
 		}
 		os.Exit(1)
 	}

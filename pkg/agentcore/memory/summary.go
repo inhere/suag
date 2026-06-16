@@ -3,7 +3,7 @@ package memory
 import (
 	"strings"
 
-	"github.com/inhere/axon/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
 // SummaryInjector controls how a summary string becomes model-facing messages.

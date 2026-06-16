@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore"
 
 	_ "modernc.org/sqlite"
 )

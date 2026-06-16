@@ -42,9 +42,9 @@ import (
 	"context"
 	"log"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/storage/files"
-	"github.com/inhere/axon/pkg/agentcore/mock"
+	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore/mock"
 )
 
 func main() {

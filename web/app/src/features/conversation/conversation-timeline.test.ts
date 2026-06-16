@@ -5,7 +5,7 @@ import { buildConversationTimeline } from "./conversation-timeline";
 function makeSnapshot(): StateSnapshotV0 {
   return {
     snapshotVersion: "v0",
-    snapshotSchema: "axon.host.state.v0",
+    snapshotSchema: "suag.host.state.v0",
     generatedAt: "2026-04-12T11:00:00Z",
     threadId: "sess_001",
     sessionId: "sess_001",
@@ -247,7 +247,7 @@ describe("buildConversationTimeline", () => {
     snapshot.events = [
       {
         type: "CUSTOM",
-        name: "axon.run.queued",
+        name: "suag.run.queued",
         value: {
           type: "run.queued",
           sessionId: "sess_001",

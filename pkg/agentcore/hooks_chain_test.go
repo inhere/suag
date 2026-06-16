@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	hookchain "github.com/inhere/axon/pkg/agentcore/hooks"
+	"github.com/inhere/suag/pkg/agentcore"
+	hookchain "github.com/inhere/suag/pkg/agentcore/hooks"
 )
 
 type orderedHook struct {

@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/inhere/axon/internal/platform/llm"
-	"github.com/inhere/axon/internal/platform/tools"
-	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/api"
-	"github.com/inhere/axon/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/internal/platform/llm"
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 type echoTool struct{}
@@ -52,7 +52,7 @@ func main() {
 
 	runtime := agentcore.New(agentcore.Config{
 		Provider: provider,
-		Storage:  files.NewStorage(filepath.Join(os.TempDir(), "axon-agentcore-examples", "bridge")),
+		Storage:  files.NewStorage(filepath.Join(os.TempDir(), "suag-agentcore-examples", "bridge")),
 		Tools:    reg,
 	})
 

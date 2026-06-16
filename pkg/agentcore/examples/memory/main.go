@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	memorypkg "github.com/inhere/axon/pkg/agentcore/memory"
-	"github.com/inhere/axon/pkg/agentcore/mock"
-	"github.com/inhere/axon/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore"
+	memorypkg "github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 type logMemoryContextHook struct {
@@ -29,7 +29,7 @@ func (h logMemoryContextHook) BeforeModel(_ context.Context, event *agentcore.Mo
 
 func main() {
 	runID := "example-memory"
-	storageDir := filepath.Join(os.TempDir(), "axon-agentcore-examples", "memory")
+	storageDir := filepath.Join(os.TempDir(), "suag-agentcore-examples", "memory")
 
 	store := files.NewStorage(storageDir)
 	if err := store.SaveRun(context.Background(), &agentcore.RunState{

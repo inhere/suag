@@ -67,7 +67,7 @@ export function Composer({
         placeholder={
           waitingForInput
             ? "当前任务在等待你的补充说明..."
-            : "给 Axon 发送下一条任务说明..."
+            : "给 Suag 发送下一条任务说明..."
         }
       />
       <div className="composer__footer">

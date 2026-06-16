@@ -1,6 +1,6 @@
 # agentcore
 
-`agentcore` 是 Axon 中抽离出来的最小 Agent Runtime Core，目标是将来可以作为独立包发布和嵌入使用。
+`agentcore` 是 Suag 中抽离出来的最小 Agent Runtime Core，目标是将来可以作为独立包发布和嵌入使用。
 
 它的定位更接近一个 runtime kernel，而不是一个完整 agent framework：
 
@@ -240,7 +240,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - 当前对外最直接的 runtime 构造入口仍然是 `agentcore.New(...)`
 - `api/` 主要面向扩展实现和 adapter，承接稳定 contract
 - `agentcore` 本身不应依赖仓库的 `internal/*` 包
-- 与 Axon 内部实现相关的第一方集成代码放在仓库私有 `internal/*` 下
+- 与 Suag 内部实现相关的第一方集成代码放在仓库私有 `internal/*` 下
 
 如果你想看 authority helpers 的实际消费方式，当前可以直接看：
 
@@ -500,9 +500,9 @@ go run ./examples/agentcore/bridge
 - replay 时不会丢失模型当时的工具决策
 - 不同 provider / adapter 可以围绕统一的 `Message` 契约工作
 
-## Axon Internal Integration
+## Suag Internal Integration
 
-如果你想复用 Axon 仓库当前内部实现，请看：
+如果你想复用 Suag 仓库当前内部实现，请看：
 
 - `internal/platform/llm`
 - `internal/platform/memory`
@@ -535,4 +535,4 @@ internal 侧可以基于第一方实现复用它，但不应该反过来让 `age
 
 - 绑定某个具体 provider
 - 绑定某个具体存储后端
-- 绑定 Axon 内部运行时实现
+- 绑定 Suag 内部运行时实现

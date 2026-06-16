@@ -62,7 +62,7 @@ runtime := agentcore.New(agentcore.Config{
 
 思路不是重写全部组件，而是让已有实现直接围绕 `agentcore` 的公共 contract 组织。
 
-在 Axon 当前仓库里，更推荐直接复用这些第一方实现：
+在 Suag 当前仓库里，更推荐直接复用这些第一方实现：
 
 - `internal/platform/llm`
 - `internal/platform/memory`

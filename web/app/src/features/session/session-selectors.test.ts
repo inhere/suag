@@ -13,7 +13,7 @@ function makeSnapshot(
 ): StateSnapshotV0 {
   return {
     snapshotVersion: "v0",
-    snapshotSchema: "axon.host.state.v0",
+    snapshotSchema: "suag.host.state.v0",
     generatedAt: "2026-04-12T08:00:00Z",
     threadId: "sess_001",
     sessionId: "sess_001",

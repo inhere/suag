@@ -3,7 +3,7 @@ package prompt
 import (
 	"context"
 
-	"github.com/inhere/axon/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
 // StaticBuilder always returns the same system prompt.

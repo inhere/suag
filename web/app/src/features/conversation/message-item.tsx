@@ -25,7 +25,7 @@ export function MessageItem({ role, text, timestamp, tokenUsage = null }: Messag
     >
       <div className="conversation-message__meta">
         <div className="conversation-message__role">
-          {isAssistant ? "Axon" : "You"}
+          {isAssistant ? "Suag" : "You"}
         </div>
         {timestamp ? <time className="conversation-message__time">{timestamp}</time> : null}
       </div>

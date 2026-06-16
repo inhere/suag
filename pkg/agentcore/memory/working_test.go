@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	memorypkg "github.com/inhere/axon/pkg/agentcore/memory"
+	"github.com/inhere/suag/pkg/agentcore"
+	memorypkg "github.com/inhere/suag/pkg/agentcore/memory"
 )
 
 type memoryTestInjector struct{}

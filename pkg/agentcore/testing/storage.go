@@ -6,8 +6,8 @@ import (
 	"reflect"
 	stdtesting "testing"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/mock"
+	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/mock"
 )
 
 // StorageFactory creates an isolated storage implementation for one test case.

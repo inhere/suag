@@ -3,8 +3,8 @@ package memory
 import (
 	"context"
 
-	"github.com/inhere/axon/pkg/agentcore/api"
-	internalutils "github.com/inhere/axon/pkg/agentcore/internal/utils"
+	"github.com/inhere/suag/pkg/agentcore/api"
+	internalutils "github.com/inhere/suag/pkg/agentcore/internal/utils"
 )
 
 // Config controls how WorkingMemory filters and emits model-facing context.

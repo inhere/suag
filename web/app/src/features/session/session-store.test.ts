@@ -24,7 +24,7 @@ function makeSnapshot(
 ): StateSnapshotV0 {
   return {
     snapshotVersion: "v0",
-    snapshotSchema: "axon.host.state.v0",
+    snapshotSchema: "suag.host.state.v0",
     generatedAt: "2026-04-12T09:00:00Z",
     threadId: "sess_001",
     sessionId: "sess_001",
@@ -372,7 +372,7 @@ describe("session-store", () => {
     const state = hydrateFromSnapshot(emptySessionViewState, makeSnapshot());
     const withCustom = reduceSessionMessage(state, {
       type: "CUSTOM",
-      name: "axon.run.external.activity",
+      name: "suag.run.external.activity",
       value: {
         threadId: "sess_001",
         turnId: "turn_002",

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 func TestStorageSaveRunCreatesExpectedLayout(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inhere/axon/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
 // MetadataConfig controls whether run metadata is injected into the prompt.

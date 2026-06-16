@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Repository persists Axon Host session lifecycle state.
+// Repository persists Suag Host session lifecycle state.
 //
 // It is the product-layer authority for sessions, turns, runs, events,
 // external tasks, recaps, and memory candidates. It is intentionally separate

@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/mock"
-	promptpkg "github.com/inhere/axon/pkg/agentcore/prompt"
-	"github.com/inhere/axon/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/mock"
+	promptpkg "github.com/inhere/suag/pkg/agentcore/prompt"
+	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 type logPromptHook struct {
@@ -28,7 +28,7 @@ func (h logPromptHook) BeforeModel(_ context.Context, event *agentcore.ModelEven
 func main() {
 	runtime := agentcore.New(agentcore.Config{
 		Provider: mock.NewProvider(mock.Final("prompt example completed")),
-		Storage:  files.NewStorage(filepath.Join(os.TempDir(), "axon-agentcore-examples", "prompt")),
+		Storage:  files.NewStorage(filepath.Join(os.TempDir(), "suag-agentcore-examples", "prompt")),
 		PromptBuilder: promptpkg.Layered(promptpkg.Config{
 			Base: "You are a focused repository assistant.",
 			Metadata: promptpkg.MetadataConfig{

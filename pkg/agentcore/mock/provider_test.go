@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore"
 )
 
 func TestDefaultRegistrySchemas(t *testing.T) {

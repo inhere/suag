@@ -1,6 +1,6 @@
 database:
   driver: sqlite
-  dsn: db/axon.db
+  dsn: db/suag.db
 
 migrations:
   path: ./db/migrations

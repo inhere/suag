@@ -1,7 +1,7 @@
 .PHONY: all build tidy test lint run-chat run-server clean
 
-BINARY := axon
-CMD     := ./cmd/axon
+BINARY := suag
+CMD     := ./cmd/suag
 GOFLAGS := -ldflags="-s -w"
 
 all: tidy build
@@ -10,7 +10,7 @@ all: tidy build
 tidy:
 	go mod tidy
 
-## build: compile the axon binary
+## build: compile the suag binary
 build:
 	go build $(GOFLAGS) -o $(BINARY) $(CMD)
 
@@ -33,7 +33,7 @@ run-server: build
 ## clean: remove build artifacts
 clean:
 	rm -f $(BINARY)
-	rm -f axon.db
+	rm -f suag.db
 
 ## help: print available targets
 help:

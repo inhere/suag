@@ -6,11 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	contextpkg "github.com/inhere/axon/pkg/agentcore/context"
-	memorypkg "github.com/inhere/axon/pkg/agentcore/memory"
-	"github.com/inhere/axon/pkg/agentcore/mock"
-	"github.com/inhere/axon/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore"
+	contextpkg "github.com/inhere/suag/pkg/agentcore/context"
+	memorypkg "github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 type logContextHook struct {
@@ -79,7 +79,7 @@ func main() {
 }
 
 func runPreset(runID string, transcript []agentcore.Message, mem agentcore.Memory, builder agentcore.ContextBuilder, artifacts []agentcore.Artifact, hook agentcore.Hook) {
-	store := files.NewStorage(filepath.Join(os.TempDir(), "axon-agentcore-examples", runID))
+	store := files.NewStorage(filepath.Join(os.TempDir(), "suag-agentcore-examples", runID))
 	if err := store.SaveRun(context.Background(), &agentcore.RunState{
 		RunID:     runID,
 		AgentID:   "context-agent",

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/inhere/axon/pkg/agentcore"
-	builderctx "github.com/inhere/axon/pkg/agentcore/context"
+	"github.com/inhere/suag/pkg/agentcore"
+	builderctx "github.com/inhere/suag/pkg/agentcore/context"
 )
 
 type contextTestMemory struct {

@@ -10,7 +10,7 @@ import (
 )
 
 // OpenSQLite opens a SQLite database and applies the connection pragmas shared
-// by Axon-owned SQLite repositories.
+// by Suag-owned SQLite repositories.
 func OpenSQLite(dbPath string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return nil, fmt.Errorf("create sqlite directory: %w", err)
