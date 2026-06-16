@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/suag/internal/host/session"
 )
 
 func TestMapGatewayEvent_RunQueuedToCustom(t *testing.T) {
@@ -33,8 +33,8 @@ func TestMapGatewayEvent_RunQueuedToCustom(t *testing.T) {
 	if customEvent.Type() != EventTypeCustom {
 		t.Fatalf("MapEvent().Type = %q, want %q", customEvent.Type(), EventTypeCustom)
 	}
-	if customEvent.Name != "axon.run.queued" {
-		t.Fatalf("MapEvent().Name = %q, want %q", customEvent.Name, "axon.run.queued")
+	if customEvent.Name != "suag.run.queued" {
+		t.Fatalf("MapEvent().Name = %q, want %q", customEvent.Name, "suag.run.queued")
 	}
 
 	value, ok := customEvent.Value.(map[string]any)
@@ -658,8 +658,8 @@ func TestMapEvent_RunExternalActivityMapsToCustomAndSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], &CustomEvent{})
 	}
-	if customEvent.Name != "axon.run.external.activity" {
-		t.Fatalf("MapEvent()[0].Name = %q, want %q", customEvent.Name, "axon.run.external.activity")
+	if customEvent.Name != "suag.run.external.activity" {
+		t.Fatalf("MapEvent()[0].Name = %q, want %q", customEvent.Name, "suag.run.external.activity")
 	}
 	value, ok := customEvent.Value.(map[string]any)
 	if !ok {
@@ -772,8 +772,8 @@ func TestMapEvent_RunStatusMapsToCustomAndSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatalf("MapEvent()[0] type = %T, want %T", got[0], &CustomEvent{})
 	}
-	if customEvent.Name != "axon.run.status" {
-		t.Fatalf("MapEvent()[0].Name = %q, want %q", customEvent.Name, "axon.run.status")
+	if customEvent.Name != "suag.run.status" {
+		t.Fatalf("MapEvent()[0].Name = %q, want %q", customEvent.Name, "suag.run.status")
 	}
 
 	activityEvent, ok := got[1].(*ActivitySnapshotEvent)

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inhere/axon/internal/ops/hitl"
-	"github.com/inhere/axon/internal/platform/tracing"
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/suag/internal/ops/hitl"
+	"github.com/inhere/suag/internal/platform/tracing"
+	"github.com/inhere/suag/pkg/agentcore"
 )
 
 // RuntimeKind selects which internal runner implementation should execute an agent task.

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	datatestutil "github.com/inhere/axon/internal/data/testutil"
-	"github.com/inhere/axon/internal/host/acpbridge"
-	"github.com/inhere/axon/internal/host/session"
+	datatestutil "github.com/inhere/suag/internal/data/testutil"
+	"github.com/inhere/suag/internal/host/acpbridge"
+	"github.com/inhere/suag/internal/host/session"
 )
 
 func TestService_StartTurnWithACPBridgeRunnerPublishesFinishedLifecycle(t *testing.T) {

@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/inhere/axon/internal/ops/hitl"
-	"github.com/inhere/axon/internal/platform/memory"
-	"github.com/inhere/axon/internal/platform/tracing"
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/suag/internal/ops/hitl"
+	"github.com/inhere/suag/internal/platform/memory"
+	"github.com/inhere/suag/internal/platform/tracing"
+	"github.com/inhere/suag/pkg/agentcore"
 )
 
 const (

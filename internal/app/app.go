@@ -12,18 +12,18 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	"github.com/inhere/axon/internal/capability/runtimecaps"
-	capskills "github.com/inhere/axon/internal/capability/skills"
-	appconfig "github.com/inhere/axon/internal/config"
-	"github.com/inhere/axon/internal/host/gateway"
-	"github.com/inhere/axon/internal/ops/cron"
-	"github.com/inhere/axon/internal/ops/hitl"
-	"github.com/inhere/axon/internal/orchestrator"
-	"github.com/inhere/axon/internal/platform/llm"
-	"github.com/inhere/axon/internal/platform/memory"
-	"github.com/inhere/axon/internal/platform/tools"
-	"github.com/inhere/axon/internal/platform/tracing"
-	"github.com/inhere/axon/internal/team"
+	"github.com/inhere/suag/internal/capability/runtimecaps"
+	capskills "github.com/inhere/suag/internal/capability/skills"
+	appconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/host/gateway"
+	"github.com/inhere/suag/internal/ops/cron"
+	"github.com/inhere/suag/internal/ops/hitl"
+	"github.com/inhere/suag/internal/orchestrator"
+	"github.com/inhere/suag/internal/platform/llm"
+	"github.com/inhere/suag/internal/platform/memory"
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/internal/platform/tracing"
+	"github.com/inhere/suag/internal/team"
 )
 
 var ErrUnknownMode = errors.New("unknown mode")

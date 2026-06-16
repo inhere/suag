@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inhere/axon/internal/capability/runtimecaps"
-	axconfig "github.com/inhere/axon/internal/config"
-	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/suag/internal/capability/runtimecaps"
+	axconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/platform/tools"
 )
 
 type toolClient interface {

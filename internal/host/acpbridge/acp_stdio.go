@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/suag/internal/host/session"
 )
 
 type ACPStdioSession interface {
@@ -160,7 +160,7 @@ func (b *ACPStdioBridge) sendInitialize(ctx context.Context, sess ACPStdioSessio
 				"terminal": false,
 			},
 			ClientInfo: map[string]string{
-				"name":    "axon",
+				"name":    "suag",
 				"version": "v0",
 			},
 		},

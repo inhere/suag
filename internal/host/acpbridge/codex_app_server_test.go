@@ -17,8 +17,8 @@ func TestCodexAppServerBridge_DispatchRunsCodexProtocol(t *testing.T) {
 			[]byte(`{"jsonrpc":"2.0","id":3,"result":{"turnId":"turn_remote_001"}}` + "\n"),
 			[]byte(`{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread_001","turnId":"turn_remote_001"}}` + "\n"),
 			[]byte(`{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_cmd_001","itemType":"commandExecution","item":{"id":"item_cmd_001","type":"commandExecution","command":"go test ./...","cwd":"workspace/demo","status":"in_progress"}}}` + "\n"),
-			[]byte(`{"jsonrpc":"2.0","method":"item/commandExecution/outputDelta","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_cmd_001","delta":"ok github.com/inhere/axon/internal/host/acpbridge"}}` + "\n"),
-			[]byte(`{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_cmd_001","itemType":"commandExecution","item":{"id":"item_cmd_001","type":"commandExecution","command":"go test ./...","cwd":"workspace/demo","status":"completed","aggregatedOutput":"ok github.com/inhere/axon/internal/host/acpbridge","exitCode":0}}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","method":"item/commandExecution/outputDelta","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_cmd_001","delta":"ok github.com/inhere/suag/internal/host/acpbridge"}}` + "\n"),
+			[]byte(`{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_cmd_001","itemType":"commandExecution","item":{"id":"item_cmd_001","type":"commandExecution","command":"go test ./...","cwd":"workspace/demo","status":"completed","aggregatedOutput":"ok github.com/inhere/suag/internal/host/acpbridge","exitCode":0}}}` + "\n"),
 			[]byte(`{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_001","delta":"hello "}}` + "\n"),
 			[]byte(`{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread_001","turnId":"turn_remote_001","itemId":"item_001","delta":"codex"}}` + "\n"),
 			[]byte(`{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread_001","turnId":"turn_remote_001","stopReason":"end_turn"}}` + "\n"),
@@ -87,7 +87,7 @@ func TestCodexAppServerBridge_DispatchRunsCodexProtocol(t *testing.T) {
 	if items[0]["command"] != "go test ./..." {
 		t.Fatalf("Dispatch().Metadata[items][0][command] = %v, want %q", items[0]["command"], "go test ./...")
 	}
-	if items[0]["outputPreview"] != "ok github.com/inhere/axon/internal/host/acpbridge" {
+	if items[0]["outputPreview"] != "ok github.com/inhere/suag/internal/host/acpbridge" {
 		t.Fatalf("Dispatch().Metadata[items][0][outputPreview] = %v, want preview text", items[0]["outputPreview"])
 	}
 	eventSummary, ok := result.Metadata["eventSummary"].(map[string]any)

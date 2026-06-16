@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/suag/internal/host/session"
 )
 
 func MapEvent(event HostEvent) []Event {
@@ -22,7 +22,7 @@ func MapEvent(event HostEvent) []Event {
 			status = "running"
 		}
 		return []Event{
-			withTimestamp(NewCustomEvent("axon.run.status", map[string]any{
+			withTimestamp(NewCustomEvent("suag.run.status", map[string]any{
 				"threadId":       event.SessionID,
 				"sessionId":      event.SessionID,
 				"turnId":         event.TurnID,
@@ -74,7 +74,7 @@ func MapEvent(event HostEvent) []Event {
 			activityID = event.RunID + ":external"
 		}
 		return []Event{
-			withTimestamp(NewCustomEvent("axon.run.external.activity", map[string]any{
+			withTimestamp(NewCustomEvent("suag.run.external.activity", map[string]any{
 				"threadId":       event.SessionID,
 				"sessionId":      event.SessionID,
 				"turnId":         event.TurnID,
@@ -106,7 +106,7 @@ func MapEvent(event HostEvent) []Event {
 
 	if event.Type == "hitl_ticket" {
 		return []Event{
-			withTimestamp(NewCustomEvent("axon.hitl.ticket", map[string]any{
+			withTimestamp(NewCustomEvent("suag.hitl.ticket", map[string]any{
 				"threadId":  event.SessionID,
 				"sessionId": event.SessionID,
 				"turnId":    event.TurnID,
@@ -117,9 +117,9 @@ func MapEvent(event HostEvent) []Event {
 		}
 	}
 
-	name := "axon.event"
+	name := "suag.event"
 	if event.Type == session.EventRunQueued {
-		name = "axon.run.queued"
+		name = "suag.run.queued"
 	}
 
 	return []Event{

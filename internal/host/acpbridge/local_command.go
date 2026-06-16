@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/suag/internal/host/session"
 )
 
 type CommandConfig struct {

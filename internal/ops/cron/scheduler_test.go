@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/inhere/axon/internal/orchestrator"
-	"github.com/inhere/axon/internal/platform/llm"
-	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/suag/internal/orchestrator"
+	"github.com/inhere/suag/internal/platform/llm"
+	"github.com/inhere/suag/internal/platform/tools"
 )
 
 func TestScheduler_RunJob_CanParseNoActionDecision(t *testing.T) {

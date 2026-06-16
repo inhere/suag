@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inhere/axon/internal/agent"
-	"github.com/inhere/axon/internal/ops/hitl"
-	"github.com/inhere/axon/internal/platform/llm"
-	"github.com/inhere/axon/internal/platform/memory"
-	"github.com/inhere/axon/internal/platform/tools"
-	"github.com/inhere/axon/internal/platform/tracing"
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/suag/internal/agent"
+	"github.com/inhere/suag/internal/ops/hitl"
+	"github.com/inhere/suag/internal/platform/llm"
+	"github.com/inhere/suag/internal/platform/memory"
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/internal/platform/tracing"
+	"github.com/inhere/suag/pkg/agentcore"
 )
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

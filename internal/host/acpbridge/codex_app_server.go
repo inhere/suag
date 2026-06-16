@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/suag/internal/host/session"
 )
 
 type CodexAppServerBridgeConfig struct {
@@ -218,7 +218,7 @@ func (b *CodexAppServerBridge) sendInitialize(ctx context.Context, sess ACPStdio
 		Method:  "initialize",
 		Params: map[string]any{
 			"clientInfo": map[string]string{
-				"name":    "axon",
+				"name":    "suag",
 				"version": "v0",
 			},
 			"capabilities": map[string]any{},

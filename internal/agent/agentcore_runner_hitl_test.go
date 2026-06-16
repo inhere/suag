@@ -3,7 +3,7 @@ package agent
 import (
 	"testing"
 
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore"
 )
 
 func TestHITLFailureTracker_BuildsPendingInterventionAfterThreshold(t *testing.T) {

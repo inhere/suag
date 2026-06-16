@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/inhere/axon/internal/orchestrator"
-	"github.com/inhere/axon/internal/platform/llm"
-	"github.com/inhere/axon/internal/platform/tools"
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/suag/internal/orchestrator"
+	"github.com/inhere/suag/internal/platform/llm"
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/pkg/agentcore"
 )
 
 // Scheduler runs agentic cron jobs on their configured schedules.

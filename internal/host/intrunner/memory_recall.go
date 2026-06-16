@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/inhere/axon/internal/platform/memory"
+	"github.com/inhere/suag/internal/platform/memory"
 )
 
 const (

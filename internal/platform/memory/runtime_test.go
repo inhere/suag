@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/inhere/axon/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
 func TestRuntimeMemory_ImplementsAgentcoreMemory(t *testing.T) {

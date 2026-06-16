@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/inhere/axon/internal/agent"
-	"github.com/inhere/axon/internal/platform/llm"
-	"github.com/inhere/axon/internal/platform/tracing"
+	"github.com/inhere/suag/internal/agent"
+	"github.com/inhere/suag/internal/platform/llm"
+	"github.com/inhere/suag/internal/platform/tracing"
 )
 
 func TestReactRunner_Resume_UsesConfiguredResumePolicyBehavior(t *testing.T) {

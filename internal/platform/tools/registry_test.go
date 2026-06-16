@@ -7,8 +7,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/inhere/axon/pkg/agentcore/api"
-	agentcoretesting "github.com/inhere/axon/pkg/agentcore/testing"
+	"github.com/inhere/suag/pkg/agentcore/api"
+	agentcoretesting "github.com/inhere/suag/pkg/agentcore/testing"
 )
 
 // mockTool is a simple test double.

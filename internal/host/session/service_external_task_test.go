@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inhere/axon/internal/host/acpbridge"
-	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/suag/internal/host/acpbridge"
+	"github.com/inhere/suag/internal/host/session"
 )
 
 func TestService_StartTurnWithACPBridgeStubPersistsExternalTask(t *testing.T) {
@@ -311,7 +311,7 @@ func (b *serviceMetadataBridge) Dispatch(_ context.Context, _ acpbridge.Dispatch
 					"itemId":        "item_cmd_001",
 					"type":          "commandExecution",
 					"command":       "go test ./...",
-					"outputPreview": "ok github.com/inhere/axon/internal/host/acpbridge",
+					"outputPreview": "ok github.com/inhere/suag/internal/host/acpbridge",
 				},
 			},
 		},

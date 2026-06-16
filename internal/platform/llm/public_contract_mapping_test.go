@@ -3,7 +3,7 @@ package llm
 import (
 	"testing"
 
-	agentcoreapi "github.com/inhere/axon/pkg/agentcore/api"
+	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 )
 
 func TestToGenerateResult_MapsToolCallsAndUsage(t *testing.T) {

@@ -11,11 +11,11 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/testutil/assert"
 
-	"github.com/inhere/axon/internal/capability/runtimecaps"
-	axconfig "github.com/inhere/axon/internal/config"
-	"github.com/inhere/axon/internal/platform/tools"
-	toolsmcp "github.com/inhere/axon/internal/platform/tools/mcp"
-	agentcoreapi "github.com/inhere/axon/pkg/agentcore/api"
+	"github.com/inhere/suag/internal/capability/runtimecaps"
+	axconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/platform/tools"
+	toolsmcp "github.com/inhere/suag/internal/platform/tools/mcp"
+	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 )
 
 func TestBuildDefaultCapabilities_RegistersNativeToolsAndCapabilitySet(t *testing.T) {

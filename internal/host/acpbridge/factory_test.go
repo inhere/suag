@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/suag/internal/host/session"
 )
 
 func TestNewRunner_ReturnsNilWhenModeEmpty(t *testing.T) {

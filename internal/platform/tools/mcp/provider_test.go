@@ -6,9 +6,9 @@ import (
 
 	"github.com/gookit/goutil/testutil/assert"
 
-	axconfig "github.com/inhere/axon/internal/config"
-	"github.com/inhere/axon/internal/platform/tools"
-	"github.com/inhere/axon/pkg/agentcore/api"
+	axconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
 func TestProvider_RegisterToolsAndListToolRefs(t *testing.T) {

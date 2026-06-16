@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	datatestutil "github.com/inhere/axon/internal/data/testutil"
+	datatestutil "github.com/inhere/suag/internal/data/testutil"
 )
 
 func TestSQLiteRepository_RequiresMigratedSchema(t *testing.T) {

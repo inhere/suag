@@ -11,7 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-// Server is the HTTP gateway for axon.
+// Server is the HTTP gateway for suag.
 type Server struct {
 	handler *Handler
 	bus     *EventBus
@@ -67,7 +67,7 @@ func (s *Server) Start(ctx context.Context) error {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	slog.Info("axon server starting", "addr", s.addr)
+	slog.Info("suag server starting", "addr", s.addr)
 
 	errCh := make(chan error, 1)
 	go func() {

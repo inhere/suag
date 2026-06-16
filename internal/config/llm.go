@@ -7,7 +7,7 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	"github.com/inhere/axon/internal/platform/llm"
+	"github.com/inhere/suag/internal/platform/llm"
 )
 
 // LLMProviderSettings is the normalized provider configuration used by app

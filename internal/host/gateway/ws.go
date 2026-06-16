@@ -10,8 +10,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
-	"github.com/inhere/axon/internal/host/agui"
-	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/suag/internal/host/agui"
+	"github.com/inhere/suag/internal/host/session"
 )
 
 var wsAcceptOptions = &websocket.AcceptOptions{

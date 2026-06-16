@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	agentcoreapi "github.com/inhere/axon/pkg/agentcore/api"
+	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 )
 
 // MockResponse is a single canned response returned by MockProvider.

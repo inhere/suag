@@ -3,7 +3,7 @@ package session
 import (
 	"database/sql"
 
-	"github.com/inhere/axon/internal/data"
+	"github.com/inhere/suag/internal/data"
 )
 
 type SQLiteRepository struct {

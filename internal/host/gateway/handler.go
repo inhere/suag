@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/host/agui"
-	"github.com/inhere/axon/internal/host/session"
-	"github.com/inhere/axon/internal/ops/hitl"
-	"github.com/inhere/axon/internal/orchestrator"
+	"github.com/inhere/suag/internal/host/agui"
+	"github.com/inhere/suag/internal/host/session"
+	"github.com/inhere/suag/internal/ops/hitl"
+	"github.com/inhere/suag/internal/orchestrator"
 )
 
-// Handler exposes the REST API for the axon server.
+// Handler exposes the REST API for the suag server.
 type Handler struct {
 	orch        *orchestrator.Orchestrator
 	sessionRepo session.Repository

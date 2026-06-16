@@ -7,17 +7,17 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	"github.com/inhere/axon/internal/capability/runtimecaps"
-	capskills "github.com/inhere/axon/internal/capability/skills"
-	appconfig "github.com/inhere/axon/internal/config"
-	"github.com/inhere/axon/internal/host/acpbridge"
-	"github.com/inhere/axon/internal/host/gateway"
-	"github.com/inhere/axon/internal/host/intrunner"
-	"github.com/inhere/axon/internal/host/session"
-	"github.com/inhere/axon/internal/platform/tools"
+	"github.com/inhere/suag/internal/capability/runtimecaps"
+	capskills "github.com/inhere/suag/internal/capability/skills"
+	appconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/host/acpbridge"
+	"github.com/inhere/suag/internal/host/gateway"
+	"github.com/inhere/suag/internal/host/intrunner"
+	"github.com/inhere/suag/internal/host/session"
+	"github.com/inhere/suag/internal/platform/tools"
 )
 
-// RunServer starts the axon server, which listens for incoming API requests and manages agent sessions.
+// RunServer starts the suag server, which listens for incoming API requests and manages agent sessions.
 func (a *App) RunServer(ctx context.Context) error {
 	sessionDBPath := appconfig.ResolveSessionDBPath()
 	if err := prepareHostSessionDatabase(ctx, sessionDBPath); err != nil {

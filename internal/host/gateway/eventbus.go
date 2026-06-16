@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/suag/internal/host/session"
 )
 
 // Event is a generic event published to the bus.

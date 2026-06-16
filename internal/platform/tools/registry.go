@@ -7,7 +7,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/inhere/axon/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
 // Kind classifies the runtime type of a tool.

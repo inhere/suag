@@ -6,11 +6,11 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	"github.com/inhere/axon/internal/capability/runtimecaps"
-	axconfig "github.com/inhere/axon/internal/config"
-	"github.com/inhere/axon/internal/platform/tools"
-	toolsmcp "github.com/inhere/axon/internal/platform/tools/mcp"
-	"github.com/inhere/axon/internal/platform/tools/native"
+	"github.com/inhere/suag/internal/capability/runtimecaps"
+	axconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/platform/tools"
+	toolsmcp "github.com/inhere/suag/internal/platform/tools/mcp"
+	"github.com/inhere/suag/internal/platform/tools/native"
 )
 
 const nativeToolProviderID = "native"

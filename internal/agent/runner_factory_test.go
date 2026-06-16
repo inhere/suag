@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/inhere/axon/internal/agent"
-	"github.com/inhere/axon/internal/platform/llm"
-	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
+	"github.com/inhere/suag/internal/agent"
+	"github.com/inhere/suag/internal/platform/llm"
+	"github.com/inhere/suag/pkg/agentcore/storage/sqlite"
 )
 
 func TestNewRunner_DefaultsToAgentcore(t *testing.T) {

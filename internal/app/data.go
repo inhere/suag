@@ -10,7 +10,7 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	"github.com/inhere/axon/internal/data"
+	"github.com/inhere/suag/internal/data"
 )
 
 const defaultHostMigrationDir = "db/migrations"

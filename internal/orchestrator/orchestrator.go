@@ -8,14 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/inhere/axon/internal/agent"
-	"github.com/inhere/axon/internal/ops/hitl"
-	"github.com/inhere/axon/internal/platform/llm"
-	"github.com/inhere/axon/internal/platform/memory"
-	"github.com/inhere/axon/internal/platform/tools"
-	"github.com/inhere/axon/internal/platform/tracing"
-	"github.com/inhere/axon/internal/team"
-	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
+	"github.com/inhere/suag/internal/agent"
+	"github.com/inhere/suag/internal/ops/hitl"
+	"github.com/inhere/suag/internal/platform/llm"
+	"github.com/inhere/suag/internal/platform/memory"
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/internal/platform/tracing"
+	"github.com/inhere/suag/internal/team"
+	"github.com/inhere/suag/pkg/agentcore/storage/sqlite"
 )
 
 // Config holds all dependencies for the Orchestrator.

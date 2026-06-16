@@ -23,7 +23,7 @@ const (
 
 const (
 	StateSnapshotVersionV0 = "v0"
-	StateSnapshotSchemaV0  = "axon.host.state.v0"
+	StateSnapshotSchemaV0  = "suag.host.state.v0"
 )
 
 type Event interface {

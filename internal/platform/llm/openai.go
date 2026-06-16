@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	agentcoreapi "github.com/inhere/axon/pkg/agentcore/api"
+	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 )
 
 const defaultOpenAIBase = "https://api.openai.com/v1"

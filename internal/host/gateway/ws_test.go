@@ -18,16 +18,16 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
-	datatestutil "github.com/inhere/axon/internal/data/testutil"
-	"github.com/inhere/axon/internal/host/acpbridge"
-	"github.com/inhere/axon/internal/host/agui"
-	"github.com/inhere/axon/internal/host/intrunner"
-	"github.com/inhere/axon/internal/host/session"
-	"github.com/inhere/axon/internal/ops/hitl"
-	"github.com/inhere/axon/internal/platform/llm"
-	"github.com/inhere/axon/internal/platform/tools"
-	"github.com/inhere/axon/internal/platform/tracing"
-	"github.com/inhere/axon/pkg/agentcore"
+	datatestutil "github.com/inhere/suag/internal/data/testutil"
+	"github.com/inhere/suag/internal/host/acpbridge"
+	"github.com/inhere/suag/internal/host/agui"
+	"github.com/inhere/suag/internal/host/intrunner"
+	"github.com/inhere/suag/internal/host/session"
+	"github.com/inhere/suag/internal/ops/hitl"
+	"github.com/inhere/suag/internal/platform/llm"
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/internal/platform/tracing"
+	"github.com/inhere/suag/pkg/agentcore"
 )
 
 func TestServer_CreateSessionAndStreamEventsOverWebSocket(t *testing.T) {
@@ -87,8 +87,8 @@ func TestServer_CreateSessionAndStreamEventsOverWebSocket(t *testing.T) {
 	}
 
 	event := readUntilEventType(t, ctx, conn, "CUSTOM")
-	if event["name"] != "axon.run.queued" {
-		t.Fatalf("event name = %v, want axon.run.queued", event["name"])
+	if event["name"] != "suag.run.queued" {
+		t.Fatalf("event name = %v, want suag.run.queued", event["name"])
 	}
 
 	value, ok := event["value"].(map[string]any)
@@ -1819,7 +1819,7 @@ func TestServer_StartTurnStreamsExternalRuntimeEvents(t *testing.T) {
 		if err := wsjson.Read(ctx, conn, &message); err != nil {
 			t.Fatalf("wsjson.Read() event error = %v", err)
 		}
-		if message["type"] == "CUSTOM" && message["name"] == "axon.run.external.activity" {
+		if message["type"] == "CUSTOM" && message["name"] == "suag.run.external.activity" {
 			value, _ := message["value"].(map[string]any)
 			if value != nil && value["externalTaskId"] != "" {
 				foundExternalActivity = true

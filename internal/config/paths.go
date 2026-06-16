@@ -14,7 +14,7 @@ func ResolveSessionDBPath() string {
 		raw = strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	}
 	if raw == "" {
-		return filepath.Join("db", "axon.db")
+		return filepath.Join("db", "suag.db")
 	}
 	if strings.HasPrefix(raw, "sqlite://") {
 		raw = strings.TrimPrefix(raw, "sqlite://")
@@ -24,13 +24,13 @@ func ResolveSessionDBPath() string {
 	}
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return filepath.Join("db", "axon.db")
+		return filepath.Join("db", "suag.db")
 	}
 	return filepath.Clean(filepath.FromSlash(raw))
 }
 
 func ResolveWorkspacePath() string {
-	workspace := gkconfig.String("workspace", "~/.axon/workspace")
+	workspace := gkconfig.String("workspace", "~/.suag/workspace")
 	if workspace == "" {
 		workspace, _ = os.Getwd()
 	}

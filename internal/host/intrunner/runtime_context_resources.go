@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/platform/memory"
+	"github.com/inhere/suag/internal/platform/memory"
 )
 
 const runtimeContextResolvedResourceHintsKey = "resolved_resource_hints"

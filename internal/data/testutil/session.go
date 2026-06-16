@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/inhere/axon/internal/data"
+	"github.com/inhere/suag/internal/data"
 )
 
 // NewMigratedSQLitePath creates a temporary SQLite database and applies the

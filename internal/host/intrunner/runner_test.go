@@ -9,13 +9,13 @@ import (
 
 	"github.com/gookit/goutil/testutil/assert"
 
-	"github.com/inhere/axon/internal/agent"
-	"github.com/inhere/axon/internal/host/session"
-	"github.com/inhere/axon/internal/platform/llm"
-	"github.com/inhere/axon/internal/platform/tools"
-	"github.com/inhere/axon/internal/platform/tracing"
-	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/api"
+	"github.com/inhere/suag/internal/agent"
+	"github.com/inhere/suag/internal/host/session"
+	"github.com/inhere/suag/internal/platform/llm"
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/internal/platform/tracing"
+	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
 func TestRunner_RunReusesSessionMemoryAcrossTurns(t *testing.T) {

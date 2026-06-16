@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/inhere/axon/internal/host/session"
-	"github.com/inhere/axon/pkg/agentcore"
+	"github.com/inhere/suag/internal/host/session"
+	"github.com/inhere/suag/pkg/agentcore"
 )
 
 type hostProgressEmitter struct {

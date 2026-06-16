@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/inhere/axon/internal/platform/llm"
-	platformmemory "github.com/inhere/axon/internal/platform/memory"
-	platformtools "github.com/inhere/axon/internal/platform/tools"
-	"github.com/inhere/axon/pkg/agentcore"
-	contextpkg "github.com/inhere/axon/pkg/agentcore/context"
-	"github.com/inhere/axon/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/internal/platform/llm"
+	platformmemory "github.com/inhere/suag/internal/platform/memory"
+	platformtools "github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/pkg/agentcore"
+	contextpkg "github.com/inhere/suag/pkg/agentcore/context"
+	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 type yieldBeforeSecondModelRuntimeHook struct {

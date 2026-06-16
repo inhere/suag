@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/inhere/axon/internal/host/session"
+	"github.com/inhere/suag/internal/host/session"
 )
 
 func TestRunnerAdapter_RunDispatchesTaskToBridge(t *testing.T) {

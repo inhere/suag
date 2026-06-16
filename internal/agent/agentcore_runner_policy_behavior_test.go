@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/inhere/axon/internal/agent"
-	"github.com/inhere/axon/internal/platform/llm"
-	"github.com/inhere/axon/pkg/agentcore"
-	"github.com/inhere/axon/pkg/agentcore/storage/sqlite"
+	"github.com/inhere/suag/internal/agent"
+	"github.com/inhere/suag/internal/platform/llm"
+	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/storage/sqlite"
 )
 
 type suppressResumeInstructionPolicy struct{}

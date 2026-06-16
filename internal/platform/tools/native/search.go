@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/axon/internal/platform/tools"
-	"github.com/inhere/axon/pkg/agentcore/api"
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
 // WebSearchTool performs web searches via SerpAPI.

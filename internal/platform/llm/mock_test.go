@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	agentcoreapi "github.com/inhere/axon/pkg/agentcore/api"
+	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 )
 
 // ── scripted mode ─────────────────────────────────────────────────────────────
