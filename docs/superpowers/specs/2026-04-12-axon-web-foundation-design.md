@@ -1,16 +1,16 @@
-# Axon Web Foundation Design
+# Suag Web Foundation Design
 
 > 状态：Draft for review
 > 日期：2026-04-12
-> 范围：Axon `v0` Web 客户端第一阶段基础工作台
+> 范围：Suag `v0` Web 客户端第一阶段基础工作台
 > 相关文档：`docs/v0-self-host-design.md`、`docs/usage/host-state-snapshot-v0.md`
-> 实现计划：`docs/superpowers/plans/2026-04-12-axon-web-foundation-implementation-plan.md`
+> 实现计划：`docs/superpowers/plans/2026-04-12-suag-web-foundation-implementation-plan.md`
 
 ---
 
 ## 1. 目标
 
-这份文档定义 Axon Web 客户端第一阶段的基础工作台设计。
+这份文档定义 Suag Web 客户端第一阶段的基础工作台设计。
 
 这一阶段的目标不是把完整产品交互一次做完，而是先打通后端主链，并把当前已经落地的 Host 能力稳定呈现出来。
 
@@ -31,7 +31,7 @@
 
 ### 2.1 聊天是主入口
 
-Axon 第一阶段的用户心智应是：
+Suag 第一阶段的用户心智应是：
 
 **通过聊天把事情办了。**
 
@@ -43,7 +43,7 @@ Axon 第一阶段的用户心智应是：
 
 ### 2.2 追踪与干预是伴随能力
 
-虽然聊天是主入口，但 Axon 第一阶段又必须把过程看清楚。
+虽然聊天是主入口，但 Suag 第一阶段又必须把过程看清楚。
 
 因此：
 

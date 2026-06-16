@@ -9,7 +9,7 @@
 
 ## 1. 职责边界
 
-Orchestrator 是 axon 的核心调度中枢，负责：
+Orchestrator 是 suag 的核心调度中枢，负责：
 
 - **任务路由**：分析用户请求，决定由单 Agent 还是多 Agent 团队处理
 - **权限与生命周期层**：基于规则引擎管控工具访问白名单、Agent 生命周期
@@ -88,7 +88,7 @@ type Task struct {
 
 ### 3.1 设计意图
 
-EventBus 是 axon 内部所有模块解耦通信的中枢：
+EventBus 是 suag 内部所有模块解耦通信的中枢：
 
 - Agent 状态变更 → 广播事件 → SSE Server 推送前端
 - 工具调用完成 → 广播事件 → Tracing System 记录 Span

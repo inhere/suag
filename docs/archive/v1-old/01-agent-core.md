@@ -5,13 +5,13 @@
 
 > 所属层级：编排层 | 相关文档：[架构总纲](./00-overview.md) | [Orchestrator](./02-orchestrator.md)
 
-> 注：本文档描述的是 Axon 长期演进中的 Agent Core 蓝图。当前已经落地、可独立嵌入使用的最小实现，请优先参考 [`pkg/agentcore/README.md`](../../../pkg/agentcore/README.md)、[`pkg/agentcore/docs/README.md`](../../../pkg/agentcore/docs/README.md) 与对应包文档。
+> 注：本文档描述的是 Suag 长期演进中的 Agent Core 蓝图。当前已经落地、可独立嵌入使用的最小实现，请优先参考 [`pkg/agentcore/README.md`](../../../pkg/agentcore/README.md)、[`pkg/agentcore/docs/README.md`](../../../pkg/agentcore/docs/README.md) 与对应包文档。
 
 ---
 
 ## 1. 12步递进式实现机制
 
-Agent Core 的构建遵循从简单到复杂的叠加策略：每个步骤在上一步基础上叠加一个机制，不推翻已有结构。这 12 步也是 axon 单 Agent 能力演进的路线图。
+Agent Core 的构建遵循从简单到复杂的叠加策略：每个步骤在上一步基础上叠加一个机制，不推翻已有结构。这 12 步也是 suag 单 Agent 能力演进的路线图。
 
 | 步骤 | 格言 | 叠加机制 | 说明 |
 |------|------|----------|------|

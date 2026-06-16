@@ -239,7 +239,7 @@
   - 继续装配 native tools
   - 按配置装配 MCP providers
   - 把 native + mcp 一起写入默认 capability manager
-- `App.Close()` 已开始统一回收 capability runtime 资源，`cmd/axon/main.go` 也已接入退出时关闭
+- `App.Close()` 已开始统一回收 capability runtime 资源，`cmd/suag/main.go` 也已接入退出时关闭
 
 这意味着当前 capability governance 主链已经从：
 

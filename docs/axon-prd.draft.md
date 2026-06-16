@@ -5,7 +5,7 @@
 当前项目是一个基于 AI agent 的智能体系统，用于处理复杂的任务和决策，支持团队协作和任务分配，能够自动处理任务，跟踪任务进度，审核任务结果，与外部系统集成。
 
 ```txt
-axon 大脑，入口
+suag 大脑，入口
 记忆能力
 创建职责团队 专家
 根据职责配备相应的 规范，工具，技能
@@ -146,7 +146,7 @@ refer:
 ### 2026.03.25 补充
 
 - agent core, orchestrator, agents, team(leader, worker), tools, skills, api
-- 支持多节点部署，每个节点运行一个 axon，一个为主节点，其他节点为从节点。通过协议进行通信协作指挥。
+- 支持多节点部署，每个节点运行一个 suag，一个为主节点，其他节点为从节点。通过协议进行通信协作指挥。
   - 主节点负责协调和管理所有智能体，可以调度指定从节点负责执行具体任务。
   - 一个子节点可能是一个专业的 agent team，负责执行特定类型的任务。
 - A2A 用作多个agent时，允许agent是远程运行的，这时 编排或者agent 直接可以通过A2A交互通信
@@ -271,4 +271,3 @@ Rust:
 - <https://mp.weixin.qq.com/s/DObso9ym9gsTXCikX3sm7A> Tool Router：Harness 如何通过三层架构驯服 AI Agent 的工具爆炸
 - <https://mp.weixin.qq.com/s/adQSYnS_vMjXr0DKILWIMA> Harness Engineering：生产级 AI Agent Runtime 的架构与设计原则
 - [https://geekbang.feishu.cn/wiki/TSUqwoAn5iL6WxkkxHcci3pzn7c](openclaw 知识库)
-

@@ -3,7 +3,7 @@
 > 状态：Current
 > 更新时间：2026-04-20
 
-本文档只描述 Axon v0 当前最小可用的本地联调流程。
+本文档只描述 Suag v0 当前最小可用的本地联调流程。
 
 目标是先把 `Host + Web` 真机链路跑通，方便后续继续补 `Stop`、HITL、多 agent 等交互，而不是一次性引入很重的开发脚本体系。
 
@@ -46,7 +46,7 @@
 
 当前默认约定：
 
-- SQLite 文件：`db/axon.db`
+- SQLite 文件：`db/suag.db`
 - migration 目录：`db/migrations`
 - Host internal runner runtime 数据默认目录：`db/agentcore/host/<sessionId>/runs.db`
 - 可选 MCP 配置：`config/config.yaml` 中的 `mcp.servers`
@@ -66,7 +66,7 @@
 ```yaml
 database:
   driver: sqlite
-  dsn: db/axon.db
+  dsn: db/suag.db
 
 migrations:
   path: ./db/migrations
@@ -93,12 +93,12 @@ miglite up -y
 在项目根目录执行：
 
 ```bash
-go run ./cmd/axon server
+go run ./cmd/suag server
 ```
 
 默认会使用：
 
-- `db/axon.db` 作为 session repository
+- `db/suag.db` 作为 session repository
 - `:8180` 作为 gateway 地址
 
 健康检查可用：
@@ -255,4 +255,4 @@ curl http://127.0.0.1:8180/api/sessions/<sessionId>/memory-candidates
   - `POST /api/memory-candidates/{id}/accept`
   - `POST /api/memory-candidates/{id}/reject`
 - `vite` 代理仅用于本地开发，不影响生产构建输出
-- 本地 `db/axon.db`、`db/axon.db-shm`、`db/axon.db-wal` 都属于开发产物，不应作为功能变更提交
+- 本地 `db/suag.db`、`db/suag.db-shm`、`db/suag.db-wal` 都属于开发产物，不应作为功能变更提交

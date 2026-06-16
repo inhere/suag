@@ -28,7 +28,7 @@
   - 覆盖默认 builder 在配置 MCP server 后能合并 provider/tool refs
 - Modify: `internal/app/app.go`
   - 让 `App` 持有 capability runtime 资源关闭入口
-- Modify: `cmd/axon/main.go`
+- Modify: `cmd/suag/main.go`
   - 退出时关闭 app 持有的 MCP 子进程等资源
 - Modify: `config/config.yaml`
   - 增加最小 MCP 配置示例
@@ -231,7 +231,7 @@ git commit -m "feat: add mcp tool provider"
 - Modify: `internal/app/capabilities.go`
 - Modify: `internal/app/capabilities_test.go`
 - Modify: `internal/app/app.go`
-- Modify: `cmd/axon/main.go`
+- Modify: `cmd/suag/main.go`
 
 - [x] **Step 1: 先写 app builder 合并 MCP provider 的失败测试**
 
@@ -288,7 +288,7 @@ Expected:
 - `buildDefaultCapabilities` 继续返回默认 registry + manager
 - 同时开始持有 capability runtime closers，至少覆盖 MCP providers
 - `App` 增加 `Close() error`
-- `cmd/axon/main.go` 在 app 创建成功后 `defer runtimeApp.Close()`
+- `cmd/suag/main.go` 在 app 创建成功后 `defer runtimeApp.Close()`
 - builder 对 MCP server 启动错误先采用：
   - fail fast
   - 避免“配置了 MCP 但实际能力静默缺失”
@@ -304,7 +304,7 @@ Expected:
 - [x] **Step 5: Commit**
 
 ```bash
-git add internal/app/capabilities.go internal/app/capabilities_test.go internal/app/app.go cmd/axon/main.go
+git add internal/app/capabilities.go internal/app/capabilities_test.go internal/app/app.go cmd/suag/main.go
 git commit -m "feat: wire mcp providers into app capabilities"
 ```
 

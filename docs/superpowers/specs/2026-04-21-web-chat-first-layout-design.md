@@ -1,16 +1,16 @@
-# Axon Web Chat-First Layout Design
+# Suag Web Chat-First Layout Design
 
 > 状态：Draft for review
 > 日期：2026-04-21
-> 范围：Axon `v0` Web 客户端默认 `Chat` 视图的信息架构与布局收敛
-> 相关文档：`docs/v0-self-host-design.md`、`docs/superpowers/specs/2026-04-12-axon-web-foundation-design.md`、`docs/usage/web-host-local-dev.md`
+> 范围：Suag `v0` Web 客户端默认 `Chat` 视图的信息架构与布局收敛
+> 相关文档：`docs/v0-self-host-design.md`、`docs/superpowers/specs/2026-04-12-suag-web-foundation-design.md`、`docs/usage/web-host-local-dev.md`
 > 实现计划：待本文确认后编写
 
 ---
 
 ## 1. 目标
 
-这份文档定义 Axon Web 当前默认界面的收敛方向：从“偏工作台的三栏观察视图”回到“聊天主窗口优先”的默认体验。
+这份文档定义 Suag Web 当前默认界面的收敛方向：从“偏工作台的三栏观察视图”回到“聊天主窗口优先”的默认体验。
 
 这次调整的目标不是重做完整产品，而是先解决一个更基础的问题：
 
@@ -47,7 +47,7 @@
 
 ### 3.1 默认进入 `Chat` 模式
 
-Axon Web 默认视图采用 `Chat` 模式。
+Suag Web 默认视图采用 `Chat` 模式。
 
 它的核心目标是：
 

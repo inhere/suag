@@ -6,7 +6,7 @@
 
 **Architecture:** Keep `pkg/agentcore` as the kernel contract owner, add only the minimal contract additions needed for first-party provider support, and refactor `internal/platform/llm` so OpenAI-compatible and Anthropic providers implement the public agentcore provider interfaces directly. Phase 1 is not a big-bang rewrite: preserve a narrow compatibility surface for existing `ReactRunner`, `cron`, and pool call sites while moving `agentcore` paths to the public contract first, then schedule the remaining legacy call-site cleanup in a later phase.
 
-**Tech Stack:** Go 1.24, existing `pkg/agentcore/api`, `internal/platform/llm`, `cmd/axon`, `gookit/config`, `go test`
+**Tech Stack:** Go 1.24, existing `pkg/agentcore/api`, `internal/platform/llm`, `cmd/suag`, `gookit/config`, `go test`
 
 ---
 
@@ -57,7 +57,7 @@
 
 ### Config evolution
 
-- Modify: `cmd/axon/main.go`
+- Modify: `cmd/suag/main.go`
   Responsibility: replace `llm.provider`-first assembly with `llm.api_type + llm.provider_name`, keep backward-compatible fallback during migration, and centralize defaulting logic
 - Modify: `README.md`
   Responsibility: correct the outdated adapter path references and mention the new LLM config shape only if the root README is already the right place for this runtime wiring note
@@ -315,11 +315,11 @@ git commit -m "refactor: remove internalllm from agentcore runner path"
 ### Task 4: Evolve Top-Level LLM Config to `api_type`
 
 **Files:**
-- Modify: `cmd/axon/main.go`
+- Modify: `cmd/suag/main.go`
 - Modify: `README.md`
 - Modify or Create: `docs/usage/llm-config-v0.md`
 - Modify: `docs/superpowers/specs/2026-04-14-agentcore-platform-contract-alignment-design.md`
-- Test: `cmd/axon/main_test.go` or a new focused config assembly test file if none exists yet
+- Test: `cmd/suag/main_test.go` or a new focused config assembly test file if none exists yet
 
 - [ ] **Step 1: Write the failing config assembly tests**
 
@@ -349,7 +349,7 @@ func TestBuildLLMProvider_AnthropicAPITypeBuildsClaudeProvider(t *testing.T) {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `go test ./cmd/axon -run "TestBuildLLMProvider_OpenAIAPITypeWithDeepSeekProviderName|TestBuildLLMProvider_AnthropicAPITypeBuildsClaudeProvider" -v`
+Run: `go test ./cmd/suag -run "TestBuildLLMProvider_OpenAIAPITypeWithDeepSeekProviderName|TestBuildLLMProvider_AnthropicAPITypeBuildsClaudeProvider" -v`
 Expected: FAIL because config still keys off `llm.provider`
 
 - [ ] **Step 3: Refactor `buildLLMProvider()` to prefer `llm.api_type` and `llm.provider_name`**
@@ -371,18 +371,18 @@ Document the new config shape in:
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `go test ./cmd/axon -v`
+Run: `go test ./cmd/suag -v`
 Expected: PASS
 
 - [ ] **Step 6: Run broader verification**
 
-Run: `go test ./pkg/agentcore/api ./internal/platform/llm ./internal/agent ./internal/ops/cron ./internal/team ./cmd/axon -v`
+Run: `go test ./pkg/agentcore/api ./internal/platform/llm ./internal/agent ./internal/ops/cron ./internal/team ./cmd/suag -v`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add cmd/axon/main.go cmd/axon/main_test.go README.md docs/usage/llm-config-v0.md docs/superpowers/specs/2026-04-14-agentcore-platform-contract-alignment-design.md
+git add cmd/suag/main.go cmd/suag/main_test.go README.md docs/usage/llm-config-v0.md docs/superpowers/specs/2026-04-14-agentcore-platform-contract-alignment-design.md
 git commit -m "feat: add api-type based llm provider configuration"
 ```
 

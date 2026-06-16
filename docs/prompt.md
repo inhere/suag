@@ -5,7 +5,7 @@
 > date: 2026.03.16 22:00
 
 ```txt
-查看 docs 下的 axon-design-v0.1-draft1.md 和 axon-design-v0.1-draft2.md
+查看 docs 下的 suag-design-v0.1-draft1.md 和 suag-design-v0.1-draft2.md
 附加今天新看到的一些要点：
 - agent loop 叠加策略、权限与生命周期层
 - 事件 / Hook 总线
@@ -68,7 +68,7 @@ see docs/superpowers/specs/2026-04-02-agentcore-design.md
 
 ## 2026.04.06 重新规划产品和实现计划
 
-现在我将 agent 核心抽离为了一个独立的 pkg/agentcore 包。而且有一些新的想法记录在了 axon-prd.draft.md
+现在我将 agent 核心抽离为了一个独立的 pkg/agentcore 包。而且有一些新的想法记录在了 suag-prd.draft.md
 
 重新思考并调整方案设计和开发准备
 

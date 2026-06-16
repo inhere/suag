@@ -2,7 +2,7 @@
 
 > 状态：Current
 > 更新时间：2026-04-20
-> Schema：`axon.host.state.v0`
+> Schema：`suag.host.state.v0`
 > Version：`v0`
 
 本文档用于约定当前 `internal/host/agui` 输出的 `STATE_SNAPSHOT` 消费方式。
@@ -37,7 +37,7 @@
 - `snapshotVersion`
   - 当前固定为 `v0`
 - `snapshotSchema`
-  - 当前固定为 `axon.host.state.v0`
+  - 当前固定为 `suag.host.state.v0`
 - `generatedAt`
   - 当前快照生成时间，RFC3339Nano UTC 字符串
 - `threadId`
@@ -391,7 +391,7 @@
 
 如果客户端只做最小实现，建议：
 
-1. 根层先校验 `snapshotSchema == axon.host.state.v0`
+1. 根层先校验 `snapshotSchema == suag.host.state.v0`
 2. 用 `turns` 渲染轮次概览
 3. 用 `runs` 渲染 run 面板
 4. 用 `externalMessages` 恢复正文流

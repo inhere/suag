@@ -13,18 +13,18 @@
 
 这个包的定位是：
 
-- 任何 Axon Agent 启动运行时都必须依赖的核心执行内核
+- 任何 Suag Agent 启动运行时都必须依赖的核心执行内核
 - 可以嵌入 CLI、HTTP Handler、Cron Worker、上层编排器等任意宿主
 - 通过小接口和生命周期 Hooks 提供扩展能力
 - 在 v1 即可形成完整可运行的 Agent Core Loop，同时保持足够克制
 
-本文档不定义完整 Axon 平台，只定义可复用的 Agent Runtime Kernel。
+本文档不定义完整 Suag 平台，只定义可复用的 Agent Runtime Kernel。
 
 ---
 
 ## 2. 问题背景
 
-当前仓库已经存在 `internal/agent`、`internal/llm`、`internal/memory`、`internal/tools` 等工作中的模块。这些模块对于 Axon 应用本身是有价值的，但它们还不是一个稳定、可嵌入、可独立演进的公共 Core 包。
+当前仓库已经存在 `internal/agent`、`internal/llm`、`internal/memory`、`internal/tools` 等工作中的模块。这些模块对于 Suag 应用本身是有价值的，但它们还不是一个稳定、可嵌入、可独立演进的公共 Core 包。
 
 项目现在需要一个更小、更清晰的运行时抽象，用来满足以下目标：
 
@@ -45,7 +45,7 @@
 - 内置最小的文件存储实现
 - 仅依赖默认实现加一个 provider 就可以跑起来
 - 对外 API 保持小而稳定
-- 不和 Axon 应用级运行时职责强绑定
+- 不和 Suag 应用级运行时职责强绑定
 
 ### 3.1 成功标准
 
@@ -55,7 +55,7 @@
 - runtime 可以把 run state 持久化到文件，并在需要时由调用方重新加载
 - runtime 可以执行一轮或多轮 tool call，再输出最终结果
 - hooks 可以拦截关键生命周期节点、修改阶段输入、在受控范围内短路默认行为
-- 当前 Axon 的 `internal/*` 能力后续可以通过 adapter 接入，而不是反向污染 core 包边界
+- 当前 Suag 的 `internal/*` 能力后续可以通过 adapter 接入，而不是反向污染 core 包边界
 
 ---
 
@@ -135,7 +135,7 @@ pkg/agentcore/
 
 - `pkg/agentcore` 自己定义稳定接口
 - `internal/*` 不直接出现在 core 包 API 中
-- 当前 Axon 模块和 core 包之间的兼容，应通过 adapter 解决
+- 当前 Suag 模块和 core 包之间的兼容，应通过 adapter 解决
 
 ---
 
@@ -751,6 +751,6 @@ v1 必须包含最基础的执行保护：
 - 添加核心接口与 runtime
 - 实现 file storage 和默认 builders
 - 添加 mocks 与测试
-- 说明当前 Axon internals 如何通过 adapters 逐步接入
+- 说明当前 Suag internals 如何通过 adapters 逐步接入
 
 实现时建议从最小可运行 loop 开始，逐层补上 storage、hooks、tools 和测试，不要把 scope 扩张到 orchestration 或平台能力。

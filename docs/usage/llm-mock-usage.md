@@ -16,8 +16,8 @@
 ## 快速上手
 
 ```go
-import "github.com/inhere/axon/pkg/agentcore"
-import "github.com/inhere/axon/internal/platform/llm"
+import "github.com/inhere/suag/pkg/agentcore"
+import "github.com/inhere/suag/internal/platform/llm"
 
 m := llm.NewMockProvider("my-test")
 ```

@@ -58,7 +58,7 @@
 
 ### CLI
 
-- [ ] P1-050 实现 `cmd/axon` 命令行入口
+- [ ] P1-050 实现 `cmd/suag` 命令行入口
 - [ ] P1-051 实现基础 TUI 交互（输入任务，查看输出）
 
 ### 测试
@@ -230,7 +230,7 @@
 - [ ] P5-021 实现 `CronJob` 数据模型及 SQLite 持久化
 - [ ] P5-022 实现感知-决策-执行三阶段流程
 - [ ] P5-023 实现 Cron 执行日志与 SSE 推送
-- [ ] P5-024 实现 CLI 管理命令：`axon cron add/list/enable/disable/delete`
+- [ ] P5-024 实现 CLI 管理命令：`suag cron add/list/enable/disable/delete`
 - [ ] P5-025 实现 WebUI Cron 管理页（创建/编辑/启停），与 CLI 共用同一存储层
 
 ### LLM Provider Pool

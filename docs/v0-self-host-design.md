@@ -1,19 +1,19 @@
-# Axon v0 自用主线与阶段架构设计
+# Suag v0 自用主线与阶段架构设计
 
 > 状态：Draft for review
 > 日期：2026-04-10
-> 范围：Axon 整体主线、v0 分阶段演进、第一阶段自用闭环架构
-> 相关文档：`docs/axon-prd.draft.md`、`pkg/agentcore/README.md`、`pkg/agentcore/docs/architecture.md`、`docs/research/ag-ui-protocol-research.md`、`docs/research/a2a-protocol-research.md`、`docs/research/a2ui-protocol.md`
+> 范围：Suag 整体主线、v0 分阶段演进、第一阶段自用闭环架构
+> 相关文档：`docs/suag-prd.draft.md`、`pkg/agentcore/README.md`、`pkg/agentcore/docs/architecture.md`、`docs/research/ag-ui-protocol-research.md`、`docs/research/a2a-protocol-research.md`、`docs/research/a2ui-protocol.md`
 
 ---
 
 ## 1. 文档目的
 
-本文档用于把 Axon 当前的产品想法、协议判断和架构分层收拢成一份总纲。
+本文档用于把 Suag 当前的产品想法、协议判断和架构分层收拢成一份总纲。
 
 目标不是一次性写完所有细节，而是先回答 4 个问题：
 
-- Axon 长期要长成什么
+- Suag 长期要长成什么
 - 当前第一阶段到底先做什么
 - 核心边界如何划分，避免后续返工
 - 未来从 `v0` 演进到更成熟形态的主线是什么
@@ -26,7 +26,7 @@
 
 ### 2.1 产品定位
 
-Axon 的长期定位不是单纯聊天机器人，也不是一个只会套壳调用模型的工具，而是：
+Suag 的长期定位不是单纯聊天机器人，也不是一个只会套壳调用模型的工具，而是：
 
 **一个可长期运行的 Agent 操作系统。**
 
@@ -58,7 +58,7 @@ Axon 的长期定位不是单纯聊天机器人，也不是一个只会套壳调
 
 它需要跑通的闭环是：
 
-`Web 用户发起任务 -> 服务端建立会话 -> Axon 驱动 agentcore -> 通过 ACP 指挥 codex/claude-code 等外部 Agent -> 持续跟进执行 -> 通过 WS + AG-UI 实时回传 -> 会话可恢复、可继续`
+`Web 用户发起任务 -> 服务端建立会话 -> Suag 驱动 agentcore -> 通过 ACP 指挥 codex/claude-code 等外部 Agent -> 持续跟进执行 -> 通过 WS + AG-UI 实时回传 -> 会话可恢复、可继续`
 
 这条主线优先级高于完整多 Agent、完整 IM 生态、复杂治理面板等方向。
 
@@ -66,7 +66,7 @@ Axon 的长期定位不是单纯聊天机器人，也不是一个只会套壳调
 
 ## 3. 长期分层
 
-Axon 长期建议分成 4 层：
+Suag 长期建议分成 4 层：
 
 ### 3.1 Agent Core
 
@@ -141,7 +141,7 @@ Axon 长期建议分成 4 层：
 
 第一阶段只定义成一个明确产品切片：
 
-**让 Axon 作为一个可自用的编码协作 Agent 主机稳定运行。**
+**让 Suag 作为一个可自用的编码协作 Agent 主机稳定运行。**
 
 ### 4.1 第一阶段必须交付
 
@@ -156,7 +156,7 @@ Axon 长期建议分成 4 层：
 
 #### 2. ACP 外部 Agent 协作
 
-Axon 第一阶段不追求自己直接具备最强编码能力，而是先稳定接管：
+Suag 第一阶段不追求自己直接具备最强编码能力，而是先稳定接管：
 
 - codex
 - claude-code
@@ -213,7 +213,7 @@ Axon 第一阶段不追求自己直接具备最强编码能力，而是先稳定
 
 第一阶段成功标准不是“功能多”，而是：
 
-**Axon 能稳定接住一个真实开发任务，把它转成一段可跟踪、可恢复、可继续协作的外部 Agent 执行会话。**
+**Suag 能稳定接住一个真实开发任务，把它转成一段可跟踪、可恢复、可继续协作的外部 Agent 执行会话。**
 
 ---
 
@@ -265,7 +265,7 @@ Axon 第一阶段不追求自己直接具备最强编码能力，而是先稳定
 - 追加指令
 - 查询状态
 - 收集结果
-- 将外部状态映射为 Axon 内部事件
+- 将外部状态映射为 Suag 内部事件
 
 关键原则：
 
@@ -346,7 +346,7 @@ Axon 第一阶段不追求自己直接具备最强编码能力，而是先稳定
 #### 已确认的技术选型
 
 - Go 继续使用当前 `1.24`
-- CLI 后续准备迁移到 `gookit/gcli`，但当前阶段先不改 `cmd/axon`
+- CLI 后续准备迁移到 `gookit/gcli`，但当前阶段先不改 `cmd/suag`
 - WebSocket 实现使用 `github.com/coder/websocket`
 - ID 方案使用 `前缀 + ULID`
 - 数据库迁移使用 `gookit/miglite`
@@ -370,7 +370,7 @@ Axon 第一阶段不追求自己直接具备最强编码能力，而是先稳定
 
 ```text
 cmd/
-  axon/
+  suag/
 
 docs/
   README.md
@@ -494,8 +494,8 @@ web/
 - `Web Client <-> Gateway`：`WebSocket`
 - `Gateway -> Client` 下行事件语义：`AG-UI`
 - `AG-UI CUSTOM / ACTIVITY` 载荷：`A2UI`
-- `Axon -> External Agent App`：`ACP`
-- `Axon -> Remote Agent / Future Mesh`：后续阶段再引入 `A2A`
+- `Suag -> External Agent App`：`ACP`
+- `Suag -> Remote Agent / Future Mesh`：后续阶段再引入 `A2A`
 
 判断依据：
 
@@ -743,7 +743,7 @@ Session 是长期容器，不承载复杂执行细节。
 
 ## 9. 整体演进路线
 
-建议 Axon 按以下 5 个阶段推进：
+建议 Suag 按以下 5 个阶段推进：
 
 ### Phase 0：`v0.kernel`
 
@@ -848,7 +848,7 @@ Agent 可以建议沉淀、建议生成 skill、建议优化流程，但不应�
 
 ## 11. 何时值得定义 `v1`
 
-只有当以下条件大部分成立时，才考虑把 Axon 从 `v0` 提升到 `v1`：
+只有当以下条件大部分成立时，才考虑把 Suag 从 `v0` 提升到 `v1`：
 
 - `session / turn / run` 模型稳定
 - 单机会话闭环经过真实持续使用

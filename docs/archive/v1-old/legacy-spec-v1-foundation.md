@@ -1,17 +1,17 @@
-# Axon SPEC
+# Suag SPEC
 
 > 状态：Legacy reference
 > 版本：2026-03-26
 > 适用范围：旧 `v1 foundation` 技术规范
 > 说明：本文档基于旧的 `v1 foundation` 方案撰写。当前新的 `v0` 开发不再以本文档为直接实现依据，仅作为历史参考。当前入口请先看 `docs/README.md`。
 > 上游产品文档：[legacy-prd-v1-foundation.md](./legacy-prd-v1-foundation.md)
-> 参考资料：[`00-overview.md`](./00-overview.md)、[`01-agent-core.md`](./01-agent-core.md)、[`02-orchestrator.md`](./02-orchestrator.md)、[`03-team.md`](./03-team.md)、[`04-tools-skills.md`](./04-tools-skills.md)、[`05-memory-tracing.md`](./05-memory-tracing.md)、[`06-gateway-api.md`](./06-gateway-api.md)、[`docs/axon-v1-process.md`](../../axon-v1-process.md)
+> 参考资料：[`00-overview.md`](./00-overview.md)、[`01-agent-core.md`](./01-agent-core.md)、[`02-orchestrator.md`](./02-orchestrator.md)、[`03-team.md`](./03-team.md)、[`04-tools-skills.md`](./04-tools-skills.md)、[`05-memory-tracing.md`](./05-memory-tracing.md)、[`06-gateway-api.md`](./06-gateway-api.md)、[`docs/suag-v1-process.md`](../../suag-v1-process.md)
 
 ---
 
 ## 1. 文档目的
 
-本文档定义 Axon `v1 foundation` 的实现边界、系统架构、模块职责、数据与接口约束、非功能要求和交付优先级。
+本文档定义 Suag `v1 foundation` 的实现边界、系统架构、模块职责、数据与接口约束、非功能要求和交付优先级。
 
 本文档的重点不是描述终局产品，而是明确：
 
@@ -26,7 +26,7 @@
 
 ### 2.1 目标
 
-Axon `v1 foundation` 需要交付一个可实际使用的、自托管单实例 Agent 系统基座，满足以下条件：
+Suag `v1 foundation` 需要交付一个可实际使用的、自托管单实例 Agent 系统基座，满足以下条件：
 
 - Web-first，CLI 为辅
 - 面向个人或小团队共享使用
@@ -60,7 +60,7 @@ Axon `v1 foundation` 需要交付一个可实际使用的、自托管单实例 A
 
 根据当前代码与文档，仓库内已具备以下基础能力：
 
-- `cmd/axon`
+- `cmd/suag`
   - `chat` 模式
   - `server` 模式
 - `internal/agent`
@@ -134,9 +134,9 @@ Axon `v1 foundation` 需要交付一个可实际使用的、自托管单实例 A
 
 ### 4.2 系统边界
 
-- Axon 负责控制平面、编排、状态、审计、追踪和本地执行治理
-- 远程 Agent 不属于 Axon 内部运行时，但可通过 A2A 纳入协作网络
-- 本机外部 Agent 工具不属于 Axon 内核，但可通过 ACP / CLI bridge 被发现和调度
+- Suag 负责控制平面、编排、状态、审计、追踪和本地执行治理
+- 远程 Agent 不属于 Suag 内部运行时，但可通过 A2A 纳入协作网络
+- 本机外部 Agent 工具不属于 Suag 内核，但可通过 ACP / CLI bridge 被发现和调度
 - 钉钉是渠道连接器，而不是主控制平面
 
 ---
@@ -185,7 +185,7 @@ Agent 推理、工具执行、外部 Agent 委派属于执行平面。
 
 `v1 foundation` 默认部署形态：
 
-- 单个 Axon 实例
+- 单个 Suag 实例
 - 单个共享工作区
 - 单个 SQLite 主数据存储
 - 通过浏览器访问 Web 控制台
@@ -530,7 +530,7 @@ Web 是 `v1` 主入口和主控制台。
 
 #### A2A
 
-用于远程 Agent 与 Axon 的协作通信，适用于：
+用于远程 Agent 与 Suag 的协作通信，适用于：
 
 - 远端独立运行的 Agent 节点
 - 不在本机进程内的团队成员 Agent

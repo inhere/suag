@@ -1,17 +1,17 @@
-# Axon PRD
+# Suag PRD
 
 > 状态：Legacy reference
 > 版本：2026-03-26
 > 适用范围：旧 `v1 foundation` 产品愿景与阶段边界
 > 说明：本文档基于旧的 `v1 foundation` 方案撰写。当前新的 `v0` 开发不再以本文档为直接实现依据，仅作为历史参考。当前入口请先看 `docs/README.md`。
 > 配套技术文档：[legacy-spec-v1-foundation.md](./legacy-spec-v1-foundation.md)
-> 参考资料：[`00-overview.md`](./00-overview.md)、[`01-agent-core.md`](./01-agent-core.md)、[`02-orchestrator.md`](./02-orchestrator.md)、[`03-team.md`](./03-team.md)、[`04-tools-skills.md`](./04-tools-skills.md)、[`05-memory-tracing.md`](./05-memory-tracing.md)、[`06-gateway-api.md`](./06-gateway-api.md)、[`docs/axon-prd.draft.md`](../../axon-prd.draft.md)
+> 参考资料：[`00-overview.md`](./00-overview.md)、[`01-agent-core.md`](./01-agent-core.md)、[`02-orchestrator.md`](./02-orchestrator.md)、[`03-team.md`](./03-team.md)、[`04-tools-skills.md`](./04-tools-skills.md)、[`05-memory-tracing.md`](./05-memory-tracing.md)、[`06-gateway-api.md`](./06-gateway-api.md)、[`docs/suag-prd.draft.md`](../../suag-prd.draft.md)
 
 ---
 
 ## 1. 文档目的
 
-本文档定义 Axon 的产品目标、目标用户、核心场景、版本边界和成功标准。
+本文档定义 Suag 的产品目标、目标用户、核心场景、版本边界和成功标准。
 
 本文档不承担详细技术实现说明，所有实现级约束统一收敛到 [legacy-spec-v1-foundation.md](./legacy-spec-v1-foundation.md)。现有 `docs/archive/v1-old/*.md` 保留为专题分册和历史设计参考，不再作为主 PRD。
 
@@ -19,7 +19,7 @@
 
 ## 2. 产品定义
 
-Axon 是一个面向个人和小团队的 AI Agent 协作助手。它不是单次问答工具，也不是单一代码代理，而是一个以任务为中心的智能体操作系统：
+Suag 是一个面向个人和小团队的 AI Agent 协作助手。它不是单次问答工具，也不是单一代码代理，而是一个以任务为中心的智能体操作系统：
 
 - 能接收复杂目标，并拆解为可执行任务
 - 能组织多个 Agent 或外部 Agent 协作执行
@@ -30,7 +30,7 @@ Axon 是一个面向个人和小团队的 AI Agent 协作助手。它不是单�
 
 一句话定位：
 
-> Axon 是一个 Web-first 的本地/自托管 AI Agent 协作控制台，用于把复杂任务交给可追踪、可治理、可持续运行的智能体系统完成。
+> Suag 是一个 Web-first 的本地/自托管 AI Agent 协作控制台，用于把复杂任务交给可追踪、可治理、可持续运行的智能体系统完成。
 
 ---
 
@@ -38,11 +38,11 @@ Axon 是一个面向个人和小团队的 AI Agent 协作助手。它不是单�
 
 ### 3.1 核心目标
 
-Axon 需要成为个人或小团队的智能助手，基于 AI Agent 系统处理复杂任务和决策，支持团队协作、任务分配、自动执行、进度跟踪、结果审核和外部系统集成。
+Suag 需要成为个人或小团队的智能助手，基于 AI Agent 系统处理复杂任务和决策，支持团队协作、任务分配、自动执行、进度跟踪、结果审核和外部系统集成。
 
 ### 3.2 目标原则
 
-Axon 的产品设计遵循以下原则：
+Suag 的产品设计遵循以下原则：
 
 1. 架构核心简单稳定
    核心运行时、编排层、任务模型和观测链路必须先稳定，再在其上叠加更多能力。
@@ -108,7 +108,7 @@ Axon 的产品设计遵循以下原则：
 - 想通过 Web 或 IM 使用 Agent 时，消息路由、状态同步和恢复机制不完整
 - 反馈和执行结果沉淀不下来，系统无法持续优化
 
-Axon 需要解决的是：
+Suag 需要解决的是：
 
 > 如何把“会回答的 Agent”升级为“能长期执行、能协作、能治理、能持续优化”的任务系统。
 
@@ -118,7 +118,7 @@ Axon 需要解决的是：
 
 ### 6.1 产品定位
 
-Axon 是一个面向个人或小团队的 AI Agent 控制平面与执行系统。
+Suag 是一个面向个人或小团队的 AI Agent 控制平面与执行系统。
 
 它提供：
 
@@ -194,7 +194,7 @@ Web 是主控制平面，承担看板、追踪、审核、配置和干预。CLI 
 
 ### 8.2 任务优先，而不是聊天优先
 
-Axon 不是先做聊天再附带任务，而是从任务模型、状态机、执行链路和复盘出发设计。
+Suag 不是先做聊天再附带任务，而是从任务模型、状态机、执行链路和复盘出发设计。
 
 ### 8.3 协议优先，而不是工具绑定
 
@@ -206,7 +206,7 @@ Axon 不是先做聊天再附带任务，而是从任务模型、状态机、执
 
 ### 8.5 默认可控，而不是完全自治
 
-Axon 支持自治执行，但高风险操作、自我进化和外部协作必须能被限制、暂停、审核和回放。
+Suag 支持自治执行，但高风险操作、自我进化和外部协作必须能被限制、暂停、审核和回放。
 
 ---
 
@@ -214,7 +214,7 @@ Axon 支持自治执行，但高风险操作、自我进化和外部协作必须
 
 ### 9.1 终局愿景
 
-终局形态下，Axon 应是一个可持续运行的 Agent 操作系统：
+终局形态下，Suag 应是一个可持续运行的 Agent 操作系统：
 
 - 支持本地与远程 Agent 混合协作
 - 支持多入口和多模态交互
@@ -331,7 +331,7 @@ Web 控制台是主产品形态，CLI 是运维和调试辅助，不把 CLI 作�
 
 ### 12.3 A2A 与 ACP 分工
 
-- A2A：用于远程 Agent 与 Axon 之间的协作通信
+- A2A：用于远程 Agent 与 Suag 之间的协作通信
 - ACP / 本地桥接：用于发现和操作本地已安装的 Agent 工具
 
 ### 12.4 审核式自进化
@@ -387,7 +387,7 @@ Web 控制台是主产品形态，CLI 是运维和调试辅助，不把 CLI 作�
 
 - [legacy-spec-v1-foundation.md](./legacy-spec-v1-foundation.md) 是本 PRD 对应的旧主技术文档
 - `docs/archive/v1-old/*.md` 作为专题设计分册保留
-- `docs/axon-v1-prd.draft.md` 作为需求素材来源保留，不再作为主 PRD
+- `docs/suag-v1-prd.draft.md` 作为需求素材来源保留，不再作为主 PRD
 - 后续新增文档不应再以本文档为主入口，当前主线请回到 `docs/README.md`
 
 ---

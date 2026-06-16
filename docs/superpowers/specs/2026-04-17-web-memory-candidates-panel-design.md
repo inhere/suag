@@ -9,7 +9,7 @@
 
 ## 1. 目标
 
-这份设计文档定义 Axon Web 第一版 `Memory Candidates` 面板的前端接入方式。
+这份设计文档定义 Suag Web 第一版 `Memory Candidates` 面板的前端接入方式。
 
 当前后端已经具备：
 

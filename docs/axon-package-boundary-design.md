@@ -1,8 +1,8 @@
-# Axon Package Boundary Design
+# Suag Package Boundary Design
 
 > 状态：Draft for review
 > 日期：2026-04-23
-> 范围：Axon `pkg/` 与 `internal/` 包边界、目录组织原则、渐进迁移策略
+> 范围：Suag `pkg/` 与 `internal/` 包边界、目录组织原则、渐进迁移策略
 > 相关文档：`docs/v0-self-host-design.md`、`pkg/agentcore/docs/architecture.md`、`pkg/agentcore/docs/block-result-design.md`
 
 ---
@@ -36,7 +36,7 @@
 
 只有满足以下条件的包，才适合进入 `pkg/`：
 
-- 与 Axon 当前业务语义无关
+- 与 Suag 当前业务语义无关
 - 不依赖 `session / turn / run / host / capability / learning` 等应用层概念
 - 依赖方向纯净，不反向依赖 `internal/`
 - API 已具备相对稳定性，值得被长期复用
@@ -114,7 +114,7 @@ internal/session/
 
 ```text
 cmd/
-  axon/
+  suag/
 
 pkg/
   agentcore/
@@ -161,7 +161,7 @@ internal/
 这个结构的含义是：
 
 - `pkg/` 保持小而硬，只放真正稳定的公共能力
-- `internal/host` 继续承载 Axon Host 产品域
+- `internal/host` 继续承载 Suag Host 产品域
 - `internal/capability`、`internal/learning`、`internal/workspace` 是未来业务域
 - `internal/platform` 明确为过渡区
 
@@ -178,9 +178,9 @@ internal/
 
 不适合放：
 
-- 与 Axon Host/session/learning/capability 强绑定的实现
+- 与 Suag Host/session/learning/capability 强绑定的实现
 - 还在快速试验中的半成品包
-- 主要仅被当前 Axon app 内部使用、且边界未稳定的包
+- 主要仅被当前 Suag app 内部使用、且边界未稳定的包
 
 ### 4.2 `internal/app`
 
@@ -188,7 +188,7 @@ internal/
 
 - 应用装配
 - 初始化 provider / registry / capability manager / host runner / scheduler
-- `cmd/axon` 的主要入口 wiring
+- `cmd/suag` 的主要入口 wiring
 
 不负责：
 
@@ -199,7 +199,7 @@ internal/
 
 职责：
 
-- Axon 应用配置读取、解析、默认值与环境变量映射
+- Suag 应用配置读取、解析、默认值与环境变量映射
 
 不负责：
 
@@ -210,7 +210,7 @@ internal/
 
 职责：
 
-- Axon Host 主产品域
+- Suag Host 主产品域
 - 对外会话入口
 - 运行中状态、事件网关、AG-UI 映射、ACP 适配、内部 runner 适配
 
@@ -226,7 +226,7 @@ internal/
 - planner hints
 - 资源提示与能力治理
 
-它属于 Axon 自身的能力治理域，而不是通用平台层。
+它属于 Suag 自身的能力治理域，而不是通用平台层。
 
 当前目录为 `internal/capabilities`，建议后续收敛为单数 `internal/capability`。
 
@@ -239,7 +239,7 @@ internal/
 - `MEMORY.md` / `USER.md` 相关沉淀
 - recall governance
 
-这部分虽然依赖底层 memory/store，但本质上是 Axon 业务能力，不应混入通用 memory 平台包。
+这部分虽然依赖底层 memory/store，但本质上是 Suag 业务能力，不应混入通用 memory 平台包。
 
 ### 4.7 `internal/workspace`
 
@@ -280,18 +280,18 @@ internal/
 ### 5.1 `pkg/agentcore`
 
 - 现状：最清晰的 runtime kernel
-- 判断：保持独立，不混入 Axon Host 业务
+- 判断：保持独立，不混入 Suag Host 业务
 - 处理：继续作为 `pkg/` 核心包存在
 
 ### 5.2 `internal/host/*`
 
-- 现状：Axon Host 主干
+- 现状：Suag Host 主干
 - 判断：属于产品域，不应上提到 `pkg`
 - 处理：继续保留在 `internal/host`
 
 其中：
 
-- `gateway`、`agui`、`acpbridge`、`intrunner` 都是 Axon Host 适配层
+- `gateway`、`agui`、`acpbridge`、`intrunner` 都是 Suag Host 适配层
 - `session` 当前仍放 `internal/host/session`
 
 ### 5.3 `internal/host/session`
@@ -302,7 +302,7 @@ internal/
 
 ### 5.4 `internal/capability/*`
 
-- 现状：Axon 能力治理包
+- 现状：Suag 能力治理包
 - 判断：更像业务域，不像平台层
 - 处理：建议后续收敛为 `internal/capability/*`
 
@@ -318,7 +318,7 @@ internal/
 - 判断：不能整体上提 `pkg`
 - 原因：
   - 部分内容是通用 tool registry/contract
-  - 但 `mcp` 等子模块已引入 Axon config/capability 语义
+  - 但 `mcp` 等子模块已引入 Suag config/capability 语义
 - 处理：未来只拆真正通用的部分，其余继续留 `internal`
 
 ### 5.7 `internal/platform/memory`
@@ -326,9 +326,9 @@ internal/
 - 现状：memory/store 相关实现
 - 判断：不宜整体上提
 - 原因：
-  - memory 很容易与 Axon 的 recall/learning/MEMORY.md/USER.md 业务耦合
+  - memory 很容易与 Suag 的 recall/learning/MEMORY.md/USER.md 业务耦合
   - 通用 working memory contract 更应该集中在 `pkg/agentcore`
-- 处理：暂留过渡区，未来仅在明确“通用 memory”与“Axon learning/recall 业务”边界后再拆
+- 处理：暂留过渡区，未来仅在明确“通用 memory”与“Suag learning/recall 业务”边界后再拆
 
 ### 5.8 `internal/platform/tracing`
 
@@ -339,7 +339,7 @@ internal/
 ### 5.9 `pkg/agentcore/storage/sqlite`
 
 - 现状：已作为 agentcore SQLite storage adapter 迁入 `pkg/agentcore/storage/sqlite`
-- 判断：属于 `agentcore.Storage` 的第一方实现层，不属于 Axon Host 业务仓储
+- 判断：属于 `agentcore.Storage` 的第一方实现层，不属于 Suag Host 业务仓储
 - 处理：后续 MySQL/PostgreSQL 等 runtime storage backend 也应放在 `pkg/agentcore/storage/*`
 
 ### 5.10 `internal/orchestrator`
@@ -366,7 +366,7 @@ cmd -> internal/app -> internal/domain -> pkg
 
 更具体地说：
 
-- `cmd/axon` 只依赖 `internal/app`
+- `cmd/suag` 只依赖 `internal/app`
 - `internal/app` 负责装配，依赖各业务域与 `pkg`
 - 业务域可以依赖 `pkg`
 - `pkg` 不能依赖 `internal`
@@ -441,7 +441,7 @@ cmd -> internal/app -> internal/domain -> pkg
 - 当前状态：已从 `internal/acstore` 迁入 `pkg/agentcore/storage/sqlite`
 - 当前判断：
   - 它只表达 `agentcore` runtime storage
-  - 没有混入 Axon Host/session 业务语义
+  - 没有混入 Suag Host/session 业务语义
 - 第一阶段动作：
   - 已迁入 `pkg/agentcore/storage/sqlite`
   - 构造函数收敛为 `sqlite.NewStorage(...)`
@@ -461,7 +461,7 @@ cmd -> internal/app -> internal/domain -> pkg
 - 第一阶段动作：
   - 保持目录不动
   - 继续收 provider contract、mock、compatibility tests
-  - 确认哪些是通用 provider adapter，哪些是 Axon 应用构造逻辑
+  - 确认哪些是通用 provider adapter，哪些是 Suag 应用构造逻辑
 - 第二阶段目标：
   - 将通用 provider adapter 抽到 `pkg/llm`
   - 将基于 config 的 provider 构建逻辑继续留在 `internal/config` / `internal/app`
@@ -473,17 +473,17 @@ cmd -> internal/app -> internal/domain -> pkg
 - 当前状态：registry/native tools/MCP 适配混在一起
 - 当前判断：
   - 不能整体迁
-  - 应先拆“通用 tool contract”与“Axon capability / config / MCP wiring”
+  - 应先拆“通用 tool contract”与“Suag capability / config / MCP wiring”
 - 第一阶段动作：
   - 梳理子模块边界：
     - registry / schema / base contract
     - native file/shell/search tools
-    - MCP client / MCP adapter / Axon wiring
+    - MCP client / MCP adapter / Suag wiring
   - 明确 `internal/platform/tools/mcp` 为什么依赖 `internal/config` 与 `internal/capability`
 - 第二阶段目标：
   - 若 registry/contract 足够纯净，可单独抽出
   - native tools 视是否独立复用再判断
-  - `mcp` 大概率拆成通用 client 与 Axon adapter 两层
+  - `mcp` 大概率拆成通用 client 与 Suag adapter 两层
 - 风险等级：中
 - 建议时机：晚于 `acstore`、晚于 `llm`
 
@@ -494,7 +494,7 @@ cmd -> internal/app -> internal/domain -> pkg
 - 当前状态：memory/store 语义与 learning/recall 边界仍在演进
 - 当前判断：
   - 暂不适合整体迁入 `pkg`
-  - 容易把 Axon 的 recall/learning 业务误抽成“通用 memory”
+  - 容易把 Suag 的 recall/learning 业务误抽成“通用 memory”
 - 当前动作：
   - 不迁
   - 后续在实现 `internal/learning` 时，把业务语义逐步从这里抽出
@@ -579,7 +579,7 @@ cmd -> internal/app -> internal/domain -> pkg
 
 本轮确认的结论是：
 
-- Axon 应采用“领域优先”的 `internal` 组织方式
+- Suag 应采用“领域优先”的 `internal` 组织方式
 - `pkg/` 保持保守准入
 - `internal/platform` 作为过渡区继续存在，但以后只减不增
 - `session/turn/run` 当前继续留在 `internal/host/session`，但被明确标记为未来最优先的顶层业务域候选

@@ -1,4 +1,4 @@
-# Axon v0 Self-Host Foundation Implementation Plan
+# Suag v0 Self-Host Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -51,7 +51,7 @@
 
 ### App wiring
 
-- Modify: `cmd/axon/main.go`
+- Modify: `cmd/suag/main.go`
   Responsibility: wire the new session runtime store/service into server mode without breaking existing chat mode
 - Modify: `internal/acadapters/...`
   Responsibility: expose narrow adapters that let the new host session layer call existing internal capabilities without reviving the old orchestration model
@@ -383,7 +383,7 @@ git commit -m "refactor: make gateway event bus session-aware"
 - Modify: `internal/host/gateway/server.go`
 - Modify: `internal/host/gateway/handler.go`
 - Test: `internal/host/gateway/ws_test.go`
-- Modify: `cmd/axon/main.go`
+- Modify: `cmd/suag/main.go`
 
 - [ ] **Step 1: Write failing gateway tests for session creation and WebSocket subscription**
 
@@ -429,13 +429,13 @@ handler := gateway.NewHandler(a.orch, sessionSvc, bus, a.hitlMgr)
 
 - [ ] **Step 6: Run gateway and server tests**
 
-Run: `go test ./internal/host/gateway/... ./cmd/axon/...`
+Run: `go test ./internal/host/gateway/... ./cmd/suag/...`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add internal/host/gateway cmd/axon/main.go
+git add internal/host/gateway cmd/suag/main.go
 git commit -m "feat: add websocket session gateway foundation"
 ```
 
@@ -451,7 +451,7 @@ git commit -m "feat: add websocket session gateway foundation"
 
 ```md
 后续实施计划见：
-`docs/superpowers/plans/2026-04-10-axon-v0-self-host-foundation-plan.md`
+`docs/superpowers/plans/2026-04-10-suag-v0-self-host-foundation-plan.md`
 ```
 
 - [ ] **Step 2: Add a short README note for the new foundation slice**

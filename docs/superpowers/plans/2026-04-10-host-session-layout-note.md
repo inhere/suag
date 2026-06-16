@@ -3,7 +3,7 @@
 > 状态：Current
 > 日期：2026-04-10
 > 作用：冻结 `internal/host/session` 第一批文件拆分，避免开工时边写边拆
-> 相关文档：`docs/v0-self-host-design.md`、`docs/superpowers/plans/2026-04-10-axon-v0-self-host-foundation-plan.md`
+> 相关文档：`docs/v0-self-host-design.md`、`docs/superpowers/plans/2026-04-10-suag-v0-self-host-foundation-plan.md`
 
 ---
 

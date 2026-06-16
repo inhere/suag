@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 Axon Web 默认界面从偏运行观察的工作台收敛为 `Chat-first` 视图，同时保留 HITL、memory candidates 和紧凑 run context 的可见性与可操作性。
+**Goal:** 将 Suag Web 默认界面从偏运行观察的工作台收敛为 `Chat-first` 视图，同时保留 HITL、memory candidates 和紧凑 run context 的可见性与可操作性。
 
 **Architecture:** 继续保留左中右三栏，但重构壳层职责为 `Sessions / Chat / Context`。中栏由 `ConversationPane` 升级为默认主视图，新增薄状态条与必要的内联状态卡；右栏把现有大型 `RunInspector` 降级为紧凑上下文块，并保持 `HITL`、`Memory Candidates` 的独立职责。
 

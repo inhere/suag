@@ -28,7 +28,7 @@
 
 - `docs/v0-self-host-design.md`
   - 当前 `v0.self-host` 总纲
-- `docs/superpowers/plans/2026-04-10-axon-v0-self-host-foundation-plan.md`
+- `docs/superpowers/plans/2026-04-10-suag-v0-self-host-foundation-plan.md`
   - 当前第一阶段基础骨架实施计划
 - `docs/superpowers/specs/2026-04-02-agentcore-design.md`
   - `pkg/agentcore` 的独立设计说明
@@ -67,9 +67,9 @@
   - 当前 Host `STATE_SNAPSHOT` 的 `v0` 消费约定
 - `docs/usage/agentcore-internal-integration.md`
   - `internal/*` 接入 `pkg/agentcore` 的当前结论
-- `docs/superpowers/specs/2026-04-12-axon-web-foundation-design.md`
-  - Axon Web 基础工作台第一阶段设计
-- `docs/superpowers/plans/2026-04-12-axon-web-foundation-implementation-plan.md`
+- `docs/superpowers/specs/2026-04-12-suag-web-foundation-design.md`
+  - Suag Web 基础工作台第一阶段设计
+- `docs/superpowers/plans/2026-04-12-suag-web-foundation-implementation-plan.md`
   - Web 基础工作台第一阶段实现计划，覆盖 `web/app` 的三栏工作台、HTTP/WS 接线与调试抽屉
 
 ---
@@ -78,7 +78,7 @@
 
 以下文档保留为想法沉淀和方向记录，不应直接视为当前实现任务单：
 
-- `docs/axon-prd.draft.md`
+- `docs/suag-prd.draft.md`
 - `docs/code-refer.v0.1.draft.md`
 
 这类文档的价值主要在于：
@@ -95,7 +95,7 @@
 
 - `docs/archive/v1-old/legacy-prd-v1-foundation.md`
 - `docs/archive/v1-old/legacy-spec-v1-foundation.md`
-- `docs/axon-v1-process.md`
+- `docs/suag-v1-process.md`
 - `docs/archive/v1-old/00-overview.md`
 - `docs/archive/v1-old/01-agent-core.md`
 - `docs/archive/v1-old/02-orchestrator.md`

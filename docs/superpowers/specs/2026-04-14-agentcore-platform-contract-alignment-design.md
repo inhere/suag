@@ -9,7 +9,7 @@
 
 ## 1. 目标
 
-这份文档定义 Axon 在进入 Host internal `session runner` 实装之前，需要先完成的一轮 runtime contract 收口设计。
+这份文档定义 Suag 在进入 Host internal `session runner` 实装之前，需要先完成的一轮 runtime contract 收口设计。
 
 这轮工作的目标不是直接让 Host 跑内部模型链路，而是先回答一个更基础的问题：
 
@@ -123,7 +123,7 @@ Host Session internal runner 的实装排在 contract 收口之后。
 截至当前阶段，这份设计里的 Phase 2 已完成下面几项：
 
 - `pkg/agentcore/api` 已补齐可选 `EmbeddingProvider` 扩展接口
-- `cmd/axon/main.go` 已切到 `llm.api_type + llm.provider_name` 配置模型
+- `cmd/suag/main.go` 已切到 `llm.api_type + llm.provider_name` 配置模型
 - `internal/platform/llm` 已直接围绕 `agentcore/api.Provider` 组织，主路径不再依赖 `internalllm`
 - `internal/platform/tools.Registry` 已直接实现 `agentcore/api.ToolRegistry`
 - 代表性 native tools 已升级到 `api.ToolResult` 返回形态
@@ -360,7 +360,7 @@ llm:
 
 ### 7.4 `buildLLMProvider()` 的目标形态
 
-当前 `cmd/axon/main.go` 中的 `buildLLMProvider()` 已改成：
+当前 `cmd/suag/main.go` 中的 `buildLLMProvider()` 已改成：
 
 1. 先按 `api_type` 选择协议实现
 2. 再按 `provider_name` 决定默认标签、默认 base URL 或兼容分支

@@ -283,7 +283,7 @@ git commit -m "test: tighten host local verification flow"
 ## Exit Criteria
 
 - `go test ./internal/host/... ./internal/app ./internal/agent/...` 关键包通过
-- `cmd/axon server` 本地默认配置可启动并完成一轮会话
+- `cmd/suag server` 本地默认配置可启动并完成一轮会话
 - Web 联调可稳定覆盖 `start / continue / stop / auth-required + hitl`
 - 文档与代码现状一致，不再依赖历史 v1 语义解释当前行为
 

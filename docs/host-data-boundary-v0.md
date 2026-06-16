@@ -2,7 +2,7 @@
 
 > Status: v0 working agreement
 > Date: 2026-04-30
-> Scope: storage / repository / memory / markdown projection boundaries for Axon Host
+> Scope: storage / repository / memory / markdown projection boundaries for Suag Host
 
 ## 1. Purpose
 
@@ -32,7 +32,7 @@ It is responsible for runtime authority persistence:
 - authoritative runtime transcript
 - optional runtime artifacts when supported by a backend
 
-It must not know about Axon Host concepts:
+It must not know about Suag Host concepts:
 
 - session
 - turn
@@ -67,7 +67,7 @@ It is responsible for:
 - recaps
 - memory candidates
 
-It is not an `agentcore.Storage` implementation. It owns Axon Host state, not
+It is not an `agentcore.Storage` implementation. It owns Suag Host state, not
 single-runtime snapshots.
 
 Current implementation:
@@ -100,7 +100,7 @@ projection layer.
 
 This package remains in `internal/platform` for now because its API is still
 closely tied to current runtime needs. It should not be promoted to `pkg/`
-until the API is stable and useful outside Axon Host.
+until the API is stable and useful outside Suag Host.
 
 ### 2.4 `internal/host/session.MemoryProjection*`
 

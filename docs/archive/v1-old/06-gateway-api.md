@@ -206,7 +206,7 @@ Gateway 设计支持未来扩展多渠道接入，不限于 Web：
 | 渠道 | 接入方式 |
 |------|----------|
 | Web UI | 内嵌 SPA，go:embed |
-| TUI | 命令行交互界面（cmd/axon） |
+| TUI | 命令行交互界面（cmd/suag） |
 | IM Webhook | 接收消息体，包装成 TaskRequest 提交 |
 | API Client | pkg/client SDK |
 

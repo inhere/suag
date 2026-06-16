@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在现有 Axon Web 三栏工作台右侧接入 `Memory Candidates` 最小人工处理面板，打通 session 级候选查看、采纳和拒绝链路。
+**Goal:** 在现有 Suag Web 三栏工作台右侧接入 `Memory Candidates` 最小人工处理面板，打通 session 级候选查看、采纳和拒绝链路。
 
 **Architecture:** 保持 `memory candidates` 作为独立于 websocket snapshot 的右侧辅助面板数据，不混入现有 session reducer。前端通过 typed REST client 拉取和更新候选列表，`App.tsx` 负责局部状态与重新拉取，`AppShell.tsx` 只做右侧列插槽传递，新增纯展示型 `memory-candidates-panel` 负责分组和动作渲染。
 

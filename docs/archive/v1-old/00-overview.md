@@ -1,4 +1,4 @@
-# axon v1 架构总纲
+# suag v1 架构总纲
 
 > 状态：Legacy reference
 > 说明：本文档基于旧 `v1 foundation` 假设撰写，当前仅作为历史参考。新的 `v0` 主线请先看 `docs/README.md`。
@@ -9,7 +9,7 @@
 
 ## 1. 项目定位
 
-axon 是以 **Go 语言**构建的本地优先 AI Agent 编排引擎，定位是：
+suag 是以 **Go 语言**构建的本地优先 AI Agent 编排引擎，定位是：
 
 - **大脑入口**：统一接收用户任务，分解并分发给专家 Agent 团队
 - **长期记忆**：通过 SQLite + 向量搜索实现跨会话记忆
@@ -121,9 +121,9 @@ graph TB
 ## 5. 项目目录结构
 
 ```
-axon/
+suag/
 ├── cmd/
-│   ├── axon/          # 主程序入口 (CLI/TUI)
+│   ├── suag/          # 主程序入口 (CLI/TUI)
 │   └── server/          # HTTP Server 模式
 │
 ├── internal/

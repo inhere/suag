@@ -1,8 +1,8 @@
-# Axon Web Foundation Implementation Plan
+# Suag Web Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the first Axon Web foundation slice: a React + Vite single-page workbench that can create sessions, reconnect to a chosen session, render `STATE_SNAPSHOT v0`, stream updates over WebSocket, send new turns, and continue existing turns.
+**Goal:** Build the first Suag Web foundation slice: a React + Vite single-page workbench that can create sessions, reconnect to a chosen session, render `STATE_SNAPSHOT v0`, stream updates over WebSocket, send new turns, and continue existing turns.
 
 **Architecture:** Start from an empty `web/app` and build a thin frontend around the current Host APIs instead of inventing new frontend-side state semantics. Keep the UI as a three-column workbench: left `Session List`, middle `Conversation`, right `Run Inspector`, with data flowing from HTTP bootstrap + `STATE_SNAPSHOT v0` + incremental WS events. Respect current backend reality: `POST /api/sessions`, `GET /api/sessions/{id}`, `POST /api/sessions/{id}/turns`, `GET /api/sessions/{id}/events`, and `GET /ws?session_id=<id>` already exist, while a REST session list endpoint and dedicated REST continue-turn endpoint do not.
 
@@ -110,7 +110,7 @@
 
 - Modify: `docs/README.md`
   Responsibility: point readers to the new frontend foundation plan/spec pair
-- Modify: `docs/superpowers/specs/2026-04-12-axon-web-foundation-design.md`
+- Modify: `docs/superpowers/specs/2026-04-12-suag-web-foundation-design.md`
   Responsibility: link the implementation plan after it lands
 
 ## Existing Backend Constraints
@@ -192,7 +192,7 @@ Expected: FAIL with missing package or missing component/module errors
 
 ```json
 {
-  "name": "axon-web",
+  "name": "suag-web",
   "private": true,
   "type": "module",
   "scripts": {
@@ -237,7 +237,7 @@ Expected: PASS and `web/app/dist` generated
 
 ```bash
 git add web/app
-git commit -m "feat: scaffold axon web foundation app"
+git commit -m "feat: scaffold suag web foundation app"
 ```
 
 ---
@@ -316,7 +316,7 @@ Expected: FAIL with missing modules or missing exported functions
 ```ts
 export type StateSnapshotV0 = {
   snapshotVersion: "v0";
-  snapshotSchema: "axon.host.state.v0";
+  snapshotSchema: "suag.host.state.v0";
   generatedAt: string;
   threadId: string;
   sessionId: string;
@@ -595,7 +595,7 @@ export function TurnSummaryCard({ turn }: { turn: TurnSnapshot }) {
 export function Composer({ waitingForInput, onSubmit }: Props) {
   return (
     <form onSubmit={/* ... */}>
-      <textarea placeholder={waitingForInput ? "当前任务在等待你的补充说明..." : "给 Axon 发送下一条任务说明..."} />
+      <textarea placeholder={waitingForInput ? "当前任务在等待你的补充说明..." : "给 Suag 发送下一条任务说明..."} />
       <button type="submit">{waitingForInput ? "Continue" : "Send"}</button>
     </form>
   );
@@ -809,7 +809,7 @@ git commit -m "feat: wire session snapshot hydration and websocket updates"
 - Create: `web/app/src/features/debug/debug-drawer.tsx`
 - Create: `web/app/src/features/debug/debug-drawer.test.tsx`
 - Modify: `docs/README.md`
-- Modify: `docs/superpowers/specs/2026-04-12-axon-web-foundation-design.md`
+- Modify: `docs/superpowers/specs/2026-04-12-suag-web-foundation-design.md`
 
 - [ ] **Step 1: Write the failing debug drawer test**
 
@@ -838,13 +838,13 @@ export function DebugDrawer({ open, events, onClose }: Props) {
 
 ```md
 实现计划见：
-`docs/superpowers/plans/2026-04-12-axon-web-foundation-implementation-plan.md`
+`docs/superpowers/plans/2026-04-12-suag-web-foundation-implementation-plan.md`
 ```
 
 - [ ] **Step 5: Link the plan from `docs/README.md` usage/current-doc guidance**
 
 ```md
-- `docs/superpowers/plans/2026-04-12-axon-web-foundation-implementation-plan.md`
+- `docs/superpowers/plans/2026-04-12-suag-web-foundation-implementation-plan.md`
   - Web 基础工作台第一阶段实现计划
 ```
 
@@ -864,7 +864,7 @@ Expected: PASS
 - [ ] **Step 8: Commit**
 
 ```bash
-git add web/app/src/features/debug docs/README.md docs/superpowers/specs/2026-04-12-axon-web-foundation-design.md
+git add web/app/src/features/debug docs/README.md docs/superpowers/specs/2026-04-12-suag-web-foundation-design.md
 git commit -m "docs: link web foundation implementation plan"
 ```
 

@@ -2,7 +2,7 @@
 
 > 状态：Draft
 > 日期：2026-04-20
-> 适用范围：Axon v0 self-host 主线
+> 适用范围：Suag v0 self-host 主线
 
 ## 1. 背景与目标
 
@@ -28,7 +28,7 @@
 
 本文档目标是定义一套长期可扩展、但能从 v0 平滑落地的能力治理模型：
 
-- 明确 `agentcore` 与 `axon` 的能力边界
+- 明确 `agentcore` 与 `suag` 的能力边界
 - 定义 `tool / mcp / skill` 的统一分层
 - 定义 Host/runtime 中的注册、解析、消费链路
 - 给出 v0 → v1 的推荐落地顺序
@@ -62,7 +62,7 @@
 一句话：
 
 - `agentcore` 负责“怎么跑”
-- `axon` 负责“有哪些能力、何时用、怎么装配”
+- `suag` 负责“有哪些能力、何时用、怎么装配”
 
 ### 2.2 Tool 是 runtime primitive
 
@@ -285,7 +285,7 @@ Host 应关注：
 
 ---
 
-## 5. `agentcore` 与 `axon` 的内置边界
+## 5. `agentcore` 与 `suag` 的内置边界
 
 ### 5.1 `agentcore` 应该内置的东西
 
@@ -305,11 +305,11 @@ Host 应关注：
 原则：
 
 - `agentcore` 可以内置机制
-- `agentcore` 不内置 Axon 产品能力集合
+- `agentcore` 不内置 Suag 产品能力集合
 
-### 5.3 `axon` 应该内置的东西
+### 5.3 `suag` 应该内置的东西
 
-Axon 应提供一组最小 self-host 可用能力底座：
+Suag 应提供一组最小 self-host 可用能力底座：
 
 - first-party native tools
   - `file_read`
@@ -541,7 +541,7 @@ MCP 应作为 `ToolProvider` 的一种来源。
   - 导出 `runtimecaps.ToolRef`
   - 在生命周期结束时关闭
 - `internal/app` 默认 capability builder 已能装配 native + configured MCP providers
-- `cmd/axon/main.go` 已接入 `App.Close()`，为 MCP provider 子进程回收留出统一出口
+- `cmd/suag/main.go` 已接入 `App.Close()`，为 MCP provider 子进程回收留出统一出口
 
 当前 Phase B2 已开始补上 session-stable capability baseline：
 
@@ -687,16 +687,16 @@ MCP 应作为 `ToolProvider` 的一种来源。
 
 ```text
 agentcore = runtime kernel
-axon tools = executable capability layer
-axon mcp = external tool providers
-axon skills = capability recipes
+suag tools = executable capability layer
+suag mcp = external tool providers
+suag skills = capability recipes
 host = session/runtime orchestrator consuming resolved capabilities
 ```
 
 配套原则：
 
 - `agentcore` 只做 kernel 与 tool contract
-- `axon` 负责能力治理
+- `suag` 负责能力治理
 - skill 不直接等于 tool
 - mcp 不直接等于第二套 runtime primitive
 - Host 运行时始终消费“解析后的能力快照”
