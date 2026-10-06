@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	"github.com/gookit/rux/v2"
+	"github.com/gookit/rux/v2/pkg/handlers"
 )
 
 // Server is the HTTP gateway for suag.
@@ -25,34 +25,34 @@ func NewServer(addr string, handler *Handler, bus *EventBus) *Server {
 }
 
 func (s *Server) router() http.Handler {
-	r := chi.NewRouter()
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
+	r := rux.New(rux.WithMethodNotAllowed(true))
+	r.Use(handlers.RequestLogger())
+	r.Use(handlers.PanicsHandler())
 	r.Use(corsMiddleware)
 
 	// REST API.
-	r.Post("/api/tasks", s.handler.HandleCreateTask)
-	r.Get("/api/hitl", s.handler.HandleListHITL)
-	r.Post("/api/hitl/{id}/respond", s.handler.HandleHITLRespond)
-	r.Post("/api/hitl/{id}/dismiss", s.handler.HandleHITLDismiss)
-	r.Post("/api/sessions", s.handler.HandleCreateSession)
-	r.Get("/api/sessions", s.handler.HandleListSessions)
-	r.Get("/api/sessions/{id}", s.handler.HandleGetSession)
-	r.Get("/api/sessions/{id}/runs/{runId}", s.handler.HandleGetRunDetail)
-	r.Get("/api/sessions/{id}/events", s.handler.HandleListSessionEvents)
-	r.Get("/api/sessions/{id}/memory-candidates", s.handler.HandleListMemoryCandidates)
-	r.Post("/api/sessions/{id}/turns", s.handler.HandleStartTurn)
-	r.Post("/api/memory-candidates/{id}/accept", s.handler.HandleAcceptMemoryCandidate)
-	r.Post("/api/memory-candidates/{id}/reject", s.handler.HandleRejectMemoryCandidate)
+	r.POST("/api/tasks", adaptHTTPHandler(s.handler.HandleCreateTask))
+	r.GET("/api/hitl", adaptHTTPHandler(s.handler.HandleListHITL))
+	r.POST("/api/hitl/{id}/respond", adaptHTTPHandler(s.handler.HandleHITLRespond))
+	r.POST("/api/hitl/{id}/dismiss", adaptHTTPHandler(s.handler.HandleHITLDismiss))
+	r.POST("/api/sessions", adaptHTTPHandler(s.handler.HandleCreateSession))
+	r.GET("/api/sessions", adaptHTTPHandler(s.handler.HandleListSessions))
+	r.GET("/api/sessions/{id}", adaptHTTPHandler(s.handler.HandleGetSession))
+	r.GET("/api/sessions/{id}/runs/{runId}", adaptHTTPHandler(s.handler.HandleGetRunDetail))
+	r.GET("/api/sessions/{id}/events", adaptHTTPHandler(s.handler.HandleListSessionEvents))
+	r.GET("/api/sessions/{id}/memory-candidates", adaptHTTPHandler(s.handler.HandleListMemoryCandidates))
+	r.POST("/api/sessions/{id}/turns", adaptHTTPHandler(s.handler.HandleStartTurn))
+	r.POST("/api/memory-candidates/{id}/accept", adaptHTTPHandler(s.handler.HandleAcceptMemoryCandidate))
+	r.POST("/api/memory-candidates/{id}/reject", adaptHTTPHandler(s.handler.HandleRejectMemoryCandidate))
 
 	// Streaming endpoints.
-	r.Get("/events", SSEHandler(s.bus))
-	r.Get("/ws", WSHandler(s.bus, s.handler.sessionRepo, s.handler.sessionSvc))
+	r.GET("/events", adaptHTTPHandler(SSEHandler(s.bus)))
+	r.GET("/ws", adaptHTTPHandler(WSHandler(s.bus, s.handler.sessionRepo, s.handler.sessionSvc)))
 
 	// Health check.
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+	r.GET("/health", adaptHTTPHandler(func(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]string{"status": "ok", "ts": time.Now().UTC().Format(time.RFC3339)})
-	})
+	}))
 
 	return r
 }
@@ -86,15 +86,24 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 }
 
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
+// adaptHTTPHandler preserves net/http PathValue for the existing handlers.
+func adaptHTTPHandler(handler http.HandlerFunc) rux.HandlerFunc {
+	return func(c *rux.Context) {
+		for _, param := range c.Params().Snapshot() {
+			c.Req.SetPathValue(param.Key, param.Value)
 		}
-		next.ServeHTTP(w, r)
-	})
+		handler(c.Resp, c.Req)
+	}
+}
+
+func corsMiddleware(c *rux.Context) {
+	c.Resp.Header().Set("Access-Control-Allow-Origin", "*")
+	c.Resp.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	c.Resp.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	if c.Req.Method == http.MethodOptions {
+		c.Resp.WriteHeader(http.StatusNoContent)
+		c.Abort()
+		return
+	}
+	c.Next()
 }
