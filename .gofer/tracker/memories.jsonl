@@ -1,0 +1,1 @@
+{"key":"suag-personal-agent-scope","content":"Suag 定位为个人单 Agent。Gofer 启动 Suag：保留批处理 CLI，并新增 ACP 交互模式；Suag 不复制 Gofer 的作业/Worker/Web 控制面。旧 Web 可删除；team、cron、orchestrator 移到不会参与构建的 legacy 仅供参考。设计与计划分别审核后再实施。","tags":["design","prime"],"updated_at":"2026-10-06T14:26:36.146899Z","by":"inhere"}
