@@ -4,62 +4,62 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 
-	"github.com/gookit/goutil/x/ccolor"
+	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/pkg/agentcore"
 )
 
-// RunChat starts an interactive chat session in the terminal, allowing the user to enter tasks and receive results.
-// It also supports HITL ticket management commands.
-func (a *App) RunChat(ctx context.Context) {
-	ccolor.Infoln("suag chat mode — type your task and press Enter. Ctrl+C to exit.")
-	ccolor.Infoln("Commands: :quit, :hitl (list pending tickets), :respond <id> <instruction>")
-	fmt.Println()
-
-	scanner := bufio.NewScanner(os.Stdin)
+func runPersonalChat(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) error {
+	sessionID := ""
+	if opts.SessionID != "" || opts.ResumeID != "" {
+		var err error
+		sessionID, err = openRequestedSession(ctx, runner, opts)
+		if err != nil {
+			return err
+		}
+	}
+	fmt.Fprintln(stdout, "Suag chat — type a task, :session or :quit.")
+	scanner := bufio.NewScanner(stdin)
+	scanner.Buffer(make([]byte, 4096), 1024*1024)
 	for {
-		fmt.Print("> ")
+		if _, err := fmt.Fprint(stdout, "> "); err != nil {
+			return err
+		}
 		if !scanner.Scan() {
-			break
+			return scanner.Err()
 		}
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		switch line {
+		case "":
+			continue
+		case ":quit":
+			return nil
+		case ":session":
+			fmt.Fprintln(stdout, "session id:", sessionID)
 			continue
 		}
-
-		switch {
-		case line == ":quit":
-			return
-		case line == ":hitl":
-			tickets := a.hitlMgr.ListPending()
-			if len(tickets) == 0 {
-				fmt.Println("No pending HITL tickets.")
-			}
-			for _, t := range tickets {
-				fmt.Printf("  [%s] agent=%s reason=%s\n", t.ID, t.AgentID, t.Reason)
-			}
-		case strings.HasPrefix(line, ":respond "):
-			parts := strings.SplitN(line[9:], " ", 2)
-			if len(parts) < 2 {
-				fmt.Println("Usage: :respond <ticket-id> <instruction>")
-				continue
-			}
-			if err := a.hitlMgr.Respond(parts[0], parts[1]); err != nil {
-				fmt.Println("Error:", err)
-			} else {
-				fmt.Println("Instruction delivered.")
-			}
-		default:
-			fmt.Println("Running task...")
-			result, err := a.orch.RunTask(ctx, line)
+		if sessionID == "" {
+			model, err := runner.NewSession(ctx, "", line)
 			if err != nil {
-				fmt.Println("Error:", err)
-				continue
+				return err
 			}
-			fmt.Println("\n─── Result ───────────────────────────────────────")
-			fmt.Println(result.Output)
-			fmt.Println("──────────────────────────────────────────────────")
+			sessionID = model.SessionID
+			fmt.Fprintln(stderr, "session id:", sessionID)
 		}
+		result, err := runner.Run(ctx, personal.RunRequest{SessionID: sessionID, Prompt: line})
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			fmt.Fprintln(stderr, "Error:", err)
+			continue
+		}
+		if result.Status == agentcore.RunYielded {
+			fmt.Fprintln(stdout, "Waiting for more input.")
+			continue
+		}
+		fmt.Fprintln(stdout, result.Output)
 	}
 }

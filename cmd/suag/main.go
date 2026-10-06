@@ -1,4 +1,4 @@
-// Command suag is the main entry point for the suag AI agent orchestration engine.
+// Command suag runs the personal agent in CLI mode or the legacy Web server.
 package main
 
 import (
@@ -14,11 +14,27 @@ import (
 )
 
 func main() {
-	_ = appconfig.Load()
+	if err := appconfig.Load(); err != nil {
+		fmt.Fprintln(os.Stderr, "load config:", err)
+		os.Exit(1)
+	}
 	app.SetupLogging()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	mode := "chat"
+	var modeArgs []string
+	if len(os.Args) > 1 {
+		mode, modeArgs = os.Args[1], os.Args[2:]
+	}
+	if mode == "run" || mode == "chat" {
+		if err := app.RunPersonalCLI(ctx, mode, modeArgs, os.Stdin, os.Stdout, os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	runtimeApp, err := app.New()
 	if err != nil {
@@ -31,16 +47,10 @@ func main() {
 		}
 	}()
 
-	// Determine run mode from args.
-	mode := "chat"
-	if len(os.Args) > 1 {
-		mode = os.Args[1]
-	}
-
 	if err := runtimeApp.Run(ctx, mode); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		if errors.Is(err, app.ErrUnknownMode) {
-			fmt.Fprintln(os.Stderr, "Usage: suag [chat|server]")
+			fmt.Fprintln(os.Stderr, "Usage: suag [run|chat|server]")
 		}
 		os.Exit(1)
 	}

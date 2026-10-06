@@ -151,8 +151,7 @@ func (a *App) Close() error {
 func (a *App) Run(ctx context.Context, mode string) error {
 	switch strings.TrimSpace(mode) {
 	case "", "chat":
-		a.RunChat(ctx)
-		return nil
+		return RunPersonalChat(ctx, nil)
 	case "server":
 		return a.RunServer(ctx)
 	default:
