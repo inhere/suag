@@ -1,4 +1,4 @@
-# Suag - Agent OS
+# Suag - SupAgent OS
 
 ## Minimal Agentcore Embedding
 
