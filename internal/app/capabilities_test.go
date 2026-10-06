@@ -144,8 +144,6 @@ func TestBuildDefaultCapabilities_RegistersConfiguredMCPTools(t *testing.T) {
 }
 
 func TestBuildDefaultSkillRegistry_LoadsWorkspaceAgentsSkills(t *testing.T) {
-	t.Parallel()
-
 	workspace := t.TempDir()
 	skillDir := filepath.Join(workspace, ".agents", "skills", "project-review")
 	err := os.MkdirAll(skillDir, 0o755)
@@ -166,8 +164,6 @@ description: Review project changes before handoff.
 }
 
 func TestDefaultSkillRootsPreferUserAgentsSkills(t *testing.T) {
-	t.Parallel()
-
 	workspace := t.TempDir()
 	home := t.TempDir()
 
@@ -179,8 +175,6 @@ func TestDefaultSkillRootsPreferUserAgentsSkills(t *testing.T) {
 }
 
 func TestBuildSkillRegistry_UserAgentsSkillsWinDuplicateNames(t *testing.T) {
-	t.Parallel()
-
 	workspace := t.TempDir()
 	home := t.TempDir()
 	userSkillDir := filepath.Join(home, ".agents", "skills", "brainstorming")
