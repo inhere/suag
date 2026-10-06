@@ -3,6 +3,7 @@ module github.com/inhere/suag
 go 1.25
 
 require (
+	github.com/coder/acp-go-sdk v0.13.5
 	github.com/coder/websocket v1.8.14
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gookit/config/v2 v2.2.9
