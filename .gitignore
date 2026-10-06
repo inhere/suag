@@ -1,9 +1,9 @@
 .claude/
 .agents/
-.omc/
 .worktrees/
 .superpowers/
 tmp/
+local/
 .env
 *.exe
 .xenv.*

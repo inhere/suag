@@ -1,13 +1,13 @@
 module github.com/inhere/suag
 
-go 1.24
+go 1.25
 
 require (
 	github.com/coder/websocket v1.8.14
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/goccy/go-yaml v1.19.2
-	github.com/gookit/config/v2 v2.2.8
-	github.com/gookit/goutil v0.7.6
+	github.com/gookit/config/v2 v2.2.9
+	github.com/gookit/goutil v0.8.0
 	github.com/gookit/ini/v2 v2.3.2
 	golang.org/x/sys v0.30.0
 	modernc.org/sqlite v1.31.1
