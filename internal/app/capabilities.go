@@ -34,6 +34,10 @@ type defaultCapabilities struct {
 // buildDefaultCapabilities creates the app's shared native tool wiring once so
 // orchestrator, team, cron, and future capability gating all see the same base.
 func buildDefaultCapabilities(workspace string) (defaultCapabilities, error) {
+	return buildDefaultCapabilitiesWithServers(workspace, nil)
+}
+
+func buildDefaultCapabilitiesWithServers(workspace string, additional []axconfig.MCPServerSettings) (defaultCapabilities, error) {
 	registry := tools.NewRegistry()
 	manager := runtimecaps.NewManager()
 
@@ -52,7 +56,8 @@ func buildDefaultCapabilities(workspace string) (defaultCapabilities, error) {
 		Registry: registry,
 		Manager:  manager,
 	}
-	for _, settings := range axconfig.ReadMCPServerSettings() {
+	servers := append(axconfig.ReadMCPServerSettings(), additional...)
+	for _, settings := range servers {
 		provider, err := mcpProviderFactory(context.Background(), settings)
 		if err != nil {
 			_ = built.Close()

@@ -1,0 +1,310 @@
+package acpserver
+
+import (
+	"context"
+	"errors"
+	"io"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/coder/acp-go-sdk"
+	appconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/data/testutil"
+	"github.com/inhere/suag/internal/host/session"
+	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/mock"
+)
+
+type testACPClient struct {
+	acp.Client
+	mu            sync.Mutex
+	selected      acp.PermissionOptionId
+	permissionErr error
+	updates       []acp.SessionNotification
+	requests      []acp.RequestPermissionRequest
+}
+
+func (c *testACPClient) RequestPermission(_ context.Context, req acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.requests = append(c.requests, req)
+	if c.permissionErr != nil {
+		return acp.RequestPermissionResponse{}, c.permissionErr
+	}
+	return acp.RequestPermissionResponse{Outcome: acp.RequestPermissionOutcome{
+		Selected: &acp.RequestPermissionOutcomeSelected{OptionId: c.selected},
+	}}, nil
+}
+
+func (c *testACPClient) SessionUpdate(_ context.Context, update acp.SessionNotification) error {
+	c.mu.Lock()
+	c.updates = append(c.updates, update)
+	c.mu.Unlock()
+	return nil
+}
+
+func connectPersonalACP(t *testing.T, open OpenRuntime, client *testACPClient) *acp.ClientSideConnection {
+	t.Helper()
+	clientToAgentR, clientToAgentW := io.Pipe()
+	agentToClientR, agentToClientW := io.Pipe()
+	agent := New(open)
+	agent.SetConnection(acp.NewAgentSideConnection(agent, agentToClientW, clientToAgentR))
+	conn := acp.NewClientSideConnection(client, clientToAgentW, agentToClientR)
+	t.Cleanup(func() {
+		_ = clientToAgentW.Close()
+		_ = clientToAgentR.Close()
+		_ = agentToClientW.Close()
+		_ = agentToClientR.Close()
+	})
+	return conn
+}
+
+func testACPRuntime(t *testing.T, provider agentcore.Provider, tool *countingTool) OpenRuntime {
+	t.Helper()
+	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
+	runRoot := filepath.Join(t.TempDir(), "runs")
+	return func(_ context.Context, _ string, _ bool, _ []appconfig.MCPServerSettings, hook agentcore.Hook) (Runtime, error) {
+		repo, err := session.NewSQLiteRepository(dbPath)
+		if err != nil {
+			return Runtime{}, err
+		}
+		registry := tools.NewRegistry()
+		if tool != nil {
+			registry.Register(tool)
+		}
+		var hooks []agentcore.Hook
+		if hook != nil {
+			hooks = append(hooks, hook)
+		}
+		runner, err := personal.New(personal.Config{Repository: repo, RunRoot: runRoot, Provider: provider, Tools: registry, Hooks: hooks})
+		if err != nil {
+			_ = repo.Close()
+			return Runtime{}, err
+		}
+		return Runtime{Runner: runner, Close: repo.Close}, nil
+	}
+}
+
+type countingTool struct{ calls atomic.Int32 }
+
+func (*countingTool) Name() string        { return "file_write" }
+func (*countingTool) Description() string { return "write test file" }
+func (*countingTool) Kind() tools.Kind    { return tools.KindNative }
+func (*countingTool) Schema() agentcore.ToolSchema {
+	return agentcore.ToolSchema{Name: "file_write", InputSchema: map[string]any{"type": "object"}}
+}
+func (t *countingTool) Execute(_ context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
+	t.calls.Add(1)
+	return &agentcore.ToolResult{CallID: call.CallID, Name: call.Name, Content: "written"}, nil
+}
+
+func TestPersonalACPRequiresPermissionBeforeToolExecution(t *testing.T) {
+	for _, selected := range []acp.PermissionOptionId{"reject", "allow"} {
+		t.Run(string(selected), func(t *testing.T) {
+			tool := &countingTool{}
+			provider := mock.NewProvider(mock.ToolCall("edit-1", "file_write", map[string]any{"path": "test.txt"}), mock.Final("done"))
+			client := &testACPClient{selected: selected}
+			conn := connectPersonalACP(t, testACPRuntime(t, provider, tool), client)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("edit")}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			client.mu.Lock()
+			requests := len(client.requests)
+			started, terminal := false, false
+			for _, update := range client.updates {
+				started = started || update.Update.ToolCall != nil
+				if status := update.Update.ToolCallUpdate; status != nil && status.Status != nil {
+					terminal = terminal || *status.Status == acp.ToolCallStatusCompleted || *status.Status == acp.ToolCallStatusFailed
+				}
+			}
+			client.mu.Unlock()
+			if requests != 1 || !started || !terminal {
+				t.Fatalf("permission requests = %d, tool started = %v, terminal update = %v", requests, started, terminal)
+			}
+			if selected == "reject" {
+				if response.StopReason != acp.StopReasonRefusal || tool.calls.Load() != 0 {
+					t.Fatalf("rejected tool: response=%s executions=%d", response.StopReason, tool.calls.Load())
+				}
+			} else if response.StopReason != acp.StopReasonEndTurn || tool.calls.Load() != 1 {
+				t.Fatalf("allowed tool: response=%s executions=%d", response.StopReason, tool.calls.Load())
+			}
+		})
+	}
+}
+
+func TestPersonalACPReadOnlyRejectsToolWithoutPermissionRequest(t *testing.T) {
+	tool := &countingTool{}
+	client := &testACPClient{selected: "allow"}
+	conn := connectPersonalACP(t, testACPRuntime(t, mock.NewProvider(mock.ToolCall("edit-1", "file_write", nil)), tool), client)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: created.SessionId, ModeId: "read_only"}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("edit")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.mu.Lock()
+	requests := len(client.requests)
+	client.mu.Unlock()
+	if response.StopReason != acp.StopReasonRefusal || tool.calls.Load() != 0 || requests != 0 {
+		t.Fatalf("read_only: response=%s executions=%d permission requests=%d", response.StopReason, tool.calls.Load(), requests)
+	}
+}
+
+func TestPersonalACPPermissionFailureDoesNotExecuteTool(t *testing.T) {
+	tool := &countingTool{}
+	client := &testACPClient{permissionErr: context.DeadlineExceeded}
+	conn := connectPersonalACP(t, testACPRuntime(t, mock.NewProvider(mock.ToolCall("edit-1", "file_write", nil)), tool), client)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("edit")}})
+	if err != nil || response.StopReason != acp.StopReasonRefusal || tool.calls.Load() != 0 {
+		t.Fatalf("permission failure: response=%+v error=%v executions=%d", response, err, tool.calls.Load())
+	}
+}
+
+type recallACPProvider struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (*recallACPProvider) Name() string { return "recall" }
+func (p *recallACPProvider) Generate(_ context.Context, req *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls++
+	if p.calls > 1 {
+		found := false
+		for _, message := range req.Messages {
+			found = found || message.Content == "amber"
+		}
+		if !found {
+			return nil, errors.New("prior answer missing from resumed ACP context")
+		}
+	}
+	return &agentcore.GenerateResult{Content: "amber", FinishReason: agentcore.FinishFinal}, nil
+}
+
+func TestPersonalACPTwoTurnsAndNewConnectionLoad(t *testing.T) {
+	provider := &recallACPProvider{}
+	open := testACPRuntime(t, provider, nil)
+	client := &testACPClient{}
+	conn := connectPersonalACP(t, open, client)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	initialized, err := conn.Initialize(ctx, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber})
+	if err != nil || !initialized.AgentCapabilities.LoadSession {
+		t.Fatalf("initialize: %+v, %v", initialized, err)
+	}
+	cwd := t.TempDir()
+	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: cwd, McpServers: []acp.McpServer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, prompt := range []string{"remember amber", "what was the color?"} {
+		response, err := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock(prompt)}})
+		if err != nil || response.StopReason != acp.StopReasonEndTurn {
+			t.Fatalf("prompt %q: %+v, %v", prompt, response, err)
+		}
+	}
+	newClient := &testACPClient{}
+	newConn := connectPersonalACP(t, open, newClient)
+	if _, err := newConn.LoadSession(ctx, acp.LoadSessionRequest{SessionId: created.SessionId, Cwd: cwd, McpServers: []acp.McpServer{}}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := newConn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("again?")}})
+	if err != nil || response.StopReason != acp.StopReasonEndTurn {
+		t.Fatalf("loaded prompt: %+v, %v", response, err)
+	}
+	newClient.mu.Lock()
+	gotText := false
+	for _, update := range newClient.updates {
+		if update.Update.AgentMessageChunk != nil && update.Update.AgentMessageChunk.Content.Text != nil {
+			gotText = gotText || strings.Contains(update.Update.AgentMessageChunk.Content.Text.Text, "amber")
+		}
+	}
+	newClient.mu.Unlock()
+	if !gotText {
+		t.Fatal("loaded prompt did not emit answer update")
+	}
+}
+
+type blockingACPProvider struct{ started chan struct{} }
+
+func (*blockingACPProvider) Name() string { return "blocking" }
+func (p *blockingACPProvider) Generate(ctx context.Context, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	close(p.started)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestPersonalACPCancelEndsActivePrompt(t *testing.T) {
+	provider := &blockingACPProvider{started: make(chan struct{})}
+	conn := connectPersonalACP(t, testACPRuntime(t, provider, nil), &testACPClient{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan acp.PromptResponse, 1)
+	errs := make(chan error, 1)
+	go func() {
+		response, runErr := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("wait")}})
+		result <- response
+		errs <- runErr
+	}()
+	select {
+	case <-provider.started:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := conn.Cancel(ctx, acp.CancelNotification{SessionId: created.SessionId}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-errs; err != nil {
+		t.Fatal(err)
+	}
+	if response := <-result; response.StopReason != acp.StopReasonCancelled {
+		t.Fatalf("stop reason = %s", response.StopReason)
+	}
+}
+
+func TestACPMCPSettingsAcceptStdioAndRejectUnsupportedTransport(t *testing.T) {
+	settings, err := mcpSettings([]acp.McpServer{{Stdio: &acp.McpServerStdio{
+		Name: "local", Command: "mcp-server", Args: []string{"--stdio"},
+		Env: []acp.EnvVariable{{Name: "MODE", Value: "test"}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(settings) != 1 || settings[0].ID != "local" || settings[0].Command != "mcp-server" || settings[0].Env["MODE"] != "test" {
+		t.Fatalf("stdio mapping = %+v", settings)
+	}
+	if _, err := mcpSettings([]acp.McpServer{{Http: &acp.McpServerHttpInline{}}}); err == nil {
+		t.Fatal("unsupported HTTP MCP transport was accepted")
+	}
+}

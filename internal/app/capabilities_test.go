@@ -143,6 +143,31 @@ func TestBuildDefaultCapabilities_RegistersConfiguredMCPTools(t *testing.T) {
 	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "shell_exec", "mcp_echo"}, resolved.ToolNames)
 }
 
+func TestPersonalCapabilitiesUseACPStdioMCPOnlyInWritableMode(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	var starts int
+	restore := swapMCPProviderFactoryForTest(func(_ context.Context, settings axconfig.MCPServerSettings) (capabilityToolProvider, error) {
+		starts++
+		assert.Eq(t, "acp-local", settings.ID)
+		return toolsmcp.NewProviderForTools(settings.ID, []tools.Tool{newCapabilityStubTool("mcp_echo")}, nil), nil
+	})
+	t.Cleanup(restore)
+	servers := []axconfig.MCPServerSettings{{ID: "acp-local", Command: "stub"}}
+	readOnly, err := buildPersonalCapabilitiesWithServers(t.TempDir(), false, servers)
+	assert.NoErr(t, err)
+	assert.Eq(t, 0, starts)
+	_, err = readOnly.Registry.Get("mcp_echo")
+	assert.True(t, err != nil)
+	assert.NoErr(t, readOnly.Close())
+
+	writable, err := buildPersonalCapabilitiesWithServers(t.TempDir(), true, servers)
+	assert.NoErr(t, err)
+	t.Cleanup(func() { assert.NoErr(t, writable.Close()) })
+	assert.Eq(t, 1, starts)
+	assert.NotNil(t, mustGetTool(t, writable.Registry, "mcp_echo"))
+}
+
 func TestBuildDefaultSkillRegistry_LoadsWorkspaceAgentsSkills(t *testing.T) {
 	workspace := t.TempDir()
 	skillDir := filepath.Join(workspace, ".agents", "skills", "project-review")

@@ -35,6 +35,17 @@ func main() {
 		}
 		return
 	}
+	if mode == "acp" {
+		if len(modeArgs) != 0 {
+			fmt.Fprintln(os.Stderr, "suag acp does not accept arguments")
+			os.Exit(1)
+		}
+		if err := app.RunPersonalACP(ctx, os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "acp:", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	runtimeApp, err := app.New()
 	if err != nil {
@@ -50,7 +61,7 @@ func main() {
 	if err := runtimeApp.Run(ctx, mode); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		if errors.Is(err, app.ErrUnknownMode) {
-			fmt.Fprintln(os.Stderr, "Usage: suag [run|chat|server]")
+			fmt.Fprintln(os.Stderr, "Usage: suag [run|chat|acp|server]")
 		}
 		os.Exit(1)
 	}

@@ -103,15 +103,19 @@ func parsePersonalOptions(mode string, args []string, stderr io.Writer) (persona
 }
 
 func openPersonalRuntime(ctx context.Context, allowWrite bool) (*personalRuntime, error) {
-	provider, err := appconfig.BuildLLMProvider()
-	if err != nil {
-		return nil, err
-	}
 	workspace, err := filepath.Abs(appconfig.ResolveWorkspacePath())
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace: %w", err)
 	}
-	capabilities, err := buildPersonalCapabilities(workspace, allowWrite)
+	return openPersonalRuntimeConfigured(ctx, workspace, allowWrite, nil, nil)
+}
+
+func openPersonalRuntimeConfigured(ctx context.Context, workspace string, allowWrite bool, servers []appconfig.MCPServerSettings, hooks []agentcore.Hook) (*personalRuntime, error) {
+	provider, err := appconfig.BuildLLMProvider()
+	if err != nil {
+		return nil, err
+	}
+	capabilities, err := buildPersonalCapabilitiesWithServers(workspace, allowWrite, servers)
 	if err != nil {
 		return nil, err
 	}
@@ -144,6 +148,7 @@ func openPersonalRuntime(ctx context.Context, allowWrite bool) (*personalRuntime
 		RunRoot:    runRoot,
 		Provider:   provider,
 		Tools:      capabilities.Registry,
+		Hooks:      hooks,
 		MaxSteps:   gkconfig.Int("max_steps", 30),
 	})
 	if err != nil {
@@ -155,8 +160,12 @@ func openPersonalRuntime(ctx context.Context, allowWrite bool) (*personalRuntime
 }
 
 func buildPersonalCapabilities(workspace string, allowWrite bool) (defaultCapabilities, error) {
+	return buildPersonalCapabilitiesWithServers(workspace, allowWrite, nil)
+}
+
+func buildPersonalCapabilitiesWithServers(workspace string, allowWrite bool, servers []appconfig.MCPServerSettings) (defaultCapabilities, error) {
 	if allowWrite {
-		return buildDefaultCapabilities(workspace)
+		return buildDefaultCapabilitiesWithServers(workspace, servers)
 	}
 	registry := tools.NewRegistry()
 	for _, tool := range native.NewFileTools(workspace) {
