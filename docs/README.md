@@ -1,9 +1,9 @@
 # Docs Guide
 
 > 状态：Current
-> 更新时间：2026-04-10
+> 更新时间：2026-10-07
 
-本文档用于说明当前 `docs/` 目录的使用方式，避免旧 `v1` 方案文档干扰新的 `v0` 开发。
+本文档区分当前个人 Agent 主线与早期 Host/Web 资料；早期设计保留作历史参考。
 
 ---
 
@@ -24,22 +24,14 @@
 
 ## 2. 当前主线（Source of Truth）
 
-当前新的 `v0` 开发，以以下文档作为主要依据：
+当前个人 Agent 改造以以下文档为依据：
 
-- `docs/v0-self-host-design.md`
-  - 当前 `v0.self-host` 总纲
-- `docs/superpowers/plans/2026-04-10-suag-v0-self-host-foundation-plan.md`
-  - 当前第一阶段基础骨架实施计划
-- `docs/superpowers/specs/2026-04-02-agentcore-design.md`
-  - `pkg/agentcore` 的独立设计说明
-- `docs/superpowers/plans/2026-04-02-agentcore-implementation-plan.md`
-  - `agentcore` 的基础实现计划
-- `docs/superpowers/plans/2026-04-06-agentcore-working-memory-phase1.md`
-- `docs/superpowers/plans/2026-04-06-agentcore-context-presets-phase1.md`
-- `docs/superpowers/plans/2026-04-07-agentcore-prompt-layered-phase1.md`
-- `docs/superpowers/plans/2026-04-07-agentcore-streaming-phase1.md`
+- `docs/design/2026-10-06-personal-agent-redesign-design.md`：产品与数据边界。
+- `docs/plans/2026-10-06-personal-agent-redesign-plan.md`：已批准实施阶段与 Gate。
+- `docs/usage/gofer-personal-agent.md`：当前 CLI/ACP 接入与操作。
+- `pkg/agentcore/docs/README.md`：保留的执行内核资料。
 
-如果这些文档与旧归档文档有冲突，以当前主线文档为准。
+早期 `docs/v0-self-host-design.md` 和 Web 工作台文档记录历史设计，不再描述当前运行入口。
 
 ---
 
@@ -63,14 +55,10 @@
 
 部分已经落地到代码的当前使用约定，放在 `docs/usage/` 下，供开发和客户端对接时直接参考，例如：
 
-- `docs/usage/host-state-snapshot-v0.md`
-  - 当前 Host `STATE_SNAPSHOT` 的 `v0` 消费约定
+- `docs/usage/gofer-personal-agent.md`
+  - 当前 Gofer CLI/ACP 用户路径
 - `docs/usage/agentcore-internal-integration.md`
-  - `internal/*` 接入 `pkg/agentcore` 的当前结论
-- `docs/superpowers/specs/2026-04-12-suag-web-foundation-design.md`
-  - Suag Web 基础工作台第一阶段设计
-- `docs/superpowers/plans/2026-04-12-suag-web-foundation-implementation-plan.md`
-  - Web 基础工作台第一阶段实现计划，覆盖 `web/app` 的三栏工作台、HTTP/WS 接线与调试抽屉
+  - `internal/*` 接入 `pkg/agentcore` 的既有说明，按当前源码核对
 
 ---
 

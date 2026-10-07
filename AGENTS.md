@@ -10,16 +10,10 @@
 
 <!-- PROCESSING WORKS:START -->
 
-- Suag v0 自用主线持续推进中，设计总纲见 `docs/v0-self-host-design.md`；当前 Host + Web 最小闭环已打通，联调说明见 `docs/usage/web-host-local-dev.md`
-- `docs/usage/host-state-snapshot-v0.md`、`docs/usage/llm-config-v0.md`、`docs/usage/host-recap-memory-hooks-v0.md`、`docs/usage/host-learning-retrieval-v0.md`、`docs/usage/host-internal-self-loop-v0.md` 共同构成当前 v0 协议、配置、learning/recall 与 self-loop 基线
-- `internal/host/session`、`internal/host/gateway`、Web 工作台已具备 session/turn/run 恢复、WS 命令编排、Pending HITL 自动刷新与 Focused Run 恢复链路；`DISPATCHING / EXTERNAL_RUNNING / INPUT_REQUIRED / AUTH_REQUIRED` 已贯通到快照与事件流
-- internal runner / ACP runner 的 Host contract 已完成一轮对齐：`externalTaskId`、失败态 external task 持久化、internal suspend `waitMetadata`、ACP `EXTERNAL_RUNNING` waiting metadata 与 AG-UI run detail / snapshot 已对齐
-- Host learning-system 当前已形成 `recaps + memory_candidates + MEMORY.draft.md / USER.draft.md + MEMORY.md / USER.md` 闭环，并已验证 recall 会影响 self-loop 结果且不会污染 session history；markdown 侧已按 `MemoryProjection*` 命名收敛，避免与 memory backend/storage 混淆
-- `tools / mcp / skills` 长线治理设计见 `docs/superpowers/specs/2026-04-20-host-capability-governance-design.md`，当前按“agentcore 只保留 runtime kernel 与 tool contract，suag 负责 capability governance” 方向持续推进
-- Capability governance 当前已完成到 Phase C-E：`CapabilityPolicy`、tool subset、结构化 `resolved_tool_refs`、skill matching、resource hints、planner hint 与结构化 `next_turn_plan` 已贯通，skills 会从 `<workspace>/skills`、`<workspace>/.agents/skills`、`config/skills` 加载，Web Context 面板已能显示下一轮 tool/skill/recall 信号与 tool source/provider；后续继续推进 richer skill matching、tool catalog 与 recall/policy/skills/planner 联动
-- Web 默认界面的 `Chat-first` 设计见 `docs/superpowers/specs/2026-04-21-web-chat-first-layout-design.md`，实现计划见 `docs/superpowers/plans/2026-04-21-web-chat-first-layout-implementation-plan.md`；当前默认左中右布局已切到浅色 `Sessions / Agent Chat / Context`，中间 chat 可滚动展示历史、thinking/activity 与 capability plan，并已通过 `App.test.tsx`、全量 `pnpm --dir web/app test` 与 `pnpm --dir web/app build` 验证
-- 正在收口 host turn 的 provider 兼容问题：已修复 OpenAI-compatible tool call `arguments` 的 JSON 字符串解析，并补充 provider 请求/响应 debug 日志；当前 v0 继续在 provider 映射层兼容“文本内容 + tool calls 混合返回”，长期 block-based `GenerateResult` 设计见 `pkg/agentcore/docs/block-result-design.md`
-- 目录治理与包边界设计已形成草案，见 `docs/suag-package-boundary-design.md`；Host data 边界见 `docs/host-data-boundary-v0.md`；当前确认采用“领域优先组织 internal、pkg 保守准入、internal/platform 作为只减不增的过渡区、session 暂留 host 下后续再择机提升”为主线，第一批已完成 `agentcore/storage` 迁移、`internal/host/session` 大文件同包拆分、Host `Repository`/`SQLiteRepository` 命名收敛、`internal/data` 最小基础设施骨架、app 启动 DB bootstrap、测试迁移 helper 与顶层 `miglite.yaml` 本地迁移入口
+- 当前主线是个人 Agent；设计见 `docs/design/2026-10-06-personal-agent-redesign-design.md`，已批准实施计划见 `docs/plans/2026-10-06-personal-agent-redesign-plan.md`。
+- CLI/ACP 的 Gofer 接入见 `docs/usage/gofer-personal-agent.md`。T01–T05 已验收；T06 删除旧 Web、T07 隔离 legacy、T08 资料与质量收口，阶段状态以 `.gofer/tracker` 的 `suag-ha0z` 子 issue 为准。
+- 本次改造用 `gofer issue` / `gofer memory` 跟踪，不使用 `bd`。
+
 <!-- PROCESSING WORKS:END -->
 
 ## 项目编码规范
@@ -44,7 +38,3 @@ Require(t, assert.Eq(t, 1, res.ID))
 // Standard assertion
 assert.Eq(t, expected, actual)
 ```
-
-## 前端项目开发
-
-- 包管理使用 pnpm

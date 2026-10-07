@@ -31,8 +31,8 @@ type defaultCapabilities struct {
 	closers  []capabilityToolProvider
 }
 
-// buildDefaultCapabilities creates the app's shared native tool wiring once so
-// orchestrator, team, cron, and future capability gating all see the same base.
+// buildDefaultCapabilities assembles native and configured MCP tools for the
+// personal Agent's writable mode.
 func buildDefaultCapabilities(workspace string) (defaultCapabilities, error) {
 	return buildDefaultCapabilitiesWithServers(workspace, nil)
 }

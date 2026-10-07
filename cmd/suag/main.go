@@ -1,9 +1,8 @@
-// Command suag runs the personal agent in CLI mode or the legacy Web server.
+// Command suag runs the personal agent through CLI or ACP stdio.
 package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -47,22 +46,6 @@ func main() {
 		return
 	}
 
-	runtimeApp, err := app.New()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to build app: %v\n", err)
-		os.Exit(1)
-	}
-	defer func() {
-		if err := runtimeApp.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to close app: %v\n", err)
-		}
-	}()
-
-	if err := runtimeApp.Run(ctx, mode); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		if errors.Is(err, app.ErrUnknownMode) {
-			fmt.Fprintln(os.Stderr, "Usage: suag [run|chat|acp|server]")
-		}
-		os.Exit(1)
-	}
+	fmt.Fprintf(os.Stderr, "unknown mode %q\nUsage: suag [run|chat|acp]\n", mode)
+	os.Exit(1)
 }
