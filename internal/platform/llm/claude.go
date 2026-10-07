@@ -155,8 +155,10 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		} `json:"content"`
 		StopReason string `json:"stop_reason"`
 		Usage      struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
+			InputTokens              int `json:"input_tokens"`
+			OutputTokens             int `json:"output_tokens"`
+			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
 		Error *struct {
 			Message string `json:"message"`
@@ -172,9 +174,11 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 
 	resp := &agentcoreapi.GenerateResult{
 		Usage: agentcoreapi.Usage{
-			InputTokens:  raw.Usage.InputTokens,
-			OutputTokens: raw.Usage.OutputTokens,
-			TotalTokens:  raw.Usage.InputTokens + raw.Usage.OutputTokens,
+			InputTokens:      raw.Usage.InputTokens + raw.Usage.CacheReadInputTokens + raw.Usage.CacheCreationInputTokens,
+			OutputTokens:     raw.Usage.OutputTokens,
+			TotalTokens:      raw.Usage.InputTokens + raw.Usage.CacheReadInputTokens + raw.Usage.CacheCreationInputTokens + raw.Usage.OutputTokens,
+			CacheReadTokens:  raw.Usage.CacheReadInputTokens,
+			CacheWriteTokens: raw.Usage.CacheCreationInputTokens,
 		},
 	}
 

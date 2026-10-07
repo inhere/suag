@@ -100,6 +100,24 @@ func TestOpenAIProvider_ParseResponse_AcceptsStringifiedToolArguments(t *testing
 	assert.Eq(t, ".", resp.ToolCalls[0].Arguments["path"])
 }
 
+func TestOpenAIProvider_ParseResponse_CapturesCacheUsage(t *testing.T) {
+	provider := NewOpenAIProvider(OpenAIConfig{})
+	resp, err := provider.parseResponse([]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15,"prompt_tokens_details":{"cached_tokens":4},"cost_usd":0.01}}`))
+	assert.NoErr(t, err)
+	assert.Eq(t, 4, resp.Usage.CacheReadTokens)
+	assert.Eq(t, 0.01, resp.Usage.CostUSD)
+}
+
+func TestClaudeProvider_ParseResponse_CapturesCacheUsage(t *testing.T) {
+	provider := NewClaudeProvider(ClaudeConfig{})
+	resp, err := provider.parseResponse([]byte(`{"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":12,"output_tokens":3,"cache_read_input_tokens":4,"cache_creation_input_tokens":2}}`))
+	assert.NoErr(t, err)
+	assert.Eq(t, 4, resp.Usage.CacheReadTokens)
+	assert.Eq(t, 2, resp.Usage.CacheWriteTokens)
+	assert.Eq(t, 18, resp.Usage.InputTokens)
+	assert.Eq(t, 21, resp.Usage.TotalTokens)
+}
+
 func TestOpenAIProvider_ParseResponse_PrefersToolCallsOverMixedContent(t *testing.T) {
 	provider := NewOpenAIProvider(OpenAIConfig{})
 

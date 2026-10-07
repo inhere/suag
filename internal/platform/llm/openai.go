@@ -202,9 +202,13 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
+			PromptTokens        int `json:"prompt_tokens"`
+			CompletionTokens    int `json:"completion_tokens"`
+			TotalTokens         int `json:"total_tokens"`
+			PromptTokensDetails struct {
+				CachedTokens int `json:"cached_tokens"`
+			} `json:"prompt_tokens_details"`
+			CostUSD float64 `json:"cost_usd"`
 		} `json:"usage"`
 		Error *struct {
 			Message string `json:"message"`
@@ -225,9 +229,11 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 	resp := &agentcoreapi.GenerateResult{
 		Content: choice.Message.Content,
 		Usage: agentcoreapi.Usage{
-			InputTokens:  raw.Usage.PromptTokens,
-			OutputTokens: raw.Usage.CompletionTokens,
-			TotalTokens:  raw.Usage.TotalTokens,
+			InputTokens:     raw.Usage.PromptTokens,
+			OutputTokens:    raw.Usage.CompletionTokens,
+			TotalTokens:     raw.Usage.TotalTokens,
+			CacheReadTokens: raw.Usage.PromptTokensDetails.CachedTokens,
+			CostUSD:         raw.Usage.CostUSD,
 		},
 	}
 
