@@ -1,7 +1,7 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # Suag 个人 Agent 收敛实施计划
 
-> 状态：Draft 0.2 / 待人工计划批准
+> 状态：Draft 0.3 / 数据目标修订待人工计划批准
 
 ## 修订记录
 
@@ -9,6 +9,7 @@
 |---|---|---|---|
 | 0.1 | 2026-10-06 | Codex | 规划共同会话主链、CLI/ACP 双入口、Gofer 联调及旧控制面退出 |
 | 0.2 | 2026-10-06 | Codex | ACP 审批限定 Suag Agent，调整 Web 删除与 legacy 移动顺序 |
+| 0.3 | 2026-10-07 | Codex | 将个人 CLI/ACP 默认持久会话放入 `~/.suag/db`，补齐旧数据与只读验收 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -20,7 +21,7 @@
 
 1. `suag run` 输出可被 Gofer 捕获的实时事件、最终答复与失败状态；`suag chat` 复用同一会话模块。
 2. `suag acp` 完成 `initialize/new/load/prompt/cancel/set_mode/update/request_permission` 的适用合同；Gofer `job run --session`、`job say/end` 和新进程 `job resume` 真正运行并保留上下文。
-3. ACP 只读 mode 不写文件；编辑或执行工具的权限请求被拒绝时工具不运行。CLI 无法交互审批时明确失败，不挂起等待 stdin。
+3. ACP 与 CLI 的只读 mode 不写工作区文件或执行有副作用的工具；会话仍持久化于 `~/.suag/db`。编辑或执行工具的权限请求被拒绝时工具不运行。CLI 无法交互审批时明确失败，不挂起等待 stdin。
 4. 旧 Web 前后端和 `server` 入口已删除；旧 team/cron/orchestrator 等只留在根 Go module 不参与构建的 `legacy/`；根模块 `go list ./...`、`go test ./...`、`go build ./cmd/suag` 通过。
 5. Gofer issue/memory 可记录与恢复进度；真实 Gofer 作业验收与单元测试分开报告。资料、配置和运行日志不含凭据。
 
@@ -28,12 +29,13 @@
 
 - 代码归属：独立 Git 根 `D:/work/inhere/my-tools-dev/inhere-tools/suag`；Gofer 源码根 `D:/work/inhere/hyy-ai-inspect/tools/gofer` 只读。目标主机 Gofer 配置 `D:/work/inhere/config/win-env/gofer/config.yaml` 仅在联调波次按单独 Gate 调整。
 - 保持现有 SQLite session/run 数据的读取兼容；本计划不实施数据库迁移、不清理已有会话数据、不发布或推送代码。Pigo 仅作设计参考，不引入为依赖。
+- 个人 CLI/ACP 的默认会话数据库为 `~/.suag/db/suag.db`，run/transcript 根为 `~/.suag/db/agentcore/host`；`~` 通过用户主目录解析。显式 `database_url`、`agentcore.run_root` 继续优先；旧 Web 在删除前保留原默认目录。已有仓库 `db/` 不自动迁移或覆盖。
 - 当前用户明确要求本次不用 `bd`；进度与后续事项使用 Suag 仓库的 `.gofer/tracker`、`gofer issue` 和 `gofer memory`。已置 `auto_sync: false`，不把嵌套仓库记录自动镜像到父项目。
 - 本计划包含 Gofer 主机配置与真实 job 运行，故外部动作适用性为 `host_or_non_offline_action=REQUIRED`。计划批准不自动授权修改该主机配置、启动 Agent 作业或执行其他出机器动作。
 
 ## 输入与批准证据
 
-- 输入设计：[2026-10-06-personal-agent-redesign-design.md](../design/2026-10-06-personal-agent-redesign-design.md)，修订 `0.3`；用户在 2026-10-06 对原设计回复“好的”，并明确增加 ACP 交互、删除 Web、移动旧 team/cron/orch 至 legacy、改用 Gofer issue/memory。该原话授权进入规划，不授权实施。
+- 输入设计：[2026-10-06-personal-agent-redesign-design.md](../design/2026-10-06-personal-agent-redesign-design.md)，修订 `0.4`；用户在 2026-10-06 对原设计回复“好的”，并明确增加 ACP 交互、删除 Web、移动旧 team/cron/orch 至 legacy、改用 Gofer issue/memory；2026-10-07 又明确选择 `~/.suag/db` 作为默认数据目录。上述决定固定设计范围，修订后的本计划仍待批准。
 - 当前执行请求与计划批准证据：用户在审阅本计划 `0.2` 后要求“执行一下 gofer repo sync 同步issue memory 上 server 我看看。先在当前commit 打一个 v0.1.0 tag 记录；先做一点调整，将 chi 切到 gookit/rux/v2 库，之后再开始计划”。这明确给出了顺序和本计划的当前执行意图；先行三项动作不扩大 T01–T08 的目标，T05 的主机配置与真实 Agent 作业仍受单独 Gate 约束。
 - 设计审查：直接核对 Suag 的旧 CLI/Host/ACP client、Gofer 的 `acp-agent` runner/config、ACP Go SDK 的 Agent 侧接口，设计文档 validator PASS。若 SDK 与本机 Gofer 不兼容，S0 停止后回设计 Gate。
 - 跟踪：`gofer issue show suag-ha0z` 是主事项；`suag-xpks` 记录 tracker 初始化的嵌套仓库同步体验；`gofer memory show suag-personal-agent-scope` 是用户已定范围摘要。它们不替代本设计或当前授权。
@@ -51,6 +53,7 @@
 | CAP-05 | Provider、MCP、技能扩展 | `internal/platform/llm`、`internal/platform/tools/mcp`、`internal/capability/skills` | 现有 provider/tool/skill 能力足够首切片 | 由个人会话模块装配 ACP `mcpServers` 与已允许工具 | DIRECT_REUSE | 当前无第二个插件 ABI 用例 | 不引入 Pigo、插件市场或动态加载系统 |
 | CAP-06 | 删除 Web 并隔离旧控制面 | `web/app`、`internal/host/gateway`、`agui`、旧 team/cron/orchestrator、Go nested module | Git 移动和 Go module 边界可直接完成 | 先清 active import，再移动旧源码并删 Web | DIRECT_REUSE | 无新运行机制缺口，只有依赖切断与资料归档 | legacy 不参与根构建；不让旧模块以 adapter 名义继续活跃 |
 | CAP-07 | Gofer 作业、会话、记录 | `gofer cli-agent/acp-agent`、`gofer issue/memory`、项目配置 | 直接复用现有 Gofer 项目与作业控制面 | 只增加 Suag agent 配置和最小联调说明 | DIRECT_REUSE | 当前服务尚无 `suag-cli`/`suag-acp` 注册 | 不改 Gofer 源码，不另建 job scheduler 或 Web |
+| CAP-08 | 个人会话默认目录与旧数据兼容 | `internal/config/paths.go`、显式路径配置、Go `os.UserHomeDir` | 保留现有 SQLite 仓储和显式覆盖配置；标准库解析用户主目录 | 在个人入口的配置 owner 增加默认路径解析，旧 Web 默认值保持到删除 | OWNER_EXTENSION | 相对 `db/` 默认值不符合用户指定的 `~/.suag/db`，无需新存储模块 | 不复制 session schema、不迁移旧 `db/`；CLI/ACP 只共享一套路径解析 |
 
 ### New module candidates
 
@@ -74,6 +77,7 @@
 - Gofer 源码只读 HEAD `2ef84014ef945c7289a28ad2c650d1af4f7ac2e3`，本机 CLI 报告 `0.81.0-1-g11aef54`。实施前重新运行 `gofer --version`、`gofer job run --help`、`gofer config validate server`；不能由源码 HEAD 推断本机 CLI 已具相同合同。
 - Suag 当前 `go test ./...` 于 2026-10-06 PASS；实施前复测。检查 Go 1.25、ACP SDK 版本与 Gofer 协议版本。缺 SDK/Gofer 兼容证据、缺会话数据备份路径、Gofer 配置无法验证或 read-only/permission 无法阻止副作用时，停止对应波次。
 - 实施前重查嵌套 Git 根、HEAD、dirty 与数据库路径；既有 `db/suag.db` 及 `db/agentcore/**` 视为用户数据，不在测试和迁移中覆盖。测试使用临时目录。Codebase Memory 图服务本次 `list_projects` 返回 `Transport closed`，相关 owner 与导入需以当前源文件和 `go list` 再核实。
+- 恢复发现父工作区 IDEV-STD 已从 `0.22.2` 升至 `0.23.0`，旧 SUPMODE 指纹 `s2:ffhB3PoqDrQV3h53vb35ug` 失配；T01/T02 已验收，T03 checkpoint `f673084` 与测试修正 `e4654d0` 未构成 T03 完成。须在本修订获批后重新 preflight，不能从旧指纹直接续跑。
 
 ## 波次与依赖
 
@@ -107,16 +111,17 @@
 
 ### T03 CLI 批处理和交互入口
 
-- 文件/owner：`cmd/suag/main.go`、`internal/app/{app.go,chat.go}`、新 `internal/app/cli.go`、`internal/config`、对应 focused tests、`README.md`。
-- 动作：提供 `run --prompt --session-id/--resume --output-format stream-json --read-only` 与 `chat`；二者调用 T02。stream-json 第一条为 session，最终一条 result；Gofer 通用 NDJSON 可提取答复。CLI 无 stdin 审批时清楚拒绝；旧 `orchestrator.RunTask` 不再用于新入口。
-- 验证：`go test ./cmd/suag ./internal/app/... ./internal/personal/...`；mock provider 命令 smoke；`go build ./cmd/suag`。
-- 完成标准：可在无 Web 服务时执行、连续输出、续聊、失败非零退出；只读模式对写文件和 shell 工具真正拒绝。
+- 文件/owner：`cmd/suag/main.go`、`internal/app/{app.go,chat.go,cli.go}`、`internal/config/paths.go` 及对应 focused tests、`README.md`。
+- 动作：提供 `run --prompt --session-id/--resume --output-format stream-json --read-only` 与 `chat`；二者调用 T02。stream-json 第一条为 session，最终一条 result；Gofer 通用 NDJSON 可提取答复。个人 CLI 默认将 SQLite 与 run/transcript 写到用户主目录 `~/.suag/db`，显式路径覆盖仍可用；旧 Web 默认路径不变且不迁移旧 `db/`。CLI 无 stdin 审批时清楚拒绝；旧 `orchestrator.RunTask` 不再用于新入口。
+- 验证：`go test ./cmd/suag ./internal/app/... ./internal/config/... ./internal/personal/...`；隔离用户主目录下的默认路径、显式覆盖及仓库 `db/` 不被新入口默认写入测试；mock provider 命令 smoke；`go build ./cmd/suag`；Docker `golang:1.25` focused `-race`。
+- 完成标准：可在无 Web 服务时执行、连续输出、续聊、失败非零退出；只读模式对工作区写文件和 shell 工具真正拒绝，同时会话写入 `~/.suag/db`；原仓库 `db/` 不受默认新入口影响。
 - 依赖：T02。
 
 ### T04 ACP 常驻、只读与审批
 
 - 文件/owner：`internal/acpserver/`、`internal/personal/`、`cmd/suag/main.go`、必要的 `pkg/agentcore` hook/policy 文件及 focused tests。
 - 动作：`suag acp` 接 Gofer 协议；`session/new/load/prompt/cancel/set_mode` 共用 T02；发送文本/工具 `session/update`，执行前对 edit/execute 申请 `session/request_permission`。对拒绝、超时、取消作 fail-closed 处理；将 ACP `mcpServers` 映射到现有允许的 MCP provider，不支持的传输报错。ACP stdout 只用于协议。
+- ACP 默认会话与 CLI 使用 T03 的同一 `~/.suag/db` 路径解析，并在隔离用户主目录中验证新进程 `session/load`。
 - 验证：`go test ./internal/acpserver/... ./internal/personal/... ./pkg/agentcore/...`；使用 SDK client 的两轮、load、read-only、permission allow/reject、cancel 用例；`go build ./cmd/suag`。
 - 完成标准：拒绝审批无副作用；read-only 不执行写/命令；第二轮和新进程 load 均保留上下文；取消使正在运行的 turn 有界退出。
 - 依赖：T02、T01。
@@ -170,6 +175,7 @@
 | 用户结果/决定 | 任务 | 验证 |
 |---|---|---|
 | 个人单 Agent、简化主链 | T02、T03、T06 | 共同会话测试、`go list ./...` |
+| 默认会话位于 `~/.suag/db` 且旧数据不迁移 | T03、T04 | 隔离用户主目录路径、显式覆盖与新进程 load 测试 |
 | Gofer 批处理执行 | T03、T05 | NDJSON 答复与 Gofer job 日志 |
 | Gofer ACP 常驻与跨进程续聊 | T01、T02、T04、T05 | `job say/end/resume` 与 session/load 上下文 |
 | 只读和过程审批 | T03、T04、T05 | 拒绝无副作用、只读不写、Gofer permission 记录 |
