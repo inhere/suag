@@ -11,3 +11,6 @@ db/*.db
 db/*.db*
 db/agentcore/
 .agentcore/
+tmp/
+dist/
+local/
