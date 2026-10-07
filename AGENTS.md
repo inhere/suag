@@ -11,7 +11,7 @@
 <!-- PROCESSING WORKS:START -->
 
 - 当前主线是个人 Agent；设计见 `docs/design/2026-10-06-personal-agent-redesign-design.md`，已批准实施计划见 `docs/plans/2026-10-06-personal-agent-redesign-plan.md`。
-- CLI/ACP 的 Gofer 接入见 `docs/usage/gofer-personal-agent.md`。T01–T05 已验收；T06 删除旧 Web、T07 隔离 legacy、T08 资料与质量收口，阶段状态以 `.gofer/tracker` 的 `suag-ha0z` 子 issue 为准。
+- CLI/ACP 的 Gofer 接入见 `docs/usage/gofer-personal-agent.md`。T01–T06 已验收；T07 隔离 legacy、T08 资料与质量收口，阶段状态以 `.gofer/tracker` 的 `suag-ha0z` 子 issue 为准。
 - 本次改造用 `gofer issue` / `gofer memory` 跟踪，不使用 `bd`。
 
 <!-- PROCESSING WORKS:END -->
