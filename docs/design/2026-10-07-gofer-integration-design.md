@@ -1,12 +1,13 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # Suag 接入 Gofer 增强设计（规则、用量、工具、传话）
 
-> 状态：Draft 0.3 / S1–S4 可实施；S5/S6 待 Gofer 侧 G1–G6 发布（v0.119）；Gofer 侧由 Gofer 仓库单独交付
+> 状态：Draft 0.4 / S1–S4 可实施；S5/S6 待 Gofer 侧 G1–G6 发布（v0.119）；Gofer 侧由 Gofer 仓库单独交付
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
+| 0.4 | 2026-10-07 | Claude | S1 规则收集修正：同级 `AGENTS.md` 与 `CLAUDE.md` 都读（去重规则见正文），同一文件被多次引入只展开一次，`@路径` 后可跟说明文字。原因：Gofer 管理的工作区里 `workspace.md` 常只由 `CLAUDE.md` 引入，只读 `AGENTS.md` 会漏掉项目规则 |
 | 0.3 | 2026-10-07 | Claude | 按用户思路改送话通道：Suag 进程本机登记 + 本地 socket，新增 `suag ps` / `suag send`，Gofer 只在会话所在机器执行 agent 配置的 `deliver_command`（G6）；去掉 `--listen` 长轮询；存活判定改由 `suag send` 退出码给出 |
 | 0.2 | 2026-10-07 | Claude | 送话改为「先找到原进程」：新增在线收件（`--listen` 常驻长轮询，Gofer G6），送话优先级为 Stop 等待 → 在线收件 → tmux → 接管；接管只允许在原进程已退出/心跳超时时进行，避免两个进程写同一会话分叉；待确认两项按建议确认 |
 | 0.1 | 2026-10-07 | Claude | 初稿：在个人 Agent 首切片（2026-10-06 设计 0.4）之上，补齐 Gofer 使用所需的规则注入、用量、模型配置、CLI MCP、ACP 更新，以及终端会话「传话人」（web 送话激活停滞会话） |
@@ -88,8 +89,10 @@ Gofer 侧（在 Gofer 仓库实现，目标版本 v0.119）。原则：**送话�
 
 ### S1 规则与提示注入
 
-- 启动（run/chat/acp 新会话）时，从 cwd 向上查找到 git 根（无 git 时到 cwd）收集规则文件：每一级优先 `AGENTS.md`，否则 `CLAUDE.md`；同级两者都在且 `CLAUDE.md` 只含 `@AGENTS.md` 时只读一次。外层在前、内层在后。另读用户级 `~/.suag/AGENTS.md`（若有，放最前）。
-- `@<相对路径>` 独占一行时展开为该文件内容（相对当前文件所在目录，只展开一层，防环，单文件上限 64KB，总上限 128KB，超限截断并在末尾注明）。
+- 启动（run/chat/acp 新会话）时，从 cwd 向上查找到 git 根（无 git 时到 cwd）收集规则文件：每一级**两个都读**，`AGENTS.md` 在前、`CLAUDE.md` 在后；外层在前、内层在后。另读用户级 `~/.suag/AGENTS.md`（若有，放最前）。
+- 去重：按「展开后的文件路径」去重——同一个文件（含经 `@` 引入的文件，如两边都引入的 `workspace.md`）在整个收集过程中只出现一次；`CLAUDE.md` 若只含 `@AGENTS.md`（或两文件内容相同）则等同于已读。
+- 实际例子：某工作区 `AGENTS.md` 不引入 `workspace.md`、`CLAUDE.md` 引入了 `@workspace.md`，则规则 = `AGENTS.md` + `CLAUDE.md`（其中 `@workspace.md` 展开一次）；若两者都引入 `workspace.md`，它只展开一次。
+- 行首为 `@<相对路径>` 时（路径后可跟空白与说明文字，如 `@workspace.md 需要先加载阅读。`）展开为该文件内容（相对当前文件所在目录，只展开一层，防环，单文件上限 64KB，总上限 128KB，超限截断并在末尾注明）。
 - 新增 `--append-system-prompt <text>`（及 `SUAG_APPEND_SYSTEM_PROMPT`）：追加在规则之后。Gofer 用 `{{system_prompt}}` 注入规则与 skill。
 - 规则只在会话创建时读入并持久化到会话元数据；`--resume` 时不重复注入，但若规则文件哈希变化，在下一轮前追加一条「项目规则已更新」的系统消息（带新内容）。
 - 在 job 内（`GOFER_JOB_ID` 存在）额外追加一段固定提示：当前运行在 Gofer job 中，可用 `gofer work report` / `gofer issue` 汇报。
