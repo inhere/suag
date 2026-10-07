@@ -55,6 +55,9 @@ func TestRuntime_Run_ToolCallThenFinal(t *testing.T) {
 	if result.Steps != 2 {
 		t.Fatalf("expected two model steps, got %#v", result)
 	}
+	if result.Usage != (Usage{InputTokens: 7, OutputTokens: 5, TotalTokens: 12}) {
+		t.Fatalf("expected cumulative usage across model steps, got %#v", result.Usage)
+	}
 	if len(provider.calls) != 2 {
 		t.Fatalf("expected two model calls, got %d", len(provider.calls))
 	}
