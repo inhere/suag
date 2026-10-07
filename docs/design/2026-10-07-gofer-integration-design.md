@@ -15,7 +15,7 @@
 
 ## 背景与目标
 
-个人 Agent 首切片已完成（`suag-ha0z`）：`suag run --output-format stream-json`（一次性回合）、`--resume`、`suag chat`（终端多轮）、`suag acp`（ACP stdio，`session/load`、`read_only` 模式、权限请求、stdio MCP），会话持久化在 `~/.suag/db`。Gofer 已能用 cli-agent（`suag-cli`）与 acp-agent（`suag-acp`）跑它。
+个人 Agent 首切片已完成（`suag-ha0z`）：`suag run --output-format stream-json`（一次性回合）、`--resume`、`suag chat`（终端多轮）、`suag acp`（ACP stdio，`session/load`、`read_only` 模式、权限请求、stdio MCP），会话持久化在 `~/.suag/db`。Gofer 已能用 cli-agent（`suag`）与 acp-agent（`suag-acp`）跑它。
 
 但 Gofer 后来加入的几类能力 Suag 还接不上：
 
@@ -37,7 +37,7 @@
 | 唤醒（wake） | 对停滞会话非交互地续一轮：Gofer 以 cli-agent 的 `session_resume` 起一个 job（`suag run --resume <id> --prompt …`） |
 | hook | Suag 在会话生命周期事件上调用的外部命令 `gofer hook generic --agent <key>`，stdin 为一段 JSON |
 | transcript | Suag 为每个会话追加写的 jsonl 对话记录，供 Gofer 读取最后消息与整理工作项 |
-| gofer agent key | Gofer 配置里 Suag 的 agent 名（建议 `suag-cli` / `suag-acp`），决定续接/接管模板 |
+| gofer agent key | Gofer 配置里 Suag 的 agent 名（建议 `suag` / `suag-acp`），决定续接/接管模板 |
 
 ## 范围与非目标
 
@@ -81,7 +81,7 @@ Gofer 侧（在 Gofer 仓库实现，目标版本 v0.119）。原则：**送话�
 | G2 | cli-agent 配置 `ndjson_usage_path`（如 `usage`）：从 ndjson 结果行读取用量，入 job 用量与统计 |
 | G3 | transcript 通用方言 `generic`（格式见下），agent 配置 `transcript_dialect: generic`；整理器与 worker 尾读都支持 |
 | G4 | agent 配置 `inject_process: [suag]`：并入 tmux 送话前台进程白名单 |
-| G5 | agent 配置 `session_family: suag`：`suag-cli` 与 `suag-acp` 会话互通（CLI 续 ACP、ACP `session/load` CLI 会话） |
+| G5 | agent 配置 `session_family: suag`：`suag` 与 `suag-acp` 会话互通（CLI 续 ACP、ACP `session/load` CLI 会话） |
 | G6 | agent 配置 `deliver_command`（argv 模板，如 `[send, --session, "{{session_id}}"]`）与 `deliver_stdin: true`：送话时 Gofer 在会话登记的 runner 上执行它（同 tmux 注入的内部 job 机制），退出码 0=已送达、3=会话进程不在线、其它=失败；deliver 优先级 OPEN turn → deliver_command → tmux（未配时）→ 接管；接管前存活检查：配了 deliver_command 的以退出码 3 为准，其余 agent 看 hook 心跳（`session.takeover_alive_sec`，原因 `session_alive`） |
 
 ## 合同细节
@@ -128,7 +128,7 @@ Gofer 侧（在 Gofer 仓库实现，目标版本 v0.119）。原则：**送话�
 gofer:
   hooks: auto        # auto | on | off；auto = PATH 上有 gofer 且不在 Gofer job 内
   command: gofer     # 可写绝对路径
-  agent: suag-cli    # Gofer 配置里的 agent key（决定续接/接管模板）
+  agent: suag        # Gofer 配置里的 agent key（决定续接/接管模板）
   wait_sec: 7140     # Stop 等待 web 回复的上限
   timeout_ms: 3000   # 非 Stop 事件的调用超时
 ```
@@ -169,7 +169,7 @@ gofer:
 
 验收：
 - 单测：事件序列（含等待中输入 → Interrupt 在前）、block 输出转新一轮、hook 缺失/失败不影响对话、transcript 行格式。
-- 真机（Gofer ≥ G1/G3 发布版）：在 tmux 里 `suag chat` → Gofer Sessions 页出现会话（agent=`suag-cli`）、标题来自首条输入；`gofer session relay on` 后一轮结束进入「等回复」，web 回复后 Suag 以新一轮继续；终端输入可打断等待；退出后会话 `ended`；工作项草稿出现并能「整理」出目标（读 transcript）。
+- 真机（Gofer ≥ G1/G3 发布版）：在 tmux 里 `suag chat` → Gofer Sessions 页出现会话（agent=`suag`）、标题来自首条输入；`gofer session relay on` 后一轮结束进入「等回复」，web 回复后 Suag 以新一轮继续；终端输入可打断等待；退出后会话 `ended`；工作项草稿出现并能「整理」出目标（读 transcript）。
 
 ### S6 送话与唤醒
 
@@ -183,12 +183,12 @@ gofer:
 - **接管（送话 B，仅原进程已不在时）**：Gofer 先做存活检查（G6：`suag send` 返回 3 才视为原进程不在；否则拒绝，原因 `session_alive`），通过后才用 `session_resume_interactive: [chat, --resume, "{{session_id}}"]` 在 pty 起 `suag chat --resume <id>`，并在首次输出后写入 `[gofer web 回复] <文本>\r`。要求：`chat --resume` 在 pty 下尽快打印提示并读取首行；首行作为正常用户输入（`injected=true` 记入 transcript，发 UserPromptSubmit）。Suag 侧另需保证：同一会话被第二个 Suag 进程打开时（例如原进程其实仍在但心跳异常），后打开的进程检测到会话被占用（会话锁，见下）并拒绝写入或只读打开，防止分叉。
 - **会话锁**：`chat`/`run` 打开会话时在 `SUAG_HOME` 下取会话级排他锁（含 pid、主机、时间，进程退出释放、陈旧锁可回收）；锁被占用时 `chat --resume` 报错退出（Gofer 接管 job 随之失败并提示），`run --resume` 等待短时（如 30s）后报错。
 - **唤醒（非交互）**：Gofer 已能用 `session_resume` 起 `suag run --resume <id> --prompt …`（0.118 起继承 agent/job env 并按源 agent 投影输出），Suag 侧无需改动，只需保证 run 续接后的事件与首轮一致。
-- **会话族**：同一会话可被 `suag-cli` 与 `suag-acp` 交替续接（共享 `~/.suag/db`）；Gofer 侧用 G5 声明族。
+- **会话族**：同一会话可被 `suag` 与 `suag-acp` 交替续接（共享 `~/.suag/db`）；Gofer 侧用 G5 声明族。
 - **配置样例**（交付 `docs/usage/gofer-personal-agent.md` 更新）：
 
 ```yaml
 agents:
-  suag-cli:
+  suag:
     type: cli-agent
     command: suag
     args: [run, --output-format, stream-json, --append-system-prompt, "{{system_prompt}}", --prompt, "{{prompt}}"]
@@ -229,7 +229,7 @@ agents:
 **web 回复让停在回合末尾的会话继续（S5）**
 
 ```
-suag chat 一轮结束 → 后台: gofer hook generic --agent suag-cli --wait 7140 (Stop, last_assistant_message)
+suag chat 一轮结束 → 后台: gofer hook generic --agent suag --wait 7140 (Stop, last_assistant_message)
   → Gofer 判定需要等（relay on / auto 判据）→ web 会话页显示「等回复」
   → 用户 web 回复 → hook stdout {"decision":"block","reason":"[gofer web 回复] 继续"}
   → Suag 以该文本开新一轮 → 再次 Stop …
