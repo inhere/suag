@@ -21,7 +21,7 @@ agents:
     ndjson_stdout_path: result
     detect:
       command: suag
-      args: [run, --help]
+      args: [version]
   suag-acp:
     type: acp-agent
     command: suag
@@ -32,10 +32,10 @@ agents:
       load_session: true
     detect:
       command: suag
-      args: [run, --help]
+      args: [version]
 ```
 
-用 `gofer config validate server` 检查文件，再按当前 Gofer 服务的配置管理流程 reload，并用 `gofer agent list --runner server` 确认两项可用。`detect` 使用 `run --help`，避免默认 `--version` 探测走入旧运行入口。
+用 `gofer config validate server` 检查文件，再按当前 Gofer 服务的配置管理流程 reload，并用 `gofer agent list --runner server` 确认两项可用。`detect` 使用 `suag version`，其输出为单行 `suag <version> (<commit>)`。
 
 Suag 创建会话时按外层到内层读取项目 `AGENTS.md`（没有时读取 `CLAUDE.md`），并在最前加入 `~/.suag/AGENTS.md`。`SUAG_HOME` 可改变用户级规则目录。规则里的独占行 `@相对文件` 展开一层；规则和 `--append-system-prompt` 在会话创建时保存，续接时只在规则文件变化后向下一轮补充更新消息。`SUAG_APPEND_SYSTEM_PROMPT` 可提供默认追加提示，命令行参数优先；`--no-project-rules` 可在调试时跳过项目文件。Gofer job 中还会附上 `gofer work report` / `gofer issue` 的汇报提示。
 
@@ -57,7 +57,7 @@ BAILIAN_API_KEY=<你的密钥>
 BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
-也可将这两个变量设为 Gofer server 进程可用的环境变量。`config/config.yaml` 提供了字段样例；Suag 启动时依次加载当前目录和用户目录的配置。换用 OpenAI、DeepSeek 或 Anthropic 时，调整 `api_type`、`provider_name`、`model`、`api_key` 与 `base_url`；Anthropic 使用 `api_type: anthropic`。不要把真实密钥写入 agent argv、job `--env` 或任务文本：Gofer 会持久化 job 请求。需要读取旧仓库 `db/` 会话时，显式配置 `database_url` 和 `agentcore.run_root`；默认路径不会自动迁移旧数据。
+也可将这两个变量设为 Gofer server 进程可用的环境变量。`config/config.yaml` 提供了字段样例；Suag 启动时依次加载当前目录和用户目录的配置。`SUAG_HOME` 替换 `~/.suag` 作为数据与配置根，`SUAG_CONFIG` 指定唯一配置文件。模型与 provider 的优先级是 `--model` / `--provider` > `SUAG_MODEL` / `SUAG_PROVIDER` > 配置文件；这些选项不会接收密钥。换用 OpenAI、DeepSeek 或 Anthropic 时，调整 `api_type`、`provider_name`、`model`、`api_key` 与 `base_url`；Anthropic 使用 `api_type: anthropic`。不要把真实密钥写入 agent argv、job `--env` 或任务文本：Gofer 会持久化 job 请求。需要读取旧仓库 `db/` 会话时，显式配置 `database_url` 和 `agentcore.run_root`；默认路径不会自动迁移旧数据。
 
 ## 批处理 CLI
 

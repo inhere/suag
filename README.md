@@ -14,13 +14,13 @@ go build -o local/bin/suag.exe ./cmd/suag
 
 On a host with `make` and `upx`, `make install` builds and installs `suag` to `$(go env GOPATH)/bin`. Ensure that directory is on the PATH of both your shell and any Gofer server process, then check `suag run --help` from a new shell.
 
-`run` executes one turn and emits a `session` event, progress events, then one `result` event. `chat` keeps a terminal conversation open; enter `:session` to see its ID and `:quit` to leave. Use `--session-id <id>` to create or reuse a named session. Use `--resume <id>` when an existing session is required; an unknown ID fails instead of creating a new one.
+`run` executes one turn and emits a `session` event, progress events, then one `result` event with cumulative `usage.input_tokens`, `usage.output_tokens`, and `usage.total_tokens`. `chat` keeps a terminal conversation open; enter `:session` to see its ID and `:quit` to leave. Use `--session-id <id>` to create or reuse a named session. Use `--resume <id>` when an existing session is required; an unknown ID fails instead of creating a new one. `suag version` prints `suag <version> (<commit>)`.
 
 `suag acp` speaks ACP over stdin/stdout. Launch it through an ACP client such as Gofer; stdout is reserved for protocol frames. See [Gofer setup and commands](docs/usage/gofer-personal-agent.md) for the tested `suag` and `suag-acp` configurations.
 
 ## Data and tool boundaries
 
-Personal sessions and run records default to `~/.suag/db`. The `database_url` and `agentcore.run_root` settings can point to existing data explicitly; Suag does not move the former repository `db/` contents automatically. Tests use isolated temporary homes and databases.
+Personal sessions and run records default to `~/.suag/db`. `SUAG_HOME` replaces `~/.suag` as the data and configuration root; `SUAG_CONFIG` selects a specific YAML configuration file. For `run` and `chat`, `--model` and `--provider` override `SUAG_MODEL` and `SUAG_PROVIDER`, which override `llm.model` and `llm.provider_name` in the configuration file. Credentials stay in the configuration file or provider environment variables. The `database_url` and `agentcore.run_root` settings can point to existing data explicitly; Suag does not move the former repository `db/` contents automatically. Tests use isolated temporary homes and databases.
 
 The CLI starts with read and list tools. `--read-only` makes that intent explicit. `--allow-write` opts into workspace write and shell tools for a trusted local invocation; the CLI has no mid-turn approval prompt. For Gofer tasks that require approval before a tool runs, use `suag-acp` with `permission_policy: ask`. Its `read_only` mode excludes mutating tools, and permission refusal stops a pending write or command before execution.
 

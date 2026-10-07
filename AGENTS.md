@@ -16,6 +16,7 @@
 
 <!-- PROCESSING WORKS:START -->
 
+- [suag-ifpp.2] S2 用量、模型覆盖与版本命令：实现已本地提交；全仓库格式门槛受 9 个既有未格式化文件阻断。设计见 [Gofer 集成设计](docs/design/2026-10-07-gofer-integration-design.md)。
 
 <!-- PROCESSING WORKS:END -->
 

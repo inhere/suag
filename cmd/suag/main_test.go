@@ -32,7 +32,7 @@ func TestVersionFlagsWriteConfiguredOutputAndDoNotAffectNextApp(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{flag})
 			assert.NoErr(t, err)
-			assert.Eq(t, Version+"\n", stdout.String())
+			assert.Eq(t, "suag dev (dev)\n", stdout.String())
 			assert.Eq(t, "", stderr.String())
 		})
 	}
@@ -45,6 +45,14 @@ func TestVersionFlagsWriteConfiguredOutputAndDoNotAffectNextApp(t *testing.T) {
 }
 
 func TestFormatVersionIncludesAvailableBuildMetadata(t *testing.T) {
-	assert.Eq(t, "dev", formatVersion("dev", "", ""))
-	assert.Eq(t, "1.2.3 (commit abc123, built 2026-10-07)", formatVersion("1.2.3", "abc123", "2026-10-07"))
+	assert.Eq(t, "suag dev (dev)", formatVersion("dev", ""))
+	assert.Eq(t, "suag 1.2.3 (abc123)", formatVersion("1.2.3", "abc123"))
+}
+
+func TestVersionCommandWritesOneLine(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"version"})
+	assert.NoErr(t, err)
+	assert.Eq(t, "suag dev (dev)\n", stdout.String())
+	assert.Eq(t, "", stderr.String())
 }
