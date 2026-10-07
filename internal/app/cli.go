@@ -82,12 +82,11 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 		return runPersonalWithOptions(ctx, mode, opts, stdin, stdout, stderr)
 	})
 	cmd.SetOutput(stderr)
-	cmd.StringVar(&opts.Prompt, "prompt", "", "task prompt for run mode")
-	cmd.StringVar(&opts.Prompt, "p", "", "task prompt for run mode")
-	cmd.StringVar(&opts.SessionID, "session-id", "", "create or use this session ID")
-	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID")
+	cmd.StringVar(&opts.Prompt, "prompt", "", "task prompt for run mode;;p")
+	cmd.StringVar(&opts.SessionID, "session-id", "", "create or use this session ID;;sid")
+	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID;;r")
 	cmd.StringVar(&opts.OutputFormat, "output-format", "text", "text or stream-json")
-	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool")
+	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool;;ro")
 	cmd.BoolVar(&opts.AllowWrite, "allow-write", false, "allow workspace write and shell tools for this run")
 	return cmd
 }
