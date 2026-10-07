@@ -1,7 +1,6 @@
 package axconfig
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,14 +54,11 @@ func ResolvePersonalAgentcoreRunRoot() (string, error) {
 }
 
 func personalDBDir() (string, error) {
-	home, err := os.UserHomeDir()
+	home, err := ResolveSuagHome()
 	if err != nil {
 		return "", err
 	}
-	if !filepath.IsAbs(home) {
-		return "", fmt.Errorf("user home is not an absolute path: %q", home)
-	}
-	return filepath.Join(home, ".suag", "db"), nil
+	return filepath.Join(home, "db"), nil
 }
 
 // ResolveSuagHome locates user-level instructions independently of the database override.
@@ -78,9 +74,13 @@ func ResolveSuagHome() (string, error) {
 }
 
 func ResolveWorkspacePath() string {
-	workspace := gkconfig.String("workspace", "~/.suag/workspace")
+	workspace := gkconfig.String("workspace")
 	if workspace == "" {
-		workspace, _ = os.Getwd()
+		home, err := ResolveSuagHome()
+		if err != nil {
+			return ""
+		}
+		return filepath.Join(home, "workspace")
 	}
 	return workspace
 }

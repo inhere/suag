@@ -36,12 +36,29 @@ func (s LLMProviderSettings) LogArgs() []any {
 }
 
 func ReadLLMProviderSettings() LLMProviderSettings {
+	return ReadLLMProviderSettingsWithOverrides("", "")
+}
+
+// ReadLLMProviderSettingsWithOverrides applies CLI flags, environment, then file settings.
+func ReadLLMProviderSettingsWithOverrides(modelFlag, providerFlag string) LLMProviderSettings {
 	settings := LLMProviderSettings{
 		APIType:      normalizeConfigToken(gkconfig.String("llm.api_type")),
 		ProviderName: normalizeConfigToken(gkconfig.String("llm.provider_name")),
 		Model:        strings.TrimSpace(gkconfig.String("llm.model")),
 		APIKey:       strings.TrimSpace(gkconfig.String("llm.api_key")),
 		BaseURL:      strings.TrimSpace(gkconfig.String("llm.base_url")),
+	}
+	settings.Model = firstNonEmpty(modelFlag, os.Getenv("SUAG_MODEL"), settings.Model)
+	provider := firstNonEmpty(providerFlag, os.Getenv("SUAG_PROVIDER"))
+	if provider != "" {
+		settings.ProviderName = normalizeConfigToken(provider)
+		// A named provider override selects its protocol as well as its label.
+		switch settings.ProviderName {
+		case "claude", "anthropic":
+			settings.APIType = "anthropic"
+		case "openai", "deepseek":
+			settings.APIType = "openai"
+		}
 	}
 	return normalizeLLMProviderSettings(settings)
 }

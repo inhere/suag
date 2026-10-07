@@ -31,12 +31,15 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("SUAG_MODEL", "environment-model")
+	t.Setenv("SUAG_PROVIDER", "deepseek")
 	workspace := t.TempDir()
 	t.Chdir(workspace)
 	_ = gkconfig.Set("workspace", workspace)
 	_ = gkconfig.Set("llm.api_type", "openai")
 	_ = gkconfig.Set("llm.api_key", "local-test-key")
 	var requestCount atomic.Int32
+	var requestedModels []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("unexpected provider path: %s", r.URL.Path)
@@ -44,6 +47,7 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 			return
 		}
 		var body struct {
+			Model    string `json:"model"`
 			Messages []struct {
 				Role    string `json:"role"`
 				Content string `json:"content"`
@@ -52,6 +56,7 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Errorf("decode provider request: %v", err)
 		}
+		requestedModels = append(requestedModels, body.Model)
 		n := requestCount.Add(1)
 		if n == 2 {
 			foundPreviousAnswer := false
@@ -65,26 +70,35 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"choices":[{"message":{"content":"reply-%d"},"finish_reason":"stop"}]}`, n)
+		_, _ = fmt.Fprintf(w, `{"choices":[{"message":{"content":"reply-%d"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`, n)
 	}))
 	t.Cleanup(server.Close)
 	_ = gkconfig.Set("llm.base_url", server.URL)
 
 	var firstOut, firstErr bytes.Buffer
-	err := RunPersonalCLI(context.Background(), "run", []string{"--prompt", "hello", "--output-format", "stream-json", "--read-only", "--session-id", "path-test"},
+	err := RunPersonalCLI(context.Background(), "run", []string{"--prompt", "hello", "--output-format", "stream-json", "--read-only", "--model", "flag-model", "--provider", "openai", "--session-id", "path-test"},
 		strings.NewReader(""), &firstOut, &firstErr)
 	assert.NoErr(t, err)
 	assert.Eq(t, true, strings.Contains(firstOut.String(), `"result":"reply-1"`))
+	assert.Eq(t, true, strings.Contains(firstOut.String(), `"usage":{"input_tokens":4,"output_tokens":2,"total_tokens":6}`))
 	var secondOut, secondErr bytes.Buffer
 	err = RunPersonalCLI(context.Background(), "run", []string{"--prompt", "follow up", "--output-format", "stream-json", "--read-only", "--resume", "path-test"},
 		strings.NewReader(""), &secondOut, &secondErr)
 	assert.NoErr(t, err)
 	assert.Eq(t, true, strings.Contains(secondOut.String(), `"result":"reply-2"`))
 	assert.Eq(t, int32(2), requestCount.Load())
+	assert.Eq(t, []string{"flag-model", "environment-model"}, requestedModels)
 
 	personalDB := filepath.Join(home, ".suag", "db", "suag.db")
 	_, err = os.Stat(personalDB)
 	assert.NoErr(t, err)
+	repo, err := session.NewSQLiteRepository(personalDB)
+	assert.NoErr(t, err)
+	defer repo.Close()
+	stored, err := repo.GetSession(context.Background(), "path-test")
+	assert.NoErr(t, err)
+	assert.Eq(t, "environment-model", stored.Metadata["model"])
+	assert.Eq(t, "deepseek", stored.Metadata["provider"])
 	_, err = os.Stat(filepath.Join(home, ".suag", "db", "agentcore", "host", "path-test", "runs.db"))
 	assert.NoErr(t, err)
 	_, err = os.Stat(filepath.Join(workspace, "db"))

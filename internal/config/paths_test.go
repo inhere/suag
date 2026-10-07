@@ -43,6 +43,20 @@ func TestPersonalPathsHonorExplicitOverrides(t *testing.T) {
 	assert.Eq(t, filepath.Join(runRoot, "host"), gotRuns)
 }
 
+func TestPersonalPathsUseSuagHome(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	t.Setenv("DATABASE_URL", "")
+	root := t.TempDir()
+	t.Setenv("SUAG_HOME", root)
+	dbPath, err := ResolvePersonalSessionDBPath()
+	assert.NoErr(t, err)
+	assert.Eq(t, filepath.Join(root, "db", "suag.db"), dbPath)
+	runRoot, err := ResolvePersonalAgentcoreRunRoot()
+	assert.NoErr(t, err)
+	assert.Eq(t, filepath.Join(root, "db", "agentcore", "host"), runRoot)
+}
+
 func TestResolveHostAgentcoreRunRoot_DefaultsUnderDB(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)

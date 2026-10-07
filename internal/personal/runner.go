@@ -21,6 +21,8 @@ type Config struct {
 	Repository         session.Repository
 	RunRoot            string
 	Provider           agentcore.Provider
+	Model              string
+	ProviderName       string
 	Tools              agentcore.ToolRegistry
 	PromptBuilder      agentcore.PromptBuilder
 	RuleSource         func() (string, string, error)
@@ -99,6 +101,8 @@ func (r *Runner) NewSession(ctx context.Context, id, title string) (session.Sess
 		model.Metadata["personal_rules_hash"] = hash
 	}
 	model.Metadata["personal_append_prompt"] = r.cfg.AppendSystemPrompt
+	model.Metadata["model"] = r.cfg.Model
+	model.Metadata["provider"] = r.cfg.ProviderName
 	if err := r.cfg.Repository.CreateSession(ctx, model); err != nil {
 		return session.Session{}, fmt.Errorf("create personal session: %w", err)
 	}
@@ -195,6 +199,12 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		model.LastTurnID = result.TurnID
 	}
 	model.Status = session.SessionRunning
+	// Keep session metadata aligned with the provider selected for this turn.
+	if model.Metadata == nil {
+		model.Metadata = map[string]any{}
+	}
+	model.Metadata["model"] = r.cfg.Model
+	model.Metadata["provider"] = r.cfg.ProviderName
 	model.UpdatedAt = time.Now().UTC()
 	if err := r.cfg.Repository.UpdateSession(ctx, model); err != nil {
 		return result, err

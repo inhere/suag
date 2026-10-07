@@ -98,3 +98,25 @@ func TestBuildLLMProvider_UsesNormalizedConfigSettings(t *testing.T) {
 	assert.NotNil(t, provider)
 	assert.Eq(t, "deepseek", provider.Name())
 }
+
+func TestReadLLMProviderSettingsOverridePrecedence(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	_ = gkconfig.Set("llm.api_type", "openai")
+	_ = gkconfig.Set("llm.provider_name", "openai")
+	_ = gkconfig.Set("llm.model", "config-model")
+	t.Setenv("SUAG_MODEL", "env-model")
+	t.Setenv("SUAG_PROVIDER", "deepseek")
+
+	t.Run("environment", func(t *testing.T) {
+		settings := ReadLLMProviderSettingsWithOverrides("", "")
+		assert.Eq(t, "env-model", settings.Model)
+		assert.Eq(t, "deepseek", settings.ProviderName)
+	})
+	t.Run("flags", func(t *testing.T) {
+		settings := ReadLLMProviderSettingsWithOverrides("flag-model", "claude")
+		assert.Eq(t, "flag-model", settings.Model)
+		assert.Eq(t, "claude", settings.ProviderName)
+		assert.Eq(t, "anthropic", settings.APIType)
+	})
+}

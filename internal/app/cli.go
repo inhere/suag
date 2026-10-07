@@ -24,6 +24,8 @@ var ErrInputRequired = errors.New("turn requires more input")
 
 type personalOptions struct {
 	Prompt             string
+	Model              string
+	Provider           string
 	SessionID          string
 	ResumeID           string
 	OutputFormat       string
@@ -85,6 +87,8 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	})
 	cmd.SetOutput(stderr)
 	cmd.StringVar(&opts.Prompt, "prompt", "", "task prompt for run mode;;p")
+	cmd.StringVar(&opts.Model, "model", "", "model name (overrides SUAG_MODEL)")
+	cmd.StringVar(&opts.Provider, "provider", "", "provider name (overrides SUAG_PROVIDER)")
 	cmd.StringVar(&opts.SessionID, "session-id", "", "create or use this session ID;;sid")
 	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID;;r")
 	cmd.StringVar(&opts.OutputFormat, "output-format", "text", "text or stream-json")
@@ -127,7 +131,8 @@ func openPersonalRuntime(ctx context.Context, allowWrite bool, opts personalOpti
 }
 
 func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD string, allowWrite bool, servers []appconfig.MCPServerSettings, hooks []agentcore.Hook, opts personalOptions) (*personalRuntime, error) {
-	provider, err := appconfig.BuildLLMProvider()
+	settings := appconfig.ReadLLMProviderSettingsWithOverrides(opts.Model, opts.Provider)
+	provider, err := appconfig.BuildLLMProviderFromSettings(settings)
 	if err != nil {
 		return nil, err
 	}
@@ -160,12 +165,14 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		return nil, err
 	}
 	runner, err := personal.New(personal.Config{
-		Repository: repo,
-		RunRoot:    runRoot,
-		Provider:   provider,
-		Tools:      capabilities.Registry,
-		Hooks:      hooks,
-		MaxSteps:   gkconfig.Int("max_steps", 30),
+		Repository:   repo,
+		RunRoot:      runRoot,
+		Provider:     provider,
+		Model:        settings.Model,
+		ProviderName: settings.ProviderName,
+		Tools:        capabilities.Registry,
+		Hooks:        hooks,
+		MaxSteps:     gkconfig.Int("max_steps", 30),
 		RuleSource: func() (string, string, error) {
 			home, err := appconfig.ResolveSuagHome()
 			if err != nil {

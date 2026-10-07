@@ -29,3 +29,29 @@ func TestLoadReadsPrivateModelSettingsFromUserHome(t *testing.T) {
 	assert.Eq(t, "private-model", settings.Model)
 	assert.Eq(t, "test-key", settings.APIKey)
 }
+
+func TestLoadUsesSuagConfigFromSuagHome(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	root := t.TempDir()
+	t.Setenv("SUAG_HOME", root)
+	t.Setenv("SUAG_CONFIG", "")
+	t.Chdir(t.TempDir())
+	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte("llm:\n  model: home-model\n"), 0600))
+	assert.NoErr(t, Load())
+	assert.Eq(t, "home-model", ReadLLMProviderSettings().Model)
+}
+
+func TestLoadUsesExplicitConfigFile(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	root := t.TempDir()
+	t.Setenv("SUAG_HOME", root)
+	t.Chdir(t.TempDir())
+	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte("llm:\n  model: home-model\n"), 0600))
+	configPath := filepath.Join(t.TempDir(), "chosen.yaml")
+	assert.NoErr(t, os.WriteFile(configPath, []byte("llm:\n  model: chosen-model\n"), 0600))
+	t.Setenv("SUAG_CONFIG", configPath)
+	assert.NoErr(t, Load())
+	assert.Eq(t, "chosen-model", ReadLLMProviderSettings().Model)
+}
