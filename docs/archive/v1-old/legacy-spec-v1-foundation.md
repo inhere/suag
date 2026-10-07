@@ -5,7 +5,7 @@
 > 适用范围：旧 `v1 foundation` 技术规范
 > 说明：本文档基于旧的 `v1 foundation` 方案撰写。当前新的 `v0` 开发不再以本文档为直接实现依据，仅作为历史参考。当前入口请先看 `docs/README.md`。
 > 上游产品文档：[legacy-prd-v1-foundation.md](./legacy-prd-v1-foundation.md)
-> 参考资料：[`00-overview.md`](./00-overview.md)、[`01-agent-core.md`](./01-agent-core.md)、[`02-orchestrator.md`](./02-orchestrator.md)、[`03-team.md`](./03-team.md)、[`04-tools-skills.md`](./04-tools-skills.md)、[`05-memory-tracing.md`](./05-memory-tracing.md)、[`06-gateway-api.md`](./06-gateway-api.md)、[`docs/suag-v1-process.md`](../../suag-v1-process.md)
+> 参考资料：[`00-overview.md`](./00-overview.md)、[`01-agent-core.md`](./01-agent-core.md)、[`02-orchestrator.md`](./02-orchestrator.md)、[`03-team.md`](./03-team.md)、[`04-tools-skills.md`](./04-tools-skills.md)、[`05-memory-tracing.md`](./05-memory-tracing.md)、[`06-gateway-api.md`](./06-gateway-api.md)、[`legacy-axon-v1-process.md`](./legacy-axon-v1-process.md)
 
 ---
 

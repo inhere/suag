@@ -270,4 +270,4 @@ Rust:
 - <https://mp.weixin.qq.com/s/JLToUqqO-2MBL3PQojLnUQ> AI Harness 工程：Agent 能跑起来的那一层到底是什么？
 - <https://mp.weixin.qq.com/s/DObso9ym9gsTXCikX3sm7A> Tool Router：Harness 如何通过三层架构驯服 AI Agent 的工具爆炸
 - <https://mp.weixin.qq.com/s/adQSYnS_vMjXr0DKILWIMA> Harness Engineering：生产级 AI Agent Runtime 的架构与设计原则
-- [https://geekbang.feishu.cn/wiki/TSUqwoAn5iL6WxkkxHcci3pzn7c](openclaw 知识库)
+- [openclaw 知识库](https://geekbang.feishu.cn/wiki/TSUqwoAn5iL6WxkkxHcci3pzn7c)

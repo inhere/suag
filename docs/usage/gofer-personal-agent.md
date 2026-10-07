@@ -1,6 +1,6 @@
 # 在 Gofer 中运行 Suag
 
-Suag 提供两个入口：`suag-cli` 执行一次性任务，`suag-acp` 提供常驻 ACP 会话。两者共用个人会话数据，默认位于启动 Suag 的用户主目录 `~/.suag/db`。Gofer job ID 是执行记录，Suag session ID 是对话记录。
+Suag 提供两个 Gofer agent：`suag` 执行一次性 CLI 任务，`suag-acp` 提供常驻 ACP 会话。两者共用个人会话数据，默认位于启动 Suag 的用户主目录 `~/.suag/db`。Gofer job ID 是执行记录，Suag session ID 是对话记录。
 
 ## 准备二进制与配置
 
@@ -8,7 +8,7 @@ Suag 提供两个入口：`suag-cli` 执行一次性任务，`suag-acp` 提供�
 
 ```yaml
 agents:
-  suag-cli:
+  suag:
     type: cli-agent
     command: suag
     args: [run, --output-format, stream-json, --prompt, "{{prompt}}"]
@@ -60,13 +60,13 @@ BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ## 批处理 CLI
 
 ```powershell
-gofer job run --runner server --project my-tools-dev --cwd inhere-tools/suag --agent suag-cli --read-only --prompt "检查当前项目"
+gofer job run --runner server --project my-tools-dev --cwd inhere-tools/suag --agent suag --read-only --prompt "检查当前项目"
 gofer job show <job-id>
 gofer job logs <job-id> --stream stdout --tail -n 20
 gofer job resume <job-id> --prompt "继续上个问题"
 ```
 
-首个 CLI job 的 `stdout` 是 Gofer 提取的最终答复；`session_id` 可从 `job show` 读取。当前 Gofer 的 CLI resume 通过 `exec` 载体启动新进程，续接 job 的日志可能是原始 NDJSON 行，可在其中查看 `result` 事件。该载体不会继承原 job 临时传入的 `--env`，所以跨 job 必需的模型与数据配置应来自稳定的进程环境或 Suag 私有配置。
+首个 CLI job 的 `stdout` 是 Gofer 提取的最终答复；`session_id` 可从 `job show` 读取。Gofer 0.118.0 的 `job resume` 已验证继承源 job 的环境，并将最终答复投影到 `stdout`；原始 NDJSON 保留在 `stderr` 供排查。真实凭据仍应放在 Suag 私有配置或稳定的进程环境中。历史作业若使用已移除的 `suag-cli` agent 键，不能直接用当前的 `suag` 键续接。
 
 ## ACP 常驻与审批
 
@@ -79,4 +79,4 @@ gofer job resume <job-id> --prompt "从上次会话继续"
 
 `--read-only` 映射为 ACP `read_only` mode，写文件、命令与 MCP 工具不会加入可执行工具集合。默认 mode 中，写入/执行及未知 MCP 工具在执行前调用 Gofer `session/request_permission`；可用 `gofer job interactions <job-id>` 查看待答复请求，再用 `gofer job answer <job-id> <interaction-id> reject|allow` 处理。拒绝时工具不执行；允许仅作用于当前一次请求。
 
-2026-10-07 的 Gofer 实际作业已验证 CLI/ACP 续聊、ACP `job say/end/resume`、只读无写入及审批允许/拒绝。模型响应由本机回环模拟服务提供；最终配置不含测试模型地址或测试 HOME，真实模型凭据路径须在运行环境中单独准备和验证。
+2026-10-07 的 Gofer 实际作业已验证 CLI/ACP 续聊、ACP `job say/end/resume`、只读无写入及审批允许/拒绝；0.118.0 另以当前 `suag` agent 验证了 CLI 续接的环境继承与输出投影。模型响应由本机回环模拟服务提供；最终配置不含测试模型地址或测试 HOME，真实模型凭据路径须在运行环境中单独准备和验证。
