@@ -4,12 +4,10 @@ go 1.25
 
 require (
 	github.com/coder/acp-go-sdk v0.13.5
-	github.com/coder/websocket v1.8.14
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gookit/config/v2 v2.2.9
 	github.com/gookit/goutil v0.8.0
 	github.com/gookit/ini/v2 v2.3.2
-	github.com/gookit/rux/v2 v2.1.2
 	golang.org/x/sys v0.30.0
 	modernc.org/sqlite v1.31.1
 )
@@ -21,7 +19,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/monoculum/formam v3.5.5+incompatible // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/sync v0.11.0 // indirect
