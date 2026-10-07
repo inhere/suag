@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"sync"
 	"sync/atomic"
@@ -48,7 +49,8 @@ func NewClient(cfg ServerConfig) *Client {
 // Start launches the MCP server subprocess and performs the JSON-RPC initialize handshake.
 func (c *Client) Start(ctx context.Context) error {
 	c.cmd = exec.CommandContext(ctx, c.cfg.Command, c.cfg.Args...)
-	c.cmd.Env = append(c.cmd.Env, c.cfg.Env...)
+	// MCP server env extends the process env so PATH and Gofer's connection settings survive.
+	c.cmd.Env = append(os.Environ(), c.cfg.Env...)
 
 	stdin, err := c.cmd.StdinPipe()
 	if err != nil {

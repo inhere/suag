@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
+	"github.com/gookit/goutil/cflag"
 	"github.com/gookit/goutil/cflag/capp"
 	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/host/session"
@@ -33,12 +34,15 @@ type personalOptions struct {
 	AllowWrite         bool
 	AppendSystemPrompt string
 	NoProjectRules     bool
+	MCPConfigs         []string
+	CLIMode            bool
 }
 
 type personalRuntime struct {
 	runner       *personal.Runner
 	repo         *session.SQLiteRepository
 	capabilities defaultCapabilities
+	gate         *cliMCPGate
 }
 
 func (p *personalRuntime) Close() error {
@@ -63,9 +67,9 @@ func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptio
 	}
 	defer func() { retErr = errors.Join(retErr, runtime.Close()) }()
 	if mode == "chat" {
-		return runPersonalChat(ctx, runtime.runner, opts, stdin, stdout, stderr)
+		return runPersonalChat(ctx, runtime.runner, opts, stdin, stdout, stderr, runtime.gate)
 	}
-	return executePersonalRun(ctx, runtime.runner, opts, stdout, stderr)
+	return executePersonalRun(ctx, runtime.runner, opts, stdout, stderr, runtime.gate)
 }
 
 // NewPersonalCommand owns the flags and validation shared by direct CLI calls
@@ -96,6 +100,7 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.BoolVar(&opts.AllowWrite, "allow-write", false, "allow workspace write and shell tools for this run")
 	cmd.StringVar(&opts.AppendSystemPrompt, "append-system-prompt", "", "append system instructions after rules")
 	cmd.BoolVar(&opts.NoProjectRules, "no-project-rules", false, "skip project rule files for debugging")
+	cmd.Var((*cflag.Strings)(&opts.MCPConfigs), "mcp-config", "Claude-style JSON MCP server config; repeatable")
 	return cmd
 }
 
@@ -127,7 +132,12 @@ func openPersonalRuntime(ctx context.Context, allowWrite bool, opts personalOpti
 	if err != nil {
 		return nil, err
 	}
-	return openPersonalRuntimeConfigured(ctx, workspace, cwd, allowWrite, nil, nil, opts)
+	servers, err := appconfig.ReadClaudeMCPConfigs(opts.MCPConfigs)
+	if err != nil {
+		return nil, err
+	}
+	opts.CLIMode = true
+	return openPersonalRuntimeConfigured(ctx, workspace, cwd, allowWrite, servers, nil, opts)
 }
 
 func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD string, allowWrite bool, servers []appconfig.MCPServerSettings, hooks []agentcore.Hook, opts personalOptions) (*personalRuntime, error) {
@@ -136,9 +146,25 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 	if err != nil {
 		return nil, err
 	}
-	capabilities, err := buildPersonalCapabilitiesWithServers(workspace, allowWrite, servers)
+	var capabilities defaultCapabilities
+	if opts.CLIMode {
+		capabilities, err = buildPersonalCLICapabilities(workspace, allowWrite, servers)
+	} else {
+		capabilities, err = buildPersonalCapabilitiesWithServers(workspace, allowWrite, servers)
+	}
 	if err != nil {
 		return nil, err
+	}
+	var gate *cliMCPGate
+	var toolRegistry agentcore.ToolRegistry = capabilities.Registry
+	if opts.CLIMode {
+		gate, err = newCLIMCPGate(capabilities.Registry)
+		if err != nil {
+			_ = capabilities.Close()
+			return nil, err
+		}
+		toolRegistry = gate
+		hooks = append(hooks, gate)
 	}
 	dbPath, err := appconfig.ResolvePersonalSessionDBPath()
 	if err != nil {
@@ -170,7 +196,7 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		Provider:     provider,
 		Model:        settings.Model,
 		ProviderName: settings.ProviderName,
-		Tools:        capabilities.Registry,
+		Tools:        toolRegistry,
 		Hooks:        hooks,
 		MaxSteps:     gkconfig.Int("max_steps", 30),
 		RuleSource: func() (string, string, error) {
@@ -188,7 +214,7 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		_ = capabilities.Close()
 		return nil, err
 	}
-	return &personalRuntime{runner: runner, repo: repo, capabilities: capabilities}, nil
+	return &personalRuntime{runner: runner, repo: repo, capabilities: capabilities, gate: gate}, nil
 }
 
 func appendSystemPrompt(flagValue string) string {
@@ -215,7 +241,39 @@ func buildPersonalCapabilitiesWithServers(workspace string, allowWrite bool, ser
 	return defaultCapabilities{Registry: registry}, nil
 }
 
-func executePersonalRun(ctx context.Context, runner *personal.Runner, opts personalOptions, stdout, stderr io.Writer) error {
+// CLI always exposes configured MCP tools; the dispatch gate enforces their permissions.
+func buildPersonalCLICapabilities(workspace string, allowWrite bool, servers []appconfig.MCPServerSettings) (defaultCapabilities, error) {
+	if allowWrite {
+		return buildDefaultCapabilitiesWithServers(workspace, servers)
+	}
+	built, err := buildPersonalCapabilitiesWithServers(workspace, false, nil)
+	if err != nil {
+		return defaultCapabilities{}, err
+	}
+	for _, settings := range append(appconfig.ReadMCPServerSettings(), servers...) {
+		provider, err := mcpProviderFactory(context.Background(), settings)
+		if err != nil {
+			_ = built.Close()
+			return defaultCapabilities{}, fmt.Errorf("build mcp provider %q: %w", settings.ID, err)
+		}
+		if err := provider.RegisterTools(built.Registry); err != nil {
+			_ = provider.Close()
+			_ = built.Close()
+			return defaultCapabilities{}, fmt.Errorf("register mcp tools for %q: %w", settings.ID, err)
+		}
+		built.closers = append(built.closers, provider)
+	}
+	return built, nil
+}
+
+func executePersonalRun(ctx context.Context, runner *personal.Runner, opts personalOptions, stdout, stderr io.Writer, gates ...*cliMCPGate) error {
+	var gate *cliMCPGate
+	if len(gates) > 0 {
+		gate = gates[0]
+	}
+	if gate != nil {
+		gate.Reset()
+	}
 	sessionID, err := openRequestedSession(ctx, runner, opts)
 	if err != nil {
 		return err
@@ -258,6 +316,11 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 			_ = encoder.Encode(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID})
 		}
 		return ErrInputRequired
+	}
+	if gate != nil && gate.WasDenied() && encoder != nil {
+		if err := encoder.Encode(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID}); err != nil {
+			return err
+		}
 	}
 	if encoder != nil {
 		return encoder.Encode(map[string]any{

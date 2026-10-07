@@ -61,6 +61,10 @@ BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 
 ## 批处理 CLI
 
+CLI 可在 agent 的 `args` 中加入 `--mcp-config <file>` 接入本机 stdio MCP 服务；可重复指定多个 JSON 文件。文件格式为 Claude 的 `mcpServers`，例如 `{"mcpServers":{"gofer":{"command":"gofer","args":["mcp"]}}}`。Suag 的 YAML 配置也可在 `mcp.servers` 下列出默认服务。MCP 子进程继承启动环境，并叠加各服务的 `env`。需要让 Gofer job 调用其工具时，须在可执行路径和运行环境中提供 `gofer`；不要把密钥放在参数或文档中。
+
+`tools.auto_allow` 是 YAML 中的 glob 列表。默认自动放行 `gofer_*_list`、`gofer_*_get`、`gofer_work_report`、`gofer_session_list`；若显式配置，列表替换默认值。其余 MCP 工具在 CLI 中被拒绝，即使带 `--allow-write`；拒绝信息作为工具错误交给模型，`run --output-format stream-json` 发出 `input_required` 与最终 `result` 后正常退出。需要逐次审批 MCP 写工具时使用 ACP。
+
 ```powershell
 gofer job run --runner server --project my-tools-dev --cwd inhere-tools/suag --agent suag --read-only --prompt "检查当前项目"
 gofer job show <job-id>

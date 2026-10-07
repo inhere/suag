@@ -11,7 +11,11 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
-func runPersonalChat(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) error {
+func runPersonalChat(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer, gates ...*cliMCPGate) error {
+	var gate *cliMCPGate
+	if len(gates) > 0 {
+		gate = gates[0]
+	}
 	sessionID := ""
 	if opts.SessionID != "" || opts.ResumeID != "" {
 		var err error
@@ -48,6 +52,9 @@ func runPersonalChat(ctx context.Context, runner *personal.Runner, opts personal
 			sessionID = model.SessionID
 			fmt.Fprintln(stderr, "session id:", sessionID)
 		}
+		if gate != nil {
+			gate.Reset()
+		}
 		result, err := runner.Run(ctx, personal.RunRequest{SessionID: sessionID, Prompt: line})
 		if err != nil {
 			if ctx.Err() != nil {
@@ -61,5 +68,8 @@ func runPersonalChat(ctx context.Context, runner *personal.Runner, opts personal
 			continue
 		}
 		fmt.Fprintln(stdout, result.Output)
+		if gate != nil && gate.WasDenied() {
+			fmt.Fprintln(stdout, "Input required to authorize an MCP tool.")
+		}
 	}
 }
