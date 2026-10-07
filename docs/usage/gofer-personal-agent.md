@@ -11,7 +11,7 @@ agents:
   suag:
     type: cli-agent
     command: suag
-    args: [run, --output-format, stream-json, --prompt, "{{prompt}}"]
+    args: [run, --output-format, stream-json, --append-system-prompt, "{{system_prompt}}", --prompt, "{{prompt}}"]
     session_inject: [--session-id, "{{session_id}}"]
     session_resume: [run, --output-format, stream-json, --resume, "{{session_id}}", --prompt, "{{prompt}}"]
     read_only_args: [--read-only]
@@ -36,6 +36,8 @@ agents:
 ```
 
 用 `gofer config validate server` 检查文件，再按当前 Gofer 服务的配置管理流程 reload，并用 `gofer agent list --runner server` 确认两项可用。`detect` 使用 `run --help`，避免默认 `--version` 探测走入旧运行入口。
+
+Suag 创建会话时按外层到内层读取项目 `AGENTS.md`（没有时读取 `CLAUDE.md`），并在最前加入 `~/.suag/AGENTS.md`。`SUAG_HOME` 可改变用户级规则目录。规则里的独占行 `@相对文件` 展开一层；规则和 `--append-system-prompt` 在会话创建时保存，续接时只在规则文件变化后向下一轮补充更新消息。`SUAG_APPEND_SYSTEM_PROMPT` 可提供默认追加提示，命令行参数优先；`--no-project-rules` 可在调试时跳过项目文件。Gofer job 中还会附上 `gofer work report` / `gofer issue` 的汇报提示。
 
 模型地址与认证由启动 Suag 的用户配置。例如在该用户的 `~/.suag/config.yaml` 中设置：
 

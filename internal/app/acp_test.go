@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -62,6 +63,10 @@ func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, "AGENTS.md"), []byte("ACP project rule"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	var calls atomic.Int32
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -74,6 +79,15 @@ func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {
 			t.Errorf("decode provider request: %v", err)
 		}
 		n := calls.Add(1)
+		if n == 1 {
+			found := false
+			for _, message := range body.Messages {
+				found = found || message.Role == "system" && message.Content != "" && strings.Contains(message.Content, "ACP project rule")
+			}
+			if !found {
+				t.Error("ACP new session omitted project rule")
+			}
+		}
 		if n == 2 {
 			found := false
 			for _, message := range body.Messages {
@@ -90,7 +104,6 @@ func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {
 	_ = gkconfig.Set("llm.api_type", "openai")
 	_ = gkconfig.Set("llm.api_key", "local-test-key")
 	_ = gkconfig.Set("llm.base_url", provider.URL)
-	cwd := t.TempDir()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 

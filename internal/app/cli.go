@@ -23,12 +23,14 @@ import (
 var ErrInputRequired = errors.New("turn requires more input")
 
 type personalOptions struct {
-	Prompt       string
-	SessionID    string
-	ResumeID     string
-	OutputFormat string
-	ReadOnly     bool
-	AllowWrite   bool
+	Prompt             string
+	SessionID          string
+	ResumeID           string
+	OutputFormat       string
+	ReadOnly           bool
+	AllowWrite         bool
+	AppendSystemPrompt string
+	NoProjectRules     bool
 }
 
 type personalRuntime struct {
@@ -53,7 +55,7 @@ func RunPersonalCLI(ctx context.Context, mode string, args []string, stdin io.Re
 }
 
 func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) (retErr error) {
-	runtime, err := openPersonalRuntime(ctx, opts.AllowWrite && !opts.ReadOnly)
+	runtime, err := openPersonalRuntime(ctx, opts.AllowWrite && !opts.ReadOnly, opts)
 	if err != nil {
 		return err
 	}
@@ -88,6 +90,8 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.StringVar(&opts.OutputFormat, "output-format", "text", "text or stream-json")
 	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool;;ro")
 	cmd.BoolVar(&opts.AllowWrite, "allow-write", false, "allow workspace write and shell tools for this run")
+	cmd.StringVar(&opts.AppendSystemPrompt, "append-system-prompt", "", "append system instructions after rules")
+	cmd.BoolVar(&opts.NoProjectRules, "no-project-rules", false, "skip project rule files for debugging")
 	return cmd
 }
 
@@ -110,15 +114,19 @@ func validatePersonalOptions(mode string, opts personalOptions) error {
 	return nil
 }
 
-func openPersonalRuntime(ctx context.Context, allowWrite bool) (*personalRuntime, error) {
+func openPersonalRuntime(ctx context.Context, allowWrite bool, opts personalOptions) (*personalRuntime, error) {
 	workspace, err := filepath.Abs(appconfig.ResolveWorkspacePath())
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace: %w", err)
 	}
-	return openPersonalRuntimeConfigured(ctx, workspace, allowWrite, nil, nil)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	return openPersonalRuntimeConfigured(ctx, workspace, cwd, allowWrite, nil, nil, opts)
 }
 
-func openPersonalRuntimeConfigured(ctx context.Context, workspace string, allowWrite bool, servers []appconfig.MCPServerSettings, hooks []agentcore.Hook) (*personalRuntime, error) {
+func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD string, allowWrite bool, servers []appconfig.MCPServerSettings, hooks []agentcore.Hook, opts personalOptions) (*personalRuntime, error) {
 	provider, err := appconfig.BuildLLMProvider()
 	if err != nil {
 		return nil, err
@@ -158,6 +166,15 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace string, allowW
 		Tools:      capabilities.Registry,
 		Hooks:      hooks,
 		MaxSteps:   gkconfig.Int("max_steps", 30),
+		RuleSource: func() (string, string, error) {
+			home, err := appconfig.ResolveSuagHome()
+			if err != nil {
+				return "", "", err
+			}
+			return personal.LoadRules(ruleCWD, home, opts.NoProjectRules)
+		},
+		AppendSystemPrompt: appendSystemPrompt(opts.AppendSystemPrompt),
+		GoferJob:           os.Getenv("GOFER_JOB_ID") != "",
 	})
 	if err != nil {
 		_ = repo.Close()
@@ -165,6 +182,13 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace string, allowW
 		return nil, err
 	}
 	return &personalRuntime{runner: runner, repo: repo, capabilities: capabilities}, nil
+}
+
+func appendSystemPrompt(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	return os.Getenv("SUAG_APPEND_SYSTEM_PROMPT")
 }
 
 func buildPersonalCapabilities(workspace string, allowWrite bool) (defaultCapabilities, error) {

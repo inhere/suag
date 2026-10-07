@@ -18,6 +18,72 @@ import (
 
 type recallProvider struct{ requests [][]agentcore.Message }
 
+type rulesProvider struct{ requests []*agentcore.GenerateRequest }
+
+func (*rulesProvider) Name() string { return "rules-test" }
+
+func (p *rulesProvider) Generate(_ context.Context, req *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	copyReq := *req
+	copyReq.Messages = append([]agentcore.Message(nil), req.Messages...)
+	p.requests = append(p.requests, &copyReq)
+	return &agentcore.GenerateResult{Content: "ok", FinishReason: agentcore.FinishFinal}, nil
+}
+
+func TestRunnerRulesPersistAndUpdateOnlyWhenChanged(t *testing.T) {
+	ctx := context.Background()
+	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
+	repo, err := session.NewSQLiteRepository(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	root := t.TempDir()
+	putRule(t, filepath.Join(root, "AGENTS.md"), "first rule")
+	provider := &rulesProvider{}
+	// Keep one run store while recreating the runner to mimic --resume.
+	runRoot := filepath.Join(t.TempDir(), "runs")
+	newRunner := func(appendPrompt string) *Runner {
+		runner, err := New(Config{Repository: repo, RunRoot: runRoot, Provider: provider,
+			RuleSource:         func() (string, string, error) { return LoadRules(root, "", false) },
+			AppendSystemPrompt: appendPrompt})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return runner
+	}
+	runner := newRunner("extra")
+	model, err := runner.NewSession(ctx, "rules-session", "test")
+	assert.NoErr(t, err)
+	_, err = runner.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "one"})
+	assert.NoErr(t, err)
+	putRule(t, filepath.Join(root, "AGENTS.md"), "second rule")
+	runner = newRunner("ignored on resume")
+	_, err = runner.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "two"})
+	assert.NoErr(t, err)
+	_, err = runner.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "three"})
+	assert.NoErr(t, err)
+	assert.Eq(t, 3, len(provider.requests))
+	assert.Eq(t, true, strings.Contains(provider.requests[0].System, "first rule"))
+	assert.Eq(t, true, strings.Contains(provider.requests[0].System, "extra"))
+	assert.Eq(t, false, strings.Contains(provider.requests[1].System, "ignored on resume"))
+	assert.Eq(t, true, strings.Contains(provider.requests[1].System, "second rule"))
+	assert.Eq(t, 1, countRuleUpdates(provider.requests[1].Messages))
+	assert.Eq(t, 0, countRuleUpdates(provider.requests[2].Messages))
+	stored, err := repo.GetSession(ctx, model.SessionID)
+	assert.NoErr(t, err)
+	assert.Eq(t, true, strings.Contains(stored.Metadata["personal_rules_content"].(string), "second rule"))
+}
+
+func countRuleUpdates(messages []agentcore.Message) int {
+	n := 0
+	for _, message := range messages {
+		if message.Role == "system" && strings.HasPrefix(message.Content, "项目规则已更新") {
+			n++
+		}
+	}
+	return n
+}
+
 func (*recallProvider) Name() string { return "recall-test" }
 
 func (p *recallProvider) Generate(_ context.Context, req *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {

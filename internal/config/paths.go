@@ -65,6 +65,18 @@ func personalDBDir() (string, error) {
 	return filepath.Join(home, ".suag", "db"), nil
 }
 
+// ResolveSuagHome locates user-level instructions independently of the database override.
+func ResolveSuagHome() (string, error) {
+	if root := strings.TrimSpace(os.Getenv("SUAG_HOME")); root != "" {
+		return filepath.Abs(root)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".suag"), nil
+}
+
 func ResolveWorkspacePath() string {
 	workspace := gkconfig.String("workspace", "~/.suag/workspace")
 	if workspace == "" {

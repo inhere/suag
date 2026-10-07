@@ -18,13 +18,16 @@ var safeSessionID = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // Config holds the existing session and run authorities used by a personal agent.
 type Config struct {
-	Repository    session.Repository
-	RunRoot       string
-	Provider      agentcore.Provider
-	Tools         agentcore.ToolRegistry
-	PromptBuilder agentcore.PromptBuilder
-	Hooks         []agentcore.Hook
-	MaxSteps      int
+	Repository         session.Repository
+	RunRoot            string
+	Provider           agentcore.Provider
+	Tools              agentcore.ToolRegistry
+	PromptBuilder      agentcore.PromptBuilder
+	RuleSource         func() (string, string, error)
+	AppendSystemPrompt string
+	GoferJob           bool
+	Hooks              []agentcore.Hook
+	MaxSteps           int
 }
 
 // Event is one transport-neutral lifecycle or model-stream update.
@@ -87,6 +90,15 @@ func (r *Runner) NewSession(ctx context.Context, id, title string) (session.Sess
 	if model.Title == "" {
 		model.Title = "Session " + id
 	}
+	if r.cfg.RuleSource != nil {
+		rules, hash, err := r.cfg.RuleSource()
+		if err != nil {
+			return session.Session{}, err
+		}
+		model.Metadata["personal_rules_content"] = rules
+		model.Metadata["personal_rules_hash"] = hash
+	}
+	model.Metadata["personal_append_prompt"] = r.cfg.AppendSystemPrompt
 	if err := r.cfg.Repository.CreateSession(ctx, model); err != nil {
 		return session.Session{}, fmt.Errorf("create personal session: %w", err)
 	}
@@ -149,6 +161,21 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err != nil {
 		return result, err
 	}
+	var rulesUpdate string
+	if r.cfg.RuleSource != nil {
+		rules, hash, err := r.cfg.RuleSource()
+		if err != nil {
+			return result, err
+		}
+		if model.Metadata == nil {
+			model.Metadata = map[string]any{}
+		}
+		if previous, _ := model.Metadata["personal_rules_hash"].(string); previous != hash {
+			model.Metadata["personal_rules_hash"] = hash
+			model.Metadata["personal_rules_content"] = rules
+			rulesUpdate = "项目规则已更新\n" + rules
+		}
+	}
 
 	agentID := strings.TrimSpace(req.AgentID)
 	if agentID == "" {
@@ -192,8 +219,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		Provider:       r.cfg.Provider,
 		Storage:        storage,
 		Tools:          r.cfg.Tools,
-		PromptBuilder:  r.cfg.PromptBuilder,
-		ContextBuilder: historyContext{previous: history},
+		PromptBuilder:  rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Metadata, goferJob: r.cfg.GoferJob},
+		ContextBuilder: historyContext{previous: history, update: rulesUpdate},
 		Hooks:          r.cfg.Hooks,
 		MaxSteps:       r.cfg.MaxSteps,
 	})
@@ -388,7 +415,10 @@ func emit(ctx context.Context, sink EmitFunc, event Event) error {
 	return sink(ctx, event)
 }
 
-type historyContext struct{ previous []agentcore.Message }
+type historyContext struct {
+	previous []agentcore.Message
+	update   string
+}
 
 func (b historyContext) BuildMessages(ctx context.Context, state *agentcore.RunState) ([]agentcore.Message, error) {
 	if err := ctx.Err(); err != nil {
@@ -396,6 +426,35 @@ func (b historyContext) BuildMessages(ctx context.Context, state *agentcore.RunS
 	}
 	out := make([]agentcore.Message, 0, len(b.previous)+len(state.Messages))
 	out = append(out, b.previous...)
+	if b.update != "" {
+		out = append(out, agentcore.Message{Role: "system", Content: b.update})
+	}
 	out = append(out, state.Messages...)
 	return out, nil
+}
+
+type rulesPromptBuilder struct {
+	base     agentcore.PromptBuilder
+	metadata map[string]any
+	goferJob bool
+}
+
+func (b rulesPromptBuilder) BuildSystemPrompt(ctx context.Context, state *agentcore.RunState) (string, error) {
+	var parts []string
+	if b.base != nil {
+		base, err := b.base.BuildSystemPrompt(ctx, state)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, base)
+	}
+	for _, key := range []string{"personal_rules_content", "personal_append_prompt"} {
+		if value, _ := b.metadata[key].(string); value != "" {
+			parts = append(parts, value)
+		}
+	}
+	if b.goferJob {
+		parts = append(parts, "当前运行在 Gofer job 中；可用 gofer work report / gofer issue 汇报工作进度与结果。")
+	}
+	return strings.Join(parts, "\n\n"), nil
 }

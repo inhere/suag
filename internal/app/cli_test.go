@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -88,6 +89,69 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	assert.NoErr(t, err)
 	_, err = os.Stat(filepath.Join(workspace, "db"))
 	assert.Eq(t, true, errors.Is(err, os.ErrNotExist))
+}
+
+func TestPersonalCLIInjectsRulesPromptAndGoferHint(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	t.Setenv("DATABASE_URL", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	suagHome := t.TempDir()
+	t.Setenv("SUAG_HOME", suagHome)
+	t.Setenv("SUAG_APPEND_SYSTEM_PROMPT", "environment prompt")
+	t.Setenv("GOFER_JOB_ID", "test-job")
+	if err := os.WriteFile(filepath.Join(suagHome, "AGENTS.md"), []byte("user-level rule"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("project-level rule"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(workspace)
+	_ = gkconfig.Set("workspace", workspace)
+	_ = gkconfig.Set("llm.api_type", "openai")
+	_ = gkconfig.Set("llm.api_key", "local-test-key")
+	var systems []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		for _, message := range body.Messages {
+			if message.Role == "system" {
+				systems = append(systems, message.Content)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	t.Cleanup(server.Close)
+	_ = gkconfig.Set("llm.base_url", server.URL)
+	for _, args := range [][]string{
+		{"--prompt", "one", "--session-id", "flags", "--append-system-prompt", "flag prompt"},
+		{"--prompt", "two", "--session-id", "environment", "--no-project-rules"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if err := RunPersonalCLI(context.Background(), "run", args, strings.NewReader(""), &stdout, &stderr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assert.Eq(t, 2, len(systems))
+	assert.Eq(t, true, strings.Contains(systems[0], "user-level rule"))
+	assert.Eq(t, true, strings.Contains(systems[0], "project-level rule"))
+	assert.Eq(t, true, strings.Contains(systems[0], "flag prompt"))
+	assert.Eq(t, false, strings.Contains(systems[0], "environment prompt"))
+	assert.Eq(t, true, strings.Contains(systems[0], "gofer work report"))
+	assert.Eq(t, true, strings.Contains(systems[1], "user-level rule"))
+	assert.Eq(t, false, strings.Contains(systems[1], "project-level rule"))
+	assert.Eq(t, true, strings.Contains(systems[1], "environment prompt"))
 }
 
 func newCLITestRunner(t *testing.T, provider agentcore.Provider, hooks ...agentcore.Hook) (*personal.Runner, *session.SQLiteRepository) {

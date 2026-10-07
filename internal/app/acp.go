@@ -22,7 +22,7 @@ func RunPersonalACP(ctx context.Context, input io.Reader, output io.Writer) erro
 		if hook != nil {
 			hooks = []agentcore.Hook{hook}
 		}
-		runtime, err := openPersonalRuntimeConfigured(ctx, workspace, !readOnly, servers, hooks)
+		runtime, err := openPersonalRuntimeConfigured(ctx, workspace, workspace, !readOnly, servers, hooks, personalOptions{})
 		if err != nil {
 			return acpserver.Runtime{}, err
 		}
