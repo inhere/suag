@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
+	"github.com/gookit/goutil/cflag/capp"
 	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/host/session"
 	"github.com/inhere/suag/internal/personal"
@@ -45,14 +45,14 @@ func (p *personalRuntime) Close() error {
 }
 
 // RunPersonalCLI is the shared headless and interactive entry, independent of the old Web host.
-func RunPersonalCLI(ctx context.Context, mode string, args []string, stdin io.Reader, stdout, stderr io.Writer) (retErr error) {
-	opts, err := parsePersonalOptions(mode, args, stderr)
-	if errors.Is(err, flag.ErrHelp) {
-		return nil
+func RunPersonalCLI(ctx context.Context, mode string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if mode != "run" && mode != "chat" {
+		return fmt.Errorf("unsupported personal mode %q", mode)
 	}
-	if err != nil {
-		return err
-	}
+	return NewPersonalCommand(ctx, mode, stdin, stdout, stderr).Parse(args)
+}
+
+func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) (retErr error) {
 	runtime, err := openPersonalRuntime(ctx, opts.AllowWrite && !opts.ReadOnly)
 	if err != nil {
 		return err
@@ -64,42 +64,51 @@ func RunPersonalCLI(ctx context.Context, mode string, args []string, stdin io.Re
 	return executePersonalRun(ctx, runtime.runner, opts, stdout, stderr)
 }
 
-func parsePersonalOptions(mode string, args []string, stderr io.Writer) (personalOptions, error) {
-	if mode != "run" && mode != "chat" {
-		return personalOptions{}, fmt.Errorf("unsupported personal mode %q", mode)
-	}
+// NewPersonalCommand owns the flags and validation shared by direct CLI calls
+// and the root command registry.
+func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdout, stderr io.Writer) *capp.Cmd {
 	var opts personalOptions
-	fs := flag.NewFlagSet(mode, flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.StringVar(&opts.Prompt, "prompt", "", "task prompt for run mode")
-	fs.StringVar(&opts.Prompt, "p", "", "task prompt for run mode")
-	fs.StringVar(&opts.SessionID, "session-id", "", "create or use this session ID")
-	fs.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID")
-	fs.StringVar(&opts.OutputFormat, "output-format", "text", "text or stream-json")
-	fs.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool")
-	fs.BoolVar(&opts.AllowWrite, "allow-write", false, "allow workspace write and shell tools for this run")
-	if err := fs.Parse(args); err != nil {
-		return personalOptions{}, err
+	desc := "Run one personal-agent turn"
+	if mode == "chat" {
+		desc = "Chat with the personal agent"
 	}
-	if fs.NArg() != 0 {
-		return personalOptions{}, fmt.Errorf("unexpected positional arguments: %s", strings.Join(fs.Args(), " "))
-	}
+	cmd := capp.NewCmd(mode, desc, func(c *capp.Cmd) error {
+		if len(c.RemainArgs()) != 0 {
+			return fmt.Errorf("unexpected positional arguments: %s", strings.Join(c.RemainArgs(), " "))
+		}
+		if err := validatePersonalOptions(mode, opts); err != nil {
+			return err
+		}
+		return runPersonalWithOptions(ctx, mode, opts, stdin, stdout, stderr)
+	})
+	cmd.SetOutput(stderr)
+	cmd.StringVar(&opts.Prompt, "prompt", "", "task prompt for run mode")
+	cmd.StringVar(&opts.Prompt, "p", "", "task prompt for run mode")
+	cmd.StringVar(&opts.SessionID, "session-id", "", "create or use this session ID")
+	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID")
+	cmd.StringVar(&opts.OutputFormat, "output-format", "text", "text or stream-json")
+	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool")
+	cmd.BoolVar(&opts.AllowWrite, "allow-write", false, "allow workspace write and shell tools for this run")
+	return cmd
+}
+
+func validatePersonalOptions(mode string, opts personalOptions) error {
 	if opts.SessionID != "" && opts.ResumeID != "" {
-		return personalOptions{}, fmt.Errorf("--session-id and --resume cannot be combined")
+		return fmt.Errorf("--session-id and --resume cannot be combined")
 	}
 	if opts.OutputFormat != "text" && opts.OutputFormat != "stream-json" {
-		return personalOptions{}, fmt.Errorf("unsupported output format %q", opts.OutputFormat)
+		return fmt.Errorf("unsupported output format %q", opts.OutputFormat)
 	}
 	if mode == "run" && strings.TrimSpace(opts.Prompt) == "" {
-		return personalOptions{}, fmt.Errorf("--prompt is required for run mode")
+		return fmt.Errorf("--prompt is required for run mode")
 	}
 	if mode == "chat" && opts.Prompt != "" {
-		return personalOptions{}, fmt.Errorf("--prompt is only supported in run mode")
+		return fmt.Errorf("--prompt is only supported in run mode")
 	}
 	if mode == "chat" && opts.OutputFormat != "text" {
-		return personalOptions{}, fmt.Errorf("chat mode requires text output")
+		return fmt.Errorf("chat mode requires text output")
 	}
-	return opts, nil
+	return nil
 }
 
 func openPersonalRuntime(ctx context.Context, allowWrite bool) (*personalRuntime, error) {

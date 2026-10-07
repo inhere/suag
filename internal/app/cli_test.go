@@ -212,9 +212,11 @@ func TestPersonalChatReusesOneSession(t *testing.T) {
 
 func TestParsePersonalOptionsRejectsInvalidCombinations(t *testing.T) {
 	var stderr bytes.Buffer
-	_, err := parsePersonalOptions("run", []string{"--prompt", "hi", "--session-id", "one", "--resume", "two"}, &stderr)
+	err := RunPersonalCLI(context.Background(), "run", []string{"--prompt", "hi", "--session-id", "one", "--resume", "two"},
+		strings.NewReader(""), &bytes.Buffer{}, &stderr)
 	assert.Eq(t, true, err != nil && strings.Contains(err.Error(), "cannot be combined"))
-	_, err = parsePersonalOptions("run", []string{"--prompt", "hi", "--output-format", "xml"}, &stderr)
+	err = RunPersonalCLI(context.Background(), "run", []string{"--prompt", "hi", "--output-format", "xml"},
+		strings.NewReader(""), &bytes.Buffer{}, &stderr)
 	assert.Eq(t, true, err != nil && strings.Contains(err.Error(), "unsupported output format"))
 }
 

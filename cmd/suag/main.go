@@ -4,13 +4,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/gookit/goutil/cflag/capp"
 	"github.com/inhere/suag/internal/app"
 	appconfig "github.com/inhere/suag/internal/config"
 )
+
+var Version = "dev"
 
 func main() {
 	if err := appconfig.Load(); err != nil {
@@ -22,30 +26,36 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	mode := "chat"
-	var modeArgs []string
-	if len(os.Args) > 1 {
-		mode, modeArgs = os.Args[1], os.Args[2:]
+	args := os.Args[1:]
+	if len(args) == 0 {
+		args = []string{"chat"}
 	}
-	if mode == "run" || mode == "chat" {
-		if err := app.RunPersonalCLI(ctx, mode, modeArgs, os.Stdin, os.Stdout, os.Stderr); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
+	if err := newCLI(ctx, os.Stdin, os.Stdout, os.Stderr).RunWithArgs(args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	if mode == "acp" {
-		if len(modeArgs) != 0 {
-			fmt.Fprintln(os.Stderr, "suag acp does not accept arguments")
-			os.Exit(1)
-		}
-		if err := app.RunPersonalACP(ctx, os.Stdin, os.Stdout); err != nil {
-			fmt.Fprintln(os.Stderr, "acp:", err)
-			os.Exit(1)
-		}
-		return
-	}
+}
 
-	fmt.Fprintf(os.Stderr, "unknown mode %q\nUsage: suag [run|chat|acp]\n", mode)
-	os.Exit(1)
+func newCLI(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) *capp.App {
+	cli := capp.NewApp()
+	cli.Name = "suag"
+	cli.Desc = "Personal agent with CLI and ACP interfaces"
+	cli.Version = Version
+	cli.SetOutput(stdout)
+	acp := capp.NewCmd("acp", "Serve an ACP session over stdio", func(c *capp.Cmd) error {
+		if len(c.RemainArgs()) != 0 {
+			return fmt.Errorf("suag acp does not accept arguments")
+		}
+		if err := app.RunPersonalACP(ctx, stdin, stdout); err != nil {
+			return fmt.Errorf("acp: %w", err)
+		}
+		return nil
+	})
+	acp.SetOutput(stderr)
+	cli.Add(
+		app.NewPersonalCommand(ctx, "run", stdin, stdout, stderr),
+		app.NewPersonalCommand(ctx, "chat", stdin, stdout, stderr),
+		acp,
+	)
+	return cli
 }
