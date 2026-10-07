@@ -115,7 +115,21 @@ func openPersonalRuntime(ctx context.Context, allowWrite bool) (*personalRuntime
 	if err != nil {
 		return nil, err
 	}
-	dbPath := appconfig.ResolveSessionDBPath()
+	dbPath, err := appconfig.ResolvePersonalSessionDBPath()
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, fmt.Errorf("resolve personal session database: %w", err)
+	}
+	runPath, err := appconfig.ResolvePersonalAgentcoreRunRoot()
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, fmt.Errorf("resolve personal run root: %w", err)
+	}
+	runRoot, err := filepath.Abs(runPath)
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, fmt.Errorf("resolve run root: %w", err)
+	}
 	if err := prepareHostSessionDatabase(ctx, dbPath); err != nil {
 		_ = capabilities.Close()
 		return nil, err
@@ -124,12 +138,6 @@ func openPersonalRuntime(ctx context.Context, allowWrite bool) (*personalRuntime
 	if err != nil {
 		_ = capabilities.Close()
 		return nil, err
-	}
-	runRoot, err := filepath.Abs(appconfig.ResolveHostAgentcoreRunRoot())
-	if err != nil {
-		_ = repo.Close()
-		_ = capabilities.Close()
-		return nil, fmt.Errorf("resolve run root: %w", err)
 	}
 	runner, err := personal.New(personal.Config{
 		Repository: repo,

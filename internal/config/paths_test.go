@@ -8,6 +8,41 @@ import (
 	"github.com/gookit/goutil/testutil/assert"
 )
 
+func TestPersonalPathsUseUserDataDirectoryWithoutChangingHostDefaults(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	t.Setenv("DATABASE_URL", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	dbPath, err := ResolvePersonalSessionDBPath()
+	assert.NoErr(t, err)
+	runRoot, err := ResolvePersonalAgentcoreRunRoot()
+	assert.NoErr(t, err)
+	assert.Eq(t, filepath.Join(home, ".suag", "db", "suag.db"), dbPath)
+	assert.Eq(t, filepath.Join(home, ".suag", "db", "agentcore", "host"), runRoot)
+	assert.Eq(t, filepath.Join("db", "suag.db"), ResolveSessionDBPath())
+	assert.Eq(t, filepath.Join("db", "agentcore", "host"), ResolveHostAgentcoreRunRoot())
+}
+
+func TestPersonalPathsHonorExplicitOverrides(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	t.Setenv("DATABASE_URL", "")
+	dbPath := filepath.Join(t.TempDir(), "old-sessions.db")
+	runRoot := filepath.Join(t.TempDir(), "old-runs")
+	_ = gkconfig.Set("database_url", "sqlite://"+filepath.ToSlash(dbPath)+"?mode=rwc")
+	_ = gkconfig.Set("agentcore.run_root", runRoot)
+
+	gotDB, err := ResolvePersonalSessionDBPath()
+	assert.NoErr(t, err)
+	gotRuns, err := ResolvePersonalAgentcoreRunRoot()
+	assert.NoErr(t, err)
+	assert.Eq(t, dbPath, gotDB)
+	assert.Eq(t, filepath.Join(runRoot, "host"), gotRuns)
+}
+
 func TestResolveHostAgentcoreRunRoot_DefaultsUnderDB(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)

@@ -5,11 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/internal/data/testutil"
 	"github.com/inhere/suag/internal/host/session"
@@ -17,6 +22,73 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
 )
+
+func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	t.Setenv("DATABASE_URL", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	workspace := t.TempDir()
+	t.Chdir(workspace)
+	_ = gkconfig.Set("workspace", workspace)
+	_ = gkconfig.Set("llm.api_type", "openai")
+	_ = gkconfig.Set("llm.api_key", "local-test-key")
+	var requestCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("unexpected provider path: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		var body struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode provider request: %v", err)
+		}
+		n := requestCount.Add(1)
+		if n == 2 {
+			foundPreviousAnswer := false
+			for _, message := range body.Messages {
+				if message.Role == "assistant" && message.Content == "reply-1" {
+					foundPreviousAnswer = true
+				}
+			}
+			if !foundPreviousAnswer {
+				t.Error("second turn omitted persisted assistant context")
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"choices":[{"message":{"content":"reply-%d"},"finish_reason":"stop"}]}`, n)
+	}))
+	t.Cleanup(server.Close)
+	_ = gkconfig.Set("llm.base_url", server.URL)
+
+	var firstOut, firstErr bytes.Buffer
+	err := RunPersonalCLI(context.Background(), "run", []string{"--prompt", "hello", "--output-format", "stream-json", "--read-only", "--session-id", "path-test"},
+		strings.NewReader(""), &firstOut, &firstErr)
+	assert.NoErr(t, err)
+	assert.Eq(t, true, strings.Contains(firstOut.String(), `"result":"reply-1"`))
+	var secondOut, secondErr bytes.Buffer
+	err = RunPersonalCLI(context.Background(), "run", []string{"--prompt", "follow up", "--output-format", "stream-json", "--read-only", "--resume", "path-test"},
+		strings.NewReader(""), &secondOut, &secondErr)
+	assert.NoErr(t, err)
+	assert.Eq(t, true, strings.Contains(secondOut.String(), `"result":"reply-2"`))
+	assert.Eq(t, int32(2), requestCount.Load())
+
+	personalDB := filepath.Join(home, ".suag", "db", "suag.db")
+	_, err = os.Stat(personalDB)
+	assert.NoErr(t, err)
+	_, err = os.Stat(filepath.Join(home, ".suag", "db", "agentcore", "host", "path-test", "runs.db"))
+	assert.NoErr(t, err)
+	_, err = os.Stat(filepath.Join(workspace, "db"))
+	assert.Eq(t, true, errors.Is(err, os.ErrNotExist))
+}
 
 func newCLITestRunner(t *testing.T, provider agentcore.Provider, hooks ...agentcore.Hook) (*personal.Runner, *session.SQLiteRepository) {
 	t.Helper()
@@ -106,6 +178,10 @@ func TestPersonalReadOnlyToolsCannotWrite(t *testing.T) {
 	assert.Eq(t, true, err != nil)
 	_, err = os.Stat(filepath.Join(workspace, "blocked.txt"))
 	assert.Eq(t, true, errors.Is(err, os.ErrNotExist))
+	_, err = capabilities.Registry.ExecuteTool(context.Background(), agentcore.ToolCall{
+		CallID: "shell", Name: "shell_exec", Arguments: map[string]any{"command": "echo blocked"},
+	})
+	assert.Eq(t, true, err != nil)
 }
 
 func TestPersonalChatReusesOneSession(t *testing.T) {

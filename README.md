@@ -1,4 +1,10 @@
-# Suag - SupAgent OS
+# Suag
+
+## Personal CLI
+
+`suag run --prompt "..." --output-format stream-json` executes one turn and emits a session ID followed by progress and a final result. `suag chat` opens an interactive conversation. Use `--session-id <id>` to create or reuse a named session, or `--resume <id>` to require an existing session. `--read-only` limits tools to file reads and listing; conversation records are still persisted.
+
+The personal CLI stores its session database and run records under `~/.suag/db` by default. `database_url` and `agentcore.run_root` remain available as explicit path overrides. Existing repository `db/` data is left in place and can be selected through those overrides.
 
 ## Minimal Agentcore Embedding
 
