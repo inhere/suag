@@ -168,7 +168,7 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		a.mu.Unlock()
 	}()
 
-	hook := &permissionHook{conn: a.conn, sessionID: req.SessionId, readOnly: readOnly}
+	hook := &permissionHook{conn: a.conn, sessionID: req.SessionId, cwd: cwd, readOnly: readOnly}
 	runtime, err := a.open(turnCtx, cwd, readOnly, servers, hook)
 	if err != nil {
 		return acp.PromptResponse{}, err
@@ -186,6 +186,9 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 	if turnCtx.Err() != nil || errors.Is(runErr, context.Canceled) {
 		return acp.PromptResponse{StopReason: acp.StopReasonCancelled}, errors.Join(closeErr)
 	}
+	if err := a.sendTurnUpdates(ctx, req.SessionId, result); err != nil {
+		return acp.PromptResponse{}, errors.Join(runErr, closeErr, err)
+	}
 	if errors.Is(runErr, ErrPermissionDenied) || errors.Is(runErr, ErrReadOnly) {
 		return acp.PromptResponse{StopReason: acp.StopReasonRefusal}, closeErr
 	}
@@ -201,6 +204,62 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		return acp.PromptResponse{StopReason: acp.StopReasonMaxTurnRequests}, nil
 	}
 	return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
+}
+
+// sendTurnUpdates reports the final turn usage and any complete task list in the model answer.
+func (a *Agent) sendTurnUpdates(ctx context.Context, id acp.SessionId, result personal.RunResult) error {
+	usage := result.Usage
+	update := acp.SessionUpdate{UsageUpdate: &acp.SessionUsageUpdate{
+		Used: usage.InputTokens,
+		Meta: map[string]any{
+			"input_tokens": usage.InputTokens, "output_tokens": usage.OutputTokens,
+			"total_tokens": usage.TotalTokens,
+		},
+	}}
+	if usage.CacheReadTokens != 0 {
+		update.UsageUpdate.Meta["cache_read_tokens"] = usage.CacheReadTokens
+	}
+	if usage.CacheWriteTokens != 0 {
+		update.UsageUpdate.Meta["cache_write_tokens"] = usage.CacheWriteTokens
+	}
+	if usage.CostUSD != 0 {
+		update.UsageUpdate.Meta["cost_usd"] = usage.CostUSD
+		update.UsageUpdate.Cost = &acp.Cost{Amount: usage.CostUSD, Currency: "USD"}
+	}
+	if err := a.conn.SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: update}); err != nil {
+		return fmt.Errorf("send usage update: %w", err)
+	}
+	if entries := planEntries(result.Output); len(entries) > 0 {
+		if err := a.conn.SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: acp.UpdatePlan(entries...)}); err != nil {
+			return fmt.Errorf("send plan update: %w", err)
+		}
+	}
+	return nil
+}
+
+// planEntries recognizes explicit Markdown checklists; prose is not treated as a plan.
+func planEntries(output string) []acp.PlanEntry {
+	var entries []acp.PlanEntry
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if len(line) < 6 || (line[:2] != "- " && line[:2] != "* ") || line[2] != '[' || line[4] != ']' || line[5] != ' ' {
+			continue
+		}
+		status := acp.PlanEntryStatusPending
+		switch line[3] {
+		case 'x', 'X':
+			status = acp.PlanEntryStatusCompleted
+		case '>':
+			status = acp.PlanEntryStatusInProgress
+		case ' ':
+		default:
+			continue
+		}
+		if content := strings.TrimSpace(line[6:]); content != "" {
+			entries = append(entries, acp.PlanEntry{Content: content, Status: status, Priority: acp.PlanEntryPriorityMedium})
+		}
+	}
+	return entries
 }
 
 func (a *Agent) Cancel(_ context.Context, req acp.CancelNotification) error {

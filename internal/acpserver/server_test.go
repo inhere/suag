@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/acp-go-sdk"
+	"github.com/gookit/goutil/x/assert"
 	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/data/testutil"
 	"github.com/inhere/suag/internal/host/session"
@@ -91,7 +93,20 @@ func testACPRuntime(t *testing.T, provider agentcore.Provider, tool *countingToo
 	}
 }
 
-type countingTool struct{ calls atomic.Int32 }
+type countingTool struct {
+	calls     atomic.Int32
+	writePath string
+}
+
+type countedUsageProvider struct{ *mock.Provider }
+
+func (p countedUsageProvider) Stream(ctx context.Context, req *agentcore.GenerateRequest, emit agentcore.StreamFunc) (*agentcore.GenerateResult, error) {
+	result, err := p.Provider.Stream(ctx, req, emit)
+	if result != nil {
+		result.Usage = agentcore.Usage{InputTokens: 7, OutputTokens: 3, TotalTokens: 10, CacheReadTokens: 2, CostUSD: 0.25}
+	}
+	return result, err
+}
 
 func (*countingTool) Name() string        { return "file_write" }
 func (*countingTool) Description() string { return "write test file" }
@@ -101,6 +116,12 @@ func (*countingTool) Schema() agentcore.ToolSchema {
 }
 func (t *countingTool) Execute(_ context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	t.calls.Add(1)
+	if t.writePath != "" {
+		content, _ := call.Arguments["content"].(string)
+		if err := os.WriteFile(t.writePath, []byte(content), 0644); err != nil {
+			return nil, err
+		}
+	}
 	return &agentcore.ToolResult{CallID: call.CallID, Name: call.Name, Content: "written"}, nil
 }
 
@@ -141,6 +162,91 @@ func TestPersonalACPRequiresPermissionBeforeToolExecution(t *testing.T) {
 			} else if response.StopReason != acp.StopReasonEndTurn || tool.calls.Load() != 1 {
 				t.Fatalf("allowed tool: response=%s executions=%d", response.StopReason, tool.calls.Load())
 			}
+		})
+	}
+}
+
+func TestPersonalACPEmitsUsagePlanAndEditDetails(t *testing.T) {
+	cwd := t.TempDir()
+	path := filepath.Join(cwd, "test.txt")
+	if err := os.WriteFile(path, []byte("before\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	tool := &countingTool{writePath: path}
+	provider := countedUsageProvider{mock.NewProvider(
+		mock.ToolCall("edit-1", "file_write", map[string]any{"path": "test.txt", "content": "after\n", "line": 2}),
+		mock.Final("- [x] Inspect file\n- [ ] Verify edit"),
+	)}
+	client := &testACPClient{selected: "allow"}
+	conn := connectPersonalACP(t, testACPRuntime(t, provider, tool), client)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: cwd, McpServers: []acp.McpServer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("edit")}})
+	if err != nil || response.StopReason != acp.StopReasonEndTurn {
+		t.Fatalf("prompt = %+v, %v", response, err)
+	}
+	client.mu.Lock()
+	updates := append([]acp.SessionNotification(nil), client.updates...)
+	client.mu.Unlock()
+	var usage *acp.SessionUsageUpdate
+	var plan *acp.SessionUpdatePlan
+	var started *acp.SessionUpdateToolCall
+	var completed *acp.SessionToolCallUpdate
+	for _, notification := range updates {
+		update := notification.Update
+		if update.UsageUpdate != nil {
+			usage = update.UsageUpdate
+		}
+		if update.Plan != nil {
+			plan = update.Plan
+		}
+		if update.ToolCall != nil {
+			started = update.ToolCall
+		}
+		if update.ToolCallUpdate != nil && update.ToolCallUpdate.Status != nil && *update.ToolCallUpdate.Status == acp.ToolCallStatusCompleted {
+			completed = update.ToolCallUpdate
+		}
+	}
+	if usage == nil || plan == nil || started == nil || completed == nil {
+		t.Fatalf("missing S4 updates: usage=%v plan=%v start=%v complete=%v", usage, plan, started, completed)
+	}
+	assert.Eq(t, acp.PlanEntryStatusCompleted, plan.Entries[0].Status)
+	assert.Eq(t, acp.PlanEntryStatusPending, plan.Entries[1].Status)
+	assert.Eq(t, acp.ToolKindEdit, started.Kind)
+	assert.Eq(t, path, started.Locations[0].Path)
+	assert.Eq(t, 2, *started.Locations[0].Line)
+	assert.Eq(t, "before\n", *started.Content[0].Diff.OldText)
+	assert.Eq(t, "after\n", started.Content[0].Diff.NewText)
+	assert.Eq(t, acp.ToolKindEdit, *completed.Kind)
+	assert.Eq(t, path, completed.Locations[0].Path)
+	assert.Eq(t, "after\n", completed.Content[0].Diff.NewText)
+	assert.Eq(t, float64(14), usage.Meta["input_tokens"])
+	assert.Eq(t, float64(6), usage.Meta["output_tokens"])
+	assert.Eq(t, float64(20), usage.Meta["total_tokens"])
+	assert.Eq(t, float64(4), usage.Meta["cache_read_tokens"])
+	assert.Eq(t, float64(0.5), usage.Meta["cost_usd"])
+	assert.Eq(t, float64(0.5), usage.Cost.Amount)
+}
+
+func TestACPToolKinds(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		kind acp.ToolKind
+	}{
+		{"file_read", acp.ToolKindRead},
+		{"file_write", acp.ToolKindEdit},
+		{"shell_exec", acp.ToolKindExecute},
+		{"web_search", acp.ToolKindSearch},
+		{"web_fetch", acp.ToolKindFetch},
+		{"unknown_mcp_tool", acp.ToolKindOther},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			kind, _ := toolKind(tc.name)
+			assert.Eq(t, tc.kind, kind)
 		})
 	}
 }
