@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # Suag 个人 Agent 收敛设计
 
-> 状态：Draft 0.3 / 用户已确认方向，实施待计划 Gate
+> 状态：Draft 0.4 / 数据目录选择已确认，实施待修订计划 Gate
 
 ## 修订记录
 
@@ -10,6 +10,7 @@
 | 0.1 | 2026-10-06 | Codex | 从 Agent OS 收敛为个人 Agent，确定 Gofer 首要接入方向与迁移边界 |
 | 0.2 | 2026-10-06 | Codex | 加入 Gofer ACP 常驻交互，明确删除旧 Web 与隔离 legacy 代码 |
 | 0.3 | 2026-10-06 | Codex | ACP 审批优先限定在 Suag Agent，明确先删除 Web 引用再移动旧 bridge |
+| 0.4 | 2026-10-07 | Codex | 个人 CLI/ACP 默认会话数据放入 `~/.suag/db`，明确旧数据与只读边界 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -49,12 +50,15 @@ Gofer 已负责项目与执行节点选择、异步作业、日志、锁、重�
 - `github.com/coder/acp-go-sdk` 提供 Agent 侧 stdio 连接和 `AgentLoader`，其当前 `go.mod` 要求 Go 1.21，可作为实现候选；须先做与本机 Gofer 的协议兼容试验。参考 [ACP Go SDK](https://github.com/coder/acp-go-sdk/tree/0845a3bb9eddda5bfc22a94dd3598c90cb842451)。
 - Pi 提供交互、print/JSON、RPC/SDK 与扩展入口；Pigo 公开 `agent.Session`、`Prompt/Stream/StreamEvents` 和自定义工具，并提供 headless/REPL、session resume。参考 [Pi coding agent](https://github.com/earendil-works/pi/tree/8b5708dbb1b4a819f924b43a2de02c9cc8c7a46d/packages/coding-agent) 与 [Pigo](https://github.com/smallnest/pigo/tree/891d1f372cefa92b5f5a104db20521238ba5a9fe)。Pigo 当前要求 Go 1.27+，Suag 是 Go 1.25，故不直接引入。
 - 此变更涉及对外 CLI 合同、会话状态和权限语义，按 IDEV-STD 的 SR1107、SR1137、SR1408 走 Design → Planning → Implement；本草案不构成实施授权。
+- 当前 `ResolveSessionDBPath` 与 `ResolveHostAgentcoreRunRoot` 默认使用相对路径 `db/`，个人 CLI checkpoint 也调用这两个函数。用户于 2026-10-07 明确指定新默认位置为 `~/.suag/db`；已有仓库 `db/` 内容仍按用户数据保留。
 
 ## 总体方案
 
 **保留一个执行内核、一个会话真源、两个薄接入。** `pkg/agentcore` 继续负责模型/工具循环；在它与用户入口之间收敛一个个人会话模块，负责打开会话、装配 prompt/能力、运行 turn、保存结果和发事件。CLI 和 ACP stdio 使用同一个模块，不各自实现 Agent 循环。
 
 第一阶段复用现有 `internal/host/session` 的持久化与 `pkg/agentcore` 存储，不立刻更换数据库或复制一份 session schema。将当前 `intrunner -> internal/agent -> agentcore` 的旧适配链逐步收短为 session 模块直接驱动 agentcore；先建立 CLI/ACP 共同执行路径，再替换旧链。外部只暴露 `session_id`；内部 `turn_id/run_id` 留给事件和诊断。旧 Web gateway 的测试仍引用出站 ACP bridge，因此清理顺序为新路径验收、删除 Web 引用、再移动旧 bridge 与控制面。
+
+个人 CLI 与 ACP 共用的默认数据根为用户主目录下的 `~/.suag/db`：会话 SQLite 位于 `~/.suag/db/suag.db`，agentcore run/transcript 位于 `~/.suag/db/agentcore/host`。通过用户主目录 API 解析 `~`，不能把波浪号当成字面路径。显式 `database_url` 和 `agentcore.run_root` 继续覆盖各自默认值；旧 Web 在删除前保持原有默认目录。既有仓库 `db/` 不自动复制或迁移，需读取旧数据时可显式配置其路径。
 
 扩展入口先只保留现有已验证的变化点：Provider、Tool registry/MCP source、分层 prompt/skills。插件 ABI、动态加载与自动生成技能需要第二个真实用例后再定。公开 Go 嵌入需求先由现有 `pkg/agentcore` 承担；只有出现第二个非 CLI 调用者时，才为“个人会话”新增公开 Go facade。
 
@@ -120,6 +124,7 @@ ACP 模式优先在 `suag-acp` 的配置中设置过程审批 `permission_policy
 
 - Headless CLI 模式绝不等待终端确认。`--read-only` 与 ACP `read_only` mode 必须在工具执行层禁止写入和命令副作用，而非仅修改提示词；首切片可直接排除 `file_write` 和通用 `shell_exec`。写权限只在显式信任的工作目录和允许的工具范围内开放。CLI 无法处理中途人工批准时应明确拒绝，ACP 通过 `session/request_permission` 与 Gofer 过程审批衔接；Gofer 的结束后 `--review` 不等于执行前批准。
 - 会话与 transcript 继续由 Suag 保管，Gofer 只持有 job/session 关联和日志；事件、日志、recap 不写凭据、完整敏感工具结果或原始环境变量。Gofer job id 与 Suag session id 不混用。
+- 只读限制作用于 Agent 工具和工作区文件；会话与运行记录仍写入 `~/.suag/db`，以支持新进程续聊。用隔离的用户主目录测试默认路径、显式覆盖和仓库 `db/` 不被默认新入口写入；真实用户目录中的旧数据不用于测试。
 - 先保持当前 SQLite schema；迁移须另附兼容与备份方案。删除旧 Web 前，先以 CLI/ACP 验证保留的用户路径；切换前保留现有源与数据库备份点，失败可用 Git 恢复源代码。`web/app`、Web gateway/AG-UI、`server` 命令及对应无效测试在验收后删除。
 - `legacy/` 使用独立的嵌套 Go module 隔离旧 `team/cron/orchestrator`、不再需要的 `internal/agent` 适配和出站 ACP bridge；只在 active import 清零后移动。根模块的 `go list ./...`、构建和测试必须不包含 `legacy/`，目录 README 明示仅供阅读、不承诺可运行或维护。
 - Gofer 可作为调度入口，但 Suag 不自动注册 Gofer MCP 作为工具，避免 `Gofer -> Suag -> Gofer -> Suag` 递归与意外任务提交。反向调用是后续独立决策。
@@ -133,13 +138,14 @@ ACP 模式优先在 `suag-acp` 的配置中设置过程审批 `permission_policy
 | 执行内核 | 保留 `pkg/agentcore`，消除旧 runner 绕行 | 已有测试与持久 transcript，避免第二套循环 |
 | 扩展 | Provider、Tool/MCP、skill 组合点 | 使用现有模块，暂不发明插件 ABI |
 | 状态 | Suag session 为对话真源，Gofer job 为执行真源 | 支持续跑且避免双写控制状态 |
+| 个人会话默认目录 | `~/.suag/db`；保留显式路径覆盖，不自动迁移仓库 `db/` | 按用户指定的数据目标隔离工作树与运行状态，保留旧数据访问方式 |
 | Web/legacy | 删除旧 Web；旧控制面代码移到不参与构建的 `legacy/` | 主仓库只保留个人 Agent 活跃路径 |
 | ACP 实现 | 新增入站 ACP Agent adapter，优先评估 Go SDK | 现有 `acpbridge` 是出站客户端，不能充当 Gofer 所需的服务端 |
 
 ## 待确认事项
 
 1. 首切片的任务侧重是否仍以项目/编码任务为主？本草案按“个人通用 Agent，先验收项目任务”处理；若要优先做日程/消息等个人事务，需要调整默认工具与验收。
-2. Suag 现有 SQLite 会话数据是否有必须原样保留的真实使用记录？本草案默认保留 schema 与数据，不做破坏性迁移。
+2. Suag 现有 SQLite 会话数据若仍需使用，可通过显式路径读取；本阶段保留 schema 与原文件，不做自动迁移。
 3. ACP Go SDK 与当前 Gofer 的协议组合是否覆盖 `session/load`、mode、permission 和取消，须在实施计划的首个协议试验中实测；失败时重新评估具体实现，不静默降级为无审批的 CLI。
 
 ## 结论与人工计划 Gate
