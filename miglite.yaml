@@ -1,7 +1,0 @@
-database:
-  driver: sqlite
-  dsn: db/suag.db
-
-migrations:
-  path: ./db/migrations
-  recursive: true
