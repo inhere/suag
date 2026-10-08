@@ -63,6 +63,7 @@ func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("SUAG_HOME", "") // fall back to HOME/.suag despite the TestMain default
 	cwd := t.TempDir()
 	if err := os.WriteFile(filepath.Join(cwd, "AGENTS.md"), []byte("ACP project rule"), 0644); err != nil {
 		t.Fatal(err)

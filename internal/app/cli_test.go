@@ -32,6 +32,7 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("SUAG_HOME", "") // fall back to HOME/.suag despite the TestMain default
 	t.Setenv("SUAG_MODEL", "environment-model")
 	// Same vendor as llm.api_type: switching vendors drops the file's base_url/api_key,
 	// which would send this run to the real vendor instead of the test server.
@@ -119,6 +120,7 @@ func TestPersonalCLIInjectsRulesPromptAndGoferHint(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("SUAG_HOME", "") // fall back to HOME/.suag despite the TestMain default
 	suagHome := t.TempDir()
 	t.Setenv("SUAG_HOME", suagHome)
 	t.Setenv("SUAG_APPEND_SYSTEM_PROMPT", "environment prompt")

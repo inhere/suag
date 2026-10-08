@@ -42,6 +42,17 @@ func ResolvePersonalSessionDBPath() (string, error) {
 	return filepath.Join(dir, "suag.db"), nil
 }
 
+// ResolveCoreStorePath returns the single-file core store location
+// ($SUAG_HOME/db/sessions.db). It deliberately ignores database_url, which
+// only governs the legacy suag.db.
+func ResolveCoreStorePath() (string, error) {
+	dir, err := personalDBDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "sessions.db"), nil
+}
+
 func ResolvePersonalAgentcoreRunRoot() (string, error) {
 	if strings.TrimSpace(gkconfig.String("agentcore.run_root")) != "" {
 		return ResolveHostAgentcoreRunRoot(), nil

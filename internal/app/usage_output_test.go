@@ -115,6 +115,7 @@ func TestAppendSystemPromptCanBeClearedFromCLI(t *testing.T) {
 	home := shortTestHome(t)
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("SUAG_HOME", "") // fall back to HOME/.suag despite the TestMain default
 	workspace := t.TempDir()
 	t.Chdir(workspace)
 	_ = gkconfig.Set("workspace", workspace)
