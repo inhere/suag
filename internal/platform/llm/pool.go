@@ -15,6 +15,7 @@ type Pool struct {
 	mu        sync.RWMutex
 	providers []Provider
 	embedder  EmbeddingProvider // dedicated provider for embeddings
+	observer  AttemptObserver   // optional; sees every provider attempt
 }
 
 // NewPool creates a Pool from an ordered list of providers.
@@ -25,18 +26,26 @@ func NewPool(providers []Provider, embedProvider EmbeddingProvider) *Pool {
 	return &Pool{providers: providers, embedder: embedProvider}
 }
 
+// SetObserver installs a callback invoked once per provider attempt (fallbacks
+// included). Pass nil to remove it.
+func (p *Pool) SetObserver(obs AttemptObserver) {
+	p.mu.Lock()
+	p.observer = obs
+	p.mu.Unlock()
+}
+
 // Name implements Provider.
 func (p *Pool) Name() string { return "pool" }
 
 // Generate tries each provider in turn and returns the first success.
 func (p *Pool) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
 	p.mu.RLock()
-	providers := p.providers
+	providers, obs := p.providers, p.observer
 	p.mu.RUnlock()
 
 	var lastErr error
-	for _, prov := range providers {
-		resp, err := prov.Generate(ctx, req)
+	for i, prov := range providers {
+		resp, err := GenerateObserved(ctx, prov, req, i+1, obs)
 		if err == nil {
 			return resp, nil
 		}
@@ -49,17 +58,17 @@ func (p *Pool) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) 
 // Stream implements the public streaming contract.
 func (p *Pool) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 	p.mu.RLock()
-	providers := p.providers
+	providers, obs := p.providers, p.observer
 	p.mu.RUnlock()
 
 	var lastErr error
-	for _, prov := range providers {
+	for i, prov := range providers {
 		streaming, ok := prov.(agentcoreapi.StreamingProvider)
 		if !ok {
 			lastErr = fmt.Errorf("provider %s does not support streaming", prov.Name())
 			continue
 		}
-		resp, err := streaming.Stream(ctx, req, emit)
+		resp, err := StreamObserved(ctx, streaming, req, emit, i+1, obs)
 		if err == nil {
 			return resp, nil
 		}

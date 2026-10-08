@@ -3,6 +3,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -21,6 +22,20 @@ const (
 	KindExtAgent Kind = "ext_agent"
 )
 
+// ErrDenied is the sentinel for a tool call refused by a permission layer
+// (approval gate, read-only mode ...). The observe layer uses it to tell a
+// denial from an ordinary tool failure.
+var ErrDenied = errors.New("tool call denied")
+
+// deniedError carries the user-facing message while matching ErrDenied.
+type deniedError struct{ msg string }
+
+func (e *deniedError) Error() string { return e.msg }
+func (e *deniedError) Unwrap() error { return ErrDenied }
+
+// Denied returns an error that prints as msg and satisfies errors.Is(err, ErrDenied).
+func Denied(msg string) error { return &deniedError{msg: msg} }
+
 // Tool is the interface every tool must implement.
 type Tool interface {
 	// Name returns the unique tool identifier used in LLM function calls.
@@ -33,6 +48,13 @@ type Tool interface {
 	Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error)
 	// Kind returns the tool's runtime kind.
 	Kind() Kind
+}
+
+// Lookup is the query capability wrapping registry layers (observe, visibility,
+// approval) pass through so permission code can still resolve a tool's Kind and
+// MCP server name behind them.
+type Lookup interface {
+	Get(name string) (Tool, error)
 }
 
 // Registry holds all registered tools and dispatches calls.

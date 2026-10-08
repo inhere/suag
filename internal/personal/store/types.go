@@ -134,4 +134,5 @@ type Usage struct {
 	OutputTokens     int64
 	CacheReadTokens  int64
 	CacheWriteTokens int64
+	CostUSD          float64
 }

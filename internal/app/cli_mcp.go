@@ -115,7 +115,7 @@ func (g *cliMCPGate) ExecuteTool(ctx context.Context, call agentcore.ToolCall) (
 			g.denied = true
 			g.deniedTool = call.Name
 			g.mu.Unlock()
-			return nil, fmt.Errorf("需要许可：%s，本次运行未授权", call.Name)
+			return nil, tools.Denied(fmt.Sprintf("需要许可：%s，本次运行未授权", call.Name))
 		}
 	}
 	return g.registry.ExecuteTool(ctx, call)

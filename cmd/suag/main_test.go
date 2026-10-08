@@ -12,7 +12,9 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
+	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/personal/process"
+	"github.com/inhere/suag/internal/personal/store"
 )
 
 func TestCLIRegistersPersonalCommands(t *testing.T) {
@@ -170,4 +172,48 @@ func TestSendRejectsOversizeStdinInsteadOfTruncating(t *testing.T) {
 	assert.Require(t, assert.NotNil(t, err))
 	assert.Eq(t, 4, commandExitCode(err))
 	assert.StrContains(t, err.Error(), "1 MiB")
+}
+
+func TestTraceCommandPrintsSessionTimeline(t *testing.T) {
+	t.Setenv("SUAG_HOME", shortCLIHome(t))
+	dbPath, err := appconfig.ResolveCoreStorePath()
+	assert.NoErr(t, err)
+	repo, err := store.Open(dbPath)
+	assert.NoErr(t, err)
+	ctx := context.Background()
+	assert.NoErr(t, repo.CreateSession(ctx, store.Session{ID: "trace-s1", Status: store.SessionOpen}))
+	for _, e := range []store.Event{
+		{SessionID: "trace-s1", TurnID: "t1", Kind: store.EventTurn, Name: "turn", Status: "completed"},
+		{SessionID: "trace-s1", TurnID: "t1", Kind: store.EventModel, Name: "primary", Status: "error", Error: "boom"},
+		{SessionID: "trace-s1", TurnID: "t2", Kind: store.EventDenial, Name: "mcp_write", Status: "denied"},
+	} {
+		_, err := repo.AppendEvent(ctx, e)
+		assert.NoErr(t, err)
+	}
+	assert.NoErr(t, repo.Close())
+
+	run := func(args ...string) string {
+		var stdout, stderr bytes.Buffer
+		assert.NoErr(t, newCLI(ctx, strings.NewReader(""), &stdout, &stderr).RunWithArgs(args))
+		return stdout.String()
+	}
+	t.Run("text", func(t *testing.T) {
+		out := run("trace", "trace-s1")
+		assert.Eq(t, true, strings.Contains(out, " model primary error "))
+		assert.Eq(t, true, strings.Contains(out, "err=boom"))
+		assert.Eq(t, true, strings.Contains(out, " denial mcp_write denied "))
+	})
+	t.Run("turn filter with json", func(t *testing.T) {
+		out := run("trace", "trace-s1", "--turn", "t2", "--json")
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		assert.Eq(t, 1, len(lines))
+		var row map[string]any
+		assert.NoErr(t, json.Unmarshal([]byte(lines[0]), &row))
+		assert.Eq(t, "denial", row["kind"])
+	})
+	t.Run("unknown session", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		err := newCLI(ctx, strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"trace", "nope"})
+		assert.Err(t, err)
+	})
 }

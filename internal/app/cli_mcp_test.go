@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -178,6 +179,9 @@ func TestCLIMCPGateDefaultsAndOverrides(t *testing.T) {
 		assert.True(t, err != nil && strings.Contains(err.Error(), "需要许可："+name))
 	}
 	assert.Eq(t, true, gate.WasDenied())
+	// The refusal matches the denial sentinel the observe layer keys on.
+	_, err = gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: "mcp_write"})
+	assert.True(t, errors.Is(err, tools.ErrDenied))
 	assert.NoErr(t, gkconfig.Set("tools.auto_allow", []string{"mcp_write"}))
 	gate, err = newCLIMCPGate(registry, false)
 	assert.NoErr(t, err)

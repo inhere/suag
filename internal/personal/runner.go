@@ -101,13 +101,19 @@ type Runner struct {
 	cfg       Config
 	locksMu   sync.Mutex
 	heldLocks map[string]*process.SessionLock
+	rec       *recorder
 }
 
 func New(cfg Config) (*Runner, error) {
 	if cfg.Repository == nil || cfg.Provider == nil {
 		return nil, fmt.Errorf("personal runner requires repository and provider")
 	}
-	return &Runner{cfg: cfg, heldLocks: make(map[string]*process.SessionLock)}, nil
+	// Observation wraps the provider and tools once here, so every model call
+	// (including later compaction calls) and tool call emits events.
+	rec := &recorder{sink: cfg.Repository}
+	cfg.Provider = rec.observeProvider(cfg.Provider, cfg.ProviderName, cfg.Model)
+	cfg.Tools = rec.observeTools(cfg.Tools)
+	return &Runner{cfg: cfg, heldLocks: make(map[string]*process.SessionLock), rec: rec}, nil
 }
 
 // HoldSessionLock reserves a session for the lifetime of an interactive chat.
@@ -262,6 +268,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	// run_id == turn_id: the store's agentcore adapter keys run state and
 	// messages by turn id, and the turn row must exist before the runtime saves.
 	turnID := NewTurnID()
+	turnStart := time.Now()
+	ctx = withObserveScope(ctx, model.ID, turnID)
 	result := RunResult{SessionID: model.ID, TurnID: turnID, RunID: turnID}
 	history, err := r.history(ctx, model.ID)
 	if err != nil {
@@ -310,22 +318,22 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err := r.cfg.Repository.CreateTurn(ctx, store.Turn{ID: turnID, SessionID: model.ID, Status: store.TurnRunning}); err != nil {
 		return result, fmt.Errorf("create turn: %w", err)
 	}
-	// Collect per-call usage for the session-cumulative total saved in finish.
+	// Collect this turn's per-call usage (the session total comes from model events).
 	usage := &usageCollector{}
 	// Keep session metadata aligned with the provider selected for this turn.
 	metaPatch["model"] = r.cfg.Model
 	metaPatch["provider"] = r.cfg.ProviderName
 	if err := r.cfg.Repository.PatchSessionMeta(ctx, model.ID, metaPatch); err != nil {
-		return r.finish(ctx, model, result, usage, nil, err, req.Emit)
+		return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
 	}
 	// Re-read so the prompt builder and the status write see the patched,
 	// current metadata (including usage written by another process).
 	model, err = r.markRunning(ctx, model.ID, turnID)
 	if err != nil {
-		return r.finish(ctx, model, result, usage, nil, err, req.Emit)
+		return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
 	}
 	if err := emit(ctx, req.Emit, Event{Kind: "run_started", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID}); err != nil {
-		return r.finish(ctx, model, result, usage, nil, err, req.Emit)
+		return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
 	}
 
 	stream := func(ctx context.Context, update agentcore.StreamEvent) error {
@@ -388,7 +396,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			slog.Warn("append personal transcript", "session_id", model.ID, "err", err)
 		}
 	}
-	return r.finish(ctx, model, result, usage, coreResult, runErr, req.Emit)
+	return r.finish(ctx, model, result, turnStart, usage, coreResult, runErr, req.Emit)
 }
 
 // markRunning flips the session to running with this turn as last_turn_id and
@@ -497,7 +505,7 @@ func (r *Runner) history(ctx context.Context, sessionID string) ([]agentcore.Mes
 	return history, nil
 }
 
-func (r *Runner) finish(ctx context.Context, model Session, result RunResult, usage *usageCollector, coreResult *agentcore.RunResult, runErr error, sink EmitFunc) (RunResult, error) {
+func (r *Runner) finish(ctx context.Context, model Session, result RunResult, turnStart time.Time, usage *usageCollector, coreResult *agentcore.RunResult, runErr error, sink EmitFunc) (RunResult, error) {
 	if coreResult != nil {
 		result.Status, result.Output, result.Usage = coreResult.Status, coreResult.Output, coreResult.Usage
 	}
@@ -540,16 +548,19 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, us
 	if err := r.cfg.Repository.UpdateTurn(finishCtx, store.Turn{ID: result.TurnID, Status: turnStatus, StopReason: stopReason, EndedAt: now}); err != nil {
 		persistErr = errors.Join(persistErr, err)
 	}
-	// Accumulate session usage inside the session lock (held by Run): re-read the
-	// persisted total so a stale in-memory model cannot overwrite another
-	// process's earlier turns, and patch only the usage key.
-	base := model
-	if fresh, err := r.cfg.Repository.GetSession(finishCtx, model.ID); err == nil {
-		base = fresh
-	}
-	result.SessionUsage = AddUsage(usageFromMetadata(base.Meta), turnUsage)
-	if err := r.cfg.Repository.PatchSessionMeta(finishCtx, model.ID, map[string]any{usageMetadataKey: usageToMetadata(result.SessionUsage)}); err != nil {
-		persistErr = errors.Join(persistErr, err)
+	// The turn event is written outside the entry transactions and is
+	// best-effort; it is also what the trace timeline anchors on.
+	r.rec.record(finishCtx, store.Event{
+		SessionID: model.ID, TurnID: result.TurnID, Kind: store.EventTurn, Name: "turn",
+		Status: strings.ToLower(string(runState)), StartedAt: turnStart, DurationMs: time.Since(turnStart).Milliseconds(),
+		Attrs: map[string]any{"stop_reason": stopReason, "status": string(result.Status)},
+	})
+	// Session-cumulative usage is derived from the model events of the session,
+	// which already include this turn's calls (written synchronously above).
+	if sum, err := r.cfg.Repository.SumUsage(finishCtx, model.ID); err != nil {
+		slog.Warn("sum session usage", "session_id", model.ID, "err", err)
+	} else {
+		result.SessionUsage = usageFromSum(sum)
 	}
 	// Back to open with the current metadata (status columns only).
 	if fresh, err := r.cfg.Repository.GetSession(finishCtx, model.ID); err != nil {

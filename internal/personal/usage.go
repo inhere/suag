@@ -4,12 +4,9 @@ import (
 	"context"
 	"sync"
 
+	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
 )
-
-// usageMetadataKey is the session metadata key holding session-cumulative
-// token usage. It lives in sessions.metadata_json, so no schema change is needed.
-const usageMetadataKey = "usage"
 
 // usageCollector sums the usage of every successful model call of one Run via
 // the AfterModel hook. Unlike agentcore.RunResult.Usage it also covers turns
@@ -50,34 +47,16 @@ func AddUsage(a, b agentcore.Usage) agentcore.Usage {
 	return a
 }
 
-// usageToMetadata encodes usage as a JSON-friendly map for session metadata.
-func usageToMetadata(u agentcore.Usage) map[string]any {
-	return map[string]any{
-		"input_tokens": u.InputTokens, "output_tokens": u.OutputTokens, "total_tokens": u.TotalTokens,
-		"cache_read_tokens": u.CacheReadTokens, "cache_write_tokens": u.CacheWriteTokens,
-		"cost_usd": u.CostUSD,
-	}
-}
-
-// usageFromMetadata decodes the persisted cumulative usage; a missing or
-// malformed entry reads as zero. JSON numbers come back as float64, while a
-// value set in-process may still be an int.
-func usageFromMetadata(metadata map[string]any) agentcore.Usage {
-	raw, _ := metadata[usageMetadataKey].(map[string]any)
-	num := func(key string) float64 {
-		switch v := raw[key].(type) {
-		case float64:
-			return v
-		case int:
-			return float64(v)
-		}
-		return 0
-	}
+// usageFromSum converts the store's per-session model-event total back to the
+// provider-normalized shape (input includes cache), so ReportUsage subtracts the
+// cache part exactly as for a single turn. Total follows the same convention as
+// providers: input + output.
+func usageFromSum(s store.Usage) agentcore.Usage {
 	return agentcore.Usage{
-		InputTokens: int(num("input_tokens")), OutputTokens: int(num("output_tokens")),
-		TotalTokens:     int(num("total_tokens")),
-		CacheReadTokens: int(num("cache_read_tokens")), CacheWriteTokens: int(num("cache_write_tokens")),
-		CostUSD: num("cost_usd"),
+		InputTokens: int(s.InputTokens), OutputTokens: int(s.OutputTokens),
+		TotalTokens:     int(s.InputTokens + s.OutputTokens),
+		CacheReadTokens: int(s.CacheReadTokens), CacheWriteTokens: int(s.CacheWriteTokens),
+		CostUSD: s.CostUSD,
 	}
 }
 

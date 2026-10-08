@@ -90,11 +90,13 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 }
 
 // SumUsage totals tokens over kind=model events only; turn/tool events carry
-// no per-call usage of their own, so nothing is counted twice.
+// no per-call usage of their own, so nothing is counted twice. Cost is the sum
+// of the optional attrs.cost_usd of those events.
 func (s *Store) SumUsage(ctx context.Context, sessionID string) (Usage, error) {
 	var u Usage
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(1), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
-		COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_write_tokens),0) FROM events WHERE session_id = ? AND kind = ?`,
-		sessionID, EventModel).Scan(&u.Calls, &u.InputTokens, &u.OutputTokens, &u.CacheReadTokens, &u.CacheWriteTokens)
+		COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_write_tokens),0),
+		COALESCE(SUM(json_extract(attrs_json, '$.cost_usd')),0) FROM events WHERE session_id = ? AND kind = ?`,
+		sessionID, EventModel).Scan(&u.Calls, &u.InputTokens, &u.OutputTokens, &u.CacheReadTokens, &u.CacheWriteTokens, &u.CostUSD)
 	return u, err
 }

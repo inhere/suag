@@ -31,14 +31,11 @@ func TestReportUsage(t *testing.T) {
 	})
 }
 
-func TestUsageMetadataRoundTripsThroughJSON(t *testing.T) {
-	want := agentcore.Usage{InputTokens: 14, OutputTokens: 6, TotalTokens: 20, CacheReadTokens: 4, CacheWriteTokens: 2, CostUSD: 0.5}
-	data, err := json.Marshal(map[string]any{usageMetadataKey: usageToMetadata(want)})
-	assert.NoErr(t, err)
-	var decoded map[string]any
-	assert.NoErr(t, json.Unmarshal(data, &decoded))
-	assert.Eq(t, want, usageFromMetadata(decoded))
-	assert.Eq(t, agentcore.Usage{}, usageFromMetadata(nil))
+func TestUsageFromSum(t *testing.T) {
+	got := usageFromSum(store.Usage{InputTokens: 14, OutputTokens: 6, CacheReadTokens: 4, CacheWriteTokens: 2, CostUSD: 0.5})
+	assert.Eq(t, agentcore.Usage{InputTokens: 14, OutputTokens: 6, TotalTokens: 20, CacheReadTokens: 4, CacheWriteTokens: 2, CostUSD: 0.5}, got)
+	// The reported shape subtracts cache from input, same as a single turn.
+	assert.Eq(t, 8, ReportUsage(got).InputTokens)
 }
 
 type usageProvider struct{ calls int }
@@ -75,9 +72,14 @@ func TestRunnerPersistsCumulativeUsageAcrossRestart(t *testing.T) {
 	assert.Eq(t, 20, second.Usage.TotalTokens)
 	assert.Eq(t, agentcore.Usage{InputTokens: 28, OutputTokens: 12, TotalTokens: 40, CacheReadTokens: 8, CostUSD: 1}, second.SessionUsage)
 
+	// The session total is derived from model events, not from session metadata.
+	sum, err := repo.SumUsage(ctx, "usage-session")
+	assert.NoErr(t, err)
+	assert.Eq(t, second.SessionUsage, usageFromSum(sum))
 	stored, err := repo.GetSession(ctx, "usage-session")
 	assert.NoErr(t, err)
-	assert.Eq(t, second.SessionUsage, usageFromMetadata(stored.Meta))
+	_, hasMeta := stored.Meta["usage"]
+	assert.False(t, hasMeta)
 }
 
 func TestRunnerSessionUsageCountsCancelledTurn(t *testing.T) {
