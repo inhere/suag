@@ -184,6 +184,14 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		toolRegistry = gate
 		hooks = append(hooks, gate)
 	}
+	// Visibility sits between observe (added in personal.New) and the approval
+	// layer: observe -> visibility -> approval(gate) -> base registry.
+	vis, err := newToolVisibility(capabilities.Registry, toolRegistry, contextWindowForSettings(settings))
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, err
+	}
+	toolRegistry = vis
 	dbPath, err := appconfig.ResolveCoreStorePath()
 	if err != nil {
 		_ = capabilities.Close()
@@ -228,6 +236,7 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		CompactProvider: compactProvider,
 		CompactModel:    compactSettings.Model,
 		Plans:           plans,
+		Visibility:      vis,
 		Repository:      repo,
 		Provider:        provider,
 		Model:           settings.Model,

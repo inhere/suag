@@ -12,6 +12,7 @@ import (
 
 	"github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
 )
@@ -69,6 +70,10 @@ type Config struct {
 	// Plans is the update_plan sink handed to the tool at build time; New binds
 	// it to this runner's store.
 	Plans *PlanRecorder
+	// Visibility is the deferred-tool layer already wrapped around Tools; New
+	// binds it to this runner's store (loaded_tools meta) and event recorder,
+	// and its tool list is added to the system prompt.
+	Visibility *tools.Visibility
 }
 
 // Event is one transport-neutral lifecycle or model-stream update.
@@ -134,7 +139,9 @@ func New(cfg Config) (*Runner, error) {
 	if cfg.CompactProvider != nil {
 		cfg.CompactProvider = rec.observeProvider(cfg.CompactProvider, cfg.ProviderName, cfg.CompactModel)
 	}
-	return &Runner{cfg: cfg, heldLocks: make(map[string]*process.SessionLock), rec: rec}, nil
+	runner := &Runner{cfg: cfg, heldLocks: make(map[string]*process.SessionLock), rec: rec}
+	runner.bindVisibility()
+	return runner, nil
 }
 
 // HoldSessionLock reserves a session for the lifetime of an interactive chat.
@@ -377,7 +384,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		runtimeHooks = append(runtimeHooks, toolResultEmitHook{sink: req.Emit, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
 	}
 	storage := r.cfg.Repository.AgentStorage()
-	promptBuilder := rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Meta, goferJob: r.cfg.GoferJob}
+	promptBuilder := rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Meta, goferJob: r.cfg.GoferJob, deferredTools: r.deferredToolsPrompt()}
 	runtime := agentcore.New(agentcore.Config{
 		Provider:       r.cfg.Provider,
 		Storage:        storage,
@@ -586,6 +593,8 @@ type rulesPromptBuilder struct {
 	base     agentcore.PromptBuilder
 	metadata map[string]any
 	goferJob bool
+	// deferredTools is the stable deferred-tool listing ("" when none).
+	deferredTools string
 }
 
 func (b rulesPromptBuilder) BuildSystemPrompt(ctx context.Context, state *agentcore.RunState) (string, error) {
@@ -604,6 +613,9 @@ func (b rulesPromptBuilder) BuildSystemPrompt(ctx context.Context, state *agentc
 	}
 	if b.goferJob {
 		parts = append(parts, "当前运行在 Gofer job 中；可用 gofer work report / gofer issue 汇报工作进度与结果。")
+	}
+	if b.deferredTools != "" {
+		parts = append(parts, b.deferredTools)
 	}
 	return strings.Join(parts, "\n\n"), nil
 }

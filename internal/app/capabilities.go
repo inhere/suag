@@ -11,6 +11,7 @@ import (
 	"github.com/inhere/suag/internal/platform/tools"
 	toolsmcp "github.com/inhere/suag/internal/platform/tools/mcp"
 	"github.com/inhere/suag/internal/platform/tools/native"
+	"github.com/inhere/suag/pkg/agentcore"
 )
 
 const nativeToolProviderID = "native"
@@ -102,4 +103,26 @@ func swapMCPProviderFactoryForTest(factory func(ctx context.Context, settings ax
 	return func() {
 		mcpProviderFactory = prev
 	}
+}
+
+// newToolVisibility wraps the (approval-gated) registry in the deferred-tool
+// layer per tools.deferred. When tools end up deferred, tool_search is added to
+// base so the model can load them; otherwise it is not registered at all.
+func newToolVisibility(base *tools.Registry, inner agentcore.ToolRegistry, contextWindow int) (*tools.Visibility, error) {
+	mode, err := tools.ParseDeferredMode(gkconfig.String("tools.deferred"))
+	if err != nil {
+		return nil, err
+	}
+	lookup, ok := inner.(interface {
+		agentcore.ToolRegistry
+		tools.Lookup
+	})
+	if !ok {
+		return nil, fmt.Errorf("tool registry %T does not support lookup", inner)
+	}
+	vis := tools.NewVisibility(lookup, tools.VisibilityOptions{Mode: mode, ContextWindow: contextWindow})
+	if vis.Active() {
+		base.MustRegister(native.NewToolSearchTool(vis))
+	}
+	return vis, nil
 }

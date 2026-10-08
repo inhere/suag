@@ -227,6 +227,9 @@ func toolKind(name string) (acp.ToolKind, bool) {
 		return acp.ToolKindThink, true
 	case "web_search":
 		return acp.ToolKindSearch, true
+	case "tool_search":
+		// Only loads deferred tool schemas; no side effects, no prompt.
+		return acp.ToolKindSearch, true
 	case "web_fetch":
 		return acp.ToolKindFetch, true
 	default:

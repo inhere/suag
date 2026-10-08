@@ -93,6 +93,10 @@ func (g *cliMCPGate) ListTools(ctx context.Context) ([]agentcore.ToolSchema, err
 	return g.registry.ListTools(ctx)
 }
 
+// Get passes tool lookup through so layers above (visibility, observe) can
+// still resolve a tool's Kind and MCP server.
+func (g *cliMCPGate) Get(name string) (tools.Tool, error) { return g.registry.Get(name) }
+
 func (g *cliMCPGate) ExecuteTool(ctx context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	tool, err := g.registry.Get(call.Name)
 	if err != nil {
