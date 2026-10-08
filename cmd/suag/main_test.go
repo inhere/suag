@@ -125,3 +125,12 @@ func TestVersionCommandWritesOneLine(t *testing.T) {
 	assert.Eq(t, "suag dev (dev)\n", stdout.String())
 	assert.Eq(t, "", stderr.String())
 }
+
+func TestSendRejectsOversizeStdinInsteadOfTruncating(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	big := strings.NewReader(strings.Repeat("a", maxSendStdinBytes+1))
+	err := newCLI(context.Background(), big, &stdout, &stderr).RunWithArgs([]string{"send", "--session", "any"})
+	assert.Require(t, assert.NotNil(t, err))
+	assert.Eq(t, 4, commandExitCode(err))
+	assert.StrContains(t, err.Error(), "1 MiB")
+}

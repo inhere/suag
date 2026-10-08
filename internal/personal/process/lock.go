@@ -1,6 +1,7 @@
 package process
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,12 @@ var ErrSessionLocked = errors.New("session is locked by another Suag process")
 // The OS releases it when the owner exits, so a crashed owner never needs PID-based
 // reclaiming, and two contenders can never both win. The JSON content is diagnostic only.
 func AcquireSessionLock(root, sessionID string, wait time.Duration) (*SessionLock, error) {
+	return AcquireSessionLockContext(context.Background(), root, sessionID, wait)
+}
+
+// AcquireSessionLockContext is AcquireSessionLock whose wait aborts as soon as ctx is
+// cancelled (Ctrl-C / SIGTERM), returning ctx.Err() instead of sleeping out the timeout.
+func AcquireSessionLockContext(ctx context.Context, root, sessionID string, wait time.Duration) (*SessionLock, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
@@ -49,7 +56,11 @@ func AcquireSessionLock(root, sessionID string, wait time.Duration) (*SessionLoc
 		if wait <= 0 || time.Now().After(deadline) {
 			return nil, fmt.Errorf("%w: %s", ErrSessionLocked, sessionID)
 		}
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 }
 

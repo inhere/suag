@@ -287,6 +287,17 @@ func processAlive(pid int, procStart string) bool {
 
 func Resolve(records []Record, selector string) (Record, error) {
 	selector = strings.TrimSpace(selector)
+	// An exact session ID always wins over prefix/name matches, so a full ID that is
+	// also a prefix of another session never turns ambiguous or picks the wrong one.
+	var exact []Record
+	for _, record := range records {
+		if record.SessionID == selector {
+			exact = append(exact, record)
+		}
+	}
+	if len(exact) == 1 {
+		return exact[0], nil
+	}
 	var matches []Record
 	for _, record := range records {
 		if record.SessionID == selector || strings.HasPrefix(record.SessionID, selector) || strings.EqualFold(record.Name, selector) {

@@ -1,6 +1,7 @@
 package process
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -91,4 +92,18 @@ func TestLockChildFixture(t *testing.T) {
 	for {
 		time.Sleep(time.Second)
 	}
+}
+
+func TestAcquireSessionLockContextCancelsWait(t *testing.T) {
+	root := t.TempDir()
+	held, err := AcquireSessionLock(root, "ctx-lock", 0)
+	assert.Require(t, assert.NoErr(t, err))
+	defer held.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	_, err = AcquireSessionLockContext(ctx, root, "ctx-lock", 30*time.Second)
+	assert.True(t, errors.Is(err, context.Canceled))
+	assert.True(t, time.Since(start) < 5*time.Second)
 }

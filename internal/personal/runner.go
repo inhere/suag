@@ -208,7 +208,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	_, heldByChat := r.heldLocks[model.SessionID]
 	r.locksMu.Unlock()
 	if r.cfg.LockRoot != "" && !heldByChat {
-		lock, err := process.AcquireSessionLock(r.cfg.LockRoot, model.SessionID, 30*time.Second)
+		lock, err := process.AcquireSessionLockContext(ctx, r.cfg.LockRoot, model.SessionID, 30*time.Second)
 		if err != nil {
 			return RunResult{}, err
 		}

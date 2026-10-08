@@ -132,9 +132,13 @@ func newCLI(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) *cap
 		}
 		text := sendText
 		if text == "" {
-			data, err := io.ReadAll(io.LimitReader(stdin, 1<<20))
+			// Read one byte past the cap so oversize input is rejected, never truncated.
+			data, err := io.ReadAll(io.LimitReader(stdin, maxSendStdinBytes+1))
 			if err != nil {
 				return err
+			}
+			if len(data) > maxSendStdinBytes {
+				return processExitError{code: 4, err: fmt.Errorf("stdin exceeds the %d byte (1 MiB) limit; nothing was sent", maxSendStdinBytes)}
 			}
 			text = string(data)
 		}
@@ -183,6 +187,9 @@ func newCLI(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) *cap
 	)
 	return cli
 }
+
+// maxSendStdinBytes caps `suag send` stdin; exit codes: 2 ambiguous, 3 offline, 4 too large.
+const maxSendStdinBytes = 1 << 20
 
 type processExitError struct {
 	code int

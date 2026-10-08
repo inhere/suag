@@ -3,6 +3,7 @@ package process
 import (
 	"encoding/json"
 	"errors"
+	"github.com/gookit/goutil/x/assert"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -222,4 +223,17 @@ func TestWindowsLongSocketPathFailsWithClearError(t *testing.T) {
 
 func itoa(value int) string {
 	return strconv.Itoa(value)
+}
+
+func TestResolvePrefersExactSessionID(t *testing.T) {
+	records := []Record{{SessionID: "abc", PID: 1}, {SessionID: "abcdef", PID: 2}}
+	t.Run("exact id beats prefix", func(t *testing.T) {
+		got, err := Resolve(records, "abc")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, 1, got.PID)
+	})
+	t.Run("ambiguous prefix still errors", func(t *testing.T) {
+		_, err := Resolve(records, "ab")
+		assert.True(t, errors.Is(err, ErrAmbiguous))
+	})
 }
