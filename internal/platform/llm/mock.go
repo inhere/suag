@@ -32,8 +32,8 @@ type MockResponse struct {
 //     Useful for stepping through a ReAct loop interactively in tests.
 type MockProvider struct {
 	mu      sync.Mutex
-	queue   []MockResponse               // scripted responses (mode 1)
-	pending chan pendingCall             // manual mode channel (mode 2)
+	queue   []MockResponse                 // scripted responses (mode 1)
+	pending chan pendingCall               // manual mode channel (mode 2)
 	calls   []agentcoreapi.GenerateRequest // all recorded calls
 	name    string
 }

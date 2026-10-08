@@ -16,7 +16,7 @@ const (
 	RuntimeAgentcore RuntimeKind = "agentcore"
 	// RuntimeReact is a legacy fallback kept for explicit opt-in usage and
 	// parity verification while callers continue converging on agentcore.
-	RuntimeReact     RuntimeKind = "react"
+	RuntimeReact RuntimeKind = "react"
 )
 
 // RunnerFactoryConfig centralizes runner selection and common runtime wiring.

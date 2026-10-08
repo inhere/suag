@@ -59,4 +59,3 @@ func OnboardingChecklist() []OnboardingItem {
 		},
 	}
 }
-

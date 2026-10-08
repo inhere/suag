@@ -981,7 +981,7 @@ func TestRuntime_Run_ResumeLoadsArtifactsFromOptionalArtifactStorage(t *testing.
 	store.messages[runID] = []Message{
 		{Role: "user", Content: "persisted question"},
 		{
-			Role: "tool",
+			Role:    "tool",
 			Content: "tool-output",
 			ToolCall: &ToolCall{
 				CallID: "call-1",

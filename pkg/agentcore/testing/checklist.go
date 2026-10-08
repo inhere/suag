@@ -4,14 +4,14 @@ package agentcoretesting
 type ContractStatus string
 
 const (
-	StatusHighConfidence      ContractStatus = "High confidence in v0"
-	StatusStableDirection     ContractStatus = "Stable direction, careful evolution"
+	StatusHighConfidence       ContractStatus = "High confidence in v0"
+	StatusStableDirection      ContractStatus = "Stable direction, careful evolution"
 	StatusMustStayConservative ContractStatus = "Must stay conservative"
 	StatusShouldKeepTightening ContractStatus = "Should keep tightening"
-	StatusUsefulButEvolving   ContractStatus = "Useful but still evolving"
-	StatusNeededForPosture    ContractStatus = "Needed for independent package posture"
-	StatusHostReadyCandidate  ContractStatus = "Kernel-stable candidate"
-	StatusImportantRelease    ContractStatus = "Important release surface"
+	StatusUsefulButEvolving    ContractStatus = "Useful but still evolving"
+	StatusNeededForPosture     ContractStatus = "Needed for independent package posture"
+	StatusHostReadyCandidate   ContractStatus = "Kernel-stable candidate"
+	StatusImportantRelease     ContractStatus = "Important release surface"
 )
 
 // EvidenceLevel describes what kind of verification currently supports a surface.
@@ -115,4 +115,3 @@ func ContractChecklist() []ChecklistItem {
 		},
 	}
 }
-

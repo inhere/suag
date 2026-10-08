@@ -128,7 +128,7 @@ func TestAuthorityBundle_ToolMessagesReturnsCopiesInOrder(t *testing.T) {
 		Messages: []Message{
 			{Role: "user", Content: "hello"},
 			{
-				Role: "tool",
+				Role:    "tool",
 				Content: "tool-1",
 				ToolResult: &ToolResult{
 					CallID:  "call-1",
@@ -141,7 +141,7 @@ func TestAuthorityBundle_ToolMessagesReturnsCopiesInOrder(t *testing.T) {
 			},
 			{Role: "assistant", Content: "done"},
 			{
-				Role: "tool",
+				Role:    "tool",
 				Content: "tool-2",
 				ToolResult: &ToolResult{
 					CallID:  "call-2",
@@ -203,4 +203,6 @@ func (s *runtimeSnapshotOnlyStorage) LoadMessages(_ context.Context, runID strin
 
 func (s *runtimeSnapshotOnlyStorage) SaveRun(context.Context, *RunState) error { return nil }
 
-func (s *runtimeSnapshotOnlyStorage) AppendMessages(context.Context, string, ...Message) error { return nil }
+func (s *runtimeSnapshotOnlyStorage) AppendMessages(context.Context, string, ...Message) error {
+	return nil
+}

@@ -321,9 +321,9 @@ type captureTool struct {
 	lastArgs map[string]any
 }
 
-func (m *captureTool) Name() string           { return m.name }
-func (m *captureTool) Description() string    { return "capture tool" }
-func (m *captureTool) Kind() Kind             { return KindNative }
+func (m *captureTool) Name() string        { return m.name }
+func (m *captureTool) Description() string { return "capture tool" }
+func (m *captureTool) Kind() Kind          { return KindNative }
 func (m *captureTool) Schema() api.ToolSchema {
 	return api.ToolSchema{
 		Name:        m.name,
