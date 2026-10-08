@@ -4,8 +4,10 @@ package native
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/inhere/suag/internal/platform/tools"
@@ -57,7 +59,7 @@ func (t *FileReadTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := readFileInRoot(t.workspace, path)
 	if err != nil {
 		return nil, fmt.Errorf("file_read: %w", err)
 	}
@@ -103,10 +105,7 @@ func (t *FileWriteTool) Execute(_ context.Context, call api.ToolCall) (*api.Tool
 	}
 	content, _ := call.Arguments["content"].(string)
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, fmt.Errorf("file_write mkdir: %w", err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := writeFileInRoot(t.workspace, path, []byte(content)); err != nil {
 		return nil, fmt.Errorf("file_write: %w", err)
 	}
 	return &api.ToolResult{
@@ -142,12 +141,12 @@ func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	if dirArg == "" {
 		dirArg = "."
 	}
-	base := filepath.Join(t.workspace, filepath.Clean(dirArg))
-	if !strings.HasPrefix(base, t.workspace) {
-		return nil, fmt.Errorf("path escape: %q is outside workspace", dirArg)
+	base, err := ResolveSandboxedPath(t.workspace, dirArg)
+	if err != nil {
+		return nil, err
 	}
 
-	entries, err := os.ReadDir(base)
+	entries, err := readDirInRoot(t.workspace, base)
 	if err != nil {
 		return nil, fmt.Errorf("file_list: %w", err)
 	}
@@ -172,12 +171,110 @@ func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 // always joined under workspace (an absolute rel is NOT treated as absolute) and
 // must not escape it. Exported so ACP reports exactly the path the tool writes.
 func ResolveSandboxedPath(workspace, rel string) (string, error) {
+	workspace = filepath.Clean(workspace)
 	abs := filepath.Join(workspace, filepath.Clean(rel))
-	// Security: reject any path that escapes the workspace root.
-	if !strings.HasPrefix(abs, workspace) {
+	// Security: reject any path that escapes the workspace root. Compare via
+	// filepath.Rel so a sibling like /a/ws2 is not mistaken for inside /a/ws
+	// (a bare string-prefix check would accept it).
+	if _, err := relInWorkspace(workspace, abs); err != nil {
 		return "", fmt.Errorf("path escape: %q is outside workspace", rel)
 	}
 	return abs, nil
+}
+
+// relInWorkspace returns abs relative to workspace, or an error when abs is
+// not workspace itself or a descendant of it.
+func relInWorkspace(workspace, abs string) (string, error) {
+	rel, err := filepath.Rel(workspace, abs)
+	if err != nil || filepath.IsAbs(rel) || rel == ".." ||
+		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path escape: %q is outside workspace", abs)
+	}
+	return rel, nil
+}
+
+// openWorkspaceRoot opens workspace as an os.Root. All real file I/O goes
+// through it so symlinks that point outside the workspace are rejected by the
+// OS-level traversal check, while symlinks that stay inside keep working.
+func openWorkspaceRoot(workspace string) (*os.Root, error) {
+	return os.OpenRoot(filepath.Clean(workspace))
+}
+
+// wrapRootErr turns os.Root's symlink/".." escape error into the same
+// "path escape" wording used by the lexical check.
+func wrapRootErr(err error, path string) error {
+	if err != nil && strings.Contains(err.Error(), "path escapes from parent") {
+		return fmt.Errorf("path escape: %q is outside workspace (via symlink): %w", path, err)
+	}
+	return err
+}
+
+func readFileInRoot(workspace, abs string) ([]byte, error) {
+	rel, err := relInWorkspace(filepath.Clean(workspace), abs)
+	if err != nil {
+		return nil, err
+	}
+	root, err := openWorkspaceRoot(workspace)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	f, err := root.Open(rel)
+	if err != nil {
+		return nil, wrapRootErr(err, abs)
+	}
+	defer f.Close()
+	return io.ReadAll(f)
+}
+
+func writeFileInRoot(workspace, abs string, data []byte) error {
+	rel, err := relInWorkspace(filepath.Clean(workspace), abs)
+	if err != nil {
+		return err
+	}
+	root, err := openWorkspaceRoot(workspace)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if dir := filepath.Dir(rel); dir != "." {
+		if err := root.MkdirAll(dir, 0o755); err != nil {
+			return wrapRootErr(fmt.Errorf("mkdir: %w", err), abs)
+		}
+	}
+	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return wrapRootErr(err, abs)
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+func readDirInRoot(workspace, abs string) ([]os.DirEntry, error) {
+	rel, err := relInWorkspace(filepath.Clean(workspace), abs)
+	if err != nil {
+		return nil, err
+	}
+	root, err := openWorkspaceRoot(workspace)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	d, err := root.Open(rel)
+	if err != nil {
+		return nil, wrapRootErr(err, abs)
+	}
+	defer d.Close()
+	entries, err := d.ReadDir(-1)
+	if err != nil {
+		return nil, err
+	}
+	// os.ReadDir returns entries sorted by name; keep that behavior.
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	return entries, nil
 }
 
 // sandboxedPath resolves the named arg as a path confined to workspace.
