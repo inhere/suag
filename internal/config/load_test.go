@@ -55,3 +55,57 @@ func TestLoadUsesExplicitConfigFile(t *testing.T) {
 	assert.NoErr(t, Load())
 	assert.Eq(t, "chosen-model", ReadLLMProviderSettings().Model)
 }
+
+func TestLoadIgnoresWorkingDirectoryDotenv(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	root := t.TempDir()
+	t.Setenv("SUAG_HOME", root)
+	t.Setenv("SUAG_CONFIG", "")
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("SUAG_TEST_CWD_ONLY", "")
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	other := t.TempDir()
+	body := "DATABASE_URL=sqlite://project.db\nSUAG_HOME=" + other + "\nSUAG_TEST_CWD_ONLY=1\n"
+	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, ".env"), []byte(body), 0600))
+	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, ".env.local"), []byte(body), 0600))
+	assert.NoErr(t, Load())
+	assert.Eq(t, "", os.Getenv("DATABASE_URL"))
+	assert.Eq(t, "", os.Getenv("SUAG_TEST_CWD_ONLY"))
+	assert.Eq(t, root, os.Getenv("SUAG_HOME"))
+}
+
+func TestLoadSuagHomeDotenv(t *testing.T) {
+	t.Run("ordinary variables apply", func(t *testing.T) {
+		gkconfig.Reset()
+		t.Cleanup(gkconfig.Reset)
+		root := t.TempDir()
+		t.Setenv("SUAG_HOME", root)
+		t.Setenv("SUAG_TEST_HOME_VAR", "")
+		t.Chdir(t.TempDir())
+		assert.NoErr(t, os.WriteFile(filepath.Join(root, ".env"), []byte("SUAG_TEST_HOME_VAR=ok\n"), 0600))
+		assert.NoErr(t, Load())
+		assert.Eq(t, "ok", os.Getenv("SUAG_TEST_HOME_VAR"))
+	})
+	t.Run("SUAG_HOME and SUAG_CONFIG in .env do not move the root", func(t *testing.T) {
+		gkconfig.Reset()
+		t.Cleanup(gkconfig.Reset)
+		root := t.TempDir()
+		other := t.TempDir()
+		t.Setenv("SUAG_HOME", root)
+		// Unset in the process env: the .env value must not stick afterwards.
+		t.Setenv("SUAG_CONFIG", "")
+		os.Unsetenv("SUAG_CONFIG")
+		t.Chdir(t.TempDir())
+		body := "SUAG_HOME=" + other + "\nSUAG_CONFIG=" + filepath.Join(other, "x.yaml") + "\n"
+		assert.NoErr(t, os.WriteFile(filepath.Join(root, ".env"), []byte(body), 0600))
+		assert.NoErr(t, Load())
+		assert.Eq(t, root, os.Getenv("SUAG_HOME"))
+		_, has := os.LookupEnv("SUAG_CONFIG")
+		assert.False(t, has)
+		got, err := ResolveSuagHome()
+		assert.NoErr(t, err)
+		assert.Eq(t, root, got)
+	})
+}

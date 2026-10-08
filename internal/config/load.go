@@ -19,9 +19,14 @@ func Load() error {
 		return fmt.Errorf("resolve suag home for config: %w", err)
 	}
 
-	// Load .env files if they exist. This allows environment variables to override
-	dotenv.LoadExists(".", ".env", ".env.local")
+	// Only SUAG_HOME/.env is read. The working directory's .env belongs to the
+	// user's project (suag runs inside it) and must not rewrite suag's database
+	// or config root. SUAG_HOME/SUAG_CONFIG are honoured from the process
+	// environment only: the root was resolved above, so a value injected by the
+	// .env file is reverted to keep the config root and data root consistent.
+	guarded := snapshotEnv("SUAG_HOME", "SUAG_CONFIG")
 	dotenv.LoadExistFiles(filepath.Join(privateDir, ".env"))
+	guarded.restore()
 
 	gkconfig.AddDriver(yaml.Driver)
 	gkconfig.WithOptions(gkconfig.ParseEnv)
@@ -36,4 +41,30 @@ func Load() error {
 		return err
 	}
 	return nil
+}
+
+type envSnapshot map[string]*string
+
+// snapshotEnv records the current process value (or absence) of each key.
+func snapshotEnv(keys ...string) envSnapshot {
+	snap := make(envSnapshot, len(keys))
+	for _, key := range keys {
+		if v, ok := os.LookupEnv(key); ok {
+			snap[key] = &v
+		} else {
+			snap[key] = nil
+		}
+	}
+	return snap
+}
+
+// restore puts every recorded key back to its snapshot state.
+func (s envSnapshot) restore() {
+	for key, v := range s {
+		if v == nil {
+			_ = os.Unsetenv(key)
+		} else {
+			_ = os.Setenv(key, *v)
+		}
+	}
 }
