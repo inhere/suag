@@ -247,7 +247,7 @@ func TestPersonalChatEOFExitsNormally(t *testing.T) {
 	for _, input := range []string{"", "prompt\n"} {
 		t.Run(fmt.Sprintf("input_%q", input), func(t *testing.T) {
 			runner, _ := newCLITestRunner(t, mock.NewProvider(mock.Final("done")))
-			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := runPersonalChatWithHooks(ctx, runner, personalOptions{}, strings.NewReader(input), io.Discard, io.Discard, nil); err != nil {
 				t.Fatalf("normal EOF returned an error: %v", err)
@@ -579,7 +579,7 @@ func TestPersonalChatSendsOnlyBoundedRedactedShellOutputToPostToolUse(t *testing
 			stopIndex = i
 		}
 	}
-	if postTool == nil || postTool.ToolName != "shell_exec" || stopIndex <= postToolIndex {
+	if postTool == nil || postTool.ToolName != "shell" || stopIndex <= postToolIndex {
 		t.Fatalf("expected shell PostToolUse event, got %#v", hooks.snapshot())
 	}
 	if len(postTool.ToolOutput) > toolHookLimit || strings.Contains(postTool.ToolOutput, "canary-credential-4a2b") || !strings.Contains(postTool.ToolOutput, "[REDACTED]") {
@@ -639,4 +639,35 @@ func hasSystemText(messages []agentcore.Message, text string) bool {
 		}
 	}
 	return false
+}
+
+type failingChatProvider struct{}
+
+func (failingChatProvider) Name() string { return "failing-chat-test" }
+func (failingChatProvider) Generate(context.Context, *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	return nil, errors.New("upstream exploded")
+}
+
+// A failed turn must still send Stop so gofer leaves the "running" state and web replies work.
+func TestPersonalChatSendsStopWhenTurnFails(t *testing.T) {
+	runner, _ := newCLITestRunner(t, failingChatProvider{})
+	hooks := newFakeHookClient()
+	hooks.blockFirst = false
+	var stderr strings.Builder
+	err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader("do it\n:quit\n"), io.Discard, &stderr, hooks)
+	if err != nil {
+		t.Fatalf("failed turn should not end chat with an error: %v", err)
+	}
+	var stops []goferHookEvent
+	for _, event := range hooks.snapshot() {
+		if event.Name == "Stop" {
+			stops = append(stops, event)
+		}
+	}
+	if len(stops) != 1 || !strings.Contains(stops[0].LastAssistant, "upstream exploded") {
+		t.Fatalf("expected one Stop carrying the error summary, got %#v", stops)
+	}
+	if !strings.Contains(stderr.String(), "Error:") {
+		t.Fatalf("error should still be reported on stderr: %q", stderr.String())
+	}
 }

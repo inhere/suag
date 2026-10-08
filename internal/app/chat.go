@@ -192,7 +192,9 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 					return nil
 				}
 				postTool := baseEvent("PostToolUse")
-				postTool.ToolName = event.ToolName
+				// gofer's hookrelay only registers watches for a fixed shell-tool whitelist,
+				// so suag-native names like shell_exec are normalized to "shell".
+				postTool.ToolName = goferShellToolName
 				postTool.ToolOutput = truncateHookOutput(personal.RedactSecretValues(event.Text), toolHookLimit)
 				hooks.Call(eventCtx, postTool)
 				return nil
@@ -203,24 +205,27 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 			_ = processServer.SetBusy(false)
 		}
 		pendingContext = ""
+		// Every turn end (success, error or yield) must send Stop: the gofer contract defines it as
+		// "turn finished, back to waiting for input", otherwise the session stays "running" forever.
+		stopMessage := ""
 		if runErr != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			fmt.Fprintln(stderr, "Error:", runErr)
-			continue
-		}
-		if result.Status == agentcore.RunYielded {
+			stopMessage = "Error: " + runErr.Error()
+		} else if result.Status == agentcore.RunYielded {
 			fmt.Fprintln(inputSource, "Waiting for more input.")
-			continue
-		}
-		fmt.Fprintln(inputSource, result.Output)
-		if gate != nil && gate.WasDenied() {
-			fmt.Fprintln(inputSource, "Input required to authorize an MCP tool.")
+		} else {
+			fmt.Fprintln(inputSource, result.Output)
+			if gate != nil && gate.WasDenied() {
+				fmt.Fprintln(inputSource, "Input required to authorize an MCP tool.")
+			}
+			stopMessage = result.Output
 		}
 		if hooks != nil {
 			stop := baseEvent("Stop")
-			stop.LastAssistant = truncateHookOutput(personal.RedactSecretValues(result.Output), stopHookLimit)
+			stop.LastAssistant = truncateHookOutput(personal.RedactSecretValues(stopMessage), stopHookLimit)
 			stop.StopHookActive = turnStopActive
 			waiting = hooks.StartStop(ctx, stop)
 		}
@@ -336,6 +341,9 @@ func appendContext(current, next string) string {
 	}
 	return current + "\n\n" + next
 }
+
+// goferShellToolName is the tool name gofer recognizes as a shell tool.
+const goferShellToolName = "shell"
 
 func isShellOrExecTool(name string) bool {
 	name = strings.ToLower(name)

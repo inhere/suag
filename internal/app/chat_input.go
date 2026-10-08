@@ -31,7 +31,7 @@ type chatInputSource struct {
 	input      io.Reader
 	output     io.Writer
 	ttyFile    *os.File
-	state      *term.State
+	rawState   *term.State // non-nil only while a line is being edited in raw mode (guarded by mu)
 	terminal   *term.Terminal
 	requests   chan chatInputRequest
 	events     chan chatInputEvent
@@ -41,26 +41,22 @@ type chatInputSource struct {
 	mu         sync.Mutex
 	pending    bool
 	busy       bool
-	closeErr   error
 	reader     *chatActivityReader
 }
 
 func newChatInputSource(parent context.Context, input io.Reader, output io.Writer) (*chatInputSource, error) {
 	ctx, cancel := context.WithCancel(parent)
 	source := &chatInputSource{
-		ctx: ctx, cancel: cancel, input: input, output: output,
+		ctx: ctx, cancel: cancel, input: input, output: &lockedWriter{w: output},
 		requests: make(chan chatInputRequest), events: make(chan chatInputEvent, 1),
 		activity: make(chan struct{}), deliveries: make(chan chatInputEvent, 8), done: make(chan struct{}),
 	}
 	if file, ok := input.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
-		state, err := term.MakeRaw(int(file.Fd()))
-		if err != nil {
-			cancel()
-			return nil, fmt.Errorf("enable terminal input editing: %w", err)
-		}
-		source.ttyFile, source.state = file, state
+		// Raw mode is entered per line in readLine, not here: during model/tool execution the
+		// terminal must stay cooked so Ctrl-C raises SIGINT and stderr keeps CR translation.
+		source.ttyFile = file
 		source.reader = &chatActivityReader{source: source, input: input}
-		terminalIO := &chatTerminalIO{reader: source.reader, output: output}
+		terminalIO := &chatTerminalIO{reader: source.reader, output: source.output}
 		source.terminal = term.NewTerminal(terminalIO, "")
 	}
 	go source.run()
@@ -162,10 +158,35 @@ func (s *chatInputSource) Write(p []byte) (int, error) {
 
 func (s *chatInputSource) Close() error {
 	s.cancel()
-	if s.ttyFile != nil && s.state != nil {
-		s.closeErr = term.Restore(int(s.ttyFile.Fd()), s.state)
+	// The reader goroutine may still be blocked inside a raw-mode line edit; restore for it.
+	return s.leaveRaw()
+}
+
+// enterRaw switches the tty to raw mode for line editing (no-op if already raw).
+func (s *chatInputSource) enterRaw() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.rawState != nil {
+		return nil
 	}
-	return s.closeErr
+	state, err := term.MakeRaw(int(s.ttyFile.Fd()))
+	if err != nil {
+		return fmt.Errorf("enable terminal input editing: %w", err)
+	}
+	s.rawState = state
+	return nil
+}
+
+// leaveRaw restores the original (cooked) tty state; idempotent and safe from any goroutine.
+func (s *chatInputSource) leaveRaw() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.rawState == nil {
+		return nil
+	}
+	err := term.Restore(int(s.ttyFile.Fd()), s.rawState)
+	s.rawState = nil
+	return err
 }
 
 func (s *chatInputSource) run() {
@@ -188,6 +209,12 @@ func (s *chatInputSource) run() {
 
 func (s *chatInputSource) readLine(prompt string) (string, error) {
 	if s.terminal != nil {
+		// Raw mode only while editing a line. Ctrl-C here arrives as byte 0x03 (no SIGINT) and the
+		// line editor returns io.EOF, so the prompt exits chat like SIGINT did with cooked line reads.
+		if err := s.enterRaw(); err != nil {
+			return "", err
+		}
+		defer s.leaveRaw()
 		s.terminal.SetPrompt(prompt)
 		s.reader.activitySent = false
 		line, err := s.terminal.ReadLine()
@@ -253,4 +280,16 @@ func (rw *chatTerminalIO) Read(p []byte) (int, error) {
 
 func (rw *chatTerminalIO) Write(p []byte) (int, error) {
 	return rw.output.Write(p)
+}
+
+// lockedWriter serializes writes from the input goroutine (prompts) and the chat loop.
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }
