@@ -233,3 +233,37 @@ func TestLoadRulesTotalLimitMarker(t *testing.T) {
 		assert.StrContains(t, rules, "总量超过 128KB")
 	})
 }
+
+func TestLoadRulesHashIgnoresCheckoutLocation(t *testing.T) {
+	build := func(content string) (string, string) {
+		root := t.TempDir()
+		putRule(t, filepath.Join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+		putRule(t, filepath.Join(root, "AGENTS.md"), "root\n@part.md\n")
+		putRule(t, filepath.Join(root, "part.md"), content)
+		sub := filepath.Join(root, "sub")
+		putRule(t, filepath.Join(sub, "AGENTS.md"), "sub")
+		return root, sub
+	}
+	home1, home2 := t.TempDir(), t.TempDir()
+	putRule(t, filepath.Join(home1, "AGENTS.md"), "user")
+	putRule(t, filepath.Join(home2, "AGENTS.md"), "user")
+
+	_, sub1 := build("part-v1")
+	_, sub2 := build("part-v1")
+	_, sub3 := build("part-v2")
+	rules1, h1, err := LoadRules(sub1, home1, false)
+	assert.NoErr(t, err)
+	rules2, h2, err := LoadRules(sub2, home2, false)
+	assert.NoErr(t, err)
+	_, h3, err := LoadRules(sub3, home1, false)
+	assert.NoErr(t, err)
+
+	t.Run("same content at different roots", func(t *testing.T) {
+		assert.Eq(t, h1, h2)
+		// The prompt text still shows real paths; only the hash is neutral.
+		assert.NotEq(t, rules1, rules2)
+	})
+	t.Run("content change changes hash", func(t *testing.T) {
+		assert.NotEq(t, h1, h3)
+	})
+}

@@ -20,17 +20,19 @@ const (
 // deliberately one level deep so a rule file cannot recursively expand a tree.
 func LoadRules(cwd, suagHome string, noProject bool) (string, string, error) {
 	var paths []string
+	workspaceRoot := ""
 	if suagHome != "" {
 		paths = append(paths, filepath.Join(suagHome, "AGENTS.md"))
 	}
 	if !noProject {
-		project, err := projectRulePaths(cwd)
+		project, root, err := projectRulePaths(cwd)
 		if err != nil {
 			return "", "", err
 		}
+		workspaceRoot = root
 		paths = append(paths, project...)
 	}
-	var sections []string
+	var sections, hashSections []string
 	remaining := maxRuleTotalBytes
 	seenPaths := make(map[string]struct{})
 	previousPath := ""
@@ -55,14 +57,42 @@ func LoadRules(cwd, suagHome string, noProject bool) (string, string, error) {
 		}
 		if content != "" {
 			sections = append(sections, fmt.Sprintf("# %s\n%s", path, content))
+			hashSections = append(hashSections, fmt.Sprintf("# %s\n%s", ruleHashLabel(path, suagHome, workspaceRoot), content))
 		}
 		if remaining == 0 {
 			break
 		}
 	}
 	rules := strings.Join(sections, "\n\n")
-	hash := sha256.Sum256([]byte(rules))
+	// The hash must not depend on where the checkout lives (another directory,
+	// container or Windows path), so it covers path-neutral labels plus content.
+	hash := sha256.Sum256([]byte(strings.Join(hashSections, "\n\n")))
 	return rules, hex.EncodeToString(hash[:]), nil
+}
+
+// ruleHashLabel returns a machine-independent identity for a rule file: files
+// under suagHome are "suag-home/<rel>", files under the workspace root are the
+// slash-separated relative path, anything else keeps only its base name.
+func ruleHashLabel(path, suagHome, workspaceRoot string) string {
+	if rel, ok := relInside(suagHome, path); ok {
+		return "suag-home/" + rel
+	}
+	if rel, ok := relInside(workspaceRoot, path); ok {
+		return rel
+	}
+	return "external/" + filepath.Base(path)
+}
+
+// relInside returns path relative to root (slash separated) when path is inside root.
+func relInside(root, path string) (string, bool) {
+	if root == "" {
+		return "", false
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
 }
 
 func sameLevelRulePair(first, second string) bool {
@@ -71,10 +101,12 @@ func sameLevelRulePair(first, second string) bool {
 		rulePathKey(filepath.Dir(first)) == rulePathKey(filepath.Dir(second))
 }
 
-func projectRulePaths(cwd string) ([]string, error) {
+// projectRulePaths also returns the workspace root: the Git root, or cwd when
+// there is no Git root.
+func projectRulePaths(cwd string) ([]string, string, error) {
 	dir, err := filepath.Abs(cwd)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	var levels []string
 	for current := dir; ; current = filepath.Dir(current) {
@@ -82,7 +114,7 @@ func projectRulePaths(cwd string) ([]string, error) {
 		if _, err := os.Stat(filepath.Join(current, ".git")); err == nil || filepath.Dir(current) == current {
 			break
 		} else if !os.IsNotExist(err) {
-			return nil, err
+			return nil, "", err
 		}
 	}
 	// Without a Git root, only the requested cwd is in scope.
@@ -96,11 +128,11 @@ func projectRulePaths(cwd string) ([]string, error) {
 			if info, err := os.Stat(path); err == nil && !info.IsDir() {
 				paths = append(paths, path)
 			} else if err != nil && !os.IsNotExist(err) {
-				return nil, err
+				return nil, "", err
 			}
 		}
 	}
-	return paths, nil
+	return paths, levels[len(levels)-1], nil
 }
 
 func expandRuleFile(path string, remaining *int, seenPaths map[string]struct{}) (string, error) {
