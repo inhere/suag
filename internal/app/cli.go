@@ -14,8 +14,8 @@ import (
 	"github.com/gookit/goutil/cflag"
 	"github.com/gookit/goutil/cflag/capp"
 	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/host/session"
 	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
@@ -44,7 +44,7 @@ type personalOptions struct {
 
 type personalRuntime struct {
 	runner       *personal.Runner
-	repo         *session.SQLiteRepository
+	repo         *store.Store
 	capabilities defaultCapabilities
 	gate         *cliMCPGate
 	// contextWindow is the window of the model actually used by the provider.
@@ -173,20 +173,10 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		toolRegistry = gate
 		hooks = append(hooks, gate)
 	}
-	dbPath, err := appconfig.ResolvePersonalSessionDBPath()
+	dbPath, err := appconfig.ResolveCoreStorePath()
 	if err != nil {
 		_ = capabilities.Close()
 		return nil, fmt.Errorf("resolve personal session database: %w", err)
-	}
-	runPath, err := appconfig.ResolvePersonalAgentcoreRunRoot()
-	if err != nil {
-		_ = capabilities.Close()
-		return nil, fmt.Errorf("resolve personal run root: %w", err)
-	}
-	runRoot, err := filepath.Abs(runPath)
-	if err != nil {
-		_ = capabilities.Close()
-		return nil, fmt.Errorf("resolve run root: %w", err)
 	}
 	transcriptDir := ""
 	if transcriptsEnabled() {
@@ -204,18 +194,13 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 	}
 	lockRoot := filepath.Join(home, "run", "locks")
 	processRoot := filepath.Join(home, "run")
-	if err := prepareHostSessionDatabase(ctx, dbPath); err != nil {
-		_ = capabilities.Close()
-		return nil, err
-	}
-	repo, err := session.NewSQLiteRepository(dbPath)
+	repo, err := store.Open(dbPath)
 	if err != nil {
 		_ = capabilities.Close()
 		return nil, err
 	}
 	runner, err := personal.New(personal.Config{
 		Repository:   repo,
-		RunRoot:      runRoot,
 		Provider:     provider,
 		Model:        settings.Model,
 		ProviderName: settings.ProviderName,
@@ -386,27 +371,27 @@ func openRequestedSession(ctx context.Context, runner *personal.Runner, opts per
 		if err != nil {
 			return "", err
 		}
-		return model.SessionID, nil
+		return model.ID, nil
 	}
 	if opts.SessionID != "" {
 		model, err := runner.LoadSession(ctx, opts.SessionID)
 		if err == nil {
-			return model.SessionID, nil
+			return model.ID, nil
 		}
-		if !errors.Is(err, session.ErrSessionNotFound) {
+		if !errors.Is(err, personal.ErrSessionNotFound) {
 			return "", err
 		}
 		model, err = runner.NewSession(ctx, opts.SessionID, opts.Prompt)
 		if err != nil {
 			return "", err
 		}
-		return model.SessionID, nil
+		return model.ID, nil
 	}
 	model, err := runner.NewSession(ctx, "", opts.Prompt)
 	if err != nil {
 		return "", err
 	}
-	return model.SessionID, nil
+	return model.ID, nil
 }
 
 // RunPersonalChat gives the terminal REPL the same persistent session engine as run mode.

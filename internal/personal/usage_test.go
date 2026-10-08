@@ -3,12 +3,10 @@ package personal
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/data/testutil"
-	"github.com/inhere/suag/internal/host/session"
+	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
@@ -58,12 +56,11 @@ func (p *usageProvider) Generate(context.Context, *agentcore.GenerateRequest) (*
 // Session-cumulative usage must survive a runner (process) restart.
 func TestRunnerPersistsCumulativeUsageAcrossRestart(t *testing.T) {
 	ctx := context.Background()
-	repo, err := session.NewSQLiteRepository(testutil.NewMigratedSQLitePath(t, "sessions.db"))
+	repo, err := store.Open(newStorePath(t))
 	assert.NoErr(t, err)
 	t.Cleanup(func() { _ = repo.Close() })
-	runRoot := filepath.Join(t.TempDir(), "runs")
 	newRunner := func() *Runner {
-		runner, err := New(Config{Repository: repo, RunRoot: runRoot, Provider: &usageProvider{}, LockRoot: t.TempDir()})
+		runner, err := New(Config{Repository: repo, Provider: &usageProvider{}, LockRoot: t.TempDir()})
 		assert.NoErr(t, err)
 		return runner
 	}
@@ -80,15 +77,15 @@ func TestRunnerPersistsCumulativeUsageAcrossRestart(t *testing.T) {
 
 	stored, err := repo.GetSession(ctx, "usage-session")
 	assert.NoErr(t, err)
-	assert.Eq(t, second.SessionUsage, usageFromMetadata(stored.Metadata))
+	assert.Eq(t, second.SessionUsage, usageFromMetadata(stored.Meta))
 }
 
 func TestRunnerSessionUsageCountsCancelledTurn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	repo, err := session.NewSQLiteRepository(testutil.NewMigratedSQLitePath(t, "sessions.db"))
+	repo, err := store.Open(newStorePath(t))
 	assert.NoErr(t, err)
 	t.Cleanup(func() { _ = repo.Close() })
-	runner, err := New(Config{Repository: repo, RunRoot: filepath.Join(t.TempDir(), "runs"), Provider: &usageProvider{},
+	runner, err := New(Config{Repository: repo, Provider: &usageProvider{},
 		Hooks: []agentcore.Hook{cancelAfterModel{cancel: cancel}}})
 	assert.NoErr(t, err)
 	result, _ := runner.Run(ctx, RunRequest{SessionID: "cancel-usage", CreateIfMissing: true, Prompt: "x"})

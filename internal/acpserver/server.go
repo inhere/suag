@@ -117,7 +117,7 @@ func (a *Agent) NewSession(ctx context.Context, req acp.NewSessionRequest) (acp.
 	if err := errors.Join(runErr, runtime.close()); err != nil {
 		return acp.NewSessionResponse{}, err
 	}
-	id := acp.SessionId(model.SessionID)
+	id := acp.SessionId(model.ID)
 	a.mu.Lock()
 	a.sessions[id] = &sessionState{cwd: cwd, servers: servers, mode: "default"}
 	a.mu.Unlock()

@@ -2,13 +2,11 @@ package personal
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/data/testutil"
-	"github.com/inhere/suag/internal/host/session"
+	"github.com/inhere/suag/internal/personal/store"
 )
 
 // An explicitly supplied empty append prompt clears the saved one; an unset
@@ -27,22 +25,21 @@ func TestRunnerAppendPromptClearedByExplicitEmpty(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, err := session.NewSQLiteRepository(testutil.NewMigratedSQLitePath(t, "sessions.db"))
+			repo, err := store.Open(newStorePath(t))
 			assert.NoErr(t, err)
 			t.Cleanup(func() { _ = repo.Close() })
 			provider := &rulesProvider{}
-			runRoot := filepath.Join(t.TempDir(), "runs")
-			creator, err := New(Config{Repository: repo, RunRoot: runRoot, Provider: provider, AppendSystemPrompt: "orig"})
+			creator, err := New(Config{Repository: repo, Provider: provider, AppendSystemPrompt: "orig"})
 			assert.NoErr(t, err)
 			model, err := creator.NewSession(ctx, "clear-session", "test")
 			assert.NoErr(t, err)
-			resumed, err := New(Config{Repository: repo, RunRoot: runRoot, Provider: provider, AppendSystemPromptSet: tc.set})
+			resumed, err := New(Config{Repository: repo, Provider: provider, AppendSystemPromptSet: tc.set})
 			assert.NoErr(t, err)
-			_, err = resumed.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "one"})
+			_, err = resumed.Run(ctx, RunRequest{SessionID: model.ID, Prompt: "one"})
 			assert.NoErr(t, err)
-			stored, err := repo.GetSession(ctx, model.SessionID)
+			stored, err := repo.GetSession(ctx, model.ID)
 			assert.NoErr(t, err)
-			assert.Eq(t, tc.wantStored, stored.Metadata["personal_append_prompt"])
+			assert.Eq(t, tc.wantStored, stored.Meta["personal_append_prompt"])
 			assert.Eq(t, tc.wantNotice, countNotices(provider.requests[0].Messages, clearedNotice))
 			if tc.set {
 				assert.Eq(t, false, strings.Contains(provider.requests[0].System, "orig"))

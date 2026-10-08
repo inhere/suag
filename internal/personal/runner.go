@@ -2,27 +2,44 @@ package personal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/inhere/suag/internal/host/session"
 	"github.com/inhere/suag/internal/personal/process"
+	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/storage/sqlite"
 )
 
 var safeSessionID = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
-// Config holds the existing session and run authorities used by a personal agent.
+// Session is a persisted conversation (alias of the core store model).
+type Session = store.Session
+
+// ErrSessionNotFound is returned when a session id does not exist.
+var ErrSessionNotFound = store.ErrSessionNotFound
+
+// RunState is the Gofer-facing run status reported in events and results
+// (stream-json "status"). The values are a wire contract; do not change them.
+type RunState string
+
+const (
+	RunCompleted     RunState = "COMPLETED"
+	RunInputRequired RunState = "INPUT_REQUIRED"
+	RunFailed        RunState = "FAILED"
+	RunCanceled      RunState = "CANCELED"
+)
+
+// Config holds the core store and the model/tool wiring used by a personal agent.
 type Config struct {
-	Repository         session.Repository
-	RunRoot            string
+	// Repository is the single core store: sessions, turns, entries and
+	// agentcore run state (run_id == turn_id) all live in it.
+	Repository         *store.Store
 	Provider           agentcore.Provider
 	Model              string
 	ProviderName       string
@@ -50,7 +67,7 @@ type Event struct {
 	Text      string
 	ToolName  string
 	Status    agentcore.RunStatus
-	State     session.RunState
+	State     RunState
 }
 
 type EmitFunc func(context.Context, Event) error
@@ -71,7 +88,7 @@ type RunResult struct {
 	TurnID    string
 	RunID     string
 	Status    agentcore.RunStatus
-	State     session.RunState
+	State     RunState
 	Output    string
 	// Usage is this invocation's usage (provider-normalized: input includes cache).
 	Usage agentcore.Usage
@@ -87,8 +104,8 @@ type Runner struct {
 }
 
 func New(cfg Config) (*Runner, error) {
-	if cfg.Repository == nil || cfg.Provider == nil || strings.TrimSpace(cfg.RunRoot) == "" {
-		return nil, fmt.Errorf("personal runner requires repository, provider and run root")
+	if cfg.Repository == nil || cfg.Provider == nil {
+		return nil, fmt.Errorf("personal runner requires repository and provider")
 	}
 	return &Runner{cfg: cfg, heldLocks: make(map[string]*process.SessionLock)}, nil
 }
@@ -131,21 +148,21 @@ func (r *Runner) HoldSessionLock(sessionID string) (func() error, error) {
 
 func (r *Runner) ProcessRoot() string { return r.cfg.ProcessRoot }
 
-func (r *Runner) NewSession(ctx context.Context, id, title string) (session.Session, error) {
+func (r *Runner) NewSession(ctx context.Context, id, title string) (Session, error) {
 	if id == "" {
-		id = session.NewSessionID()
+		id = NewSessionID()
 	}
 	if err := validateSessionID(id); err != nil {
-		return session.Session{}, err
+		return Session{}, err
 	}
 	now := time.Now().UTC()
-	model := session.Session{
-		SessionID: id,
+	model := Session{
+		ID:        id,
 		Title:     strings.TrimSpace(title),
-		Status:    session.SessionOpen,
+		Status:    store.SessionOpen,
 		CreatedAt: now,
 		UpdatedAt: now,
-		Metadata:  map[string]any{},
+		Meta:      map[string]any{},
 	}
 	if model.Title == "" {
 		model.Title = "Session " + id
@@ -153,16 +170,16 @@ func (r *Runner) NewSession(ctx context.Context, id, title string) (session.Sess
 	if r.cfg.RuleSource != nil {
 		rules, hash, err := r.cfg.RuleSource()
 		if err != nil {
-			return session.Session{}, err
+			return Session{}, err
 		}
-		model.Metadata["personal_rules_content"] = rules
-		model.Metadata["personal_rules_hash"] = hash
+		model.Meta["personal_rules_content"] = rules
+		model.Meta["personal_rules_hash"] = hash
 	}
-	model.Metadata["personal_append_prompt"] = r.cfg.AppendSystemPrompt
-	model.Metadata["model"] = r.cfg.Model
-	model.Metadata["provider"] = r.cfg.ProviderName
+	model.Meta["personal_append_prompt"] = r.cfg.AppendSystemPrompt
+	model.Meta["model"] = r.cfg.Model
+	model.Meta["provider"] = r.cfg.ProviderName
 	if err := r.cfg.Repository.CreateSession(ctx, model); err != nil {
-		return session.Session{}, fmt.Errorf("create personal session: %w", err)
+		return Session{}, fmt.Errorf("create personal session: %w", err)
 	}
 	return model, nil
 }
@@ -181,18 +198,20 @@ func (r *Runner) SetSessionTitle(ctx context.Context, sessionID, title string) e
 	return nil
 }
 
-func (r *Runner) LoadSession(ctx context.Context, id string) (session.Session, error) {
+func (r *Runner) LoadSession(ctx context.Context, id string) (Session, error) {
 	if err := validateSessionID(id); err != nil {
-		return session.Session{}, err
+		return Session{}, err
 	}
 	model, err := r.cfg.Repository.GetSession(ctx, id)
 	if err != nil {
-		return session.Session{}, fmt.Errorf("load personal session: %w", err)
+		return Session{}, fmt.Errorf("load personal session: %w", err)
 	}
 	return model, nil
 }
 
-// Run creates a new run for a completed turn, or resumes the yielded run in place.
+// Run executes one new turn (run_id == turn_id) of the session. A turn that
+// yielded for input is finished as INPUT_REQUIRED and is not resumed in place:
+// the caller's next prompt is simply a new turn that sees it as history.
 func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if r == nil {
 		return RunResult{}, fmt.Errorf("personal runner is nil")
@@ -204,84 +223,63 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err != nil {
 		return RunResult{}, err
 	}
-	if strings.TrimSpace(req.Prompt) == "" && model.Status != session.SessionWaiting {
+	if strings.TrimSpace(req.Prompt) == "" {
 		return RunResult{}, fmt.Errorf("prompt is required for a new turn")
 	}
-	if model.Status == session.SessionArchived || model.Status == session.SessionRunning {
-		return RunResult{}, fmt.Errorf("session %q is not ready for a new turn: %s", model.SessionID, model.Status)
+	if model.Status == store.SessionArchived || model.Status == store.SessionRunning {
+		return RunResult{}, fmt.Errorf("session %q is not ready for a new turn: %s", model.ID, model.Status)
 	}
 	r.locksMu.Lock()
-	_, heldByChat := r.heldLocks[model.SessionID]
+	_, heldByChat := r.heldLocks[model.ID]
 	r.locksMu.Unlock()
 	if r.cfg.LockRoot != "" && !heldByChat {
-		lock, err := process.AcquireSessionLockContext(ctx, r.cfg.LockRoot, model.SessionID, 30*time.Second)
+		lock, err := process.AcquireSessionLockContext(ctx, r.cfg.LockRoot, model.ID, 30*time.Second)
 		if err != nil {
 			return RunResult{}, err
 		}
 		defer lock.Close()
 	}
-	transcript := r.openTranscript(model.SessionID)
+	transcript := r.openTranscript(model.ID)
 	if transcript != nil {
 		defer func() {
 			if err := transcript.Close(); err != nil {
-				slog.Warn("close personal transcript", "session_id", model.SessionID, "err", err)
+				slog.Warn("close personal transcript", "session_id", model.ID, "err", err)
 			}
 		}()
 		if req.SystemContext != "" {
 			if err := transcript.AppendUser(req.SystemContext, true); err != nil {
-				slog.Warn("append personal transcript", "session_id", model.SessionID, "err", err)
+				slog.Warn("append personal transcript", "session_id", model.ID, "err", err)
 			}
 		}
 		if req.Prompt != "" {
 			injected := req.Injected || strings.HasPrefix(req.Prompt, "[gofer web 回复] ")
 			if err := transcript.AppendUser(req.Prompt, injected); err != nil {
-				slog.Warn("append personal transcript", "session_id", model.SessionID, "err", err)
+				slog.Warn("append personal transcript", "session_id", model.ID, "err", err)
 			}
 		}
 	}
 
-	storagePath := filepath.Join(r.cfg.RunRoot, model.SessionID, "runs.db")
-	storage, err := sqlite.NewStorage(storagePath)
-	if err != nil {
-		return RunResult{}, fmt.Errorf("open run storage: %w", err)
-	}
-	defer storage.Close()
-
-	result := RunResult{SessionID: model.SessionID}
-	resumeMode := agentcore.ResumeAuto
-	if model.Status == session.SessionWaiting {
-		run, err := r.waitingRun(ctx, model)
-		if err != nil {
-			return result, err
-		}
-		result.TurnID, result.RunID = run.TurnID, run.RunID
-		resumeMode = agentcore.ResumeFromState
-		if strings.TrimSpace(req.Prompt) != "" {
-			resumeMode = agentcore.ResumeWithInput
-		}
-	} else {
-		result.TurnID, result.RunID = session.NewTurnID(), session.NewRunID()
-	}
-	priorMessages, priorMessagesErr := storage.LoadMessages(ctx, result.RunID)
-	if priorMessagesErr != nil {
-		priorMessages = nil
-	}
-	history, err := r.completedHistory(ctx, storage, model.SessionID, result.RunID)
+	// run_id == turn_id: the store's agentcore adapter keys run state and
+	// messages by turn id, and the turn row must exist before the runtime saves.
+	turnID := NewTurnID()
+	result := RunResult{SessionID: model.ID, TurnID: turnID, RunID: turnID}
+	history, err := r.history(ctx, model.ID)
 	if err != nil {
 		return result, err
 	}
+
+	// metaPatch collects the session metadata keys this turn changes; it is
+	// applied with PatchSessionMeta so concurrent writers cannot be rolled back.
+	metaPatch := map[string]any{}
 	var rulesUpdate, appendUpdate string
 	if r.cfg.RuleSource != nil {
 		rules, hash, err := r.cfg.RuleSource()
 		if err != nil {
 			return result, err
 		}
-		if model.Metadata == nil {
-			model.Metadata = map[string]any{}
-		}
-		if previous, _ := model.Metadata["personal_rules_hash"].(string); previous != hash {
-			model.Metadata["personal_rules_hash"] = hash
-			model.Metadata["personal_rules_content"] = rules
+		if previous, _ := model.Meta["personal_rules_hash"].(string); previous != hash {
+			metaPatch["personal_rules_hash"] = hash
+			metaPatch["personal_rules_content"] = rules
 			// The system prompt is built from the metadata updated above, so it
 			// already carries the new rules this turn. Only send a short notice
 			// instead of repeating the full text (up to 128KB, resent per step).
@@ -295,11 +293,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	// only in the system prompt). An unset value keeps the persisted one; an
 	// explicitly supplied empty value clears it.
 	if appended := r.cfg.AppendSystemPrompt; appended != "" || r.cfg.AppendSystemPromptSet {
-		if model.Metadata == nil {
-			model.Metadata = map[string]any{}
-		}
-		if previous, _ := model.Metadata["personal_append_prompt"].(string); previous != appended {
-			model.Metadata["personal_append_prompt"] = appended
+		if previous, _ := model.Meta["personal_append_prompt"].(string); previous != appended {
+			// An empty string (not nil) so PatchSessionMeta stores it instead of deleting the key.
+			metaPatch["personal_append_prompt"] = appended
 			appendUpdate = "附加提示已更新，以 system prompt 中的版本为准"
 			if appended == "" {
 				appendUpdate = "附加提示已清除，不再追加"
@@ -311,44 +307,25 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if agentID == "" {
 		agentID = "suag"
 	}
-	if model.Status == session.SessionWaiting {
-		if err := r.cfg.Repository.UpdateTurnStatus(ctx, result.TurnID, session.TurnRunning, nil); err != nil {
-			return result, err
-		}
-		if err := r.cfg.Repository.UpdateRunLifecycle(ctx, result.RunID, session.RunThinking, "", "", nil); err != nil {
-			return result, err
-		}
-	} else {
-		if err := r.createTurnAndRun(ctx, result, agentID, req.Prompt); err != nil {
-			return result, err
-		}
-		model.LastTurnID = result.TurnID
+	if err := r.cfg.Repository.CreateTurn(ctx, store.Turn{ID: turnID, SessionID: model.ID, Status: store.TurnRunning}); err != nil {
+		return result, fmt.Errorf("create turn: %w", err)
 	}
 	// Collect per-call usage for the session-cumulative total saved in finish.
 	usage := &usageCollector{}
-	model.Status = session.SessionRunning
 	// Keep session metadata aligned with the provider selected for this turn.
-	if model.Metadata == nil {
-		model.Metadata = map[string]any{}
+	metaPatch["model"] = r.cfg.Model
+	metaPatch["provider"] = r.cfg.ProviderName
+	if err := r.cfg.Repository.PatchSessionMeta(ctx, model.ID, metaPatch); err != nil {
+		return r.finish(ctx, model, result, usage, nil, err, req.Emit)
 	}
-	model.Metadata["model"] = r.cfg.Model
-	model.Metadata["provider"] = r.cfg.ProviderName
-	// The session was loaded before the session lock was taken; refresh the
-	// persisted usage so this write cannot roll back another process's turn.
-	if fresh, err := r.cfg.Repository.GetSession(ctx, model.SessionID); err == nil {
-		if u, ok := fresh.Metadata[usageMetadataKey]; ok {
-			model.Metadata[usageMetadataKey] = u
-		}
-	}
-	model.UpdatedAt = time.Now().UTC()
-	if err := r.cfg.Repository.UpdateSession(ctx, model); err != nil {
-		return result, err
-	}
-	if err := r.appendEvent(ctx, result, agentID, "personal.run.started", nil); err != nil {
-		return r.finish(ctx, model, result, agentID, usage, nil, err, req.Emit)
+	// Re-read so the prompt builder and the status write see the patched,
+	// current metadata (including usage written by another process).
+	model, err = r.markRunning(ctx, model.ID, turnID)
+	if err != nil {
+		return r.finish(ctx, model, result, usage, nil, err, req.Emit)
 	}
 	if err := emit(ctx, req.Emit, Event{Kind: "run_started", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID}); err != nil {
-		return r.finish(ctx, model, result, agentID, usage, nil, err, req.Emit)
+		return r.finish(ctx, model, result, usage, nil, err, req.Emit)
 	}
 
 	stream := func(ctx context.Context, update agentcore.StreamEvent) error {
@@ -366,11 +343,12 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if req.Emit != nil && req.EmitToolResults {
 		runtimeHooks = append(runtimeHooks, toolResultEmitHook{sink: req.Emit, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
 	}
+	storage := r.cfg.Repository.AgentStorage()
 	runtime := agentcore.New(agentcore.Config{
 		Provider:       r.cfg.Provider,
 		Storage:        storage,
 		Tools:          r.cfg.Tools,
-		PromptBuilder:  rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Metadata, goferJob: r.cfg.GoferJob},
+		PromptBuilder:  rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Meta, goferJob: r.cfg.GoferJob},
 		ContextBuilder: historyContext{previous: history, update: joinContext(joinContext(rulesUpdate, appendUpdate), req.SystemContext)},
 		Hooks:          runtimeHooks,
 		MaxSteps:       r.cfg.MaxSteps,
@@ -379,11 +357,11 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		RunID:       result.RunID,
 		AgentID:     agentID,
 		Instruction: req.Prompt,
-		ResumeMode:  resumeMode,
+		ResumeMode:  agentcore.ResumeAuto,
 		Stream:      stream,
 	})
 	if messages, err := storage.LoadMessages(context.WithoutCancel(ctx), result.RunID); err != nil {
-		slog.Warn("read personal run transcript", "session_id", model.SessionID, "err", err)
+		slog.Warn("read personal run transcript", "session_id", model.ID, "err", err)
 	} else {
 		// Tool arguments live on the assistant's ToolCall message; index them by call id
 		// so each result can be summarized with its call parameters.
@@ -393,24 +371,38 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 				calls[message.ToolCall.CallID] = message.ToolCall.Arguments
 			}
 		}
-		for _, message := range messages[min(len(priorMessages), len(messages)):] {
+		for _, message := range messages {
 			if message.ToolResult == nil {
 				continue
 			}
 			toolName := message.ToolResult.Name
 			if transcript != nil {
 				if err := transcript.AppendToolCall(toolName, calls[message.ToolResult.CallID], message.ToolResult.Content); err != nil {
-					slog.Warn("append personal transcript", "session_id", model.SessionID, "err", err)
+					slog.Warn("append personal transcript", "session_id", model.ID, "err", err)
 				}
 			}
 		}
 	}
 	if coreResult != nil && transcript != nil {
 		if err := transcript.AppendAssistant(coreResult.Output); err != nil {
-			slog.Warn("append personal transcript", "session_id", model.SessionID, "err", err)
+			slog.Warn("append personal transcript", "session_id", model.ID, "err", err)
 		}
 	}
-	return r.finish(ctx, model, result, agentID, usage, coreResult, runErr, req.Emit)
+	return r.finish(ctx, model, result, usage, coreResult, runErr, req.Emit)
+}
+
+// markRunning flips the session to running with this turn as last_turn_id and
+// returns the fresh session (metadata included).
+func (r *Runner) markRunning(ctx context.Context, sessionID, turnID string) (Session, error) {
+	fresh, err := r.cfg.Repository.GetSession(ctx, sessionID)
+	if err != nil {
+		return Session{}, err
+	}
+	fresh.Status, fresh.LastTurnID, fresh.UpdatedAt = store.SessionRunning, turnID, time.Now().UTC()
+	if err := r.cfg.Repository.UpdateSession(ctx, fresh); err != nil {
+		return fresh, err
+	}
+	return fresh, nil
 }
 
 type toolResultEmitHook struct {
@@ -453,7 +445,7 @@ func joinContext(first, second string) string {
 	return first + "\n\n" + second
 }
 
-func (r *Runner) findSession(ctx context.Context, req RunRequest) (session.Session, error) {
+func (r *Runner) findSession(ctx context.Context, req RunRequest) (Session, error) {
 	if req.SessionID == "" {
 		return r.NewSession(ctx, "", req.Prompt)
 	}
@@ -461,96 +453,55 @@ func (r *Runner) findSession(ctx context.Context, req RunRequest) (session.Sessi
 	if err == nil {
 		return model, nil
 	}
-	if req.CreateIfMissing && errors.Is(err, session.ErrSessionNotFound) {
+	if req.CreateIfMissing && errors.Is(err, ErrSessionNotFound) {
 		if strings.TrimSpace(req.Prompt) == "" {
-			return session.Session{}, fmt.Errorf("prompt is required to create session %q", req.SessionID)
+			return Session{}, fmt.Errorf("prompt is required to create session %q", req.SessionID)
 		}
 		return r.NewSession(ctx, req.SessionID, req.Prompt)
 	}
-	return session.Session{}, err
+	return Session{}, err
 }
 
-func (r *Runner) waitingRun(ctx context.Context, model session.Session) (session.Run, error) {
-	events, err := r.cfg.Repository.ListEventsBySession(ctx, model.SessionID, 0)
+// history replays the user/assistant/tool entries of every finished (completed)
+// turn of the session in seq order. Failed, cancelled and still-running turns
+// are excluded. Assistant tool-call messages keep their own Content.
+func (r *Runner) history(ctx context.Context, sessionID string) ([]agentcore.Message, error) {
+	turns, err := r.cfg.Repository.ListTurns(ctx, sessionID, store.TurnCompleted)
 	if err != nil {
-		return session.Run{}, err
+		return nil, fmt.Errorf("list completed turns: %w", err)
 	}
-	for i := len(events) - 1; i >= 0; i-- {
-		if events[i].TurnID != model.LastTurnID || events[i].RunID == "" {
-			continue
-		}
-		run, err := r.cfg.Repository.GetRun(ctx, events[i].RunID)
-		if err != nil {
-			return session.Run{}, err
-		}
-		if run.State != session.RunInputRequired && run.State != session.RunAuthRequired {
-			return session.Run{}, fmt.Errorf("waiting session %q has non-waiting run %q: %s", model.SessionID, run.RunID, run.State)
-		}
-		return run, nil
+	if len(turns) == 0 {
+		return nil, nil
 	}
-	return session.Run{}, fmt.Errorf("waiting session %q has no run to resume", model.SessionID)
-}
-
-func (r *Runner) completedHistory(ctx context.Context, storage agentcore.Storage, sessionID, currentRunID string) ([]agentcore.Message, error) {
-	events, err := r.cfg.Repository.ListEventsBySession(ctx, sessionID, 0)
+	done := make(map[string]bool, len(turns))
+	for _, t := range turns {
+		done[t.ID] = true
+	}
+	entries, err := r.cfg.Repository.ListEntries(ctx, sessionID, store.EntryFilter{
+		Types: []string{store.EntryUser, store.EntryAssistant, store.EntryTool},
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load session history: %w", err)
 	}
-	seen := make(map[string]bool)
 	var history []agentcore.Message
-	for _, event := range events {
-		if event.RunID == "" || event.RunID == currentRunID || seen[event.RunID] {
+	for _, e := range entries {
+		if !done[e.TurnID] {
 			continue
 		}
-		seen[event.RunID] = true
-		run, err := r.cfg.Repository.GetRun(ctx, event.RunID)
-		if err != nil {
-			return nil, fmt.Errorf("load prior run %q: %w", event.RunID, err)
+		var m agentcore.Message
+		if err := json.Unmarshal(e.JSON, &m); err != nil {
+			return nil, fmt.Errorf("decode history entry %d: %w", e.Seq, err)
 		}
-		if run.State != session.RunCompleted {
-			continue
-		}
-		messages, err := storage.LoadMessages(ctx, run.RunID)
-		if err != nil {
-			return nil, fmt.Errorf("load prior transcript %q: %w", run.RunID, err)
-		}
-		history = append(history, messages...)
+		history = append(history, m)
 	}
 	return history, nil
 }
 
-func (r *Runner) createTurnAndRun(ctx context.Context, result RunResult, agentID, prompt string) error {
-	now := time.Now().UTC()
-	if err := r.cfg.Repository.CreateTurn(ctx, session.Turn{
-		TurnID:        result.TurnID,
-		SessionID:     result.SessionID,
-		InitiatorType: session.InitiatorUser,
-		InputSummary:  prompt,
-		Status:        session.TurnRunning,
-		PrimaryRunID:  result.RunID,
-		CreatedAt:     now,
-	}); err != nil {
-		return fmt.Errorf("create turn: %w", err)
-	}
-	if err := r.cfg.Repository.CreateRun(ctx, session.Run{
-		RunID:     result.RunID,
-		SessionID: result.SessionID,
-		TurnID:    result.TurnID,
-		AgentID:   agentID,
-		State:     session.RunPreparing,
-		StartedAt: now,
-	}); err != nil {
-		return fmt.Errorf("create run: %w", err)
-	}
-	return nil
-}
-
-func (r *Runner) finish(ctx context.Context, model session.Session, result RunResult, agentID string, usage *usageCollector, coreResult *agentcore.RunResult, runErr error, sink EmitFunc) (RunResult, error) {
+func (r *Runner) finish(ctx context.Context, model Session, result RunResult, usage *usageCollector, coreResult *agentcore.RunResult, runErr error, sink EmitFunc) (RunResult, error) {
 	if coreResult != nil {
 		result.Status, result.Output, result.Usage = coreResult.Status, coreResult.Output, coreResult.Usage
 	}
-	// Prefer the hook-collected sum: it also covers failed/cancelled turns and
-	// excludes usage of earlier invocations of a resumed run.
+	// Prefer the hook-collected sum: it also covers failed/cancelled turns.
 	turnUsage, calls := usage.snapshot()
 	if calls > 0 {
 		result.Usage = turnUsage
@@ -565,77 +516,54 @@ func (r *Runner) finish(ctx context.Context, model session.Session, result RunRe
 		result.Status = agentcore.RunFailed
 	}
 
-	runStatus, turnStatus, sessionStatus := session.RunCompleted, session.TurnCompleted, session.SessionOpen
-	failureCode := ""
+	// A yielded turn is stored as completed (its messages become history for the
+	// next turn) but reported to callers as INPUT_REQUIRED.
+	runState, turnStatus, stopReason := RunCompleted, store.TurnCompleted, ""
 	switch result.Status {
 	case agentcore.RunCompleted:
 	case agentcore.RunYielded:
-		runStatus, turnStatus, sessionStatus = session.RunInputRequired, session.TurnWaiting, session.SessionWaiting
+		runState, stopReason = RunInputRequired, "input_required"
 	case agentcore.RunFailed:
 		if ctx.Err() != nil {
-			runStatus, turnStatus = session.RunCanceled, session.TurnCanceled
-			failureCode = "cancelled"
+			runState, turnStatus, stopReason = RunCanceled, store.TurnCancelled, "cancelled"
 		} else {
-			runStatus, turnStatus = session.RunFailed, session.TurnFailed
-			failureCode = "run_failed"
+			runState, turnStatus, stopReason = RunFailed, store.TurnFailed, "run_failed"
 		}
 	default:
-		runStatus, turnStatus = session.RunFailed, session.TurnFailed
-		failureCode = "unexpected_status"
+		runState, turnStatus, stopReason = RunFailed, store.TurnFailed, "unexpected_status"
 	}
-	result.State = runStatus
+	result.State = runState
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	now := time.Now().UTC()
-	var endedAt *time.Time
-	if result.Status != agentcore.RunYielded {
-		endedAt = &now
-	}
 	var persistErr error
-	if err := r.cfg.Repository.UpdateRunLifecycle(finishCtx, result.RunID, runStatus, result.Output, failureCode, endedAt); err != nil {
+	if err := r.cfg.Repository.UpdateTurn(finishCtx, store.Turn{ID: result.TurnID, Status: turnStatus, StopReason: stopReason, EndedAt: now}); err != nil {
 		persistErr = errors.Join(persistErr, err)
 	}
-	if err := r.cfg.Repository.UpdateTurnStatus(finishCtx, result.TurnID, turnStatus, endedAt); err != nil {
-		persistErr = errors.Join(persistErr, err)
-	}
-	model.Status, model.UpdatedAt = sessionStatus, now
 	// Accumulate session usage inside the session lock (held by Run): re-read the
 	// persisted total so a stale in-memory model cannot overwrite another
-	// process's earlier turns.
+	// process's earlier turns, and patch only the usage key.
 	base := model
-	if fresh, err := r.cfg.Repository.GetSession(finishCtx, model.SessionID); err == nil {
+	if fresh, err := r.cfg.Repository.GetSession(finishCtx, model.ID); err == nil {
 		base = fresh
 	}
-	result.SessionUsage = AddUsage(usageFromMetadata(base.Metadata), turnUsage)
-	if model.Metadata == nil {
-		model.Metadata = map[string]any{}
-	}
-	model.Metadata[usageMetadataKey] = usageToMetadata(result.SessionUsage)
-	if err := r.cfg.Repository.UpdateSession(finishCtx, model); err != nil {
+	result.SessionUsage = AddUsage(usageFromMetadata(base.Meta), turnUsage)
+	if err := r.cfg.Repository.PatchSessionMeta(finishCtx, model.ID, map[string]any{usageMetadataKey: usageToMetadata(result.SessionUsage)}); err != nil {
 		persistErr = errors.Join(persistErr, err)
 	}
-	if err := r.appendEvent(finishCtx, result, agentID, "personal.run."+strings.ToLower(string(runStatus)), map[string]any{"status": string(runStatus)}); err != nil {
+	// Back to open with the current metadata (status columns only).
+	if fresh, err := r.cfg.Repository.GetSession(finishCtx, model.ID); err != nil {
 		persistErr = errors.Join(persistErr, err)
+	} else {
+		fresh.Status, fresh.UpdatedAt = store.SessionOpen, now
+		if err := r.cfg.Repository.UpdateSession(finishCtx, fresh); err != nil {
+			persistErr = errors.Join(persistErr, err)
+		}
 	}
 	if err := emit(finishCtx, sink, Event{Kind: "run_finished", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Status: result.Status, State: result.State, Text: result.Output}); err != nil {
 		persistErr = errors.Join(persistErr, err)
 	}
 	return result, errors.Join(runErr, persistErr)
-}
-
-func (r *Runner) appendEvent(ctx context.Context, result RunResult, agentID, eventType string, payload map[string]any) error {
-	_, err := r.cfg.Repository.AppendEvent(ctx, session.RunEvent{
-		EventID:   session.NewEventID(),
-		SessionID: result.SessionID,
-		TurnID:    result.TurnID,
-		RunID:     result.RunID,
-		AgentID:   agentID,
-		EventType: eventType,
-		Payload:   payload,
-		Source:    "personal",
-		CreatedAt: time.Now().UTC(),
-	})
-	return err
 }
 
 func validateSessionID(id string) error {

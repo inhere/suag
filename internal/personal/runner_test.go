@@ -12,18 +12,16 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/data/testutil"
-	"github.com/inhere/suag/internal/host/session"
+	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/storage/sqlite"
 )
 
 func TestRunnerWritesResumedTurnsAndToolSummariesToTranscript(t *testing.T) {
 	ctx := context.Background()
-	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
-	repo, err := session.NewSQLiteRepository(dbPath)
+	dbPath := newStorePath(t)
+	repo, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +31,6 @@ func TestRunnerWritesResumedTurnsAndToolSummariesToTranscript(t *testing.T) {
 	registry.Register(transcriptTool{})
 	runner, err := New(Config{
 		Repository: repo,
-		RunRoot:    filepath.Join(t.TempDir(), "runs"),
 		Provider: mock.NewProvider(
 			mock.ToolCall("call-1", "shell_exec", map[string]any{"command": "echo safe"}),
 			mock.Final("first answer"),
@@ -102,8 +99,8 @@ func (p *rulesProvider) Generate(_ context.Context, req *agentcore.GenerateReque
 
 func TestRunnerRulesPersistAndUpdateOnlyWhenChanged(t *testing.T) {
 	ctx := context.Background()
-	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
-	repo, err := session.NewSQLiteRepository(dbPath)
+	dbPath := newStorePath(t)
+	repo, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,9 +109,8 @@ func TestRunnerRulesPersistAndUpdateOnlyWhenChanged(t *testing.T) {
 	putRule(t, filepath.Join(root, "AGENTS.md"), "first rule")
 	provider := &rulesProvider{}
 	// Keep one run store while recreating the runner to mimic --resume.
-	runRoot := filepath.Join(t.TempDir(), "runs")
 	newRunner := func(appendPrompt string) *Runner {
-		runner, err := New(Config{Repository: repo, RunRoot: runRoot, Provider: provider,
+		runner, err := New(Config{Repository: repo, Provider: provider,
 			RuleSource:         func() (string, string, error) { return LoadRules(root, "", false) },
 			AppendSystemPrompt: appendPrompt})
 		if err != nil {
@@ -125,13 +121,13 @@ func TestRunnerRulesPersistAndUpdateOnlyWhenChanged(t *testing.T) {
 	runner := newRunner("extra")
 	model, err := runner.NewSession(ctx, "rules-session", "test")
 	assert.NoErr(t, err)
-	_, err = runner.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "one"})
+	_, err = runner.Run(ctx, RunRequest{SessionID: model.ID, Prompt: "one"})
 	assert.NoErr(t, err)
 	putRule(t, filepath.Join(root, "AGENTS.md"), "second rule")
 	runner = newRunner("replaced on resume")
-	_, err = runner.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "two"})
+	_, err = runner.Run(ctx, RunRequest{SessionID: model.ID, Prompt: "two"})
 	assert.NoErr(t, err)
-	_, err = runner.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "three"})
+	_, err = runner.Run(ctx, RunRequest{SessionID: model.ID, Prompt: "three"})
 	assert.NoErr(t, err)
 	assert.Eq(t, 3, len(provider.requests))
 	assert.Eq(t, true, strings.Contains(provider.requests[0].System, "first rule"))
@@ -148,9 +144,9 @@ func TestRunnerRulesPersistAndUpdateOnlyWhenChanged(t *testing.T) {
 	}
 	assert.Eq(t, 1, strings.Count(provider.requests[1].System, "second rule"))
 	assert.Eq(t, 0, countRuleUpdates(provider.requests[2].Messages))
-	stored, err := repo.GetSession(ctx, model.SessionID)
+	stored, err := repo.GetSession(ctx, model.ID)
 	assert.NoErr(t, err)
-	assert.Eq(t, true, strings.Contains(stored.Metadata["personal_rules_content"].(string), "second rule"))
+	assert.Eq(t, true, strings.Contains(stored.Meta["personal_rules_content"].(string), "second rule"))
 }
 
 func countRuleUpdates(messages []agentcore.Message) int {
@@ -183,15 +179,14 @@ func (p *recallProvider) Generate(_ context.Context, req *agentcore.GenerateRequ
 
 func TestRunnerRestoresCompletedConversationAfterReopen(t *testing.T) {
 	ctx := context.Background()
-	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
-	runRoot := filepath.Join(t.TempDir(), "runs")
+	dbPath := newStorePath(t)
 	provider := &recallProvider{}
 
-	firstRepo, err := session.NewSQLiteRepository(dbPath)
+	firstRepo, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstRunner, err := New(Config{Repository: firstRepo, RunRoot: runRoot, Provider: provider})
+	firstRunner, err := New(Config{Repository: firstRepo, Provider: provider})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,17 +195,17 @@ func TestRunnerRestoresCompletedConversationAfterReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Eq(t, agentcore.RunCompleted, first.Status)
-	assert.Eq(t, session.RunCompleted, first.State)
+	assert.Eq(t, RunCompleted, first.State)
 	if err := firstRepo.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	secondRepo, err := session.NewSQLiteRepository(dbPath)
+	secondRepo, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = secondRepo.Close() })
-	secondRunner, err := New(Config{Repository: secondRepo, RunRoot: runRoot, Provider: provider})
+	secondRunner, err := New(Config{Repository: secondRepo, Provider: provider})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +215,7 @@ func TestRunnerRestoresCompletedConversationAfterReopen(t *testing.T) {
 	}
 	assert.Eq(t, "amber", second.Output)
 	assert.Eq(t, agentcore.RunCompleted, second.Status)
-	assert.Eq(t, session.RunCompleted, second.State)
+	assert.Eq(t, RunCompleted, second.State)
 	assert.Eq(t, false, first.RunID == second.RunID)
 	stored, err := secondRepo.GetSession(ctx, first.SessionID)
 	if err != nil {
@@ -231,18 +226,18 @@ func TestRunnerRestoresCompletedConversationAfterReopen(t *testing.T) {
 
 func TestRunnerUnknownResumeDoesNotCreateSession(t *testing.T) {
 	ctx := context.Background()
-	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
-	repo, err := session.NewSQLiteRepository(dbPath)
+	dbPath := newStorePath(t)
+	repo, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = repo.Close() })
-	runner, err := New(Config{Repository: repo, RunRoot: t.TempDir(), Provider: &recallProvider{}})
+	runner, err := New(Config{Repository: repo, Provider: &recallProvider{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = runner.Run(ctx, RunRequest{SessionID: "missing", Prompt: "continue"})
-	assert.Eq(t, true, errors.Is(err, session.ErrSessionNotFound))
+	assert.Eq(t, true, errors.Is(err, ErrSessionNotFound))
 	sessions, err := repo.ListSessions(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -256,13 +251,13 @@ func TestRunnerUnknownResumeDoesNotCreateSession(t *testing.T) {
 
 func TestRunnerCreatesGoferInjectedSessionID(t *testing.T) {
 	ctx := context.Background()
-	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
-	repo, err := session.NewSQLiteRepository(dbPath)
+	dbPath := newStorePath(t)
+	repo, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = repo.Close() })
-	runner, err := New(Config{Repository: repo, RunRoot: t.TempDir(), Provider: &recallProvider{}})
+	runner, err := New(Config{Repository: repo, Provider: &recallProvider{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +266,7 @@ func TestRunnerCreatesGoferInjectedSessionID(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Eq(t, "gofer-001", result.SessionID)
-	assert.Eq(t, session.RunCompleted, result.State)
+	assert.Eq(t, RunCompleted, result.State)
 }
 
 type priorTranscriptProvider struct{}
@@ -284,49 +279,25 @@ func (*priorTranscriptProvider) Generate(_ context.Context, req *agentcore.Gener
 		found = found || message.Content == "Old host answer"
 	}
 	if !found {
-		return nil, fmt.Errorf("existing Host transcript was not included")
+		return nil, fmt.Errorf("existing store history was not included")
 	}
 	return &agentcore.GenerateResult{Content: "legacy context found", FinishReason: agentcore.FinishFinal}, nil
 }
 
-func TestRunnerReadsExistingHostTranscript(t *testing.T) {
+// History is rebuilt from the completed turns' entries written straight into the store.
+func TestRunnerReadsExistingStoreHistory(t *testing.T) {
 	ctx := context.Background()
-	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
-	runRoot := filepath.Join(t.TempDir(), "runs")
-	repo, err := session.NewSQLiteRepository(dbPath)
+	repo, err := store.Open(newStorePath(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = repo.Close() })
-	now := time.Now().UTC()
-	if err := repo.CreateSession(ctx, session.Session{SessionID: "sess_legacy", Title: "legacy", Status: session.SessionOpen, LastTurnID: "turn_legacy", CreatedAt: now, UpdatedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	if err := repo.CreateTurn(ctx, session.Turn{TurnID: "turn_legacy", SessionID: "sess_legacy", InitiatorType: session.InitiatorUser, Status: session.TurnCompleted, PrimaryRunID: "run_legacy", CreatedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	if err := repo.CreateRun(ctx, session.Run{RunID: "run_legacy", SessionID: "sess_legacy", TurnID: "turn_legacy", AgentID: "suag", State: session.RunCompleted, StartedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repo.AppendEvent(ctx, session.RunEvent{EventID: "evt_legacy", SessionID: "sess_legacy", TurnID: "turn_legacy", RunID: "run_legacy", AgentID: "suag", EventType: "run.completed", Source: "host.session", CreatedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	storage, err := sqlite.NewStorage(filepath.Join(runRoot, "sess_legacy", "runs.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	oldMessages := []agentcore.Message{{Role: "user", Content: "Old host question"}, {Role: "assistant", Content: "Old host answer"}}
-	if err := storage.SaveRun(ctx, &agentcore.RunState{RunID: "run_legacy", AgentID: "suag", Status: agentcore.RunCompleted, Messages: oldMessages}); err != nil {
-		t.Fatal(err)
-	}
-	if err := storage.AppendMessages(ctx, "run_legacy", oldMessages...); err != nil {
-		t.Fatal(err)
-	}
-	if err := storage.Close(); err != nil {
-		t.Fatal(err)
-	}
+	assert.NoErr(t, repo.CreateSession(ctx, store.Session{ID: "sess_legacy", Title: "legacy"}))
+	assert.NoErr(t, repo.CreateTurn(ctx, store.Turn{ID: "turn_legacy", SessionID: "sess_legacy", Status: store.TurnCompleted}))
+	assert.NoErr(t, repo.AgentStorage().AppendMessages(ctx, "turn_legacy",
+		agentcore.Message{Role: "user", Content: "Old host question"}, agentcore.Message{Role: "assistant", Content: "Old host answer"}))
 
-	runner, err := New(Config{Repository: repo, RunRoot: runRoot, Provider: &priorTranscriptProvider{}})
+	runner, err := New(Config{Repository: repo, Provider: &priorTranscriptProvider{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,17 +321,17 @@ func (h *yieldOnceHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent, 
 	return nil
 }
 
-func TestRunnerResumesYieldedRunWithoutDuplicatingInput(t *testing.T) {
+// A yielded turn is reported as INPUT_REQUIRED, is not resumed in place, and
+// its messages are history for the next (new) turn.
+func TestRunnerYieldedTurnIsNotResumedAndBecomesHistory(t *testing.T) {
 	ctx := context.Background()
-	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
-	runRoot := filepath.Join(t.TempDir(), "runs")
-	repo, err := session.NewSQLiteRepository(dbPath)
+	dbPath := newStorePath(t)
+	repo, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	hook := &yieldOnceHook{}
-	provider := &recallProvider{}
-	runner, err := New(Config{Repository: repo, RunRoot: runRoot, Provider: provider, Hooks: []agentcore.Hook{hook}})
+	runner, err := New(Config{Repository: repo, Provider: &recallProvider{}, Hooks: []agentcore.Hook{hook}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,96 +340,32 @@ func TestRunnerResumesYieldedRunWithoutDuplicatingInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Eq(t, agentcore.RunYielded, first.Status)
-	if err := repo.Close(); err != nil {
-		t.Fatal(err)
-	}
+	assert.Eq(t, RunInputRequired, first.State)
+	assert.NoErr(t, repo.Close())
 
-	reopened, err := session.NewSQLiteRepository(dbPath)
+	reopened, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = reopened.Close() })
-	resumed, err := New(Config{Repository: reopened, RunRoot: runRoot, Provider: provider, Hooks: []agentcore.Hook{hook}})
+	resumed, err := New(Config{Repository: reopened, Provider: &recallProvider{}, Hooks: []agentcore.Hook{hook}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := resumed.Run(ctx, RunRequest{SessionID: first.SessionID, Prompt: "continue"})
+	second, err := resumed.Run(ctx, RunRequest{SessionID: first.SessionID, Prompt: "What was the code?"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Eq(t, first.RunID, second.RunID)
-	assert.Eq(t, first.TurnID, second.TurnID)
-	assert.Eq(t, agentcore.RunCompleted, second.Status)
-	storage, err := sqlite.NewStorage(filepath.Join(runRoot, first.SessionID, "runs.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = storage.Close() })
-	messages, err := storage.LoadMessages(ctx, first.RunID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var originalCount int
-	for _, message := range messages {
-		if message.Content == "Remember code amber" {
-			originalCount++
-		}
-	}
-	assert.Eq(t, 1, originalCount)
-}
-
-func TestRunnerResumesYieldedRunWithoutNewInput(t *testing.T) {
-	ctx := context.Background()
-	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
-	runRoot := filepath.Join(t.TempDir(), "runs")
-	repo, err := session.NewSQLiteRepository(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	hook := &yieldOnceHook{}
-	runner, err := New(Config{Repository: repo, RunRoot: runRoot, Provider: &recallProvider{}, Hooks: []agentcore.Hook{hook}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	first, err := runner.Run(ctx, RunRequest{Prompt: "Remember code amber"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := repo.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	reopened, err := session.NewSQLiteRepository(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = reopened.Close() })
-	resumed, err := New(Config{Repository: reopened, RunRoot: runRoot, Provider: &recallProvider{}, Hooks: []agentcore.Hook{hook}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := resumed.Run(ctx, RunRequest{SessionID: first.SessionID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Eq(t, first.RunID, second.RunID)
-	assert.Eq(t, session.RunCompleted, second.State)
-	storage, err := sqlite.NewStorage(filepath.Join(runRoot, first.SessionID, "runs.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = storage.Close() })
-	messages, err := storage.LoadMessages(ctx, first.RunID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var users int
-	for _, message := range messages {
-		if message.Role == "user" {
-			users++
-		}
-	}
-	assert.Eq(t, 1, users)
+	assert.Eq(t, false, first.RunID == second.RunID)
+	assert.Eq(t, RunCompleted, second.State)
+	assert.Eq(t, true, strings.Contains(second.Output, "amber"))
+	// An empty prompt no longer resumes a waiting run.
+	_, err = resumed.Run(ctx, RunRequest{SessionID: first.SessionID})
+	assert.Eq(t, true, err != nil && strings.Contains(err.Error(), "prompt is required"))
+	// run_id == turn_id: both turns are stored and completed.
+	turns, err := reopened.ListTurns(ctx, first.SessionID, store.TurnCompleted)
+	assert.NoErr(t, err)
+	assert.Eq(t, 2, len(turns))
 }
 
 type blockingProvider struct{ started chan struct{} }
@@ -472,14 +379,14 @@ func (p *blockingProvider) Generate(ctx context.Context, _ *agentcore.GenerateRe
 }
 
 func TestRunnerPersistsCancellationAfterContextEnds(t *testing.T) {
-	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
-	repo, err := session.NewSQLiteRepository(dbPath)
+	dbPath := newStorePath(t)
+	repo, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = repo.Close() })
 	provider := &blockingProvider{started: make(chan struct{})}
-	runner, err := New(Config{Repository: repo, RunRoot: t.TempDir(), Provider: provider})
+	runner, err := New(Config{Repository: repo, Provider: provider})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,17 +407,18 @@ func TestRunnerPersistsCancellationAfterContextEnds(t *testing.T) {
 	cancel()
 	result := <-resultCh
 	assert.Eq(t, true, errors.Is(<-errCh, context.Canceled))
-	assert.Eq(t, session.RunCanceled, result.State)
-	storedRun, err := repo.GetRun(context.Background(), result.RunID)
+	assert.Eq(t, RunCanceled, result.State)
+	storedTurn, err := repo.GetTurn(context.Background(), result.TurnID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Eq(t, session.RunCanceled, storedRun.State)
+	assert.Eq(t, store.TurnCancelled, storedTurn.Status)
+	assert.Eq(t, result.TurnID, result.RunID)
 	storedSession, err := repo.GetSession(context.Background(), result.SessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Eq(t, session.SessionOpen, storedSession.Status)
+	assert.Eq(t, store.SessionOpen, storedSession.Status)
 }
 
 func countNotices(messages []agentcore.Message, prefix string) int {
@@ -537,15 +445,14 @@ func TestRunnerAppendPromptOnResume(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, err := session.NewSQLiteRepository(testutil.NewMigratedSQLitePath(t, "sessions.db"))
+			repo, err := store.Open(newStorePath(t))
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = repo.Close() })
 			provider := &rulesProvider{}
-			runRoot := filepath.Join(t.TempDir(), "runs")
 			newRunner := func(appendPrompt string) *Runner {
-				runner, err := New(Config{Repository: repo, RunRoot: runRoot, Provider: provider, AppendSystemPrompt: appendPrompt})
+				runner, err := New(Config{Repository: repo, Provider: provider, AppendSystemPrompt: appendPrompt})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -554,14 +461,14 @@ func TestRunnerAppendPromptOnResume(t *testing.T) {
 			model, err := newRunner("orig").NewSession(ctx, "append-session", "test")
 			assert.NoErr(t, err)
 			resumed := newRunner(tc.resume)
-			_, err = resumed.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "one"})
+			_, err = resumed.Run(ctx, RunRequest{SessionID: model.ID, Prompt: "one"})
 			assert.NoErr(t, err)
-			_, err = resumed.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "two"})
+			_, err = resumed.Run(ctx, RunRequest{SessionID: model.ID, Prompt: "two"})
 			assert.NoErr(t, err)
 			assert.Eq(t, 2, len(provider.requests))
-			stored, err := repo.GetSession(ctx, model.SessionID)
+			stored, err := repo.GetSession(ctx, model.ID)
 			assert.NoErr(t, err)
-			assert.Eq(t, tc.wantStored, stored.Metadata["personal_append_prompt"])
+			assert.Eq(t, tc.wantStored, stored.Meta["personal_append_prompt"])
 			assert.Eq(t, true, strings.Contains(provider.requests[0].System, tc.wantStored))
 			assert.Eq(t, tc.wantNotice, countNotices(provider.requests[0].Messages, notice))
 			assert.Eq(t, 0, countNotices(provider.requests[1].Messages, notice))
@@ -570,4 +477,10 @@ func TestRunnerAppendPromptOnResume(t *testing.T) {
 			}
 		})
 	}
+}
+
+// newStorePath returns a fresh core store path under a temp dir.
+func newStorePath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "db", "sessions.db")
 }

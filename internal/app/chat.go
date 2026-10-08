@@ -11,7 +11,6 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/host/session"
 	"github.com/inhere/suag/internal/personal"
 	personalprocess "github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/pkg/agentcore"
@@ -41,19 +40,19 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 		if err != nil {
 			return err
 		}
-		sessionID = model.SessionID
+		sessionID = model.ID
 	} else if opts.SessionID != "" {
 		model, err := runner.LoadSession(ctx, opts.SessionID)
 		if err == nil {
 			// Opening an existing session by --session-id continues it: report resume, like claude.
-			sessionID = model.SessionID
+			sessionID = model.ID
 			source = "resume"
-		} else if errors.Is(err, session.ErrSessionNotFound) {
+		} else if errors.Is(err, personal.ErrSessionNotFound) {
 			model, err = runner.NewSession(ctx, opts.SessionID, "New chat")
 			if err != nil {
 				return err
 			}
-			sessionID, createdAtStartup = model.SessionID, true
+			sessionID, createdAtStartup = model.ID, true
 		} else {
 			return err
 		}
@@ -62,7 +61,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 		if err != nil {
 			return err
 		}
-		sessionID, createdAtStartup = model.SessionID, true
+		sessionID, createdAtStartup = model.ID, true
 	}
 	fmt.Fprintln(stderr, "session id:", sessionID)
 	var releaseSessionLock func() error
