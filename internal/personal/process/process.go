@@ -25,8 +25,10 @@ type Record struct {
 	Kind      string    `json:"kind"`
 	Socket    string    `json:"socket"`
 	StartedAt time.Time `json:"started_at"`
-	Host      string    `json:"host"`
-	State     string    `json:"state"`
+	// ProcStart is the OS start time of PID; it tells a reused PID apart from this process.
+	ProcStart string `json:"proc_start,omitempty"`
+	Host      string `json:"host"`
+	State     string `json:"state"`
 }
 
 type Request struct {
@@ -65,22 +67,27 @@ func Start(root, sessionID, name, cwd string, deliver DeliverFunc) (*Server, err
 	if err := validateSocketPath(socket); err != nil {
 		return nil, err
 	}
+	procStart := processStartID(pid)
 	recordPath := filepath.Join(root, fmt.Sprintf("%d.json", pid))
 	if data, err := os.ReadFile(recordPath); err == nil {
 		var existing Record
-		if json.Unmarshal(data, &existing) == nil && existing.PID == pid && existing.Host != "" {
+		// Same PID and same start time is this very process; a different start time
+		// is a crashed earlier owner of a now-reused PID.
+		if json.Unmarshal(data, &existing) == nil && existing.PID == pid && existing.Host != "" && (procStart == "" || existing.ProcStart == procStart) {
 			return nil, fmt.Errorf("this process already owns a chat registration")
 		}
 		_ = os.Remove(recordPath)
-		_ = os.Remove(socket)
 	}
+	// Our own PID's socket can only be left behind by a dead owner (or one that died
+	// between listening and registering), so it is always safe to remove here.
+	_ = os.Remove(socket)
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		return nil, fmt.Errorf("listen on local session socket: %w", err)
 	}
 	_ = os.Chmod(socket, 0o600)
 	host, _ := os.Hostname()
-	record := Record{PID: pid, SessionID: sessionID, Name: name, CWD: cwd, Kind: "chat", Socket: socket, StartedAt: time.Now().UTC(), Host: host, State: "idle"}
+	record := Record{PID: pid, SessionID: sessionID, Name: name, CWD: cwd, Kind: "chat", Socket: socket, StartedAt: time.Now().UTC(), ProcStart: procStart, Host: host, State: "idle"}
 	server := &Server{root: root, record: record, listener: listener, done: make(chan struct{})}
 	if err := server.writeRecord(); err != nil {
 		_ = listener.Close()
@@ -218,7 +225,7 @@ func List(root string) ([]Record, error) {
 		if json.Unmarshal(data, &record) != nil || record.PID <= 0 || filepath.Base(entry.Name()) != fmt.Sprintf("%d.json", record.PID) || filepath.Clean(record.Socket) != filepath.Clean(filepath.Join(root, fmt.Sprintf("%d.sock", record.PID))) {
 			continue
 		}
-		if !processExists(record.PID) {
+		if !processAlive(record.PID, record.ProcStart) {
 			_ = os.Remove(path)
 			_ = os.Remove(filepath.Join(root, fmt.Sprintf("%d.sock", record.PID)))
 			continue
@@ -230,11 +237,15 @@ func List(root string) ([]Record, error) {
 }
 
 func Send(record Record, request Request) (Response, error) {
-	if !processExists(record.PID) {
+	if !processAlive(record.PID, record.ProcStart) {
 		return Response{}, ErrNotOnline
 	}
 	conn, err := net.DialTimeout("unix", record.Socket, 2*time.Second)
 	if err != nil {
+		// The owner may have exited between the liveness check and the dial.
+		if !processAlive(record.PID, record.ProcStart) {
+			return Response{}, ErrNotOnline
+		}
 		return Response{}, fmt.Errorf("connect session socket: %w", err)
 	}
 	defer conn.Close()
@@ -260,6 +271,19 @@ func Send(record Record, request Request) (Response, error) {
 }
 
 var ErrNotOnline = errors.New("session process is not online")
+
+// processAlive reports whether pid still runs the process that recorded procStart.
+// An empty procStart (older record or unsupported platform) falls back to the PID alone.
+func processAlive(pid int, procStart string) bool {
+	if !processExists(pid) {
+		return false
+	}
+	if procStart == "" {
+		return true
+	}
+	current := processStartID(pid)
+	return current == "" || current == procStart
+}
 
 func Resolve(records []Record, selector string) (Record, error) {
 	selector = strings.TrimSpace(selector)
