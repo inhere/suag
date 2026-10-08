@@ -33,7 +33,9 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("SUAG_MODEL", "environment-model")
-	t.Setenv("SUAG_PROVIDER", "deepseek")
+	// Same vendor as llm.api_type: switching vendors drops the file's base_url/api_key,
+	// which would send this run to the real vendor instead of the test server.
+	t.Setenv("SUAG_PROVIDER", "openai")
 	workspace := t.TempDir()
 	t.Chdir(workspace)
 	_ = gkconfig.Set("workspace", workspace)
@@ -103,7 +105,7 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	stored, err := repo.GetSession(context.Background(), "path-test")
 	assert.NoErr(t, err)
 	assert.Eq(t, "environment-model", stored.Metadata["model"])
-	assert.Eq(t, "deepseek", stored.Metadata["provider"])
+	assert.Eq(t, "openai", stored.Metadata["provider"])
 	_, err = os.Stat(filepath.Join(home, ".suag", "db", "agentcore", "host", "path-test", "runs.db"))
 	assert.NoErr(t, err)
 	_, err = os.Stat(filepath.Join(workspace, "db"))
