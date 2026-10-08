@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestTranscriptAppendsTypedEntriesAndRedactsToolSummaries(t *testing.T) {
@@ -67,4 +68,48 @@ func TestTranscriptAppendsTypedEntriesAndRedactsToolSummaries(t *testing.T) {
 	if entries[2]["type"] != "assistant" || entries[2]["text"] != "done" {
 		t.Fatalf("unexpected resumed assistant entry: %#v", entries[2])
 	}
+}
+
+func TestTranscriptToolSummaryIncludesNameAndKeyArgs(t *testing.T) {
+	read := func(t *testing.T, root string) map[string]any {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(root, "s.jsonl"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(lines[len(lines)-1]), &entry); err != nil {
+			t.Fatal(err)
+		}
+		return entry
+	}
+	t.Run("path", func(t *testing.T) {
+		root := t.TempDir()
+		tr, _ := OpenTranscript(root, "s")
+		defer tr.Close()
+		_ = tr.AppendToolCall("read_file", map[string]any{"path": "a/b.go"}, "body")
+		if got := read(t, root)["summary"]; got != "read_file path=a/b.go" {
+			t.Fatalf("summary = %v", got)
+		}
+	})
+	t.Run("long command truncated on rune boundary", func(t *testing.T) {
+		root := t.TempDir()
+		tr, _ := OpenTranscript(root, "s")
+		defer tr.Close()
+		_ = tr.AppendToolCall("shell_exec", map[string]any{"command": strings.Repeat("工", 300)}, "")
+		got := read(t, root)["summary"].(string)
+		if !utf8.ValidString(got) || !strings.HasPrefix(got, "shell_exec command=工") || strings.Count(got, "工") > 120 {
+			t.Fatalf("summary = %q", got)
+		}
+	})
+	t.Run("secrets redacted", func(t *testing.T) {
+		root := t.TempDir()
+		tr, _ := OpenTranscript(root, "s")
+		defer tr.Close()
+		_ = tr.AppendToolCall("shell_exec", map[string]any{"command": "curl -H token=canary-xyz1 http://x"}, "")
+		if got := read(t, root)["summary"].(string); strings.Contains(got, "canary-xyz1") {
+			t.Fatalf("leaked: %q", got)
+		}
+	})
 }

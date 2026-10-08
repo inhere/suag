@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -72,13 +73,70 @@ func (t *Transcript) AppendAssistant(text string) error {
 	return t.append(transcriptEntry{Type: "assistant", Text: RedactSecretValues(text)})
 }
 
-func (t *Transcript) AppendTool(name, _ string) error {
+func (t *Transcript) AppendTool(name, content string) error {
+	return t.AppendToolCall(name, nil, content)
+}
+
+// AppendToolCall records a tool call as "<name> key=value ..." built from the call
+// arguments (never the tool output), so a transcript reader can tell what was done.
+// The summary is redacted and rune-bounded; values are cut on UTF-8 boundaries.
+func (t *Transcript) AppendToolCall(name string, args map[string]any, _ string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "tool"
 	}
-	summary := truncateRunes(name+" result; output omitted", 200)
+	summary := name
+	if brief := summarizeToolArgs(args); brief != "" {
+		summary += " " + brief
+	} else {
+		summary += " result; output omitted"
+	}
+	summary = truncateRunes(RedactSecretValues(summary), 200)
 	return t.append(transcriptEntry{Type: "tool", Name: name, Summary: summary})
+}
+
+const toolArgValueLimit = 120
+
+// summaryArgKeys are the argument names that best identify what a tool call did,
+// in display priority order.
+var summaryArgKeys = []string{"path", "file_path", "filepath", "file", "command", "cmd", "pattern", "query", "url"}
+
+func summarizeToolArgs(args map[string]any) string {
+	var parts []string
+	used := map[string]bool{}
+	for _, key := range summaryArgKeys {
+		if v, ok := args[key]; ok {
+			if text := toolArgText(v); text != "" {
+				parts = append(parts, key+"="+text)
+			}
+			used[key] = true
+		}
+	}
+	if len(parts) == 0 {
+		// Unknown tool shape: fall back to the first few scalar args in stable order.
+		keys := make([]string, 0, len(args))
+		for k := range args {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if used[k] || len(parts) >= 3 {
+				continue
+			}
+			switch args[k].(type) {
+			case string, bool, float64, int, int64:
+				if text := toolArgText(args[k]); text != "" {
+					parts = append(parts, k+"="+text)
+				}
+			}
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func toolArgText(v any) string {
+	text := strings.Join(strings.Fields(fmt.Sprint(v)), " ")
+	return truncateRunes(text, toolArgValueLimit)
 }
 
 // RedactSecretValues removes credential-like values before tool data leaves the runtime.

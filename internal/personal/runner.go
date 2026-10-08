@@ -364,13 +364,21 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if messages, err := storage.LoadMessages(context.WithoutCancel(ctx), result.RunID); err != nil {
 		slog.Warn("read personal run transcript", "session_id", model.SessionID, "err", err)
 	} else {
+		// Tool arguments live on the assistant's ToolCall message; index them by call id
+		// so each result can be summarized with its call parameters.
+		calls := map[string]map[string]any{}
+		for _, message := range messages {
+			if message.ToolCall != nil {
+				calls[message.ToolCall.CallID] = message.ToolCall.Arguments
+			}
+		}
 		for _, message := range messages[min(len(priorMessages), len(messages)):] {
 			if message.ToolResult == nil {
 				continue
 			}
 			toolName := message.ToolResult.Name
 			if transcript != nil {
-				if err := transcript.AppendTool(toolName, message.ToolResult.Content); err != nil {
+				if err := transcript.AppendToolCall(toolName, calls[message.ToolResult.CallID], message.ToolResult.Content); err != nil {
 					slog.Warn("append personal transcript", "session_id", model.SessionID, "err", err)
 				}
 			}

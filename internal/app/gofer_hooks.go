@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -20,7 +19,7 @@ type goferHookEvent struct {
 	Name           string `json:"hook_event_name"`
 	SessionID      string `json:"session_id"`
 	CWD            string `json:"cwd"`
-	TranscriptPath string `json:"transcript_path"`
+	TranscriptPath string `json:"transcript_path,omitempty"`
 	Source         string `json:"source,omitempty"`
 	Prompt         string `json:"prompt,omitempty"`
 	// Injected marks a UserPromptSubmit whose input did not come from terminal typing
@@ -36,6 +35,10 @@ type goferHookResponse struct {
 	Decision          string
 	Reason            string
 	AdditionalContext string
+	// Notice is a one-line message the Gofer server wants the person at this terminal
+	// to see (e.g. the session was taken over on the web). `gofer hook` prints it on
+	// its stderr, so the client captures that stream.
+	Notice string
 }
 
 type goferHookResult struct {
@@ -45,7 +48,9 @@ type goferHookResult struct {
 
 type chatHookWait interface {
 	Done() <-chan goferHookResult
-	Interrupt(context.Context)
+	// Interrupt ends the wait. It returns a web reply that had already been received
+	// (Stop block) but not yet consumed, so the caller can still deliver it.
+	Interrupt(context.Context) string
 }
 
 type chatHookClient interface {
@@ -145,7 +150,8 @@ func (h *goferHooks) call(parent context.Context, event goferHookEvent, waitSec 
 	input = append(input, '\n')
 	cmd := exec.CommandContext(ctx, h.command, args...)
 	cmd.Stdin = bytes.NewReader(input)
-	cmd.Stderr = io.Discard
+	var stderr limitedBuffer
+	cmd.Stderr = &stderr
 	output, err := cmd.Output()
 	if err != nil {
 		return goferHookResponse{}, err
@@ -162,7 +168,7 @@ func (h *goferHooks) call(parent context.Context, event goferHookEvent, waitSec 
 			return goferHookResponse{}, err
 		}
 	}
-	return goferHookResponse{Decision: wire.Decision, Reason: wire.Reason, AdditionalContext: wire.HookSpecificOutput.AdditionalContext}, nil
+	return goferHookResponse{Decision: wire.Decision, Reason: wire.Reason, AdditionalContext: wire.HookSpecificOutput.AdditionalContext, Notice: strings.TrimSpace(stderr.String())}, nil
 }
 
 type goferStopWait struct {
@@ -174,7 +180,7 @@ type goferStopWait struct {
 
 func (w *goferStopWait) Done() <-chan goferHookResult { return w.done }
 
-func (w *goferStopWait) Interrupt(parent context.Context) {
+func (w *goferStopWait) Interrupt(parent context.Context) string {
 	interrupt := w.event
 	interrupt.Name = "Interrupt"
 	interrupt.LastAssistant = ""
@@ -183,8 +189,27 @@ func (w *goferStopWait) Interrupt(parent context.Context) {
 	w.call(ctx, interrupt)
 	cancel()
 	w.cancel()
-	<-w.done
+	// The reply may have landed in done before cancellation; hand it back instead of dropping it.
+	result := <-w.done
+	if result.err == nil && result.response.Decision == "block" {
+		return result.response.Reason
+	}
+	return ""
 }
+
+// limitedBuffer keeps at most noticeLimit bytes of a hook's stderr.
+type limitedBuffer struct{ bytes.Buffer }
+
+const noticeLimit = 1024
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if room := noticeLimit - b.Len(); room > 0 {
+		b.Buffer.Write(p[:min(room, len(p))])
+	}
+	return len(p), nil
+}
+
+func (b *limitedBuffer) String() string { return truncateHookOutput(b.Buffer.String(), noticeLimit) }
 
 func hookAdditionalContext(response goferHookResponse) string {
 	return strings.TrimSpace(response.AdditionalContext)

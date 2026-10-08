@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -47,6 +48,10 @@ type fakeHookClient struct {
 	startCount chan struct{}
 	eventWake  chan struct{}
 	blockFirst bool
+	// lostOnInterrupt makes every Stop wait report this web reply when interrupted.
+	lostOnInterrupt string
+	// startNotice is returned as the SessionStart response Notice.
+	startNotice string
 }
 
 func newFakeHookClient() *fakeHookClient {
@@ -66,7 +71,7 @@ func (f *fakeHookClient) record(event goferHookEvent) {
 func (f *fakeHookClient) Call(_ context.Context, event goferHookEvent) goferHookResponse {
 	f.record(event)
 	if event.Name == "SessionStart" {
-		return goferHookResponse{AdditionalContext: "startup-context"}
+		return goferHookResponse{AdditionalContext: "startup-context", Notice: f.startNotice}
 	}
 	if event.Name == "UserPromptSubmit" {
 		return goferHookResponse{AdditionalContext: "submit-context"}
@@ -90,7 +95,7 @@ func (f *fakeHookClient) StartStop(_ context.Context, event goferHookEvent) chat
 		interrupt.Name = "Interrupt"
 		interrupt.LastAssistant = ""
 		f.Call(context.Background(), interrupt)
-	}}
+	}, lost: f.lostOnInterrupt}
 }
 
 func (f *fakeHookClient) snapshot() []goferHookEvent {
@@ -102,10 +107,15 @@ func (f *fakeHookClient) snapshot() []goferHookEvent {
 type fakeStopWait struct {
 	done      chan goferHookResult
 	interrupt func()
+	// lost is the undelivered web reply Interrupt reports back (race simulation).
+	lost string
 }
 
 func (w *fakeStopWait) Done() <-chan goferHookResult { return w.done }
-func (w *fakeStopWait) Interrupt(context.Context)    { w.interrupt() }
+func (w *fakeStopWait) Interrupt(context.Context) string {
+	w.interrupt()
+	return w.lost
+}
 
 func TestPersonalChatBlockStartsInjectedTurnAndMarksStopActive(t *testing.T) {
 	gkconfig.Reset()
@@ -748,4 +758,125 @@ func TestPersonalChatSendsStopWhenTurnFails(t *testing.T) {
 	if !strings.Contains(stderr.String(), "Error:") {
 		t.Fatalf("error should still be reported on stderr: %q", stderr.String())
 	}
+}
+
+func TestPersonalChatKeepsWebReplyReceivedDuringInterrupt(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	t.Setenv("SUAG_HOME", t.TempDir())
+	t.Run("delivered as next-turn context", func(t *testing.T) {
+		provider := &hookTestProvider{}
+		runner, _ := newCLITestRunner(t, provider)
+		hooks := newFakeHookClient()
+		hooks.blockFirst = false
+		hooks.lostOnInterrupt = "[gofer web 回复] late-reply-canary"
+		var stdout, stderr strings.Builder
+		err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader("first\nsecond\n:quit\n"), &stdout, &stderr, hooks)
+		assert.Require(t, assert.NoErr(t, err))
+		provider.mu.Lock()
+		defer provider.mu.Unlock()
+		assert.Require(t, assert.Gt(t, len(provider.calls), 1))
+		found := false
+		for _, m := range provider.calls[len(provider.calls)-1] {
+			found = found || strings.Contains(m.Content, "late-reply-canary")
+		}
+		assert.True(t, found)
+	})
+	t.Run("warns when chat ends before another turn", func(t *testing.T) {
+		runner, _ := newCLITestRunner(t, &hookTestProvider{})
+		hooks := newFakeHookClient()
+		hooks.blockFirst = false
+		hooks.lostOnInterrupt = "[gofer web 回复] late-reply-canary"
+		var stdout, stderr strings.Builder
+		err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader("first\n:quit\n"), &stdout, &stderr, hooks)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.StrContains(t, stderr.String(), "not delivered")
+		assert.StrContains(t, stderr.String(), "late-reply-canary")
+	})
+}
+
+func TestGoferStopInterruptReturnsAlreadyReceivedReply(t *testing.T) {
+	done := make(chan goferHookResult, 1)
+	done <- goferHookResult{response: goferHookResponse{Decision: "block", Reason: "[gofer web 回复] hi"}}
+	wait := &goferStopWait{
+		call:   func(context.Context, goferHookEvent) goferHookResponse { return goferHookResponse{} },
+		cancel: func() {},
+		done:   done,
+	}
+	assert.Eq(t, "[gofer web 回复] hi", wait.Interrupt(context.Background()))
+}
+
+func TestHookEventTranscriptPathAndSource(t *testing.T) {
+	run := func(t *testing.T, opts personalOptions) []goferHookEvent {
+		runner, _ := newCLITestRunner(t, &hookTestProvider{})
+		hooks := newFakeHookClient()
+		hooks.blockFirst = false
+		var stdout, stderr strings.Builder
+		assert.Require(t, assert.NoErr(t, runPersonalChatWithHooks(context.Background(), runner, opts, strings.NewReader(":quit\n"), &stdout, &stderr, hooks)))
+		return hooks.snapshot()
+	}
+	startOf := func(events []goferHookEvent) goferHookEvent {
+		for _, e := range events {
+			if e.Name == "SessionStart" {
+				return e
+			}
+		}
+		t.Fatal("no SessionStart")
+		return goferHookEvent{}
+	}
+	t.Run("transcripts off omits transcript_path", func(t *testing.T) {
+		gkconfig.Reset()
+		t.Cleanup(gkconfig.Reset)
+		t.Setenv("SUAG_HOME", t.TempDir())
+		_ = gkconfig.Set("transcripts", "off")
+		start := startOf(run(t, personalOptions{}))
+		assert.Eq(t, "", start.TranscriptPath)
+		data, _ := json.Marshal(start)
+		assert.StrNotContains(t, string(data), "transcript_path")
+	})
+	t.Run("transcripts on reports path", func(t *testing.T) {
+		gkconfig.Reset()
+		t.Cleanup(gkconfig.Reset)
+		t.Setenv("SUAG_HOME", t.TempDir())
+		assert.NotEq(t, "", startOf(run(t, personalOptions{})).TranscriptPath)
+	})
+	t.Run("existing --session-id reports resume", func(t *testing.T) {
+		gkconfig.Reset()
+		t.Cleanup(gkconfig.Reset)
+		t.Setenv("SUAG_HOME", t.TempDir())
+		runner, _ := newCLITestRunner(t, &hookTestProvider{})
+		var sources []string
+		for range 2 {
+			hooks := newFakeHookClient()
+			var stdout, stderr strings.Builder
+			assert.Require(t, assert.NoErr(t, runPersonalChatWithHooks(context.Background(), runner, personalOptions{SessionID: "sess-fixed"}, strings.NewReader(":quit\n"), &stdout, &stderr, hooks)))
+			sources = append(sources, startOf(hooks.snapshot()).Source)
+		}
+		assert.Eq(t, []string{"startup", "resume"}, sources)
+	})
+}
+
+func TestGoferHookNoticeIsShownOnStderr(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	t.Setenv("SUAG_HOME", t.TempDir())
+	runner, _ := newCLITestRunner(t, &hookTestProvider{})
+	hooks := newFakeHookClient()
+	hooks.blockFirst = false
+	hooks.startNotice = "session taken over on web"
+	var stdout, stderr strings.Builder
+	assert.Require(t, assert.NoErr(t, runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader(":quit\n"), &stdout, &stderr, hooks)))
+	assert.StrContains(t, stderr.String(), "session taken over on web")
+	assert.StrNotContains(t, stdout.String(), "session taken over on web")
+}
+
+func TestGoferHooksCaptureStderrAsNotice(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a sh script as the fake gofer command")
+	}
+	script := filepath.Join(t.TempDir(), "fakegofer")
+	assert.Require(t, assert.NoErr(t, os.WriteFile(script, []byte("#!/bin/sh\ncat >/dev/null\necho 'taken over on web' >&2\n"), 0o755)))
+	h := &goferHooks{command: script, agent: "suag", timeout: 5 * time.Second, waitSec: 1}
+	resp := h.Call(context.Background(), goferHookEvent{Name: "UserPromptSubmit"})
+	assert.Eq(t, "taken over on web", resp.Notice)
 }
