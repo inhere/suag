@@ -102,3 +102,7 @@ gofer job resume <job-id> --prompt "从上次会话继续"
 `--read-only` 映射为 ACP `read_only` mode，写文件、命令与 MCP 工具不会加入可执行工具集合。默认 mode 中，写入/执行及未知 MCP 工具在执行前调用 Gofer `session/request_permission`；可用 `gofer job interactions <job-id>` 查看待答复请求，再用 `gofer job answer <job-id> <interaction-id> reject|allow` 处理。拒绝时工具不执行；允许仅作用于当前一次请求。
 
 2026-10-07 的 Gofer 实际作业已验证 CLI/ACP 续聊、ACP `job say/end/resume`、只读无写入及审批允许/拒绝；0.118.0 另以当前 `suag` agent 验证了 CLI 续接的环境继承与输出投影。模型响应由本机回环模拟服务提供；最终配置不含测试模型地址或测试 HOME，真实模型凭据路径须在运行环境中单独准备和验证。
+
+### ACP 用量上报
+
+每轮结束（含被取消的回合）发送 `usage_update`：`_meta` 的 `input_tokens`/`output_tokens`/`total_tokens`（及可选 `cache_read_tokens`/`cache_write_tokens`/`cost_usd`）和顶层 `cost.amount` 均为**会话累计值**；顶层 `used` 是最近一次模型请求的上下文 token 数，`size` 是模型上下文窗口。窗口取 `llm.context_window`（可选配置），否则按模型名取保守默认（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k），未知模型为 128k。会话累计保存在 ACP 进程内存，`session/load` 或重启后从 0 重新累计。

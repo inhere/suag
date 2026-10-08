@@ -26,6 +26,7 @@ type permissionHook struct {
 	cwd       string
 	readOnly  bool
 	sequence  uint64
+	usage     *turnUsage
 }
 
 // maxDiffBytes caps each side of a diff; larger files only report locations.

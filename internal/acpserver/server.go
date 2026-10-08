@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/coder/acp-go-sdk"
 	appconfig "github.com/inhere/suag/internal/config"
@@ -19,6 +20,9 @@ import (
 type Runtime struct {
 	Runner *personal.Runner
 	Close  func() error
+	// ContextWindow is the model context size in tokens; 0 uses the configured
+	// llm.context_window or a model-based default.
+	ContextWindow int
 }
 
 func (r Runtime) close() error {
@@ -36,6 +40,9 @@ type sessionState struct {
 	servers []appconfig.MCPServerSettings
 	mode    acp.SessionModeId
 	cancel  context.CancelFunc
+	// total and lastContext are guarded by Agent.mu; see recordUsage.
+	total       agentcore.Usage
+	lastContext int
 }
 
 // Agent owns ACP connection state; personal.Runner owns persisted conversation state.
@@ -180,7 +187,8 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		a.mu.Unlock()
 	}()
 
-	hook := &permissionHook{conn: a.connection(), sessionID: req.SessionId, cwd: cwd, readOnly: readOnly}
+	turn := &turnUsage{}
+	hook := &permissionHook{conn: a.connection(), sessionID: req.SessionId, cwd: cwd, readOnly: readOnly, usage: turn}
 	runtime, err := a.open(turnCtx, cwd, readOnly, servers, hook)
 	if err != nil {
 		return acp.PromptResponse{}, err
@@ -194,11 +202,21 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		return a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: acp.UpdateAgentMessageText(event.Text)})
 	}
 	result, runErr := runtime.Runner.Run(turnCtx, personal.RunRequest{SessionID: string(req.SessionId), Prompt: prompt, Emit: emit})
+	window := runtime.ContextWindow
 	closeErr := runtime.close()
-	if turnCtx.Err() != nil || errors.Is(runErr, context.Canceled) {
-		return acp.PromptResponse{StopReason: acp.StopReasonCancelled}, errors.Join(closeErr)
+	if window <= 0 {
+		window = appconfig.ReadContextWindow()
 	}
-	if err := a.sendTurnUpdates(ctx, req.SessionId, result); err != nil {
+	if turnCtx.Err() != nil || errors.Is(runErr, context.Canceled) {
+		// A cancelled turn still consumed tokens; report them before returning.
+		// The SDK cancels the request ctx on session/cancel, so detach from it
+		// (bounded) or the notification could never be written.
+		usageCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		usageErr := a.sendUsage(usageCtx, req.SessionId, state, turn, window)
+		stop()
+		return acp.PromptResponse{StopReason: acp.StopReasonCancelled}, errors.Join(closeErr, usageErr)
+	}
+	if err := a.sendTurnUpdates(ctx, req.SessionId, state, turn, window, result); err != nil {
 		return acp.PromptResponse{}, errors.Join(runErr, closeErr, err)
 	}
 	if errors.Is(runErr, ErrPermissionDenied) || errors.Is(runErr, ErrReadOnly) {
@@ -218,28 +236,19 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 	return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
 }
 
-// sendTurnUpdates reports the final turn usage and any complete task list in the model answer.
-func (a *Agent) sendTurnUpdates(ctx context.Context, id acp.SessionId, result personal.RunResult) error {
-	usage := result.Usage
-	update := acp.SessionUpdate{UsageUpdate: &acp.SessionUsageUpdate{
-		Used: usage.InputTokens,
-		Meta: map[string]any{
-			"input_tokens": usage.InputTokens, "output_tokens": usage.OutputTokens,
-			"total_tokens": usage.TotalTokens,
-		},
-	}}
-	if usage.CacheReadTokens != 0 {
-		update.UsageUpdate.Meta["cache_read_tokens"] = usage.CacheReadTokens
-	}
-	if usage.CacheWriteTokens != 0 {
-		update.UsageUpdate.Meta["cache_write_tokens"] = usage.CacheWriteTokens
-	}
-	if usage.CostUSD != 0 {
-		update.UsageUpdate.Meta["cost_usd"] = usage.CostUSD
-		update.UsageUpdate.Cost = &acp.Cost{Amount: usage.CostUSD, Currency: "USD"}
-	}
-	if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: update}); err != nil {
+// sendUsage reports session-cumulative usage after a turn (completed or cancelled).
+func (a *Agent) sendUsage(ctx context.Context, id acp.SessionId, state *sessionState, turn *turnUsage, window int) error {
+	total, used := state.recordUsage(a, turn)
+	if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: usageUpdate(total, used, window)}); err != nil {
 		return fmt.Errorf("send usage update: %w", err)
+	}
+	return nil
+}
+
+// sendTurnUpdates reports usage and any complete task list in the model answer.
+func (a *Agent) sendTurnUpdates(ctx context.Context, id acp.SessionId, state *sessionState, turn *turnUsage, window int, result personal.RunResult) error {
+	if err := a.sendUsage(ctx, id, state, turn, window); err != nil {
+		return err
 	}
 	if entries := planEntries(result.Output); len(entries) > 0 {
 		if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: acp.UpdatePlan(entries...)}); err != nil {

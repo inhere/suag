@@ -230,6 +230,9 @@ func TestPersonalACPEmitsUsagePlanAndEditDetails(t *testing.T) {
 	assert.Eq(t, float64(4), usage.Meta["cache_read_tokens"])
 	assert.Eq(t, float64(0.5), usage.Meta["cost_usd"])
 	assert.Eq(t, float64(0.5), usage.Cost.Amount)
+	// used is the last request's context (one step), not the two-step sum.
+	assert.Eq(t, 7, usage.Used)
+	assert.Gt(t, usage.Size, 0)
 }
 
 func TestToolDiffRejectsWorkspaceEscapeSymlink(t *testing.T) {
