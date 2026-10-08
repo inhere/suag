@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -150,7 +151,10 @@ func TestExportCommand(t *testing.T) {
 		assert.Eq(t, false, strings.Contains(string(b), `"arguments"`))
 		st, err := os.Stat(f)
 		assert.NoErr(t, err)
-		assert.Eq(t, os.FileMode(0), st.Mode().Perm()&0o077)
+		// Windows has no Unix permission bits (files report 0666), so only check elsewhere.
+		if runtime.GOOS != "windows" {
+			assert.Eq(t, os.FileMode(0), st.Mode().Perm()&0o077)
+		}
 	})
 	t.Run("unknown session", func(t *testing.T) {
 		_, err := runCLI(t, ctx, "export", "nope")
