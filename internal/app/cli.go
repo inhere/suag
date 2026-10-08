@@ -181,6 +181,15 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		_ = capabilities.Close()
 		return nil, fmt.Errorf("resolve run root: %w", err)
 	}
+	transcriptDir := ""
+	if transcriptsEnabled() {
+		home, err := appconfig.ResolveSuagHome()
+		if err != nil {
+			_ = capabilities.Close()
+			return nil, fmt.Errorf("resolve transcript root: %w", err)
+		}
+		transcriptDir = filepath.Join(home, "transcripts")
+	}
 	if err := prepareHostSessionDatabase(ctx, dbPath); err != nil {
 		_ = capabilities.Close()
 		return nil, err
@@ -208,6 +217,7 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		},
 		AppendSystemPrompt: appendSystemPrompt(opts.AppendSystemPrompt),
 		GoferJob:           os.Getenv("GOFER_JOB_ID") != "",
+		TranscriptDir:      transcriptDir,
 	})
 	if err != nil {
 		_ = repo.Close()

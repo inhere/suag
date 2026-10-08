@@ -88,6 +88,10 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	assert.Eq(t, true, strings.Contains(secondOut.String(), `"result":"reply-2"`))
 	assert.Eq(t, int32(2), requestCount.Load())
 	assert.Eq(t, []string{"flag-model", "environment-model"}, requestedModels)
+	transcript, err := os.ReadFile(filepath.Join(home, ".suag", "transcripts", "path-test.jsonl"))
+	assert.NoErr(t, err)
+	assert.Eq(t, true, strings.Contains(string(transcript), "hello"))
+	assert.Eq(t, true, strings.Contains(string(transcript), "reply-2"))
 
 	personalDB := filepath.Join(home, ".suag", "db", "suag.db")
 	_, err = os.Stat(personalDB)
@@ -265,8 +269,8 @@ func TestPersonalReadOnlyToolsCannotWrite(t *testing.T) {
 func TestPersonalChatReusesOneSession(t *testing.T) {
 	runner, repo := newCLITestRunner(t, mock.NewProvider(mock.Final("first"), mock.Final("second")))
 	var stdout, stderr bytes.Buffer
-	err := runPersonalChat(context.Background(), runner, personalOptions{OutputFormat: "text"},
-		strings.NewReader("Hello\nFollow up\n:quit\n"), &stdout, &stderr)
+	err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{OutputFormat: "text"},
+		strings.NewReader("Hello\nFollow up\n:quit\n"), &stdout, &stderr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

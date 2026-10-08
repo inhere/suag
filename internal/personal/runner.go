@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -29,6 +30,7 @@ type Config struct {
 	AppendSystemPrompt string
 	GoferJob           bool
 	Hooks              []agentcore.Hook
+	TranscriptDir      string
 	MaxSteps           int
 }
 
@@ -39,6 +41,7 @@ type Event struct {
 	TurnID    string
 	RunID     string
 	Text      string
+	ToolName  string
 	Status    agentcore.RunStatus
 	State     session.RunState
 }
@@ -50,6 +53,8 @@ type RunRequest struct {
 	CreateIfMissing bool
 	AgentID         string
 	Prompt          string
+	SystemContext   string
+	EmitToolResults bool
 	Emit            EmitFunc
 }
 
@@ -138,6 +143,24 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if model.Status == session.SessionArchived || model.Status == session.SessionRunning {
 		return RunResult{}, fmt.Errorf("session %q is not ready for a new turn: %s", model.SessionID, model.Status)
 	}
+	transcript := r.openTranscript(model.SessionID)
+	if transcript != nil {
+		defer func() {
+			if err := transcript.Close(); err != nil {
+				slog.Warn("close personal transcript", "session_id", model.SessionID, "err", err)
+			}
+		}()
+		if req.SystemContext != "" {
+			if err := transcript.AppendUser(req.SystemContext, true); err != nil {
+				slog.Warn("append personal transcript", "session_id", model.SessionID, "err", err)
+			}
+		}
+		if req.Prompt != "" {
+			if err := transcript.AppendUser(req.Prompt, strings.HasPrefix(req.Prompt, "[gofer web 回复] ")); err != nil {
+				slog.Warn("append personal transcript", "session_id", model.SessionID, "err", err)
+			}
+		}
+	}
 
 	storagePath := filepath.Join(r.cfg.RunRoot, model.SessionID, "runs.db")
 	storage, err := sqlite.NewStorage(storagePath)
@@ -160,6 +183,10 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		}
 	} else {
 		result.TurnID, result.RunID = session.NewTurnID(), session.NewRunID()
+	}
+	priorMessages, priorMessagesErr := storage.LoadMessages(ctx, result.RunID)
+	if priorMessagesErr != nil {
+		priorMessages = nil
 	}
 	history, err := r.completedHistory(ctx, storage, model.SessionID, result.RunID)
 	if err != nil {
@@ -225,13 +252,17 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			Text:      update.Delta,
 		})
 	}
+	runtimeHooks := append([]agentcore.Hook(nil), r.cfg.Hooks...)
+	if req.Emit != nil && req.EmitToolResults {
+		runtimeHooks = append(runtimeHooks, toolResultEmitHook{sink: req.Emit, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
+	}
 	runtime := agentcore.New(agentcore.Config{
 		Provider:       r.cfg.Provider,
 		Storage:        storage,
 		Tools:          r.cfg.Tools,
 		PromptBuilder:  rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Metadata, goferJob: r.cfg.GoferJob},
-		ContextBuilder: historyContext{previous: history, update: rulesUpdate},
-		Hooks:          r.cfg.Hooks,
+		ContextBuilder: historyContext{previous: history, update: joinContext(rulesUpdate, req.SystemContext)},
+		Hooks:          runtimeHooks,
 		MaxSteps:       r.cfg.MaxSteps,
 	})
 	coreResult, runErr := runtime.Run(ctx, agentcore.RunInput{
@@ -241,7 +272,67 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		ResumeMode:  resumeMode,
 		Stream:      stream,
 	})
+	if messages, err := storage.LoadMessages(context.WithoutCancel(ctx), result.RunID); err != nil {
+		slog.Warn("read personal run transcript", "session_id", model.SessionID, "err", err)
+	} else {
+		for _, message := range messages[min(len(priorMessages), len(messages)):] {
+			if message.ToolResult == nil {
+				continue
+			}
+			toolName := message.ToolResult.Name
+			if transcript != nil {
+				if err := transcript.AppendTool(toolName, message.ToolResult.Content); err != nil {
+					slog.Warn("append personal transcript", "session_id", model.SessionID, "err", err)
+				}
+			}
+		}
+	}
+	if coreResult != nil && transcript != nil {
+		if err := transcript.AppendAssistant(coreResult.Output); err != nil {
+			slog.Warn("append personal transcript", "session_id", model.SessionID, "err", err)
+		}
+	}
 	return r.finish(ctx, model, result, agentID, coreResult, runErr, req.Emit)
+}
+
+type toolResultEmitHook struct {
+	agentcore.NopHook
+	sink      EmitFunc
+	sessionID string
+	turnID    string
+	runID     string
+}
+
+func (h toolResultEmitHook) AfterTool(ctx context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
+	if event == nil || event.Result == nil {
+		return nil
+	}
+	return emit(ctx, h.sink, Event{
+		Kind: "tool_result", SessionID: h.sessionID, TurnID: h.turnID, RunID: h.runID,
+		ToolName: event.Result.Name, Text: event.Result.Content,
+	})
+}
+
+func (r *Runner) openTranscript(sessionID string) *Transcript {
+	if r.cfg.TranscriptDir == "" {
+		return nil
+	}
+	transcript, err := OpenTranscript(r.cfg.TranscriptDir, sessionID)
+	if err != nil {
+		slog.Warn("open personal transcript", "session_id", sessionID, "err", err)
+		return nil
+	}
+	return transcript
+}
+
+func joinContext(first, second string) string {
+	if first == "" {
+		return second
+	}
+	if second == "" {
+		return first
+	}
+	return first + "\n\n" + second
 }
 
 func (r *Runner) findSession(ctx context.Context, req RunRequest) (session.Session, error) {

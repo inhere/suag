@@ -2,8 +2,10 @@ package personal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,9 +14,78 @@ import (
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/internal/data/testutil"
 	"github.com/inhere/suag/internal/host/session"
+	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/mock"
 	"github.com/inhere/suag/pkg/agentcore/storage/sqlite"
 )
+
+func TestRunnerWritesResumedTurnsAndToolSummariesToTranscript(t *testing.T) {
+	ctx := context.Background()
+	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
+	repo, err := session.NewSQLiteRepository(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	root := t.TempDir()
+	registry := tools.NewRegistry()
+	registry.Register(transcriptTool{})
+	runner, err := New(Config{
+		Repository: repo,
+		RunRoot:    filepath.Join(t.TempDir(), "runs"),
+		Provider: mock.NewProvider(
+			mock.ToolCall("call-1", "shell_exec", map[string]any{"command": "echo safe"}),
+			mock.Final("first answer"),
+			mock.Final("resumed answer"),
+		),
+		Tools: registry, TranscriptDir: root,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := runner.Run(ctx, RunRequest{Prompt: "run tool"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.Run(ctx, RunRequest{SessionID: first.SessionID, Prompt: "resume"}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, first.SessionID+".jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, entry)
+	}
+	if len(entries) != 5 {
+		t.Fatalf("expected user/tool/assistant for both turns, got %#v", entries)
+	}
+	if entries[1]["type"] != "tool" || entries[1]["name"] != "shell_exec" || strings.Contains(entries[1]["summary"].(string), "canary-credential-4a2b") {
+		t.Fatalf("tool summary was not redacted: %#v", entries[1])
+	}
+	if entries[4]["type"] != "assistant" || entries[4]["text"] != "resumed answer" {
+		t.Fatalf("resumed turn was not appended: %#v", entries[4])
+	}
+}
+
+type transcriptTool struct{}
+
+func (transcriptTool) Name() string        { return "shell_exec" }
+func (transcriptTool) Description() string { return "test shell tool" }
+func (transcriptTool) Schema() agentcore.ToolSchema {
+	return agentcore.ToolSchema{Name: "shell_exec"}
+}
+func (transcriptTool) Kind() tools.Kind { return tools.KindNative }
+func (transcriptTool) Execute(context.Context, agentcore.ToolCall) (*agentcore.ToolResult, error) {
+	return &agentcore.ToolResult{Name: "shell_exec", Content: `Authorization: Bearer canary-credential-4a2b {"api_key":"canary-credential-4a2b"}`}, nil
+}
 
 type recallProvider struct{ requests [][]agentcore.Message }
 
