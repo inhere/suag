@@ -5,6 +5,7 @@ package process
 import (
 	"errors"
 	"math"
+	"os"
 	"syscall"
 )
 
@@ -20,3 +21,10 @@ func processExists(pid int) bool {
 }
 
 func validateSocketPath(string) error { return nil }
+
+// secureDir limits dir to the owner. Best effort, like the original chmod: a directory we
+// cannot chmod (not ours) is left as is.
+func secureDir(dir string) error {
+	_ = os.Chmod(dir, 0o700)
+	return nil
+}

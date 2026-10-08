@@ -39,7 +39,10 @@ func AcquireSessionLockContext(ctx context.Context, root, sessionID string, wait
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
-	_ = os.Chmod(root, 0o700)
+	// Restrict the directory to the current user (0700 on Unix, a protected DACL on Windows).
+	if err := secureDir(root); err != nil {
+		return nil, fmt.Errorf("secure %s: %w", root, err)
+	}
 	name := strings.NewReplacer("/", "_", "\\", "_").Replace(sessionID)
 	path := filepath.Join(root, name+".lock")
 	host, _ := os.Hostname()

@@ -61,7 +61,10 @@ func Start(root, sessionID, name, cwd string, deliver DeliverFunc) (*Server, err
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
-	_ = os.Chmod(root, 0o700)
+	// Restrict the directory to the current user (0700 on Unix, a protected DACL on Windows).
+	if err := secureDir(root); err != nil {
+		return nil, fmt.Errorf("secure %s: %w", root, err)
+	}
 	pid := os.Getpid()
 	socket := filepath.Join(root, fmt.Sprintf("%d.sock", pid))
 	if err := validateSocketPath(socket); err != nil {
