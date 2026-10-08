@@ -232,6 +232,60 @@ func TestPersonalACPEmitsUsagePlanAndEditDetails(t *testing.T) {
 	assert.Eq(t, float64(0.5), usage.Cost.Amount)
 }
 
+func TestToolDiffRejectsWorkspaceEscapeSymlink(t *testing.T) {
+	workspace := t.TempDir()
+	outside := t.TempDir()
+	outsideFile := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(outsideFile, []byte("outside old contents\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(workspace, "linked.txt")
+	if err := os.Symlink(outsideFile, link); err != nil {
+		t.Skipf("cannot create symlink on this platform: %v", err)
+	}
+
+	locations := toolLocations(workspace, map[string]any{"path": "linked.txt"})
+	diff := toolDiff(workspace, acp.ToolKindEdit, locations, map[string]any{"content": "replacement\n"})
+	if len(diff) != 0 {
+		t.Fatalf("workspace escape symlink produced diff: %+v", diff)
+	}
+}
+
+func TestToolDiffKeepsNewFileDiff(t *testing.T) {
+	workspace := t.TempDir()
+	locations := toolLocations(workspace, map[string]any{"path": "new.txt"})
+	diff := toolDiff(workspace, acp.ToolKindEdit, locations, map[string]any{"content": "new contents\n"})
+	if len(diff) != 1 || diff[0].Diff == nil {
+		t.Fatalf("new file diff = %+v", diff)
+	}
+	if diff[0].Diff.OldText != nil {
+		t.Fatalf("new file old text = %q, want nil", *diff[0].Diff.OldText)
+	}
+	assert.Eq(t, "new contents\n", diff[0].Diff.NewText)
+}
+
+func TestToolDiffSupportsSymlinkedWorkspaceRoot(t *testing.T) {
+	realWorkspace := t.TempDir()
+	path := filepath.Join(realWorkspace, "existing.txt")
+	if err := os.WriteFile(path, []byte("existing contents\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	workspaceLink := filepath.Join(t.TempDir(), "workspace")
+	if err := os.Symlink(realWorkspace, workspaceLink); err != nil {
+		t.Skipf("cannot create workspace symlink on this platform: %v", err)
+	}
+
+	locations := toolLocations(workspaceLink, map[string]any{"path": "existing.txt"})
+	diff := toolDiff(workspaceLink, acp.ToolKindEdit, locations, map[string]any{"content": "replacement\n"})
+	if len(diff) != 1 || diff[0].Diff == nil {
+		t.Fatalf("symlinked workspace diff = %+v", diff)
+	}
+	if diff[0].Diff.OldText == nil {
+		t.Fatal("symlinked workspace old text = nil, want existing contents")
+	}
+	assert.Eq(t, "existing contents\n", *diff[0].Diff.OldText)
+}
+
 func TestACPToolKinds(t *testing.T) {
 	for _, tc := range []struct {
 		name string

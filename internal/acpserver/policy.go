@@ -165,9 +165,33 @@ func toolDiff(cwd string, kind acp.ToolKind, locations []acp.ToolCallLocation, a
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return nil
 	}
+	root, err := os.OpenRoot(cwd)
+	if err != nil {
+		return nil
+	}
+	defer root.Close()
+
 	var oldText *string
-	if before, err := os.ReadFile(locations[0].Path); err == nil {
+	if before, err := root.ReadFile(rel); err == nil {
 		oldText = acp.Ptr(string(before))
+	} else {
+		// Only a genuinely absent file can produce a new-file diff. Rooted reads
+		// reject symlinks that escape cwd; inspect the missing leaf through its
+		// rooted parent so a dangling or external symlink also fails closed.
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if _, err := root.Lstat(rel); err == nil || !errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		parent, err := root.OpenRoot(filepath.Dir(rel))
+		if err != nil {
+			return nil
+		}
+		defer parent.Close()
+		if _, err := parent.Lstat(filepath.Base(rel)); err == nil || !errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
 	}
 	return []acp.ToolCallContent{{Diff: &acp.ToolCallContentDiff{Type: "diff", Path: locations[0].Path, OldText: oldText, NewText: newText}}}
 }
