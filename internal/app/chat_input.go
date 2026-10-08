@@ -26,12 +26,17 @@ type chatInputRequest struct{ prompt string }
 // chatInputSource reads exactly one prompt per request and signals its first byte before
 // forwarding it to the line editor, so callers can interrupt a waiting Stop hook first.
 type chatInputSource struct {
-	ctx        context.Context
-	cancel     context.CancelFunc
-	input      io.Reader
-	output     io.Writer
-	ttyFile    *os.File
-	rawState   *term.State // non-nil only while a line is being edited in raw mode (guarded by mu)
+	ctx    context.Context
+	cancel context.CancelFunc
+	input  io.Reader
+	output io.Writer
+	// makeRaw switches the tty to raw mode and returns the restore func; injectable so tests
+	// need no real tty. nil when input is not a terminal.
+	makeRaw    func() (restore func() error, err error)
+	restoreRaw func() error // non-nil only while the tty is raw (guarded by mu)
+	// turnActive is true from SetBusy(true) until the next Request: while set the tty must stay
+	// cooked so Ctrl-C raises SIGINT, even if a line read started earlier is still blocked.
+	turnActive bool
 	terminal   *term.Terminal
 	requests   chan chatInputRequest
 	events     chan chatInputEvent
@@ -54,7 +59,13 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 	if file, ok := input.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
 		// Raw mode is entered per line in readLine, not here: during model/tool execution the
 		// terminal must stay cooked so Ctrl-C raises SIGINT and stderr keeps CR translation.
-		source.ttyFile = file
+		source.makeRaw = func() (func() error, error) {
+			state, err := term.MakeRaw(int(file.Fd()))
+			if err != nil {
+				return nil, err
+			}
+			return func() error { return term.Restore(int(file.Fd()), state) }, nil
+		}
 		source.reader = &chatActivityReader{source: source, input: input}
 		terminalIO := &chatTerminalIO{reader: source.reader, output: source.output}
 		source.terminal = term.NewTerminal(terminalIO, "")
@@ -109,16 +120,28 @@ func (s *chatInputSource) isBusy() bool {
 	return s.busy
 }
 
+// SetBusy marks a turn start/end. Starting a turn forces the tty back to cooked mode even when a
+// line read begun earlier is still blocked (a gofer/send delivery can start a turn while the
+// prompt is waiting); otherwise Ctrl-C would arrive as byte 0x03 and never interrupt the turn.
 func (s *chatInputSource) SetBusy(busy bool) {
 	s.mu.Lock()
 	s.busy = busy
+	if busy {
+		s.turnActive = true
+		_ = s.leaveRawLocked()
+	}
 	s.mu.Unlock()
 }
 
 func (s *chatInputSource) Request(prompt string) bool {
 	s.mu.Lock()
+	// Back at a prompt: raw mode is allowed again. If a read from before the turn is still
+	// blocked it continues as this prompt's read, so switch to raw for it right here.
+	s.turnActive = false
 	if s.pending {
+		err := s.enterRawLocked()
 		s.mu.Unlock()
+		_ = err // best effort: the pending read still works in cooked mode
 		return true
 	}
 	s.pending = true
@@ -158,22 +181,31 @@ func (s *chatInputSource) Write(p []byte) (int, error) {
 
 func (s *chatInputSource) Close() error {
 	s.cancel()
-	// The reader goroutine may still be blocked inside a raw-mode line edit; restore for it.
-	return s.leaveRaw()
+	// The reader goroutine may still be blocked inside a raw-mode line edit; restore for it and
+	// keep it cooked from now on.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.turnActive = true
+	return s.leaveRawLocked()
 }
 
-// enterRaw switches the tty to raw mode for line editing (no-op if already raw).
+// enterRaw switches the tty to raw mode for line editing (no-op if already raw, or while a turn
+// is running, when the terminal must stay cooked).
 func (s *chatInputSource) enterRaw() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.rawState != nil {
+	return s.enterRawLocked()
+}
+
+func (s *chatInputSource) enterRawLocked() error {
+	if s.restoreRaw != nil || s.turnActive || s.makeRaw == nil {
 		return nil
 	}
-	state, err := term.MakeRaw(int(s.ttyFile.Fd()))
+	restore, err := s.makeRaw()
 	if err != nil {
 		return fmt.Errorf("enable terminal input editing: %w", err)
 	}
-	s.rawState = state
+	s.restoreRaw = restore
 	return nil
 }
 
@@ -181,11 +213,15 @@ func (s *chatInputSource) enterRaw() error {
 func (s *chatInputSource) leaveRaw() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.rawState == nil {
+	return s.leaveRawLocked()
+}
+
+func (s *chatInputSource) leaveRawLocked() error {
+	if s.restoreRaw == nil {
 		return nil
 	}
-	err := term.Restore(int(s.ttyFile.Fd()), s.rawState)
-	s.rawState = nil
+	err := s.restoreRaw()
+	s.restoreRaw = nil
 	return err
 }
 
