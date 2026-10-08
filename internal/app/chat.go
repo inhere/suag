@@ -122,6 +122,11 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 	// It is folded into the next turn's context; if the chat ends first, warn on stderr.
 	var lostReply string
 	defer func() {
+		// Messages queued by `suag send`/gofer that never became a turn: fail their senders
+		// (exit 3 for `send --wait` style callers) and tell the person how many were dropped.
+		if n := inputSource.DiscardQueued(); n > 0 {
+			fmt.Fprintf(stderr, "Warning: %d queued message(s) were discarded on exit and not run.\n", n)
+		}
 		if waiting != nil {
 			lostReply = appendContext(lostReply, waiting.Interrupt(context.Background()))
 		}
@@ -260,7 +265,7 @@ func startChatProcessRegistration(sessionID, processRoot string, runner *persona
 		return nil, err
 	}
 	cwd, _ := os.Getwd()
-	return personalprocess.Start(processRoot, sessionID, model.Title, cwd, input.Deliver)
+	return personalprocess.StartWait(processRoot, sessionID, model.Title, cwd, input.DeliverWait)
 }
 
 func ensureTranscriptFile(path, sessionID string) {
@@ -305,6 +310,7 @@ func nextChatInput(ctx context.Context, source *chatInputSource, waiting chatHoo
 				interrupted = true
 			}
 			fmt.Fprintln(source, delivery.line)
+			delivery.settle(nil)
 			return delivery.line, true, nil, false, true, interrupted
 		default:
 		}
@@ -334,6 +340,7 @@ func nextChatInput(ctx context.Context, source *chatInputSource, waiting chatHoo
 				interrupted = true
 			}
 			fmt.Fprintln(source, delivery.line)
+			delivery.settle(nil)
 			return delivery.line, true, nil, false, delivery.injected, interrupted
 		case <-ctx.Done():
 			return "", false, ctx.Err(), false, false, interrupted

@@ -19,6 +19,20 @@ type chatInputEvent struct {
 	line     string
 	err      error
 	injected bool
+	// settled (deliveries only) reports the final fate of a queued delivery: nil once it starts
+	// a turn, an error if it is discarded at exit. Buffered(1); nil when nobody waits.
+	settled chan error
+}
+
+// settle reports the delivery's final fate to a waiting sender; never blocks.
+func (e chatInputEvent) settle(err error) {
+	if e.settled == nil {
+		return
+	}
+	select {
+	case e.settled <- err:
+	default:
+	}
 }
 
 type chatInputRequest struct{ prompt string }
@@ -37,6 +51,7 @@ type chatInputSource struct {
 	// turnActive is true from SetBusy(true) until the next Request: while set the tty must stay
 	// cooked so Ctrl-C raises SIGINT, even if a line read started earlier is still blocked.
 	turnActive bool
+	closed     bool // set by DiscardQueued/Close: deliveries are refused afterwards (guarded by mu)
 	terminal   *term.Terminal
 	requests   chan chatInputRequest
 	events     chan chatInputEvent
@@ -75,8 +90,15 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 }
 
 func (s *chatInputSource) Deliver(text, from string) (bool, error) {
+	queued, _, err := s.DeliverWait(text, from)
+	return queued, err
+}
+
+// DeliverWait enqueues a message for the chat loop. settled yields nil once the message starts
+// a turn, or process.ErrDiscarded if the chat exits while it is still queued.
+func (s *chatInputSource) DeliverWait(text, from string) (bool, <-chan error, error) {
 	if strings.TrimSpace(text) == "" {
-		return false, fmt.Errorf("delivery text is empty")
+		return false, nil, fmt.Errorf("delivery text is empty")
 	}
 	from = safeSender(from)
 	prefix := "[来自 " + from + "] "
@@ -86,13 +108,38 @@ func (s *chatInputSource) Deliver(text, from string) (bool, error) {
 	if strings.HasPrefix(text, goferReplyPrefix) || strings.HasPrefix(text, "[来自 ") {
 		prefix = ""
 	}
-	queued := s.isBusy() || len(s.deliveries) > 0
-	event := chatInputEvent{line: prefix + text, injected: true}
+	settled := make(chan error, 1)
+	event := chatInputEvent{line: prefix + text, injected: true, settled: settled}
+	// Hold mu across the closed check and the enqueue so DiscardQueued cannot miss a delivery.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return false, nil, process.ErrSessionClosed
+	}
+	queued := s.busy || len(s.deliveries) > 0
 	select {
 	case s.deliveries <- event:
-		return queued, nil
+		return queued, settled, nil
 	default:
-		return true, process.ErrQueueFull
+		return true, nil, process.ErrQueueFull
+	}
+}
+
+// DiscardQueued refuses further deliveries and fails every message still queued (its sender,
+// if waiting, learns it was not delivered). It returns how many were dropped.
+func (s *chatInputSource) DiscardQueued() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+	n := 0
+	for {
+		select {
+		case event := <-s.deliveries:
+			event.settle(process.ErrDiscarded)
+			n++
+		default:
+			return n
+		}
 	}
 }
 
@@ -186,6 +233,7 @@ func (s *chatInputSource) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.turnActive = true
+	s.closed = true
 	return s.leaveRawLocked()
 }
 

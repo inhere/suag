@@ -2,7 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
+	"github.com/inhere/suag/internal/personal/process"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -116,4 +119,22 @@ func TestChatInputSource_RawModeFollowsTurns(t *testing.T) {
 		assert.NoErr(t, source.enterRaw())
 		assert.False(t, tty.isRaw())
 	})
+}
+
+func TestChatInputSource_DiscardQueued(t *testing.T) {
+	source, err := newChatInputSource(context.Background(), strings.NewReader(""), io.Discard)
+	assert.Require(t, assert.NoErr(t, err))
+	t.Cleanup(func() { _ = source.Close() })
+	_, first, err := source.DeliverWait("one", "cli")
+	assert.NoErr(t, err)
+	_, second, err := source.DeliverWait("two", "cli")
+	assert.NoErr(t, err)
+
+	assert.Eq(t, 2, source.DiscardQueued())
+	assert.True(t, errors.Is(<-first, process.ErrDiscarded))
+	assert.True(t, errors.Is(<-second, process.ErrDiscarded))
+	assert.Eq(t, 0, source.DiscardQueued())
+
+	_, _, err = source.DeliverWait("late", "cli")
+	assert.True(t, errors.Is(err, process.ErrSessionClosed))
 }

@@ -36,6 +36,9 @@ type Request struct {
 	SessionID string `json:"session_id,omitempty"`
 	Text      string `json:"text,omitempty"`
 	From      string `json:"from,omitempty"`
+	// Wait asks the server to keep the connection open after a "queued" acknowledgement and send
+	// a second Response once the message starts a turn (OK) or is discarded at exit (Error).
+	Wait bool `json:"wait,omitempty"`
 }
 
 type Response struct {
@@ -46,15 +49,40 @@ type Response struct {
 
 type DeliverFunc func(text, from string) (queued bool, err error)
 
+// DeliverWaitFunc is a DeliverFunc that can also report the final fate of a queued message:
+// settled (may be nil) yields nil once the message starts a turn, or an error if it is discarded.
+type DeliverWaitFunc func(text, from string) (queued bool, settled <-chan error, err error)
+
+// Error codes of the final Response sent to a waiting sender whose queued message was not run.
+const (
+	codeDiscarded     = "discarded"
+	codeSessionClosed = "session_closed"
+)
+
+// ErrSessionClosed is returned by a deliver func that no longer accepts messages (chat is exiting).
+var ErrSessionClosed = errors.New("session is closing")
+
+// ErrDiscarded is the error a deliver func reports on a settled channel for a queued message dropped at exit.
+var ErrDiscarded = errors.New("queued message discarded at exit")
+
 type Server struct {
 	root     string
 	mu       sync.RWMutex
 	record   Record
 	listener net.Listener
 	done     chan struct{}
+	closing  chan struct{} // closed by Close so connections waiting on a queued message end promptly
+	closeOne sync.Once
 }
 
 func Start(root, sessionID, name, cwd string, deliver DeliverFunc) (*Server, error) {
+	return StartWait(root, sessionID, name, cwd, func(text, from string) (bool, <-chan error, error) {
+		queued, err := deliver(text, from)
+		return queued, nil, err
+	})
+}
+
+func StartWait(root, sessionID, name, cwd string, deliver DeliverWaitFunc) (*Server, error) {
 	if strings.TrimSpace(root) == "" || strings.TrimSpace(sessionID) == "" {
 		return nil, fmt.Errorf("process registration requires root and session ID")
 	}
@@ -91,7 +119,7 @@ func Start(root, sessionID, name, cwd string, deliver DeliverFunc) (*Server, err
 	_ = os.Chmod(socket, 0o600)
 	host, _ := os.Hostname()
 	record := Record{PID: pid, SessionID: sessionID, Name: name, CWD: cwd, Kind: "chat", Socket: socket, StartedAt: time.Now().UTC(), ProcStart: procStart, Host: host, State: "idle"}
-	server := &Server{root: root, record: record, listener: listener, done: make(chan struct{})}
+	server := &Server{root: root, record: record, listener: listener, done: make(chan struct{}), closing: make(chan struct{})}
 	if err := server.writeRecord(); err != nil {
 		_ = listener.Close()
 		_ = os.Remove(socket)
@@ -142,6 +170,7 @@ func (s *Server) Close() error {
 	if s == nil {
 		return nil
 	}
+	s.closeOne.Do(func() { close(s.closing) })
 	err := s.listener.Close()
 	<-s.done
 	_ = os.Remove(filepath.Join(s.root, fmt.Sprintf("%d.json", s.record.PID)))
@@ -161,7 +190,7 @@ func (s *Server) writeRecord() error {
 	return os.Rename(tmp, filepath.Join(s.root, fmt.Sprintf("%d.json", s.record.PID)))
 }
 
-func (s *Server) serve(deliver DeliverFunc) {
+func (s *Server) serve(deliver DeliverWaitFunc) {
 	defer close(s.done)
 	for {
 		conn, err := s.listener.Accept()
@@ -172,7 +201,7 @@ func (s *Server) serve(deliver DeliverFunc) {
 	}
 }
 
-func (s *Server) handle(conn net.Conn, deliver DeliverFunc) {
+func (s *Server) handle(conn net.Conn, deliver DeliverWaitFunc) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	var request Request
@@ -192,16 +221,35 @@ func (s *Server) handle(conn net.Conn, deliver DeliverFunc) {
 		_ = json.NewEncoder(conn).Encode(Response{Error: "delivery_unavailable"})
 		return
 	}
-	queued, err := deliver(request.Text, request.From)
+	queued, settled, err := deliver(request.Text, request.From)
 	if err != nil {
 		code := "delivery_failed"
 		if errors.Is(err, ErrQueueFull) {
 			code = "queue_full"
+		} else if errors.Is(err, ErrSessionClosed) {
+			code = codeSessionClosed
 		}
 		_ = json.NewEncoder(conn).Encode(Response{Error: code})
 		return
 	}
-	_ = json.NewEncoder(conn).Encode(Response{OK: true, Queued: queued})
+	encoder := json.NewEncoder(conn)
+	_ = encoder.Encode(Response{OK: true, Queued: queued})
+	if !request.Wait || !queued || settled == nil {
+		return
+	}
+	// Two-phase reply: the sender already has the "queued" ack; keep the connection open (no
+	// deadline, the wait is as long as the current turn) and report whether the message ran.
+	_ = conn.SetDeadline(time.Time{})
+	select {
+	case err := <-settled:
+		if err == nil {
+			_ = encoder.Encode(Response{OK: true, Queued: true})
+		} else {
+			_ = encoder.Encode(Response{Queued: true, Error: codeDiscarded})
+		}
+	case <-s.closing:
+		_ = encoder.Encode(Response{Queued: true, Error: codeSessionClosed})
+	}
 }
 
 var ErrQueueFull = errors.New("delivery queue is full")
@@ -260,17 +308,36 @@ func Send(record Record, request Request) (Response, error) {
 	if err := json.NewEncoder(conn).Encode(request); err != nil {
 		return Response{}, err
 	}
+	decoder := json.NewDecoder(conn)
 	var response Response
-	if err := json.NewDecoder(conn).Decode(&response); err != nil {
+	if err := decoder.Decode(&response); err != nil {
 		return Response{}, err
 	}
 	if response.Error == "queue_full" {
 		return response, ErrQueueFull
 	}
+	if response.Error == codeSessionClosed {
+		return response, ErrNotOnline
+	}
 	if !response.OK {
 		return response, fmt.Errorf("delivery failed: %s", response.Error)
 	}
-	return response, nil
+	if !request.Wait || !response.Queued {
+		return response, nil
+	}
+	// Wait for the final fate of the queued message. A dropped connection means the chat died.
+	_ = conn.SetDeadline(time.Time{})
+	var final Response
+	if err := decoder.Decode(&final); err != nil {
+		return response, fmt.Errorf("%w: connection closed before the queued message ran", ErrNotOnline)
+	}
+	if final.Error == codeDiscarded || final.Error == codeSessionClosed {
+		return final, fmt.Errorf("%w: queued message was discarded when the chat exited", ErrNotOnline)
+	}
+	if !final.OK {
+		return final, fmt.Errorf("delivery failed: %s", final.Error)
+	}
+	return final, nil
 }
 
 var ErrNotOnline = errors.New("session process is not online")
