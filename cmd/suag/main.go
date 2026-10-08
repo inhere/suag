@@ -123,6 +123,7 @@ func newCLI(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) *cap
 	ps.SetOutput(stderr)
 	ps.BoolVar(&psJSON, "json", false, "write machine-readable JSON")
 	var sendSession, sendText string
+	var sendWait bool
 	send := capp.NewCmd("send", "Send text to a local Suag chat process", func(c *capp.Cmd) error {
 		if len(c.RemainArgs()) != 0 {
 			return fmt.Errorf("suag send does not accept arguments")
@@ -160,14 +161,17 @@ func newCLI(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) *cap
 		if err != nil {
 			return err
 		}
-		response, err := personalprocess.Send(record, personalprocess.Request{Text: text, From: "cli"})
+		// --wait keeps the connection until a queued message actually starts a turn (or is
+		// discarded, exit 3). Without it "queued" returns at once, so a Gofer deliver
+		// job never blocks for the length of the chat's current turn.
+		response, err := personalprocess.Send(record, personalprocess.Request{Text: text, From: "cli", Wait: sendWait})
 		if errors.Is(err, personalprocess.ErrNotOnline) {
 			return processExitError{code: 3, err: err}
 		}
 		if err != nil {
 			return err
 		}
-		if response.Queued {
+		if response.Queued && !sendWait {
 			fmt.Fprintln(stderr, "queued")
 		} else {
 			fmt.Fprintln(stderr, "delivered")
@@ -177,6 +181,7 @@ func newCLI(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) *cap
 	send.SetOutput(stderr)
 	send.StringVar(&sendSession, "session", "", "session ID, prefix, or name")
 	send.StringVar(&sendText, "text", "", "message text; defaults to stdin")
+	send.BoolVar(&sendWait, "wait", false, "wait until a queued message starts a turn; exit 3 if it is discarded")
 	cli.Add(
 		app.NewPersonalCommand(ctx, "run", stdin, stdout, stderr),
 		app.NewPersonalCommand(ctx, "chat", stdin, stdout, stderr),

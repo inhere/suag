@@ -126,6 +126,43 @@ func TestVersionCommandWritesOneLine(t *testing.T) {
 	assert.Eq(t, "", stderr.String())
 }
 
+func TestSendWaitReportsQueuedFate(t *testing.T) {
+	start := func(t *testing.T, sessionID string, settled chan error) {
+		t.Helper()
+		home := shortCLIHome(t)
+		t.Setenv("SUAG_HOME", home)
+		server, err := process.StartWait(filepath.Join(home, "run"), sessionID, "wait", t.TempDir(), func(text, from string) (bool, <-chan error, error) {
+			return true, settled, nil
+		})
+		assert.Require(t, assert.NoErr(t, err))
+		t.Cleanup(func() { _ = server.Close() })
+	}
+	t.Run("discarded message exits 3", func(t *testing.T) {
+		settled := make(chan error, 1)
+		settled <- process.ErrDiscarded
+		start(t, "session-wait-a", settled)
+		var stdout, stderr bytes.Buffer
+		err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"send", "--session", "session-wait-a", "--text", "hi", "--wait"})
+		assert.Eq(t, 3, commandExitCode(err))
+	})
+	t.Run("started message reports delivered", func(t *testing.T) {
+		settled := make(chan error, 1)
+		settled <- nil
+		start(t, "session-wait-b", settled)
+		var stdout, stderr bytes.Buffer
+		err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"send", "--session", "session-wait-b", "--text", "hi", "--wait"})
+		assert.NoErr(t, err)
+		assert.Eq(t, "delivered\n", stderr.String())
+	})
+	t.Run("without wait a queued message returns at once", func(t *testing.T) {
+		start(t, "session-wait-c", make(chan error))
+		var stdout, stderr bytes.Buffer
+		err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"send", "--session", "session-wait-c", "--text", "hi"})
+		assert.NoErr(t, err)
+		assert.Eq(t, "queued\n", stderr.String())
+	})
+}
+
 func TestSendRejectsOversizeStdinInsteadOfTruncating(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	big := strings.NewReader(strings.Repeat("a", maxSendStdinBytes+1))
