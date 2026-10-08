@@ -58,6 +58,7 @@ type RunRequest struct {
 	AgentID         string
 	Prompt          string
 	SystemContext   string
+	Injected        bool
 	EmitToolResults bool
 	Emit            EmitFunc
 }
@@ -226,7 +227,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			}
 		}
 		if req.Prompt != "" {
-			if err := transcript.AppendUser(req.Prompt, strings.HasPrefix(req.Prompt, "[gofer web 回复] ")); err != nil {
+			injected := req.Injected || strings.HasPrefix(req.Prompt, "[gofer web 回复] ")
+			if err := transcript.AppendUser(req.Prompt, injected); err != nil {
 				slog.Warn("append personal transcript", "session_id", model.SessionID, "err", err)
 			}
 		}

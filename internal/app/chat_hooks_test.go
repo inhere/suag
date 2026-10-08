@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -354,6 +355,96 @@ func TestEmptyChatRegistersRealSessionThenUpdatesTitleOnFirstPrompt(t *testing.T
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestChatProcessDeliveryTranscriptIsInjectedAndTerminalPromptIsNot(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	suagHome := shortTestHome(t)
+	t.Setenv("SUAG_HOME", suagHome)
+	repo, err := session.NewSQLiteRepository(testutil.NewMigratedSQLitePath(t, "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	processRoot := filepath.Join(suagHome, "run")
+	provider := &hookTestProvider{}
+	runner, err := personal.New(personal.Config{
+		Repository: repo, RunRoot: filepath.Join(t.TempDir(), "runs"), Provider: provider,
+		TranscriptDir: filepath.Join(suagHome, "transcripts"),
+		LockRoot:      filepath.Join(processRoot, "locks"), ProcessRoot: processRoot,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, writer := io.Pipe()
+	var stdout, stderr strings.Builder
+	done := make(chan error, 1)
+	go func() {
+		done <- runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, reader, &stdout, &stderr, nil)
+	}()
+	record := waitForProcessRecord(t, processRoot)
+	if response, err := personalprocess.Send(record, personalprocess.Request{Text: "S6_QUEUE_1", From: "cli"}); err != nil || response.Queued {
+		t.Fatalf("idle process delivery should be immediate: response=%#v err=%v", response, err)
+	}
+	waitProviderCalls(t, provider, 1)
+	if _, err := io.WriteString(writer, "ordinary terminal prompt\n"); err != nil {
+		t.Fatal(err)
+	}
+	waitProviderCalls(t, provider, 2)
+	if _, err := io.WriteString(writer, ":quit\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = writer.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(suagHome, "transcripts", record.SessionID+".jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatal(err)
+		}
+		if entry["type"] == "user" {
+			entries = append(entries, entry)
+		}
+	}
+	if len(entries) != 2 || entries[0]["text"] != "[来自 cli] S6_QUEUE_1" || entries[0]["injected"] != true || entries[1]["text"] != "ordinary terminal prompt" || entries[1]["injected"] != false {
+		t.Fatalf("transcript did not preserve delivery provenance: %#v", entries)
+	}
+}
+
+func waitForProcessRecord(t *testing.T, root string) personalprocess.Record {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		records, err := personalprocess.List(root)
+		if err == nil && len(records) == 1 {
+			return records[0]
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("chat process did not register")
+	return personalprocess.Record{}
+}
+
+func waitProviderCalls(t *testing.T, provider *hookTestProvider, count int) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		provider.mu.Lock()
+		calls := len(provider.calls)
+		provider.mu.Unlock()
+		if calls >= count {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("provider did not receive call %d", count)
 }
 
 type blockingChatProvider struct {

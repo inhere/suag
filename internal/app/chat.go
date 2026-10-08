@@ -185,6 +185,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 			SessionID:       sessionID,
 			Prompt:          line,
 			SystemContext:   pendingContext,
+			Injected:        injected,
 			EmitToolResults: hooks != nil,
 			Emit: func(eventCtx context.Context, event personal.Event) error {
 				if hooks == nil || event.Kind != "tool_result" || !isShellOrExecTool(event.ToolName) {

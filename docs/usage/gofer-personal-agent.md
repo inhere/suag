@@ -12,6 +12,7 @@ agents:
     type: cli-agent
     command: suag
     args: [run, --output-format, stream-json, --append-system-prompt, "{{system_prompt}}", --prompt, "{{prompt}}"]
+    interactive_args: [chat]
     session_inject: [--session-id, "{{session_id}}"]
     session_resume: [run, --output-format, stream-json, --resume, "{{session_id}}", --prompt, "{{prompt}}"]
     session_resume_interactive: [chat, --resume, "{{session_id}}"]
@@ -32,6 +33,7 @@ agents:
     type: acp-agent
     command: suag
     args: [acp]
+    session_family: suag
     acp:
       modes: {read_only: read_only}
       permission_policy: ask
@@ -50,6 +52,8 @@ Suag 创建会话时从外层到内层读取项目规则；每一级按顺序读
 `suag chat` 会在 `SUAG_HOME/run` 登记当前进程并监听仅本机用户可访问的 socket。可用 `suag ps --json` 查看活跃会话，用 `suag send --session <session-id|前缀|名称> --text <文本>` 送话；省略 `--text` 时从 stdin 读取。没有匹配进程时退出码为 3，多个匹配项为 2，成功送达或排队为 0，其他错误为 1。
 
 Gofer agent 可配置 `deliver_command: [send, --session, "{{session_id}}"]` 和 `deliver_stdin: true`，由 Gofer 在会话所在 worker 上调用 Suag。Suag chat 忙时最多排队 8 条；空闲时送入下一轮。Gofer 送话会以 `[gofer web 回复]` 显示并作为注入输入记录。`run` 和 ACP 续接同一会话时使用会话锁，避免与仍运行的 chat 同时写入；chat 退出后进程登记、socket 和锁会清理。
+
+`interactive_args: [chat]` 允许 Gofer 在原进程退出后以交互终端启动 `suag chat --resume`；`session_resume_interactive` 给出续接参数。Windows 本机 socket 路径最多支持 100 个 UTF-16 code units；超长的 `SUAG_HOME/run/<pid>.sock` 会明确报错，需要将 `SUAG_HOME` 配置得更短。
 
 模型地址与认证由启动 Suag 的用户配置。例如在该用户的 `~/.suag/config.yaml` 中设置：
 
