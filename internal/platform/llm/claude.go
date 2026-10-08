@@ -88,6 +88,27 @@ func (p *ClaudeProvider) Embed(_ context.Context, _ string) ([]float32, error) {
 	return nil, fmt.Errorf("claude provider does not support embeddings: use an OpenAI-compatible provider for embeddings")
 }
 
+// appendClaudeBlock adds a content block as a message of the given role. When
+// the previous message has the same role and already holds content blocks
+// (parallel tool_use / consecutive tool_result), the block is merged into it so
+// roles keep alternating as Anthropic requires.
+func appendClaudeBlock(msgs []map[string]any, role string, block map[string]any) []map[string]any {
+	if n := len(msgs); n > 0 && msgs[n-1]["role"] == role {
+		if blocks, ok := msgs[n-1]["content"].([]map[string]any); ok {
+			msgs[n-1]["content"] = append(blocks, block)
+			return msgs
+		}
+	}
+	return append(msgs, map[string]any{"role": role, "content": []map[string]any{block}})
+}
+
+// toolResultIsError reports whether a tool result is flagged as failed.
+// agentcore has no dedicated field, so a Metadata["is_error"]=true marker is honored.
+func toolResultIsError(r *agentcoreapi.ToolResult) bool {
+	v, _ := r.Metadata["is_error"].(bool)
+	return v
+}
+
 func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, model string) map[string]any {
 	msgs := make([]map[string]any, 0, len(req.Messages))
 	// Anthropic messages only accept user/assistant roles; mid-conversation
@@ -102,24 +123,27 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 				}
 				system += m.Content
 			}
+		// agentcore persists a tool result as role=tool carrying BOTH ToolCall and
+		// ToolResult, so the result check must come first; otherwise the result
+		// is rendered as a duplicate tool_use and tool_result is never sent.
+		case m.ToolResult != nil || m.Role == "tool":
+			block := map[string]any{"type": "tool_result", "content": m.Content}
+			if m.ToolResult != nil {
+				block["tool_use_id"] = m.ToolResult.CallID
+				block["content"] = m.ToolResult.Content
+				if toolResultIsError(m.ToolResult) {
+					block["is_error"] = true
+				}
+			} else if m.ToolCall != nil {
+				block["tool_use_id"] = m.ToolCall.CallID
+			}
+			msgs = appendClaudeBlock(msgs, "user", block)
 		case m.ToolCall != nil:
-			msgs = append(msgs, map[string]any{
-				"role": "assistant",
-				"content": []map[string]any{{
-					"type":  "tool_use",
-					"id":    m.ToolCall.CallID,
-					"name":  m.ToolCall.Name,
-					"input": m.ToolCall.Arguments,
-				}},
-			})
-		case m.ToolResult != nil:
-			msgs = append(msgs, map[string]any{
-				"role": "user",
-				"content": []map[string]any{{
-					"type":        "tool_result",
-					"tool_use_id": m.ToolResult.CallID,
-					"content":     m.ToolResult.Content,
-				}},
+			msgs = appendClaudeBlock(msgs, "assistant", map[string]any{
+				"type":  "tool_use",
+				"id":    m.ToolCall.CallID,
+				"name":  m.ToolCall.Name,
+				"input": m.ToolCall.Arguments,
 			})
 		default:
 			msgs = append(msgs, map[string]any{"role": m.Role, "content": m.Content})

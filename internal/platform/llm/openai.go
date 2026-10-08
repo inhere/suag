@@ -137,24 +137,41 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 	}
 
 	for _, m := range req.Messages {
-		msg := map[string]any{"role": m.Role, "content": m.Content}
+		// Tool messages carry both ToolCall and ToolResult in agentcore; OpenAI
+		// wants role=tool with only tool_call_id+content (no tool_calls).
+		if m.ToolResult != nil || m.Role == "tool" {
+			msg := map[string]any{"role": "tool", "content": m.Content}
+			if m.ToolResult != nil {
+				msg["tool_call_id"] = m.ToolResult.CallID
+				msg["content"] = m.ToolResult.Content
+			} else if m.ToolCall != nil {
+				msg["tool_call_id"] = m.ToolCall.CallID
+			}
+			msgs = append(msgs, msg)
+			continue
+		}
 		if m.ToolCall != nil {
-			msg["tool_calls"] = []map[string]any{{
+			call := map[string]any{
 				"id":   m.ToolCall.CallID,
 				"type": "function",
 				"function": map[string]any{
 					"name":      m.ToolCall.Name,
 					"arguments": mustJSON(m.ToolCall.Arguments),
 				},
-			}}
-			msg["content"] = nil
+			}
+			// Merge consecutive assistant tool calls into one message.
+			if n := len(msgs); n > 0 && msgs[n-1]["role"] == "assistant" {
+				if calls, ok := msgs[n-1]["tool_calls"].([]map[string]any); ok {
+					msgs[n-1]["tool_calls"] = append(calls, call)
+					continue
+				}
+			}
+			msgs = append(msgs, map[string]any{
+				"role": "assistant", "content": nil, "tool_calls": []map[string]any{call},
+			})
+			continue
 		}
-		if m.ToolResult != nil {
-			msg["role"] = "tool"
-			msg["tool_call_id"] = m.ToolResult.CallID
-			msg["content"] = m.ToolResult.Content
-		}
-		msgs = append(msgs, msg)
+		msgs = append(msgs, map[string]any{"role": m.Role, "content": m.Content})
 	}
 
 	body := map[string]any{
