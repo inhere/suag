@@ -146,10 +146,12 @@ func TestAppendSystemPromptCanBeClearedFromCLI(t *testing.T) {
 	assert.Eq(t, "saved", stored())
 	run() // absent flag keeps the saved prompt
 	assert.Eq(t, "saved", stored())
-	run("--append-system-prompt", "") // explicit empty clears
+	run("--append-system-prompt", "") // empty keeps it: Gofer renders an unset system prompt as ""
+	assert.Eq(t, "saved", stored())
+	run("--clear-append-system-prompt")
 	assert.Eq(t, "", stored())
 	run("--append-system-prompt", "again")
 	assert.Eq(t, "again", stored())
-	run("--append-system-prompt=") // "=" form clears too
+	run("--clear-append-system-prompt", "--append-system-prompt", "") // the Gofer argv shape still clears
 	assert.Eq(t, "", stored())
 }

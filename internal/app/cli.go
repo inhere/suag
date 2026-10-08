@@ -33,12 +33,13 @@ type personalOptions struct {
 	ReadOnly           bool
 	AllowWrite         bool
 	AppendSystemPrompt string
-	// AppendSystemPromptSet records that --append-system-prompt was given, even
-	// as an empty string, which clears the session's saved prompt.
-	AppendSystemPromptSet bool
-	NoProjectRules        bool
-	MCPConfigs            []string
-	CLIMode               bool
+	// ClearAppendSystemPrompt drops the session's saved append prompt. An empty
+	// --append-system-prompt keeps it instead: Gofer templates always pass the
+	// flag and render it empty when a job has no system prompt.
+	ClearAppendSystemPrompt bool
+	NoProjectRules          bool
+	MCPConfigs              []string
+	CLIMode                 bool
 }
 
 type personalRuntime struct {
@@ -103,8 +104,8 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.StringVar(&opts.OutputFormat, "output-format", "text", "text or stream-json")
 	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool; MCP allows only default query tools and gofer_work_report;;ro")
 	cmd.BoolVar(&opts.AllowWrite, "allow-write", false, "allow workspace write and shell tools for this run")
-	// A custom flag.Value tells "not passed" from "passed as empty string".
-	cmd.Var(&optionalString{value: &opts.AppendSystemPrompt, set: &opts.AppendSystemPromptSet}, "append-system-prompt", "append system instructions after rules; an empty value clears the saved prompt")
+	cmd.StringVar(&opts.AppendSystemPrompt, "append-system-prompt", "", "append system instructions after rules; empty keeps the saved prompt")
+	cmd.BoolVar(&opts.ClearAppendSystemPrompt, "clear-append-system-prompt", false, "clear the session's saved append prompt (a non-empty --append-system-prompt still replaces it)")
 	cmd.BoolVar(&opts.NoProjectRules, "no-project-rules", false, "skip project rule files for debugging")
 	cmd.Var((*cflag.Strings)(&opts.MCPConfigs), "mcp-config", "Claude-style JSON MCP server config; repeatable")
 	return cmd
@@ -229,7 +230,7 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 			return personal.LoadRules(ruleCWD, home, opts.NoProjectRules)
 		},
 		AppendSystemPrompt:    appendSystemPrompt(opts.AppendSystemPrompt),
-		AppendSystemPromptSet: opts.AppendSystemPromptSet,
+		AppendSystemPromptSet: opts.ClearAppendSystemPrompt,
 		GoferJob:              os.Getenv("GOFER_JOB_ID") != "",
 		TranscriptDir:         transcriptDir,
 		LockRoot:              lockRoot,
@@ -243,25 +244,6 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 	// Same model value the provider was built from (flag/env overrides included).
 	return &personalRuntime{runner: runner, repo: repo, capabilities: capabilities, gate: gate,
 		contextWindow: contextWindowForSettings(settings)}, nil
-}
-
-// optionalString is a string flag that remembers whether it was passed, so an
-// explicit empty value (--append-system-prompt "") differs from an absent flag.
-type optionalString struct {
-	value *string
-	set   *bool
-}
-
-func (o *optionalString) String() string {
-	if o == nil || o.value == nil {
-		return ""
-	}
-	return *o.value
-}
-
-func (o *optionalString) Set(v string) error {
-	*o.value, *o.set = v, true
-	return nil
 }
 
 // contextWindowForSettings resolves the usage_update size from the effective
