@@ -77,3 +77,81 @@ func TestLoadRulesLimitsAndCycle(t *testing.T) {
 	assert.NoErr(t, err)
 	assert.Eq(t, true, strings.Contains(rules, "[规则已截断: 总量超过 128KB]"))
 }
+
+func TestLoadRulesReadsBothProjectRuleFiles(t *testing.T) {
+	root := t.TempDir()
+	putRule(t, filepath.Join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+	putRule(t, filepath.Join(root, "AGENTS.md"), "agents rules\n")
+	putRule(t, filepath.Join(root, "CLAUDE.md"), "claude rules\n@workspace.md\n")
+	putRule(t, filepath.Join(root, "workspace.md"), "workspace rules\n")
+
+	rules, _, err := LoadRules(root, "", false)
+	assert.NoErr(t, err)
+	assert.Eq(t, true, strings.Contains(rules, "agents rules"))
+	assert.Eq(t, true, strings.Contains(rules, "claude rules"))
+	assert.Eq(t, true, strings.Contains(rules, "workspace rules"))
+	assert.Eq(t, false, strings.Contains(rules, "@workspace.md"))
+}
+
+func TestLoadRulesDeduplicatesIncludesAcrossProjectFiles(t *testing.T) {
+	root := t.TempDir()
+	putRule(t, filepath.Join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+	putRule(t, filepath.Join(root, "AGENTS.md"), "@workspace.md\n")
+	putRule(t, filepath.Join(root, "CLAUDE.md"), "claude marker\n@workspace.md\n")
+	putRule(t, filepath.Join(root, "workspace.md"), "workspace rules\n")
+
+	rules, _, err := LoadRules(root, "", false)
+	assert.NoErr(t, err)
+	assert.Eq(t, true, strings.Contains(rules, "claude marker"))
+	assert.Eq(t, 1, strings.Count(rules, "workspace rules"))
+}
+
+func TestLoadRulesExpandsIncludeWithExplanation(t *testing.T) {
+	root := t.TempDir()
+	putRule(t, filepath.Join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+	putRule(t, filepath.Join(root, "AGENTS.md"), "agents rules\n")
+	putRule(t, filepath.Join(root, "CLAUDE.md"), "@workspace.md 需要先加载阅读。\n")
+	putRule(t, filepath.Join(root, "workspace.md"), "workspace rules\n")
+
+	rules, _, err := LoadRules(root, "", false)
+	assert.NoErr(t, err)
+	assert.Eq(t, true, strings.Contains(rules, "workspace rules"))
+	assert.Eq(t, false, strings.Contains(rules, "@workspace.md"))
+}
+
+func TestLoadRulesSkipsClaudeReferenceToAgentsAlreadyRead(t *testing.T) {
+	root := t.TempDir()
+	putRule(t, filepath.Join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+	putRule(t, filepath.Join(root, "AGENTS.md"), "agents rules\n")
+	putRule(t, filepath.Join(root, "CLAUDE.md"), "@AGENTS.md\n")
+
+	rules, _, err := LoadRules(root, "", false)
+	assert.NoErr(t, err)
+	assert.Eq(t, 1, strings.Count(rules, "agents rules"))
+}
+
+func TestLoadRulesSkipsClaudeWithIdenticalContent(t *testing.T) {
+	root := t.TempDir()
+	putRule(t, filepath.Join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+	putRule(t, filepath.Join(root, "AGENTS.md"), "shared rules\n")
+	putRule(t, filepath.Join(root, "CLAUDE.md"), "shared rules\n")
+
+	rules, _, err := LoadRules(root, "", false)
+	assert.NoErr(t, err)
+	assert.Eq(t, 1, strings.Count(rules, "shared rules"))
+}
+
+func TestLoadRulesKeepsSameIncludeTextFromDifferentDirectories(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	putRule(t, filepath.Join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+	putRule(t, filepath.Join(home, "AGENTS.md"), "@workspace.md\n")
+	putRule(t, filepath.Join(home, "workspace.md"), "user workspace rules\n")
+	putRule(t, filepath.Join(root, "AGENTS.md"), "@workspace.md\n")
+	putRule(t, filepath.Join(root, "workspace.md"), "project workspace rules\n")
+
+	rules, _, err := LoadRules(root, home, false)
+	assert.NoErr(t, err)
+	assert.Eq(t, true, strings.Contains(rules, "user workspace rules"))
+	assert.Eq(t, true, strings.Contains(rules, "project workspace rules"))
+}

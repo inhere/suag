@@ -31,8 +31,24 @@ func LoadRules(cwd, suagHome string, noProject bool) (string, string, error) {
 	}
 	var sections []string
 	remaining := maxRuleTotalBytes
+	seenPaths := make(map[string]struct{})
+	previousPath := ""
+	var previousContent string
 	for _, path := range paths {
-		content, err := expandRuleFile(path, &remaining)
+		raw, _, err := readRuleFile(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", "", fmt.Errorf("read rule %s: %w", path, err)
+		}
+		if sameLevelRulePair(previousPath, path) && previousContent == raw {
+			seenPaths[rulePathKey(path)] = struct{}{}
+			previousPath, previousContent = path, raw
+			continue
+		}
+		previousPath, previousContent = path, raw
+		content, err := expandRuleFile(path, &remaining, seenPaths)
 		if err != nil {
 			return "", "", err
 		}
@@ -46,6 +62,12 @@ func LoadRules(cwd, suagHome string, noProject bool) (string, string, error) {
 	rules := strings.Join(sections, "\n\n")
 	hash := sha256.Sum256([]byte(rules))
 	return rules, hex.EncodeToString(hash[:]), nil
+}
+
+func sameLevelRulePair(first, second string) bool {
+	return strings.EqualFold(filepath.Base(first), "AGENTS.md") &&
+		strings.EqualFold(filepath.Base(second), "CLAUDE.md") &&
+		rulePathKey(filepath.Dir(first)) == rulePathKey(filepath.Dir(second))
 }
 
 func projectRulePaths(cwd string) ([]string, error) {
@@ -72,7 +94,6 @@ func projectRulePaths(cwd string) ([]string, error) {
 			path := filepath.Join(levels[i], name)
 			if info, err := os.Stat(path); err == nil && !info.IsDir() {
 				paths = append(paths, path)
-				break
 			} else if err != nil && !os.IsNotExist(err) {
 				return nil, err
 			}
@@ -81,7 +102,11 @@ func projectRulePaths(cwd string) ([]string, error) {
 	return paths, nil
 }
 
-func expandRuleFile(path string, remaining *int) (string, error) {
+func expandRuleFile(path string, remaining *int, seenPaths map[string]struct{}) (string, error) {
+	pathKey := rulePathKey(path)
+	if _, exists := seenPaths[pathKey]; exists {
+		return "", nil
+	}
 	content, truncated, err := readRuleFile(path)
 	if os.IsNotExist(err) {
 		return "", nil
@@ -89,19 +114,25 @@ func expandRuleFile(path string, remaining *int) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read rule %s: %w", path, err)
 	}
+	seenPaths[pathKey] = struct{}{}
 	var out strings.Builder
 	for _, line := range strings.SplitAfter(content, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "@") && len(trimmed) > 1 && !strings.ContainsAny(trimmed, " \t") {
-			include := filepath.Join(filepath.Dir(path), trimmed[1:])
+		if includePath := ruleIncludePath(trimmed); includePath != "" {
+			include := filepath.Join(filepath.Dir(path), includePath)
 			if sameRulePath(path, include) {
 				out.WriteString("[循环引用已跳过: " + trimmed + "]\n")
+				continue
+			}
+			includeKey := rulePathKey(include)
+			if _, exists := seenPaths[includeKey]; exists {
 				continue
 			}
 			part, cut, readErr := readRuleFile(include)
 			if readErr != nil {
 				return "", fmt.Errorf("read rule include %s: %w", include, readErr)
 			}
+			seenPaths[includeKey] = struct{}{}
 			out.WriteString(appendLimited(part, remaining))
 			if cut {
 				out.WriteString("\n[规则已截断: 单文件超过 64KB]")
@@ -122,6 +153,19 @@ func expandRuleFile(path string, remaining *int) (string, error) {
 		out.WriteString("\n[规则已截断: 单文件超过 64KB]")
 	}
 	return out.String(), nil
+}
+
+// ruleIncludePath accepts a line-start @path directive and ignores trailing
+// whitespace-delimited explanation text.
+func ruleIncludePath(line string) string {
+	if !strings.HasPrefix(line, "@") {
+		return ""
+	}
+	fields := strings.Fields(line)
+	if len(fields) == 0 || len(fields[0]) < 2 {
+		return ""
+	}
+	return fields[0][1:]
 }
 
 func readRuleFile(path string) (string, bool, error) {
@@ -146,7 +190,20 @@ func appendLimited(content string, remaining *int) string {
 }
 
 func sameRulePath(a, b string) bool {
-	first, errA := filepath.EvalSymlinks(a)
-	second, errB := filepath.EvalSymlinks(b)
-	return errA == nil && errB == nil && first == second
+	return rulePathKey(a) == rulePathKey(b)
+}
+
+func rulePathKey(path string) string {
+	absolute, err := filepath.Abs(path)
+	if err == nil {
+		path = absolute
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	path = filepath.Clean(path)
+	if os.PathSeparator == '\\' {
+		path = strings.ToLower(path)
+	}
+	return path
 }
