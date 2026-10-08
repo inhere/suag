@@ -41,8 +41,9 @@ func TestToolDiffFIFODoesNotBlock(t *testing.T) {
 
 func TestToolPathMatchesNativeWritePath(t *testing.T) {
 	cwd := t.TempDir()
-	// An existing file at the "naive absolute" location must not be used as oldText.
-	if err := os.WriteFile(filepath.Join(cwd, "a.txt"), []byte("decoy\n"), 0o644); err != nil {
+	// An absolute path inside cwd is the file itself (not re-joined under cwd), so
+	// its current content is the diff's oldText.
+	if err := os.WriteFile(filepath.Join(cwd, "a.txt"), []byte("current\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for name, arg := range map[string]string{
@@ -54,8 +55,8 @@ func TestToolPathMatchesNativeWritePath(t *testing.T) {
 			args := map[string]any{"path": arg, "content": "new\n"}
 			want, err := native.ResolveSandboxedPath(cwd, arg)
 			if err != nil {
-				// The write tool rejects this path (e.g. a drive-qualified path on
-				// Windows), so there is nothing to point at and no diff to offer.
+				// The write tool rejects this path (e.g. an absolute path outside
+				// the workspace), so there is nothing to point at and no diff to offer.
 				assert.Empty(t, toolLocations(cwd, args))
 				assert.Empty(t, editDiff(t, cwd, args))
 				return
@@ -66,7 +67,11 @@ func TestToolPathMatchesNativeWritePath(t *testing.T) {
 			diff := editDiff(t, cwd, args)
 			assert.Eq(t, 1, len(diff))
 			assert.Eq(t, want, diff[0].Diff.Path)
-			assert.Nil(t, diff[0].Diff.OldText) // none of the resolved targets exists
+			if name == "abs inside" {
+				assert.Eq(t, "current\n", *diff[0].Diff.OldText)
+			} else {
+				assert.Nil(t, diff[0].Diff.OldText) // the other resolved targets do not exist
+			}
 		})
 	}
 }

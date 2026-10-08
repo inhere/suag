@@ -46,7 +46,7 @@ func (t *FileReadTool) Schema() api.ToolSchema {
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "Relative path within workspace",
+					"description": "Path within workspace (relative, or absolute inside it)",
 				},
 			},
 			"required": []any{"path"},
@@ -86,7 +86,7 @@ func (t *FileWriteTool) Schema() api.ToolSchema {
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "Relative path within workspace",
+					"description": "Path within workspace (relative, or absolute inside it)",
 				},
 				"content": map[string]any{
 					"type":        "string",
@@ -167,12 +167,26 @@ func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-// ResolveSandboxedPath is the pure path rule shared by the file tools: rel is
-// always joined under workspace (an absolute rel is NOT treated as absolute) and
-// must not escape it. Exported so ACP reports exactly the path the tool writes.
+// ResolveSandboxedPath is the path rule shared by the file tools. A relative
+// rel is joined under workspace; an absolute rel is accepted only when it lies
+// inside workspace (Windows compares volume and names case-insensitively) and
+// is otherwise rejected. Either way the result must not escape workspace.
+// Exported so ACP reports exactly the path the tool writes.
 func ResolveSandboxedPath(workspace, rel string) (string, error) {
 	workspace = filepath.Clean(workspace)
-	abs := filepath.Join(workspace, filepath.Clean(rel))
+	var abs string
+	if filepath.IsAbs(rel) {
+		mapped, ok := absUnderWorkspace(workspace, rel, foldPathCase)
+		if !ok {
+			return "", fmt.Errorf("path escape: %q is outside workspace", rel)
+		}
+		abs = mapped
+	} else if filepath.VolumeName(rel) != "" {
+		// "C:foo" is drive-relative: it names no place inside the workspace.
+		return "", fmt.Errorf("path escape: %q is outside workspace", rel)
+	} else {
+		abs = filepath.Join(workspace, filepath.Clean(rel))
+	}
 	// Security: reject any path that escapes the workspace root. Compare via
 	// filepath.Rel so a sibling like /a/ws2 is not mistaken for inside /a/ws
 	// (a bare string-prefix check would accept it).
@@ -203,78 +217,58 @@ func openWorkspaceRoot(workspace string) (*os.Root, error) {
 // wrapRootErr turns os.Root's symlink/".." escape error into the same
 // "path escape" wording used by the lexical check.
 func wrapRootErr(err error, path string) error {
-	if err != nil && strings.Contains(err.Error(), "path escapes from parent") {
+	if isRootEscape(err) {
 		return fmt.Errorf("path escape: %q is outside workspace (via symlink): %w", path, err)
 	}
 	return err
 }
 
 func readFileInRoot(workspace, abs string) ([]byte, error) {
-	rel, err := relInWorkspace(filepath.Clean(workspace), abs)
-	if err != nil {
-		return nil, err
-	}
-	root, err := openWorkspaceRoot(workspace)
-	if err != nil {
-		return nil, err
-	}
-	defer root.Close()
-	f, err := root.Open(rel)
-	if err != nil {
-		return nil, wrapRootErr(err, abs)
-	}
-	defer f.Close()
-	return io.ReadAll(f)
+	return withRoot(workspace, abs, func(root *os.Root, rel string) ([]byte, error) {
+		f, err := root.Open(rel)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		return io.ReadAll(f)
+	})
 }
 
 func writeFileInRoot(workspace, abs string, data []byte) error {
-	rel, err := relInWorkspace(filepath.Clean(workspace), abs)
-	if err != nil {
-		return err
-	}
-	root, err := openWorkspaceRoot(workspace)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	if dir := filepath.Dir(rel); dir != "." {
-		if err := root.MkdirAll(dir, 0o755); err != nil {
-			return wrapRootErr(fmt.Errorf("mkdir: %w", err), abs)
+	_, err := withRoot(workspace, abs, func(root *os.Root, rel string) (struct{}, error) {
+		if dir := filepath.Dir(rel); dir != "." {
+			if err := root.MkdirAll(dir, 0o755); err != nil {
+				return struct{}{}, fmt.Errorf("mkdir: %w", err)
+			}
 		}
-	}
-	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		return wrapRootErr(err, abs)
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
+		f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+		if err != nil {
+			return struct{}{}, err
+		}
+		if _, err := f.Write(data); err != nil {
+			f.Close()
+			return struct{}{}, err
+		}
+		return struct{}{}, f.Close()
+	})
+	return err
 }
 
 func readDirInRoot(workspace, abs string) ([]os.DirEntry, error) {
-	rel, err := relInWorkspace(filepath.Clean(workspace), abs)
-	if err != nil {
-		return nil, err
-	}
-	root, err := openWorkspaceRoot(workspace)
-	if err != nil {
-		return nil, err
-	}
-	defer root.Close()
-	d, err := root.Open(rel)
-	if err != nil {
-		return nil, wrapRootErr(err, abs)
-	}
-	defer d.Close()
-	entries, err := d.ReadDir(-1)
-	if err != nil {
-		return nil, err
-	}
-	// os.ReadDir returns entries sorted by name; keep that behavior.
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-	return entries, nil
+	return withRoot(workspace, abs, func(root *os.Root, rel string) ([]os.DirEntry, error) {
+		d, err := root.Open(rel)
+		if err != nil {
+			return nil, err
+		}
+		defer d.Close()
+		entries, err := d.ReadDir(-1)
+		if err != nil {
+			return nil, err
+		}
+		// os.ReadDir returns entries sorted by name; keep that behavior.
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+		return entries, nil
+	})
 }
 
 // sandboxedPath resolves the named arg as a path confined to workspace.

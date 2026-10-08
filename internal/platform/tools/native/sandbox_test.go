@@ -15,18 +15,30 @@ func call(args map[string]any) api.ToolCall { return api.ToolCall{CallID: "c", A
 func TestResolveSandboxedPath(t *testing.T) {
 	ws := filepath.Join(t.TempDir(), "ws")
 
-	t.Run("relative and absolute-looking args stay under workspace", func(t *testing.T) {
+	t.Run("relative and in-workspace absolute args resolve under workspace", func(t *testing.T) {
 		got, err := ResolveSandboxedPath(ws, "a/b.txt")
 		assert.NoErr(t, err)
 		assert.Eq(t, filepath.Join(ws, "a", "b.txt"), got)
 
-		got, err = ResolveSandboxedPath(ws, "/a/b.txt")
+		got, err = ResolveSandboxedPath(ws, filepath.Join(ws, "a", "..", "a", "b.txt"))
 		assert.NoErr(t, err)
 		assert.Eq(t, filepath.Join(ws, "a", "b.txt"), got)
+
+		got, err = ResolveSandboxedPath(ws, ws)
+		assert.NoErr(t, err)
+		assert.Eq(t, ws, got)
 
 		got, err = ResolveSandboxedPath(ws, ".")
 		assert.NoErr(t, err)
 		assert.Eq(t, ws, got)
+	})
+
+	t.Run("absolute outside workspace is rejected", func(t *testing.T) {
+		for _, p := range []string{ws + "2", filepath.Join(ws+"2", "x"), filepath.Dir(ws), filepath.Join(ws, "..", "x")} {
+			_, err := ResolveSandboxedPath(ws, p)
+			assert.Err(t, err)
+			assert.StrContains(t, err.Error(), "path escape")
+		}
 	})
 
 	t.Run("sibling dir sharing prefix is rejected", func(t *testing.T) {
