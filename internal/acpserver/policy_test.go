@@ -51,18 +51,19 @@ func TestToolPathMatchesNativeWritePath(t *testing.T) {
 		"relative":    "sub/b.txt",
 	} {
 		t.Run(name, func(t *testing.T) {
-			want, err := native.ResolveSandboxedPath(cwd, arg)
-			assert.NoErr(t, err)
 			args := map[string]any{"path": arg, "content": "new\n"}
-			locations := toolLocations(cwd, args)
-			assert.Eq(t, want, locations[0].Path)
-			diff := editDiff(t, cwd, args)
-			if runtime.GOOS == "windows" && filepath.IsAbs(arg) && filepath.VolumeName(arg) != "" {
-				// Joining a drive-qualified path leaves "C:" mid-path, an invalid Windows
-				// file name the write tool cannot create either, so no diff is offered.
-				assert.Empty(t, diff)
+			want, err := native.ResolveSandboxedPath(cwd, arg)
+			if err != nil {
+				// The write tool rejects this path (e.g. a drive-qualified path on
+				// Windows), so there is nothing to point at and no diff to offer.
+				assert.Empty(t, toolLocations(cwd, args))
+				assert.Empty(t, editDiff(t, cwd, args))
 				return
 			}
+			locations := toolLocations(cwd, args)
+			assert.Eq(t, 1, len(locations))
+			assert.Eq(t, want, locations[0].Path)
+			diff := editDiff(t, cwd, args)
 			assert.Eq(t, 1, len(diff))
 			assert.Eq(t, want, diff[0].Diff.Path)
 			assert.Nil(t, diff[0].Diff.OldText) // none of the resolved targets exists
