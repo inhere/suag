@@ -48,7 +48,18 @@ func ReadLLMProviderSettingsWithOverrides(modelFlag, providerFlag string) LLMPro
 		APIKey:       strings.TrimSpace(gkconfig.String("llm.api_key")),
 		BaseURL:      strings.TrimSpace(gkconfig.String("llm.base_url")),
 	}
-	settings.Model = firstNonEmpty(modelFlag, os.Getenv("SUAG_MODEL"), settings.Model)
+	// The provider recorded in the file owns the file's api_key and base_url.
+	// Remember it before any override so a different provider never inherits them.
+	fileProvider := canonicalProviderName(normalizeLLMProviderSettings(LLMProviderSettings{
+		APIType:      settings.APIType,
+		ProviderName: settings.ProviderName,
+	}).ProviderName)
+
+	// An explicit model (flag or env) is kept across a provider switch; a model
+	// that only comes from the file belongs to the file's provider and is dropped.
+	explicitModel := firstNonEmpty(modelFlag, os.Getenv("SUAG_MODEL"))
+	settings.Model = firstNonEmpty(explicitModel, settings.Model)
+
 	provider := firstNonEmpty(providerFlag, os.Getenv("SUAG_PROVIDER"))
 	if provider != "" {
 		settings.ProviderName = normalizeConfigToken(provider)
@@ -58,6 +69,18 @@ func ReadLLMProviderSettingsWithOverrides(modelFlag, providerFlag string) LLMPro
 			settings.APIType = "anthropic"
 		case "openai", "deepseek":
 			settings.APIType = "openai"
+		}
+
+		// Switching to a different provider: the file's credential and endpoint
+		// would go to the wrong vendor, so clear them. The new provider's key is
+		// then read from its standard env var in BuildLLMProviderFromSettings, and
+		// an unset model falls back to that provider's default.
+		if canonicalProviderName(settings.ProviderName) != fileProvider {
+			settings.APIKey = ""
+			settings.BaseURL = ""
+			if explicitModel == "" {
+				settings.Model = ""
+			}
 		}
 	}
 	return normalizeLLMProviderSettings(settings)
@@ -121,6 +144,15 @@ func normalizeLLMProviderSettings(settings LLMProviderSettings) LLMProviderSetti
 	}
 
 	return normalized
+}
+
+// canonicalProviderName maps provider aliases to one vendor, so an alias
+// (anthropic) of the file's provider (claude) is not treated as a switch.
+func canonicalProviderName(name string) string {
+	if name == "anthropic" {
+		return "claude"
+	}
+	return name
 }
 
 func normalizeConfigToken(value string) string {
