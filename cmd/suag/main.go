@@ -218,6 +218,8 @@ func newCLI(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) *cap
 		ps,
 		send,
 		trace,
+		newStatsCommand(ctx, stdout, stderr),
+		newExportCommand(ctx, stdout, stderr),
 	)
 	return cli
 }
