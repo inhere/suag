@@ -201,3 +201,26 @@ func TestClaudeProvider_ParseResponse_PrefersToolCallsOverMixedContent(t *testin
 	assert.Eq(t, "file_list", resp.ToolCalls[0].Name)
 	assert.Eq(t, ".", resp.ToolCalls[0].Arguments["path"])
 }
+
+func TestClaudeProvider_BuildRequestBody_MovesSystemMessagesToSystemField(t *testing.T) {
+	provider := NewClaudeProvider(ClaudeConfig{})
+	body := provider.buildRequestBody(&agentcoreapi.GenerateRequest{
+		System: "base",
+		Messages: []agentcoreapi.Message{
+			{Role: "user", Content: "a"},
+			{Role: "system", Content: "项目规则已更新"},
+		},
+	}, "m")
+	msgs := body["messages"].([]map[string]any)
+	assert.Eq(t, 1, len(msgs))
+	for _, m := range msgs {
+		assert.Eq(t, "user", m["role"])
+	}
+	assert.Eq(t, "base\n\n项目规则已更新", body["system"])
+
+	// Without a base system prompt the system message becomes the system field.
+	body = provider.buildRequestBody(&agentcoreapi.GenerateRequest{
+		Messages: []agentcoreapi.Message{{Role: "system", Content: "only"}, {Role: "user", Content: "a"}},
+	}, "m")
+	assert.Eq(t, "only", body["system"])
+}

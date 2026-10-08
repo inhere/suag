@@ -90,9 +90,18 @@ func (p *ClaudeProvider) Embed(_ context.Context, _ string) ([]float32, error) {
 
 func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, model string) map[string]any {
 	msgs := make([]map[string]any, 0, len(req.Messages))
-
+	// Anthropic messages only accept user/assistant roles; mid-conversation
+	// system messages (rule updates, hook context) go to the top-level system.
+	system := req.System
 	for _, m := range req.Messages {
 		switch {
+		case m.Role == "system" && m.ToolCall == nil && m.ToolResult == nil:
+			if m.Content != "" {
+				if system != "" {
+					system += "\n\n"
+				}
+				system += m.Content
+			}
 		case m.ToolCall != nil:
 			msgs = append(msgs, map[string]any{
 				"role": "assistant",
@@ -125,8 +134,8 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 	if req.MaxTokens > 0 {
 		body["max_tokens"] = req.MaxTokens
 	}
-	if req.System != "" {
-		body["system"] = req.System
+	if system != "" {
+		body["system"] = system
 	}
 
 	if len(req.Tools) > 0 {
