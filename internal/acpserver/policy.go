@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	"unicode/utf8"
 
 	"github.com/coder/acp-go-sdk"
 	appconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
@@ -24,15 +26,10 @@ type permissionHook struct {
 	cwd       string
 	readOnly  bool
 	sequence  uint64
-	mu        sync.Mutex
-	details   map[acp.ToolCallId]toolDetail
 }
 
-type toolDetail struct {
-	kind      acp.ToolKind
-	locations []acp.ToolCallLocation
-	content   []acp.ToolCallContent
-}
+// maxDiffBytes caps each side of a diff; larger files only report locations.
+const maxDiffBytes = 256 << 10
 
 func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
 	if event == nil || event.Call == nil || h.conn == nil {
@@ -47,12 +44,8 @@ func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEv
 	kind, readTool := toolKind(call.Name)
 	locations := toolLocations(h.cwd, call.Arguments)
 	content := toolDiff(h.cwd, kind, locations, call.Arguments)
-	h.mu.Lock()
-	if h.details == nil {
-		h.details = make(map[acp.ToolCallId]toolDetail)
-	}
-	h.details[id] = toolDetail{kind: kind, locations: locations, content: content}
-	h.mu.Unlock()
+	// The diff is sent in the initial tool_call and once more in the permission
+	// request (so the approver sees it); later status updates carry status only.
 	if err := h.conn.SessionUpdate(ctx, acp.SessionNotification{
 		SessionId: h.sessionID,
 		Update:    acp.StartToolCall(id, call.Name, acp.WithStartKind(kind), acp.WithStartStatus(acp.ToolCallStatusPending), acp.WithStartLocations(locations), acp.WithStartContent(content)),
@@ -60,7 +53,7 @@ func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEv
 		return fmt.Errorf("send tool update: %w", err)
 	}
 	if h.readOnly && !readTool {
-		_ = h.toolStatus(ctx, id, kind, locations, content, acp.ToolCallStatusFailed)
+		_ = h.toolStatus(ctx, id, acp.ToolCallStatusFailed)
 		return ErrReadOnly
 	}
 	if !readTool {
@@ -80,44 +73,38 @@ func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEv
 			},
 		})
 		if err != nil {
-			_ = h.toolStatus(ctx, id, kind, locations, content, acp.ToolCallStatusFailed)
+			_ = h.toolStatus(ctx, id, acp.ToolCallStatusFailed)
 			return fmt.Errorf("%w: %v", ErrPermissionDenied, err)
 		}
 		if decision.Outcome.Cancelled != nil {
 			return context.Canceled
 		}
 		if decision.Outcome.Selected == nil || decision.Outcome.Selected.OptionId != "allow" {
-			_ = h.toolStatus(ctx, id, kind, locations, content, acp.ToolCallStatusFailed)
+			_ = h.toolStatus(ctx, id, acp.ToolCallStatusFailed)
 			return ErrPermissionDenied
 		}
 	}
-	return h.toolStatus(ctx, id, kind, locations, content, acp.ToolCallStatusInProgress)
+	return h.toolStatus(ctx, id, acp.ToolCallStatusInProgress)
 }
 
 func (h *permissionHook) AfterTool(ctx context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
 	if event == nil || event.Call == nil || h.conn == nil {
 		return nil
 	}
-	id := acp.ToolCallId(event.Call.CallID)
-	h.mu.Lock()
-	detail, found := h.details[id]
-	delete(h.details, id)
-	h.mu.Unlock()
-	if !found {
-		kind, _ := toolKind(event.Call.Name)
-		detail = toolDetail{kind: kind, locations: toolLocations(h.cwd, event.Call.Arguments)}
-	}
-	return h.toolStatus(ctx, id, detail.kind, detail.locations, detail.content, acp.ToolCallStatusCompleted)
+	return h.toolStatus(ctx, acp.ToolCallId(event.Call.CallID), acp.ToolCallStatusCompleted)
 }
 
-func (h *permissionHook) toolStatus(ctx context.Context, id acp.ToolCallId, kind acp.ToolKind, locations []acp.ToolCallLocation, content []acp.ToolCallContent, status acp.ToolCallStatus) error {
+// toolStatus sends a status-only tool_call_update; all other fields are optional
+// in ACP and were already delivered by the initial tool_call.
+func (h *permissionHook) toolStatus(ctx context.Context, id acp.ToolCallId, status acp.ToolCallStatus) error {
 	return h.conn.SessionUpdate(ctx, acp.SessionNotification{
 		SessionId: h.sessionID,
-		Update:    acp.UpdateToolCall(id, acp.WithUpdateKind(kind), acp.WithUpdateLocations(locations), acp.WithUpdateContent(content), acp.WithUpdateStatus(status)),
+		Update:    acp.UpdateToolCall(id, acp.WithUpdateStatus(status)),
 	})
 }
 
-// toolLocations resolves path arguments against the ACP workspace and keeps line hints when present.
+// toolLocations resolves the path argument exactly like the native file tools
+// (native.ResolveSandboxedPath) and keeps a line hint only when one is given.
 func toolLocations(cwd string, args map[string]any) []acp.ToolCallLocation {
 	if args == nil {
 		return nil
@@ -132,10 +119,11 @@ func toolLocations(cwd string, args map[string]any) []acp.ToolCallLocation {
 	if path == "" {
 		return nil
 	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(cwd, path)
+	resolved, err := native.ResolveSandboxedPath(cwd, path)
+	if err != nil {
+		return nil // the tool will reject this path; nothing to point at
 	}
-	location := acp.ToolCallLocation{Path: filepath.Clean(path)}
+	location := acp.ToolCallLocation{Path: resolved}
 	for _, key := range []string{"line", "line_number"} {
 		if line, ok := args[key].(int); ok && line > 0 {
 			location.Line = acp.Ptr(line)
@@ -146,19 +134,18 @@ func toolLocations(cwd string, args map[string]any) []acp.ToolCallLocation {
 			break
 		}
 	}
-	if location.Line == nil {
-		location.Line = acp.Ptr(1)
-	}
 	return []acp.ToolCallLocation{location}
 }
 
 // toolDiff records the proposed replacement for file_write without reading outside the workspace.
+// It never blocks: only regular files within maxDiffBytes are read, and binary
+// or oversized content yields no diff (locations are still reported).
 func toolDiff(cwd string, kind acp.ToolKind, locations []acp.ToolCallLocation, args map[string]any) []acp.ToolCallContent {
 	if kind != acp.ToolKindEdit || len(locations) == 0 || args == nil {
 		return nil
 	}
 	newText, ok := args["content"].(string)
-	if !ok {
+	if !ok || len(newText) > maxDiffBytes || !textual(newText) {
 		return nil
 	}
 	rel, err := filepath.Rel(cwd, locations[0].Path)
@@ -172,28 +159,51 @@ func toolDiff(cwd string, kind acp.ToolKind, locations []acp.ToolCallLocation, a
 	defer root.Close()
 
 	var oldText *string
-	if before, err := root.ReadFile(rel); err == nil {
-		oldText = acp.Ptr(string(before))
-	} else {
-		// Only a genuinely absent file can produce a new-file diff. Rooted reads
-		// reject symlinks that escape cwd; inspect the missing leaf through its
-		// rooted parent so a dangling or external symlink also fails closed.
-		if !errors.Is(err, os.ErrNotExist) {
+	info, err := root.Lstat(rel)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		// Absent target (including a missing parent directory, which file_write
+		// creates) is a new file. os.Root already rejects ".." and symlink
+		// escapes with a non-NotExist error, which falls to the nil branch.
+	case err != nil:
+		return nil
+	default:
+		if info.Mode()&os.ModeSymlink != 0 {
+			// Follow only symlinks that stay inside the root; dangling ones fail closed.
+			if info, err = root.Stat(rel); err != nil {
+				return nil
+			}
+		}
+		// Opening a FIFO/device would block before the user can even decide.
+		if !info.Mode().IsRegular() || info.Size() > maxDiffBytes {
 			return nil
 		}
-		if _, err := root.Lstat(rel); err == nil || !errors.Is(err, os.ErrNotExist) {
+		before, ok := readBounded(root, rel)
+		if !ok {
 			return nil
 		}
-		parent, err := root.OpenRoot(filepath.Dir(rel))
-		if err != nil {
-			return nil
-		}
-		defer parent.Close()
-		if _, err := parent.Lstat(filepath.Base(rel)); err == nil || !errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
+		oldText = acp.Ptr(before)
 	}
 	return []acp.ToolCallContent{{Diff: &acp.ToolCallContentDiff{Type: "diff", Path: locations[0].Path, OldText: oldText, NewText: newText}}}
+}
+
+// readBounded reads a regular file, giving up if it grew past maxDiffBytes or is binary.
+func readBounded(root *os.Root, rel string) (string, bool) {
+	f, err := root.Open(rel)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxDiffBytes+1))
+	if err != nil || len(data) > maxDiffBytes || !textual(string(data)) {
+		return "", false
+	}
+	return string(data), true
+}
+
+// textual reports whether s is valid UTF-8 without NUL bytes (a binary marker).
+func textual(s string) bool {
+	return utf8.ValidString(s) && !strings.ContainsRune(s, 0)
 }
 
 func toolKind(name string) (acp.ToolKind, bool) {

@@ -168,16 +168,23 @@ func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-// sandboxedPath resolves the named arg as a path confined to workspace.
-func sandboxedPath(workspace string, args map[string]any, key string) (string, error) {
-	rel, _ := args[key].(string)
-	if rel == "" {
-		return "", fmt.Errorf("%q arg is required", key)
-	}
+// ResolveSandboxedPath is the pure path rule shared by the file tools: rel is
+// always joined under workspace (an absolute rel is NOT treated as absolute) and
+// must not escape it. Exported so ACP reports exactly the path the tool writes.
+func ResolveSandboxedPath(workspace, rel string) (string, error) {
 	abs := filepath.Join(workspace, filepath.Clean(rel))
 	// Security: reject any path that escapes the workspace root.
 	if !strings.HasPrefix(abs, workspace) {
 		return "", fmt.Errorf("path escape: %q is outside workspace", rel)
 	}
 	return abs, nil
+}
+
+// sandboxedPath resolves the named arg as a path confined to workspace.
+func sandboxedPath(workspace string, args map[string]any, key string) (string, error) {
+	rel, _ := args[key].(string)
+	if rel == "" {
+		return "", fmt.Errorf("%q arg is required", key)
+	}
+	return ResolveSandboxedPath(workspace, rel)
 }

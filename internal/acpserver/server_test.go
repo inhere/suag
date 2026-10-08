@@ -221,9 +221,9 @@ func TestPersonalACPEmitsUsagePlanAndEditDetails(t *testing.T) {
 	assert.Eq(t, 2, *started.Locations[0].Line)
 	assert.Eq(t, "before\n", *started.Content[0].Diff.OldText)
 	assert.Eq(t, "after\n", started.Content[0].Diff.NewText)
-	assert.Eq(t, acp.ToolKindEdit, *completed.Kind)
-	assert.Eq(t, path, completed.Locations[0].Path)
-	assert.Eq(t, "after\n", completed.Content[0].Diff.NewText)
+	// Later updates are status-only: the diff was already delivered by tool_call.
+	assert.Empty(t, completed.Locations)
+	assert.Empty(t, completed.Content)
 	assert.Eq(t, float64(14), usage.Meta["input_tokens"])
 	assert.Eq(t, float64(6), usage.Meta["output_tokens"])
 	assert.Eq(t, float64(20), usage.Meta["total_tokens"])

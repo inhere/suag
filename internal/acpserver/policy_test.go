@@ -1,0 +1,161 @@
+package acpserver
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/coder/acp-go-sdk"
+	"github.com/gookit/goutil/x/assert"
+	"github.com/inhere/suag/internal/platform/tools/native"
+	"github.com/inhere/suag/pkg/agentcore/mock"
+)
+
+func editDiff(t *testing.T, cwd string, args map[string]any) []acp.ToolCallContent {
+	t.Helper()
+	return toolDiff(cwd, acp.ToolKindEdit, toolLocations(cwd, args), args)
+}
+
+func TestToolDiffFIFODoesNotBlock(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mkfifo is unavailable on windows")
+	}
+	cwd := t.TempDir()
+	if err := mkfifo(filepath.Join(cwd, "pipe"), 0o600); err != nil {
+		t.Skipf("cannot create fifo: %v", err)
+	}
+	done := make(chan []acp.ToolCallContent, 1)
+	go func() { done <- editDiff(t, cwd, map[string]any{"path": "pipe", "content": "x"}) }()
+	select {
+	case diff := <-done:
+		assert.Empty(t, diff)
+	case <-time.After(3 * time.Second):
+		t.Fatal("toolDiff blocked on a FIFO")
+	}
+}
+
+func TestToolPathMatchesNativeWritePath(t *testing.T) {
+	cwd := t.TempDir()
+	// An existing file at the "naive absolute" location must not be used as oldText.
+	if err := os.WriteFile(filepath.Join(cwd, "a.txt"), []byte("decoy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, arg := range map[string]string{
+		"abs inside":  filepath.Join(cwd, "a.txt"),
+		"abs outside": "/etc/x",
+		"relative":    "sub/b.txt",
+	} {
+		t.Run(name, func(t *testing.T) {
+			want, err := native.ResolveSandboxedPath(cwd, arg)
+			assert.NoErr(t, err)
+			args := map[string]any{"path": arg, "content": "new\n"}
+			locations := toolLocations(cwd, args)
+			assert.Eq(t, want, locations[0].Path)
+			diff := editDiff(t, cwd, args)
+			assert.Eq(t, 1, len(diff))
+			assert.Eq(t, want, diff[0].Diff.Path)
+			assert.Nil(t, diff[0].Diff.OldText) // none of the resolved targets exists
+		})
+	}
+}
+
+func TestToolDiffNewFileInNewDirectory(t *testing.T) {
+	cwd := t.TempDir()
+	diff := editDiff(t, cwd, map[string]any{"path": "a/b/new.txt", "content": "hello\n"})
+	assert.Eq(t, 1, len(diff))
+	assert.Nil(t, diff[0].Diff.OldText)
+	assert.Eq(t, "hello\n", diff[0].Diff.NewText)
+}
+
+func TestToolDiffEscapeStillBlockedBehindMissingLeaf(t *testing.T) {
+	cwd, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(cwd, "out")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	assert.Empty(t, editDiff(t, cwd, map[string]any{"path": "out/new.txt", "content": "x"}))
+}
+
+func TestToolDiffSkipsLargeAndBinary(t *testing.T) {
+	cwd := t.TempDir()
+	big := strings.Repeat("a", maxDiffBytes+1)
+	write := func(name string, data []byte) {
+		if err := os.WriteFile(filepath.Join(cwd, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("big.txt", []byte(big))
+	write("bin.dat", []byte{0xff, 0xfe, 0x00, 0x01})
+	write("nul.txt", []byte("a\x00b"))
+	write("ok.txt", []byte("ok"))
+
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want bool
+	}{
+		{"large old", map[string]any{"path": "big.txt", "content": "x"}, false},
+		{"large new", map[string]any{"path": "ok.txt", "content": big}, false},
+		{"binary old", map[string]any{"path": "bin.dat", "content": "x"}, false},
+		{"nul old", map[string]any{"path": "nul.txt", "content": "x"}, false},
+		{"binary new", map[string]any{"path": "ok.txt", "content": "a\xffb"}, false},
+		{"small text", map[string]any{"path": "ok.txt", "content": "y"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Eq(t, tc.want, len(editDiff(t, cwd, tc.args)) == 1)
+			assert.Eq(t, 1, len(toolLocations(cwd, tc.args))) // locations are kept regardless
+		})
+	}
+}
+
+func TestToolLocationOmitsLineWhenUnknown(t *testing.T) {
+	cwd := t.TempDir()
+	locations := toolLocations(cwd, map[string]any{"path": "a.txt"})
+	assert.Nil(t, locations[0].Line)
+	data, err := json.Marshal(locations[0])
+	assert.NoErr(t, err)
+	assert.False(t, strings.Contains(string(data), "line"))
+
+	locations = toolLocations(cwd, map[string]any{"path": "a.txt", "line": float64(7)})
+	assert.Eq(t, 7, *locations[0].Line)
+}
+
+func TestToolUpdatesDoNotRepeatDiff(t *testing.T) {
+	cwd := t.TempDir()
+	path := filepath.Join(cwd, "t.txt")
+	if err := os.WriteFile(path, []byte("before\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	provider := mock.NewProvider(mock.ToolCall("edit-1", "file_write", map[string]any{"path": "t.txt", "content": "after\n"}), mock.Final("done"))
+	client := &testACPClient{selected: "allow"}
+	conn := connectPersonalACP(t, testACPRuntime(t, provider, &countingTool{writePath: path}), client)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: cwd, McpServers: []acp.McpServer{}})
+	assert.NoErr(t, err)
+	_, err = conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("edit")}})
+	assert.NoErr(t, err)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	starts, statuses := 0, 0
+	for _, n := range client.updates {
+		if n.Update.ToolCall != nil {
+			starts++
+			assert.Eq(t, 1, len(n.Update.ToolCall.Content)) // gofer gets the diff here
+		}
+		if u := n.Update.ToolCallUpdate; u != nil {
+			statuses++
+			assert.Empty(t, u.Content)
+			assert.Empty(t, u.Locations)
+		}
+	}
+	assert.Eq(t, 1, starts)
+	assert.True(t, statuses >= 2) // in_progress + completed
+	assert.Eq(t, 1, len(client.requests))
+	assert.Eq(t, 1, len(client.requests[0].ToolCall.Content)) // approver still sees the diff
+}
