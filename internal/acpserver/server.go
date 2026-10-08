@@ -53,7 +53,19 @@ func New(open OpenRuntime) *Agent {
 	return &Agent{open: open, sessions: make(map[acp.SessionId]*sessionState)}
 }
 
-func (a *Agent) SetConnection(conn *acp.AgentSideConnection) { a.conn = conn }
+// SetConnection runs after the connection has started serving requests, so conn
+// is guarded by mu like the rest of the shared state.
+func (a *Agent) SetConnection(conn *acp.AgentSideConnection) {
+	a.mu.Lock()
+	a.conn = conn
+	a.mu.Unlock()
+}
+
+func (a *Agent) connection() *acp.AgentSideConnection {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.conn
+}
 
 // Serve uses stdout exclusively for ACP JSON-RPC frames.
 func Serve(ctx context.Context, input io.Reader, output io.Writer, open OpenRuntime) error {
@@ -144,7 +156,7 @@ func (a *Agent) SetSessionMode(_ context.Context, req acp.SetSessionModeRequest)
 }
 
 func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptResponse, error) {
-	if a.conn == nil {
+	if a.connection() == nil {
 		return acp.PromptResponse{}, fmt.Errorf("ACP connection is not ready")
 	}
 	prompt, err := promptText(req.Prompt)
@@ -168,7 +180,7 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		a.mu.Unlock()
 	}()
 
-	hook := &permissionHook{conn: a.conn, sessionID: req.SessionId, cwd: cwd, readOnly: readOnly}
+	hook := &permissionHook{conn: a.connection(), sessionID: req.SessionId, cwd: cwd, readOnly: readOnly}
 	runtime, err := a.open(turnCtx, cwd, readOnly, servers, hook)
 	if err != nil {
 		return acp.PromptResponse{}, err
@@ -179,7 +191,7 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 			return nil
 		}
 		textSent = true
-		return a.conn.SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: acp.UpdateAgentMessageText(event.Text)})
+		return a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: acp.UpdateAgentMessageText(event.Text)})
 	}
 	result, runErr := runtime.Runner.Run(turnCtx, personal.RunRequest{SessionID: string(req.SessionId), Prompt: prompt, Emit: emit})
 	closeErr := runtime.close()
@@ -196,7 +208,7 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		return acp.PromptResponse{}, err
 	}
 	if !textSent && result.Output != "" {
-		if err := a.conn.SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: acp.UpdateAgentMessageText(result.Output)}); err != nil {
+		if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: acp.UpdateAgentMessageText(result.Output)}); err != nil {
 			return acp.PromptResponse{}, err
 		}
 	}
@@ -226,11 +238,11 @@ func (a *Agent) sendTurnUpdates(ctx context.Context, id acp.SessionId, result pe
 		update.UsageUpdate.Meta["cost_usd"] = usage.CostUSD
 		update.UsageUpdate.Cost = &acp.Cost{Amount: usage.CostUSD, Currency: "USD"}
 	}
-	if err := a.conn.SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: update}); err != nil {
+	if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: update}); err != nil {
 		return fmt.Errorf("send usage update: %w", err)
 	}
 	if entries := planEntries(result.Output); len(entries) > 0 {
-		if err := a.conn.SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: acp.UpdatePlan(entries...)}); err != nil {
+		if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: acp.UpdatePlan(entries...)}); err != nil {
 			return fmt.Errorf("send plan update: %w", err)
 		}
 	}
