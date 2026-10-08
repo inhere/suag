@@ -137,7 +137,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 		}
 	}()
 
-	fmt.Fprintln(inputSource, "Suag chat — type a task, :session or :quit.")
+	fmt.Fprintln(inputSource, "Suag chat — type a task, :session, :compact or :quit.")
 	stopHookActive := false
 	for {
 		line, hasLine, err, stopDone, injected, interrupted := nextChatInput(ctx, inputSource, waiting, &lostReply)
@@ -169,6 +169,14 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 			return nil
 		case ":session":
 			fmt.Fprintln(inputSource, "session id:", sessionID)
+			continue
+		case ":compact":
+			// Compress the session context now; token figures are estimates.
+			if out, err := runner.Compact(ctx, sessionID); err != nil {
+				fmt.Fprintln(stderr, "Compact:", err)
+			} else {
+				fmt.Fprintf(inputSource, "Compacted context: ~%d -> ~%d tokens (estimate)\n", out.TokensBefore, out.TokensAfter)
+			}
 			continue
 		}
 		if createdAtStartup {

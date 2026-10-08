@@ -134,3 +134,29 @@ func TestReadLLMProviderSettings_ProviderOverrideDoesNotLeakFileCredentials(t *t
 		assert.Eq(t, "claude-sonnet-4-6", settings.Model)
 	})
 }
+
+func TestCompactModelSettings(t *testing.T) {
+	t.Run("unset uses the current model", func(t *testing.T) {
+		setDeepSeekFileConfig(t)
+		base := ReadLLMProviderSettingsWithOverrides("", "")
+		_, ok := CompactModelSettings(base)
+		assert.Eq(t, false, ok)
+	})
+	t.Run("configured swaps only the model", func(t *testing.T) {
+		setDeepSeekFileConfig(t)
+		_ = gkconfig.Set("llm.compact_model", "deepseek-lite")
+		base := ReadLLMProviderSettingsWithOverrides("", "")
+		got, ok := CompactModelSettings(base)
+		assert.Eq(t, true, ok)
+		assert.Eq(t, "deepseek-lite", got.Model)
+		assert.Eq(t, base.APIKey, got.APIKey)
+		assert.Eq(t, base.BaseURL, got.BaseURL)
+		assert.Eq(t, "deepseek-chat", base.Model)
+	})
+	t.Run("same as current model is not a separate provider", func(t *testing.T) {
+		setDeepSeekFileConfig(t)
+		_ = gkconfig.Set("llm.compact_model", "deepseek-chat")
+		_, ok := CompactModelSettings(ReadLLMProviderSettingsWithOverrides("", ""))
+		assert.Eq(t, false, ok)
+	})
+}

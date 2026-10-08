@@ -86,6 +86,19 @@ func ReadLLMProviderSettingsWithOverrides(modelFlag, providerFlag string) LLMPro
 	return normalizeLLMProviderSettings(settings)
 }
 
+// CompactModelSettings returns the settings used for context summaries: the
+// effective settings with Model replaced by llm.compact_model (same provider,
+// key and endpoint). ok is false when llm.compact_model is unset or equals the
+// current model, in which case the turn's own provider summarizes.
+func CompactModelSettings(base LLMProviderSettings) (LLMProviderSettings, bool) {
+	model := strings.TrimSpace(gkconfig.String("llm.compact_model"))
+	if model == "" || model == base.Model {
+		return base, false
+	}
+	base.Model = model
+	return base, true
+}
+
 func BuildLLMProvider() (llm.Provider, error) {
 	return BuildLLMProviderFromSettings(ReadLLMProviderSettings())
 }

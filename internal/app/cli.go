@@ -199,14 +199,30 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		_ = capabilities.Close()
 		return nil, err
 	}
+	// llm.compact_model: summaries use that model on the same provider; unset
+	// means the turn's own provider.
+	var compactProvider agentcore.Provider
+	compactSettings, hasCompact := appconfig.CompactModelSettings(settings)
+	if hasCompact {
+		built, err := appconfig.BuildLLMProviderFromSettings(compactSettings)
+		if err != nil {
+			_ = repo.Close()
+			_ = capabilities.Close()
+			return nil, fmt.Errorf("build compact model provider: %w", err)
+		}
+		compactProvider = built
+	}
 	runner, err := personal.New(personal.Config{
-		Repository:   repo,
-		Provider:     provider,
-		Model:        settings.Model,
-		ProviderName: settings.ProviderName,
-		Tools:        toolRegistry,
-		Hooks:        hooks,
-		MaxSteps:     gkconfig.Int("max_steps", 30),
+		ContextWindow:   contextWindowForSettings(settings),
+		CompactProvider: compactProvider,
+		CompactModel:    compactSettings.Model,
+		Repository:      repo,
+		Provider:        provider,
+		Model:           settings.Model,
+		ProviderName:    settings.ProviderName,
+		Tools:           toolRegistry,
+		Hooks:           hooks,
+		MaxSteps:        gkconfig.Int("max_steps", 30),
 		RuleSource: func() (string, string, error) {
 			home, err := appconfig.ResolveSuagHome()
 			if err != nil {

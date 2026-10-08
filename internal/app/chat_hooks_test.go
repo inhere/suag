@@ -877,3 +877,26 @@ func TestGoferHooksCaptureStderrAsNotice(t *testing.T) {
 	resp := h.Call(context.Background(), goferHookEvent{Name: "UserPromptSubmit"})
 	assert.Eq(t, "taken over on web", resp.Notice)
 }
+
+func TestPersonalChatCompactCommandCompressesSession(t *testing.T) {
+	t.Setenv("SUAG_HOME", t.TempDir())
+	provider := &hookTestProvider{}
+	runner, _ := newCLITestRunner(t, provider)
+	var stdout, stderr strings.Builder
+	input := "first " + strings.Repeat("x", 400) + "\n:compact\nsecond\n:quit\n"
+	err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader(input), &stdout, &stderr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "Compacted context: ~") {
+		t.Fatalf("missing :compact report: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	// calls: first turn, the summary request, then "second" with summary + new prompt only.
+	if len(provider.calls) != 3 {
+		t.Fatalf("expected 3 model calls, got %d", len(provider.calls))
+	}
+	last := provider.calls[2]
+	if len(last) != 2 || !strings.Contains(last[0].Content, "压缩摘要") || last[1].Content != "second" {
+		t.Fatalf("unexpected context after :compact: %#v", last)
+	}
+}
