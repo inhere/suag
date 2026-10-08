@@ -1,0 +1,100 @@
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+)
+
+// AppendEvent inserts one event and returns it with its assigned ID.
+func (s *Store) AppendEvent(ctx context.Context, e Event) (Event, error) {
+	if e.Kind == "" {
+		return e, errors.New("event kind is required")
+	}
+	if e.StartedAt.IsZero() {
+		e.StartedAt = time.Now()
+	}
+	attrs := "{}"
+	if e.Attrs != nil {
+		b, err := json.Marshal(e.Attrs)
+		if err != nil {
+			return e, err
+		}
+		attrs = string(b)
+	}
+	res, err := s.db.ExecContext(ctx, `INSERT INTO events(session_id, turn_id, kind, name, status, started_at, duration_ms, ttft_ms,
+		input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, error, attrs_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		e.SessionID, e.TurnID, e.Kind, e.Name, e.Status, formatTime(e.StartedAt), e.DurationMs, e.TTFTMs,
+		e.InputTokens, e.OutputTokens, e.CacheReadTokens, e.CacheWriteTokens, e.Error, attrs)
+	if err != nil {
+		return e, fmt.Errorf("append event: %w", err)
+	}
+	e.ID, _ = res.LastInsertId()
+	return e, nil
+}
+
+// ListEvents returns events oldest first (started_at, id), narrowed by f.
+func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) {
+	q := `SELECT id, session_id, turn_id, kind, name, status, started_at, duration_ms, ttft_ms,
+		input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, error, attrs_json FROM events WHERE 1=1`
+	var args []any
+	if f.SessionID != "" {
+		q += ` AND session_id = ?`
+		args = append(args, f.SessionID)
+	}
+	if f.TurnID != "" {
+		q += ` AND turn_id = ?`
+		args = append(args, f.TurnID)
+	}
+	if len(f.Kinds) > 0 {
+		q += ` AND kind IN (` + placeholders(len(f.Kinds)) + `)`
+		for _, k := range f.Kinds {
+			args = append(args, k)
+		}
+	}
+	if !f.Since.IsZero() {
+		q += ` AND started_at >= ?`
+		args = append(args, formatTime(f.Since))
+	}
+	q += ` ORDER BY started_at ASC, id ASC`
+	if f.Limit > 0 {
+		q += fmt.Sprintf(` LIMIT %d`, f.Limit)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list events: %w", err)
+	}
+	defer rows.Close()
+	out := []Event{}
+	for rows.Next() {
+		var (
+			e       Event
+			started string
+			attrs   string
+		)
+		if err := rows.Scan(&e.ID, &e.SessionID, &e.TurnID, &e.Kind, &e.Name, &e.Status, &started, &e.DurationMs, &e.TTFTMs,
+			&e.InputTokens, &e.OutputTokens, &e.CacheReadTokens, &e.CacheWriteTokens, &e.Error, &attrs); err != nil {
+			return nil, err
+		}
+		e.StartedAt = parseTime(started)
+		if attrs != "" && attrs != "{}" {
+			if err := json.Unmarshal([]byte(attrs), &e.Attrs); err != nil {
+				return nil, fmt.Errorf("decode event attrs: %w", err)
+			}
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// SumUsage totals tokens over kind=model events only; turn/tool events carry
+// no per-call usage of their own, so nothing is counted twice.
+func (s *Store) SumUsage(ctx context.Context, sessionID string) (Usage, error) {
+	var u Usage
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(1), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
+		COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_write_tokens),0) FROM events WHERE session_id = ? AND kind = ?`,
+		sessionID, EventModel).Scan(&u.Calls, &u.InputTokens, &u.OutputTokens, &u.CacheReadTokens, &u.CacheWriteTokens)
+	return u, err
+}
