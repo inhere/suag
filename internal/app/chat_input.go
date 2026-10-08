@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 
+	"github.com/inhere/suag/internal/personal/process"
 	"golang.org/x/term"
 )
 
@@ -16,6 +18,7 @@ type chatInputEvent struct {
 	activity bool
 	line     string
 	err      error
+	injected bool
 }
 
 type chatInputRequest struct{ prompt string }
@@ -23,21 +26,23 @@ type chatInputRequest struct{ prompt string }
 // chatInputSource reads exactly one prompt per request and signals its first byte before
 // forwarding it to the line editor, so callers can interrupt a waiting Stop hook first.
 type chatInputSource struct {
-	ctx      context.Context
-	cancel   context.CancelFunc
-	input    io.Reader
-	output   io.Writer
-	ttyFile  *os.File
-	state    *term.State
-	terminal *term.Terminal
-	requests chan chatInputRequest
-	events   chan chatInputEvent
-	activity chan struct{}
-	done     chan struct{}
-	mu       sync.Mutex
-	pending  bool
-	closeErr error
-	reader   *chatActivityReader
+	ctx        context.Context
+	cancel     context.CancelFunc
+	input      io.Reader
+	output     io.Writer
+	ttyFile    *os.File
+	state      *term.State
+	terminal   *term.Terminal
+	requests   chan chatInputRequest
+	events     chan chatInputEvent
+	activity   chan struct{}
+	deliveries chan chatInputEvent
+	done       chan struct{}
+	mu         sync.Mutex
+	pending    bool
+	busy       bool
+	closeErr   error
+	reader     *chatActivityReader
 }
 
 func newChatInputSource(parent context.Context, input io.Reader, output io.Writer) (*chatInputSource, error) {
@@ -45,7 +50,7 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 	source := &chatInputSource{
 		ctx: ctx, cancel: cancel, input: input, output: output,
 		requests: make(chan chatInputRequest), events: make(chan chatInputEvent, 1),
-		activity: make(chan struct{}), done: make(chan struct{}),
+		activity: make(chan struct{}), deliveries: make(chan chatInputEvent, 8), done: make(chan struct{}),
 	}
 	if file, ok := input.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
 		state, err := term.MakeRaw(int(file.Fd()))
@@ -60,6 +65,58 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 	}
 	go source.run()
 	return source, nil
+}
+
+func (s *chatInputSource) Deliver(text, from string) (bool, error) {
+	if strings.TrimSpace(text) == "" {
+		return false, fmt.Errorf("delivery text is empty")
+	}
+	from = safeSender(from)
+	prefix := "[来自 " + from + "] "
+	if strings.EqualFold(from, "gofer") {
+		prefix = goferReplyPrefix
+	}
+	if strings.HasPrefix(text, goferReplyPrefix) || strings.HasPrefix(text, "[来自 ") {
+		prefix = ""
+	}
+	queued := s.isBusy() || len(s.deliveries) > 0
+	event := chatInputEvent{line: prefix + text, injected: true}
+	select {
+	case s.deliveries <- event:
+		return queued, nil
+	default:
+		return true, process.ErrQueueFull
+	}
+}
+
+func safeSender(from string) string {
+	from = strings.TrimSpace(from)
+	if from == "" {
+		return "unknown"
+	}
+	clean := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, from)
+	runes := []rune(clean)
+	if len(runes) > 64 {
+		clean = string(runes[:64])
+	}
+	return clean
+}
+
+func (s *chatInputSource) isBusy() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.busy
+}
+
+func (s *chatInputSource) SetBusy(busy bool) {
+	s.mu.Lock()
+	s.busy = busy
+	s.mu.Unlock()
 }
 
 func (s *chatInputSource) Request(prompt string) bool {

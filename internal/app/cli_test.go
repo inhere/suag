@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -328,4 +329,26 @@ func TestPersonalHelpDoesNotOpenRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Eq(t, true, strings.Contains(stderr.String(), "-prompt"))
+}
+
+func shortTestHome(t *testing.T) string {
+	t.Helper()
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test source path")
+	}
+	repoRoot, err := filepath.Abs(filepath.Join(filepath.Dir(source), "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(repoRoot, "tmp", "s6test")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.MkdirTemp(root, "h-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }

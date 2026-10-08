@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"github.com/inhere/suag/internal/data/testutil"
 	"github.com/inhere/suag/internal/host/session"
 	"github.com/inhere/suag/internal/personal"
+	personalprocess "github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
@@ -249,6 +252,127 @@ func TestPersonalChatEOFExitsNormally(t *testing.T) {
 				t.Fatalf("normal EOF returned an error: %v", err)
 			}
 		})
+	}
+}
+
+func TestChatDeliveryQueueIsBoundedAndInjectsOnlyOnce(t *testing.T) {
+	source, err := newChatInputSource(context.Background(), strings.NewReader(""), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	source.SetBusy(true)
+	for i := 0; i < personalprocess.MaxQueue; i++ {
+		queued, err := source.Deliver(fmt.Sprintf("message-%d", i), "gofer")
+		if err != nil || !queued {
+			t.Fatalf("busy delivery %d should queue: queued=%v err=%v", i, queued, err)
+		}
+	}
+	if _, err := source.Deliver("overflow", "gofer"); !errors.Is(err, personalprocess.ErrQueueFull) {
+		t.Fatalf("queue overflow should be rejected, got %v", err)
+	}
+	for i := 0; i < personalprocess.MaxQueue; i++ {
+		event := <-source.deliveries
+		if !event.injected || event.line != fmt.Sprintf("[gofer web 回复] message-%d", i) {
+			t.Fatalf("unexpected queued delivery %#v", event)
+		}
+	}
+	source.SetBusy(false)
+	queued, err := source.Deliver("hello", "local-agent")
+	if err != nil || queued {
+		t.Fatalf("idle delivery should be immediate: queued=%v err=%v", queued, err)
+	}
+	if event := <-source.deliveries; event.line != "[来自 local-agent] hello" || !event.injected {
+		t.Fatalf("unexpected idle delivery event %#v", event)
+	}
+}
+
+func TestEmptyChatRegistersRealSessionThenUpdatesTitleOnFirstPrompt(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	processRoot := shortTestHome(t)
+	runRoot := filepath.Join(processRoot, "runs")
+	lockRoot := filepath.Join(processRoot, "locks")
+	repo, err := session.NewSQLiteRepository(testutil.NewMigratedSQLitePath(t, "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	provider := &blockingChatProvider{entered: make(chan struct{}), release: make(chan struct{})}
+	runner, err := personal.New(personal.Config{
+		Repository: repo, RunRoot: runRoot, Provider: provider,
+		LockRoot: lockRoot, ProcessRoot: filepath.Join(processRoot, "run"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, writer := io.Pipe()
+	var stdout, stderr strings.Builder
+	done := make(chan error, 1)
+	go func() {
+		done <- runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, reader, &stdout, &stderr, nil)
+	}()
+	processRoot = filepath.Join(processRoot, "run")
+	var record personalprocess.Record
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		records, err := personalprocess.List(processRoot)
+		if err == nil && len(records) == 1 {
+			record = records[0]
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if record.SessionID == "" {
+		t.Fatalf("chat process did not register before its first prompt")
+	}
+	created, err := runner.LoadSession(context.Background(), record.SessionID)
+	if err != nil || created.Title != "New chat" {
+		t.Fatalf("startup should create a real default-titled session: %#v err=%v", created, err)
+	}
+	if _, err := io.WriteString(writer, "first meaningful prompt\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-provider.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("provider did not receive first prompt")
+	}
+	updated, err := personalprocess.List(processRoot)
+	if err != nil || len(updated) != 1 || updated[0].Name != "first meaningful prompt" {
+		t.Fatalf("ps registration did not receive first prompt title: %#v err=%v", updated, err)
+	}
+	stored, err := runner.LoadSession(context.Background(), record.SessionID)
+	if err != nil || stored.Title != "first meaningful prompt" {
+		t.Fatalf("session title was not updated: %#v err=%v", stored, err)
+	}
+	close(provider.release)
+	if _, err := io.WriteString(writer, ":quit\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = writer.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+type blockingChatProvider struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (*blockingChatProvider) Name() string { return "blocking-chat-test" }
+func (p *blockingChatProvider) Generate(ctx context.Context, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	select {
+	case <-p.entered:
+	default:
+		close(p.entered)
+	}
+	select {
+	case <-p.release:
+		return &agentcore.GenerateResult{Content: "finished", FinishReason: agentcore.FinishFinal}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 }
 

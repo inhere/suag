@@ -190,6 +190,13 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		}
 		transcriptDir = filepath.Join(home, "transcripts")
 	}
+	home, err := appconfig.ResolveSuagHome()
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, fmt.Errorf("resolve session process root: %w", err)
+	}
+	lockRoot := filepath.Join(home, "run", "locks")
+	processRoot := filepath.Join(home, "run")
 	if err := prepareHostSessionDatabase(ctx, dbPath); err != nil {
 		_ = capabilities.Close()
 		return nil, err
@@ -218,6 +225,8 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		AppendSystemPrompt: appendSystemPrompt(opts.AppendSystemPrompt),
 		GoferJob:           os.Getenv("GOFER_JOB_ID") != "",
 		TranscriptDir:      transcriptDir,
+		LockRoot:           lockRoot,
+		ProcessRoot:        processRoot,
 	})
 	if err != nil {
 		_ = repo.Close()

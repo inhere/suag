@@ -11,7 +11,9 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	appconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/host/session"
 	"github.com/inhere/suag/internal/personal"
+	personalprocess "github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
@@ -32,14 +34,50 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 	}
 	sessionID := ""
 	source := "startup"
+	createdAtStartup := false
 	if opts.ResumeID != "" {
 		source = "resume"
-	}
-	if opts.SessionID != "" || opts.ResumeID != "" {
-		var err error
-		sessionID, err = openRequestedSession(ctx, runner, opts)
+		model, err := runner.LoadSession(ctx, opts.ResumeID)
 		if err != nil {
 			return err
+		}
+		sessionID = model.SessionID
+	} else if opts.SessionID != "" {
+		model, err := runner.LoadSession(ctx, opts.SessionID)
+		if err == nil {
+			sessionID = model.SessionID
+		} else if errors.Is(err, session.ErrSessionNotFound) {
+			model, err = runner.NewSession(ctx, opts.SessionID, "New chat")
+			if err != nil {
+				return err
+			}
+			sessionID, createdAtStartup = model.SessionID, true
+		} else {
+			return err
+		}
+	} else {
+		model, err := runner.NewSession(ctx, "", "New chat")
+		if err != nil {
+			return err
+		}
+		sessionID, createdAtStartup = model.SessionID, true
+	}
+	fmt.Fprintln(stderr, "session id:", sessionID)
+	var releaseSessionLock func() error
+	var processServer *personalprocess.Server
+	defer func() {
+		if processServer != nil {
+			_ = processServer.Close()
+		}
+		if releaseSessionLock != nil {
+			_ = releaseSessionLock()
+		}
+	}()
+	if sessionID != "" {
+		var lockErr error
+		releaseSessionLock, lockErr = runner.HoldSessionLock(sessionID)
+		if lockErr != nil {
+			return lockErr
 		}
 	}
 	cwd, _ := os.Getwd()
@@ -56,6 +94,17 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 	baseEvent := func(name string) goferHookEvent {
 		return goferHookEvent{Name: name, SessionID: sessionID, CWD: cwd, TranscriptPath: transcriptPath(sessionID)}
 	}
+	inputSource, err := newChatInputSource(ctx, stdin, stdout)
+	if err != nil {
+		return err
+	}
+	defer inputSource.Close()
+	if runner.ProcessRoot() != "" {
+		processServer, err = startChatProcessRegistration(sessionID, runner.ProcessRoot(), runner, inputSource)
+		if err != nil {
+			return err
+		}
+	}
 	var pendingContext string
 	if hooks != nil && sessionID != "" {
 		ensureTranscriptFile(transcriptPath(sessionID), sessionID)
@@ -63,11 +112,6 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 		start.Source = source
 		pendingContext = hookAdditionalContext(hooks.Call(ctx, start))
 	}
-	inputSource, err := newChatInputSource(ctx, stdin, stdout)
-	if err != nil {
-		return err
-	}
-	defer inputSource.Close()
 	var waiting chatHookWait
 	defer func() {
 		if waiting != nil {
@@ -112,19 +156,16 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 			fmt.Fprintln(inputSource, "session id:", sessionID)
 			continue
 		}
-		if sessionID == "" {
-			model, err := runner.NewSession(ctx, "", line)
-			if err != nil {
+		if createdAtStartup {
+			if err := runner.SetSessionTitle(ctx, sessionID, line); err != nil {
 				return err
 			}
-			sessionID = model.SessionID
-			fmt.Fprintln(stderr, "session id:", sessionID)
-			if hooks != nil {
-				ensureTranscriptFile(transcriptPath(sessionID), sessionID)
-				start := baseEvent("SessionStart")
-				start.Source = source
-				pendingContext = appendContext(pendingContext, hookAdditionalContext(hooks.Call(ctx, start)))
+			if processServer != nil {
+				if err := processServer.SetName(line); err != nil {
+					return err
+				}
 			}
+			createdAtStartup = false
 		}
 		if gate != nil {
 			gate.Reset()
@@ -136,6 +177,10 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 		}
 		turnStopActive := stopHookActive
 		stopHookActive = false
+		inputSource.SetBusy(true)
+		if processServer != nil {
+			_ = processServer.SetBusy(true)
+		}
 		result, runErr := runner.Run(ctx, personal.RunRequest{
 			SessionID:       sessionID,
 			Prompt:          line,
@@ -152,6 +197,10 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 				return nil
 			},
 		})
+		inputSource.SetBusy(false)
+		if processServer != nil {
+			_ = processServer.SetBusy(false)
+		}
 		pendingContext = ""
 		if runErr != nil {
 			if ctx.Err() != nil {
@@ -175,6 +224,15 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 			waiting = hooks.StartStop(ctx, stop)
 		}
 	}
+}
+
+func startChatProcessRegistration(sessionID, processRoot string, runner *personal.Runner, input *chatInputSource) (*personalprocess.Server, error) {
+	model, err := runner.LoadSession(context.Background(), sessionID)
+	if err != nil {
+		return nil, err
+	}
+	cwd, _ := os.Getwd()
+	return personalprocess.Start(processRoot, sessionID, model.Title, cwd, input.Deliver)
 }
 
 func ensureTranscriptFile(path, sessionID string) {
@@ -213,6 +271,13 @@ func nextChatInput(ctx context.Context, source *chatInputSource, waiting chatHoo
 				continue
 			}
 			return line, hasLine, err, stopResult, injected, interrupted
+		case delivery := <-source.deliveries:
+			if waiting != nil {
+				waiting.Interrupt(context.Background())
+				interrupted = true
+			}
+			fmt.Fprintln(source, delivery.line)
+			return delivery.line, true, nil, false, true, interrupted
 		default:
 		}
 		select {
@@ -232,6 +297,13 @@ func nextChatInput(ctx context.Context, source *chatInputSource, waiting chatHoo
 			}
 			fmt.Fprintln(source, result.response.Reason)
 			return result.response.Reason, true, nil, true, true, interrupted
+		case delivery := <-source.deliveries:
+			if waiting != nil {
+				waiting.Interrupt(context.Background())
+				interrupted = true
+			}
+			fmt.Fprintln(source, delivery.line)
+			return delivery.line, true, nil, false, delivery.injected, interrupted
 		case <-ctx.Done():
 			return "", false, ctx.Err(), false, false, interrupted
 		}

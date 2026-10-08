@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/inhere/suag/internal/host/session"
+	"github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/storage/sqlite"
 )
@@ -31,6 +33,8 @@ type Config struct {
 	GoferJob           bool
 	Hooks              []agentcore.Hook
 	TranscriptDir      string
+	LockRoot           string
+	ProcessRoot        string
 	MaxSteps           int
 }
 
@@ -69,14 +73,56 @@ type RunResult struct {
 }
 
 // Runner owns one synchronous turn at a time for a persisted personal session.
-type Runner struct{ cfg Config }
+type Runner struct {
+	cfg       Config
+	locksMu   sync.Mutex
+	heldLocks map[string]*process.SessionLock
+}
 
 func New(cfg Config) (*Runner, error) {
 	if cfg.Repository == nil || cfg.Provider == nil || strings.TrimSpace(cfg.RunRoot) == "" {
 		return nil, fmt.Errorf("personal runner requires repository, provider and run root")
 	}
-	return &Runner{cfg: cfg}, nil
+	return &Runner{cfg: cfg, heldLocks: make(map[string]*process.SessionLock)}, nil
 }
+
+// HoldSessionLock reserves a session for the lifetime of an interactive chat.
+func (r *Runner) HoldSessionLock(sessionID string) (func() error, error) {
+	if r.cfg.LockRoot == "" {
+		return func() error { return nil }, nil
+	}
+	r.locksMu.Lock()
+	if _, exists := r.heldLocks[sessionID]; exists {
+		r.locksMu.Unlock()
+		return func() error { return nil }, nil
+	}
+	r.locksMu.Unlock()
+	lock, err := process.AcquireSessionLock(r.cfg.LockRoot, sessionID, 0)
+	if err != nil {
+		return nil, err
+	}
+	r.locksMu.Lock()
+	if existing := r.heldLocks[sessionID]; existing != nil {
+		r.locksMu.Unlock()
+		_ = lock.Close()
+		return func() error { return nil }, nil
+	}
+	r.heldLocks[sessionID] = lock
+	r.locksMu.Unlock()
+	var once sync.Once
+	return func() error {
+		var closeErr error
+		once.Do(func() {
+			r.locksMu.Lock()
+			delete(r.heldLocks, sessionID)
+			r.locksMu.Unlock()
+			closeErr = lock.Close()
+		})
+		return closeErr
+	}, nil
+}
+
+func (r *Runner) ProcessRoot() string { return r.cfg.ProcessRoot }
 
 func (r *Runner) NewSession(ctx context.Context, id, title string) (session.Session, error) {
 	if id == "" {
@@ -114,6 +160,20 @@ func (r *Runner) NewSession(ctx context.Context, id, title string) (session.Sess
 	return model, nil
 }
 
+// SetSessionTitle updates the persisted display title after an interactive chat's first prompt.
+func (r *Runner) SetSessionTitle(ctx context.Context, sessionID, title string) error {
+	model, err := r.LoadSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	model.Title = strings.TrimSpace(title)
+	model.UpdatedAt = time.Now().UTC()
+	if err := r.cfg.Repository.UpdateSession(ctx, model); err != nil {
+		return fmt.Errorf("update personal session title: %w", err)
+	}
+	return nil
+}
+
 func (r *Runner) LoadSession(ctx context.Context, id string) (session.Session, error) {
 	if err := validateSessionID(id); err != nil {
 		return session.Session{}, err
@@ -142,6 +202,16 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	}
 	if model.Status == session.SessionArchived || model.Status == session.SessionRunning {
 		return RunResult{}, fmt.Errorf("session %q is not ready for a new turn: %s", model.SessionID, model.Status)
+	}
+	r.locksMu.Lock()
+	_, heldByChat := r.heldLocks[model.SessionID]
+	r.locksMu.Unlock()
+	if r.cfg.LockRoot != "" && !heldByChat {
+		lock, err := process.AcquireSessionLock(r.cfg.LockRoot, model.SessionID, 30*time.Second)
+		if err != nil {
+			return RunResult{}, err
+		}
+		defer lock.Close()
 	}
 	transcript := r.openTranscript(model.SessionID)
 	if transcript != nil {
