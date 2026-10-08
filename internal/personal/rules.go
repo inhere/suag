@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -116,35 +117,50 @@ func expandRuleFile(path string, remaining *int, seenPaths map[string]struct{}) 
 	}
 	seenPaths[pathKey] = struct{}{}
 	var out strings.Builder
+	// fence 记录当前所处围栏代码块的标记字符（` 或 ~），0 表示不在代码块内。
+	// 代码块内的 @Test/@Override 等不是 include 指令，必须原样保留。
+	var fence byte
 	for _, line := range strings.SplitAfter(content, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if includePath := ruleIncludePath(trimmed); includePath != "" {
-			include := filepath.Join(filepath.Dir(path), includePath)
-			if sameRulePath(path, include) {
-				out.WriteString("[循环引用已跳过: " + trimmed + "]\n")
-				continue
+		if marker := fenceMarker(trimmed); marker != 0 {
+			if fence == 0 {
+				fence = marker
+			} else if fence == marker {
+				fence = 0
 			}
-			includeKey := rulePathKey(include)
-			if _, exists := seenPaths[includeKey]; exists {
-				continue
+		} else if fence == 0 {
+			if includePath := ruleIncludePath(trimmed); includePath != "" {
+				include := filepath.Join(filepath.Dir(path), includePath)
+				if sameRulePath(path, include) {
+					out.WriteString("[循环引用已跳过: " + trimmed + "]\n")
+					continue
+				}
+				includeKey := rulePathKey(include)
+				if _, exists := seenPaths[includeKey]; exists {
+					continue
+				}
+				// 目标不存在、是目录/非普通文件或读取失败时，这行很可能只是普通
+				// 文本（如 "@某人 负责"），降级为保留原行，避免阻断会话创建。
+				if info, statErr := os.Stat(include); statErr == nil && info.Mode().IsRegular() {
+					if part, cut, readErr := readRuleFile(include); readErr == nil {
+						seenPaths[includeKey] = struct{}{}
+						text, dropped := appendLimited(part, remaining)
+						out.WriteString(text)
+						if cut {
+							out.WriteString("\n[规则已截断: 单文件超过 64KB]")
+						}
+						if dropped {
+							out.WriteString("\n[规则已截断: 总量超过 128KB]")
+							break
+						}
+						continue
+					}
+				}
 			}
-			part, cut, readErr := readRuleFile(include)
-			if readErr != nil {
-				return "", fmt.Errorf("read rule include %s: %w", include, readErr)
-			}
-			seenPaths[includeKey] = struct{}{}
-			out.WriteString(appendLimited(part, remaining))
-			if cut {
-				out.WriteString("\n[规则已截断: 单文件超过 64KB]")
-			}
-			if *remaining == 0 {
-				out.WriteString("\n[规则已截断: 总量超过 128KB]")
-				break
-			}
-			continue
 		}
-		out.WriteString(appendLimited(line, remaining))
-		if *remaining == 0 {
+		text, dropped := appendLimited(line, remaining)
+		out.WriteString(text)
+		if dropped {
 			out.WriteString("\n[规则已截断: 总量超过 128KB]")
 			break
 		}
@@ -153,6 +169,17 @@ func expandRuleFile(path string, remaining *int, seenPaths map[string]struct{}) 
 		out.WriteString("\n[规则已截断: 单文件超过 64KB]")
 	}
 	return out.String(), nil
+}
+
+// fenceMarker returns '`' or '~' when the line opens/closes a fenced code block.
+func fenceMarker(trimmed string) byte {
+	if strings.HasPrefix(trimmed, "```") {
+		return '`'
+	}
+	if strings.HasPrefix(trimmed, "~~~") {
+		return '~'
+	}
+	return 0
 }
 
 // ruleIncludePath accepts a line-start @path directive and ignores trailing
@@ -178,15 +205,30 @@ func readRuleFile(path string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	return string(data[:min(len(data), maxRuleFileBytes)]), len(data) > maxRuleFileBytes, nil
+	if len(data) > maxRuleFileBytes {
+		return string(data[:utf8Boundary(data, maxRuleFileBytes)]), true, nil
+	}
+	return string(data), false, nil
 }
 
-func appendLimited(content string, remaining *int) string {
+// appendLimited cuts content to the remaining budget on a UTF-8 boundary and
+// reports whether any content was actually discarded.
+func appendLimited(content string, remaining *int) (string, bool) {
+	dropped := false
 	if len(content) > *remaining {
-		content = content[:*remaining]
+		content = content[:utf8Boundary([]byte(content), *remaining)]
+		dropped = true
 	}
 	*remaining -= len(content)
-	return content
+	return content, dropped
+}
+
+// utf8Boundary moves cut back so that data[:cut] does not split a multi-byte rune.
+func utf8Boundary(data []byte, cut int) int {
+	for cut > 0 && cut < len(data) && !utf8.RuneStart(data[cut]) {
+		cut--
+	}
+	return cut
 }
 
 func sameRulePath(a, b string) bool {

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gookit/goutil/x/assert"
 )
@@ -154,4 +155,81 @@ func TestLoadRulesKeepsSameIncludeTextFromDifferentDirectories(t *testing.T) {
 	assert.NoErr(t, err)
 	assert.Eq(t, true, strings.Contains(rules, "user workspace rules"))
 	assert.Eq(t, true, strings.Contains(rules, "project workspace rules"))
+}
+
+func TestLoadRulesIncludeFallbacks(t *testing.T) {
+	newRoot := func(t *testing.T, content string) string {
+		root := t.TempDir()
+		putRule(t, filepath.Join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+		putRule(t, filepath.Join(root, "AGENTS.md"), content)
+		return root
+	}
+
+	t.Run("fenced code block is not include", func(t *testing.T) {
+		root := newRoot(t, "```java\n@Test\n@Override\n```\n~~~\n@Foo\n~~~\n")
+		rules, _, err := LoadRules(root, t.TempDir(), false)
+		assert.NoErr(t, err)
+		assert.StrContains(t, rules, "@Test\n@Override")
+		assert.StrContains(t, rules, "@Foo")
+	})
+
+	t.Run("missing target keeps original line", func(t *testing.T) {
+		root := newRoot(t, "@AGENTS-missing.md\n@某人 负责发布\nafter\n")
+		rules, _, err := LoadRules(root, t.TempDir(), false)
+		assert.NoErr(t, err)
+		assert.StrContains(t, rules, "@AGENTS-missing.md")
+		assert.StrContains(t, rules, "@某人 负责发布")
+		assert.StrContains(t, rules, "after")
+	})
+
+	t.Run("directory target keeps original line", func(t *testing.T) {
+		root := newRoot(t, "@docs/\nafter\n")
+		assert.NoErr(t, os.MkdirAll(filepath.Join(root, "docs"), 0755))
+		rules, _, err := LoadRules(root, t.TempDir(), false)
+		assert.NoErr(t, err)
+		assert.StrContains(t, rules, "@docs/")
+		assert.StrContains(t, rules, "after")
+	})
+}
+
+func TestLoadRulesTruncatesOnUTF8Boundary(t *testing.T) {
+	root := t.TempDir()
+	putRule(t, filepath.Join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+	// 64KB 不是 3 的倍数，按字节切必然落在汉字中间。
+	putRule(t, filepath.Join(root, "AGENTS.md"), strings.Repeat("中", 30000))
+	rules, _, err := LoadRules(root, t.TempDir(), false)
+	assert.NoErr(t, err)
+	assert.StrContains(t, rules, "单文件超过 64KB")
+	assert.True(t, utf8.ValidString(rules))
+
+	// 总量截断：home 占 64KB，项目文件用汉字填超剩余额度。
+	home := t.TempDir()
+	putRule(t, filepath.Join(home, "AGENTS.md"), strings.Repeat("a", 64*1024-1))
+	putRule(t, filepath.Join(root, "AGENTS.md"), strings.Repeat("中", 30000))
+	rules, _, err = LoadRules(root, home, false)
+	assert.NoErr(t, err)
+	assert.True(t, utf8.ValidString(rules))
+}
+
+func TestLoadRulesTotalLimitMarker(t *testing.T) {
+	home := t.TempDir()
+	root := t.TempDir()
+	putRule(t, filepath.Join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+	putRule(t, filepath.Join(home, "AGENTS.md"), strings.Repeat("u", 64*1024))
+
+	putRule(t, filepath.Join(root, "extra.md"), strings.Repeat("p", 64*1024))
+
+	t.Run("exactly 128KB has no marker", func(t *testing.T) {
+		putRule(t, filepath.Join(root, "AGENTS.md"), "@extra.md\n")
+		rules, _, err := LoadRules(root, home, false)
+		assert.NoErr(t, err)
+		assert.StrNotContains(t, rules, "总量超过 128KB")
+	})
+
+	t.Run("one byte over adds marker", func(t *testing.T) {
+		putRule(t, filepath.Join(root, "AGENTS.md"), "@extra.md\nx")
+		rules, _, err := LoadRules(root, home, false)
+		assert.NoErr(t, err)
+		assert.StrContains(t, rules, "总量超过 128KB")
+	})
 }
