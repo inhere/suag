@@ -73,7 +73,7 @@ BAILIAN_API_KEY=<你的密钥>
 BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
-也可将这两个变量设为 Gofer server 进程可用的环境变量。`config/config.yaml` 提供了字段样例；Suag 启动时依次加载当前目录和用户目录的配置。`SUAG_HOME` 替换 `~/.suag` 作为数据与配置根，`SUAG_CONFIG` 指定唯一配置文件。模型与 provider 的优先级是 `--model` / `--provider` > `SUAG_MODEL` / `SUAG_PROVIDER` > 配置文件；这些选项不会接收密钥。换用 OpenAI、DeepSeek 或 Anthropic 时，调整 `api_type`、`provider_name`、`model`、`api_key` 与 `base_url`；Anthropic 使用 `api_type: anthropic`。不要把真实密钥写入 agent argv、job `--env` 或任务文本：Gofer 会持久化 job 请求。需要读取旧仓库 `db/` 会话时，显式配置 `database_url` 和 `agentcore.run_root`；默认路径不会自动迁移旧数据。
+也可将这两个变量设为 Gofer server 进程可用的环境变量。仓库的 `config/config.yaml` 是字段样例；Suag 只加载 `~/.suag/config.yaml` 与 `~/.suag/.env`（或 `SUAG_HOME` 下的同名文件），不读取当前工作目录的配置和 `.env`。`SUAG_HOME` 替换 `~/.suag` 作为数据与配置根，`SUAG_CONFIG` 指定唯一配置文件。模型与 provider 的优先级是 `--model` / `--provider` > `SUAG_MODEL` / `SUAG_PROVIDER` > 配置文件；这些选项不会接收密钥。换用 OpenAI、DeepSeek 或 Anthropic 时，调整 `api_type`、`provider_name`、`model`、`api_key` 与 `base_url`；Anthropic 使用 `api_type: anthropic`。不要把真实密钥写入 agent argv、job `--env` 或任务文本：Gofer 会持久化 job 请求。需要读取旧仓库 `db/` 会话时，显式配置 `database_url` 和 `agentcore.run_root`；默认路径不会自动迁移旧数据。
 
 ## 批处理 CLI
 

@@ -76,6 +76,22 @@ func TestLoadIgnoresWorkingDirectoryDotenv(t *testing.T) {
 	assert.Eq(t, root, os.Getenv("SUAG_HOME"))
 }
 
+func TestLoadIgnoresWorkingDirectoryConfig(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	root := t.TempDir()
+	t.Setenv("SUAG_HOME", root)
+	t.Setenv("SUAG_CONFIG", "")
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte("llm:\n  model: home-model\n"), 0600))
+	assert.NoErr(t, os.MkdirAll(filepath.Join(cwd, "config"), 0700))
+	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, "config", "config.yaml"), []byte("llm:\n  model: project-model\n"), 0600))
+	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, "config.yaml"), []byte("llm:\n  model: project-model\n"), 0600))
+	assert.NoErr(t, Load())
+	assert.Eq(t, "home-model", ReadLLMProviderSettings().Model)
+}
+
 func TestLoadSuagHomeDotenv(t *testing.T) {
 	t.Run("ordinary variables apply", func(t *testing.T) {
 		gkconfig.Reset()

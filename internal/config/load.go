@@ -36,7 +36,9 @@ func Load() error {
 		}
 		return nil
 	}
-	if err := gkconfig.LoadExists("./config/config.yaml", filepath.Join(privateDir, "config.yaml"), "config.yaml"); err != nil {
+	// Like .env, config.yaml is read from SUAG_HOME only: a config.yaml in the
+	// user's project directory is that project's file, not suag's.
+	if err := gkconfig.LoadExists(filepath.Join(privateDir, "config.yaml")); err != nil {
 		slog.Error("loading config file", "err", err)
 		return err
 	}
