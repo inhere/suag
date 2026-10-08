@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	gkconfig "github.com/gookit/config/v2"
+	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/internal/data/testutil"
 	"github.com/inhere/suag/internal/host/session"
 	"github.com/inhere/suag/internal/personal"
@@ -145,6 +146,9 @@ func TestPersonalChatBlockStartsInjectedTurnAndMarksStopActive(t *testing.T) {
 	}
 	if len(prompts) != 2 || prompts[1].Prompt != "[gofer web 回复] continue" {
 		t.Fatalf("expected block reason as a new submitted prompt, got %#v", prompts)
+	}
+	if prompts[0].Injected || !prompts[1].Injected {
+		t.Fatalf("terminal prompt must not be injected and Stop-block prompt must be: %#v", prompts)
 	}
 	if prompts[0].TranscriptPath == "" {
 		t.Fatal("SessionStart and prompt hooks should receive the transcript path")
@@ -416,6 +420,79 @@ func TestChatProcessDeliveryTranscriptIsInjectedAndTerminalPromptIsNot(t *testin
 	if len(entries) != 2 || entries[0]["text"] != "[来自 cli] S6_QUEUE_1" || entries[0]["injected"] != true || entries[1]["text"] != "ordinary terminal prompt" || entries[1]["injected"] != false {
 		t.Fatalf("transcript did not preserve delivery provenance: %#v", entries)
 	}
+}
+
+func TestChatProcessDeliveryUserPromptSubmitCarriesInjected(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	suagHome := shortTestHome(t)
+	t.Setenv("SUAG_HOME", suagHome)
+	repo, err := session.NewSQLiteRepository(testutil.NewMigratedSQLitePath(t, "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	processRoot := filepath.Join(suagHome, "run")
+	provider := &hookTestProvider{}
+	runner, err := personal.New(personal.Config{
+		Repository: repo, RunRoot: filepath.Join(t.TempDir(), "runs"), Provider: provider,
+		TranscriptDir: filepath.Join(suagHome, "transcripts"),
+		LockRoot:      filepath.Join(processRoot, "locks"), ProcessRoot: processRoot,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hooks := newFakeHookClient()
+	hooks.blockFirst = false
+	reader, writer := io.Pipe()
+	var stdout, stderr strings.Builder
+	done := make(chan error, 1)
+	go func() {
+		done <- runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, reader, &stdout, &stderr, hooks)
+	}()
+	record := waitForProcessRecord(t, processRoot)
+	if _, err := personalprocess.Send(record, personalprocess.Request{Text: "S6_HOOK", From: "cli"}); err != nil {
+		t.Fatal(err)
+	}
+	waitProviderCalls(t, provider, 1)
+	waitHookEvent(t, hooks, "Stop", 1)
+	if _, err := io.WriteString(writer, "typed prompt\n"); err != nil {
+		t.Fatal(err)
+	}
+	waitProviderCalls(t, provider, 2)
+	if _, err := io.WriteString(writer, ":quit\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = writer.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	var prompts []goferHookEvent
+	for _, event := range hooks.snapshot() {
+		if event.Name == "UserPromptSubmit" {
+			prompts = append(prompts, event)
+		}
+	}
+	t.Run("delivery is injected", func(t *testing.T) {
+		assert.Eq(t, 2, len(prompts))
+		assert.Eq(t, "[来自 cli] S6_HOOK", prompts[0].Prompt)
+		assert.True(t, prompts[0].Injected)
+	})
+	t.Run("terminal input is not injected", func(t *testing.T) {
+		assert.Eq(t, "typed prompt", prompts[1].Prompt)
+		assert.False(t, prompts[1].Injected)
+	})
+	t.Run("json omits false and only prompt event carries true", func(t *testing.T) {
+		on, _ := json.Marshal(prompts[0])
+		off, _ := json.Marshal(prompts[1])
+		assert.StrContains(t, string(on), `"injected":true`)
+		assert.StrNotContains(t, string(off), "injected")
+		for _, event := range hooks.snapshot() {
+			if event.Name != "UserPromptSubmit" {
+				assert.False(t, event.Injected)
+			}
+		}
+	})
 }
 
 func waitForProcessRecord(t *testing.T, root string) personalprocess.Record {

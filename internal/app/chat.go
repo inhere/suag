@@ -173,6 +173,9 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 		if hooks != nil {
 			submit := baseEvent("UserPromptSubmit")
 			submit.Prompt = personal.RedactSecretValues(line)
+			// injected covers every non-keyboard source (Stop block reasons and socket
+			// deliveries both flow through nextChatInput), same flag the transcript records.
+			submit.Injected = injected
 			pendingContext = appendContext(pendingContext, hookAdditionalContext(hooks.Call(ctx, submit)))
 		}
 		turnStopActive := stopHookActive

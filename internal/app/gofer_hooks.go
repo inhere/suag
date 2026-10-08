@@ -23,6 +23,9 @@ type goferHookEvent struct {
 	TranscriptPath string `json:"transcript_path"`
 	Source         string `json:"source,omitempty"`
 	Prompt         string `json:"prompt,omitempty"`
+	// Injected marks a UserPromptSubmit whose input did not come from terminal typing
+	// (Stop-block reply/notification or a local-socket delivery). Omitted when false.
+	Injected       bool   `json:"injected,omitempty"`
 	LastAssistant  string `json:"last_assistant_message,omitempty"`
 	StopHookActive bool   `json:"stop_hook_active"`
 	ToolName       string `json:"tool_name,omitempty"`

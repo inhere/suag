@@ -143,7 +143,7 @@ gofer:
 | 事件 `hook_event_name` | 时机 | 字段 | 期望输出 |
 |---|---|---|---|
 | `SessionStart` | 会话创建或 `--resume` 打开 | `session_id`、`cwd`、`transcript_path`、`source`（`startup`/`resume`） | 可能有 `hookSpecificOutput.additionalContext`：作为系统上下文附加到下一轮 |
-| `UserPromptSubmit` | 用户在终端提交输入（含送话注入的行） | `prompt` 原文 | 同上 |
+| `UserPromptSubmit` | 用户在终端提交输入（含送话注入的行） | `prompt` 原文；`injected`（bool，仅为 true 时出现）：本轮输入不是终端键盘输入，而是 Stop block 注入（web 回复/job 完成通知）或本地 socket 送话（`suag send`/`deliver_command`） | 同上 |
 | `PostToolUse` | shell/exec 类工具完成 | `tool_name`、`tool_output`（截断到 8KB） | 无（Gofer 据此登记 job watch） |
 | `Stop` | 一轮结束、回到等待输入 | `last_assistant_message`（本轮最终回复全文，截断 16KB）、`stop_hook_active`（本轮是否由上次 Stop 注入触发） | 可能为 `{"decision":"block","reason":…}` |
 | `Interrupt` | 用户在等待期间按键/输入，取消等待 | — | 无 |
