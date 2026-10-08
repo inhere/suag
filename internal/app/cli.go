@@ -148,9 +148,9 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 	}
 	var capabilities defaultCapabilities
 	if opts.CLIMode {
-		capabilities, err = buildPersonalCLICapabilities(workspace, allowWrite, servers)
+		capabilities, err = buildPersonalCLICapabilities(ctx, workspace, allowWrite, servers)
 	} else {
-		capabilities, err = buildPersonalCapabilitiesWithServers(workspace, allowWrite, servers)
+		capabilities, err = buildPersonalCapabilitiesWithServers(ctx, workspace, allowWrite, servers)
 	}
 	if err != nil {
 		return nil, err
@@ -244,12 +244,12 @@ func appendSystemPrompt(flagValue string) string {
 }
 
 func buildPersonalCapabilities(workspace string, allowWrite bool) (defaultCapabilities, error) {
-	return buildPersonalCapabilitiesWithServers(workspace, allowWrite, nil)
+	return buildPersonalCapabilitiesWithServers(context.Background(), workspace, allowWrite, nil)
 }
 
-func buildPersonalCapabilitiesWithServers(workspace string, allowWrite bool, servers []appconfig.MCPServerSettings) (defaultCapabilities, error) {
+func buildPersonalCapabilitiesWithServers(ctx context.Context, workspace string, allowWrite bool, servers []appconfig.MCPServerSettings) (defaultCapabilities, error) {
 	if allowWrite {
-		return buildDefaultCapabilitiesWithServers(workspace, servers)
+		return buildDefaultCapabilitiesWithServers(ctx, workspace, servers)
 	}
 	registry := tools.NewRegistry()
 	for _, tool := range native.NewFileTools(workspace) {
@@ -261,16 +261,16 @@ func buildPersonalCapabilitiesWithServers(workspace string, allowWrite bool, ser
 }
 
 // CLI always exposes configured MCP tools; the dispatch gate enforces their permissions.
-func buildPersonalCLICapabilities(workspace string, allowWrite bool, servers []appconfig.MCPServerSettings) (defaultCapabilities, error) {
+func buildPersonalCLICapabilities(ctx context.Context, workspace string, allowWrite bool, servers []appconfig.MCPServerSettings) (defaultCapabilities, error) {
 	if allowWrite {
-		return buildDefaultCapabilitiesWithServers(workspace, servers)
+		return buildDefaultCapabilitiesWithServers(ctx, workspace, servers)
 	}
-	built, err := buildPersonalCapabilitiesWithServers(workspace, false, nil)
+	built, err := buildPersonalCapabilitiesWithServers(ctx, workspace, false, nil)
 	if err != nil {
 		return defaultCapabilities{}, err
 	}
 	for _, settings := range append(appconfig.ReadMCPServerSettings(), servers...) {
-		provider, err := mcpProviderFactory(context.Background(), settings)
+		provider, err := mcpProviderFactory(ctx, settings)
 		if err != nil {
 			_ = built.Close()
 			return defaultCapabilities{}, fmt.Errorf("build mcp provider %q: %w", settings.ID, err)

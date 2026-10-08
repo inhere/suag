@@ -154,14 +154,14 @@ func TestPersonalCapabilitiesUseACPStdioMCPOnlyInWritableMode(t *testing.T) {
 	})
 	t.Cleanup(restore)
 	servers := []axconfig.MCPServerSettings{{ID: "acp-local", Command: "stub"}}
-	readOnly, err := buildPersonalCapabilitiesWithServers(t.TempDir(), false, servers)
+	readOnly, err := buildPersonalCapabilitiesWithServers(context.Background(), t.TempDir(), false, servers)
 	assert.NoErr(t, err)
 	assert.Eq(t, 0, starts)
 	_, err = readOnly.Registry.Get("mcp_echo")
 	assert.True(t, err != nil)
 	assert.NoErr(t, readOnly.Close())
 
-	writable, err := buildPersonalCapabilitiesWithServers(t.TempDir(), true, servers)
+	writable, err := buildPersonalCapabilitiesWithServers(context.Background(), t.TempDir(), true, servers)
 	assert.NoErr(t, err)
 	t.Cleanup(func() { assert.NoErr(t, writable.Close()) })
 	assert.Eq(t, 1, starts)

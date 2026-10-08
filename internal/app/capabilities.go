@@ -34,10 +34,10 @@ type defaultCapabilities struct {
 // buildDefaultCapabilities assembles native and configured MCP tools for the
 // personal Agent's writable mode.
 func buildDefaultCapabilities(workspace string) (defaultCapabilities, error) {
-	return buildDefaultCapabilitiesWithServers(workspace, nil)
+	return buildDefaultCapabilitiesWithServers(context.Background(), workspace, nil)
 }
 
-func buildDefaultCapabilitiesWithServers(workspace string, additional []axconfig.MCPServerSettings) (defaultCapabilities, error) {
+func buildDefaultCapabilitiesWithServers(ctx context.Context, workspace string, additional []axconfig.MCPServerSettings) (defaultCapabilities, error) {
 	registry := tools.NewRegistry()
 	manager := runtimecaps.NewManager()
 
@@ -58,7 +58,7 @@ func buildDefaultCapabilitiesWithServers(workspace string, additional []axconfig
 	}
 	servers := append(axconfig.ReadMCPServerSettings(), additional...)
 	for _, settings := range servers {
-		provider, err := mcpProviderFactory(context.Background(), settings)
+		provider, err := mcpProviderFactory(ctx, settings)
 		if err != nil {
 			_ = built.Close()
 			return defaultCapabilities{}, fmt.Errorf("build mcp provider %q: %w", settings.ID, err)

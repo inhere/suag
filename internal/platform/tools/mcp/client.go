@@ -12,8 +12,10 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
@@ -27,15 +29,36 @@ type ServerConfig struct {
 	Env     []string // extra environment variables (KEY=VALUE)
 }
 
+const (
+	// stderrTailLimit bounds how much subprocess stderr is kept for diagnostics.
+	stderrTailLimit = 4096
+	// stopWaitTimeout bounds how long Stop waits for the killed subprocess to be reaped.
+	stopWaitTimeout = 3 * time.Second
+	// exitDiagWait bounds how long an error path waits for stderr to be fully drained.
+	exitDiagWait = 500 * time.Millisecond
+	// maxMessageSize is the largest single JSON-RPC line the reader accepts.
+	maxMessageSize = 8 << 20
+)
+
 // Client connects to an MCP server via stdio and exposes its tools.
 type Client struct {
 	cfg     ServerConfig
 	cmd     *exec.Cmd
 	stdin   io.WriteCloser
 	scanner *bufio.Scanner
-	mu      sync.Mutex
+	stderr  *tailBuffer
+	mu      sync.Mutex // guards pending and done
+	wmu     sync.Mutex // serializes stdin writes (may block on a full pipe)
 	seq     atomic.Int64
 	pending map[int64]chan *jsonRPCResponse
+
+	// done is closed once the stdout reader stops (EOF or read error); after that
+	// no response can ever arrive, so every call must fail instead of waiting.
+	done    chan struct{}
+	readErr error // set before done is closed
+	// exited is closed after the subprocess has been waited on (reaped).
+	exited   chan struct{}
+	stopOnce sync.Once
 }
 
 // NewClient creates an MCP client from cfg but does not start the server yet.
@@ -43,14 +66,21 @@ func NewClient(cfg ServerConfig) *Client {
 	return &Client{
 		cfg:     cfg,
 		pending: make(map[int64]chan *jsonRPCResponse),
+		done:    make(chan struct{}),
+		exited:  make(chan struct{}),
+		stderr:  &tailBuffer{limit: stderrTailLimit},
 	}
 }
 
 // Start launches the MCP server subprocess and performs the JSON-RPC initialize handshake.
+// ctx only bounds the handshake: the subprocess lifetime is owned by Stop, so a
+// startup-scoped (timeout) ctx being released does not kill a healthy server.
+// On any failure the subprocess is stopped and reaped before returning.
 func (c *Client) Start(ctx context.Context) error {
-	c.cmd = exec.CommandContext(ctx, c.cfg.Command, c.cfg.Args...)
+	c.cmd = exec.Command(c.cfg.Command, c.cfg.Args...)
 	// MCP server env extends the process env so PATH and Gofer's connection settings survive.
 	c.cmd.Env = append(os.Environ(), c.cfg.Env...)
+	c.cmd.Stderr = c.stderr
 
 	stdin, err := c.cmd.StdinPipe()
 	if err != nil {
@@ -67,7 +97,13 @@ func (c *Client) Start(ctx context.Context) error {
 
 	c.stdin = stdin
 	c.scanner = bufio.NewScanner(stdout)
-	go c.readLoop()
+	c.scanner.Buffer(make([]byte, 0, 64*1024), maxMessageSize)
+	go func() {
+		c.readLoop()
+		// Wait only after stdout is drained: Wait closes the pipe.
+		_ = c.cmd.Wait()
+		close(c.exited)
+	}()
 
 	// Handshake: initialize.
 	_, err = c.call(ctx, "initialize", map[string]any{
@@ -75,7 +111,20 @@ func (c *Client) Start(ctx context.Context) error {
 		"clientInfo":      map[string]any{"name": "suag", "version": "0.1.0"},
 		"capabilities":    map[string]any{},
 	})
-	return err
+	if err != nil {
+		c.Stop() // reap the subprocess so stderr is complete and nothing leaks
+		return c.diagnose(err)
+	}
+	return nil
+}
+
+// diagnose decorates err with the server name and the stderr tail (if any).
+func (c *Client) diagnose(err error) error {
+	tail := strings.TrimSpace(c.stderr.String())
+	if tail == "" {
+		return fmt.Errorf("mcp server %q: %w", c.cfg.Name, err)
+	}
+	return fmt.Errorf("mcp server %q: %w (stderr: %s)", c.cfg.Name, err, tail)
 }
 
 // ListTools queries the MCP server for its available tools.
@@ -98,14 +147,24 @@ func (c *Client) AsTool(t mcpTool) tools.Tool {
 	return &mcpToolAdapter{client: c, def: t}
 }
 
-// Stop terminates the MCP server subprocess.
+// Stop terminates the MCP server subprocess and reaps it. It is idempotent and
+// never blocks longer than stopWaitTimeout, even if Wait is stuck (for example a
+// grandchild keeps the stdout pipe open).
 func (c *Client) Stop() {
-	if c.stdin != nil {
-		_ = c.stdin.Close()
-	}
-	if c.cmd != nil && c.cmd.Process != nil {
+	c.stopOnce.Do(func() {
+		if c.stdin != nil {
+			_ = c.stdin.Close()
+		}
+		if c.cmd == nil || c.cmd.Process == nil {
+			return
+		}
 		_ = c.cmd.Process.Kill()
-	}
+		select {
+		case <-c.exited:
+		case <-time.After(stopWaitTimeout):
+			slog.Warn("mcp: timed out waiting for server to exit", "server", c.cfg.Name)
+		}
+	})
 }
 
 // ─── JSON-RPC internals ───────────────────────────────────────────────────────
@@ -130,10 +189,6 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 	id := c.seq.Add(1)
 	ch := make(chan *jsonRPCResponse, 1)
 
-	c.mu.Lock()
-	c.pending[id] = ch
-	c.mu.Unlock()
-
 	req := jsonRPCRequest{JSONRPC: "2.0", ID: id, Method: method, Params: params}
 	data, err := json.Marshal(req)
 	if err != nil {
@@ -141,28 +196,93 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 	}
 	data = append(data, '\n')
 
+	// Register under the lock and re-check done, so a call racing with reader
+	// shutdown either fails here or is failed by failPending; never hangs.
 	c.mu.Lock()
-	_, writeErr := c.stdin.Write(data)
-	c.mu.Unlock()
-	if writeErr != nil {
-		return nil, fmt.Errorf("mcp write: %w", writeErr)
-	}
-
 	select {
-	case <-ctx.Done():
+	case <-c.done:
+		c.mu.Unlock()
+		return nil, c.exitError()
+	default:
+	}
+	c.pending[id] = ch
+	c.mu.Unlock()
+	forget := func() {
 		c.mu.Lock()
 		delete(c.pending, id)
 		c.mu.Unlock()
-		return nil, ctx.Err()
-	case resp := <-ch:
-		if resp.Error != nil {
-			return nil, fmt.Errorf("mcp error %d: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	// The write may block on a full pipe if the server stops reading, so it runs
+	// off-thread and the select below keeps honoring ctx and subprocess exit.
+	writeErr := make(chan error, 1)
+	go func() {
+		c.wmu.Lock()
+		_, err := c.stdin.Write(data)
+		c.wmu.Unlock()
+		writeErr <- err
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			forget()
+			return nil, ctx.Err()
+		case err := <-writeErr:
+			if err != nil {
+				forget()
+				select {
+				case <-c.done:
+					return nil, c.exitError()
+				default:
+				}
+				return nil, fmt.Errorf("mcp write: %w", err)
+			}
+			writeErr = nil // keep waiting for the response
+		case resp := <-ch:
+			return decodeResponse(resp)
+		case <-c.done:
+			// A response may have been delivered just before the reader stopped.
+			select {
+			case resp := <-ch:
+				return decodeResponse(resp)
+			default:
+			}
+			forget()
+			return nil, c.exitError()
 		}
-		return resp.Result, nil
 	}
 }
 
+func decodeResponse(resp *jsonRPCResponse) (json.RawMessage, error) {
+	if resp.Error != nil {
+		return nil, fmt.Errorf("mcp error %d: %s", resp.Error.Code, resp.Error.Message)
+	}
+	return resp.Result, nil
+}
+
+// exitError describes why the server connection is gone, including the stderr tail.
+func (c *Client) exitError() error {
+	// Give the subprocess a moment to be reaped so stderr is fully captured.
+	select {
+	case <-c.exited:
+	case <-time.After(exitDiagWait):
+	}
+	reason := "connection closed"
+	if c.readErr != nil {
+		reason = c.readErr.Error()
+	}
+	return c.diagnose(fmt.Errorf("server exited: %s", reason))
+}
+
 func (c *Client) readLoop() {
+	defer func() {
+		// Fail every in-flight call and make later calls fail immediately.
+		c.mu.Lock()
+		close(c.done)
+		c.pending = make(map[int64]chan *jsonRPCResponse)
+		c.mu.Unlock()
+	}()
 	for c.scanner.Scan() {
 		line := c.scanner.Bytes()
 		var resp jsonRPCResponse
@@ -180,6 +300,34 @@ func (c *Client) readLoop() {
 			ch <- &resp
 		}
 	}
+	if err := c.scanner.Err(); err != nil {
+		c.readErr = err
+	} else {
+		c.readErr = io.EOF
+	}
+}
+
+// tailBuffer keeps only the last limit bytes written to it (subprocess stderr).
+type tailBuffer struct {
+	mu    sync.Mutex
+	limit int
+	buf   []byte
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > t.limit {
+		t.buf = append([]byte(nil), t.buf[len(t.buf)-t.limit:]...)
+	}
+	return len(p), nil
+}
+
+func (t *tailBuffer) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return string(t.buf)
 }
 
 // ─── mcpTool / adapter ────────────────────────────────────────────────────────

@@ -2,8 +2,10 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/inhere/suag/internal/capability/runtimecaps"
 	axconfig "github.com/inhere/suag/internal/config"
@@ -19,6 +21,17 @@ type toolClient interface {
 
 var newClient = func(cfg ServerConfig) toolClient {
 	return NewClient(cfg)
+}
+
+// startupTimeout bounds MCP server spawn, initialize and tools/list. It is a var so tests can shrink it.
+var startupTimeout = 30 * time.Second
+
+// startErr turns a bare context error into an actionable message.
+func startErr(ctx context.Context, err error) error {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) && errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("timed out after %s waiting for server: %w", startupTimeout, err)
+	}
+	return err
 }
 
 // Provider exposes MCP tools as a runtime capability-governed tool source.
@@ -47,15 +60,21 @@ func NewProvider(ctx context.Context, settings axconfig.MCPServerSettings) (*Pro
 		Env:     formatEnvMap(settings.Env),
 	}
 
+	// Startup (spawn + initialize + tools/list) is bounded and honors the caller's
+	// ctx, so a broken server can never hang `suag run`.
+	startCtx, cancel := context.WithTimeout(ctx, startupTimeout)
+	defer cancel()
+
 	client := newClient(serverCfg)
-	if err := client.Start(ctx); err != nil {
-		return nil, fmt.Errorf("start mcp provider %q: %w", settings.ID, err)
+	if err := client.Start(startCtx); err != nil {
+		client.Stop() // Start already cleans up; Stop is idempotent
+		return nil, fmt.Errorf("start mcp provider %q: %w", settings.ID, startErr(startCtx, err))
 	}
 
-	defs, err := client.ListTools(ctx)
+	defs, err := client.ListTools(startCtx)
 	if err != nil {
 		client.Stop()
-		return nil, fmt.Errorf("list mcp tools for %q: %w", settings.ID, err)
+		return nil, fmt.Errorf("list mcp tools for %q: %w", settings.ID, startErr(startCtx, err))
 	}
 
 	toolsList := make([]tools.Tool, 0, len(defs))
