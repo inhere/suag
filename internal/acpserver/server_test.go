@@ -241,7 +241,8 @@ func TestPersonalACPEmitsUsagePlanAndEditDetails(t *testing.T) {
 	// Later updates are status-only: the diff was already delivered by tool_call.
 	assert.Empty(t, completed.Locations)
 	assert.Empty(t, completed.Content)
-	assert.Eq(t, float64(14), usage.Meta["input_tokens"])
+	// Provider input (14) includes the 4 cache-read tokens; reported input excludes them.
+	assert.Eq(t, float64(10), usage.Meta["input_tokens"])
 	assert.Eq(t, float64(6), usage.Meta["output_tokens"])
 	assert.Eq(t, float64(20), usage.Meta["total_tokens"])
 	assert.Eq(t, float64(4), usage.Meta["cache_read_tokens"])

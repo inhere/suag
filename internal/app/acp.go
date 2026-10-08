@@ -32,6 +32,6 @@ func RunPersonalACP(ctx context.Context, input io.Reader, output io.Writer) erro
 			tool, err := registry.Get(name)
 			return err == nil && tool.Kind() == tools.KindMCP
 		}
-		return acpserver.Runtime{Runner: runtime.runner, Close: runtime.Close, IsMCPTool: isMCP}, nil
+		return acpserver.Runtime{Runner: runtime.runner, Close: runtime.Close, IsMCPTool: isMCP, ContextWindow: runtime.contextWindow}, nil
 	})
 }

@@ -14,7 +14,7 @@ go build -o local/bin/suag.exe ./cmd/suag
 
 On a host with `make` and `upx`, `make install` builds and installs `suag` to `$(go env GOPATH)/bin`. Ensure that directory is on the PATH of both your shell and any Gofer server process, then check `suag run --help` from a new shell.
 
-`run` executes one turn and emits a `session` event, progress events, then one `result` event with cumulative `usage.input_tokens`, `usage.output_tokens`, and `usage.total_tokens`. `chat` keeps a terminal conversation open; enter `:session` to see its ID and `:quit` to leave. Use `--session-id <id>` to create or reuse a named session. Use `--resume <id>` when an existing session is required; an unknown ID fails instead of creating a new one. `suag version` prints `suag <version> (<commit>)`.
+`run` executes one turn and emits a `session` event, progress events, then one `result` event. The `result`, `input_required` and `error` events carry `usage` (this turn) and `session_usage` (session cumulative, persisted in session metadata), each with `input_tokens` (excluding cache), `output_tokens`, optional `cache_read_tokens`/`cache_write_tokens`, and `total_tokens` (input + output + cache). `chat` keeps a terminal conversation open; enter `:session` to see its ID and `:quit` to leave. Use `--session-id <id>` to create or reuse a named session. Use `--resume <id>` when an existing session is required; an unknown ID fails instead of creating a new one. `suag version` prints `suag <version> (<commit>)`.
 
 `suag acp` speaks ACP over stdin/stdout. Launch it through an ACP client such as Gofer; stdout is reserved for protocol frames. See [Gofer setup and commands](docs/usage/gofer-personal-agent.md) for the tested `suag` and `suag-acp` configurations.
 

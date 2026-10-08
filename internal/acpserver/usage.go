@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/coder/acp-go-sdk"
+	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
@@ -45,48 +46,48 @@ func (h *permissionHook) AfterModel(_ context.Context, event *agentcore.ModelEve
 	return nil
 }
 
-// recordUsage folds a finished turn into the session totals and returns the
-// totals together with the context size of the last request.
+// recordUsage returns the session-cumulative usage after a turn together with
+// the context size of the last request.
 //
-// Session totals live only in the ACP process: personal sessions do not persist
-// usage, so after session/load (or a restart) accumulation resumes from zero.
-func (s *sessionState) recordUsage(a *Agent, turn *turnUsage) (agentcore.Usage, int) {
-	sum, last, calls := turn.snapshot()
+// The cumulative total is owned by personal.Runner and persisted in session
+// metadata, so it survives session/load and process restarts; persisted is
+// RunResult.SessionUsage of the finished turn. When the turn never reached the
+// runner's finish step (zero value), the previously known total is kept.
+func (s *sessionState) recordUsage(a *Agent, turn *turnUsage, persisted agentcore.Usage) (agentcore.Usage, int) {
+	_, last, calls := turn.snapshot()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	t := &s.total
-	t.InputTokens += sum.InputTokens
-	t.OutputTokens += sum.OutputTokens
-	t.TotalTokens += sum.TotalTokens
-	t.CacheReadTokens += sum.CacheReadTokens
-	t.CacheWriteTokens += sum.CacheWriteTokens
-	t.CostUSD += sum.CostUSD
+	if persisted != (agentcore.Usage{}) {
+		s.total = persisted
+	}
 	// A turn without any model call (e.g. cancelled early) keeps the previous
 	// context size instead of resetting it to 0.
 	if calls > 0 {
 		s.lastContext = last
 	}
-	return *t, s.lastContext
+	return s.total, s.lastContext
 }
 
 // usageUpdate builds the usage_update payload. _meta carries session-cumulative
-// snake_case fields (gofer replaces its totals with them); used is the context
+// snake_case fields (gofer replaces its totals with them) in the reported shape
+// (input_tokens excludes cache, see personal.ReportUsage); used is the context
 // size of the last request; size is the model context window.
 func usageUpdate(total agentcore.Usage, used, size int) acp.SessionUpdate {
+	rep := personal.ReportUsage(total)
 	meta := map[string]any{
-		"input_tokens": total.InputTokens, "output_tokens": total.OutputTokens,
-		"total_tokens": total.TotalTokens,
+		"input_tokens": rep.InputTokens, "output_tokens": rep.OutputTokens,
+		"total_tokens": rep.TotalTokens,
 	}
 	update := &acp.SessionUsageUpdate{Used: used, Size: size, Meta: meta}
-	if total.CacheReadTokens != 0 {
-		meta["cache_read_tokens"] = total.CacheReadTokens
+	if rep.CacheReadTokens != 0 {
+		meta["cache_read_tokens"] = rep.CacheReadTokens
 	}
-	if total.CacheWriteTokens != 0 {
-		meta["cache_write_tokens"] = total.CacheWriteTokens
+	if rep.CacheWriteTokens != 0 {
+		meta["cache_write_tokens"] = rep.CacheWriteTokens
 	}
-	if total.CostUSD != 0 {
-		meta["cost_usd"] = total.CostUSD
-		update.Cost = &acp.Cost{Amount: total.CostUSD, Currency: "USD"}
+	if rep.CostUSD != 0 {
+		meta["cost_usd"] = rep.CostUSD
+		update.Cost = &acp.Cost{Amount: rep.CostUSD, Currency: "USD"}
 	}
 	return acp.SessionUpdate{UsageUpdate: update}
 }

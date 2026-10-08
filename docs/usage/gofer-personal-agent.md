@@ -45,7 +45,7 @@ agents:
 
 用 `gofer config validate server` 检查文件，再按当前 Gofer 服务的配置管理流程 reload，并用 `gofer agent list --runner server` 确认两项可用。`detect` 使用 `suag version`，其输出为单行 `suag <version> (<commit>)`。
 
-Suag 创建会话时从外层到内层读取项目规则；每一级按顺序读取 `AGENTS.md`、`CLAUDE.md`（若存在），并在最前加入 `~/.suag/AGENTS.md`。展开后的真实文件路径会去重，因此两个规则文件共同引入的文件只读取一次。规则里的独占行 `@相对文件` 展开一层；规则和 `--append-system-prompt` 在会话创建时保存，续接时只在规则文件变化后向下一轮补充更新消息。`SUAG_APPEND_SYSTEM_PROMPT` 可提供默认追加提示，命令行参数优先；`--no-project-rules` 可在调试时跳过项目文件。Gofer job 中还会附上 `gofer work report` / `gofer issue` 的汇报提示。
+Suag 创建会话时从外层到内层读取项目规则；每一级按顺序读取 `AGENTS.md`、`CLAUDE.md`（若存在），并在最前加入 `~/.suag/AGENTS.md`。展开后的真实文件路径会去重，因此两个规则文件共同引入的文件只读取一次。规则里的独占行 `@相对文件` 展开一层；规则和 `--append-system-prompt` 在会话创建时保存，续接时只在规则文件变化后向下一轮补充更新消息。`SUAG_APPEND_SYSTEM_PROMPT` 可提供默认追加提示，命令行参数优先；显式传空串（`--append-system-prompt ""` 或 `--append-system-prompt=`）会清空会话已保存的追加提示，不传则沿用；`--no-project-rules` 可在调试时跳过项目文件。Gofer job 中还会附上 `gofer work report` / `gofer issue` 的汇报提示。
 
 ## 本机 chat 会话送话
 
@@ -105,4 +105,4 @@ gofer job resume <job-id> --prompt "从上次会话继续"
 
 ### ACP 用量上报
 
-每轮结束（含被取消的回合）发送 `usage_update`：`_meta` 的 `input_tokens`/`output_tokens`/`total_tokens`（及可选 `cache_read_tokens`/`cache_write_tokens`/`cost_usd`）和顶层 `cost.amount` 均为**会话累计值**；顶层 `used` 是最近一次模型请求的上下文 token 数，`size` 是模型上下文窗口。窗口取 `llm.context_window`（可选配置），否则按模型名取保守默认（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k），未知模型为 128k。会话累计保存在 ACP 进程内存，`session/load` 或重启后从 0 重新累计。
+每轮结束（含被取消的回合）发送 `usage_update`：`_meta` 的 `input_tokens`/`output_tokens`/`total_tokens`（及可选 `cache_read_tokens`/`cache_write_tokens`/`cost_usd`）和顶层 `cost.amount` 均为**会话累计值**；顶层 `used` 是最近一次模型请求的上下文 token 数，`size` 是模型上下文窗口。窗口取 `llm.context_window`（可选配置），否则按实际生效的模型（`--model`/`SUAG_MODEL` 覆盖后的值）名取保守默认（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k），未知模型为 128k。会话累计保存在会话 metadata（`sessions.metadata_json`），`session/load` 或重启后从已保存值继续累计。`input_tokens` 不含缓存，缓存另报 `cache_read_tokens`/`cache_write_tokens`，`total_tokens` = input + output + cache_read + cache_write（与 Gofer 口径一致）。

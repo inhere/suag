@@ -30,12 +30,15 @@ type Config struct {
 	PromptBuilder      agentcore.PromptBuilder
 	RuleSource         func() (string, string, error)
 	AppendSystemPrompt string
-	GoferJob           bool
-	Hooks              []agentcore.Hook
-	TranscriptDir      string
-	LockRoot           string
-	ProcessRoot        string
-	MaxSteps           int
+	// AppendSystemPromptSet marks AppendSystemPrompt as explicitly supplied by
+	// the caller, so an empty value clears the saved prompt instead of keeping it.
+	AppendSystemPromptSet bool
+	GoferJob              bool
+	Hooks                 []agentcore.Hook
+	TranscriptDir         string
+	LockRoot              string
+	ProcessRoot           string
+	MaxSteps              int
 }
 
 // Event is one transport-neutral lifecycle or model-stream update.
@@ -70,7 +73,10 @@ type RunResult struct {
 	Status    agentcore.RunStatus
 	State     session.RunState
 	Output    string
-	Usage     agentcore.Usage
+	// Usage is this invocation's usage (provider-normalized: input includes cache).
+	Usage agentcore.Usage
+	// SessionUsage is the session-cumulative usage persisted after this turn.
+	SessionUsage agentcore.Usage
 }
 
 // Runner owns one synchronous turn at a time for a persisted personal session.
@@ -286,14 +292,18 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	// Resume with a caller-supplied append prompt (--append-system-prompt or
 	// SUAG_APPEND_SYSTEM_PROMPT): when it differs from the persisted one, replace
 	// it and send a short notice (same mechanism as rules; the full text lives
-	// only in the system prompt). Empty input keeps the persisted value.
-	if appended := r.cfg.AppendSystemPrompt; appended != "" {
+	// only in the system prompt). An unset value keeps the persisted one; an
+	// explicitly supplied empty value clears it.
+	if appended := r.cfg.AppendSystemPrompt; appended != "" || r.cfg.AppendSystemPromptSet {
 		if model.Metadata == nil {
 			model.Metadata = map[string]any{}
 		}
 		if previous, _ := model.Metadata["personal_append_prompt"].(string); previous != appended {
 			model.Metadata["personal_append_prompt"] = appended
 			appendUpdate = "附加提示已更新，以 system prompt 中的版本为准"
+			if appended == "" {
+				appendUpdate = "附加提示已清除，不再追加"
+			}
 		}
 	}
 
@@ -314,6 +324,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		}
 		model.LastTurnID = result.TurnID
 	}
+	// Collect per-call usage for the session-cumulative total saved in finish.
+	usage := &usageCollector{}
 	model.Status = session.SessionRunning
 	// Keep session metadata aligned with the provider selected for this turn.
 	if model.Metadata == nil {
@@ -321,15 +333,22 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	}
 	model.Metadata["model"] = r.cfg.Model
 	model.Metadata["provider"] = r.cfg.ProviderName
+	// The session was loaded before the session lock was taken; refresh the
+	// persisted usage so this write cannot roll back another process's turn.
+	if fresh, err := r.cfg.Repository.GetSession(ctx, model.SessionID); err == nil {
+		if u, ok := fresh.Metadata[usageMetadataKey]; ok {
+			model.Metadata[usageMetadataKey] = u
+		}
+	}
 	model.UpdatedAt = time.Now().UTC()
 	if err := r.cfg.Repository.UpdateSession(ctx, model); err != nil {
 		return result, err
 	}
 	if err := r.appendEvent(ctx, result, agentID, "personal.run.started", nil); err != nil {
-		return r.finish(ctx, model, result, agentID, nil, err, req.Emit)
+		return r.finish(ctx, model, result, agentID, usage, nil, err, req.Emit)
 	}
 	if err := emit(ctx, req.Emit, Event{Kind: "run_started", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID}); err != nil {
-		return r.finish(ctx, model, result, agentID, nil, err, req.Emit)
+		return r.finish(ctx, model, result, agentID, usage, nil, err, req.Emit)
 	}
 
 	stream := func(ctx context.Context, update agentcore.StreamEvent) error {
@@ -341,7 +360,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			Text:      update.Delta,
 		})
 	}
-	runtimeHooks := append([]agentcore.Hook(nil), r.cfg.Hooks...)
+	// The collector goes first so a later hook short-circuiting the chain
+	// (the CLI MCP gate does) cannot hide a model call from the usage total.
+	runtimeHooks := append([]agentcore.Hook{usage}, r.cfg.Hooks...)
 	if req.Emit != nil && req.EmitToolResults {
 		runtimeHooks = append(runtimeHooks, toolResultEmitHook{sink: req.Emit, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
 	}
@@ -389,7 +410,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			slog.Warn("append personal transcript", "session_id", model.SessionID, "err", err)
 		}
 	}
-	return r.finish(ctx, model, result, agentID, coreResult, runErr, req.Emit)
+	return r.finish(ctx, model, result, agentID, usage, coreResult, runErr, req.Emit)
 }
 
 type toolResultEmitHook struct {
@@ -524,9 +545,15 @@ func (r *Runner) createTurnAndRun(ctx context.Context, result RunResult, agentID
 	return nil
 }
 
-func (r *Runner) finish(ctx context.Context, model session.Session, result RunResult, agentID string, coreResult *agentcore.RunResult, runErr error, sink EmitFunc) (RunResult, error) {
+func (r *Runner) finish(ctx context.Context, model session.Session, result RunResult, agentID string, usage *usageCollector, coreResult *agentcore.RunResult, runErr error, sink EmitFunc) (RunResult, error) {
 	if coreResult != nil {
 		result.Status, result.Output, result.Usage = coreResult.Status, coreResult.Output, coreResult.Usage
+	}
+	// Prefer the hook-collected sum: it also covers failed/cancelled turns and
+	// excludes usage of earlier invocations of a resumed run.
+	turnUsage, calls := usage.snapshot()
+	if calls > 0 {
+		result.Usage = turnUsage
 	}
 	if coreResult == nil && runErr == nil {
 		runErr = fmt.Errorf("runtime returned no result")
@@ -572,6 +599,18 @@ func (r *Runner) finish(ctx context.Context, model session.Session, result RunRe
 		persistErr = errors.Join(persistErr, err)
 	}
 	model.Status, model.UpdatedAt = sessionStatus, now
+	// Accumulate session usage inside the session lock (held by Run): re-read the
+	// persisted total so a stale in-memory model cannot overwrite another
+	// process's earlier turns.
+	base := model
+	if fresh, err := r.cfg.Repository.GetSession(finishCtx, model.SessionID); err == nil {
+		base = fresh
+	}
+	result.SessionUsage = AddUsage(usageFromMetadata(base.Metadata), turnUsage)
+	if model.Metadata == nil {
+		model.Metadata = map[string]any{}
+	}
+	model.Metadata[usageMetadataKey] = usageToMetadata(result.SessionUsage)
 	if err := r.cfg.Repository.UpdateSession(finishCtx, model); err != nil {
 		persistErr = errors.Join(persistErr, err)
 	}

@@ -33,9 +33,12 @@ type personalOptions struct {
 	ReadOnly           bool
 	AllowWrite         bool
 	AppendSystemPrompt string
-	NoProjectRules     bool
-	MCPConfigs         []string
-	CLIMode            bool
+	// AppendSystemPromptSet records that --append-system-prompt was given, even
+	// as an empty string, which clears the session's saved prompt.
+	AppendSystemPromptSet bool
+	NoProjectRules        bool
+	MCPConfigs            []string
+	CLIMode               bool
 }
 
 type personalRuntime struct {
@@ -43,6 +46,8 @@ type personalRuntime struct {
 	repo         *session.SQLiteRepository
 	capabilities defaultCapabilities
 	gate         *cliMCPGate
+	// contextWindow is the window of the model actually used by the provider.
+	contextWindow int
 }
 
 func (p *personalRuntime) Close() error {
@@ -98,7 +103,8 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.StringVar(&opts.OutputFormat, "output-format", "text", "text or stream-json")
 	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool; MCP allows only default query tools and gofer_work_report;;ro")
 	cmd.BoolVar(&opts.AllowWrite, "allow-write", false, "allow workspace write and shell tools for this run")
-	cmd.StringVar(&opts.AppendSystemPrompt, "append-system-prompt", "", "append system instructions after rules")
+	// A custom flag.Value tells "not passed" from "passed as empty string".
+	cmd.Var(&optionalString{value: &opts.AppendSystemPrompt, set: &opts.AppendSystemPromptSet}, "append-system-prompt", "append system instructions after rules; an empty value clears the saved prompt")
 	cmd.BoolVar(&opts.NoProjectRules, "no-project-rules", false, "skip project rule files for debugging")
 	cmd.Var((*cflag.Strings)(&opts.MCPConfigs), "mcp-config", "Claude-style JSON MCP server config; repeatable")
 	return cmd
@@ -222,18 +228,49 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 			}
 			return personal.LoadRules(ruleCWD, home, opts.NoProjectRules)
 		},
-		AppendSystemPrompt: appendSystemPrompt(opts.AppendSystemPrompt),
-		GoferJob:           os.Getenv("GOFER_JOB_ID") != "",
-		TranscriptDir:      transcriptDir,
-		LockRoot:           lockRoot,
-		ProcessRoot:        processRoot,
+		AppendSystemPrompt:    appendSystemPrompt(opts.AppendSystemPrompt),
+		AppendSystemPromptSet: opts.AppendSystemPromptSet,
+		GoferJob:              os.Getenv("GOFER_JOB_ID") != "",
+		TranscriptDir:         transcriptDir,
+		LockRoot:              lockRoot,
+		ProcessRoot:           processRoot,
 	})
 	if err != nil {
 		_ = repo.Close()
 		_ = capabilities.Close()
 		return nil, err
 	}
-	return &personalRuntime{runner: runner, repo: repo, capabilities: capabilities, gate: gate}, nil
+	// Same model value the provider was built from (flag/env overrides included).
+	return &personalRuntime{runner: runner, repo: repo, capabilities: capabilities, gate: gate,
+		contextWindow: contextWindowForSettings(settings)}, nil
+}
+
+// optionalString is a string flag that remembers whether it was passed, so an
+// explicit empty value (--append-system-prompt "") differs from an absent flag.
+type optionalString struct {
+	value *string
+	set   *bool
+}
+
+func (o *optionalString) String() string {
+	if o == nil || o.value == nil {
+		return ""
+	}
+	return *o.value
+}
+
+func (o *optionalString) Set(v string) error {
+	*o.value, *o.set = v, true
+	return nil
+}
+
+// contextWindowForSettings resolves the usage_update size from the effective
+// model: llm.context_window wins, then the model-name table, then the default.
+func contextWindowForSettings(settings appconfig.LLMProviderSettings) int {
+	if configured := gkconfig.Int("llm.context_window"); configured > 0 {
+		return configured
+	}
+	return appconfig.ContextWindowForModel(settings.Model)
 }
 
 func appendSystemPrompt(flagValue string) string {
@@ -326,29 +363,39 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 	result, err := runner.Run(ctx, personal.RunRequest{SessionID: sessionID, Prompt: opts.Prompt, Emit: emit})
 	if err != nil {
 		if encoder != nil {
-			_ = encoder.Encode(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
+			_ = encoder.Encode(withUsage(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()}, result))
 		}
 		return err
 	}
 	if result.Status == agentcore.RunYielded {
 		if encoder != nil {
-			_ = encoder.Encode(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID})
+			_ = encoder.Encode(withUsage(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID}, result))
 		}
 		return ErrInputRequired
 	}
 	if gate != nil && gate.WasDenied() && encoder != nil {
-		if err := encoder.Encode(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID}); err != nil {
+		if err := encoder.Encode(withUsage(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID}, result)); err != nil {
 			return err
 		}
 	}
 	if encoder != nil {
-		return encoder.Encode(map[string]any{
+		return encoder.Encode(withUsage(map[string]any{
 			"type": "result", "session_id": sessionID, "run_id": result.RunID,
-			"result": result.Output, "status": result.State, "usage": result.Usage,
-		})
+			"result": result.Output, "status": result.State,
+		}, result))
 	}
 	_, err = fmt.Fprintln(stdout, result.Output)
 	return err
+}
+
+// withUsage adds usage to a stream-json line: "usage" is this turn, and
+// "session_usage" the session-cumulative total. Both use the reported shape
+// (input_tokens excludes cache; see personal.ReportUsage), identical on the
+// result, input_required and error lines.
+func withUsage(line map[string]any, result personal.RunResult) map[string]any {
+	line["usage"] = personal.ReportUsage(result.Usage)
+	line["session_usage"] = personal.ReportUsage(result.SessionUsage)
+	return line
 }
 
 func openRequestedSession(ctx context.Context, runner *personal.Runner, opts personalOptions) (string, error) {

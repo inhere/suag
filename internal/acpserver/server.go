@@ -216,7 +216,7 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		// The SDK cancels the request ctx on session/cancel, so detach from it
 		// (bounded) or the notification could never be written.
 		usageCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		usageErr := a.sendUsage(usageCtx, req.SessionId, state, turn, window)
+		usageErr := a.sendUsage(usageCtx, req.SessionId, state, turn, window, result.SessionUsage)
 		stop()
 		return acp.PromptResponse{StopReason: acp.StopReasonCancelled}, errors.Join(closeErr, usageErr)
 	}
@@ -241,8 +241,8 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 }
 
 // sendUsage reports session-cumulative usage after a turn (completed or cancelled).
-func (a *Agent) sendUsage(ctx context.Context, id acp.SessionId, state *sessionState, turn *turnUsage, window int) error {
-	total, used := state.recordUsage(a, turn)
+func (a *Agent) sendUsage(ctx context.Context, id acp.SessionId, state *sessionState, turn *turnUsage, window int, persisted agentcore.Usage) error {
+	total, used := state.recordUsage(a, turn, persisted)
 	if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: usageUpdate(total, used, window)}); err != nil {
 		return fmt.Errorf("send usage update: %w", err)
 	}
@@ -251,7 +251,7 @@ func (a *Agent) sendUsage(ctx context.Context, id acp.SessionId, state *sessionS
 
 // sendTurnUpdates reports usage and any complete task list in the model answer.
 func (a *Agent) sendTurnUpdates(ctx context.Context, id acp.SessionId, state *sessionState, turn *turnUsage, window int, result personal.RunResult) error {
-	if err := a.sendUsage(ctx, id, state, turn, window); err != nil {
+	if err := a.sendUsage(ctx, id, state, turn, window, result.SessionUsage); err != nil {
 		return err
 	}
 	if entries := planEntries(result.Output); len(entries) > 0 {

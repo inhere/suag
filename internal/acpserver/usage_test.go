@@ -107,3 +107,41 @@ func TestContextWindowForModel(t *testing.T) {
 		})
 	}
 }
+
+// Cumulative usage is persisted by personal.Runner, so a new ACP process that
+// loads the session continues from the stored total instead of from zero.
+func TestUsageUpdateContinuesAfterSessionLoad(t *testing.T) {
+	provider := &growingUsageProvider{Provider: mock.NewProvider(mock.Final("one"), mock.Final("two"))}
+	open := testACPRuntime(t, provider, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cwd := t.TempDir()
+
+	firstClient := &testACPClient{}
+	first := connectPersonalACP(t, open, firstClient)
+	created, err := first.NewSession(ctx, acp.NewSessionRequest{Cwd: cwd, McpServers: []acp.McpServer{}})
+	assert.NoErr(t, err)
+	_, err = first.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("a")}})
+	assert.NoErr(t, err)
+	assert.Eq(t, float64(10), usageUpdates(firstClient)[0].Meta["input_tokens"])
+
+	// A second connection stands in for a restarted ACP process.
+	secondClient := &testACPClient{}
+	second := connectPersonalACP(t, open, secondClient)
+	_, err = second.LoadSession(ctx, acp.LoadSessionRequest{SessionId: created.SessionId, Cwd: cwd, McpServers: []acp.McpServer{}})
+	assert.NoErr(t, err)
+	_, err = second.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("b")}})
+	assert.NoErr(t, err)
+	updates := usageUpdates(secondClient)
+	assert.Eq(t, 1, len(updates))
+	assert.Eq(t, float64(30), updates[0].Meta["input_tokens"]) // 10 persisted + 20 new, not 20
+	assert.Eq(t, float64(32), updates[0].Meta["total_tokens"])
+}
+
+func TestUsageUpdateInputExcludesCache(t *testing.T) {
+	u := usageUpdate(agentcore.Usage{InputTokens: 100, OutputTokens: 5, TotalTokens: 105, CacheReadTokens: 60, CacheWriteTokens: 30}, 100, 200000).UsageUpdate
+	assert.Eq(t, 10, u.Meta["input_tokens"])
+	assert.Eq(t, 60, u.Meta["cache_read_tokens"])
+	assert.Eq(t, 30, u.Meta["cache_write_tokens"])
+	assert.Eq(t, 105, u.Meta["total_tokens"])
+}
