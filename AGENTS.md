@@ -16,7 +16,7 @@
 
 <!-- PROCESSING WORKS:START -->
 
-- [suag-ifpp.4] S4 ACP 用量、计划与工具详情：实现和 ACP 客户端验证完成；全仓库 `gofmt -l .` 仍受 9 个既有未格式化文件阻断。设计见 [Gofer 集成设计](docs/design/2026-10-07-gofer-integration-design.md)。
+- [plan-20261008-222122-6cf0bc1e] 收尾修复批 B1–B10（MCP 重名/凭据环境、SUAG_HOME/.env、Windows DACL、路径、用量持久化、送话/hook 细节、chat 终端模式）+ D1 核心能力演进设计（计划持久化、tool_search、执行观测、存储收敛）；进度以 `gofer plan show` 为准。
 
 <!-- PROCESSING WORKS:END -->
 
