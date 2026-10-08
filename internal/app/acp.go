@@ -14,16 +14,20 @@ import (
 
 // RunPersonalACP serves the same persistent personal runner used by CLI over stdio.
 func RunPersonalACP(ctx context.Context, input io.Reader, output io.Writer) error {
-	return acpserver.Serve(ctx, input, output, func(ctx context.Context, cwd string, readOnly bool, servers []appconfig.MCPServerSettings, hook agentcore.Hook) (acpserver.Runtime, error) {
+	return acpserver.Serve(ctx, input, output, func(ctx context.Context, cwd string, readOnly bool, servers []appconfig.MCPServerSettings, gate acpserver.TurnGate) (acpserver.Runtime, error) {
 		workspace, err := filepath.Abs(cwd)
 		if err != nil {
 			return acpserver.Runtime{}, fmt.Errorf("resolve ACP workspace: %w", err)
 		}
+		// The gate is both the notification hook and the approval policy. A nil
+		// gate (session create/load, no turn) leaves the approver nil, which the
+		// approval layer treats as deny-all.
 		var hooks []agentcore.Hook
-		if hook != nil {
-			hooks = []agentcore.Hook{hook}
+		var approver tools.Approver
+		if gate != nil {
+			hooks, approver = []agentcore.Hook{gate}, gate
 		}
-		runtime, err := openPersonalRuntimeConfigured(ctx, workspace, workspace, !readOnly, servers, hooks, personalOptions{})
+		runtime, err := openPersonalRuntimeConfigured(ctx, workspace, workspace, !readOnly, servers, hooks, approver, personalOptions{})
 		if err != nil {
 			return acpserver.Runtime{}, err
 		}

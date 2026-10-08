@@ -181,6 +181,8 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 	switch {
 	case err != nil && errors.Is(err, tools.ErrDenied):
 		e.Kind, e.Status, e.Error = store.EventDenial, eventDenied, err.Error()
+		// Feeds the per-turn denial limit and RunResult.DeniedTools.
+		turnDenialsFrom(ctx).add(call.Name)
 	case err != nil:
 		e.Status, e.Error = eventError, err.Error()
 	case res != nil && res.Metadata["is_error"] == true:

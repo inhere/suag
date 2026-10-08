@@ -79,7 +79,7 @@ BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 
 CLI 可在 agent 的 `args` 中加入 `--mcp-config <file>` 接入本机 stdio MCP 服务；可重复指定多个 JSON 文件。文件格式为 Claude 的 `mcpServers`，例如 `{"mcpServers":{"gofer":{"command":"gofer","args":["mcp"]}}}`。Suag 的 YAML 配置也可在 `mcp.servers` 下列出默认服务。MCP 子进程继承启动环境（`GOFER_*` 等保留），但会剔除凭据变量：名称以 `_API_KEY`、`_AUTH_TOKEN` 结尾的变量及 suag 自己读取的 LLM 密钥（`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`），再叠加各服务的 `env`；服务 `env` 里显式配置的同名变量照常传入。MCP 工具名保持原名；若与内置工具或更早配置的 server 的工具重名，后者被丢弃并记录警告，不会覆盖。需要让 Gofer job 调用其工具时，须在可执行路径和运行环境中提供 `gofer`；不要把密钥放在参数或文档中。
 
-`tools.auto_allow` 是 YAML 中的 glob 列表。条目形如 `server/工具glob`，默认只自动放行名为 `gofer` 的 MCP 服务的 `gofer/gofer_*_list`、`gofer/gofer_*_get`、`gofer/gofer_work_report`、`gofer/gofer_session_list`，其他服务即使暴露同名工具也不放行；不含 `/` 的旧式条目仍按工具名匹配任意服务（有冒充风险，建议改写为带服务名的形式）；若显式配置，列表替换默认值。其余 MCP 工具在 CLI 中被拒绝，即使带 `--allow-write`；拒绝信息作为工具错误交给模型，`run --output-format stream-json` 发出 `input_required` 与最终 `result` 后正常退出。需要逐次审批 MCP 写工具时使用 ACP。
+`tools.auto_allow` 是 YAML 中的 glob 列表。条目形如 `server/工具glob`，默认只自动放行名为 `gofer` 的 MCP 服务的 `gofer/gofer_*_list`、`gofer/gofer_*_get`、`gofer/gofer_work_report`、`gofer/gofer_session_list`，其他服务即使暴露同名工具也不放行；不含 `/` 的旧式条目仍按工具名匹配任意服务（有冒充风险，建议改写为带服务名的形式）；若显式配置，列表替换默认值。其余 MCP 工具在 CLI 中被拒绝，即使带 `--allow-write`；拒绝信息作为工具错误交给模型，回合继续。拒绝语义见下文“工具拒绝语义”。需要逐次审批 MCP 写工具时使用 ACP。
 
 ```powershell
 gofer job run --runner server --project my-tools-dev --cwd inhere-tools/suag --agent suag --read-only --prompt "检查当前项目"
@@ -100,6 +100,20 @@ gofer job resume <job-id> --prompt "从上次会话继续"
 ```
 
 `--read-only` 映射为 ACP `read_only` mode，写文件、命令与 MCP 工具不会加入可执行工具集合。默认 mode 中，写入/执行及所有 MCP 工具（含与内置只读工具同名者）在执行前调用 Gofer `session/request_permission`；可用 `gofer job interactions <job-id>` 查看待答复请求，再用 `gofer job answer <job-id> <interaction-id> reject|allow` 处理。拒绝时工具不执行；允许仅作用于当前一次请求。
+
+### 工具拒绝语义
+
+审批在工具注册表的包装层完成（从外到内：observe → visibility → approval → 工具），CLI 与 ACP 共用同一套语义：
+
+- 被拒绝的调用（CLI 未授权的 MCP 工具；ACP 用户选择 reject、`session/request_permission` 请求失败、`read_only` mode 下调用写入/执行类工具）不执行，拒绝信息作为工具错误交给模型，回合继续。每次拒绝在 `suag trace`/`stats` 中记为一条 denial 事件。
+- 同一回合累计被拒 3 次后（`read_only` 的拒绝同样计数），下一次模型调用前结束回合，最终答复说明拒绝次数与工具名。计数按回合重置。
+- 审批被取消（ACP 返回 `cancelled` 结果或 `session/cancel`）时中止回合，不把取消当作工具结果交给模型。
+- 尚未加载的 deferred MCP 工具被直接调用时，由 visibility 层返回“尚未加载”并自动加载，不会触发审批请求。
+
+对外契约：
+
+- stream-json：本回合只要发生过拒绝，回合结束时都会在 `result` 之前发出一行 `input_required`，并带 `denied_tools`（去重后的被拒工具名数组）；`result` 的 `status` 仍为 `COMPLETED`，进程正常退出。旧版仅在首次拒绝时发出且不带 `denied_tools`，并会在模型重复请求被拒工具时直接结束回合；该短路已移除，改为上面的 3 次上限。
+- ACP（语义变化）：拒绝后模型若正常完成，`stopReason` 由原来的 `refusal` 改为 `end_turn`；只有累计 3 次拒绝时返回 `refusal`（结束前发送说明文本）；审批取消返回 `cancelled`。被拒工具的 `tool_call` 状态为 `failed`（不再跟 `completed`）；允许路径的状态序列不变（`pending` → `in_progress` → `completed`）；未经审批就失败的调用（如未加载的 deferred 工具）以 `failed` 结束。Gofer 的 ACP 客户端两种 stopReason 都能处理。
 
 2026-10-07 的 Gofer 实际作业已验证 CLI/ACP 续聊、ACP `job say/end/resume`、只读无写入及审批允许/拒绝；0.118.0 另以当前 `suag` agent 验证了 CLI 续接的环境继承与输出投影。模型响应由本机回环模拟服务提供；最终配置不含测试模型地址或测试 HOME，真实模型凭据路径须在运行环境中单独准备和验证。
 

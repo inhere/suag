@@ -114,6 +114,12 @@ type RunResult struct {
 	Usage agentcore.Usage
 	// SessionUsage is the session-cumulative usage persisted after this turn.
 	SessionUsage agentcore.Usage
+	// DeniedTools lists the distinct tools refused by the approval layer in
+	// this turn (first-refusal order); empty when nothing was refused.
+	DeniedTools []string
+	// DenialLimitReached is true when the turn was ended because DenialLimit
+	// refusals accumulated (ACP maps it to stopReason refusal).
+	DenialLimitReached bool
 }
 
 // Runner owns one synchronous turn at a time for a persisted personal session.
@@ -298,6 +304,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	turnID := NewTurnID()
 	turnStart := time.Now()
 	ctx = withObserveScope(ctx, model.ID, turnID)
+	// Refused tool calls are counted per turn in ctx (see denial.go).
+	ctx, denials := withTurnDenials(ctx)
 	result := RunResult{SessionID: model.ID, TurnID: turnID, RunID: turnID}
 	history, err := r.loadHistory(ctx, model.ID)
 	if err != nil {
@@ -378,8 +386,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return emit(ctx, req.Emit, Event{Kind: "plan", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Plan: &plan})
 	})
 	// The collector goes first so a later hook short-circuiting the chain
-	// (the CLI MCP gate does) cannot hide a model call from the usage total.
-	runtimeHooks := append([]agentcore.Hook{usage}, r.cfg.Hooks...)
+	// cannot hide a model call from the usage total. The denial limit hook ends
+	// the turn before the next model call once DenialLimit refusals accumulated.
+	runtimeHooks := append([]agentcore.Hook{usage, denialLimitHook{denials: denials, usage: usage}}, r.cfg.Hooks...)
 	if req.Emit != nil && req.EmitToolResults {
 		runtimeHooks = append(runtimeHooks, toolResultEmitHook{sink: req.Emit, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
 	}
@@ -393,6 +402,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		ContextBuilder: r.newContextBuilder(model.ID, turnID, history, promptBuilder, usage, joinContext(joinContext(rulesUpdate, appendUpdate), req.SystemContext)),
 		Hooks:          runtimeHooks,
 		MaxSteps:       r.cfg.MaxSteps,
+		// Refused calls become tool results; aborted approvals end the turn.
+		ToolExecutionPolicy: abortingToolPolicy{},
 	})
 	coreResult, runErr := runtime.Run(ctx, agentcore.RunInput{
 		RunID:       result.RunID,
@@ -518,9 +529,14 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	if runErr != nil {
 		result.Status = agentcore.RunFailed
 	}
-	if ctx.Err() != nil {
+	// An aborted approval (cancelled permission prompt) cancels the turn even
+	// when the turn context itself is still live.
+	canceled := ctx.Err() != nil || errors.Is(runErr, context.Canceled)
+	if canceled {
 		result.Status = agentcore.RunFailed
 	}
+	denials := turnDenialsFrom(ctx)
+	result.DeniedTools, result.DenialLimitReached = denials.tools(), denials.limitReached()
 
 	// A yielded turn is stored as completed (its messages become history for the
 	// next turn) but reported to callers as INPUT_REQUIRED.
@@ -530,7 +546,7 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	case agentcore.RunYielded:
 		runState, stopReason = RunInputRequired, "input_required"
 	case agentcore.RunFailed:
-		if ctx.Err() != nil {
+		if canceled {
 			runState, turnStatus, stopReason = RunCanceled, store.TurnCancelled, "cancelled"
 		} else {
 			runState, turnStatus, stopReason = RunFailed, store.TurnFailed, "run_failed"
@@ -548,10 +564,15 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	}
 	// The turn event is written outside the entry transactions and is
 	// best-effort; it is also what the trace timeline anchors on.
+	turnAttrs := map[string]any{"stop_reason": stopReason, "status": string(result.Status)}
+	if n := denials.count(); n > 0 {
+		turnAttrs["denials"] = n
+		turnAttrs["denial_limit_reached"] = result.DenialLimitReached
+	}
 	r.rec.record(finishCtx, store.Event{
 		SessionID: model.ID, TurnID: result.TurnID, Kind: store.EventTurn, Name: "turn",
 		Status: strings.ToLower(string(runState)), StartedAt: turnStart, DurationMs: time.Since(turnStart).Milliseconds(),
-		Attrs: map[string]any{"stop_reason": stopReason, "status": string(result.Status)},
+		Attrs: turnAttrs,
 	})
 	// Session-cumulative usage is derived from the model events of the session,
 	// which already include this turn's calls (written synchronously above).

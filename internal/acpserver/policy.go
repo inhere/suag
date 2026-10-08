@@ -8,10 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/coder/acp-go-sdk"
 	appconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
 )
@@ -19,6 +21,37 @@ import (
 var ErrPermissionDenied = errors.New("ACP tool permission denied")
 var ErrReadOnly = errors.New("tool is unavailable in read_only mode")
 
+// deniedError refuses a tool call: it matches tools.ErrDenied (so the approval
+// layer returns it to the model as a tool error and observe records a denial)
+// and keeps the ACP cause (ErrPermissionDenied / ErrReadOnly) reachable.
+type deniedError struct{ cause error }
+
+func (e *deniedError) Error() string   { return e.cause.Error() }
+func (e *deniedError) Unwrap() []error { return []error{tools.ErrDenied, e.cause} }
+
+// callState tracks one tool call between BeforeTool, Decide and AfterTool.
+type callState int
+
+const (
+	callPending    callState = iota // tool_call sent, not yet decided
+	callInProgress                  // approved, in_progress sent
+	callDenied                      // refused, failed sent
+)
+
+// pendingCall is what BeforeTool computed for the notification; Decide reuses
+// it for the permission request so the diff is read once.
+type pendingCall struct {
+	state     callState
+	kind      acp.ToolKind
+	readTool  bool
+	locations []acp.ToolCallLocation
+	content   []acp.ToolCallContent
+}
+
+// permissionHook is the per-prompt ACP turn gate. As an agentcore.Hook it sends
+// the tool_call notifications (pending, in_progress, completed/failed) and
+// collects usage; as a tools.Approver (Decide) it is the approval layer's
+// policy: read_only refusals and RequestPermission for MCP/write tools.
 type permissionHook struct {
 	agentcore.NopHook
 	conn      *acp.AgentSideConnection
@@ -31,11 +64,18 @@ type permissionHook struct {
 	// take the name-based fast path, so an MCP tool called "web_search" cannot
 	// pass for the built-in read tool.
 	isMCP func(name string) bool
+
+	mu    sync.Mutex
+	calls map[acp.ToolCallId]*pendingCall
 }
+
+var _ tools.Approver = (*permissionHook)(nil)
 
 // maxDiffBytes caps each side of a diff; larger files only report locations.
 const maxDiffBytes = 256 << 10
 
+// BeforeTool announces the call (status pending, with locations and diff). The
+// permission decision happens later in Decide, inside the approval layer.
 func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
 	if event == nil || event.Call == nil || h.conn == nil {
 		return ErrPermissionDenied
@@ -52,6 +92,12 @@ func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEv
 	}
 	locations := toolLocations(h.cwd, call.Arguments)
 	content := toolDiff(h.cwd, kind, locations, call.Arguments)
+	h.mu.Lock()
+	if h.calls == nil {
+		h.calls = map[acp.ToolCallId]*pendingCall{}
+	}
+	h.calls[id] = &pendingCall{kind: kind, readTool: readTool, locations: locations, content: content}
+	h.mu.Unlock()
 	// The diff is sent in the initial tool_call and once more in the permission
 	// request (so the approver sees it); later status updates carry status only.
 	if err := h.conn.SessionUpdate(ctx, acp.SessionNotification{
@@ -60,9 +106,39 @@ func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEv
 	}); err != nil {
 		return fmt.Errorf("send tool update: %w", err)
 	}
+	return nil
+}
+
+// Decide is the ACP approval policy. A refusal (read_only, reject, failed
+// request) returns a deniedError: the model gets a tool error and the turn
+// continues. A cancelled request (or cancelled turn) returns the ctx error,
+// which aborts the turn.
+func (h *permissionHook) Decide(ctx context.Context, call agentcore.ToolCall, tool tools.Tool) error {
+	if h.conn == nil {
+		return &deniedError{cause: ErrPermissionDenied}
+	}
+	id := acp.ToolCallId(call.CallID)
+	h.mu.Lock()
+	pending := h.calls[id]
+	h.mu.Unlock()
+	if pending == nil {
+		// Not announced by BeforeTool (should not happen): classify here.
+		kind, readTool := toolKind(call.Name)
+		pending = &pendingCall{kind: kind, readTool: readTool, locations: toolLocations(h.cwd, call.Arguments)}
+		pending.content = toolDiff(h.cwd, kind, pending.locations, call.Arguments)
+		h.mu.Lock()
+		if h.calls == nil {
+			h.calls = map[acp.ToolCallId]*pendingCall{}
+		}
+		h.calls[id] = pending
+		h.mu.Unlock()
+	}
+	kind, readTool := pending.kind, pending.readTool
+	if tool != nil && tool.Kind() == tools.KindMCP {
+		kind, readTool = acp.ToolKindOther, false
+	}
 	if h.readOnly && !readTool {
-		_ = h.toolStatus(ctx, id, acp.ToolCallStatusFailed)
-		return ErrReadOnly
+		return h.deny(ctx, id, pending, ErrReadOnly)
 	}
 	if !readTool {
 		decision, err := h.conn.RequestPermission(ctx, acp.RequestPermissionRequest{
@@ -71,8 +147,8 @@ func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEv
 				ToolCallId: id,
 				Title:      acp.Ptr(call.Name),
 				Kind:       acp.Ptr(kind),
-				Locations:  locations,
-				Content:    content,
+				Locations:  pending.locations,
+				Content:    pending.content,
 				Status:     acp.Ptr(acp.ToolCallStatusPending),
 			},
 			Options: []acp.PermissionOption{
@@ -81,25 +157,53 @@ func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEv
 			},
 		})
 		if err != nil {
-			_ = h.toolStatus(ctx, id, acp.ToolCallStatusFailed)
-			return fmt.Errorf("%w: %v", ErrPermissionDenied, err)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr // the turn was cancelled while asking
+			}
+			return h.deny(ctx, id, pending, fmt.Errorf("%w: %v", ErrPermissionDenied, err))
 		}
 		if decision.Outcome.Cancelled != nil {
 			return context.Canceled
 		}
 		if decision.Outcome.Selected == nil || decision.Outcome.Selected.OptionId != "allow" {
-			_ = h.toolStatus(ctx, id, acp.ToolCallStatusFailed)
-			return ErrPermissionDenied
+			return h.deny(ctx, id, pending, ErrPermissionDenied)
 		}
 	}
+	h.mu.Lock()
+	pending.state = callInProgress
+	h.mu.Unlock()
 	return h.toolStatus(ctx, id, acp.ToolCallStatusInProgress)
 }
 
+// deny marks the call refused, reports status failed and returns the refusal.
+func (h *permissionHook) deny(ctx context.Context, id acp.ToolCallId, pending *pendingCall, cause error) error {
+	h.mu.Lock()
+	pending.state = callDenied
+	h.mu.Unlock()
+	_ = h.toolStatus(ctx, id, acp.ToolCallStatusFailed)
+	return &deniedError{cause: cause}
+}
+
+// AfterTool closes the call: completed when it ran, nothing more when it was
+// refused (failed was already sent), failed when it never reached approval
+// (unknown tool, or an unloaded deferred tool answered by visibility).
 func (h *permissionHook) AfterTool(ctx context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
 	if event == nil || event.Call == nil || h.conn == nil {
 		return nil
 	}
-	return h.toolStatus(ctx, acp.ToolCallId(event.Call.CallID), acp.ToolCallStatusCompleted)
+	id := acp.ToolCallId(event.Call.CallID)
+	h.mu.Lock()
+	pending := h.calls[id]
+	delete(h.calls, id)
+	h.mu.Unlock()
+	switch {
+	case pending == nil || pending.state == callInProgress:
+		return h.toolStatus(ctx, id, acp.ToolCallStatusCompleted)
+	case pending.state == callDenied:
+		return nil
+	default:
+		return h.toolStatus(ctx, id, acp.ToolCallStatusFailed)
+	}
 }
 
 // toolStatus sends a status-only tool_call_update; all other fields are optional

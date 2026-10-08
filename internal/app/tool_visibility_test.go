@@ -12,7 +12,7 @@ import (
 )
 
 func TestNewToolVisibility(t *testing.T) {
-	build := func(t *testing.T, mode string) (*tools.Registry, *cliMCPGate, *tools.Visibility, error) {
+	build := func(t *testing.T, mode string) (*tools.Registry, *deniedCounter, *tools.Visibility, error) {
 		t.Helper()
 		gkconfig.Reset()
 		t.Cleanup(gkconfig.Reset)
@@ -22,9 +22,10 @@ func TestNewToolVisibility(t *testing.T) {
 		reg := tools.NewRegistry()
 		reg.Register(newCapabilityStubTool("other_tool"))
 		reg.Register(newServerStubTool("srv", "srv_write"))
-		gate, err := newCLIMCPGate(reg, false)
+		cliGate, err := newCLIMCPGate(false)
 		assert.NoErr(t, err)
-		vis, err := newToolVisibility(reg, gate, 128000)
+		gate := &deniedCounter{inner: cliGate}
+		vis, err := newToolVisibility(reg, tools.NewApproval(reg, gate), 128000)
 		return reg, gate, vis, err
 	}
 	t.Run("auto with small schemas sends everything directly", func(t *testing.T) {
@@ -46,18 +47,32 @@ func TestNewToolVisibility(t *testing.T) {
 			names = append(names, s.Name)
 		}
 		assert.Eq(t, []string{"tool_search"}, names)
-		// srv_write is not allowlisted: an approved path would mark the gate denied.
+		// srv_write is not allowlisted: reaching the approver would record a denial.
 		_, execErr := vis.ExecuteTool(context.Background(), agentcoreapi.ToolCall{Name: "srv_write"})
 		assert.Err(t, execErr)
 		assert.Eq(t, false, errors.Is(execErr, tools.ErrDenied))
-		assert.Eq(t, false, gate.WasDenied())
+		assert.Eq(t, 0, gate.denied)
 		// Once loaded, the call reaches the gate and is denied there.
 		_, execErr = vis.ExecuteTool(context.Background(), agentcoreapi.ToolCall{Name: "srv_write"})
 		assert.Eq(t, true, errors.Is(execErr, tools.ErrDenied))
-		assert.Eq(t, true, gate.WasDenied())
+		assert.Eq(t, 1, gate.denied)
 	})
 	t.Run("invalid mode is rejected", func(t *testing.T) {
 		_, _, _, err := build(t, "sometimes")
 		assert.Err(t, err)
 	})
+}
+
+// deniedCounter wraps an approver and counts the calls it refused.
+type deniedCounter struct {
+	inner  tools.Approver
+	denied int
+}
+
+func (d *deniedCounter) Decide(ctx context.Context, call agentcoreapi.ToolCall, tool tools.Tool) error {
+	err := d.inner.Decide(ctx, call, tool)
+	if errors.Is(err, tools.ErrDenied) {
+		d.denied++
+	}
+	return err
 }

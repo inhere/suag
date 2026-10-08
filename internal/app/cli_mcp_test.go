@@ -62,12 +62,16 @@ func TestPersonalRunWithStdioMCPReadAndDeniedWrite(t *testing.T) {
 		defaultMCP bool
 		denied     bool
 		repeat     bool
+		// autoAllow sets tools.auto_allow (ignored by --read-only).
+		autoAllow []string
 	}{
 		{name: "read tool executes", tool: "gofer_issue_list", readOnly: true},
 		{name: "write stays denied with allow-write", tool: "gofer_issue_close", allowWrite: true, denied: true},
 		{name: "chat uses MCP", tool: "gofer_issue_list", mode: "chat"},
 		{name: "default MCP config", tool: "gofer_issue_list", defaultMCP: true},
-		{name: "repeated write request ends turn", tool: "gofer_issue_close", denied: true, repeat: true},
+		// The model keeps asking: the third refusal ends the turn before a 4th model call.
+		{name: "three refusals end the turn", tool: "gofer_issue_close", denied: true, repeat: true},
+		{name: "read-only refuses a user-allowed write tool", tool: "gofer_issue_close", readOnly: true, denied: true, autoAllow: []string{"gofer_*"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gkconfig.Reset()
@@ -79,6 +83,9 @@ func TestPersonalRunWithStdioMCPReadAndDeniedWrite(t *testing.T) {
 			assert.NoErr(t, gkconfig.Set("workspace", workspace))
 			assert.NoErr(t, gkconfig.Set("llm.api_type", "openai"))
 			assert.NoErr(t, gkconfig.Set("llm.api_key", "test-key"))
+			if tc.autoAllow != nil {
+				assert.NoErr(t, gkconfig.Set("tools.auto_allow", tc.autoAllow))
+			}
 			mcpConfig := filepath.Join(t.TempDir(), "mcp.json")
 			config, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"gofer": map[string]any{
 				"command": os.Args[0], "args": []string{"-test.run=TestFakeMCPServerProcess"},
@@ -147,18 +154,37 @@ func TestPersonalRunWithStdioMCPReadAndDeniedWrite(t *testing.T) {
 			var output, diagnostics bytes.Buffer
 			err = RunPersonalCLI(context.Background(), mode, args, strings.NewReader(input), &output, &diagnostics)
 			assert.NoErr(t, err)
-			assert.Eq(t, 2, count)
+			if tc.repeat {
+				assert.Eq(t, 3, count)
+			} else {
+				assert.Eq(t, 2, count)
+			}
 			if mode == "run" {
-				assert.Eq(t, true, strings.Contains(output.String(), `"input_tokens":4`))
-				if !tc.repeat {
+				if tc.repeat {
+					assert.Eq(t, true, strings.Contains(output.String(), `"input_tokens":6`))
+					assert.StrContains(t, output.String(), "3 次工具调用被拒绝")
+				} else {
+					assert.Eq(t, true, strings.Contains(output.String(), `"input_tokens":4`))
 					assert.Eq(t, true, strings.Contains(output.String(), `"result":"model-finished"`))
 				}
 				assert.Eq(t, tc.denied, strings.Contains(output.String(), `"type":"input_required"`))
+				// The refused tools ride on input_required; the result stays COMPLETED.
+				assert.Eq(t, tc.denied, strings.Contains(output.String(), `"denied_tools":["`+tc.tool+`"]`))
+				assert.StrContains(t, output.String(), `"status":"COMPLETED"`)
 			} else {
 				assert.Eq(t, true, strings.Contains(output.String(), "model-finished"))
 			}
 		})
 	}
+}
+
+// newGatedRegistry puts the CLI approver in front of registry, as the runtime does.
+func newGatedRegistry(registry *tools.Registry, readOnly bool) (*tools.Approval, error) {
+	gate, err := newCLIMCPGate(readOnly)
+	if err != nil {
+		return nil, err
+	}
+	return tools.NewApproval(registry, gate), nil
 }
 
 func TestCLIMCPGateDefaultsAndOverrides(t *testing.T) {
@@ -168,7 +194,7 @@ func TestCLIMCPGateDefaultsAndOverrides(t *testing.T) {
 	for _, name := range []string{"gofer_issue_list", "gofer_work_get", "gofer_work_report", "gofer_issue_close", "mcp_write"} {
 		registry.Register(newServerStubTool("gofer", name))
 	}
-	gate, err := newCLIMCPGate(registry, false)
+	gate, err := newGatedRegistry(registry, false)
 	assert.NoErr(t, err)
 	for _, name := range []string{"gofer_issue_list", "gofer_work_get", "gofer_work_report"} {
 		_, err := gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: name})
@@ -178,12 +204,11 @@ func TestCLIMCPGateDefaultsAndOverrides(t *testing.T) {
 		_, err := gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: name})
 		assert.True(t, err != nil && strings.Contains(err.Error(), "需要许可："+name))
 	}
-	assert.Eq(t, true, gate.WasDenied())
 	// The refusal matches the denial sentinel the observe layer keys on.
 	_, err = gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: "mcp_write"})
 	assert.True(t, errors.Is(err, tools.ErrDenied))
 	assert.NoErr(t, gkconfig.Set("tools.auto_allow", []string{"mcp_write"}))
-	gate, err = newCLIMCPGate(registry, false)
+	gate, err = newGatedRegistry(registry, false)
 	assert.NoErr(t, err)
 	_, err = gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: "mcp_write"})
 	assert.NoErr(t, err)
@@ -202,25 +227,23 @@ func TestCLIMCPGateReadOnly(t *testing.T) {
 	assert.NoErr(t, gkconfig.Set("tools.auto_allow", []string{"mcp_write", "gofer_*"}))
 
 	t.Run("read-only denies user-allowed write tools", func(t *testing.T) {
-		gate, err := newCLIMCPGate(registry, true)
+		gate, err := newGatedRegistry(registry, true)
 		assert.NoErr(t, err)
 		for _, name := range []string{"mcp_write", "gofer_issue_close"} {
 			_, err := gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: name})
 			assert.True(t, err != nil && strings.Contains(err.Error(), "需要许可："+name))
 		}
-		assert.Eq(t, true, gate.WasDenied())
 	})
 	t.Run("read-only allows default query tools and work report", func(t *testing.T) {
-		gate, err := newCLIMCPGate(registry, true)
+		gate, err := newGatedRegistry(registry, true)
 		assert.NoErr(t, err)
 		for _, name := range []string{"gofer_x_list", "gofer_work_report"} {
 			_, err := gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: name})
 			assert.NoErr(t, err)
 		}
-		assert.Eq(t, false, gate.WasDenied())
 	})
 	t.Run("non read-only keeps user allowlist", func(t *testing.T) {
-		gate, err := newCLIMCPGate(registry, false)
+		gate, err := newGatedRegistry(registry, false)
 		assert.NoErr(t, err)
 		_, err = gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: "mcp_write"})
 		assert.NoErr(t, err)
@@ -238,7 +261,7 @@ func TestCLIMCPGateServerQualified(t *testing.T) {
 	registry.Register(newServerStubTool("thirdparty", "gofer_issue_get"))
 
 	run := func(t *testing.T, readOnly bool, name string) error {
-		gate, err := newCLIMCPGate(registry, readOnly)
+		gate, err := newGatedRegistry(registry, readOnly)
 		assert.NoErr(t, err)
 		_, err = gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: name})
 		return err
@@ -262,7 +285,7 @@ func TestCLIMCPGateServerQualified(t *testing.T) {
 	})
 	t.Run("invalid server glob rejected", func(t *testing.T) {
 		assert.NoErr(t, gkconfig.Set("tools.auto_allow", []string{"[/x"}))
-		_, err := newCLIMCPGate(registry, false)
+		_, err := newGatedRegistry(registry, false)
 		assert.True(t, err != nil)
 	})
 }

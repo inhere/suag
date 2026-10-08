@@ -22,15 +22,11 @@ const (
 	stopHookLimit    = 16 * 1024
 )
 
-func runPersonalChat(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer, gates ...*cliMCPGate) error {
-	return runPersonalChatWithHooks(ctx, runner, opts, stdin, stdout, stderr, newGoferHooks(), gates...)
+func runPersonalChat(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) error {
+	return runPersonalChatWithHooks(ctx, runner, opts, stdin, stdout, stderr, newGoferHooks())
 }
 
-func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer, hooks chatHookClient, gates ...*cliMCPGate) error {
-	var gate *cliMCPGate
-	if len(gates) > 0 {
-		gate = gates[0]
-	}
+func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer, hooks chatHookClient) error {
 	sessionID := ""
 	source := "startup"
 	createdAtStartup := false
@@ -196,9 +192,6 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 			}
 			createdAtStartup = false
 		}
-		if gate != nil {
-			gate.Reset()
-		}
 		if hooks != nil {
 			submit := baseEvent("UserPromptSubmit")
 			submit.Prompt = personal.RedactSecretValues(line)
@@ -258,7 +251,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 			fmt.Fprintln(inputSource, "Waiting for more input.")
 		} else {
 			fmt.Fprintln(inputSource, result.Output)
-			if gate != nil && gate.WasDenied() {
+			if len(result.DeniedTools) > 0 {
 				fmt.Fprintln(inputSource, "Input required to authorize an MCP tool.")
 			}
 			stopMessage = result.Output

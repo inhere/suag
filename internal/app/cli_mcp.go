@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path"
 	"strings"
-	"sync"
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/inhere/suag/internal/platform/tools"
@@ -36,21 +35,17 @@ func mcpPatternMatches(pattern, server, tool string) bool {
 	return match
 }
 
-// cliMCPGate checks the tool kind at dispatch, so --allow-write never grants MCP writes.
+// cliMCPGate is the CLI tools.Approver: it checks the tool kind at dispatch, so
+// --allow-write never grants MCP writes. Only MCP tools are gated; which native
+// tools exist at all (--read-only, --allow-write) is decided by the tool set.
 type cliMCPGate struct {
-	agentcore.NopHook
-	registry   *tools.Registry
-	patterns   []string
-	mu         sync.Mutex
-	denied     bool
-	deniedTool string
-	usage      agentcore.Usage
+	patterns []string
 }
 
-// newCLIMCPGate builds the dispatch gate. In readOnly mode the user's
+// newCLIMCPGate builds the dispatch approver. In readOnly mode the user's
 // tools.auto_allow is still validated but never widens the allowlist: only
 // defaultMCPAutoAllow applies, so no extra (possibly mutating) MCP tool runs.
-func newCLIMCPGate(registry *tools.Registry, readOnly bool) (*cliMCPGate, error) {
+func newCLIMCPGate(readOnly bool) (*cliMCPGate, error) {
 	patterns := append([]string(nil), defaultMCPAutoAllow...)
 	if raw := gkconfig.Get("tools.auto_allow"); raw != nil {
 		patterns = nil
@@ -86,79 +81,23 @@ func newCLIMCPGate(registry *tools.Registry, readOnly bool) (*cliMCPGate, error)
 	if readOnly {
 		patterns = append([]string(nil), defaultMCPAutoAllow...)
 	}
-	return &cliMCPGate{registry: registry, patterns: patterns}, nil
+	return &cliMCPGate{patterns: patterns}, nil
 }
 
-func (g *cliMCPGate) ListTools(ctx context.Context) ([]agentcore.ToolSchema, error) {
-	return g.registry.ListTools(ctx)
-}
-
-// Get passes tool lookup through so layers above (visibility, observe) can
-// still resolve a tool's Kind and MCP server.
-func (g *cliMCPGate) Get(name string) (tools.Tool, error) { return g.registry.Get(name) }
-
-func (g *cliMCPGate) ExecuteTool(ctx context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
-	tool, err := g.registry.Get(call.Name)
-	if err != nil {
-		return nil, err
-	}
-	if tool.Kind() == tools.KindMCP {
-		allowed := false
-		server := ""
-		if named, ok := tool.(tools.MCPServerNamer); ok {
-			server = named.MCPServer()
-		}
-		for _, pattern := range g.patterns {
-			if mcpPatternMatches(pattern, server, call.Name) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			g.mu.Lock()
-			g.denied = true
-			g.deniedTool = call.Name
-			g.mu.Unlock()
-			return nil, tools.Denied(fmt.Sprintf("需要许可：%s，本次运行未授权", call.Name))
-		}
-	}
-	return g.registry.ExecuteTool(ctx, call)
-}
-
-// AfterModel ends a headless turn if the model repeats a denied MCP request.
-// The first denial is already in the model's context as a tool error.
-func (g *cliMCPGate) AfterModel(_ context.Context, event *agentcore.ModelEvent, ctrl *agentcore.Control) error {
-	if event == nil || event.Result == nil {
+// Decide allows native tools and allowlisted MCP tools; any other MCP tool is
+// refused with tools.Denied, which the model sees as a tool error.
+func (g *cliMCPGate) Decide(_ context.Context, call agentcore.ToolCall, tool tools.Tool) error {
+	if tool.Kind() != tools.KindMCP {
 		return nil
 	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.usage.InputTokens += event.Result.Usage.InputTokens
-	g.usage.OutputTokens += event.Result.Usage.OutputTokens
-	g.usage.TotalTokens += event.Result.Usage.TotalTokens
-	g.usage.CacheReadTokens += event.Result.Usage.CacheReadTokens
-	g.usage.CacheWriteTokens += event.Result.Usage.CacheWriteTokens
-	g.usage.CostUSD += event.Result.Usage.CostUSD
-	if g.denied && len(event.Result.ToolCalls) > 0 {
-		output := strings.TrimSpace(event.Result.Content)
-		if output == "" {
-			output = fmt.Sprintf("需要许可：%s，本次运行未授权", g.deniedTool)
-		}
-		ctrl.ShortCircuit(&agentcore.RunResult{Status: agentcore.RunCompleted, Output: output, Usage: g.usage})
+	server := ""
+	if named, ok := tool.(tools.MCPServerNamer); ok {
+		server = named.MCPServer()
 	}
-	return nil
-}
-
-func (g *cliMCPGate) WasDenied() bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.denied
-}
-
-func (g *cliMCPGate) Reset() {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.denied = false
-	g.deniedTool = ""
-	g.usage = agentcore.Usage{}
+	for _, pattern := range g.patterns {
+		if mcpPatternMatches(pattern, server, call.Name) {
+			return nil
+		}
+	}
+	return tools.Denied(fmt.Sprintf("需要许可：%s，本次运行未授权", call.Name))
 }

@@ -41,6 +41,7 @@
     {
       "type": "input_required",
       "fields": [
+        "denied_tools",
         "run_id",
         "session_id",
         "session_usage",

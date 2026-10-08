@@ -49,7 +49,6 @@ type personalRuntime struct {
 	runner       *personal.Runner
 	repo         *store.Store
 	capabilities defaultCapabilities
-	gate         *cliMCPGate
 	// contextWindow is the window of the model actually used by the provider.
 	contextWindow int
 }
@@ -76,9 +75,9 @@ func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptio
 	}
 	defer func() { retErr = errors.Join(retErr, runtime.Close()) }()
 	if mode == "chat" {
-		return runPersonalChat(ctx, runtime.runner, opts, stdin, stdout, stderr, runtime.gate)
+		return runPersonalChat(ctx, runtime.runner, opts, stdin, stdout, stderr)
 	}
-	return executePersonalRun(ctx, runtime.runner, opts, stdout, stderr, runtime.gate)
+	return executePersonalRun(ctx, runtime.runner, opts, stdout, stderr)
 }
 
 // NewPersonalCommand owns the flags and validation shared by direct CLI calls
@@ -151,10 +150,18 @@ func openPersonalRuntime(ctx context.Context, allowWrite bool, opts personalOpti
 		return nil, err
 	}
 	opts.CLIMode = true
-	return openPersonalRuntimeConfigured(ctx, workspace, cwd, allowWrite, servers, nil, opts)
+	// The CLI approver is the MCP allowlist (cliMCPGate); it never prompts.
+	gate, err := newCLIMCPGate(opts.ReadOnly)
+	if err != nil {
+		return nil, err
+	}
+	return openPersonalRuntimeConfigured(ctx, workspace, cwd, allowWrite, servers, nil, gate, opts)
 }
 
-func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD string, allowWrite bool, servers []appconfig.MCPServerSettings, hooks []agentcore.Hook, opts personalOptions) (*personalRuntime, error) {
+// openPersonalRuntimeConfigured assembles one runtime. approver is the
+// permission policy of the approval layer (CLI allowlist or ACP
+// RequestPermission); nil denies every tool call (fail closed).
+func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD string, allowWrite bool, servers []appconfig.MCPServerSettings, hooks []agentcore.Hook, approver tools.Approver, opts personalOptions) (*personalRuntime, error) {
 	settings := appconfig.ReadLLMProviderSettingsWithOverrides(opts.Model, opts.Provider)
 	provider, err := appconfig.BuildLLMProviderFromSettings(settings)
 	if err != nil {
@@ -173,25 +180,16 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 	// (including read-only). The recorder is bound to the runner in personal.New.
 	plans := personal.NewPlanRecorder()
 	capabilities.Registry.Register(native.NewUpdatePlanTool(plans))
-	var gate *cliMCPGate
-	var toolRegistry agentcore.ToolRegistry = capabilities.Registry
-	if opts.CLIMode {
-		gate, err = newCLIMCPGate(capabilities.Registry, opts.ReadOnly)
-		if err != nil {
-			_ = capabilities.Close()
-			return nil, err
-		}
-		toolRegistry = gate
-		hooks = append(hooks, gate)
-	}
-	// Visibility sits between observe (added in personal.New) and the approval
-	// layer: observe -> visibility -> approval(gate) -> base registry.
-	vis, err := newToolVisibility(capabilities.Registry, toolRegistry, contextWindowForSettings(settings))
+	// Tool registry stack, outer to inner: observe (added in personal.New) ->
+	// visibility -> approval -> base registry. Unloaded deferred tools are
+	// answered by visibility and never reach the approver.
+	approval := tools.NewApproval(capabilities.Registry, approver)
+	vis, err := newToolVisibility(capabilities.Registry, approval, contextWindowForSettings(settings))
 	if err != nil {
 		_ = capabilities.Close()
 		return nil, err
 	}
-	toolRegistry = vis
+	var toolRegistry agentcore.ToolRegistry = vis
 	dbPath, err := appconfig.ResolveCoreStorePath()
 	if err != nil {
 		_ = capabilities.Close()
@@ -264,7 +262,7 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		return nil, err
 	}
 	// Same model value the provider was built from (flag/env overrides included).
-	return &personalRuntime{runner: runner, repo: repo, capabilities: capabilities, gate: gate,
+	return &personalRuntime{runner: runner, repo: repo, capabilities: capabilities,
 		contextWindow: contextWindowForSettings(settings)}, nil
 }
 
@@ -326,14 +324,7 @@ func buildPersonalCLICapabilities(ctx context.Context, workspace string, allowWr
 	return built, nil
 }
 
-func executePersonalRun(ctx context.Context, runner *personal.Runner, opts personalOptions, stdout, stderr io.Writer, gates ...*cliMCPGate) error {
-	var gate *cliMCPGate
-	if len(gates) > 0 {
-		gate = gates[0]
-	}
-	if gate != nil {
-		gate.Reset()
-	}
+func executePersonalRun(ctx context.Context, runner *personal.Runner, opts personalOptions, stdout, stderr io.Writer) error {
 	sessionID, err := openRequestedSession(ctx, runner, opts)
 	if err != nil {
 		return err
@@ -380,12 +371,19 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 	}
 	if result.Status == agentcore.RunYielded {
 		if encoder != nil {
-			_ = encoder.Encode(withUsage(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID}, result))
+			line := map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID}
+			if len(result.DeniedTools) > 0 {
+				line["denied_tools"] = result.DeniedTools
+			}
+			_ = encoder.Encode(withUsage(line, result))
 		}
 		return ErrInputRequired
 	}
-	if gate != nil && gate.WasDenied() && encoder != nil {
-		if err := encoder.Encode(withUsage(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID}, result)); err != nil {
+	// A turn with any refused tool call ends with input_required, even when the
+	// model worked around the refusal: Gofer still learns authorization was
+	// missing. denied_tools is the only field added to the line.
+	if len(result.DeniedTools) > 0 && encoder != nil {
+		if err := encoder.Encode(withUsage(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID, "denied_tools": result.DeniedTools}, result)); err != nil {
 			return err
 		}
 	}

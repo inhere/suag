@@ -13,6 +13,7 @@ import (
 	"github.com/coder/acp-go-sdk"
 	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
 )
@@ -36,8 +37,19 @@ func (r Runtime) close() error {
 	return nil
 }
 
-// OpenRuntime assembles a turn with the selected workspace, tool mode and hook.
-type OpenRuntime func(context.Context, string, bool, []appconfig.MCPServerSettings, agentcore.Hook) (Runtime, error)
+// TurnGate is the per-prompt ACP policy handed to the runtime factory. Its Hook
+// side sends tool_call notifications and collects usage; its Approver side is
+// installed as the approval layer of the tool stack (observe -> visibility ->
+// approval -> base) and asks the client via session/request_permission.
+type TurnGate interface {
+	agentcore.Hook
+	tools.Approver
+}
+
+// OpenRuntime assembles a turn with the selected workspace, tool mode and turn
+// gate. gate is nil when the runtime only creates or loads a session (no turn
+// runs); the factory must then fail closed (deny every tool call).
+type OpenRuntime func(ctx context.Context, cwd string, readOnly bool, servers []appconfig.MCPServerSettings, gate TurnGate) (Runtime, error)
 
 type sessionState struct {
 	cwd     string
@@ -227,6 +239,8 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 	if err := a.sendTurnUpdates(ctx, req.SessionId, state, turn, window, result); err != nil {
 		return acp.PromptResponse{}, errors.Join(runErr, closeErr, err)
 	}
+	// Refused tool calls are tool errors and the turn continues (end_turn); only
+	// a hook-level failure (no connection) still surfaces as a refusal error.
 	if errors.Is(runErr, ErrPermissionDenied) || errors.Is(runErr, ErrReadOnly) {
 		return acp.PromptResponse{StopReason: acp.StopReasonRefusal}, closeErr
 	}
@@ -237,6 +251,10 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: acp.UpdateAgentMessageText(result.Output)}); err != nil {
 			return acp.PromptResponse{}, err
 		}
+	}
+	// personal.DenialLimit refusals in one turn end it: report refusal.
+	if result.DenialLimitReached {
+		return acp.PromptResponse{StopReason: acp.StopReasonRefusal}, nil
 	}
 	if result.Status == agentcore.RunYielded {
 		return acp.PromptResponse{StopReason: acp.StopReasonMaxTurnRequests}, nil

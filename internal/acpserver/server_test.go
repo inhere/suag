@@ -28,6 +28,8 @@ type testACPClient struct {
 	mu            sync.Mutex
 	selected      acp.PermissionOptionId
 	permissionErr error
+	// cancelOutcome answers permission requests with the Cancelled outcome.
+	cancelOutcome bool
 	updates       []acp.SessionNotification
 	requests      []acp.RequestPermissionRequest
 }
@@ -38,6 +40,9 @@ func (c *testACPClient) RequestPermission(_ context.Context, req acp.RequestPerm
 	c.requests = append(c.requests, req)
 	if c.permissionErr != nil {
 		return acp.RequestPermissionResponse{}, c.permissionErr
+	}
+	if c.cancelOutcome {
+		return acp.RequestPermissionResponse{Outcome: acp.RequestPermissionOutcome{Cancelled: &acp.RequestPermissionOutcomeCancelled{}}}, nil
 	}
 	return acp.RequestPermissionResponse{Outcome: acp.RequestPermissionOutcome{
 		Selected: &acp.RequestPermissionOutcomeSelected{OptionId: c.selected},
@@ -69,8 +74,23 @@ func connectPersonalACP(t *testing.T, open OpenRuntime, client *testACPClient) *
 
 func testACPRuntime(t *testing.T, provider agentcore.Provider, tool *countingTool) OpenRuntime {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "db", "sessions.db")
-	return func(_ context.Context, _ string, _ bool, _ []appconfig.MCPServerSettings, hook agentcore.Hook) (Runtime, error) {
+	return testACPRuntimeWith(t, provider, tool, acpTestOptions{})
+}
+
+// acpTestOptions tweaks testACPRuntimeWith: deferred puts the visibility layer
+// (MCP tools deferred) in front of approval; dbPath, when set, names the store.
+type acpTestOptions struct {
+	deferred bool
+	dbPath   string
+}
+
+func testACPRuntimeWith(t *testing.T, provider agentcore.Provider, tool *countingTool, opts acpTestOptions) OpenRuntime {
+	t.Helper()
+	dbPath := opts.dbPath
+	if dbPath == "" {
+		dbPath = filepath.Join(t.TempDir(), "db", "sessions.db")
+	}
+	return func(_ context.Context, _ string, _ bool, _ []appconfig.MCPServerSettings, gate TurnGate) (Runtime, error) {
 		repo, err := store.Open(dbPath)
 		if err != nil {
 			return Runtime{}, err
@@ -79,13 +99,21 @@ func testACPRuntime(t *testing.T, provider agentcore.Provider, tool *countingToo
 		if tool != nil {
 			registry.Register(tool)
 		}
+		// Same stack as the app: the gate is the hook and the approval policy.
 		var hooks []agentcore.Hook
-		if hook != nil {
-			hooks = append(hooks, hook)
+		var approver tools.Approver
+		if gate != nil {
+			hooks, approver = append(hooks, gate), gate
 		}
 		plans := personal.NewPlanRecorder()
 		registry.Register(native.NewUpdatePlanTool(plans))
-		runner, err := personal.New(personal.Config{Repository: repo, Provider: provider, Tools: registry, Hooks: hooks, Plans: plans})
+		cfg := personal.Config{Repository: repo, Provider: provider, Tools: tools.NewApproval(registry, approver), Hooks: hooks, Plans: plans}
+		if opts.deferred {
+			// observe -> visibility -> approval -> base, as in the app.
+			vis := tools.NewVisibility(tools.NewApproval(registry, approver), tools.VisibilityOptions{Mode: tools.DeferredAlways})
+			cfg.Tools, cfg.Visibility = vis, vis
+		}
+		runner, err := personal.New(cfg)
 		if err != nil {
 			_ = repo.Close()
 			return Runtime{}, err
@@ -174,7 +202,8 @@ func TestPersonalACPRequiresPermissionBeforeToolExecution(t *testing.T) {
 				t.Fatalf("permission requests = %d, tool started = %v, terminal update = %v", requests, started, terminal)
 			}
 			if selected == "reject" {
-				if response.StopReason != acp.StopReasonRefusal || tool.calls.Load() != 0 {
+				// A refusal is a tool error; the model finishes the turn (end_turn).
+				if response.StopReason != acp.StopReasonEndTurn || tool.calls.Load() != 0 {
 					t.Fatalf("rejected tool: response=%s executions=%d", response.StopReason, tool.calls.Load())
 				}
 			} else if response.StopReason != acp.StopReasonEndTurn || tool.calls.Load() != 1 {
@@ -369,7 +398,7 @@ func TestACPToolKinds(t *testing.T) {
 func TestPersonalACPReadOnlyRejectsToolWithoutPermissionRequest(t *testing.T) {
 	tool := &countingTool{}
 	client := &testACPClient{selected: "allow"}
-	conn := connectPersonalACP(t, testACPRuntime(t, mock.NewProvider(mock.ToolCall("edit-1", "file_write", nil)), tool), client)
+	conn := connectPersonalACP(t, testACPRuntime(t, mock.NewProvider(mock.ToolCall("edit-1", "file_write", nil), mock.Final("done")), tool), client)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
@@ -386,7 +415,8 @@ func TestPersonalACPReadOnlyRejectsToolWithoutPermissionRequest(t *testing.T) {
 	client.mu.Lock()
 	requests := len(client.requests)
 	client.mu.Unlock()
-	if response.StopReason != acp.StopReasonRefusal || tool.calls.Load() != 0 || requests != 0 {
+	// read_only refusal counts as one denial; the turn continues to end_turn.
+	if response.StopReason != acp.StopReasonEndTurn || tool.calls.Load() != 0 || requests != 0 {
 		t.Fatalf("read_only: response=%s executions=%d permission requests=%d", response.StopReason, tool.calls.Load(), requests)
 	}
 }
@@ -394,7 +424,7 @@ func TestPersonalACPReadOnlyRejectsToolWithoutPermissionRequest(t *testing.T) {
 func TestPersonalACPPermissionFailureDoesNotExecuteTool(t *testing.T) {
 	tool := &countingTool{}
 	client := &testACPClient{permissionErr: context.DeadlineExceeded}
-	conn := connectPersonalACP(t, testACPRuntime(t, mock.NewProvider(mock.ToolCall("edit-1", "file_write", nil)), tool), client)
+	conn := connectPersonalACP(t, testACPRuntime(t, mock.NewProvider(mock.ToolCall("edit-1", "file_write", nil), mock.Final("done")), tool), client)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
@@ -402,7 +432,8 @@ func TestPersonalACPPermissionFailureDoesNotExecuteTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	response, err := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("edit")}})
-	if err != nil || response.StopReason != acp.StopReasonRefusal || tool.calls.Load() != 0 {
+	// A failed permission request is a denial: tool not run, turn ends normally.
+	if err != nil || response.StopReason != acp.StopReasonEndTurn || tool.calls.Load() != 0 {
 		t.Fatalf("permission failure: response=%+v error=%v executions=%d", response, err, tool.calls.Load())
 	}
 }
