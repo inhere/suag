@@ -147,11 +147,7 @@ func (r *Runner) newContextBuilder(sessionID, turnID string, hist historyView, p
 
 // threshold is the estimated size above which compaction triggers.
 func (b *contextBuilder) threshold() int {
-	t := b.window - b.reserve
-	if t <= 0 {
-		t = b.window / 2
-	}
-	return t
+	return thresholdOf(b.window, b.reserve)
 }
 
 // BuildMessages implements agentcore.ContextBuilder.

@@ -41,18 +41,41 @@ const compactTemplate = `请按下列固定结构输出摘要（没有内容的�
 ## 涉及文件
 ## 下一步`
 
+// compactLimits resolves the window, reserve and keep budgets (tokens).
+//
+// Defaults scale with the window so small windows stay usable:
+//
+//	reserve   = min(16000, window*20%)
+//	threshold = window - reserve        (window/2 when the reserve eats it all)
+//	keep      = min(20000, threshold*40%)
+//
+// so a compacted context (~keep + summary) sits well below the threshold (about
+// 60% or less) and the next turns have room before compacting again; a fixed
+// keep close to the threshold made every turn compact and drop 1-2 messages.
+// Explicit CompactReserveTokens/CompactKeepTokens win, except that keep is
+// always capped at threshold*50% to keep that headroom.
 func (r *Runner) compactLimits() (window, reserve, keep int) {
 	window, reserve, keep = r.cfg.ContextWindow, r.cfg.CompactReserveTokens, r.cfg.CompactKeepTokens
 	if window <= 0 {
 		window = defaultContextWindow
 	}
 	if reserve <= 0 {
-		reserve = defaultReserveTokens
+		reserve = min(defaultReserveTokens, window/5)
 	}
+	t := thresholdOf(window, reserve)
 	if keep <= 0 {
-		keep = defaultKeepTokens
+		keep = min(defaultKeepTokens, t*2/5)
 	}
+	keep = min(keep, t/2)
 	return window, reserve, keep
+}
+
+// thresholdOf is the estimated size above which compaction triggers.
+func thresholdOf(window, reserve int) int {
+	if t := window - reserve; t > 0 {
+		return t
+	}
+	return window / 2
 }
 
 // validCut reports whether a view may start at items[i] (0 < i < len): either
@@ -96,7 +119,10 @@ func pickCut(items []ctxItem, keep int, allowEnd bool) int {
 			}
 		}
 		if start < 0 {
-			return 0 // the whole context is smaller than the keep budget
+			// The whole context is below the keep budget yet compaction was
+			// triggered (fixed prompt/tool overhead, or a tiny window): keep
+			// less instead, from the first legal cut.
+			start = 1
 		}
 	}
 	for i := max(start, 1); i < n; i++ {

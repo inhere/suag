@@ -443,3 +443,111 @@ func TestTruncateMiddleKeepsUTF8(t *testing.T) {
 	}
 	assert.Eq(t, "short", truncateMiddle("short", 100))
 }
+
+// TestCompactScalesWithWindow runs multi-turn sessions with default
+// (unconfigured) reserve/keep on windows from tiny to large: each must compact
+// and keep going, every request must fit, and a mid-size window must not
+// compact on (nearly) every turn.
+func TestCompactScalesWithWindow(t *testing.T) {
+	for _, window := range []int{3000, 8000, 40000, 200000} {
+		t.Run(fmt.Sprintf("window_%d", window), func(t *testing.T) {
+			repo := openObserveRepo(t)
+			// Each message is about window/10 tokens, so a turn is window/5 tokens.
+			size := window * 4 / 10
+			prov := &scriptProv{name: "main", normal: func(n int, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+				return finalText(fmt.Sprintf("answer-%d %s", n, strings.Repeat("a", size)))
+			}}
+			runner := compactRunner(t, repo, prov, nil, func(c *Config) {
+				c.ContextWindow, c.CompactReserveTokens, c.CompactKeepTokens = window, 0, 0
+			})
+			_, reserve, keep := runner.compactLimits()
+			thr := thresholdOf(window, reserve)
+			assert.Eq(t, true, keep*10 <= thr*6) // compacted view leaves >= 40% headroom
+
+			turns, sid := 12, ""
+			if window == 40000 {
+				turns = 6
+			}
+			for i := 1; i <= turns; i++ {
+				res, err := runner.Run(context.Background(), RunRequest{SessionID: sid, Prompt: fmt.Sprintf("question-%d %s", i, strings.Repeat("q", size))})
+				assert.NoErr(t, err)
+				sid = res.SessionID
+			}
+			recs := compactionEntries(t, repo, sid)
+			assert.Eq(t, true, len(recs) >= 1)
+			if window == 40000 {
+				assert.Eq(t, true, len(recs) <= 2)
+			}
+			for _, rec := range recs {
+				assert.Eq(t, true, rec.TokensAfter*10 <= thr*6+keep) // roughly keep + summary
+			}
+			for _, req := range prov.reqs {
+				assertWellFormed(t, req.Messages)
+				assert.Eq(t, true, charsOfMessages(req.Messages)/4 <= window)
+			}
+		})
+	}
+}
+
+// TestCompactLimitsExplicit checks explicit values win but keep is capped.
+func TestCompactLimitsExplicit(t *testing.T) {
+	mk := func(w, rs, k int) *Runner {
+		return &Runner{cfg: Config{ContextWindow: w, CompactReserveTokens: rs, CompactKeepTokens: k}}
+	}
+	_, rs, k := mk(100000, 1000, 5000).compactLimits()
+	assert.Eq(t, 1000, rs)
+	assert.Eq(t, 5000, k)
+	_, _, k = mk(100000, 1000, 90000).compactLimits()
+	assert.Eq(t, 99000/2, k)
+	w, rs, k := mk(0, 0, 0).compactLimits()
+	assert.Eq(t, 128000, w)
+	assert.Eq(t, 16000, rs)
+	assert.Eq(t, 20000, k)
+}
+
+// TestPickCutKeepsLessWhenContextBelowKeep: a context smaller than keep but
+// over the threshold still gets a legal cut (never the unanswered last user).
+func TestPickCutKeepsLessWhenContextBelowKeep(t *testing.T) {
+	msg := func(role string) ctxItem { return ctxItem{msg: agentcore.Message{Role: role, Content: "x"}} }
+	items := []ctxItem{msg("user"), msg("assistant"), msg("user"), msg("assistant"), msg("user")}
+	cut := pickCut(items, 100000, false)
+	assert.Eq(t, true, cut > 0 && validCut(items, cut))
+	assert.Eq(t, "user", items[len(items)-1].msg.Role)
+	assert.Eq(t, true, cut < len(items)) // the pending user request is kept
+}
+
+// TestCompactSmallWindowRecoversAfterOverflow: a turn that overflows a small
+// window fails, but its entries never enter history, so the next turn works.
+func TestCompactSmallWindowRecoversAfterOverflow(t *testing.T) {
+	repo := openObserveRepo(t)
+	big := false
+	prov := &scriptProv{name: "main", normal: func(n int, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+		if big {
+			return callTool(fmt.Sprintf("c%d", n))
+		}
+		return finalText("ok " + strings.Repeat("a", 600))
+	}}
+	runner := compactRunner(t, repo, prov, bigToolRegistry(60000, nil), func(c *Config) {
+		c.ContextWindow, c.CompactReserveTokens, c.CompactKeepTokens = 3000, 0, 0
+		c.Tools = nil
+	})
+	first, err := runner.Run(context.Background(), RunRequest{Prompt: "hello " + strings.Repeat("h", 600)})
+	assert.NoErr(t, err)
+	// Same session on a runner whose tool result can never fit.
+	big = true
+	runner = compactRunner(t, repo, prov, bigToolRegistry(60000, nil), func(c *Config) {
+		c.ContextWindow, c.CompactReserveTokens, c.CompactKeepTokens = 600, 100, 0
+	})
+	bad, err := runner.Run(context.Background(), RunRequest{SessionID: first.SessionID, Prompt: "read it"})
+	assert.Eq(t, true, errors.Is(err, ErrContextOverflow))
+	assert.Eq(t, RunFailed, bad.State)
+	big = false
+	runner = compactRunner(t, repo, prov, nil, func(c *Config) {
+		c.ContextWindow, c.CompactReserveTokens, c.CompactKeepTokens = 3000, 0, 0
+	})
+	for i := 0; i < 12; i++ {
+		_, err = runner.Run(context.Background(), RunRequest{SessionID: first.SessionID, Prompt: fmt.Sprintf("again %d %s", i, strings.Repeat("g", 800))})
+		assert.NoErr(t, err)
+	}
+	assert.Eq(t, true, len(compactionEntries(t, repo, first.SessionID)) >= 1)
+}

@@ -115,10 +115,7 @@ func (r *Runner) buildHandoff(ctx context.Context, src Session) (handoffRecord, 
 // threshold mirrors contextBuilder.threshold for the summary size cap.
 func (r *Runner) threshold() int {
 	window, reserve, _ := r.compactLimits()
-	if t := window - reserve; t > 0 {
-		return t
-	}
-	return window / 2
+	return thresholdOf(window, reserve)
 }
 
 // writeHandoff appends the handoff entry and inherits loaded tools into meta.
