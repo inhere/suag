@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gookit/goutil/testutil/assert"
+	"github.com/gookit/goutil/x/assert"
 
 	"github.com/inhere/suag/internal/agent"
 	"github.com/inhere/suag/internal/host/session"

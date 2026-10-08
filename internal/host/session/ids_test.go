@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gookit/goutil/testutil/assert"
+	"github.com/gookit/goutil/x/assert"
 )
 
 func TestNewID_UsesPrefix(t *testing.T) {

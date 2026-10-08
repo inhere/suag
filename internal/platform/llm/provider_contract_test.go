@@ -3,7 +3,7 @@ package llm
 import (
 	"testing"
 
-	"github.com/gookit/goutil/testutil/assert"
+	"github.com/gookit/goutil/x/assert"
 	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 )
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gookit/goutil/testutil/assert"
+	"github.com/gookit/goutil/x/assert"
 
 	axconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/platform/tools"

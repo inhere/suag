@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	gkconfig "github.com/gookit/config/v2"
-	"github.com/gookit/goutil/testutil/assert"
+	"github.com/gookit/goutil/x/assert"
 
 	"github.com/inhere/suag/internal/capability/runtimecaps"
 	axconfig "github.com/inhere/suag/internal/config"

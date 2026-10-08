@@ -6,9 +6,10 @@ require (
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gookit/config/v2 v2.2.9
-	github.com/gookit/goutil v0.8.0
+	github.com/gookit/goutil v0.8.1
 	github.com/gookit/ini/v2 v2.3.2
 	golang.org/x/sys v0.30.0
+	golang.org/x/term v0.29.0
 	modernc.org/sqlite v1.31.1
 )
 
@@ -22,7 +23,6 @@ require (
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/sync v0.11.0 // indirect
-	golang.org/x/term v0.29.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/tools v0.23.0 // indirect
 	modernc.org/gc/v3 v3.0.0-20240107210532-573471604cb6 // indirect
