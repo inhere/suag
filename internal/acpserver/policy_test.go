@@ -57,6 +57,12 @@ func TestToolPathMatchesNativeWritePath(t *testing.T) {
 			locations := toolLocations(cwd, args)
 			assert.Eq(t, want, locations[0].Path)
 			diff := editDiff(t, cwd, args)
+			if runtime.GOOS == "windows" && filepath.IsAbs(arg) && filepath.VolumeName(arg) != "" {
+				// Joining a drive-qualified path leaves "C:" mid-path, an invalid Windows
+				// file name the write tool cannot create either, so no diff is offered.
+				assert.Empty(t, diff)
+				return
+			}
 			assert.Eq(t, 1, len(diff))
 			assert.Eq(t, want, diff[0].Diff.Path)
 			assert.Nil(t, diff[0].Diff.OldText) // none of the resolved targets exists
