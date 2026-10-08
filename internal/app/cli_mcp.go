@@ -12,6 +12,8 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
+// defaultMCPAutoAllow is the built-in MCP allowlist: query tools plus gofer_work_report.
+// It is also the only allowlist honored in --read-only mode.
 var defaultMCPAutoAllow = []string{
 	"gofer_*_list", "gofer_*_get", "gofer_work_report", "gofer_session_list",
 }
@@ -27,7 +29,10 @@ type cliMCPGate struct {
 	usage      agentcore.Usage
 }
 
-func newCLIMCPGate(registry *tools.Registry) (*cliMCPGate, error) {
+// newCLIMCPGate builds the dispatch gate. In readOnly mode the user's
+// tools.auto_allow is still validated but never widens the allowlist: only
+// defaultMCPAutoAllow applies, so no extra (possibly mutating) MCP tool runs.
+func newCLIMCPGate(registry *tools.Registry, readOnly bool) (*cliMCPGate, error) {
 	patterns := append([]string(nil), defaultMCPAutoAllow...)
 	if raw := gkconfig.Get("tools.auto_allow"); raw != nil {
 		patterns = nil
@@ -53,6 +58,9 @@ func newCLIMCPGate(registry *tools.Registry) (*cliMCPGate, error) {
 		if _, err := path.Match(pattern, "sample"); err != nil {
 			return nil, fmt.Errorf("tools.auto_allow glob %q: %w", pattern, err)
 		}
+	}
+	if readOnly {
+		patterns = append([]string(nil), defaultMCPAutoAllow...)
 	}
 	return &cliMCPGate{registry: registry, patterns: patterns}, nil
 }

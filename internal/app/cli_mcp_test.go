@@ -167,7 +167,7 @@ func TestCLIMCPGateDefaultsAndOverrides(t *testing.T) {
 	for _, name := range []string{"gofer_issue_list", "gofer_work_get", "gofer_work_report", "gofer_issue_close", "mcp_write"} {
 		registry.Register(newCapabilityStubTool(name))
 	}
-	gate, err := newCLIMCPGate(registry)
+	gate, err := newCLIMCPGate(registry, false)
 	assert.NoErr(t, err)
 	for _, name := range []string{"gofer_issue_list", "gofer_work_get", "gofer_work_report"} {
 		_, err := gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: name})
@@ -179,10 +179,46 @@ func TestCLIMCPGateDefaultsAndOverrides(t *testing.T) {
 	}
 	assert.Eq(t, true, gate.WasDenied())
 	assert.NoErr(t, gkconfig.Set("tools.auto_allow", []string{"mcp_write"}))
-	gate, err = newCLIMCPGate(registry)
+	gate, err = newCLIMCPGate(registry, false)
 	assert.NoErr(t, err)
 	_, err = gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: "mcp_write"})
 	assert.NoErr(t, err)
 	_, err = gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: "gofer_work_report"})
 	assert.True(t, err != nil)
+}
+
+// TestCLIMCPGateReadOnly verifies --read-only ignores user auto_allow extensions.
+func TestCLIMCPGateReadOnly(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	registry := tools.NewRegistry()
+	for _, name := range []string{"gofer_x_list", "gofer_work_report", "mcp_write", "gofer_issue_close"} {
+		registry.Register(newCapabilityStubTool(name))
+	}
+	assert.NoErr(t, gkconfig.Set("tools.auto_allow", []string{"mcp_write", "gofer_*"}))
+
+	t.Run("read-only denies user-allowed write tools", func(t *testing.T) {
+		gate, err := newCLIMCPGate(registry, true)
+		assert.NoErr(t, err)
+		for _, name := range []string{"mcp_write", "gofer_issue_close"} {
+			_, err := gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: name})
+			assert.True(t, err != nil && strings.Contains(err.Error(), "需要许可："+name))
+		}
+		assert.Eq(t, true, gate.WasDenied())
+	})
+	t.Run("read-only allows default query tools and work report", func(t *testing.T) {
+		gate, err := newCLIMCPGate(registry, true)
+		assert.NoErr(t, err)
+		for _, name := range []string{"gofer_x_list", "gofer_work_report"} {
+			_, err := gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: name})
+			assert.NoErr(t, err)
+		}
+		assert.Eq(t, false, gate.WasDenied())
+	})
+	t.Run("non read-only keeps user allowlist", func(t *testing.T) {
+		gate, err := newCLIMCPGate(registry, false)
+		assert.NoErr(t, err)
+		_, err = gate.ExecuteTool(context.Background(), agentcore.ToolCall{Name: "mcp_write"})
+		assert.NoErr(t, err)
+	})
 }

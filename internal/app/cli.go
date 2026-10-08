@@ -96,7 +96,7 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.StringVar(&opts.SessionID, "session-id", "", "create or use this session ID;;sid")
 	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID;;r")
 	cmd.StringVar(&opts.OutputFormat, "output-format", "text", "text or stream-json")
-	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool;;ro")
+	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool; MCP allows only default query tools and gofer_work_report;;ro")
 	cmd.BoolVar(&opts.AllowWrite, "allow-write", false, "allow workspace write and shell tools for this run")
 	cmd.StringVar(&opts.AppendSystemPrompt, "append-system-prompt", "", "append system instructions after rules")
 	cmd.BoolVar(&opts.NoProjectRules, "no-project-rules", false, "skip project rule files for debugging")
@@ -158,7 +158,7 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 	var gate *cliMCPGate
 	var toolRegistry agentcore.ToolRegistry = capabilities.Registry
 	if opts.CLIMode {
-		gate, err = newCLIMCPGate(capabilities.Registry)
+		gate, err = newCLIMCPGate(capabilities.Registry, opts.ReadOnly)
 		if err != nil {
 			_ = capabilities.Close()
 			return nil, err
