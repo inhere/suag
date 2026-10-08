@@ -128,7 +128,7 @@ func TestRunnerRulesPersistAndUpdateOnlyWhenChanged(t *testing.T) {
 	_, err = runner.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "one"})
 	assert.NoErr(t, err)
 	putRule(t, filepath.Join(root, "AGENTS.md"), "second rule")
-	runner = newRunner("ignored on resume")
+	runner = newRunner("replaced on resume")
 	_, err = runner.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "two"})
 	assert.NoErr(t, err)
 	_, err = runner.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "three"})
@@ -136,7 +136,10 @@ func TestRunnerRulesPersistAndUpdateOnlyWhenChanged(t *testing.T) {
 	assert.Eq(t, 3, len(provider.requests))
 	assert.Eq(t, true, strings.Contains(provider.requests[0].System, "first rule"))
 	assert.Eq(t, true, strings.Contains(provider.requests[0].System, "extra"))
-	assert.Eq(t, false, strings.Contains(provider.requests[1].System, "ignored on resume"))
+	assert.Eq(t, true, strings.Contains(provider.requests[1].System, "replaced on resume"))
+	assert.Eq(t, false, strings.Contains(provider.requests[1].System, "extra"))
+	assert.Eq(t, 1, countNotices(provider.requests[1].Messages, "附加提示已更新"))
+	assert.Eq(t, 0, countNotices(provider.requests[2].Messages, "附加提示已更新"))
 	assert.Eq(t, true, strings.Contains(provider.requests[1].System, "second rule"))
 	assert.Eq(t, 1, countRuleUpdates(provider.requests[1].Messages))
 	// Full rule text appears once (system prompt only), not again in the update message.
@@ -508,4 +511,63 @@ func TestRunnerPersistsCancellationAfterContextEnds(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Eq(t, session.SessionOpen, storedSession.Status)
+}
+
+func countNotices(messages []agentcore.Message, prefix string) int {
+	n := 0
+	for _, message := range messages {
+		if message.Role == "system" && strings.Contains(message.Content, prefix) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestRunnerAppendPromptOnResume(t *testing.T) {
+	ctx := context.Background()
+	const notice = "附加提示已更新"
+	// Each case resumes a session created with "orig" using a different runner append prompt.
+	cases := []struct {
+		name, resume, wantStored string
+		wantNotice               int
+	}{
+		{"different value updates and notifies once", "fresh-skill-text", "fresh-skill-text", 1},
+		{"empty keeps persisted value", "", "orig", 0},
+		{"same value does nothing", "orig", "orig", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, err := session.NewSQLiteRepository(testutil.NewMigratedSQLitePath(t, "sessions.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = repo.Close() })
+			provider := &rulesProvider{}
+			runRoot := filepath.Join(t.TempDir(), "runs")
+			newRunner := func(appendPrompt string) *Runner {
+				runner, err := New(Config{Repository: repo, RunRoot: runRoot, Provider: provider, AppendSystemPrompt: appendPrompt})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return runner
+			}
+			model, err := newRunner("orig").NewSession(ctx, "append-session", "test")
+			assert.NoErr(t, err)
+			resumed := newRunner(tc.resume)
+			_, err = resumed.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "one"})
+			assert.NoErr(t, err)
+			_, err = resumed.Run(ctx, RunRequest{SessionID: model.SessionID, Prompt: "two"})
+			assert.NoErr(t, err)
+			assert.Eq(t, 2, len(provider.requests))
+			stored, err := repo.GetSession(ctx, model.SessionID)
+			assert.NoErr(t, err)
+			assert.Eq(t, tc.wantStored, stored.Metadata["personal_append_prompt"])
+			assert.Eq(t, true, strings.Contains(provider.requests[0].System, tc.wantStored))
+			assert.Eq(t, tc.wantNotice, countNotices(provider.requests[0].Messages, notice))
+			assert.Eq(t, 0, countNotices(provider.requests[1].Messages, notice))
+			for _, m := range provider.requests[0].Messages {
+				assert.Eq(t, false, strings.Contains(m.Content, "fresh-skill-text"))
+			}
+		})
+	}
 }

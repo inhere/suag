@@ -264,7 +264,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err != nil {
 		return result, err
 	}
-	var rulesUpdate string
+	var rulesUpdate, appendUpdate string
 	if r.cfg.RuleSource != nil {
 		rules, hash, err := r.cfg.RuleSource()
 		if err != nil {
@@ -280,6 +280,20 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			// already carries the new rules this turn. Only send a short notice
 			// instead of repeating the full text (up to 128KB, resent per step).
 			rulesUpdate = "项目规则已更新，以 system prompt 中的版本为准"
+		}
+	}
+
+	// Resume with a caller-supplied append prompt (--append-system-prompt or
+	// SUAG_APPEND_SYSTEM_PROMPT): when it differs from the persisted one, replace
+	// it and send a short notice (same mechanism as rules; the full text lives
+	// only in the system prompt). Empty input keeps the persisted value.
+	if appended := r.cfg.AppendSystemPrompt; appended != "" {
+		if model.Metadata == nil {
+			model.Metadata = map[string]any{}
+		}
+		if previous, _ := model.Metadata["personal_append_prompt"].(string); previous != appended {
+			model.Metadata["personal_append_prompt"] = appended
+			appendUpdate = "附加提示已更新，以 system prompt 中的版本为准"
 		}
 	}
 
@@ -336,7 +350,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		Storage:        storage,
 		Tools:          r.cfg.Tools,
 		PromptBuilder:  rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Metadata, goferJob: r.cfg.GoferJob},
-		ContextBuilder: historyContext{previous: history, update: joinContext(rulesUpdate, req.SystemContext)},
+		ContextBuilder: historyContext{previous: history, update: joinContext(joinContext(rulesUpdate, appendUpdate), req.SystemContext)},
 		Hooks:          runtimeHooks,
 		MaxSteps:       r.cfg.MaxSteps,
 	})
