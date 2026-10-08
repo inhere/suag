@@ -17,6 +17,9 @@ type usageCollector struct {
 	mu    sync.Mutex
 	sum   agentcore.Usage
 	calls int
+	// lastInput is the input_tokens of the most recent model call; the context
+	// builder uses it to estimate the next request size.
+	lastInput int
 }
 
 func (c *usageCollector) AfterModel(_ context.Context, event *agentcore.ModelEvent, _ *agentcore.Control) error {
@@ -26,8 +29,17 @@ func (c *usageCollector) AfterModel(_ context.Context, event *agentcore.ModelEve
 	c.mu.Lock()
 	c.sum = AddUsage(c.sum, event.Result.Usage)
 	c.calls++
+	c.lastInput = event.Result.Usage.InputTokens
 	c.mu.Unlock()
 	return nil
+}
+
+// lastInputTokens returns the latest call's input_tokens; ok is false before
+// any call or when the provider reported none.
+func (c *usageCollector) lastInputTokens() (int, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.lastInput, c.lastInput > 0
 }
 
 func (c *usageCollector) snapshot() (agentcore.Usage, int) {

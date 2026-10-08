@@ -2,7 +2,6 @@ package personal
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -56,6 +55,16 @@ type Config struct {
 	LockRoot              string
 	ProcessRoot           string
 	MaxSteps              int
+	// ContextWindow is the effective model's context window in tokens (0 = 128000).
+	ContextWindow int
+	// CompactReserveTokens / CompactKeepTokens override the compaction reserve
+	// (default 16000) and the recent tail kept verbatim (default 20000).
+	CompactReserveTokens int
+	CompactKeepTokens    int
+	// CompactProvider/CompactModel summarize history when llm.compact_model is
+	// set; nil means the turn's own provider is used.
+	CompactProvider agentcore.Provider
+	CompactModel    string
 }
 
 // Event is one transport-neutral lifecycle or model-stream update.
@@ -113,6 +122,9 @@ func New(cfg Config) (*Runner, error) {
 	rec := &recorder{sink: cfg.Repository}
 	cfg.Provider = rec.observeProvider(cfg.Provider, cfg.ProviderName, cfg.Model)
 	cfg.Tools = rec.observeTools(cfg.Tools)
+	if cfg.CompactProvider != nil {
+		cfg.CompactProvider = rec.observeProvider(cfg.CompactProvider, cfg.ProviderName, cfg.CompactModel)
+	}
 	return &Runner{cfg: cfg, heldLocks: make(map[string]*process.SessionLock), rec: rec}, nil
 }
 
@@ -271,7 +283,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	turnStart := time.Now()
 	ctx = withObserveScope(ctx, model.ID, turnID)
 	result := RunResult{SessionID: model.ID, TurnID: turnID, RunID: turnID}
-	history, err := r.history(ctx, model.ID)
+	history, err := r.loadHistory(ctx, model.ID)
 	if err != nil {
 		return result, err
 	}
@@ -352,12 +364,13 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		runtimeHooks = append(runtimeHooks, toolResultEmitHook{sink: req.Emit, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
 	}
 	storage := r.cfg.Repository.AgentStorage()
+	promptBuilder := rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Meta, goferJob: r.cfg.GoferJob}
 	runtime := agentcore.New(agentcore.Config{
 		Provider:       r.cfg.Provider,
 		Storage:        storage,
 		Tools:          r.cfg.Tools,
-		PromptBuilder:  rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Meta, goferJob: r.cfg.GoferJob},
-		ContextBuilder: historyContext{previous: history, update: joinContext(joinContext(rulesUpdate, appendUpdate), req.SystemContext)},
+		PromptBuilder:  promptBuilder,
+		ContextBuilder: r.newContextBuilder(model.ID, turnID, history, promptBuilder, usage, joinContext(joinContext(rulesUpdate, appendUpdate), req.SystemContext)),
 		Hooks:          runtimeHooks,
 		MaxSteps:       r.cfg.MaxSteps,
 	})
@@ -470,41 +483,6 @@ func (r *Runner) findSession(ctx context.Context, req RunRequest) (Session, erro
 	return Session{}, err
 }
 
-// history replays the user/assistant/tool entries of every finished (completed)
-// turn of the session in seq order. Failed, cancelled and still-running turns
-// are excluded. Assistant tool-call messages keep their own Content.
-func (r *Runner) history(ctx context.Context, sessionID string) ([]agentcore.Message, error) {
-	turns, err := r.cfg.Repository.ListTurns(ctx, sessionID, store.TurnCompleted)
-	if err != nil {
-		return nil, fmt.Errorf("list completed turns: %w", err)
-	}
-	if len(turns) == 0 {
-		return nil, nil
-	}
-	done := make(map[string]bool, len(turns))
-	for _, t := range turns {
-		done[t.ID] = true
-	}
-	entries, err := r.cfg.Repository.ListEntries(ctx, sessionID, store.EntryFilter{
-		Types: []string{store.EntryUser, store.EntryAssistant, store.EntryTool},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("load session history: %w", err)
-	}
-	var history []agentcore.Message
-	for _, e := range entries {
-		if !done[e.TurnID] {
-			continue
-		}
-		var m agentcore.Message
-		if err := json.Unmarshal(e.JSON, &m); err != nil {
-			return nil, fmt.Errorf("decode history entry %d: %w", e.Seq, err)
-		}
-		history = append(history, m)
-	}
-	return history, nil
-}
-
 func (r *Runner) finish(ctx context.Context, model Session, result RunResult, turnStart time.Time, usage *usageCollector, coreResult *agentcore.RunResult, runErr error, sink EmitFunc) (RunResult, error) {
 	if coreResult != nil {
 		result.Status, result.Output, result.Usage = coreResult.Status, coreResult.Output, coreResult.Usage
@@ -589,24 +567,6 @@ func emit(ctx context.Context, sink EmitFunc, event Event) error {
 		return nil
 	}
 	return sink(ctx, event)
-}
-
-type historyContext struct {
-	previous []agentcore.Message
-	update   string
-}
-
-func (b historyContext) BuildMessages(ctx context.Context, state *agentcore.RunState) ([]agentcore.Message, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	out := make([]agentcore.Message, 0, len(b.previous)+len(state.Messages))
-	out = append(out, b.previous...)
-	if b.update != "" {
-		out = append(out, agentcore.Message{Role: "system", Content: b.update})
-	}
-	out = append(out, state.Messages...)
-	return out, nil
 }
 
 type rulesPromptBuilder struct {
