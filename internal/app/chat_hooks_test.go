@@ -17,10 +17,9 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/data/testutil"
-	"github.com/inhere/suag/internal/host/session"
 	"github.com/inhere/suag/internal/personal"
 	personalprocess "github.com/inhere/suag/internal/personal/process"
+	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
@@ -306,16 +305,15 @@ func TestEmptyChatRegistersRealSessionThenUpdatesTitleOnFirstPrompt(t *testing.T
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	processRoot := shortTestHome(t)
-	runRoot := filepath.Join(processRoot, "runs")
 	lockRoot := filepath.Join(processRoot, "locks")
-	repo, err := session.NewSQLiteRepository(testutil.NewMigratedSQLitePath(t, "sessions.db"))
+	repo, err := store.Open(newTestStorePath(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = repo.Close() })
 	provider := &blockingChatProvider{entered: make(chan struct{}), release: make(chan struct{})}
 	runner, err := personal.New(personal.Config{
-		Repository: repo, RunRoot: runRoot, Provider: provider,
+		Repository: repo, Provider: provider,
 		LockRoot: lockRoot, ProcessRoot: filepath.Join(processRoot, "run"),
 	})
 	if err != nil {
@@ -376,7 +374,7 @@ func TestChatProcessDeliveryTranscriptIsInjectedAndTerminalPromptIsNot(t *testin
 	t.Cleanup(gkconfig.Reset)
 	suagHome := shortTestHome(t)
 	t.Setenv("SUAG_HOME", suagHome)
-	repo, err := session.NewSQLiteRepository(testutil.NewMigratedSQLitePath(t, "sessions.db"))
+	repo, err := store.Open(newTestStorePath(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +382,7 @@ func TestChatProcessDeliveryTranscriptIsInjectedAndTerminalPromptIsNot(t *testin
 	processRoot := filepath.Join(suagHome, "run")
 	provider := &hookTestProvider{}
 	runner, err := personal.New(personal.Config{
-		Repository: repo, RunRoot: filepath.Join(t.TempDir(), "runs"), Provider: provider,
+		Repository: repo, Provider: provider,
 		TranscriptDir: filepath.Join(suagHome, "transcripts"),
 		LockRoot:      filepath.Join(processRoot, "locks"), ProcessRoot: processRoot,
 	})
@@ -437,7 +435,7 @@ func TestChatProcessDeliveryUserPromptSubmitCarriesInjected(t *testing.T) {
 	t.Cleanup(gkconfig.Reset)
 	suagHome := shortTestHome(t)
 	t.Setenv("SUAG_HOME", suagHome)
-	repo, err := session.NewSQLiteRepository(testutil.NewMigratedSQLitePath(t, "sessions.db"))
+	repo, err := store.Open(newTestStorePath(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +443,7 @@ func TestChatProcessDeliveryUserPromptSubmitCarriesInjected(t *testing.T) {
 	processRoot := filepath.Join(suagHome, "run")
 	provider := &hookTestProvider{}
 	runner, err := personal.New(personal.Config{
-		Repository: repo, RunRoot: filepath.Join(t.TempDir(), "runs"), Provider: provider,
+		Repository: repo, Provider: provider,
 		TranscriptDir: filepath.Join(suagHome, "transcripts"),
 		LockRoot:      filepath.Join(processRoot, "locks"), ProcessRoot: processRoot,
 	})
@@ -630,7 +628,7 @@ func TestPersonalChatSendsOnlyBoundedRedactedShellOutputToPostToolUse(t *testing
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	t.Setenv("SUAG_HOME", t.TempDir())
-	repo, err := session.NewSQLiteRepository(testutil.NewMigratedSQLitePath(t, "sessions.db"))
+	repo, err := store.Open(newTestStorePath(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -639,7 +637,6 @@ func TestPersonalChatSendsOnlyBoundedRedactedShellOutputToPostToolUse(t *testing
 	registry.Register(appHookOutputTool{})
 	runner, err := personal.New(personal.Config{
 		Repository: repo,
-		RunRoot:    t.TempDir(),
 		Provider: mock.NewProvider(
 			mock.ToolCall("call-1", "shell_exec", map[string]any{"command": "print environment"}),
 			mock.Final("finished"),

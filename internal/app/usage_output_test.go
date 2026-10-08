@@ -15,7 +15,7 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/host/session"
+	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
 )
@@ -136,12 +136,12 @@ func TestAppendSystemPromptCanBeClearedFromCLI(t *testing.T) {
 	}
 	stored := func() any {
 		t.Helper()
-		repo, err := session.NewSQLiteRepository(filepath.Join(home, ".suag", "db", "suag.db"))
+		repo, err := store.Open(filepath.Join(home, ".suag", "db", "sessions.db"))
 		assert.NoErr(t, err)
 		defer repo.Close()
 		model, err := repo.GetSession(context.Background(), "clear-cli")
 		assert.NoErr(t, err)
-		return model.Metadata["personal_append_prompt"]
+		return model.Meta["personal_append_prompt"]
 	}
 	run("--append-system-prompt", "saved")
 	assert.Eq(t, "saved", stored())

@@ -18,9 +18,8 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/data/testutil"
-	"github.com/inhere/suag/internal/host/session"
 	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
 )
@@ -97,18 +96,20 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	assert.Eq(t, true, strings.Contains(string(transcript), "hello"))
 	assert.Eq(t, true, strings.Contains(string(transcript), "reply-2"))
 
-	personalDB := filepath.Join(home, ".suag", "db", "suag.db")
+	personalDB := filepath.Join(home, ".suag", "db", "sessions.db")
 	_, err = os.Stat(personalDB)
 	assert.NoErr(t, err)
-	repo, err := session.NewSQLiteRepository(personalDB)
+	repo, err := store.Open(personalDB)
 	assert.NoErr(t, err)
 	defer repo.Close()
 	stored, err := repo.GetSession(context.Background(), "path-test")
 	assert.NoErr(t, err)
-	assert.Eq(t, "environment-model", stored.Metadata["model"])
-	assert.Eq(t, "openai", stored.Metadata["provider"])
-	_, err = os.Stat(filepath.Join(home, ".suag", "db", "agentcore", "host", "path-test", "runs.db"))
+	assertOnlySessionsDB(t, filepath.Join(home, ".suag", "db"))
+	turns, err := repo.ListTurns(context.Background(), "path-test", store.TurnCompleted)
 	assert.NoErr(t, err)
+	assert.Eq(t, 2, len(turns))
+	assert.Eq(t, "environment-model", stored.Meta["model"])
+	assert.Eq(t, "openai", stored.Meta["provider"])
 	_, err = os.Stat(filepath.Join(workspace, "db"))
 	assert.Eq(t, true, errors.Is(err, os.ErrNotExist))
 }
@@ -177,17 +178,15 @@ func TestPersonalCLIInjectsRulesPromptAndGoferHint(t *testing.T) {
 	assert.Eq(t, true, strings.Contains(systems[1], "environment prompt"))
 }
 
-func newCLITestRunner(t *testing.T, provider agentcore.Provider, hooks ...agentcore.Hook) (*personal.Runner, *session.SQLiteRepository) {
+func newCLITestRunner(t *testing.T, provider agentcore.Provider, hooks ...agentcore.Hook) (*personal.Runner, *store.Store) {
 	t.Helper()
-	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
-	repo, err := session.NewSQLiteRepository(dbPath)
+	repo, err := store.Open(newTestStorePath(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = repo.Close() })
 	runner, err := personal.New(personal.Config{
 		Repository: repo,
-		RunRoot:    filepath.Join(t.TempDir(), "runs"),
 		Provider:   provider,
 		Hooks:      hooks,
 	})
@@ -239,7 +238,7 @@ func TestExecutePersonalRunResumeRejectsUnknownSession(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	opts := personalOptions{Prompt: "continue", ResumeID: "missing", OutputFormat: "stream-json"}
 	err := executePersonalRun(context.Background(), runner, opts, &stdout, &stderr)
-	assert.Eq(t, true, errors.Is(err, session.ErrSessionNotFound))
+	assert.Eq(t, true, errors.Is(err, personal.ErrSessionNotFound))
 	assert.Eq(t, "", stdout.String())
 	sessions, err := repo.ListSessions(context.Background())
 	if err != nil {
@@ -286,15 +285,12 @@ func TestPersonalChatReusesOneSession(t *testing.T) {
 	assert.Eq(t, 1, len(sessions))
 	assert.Eq(t, true, strings.Contains(stdout.String(), "first"))
 	assert.Eq(t, true, strings.Contains(stdout.String(), "second"))
-	events, err := repo.ListEventsBySession(context.Background(), sessions[0].SessionID, 0)
+	// Two prompts in one chat session are two completed turns of that session.
+	turns, err := repo.ListTurns(context.Background(), sessions[0].ID, store.TurnCompleted)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runs := make(map[string]bool)
-	for _, event := range events {
-		runs[event.RunID] = true
-	}
-	assert.Eq(t, 2, len(runs))
+	assert.Eq(t, 2, len(turns))
 }
 
 func TestParsePersonalOptionsRejectsInvalidCombinations(t *testing.T) {
@@ -355,4 +351,10 @@ func shortTestHome(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return dir
+}
+
+// newTestStorePath returns a fresh core store path under the test's temp dir.
+func newTestStorePath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "db", "sessions.db")
 }

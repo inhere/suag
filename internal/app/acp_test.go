@@ -99,7 +99,7 @@ func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"choices":[{"message":{"content":"reply-%d"},"finish_reason":"stop"}]}`, n)
+		_, _ = fmt.Fprintf(w, `{"choices":[{"message":{"content":"reply-%d"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`, n)
 	}))
 	t.Cleanup(provider.Close)
 	_ = gkconfig.Set("llm.api_type", "openai")
@@ -138,8 +138,16 @@ func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {
 	if calls.Load() != 2 {
 		t.Fatalf("provider calls = %d, want 2", calls.Load())
 	}
-	if _, err := os.Stat(filepath.Join(home, ".suag", "db", "suag.db")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".suag", "db", "sessions.db")); err != nil {
 		t.Fatal(err)
+	}
+	assertOnlySessionsDB(t, filepath.Join(home, ".suag", "db"))
+	// The session-cumulative usage_update keeps growing after session/load in a new Agent.
+	if got := usageTotals(firstClient); len(got) != 1 || got[0] != 6 {
+		t.Fatalf("first process usage totals = %v, want [6]", got)
+	}
+	if got := usageTotals(secondClient); len(got) != 1 || got[0] != 12 {
+		t.Fatalf("loaded process usage totals = %v, want [12]", got)
 	}
 	if _, err := os.Stat(filepath.Join(cwd, "db")); !os.IsNotExist(err) {
 		t.Fatalf("ACP wrote a database inside workspace: %v", err)
@@ -156,4 +164,42 @@ func hasACPAnswer(client *appACPClient, text string) bool {
 		}
 	}
 	return false
+}
+
+// usageTotals returns the total_tokens of every usage_update the client received.
+func usageTotals(client *appACPClient) []float64 {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	var out []float64
+	for _, update := range client.updates {
+		if u := update.Update.UsageUpdate; u != nil {
+			if total, ok := u.Meta["total_tokens"].(float64); ok {
+				out = append(out, total)
+			}
+		}
+	}
+	return out
+}
+
+// assertOnlySessionsDB fails unless dir holds sessions.db and, at most, its
+// SQLite -wal/-shm sidecars: the single-store design leaves no other database.
+func assertOnlySessionsDB(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range entries {
+		switch entry.Name() {
+		case "sessions.db":
+			found = true
+		case "sessions.db-wal", "sessions.db-shm":
+		default:
+			t.Errorf("unexpected file in %s: %s", dir, entry.Name())
+		}
+	}
+	if !found {
+		t.Errorf("sessions.db missing in %s", dir)
+	}
 }

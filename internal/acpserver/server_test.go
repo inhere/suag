@@ -15,9 +15,8 @@ import (
 	"github.com/coder/acp-go-sdk"
 	"github.com/gookit/goutil/x/assert"
 	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/data/testutil"
-	"github.com/inhere/suag/internal/host/session"
 	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
@@ -69,10 +68,9 @@ func connectPersonalACP(t *testing.T, open OpenRuntime, client *testACPClient) *
 
 func testACPRuntime(t *testing.T, provider agentcore.Provider, tool *countingTool) OpenRuntime {
 	t.Helper()
-	dbPath := testutil.NewMigratedSQLitePath(t, "sessions.db")
-	runRoot := filepath.Join(t.TempDir(), "runs")
+	dbPath := filepath.Join(t.TempDir(), "db", "sessions.db")
 	return func(_ context.Context, _ string, _ bool, _ []appconfig.MCPServerSettings, hook agentcore.Hook) (Runtime, error) {
-		repo, err := session.NewSQLiteRepository(dbPath)
+		repo, err := store.Open(dbPath)
 		if err != nil {
 			return Runtime{}, err
 		}
@@ -84,7 +82,7 @@ func testACPRuntime(t *testing.T, provider agentcore.Provider, tool *countingToo
 		if hook != nil {
 			hooks = append(hooks, hook)
 		}
-		runner, err := personal.New(personal.Config{Repository: repo, RunRoot: runRoot, Provider: provider, Tools: registry, Hooks: hooks})
+		runner, err := personal.New(personal.Config{Repository: repo, Provider: provider, Tools: registry, Hooks: hooks})
 		if err != nil {
 			_ = repo.Close()
 			return Runtime{}, err

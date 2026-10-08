@@ -1,0 +1,150 @@
+{
+  "error": [
+    {
+      "type": "error",
+      "fields": [
+        "error",
+        "session_id",
+        "session_usage",
+        "type",
+        "usage"
+      ]
+    },
+    {
+      "type": "session",
+      "fields": [
+        "id",
+        "session_id",
+        "type"
+      ]
+    },
+    {
+      "type": "turn_end",
+      "status": "FAILED",
+      "fields": [
+        "run_id",
+        "session_id",
+        "status",
+        "type"
+      ]
+    },
+    {
+      "type": "turn_start",
+      "fields": [
+        "run_id",
+        "session_id",
+        "type"
+      ]
+    }
+  ],
+  "input_required": [
+    {
+      "type": "input_required",
+      "fields": [
+        "run_id",
+        "session_id",
+        "session_usage",
+        "type",
+        "usage"
+      ]
+    },
+    {
+      "type": "message_delta",
+      "fields": [
+        "run_id",
+        "session_id",
+        "text",
+        "type"
+      ]
+    },
+    {
+      "type": "result",
+      "status": "COMPLETED",
+      "fields": [
+        "result",
+        "run_id",
+        "session_id",
+        "session_usage",
+        "status",
+        "type",
+        "usage"
+      ]
+    },
+    {
+      "type": "session",
+      "fields": [
+        "id",
+        "session_id",
+        "type"
+      ]
+    },
+    {
+      "type": "turn_end",
+      "status": "COMPLETED",
+      "fields": [
+        "run_id",
+        "session_id",
+        "status",
+        "type"
+      ]
+    },
+    {
+      "type": "turn_start",
+      "fields": [
+        "run_id",
+        "session_id",
+        "type"
+      ]
+    }
+  ],
+  "result": [
+    {
+      "type": "message_delta",
+      "fields": [
+        "run_id",
+        "session_id",
+        "text",
+        "type"
+      ]
+    },
+    {
+      "type": "result",
+      "status": "COMPLETED",
+      "fields": [
+        "result",
+        "run_id",
+        "session_id",
+        "session_usage",
+        "status",
+        "type",
+        "usage"
+      ]
+    },
+    {
+      "type": "session",
+      "fields": [
+        "id",
+        "session_id",
+        "type"
+      ]
+    },
+    {
+      "type": "turn_end",
+      "status": "COMPLETED",
+      "fields": [
+        "run_id",
+        "session_id",
+        "status",
+        "type"
+      ]
+    },
+    {
+      "type": "turn_start",
+      "fields": [
+        "run_id",
+        "session_id",
+        "type"
+      ]
+    }
+  ]
+}
