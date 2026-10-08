@@ -139,6 +139,11 @@ func TestRunnerRulesPersistAndUpdateOnlyWhenChanged(t *testing.T) {
 	assert.Eq(t, false, strings.Contains(provider.requests[1].System, "ignored on resume"))
 	assert.Eq(t, true, strings.Contains(provider.requests[1].System, "second rule"))
 	assert.Eq(t, 1, countRuleUpdates(provider.requests[1].Messages))
+	// Full rule text appears once (system prompt only), not again in the update message.
+	for _, m := range provider.requests[1].Messages {
+		assert.Eq(t, false, strings.Contains(m.Content, "second rule"))
+	}
+	assert.Eq(t, 1, strings.Count(provider.requests[1].System, "second rule"))
 	assert.Eq(t, 0, countRuleUpdates(provider.requests[2].Messages))
 	stored, err := repo.GetSession(ctx, model.SessionID)
 	assert.NoErr(t, err)

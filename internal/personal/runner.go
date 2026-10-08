@@ -276,7 +276,10 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		if previous, _ := model.Metadata["personal_rules_hash"].(string); previous != hash {
 			model.Metadata["personal_rules_hash"] = hash
 			model.Metadata["personal_rules_content"] = rules
-			rulesUpdate = "项目规则已更新\n" + rules
+			// The system prompt is built from the metadata updated above, so it
+			// already carries the new rules this turn. Only send a short notice
+			// instead of repeating the full text (up to 128KB, resent per step).
+			rulesUpdate = "项目规则已更新，以 system prompt 中的版本为准"
 		}
 	}
 
