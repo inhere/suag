@@ -27,7 +27,6 @@ import (
 func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("DATABASE_URL", "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -117,7 +116,6 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 func TestPersonalCLIInjectsRulesPromptAndGoferHint(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("DATABASE_URL", "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)

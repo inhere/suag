@@ -40,20 +40,10 @@ agent:
 # Optional agentcore runtime switch for single-agent task execution
 agentcore:
   enabled: false
-  run_root: "" # optional runtime root; host defaults to db/agentcore/host, and when set host uses <run_root>/host
 
 # HTTP server settings (server mode)
 server:
   addr: ":8180"
-
-# SQLite database path for persistent memory
-# Leave empty to use in-memory storage
-database:
-  path: "" # e.g. ~/.suag/memory.db
-
-# HITL settings
-hitl:
-  fail_threshold: 3 # trigger HITL after N consecutive tool failures
 
 # Logging
 log:

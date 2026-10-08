@@ -37,7 +37,6 @@ func runContractScenario(t *testing.T, scenario string) []contractLine {
 	t.Helper()
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("DATABASE_URL", "")
 	t.Setenv("SUAG_HOME", shortTestHome(t))
 	workspace := t.TempDir()
 	t.Chdir(workspace)

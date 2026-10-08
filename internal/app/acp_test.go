@@ -59,7 +59,6 @@ func connectAppACP(t *testing.T) (*acp.ClientSideConnection, *appACPClient) {
 func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("DATABASE_URL", "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)

@@ -29,7 +29,6 @@ func TestPersonalRunMCPStartupNeverHangs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			gkconfig.Reset()
 			t.Cleanup(gkconfig.Reset)
-			t.Setenv("DATABASE_URL", "")
 			t.Setenv("SUAG_HOME", shortTestHome(t))
 			workspace := t.TempDir()
 			t.Chdir(workspace)

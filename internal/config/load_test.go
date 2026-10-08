@@ -62,16 +62,16 @@ func TestLoadIgnoresWorkingDirectoryDotenv(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("SUAG_HOME", root)
 	t.Setenv("SUAG_CONFIG", "")
-	t.Setenv("DATABASE_URL", "")
 	t.Setenv("SUAG_TEST_CWD_ONLY", "")
+	t.Setenv("SUAG_TEST_CWD_ONLY2", "")
 	cwd := t.TempDir()
 	t.Chdir(cwd)
 	other := t.TempDir()
-	body := "DATABASE_URL=sqlite://project.db\nSUAG_HOME=" + other + "\nSUAG_TEST_CWD_ONLY=1\n"
+	body := "SUAG_TEST_CWD_ONLY2=1\nSUAG_HOME=" + other + "\nSUAG_TEST_CWD_ONLY=1\n"
 	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, ".env"), []byte(body), 0600))
 	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, ".env.local"), []byte(body), 0600))
 	assert.NoErr(t, Load())
-	assert.Eq(t, "", os.Getenv("DATABASE_URL"))
+	assert.Eq(t, "", os.Getenv("SUAG_TEST_CWD_ONLY2"))
 	assert.Eq(t, "", os.Getenv("SUAG_TEST_CWD_ONLY"))
 	assert.Eq(t, root, os.Getenv("SUAG_HOME"))
 }

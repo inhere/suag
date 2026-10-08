@@ -108,7 +108,6 @@ func TestContextWindowForSettingsFollowsEffectiveModel(t *testing.T) {
 func TestAppendSystemPromptCanBeClearedFromCLI(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("DATABASE_URL", "")
 	t.Setenv("SUAG_APPEND_SYSTEM_PROMPT", "")
 	t.Setenv("SUAG_MODEL", "")
 	t.Setenv("SUAG_PROVIDER", "openai")
