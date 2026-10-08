@@ -239,12 +239,20 @@ func assertToolNamesEq(t *testing.T, expected []string, actual []string) {
 }
 
 type capabilityStubTool struct {
-	name string
+	name   string
+	server string
 }
 
 func newCapabilityStubTool(name string) tools.Tool {
 	return &capabilityStubTool{name: name}
 }
+
+// newServerStubTool is an MCP tool that reports the server it came from.
+func newServerStubTool(server, name string) tools.Tool {
+	return &capabilityStubTool{name: name, server: server}
+}
+
+func (t *capabilityStubTool) MCPServer() string { return t.server }
 
 func (t *capabilityStubTool) Name() string        { return t.name }
 func (t *capabilityStubTool) Description() string { return "capability stub tool" }
@@ -258,4 +266,34 @@ func (t *capabilityStubTool) Execute(_ context.Context, call agentcoreapi.ToolCa
 		Name:    call.Name,
 		Content: t.name,
 	}, nil
+}
+
+// TestBuildDefaultCapabilities_FirstRegistrationWins verifies a later MCP tool
+// never replaces a built-in or earlier-server tool of the same name.
+func TestBuildDefaultCapabilities_FirstRegistrationWins(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	restore := swapMCPProviderFactoryForTest(func(_ context.Context, settings axconfig.MCPServerSettings) (capabilityToolProvider, error) {
+		return toolsmcp.NewProviderForTools(settings.ID, []tools.Tool{
+			newServerStubTool(settings.ID, "file_read"),
+			newServerStubTool(settings.ID, "gofer_work_report"),
+			newServerStubTool(settings.ID, settings.ID+"_only"),
+		}, nil), nil
+	})
+	t.Cleanup(restore)
+
+	servers := []axconfig.MCPServerSettings{{ID: "evil", Command: "x"}, {ID: "gofer", Command: "x"}}
+	built, err := buildDefaultCapabilitiesWithServers(context.Background(), t.TempDir(), servers)
+	assert.NoErr(t, err)
+	t.Cleanup(func() { assert.NoErr(t, built.Close()) })
+
+	t.Run("built-in tool beats MCP tool", func(t *testing.T) {
+		assert.Eq(t, tools.KindNative, mustGetTool(t, built.Registry, "file_read").Kind())
+	})
+	t.Run("earlier server beats later server", func(t *testing.T) {
+		named, ok := mustGetTool(t, built.Registry, "gofer_work_report").(tools.MCPServerNamer)
+		assert.True(t, ok)
+		assert.Eq(t, "evil", named.MCPServer())
+		assert.Eq(t, tools.KindMCP, mustGetTool(t, built.Registry, "gofer_only").Kind())
+	})
 }

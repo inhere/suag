@@ -8,6 +8,7 @@ import (
 
 	"github.com/inhere/suag/internal/acpserver"
 	appconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
@@ -26,6 +27,11 @@ func RunPersonalACP(ctx context.Context, input io.Reader, output io.Writer) erro
 		if err != nil {
 			return acpserver.Runtime{}, err
 		}
-		return acpserver.Runtime{Runner: runtime.runner, Close: runtime.Close}, nil
+		registry := runtime.capabilities.Registry
+		isMCP := func(name string) bool {
+			tool, err := registry.Get(name)
+			return err == nil && tool.Kind() == tools.KindMCP
+		}
+		return acpserver.Runtime{Runner: runtime.runner, Close: runtime.Close, IsMCPTool: isMCP}, nil
 	})
 }

@@ -13,9 +13,27 @@ import (
 )
 
 // defaultMCPAutoAllow is the built-in MCP allowlist: query tools plus gofer_work_report.
-// It is also the only allowlist honored in --read-only mode.
+// It is also the only allowlist honored in --read-only mode. Entries are
+// "server/toolglob": only the MCP server named "gofer" is trusted, so another
+// server cannot get a default allow by exposing a same-named tool.
 var defaultMCPAutoAllow = []string{
-	"gofer_*_list", "gofer_*_get", "gofer_work_report", "gofer_session_list",
+	"gofer/gofer_*_list", "gofer/gofer_*_get", "gofer/gofer_work_report", "gofer/gofer_session_list",
+}
+
+// mcpPatternMatches matches an allowlist entry against an MCP tool. An entry
+// with "/" is "serverglob/toolglob" and needs the tool's server to match. A bare
+// entry (legacy, user-configured tools.auto_allow only) matches the tool name
+// from any server; prefer the server-qualified form.
+func mcpPatternMatches(pattern, server, tool string) bool {
+	if serverPat, toolPat, ok := strings.Cut(pattern, "/"); ok {
+		if match, _ := path.Match(serverPat, server); !match {
+			return false
+		}
+		match, _ := path.Match(toolPat, tool)
+		return match
+	}
+	match, _ := path.Match(pattern, tool)
+	return match
 }
 
 // cliMCPGate checks the tool kind at dispatch, so --allow-write never grants MCP writes.
@@ -55,7 +73,13 @@ func newCLIMCPGate(registry *tools.Registry, readOnly bool) (*cliMCPGate, error)
 		if strings.TrimSpace(pattern) == "" {
 			return nil, fmt.Errorf("tools.auto_allow contains an empty glob")
 		}
-		if _, err := path.Match(pattern, "sample"); err != nil {
+		serverPat, toolPat, qualified := strings.Cut(pattern, "/")
+		if !qualified {
+			toolPat = pattern
+		} else if _, err := path.Match(serverPat, "sample"); err != nil {
+			return nil, fmt.Errorf("tools.auto_allow glob %q: %w", pattern, err)
+		}
+		if _, err := path.Match(toolPat, "sample"); err != nil {
 			return nil, fmt.Errorf("tools.auto_allow glob %q: %w", pattern, err)
 		}
 	}
@@ -76,8 +100,12 @@ func (g *cliMCPGate) ExecuteTool(ctx context.Context, call agentcore.ToolCall) (
 	}
 	if tool.Kind() == tools.KindMCP {
 		allowed := false
+		server := ""
+		if named, ok := tool.(tools.MCPServerNamer); ok {
+			server = named.MCPServer()
+		}
 		for _, pattern := range g.patterns {
-			if match, _ := path.Match(pattern, call.Name); match {
+			if mcpPatternMatches(pattern, server, call.Name) {
 				allowed = true
 				break
 			}

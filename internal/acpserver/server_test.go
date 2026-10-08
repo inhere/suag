@@ -89,13 +89,20 @@ func testACPRuntime(t *testing.T, provider agentcore.Provider, tool *countingToo
 			_ = repo.Close()
 			return Runtime{}, err
 		}
-		return Runtime{Runner: runner, Close: repo.Close}, nil
+		rt := Runtime{Runner: runner, Close: repo.Close}
+		if tool != nil && tool.mcp {
+			rt.IsMCPTool = func(name string) bool { return name == tool.Name() }
+		}
+		return rt, nil
 	}
 }
 
 type countingTool struct {
 	calls     atomic.Int32
 	writePath string
+	// name and mcp let a test pose as another tool; defaults are the native file_write.
+	name string
+	mcp  bool
 }
 
 type countedUsageProvider struct{ *mock.Provider }
@@ -108,11 +115,21 @@ func (p countedUsageProvider) Stream(ctx context.Context, req *agentcore.Generat
 	return result, err
 }
 
-func (*countingTool) Name() string        { return "file_write" }
+func (t *countingTool) Name() string {
+	if t.name != "" {
+		return t.name
+	}
+	return "file_write"
+}
 func (*countingTool) Description() string { return "write test file" }
-func (*countingTool) Kind() tools.Kind    { return tools.KindNative }
-func (*countingTool) Schema() agentcore.ToolSchema {
-	return agentcore.ToolSchema{Name: "file_write", InputSchema: map[string]any{"type": "object"}}
+func (t *countingTool) Kind() tools.Kind {
+	if t.mcp {
+		return tools.KindMCP
+	}
+	return tools.KindNative
+}
+func (t *countingTool) Schema() agentcore.ToolSchema {
+	return agentcore.ToolSchema{Name: t.Name(), InputSchema: map[string]any{"type": "object"}}
 }
 func (t *countingTool) Execute(_ context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	t.calls.Add(1)
@@ -469,5 +486,35 @@ func TestACPMCPSettingsAcceptStdioAndRejectUnsupportedTransport(t *testing.T) {
 	}
 	if _, err := mcpSettings([]acp.McpServer{{Http: &acp.McpServerHttpInline{}}}); err == nil {
 		t.Fatal("unsupported HTTP MCP transport was accepted")
+	}
+}
+
+// TestPersonalACPMCPToolNamedLikeReadToolStillAsks verifies an MCP tool that
+// reuses a read-only built-in name does not skip the permission request.
+func TestPersonalACPMCPToolNamedLikeReadToolStillAsks(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		mcp      bool
+		requests int
+	}{
+		{name: "web_search", mcp: true, requests: 1},
+		{name: "web_search", mcp: false, requests: 0},
+	} {
+		t.Run(tc.name+map[bool]string{true: "/mcp", false: "/native"}[tc.mcp], func(t *testing.T) {
+			tool := &countingTool{name: tc.name, mcp: tc.mcp}
+			provider := mock.NewProvider(mock.ToolCall("call-1", tc.name, map[string]any{}), mock.Final("done"))
+			client := &testACPClient{selected: "allow"}
+			conn := connectPersonalACP(t, testACPRuntime(t, provider, tool), client)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+			assert.NoErr(t, err)
+			_, err = conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("go")}})
+			assert.NoErr(t, err)
+			client.mu.Lock()
+			defer client.mu.Unlock()
+			assert.Eq(t, tc.requests, len(client.requests))
+			assert.Eq(t, int32(1), tool.calls.Load())
+		})
 	}
 }

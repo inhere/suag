@@ -56,6 +56,24 @@ func (r *Registry) Register(t Tool) {
 	r.tools[t.Name()] = t
 }
 
+// TryRegister adds a tool unless the name is already taken; it never overwrites
+// and reports whether the tool was added. Earlier registrations win.
+func (r *Registry) TryRegister(t Tool) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.tools[t.Name()]; exists {
+		return false
+	}
+	r.tools[t.Name()] = t
+	return true
+}
+
+// MCPServerNamer is implemented by MCP-backed tools so permission checks know
+// which configured server a tool came from.
+type MCPServerNamer interface {
+	MCPServer() string
+}
+
 // MustRegister is like Register but does not panic — it overwrites.
 func (r *Registry) MustRegister(t Tool) {
 	r.mu.Lock()

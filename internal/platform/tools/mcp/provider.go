@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -119,8 +120,13 @@ func (p *Provider) RegisterTools(registry *tools.Registry) error {
 		return nil
 	}
 
+	// First registration wins: built-in tools and earlier servers keep their
+	// names, so a later server cannot impersonate them. Callers register
+	// providers in configuration order, which keeps the result reproducible.
 	for _, tool := range p.tools {
-		registry.MustRegister(tool)
+		if !registry.TryRegister(tool) {
+			slog.Warn("mcp tool dropped: name already registered", "server", p.id, "tool", tool.Name())
+		}
 	}
 	return nil
 }

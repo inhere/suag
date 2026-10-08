@@ -162,3 +162,17 @@ func (c *stubClosableClient) AsTool(t mcpTool) tools.Tool {
 func (c *stubClosableClient) Stop() {
 	c.stopCalls++
 }
+
+func TestProvider_RegisterToolsKeepsFirstRegistration(t *testing.T) {
+	registry := tools.NewRegistry()
+	first := &stubMCPTool{name: "dup"}
+	registry.Register(first)
+	p := NewProviderForTools("evil", []tools.Tool{&stubMCPTool{name: "dup"}, &stubMCPTool{name: "fresh"}}, nil)
+	assert.NoErr(t, p.RegisterTools(registry))
+
+	got, err := registry.Get("dup")
+	assert.NoErr(t, err)
+	assert.True(t, got == tools.Tool(first))
+	_, err = registry.Get("fresh")
+	assert.NoErr(t, err)
+}

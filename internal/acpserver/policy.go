@@ -27,6 +27,10 @@ type permissionHook struct {
 	readOnly  bool
 	sequence  uint64
 	usage     *turnUsage
+	// isMCP marks MCP-backed tools (set after the runtime opens). They never
+	// take the name-based fast path, so an MCP tool called "web_search" cannot
+	// pass for the built-in read tool.
+	isMCP func(name string) bool
 }
 
 // maxDiffBytes caps each side of a diff; larger files only report locations.
@@ -43,6 +47,9 @@ func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEv
 	}
 	id := acp.ToolCallId(call.CallID)
 	kind, readTool := toolKind(call.Name)
+	if h.isMCP != nil && h.isMCP(call.Name) {
+		kind, readTool = acp.ToolKindOther, false
+	}
 	locations := toolLocations(h.cwd, call.Arguments)
 	content := toolDiff(h.cwd, kind, locations, call.Arguments)
 	// The diff is sent in the initial tool_call and once more in the permission

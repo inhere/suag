@@ -23,6 +23,9 @@ type Runtime struct {
 	// ContextWindow is the model context size in tokens; 0 uses the configured
 	// llm.context_window or a model-based default.
 	ContextWindow int
+	// IsMCPTool reports whether a tool name resolves to an MCP-backed tool in
+	// this runtime. MCP tools always need permission, whatever their name.
+	IsMCPTool func(name string) bool
 }
 
 func (r Runtime) close() error {
@@ -193,6 +196,7 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 	if err != nil {
 		return acp.PromptResponse{}, err
 	}
+	hook.isMCP = runtime.IsMCPTool
 	textSent := false
 	emit := func(ctx context.Context, event personal.Event) error {
 		if event.Kind != string(agentcore.StreamEventTextDelta) || event.Text == "" {

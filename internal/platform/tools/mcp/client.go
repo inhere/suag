@@ -343,6 +343,8 @@ type mcpToolAdapter struct {
 	def    mcpTool
 }
 
+// MCPServer returns the configured name of the server that exposes this tool.
+func (a *mcpToolAdapter) MCPServer() string   { return a.client.cfg.Name }
 func (a *mcpToolAdapter) Name() string        { return a.def.Name }
 func (a *mcpToolAdapter) Description() string { return a.def.Description }
 func (a *mcpToolAdapter) Kind() tools.Kind    { return tools.KindMCP }
