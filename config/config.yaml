@@ -1,6 +1,6 @@
 # suag configuration
-# Override any value with AXON_<KEY> environment variables
-# e.g. AXON_LLM_API_KEY, AXON_LLM_API_TYPE, AXON_LLM_PROVIDER_NAME
+# Copy to $SUAG_HOME/config.yaml (default ~/.suag/config.yaml); ${VAR} values are
+# expanded from the environment or $SUAG_HOME/.env.
 
 # LLM provider settings
 llm:
@@ -9,13 +9,15 @@ llm:
   model: glm-5 # model name
   api_key: "${BAILIAN_API_KEY}" # set via env: OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY
   base_url: "${BAILIAN_BASE_URL}" # optional override (e.g. for OpenAI-compatible gateways)
+  # compact_model: glm-4-flash # optional cheaper model (same provider) for context summaries
+  # context_window: 128000 # optional; default is derived from the model name
 
 # Workspace directory for file and shell tools
 # Defaults to current working directory
 workspace: ""
 
 # SerpAPI key for web_search tool
-serpapi_key: "" # set via env: AXON_SERPAPI_KEY
+serpapi_key: "" # or reference an env var, e.g. "${SERPAPI_KEY}"
 
 # Optional MCP servers exposed as additional tool providers
 mcp:
@@ -33,18 +35,8 @@ mcp:
 # Max ReAct loop steps per agent task
 max_steps: 30
 
-# Single-agent runtime selection
-agent:
-  runtime: "" # default uses agentcore; set "react" to force legacy runner
-
-# Optional agentcore runtime switch for single-agent task execution
-agentcore:
-  enabled: false
-
-# HTTP server settings (server mode)
-server:
-  addr: ":8180"
-
-# Logging
-log:
-  level: info # debug | info | warn | error
+# MCP tool schema deferral: auto (defer when schemas exceed ~10% of the context
+# window) | always | never. Deferred tools are loaded via the tool_search tool.
+tools:
+  deferred: auto
+  # auto_allow: ["gofer/gofer_*_list", "gofer/gofer_*_get", "gofer/gofer_work_report"]

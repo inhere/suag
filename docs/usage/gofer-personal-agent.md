@@ -1,6 +1,6 @@
 # 在 Gofer 中运行 Suag
 
-Suag 提供两个 Gofer agent：`suag` 执行一次性 CLI 任务，`suag-acp` 提供常驻 ACP 会话。两者共用个人会话数据，默认位于启动 Suag 的用户主目录 `~/.suag/db`。Gofer job ID 是执行记录，Suag session ID 是对话记录。
+Suag 提供两个 Gofer agent：`suag` 执行一次性 CLI 任务，`suag-acp` 提供常驻 ACP 会话。两者共用个人会话数据，默认位于启动 Suag 的用户主目录 `~/.suag/db/sessions.db`（单个 SQLite 库，WAL）。Gofer job ID 是执行记录，Suag session ID 是对话记录。
 
 ## 准备二进制与配置
 
@@ -73,7 +73,7 @@ BAILIAN_API_KEY=<你的密钥>
 BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
-也可将这两个变量设为 Gofer server 进程可用的环境变量。仓库的 `config/config.yaml` 是字段样例；Suag 只加载 `~/.suag/config.yaml` 与 `~/.suag/.env`（或 `SUAG_HOME` 下的同名文件），不读取当前工作目录的配置和 `.env`。`SUAG_HOME` 替换 `~/.suag` 作为数据与配置根，`SUAG_CONFIG` 指定唯一配置文件。模型与 provider 的优先级是 `--model` / `--provider` > `SUAG_MODEL` / `SUAG_PROVIDER` > 配置文件；这些选项不会接收密钥。换用 OpenAI、DeepSeek 或 Anthropic 时，调整 `api_type`、`provider_name`、`model`、`api_key` 与 `base_url`；Anthropic 使用 `api_type: anthropic`。不要把真实密钥写入 agent argv、job `--env` 或任务文本：Gofer 会持久化 job 请求。需要读取旧仓库 `db/` 会话时，显式配置 `database_url` 和 `agentcore.run_root`；默认路径不会自动迁移旧数据。
+也可将这两个变量设为 Gofer server 进程可用的环境变量。仓库的 `config/config.yaml` 是字段样例；Suag 只加载 `~/.suag/config.yaml` 与 `~/.suag/.env`（或 `SUAG_HOME` 下的同名文件），不读取当前工作目录的配置和 `.env`。`SUAG_HOME` 替换 `~/.suag` 作为数据与配置根，`SUAG_CONFIG` 指定唯一配置文件。模型与 provider 的优先级是 `--model` / `--provider` > `SUAG_MODEL` / `SUAG_PROVIDER` > 配置文件；这些选项不会接收密钥。换用 OpenAI、DeepSeek 或 Anthropic 时，调整 `api_type`、`provider_name`、`model`、`api_key` 与 `base_url`；Anthropic 使用 `api_type: anthropic`。不要把真实密钥写入 agent argv、job `--env` 或任务文本：Gofer 会持久化 job 请求。会话库位置只由 `SUAG_HOME` 决定（`$SUAG_HOME/db/sessions.db`），`database_url` 与 `agentcore.run_root` 已移除。旧版本的库（`suag.db`、`agentcore/` 目录）不读取、不迁移、也不删除，仍留在磁盘上：旧会话 ID 无法用 `--resume`/`--session-id` 续接，Gofer 中登记的旧 Suag 会话（`session_family: suag`）无法再被唤醒或接管，需要新建会话。
 
 ## 批处理 CLI
 
@@ -89,6 +89,14 @@ gofer job resume <job-id> --prompt "继续上个问题"
 ```
 
 首个 CLI job 的 `stdout` 是 Gofer 提取的最终答复；`session_id` 可从 `job show` 读取。Gofer 0.118.0 的 `job resume` 已验证继承源 job 的环境，并将最终答复投影到 `stdout`；原始 NDJSON 保留在 `stderr` 供排查。真实凭据仍应放在 Suag 私有配置或稳定的进程环境中。历史作业若使用已移除的 `suag-cli` agent 键，不能直接用当前的 `suag` 键续接。
+
+### 会话交接、观测与 deferred 工具
+
+- `--from <session>`：`suag run --from <旧会话> --prompt ...` 新建会话并继承来源的摘要、计划与已加载工具（来源只读，不能与 `--resume` 同用）。Gofer 目前没有对应的模板变量，所以 agent 模板里不能自动带上；需要在 job 的 agent args 中手工写入 `--from <session-id>`，或等 Gofer 侧支持后再接入模板。
+- `suag trace <session> [--turn id] [--json]`、`suag stats [--session id] [--since 7d] [--json]`、`suag export <session> [--redact] [-o file]` 读取同一个会话库，在运行 Suag 的主机上执行（Gofer worker 所在用户的 `SUAG_HOME`）；`export --redact` 去掉工具参数，适合外发。
+- `run` 的 stream-json 在 `plan` 事件上输出完整计划；`ndjson_keep` 示例未保留它，需要在 Gofer 中显示计划时把 `plan` 加入 `ndjson_keep`。
+- `tools.deferred`（`auto`/`always`/`never`，默认 `auto`）在 `~/.suag/config.yaml` 中配置。MCP 工具多时被延迟加载，模型通过内置 `tool_search` 取回；Gofer 不需要额外配置。
+- `llm.compact_model` 指定自动压缩与 `:compact` 使用的模型，`llm.context_window` 覆盖上下文窗口。
 
 ## ACP 常驻与审批
 

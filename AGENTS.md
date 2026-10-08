@@ -6,7 +6,7 @@
 ## 当前项目入口
 
 - 个人 Agent 的构建与命令以 `README.md` 为准；Gofer CLI/ACP 接入见 `docs/usage/gofer-personal-agent.md`。
-- 设计与实施依据分别是 `docs/design/2026-10-06-personal-agent-redesign-design.md` 和 `docs/plans/2026-10-06-personal-agent-redesign-plan.md`；旧控制面仅在 `legacy/` 供参考。
+- 设计与实施依据分别是 `docs/design/2026-10-08-core-capabilities-design.md` 和 `docs/plans/2026-10-08-core-capabilities-plan.md`（2026-10-06 的 personal-agent-redesign 设计/计划保留为历史）；旧控制面代码见 `v0.1.0` tag。
 - 任务与进度用 `gofer issue`（数据在 `.gofer/tracker`）和 `gofer plan` 跟踪，经验用 `gofer memory`；阶段结果以 issue/plan 状态和实际验证证据为准。
 
 ## 项目编码规范
