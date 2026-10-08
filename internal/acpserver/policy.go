@@ -222,6 +222,9 @@ func toolKind(name string) (acp.ToolKind, bool) {
 		return acp.ToolKindEdit, false
 	case "shell_exec":
 		return acp.ToolKindExecute, false
+	case "update_plan":
+		// Only writes session state; allowed in read_only without a prompt.
+		return acp.ToolKindThink, true
 	case "web_search":
 		return acp.ToolKindSearch, true
 	case "web_fetch":

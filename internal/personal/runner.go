@@ -12,6 +12,7 @@ import (
 
 	"github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
@@ -65,6 +66,9 @@ type Config struct {
 	// set; nil means the turn's own provider is used.
 	CompactProvider agentcore.Provider
 	CompactModel    string
+	// Plans is the update_plan sink handed to the tool at build time; New binds
+	// it to this runner's store.
+	Plans *PlanRecorder
 }
 
 // Event is one transport-neutral lifecycle or model-stream update.
@@ -75,8 +79,10 @@ type Event struct {
 	RunID     string
 	Text      string
 	ToolName  string
-	Status    agentcore.RunStatus
-	State     RunState
+	// Plan is set on "plan" events (the full replaced task list).
+	Plan   *native.Plan
+	Status agentcore.RunStatus
+	State  RunState
 }
 
 type EmitFunc func(context.Context, Event) error
@@ -119,6 +125,9 @@ func New(cfg Config) (*Runner, error) {
 	}
 	// Observation wraps the provider and tools once here, so every model call
 	// (including later compaction calls) and tool call emits events.
+	if cfg.Plans != nil {
+		cfg.Plans.bind(cfg.Repository)
+	}
 	rec := &recorder{sink: cfg.Repository}
 	cfg.Provider = rec.observeProvider(cfg.Provider, cfg.ProviderName, cfg.Model)
 	cfg.Tools = rec.observeTools(cfg.Tools)
@@ -357,6 +366,10 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			Text:      update.Delta,
 		})
 	}
+	// update_plan reaches the caller through this turn's Emit callback.
+	ctx = withPlanEmitter(ctx, func(ctx context.Context, plan native.Plan) error {
+		return emit(ctx, req.Emit, Event{Kind: "plan", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Plan: &plan})
+	})
 	// The collector goes first so a later hook short-circuiting the chain
 	// (the CLI MCP gate does) cannot hide a model call from the usage total.
 	runtimeHooks := append([]agentcore.Hook{usage}, r.cfg.Hooks...)

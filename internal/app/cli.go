@@ -162,6 +162,10 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 	if err != nil {
 		return nil, err
 	}
+	// update_plan only writes session state, so it is registered in every mode
+	// (including read-only). The recorder is bound to the runner in personal.New.
+	plans := personal.NewPlanRecorder()
+	capabilities.Registry.Register(native.NewUpdatePlanTool(plans))
 	var gate *cliMCPGate
 	var toolRegistry agentcore.ToolRegistry = capabilities.Registry
 	if opts.CLIMode {
@@ -216,6 +220,7 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		ContextWindow:   contextWindowForSettings(settings),
 		CompactProvider: compactProvider,
 		CompactModel:    compactSettings.Model,
+		Plans:           plans,
 		Repository:      repo,
 		Provider:        provider,
 		Model:           settings.Model,
@@ -338,6 +343,13 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 			data["type"], data["status"] = "turn_end", event.State
 		case string(agentcore.StreamEventTextDelta):
 			data["type"], data["text"] = "message_delta", event.Text
+		case "plan":
+			// Same shape as the ACP plan update: the full list, replaced each time.
+			entries := make([]map[string]string, 0, len(event.Plan.Steps))
+			for _, step := range event.Plan.Steps {
+				entries = append(entries, map[string]string{"step": step.Step, "status": step.Status})
+			}
+			data["type"], data["explanation"], data["entries"] = "plan", event.Plan.Explanation, entries
 		default:
 			return nil
 		}

@@ -18,6 +18,7 @@ import (
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
 )
@@ -82,7 +83,9 @@ func testACPRuntime(t *testing.T, provider agentcore.Provider, tool *countingToo
 		if hook != nil {
 			hooks = append(hooks, hook)
 		}
-		runner, err := personal.New(personal.Config{Repository: repo, Provider: provider, Tools: registry, Hooks: hooks})
+		plans := personal.NewPlanRecorder()
+		registry.Register(native.NewUpdatePlanTool(plans))
+		runner, err := personal.New(personal.Config{Repository: repo, Provider: provider, Tools: registry, Hooks: hooks, Plans: plans})
 		if err != nil {
 			_ = repo.Close()
 			return Runtime{}, err
@@ -208,7 +211,6 @@ func TestPersonalACPEmitsUsagePlanAndEditDetails(t *testing.T) {
 	updates := append([]acp.SessionNotification(nil), client.updates...)
 	client.mu.Unlock()
 	var usage *acp.SessionUsageUpdate
-	var plan *acp.SessionUpdatePlan
 	var started *acp.SessionUpdateToolCall
 	var completed *acp.SessionToolCallUpdate
 	for _, notification := range updates {
@@ -216,9 +218,8 @@ func TestPersonalACPEmitsUsagePlanAndEditDetails(t *testing.T) {
 		if update.UsageUpdate != nil {
 			usage = update.UsageUpdate
 		}
-		if update.Plan != nil {
-			plan = update.Plan
-		}
+		// A task list in the final text must not produce a plan update.
+		assert.Eq(t, true, update.Plan == nil)
 		if update.ToolCall != nil {
 			started = update.ToolCall
 		}
@@ -226,11 +227,9 @@ func TestPersonalACPEmitsUsagePlanAndEditDetails(t *testing.T) {
 			completed = update.ToolCallUpdate
 		}
 	}
-	if usage == nil || plan == nil || started == nil || completed == nil {
-		t.Fatalf("missing S4 updates: usage=%v plan=%v start=%v complete=%v", usage, plan, started, completed)
+	if usage == nil || started == nil || completed == nil {
+		t.Fatalf("missing S4 updates: usage=%v start=%v complete=%v", usage, started, completed)
 	}
-	assert.Eq(t, acp.PlanEntryStatusCompleted, plan.Entries[0].Status)
-	assert.Eq(t, acp.PlanEntryStatusPending, plan.Entries[1].Status)
 	assert.Eq(t, acp.ToolKindEdit, started.Kind)
 	assert.Eq(t, path, started.Locations[0].Path)
 	assert.Eq(t, 2, *started.Locations[0].Line)
@@ -249,6 +248,49 @@ func TestPersonalACPEmitsUsagePlanAndEditDetails(t *testing.T) {
 	// used is the last request's context (one step), not the two-step sum.
 	assert.Eq(t, 7, usage.Used)
 	assert.Gt(t, usage.Size, 0)
+}
+
+// TestPersonalACPPlanComesFromUpdatePlanTool: the plan update is driven by the
+// update_plan tool call (also in read_only mode), not parsed from answer text.
+func TestPersonalACPPlanComesFromUpdatePlanTool(t *testing.T) {
+	for _, mode := range []acp.SessionModeId{"default", "read_only"} {
+		t.Run(string(mode), func(t *testing.T) {
+			provider := mock.NewProvider(
+				mock.ToolCall("plan-1", "update_plan", map[string]any{"explanation": "start", "plan": []any{
+					map[string]any{"step": "Inspect", "status": "completed"},
+					map[string]any{"step": "Edit", "status": "in_progress"},
+					map[string]any{"step": "Verify", "status": "pending"},
+				}}),
+				mock.Final("done"),
+			)
+			client := &testACPClient{selected: "reject"}
+			conn := connectPersonalACP(t, testACPRuntime(t, provider, nil), client)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+			assert.Require(t, assert.NoErr(t, err))
+			_, err = conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: created.SessionId, ModeId: mode})
+			assert.Require(t, assert.NoErr(t, err))
+			response, err := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("plan it")}})
+			assert.Require(t, assert.NoErr(t, err))
+			assert.Eq(t, acp.StopReasonEndTurn, response.StopReason)
+			client.mu.Lock()
+			defer client.mu.Unlock()
+			assert.Eq(t, 0, len(client.requests)) // no approval needed
+			var plans []*acp.SessionUpdatePlan
+			for _, n := range client.updates {
+				if n.Update.Plan != nil {
+					plans = append(plans, n.Update.Plan)
+				}
+			}
+			assert.Require(t, assert.Eq(t, 1, len(plans)))
+			assert.Eq(t, 3, len(plans[0].Entries))
+			assert.Eq(t, "Inspect", plans[0].Entries[0].Content)
+			assert.Eq(t, acp.PlanEntryStatusCompleted, plans[0].Entries[0].Status)
+			assert.Eq(t, acp.PlanEntryStatusInProgress, plans[0].Entries[1].Status)
+			assert.Eq(t, acp.PlanEntryStatusPending, plans[0].Entries[2].Status)
+		})
+	}
 }
 
 func TestToolDiffRejectsWorkspaceEscapeSymlink(t *testing.T) {

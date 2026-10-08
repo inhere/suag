@@ -13,6 +13,7 @@ import (
 	"github.com/coder/acp-go-sdk"
 	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
@@ -199,6 +200,9 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 	hook.isMCP = runtime.IsMCPTool
 	textSent := false
 	emit := func(ctx context.Context, event personal.Event) error {
+		if event.Kind == "plan" && event.Plan != nil {
+			return a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: planUpdate(event.Plan)})
+		}
 		if event.Kind != string(agentcore.StreamEventTextDelta) || event.Text == "" {
 			return nil
 		}
@@ -249,42 +253,28 @@ func (a *Agent) sendUsage(ctx context.Context, id acp.SessionId, state *sessionS
 	return nil
 }
 
-// sendTurnUpdates reports usage and any complete task list in the model answer.
+// sendTurnUpdates reports usage after a turn; plans are streamed live from update_plan events.
 func (a *Agent) sendTurnUpdates(ctx context.Context, id acp.SessionId, state *sessionState, turn *turnUsage, window int, result personal.RunResult) error {
 	if err := a.sendUsage(ctx, id, state, turn, window, result.SessionUsage); err != nil {
 		return err
 	}
-	if entries := planEntries(result.Output); len(entries) > 0 {
-		if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: acp.UpdatePlan(entries...)}); err != nil {
-			return fmt.Errorf("send plan update: %w", err)
-		}
-	}
 	return nil
 }
 
-// planEntries recognizes explicit Markdown checklists; prose is not treated as a plan.
-func planEntries(output string) []acp.PlanEntry {
-	var entries []acp.PlanEntry
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if len(line) < 6 || (line[:2] != "- " && line[:2] != "* ") || line[2] != '[' || line[4] != ']' || line[5] != ' ' {
-			continue
-		}
+// planUpdate maps an update_plan event onto an ACP plan update (full replace).
+func planUpdate(plan *native.Plan) acp.SessionUpdate {
+	entries := make([]acp.PlanEntry, 0, len(plan.Steps))
+	for _, step := range plan.Steps {
 		status := acp.PlanEntryStatusPending
-		switch line[3] {
-		case 'x', 'X':
-			status = acp.PlanEntryStatusCompleted
-		case '>':
+		switch step.Status {
+		case native.PlanInProgress:
 			status = acp.PlanEntryStatusInProgress
-		case ' ':
-		default:
-			continue
+		case native.PlanCompleted:
+			status = acp.PlanEntryStatusCompleted
 		}
-		if content := strings.TrimSpace(line[6:]); content != "" {
-			entries = append(entries, acp.PlanEntry{Content: content, Status: status, Priority: acp.PlanEntryPriorityMedium})
-		}
+		entries = append(entries, acp.PlanEntry{Content: step.Step, Status: status, Priority: acp.PlanEntryPriorityMedium})
 	}
-	return entries
+	return acp.UpdatePlan(entries...)
 }
 
 func (a *Agent) Cancel(_ context.Context, req acp.CancelNotification) error {
