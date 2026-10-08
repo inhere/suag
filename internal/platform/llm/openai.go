@@ -166,8 +166,12 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 					continue
 				}
 			}
+			var content any // nil -> JSON null when the model sent no text
+			if m.Content != "" {
+				content = m.Content
+			}
 			msgs = append(msgs, map[string]any{
-				"role": "assistant", "content": nil, "tool_calls": []map[string]any{call},
+				"role": "assistant", "content": content, "tool_calls": []map[string]any{call},
 			})
 			continue
 		}
@@ -266,10 +270,8 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		})
 	}
 	if len(resp.ToolCalls) > 0 {
-		// Some OpenAI-compatible providers emit a short assistant preamble
-		// alongside tool calls. The public agentcore contract models a step as
-		// either final text or tool requests, so prefer the actionable tool calls.
-		resp.Content = ""
+		// Text emitted alongside the tool calls is kept in resp.Content; the runtime
+		// persists it with the first tool-call message.
 		resp.FinishReason = agentcoreapi.FinishToolCalls
 	} else {
 		resp.FinishReason = agentcoreapi.FinishFinal

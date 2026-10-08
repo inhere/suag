@@ -139,6 +139,10 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 			}
 			msgs = appendClaudeBlock(msgs, "user", block)
 		case m.ToolCall != nil:
+			// Text the model emitted alongside the call precedes tool_use in the same turn.
+			if m.Content != "" {
+				msgs = appendClaudeBlock(msgs, "assistant", map[string]any{"type": "text", "text": m.Content})
+			}
 			msgs = appendClaudeBlock(msgs, "assistant", map[string]any{
 				"type":  "tool_use",
 				"id":    m.ToolCall.CallID,
@@ -232,9 +236,8 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		}
 	}
 	if len(resp.ToolCalls) > 0 {
-		// Claude-style responses may interleave explanatory text with tool_use
-		// blocks. Agentcore requires a single step shape, so tool requests win.
-		resp.Content = ""
+		// Text emitted alongside the tool calls is kept in resp.Content; the runtime
+		// persists it with the first tool-call message.
 		resp.FinishReason = agentcoreapi.FinishToolCalls
 	} else {
 		resp.FinishReason = agentcoreapi.FinishFinal

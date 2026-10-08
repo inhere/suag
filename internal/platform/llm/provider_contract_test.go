@@ -118,7 +118,7 @@ func TestClaudeProvider_ParseResponse_CapturesCacheUsage(t *testing.T) {
 	assert.Eq(t, 21, resp.Usage.TotalTokens)
 }
 
-func TestOpenAIProvider_ParseResponse_PrefersToolCallsOverMixedContent(t *testing.T) {
+func TestOpenAIProvider_ParseResponse_KeepsTextWithToolCalls(t *testing.T) {
 	provider := NewOpenAIProvider(OpenAIConfig{})
 
 	resp, err := provider.parseResponse([]byte(`{
@@ -145,7 +145,7 @@ func TestOpenAIProvider_ParseResponse_PrefersToolCallsOverMixedContent(t *testin
 	assert.NoErr(t, err)
 	assert.NotNil(t, resp)
 	assert.Eq(t, FinishToolCalls, resp.FinishReason)
-	assert.Eq(t, "", resp.Content)
+	assert.Eq(t, "我先看一下目录。", resp.Content)
 	assert.Eq(t, 1, len(resp.ToolCalls))
 }
 
@@ -171,7 +171,7 @@ func TestClaudeProvider_ParseResponse_RejectsInvalidToolArguments(t *testing.T) 
 	assert.Contains(t, err.Error(), "arguments")
 }
 
-func TestClaudeProvider_ParseResponse_PrefersToolCallsOverMixedContent(t *testing.T) {
+func TestClaudeProvider_ParseResponse_KeepsTextWithToolCalls(t *testing.T) {
 	provider := NewClaudeProvider(ClaudeConfig{})
 
 	resp, err := provider.parseResponse([]byte(`{
@@ -196,7 +196,7 @@ func TestClaudeProvider_ParseResponse_PrefersToolCallsOverMixedContent(t *testin
 	assert.NoErr(t, err)
 	assert.NotNil(t, resp)
 	assert.Eq(t, FinishToolCalls, resp.FinishReason)
-	assert.Eq(t, "", resp.Content)
+	assert.Eq(t, "我先看一下。", resp.Content)
 	assert.Eq(t, 1, len(resp.ToolCalls))
 	assert.Eq(t, "file_list", resp.ToolCalls[0].Name)
 	assert.Eq(t, ".", resp.ToolCalls[0].Arguments["path"])

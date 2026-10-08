@@ -66,6 +66,14 @@ func TestClaudeProvider_BuildRequestBody_ToolTranscript(t *testing.T) {
 		assert.Eq(t, "thinking", msgs[1]["content"])
 	})
 
+	t.Run("text with call", func(t *testing.T) {
+		pair := toolPair("c1", "a", "r", nil)
+		pair[0].Content = "checking"
+		msgs := build(append([]agentcoreapi.Message{user}, pair...)...)
+		assert.Eq(t, 3, len(msgs))
+		assert.Eq(t, `{"content":[{"text":"checking","type":"text"},{"id":"c1","input":{"k":"v"},"name":"a","type":"tool_use"}],"role":"assistant"}`, toJSON(t, msgs[1]))
+	})
+
 	t.Run("error result", func(t *testing.T) {
 		msgs := build(append([]agentcoreapi.Message{user}, toolPair("c1", "a", "boom", map[string]any{"is_error": true})...)...)
 		assert.Eq(t, `{"content":[{"content":"boom","is_error":true,"tool_use_id":"c1","type":"tool_result"}],"role":"user"}`, toJSON(t, msgs[2]))
@@ -86,6 +94,14 @@ func TestOpenAIProvider_BuildRequestBody_ToolTranscript(t *testing.T) {
 		assert.Eq(t, 1, len(msgs[1]["tool_calls"].([]map[string]any)))
 		// tool message must not carry tool_calls
 		assert.Eq(t, `{"content":"ok","role":"tool","tool_call_id":"c1"}`, toJSON(t, msgs[2]))
+	})
+
+	t.Run("text with call", func(t *testing.T) {
+		pair := toolPair("c1", "a", "r", nil)
+		pair[0].Content = "checking"
+		msgs := build(append([]agentcoreapi.Message{user}, pair...)...)
+		assert.Eq(t, "checking", msgs[1]["content"])
+		assert.Eq(t, 1, len(msgs[1]["tool_calls"].([]map[string]any)))
 	})
 
 	t.Run("consecutive calls merge", func(t *testing.T) {

@@ -38,16 +38,19 @@ func TestGenerateResultValidate_RejectsEmptyResult(t *testing.T) {
 	}
 }
 
-func TestGenerateResultValidate_RejectsMixedFinalAndToolCalls(t *testing.T) {
+func TestGenerateResultValidate_AllowsTextWithToolCalls(t *testing.T) {
 	res := &GenerateResult{
 		Content:      "done",
 		ToolCalls:    []ToolCall{{CallID: "call-1", Name: "echo"}},
 		FinishReason: FinishToolCalls,
 	}
 
-	err := res.Validate()
-	if !errors.Is(err, ErrMixedGenerateResult) {
-		t.Fatalf("expected mutually exclusive error, got %v", err)
+	if err := res.Validate(); err != nil {
+		t.Fatalf("text alongside tool calls must be valid, got %v", err)
+	}
+	res.FinishReason = FinishFinal
+	if err := res.Validate(); !errors.Is(err, ErrInvalidFinishReason) {
+		t.Fatalf("tool calls with final finish reason must be rejected, got %v", err)
 	}
 }
 

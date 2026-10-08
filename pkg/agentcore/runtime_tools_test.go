@@ -920,3 +920,44 @@ func TestRuntime_Run_AfterToolControlDoesNotStopLaterAfterToolHooks(t *testing.T
 		t.Fatalf("expected assistant tool-call and tool messages to be persisted before after-tool control rejection, got %#v", store.messages["run-after-tool-multi-hooks"])
 	}
 }
+
+func TestRuntime_Run_ToolCallKeepsAssistantTextAndErrorMark(t *testing.T) {
+	store := newRuntimeTestStorage()
+	tools := NewToolRegistry()
+	tools.Register(&runtimeTestTool{name: "ok", result: &ToolResult{Content: "fine"}})
+	tools.Register(&runtimeTestTool{name: "bad", err: errors.New("boom")})
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{{
+			Content: "let me check",
+			ToolCalls: []ToolCall{
+				{CallID: "c1", Name: "ok", Arguments: map[string]any{}},
+				{CallID: "c2", Name: "bad", Arguments: map[string]any{}},
+			},
+			FinishReason: FinishToolCalls,
+		}, {Content: "done", FinishReason: FinishFinal}},
+	}
+	_, err := New(Config{
+		Provider: provider, Storage: store, Tools: tools,
+		PromptBuilder: runtimeTestPromptBuilder{}, ContextBuilder: runtimeTestContextBuilder{},
+	}).Run(context.Background(), RunInput{RunID: "run-lead", AgentID: "a", Instruction: "go"})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	msgs := store.messages["run-lead"]
+	// user, assistant(c1), tool(c1), assistant(c2), tool(c2), final
+	if len(msgs) != 6 {
+		t.Fatalf("unexpected messages: %#v", msgs)
+	}
+	if msgs[1].Content != "let me check" || msgs[1].ToolCall == nil {
+		t.Fatalf("first tool-call message must keep model text, got %#v", msgs[1])
+	}
+	if msgs[3].Content != "" {
+		t.Fatalf("parallel tool-call message must not repeat text, got %#v", msgs[3])
+	}
+	if v, _ := msgs[2].ToolResult.Metadata["is_error"].(bool); v {
+		t.Fatalf("successful result must not be marked: %#v", msgs[2].ToolResult)
+	}
+	if v, _ := msgs[4].ToolResult.Metadata["is_error"].(bool); !v {
+		t.Fatalf("failed result must carry is_error, got %#v", msgs[4].ToolResult)
+	}
+}

@@ -72,13 +72,12 @@ func (r *GenerateResult) Validate() error {
 	if r == nil || (r.Content == "" && len(r.ToolCalls) == 0) {
 		return ErrEmptyGenerateResult
 	}
-	if r.Content != "" && len(r.ToolCalls) > 0 {
-		return ErrMixedGenerateResult
-	}
+	// Content alongside ToolCalls is allowed: it is the model's text preceding the
+	// tool requests (FinishToolCalls) and is persisted with the first tool-call message.
 	if r.FinishReason == "" {
 		return ErrMissingFinishReason
 	}
-	if r.Content != "" && r.FinishReason != FinishFinal {
+	if r.Content != "" && len(r.ToolCalls) == 0 && r.FinishReason != FinishFinal {
 		return ErrInvalidFinishReason
 	}
 	if len(r.ToolCalls) > 0 && r.FinishReason != FinishToolCalls {
