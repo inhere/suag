@@ -24,11 +24,14 @@ import (
 var ErrInputRequired = errors.New("turn requires more input")
 
 type personalOptions struct {
-	Prompt             string
-	Model              string
-	Provider           string
-	SessionID          string
-	ResumeID           string
+	Prompt    string
+	Model     string
+	Provider  string
+	SessionID string
+	ResumeID  string
+	// FromID starts a NEW session that inherits summary, plan and loaded tools
+	// from this session (read-only on the source).
+	FromID             string
 	OutputFormat       string
 	ReadOnly           bool
 	AllowWrite         bool
@@ -101,6 +104,7 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.StringVar(&opts.Provider, "provider", "", "provider name (overrides SUAG_PROVIDER)")
 	cmd.StringVar(&opts.SessionID, "session-id", "", "create or use this session ID;;sid")
 	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID;;r")
+	cmd.StringVar(&opts.FromID, "from", "", "start a new session that inherits the summary, plan and loaded tools of this session")
 	cmd.StringVar(&opts.OutputFormat, "output-format", "text", "text or stream-json")
 	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool; MCP allows only default query tools and gofer_work_report;;ro")
 	cmd.BoolVar(&opts.AllowWrite, "allow-write", false, "allow workspace write and shell tools for this run")
@@ -114,6 +118,9 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 func validatePersonalOptions(mode string, opts personalOptions) error {
 	if opts.SessionID != "" && opts.ResumeID != "" {
 		return fmt.Errorf("--session-id and --resume cannot be combined")
+	}
+	if opts.FromID != "" && opts.ResumeID != "" {
+		return fmt.Errorf("--from and --resume cannot be combined")
 	}
 	if opts.OutputFormat != "text" && opts.OutputFormat != "stream-json" {
 		return fmt.Errorf("unsupported output format %q", opts.OutputFormat)
@@ -394,6 +401,14 @@ func withUsage(line map[string]any, result personal.RunResult) map[string]any {
 }
 
 func openRequestedSession(ctx context.Context, runner *personal.Runner, opts personalOptions) (string, error) {
+	if opts.FromID != "" {
+		// --session-id names the new session; an existing one is rejected by Handoff.
+		model, err := runner.Handoff(ctx, personal.HandoffRequest{SourceID: opts.FromID, NewID: opts.SessionID, Title: opts.Prompt})
+		if err != nil {
+			return "", err
+		}
+		return model.ID, nil
+	}
 	if opts.ResumeID != "" {
 		model, err := runner.LoadSession(ctx, opts.ResumeID)
 		if err != nil {

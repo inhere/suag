@@ -1,0 +1,153 @@
+package personal
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suag/pkg/agentcore"
+)
+
+// metaLoadedTools is the session meta key holding the names of the deferred
+// tools loaded so far (written by tool_search; a handoff inherits it).
+const metaLoadedTools = "loaded_tools"
+
+// handoffRecord is the JSON body of a handoff entry: the first entry of a
+// session created by --from.
+type handoffRecord struct {
+	Source      string          `json:"source"`
+	Summary     string          `json:"summary"`
+	Plan        json.RawMessage `json:"plan,omitempty"` // source's latest plan entry, verbatim
+	LoadedTools []string        `json:"loaded_tools,omitempty"`
+}
+
+// HandoffRequest creates a new session that continues from SourceID.
+type HandoffRequest struct {
+	SourceID string
+	// NewID is the id of the new session ("" = generate). It must not exist.
+	NewID string
+	Title string
+}
+
+// handoffMessage renders the record as the first user message of the new
+// session. It is an ordinary context item (seq = the handoff entry), so a later
+// compaction naturally folds it into its summary.
+func handoffMessage(rec handoffRecord) agentcore.Message {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "以下是从会话 %s 交接过来的上下文（摘要与当前计划），请据此继续工作：\n\n%s", rec.Source, rec.Summary)
+	if len(rec.Plan) > 0 {
+		sb.WriteString("\n\n## 交接时的计划\n" + string(rec.Plan))
+	}
+	return agentcore.Message{Role: "user", Content: sb.String()}
+}
+
+// Handoff creates a new session whose first entry is a handoff record built
+// from the source session. The source is only read: nothing is written to it
+// and its session lock is not taken. The latest adopted summary is reused when
+// it already covers the whole source view; otherwise a summary is generated in
+// memory (model event recorded under the new session).
+func (r *Runner) Handoff(ctx context.Context, req HandoffRequest) (Session, error) {
+	src, err := r.LoadSession(ctx, req.SourceID)
+	if err != nil {
+		return Session{}, err
+	}
+	if req.NewID != "" {
+		if err := validateSessionID(req.NewID); err != nil {
+			return Session{}, err
+		}
+		if _, err := r.cfg.Repository.GetSession(ctx, req.NewID); err == nil {
+			return Session{}, fmt.Errorf("session %q already exists; --from creates a new session", req.NewID)
+		} else if !errors.Is(err, ErrSessionNotFound) {
+			return Session{}, err
+		}
+	}
+	title := req.Title
+	if strings.TrimSpace(title) == "" {
+		title = "Handoff from " + src.ID
+	}
+	// The new session must exist first: the summary call is observed under it.
+	model, err := r.NewSession(ctx, req.NewID, title)
+	if err != nil {
+		return Session{}, err
+	}
+	rec, err := r.buildHandoff(withObserveScope(ctx, model.ID, ""), src)
+	if err == nil {
+		err = r.writeHandoff(ctx, model, rec)
+	}
+	if err != nil {
+		// No delete API: archive the half-built session so it is never resumed.
+		model.Status, model.UpdatedAt = store.SessionArchived, time.Now().UTC()
+		_ = r.cfg.Repository.UpdateSession(context.WithoutCancel(ctx), model)
+		return Session{}, fmt.Errorf("handoff from %q: %w", src.ID, err)
+	}
+	return r.LoadSession(ctx, model.ID)
+}
+
+// buildHandoff reads the source (read-only) and produces the record.
+func (r *Runner) buildHandoff(ctx context.Context, src Session) (handoffRecord, error) {
+	view, err := r.loadHistory(ctx, src.ID)
+	if err != nil {
+		return handoffRecord{}, err
+	}
+	rec := handoffRecord{Source: src.ID, Summary: view.summary, LoadedTools: loadedToolNames(src.Meta)}
+	// A summary only stands for itself when no message is kept after it (e.g.
+	// a manual :compact); a kept tail must be folded in, so summarize again.
+	if len(view.items) > 0 {
+		if rec.Summary, err = r.summarize(ctx, src.ID, view.summary, view.items, r.threshold()); err != nil {
+			return handoffRecord{}, err
+		}
+	}
+	if strings.TrimSpace(rec.Summary) == "" {
+		return handoffRecord{}, errors.New("source session has no content to hand off")
+	}
+	if e, err := r.cfg.Repository.LatestEntry(ctx, src.ID, store.EntryPlan); err != nil {
+		return handoffRecord{}, err
+	} else if e != nil && len(e.JSON) > 0 {
+		rec.Plan = e.JSON
+	}
+	return rec, nil
+}
+
+// threshold mirrors contextBuilder.threshold for the summary size cap.
+func (r *Runner) threshold() int {
+	window, reserve, _ := r.compactLimits()
+	if t := window - reserve; t > 0 {
+		return t
+	}
+	return window / 2
+}
+
+// writeHandoff appends the handoff entry and inherits loaded tools into meta.
+func (r *Runner) writeHandoff(ctx context.Context, model Session, rec handoffRecord) error {
+	raw, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	if _, err := r.cfg.Repository.AppendEntries(ctx, model.ID, store.NewEntry{Type: store.EntryHandoff, JSON: raw}); err != nil {
+		return err
+	}
+	if len(rec.LoadedTools) > 0 {
+		return r.cfg.Repository.PatchSessionMeta(ctx, model.ID, map[string]any{metaLoadedTools: rec.LoadedTools})
+	}
+	return nil
+}
+
+// loadedToolNames reads the loaded deferred tool names from session meta.
+func loadedToolNames(meta map[string]any) []string {
+	var out []string
+	switch v := meta[metaLoadedTools].(type) {
+	case []string:
+		out = append(out, v...)
+	case []any:
+		for _, x := range v {
+			if s, ok := x.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}

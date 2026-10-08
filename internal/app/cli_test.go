@@ -358,3 +358,39 @@ func newTestStorePath(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "db", "sessions.db")
 }
+
+func TestPersonalFromHandoff(t *testing.T) {
+	t.Run("option conflicts", func(t *testing.T) {
+		err := RunPersonalCLI(context.Background(), "run", []string{"--prompt", "hi", "--from", "a", "--resume", "b"},
+			strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+		assert.Eq(t, true, err != nil && strings.Contains(err.Error(), "--from and --resume cannot be combined"))
+	})
+	runner, repo := newCLITestRunner(t, mock.NewProvider(mock.Final("ok"), mock.Final("ok2")))
+	ctx := context.Background()
+	t.Run("unknown source behaves like unknown resume", func(t *testing.T) {
+		var stdout bytes.Buffer
+		err := executePersonalRun(ctx, runner, personalOptions{Prompt: "go", FromID: "missing", OutputFormat: "stream-json"}, &stdout, &bytes.Buffer{})
+		assert.Eq(t, true, errors.Is(err, personal.ErrSessionNotFound))
+		assert.Eq(t, "", stdout.String())
+	})
+	// A manually written compaction lets the handoff reuse its summary offline.
+	src, err := runner.NewSession(ctx, "src-1", "src")
+	assert.NoErr(t, err)
+	_, err = repo.AppendEntries(ctx, src.ID, store.NewEntry{Type: store.EntryCompaction, JSON: []byte(`{"summary":"OLD-SUMMARY","first_kept_seq":1}`)})
+	assert.NoErr(t, err)
+	t.Run("existing --session-id is rejected", func(t *testing.T) {
+		err := executePersonalRun(ctx, runner, personalOptions{Prompt: "go", FromID: "src-1", SessionID: "src-1", OutputFormat: "stream-json"}, &bytes.Buffer{}, &bytes.Buffer{})
+		assert.Eq(t, true, err != nil && strings.Contains(err.Error(), "already exists"))
+	})
+	t.Run("new session id is reported and carries the handoff", func(t *testing.T) {
+		var stdout bytes.Buffer
+		err := executePersonalRun(ctx, runner, personalOptions{Prompt: "go", FromID: "src-1", SessionID: "child-1", OutputFormat: "stream-json"}, &stdout, &bytes.Buffer{})
+		assert.NoErr(t, err)
+		var first map[string]any
+		assert.NoErr(t, json.Unmarshal([]byte(strings.SplitN(stdout.String(), "\n", 2)[0]), &first))
+		assert.Eq(t, "child-1", first["id"])
+		e, err := repo.LatestEntry(ctx, "child-1", store.EntryHandoff)
+		assert.NoErr(t, err)
+		assert.Eq(t, true, e != nil && strings.Contains(string(e.JSON), "OLD-SUMMARY"))
+	})
+}

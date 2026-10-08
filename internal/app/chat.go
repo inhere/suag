@@ -34,7 +34,13 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 	sessionID := ""
 	source := "startup"
 	createdAtStartup := false
-	if opts.ResumeID != "" {
+	if opts.FromID != "" {
+		model, err := runner.Handoff(ctx, personal.HandoffRequest{SourceID: opts.FromID, NewID: opts.SessionID, Title: "New chat"})
+		if err != nil {
+			return err
+		}
+		sessionID, createdAtStartup = model.ID, true
+	} else if opts.ResumeID != "" {
 		source = "resume"
 		model, err := runner.LoadSession(ctx, opts.ResumeID)
 		if err != nil {

@@ -56,15 +56,12 @@ func (r *Runner) loadHistory(ctx context.Context, sessionID string) (historyView
 	if err != nil {
 		return historyView{}, fmt.Errorf("list completed turns: %w", err)
 	}
-	if len(turns) == 0 {
-		return historyView{}, nil
-	}
 	done := make(map[string]bool, len(turns))
 	for _, t := range turns {
 		done[t.ID] = true
 	}
 	entries, err := r.cfg.Repository.ListEntries(ctx, sessionID, store.EntryFilter{
-		Types: []string{store.EntryUser, store.EntryAssistant, store.EntryTool, store.EntryCompaction},
+		Types: []string{store.EntryUser, store.EntryAssistant, store.EntryTool, store.EntryCompaction, store.EntryHandoff},
 	})
 	if err != nil {
 		return historyView{}, fmt.Errorf("load session history: %w", err)
@@ -82,10 +79,24 @@ func (r *Runner) loadHistory(ctx context.Context, sessionID string) (historyView
 		view.summary, firstKept = rec.Summary, rec.FirstKeptSeq
 	}
 	for _, e := range entries {
-		if e.Type == store.EntryCompaction || !done[e.TurnID] || e.Seq < firstKept {
+		if e.Type == store.EntryCompaction || e.Seq < firstKept {
 			continue
 		}
 		var m agentcore.Message
+		if e.Type == store.EntryHandoff {
+			// A handoff belongs to no turn and is the session's first context
+			// message; once a compaction passes it, firstKept drops it (the
+			// summary was built from it).
+			var rec handoffRecord
+			if err := json.Unmarshal(e.JSON, &rec); err != nil {
+				return historyView{}, fmt.Errorf("decode handoff entry %d: %w", e.Seq, err)
+			}
+			view.items = append(view.items, ctxItem{msg: handoffMessage(rec), seq: e.Seq})
+			continue
+		}
+		if !done[e.TurnID] {
+			continue
+		}
 		if err := json.Unmarshal(e.JSON, &m); err != nil {
 			return historyView{}, fmt.Errorf("decode history entry %d: %w", e.Seq, err)
 		}
