@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gookit/goutil/testutil/assert"
+	"github.com/gookit/goutil/x/assert"
 )
 
 func TestCapabilityManager_BuildDefaultSetIncludesRegisteredToolRefs(t *testing.T) {
