@@ -129,7 +129,7 @@ Gofer 侧（在 Gofer 仓库实现，目标版本 v0.119）。原则：**送话�
 
 ```yaml
 gofer:
-  hooks: auto        # auto | on | off；auto = PATH 上有 gofer 且不在 Gofer job 内
+  hooks: auto        # auto | on | off；auto = PATH 上有 gofer 且不在 Gofer job 内；环境变量 SUAG_GOFER_HOOKS 优先于此项（测试统一设 off）
   command: gofer     # 可写绝对路径
   agent: suag        # Gofer 配置里的 agent key（决定续接/接管模板）
   wait_sec: 7140     # Stop 等待 web 回复的上限

@@ -64,7 +64,12 @@ func newGoferHooks() chatHookClient {
 	if strings.TrimSpace(os.Getenv("GOFER_JOB_ID")) != "" {
 		return nil
 	}
-	mode := strings.ToLower(strings.TrimSpace(gkconfig.String("gofer.hooks")))
+	// SUAG_GOFER_HOOKS overrides gofer.hooks; tests set it to off so a local
+	// `go test` never registers sessions with a live Gofer server.
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("SUAG_GOFER_HOOKS")))
+	if mode == "" {
+		mode = strings.ToLower(strings.TrimSpace(gkconfig.String("gofer.hooks")))
+	}
 	if mode == "" {
 		mode = "auto"
 	}

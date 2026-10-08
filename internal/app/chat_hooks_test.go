@@ -548,6 +548,7 @@ func TestGoferHookFailuresAndJobEnvironmentAreBestEffort(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	t.Setenv("GOFER_JOB_ID", "")
+	t.Setenv("SUAG_GOFER_HOOKS", "") // exercise the config value, not the TestMain override
 	t.Setenv("PATH", t.TempDir())
 	_ = gkconfig.Set("gofer.hooks", "auto")
 	_ = gkconfig.Set("gofer.command", "missing-gofer-command-7cb7")
