@@ -5,6 +5,7 @@ package process
 import (
 	"errors"
 	"fmt"
+	"math"
 	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
@@ -13,6 +14,9 @@ import (
 const processStillActive = 259
 
 func processExists(pid int) bool {
+	if pid <= 0 || pid > math.MaxUint32 {
+		return false
+	}
 	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
 		// Only ERROR_INVALID_PARAMETER proves that the PID does not exist.
