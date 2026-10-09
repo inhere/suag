@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 )
 
 // foldPathCase reports whether path comparison is case-insensitive on this OS.
@@ -69,9 +70,23 @@ func absUnderWorkspace(workspace, arg string, fold bool) (string, bool) {
 	return "", false
 }
 
-// isRootEscape reports whether err is os.Root refusing a path that leaves the root.
+// errEscapeViaSymlink marks realRelInRoot's confirmation that the fully
+// resolved location is outside the workspace.
+var errEscapeViaSymlink = errors.New("path escapes workspace via symlink")
+
+// isRootEscape reports whether err might be os.Root refusing a path that leaves
+// the root. os.Root's escape and structural errors (not a directory,
+// unsupported file mode, empty path) are *os.PathError values whose cause is
+// not a syscall.Errno, whereas real OS failures (EISDIR, ENOENT, EACCES, ...)
+// always carry an Errno. A true result only selects the candidates for the
+// realRelInRoot second look; it never decides on its own that a path escaped.
 func isRootEscape(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "path escapes from parent")
+	var pe *os.PathError
+	if !errors.As(err, &pe) {
+		return false
+	}
+	var errno syscall.Errno
+	return !errors.As(pe.Err, &errno)
 }
 
 // realRelInRoot is the second-chance check used when os.Root rejected abs
@@ -112,7 +127,7 @@ func realRelInRoot(workspace, abs string) (string, error) {
 	real = filepath.Join(append([]string{real}, tail...)...)
 	rel, ok := relUnderRoot(realRoot, filepath.Clean(real), foldPathCase)
 	if !ok {
-		return "", fmt.Errorf("path escape: %q is outside workspace (via symlink)", abs)
+		return "", fmt.Errorf("%w: %q is outside workspace", errEscapeViaSymlink, abs)
 	}
 	return rel, nil
 }
@@ -135,17 +150,22 @@ func withRoot[T any](workspace, abs string, op func(root *os.Root, rel string) (
 
 	v, err := op(root, rel)
 	// os.Root.MkdirAll reports a symlink-to-directory with an absolute target as
-	// "file exists" rather than as an escape, so retry on that too; the retry is
-	// still confined by realRelInRoot and os.Root.
+	// "file exists" rather than as an escape, so retry on that too (an existing
+	// directory is a normal idempotent MkdirAll outcome; the retry is a no-op
+	// there). The retry is still confined by realRelInRoot and os.Root.
 	if !isRootEscape(err) && !errors.Is(err, os.ErrExist) {
 		return v, err
 	}
 	rel2, ferr := realRelInRoot(workspace, abs)
 	if ferr != nil {
-		return zero, wrapRootErr(err, abs)
+		// Only a confirmed escape is reworded; any other error is returned as is.
+		if errors.Is(ferr, errEscapeViaSymlink) {
+			return zero, wrapRootErr(err, abs)
+		}
+		return zero, err
 	}
 	if v, err = op(root, rel2); err != nil {
-		return zero, wrapRootErr(err, abs)
+		return zero, err
 	}
 	return v, nil
 }

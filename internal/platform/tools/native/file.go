@@ -214,13 +214,11 @@ func openWorkspaceRoot(workspace string) (*os.Root, error) {
 	return os.OpenRoot(filepath.Clean(workspace))
 }
 
-// wrapRootErr turns os.Root's symlink/".." escape error into the same
-// "path escape" wording used by the lexical check.
+// wrapRootErr rewords err into the "path escape" wording used by the lexical
+// check. Call it only after realRelInRoot confirmed the escape; it does not
+// inspect err itself.
 func wrapRootErr(err error, path string) error {
-	if isRootEscape(err) {
-		return fmt.Errorf("path escape: %q is outside workspace (via symlink): %w", path, err)
-	}
-	return err
+	return fmt.Errorf("path escape: %q is outside workspace (via symlink): %w", path, err)
 }
 
 func readFileInRoot(workspace, abs string) ([]byte, error) {

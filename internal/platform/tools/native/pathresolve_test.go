@@ -209,3 +209,58 @@ func TestFileTools_WorkspaceRootIsSymlink(t *testing.T) {
 		assert.Err(t, err)
 	})
 }
+
+func TestWithRoot_ErrorClassification(t *testing.T) {
+	base := t.TempDir()
+	ws := filepath.Join(base, "ws")
+	outside := filepath.Join(base, "outside")
+	assert.NoErr(t, os.MkdirAll(filepath.Join(ws, "dir"), 0o755))
+	assert.NoErr(t, os.MkdirAll(outside, 0o755))
+	assert.NoErr(t, os.WriteFile(filepath.Join(ws, "file.txt"), []byte("x"), 0o644))
+	assert.NoErr(t, os.WriteFile(filepath.Join(ws, "ok.txt"), []byte("ok"), 0o644))
+
+	t.Run("EISDIR does not trigger a second execution", func(t *testing.T) {
+		runs := 0
+		err := writeFileInRootCounting(ws, filepath.Join(ws, "dir"), &runs)
+		assert.Err(t, err)
+		assert.Eq(t, 1, runs)
+		assert.StrNotContains(t, err.Error(), "path escape")
+	})
+
+	t.Run("a file as intermediate path is not reported as an escape", func(t *testing.T) {
+		err := writeFileInRoot(ws, filepath.Join(ws, "file.txt", "sub", "a.txt"), []byte("x"))
+		assert.Err(t, err)
+		assert.StrNotContains(t, err.Error(), "path escape")
+		_, err = readFileInRoot(ws, filepath.Join(ws, "file.txt", "a.txt"))
+		assert.Err(t, err)
+		assert.StrNotContains(t, err.Error(), "path escape")
+	})
+
+	t.Run("escape through a symlink is still rejected", func(t *testing.T) {
+		symlinkOrSkip(t, outside, filepath.Join(ws, "out"))
+		err := writeFileInRoot(ws, filepath.Join(ws, "out", "a.txt"), []byte("x"))
+		assert.Err(t, err)
+		assert.StrContains(t, err.Error(), "path escape")
+	})
+
+	t.Run("absolute symlink to inside the workspace still works", func(t *testing.T) {
+		symlinkOrSkip(t, filepath.Join(ws, "dir"), filepath.Join(ws, "in"))
+		assert.NoErr(t, writeFileInRoot(ws, filepath.Join(ws, "in", "a.txt"), []byte("a")))
+		b, err := readFileInRoot(ws, filepath.Join(ws, "in", "a.txt"))
+		assert.NoErr(t, err)
+		assert.Eq(t, "a", string(b))
+	})
+}
+
+// writeFileInRootCounting counts how many times withRoot runs the operation.
+func writeFileInRootCounting(ws, abs string, runs *int) error {
+	_, err := withRoot(ws, abs, func(root *os.Root, rel string) (struct{}, error) {
+		*runs++
+		f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+		if err != nil {
+			return struct{}{}, err
+		}
+		return struct{}{}, f.Close()
+	})
+	return err
+}
