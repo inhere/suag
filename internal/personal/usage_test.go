@@ -3,6 +3,7 @@ package personal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
@@ -102,4 +103,43 @@ type cancelAfterModel struct {
 func (h cancelAfterModel) AfterModel(context.Context, *agentcore.ModelEvent, *agentcore.Control) error {
 	h.cancel()
 	return nil
+}
+
+// Early failures (before the turn is finished) must still report the usage the
+// session already accumulated, not a zero value.
+func TestRunnerEarlyFailureKeepsSessionUsage(t *testing.T) {
+	ctx := context.Background()
+	repo, err := store.Open(newStorePath(t))
+	assert.NoErr(t, err)
+	t.Cleanup(func() { _ = repo.Close() })
+	ruleErr := errors.New("rules unavailable")
+	failRules := false
+	runner, err := New(Config{Repository: repo, Provider: &usageProvider{}, LockRoot: t.TempDir(),
+		RuleSource: func() (string, string, error) {
+			if failRules {
+				return "", "", ruleErr
+			}
+			return "", "h", nil
+		}})
+	assert.NoErr(t, err)
+	first, err := runner.Run(ctx, RunRequest{SessionID: "early-fail", CreateIfMissing: true, Prompt: "one"})
+	assert.NoErr(t, err)
+	assert.Eq(t, 20, first.SessionUsage.TotalTokens)
+
+	t.Run("rule source failure", func(t *testing.T) {
+		failRules = true
+		res, err := runner.Run(ctx, RunRequest{SessionID: "early-fail", Prompt: "two"})
+		assert.True(t, errors.Is(err, ruleErr))
+		assert.Eq(t, first.SessionUsage, res.SessionUsage)
+	})
+
+	t.Run("session not ready", func(t *testing.T) {
+		model, err := repo.GetSession(ctx, "early-fail")
+		assert.NoErr(t, err)
+		model.Status = store.SessionArchived
+		assert.NoErr(t, repo.UpdateSession(ctx, model))
+		res, err := runner.Run(ctx, RunRequest{SessionID: "early-fail", Prompt: "three"})
+		assert.Err(t, err)
+		assert.Eq(t, first.SessionUsage, res.SessionUsage)
+	})
 }

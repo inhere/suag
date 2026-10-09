@@ -2,6 +2,7 @@ package acpserver
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -136,6 +137,35 @@ func TestUsageUpdateContinuesAfterSessionLoad(t *testing.T) {
 	assert.Eq(t, 1, len(updates))
 	assert.Eq(t, float64(30), updates[0].Meta["input_tokens"]) // 10 persisted + 20 new, not 20
 	assert.Eq(t, float64(32), updates[0].Meta["total_tokens"])
+}
+
+// A first turn after session/load that fails before the runner finishes it must
+// still report the persisted total, not reset the client to zero.
+func TestUsageUpdateAfterSessionLoadEarlyFailure(t *testing.T) {
+	provider := &growingUsageProvider{Provider: mock.NewProvider(mock.Final("one"), mock.Final("two"))}
+	failRules := &atomic.Bool{}
+	open := testACPRuntimeWith(t, provider, nil, acpTestOptions{failRules: failRules})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cwd := t.TempDir()
+
+	first := connectPersonalACP(t, open, &testACPClient{})
+	created, err := first.NewSession(ctx, acp.NewSessionRequest{Cwd: cwd, McpServers: []acp.McpServer{}})
+	assert.NoErr(t, err)
+	_, err = first.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("a")}})
+	assert.NoErr(t, err)
+
+	secondClient := &testACPClient{}
+	second := connectPersonalACP(t, open, secondClient)
+	_, err = second.LoadSession(ctx, acp.LoadSessionRequest{SessionId: created.SessionId, Cwd: cwd, McpServers: []acp.McpServer{}})
+	assert.NoErr(t, err)
+	failRules.Store(true)
+	_, err = second.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("b")}})
+	assert.Err(t, err)
+	updates := usageUpdates(secondClient)
+	assert.Eq(t, 1, len(updates))
+	assert.Eq(t, float64(10), updates[0].Meta["input_tokens"]) // the persisted first-turn total
+	assert.Eq(t, float64(11), updates[0].Meta["total_tokens"])
 }
 
 func TestUsageUpdateInputExcludesCache(t *testing.T) {

@@ -82,6 +82,9 @@ func testACPRuntime(t *testing.T, provider agentcore.Provider, tool *countingToo
 type acpTestOptions struct {
 	deferred bool
 	dbPath   string
+	// failRules, when set to true, makes the rule source fail so a turn dies
+	// before the runner finishes it.
+	failRules *atomic.Bool
 }
 
 func testACPRuntimeWith(t *testing.T, provider agentcore.Provider, tool *countingTool, opts acpTestOptions) OpenRuntime {
@@ -108,6 +111,14 @@ func testACPRuntimeWith(t *testing.T, provider agentcore.Provider, tool *countin
 		plans := personal.NewPlanRecorder()
 		registry.Register(native.NewUpdatePlanTool(plans))
 		cfg := personal.Config{Repository: repo, Provider: provider, Tools: tools.NewApproval(registry, approver), Hooks: hooks, Plans: plans}
+		if opts.failRules != nil {
+			cfg.RuleSource = func() (string, string, error) {
+				if opts.failRules.Load() {
+					return "", "", errors.New("rules unavailable")
+				}
+				return "", "h", nil
+			}
+		}
 		if opts.deferred {
 			// observe -> visibility -> approval -> base, as in the app.
 			vis := tools.NewVisibility(tools.NewApproval(registry, approver), tools.VisibilityOptions{Mode: tools.DeferredAlways})

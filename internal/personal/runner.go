@@ -273,7 +273,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return RunResult{}, fmt.Errorf("prompt is required for a new turn")
 	}
 	if model.Status == store.SessionArchived || model.Status == store.SessionRunning {
-		return RunResult{}, fmt.Errorf("session %q is not ready for a new turn: %s", model.ID, model.Status)
+		return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), fmt.Errorf("session %q is not ready for a new turn: %s", model.ID, model.Status)
 	}
 	r.locksMu.Lock()
 	_, heldByChat := r.heldLocks[model.ID]
@@ -281,7 +281,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if r.cfg.LockRoot != "" && !heldByChat {
 		lock, err := process.AcquireSessionLockContext(ctx, r.cfg.LockRoot, model.ID, 30*time.Second)
 		if err != nil {
-			return RunResult{}, err
+			return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), err
 		}
 		defer lock.Close()
 	}
@@ -315,7 +315,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	result := RunResult{SessionID: model.ID, TurnID: turnID, RunID: turnID}
 	history, err := r.loadHistory(ctx, model.ID)
 	if err != nil {
-		return result, err
+		return r.withSessionUsage(ctx, model.ID, result), err
 	}
 
 	// metaPatch collects the session metadata keys this turn changes; it is
@@ -325,7 +325,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if r.cfg.RuleSource != nil {
 		rules, hash, err := r.cfg.RuleSource()
 		if err != nil {
-			return result, err
+			return r.withSessionUsage(ctx, model.ID, result), err
 		}
 		if previous, _ := model.Meta["personal_rules_hash"].(string); previous != hash {
 			metaPatch["personal_rules_hash"] = hash
@@ -358,7 +358,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		agentID = "suag"
 	}
 	if err := r.cfg.Repository.CreateTurn(ctx, store.Turn{ID: turnID, SessionID: model.ID, Status: store.TurnRunning}); err != nil {
-		return result, fmt.Errorf("create turn: %w", err)
+		return r.withSessionUsage(ctx, model.ID, result), fmt.Errorf("create turn: %w", err)
 	}
 	// Collect this turn's per-call usage (the session total comes from model events).
 	usage := &usageCollector{}
@@ -553,6 +553,21 @@ func (r *Runner) findSession(ctx context.Context, req RunRequest) (Session, erro
 	return Session{}, err
 }
 
+// withSessionUsage fills result.SessionUsage with the session-cumulative usage
+// (model events of the session). Error returns that happen before finish use it
+// too, so callers such as the ACP usage_update keep the previously known total
+// instead of seeing a zero value. A lookup failure leaves the value untouched.
+func (r *Runner) withSessionUsage(ctx context.Context, sessionID string, result RunResult) RunResult {
+	// The caller's ctx may already be cancelled or timed out (lock wait).
+	sum, err := r.cfg.Repository.SumUsage(context.WithoutCancel(ctx), sessionID)
+	if err != nil {
+		slog.Warn("sum session usage", "session_id", sessionID, "err", err)
+		return result
+	}
+	result.SessionUsage = usageFromSum(sum)
+	return result
+}
+
 func (r *Runner) finish(ctx context.Context, model Session, result RunResult, turnStart time.Time, usage *usageCollector, coreResult *agentcore.RunResult, runErr error, sink EmitFunc) (RunResult, error) {
 	if coreResult != nil {
 		result.Status, result.Output, result.Usage = coreResult.Status, coreResult.Output, coreResult.Usage
@@ -615,11 +630,7 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	})
 	// Session-cumulative usage is derived from the model events of the session,
 	// which already include this turn's calls (written synchronously above).
-	if sum, err := r.cfg.Repository.SumUsage(finishCtx, model.ID); err != nil {
-		slog.Warn("sum session usage", "session_id", model.ID, "err", err)
-	} else {
-		result.SessionUsage = usageFromSum(sum)
-	}
+	result = r.withSessionUsage(finishCtx, model.ID, result)
 	// Back to open with the current metadata (status columns only).
 	if fresh, err := r.cfg.Repository.GetSession(finishCtx, model.ID); err != nil {
 		persistErr = errors.Join(persistErr, err)
