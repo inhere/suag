@@ -59,6 +59,10 @@ type Runtime struct {
 	Registry *tools.Registry
 	// ContextWindow is the window of the model actually used by the provider.
 	ContextWindow int
+	// Asker (chat mode only, else nil) is where the chat approver asks its
+	// questions; chat binds its terminal input to it. Unbound, every tool that
+	// needs a confirmation is refused.
+	Asker *tools.BindableAsker
 
 	repo         *store.Store
 	capabilities defaultCapabilities
@@ -88,10 +92,22 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	opts.CLIMode = true
-	// The CLI approver is the MCP allowlist (cliMCPGate); it never prompts.
+	// The run approver is the MCP allowlist (cliMCPGate); it never prompts.
 	gate, err := newCLIMCPGate(opts.ReadOnly)
 	if err != nil {
 		return nil, err
+	}
+	var approver tools.Approver = gate
+	var asker *tools.BindableAsker
+	if opts.ChatMode {
+		// chat wraps the gate: MCP rules unchanged, other tools confirmed
+		// through the asker (bound later by chat) per tools.approval.
+		auto, err := toolsApprovalAuto()
+		if err != nil {
+			return nil, err
+		}
+		asker = tools.NewBindableAsker()
+		approver = newChatApprover(gate, auto, asker, workspace)
 	}
 	opts.Workspace, opts.RuleCWD = workspace, cwd
 	// tools.allow_write applies to chat only: run (often started by a job
@@ -104,8 +120,13 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 		}
 	}
 	opts.AllowWrite = (opts.AllowWrite || configWrite) && !opts.ReadOnly
-	opts.Servers, opts.Hooks, opts.Approver = servers, nil, gate
-	return Open(ctx, opts)
+	opts.Servers, opts.Hooks, opts.Approver = servers, nil, approver
+	rt, err := Open(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	rt.Asker = asker
+	return rt, nil
 }
 
 // toolsAllowWrite reads tools.allow_write (default false); a non-boolean
