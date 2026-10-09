@@ -144,7 +144,7 @@ func TestBannerAndExitSummary(t *testing.T) {
 			SessionUsage: agentcore.Usage{InputTokens: 900, OutputTokens: 80, TotalTokens: 980}})
 		var out bytes.Buffer
 		s.print(&out, "sess_x", 125*time.Second)
-		assert.Eq(t, "本次 2 轮 · in 150 / out 25 tokens（会话累计 in 900 / out 80） · 运行 2m5s\n续接：suag chat --resume sess_x\n", out.String())
+		assert.Eq(t, "\n本次 2 轮 · in 150 / out 25 tokens（会话累计 in 900 / out 80） · 运行 2m5s\n续接：suag chat --resume sess_x\n", out.String())
 	})
 	t.Run("no session no summary", func(t *testing.T) {
 		var out bytes.Buffer

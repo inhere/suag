@@ -455,5 +455,6 @@ func (s chatStats) print(w io.Writer, sessionID string, elapsed time.Duration) {
 	if s.session.InputTokens > 0 || s.session.OutputTokens > 0 {
 		line += fmt.Sprintf("（会话累计 in %d / out %d）", s.session.InputTokens, s.session.OutputTokens)
 	}
-	fmt.Fprintf(w, "%s · 运行 %s\n续接：suag chat --resume %s\n", line, formatElapsed(elapsed), sessionID)
+	// Leading newline: Ctrl-C/Ctrl-D at the prompt leaves the cursor after "❯ ".
+	fmt.Fprintf(w, "\n%s · 运行 %s\n续接：suag chat --resume %s\n", line, formatElapsed(elapsed), sessionID)
 }
