@@ -2,19 +2,56 @@
 # Copy to $SUAG_HOME/config.yaml (default ~/.suag/config.yaml); ${VAR} values are
 # expanded from the environment or $SUAG_HOME/.env.
 
-# LLM provider settings
-llm:
-  api_type: openai # openai | anthropic
-  provider_name: bailian # openai | deepseek | claude | custom
-  model: glm-5 # model name
-  api_key: "${BAILIAN_API_KEY}" # set via env: OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY
-  base_url: "${BAILIAN_BASE_URL}" # optional override (e.g. for OpenAI-compatible gateways)
-  # compact_model: glm-4-flash # optional cheaper model (same provider) for context summaries
-  # context_window: 128000 # optional; default is derived from the model name
-  # Optional extra request headers. "{{session_id}}" becomes the current suag
-  # session id (skipped when there is none); User-Agent defaults to "suag".
-  # headers:
-  #   x-opencode-session: "{{session_id}}" # e.g. required by OpenCode Go
+# Main model, "<provider>/<model>". The prefix must be a defined provider (the
+# presets openai, anthropic, deepseek, or one under providers:); only the first
+# "/" splits, otherwise the whole string is the model id of the provider of
+# this setting. Overridden by SUAG_MODEL, then by --model.
+model: bailian/glm-5
+
+# Providers. openai / anthropic / deepseek are built in (default base_url and
+# the api_key env OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY); an
+# entry with the same id overrides them field by field. Any other id needs type.
+providers:
+  bailian:
+    type: openai # openai | anthropic
+    base_url: "${BAILIAN_BASE_URL}" # openai type appends /chat/completions
+    api_key: "${BAILIAN_API_KEY}"
+    # Optional per-model overrides; the context window is otherwise derived
+    # from the model name (unknown models: 128000).
+    # models:
+    #   glm-5:
+    #     context_window: 128000
+    # Optional extra request headers. "{{session_id}}" becomes the current suag
+    # session id (skipped when there is none); User-Agent defaults to "suag".
+    # headers:
+    #   x-extra: "value"
+
+  # OpenCode Go, OpenAI-compatible endpoint (needs the session header):
+  # opencode-go:
+  #   type: openai
+  #   base_url: "https://opencode.ai/zen/go/v1"
+  #   api_key: "${OPENCODE_API_KEY}"
+  #   headers:
+  #     x-opencode-session: "{{session_id}}"
+  # OpenCode Go, Anthropic-compatible endpoint (appends /v1/messages):
+  # opencode-go-claude:
+  #   type: anthropic
+  #   base_url: "https://opencode.ai/zen/go"
+  #   api_key: "${OPENCODE_API_KEY}"
+  #   headers:
+  #     x-opencode-session: "{{session_id}}"
+  # Override a preset, e.g. an Anthropic gateway:
+  # anthropic:
+  #   base_url: "https://gateway.example.com"
+
+# Optional cheaper model for context summaries (same reference rules as model;
+# a bare id uses the main model's provider). Unset: the turn's own model.
+# compact_model: bailian/glm-4-flash
+
+# Optional models tried in order when the main model fails.
+# fallback_models:
+#   - anthropic/claude-sonnet-4-6
+#   - deepseek-chat # bare id: served by the main model's provider
 
 # Workspace directory for file and shell tools
 # Defaults to current working directory
@@ -43,4 +80,31 @@ max_steps: 100
 # window) | always | never. Deferred tools are loaded via the tool_search tool.
 tools:
   deferred: auto
+  # No MCP tool is allowed by default: with both lists empty every MCP call is
+  # refused. Entries are "server/toolglob" (a bare "toolglob" in auto_allow
+  # matches that tool from any server; prefer the qualified form).
+  # auto_allow applies to normal (non --read-only) runs:
   # auto_allow: ["gofer/gofer_*_list", "gofer/gofer_*_get", "gofer/gofer_work_report"]
+  # --read-only uses ONLY read_only_allow (auto_allow never widens it) and
+  # every entry must be server-qualified:
+  # read_only_allow:
+  #   - gofer/gofer_*_list
+  #   - gofer/gofer_*_get
+  #   - gofer/gofer_work_report
+  #   - gofer/gofer_session_list
+
+# Chat hooks. Disabled unless hooks.command is set; SUAG_HOOKS=off disables
+# them regardless. The command is an argv list (no shell) and receives each
+# event as one JSON line on stdin.
+# hooks:
+#   command: [gofer, hook, generic, --agent, suag]
+#   timeout_ms: 3000 # ordinary events (default 3000)
+#   # Appended to the Stop event argv only. Always set stop_wait_sec together
+#   # with it, or Stop is ended after timeout_ms.
+#   stop_args: [--wait, "7140"]
+#   stop_wait_sec: 7140 # Stop waits stop_wait_sec+2 seconds
+#   # PostToolUse is sent only for tools matching these globs (none: never),
+#   # renamed to "name" when set. Globs use path.Match; "*" does not match "/".
+#   post_tool_use:
+#     tools: ["*shell*", "*exec*"]
+#     name: shell

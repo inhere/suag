@@ -45,25 +45,25 @@ agents:
 
 用 `gofer config validate server` 检查文件，再按当前 Gofer 服务的配置管理流程 reload，并用 `gofer agent list --runner server` 确认两项可用。`detect` 使用 `suag version`，其输出为单行 `suag <version> (<commit>)`。
 
-Suag 创建会话时从外层到内层读取项目规则；每一级按顺序读取 `AGENTS.md`、`CLAUDE.md`（若存在），并在最前加入 `~/.suag/AGENTS.md`。展开后的真实文件路径会去重，因此两个规则文件共同引入的文件只读取一次。规则里的独占行 `@相对文件` 展开一层；规则和 `--append-system-prompt` 在会话创建时保存，续接时只在规则文件变化后向下一轮补充更新消息。`SUAG_APPEND_SYSTEM_PROMPT` 可提供默认追加提示，命令行参数优先；不传或传空串都沿用会话已保存的追加提示（Gofer 模板在 job 没有系统提示时会渲染出空串），用 `--clear-append-system-prompt` 清空；`--no-project-rules` 可在调试时跳过项目文件。Gofer job 中还会附上 `gofer work report` / `gofer issue` 的汇报提示。
+Suag 创建会话时从外层到内层读取项目规则；每一级按顺序读取 `AGENTS.md`、`CLAUDE.md`（若存在），并在最前加入 `~/.suag/AGENTS.md`。展开后的真实文件路径会去重，因此两个规则文件共同引入的文件只读取一次。规则里的独占行 `@相对文件` 展开一层；规则和 `--append-system-prompt` 在会话创建时保存，续接时只在规则文件变化后向下一轮补充更新消息。`SUAG_APPEND_SYSTEM_PROMPT` 可提供默认追加提示，命令行参数优先；不传或传空串都沿用会话已保存的追加提示（Gofer 模板在 job 没有系统提示时会渲染出空串），用 `--clear-append-system-prompt` 清空；`--no-project-rules` 可在调试时跳过项目文件。Suag 不再因 `GOFER_JOB_ID` 自动追加任何提示；Gofer job 需要的汇报提示（`gofer work report` / `gofer issue`）由 Gofer 经 `SUAG_APPEND_SYSTEM_PROMPT` 或 `--append-system-prompt` 提供（见「升级迁移」）。
 
 ## 本机 chat 会话送话
 
 `suag chat` 会在 `SUAG_HOME/run` 登记当前进程并监听仅本机用户可访问的 socket。可用 `suag ps --json` 查看活跃会话，用 `suag send --session <session-id|前缀|名称> --text <文本>` 送话；省略 `--text` 时从 stdin 读取（上限 1 MiB）。没有匹配进程时退出码为 3，多个匹配项为 2，stdin 超限为 4，成功送达或排队为 0，其他错误为 1。加 `--wait` 时，排队的消息要等到真正开始一轮才返回 0；若 chat 在此之前退出，消息被丢弃并返回 3。不加时排队即返回，chat 退出时会在其终端提示丢弃的条数。
 
-Gofer agent 可配置 `deliver_command: [send, --session, "{{session_id}}"]` 和 `deliver_stdin: true`，由 Gofer 在会话所在 worker 上调用 Suag。Suag chat 忙时最多排队 8 条；空闲时送入下一轮。Gofer 送话会以 `[gofer web 回复]` 显示并作为注入输入记录。`hook generic` 的 `UserPromptSubmit` 事件对这类输入（含 Stop block 注入的 web 回复和 `[gofer job 完成]` 通知）带 `"injected": true`；终端手敲的输入不带该字段，其它事件也不带。`run` 和 ACP 续接同一会话时使用会话锁，避免与仍运行的 chat 同时写入；chat 退出后进程登记、socket 和锁会清理。
+Gofer agent 可配置 `deliver_command: [send, --session, "{{session_id}}"]` 和 `deliver_stdin: true`，由 Gofer 在会话所在 worker 上调用 Suag。Suag chat 忙时最多排队 8 条；空闲时送入下一轮。`send` 的 `--source <label>`（默认 `cli`）决定 chat 中的显示前缀 `[来自 <label>] `；文本首行已带 `[...] ` 标签时原样保留。送话作为注入输入记录。`UserPromptSubmit` 事件对这类输入（含 Stop block 注入的回复和 `[gofer job 完成]` 通知）带 `"injected": true`；终端手敲的输入不带该字段，其它事件也不带。`run` 和 ACP 续接同一会话时使用会话锁，避免与仍运行的 chat 同时写入；chat 退出后进程登记、socket 和锁会清理。
 
 `interactive_args: [chat]` 允许 Gofer 在原进程退出后以交互终端启动 `suag chat --resume`；`session_resume_interactive` 给出续接参数。Windows 本机 socket 路径最多支持 100 个 UTF-16 code units；超长的 `SUAG_HOME/run/<pid>.sock` 会明确报错，需要将 `SUAG_HOME` 配置得更短。
 
 模型地址与认证由启动 Suag 的用户配置。例如在该用户的 `~/.suag/config.yaml` 中设置：
 
 ```yaml
-llm:
-  api_type: openai
-  provider_name: bailian
-  model: glm-5
-  api_key: "${BAILIAN_API_KEY}"
-  base_url: "${BAILIAN_BASE_URL}"
+model: bailian/glm-5
+providers:
+  bailian:
+    type: openai
+    api_key: "${BAILIAN_API_KEY}"
+    base_url: "${BAILIAN_BASE_URL}"
 ```
 
 将 `BAILIAN_API_KEY` 和兼容 OpenAI API 的 `BAILIAN_BASE_URL` 放在同一用户的 `~/.suag/.env`，例如：
@@ -73,13 +73,13 @@ BAILIAN_API_KEY=<你的密钥>
 BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
-也可将这两个变量设为 Gofer server 进程可用的环境变量。仓库的 `config/config.yaml` 是字段样例；Suag 只加载 `~/.suag/config.yaml` 与 `~/.suag/.env`（或 `SUAG_HOME` 下的同名文件），不读取当前工作目录的配置和 `.env`。`SUAG_HOME` 替换 `~/.suag` 作为数据与配置根，`SUAG_CONFIG` 指定唯一配置文件。模型与 provider 的优先级是 `--model` / `--provider` > `SUAG_MODEL` / `SUAG_PROVIDER` > 配置文件；这些选项不会接收密钥。换用 OpenAI、DeepSeek 或 Anthropic 时，调整 `api_type`、`provider_name`、`model`、`api_key` 与 `base_url`；Anthropic 使用 `api_type: anthropic`。不要把真实密钥写入 agent argv、job `--env` 或任务文本：Gofer 会持久化 job 请求。会话库位置只由 `SUAG_HOME` 决定（`$SUAG_HOME/db/sessions.db`），`database_url` 与 `agentcore.run_root` 已移除。旧版本的库（`suag.db`、`agentcore/` 目录）不读取、不迁移、也不删除，仍留在磁盘上：旧会话 ID 无法用 `--resume`/`--session-id` 续接，Gofer 中登记的旧 Suag 会话（`session_family: suag`）无法再被唤醒或接管，需要新建会话。
+也可将这两个变量设为 Gofer server 进程可用的环境变量。仓库的 `config/config.yaml` 是字段样例；Suag 只加载 `~/.suag/config.yaml` 与 `~/.suag/.env`（或 `SUAG_HOME` 下的同名文件），不读取当前工作目录的配置和 `.env`。`SUAG_HOME` 替换 `~/.suag` 作为数据与配置根，`SUAG_CONFIG` 指定唯一配置文件。模型优先级是 `--model` > `SUAG_MODEL` > 配置 `model`（`<provider>/<model>`）；这些选项不会接收密钥。OpenAI、Anthropic、DeepSeek 是内置预设，换用时改 `model` 并提供对应环境变量即可；完整字段见 [LLM 配置](llm-config-v0.md)。不要把真实密钥写入 agent argv、job `--env` 或任务文本：Gofer 会持久化 job 请求。会话库位置只由 `SUAG_HOME` 决定（`$SUAG_HOME/db/sessions.db`），`database_url` 与 `agentcore.run_root` 已移除。旧版本的库（`suag.db`、`agentcore/` 目录）不读取、不迁移、也不删除，仍留在磁盘上：旧会话 ID 无法用 `--resume`/`--session-id` 续接，Gofer 中登记的旧 Suag 会话（`session_family: suag`）无法再被唤醒或接管，需要新建会话。
 
 ## 批处理 CLI
 
 CLI 可在 agent 的 `args` 中加入 `--mcp-config <file>` 接入本机 stdio MCP 服务；可重复指定多个 JSON 文件。文件格式为 Claude 的 `mcpServers`，例如 `{"mcpServers":{"gofer":{"command":"gofer","args":["mcp"]}}}`。Suag 的 YAML 配置也可在 `mcp.servers` 下列出默认服务。MCP 子进程继承启动环境（`GOFER_*` 等保留），但会剔除凭据变量：名称以 `_API_KEY`、`_AUTH_TOKEN` 结尾的变量及 suag 自己读取的 LLM 密钥（`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`），再叠加各服务的 `env`；服务 `env` 里显式配置的同名变量照常传入。MCP 工具名保持原名；若与内置工具或更早配置的 server 的工具重名，后者被丢弃并记录警告，不会覆盖。需要让 Gofer job 调用其工具时，须在可执行路径和运行环境中提供 `gofer`；不要把密钥放在参数或文档中。
 
-`tools.auto_allow` 是 YAML 中的 glob 列表。条目形如 `server/工具glob`，默认只自动放行名为 `gofer` 的 MCP 服务的 `gofer/gofer_*_list`、`gofer/gofer_*_get`、`gofer/gofer_work_report`、`gofer/gofer_session_list`，其他服务即使暴露同名工具也不放行；不含 `/` 的旧式条目仍按工具名匹配任意服务（有冒充风险，建议改写为带服务名的形式）；若显式配置，列表替换默认值。其余 MCP 工具在 CLI 中被拒绝，即使带 `--allow-write`；拒绝信息作为工具错误交给模型，回合继续。拒绝语义见下文“工具拒绝语义”。需要逐次审批 MCP 写工具时使用 ACP。
+MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目形如 `server/工具glob`：`tools.auto_allow` 用于普通运行；`--read-only` 只认 `tools.read_only_allow`（条目必须带服务名，`auto_allow` 不会扩大它）。两者都为空时所有 MCP 调用被拒绝。Gofer 只读 job 需要的典型配置见「升级迁移」。其余 MCP 工具在 CLI 中被拒绝，即使带 `--allow-write`；拒绝信息作为工具错误交给模型，回合继续。拒绝语义见下文“工具拒绝语义”。需要逐次审批 MCP 写工具时使用 ACP。
 
 ```powershell
 gofer job run --runner server --project my-tools-dev --cwd inhere-tools/suag --agent suag --read-only --prompt "检查当前项目"
@@ -97,7 +97,7 @@ gofer job resume <job-id> --prompt "继续上个问题"
 - `suag trace <session> [--turn id] [--json]`、`suag stats [--session id] [--since 7d] [--json]`、`suag export <session> [--redact] [-o file]` 读取同一个会话库，在运行 Suag 的主机上执行（Gofer worker 所在用户的 `SUAG_HOME`）；`export --redact` 去掉工具参数，适合外发。
 - `run` 的 stream-json 在 `plan` 事件上输出完整计划；`ndjson_keep` 示例未保留它，需要在 Gofer 中显示计划时把 `plan` 加入 `ndjson_keep`。
 - `tools.deferred`（`auto`/`always`/`never`，默认 `auto`）在 `~/.suag/config.yaml` 中配置。MCP 工具多时被延迟加载，模型通过内置 `tool_search` 取回；Gofer 不需要额外配置。
-- `llm.compact_model` 指定自动压缩与 `:compact` 使用的模型，`llm.context_window` 覆盖上下文窗口。
+- `compact_model` 指定自动压缩与 `:compact` 使用的模型，`providers.<id>.models.<model>.context_window` 覆盖上下文窗口。
 
 ## ACP 常驻与审批
 
@@ -128,4 +128,46 @@ gofer job resume <job-id> --prompt "从上次会话继续"
 
 ### ACP 用量上报
 
-每轮结束（含被取消的回合）发送 `usage_update`：`_meta` 的 `input_tokens`/`output_tokens`/`total_tokens`（及可选 `cache_read_tokens`/`cache_write_tokens`/`cost_usd`）和顶层 `cost.amount` 均为**会话累计值**；顶层 `used` 是最近一次模型请求的上下文 token 数，`size` 是模型上下文窗口。窗口取 `llm.context_window`（可选配置），否则按实际生效的模型（`--model`/`SUAG_MODEL` 覆盖后的值）名取保守默认（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k），未知模型为 128k。会话累计保存在会话 metadata（`sessions.metadata_json`），`session/load` 或重启后从已保存值继续累计。`input_tokens` 不含缓存，缓存另报 `cache_read_tokens`/`cache_write_tokens`，`total_tokens` = input + output + cache_read + cache_write（与 Gofer 口径一致）。
+每轮结束（含被取消的回合）发送 `usage_update`：`_meta` 的 `input_tokens`/`output_tokens`/`total_tokens`（及可选 `cache_read_tokens`/`cache_write_tokens`/`cost_usd`）和顶层 `cost.amount` 均为**会话累计值**；顶层 `used` 是最近一次模型请求的上下文 token 数，`size` 是模型上下文窗口。窗口取 `providers.<id>.models.<model>.context_window`（可选配置），否则按实际生效的模型（`--model`/`SUAG_MODEL` 覆盖后的值）名取保守默认（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k），未知模型为 128k。会话累计保存在会话 metadata（`sessions.metadata_json`），`session/load` 或重启后从已保存值继续累计。`input_tokens` 不含缓存，缓存另报 `cache_read_tokens`/`cache_write_tokens`，`total_tokens` = input + output + cache_read + cache_write（与 Gofer 口径一致）。
+
+## 升级迁移
+
+本批改动（providers/model 配置、hooks 通用化、来源前缀）带来下列不兼容变化；按两侧分别处理。
+
+### 用户 suag 配置（`~/.suag/config.yaml`）
+
+- `llm:` 段改写为 `model: <provider>/<model>` 加 `providers:`，旧写法启动即报错；对照见 [LLM 配置](llm-config-v0.md#从旧配置迁移)。
+- 补 `tools.read_only_allow`。只读 job（`--read-only`）不再有内置放行表，不配置则所有 MCP 工具被拒绝：
+
+  ```yaml
+  tools:
+    read_only_allow:
+      - gofer/gofer_*_list
+      - gofer/gofer_*_get
+      - gofer/gofer_work_report
+      - gofer/gofer_session_list
+  ```
+
+- 补 `hooks.command` 等。原先 `gofer.hooks` 的 auto 模式（PATH 中有 `gofer` 即启用）已取消，不配置就不启用 hooks。等价于原行为的配置：
+
+  ```yaml
+  hooks:
+    command: [gofer, hook, generic, --agent, suag]
+    stop_args: [--wait, "7140"]
+    stop_wait_sec: 7140
+    post_tool_use:
+      tools: ["*shell*", "*exec*"]
+      name: shell
+  ```
+
+  只配 `stop_args` 不配 `stop_wait_sec` 会让 Stop 在 `timeout_ms`（默认 3000）后被结束，两者必须同时配置。`post_tool_use.tools` 不配置则不发送 PostToolUse。
+
+- provider 名变化：trace/stats 中的 provider 名是配置里的 id（原 `claude` 变为 `anthropic` 或自定义 id）。
+
+### Gofer 侧（由 Gofer 会话在 Gofer 仓库实施）
+
+- job 环境设 `SUAG_HOOKS=off`，替代 suag 原先对 `GOFER_JOB_ID` 的判断：job 内的 suag 不应再启用 hooks。
+- job 环境设 `SUAG_APPEND_SYSTEM_PROMPT`，携带原“运行在 Gofer job 中，可用 `gofer work report` / `gofer issue` 汇报”的提示。chat、resume 与 ACP 路径不带 `--append-system-prompt`。
+- 经 `run` 续接投递 web 回复时加 `--injected`，suag 不再根据文本前缀 `[gofer web 回复] ` 推断注入。
+- socket 投递（`suag send`）若要保留“[gofer web 回复]”措辞，需由 Gofer 自己加在文本前；suag 不再特判，`--source gofer`（或来源为 gofer）时显示为 `[来自 gofer] `。
+- agent 配置中删除 `--provider` 用法（若有）；改用 `--model <provider>/<model>`。
