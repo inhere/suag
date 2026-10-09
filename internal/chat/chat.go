@@ -1,4 +1,4 @@
-package app
+package chat
 
 import (
 	"context"
@@ -23,11 +23,17 @@ const (
 	stopHookLimit    = 16 * 1024
 )
 
-func runPersonalChat(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) error {
-	return runPersonalChatWithHooks(ctx, runner, opts, stdin, stdout, stderr, suaghooks.New())
+// Options selects which session a chat opens: a new one, an existing one, or a
+// handoff child of another session.
+type Options struct {
+	SessionID string
+	ResumeID  string
+	// FromID starts a NEW session that inherits state from this session.
+	FromID string
 }
 
-func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer, hooks suaghooks.Client) error {
+// Run drives the interactive chat REPL on top of runner; hooks may be nil.
+func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Reader, stdout, stderr io.Writer, hooks suaghooks.Client) error {
 	sessionID := ""
 	source := "startup"
 	createdAtStartup := false

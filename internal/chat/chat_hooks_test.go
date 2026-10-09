@@ -1,4 +1,4 @@
-package app
+package chat
 
 import (
 	"context"
@@ -128,7 +128,7 @@ func TestPersonalChatBlockStartsInjectedTurnAndMarksStopActive(t *testing.T) {
 	var stdout, stderr strings.Builder
 	done := make(chan error, 1)
 	go func() {
-		done <- runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, reader, &stdout, &stderr, hooks)
+		done <- Run(context.Background(), runner, Options{}, reader, &stdout, &stderr, hooks)
 	}()
 	if _, err := io.WriteString(writer, "first prompt\n"); err != nil {
 		t.Fatal(err)
@@ -184,7 +184,7 @@ func TestPersonalChatInterruptsStopBeforeNextPromptAndContinuesWithoutHooks(t *t
 	runner, _ := newCLITestRunner(t, &hookTestProvider{})
 	hooks := newFakeHookClient()
 	var stdout, stderr strings.Builder
-	err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader("first\nsecond\n:quit\n"), &stdout, &stderr, hooks)
+	err := Run(context.Background(), runner, Options{}, strings.NewReader("first\nsecond\n:quit\n"), &stdout, &stderr, hooks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestPersonalChatInterruptsStopBeforeNextPromptAndContinuesWithoutHooks(t *t
 	if firstStop < 0 || interrupt <= firstStop || secondPrompt <= interrupt {
 		t.Fatalf("expected Stop, Interrupt, then next UserPromptSubmit; got %#v", events)
 	}
-	if err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader(":quit\n"), &stdout, &stderr, nil); err != nil {
+	if err := Run(context.Background(), runner, Options{}, strings.NewReader(":quit\n"), &stdout, &stderr, nil); err != nil {
 		t.Fatalf("missing hooks interrupted the conversation: %v", err)
 	}
 }
@@ -221,7 +221,7 @@ func TestPersonalChatInterruptsOnFirstByteBeforeLineSubmission(t *testing.T) {
 	var stdout, stderr strings.Builder
 	done := make(chan error, 1)
 	go func() {
-		done <- runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, reader, &stdout, &stderr, hooks)
+		done <- Run(context.Background(), runner, Options{}, reader, &stdout, &stderr, hooks)
 	}()
 	if _, err := io.WriteString(writer, "first prompt\n"); err != nil {
 		t.Fatal(err)
@@ -262,7 +262,7 @@ func TestPersonalChatEOFExitsNormally(t *testing.T) {
 			runner, _ := newCLITestRunner(t, mock.NewProvider(mock.Final("done")))
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := runPersonalChatWithHooks(ctx, runner, personalOptions{}, strings.NewReader(input), io.Discard, io.Discard, nil); err != nil {
+			if err := Run(ctx, runner, Options{}, strings.NewReader(input), io.Discard, io.Discard, nil); err != nil {
 				t.Fatalf("normal EOF returned an error: %v", err)
 			}
 		})
@@ -323,7 +323,7 @@ func TestEmptyChatRegistersRealSessionThenUpdatesTitleOnFirstPrompt(t *testing.T
 	var stdout, stderr strings.Builder
 	done := make(chan error, 1)
 	go func() {
-		done <- runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, reader, &stdout, &stderr, nil)
+		done <- Run(context.Background(), runner, Options{}, reader, &stdout, &stderr, nil)
 	}()
 	processRoot = filepath.Join(processRoot, "run")
 	var record personalprocess.Record
@@ -393,7 +393,7 @@ func TestChatProcessDeliveryTranscriptIsInjectedAndTerminalPromptIsNot(t *testin
 	var stdout, stderr strings.Builder
 	done := make(chan error, 1)
 	go func() {
-		done <- runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, reader, &stdout, &stderr, nil)
+		done <- Run(context.Background(), runner, Options{}, reader, &stdout, &stderr, nil)
 	}()
 	record := waitForProcessRecord(t, processRoot)
 	if response, err := personalprocess.Send(record, personalprocess.Request{Text: "S6_QUEUE_1", From: "cli"}); err != nil || response.Queued {
@@ -456,7 +456,7 @@ func TestChatProcessDeliveryUserPromptSubmitCarriesInjected(t *testing.T) {
 	var stdout, stderr strings.Builder
 	done := make(chan error, 1)
 	go func() {
-		done <- runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, reader, &stdout, &stderr, hooks)
+		done <- Run(context.Background(), runner, Options{}, reader, &stdout, &stderr, hooks)
 	}()
 	record := waitForProcessRecord(t, processRoot)
 	if _, err := personalprocess.Send(record, personalprocess.Request{Text: "S6_HOOK", From: "cli"}); err != nil {
@@ -564,7 +564,7 @@ func TestPersonalChatSurvivesFailingHookCommand(t *testing.T) {
 	assert.Require(t, assert.NotNil(t, hooks))
 	runner, _ := newCLITestRunner(t, &hookTestProvider{})
 	var stdout, stderr strings.Builder
-	if err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader("hello\n:quit\n"), &stdout, &stderr, hooks); err != nil {
+	if err := Run(context.Background(), runner, Options{}, strings.NewReader("hello\n:quit\n"), &stdout, &stderr, hooks); err != nil {
 		t.Fatalf("hook failure interrupted chat: %v", err)
 	}
 	if !strings.Contains(stdout.String(), "answer-1") {
@@ -608,7 +608,7 @@ func TestPersonalChatSendsOnlyBoundedRedactedShellOutputToPostToolUse(t *testing
 	}
 	hooks := newFakeHookClient()
 	var stdout, stderr strings.Builder
-	err = runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader("run command\n:quit\n"), &stdout, &stderr, hooks)
+	err = Run(context.Background(), runner, Options{}, strings.NewReader("run command\n:quit\n"), &stdout, &stderr, hooks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -699,7 +699,7 @@ func TestPersonalChatSendsStopWhenTurnFails(t *testing.T) {
 	hooks := newFakeHookClient()
 	hooks.blockFirst = false
 	var stderr strings.Builder
-	err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader("do it\n:quit\n"), io.Discard, &stderr, hooks)
+	err := Run(context.Background(), runner, Options{}, strings.NewReader("do it\n:quit\n"), io.Discard, &stderr, hooks)
 	if err != nil {
 		t.Fatalf("failed turn should not end chat with an error: %v", err)
 	}
@@ -728,7 +728,7 @@ func TestPersonalChatKeepsWebReplyReceivedDuringInterrupt(t *testing.T) {
 		hooks.blockFirst = false
 		hooks.lostOnInterrupt = "[gofer web 回复] late-reply-canary"
 		var stdout, stderr strings.Builder
-		err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader("first\nsecond\n:quit\n"), &stdout, &stderr, hooks)
+		err := Run(context.Background(), runner, Options{}, strings.NewReader("first\nsecond\n:quit\n"), &stdout, &stderr, hooks)
 		assert.Require(t, assert.NoErr(t, err))
 		provider.mu.Lock()
 		defer provider.mu.Unlock()
@@ -745,7 +745,7 @@ func TestPersonalChatKeepsWebReplyReceivedDuringInterrupt(t *testing.T) {
 		hooks.blockFirst = false
 		hooks.lostOnInterrupt = "[gofer web 回复] late-reply-canary"
 		var stdout, stderr strings.Builder
-		err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader("first\n:quit\n"), &stdout, &stderr, hooks)
+		err := Run(context.Background(), runner, Options{}, strings.NewReader("first\n:quit\n"), &stdout, &stderr, hooks)
 		assert.Require(t, assert.NoErr(t, err))
 		assert.StrContains(t, stderr.String(), "not delivered")
 		assert.StrContains(t, stderr.String(), "late-reply-canary")
@@ -753,12 +753,12 @@ func TestPersonalChatKeepsWebReplyReceivedDuringInterrupt(t *testing.T) {
 }
 
 func TestHookEventTranscriptPathAndSource(t *testing.T) {
-	run := func(t *testing.T, opts personalOptions) []suaghooks.Event {
+	run := func(t *testing.T, opts Options) []suaghooks.Event {
 		runner, _ := newCLITestRunner(t, &hookTestProvider{})
 		hooks := newFakeHookClient()
 		hooks.blockFirst = false
 		var stdout, stderr strings.Builder
-		assert.Require(t, assert.NoErr(t, runPersonalChatWithHooks(context.Background(), runner, opts, strings.NewReader(":quit\n"), &stdout, &stderr, hooks)))
+		assert.Require(t, assert.NoErr(t, Run(context.Background(), runner, opts, strings.NewReader(":quit\n"), &stdout, &stderr, hooks)))
 		return hooks.snapshot()
 	}
 	startOf := func(events []suaghooks.Event) suaghooks.Event {
@@ -775,7 +775,7 @@ func TestHookEventTranscriptPathAndSource(t *testing.T) {
 		t.Cleanup(gkconfig.Reset)
 		t.Setenv("SUAG_HOME", t.TempDir())
 		_ = gkconfig.Set("transcripts", "off")
-		start := startOf(run(t, personalOptions{}))
+		start := startOf(run(t, Options{}))
 		assert.Eq(t, "", start.TranscriptPath)
 		data, _ := json.Marshal(start)
 		assert.StrNotContains(t, string(data), "transcript_path")
@@ -784,7 +784,7 @@ func TestHookEventTranscriptPathAndSource(t *testing.T) {
 		gkconfig.Reset()
 		t.Cleanup(gkconfig.Reset)
 		t.Setenv("SUAG_HOME", t.TempDir())
-		assert.NotEq(t, "", startOf(run(t, personalOptions{})).TranscriptPath)
+		assert.NotEq(t, "", startOf(run(t, Options{})).TranscriptPath)
 	})
 	t.Run("existing --session-id reports resume", func(t *testing.T) {
 		gkconfig.Reset()
@@ -795,7 +795,7 @@ func TestHookEventTranscriptPathAndSource(t *testing.T) {
 		for range 2 {
 			hooks := newFakeHookClient()
 			var stdout, stderr strings.Builder
-			assert.Require(t, assert.NoErr(t, runPersonalChatWithHooks(context.Background(), runner, personalOptions{SessionID: "sess-fixed"}, strings.NewReader(":quit\n"), &stdout, &stderr, hooks)))
+			assert.Require(t, assert.NoErr(t, Run(context.Background(), runner, Options{SessionID: "sess-fixed"}, strings.NewReader(":quit\n"), &stdout, &stderr, hooks)))
 			sources = append(sources, startOf(hooks.snapshot()).Source)
 		}
 		assert.Eq(t, []string{"startup", "resume"}, sources)
@@ -811,7 +811,7 @@ func TestGoferHookNoticeIsShownOnStderr(t *testing.T) {
 	hooks.blockFirst = false
 	hooks.startNotice = "session taken over on web"
 	var stdout, stderr strings.Builder
-	assert.Require(t, assert.NoErr(t, runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader(":quit\n"), &stdout, &stderr, hooks)))
+	assert.Require(t, assert.NoErr(t, Run(context.Background(), runner, Options{}, strings.NewReader(":quit\n"), &stdout, &stderr, hooks)))
 	assert.StrContains(t, stderr.String(), "session taken over on web")
 	assert.StrNotContains(t, stdout.String(), "session taken over on web")
 }
@@ -822,7 +822,7 @@ func TestPersonalChatCompactCommandCompressesSession(t *testing.T) {
 	runner, _ := newCLITestRunner(t, provider)
 	var stdout, stderr strings.Builder
 	input := "first " + strings.Repeat("x", 400) + "\n:compact\nsecond\n:quit\n"
-	err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader(input), &stdout, &stderr, nil)
+	err := Run(context.Background(), runner, Options{}, strings.NewReader(input), &stdout, &stderr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

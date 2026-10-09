@@ -11,6 +11,8 @@ import (
 
 	"github.com/gookit/goutil/cflag"
 	"github.com/gookit/goutil/cflag/capp"
+	"github.com/inhere/suag/internal/chat"
+	suaghooks "github.com/inhere/suag/internal/hooks"
 	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/internal/wiring"
@@ -56,7 +58,7 @@ func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptio
 	}
 	defer func() { retErr = errors.Join(retErr, runtime.Close()) }()
 	if mode == "chat" {
-		return runPersonalChat(ctx, runtime.Runner, opts, stdin, stdout, stderr)
+		return chat.Run(ctx, runtime.Runner, chat.Options{SessionID: opts.SessionID, ResumeID: opts.ResumeID, FromID: opts.FromID}, stdin, stdout, stderr, suaghooks.New())
 	}
 	return executePersonalRun(ctx, runtime.Runner, opts, stdout, stderr)
 }

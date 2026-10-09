@@ -245,29 +245,6 @@ func TestExecutePersonalRunResumeRejectsUnknownSession(t *testing.T) {
 	assert.Eq(t, 0, len(sessions))
 }
 
-func TestPersonalChatReusesOneSession(t *testing.T) {
-	runner, repo := newCLITestRunner(t, mock.NewProvider(mock.Final("first"), mock.Final("second")))
-	var stdout, stderr bytes.Buffer
-	err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{OutputFormat: "text"},
-		strings.NewReader("Hello\nFollow up\n:quit\n"), &stdout, &stderr, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sessions, err := repo.ListSessions(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Eq(t, 1, len(sessions))
-	assert.Eq(t, true, strings.Contains(stdout.String(), "first"))
-	assert.Eq(t, true, strings.Contains(stdout.String(), "second"))
-	// Two prompts in one chat session are two completed turns of that session.
-	turns, err := repo.ListTurns(context.Background(), sessions[0].ID, store.TurnCompleted)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Eq(t, 2, len(turns))
-}
-
 func TestParsePersonalOptionsRejectsInvalidCombinations(t *testing.T) {
 	var stderr bytes.Buffer
 	err := RunPersonalCLI(context.Background(), "run", []string{"--prompt", "hi", "--session-id", "one", "--resume", "two"},
