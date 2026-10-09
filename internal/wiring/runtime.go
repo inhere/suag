@@ -1,0 +1,262 @@
+// Package wiring assembles the personal runner (provider, tools, store, rules)
+// shared by the CLI and ACP front ends.
+package wiring
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	gkconfig "github.com/gookit/config/v2"
+	appconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/internal/platform/tools/native"
+	"github.com/inhere/suag/pkg/agentcore"
+)
+
+// Options carries everything needed to assemble one runtime.
+type Options struct {
+	// Workspace is the tool workspace root; RuleCWD is where project rules are read.
+	// Both are filled by OpenCLI.
+	Workspace string
+	RuleCWD   string
+	Model     string
+	Provider  string
+	// AllowWrite exposes workspace write and shell tools.
+	AllowWrite bool
+	// ReadOnly (OpenCLI only) narrows the MCP gate to the built-in allowlist and
+	// overrides AllowWrite.
+	ReadOnly bool
+	// Servers are extra MCP servers (from --mcp-config or the ACP session).
+	Servers []appconfig.MCPServerSettings
+	// MCPConfigs are Claude-style config files read by OpenCLI into Servers.
+	MCPConfigs []string
+	Hooks      []agentcore.Hook
+	// Approver is the permission policy of the approval layer (CLI allowlist or
+	// ACP RequestPermission); nil denies every tool call (fail closed).
+	Approver           tools.Approver
+	AppendSystemPrompt string
+	// ClearAppendSystemPrompt drops the session's saved append prompt. An empty
+	// AppendSystemPrompt keeps it instead: argv templates (job runners)
+	// often always pass the flag and render it empty when there is no prompt.
+	ClearAppendSystemPrompt bool
+	NoProjectRules          bool
+	// CLIMode always exposes configured MCP tools; the dispatch gate enforces permissions.
+	CLIMode bool
+}
+
+// Runtime is one assembled personal runner and the resources it owns.
+type Runtime struct {
+	Runner *personal.Runner
+	// Registry is the base tool registry (lets ACP tell MCP tools apart).
+	Registry *tools.Registry
+	// ContextWindow is the window of the model actually used by the provider.
+	ContextWindow int
+
+	repo         *store.Store
+	capabilities defaultCapabilities
+}
+
+// Close releases the session store and tool providers.
+func (p *Runtime) Close() error {
+	if p == nil {
+		return nil
+	}
+	return errors.Join(p.repo.Close(), p.capabilities.Close())
+}
+
+// OpenCLI resolves the workspace, cwd, MCP configs and the CLI MCP gate from
+// opts, then assembles the runtime via Open.
+func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
+	workspace, err := filepath.Abs(appconfig.ResolveWorkspacePath())
+	if err != nil {
+		return nil, fmt.Errorf("resolve workspace: %w", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	servers, err := appconfig.ReadClaudeMCPConfigs(opts.MCPConfigs)
+	if err != nil {
+		return nil, err
+	}
+	opts.CLIMode = true
+	// The CLI approver is the MCP allowlist (cliMCPGate); it never prompts.
+	gate, err := newCLIMCPGate(opts.ReadOnly)
+	if err != nil {
+		return nil, err
+	}
+	opts.Workspace, opts.RuleCWD = workspace, cwd
+	opts.AllowWrite = opts.AllowWrite && !opts.ReadOnly
+	opts.Servers, opts.Hooks, opts.Approver = servers, nil, gate
+	return Open(ctx, opts)
+}
+
+// Open assembles one runtime.
+func Open(ctx context.Context, opts Options) (*Runtime, error) {
+	workspace, ruleCWD, allowWrite, servers := opts.Workspace, opts.RuleCWD, opts.AllowWrite, opts.Servers
+	settings := appconfig.ReadLLMProviderSettingsWithOverrides(opts.Model, opts.Provider)
+	provider, err := appconfig.BuildLLMProviderFromSettings(settings)
+	if err != nil {
+		return nil, err
+	}
+	var capabilities defaultCapabilities
+	if opts.CLIMode {
+		capabilities, err = buildPersonalCLICapabilities(ctx, workspace, allowWrite, servers)
+	} else {
+		capabilities, err = buildPersonalCapabilitiesWithServers(ctx, workspace, allowWrite, servers)
+	}
+	if err != nil {
+		return nil, err
+	}
+	// update_plan only writes session state, so it is registered in every mode
+	// (including read-only). The recorder is bound to the runner in personal.New.
+	plans := personal.NewPlanRecorder()
+	capabilities.Registry.Register(native.NewUpdatePlanTool(plans))
+	// Tool registry stack, outer to inner: observe (added in personal.New) ->
+	// visibility -> approval -> base registry. Unloaded deferred tools are
+	// answered by visibility and never reach the approver.
+	approval := tools.NewApproval(capabilities.Registry, opts.Approver)
+	vis, err := newToolVisibility(capabilities.Registry, approval, contextWindowForSettings(settings))
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, err
+	}
+	var toolRegistry agentcore.ToolRegistry = vis
+	dbPath, err := appconfig.ResolveCoreStorePath()
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, fmt.Errorf("resolve personal session database: %w", err)
+	}
+	transcriptDir := ""
+	if appconfig.TranscriptsEnabled() {
+		home, err := appconfig.ResolveSuagHome()
+		if err != nil {
+			_ = capabilities.Close()
+			return nil, fmt.Errorf("resolve transcript root: %w", err)
+		}
+		transcriptDir = filepath.Join(home, "transcripts")
+	}
+	home, err := appconfig.ResolveSuagHome()
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, fmt.Errorf("resolve session process root: %w", err)
+	}
+	lockRoot := filepath.Join(home, "run", "locks")
+	processRoot := filepath.Join(home, "run")
+	repo, err := store.Open(dbPath)
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, err
+	}
+	// llm.compact_model: summaries use that model on the same provider; unset
+	// means the turn's own provider.
+	var compactProvider agentcore.Provider
+	compactSettings, hasCompact := appconfig.CompactModelSettings(settings)
+	if hasCompact {
+		built, err := appconfig.BuildLLMProviderFromSettings(compactSettings)
+		if err != nil {
+			_ = repo.Close()
+			_ = capabilities.Close()
+			return nil, fmt.Errorf("build compact model provider: %w", err)
+		}
+		compactProvider = built
+	}
+	runner, err := personal.New(personal.Config{
+		ContextWindow:   contextWindowForSettings(settings),
+		CompactProvider: compactProvider,
+		CompactModel:    compactSettings.Model,
+		Plans:           plans,
+		Visibility:      vis,
+		Repository:      repo,
+		Provider:        provider,
+		Model:           settings.Model,
+		ProviderName:    settings.ProviderName,
+		Tools:           toolRegistry,
+		Hooks:           opts.Hooks,
+		MaxSteps:        gkconfig.Int("max_steps", 100),
+		RuleSource: func() (string, string, error) {
+			home, err := appconfig.ResolveSuagHome()
+			if err != nil {
+				return "", "", err
+			}
+			return personal.LoadRules(ruleCWD, home, opts.NoProjectRules)
+		},
+		AppendSystemPrompt:    appendSystemPrompt(opts.AppendSystemPrompt),
+		AppendSystemPromptSet: opts.ClearAppendSystemPrompt,
+		GoferJob:              os.Getenv("GOFER_JOB_ID") != "",
+		TranscriptDir:         transcriptDir,
+		LockRoot:              lockRoot,
+		ProcessRoot:           processRoot,
+	})
+	if err != nil {
+		_ = repo.Close()
+		_ = capabilities.Close()
+		return nil, err
+	}
+	// Same model value the provider was built from (flag/env overrides included).
+	return &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
+		ContextWindow: contextWindowForSettings(settings)}, nil
+}
+
+// contextWindowForSettings resolves the usage_update size from the effective
+// model: llm.context_window wins, then the model-name table, then the default.
+func contextWindowForSettings(settings appconfig.LLMProviderSettings) int {
+	if configured := gkconfig.Int("llm.context_window"); configured > 0 {
+		return configured
+	}
+	return appconfig.ContextWindowForModel(settings.Model)
+}
+
+func appendSystemPrompt(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	return os.Getenv("SUAG_APPEND_SYSTEM_PROMPT")
+}
+
+func buildPersonalCapabilities(workspace string, allowWrite bool) (defaultCapabilities, error) {
+	return buildPersonalCapabilitiesWithServers(context.Background(), workspace, allowWrite, nil)
+}
+
+func buildPersonalCapabilitiesWithServers(ctx context.Context, workspace string, allowWrite bool, servers []appconfig.MCPServerSettings) (defaultCapabilities, error) {
+	if allowWrite {
+		return buildDefaultCapabilitiesWithServers(ctx, workspace, servers)
+	}
+	registry := tools.NewRegistry()
+	for _, tool := range native.NewFileTools(workspace) {
+		if tool.Name() == "file_read" || tool.Name() == "file_list" {
+			registry.Register(tool)
+		}
+	}
+	return defaultCapabilities{Registry: registry}, nil
+}
+
+// CLI always exposes configured MCP tools; the dispatch gate enforces their permissions.
+func buildPersonalCLICapabilities(ctx context.Context, workspace string, allowWrite bool, servers []appconfig.MCPServerSettings) (defaultCapabilities, error) {
+	if allowWrite {
+		return buildDefaultCapabilitiesWithServers(ctx, workspace, servers)
+	}
+	built, err := buildPersonalCapabilitiesWithServers(ctx, workspace, false, nil)
+	if err != nil {
+		return defaultCapabilities{}, err
+	}
+	for _, settings := range append(appconfig.ReadMCPServerSettings(), servers...) {
+		provider, err := mcpProviderFactory(ctx, settings)
+		if err != nil {
+			_ = built.Close()
+			return defaultCapabilities{}, fmt.Errorf("build mcp provider %q: %w", settings.ID, err)
+		}
+		if err := provider.RegisterTools(built.Registry); err != nil {
+			_ = provider.Close()
+			_ = built.Close()
+			return defaultCapabilities{}, fmt.Errorf("register mcp tools for %q: %w", settings.ID, err)
+		}
+		built.closers = append(built.closers, provider)
+	}
+	return built, nil
+}

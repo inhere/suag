@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	gkconfig "github.com/gookit/config/v2"
 	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
@@ -34,14 +33,14 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 	if opts.FromID != "" {
 		model, err := runner.Handoff(ctx, personal.HandoffRequest{SourceID: opts.FromID, NewID: opts.SessionID, Title: "New chat"})
 		if err != nil {
-			return sessionNotFound(err, opts.FromID)
+			return personal.SessionNotFound(err, opts.FromID)
 		}
 		sessionID, createdAtStartup = model.ID, true
 	} else if opts.ResumeID != "" {
 		source = "resume"
 		model, err := runner.LoadSession(ctx, opts.ResumeID)
 		if err != nil {
-			return sessionNotFound(err, opts.ResumeID)
+			return personal.SessionNotFound(err, opts.ResumeID)
 		}
 		sessionID = model.ID
 	} else if opts.SessionID != "" {
@@ -87,7 +86,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 	cwd, _ := os.Getwd()
 	transcriptPath := func(id string) string {
 		// With transcripts disabled no file is written, so do not advertise a path.
-		if id == "" || !transcriptsEnabled() {
+		if id == "" || !appconfig.TranscriptsEnabled() {
 			return ""
 		}
 		home, err := appconfig.ResolveSuagHome()
@@ -284,7 +283,7 @@ func startChatProcessRegistration(sessionID, processRoot string, runner *persona
 }
 
 func ensureTranscriptFile(path, sessionID string) {
-	if path == "" || !transcriptsEnabled() {
+	if path == "" || !appconfig.TranscriptsEnabled() {
 		return
 	}
 	transcript, err := personal.OpenTranscript(filepath.Dir(path), sessionID)
@@ -395,18 +394,6 @@ const goferShellToolName = "shell"
 func isShellOrExecTool(name string) bool {
 	name = strings.ToLower(name)
 	return strings.Contains(name, "shell") || strings.Contains(name, "exec")
-}
-
-func transcriptsEnabled() bool {
-	value := gkconfig.Get("transcripts")
-	switch v := value.(type) {
-	case bool:
-		return v
-	case string:
-		return !strings.EqualFold(strings.TrimSpace(v), "off") && !strings.EqualFold(strings.TrimSpace(v), "false")
-	default:
-		return true
-	}
 }
 
 // showHookNotice prints the server-provided notice (if any) for the person at the terminal.

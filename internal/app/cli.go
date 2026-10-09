@@ -7,43 +7,17 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
-	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/cflag"
 	"github.com/gookit/goutil/cflag/capp"
-	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/internal/platform/tools"
-	"github.com/inhere/suag/internal/platform/tools/native"
+	"github.com/inhere/suag/internal/wiring"
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
 var ErrInputRequired = errors.New("turn requires more input")
-
-// SessionNotFoundError reports that --resume or the --from source names no
-// session. It is a stable contract for callers: exit code 4 and a stderr line
-// starting with "session not found: ", so a caller can tell a missing (e.g.
-// pre-store) session from any other failure and fall back to --from.
-type SessionNotFoundError struct{ ID string }
-
-func (e SessionNotFoundError) Error() string { return "session not found: " + e.ID }
-
-// ExitCode is the process exit code main uses for this error.
-func (e SessionNotFoundError) ExitCode() int { return 4 }
-
-func (e SessionNotFoundError) Unwrap() error { return personal.ErrSessionNotFound }
-
-// sessionNotFound maps a not-found error for id to SessionNotFoundError.
-func sessionNotFound(err error, id string) error {
-	if errors.Is(err, personal.ErrSessionNotFound) {
-		return SessionNotFoundError{ID: id}
-	}
-	return err
-}
 
 type personalOptions struct {
 	Prompt    string
@@ -67,21 +41,6 @@ type personalOptions struct {
 	CLIMode                 bool
 }
 
-type personalRuntime struct {
-	runner       *personal.Runner
-	repo         *store.Store
-	capabilities defaultCapabilities
-	// contextWindow is the window of the model actually used by the provider.
-	contextWindow int
-}
-
-func (p *personalRuntime) Close() error {
-	if p == nil {
-		return nil
-	}
-	return errors.Join(p.repo.Close(), p.capabilities.Close())
-}
-
 // RunPersonalCLI is the shared headless and interactive entry, independent of the old Web host.
 func RunPersonalCLI(ctx context.Context, mode string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if mode != "run" && mode != "chat" {
@@ -91,15 +50,15 @@ func RunPersonalCLI(ctx context.Context, mode string, args []string, stdin io.Re
 }
 
 func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) (retErr error) {
-	runtime, err := openPersonalRuntime(ctx, opts.AllowWrite && !opts.ReadOnly, opts)
+	runtime, err := wiring.OpenCLI(ctx, opts.wiringOptions())
 	if err != nil {
 		return err
 	}
 	defer func() { retErr = errors.Join(retErr, runtime.Close()) }()
 	if mode == "chat" {
-		return runPersonalChat(ctx, runtime.runner, opts, stdin, stdout, stderr)
+		return runPersonalChat(ctx, runtime.Runner, opts, stdin, stdout, stderr)
 	}
-	return executePersonalRun(ctx, runtime.runner, opts, stdout, stderr)
+	return executePersonalRun(ctx, runtime.Runner, opts, stdout, stderr)
 }
 
 // NewPersonalCommand owns the flags and validation shared by direct CLI calls
@@ -136,6 +95,17 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	return cmd
 }
 
+// wiringOptions maps the CLI flags to the runtime assembly options.
+func (o personalOptions) wiringOptions() wiring.Options {
+	return wiring.Options{
+		Model: o.Model, Provider: o.Provider,
+		AllowWrite: o.AllowWrite, ReadOnly: o.ReadOnly,
+		MCPConfigs:         o.MCPConfigs,
+		AppendSystemPrompt: o.AppendSystemPrompt, ClearAppendSystemPrompt: o.ClearAppendSystemPrompt,
+		NoProjectRules: o.NoProjectRules,
+	}
+}
+
 func validatePersonalOptions(mode string, opts personalOptions) error {
 	if opts.SessionID != "" && opts.ResumeID != "" {
 		return fmt.Errorf("--session-id and --resume cannot be combined")
@@ -156,194 +126,6 @@ func validatePersonalOptions(mode string, opts personalOptions) error {
 		return fmt.Errorf("chat mode requires text output")
 	}
 	return nil
-}
-
-func openPersonalRuntime(ctx context.Context, allowWrite bool, opts personalOptions) (*personalRuntime, error) {
-	workspace, err := filepath.Abs(appconfig.ResolveWorkspacePath())
-	if err != nil {
-		return nil, fmt.Errorf("resolve workspace: %w", err)
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	servers, err := appconfig.ReadClaudeMCPConfigs(opts.MCPConfigs)
-	if err != nil {
-		return nil, err
-	}
-	opts.CLIMode = true
-	// The CLI approver is the MCP allowlist (cliMCPGate); it never prompts.
-	gate, err := newCLIMCPGate(opts.ReadOnly)
-	if err != nil {
-		return nil, err
-	}
-	return openPersonalRuntimeConfigured(ctx, workspace, cwd, allowWrite, servers, nil, gate, opts)
-}
-
-// openPersonalRuntimeConfigured assembles one runtime. approver is the
-// permission policy of the approval layer (CLI allowlist or ACP
-// RequestPermission); nil denies every tool call (fail closed).
-func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD string, allowWrite bool, servers []appconfig.MCPServerSettings, hooks []agentcore.Hook, approver tools.Approver, opts personalOptions) (*personalRuntime, error) {
-	settings := appconfig.ReadLLMProviderSettingsWithOverrides(opts.Model, opts.Provider)
-	provider, err := appconfig.BuildLLMProviderFromSettings(settings)
-	if err != nil {
-		return nil, err
-	}
-	var capabilities defaultCapabilities
-	if opts.CLIMode {
-		capabilities, err = buildPersonalCLICapabilities(ctx, workspace, allowWrite, servers)
-	} else {
-		capabilities, err = buildPersonalCapabilitiesWithServers(ctx, workspace, allowWrite, servers)
-	}
-	if err != nil {
-		return nil, err
-	}
-	// update_plan only writes session state, so it is registered in every mode
-	// (including read-only). The recorder is bound to the runner in personal.New.
-	plans := personal.NewPlanRecorder()
-	capabilities.Registry.Register(native.NewUpdatePlanTool(plans))
-	// Tool registry stack, outer to inner: observe (added in personal.New) ->
-	// visibility -> approval -> base registry. Unloaded deferred tools are
-	// answered by visibility and never reach the approver.
-	approval := tools.NewApproval(capabilities.Registry, approver)
-	vis, err := newToolVisibility(capabilities.Registry, approval, contextWindowForSettings(settings))
-	if err != nil {
-		_ = capabilities.Close()
-		return nil, err
-	}
-	var toolRegistry agentcore.ToolRegistry = vis
-	dbPath, err := appconfig.ResolveCoreStorePath()
-	if err != nil {
-		_ = capabilities.Close()
-		return nil, fmt.Errorf("resolve personal session database: %w", err)
-	}
-	transcriptDir := ""
-	if transcriptsEnabled() {
-		home, err := appconfig.ResolveSuagHome()
-		if err != nil {
-			_ = capabilities.Close()
-			return nil, fmt.Errorf("resolve transcript root: %w", err)
-		}
-		transcriptDir = filepath.Join(home, "transcripts")
-	}
-	home, err := appconfig.ResolveSuagHome()
-	if err != nil {
-		_ = capabilities.Close()
-		return nil, fmt.Errorf("resolve session process root: %w", err)
-	}
-	lockRoot := filepath.Join(home, "run", "locks")
-	processRoot := filepath.Join(home, "run")
-	repo, err := store.Open(dbPath)
-	if err != nil {
-		_ = capabilities.Close()
-		return nil, err
-	}
-	// llm.compact_model: summaries use that model on the same provider; unset
-	// means the turn's own provider.
-	var compactProvider agentcore.Provider
-	compactSettings, hasCompact := appconfig.CompactModelSettings(settings)
-	if hasCompact {
-		built, err := appconfig.BuildLLMProviderFromSettings(compactSettings)
-		if err != nil {
-			_ = repo.Close()
-			_ = capabilities.Close()
-			return nil, fmt.Errorf("build compact model provider: %w", err)
-		}
-		compactProvider = built
-	}
-	runner, err := personal.New(personal.Config{
-		ContextWindow:   contextWindowForSettings(settings),
-		CompactProvider: compactProvider,
-		CompactModel:    compactSettings.Model,
-		Plans:           plans,
-		Visibility:      vis,
-		Repository:      repo,
-		Provider:        provider,
-		Model:           settings.Model,
-		ProviderName:    settings.ProviderName,
-		Tools:           toolRegistry,
-		Hooks:           hooks,
-		MaxSteps:        gkconfig.Int("max_steps", 100),
-		RuleSource: func() (string, string, error) {
-			home, err := appconfig.ResolveSuagHome()
-			if err != nil {
-				return "", "", err
-			}
-			return personal.LoadRules(ruleCWD, home, opts.NoProjectRules)
-		},
-		AppendSystemPrompt:    appendSystemPrompt(opts.AppendSystemPrompt),
-		AppendSystemPromptSet: opts.ClearAppendSystemPrompt,
-		GoferJob:              os.Getenv("GOFER_JOB_ID") != "",
-		TranscriptDir:         transcriptDir,
-		LockRoot:              lockRoot,
-		ProcessRoot:           processRoot,
-	})
-	if err != nil {
-		_ = repo.Close()
-		_ = capabilities.Close()
-		return nil, err
-	}
-	// Same model value the provider was built from (flag/env overrides included).
-	return &personalRuntime{runner: runner, repo: repo, capabilities: capabilities,
-		contextWindow: contextWindowForSettings(settings)}, nil
-}
-
-// contextWindowForSettings resolves the usage_update size from the effective
-// model: llm.context_window wins, then the model-name table, then the default.
-func contextWindowForSettings(settings appconfig.LLMProviderSettings) int {
-	if configured := gkconfig.Int("llm.context_window"); configured > 0 {
-		return configured
-	}
-	return appconfig.ContextWindowForModel(settings.Model)
-}
-
-func appendSystemPrompt(flagValue string) string {
-	if flagValue != "" {
-		return flagValue
-	}
-	return os.Getenv("SUAG_APPEND_SYSTEM_PROMPT")
-}
-
-func buildPersonalCapabilities(workspace string, allowWrite bool) (defaultCapabilities, error) {
-	return buildPersonalCapabilitiesWithServers(context.Background(), workspace, allowWrite, nil)
-}
-
-func buildPersonalCapabilitiesWithServers(ctx context.Context, workspace string, allowWrite bool, servers []appconfig.MCPServerSettings) (defaultCapabilities, error) {
-	if allowWrite {
-		return buildDefaultCapabilitiesWithServers(ctx, workspace, servers)
-	}
-	registry := tools.NewRegistry()
-	for _, tool := range native.NewFileTools(workspace) {
-		if tool.Name() == "file_read" || tool.Name() == "file_list" {
-			registry.Register(tool)
-		}
-	}
-	return defaultCapabilities{Registry: registry}, nil
-}
-
-// CLI always exposes configured MCP tools; the dispatch gate enforces their permissions.
-func buildPersonalCLICapabilities(ctx context.Context, workspace string, allowWrite bool, servers []appconfig.MCPServerSettings) (defaultCapabilities, error) {
-	if allowWrite {
-		return buildDefaultCapabilitiesWithServers(ctx, workspace, servers)
-	}
-	built, err := buildPersonalCapabilitiesWithServers(ctx, workspace, false, nil)
-	if err != nil {
-		return defaultCapabilities{}, err
-	}
-	for _, settings := range append(appconfig.ReadMCPServerSettings(), servers...) {
-		provider, err := mcpProviderFactory(ctx, settings)
-		if err != nil {
-			_ = built.Close()
-			return defaultCapabilities{}, fmt.Errorf("build mcp provider %q: %w", settings.ID, err)
-		}
-		if err := provider.RegisterTools(built.Registry); err != nil {
-			_ = provider.Close()
-			_ = built.Close()
-			return defaultCapabilities{}, fmt.Errorf("register mcp tools for %q: %w", settings.ID, err)
-		}
-		built.closers = append(built.closers, provider)
-	}
-	return built, nil
 }
 
 func executePersonalRun(ctx context.Context, runner *personal.Runner, opts personalOptions, stdout, stderr io.Writer) error {
@@ -409,14 +191,14 @@ func openRequestedSession(ctx context.Context, runner *personal.Runner, opts per
 		// --session-id names the new session; an existing one is rejected by Handoff.
 		model, err := runner.Handoff(ctx, personal.HandoffRequest{SourceID: opts.FromID, NewID: opts.SessionID, Title: opts.Prompt})
 		if err != nil {
-			return "", sessionNotFound(err, opts.FromID)
+			return "", personal.SessionNotFound(err, opts.FromID)
 		}
 		return model.ID, nil
 	}
 	if opts.ResumeID != "" {
 		model, err := runner.LoadSession(ctx, opts.ResumeID)
 		if err != nil {
-			return "", sessionNotFound(err, opts.ResumeID)
+			return "", personal.SessionNotFound(err, opts.ResumeID)
 		}
 		return model.ID, nil
 	}

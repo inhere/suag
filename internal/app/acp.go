@@ -9,6 +9,7 @@ import (
 	"github.com/inhere/suag/internal/acpserver"
 	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/internal/wiring"
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
@@ -27,15 +28,15 @@ func RunPersonalACP(ctx context.Context, input io.Reader, output io.Writer) erro
 		if gate != nil {
 			hooks, approver = []agentcore.Hook{gate}, gate
 		}
-		runtime, err := openPersonalRuntimeConfigured(ctx, workspace, workspace, !readOnly, servers, hooks, approver, personalOptions{})
+		runtime, err := wiring.Open(ctx, wiring.Options{Workspace: workspace, RuleCWD: workspace, AllowWrite: !readOnly, Servers: servers, Hooks: hooks, Approver: approver})
 		if err != nil {
 			return acpserver.Runtime{}, err
 		}
-		registry := runtime.capabilities.Registry
+		registry := runtime.Registry
 		isMCP := func(name string) bool {
 			tool, err := registry.Get(name)
 			return err == nil && tool.Kind() == tools.KindMCP
 		}
-		return acpserver.Runtime{Runner: runtime.runner, Close: runtime.Close, IsMCPTool: isMCP, ContextWindow: runtime.contextWindow}, nil
+		return acpserver.Runtime{Runner: runtime.Runner, Close: runtime.Close, IsMCPTool: isMCP, ContextWindow: runtime.ContextWindow}, nil
 	})
 }

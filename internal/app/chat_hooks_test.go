@@ -17,6 +17,7 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
+	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/personal"
 	personalprocess "github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/internal/personal/store"
@@ -586,11 +587,11 @@ func TestGoferHookFailuresAndJobEnvironmentAreBestEffort(t *testing.T) {
 func TestTranscriptsCanBeDisabledByConfig(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	if !transcriptsEnabled() {
+	if !appconfig.TranscriptsEnabled() {
 		t.Fatal("transcripts should default to enabled")
 	}
 	_ = gkconfig.Set("transcripts", "off")
-	if transcriptsEnabled() {
+	if appconfig.TranscriptsEnabled() {
 		t.Fatal("transcripts: off must disable transcript files")
 	}
 }

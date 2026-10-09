@@ -21,6 +21,7 @@ import (
 	"github.com/inhere/suag/internal/personal"
 	personalprocess "github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suag/internal/wiring"
 )
 
 var (
@@ -41,7 +42,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	app.SetupLogging()
+	wiring.SetupLogging()
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	if err := newCLI(ctx, os.Stdin, os.Stdout, os.Stderr).RunWithArgs(args); err != nil {

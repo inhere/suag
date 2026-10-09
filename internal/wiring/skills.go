@@ -1,4 +1,4 @@
-package app
+package wiring
 
 import (
 	"io/fs"
