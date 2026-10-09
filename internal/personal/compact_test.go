@@ -31,6 +31,7 @@ type scriptProv struct {
 	normal  func(n int, req *agentcore.GenerateRequest) (*agentcore.GenerateResult, error)
 	reqs    []*agentcore.GenerateRequest // ordinary calls
 	sumReqs []*agentcore.GenerateRequest // summary calls
+	sumErr  error                        // when set, summary calls fail with it
 }
 
 func (p *scriptProv) Name() string { return p.name }
@@ -41,8 +42,11 @@ func (p *scriptProv) Generate(_ context.Context, req *agentcore.GenerateRequest)
 	p.mu.Lock()
 	if req.System == compactSystemPrompt {
 		p.sumReqs = append(p.sumReqs, &cp)
-		n := len(p.sumReqs)
+		n, sumErr := len(p.sumReqs), p.sumErr
 		p.mu.Unlock()
+		if sumErr != nil {
+			return nil, sumErr
+		}
 		return &agentcore.GenerateResult{Content: fmt.Sprintf("SUMMARY-%s-%d", p.name, n), FinishReason: agentcore.FinishFinal}, nil
 	}
 	p.reqs = append(p.reqs, &cp)

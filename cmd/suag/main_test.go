@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
+	"github.com/inhere/suag/internal/app"
 	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/internal/personal/store"
@@ -61,6 +63,9 @@ func TestCLIRegistersProcessCommandsAndSendExitCodes(t *testing.T) {
 	}
 	if got := commandExitCode(err); got != 3 {
 		t.Fatalf("CLI main mapping returned %d for offline session", got)
+	}
+	if got := commandExitCode(fmt.Errorf("wrapped: %w", app.SessionNotFoundError{ID: "x"})); got != 4 {
+		t.Fatalf("session not found exit code = %d, want 4", got)
 	}
 	if got := commandExitCode(processExitError{code: 2, err: process.ErrAmbiguous}); got != 2 {
 		t.Fatalf("CLI main mapping returned %d for ambiguous selector", got)

@@ -28,7 +28,8 @@ The CLI starts with read and list tools. `--read-only` makes that intent explici
 
 - Automatic compaction: when the estimated context exceeds the model window minus a reserve, older history is summarized and the summary is persisted as a session entry. In `chat`, `:compact` compacts on demand. `llm.compact_model` selects a (cheaper) model on the same provider for summaries; unset means the turn's own model. `llm.context_window` overrides the window otherwise derived from the model name.
 - Plans: the `update_plan` tool records the model's plan in the session. `run --output-format stream-json` emits a `plan` event (`explanation`, `entries` of `step`/`status`, always the full list), and ACP maps it to a plan update.
-- Handoff: `suag run --from <session> ...` starts a new session that inherits the source's summary, plan and loaded tools; the source is only read. It cannot be combined with `--resume`.
+- Handoff: `suag run --from <session> ...` starts a new session that inherits the source's summary, plan and loaded tools; the source is only read. It cannot be combined with `--resume`; a failed handoff creates no session, so the same `--session-id` can be retried.
+- Missing session: when the `--resume` target or `--from` source does not exist, `run`/`chat` exit with code 4 and print `session not found: <id>` to stderr.
 
 ## Tools
 

@@ -155,3 +155,20 @@ func TestAppendSystemPromptCanBeClearedFromCLI(t *testing.T) {
 	run("--clear-append-system-prompt", "--append-system-prompt", "") // the Gofer argv shape still clears
 	assert.Eq(t, "", stored())
 }
+
+// Gofer contract: a missing --resume target or --from source exits 4 with a
+// "session not found: <id>" message, distinct from other run failures.
+func TestMissingSessionIsStableError(t *testing.T) {
+	for _, opts := range []personalOptions{
+		{Prompt: "x", ResumeID: "gone-session"},
+		{Prompt: "x", FromID: "gone-session", SessionID: "fresh-child"},
+	} {
+		runner, _ := newCLITestRunner(t, cachedUsageProvider{})
+		err := executePersonalRun(context.Background(), runner, opts, &bytes.Buffer{}, &bytes.Buffer{})
+		var notFound SessionNotFoundError
+		assert.Eq(t, true, errors.As(err, &notFound))
+		assert.Eq(t, 4, notFound.ExitCode())
+		assert.Eq(t, "session not found: gone-session", err.Error())
+		assert.Eq(t, true, errors.Is(err, store.ErrSessionNotFound))
+	}
+}

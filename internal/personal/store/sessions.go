@@ -114,6 +114,16 @@ func (s *Store) UpdateSession(ctx context.Context, in Session) error {
 	return requireAffected(res, ErrSessionNotFound)
 }
 
+// DeleteSession removes a session with its turns and entries (ON DELETE
+// CASCADE). Events are kept: they have no foreign key and record spent tokens.
+func (s *Store) DeleteSession(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id=?`, id)
+	if err != nil {
+		return fmt.Errorf("delete session %q: %w", id, err)
+	}
+	return requireAffected(res, ErrSessionNotFound)
+}
+
 // PatchSessionMeta merges patch into meta_json atomically (a nil value deletes
 // the key), so concurrent processes cannot roll back each other's keys.
 func (s *Store) PatchSessionMeta(ctx context.Context, id string, patch map[string]any) error {

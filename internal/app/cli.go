@@ -23,6 +23,27 @@ import (
 
 var ErrInputRequired = errors.New("turn requires more input")
 
+// SessionNotFoundError reports that --resume or the --from source names no
+// session. It is a stable contract for Gofer: exit code 4 and a stderr line
+// starting with "session not found: ", so a caller can tell a missing (e.g.
+// pre-store) session from any other failure and fall back to --from.
+type SessionNotFoundError struct{ ID string }
+
+func (e SessionNotFoundError) Error() string { return "session not found: " + e.ID }
+
+// ExitCode is the process exit code main uses for this error.
+func (e SessionNotFoundError) ExitCode() int { return 4 }
+
+func (e SessionNotFoundError) Unwrap() error { return personal.ErrSessionNotFound }
+
+// sessionNotFound maps a not-found error for id to SessionNotFoundError.
+func sessionNotFound(err error, id string) error {
+	if errors.Is(err, personal.ErrSessionNotFound) {
+		return SessionNotFoundError{ID: id}
+	}
+	return err
+}
+
 type personalOptions struct {
 	Prompt    string
 	Model     string
@@ -412,14 +433,14 @@ func openRequestedSession(ctx context.Context, runner *personal.Runner, opts per
 		// --session-id names the new session; an existing one is rejected by Handoff.
 		model, err := runner.Handoff(ctx, personal.HandoffRequest{SourceID: opts.FromID, NewID: opts.SessionID, Title: opts.Prompt})
 		if err != nil {
-			return "", err
+			return "", sessionNotFound(err, opts.FromID)
 		}
 		return model.ID, nil
 	}
 	if opts.ResumeID != "" {
 		model, err := runner.LoadSession(ctx, opts.ResumeID)
 		if err != nil {
-			return "", err
+			return "", sessionNotFound(err, opts.ResumeID)
 		}
 		return model.ID, nil
 	}

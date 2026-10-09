@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
@@ -49,39 +48,44 @@ func handoffMessage(rec handoffRecord) agentcore.Message {
 // from the source session. The source is only read: nothing is written to it
 // and its session lock is not taken. The latest adopted summary is reused when
 // it already covers the whole source view; otherwise a summary is generated in
-// memory (model event recorded under the new session).
+// memory (model event recorded under the new session id).
+//
+// The record is built before the session exists, so a failed handoff leaves no
+// session behind and the same NewID can be retried. The summary call's events
+// carry the new id anyway (events have no foreign key), so a later successful
+// retry also accounts for the failed attempt's tokens.
 func (r *Runner) Handoff(ctx context.Context, req HandoffRequest) (Session, error) {
 	src, err := r.LoadSession(ctx, req.SourceID)
 	if err != nil {
 		return Session{}, err
 	}
-	if req.NewID != "" {
-		if err := validateSessionID(req.NewID); err != nil {
-			return Session{}, err
-		}
-		if _, err := r.cfg.Repository.GetSession(ctx, req.NewID); err == nil {
-			return Session{}, fmt.Errorf("session %q already exists; --from creates a new session", req.NewID)
-		} else if !errors.Is(err, ErrSessionNotFound) {
-			return Session{}, err
-		}
+	newID := req.NewID
+	if newID == "" {
+		newID = NewSessionID()
+	}
+	if err := validateSessionID(newID); err != nil {
+		return Session{}, err
+	}
+	if _, err := r.cfg.Repository.GetSession(ctx, newID); err == nil {
+		return Session{}, fmt.Errorf("session %q already exists; --from creates a new session", newID)
+	} else if !errors.Is(err, ErrSessionNotFound) {
+		return Session{}, err
+	}
+	rec, err := r.buildHandoff(withObserveScope(ctx, newID, ""), src)
+	if err != nil {
+		return Session{}, fmt.Errorf("handoff from %q: %w", src.ID, err)
 	}
 	title := req.Title
 	if strings.TrimSpace(title) == "" {
 		title = "Handoff from " + src.ID
 	}
-	// The new session must exist first: the summary call is observed under it.
-	model, err := r.NewSession(ctx, req.NewID, title)
+	model, err := r.NewSession(ctx, newID, title)
 	if err != nil {
 		return Session{}, err
 	}
-	rec, err := r.buildHandoff(withObserveScope(ctx, model.ID, ""), src)
-	if err == nil {
-		err = r.writeHandoff(ctx, model, rec)
-	}
-	if err != nil {
-		// No delete API: archive the half-built session so it is never resumed.
-		model.Status, model.UpdatedAt = store.SessionArchived, time.Now().UTC()
-		_ = r.cfg.Repository.UpdateSession(context.WithoutCancel(ctx), model)
+	if err := r.writeHandoff(ctx, model, rec); err != nil {
+		// Release the id: a session without its handoff entry must never be resumed.
+		_ = r.cfg.Repository.DeleteSession(context.WithoutCancel(ctx), model.ID)
 		return Session{}, fmt.Errorf("handoff from %q: %w", src.ID, err)
 	}
 	return r.LoadSession(ctx, model.ID)

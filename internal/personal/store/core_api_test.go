@@ -51,6 +51,18 @@ func TestSessionCRUD(t *testing.T) {
 		assert.Eq(t, "1", got.Meta["z"])
 		assert.Eq(t, 2.0, got.Meta["n"])
 	})
+	t.Run("delete cascades entries", func(t *testing.T) {
+		newSession(t, s, "del")
+		_, err := s.AppendEntries(ctx, "del", NewEntry{Type: EntryUser, JSON: json.RawMessage(`{}`)})
+		assert.NoErr(t, err)
+		assert.NoErr(t, s.DeleteSession(ctx, "del"))
+		_, err = s.GetSession(ctx, "del")
+		assert.Eq(t, ErrSessionNotFound, err)
+		var n int
+		assert.NoErr(t, s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM entries WHERE session_id='del'`).Scan(&n))
+		assert.Eq(t, 0, n)
+		assert.Eq(t, ErrSessionNotFound, s.DeleteSession(ctx, "del"))
+	})
 	t.Run("list latest first", func(t *testing.T) {
 		now := time.Now()
 		assert.NoErr(t, s.CreateSession(ctx, Session{ID: "old", CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour)}))

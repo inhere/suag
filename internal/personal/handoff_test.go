@@ -154,10 +154,32 @@ func TestHandoffErrors(t *testing.T) {
 		assert.NoErr(t, err)
 		_, err = runner.Handoff(ctx, HandoffRequest{SourceID: empty.ID, NewID: "child-empty"})
 		assert.Eq(t, true, err != nil)
-		got, err := repo.GetSession(ctx, "child-empty")
-		assert.NoErr(t, err)
-		assert.Eq(t, store.SessionArchived, got.Status)
+		_, err = repo.GetSession(ctx, "child-empty")
+		assert.Eq(t, true, errorsIs(err, ErrSessionNotFound))
 	})
+}
+
+// A failed summary must not leave the requested id taken: Gofer retries --from
+// with the same --session-id it generated.
+func TestHandoffSummaryFailureReleasesID(t *testing.T) {
+	repo, runner, prov, src := handoffSource(t)
+	ctx := context.Background()
+	prov.mu.Lock()
+	prov.sumErr = errors.New("summary boom")
+	prov.mu.Unlock()
+	_, err := runner.Handoff(ctx, HandoffRequest{SourceID: src, NewID: "child-retry"})
+	assert.Eq(t, true, err != nil && strings.Contains(err.Error(), "summary boom"))
+	_, err = repo.GetSession(ctx, "child-retry")
+	assert.Eq(t, true, errorsIs(err, ErrSessionNotFound))
+
+	prov.mu.Lock()
+	prov.sumErr = nil
+	prov.mu.Unlock()
+	got, err := runner.Handoff(ctx, HandoffRequest{SourceID: src, NewID: "child-retry"})
+	assert.NoErr(t, err)
+	assert.Eq(t, "child-retry", got.ID)
+	assert.Eq(t, store.SessionOpen, got.Status)
+	assert.Eq(t, 1, entryCount(t, repo, "child-retry"))
 }
 
 func errorsIs(err, target error) bool { return errors.Is(err, target) }

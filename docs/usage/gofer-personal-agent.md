@@ -92,7 +92,8 @@ gofer job resume <job-id> --prompt "继续上个问题"
 
 ### 会话交接、观测与 deferred 工具
 
-- `--from <session>`：`suag run --from <旧会话> --prompt ...` 新建会话并继承来源的摘要、计划与已加载工具（来源只读，不能与 `--resume` 同用）。Gofer 目前没有对应的模板变量，所以 agent 模板里不能自动带上；需要在 job 的 agent args 中手工写入 `--from <session-id>`，或等 Gofer 侧支持后再接入模板。
+- `--from <session>`：`suag run --from <旧会话> --prompt ...` 新建会话并继承来源的摘要、计划与已加载工具（来源只读，不能与 `--resume` 同用）。可同时传 `--session-id` 指定新会话 ID；交接失败（如生成摘要失败）时不会创建会话，同一 ID 可直接重试。Gofer 目前没有对应的模板变量（Gofer 侧计划以 `--from-session` 参数支持），在此之前需要在 job 的 agent args 中手工写入 `--from <session-id>`。
+- 会话不存在：`run`/`chat` 的 `--resume` 目标或 `--from` 来源不存在时，退出码为 4，stderr 输出 `session not found: <id>`（其他失败为 1）。旧版本的会话 ID 在新库中都属于这种情况，可据此改用 `--from` 或新建会话。
 - `suag trace <session> [--turn id] [--json]`、`suag stats [--session id] [--since 7d] [--json]`、`suag export <session> [--redact] [-o file]` 读取同一个会话库，在运行 Suag 的主机上执行（Gofer worker 所在用户的 `SUAG_HOME`）；`export --redact` 去掉工具参数，适合外发。
 - `run` 的 stream-json 在 `plan` 事件上输出完整计划；`ndjson_keep` 示例未保留它，需要在 Gofer 中显示计划时把 `plan` 加入 `ndjson_keep`。
 - `tools.deferred`（`auto`/`always`/`never`，默认 `auto`）在 `~/.suag/config.yaml` 中配置。MCP 工具多时被延迟加载，模型通过内置 `tool_search` 取回；Gofer 不需要额外配置。
