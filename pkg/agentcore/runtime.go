@@ -27,6 +27,11 @@ type Config struct {
 	Hooks               []Hook
 	MaxSteps            int
 	MaxToolCallsPerStep int
+	// MaxStepsWrapUp, when set, makes reaching MaxSteps ask the model for one
+	// more answer instead of failing at once: the text is appended to that
+	// request only (not persisted) as a user message. The run still fails with
+	// the max-steps error if the model keeps requesting tools.
+	MaxStepsWrapUp string
 }
 
 // DefaultRuntime provides the minimal public runtime orchestration.
@@ -43,6 +48,7 @@ type DefaultRuntime struct {
 	hooks               runtimeHookChain
 	maxSteps            int
 	maxToolCallsPerStep int
+	maxStepsWrapUp      string
 }
 
 // New constructs a runnable runtime, filling in built-in defaults when possible.
@@ -60,6 +66,7 @@ func New(cfg Config) *DefaultRuntime {
 		hooks:               newRuntimeHookChain(cfg.Hooks...),
 		maxSteps:            cfg.MaxSteps,
 		maxToolCallsPerStep: cfg.MaxToolCallsPerStep,
+		maxStepsWrapUp:      cfg.MaxStepsWrapUp,
 	}
 }
 
@@ -108,10 +115,14 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	}
 
 	maxSteps := r.effectiveMaxSteps(input)
+	wrappingUp := false
 
 	for {
 		if maxSteps > 0 && state.Step >= maxSteps {
-			return r.returnWithHandledError(ctx, input, state, "max_steps", fmt.Errorf("max steps exceeded: %d", maxSteps), NewControl())
+			if r.maxStepsWrapUp == "" || wrappingUp {
+				return r.returnWithHandledError(ctx, input, state, "max_steps", fmt.Errorf("max steps exceeded: %d", maxSteps), NewControl())
+			}
+			wrappingUp = true
 		}
 
 		systemPrompt, err := r.buildPrompt(ctx, state, ctrl)
@@ -135,6 +146,11 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 			return r.returnWithHandledError(ctx, input, state, "tools", err, ctrl)
 		}
 
+		if wrappingUp {
+			// Tools stay declared (some APIs reject tool history without them);
+			// the instruction asks for a final answer from what is known.
+			messages = append(messages, Message{Role: "user", Content: r.maxStepsWrapUp})
+		}
 		req := &GenerateRequest{
 			System:   systemPrompt,
 			Messages: messages,
@@ -163,6 +179,10 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 		state.Usage.CostUSD += res.Usage.CostUSD
 		if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
 			return r.finishRun(ctx, input, state, result, err)
+		}
+
+		if wrappingUp && res.FinishReason == FinishToolCalls {
+			return r.returnWithHandledError(ctx, input, state, "max_steps", fmt.Errorf("max steps exceeded: %d", maxSteps), NewControl())
 		}
 
 		switch res.FinishReason {

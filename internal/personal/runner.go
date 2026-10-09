@@ -402,6 +402,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		ContextBuilder: r.newContextBuilder(model.ID, turnID, history, promptBuilder, usage, joinContext(joinContext(rulesUpdate, appendUpdate), req.SystemContext)),
 		Hooks:          runtimeHooks,
 		MaxSteps:       r.cfg.MaxSteps,
+		MaxStepsWrapUp: maxStepsWrapUp(r.cfg.MaxSteps),
 		// Refused calls become tool results; aborted approvals end the turn.
 		ToolExecutionPolicy: abortingToolPolicy{},
 	})
@@ -594,6 +595,16 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 		persistErr = errors.Join(persistErr, err)
 	}
 	return result, errors.Join(runErr, persistErr)
+}
+
+// maxStepsWrapUp is the request-only instruction used when a turn reaches its
+// step limit: the model answers from what it has instead of the turn failing
+// and losing the work done so far.
+func maxStepsWrapUp(maxSteps int) string {
+	if maxSteps <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("已达到本轮的步数上限（%d 步）。不要再调用任何工具，直接根据目前已获得的信息回答：说明已完成的部分、尚未完成的部分，以及继续时建议的下一步。", maxSteps)
 }
 
 func validateSessionID(id string) error {

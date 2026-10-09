@@ -262,7 +262,7 @@ func openPersonalRuntimeConfigured(ctx context.Context, workspace, ruleCWD strin
 		ProviderName:    settings.ProviderName,
 		Tools:           toolRegistry,
 		Hooks:           hooks,
-		MaxSteps:        gkconfig.Int("max_steps", 30),
+		MaxSteps:        gkconfig.Int("max_steps", 100),
 		RuleSource: func() (string, string, error) {
 			home, err := appconfig.ResolveSuagHome()
 			if err != nil {

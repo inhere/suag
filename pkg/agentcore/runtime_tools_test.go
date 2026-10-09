@@ -961,3 +961,48 @@ func TestRuntime_Run_ToolCallKeepsAssistantTextAndErrorMark(t *testing.T) {
 		t.Fatalf("failed result must carry is_error, got %#v", msgs[4].ToolResult)
 	}
 }
+
+func TestRuntime_Run_MaxStepsWrapUp(t *testing.T) {
+	newRun := func(results ...*GenerateResult) (*runtimeTestStorage, *runtimeTestProvider, *RunResult, error) {
+		store := newRuntimeTestStorage()
+		tools := NewToolRegistry()
+		tools.Register(&runtimeTestTool{name: "lookup"})
+		provider := &runtimeTestProvider{results: results}
+		res, err := New(Config{
+			Provider:       provider,
+			Storage:        store,
+			Tools:          tools,
+			PromptBuilder:  runtimeTestPromptBuilder{},
+			ContextBuilder: runtimeTestContextBuilder{},
+			MaxSteps:       1,
+			MaxStepsWrapUp: "WRAP UP",
+		}).Run(context.Background(), RunInput{RunID: "run-wrap", AgentID: "agent-1", Instruction: "explore"})
+		return store, provider, res, err
+	}
+	call := &GenerateResult{ToolCalls: []ToolCall{{CallID: "call-1", Name: "lookup"}}, FinishReason: FinishToolCalls}
+
+	t.Run("final answer completes the run", func(t *testing.T) {
+		store, provider, res, err := newRun(call, &GenerateResult{Content: "summary so far", FinishReason: FinishFinal})
+		if err != nil || res == nil || res.Status != RunCompleted || res.Output != "summary so far" {
+			t.Fatalf("expected completed wrap-up run, got %#v, %v", res, err)
+		}
+		last := provider.calls[1].Messages[len(provider.calls[1].Messages)-1]
+		if last.Role != "user" || last.Content != "WRAP UP" {
+			t.Fatalf("expected wrap-up instruction last in the request, got %#v", last)
+		}
+		for _, m := range store.messages["run-wrap"] {
+			if m.Content == "WRAP UP" {
+				t.Fatalf("wrap-up instruction must not be persisted")
+			}
+		}
+	})
+	t.Run("more tool calls still fail", func(t *testing.T) {
+		store, provider, _, err := newRun(call, call)
+		if err == nil || !strings.Contains(err.Error(), "max steps") {
+			t.Fatalf("expected max-steps failure, got %v", err)
+		}
+		if len(provider.calls) != 2 || store.runs["run-wrap"].Status != RunFailed {
+			t.Fatalf("expected exactly one wrap-up call and a failed run")
+		}
+	})
+}

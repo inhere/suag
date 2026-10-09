@@ -37,7 +37,7 @@ mcp:
   #       NODE_ENV: development
 
 # Max ReAct loop steps per agent task
-max_steps: 30
+max_steps: 100
 
 # MCP tool schema deferral: auto (defer when schemas exceed ~10% of the context
 # window) | always | never. Deferred tools are loaded via the tool_search tool.
