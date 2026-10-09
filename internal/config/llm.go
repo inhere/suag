@@ -117,6 +117,7 @@ func BuildLLMProviderFromSettings(settings LLMProviderSettings) (llm.Provider, e
 			APIKey:  firstNonEmpty(settings.APIKey, os.Getenv("ANTHROPIC_API_KEY")),
 			Model:   settings.Model,
 			Headers: settings.Headers,
+			Name:    settings.ProviderName,
 		}), nil
 	case "openai":
 		key := settings.APIKey
