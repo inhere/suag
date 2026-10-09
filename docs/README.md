@@ -4,7 +4,7 @@ Suag 当前是个人 Agent，通过 CLI 或 ACP 运行；Gofer 负责作业、�
 
 ## 当前资料
 
-- [配置分层与 chat 体验设计](design/2026-10-09-config-layering-chat-design.md)与[实施计划](plans/2026-10-09-config-layering-chat-plan.md)：providers/model 配置、包分层、hooks 通用化、chat 渲染（当前实施依据）。
+- [配置分层与 chat 体验设计](design/2026-10-09-config-layering-chat-design.md)与[实施计划](plans/2026-10-09-config-layering-chat-plan.md)（[复盘](plans/2026-10-09-config-layering-chat-retrospective.md)）：providers/model 配置、包分层、hooks 通用化、chat 渲染（当前实施依据）。
 - [核心能力演进设计](design/2026-10-08-core-capabilities-design.md)：单库存储、压缩、计划、`--from` 续接、`tool_search`、观测与工具层审批。
 - [核心能力实施计划](plans/2026-10-08-core-capabilities-plan.md)与[复盘](plans/2026-10-08-core-capabilities-retrospective.md)：已完成。
 - [个人 Agent 设计](design/2026-10-06-personal-agent-redesign-design.md)与[实施计划](plans/2026-10-06-personal-agent-redesign-plan.md)：产品范围与会话边界（历史基线）。
