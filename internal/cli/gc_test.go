@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/gookit/goutil/fsutil"
 	"github.com/gookit/goutil/x/assert"
 	appconfig "github.com/inhere/suag/internal/config"
 	personalprocess "github.com/inhere/suag/internal/personal/process"
@@ -27,6 +29,11 @@ func TestGCCommand(t *testing.T) {
 	}
 	assert.NoErr(t, repo.CreateSession(ctx, store.Session{ID: "gc-new", Title: "new"}))
 	assert.NoErr(t, repo.Close())
+	transcripts := filepath.Join(home, "transcripts")
+	assert.NoErr(t, os.MkdirAll(transcripts, 0o700))
+	for _, id := range []string{"gc-idle", "gc-busy"} {
+		assert.NoErr(t, os.WriteFile(filepath.Join(transcripts, id+".jsonl"), []byte("{}\n"), 0o600))
+	}
 
 	exists := func(id string) bool {
 		repo, err := store.Open(dbPath)
@@ -61,5 +68,7 @@ func TestGCCommand(t *testing.T) {
 		assert.False(t, exists("gc-idle"))
 		assert.True(t, exists("gc-busy"))
 		assert.True(t, exists("gc-new"))
+		assert.False(t, fsutil.IsFile(filepath.Join(transcripts, "gc-idle.jsonl")))
+		assert.True(t, fsutil.IsFile(filepath.Join(transcripts, "gc-busy.jsonl")))
 	})
 }

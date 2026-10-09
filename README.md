@@ -45,7 +45,7 @@ Model calls, tool calls, compactions and denials are recorded as events in the s
 suag trace <session> [--turn <turn-id>] [--json]   # timeline of one session, including update_plan records (`plan ✔/▶/○ step`; `--json` rows have `"kind":"plan"`)
 suag stats [--session <id>] [--since 12h|7d] [--json]  # calls, latency, tokens, cache hits
 suag export <session> [--redact] [-o <file>]       # entries and events as jsonl (--redact drops tool arguments)
-suag gc --older-than 30d [--apply]                 # list (default) or delete sessions idle that long, with their events; live sessions are kept
+suag gc --older-than 30d [--apply]                 # list (default) or delete sessions idle that long, with their events and transcripts/<id>.jsonl; live sessions are kept
 ```
 
 ## Tool denial

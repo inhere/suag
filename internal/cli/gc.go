@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -79,6 +81,16 @@ func runGC(ctx context.Context, out io.Writer, cutoff time.Time, apply bool) err
 	if err != nil {
 		return err
 	}
+	if report.Applied {
+		// The readable per-session transcript (transcripts/<id>.jsonl) is not
+		// in the database; remove it with its session whatever the current
+		// transcripts setting, since an earlier run may have written it.
+		for _, session := range report.Sessions {
+			if err := os.Remove(filepath.Join(home, "transcripts", session.ID+".jsonl")); err != nil && !errors.Is(err, os.ErrNotExist) {
+				fmt.Fprintf(out, "warning: remove transcript of %s: %v\n", session.ID, err)
+			}
+		}
+	}
 	writeGCReport(out, report, cutoff)
 	return nil
 }
@@ -95,7 +107,7 @@ func writeGCReport(out io.Writer, report store.GCReport, cutoff time.Time) {
 	if report.Applied {
 		verb = "已删除"
 	}
-	fmt.Fprintf(out, "%s %d 个会话（%s 之前未更新）与 %d 条事件记录", verb, len(report.Sessions),
+	fmt.Fprintf(out, "%s %d 个会话（%s 之前未更新，含其 transcript 文件）与 %d 条事件记录", verb, len(report.Sessions),
 		cutoff.Local().Format("2006-01-02 15:04"), report.Events)
 	if !report.Applied {
 		fmt.Fprint(out, "；加 --apply 执行")
