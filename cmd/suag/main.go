@@ -45,9 +45,20 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	if err := newCLI(ctx, os.Stdin, os.Stdout, os.Stderr).RunWithArgs(args); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(commandExitCode(err))
+		msg, code := exitReport(ctx, err)
+		fmt.Fprintln(os.Stderr, msg)
+		os.Exit(code)
 	}
+}
+
+// exitReport turns the command error into the stderr line and exit code. An
+// error caused by Ctrl-C/SIGTERM (ctx canceled by the signal) reads "已中断"
+// instead of "context canceled" and exits 130, the shell convention for SIGINT.
+func exitReport(ctx context.Context, err error) (string, int) {
+	if ctx.Err() != nil && errors.Is(err, context.Canceled) {
+		return "已中断", 130
+	}
+	return err.Error(), commandExitCode(err)
 }
 
 func formatVersion(version, commit string) string {

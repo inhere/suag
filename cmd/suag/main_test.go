@@ -222,3 +222,20 @@ func TestTraceCommandPrintsSessionTimeline(t *testing.T) {
 		assert.Err(t, err)
 	})
 }
+
+func TestExitReportInterrupted(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	msg, code := exitReport(canceled, fmt.Errorf("run turn: %w", context.Canceled))
+	assert.Eq(t, "已中断", msg)
+	assert.Eq(t, 130, code)
+
+	// A canceled error without the signal context canceled is reported as is.
+	msg, code = exitReport(context.Background(), context.Canceled)
+	assert.Eq(t, "context canceled", msg)
+	assert.Eq(t, 1, code)
+
+	msg, code = exitReport(canceled, app.SessionNotFoundError{ID: "x"})
+	assert.Eq(t, "session not found: x", msg)
+	assert.Eq(t, 4, code)
+}
