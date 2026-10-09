@@ -28,7 +28,7 @@ func newStatsCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	})
 	cmd.SetOutput(stderr)
 	cmd.StringVar(&since, "since", "", "only events newer than this, e.g. 12h or 7d")
-	cmd.StringVar(&session, "session", "", "only events of this session ID")
+	cmd.StringVar(&session, "session", "", "only events of this session ID;;sid")
 	cmd.BoolVar(&asJSON, "json", false, "write a single JSON object")
 	return cmd
 }
@@ -59,7 +59,7 @@ func newExportCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	})
 	cmd.SetOutput(stderr)
 	cmd.BoolVar(&redact, "redact", false, "drop tool call arguments")
-	cmd.StringVar(&outFile, "o", "", "write to this file (mode 0600) instead of stdout")
+	cmd.StringVar(&outFile, "output", "", "write to this file (mode 0600) instead of stdout;;o")
 	return cmd
 }
 

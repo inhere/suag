@@ -126,12 +126,12 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID;;r")
 	cmd.StringVar(&opts.FromID, "from", "", "start a new session that inherits the summary, plan and loaded tools of this session")
 	cmd.StringVar(&opts.OutputFormat, "output-format", "text", "text or stream-json")
-	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool; MCP allows only default query tools and gofer_work_report;;ro")
+	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool, MCP allows only default query tools and gofer_work_report;;ro")
 	cmd.BoolVar(&opts.AllowWrite, "allow-write", false, "allow workspace write and shell tools for this run")
-	cmd.StringVar(&opts.AppendSystemPrompt, "append-system-prompt", "", "append system instructions after rules; empty keeps the saved prompt")
+	cmd.StringVar(&opts.AppendSystemPrompt, "append-system-prompt", "", "append system instructions after rules, empty keeps the saved prompt")
 	cmd.BoolVar(&opts.ClearAppendSystemPrompt, "clear-append-system-prompt", false, "clear the session's saved append prompt (a non-empty --append-system-prompt still replaces it)")
 	cmd.BoolVar(&opts.NoProjectRules, "no-project-rules", false, "skip project rule files for debugging")
-	cmd.Var((*cflag.Strings)(&opts.MCPConfigs), "mcp-config", "Claude-style JSON MCP server config; repeatable")
+	cmd.Var((*cflag.Strings)(&opts.MCPConfigs), "mcp-config", "Claude-style JSON MCP server config")
 	return cmd
 }
 

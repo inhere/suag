@@ -12,7 +12,7 @@ import (
 
 func SetupLogging() {
 	level := slog.LevelInfo
-	debugMode := os.Getenv("AXON_DEBUG") != ""
+	debugMode := os.Getenv("SUAG_DEBUG") != ""
 	if debugMode {
 		level = slog.LevelDebug
 	}
