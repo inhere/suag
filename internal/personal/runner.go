@@ -51,7 +51,6 @@ type Config struct {
 	// AppendSystemPromptSet marks AppendSystemPrompt as explicitly supplied by
 	// the caller, so an empty value clears the saved prompt instead of keeping it.
 	AppendSystemPromptSet bool
-	GoferJob              bool
 	Hooks                 []agentcore.Hook
 	TranscriptDir         string
 	LockRoot              string
@@ -292,8 +291,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			}
 		}
 		if req.Prompt != "" {
-			injected := req.Injected || strings.HasPrefix(req.Prompt, "[gofer web 回复] ")
-			if err := transcript.AppendUser(req.Prompt, injected); err != nil {
+			// Only the caller knows whether a person typed this prompt.
+			if err := transcript.AppendUser(req.Prompt, req.Injected); err != nil {
 				slog.Warn("append personal transcript", "session_id", model.ID, "err", err)
 			}
 		}
@@ -393,7 +392,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		runtimeHooks = append(runtimeHooks, toolResultEmitHook{sink: req.Emit, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
 	}
 	storage := r.cfg.Repository.AgentStorage()
-	promptBuilder := rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Meta, goferJob: r.cfg.GoferJob, deferredTools: r.deferredToolsPrompt()}
+	promptBuilder := rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Meta, deferredTools: r.deferredToolsPrompt()}
 	runtime := agentcore.New(agentcore.Config{
 		Provider:       r.cfg.Provider,
 		Storage:        storage,
@@ -624,7 +623,6 @@ func emit(ctx context.Context, sink EmitFunc, event Event) error {
 type rulesPromptBuilder struct {
 	base     agentcore.PromptBuilder
 	metadata map[string]any
-	goferJob bool
 	// deferredTools is the stable deferred-tool listing ("" when none).
 	deferredTools string
 }
@@ -642,9 +640,6 @@ func (b rulesPromptBuilder) BuildSystemPrompt(ctx context.Context, state *agentc
 		if value, _ := b.metadata[key].(string); value != "" {
 			parts = append(parts, value)
 		}
-	}
-	if b.goferJob {
-		parts = append(parts, "当前运行在 Gofer job 中；可用 gofer work report / gofer issue 汇报工作进度与结果。")
 	}
 	if b.deferredTools != "" {
 		parts = append(parts, b.deferredTools)

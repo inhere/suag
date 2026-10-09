@@ -100,16 +100,8 @@ func (s *chatInputSource) DeliverWait(text, from string) (bool, <-chan error, er
 	if strings.TrimSpace(text) == "" {
 		return false, nil, fmt.Errorf("delivery text is empty")
 	}
-	from = safeSender(from)
-	prefix := "[来自 " + from + "] "
-	if strings.EqualFold(from, "gofer") {
-		prefix = goferReplyPrefix
-	}
-	if strings.HasPrefix(text, goferReplyPrefix) || strings.HasPrefix(text, "[来自 ") {
-		prefix = ""
-	}
 	settled := make(chan error, 1)
-	event := chatInputEvent{line: prefix + text, injected: true, settled: settled}
+	event := chatInputEvent{line: deliveryLine(text, from), injected: true, settled: settled}
 	// Hold mu across the closed check and the enqueue so DiscardQueued cannot miss a delivery.
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -143,6 +135,29 @@ func (s *chatInputSource) DiscardQueued() int {
 	}
 }
 
+// deliveryLine labels a delivered message with its source: "[来自 <from>] text".
+// Text that already starts with a "[...] " tag (the sender labeled it itself)
+// is kept as is.
+func deliveryLine(text, from string) string {
+	if hasSourceTag(text) {
+		return text
+	}
+	return "[来自 " + safeSender(from) + "] " + text
+}
+
+// hasSourceTag reports whether text starts with a non-empty "[label]" on its first line
+// followed by a space.
+func hasSourceTag(text string) bool {
+	if !strings.HasPrefix(text, "[") {
+		return false
+	}
+	firstLine, _, _ := strings.Cut(text, "\n")
+	end := strings.IndexByte(firstLine, ']')
+	return end > 1 && end+1 < len(firstLine) && firstLine[end+1] == ' '
+}
+
+// safeSender is the source label: the request's From (`suag send --source`),
+// "unknown" when empty, with control characters dropped and at most 64 runes.
 func safeSender(from string) string {
 	from = strings.TrimSpace(from)
 	if from == "" {

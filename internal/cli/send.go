@@ -14,7 +14,7 @@ import (
 const maxSendStdinBytes = 1 << 20
 
 func newSendCommand(stdin io.Reader, stderr io.Writer) *capp.Cmd {
-	var sendSession, sendText string
+	var sendSession, sendText, sendSource string
 	var sendWait bool
 	send := capp.NewCmd("send", "Send text to a local Suag chat process", func(c *capp.Cmd) error {
 		if len(c.RemainArgs()) != 0 {
@@ -56,7 +56,7 @@ func newSendCommand(stdin io.Reader, stderr io.Writer) *capp.Cmd {
 		// --wait keeps the connection until a queued message actually starts a turn (or is
 		// discarded, exit 3). Without it "queued" returns at once, so an automated
 		// sender never blocks for the length of the chat's current turn.
-		response, err := personalprocess.Send(record, personalprocess.Request{Text: text, From: "cli", Wait: sendWait})
+		response, err := personalprocess.Send(record, personalprocess.Request{Text: text, From: sendSource, Wait: sendWait})
 		if errors.Is(err, personalprocess.ErrNotOnline) {
 			return processExitError{code: 3, err: err}
 		}
@@ -73,6 +73,7 @@ func newSendCommand(stdin io.Reader, stderr io.Writer) *capp.Cmd {
 	send.SetOutput(stderr)
 	send.StringVar(&sendSession, "session", "", "session ID, prefix, or name")
 	send.StringVar(&sendText, "text", "", "message text; defaults to stdin")
+	send.StringVar(&sendSource, "source", "cli", "source label the chat shows before the text as [来自 <source>]; text already starting with a [...] tag is shown as is")
 	send.BoolVar(&sendWait, "wait", false, "wait until a queued message starts a turn; exit 3 if it is discarded")
 	return send
 }

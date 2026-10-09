@@ -18,9 +18,8 @@ import (
 )
 
 const (
-	goferReplyPrefix = "[gofer web 回复] "
-	toolHookLimit    = 8 * 1024
-	stopHookLimit    = 16 * 1024
+	toolHookLimit = 8 * 1024
+	stopHookLimit = 16 * 1024
 )
 
 // Options selects which session a chat opens: a new one, an existing one, or a

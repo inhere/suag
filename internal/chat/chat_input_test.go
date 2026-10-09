@@ -138,3 +138,26 @@ func TestChatInputSource_DiscardQueued(t *testing.T) {
 	_, _, err = source.DeliverWait("late", "cli")
 	assert.True(t, errors.Is(err, process.ErrSessionClosed))
 }
+
+func TestDeliveryLine(t *testing.T) {
+	for _, tc := range []struct {
+		name, text, from, want string
+	}{
+		{name: "send default source", text: "hello", from: "cli", want: "[来自 cli] hello"},
+		{name: "send --source", text: "hello", from: "web-ui", want: "[来自 web-ui] hello"},
+		{name: "gofer is not special", text: "hello", from: "gofer", want: "[来自 gofer] hello"},
+		{name: "empty source", text: "hello", from: " ", want: "[来自 unknown] hello"},
+		{name: "control chars dropped", text: "hello", from: "a\x1bb\n", want: "[来自 ab] hello"},
+		{name: "existing tag kept", text: "[x] hello", from: "gofer", want: "[x] hello"},
+		{name: "sender's own reply tag kept", text: "[gofer web 回复] hi", from: "gofer", want: "[gofer web 回复] hi"},
+		{name: "existing source tag kept", text: "[来自 bot] hi", from: "cli", want: "[来自 bot] hi"},
+		{name: "tag needs a following space", text: "[x]hello", from: "cli", want: "[来自 cli] [x]hello"},
+		{name: "tag must close on the first line", text: "[x\n] hello", from: "cli", want: "[来自 cli] [x\n] hello"},
+		{name: "empty brackets are not a tag", text: "[] hello", from: "cli", want: "[来自 cli] [] hello"},
+		{name: "tag must lead the text", text: " [x] hello", from: "cli", want: "[来自 cli]  [x] hello"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Eq(t, tc.want, deliveryLine(tc.text, tc.from))
+		})
+	}
+}

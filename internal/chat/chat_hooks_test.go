@@ -291,7 +291,7 @@ func TestChatDeliveryQueueIsBoundedAndInjectsOnlyOnce(t *testing.T) {
 	}
 	for i := 0; i < personalprocess.MaxQueue; i++ {
 		event := <-source.deliveries
-		if !event.injected || event.line != fmt.Sprintf("[gofer web 回复] message-%d", i) {
+		if !event.injected || event.line != fmt.Sprintf("[来自 gofer] message-%d", i) {
 			t.Fatalf("unexpected queued delivery %#v", event)
 		}
 	}
@@ -806,7 +806,7 @@ func TestHookEventTranscriptPathAndSource(t *testing.T) {
 	})
 }
 
-func TestGoferHookNoticeIsShownOnStderr(t *testing.T) {
+func TestHookNoticeIsShownOnStderr(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	t.Setenv("SUAG_HOME", t.TempDir())

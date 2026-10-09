@@ -192,7 +192,6 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		},
 		AppendSystemPrompt:    appendSystemPrompt(opts.AppendSystemPrompt),
 		AppendSystemPromptSet: opts.ClearAppendSystemPrompt,
-		GoferJob:              os.Getenv("GOFER_JOB_ID") != "",
 		TranscriptDir:         transcriptDir,
 		LockRoot:              lockRoot,
 		ProcessRoot:           processRoot,

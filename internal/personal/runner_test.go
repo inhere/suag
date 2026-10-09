@@ -249,7 +249,7 @@ func TestRunnerUnknownResumeDoesNotCreateSession(t *testing.T) {
 	assert.Eq(t, true, err != nil && strings.Contains(err.Error(), "prompt is required"))
 }
 
-func TestRunnerCreatesGoferInjectedSessionID(t *testing.T) {
+func TestRunnerCreatesCallerSuppliedSessionID(t *testing.T) {
 	ctx := context.Background()
 	dbPath := newStorePath(t)
 	repo, err := store.Open(dbPath)

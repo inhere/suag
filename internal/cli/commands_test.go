@@ -47,6 +47,13 @@ func TestCLIRegistersProcessCommandsAndSendExitCodes(t *testing.T) {
 	assert.Eq(t, "cli:stdin delivery", <-delivered)
 	assert.Eq(t, "delivered\n", stderr.String())
 
+	// --source replaces the default "cli" source label.
+	stderr.Reset()
+	err = newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"send", "--session", "session-cli", "--source", "web-ui", "--text", "hi"})
+	assert.NoErr(t, err)
+	assert.Eq(t, "web-ui:hi", <-delivered)
+	assert.Eq(t, "delivered\n", stderr.String())
+
 	stdout.Reset()
 	stderr.Reset()
 	err = newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"ps", "--json"})

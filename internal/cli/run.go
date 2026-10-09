@@ -35,8 +35,11 @@ type personalOptions struct {
 	// often always pass the flag and render it empty when there is no prompt.
 	ClearAppendSystemPrompt bool
 	NoProjectRules          bool
-	MCPConfigs              []string
-	CLIMode                 bool
+	// Injected (run only) marks this turn's prompt as not typed by a person;
+	// the transcript records it as injected.
+	Injected   bool
+	MCPConfigs []string
+	CLIMode    bool
 }
 
 // RunPersonalCLI is the shared headless and interactive entry, independent of the old Web host.
@@ -89,6 +92,9 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.BoolVar(&opts.ClearAppendSystemPrompt, "clear-append-system-prompt", false, "clear the session's saved append prompt (a non-empty --append-system-prompt still replaces it)")
 	cmd.BoolVar(&opts.NoProjectRules, "no-project-rules", false, "skip project rule files for debugging")
 	cmd.Var((*cflag.Strings)(&opts.MCPConfigs), "mcp-config", "Claude-style JSON MCP server config")
+	if mode == "run" {
+		cmd.BoolVar(&opts.Injected, "injected", false, "mark this turn's prompt as not typed by a person")
+	}
 	return cmd
 }
 
@@ -151,7 +157,7 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 		}
 		return encoder.Encode(line)
 	}
-	result, err := runner.Run(ctx, personal.RunRequest{SessionID: sessionID, Prompt: opts.Prompt, Emit: emit})
+	result, err := runner.Run(ctx, personal.RunRequest{SessionID: sessionID, Prompt: opts.Prompt, Injected: opts.Injected, Emit: emit})
 	streamed := live.Finish() // end the streamed line before any error or status output
 	if err != nil {
 		if encoder != nil {

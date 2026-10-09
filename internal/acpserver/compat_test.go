@@ -130,7 +130,7 @@ func connectCompat(t *testing.T, agent *compatAgent, client *compatClient) *acp.
 	return conn
 }
 
-func TestACPGoSDKSupportsGoferSessionAndPermissionContract(t *testing.T) {
+func TestACPGoSDKSupportsClientSessionAndPermissionContract(t *testing.T) {
 	agent := &compatAgent{}
 	client := &compatClient{
 		selected:   "reject",

@@ -109,7 +109,7 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	assert.Eq(t, true, errors.Is(err, os.ErrNotExist))
 }
 
-func TestPersonalCLIInjectsRulesPromptAndGoferHint(t *testing.T) {
+func TestPersonalCLIInjectsRulesAndAppendPrompt(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	home := t.TempDir()
@@ -119,6 +119,7 @@ func TestPersonalCLIInjectsRulesPromptAndGoferHint(t *testing.T) {
 	suagHome := t.TempDir()
 	t.Setenv("SUAG_HOME", suagHome)
 	t.Setenv("SUAG_APPEND_SYSTEM_PROMPT", "environment prompt")
+	// A job id in the environment no longer adds any prompt text.
 	t.Setenv("GOFER_JOB_ID", "test-job")
 	if err := os.WriteFile(filepath.Join(suagHome, "AGENTS.md"), []byte("user-level rule"), 0644); err != nil {
 		t.Fatal(err)
@@ -165,10 +166,12 @@ func TestPersonalCLIInjectsRulesPromptAndGoferHint(t *testing.T) {
 	assert.Eq(t, true, strings.Contains(systems[0], "project-level rule"))
 	assert.Eq(t, true, strings.Contains(systems[0], "flag prompt"))
 	assert.Eq(t, false, strings.Contains(systems[0], "environment prompt"))
-	assert.Eq(t, true, strings.Contains(systems[0], "gofer work report"))
 	assert.Eq(t, true, strings.Contains(systems[1], "user-level rule"))
 	assert.Eq(t, false, strings.Contains(systems[1], "project-level rule"))
 	assert.Eq(t, true, strings.Contains(systems[1], "environment prompt"))
+	for _, system := range systems {
+		assert.Eq(t, false, strings.Contains(strings.ToLower(system), "gofer"))
+	}
 }
 
 func newCLITestRunner(t *testing.T, provider agentcore.Provider, hooks ...agentcore.Hook) (*personal.Runner, *store.Store) {
@@ -189,7 +192,7 @@ func newCLITestRunner(t *testing.T, provider agentcore.Provider, hooks ...agentc
 	return runner, repo
 }
 
-func TestExecutePersonalRunEmitsGoferReadableStream(t *testing.T) {
+func TestExecutePersonalRunEmitsMachineReadableStream(t *testing.T) {
 	runner, _ := newCLITestRunner(t, mock.NewProvider(mock.Stream(mock.Final("done"),
 		agentcore.StreamEvent{Kind: agentcore.StreamEventTextDelta, Delta: "do"},
 	)))
@@ -339,5 +342,54 @@ func TestPersonalFromHandoff(t *testing.T) {
 		e, err := repo.LatestEntry(ctx, "child-1", store.EntryHandoff)
 		assert.NoErr(t, err)
 		assert.Eq(t, true, e != nil && strings.Contains(string(e.JSON), "OLD-SUMMARY"))
+	})
+}
+
+// TestPersonalRunInjectedFlagMarksTranscript checks that only run --injected marks
+// the prompt as injected; a "[gofer web 回复] " text prefix no longer does.
+func TestPersonalRunInjectedFlagMarksTranscript(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	suagHome := t.TempDir()
+	t.Setenv("SUAG_HOME", suagHome)
+	workspace := t.TempDir()
+	t.Chdir(workspace)
+	_ = gkconfig.Set("workspace", workspace)
+	_ = gkconfig.Set("model", "openai/gpt-4o")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	t.Cleanup(server.Close)
+	setTestProvider(t, server.URL)
+
+	for _, args := range [][]string{
+		{"--prompt", "typed", "--session-id", "injected-test"},
+		{"--prompt", "[gofer web 回复] reply", "--resume", "injected-test"},
+		{"--prompt", "relayed", "--resume", "injected-test", "--injected"},
+	} {
+		var stdout, stderr bytes.Buffer
+		assert.NoErr(t, RunPersonalCLI(context.Background(), "run", args, strings.NewReader(""), &stdout, &stderr))
+	}
+	data, err := os.ReadFile(filepath.Join(suagHome, "transcripts", "injected-test.jsonl"))
+	assert.Require(t, assert.NoErr(t, err))
+	got := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var entry struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Injected *bool  `json:"injected"`
+		}
+		assert.NoErr(t, json.Unmarshal([]byte(line), &entry))
+		if entry.Type == "user" && entry.Injected != nil {
+			got[entry.Text] = *entry.Injected
+		}
+	}
+	assert.Eq(t, map[string]bool{"typed": false, "[gofer web 回复] reply": false, "relayed": true}, got)
+
+	t.Run("chat has no --injected", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		err := RunPersonalCLI(context.Background(), "chat", []string{"--injected"}, strings.NewReader(":quit\n"), &stdout, &stderr)
+		assert.Err(t, err)
 	})
 }
