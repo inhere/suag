@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # Suag 配置重设计、分层整理与 chat 显示 设计
 
-> 状态：Draft 0.2 / 待人工计划批准
+> 状态：Draft 0.2 / 已批准进入计划（2026-10-09 用户：“可以 按推荐来”，Q1–Q3 均按推荐）
 
 ## 修订记录
 
@@ -171,6 +171,8 @@ chat 一轮：输入 → 渲染器打印提示 → Runner 事件流（文本增�
 - Q1 旧 `llm` 段：直接报错并提示新写法（推荐，无历史包袱）／读取时自动转换为新结构。
 - Q2 删除 `--provider` 与 `SUAG_PROVIDER`，只用 `--model provider/model`（推荐）／保留 `--provider` 作为选择 provider 的简写。
 - Q3 Gofer 侧配合（job 环境设 `SUAG_HOOKS=off` 与 `SUAG_APPEND_SYSTEM_PROMPT`、经 run 投递 web 回复时加 `--injected`）与 suag 同批交付，由 gofer 会话在 Gofer 仓库实施（推荐）／suag 先保留兼容读取 `GOFER_JOB_ID` 一个版本。用户 suag 配置的迁移（`hooks`、`tools.read_only_allow`、`providers`）由 suag 文档与样例给出。
+
+决议（2026-10-09）：Q1 旧 `llm` 段直接报错并提示新写法；Q2 删除 `--provider` 与 `SUAG_PROVIDER`；Q3 Gofer 侧配合同批交付，由 gofer 会话实施，suag 不保留 `GOFER_JOB_ID` 兼容。
 
 ## 结论与人工计划 Gate
 
