@@ -5,6 +5,8 @@ go 1.25
 require (
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/goccy/go-yaml v1.19.2
+	github.com/gookit/cliui v0.5.3
+	github.com/gookit/color v1.6.2-0.20260604125953-289d54c4470a
 	github.com/gookit/config/v2 v2.2.9
 	github.com/gookit/goutil v0.8.1
 	github.com/gookit/ini/v2 v2.3.2
@@ -22,6 +24,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/tools v0.23.0 // indirect

@@ -8,10 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	appconfig "github.com/inhere/suag/internal/config"
 	suaghooks "github.com/inhere/suag/internal/hooks"
-	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
 	personalprocess "github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/pkg/agentcore"
@@ -109,6 +109,13 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		return err
 	}
 	defer inputSource.Close()
+	// All conversation output goes through the renderer (and the input source,
+	// which keeps the line editor's screen state consistent).
+	render := newRenderer(rendererOptions{
+		Out: inputSource, Err: stderr,
+		Color: colorEnabledFor(stdout), ErrColor: colorEnabledFor(stderr),
+		Provider: runner.ProviderName(), Model: runner.Model(),
+	})
 	if runner.ProcessRoot() != "" {
 		processServer, err = startChatProcessRegistration(sessionID, runner.ProcessRoot(), runner, inputSource)
 		if err != nil {
@@ -148,7 +155,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	fmt.Fprintln(inputSource, "Suag chat — type a task, :session, :compact or :quit.")
 	stopHookActive := false
 	for {
-		line, hasLine, err, stopDone, injected, interrupted := nextChatInput(ctx, inputSource, waiting, &lostReply)
+		line, hasLine, err, stopDone, injected, interrupted := nextChatInput(ctx, inputSource, render, waiting, &lostReply)
 		if interrupted {
 			waiting = nil
 		} else if waiting != nil && stopDone {
@@ -220,16 +227,15 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		if processServer != nil {
 			_ = processServer.SetBusy(true)
 		}
-		live := output.NewLiveText(inputSource)
+		render.BeginTurn()
+		turnStart := time.Now()
 		result, runErr := runner.Run(ctx, personal.RunRequest{
 			SessionID:     sessionID,
 			Prompt:        line,
 			SystemContext: pendingContext,
 			Injected:      injected,
 			Emit: func(eventCtx context.Context, event personal.Event) error {
-				if live.Handle(event) {
-					return nil
-				}
+				render.Handle(event)
 				if hooks == nil || event.Kind != "tool_result" {
 					return nil
 				}
@@ -254,22 +260,25 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		// "turn finished, back to waiting for input", otherwise a hook-side session stays "running" forever.
 		stopMessage := ""
 		if runErr != nil {
-			live.Finish()
+			render.Finish()
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			fmt.Fprintln(stderr, "Error:", runErr)
+			render.Error(runErr)
 			stopMessage = "Error: " + runErr.Error()
 		} else if result.Status == agentcore.RunYielded {
-			fmt.Fprintln(inputSource, "Waiting for more input.")
+			render.Finish()
+			render.Notice("Waiting for more input.")
+			render.Status(result, time.Since(turnStart))
 		} else {
 			// Streamed text is already on screen; otherwise print the answer now.
-			if !live.Finish() {
-				fmt.Fprintln(inputSource, result.Output)
+			if !render.Finish() {
+				render.Answer(result.Output)
 			}
 			if len(result.DeniedTools) > 0 {
-				fmt.Fprintln(inputSource, "Input required to authorize an MCP tool.")
+				render.Notice("Input required to authorize an MCP tool.")
 			}
+			render.Status(result, time.Since(turnStart))
 			stopMessage = result.Output
 		}
 		if hooks != nil {
@@ -301,12 +310,8 @@ func ensureTranscriptFile(path, sessionID string) {
 	_ = transcript.Close()
 }
 
-func nextChatInput(ctx context.Context, source *chatInputSource, waiting suaghooks.Wait, lost *string) (string, bool, error, bool, bool, bool) {
-	prompt := "> "
-	if waiting != nil {
-		prompt = "> (web 可回复) "
-	}
-	if !source.Request(prompt) {
+func nextChatInput(ctx context.Context, source *chatInputSource, render *Renderer, waiting suaghooks.Wait, lost *string) (string, bool, error, bool, bool, bool) {
+	if !source.Request(render.Prompt(waiting != nil)) {
 		return "", false, ctx.Err(), false, false, false
 	}
 	var stopDone <-chan suaghooks.Result

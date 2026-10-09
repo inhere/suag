@@ -189,6 +189,11 @@ func (r *Runner) HoldSessionLock(sessionID string) (func() error, error) {
 
 func (r *Runner) ProcessRoot() string { return r.cfg.ProcessRoot }
 
+// ProviderName and Model identify the provider config id and model this runner
+// calls; chat shows them in its per-turn status line.
+func (r *Runner) ProviderName() string { return r.cfg.ProviderName }
+func (r *Runner) Model() string        { return r.cfg.Model }
+
 func (r *Runner) NewSession(ctx context.Context, id, title string) (Session, error) {
 	if id == "" {
 		id = NewSessionID()
