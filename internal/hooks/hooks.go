@@ -205,7 +205,14 @@ func (h *commandClient) StartStop(ctx context.Context, event Event) Wait {
 	wait := &stopWait{call: h.Call, event: event, cancel: cancel, done: done}
 	go func() {
 		response, err := h.call(waitCtx, event, true)
-		if err != nil {
+		switch {
+		case err == nil:
+		case waitCtx.Err() != nil:
+			// Cancelled on purpose (the user typed, or chat is exiting): the
+			// kill error is expected and, on Windows, often "Access is denied"
+			// for a child that already exited. Not worth a warning on the prompt.
+			slog.Debug("stop hook cancelled", "event", event.Name, "err", err)
+		default:
 			slog.Warn("hook command failed", "event", event.Name, "err", err)
 		}
 		done <- Result{Response: response, Err: err}

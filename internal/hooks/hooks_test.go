@@ -2,9 +2,11 @@ package hooks
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -207,6 +209,27 @@ func TestStopInterruptSendsInterruptWithoutStopArgs(t *testing.T) {
 	}
 	assert.Require(t, assert.NotNil(t, interrupt))
 	assert.Eq(t, []string{"base"}, interrupt.Args)
+}
+
+func TestCancelledStopIsNotReportedAsAFailure(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	useFakeHook(t, "base")
+	assert.NoErr(t, gkconfig.Set("hooks.stop_wait_sec", 7))
+	h := mustNew(t)
+	t.Setenv("SUAG_FAKE_HOOK_SLEEP_MS", "2000")
+
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	// The user typing interrupts the waiting Stop hook: the killed process is
+	// expected (on Windows the kill often reports "Access is denied").
+	wait := h.StartStop(context.Background(), Event{Name: "Stop"})
+	time.Sleep(100 * time.Millisecond)
+	wait.Interrupt(context.Background())
+	assert.StrNotContains(t, logs.String(), "event=Stop")
 }
 
 func eventNames(calls []fakeHookCall) []string {
