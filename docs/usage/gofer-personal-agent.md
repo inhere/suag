@@ -81,6 +81,16 @@ CLI 可在 agent 的 `args` 中加入 `--mcp-config <file>` 接入本机 stdio M
 
 MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目形如 `server/工具glob`：`tools.auto_allow` 用于普通运行；`--read-only` 只认 `tools.read_only_allow`（条目必须带服务名，`auto_allow` 不会扩大它）。两者都为空时所有 MCP 调用被拒绝。Gofer 只读 job 需要的典型配置见「升级迁移」。其余 MCP 工具在 CLI 中被拒绝，即使带 `--allow-write`；拒绝信息作为工具错误交给模型，回合继续。拒绝语义见下文“工具拒绝语义”。需要逐次审批 MCP 写工具时使用 ACP。
 
+### chat 的写权限与终端确认
+
+仅作用于 `suag chat`（`run` 与 ACP 行为不变）：
+
+- `tools.allow_write`（布尔，缺省 `false`）：为 `true` 时 chat 启用写文件与命令工具，等同 `--allow-write`。`run` 仍需 `--allow-write`；`--read-only` 优先；ACP 不读取该项；非布尔值使 chat 启动失败。
+- `tools.approval`（`ask` 缺省 / `auto`）：`ask` 时，只读名单（`file_read`、`file_list`、`update_plan`、`tool_search`）之外的所有非 MCP 工具（目前是 `file_write`、`shell_exec`，配置 `serpapi_key` 时还有 `web_search`）执行前在终端询问，显示完整命令 / 路径与字节数 / 查询（已脱敏、不截断）。回答 `y`/`yes` 允许一次，`a`/`always` 在本次 chat 进程内放行后续同名工具，其他（含回车）拒绝，回合继续。询问中 Ctrl-C / Ctrl-D 只取消本回合并显示“已取消”，不退出 chat；回合中提前敲的输入不会被当作回答。`auto` 不询问。
+- 标准输入不是终端时，需确认的工具一律拒绝，并提示设置 `tools.approval: auto`。
+- 同一回合 3 次拒绝结束回合；回合末显示“本轮被拒绝的工具：…”。
+- MCP 工具不询问，仍按 `tools.auto_allow` / `tools.read_only_allow`。
+
 ```powershell
 gofer job run --runner server --project my-tools-dev --cwd inhere-tools/suag --agent suag --read-only --prompt "检查当前项目"
 gofer job show <job-id>
@@ -95,6 +105,7 @@ gofer job resume <job-id> --prompt "继续上个问题"
 - `--from <session>`：`suag run --from <旧会话> --prompt ...` 新建会话并继承来源的摘要、计划与已加载工具（来源只读，不能与 `--resume` 同用）。可同时传 `--session-id` 指定新会话 ID；交接失败（如生成摘要失败）时不会创建会话，同一 ID 可直接重试。Gofer 目前没有对应的模板变量（Gofer 侧计划以 `--from-session` 参数支持），在此之前需要在 job 的 agent args 中手工写入 `--from <session-id>`。
 - 会话不存在：`run`/`chat` 的 `--resume` 目标或 `--from` 来源不存在时，退出码为 4，stderr 输出 `session not found: <id>`；被 Ctrl-C / SIGTERM 中断时退出码为 130，stderr 输出 `已中断`；其他失败为 1。旧版本的会话 ID 在新库中都属于这种情况，可据此改用 `--from` 或新建会话。
 - `suag trace <session> [--turn id] [--json]`、`suag stats [--session id] [--since 7d] [--json]`、`suag export <session> [--redact] [-o file]` 读取同一个会话库，在运行 Suag 的主机上执行（Gofer worker 所在用户的 `SUAG_HOME`）；`export --redact` 去掉工具参数，适合外发。
+- `run` 的 stream-json 另有两种新增行：`tool_call`（`name`、`args` 摘要）与 `tool_result`（`name`、`is_error`、脱敏并截断的 `summary`）；已有行不变。未配置 `ndjson_keep` 的调用方会收到它们，上面的示例 `ndjson_keep` 不含它们，需要在 Gofer 中显示工具调用时再加入。`suag trace` 会显示 plan 行（文本 `plan ✔/▶/○ 步骤`，`--json` 为 `{"kind":"plan",...}`）。
 - `run` 的 stream-json 在 `plan` 事件上输出完整计划；`ndjson_keep` 示例未保留它，需要在 Gofer 中显示计划时把 `plan` 加入 `ndjson_keep`。
 - `tools.deferred`（`auto`/`always`/`never`，默认 `auto`）在 `~/.suag/config.yaml` 中配置。MCP 工具多时被延迟加载，模型通过内置 `tool_search` 取回；Gofer 不需要额外配置。
 - `compact_model` 指定自动压缩与 `:compact` 使用的模型，`providers.<id>.models.<model>.context_window` 覆盖上下文窗口。

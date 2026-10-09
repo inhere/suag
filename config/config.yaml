@@ -80,6 +80,12 @@ max_steps: 100
 # window) | always | never. Deferred tools are loaded via the tool_search tool.
 tools:
   deferred: auto
+  # chat only (run needs --allow-write; --read-only wins; ACP ignores it):
+  # allow_write: true  # boolean, default false: enable file_write / shell_exec
+  # chat only: ask (default) confirms every non-MCP tool outside the read-only
+  # list (file_read, file_list, update_plan, tool_search) on the terminal;
+  # auto never asks. Without a terminal, tools needing confirmation are refused.
+  # approval: ask
   # No MCP tool is allowed by default: with both lists empty every MCP call is
   # refused. Entries are "server/toolglob" (a bare "toolglob" in auto_allow
   # matches that tool from any server; prefer the qualified form).
