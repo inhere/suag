@@ -1,0 +1,276 @@
+package llm
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"sort"
+	"strings"
+	"time"
+
+	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
+)
+
+// Stream implements the public streaming contract with Anthropic SSE: text
+// deltas are emitted as they arrive; tool_use input, thinking and usage are
+// accumulated into the returned result. Only the connection (before any byte
+// of the body is read) is retried, so a delta is never emitted twice.
+func (p *ClaudeProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	model := req.Model
+	if model == "" {
+		model = p.model
+	}
+	body := p.buildRequestBody(req, model)
+	body["stream"] = true
+	logProviderRequest(p.Name(), "/messages", body)
+
+	resp, err := p.openStream(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if !strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+		// Some gateways ignore stream=true and answer with a plain message.
+		return p.readWhole(ctx, resp.Body, emit)
+	}
+	return p.readStream(ctx, resp.Body, emit)
+}
+
+// readWhole parses a non-streamed message and emits its text in one delta.
+func (p *ClaudeProvider) readWhole(ctx context.Context, r io.Reader, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("read claude response: %w", err)
+	}
+	logProviderResponse(p.Name(), "/messages", http.StatusOK, data)
+	res, err := p.parseResponse(data)
+	if err != nil || emit == nil || res.Content == "" {
+		return res, err
+	}
+	if err := emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventTextDelta, Delta: res.Content}); err != nil {
+		return nil, err
+	}
+	return res, emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventMessageStop})
+}
+
+// openStream sends the request and returns a 2xx response. Network errors and
+// 5xx are retried; 4xx fails immediately with the API's own message.
+func (p *ClaudeProvider) openStream(ctx context.Context, body map[string]any) (*http.Response, error) {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal claude request: %w", err)
+	}
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(time.Duration(1<<attempt) * time.Second):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.messagesURL, bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("build request: %w", err)
+		}
+		applyHeaders(ctx, httpReq, p.headers)
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Accept", "text/event-stream")
+		httpReq.Header.Set("x-api-key", p.apiKey)
+		httpReq.Header.Set("anthropic-version", claudeAPIVersion)
+
+		resp, err := p.streamClient.Do(httpReq)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return resp, nil
+		}
+		respData, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		logProviderResponse(p.Name(), "/messages", resp.StatusCode, respData)
+		if resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("claude server error %d: %s", resp.StatusCode, string(respData))
+			continue
+		}
+		var apiErr struct {
+			Error *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
+			return nil, fmt.Errorf("claude api error: %s", apiErr.Error.Message)
+		}
+		return nil, fmt.Errorf("claude api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData)))
+	}
+	return nil, fmt.Errorf("claude request failed after retries: %w", lastErr)
+}
+
+// claudeUsage is the usage object shared by message_start and message_delta.
+type claudeUsage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+}
+
+// claudeStreamEvent is the union of the SSE data payloads we care about.
+type claudeStreamEvent struct {
+	Type    string `json:"type"`
+	Index   int    `json:"index"`
+	Message struct {
+		Usage claudeUsage `json:"usage"`
+	} `json:"message"`
+	ContentBlock struct {
+		Type string `json:"type"`
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"content_block"`
+	Delta struct {
+		Type        string `json:"type"`
+		Text        string `json:"text"`
+		PartialJSON string `json:"partial_json"`
+		Thinking    string `json:"thinking"`
+		StopReason  string `json:"stop_reason"`
+	} `json:"delta"`
+	Usage *claudeUsage `json:"usage"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// claudeStreamTool accumulates one tool_use block by its content index.
+type claudeStreamTool struct {
+	id, name string
+	args     strings.Builder
+}
+
+// readStream consumes SSE "data:" lines until message_stop or EOF. The event
+// type is taken from the payload's "type" field, falling back to "event:".
+func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	var content, reasoning strings.Builder
+	calls := map[int]*claudeStreamTool{}
+	res := &agentcoreapi.GenerateResult{}
+	var usage claudeUsage
+	stopReason, eventName, emitted := "", "", false
+
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if name, ok := strings.CutPrefix(line, "event:"); ok {
+			eventName = strings.TrimSpace(name)
+			continue
+		}
+		payload, ok := strings.CutPrefix(line, "data:")
+		if !ok {
+			continue // blank separators and ": keep-alive" comments
+		}
+		var ev claudeStreamEvent
+		if err := json.Unmarshal([]byte(strings.TrimSpace(payload)), &ev); err != nil {
+			return nil, fmt.Errorf("parse claude stream event: %w", err)
+		}
+		if ev.Type == "" {
+			ev.Type = eventName
+		}
+		eventName = ""
+
+		switch ev.Type {
+		case "error":
+			msg := "unknown error"
+			if ev.Error != nil {
+				msg = ev.Error.Message
+			}
+			return nil, fmt.Errorf("claude api error: %s", msg)
+		case "message_start":
+			usage = ev.Message.Usage
+		case "content_block_start":
+			if ev.ContentBlock.Type == "tool_use" {
+				calls[ev.Index] = &claudeStreamTool{id: ev.ContentBlock.ID, name: ev.ContentBlock.Name}
+			}
+		case "content_block_delta":
+			switch ev.Delta.Type {
+			case "text_delta":
+				if ev.Delta.Text == "" {
+					continue
+				}
+				content.WriteString(ev.Delta.Text)
+				if emit != nil {
+					if err := emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventTextDelta, Delta: ev.Delta.Text}); err != nil {
+						return nil, err
+					}
+				}
+				emitted = true
+			case "input_json_delta":
+				if call := calls[ev.Index]; call != nil {
+					call.args.WriteString(ev.Delta.PartialJSON)
+				}
+			case "thinking_delta":
+				reasoning.WriteString(ev.Delta.Thinking)
+			}
+		case "message_delta":
+			if ev.Delta.StopReason != "" {
+				stopReason = ev.Delta.StopReason
+			}
+			if ev.Usage != nil {
+				usage.OutputTokens = ev.Usage.OutputTokens
+			}
+		}
+		if ev.Type == "message_stop" {
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("read claude stream: %w", err)
+	}
+
+	in := usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens
+	res.Usage = agentcoreapi.Usage{
+		InputTokens:      in,
+		OutputTokens:     usage.OutputTokens,
+		TotalTokens:      in + usage.OutputTokens,
+		CacheReadTokens:  usage.CacheReadInputTokens,
+		CacheWriteTokens: usage.CacheCreationInputTokens,
+	}
+	res.Content, res.Reasoning = content.String(), reasoning.String()
+
+	indexes := make([]int, 0, len(calls))
+	for i := range calls {
+		indexes = append(indexes, i)
+	}
+	sort.Ints(indexes)
+	for _, i := range indexes {
+		call := calls[i]
+		raw := call.args.String()
+		if strings.TrimSpace(raw) == "" {
+			raw = "{}" // a no-argument call streams no input_json_delta
+		}
+		args, err := decodeToolArguments(json.RawMessage(raw), call.name)
+		if err != nil {
+			return nil, err
+		}
+		res.ToolCalls = append(res.ToolCalls, agentcoreapi.ToolCall{CallID: call.id, Name: call.name, Arguments: args})
+	}
+	if len(res.ToolCalls) > 0 || stopReason == "tool_use" {
+		res.FinishReason = agentcoreapi.FinishToolCalls
+	} else {
+		res.FinishReason = agentcoreapi.FinishFinal
+	}
+	if emitted && emit != nil {
+		if err := emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventMessageStop}); err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}

@@ -8,28 +8,37 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 )
 
 const (
-	claudeAPIBase    = "https://api.anthropic.com/v1"
-	claudeAPIVersion = "2023-06-01"
+	claudeDefaultBaseURL = "https://api.anthropic.com"
+	claudeAPIVersion     = "2023-06-01"
 )
 
 // ClaudeProvider implements Provider for Anthropic Claude.
 type ClaudeProvider struct {
-	apiKey  string
-	model   string
-	client  *http.Client
-	headers map[string]string
+	name         string
+	apiKey       string
+	model        string
+	messagesURL  string
+	client       *http.Client
+	streamClient *http.Client
+	headers      map[string]string
 }
 
 // ClaudeConfig configures a ClaudeProvider.
 type ClaudeConfig struct {
+	// Name is the provider name reported by Name(); default: anthropic.
+	Name   string
 	APIKey string
-	Model  string // default: claude-sonnet-4-6
+	// BaseURL defaults to https://api.anthropic.com. A URL ending in /v1 gets
+	// /messages appended, any other gets /v1/messages.
+	BaseURL string
+	Model   string // default: claude-sonnet-4-6
 	// Headers are extra request headers; see applyHeaders for SessionIDPlaceholder.
 	Headers map[string]string
 }
@@ -39,16 +48,34 @@ func NewClaudeProvider(cfg ClaudeConfig) *ClaudeProvider {
 	if cfg.Model == "" {
 		cfg.Model = "claude-sonnet-4-6"
 	}
+	if cfg.Name == "" {
+		cfg.Name = "anthropic"
+	}
 	return &ClaudeProvider{
-		apiKey:  cfg.APIKey,
-		model:   cfg.Model,
-		client:  &http.Client{Timeout: 120 * time.Second},
-		headers: cfg.Headers,
+		name:         cfg.Name,
+		apiKey:       cfg.APIKey,
+		model:        cfg.Model,
+		messagesURL:  claudeMessagesURL(cfg.BaseURL),
+		client:       &http.Client{Timeout: 120 * time.Second},
+		streamClient: newStreamClient(),
+		headers:      cfg.Headers,
 	}
 }
 
+// claudeMessagesURL builds the messages endpoint from a user-supplied base URL.
+func claudeMessagesURL(base string) string {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	if base == "" {
+		base = claudeDefaultBaseURL
+	}
+	if strings.HasSuffix(base, "/v1") {
+		return base + "/messages"
+	}
+	return base + "/v1/messages"
+}
+
 // Name implements Provider.
-func (p *ClaudeProvider) Name() string { return "claude" }
+func (p *ClaudeProvider) Name() string { return p.name }
 
 // Generate implements the public agentcore provider contract.
 func (p *ClaudeProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
@@ -64,27 +91,6 @@ func (p *ClaudeProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 		return nil, err
 	}
 	return p.parseResponse(respData)
-}
-
-// Stream implements the public streaming contract. This first iteration keeps
-// behavior simple by emitting the final content as a single delta.
-func (p *ClaudeProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
-	resp, err := p.Generate(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	if emit != nil && resp != nil && resp.Content != "" {
-		if err := emit(ctx, agentcoreapi.StreamEvent{
-			Kind:  agentcoreapi.StreamEventTextDelta,
-			Delta: resp.Content,
-		}); err != nil {
-			return nil, err
-		}
-		if err := emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventMessageStop}); err != nil {
-			return nil, err
-		}
-	}
-	return resp, nil
 }
 
 // Embed implements Provider — delegates to OpenAI embeddings since Claude has no native embed API.
@@ -266,7 +272,7 @@ func (p *ClaudeProvider) doRequest(ctx context.Context, body map[string]any) ([]
 			return nil, fmt.Errorf("marshal claude request: %w", err)
 		}
 
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, claudeAPIBase+"/messages", bytes.NewReader(data))
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.messagesURL, bytes.NewReader(data))
 		if err != nil {
 			return nil, err
 		}

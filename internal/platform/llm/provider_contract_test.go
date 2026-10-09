@@ -28,7 +28,7 @@ func TestClaudeProvider_DoesNotRequireEmbeddingSupport(t *testing.T) {
 
 	assert.NotNil(t, base)
 	assert.NotNil(t, streaming)
-	assert.Eq(t, "claude", provider.Name())
+	assert.Eq(t, "anthropic", provider.Name())
 }
 
 func TestDeepSeekProvider_ImplementsEmbeddingProvider(t *testing.T) {
