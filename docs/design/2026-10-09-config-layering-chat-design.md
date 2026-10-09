@@ -1,13 +1,14 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # Suag 配置重设计、分层整理与 chat 显示 设计
 
-> 状态：Draft 0.1 / 待人工计划批准
+> 状态：Draft 0.2 / 待人工计划批准
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-09 | Claude | 初稿 |
+| 0.2 | 2026-10-09 | Claude | 按合并评审修订：只读模式新增 `tools.read_only_allow`（原 CORE_BLOCKING）；补全 hooks 调用协议、投递来源与 injected 规则、Gofer 迁移清单；装配包改名 `internal/wiring`、ACP 工厂放 cli 层、liveText 归 output；补测试迁移原则、Claude SSE 事件与 base_url 规则、模型引用解析规则 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -41,7 +42,10 @@
 
 ## 已确认事实与规范
 
-- 当前配置键（代码中全部读取点）：`llm.{api_type,provider_name,model,api_key,base_url,compact_model,context_window,headers}`、`max_steps`、`workspace`、`serpapi_key`、`mcp.servers`、`tools.{deferred,auto_allow}`、`transcripts`、`gofer.{hooks,command,agent,wait_sec,timeout_ms}`；env：`SUAG_MODEL`、`SUAG_PROVIDER`、`SUAG_GOFER_HOOKS`、`GOFER_JOB_ID`。
+- 当前配置键（代码中全部读取点）：`llm.{api_type,provider_name,model,api_key,base_url,compact_model,context_window,headers}`、`max_steps`、`workspace`、`serpapi_key`、`mcp.servers`、`tools.{deferred,auto_allow}`、`transcripts`、`gofer.{hooks,command,agent,wait_sec,timeout_ms}`；env：`SUAG_MODEL`、`SUAG_PROVIDER`、`SUAG_APPEND_SYSTEM_PROMPT`、`SUAG_GOFER_HOOKS`（测试也用它关闭 hooks）、`GOFER_JOB_ID`，以及 `SUAG_HOME`/`SUAG_CONFIG`/`SUAG_DEBUG`。
+- `--read-only` 下 MCP 放行只用内置 `defaultMCPAutoAllow`，用户的 `tools.auto_allow` 被忽略（`cli_mcp.go` `newCLIMCPGate`）；Gofer CLI job 使用 `read_only_args: [--read-only]`。
+- hooks 调用为 `gofer hook generic --agent <agent>`，Stop 事件追加 `--wait N`；事件除 Claude Code 兼容的 SessionStart/UserPromptSubmit/PostToolUse/Stop/SessionEnd 外，还有 suag 自定义的 Interrupt；PostToolUse 只对 shell/exec 类工具发送，工具名归一为 `shell`；`gofer.hooks: auto` 时 PATH 中有 gofer 即启用。
+- `[gofer web 回复]` 前缀由 Gofer 自己加在投递文本上；suag 只做识别：投递时已带该前缀就不再加 `[来自 <from>] `（`suag send` 固定 `from=cli`，缺省来源 `unknown`），run 模式据该前缀把 transcript 中的用户输入标记为 injected。
 - gofer 写死行为四处：`internal/app/gofer_hooks.go`（调用 `gofer hook`）、`internal/app/cli_mcp.go` 的 `defaultMCPAutoAllow`、`internal/personal/runner.go` 的 GOFER_JOB_ID 提示词、`[gofer web 回复]` 前缀（`chat.go`/`chat_input.go`/`runner.go`）。
 - 规模：`cmd/suag` 2 个文件 537 行，其中直接定义了 acp/version/ps/send/trace 命令和 `runTrace`；`internal/app` 8 个文件约 1900 行，混合了命令定义（`NewPersonalCommand`）、运行时装配（`openPersonalRuntimeConfigured`）、stream-json 输出、chat 循环、hooks、MCP 审批。
 - Claude provider 使用固定 `claudeAPIBase`，不读 `base_url`；`Stream` 先 `Generate` 再一次性输出。OpenAI 兼容 provider 已在 1bf358c 改为 SSE 真流式。
@@ -81,19 +85,21 @@ providers:
 规则：
 
 - 内置三个 provider 预设 `openai`、`anthropic`、`deepseek`（默认 base_url 与密钥环境变量 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY`）；用户同名条目逐字段覆盖预设。其他 provider 必须写 `type`。
-- `--model` 与 `SUAG_MODEL` 接受 `provider/model`；只写 `model`（不含 `/`）时沿用默认模型的 provider。优先级：flag > env > 配置。
+- 模型引用解析：只按第一个 `/` 切分，且前缀必须是已定义的 provider（预设或 `providers` 中的条目），否则整串都是 model id、provider 取默认模型的 provider（model id 自身可含 `/`）。`--model`、`SUAG_MODEL`、`compact_model`、`fallback_models` 都按此规则。优先级：flag > env > 配置。
+- base_url 拼接：`type: openai` 拼 `/chat/completions`；`type: anthropic` 拼 `/v1/messages`，若 base_url 已以 `/v1` 结尾则只拼 `/messages`。预设 `anthropic` 的 base_url 为 `https://api.anthropic.com`。
 - 删除 `--provider`、`SUAG_PROVIDER`、`llm.*` 整段；读到旧 `llm` 段时启动报错并给出新写法提示（不自动迁移，见待确认 Q1）。
-- `context_window`：`providers.<id>.models.<model>.context_window` > 内置按模型名推断。
-- 其余顶层键保留：`max_steps`、`workspace`、`serpapi_key`、`mcp.servers`、`tools.{deferred,auto_allow}`、`transcripts`。
+- `context_window`：`providers.<id>.models.<model>.context_window` > 内置按模型名推断；合并现有两处推断逻辑（`config.ReadContextWindow` 与 app 的 `contextWindowForSettings`）为一处。
+- provider 名即配置中的 id：原 `claude` 标签变为 `anthropic`（或用户自定义 id），trace/stats 按 provider 名的历史统计会出现新旧两个名字；启用备用模型后，会话元数据只记录主模型。
+- 其余顶层键保留：`max_steps`、`workspace`、`serpapi_key`、`mcp.servers`、`tools.{deferred,auto_allow}`、`transcripts`；新增 `tools.read_only_allow`（见下节）。
 
 ### 2. gofer 行为改为通用配置
 
 | 现状 | 新做法 | Gofer 侧配合 |
 |---|---|---|
-| chat 自动调用 `gofer hook`，`gofer.*` 配置 | `hooks.command: [gofer, hook, suag]`（argv 数组）、`hooks.timeout_ms`、`hooks.stop_wait_sec`、`hooks.tool_name_alias: {shell_exec: shell}`；未配置即关闭；`SUAG_HOOKS=off` 临时关闭 | 用户 suag 配置写 `hooks.command`；Gofer 拉起的非交互 job 设 `SUAG_HOOKS=off`（替代 suag 内对 `GOFER_JOB_ID` 的判断） |
-| 默认放行 `gofer/...` 查询工具 | 内置默认放行为空；`tools.auto_allow` 由配置给出 | 用户 suag 配置写 gofer 查询工具的放行规则（样例给出） |
-| `GOFER_JOB_ID` 时追加汇报提示词 | 删除；提示由调用方经 `--append-system-prompt` 给出 | Gofer 在 job 的 system_prompt 中加入该句 |
-| `[gofer web 回复]` 前缀、`from=gofer` 映射 | 投递来源标签通用化：前缀为 `[来自 <from>] `，`<from>` 来自 `suag send --from` 或 hooks 响应里的 `source` 字段（缺省 `外部`） | `deliver_command` 加 `--from "gofer web"`；hook 响应带 `source` |
+| 默认放行 `gofer/...` 查询工具；`--read-only` 只用内置名单 | 内置名单清空。新增 `tools.read_only_allow`：只读模式唯一生效的放行名单，条目必须是 `server/toolglob` 限定写法；非只读模式仍用 `tools.auto_allow`。两者缺省为空 | 用户 suag 配置写 `tools.read_only_allow: [gofer/gofer_*_list, gofer/gofer_*_get, gofer/gofer_work_report, gofer/gofer_session_list]`（样例给出） |
+| chat 自动调用 `gofer hook generic --agent suag`，`gofer.*` 配置，auto 模式 | `hooks.command`（argv 数组，不经 shell）、`hooks.timeout_ms`、`hooks.stop_args`（只追加到 Stop 事件，如 `[--wait, "7140"]`，其中秒数同时作为本端等待上限）、`hooks.post_tool_use: {tools: [shell_exec, ...], name: shell}`（发送范围与改名）；事件集合不变（含自定义 Interrupt）。未配置即关闭，取消 auto 模式；`SUAG_HOOKS=off` 临时关闭（替代测试用的 `SUAG_GOFER_HOOKS`） | 用户 suag 配置写 `hooks.command: [gofer, hook, generic, --agent, suag]` 与 `stop_args`；Gofer 拉起的 job 设 `SUAG_HOOKS=off`（替代 suag 对 `GOFER_JOB_ID` 的判断） |
+| `GOFER_JOB_ID` 时追加汇报提示词（run、chat、ACP 共用装配） | 删除；提示由调用方给出 | Gofer 在 job 环境设 `SUAG_APPEND_SYSTEM_PROMPT`（覆盖 chat/resume/ACP 等不带 `--append-system-prompt` 的路径），run 路径也可继续用 system_prompt |
+| 识别 `[gofer web 回复]` 前缀 | 投递：`suag send --source <label>`（缺省 `cli`）加 `[来自 <label>] ` 前缀；文本已以 `[…] ` 形式的来源标签开头时不再加（通用规则，覆盖 Gofer 自带前缀，缺省来源 `unknown` 不变）。run：新增 `--injected` 标记本轮输入非人工键入，替代前缀识别 | Gofer 投递 web 回复时可不改；经 run 续接投递 web 回复时加 `--injected` |
 
 `internal/personal` 不再出现 gofer 字样；`injected` 判定只依据调用方传入的 `Injected` 标志。
 
@@ -105,21 +111,23 @@ providers:
 cmd/suag/main.go            装配：加载配置 → 构建命令树 → 运行 → exitReport
 internal/cli/               命令定义：每个命令一个文件（run chat acp ps send trace stats export version），
                             只做 flag 解析、调用下层、选择输出格式
-internal/runtime/           运行时装配：由配置构建 provider/pool、工具、MCP、审批、Runner（原 openPersonalRuntimeConfigured 等）
-internal/output/            run 的输出：stream-json 编码、文本实时输出（liveText）、usage 形状
+internal/wiring/            运行时装配：由配置构建 provider/pool、工具、MCP、审批、Runner（原 openPersonalRuntimeConfigured 等）；不用 runtime 命名以免遮蔽标准库
+internal/output/            输出：stream-json 编码、文本实时输出（liveText，run 与 chat 共用）、usage 形状
 internal/chat/              chat 循环、输入源、投递队列、渲染（cliui）
 internal/hooks/             通用 hooks 客户端（原 gofer_hooks.go）
 internal/config/            新配置模型与读取
 internal/personal、platform、acpserver、capability   保持
 ```
 
-`internal/app` 拆完后删除。每个新包只依赖下层：`cli → runtime/chat/output/hooks → personal/platform/config`。
+`internal/app` 拆完后删除。依赖方向：`cli → wiring/chat/output/hooks/acpserver`，`chat → output/hooks/personal`，`wiring → config/personal/platform/capability`；ACP 的会话工厂闭包放在 cli 层（cli 同时依赖 acpserver 与 wiring），acpserver 不 import wiring，避免循环。
+
+测试迁移原则：测试随被测代码移动并保持内部测试（同包）；跨包测试（如 `stream_json_contract_test`、`chat_hooks_test`）按主要被测对象归属，必要的测试接缝以最小导出（或 `export_test.go`）提供；分层阶段的验收是 golden 契约测试与全量 `go test -race` 结果不变。
 
 ### 4. chat 显示与 Claude 流式
 
 - 渲染器（`internal/chat/render.go`）基于 gookit/cliui 与 gookit/color：用户提示符着色；模型文本实时打印；工具调用显示为一行 `⏺ file_read path=...`，结果摘要一行（超长截断）；`update_plan` 显示勾选列表；错误红色；每轮结束一行灰色状态 `model · in/out tokens · 耗时`。非 TTY 或 `NO_COLOR` 时退化为纯文本。
 - 需要的事件：runner 现有 `tool_result`（仅 hooks 开启时发）改为 chat 始终订阅，并新增 `tool_call` 开始事件；stream-json 不输出这两类事件（契约不变）。
-- Claude provider：读取 `base_url`；`Stream` 用 Messages API `stream: true` 解析 `content_block_delta`（text、input_json_delta）、`message_delta`（usage、stop_reason）；只重试建连；与 OpenAI 实现同样的"已输出则不切换备用"。
+- Claude provider：读取 `base_url`（拼接规则见第 1 节）；`Stream` 用 Messages API `stream: true`，处理 `message_start`（输入与缓存 token）、`content_block_start`（tool_use 的 id/name）、`content_block_delta`（`text_delta` 实时输出、`input_json_delta` 累积参数）、`content_block_stop`（解析该块参数）、`message_delta`（stop_reason、输出 token）、`message_stop`、`ping`（忽略）与流中 `error`；只重试建连；Pool 已有"已输出则不切换备用"。
 
 ## 架构
 
@@ -128,14 +136,15 @@ flowchart TD
   main[cmd/suag main] --> cli[internal/cli 命令]
   cli --> output[internal/output]
   cli --> chat[internal/chat]
-  cli --> rt[internal/runtime 装配]
+  cli --> rt[internal/wiring 装配]
+  cli --> acp[internal/acpserver]
   chat --> hooks[internal/hooks]
-  chat --> rt
+  chat --> output
+  chat --> personal
   rt --> cfg[internal/config]
   rt --> personal[internal/personal Runner]
   rt --> platform[internal/platform llm/tools]
-  cli --> acp[internal/acpserver]
-  acp --> rt
+  acp --> personal
 ```
 
 ## 关键流程
@@ -148,7 +157,7 @@ chat 一轮：输入 → 渲染器打印提示 → Runner 事件流（文本增�
 
 - 数据：会话库与 stream-json/ACP 契约不变；旧会话可继续使用。
 - 配置：旧 `llm` 段不再生效，升级后需按提示改写配置（Gofer 主机与本机各一份）；回滚到旧二进制即恢复旧配置读取。
-- 安全：默认 MCP 放行变为空，比现状更严；hooks 默认关闭，只执行配置里的 argv（不经 shell）。密钥仍只来自配置/`.env`/环境变量，不进 argv。
+- 安全：默认 MCP 放行变为空；只读模式只认 `tools.read_only_allow` 且必须带 server 限定，未配置时只读 job 中的 MCP 工具全部被拒（升级时需按迁移清单补配置）；hooks 默认关闭，只执行配置里的 argv（不经 shell）。密钥仍只来自配置/`.env`/环境变量，不进 argv。
 - 回滚：每个阶段独立提交，可按阶段回退。
 
 ## 决策
@@ -161,7 +170,7 @@ chat 一轮：输入 → 渲染器打印提示 → Runner 事件流（文本增�
 
 - Q1 旧 `llm` 段：直接报错并提示新写法（推荐，无历史包袱）／读取时自动转换为新结构。
 - Q2 删除 `--provider` 与 `SUAG_PROVIDER`，只用 `--model provider/model`（推荐）／保留 `--provider` 作为选择 provider 的简写。
-- Q3 Gofer 侧配合（`SUAG_HOOKS=off`、system_prompt 汇报句、`--from "gofer web"`、hook 响应 `source`）与 suag 同批交付，由 gofer 会话在 Gofer 仓库实施（推荐）／suag 先保留兼容读取 `GOFER_JOB_ID` 一个版本。
+- Q3 Gofer 侧配合（job 环境设 `SUAG_HOOKS=off` 与 `SUAG_APPEND_SYSTEM_PROMPT`、经 run 投递 web 回复时加 `--injected`）与 suag 同批交付，由 gofer 会话在 Gofer 仓库实施（推荐）／suag 先保留兼容读取 `GOFER_JOB_ID` 一个版本。用户 suag 配置的迁移（`hooks`、`tools.read_only_allow`、`providers`）由 suag 文档与样例给出。
 
 ## 结论与人工计划 Gate
 
