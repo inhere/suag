@@ -115,6 +115,16 @@ func (p *OpenAIProvider) Embed(ctx context.Context, text string) ([]float32, err
 // buildRequestBody constructs the OpenAI chat completion request payload.
 func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, model string, stream bool) map[string]any {
 	msgs := make([]map[string]any, 0, len(req.Messages)+1)
+	// A thinking-mode session echoes reasoning_content on every assistant
+	// message, even a step whose reasoning was empty: DeepSeek rejects a request
+	// with tools when any earlier assistant message lacks the field.
+	thinking := false
+	for _, m := range req.Messages {
+		if m.Role == "assistant" && m.Reasoning != "" {
+			thinking = true
+			break
+		}
+	}
 
 	// System prompt injection.
 	system := req.System
@@ -157,12 +167,12 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 				content = m.Content
 			}
 			msg := map[string]any{"role": "assistant", "content": content, "tool_calls": []map[string]any{call}}
-			withReasoning(msg, m)
+			withReasoning(msg, m, thinking)
 			msgs = append(msgs, msg)
 			continue
 		}
 		msg := map[string]any{"role": m.Role, "content": m.Content}
-		withReasoning(msg, m)
+		withReasoning(msg, m, thinking)
 		msgs = append(msgs, msg)
 	}
 
@@ -196,10 +206,10 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 
 // withReasoning echoes an assistant message's reasoning as reasoning_content.
 // Thinking-mode APIs (DeepSeek, Kimi, ...) reject a request with tools whose
-// earlier assistant messages lack it. It is only present when the API returned
-// reasoning_content, so APIs without thinking never see the field.
-func withReasoning(msg map[string]any, m agentcoreapi.Message) {
-	if m.Role == "assistant" && m.Reasoning != "" {
+// earlier assistant messages lack it. Without any reasoning in the request
+// (thinking=false) the field is never sent, so other APIs never see it.
+func withReasoning(msg map[string]any, m agentcoreapi.Message, thinking bool) {
+	if m.Role == "assistant" && (thinking || m.Reasoning != "") {
 		msg["reasoning_content"] = m.Reasoning
 	}
 }

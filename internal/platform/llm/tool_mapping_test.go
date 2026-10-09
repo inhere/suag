@@ -139,6 +139,20 @@ func TestOpenAIProvider_ReasoningContentRoundTrip(t *testing.T) {
 			assert.Eq(t, false, has)
 		}
 	})
+	t.Run("empty reasoning still echoed in a thinking session", func(t *testing.T) {
+		first := toolPair("c1", "ls", "ok", nil)
+		first[0].Reasoning = "think-1"
+		second := toolPair("c2", "ls", "ok", nil) // a step that produced no reasoning
+		ms := append([]agentcoreapi.Message{{Role: "user", Content: "go"}}, first...)
+		ms = append(ms, second...)
+		msgs := p.buildRequestBody(&agentcoreapi.GenerateRequest{Messages: ms}, "m", true)["messages"].([]map[string]any)
+		assert.Eq(t, "think-1", msgs[1]["reasoning_content"])
+		got, has := msgs[3]["reasoning_content"]
+		assert.Eq(t, true, has)
+		assert.Eq(t, "", got)
+		_, has = msgs[2]["reasoning_content"] // tool messages never carry it
+		assert.Eq(t, false, has)
+	})
 	t.Run("absent when empty", func(t *testing.T) {
 		msgs := p.buildRequestBody(&agentcoreapi.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "go"}, {Role: "assistant", Content: "hi"}}}, "m", false)["messages"].([]map[string]any)
 		_, has := msgs[1]["reasoning_content"]
