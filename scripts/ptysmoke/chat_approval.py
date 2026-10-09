@@ -54,6 +54,7 @@ def scenario(s):
 
     m = s.mark()
     s.check("banner shows model", s.until(r"Suag chat · fake/m1", m))
+    s.check("banner shows write tools on", s.until(r"工具：可读写文件、执行 shell", m))
     s.check("❯ prompt", s.until(r"❯ ", m))
 
     # Pre-typed y + Enter while the turn runs must not approve.
@@ -70,6 +71,7 @@ def scenario(s):
     s.check("y: full command shown", s.until(r"命令：echo SMOKE_OK", m) and s.until(QUESTION, m))
     s.line("y")
     s.check("y: executed", s.until(OK, m) and s.until(r"完成", m))
+    s.check("y: answer marked ▣", s.contains(r"▣ 完成", m))
     s.check("y: turn ends", turn_end(m))
 
     m = s.mark(); s.line("第三次")

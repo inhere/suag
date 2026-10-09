@@ -45,8 +45,9 @@ func TestRendererPlainTurn(t *testing.T) {
 	r := newRenderer(rendererOptions{Out: &out, Err: &errOut, Provider: "opencode", Model: "glm-5"})
 	runTurn(r, 2340*time.Millisecond)
 
+	// Each model message starts with the ▣ marker; tool and plan lines do not.
 	want := strings.Join([]string{
-		"looking",
+		"▣ looking",
 		`⏺ file_read {"path":"a.go"}`,
 		"  ⎿ ok: package a func A() {}",
 		`⏺ shell {"cmd":"false"}`,
@@ -55,7 +56,7 @@ func TestRendererPlainTurn(t *testing.T) {
 		"  ✔ read",
 		"  ▶ edit",
 		"  ○ test",
-		"done",
+		"▣ done",
 		"opencode/glm-5 · in 1200 / out 34 tokens · 2.3s",
 		"",
 	}, "\n")
@@ -155,5 +156,20 @@ func TestBannerAndExitSummary(t *testing.T) {
 		assert.Eq(t, "40ms", FormatElapsed(40*time.Millisecond))
 		assert.Eq(t, "2.5s", FormatElapsed(2500*time.Millisecond))
 		assert.Eq(t, "1h2m3s", FormatElapsed(time.Hour+2*time.Minute+3*time.Second))
+	})
+}
+
+func TestRendererBannerToolLine(t *testing.T) {
+	t.Run("read only points at tools.allow_write", func(t *testing.T) {
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out, Model: "m"}).Banner()
+		assert.StrContains(t, out.String(), "工具：只读")
+		assert.StrContains(t, out.String(), "tools.allow_write: true")
+	})
+	t.Run("write tools on", func(t *testing.T) {
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out, Model: "m", WriteTools: true}).Banner()
+		assert.StrContains(t, out.String(), "执行 shell")
+		assert.StrNotContains(t, out.String(), "工具：只读")
 	})
 }

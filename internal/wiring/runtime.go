@@ -64,6 +64,8 @@ type Runtime struct {
 	// questions; chat binds its terminal input to it. Unbound, every tool that
 	// needs a confirmation is refused.
 	Asker *tools.BindableAsker
+	// WriteTools reports whether workspace write and shell tools are exposed.
+	WriteTools bool
 
 	repo         *store.Store
 	capabilities defaultCapabilities
@@ -126,7 +128,7 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	rt.Asker = asker
+	rt.Asker, rt.WriteTools = asker, opts.AllowWrite
 	return rt, nil
 }
 

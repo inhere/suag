@@ -34,6 +34,8 @@ type Options struct {
 	// the terminal input to it only when stdin is a terminal; left unbound,
 	// every tool that needs a confirmation is refused. May be nil.
 	Asker *tools.BindableAsker
+	// WriteTools tells the banner whether file_write/shell_exec are available.
+	WriteTools bool
 }
 
 // Run drives the interactive chat REPL on top of runner; hooks may be nil.
@@ -125,6 +127,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		Out: inputSource, Err: stderr,
 		Color: colorEnabledFor(stdout), ErrColor: colorEnabledFor(stderr),
 		Provider: runner.ProviderName(), Model: runner.Model(),
+		WriteTools: opts.WriteTools,
 	})
 	if opts.Asker != nil && inputSource.terminal != nil {
 		opts.Asker.Bind(chatAsker{source: inputSource, render: render})

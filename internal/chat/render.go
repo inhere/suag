@@ -32,6 +32,8 @@ type rendererOptions struct {
 	Color, ErrColor bool
 	// Provider and Model label the per-turn status line; either may be empty.
 	Provider, Model string
+	// WriteTools selects the banner's tool line (write and shell on or off).
+	WriteTools bool
 }
 
 // Renderer owns all terminal output of one chat: prompt, streamed model text,
@@ -42,7 +44,9 @@ type Renderer struct {
 }
 
 func newRenderer(opts rendererOptions) *Renderer {
-	return &Renderer{opts: opts, live: output.NewLiveText(opts.Out)}
+	r := &Renderer{opts: opts}
+	r.BeginTurn()
+	return r
 }
 
 // colorEnabledFor reports whether w is a terminal and NO_COLOR is not set.
@@ -75,7 +79,11 @@ func (r *Renderer) Prompt(waiting bool) string {
 }
 
 // BeginTurn resets the per-turn text streaming state.
-func (r *Renderer) BeginTurn() { r.live = output.NewLiveText(r.opts.Out) }
+func (r *Renderer) BeginTurn() { r.live = output.NewPrefixedLiveText(r.opts.Out, r.answerPrefix()) }
+
+// answerPrefix marks the start of each model message so it stands apart from
+// tool lines and the user's input.
+func (r *Renderer) answerPrefix() string { return r.paint(color.Green, "▣") + " " }
 
 // Handle renders one runner event: text deltas, tool calls/results and plans.
 func (r *Renderer) Handle(event personal.Event) {
@@ -128,7 +136,7 @@ func (r *Renderer) renderPlan(event personal.Event) {
 func (r *Renderer) Finish() bool { return r.live.Finish() }
 
 // Answer prints a final answer that was not streamed.
-func (r *Renderer) Answer(text string) { fmt.Fprintln(r.opts.Out, text) }
+func (r *Renderer) Answer(text string) { fmt.Fprintln(r.opts.Out, r.answerPrefix()+text) }
 
 // External prints input that did not come from this keyboard (a reply sent
 // from elsewhere through `suag send` or a Stop hook) in its own color, so it
@@ -196,6 +204,13 @@ func (r *Renderer) Banner() {
 	}
 	fmt.Fprintln(r.opts.Out, r.paint(color.Cyan, head))
 	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "输入任务开始对话；:session 显示会话，:compact 压缩上下文，:quit 退出。"))
+	if r.opts.WriteTools {
+		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "工具：可读写文件、执行 shell（tools.approval 决定是否先确认）。"))
+	} else {
+		// The usual reason the model says it has no shell_exec: write tools
+		// are off unless SUAG_HOME/config.yaml sets tools.allow_write.
+		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "工具：只读。要写文件、执行 shell，在 SUAG_HOME/config.yaml 设 tools.allow_write: true。"))
+	}
 }
 
 // ModelLabel is "provider/model" (or whichever part is known).

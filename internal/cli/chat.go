@@ -7,18 +7,20 @@ import (
 
 	"github.com/inhere/suag/internal/chat"
 	suaghooks "github.com/inhere/suag/internal/hooks"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/internal/wiring"
 )
 
 // runChat starts the interactive REPL on an assembled runner.
-// asker (chat approver questions) is bound by chat when stdin is a terminal.
-func runChat(ctx context.Context, runner *personal.Runner, asker *tools.BindableAsker, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) error {
+// The runtime's asker (chat approver questions) is bound by chat when stdin is a terminal.
+func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) error {
 	hooks, err := suaghooks.New()
 	if err != nil {
 		return err
 	}
-	return chat.Run(ctx, runner, chat.Options{SessionID: opts.SessionID, ResumeID: opts.ResumeID, FromID: opts.FromID, Asker: asker}, stdin, stdout, stderr, hooks)
+	return chat.Run(ctx, runtime.Runner, chat.Options{
+		SessionID: opts.SessionID, ResumeID: opts.ResumeID, FromID: opts.FromID,
+		Asker: runtime.Asker, WriteTools: runtime.WriteTools,
+	}, stdin, stdout, stderr, hooks)
 }
 
 // RunPersonalChat gives the terminal REPL the same persistent session engine as run mode.
