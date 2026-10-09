@@ -121,7 +121,7 @@ type contextBuilder struct {
 	turnID    string
 	prompt    agentcore.PromptBuilder
 	usage     *usageCollector
-	update    string // short system notice (rules/append prompt/gofer context)
+	update    string // short system notice (rules/append prompt/environment context)
 
 	summary   string    // current compaction summary ("" before any compaction)
 	prev      []ctxItem // kept history before this turn's own messages

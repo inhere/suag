@@ -69,7 +69,7 @@ func (s *sessionState) recordUsage(a *Agent, turn *turnUsage, persisted agentcor
 }
 
 // usageUpdate builds the usage_update payload. _meta carries session-cumulative
-// snake_case fields (gofer replaces its totals with them) in the reported shape
+// snake_case fields (clients may replace their totals with them) in the reported shape
 // (input_tokens excludes cache, see personal.ReportUsage); used is the context
 // size of the last request; size is the model context window.
 func usageUpdate(total agentcore.Usage, used, size int) acp.SessionUpdate {

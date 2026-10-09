@@ -25,7 +25,7 @@ type Session = store.Session
 // ErrSessionNotFound is returned when a session id does not exist.
 var ErrSessionNotFound = store.ErrSessionNotFound
 
-// RunState is the Gofer-facing run status reported in events and results
+// RunState is the caller-facing run status reported in events and results
 // (stream-json "status"). The values are a wire contract; do not change them.
 type RunState string
 

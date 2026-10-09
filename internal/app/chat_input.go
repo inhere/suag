@@ -168,7 +168,7 @@ func (s *chatInputSource) isBusy() bool {
 }
 
 // SetBusy marks a turn start/end. Starting a turn forces the tty back to cooked mode even when a
-// line read begun earlier is still blocked (a gofer/send delivery can start a turn while the
+// line read begun earlier is still blocked (a `suag send` delivery can start a turn while the
 // prompt is waiting); otherwise Ctrl-C would arrive as byte 0x03 and never interrupt the turn.
 func (s *chatInputSource) SetBusy(busy bool) {
 	s.mu.Lock()

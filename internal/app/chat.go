@@ -123,7 +123,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 	// It is folded into the next turn's context; if the chat ends first, warn on stderr.
 	var lostReply string
 	defer func() {
-		// Messages queued by `suag send`/gofer that never became a turn: fail their senders
+		// Messages queued by `suag send` that never became a turn: fail their senders
 		// (exit 3 for `send --wait` style callers) and tell the person how many were dropped.
 		if n := inputSource.DiscardQueued(); n > 0 {
 			fmt.Fprintf(stderr, "Warning: %d queued message(s) were discarded on exit and not run.\n", n)

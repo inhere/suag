@@ -24,7 +24,7 @@ import (
 var ErrInputRequired = errors.New("turn requires more input")
 
 // SessionNotFoundError reports that --resume or the --from source names no
-// session. It is a stable contract for Gofer: exit code 4 and a stderr line
+// session. It is a stable contract for callers: exit code 4 and a stderr line
 // starting with "session not found: ", so a caller can tell a missing (e.g.
 // pre-store) session from any other failure and fall back to --from.
 type SessionNotFoundError struct{ ID string }
@@ -58,8 +58,8 @@ type personalOptions struct {
 	AllowWrite         bool
 	AppendSystemPrompt string
 	// ClearAppendSystemPrompt drops the session's saved append prompt. An empty
-	// --append-system-prompt keeps it instead: Gofer templates always pass the
-	// flag and render it empty when a job has no system prompt.
+	// --append-system-prompt keeps it instead: argv templates (job runners)
+	// often always pass the flag and render it empty when there is no prompt.
 	ClearAppendSystemPrompt bool
 	NoProjectRules          bool
 	MCPConfigs              []string
@@ -126,7 +126,7 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID;;r")
 	cmd.StringVar(&opts.FromID, "from", "", "start a new session that inherits the summary, plan and loaded tools of this session")
 	cmd.StringVar(&opts.OutputFormat, "output-format", "text", "text or stream-json")
-	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool, MCP allows only default query tools and gofer_work_report;;ro")
+	cmd.BoolVar(&opts.ReadOnly, "read-only", false, "disable every mutating tool; MCP tools are limited to the default query allowlist;;ro")
 	cmd.BoolVar(&opts.AllowWrite, "allow-write", false, "allow workspace write and shell tools for this run")
 	cmd.StringVar(&opts.AppendSystemPrompt, "append-system-prompt", "", "append system instructions after rules, empty keeps the saved prompt")
 	cmd.BoolVar(&opts.ClearAppendSystemPrompt, "clear-append-system-prompt", false, "clear the session's saved append prompt (a non-empty --append-system-prompt still replaces it)")
@@ -401,8 +401,8 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 		return ErrInputRequired
 	}
 	// A turn with any refused tool call ends with input_required, even when the
-	// model worked around the refusal: Gofer still learns authorization was
-	// missing. denied_tools is the only field added to the line.
+	// model worked around the refusal: the caller still learns authorization
+	// was missing. denied_tools is the only field added to the line.
 	if len(result.DeniedTools) > 0 && encoder != nil {
 		if err := encoder.Encode(withUsage(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID, "denied_tools": result.DeniedTools}, result)); err != nil {
 			return err

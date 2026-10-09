@@ -388,7 +388,7 @@ func containsToken(tokens map[string]bool, term string) bool {
 }
 
 // tokenize lowercases and splits on non letter/digit runes ("_" included), so
-// "gofer_issue_list" yields gofer, issue, list. Duplicates are dropped.
+// "github_issue_list" yields github, issue, list. Duplicates are dropped.
 func tokenize(s string) []string {
 	parts := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)

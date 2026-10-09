@@ -30,7 +30,7 @@ func isCredentialEnv(name string) bool {
 // buildServerEnv returns the MCP subprocess environment: the parent
 // environment minus credential variables, then the server's own configured
 // entries. Configured entries are passed as-is, so a server may still be given
-// a credential explicitly. GOFER_* and everything else is inherited.
+// a credential explicitly. Everything else is inherited.
 func buildServerEnv(parent, configured []string) []string {
 	env := make([]string, 0, len(parent)+len(configured))
 	for _, kv := range parent {

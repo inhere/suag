@@ -73,8 +73,8 @@ func usageFromSum(s store.Usage) agentcore.Usage {
 }
 
 // ReportedUsage is the usage shape emitted on the output layer (stream-json
-// result/input_required/error lines and ACP usage_update), matching Gofer's
-// Anthropic-style accounting: input_tokens excludes cache, cache tokens are
+// result/input_required/error lines and ACP usage_update), in Anthropic-style
+// accounting: input_tokens excludes cache, cache tokens are
 // reported separately and total = input + output + cache_read + cache_write.
 type ReportedUsage struct {
 	InputTokens      int     `json:"input_tokens"`

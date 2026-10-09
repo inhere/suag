@@ -165,8 +165,8 @@ func newCLI(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) *cap
 			return err
 		}
 		// --wait keeps the connection until a queued message actually starts a turn (or is
-		// discarded, exit 3). Without it "queued" returns at once, so a Gofer deliver
-		// job never blocks for the length of the chat's current turn.
+		// discarded, exit 3). Without it "queued" returns at once, so an automated
+		// sender never blocks for the length of the chat's current turn.
 		response, err := personalprocess.Send(record, personalprocess.Request{Text: text, From: "cli", Wait: sendWait})
 		if errors.Is(err, personalprocess.ErrNotOnline) {
 			return processExitError{code: 3, err: err}
