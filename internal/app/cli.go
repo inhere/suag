@@ -359,8 +359,10 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 	} else {
 		fmt.Fprintln(stderr, "session id:", sessionID)
 	}
+	live := &liveText{w: stdout}
 	emit := func(_ context.Context, event personal.Event) error {
 		if encoder == nil {
+			live.handle(event) // text mode prints the answer as it streams
 			return nil
 		}
 		data := map[string]any{"session_id": event.SessionID, "run_id": event.RunID}
@@ -384,6 +386,7 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 		return encoder.Encode(data)
 	}
 	result, err := runner.Run(ctx, personal.RunRequest{SessionID: sessionID, Prompt: opts.Prompt, Emit: emit})
+	streamed := live.finish() // end the streamed line before any error or status output
 	if err != nil {
 		if encoder != nil {
 			_ = encoder.Encode(withUsage(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()}, result))
@@ -413,6 +416,9 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 			"type": "result", "session_id": sessionID, "run_id": result.RunID,
 			"result": result.Output, "status": result.State,
 		}, result))
+	}
+	if streamed {
+		return nil
 	}
 	_, err = fmt.Fprintln(stdout, result.Output)
 	return err

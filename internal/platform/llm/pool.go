@@ -61,6 +61,18 @@ func (p *Pool) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, em
 	providers, obs := p.providers, p.observer
 	p.mu.RUnlock()
 
+	// Once a provider has emitted text the caller has shown it, so a later
+	// failure is returned as is: falling back would repeat or mix the answer.
+	emitted := false
+	tracked := func(ctx context.Context, ev agentcoreapi.StreamEvent) error {
+		if ev.Kind == agentcoreapi.StreamEventTextDelta && ev.Delta != "" {
+			emitted = true
+		}
+		if emit == nil {
+			return nil
+		}
+		return emit(ctx, ev)
+	}
 	var lastErr error
 	for i, prov := range providers {
 		streaming, ok := prov.(agentcoreapi.StreamingProvider)
@@ -68,10 +80,14 @@ func (p *Pool) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, em
 			lastErr = fmt.Errorf("provider %s does not support streaming", prov.Name())
 			continue
 		}
-		resp, err := StreamObserved(ctx, streaming, req, emit, i+1, obs)
+		resp, err := StreamObserved(ctx, streaming, req, tracked, i+1, obs)
 		if err == nil {
 			return resp, nil
 		}
+		if emitted || ctx.Err() != nil {
+			return nil, err
+		}
+		slog.Warn("llm provider stream failed, trying next", "provider", prov.Name(), "err", err)
 		lastErr = err
 	}
 	return nil, fmt.Errorf("all providers failed for stream: %w", lastErr)

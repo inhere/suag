@@ -23,8 +23,10 @@ type OpenAIProvider struct {
 	model      string
 	embedModel string
 	client     *http.Client
-	name       string
-	headers    map[string]string
+	// streamClient has no overall timeout: a streamed body may last minutes.
+	streamClient *http.Client
+	name         string
+	headers      map[string]string
 }
 
 // OpenAIConfig configures an OpenAIProvider.
@@ -53,13 +55,14 @@ func NewOpenAIProvider(cfg OpenAIConfig) *OpenAIProvider {
 		cfg.Name = "openai"
 	}
 	return &OpenAIProvider{
-		apiKey:     cfg.APIKey,
-		baseURL:    cfg.BaseURL,
-		model:      cfg.Model,
-		embedModel: cfg.EmbedModel,
-		client:     &http.Client{Timeout: 120 * time.Second},
-		name:       cfg.Name,
-		headers:    cfg.Headers,
+		apiKey:       cfg.APIKey,
+		baseURL:      cfg.BaseURL,
+		model:        cfg.Model,
+		embedModel:   cfg.EmbedModel,
+		client:       &http.Client{Timeout: 120 * time.Second},
+		streamClient: newStreamClient(),
+		name:         cfg.Name,
+		headers:      cfg.Headers,
 	}
 }
 
@@ -81,27 +84,6 @@ func (p *OpenAIProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 	}
 
 	return p.parseResponse(respBody)
-}
-
-// Stream implements the public streaming contract. This first iteration keeps
-// behavior simple by emitting the final content as a single delta.
-func (p *OpenAIProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
-	resp, err := p.Generate(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	if emit != nil && resp != nil && resp.Content != "" {
-		if err := emit(ctx, agentcoreapi.StreamEvent{
-			Kind:  agentcoreapi.StreamEventTextDelta,
-			Delta: resp.Content,
-		}); err != nil {
-			return nil, err
-		}
-		if err := emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventMessageStop}); err != nil {
-			return nil, err
-		}
-	}
-	return resp, nil
 }
 
 // Embed implements Provider.
