@@ -1,6 +1,8 @@
 package output
 
 import (
+	"strings"
+
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/pkg/agentcore"
 )
@@ -28,10 +30,30 @@ func EventLine(event personal.Event) (line map[string]any, ok bool) {
 			entries = append(entries, map[string]string{"step": step.Step, "status": step.Status})
 		}
 		data["type"], data["explanation"], data["entries"] = "plan", event.Plan.Explanation, entries
+	case "tool_call":
+		// Text is already the redacted, truncated argument summary (toolEventHook).
+		data["type"], data["name"], data["args"] = "tool_call", event.ToolName, event.Text
+	case "tool_result":
+		data["type"], data["name"], data["is_error"] = "tool_result", event.ToolName, event.IsError
+		data["summary"] = ToolResultSummary(event.Text)
 	default:
 		return nil, false
 	}
 	return data, true
+}
+
+// toolSummaryLimit caps the tool_result summary, in runes.
+const toolSummaryLimit = 200
+
+// ToolResultSummary condenses a tool result for stream-json. Secrets are
+// redacted first and the result truncated afterwards, so a cut can never leave
+// a partially redacted credential behind.
+func ToolResultSummary(content string) string {
+	text := strings.Join(strings.Fields(personal.RedactSecretValues(content)), " ")
+	if r := []rune(text); len(r) > toolSummaryLimit {
+		return string(r[:toolSummaryLimit-1]) + "…"
+	}
+	return text
 }
 
 // ErrorLine is the stream-json line for a failed run.

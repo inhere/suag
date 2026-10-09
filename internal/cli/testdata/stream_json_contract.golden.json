@@ -80,6 +80,27 @@
       ]
     },
     {
+      "type": "tool_call",
+      "fields": [
+        "args",
+        "name",
+        "run_id",
+        "session_id",
+        "type"
+      ]
+    },
+    {
+      "type": "tool_result",
+      "fields": [
+        "is_error",
+        "name",
+        "run_id",
+        "session_id",
+        "summary",
+        "type"
+      ]
+    },
+    {
       "type": "turn_end",
       "status": "COMPLETED",
       "fields": [
