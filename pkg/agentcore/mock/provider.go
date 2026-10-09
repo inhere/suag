@@ -176,6 +176,7 @@ func cloneResult(result *api.GenerateResult) *api.GenerateResult {
 		FinishReason: result.FinishReason,
 		Usage:        result.Usage,
 		Metadata:     cloneMap(result.Metadata),
+		Reasoning:    result.Reasoning,
 	}
 
 	if len(result.ToolCalls) > 0 {

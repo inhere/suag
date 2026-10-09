@@ -114,3 +114,34 @@ func TestOpenAIProvider_BuildRequestBody_ToolTranscript(t *testing.T) {
 		assert.Eq(t, "tool", msgs[3]["role"])
 	})
 }
+
+// Thinking-mode APIs require each earlier assistant message's reasoning_content
+// back on requests that carry tools; it is never added to user or tool messages.
+func TestOpenAIProvider_ReasoningContentRoundTrip(t *testing.T) {
+	p := NewOpenAIProvider(OpenAIConfig{})
+	t.Run("parse", func(t *testing.T) {
+		res, err := p.parseResponse([]byte(`{"choices":[{"message":{"content":"","reasoning_content":"think","tool_calls":[{"id":"c1","function":{"name":"ls","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`))
+		assert.NoErr(t, err)
+		assert.Eq(t, "think", res.Reasoning)
+		assert.Eq(t, agentcoreapi.FinishToolCalls, res.FinishReason)
+	})
+	t.Run("echo on assistant messages", func(t *testing.T) {
+		pair := toolPair("c1", "ls", "ok", nil)
+		pair[0].Reasoning = "think-1"
+		ms := append([]agentcoreapi.Message{{Role: "user", Content: "go"}}, pair...)
+		ms = append(ms, agentcoreapi.Message{Role: "assistant", Content: "done", Reasoning: "think-2"}, agentcoreapi.Message{Role: "user", Content: "next"})
+		msgs := p.buildRequestBody(&agentcoreapi.GenerateRequest{Messages: ms}, "m", false)["messages"].([]map[string]any)
+		assert.Eq(t, 5, len(msgs))
+		assert.Eq(t, "think-1", msgs[1]["reasoning_content"])
+		assert.Eq(t, "think-2", msgs[3]["reasoning_content"])
+		for _, i := range []int{0, 2, 4} {
+			_, has := msgs[i]["reasoning_content"]
+			assert.Eq(t, false, has)
+		}
+	})
+	t.Run("absent when empty", func(t *testing.T) {
+		msgs := p.buildRequestBody(&agentcoreapi.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "go"}, {Role: "assistant", Content: "hi"}}}, "m", false)["messages"].([]map[string]any)
+		_, has := msgs[1]["reasoning_content"]
+		assert.Eq(t, false, has)
+	})
+}

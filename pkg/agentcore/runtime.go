@@ -167,7 +167,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 
 		switch res.FinishReason {
 		case FinishToolCalls:
-			if result, err, handled := r.executeToolCalls(ctx, state, tools, res.ToolCalls, res.Content); handled {
+			if result, err, handled := r.executeToolCalls(ctx, state, tools, res.ToolCalls, leadOutput{text: res.Content, reasoning: res.Reasoning}); handled {
 				return r.finishRun(ctx, input, state, result, err)
 			}
 			continue
@@ -415,7 +415,11 @@ func (r *DefaultRuntime) effectiveMaxSteps(input RunInput) int {
 	return r.maxSteps
 }
 
-func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, schemas []ToolSchema, calls []ToolCall, leadText string) (*RunResult, error, bool) {
+// leadOutput is the model output accompanying a batch of tool calls; it is
+// stored on the first assistant tool-call message only.
+type leadOutput struct{ text, reasoning string }
+
+func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, schemas []ToolSchema, calls []ToolCall, lead leadOutput) (*RunResult, error, bool) {
 	if err := validateToolCallsAgainstSchemas(schemas, calls); err != nil {
 		return r.handleErrorResult(ctx, state, "tool_validation", err, NewControl())
 	}
@@ -424,13 +428,13 @@ func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, 
 	}
 
 	for i, call := range calls {
-		// The model's text accompanying the tool calls is kept on the first
-		// assistant tool-call message only; parallel calls carry no duplicate.
-		text := ""
+		// The model's text and reasoning accompanying the tool calls are kept on
+		// the first assistant tool-call message only; parallel calls carry no duplicate.
+		var callLead leadOutput
 		if i == 0 {
-			text = leadText
+			callLead = lead
 		}
-		result, err, handled := r.executeSingleTool(ctx, state, call, text)
+		result, err, handled := r.executeSingleTool(ctx, state, call, callLead)
 		if handled {
 			return result, err, true
 		}
@@ -438,7 +442,7 @@ func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, 
 	return nil, nil, false
 }
 
-func (r *DefaultRuntime) executeSingleTool(ctx context.Context, state *RunState, call ToolCall, leadText string) (*RunResult, error, bool) {
+func (r *DefaultRuntime) executeSingleTool(ctx context.Context, state *RunState, call ToolCall, lead leadOutput) (*RunResult, error, bool) {
 	ctrl := NewControl()
 	event := &ToolEvent{
 		RunID:     state.RunID,
@@ -483,7 +487,7 @@ func (r *DefaultRuntime) executeSingleTool(ctx context.Context, state *RunState,
 			finalCall = *cloneToolCallValue(event.Call)
 		}
 		finalResult := normalizeToolResult(finalCall, event.Result)
-		if result, persistErr, handled := r.persistToolTranscript(ctx, state, finalCall, finalResult, leadText); handled {
+		if result, persistErr, handled := r.persistToolTranscript(ctx, state, finalCall, finalResult, lead); handled {
 			return result, persistErr, true
 		}
 		return r.handleErrorResult(ctx, state, "after_tool", wrapHookError(err), NewControl())
@@ -494,23 +498,24 @@ func (r *DefaultRuntime) executeSingleTool(ctx context.Context, state *RunState,
 	}
 	finalResult := normalizeToolResult(finalCall, event.Result)
 	if ctrl.ShouldYield() || ctrl.ShouldShortCircuit() {
-		if result, persistErr, handled := r.persistToolTranscript(ctx, state, finalCall, finalResult, leadText); handled {
+		if result, persistErr, handled := r.persistToolTranscript(ctx, state, finalCall, finalResult, lead); handled {
 			return result, persistErr, true
 		}
 		return r.handleErrorResult(ctx, state, "after_tool", wrapHookError(errors.New("after_tool control is not supported")), NewControl())
 	}
 
-	if result, err, handled := r.persistToolTranscript(ctx, state, finalCall, finalResult, leadText); handled {
+	if result, err, handled := r.persistToolTranscript(ctx, state, finalCall, finalResult, lead); handled {
 		return result, err, true
 	}
 	return nil, nil, false
 }
 
-func (r *DefaultRuntime) persistToolTranscript(ctx context.Context, state *RunState, call ToolCall, result *ToolResult, leadText string) (*RunResult, error, bool) {
+func (r *DefaultRuntime) persistToolTranscript(ctx context.Context, state *RunState, call ToolCall, result *ToolResult, lead leadOutput) (*RunResult, error, bool) {
 	assistantMessage := Message{
-		Role:     "assistant",
-		Content:  leadText,
-		ToolCall: cloneToolCallValue(&call),
+		Role:      "assistant",
+		Content:   lead.text,
+		ToolCall:  cloneToolCallValue(&call),
+		Reasoning: lead.reasoning,
 	}
 	toolMessage := Message{
 		Role:       "tool",
@@ -532,9 +537,10 @@ func (r *DefaultRuntime) persistToolTranscript(ctx context.Context, state *RunSt
 func (r *DefaultRuntime) persistFinalAnswer(ctx context.Context, input RunInput, state *RunState, result *GenerateResult) (*RunResult, error) {
 	preOutputState := cloneRunStateValue(state)
 	assistantMessage := Message{
-		Role:     "assistant",
-		Content:  result.Content,
-		Metadata: cloneMetadata(result.Metadata),
+		Role:      "assistant",
+		Content:   result.Content,
+		Metadata:  cloneMetadata(result.Metadata),
+		Reasoning: result.Reasoning,
 	}
 	state.Messages = append(state.Messages, assistantMessage)
 	if len(result.Artifacts) > 0 {

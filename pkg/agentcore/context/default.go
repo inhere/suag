@@ -239,6 +239,7 @@ func cloneMessage(msg api.Message) api.Message {
 		ToolCall:   cloneToolCall(msg.ToolCall),
 		ToolResult: cloneToolResult(msg.ToolResult),
 		Metadata:   cloneMetadata(msg.Metadata),
+		Reasoning:  msg.Reasoning,
 	}
 }
 

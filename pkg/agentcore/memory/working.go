@@ -120,8 +120,9 @@ func cloneMessages(messages []api.Message) []api.Message {
 
 func cloneMessage(msg api.Message) api.Message {
 	cloned := api.Message{
-		Role:    msg.Role,
-		Content: msg.Content,
+		Role:      msg.Role,
+		Content:   msg.Content,
+		Reasoning: msg.Reasoning,
 	}
 	if msg.Metadata != nil {
 		cloned.Metadata = cloneMetadata(msg.Metadata)

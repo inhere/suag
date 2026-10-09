@@ -174,12 +174,14 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 			if m.Content != "" {
 				content = m.Content
 			}
-			msgs = append(msgs, map[string]any{
-				"role": "assistant", "content": content, "tool_calls": []map[string]any{call},
-			})
+			msg := map[string]any{"role": "assistant", "content": content, "tool_calls": []map[string]any{call}}
+			withReasoning(msg, m)
+			msgs = append(msgs, msg)
 			continue
 		}
-		msgs = append(msgs, map[string]any{"role": m.Role, "content": m.Content})
+		msg := map[string]any{"role": m.Role, "content": m.Content}
+		withReasoning(msg, m)
+		msgs = append(msgs, msg)
 	}
 
 	body := map[string]any{
@@ -210,13 +212,24 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 	return body
 }
 
+// withReasoning echoes an assistant message's reasoning as reasoning_content.
+// Thinking-mode APIs (DeepSeek, Kimi, ...) reject a request with tools whose
+// earlier assistant messages lack it. It is only present when the API returned
+// reasoning_content, so APIs without thinking never see the field.
+func withReasoning(msg map[string]any, m agentcoreapi.Message) {
+	if m.Role == "assistant" && m.Reasoning != "" {
+		msg["reasoning_content"] = m.Reasoning
+	}
+}
+
 // parseResponse decodes an OpenAI chat completion response.
 func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResult, error) {
 	var raw struct {
 		Choices []struct {
 			Message struct {
-				Content   string `json:"content"`
-				ToolCalls []struct {
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
+				ToolCalls        []struct {
 					ID       string `json:"id"`
 					Function struct {
 						Name      string          `json:"name"`
@@ -252,7 +265,8 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 
 	choice := raw.Choices[0]
 	resp := &agentcoreapi.GenerateResult{
-		Content: choice.Message.Content,
+		Content:   choice.Message.Content,
+		Reasoning: choice.Message.ReasoningContent,
 		Usage: agentcoreapi.Usage{
 			InputTokens:     raw.Usage.PromptTokens,
 			OutputTokens:    raw.Usage.CompletionTokens,

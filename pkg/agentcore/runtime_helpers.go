@@ -228,6 +228,7 @@ func cloneMessagesValue(messages []Message) []Message {
 			Metadata:   cloneMetadata(msg.Metadata),
 			ToolCall:   cloneToolCallValue(msg.ToolCall),
 			ToolResult: cloneToolResultValue(msg.ToolResult),
+			Reasoning:  msg.Reasoning,
 		}
 	}
 	return cloned

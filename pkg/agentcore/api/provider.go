@@ -57,6 +57,9 @@ type GenerateResult struct {
 	Usage        Usage
 	Artifacts    []Artifact
 	Metadata     map[string]any
+	// Reasoning is the model's reasoning text returned with this result; the
+	// runtime stores it on the assistant message it persists.
+	Reasoning string
 }
 
 // FinishReason explains whether a model response completed the step or requested tools.

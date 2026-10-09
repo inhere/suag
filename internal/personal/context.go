@@ -316,7 +316,8 @@ func charsOfMessages(ms []agentcore.Message) int {
 }
 
 func charsOfMessage(m agentcore.Message) int {
-	n := len(m.Content)
+	// Reasoning is sent back to thinking-mode APIs, so it occupies the window too.
+	n := len(m.Content) + len(m.Reasoning)
 	if m.ToolResult != nil && len(m.ToolResult.Content) > n {
 		n = len(m.ToolResult.Content) // tool messages carry the result twice; count once
 	}

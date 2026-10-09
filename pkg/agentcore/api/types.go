@@ -38,6 +38,10 @@ type Message struct {
 	ToolCall   *ToolCall
 	ToolResult *ToolResult
 	Metadata   map[string]any
+	// Reasoning is the model's reasoning text for an assistant message (e.g.
+	// OpenAI-compatible reasoning_content). It is persisted with the message so
+	// providers whose APIs require it can send it back on later requests.
+	Reasoning string `json:",omitempty"`
 }
 
 // Artifact is a minimal portable output produced by tools or models.
