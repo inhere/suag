@@ -5,7 +5,10 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gookit/goutil/x/assert"
 	"golang.org/x/term"
@@ -234,4 +237,55 @@ func TestTerminal_pasteIndicator(t *testing.T) {
 	line, err := tm.ReadLine()
 	assert.Eq(t, "你好", line)
 	assert.True(t, errors.Is(err, ErrPasteIndicator))
+}
+
+// syncBuffer is a Write sink safe for the reader goroutine and the test.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// UpdatePrompt during a ReadLine repaints the new prompt with the typed text,
+// so a stale prompt (e.g. "waiting for a reply") never lingers on screen.
+func TestTerminal_UpdatePromptRepaintsDuringRead(t *testing.T) {
+	pr, pw := io.Pipe()
+	out := &syncBuffer{}
+	tm := NewTerminal(struct {
+		io.Reader
+		io.Writer
+	}{pr, out}, "wait> ")
+	lines := make(chan string, 1)
+	go func() {
+		line, _ := tm.ReadLine()
+		lines <- line
+	}()
+	_, _ = pw.Write([]byte("你a"))
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(out.String(), "你a") && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	before := len(out.String())
+	assert.NoErr(t, tm.UpdatePrompt("> "))
+	repaint := out.String()[before:]
+	assert.StrContains(t, repaint, "\x1b[K") // the old prompt and line are cleared
+	assert.StrContains(t, repaint, "> 你a")
+	assert.NotContains(t, repaint, "wait> ")
+	assert.NoErr(t, tm.UpdatePrompt("> ")) // same prompt: no output
+	assert.Eq(t, len(out.String()), before+len(repaint))
+
+	_, _ = pw.Write([]byte("\r"))
+	assert.Eq(t, "你a", <-lines)
+	_ = pw.Close()
 }

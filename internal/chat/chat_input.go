@@ -205,6 +205,11 @@ func (s *chatInputSource) Request(prompt string) bool {
 		err := s.enterRawLocked()
 		s.mu.Unlock()
 		_ = err // best effort: the pending read still works in cooked mode
+		// The read keeps its line; only the prompt changes (e.g. a Stop hook that
+		// returned without waiting for an external reply).
+		if s.terminal != nil {
+			_ = s.terminal.UpdatePrompt(prompt)
+		}
 		return true
 	}
 	s.pending = true

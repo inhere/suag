@@ -818,6 +818,39 @@ func (t *Terminal) SetPrompt(prompt string) {
 	t.prompt = []rune(prompt)
 }
 
+// UpdatePrompt replaces the prompt and, when a prompt is on screen (a ReadLine
+// is in progress), repaints it together with the line being edited. SetPrompt
+// alone only takes effect on the next redraw. (Local addition.)
+func (t *Terminal) UpdatePrompt(prompt string) error {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	if string(t.prompt) == prompt {
+		return nil
+	}
+	t.prompt = []rune(prompt)
+	if t.cursorX == 0 && t.cursorY == 0 {
+		return nil // nothing on screen yet; the next ReadLine draws it
+	}
+	// Same clearing as Write: column zero, then every row of prompt+line.
+	t.move(0, 0, t.cursorX, 0)
+	t.cursorX = 0
+	t.clearLineToRight()
+	for t.cursorY > 0 {
+		t.move(1, 0, 0, 0)
+		t.cursorY--
+		t.clearLineToRight()
+	}
+	t.writeLine(t.prompt)
+	if t.echo {
+		t.writeLine(t.line)
+	}
+	t.moveCursorToPos(t.pos)
+	_, err := t.c.Write(t.outBuf)
+	t.outBuf = t.outBuf[:0]
+	return err
+}
+
 func (t *Terminal) clearAndRepaintLinePlusNPrevious(numPrevLines int) {
 	// Move cursor to column zero at the start of the line.
 	t.move(t.cursorY, 0, t.cursorX, 0)
