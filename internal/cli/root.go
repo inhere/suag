@@ -52,6 +52,7 @@ func New(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, build B
 		newSendCommand(stdin, stderr),
 		newTraceCommand(ctx, stdout, stderr),
 		newStatsCommand(ctx, stdout, stderr),
+		newGCCommand(ctx, stdout, stderr),
 		newExportCommand(ctx, stdout, stderr),
 	)
 	return root

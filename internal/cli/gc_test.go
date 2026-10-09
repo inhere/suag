@@ -1,0 +1,65 @@
+package cli
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/gookit/goutil/x/assert"
+	appconfig "github.com/inhere/suag/internal/config"
+	personalprocess "github.com/inhere/suag/internal/personal/process"
+	"github.com/inhere/suag/internal/personal/store"
+)
+
+func TestGCCommand(t *testing.T) {
+	home := shortCLIHome(t)
+	t.Setenv("SUAG_HOME", home)
+	t.Setenv("SUAG_HOOKS", "off")
+	ctx := context.Background()
+	dbPath, err := appconfig.ResolveCoreStorePath()
+	assert.Require(t, assert.NoErr(t, err))
+	repo, err := store.Open(dbPath)
+	assert.Require(t, assert.NoErr(t, err))
+	old := time.Now().Add(-40 * 24 * time.Hour)
+	for _, id := range []string{"gc-idle", "gc-busy"} {
+		assert.NoErr(t, repo.CreateSession(ctx, store.Session{ID: id, Title: id, CreatedAt: old, UpdatedAt: old}))
+	}
+	assert.NoErr(t, repo.CreateSession(ctx, store.Session{ID: "gc-new", Title: "new"}))
+	assert.NoErr(t, repo.Close())
+
+	exists := func(id string) bool {
+		repo, err := store.Open(dbPath)
+		assert.Require(t, assert.NoErr(t, err))
+		defer repo.Close()
+		_, err = repo.GetSession(ctx, id)
+		return err == nil
+	}
+
+	t.Run("usage", func(t *testing.T) {
+		_, err := runCLI(t, ctx, "gc")
+		assert.ErrMsgContains(t, err, "--older-than")
+	})
+
+	t.Run("dry run by default", func(t *testing.T) {
+		out, err := runCLI(t, ctx, "gc", "--older-than", "30d")
+		assert.NoErr(t, err)
+		assert.StrContains(t, out, "gc-idle")
+		assert.StrContains(t, out, "将删除 2 个会话")
+		assert.StrContains(t, out, "--apply")
+		assert.True(t, exists("gc-idle"))
+	})
+
+	t.Run("apply keeps a session another process holds", func(t *testing.T) {
+		// A running turn holds run/locks/<id>.lock for the whole turn.
+		lock, err := personalprocess.AcquireSessionLock(filepath.Join(home, "run", "locks"), "gc-busy", 0)
+		assert.Require(t, assert.NoErr(t, err))
+		defer lock.Close()
+		out, err := runCLI(t, ctx, "gc", "--older-than", "30d", "--apply")
+		assert.NoErr(t, err)
+		assert.StrContains(t, out, "已删除 1 个会话")
+		assert.False(t, exists("gc-idle"))
+		assert.True(t, exists("gc-busy"))
+		assert.True(t, exists("gc-new"))
+	})
+}
