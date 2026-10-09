@@ -2,6 +2,7 @@ package personal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -83,6 +84,8 @@ type Event struct {
 	RunID     string
 	Text      string
 	ToolName  string
+	// IsError is set on "tool_result" events whose tool call failed or was refused.
+	IsError bool
 	// Plan is set on "plan" events (the full replaced task list).
 	Plan   *native.Plan
 	Status agentcore.RunStatus
@@ -98,7 +101,6 @@ type RunRequest struct {
 	Prompt          string
 	SystemContext   string
 	Injected        bool
-	EmitToolResults bool
 	Emit            EmitFunc
 }
 
@@ -388,8 +390,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	// cannot hide a model call from the usage total. The denial limit hook ends
 	// the turn before the next model call once DenialLimit refusals accumulated.
 	runtimeHooks := append([]agentcore.Hook{usage, denialLimitHook{denials: denials, usage: usage}}, r.cfg.Hooks...)
-	if req.Emit != nil && req.EmitToolResults {
-		runtimeHooks = append(runtimeHooks, toolResultEmitHook{sink: req.Emit, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
+	if req.Emit != nil {
+		runtimeHooks = append(runtimeHooks, toolEventHook{sink: req.Emit, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
 	}
 	storage := r.cfg.Repository.AgentStorage()
 	promptBuilder := rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Meta, deferredTools: r.deferredToolsPrompt()}
@@ -457,7 +459,13 @@ func (r *Runner) markRunning(ctx context.Context, sessionID, turnID string) (Ses
 	return fresh, nil
 }
 
-type toolResultEmitHook struct {
+// toolArgSummaryLimit caps the argument summary carried by "tool_call" events.
+const toolArgSummaryLimit = 200
+
+// toolEventHook publishes "tool_call" (before execution) and "tool_result"
+// (after) events. Emit failures are only logged: returning them from a hook
+// stage would abort the tool or the turn, and display must never do that.
+type toolEventHook struct {
 	agentcore.NopHook
 	sink      EmitFunc
 	sessionID string
@@ -465,14 +473,40 @@ type toolResultEmitHook struct {
 	runID     string
 }
 
-func (h toolResultEmitHook) AfterTool(ctx context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
+func (h toolEventHook) publish(ctx context.Context, event Event) {
+	event.SessionID, event.TurnID, event.RunID = h.sessionID, h.turnID, h.runID
+	if err := emit(ctx, h.sink, event); err != nil {
+		slog.Warn("emit tool event", "session_id", h.sessionID, "kind", event.Kind, "tool", event.ToolName, "err", err)
+	}
+}
+
+func (h toolEventHook) BeforeTool(ctx context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
+	if event == nil || event.Call == nil {
+		return nil
+	}
+	h.publish(ctx, Event{Kind: "tool_call", ToolName: event.Call.Name, Text: toolArgSummary(event.Call.Arguments)})
+	return nil
+}
+
+func (h toolEventHook) AfterTool(ctx context.Context, event *agentcore.ToolEvent, _ *agentcore.Control) error {
 	if event == nil || event.Result == nil {
 		return nil
 	}
-	return emit(ctx, h.sink, Event{
-		Kind: "tool_result", SessionID: h.sessionID, TurnID: h.turnID, RunID: h.runID,
-		ToolName: event.Result.Name, Text: event.Result.Content,
-	})
+	isErr, _ := event.Result.Metadata["is_error"].(bool)
+	h.publish(ctx, Event{Kind: "tool_result", ToolName: event.Result.Name, Text: event.Result.Content, IsError: isErr})
+	return nil
+}
+
+// toolArgSummary renders call arguments as compact JSON, redacted and truncated.
+func toolArgSummary(args map[string]any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(args)
+	if err != nil {
+		return ""
+	}
+	return truncateRunes(RedactSecretValues(string(data)), toolArgSummaryLimit)
 }
 
 func (r *Runner) openTranscript(sessionID string) *Transcript {

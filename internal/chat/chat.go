@@ -222,11 +222,10 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		}
 		live := output.NewLiveText(inputSource)
 		result, runErr := runner.Run(ctx, personal.RunRequest{
-			SessionID:       sessionID,
-			Prompt:          line,
-			SystemContext:   pendingContext,
-			Injected:        injected,
-			EmitToolResults: hooks != nil,
+			SessionID:     sessionID,
+			Prompt:        line,
+			SystemContext: pendingContext,
+			Injected:      injected,
 			Emit: func(eventCtx context.Context, event personal.Event) error {
 				if live.Handle(event) {
 					return nil

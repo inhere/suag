@@ -155,7 +155,7 @@ func TestDeferredToolDirectCallAutoLoads(t *testing.T) {
 	}}
 	runner, gate := visRunner(t, repo, prov)
 	var results []string
-	_, err := runner.Run(ctx, RunRequest{Prompt: "go", EmitToolResults: true, Emit: func(_ context.Context, e Event) error {
+	_, err := runner.Run(ctx, RunRequest{Prompt: "go", Emit: func(_ context.Context, e Event) error {
 		if e.Kind == "tool_result" {
 			results = append(results, e.Text)
 		}
