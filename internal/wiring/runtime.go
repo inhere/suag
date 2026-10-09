@@ -36,8 +36,9 @@ type Options struct {
 	// MCPConfigs are Claude-style config files read by OpenCLI into Servers.
 	MCPConfigs []string
 	Hooks      []agentcore.Hook
-	// Approver is the permission policy of the approval layer (CLI allowlist or
-	// ACP RequestPermission); nil denies every tool call (fail closed).
+	// Approver is the permission policy of the approval layer (run: MCP
+	// allowlist; chat: chat approver set by OpenCLI; ACP: RequestPermission);
+	// nil denies every tool call (fail closed).
 	Approver           tools.Approver
 	AppendSystemPrompt string
 	// ClearAppendSystemPrompt drops the session's saved append prompt. An empty

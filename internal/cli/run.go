@@ -57,7 +57,7 @@ func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptio
 	}
 	defer func() { retErr = errors.Join(retErr, runtime.Close()) }()
 	if mode == "chat" {
-		return runChat(ctx, runtime.Runner, opts, stdin, stdout, stderr)
+		return runChat(ctx, runtime.Runner, runtime.Asker, opts, stdin, stdout, stderr)
 	}
 	return executePersonalRun(ctx, runtime.Runner, opts, stdout, stderr)
 }
