@@ -9,6 +9,12 @@
 - 设计与实施依据分别是 `docs/design/2026-10-09-config-layering-chat-design.md` 和 `docs/plans/2026-10-09-config-layering-chat-plan.md`（2026-10-08 的 core-capabilities 与 2026-10-06 的 personal-agent-redesign 设计/计划保留为历史）；配置格式见 `docs/usage/llm-config-v0.md`；旧控制面代码见 `v0.1.0` tag。
 - 任务与进度用 `gofer issue`（数据在 `.gofer/tracker`）和 `gofer plan` 跟踪，经验用 `gofer memory`；阶段结果以 issue/plan 状态和实际验证证据为准。
 
+## 验证
+
+- 单元测试：`go test -race ./...`；Windows 行为经 gofer exec job 在主机跑 `go test ./...`。
+- 终端交互改动（chat 输入、提示符、确认交互、Ctrl-C、渲染）必须再跑伪终端端到端冒烟：`make smoke-chat`（`scripts/ptysmoke/`，说明见其 README）；新增交互行为时在 `chat_approval.py` 补对应检查或新建场景脚本。
+- 涉及 provider 协议的改动，至少用一个真实 provider 跑一轮带工具调用的对话；做不到时在交付说明中写明未经真实模型验证。
+
 ## 项目编码规范
 
 - 关键的方法或逻辑点需要添加注释说明

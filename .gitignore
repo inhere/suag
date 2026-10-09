@@ -11,3 +11,4 @@ local/
 tmp/
 dist/
 local/
+__pycache__/

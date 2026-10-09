@@ -16,7 +16,7 @@ LDFLAGS := -s -w \
 	-X main.GitCommit=$(GIT_HASH) \
 	-X 'main.BuildDate=$(BUILD_TIME)'
 
-.PHONY: all build install run clean clean-dist help latest build-all dump-info latest-yaml build-linux build-linux-arm64 build-darwin build-darwin-arm64 build-windows
+.PHONY: all build install run clean clean-dist help latest build-all dump-info latest-yaml build-linux build-linux-arm64 build-darwin build-darwin-arm64 build-windows smoke-chat
 
 DIST_DIR := dist
 # 注：值会经 `echo "description: $(DESCRIPTION)"` 写入 latest.yaml，避免 `;`/`:`/引号等
@@ -121,6 +121,12 @@ release: build-all ## Create release archives for all platforms TODO 还未启�
 	tar -czf ../release/$(APP)-darwin-arm64.tar.gz $(APP)-darwin-arm64; \
 	zip ../release/$(APP)-windows-amd64.zip $(APP)-windows-amd64.exe;
 	@echo "Release archives created in release/"
+
+## smoke-chat: build to tmp/smoke and run the PTY end-to-end chat smoke test (Linux/macOS)
+smoke-chat:
+	@mkdir -p tmp/smoke
+	go build -o tmp/smoke/suag ./cmd/suag
+	python3 -I scripts/ptysmoke/chat_approval.py --bin tmp/smoke/suag --work tmp/smoke
 
 ## clean: remove build artifacts
 clean:
