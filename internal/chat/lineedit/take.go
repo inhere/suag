@@ -1,0 +1,109 @@
+package lineedit
+
+// Local additions used by chat to ask a question while a line read started
+// earlier is still waiting: the half-typed line is taken out, the question is
+// read in its place (outside history), and the taken line is put back into the
+// next read. All of them hold t.lock; a ReadLine blocked in Read has released
+// it, so they never wait for a key press.
+
+// TakeLine removes the line being edited and repaints the prompt without it.
+// reading reports whether a ReadLine is in progress; if so, the rest of that
+// read (whatever is typed from now on) is not added to history. When no read is
+// running, the line set by SetPendingLine (not yet shown) is taken instead.
+func (t *Terminal) TakeLine() (line string, reading bool) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	if !t.reading {
+		line, t.pendingLine = t.pendingLine, ""
+		return line, false
+	}
+	line = string(t.line)
+	t.noHistory = true
+	t.historyIndex = -1
+	if len(t.line) > 0 {
+		t.setLine([]rune{}, 0)
+		t.c.Write(t.outBuf)
+		t.outBuf = t.outBuf[:0]
+	}
+	return line, true
+}
+
+// SetPendingLine prefills the next ReadLine with line (cursor at its end), as if
+// it had been typed. An empty line clears a pending one.
+func (t *Terminal) SetPendingLine(line string) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	t.pendingLine = line
+}
+
+// ReadLineNoHistory is ReadLine without adding the line to the history.
+func (t *Terminal) ReadLineNoHistory() (line string, err error) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	t.noHistory = true
+	return t.readLine()
+}
+
+// applyPendingLine moves a pending line into the line being edited; it
+// reports whether it did. t.lock must be held.
+func (t *Terminal) applyPendingLine() bool {
+	if t.pendingLine == "" {
+		return false
+	}
+	t.line = []rune(t.pendingLine)
+	t.pos = len(t.line)
+	t.pendingLine = ""
+	return true
+}
+
+// repaintLocked redraws the prompt and the line in place, clearing every row
+// they used first (the same clearing as Write). t.lock must be held.
+func (t *Terminal) repaintLocked() error {
+	t.move(0, 0, t.cursorX, 0)
+	t.cursorX = 0
+	t.clearLineToRight()
+	for t.cursorY > 0 {
+		t.move(1, 0, 0, 0)
+		t.cursorY--
+		t.clearLineToRight()
+	}
+	t.writeLine(t.prompt)
+	if t.echo {
+		t.writeLine(t.line)
+	}
+	t.moveCursorToPos(t.pos)
+	_, err := t.c.Write(t.outBuf)
+	t.outBuf = t.outBuf[:0]
+	return err
+}
+
+// AbortLine ends the screen state of a read that returned io.EOF (Ctrl-C, or
+// Ctrl-D on an empty line): the cursor moves past the typed text to a new row
+// and the text is dropped, so the next ReadLine starts on a clean line.
+func (t *Terminal) AbortLine() {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	if t.cursorX != 0 || t.cursorY != 0 || len(t.line) > 0 {
+		t.moveCursorToPos(len(t.line))
+		t.queue([]rune("\r\n"))
+		t.c.Write(t.outBuf)
+		t.outBuf = t.outBuf[:0]
+	}
+	t.line, t.pos = t.line[:0], 0
+	t.cursorX, t.cursorY, t.maxLine = 0, 0, 0
+}
+
+// keepRemainder stores the unprocessed input rest (a slice of t.inBuf) for
+// the next loop or ReadLine. t.lock must be held.
+func (t *Terminal) keepRemainder(rest []byte) {
+	if len(rest) > 0 {
+		n := copy(t.inBuf[:], rest)
+		t.remainder = t.inBuf[:n]
+	} else {
+		t.remainder = nil
+	}
+}

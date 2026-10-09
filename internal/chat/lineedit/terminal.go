@@ -18,6 +18,10 @@
 //     marks) together with their base rune;
 //   - readPasswordLine (unused here) is dropped; stRingBuffer moved to history.go.
 //
+// Additions for asking a question during a pending read (take.go): TakeLine,
+// SetPendingLine, ReadLineNoHistory and AbortLine; a Ctrl-C/Ctrl-D that ends
+// a read is consumed instead of staying in the input remainder.
+//
 // For ASCII input the output is byte-for-byte identical to x/term.
 package lineedit
 
@@ -110,6 +114,13 @@ type Terminal struct {
 	// the incomplete, initial line. That value is stored in
 	// historyPending.
 	historyPending string
+
+	// Local additions (see take.go): reading is set while ReadLine runs,
+	// noHistory keeps the current read out of history and pendingLine
+	// prefills the next read.
+	reading     bool
+	noHistory   bool
+	pendingLine string
 }
 
 // NewTerminal runs a VT100 terminal on the given ReadWriter. If the ReadWriter is
@@ -732,10 +743,20 @@ func (t *Terminal) ReadLine() (line string, err error) {
 func (t *Terminal) readLine() (line string, err error) {
 	// t.lock must be held at this point
 
+	t.reading = true
+	defer func() { t.reading, t.noHistory = false, false }()
+	prefilled := t.applyPendingLine()
 	if t.cursorX == 0 && t.cursorY == 0 {
 		t.writeLine(t.prompt)
+		if t.echo && len(t.line) > 0 { // a prefilled line (SetPendingLine)
+			t.writeLine(t.line)
+			t.moveCursorToPos(t.pos)
+		}
 		t.c.Write(t.outBuf)
 		t.outBuf = t.outBuf[:0]
+	} else if prefilled {
+		// The prompt is already on screen with the old line: repaint it.
+		t.repaintLocked()
 	}
 
 	lineIsPasted := t.pasteActive
@@ -750,12 +771,16 @@ func (t *Terminal) readLine() (line string, err error) {
 				break
 			}
 			if !t.pasteActive {
+				// Local change: the key is consumed (kept out of t.remainder),
+				// so a later ReadLine does not see the same Ctrl-C/Ctrl-D again.
 				if key == keyCtrlD {
 					if len(t.line) == 0 {
+						t.keepRemainder(rest)
 						return "", io.EOF
 					}
 				}
 				if key == keyCtrlC {
+					t.keepRemainder(rest)
 					return "", io.EOF
 				}
 				if key == keyPasteStart {
@@ -774,18 +799,15 @@ func (t *Terminal) readLine() (line string, err error) {
 			}
 			line, lineOk = t.handleKey(key)
 		}
-		if len(rest) > 0 {
-			n := copy(t.inBuf[:], rest)
-			t.remainder = t.inBuf[:n]
-		} else {
-			t.remainder = nil
-		}
+		t.keepRemainder(rest)
 		t.c.Write(t.outBuf)
 		t.outBuf = t.outBuf[:0]
 		if lineOk {
 			if t.echo {
 				t.historyIndex = -1
-				t.history.Add(line)
+				if !t.noHistory {
+					t.history.Add(line)
+				}
 			}
 			if lineIsPasted {
 				err = ErrPasteIndicator
@@ -832,23 +854,7 @@ func (t *Terminal) UpdatePrompt(prompt string) error {
 	if t.cursorX == 0 && t.cursorY == 0 {
 		return nil // nothing on screen yet; the next ReadLine draws it
 	}
-	// Same clearing as Write: column zero, then every row of prompt+line.
-	t.move(0, 0, t.cursorX, 0)
-	t.cursorX = 0
-	t.clearLineToRight()
-	for t.cursorY > 0 {
-		t.move(1, 0, 0, 0)
-		t.cursorY--
-		t.clearLineToRight()
-	}
-	t.writeLine(t.prompt)
-	if t.echo {
-		t.writeLine(t.line)
-	}
-	t.moveCursorToPos(t.pos)
-	_, err := t.c.Write(t.outBuf)
-	t.outBuf = t.outBuf[:0]
-	return err
+	return t.repaintLocked()
 }
 
 func (t *Terminal) clearAndRepaintLinePlusNPrevious(numPrevLines int) {
