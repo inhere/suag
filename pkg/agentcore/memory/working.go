@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"strings"
 
 	"github.com/inhere/suag/pkg/agentcore/api"
 	internalutils "github.com/inhere/suag/pkg/agentcore/internal/utils"
@@ -92,6 +93,14 @@ func (m *WorkingMemory) filterAndTruncate(messages []api.Message) []api.Message 
 			continue
 		}
 		if !m.config.IncludeToolMessages && isToolMessage(msg) {
+			// An assistant message that carries both text and a tool call keeps its
+			// text (without the call, which would be orphaned once the matching
+			// tool result is dropped); a pure tool call is still filtered.
+			if msg.Role != "tool" && msg.ToolResult == nil && msg.ToolCall != nil && strings.TrimSpace(msg.Content) != "" {
+				kept := cloneMessage(msg)
+				kept.ToolCall = nil
+				filtered = append(filtered, kept)
+			}
 			continue
 		}
 		filtered = append(filtered, cloneMessage(msg))

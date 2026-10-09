@@ -259,3 +259,47 @@ func TestWorkingMemory_ObserveMessages_DoesNotOverwriteSummary(t *testing.T) {
 		t.Fatalf("summary = %q, want preserved summary", got)
 	}
 }
+
+func TestWorkingMemory_ToolCallMessagesKeepText(t *testing.T) {
+	hydrate := func(t *testing.T, cfg memorypkg.Config) []agentcore.Message {
+		t.Helper()
+		mem := memorypkg.New(cfg)
+		err := mem.Hydrate(context.Background(), &agentcore.RunState{Messages: []agentcore.Message{
+			{Role: "user", Content: "q"},
+			{Role: "assistant", Content: "let me look", ToolCall: &agentcore.ToolCall{CallID: "c1", Name: "file_read"}},
+			{Role: "tool", ToolResult: &agentcore.ToolResult{CallID: "c1", Name: "file_read", Content: "data"}},
+			{Role: "assistant", ToolCall: &agentcore.ToolCall{CallID: "c2", Name: "file_read"}},
+			{Role: "assistant", Content: "  ", ToolCall: &agentcore.ToolCall{CallID: "c3", Name: "file_read"}},
+			{Role: "assistant", Content: "done"},
+		}})
+		if err != nil {
+			t.Fatalf("Hydrate() error = %v", err)
+		}
+		msgs, err := mem.BuildContext(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("BuildContext() error = %v", err)
+		}
+		return msgs
+	}
+
+	t.Run("text is kept and the call is dropped", func(t *testing.T) {
+		msgs := hydrate(t, memorypkg.Config{})
+		var contents []string
+		for _, m := range msgs {
+			if m.ToolCall != nil || m.ToolResult != nil || m.Role == "tool" {
+				t.Fatalf("orphan tool data in %#v", m)
+			}
+			contents = append(contents, m.Content)
+		}
+		if want := []string{"q", "let me look", "done"}; !reflect.DeepEqual(contents, want) {
+			t.Fatalf("contents = %#v, want %#v (pure tool calls filtered)", contents, want)
+		}
+	})
+
+	t.Run("IncludeToolMessages keeps everything", func(t *testing.T) {
+		msgs := hydrate(t, memorypkg.Config{IncludeToolMessages: true})
+		if len(msgs) != 6 || msgs[1].ToolCall == nil {
+			t.Fatalf("msgs = %#v", msgs)
+		}
+	})
+}
