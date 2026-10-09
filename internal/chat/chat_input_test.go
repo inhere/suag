@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/x/assert"
-	"golang.org/x/term"
+	"github.com/inhere/suag/internal/chat/lineedit"
 )
 
 // fakeTTY records raw/cooked transitions without touching a real terminal.
@@ -63,7 +63,7 @@ func newFakeTTYSource(t *testing.T) (*chatInputSource, *fakeTTY, *io.PipeWriter)
 	tty := &fakeTTY{}
 	source.makeRaw = tty.makeRaw
 	source.reader = &chatActivityReader{source: source, input: pr}
-	source.terminal = term.NewTerminal(&chatTerminalIO{reader: source.reader, output: source.output}, "")
+	source.terminal = lineedit.NewTerminal(&chatTerminalIO{reader: source.reader, output: source.output}, "")
 	t.Cleanup(func() { _ = source.Close(); _ = pw.Close(); _ = pr.Close() })
 	return source, tty, pw
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/inhere/suag/internal/chat/lineedit"
 	"github.com/inhere/suag/internal/personal/process"
 	"golang.org/x/term"
 )
@@ -52,7 +53,7 @@ type chatInputSource struct {
 	// cooked so Ctrl-C raises SIGINT, even if a line read started earlier is still blocked.
 	turnActive bool
 	closed     bool // set by DiscardQueued/Close: deliveries are refused afterwards (guarded by mu)
-	terminal   *term.Terminal
+	terminal   *lineedit.Terminal
 	requests   chan chatInputRequest
 	events     chan chatInputEvent
 	activity   chan struct{}
@@ -83,7 +84,7 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 		}
 		source.reader = &chatActivityReader{source: source, input: input}
 		terminalIO := &chatTerminalIO{reader: source.reader, output: source.output}
-		source.terminal = term.NewTerminal(terminalIO, "")
+		source.terminal = lineedit.NewTerminal(terminalIO, "")
 	}
 	go source.run()
 	return source, nil
@@ -317,7 +318,7 @@ func (s *chatInputSource) readLine(prompt string) (string, error) {
 		s.terminal.SetPrompt(prompt)
 		s.reader.activitySent = false
 		line, err := s.terminal.ReadLine()
-		if errors.Is(err, term.ErrPasteIndicator) {
+		if errors.Is(err, lineedit.ErrPasteIndicator) {
 			err = nil
 		}
 		return line, err
