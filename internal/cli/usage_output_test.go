@@ -147,3 +147,20 @@ func TestMissingSessionIsStableError(t *testing.T) {
 		assert.Eq(t, true, errors.Is(err, store.ErrSessionNotFound))
 	}
 }
+
+// Text mode prints the model at the start and a usage summary at the end on
+// stderr; stdout keeps only the answer. stream-json output is unchanged.
+func TestRunTextModeShowsModelAndSummary(t *testing.T) {
+	runner, _ := newCLITestRunner(t, cachedUsageProvider{})
+	var stdout, stderr bytes.Buffer
+	assert.NoErr(t, executePersonalRun(context.Background(), runner, personalOptions{Prompt: "x", OutputFormat: "text"}, &stdout, &stderr))
+	assert.Eq(t, "done\n", stdout.String())
+	errOut := stderr.String()
+	assert.StrContains(t, errOut, "model: ")
+	assert.StrContains(t, errOut, "in 14 / out 6 tokens")
+
+	var jsonOut, jsonErr bytes.Buffer
+	assert.NoErr(t, executePersonalRun(context.Background(), runner, personalOptions{Prompt: "x", OutputFormat: "stream-json"}, &jsonOut, &jsonErr))
+	assert.NotContains(t, jsonErr.String(), "model: ")
+	assert.StrContains(t, strings.SplitN(jsonOut.String(), "\n", 2)[0], `"type":"session"`)
+}

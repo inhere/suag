@@ -21,8 +21,8 @@ const (
 	// callArgsLimit caps the tool_call argument text on screen, in runes.
 	callArgsLimit = 120
 
-	promptText        = "> "
-	promptWaitingText = "> (可等待外部回复) "
+	promptText        = "❯ "
+	promptWaitingText = "❯ (可等待外部回复) "
 )
 
 // rendererOptions configures a Renderer. Color switches ANSI styling for Out
@@ -188,6 +188,19 @@ func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration) {
 	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, strings.Join(parts, " · ")))
 }
 
+// Banner prints the chat header: the model in use and the commands.
+func (r *Renderer) Banner() {
+	head := "Suag chat"
+	if label := modelLabel(r.opts.Provider, r.opts.Model); label != "" {
+		head += " · " + label
+	}
+	fmt.Fprintln(r.opts.Out, r.paint(color.Cyan, head))
+	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "输入任务开始对话；:session 显示会话，:compact 压缩上下文，:quit 退出。"))
+}
+
+// ModelLabel is "provider/model" (or whichever part is known).
+func ModelLabel(provider, model string) string { return modelLabel(provider, model) }
+
 func modelLabel(provider, model string) string {
 	switch {
 	case provider != "" && model != "":
@@ -198,11 +211,18 @@ func modelLabel(provider, model string) string {
 	return provider
 }
 
+// FormatElapsed renders a duration for status lines (ms, s, then 1m2s).
+func FormatElapsed(d time.Duration) string { return formatElapsed(d) }
+
 func formatElapsed(d time.Duration) string {
-	if d < time.Second {
+	switch {
+	case d < time.Second:
 		return fmt.Sprintf("%dms", d.Milliseconds())
+	case d < time.Minute:
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	default:
+		return d.Round(time.Second).String() // e.g. 12m34s, 1h2m3s
 	}
-	return fmt.Sprintf("%.1fs", d.Seconds())
 }
 
 // truncateLine collapses whitespace (one display line) and cuts to limit runes.

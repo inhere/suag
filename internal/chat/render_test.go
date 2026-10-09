@@ -63,8 +63,8 @@ func TestRendererPlainTurn(t *testing.T) {
 	assert.StrNotContains(t, out.String(), "\x1b[")
 
 	t.Run("prompt and error", func(t *testing.T) {
-		assert.Eq(t, "> ", r.Prompt(false))
-		assert.Eq(t, "> (可等待外部回复) ", r.Prompt(true))
+		assert.Eq(t, "❯ ", r.Prompt(false))
+		assert.Eq(t, "❯ (可等待外部回复) ", r.Prompt(true))
 		r.Error(errors.New("boom"))
 		assert.Eq(t, "Error: boom\n", errOut.String())
 	})
@@ -91,7 +91,7 @@ func TestRendererColoredTurn(t *testing.T) {
 	assert.StrContains(t, got, "\x1b[31m  ⎿ error: exit status 1\x1b[0m")
 	assert.StrContains(t, got, "\x1b[90mp/m · in 1200 / out 34 tokens · 1.0s\x1b[0m")
 	assert.StrContains(t, got, "\x1b[32m  ✔ read\x1b[0m")
-	assert.Eq(t, "\x1b[36m> \x1b[0m", r.Prompt(false))
+	assert.Eq(t, "\x1b[36m❯ \x1b[0m", r.Prompt(false))
 
 	r.Error(errors.New("boom"))
 	assert.StrContains(t, errOut.String(), "\x1b[31mError: boom\x1b[0m")
@@ -128,5 +128,32 @@ func TestRendererExternalInput(t *testing.T) {
 		assert.Eq(t, 2, strings.Count(got, "\x1b[35m"))
 		assert.StrContains(t, got, "[来自 cli] a")
 		assert.StrContains(t, got, "b")
+	})
+}
+
+func TestBannerAndExitSummary(t *testing.T) {
+	t.Run("banner shows the model", func(t *testing.T) {
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out, Provider: "opencode-go", Model: "deepseek-v4-flash"}).Banner()
+		assert.StrContains(t, out.String(), "Suag chat · opencode-go/deepseek-v4-flash")
+	})
+	t.Run("exit summary", func(t *testing.T) {
+		var s chatStats
+		s.add(personal.RunResult{Usage: agentcore.Usage{InputTokens: 100, OutputTokens: 20}})
+		s.add(personal.RunResult{Usage: agentcore.Usage{InputTokens: 50, OutputTokens: 5},
+			SessionUsage: agentcore.Usage{InputTokens: 900, OutputTokens: 80, TotalTokens: 980}})
+		var out bytes.Buffer
+		s.print(&out, "sess_x", 125*time.Second)
+		assert.Eq(t, "本次 2 轮 · in 150 / out 25 tokens（会话累计 in 900 / out 80） · 运行 2m5s\n续接：suag chat --resume sess_x\n", out.String())
+	})
+	t.Run("no session no summary", func(t *testing.T) {
+		var out bytes.Buffer
+		chatStats{}.print(&out, "", time.Second)
+		assert.Eq(t, "", out.String())
+	})
+	t.Run("elapsed formats", func(t *testing.T) {
+		assert.Eq(t, "40ms", FormatElapsed(40*time.Millisecond))
+		assert.Eq(t, "2.5s", FormatElapsed(2500*time.Millisecond))
+		assert.Eq(t, "1h2m3s", FormatElapsed(time.Hour+2*time.Minute+3*time.Second))
 	})
 }

@@ -77,6 +77,11 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		sessionID, createdAtStartup = model.ID, true
 	}
 	fmt.Fprintln(stderr, "session id:", sessionID)
+	// Registered first so it runs last, after the terminal is restored: how to
+	// continue this session and what this chat process used.
+	chatStart := time.Now()
+	var stats chatStats
+	defer func() { stats.print(stderr, sessionID, time.Since(chatStart)) }()
 	var releaseSessionLock func() error
 	var processServer *personalprocess.Server
 	defer func() {
@@ -161,7 +166,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		}
 	}()
 
-	fmt.Fprintln(inputSource, "Suag chat — type a task, :session, :compact or :quit.")
+	render.Banner()
 	stopHookActive := false
 	for {
 		line, hasLine, err, stopDone, injected, interrupted := nextChatInput(ctx, inputSource, render, waiting, &lostReply)
@@ -264,6 +269,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		if processServer != nil {
 			_ = processServer.SetBusy(false)
 		}
+		stats.add(result)
 		pendingContext = ""
 		// Every turn end (success, error or yield) must send Stop: the hook contract defines it as
 		// "turn finished, back to waiting for input", otherwise a hook-side session stays "running" forever.
@@ -421,4 +427,33 @@ func showHookNotice(w io.Writer, response suaghooks.Response) {
 	if response.Notice != "" {
 		fmt.Fprintln(w, response.Notice)
 	}
+}
+
+// chatStats accumulates what one chat process used, for the exit summary.
+type chatStats struct {
+	turns   int
+	usage   agentcore.Usage
+	session agentcore.Usage // session-cumulative usage after the last turn
+}
+
+func (s *chatStats) add(result personal.RunResult) {
+	s.turns++
+	s.usage.InputTokens += result.Usage.InputTokens
+	s.usage.OutputTokens += result.Usage.OutputTokens
+	if result.SessionUsage.TotalTokens > 0 || result.SessionUsage.InputTokens > 0 {
+		s.session = result.SessionUsage
+	}
+}
+
+// print writes the exit summary: the resume command, this process's turns and
+// tokens (plus the session total when known) and how long chat ran.
+func (s chatStats) print(w io.Writer, sessionID string, elapsed time.Duration) {
+	if sessionID == "" {
+		return
+	}
+	line := fmt.Sprintf("本次 %d 轮 · in %d / out %d tokens", s.turns, s.usage.InputTokens, s.usage.OutputTokens)
+	if s.session.InputTokens > 0 || s.session.OutputTokens > 0 {
+		line += fmt.Sprintf("（会话累计 in %d / out %d）", s.session.InputTokens, s.session.OutputTokens)
+	}
+	fmt.Fprintf(w, "%s · 运行 %s\n续接：suag chat --resume %s\n", line, formatElapsed(elapsed), sessionID)
 }

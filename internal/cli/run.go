@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/gookit/goutil/cflag"
 	"github.com/gookit/goutil/cflag/capp"
+	"github.com/inhere/suag/internal/chat"
 	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/internal/wiring"
@@ -146,6 +148,7 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 		}
 	} else {
 		fmt.Fprintln(stderr, "session id:", sessionID)
+		fmt.Fprintln(stderr, "model:", chat.ModelLabel(runner.ProviderName(), runner.Model()))
 	}
 	live := output.NewLiveText(stdout)
 	emit := func(_ context.Context, event personal.Event) error {
@@ -159,8 +162,13 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 		}
 		return encoder.Encode(line)
 	}
+	runStart := time.Now()
 	result, err := runner.Run(ctx, personal.RunRequest{SessionID: sessionID, Prompt: opts.Prompt, Injected: opts.Injected, Emit: emit})
 	streamed := live.Finish() // end the streamed line before any error or status output
+	if encoder == nil {
+		// Text mode: a usage summary on stderr (stdout stays the answer only).
+		fmt.Fprintln(stderr, runSummary(runner, result, time.Since(runStart)))
+	}
 	if err != nil {
 		if encoder != nil {
 			_ = encoder.Encode(output.ErrorLine(sessionID, err, result))
@@ -226,4 +234,15 @@ func openRequestedSession(ctx context.Context, runner *personal.Runner, opts per
 		return "", err
 	}
 	return model.ID, nil
+}
+
+// runSummary is the text-mode closing line: model, this turn's tokens, the
+// session total when known, and the elapsed time.
+func runSummary(runner *personal.Runner, result personal.RunResult, elapsed time.Duration) string {
+	line := fmt.Sprintf("%s · in %d / out %d tokens", chat.ModelLabel(runner.ProviderName(), runner.Model()),
+		result.Usage.InputTokens, result.Usage.OutputTokens)
+	if s := result.SessionUsage; s.InputTokens > 0 || s.OutputTokens > 0 {
+		line += fmt.Sprintf("（会话累计 in %d / out %d）", s.InputTokens, s.OutputTokens)
+	}
+	return line + " · " + chat.FormatElapsed(elapsed)
 }
