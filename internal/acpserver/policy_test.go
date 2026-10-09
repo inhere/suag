@@ -171,3 +171,46 @@ func TestToolUpdatesDoNotRepeatDiff(t *testing.T) {
 	assert.Eq(t, 1, len(client.requests))
 	assert.Eq(t, 1, len(client.requests[0].ToolCall.Content)) // approver still sees the diff
 }
+
+func TestToolDiffOpenOnce(t *testing.T) {
+	cwd := t.TempDir()
+	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, "a.txt"), []byte("old\n"), 0o644))
+	assert.NoErr(t, os.Mkdir(filepath.Join(cwd, "dir"), 0o755))
+	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, "big.txt"), []byte(strings.Repeat("x", maxDiffBytes+1)), 0o644))
+
+	t.Run("regular file previews old text", func(t *testing.T) {
+		diff := editDiff(t, cwd, map[string]any{"path": "a.txt", "content": "new\n"})
+		assert.Eq(t, 1, len(diff))
+		assert.Eq(t, "old\n", *diff[0].Diff.OldText)
+	})
+
+	t.Run("missing file previews as new", func(t *testing.T) {
+		diff := editDiff(t, cwd, map[string]any{"path": "none.txt", "content": "new\n"})
+		assert.Eq(t, 1, len(diff))
+		assert.Nil(t, diff[0].Diff.OldText)
+	})
+
+	t.Run("symlink inside workspace previews target", func(t *testing.T) {
+		if err := os.Symlink("a.txt", filepath.Join(cwd, "ln.txt")); err != nil {
+			t.Skipf("cannot create symlink: %v", err)
+		}
+		diff := editDiff(t, cwd, map[string]any{"path": "ln.txt", "content": "new\n"})
+		assert.Eq(t, 1, len(diff))
+		assert.Eq(t, "old\n", *diff[0].Diff.OldText)
+	})
+
+	t.Run("dangling symlink is not previewed", func(t *testing.T) {
+		if err := os.Symlink("gone.txt", filepath.Join(cwd, "dangling.txt")); err != nil {
+			t.Skipf("cannot create symlink: %v", err)
+		}
+		assert.Empty(t, editDiff(t, cwd, map[string]any{"path": "dangling.txt", "content": "new\n"}))
+	})
+
+	t.Run("directory is not previewed", func(t *testing.T) {
+		assert.Empty(t, editDiff(t, cwd, map[string]any{"path": "dir", "content": "new\n"}))
+	})
+
+	t.Run("oversized file is not previewed", func(t *testing.T) {
+		assert.Empty(t, editDiff(t, cwd, map[string]any{"path": "big.txt", "content": "new\n"}))
+	})
+}

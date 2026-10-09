@@ -271,26 +271,24 @@ func toolDiff(cwd string, kind acp.ToolKind, locations []acp.ToolCallLocation, a
 	defer root.Close()
 
 	var oldText *string
-	info, err := root.Lstat(rel)
+	// Open exactly once through os.Root (which follows only in-root symlinks and
+	// rejects escapes), then judge the handle itself: no separate Lstat/Stat
+	// that a swap could race with.
+	f, err := openPreview(root, rel)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		// Absent target (including a missing parent directory, which file_write
-		// creates) is a new file. os.Root already rejects ".." and symlink
-		// escapes with a non-NotExist error, which falls to the nil branch.
-	case err != nil:
-		return nil
-	default:
-		if info.Mode()&os.ModeSymlink != 0 {
-			// Follow only symlinks that stay inside the root; dangling ones fail closed.
-			if info, err = root.Stat(rel); err != nil {
-				return nil
-			}
-		}
-		// Opening a FIFO/device would block before the user can even decide.
-		if !info.Mode().IsRegular() || info.Size() > maxDiffBytes {
+		// creates) is a new file. A dangling symlink also reports not-exist, so
+		// fail closed on anything that is still present as a link.
+		if _, lerr := root.Lstat(rel); lerr == nil {
 			return nil
 		}
-		before, ok := readBounded(root, rel)
+	case err != nil:
+		// os.Root rejects ".." and symlink escapes with a non-NotExist error.
+		return nil
+	default:
+		defer f.Close()
+		before, ok := readBounded(f)
 		if !ok {
 			return nil
 		}
@@ -299,13 +297,13 @@ func toolDiff(cwd string, kind acp.ToolKind, locations []acp.ToolCallLocation, a
 	return []acp.ToolCallContent{{Diff: &acp.ToolCallContentDiff{Type: "diff", Path: locations[0].Path, OldText: oldText, NewText: newText}}}
 }
 
-// readBounded reads a regular file, giving up if it grew past maxDiffBytes or is binary.
-func readBounded(root *os.Root, rel string) (string, bool) {
-	f, err := root.Open(rel)
-	if err != nil {
+// readBounded reads an opened regular file, giving up on non-regular files
+// (FIFO/device/directory), files past maxDiffBytes, or binary content.
+func readBounded(f *os.File) (string, bool) {
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maxDiffBytes {
 		return "", false
 	}
-	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, maxDiffBytes+1))
 	if err != nil || len(data) > maxDiffBytes || !textual(string(data)) {
 		return "", false
