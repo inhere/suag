@@ -129,6 +129,17 @@ func (r *Renderer) Finish() bool { return r.live.Finish() }
 // Answer prints a final answer that was not streamed.
 func (r *Renderer) Answer(text string) { fmt.Fprintln(r.opts.Out, text) }
 
+// External prints input that did not come from this keyboard (a reply sent
+// from elsewhere through `suag send` or a Stop hook) in its own color, so it
+// stands out from the model's answer. Each line is painted separately.
+func (r *Renderer) External(text string) {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = r.paint(color.Magenta, line)
+	}
+	fmt.Fprintln(r.opts.Out, strings.Join(lines, "\n"))
+}
+
 // Notice prints a plain informational line on the chat output.
 func (r *Renderer) Notice(text string) { fmt.Fprintln(r.opts.Out, text) }
 

@@ -336,7 +336,7 @@ func nextChatInput(ctx context.Context, source *chatInputSource, render *Rendere
 				*lost = appendContext(*lost, waiting.Interrupt(context.Background()))
 				interrupted = true
 			}
-			fmt.Fprintln(source, delivery.line)
+			render.External(delivery.line)
 			delivery.settle(nil)
 			return delivery.line, true, nil, false, true, interrupted
 		default:
@@ -359,14 +359,14 @@ func nextChatInput(ctx context.Context, source *chatInputSource, render *Rendere
 				fmt.Fprintln(source)
 				return "", false, nil, true, false, interrupted
 			}
-			fmt.Fprintln(source, result.Response.Reason)
+			render.External(result.Response.Reason)
 			return result.Response.Reason, true, nil, true, true, interrupted
 		case delivery := <-source.deliveries:
 			if waiting != nil {
 				*lost = appendContext(*lost, waiting.Interrupt(context.Background()))
 				interrupted = true
 			}
-			fmt.Fprintln(source, delivery.line)
+			render.External(delivery.line)
 			delivery.settle(nil)
 			return delivery.line, true, nil, false, delivery.injected, interrupted
 		case <-ctx.Done():

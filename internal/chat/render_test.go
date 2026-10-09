@@ -112,3 +112,21 @@ func TestColorEnabled(t *testing.T) {
 		assert.False(t, colorEnabledFor(&bytes.Buffer{}))
 	})
 }
+
+func TestRendererExternalInput(t *testing.T) {
+	t.Run("plain", func(t *testing.T) {
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out}).External("[gofer web 回复] 你好\n第二行")
+		assert.Eq(t, "[gofer web 回复] 你好\n第二行\n", out.String())
+	})
+	t.Run("colored per line", func(t *testing.T) {
+		color.ForceColor()
+		t.Cleanup(func() { color.RevertColorLevel() })
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out, Color: true}).External("[来自 cli] a\nb")
+		got := out.String()
+		assert.Eq(t, 2, strings.Count(got, "\x1b[35m"))
+		assert.StrContains(t, got, "[来自 cli] a")
+		assert.StrContains(t, got, "b")
+	})
+}
