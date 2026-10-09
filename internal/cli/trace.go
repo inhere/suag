@@ -58,5 +58,10 @@ func runTrace(ctx context.Context, out io.Writer, sessionID, turnID string, asJS
 	if err != nil {
 		return err
 	}
-	return personal.WriteTrace(out, events, asJSON)
+	// Plan entries come from the entries table and are merged by creation time.
+	plans, err := repo.ListEntries(ctx, sessionID, store.EntryFilter{Types: []string{store.EntryPlan}, TurnID: turnID})
+	if err != nil {
+		return err
+	}
+	return personal.WriteTrace(out, events, plans, asJSON)
 }

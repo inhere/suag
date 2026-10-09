@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gookit/goutil/x/assert"
 	appconfig "github.com/inhere/suag/internal/config"
@@ -222,5 +223,61 @@ func TestTraceCommandPrintsSessionTimeline(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err := newCLI(ctx, strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"trace", "nope"})
 		assert.Err(t, err)
+	})
+}
+
+func TestTraceCommandShowsPlan(t *testing.T) {
+	t.Setenv("SUAG_HOME", shortCLIHome(t))
+	dbPath, err := appconfig.ResolveCoreStorePath()
+	assert.NoErr(t, err)
+	repo, err := store.Open(dbPath)
+	assert.NoErr(t, err)
+	ctx := context.Background()
+	assert.NoErr(t, repo.CreateSession(ctx, store.Session{ID: "trace-plan", Status: store.SessionOpen}))
+	// Event, plan, event in time order: the plan must land between the events.
+	_, err = repo.AppendEvent(ctx, store.Event{SessionID: "trace-plan", TurnID: "t1", Kind: store.EventTurn, Name: "turn", Status: "completed", StartedAt: time.Now().Add(-time.Hour)})
+	assert.NoErr(t, err)
+	_, err = repo.AppendEntries(ctx, "trace-plan",
+		store.NewEntry{TurnID: "t1", Type: store.EntryPlan, JSON: json.RawMessage(`{"plan":[{"step":"design","status":"completed"},{"step":"build","status":"in_progress"},{"step":"ship","status":"pending"}]}`)},
+		store.NewEntry{TurnID: "t2", Type: store.EntryPlan, JSON: json.RawMessage(`{"explanation":"redo","plan":[{"step":"other","status":"pending"}]}`)})
+	assert.NoErr(t, err)
+	_, err = repo.AppendEvent(ctx, store.Event{SessionID: "trace-plan", TurnID: "t2", Kind: store.EventDenial, Name: "late", Status: "denied", StartedAt: time.Now().Add(time.Hour)})
+	assert.NoErr(t, err)
+	assert.NoErr(t, repo.Close())
+
+	run := func(args ...string) string {
+		var stdout, stderr bytes.Buffer
+		assert.NoErr(t, newCLI(ctx, strings.NewReader(""), &stdout, &stderr).RunWithArgs(args))
+		return stdout.String()
+	}
+	t.Run("text merges plan steps by time", func(t *testing.T) {
+		out := run("trace", "trace-plan")
+		assert.StrContains(t, out, " plan ✔ design turn=t1")
+		assert.StrContains(t, out, " plan ▶ build turn=t1")
+		assert.StrContains(t, out, " plan ○ ship turn=t1")
+		turn, design, late := strings.Index(out, " turn turn "), strings.Index(out, "design"), strings.Index(out, " denial late ")
+		assert.True(t, turn < design && design < late)
+	})
+	t.Run("turn filter", func(t *testing.T) {
+		out := run("trace", "trace-plan", "--turn", "t2")
+		assert.StrContains(t, out, " plan ○ other turn=t2")
+		assert.StrNotContains(t, out, "design")
+	})
+	t.Run("json", func(t *testing.T) {
+		out := run("trace", "trace-plan", "--turn", "t2", "--json")
+		var plan map[string]any
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			var row map[string]any
+			assert.NoErr(t, json.Unmarshal([]byte(line), &row))
+			if row["kind"] == "plan" {
+				plan = row
+			}
+		}
+		assert.NotNil(t, plan)
+		assert.Eq(t, "t2", plan["turn_id"])
+		assert.Eq(t, "redo", plan["explanation"])
+		steps := plan["plan"].([]any)
+		assert.Eq(t, 1, len(steps))
+		assert.Eq(t, "pending", steps[0].(map[string]any)["status"])
 	})
 }
