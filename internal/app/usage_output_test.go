@@ -15,7 +15,6 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
@@ -172,22 +171,4 @@ func TestMissingSessionIsStableError(t *testing.T) {
 		assert.Eq(t, "session not found: gone-session", err.Error())
 		assert.Eq(t, true, errors.Is(err, store.ErrSessionNotFound))
 	}
-}
-
-func TestLiveTextPrintsDeltasPerMessage(t *testing.T) {
-	var out bytes.Buffer
-	live := &liveText{w: &out}
-	delta := func(s string) personal.Event {
-		return personal.Event{Kind: string(agentcore.StreamEventTextDelta), Text: s}
-	}
-	stop := personal.Event{Kind: string(agentcore.StreamEventMessageStop)}
-	assert.Eq(t, true, live.handle(delta("let me ")))
-	live.handle(delta("check"))
-	live.handle(stop) // a tool call follows: the commentary gets its own line
-	live.handle(delta("done\n"))
-	live.handle(stop)
-	assert.Eq(t, false, live.handle(personal.Event{Kind: "tool_result"}))
-	assert.Eq(t, true, live.finish())
-	assert.Eq(t, "let me check\ndone\n", out.String())
-	assert.Eq(t, false, (&liveText{w: &out}).finish())
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/gookit/goutil/cflag"
 	"github.com/gookit/goutil/cflag/capp"
 	appconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/internal/platform/tools"
@@ -353,53 +354,35 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 	var encoder *json.Encoder
 	if opts.OutputFormat == "stream-json" {
 		encoder = json.NewEncoder(stdout)
-		if err := encoder.Encode(map[string]any{"type": "session", "id": sessionID, "session_id": sessionID}); err != nil {
+		if err := encoder.Encode(output.SessionLine(sessionID)); err != nil {
 			return err
 		}
 	} else {
 		fmt.Fprintln(stderr, "session id:", sessionID)
 	}
-	live := &liveText{w: stdout}
+	live := output.NewLiveText(stdout)
 	emit := func(_ context.Context, event personal.Event) error {
 		if encoder == nil {
-			live.handle(event) // text mode prints the answer as it streams
+			live.Handle(event) // text mode prints the answer as it streams
 			return nil
 		}
-		data := map[string]any{"session_id": event.SessionID, "run_id": event.RunID}
-		switch event.Kind {
-		case "run_started":
-			data["type"] = "turn_start"
-		case "run_finished":
-			data["type"], data["status"] = "turn_end", event.State
-		case string(agentcore.StreamEventTextDelta):
-			data["type"], data["text"] = "message_delta", event.Text
-		case "plan":
-			// Same shape as the ACP plan update: the full list, replaced each time.
-			entries := make([]map[string]string, 0, len(event.Plan.Steps))
-			for _, step := range event.Plan.Steps {
-				entries = append(entries, map[string]string{"step": step.Step, "status": step.Status})
-			}
-			data["type"], data["explanation"], data["entries"] = "plan", event.Plan.Explanation, entries
-		default:
+		line, ok := output.EventLine(event)
+		if !ok {
 			return nil
 		}
-		return encoder.Encode(data)
+		return encoder.Encode(line)
 	}
 	result, err := runner.Run(ctx, personal.RunRequest{SessionID: sessionID, Prompt: opts.Prompt, Emit: emit})
-	streamed := live.finish() // end the streamed line before any error or status output
+	streamed := live.Finish() // end the streamed line before any error or status output
 	if err != nil {
 		if encoder != nil {
-			_ = encoder.Encode(withUsage(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()}, result))
+			_ = encoder.Encode(output.ErrorLine(sessionID, err, result))
 		}
 		return err
 	}
 	if result.Status == agentcore.RunYielded {
 		if encoder != nil {
-			line := map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID}
-			if len(result.DeniedTools) > 0 {
-				line["denied_tools"] = result.DeniedTools
-			}
-			_ = encoder.Encode(withUsage(line, result))
+			_ = encoder.Encode(output.YieldedLine(sessionID, result))
 		}
 		return ErrInputRequired
 	}
@@ -407,31 +390,18 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 	// model worked around the refusal: the caller still learns authorization
 	// was missing. denied_tools is the only field added to the line.
 	if len(result.DeniedTools) > 0 && encoder != nil {
-		if err := encoder.Encode(withUsage(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID, "denied_tools": result.DeniedTools}, result)); err != nil {
+		if err := encoder.Encode(output.DeniedLine(sessionID, result)); err != nil {
 			return err
 		}
 	}
 	if encoder != nil {
-		return encoder.Encode(withUsage(map[string]any{
-			"type": "result", "session_id": sessionID, "run_id": result.RunID,
-			"result": result.Output, "status": result.State,
-		}, result))
+		return encoder.Encode(output.ResultLine(sessionID, result))
 	}
 	if streamed {
 		return nil
 	}
 	_, err = fmt.Fprintln(stdout, result.Output)
 	return err
-}
-
-// withUsage adds usage to a stream-json line: "usage" is this turn, and
-// "session_usage" the session-cumulative total. Both use the reported shape
-// (input_tokens excludes cache; see personal.ReportUsage), identical on the
-// result, input_required and error lines.
-func withUsage(line map[string]any, result personal.RunResult) map[string]any {
-	line["usage"] = personal.ReportUsage(result.Usage)
-	line["session_usage"] = personal.ReportUsage(result.SessionUsage)
-	return line
 }
 
 func openRequestedSession(ctx context.Context, runner *personal.Runner, opts personalOptions) (string, error) {

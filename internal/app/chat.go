@@ -11,6 +11,7 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	appconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
 	personalprocess "github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/pkg/agentcore"
@@ -214,7 +215,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 		if processServer != nil {
 			_ = processServer.SetBusy(true)
 		}
-		live := &liveText{w: inputSource}
+		live := output.NewLiveText(inputSource)
 		result, runErr := runner.Run(ctx, personal.RunRequest{
 			SessionID:       sessionID,
 			Prompt:          line,
@@ -222,7 +223,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 			Injected:        injected,
 			EmitToolResults: hooks != nil,
 			Emit: func(eventCtx context.Context, event personal.Event) error {
-				if live.handle(event) {
+				if live.Handle(event) {
 					return nil
 				}
 				if hooks == nil || event.Kind != "tool_result" || !isShellOrExecTool(event.ToolName) {
@@ -246,7 +247,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 		// "turn finished, back to waiting for input", otherwise the session stays "running" forever.
 		stopMessage := ""
 		if runErr != nil {
-			live.finish()
+			live.Finish()
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -256,7 +257,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 			fmt.Fprintln(inputSource, "Waiting for more input.")
 		} else {
 			// Streamed text is already on screen; otherwise print the answer now.
-			if !live.finish() {
+			if !live.Finish() {
 				fmt.Fprintln(inputSource, result.Output)
 			}
 			if len(result.DeniedTools) > 0 {
@@ -414,43 +415,4 @@ func showHookNotice(w io.Writer, response goferHookResponse) {
 	if response.Notice != "" {
 		fmt.Fprintln(w, response.Notice)
 	}
-}
-
-// liveText prints a turn's text deltas as they stream in. Each model message
-// ends on its own line, so commentary before a tool call and the final answer
-// do not run together.
-type liveText struct {
-	w        io.Writer
-	streamed bool // any delta printed this turn
-	open     bool // the last printed delta did not end with a newline
-}
-
-// handle prints a text delta or closes the line on message_stop; it reports
-// whether the event was a streaming event.
-func (l *liveText) handle(event personal.Event) bool {
-	switch event.Kind {
-	case string(agentcore.StreamEventTextDelta):
-		if event.Text != "" {
-			fmt.Fprint(l.w, event.Text)
-			l.streamed, l.open = true, !strings.HasSuffix(event.Text, "\n")
-		}
-		return true
-	case string(agentcore.StreamEventMessageStop):
-		l.closeLine()
-		return true
-	}
-	return false
-}
-
-func (l *liveText) closeLine() {
-	if l.open {
-		fmt.Fprintln(l.w)
-		l.open = false
-	}
-}
-
-// finish ends the turn's output and reports whether anything was streamed.
-func (l *liveText) finish() bool {
-	l.closeLine()
-	return l.streamed
 }

@@ -1,0 +1,62 @@
+package output
+
+import (
+	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/pkg/agentcore"
+)
+
+// SessionLine is the first stream-json line of a run.
+func SessionLine(sessionID string) map[string]any {
+	return map[string]any{"type": "session", "id": sessionID, "session_id": sessionID}
+}
+
+// EventLine maps a runner event to its stream-json line; ok is false for
+// events that have no stream-json representation.
+func EventLine(event personal.Event) (line map[string]any, ok bool) {
+	data := map[string]any{"session_id": event.SessionID, "run_id": event.RunID}
+	switch event.Kind {
+	case "run_started":
+		data["type"] = "turn_start"
+	case "run_finished":
+		data["type"], data["status"] = "turn_end", event.State
+	case string(agentcore.StreamEventTextDelta):
+		data["type"], data["text"] = "message_delta", event.Text
+	case "plan":
+		// Same shape as the ACP plan update: the full list, replaced each time.
+		entries := make([]map[string]string, 0, len(event.Plan.Steps))
+		for _, step := range event.Plan.Steps {
+			entries = append(entries, map[string]string{"step": step.Step, "status": step.Status})
+		}
+		data["type"], data["explanation"], data["entries"] = "plan", event.Plan.Explanation, entries
+	default:
+		return nil, false
+	}
+	return data, true
+}
+
+// ErrorLine is the stream-json line for a failed run.
+func ErrorLine(sessionID string, runErr error, result personal.RunResult) map[string]any {
+	return WithUsage(map[string]any{"type": "error", "session_id": sessionID, "error": runErr.Error()}, result)
+}
+
+// YieldedLine is the input_required line of a run that stopped for more input.
+func YieldedLine(sessionID string, result personal.RunResult) map[string]any {
+	line := map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID}
+	if len(result.DeniedTools) > 0 {
+		line["denied_tools"] = result.DeniedTools
+	}
+	return WithUsage(line, result)
+}
+
+// DeniedLine is the input_required line of a finished turn that had refused tool calls.
+func DeniedLine(sessionID string, result personal.RunResult) map[string]any {
+	return WithUsage(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID, "denied_tools": result.DeniedTools}, result)
+}
+
+// ResultLine is the final stream-json line of a successful run.
+func ResultLine(sessionID string, result personal.RunResult) map[string]any {
+	return WithUsage(map[string]any{
+		"type": "result", "session_id": sessionID, "run_id": result.RunID,
+		"result": result.Output, "status": result.State,
+	}, result)
+}
