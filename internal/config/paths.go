@@ -39,13 +39,15 @@ func ResolveSuagHome() (string, error) {
 }
 
 func ResolveWorkspacePath() string {
-	workspace := gkconfig.String("workspace")
-	if workspace == "" {
-		home, err := ResolveSuagHome()
-		if err != nil {
-			return ""
-		}
-		return filepath.Join(home, "workspace")
+	// Unset means the directory suag was started in, as the config sample
+	// documents: `suag run` in a project works on that project, and Gofer CLI
+	// jobs (started with --cwd) work in the job directory like ACP sessions do.
+	if workspace := strings.TrimSpace(gkconfig.String("workspace")); workspace != "" {
+		return workspace
 	}
-	return workspace
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return wd
 }
