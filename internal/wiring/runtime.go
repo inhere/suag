@@ -28,7 +28,7 @@ type Options struct {
 	Model     string
 	// AllowWrite exposes workspace write and shell tools.
 	AllowWrite bool
-	// ReadOnly (OpenCLI only) narrows the MCP gate to the built-in allowlist and
+	// ReadOnly (OpenCLI only) narrows the MCP gate to tools.read_only_allow and
 	// overrides AllowWrite.
 	ReadOnly bool
 	// Servers are extra MCP servers (from --mcp-config or the ACP session).

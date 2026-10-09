@@ -61,14 +61,18 @@ func TestPersonalRunWithStdioMCPReadAndDeniedWrite(t *testing.T) {
 		repeat     bool
 		// autoAllow sets tools.auto_allow (ignored by --read-only).
 		autoAllow []string
+		// readOnlyAllow sets tools.read_only_allow (the only list --read-only honors).
+		readOnlyAllow []string
 	}{
-		{name: "read tool executes", tool: "gofer_issue_list", readOnly: true},
-		{name: "write stays denied with allow-write", tool: "gofer_issue_close", allowWrite: true, denied: true},
-		{name: "chat uses MCP", tool: "gofer_issue_list", mode: "chat"},
-		{name: "default MCP config", tool: "gofer_issue_list", defaultMCP: true},
+		{name: "read-only runs a read_only_allow tool", tool: "gofer_issue_list", readOnly: true, readOnlyAllow: []string{"gofer/gofer_*_list"}},
+		{name: "read-only without read_only_allow denies", tool: "gofer_issue_list", readOnly: true, denied: true, autoAllow: []string{"gofer_*"}},
+		{name: "unconfigured auto_allow denies", tool: "gofer_issue_list", denied: true},
+		{name: "write stays denied with allow-write", tool: "gofer_issue_close", allowWrite: true, denied: true, autoAllow: []string{"gofer/gofer_*_list"}},
+		{name: "chat uses MCP", tool: "gofer_issue_list", mode: "chat", autoAllow: []string{"gofer/gofer_*_list"}},
+		{name: "default MCP config", tool: "gofer_issue_list", defaultMCP: true, autoAllow: []string{"gofer_issue_list"}},
 		// The model keeps asking: the third refusal ends the turn before a 4th model call.
 		{name: "three refusals end the turn", tool: "gofer_issue_close", denied: true, repeat: true},
-		{name: "read-only refuses a user-allowed write tool", tool: "gofer_issue_close", readOnly: true, denied: true, autoAllow: []string{"gofer_*"}},
+		{name: "read-only refuses a user-allowed write tool", tool: "gofer_issue_close", readOnly: true, denied: true, autoAllow: []string{"gofer_*"}, readOnlyAllow: []string{"gofer/gofer_*_list"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gkconfig.Reset()
@@ -80,6 +84,9 @@ func TestPersonalRunWithStdioMCPReadAndDeniedWrite(t *testing.T) {
 			assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
 			if tc.autoAllow != nil {
 				assert.NoErr(t, gkconfig.Set("tools.auto_allow", tc.autoAllow))
+			}
+			if tc.readOnlyAllow != nil {
+				assert.NoErr(t, gkconfig.Set("tools.read_only_allow", tc.readOnlyAllow))
 			}
 			mcpConfig := filepath.Join(t.TempDir(), "mcp.json")
 			config, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"gofer": map[string]any{
