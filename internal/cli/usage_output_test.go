@@ -88,7 +88,6 @@ func TestAppendSystemPromptCanBeClearedFromCLI(t *testing.T) {
 	t.Cleanup(gkconfig.Reset)
 	t.Setenv("SUAG_APPEND_SYSTEM_PROMPT", "")
 	t.Setenv("SUAG_MODEL", "")
-	t.Setenv("SUAG_PROVIDER", "openai")
 	home := shortTestHome(t)
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -96,15 +95,13 @@ func TestAppendSystemPromptCanBeClearedFromCLI(t *testing.T) {
 	workspace := t.TempDir()
 	t.Chdir(workspace)
 	_ = gkconfig.Set("workspace", workspace)
-	_ = gkconfig.Set("llm.api_type", "openai")
-	_ = gkconfig.Set("llm.api_key", "local-test-key")
-	_ = gkconfig.Set("llm.model", "m")
+	_ = gkconfig.Set("model", "openai/m")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`)
 	}))
 	t.Cleanup(server.Close)
-	_ = gkconfig.Set("llm.base_url", server.URL)
+	setTestProvider(t, server.URL)
 
 	run := func(extra ...string) {
 		t.Helper()

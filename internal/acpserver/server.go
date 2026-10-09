@@ -22,8 +22,8 @@ import (
 type Runtime struct {
 	Runner *personal.Runner
 	Close  func() error
-	// ContextWindow is the model context size in tokens; 0 uses the configured
-	// llm.context_window or a model-based default.
+	// ContextWindow is the model context size in tokens; wiring.Runtime supplies the
+	// effective model's window; 0 falls back to appconfig.DefaultContextWindow.
 	ContextWindow int
 	// IsMCPTool reports whether a tool name resolves to an MCP-backed tool in
 	// this runtime. MCP tools always need permission, whatever their name.
@@ -225,7 +225,7 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 	window := runtime.ContextWindow
 	closeErr := runtime.close()
 	if window <= 0 {
-		window = appconfig.ReadContextWindow()
+		window = appconfig.DefaultContextWindow
 	}
 	if turnCtx.Err() != nil || errors.Is(runErr, context.Canceled) {
 		// A cancelled turn still consumed tokens; report them before returning.

@@ -13,6 +13,7 @@ import (
 	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suag/internal/platform/llm"
 	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
@@ -25,7 +26,6 @@ type Options struct {
 	Workspace string
 	RuleCWD   string
 	Model     string
-	Provider  string
 	// AllowWrite exposes workspace write and shell tools.
 	AllowWrite bool
 	// ReadOnly (OpenCLI only) narrows the MCP gate to the built-in allowlist and
@@ -99,11 +99,15 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 // Open assembles one runtime.
 func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	workspace, ruleCWD, allowWrite, servers := opts.Workspace, opts.RuleCWD, opts.AllowWrite, opts.Servers
-	settings := appconfig.ReadLLMProviderSettingsWithOverrides(opts.Model, opts.Provider)
-	provider, err := appconfig.BuildLLMProviderFromSettings(settings)
+	settings, err := appconfig.ReadModelSettings(opts.Model)
 	if err != nil {
 		return nil, err
 	}
+	provider, err := buildMainProvider(settings)
+	if err != nil {
+		return nil, err
+	}
+	contextWindow := appconfig.ContextWindowFor(settings.Main)
 	var capabilities defaultCapabilities
 	if opts.CLIMode {
 		capabilities, err = buildPersonalCLICapabilities(ctx, workspace, allowWrite, servers)
@@ -121,7 +125,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// visibility -> approval -> base registry. Unloaded deferred tools are
 	// answered by visibility and never reach the approver.
 	approval := tools.NewApproval(capabilities.Registry, opts.Approver)
-	vis, err := newToolVisibility(capabilities.Registry, approval, contextWindowForSettings(settings))
+	vis, err := newToolVisibility(capabilities.Registry, approval, contextWindow)
 	if err != nil {
 		_ = capabilities.Close()
 		return nil, err
@@ -153,29 +157,29 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		_ = capabilities.Close()
 		return nil, err
 	}
-	// llm.compact_model: summaries use that model on the same provider; unset
-	// means the turn's own provider.
+	// compact_model: summaries use that model (and its provider); unset means
+	// the turn's own provider.
 	var compactProvider agentcore.Provider
-	compactSettings, hasCompact := appconfig.CompactModelSettings(settings)
-	if hasCompact {
-		built, err := appconfig.BuildLLMProviderFromSettings(compactSettings)
+	compactModel := ""
+	if settings.Compact != nil {
+		built, err := appconfig.BuildProvider(*settings.Compact)
 		if err != nil {
 			_ = repo.Close()
 			_ = capabilities.Close()
 			return nil, fmt.Errorf("build compact model provider: %w", err)
 		}
-		compactProvider = built
+		compactProvider, compactModel = built, settings.Compact.Model
 	}
 	runner, err := personal.New(personal.Config{
-		ContextWindow:   contextWindowForSettings(settings),
+		ContextWindow:   contextWindow,
 		CompactProvider: compactProvider,
-		CompactModel:    compactSettings.Model,
+		CompactModel:    compactModel,
 		Plans:           plans,
 		Visibility:      vis,
 		Repository:      repo,
 		Provider:        provider,
-		Model:           settings.Model,
-		ProviderName:    settings.ProviderName,
+		Model:           settings.Main.Model,
+		ProviderName:    settings.Main.Provider.ID,
 		Tools:           toolRegistry,
 		Hooks:           opts.Hooks,
 		MaxSteps:        gkconfig.Int("max_steps", 100),
@@ -198,18 +202,30 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		_ = capabilities.Close()
 		return nil, err
 	}
-	// Same model value the provider was built from (flag/env overrides included).
 	return &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
-		ContextWindow: contextWindowForSettings(settings)}, nil
+		ContextWindow: contextWindow}, nil
 }
 
-// contextWindowForSettings resolves the usage_update size from the effective
-// model: llm.context_window wins, then the model-name table, then the default.
-func contextWindowForSettings(settings appconfig.LLMProviderSettings) int {
-	if configured := gkconfig.Int("llm.context_window"); configured > 0 {
-		return configured
+// buildMainProvider builds the main provider; with fallback_models the result
+// is a Pool that tries main first, then each fallback in order (a Pool never
+// switches once a stream has produced output).
+func buildMainProvider(settings appconfig.ModelSettings) (agentcore.Provider, error) {
+	main, err := appconfig.BuildProvider(settings.Main)
+	if err != nil {
+		return nil, err
 	}
-	return appconfig.ContextWindowForModel(settings.Model)
+	if len(settings.Fallbacks) == 0 {
+		return main, nil
+	}
+	providers := []llm.Provider{main}
+	for i, spec := range settings.Fallbacks {
+		fb, err := appconfig.BuildProvider(spec)
+		if err != nil {
+			return nil, fmt.Errorf("fallback_models[%d]: %w", i, err)
+		}
+		providers = append(providers, fb)
+	}
+	return llm.NewPool(providers, nil), nil
 }
 
 func appendSystemPrompt(flagValue string) string {

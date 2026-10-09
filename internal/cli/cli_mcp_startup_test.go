@@ -33,9 +33,8 @@ func TestPersonalRunMCPStartupNeverHangs(t *testing.T) {
 			workspace := t.TempDir()
 			t.Chdir(workspace)
 			assert.NoErr(t, gkconfig.Set("workspace", workspace))
-			assert.NoErr(t, gkconfig.Set("llm.api_type", "openai"))
-			assert.NoErr(t, gkconfig.Set("llm.api_key", "test-key"))
-			assert.NoErr(t, gkconfig.Set("llm.base_url", "http://127.0.0.1:1"))
+			assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
+			setTestProvider(t, "http://127.0.0.1:1")
 
 			mcpConfig := filepath.Join(t.TempDir(), "bad.json")
 			config, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"bad": map[string]any{

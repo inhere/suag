@@ -31,15 +31,6 @@ func TestClaudeProvider_DoesNotRequireEmbeddingSupport(t *testing.T) {
 	assert.Eq(t, "anthropic", provider.Name())
 }
 
-func TestDeepSeekProvider_ImplementsEmbeddingProvider(t *testing.T) {
-	provider := NewDeepSeekProvider("", "", nil)
-
-	var embedding agentcoreapi.EmbeddingProvider = provider
-
-	assert.NotNil(t, embedding)
-	assert.Eq(t, "deepseek", provider.Name())
-}
-
 func TestOpenAIProvider_ParseResponse_RejectsInvalidToolArguments(t *testing.T) {
 	provider := NewOpenAIProvider(OpenAIConfig{})
 

@@ -1,0 +1,191 @@
+package wiring
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	gkconfig "github.com/gookit/config/v2"
+	"github.com/gookit/goutil/x/assert"
+	appconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/internal/personal/store"
+)
+
+const okBody = `{"choices":[{"message":{"content":"ok-from-%s"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`
+
+// resetConfig isolates the global config and the provider-related environment.
+func resetConfig(t *testing.T) {
+	t.Helper()
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	for _, k := range []string{"SUAG_MODEL", "SUAG_PROVIDER", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY"} {
+		t.Setenv(k, "")
+	}
+}
+
+func setProviders(t *testing.T, providers map[string]any) {
+	t.Helper()
+	assert.NoErr(t, gkconfig.Set("providers", providers))
+}
+
+// fakeServer answers every request with the given status and a fixed reply.
+func fakeServer(t *testing.T, status int, name string, hits *atomic.Int32) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits != nil {
+			hits.Add(1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if status == http.StatusOK {
+			_, _ = w.Write([]byte(strings.Replace(okBody, "%s", name, 1)))
+			return
+		}
+		_, _ = w.Write([]byte(`{"error":{"message":"nope"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func openTestRuntime(t *testing.T, model string) *Runtime {
+	t.Helper()
+	rt, err := Open(context.Background(), Options{Workspace: t.TempDir(), RuleCWD: t.TempDir(), Model: model})
+	assert.NoErr(t, err)
+	t.Cleanup(func() { _ = rt.Close() })
+	return rt
+}
+
+func modelEvents(t *testing.T, rt *Runtime, sessionID string) []store.Event {
+	t.Helper()
+	events, err := rt.repo.ListEvents(context.Background(), store.EventFilter{SessionID: sessionID, Kinds: []string{store.EventModel}})
+	assert.NoErr(t, err)
+	return events
+}
+
+func TestContextWindowFollowsEffectiveModel(t *testing.T) {
+	resetConfig(t)
+	assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
+	window := func(flag string) int {
+		settings, err := appconfig.ReadModelSettings(flag)
+		assert.NoErr(t, err)
+		return appconfig.ContextWindowFor(settings.Main)
+	}
+	t.Run("file model", func(t *testing.T) { assert.Eq(t, 128000, window("")) })
+	t.Run("flag overrides file model", func(t *testing.T) { assert.Eq(t, 1000000, window("gpt-4.1")) })
+	t.Run("env overrides file model", func(t *testing.T) {
+		t.Setenv("SUAG_MODEL", "gpt-5")
+		assert.Eq(t, 400000, window(""))
+	})
+	t.Run("configured context_window wins", func(t *testing.T) {
+		setProviders(t, map[string]any{"openai": map[string]any{"models": map[string]any{"gpt-4.1": map[string]any{"context_window": 64000}}}})
+		assert.Eq(t, 64000, window("gpt-4.1"))
+	})
+}
+
+func TestOpenUsesPresetAndReportsWindow(t *testing.T) {
+	resetConfig(t)
+	assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
+
+	t.Run("deepseek preset", func(t *testing.T) {
+		settings, err := appconfig.ReadModelSettings("deepseek/deepseek-chat")
+		assert.NoErr(t, err)
+		assert.Eq(t, "https://api.deepseek.com/v1", settings.Main.Provider.BaseURL)
+		provider, err := buildMainProvider(settings)
+		assert.NoErr(t, err)
+		assert.Eq(t, "deepseek", provider.Name())
+	})
+
+	t.Run("request reaches the preset provider with its own key and model", func(t *testing.T) {
+		var gotAuth, gotModel string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotAuth = r.Header.Get("Authorization")
+			raw, _ := io.ReadAll(r.Body)
+			if strings.Contains(string(raw), `"model":"deepseek-chat"`) {
+				gotModel = "deepseek-chat"
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(strings.Replace(okBody, "%s", "ds", 1)))
+		}))
+		t.Cleanup(srv.Close)
+		// Overriding base_url keeps the preset type; the credential is the deepseek one,
+		// not the main openai provider's.
+		setProviders(t, map[string]any{
+			"openai":   map[string]any{"api_key": "openai-key"},
+			"deepseek": map[string]any{"api_key": "ds-key", "base_url": srv.URL},
+		})
+		rt := openTestRuntime(t, "deepseek/deepseek-chat")
+		assert.Eq(t, 128000, rt.ContextWindow)
+		res, err := rt.Runner.Run(context.Background(), personal.RunRequest{Prompt: "hi"})
+		assert.NoErr(t, err)
+		assert.Eq(t, "ok-from-ds", res.Output)
+		assert.Eq(t, "Bearer ds-key", gotAuth)
+		assert.Eq(t, "deepseek-chat", gotModel)
+		sess, err := rt.repo.GetSession(context.Background(), res.SessionID)
+		assert.NoErr(t, err)
+		assert.Eq(t, "deepseek", sess.Meta["provider"])
+		assert.Eq(t, "deepseek-chat", sess.Meta["model"])
+	})
+
+	t.Run("context window is always positive", func(t *testing.T) {
+		setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k"}})
+		assert.Eq(t, 128000, openTestRuntime(t, "openai/unknown-model").ContextWindow)
+	})
+}
+
+func TestOpenFallbackModels(t *testing.T) {
+	resetConfig(t)
+	var mainHits, backupHits atomic.Int32
+	// A 401 is not retried by the openai provider, so the pool moves on at once.
+	bad := fakeServer(t, http.StatusUnauthorized, "main", &mainHits)
+	good := fakeServer(t, http.StatusOK, "backup", &backupHits)
+	assert.NoErr(t, gkconfig.Set("model", "primary/m1"))
+	assert.NoErr(t, gkconfig.Set("fallback_models", []string{"backup/m2"}))
+	setProviders(t, map[string]any{
+		"primary": map[string]any{"type": "openai", "api_key": "k", "base_url": bad.URL},
+		"backup":  map[string]any{"type": "openai", "api_key": "k", "base_url": good.URL},
+	})
+	rt := openTestRuntime(t, "")
+	res, err := rt.Runner.Run(context.Background(), personal.RunRequest{Prompt: "hi"})
+	assert.NoErr(t, err)
+	assert.Eq(t, "ok-from-backup", res.Output)
+	assert.Eq(t, int32(1), mainHits.Load())
+	assert.Eq(t, int32(1), backupHits.Load())
+
+	events := modelEvents(t, rt, res.SessionID)
+	assert.Require(t, assert.Eq(t, 2, len(events)))
+	assert.Eq(t, "primary", events[0].Name)
+	assert.Eq(t, "error", events[0].Status)
+	assert.Eq(t, "backup", events[1].Name)
+	// Session metadata records only the main model.
+	sess, err := rt.repo.GetSession(context.Background(), res.SessionID)
+	assert.NoErr(t, err)
+	assert.Eq(t, "primary", sess.Meta["provider"])
+	assert.Eq(t, "m1", sess.Meta["model"])
+}
+
+func TestOpenTraceUsesConfiguredProviderID(t *testing.T) {
+	resetConfig(t)
+	srv := fakeServer(t, http.StatusOK, "gw", nil)
+	assert.NoErr(t, gkconfig.Set("model", "my-gw/some-model"))
+	setProviders(t, map[string]any{"my-gw": map[string]any{"type": "openai", "api_key": "k", "base_url": srv.URL}})
+	rt := openTestRuntime(t, "")
+	res, err := rt.Runner.Run(context.Background(), personal.RunRequest{Prompt: "hi"})
+	assert.NoErr(t, err)
+	events := modelEvents(t, rt, res.SessionID)
+	assert.Require(t, assert.Eq(t, 1, len(events)))
+	assert.Eq(t, "my-gw", events[0].Name)
+	assert.Eq(t, "some-model", events[0].Attrs["model"])
+}
+
+func TestOpenRejectsLegacyConfig(t *testing.T) {
+	resetConfig(t)
+	assert.NoErr(t, gkconfig.Set("llm", map[string]any{"api_type": "openai", "model": "gpt-4o"}))
+	_, err := Open(context.Background(), Options{Workspace: t.TempDir(), RuleCWD: t.TempDir()})
+	assert.Err(t, err)
+	assert.StrContains(t, err.Error(), "no longer supported")
+}

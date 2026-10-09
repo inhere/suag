@@ -32,14 +32,10 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("SUAG_HOME", "") // fall back to HOME/.suag despite the TestMain default
 	t.Setenv("SUAG_MODEL", "environment-model")
-	// Same vendor as llm.api_type: switching vendors drops the file's base_url/api_key,
-	// which would send this run to the real vendor instead of the test server.
-	t.Setenv("SUAG_PROVIDER", "openai")
 	workspace := t.TempDir()
 	t.Chdir(workspace)
 	_ = gkconfig.Set("workspace", workspace)
-	_ = gkconfig.Set("llm.api_type", "openai")
-	_ = gkconfig.Set("llm.api_key", "local-test-key")
+	_ = gkconfig.Set("model", "openai/gpt-4o")
 	var requestCount atomic.Int32
 	var requestedModels []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -75,10 +71,10 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 		_, _ = fmt.Fprintf(w, `{"choices":[{"message":{"content":"reply-%d"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`, n)
 	}))
 	t.Cleanup(server.Close)
-	_ = gkconfig.Set("llm.base_url", server.URL)
+	setTestProvider(t, server.URL)
 
 	var firstOut, firstErr bytes.Buffer
-	err := RunPersonalCLI(context.Background(), "run", []string{"--prompt", "hello", "--output-format", "stream-json", "--read-only", "--model", "flag-model", "--provider", "openai", "--session-id", "path-test"},
+	err := RunPersonalCLI(context.Background(), "run", []string{"--prompt", "hello", "--output-format", "stream-json", "--read-only", "--model", "openai/flag-model", "--session-id", "path-test"},
 		strings.NewReader(""), &firstOut, &firstErr)
 	assert.NoErr(t, err)
 	assert.Eq(t, true, strings.Contains(firstOut.String(), `"result":"reply-1"`))
@@ -133,8 +129,7 @@ func TestPersonalCLIInjectsRulesPromptAndGoferHint(t *testing.T) {
 	}
 	t.Chdir(workspace)
 	_ = gkconfig.Set("workspace", workspace)
-	_ = gkconfig.Set("llm.api_type", "openai")
-	_ = gkconfig.Set("llm.api_key", "local-test-key")
+	_ = gkconfig.Set("model", "openai/gpt-4o")
 	var systems []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -155,7 +150,7 @@ func TestPersonalCLIInjectsRulesPromptAndGoferHint(t *testing.T) {
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`)
 	}))
 	t.Cleanup(server.Close)
-	_ = gkconfig.Set("llm.base_url", server.URL)
+	setTestProvider(t, server.URL)
 	for _, args := range [][]string{
 		{"--prompt", "one", "--session-id", "flags", "--append-system-prompt", "flag prompt"},
 		{"--prompt", "two", "--session-id", "environment", "--no-project-rules"},

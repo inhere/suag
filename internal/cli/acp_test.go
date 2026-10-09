@@ -17,6 +17,7 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	gkconfig "github.com/gookit/config/v2"
+	"github.com/gookit/goutil/x/assert"
 )
 
 type appACPClient struct {
@@ -101,9 +102,8 @@ func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {
 		_, _ = fmt.Fprintf(w, `{"choices":[{"message":{"content":"reply-%d"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`, n)
 	}))
 	t.Cleanup(provider.Close)
-	_ = gkconfig.Set("llm.api_type", "openai")
-	_ = gkconfig.Set("llm.api_key", "local-test-key")
-	_ = gkconfig.Set("llm.base_url", provider.URL)
+	_ = gkconfig.Set("model", "openai/gpt-4o")
+	setTestProvider(t, provider.URL)
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
@@ -201,4 +201,46 @@ func assertOnlySessionsDB(t *testing.T, dir string) {
 	if !found {
 		t.Errorf("sessions.db missing in %s", dir)
 	}
+}
+
+// The usage_update size is the context window wiring resolved for the main
+// model (providers.<id>.models.<model>.context_window), not a config re-read.
+func TestAppACPContextWindowComesFromWiring(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	t.Setenv("SUAG_HOME", shortTestHome(t))
+	t.Setenv("SUAG_MODEL", "")
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`)
+	}))
+	t.Cleanup(provider.Close)
+	assert.NoErr(t, gkconfig.Set("workspace", cwd))
+	assert.NoErr(t, gkconfig.Set("model", "openai/ctx-model"))
+	assert.NoErr(t, gkconfig.Set("providers", map[string]any{"openai": map[string]any{
+		"type": "openai", "api_key": "k", "base_url": provider.URL,
+		"models": map[string]any{"ctx-model": map[string]any{"context_window": 4321}},
+	}}))
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	conn, client := connectAppACP(t)
+	_, err := conn.Initialize(ctx, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber})
+	assert.NoErr(t, err)
+	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: cwd, McpServers: []acp.McpServer{}})
+	assert.NoErr(t, err)
+	_, err = conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("hi")}})
+	assert.NoErr(t, err)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	var sizes []int
+	for _, update := range client.updates {
+		if u := update.Update.UsageUpdate; u != nil {
+			sizes = append(sizes, int(u.Size))
+		}
+	}
+	assert.Eq(t, []int{4321}, sizes)
 }

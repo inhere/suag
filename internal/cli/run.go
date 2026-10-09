@@ -21,7 +21,6 @@ var ErrInputRequired = errors.New("turn requires more input")
 type personalOptions struct {
 	Prompt    string
 	Model     string
-	Provider  string
 	SessionID string
 	ResumeID  string
 	// FromID starts a NEW session that inherits summary, plan and loaded tools
@@ -79,8 +78,7 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	})
 	cmd.SetOutput(stderr)
 	cmd.StringVar(&opts.Prompt, "prompt", "", "task prompt for run mode;;p")
-	cmd.StringVar(&opts.Model, "model", "", "model name (overrides SUAG_MODEL)")
-	cmd.StringVar(&opts.Provider, "provider", "", "provider name (overrides SUAG_PROVIDER)")
+	cmd.StringVar(&opts.Model, "model", "", "model, <provider>/<model> or a bare model id (overrides SUAG_MODEL)")
 	cmd.StringVar(&opts.SessionID, "session-id", "", "create or use this session ID;;sid")
 	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID;;r")
 	cmd.StringVar(&opts.FromID, "from", "", "start a new session that inherits the summary, plan and loaded tools of this session")
@@ -97,7 +95,7 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 // wiringOptions maps the CLI flags to the runtime assembly options.
 func (o personalOptions) wiringOptions() wiring.Options {
 	return wiring.Options{
-		Model: o.Model, Provider: o.Provider,
+		Model:      o.Model,
 		AllowWrite: o.AllowWrite, ReadOnly: o.ReadOnly,
 		MCPConfigs:         o.MCPConfigs,
 		AppendSystemPrompt: o.AppendSystemPrompt, ClearAppendSystemPrompt: o.ClearAppendSystemPrompt,

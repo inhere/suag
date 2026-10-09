@@ -21,13 +21,14 @@ func TestLoadReadsPrivateModelSettingsFromUserHome(t *testing.T) {
 	privateDir := filepath.Join(home, ".suag")
 	assert.NoErr(t, os.MkdirAll(privateDir, 0700))
 	assert.NoErr(t, os.WriteFile(filepath.Join(privateDir, ".env"), []byte("SUAG_TEST_PRIVATE_API_KEY=test-key\n"), 0600))
-	config := "llm:\n  model: private-model\n  api_key: \"${SUAG_TEST_PRIVATE_API_KEY}\"\n"
+	config := "model: openai/private-model\nproviders:\n  openai:\n    api_key: \"${SUAG_TEST_PRIVATE_API_KEY}\"\n"
 	assert.NoErr(t, os.WriteFile(filepath.Join(privateDir, "config.yaml"), []byte(config), 0600))
 
 	assert.NoErr(t, Load())
-	settings := ReadLLMProviderSettings()
-	assert.Eq(t, "private-model", settings.Model)
-	assert.Eq(t, "test-key", settings.APIKey)
+	settings, err := ReadModelSettings("")
+	assert.NoErr(t, err)
+	assert.Eq(t, "private-model", settings.Main.Model)
+	assert.Eq(t, "test-key", settings.Main.Provider.APIKey)
 }
 
 func TestLoadUsesSuagConfigFromSuagHome(t *testing.T) {
@@ -37,9 +38,9 @@ func TestLoadUsesSuagConfigFromSuagHome(t *testing.T) {
 	t.Setenv("SUAG_HOME", root)
 	t.Setenv("SUAG_CONFIG", "")
 	t.Chdir(t.TempDir())
-	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte("llm:\n  model: home-model\n"), 0600))
+	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte("model: openai/home-model\n"), 0600))
 	assert.NoErr(t, Load())
-	assert.Eq(t, "home-model", ReadLLMProviderSettings().Model)
+	assertMainModel(t, "home-model")
 }
 
 func TestLoadUsesExplicitConfigFile(t *testing.T) {
@@ -48,12 +49,12 @@ func TestLoadUsesExplicitConfigFile(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("SUAG_HOME", root)
 	t.Chdir(t.TempDir())
-	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte("llm:\n  model: home-model\n"), 0600))
+	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte("model: openai/home-model\n"), 0600))
 	configPath := filepath.Join(t.TempDir(), "chosen.yaml")
-	assert.NoErr(t, os.WriteFile(configPath, []byte("llm:\n  model: chosen-model\n"), 0600))
+	assert.NoErr(t, os.WriteFile(configPath, []byte("model: openai/chosen-model\n"), 0600))
 	t.Setenv("SUAG_CONFIG", configPath)
 	assert.NoErr(t, Load())
-	assert.Eq(t, "chosen-model", ReadLLMProviderSettings().Model)
+	assertMainModel(t, "chosen-model")
 }
 
 func TestLoadIgnoresWorkingDirectoryDotenv(t *testing.T) {
@@ -84,12 +85,12 @@ func TestLoadIgnoresWorkingDirectoryConfig(t *testing.T) {
 	t.Setenv("SUAG_CONFIG", "")
 	cwd := t.TempDir()
 	t.Chdir(cwd)
-	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte("llm:\n  model: home-model\n"), 0600))
+	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte("model: openai/home-model\n"), 0600))
 	assert.NoErr(t, os.MkdirAll(filepath.Join(cwd, "config"), 0700))
-	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, "config", "config.yaml"), []byte("llm:\n  model: project-model\n"), 0600))
-	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, "config.yaml"), []byte("llm:\n  model: project-model\n"), 0600))
+	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, "config", "config.yaml"), []byte("model: openai/project-model\n"), 0600))
+	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, "config.yaml"), []byte("model: openai/project-model\n"), 0600))
 	assert.NoErr(t, Load())
-	assert.Eq(t, "home-model", ReadLLMProviderSettings().Model)
+	assertMainModel(t, "home-model")
 }
 
 func TestLoadSuagHomeDotenv(t *testing.T) {
@@ -126,9 +127,16 @@ func TestLoadSuagHomeDotenv(t *testing.T) {
 	})
 }
 
-// llm.headers keeps both env references and the {{session_id}} placeholder,
+func assertMainModel(t *testing.T, want string) {
+	t.Helper()
+	settings, err := ReadModelSettings("")
+	assert.NoErr(t, err)
+	assert.Eq(t, want, settings.Main.Model)
+}
+
+// providers.<id>.headers keeps both env references and the {{session_id}} placeholder,
 // with the header name spelled as written.
-func TestLoadReadsLLMHeaders(t *testing.T) {
+func TestLoadReadsProviderHeaders(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	root := t.TempDir()
@@ -136,10 +144,12 @@ func TestLoadReadsLLMHeaders(t *testing.T) {
 	t.Setenv("SUAG_CONFIG", "")
 	t.Setenv("SUAG_TEST_GATEWAY_TAG", "team-a")
 	t.Chdir(t.TempDir())
-	config := "llm:\n  model: m\n  headers:\n    x-opencode-session: \"{{session_id}}\"\n    X-Gateway-Tag: \"${SUAG_TEST_GATEWAY_TAG}\"\n"
+	config := "model: gw/m\nproviders:\n  gw:\n    type: openai\n    headers:\n      x-opencode-session: \"{{session_id}}\"\n      X-Gateway-Tag: \"${SUAG_TEST_GATEWAY_TAG}\"\n"
 	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte(config), 0600))
 	assert.NoErr(t, Load())
-	headers := ReadLLMProviderSettings().Headers
+	settings, err := ReadModelSettings("")
+	assert.NoErr(t, err)
+	headers := settings.Main.Provider.Headers
 	assert.Eq(t, "{{session_id}}", headers["x-opencode-session"])
 	assert.Eq(t, "team-a", headers["X-Gateway-Tag"])
 }

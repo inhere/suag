@@ -23,8 +23,7 @@ func TestStreamJSONPlanEvent(t *testing.T) {
 	workspace := t.TempDir()
 	t.Chdir(workspace)
 	assert.NoErr(t, gkconfig.Set("workspace", workspace))
-	assert.NoErr(t, gkconfig.Set("llm.api_type", "openai"))
-	assert.NoErr(t, gkconfig.Set("llm.api_key", "test-key"))
+	assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
 
 	count := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +37,7 @@ func TestStreamJSONPlanEvent(t *testing.T) {
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"- [x] not a plan"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`)
 	}))
 	t.Cleanup(server.Close)
-	assert.NoErr(t, gkconfig.Set("llm.base_url", server.URL))
+	setTestProvider(t, server.URL)
 
 	var out, diag bytes.Buffer
 	args := []string{"--prompt", "plan", "--output-format", "stream-json", "--read-only"}

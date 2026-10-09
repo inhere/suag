@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
+	"github.com/gookit/goutil/envutil"
 )
 
 // Provider protocol types accepted in providers.<id>.type.
@@ -78,9 +79,9 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 		user := ProviderConfig{
 			ID:      id,
 			Type:    normalizeConfigToken(stringValue(entry["type"])),
-			BaseURL: strings.TrimSpace(stringValue(entry["base_url"])),
-			APIKey:  strings.TrimSpace(stringValue(entry["api_key"])),
-			Headers: normalizeStringMap(entry["headers"]),
+			BaseURL: expandEnv(stringValue(entry["base_url"])),
+			APIKey:  expandEnv(stringValue(entry["api_key"])),
+			Headers: expandEnvMap(normalizeStringMap(entry["headers"])),
 			Models:  readModelConfigs(entry["models"]),
 		}
 
@@ -106,6 +107,17 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 		providers[id] = merged
 	}
 	return providers, nil
+}
+
+// expandEnv resolves ${VAR} references. The raw map read of providers bypasses
+// gkconfig's ParseEnv (which only applies to typed getters), so do it here.
+func expandEnv(v string) string { return strings.TrimSpace(envutil.ParseEnvValue(v)) }
+
+func expandEnvMap(m map[string]string) map[string]string {
+	for k, v := range m {
+		m[k] = expandEnv(v)
+	}
+	return m
 }
 
 // readModelConfigs parses providers.<id>.models. It reads the raw map rather

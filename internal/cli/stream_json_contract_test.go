@@ -41,8 +41,7 @@ func runContractScenario(t *testing.T, scenario string) []contractLine {
 	workspace := t.TempDir()
 	t.Chdir(workspace)
 	assert.NoErr(t, gkconfig.Set("workspace", workspace))
-	assert.NoErr(t, gkconfig.Set("llm.api_type", "openai"))
-	assert.NoErr(t, gkconfig.Set("llm.api_key", "test-key"))
+	assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
 
 	args := []string{"--prompt", "contract", "--output-format", "stream-json"}
 	var count int
@@ -64,7 +63,7 @@ func runContractScenario(t *testing.T, scenario string) []contractLine {
 	}
 	server := httptest.NewServer(http.HandlerFunc(handler))
 	t.Cleanup(server.Close)
-	assert.NoErr(t, gkconfig.Set("llm.base_url", server.URL))
+	setTestProvider(t, server.URL)
 
 	if scenario == "input_required" {
 		// A write MCP tool without --allow-write is denied by the CLI gate.

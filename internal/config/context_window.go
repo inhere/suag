@@ -1,14 +1,10 @@
 package axconfig
 
-import (
-	"strings"
+import "strings"
 
-	gkconfig "github.com/gookit/config/v2"
-)
-
-// DefaultContextWindow is used when the model is unknown and llm.context_window
-// is unset. 128k is the smallest window among current mainstream chat models,
-// so a client computing "used/size" never under-reports pressure by assuming a
+// DefaultContextWindow is used when the model is unknown and no
+// providers.<id>.models.<model>.context_window is set. 128k is the smallest
+// window among current mainstream chat models, so a client computing "used/size" never under-reports pressure by assuming a
 // larger window than the model really has.
 const DefaultContextWindow = 128000
 
@@ -35,14 +31,4 @@ func ContextWindowForModel(model string) int {
 		}
 	}
 	return DefaultContextWindow
-}
-
-// ReadContextWindow resolves the model context window: the optional
-// llm.context_window setting wins, then the configured model's known window,
-// then DefaultContextWindow. It never returns a non-positive value.
-func ReadContextWindow() int {
-	if configured := gkconfig.Int("llm.context_window"); configured > 0 {
-		return configured
-	}
-	return ContextWindowForModel(ReadLLMProviderSettings().Model)
 }

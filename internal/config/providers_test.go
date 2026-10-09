@@ -282,3 +282,28 @@ llm:
 		})
 	}
 }
+
+// Provider entries are read as a raw map, so ${VAR} references must be expanded
+// by ReadProviders itself (gkconfig only does it for typed getters).
+func TestReadProvidersExpandsEnvReferences(t *testing.T) {
+	loadYAML(t, `
+providers:
+  gw:
+    type: openai
+    api_key: "${SUAG_TEST_GW_KEY}"
+    base_url: "${SUAG_TEST_GW_URL}"
+    headers:
+      x-session: "{{session_id}}"
+      x-tag: "${SUAG_TEST_GW_TAG}"
+`)
+	t.Setenv("SUAG_TEST_GW_KEY", "sk-env")
+	t.Setenv("SUAG_TEST_GW_URL", "https://gw.example/v1")
+	t.Setenv("SUAG_TEST_GW_TAG", "team-a")
+	ps, err := ReadProviders()
+	assert.NoErr(t, err)
+	gw := ps["gw"]
+	assert.Eq(t, "sk-env", gw.APIKey)
+	assert.Eq(t, "https://gw.example/v1", gw.BaseURL)
+	assert.Eq(t, "team-a", gw.Headers["x-tag"])
+	assert.Eq(t, "{{session_id}}", gw.Headers["x-session"])
+}

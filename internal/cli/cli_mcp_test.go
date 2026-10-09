@@ -77,8 +77,7 @@ func TestPersonalRunWithStdioMCPReadAndDeniedWrite(t *testing.T) {
 			workspace := t.TempDir()
 			t.Chdir(workspace)
 			assert.NoErr(t, gkconfig.Set("workspace", workspace))
-			assert.NoErr(t, gkconfig.Set("llm.api_type", "openai"))
-			assert.NoErr(t, gkconfig.Set("llm.api_key", "test-key"))
+			assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
 			if tc.autoAllow != nil {
 				assert.NoErr(t, gkconfig.Set("tools.auto_allow", tc.autoAllow))
 			}
@@ -126,7 +125,7 @@ func TestPersonalRunWithStdioMCPReadAndDeniedWrite(t *testing.T) {
 				_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"model-finished"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`)
 			}))
 			t.Cleanup(server.Close)
-			assert.NoErr(t, gkconfig.Set("llm.base_url", server.URL))
+			setTestProvider(t, server.URL)
 			mode := tc.mode
 			if mode == "" {
 				mode = "run"
