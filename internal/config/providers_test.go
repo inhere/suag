@@ -197,6 +197,25 @@ fallback_models:
 		assert.StrContains(t, err.Error(), "no provider")
 	})
 
+	t.Run("bare flag or env model uses the configured provider", func(t *testing.T) {
+		loadYAML(t, doc)
+		s, err := ReadModelSettings("deepseek-reasoner")
+		assert.NoErr(t, err)
+		assert.Eq(t, "deepseek/deepseek-reasoner", s.Main.Ref())
+
+		t.Setenv("SUAG_MODEL", "deepseek-coder")
+		s, err = ReadModelSettings("")
+		assert.NoErr(t, err)
+		assert.Eq(t, "deepseek/deepseek-coder", s.Main.Ref())
+	})
+
+	t.Run("bare flag model without configured model rejected", func(t *testing.T) {
+		loadYAML(t, "")
+		_, err := ReadModelSettings("gpt-4o")
+		assert.Err(t, err)
+		assert.StrContains(t, err.Error(), "no provider")
+	})
+
 	t.Run("bad fallback names its position", func(t *testing.T) {
 		loadYAML(t, "model: openai/gpt-4o\nfallback_models: [\"\"]\n")
 		_, err := ReadModelSettings("")

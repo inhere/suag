@@ -190,12 +190,22 @@ func ReadModelSettings(flagModel string) (ModelSettings, error) {
 		return ModelSettings{}, err
 	}
 
-	mainRef := firstNonEmpty(flagModel, os.Getenv("SUAG_MODEL"), gkconfig.String("model"))
+	// The configured model names the default provider; a bare --model or
+	// SUAG_MODEL (no known provider prefix) then selects a model of that provider.
+	configRef := strings.TrimSpace(gkconfig.String("model"))
+	defaultProvider := ""
+	if configRef != "" {
+		spec, err := ResolveModel(configRef, providers, "")
+		if err != nil {
+			return ModelSettings{}, fmt.Errorf("model: %w", err)
+		}
+		defaultProvider = spec.Provider.ID
+	}
+	mainRef := firstNonEmpty(flagModel, os.Getenv("SUAG_MODEL"), configRef)
 	if strings.TrimSpace(mainRef) == "" {
 		return ModelSettings{}, errors.New("model is not configured; set `model: <provider>/<model>` (or SUAG_MODEL / --model)")
 	}
-	// A bare main model has no provider to default to, so ResolveModel errors.
-	main, err := ResolveModel(mainRef, providers, "")
+	main, err := ResolveModel(mainRef, providers, defaultProvider)
 	if err != nil {
 		return ModelSettings{}, fmt.Errorf("model: %w", err)
 	}
