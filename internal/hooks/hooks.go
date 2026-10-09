@@ -1,13 +1,24 @@
+// Package hooks runs the user-configured hook command for chat events.
+//
+// Each event runs hooks.command once with the event as one JSON line on stdin.
+// Events follow the Claude Code hook format (SessionStart, UserPromptSubmit,
+// PostToolUse, Stop, SessionEnd) plus the suag-specific Interrupt, sent when the
+// person types while a Stop call is still waiting. The command answers on stdout
+// with optional JSON ({"decision","reason","hookSpecificOutput":{"additionalContext"}});
+// a Stop answer with decision "block" and a reason starts a new turn with that
+// reason as input. Anything on stderr is shown to the person as a notice.
+// Failures are logged and never stop the chat.
 package hooks
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
-	"strconv"
+	"path"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -37,9 +48,9 @@ type Response struct {
 	Decision          string
 	Reason            string
 	AdditionalContext string
-	// Notice is a one-line message the Gofer server wants the person at this terminal
-	// to see (e.g. the session was taken over on the web). `gofer hook` prints it on
-	// its stderr, so the client captures that stream.
+	// Notice is a one-line message the hook command wants the person at this
+	// terminal to see (e.g. the session was taken over elsewhere). The command
+	// prints it on its stderr, so the client captures that stream.
 	Notice string
 }
 
@@ -52,7 +63,7 @@ type Result struct {
 // Wait is a pending Stop hook call.
 type Wait interface {
 	Done() <-chan Result
-	// Interrupt ends the wait. It returns a web reply that had already been received
+	// Interrupt ends the wait. It returns a reply that had already been received
 	// (Stop block) but not yet consumed, so the caller can still deliver it.
 	Interrupt(context.Context) string
 }
@@ -61,72 +72,141 @@ type Wait interface {
 type Client interface {
 	Call(context.Context, Event) Response
 	StartStop(context.Context, Event) Wait
+	// PostToolName reports whether a PostToolUse event is sent for the tool,
+	// and the tool name to put in it.
+	PostToolName(tool string) (string, bool)
 }
 
-type goferHooks struct {
-	command string
-	agent   string
-	timeout time.Duration
-	waitSec int
+const defaultTimeoutMS = 3000
+
+// commandClient runs the configured argv once per event, the event JSON on stdin.
+type commandClient struct {
+	argv     []string
+	stopArgs []string
+	timeout  time.Duration
+	// stopTimeout bounds the local wait for a Stop call.
+	stopTimeout time.Duration
+	postTool    PostToolFilter
 }
 
-// New returns the hook client for the current configuration, or nil when hooks are disabled.
-func New() Client {
-	if strings.TrimSpace(os.Getenv("GOFER_JOB_ID")) != "" {
-		return nil
-	}
-	// SUAG_GOFER_HOOKS overrides gofer.hooks; tests set it to off so a local
-	// `go test` never registers sessions with a live Gofer server.
-	mode := strings.ToLower(strings.TrimSpace(os.Getenv("SUAG_GOFER_HOOKS")))
-	if mode == "" {
-		mode = strings.ToLower(strings.TrimSpace(gkconfig.String("gofer.hooks")))
-	}
-	if mode == "" {
-		mode = "auto"
-	}
-	if mode == "off" || (mode != "on" && mode != "auto") {
-		return nil
-	}
-	command := strings.TrimSpace(gkconfig.String("gofer.command"))
-	if command == "" {
-		command = "gofer"
-	}
-	if mode == "auto" {
-		if _, err := exec.LookPath(command); err != nil {
-			return nil
+// PostToolFilter selects the tools that send PostToolUse and the name they are sent as.
+type PostToolFilter struct {
+	// Tools are tool name globs (path.Match); empty sends no PostToolUse at all.
+	Tools []string
+	// Name replaces the tool name in the event; empty keeps the original.
+	Name string
+}
+
+// Match reports whether tool sends PostToolUse and the name to send.
+func (f PostToolFilter) Match(tool string) (string, bool) {
+	for _, pattern := range f.Tools {
+		if ok, _ := path.Match(pattern, tool); ok {
+			if f.Name != "" {
+				return f.Name, true
+			}
+			return tool, true
 		}
 	}
-	agent := strings.TrimSpace(gkconfig.String("gofer.agent"))
-	if agent == "" {
-		agent = "suag"
-	}
-	waitSec := gkconfig.Int("gofer.wait_sec", 7140)
-	if waitSec <= 0 {
-		waitSec = 7140
-	}
-	timeoutMS := gkconfig.Int("gofer.timeout_ms", 3000)
-	if timeoutMS <= 0 {
-		timeoutMS = 3000
-	}
-	return &goferHooks{command: command, agent: agent, waitSec: waitSec, timeout: time.Duration(timeoutMS) * time.Millisecond}
+	return "", false
 }
 
-func (h *goferHooks) Call(ctx context.Context, event Event) Response {
-	response, err := h.call(ctx, event, 0)
+// New returns the hook client for the current configuration, or nil when hooks
+// are disabled: hooks.command is unset or empty, or SUAG_HOOKS=off (tests use it
+// so a local `go test` never runs a developer's configured hook command).
+// Configuration keys:
+//   - hooks.command: argv list, executed directly (never through a shell)
+//   - hooks.timeout_ms: timeout of every non-Stop event (default 3000)
+//   - hooks.stop_args: argv appended only to the Stop event
+//   - hooks.stop_wait_sec: Stop waits up to stop_wait_sec+2 seconds; 0 uses timeout_ms
+//   - hooks.post_tool_use.tools / .name: PostToolUse tool globs and the name sent
+func New() (Client, error) {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("SUAG_HOOKS")), "off") {
+		return nil, nil
+	}
+	argv, err := stringList("hooks.command")
 	if err != nil {
-		slog.Warn("Gofer hook failed", "event", event.Name, "err", err)
+		return nil, err
+	}
+	if len(argv) == 0 {
+		return nil, nil
+	}
+	if strings.TrimSpace(argv[0]) == "" {
+		return nil, fmt.Errorf("hooks.command: the program name is empty")
+	}
+	stopArgs, err := stringList("hooks.stop_args")
+	if err != nil {
+		return nil, err
+	}
+	tools, err := stringList("hooks.post_tool_use.tools")
+	if err != nil {
+		return nil, err
+	}
+	for _, pattern := range tools {
+		if strings.TrimSpace(pattern) == "" {
+			return nil, fmt.Errorf("hooks.post_tool_use.tools contains an empty glob")
+		}
+		if _, err := path.Match(pattern, "sample"); err != nil {
+			return nil, fmt.Errorf("hooks.post_tool_use.tools glob %q: %w", pattern, err)
+		}
+	}
+	timeoutMS := gkconfig.Int("hooks.timeout_ms", defaultTimeoutMS)
+	if timeoutMS <= 0 {
+		timeoutMS = defaultTimeoutMS
+	}
+	timeout := time.Duration(timeoutMS) * time.Millisecond
+	stopTimeout := timeout
+	// The extra 2s lets a command that waits stop_wait_sec answer before it is killed.
+	if waitSec := gkconfig.Int("hooks.stop_wait_sec", 0); waitSec > 0 {
+		stopTimeout = time.Duration(waitSec+2) * time.Second
+	}
+	return &commandClient{
+		argv: argv, stopArgs: stopArgs, timeout: timeout, stopTimeout: stopTimeout,
+		postTool: PostToolFilter{Tools: tools, Name: strings.TrimSpace(gkconfig.String("hooks.post_tool_use.name"))},
+	}, nil
+}
+
+// stringList reads an optional list of strings from the config.
+func stringList(key string) ([]string, error) {
+	raw := gkconfig.Get(key)
+	if raw == nil {
+		return nil, nil
+	}
+	switch value := raw.(type) {
+	case []string:
+		return append([]string(nil), value...), nil
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			text, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("%s must be a list of strings", key)
+			}
+			out = append(out, text)
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("%s must be a list of strings", key)
+	}
+}
+
+func (h *commandClient) PostToolName(tool string) (string, bool) { return h.postTool.Match(tool) }
+
+func (h *commandClient) Call(ctx context.Context, event Event) Response {
+	response, err := h.call(ctx, event, false)
+	if err != nil {
+		slog.Warn("hook command failed", "event", event.Name, "err", err)
 	}
 	return response
 }
 
-func (h *goferHooks) StartStop(ctx context.Context, event Event) Wait {
+func (h *commandClient) StartStop(ctx context.Context, event Event) Wait {
 	waitCtx, cancel := context.WithCancel(ctx)
 	done := make(chan Result, 1)
-	wait := &goferStopWait{call: h.Call, event: event, cancel: cancel, done: done}
+	wait := &stopWait{call: h.Call, event: event, cancel: cancel, done: done}
 	go func() {
-		response, err := h.call(waitCtx, event, h.waitSec)
+		response, err := h.call(waitCtx, event, true)
 		if err != nil {
-			slog.Warn("Gofer hook failed", "event", event.Name, "err", err)
+			slog.Warn("hook command failed", "event", event.Name, "err", err)
 		}
 		done <- Result{Response: response, Err: err}
 		close(done)
@@ -134,27 +214,21 @@ func (h *goferHooks) StartStop(ctx context.Context, event Event) Wait {
 	return wait
 }
 
-func (h *goferHooks) call(parent context.Context, event Event, waitSec int) (Response, error) {
-	ctx := parent
-	if waitSec == 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(parent, h.timeout)
-		defer cancel()
-	} else {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(parent, time.Duration(waitSec+2)*time.Second)
-		defer cancel()
+func (h *commandClient) call(parent context.Context, event Event, stop bool) (Response, error) {
+	timeout := h.timeout
+	args := append([]string(nil), h.argv[1:]...)
+	if stop {
+		timeout = h.stopTimeout
+		args = append(args, h.stopArgs...)
 	}
-	args := []string{"hook", "generic", "--agent", h.agent}
-	if waitSec > 0 {
-		args = append(args, "--wait", strconv.Itoa(waitSec))
-	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
 	input, err := json.Marshal(event)
 	if err != nil {
 		return Response{}, err
 	}
 	input = append(input, '\n')
-	cmd := exec.CommandContext(ctx, h.command, args...)
+	cmd := exec.CommandContext(ctx, h.argv[0], args...)
 	cmd.Stdin = bytes.NewReader(input)
 	var stderr limitedBuffer
 	cmd.Stderr = &stderr
@@ -177,16 +251,16 @@ func (h *goferHooks) call(parent context.Context, event Event, waitSec int) (Res
 	return Response{Decision: wire.Decision, Reason: wire.Reason, AdditionalContext: wire.HookSpecificOutput.AdditionalContext, Notice: strings.TrimSpace(stderr.String())}, nil
 }
 
-type goferStopWait struct {
+type stopWait struct {
 	call   func(context.Context, Event) Response
 	event  Event
 	cancel context.CancelFunc
 	done   chan Result
 }
 
-func (w *goferStopWait) Done() <-chan Result { return w.done }
+func (w *stopWait) Done() <-chan Result { return w.done }
 
-func (w *goferStopWait) Interrupt(parent context.Context) string {
+func (w *stopWait) Interrupt(parent context.Context) string {
 	interrupt := w.event
 	interrupt.Name = "Interrupt"
 	interrupt.LastAssistant = ""

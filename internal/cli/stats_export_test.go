@@ -18,7 +18,7 @@ import (
 func seedObserve(t *testing.T) context.Context {
 	t.Helper()
 	t.Setenv("SUAG_HOME", shortCLIHome(t))
-	t.Setenv("SUAG_GOFER_HOOKS", "off")
+	t.Setenv("SUAG_HOOKS", "off")
 	dbPath, err := appconfig.ResolveCoreStorePath()
 	assert.NoErr(t, err)
 	repo, err := store.Open(dbPath)

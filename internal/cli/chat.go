@@ -12,7 +12,11 @@ import (
 
 // runChat starts the interactive REPL on an assembled runner.
 func runChat(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) error {
-	return chat.Run(ctx, runner, chat.Options{SessionID: opts.SessionID, ResumeID: opts.ResumeID, FromID: opts.FromID}, stdin, stdout, stderr, suaghooks.New())
+	hooks, err := suaghooks.New()
+	if err != nil {
+		return err
+	}
+	return chat.Run(ctx, runner, chat.Options{SessionID: opts.SessionID, ResumeID: opts.ResumeID, FromID: opts.FromID}, stdin, stdout, stderr, hooks)
 }
 
 // RunPersonalChat gives the terminal REPL the same persistent session engine as run mode.

@@ -51,7 +51,11 @@ type fakeHookClient struct {
 	lostOnInterrupt string
 	// startNotice is returned as the SessionStart response Notice.
 	startNotice string
+	// postTool selects PostToolUse tools; empty sends none, like an unset hooks.post_tool_use.
+	postTool suaghooks.PostToolFilter
 }
+
+func (f *fakeHookClient) PostToolName(tool string) (string, bool) { return f.postTool.Match(tool) }
 
 func newFakeHookClient() *fakeHookClient {
 	return &fakeHookClient{startCount: make(chan struct{}, 8), eventWake: make(chan struct{}, 64), blockFirst: true}
@@ -556,11 +560,10 @@ func (p *blockingChatProvider) Generate(ctx context.Context, _ *agentcore.Genera
 func TestPersonalChatSurvivesFailingHookCommand(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("GOFER_JOB_ID", "")
-	t.Setenv("SUAG_GOFER_HOOKS", "") // exercise the config value, not the TestMain override
-	_ = gkconfig.Set("gofer.hooks", "on")
-	_ = gkconfig.Set("gofer.command", "missing-gofer-command-7cb7")
-	hooks := suaghooks.New()
+	t.Setenv("SUAG_HOOKS", "") // exercise the config value, not the TestMain override
+	_ = gkconfig.Set("hooks.command", []string{filepath.Join(t.TempDir(), "missing-hook-command-7cb7")})
+	hooks, err := suaghooks.New()
+	assert.Require(t, assert.NoErr(t, err))
 	assert.Require(t, assert.NotNil(t, hooks))
 	runner, _ := newCLITestRunner(t, &hookTestProvider{})
 	var stdout, stderr strings.Builder
@@ -607,6 +610,7 @@ func TestPersonalChatSendsOnlyBoundedRedactedShellOutputToPostToolUse(t *testing
 		t.Fatal(err)
 	}
 	hooks := newFakeHookClient()
+	hooks.postTool = suaghooks.PostToolFilter{Tools: []string{"shell_*"}, Name: "shell"}
 	var stdout, stderr strings.Builder
 	err = Run(context.Background(), runner, Options{}, strings.NewReader("run command\n:quit\n"), &stdout, &stderr, hooks)
 	if err != nil {

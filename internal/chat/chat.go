@@ -139,7 +139,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			lostReply = appendContext(lostReply, waiting.Interrupt(context.Background()))
 		}
 		if lostReply != "" {
-			fmt.Fprintln(stderr, "Warning: gofer web reply was not delivered:", suaghooks.TruncateOutput(lostReply, 200))
+			fmt.Fprintln(stderr, "Warning: hook reply was not delivered:", suaghooks.TruncateOutput(lostReply, 200))
 		}
 		if hooks != nil && sessionID != "" {
 			hooks.Call(context.Background(), baseEvent("SessionEnd"))
@@ -211,7 +211,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		}
 		if lostReply != "" {
 			// A reply received during an interrupt race still reaches the model as next-turn context.
-			fmt.Fprintln(stderr, "Note: delivering gofer web reply received while interrupting:", suaghooks.TruncateOutput(lostReply, 200))
+			fmt.Fprintln(stderr, "Note: delivering hook reply received while interrupting:", suaghooks.TruncateOutput(lostReply, 200))
 			pendingContext = appendContext(pendingContext, lostReply)
 			lostReply = ""
 		}
@@ -232,13 +232,16 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 				if live.Handle(event) {
 					return nil
 				}
-				if hooks == nil || event.Kind != "tool_result" || !isShellOrExecTool(event.ToolName) {
+				if hooks == nil || event.Kind != "tool_result" {
+					return nil
+				}
+				// hooks.post_tool_use decides which tools send PostToolUse and under which name.
+				toolName, send := hooks.PostToolName(event.ToolName)
+				if !send {
 					return nil
 				}
 				postTool := baseEvent("PostToolUse")
-				// gofer's hookrelay only registers watches for a fixed shell-tool whitelist,
-				// so suag-native names like shell_exec are normalized to "shell".
-				postTool.ToolName = goferShellToolName
+				postTool.ToolName = toolName
 				postTool.ToolOutput = suaghooks.TruncateOutput(personal.RedactSecretValues(event.Text), toolHookLimit)
 				showHookNotice(stderr, hooks.Call(eventCtx, postTool))
 				return nil
@@ -249,8 +252,8 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			_ = processServer.SetBusy(false)
 		}
 		pendingContext = ""
-		// Every turn end (success, error or yield) must send Stop: the gofer contract defines it as
-		// "turn finished, back to waiting for input", otherwise the session stays "running" forever.
+		// Every turn end (success, error or yield) must send Stop: the hook contract defines it as
+		// "turn finished, back to waiting for input", otherwise a hook-side session stays "running" forever.
 		stopMessage := ""
 		if runErr != nil {
 			live.Finish()
@@ -393,14 +396,6 @@ func appendContext(current, next string) string {
 		return next
 	}
 	return current + "\n\n" + next
-}
-
-// goferShellToolName is the tool name gofer recognizes as a shell tool.
-const goferShellToolName = "shell"
-
-func isShellOrExecTool(name string) bool {
-	name = strings.ToLower(name)
-	return strings.Contains(name, "shell") || strings.Contains(name, "exec")
 }
 
 // showHookNotice prints the server-provided notice (if any) for the person at the terminal.
