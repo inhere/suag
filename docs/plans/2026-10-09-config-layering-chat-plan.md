@@ -1,13 +1,14 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # Suag 配置重设计、分层整理与 chat 显示 实施计划
 
-> 状态：Draft 0.1 / 待人工计划批准
+> 状态：Draft 0.2 / 待人工计划批准
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-09 | Claude | 初稿 |
+| 0.2 | 2026-10-09 | Claude | 按合并评审修订：新增符号与测试落点表（原 CORE_BLOCKING：SessionNotFoundError/transcriptsEnabled 落点成环、测试整文件迁移无法编译）；W1 验收改为全仓测试名集合对比；补各新包 TestMain；ACP context_window 回退收归 wiring；provider 名取配置 id；hooks 的 Stop 等待上限与 PostToolUse 缺省规则具体化；Gofer socket 投递前缀变化写入迁移清单；T09 验证改为样例配置实跑；T12 补强制着色渲染测试；如实列出 cliui 带入的依赖 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -26,7 +27,7 @@
 
 ## 范围、排除项与授权
 
-范围：suag 仓库 `cmd/`、`internal/`、`config/config.yaml`、`README.md`、`docs/usage/*`、`AGENTS.md` 入口说明；新增依赖 `github.com/gookit/cliui v0.5.3`（设计 0.2 与用户要求指定）。
+范围：suag 仓库 `cmd/`、`internal/`、`config/config.yaml`、`README.md`、`docs/usage/*`、`AGENTS.md` 入口说明；新增依赖 `github.com/gookit/cliui v0.5.3`（设计 0.2 与用户要求指定），它会带入 `github.com/gookit/color`（伪版本 `v1.6.2-0.20260604125953-289d54c4470a`）与 `github.com/xo/terminfo`，随本计划一并批准。
 
 排除：会话存储与迁移、stream-json/ACP 字段、`pkg/agentcore` 公共接口、Gofer 仓库（迁移清单交 gofer 会话实施）、`suag-iw3u` 遗留项、push/发版。
 
@@ -71,11 +72,37 @@
 ## 前置检查与 fail-closed 条件
 
 - workspace baseline（2026-10-09 规划时）：Git 根 `inhere-tools/suag`，分支 `main`，HEAD `4624e4c`，dirty 仅本计划与设计批准标注（本计划提交时一并提交）；无需保护的 untracked 文件。实施前再执行 `git status --short`，出现非本计划产生的 dirty 文件即 `Ownership Conflict`，停止。
-- 依赖：Go 1.25；新增 `github.com/gookit/cliui v0.5.3`（T12 引入）；不新增其他第三方依赖。
+- 依赖：Go 1.25；新增 `github.com/gookit/cliui v0.5.3` 及其带入的 `gookit/color`、`xo/terminfo`（T12 引入）；不新增其他第三方依赖。
 - 环境：容器内 Go 跑 race；Windows 主机经 `gofer job run -p my-tools-dev -a exec --runner local --cwd inhere-tools/suag --sync -- go test ./...`。
-- 测试隔离：各测试包 `TestMain` 继续把 `SUAG_HOME` 设为临时目录；hooks 关闭开关在 T08 由 `SUAG_GOFER_HOOKS=off` 改为 `SUAG_HOOKS=off`；任何测试触及真实 `~/.suag` 立即停止。
+- 测试隔离：现有 `TestMain`（app、personal、acpserver、cmd/suag）与 W1 新建的 wiring、hooks、chat、cli 包各有一个 `TestMain`，把 `SUAG_HOME` 设为临时目录并关闭 hooks；hooks 关闭开关在 T08 由 `SUAG_GOFER_HOOKS=off` 统一改为 `SUAG_HOOKS=off`；任何测试触及真实 `~/.suag` 立即停止。
+- W1 测试基线：开始前执行 `go test -list . ./... | grep '^Test' | sort > tmp/w1-tests-before.txt`，W1 结束后同样生成 after，两份名单必须一致（跨包移动不计差异）。
 - 预期路径（规划证据，非封闭白名单）：新增 `internal/{cli,wiring,output,chat,hooks}/`、`internal/platform/llm/claude_stream.go`、`internal/config/providers.go`；删除 `internal/app/`、`cmd/suag/observe_cmd.go`；修改 `cmd/suag/main.go`、`internal/config/*`、`internal/platform/llm/{claude.go,pool.go}`、`internal/personal/{runner.go,observe.go}`、`internal/acpserver/server.go`（注释）、文档与样例。
 - fail-closed：W1 任一步 golden 契约或全量测试结果变化即停止（W1 不允许行为变化）；需要改 `pkg/agentcore` 公共接口时停止；发现设计未覆盖的行为取舍按 `Semantic Amendment` 返回。
+
+## 符号与测试落点
+
+跨文件共用的生产符号（W1 按此放置，避免环）：
+
+| 符号 | 现位置 | 目标 |
+|---|---|---|
+| `SessionNotFoundError`、`sessionNotFound` | app/cli.go | `internal/personal`（导出，保留 `ExitCode() 4`）；cli 与 chat 都只依赖 personal |
+| `transcriptsEnabled` | app/chat.go | `internal/config.TranscriptsEnabled()`；wiring 与 chat 共用 |
+| `liveText`、`withUsage`、stream-json 行构造 | app/cli.go、chat.go | `internal/output` |
+| `processExitError`、`exitReport` 依赖的退出码接口 | cmd/suag/main.go | `processExitError` 归 `internal/cli`；`exitReport` 留 main |
+| `transcriptPath`、`showHookNotice` | app/chat.go | `internal/chat` |
+
+测试按"用到哪个包的未导出符号就放哪个包，驱动整条命令的放 cli"逐用例放置：
+
+| 去向 | 用例 |
+|---|---|
+| output | TestLiveTextPrintsDeltasPerMessage |
+| wiring | capabilities_test 全部、TestNewToolVisibility、TestCLIMCPGate*（3 个）、TestPersonalReadOnlyToolsCannotWrite、TestContextWindowForSettingsFollowsEffectiveModel（T07 改到 config） |
+| hooks | TestGoferHookFailuresAndJobEnvironmentAreBestEffort、TestHookPayloadCapsToolOutputAtUTF8Boundary、TestGoferStopInterrupt*（2 个）、TestGoferHooksCaptureStderrAsNotice |
+| chat | chat_input_test 全部；chat_hooks_test 其余 15 个；TestPersonalChatReusesOneSession |
+| cli | cli_test 其余、cli_mcp_startup_test、TestFakeMCPServerProcess 与 TestPersonalRunWithStdioMCPReadAndDeniedWrite、acp_test、stream_json_contract_test、stream_json_plan_test、usage_output_test 其余、cmd/suag/main_test.go 中的命令用例、observe_cmd_test 全部 |
+| cmd/suag | TestExitReportInterrupted 及 exitReport/commandExitCode/formatVersion 用例 |
+
+测试需要的跨包接缝只用 `export_test.go` 或最小导出提供，并在提交说明中列出。
 
 ## 波次与依赖
 
@@ -93,41 +120,41 @@
 ### T01 抽出 internal/output
 
 - 文件: 新增 `internal/output/`（`livetext.go`、`streamjson.go`、`usage.go`）；修改 `internal/app/{cli.go,chat.go}` 改为调用 output。
-- 动作: 移动 `liveText`、`withUsage` 与 stream-json 行编码（session/turn_start/message_delta/plan/turn_end/result/input_required/error 行的构造）为 output 的导出函数；app 仅调用。
+- 动作: 按落点表移动 `liveText`、`withUsage` 与 stream-json 行编码（session/turn_start/message_delta/plan/turn_end/result/input_required/error 行的构造）为 output 的导出函数；app 仅调用。
 - 验证: `go test -race ./...`；`git diff --stat internal/app/testdata` 为空。
 - 完成标准: app 中不再有 stream-json 行字面量构造；golden 测试通过。
 - 依赖: 无。
 
 ### T02 抽出 internal/wiring
 
-- 文件: 新增 `internal/wiring/`；移动 `internal/app/{capabilities.go,cli_mcp.go,app.go}` 与 `cli.go` 中的 `openPersonalRuntime*`、`contextWindowForSettings`、`appendSystemPrompt`、`buildPersonal*Capabilities`；对应测试 `capabilities_test.go`、`cli_mcp_startup_test.go`、`tool_visibility_test.go` 随迁。
-- 动作: 导出 `wiring.Open(ctx, Options) (*Runtime, error)` 与 `Runtime.Close`；`Options` 承接现有 personalOptions 中装配所需字段；MCP provider 工厂测试替身用 `export_test.go` 暴露。
+- 文件: 新增 `internal/wiring/`（含 `main_test.go`）；移动 `internal/app/{capabilities.go,cli_mcp.go,app.go}` 与 `cli.go` 中的 `openPersonalRuntime*`、`contextWindowForSettings`、`appendSystemPrompt`、`buildPersonal*Capabilities`；`transcriptsEnabled` 移到 `internal/config`；测试按落点表的 wiring 行迁移。
+- 动作: 导出 `wiring.Open(ctx, Options) (*Runtime, error)` 与 `Runtime.Close`；`Options` 承接 Configured 变体的全部参数（workspace、ruleCWD、allowWrite、servers、hooks、approver、CLIMode 与 personalOptions 中装配字段）；`Runtime` 暴露 Runner、Registry（供 ACP 判断 MCP 工具）与 ContextWindow；MCP provider 工厂测试替身用 `export_test.go` 暴露。
 - 验证: `go test -race ./...`；`go vet ./...`。
 - 完成标准: app 只通过 `wiring.Open` 获得 Runner；随迁测试全部在 wiring 包通过。
 - 依赖: T01。
 
 ### T03 抽出 internal/hooks
 
-- 文件: 新增 `internal/hooks/`（来自 `internal/app/gofer_hooks.go`）；修改 `internal/app/chat.go`。
-- 动作: 原样移动 hooks 客户端、事件/响应类型与 Stop 等待；导出 chat 所需接口（Client、Wait、Event、Response）；行为与配置键暂不变。
+- 文件: 新增 `internal/hooks/`（来自 `internal/app/gofer_hooks.go`，含 `main_test.go`）；修改 `internal/app/chat.go`；测试按落点表的 hooks 行迁移。
+- 动作: 原样移动 hooks 客户端、事件/响应/结果类型与 Stop 等待；导出 chat 所需接口（Client、Wait、Event、Response、Result 及其字段、`New`）；行为与配置键暂不变。
 - 验证: `go test -race ./...`（chat_hooks_test 仍在 app，经导出类型编译通过）。
 - 完成标准: app 中无 hooks 进程调用代码。
 - 依赖: T02。
 
 ### T04 抽出 internal/chat
 
-- 文件: 新增 `internal/chat/`（来自 `internal/app/{chat.go,chat_input.go}`）；测试 `chat_input_test.go`、`chat_hooks_test.go` 随迁（后者按主要被测对象归 chat）。
-- 动作: 导出 `chat.Run(ctx, runner, Options, stdin, stdout, stderr, hooks.Client)`；chat 依赖 output、hooks、personal，不依赖 wiring。
-- 验证: `go test -race ./internal/chat/ ./...`。
-- 完成标准: chat 相关测试在 chat 包通过，数量与迁移前一致（迁移前后 `go test -list . ` 计数对比记录到 progress）。
+- 文件: 新增 `internal/chat/`（来自 `internal/app/{chat.go,chat_input.go}`，含 `main_test.go`）；测试按落点表的 chat 行迁移。
+- 动作: 导出 `chat.Run(ctx, runner, Options, stdin, stdout, stderr, hooks.Client)`；`SessionNotFoundError` 已在 personal；chat 依赖 output、hooks、personal、config，不依赖 wiring 与 cli。
+- 验证: `go test -race ./...`；`go list -deps ./internal/chat | grep -E 'internal/(wiring|cli|app)$'` 为空。
+- 完成标准: 落点表 chat 行的用例全部在 chat 包通过。
 - 依赖: T03。
 
 ### T05 建立 internal/cli，删除 internal/app
 
-- 文件: 新增 `internal/cli/`（`root.go`、`run.go`、`chat.go`、`acp.go`、`ps.go`、`send.go`、`trace.go`、`stats.go`、`export.go`、`version.go`、`errors.go`）；移动 `internal/app/cli.go` 剩余部分、`acp.go`、`cmd/suag/observe_cmd.go` 与 `cmd/suag/main.go` 中的命令定义；测试 `cli_test.go`、`cli_mcp_test.go`、`acp_test.go`、`stream_json_*_test.go`、`usage_output_test.go`、`main_test.go`（命令部分）、`observe_cmd_test.go` 随迁；删除 `internal/app/`。
-- 动作: `cmd/suag/main.go` 只保留 main、`exitReport`、版本注入；ACP 会话工厂闭包放在 `internal/cli/acp.go`（cli 依赖 acpserver 与 wiring，acpserver 不 import wiring）；`SessionNotFoundError`、`processExitError` 归 `internal/cli/errors.go`。
-- 验证: `go test -race ./...`；`go vet ./...`；`go list -deps ./internal/acpserver | grep internal/wiring` 为空；`test ! -d internal/app`。
-- 完成标准: 完成定义第 1 条成立；W1 前后全量测试名单一致。
+- 文件: 新增 `internal/cli/`（`root.go`、`run.go`、`chat.go`、`acp.go`、`ps.go`、`send.go`、`trace.go`、`stats.go`、`export.go`、`version.go`、`errors.go`、`main_test.go`）；移动 `internal/app/cli.go` 剩余部分、`acp.go`、`cmd/suag/observe_cmd.go` 与 `cmd/suag/main.go` 中的命令定义；测试按落点表的 cli 行迁移；删除 `internal/app/`。
+- 动作: `cmd/suag/main.go` 只保留 main、`exitReport`、版本注入；ACP 会话工厂闭包放在 `internal/cli/acp.go`（cli 依赖 acpserver 与 wiring，acpserver 不 import wiring）；`processExitError` 归 `internal/cli/errors.go`。
+- 验证: `go test -race ./...`；`go vet ./...`；`go list -deps ./internal/acpserver | grep internal/wiring` 为空；`test ! -d internal/app`；W1 测试名单 before/after 一致（`diff tmp/w1-tests-before.txt tmp/w1-tests-after.txt`）。
+- 完成标准: 完成定义第 1 条成立。
 - 依赖: T04。
 
 ### T06 新配置模型
@@ -141,39 +168,39 @@
 ### T10 Claude provider：base_url 与 SSE 流式
 
 - 文件: `internal/platform/llm/{claude.go,claude_stream.go,claude_stream_test.go}`。
-- 动作: `ClaudeConfig.BaseURL`（`/v1` 结尾则拼 `/messages`，否则拼 `/v1/messages`，缺省 `https://api.anthropic.com`）；`Stream` 发送 `stream: true`，处理 message_start（输入/缓存 token）、content_block_start（tool_use id/name）、content_block_delta（text_delta 实时 emit、input_json_delta 累积）、content_block_stop、message_delta（stop_reason、输出 token）、message_stop、ping、error；只重试建连；非 event-stream 响应按普通响应解析。
+- 动作: `ClaudeConfig.Name`（provider 名，缺省 `anthropic`，供 trace/stats 记录配置 id）与 `ClaudeConfig.BaseURL`（`/v1` 结尾则拼 `/messages`，否则拼 `/v1/messages`，缺省 `https://api.anthropic.com`）；`Stream` 发送 `stream: true`，处理 message_start（输入/缓存 token）、content_block_start（tool_use id/name）、content_block_delta（text_delta 实时 emit、input_json_delta 累积）、content_block_stop、message_delta（stop_reason、输出 token）、message_stop、ping、error；只重试建连；非 event-stream 响应按普通响应解析。
 - 验证: `go test ./internal/platform/llm/`，用 httptest 覆盖文本流、tool_use 分片、usage、流中 error、4xx、base_url 两种写法。
 - 完成标准: Claude `Stream` 不再调用 `Generate`。
 - 依赖: T05（与 T06 并行）。
 
 ### T07 装配切换到新配置
 
-- 文件: `internal/wiring/*`、`internal/config/llm.go`（删旧函数）、`internal/cli/{run.go,chat.go}`（删除 `--provider`）、`internal/acpserver/server.go`（注释）及相关测试。
-- 动作: wiring 按 `ModelSpec` 构建主 provider（含 headers、base_url）、`fallback_models` 组成 Pool、`compact_model` 单独构建；会话元数据记录 provider id 与主模型；删除 `ReadLLMProviderSettingsWithOverrides` 等旧路径与 `--provider` flag。
-- 验证: `go test -race ./...`；新增测试：`--model deepseek/deepseek-chat` 指向预设、fallback 在主 provider 失败时生效、旧 `llm` 段启动报错。
+- 文件: `internal/wiring/*`、`internal/config/{llm.go,context_window.go}`（删旧函数）、`internal/cli/{run.go,chat.go}`（删除 `--provider`）、`internal/acpserver/server.go`（删除 `ReadContextWindow` 回退）及相关测试（约 10 个测试文件中约 57 处 `llm.*` 配置改写为 `providers`/`model`）。
+- 动作: wiring 按 `ModelSpec` 构建主 provider（含 headers、base_url，provider 名取配置 id）、`fallback_models` 组成 Pool、`compact_model` 单独构建；`Runtime.ContextWindow` 必定填写，acpserver 不再自行回退读取；会话元数据记录 provider id 与主模型；删除 `ReadLLMProviderSettingsWithOverrides` 等旧路径与 `--provider` flag。
+- 验证: `go test -race ./...`；新增测试：`--model deepseek/deepseek-chat` 指向预设、fallback 在主 provider 失败时生效、旧 `llm` 段启动报错、trace 中 model 事件的 provider 名为配置 id、ACP 会话的 context window 来自 wiring。
 - 完成标准: 完成定义第 2、5 条（装配侧）成立；代码中无 `SUAG_PROVIDER`、`llm.api_type` 读取。
 - 依赖: T06、T10。
 
 ### T08 gofer 行为改为通用配置
 
 - 文件: `internal/wiring/` 中 MCP gate、`internal/hooks/*`、`internal/chat/*`、`internal/personal/runner.go`、`internal/cli/{run.go,send.go}`、各 `TestMain` 与 hooks 相关测试。
-- 动作: 内置放行清空，新增 `tools.read_only_allow`（只读模式唯一名单，必须 `server/toolglob`）；hooks 读 `hooks.command`/`timeout_ms`/`stop_args`/`post_tool_use`，未配置即关闭，`SUAG_HOOKS=off` 关闭，删除 auto 模式与 `GOFER_JOB_ID` 判断；删除 GOFER_JOB_ID 提示词；投递前缀改为通用规则（`send --source`，文本已带 `[…] ` 标签不再加）；`run --injected` 替代前缀识别；测试开关改名 `SUAG_HOOKS`。
-- 验证: `go test -race ./...`；新增测试：只读模式 `read_only_allow` 放行与拒绝、未配置 hooks 不调用命令、`stop_args` 只追加到 Stop、`post_tool_use` 过滤与改名、`--source` 前缀、`--injected` 写入 transcript；`grep -rni gofer --include=*.go internal cmd | grep -v _test.go` 无结果。
+- 动作: 内置放行清空，新增 `tools.read_only_allow`（只读模式唯一名单，必须 `server/toolglob`）；hooks 读 `hooks.command`/`timeout_ms`/`stop_args`/`stop_wait_sec`/`post_tool_use`，未配置 `command` 即关闭，`SUAG_HOOKS=off` 关闭，删除 auto 模式与 `GOFER_JOB_ID` 判断；规则具体化：Stop 事件追加 `stop_args`，本端等待上限为 `stop_wait_sec + 2` 秒（`stop_wait_sec` 缺省 0 时用 `timeout_ms`，这是设计 0.2 中“stop_args 中秒数同时作为等待上限”的落地写法），只有配置了 `post_tool_use.tools` 才发送 PostToolUse；删除 GOFER_JOB_ID 提示词；投递前缀改为通用规则（`send --source` 与 socket 请求的 `From` 一样处理为 `[来自 <source>] `，文本已带 `[…] ` 标签不再加，删除 `from=gofer` 特判与 runner 的前缀识别）；`run --injected` 替代前缀识别；所有 `TestMain` 与测试中的开关改名 `SUAG_HOOKS`。
+- 验证: `go test -race ./...`；新增测试：只读模式 `read_only_allow` 放行与拒绝、非只读模式未配置 `auto_allow` 时 MCP 调用被拒、未配置 hooks 不调用命令、`stop_args` 只追加到 Stop 且等待上限按规则、未配置 `post_tool_use` 不发送、`post_tool_use` 过滤与改名、`--source` 与 `From=gofer` 均得到 `[来自 …] ` 前缀、`--injected` 写入 transcript；hooks 协议说明注释改写为中立表述；`grep -rni gofer --include=*.go internal cmd | grep -v _test.go` 无结果。
 - 完成标准: 完成定义第 3 条成立。
 - 依赖: T07。
 
 ### T09 文档、样例与 Gofer 迁移清单
 
 - 文件: `config/config.yaml`、`README.md`、`docs/usage/{llm-config-v0.md,gofer-personal-agent.md}`、`AGENTS.md`、`docs/README.md`。
-- 动作: 按新配置格式重写样例（含 OpenCode Go、anthropic 网关、read_only_allow、hooks 示例）；`llm-config-v0.md` 改为新格式说明；Gofer 使用文档加“升级迁移”一节：用户配置改写、`hooks.command`、`tools.read_only_allow`，以及 Gofer 侧 `SUAG_HOOKS=off`、`SUAG_APPEND_SYSTEM_PROMPT`、`--injected`。
-- 验证: 用 T05 后的二进制以样例配置 `SUAG_CONFIG=config/config.yaml suag version`/`run --help` 加载成功；`grep -rn "llm:\|--provider\|SUAG_PROVIDER\|gofer.hooks" README.md docs/usage config` 无残留。
+- 动作: 按新配置格式重写样例（含 OpenCode Go、anthropic 网关、read_only_allow、hooks 示例）；`llm-config-v0.md` 改为新格式说明；Gofer 使用文档加“升级迁移”一节：用户配置改写、`hooks.command`、`tools.read_only_allow`，以及 Gofer 侧 `SUAG_HOOKS=off`、`SUAG_APPEND_SYSTEM_PROMPT`、`--injected`、socket 投递若要保留“[gofer web 回复]”措辞需由 Gofer 自己加在文本前（否则显示为 `[来自 gofer] `）。
+- 验证: 以样例配置（`SUAG_CONFIG` 指向样例副本，provider 指向本地假服务）实跑 `suag run --prompt hi --read-only` 成功；`grep -n "llm:\|--provider\|SUAG_PROVIDER\|gofer.hooks" config/config.yaml docs/usage/llm-config-v0.md README.md` 无结果（Gofer 使用文档的迁移小节按需出现旧写法，人工核对）。
 - 完成标准: 文档描述与 T07/T08 行为一致。
 - 依赖: T08。
 
 ### T11 工具调用事件
 
 - 文件: `internal/personal/{runner.go,observe.go}` 及测试、`internal/chat/*`。
-- 动作: Runner 在工具执行前发 `tool_call` 事件（名称、参数摘要），`tool_result` 不再依赖 `EmitToolResults`（chat 始终订阅；stream-json 忽略这两类）。
+- 动作: Runner 在工具执行前发 `tool_call` 事件（名称、参数摘要），emit 出错只记录日志、不阻止工具执行；`tool_result` 不再依赖 `EmitToolResults`（chat 始终订阅；stream-json 与 ACP 的 emit 忽略这两类）。
 - 验证: `go test -race ./...`；golden 契约文件不变；新增测试断言事件顺序 tool_call → tool_result。
 - 完成标准: chat 能在执行前收到调用事件。
 - 依赖: T08。
@@ -182,7 +209,7 @@
 
 - 文件: `internal/chat/render.go`、`render_test.go`、`go.mod/go.sum`（cliui v0.5.3）。
 - 动作: 渲染器：提示符着色；文本实时输出（复用 output.LiveText）；工具调用一行（名称 + 截断参数）、结果一行（成功/失败 + 截断摘要）；`update_plan` 勾选列表；错误红色；每轮结束灰色状态行（模型 · in/out tokens · 耗时）；非 TTY 或 `NO_COLOR` 退化纯文本。
-- 验证: `go test ./internal/chat/` 用缓冲区断言纯文本模式输出；真实二进制以 OpenAI 与 Anthropic SSE 假服务跑一轮含工具调用的 chat（stdin 管道，纯文本模式），检查输出顺序与状态行。
+- 验证: `go test ./internal/chat/` 用缓冲区断言纯文本模式输出，并以强制着色模式断言含颜色码、状态行与工具行格式；真实二进制以 OpenAI 与 Anthropic SSE 假服务跑一轮含工具调用的 chat（stdin 管道，纯文本模式），检查输出顺序与状态行。
 - 完成标准: 完成定义第 4 条成立。
 - 依赖: T11。
 
@@ -223,7 +250,9 @@
 | 只读放行 `tools.read_only_allow`（设计评审 CORE_BLOCKING） | T08 | 只读放行/拒绝测试 |
 | hooks 通用化、来源前缀、`--injected`、删除 GOFER_JOB_ID（Q3） | T08、T09 | hooks 测试、grep 检查、迁移清单 |
 | chat 显示 | T11、T12 | 事件顺序测试、渲染测试、真实二进制冒烟 |
-| 文档同步 | T09 | 样例加载、grep 无残留 |
+| 文档同步 | T09 | 样例配置实跑、grep 无残留 |
+| provider 名取配置 id、会话元数据只记主模型 | T07、T10 | trace provider 名测试 |
+| 默认放行清空（含非只读模式） | T08 | 未配置即拒绝测试 |
 
 ## 完成 Gate 与剩余工作
 
