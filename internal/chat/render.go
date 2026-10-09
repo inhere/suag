@@ -11,6 +11,7 @@ import (
 	"github.com/gookit/color"
 	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/internal/platform/tools"
 	"golang.org/x/term"
 )
 
@@ -138,6 +139,29 @@ func (r *Renderer) External(text string) {
 		lines[i] = r.paint(color.Magenta, line)
 	}
 	fmt.Fprintln(r.opts.Out, strings.Join(lines, "\n"))
+}
+
+// ApprovalDetails formats the full key arguments of an approval question, one
+// indented item per detail (continuation lines indented further). Nothing is
+// truncated: the person must see exactly what will run.
+func (r *Renderer) ApprovalDetails(q tools.Question) string {
+	var b strings.Builder
+	for _, detail := range q.Details {
+		for i, line := range strings.Split(detail, "\n") {
+			indent := "  "
+			if i > 0 {
+				indent = "    "
+			}
+			b.WriteString(r.paint(color.Yellow, indent+line))
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+// ApprovalPrompt is the line the approval answer is typed on.
+func (r *Renderer) ApprovalPrompt(q tools.Question) string {
+	return r.paint(color.Yellow, q.Prompt)
 }
 
 // Notice prints a plain informational line on the chat output.

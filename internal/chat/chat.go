@@ -14,6 +14,7 @@ import (
 	suaghooks "github.com/inhere/suag/internal/hooks"
 	"github.com/inhere/suag/internal/personal"
 	personalprocess "github.com/inhere/suag/internal/personal/process"
+	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
@@ -29,6 +30,10 @@ type Options struct {
 	ResumeID  string
 	// FromID starts a NEW session that inherits state from this session.
 	FromID string
+	// Asker is where the chat approver asks before running a tool. Run binds
+	// the terminal input to it only when stdin is a terminal; left unbound,
+	// every tool that needs a confirmation is refused. May be nil.
+	Asker *tools.BindableAsker
 }
 
 // Run drives the interactive chat REPL on top of runner; hooks may be nil.
@@ -116,6 +121,10 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		Color: colorEnabledFor(stdout), ErrColor: colorEnabledFor(stderr),
 		Provider: runner.ProviderName(), Model: runner.Model(),
 	})
+	if opts.Asker != nil && inputSource.terminal != nil {
+		opts.Asker.Bind(chatAsker{source: inputSource, render: render})
+		defer opts.Asker.Bind(nil)
+	}
 	if runner.ProcessRoot() != "" {
 		processServer, err = startChatProcessRegistration(sessionID, runner.ProcessRoot(), runner, inputSource)
 		if err != nil {
@@ -264,7 +273,12 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			render.Error(runErr)
+			if errors.Is(runErr, tools.ErrAborted) {
+				// Ctrl-C/Ctrl-D at an approval question: only this turn ends.
+				render.Notice("已取消")
+			} else {
+				render.Error(runErr)
+			}
 			stopMessage = "Error: " + runErr.Error()
 		} else if result.Status == agentcore.RunYielded {
 			render.Finish()
@@ -276,7 +290,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 				render.Answer(result.Output)
 			}
 			if len(result.DeniedTools) > 0 {
-				render.Notice("Input required to authorize an MCP tool.")
+				render.Notice("本轮被拒绝的工具：" + strings.Join(result.DeniedTools, ", "))
 			}
 			render.Status(result, time.Since(turnStart))
 			stopMessage = result.Output

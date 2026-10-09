@@ -36,7 +36,13 @@ func (e chatInputEvent) settle(err error) {
 	}
 }
 
-type chatInputRequest struct{ prompt string }
+// chatInputRequest asks the reader goroutine for one line. ask marks the answer
+// to an approval question: it is read outside history and never gets the
+// half-typed line saved for the next prompt.
+type chatInputRequest struct {
+	prompt string
+	ask    bool
+}
 
 // chatInputSource reads exactly one prompt per request and signals its first byte before
 // forwarding it to the line editor, so callers can interrupt a waiting Stop hook first.
@@ -63,6 +69,22 @@ type chatInputSource struct {
 	pending    bool
 	busy       bool
 	reader     *chatActivityReader
+
+	// Approval questions (ask.go). flushInput drops terminal input that was
+	// typed but not read yet; injectable, nil when input is not a terminal.
+	flushInput func() error
+	askMu      sync.Mutex // one question at a time
+	// cond (on mu) signals handing changes.
+	cond *sync.Cond
+	// inputEpoch is bumped by Ask right after flushing: a byte read from the
+	// terminal before that is dropped instead of reaching the line editor.
+	inputEpoch uint64
+	// handing is set while the reader has passed a byte to the line editor
+	// that the editor has not processed yet.
+	handing bool
+	// savedLine is a half-typed line taken out of a pending read for a
+	// question; it prefills the next prompt read.
+	savedLine string
 }
 
 func newChatInputSource(parent context.Context, input io.Reader, output io.Writer) (*chatInputSource, error) {
@@ -72,6 +94,7 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 		requests: make(chan chatInputRequest), events: make(chan chatInputEvent, 1),
 		activity: make(chan struct{}), deliveries: make(chan chatInputEvent, 8), done: make(chan struct{}),
 	}
+	source.cond = sync.NewCond(&source.mu)
 	if file, ok := input.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
 		// Raw mode is entered per line in readLine, not here: during model/tool execution the
 		// terminal must stay cooked so Ctrl-C raises SIGINT and stderr keeps CR translation.
@@ -82,6 +105,7 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 			}
 			return func() error { return term.Restore(int(file.Fd()), state) }, nil
 		}
+		source.flushInput = func() error { return flushTerminalInput(int(file.Fd())) }
 		source.reader = &chatActivityReader{source: source, input: input}
 		terminalIO := &chatTerminalIO{reader: source.reader, output: source.output}
 		source.terminal = lineedit.NewTerminal(terminalIO, "")
@@ -301,7 +325,8 @@ func (s *chatInputSource) run() {
 		case <-s.ctx.Done():
 			return
 		case request := <-s.requests:
-			line, err := s.readLine(request.prompt)
+			line, err := s.readLine(request)
+			s.byteConsumed() // the line editor is done with every byte it got
 			event := chatInputEvent{line: line, err: err}
 			select {
 			case s.events <- event:
@@ -312,7 +337,8 @@ func (s *chatInputSource) run() {
 	}
 }
 
-func (s *chatInputSource) readLine(prompt string) (string, error) {
+func (s *chatInputSource) readLine(request chatInputRequest) (string, error) {
+	prompt := request.prompt
 	if s.terminal != nil {
 		// Raw mode only while editing a line. Ctrl-C here arrives as byte 0x03 (no SIGINT) and the
 		// line editor returns io.EOF, so the prompt exits chat like SIGINT did with cooked line reads.
@@ -322,7 +348,17 @@ func (s *chatInputSource) readLine(prompt string) (string, error) {
 		defer s.leaveRaw()
 		s.terminal.SetPrompt(prompt)
 		s.reader.activitySent = false
-		line, err := s.terminal.ReadLine()
+		var line string
+		var err error
+		if request.ask {
+			line, err = s.terminal.ReadLineNoHistory()
+		} else {
+			// Give back a half-typed line that a question took out of an earlier read.
+			if saved := s.takeSavedLine(); saved != "" {
+				s.terminal.SetPendingLine(saved)
+			}
+			line, err = s.terminal.ReadLine()
+		}
 		if errors.Is(err, lineedit.ErrPasteIndicator) {
 			err = nil
 		}
@@ -352,26 +388,36 @@ func (r *chatActivityReader) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	var one [1]byte
-	n, err := r.input.Read(one[:])
-	if n == 0 {
-		return 0, err
-	}
-	if !r.activitySent {
-		r.activitySent = true
-		select {
-		case r.source.events <- chatInputEvent{activity: true}:
-		case <-r.source.ctx.Done():
-			return 0, r.source.ctx.Err()
+	// Asking for more input means the previous byte has been processed.
+	r.source.byteConsumed()
+	for {
+		var one [1]byte
+		n, err := r.input.Read(one[:])
+		if n == 0 {
+			return 0, err
 		}
-		select {
-		case <-r.source.activity:
-		case <-r.source.ctx.Done():
-			return 0, r.source.ctx.Err()
+		epoch := r.source.currentEpoch()
+		if !r.activitySent {
+			r.activitySent = true
+			select {
+			case r.source.events <- chatInputEvent{activity: true}:
+			case <-r.source.ctx.Done():
+				return 0, r.source.ctx.Err()
+			}
+			select {
+			case <-r.source.activity:
+			case <-r.source.ctx.Done():
+				return 0, r.source.ctx.Err()
+			}
 		}
+		// A byte held here (e.g. during the activity handshake) while a question
+		// flushed the input was typed before the question: drop it.
+		if !r.source.handOver(epoch) {
+			continue
+		}
+		p[0] = one[0]
+		return 1, nil
 	}
-	p[0] = one[0]
-	return 1, nil
 }
 
 type chatTerminalIO struct {
