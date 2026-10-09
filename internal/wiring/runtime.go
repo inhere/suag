@@ -47,6 +47,9 @@ type Options struct {
 	NoProjectRules          bool
 	// CLIMode always exposes configured MCP tools; the dispatch gate enforces permissions.
 	CLIMode bool
+	// ChatMode (OpenCLI only) marks the interactive chat: tools.allow_write may
+	// enable write tools there, and tools are approved by the chat approver.
+	ChatMode bool
 }
 
 // Runtime is one assembled personal runner and the resources it owns.
@@ -91,9 +94,31 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	opts.Workspace, opts.RuleCWD = workspace, cwd
-	opts.AllowWrite = opts.AllowWrite && !opts.ReadOnly
+	// tools.allow_write applies to chat only: run (often started by a job
+	// runner sharing this config) still needs an explicit --allow-write.
+	// --read-only always wins.
+	configWrite := false
+	if opts.ChatMode {
+		if configWrite, err = toolsAllowWrite(); err != nil {
+			return nil, err
+		}
+	}
+	opts.AllowWrite = (opts.AllowWrite || configWrite) && !opts.ReadOnly
 	opts.Servers, opts.Hooks, opts.Approver = servers, nil, gate
 	return Open(ctx, opts)
+}
+
+// toolsAllowWrite reads tools.allow_write (default false); a non-boolean
+// value is a startup error instead of being guessed.
+func toolsAllowWrite() (bool, error) {
+	switch value := gkconfig.Get("tools.allow_write").(type) {
+	case nil:
+		return false, nil
+	case bool:
+		return value, nil
+	default:
+		return false, fmt.Errorf("tools.allow_write must be a boolean (true or false), got %v", value)
+	}
 }
 
 // Open assembles one runtime.

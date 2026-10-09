@@ -51,7 +51,7 @@ func RunPersonalCLI(ctx context.Context, mode string, args []string, stdin io.Re
 }
 
 func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) (retErr error) {
-	runtime, err := wiring.OpenCLI(ctx, opts.wiringOptions())
+	runtime, err := wiring.OpenCLI(ctx, opts.wiringOptions(mode))
 	if err != nil {
 		return err
 	}
@@ -98,9 +98,11 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	return cmd
 }
 
-// wiringOptions maps the CLI flags to the runtime assembly options.
-func (o personalOptions) wiringOptions() wiring.Options {
+// wiringOptions maps the CLI flags to the runtime assembly options. mode "chat"
+// sets ChatMode (tools.allow_write and the chat approver apply only there).
+func (o personalOptions) wiringOptions(mode string) wiring.Options {
 	return wiring.Options{
+		ChatMode:   mode == "chat",
 		Model:      o.Model,
 		AllowWrite: o.AllowWrite, ReadOnly: o.ReadOnly,
 		MCPConfigs:         o.MCPConfigs,
