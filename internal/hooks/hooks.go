@@ -1,4 +1,4 @@
-package app
+package hooks
 
 import (
 	"bytes"
@@ -15,7 +15,8 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 )
 
-type goferHookEvent struct {
+// Event is one hook invocation payload.
+type Event struct {
 	Name           string `json:"hook_event_name"`
 	SessionID      string `json:"session_id"`
 	CWD            string `json:"cwd"`
@@ -31,7 +32,8 @@ type goferHookEvent struct {
 	ToolOutput     string `json:"tool_output,omitempty"`
 }
 
-type goferHookResponse struct {
+// Response is the decoded hook answer.
+type Response struct {
 	Decision          string
 	Reason            string
 	AdditionalContext string
@@ -41,21 +43,24 @@ type goferHookResponse struct {
 	Notice string
 }
 
-type goferHookResult struct {
-	response goferHookResponse
-	err      error
+// Result is the outcome of a Stop wait.
+type Result struct {
+	Response Response
+	Err      error
 }
 
-type chatHookWait interface {
-	Done() <-chan goferHookResult
+// Wait is a pending Stop hook call.
+type Wait interface {
+	Done() <-chan Result
 	// Interrupt ends the wait. It returns a web reply that had already been received
 	// (Stop block) but not yet consumed, so the caller can still deliver it.
 	Interrupt(context.Context) string
 }
 
-type chatHookClient interface {
-	Call(context.Context, goferHookEvent) goferHookResponse
-	StartStop(context.Context, goferHookEvent) chatHookWait
+// Client calls the hook command.
+type Client interface {
+	Call(context.Context, Event) Response
+	StartStop(context.Context, Event) Wait
 }
 
 type goferHooks struct {
@@ -65,7 +70,8 @@ type goferHooks struct {
 	waitSec int
 }
 
-func newGoferHooks() chatHookClient {
+// New returns the hook client for the current configuration, or nil when hooks are disabled.
+func New() Client {
 	if strings.TrimSpace(os.Getenv("GOFER_JOB_ID")) != "" {
 		return nil
 	}
@@ -105,7 +111,7 @@ func newGoferHooks() chatHookClient {
 	return &goferHooks{command: command, agent: agent, waitSec: waitSec, timeout: time.Duration(timeoutMS) * time.Millisecond}
 }
 
-func (h *goferHooks) Call(ctx context.Context, event goferHookEvent) goferHookResponse {
+func (h *goferHooks) Call(ctx context.Context, event Event) Response {
 	response, err := h.call(ctx, event, 0)
 	if err != nil {
 		slog.Warn("Gofer hook failed", "event", event.Name, "err", err)
@@ -113,22 +119,22 @@ func (h *goferHooks) Call(ctx context.Context, event goferHookEvent) goferHookRe
 	return response
 }
 
-func (h *goferHooks) StartStop(ctx context.Context, event goferHookEvent) chatHookWait {
+func (h *goferHooks) StartStop(ctx context.Context, event Event) Wait {
 	waitCtx, cancel := context.WithCancel(ctx)
-	done := make(chan goferHookResult, 1)
+	done := make(chan Result, 1)
 	wait := &goferStopWait{call: h.Call, event: event, cancel: cancel, done: done}
 	go func() {
 		response, err := h.call(waitCtx, event, h.waitSec)
 		if err != nil {
 			slog.Warn("Gofer hook failed", "event", event.Name, "err", err)
 		}
-		done <- goferHookResult{response: response, err: err}
+		done <- Result{Response: response, Err: err}
 		close(done)
 	}()
 	return wait
 }
 
-func (h *goferHooks) call(parent context.Context, event goferHookEvent, waitSec int) (goferHookResponse, error) {
+func (h *goferHooks) call(parent context.Context, event Event, waitSec int) (Response, error) {
 	ctx := parent
 	if waitSec == 0 {
 		var cancel context.CancelFunc
@@ -145,7 +151,7 @@ func (h *goferHooks) call(parent context.Context, event goferHookEvent, waitSec 
 	}
 	input, err := json.Marshal(event)
 	if err != nil {
-		return goferHookResponse{}, err
+		return Response{}, err
 	}
 	input = append(input, '\n')
 	cmd := exec.CommandContext(ctx, h.command, args...)
@@ -154,7 +160,7 @@ func (h *goferHooks) call(parent context.Context, event goferHookEvent, waitSec 
 	cmd.Stderr = &stderr
 	output, err := cmd.Output()
 	if err != nil {
-		return goferHookResponse{}, err
+		return Response{}, err
 	}
 	var wire struct {
 		Decision           string `json:"decision"`
@@ -165,20 +171,20 @@ func (h *goferHooks) call(parent context.Context, event goferHookEvent, waitSec 
 	}
 	if len(bytes.TrimSpace(output)) != 0 {
 		if err := json.Unmarshal(output, &wire); err != nil {
-			return goferHookResponse{}, err
+			return Response{}, err
 		}
 	}
-	return goferHookResponse{Decision: wire.Decision, Reason: wire.Reason, AdditionalContext: wire.HookSpecificOutput.AdditionalContext, Notice: strings.TrimSpace(stderr.String())}, nil
+	return Response{Decision: wire.Decision, Reason: wire.Reason, AdditionalContext: wire.HookSpecificOutput.AdditionalContext, Notice: strings.TrimSpace(stderr.String())}, nil
 }
 
 type goferStopWait struct {
-	call   func(context.Context, goferHookEvent) goferHookResponse
-	event  goferHookEvent
+	call   func(context.Context, Event) Response
+	event  Event
 	cancel context.CancelFunc
-	done   chan goferHookResult
+	done   chan Result
 }
 
-func (w *goferStopWait) Done() <-chan goferHookResult { return w.done }
+func (w *goferStopWait) Done() <-chan Result { return w.done }
 
 func (w *goferStopWait) Interrupt(parent context.Context) string {
 	interrupt := w.event
@@ -191,8 +197,8 @@ func (w *goferStopWait) Interrupt(parent context.Context) string {
 	w.cancel()
 	// The reply may have landed in done before cancellation; hand it back instead of dropping it.
 	result := <-w.done
-	if result.err == nil && result.response.Decision == "block" {
-		return result.response.Reason
+	if result.Err == nil && result.Response.Decision == "block" {
+		return result.Response.Reason
 	}
 	return ""
 }
@@ -209,13 +215,15 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (b *limitedBuffer) String() string { return truncateHookOutput(b.Buffer.String(), noticeLimit) }
+func (b *limitedBuffer) String() string { return TruncateOutput(b.Buffer.String(), noticeLimit) }
 
-func hookAdditionalContext(response goferHookResponse) string {
+// AdditionalContext is the trimmed additional context of a hook response.
+func AdditionalContext(response Response) string {
 	return strings.TrimSpace(response.AdditionalContext)
 }
 
-func truncateHookOutput(value string, maxBytes int) string {
+// TruncateOutput cuts value to at most maxBytes without splitting a UTF-8 rune.
+func TruncateOutput(value string, maxBytes int) string {
 	if len(value) <= maxBytes {
 		return value
 	}

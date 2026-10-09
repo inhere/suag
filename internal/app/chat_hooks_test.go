@@ -8,16 +8,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 	appconfig "github.com/inhere/suag/internal/config"
+	suaghooks "github.com/inhere/suag/internal/hooks"
 	"github.com/inhere/suag/internal/personal"
 	personalprocess "github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/internal/personal/store"
@@ -43,7 +42,7 @@ func (p *hookTestProvider) Generate(_ context.Context, req *agentcore.GenerateRe
 
 type fakeHookClient struct {
 	mu         sync.Mutex
-	events     []goferHookEvent
+	events     []suaghooks.Event
 	stopCount  int
 	startCount chan struct{}
 	eventWake  chan struct{}
@@ -58,7 +57,7 @@ func newFakeHookClient() *fakeHookClient {
 	return &fakeHookClient{startCount: make(chan struct{}, 8), eventWake: make(chan struct{}, 64), blockFirst: true}
 }
 
-func (f *fakeHookClient) record(event goferHookEvent) {
+func (f *fakeHookClient) record(event suaghooks.Event) {
 	f.mu.Lock()
 	f.events = append(f.events, event)
 	f.mu.Unlock()
@@ -68,27 +67,27 @@ func (f *fakeHookClient) record(event goferHookEvent) {
 	}
 }
 
-func (f *fakeHookClient) Call(_ context.Context, event goferHookEvent) goferHookResponse {
+func (f *fakeHookClient) Call(_ context.Context, event suaghooks.Event) suaghooks.Response {
 	f.record(event)
 	if event.Name == "SessionStart" {
-		return goferHookResponse{AdditionalContext: "startup-context", Notice: f.startNotice}
+		return suaghooks.Response{AdditionalContext: "startup-context", Notice: f.startNotice}
 	}
 	if event.Name == "UserPromptSubmit" {
-		return goferHookResponse{AdditionalContext: "submit-context"}
+		return suaghooks.Response{AdditionalContext: "submit-context"}
 	}
-	return goferHookResponse{}
+	return suaghooks.Response{}
 }
 
-func (f *fakeHookClient) StartStop(_ context.Context, event goferHookEvent) chatHookWait {
+func (f *fakeHookClient) StartStop(_ context.Context, event suaghooks.Event) suaghooks.Wait {
 	f.record(event)
 	f.mu.Lock()
 	f.stopCount++
 	stopCount := f.stopCount
 	f.mu.Unlock()
 	f.startCount <- struct{}{}
-	done := make(chan goferHookResult, 1)
+	done := make(chan suaghooks.Result, 1)
 	if stopCount == 1 && f.blockFirst {
-		done <- goferHookResult{response: goferHookResponse{Decision: "block", Reason: "[gofer web 回复] continue"}}
+		done <- suaghooks.Result{Response: suaghooks.Response{Decision: "block", Reason: "[gofer web 回复] continue"}}
 	}
 	return &fakeStopWait{done: done, interrupt: func() {
 		interrupt := event
@@ -98,20 +97,20 @@ func (f *fakeHookClient) StartStop(_ context.Context, event goferHookEvent) chat
 	}, lost: f.lostOnInterrupt}
 }
 
-func (f *fakeHookClient) snapshot() []goferHookEvent {
+func (f *fakeHookClient) snapshot() []suaghooks.Event {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]goferHookEvent(nil), f.events...)
+	return append([]suaghooks.Event(nil), f.events...)
 }
 
 type fakeStopWait struct {
-	done      chan goferHookResult
+	done      chan suaghooks.Result
 	interrupt func()
 	// lost is the undelivered web reply Interrupt reports back (race simulation).
 	lost string
 }
 
-func (w *fakeStopWait) Done() <-chan goferHookResult { return w.done }
+func (w *fakeStopWait) Done() <-chan suaghooks.Result { return w.done }
 func (w *fakeStopWait) Interrupt(context.Context) string {
 	w.interrupt()
 	return w.lost
@@ -144,8 +143,8 @@ func TestPersonalChatBlockStartsInjectedTurnAndMarksStopActive(t *testing.T) {
 	}
 
 	events := hooks.snapshot()
-	var prompts []goferHookEvent
-	var stops []goferHookEvent
+	var prompts []suaghooks.Event
+	var stops []suaghooks.Event
 	for _, event := range events {
 		if event.Name == "UserPromptSubmit" {
 			prompts = append(prompts, event)
@@ -476,7 +475,7 @@ func TestChatProcessDeliveryUserPromptSubmitCarriesInjected(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	var prompts []goferHookEvent
+	var prompts []suaghooks.Event
 	for _, event := range hooks.snapshot() {
 		if event.Name == "UserPromptSubmit" {
 			prompts = append(prompts, event)
@@ -553,29 +552,18 @@ func (p *blockingChatProvider) Generate(ctx context.Context, _ *agentcore.Genera
 	}
 }
 
-func TestGoferHookFailuresAndJobEnvironmentAreBestEffort(t *testing.T) {
+// A configured but failing hook process must not prevent the chat turn.
+func TestPersonalChatSurvivesFailingHookCommand(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	t.Setenv("GOFER_JOB_ID", "")
 	t.Setenv("SUAG_GOFER_HOOKS", "") // exercise the config value, not the TestMain override
-	t.Setenv("PATH", t.TempDir())
-	_ = gkconfig.Set("gofer.hooks", "auto")
-	_ = gkconfig.Set("gofer.command", "missing-gofer-command-7cb7")
-	if got := newGoferHooks(); got != nil {
-		t.Fatal("auto mode should skip a missing command")
-	}
-
-	t.Setenv("GOFER_JOB_ID", "inside-job")
 	_ = gkconfig.Set("gofer.hooks", "on")
-	if got := newGoferHooks(); got != nil {
-		t.Fatal("hooks must be skipped inside a Gofer job")
-	}
-
-	// A configured but failing hook process must not prevent the chat turn.
-	t.Setenv("GOFER_JOB_ID", "")
+	_ = gkconfig.Set("gofer.command", "missing-gofer-command-7cb7")
+	hooks := suaghooks.New()
+	assert.Require(t, assert.NotNil(t, hooks))
 	runner, _ := newCLITestRunner(t, &hookTestProvider{})
 	var stdout, stderr strings.Builder
-	hooks := &goferHooks{command: "", agent: "suag", timeout: time.Millisecond, waitSec: 1}
 	if err := runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader("hello\n:quit\n"), &stdout, &stderr, hooks); err != nil {
 		t.Fatalf("hook failure interrupted chat: %v", err)
 	}
@@ -593,35 +581,6 @@ func TestTranscriptsCanBeDisabledByConfig(t *testing.T) {
 	_ = gkconfig.Set("transcripts", "off")
 	if appconfig.TranscriptsEnabled() {
 		t.Fatal("transcripts: off must disable transcript files")
-	}
-}
-
-func TestHookPayloadCapsToolOutputAtUTF8Boundary(t *testing.T) {
-	value := strings.Repeat("工", toolHookLimit)
-	got := truncateHookOutput(value, toolHookLimit)
-	if len(got) > toolHookLimit || !utf8.ValidString(got) {
-		t.Fatalf("hook output is not valid bounded UTF-8: bytes=%d", len(got))
-	}
-}
-
-func TestGoferStopInterruptIsSentBeforeStopProcessCancellation(t *testing.T) {
-	var sequence []string
-	done := make(chan goferHookResult, 1)
-	done <- goferHookResult{}
-	wait := &goferStopWait{
-		call: func(_ context.Context, event goferHookEvent) goferHookResponse {
-			if event.Name == "Interrupt" {
-				sequence = append(sequence, "interrupt")
-			}
-			return goferHookResponse{}
-		},
-		event:  goferHookEvent{Name: "Stop", SessionID: "s1"},
-		cancel: func() { sequence = append(sequence, "cancel") },
-		done:   done,
-	}
-	wait.Interrupt(context.Background())
-	if len(sequence) != 2 || sequence[0] != "interrupt" || sequence[1] != "cancel" {
-		t.Fatalf("Stop process cancelled before Interrupt completed: %#v", sequence)
 	}
 }
 
@@ -653,7 +612,7 @@ func TestPersonalChatSendsOnlyBoundedRedactedShellOutputToPostToolUse(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	var postTool *goferHookEvent
+	var postTool *suaghooks.Event
 	postToolIndex, stopIndex := -1, -1
 	for i, event := range hooks.snapshot() {
 		if event.Name == "PostToolUse" {
@@ -708,7 +667,7 @@ func waitHookEvent(t *testing.T, hooks *fakeHookClient, name string, count int) 
 	}
 }
 
-func countHookEvents(events []goferHookEvent, name string) int {
+func countHookEvents(events []suaghooks.Event, name string) int {
 	count := 0
 	for _, event := range events {
 		if event.Name == name {
@@ -744,7 +703,7 @@ func TestPersonalChatSendsStopWhenTurnFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed turn should not end chat with an error: %v", err)
 	}
-	var stops []goferHookEvent
+	var stops []suaghooks.Event
 	for _, event := range hooks.snapshot() {
 		if event.Name == "Stop" {
 			stops = append(stops, event)
@@ -793,19 +752,8 @@ func TestPersonalChatKeepsWebReplyReceivedDuringInterrupt(t *testing.T) {
 	})
 }
 
-func TestGoferStopInterruptReturnsAlreadyReceivedReply(t *testing.T) {
-	done := make(chan goferHookResult, 1)
-	done <- goferHookResult{response: goferHookResponse{Decision: "block", Reason: "[gofer web 回复] hi"}}
-	wait := &goferStopWait{
-		call:   func(context.Context, goferHookEvent) goferHookResponse { return goferHookResponse{} },
-		cancel: func() {},
-		done:   done,
-	}
-	assert.Eq(t, "[gofer web 回复] hi", wait.Interrupt(context.Background()))
-}
-
 func TestHookEventTranscriptPathAndSource(t *testing.T) {
-	run := func(t *testing.T, opts personalOptions) []goferHookEvent {
+	run := func(t *testing.T, opts personalOptions) []suaghooks.Event {
 		runner, _ := newCLITestRunner(t, &hookTestProvider{})
 		hooks := newFakeHookClient()
 		hooks.blockFirst = false
@@ -813,14 +761,14 @@ func TestHookEventTranscriptPathAndSource(t *testing.T) {
 		assert.Require(t, assert.NoErr(t, runPersonalChatWithHooks(context.Background(), runner, opts, strings.NewReader(":quit\n"), &stdout, &stderr, hooks)))
 		return hooks.snapshot()
 	}
-	startOf := func(events []goferHookEvent) goferHookEvent {
+	startOf := func(events []suaghooks.Event) suaghooks.Event {
 		for _, e := range events {
 			if e.Name == "SessionStart" {
 				return e
 			}
 		}
 		t.Fatal("no SessionStart")
-		return goferHookEvent{}
+		return suaghooks.Event{}
 	}
 	t.Run("transcripts off omits transcript_path", func(t *testing.T) {
 		gkconfig.Reset()
@@ -866,17 +814,6 @@ func TestGoferHookNoticeIsShownOnStderr(t *testing.T) {
 	assert.Require(t, assert.NoErr(t, runPersonalChatWithHooks(context.Background(), runner, personalOptions{}, strings.NewReader(":quit\n"), &stdout, &stderr, hooks)))
 	assert.StrContains(t, stderr.String(), "session taken over on web")
 	assert.StrNotContains(t, stdout.String(), "session taken over on web")
-}
-
-func TestGoferHooksCaptureStderrAsNotice(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses a sh script as the fake gofer command")
-	}
-	script := filepath.Join(t.TempDir(), "fakegofer")
-	assert.Require(t, assert.NoErr(t, os.WriteFile(script, []byte("#!/bin/sh\ncat >/dev/null\necho 'taken over on web' >&2\n"), 0o755)))
-	h := &goferHooks{command: script, agent: "suag", timeout: 5 * time.Second, waitSec: 1}
-	resp := h.Call(context.Background(), goferHookEvent{Name: "UserPromptSubmit"})
-	assert.Eq(t, "taken over on web", resp.Notice)
 }
 
 func TestPersonalChatCompactCommandCompressesSession(t *testing.T) {

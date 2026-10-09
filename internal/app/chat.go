@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	appconfig "github.com/inhere/suag/internal/config"
+	suaghooks "github.com/inhere/suag/internal/hooks"
 	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
 	personalprocess "github.com/inhere/suag/internal/personal/process"
@@ -23,10 +24,10 @@ const (
 )
 
 func runPersonalChat(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) error {
-	return runPersonalChatWithHooks(ctx, runner, opts, stdin, stdout, stderr, newGoferHooks())
+	return runPersonalChatWithHooks(ctx, runner, opts, stdin, stdout, stderr, suaghooks.New())
 }
 
-func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer, hooks chatHookClient) error {
+func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer, hooks suaghooks.Client) error {
 	sessionID := ""
 	source := "startup"
 	createdAtStartup := false
@@ -95,8 +96,8 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 		}
 		return filepath.Join(home, "transcripts", id+".jsonl")
 	}
-	baseEvent := func(name string) goferHookEvent {
-		return goferHookEvent{Name: name, SessionID: sessionID, CWD: cwd, TranscriptPath: transcriptPath(sessionID)}
+	baseEvent := func(name string) suaghooks.Event {
+		return suaghooks.Event{Name: name, SessionID: sessionID, CWD: cwd, TranscriptPath: transcriptPath(sessionID)}
 	}
 	inputSource, err := newChatInputSource(ctx, stdin, stdout)
 	if err != nil {
@@ -116,9 +117,9 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 		start.Source = source
 		startResp := hooks.Call(ctx, start)
 		showHookNotice(stderr, startResp)
-		pendingContext = hookAdditionalContext(startResp)
+		pendingContext = suaghooks.AdditionalContext(startResp)
 	}
-	var waiting chatHookWait
+	var waiting suaghooks.Wait
 	// lostReply holds a web reply that arrived while the user interrupted the Stop wait.
 	// It is folded into the next turn's context; if the chat ends first, warn on stderr.
 	var lostReply string
@@ -132,7 +133,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 			lostReply = appendContext(lostReply, waiting.Interrupt(context.Background()))
 		}
 		if lostReply != "" {
-			fmt.Fprintln(stderr, "Warning: gofer web reply was not delivered:", truncateHookOutput(lostReply, 200))
+			fmt.Fprintln(stderr, "Warning: gofer web reply was not delivered:", suaghooks.TruncateOutput(lostReply, 200))
 		}
 		if hooks != nil && sessionID != "" {
 			hooks.Call(context.Background(), baseEvent("SessionEnd"))
@@ -200,11 +201,11 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 			submit.Injected = injected
 			submitResp := hooks.Call(ctx, submit)
 			showHookNotice(stderr, submitResp)
-			pendingContext = appendContext(pendingContext, hookAdditionalContext(submitResp))
+			pendingContext = appendContext(pendingContext, suaghooks.AdditionalContext(submitResp))
 		}
 		if lostReply != "" {
 			// A reply received during an interrupt race still reaches the model as next-turn context.
-			fmt.Fprintln(stderr, "Note: delivering gofer web reply received while interrupting:", truncateHookOutput(lostReply, 200))
+			fmt.Fprintln(stderr, "Note: delivering gofer web reply received while interrupting:", suaghooks.TruncateOutput(lostReply, 200))
 			pendingContext = appendContext(pendingContext, lostReply)
 			lostReply = ""
 		}
@@ -232,7 +233,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 				// gofer's hookrelay only registers watches for a fixed shell-tool whitelist,
 				// so suag-native names like shell_exec are normalized to "shell".
 				postTool.ToolName = goferShellToolName
-				postTool.ToolOutput = truncateHookOutput(personal.RedactSecretValues(event.Text), toolHookLimit)
+				postTool.ToolOutput = suaghooks.TruncateOutput(personal.RedactSecretValues(event.Text), toolHookLimit)
 				showHookNotice(stderr, hooks.Call(eventCtx, postTool))
 				return nil
 			},
@@ -266,7 +267,7 @@ func runPersonalChatWithHooks(ctx context.Context, runner *personal.Runner, opts
 		}
 		if hooks != nil {
 			stop := baseEvent("Stop")
-			stop.LastAssistant = truncateHookOutput(personal.RedactSecretValues(stopMessage), stopHookLimit)
+			stop.LastAssistant = suaghooks.TruncateOutput(personal.RedactSecretValues(stopMessage), stopHookLimit)
 			stop.StopHookActive = turnStopActive
 			waiting = hooks.StartStop(ctx, stop)
 		}
@@ -293,7 +294,7 @@ func ensureTranscriptFile(path, sessionID string) {
 	_ = transcript.Close()
 }
 
-func nextChatInput(ctx context.Context, source *chatInputSource, waiting chatHookWait, lost *string) (string, bool, error, bool, bool, bool) {
+func nextChatInput(ctx context.Context, source *chatInputSource, waiting suaghooks.Wait, lost *string) (string, bool, error, bool, bool, bool) {
 	prompt := "> "
 	if waiting != nil {
 		prompt = "> (web 可回复) "
@@ -301,7 +302,7 @@ func nextChatInput(ctx context.Context, source *chatInputSource, waiting chatHoo
 	if !source.Request(prompt) {
 		return "", false, ctx.Err(), false, false, false
 	}
-	var stopDone <-chan goferHookResult
+	var stopDone <-chan suaghooks.Result
 	if waiting != nil {
 		stopDone = waiting.Done()
 	}
@@ -339,15 +340,15 @@ func nextChatInput(ctx context.Context, source *chatInputSource, waiting chatHoo
 			}
 			return line, hasLine, err, stopResult, injected, interrupted
 		case result, ok := <-stopDone:
-			if ok && result.response.Notice != "" {
-				fmt.Fprintln(source, result.response.Notice)
+			if ok && result.Response.Notice != "" {
+				fmt.Fprintln(source, result.Response.Notice)
 			}
-			if !ok || result.err != nil || result.response.Decision != "block" || result.response.Reason == "" {
+			if !ok || result.Err != nil || result.Response.Decision != "block" || result.Response.Reason == "" {
 				fmt.Fprintln(source)
 				return "", false, nil, true, false, interrupted
 			}
-			fmt.Fprintln(source, result.response.Reason)
-			return result.response.Reason, true, nil, true, true, interrupted
+			fmt.Fprintln(source, result.Response.Reason)
+			return result.Response.Reason, true, nil, true, true, interrupted
 		case delivery := <-source.deliveries:
 			if waiting != nil {
 				*lost = appendContext(*lost, waiting.Interrupt(context.Background()))
@@ -362,7 +363,7 @@ func nextChatInput(ctx context.Context, source *chatInputSource, waiting chatHoo
 	}
 }
 
-func processChatInputEvent(source *chatInputSource, event chatInputEvent, waiting chatHookWait, lost *string) (string, bool, error, bool, bool, bool) {
+func processChatInputEvent(source *chatInputSource, event chatInputEvent, waiting suaghooks.Wait, lost *string) (string, bool, error, bool, bool, bool) {
 	if event.activity {
 		if waiting != nil {
 			*lost = appendContext(*lost, waiting.Interrupt(context.Background()))
@@ -398,7 +399,7 @@ func isShellOrExecTool(name string) bool {
 
 // showHookNotice prints the server-provided notice (if any) for the person at the terminal.
 // It always goes to stderr so it never mixes into the conversation output.
-func showHookNotice(w io.Writer, response goferHookResponse) {
+func showHookNotice(w io.Writer, response suaghooks.Response) {
 	if response.Notice != "" {
 		fmt.Fprintln(w, response.Notice)
 	}
