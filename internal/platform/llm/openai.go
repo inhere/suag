@@ -24,6 +24,7 @@ type OpenAIProvider struct {
 	embedModel string
 	client     *http.Client
 	name       string
+	headers    map[string]string
 }
 
 // OpenAIConfig configures an OpenAIProvider.
@@ -33,6 +34,8 @@ type OpenAIConfig struct {
 	Model      string // default: gpt-4o
 	EmbedModel string // default: text-embedding-3-small
 	Name       string // default: "openai"
+	// Headers are extra request headers; see applyHeaders for SessionIDPlaceholder.
+	Headers map[string]string
 }
 
 // NewOpenAIProvider creates an OpenAIProvider from cfg.
@@ -56,6 +59,7 @@ func NewOpenAIProvider(cfg OpenAIConfig) *OpenAIProvider {
 		embedModel: cfg.EmbedModel,
 		client:     &http.Client{Timeout: 120 * time.Second},
 		name:       cfg.Name,
+		headers:    cfg.Headers,
 	}
 }
 
@@ -302,6 +306,7 @@ func (p *OpenAIProvider) doRequest(ctx context.Context, path string, body map[st
 		if err != nil {
 			return nil, fmt.Errorf("build request: %w", err)
 		}
+		applyHeaders(ctx, httpReq, p.headers)
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 

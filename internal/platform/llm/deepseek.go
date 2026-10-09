@@ -6,7 +6,7 @@ type DeepSeekProvider struct {
 }
 
 // NewDeepSeekProvider creates a DeepSeek provider using the OpenAI-compatible client.
-func NewDeepSeekProvider(apiKey, model string) *DeepSeekProvider {
+func NewDeepSeekProvider(apiKey, model string, headers map[string]string) *DeepSeekProvider {
 	if model == "" {
 		model = "deepseek-chat"
 	}
@@ -17,6 +17,7 @@ func NewDeepSeekProvider(apiKey, model string) *DeepSeekProvider {
 		Name:    "deepseek",
 		// DeepSeek doesn't have an embed API; set a placeholder.
 		EmbedModel: "deepseek-chat",
+		Headers:    headers,
 	})
 	return &DeepSeekProvider{OpenAIProvider: inner}
 }

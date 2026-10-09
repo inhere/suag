@@ -125,3 +125,21 @@ func TestLoadSuagHomeDotenv(t *testing.T) {
 		assert.Eq(t, root, got)
 	})
 }
+
+// llm.headers keeps both env references and the {{session_id}} placeholder,
+// with the header name spelled as written.
+func TestLoadReadsLLMHeaders(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	root := t.TempDir()
+	t.Setenv("SUAG_HOME", root)
+	t.Setenv("SUAG_CONFIG", "")
+	t.Setenv("SUAG_TEST_GATEWAY_TAG", "team-a")
+	t.Chdir(t.TempDir())
+	config := "llm:\n  model: m\n  headers:\n    x-opencode-session: \"{{session_id}}\"\n    X-Gateway-Tag: \"${SUAG_TEST_GATEWAY_TAG}\"\n"
+	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte(config), 0600))
+	assert.NoErr(t, Load())
+	headers := ReadLLMProviderSettings().Headers
+	assert.Eq(t, "{{session_id}}", headers["x-opencode-session"])
+	assert.Eq(t, "team-a", headers["X-Gateway-Tag"])
+}

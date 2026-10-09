@@ -11,6 +11,10 @@ llm:
   base_url: "${BAILIAN_BASE_URL}" # optional override (e.g. for OpenAI-compatible gateways)
   # compact_model: glm-4-flash # optional cheaper model (same provider) for context summaries
   # context_window: 128000 # optional; default is derived from the model name
+  # Optional extra request headers. "{{session_id}}" becomes the current suag
+  # session id (skipped when there is none); User-Agent defaults to "suag".
+  # headers:
+  #   x-opencode-session: "{{session_id}}" # e.g. required by OpenCode Go
 
 # Workspace directory for file and shell tools
 # Defaults to current working directory

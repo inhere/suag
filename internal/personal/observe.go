@@ -34,7 +34,10 @@ type scopeKey struct{}
 // ctx so provider and tool wrappers (which only see ctx) can attribute events.
 type observeScope struct{ sessionID, turnID string }
 
+// The session id is also handed to the llm providers for llm.headers values
+// that use the {{session_id}} placeholder.
 func withObserveScope(ctx context.Context, sessionID, turnID string) context.Context {
+	ctx = llm.WithSessionID(ctx, sessionID)
 	return context.WithValue(ctx, scopeKey{}, observeScope{sessionID: sessionID, turnID: turnID})
 }
 

@@ -19,6 +19,9 @@ type LLMProviderSettings struct {
 	Model        string
 	APIKey       string
 	BaseURL      string
+	// Headers are extra request headers from llm.headers. A value may use
+	// llm.SessionIDPlaceholder ("{{session_id}}") for the current session id.
+	Headers map[string]string
 }
 
 func (s LLMProviderSettings) LogArgs() []any {
@@ -47,6 +50,7 @@ func ReadLLMProviderSettingsWithOverrides(modelFlag, providerFlag string) LLMPro
 		Model:        strings.TrimSpace(gkconfig.String("llm.model")),
 		APIKey:       strings.TrimSpace(gkconfig.String("llm.api_key")),
 		BaseURL:      strings.TrimSpace(gkconfig.String("llm.base_url")),
+		Headers:      gkconfig.StringMap("llm.headers"),
 	}
 	// The provider recorded in the file owns the file's api_key and base_url.
 	// Remember it before any override so a different provider never inherits them.
@@ -78,6 +82,7 @@ func ReadLLMProviderSettingsWithOverrides(modelFlag, providerFlag string) LLMPro
 		if canonicalProviderName(settings.ProviderName) != fileProvider {
 			settings.APIKey = ""
 			settings.BaseURL = ""
+			settings.Headers = nil
 			if explicitModel == "" {
 				settings.Model = ""
 			}
@@ -109,8 +114,9 @@ func BuildLLMProviderFromSettings(settings LLMProviderSettings) (llm.Provider, e
 	switch settings.APIType {
 	case "anthropic":
 		return llm.NewClaudeProvider(llm.ClaudeConfig{
-			APIKey: firstNonEmpty(settings.APIKey, os.Getenv("ANTHROPIC_API_KEY")),
-			Model:  settings.Model,
+			APIKey:  firstNonEmpty(settings.APIKey, os.Getenv("ANTHROPIC_API_KEY")),
+			Model:   settings.Model,
+			Headers: settings.Headers,
 		}), nil
 	case "openai":
 		key := settings.APIKey
@@ -123,9 +129,10 @@ func BuildLLMProviderFromSettings(settings LLMProviderSettings) (llm.Provider, e
 					BaseURL: settings.BaseURL,
 					Model:   settings.Model,
 					Name:    "deepseek",
+					Headers: settings.Headers,
 				}), nil
 			}
-			return llm.NewDeepSeekProvider(key, settings.Model), nil
+			return llm.NewDeepSeekProvider(key, settings.Model, settings.Headers), nil
 		default:
 			key = firstNonEmpty(key, os.Getenv("OPENAI_API_KEY"))
 			return llm.NewOpenAIProvider(llm.OpenAIConfig{
@@ -133,6 +140,7 @@ func BuildLLMProviderFromSettings(settings LLMProviderSettings) (llm.Provider, e
 				Model:   settings.Model,
 				BaseURL: settings.BaseURL,
 				Name:    settings.ProviderName,
+				Headers: settings.Headers,
 			}), nil
 		}
 	default:

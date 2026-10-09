@@ -20,15 +20,18 @@ const (
 
 // ClaudeProvider implements Provider for Anthropic Claude.
 type ClaudeProvider struct {
-	apiKey string
-	model  string
-	client *http.Client
+	apiKey  string
+	model   string
+	client  *http.Client
+	headers map[string]string
 }
 
 // ClaudeConfig configures a ClaudeProvider.
 type ClaudeConfig struct {
 	APIKey string
 	Model  string // default: claude-sonnet-4-6
+	// Headers are extra request headers; see applyHeaders for SessionIDPlaceholder.
+	Headers map[string]string
 }
 
 // NewClaudeProvider creates a ClaudeProvider.
@@ -37,9 +40,10 @@ func NewClaudeProvider(cfg ClaudeConfig) *ClaudeProvider {
 		cfg.Model = "claude-sonnet-4-6"
 	}
 	return &ClaudeProvider{
-		apiKey: cfg.APIKey,
-		model:  cfg.Model,
-		client: &http.Client{Timeout: 120 * time.Second},
+		apiKey:  cfg.APIKey,
+		model:   cfg.Model,
+		client:  &http.Client{Timeout: 120 * time.Second},
+		headers: cfg.Headers,
 	}
 }
 
@@ -266,6 +270,7 @@ func (p *ClaudeProvider) doRequest(ctx context.Context, body map[string]any) ([]
 		if err != nil {
 			return nil, err
 		}
+		applyHeaders(ctx, httpReq, p.headers)
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("x-api-key", p.apiKey)
 		httpReq.Header.Set("anthropic-version", claudeAPIVersion)
