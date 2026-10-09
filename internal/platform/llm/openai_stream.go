@@ -177,6 +177,7 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 			continue // blank separators, ": keep-alive" comments, event: lines
 		}
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		logStreamChunk(p.Name(), payload)
 		if payload == "[DONE]" {
 			break
 		}
