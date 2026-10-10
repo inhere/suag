@@ -1,0 +1,170 @@
+package wiring
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"testing"
+
+	gkconfig "github.com/gookit/config/v2"
+	"github.com/gookit/goutil/x/assert"
+	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/internal/platform/tools/native"
+	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/skills"
+)
+
+// approvalRow is one tool of the approval table. Outcomes are "run" (allowed
+// without a question), "ask" (the person is asked) or "deny" (refused without
+// a question). The table locks the current behavior before the tool kind and
+// metadata refactor: it must stay unchanged while the implementation moves.
+type approvalRow struct {
+	name string
+	tool func(t *testing.T) tools.Tool
+	// chatAsk and chatAuto are the chat outcomes with tools.approval ask/auto.
+	chatAsk, chatAuto string
+	// chatAlwaysAsks is how many questions two calls cause when the first
+	// question is answered "a" (always).
+	chatAlwaysAsks int
+	// cliRun and cliReadOnly are the CLI MCP gate outcomes (run, --read-only).
+	cliRun, cliReadOnly string
+	// readOnlyRegistered: "yes"/"no" for catalog tools in a read-only tool
+	// set, "-" for tools wired outside the catalog.
+	readOnlyRegistered string
+	// deferred reports whether tools.deferred: always hides the tool.
+	deferred bool
+}
+
+func catalogTool(name string) func(t *testing.T) tools.Tool {
+	return func(t *testing.T) tools.Tool {
+		t.Helper()
+		env := native.Env{Workspace: t.TempDir(), SerpAPIKey: "test-key"}
+		for _, spec := range native.Catalog() {
+			if spec.Name == name {
+				tool := spec.New(env)
+				assert.Require(t, assert.NotNil(t, tool))
+				return tool
+			}
+		}
+		t.Fatalf("%s is not in the native catalog", name)
+		return nil
+	}
+}
+
+func approvalRows() []approvalRow {
+	read := func(name string) approvalRow {
+		return approvalRow{name: name, tool: catalogTool(name), chatAsk: "run", chatAuto: "run",
+			cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "yes"}
+	}
+	write := func(name string) approvalRow {
+		return approvalRow{name: name, tool: catalogTool(name), chatAsk: "ask", chatAuto: "run", chatAlwaysAsks: 1,
+			cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "no"}
+	}
+	wired := func(name string, tool func(t *testing.T) tools.Tool) approvalRow {
+		return approvalRow{name: name, tool: tool, chatAsk: "run", chatAuto: "run",
+			cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "-"}
+	}
+	return []approvalRow{
+		read("file_read"), read("file_list"), read("file_grep"), read("file_find"), read("web_fetch"), read("web_search"),
+		write("file_write"), write("file_edit"), write("shell_exec"),
+		wired("update_plan", func(*testing.T) tools.Tool { return native.NewUpdatePlanTool(personal.NewPlanRecorder()) }),
+		wired("tool_search", func(*testing.T) tools.Tool {
+			return native.NewToolSearchTool(tools.NewVisibility(tools.NewRegistry(), tools.VisibilityOptions{}))
+		}),
+		wired("skill", func(*testing.T) tools.Tool { return native.NewSkillTool(skills.NewRegistry(), 0) }),
+		// A native tool added later is asked about by default.
+		{name: "future_tool", tool: func(*testing.T) tools.Tool { return &nativeStubTool{name: "future_tool"} },
+			chatAsk: "ask", chatAuto: "run", chatAlwaysAsks: 1, cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "-"},
+		// MCP tools follow the allowlists (configured below as srv/srv_*), never chat questions.
+		{name: "srv_query", tool: func(*testing.T) tools.Tool { return newServerStubTool("srv", "srv_query") },
+			chatAsk: "run", chatAuto: "run", cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "-", deferred: true},
+		{name: "srv_write", tool: func(*testing.T) tools.Tool { return newServerStubTool("other", "srv_write") },
+			chatAsk: "deny", chatAuto: "deny", cliRun: "deny", cliReadOnly: "deny", readOnlyRegistered: "-", deferred: true},
+		// An MCP tool named like a built-in read tool is still an MCP tool.
+		{name: "file_read", tool: func(*testing.T) tools.Tool { return newServerStubTool("evil", "file_read") },
+			chatAsk: "deny", chatAuto: "deny", cliRun: "deny", cliReadOnly: "deny", readOnlyRegistered: "-", deferred: true},
+	}
+}
+
+// decideOutcome runs approver.Decide once and classifies the result.
+func decideOutcome(t *testing.T, approver tools.Approver, asker *scriptedAsker, name string, tool tools.Tool) string {
+	t.Helper()
+	before := 0
+	if asker != nil {
+		before = len(asker.questions)
+	}
+	err := approver.Decide(context.Background(), agentcore.ToolCall{CallID: "c", Name: name, Arguments: map[string]any{}}, tool)
+	switch {
+	case asker != nil && len(asker.questions) > before:
+		return "ask"
+	case err == nil:
+		return "run"
+	case errors.Is(err, tools.ErrDenied):
+		return "deny"
+	}
+	t.Fatalf("%s: unexpected approver error %v", name, err)
+	return ""
+}
+
+func TestApprovalTable(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	assert.NoErr(t, gkconfig.Set("tools.auto_allow", []string{"srv/srv_*"}))
+	assert.NoErr(t, gkconfig.Set("tools.read_only_allow", []string{"srv/srv_*"}))
+	runGate, err := newCLIMCPGate(false)
+	assert.Require(t, assert.NoErr(t, err))
+	readOnlyGate, err := newCLIMCPGate(true)
+	assert.Require(t, assert.NoErr(t, err))
+
+	var readOnlySet []string
+	for _, tool := range native.BuildTools(native.Env{Workspace: t.TempDir(), SerpAPIKey: "test-key"}, false) {
+		readOnlySet = append(readOnlySet, tool.Name())
+	}
+
+	for i, row := range approvalRows() {
+		tool := row.tool(t)
+		t.Run(fmt.Sprintf("%02d_%s", i, row.name), func(t *testing.T) {
+			askAsker := &scriptedAsker{answers: []string{"n"}}
+			assert.Eq(t, row.chatAsk, decideOutcome(t, newChatApprover(runGate, false, askAsker, "/work"), askAsker, row.name, tool), "chat ask")
+			autoAsker := &scriptedAsker{}
+			assert.Eq(t, row.chatAuto, decideOutcome(t, newChatApprover(runGate, true, autoAsker, "/work"), autoAsker, row.name, tool), "chat auto")
+
+			alwaysAsker := &scriptedAsker{answers: []string{"a"}}
+			always := newChatApprover(runGate, false, alwaysAsker, "/work")
+			call := agentcore.ToolCall{CallID: "c", Name: row.name, Arguments: map[string]any{}}
+			_ = always.Decide(context.Background(), call, tool)
+			_ = always.Decide(context.Background(), call, tool)
+			assert.Eq(t, row.chatAlwaysAsks, len(alwaysAsker.questions), "chat always")
+
+			assert.Eq(t, row.cliRun, decideOutcome(t, runGate, nil, row.name, tool), "cli run")
+			assert.Eq(t, row.cliReadOnly, decideOutcome(t, readOnlyGate, nil, row.name, tool), "cli read-only")
+
+			if row.readOnlyRegistered != "-" {
+				registered := "no"
+				if slices.Contains(readOnlySet, row.name) {
+					registered = "yes"
+				}
+				assert.Eq(t, row.readOnlyRegistered, registered, "read-only tool set")
+			}
+
+			reg := tools.NewRegistry()
+			reg.Register(tool)
+			vis := tools.NewVisibility(reg, tools.VisibilityOptions{Mode: tools.DeferredAlways})
+			listed, err := vis.ListTools(context.Background())
+			assert.NoErr(t, err)
+			hidden := !slices.ContainsFunc(listed, func(s agentcore.ToolSchema) bool { return s.Name == row.name })
+			assert.Eq(t, row.deferred, hidden, "deferred")
+		})
+	}
+
+	t.Run("unregistered tool is a plain error, never asked", func(t *testing.T) {
+		asker := &scriptedAsker{answers: []string{"y"}}
+		approval := tools.NewApproval(tools.NewRegistry(), newChatApprover(runGate, false, asker, "/work"))
+		_, err := approval.ExecuteTool(context.Background(), agentcore.ToolCall{CallID: "c", Name: "nope"})
+		assert.Err(t, err)
+		assert.False(t, errors.Is(err, tools.ErrDenied))
+		assert.Eq(t, 0, len(asker.questions))
+	})
+}

@@ -170,3 +170,15 @@ func TestProvider_RegisterToolsKeepsFirstRegistration(t *testing.T) {
 	_, err = registry.Get("fresh")
 	assert.NoErr(t, err)
 }
+
+// The approval tables (wiring, acpserver) use MCP stubs; this pins the real
+// adapter to the same classification: MCP kind with its server name, even
+// when it is named like a built-in tool.
+func TestClientAdapterIsMCPTool(t *testing.T) {
+	tool := NewClient(ServerConfig{Name: "srv"}).AsTool(mcpTool{Name: "file_read"})
+	assert.Eq(t, tools.KindMCP, tool.Kind())
+	named, ok := tool.(tools.MCPServerNamer)
+	assert.Require(t, assert.True(t, ok))
+	assert.Eq(t, "srv", named.MCPServer())
+	assert.Eq(t, "file_read", tool.Name())
+}
