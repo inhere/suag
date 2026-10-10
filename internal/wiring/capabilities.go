@@ -3,6 +3,7 @@ package wiring
 import (
 	"context"
 	"fmt"
+	"time"
 
 	gkconfig "github.com/gookit/config/v2"
 
@@ -89,6 +90,9 @@ func nativeEnv(workspace string) native.Env {
 		Workspace:      workspace,
 		MaxOutputBytes: gkconfig.Int("tools.max_output_bytes", native.DefaultMaxOutputBytes),
 		SerpAPIKey:     gkconfig.String("serpapi_key"),
+		Shell:          gkconfig.String("tools.shell"),
+		ShellTimeoutMax: time.Duration(gkconfig.Int("tools.shell_timeout_max",
+			int(native.DefaultShellTimeoutMax/time.Second))) * time.Second,
 	}
 }
 

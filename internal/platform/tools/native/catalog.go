@@ -1,6 +1,8 @@
 package native
 
 import (
+	"time"
+
 	"github.com/inhere/suag/internal/platform/tools"
 )
 
@@ -13,6 +15,10 @@ type Env struct {
 	MaxOutputBytes int
 	// SerpAPIKey enables web_search; empty leaves it unavailable.
 	SerpAPIKey string
+	// Shell overrides the shell_exec shell (tools.shell); empty = OS default.
+	Shell string
+	// ShellTimeoutMax caps a shell_exec timeout (tools.shell_timeout_max).
+	ShellTimeoutMax time.Duration
 }
 
 // Spec is one entry of the native tool catalog.
@@ -42,7 +48,12 @@ func Catalog() []Spec {
 		}},
 		{Name: "shell_exec", Write: true, New: func(env Env) tools.Tool {
 			t := NewShellExecTool(env.Workspace, 0)
+			t.shell = resolveShell(env.Shell)
 			t.maxOut = env.MaxOutputBytes
+			if env.ShellTimeoutMax > 0 {
+				t.maxTimeout = env.ShellTimeoutMax
+				t.timeout = min(t.timeout, t.maxTimeout)
+			}
 			return t
 		}},
 		{Name: "web_search", Write: true, New: func(env Env) tools.Tool {
