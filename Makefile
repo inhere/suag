@@ -127,6 +127,7 @@ smoke-chat:
 	@mkdir -p tmp/smoke
 	go build -o tmp/smoke/suag ./cmd/suag
 	python3 -I scripts/ptysmoke/chat_approval.py --bin tmp/smoke/suag --work tmp/smoke
+	python3 -I scripts/ptysmoke/chat_edit.py --bin tmp/smoke/suag --work tmp/smoke-edit
 
 ## clean: remove build artifacts
 clean:
