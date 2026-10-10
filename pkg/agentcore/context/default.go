@@ -37,7 +37,7 @@ type DefaultBuilder struct {
 
 // BuildMessages returns a shallow copy of the current run messages, optionally truncated.
 func (b DefaultBuilder) BuildMessages(_ context.Context, state *api.RunState) ([]api.Message, error) {
-	return TranscriptWindow(WindowConfig{MaxMessages: b.MaxMessages}).BuildMessages(context.Background(), state)
+	return TranscriptWindow(WindowConfig(b)).BuildMessages(context.Background(), state)
 }
 
 // Messages returns a shallow copy of the most recent run messages.

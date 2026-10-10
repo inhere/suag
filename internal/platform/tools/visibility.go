@@ -283,7 +283,7 @@ func (v *Visibility) ExecuteTool(ctx context.Context, call api.ToolCall) (*api.T
 		onEvent(ctx, SearchEvent{Kind: SearchEventAutoLoad, Query: call.Name,
 			Hits: []string{call.Name}, NewlyLoaded: added, CacheInvalidated: len(added) > 0})
 	}
-	return nil, fmt.Errorf("tool %s is not loaded yet; its schema: %s\nIt is loaded now: call it again with matching arguments.",
+	return nil, fmt.Errorf("tool %s is not loaded yet; its schema: %s\nIt is loaded now: call it again with matching arguments",
 		call.Name, schemaJSON(d.schema))
 }
 

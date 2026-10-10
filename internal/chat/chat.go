@@ -174,7 +174,8 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	stopHookActive := false
 	var lastInterrupt time.Time
 	for {
-		line, hasLine, err, stopDone, injected, interrupted := nextChatInput(ctx, inputSource, render, waiting, &lostReply)
+		in, err := nextChatInput(ctx, inputSource, render, waiting, &lostReply)
+		line, hasLine, stopDone, injected, interrupted := in.line, in.hasLine, in.stopDone, in.injected, in.interrupted
 		if interrupted {
 			waiting = nil
 		} else if waiting != nil && stopDone {
@@ -347,9 +348,17 @@ func ensureTranscriptFile(path, sessionID string) {
 	_ = transcript.Close()
 }
 
-func nextChatInput(ctx context.Context, source *chatInputSource, render *Renderer, waiting suaghooks.Wait, lost *string) (string, bool, error, bool, bool, bool) {
+// chatInput is one result of nextChatInput: a line to run (hasLine), or the
+// end of a Stop hook wait (stopDone; injected when the hook supplied the next
+// prompt). interrupted reports that typing or a delivery cut a Stop wait short.
+type chatInput struct {
+	line                                     string
+	hasLine, stopDone, injected, interrupted bool
+}
+
+func nextChatInput(ctx context.Context, source *chatInputSource, render *Renderer, waiting suaghooks.Wait, lost *string) (chatInput, error) {
 	if !source.Request(render.Prompt(waiting != nil)) {
-		return "", false, ctx.Err(), false, false, false
+		return chatInput{}, ctx.Err()
 	}
 	var stopDone <-chan suaghooks.Result
 	if waiting != nil {
@@ -360,14 +369,15 @@ func nextChatInput(ctx context.Context, source *chatInputSource, render *Rendere
 		// Prefer a byte already observed by the reader over a simultaneous Stop result.
 		select {
 		case event := <-source.Next():
-			line, hasLine, err, stopResult, injected, activity := processChatInputEvent(source, event, waiting, lost)
-			if activity {
+			in, again, err := processChatInputEvent(source, event, waiting, lost)
+			if again {
 				interrupted = true
 				waiting = nil
 				stopDone = nil
 				continue
 			}
-			return line, hasLine, err, stopResult, injected, interrupted
+			in.interrupted = interrupted
+			return in, err
 		case delivery := <-source.deliveries:
 			if waiting != nil {
 				*lost = appendContext(*lost, waiting.Interrupt(context.Background()))
@@ -375,29 +385,30 @@ func nextChatInput(ctx context.Context, source *chatInputSource, render *Rendere
 			}
 			render.External(delivery.line)
 			delivery.settle(nil)
-			return delivery.line, true, nil, false, true, interrupted
+			return chatInput{line: delivery.line, hasLine: true, injected: true, interrupted: interrupted}, nil
 		default:
 		}
 		select {
 		case event := <-source.Next():
-			line, hasLine, err, stopResult, injected, activity := processChatInputEvent(source, event, waiting, lost)
-			if activity {
+			in, again, err := processChatInputEvent(source, event, waiting, lost)
+			if again {
 				interrupted = true
 				waiting = nil
 				stopDone = nil
 				continue
 			}
-			return line, hasLine, err, stopResult, injected, interrupted
+			in.interrupted = interrupted
+			return in, err
 		case result, ok := <-stopDone:
 			if ok && result.Response.Notice != "" {
 				fmt.Fprintln(source, result.Response.Notice)
 			}
 			if !ok || result.Err != nil || result.Response.Decision != "block" || result.Response.Reason == "" {
 				fmt.Fprintln(source)
-				return "", false, nil, true, false, interrupted
+				return chatInput{stopDone: true, interrupted: interrupted}, nil
 			}
 			render.External(result.Response.Reason)
-			return result.Response.Reason, true, nil, true, true, interrupted
+			return chatInput{line: result.Response.Reason, hasLine: true, stopDone: true, injected: true, interrupted: interrupted}, nil
 		case delivery := <-source.deliveries:
 			if waiting != nil {
 				*lost = appendContext(*lost, waiting.Interrupt(context.Background()))
@@ -405,27 +416,30 @@ func nextChatInput(ctx context.Context, source *chatInputSource, render *Rendere
 			}
 			render.External(delivery.line)
 			delivery.settle(nil)
-			return delivery.line, true, nil, false, delivery.injected, interrupted
+			return chatInput{line: delivery.line, hasLine: true, injected: delivery.injected, interrupted: interrupted}, nil
 		case <-ctx.Done():
-			return "", false, ctx.Err(), false, false, interrupted
+			return chatInput{interrupted: interrupted}, ctx.Err()
 		}
 	}
 }
 
-func processChatInputEvent(source *chatInputSource, event chatInputEvent, waiting suaghooks.Wait, lost *string) (string, bool, error, bool, bool, bool) {
+// processChatInputEvent turns one reader event into input. again reports an
+// event that only cut a Stop wait short (typing, or Ctrl-C/EOF while waiting):
+// the caller keeps reading instead of returning it.
+func processChatInputEvent(source *chatInputSource, event chatInputEvent, waiting suaghooks.Wait, lost *string) (in chatInput, again bool, err error) {
 	if event.activity {
 		if waiting != nil {
 			*lost = appendContext(*lost, waiting.Interrupt(context.Background()))
 		}
 		source.AckActivity()
-		return "", false, nil, false, false, true
+		return chatInput{}, true, nil
 	}
 	if event.err != nil && waiting != nil {
 		*lost = appendContext(*lost, waiting.Interrupt(context.Background()))
-		return event.line, false, event.err, false, false, true
+		return chatInput{line: event.line}, true, event.err
 	}
 	source.CompleteLine()
-	return event.line, event.err == nil, event.err, false, false, false
+	return chatInput{line: event.line, hasLine: event.err == nil}, false, event.err
 }
 
 func appendContext(current, next string) string {

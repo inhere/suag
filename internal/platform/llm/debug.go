@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"strings"
@@ -9,7 +10,7 @@ import (
 const maxDebugBodyLen = 4000
 
 func logProviderRequest(provider, path string, body map[string]any) {
-	if !slog.Default().Enabled(nil, slog.LevelDebug) {
+	if !slog.Default().Enabled(context.Background(), slog.LevelDebug) {
 		return
 	}
 	slog.Debug("llm request",
@@ -20,7 +21,7 @@ func logProviderRequest(provider, path string, body map[string]any) {
 }
 
 func logProviderResponse(provider, path string, statusCode int, body []byte) {
-	if !slog.Default().Enabled(nil, slog.LevelDebug) {
+	if !slog.Default().Enabled(context.Background(), slog.LevelDebug) {
 		return
 	}
 	slog.Debug("llm response",
@@ -34,7 +35,7 @@ func logProviderResponse(provider, path string, statusCode int, body []byte) {
 // logStreamChunk logs one raw SSE data payload at debug level, so the exact
 // field names a gateway streams (e.g. for reasoning) can be inspected.
 func logStreamChunk(provider, payload string) {
-	if !slog.Default().Enabled(nil, slog.LevelDebug) {
+	if !slog.Default().Enabled(context.Background(), slog.LevelDebug) {
 		return
 	}
 	slog.Debug("llm stream chunk", "provider", strings.TrimSpace(provider), "data", truncateDebugText(payload))
