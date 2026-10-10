@@ -40,7 +40,7 @@ func TestBuildDefaultCapabilities_RegistersNativeToolsAndCapabilitySet(t *testin
 
 	set := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
 	resolved := built.Manager.ResolveTurnCapabilities(set)
-	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "shell_exec"}, resolved.ToolNames)
+	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "file_edit", "shell_exec"}, resolved.ToolNames)
 }
 
 func TestBuildDefaultCapabilities_RegistersWebSearchWhenConfigured(t *testing.T) {
@@ -59,7 +59,7 @@ func TestBuildDefaultCapabilities_RegistersWebSearchWhenConfigured(t *testing.T)
 
 	set := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
 	resolved := built.Manager.ResolveTurnCapabilities(set)
-	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "shell_exec", "web_search"}, resolved.ToolNames)
+	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "file_edit", "shell_exec", "web_search"}, resolved.ToolNames)
 }
 
 func TestBuildDefaultCapabilities_ResolvedRegistryMatchesCapabilityNames(t *testing.T) {
@@ -105,7 +105,7 @@ func TestBuildDefaultCapabilities_StaticProviderReturnsCopy(t *testing.T) {
 	resolved := built.Manager.ResolveTurnCapabilities(
 		built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{}),
 	)
-	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "shell_exec"}, resolved.ToolNames)
+	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "file_edit", "shell_exec"}, resolved.ToolNames)
 }
 
 func TestBuildDefaultCapabilities_RegistersConfiguredMCPTools(t *testing.T) {
@@ -140,7 +140,7 @@ func TestBuildDefaultCapabilities_RegistersConfiguredMCPTools(t *testing.T) {
 
 	set := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
 	resolved := built.Manager.ResolveTurnCapabilities(set)
-	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "shell_exec", "mcp_echo"}, resolved.ToolNames)
+	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "file_edit", "shell_exec", "mcp_echo"}, resolved.ToolNames)
 }
 
 func TestPersonalCapabilitiesUseACPStdioMCPOnlyInWritableMode(t *testing.T) {

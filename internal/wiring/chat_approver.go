@@ -101,6 +101,15 @@ func (a *chatApprover) question(call agentcore.ToolCall) tools.Question {
 			"路径：" + a.fullPath(argText(args["path"])),
 			fmt.Sprintf("内容：%d 字节", len(argText(args["content"]))),
 		}
+	case "file_edit":
+		details = []string{
+			"路径：" + a.fullPath(argText(args["path"])),
+			"原文：\n" + previewLines(argText(args["old_string"])),
+			"改为：\n" + previewLines(argText(args["new_string"])),
+		}
+		if all, _ := args["replace_all"].(bool); all {
+			details = append(details, "替换全部匹配处")
+		}
 	case "web_search":
 		details = []string{"查询：" + argText(args["query"])}
 	default:
@@ -115,6 +124,18 @@ func (a *chatApprover) question(call agentcore.ToolCall) tools.Question {
 		Details: details,
 		Prompt:  fmt.Sprintf("允许执行 %s？[y]是 [N]否 [a]本会话总是允许该工具：", call.Name),
 	}
+}
+
+// editPreviewLines bounds each side of a file_edit preview.
+const editPreviewLines = 20
+
+// previewLines returns text cut to editPreviewLines lines, noting the total.
+func previewLines(text string) string {
+	lines := strings.Split(text, "\n")
+	if len(lines) <= editPreviewLines {
+		return text
+	}
+	return strings.Join(lines[:editPreviewLines], "\n") + fmt.Sprintf("\n…（共 %d 行）", len(lines))
 }
 
 // fullPath resolves a workspace-relative path for display.

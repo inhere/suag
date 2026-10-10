@@ -249,15 +249,20 @@ func toolLocations(cwd string, args map[string]any) []acp.ToolCallLocation {
 	return []acp.ToolCallLocation{location}
 }
 
-// toolDiff records the proposed replacement for file_write without reading outside the workspace.
+// toolDiff records the proposed replacement for file_write (content) or
+// file_edit (old file with the replacement applied) without reading outside
+// the workspace.
 // It never blocks: only regular files within maxDiffBytes are read, and binary
 // or oversized content yields no diff (locations are still reported).
 func toolDiff(cwd string, kind acp.ToolKind, locations []acp.ToolCallLocation, args map[string]any) []acp.ToolCallContent {
 	if kind != acp.ToolKindEdit || len(locations) == 0 || args == nil {
 		return nil
 	}
+	// file_edit carries old_string/new_string: the new text is the current
+	// file with the replacement applied, computed once the file is read.
+	_, isEdit := args["old_string"]
 	newText, ok := args["content"].(string)
-	if !ok || len(newText) > maxDiffBytes || !textual(newText) {
+	if !isEdit && (!ok || len(newText) > maxDiffBytes || !textual(newText)) {
 		return nil
 	}
 	rel, err := filepath.Rel(cwd, locations[0].Path)
@@ -294,6 +299,16 @@ func toolDiff(cwd string, kind acp.ToolKind, locations []acp.ToolCallLocation, a
 		}
 		oldText = acp.Ptr(before)
 	}
+	if isEdit {
+		if oldText == nil {
+			return nil // file_edit needs an existing file
+		}
+		edited, _, err := native.ApplyEdit(*oldText, args)
+		if err != nil || len(edited) > maxDiffBytes {
+			return nil
+		}
+		newText = edited
+	}
 	return []acp.ToolCallContent{{Diff: &acp.ToolCallContentDiff{Type: "diff", Path: locations[0].Path, OldText: oldText, NewText: newText}}}
 }
 
@@ -320,7 +335,7 @@ func toolKind(name string) (acp.ToolKind, bool) {
 	switch name {
 	case "file_read", "file_list":
 		return acp.ToolKindRead, true
-	case "file_write":
+	case "file_write", "file_edit":
 		return acp.ToolKindEdit, false
 	case "shell_exec":
 		return acp.ToolKindExecute, false

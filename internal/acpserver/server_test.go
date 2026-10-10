@@ -398,6 +398,7 @@ func TestACPToolKinds(t *testing.T) {
 		{"web_search", acp.ToolKindSearch},
 		{"web_fetch", acp.ToolKindFetch},
 		{"file_grep", acp.ToolKindSearch},
+		{"file_edit", acp.ToolKindEdit},
 		{"file_find", acp.ToolKindSearch},
 		{"unknown_mcp_tool", acp.ToolKindOther},
 	} {

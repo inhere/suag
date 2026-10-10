@@ -52,6 +52,9 @@ func Catalog() []Spec {
 		{Name: "file_write", Write: true, New: func(env Env) tools.Tool {
 			return &FileWriteTool{workspace: env.Workspace}
 		}},
+		{Name: "file_edit", Write: true, New: func(env Env) tools.Tool {
+			return &FileEditTool{workspace: env.Workspace}
+		}},
 		{Name: "shell_exec", Write: true, New: func(env Env) tools.Tool {
 			t := NewShellExecTool(env.Workspace, 0)
 			t.shell = resolveShell(env.Shell)

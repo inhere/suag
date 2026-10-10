@@ -192,6 +192,15 @@ func TestChatApproverQuestion(t *testing.T) {
 		q := approver.question(agentcore.ToolCall{Name: "file_write", Arguments: map[string]any{"path": "dir/a.txt", "content": "你好"}})
 		assert.Eq(t, []string{"路径：" + filepath.Join(filepath.FromSlash("/work"), "dir/a.txt"), "内容：6 字节"}, q.Details)
 	})
+	t.Run("file_edit previews old and new text", func(t *testing.T) {
+		long := strings.Repeat("line\n", 30)
+		q := approver.question(agentcore.ToolCall{Name: "file_edit", Arguments: map[string]any{
+			"path": "a.go", "old_string": "b := 2", "new_string": long, "replace_all": true}})
+		assert.Eq(t, "路径："+filepath.Join(filepath.FromSlash("/work"), "a.go"), q.Details[0])
+		assert.Eq(t, "原文：\nb := 2", q.Details[1])
+		assert.StrContains(t, q.Details[2], "…（共 31 行）")
+		assert.Eq(t, "替换全部匹配处", q.Details[3])
+	})
 	t.Run("web_search shows the query", func(t *testing.T) {
 		q := approver.question(agentcore.ToolCall{Name: "web_search", Arguments: map[string]any{"query": "golang tcflush"}})
 		assert.Eq(t, []string{"查询：golang tcflush"}, q.Details)

@@ -214,3 +214,21 @@ func TestToolDiffOpenOnce(t *testing.T) {
 		assert.Empty(t, editDiff(t, cwd, map[string]any{"path": "big.txt", "content": "new\n"}))
 	})
 }
+
+func TestToolDiffFileEdit(t *testing.T) {
+	cwd := t.TempDir()
+	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, "a.go"), []byte("a := 1\nb := 2\n"), 0o644))
+
+	t.Run("new text is the file with the replacement applied", func(t *testing.T) {
+		diff := editDiff(t, cwd, map[string]any{"path": "a.go", "old_string": "b := 2", "new_string": "b := 3"})
+		assert.Require(t, assert.Len(t, diff, 1))
+		assert.Eq(t, "a := 1\nb := 2\n", *diff[0].Diff.OldText)
+		assert.Eq(t, "a := 1\nb := 3\n", diff[0].Diff.NewText)
+	})
+	t.Run("an edit that cannot apply has no diff", func(t *testing.T) {
+		assert.Len(t, editDiff(t, cwd, map[string]any{"path": "a.go", "old_string": "nope", "new_string": "x"}), 0)
+	})
+	t.Run("a missing file has no diff", func(t *testing.T) {
+		assert.Len(t, editDiff(t, cwd, map[string]any{"path": "new.go", "old_string": "a", "new_string": "b"}), 0)
+	})
+}
