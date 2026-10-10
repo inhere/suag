@@ -124,7 +124,7 @@ func skillsPrompt(reg *capskills.Registry, pol skillPolicy) string {
 	}
 	if hidden > 0 {
 		fmt.Fprintf(&b, "%d more skills are installed but not listed. When a task may match one (a workflow, tool, "+
-			"framework or kind of document), first search with the skill tool's query argument and load a match.\n", hidden)
+			"framework or kind of document), first search with the skill tool's query argument (query \"*\" lists all names) and load a match.\n", hidden)
 	}
 	for _, s := range preload {
 		_, body, err := capskills.ParseFile(s.Path)

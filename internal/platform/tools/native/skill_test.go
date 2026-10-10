@@ -40,6 +40,15 @@ func TestSkillTool(t *testing.T) {
 		_, err := tool.Execute(t.Context(), callWith(map[string]any{"name": "nope"}))
 		assert.ErrMsgContains(t, err, `no skill matches "nope"`)
 	})
+	t.Run("query * lists every name by source", func(t *testing.T) {
+		ws := t.TempDir()
+		wsDir := filepath.Join(ws, "proj")
+		assert.NoErr(t, os.MkdirAll(wsDir, 0o755))
+		assert.NoErr(t, os.WriteFile(filepath.Join(wsDir, "SKILL.md"), []byte("---\nname: proj\n---\n"), 0o644))
+		both := NewSkillTool(skills.LoadRoots([]skills.Root{{Dir: ws, Workspace: true}, {Dir: root}}), 0)
+		assert.Eq(t, "2 skills (load one with name; search descriptions with keywords):\nworkspace: proj\nuser: demo",
+			execTool(t, both, map[string]any{"query": "*"}))
+	})
 	t.Run("query searches", func(t *testing.T) {
 		assert.StrContains(t, execTool(t, tool, map[string]any{"query": "demo"}), "- demo — d")
 		_, err := tool.Execute(t.Context(), callWith(map[string]any{}))

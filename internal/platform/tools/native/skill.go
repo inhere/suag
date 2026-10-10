@@ -39,7 +39,8 @@ func (t *SkillTool) Kind() tools.Kind { return tools.KindNative }
 func (t *SkillTool) Description() string {
 	return "Load a skill by name: returns its instructions and the files in its directory; pass file to read one of " +
 		"those files (path relative to the skill directory). Follow the instructions you load. " +
-		"To find skills not listed in the system prompt, pass query (keywords) instead of name: returns matching names and descriptions."
+		"To find skills not listed in the system prompt, pass query (keywords) instead of name: returns matching names and descriptions; " +
+		"query \"*\" lists every skill name."
 }
 func (t *SkillTool) Schema() api.ToolSchema {
 	return api.ToolSchema{
@@ -49,7 +50,7 @@ func (t *SkillTool) Schema() api.ToolSchema {
 			"type": "object",
 			"properties": map[string]any{
 				"name":  map[string]any{"type": "string", "description": "Skill name to load"},
-				"query": map[string]any{"type": "string", "description": "Keywords to search skills by name and description"},
+				"query": map[string]any{"type": "string", "description": "Keywords to search skills by name and description; \"*\" lists all skill names"},
 				"file":  map[string]any{"type": "string", "description": "Optional file inside the skill directory, e.g. references/usage.md"},
 			},
 		},
@@ -148,8 +149,34 @@ func skillFiles(root *os.Root) []string {
 	return out
 }
 
-// search lists the skills matching query as "name — description" lines.
+// listAll returns every skill name, workspace skills first, comma separated
+// (names alone are short and usually say enough to pick one to load).
+func (t *SkillTool) listAll() string {
+	var ws, user []string
+	for _, s := range t.reg.List() {
+		if s.Workspace {
+			ws = append(ws, s.Name)
+		} else {
+			user = append(user, s.Name)
+		}
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d skills (load one with name; search descriptions with keywords):\n", t.reg.Len())
+	if len(ws) > 0 {
+		fmt.Fprintf(&b, "workspace: %s\n", strings.Join(ws, ", "))
+	}
+	if len(user) > 0 {
+		fmt.Fprintf(&b, "user: %s\n", strings.Join(user, ", "))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// search lists the skills matching query as "name — description" lines;
+// "*" lists all names.
 func (t *SkillTool) search(query string) string {
+	if q := strings.TrimSpace(query); q == "*" || q == "**" {
+		return t.listAll()
+	}
 	hits := t.reg.Search(query, skillSearchLimit)
 	if len(hits) == 0 {
 		return fmt.Sprintf("no skill matches %q (%d skills installed); try other keywords", query, t.reg.Len())
