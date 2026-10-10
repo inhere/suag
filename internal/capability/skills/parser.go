@@ -1,3 +1,5 @@
+// Package skills loads SKILL.md files: YAML frontmatter (name, description,
+// optional allowed-tools) followed by Markdown instructions.
 package skills
 
 import (
@@ -8,48 +10,89 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// SkillSource is the lightweight parsed representation of a SKILL.md block used
-// by capability-skill loading. It stays intentionally focused on metadata that
-// v0 runtime governance actually consumes.
-type SkillSource struct {
-	Name        string            `yaml:"name"`
-	Description string            `yaml:"description"`
-	Type        string            `yaml:"type"`
-	Command     string            `yaml:"command"`
-	InputSchema map[string]string `yaml:"inputs"`
+// Skill is one parsed SKILL.md.
+type Skill struct {
+	Name        string
+	Description string
+	// AllowedTools is informational only (shown, never enforced).
+	AllowedTools []string
+	// Path is the SKILL.md file; Dir its directory (other skill files live there).
+	Path string
+	Dir  string
 }
 
-// ParseSkillsFile reads a SKILL.md file and returns all defined skill blocks.
-func ParseSkillsFile(path string) ([]SkillSource, error) {
+type frontmatter struct {
+	Name         string `yaml:"name"`
+	Description  string `yaml:"description"`
+	AllowedTools any    `yaml:"allowed-tools"`
+}
+
+// Parse splits data into the skill metadata and the Markdown body. The file
+// must start with a "---" line and close the frontmatter with another; CRLF
+// line endings are accepted.
+func Parse(data []byte) (Skill, string, error) {
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	text = strings.TrimPrefix(text, "\xef\xbb\xbf")
+	if !strings.HasPrefix(text, "---\n") {
+		return Skill{}, "", fmt.Errorf("missing frontmatter: the file must start with ---")
+	}
+	rest := text[len("---\n"):]
+	end := strings.Index(rest, "\n---")
+	var head, body string
+	switch {
+	case strings.HasPrefix(rest, "---"): // empty frontmatter
+		head, body = "", strings.TrimPrefix(rest, "---")
+	case end < 0:
+		return Skill{}, "", fmt.Errorf("frontmatter is not closed with ---")
+	default:
+		head, body = rest[:end], rest[end+len("\n---"):]
+	}
+	// The closing line may carry trailing spaces; the body starts after it.
+	if i := strings.IndexByte(body, '\n'); i >= 0 && strings.TrimSpace(body[:i]) == "" {
+		body = body[i+1:]
+	} else if strings.TrimSpace(body) == "" {
+		body = ""
+	}
+	var fm frontmatter
+	if err := yaml.Unmarshal([]byte(head), &fm); err != nil {
+		return Skill{}, "", fmt.Errorf("parse frontmatter: %w", err)
+	}
+	s := Skill{
+		Name:         strings.TrimSpace(fm.Name),
+		Description:  strings.Join(strings.Fields(fm.Description), " "),
+		AllowedTools: toolList(fm.AllowedTools),
+	}
+	if s.Name == "" {
+		return Skill{}, "", fmt.Errorf("frontmatter has no name")
+	}
+	return s, strings.TrimLeft(body, "\n"), nil
+}
+
+// ParseFile reads and parses one SKILL.md.
+func ParseFile(path string) (Skill, string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read skills file %q: %w", path, err)
+		return Skill{}, "", err
 	}
-	return ParseSkillsBytes(data)
+	s, body, err := Parse(data)
+	if err != nil {
+		return Skill{}, "", fmt.Errorf("%s: %w", path, err)
+	}
+	return s, body, nil
 }
 
-// ParseSkillsBytes parses one or more YAML skill blocks separated by "---".
-func ParseSkillsBytes(data []byte) ([]SkillSource, error) {
-	raw := string(data)
-	blocks := strings.Split(raw, "\n---\n")
-
-	var skills []SkillSource
-	for _, block := range blocks {
-		block = strings.TrimSpace(block)
-		block = strings.TrimPrefix(block, "---\n")
-		block = strings.TrimSpace(block)
-		if block == "" {
-			continue
+// toolList accepts allowed-tools as a list or a comma/space separated string.
+func toolList(v any) []string {
+	var out []string
+	switch t := v.(type) {
+	case string:
+		out = strings.FieldsFunc(t, func(r rune) bool { return r == ',' || r == ' ' })
+	case []any:
+		for _, item := range t {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, strings.TrimSpace(s))
+			}
 		}
-
-		var skill SkillSource
-		if err := yaml.Unmarshal([]byte(block), &skill); err != nil {
-			return nil, fmt.Errorf("parse skill block: %w", err)
-		}
-		if strings.TrimSpace(skill.Name) == "" {
-			continue
-		}
-		skills = append(skills, skill)
 	}
-	return skills, nil
+	return out
 }

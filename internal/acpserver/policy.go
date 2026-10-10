@@ -333,7 +333,7 @@ func textual(s string) bool {
 
 func toolKind(name string) (acp.ToolKind, bool) {
 	switch name {
-	case "file_read", "file_list":
+	case "file_read", "file_list", "skill":
 		return acp.ToolKindRead, true
 	case "file_write", "file_edit":
 		return acp.ToolKindEdit, false

@@ -168,60 +168,63 @@ func TestPersonalCapabilitiesUseACPStdioMCPOnlyInWritableMode(t *testing.T) {
 	assert.NotNil(t, mustGetTool(t, writable.Registry, "mcp_echo"))
 }
 
-func TestBuildDefaultSkillRegistry_LoadsWorkspaceAgentsSkills(t *testing.T) {
-	workspace := t.TempDir()
-	skillDir := filepath.Join(workspace, ".agents", "skills", "project-review")
-	err := os.MkdirAll(skillDir, 0o755)
-	assert.NoErr(t, err)
-	err = os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
-name: project-review
-description: Review project changes before handoff.
----
-`), 0o644)
-	assert.NoErr(t, err)
-
-	registry := buildSkillRegistry(workspace, "")
-	descriptors := registry.List()
-
-	assert.Eq(t, 1, len(descriptors))
-	assert.Eq(t, "project-review", descriptors[0].Name)
-	assert.True(t, strings.Contains(descriptors[0].SourcePath, filepath.Join(".agents", "skills", "project-review", "SKILL.md")))
+func writeSkill(t *testing.T, dir, name, desc string) {
+	t.Helper()
+	assert.NoErr(t, os.MkdirAll(dir, 0o755))
+	assert.NoErr(t, os.WriteFile(filepath.Join(dir, "SKILL.md"),
+		[]byte("---\nname: "+name+"\ndescription: "+desc+"\n---\n\n# "+name+"\nSteps.\n"), 0o644))
 }
 
-func TestDefaultSkillRootsPreferUserAgentsSkills(t *testing.T) {
-	workspace := t.TempDir()
-	home := t.TempDir()
-
-	roots := defaultSkillRoots(workspace, home)
-
-	assert.True(t, len(roots) >= 2)
-	assert.Eq(t, filepath.Join(home, ".agents", "skills"), roots[0])
-	assert.Eq(t, filepath.Join(workspace, ".agents", "skills"), roots[1])
+func TestDefaultSkillRootsPreferWorkspace(t *testing.T) {
+	workspace, home := t.TempDir(), t.TempDir()
+	assert.Eq(t, []string{
+		filepath.Join(workspace, ".agents", "skills"),
+		filepath.Join(workspace, "skills"),
+		filepath.Join(home, ".agents", "skills"),
+	}, defaultSkillRoots(workspace, home))
 }
 
-func TestBuildSkillRegistry_UserAgentsSkillsWinDuplicateNames(t *testing.T) {
+func TestBuildSkillRegistry_WorkspaceWinsDuplicateNames(t *testing.T) {
+	workspace, home := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	writeSkill(t, filepath.Join(home, ".agents", "skills", "brainstorming"), "brainstorming", "User brainstorming skill.")
+	writeSkill(t, filepath.Join(workspace, ".agents", "skills", "brainstorming"), "brainstorming", "Workspace brainstorming skill.")
+	writeSkill(t, filepath.Join(home, ".agents", "skills", "review"), "review", "User review skill.")
+
+	list := buildDefaultSkillRegistry(workspace).List()
+	assert.Require(t, assert.Eq(t, 2, len(list)))
+	assert.Eq(t, "Workspace brainstorming skill.", list[0].Description)
+	assert.True(t, strings.HasPrefix(list[0].Path, workspace))
+	assert.Eq(t, "review", list[1].Name)
+}
+
+func TestSkillsPrompt(t *testing.T) {
 	workspace := t.TempDir()
-	home := t.TempDir()
-	userSkillDir := filepath.Join(home, ".agents", "skills", "brainstorming")
-	workspaceSkillDir := filepath.Join(workspace, ".agents", "skills", "brainstorming")
-	assert.NoErr(t, os.MkdirAll(userSkillDir, 0o755))
-	assert.NoErr(t, os.MkdirAll(workspaceSkillDir, 0o755))
-	assert.NoErr(t, os.WriteFile(filepath.Join(userSkillDir, "SKILL.md"), []byte(`---
-name: brainstorming
-description: User brainstorming skill.
----
-`), 0o644))
-	assert.NoErr(t, os.WriteFile(filepath.Join(workspaceSkillDir, "SKILL.md"), []byte(`---
-name: brainstorming
-description: Workspace brainstorming skill.
----
-`), 0o644))
+	assert.Eq(t, "", skillsPrompt(buildDefaultSkillRegistry(workspace)))
+	writeSkill(t, filepath.Join(workspace, "skills", "a"), "alpha", "Short one.")
+	writeSkill(t, filepath.Join(workspace, "skills", "b"), "beta", strings.Repeat("长", 100))
+	p := skillsPrompt(buildDefaultSkillRegistry(workspace))
+	assert.StrContains(t, p, "# Skills\n")
+	assert.StrContains(t, p, "- alpha — Short one.\n")
+	assert.StrContains(t, p, "- beta — "+strings.Repeat("长", 53)+"…\n")
+}
 
-	descriptors := buildSkillRegistry(workspace, home).List()
+func TestOpenWiresSkills(t *testing.T) {
+	resetConfig(t)
+	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k"}})
+	assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
+	workspace := t.TempDir()
+	writeSkill(t, filepath.Join(workspace, ".agents", "skills", "demo"), "demo", "Demo skill.")
 
-	assert.Eq(t, 1, len(descriptors))
-	assert.True(t, strings.HasPrefix(descriptors[0].SourcePath, userSkillDir))
-	assert.Eq(t, "User brainstorming skill.", descriptors[0].Description)
+	allowAll := tools.ApproverFunc(func(context.Context, agentcoreapi.ToolCall, tools.Tool) error { return nil })
+	rt, err := Open(context.Background(), Options{Workspace: workspace, RuleCWD: t.TempDir(), Approver: allowAll})
+	assert.Require(t, assert.NoErr(t, err))
+	t.Cleanup(func() { _ = rt.Close() })
+	res, err := rt.tools.ExecuteTool(context.Background(), agentcoreapi.ToolCall{CallID: "c", Name: "skill", Arguments: map[string]any{"name": "demo"}})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.StrContains(t, res.Content, "# Skill: demo")
+	assert.StrContains(t, res.Content, "Steps.")
 }
 
 func assertToolNamesEq(t *testing.T, expected []string, actual []string) {

@@ -1,96 +1,111 @@
 package skills
 
-import "strings"
+import (
+	"io/fs"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
 
-// Registry stores capability-skill descriptors discovered from local or user
-// provided skill sources.
+// maxSkillDepth bounds how deep below a root SKILL.md files are looked for
+// (root/<name>/SKILL.md is depth 2; grouped layouts go one level deeper).
+const maxSkillDepth = 3
+
+// Registry holds the skills found at startup. The first registration of a
+// name wins, so roots are loaded in priority order.
 type Registry struct {
-	descriptors []Descriptor
+	skills []Skill
+	byName map[string]int
 }
 
-func NewRegistry() *Registry {
-	return &Registry{}
-}
+// NewRegistry returns an empty registry.
+func NewRegistry() *Registry { return &Registry{byName: map[string]int{}} }
 
-func (r *Registry) Register(desc Descriptor) {
-	name := strings.TrimSpace(desc.Name)
-	if name == "" {
-		return
+// Register adds s unless a skill with the same name (case-insensitive) is
+// already registered; it reports whether s was added.
+func (r *Registry) Register(s Skill) bool {
+	key := strings.ToLower(s.Name)
+	if key == "" {
+		return false
 	}
-	normalizedName := strings.ToLower(name)
-	for _, existing := range r.descriptors {
-		if strings.ToLower(strings.TrimSpace(existing.Name)) == normalizedName {
-			return
-		}
+	if _, dup := r.byName[key]; dup {
+		return false
 	}
-	r.descriptors = append(r.descriptors, cloneDescriptor(desc))
+	r.byName[key] = len(r.skills)
+	r.skills = append(r.skills, s)
+	return true
 }
 
-func (r *Registry) List() []Descriptor {
-	if r == nil || len(r.descriptors) == 0 {
+// Get returns the named skill.
+func (r *Registry) Get(name string) (Skill, bool) {
+	if r == nil {
+		return Skill{}, false
+	}
+	i, ok := r.byName[strings.ToLower(strings.TrimSpace(name))]
+	if !ok {
+		return Skill{}, false
+	}
+	return r.skills[i], true
+}
+
+// List returns the skills sorted by name.
+func (r *Registry) List() []Skill {
+	if r == nil {
 		return nil
 	}
-
-	out := make([]Descriptor, 0, len(r.descriptors))
-	for _, desc := range r.descriptors {
-		out = append(out, cloneDescriptor(desc))
-	}
+	out := append([]Skill(nil), r.skills...)
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
 
-func cloneDescriptor(desc Descriptor) Descriptor {
-	return Descriptor{
-		Name:              strings.TrimSpace(desc.Name),
-		Description:       strings.TrimSpace(desc.Description),
-		SourcePath:        strings.TrimSpace(desc.SourcePath),
-		TriggerHints:      cloneStrings(desc.TriggerHints),
-		ScopeHints:        cloneStrings(desc.ScopeHints),
-		ToolAllowlist:     cloneStrings(desc.ToolAllowlist),
-		SystemPromptParts: cloneStrings(desc.SystemPromptParts),
-		ResourceHints:     cloneResourceHints(desc.ResourceHints),
+// Len is the number of registered skills.
+func (r *Registry) Len() int {
+	if r == nil {
+		return 0
 	}
+	return len(r.skills)
 }
 
-func cloneStrings(src []string) []string {
-	if len(src) == 0 {
-		return nil
-	}
-
-	out := make([]string, 0, len(src))
-	for _, item := range src {
-		item = strings.TrimSpace(item)
-		if item == "" {
+// LoadRoots scans each root (in priority order) for SKILL.md files and
+// registers them; a later root never replaces an earlier skill of the same
+// name. Missing roots are skipped; an invalid SKILL.md is logged and skipped.
+func LoadRoots(roots []string) *Registry {
+	reg := NewRegistry()
+	for _, root := range roots {
+		info, err := os.Stat(root)
+		if err != nil || !info.IsDir() {
 			continue
 		}
-		out = append(out, item)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func cloneResourceHints(src []ResourceHint) []ResourceHint {
-	if len(src) == 0 {
-		return nil
-	}
-
-	out := make([]ResourceHint, 0, len(src))
-	for _, hint := range src {
-		path := strings.TrimSpace(hint.Path)
-		if path == "" {
-			continue
-		}
-		out = append(out, ResourceHint{
-			SkillName:  strings.TrimSpace(hint.SkillName),
-			Kind:       strings.TrimSpace(hint.Kind),
-			Path:       path,
-			SourcePath: strings.TrimSpace(hint.SourcePath),
-			Priority:   hint.Priority,
+		var found []string
+		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			rel, _ := filepath.Rel(root, path)
+			depth := len(strings.Split(rel, string(filepath.Separator)))
+			if d.IsDir() {
+				if path != root && (strings.HasPrefix(d.Name(), ".") || depth >= maxSkillDepth) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if strings.EqualFold(d.Name(), "SKILL.md") {
+				found = append(found, path)
+			}
+			return nil
 		})
+		sort.Strings(found)
+		for _, path := range found {
+			s, _, err := ParseFile(path)
+			if err != nil {
+				slog.Warn("skip invalid skill", "path", path, "err", err)
+				continue
+			}
+			s.Path, s.Dir = path, filepath.Dir(path)
+			reg.Register(s)
+		}
 	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
+	return reg
 }

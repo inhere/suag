@@ -173,6 +173,12 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// (including read-only). The recorder is bound to the runner in personal.New.
 	plans := personal.NewPlanRecorder()
 	capabilities.Registry.Register(native.NewUpdatePlanTool(plans))
+	// Skills are scanned once per process; the skill tool (read-only, every
+	// mode) and the prompt listing exist only when some skill was found.
+	skillReg := buildDefaultSkillRegistry(workspace)
+	if skillReg.Len() > 0 {
+		capabilities.Registry.Register(native.NewSkillTool(skillReg, nativeEnv(workspace).MaxOutputBytes))
+	}
 	// Tool registry stack, outer to inner: observe (added in personal.New) ->
 	// visibility -> approval -> base registry. Unloaded deferred tools are
 	// answered by visibility and never reach the approver.
@@ -234,7 +240,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		Model:           settings.Main.Model,
 		ProviderName:    settings.Main.Provider.ID,
 		Tools:           toolRegistry,
-		PromptBuilder:   staticPrompt(basePrompt(opts, "")),
+		PromptBuilder:   staticPrompt(basePrompt(opts, skillsPrompt(skillReg))),
 		Hooks:           opts.Hooks,
 		MaxSteps:        gkconfig.Int("max_steps", 100),
 		RuleSource: func() (string, string, error) {
