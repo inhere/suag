@@ -19,6 +19,7 @@ const defaultExecTimeout = 30 * time.Second
 type ShellExecTool struct {
 	workspace string
 	timeout   time.Duration
+	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
 }
 
 // NewShellExecTool returns a ShellExecTool scoped to workspace.
@@ -78,7 +79,7 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 		sb.WriteString("\n[stderr]\n")
 		sb.WriteString(stderr.String())
 	}
-	output := strings.TrimSpace(sb.String())
+	output := TruncateHeadTail(strings.TrimSpace(sb.String()), t.maxOut)
 
 	if err != nil {
 		if ctx.Err() != nil {

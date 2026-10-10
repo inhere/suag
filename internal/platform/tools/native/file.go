@@ -15,13 +15,19 @@ import (
 )
 
 // FileReadTool reads a file within the workspace.
-type FileReadTool struct{ workspace string }
+type FileReadTool struct {
+	workspace string
+	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
+}
 
 // FileWriteTool writes/creates a file within the workspace.
 type FileWriteTool struct{ workspace string }
 
 // FileListTool lists files in a workspace directory.
-type FileListTool struct{ workspace string }
+type FileListTool struct {
+	workspace string
+	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
+}
 
 // NewFileTools returns the three file tools scoped to workspace.
 func NewFileTools(workspace string) []tools.Tool {
@@ -63,10 +69,14 @@ func (t *FileReadTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	if err != nil {
 		return nil, fmt.Errorf("file_read: %w", err)
 	}
+	content, lines, cut := TruncateLines(string(data), t.maxOut)
+	if cut {
+		content += fmt.Sprintf("\n…[已截断：只返回前 %d 行，文件共 %d 字节]", lines, len(data))
+	}
 	return &api.ToolResult{
 		CallID:  call.CallID,
 		Name:    t.Name(),
-		Content: string(data),
+		Content: content,
 	}, nil
 }
 
@@ -161,7 +171,7 @@ func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	return &api.ToolResult{
 		CallID:  call.CallID,
 		Name:    t.Name(),
-		Content: sb.String(),
+		Content: TruncateHeadTail(sb.String(), t.maxOut),
 	}, nil
 }
 

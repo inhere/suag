@@ -291,11 +291,11 @@ func buildPersonalCapabilitiesWithServers(ctx context.Context, workspace string,
 	if allowWrite {
 		return buildDefaultCapabilitiesWithServers(ctx, workspace, servers)
 	}
+	// Read-only: only the catalog's read tools, and no MCP (ACP read_only
+	// sessions must not start MCP servers).
 	registry := tools.NewRegistry()
-	for _, tool := range native.NewFileTools(workspace) {
-		if tool.Name() == "file_read" || tool.Name() == "file_list" {
-			registry.Register(tool)
-		}
+	for _, tool := range native.BuildTools(nativeEnv(workspace), false) {
+		registry.Register(tool)
 	}
 	return defaultCapabilities{Registry: registry}, nil
 }

@@ -19,6 +19,7 @@ import (
 type WebSearchTool struct {
 	apiKey string
 	client *http.Client
+	maxOut int // result cap in bytes; 0 = DefaultMaxOutputBytes
 }
 
 // NewWebSearchTool creates a WebSearchTool with the given SerpAPI key.
@@ -95,7 +96,7 @@ func (t *WebSearchTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 	return &api.ToolResult{
 		CallID:  call.CallID,
 		Name:    t.Name(),
-		Content: content,
+		Content: TruncateHeadTail(content, t.maxOut),
 	}, nil
 }
 

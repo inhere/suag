@@ -43,13 +43,8 @@ func buildDefaultCapabilitiesWithServers(ctx context.Context, workspace string, 
 	manager := runtimecaps.NewManager()
 
 	toolRefs := make([]runtimecaps.ToolRef, 0, 5)
-	for _, tool := range native.NewFileTools(workspace) {
+	for _, tool := range native.BuildTools(nativeEnv(workspace), true) {
 		registerNativeTool(registry, &toolRefs, tool)
-	}
-	registerNativeTool(registry, &toolRefs, native.NewShellExecTool(workspace, 0))
-
-	if serpKey := gkconfig.String("serpapi_key"); serpKey != "" {
-		registerNativeTool(registry, &toolRefs, native.NewWebSearchTool(serpKey))
 	}
 
 	manager.MustRegisterToolProvider(runtimecaps.NewStaticToolProvider(nativeToolProviderID, toolRefs))
@@ -86,6 +81,15 @@ func (c defaultCapabilities) Close() error {
 		}
 	}
 	return firstErr
+}
+
+// nativeEnv reads the tools.* settings native tools are built with.
+func nativeEnv(workspace string) native.Env {
+	return native.Env{
+		Workspace:      workspace,
+		MaxOutputBytes: gkconfig.Int("tools.max_output_bytes", native.DefaultMaxOutputBytes),
+		SerpAPIKey:     gkconfig.String("serpapi_key"),
+	}
 }
 
 func registerNativeTool(registry *tools.Registry, refs *[]runtimecaps.ToolRef, tool tools.Tool) {
