@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/inhere/suag/internal/platform/tools/mcp"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/coder/acp-go-sdk"
-	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 	"github.com/inhere/suag/pkg/agentcore/tools/native"
@@ -353,8 +353,8 @@ func toolKind(name string) (acp.ToolKind, bool) {
 	}
 }
 
-func mcpSettings(servers []acp.McpServer) ([]appconfig.MCPServerSettings, error) {
-	settings := make([]appconfig.MCPServerSettings, 0, len(servers))
+func mcpSettings(servers []acp.McpServer) ([]mcp.ServerSettings, error) {
+	settings := make([]mcp.ServerSettings, 0, len(servers))
 	seen := make(map[string]bool)
 	for _, server := range servers {
 		if server.Stdio == nil {
@@ -373,7 +373,7 @@ func mcpSettings(servers []acp.McpServer) ([]appconfig.MCPServerSettings, error)
 			}
 			env[variable.Name] = variable.Value
 		}
-		settings = append(settings, appconfig.MCPServerSettings{ID: name, Command: command, Args: append([]string(nil), stdio.Args...), Env: env})
+		settings = append(settings, mcp.ServerSettings{ID: name, Command: command, Args: append([]string(nil), stdio.Args...), Env: env})
 	}
 	return settings, nil
 }

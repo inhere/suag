@@ -7,7 +7,6 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	axconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/pkg/agentcore/api"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
@@ -57,7 +56,7 @@ func TestNewProvider_StartsClientAndLoadsTools(t *testing.T) {
 	})
 	t.Cleanup(restore)
 
-	provider, err := NewProvider(context.Background(), axconfig.MCPServerSettings{
+	provider, err := NewProvider(context.Background(), ServerSettings{
 		ID:      "filesystem",
 		Command: "npx",
 		Args:    []string{"-y", "@modelcontextprotocol/server-filesystem"},

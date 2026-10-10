@@ -19,8 +19,18 @@ type capabilityToolProvider interface {
 	Close() error
 }
 
-var mcpProviderFactory = func(ctx context.Context, settings axconfig.MCPServerSettings) (capabilityToolProvider, error) {
-	return toolsmcp.NewProvider(ctx, settings)
+var mcpProviderFactory = func(ctx context.Context, settings toolsmcp.ServerSettings) (capabilityToolProvider, error) {
+	return toolsmcp.NewProvider(ctx, withMCPCallTimeout(settings))
+}
+
+// withMCPCallTimeout applies mcp.call_timeout_sec to a server without its own
+// timeout. Every server (config, Claude MCP files, ACP session) starts through
+// mcpProviderFactory, so this is the one place the setting is read.
+func withMCPCallTimeout(settings toolsmcp.ServerSettings) toolsmcp.ServerSettings {
+	if settings.CallTimeout == 0 {
+		settings.CallTimeout = axconfig.MCPCallTimeout()
+	}
+	return settings
 }
 
 type defaultCapabilities struct {
@@ -34,7 +44,7 @@ func buildDefaultCapabilities(workspace string) (defaultCapabilities, error) {
 	return buildDefaultCapabilitiesWithServers(context.Background(), workspace, nil)
 }
 
-func buildDefaultCapabilitiesWithServers(ctx context.Context, workspace string, additional []axconfig.MCPServerSettings) (defaultCapabilities, error) {
+func buildDefaultCapabilitiesWithServers(ctx context.Context, workspace string, additional []toolsmcp.ServerSettings) (defaultCapabilities, error) {
 	registry := tools.NewRegistry()
 	for _, tool := range native.BuildTools(nativeEnv(workspace), true) {
 		registry.MustRegister(tool)
@@ -84,7 +94,7 @@ func nativeEnv(workspace string) native.Env {
 	}
 }
 
-func swapMCPProviderFactoryForTest(factory func(ctx context.Context, settings axconfig.MCPServerSettings) (capabilityToolProvider, error)) func() {
+func swapMCPProviderFactoryForTest(factory func(ctx context.Context, settings toolsmcp.ServerSettings) (capabilityToolProvider, error)) func() {
 	prev := mcpProviderFactory
 	mcpProviderFactory = factory
 	return func() {

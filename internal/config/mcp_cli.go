@@ -3,14 +3,15 @@ package axconfig
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/inhere/suag/internal/platform/tools/mcp"
 	"os"
 	"sort"
 	"strings"
 )
 
 // ReadClaudeMCPConfigs reads repeatable Claude-style stdio MCP configuration files.
-func ReadClaudeMCPConfigs(paths []string) ([]MCPServerSettings, error) {
-	var servers []MCPServerSettings
+func ReadClaudeMCPConfigs(paths []string) ([]mcp.ServerSettings, error) {
+	var servers []mcp.ServerSettings
 	seen := make(map[string]bool)
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
@@ -49,7 +50,7 @@ func ReadClaudeMCPConfigs(paths []string) ([]MCPServerSettings, error) {
 				return nil, fmt.Errorf("duplicate MCP server %q", name)
 			}
 			seen[name] = true
-			servers = append(servers, MCPServerSettings{ID: name, Command: entry.Command, Args: entry.Args, Env: entry.Env})
+			servers = append(servers, mcp.ServerSettings{ID: name, Command: entry.Command, Args: entry.Args, Env: entry.Env})
 		}
 	}
 	return servers, nil

@@ -4,14 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/inhere/suag/pkg/agentcore/api"
 	"log/slog"
 	"strings"
 	"time"
 
-	axconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/pkg/agentcore/api"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
+
+// ServerSettings describes one stdio MCP server. The host fills it from its
+// own configuration; this package never reads global config.
+type ServerSettings struct {
+	ID      string
+	Command string
+	Args    []string
+	Env     map[string]string
+	// CallTimeout bounds one tools/call; 0 means DefaultCallTimeout.
+	CallTimeout time.Duration
+}
 
 type toolClient interface {
 	Start(ctx context.Context) error
@@ -53,14 +63,14 @@ func NewProviderForTools(id string, toolsList []api.Tool, client toolClient) *Pr
 	}
 }
 
-func NewProvider(ctx context.Context, settings axconfig.MCPServerSettings) (*Provider, error) {
+func NewProvider(ctx context.Context, settings ServerSettings) (*Provider, error) {
 	serverCfg := ServerConfig{
 		Name:    settings.ID,
 		Command: settings.Command,
 		Args:    append([]string(nil), settings.Args...),
 		Env:     formatEnvMap(settings.Env),
 
-		CallTimeout: axconfig.MCPCallTimeout(),
+		CallTimeout: settings.CallTimeout,
 	}
 
 	// Startup (spawn + initialize + tools/list) is bounded and honors the caller's

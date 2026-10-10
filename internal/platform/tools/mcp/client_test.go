@@ -16,7 +16,6 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	axconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/pkg/agentcore/api"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
@@ -75,14 +74,14 @@ func fakeConfig(t *testing.T, mode string) (ServerConfig, string) {
 	}, pidFile
 }
 
-func fakeSettings(t *testing.T, mode string) (axconfig.MCPServerSettings, string) {
+func fakeSettings(t *testing.T, mode string) (ServerSettings, string) {
 	cfg, pidFile := fakeConfig(t, mode)
 	env := map[string]string{}
 	for _, kv := range cfg.Env {
 		k, v, _ := strings.Cut(kv, "=")
 		env[k] = v
 	}
-	return axconfig.MCPServerSettings{ID: cfg.Name, Command: cfg.Command, Args: cfg.Args, Env: env}, pidFile
+	return ServerSettings{ID: cfg.Name, Command: cfg.Command, Args: cfg.Args, Env: env}, pidFile
 }
 
 // assertReaped fails unless the pid recorded by the fake server no longer exists

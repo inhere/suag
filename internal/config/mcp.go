@@ -5,18 +5,10 @@ import (
 	"time"
 
 	gkconfig "github.com/gookit/config/v2"
+	"github.com/inhere/suag/internal/platform/tools/mcp"
 )
 
-// MCPServerSettings is the normalized stdio MCP server config used by the app
-// capability builder.
-type MCPServerSettings struct {
-	ID      string
-	Command string
-	Args    []string
-	Env     map[string]string
-}
-
-func ReadMCPServerSettings() []MCPServerSettings {
+func ReadMCPServerSettings() []mcp.ServerSettings {
 	raw := gkconfig.Get("mcp.servers")
 	items, ok := raw.([]any)
 	if !ok || len(items) == 0 {
@@ -31,7 +23,7 @@ func ReadMCPServerSettings() []MCPServerSettings {
 		}
 	}
 
-	servers := make([]MCPServerSettings, 0, len(items))
+	servers := make([]mcp.ServerSettings, 0, len(items))
 	for _, item := range items {
 		server, ok := normalizeMCPServerSettings(item)
 		if !ok {
@@ -42,15 +34,15 @@ func ReadMCPServerSettings() []MCPServerSettings {
 	return servers
 }
 
-func normalizeMCPServerSettings(raw any) (MCPServerSettings, bool) {
+func normalizeMCPServerSettings(raw any) (mcp.ServerSettings, bool) {
 	item, ok := raw.(map[string]any)
 	if !ok {
-		return MCPServerSettings{}, false
+		return mcp.ServerSettings{}, false
 	}
 
 	command := strings.TrimSpace(stringValue(item["command"]))
 	if command == "" {
-		return MCPServerSettings{}, false
+		return mcp.ServerSettings{}, false
 	}
 
 	id := strings.TrimSpace(stringValue(item["id"]))
@@ -58,7 +50,7 @@ func normalizeMCPServerSettings(raw any) (MCPServerSettings, bool) {
 		id = command
 	}
 
-	return MCPServerSettings{
+	return mcp.ServerSettings{
 		ID:      id,
 		Command: command,
 		Args:    normalizeStringList(item["args"]),

@@ -2,9 +2,9 @@ package mcp
 
 import "strings"
 
-// credentialEnvNames are the LLM credential variables suag itself reads (see
-// internal/config/llm.go). They also match the suffix rule; the explicit list
-// keeps them covered if that rule is ever narrowed.
+// credentialEnvNames are the common LLM provider credential variables. They
+// also match the suffix rule; the explicit list keeps them covered if that
+// rule is ever narrowed.
 var credentialEnvNames = []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"}
 
 var credentialEnvSuffixes = []string{"_API_KEY", "_AUTH_TOKEN"}

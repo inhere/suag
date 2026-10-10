@@ -3,6 +3,7 @@ package acpserver
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/internal/platform/tools/mcp"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/gookit/goutil/x/assert"
-	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
@@ -93,7 +93,7 @@ func testACPRuntimeWith(t *testing.T, provider agentcore.Provider, tool *countin
 	if dbPath == "" {
 		dbPath = filepath.Join(t.TempDir(), "db", "sessions.db")
 	}
-	return func(_ context.Context, _ string, _ bool, _ []appconfig.MCPServerSettings, gate TurnGate) (Runtime, error) {
+	return func(_ context.Context, _ string, _ bool, _ []mcp.ServerSettings, gate TurnGate) (Runtime, error) {
 		repo, err := store.Open(dbPath)
 		if err != nil {
 			return Runtime{}, err

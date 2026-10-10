@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/inhere/suag/internal/platform/tools/mcp"
 	"os"
 	"path/filepath"
 
@@ -32,7 +33,7 @@ type Options struct {
 	// overrides AllowWrite.
 	ReadOnly bool
 	// Servers are extra MCP servers (from --mcp-config or the ACP session).
-	Servers []appconfig.MCPServerSettings
+	Servers []mcp.ServerSettings
 	// MCPConfigs are Claude-style config files read by OpenCLI into Servers.
 	MCPConfigs []string
 	Hooks      []agentcore.Hook
@@ -302,7 +303,7 @@ func buildPersonalCapabilities(workspace string, allowWrite bool) (defaultCapabi
 	return buildPersonalCapabilitiesWithServers(context.Background(), workspace, allowWrite, nil)
 }
 
-func buildPersonalCapabilitiesWithServers(ctx context.Context, workspace string, allowWrite bool, servers []appconfig.MCPServerSettings) (defaultCapabilities, error) {
+func buildPersonalCapabilitiesWithServers(ctx context.Context, workspace string, allowWrite bool, servers []mcp.ServerSettings) (defaultCapabilities, error) {
 	if allowWrite {
 		return buildDefaultCapabilitiesWithServers(ctx, workspace, servers)
 	}
@@ -316,7 +317,7 @@ func buildPersonalCapabilitiesWithServers(ctx context.Context, workspace string,
 }
 
 // CLI always exposes configured MCP tools; the dispatch gate enforces their permissions.
-func buildPersonalCLICapabilities(ctx context.Context, workspace string, allowWrite bool, servers []appconfig.MCPServerSettings) (defaultCapabilities, error) {
+func buildPersonalCLICapabilities(ctx context.Context, workspace string, allowWrite bool, servers []mcp.ServerSettings) (defaultCapabilities, error) {
 	if allowWrite {
 		return buildDefaultCapabilitiesWithServers(ctx, workspace, servers)
 	}

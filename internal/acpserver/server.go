@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/inhere/suag/internal/platform/tools/mcp"
 	"io"
 	"path/filepath"
 	"strings"
@@ -49,11 +50,11 @@ type TurnGate interface {
 // OpenRuntime assembles a turn with the selected workspace, tool mode and turn
 // gate. gate is nil when the runtime only creates or loads a session (no turn
 // runs); the factory must then fail closed (deny every tool call).
-type OpenRuntime func(ctx context.Context, cwd string, readOnly bool, servers []appconfig.MCPServerSettings, gate TurnGate) (Runtime, error)
+type OpenRuntime func(ctx context.Context, cwd string, readOnly bool, servers []mcp.ServerSettings, gate TurnGate) (Runtime, error)
 
 type sessionState struct {
 	cwd     string
-	servers []appconfig.MCPServerSettings
+	servers []mcp.ServerSettings
 	mode    acp.SessionModeId
 	cancel  context.CancelFunc
 	// total and lastContext are guarded by Agent.mu; see recordUsage.
@@ -306,7 +307,7 @@ func sessionModes(current acp.SessionModeId) *acp.SessionModeState {
 	}}
 }
 
-func sessionInputs(cwd string, roots []string, mcpServers []acp.McpServer) (string, []appconfig.MCPServerSettings, error) {
+func sessionInputs(cwd string, roots []string, mcpServers []acp.McpServer) (string, []mcp.ServerSettings, error) {
 	if !filepath.IsAbs(cwd) || len(roots) != 0 {
 		return "", nil, acp.NewInvalidParams(map[string]any{"cwd": cwd, "reason": "absolute cwd required; additional roots unsupported"})
 	}

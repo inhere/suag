@@ -7,11 +7,11 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
-	axconfig "github.com/inhere/suag/internal/config"
 	toolsmcp "github.com/inhere/suag/internal/platform/tools/mcp"
 	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 	capskills "github.com/inhere/suag/pkg/agentcore/skills"
@@ -76,7 +76,7 @@ func TestBuildDefaultCapabilities_RegistersConfiguredMCPTools(t *testing.T) {
 		},
 	})
 
-	restore := swapMCPProviderFactoryForTest(func(_ context.Context, settings axconfig.MCPServerSettings) (capabilityToolProvider, error) {
+	restore := swapMCPProviderFactoryForTest(func(_ context.Context, settings toolsmcp.ServerSettings) (capabilityToolProvider, error) {
 		return toolsmcp.NewProviderForTools(
 			settings.ID,
 			[]agentcoreapi.Tool{
@@ -102,13 +102,13 @@ func TestPersonalCapabilitiesUseACPStdioMCPOnlyInWritableMode(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	var starts int
-	restore := swapMCPProviderFactoryForTest(func(_ context.Context, settings axconfig.MCPServerSettings) (capabilityToolProvider, error) {
+	restore := swapMCPProviderFactoryForTest(func(_ context.Context, settings toolsmcp.ServerSettings) (capabilityToolProvider, error) {
 		starts++
 		assert.Eq(t, "acp-local", settings.ID)
 		return toolsmcp.NewProviderForTools(settings.ID, []agentcoreapi.Tool{newCapabilityStubTool("mcp_echo")}, nil), nil
 	})
 	t.Cleanup(restore)
-	servers := []axconfig.MCPServerSettings{{ID: "acp-local", Command: "stub"}}
+	servers := []toolsmcp.ServerSettings{{ID: "acp-local", Command: "stub"}}
 	readOnly, err := buildPersonalCapabilitiesWithServers(context.Background(), t.TempDir(), false, servers)
 	assert.NoErr(t, err)
 	assert.Eq(t, 0, starts)
@@ -260,7 +260,7 @@ func (t *capabilityStubTool) Execute(_ context.Context, call agentcoreapi.ToolCa
 func TestBuildDefaultCapabilities_FirstRegistrationWins(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	restore := swapMCPProviderFactoryForTest(func(_ context.Context, settings axconfig.MCPServerSettings) (capabilityToolProvider, error) {
+	restore := swapMCPProviderFactoryForTest(func(_ context.Context, settings toolsmcp.ServerSettings) (capabilityToolProvider, error) {
 		return toolsmcp.NewProviderForTools(settings.ID, []agentcoreapi.Tool{
 			newServerStubTool(settings.ID, "file_read"),
 			newServerStubTool(settings.ID, "gofer_work_report"),
@@ -269,7 +269,7 @@ func TestBuildDefaultCapabilities_FirstRegistrationWins(t *testing.T) {
 	})
 	t.Cleanup(restore)
 
-	servers := []axconfig.MCPServerSettings{{ID: "evil", Command: "x"}, {ID: "gofer", Command: "x"}}
+	servers := []toolsmcp.ServerSettings{{ID: "evil", Command: "x"}, {ID: "gofer", Command: "x"}}
 	built, err := buildDefaultCapabilitiesWithServers(context.Background(), t.TempDir(), servers)
 	assert.NoErr(t, err)
 	t.Cleanup(func() { assert.NoErr(t, built.Close()) })
@@ -283,4 +283,13 @@ func TestBuildDefaultCapabilities_FirstRegistrationWins(t *testing.T) {
 		assert.Eq(t, "evil", named.MCPServer())
 		assert.Eq(t, tools.KindMCP, tools.KindOf(mustGetTool(t, built.Registry, "gofer_only")))
 	})
+}
+
+func TestWithMCPCallTimeout(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	assert.Eq(t, 120*time.Second, withMCPCallTimeout(toolsmcp.ServerSettings{ID: "a"}).CallTimeout)
+	assert.NoErr(t, gkconfig.Set("mcp.call_timeout_sec", 7))
+	assert.Eq(t, 7*time.Second, withMCPCallTimeout(toolsmcp.ServerSettings{ID: "a"}).CallTimeout)
+	assert.Eq(t, time.Second, withMCPCallTimeout(toolsmcp.ServerSettings{ID: "a", CallTimeout: time.Second}).CallTimeout)
 }
