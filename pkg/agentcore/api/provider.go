@@ -32,12 +32,6 @@ type StreamingProvider interface {
 	Stream(ctx context.Context, req *GenerateRequest, emit StreamFunc) (*GenerateResult, error)
 }
 
-// EmbeddingProvider is an optional provider capability for vector generation.
-type EmbeddingProvider interface {
-	Provider
-	Embed(ctx context.Context, text string) ([]float32, error)
-}
-
 // GenerateRequest is the portable model request contract for agentcore runtimes.
 type GenerateRequest struct {
 	Model       string

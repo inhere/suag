@@ -288,7 +288,7 @@ func buildMainProvider(settings appconfig.ModelSettings) (agentcore.Provider, er
 		}
 		providers = append(providers, fb)
 	}
-	return llm.NewPool(providers, nil), nil
+	return llm.NewPool(providers), nil
 }
 
 func appendSystemPrompt(flagValue string) string {

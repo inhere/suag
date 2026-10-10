@@ -71,6 +71,13 @@ func NewProvider(steps ...Step) *Provider {
 	}
 }
 
+// WithName sets the identifier Name reports (default "mock"), so a test can
+// tell several scripted providers apart, e.g. in a fallback pool.
+func (p *Provider) WithName(name string) *Provider {
+	p.name = name
+	return p
+}
+
 // Name returns the provider identifier.
 func (p *Provider) Name() string {
 	if p == nil || p.name == "" {

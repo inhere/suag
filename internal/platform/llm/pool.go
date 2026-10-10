@@ -14,16 +14,13 @@ import (
 type Pool struct {
 	mu        sync.RWMutex
 	providers []Provider
-	embedder  EmbeddingProvider // dedicated provider for embeddings
-	observer  AttemptObserver   // optional; sees every provider attempt
+	observer  AttemptObserver // optional; sees every provider attempt
 }
 
 // NewPool creates a Pool from an ordered list of providers.
 // The first provider is the primary; subsequent ones are fallbacks.
-// embedProvider (may be nil) is used exclusively for Embed calls;
-// falls back to the primary if nil.
-func NewPool(providers []Provider, embedProvider EmbeddingProvider) *Pool {
-	return &Pool{providers: providers, embedder: embedProvider}
+func NewPool(providers []Provider) *Pool {
+	return &Pool{providers: providers}
 }
 
 // SetObserver installs a callback invoked once per provider attempt (fallbacks
@@ -91,37 +88,6 @@ func (p *Pool) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, em
 		lastErr = err
 	}
 	return nil, fmt.Errorf("all providers failed for stream: %w", lastErr)
-}
-
-// Embed uses the dedicated embed provider if set, otherwise tries the pool.
-func (p *Pool) Embed(ctx context.Context, text string) ([]float32, error) {
-	p.mu.RLock()
-	embedder := p.embedder
-	providers := p.providers
-	p.mu.RUnlock()
-
-	if embedder != nil {
-		vec, err := embedder.Embed(ctx, text)
-		if err == nil {
-			return vec, nil
-		}
-		slog.Warn("embed provider failed, trying pool", "err", err)
-	}
-
-	var lastErr error
-	for _, prov := range providers {
-		embedProv, ok := prov.(EmbeddingProvider)
-		if !ok {
-			lastErr = fmt.Errorf("provider %s does not support embeddings", prov.Name())
-			continue
-		}
-		vec, err := embedProv.Embed(ctx, text)
-		if err == nil {
-			return vec, nil
-		}
-		lastErr = err
-	}
-	return nil, fmt.Errorf("all providers failed for embed: %w", lastErr)
 }
 
 // AddProvider appends a provider to the pool (thread-safe).

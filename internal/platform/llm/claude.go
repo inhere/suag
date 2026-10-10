@@ -93,11 +93,6 @@ func (p *ClaudeProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 	return p.parseResponse(respData)
 }
 
-// Embed implements Provider — delegates to OpenAI embeddings since Claude has no native embed API.
-func (p *ClaudeProvider) Embed(_ context.Context, _ string) ([]float32, error) {
-	return nil, fmt.Errorf("claude provider does not support embeddings: use an OpenAI-compatible provider for embeddings")
-}
-
 // appendClaudeBlock adds a content block as a message of the given role. When
 // the previous message has the same role and already holds content blocks
 // (parallel tool_use / consecutive tool_result), the block is merged into it so

@@ -18,11 +18,10 @@ const defaultOpenAIBase = "https://api.openai.com/v1"
 // OpenAIProvider implements Provider for OpenAI-compatible APIs
 // (OpenAI, DeepSeek, Ollama, etc.).
 type OpenAIProvider struct {
-	apiKey     string
-	baseURL    string
-	model      string
-	embedModel string
-	client     *http.Client
+	apiKey  string
+	baseURL string
+	model   string
+	client  *http.Client
 	// streamClient has no overall timeout: a streamed body may last minutes.
 	streamClient *http.Client
 	name         string
@@ -31,11 +30,10 @@ type OpenAIProvider struct {
 
 // OpenAIConfig configures an OpenAIProvider.
 type OpenAIConfig struct {
-	APIKey     string
-	BaseURL    string // default: https://api.openai.com/v1
-	Model      string // default: gpt-4o
-	EmbedModel string // default: text-embedding-3-small
-	Name       string // default: "openai"
+	APIKey  string
+	BaseURL string // default: https://api.openai.com/v1
+	Model   string // default: gpt-4o
+	Name    string // default: "openai"
 	// Headers are extra request headers; see applyHeaders for SessionIDPlaceholder.
 	Headers map[string]string
 }
@@ -48,9 +46,6 @@ func NewOpenAIProvider(cfg OpenAIConfig) *OpenAIProvider {
 	if cfg.Model == "" {
 		cfg.Model = "gpt-4o"
 	}
-	if cfg.EmbedModel == "" {
-		cfg.EmbedModel = "text-embedding-3-small"
-	}
 	if cfg.Name == "" {
 		cfg.Name = "openai"
 	}
@@ -58,7 +53,6 @@ func NewOpenAIProvider(cfg OpenAIConfig) *OpenAIProvider {
 		apiKey:       cfg.APIKey,
 		baseURL:      cfg.BaseURL,
 		model:        cfg.Model,
-		embedModel:   cfg.EmbedModel,
 		client:       &http.Client{Timeout: 120 * time.Second},
 		streamClient: newStreamClient(),
 		name:         cfg.Name,
@@ -84,32 +78,6 @@ func (p *OpenAIProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 	}
 
 	return p.parseResponse(respBody)
-}
-
-// Embed implements Provider.
-func (p *OpenAIProvider) Embed(ctx context.Context, text string) ([]float32, error) {
-	body := map[string]any{
-		"model": p.embedModel,
-		"input": text,
-	}
-	logProviderRequest(p.Name(), "/embeddings", body)
-	respBody, err := p.doRequest(ctx, "/embeddings", body)
-	if err != nil {
-		return nil, err
-	}
-
-	var result struct {
-		Data []struct {
-			Embedding []float32 `json:"embedding"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("parse embedding response: %w", err)
-	}
-	if len(result.Data) == 0 {
-		return nil, fmt.Errorf("empty embedding response")
-	}
-	return result.Data[0].Embedding, nil
 }
 
 // buildRequestBody constructs the OpenAI chat completion request payload.

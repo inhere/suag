@@ -5,7 +5,6 @@ import agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 
 type Provider = agentcoreapi.Provider
 type StreamingProvider = agentcoreapi.StreamingProvider
-type EmbeddingProvider = agentcoreapi.EmbeddingProvider
 type GenerateRequest = agentcoreapi.GenerateRequest
 type GenerateResult = agentcoreapi.GenerateResult
 type FinishReason = agentcoreapi.FinishReason

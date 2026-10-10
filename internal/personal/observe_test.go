@@ -49,9 +49,9 @@ func (t fnTool) Execute(context.Context, agentcore.ToolCall) (*agentcore.ToolRes
 
 func TestPoolFallbackRecordsOneModelEventPerAttempt(t *testing.T) {
 	repo := openObserveRepo(t)
-	first := llm.NewMockProvider("primary").QueueError(errors.New("boom"))
-	second := llm.NewMockProvider("backup").QueueText("fallback answer")
-	runner, err := New(Config{Repository: repo, Provider: llm.NewPool([]llm.Provider{first, second}, nil), Model: "m-1", ProviderName: "pool-cfg"})
+	first := mock.NewProvider(mock.Error(errors.New("boom"))).WithName("primary")
+	second := mock.NewProvider(mock.Final("fallback answer")).WithName("backup")
+	runner, err := New(Config{Repository: repo, Provider: llm.NewPool([]llm.Provider{first, second}), Model: "m-1", ProviderName: "pool-cfg"})
 	assert.NoErr(t, err)
 	res, err := runner.Run(context.Background(), RunRequest{Prompt: "hi"})
 	assert.NoErr(t, err)

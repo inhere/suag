@@ -12,15 +12,13 @@ func TestOpenAIProvider_ImplementsAgentcoreProviderContracts(t *testing.T) {
 
 	var base agentcoreapi.Provider = provider
 	var streaming agentcoreapi.StreamingProvider = provider
-	var embedding agentcoreapi.EmbeddingProvider = provider
 
 	assert.NotNil(t, base)
 	assert.NotNil(t, streaming)
-	assert.NotNil(t, embedding)
 	assert.Eq(t, "openai", provider.Name())
 }
 
-func TestClaudeProvider_DoesNotRequireEmbeddingSupport(t *testing.T) {
+func TestClaudeProvider_ImplementsAgentcoreProviderContracts(t *testing.T) {
 	provider := NewClaudeProvider(ClaudeConfig{})
 
 	var base agentcoreapi.Provider = provider

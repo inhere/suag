@@ -118,7 +118,7 @@ func (f failingStream) Stream(ctx context.Context, _ *agentcoreapi.GenerateReque
 // repeat or mix the answer.
 func TestPoolStreamDoesNotFallBackAfterOutput(t *testing.T) {
 	var events []agentcoreapi.StreamEvent
-	pool := NewPool([]Provider{failingStream{name: "a"}, failingStream{name: "b"}}, nil)
+	pool := NewPool([]Provider{failingStream{name: "a"}, failingStream{name: "b"}})
 	_, err := pool.Stream(context.Background(), &agentcoreapi.GenerateRequest{}, collect(&events))
 	assert.Eq(t, "connection reset", fmt.Sprint(err))
 	assert.Eq(t, 1, len(events))

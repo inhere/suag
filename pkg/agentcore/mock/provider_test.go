@@ -361,3 +361,12 @@ func TestMockTool_SchemaClonesTypedSlices(t *testing.T) {
 		t.Fatalf("expected typed slice of maps to be cloned on each read, got %#v", got)
 	}
 }
+
+func TestMockProvider_WithName(t *testing.T) {
+	if got := NewProvider().Name(); got != "mock" {
+		t.Fatalf("default name = %q, want mock", got)
+	}
+	if got := NewProvider().WithName("backup").Name(); got != "backup" {
+		t.Fatalf("name = %q, want backup", got)
+	}
+}

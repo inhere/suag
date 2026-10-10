@@ -12,7 +12,7 @@ Suag 当前是个人 Agent，通过 CLI 或 ACP 运行；Gofer 负责作业、�
 - [个人 Agent 设计](design/2026-10-06-personal-agent-redesign-design.md)与[实施计划](plans/2026-10-06-personal-agent-redesign-plan.md)：产品范围与会话边界（历史基线）。
 - [Gofer 接入](usage/gofer-personal-agent.md)：当前 `suag` CLI 与 `suag-acp` 的配置、续接和审批。
 - [LLM 配置](usage/llm-config-v0.md)：`model` / `providers` 格式、内置预设、引用解析与旧配置迁移。
-- [MockProvider 用法](usage/llm-mock-usage.md)：本地测试执行内核。
+- [测试用假模型与假工具](usage/llm-mock-usage.md)：`pkg/agentcore/mock` 与端到端 fakellm。
 - [ACP 调研](research/acp-protocoal-research.md)：协议参考；实现合同以源码和依赖版本为准。
 - [agentcore 资料](../pkg/agentcore/docs/README.md)：可复用执行内核的接口说明。
 
