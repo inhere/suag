@@ -1,7 +1,7 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # agentcore 独立分层：核心下沉与清理 实施计划
 
-> 状态：Draft 0.2 / 待人工计划批准
+> 状态：Draft 0.2 / 已批准（2026-10-10 用户：“批准计划 0.2”）
 
 ## 修订记录
 
