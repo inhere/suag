@@ -77,6 +77,6 @@ func TestSystemPromptIsSentAndStable(t *testing.T) {
 
 	assert.Require(t, assert.Len(t, systems, 2))
 	assert.StrContains(t, systems[0], "You are suag")
-	assert.StrContains(t, systems[0], "ACP 会话为只读")
+	assert.StrContains(t, systems[0], "read_only 模式")
 	assert.Eq(t, systems[0], systems[1])
 }

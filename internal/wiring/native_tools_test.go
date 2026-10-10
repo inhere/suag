@@ -115,7 +115,7 @@ func TestDisabledToolHints(t *testing.T) {
 		{"read-only", func() (*Runtime, error) { return OpenCLI(context.Background(), Options{ReadOnly: true}) }, "--read-only 启动"},
 		{"ACP", func() (*Runtime, error) {
 			return Open(context.Background(), Options{Workspace: t.TempDir(), RuleCWD: t.TempDir()})
-		}, "ACP 会话为只读"},
+		}, "read_only 模式"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rt, err := tc.open()

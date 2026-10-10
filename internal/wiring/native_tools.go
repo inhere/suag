@@ -14,9 +14,9 @@ func writeToolHint(opts Options) string {
 	case opts.CLIMode && opts.ChatMode:
 		return "chat 默认只读；在 SUAG_HOME/config.yaml 设 tools.allow_write: true 后重新打开 chat"
 	case opts.CLIMode:
-		return "suag run 默认只读；加 --allow-write 重新运行（由 gofer 拉起时需在其 suag run 模板中加 --allow-write）"
+		return "suag run 默认只读；加 --allow-write 重新运行（由任务调度器拉起时，需在其 suag run 命令模板中加 --allow-write）"
 	default:
-		return "ACP 会话为只读（read_only）；需以可写模式打开会话（gofer 侧去掉 --read-only）"
+		return "ACP 会话处于 read_only 模式；需由 ACP 客户端把会话模式设为 default（可写）"
 	}
 }
 
