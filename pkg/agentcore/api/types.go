@@ -62,6 +62,18 @@ type Usage struct {
 	CostUSD          float64 `json:"cost_usd,omitempty"`
 }
 
+// Add returns the field-wise sum of u and o. Providers report usage per model
+// call; a run or session total is the sum of its calls.
+func (u Usage) Add(o Usage) Usage {
+	u.InputTokens += o.InputTokens
+	u.OutputTokens += o.OutputTokens
+	u.TotalTokens += o.TotalTokens
+	u.CacheReadTokens += o.CacheReadTokens
+	u.CacheWriteTokens += o.CacheWriteTokens
+	u.CostUSD += o.CostUSD
+	return u
+}
+
 // Yield captures a paused runtime state that requires external input.
 type Yield struct {
 	Reason   string

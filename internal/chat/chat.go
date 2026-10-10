@@ -473,8 +473,7 @@ type chatStats struct {
 
 func (s *chatStats) add(result personal.RunResult) {
 	s.turns++
-	s.usage.InputTokens += result.Usage.InputTokens
-	s.usage.OutputTokens += result.Usage.OutputTokens
+	s.usage = s.usage.Add(result.Usage)
 	if result.SessionUsage.TotalTokens > 0 || result.SessionUsage.InputTokens > 0 {
 		s.session = result.SessionUsage
 	}

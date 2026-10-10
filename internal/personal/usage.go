@@ -27,7 +27,7 @@ func (c *usageCollector) AfterModel(_ context.Context, event *agentcore.ModelEve
 		return nil
 	}
 	c.mu.Lock()
-	c.sum = AddUsage(c.sum, event.Result.Usage)
+	c.sum = c.sum.Add(event.Result.Usage)
 	c.calls++
 	c.lastInput = event.Result.Usage.InputTokens
 	c.mu.Unlock()
@@ -46,17 +46,6 @@ func (c *usageCollector) snapshot() (agentcore.Usage, int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.sum, c.calls
-}
-
-// AddUsage returns a+b field by field.
-func AddUsage(a, b agentcore.Usage) agentcore.Usage {
-	a.InputTokens += b.InputTokens
-	a.OutputTokens += b.OutputTokens
-	a.TotalTokens += b.TotalTokens
-	a.CacheReadTokens += b.CacheReadTokens
-	a.CacheWriteTokens += b.CacheWriteTokens
-	a.CostUSD += b.CostUSD
-	return a
 }
 
 // usageFromSum converts the store's per-session model-event total back to the

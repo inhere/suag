@@ -171,12 +171,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 
 		state.Step++
 		// Providers report usage per model call; a run may use several calls for tools.
-		state.Usage.InputTokens += res.Usage.InputTokens
-		state.Usage.OutputTokens += res.Usage.OutputTokens
-		state.Usage.TotalTokens += res.Usage.TotalTokens
-		state.Usage.CacheReadTokens += res.Usage.CacheReadTokens
-		state.Usage.CacheWriteTokens += res.Usage.CacheWriteTokens
-		state.Usage.CostUSD += res.Usage.CostUSD
+		state.Usage = state.Usage.Add(res.Usage)
 		if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
 			return r.finishRun(ctx, input, state, result, err)
 		}
