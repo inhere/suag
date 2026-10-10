@@ -2,7 +2,6 @@ package agentcore
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 )
 
@@ -62,9 +61,9 @@ func TestGenerateResultValidate_RejectsMissingFinishReason(t *testing.T) {
 	}
 }
 
-func TestDefaultStorage_UsesFilesStorage(t *testing.T) {
-	if got := fmt.Sprintf("%T", defaultStorage(nil)); got != "*files.Storage" {
-		t.Fatalf("expected default storage to use files.Storage, got %s", got)
+func TestDefaultStorage_UsesMemoryStorage(t *testing.T) {
+	if _, ok := defaultStorage(nil).(*MemoryStorage); !ok {
+		t.Fatalf("expected default storage to be *MemoryStorage, got %T", defaultStorage(nil))
 	}
 }
 

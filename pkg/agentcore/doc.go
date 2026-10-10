@@ -34,6 +34,9 @@ Package shape:
   - agentcore: current public runtime entrypoint and root facade
   - api: stable contracts and shared runtime data types
 
+Without Config.Storage the runtime keeps runs in an in-process MemoryStorage;
+pass a persistent storage to resume runs across processes.
+
 Built-in companion packages:
 
   - storage/files: filesystem-backed storage

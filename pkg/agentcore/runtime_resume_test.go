@@ -3,6 +3,8 @@ package agentcore
 import (
 	"context"
 	"testing"
+
+	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 func TestRuntime_Run_ResumeMatrix(t *testing.T) {
@@ -162,7 +164,7 @@ func TestRuntime_Run_ResumeMatrix(t *testing.T) {
 
 func TestRuntime_Run_ResumeFromState_WithPublicContracts(t *testing.T) {
 	runID := "resume-with-public-contracts"
-	store := NewFileStorage(t.TempDir())
+	store := files.NewStorage(t.TempDir())
 	provider := &runtimeTestProvider{
 		results: []*GenerateResult{{
 			ToolCalls: []ToolCall{{

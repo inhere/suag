@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/internal/runid"
 	internalutils "github.com/inhere/suag/pkg/agentcore/internal/utils"
 )
 
@@ -242,22 +243,7 @@ func (s *Storage) ensureFile(runID, path string) error {
 }
 
 func (s *Storage) validateRunID(runID string) error {
-	if strings.TrimSpace(runID) == "" {
-		return s.wrapError("validate run id", runID, errors.New("run id is required"))
-	}
-	if filepath.IsAbs(runID) || filepath.VolumeName(runID) != "" {
-		return s.wrapError("validate run id", runID, errors.New("run id must not be an absolute path"))
-	}
-	if runID == "." || runID == ".." {
-		return s.wrapError("validate run id", runID, errors.New("run id must not reference the current or parent directory"))
-	}
-	if strings.ContainsAny(runID, `/\`) {
-		return s.wrapError("validate run id", runID, errors.New("run id must not contain path separators"))
-	}
-	if cleaned := filepath.Clean(runID); cleaned != runID || cleaned == "." || cleaned == ".." {
-		return s.wrapError("validate run id", runID, errors.New("run id must resolve to a single safe path segment"))
-	}
-	return nil
+	return s.wrapError("validate run id", runID, runid.Validate(runID))
 }
 
 func (s *Storage) writeFileAtomically(runID, path string, data []byte, perm os.FileMode) error {

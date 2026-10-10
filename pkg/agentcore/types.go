@@ -5,7 +5,6 @@ import (
 
 	"github.com/inhere/suag/pkg/agentcore/api"
 	internalutils "github.com/inhere/suag/pkg/agentcore/internal/utils"
-	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 type ContextBuilder = api.ContextBuilder
@@ -93,14 +92,6 @@ func (noopMemory) BuildContext(_ context.Context, state *RunState) ([]Message, e
 
 type Storage = api.Storage
 type ArtifactStorage = api.ArtifactStorage
-
-// FileStorage is kept as a compatibility alias for the first-party filesystem storage.
-type FileStorage = files.Storage
-
-// NewFileStorage is kept as a compatibility constructor for the first-party filesystem storage.
-func NewFileStorage(root string) *FileStorage {
-	return files.NewStorage(root)
-}
 
 // ---------------- Hook ----------------
 

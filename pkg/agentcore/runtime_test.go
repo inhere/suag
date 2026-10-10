@@ -285,11 +285,6 @@ func TestRuntime_New_WithOnlyProvider_UsesDefaults(t *testing.T) {
 }
 
 func TestRuntime_New_WithOnlyProvider_RejectsUnsafeRunID(t *testing.T) {
-	unique := filepath.Base(t.TempDir()) + "-unsafe"
-	outsidePath := filepath.Join(os.TempDir(), unique)
-	_ = os.RemoveAll(outsidePath)
-	defer os.RemoveAll(outsidePath)
-
 	provider := &runtimeTestProvider{
 		results: []*GenerateResult{{
 			Content:      "ok",
@@ -300,7 +295,7 @@ func TestRuntime_New_WithOnlyProvider_RejectsUnsafeRunID(t *testing.T) {
 	rt := New(Config{Provider: provider})
 
 	_, err := rt.Run(context.Background(), RunInput{
-		RunID:       filepath.Join("..", unique),
+		RunID:       filepath.Join("..", "unsafe-run"),
 		AgentID:     "agent-1",
 		Instruction: "unsafe",
 		ResumeMode:  ResumeFromState,
@@ -312,9 +307,6 @@ func TestRuntime_New_WithOnlyProvider_RejectsUnsafeRunID(t *testing.T) {
 	}
 	if len(provider.calls) != 0 {
 		t.Fatalf("expected provider not to be called for unsafe run id, got %#v", provider.calls)
-	}
-	if _, statErr := os.Stat(outsidePath); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatalf("expected unsafe run id not to create %q, got %v", outsidePath, statErr)
 	}
 }
 

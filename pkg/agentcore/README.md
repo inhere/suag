@@ -162,6 +162,8 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 - append-only transcript
 - 后续可继续接入 tool、hook、memory、resume
 
+不传 `Storage` 时 runtime 使用进程内的 `agentcore.NewMemoryStorage()`：默认不持久化，进程退出即丢失；跨进程或跨 Runtime 实例续跑需显式传入 `files.NewStorage(dir)` 或自己的存储实现。
+
 如果你不是只想跑最小 demo，而是准备真正接入自己的系统，可以这样选阅读路径：
 
 - 新项目直接嵌入：看 [docs/recommended-runtime.md](../../docs/archive/agentcore-2026-10/recommended-runtime.md)

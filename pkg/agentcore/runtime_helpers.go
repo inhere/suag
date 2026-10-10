@@ -5,10 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
-
-	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 func stateForSaveStateFailure(preState *RunState, currentState *RunState, err error) *RunState {
@@ -27,18 +24,29 @@ func (e runtimeResolvedControlError) Error() string {
 	return "runtime control resolved"
 }
 
+// defaultStorage keeps runs in memory when the host passes no storage.
 func defaultStorage(storage Storage) Storage {
 	if storage != nil {
 		return storage
 	}
-	return files.NewStorage(filepath.Join(os.TempDir(), "agentcore-runs"))
+	return NewMemoryStorage()
 }
 
 func defaultTools(tools ToolRegistry) ToolRegistry {
 	if tools != nil {
 		return tools
 	}
-	return NewToolRegistry()
+	return noTools{}
+}
+
+// noTools is the registry of a runtime configured without tools: it lists
+// none and rejects every call as unregistered.
+type noTools struct{}
+
+func (noTools) ListTools(context.Context) ([]ToolSchema, error) { return nil, nil }
+
+func (noTools) ExecuteTool(_ context.Context, call ToolCall) (*ToolResult, error) {
+	return nil, &ToolError{Err: fmt.Errorf("tool %q not registered", call.Name)}
 }
 
 func defaultMemory(memory Memory) Memory {
