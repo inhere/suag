@@ -160,6 +160,10 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	contextWindow := appconfig.ContextWindowFor(settings.Main)
+	// A bad proxy is a startup error rather than a silently missing web_fetch.
+	if _, err := native.ParseFetchProxy(gkconfig.String("tools.web_fetch.proxy")); err != nil {
+		return nil, err
+	}
 	var capabilities defaultCapabilities
 	if opts.CLIMode {
 		capabilities, err = buildPersonalCLICapabilities(ctx, workspace, allowWrite, servers)

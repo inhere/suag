@@ -22,6 +22,9 @@ type Env struct {
 	// FetchAllowPrivate lets web_fetch reach private and local addresses
 	// (tools.web_fetch.allow_private).
 	FetchAllowPrivate bool
+	// FetchProxy routes web_fetch through a proxy (tools.web_fetch.proxy);
+	// wiring validates it at startup with ParseFetchProxy.
+	FetchProxy string
 }
 
 // Spec is one entry of the native tool catalog.
@@ -53,7 +56,10 @@ func Catalog() []Spec {
 			return &FileFindTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
 		}},
 		{Name: "web_fetch", New: func(env Env) tools.Tool {
-			t := NewWebFetchTool(env.FetchAllowPrivate)
+			t, err := NewWebFetchTool(env.FetchAllowPrivate, env.FetchProxy)
+			if err != nil {
+				return nil // invalid proxy: rejected earlier by wiring
+			}
 			t.maxOut = env.MaxOutputBytes
 			return t
 		}},

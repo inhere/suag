@@ -46,24 +46,62 @@ func publicIP(ip netip.Addr) bool {
 type WebFetchTool struct {
 	client *http.Client
 	maxOut int // result cap in bytes; 0 = DefaultMaxOutputBytes
+	// checkTarget vets a URL before it is requested (and on every redirect)
+	// when a proxy is used; nil without a proxy, where the dial check applies.
+	checkTarget func(ctx context.Context, u *url.URL) error
 }
 
-// NewWebFetchTool builds the tool. Unless allowPrivate is set, every
-// connection is checked at dial time against the IP actually connected to,
-// which also covers redirects and DNS rebinding. Environment proxies are
-// ignored so the check sees the real target.
-func NewWebFetchTool(allowPrivate bool) *WebFetchTool {
-	allow := publicIP
+// fetchOptions configure newWebFetchTool.
+type fetchOptions struct {
+	allow func(netip.Addr) bool
+	// proxy, when set, receives every request (tools.web_fetch.proxy).
+	proxy *url.URL
+	// lookup resolves a host name; tests replace it.
+	lookup func(ctx context.Context, host string) ([]netip.Addr, error)
+}
+
+// NewWebFetchTool builds the tool. Unless allowPrivate is set, private and
+// local addresses are refused. Without a proxy every connection is checked at
+// dial time against the IP actually connected to, which also covers
+// redirects and DNS rebinding; environment proxies are ignored so the check
+// sees the real target. With proxy (http, https or socks5 URL) connections go
+// only to the proxy, and the target host is resolved and checked before the
+// request and on every redirect instead (the proxy may still resolve a name
+// differently: a weaker guarantee, accepted to reach sites that need one).
+func NewWebFetchTool(allowPrivate bool, proxy string) (*WebFetchTool, error) {
+	opts := fetchOptions{allow: publicIP, lookup: func(ctx context.Context, host string) ([]netip.Addr, error) {
+		return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	}}
 	if allowPrivate {
-		allow = func(netip.Addr) bool { return true }
+		opts.allow = func(netip.Addr) bool { return true }
 	}
-	return newWebFetchTool(allow)
+	u, err := ParseFetchProxy(proxy)
+	if err != nil {
+		return nil, err
+	}
+	opts.proxy = u
+	return newWebFetchTool(opts), nil
 }
 
-func newWebFetchTool(allow func(netip.Addr) bool) *WebFetchTool {
-	dialer := &net.Dialer{
-		Timeout: 10 * time.Second,
-		Control: func(_, address string, _ syscall.RawConn) error {
+// ParseFetchProxy validates tools.web_fetch.proxy; empty means no proxy.
+func ParseFetchProxy(proxy string) (*url.URL, error) {
+	if proxy = strings.TrimSpace(proxy); proxy == "" {
+		return nil, nil
+	}
+	u, err := url.Parse(proxy)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "socks5") {
+		return nil, fmt.Errorf("tools.web_fetch.proxy must be an http://, https:// or socks5:// URL, got %q", proxy)
+	}
+	return u, nil
+}
+
+func newWebFetchTool(opts fetchOptions) *WebFetchTool {
+	allow := opts.allow
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	t := &WebFetchTool{}
+	var proxyFunc func(*http.Request) (*url.URL, error)
+	if opts.proxy == nil {
+		dialer.Control = func(_, address string, _ syscall.RawConn) error {
 			host, _, err := net.SplitHostPort(address)
 			if err != nil {
 				return err
@@ -73,17 +111,22 @@ func newWebFetchTool(allow func(netip.Addr) bool) *WebFetchTool {
 				return fmt.Errorf("%w: %s is not a public address", errBlockedAddress, host)
 			}
 			return nil
-		},
+		}
+	} else {
+		proxyFunc = http.ProxyURL(opts.proxy)
+		t.checkTarget = func(ctx context.Context, u *url.URL) error {
+			return checkHost(ctx, u.Hostname(), allow, opts.lookup)
+		}
 	}
 	transport := &http.Transport{
-		Proxy:                 nil,
+		Proxy:                 proxyFunc,
 		DialContext:           dialer.DialContext,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: fetchTimeout,
 		MaxIdleConns:          4,
 		IdleConnTimeout:       30 * time.Second,
 	}
-	client := &http.Client{
+	t.client = &http.Client{
 		Transport: transport,
 		Timeout:   fetchTimeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -93,10 +136,35 @@ func newWebFetchTool(allow func(netip.Addr) bool) *WebFetchTool {
 			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
 				return fmt.Errorf("redirect to unsupported scheme %q", req.URL.Scheme)
 			}
+			if t.checkTarget != nil {
+				return t.checkTarget(req.Context(), req.URL)
+			}
 			return nil
 		},
 	}
-	return &WebFetchTool{client: client}
+	return t
+}
+
+// checkHost refuses host when it is, or resolves to, an address allow
+// rejects. Every resolved address must pass; a failed lookup is refused too.
+func checkHost(ctx context.Context, host string, allow func(netip.Addr) bool,
+	lookup func(context.Context, string) ([]netip.Addr, error)) error {
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if !allow(ip) {
+			return fmt.Errorf("%w: %s is not a public address", errBlockedAddress, host)
+		}
+		return nil
+	}
+	addrs, err := lookup(ctx, host)
+	if err != nil || len(addrs) == 0 {
+		return fmt.Errorf("%w: cannot resolve %s to check it: %v", errBlockedAddress, host, err)
+	}
+	for _, ip := range addrs {
+		if !allow(ip) {
+			return fmt.Errorf("%w: %s resolves to %s, not a public address", errBlockedAddress, host, ip)
+		}
+	}
+	return nil
 }
 
 func (t *WebFetchTool) Name() string     { return "web_fetch" }
@@ -132,6 +200,11 @@ func (t *WebFetchTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	}
 	maxBytes = min(maxBytes, outputLimit(t.maxOut))
 
+	if t.checkTarget != nil {
+		if err := t.checkTarget(ctx, u); err != nil {
+			return nil, fmt.Errorf("web_fetch: refused: %w", err)
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("web_fetch: %w", err)
@@ -141,7 +214,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	resp, err := t.client.Do(req)
 	if err != nil {
 		if errors.Is(err, errBlockedAddress) {
-			return nil, fmt.Errorf("web_fetch: refused: %w", errBlockedAddress)
+			return nil, fmt.Errorf("web_fetch: refused: %w", err)
 		}
 		return nil, fmt.Errorf("web_fetch: %w", err)
 	}

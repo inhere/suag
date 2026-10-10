@@ -1,6 +1,8 @@
 package native
 
 import (
+	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -50,7 +52,7 @@ func TestFetchPage(t *testing.T) {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	tool := NewWebFetchTool(true) // test server is on loopback
+	tool := mustFetchTool(t, true, "") // test server is on loopback
 
 	t.Run("HTML becomes readable text", func(t *testing.T) {
 		out := execTool(t, tool, map[string]any{"url": srv.URL + "/page"})
@@ -85,7 +87,7 @@ func TestFetchRefusesPrivateTargets(t *testing.T) {
 		_, _ = w.Write([]byte("secret"))
 	}))
 	t.Cleanup(srv.Close)
-	tool := NewWebFetchTool(false)
+	tool := mustFetchTool(t, false, "")
 	refused := func(t *testing.T, url string) {
 		t.Helper()
 		_, err := tool.Execute(t.Context(), callWith(map[string]any{"url": url}))
@@ -116,8 +118,70 @@ func TestFetchRefusesPrivateTargets(t *testing.T) {
 		outer := httptest.NewServer(http.RedirectHandler(inner.URL+"/x", http.StatusFound))
 		t.Cleanup(outer.Close)
 		// Only the redirecting server counts as public here.
-		onlyOuter := newWebFetchTool(func(ip netip.Addr) bool { return ip == netip.MustParseAddr("127.0.0.1") })
+		onlyOuter := newWebFetchTool(fetchOptions{allow: func(ip netip.Addr) bool { return ip == netip.MustParseAddr("127.0.0.1") }})
 		_, err = onlyOuter.Execute(t.Context(), callWith(map[string]any{"url": outer.URL}))
 		assert.ErrMsgContains(t, err, "refused")
+	})
+}
+
+func mustFetchTool(t *testing.T, allowPrivate bool, proxy string) *WebFetchTool {
+	t.Helper()
+	tool, err := NewWebFetchTool(allowPrivate, proxy)
+	assert.Require(t, assert.NoErr(t, err))
+	return tool
+}
+
+// TestFetchThroughProxy: with a proxy, requests go to the proxy and the
+// target host is resolved and checked first (and on redirects).
+func TestFetchThroughProxy(t *testing.T) {
+	var seen []string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.String()) // a forward proxy gets the absolute URL
+		if r.URL.Host == "redirect.example" {
+			http.Redirect(w, r, "http://internal.example/admin", http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("via proxy: " + r.URL.String()))
+	}))
+	t.Cleanup(proxy.Close)
+	proxyURL, err := ParseFetchProxy(proxy.URL)
+	assert.Require(t, assert.NoErr(t, err))
+	dns := map[string]string{"public.example": "93.184.216.34", "redirect.example": "93.184.216.35", "internal.example": "10.0.0.5"}
+	tool := newWebFetchTool(fetchOptions{allow: publicIP, proxy: proxyURL,
+		lookup: func(_ context.Context, host string) ([]netip.Addr, error) {
+			if ip, ok := dns[host]; ok {
+				return []netip.Addr{netip.MustParseAddr(ip)}, nil
+			}
+			return nil, errors.New("no such host")
+		}})
+
+	t.Run("public host goes through the proxy", func(t *testing.T) {
+		assert.StrContains(t, execTool(t, tool, map[string]any{"url": "http://public.example/doc"}), "via proxy: http://public.example/doc")
+	})
+	t.Run("host resolving to a private address is refused before the proxy", func(t *testing.T) {
+		before := len(seen)
+		_, err := tool.Execute(t.Context(), callWith(map[string]any{"url": "http://internal.example/"}))
+		assert.ErrMsgContains(t, err, "refused")
+		assert.Eq(t, before, len(seen))
+	})
+	t.Run("private literal and unresolvable hosts are refused", func(t *testing.T) {
+		for _, u := range []string{"http://127.0.0.1/", "http://unknown.example/"} {
+			_, err := tool.Execute(t.Context(), callWith(map[string]any{"url": u}))
+			assert.ErrMsgContains(t, err, "refused", u)
+		}
+	})
+	t.Run("redirect to a private host is refused", func(t *testing.T) {
+		_, err := tool.Execute(t.Context(), callWith(map[string]any{"url": "http://redirect.example/"}))
+		assert.ErrMsgContains(t, err, "not a public address")
+		assert.NotContains(t, strings.Join(seen, " "), "internal.example")
+	})
+	t.Run("invalid proxy URL", func(t *testing.T) {
+		for _, bad := range []string{"ftp://p:1", "127.0.0.1:7890", "http://"} {
+			_, err := NewWebFetchTool(false, bad)
+			assert.ErrMsgContains(t, err, "tools.web_fetch.proxy", bad)
+		}
+		_, err := NewWebFetchTool(false, "socks5://127.0.0.1:7890")
+		assert.NoErr(t, err)
 	})
 }

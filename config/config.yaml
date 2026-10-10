@@ -93,6 +93,7 @@ tools:
   # shell_timeout_max: 600   # max seconds a shell_exec call may ask for (default 120 per call)
   # web_fetch:
   #   allow_private: false   # true lets web_fetch reach private/local addresses
+  #   proxy: ""             # http://, https:// or socks5:// proxy for web_fetch, e.g. http://127.0.0.1:7890
   # No MCP tool is allowed by default: with both lists empty every MCP call is
   # refused. Entries are "server/toolglob" (a bare "toolglob" in auto_allow
   # matches that tool from any server; prefer the qualified form).

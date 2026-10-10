@@ -92,6 +92,7 @@ func nativeEnv(workspace string) native.Env {
 		SerpAPIKey:        gkconfig.String("serpapi_key"),
 		Shell:             gkconfig.String("tools.shell"),
 		FetchAllowPrivate: gkconfig.Bool("tools.web_fetch.allow_private"),
+		FetchProxy:        gkconfig.String("tools.web_fetch.proxy"),
 		ShellTimeoutMax: time.Duration(gkconfig.Int("tools.shell_timeout_max",
 			int(native.DefaultShellTimeoutMax/time.Second))) * time.Second,
 	}
