@@ -2,6 +2,7 @@ package axconfig
 
 import (
 	"strings"
+	"time"
 
 	gkconfig "github.com/gookit/config/v2"
 )
@@ -104,4 +105,10 @@ func stringValue(raw any) string {
 	default:
 		return ""
 	}
+}
+
+// MCPCallTimeout reads mcp.call_timeout_sec (default 120): the bound on one
+// MCP tools/call.
+func MCPCallTimeout() time.Duration {
+	return time.Duration(gkconfig.Int("mcp.call_timeout_sec", 120)) * time.Second
 }

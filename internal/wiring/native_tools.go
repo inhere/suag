@@ -1,0 +1,41 @@
+package wiring
+
+import (
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/internal/platform/tools/native"
+)
+
+// writeToolHint says why write tools are off in this runtime and how the
+// person enables them; it differs per entry (run, chat, ACP).
+func writeToolHint(opts Options) string {
+	switch {
+	case opts.CLIMode && opts.ReadOnly:
+		return "本次以 --read-only 启动，写文件与执行命令的工具不可用；去掉 --read-only 后，run 加 --allow-write，chat 在 SUAG_HOME/config.yaml 设 tools.allow_write: true"
+	case opts.CLIMode && opts.ChatMode:
+		return "chat 默认只读；在 SUAG_HOME/config.yaml 设 tools.allow_write: true 后重新打开 chat"
+	case opts.CLIMode:
+		return "suag run 默认只读；加 --allow-write 重新运行（由 gofer 拉起时需在其 suag run 模板中加 --allow-write）"
+	default:
+		return "ACP 会话为只读（read_only）；需以可写模式打开会话（gofer 侧去掉 --read-only）"
+	}
+}
+
+// disabledToolHints lists the catalog tools that registry lacks with the hint
+// for each: write tools get the per-entry hint, web_search the missing key.
+// Names outside the catalog are not listed: calling them is a plain
+// "not found" that does not count as a denial.
+func disabledToolHints(registry *tools.Registry, opts Options) map[string]string {
+	hints := map[string]string{}
+	for _, spec := range native.Catalog() {
+		if _, err := registry.Get(spec.Name); err == nil {
+			continue
+		}
+		switch {
+		case spec.Write:
+			hints[spec.Name] = writeToolHint(opts)
+		case spec.Name == "web_search":
+			hints[spec.Name] = "未配置 serpapi_key；在 SUAG_HOME/config.yaml 设 serpapi_key 后可用"
+		}
+	}
+	return hints
+}

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,7 +28,13 @@ type ServerConfig struct {
 	Command string   // executable
 	Args    []string // command arguments
 	Env     []string // extra environment variables (KEY=VALUE)
+	// CallTimeout bounds one tools/call (mcp.call_timeout_sec); 0 means
+	// DefaultCallTimeout. A server that never answers must not hang the turn.
+	CallTimeout time.Duration
 }
+
+// DefaultCallTimeout is the default bound on one tools/call.
+const DefaultCallTimeout = 120 * time.Second
 
 const (
 	// stderrTailLimit bounds how much subprocess stderr is kept for diagnostics.
@@ -360,11 +367,20 @@ func (a *mcpToolAdapter) Schema() api.ToolSchema {
 }
 
 func (a *mcpToolAdapter) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
-	result, err := a.client.call(ctx, "tools/call", map[string]any{
+	timeout := a.client.cfg.CallTimeout
+	if timeout <= 0 {
+		timeout = DefaultCallTimeout
+	}
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	result, err := a.client.call(callCtx, "tools/call", map[string]any{
 		"name":      a.def.Name,
 		"arguments": call.Arguments,
 	})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return nil, fmt.Errorf("mcp tool %s (server %s) did not answer within %s", a.def.Name, a.client.cfg.Name, timeout)
+		}
 		return nil, err
 	}
 	var resp struct {

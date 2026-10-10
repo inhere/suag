@@ -17,6 +17,7 @@ import (
 	"github.com/gookit/goutil/x/assert"
 
 	axconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
 // TestFakeServerProcess is the fake stdio MCP server: the test binary re-executes
@@ -48,6 +49,9 @@ func TestFakeServerProcess(t *testing.T) {
 		}
 		if mode == "crash-on-call" && req.Method == "tools/call" {
 			os.Exit(4)
+		}
+		if mode == "hang-on-call" && req.Method == "tools/call" {
+			continue // never answers a tool call
 		}
 		var result any = map[string]any{}
 		if req.Method == "tools/list" {
@@ -188,4 +192,19 @@ func TestClient_CallFailsWhenServerExits(t *testing.T) {
 		client.Stop()
 		assertReaped(t, pidFile)
 	})
+}
+
+func TestToolCallTimeout(t *testing.T) {
+	cfg, _ := fakeConfig(t, "hang-on-call")
+	cfg.CallTimeout = 300 * time.Millisecond
+	client := newClient(cfg)
+	ctx := context.Background()
+	assert.Require(t, assert.NoErr(t, client.Start(ctx)))
+	t.Cleanup(client.Stop)
+	defs, err := client.ListTools(ctx)
+	assert.Require(t, assert.NoErr(t, err))
+	start := time.Now()
+	_, err = client.AsTool(defs[0]).Execute(ctx, api.ToolCall{CallID: "c", Name: "echo"})
+	assert.ErrMsgContains(t, err, "did not answer within 300ms")
+	assert.True(t, time.Since(start) < 3*time.Second)
 }

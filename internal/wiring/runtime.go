@@ -69,6 +69,9 @@ type Runtime struct {
 
 	repo         *store.Store
 	capabilities defaultCapabilities
+	// tools is the registry stack the runner calls (visibility -> approval
+	// -> base); kept for tests.
+	tools agentcore.ToolRegistry
 }
 
 // Close releases the session store and tool providers.
@@ -174,6 +177,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// visibility -> approval -> base registry. Unloaded deferred tools are
 	// answered by visibility and never reach the approver.
 	approval := tools.NewApproval(capabilities.Registry, opts.Approver)
+	approval.SetDisabled(disabledToolHints(capabilities.Registry, opts))
 	vis, err := newToolVisibility(capabilities.Registry, approval, contextWindow)
 	if err != nil {
 		_ = capabilities.Close()
@@ -251,7 +255,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	return &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
-		ContextWindow: contextWindow}, nil
+		ContextWindow: contextWindow, tools: toolRegistry}, nil
 }
 
 // buildMainProvider builds the main provider; with fallback_models the result

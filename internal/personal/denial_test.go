@@ -3,6 +3,7 @@ package personal
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
@@ -131,4 +132,65 @@ func TestRunnerDenialSemantics(t *testing.T) {
 		assert.Eq(t, "recovered", res.Output)
 		assert.Eq(t, 0, len(res.DeniedTools))
 	})
+}
+
+// TestRunnerDisabledAndUnknownTools: a known-but-disabled tool is refused with
+// its enable hint and counts; an unknown name is a plain error that does not.
+func TestRunnerDisabledAndUnknownTools(t *testing.T) {
+	ctx := context.Background()
+	newRunner := func(t *testing.T, repo *store.Store, prov agentcore.Provider) *Runner {
+		reg := tools.NewRegistry()
+		reg.Register(fnTool{name: "act", fn: func() (*agentcore.ToolResult, error) {
+			return &agentcore.ToolResult{Content: "acted"}, nil
+		}})
+		approval := tools.NewApproval(reg, tools.ApproverFunc(func(context.Context, agentcore.ToolCall, tools.Tool) error { return nil }))
+		approval.SetDisabled(map[string]string{"shell_exec": "加 --allow-write"})
+		runner, err := New(Config{Repository: repo, Provider: prov, Tools: approval})
+		assert.Require(t, assert.NoErr(t, err))
+		return runner
+	}
+
+	t.Run("three disabled calls end the turn", func(t *testing.T) {
+		repo := openObserveRepo(t)
+		prov := &reqProv{steps: []*agentcore.GenerateResult{
+			callStep("c1", "shell_exec", nil),
+			callStep("c2", "shell_exec", nil),
+			callStep("c3", "shell_exec", nil),
+			{Content: "never reached", FinishReason: agentcore.FinishFinal},
+		}}
+		res, err := newRunner(t, repo, prov).Run(ctx, RunRequest{Prompt: "go"})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.True(t, res.DenialLimitReached)
+		assert.Eq(t, 3, len(prov.reqs))
+		assert.StrContains(t, toolResultText(prov.reqs[1]), "加 --allow-write")
+	})
+	t.Run("unknown names do not count", func(t *testing.T) {
+		repo := openObserveRepo(t)
+		prov := &reqProv{steps: []*agentcore.GenerateResult{
+			callStep("c1", "bash", nil),
+			callStep("c2", "bash", nil),
+			callStep("c3", "bash", nil),
+			{Content: "done", FinishReason: agentcore.FinishFinal},
+		}}
+		res, err := newRunner(t, repo, prov).Run(ctx, RunRequest{Prompt: "go"})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.False(t, res.DenialLimitReached)
+		assert.Eq(t, "done", res.Output)
+		assert.StrContains(t, toolResultText(prov.reqs[1]), "available tools: act")
+	})
+}
+
+// toolResultText joins the tool result contents (and tool error texts) a
+// request carries.
+func toolResultText(req *agentcore.GenerateRequest) string {
+	var sb strings.Builder
+	for _, m := range req.Messages {
+		if m.ToolResult != nil {
+			sb.WriteString(m.ToolResult.Content + "\n")
+		}
+		if m.Role == "tool" {
+			sb.WriteString(m.Content + "\n")
+		}
+	}
+	return sb.String()
 }

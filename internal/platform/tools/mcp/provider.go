@@ -59,6 +59,8 @@ func NewProvider(ctx context.Context, settings axconfig.MCPServerSettings) (*Pro
 		Command: settings.Command,
 		Args:    append([]string(nil), settings.Args...),
 		Env:     formatEnvMap(settings.Env),
+
+		CallTimeout: axconfig.MCPCallTimeout(),
 	}
 
 	// Startup (spawn + initialize + tools/list) is bounded and honors the caller's
