@@ -1,6 +1,6 @@
 module github.com/inhere/suag
 
-go 1.25
+go 1.26.0
 
 require (
 	github.com/coder/acp-go-sdk v0.13.5
@@ -11,7 +11,7 @@ require (
 	github.com/gookit/goutil v0.8.2
 	github.com/gookit/ini/v2 v2.3.2
 	golang.org/x/net v0.35.0
-	golang.org/x/sys v0.30.0
+	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.29.0
 	golang.org/x/text v0.22.0
 	modernc.org/sqlite v1.31.1
