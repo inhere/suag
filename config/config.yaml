@@ -84,12 +84,15 @@ tools:
   # chat only (run needs --allow-write; --read-only wins; ACP ignores it):
   # allow_write: true  # boolean, default false: enable file_write / shell_exec
   # chat only: ask (default) confirms every non-MCP tool outside the read-only
-  # list (file_read, file_list, update_plan, tool_search, web_search) on the terminal;
+  # list (file_read, file_list, file_grep, file_find, web_fetch, web_search,
+  # skill, update_plan, tool_search) on the terminal;
   # auto never asks. Without a terminal, tools needing confirmation are refused.
   # approval: ask
   # max_output_bytes: 30000  # cap on one stored tool result (UTF-8 safe)
   # shell: ""                # shell_exec shell; default pwsh/powershell on Windows, sh elsewhere
   # shell_timeout_max: 600   # max seconds a shell_exec call may ask for (default 120 per call)
+  # web_fetch:
+  #   allow_private: false   # true lets web_fetch reach private/local addresses
   # No MCP tool is allowed by default: with both lists empty every MCP call is
   # refused. Entries are "server/toolglob" (a bare "toolglob" in auto_allow
   # matches that tool from any server; prefer the qualified form).

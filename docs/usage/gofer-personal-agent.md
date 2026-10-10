@@ -83,7 +83,13 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 
 ### 内置工具与相关配置
 
-内置工具来自同一份清单，run、chat、ACP 共用：读工具 `file_read`（按行分段，`offset`/`limit`，默认 2000 行，带行号）、`file_list`（`depth` ≤ 5、`max_entries` 500，不进入 `.git`/`node_modules`/`vendor`/`dist`，symlink 不跟随）、`web_search`（配置 `serpapi_key` 时注册，只读模式也可用）；写工具 `file_write`、`shell_exec` 只在可写时注册。`update_plan` 各模式都有。
+内置工具来自同一份清单，run、chat、ACP 共用：
+
+- 读工具（只读模式也有，chat 不询问）：`file_read`（按行分段，`offset`/`limit`，默认 2000 行，带行号）、`file_list`（`depth` ≤ 5、`max_entries` 500）、`file_grep`（RE2 正则，`path`/`glob`/`ignore_case`/`output: content|files`/`max_results` 默认 100 上限 1000）、`file_find`（`**` glob，按修改时间新到旧，默认 200 条）、`web_fetch`（http(s)，20 秒、下载上限 5MB、最多 5 次跳转，HTML 转为保留标题/链接/代码块的文本，默认返回 20000 字节）、`web_search`（配置 `serpapi_key` 时注册）、`skill`（见下）。`update_plan` 各模式都有。
+- 写工具（`--allow-write` / `tools.allow_write` / ACP `default` mode）：`file_write`（整文件写）、`file_edit`（按唯一字符串替换，`replace_all` 替换全部，保留 CRLF）、`shell_exec`。
+- 文件类工具都经 `os.OpenRoot` 限制在工作区内，不跟随指向外部的 symlink；`file_list`/`file_grep`/`file_find` 不进入 `.git`、`node_modules`、`vendor`、`dist` 与根 `.gitignore` 的简单模式（不支持 `!` 与子目录 `.gitignore`），`file_grep` 跳过二进制与超过 1MB 的文件；搜索超过 10 秒返回已有结果并注明不完整。
+- `web_fetch` 在拨号时检查实际连接的 IP，拒绝回环、私网、链路本地（含云元数据地址）、CGNAT 与组播地址，跳转与 DNS 重绑定同样受限；不使用环境代理（`HTTPS_PROXY` 等），所以只能抓主机直连可达的站点。`tools.web_fetch.allow_private: true` 可放开内网限制。
+- skills：启动时扫描一次 `<工作区>/.agents/skills`、`<工作区>/skills`、`~/.agents/skills` 下的 `SKILL.md`（frontmatter 含 `name`、`description`，可选 `allowed-tools` 仅展示），同名时工作区优先，无效文件记警告后跳过。系统提示词列出“名字 — 描述”（描述截到 160 字符），模型用 `skill` 工具取正文与目录文件列表，`file` 参数只能读该 skill 目录内的文件。
 
 `shell_exec` 在 Windows 用 PowerShell（优先 `pwsh`，否则 `powershell`），输出固定 UTF-8，返回原生命令的退出码；其他系统用 `sh -c`。每次调用可传 `timeout`（秒，默认 120），超时后整组进程（Unix 进程组 / Windows job object）被终止，已有输出与退出码照常返回；后台残留进程占住输出时最多再等 2 秒。命令以 `GIT_TERMINAL_PROMPT=0`、`GIT_PAGER=cat`、`PAGER=cat` 运行，没有标准输入。
 
@@ -98,7 +104,7 @@ Suag 每个进程生成一次基础系统提示词（系统与 shell、工作区
 
 Gofer 中两种 `suag run` 用法：
 
-- 只读（模板缺省）：模型只能读文件、列目录、搜索网页，要改文件或跑命令时会说明需要 `--allow-write`。
+- 只读（模板缺省）：模型可读、列、搜索文件，抓取网页，使用 skills；要改文件或跑命令时会说明需要 `--allow-write`。
 - 可写：在 `suag` agent 的 `args` / `session_resume` 中加入 `--allow-write`，模型可写文件、执行 shell（run 没有逐次确认，适合可信的本机任务）。需要逐次审批时用 `suag-acp`：审批请求的等待时长与超时处理由 Gofer 的 `permission_policy` 决定。
 
 ### chat 的写权限与终端确认
@@ -106,7 +112,7 @@ Gofer 中两种 `suag run` 用法：
 仅作用于 `suag chat`（`run` 与 ACP 行为不变）：
 
 - `tools.allow_write`（布尔，缺省 `false`）：为 `true` 时 chat 启用写文件与命令工具，等同 `--allow-write`。`run` 仍需 `--allow-write`；`--read-only` 优先；ACP 不读取该项；非布尔值使 chat 启动失败。
-- `tools.approval`（`ask` 缺省 / `auto`）：`ask` 时，只读名单（`file_read`、`file_list`、`update_plan`、`tool_search`、`web_search`）之外的所有非 MCP 工具（目前是 `file_write`、`shell_exec`）执行前在终端询问，显示完整命令 / 路径与字节数 / 查询（已脱敏、不截断）。回答 `y`/`yes` 允许一次，`a`/`always` 在本次 chat 进程内放行后续同名工具，其他（含回车）拒绝，回合继续。询问中 Ctrl-C / Ctrl-D 只取消本回合并显示“已取消”，不退出 chat；回合中提前敲的输入不会被当作回答。提示符处按一次 Ctrl-C 只清掉已输入内容并提示，3 秒内再按一次才退出 chat；Ctrl-D 直接退出。`auto` 不询问。
+- `tools.approval`（`ask` 缺省 / `auto`）：`ask` 时，只读名单（`file_read`、`file_list`、`file_grep`、`file_find`、`web_fetch`、`web_search`、`skill`、`update_plan`、`tool_search`）之外的所有非 MCP 工具（目前是 `file_write`、`file_edit`、`shell_exec`）执行前在终端询问；`file_edit` 的询问显示路径与原文/改为各前 20 行执行前在终端询问，显示完整命令 / 路径与字节数 / 查询（已脱敏、不截断）。回答 `y`/`yes` 允许一次，`a`/`always` 在本次 chat 进程内放行后续同名工具，其他（含回车）拒绝，回合继续。询问中 Ctrl-C / Ctrl-D 只取消本回合并显示“已取消”，不退出 chat；回合中提前敲的输入不会被当作回答。提示符处按一次 Ctrl-C 只清掉已输入内容并提示，3 秒内再按一次才退出 chat；Ctrl-D 直接退出。`auto` 不询问。
 - 标准输入不是终端时，需确认的工具一律拒绝，并提示设置 `tools.approval: auto`。
 - 同一回合 3 次拒绝结束回合；回合末显示“本轮被拒绝的工具：…”。
 - MCP 工具不询问，仍按 `tools.auto_allow` / `tools.read_only_allow`。
