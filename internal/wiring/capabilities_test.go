@@ -11,7 +11,6 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/internal/capability/runtimecaps"
 	capskills "github.com/inhere/suag/internal/capability/skills"
 	axconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/platform/tools"
@@ -19,7 +18,7 @@ import (
 	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 )
 
-func TestBuildDefaultCapabilities_RegistersNativeToolsAndCapabilitySet(t *testing.T) {
+func TestBuildDefaultCapabilities_RegistersNativeTools(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 
@@ -32,16 +31,13 @@ func TestBuildDefaultCapabilities_RegistersNativeToolsAndCapabilitySet(t *testin
 	})
 
 	assert.NotNil(t, built.Registry)
-	assert.NotNil(t, built.Manager)
 
 	assert.NotNil(t, mustGetTool(t, built.Registry, "file_read"))
 	assert.NotNil(t, mustGetTool(t, built.Registry, "file_write"))
 	assert.NotNil(t, mustGetTool(t, built.Registry, "file_list"))
 	assert.NotNil(t, mustGetTool(t, built.Registry, "shell_exec"))
 
-	set := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
-	resolved := built.Manager.ResolveTurnCapabilities(set)
-	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "web_fetch", "file_edit", "shell_exec"}, resolved.ToolNames)
+	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "web_fetch", "file_edit", "shell_exec"}, built.Registry.List())
 }
 
 func TestBuildDefaultCapabilities_RegistersWebSearchWhenConfigured(t *testing.T) {
@@ -58,26 +54,7 @@ func TestBuildDefaultCapabilities_RegistersWebSearchWhenConfigured(t *testing.T)
 
 	assert.NotNil(t, mustGetTool(t, built.Registry, "web_search"))
 
-	set := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
-	resolved := built.Manager.ResolveTurnCapabilities(set)
-	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "web_fetch", "file_edit", "shell_exec", "web_search"}, resolved.ToolNames)
-}
-
-func TestBuildDefaultCapabilities_ResolvedRegistryMatchesCapabilityNames(t *testing.T) {
-	gkconfig.Reset()
-	t.Cleanup(gkconfig.Reset)
-
-	built, err := buildDefaultCapabilities(t.TempDir())
-	assert.NoErr(t, err)
-	t.Cleanup(func() {
-		assert.NoErr(t, built.Close())
-	})
-
-	set := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
-	resolved := built.Manager.ResolveTurnCapabilities(set)
-	subset := built.Registry.Subset(resolved.ToolNames)
-
-	assertToolNamesEq(t, resolved.ToolNames, subset.List())
+	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "web_fetch", "file_edit", "shell_exec", "web_search"}, built.Registry.List())
 }
 
 func mustGetTool(t *testing.T, registry *tools.Registry, name string) tools.Tool {
@@ -86,27 +63,6 @@ func mustGetTool(t *testing.T, registry *tools.Registry, name string) tools.Tool
 	tool, err := registry.Get(name)
 	assert.NoErr(t, err)
 	return tool
-}
-
-func TestBuildDefaultCapabilities_StaticProviderReturnsCopy(t *testing.T) {
-	gkconfig.Reset()
-	t.Cleanup(gkconfig.Reset)
-
-	built, err := buildDefaultCapabilities(t.TempDir())
-	assert.NoErr(t, err)
-	t.Cleanup(func() {
-		assert.NoErr(t, built.Close())
-	})
-	refs, err := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{}).Tools, error(nil)
-	assert.NoErr(t, err)
-	assert.True(t, len(refs) > 0)
-
-	refs[0].Name = "mutated"
-
-	resolved := built.Manager.ResolveTurnCapabilities(
-		built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{}),
-	)
-	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "web_fetch", "file_edit", "shell_exec"}, resolved.ToolNames)
 }
 
 func TestBuildDefaultCapabilities_RegistersConfiguredMCPTools(t *testing.T) {
@@ -139,9 +95,7 @@ func TestBuildDefaultCapabilities_RegistersConfiguredMCPTools(t *testing.T) {
 
 	assert.NotNil(t, mustGetTool(t, built.Registry, "mcp_echo"))
 
-	set := built.Manager.BuildDefaultCapabilitySet(runtimecaps.BuildSetInput{})
-	resolved := built.Manager.ResolveTurnCapabilities(set)
-	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "web_fetch", "file_edit", "shell_exec", "mcp_echo"}, resolved.ToolNames)
+	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "web_fetch", "file_edit", "shell_exec", "mcp_echo"}, built.Registry.List())
 }
 
 func TestPersonalCapabilitiesUseACPStdioMCPOnlyInWritableMode(t *testing.T) {

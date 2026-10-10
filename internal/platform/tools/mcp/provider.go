@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/internal/capability/runtimecaps"
 	axconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/platform/tools"
 )
@@ -97,24 +96,6 @@ func (p *Provider) ID() string {
 		return ""
 	}
 	return p.id
-}
-
-func (p *Provider) ListToolRefs(ctx context.Context) ([]runtimecaps.ToolRef, error) {
-	_ = ctx
-
-	if p == nil || len(p.tools) == 0 {
-		return nil, nil
-	}
-
-	refs := make([]runtimecaps.ToolRef, 0, len(p.tools))
-	for _, tool := range p.tools {
-		refs = append(refs, runtimecaps.ToolRef{
-			Name:       tool.Name(),
-			Source:     string(tools.KindMCP),
-			ProviderID: p.id,
-		})
-	}
-	return refs, nil
 }
 
 func (p *Provider) RegisterTools(registry *tools.Registry) error {

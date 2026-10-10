@@ -7,7 +7,6 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	"github.com/inhere/suag/internal/capability/runtimecaps"
 	axconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/platform/tools"
 	toolsmcp "github.com/inhere/suag/internal/platform/tools/mcp"
@@ -15,10 +14,7 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
-const nativeToolProviderID = "native"
-
 type capabilityToolProvider interface {
-	runtimecaps.ToolProvider
 	RegisterTools(registry *tools.Registry) error
 	Close() error
 }
@@ -29,7 +25,6 @@ var mcpProviderFactory = func(ctx context.Context, settings axconfig.MCPServerSe
 
 type defaultCapabilities struct {
 	Registry *tools.Registry
-	Manager  *runtimecaps.CapabilityManager
 	closers  []capabilityToolProvider
 }
 
@@ -41,18 +36,10 @@ func buildDefaultCapabilities(workspace string) (defaultCapabilities, error) {
 
 func buildDefaultCapabilitiesWithServers(ctx context.Context, workspace string, additional []axconfig.MCPServerSettings) (defaultCapabilities, error) {
 	registry := tools.NewRegistry()
-	manager := runtimecaps.NewManager()
-
-	toolRefs := make([]runtimecaps.ToolRef, 0, 5)
 	for _, tool := range native.BuildTools(nativeEnv(workspace), true) {
-		registerNativeTool(registry, &toolRefs, tool)
+		registry.MustRegister(tool)
 	}
-
-	manager.MustRegisterToolProvider(runtimecaps.NewStaticToolProvider(nativeToolProviderID, toolRefs))
-	built := defaultCapabilities{
-		Registry: registry,
-		Manager:  manager,
-	}
+	built := defaultCapabilities{Registry: registry}
 	servers := append(axconfig.ReadMCPServerSettings(), additional...)
 	for _, settings := range servers {
 		provider, err := mcpProviderFactory(ctx, settings)
@@ -65,7 +52,6 @@ func buildDefaultCapabilitiesWithServers(ctx context.Context, workspace string, 
 			_ = built.Close()
 			return defaultCapabilities{}, fmt.Errorf("register mcp tools for %q: %w", settings.ID, err)
 		}
-		manager.MustRegisterToolProvider(provider)
 		built.closers = append(built.closers, provider)
 	}
 	return built, nil
@@ -96,15 +82,6 @@ func nativeEnv(workspace string) native.Env {
 		ShellTimeoutMax: time.Duration(gkconfig.Int("tools.shell_timeout_max",
 			int(native.DefaultShellTimeoutMax/time.Second))) * time.Second,
 	}
-}
-
-func registerNativeTool(registry *tools.Registry, refs *[]runtimecaps.ToolRef, tool tools.Tool) {
-	registry.MustRegister(tool)
-	*refs = append(*refs, runtimecaps.ToolRef{
-		Name:       tool.Name(),
-		Source:     string(tool.Kind()),
-		ProviderID: nativeToolProviderID,
-	})
 }
 
 func swapMCPProviderFactoryForTest(factory func(ctx context.Context, settings axconfig.MCPServerSettings) (capabilityToolProvider, error)) func() {

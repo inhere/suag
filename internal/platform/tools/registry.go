@@ -15,11 +15,8 @@ import (
 type Kind string
 
 const (
-	KindNative   Kind = "native"
-	KindMCP      Kind = "mcp"
-	KindSkill    Kind = "skill"
-	KindBrowser  Kind = "browser"
-	KindExtAgent Kind = "ext_agent"
+	KindNative Kind = "native"
+	KindMCP    Kind = "mcp"
 )
 
 // ErrDenied is the sentinel for a tool call refused by a permission layer
@@ -114,21 +111,6 @@ func (r *Registry) Get(name string) (Tool, error) {
 	return t, nil
 }
 
-// Execute dispatches a tool call by name.
-func (r *Registry) Execute(ctx context.Context, name string, args map[string]any) (string, error) {
-	result, err := r.ExecuteTool(ctx, api.ToolCall{
-		Name:      name,
-		Arguments: args,
-	})
-	if err != nil {
-		return "", err
-	}
-	if result == nil {
-		return "", nil
-	}
-	return result.Content, nil
-}
-
 // Schemas returns the ToolSchema list for all registered tools in deterministic order.
 func (r *Registry) Schemas() []api.ToolSchema {
 	r.mu.RLock()
@@ -195,26 +177,6 @@ func (r *Registry) List() []string {
 		names = append(names, name)
 	}
 	return names
-}
-
-// Subset returns a new registry containing only the named tools that exist.
-func (r *Registry) Subset(names []string) *Registry {
-	subset := NewRegistry()
-	if len(names) == 0 {
-		return subset
-	}
-
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	for _, name := range names {
-		tool, ok := r.tools[name]
-		if !ok {
-			continue
-		}
-		subset.tools[name] = tool
-	}
-	return subset
 }
 
 func cloneToolCall(call api.ToolCall) api.ToolCall {

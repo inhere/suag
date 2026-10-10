@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"sort"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
@@ -11,7 +12,7 @@ import (
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
-func TestProvider_RegisterToolsAndListToolRefs(t *testing.T) {
+func TestProvider_RegisterTools(t *testing.T) {
 	registry := tools.NewRegistry()
 	provider := &Provider{
 		id: "mcp.filesystem",
@@ -24,16 +25,9 @@ func TestProvider_RegisterToolsAndListToolRefs(t *testing.T) {
 	err := provider.RegisterTools(registry)
 	assert.NoErr(t, err)
 
-	refs, err := provider.ListToolRefs(context.Background())
+	read, err := registry.Get("fs_read")
 	assert.NoErr(t, err)
-	assert.Eq(t, 2, len(refs))
-	assert.Eq(t, "fs_read", refs[0].Name)
-	assert.Eq(t, string(tools.KindMCP), refs[0].Source)
-	assert.Eq(t, "mcp.filesystem", refs[0].ProviderID)
-	assert.Eq(t, "fs_write", refs[1].Name)
-
-	_, err = registry.Get("fs_read")
-	assert.NoErr(t, err)
+	assert.Eq(t, tools.KindMCP, read.Kind())
 	_, err = registry.Get("fs_write")
 	assert.NoErr(t, err)
 }
@@ -79,11 +73,11 @@ func TestNewProvider_StartsClientAndLoadsTools(t *testing.T) {
 
 	assert.Eq(t, "mcp.filesystem", provider.ID())
 
-	refs, err := provider.ListToolRefs(context.Background())
-	assert.NoErr(t, err)
-	assert.Eq(t, 2, len(refs))
-	assert.Eq(t, "fs_read", refs[0].Name)
-	assert.Eq(t, "fs_write", refs[1].Name)
+	registry := tools.NewRegistry()
+	assert.NoErr(t, provider.RegisterTools(registry))
+	names := registry.List()
+	sort.Strings(names)
+	assert.Eq(t, []string{"fs_read", "fs_write"}, names)
 }
 
 func swapNewClientForTest(factory func(cfg ServerConfig) toolClient) func() {

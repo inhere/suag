@@ -17,6 +17,7 @@ import (
 	"github.com/gookit/goutil/x/assert"
 
 	axconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
@@ -160,9 +161,9 @@ func TestNewProvider_StartupFailures(t *testing.T) {
 		provider, err := NewProvider(context.Background(), settings)
 		assert.NoErr(t, err)
 		defer provider.Close()
-		refs, err := provider.ListToolRefs(context.Background())
-		assert.NoErr(t, err)
-		assert.Eq(t, 1, len(refs))
+		registry := tools.NewRegistry()
+		assert.NoErr(t, provider.RegisterTools(registry))
+		assert.Eq(t, []string{"echo"}, registry.List())
 	})
 }
 
