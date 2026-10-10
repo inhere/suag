@@ -59,10 +59,11 @@ type permissionHook struct {
 	cwd       string
 	readOnly  bool
 	sequence  uint64
-	// isMCP marks MCP-backed tools (set after the runtime opens). They never
-	// take the name-based fast path, so an MCP tool called "web_search" cannot
-	// pass for the built-in read tool.
-	isMCP func(name string) bool
+	// lookup resolves a tool name in this runtime (set after it opens); the
+	// announced kind and the read-only fast path come from the tool's
+	// tools.Meta, so an MCP tool called "web_search" cannot pass for the
+	// built-in read tool.
+	lookup func(name string) agentcore.Tool
 
 	mu    sync.Mutex
 	calls map[acp.ToolCallId]*pendingCall
@@ -85,10 +86,7 @@ func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEv
 		call.CallID = fmt.Sprintf("%s-%d", event.RunID, h.sequence)
 	}
 	id := acp.ToolCallId(call.CallID)
-	kind, readTool := toolKind(call.Name)
-	if h.isMCP != nil && h.isMCP(call.Name) {
-		kind, readTool = acp.ToolKindOther, false
-	}
+	kind, readTool := toolKind(h.tool(call.Name))
 	locations := toolLocations(h.cwd, call.Arguments)
 	content := toolDiff(h.cwd, kind, locations, call.Arguments)
 	h.mu.Lock()
@@ -122,7 +120,7 @@ func (h *permissionHook) Decide(ctx context.Context, call agentcore.ToolCall, to
 	h.mu.Unlock()
 	if pending == nil {
 		// Not announced by BeforeTool (should not happen): classify here.
-		kind, readTool := toolKind(call.Name)
+		kind, readTool := toolKind(h.tool(call.Name))
 		pending = &pendingCall{kind: kind, readTool: readTool, locations: toolLocations(h.cwd, call.Arguments)}
 		pending.content = toolDiff(h.cwd, kind, pending.locations, call.Arguments)
 		h.mu.Lock()
@@ -133,7 +131,7 @@ func (h *permissionHook) Decide(ctx context.Context, call agentcore.ToolCall, to
 		h.mu.Unlock()
 	}
 	kind, readTool := pending.kind, pending.readTool
-	if tools.KindOf(tool) == tools.KindMCP {
+	if tools.IsMCP(tool) {
 		kind, readTool = acp.ToolKindOther, false
 	}
 	if h.readOnly && !readTool {
@@ -330,27 +328,34 @@ func textual(s string) bool {
 	return utf8.ValidString(s) && !strings.ContainsRune(s, 0)
 }
 
-func toolKind(name string) (acp.ToolKind, bool) {
-	switch name {
-	case "file_read", "file_list", "skill":
-		return acp.ToolKindRead, true
-	case "file_write", "file_edit":
-		return acp.ToolKindEdit, false
-	case "shell_exec":
-		return acp.ToolKindExecute, false
-	case "update_plan":
-		// Only writes session state; allowed in read_only without a prompt.
-		return acp.ToolKindThink, true
-	case "web_search", "file_grep", "file_find":
-		return acp.ToolKindSearch, true
-	case "tool_search":
-		// Only loads deferred tool schemas; no side effects, no prompt.
-		return acp.ToolKindSearch, true
-	case "web_fetch":
-		return acp.ToolKindFetch, true
-	default:
-		return acp.ToolKindOther, false // Unknown MCP tools require permission.
+// tool resolves name in this runtime; nil when unknown or without lookup.
+func (h *permissionHook) tool(name string) agentcore.Tool {
+	if h.lookup == nil {
+		return nil
 	}
+	return h.lookup(name)
+}
+
+// acpKinds maps the neutral tool categories onto ACP tool kinds.
+var acpKinds = map[tools.Category]acp.ToolKind{
+	tools.CategoryRead:    acp.ToolKindRead,
+	tools.CategoryEdit:    acp.ToolKindEdit,
+	tools.CategoryExecute: acp.ToolKindExecute,
+	tools.CategorySearch:  acp.ToolKindSearch,
+	tools.CategoryFetch:   acp.ToolKindFetch,
+	tools.CategoryThink:   acp.ToolKindThink,
+}
+
+// toolKind returns the ACP kind of tool and whether it is read-only (runs
+// without a permission request, also in read_only mode). Unknown tools, MCP
+// tools and tools that declare nothing are Other and require permission.
+func toolKind(tool agentcore.Tool) (acp.ToolKind, bool) {
+	meta := tools.MetaOf(tool)
+	kind, ok := acpKinds[meta.Category]
+	if !ok {
+		kind = acp.ToolKindOther
+	}
+	return kind, meta.ReadOnly
 }
 
 func mcpSettings(servers []acp.McpServer) ([]mcp.ServerSettings, error) {

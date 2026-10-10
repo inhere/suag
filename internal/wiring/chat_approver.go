@@ -16,16 +16,10 @@ import (
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
-// chatReadOnlyTools never need a confirmation in chat. Every other non-MCP tool
-// (file_write, shell_exec and any tool added later) is asked about.
-var chatReadOnlyTools = map[string]bool{
-	"file_read": true, "file_list": true, "update_plan": true, "tool_search": true,
-	"web_search": true, "file_grep": true, "file_find": true, "web_fetch": true, "skill": true,
-}
-
 // chatApprover is the chat tools.Approver: MCP tools keep the cliMCPGate rules
-// (never asked), read-only tools run, and the other tools are confirmed by the
-// person (tools.approval: ask) or run (tools.approval: auto).
+// (never asked), read-only tools (tools.MetaOf) run, and every other tool
+// (file_write, shell_exec and any tool that declares nothing) is confirmed by
+// the person (tools.approval: ask) or run (tools.approval: auto).
 type chatApprover struct {
 	gate      *cliMCPGate
 	auto      bool
@@ -60,11 +54,11 @@ func toolsApprovalAuto() (bool, error) {
 }
 
 func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool agentcore.Tool) error {
-	if tools.KindOf(tool) == tools.KindMCP {
+	if tools.IsMCP(tool) {
 		return a.gate.Decide(ctx, call, tool)
 	}
 	name := call.Name
-	if chatReadOnlyTools[name] || a.auto {
+	if tools.MetaOf(tool).ReadOnly || a.auto {
 		return nil
 	}
 	a.mu.Lock()

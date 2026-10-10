@@ -96,9 +96,6 @@ type tableMCPTool struct {
 
 func (t *tableMCPTool) MCPServer() string { return t.server }
 
-// isMCPTool mirrors the CLI's ACP wiring: a registered tool of MCP kind.
-func isMCPTool(tool agentcore.Tool) bool { return tool != nil && tools.KindOf(tool) == tools.KindMCP }
-
 // newTableHook returns a permission hook wired to a client that rejects every
 // permission request.
 func newTableHook(t *testing.T, cwd string, readOnly bool, client *testACPClient) *permissionHook {
@@ -152,12 +149,11 @@ func TestPolicyTable(t *testing.T) {
 	for i, row := range policyRows() {
 		tool := row.tool(t, cwd)
 		t.Run(fmt.Sprintf("%02d_%s", i, row.name), func(t *testing.T) {
-			mcp := isMCPTool(tool)
-			isMCP := func(string) bool { return mcp }
+			lookup := func(string) agentcore.Tool { return tool }
 			outcome := func(readOnly bool, tool agentcore.Tool, id string) (string, *pendingCall) {
 				client := &testACPClient{selected: "reject"}
 				hook := newTableHook(t, cwd, readOnly, client)
-				hook.isMCP = isMCP
+				hook.lookup = lookup
 				return policyOutcome(t, hook, client, agentcore.ToolCall{CallID: id, Name: row.name, Arguments: args}, tool)
 			}
 

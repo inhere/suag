@@ -330,3 +330,34 @@ func TestKindOf(t *testing.T) {
 	assert.NoErr(t, err)
 	assert.Eq(t, KindNative, KindOf(got))
 }
+
+// describedTool declares metadata; mcp makes it an MCP tool.
+type describedTool struct {
+	plainTool
+	meta Meta
+	mcp  bool
+}
+
+func (d describedTool) ToolMeta() Meta { return d.meta }
+func (d describedTool) Kind() Kind {
+	if d.mcp {
+		return KindMCP
+	}
+	return KindNative
+}
+func (describedTool) MCPServer() string { return "srv" }
+
+func TestMetaOf(t *testing.T) {
+	other := Meta{Category: CategoryOther}
+	assert.Eq(t, other, MetaOf(nil))
+	assert.Eq(t, other, MetaOf(plainTool{}))
+	read := Meta{Category: CategoryRead, ReadOnly: true}
+	assert.Eq(t, read, MetaOf(describedTool{meta: read}))
+	assert.Eq(t, Meta{Category: CategoryOther, ReadOnly: true}, MetaOf(describedTool{meta: Meta{ReadOnly: true}}))
+	// An MCP tool is never trusted by its own declaration.
+	assert.Eq(t, other, MetaOf(describedTool{meta: read, mcp: true}))
+	assert.True(t, IsMCP(describedTool{mcp: true}))
+	assert.False(t, IsMCP(nil))
+	assert.Eq(t, "srv", MCPServerOf(describedTool{}))
+	assert.Eq(t, "", MCPServerOf(plainTool{}))
+}

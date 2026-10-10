@@ -4,6 +4,7 @@ package native
 import (
 	"context"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"io"
 	"os"
 	"path/filepath"
@@ -29,6 +30,11 @@ func NewFileTools(workspace string) []api.Tool {
 func (t *FileWriteTool) Name() string { return "file_write" }
 func (t *FileWriteTool) Description() string {
 	return "Write content to a file in the workspace. Creates parent directories as needed."
+}
+
+// ToolMeta marks the tool as an edit: it changes workspace files.
+func (*FileWriteTool) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategoryEdit, ReadOnly: false}
 }
 func (t *FileWriteTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

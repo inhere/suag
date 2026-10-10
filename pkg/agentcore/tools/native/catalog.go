@@ -2,6 +2,7 @@ package native
 
 import (
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"time"
 )
 
@@ -26,18 +27,16 @@ type Env struct {
 	FetchProxy string
 }
 
-// Spec is one entry of the native tool catalog.
+// Spec is one entry of the native tool catalog. Whether a tool writes is its
+// own tools.Meta (ToolMeta), not a catalog flag.
 type Spec struct {
 	Name string
-	// Write marks tools that change files or run commands; they are only
-	// registered when writing is allowed.
-	Write bool
 	// New builds the tool, or returns nil when env lacks what it needs
 	// (web_search without a key).
 	New func(env Env) api.Tool
 }
 
-// Catalog lists every native tool with its read/write flag. run, chat and ACP
+// Catalog lists every native tool. run, chat and ACP
 // all register from this one list; update_plan and tool_search are wired
 // separately because they depend on session state, not on Env.
 func Catalog() []Spec {
@@ -62,13 +61,13 @@ func Catalog() []Spec {
 			t.maxOut = env.MaxOutputBytes
 			return t
 		}},
-		{Name: "file_write", Write: true, New: func(env Env) api.Tool {
+		{Name: "file_write", New: func(env Env) api.Tool {
 			return &FileWriteTool{workspace: env.Workspace}
 		}},
-		{Name: "file_edit", Write: true, New: func(env Env) api.Tool {
+		{Name: "file_edit", New: func(env Env) api.Tool {
 			return &FileEditTool{workspace: env.Workspace}
 		}},
-		{Name: "shell_exec", Write: true, New: func(env Env) api.Tool {
+		{Name: "shell_exec", New: func(env Env) api.Tool {
 			t := NewShellExecTool(env.Workspace, 0)
 			t.shell = resolveShell(env.Shell)
 			t.maxOut = env.MaxOutputBytes
@@ -90,16 +89,16 @@ func Catalog() []Spec {
 }
 
 // BuildTools returns the catalog tools available in env, in catalog order.
-// Write tools are skipped unless allowWrite is set.
+// Tools that are not read-only (tools.MetaOf) are skipped unless allowWrite
+// is set.
 func BuildTools(env Env, allowWrite bool) []api.Tool {
 	var out []api.Tool
 	for _, spec := range Catalog() {
-		if spec.Write && !allowWrite {
+		t := spec.New(env)
+		if t == nil || (!allowWrite && !tools.MetaOf(t).ReadOnly) {
 			continue
 		}
-		if t := spec.New(env); t != nil {
-			out = append(out, t)
-		}
+		out = append(out, t)
 	}
 	return out
 }

@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"io"
 	"os"
 	"path/filepath"
@@ -39,6 +40,11 @@ func (t *SkillTool) Description() string {
 		"those files (path relative to the skill directory). Follow the instructions you load. " +
 		"To find skills not listed in the system prompt, pass query (keywords) instead of name: returns matching names and descriptions; " +
 		"query \"*\" lists every skill name."
+}
+
+// ToolMeta marks the tool as a read-only read.
+func (*SkillTool) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategoryRead, ReadOnly: true}
 }
 func (t *SkillTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

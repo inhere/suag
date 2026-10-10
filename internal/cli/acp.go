@@ -48,10 +48,13 @@ func RunPersonalACP(ctx context.Context, input io.Reader, output io.Writer) erro
 			return acpserver.Runtime{}, err
 		}
 		registry := runtime.Registry
-		isMCP := func(name string) bool {
+		lookup := func(name string) agentcore.Tool {
 			tool, err := registry.Get(name)
-			return err == nil && tools.KindOf(tool) == tools.KindMCP
+			if err != nil {
+				return nil
+			}
+			return tool
 		}
-		return acpserver.Runtime{Runner: runtime.Runner, Close: runtime.Close, IsMCPTool: isMCP, ContextWindow: runtime.ContextWindow}, nil
+		return acpserver.Runtime{Runner: runtime.Runner, Close: runtime.Close, LookupTool: lookup, ContextWindow: runtime.ContextWindow}, nil
 	})
 }

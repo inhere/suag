@@ -129,11 +129,15 @@ func testACPRuntimeWith(t *testing.T, provider agentcore.Provider, tool *countin
 			_ = repo.Close()
 			return Runtime{}, err
 		}
-		rt := Runtime{Runner: runner, Close: repo.Close}
-		if tool != nil && tool.mcp {
-			rt.IsMCPTool = func(name string) bool { return name == tool.Name() }
+		// Same lookup as the app: classification reads the registered tool.
+		lookup := func(name string) agentcore.Tool {
+			found, err := registry.Get(name)
+			if err != nil {
+				return nil
+			}
+			return found
 		}
-		return rt, nil
+		return Runtime{Runner: runner, Close: repo.Close, LookupTool: lookup}, nil
 	}
 }
 
@@ -162,6 +166,18 @@ func (t *countingTool) Name() string {
 	return "file_write"
 }
 func (*countingTool) Description() string { return "write test file" }
+
+// ToolMeta gives the stub the metadata of the catalog tool it poses as
+// (file_write by default); other names declare nothing.
+func (t *countingTool) ToolMeta() tools.Meta {
+	for _, spec := range native.Catalog() {
+		if spec.Name == t.Name() {
+			return tools.MetaOf(spec.New(native.Env{SerpAPIKey: "test-key"}))
+		}
+	}
+	return tools.Meta{Category: tools.CategoryOther}
+}
+
 func (t *countingTool) Kind() tools.Kind {
 	if t.mcp {
 		return tools.KindMCP
@@ -385,29 +401,6 @@ func TestToolDiffSupportsSymlinkedWorkspaceRoot(t *testing.T) {
 		t.Fatal("symlinked workspace old text = nil, want existing contents")
 	}
 	assert.Eq(t, "existing contents\n", *diff[0].Diff.OldText)
-}
-
-func TestACPToolKinds(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		kind acp.ToolKind
-	}{
-		{"file_read", acp.ToolKindRead},
-		{"file_write", acp.ToolKindEdit},
-		{"shell_exec", acp.ToolKindExecute},
-		{"web_search", acp.ToolKindSearch},
-		{"web_fetch", acp.ToolKindFetch},
-		{"file_grep", acp.ToolKindSearch},
-		{"file_edit", acp.ToolKindEdit},
-		{"skill", acp.ToolKindRead},
-		{"file_find", acp.ToolKindSearch},
-		{"unknown_mcp_tool", acp.ToolKindOther},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			kind, _ := toolKind(tc.name)
-			assert.Eq(t, tc.kind, kind)
-		})
-	}
 }
 
 func TestPersonalACPReadOnlyRejectsToolWithoutPermissionRequest(t *testing.T) {

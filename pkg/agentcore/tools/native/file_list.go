@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"os"
 	"path"
 	"path/filepath"
@@ -31,6 +32,11 @@ func (t *FileListTool) Name() string { return "file_list" }
 func (t *FileListTool) Description() string {
 	return "List a workspace directory. Directories end with /, symlinks with @ (not followed). " +
 		"depth>1 lists recursively as relative paths; .git, node_modules, vendor and dist are shown but not entered."
+}
+
+// ToolMeta marks the tool as a read-only read.
+func (*FileListTool) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategoryRead, ReadOnly: true}
 }
 func (t *FileListTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

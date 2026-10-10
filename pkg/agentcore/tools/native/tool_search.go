@@ -32,6 +32,11 @@ func (t *ToolSearchTool) Description() string {
 		"called from the next step. query is keywords, or \"select:name1,name2\" to load exact tools."
 }
 
+// ToolMeta marks the tool as a read-only search.
+func (*ToolSearchTool) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategorySearch, ReadOnly: true}
+}
+
 func (t *ToolSearchTool) Schema() api.ToolSchema {
 	return api.ToolSchema{
 		Name:        t.Name(),

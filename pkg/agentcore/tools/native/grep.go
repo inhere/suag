@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"io"
 	"io/fs"
 	"os"
@@ -32,6 +33,11 @@ func (t *FileGrepTool) Description() string {
 	return "Search file contents in the workspace with a Go (RE2) regular expression. " +
 		"Returns path:line: text (paths relative to the workspace, / separated), or only paths with output=files. " +
 		"Skips .git, node_modules, vendor, dist, .gitignore matches, binary files and files over 1MB. Prefer this over shell grep."
+}
+
+// ToolMeta marks the tool as a read-only search.
+func (*FileGrepTool) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategorySearch, ReadOnly: true}
 }
 func (t *FileGrepTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

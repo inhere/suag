@@ -26,9 +26,10 @@ type Runtime struct {
 	// ContextWindow is the model context size in tokens; wiring.Runtime supplies the
 	// effective model's window; 0 falls back to appconfig.DefaultContextWindow.
 	ContextWindow int
-	// IsMCPTool reports whether a tool name resolves to an MCP-backed tool in
-	// this runtime. MCP tools always need permission, whatever their name.
-	IsMCPTool func(name string) bool
+	// LookupTool resolves a tool name to the registered tool, nil when
+	// unknown. Permission handling classifies calls by the tool's tools.Meta,
+	// never by name, so an MCP tool always needs permission.
+	LookupTool func(name string) agentcore.Tool
 }
 
 func (r Runtime) close() error {
@@ -209,7 +210,7 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 	if err != nil {
 		return acp.PromptResponse{}, err
 	}
-	hook.isMCP = runtime.IsMCPTool
+	hook.lookup = runtime.LookupTool
 	textSent := false
 	emit := func(ctx context.Context, event personal.Event) error {
 		if event.Kind == "plan" && event.Plan != nil {

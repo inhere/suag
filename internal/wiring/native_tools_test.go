@@ -19,10 +19,10 @@ import (
 func catalogNames(write bool) []string {
 	var names []string
 	for _, spec := range native.Catalog() {
-		if spec.Write && !write {
+		if spec.Name == "web_search" { // needs serpapi_key, unset here
 			continue
 		}
-		if spec.Name == "web_search" { // needs serpapi_key, unset here
+		if tool := spec.New(native.Env{}); !write && !tools.MetaOf(tool).ReadOnly {
 			continue
 		}
 		names = append(names, spec.Name)

@@ -3,6 +3,7 @@ package wiring
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools/native"
 	"io"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,19 @@ type nativeStubTool struct {
 func (t *nativeStubTool) Name() string        { return t.name }
 func (t *nativeStubTool) Description() string { return "native stub tool" }
 func (t *nativeStubTool) Kind() tools.Kind    { return tools.KindNative }
+
+// ToolMeta gives the stub the metadata of the built-in tool it poses as;
+// other names (a tool added later) declare nothing.
+func (t *nativeStubTool) ToolMeta() tools.Meta {
+	builtins := native.BuildTools(native.Env{SerpAPIKey: "test-key"}, true)
+	builtins = append(builtins, native.NewUpdatePlanTool(nil), native.NewToolSearchTool(nil), native.NewSkillTool(nil, 0))
+	for _, tool := range builtins {
+		if tool.Name() == t.name {
+			return tools.MetaOf(tool)
+		}
+	}
+	return tools.Meta{Category: tools.CategoryOther}
+}
 func (t *nativeStubTool) Schema() agentcoreapi.ToolSchema {
 	return agentcoreapi.ToolSchema{Name: t.name}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"io"
 	"net/http"
 	"net/url"
@@ -38,6 +39,11 @@ func NewWebSearchTool(apiKey string) *WebSearchTool {
 func (t *WebSearchTool) Name() string { return "web_search" }
 func (t *WebSearchTool) Description() string {
 	return "Search the web using SerpAPI. Returns top organic results."
+}
+
+// ToolMeta marks the tool as a read-only search.
+func (*WebSearchTool) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategorySearch, ReadOnly: true}
 }
 func (t *WebSearchTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"io/fs"
 	"os"
 	"sort"
@@ -25,6 +26,11 @@ func (t *FileFindTool) Description() string {
 	return "Find files in the workspace by glob pattern (** matches any directories, e.g. **/*_test.go; " +
 		"a pattern without / matches file names at any depth). Newest first; paths relative to the workspace. " +
 		"Skips .git, node_modules, vendor, dist and .gitignore matches."
+}
+
+// ToolMeta marks the tool as a read-only search.
+func (*FileFindTool) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategorySearch, ReadOnly: true}
 }
 func (t *FileFindTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"math"
 	"os"
 	"os/exec"
@@ -131,6 +132,11 @@ func (t *ShellExecTool) Description() string {
 		"Returns stdout, stderr and the exit code; output gathered before a timeout is kept. "+
 		"Default timeout %ds, max %ds. No interactive input: stdin is empty.",
 		t.shell.name(), syntax, int(t.timeout.Seconds()), int(t.maxTimeout.Seconds()))
+}
+
+// ToolMeta marks the tool as an execute: it runs commands.
+func (*ShellExecTool) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategoryExecute, ReadOnly: false}
 }
 func (t *ShellExecTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

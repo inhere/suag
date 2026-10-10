@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"strings"
 
 	"github.com/inhere/suag/pkg/agentcore/api"
@@ -46,6 +47,11 @@ func (t *UpdatePlanTool) Name() string { return "update_plan" }
 func (t *UpdatePlanTool) Description() string {
 	return "Create or replace the task list for the current work. Always send the complete list; " +
 		"at most one step may be in_progress. Does not modify the workspace."
+}
+
+// ToolMeta marks the tool read-only: it only updates the session plan.
+func (*UpdatePlanTool) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategoryThink, ReadOnly: true}
 }
 
 func (t *UpdatePlanTool) Schema() api.ToolSchema {

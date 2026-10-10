@@ -146,13 +146,10 @@ func NewVisibility(inner lookupRegistry, opts VisibilityOptions) *Visibility {
 	total := 0
 	for _, s := range schemas {
 		tool, err := inner.Get(s.Name)
-		if err != nil || KindOf(tool) != KindMCP {
+		if err != nil || !IsMCP(tool) {
 			continue
 		}
-		server := ""
-		if named, ok := tool.(MCPServerNamer); ok {
-			server = named.MCPServer()
-		}
+		server := MCPServerOf(tool)
 		d := &deferredTool{schema: s, server: server,
 			nameTokens: tokenSet(s.Name), descTokens: tokenSet(s.Description)}
 		mcp[s.Name] = d

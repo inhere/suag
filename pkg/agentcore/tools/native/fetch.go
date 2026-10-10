@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"io"
 	"mime"
 	"net"
@@ -170,6 +171,11 @@ func (t *WebFetchTool) Name() string { return "web_fetch" }
 func (t *WebFetchTool) Description() string {
 	return "Fetch an http(s) URL and return its readable text (HTML is converted to text keeping headings, " +
 		"links and code blocks; scripts and styles are dropped). Private and local network addresses are refused."
+}
+
+// ToolMeta marks the tool as a read-only fetch.
+func (*WebFetchTool) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategoryFetch, ReadOnly: true}
 }
 func (t *WebFetchTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

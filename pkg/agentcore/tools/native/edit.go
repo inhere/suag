@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"strings"
 
 	"github.com/inhere/suag/pkg/agentcore/api"
@@ -17,6 +18,11 @@ func (t *FileEditTool) Description() string {
 		"file text exactly (without file_read's line-number prefix) and be unique unless replace_all is set; " +
 		"include surrounding lines to make it unique. The file's line endings (LF/CRLF) are kept. " +
 		"Prefer this over rewriting the whole file with file_write."
+}
+
+// ToolMeta marks the tool as an edit: it changes workspace files.
+func (*FileEditTool) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategoryEdit, ReadOnly: false}
 }
 func (t *FileEditTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

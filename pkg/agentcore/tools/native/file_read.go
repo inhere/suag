@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"io"
 	"net/http"
 	"os"
@@ -31,6 +32,11 @@ func (t *FileReadTool) Description() string {
 	return fmt.Sprintf("Read a text file in the workspace. Lines are prefixed with their number and a tab "+
 		"(the prefix is not part of the file). Returns at most %d lines per call; for large files pass "+
 		"offset (1-based start line) and limit to read further. Binary files are reported, not dumped.", defaultReadLines)
+}
+
+// ToolMeta marks the tool as a read-only read.
+func (*FileReadTool) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategoryRead, ReadOnly: true}
 }
 func (t *FileReadTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

@@ -30,11 +30,13 @@ func disabledToolHints(registry *tools.Registry, opts Options) map[string]string
 		if _, err := registry.Get(spec.Name); err == nil {
 			continue
 		}
-		switch {
-		case spec.Write:
-			hints[spec.Name] = writeToolHint(opts)
-		case spec.Name == "web_search":
+		if spec.Name == "web_search" {
 			hints[spec.Name] = "未配置 serpapi_key；在 SUAG_HOME/config.yaml 设 serpapi_key 后可用"
+			continue
+		}
+		// Building with an empty Env only reads the tool's own metadata.
+		if tool := spec.New(native.Env{}); tool != nil && !tools.MetaOf(tool).ReadOnly {
+			hints[spec.Name] = writeToolHint(opts)
 		}
 	}
 	return hints
