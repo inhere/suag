@@ -1,13 +1,14 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # agentcore 独立分层：核心下沉与清理 设计
 
-> 状态：Draft 0.2 / 待人工计划批准
+> 状态：Draft 0.3 / 已批准进入计划（2026-10-10 用户：“还在v0且个人使用中，无需做兼容，按最优考虑；批准设计 0.2，按推荐”；Q1–Q3 按推荐，0.3 按“无需兼容”收窄 W2）
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-10 | Claude | 初稿 |
+| 0.3 | 2026-10-10 | Claude | 按用户“无需做兼容”：IsError 不再兼容旧数据、不双写，直接替换 `Metadata["is_error"]` |
 | 0.2 | 2026-10-10 | Claude | 按合并评审修订：根包不再导出 Registry、不 import tools，工具注册表统一接收 `api.Tool`（Kind 为可选接口），公开 API 以“干净断开 + 删除记录”代替别名（F1）；默认内存存储的语义与受影响测试（F2）；mcp 配置解耦含调用超时并补 cli/acpserver 范围（F3）；IsError 兼容改为统一解码与双写（F4）；运行用量字段放在 personal.RunResult（F5）；W4 补 skill、改为按 Tool 判定、native 只给中性类别（F6）；逐个示例处置（F7）；文档范围与历史文档不改（F8）；mock 增加命名与错误排队（F9）；守卫含测试依赖并精确匹配（F10）；最小示例默认只读（F11） |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
@@ -36,7 +37,7 @@
 
 范围：仓库 `inhere-tools/suag` 的 `pkg/agentcore/**`、`internal/platform/**`、`internal/capability/**`、`internal/wiring/**`、`internal/config/**`（MCP 设置转换处）、`internal/personal/**`、`internal/acpserver/**` 与 `internal/cli/**`（用量、工具判定与 MCP 设置的调用点）、`internal/chat/**`（用量累加点）、`docs/usage/**`（含 `llm-mock-usage.md`）、文档 `pkg/agentcore/README.md`、`pkg/agentcore/docs/**`、`docs/archive/**`、`AGENTS.md` 与 `README*.md` 的结构说明、CI 工作流。
 
-非目标：修改历史设计与计划文档（`docs/design`、`docs/plans` 中的旧路径保持原样，删除记录给出新旧路径对照）；拆成独立 Go module 或独立仓库（见 Q3）；改变 suag 的用户行为、配置格式或数据库结构（`ToolResult.IsError` 让新写入的消息 JSON 多一个键，旧数据兼容读取，回滚仍可读）；把会话策略（拒绝计数、压缩、交接、项目规则）下沉；删除内核的 resume/authority/Artifact 语义（有完整测试、属内核公开语义）；重写 `personal`（只做同包内的函数拆分，见 W5）。
+非目标：修改历史设计与计划文档（`docs/design`、`docs/plans` 中的旧路径保持原样，删除记录给出新旧路径对照）；拆成独立 Go module 或独立仓库（见 Q3）；改变 suag 的用户行为、配置格式或数据库表结构（`ToolResult.IsError` 让消息 JSON 多一个键；不做旧数据兼容）；把会话策略（拒绝计数、压缩、交接、项目规则）下沉；删除内核的 resume/authority/Artifact 语义（有完整测试、属内核公开语义）；重写 `personal`（只做同包内的函数拆分，见 W5）。
 
 ## 已确认事实与规范
 
@@ -87,7 +88,7 @@ internal/…                    suag 应用层：config、wiring、personal(+sto
 
 - `api.Usage.Add(other)`，替换 4 处手写累加。
 - `personal.RunResult` 增加最后一次请求的输入 token 与模型调用次数，由已有的 `usageCollector` 在 finish 中填入（取消回合时 agentcore 可能不返回结果，collector 仍有数据）；ACP 删除自有收集器 `turnUsage` 改用该结果，并补“取消回合仍上报用量”的测试。agentcore.RunResult 不变。
-- `api.ToolResult.IsError bool` 取代 `Metadata["is_error"]`：`ToolResult.UnmarshalJSON` 统一兼容旧数据（`Metadata["is_error"]==true` 视为 `IsError`）；一个版本内写入方同时写两种标记、读取方判断 `IsError || Metadata["is_error"]==true`；删除 `"tool_error"` 死键；补旧 JSON 往返测试。
+- `api.ToolResult.IsError bool` 直接取代 `Metadata["is_error"]`（v0、个人使用，不兼容旧数据、不双写）：所有写入与读取方改用字段，删除 `"tool_error"` 死键；已存旧会话中历史工具结果的出错标记不再被识别，可接受。
 
 ### W3 能力下沉
 
@@ -147,7 +148,7 @@ flowchart TD
 ## 安全、数据、运维与回滚
 
 - 权限相关：W4 改动只读集合与 ACP 种类的来源，靠“先补表格测试再改实现”保证判定不变；任何差异即停止。
-- 数据：`IsError` 经统一解码兼容已存消息，不迁移数据库；新写入同时保留 `Metadata["is_error"]` 一个版本（JSON 多一个 `IsError` 键），回滚到旧版本仍能读。
+- 数据：不迁移数据库；旧会话里历史工具结果的出错标记丢失（只影响回放显示与 Claude 回传的 is_error），按用户决定不做兼容。
 - 嵌入方语义：根包默认存储改为内存后，只传 provider 的嵌入方不再跨实例续跑（suag 不受影响，总是显式传入存储）。
 - 运维：无配置变化；主机 `make install` 与真实 provider 回归一次。
 - 回滚：每个 W 分步提交，可按提交回退；删除项可按删除记录用 `git show` 找回。
@@ -170,4 +171,4 @@ flowchart TD
 
 ## 结论与人工计划 Gate
 
-待用户批准设计（含 Q1–Q3）后编写实施计划；批准设计不授权实施。
+已批准进入计划（Q1–Q3 按推荐，无需兼容）；批准设计不授权实施。
