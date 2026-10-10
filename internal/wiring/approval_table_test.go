@@ -22,7 +22,7 @@ import (
 // metadata refactor: it must stay unchanged while the implementation moves.
 type approvalRow struct {
 	name string
-	tool func(t *testing.T) tools.Tool
+	tool func(t *testing.T) agentcore.Tool
 	// chatAsk and chatAuto are the chat outcomes with tools.approval ask/auto.
 	chatAsk, chatAuto string
 	// chatAlwaysAsks is how many questions two calls cause when the first
@@ -37,8 +37,8 @@ type approvalRow struct {
 	deferred bool
 }
 
-func catalogTool(name string) func(t *testing.T) tools.Tool {
-	return func(t *testing.T) tools.Tool {
+func catalogTool(name string) func(t *testing.T) agentcore.Tool {
+	return func(t *testing.T) agentcore.Tool {
 		t.Helper()
 		env := native.Env{Workspace: t.TempDir(), SerpAPIKey: "test-key"}
 		for _, spec := range native.Catalog() {
@@ -62,34 +62,34 @@ func approvalRows() []approvalRow {
 		return approvalRow{name: name, tool: catalogTool(name), chatAsk: "ask", chatAuto: "run", chatAlwaysAsks: 1,
 			cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "no"}
 	}
-	wired := func(name string, tool func(t *testing.T) tools.Tool) approvalRow {
+	wired := func(name string, tool func(t *testing.T) agentcore.Tool) approvalRow {
 		return approvalRow{name: name, tool: tool, chatAsk: "run", chatAuto: "run",
 			cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "-"}
 	}
 	return []approvalRow{
 		read("file_read"), read("file_list"), read("file_grep"), read("file_find"), read("web_fetch"), read("web_search"),
 		write("file_write"), write("file_edit"), write("shell_exec"),
-		wired("update_plan", func(*testing.T) tools.Tool { return native.NewUpdatePlanTool(personal.NewPlanRecorder()) }),
-		wired("tool_search", func(*testing.T) tools.Tool {
+		wired("update_plan", func(*testing.T) agentcore.Tool { return native.NewUpdatePlanTool(personal.NewPlanRecorder()) }),
+		wired("tool_search", func(*testing.T) agentcore.Tool {
 			return native.NewToolSearchTool(tools.NewVisibility(tools.NewRegistry(), tools.VisibilityOptions{}))
 		}),
-		wired("skill", func(*testing.T) tools.Tool { return native.NewSkillTool(skills.NewRegistry(), 0) }),
+		wired("skill", func(*testing.T) agentcore.Tool { return native.NewSkillTool(skills.NewRegistry(), 0) }),
 		// A native tool added later is asked about by default.
-		{name: "future_tool", tool: func(*testing.T) tools.Tool { return &nativeStubTool{name: "future_tool"} },
+		{name: "future_tool", tool: func(*testing.T) agentcore.Tool { return &nativeStubTool{name: "future_tool"} },
 			chatAsk: "ask", chatAuto: "run", chatAlwaysAsks: 1, cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "-"},
 		// MCP tools follow the allowlists (configured below as srv/srv_*), never chat questions.
-		{name: "srv_query", tool: func(*testing.T) tools.Tool { return newServerStubTool("srv", "srv_query") },
+		{name: "srv_query", tool: func(*testing.T) agentcore.Tool { return newServerStubTool("srv", "srv_query") },
 			chatAsk: "run", chatAuto: "run", cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "-", deferred: true},
-		{name: "srv_write", tool: func(*testing.T) tools.Tool { return newServerStubTool("other", "srv_write") },
+		{name: "srv_write", tool: func(*testing.T) agentcore.Tool { return newServerStubTool("other", "srv_write") },
 			chatAsk: "deny", chatAuto: "deny", cliRun: "deny", cliReadOnly: "deny", readOnlyRegistered: "-", deferred: true},
 		// An MCP tool named like a built-in read tool is still an MCP tool.
-		{name: "file_read", tool: func(*testing.T) tools.Tool { return newServerStubTool("evil", "file_read") },
+		{name: "file_read", tool: func(*testing.T) agentcore.Tool { return newServerStubTool("evil", "file_read") },
 			chatAsk: "deny", chatAuto: "deny", cliRun: "deny", cliReadOnly: "deny", readOnlyRegistered: "-", deferred: true},
 	}
 }
 
 // decideOutcome runs approver.Decide once and classifies the result.
-func decideOutcome(t *testing.T, approver tools.Approver, asker *scriptedAsker, name string, tool tools.Tool) string {
+func decideOutcome(t *testing.T, approver tools.Approver, asker *scriptedAsker, name string, tool agentcore.Tool) string {
 	t.Helper()
 	before := 0
 	if asker != nil {

@@ -15,7 +15,6 @@ import (
 
 	"golang.org/x/text/encoding/simplifiedchinese"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
@@ -122,8 +121,7 @@ func NewShellExecTool(workspace string, timeout time.Duration) *ShellExecTool {
 	}
 }
 
-func (t *ShellExecTool) Name() string     { return "shell_exec" }
-func (t *ShellExecTool) Kind() tools.Kind { return tools.KindNative }
+func (t *ShellExecTool) Name() string { return "shell_exec" }
 func (t *ShellExecTool) Description() string {
 	syntax := "POSIX sh syntax"
 	if t.shell.powershell {

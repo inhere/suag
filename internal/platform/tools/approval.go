@@ -29,13 +29,13 @@ func (e *abortedError) Unwrap() []error { return []error{ErrAborted, e.err} }
 // approval prompt) aborts the turn; it is returned wrapped so it matches both
 // ErrAborted and the original cause.
 type Approver interface {
-	Decide(ctx context.Context, call api.ToolCall, tool Tool) error
+	Decide(ctx context.Context, call api.ToolCall, tool api.Tool) error
 }
 
 // ApproverFunc adapts a function to Approver.
-type ApproverFunc func(ctx context.Context, call api.ToolCall, tool Tool) error
+type ApproverFunc func(ctx context.Context, call api.ToolCall, tool api.Tool) error
 
-func (f ApproverFunc) Decide(ctx context.Context, call api.ToolCall, tool Tool) error {
+func (f ApproverFunc) Decide(ctx context.Context, call api.ToolCall, tool api.Tool) error {
 	return f(ctx, call, tool)
 }
 
@@ -75,7 +75,7 @@ func (a *Approval) ListTools(ctx context.Context) ([]api.ToolSchema, error) {
 }
 
 // Get passes tool lookup through so outer layers can still classify tools.
-func (a *Approval) Get(name string) (Tool, error) { return a.inner.Get(name) }
+func (a *Approval) Get(name string) (api.Tool, error) { return a.inner.Get(name) }
 
 func (a *Approval) ExecuteTool(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	tool, err := a.inner.Get(call.Name)

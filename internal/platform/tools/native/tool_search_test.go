@@ -45,6 +45,6 @@ func TestToolSearchTool(t *testing.T) {
 	t.Run("schema", func(t *testing.T) {
 		tool := NewToolSearchTool(nil)
 		assert.Eq(t, "tool_search", tool.Schema().Name)
-		assert.Eq(t, tools.KindNative, tool.Kind())
+		assert.Eq(t, tools.KindNative, tools.KindOf(tool))
 	})
 }

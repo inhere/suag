@@ -166,7 +166,7 @@ func (o *observedTools) ListTools(ctx context.Context) ([]agentcore.ToolSchema, 
 }
 
 // Get passes tool lookup through to the wrapped layers.
-func (o *observedTools) Get(name string) (tools.Tool, error) {
+func (o *observedTools) Get(name string) (agentcore.Tool, error) {
 	if l, ok := o.inner.(tools.Lookup); ok {
 		return l.Get(name)
 	}

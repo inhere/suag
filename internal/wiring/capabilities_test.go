@@ -57,7 +57,7 @@ func TestBuildDefaultCapabilities_RegistersWebSearchWhenConfigured(t *testing.T)
 	assertToolNamesEq(t, []string{"file_read", "file_write", "file_list", "file_grep", "file_find", "web_fetch", "file_edit", "shell_exec", "web_search"}, built.Registry.List())
 }
 
-func mustGetTool(t *testing.T, registry *tools.Registry, name string) tools.Tool {
+func mustGetTool(t *testing.T, registry *tools.Registry, name string) agentcoreapi.Tool {
 	t.Helper()
 
 	tool, err := registry.Get(name)
@@ -79,7 +79,7 @@ func TestBuildDefaultCapabilities_RegistersConfiguredMCPTools(t *testing.T) {
 	restore := swapMCPProviderFactoryForTest(func(_ context.Context, settings axconfig.MCPServerSettings) (capabilityToolProvider, error) {
 		return toolsmcp.NewProviderForTools(
 			settings.ID,
-			[]tools.Tool{
+			[]agentcoreapi.Tool{
 				newCapabilityStubTool("mcp_echo"),
 			},
 			nil,
@@ -105,7 +105,7 @@ func TestPersonalCapabilitiesUseACPStdioMCPOnlyInWritableMode(t *testing.T) {
 	restore := swapMCPProviderFactoryForTest(func(_ context.Context, settings axconfig.MCPServerSettings) (capabilityToolProvider, error) {
 		starts++
 		assert.Eq(t, "acp-local", settings.ID)
-		return toolsmcp.NewProviderForTools(settings.ID, []tools.Tool{newCapabilityStubTool("mcp_echo")}, nil), nil
+		return toolsmcp.NewProviderForTools(settings.ID, []agentcoreapi.Tool{newCapabilityStubTool("mcp_echo")}, nil), nil
 	})
 	t.Cleanup(restore)
 	servers := []axconfig.MCPServerSettings{{ID: "acp-local", Command: "stub"}}
@@ -201,7 +201,7 @@ func TestOpenWiresSkills(t *testing.T) {
 	workspace := t.TempDir()
 	writeSkill(t, filepath.Join(workspace, ".agents", "skills", "demo"), "demo", "Demo skill.")
 
-	allowAll := tools.ApproverFunc(func(context.Context, agentcoreapi.ToolCall, tools.Tool) error { return nil })
+	allowAll := tools.ApproverFunc(func(context.Context, agentcoreapi.ToolCall, agentcoreapi.Tool) error { return nil })
 	rt, err := Open(context.Background(), Options{Workspace: workspace, RuleCWD: t.TempDir(), Approver: allowAll})
 	assert.Require(t, assert.NoErr(t, err))
 	t.Cleanup(func() { _ = rt.Close() })
@@ -230,12 +230,12 @@ type capabilityStubTool struct {
 	server string
 }
 
-func newCapabilityStubTool(name string) tools.Tool {
+func newCapabilityStubTool(name string) agentcoreapi.Tool {
 	return &capabilityStubTool{name: name}
 }
 
 // newServerStubTool is an MCP tool that reports the server it came from.
-func newServerStubTool(server, name string) tools.Tool {
+func newServerStubTool(server, name string) agentcoreapi.Tool {
 	return &capabilityStubTool{name: name, server: server}
 }
 
@@ -261,7 +261,7 @@ func TestBuildDefaultCapabilities_FirstRegistrationWins(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	restore := swapMCPProviderFactoryForTest(func(_ context.Context, settings axconfig.MCPServerSettings) (capabilityToolProvider, error) {
-		return toolsmcp.NewProviderForTools(settings.ID, []tools.Tool{
+		return toolsmcp.NewProviderForTools(settings.ID, []agentcoreapi.Tool{
 			newServerStubTool(settings.ID, "file_read"),
 			newServerStubTool(settings.ID, "gofer_work_report"),
 			newServerStubTool(settings.ID, settings.ID+"_only"),
@@ -275,12 +275,12 @@ func TestBuildDefaultCapabilities_FirstRegistrationWins(t *testing.T) {
 	t.Cleanup(func() { assert.NoErr(t, built.Close()) })
 
 	t.Run("built-in tool beats MCP tool", func(t *testing.T) {
-		assert.Eq(t, tools.KindNative, mustGetTool(t, built.Registry, "file_read").Kind())
+		assert.Eq(t, tools.KindNative, tools.KindOf(mustGetTool(t, built.Registry, "file_read")))
 	})
 	t.Run("earlier server beats later server", func(t *testing.T) {
 		named, ok := mustGetTool(t, built.Registry, "gofer_work_report").(tools.MCPServerNamer)
 		assert.True(t, ok)
 		assert.Eq(t, "evil", named.MCPServer())
-		assert.Eq(t, tools.KindMCP, mustGetTool(t, built.Registry, "gofer_only").Kind())
+		assert.Eq(t, tools.KindMCP, tools.KindOf(mustGetTool(t, built.Registry, "gofer_only")))
 	})
 }

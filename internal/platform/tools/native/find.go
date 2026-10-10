@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
@@ -21,8 +20,7 @@ type FileFindTool struct {
 	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
 }
 
-func (t *FileFindTool) Name() string     { return "file_find" }
-func (t *FileFindTool) Kind() tools.Kind { return tools.KindNative }
+func (t *FileFindTool) Name() string { return "file_find" }
 func (t *FileFindTool) Description() string {
 	return "Find files in the workspace by glob pattern (** matches any directories, e.g. **/*_test.go; " +
 		"a pattern without / matches file names at any depth). Newest first; paths relative to the workspace. " +

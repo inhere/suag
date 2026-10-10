@@ -16,7 +16,7 @@ func TestProvider_RegisterTools(t *testing.T) {
 	registry := tools.NewRegistry()
 	provider := &Provider{
 		id: "mcp.filesystem",
-		tools: []tools.Tool{
+		tools: []api.Tool{
 			newStubMCPTool("fs_read"),
 			newStubMCPTool("fs_write"),
 		},
@@ -27,7 +27,7 @@ func TestProvider_RegisterTools(t *testing.T) {
 
 	read, err := registry.Get("fs_read")
 	assert.NoErr(t, err)
-	assert.Eq(t, tools.KindMCP, read.Kind())
+	assert.Eq(t, tools.KindMCP, tools.KindOf(read))
 	_, err = registry.Get("fs_write")
 	assert.NoErr(t, err)
 }
@@ -105,7 +105,7 @@ func (c *stubToolClient) ListTools(ctx context.Context) ([]mcpTool, error) {
 	return append([]mcpTool(nil), c.tools...), nil
 }
 
-func (c *stubToolClient) AsTool(t mcpTool) tools.Tool {
+func (c *stubToolClient) AsTool(t mcpTool) api.Tool {
 	return newStubMCPTool(t.Name)
 }
 
@@ -117,7 +117,7 @@ type stubMCPTool struct {
 	name string
 }
 
-func newStubMCPTool(name string) tools.Tool {
+func newStubMCPTool(name string) api.Tool {
 	return &stubMCPTool{name: name}
 }
 
@@ -149,7 +149,7 @@ func (c *stubClosableClient) ListTools(ctx context.Context) ([]mcpTool, error) {
 	return nil, nil
 }
 
-func (c *stubClosableClient) AsTool(t mcpTool) tools.Tool {
+func (c *stubClosableClient) AsTool(t mcpTool) api.Tool {
 	return newStubMCPTool(t.Name)
 }
 
@@ -161,12 +161,12 @@ func TestProvider_RegisterToolsKeepsFirstRegistration(t *testing.T) {
 	registry := tools.NewRegistry()
 	first := &stubMCPTool{name: "dup"}
 	registry.Register(first)
-	p := NewProviderForTools("evil", []tools.Tool{&stubMCPTool{name: "dup"}, &stubMCPTool{name: "fresh"}}, nil)
+	p := NewProviderForTools("evil", []api.Tool{&stubMCPTool{name: "dup"}, &stubMCPTool{name: "fresh"}}, nil)
 	assert.NoErr(t, p.RegisterTools(registry))
 
 	got, err := registry.Get("dup")
 	assert.NoErr(t, err)
-	assert.True(t, got == tools.Tool(first))
+	assert.True(t, got == api.Tool(first))
 	_, err = registry.Get("fresh")
 	assert.NoErr(t, err)
 }
@@ -176,7 +176,7 @@ func TestProvider_RegisterToolsKeepsFirstRegistration(t *testing.T) {
 // when it is named like a built-in tool.
 func TestClientAdapterIsMCPTool(t *testing.T) {
 	tool := NewClient(ServerConfig{Name: "srv"}).AsTool(mcpTool{Name: "file_read"})
-	assert.Eq(t, tools.KindMCP, tool.Kind())
+	assert.Eq(t, tools.KindMCP, tools.KindOf(tool))
 	named, ok := tool.(tools.MCPServerNamer)
 	assert.Require(t, assert.True(t, ok))
 	assert.Eq(t, "srv", named.MCPServer())

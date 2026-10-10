@@ -33,40 +33,41 @@ func (e *deniedError) Unwrap() error { return ErrDenied }
 // Denied returns an error that prints as msg and satisfies errors.Is(err, ErrDenied).
 func Denied(msg string) error { return &deniedError{msg: msg} }
 
-// Tool is the interface every tool must implement.
-type Tool interface {
-	// Name returns the unique tool identifier used in LLM function calls.
-	Name() string
-	// Description returns a short human/LLM readable description.
-	Description() string
-	// Schema returns the JSON Schema for the tool's parameters.
-	Schema() api.ToolSchema
-	// Execute runs the tool with the given arguments.
-	Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error)
-	// Kind returns the tool's runtime kind.
+// Kinded is implemented by tools that report their runtime kind. It is
+// optional: a tool without it is native (see KindOf).
+type Kinded interface {
 	Kind() Kind
+}
+
+// KindOf returns the runtime kind of t: its Kind() when it implements Kinded,
+// KindNative otherwise (including a nil tool).
+func KindOf(t api.Tool) Kind {
+	if k, ok := t.(Kinded); ok {
+		return k.Kind()
+	}
+	return KindNative
 }
 
 // Lookup is the query capability wrapping registry layers (observe, visibility,
 // approval) pass through so permission code can still resolve a tool's Kind and
 // MCP server name behind them.
 type Lookup interface {
-	Get(name string) (Tool, error)
+	Get(name string) (api.Tool, error)
 }
 
 // Registry holds all registered tools and dispatches calls.
 type Registry struct {
 	mu    sync.RWMutex
-	tools map[string]Tool
+	tools map[string]api.Tool
 }
 
 // NewRegistry returns an empty Registry.
 func NewRegistry() *Registry {
-	return &Registry{tools: make(map[string]Tool)}
+	return &Registry{tools: make(map[string]api.Tool)}
 }
 
 // Register adds a tool to the registry. Panics on duplicate name.
-func (r *Registry) Register(t Tool) {
+func (r *Registry) Register(t api.Tool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.tools[t.Name()]; exists {
@@ -77,7 +78,7 @@ func (r *Registry) Register(t Tool) {
 
 // TryRegister adds a tool unless the name is already taken; it never overwrites
 // and reports whether the tool was added. Earlier registrations win.
-func (r *Registry) TryRegister(t Tool) bool {
+func (r *Registry) TryRegister(t api.Tool) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.tools[t.Name()]; exists {
@@ -94,14 +95,14 @@ type MCPServerNamer interface {
 }
 
 // MustRegister is like Register but does not panic — it overwrites.
-func (r *Registry) MustRegister(t Tool) {
+func (r *Registry) MustRegister(t api.Tool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.tools[t.Name()] = t
 }
 
 // Get returns the tool with the given name, or an error if not found.
-func (r *Registry) Get(name string) (Tool, error) {
+func (r *Registry) Get(name string) (api.Tool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	t, ok := r.tools[name]

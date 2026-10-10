@@ -44,7 +44,7 @@ func newApprovalChatRunner(t *testing.T, asker tools.Asker, steps ...mock.Step) 
 	shell := &shellStub{}
 	registry := tools.NewRegistry()
 	registry.Register(shell)
-	approver := tools.ApproverFunc(func(ctx context.Context, call agentcore.ToolCall, _ tools.Tool) error {
+	approver := tools.ApproverFunc(func(ctx context.Context, call agentcore.ToolCall, _ agentcoreapi.Tool) error {
 		answer, err := asker.Ask(ctx, tools.Question{Tool: call.Name, Prompt: "?"})
 		if err != nil {
 			return err

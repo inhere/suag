@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
@@ -43,8 +42,7 @@ type UpdatePlanTool struct {
 // NewUpdatePlanTool creates the update_plan tool writing through sink.
 func NewUpdatePlanTool(sink PlanSink) *UpdatePlanTool { return &UpdatePlanTool{sink: sink} }
 
-func (t *UpdatePlanTool) Name() string     { return "update_plan" }
-func (t *UpdatePlanTool) Kind() tools.Kind { return tools.KindNative }
+func (t *UpdatePlanTool) Name() string { return "update_plan" }
 func (t *UpdatePlanTool) Description() string {
 	return "Create or replace the task list for the current work. Always send the complete list; " +
 		"at most one step may be in_progress. Does not modify the workspace."

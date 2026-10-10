@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
@@ -36,8 +35,7 @@ func NewWebSearchTool(apiKey string) *WebSearchTool {
 	}
 }
 
-func (t *WebSearchTool) Name() string     { return "web_search" }
-func (t *WebSearchTool) Kind() tools.Kind { return tools.KindNative }
+func (t *WebSearchTool) Name() string { return "web_search" }
 func (t *WebSearchTool) Description() string {
 	return "Search the web using SerpAPI. Returns top organic results."
 }

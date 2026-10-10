@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/api"
 	"log/slog"
 	"strings"
 	"time"
@@ -15,7 +16,7 @@ import (
 type toolClient interface {
 	Start(ctx context.Context) error
 	ListTools(ctx context.Context) ([]mcpTool, error)
-	AsTool(t mcpTool) tools.Tool
+	AsTool(t mcpTool) api.Tool
 	Stop()
 }
 
@@ -38,17 +39,17 @@ func startErr(ctx context.Context, err error) error {
 type Provider struct {
 	id     string
 	client toolClient
-	tools  []tools.Tool
+	tools  []api.Tool
 }
 
 // NewProviderForTools constructs a Provider from already-materialized MCP tools.
 // It exists for higher-level wiring tests so app capability assembly can verify
 // provider composition without starting a real MCP subprocess.
-func NewProviderForTools(id string, toolsList []tools.Tool, client toolClient) *Provider {
+func NewProviderForTools(id string, toolsList []api.Tool, client toolClient) *Provider {
 	return &Provider{
 		id:     providerID(id),
 		client: client,
-		tools:  append([]tools.Tool(nil), toolsList...),
+		tools:  append([]api.Tool(nil), toolsList...),
 	}
 }
 
@@ -79,7 +80,7 @@ func NewProvider(ctx context.Context, settings axconfig.MCPServerSettings) (*Pro
 		return nil, fmt.Errorf("list mcp tools for %q: %w", settings.ID, startErr(startCtx, err))
 	}
 
-	toolsList := make([]tools.Tool, 0, len(defs))
+	toolsList := make([]api.Tool, 0, len(defs))
 	for _, def := range defs {
 		toolsList = append(toolsList, client.AsTool(def))
 	}

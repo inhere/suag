@@ -1,9 +1,8 @@
 package native
 
 import (
+	"github.com/inhere/suag/pkg/agentcore/api"
 	"time"
-
-	"github.com/inhere/suag/internal/platform/tools"
 )
 
 // Env carries the settings native tools are built with. Zero values fall back
@@ -35,7 +34,7 @@ type Spec struct {
 	Write bool
 	// New builds the tool, or returns nil when env lacks what it needs
 	// (web_search without a key).
-	New func(env Env) tools.Tool
+	New func(env Env) api.Tool
 }
 
 // Catalog lists every native tool with its read/write flag. run, chat and ACP
@@ -43,19 +42,19 @@ type Spec struct {
 // separately because they depend on session state, not on Env.
 func Catalog() []Spec {
 	return []Spec{
-		{Name: "file_read", New: func(env Env) tools.Tool {
+		{Name: "file_read", New: func(env Env) api.Tool {
 			return &FileReadTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
 		}},
-		{Name: "file_list", New: func(env Env) tools.Tool {
+		{Name: "file_list", New: func(env Env) api.Tool {
 			return &FileListTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
 		}},
-		{Name: "file_grep", New: func(env Env) tools.Tool {
+		{Name: "file_grep", New: func(env Env) api.Tool {
 			return &FileGrepTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
 		}},
-		{Name: "file_find", New: func(env Env) tools.Tool {
+		{Name: "file_find", New: func(env Env) api.Tool {
 			return &FileFindTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
 		}},
-		{Name: "web_fetch", New: func(env Env) tools.Tool {
+		{Name: "web_fetch", New: func(env Env) api.Tool {
 			t, err := NewWebFetchTool(env.FetchAllowPrivate, env.FetchProxy)
 			if err != nil {
 				return nil // invalid proxy: rejected earlier by wiring
@@ -63,13 +62,13 @@ func Catalog() []Spec {
 			t.maxOut = env.MaxOutputBytes
 			return t
 		}},
-		{Name: "file_write", Write: true, New: func(env Env) tools.Tool {
+		{Name: "file_write", Write: true, New: func(env Env) api.Tool {
 			return &FileWriteTool{workspace: env.Workspace}
 		}},
-		{Name: "file_edit", Write: true, New: func(env Env) tools.Tool {
+		{Name: "file_edit", Write: true, New: func(env Env) api.Tool {
 			return &FileEditTool{workspace: env.Workspace}
 		}},
-		{Name: "shell_exec", Write: true, New: func(env Env) tools.Tool {
+		{Name: "shell_exec", Write: true, New: func(env Env) api.Tool {
 			t := NewShellExecTool(env.Workspace, 0)
 			t.shell = resolveShell(env.Shell)
 			t.maxOut = env.MaxOutputBytes
@@ -79,7 +78,7 @@ func Catalog() []Spec {
 			}
 			return t
 		}},
-		{Name: "web_search", New: func(env Env) tools.Tool {
+		{Name: "web_search", New: func(env Env) api.Tool {
 			if env.SerpAPIKey == "" {
 				return nil
 			}
@@ -92,8 +91,8 @@ func Catalog() []Spec {
 
 // BuildTools returns the catalog tools available in env, in catalog order.
 // Write tools are skipped unless allowWrite is set.
-func BuildTools(env Env, allowWrite bool) []tools.Tool {
-	var out []tools.Tool
+func BuildTools(env Env, allowWrite bool) []api.Tool {
+	var out []api.Tool
 	for _, spec := range Catalog() {
 		if spec.Write && !allowWrite {
 			continue

@@ -28,8 +28,8 @@ func approvalRunner(t *testing.T, repo *store.Store, prov agentcore.Provider, ap
 }
 
 // denyMCP refuses every MCP tool, like the CLI allowlist without entries.
-var denyMCP = tools.ApproverFunc(func(_ context.Context, call agentcore.ToolCall, tool tools.Tool) error {
-	if tool.Kind() == tools.KindMCP {
+var denyMCP = tools.ApproverFunc(func(_ context.Context, call agentcore.ToolCall, tool agentcore.Tool) error {
+	if tools.KindOf(tool) == tools.KindMCP {
 		return tools.Denied("需要许可：" + call.Name)
 	}
 	return nil
@@ -107,7 +107,7 @@ func TestRunnerDenialSemantics(t *testing.T) {
 			callStep("c1", "mcp_write", nil),
 			{Content: "must not run", FinishReason: agentcore.FinishFinal},
 		}}
-		cancelled := tools.ApproverFunc(func(context.Context, agentcore.ToolCall, tools.Tool) error { return context.Canceled })
+		cancelled := tools.ApproverFunc(func(context.Context, agentcore.ToolCall, agentcore.Tool) error { return context.Canceled })
 		ran := 0
 		res, err := approvalRunner(t, repo, prov, cancelled, &ran).Run(ctx, RunRequest{Prompt: "go"})
 		assert.Eq(t, true, errors.Is(err, context.Canceled))
@@ -143,7 +143,7 @@ func TestRunnerDisabledAndUnknownTools(t *testing.T) {
 		reg.Register(fnTool{name: "act", fn: func() (*agentcore.ToolResult, error) {
 			return &agentcore.ToolResult{Content: "acted"}, nil
 		}})
-		approval := tools.NewApproval(reg, tools.ApproverFunc(func(context.Context, agentcore.ToolCall, tools.Tool) error { return nil }))
+		approval := tools.NewApproval(reg, tools.ApproverFunc(func(context.Context, agentcore.ToolCall, agentcore.Tool) error { return nil }))
 		approval.SetDisabled(map[string]string{"shell_exec": "加 --allow-write"})
 		runner, err := New(Config{Repository: repo, Provider: prov, Tools: approval})
 		assert.Require(t, assert.NoErr(t, err))

@@ -16,7 +16,6 @@ import (
 
 	"golang.org/x/net/html/charset"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
@@ -167,8 +166,7 @@ func checkHost(ctx context.Context, host string, allow func(netip.Addr) bool,
 	return nil
 }
 
-func (t *WebFetchTool) Name() string     { return "web_fetch" }
-func (t *WebFetchTool) Kind() tools.Kind { return tools.KindNative }
+func (t *WebFetchTool) Name() string { return "web_fetch" }
 func (t *WebFetchTool) Description() string {
 	return "Fetch an http(s) URL and return its readable text (HTML is converted to text keeping headings, " +
 		"links and code blocks; scripts and styles are dropped). Private and local network addresses are refused."

@@ -112,7 +112,7 @@ func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEv
 // request) returns a deniedError: the model gets a tool error and the turn
 // continues. A cancelled request (or cancelled turn) returns the ctx error,
 // which aborts the turn.
-func (h *permissionHook) Decide(ctx context.Context, call agentcore.ToolCall, tool tools.Tool) error {
+func (h *permissionHook) Decide(ctx context.Context, call agentcore.ToolCall, tool agentcore.Tool) error {
 	if h.conn == nil {
 		return &deniedError{cause: ErrPermissionDenied}
 	}
@@ -133,7 +133,7 @@ func (h *permissionHook) Decide(ctx context.Context, call agentcore.ToolCall, to
 		h.mu.Unlock()
 	}
 	kind, readTool := pending.kind, pending.readTool
-	if tool != nil && tool.Kind() == tools.KindMCP {
+	if tools.KindOf(tool) == tools.KindMCP {
 		kind, readTool = acp.ToolKindOther, false
 	}
 	if h.readOnly && !readTool {

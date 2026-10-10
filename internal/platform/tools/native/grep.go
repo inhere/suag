@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
@@ -28,8 +27,7 @@ type FileGrepTool struct {
 	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
 }
 
-func (t *FileGrepTool) Name() string     { return "file_grep" }
-func (t *FileGrepTool) Kind() tools.Kind { return tools.KindNative }
+func (t *FileGrepTool) Name() string { return "file_grep" }
 func (t *FileGrepTool) Description() string {
 	return "Search file contents in the workspace with a Go (RE2) regular expression. " +
 		"Returns path:line: text (paths relative to the workspace, / separated), or only paths with output=files. " +

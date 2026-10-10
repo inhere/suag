@@ -10,7 +10,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
@@ -27,8 +26,7 @@ type FileReadTool struct {
 	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
 }
 
-func (t *FileReadTool) Name() string     { return "file_read" }
-func (t *FileReadTool) Kind() tools.Kind { return tools.KindNative }
+func (t *FileReadTool) Name() string { return "file_read" }
 func (t *FileReadTool) Description() string {
 	return fmt.Sprintf("Read a text file in the workspace. Lines are prefixed with their number and a tab "+
 		"(the prefix is not part of the file). Returns at most %d lines per call; for large files pass "+

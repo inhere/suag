@@ -24,7 +24,7 @@ import (
 // the tool kind and metadata refactor and must stay unchanged through it.
 type policyRow struct {
 	name string
-	tool func(t *testing.T, cwd string) tools.Tool
+	tool func(t *testing.T, cwd string) agentcore.Tool
 	// kind is the kind announced by BeforeTool; diff whether the
 	// announcement carries a diff for a file argument.
 	kind acp.ToolKind
@@ -34,8 +34,8 @@ type policyRow struct {
 	readOnly, normal, nilTool string
 }
 
-func policyCatalogTool(name string) func(t *testing.T, cwd string) tools.Tool {
-	return func(t *testing.T, cwd string) tools.Tool {
+func policyCatalogTool(name string) func(t *testing.T, cwd string) agentcore.Tool {
+	return func(t *testing.T, cwd string) agentcore.Tool {
 		t.Helper()
 		for _, spec := range native.Catalog() {
 			if spec.Name == name {
@@ -56,11 +56,13 @@ func policyRows() []policyRow {
 	gated := func(name string, kind acp.ToolKind, diff bool) policyRow {
 		return policyRow{name: name, tool: policyCatalogTool(name), kind: kind, diff: diff, readOnly: "deny", normal: "ask", nilTool: "ask"}
 	}
-	wired := func(name string, kind acp.ToolKind, tool func(t *testing.T, cwd string) tools.Tool) policyRow {
+	wired := func(name string, kind acp.ToolKind, tool func(t *testing.T, cwd string) agentcore.Tool) policyRow {
 		return policyRow{name: name, tool: tool, kind: kind, readOnly: "run", normal: "run", nilTool: "run"}
 	}
 	mcpRow := func(server, name string) policyRow {
-		return policyRow{name: name, tool: func(*testing.T, string) tools.Tool { return &tableMCPTool{countingTool{name: name, mcp: true}, server} },
+		return policyRow{name: name, tool: func(*testing.T, string) agentcore.Tool {
+			return &tableMCPTool{countingTool{name: name, mcp: true}, server}
+		},
 			kind: acp.ToolKindOther, readOnly: "deny", normal: "ask", nilTool: "ask"}
 	}
 	return []policyRow{
@@ -69,15 +71,15 @@ func policyRows() []policyRow {
 		allowed("web_search", acp.ToolKindSearch), allowed("web_fetch", acp.ToolKindFetch),
 		gated("file_write", acp.ToolKindEdit, true), gated("file_edit", acp.ToolKindEdit, true),
 		gated("shell_exec", acp.ToolKindExecute, false),
-		wired("update_plan", acp.ToolKindThink, func(*testing.T, string) tools.Tool {
+		wired("update_plan", acp.ToolKindThink, func(*testing.T, string) agentcore.Tool {
 			return native.NewUpdatePlanTool(personal.NewPlanRecorder())
 		}),
-		wired("tool_search", acp.ToolKindSearch, func(*testing.T, string) tools.Tool {
+		wired("tool_search", acp.ToolKindSearch, func(*testing.T, string) agentcore.Tool {
 			return native.NewToolSearchTool(tools.NewVisibility(tools.NewRegistry(), tools.VisibilityOptions{}))
 		}),
-		wired("skill", acp.ToolKindRead, func(*testing.T, string) tools.Tool { return native.NewSkillTool(skills.NewRegistry(), 0) }),
+		wired("skill", acp.ToolKindRead, func(*testing.T, string) agentcore.Tool { return native.NewSkillTool(skills.NewRegistry(), 0) }),
 		// Unknown tools require permission and are refused in read_only.
-		{name: "future_tool", tool: func(*testing.T, string) tools.Tool { return &countingTool{name: "future_tool"} },
+		{name: "future_tool", tool: func(*testing.T, string) agentcore.Tool { return &countingTool{name: "future_tool"} },
 			kind: acp.ToolKindOther, readOnly: "deny", normal: "ask", nilTool: "ask"},
 		mcpRow("srv", "srv_query"),
 		// An MCP tool named like a built-in read tool never takes the read fast path.
@@ -95,7 +97,7 @@ type tableMCPTool struct {
 func (t *tableMCPTool) MCPServer() string { return t.server }
 
 // isMCPTool mirrors the CLI's ACP wiring: a registered tool of MCP kind.
-func isMCPTool(tool tools.Tool) bool { return tool != nil && tool.Kind() == tools.KindMCP }
+func isMCPTool(tool agentcore.Tool) bool { return tool != nil && tools.KindOf(tool) == tools.KindMCP }
 
 // newTableHook returns a permission hook wired to a client that rejects every
 // permission request.
@@ -115,7 +117,7 @@ func newTableHook(t *testing.T, cwd string, readOnly bool, client *testACPClient
 }
 
 // policyOutcome announces call through BeforeTool, then classifies Decide.
-func policyOutcome(t *testing.T, hook *permissionHook, client *testACPClient, call agentcore.ToolCall, tool tools.Tool) (string, *pendingCall) {
+func policyOutcome(t *testing.T, hook *permissionHook, client *testACPClient, call agentcore.ToolCall, tool agentcore.Tool) (string, *pendingCall) {
 	t.Helper()
 	ctx := context.Background()
 	assert.Require(t, assert.NoErr(t, hook.BeforeTool(ctx, &agentcore.ToolEvent{RunID: "r", Call: &call}, nil)))
@@ -152,7 +154,7 @@ func TestPolicyTable(t *testing.T) {
 		t.Run(fmt.Sprintf("%02d_%s", i, row.name), func(t *testing.T) {
 			mcp := isMCPTool(tool)
 			isMCP := func(string) bool { return mcp }
-			outcome := func(readOnly bool, tool tools.Tool, id string) (string, *pendingCall) {
+			outcome := func(readOnly bool, tool agentcore.Tool, id string) (string, *pendingCall) {
 				client := &testACPClient{selected: "reject"}
 				hook := newTableHook(t, cwd, readOnly, client)
 				hook.isMCP = isMCP

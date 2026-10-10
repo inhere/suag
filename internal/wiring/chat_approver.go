@@ -59,8 +59,8 @@ func toolsApprovalAuto() (bool, error) {
 	return false, fmt.Errorf("tools.approval must be \"ask\" or \"auto\", got %v", gkconfig.Get("tools.approval"))
 }
 
-func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool tools.Tool) error {
-	if tool.Kind() == tools.KindMCP {
+func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool agentcore.Tool) error {
+	if tools.KindOf(tool) == tools.KindMCP {
 		return a.gate.Decide(ctx, call, tool)
 	}
 	name := call.Name

@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
 	"github.com/inhere/suag/pkg/agentcore/skills"
 )
@@ -34,8 +33,7 @@ func NewSkillTool(reg *skills.Registry, maxOut int) *SkillTool {
 	return &SkillTool{reg: reg, maxOut: maxOut}
 }
 
-func (t *SkillTool) Name() string     { return "skill" }
-func (t *SkillTool) Kind() tools.Kind { return tools.KindNative }
+func (t *SkillTool) Name() string { return "skill" }
 func (t *SkillTool) Description() string {
 	return "Load a skill by name: returns its instructions and the files in its directory; pass file to read one of " +
 		"those files (path relative to the skill directory). Follow the instructions you load. " +

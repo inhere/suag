@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
@@ -17,8 +16,8 @@ import (
 type FileWriteTool struct{ workspace string }
 
 // NewFileTools returns the three file tools scoped to workspace.
-func NewFileTools(workspace string) []tools.Tool {
-	return []tools.Tool{
+func NewFileTools(workspace string) []api.Tool {
+	return []api.Tool{
 		&FileReadTool{workspace: workspace},
 		&FileWriteTool{workspace: workspace},
 		&FileListTool{workspace: workspace},
@@ -27,8 +26,7 @@ func NewFileTools(workspace string) []tools.Tool {
 
 // ─── FileWriteTool ────────────────────────────────────────────────────────────
 
-func (t *FileWriteTool) Name() string     { return "file_write" }
-func (t *FileWriteTool) Kind() tools.Kind { return tools.KindNative }
+func (t *FileWriteTool) Name() string { return "file_write" }
 func (t *FileWriteTool) Description() string {
 	return "Write content to a file in the workspace. Creates parent directories as needed."
 }

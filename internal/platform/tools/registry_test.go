@@ -7,6 +7,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/pkg/agentcore/api"
 	agentcoretesting "github.com/inhere/suag/pkg/agentcore/testing"
 )
@@ -344,4 +345,23 @@ func cloneArgs(src map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+// plainTool implements only api.Tool, without Kind.
+type plainTool struct{}
+
+func (plainTool) Name() string                                                   { return "plain" }
+func (plainTool) Description() string                                            { return "" }
+func (plainTool) Schema() api.ToolSchema                                         { return api.ToolSchema{Name: "plain"} }
+func (plainTool) Execute(context.Context, api.ToolCall) (*api.ToolResult, error) { return nil, nil }
+
+func TestKindOf(t *testing.T) {
+	assert.Eq(t, KindNative, KindOf(plainTool{}))
+	assert.Eq(t, KindNative, KindOf(nil))
+	assert.Eq(t, KindMCP, KindOf(&fakeMCP{}))
+	reg := NewRegistry()
+	reg.Register(plainTool{}) // Kind is optional for registration
+	got, err := reg.Get("plain")
+	assert.NoErr(t, err)
+	assert.Eq(t, KindNative, KindOf(got))
 }

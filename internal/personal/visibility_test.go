@@ -39,7 +39,7 @@ type approvalCounter struct {
 func (a *approvalCounter) ListTools(ctx context.Context) ([]agentcore.ToolSchema, error) {
 	return a.reg.ListTools(ctx)
 }
-func (a *approvalCounter) Get(name string) (tools.Tool, error) { return a.reg.Get(name) }
+func (a *approvalCounter) Get(name string) (api.Tool, error) { return a.reg.Get(name) }
 func (a *approvalCounter) ExecuteTool(ctx context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	a.mu.Lock()
 	a.n[call.Name]++

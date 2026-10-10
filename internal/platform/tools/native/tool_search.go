@@ -26,8 +26,7 @@ func NewToolSearchTool(searcher ToolSearcher) *ToolSearchTool {
 	return &ToolSearchTool{searcher: searcher}
 }
 
-func (t *ToolSearchTool) Name() string     { return "tool_search" }
-func (t *ToolSearchTool) Kind() tools.Kind { return tools.KindNative }
+func (t *ToolSearchTool) Name() string { return "tool_search" }
 func (t *ToolSearchTool) Description() string {
 	return "Search the deferred MCP tools listed in the system prompt and load the matches so they can be " +
 		"called from the next step. query is keywords, or \"select:name1,name2\" to load exact tools."

@@ -5,15 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
 // FileEditTool replaces an exact string in a workspace file.
 type FileEditTool struct{ workspace string }
 
-func (t *FileEditTool) Name() string     { return "file_edit" }
-func (t *FileEditTool) Kind() tools.Kind { return tools.KindNative }
+func (t *FileEditTool) Name() string { return "file_edit" }
 func (t *FileEditTool) Description() string {
 	return "Edit a workspace file by replacing an exact string. Read the file first: old_string must match the " +
 		"file text exactly (without file_read's line-number prefix) and be unique unless replace_all is set; " +

@@ -110,7 +110,7 @@ func TestToolEventsRecordErrorAndDenial(t *testing.T) {
 		assert.Require(t, assert.True(t, ok))
 		tool, err := lookup.Get("fine")
 		assert.NoErr(t, err)
-		assert.Eq(t, tools.KindNative, tool.Kind())
+		assert.Eq(t, tools.KindNative, tools.KindOf(tool))
 	})
 }
 

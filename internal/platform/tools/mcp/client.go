@@ -150,8 +150,8 @@ func (c *Client) ListTools(ctx context.Context) ([]mcpTool, error) {
 	return resp.Tools, nil
 }
 
-// AsTool wraps an MCP tool definition as a tools.Tool for the registry.
-func (c *Client) AsTool(t mcpTool) tools.Tool {
+// AsTool wraps an MCP tool definition as a api.Tool for the registry.
+func (c *Client) AsTool(t mcpTool) api.Tool {
 	return &mcpToolAdapter{client: c, def: t}
 }
 

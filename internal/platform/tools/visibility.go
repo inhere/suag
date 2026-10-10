@@ -146,7 +146,7 @@ func NewVisibility(inner lookupRegistry, opts VisibilityOptions) *Visibility {
 	total := 0
 	for _, s := range schemas {
 		tool, err := inner.Get(s.Name)
-		if err != nil || tool.Kind() != KindMCP {
+		if err != nil || KindOf(tool) != KindMCP {
 			continue
 		}
 		server := ""
@@ -184,7 +184,7 @@ func (v *Visibility) Bind(store LoadedStore, onEvent func(context.Context, Searc
 }
 
 // Get passes tool lookup through to the inner layers.
-func (v *Visibility) Get(name string) (Tool, error) { return v.inner.Get(name) }
+func (v *Visibility) Get(name string) (api.Tool, error) { return v.inner.Get(name) }
 
 // loadedLocked returns the loaded deferred tools. Names no longer deferred
 // (a server removed since) are ignored.

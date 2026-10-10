@@ -69,7 +69,7 @@ type deniedCounter struct {
 	denied int
 }
 
-func (d *deniedCounter) Decide(ctx context.Context, call agentcoreapi.ToolCall, tool tools.Tool) error {
+func (d *deniedCounter) Decide(ctx context.Context, call agentcoreapi.ToolCall, tool agentcoreapi.Tool) error {
 	err := d.inner.Decide(ctx, call, tool)
 	if errors.Is(err, tools.ErrDenied) {
 		d.denied++

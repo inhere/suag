@@ -82,7 +82,7 @@ func TestVisibilityModes(t *testing.T) {
 		reg := thirtyMCP(200, nil)
 		total := 0
 		for _, s := range reg.Schemas() {
-			if tool, _ := reg.Get(s.Name); tool.Kind() == KindMCP {
+			if tool, _ := reg.Get(s.Name); KindOf(tool) == KindMCP {
 				total += len(schemaJSON(s))
 			}
 		}
@@ -176,7 +176,7 @@ func TestVisibilityExecuteUnloaded(t *testing.T) {
 	assert.Eq(t, "r", res.Content)
 	tool, err := v.Get("tool_09")
 	assert.NoErr(t, err)
-	assert.Eq(t, KindMCP, tool.Kind())
+	assert.Eq(t, KindMCP, KindOf(tool))
 }
 
 func TestVisibilityPromptSection(t *testing.T) {

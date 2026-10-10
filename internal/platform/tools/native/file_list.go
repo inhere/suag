@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
@@ -28,8 +27,7 @@ type FileListTool struct {
 	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
 }
 
-func (t *FileListTool) Name() string     { return "file_list" }
-func (t *FileListTool) Kind() tools.Kind { return tools.KindNative }
+func (t *FileListTool) Name() string { return "file_list" }
 func (t *FileListTool) Description() string {
 	return "List a workspace directory. Directories end with /, symlinks with @ (not followed). " +
 		"depth>1 lists recursively as relative paths; .git, node_modules, vendor and dist are shown but not entered."

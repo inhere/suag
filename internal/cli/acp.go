@@ -50,7 +50,7 @@ func RunPersonalACP(ctx context.Context, input io.Reader, output io.Writer) erro
 		registry := runtime.Registry
 		isMCP := func(name string) bool {
 			tool, err := registry.Get(name)
-			return err == nil && tool.Kind() == tools.KindMCP
+			return err == nil && tools.KindOf(tool) == tools.KindMCP
 		}
 		return acpserver.Runtime{Runner: runtime.Runner, Close: runtime.Close, IsMCPTool: isMCP, ContextWindow: runtime.ContextWindow}, nil
 	})

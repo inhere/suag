@@ -100,8 +100,8 @@ func mcpAllowlist(key string, qualifiedOnly bool) ([]string, error) {
 
 // Decide allows native tools and allowlisted MCP tools; any other MCP tool is
 // refused with tools.Denied, which the model sees as a tool error.
-func (g *cliMCPGate) Decide(_ context.Context, call agentcore.ToolCall, tool tools.Tool) error {
-	if tool.Kind() != tools.KindMCP {
+func (g *cliMCPGate) Decide(_ context.Context, call agentcore.ToolCall, tool agentcore.Tool) error {
+	if tools.KindOf(tool) != tools.KindMCP {
 		return nil
 	}
 	server := ""

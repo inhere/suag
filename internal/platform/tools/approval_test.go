@@ -29,7 +29,7 @@ func TestApproval(t *testing.T) {
 		reg.Register(tool)
 		var approver Approver
 		if decide != nil {
-			approver = ApproverFunc(func(context.Context, api.ToolCall, Tool) error { return decide() })
+			approver = ApproverFunc(func(context.Context, api.ToolCall, api.Tool) error { return decide() })
 		}
 		return NewApproval(reg, approver), tool
 	}
@@ -69,7 +69,7 @@ func TestApproval(t *testing.T) {
 	t.Run("unknown tool is not sent to the approver", func(t *testing.T) {
 		asked := false
 		reg := NewRegistry()
-		a := NewApproval(reg, ApproverFunc(func(context.Context, api.ToolCall, Tool) error { asked = true; return nil }))
+		a := NewApproval(reg, ApproverFunc(func(context.Context, api.ToolCall, api.Tool) error { asked = true; return nil }))
 		_, err := a.ExecuteTool(context.Background(), api.ToolCall{Name: "missing"})
 		assert.Err(t, err)
 		assert.Eq(t, false, asked)
