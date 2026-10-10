@@ -1,0 +1,203 @@
+package native
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"mime"
+	"net"
+	"net/http"
+	"net/netip"
+	"net/url"
+	"strings"
+	"syscall"
+	"time"
+
+	"golang.org/x/net/html/charset"
+
+	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/pkg/agentcore/api"
+)
+
+const (
+	fetchTimeout         = 20 * time.Second
+	fetchMaxDownload     = 5 << 20
+	fetchMaxRedirects    = 5
+	defaultFetchMaxBytes = 20000
+)
+
+// errBlockedAddress marks a connection refused because of its target IP.
+var errBlockedAddress = errors.New("blocked address")
+
+// cgnat is 100.64.0.0/10 (carrier-grade NAT), not covered by IsPrivate.
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// publicIP reports whether ip may be fetched: not loopback, private,
+// link-local (cloud metadata lives there), unspecified, multicast or CGNAT.
+func publicIP(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	return ip.IsValid() && !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() &&
+		!ip.IsLinkLocalMulticast() && !ip.IsInterfaceLocalMulticast() && !ip.IsMulticast() &&
+		!ip.IsUnspecified() && !cgnat.Contains(ip)
+}
+
+// WebFetchTool downloads a web page and returns its readable text.
+type WebFetchTool struct {
+	client *http.Client
+	maxOut int // result cap in bytes; 0 = DefaultMaxOutputBytes
+}
+
+// NewWebFetchTool builds the tool. Unless allowPrivate is set, every
+// connection is checked at dial time against the IP actually connected to,
+// which also covers redirects and DNS rebinding. Environment proxies are
+// ignored so the check sees the real target.
+func NewWebFetchTool(allowPrivate bool) *WebFetchTool {
+	allow := publicIP
+	if allowPrivate {
+		allow = func(netip.Addr) bool { return true }
+	}
+	return newWebFetchTool(allow)
+}
+
+func newWebFetchTool(allow func(netip.Addr) bool) *WebFetchTool {
+	dialer := &net.Dialer{
+		Timeout: 10 * time.Second,
+		Control: func(_, address string, _ syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return err
+			}
+			ip, err := netip.ParseAddr(host)
+			if err != nil || !allow(ip) {
+				return fmt.Errorf("%w: %s is not a public address", errBlockedAddress, host)
+			}
+			return nil
+		},
+	}
+	transport := &http.Transport{
+		Proxy:                 nil,
+		DialContext:           dialer.DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: fetchTimeout,
+		MaxIdleConns:          4,
+		IdleConnTimeout:       30 * time.Second,
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   fetchTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= fetchMaxRedirects {
+				return fmt.Errorf("stopped after %d redirects", fetchMaxRedirects)
+			}
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("redirect to unsupported scheme %q", req.URL.Scheme)
+			}
+			return nil
+		},
+	}
+	return &WebFetchTool{client: client}
+}
+
+func (t *WebFetchTool) Name() string     { return "web_fetch" }
+func (t *WebFetchTool) Kind() tools.Kind { return tools.KindNative }
+func (t *WebFetchTool) Description() string {
+	return "Fetch an http(s) URL and return its readable text (HTML is converted to text keeping headings, " +
+		"links and code blocks; scripts and styles are dropped). Private and local network addresses are refused."
+}
+func (t *WebFetchTool) Schema() api.ToolSchema {
+	return api.ToolSchema{
+		Name:        t.Name(),
+		Description: t.Description(),
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"url":       map[string]any{"type": "string", "description": "http or https URL"},
+				"max_bytes": map[string]any{"type": "integer", "description": fmt.Sprintf("Maximum bytes of text to return (default %d)", defaultFetchMaxBytes)},
+			},
+			"required": []any{"url"},
+		},
+	}
+}
+
+func (t *WebFetchTool) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	raw, _ := call.Arguments["url"].(string)
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, fmt.Errorf("web_fetch: url must be an absolute http(s) URL, got %q", raw)
+	}
+	maxBytes := defaultFetchMaxBytes
+	if n, ok := numberArg(call.Arguments["max_bytes"]); ok && n >= 1 {
+		maxBytes = int(n)
+	}
+	maxBytes = min(maxBytes, outputLimit(t.maxOut))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("web_fetch: %w", err)
+	}
+	req.Header.Set("User-Agent", "suag-web-fetch/1.0")
+	req.Header.Set("Accept", "text/html,text/plain,application/json;q=0.9,*/*;q=0.5")
+	resp, err := t.client.Do(req)
+	if err != nil {
+		if errors.Is(err, errBlockedAddress) {
+			return nil, fmt.Errorf("web_fetch: refused: %w", errBlockedAddress)
+		}
+		return nil, fmt.Errorf("web_fetch: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, fetchMaxDownload+1))
+	if err != nil {
+		return nil, fmt.Errorf("web_fetch: read body: %w", err)
+	}
+	clipped := len(body) > fetchMaxDownload
+	if clipped {
+		body = body[:fetchMaxDownload]
+	}
+	contentType := resp.Header.Get("Content-Type")
+	mediaType, _, _ := mime.ParseMediaType(contentType)
+
+	var header strings.Builder
+	fmt.Fprintf(&header, "URL: %s\nStatus: %s\n", resp.Request.URL, resp.Status)
+	var text string
+	switch {
+	case mediaType == "text/html" || mediaType == "application/xhtml+xml" || (mediaType == "" && looksHTML(body)):
+		title, content := htmlToText(decodeBody(body, contentType), resp.Request.URL)
+		if title != "" {
+			fmt.Fprintf(&header, "Title: %s\n", title)
+		}
+		text = content
+	case strings.HasPrefix(mediaType, "text/") || strings.HasSuffix(mediaType, "json") || strings.HasSuffix(mediaType, "xml"):
+		text = decodeBody(body, contentType)
+	default:
+		return &api.ToolResult{CallID: call.CallID, Name: t.Name(),
+			Content: header.String() + fmt.Sprintf("[unsupported content type %q, %d bytes; not shown]", mediaType, len(body))}, nil
+	}
+	if clipped {
+		header.WriteString("[download stopped at 5MB]\n")
+	}
+	content, _, cut := TruncateLines(text, maxBytes)
+	if cut {
+		content += fmt.Sprintf("\n[truncated at %d bytes of %d]", maxBytes, len(text))
+	}
+	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: header.String() + "\n" + content}, nil
+}
+
+// decodeBody converts body to UTF-8 using the declared or sniffed charset.
+func decodeBody(body []byte, contentType string) string {
+	r, err := charset.NewReader(strings.NewReader(string(body)), contentType)
+	if err != nil {
+		return strings.ToValidUTF8(string(body), "�")
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		return strings.ToValidUTF8(string(body), "�")
+	}
+	return string(out)
+}
+
+// looksHTML sniffs a body served without a content type.
+func looksHTML(body []byte) bool {
+	return http.DetectContentType(body) == "text/html; charset=utf-8"
+}

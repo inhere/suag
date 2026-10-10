@@ -57,7 +57,7 @@ func newChatApproval(t *testing.T, auto bool, asker tools.Asker) (*tools.Approva
 	t.Helper()
 	registry := tools.NewRegistry()
 	stubs := map[string]*nativeStubTool{}
-	for _, name := range []string{"file_read", "file_list", "update_plan", "tool_search", "file_write", "shell_exec", "web_search", "file_grep", "file_find", "future_tool"} {
+	for _, name := range []string{"file_read", "file_list", "update_plan", "tool_search", "file_write", "shell_exec", "web_search", "file_grep", "file_find", "web_fetch", "future_tool"} {
 		stubs[name] = &nativeStubTool{name: name}
 		registry.Register(stubs[name])
 	}
@@ -82,7 +82,7 @@ func TestChatApprover(t *testing.T) {
 	t.Run("read-only tools run without asking", func(t *testing.T) {
 		asker := &scriptedAsker{}
 		approval, stubs := newChatApproval(t, false, asker)
-		for _, name := range []string{"file_read", "file_list", "update_plan", "tool_search", "web_search", "file_grep", "file_find"} {
+		for _, name := range []string{"file_read", "file_list", "update_plan", "tool_search", "web_search", "file_grep", "file_find", "web_fetch"} {
 			assert.NoErr(t, runTool(approval, name, nil))
 			assert.Eq(t, 1, stubs[name].runs)
 		}

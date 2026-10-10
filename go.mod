@@ -10,6 +10,7 @@ require (
 	github.com/gookit/config/v2 v2.2.9
 	github.com/gookit/goutil v0.8.1
 	github.com/gookit/ini/v2 v2.3.2
+	golang.org/x/net v0.35.0
 	golang.org/x/sys v0.30.0
 	golang.org/x/term v0.29.0
 	golang.org/x/text v0.22.0

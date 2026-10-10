@@ -19,6 +19,9 @@ type Env struct {
 	Shell string
 	// ShellTimeoutMax caps a shell_exec timeout (tools.shell_timeout_max).
 	ShellTimeoutMax time.Duration
+	// FetchAllowPrivate lets web_fetch reach private and local addresses
+	// (tools.web_fetch.allow_private).
+	FetchAllowPrivate bool
 }
 
 // Spec is one entry of the native tool catalog.
@@ -48,6 +51,11 @@ func Catalog() []Spec {
 		}},
 		{Name: "file_find", New: func(env Env) tools.Tool {
 			return &FileFindTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
+		}},
+		{Name: "web_fetch", New: func(env Env) tools.Tool {
+			t := NewWebFetchTool(env.FetchAllowPrivate)
+			t.maxOut = env.MaxOutputBytes
+			return t
 		}},
 		{Name: "file_write", Write: true, New: func(env Env) tools.Tool {
 			return &FileWriteTool{workspace: env.Workspace}

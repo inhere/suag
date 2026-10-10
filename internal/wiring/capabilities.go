@@ -87,10 +87,11 @@ func (c defaultCapabilities) Close() error {
 // nativeEnv reads the tools.* settings native tools are built with.
 func nativeEnv(workspace string) native.Env {
 	return native.Env{
-		Workspace:      workspace,
-		MaxOutputBytes: gkconfig.Int("tools.max_output_bytes", native.DefaultMaxOutputBytes),
-		SerpAPIKey:     gkconfig.String("serpapi_key"),
-		Shell:          gkconfig.String("tools.shell"),
+		Workspace:         workspace,
+		MaxOutputBytes:    gkconfig.Int("tools.max_output_bytes", native.DefaultMaxOutputBytes),
+		SerpAPIKey:        gkconfig.String("serpapi_key"),
+		Shell:             gkconfig.String("tools.shell"),
+		FetchAllowPrivate: gkconfig.Bool("tools.web_fetch.allow_private"),
 		ShellTimeoutMax: time.Duration(gkconfig.Int("tools.shell_timeout_max",
 			int(native.DefaultShellTimeoutMax/time.Second))) * time.Second,
 	}
