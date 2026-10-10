@@ -3,6 +3,7 @@ package agentcore
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"strings"
 	"testing"
 )
@@ -26,7 +27,7 @@ func TestRuntime_Run_PersistOutputFailureOnErrorYieldDoesNotForkAuthorityState(t
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -70,7 +71,7 @@ func TestRuntime_Run_PersistInputAppendFailureDoesNotForkAuthorityState(t *testi
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 	})
@@ -123,7 +124,7 @@ func TestRuntime_Run_ShortCircuitCompletedAppendFailureDoesNotForkAuthorityState
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -157,8 +158,8 @@ func TestRuntime_Run_ShortCircuitCompletedAppendFailureDoesNotForkAuthorityState
 
 func TestRuntime_Run_AfterToolErrorIsNotOverriddenByEarlierControl(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -183,7 +184,7 @@ func TestRuntime_Run_AfterToolErrorIsNotOverriddenByEarlierControl(t *testing.T)
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{firstHook, secondHook},
@@ -219,8 +220,8 @@ func TestRuntime_Run_PersistToolOutputAppendFailureIsNotRecoverable(t *testing.T
 	store.appendErr = errors.New("append tool output failed")
 	store.appendErrOnCall = 2
 
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -241,7 +242,7 @@ func TestRuntime_Run_PersistToolOutputAppendFailureIsNotRecoverable(t *testing.T
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -275,8 +276,8 @@ func TestRuntime_Run_PersistToolOutputAppendFailureAfterRunYieldDoesNotOverrideE
 	store.appendErr = errors.New("append tool output failed")
 	store.appendErrOnCall = 2
 
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -297,7 +298,7 @@ func TestRuntime_Run_PersistToolOutputAppendFailureAfterRunYieldDoesNotOverrideE
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -328,8 +329,8 @@ func TestRuntime_Run_PersistToolOutputOnErrorObservedErrorDoesNotOverrideRootCau
 	store.appendErr = errors.New("append tool output failed")
 	store.appendErrOnCall = 2
 
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -353,7 +354,7 @@ func TestRuntime_Run_PersistToolOutputOnErrorObservedErrorDoesNotOverrideRootCau
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -387,8 +388,8 @@ func TestRuntime_Run_PersistToolOutputAppendFailureAfterRunErrorDoesNotOverrideR
 	store.appendErr = errors.New("append tool output failed")
 	store.appendErrOnCall = 2
 
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -404,7 +405,7 @@ func TestRuntime_Run_PersistToolOutputAppendFailureAfterRunErrorDoesNotOverrideR
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{afterRunErrorHook(errors.New("after run boom"))},
@@ -439,7 +440,7 @@ func TestRuntime_Run_ProviderErrorMapped(t *testing.T) {
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 	})
@@ -473,7 +474,7 @@ func TestRuntime_Run_StorageErrorMapped(t *testing.T) {
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 	})

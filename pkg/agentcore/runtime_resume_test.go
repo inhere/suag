@@ -2,6 +2,7 @@ package agentcore
 
 import (
 	"context"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"testing"
 
 	"github.com/inhere/suag/pkg/agentcore/storage/files"
@@ -123,7 +124,7 @@ func TestRuntime_Run_ResumeMatrix(t *testing.T) {
 			rt := New(Config{
 				Provider:       provider,
 				Storage:        store,
-				Tools:          NewToolRegistry(),
+				Tools:          tools.NewRegistry(),
 				PromptBuilder:  runtimeTestPromptBuilder{},
 				ContextBuilder: runtimeTestContextBuilder{},
 			})
@@ -175,8 +176,8 @@ func TestRuntime_Run_ResumeFromState_WithPublicContracts(t *testing.T) {
 			FinishReason: FinishToolCalls,
 		}},
 	}
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "echo",
 		result: &ToolResult{
 			Content: "tool:persisted",
@@ -195,7 +196,7 @@ func TestRuntime_Run_ResumeFromState_WithPublicContracts(t *testing.T) {
 	firstRuntime := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{yieldAfterSecondModel},
@@ -244,7 +245,7 @@ func TestRuntime_Run_ResumeFromState_WithPublicContracts(t *testing.T) {
 	resumeRuntime := New(Config{
 		Provider:       resumeProvider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 	})
@@ -318,7 +319,7 @@ func TestRuntime_Run_ResumeAutoAfterYieldWithoutInstruction_ReusesState(t *testi
 			FinishReason: FinishToolCalls,
 		}},
 	}
-	registry := NewToolRegistry()
+	registry := tools.NewRegistry()
 	registry.Register(&runtimeTestTool{
 		name:   "echo",
 		result: &ToolResult{Content: "tool:ping"},
@@ -404,7 +405,7 @@ func TestRuntime_Run_ResumeFromStateCanYieldAgainWithoutForkingTranscript(t *tes
 		}
 	}
 
-	registry := NewToolRegistry()
+	registry := tools.NewRegistry()
 	registry.Register(&runtimeTestTool{
 		name:   "echo",
 		result: &ToolResult{Content: "tool:ping"},
@@ -520,7 +521,7 @@ func TestRuntime_Run_ResumeWithInputThenYieldAgainKeepsAppendedInputAuthoritativ
 		}
 	}
 
-	registry := NewToolRegistry()
+	registry := tools.NewRegistry()
 	registry.Register(&runtimeTestTool{
 		name:   "echo",
 		result: &ToolResult{Content: "tool:ping"},

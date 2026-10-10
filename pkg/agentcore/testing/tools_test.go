@@ -3,6 +3,7 @@ package agentcoretesting
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	stdtesting "testing"
 
 	"github.com/inhere/suag/pkg/agentcore"
@@ -15,7 +16,7 @@ func TestRunToolRegistrySuite_WithDefaultRegistry(t *stdtesting.T) {
 	RunToolRegistrySuite(t, func(t *stdtesting.T) ToolRegistryFixture {
 		t.Helper()
 
-		registry := agentcore.NewToolRegistry()
+		registry := tools.NewRegistry()
 		registry.Register(mock.NewTool(
 			"echo",
 			mock.WithDescription("echo text"),

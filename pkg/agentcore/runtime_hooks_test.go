@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"strings"
 	"testing"
 )
@@ -25,7 +26,7 @@ func TestRuntime_Run_HookYieldReturnsYieldedResult(t *testing.T) {
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -72,7 +73,7 @@ func TestRuntime_Run_BeforePromptBuildRunsBeforeBuilderAndCanYield(t *testing.T)
 	rt := New(Config{
 		Provider: provider,
 		Storage:  store,
-		Tools:    NewToolRegistry(),
+		Tools:    tools.NewRegistry(),
 		PromptBuilder: runtimeTestPromptBuilder{
 			calls: &promptCalls,
 			onBuild: func(*RunState) error {
@@ -120,7 +121,7 @@ func TestRuntime_Run_BeforeContextBuildRunsBeforeBuilderAndCanShortCircuit(t *te
 	rt := New(Config{
 		Provider:      provider,
 		Storage:       store,
-		Tools:         NewToolRegistry(),
+		Tools:         tools.NewRegistry(),
 		PromptBuilder: runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{
 			calls: &contextCalls,
@@ -165,7 +166,7 @@ func TestRuntime_Run_AfterModelYieldPreservesStepAndUsage(t *testing.T) {
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -212,7 +213,7 @@ func TestRuntime_Run_HookShortCircuitReturnsReplacement(t *testing.T) {
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -259,7 +260,7 @@ func TestRuntime_Run_AfterRunYieldIsNotIgnored(t *testing.T) {
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -310,7 +311,7 @@ func TestRuntime_Run_ShortCircuitStillTriggersAfterRun(t *testing.T) {
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -354,7 +355,7 @@ func TestRuntime_Run_YieldStillTriggersAfterRun(t *testing.T) {
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -399,7 +400,7 @@ func TestRuntime_Run_HardFailureTriggersOnErrorAndAfterRun(t *testing.T) {
 	_, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -434,7 +435,7 @@ func TestRuntime_Run_HardFailureAfterRunYieldDoesNotOverrideError(t *testing.T) 
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -490,7 +491,7 @@ func TestRuntime_Run_HardFailureAfterRunErrorDoesNotOverrideRootCause(t *testing
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{afterRunFailureHook},
@@ -529,7 +530,7 @@ func TestRuntime_Run_HookErrorMapped(t *testing.T) {
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -563,7 +564,7 @@ func TestRuntime_Run_OnErrorYieldIsNotIgnored(t *testing.T) {
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},

@@ -3,6 +3,7 @@ package agentcore
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"testing"
 )
 
@@ -161,7 +162,7 @@ func TestRuntime_Run_UsesConfiguredResumePolicy(t *testing.T) {
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 		ResumePolicy:   policy,

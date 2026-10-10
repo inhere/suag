@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"log"
 	"os"
 	"path/filepath"
@@ -95,7 +96,7 @@ func main() {
 	}
 
 	store := files.NewStorage(storageDir)
-	tools := agentcore.NewToolRegistry()
+	tools := tools.NewRegistry()
 	tools.Register(mock.NewTool(
 		"echo",
 		mock.WithDescription("Echoes the provided text"),

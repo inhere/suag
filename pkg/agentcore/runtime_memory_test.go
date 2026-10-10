@@ -3,6 +3,7 @@ package agentcore
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"testing"
 )
 
@@ -349,8 +350,8 @@ func TestRuntime_Run_PersistToolOutputObserveFailureKeepsToolTranscriptAuthorita
 		observeErr:   errors.New("observe failed after tool transcript append"),
 		observeErrOn: 2,
 	}
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -377,7 +378,7 @@ func TestRuntime_Run_PersistToolOutputObserveFailureKeepsToolTranscriptAuthorita
 		Provider:      provider,
 		Storage:       store,
 		Memory:        mem,
-		Tools:         tools,
+		Tools:         reg,
 		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
 	}).Run(context.Background(), RunInput{
 		RunID:       "run-memory-observe-tool-fail",
@@ -430,8 +431,8 @@ func TestRuntime_Run_PersistMutatedToolOutputObserveFailureKeepsMutatedFactsAuth
 		observeErr:   errors.New("observe failed after mutated tool transcript append"),
 		observeErrOn: 2,
 	}
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -477,7 +478,7 @@ func TestRuntime_Run_PersistMutatedToolOutputObserveFailureKeepsMutatedFactsAuth
 		Provider:      provider,
 		Storage:       store,
 		Memory:        mem,
-		Tools:         tools,
+		Tools:         reg,
 		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
 		Hooks:         []Hook{hook},
 	}).Run(context.Background(), RunInput{

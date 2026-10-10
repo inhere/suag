@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,7 +23,7 @@ func TestRuntime_Run_FinalAnswer(t *testing.T) {
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 	})
@@ -321,7 +322,7 @@ func TestRuntime_Run_RunIDNotFoundTreatsInputAsNewRun(t *testing.T) {
 	rt := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 	})
@@ -372,7 +373,7 @@ func TestRuntime_Run_RunIDStorageMissErrorTreatsInputAsNewRun(t *testing.T) {
 			rt := New(Config{
 				Provider:       provider,
 				Storage:        store,
-				Tools:          NewToolRegistry(),
+				Tools:          tools.NewRegistry(),
 				PromptBuilder:  runtimeTestPromptBuilder{},
 				ContextBuilder: runtimeTestContextBuilder{},
 			})

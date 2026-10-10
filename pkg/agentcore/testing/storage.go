@@ -3,6 +3,7 @@ package agentcoretesting
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"reflect"
 	stdtesting "testing"
 
@@ -221,7 +222,7 @@ func RunStorageFixtureSuite(t *stdtesting.T, factory StorageCaseFactory) {
 		}
 
 		runID := "run-storage-runtime-resume"
-		tools := agentcore.NewToolRegistry()
+		tools := tools.NewRegistry()
 		tools.Register(mock.NewTool("echo"))
 
 		yieldHook := &yieldOnSecondModelHook{}

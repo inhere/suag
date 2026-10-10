@@ -9,7 +9,6 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/pkg/agentcore/api"
-	agentcoretesting "github.com/inhere/suag/pkg/agentcore/testing"
 )
 
 // mockTool is a simple test double.
@@ -206,40 +205,6 @@ func TestRegistry_ExecuteTool_PreservesRichResults(t *testing.T) {
 	if result.Metadata["origin"] != "platform" {
 		t.Fatalf("metadata = %#v, want preserved metadata", result.Metadata)
 	}
-}
-
-func TestRegistry_AgentcoreToolRegistryContract(t *testing.T) {
-	agentcoretesting.RunToolRegistrySuite(t, func(t *testing.T) agentcoretesting.ToolRegistryFixture {
-		reg := NewRegistry()
-		reg.Register(&captureTool{name: "echo", result: "echo:hello"})
-
-		return agentcoretesting.NewToolRegistryFixture(
-			reg,
-			api.ToolSchema{
-				Name:        "echo",
-				Description: "capture tool",
-				InputSchema: map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"msg": map[string]any{
-							"type":        "string",
-							"description": "message",
-						},
-					},
-				},
-			},
-			api.ToolCall{
-				CallID:    "call-echo",
-				Name:      "echo",
-				Arguments: map[string]any{"msg": "hello"},
-			},
-			&api.ToolResult{
-				CallID:  "call-echo",
-				Name:    "echo",
-				Content: "echo:hello",
-			},
-		)
-	})
 }
 
 type captureTool struct {

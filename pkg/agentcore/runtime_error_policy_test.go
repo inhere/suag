@@ -3,6 +3,7 @@ package agentcore
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"testing"
 )
 
@@ -56,7 +57,7 @@ func TestRuntime_Run_UsesConfiguredErrorPolicyForRecoverableFailure(t *testing.T
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		ErrorPolicy:    policy,
@@ -100,7 +101,7 @@ func TestRuntime_Run_ErrorPolicyCanBlockHookRecovery(t *testing.T) {
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},

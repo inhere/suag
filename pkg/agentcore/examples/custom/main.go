@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"log"
 	"os"
 	"path/filepath"
@@ -30,7 +31,7 @@ func (h auditHook) AfterRun(_ context.Context, event *agentcore.RunEvent, _ *age
 }
 
 func main() {
-	tools := agentcore.NewToolRegistry()
+	tools := tools.NewRegistry()
 	tools.Register(mock.NewTool(
 		"echo",
 		mock.WithDescription("Echoes the provided text"),

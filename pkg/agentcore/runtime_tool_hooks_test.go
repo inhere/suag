@@ -3,6 +3,7 @@ package agentcore
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"strings"
 	"testing"
 )
@@ -16,8 +17,8 @@ func TestRuntime_Run_AfterToolRunsBeforeSuccessfulToolPersist(t *testing.T) {
 		}
 	}
 
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -41,7 +42,7 @@ func TestRuntime_Run_AfterToolRunsBeforeSuccessfulToolPersist(t *testing.T) {
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -60,8 +61,8 @@ func TestRuntime_Run_AfterToolRunsBeforeSuccessfulToolPersist(t *testing.T) {
 
 func TestRuntime_Run_AfterToolMutationsPersistIntoMessageAndNextContext(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -109,7 +110,7 @@ func TestRuntime_Run_AfterToolMutationsPersistIntoMessageAndNextContext(t *testi
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -163,14 +164,14 @@ func TestRuntime_Run_AfterToolMutationsPersistIntoMessageAndNextContext(t *testi
 
 func TestRuntime_Run_BeforeToolMutationsReachToolExecution(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
+	reg := tools.NewRegistry()
 	tool := &runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
 		},
 	}
-	tools.Register(tool)
+	reg.MustRegister(tool)
 	provider := &runtimeTestProvider{
 		results: []*GenerateResult{{
 			ToolCalls: []ToolCall{{
@@ -201,7 +202,7 @@ func TestRuntime_Run_BeforeToolMutationsReachToolExecution(t *testing.T) {
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -230,9 +231,9 @@ func TestRuntime_Run_BeforeToolMutationsReachToolExecution(t *testing.T) {
 func TestRuntime_Run_BeforeToolControlHonoredAndAfterToolControlRejected(t *testing.T) {
 	t.Run("before tool yield", func(t *testing.T) {
 		store := newRuntimeTestStorage()
-		tools := NewToolRegistry()
+		reg := tools.NewRegistry()
 		tool := &runtimeTestTool{name: "lookup"}
-		tools.Register(tool)
+		reg.MustRegister(tool)
 		provider := &runtimeTestProvider{
 			results: []*GenerateResult{{
 				ToolCalls:    []ToolCall{{CallID: "call-1", Name: "lookup"}},
@@ -248,7 +249,7 @@ func TestRuntime_Run_BeforeToolControlHonoredAndAfterToolControlRejected(t *test
 		result, err := New(Config{
 			Provider:       provider,
 			Storage:        store,
-			Tools:          tools,
+			Tools:          reg,
 			PromptBuilder:  runtimeTestPromptBuilder{},
 			ContextBuilder: runtimeTestContextBuilder{},
 			Hooks:          []Hook{hook},
@@ -270,14 +271,14 @@ func TestRuntime_Run_BeforeToolControlHonoredAndAfterToolControlRejected(t *test
 
 	t.Run("after tool short circuit rejected", func(t *testing.T) {
 		store := newRuntimeTestStorage()
-		tools := NewToolRegistry()
+		reg := tools.NewRegistry()
 		tool := &runtimeTestTool{
 			name: "lookup",
 			result: &ToolResult{
 				Content: "tool-output",
 			},
 		}
-		tools.Register(tool)
+		reg.MustRegister(tool)
 		provider := &runtimeTestProvider{
 			results: []*GenerateResult{{
 				ToolCalls:    []ToolCall{{CallID: "call-1", Name: "lookup"}},
@@ -299,7 +300,7 @@ func TestRuntime_Run_BeforeToolControlHonoredAndAfterToolControlRejected(t *test
 		result, err := New(Config{
 			Provider:       provider,
 			Storage:        store,
-			Tools:          tools,
+			Tools:          reg,
 			PromptBuilder:  runtimeTestPromptBuilder{},
 			ContextBuilder: runtimeTestContextBuilder{},
 			Hooks:          []Hook{hook},
@@ -330,8 +331,8 @@ func TestRuntime_Run_BeforeToolControlHonoredAndAfterToolControlRejected(t *test
 
 func TestRuntime_Run_AfterToolErrorStillPersistsToolMessage(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -350,7 +351,7 @@ func TestRuntime_Run_AfterToolErrorStillPersistsToolMessage(t *testing.T) {
 	_, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -381,8 +382,8 @@ func TestRuntime_Run_AfterToolErrorStillPersistsToolMessage(t *testing.T) {
 
 func TestRuntime_Run_AfterToolControlDoesNotStopLaterAfterToolHooks(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -413,7 +414,7 @@ func TestRuntime_Run_AfterToolControlDoesNotStopLaterAfterToolHooks(t *testing.T
 	_, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{firstHook, secondHook},
@@ -442,9 +443,9 @@ func TestRuntime_Run_AfterToolControlDoesNotStopLaterAfterToolHooks(t *testing.T
 
 func TestRuntime_Run_ToolCallKeepsAssistantTextAndErrorMark(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{name: "ok", result: &ToolResult{Content: "fine"}})
-	tools.Register(&runtimeTestTool{name: "bad", err: errors.New("boom")})
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{name: "ok", result: &ToolResult{Content: "fine"}})
+	reg.MustRegister(&runtimeTestTool{name: "bad", err: errors.New("boom")})
 	provider := &runtimeTestProvider{
 		results: []*GenerateResult{{
 			Content: "let me check",
@@ -456,7 +457,7 @@ func TestRuntime_Run_ToolCallKeepsAssistantTextAndErrorMark(t *testing.T) {
 		}, {Content: "done", FinishReason: FinishFinal}},
 	}
 	_, err := New(Config{
-		Provider: provider, Storage: store, Tools: tools,
+		Provider: provider, Storage: store, Tools: reg,
 		PromptBuilder: runtimeTestPromptBuilder{}, ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{RunID: "run-lead", AgentID: "a", Instruction: "go"})
 	if err != nil {
@@ -484,13 +485,13 @@ func TestRuntime_Run_ToolCallKeepsAssistantTextAndErrorMark(t *testing.T) {
 func TestRuntime_Run_MaxStepsWrapUp(t *testing.T) {
 	newRun := func(results ...*GenerateResult) (*runtimeTestStorage, *runtimeTestProvider, *RunResult, error) {
 		store := newRuntimeTestStorage()
-		tools := NewToolRegistry()
-		tools.Register(&runtimeTestTool{name: "lookup"})
+		reg := tools.NewRegistry()
+		reg.MustRegister(&runtimeTestTool{name: "lookup"})
 		provider := &runtimeTestProvider{results: results}
 		res, err := New(Config{
 			Provider:       provider,
 			Storage:        store,
-			Tools:          tools,
+			Tools:          reg,
 			PromptBuilder:  runtimeTestPromptBuilder{},
 			ContextBuilder: runtimeTestContextBuilder{},
 			MaxSteps:       1,

@@ -3,6 +3,7 @@ package mock
 import (
 	stdctx "context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"reflect"
 	"testing"
 
@@ -10,7 +11,7 @@ import (
 )
 
 func TestDefaultRegistrySchemas(t *testing.T) {
-	reg := agentcore.NewToolRegistry()
+	reg := tools.NewRegistry()
 	reg.Register(NewTool(
 		"echo",
 		WithDescription("echoes input text"),

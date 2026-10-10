@@ -3,20 +3,21 @@ package agentcore
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"strings"
 	"testing"
 )
 
 func TestRuntime_Run_ToolCallThenFinal(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
+	reg := tools.NewRegistry()
 	tool := &runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
 		},
 	}
-	tools.Register(tool)
+	reg.MustRegister(tool)
 	provider := &runtimeTestProvider{
 		results: []*GenerateResult{{
 			ToolCalls: []ToolCall{{
@@ -38,7 +39,7 @@ func TestRuntime_Run_ToolCallThenFinal(t *testing.T) {
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{
@@ -89,8 +90,8 @@ func TestRuntime_Run_ToolCallThenFinal(t *testing.T) {
 
 func TestRuntime_Run_ToolErrorBecomesMessage(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		err:  errors.New("lookup exploded"),
 	})
@@ -110,7 +111,7 @@ func TestRuntime_Run_ToolErrorBecomesMessage(t *testing.T) {
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{
@@ -145,7 +146,7 @@ func TestRuntime_Run_ToolErrorBecomesMessage(t *testing.T) {
 
 func TestRuntime_Run_RejectsToolCallMissingRequiredArgumentsBeforeExecution(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
+	reg := tools.NewRegistry()
 	tool := &runtimeTestToolWithSchema{
 		runtimeTestTool: runtimeTestTool{
 			name:        "file_read",
@@ -161,7 +162,7 @@ func TestRuntime_Run_RejectsToolCallMissingRequiredArgumentsBeforeExecution(t *t
 			"required": []any{"path"},
 		},
 	}
-	tools.Register(tool)
+	reg.MustRegister(tool)
 	provider := &runtimeTestProvider{
 		results: []*GenerateResult{{
 			ToolCalls: []ToolCall{{
@@ -176,7 +177,7 @@ func TestRuntime_Run_RejectsToolCallMissingRequiredArgumentsBeforeExecution(t *t
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{
@@ -208,8 +209,8 @@ func TestRuntime_Run_RejectsToolCallMissingRequiredArgumentsBeforeExecution(t *t
 
 func TestRuntime_Run_MaxStepsExceededFailsRun(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{name: "lookup"})
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{name: "lookup"})
 	provider := &runtimeTestProvider{
 		results: []*GenerateResult{{
 			ToolCalls: []ToolCall{{
@@ -226,7 +227,7 @@ func TestRuntime_Run_MaxStepsExceededFailsRun(t *testing.T) {
 	_, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		MaxSteps:       5,
@@ -247,8 +248,8 @@ func TestRuntime_Run_MaxStepsExceededFailsRun(t *testing.T) {
 
 func TestRuntime_Run_MaxStepsUsesConfigWhenInputUnset(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{name: "lookup"})
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{name: "lookup"})
 	provider := &runtimeTestProvider{
 		results: []*GenerateResult{{
 			ToolCalls: []ToolCall{{
@@ -265,7 +266,7 @@ func TestRuntime_Run_MaxStepsUsesConfigWhenInputUnset(t *testing.T) {
 	_, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 		MaxSteps:       1,
@@ -285,8 +286,8 @@ func TestRuntime_Run_MaxStepsUsesConfigWhenInputUnset(t *testing.T) {
 
 func TestRuntime_Run_MaxToolCallsPerStepExceededFailsRun(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{name: "lookup"})
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{name: "lookup"})
 	provider := &runtimeTestProvider{
 		results: []*GenerateResult{{
 			ToolCalls: []ToolCall{
@@ -300,7 +301,7 @@ func TestRuntime_Run_MaxToolCallsPerStepExceededFailsRun(t *testing.T) {
 	_, err := New(Config{
 		Provider:            provider,
 		Storage:             store,
-		Tools:               tools,
+		Tools:               reg,
 		PromptBuilder:       runtimeTestPromptBuilder{},
 		ContextBuilder:      runtimeTestContextBuilder{},
 		MaxToolCallsPerStep: 1,
@@ -320,8 +321,8 @@ func TestRuntime_Run_MaxToolCallsPerStepExceededFailsRun(t *testing.T) {
 
 func TestRuntime_Run_ToolArtifactsPersisted(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -344,7 +345,7 @@ func TestRuntime_Run_ToolArtifactsPersisted(t *testing.T) {
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{
@@ -380,7 +381,7 @@ func TestRuntime_Run_FinalArtifactsPersistedOnRunState(t *testing.T) {
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{
@@ -416,7 +417,7 @@ func TestRuntime_Run_FinalMetadataPersistedOnAssistantMessage(t *testing.T) {
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{
@@ -466,7 +467,7 @@ func TestRuntime_Run_PersistsArtifactsToOptionalArtifactStorage(t *testing.T) {
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{

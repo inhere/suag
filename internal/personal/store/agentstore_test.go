@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"os"
 	"strings"
 	"testing"
@@ -40,7 +41,7 @@ func TestAgentStorageRunRoundTrip(t *testing.T) {
 	newSession(t, s, "s1")
 	assert.NoErr(t, s.CreateTurn(ctx, Turn{ID: "turn_1", SessionID: "s1"}))
 
-	reg := agentcore.NewToolRegistry()
+	reg := tools.NewRegistry()
 	reg.Register(echoTool{})
 	provider := &scriptedProvider{results: []*agentcore.GenerateResult{
 		{Content: "calling first", FinishReason: api.FinishToolCalls, ToolCalls: []agentcore.ToolCall{{CallID: "c1", Name: "echo", Arguments: map[string]any{"text": "a"}}}},

@@ -3,6 +3,7 @@ package agentcore
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"testing"
 )
 
@@ -35,7 +36,7 @@ func TestRuntime_Run_RejectsResumeForCompletedOrFailed(t *testing.T) {
 			rt := New(Config{
 				Provider:       provider,
 				Storage:        store,
-				Tools:          NewToolRegistry(),
+				Tools:          tools.NewRegistry(),
 				PromptBuilder:  runtimeTestPromptBuilder{},
 				ContextBuilder: runtimeTestContextBuilder{},
 			})
@@ -87,7 +88,7 @@ func TestRuntime_Run_RejectsTerminalResumeAcrossResumeModes(t *testing.T) {
 			result, err := New(Config{
 				Provider:       provider,
 				Storage:        store,
-				Tools:          NewToolRegistry(),
+				Tools:          tools.NewRegistry(),
 				PromptBuilder:  runtimeTestPromptBuilder{},
 				ContextBuilder: runtimeTestContextBuilder{},
 			}).Run(context.Background(), RunInput{
@@ -135,7 +136,7 @@ func TestRuntime_Run_ResumeMergesInputMetadataIntoStateAndProviderRequest(t *tes
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{
@@ -202,7 +203,7 @@ func TestRuntime_Run_TerminalResumeDoesNotMergeInputMetadata(t *testing.T) {
 	_, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{
@@ -231,8 +232,8 @@ func TestRuntime_Run_TerminalResumeDoesNotMergeInputMetadata(t *testing.T) {
 func TestRuntime_Run_ResumePreservesMutatedToolResultMetadataAndArtifacts(t *testing.T) {
 	runID := "run-resume-mutated-tool-result"
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		result: &ToolResult{
 			Content: "tool-output",
@@ -278,7 +279,7 @@ func TestRuntime_Run_ResumePreservesMutatedToolResultMetadataAndArtifacts(t *tes
 	firstResult, err := New(Config{
 		Provider:       firstProvider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{yieldHook},
@@ -315,7 +316,7 @@ func TestRuntime_Run_ResumePreservesMutatedToolResultMetadataAndArtifacts(t *tes
 	resumed, err := New(Config{
 		Provider:       resumeProvider,
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{
@@ -388,7 +389,7 @@ func TestRuntime_Run_ResumeLoadsArtifactsFromOptionalArtifactStorage(t *testing.
 	result, err := New(Config{
 		Provider:       provider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{
@@ -424,7 +425,7 @@ func TestRuntime_Run_ResumeFromOnErrorYieldReusesAuthoritativeTranscript(t *test
 	firstResult, err := New(Config{
 		Provider:       firstProvider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -450,7 +451,7 @@ func TestRuntime_Run_ResumeFromOnErrorYieldReusesAuthoritativeTranscript(t *test
 	resumed, err := New(Config{
 		Provider:       resumeProvider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{
@@ -498,7 +499,7 @@ func TestRuntime_Run_ResumeFromPersistOutputOnErrorYieldDoesNotExposePhantomAssi
 	firstResult, err := New(Config{
 		Provider:       firstProvider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 		Hooks:          []Hook{hook},
@@ -526,7 +527,7 @@ func TestRuntime_Run_ResumeFromPersistOutputOnErrorYieldDoesNotExposePhantomAssi
 	resumed, err := New(Config{
 		Provider:       resumeProvider,
 		Storage:        store,
-		Tools:          NewToolRegistry(),
+		Tools:          tools.NewRegistry(),
 		PromptBuilder:  runtimeTestPromptBuilder{prompt: "system"},
 		ContextBuilder: runtimeTestContextBuilder{},
 	}).Run(context.Background(), RunInput{

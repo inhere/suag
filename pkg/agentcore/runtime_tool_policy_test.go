@@ -3,6 +3,7 @@ package agentcore
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"strings"
 	"testing"
 )
@@ -45,11 +46,11 @@ func TestDefaultToolExecutionPolicy_PreservesExistingSemantics(t *testing.T) {
 
 func TestRuntime_Run_UsesConfiguredToolExecutionPolicyForValidation(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
+	reg := tools.NewRegistry()
 	tool1 := &runtimeTestTool{name: "lookup-1", result: &ToolResult{Content: "first"}}
 	tool2 := &runtimeTestTool{name: "lookup-2", result: &ToolResult{Content: "second"}}
-	tools.Register(tool1)
-	tools.Register(tool2)
+	reg.MustRegister(tool1)
+	reg.MustRegister(tool2)
 
 	provider := &runtimeTestProvider{
 		results: []*GenerateResult{{
@@ -82,7 +83,7 @@ func TestRuntime_Run_UsesConfiguredToolExecutionPolicyForValidation(t *testing.T
 	result, err := New(Config{
 		Provider:            provider,
 		Storage:             store,
-		Tools:               tools,
+		Tools:               reg,
 		PromptBuilder:       runtimeTestPromptBuilder{},
 		ContextBuilder:      runtimeTestContextBuilder{},
 		MaxToolCallsPerStep: 1,
@@ -108,8 +109,8 @@ func TestRuntime_Run_UsesConfiguredToolExecutionPolicyForValidation(t *testing.T
 
 func TestRuntime_Run_UsesConfiguredToolExecutionPolicyForToolErrors(t *testing.T) {
 	store := newRuntimeTestStorage()
-	tools := NewToolRegistry()
-	tools.Register(&runtimeTestTool{
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{
 		name: "lookup",
 		err:  errors.New("lookup exploded"),
 	})
@@ -143,7 +144,7 @@ func TestRuntime_Run_UsesConfiguredToolExecutionPolicyForToolErrors(t *testing.T
 	result, err := New(Config{
 		Provider:            provider,
 		Storage:             store,
-		Tools:               tools,
+		Tools:               reg,
 		PromptBuilder:       runtimeTestPromptBuilder{},
 		ContextBuilder:      runtimeTestContextBuilder{},
 		ToolExecutionPolicy: policy,

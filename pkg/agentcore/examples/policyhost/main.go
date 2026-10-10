@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"log"
 	"os"
 	"path/filepath"
@@ -160,7 +161,7 @@ func main() {
 	}
 
 	store := files.NewStorage(root)
-	tools := agentcore.NewToolRegistry()
+	tools := tools.NewRegistry()
 	tools.Register(mock.NewTool(
 		"profile_lookup",
 		mock.WithDescription("Looks up a customer profile"),

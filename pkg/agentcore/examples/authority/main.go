@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"log"
 	"os"
 	"path/filepath"
@@ -98,7 +99,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	tools := agentcore.NewToolRegistry()
+	tools := tools.NewRegistry()
 	tools.Register(artifactTool{})
 	store := files.NewStorage(root)
 

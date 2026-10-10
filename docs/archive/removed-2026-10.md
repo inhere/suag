@@ -42,6 +42,13 @@
 | `FileStorage` 别名、`NewFileStorage` | `pkg/agentcore/types.go` | `327eb1a` | 文件存储的兼容别名；改用 `files.NewStorage(dir)`（`pkg/agentcore/storage/files`） |
 | 默认文件存储 | `pkg/agentcore/runtime_helpers.go` `defaultStorage` | `327eb1a` | 未传 Storage 时写入 `os.TempDir()/agentcore-runs`；现为进程内 `agentcore.NewMemoryStorage()`，根包不再依赖 `storage/files` |
 
+## 工具注册表合一（T11）
+
+| 删除项 | 原路径 | 删除前提交 | 原用途 / 替代 |
+|---|---|---|---|
+| 根包 `Registry`、`NewToolRegistry` | `pkg/agentcore/tools.go` | `a91b1c1` | 根包内置的内存工具注册表（同名 `Register` 覆盖）；改用 `tools.NewRegistry()`（`pkg/agentcore/tools`），覆盖语义用 `MustRegister`，`Register` 同名 panic；未传 `Config.Tools` 时 runtime 用私有空注册表 |
+| `tools.Tool` 接口（含必需的 `Kind()`） | `internal/platform/tools/registry.go` | `2156068` | 工具接口统一为 `api.Tool`；`Kind()` 改为可选接口 `tools.Kinded`，用 `tools.KindOf(tool)` 读取，缺省 `KindNative`；native 工具删去各自的 `Kind()` |
+
 ## 归档文档（T4）
 
 以下文档从 `pkg/agentcore/docs/` 原样移到 [agentcore-2026-10/](agentcore-2026-10/)（删除前提交 `ff052ac`）。原因：多为 2026-10 之前的设计稿、路线图、发布准备与迁移指南，内容与重构后的分层不再一致；保留的 getting-started、architecture、api、runtime-policies、host-integration 按新结构改写。
