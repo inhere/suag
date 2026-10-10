@@ -11,7 +11,7 @@ import (
 	"github.com/gookit/color"
 	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"golang.org/x/term"
 )
 

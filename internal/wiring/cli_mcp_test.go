@@ -8,8 +8,8 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // newGatedRegistry puts the CLI approver in front of registry, as the runtime does.

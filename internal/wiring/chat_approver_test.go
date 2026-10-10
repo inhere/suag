@@ -10,9 +10,9 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
 	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // nativeStubTool is a native tool that records whether it ran.

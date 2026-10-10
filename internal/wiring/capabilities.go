@@ -8,10 +8,10 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 
 	axconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/platform/tools"
 	toolsmcp "github.com/inhere/suag/internal/platform/tools/mcp"
 	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 type capabilityToolProvider interface {

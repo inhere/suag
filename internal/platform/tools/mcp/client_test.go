@@ -17,8 +17,8 @@ import (
 	"github.com/gookit/goutil/x/assert"
 
 	axconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // TestFakeServerProcess is the fake stdio MCP server: the test binary re-executes

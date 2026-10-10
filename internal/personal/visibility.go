@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // loadedToolsStore keeps the session's loaded deferred tool names in session

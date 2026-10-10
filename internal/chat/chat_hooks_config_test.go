@@ -16,8 +16,8 @@ import (
 	suaghooks "github.com/inhere/suag/internal/hooks"
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // TestFakeHookProcess is the fake hook command for chat tests: the test binary

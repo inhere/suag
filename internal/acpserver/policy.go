@@ -13,9 +13,9 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 var ErrPermissionDenied = errors.New("ACP tool permission denied")

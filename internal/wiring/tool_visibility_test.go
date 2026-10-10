@@ -7,8 +7,8 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/platform/tools"
 	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 func TestNewToolVisibility(t *testing.T) {

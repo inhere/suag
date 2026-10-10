@@ -18,8 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // ServerConfig describes an MCP server to connect to.

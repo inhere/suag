@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 type fakeSearcher struct {

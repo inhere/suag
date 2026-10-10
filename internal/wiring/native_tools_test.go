@@ -9,9 +9,9 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/internal/platform/tools/native"
 	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // catalogNames returns the native catalog tool names, read tools only unless

@@ -8,8 +8,8 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // approvalRunner wires observe(in New) -> approval(approver) -> registry with

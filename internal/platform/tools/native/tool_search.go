@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // ToolSearcher finds deferred tools and loads the matches (tools.Visibility).

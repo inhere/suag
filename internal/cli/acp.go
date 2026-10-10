@@ -9,9 +9,9 @@ import (
 	"github.com/gookit/goutil/cflag/capp"
 	"github.com/inhere/suag/internal/acpserver"
 	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/internal/wiring"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 func newACPCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) *capp.Cmd {

@@ -12,7 +12,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/internal/chat/lineedit"
-	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // fakeKeyboard models a tty input queue: typed bytes wait in a buffer until

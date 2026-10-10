@@ -10,7 +10,7 @@ import (
 	"time"
 
 	axconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/platform/tools"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 type toolClient interface {

@@ -1,8 +1,8 @@
 package wiring
 
 import (
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/internal/platform/tools/native"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // writeToolHint says why write tools are off in this runtime and how the

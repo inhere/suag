@@ -13,10 +13,10 @@ import (
 	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/llm"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // Options carries everything needed to assemble one runtime.

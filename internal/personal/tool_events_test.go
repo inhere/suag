@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 func TestToolEventsOrderAndSummary(t *testing.T) {

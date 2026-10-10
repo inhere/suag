@@ -15,8 +15,8 @@ import (
 	suaghooks "github.com/inhere/suag/internal/hooks"
 	"github.com/inhere/suag/internal/personal"
 	personalprocess "github.com/inhere/suag/internal/personal/process"
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 const (

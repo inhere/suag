@@ -12,8 +12,8 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // chatReadOnlyTools never need a confirmation in chat. Every other non-MCP tool
