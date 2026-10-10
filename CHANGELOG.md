@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 变更
+
+- 最低 Go 版本提升到 1.26；依赖升级：`modernc.org/sqlite` v1.60.1、`golang.org/x/sys` v0.49.0、`x/net` v0.59.0、`x/term` v0.46.0、`x/text` v0.42.0。CI 改在 Go 1.26 与 stable 上运行。
+
 ## [0.9.1] - 2026-10-10
 
 ### 修复

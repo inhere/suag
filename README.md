@@ -14,7 +14,7 @@ Suag is a personal coding agent written in Go. One persistent conversation engin
 
 ## Install
 
-Requires Go 1.25+. The repository is private, so build from a checkout:
+Requires Go 1.26+. The repository is private, so build from a checkout:
 
 ```bash
 git clone https://github.com/inhere/suag.git && cd suag
@@ -129,4 +129,4 @@ make build-all          # cross-compile to dist/
 - `internal/chat`: terminal chat; `internal/acpserver`: the ACP server.
 - `pkg/agentcore`: the reusable layers below the app, independent of `internal/*` ([README](pkg/agentcore/README.md)): the kernel (model/tool loop, run state, transcript) plus `llm` (providers), `tools` (registry, approval, deferred tools), `tools/native` (built-in tools), `tools/mcp` (MCP client) and `skills`.
 
-Release notes are in [CHANGELOG.md](CHANGELOG.md); design notes and plans are in [docs/](docs/README.md). CI runs tests on Ubuntu and Windows with Go 1.25 and stable. The old control plane (team, cron, orchestrator) is kept at the `v0.1.0` tag.
+Release notes are in [CHANGELOG.md](CHANGELOG.md); design notes and plans are in [docs/](docs/README.md). CI runs tests on Ubuntu and Windows with Go 1.26 and stable. The old control plane (team, cron, orchestrator) is kept at the `v0.1.0` tag.

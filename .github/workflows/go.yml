@@ -21,7 +21,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        go_version: [1.25, stable]
+        go_version: ['1.26', stable]
 
     steps:
     - name: Check out code
@@ -35,11 +35,11 @@ jobs:
 
     # staticcheck 2026.2.1, pinned by reviewdog/action-staticcheck@v1, cannot
     # read the export data newer Go (1.27.2+) writes ("export data version 5 is
-    # greater than maximum supported version 4"). go.mod targets Go 1.25, so
-    # lint on the 1.25 leg.
+    # greater than maximum supported version 4"). go.mod targets Go 1.26, so
+    # lint on the 1.26 leg.
     - name: Run staticcheck
       uses: reviewdog/action-staticcheck@v1
-      if: ${{ matrix.os == 'ubuntu-latest' && matrix.go_version == '1.25' }}
+      if: ${{ matrix.os == 'ubuntu-latest' && matrix.go_version == '1.26' }}
       with:
         github_token: ${{ secrets.github_token }}
         # Change reviewdog reporter if you need [github-pr-check,github-check,github-pr-review].
