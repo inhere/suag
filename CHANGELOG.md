@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 修复
+
+- 帮助输出：`--read-only` 的别名不再显示为 `--;ro`，`--read-only` 与 `send --text/--source/--wait` 的说明不再在 `;` 处截断；`--no-project-rules` 前不再出现未渲染的颜色标记（升级 goutil v0.8.2）。
+
 ## [0.9.0] - 2026-10-10
 
 `pkg/agentcore` 分层重构：内核与能力层下沉为不依赖 `internal/*` 的独立包。依据见 [设计](docs/design/2026-10-10-agentcore-layering-design.md)，删除与迁移记录见 [removed-2026-10](docs/archive/removed-2026-10.md)。
