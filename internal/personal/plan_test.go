@@ -7,9 +7,9 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
 
 // TestUpdatePlanPersistsEmitsAndFeedsCompaction: update_plan writes a plan

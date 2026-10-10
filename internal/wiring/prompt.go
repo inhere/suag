@@ -8,8 +8,8 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
 
 // staticPrompt is a system prompt built once per process. It holds no time or

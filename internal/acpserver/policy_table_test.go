@@ -12,10 +12,10 @@ import (
 	"github.com/coder/acp-go-sdk"
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/skills"
 	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
 
 // policyRow is one tool of the ACP policy table. Outcomes: "run" (allowed

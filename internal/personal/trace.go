@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/internal/platform/tools/native"
+	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
 
 // traceEvent is the jsonl shape of one timeline event.

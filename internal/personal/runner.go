@@ -13,9 +13,9 @@ import (
 
 	"github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
 
 var safeSessionID = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)

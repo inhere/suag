@@ -10,8 +10,8 @@ import (
 	"github.com/gookit/color"
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/platform/tools/native"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
 
 // turnEvents is one turn: commentary, a tool call and result, a plan, then the answer.

@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/internal/platform/tools/native"
+	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
 
 // PlanRecorder implements native.PlanSink. The update_plan tool is built before
