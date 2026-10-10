@@ -95,7 +95,7 @@ func ContractChecklist() []ChecklistItem {
 			Notes:    "Validated in runtime tests and first-party host wrappers, including recoverable-error -> yielded-result behavior.",
 		},
 		{
-			Surface:  "First-party defaults (files/memory/context/prompt/mock)",
+			Surface:  "First-party defaults (files/mock)",
 			Status:   StatusUsefulButEvolving,
 			Evidence: EvidenceDefaultPath,
 			Notes:    "Useful starter path, but consumers should depend on the underlying contract rather than implementation details.",

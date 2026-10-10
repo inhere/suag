@@ -7,10 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/inhere/suag/pkg/agentcore"
-	contextpkg "github.com/inhere/suag/pkg/agentcore/context"
-	memorypkg "github.com/inhere/suag/pkg/agentcore/memory"
 	"github.com/inhere/suag/pkg/agentcore/mock"
-	promptpkg "github.com/inhere/suag/pkg/agentcore/prompt"
 	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
@@ -73,32 +70,20 @@ func (h *yieldBeforeFinalHook) BeforeModel(_ context.Context, _ *agentcore.Model
 	return nil
 }
 
-func newRuntime(provider agentcore.Provider, storage agentcore.Storage, tools agentcore.ToolRegistry, hooks ...agentcore.Hook) agentcore.Runtime {
-	mem := memorypkg.New(memorypkg.Config{
-		MaxRecentMessages:   6,
-		IncludeToolMessages: true,
-	})
-	mem.SetSummary("The host wraps agentcore with Start/Continue entrypoints and wants resumable, inspectable runtime behavior.")
+// staticPrompt is the simplest PromptBuilder: one fixed system prompt.
+type staticPrompt string
 
+func (p staticPrompt) BuildSystemPrompt(context.Context, *agentcore.RunState) (string, error) {
+	return string(p), nil
+}
+
+func newRuntime(provider agentcore.Provider, storage agentcore.Storage, tools agentcore.ToolRegistry, hooks ...agentcore.Hook) agentcore.Runtime {
 	return agentcore.New(agentcore.Config{
-		Provider: provider,
-		Storage:  storage,
-		Memory:   mem,
-		Tools:    tools,
-		PromptBuilder: promptpkg.Layered(promptpkg.Config{
-			Base: "You are a host-integrated assistant.",
-			Metadata: promptpkg.MetadataConfig{
-				Enabled: true,
-			},
-			Sections: []string{
-				"Keep runtime state easy to resume from the host.",
-				"Prefer explicit transitions over hidden control flow.",
-			},
-		}),
-		ContextBuilder: contextpkg.MemoryThenRecent(mem, contextpkg.MemoryThenRecentConfig{
-			MaxMessages: 4,
-		}),
-		Hooks: hooks,
+		Provider:      provider,
+		Storage:       storage,
+		Tools:         tools,
+		PromptBuilder: staticPrompt("You are a host-integrated assistant. Keep runtime state easy to resume from the host."),
+		Hooks:         hooks,
 	})
 }
 

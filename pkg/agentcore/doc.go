@@ -36,11 +36,7 @@ Package shape:
 
 Built-in companion packages:
 
-  - files: filesystem-backed storage
-  - memory: default working-memory implementation
-  - context: default context presets and message-window builders
-  - prompt: first-party prompt builders
-  - hooks: ordered hook-chain helper
+  - storage/files: filesystem-backed storage
   - mock: test provider and tool implementations
 
 Transcript semantics are explicit. When the provider returns tool calls, the

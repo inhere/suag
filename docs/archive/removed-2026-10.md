@@ -23,3 +23,14 @@
 | 旧 MockProvider | `internal/platform/llm/mock.go`、`mock_test.go`、`public_contract_mapping_test.go` | `56a45df` | 脚本与手动步进两种模式的假模型；与 `pkg/agentcore/mock` 重复，后者增加 `WithName` 覆盖原用法；手动模式无使用者 |
 | 旧 MockProvider 文档 | `docs/usage/llm-mock-usage.md` → [agentcore-2026-10/llm-mock-usage.md](agentcore-2026-10/llm-mock-usage.md) | `56a45df` | 原样归档；同路径改写为 `pkg/agentcore/mock` 用法 |
 | `"tool_error"` 元数据键 | `pkg/agentcore/runtime_helpers.go` | `56a45df` | 注释称供记忆压缩读取，实际无读取者 |
+
+## 无使用者子包与示例（T3）
+
+| 删除项 | 原路径 | 删除前提交 | 原用途 / 删除原因 |
+|---|---|---|---|
+| context 子包 | `pkg/agentcore/context/` | `3973cdb` | 上下文预设：`TranscriptWindow`、`MemoryFirst`、`MemoryThenRecent`、`ArtifactsThenRecent`；suag 用自己的上下文构建（`internal/personal/context.go`），无使用者 |
+| memory 子包 | `pkg/agentcore/memory/` | `3973cdb` | 第一方 `WorkingMemory`：summary + recent window；无使用者。根包的 `Memory` 接口保留 |
+| prompt 子包 | `pkg/agentcore/prompt/` | `3973cdb` | 静态与分层（base + metadata + sections）提示词构建器；无使用者 |
+| 示例 context / memory / prompt | `pkg/agentcore/_examples/{context,memory,prompt}/` | `3973cdb` | 演示上述三个子包 |
+| 示例 bridge | `pkg/agentcore/_examples/bridge/` | `3973cdb` | 用 internal 的 llm/tools 桥接 agentcore；反向依赖 internal，独立后无法编译 |
+| `_examples/` 目录名 | `pkg/agentcore/_examples/` → `pkg/agentcore/examples/` | `3973cdb` | 改名后示例参与编译与 vet；host、recommended 去掉对已删子包的依赖 |
