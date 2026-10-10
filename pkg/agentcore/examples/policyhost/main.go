@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
 	"github.com/inhere/suag/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 type StartRequest struct {
@@ -161,8 +161,8 @@ func main() {
 	}
 
 	store := files.NewStorage(root)
-	tools := tools.NewRegistry()
-	tools.Register(mock.NewTool(
+	reg := tools.NewRegistry()
+	reg.Register(mock.NewTool(
 		"profile_lookup",
 		mock.WithDescription("Looks up a customer profile"),
 		mock.WithHandler(func(_ context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
@@ -173,7 +173,7 @@ func main() {
 			}, nil
 		}),
 	))
-	tools.Register(mock.NewTool(
+	reg.Register(mock.NewTool(
 		"risk_check",
 		mock.WithDescription("Checks account risk"),
 		mock.WithHandler(func(_ context.Context, _ agentcore.ToolCall) (*agentcore.ToolResult, error) {
@@ -181,7 +181,7 @@ func main() {
 		}),
 	))
 
-	host := NewPolicyAwareHost(store, tools)
+	host := NewPolicyAwareHost(store, reg)
 
 	first, err := host.Start(ctx, StartRequest{
 		SessionID: "session-policy-host",

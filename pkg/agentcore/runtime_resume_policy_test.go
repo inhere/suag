@@ -3,8 +3,9 @@ package agentcore
 import (
 	"context"
 	"errors"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"testing"
+
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 func TestDefaultResumePolicy_PreservesExistingSemantics(t *testing.T) {

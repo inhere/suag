@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"log"
 	"os"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
 	"github.com/inhere/suag/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 type yieldAfterToolHook struct {
@@ -31,8 +31,8 @@ func main() {
 	runID := "example-resume"
 	storageDir := filepath.Join(os.TempDir(), "suag-agentcore-examples", "resume")
 
-	tools := tools.NewRegistry()
-	tools.Register(mock.NewTool(
+	reg := tools.NewRegistry()
+	reg.Register(mock.NewTool(
 		"echo",
 		mock.WithDescription("Echoes the provided text"),
 		mock.WithSchema(map[string]any{
@@ -49,7 +49,7 @@ func main() {
 			mock.ToolCall("call-echo", "echo", map[string]any{"text": "hello from yielded run"}),
 		),
 		Storage: files.NewStorage(storageDir),
-		Tools:   tools,
+		Tools:   reg,
 		Hooks:   []agentcore.Hook{&yieldAfterToolHook{}},
 	})
 
@@ -68,7 +68,7 @@ func main() {
 			mock.Final("completed after resume"),
 		),
 		Storage: files.NewStorage(storageDir),
-		Tools:   tools,
+		Tools:   reg,
 	})
 
 	resumedResult, err := resumeRuntime.Run(context.Background(), agentcore.RunInput{

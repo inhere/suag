@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"log"
 	"os"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
 	"github.com/inhere/suag/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 type auditHook struct {
@@ -31,8 +31,8 @@ func (h auditHook) AfterRun(_ context.Context, event *agentcore.RunEvent, _ *age
 }
 
 func main() {
-	tools := tools.NewRegistry()
-	tools.Register(mock.NewTool(
+	reg := tools.NewRegistry()
+	reg.Register(mock.NewTool(
 		"echo",
 		mock.WithDescription("Echoes the provided text"),
 		mock.WithSchema(map[string]any{
@@ -50,7 +50,7 @@ func main() {
 			mock.Final("tool finished successfully"),
 		),
 		Storage: files.NewStorage(filepath.Join(os.TempDir(), "suag-agentcore-examples", "custom")),
-		Tools:   tools,
+		Tools:   reg,
 		Hooks:   []agentcore.Hook{auditHook{}},
 	})
 

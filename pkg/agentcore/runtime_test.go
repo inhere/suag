@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 func TestRuntime_Run_FinalAnswer(t *testing.T) {

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"log"
 	"os"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
 	"github.com/inhere/suag/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // staticPrompt is the simplest PromptBuilder: one fixed system prompt.
@@ -56,8 +56,8 @@ func main() {
 	}
 
 	store := files.NewStorage(storageDir)
-	tools := tools.NewRegistry()
-	tools.Register(mock.NewTool(
+	reg := tools.NewRegistry()
+	reg.Register(mock.NewTool(
 		"echo",
 		mock.WithDescription("Echoes the provided text"),
 		mock.WithSchema(map[string]any{
@@ -76,7 +76,7 @@ func main() {
 			mock.ToolCall("call-echo", "echo", map[string]any{"text": "draft a release-readiness summary"}),
 		),
 		Storage:       store,
-		Tools:         tools,
+		Tools:         reg,
 		PromptBuilder: promptBuilder,
 		Hooks: []agentcore.Hook{
 			logModelShapeHook{},
@@ -111,7 +111,7 @@ func main() {
 			),
 		),
 		Storage:       store,
-		Tools:         tools,
+		Tools:         reg,
 		PromptBuilder: promptBuilder,
 		Hooks:         []agentcore.Hook{logModelShapeHook{}},
 	})

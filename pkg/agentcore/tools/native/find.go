@@ -3,7 +3,6 @@ package native
 import (
 	"context"
 	"fmt"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"io/fs"
 	"os"
 	"sort"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 const defaultFindResults = 200

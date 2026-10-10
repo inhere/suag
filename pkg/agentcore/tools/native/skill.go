@@ -3,7 +3,6 @@ package native
 import (
 	"context"
 	"fmt"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/inhere/suag/pkg/agentcore/api"
 	"github.com/inhere/suag/pkg/agentcore/skills"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 const (

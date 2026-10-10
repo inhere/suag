@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"log"
 	"os"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
 	"github.com/inhere/suag/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 type StartRequest struct {
@@ -96,8 +96,8 @@ func main() {
 	}
 
 	store := files.NewStorage(storageDir)
-	tools := tools.NewRegistry()
-	tools.Register(mock.NewTool(
+	reg := tools.NewRegistry()
+	reg.Register(mock.NewTool(
 		"echo",
 		mock.WithDescription("Echoes the provided text"),
 		mock.WithSchema(map[string]any{
@@ -114,7 +114,7 @@ func main() {
 			mock.ToolCall("call-echo", "echo", map[string]any{"text": "prepare a host-facing summary"}),
 		),
 		store,
-		tools,
+		reg,
 		&yieldBeforeFinalHook{},
 	)
 
@@ -142,7 +142,7 @@ func main() {
 			),
 		),
 		store,
-		tools,
+		reg,
 	)
 
 	host := NewAgentHost(resumeRuntime)

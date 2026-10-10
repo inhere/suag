@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
 	"io"
 	"path/filepath"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
 	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
 

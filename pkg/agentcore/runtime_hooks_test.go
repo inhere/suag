@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"strings"
 	"testing"
+
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 func TestRuntime_Run_HookYieldReturnsYieldedResult(t *testing.T) {

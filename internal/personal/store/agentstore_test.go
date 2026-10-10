@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"os"
 	"strings"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 type scriptedProvider struct{ results []*agentcore.GenerateResult }

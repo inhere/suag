@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
 	"github.com/inhere/suag/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 type resumeWithoutAppendingPolicy struct {
@@ -85,8 +85,8 @@ func main() {
 	}
 
 	store := files.NewStorage(root)
-	tools := tools.NewRegistry()
-	tools.Register(mock.NewTool(
+	reg := tools.NewRegistry()
+	reg.Register(mock.NewTool(
 		"profile_lookup",
 		mock.WithDescription("Looks up a customer profile"),
 		mock.WithHandler(func(_ context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
@@ -97,7 +97,7 @@ func main() {
 			}, nil
 		}),
 	))
-	tools.Register(mock.NewTool(
+	reg.Register(mock.NewTool(
 		"risk_check",
 		mock.WithDescription("Checks account risk"),
 		mock.WithHandler(func(_ context.Context, _ agentcore.ToolCall) (*agentcore.ToolResult, error) {
@@ -110,7 +110,7 @@ func main() {
 			mock.Error(errors.New("provider temporarily unavailable")),
 		),
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  staticPrompt("You are a policy demonstration agent."),
 		ContextBuilder: passthroughContext{},
 		ErrorPolicy:    yieldProviderErrorPolicy{},
@@ -136,7 +136,7 @@ func main() {
 			mock.Final("profile gathered, risk fallback applied, and run completed after explicit resume"),
 		),
 		Storage:             store,
-		Tools:               tools,
+		Tools:               reg,
 		PromptBuilder:       staticPrompt("You are a policy demonstration agent."),
 		ContextBuilder:      passthroughContext{},
 		ResumePolicy:        resumeWithoutAppendingPolicy{},

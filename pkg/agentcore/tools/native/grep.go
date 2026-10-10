@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"io"
 	"io/fs"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 const (

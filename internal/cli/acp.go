@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
 	"io"
 	"path/filepath"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/inhere/suag/internal/wiring"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
 )
 
 func newACPCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) *capp.Cmd {

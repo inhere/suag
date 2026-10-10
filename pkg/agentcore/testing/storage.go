@@ -3,12 +3,12 @@ package agentcoretesting
 import (
 	"context"
 	"errors"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"reflect"
 	stdtesting "testing"
 
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // StorageFactory creates an isolated storage implementation for one test case.
@@ -222,14 +222,14 @@ func RunStorageFixtureSuite(t *stdtesting.T, factory StorageCaseFactory) {
 		}
 
 		runID := "run-storage-runtime-resume"
-		tools := tools.NewRegistry()
-		tools.Register(mock.NewTool("echo"))
+		reg := tools.NewRegistry()
+		reg.Register(mock.NewTool("echo"))
 
 		yieldHook := &yieldOnSecondModelHook{}
 		firstRuntime := agentcore.New(agentcore.Config{
 			Provider: mock.NewProvider(mock.ToolCall("call-1", "echo", map[string]any{"text": "persisted"})),
 			Storage:  store,
-			Tools:    tools,
+			Tools:    reg,
 			Hooks:    []agentcore.Hook{yieldHook},
 		})
 
@@ -248,7 +248,7 @@ func RunStorageFixtureSuite(t *stdtesting.T, factory StorageCaseFactory) {
 		resumeRuntime := agentcore.New(agentcore.Config{
 			Provider: mock.NewProvider(mock.Final("done after resume")),
 			Storage:  store,
-			Tools:    tools,
+			Tools:    reg,
 		})
 
 		resumed, err := resumeRuntime.Run(context.Background(), agentcore.RunInput{

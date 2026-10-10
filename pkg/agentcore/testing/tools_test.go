@@ -3,11 +3,11 @@ package agentcoretesting
 import (
 	"context"
 	"errors"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	stdtesting "testing"
 
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 func TestRunToolRegistrySuite_WithDefaultRegistry(t *stdtesting.T) {

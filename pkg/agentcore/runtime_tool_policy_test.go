@@ -3,9 +3,10 @@ package agentcore
 import (
 	"context"
 	"errors"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"strings"
 	"testing"
+
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 func TestDefaultToolExecutionPolicy_PreservesExistingSemantics(t *testing.T) {

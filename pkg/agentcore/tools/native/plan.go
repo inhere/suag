@@ -3,10 +3,10 @@ package native
 import (
 	"context"
 	"fmt"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"strings"
 
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // Plan step statuses accepted by update_plan.

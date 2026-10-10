@@ -3,10 +3,11 @@ package axconfig
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
 )
 
 // ReadClaudeMCPConfigs reads repeatable Claude-style stdio MCP configuration files.

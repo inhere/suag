@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"math"
 	"os"
 	"os/exec"
@@ -14,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/inhere/suag/pkg/agentcore/tools"
 	"golang.org/x/text/encoding/simplifiedchinese"
 
 	"github.com/inhere/suag/pkg/agentcore/api"

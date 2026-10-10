@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/storage/files"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 type staticPrompt string
@@ -99,14 +99,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	tools := tools.NewRegistry()
-	tools.Register(artifactTool{})
+	reg := tools.NewRegistry()
+	reg.Register(artifactTool{})
 	store := files.NewStorage(root)
 
 	runtime := agentcore.New(agentcore.Config{
 		Provider:       &scriptedProvider{},
 		Storage:        store,
-		Tools:          tools,
+		Tools:          reg,
 		PromptBuilder:  staticPrompt("You are an authority bundle example agent."),
 		ContextBuilder: passthroughContext{},
 	})

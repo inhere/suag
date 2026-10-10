@@ -3,7 +3,6 @@ package wiring
 import (
 	"context"
 	"errors"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
 	"io"
 	"path/filepath"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
 
 // nativeStubTool is a native tool that records whether it ran.

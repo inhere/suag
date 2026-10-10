@@ -3,11 +3,11 @@ package mock
 import (
 	stdctx "context"
 	"errors"
-	"github.com/inhere/suag/pkg/agentcore/tools"
 	"reflect"
 	"testing"
 
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 func TestDefaultRegistrySchemas(t *testing.T) {

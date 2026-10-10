@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"github.com/coder/acp-go-sdk"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
 	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
 
