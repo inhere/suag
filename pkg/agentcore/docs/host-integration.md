@@ -165,7 +165,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 如果你想先看“哪些 host 行为已经被验证，哪些地方仍然只是 contract 等价但 lifecycle 不同”，继续看：
 
-- [host-conformance.md](./host-conformance.md)
+- [host-conformance.md](../../../docs/archive/agentcore-2026-10/host-conformance.md)
 
 ---
 
@@ -347,11 +347,11 @@ func NewRuntime(provider agentcore.Provider, storage agentcore.Storage) agentcor
 如果你是在做一个外部 embedding host，推荐按这个顺序看：
 
 1. [getting-started.md](./getting-started.md)
-2. [recommended-runtime.md](./recommended-runtime.md)
+2. [recommended-runtime.md](../../../docs/archive/agentcore-2026-10/recommended-runtime.md)
 3. [host-integration.md](./host-integration.md)
 4. [api.md](./api.md)
-5. [embedding-patterns.md](./embedding-patterns.md)
-6. [migration.md](./migration.md)
+5. [embedding-patterns.md](../../../docs/archive/agentcore-2026-10/embedding-patterns.md)
+6. [migration.md](../../../docs/archive/agentcore-2026-10/migration.md)
 
 如果你要看对应示例，再继续看：
 

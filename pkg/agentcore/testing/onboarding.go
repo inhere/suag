@@ -19,8 +19,6 @@ func OnboardingChecklist() []OnboardingItem {
 			RecommendedSuites: []string{"RunStorageSuite", "RunStorageFixtureSuite"},
 			Docs: []string{
 				"docs/api.md",
-				"docs/conformance-testing.md",
-				"docs/contract-matrix.md",
 			},
 			Examples: []string{
 				"testing/README.md",
@@ -33,8 +31,6 @@ func OnboardingChecklist() []OnboardingItem {
 			RecommendedSuites: []string{"RunToolRegistrySuite"},
 			Docs: []string{
 				"docs/api.md",
-				"docs/conformance-testing.md",
-				"docs/contract-matrix.md",
 			},
 			Examples: []string{
 				"testing/README.md",
@@ -47,9 +43,6 @@ func OnboardingChecklist() []OnboardingItem {
 			RecommendedSuites: []string{"RunProviderSuite"},
 			Docs: []string{
 				"docs/api.md",
-				"docs/conformance-testing.md",
-				"docs/contract-matrix.md",
-				"docs/release-readiness.md",
 			},
 			Examples: []string{
 				"testing/README.md",

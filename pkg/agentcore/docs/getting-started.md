@@ -4,7 +4,7 @@
 
 如果你还不确定自己属于哪条采用路径，可以先看：
 
-- [adoption-paths.md](./adoption-paths.md)
+- [adoption-paths.md](../../../docs/archive/agentcore-2026-10/adoption-paths.md)
 
 ## 1. 什么时候适合用 Agentcore
 
@@ -118,9 +118,9 @@ func main() {
 
 如果你想直接从一个更接近真实 embedding host 的组合起步，当前更推荐继续看：
 
-- [recommended-runtime.md](./recommended-runtime.md)
+- [recommended-runtime.md](../../../docs/archive/agentcore-2026-10/recommended-runtime.md)
 - [host-integration.md](./host-integration.md)
-- [migration.md](./migration.md)
+- [migration.md](../../../docs/archive/agentcore-2026-10/migration.md)
 
 当前第一方默认 memory 实现已经提供：
 
@@ -182,11 +182,11 @@ runtime := agentcore.New(agentcore.Config{
 ## 6. 下一步看哪里
 
 - API guide: [docs/api.md](./api.md)
-- Compatibility: [docs/compatibility.md](./compatibility.md)
-- Versioning: [docs/versioning.md](./versioning.md)
-- Release readiness: [docs/release-readiness.md](./release-readiness.md)
-- Recommended runtime path: [docs/recommended-runtime.md](./recommended-runtime.md)
-- Roadmap: [docs/roadmap.md](./roadmap.md)
+- Compatibility: [docs/compatibility.md](../../../docs/archive/agentcore-2026-10/compatibility.md)
+- Versioning: [docs/versioning.md](../../../docs/archive/agentcore-2026-10/versioning.md)
+- Release readiness: [docs/release-readiness.md](../../../docs/archive/agentcore-2026-10/release-readiness.md)
+- Recommended runtime path: [docs/recommended-runtime.md](../../../docs/archive/agentcore-2026-10/recommended-runtime.md)
+- Roadmap: [docs/roadmap.md](../../../docs/archive/agentcore-2026-10/roadmap.md)
 - Examples: `examples/`
 
 建议顺序：

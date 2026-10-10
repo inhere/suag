@@ -34,3 +34,25 @@
 | 示例 context / memory / prompt | `pkg/agentcore/_examples/{context,memory,prompt}/` | `3973cdb` | 演示上述三个子包 |
 | 示例 bridge | `pkg/agentcore/_examples/bridge/` | `3973cdb` | 用 internal 的 llm/tools 桥接 agentcore；反向依赖 internal，独立后无法编译 |
 | `_examples/` 目录名 | `pkg/agentcore/_examples/` → `pkg/agentcore/examples/` | `3973cdb` | 改名后示例参与编译与 vet；host、recommended 去掉对已删子包的依赖 |
+
+## 归档文档（T4）
+
+以下文档从 `pkg/agentcore/docs/` 原样移到 [agentcore-2026-10/](agentcore-2026-10/)（删除前提交 `ff052ac`）。原因：多为 2026-10 之前的设计稿、路线图、发布准备与迁移指南，内容与重构后的分层不再一致；保留的 getting-started、architecture、api、runtime-policies、host-integration 按新结构改写。
+
+- [block-result-design.md](agentcore-2026-10/block-result-design.md)：Agentcore Block Result Design
+- [prompt-layered-design.md](agentcore-2026-10/prompt-layered-design.md)：Agentcore Prompt Layered Builder Design
+- [streaming-design.md](agentcore-2026-10/streaming-design.md)：Agentcore Streaming Design
+- [context-presets-design.md](agentcore-2026-10/context-presets-design.md)：Agentcore Context Presets Design
+- [working-memory-design.md](agentcore-2026-10/working-memory-design.md)：Agentcore Working Memory Design
+- [roadmap.md](agentcore-2026-10/roadmap.md)：Agentcore Roadmap
+- [release-readiness.md](agentcore-2026-10/release-readiness.md)：Agentcore Release Readiness
+- [migration.md](agentcore-2026-10/migration.md)：Agentcore Migration Guide
+- [versioning.md](agentcore-2026-10/versioning.md)：Agentcore Versioning
+- [compatibility.md](agentcore-2026-10/compatibility.md)：Agentcore Compatibility
+- [kernel-stability.md](agentcore-2026-10/kernel-stability.md)：Kernel Stability
+- [adoption-paths.md](agentcore-2026-10/adoption-paths.md)：Agentcore Adoption Paths
+- [contract-matrix.md](agentcore-2026-10/contract-matrix.md)：Contract Matrix
+- [conformance-testing.md](agentcore-2026-10/conformance-testing.md)：Agentcore Conformance Testing
+- [host-conformance.md](agentcore-2026-10/host-conformance.md)：Host Conformance
+- [embedding-patterns.md](agentcore-2026-10/embedding-patterns.md)：Agentcore Embedding Patterns
+- [recommended-runtime.md](agentcore-2026-10/recommended-runtime.md)：Agentcore Recommended Runtime Path

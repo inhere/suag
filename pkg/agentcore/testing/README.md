@@ -308,9 +308,9 @@ agentcoretesting.RunStorageFixtureSuite(t, func(t *testing.T) agentcoretesting.S
 如果你想先理解 contract 本身，再来使用这些 suites，推荐先看：
 
 - [../docs/api.md](../docs/api.md)
-- [../docs/conformance-testing.md](../docs/conformance-testing.md)
-- [../docs/contract-matrix.md](../docs/contract-matrix.md)
-- [../docs/release-readiness.md](../docs/release-readiness.md)
+- [../docs/conformance-testing.md](../../../docs/archive/agentcore-2026-10/conformance-testing.md)
+- [../docs/contract-matrix.md](../../../docs/archive/agentcore-2026-10/contract-matrix.md)
+- [../docs/release-readiness.md](../../../docs/archive/agentcore-2026-10/release-readiness.md)
 
 如果你想直接看“外部适配器作者”的最小示例测试，继续看：
 

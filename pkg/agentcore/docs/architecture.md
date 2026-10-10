@@ -357,12 +357,12 @@ hooks 可以观察、注入、拦截，但不应该长期承载核心业务主�
 1. [../README.md](../README.md)
 2. [getting-started.md](./getting-started.md)
 3. [api.md](./api.md)
-4. [embedding-patterns.md](./embedding-patterns.md)
+4. [embedding-patterns.md](../../../docs/archive/agentcore-2026-10/embedding-patterns.md)
 5. [../examples/README.md](../examples/README.md)
 
 如果你在看下一阶段增长方向，再继续看：
 
-- [working-memory-design.md](./working-memory-design.md)
-- [context-presets-design.md](./context-presets-design.md)
-- [prompt-layered-design.md](./prompt-layered-design.md)
-- [roadmap.md](./roadmap.md)
+- [working-memory-design.md](../../../docs/archive/agentcore-2026-10/working-memory-design.md)
+- [context-presets-design.md](../../../docs/archive/agentcore-2026-10/context-presets-design.md)
+- [prompt-layered-design.md](../../../docs/archive/agentcore-2026-10/prompt-layered-design.md)
+- [roadmap.md](../../../docs/archive/agentcore-2026-10/roadmap.md)

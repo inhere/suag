@@ -61,7 +61,7 @@
 
 如果你更想按自己当前处境选路径，而不是通读首页，直接看：
 
-- [docs/adoption-paths.md](./docs/adoption-paths.md)
+- [docs/adoption-paths.md](../../docs/archive/agentcore-2026-10/adoption-paths.md)
 
 ## Who It Fits
 
@@ -164,10 +164,10 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 如果你不是只想跑最小 demo，而是准备真正接入自己的系统，可以这样选阅读路径：
 
-- 新项目直接嵌入：看 [docs/recommended-runtime.md](./docs/recommended-runtime.md)
+- 新项目直接嵌入：看 [docs/recommended-runtime.md](../../docs/archive/agentcore-2026-10/recommended-runtime.md)
 - 给聊天服务、worker、CLI 封装宿主层：看 [docs/host-integration.md](./docs/host-integration.md)
-- 从已有 runtime 或 adapter 逐步迁移：看 [docs/migration.md](./docs/migration.md)
-- 还不确定自己属于哪类采用路径：看 [docs/adoption-paths.md](./docs/adoption-paths.md)
+- 从已有 runtime 或 adapter 逐步迁移：看 [docs/migration.md](../../docs/archive/agentcore-2026-10/migration.md)
+- 还不确定自己属于哪类采用路径：看 [docs/adoption-paths.md](../../docs/archive/agentcore-2026-10/adoption-paths.md)
 
 ## Starter Matrix
 
@@ -176,10 +176,10 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 | 目标 | 推荐起步组合 | 先看 | 先跑 |
 | --- | --- | --- | --- |
 | 跑通最小 runtime | `mock + files` | [docs/getting-started.md](./docs/getting-started.md) | `examples/minimal` |
-| 跑通更像真实 host 的默认主路径 | `files + memory + context + prompt` | [docs/recommended-runtime.md](./docs/recommended-runtime.md) | `examples/recommended` |
+| 跑通更像真实 host 的默认主路径 | `files + memory + context + prompt` | [docs/recommended-runtime.md](../../docs/archive/agentcore-2026-10/recommended-runtime.md) | `examples/recommended` |
 | 给聊天服务 / CLI / worker 做宿主封装 | `recommended path + host wrapper` | [docs/host-integration.md](./docs/host-integration.md) | `examples/host` |
-| 从已有系统逐步迁移 | `adapter + host wrapper + contract alignment` | [docs/migration.md](./docs/migration.md) | `examples/host` 和 `examples/agentcore/bridge` |
-| 评估当前是否值得依赖 | `compatibility + versioning + release readiness` | [docs/adoption-paths.md](./docs/adoption-paths.md) | package docs 为主 |
+| 从已有系统逐步迁移 | `adapter + host wrapper + contract alignment` | [docs/migration.md](../../docs/archive/agentcore-2026-10/migration.md) | `examples/host` 和 `examples/agentcore/bridge` |
+| 评估当前是否值得依赖 | `compatibility + versioning + release readiness` | [docs/adoption-paths.md](../../docs/archive/agentcore-2026-10/adoption-paths.md) | package docs 为主 |
 
 ## Core Contracts
 
@@ -251,23 +251,23 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 ## Docs
 
 - Docs index: [docs/README.md](./docs/README.md)
-- Adoption paths: [docs/adoption-paths.md](./docs/adoption-paths.md)
+- Adoption paths: [docs/adoption-paths.md](../../docs/archive/agentcore-2026-10/adoption-paths.md)
 - Getting started: [docs/getting-started.md](./docs/getting-started.md)
 - Architecture: [docs/architecture.md](./docs/architecture.md)
 - API guide: [docs/api.md](./docs/api.md)
-- Embedding patterns: [docs/embedding-patterns.md](./docs/embedding-patterns.md)
-- Compatibility: [docs/compatibility.md](./docs/compatibility.md)
-- Versioning: [docs/versioning.md](./docs/versioning.md)
-- Release readiness: [docs/release-readiness.md](./docs/release-readiness.md)
-- Recommended runtime path: [docs/recommended-runtime.md](./docs/recommended-runtime.md)
+- Embedding patterns: [docs/embedding-patterns.md](../../docs/archive/agentcore-2026-10/embedding-patterns.md)
+- Compatibility: [docs/compatibility.md](../../docs/archive/agentcore-2026-10/compatibility.md)
+- Versioning: [docs/versioning.md](../../docs/archive/agentcore-2026-10/versioning.md)
+- Release readiness: [docs/release-readiness.md](../../docs/archive/agentcore-2026-10/release-readiness.md)
+- Recommended runtime path: [docs/recommended-runtime.md](../../docs/archive/agentcore-2026-10/recommended-runtime.md)
 - Host integration: [docs/host-integration.md](./docs/host-integration.md)
-- Migration guide: [docs/migration.md](./docs/migration.md)
-- Working memory design: [docs/working-memory-design.md](./docs/working-memory-design.md)
-- Context presets design: [docs/context-presets-design.md](./docs/context-presets-design.md)
-- Prompt layered design: [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
-- Conformance testing: [docs/conformance-testing.md](./docs/conformance-testing.md)
-- Streaming design: [docs/streaming-design.md](./docs/streaming-design.md)
-- Roadmap: [docs/roadmap.md](./docs/roadmap.md)
+- Migration guide: [docs/migration.md](../../docs/archive/agentcore-2026-10/migration.md)
+- Working memory design: [docs/working-memory-design.md](../../docs/archive/agentcore-2026-10/working-memory-design.md)
+- Context presets design: [docs/context-presets-design.md](../../docs/archive/agentcore-2026-10/context-presets-design.md)
+- Prompt layered design: [docs/prompt-layered-design.md](../../docs/archive/agentcore-2026-10/prompt-layered-design.md)
+- Conformance testing: [docs/conformance-testing.md](../../docs/archive/agentcore-2026-10/conformance-testing.md)
+- Streaming design: [docs/streaming-design.md](../../docs/archive/agentcore-2026-10/streaming-design.md)
+- Roadmap: [docs/roadmap.md](../../docs/archive/agentcore-2026-10/roadmap.md)
 - Examples: `examples/`
 - Package overview: `doc.go`
 - Conformance helper package: `testing/README.md`
@@ -276,21 +276,21 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 
 1. [README.md](./README.md)
 2. [docs/README.md](./docs/README.md)
-3. [docs/adoption-paths.md](./docs/adoption-paths.md)
+3. [docs/adoption-paths.md](../../docs/archive/agentcore-2026-10/adoption-paths.md)
 4. [docs/getting-started.md](./docs/getting-started.md)
 5. [docs/architecture.md](./docs/architecture.md)
 6. [docs/api.md](./docs/api.md)
-7. [docs/embedding-patterns.md](./docs/embedding-patterns.md)
-8. [docs/compatibility.md](./docs/compatibility.md)
-9. [docs/versioning.md](./docs/versioning.md)
-10. [docs/release-readiness.md](./docs/release-readiness.md)
-11. [docs/recommended-runtime.md](./docs/recommended-runtime.md)
+7. [docs/embedding-patterns.md](../../docs/archive/agentcore-2026-10/embedding-patterns.md)
+8. [docs/compatibility.md](../../docs/archive/agentcore-2026-10/compatibility.md)
+9. [docs/versioning.md](../../docs/archive/agentcore-2026-10/versioning.md)
+10. [docs/release-readiness.md](../../docs/archive/agentcore-2026-10/release-readiness.md)
+11. [docs/recommended-runtime.md](../../docs/archive/agentcore-2026-10/recommended-runtime.md)
 12. [docs/host-integration.md](./docs/host-integration.md)
-13. [docs/migration.md](./docs/migration.md)
-14. [docs/working-memory-design.md](./docs/working-memory-design.md)
-15. [docs/context-presets-design.md](./docs/context-presets-design.md)
-16. [docs/prompt-layered-design.md](./docs/prompt-layered-design.md)
-17. [docs/streaming-design.md](./docs/streaming-design.md)
+13. [docs/migration.md](../../docs/archive/agentcore-2026-10/migration.md)
+14. [docs/working-memory-design.md](../../docs/archive/agentcore-2026-10/working-memory-design.md)
+15. [docs/context-presets-design.md](../../docs/archive/agentcore-2026-10/context-presets-design.md)
+16. [docs/prompt-layered-design.md](../../docs/archive/agentcore-2026-10/prompt-layered-design.md)
+17. [docs/streaming-design.md](../../docs/archive/agentcore-2026-10/streaming-design.md)
 18. `doc.go`
 19. `examples/README.md`
 20. `examples/minimal`
@@ -298,7 +298,7 @@ result, err := runtime.Run(ctx, agentcore.RunInput{
 22. `examples/prompt`
 23. `examples/host`
 24. `examples/resume`
-25. [docs/roadmap.md](./docs/roadmap.md)
+25. [docs/roadmap.md](../../docs/archive/agentcore-2026-10/roadmap.md)
 
 ## Memory And Context
 

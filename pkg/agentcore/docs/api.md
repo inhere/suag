@@ -545,9 +545,9 @@ runtime 会对错误做稳定分类：
 
 如果你不只是想看单个接口，而是想直接从当前更推荐的组合起步，再继续看：
 
-- [recommended-runtime.md](./recommended-runtime.md)
+- [recommended-runtime.md](../../../docs/archive/agentcore-2026-10/recommended-runtime.md)
 - [host-integration.md](./host-integration.md)
-- [migration.md](./migration.md)
+- [migration.md](../../../docs/archive/agentcore-2026-10/migration.md)
 
 ## 14. 下一阶段 API 演进重点
 
@@ -607,6 +607,6 @@ runtime 会对错误做稳定分类：
 
 如果你准备围绕这些方向扩展 `agentcore`，推荐同时参考：
 
-- [streaming-design.md](./streaming-design.md)
-- [release-readiness.md](./release-readiness.md)
-- [roadmap.md](./roadmap.md)
+- [streaming-design.md](../../../docs/archive/agentcore-2026-10/streaming-design.md)
+- [release-readiness.md](../../../docs/archive/agentcore-2026-10/release-readiness.md)
+- [roadmap.md](../../../docs/archive/agentcore-2026-10/roadmap.md)
