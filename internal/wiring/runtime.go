@@ -234,6 +234,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		Model:           settings.Main.Model,
 		ProviderName:    settings.Main.Provider.ID,
 		Tools:           toolRegistry,
+		PromptBuilder:   staticPrompt(basePrompt(opts, "")),
 		Hooks:           opts.Hooks,
 		MaxSteps:        gkconfig.Int("max_steps", 100),
 		RuleSource: func() (string, string, error) {
