@@ -25,6 +25,7 @@
 | 后台提交可能吞入下一任务的改动 | 无实际影响 | 后台 `git add -u` 与前台编辑并行 | 改为等待后台提交完成后再编辑同一文件 |
 | gofer 拒绝 `--max-tokens` | 回归无预算上限 | suag agent 配置没有可读用量（需 ndjson 用量投影） | 去掉参数运行；属于 gofer 配置，留给 gofer 会话 |
 | 计划中“tools 测试整体改外部包”只部分需要 | 无 | 设计时假设根包 import tools；实施后仅 `agentcore/testing → tools` 形成测试环 | 只把一致性测试移到 `tools_test` |
+| 发布后 CI 的 staticcheck 失败 | v0.9.0 推送后 Unit-Tests 红一次（release 不受影响） | 实施中只跑了 go vet，没跑 CI 同款 staticcheck；删除 Embedding 与重复 mock 后留下 `fakeProvider`、`cloneMap` 死代码（U1000） | d6dfbda 删除，主机 staticcheck 与 CI 全绿 |
 | 全量测试偶尔超过 10 分钟 | 等待时间长 | 主机同时跑其他会话的测试，负载高 | 后台运行并按退出码门控提交 |
 
 ## 改进
@@ -32,4 +33,5 @@
 - 后台/非交互 shell 中搜索命令一律带显式路径并重定向 stdin（已记入 gofer memory）。
 - 批量改写脚本完成后，固定检查三项：gofmt 分组、标识符遮蔽、字符串与注释是否被误改。
 - gofer 中 suag agent 若需要预算控制，应在 gofer 侧为其配置 ndjson 用量来源（提给 gofer 会话，不在本仓库修改）。
+- 删除类重构结束前在主机跑一次 `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`（与 CI 一致），再打 tag。
 - 发布前补一次 Claude provider 的真实工具失败回归。
