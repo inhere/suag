@@ -107,13 +107,6 @@ func appendClaudeBlock(msgs []map[string]any, role string, block map[string]any)
 	return append(msgs, map[string]any{"role": role, "content": []map[string]any{block}})
 }
 
-// toolResultIsError reports whether a tool result is flagged as failed.
-// agentcore has no dedicated field, so a Metadata["is_error"]=true marker is honored.
-func toolResultIsError(r *agentcoreapi.ToolResult) bool {
-	v, _ := r.Metadata["is_error"].(bool)
-	return v
-}
-
 func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, model string) map[string]any {
 	msgs := make([]map[string]any, 0, len(req.Messages))
 	// Anthropic messages only accept user/assistant roles; mid-conversation
@@ -136,7 +129,7 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 			if m.ToolResult != nil {
 				block["tool_use_id"] = m.ToolResult.CallID
 				block["content"] = m.ToolResult.Content
-				if toolResultIsError(m.ToolResult) {
+				if m.ToolResult.IsError {
 					block["is_error"] = true
 				}
 			} else if m.ToolCall != nil {

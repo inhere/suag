@@ -31,7 +31,7 @@ func (echoTool) Schema() agentcore.ToolSchema {
 }
 func (echoTool) Execute(_ context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	return &agentcore.ToolResult{CallID: call.CallID, Name: "echo", Content: "echo:" + call.Arguments["text"].(string),
-		Metadata: map[string]any{"is_error": false, "path": "/x"}}, nil
+		Metadata: map[string]any{"path": "/x"}}, nil
 }
 
 func TestAgentStorageRunRoundTrip(t *testing.T) {
@@ -103,7 +103,7 @@ func TestAgentStorageMessageFidelity(t *testing.T) {
 	in := []api.Message{
 		{Role: "user", Content: "hi 你好 \"q\"", Metadata: map[string]any{"k": "v"}},
 		{Role: "assistant", Content: "text", ToolCall: &api.ToolCall{CallID: "c", Name: "n", Arguments: map[string]any{"a": "b", "n": []any{"x"}}}},
-		{Role: "tool", ToolResult: &api.ToolResult{CallID: "c", Name: "n", Content: "r", Artifacts: []api.Artifact{{Kind: "k", URI: "u", Content: "c", Metadata: map[string]any{"z": "1"}}}, Metadata: map[string]any{"is_error": true}}},
+		{Role: "tool", ToolResult: &api.ToolResult{CallID: "c", Name: "n", Content: "r", Artifacts: []api.Artifact{{Kind: "k", URI: "u", Content: "c", Metadata: map[string]any{"z": "1"}}}, IsError: true, Metadata: map[string]any{"k": "v"}}},
 	}
 	assert.NoErr(t, st.AppendMessages(ctx, "t1", in...))
 	out, err := st.LoadMessages(ctx, "t1")

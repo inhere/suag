@@ -188,7 +188,7 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 		turnDenialsFrom(ctx).add(call.Name)
 	case err != nil:
 		e.Status, e.Error = eventError, err.Error()
-	case res != nil && res.Metadata["is_error"] == true:
+	case res != nil && res.IsError:
 		e.Status, e.Error = eventError, "tool reported an error result"
 	}
 	o.rec.record(ctx, e)

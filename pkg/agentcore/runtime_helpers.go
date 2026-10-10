@@ -190,8 +190,7 @@ func toolErrorAsResult(call ToolCall, err error) *ToolResult {
 		CallID:  call.CallID,
 		Name:    call.Name,
 		Content: err.Error(),
-		// is_error is the provider-facing marker for a failed tool call.
-		Metadata: map[string]any{"is_error": true},
+		IsError: true,
 	}
 }
 

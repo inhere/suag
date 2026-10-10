@@ -486,10 +486,7 @@ func (r *DefaultRuntime) executeSingleTool(ctx context.Context, state *RunState,
 		}
 		result = normalizeToolResult(activeCall, decision.Result)
 		// A policy that turns the failure into a result must still flag it as an error.
-		if result.Metadata == nil {
-			result.Metadata = map[string]any{}
-		}
-		result.Metadata["is_error"] = true
+		result.IsError = true
 	} else {
 		result = normalizeToolResult(activeCall, result)
 	}

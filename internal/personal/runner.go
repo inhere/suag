@@ -503,8 +503,7 @@ func (h toolEventHook) AfterTool(ctx context.Context, event *agentcore.ToolEvent
 	if event == nil || event.Result == nil {
 		return nil
 	}
-	isErr, _ := event.Result.Metadata["is_error"].(bool)
-	h.publish(ctx, Event{Kind: "tool_result", ToolName: event.Result.Name, Text: event.Result.Content, IsError: isErr})
+	h.publish(ctx, Event{Kind: "tool_result", ToolName: event.Result.Name, Text: event.Result.Content, IsError: event.Result.IsError})
 	return nil
 }
 

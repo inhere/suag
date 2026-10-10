@@ -15,7 +15,10 @@ type ToolResult struct {
 	Name      string
 	Content   string
 	Artifacts []Artifact
-	Metadata  map[string]any
+	// IsError marks a failed or refused tool call; providers forward it to
+	// the model (e.g. Claude tool_result is_error).
+	IsError  bool
+	Metadata map[string]any
 }
 
 // ToolSchema describes a callable tool in a provider-neutral way.

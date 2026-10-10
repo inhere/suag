@@ -954,11 +954,11 @@ func TestRuntime_Run_ToolCallKeepsAssistantTextAndErrorMark(t *testing.T) {
 	if msgs[3].Content != "" {
 		t.Fatalf("parallel tool-call message must not repeat text, got %#v", msgs[3])
 	}
-	if v, _ := msgs[2].ToolResult.Metadata["is_error"].(bool); v {
+	if msgs[2].ToolResult.IsError {
 		t.Fatalf("successful result must not be marked: %#v", msgs[2].ToolResult)
 	}
-	if v, _ := msgs[4].ToolResult.Metadata["is_error"].(bool); !v {
-		t.Fatalf("failed result must carry is_error, got %#v", msgs[4].ToolResult)
+	if !msgs[4].ToolResult.IsError {
+		t.Fatalf("failed result must carry IsError, got %#v", msgs[4].ToolResult)
 	}
 }
 

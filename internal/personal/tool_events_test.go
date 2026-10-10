@@ -17,7 +17,7 @@ func TestToolEventsOrderAndSummary(t *testing.T) {
 	reg := tools.NewRegistry()
 	reg.Register(fnTool{name: "ok_tool", fn: func() (*agentcore.ToolResult, error) { return &agentcore.ToolResult{Content: "fine"}, nil }})
 	reg.Register(fnTool{name: "bad_tool", fn: func() (*agentcore.ToolResult, error) {
-		return &agentcore.ToolResult{Content: "boom", Metadata: map[string]any{"is_error": true}}, nil
+		return &agentcore.ToolResult{Content: "boom", IsError: true}, nil
 	}})
 	long := strings.Repeat("x", 500)
 	prov := &reqProv{steps: []*agentcore.GenerateResult{
