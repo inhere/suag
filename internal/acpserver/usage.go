@@ -1,69 +1,27 @@
 package acpserver
 
 import (
-	"context"
-	"sync"
-
 	"github.com/coder/acp-go-sdk"
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/pkg/agentcore"
 )
 
-// turnUsage collects per-model-call usage during one prompt turn through the
-// AfterModel hook. personal.RunResult only exposes the turn sum, which cannot
-// tell the context size of the last request, and is empty for a cancelled turn.
-type turnUsage struct {
-	mu    sync.Mutex
-	sum   agentcore.Usage
-	last  int // input tokens (cache included) of the most recent model request
-	calls int
-}
-
-func (t *turnUsage) add(u agentcore.Usage) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.sum.InputTokens += u.InputTokens
-	t.sum.OutputTokens += u.OutputTokens
-	t.sum.TotalTokens += u.TotalTokens
-	t.sum.CacheReadTokens += u.CacheReadTokens
-	t.sum.CacheWriteTokens += u.CacheWriteTokens
-	t.sum.CostUSD += u.CostUSD
-	t.last = u.InputTokens
-	t.calls++
-}
-
-func (t *turnUsage) snapshot() (agentcore.Usage, int, int) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.sum, t.last, t.calls
-}
-
-// AfterModel records usage of each successful model call of the turn.
-func (h *permissionHook) AfterModel(_ context.Context, event *agentcore.ModelEvent, _ *agentcore.Control) error {
-	if h.usage != nil && event != nil && event.Result != nil {
-		h.usage.add(event.Result.Usage)
-	}
-	return nil
-}
-
 // recordUsage returns the session-cumulative usage after a turn together with
 // the context size of the last request.
 //
 // The cumulative total is owned by personal.Runner and persisted in session
-// metadata, so it survives session/load and process restarts; persisted is
-// RunResult.SessionUsage of the finished turn. When the turn never reached the
-// runner's finish step (zero value), the previously known total is kept.
-func (s *sessionState) recordUsage(a *Agent, turn *turnUsage, persisted agentcore.Usage) (agentcore.Usage, int) {
-	_, last, calls := turn.snapshot()
+// metadata, so it survives session/load and process restarts. When the turn
+// never reached the runner's finish step (zero SessionUsage), the previously
+// known total is kept; a turn without any model call (e.g. cancelled early)
+// keeps the previous context size instead of resetting it to 0.
+func (s *sessionState) recordUsage(a *Agent, result personal.RunResult) (agentcore.Usage, int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if persisted != (agentcore.Usage{}) {
-		s.total = persisted
+	if result.SessionUsage != (agentcore.Usage{}) {
+		s.total = result.SessionUsage
 	}
-	// A turn without any model call (e.g. cancelled early) keeps the previous
-	// context size instead of resetting it to 0.
-	if calls > 0 {
-		s.lastContext = last
+	if result.ModelCalls > 0 {
+		s.lastContext = result.LastInputTokens
 	}
 	return s.total, s.lastContext
 }

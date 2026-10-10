@@ -101,7 +101,7 @@ func (h denialLimitHook) BeforeModel(_ context.Context, _ *agentcore.ModelEvent,
 		return nil
 	}
 	h.denials.markReached()
-	sum, _ := h.usage.snapshot()
+	sum, _, _ := h.usage.snapshot()
 	ctrl.ShortCircuit(&agentcore.RunResult{
 		Status: agentcore.RunCompleted,
 		Output: fmt.Sprintf("本回合已有 %d 次工具调用被拒绝（%s），回合结束，等待授权或新的指示。", h.denials.count(), strings.Join(h.denials.tools(), ", ")),

@@ -97,6 +97,52 @@ func TestCancelledTurnStillSendsUsageUpdate(t *testing.T) {
 	assert.Gt(t, updates[0].Size, 0)
 }
 
+// toolThenBlockProvider answers the first call with a read tool call carrying
+// usage, then blocks the next call until the turn is cancelled.
+type toolThenBlockProvider struct {
+	calls   atomic.Int32
+	blocked chan struct{}
+}
+
+func (*toolThenBlockProvider) Name() string { return "tool-then-block" }
+func (p *toolThenBlockProvider) Generate(ctx context.Context, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	if p.calls.Add(1) == 1 {
+		return &agentcore.GenerateResult{
+			ToolCalls:    []agentcore.ToolCall{{CallID: "read-1", Name: "file_read", Arguments: map[string]any{"path": "a.txt"}}},
+			FinishReason: agentcore.FinishToolCalls,
+			Usage:        agentcore.Usage{InputTokens: 40, OutputTokens: 2, TotalTokens: 42},
+		}, nil
+	}
+	close(p.blocked)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// A turn cancelled after a completed model call reports that call's usage and
+// its request size, taken from personal.RunResult.
+func TestCancelledTurnReportsCompletedCallUsage(t *testing.T) {
+	provider := &toolThenBlockProvider{blocked: make(chan struct{})}
+	client := &testACPClient{}
+	conn := connectPersonalACP(t, testACPRuntime(t, provider, &countingTool{name: "file_read"}), client)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+	assert.NoErr(t, err)
+	done := make(chan acp.PromptResponse, 1)
+	go func() {
+		resp, _ := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("read then wait")}})
+		done <- resp
+	}()
+	<-provider.blocked
+	assert.NoErr(t, conn.Cancel(ctx, acp.CancelNotification{SessionId: created.SessionId}))
+	assert.Eq(t, acp.StopReasonCancelled, (<-done).StopReason)
+	updates := usageUpdates(client)
+	assert.Eq(t, 1, len(updates))
+	assert.Eq(t, 40, updates[0].Used)
+	assert.Eq(t, float64(40), updates[0].Meta["input_tokens"])
+	assert.Eq(t, float64(2), updates[0].Meta["output_tokens"])
+}
+
 func TestContextWindowForModel(t *testing.T) {
 	cases := map[string]int{
 		"claude-sonnet-4": 200000, "gpt-4o-mini": 128000, "gpt-4.1": 1000000,

@@ -42,10 +42,11 @@ func (c *usageCollector) lastInputTokens() (int, bool) {
 	return c.lastInput, c.lastInput > 0
 }
 
-func (c *usageCollector) snapshot() (agentcore.Usage, int) {
+// snapshot returns the usage sum, the call count and the latest call's input tokens.
+func (c *usageCollector) snapshot() (agentcore.Usage, int, int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.sum, c.calls
+	return c.sum, c.calls, c.lastInput
 }
 
 // usageFromSum converts the store's per-session model-event total back to the

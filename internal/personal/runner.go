@@ -115,6 +115,12 @@ type RunResult struct {
 	Usage agentcore.Usage
 	// SessionUsage is the session-cumulative usage persisted after this turn.
 	SessionUsage agentcore.Usage
+	// ModelCalls counts the successful model calls of this invocation,
+	// including those of a failed or cancelled turn.
+	ModelCalls int
+	// LastInputTokens is the input tokens (cache included) of the most recent
+	// model call, i.e. the context size of the last request; 0 without a call.
+	LastInputTokens int
 	// DeniedTools lists the distinct tools refused by the approval layer in
 	// this turn (first-refusal order); empty when nothing was refused.
 	DeniedTools []string
@@ -573,7 +579,8 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 		result.Status, result.Output, result.Usage = coreResult.Status, coreResult.Output, coreResult.Usage
 	}
 	// Prefer the hook-collected sum: it also covers failed/cancelled turns.
-	turnUsage, calls := usage.snapshot()
+	turnUsage, calls, lastInput := usage.snapshot()
+	result.ModelCalls, result.LastInputTokens = calls, lastInput
 	if calls > 0 {
 		result.Usage = turnUsage
 	}

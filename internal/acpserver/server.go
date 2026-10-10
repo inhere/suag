@@ -203,8 +203,7 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		a.mu.Unlock()
 	}()
 
-	turn := &turnUsage{}
-	hook := &permissionHook{conn: a.connection(), sessionID: req.SessionId, cwd: cwd, readOnly: readOnly, usage: turn}
+	hook := &permissionHook{conn: a.connection(), sessionID: req.SessionId, cwd: cwd, readOnly: readOnly}
 	runtime, err := a.open(turnCtx, cwd, readOnly, servers, hook)
 	if err != nil {
 		return acp.PromptResponse{}, err
@@ -232,11 +231,11 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		// The SDK cancels the request ctx on session/cancel, so detach from it
 		// (bounded) or the notification could never be written.
 		usageCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		usageErr := a.sendUsage(usageCtx, req.SessionId, state, turn, window, result.SessionUsage)
+		usageErr := a.sendUsage(usageCtx, req.SessionId, state, window, result)
 		stop()
 		return acp.PromptResponse{StopReason: acp.StopReasonCancelled}, errors.Join(closeErr, usageErr)
 	}
-	if err := a.sendTurnUpdates(ctx, req.SessionId, state, turn, window, result); err != nil {
+	if err := a.sendUsage(ctx, req.SessionId, state, window, result); err != nil {
 		return acp.PromptResponse{}, errors.Join(runErr, closeErr, err)
 	}
 	// Refused tool calls are tool errors and the turn continues (end_turn); only
@@ -263,18 +262,10 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 }
 
 // sendUsage reports session-cumulative usage after a turn (completed or cancelled).
-func (a *Agent) sendUsage(ctx context.Context, id acp.SessionId, state *sessionState, turn *turnUsage, window int, persisted agentcore.Usage) error {
-	total, used := state.recordUsage(a, turn, persisted)
+func (a *Agent) sendUsage(ctx context.Context, id acp.SessionId, state *sessionState, window int, result personal.RunResult) error {
+	total, used := state.recordUsage(a, result)
 	if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: usageUpdate(total, used, window)}); err != nil {
 		return fmt.Errorf("send usage update: %w", err)
-	}
-	return nil
-}
-
-// sendTurnUpdates reports usage after a turn; plans are streamed live from update_plan events.
-func (a *Agent) sendTurnUpdates(ctx context.Context, id acp.SessionId, state *sessionState, turn *turnUsage, window int, result personal.RunResult) error {
-	if err := a.sendUsage(ctx, id, state, turn, window, result.SessionUsage); err != nil {
-		return err
 	}
 	return nil
 }

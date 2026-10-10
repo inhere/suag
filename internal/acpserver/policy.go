@@ -49,9 +49,9 @@ type pendingCall struct {
 }
 
 // permissionHook is the per-prompt ACP turn gate. As an agentcore.Hook it sends
-// the tool_call notifications (pending, in_progress, completed/failed) and
-// collects usage; as a tools.Approver (Decide) it is the approval layer's
-// policy: read_only refusals and RequestPermission for MCP/write tools.
+// the tool_call notifications (pending, in_progress, completed/failed); as a
+// tools.Approver (Decide) it is the approval layer's policy: read_only
+// refusals and RequestPermission for MCP/write tools.
 type permissionHook struct {
 	agentcore.NopHook
 	conn      *acp.AgentSideConnection
@@ -59,7 +59,6 @@ type permissionHook struct {
 	cwd       string
 	readOnly  bool
 	sequence  uint64
-	usage     *turnUsage
 	// isMCP marks MCP-backed tools (set after the runtime opens). They never
 	// take the name-based fast path, so an MCP tool called "web_search" cannot
 	// pass for the built-in read tool.
