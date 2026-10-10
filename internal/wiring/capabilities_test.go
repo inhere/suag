@@ -12,10 +12,10 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
-	toolsmcp "github.com/inhere/suag/internal/platform/tools/mcp"
 	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 	capskills "github.com/inhere/suag/pkg/agentcore/skills"
 	"github.com/inhere/suag/pkg/agentcore/tools"
+	toolsmcp "github.com/inhere/suag/pkg/agentcore/tools/mcp"
 )
 
 func TestBuildDefaultCapabilities_RegistersNativeTools(t *testing.T) {

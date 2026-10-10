@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/inhere/suag/internal/platform/tools/mcp"
+	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
 	"os"
 	"path/filepath"
 
