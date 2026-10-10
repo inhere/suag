@@ -30,6 +30,11 @@ func TestBasePrompt(t *testing.T) {
 		assert.StrContains(t, p, "Mode: writable")
 		assert.StrContains(t, p, "Shell for shell_exec: ")
 	})
+	t.Run("scope discipline and stale-rule reporting", func(t *testing.T) {
+		p := basePrompt(Options{Workspace: "/w"}, "")
+		assert.StrContains(t, p, `"Found, not touched"`)
+		assert.StrContains(t, p, "contradict the actual code")
+	})
 	t.Run("no date or time", func(t *testing.T) {
 		p := basePrompt(Options{Workspace: "/w"}, "")
 		assert.False(t, regexp.MustCompile(`\d{4}-\d{2}-\d{2}|\d{2}:\d{2}`).MatchString(p))

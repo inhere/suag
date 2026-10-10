@@ -23,7 +23,7 @@ func (p staticPrompt) BuildSystemPrompt(context.Context, *agentcore.RunState) (s
 
 // basePrompt is the environment part of the system prompt: OS and shell,
 // workspace, read-only or writable (and how to enable writing), working
-// conventions, and the skills listing (empty until skills are wired). The
+// conventions (including scope discipline and reporting stale rules), and the skills listing (empty until skills are wired). The
 // tool list is not repeated here: tool schemas already carry it. Project
 // rules (AGENTS.md) and the append prompt follow it in the runner.
 func basePrompt(opts Options, skills string) string {
@@ -47,6 +47,8 @@ func basePrompt(opts Options, skills string) string {
 	b.WriteString("- Read a file before changing it; prefer small exact edits over rewriting whole files.\n")
 	b.WriteString("- Shell commands cannot be interactive and have a timeout; pass a larger timeout for long builds or tests.\n")
 	b.WriteString("- When a tool is refused or not enabled, do not retry it; explain what is needed instead.\n")
+	b.WriteString("- Change only what the task asks for. Problems you notice outside that scope go into a \"Found, not touched\" section of your report instead of being fixed on the side.\n")
+	b.WriteString("- If injected rules, memory or docs contradict the actual code or environment, say so in your report (what, where, why it looks stale) instead of silently working around it.\n")
 	b.WriteString("- Answer in the user's language.\n")
 	if skills != "" {
 		b.WriteString("\n")
