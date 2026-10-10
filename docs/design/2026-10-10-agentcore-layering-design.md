@@ -8,8 +8,8 @@
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-10 | Claude | 初稿 |
-| 0.3 | 2026-10-10 | Claude | 按用户“无需做兼容”：IsError 不再兼容旧数据、不双写，直接替换 `Metadata["is_error"]` |
 | 0.2 | 2026-10-10 | Claude | 按合并评审修订：根包不再导出 Registry、不 import tools，工具注册表统一接收 `api.Tool`（Kind 为可选接口），公开 API 以“干净断开 + 删除记录”代替别名（F1）；默认内存存储的语义与受影响测试（F2）；mcp 配置解耦含调用超时并补 cli/acpserver 范围（F3）；IsError 兼容改为统一解码与双写（F4）；运行用量字段放在 personal.RunResult（F5）；W4 补 skill、改为按 Tool 判定、native 只给中性类别（F6）；逐个示例处置（F7）；文档范围与历史文档不改（F8）；mock 增加命名与错误排队（F9）；守卫含测试依赖并精确匹配（F10）；最小示例默认只读（F11） |
+| 0.3 | 2026-10-10 | Claude | 按用户“无需做兼容”：IsError 不再兼容旧数据、不双写，直接替换 `Metadata["is_error"]` |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
