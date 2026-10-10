@@ -58,7 +58,7 @@ func TestFileTools_AbsolutePaths(t *testing.T) {
 	t.Run("absolute inside is readable and writable", func(t *testing.T) {
 		res, err := rd.Execute(ctx, call(map[string]any{"path": filepath.Join(ws, "real", "ok.txt")}))
 		assert.NoErr(t, err)
-		assert.Eq(t, "ok", res.Content)
+		assert.Eq(t, "1\tok", res.Content)
 
 		_, err = wr.Execute(ctx, call(map[string]any{"path": filepath.Join(ws, "new", "w.txt"), "content": "w"}))
 		assert.NoErr(t, err)
@@ -119,10 +119,10 @@ func TestFileTools_AbsoluteSymlinkTargets(t *testing.T) {
 	t.Run("absolute link to inside is readable, writable, listable", func(t *testing.T) {
 		got, err := read("absin/ok.txt")
 		assert.NoErr(t, err)
-		assert.Eq(t, "ok", got)
+		assert.Eq(t, "1\tok", got)
 		got, err = read("f")
 		assert.NoErr(t, err)
-		assert.Eq(t, "ok", got)
+		assert.Eq(t, "1\tok", got)
 
 		_, err = wr.Execute(ctx, call(map[string]any{"path": "absin/sub/w.txt", "content": "w"}))
 		assert.NoErr(t, err)
@@ -138,13 +138,13 @@ func TestFileTools_AbsoluteSymlinkTargets(t *testing.T) {
 	t.Run("chain leaving and re-entering ends inside", func(t *testing.T) {
 		got, err := read("hop/ok.txt")
 		assert.NoErr(t, err)
-		assert.Eq(t, "ok", got)
+		assert.Eq(t, "1\tok", got)
 	})
 
 	t.Run("relative link still works", func(t *testing.T) {
 		got, err := read("rel/ok.txt")
 		assert.NoErr(t, err)
-		assert.Eq(t, "ok", got)
+		assert.Eq(t, "1\tok", got)
 	})
 
 	t.Run("links ending outside are rejected", func(t *testing.T) {
@@ -193,7 +193,7 @@ func TestFileTools_WorkspaceRootIsSymlink(t *testing.T) {
 		for _, p := range []string{"d/ok.txt", filepath.Join(ws, "d", "ok.txt"), filepath.Join(realWs, "d", "ok.txt"), "absin/ok.txt"} {
 			got, err := read(p)
 			assert.NoErr(t, err)
-			assert.Eq(t, "ok", got)
+			assert.Eq(t, "1\tok", got)
 		}
 		_, err := wr.Execute(ctx, call(map[string]any{"path": filepath.Join(realWs, "absin", "w.txt"), "content": "w"}))
 		assert.NoErr(t, err)

@@ -33,7 +33,7 @@ func TestFileTools_ReturnToolResultsWithStableMetadata(t *testing.T) {
 		if result.CallID != "call-read" || result.Name != "file_read" {
 			t.Fatalf("result metadata = %#v, want preserved call metadata", result)
 		}
-		if result.Content != "hello from file" {
+		if result.Content != "1\thello from file" {
 			t.Fatalf("content = %q, want file body", result.Content)
 		}
 	})

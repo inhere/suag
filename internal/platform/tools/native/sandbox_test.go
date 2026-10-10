@@ -89,7 +89,7 @@ func TestFileTools_SymlinkSandbox(t *testing.T) {
 	t.Run("symlink staying inside works", func(t *testing.T) {
 		res, err := rd.Execute(ctx, call(map[string]any{"path": "inner/ok.txt"}))
 		assert.NoErr(t, err)
-		assert.Eq(t, "ok", res.Content)
+		assert.Eq(t, "1\tok", res.Content)
 
 		_, err = wr.Execute(ctx, call(map[string]any{"path": "inner/w.txt", "content": "w"}))
 		assert.NoErr(t, err)

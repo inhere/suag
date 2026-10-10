@@ -14,20 +14,8 @@ import (
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
-// FileReadTool reads a file within the workspace.
-type FileReadTool struct {
-	workspace string
-	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
-}
-
 // FileWriteTool writes/creates a file within the workspace.
 type FileWriteTool struct{ workspace string }
-
-// FileListTool lists files in a workspace directory.
-type FileListTool struct {
-	workspace string
-	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
-}
 
 // NewFileTools returns the three file tools scoped to workspace.
 func NewFileTools(workspace string) []tools.Tool {
@@ -36,48 +24,6 @@ func NewFileTools(workspace string) []tools.Tool {
 		&FileWriteTool{workspace: workspace},
 		&FileListTool{workspace: workspace},
 	}
-}
-
-// ─── FileReadTool ─────────────────────────────────────────────────────────────
-
-func (t *FileReadTool) Name() string        { return "file_read" }
-func (t *FileReadTool) Kind() tools.Kind    { return tools.KindNative }
-func (t *FileReadTool) Description() string { return "Read the contents of a file in the workspace." }
-func (t *FileReadTool) Schema() api.ToolSchema {
-	return api.ToolSchema{
-		Name:        t.Name(),
-		Description: t.Description(),
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path": map[string]any{
-					"type":        "string",
-					"description": "Path within workspace (relative, or absolute inside it)",
-				},
-			},
-			"required": []any{"path"},
-		},
-	}
-}
-
-func (t *FileReadTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
-	path, err := sandboxedPath(t.workspace, call.Arguments, "path")
-	if err != nil {
-		return nil, err
-	}
-	data, err := readFileInRoot(t.workspace, path)
-	if err != nil {
-		return nil, fmt.Errorf("file_read: %w", err)
-	}
-	content, lines, cut := TruncateLines(string(data), t.maxOut)
-	if cut {
-		content += fmt.Sprintf("\n…[已截断：只返回前 %d 行，文件共 %d 字节]", lines, len(data))
-	}
-	return &api.ToolResult{
-		CallID:  call.CallID,
-		Name:    t.Name(),
-		Content: content,
-	}, nil
 }
 
 // ─── FileWriteTool ────────────────────────────────────────────────────────────
@@ -122,56 +68,6 @@ func (t *FileWriteTool) Execute(_ context.Context, call api.ToolCall) (*api.Tool
 		CallID:  call.CallID,
 		Name:    t.Name(),
 		Content: fmt.Sprintf("wrote %d bytes to %s", len(content), path),
-	}, nil
-}
-
-// ─── FileListTool ─────────────────────────────────────────────────────────────
-
-func (t *FileListTool) Name() string        { return "file_list" }
-func (t *FileListTool) Kind() tools.Kind    { return tools.KindNative }
-func (t *FileListTool) Description() string { return "List files in a workspace directory." }
-func (t *FileListTool) Schema() api.ToolSchema {
-	return api.ToolSchema{
-		Name:        t.Name(),
-		Description: t.Description(),
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"dir": map[string]any{
-					"type":        "string",
-					"description": "Relative directory path (empty = workspace root)",
-				},
-			},
-		},
-	}
-}
-
-func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
-	dirArg, _ := call.Arguments["dir"].(string)
-	if dirArg == "" {
-		dirArg = "."
-	}
-	base, err := ResolveSandboxedPath(t.workspace, dirArg)
-	if err != nil {
-		return nil, err
-	}
-
-	entries, err := readDirInRoot(t.workspace, base)
-	if err != nil {
-		return nil, fmt.Errorf("file_list: %w", err)
-	}
-	var sb strings.Builder
-	for _, e := range entries {
-		if e.IsDir() {
-			sb.WriteString(e.Name() + "/\n")
-		} else {
-			sb.WriteString(e.Name() + "\n")
-		}
-	}
-	return &api.ToolResult{
-		CallID:  call.CallID,
-		Name:    t.Name(),
-		Content: TruncateHeadTail(sb.String(), t.maxOut),
 	}, nil
 }
 
