@@ -38,6 +38,20 @@ func TestParse(t *testing.T) {
 		s, _, _ = Parse([]byte("---\nname: c\n---\n"))
 		assert.False(t, s.AlwaysLoad)
 	})
+	t.Run("unquoted description with a colon is read leniently", func(t *testing.T) {
+		s, body, err := Parse([]byte("---\nname: inhere-load-standards\ndescription: Mandatory first step with a visible standards.json: load before other work.\nallowed-tools: [Bash, Read]\nmetadata:\n  always_load: true\n---\nbody\n"))
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "inhere-load-standards", s.Name)
+		assert.Eq(t, "Mandatory first step with a visible standards.json: load before other work.", s.Description)
+		assert.Eq(t, []string{"Bash", "Read"}, s.AllowedTools)
+		assert.True(t, s.AlwaysLoad)
+		assert.Eq(t, "body\n", body)
+	})
+	t.Run("lenient folded description", func(t *testing.T) {
+		s, _, err := Parse([]byte("---\nname: x\ndescription: >\n  first: part\n  second part\n---\n"))
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "first: part second part", s.Description)
+	})
 	t.Run("errors", func(t *testing.T) {
 		for _, bad := range []string{"# no frontmatter", "---\nname: x\n", "---\ndescription: no name\n---\n", "---\nname: [\n---\n"} {
 			_, _, err := Parse([]byte(bad))

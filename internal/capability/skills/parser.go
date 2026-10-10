@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode"
 
 	"github.com/goccy/go-yaml"
 )
@@ -64,7 +65,13 @@ func Parse(data []byte) (Skill, string, error) {
 	}
 	var fm frontmatter
 	if err := yaml.Unmarshal([]byte(head), &fm); err != nil {
-		return Skill{}, "", fmt.Errorf("parse frontmatter: %w", err)
+		// Skill files are often written for tools that read frontmatter
+		// leniently, e.g. an unquoted description containing ": ". Fall back
+		// to a line-based reading before giving up.
+		var ok bool
+		if fm, ok = lenientFrontmatter(head); !ok {
+			return Skill{}, "", fmt.Errorf("parse frontmatter: %s", firstLine(err.Error()))
+		}
 	}
 	s := Skill{
 		Name:         strings.TrimSpace(fm.Name),
@@ -105,4 +112,67 @@ func toolList(v any) []string {
 		}
 	}
 	return out
+}
+
+// lenientFrontmatter reads "key: value" lines, splitting at the first ": "
+// only, so values may contain colons. Indented lines continue the previous
+// value (folded with a space), except under "metadata:" where they are its
+// keys. Quotes around a value are dropped. ok is false when no name is found.
+func lenientFrontmatter(head string) (frontmatter, bool) {
+	var fm frontmatter
+	values := map[string]string{}
+	var last string // key whose value indented lines continue
+	inMetadata := false
+	for _, line := range strings.Split(head, "\n") {
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		indented := line[0] == ' ' || line[0] == '\t'
+		key, value, hasColon := strings.Cut(strings.TrimSpace(line), ":")
+		value = strings.TrimSpace(value)
+		switch {
+		case indented && inMetadata && hasColon:
+			if strings.TrimSpace(key) == "always_load" {
+				fm.Metadata.AlwaysLoad = value == "true"
+			}
+		case indented && last != "":
+			values[last] = strings.TrimSpace(values[last] + " " + strings.TrimSpace(line))
+		case !indented && hasColon:
+			key = strings.TrimSpace(key)
+			inMetadata, last = key == "metadata", key
+			if value == ">" || value == "|" || value == ">-" || value == "|-" {
+				value = ""
+			}
+			values[key] = strings.Trim(value, `"'`)
+		}
+	}
+	fm.Name = values["name"]
+	fm.Description = values["description"]
+	fm.AlwaysLoad = values["always_load"] == "true"
+	if tools := values["allowed-tools"]; tools != "" {
+		fm.AllowedTools = strings.Trim(tools, "[]")
+	}
+	return fm, validLenientName(fm.Name)
+}
+
+// validLenientName accepts a skill name made of letters, digits, ".", "_"
+// and "-", so a broken line like "name: [" is not taken as a name.
+func validLenientName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '.' && r != '_' && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// firstLine keeps an error message to one line for the startup warning.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
