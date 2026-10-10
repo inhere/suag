@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+## [0.9.1] - 2026-10-10
+
 ### 修复
 
 - 帮助输出：`--read-only` 的别名不再显示为 `--;ro`，`--read-only` 与 `send --text/--source/--wait` 的说明不再在 `;` 处截断；`--no-project-rules` 前不再出现未渲染的颜色标记（升级 goutil v0.8.2）。
@@ -132,7 +134,8 @@
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suag/compare/v0.9.0...HEAD
+[未发布]: https://github.com/inhere/suag/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/inhere/suag/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/inhere/suag/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/inhere/suag/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/inhere/suag/compare/v0.6.0...v0.7.0
