@@ -86,7 +86,7 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 仅作用于 `suag chat`（`run` 与 ACP 行为不变）：
 
 - `tools.allow_write`（布尔，缺省 `false`）：为 `true` 时 chat 启用写文件与命令工具，等同 `--allow-write`。`run` 仍需 `--allow-write`；`--read-only` 优先；ACP 不读取该项；非布尔值使 chat 启动失败。
-- `tools.approval`（`ask` 缺省 / `auto`）：`ask` 时，只读名单（`file_read`、`file_list`、`update_plan`、`tool_search`）之外的所有非 MCP 工具（目前是 `file_write`、`shell_exec`，配置 `serpapi_key` 时还有 `web_search`）执行前在终端询问，显示完整命令 / 路径与字节数 / 查询（已脱敏、不截断）。回答 `y`/`yes` 允许一次，`a`/`always` 在本次 chat 进程内放行后续同名工具，其他（含回车）拒绝，回合继续。询问中 Ctrl-C / Ctrl-D 只取消本回合并显示“已取消”，不退出 chat；回合中提前敲的输入不会被当作回答。`auto` 不询问。
+- `tools.approval`（`ask` 缺省 / `auto`）：`ask` 时，只读名单（`file_read`、`file_list`、`update_plan`、`tool_search`）之外的所有非 MCP 工具（目前是 `file_write`、`shell_exec`，配置 `serpapi_key` 时还有 `web_search`）执行前在终端询问，显示完整命令 / 路径与字节数 / 查询（已脱敏、不截断）。回答 `y`/`yes` 允许一次，`a`/`always` 在本次 chat 进程内放行后续同名工具，其他（含回车）拒绝，回合继续。询问中 Ctrl-C / Ctrl-D 只取消本回合并显示“已取消”，不退出 chat；回合中提前敲的输入不会被当作回答。提示符处按一次 Ctrl-C 只清掉已输入内容并提示，3 秒内再按一次才退出 chat；Ctrl-D 直接退出。`auto` 不询问。
 - 标准输入不是终端时，需确认的工具一律拒绝，并提示设置 `tools.approval: auto`。
 - 同一回合 3 次拒绝结束回合；回合末显示“本轮被拒绝的工具：…”。
 - MCP 工具不询问，仍按 `tools.auto_allow` / `tools.read_only_allow`。

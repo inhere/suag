@@ -781,7 +781,7 @@ func (t *Terminal) readLine() (line string, err error) {
 				}
 				if key == keyCtrlC {
 					t.keepRemainder(rest)
-					return "", io.EOF
+					return "", ErrInterrupt
 				}
 				if key == keyPasteStart {
 					t.pasteActive = true
@@ -936,6 +936,16 @@ type pasteIndicatorError struct{}
 func (pasteIndicatorError) Error() string {
 	return "terminal: ErrPasteIndicator not correctly handled"
 }
+
+// ErrInterrupt is returned by ReadLine for Ctrl-C. It matches io.EOF too,
+// so callers that only know "input ended" keep treating it that way, while
+// chat can tell it apart from Ctrl-D to ask for a second Ctrl-C.
+var ErrInterrupt error = interruptError{}
+
+type interruptError struct{}
+
+func (interruptError) Error() string        { return "interrupted (Ctrl-C)" }
+func (interruptError) Is(target error) bool { return target == io.EOF }
 
 // ErrPasteIndicator may be returned from ReadLine as the error, in addition
 // to valid line data. It indicates that bracketed paste mode is enabled and

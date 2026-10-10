@@ -172,6 +172,9 @@ func (r *Renderer) ApprovalPrompt(q tools.Question) string {
 	return r.paint(color.Yellow, q.Prompt)
 }
 
+// Hint prints a gray one-line hint on the chat output.
+func (r *Renderer) Hint(text string) { fmt.Fprintln(r.opts.Out, r.paint(color.Gray, text)) }
+
 // Notice prints a plain informational line on the chat output.
 func (r *Renderer) Notice(text string) { fmt.Fprintln(r.opts.Out, text) }
 

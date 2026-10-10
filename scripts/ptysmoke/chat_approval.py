@@ -6,7 +6,8 @@ with tools.allow_write: true, runs `suag chat` in a PTY and checks:
 banner with model, ❯ prompt, approval question with the full command,
 pre-typed "y⏎" during a turn does not approve, n denies and the turn goes on,
 y runs the tool, Ctrl-C at the question only cancels the turn, a stops further
-questions, Ctrl-C at the prompt prints the resume command and usage summary,
+questions, one Ctrl-C at the prompt only hints, two in a row print the resume
+command and usage summary,
 and piped (non-TTY) input denies write tools.
 
   make smoke-chat                        # builds tmp/smoke/suag and runs this
@@ -88,6 +89,15 @@ def scenario(s):
     m = s.mark(); s.line("又一次")
     s.check("a: executed again", s.until(OK, m) and turn_end(m))
     s.check("a: no question again", not s.contains(QUESTION, m))
+
+    # One Ctrl-C at the prompt only drops the typed text and asks for another.
+    m = s.mark(); time.sleep(0.3); s.send("abc"); time.sleep(0.2); s.send(CTRL_C)
+    s.check("ctrl-c once: hint", s.until(r"再按一次 Ctrl\+C 退出", m))
+    s.check("ctrl-c once: chat alive", not s.contains(r"续接：", m))
+    # A second Ctrl-C after the window is again only a hint.
+    m = s.mark(); time.sleep(3.5); s.send(CTRL_C)
+    s.check("ctrl-c late: hint again", s.until(r"再按一次 Ctrl\+C 退出", m))
+    s.check("ctrl-c late: chat alive", not s.contains(r"续接：", m))
 
     m = s.mark(); time.sleep(0.3); s.send(CTRL_C)
     s.check("exit: usage summary", s.until(r"本次 \d+ 轮 · in \d+ / out \d+ tokens", m))

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/inhere/suag/internal/chat/lineedit"
 	appconfig "github.com/inhere/suag/internal/config"
 	suaghooks "github.com/inhere/suag/internal/hooks"
 	"github.com/inhere/suag/internal/personal"
@@ -171,6 +172,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 
 	render.Banner()
 	stopHookActive := false
+	var lastInterrupt time.Time
 	for {
 		line, hasLine, err, stopDone, injected, interrupted := nextChatInput(ctx, inputSource, render, waiting, &lostReply)
 		if interrupted {
@@ -185,11 +187,23 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			continue
 		}
 		if err != nil {
+			// Ctrl-C at the prompt exits only when pressed twice in a row
+			// within exitConfirmWindow, so a stray one does not end the chat.
+			// Ctrl-D (EOF) still exits at once.
+			if errors.Is(err, lineedit.ErrInterrupt) && time.Since(lastInterrupt) > exitConfirmWindow {
+				lastInterrupt = time.Now()
+				if inputSource.terminal != nil {
+					inputSource.terminal.AbortLine()
+				}
+				render.Hint("再按一次 Ctrl+C 退出（Ctrl+D 直接退出）")
+				continue
+			}
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return err
 		}
+		lastInterrupt = time.Time{}
 		if !hasLine {
 			return nil
 		}
@@ -431,6 +445,10 @@ func showHookNotice(w io.Writer, response suaghooks.Response) {
 		fmt.Fprintln(w, response.Notice)
 	}
 }
+
+// exitConfirmWindow is how soon a second Ctrl-C at the prompt must follow the
+// first to exit chat.
+const exitConfirmWindow = 3 * time.Second
 
 // chatStats accumulates what one chat process used, for the exit summary.
 type chatStats struct {
