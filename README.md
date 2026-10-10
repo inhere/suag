@@ -129,4 +129,4 @@ make build-all          # cross-compile to dist/
 - `internal/chat`: terminal chat; `internal/acpserver`: the ACP server.
 - `pkg/agentcore`: the reusable layers below the app, independent of `internal/*` ([README](pkg/agentcore/README.md)): the kernel (model/tool loop, run state, transcript) plus `llm` (providers), `tools` (registry, approval, deferred tools), `tools/native` (built-in tools), `tools/mcp` (MCP client) and `skills`.
 
-Design notes and plans are in [docs/](docs/README.md). CI runs tests on Ubuntu and Windows with Go 1.25 and stable. The old control plane (team, cron, orchestrator) is kept at the `v0.1.0` tag.
+Release notes are in [CHANGELOG.md](CHANGELOG.md); design notes and plans are in [docs/](docs/README.md). CI runs tests on Ubuntu and Windows with Go 1.25 and stable. The old control plane (team, cron, orchestrator) is kept at the `v0.1.0` tag.
