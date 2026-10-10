@@ -17,7 +17,7 @@ func TestSkillTool(t *testing.T) {
 	assert.NoErr(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: demo\ndescription: d\n---\n# Demo\nDo it.\n"), 0o644))
 	assert.NoErr(t, os.WriteFile(filepath.Join(dir, "references", "usage.md"), []byte("usage text"), 0o644))
 	assert.NoErr(t, os.WriteFile(filepath.Join(root, "secret.txt"), []byte("secret"), 0o644))
-	tool := NewSkillTool(skills.LoadRoots([]string{root}), 0)
+	tool := NewSkillTool(skills.LoadRoots([]skills.Root{{Dir: root}}), 0)
 
 	t.Run("body and file list", func(t *testing.T) {
 		out := execTool(t, tool, map[string]any{"name": "demo"})
@@ -38,6 +38,11 @@ func TestSkillTool(t *testing.T) {
 	})
 	t.Run("unknown skill lists the available ones", func(t *testing.T) {
 		_, err := tool.Execute(t.Context(), callWith(map[string]any{"name": "nope"}))
-		assert.ErrMsgContains(t, err, "available: demo")
+		assert.ErrMsgContains(t, err, `no skill matches "nope"`)
+	})
+	t.Run("query searches", func(t *testing.T) {
+		assert.StrContains(t, execTool(t, tool, map[string]any{"query": "demo"}), "- demo — d")
+		_, err := tool.Execute(t.Context(), callWith(map[string]any{}))
+		assert.ErrMsgContains(t, err, "pass name to load a skill or query to search")
 	})
 }

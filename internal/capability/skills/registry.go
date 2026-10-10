@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // maxSkillDepth bounds how deep below a root SKILL.md files are looked for
@@ -68,12 +69,20 @@ func (r *Registry) Len() int {
 	return len(r.skills)
 }
 
+// Root is one directory scanned for skills.
+type Root struct {
+	Dir string
+	// Workspace marks a root inside the workspace (project skills).
+	Workspace bool
+}
+
 // LoadRoots scans each root (in priority order) for SKILL.md files and
 // registers them; a later root never replaces an earlier skill of the same
 // name. Missing roots are skipped; an invalid SKILL.md is logged and skipped.
-func LoadRoots(roots []string) *Registry {
+func LoadRoots(roots []Root) *Registry {
 	reg := NewRegistry()
-	for _, root := range roots {
+	for _, r := range roots {
+		root := r.Dir
 		info, err := os.Stat(root)
 		if err != nil || !info.IsDir() {
 			continue
@@ -103,9 +112,72 @@ func LoadRoots(roots []string) *Registry {
 				slog.Warn("skip invalid skill", "path", path, "err", err)
 				continue
 			}
-			s.Path, s.Dir = path, filepath.Dir(path)
+			s.Path, s.Dir, s.Workspace = path, filepath.Dir(path), r.Workspace
 			reg.Register(s)
 		}
 	}
 	return reg
+}
+
+// Search ranks skills against query: each query word found in the name
+// scores 3, in the description 1 (substring match, case-insensitive). CJK runs
+// are also split into overlapping two-character words so "前端页面设计" finds a
+// description saying "前端设计". Skills scoring 0 are dropped; ties keep name
+// order. At most limit skills are returned.
+func (r *Registry) Search(query string, limit int) []Skill {
+	terms := searchTerms(query)
+	if len(terms) == 0 || r == nil {
+		return nil
+	}
+	type hit struct {
+		s     Skill
+		score int
+	}
+	var hits []hit
+	for _, s := range r.List() {
+		name, desc := strings.ToLower(s.Name), strings.ToLower(s.Description)
+		score := 0
+		for _, t := range terms {
+			if strings.Contains(name, t) {
+				score += 3
+			} else if strings.Contains(desc, t) {
+				score++
+			}
+		}
+		if score > 0 {
+			hits = append(hits, hit{s, score})
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool { return hits[i].score > hits[j].score })
+	out := make([]Skill, 0, min(limit, len(hits)))
+	for i := 0; i < len(hits) && i < limit; i++ {
+		out = append(out, hits[i].s)
+	}
+	return out
+}
+
+// searchTerms lowercases query and splits it into words on anything but
+// letters and digits; a word of 3+ Han characters also yields its
+// two-character pieces.
+func searchTerms(query string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(t string) {
+		if t != "" && !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	for _, w := range strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		add(w)
+		runes := []rune(w)
+		if len(runes) >= 3 && unicode.Is(unicode.Han, runes[0]) {
+			for i := 0; i+2 <= len(runes); i++ {
+				add(string(runes[i : i+2]))
+			}
+		}
+	}
+	return out
 }

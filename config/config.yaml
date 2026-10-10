@@ -74,6 +74,15 @@ mcp:
   #     env:
   #       NODE_ENV: development
 
+# Skills (SKILL.md under <workspace>/.agents/skills, <workspace>/skills,
+# ~/.agents/skills). With more than list_max skills only workspace skills are
+# listed in the prompt; the model searches the rest with skill(query=...).
+# always_load puts those skills' bodies in the prompt (as does
+# "metadata: {always_load: true}" in a SKILL.md frontmatter).
+# skills:
+#   list_max: 15
+#   always_load: []
+
 # Max ReAct loop steps per agent task
 max_steps: 100
 

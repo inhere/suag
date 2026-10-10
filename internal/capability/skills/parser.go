@@ -16,6 +16,11 @@ type Skill struct {
 	Description string
 	// AllowedTools is informational only (shown, never enforced).
 	AllowedTools []string
+	// AlwaysLoad (frontmatter metadata.always_load or always_load) asks for
+	// the body to be put in the system prompt instead of loaded on demand.
+	AlwaysLoad bool
+	// Workspace marks a skill found under the workspace (vs the user's home).
+	Workspace bool
 	// Path is the SKILL.md file; Dir its directory (other skill files live there).
 	Path string
 	Dir  string
@@ -25,6 +30,10 @@ type frontmatter struct {
 	Name         string `yaml:"name"`
 	Description  string `yaml:"description"`
 	AllowedTools any    `yaml:"allowed-tools"`
+	AlwaysLoad   bool   `yaml:"always_load"`
+	Metadata     struct {
+		AlwaysLoad bool `yaml:"always_load"`
+	} `yaml:"metadata"`
 }
 
 // Parse splits data into the skill metadata and the Markdown body. The file
@@ -61,6 +70,7 @@ func Parse(data []byte) (Skill, string, error) {
 		Name:         strings.TrimSpace(fm.Name),
 		Description:  strings.Join(strings.Fields(fm.Description), " "),
 		AllowedTools: toolList(fm.AllowedTools),
+		AlwaysLoad:   fm.AlwaysLoad || fm.Metadata.AlwaysLoad,
 	}
 	if s.Name == "" {
 		return Skill{}, "", fmt.Errorf("frontmatter has no name")

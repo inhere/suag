@@ -12,6 +12,7 @@ import (
 	"github.com/gookit/goutil/x/assert"
 
 	"github.com/inhere/suag/internal/capability/runtimecaps"
+	capskills "github.com/inhere/suag/internal/capability/skills"
 	axconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/platform/tools"
 	toolsmcp "github.com/inhere/suag/internal/platform/tools/mcp"
@@ -177,10 +178,10 @@ func writeSkill(t *testing.T, dir, name, desc string) {
 
 func TestDefaultSkillRootsPreferWorkspace(t *testing.T) {
 	workspace, home := t.TempDir(), t.TempDir()
-	assert.Eq(t, []string{
-		filepath.Join(workspace, ".agents", "skills"),
-		filepath.Join(workspace, "skills"),
-		filepath.Join(home, ".agents", "skills"),
+	assert.Eq(t, []capskills.Root{
+		{Dir: filepath.Join(workspace, ".agents", "skills"), Workspace: true},
+		{Dir: filepath.Join(workspace, "skills"), Workspace: true},
+		{Dir: filepath.Join(home, ".agents", "skills")},
 	}, defaultSkillRoots(workspace, home))
 }
 
@@ -200,14 +201,43 @@ func TestBuildSkillRegistry_WorkspaceWinsDuplicateNames(t *testing.T) {
 }
 
 func TestSkillsPrompt(t *testing.T) {
-	workspace := t.TempDir()
-	assert.Eq(t, "", skillsPrompt(buildDefaultSkillRegistry(workspace)))
+	workspace, home := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	pol := skillPolicy{listMax: 3, alwaysLoad: map[string]bool{}}
+	assert.Eq(t, "", skillsPrompt(buildDefaultSkillRegistry(workspace), pol))
+
 	writeSkill(t, filepath.Join(workspace, "skills", "a"), "alpha", "Short one.")
-	writeSkill(t, filepath.Join(workspace, "skills", "b"), "beta", strings.Repeat("长", 100))
-	p := skillsPrompt(buildDefaultSkillRegistry(workspace))
-	assert.StrContains(t, p, "# Skills\n")
-	assert.StrContains(t, p, "- alpha — Short one.\n")
-	assert.StrContains(t, p, "- beta — "+strings.Repeat("长", 53)+"…\n")
+	writeSkill(t, filepath.Join(home, ".agents", "skills", "b"), "beta", strings.Repeat("长", 100))
+
+	t.Run("few skills are all listed", func(t *testing.T) {
+		p := skillsPrompt(buildDefaultSkillRegistry(workspace), pol)
+		assert.StrContains(t, p, "# Skills\n")
+		assert.StrContains(t, p, "- alpha — Short one.\n")
+		assert.StrContains(t, p, "- beta — "+strings.Repeat("长", 53)+"…\n")
+		assert.NotContains(t, p, "more skills are installed")
+	})
+	t.Run("past list_max only workspace skills are listed", func(t *testing.T) {
+		for _, n := range []string{"c", "d", "e"} {
+			writeSkill(t, filepath.Join(home, ".agents", "skills", n), "user-"+n, "User skill "+n+".")
+		}
+		p := skillsPrompt(buildDefaultSkillRegistry(workspace), pol)
+		assert.StrContains(t, p, "- alpha — Short one.\n")
+		assert.NotContains(t, p, "- beta")
+		assert.NotContains(t, p, "user-c")
+		assert.StrContains(t, p, "4 more skills are installed but not listed")
+	})
+	t.Run("always_load puts the body in the prompt", func(t *testing.T) {
+		dir := filepath.Join(home, ".agents", "skills", "pre")
+		assert.NoErr(t, os.MkdirAll(dir, 0o755))
+		assert.NoErr(t, os.WriteFile(filepath.Join(dir, "SKILL.md"),
+			[]byte("---\nname: pre\ndescription: p\nmetadata:\n  always_load: true\n---\n# Pre\nAlways do X.\n"), 0o644))
+		cfg := skillPolicy{listMax: 3, alwaysLoad: map[string]bool{"user-c": true}}
+		p := skillsPrompt(buildDefaultSkillRegistry(workspace), cfg)
+		assert.StrContains(t, p, "## Skill pre (preloaded; directory "+dir+")\n# Pre\nAlways do X.")
+		assert.StrContains(t, p, "## Skill user-c (preloaded;")
+		assert.StrContains(t, p, "3 more skills are installed") // beta, user-d, user-e
+	})
 }
 
 func TestOpenWiresSkills(t *testing.T) {

@@ -14,8 +14,12 @@ import (
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
-// maxSkillListFiles bounds the file list shown with a skill.
-const maxSkillListFiles = 50
+const (
+	// maxSkillListFiles bounds the file list shown with a skill.
+	maxSkillListFiles = 50
+	// skillSearchLimit is how many matches a query returns.
+	skillSearchLimit = 8
+)
 
 // SkillTool returns a skill's instructions (SKILL.md body) or another file of
 // the skill's directory. Skill directories may lie outside the workspace, so
@@ -33,8 +37,9 @@ func NewSkillTool(reg *skills.Registry, maxOut int) *SkillTool {
 func (t *SkillTool) Name() string     { return "skill" }
 func (t *SkillTool) Kind() tools.Kind { return tools.KindNative }
 func (t *SkillTool) Description() string {
-	return "Load a skill listed in the system prompt: returns its instructions and the files in its directory. " +
-		"Pass file to read one of those files (path relative to the skill directory). Follow the instructions you load."
+	return "Load a skill by name: returns its instructions and the files in its directory; pass file to read one of " +
+		"those files (path relative to the skill directory). Follow the instructions you load. " +
+		"To find skills not listed in the system prompt, pass query (keywords) instead of name: returns matching names and descriptions."
 }
 func (t *SkillTool) Schema() api.ToolSchema {
 	return api.ToolSchema{
@@ -43,23 +48,25 @@ func (t *SkillTool) Schema() api.ToolSchema {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"name": map[string]any{"type": "string", "description": "Skill name"},
-				"file": map[string]any{"type": "string", "description": "Optional file inside the skill directory, e.g. references/usage.md"},
+				"name":  map[string]any{"type": "string", "description": "Skill name to load"},
+				"query": map[string]any{"type": "string", "description": "Keywords to search skills by name and description"},
+				"file":  map[string]any{"type": "string", "description": "Optional file inside the skill directory, e.g. references/usage.md"},
 			},
-			"required": []any{"name"},
 		},
 	}
 }
 
 func (t *SkillTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	name, _ := call.Arguments["name"].(string)
+	if query, _ := call.Arguments["query"].(string); strings.TrimSpace(name) == "" && strings.TrimSpace(query) != "" {
+		return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: t.search(query)}, nil
+	}
+	if strings.TrimSpace(name) == "" {
+		return nil, fmt.Errorf("skill: pass name to load a skill or query to search")
+	}
 	s, ok := t.reg.Get(name)
 	if !ok {
-		var names []string
-		for _, s := range t.reg.List() {
-			names = append(names, s.Name)
-		}
-		return nil, fmt.Errorf("skill %q not found; available: %s", name, strings.Join(names, ", "))
+		return nil, fmt.Errorf("skill %q not found; %s", name, t.search(name))
 	}
 	root, err := os.OpenRoot(s.Dir)
 	if err != nil {
@@ -139,4 +146,18 @@ func skillFiles(root *os.Root) []string {
 		out = append(out[:maxSkillListFiles], "…")
 	}
 	return out
+}
+
+// search lists the skills matching query as "name — description" lines.
+func (t *SkillTool) search(query string) string {
+	hits := t.reg.Search(query, skillSearchLimit)
+	if len(hits) == 0 {
+		return fmt.Sprintf("no skill matches %q (%d skills installed); try other keywords", query, t.reg.Len())
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "skills matching %q (load one with name):\n", query)
+	for _, s := range hits {
+		fmt.Fprintf(&b, "- %s — %s\n", s.Name, s.Description)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
