@@ -296,28 +296,21 @@ return writeResult(result)
 如果你准备在自己的系统里长期使用 `agentcore`，推荐把 runtime 组装集中到一处：
 
 ```go
-func NewRuntime(provider agentcore.Provider, storage agentcore.Storage) agentcore.Runtime {
-    mem := memory.New(memory.Config{
-        MaxRecentMessages:   8,
-        IncludeToolMessages: true,
-    })
-
+func NewRuntime(provider agentcore.Provider, storage agentcore.Storage, workspace string, approver tools.Approver) agentcore.Runtime {
+    reg := tools.NewRegistry()
+    for _, tool := range native.BuildTools(native.Env{Workspace: workspace}, false) {
+        reg.Register(tool)
+    }
     return agentcore.New(agentcore.Config{
-        Provider: provider,
-        Storage:  storage,
-        Memory:   mem,
-        PromptBuilder: prompt.Layered(prompt.Config{
-            Base: "You are a focused assistant.",
-            Metadata: prompt.MetadataConfig{
-                Enabled: true,
-            },
-        }),
-        ContextBuilder: context.MemoryThenRecent(mem, context.MemoryThenRecentConfig{
-            MaxMessages: 4,
-        }),
+        Provider:      provider,
+        Storage:       storage, // 持久化存储，跨进程 resume 需要
+        Tools:         tools.NewApproval(reg, approver),
+        PromptBuilder: hostPrompt{},
     })
 }
 ```
+
+suag 自己的组装（provider 池、MCP、技能、延迟加载与审批层）在应用层 `internal/wiring`，是这个模式的完整版本。
 
 这样做的价值是：
 
@@ -347,11 +340,9 @@ func NewRuntime(provider agentcore.Provider, storage agentcore.Storage) agentcor
 如果你是在做一个外部 embedding host，推荐按这个顺序看：
 
 1. [getting-started.md](./getting-started.md)
-2. [recommended-runtime.md](../../../docs/archive/agentcore-2026-10/recommended-runtime.md)
-3. [host-integration.md](./host-integration.md)
-4. [api.md](./api.md)
-5. [embedding-patterns.md](../../../docs/archive/agentcore-2026-10/embedding-patterns.md)
-6. [migration.md](../../../docs/archive/agentcore-2026-10/migration.md)
+2. [host-integration.md](./host-integration.md)
+3. [api.md](./api.md)
+4. [runtime-policies.md](./runtime-policies.md)
 
 如果你要看对应示例，再继续看：
 

@@ -14,7 +14,7 @@ Suag 当前是个人 Agent，通过 CLI 或 ACP 运行；Gofer 负责作业、�
 - [LLM 配置](usage/llm-config-v0.md)：`model` / `providers` 格式、内置预设、引用解析与旧配置迁移。
 - [测试用假模型与假工具](usage/llm-mock-usage.md)：`pkg/agentcore/mock` 与端到端 fakellm。
 - [ACP 调研](research/acp-protocoal-research.md)：协议参考；实现合同以源码和依赖版本为准。
-- [agentcore 资料](../pkg/agentcore/docs/README.md)：可复用执行内核的接口说明。
+- [agentcore](../pkg/agentcore/README.md)：应用层之下的内核与能力层（llm、tools、native、mcp、skills），分层与组装方式；接口文档见其 [docs](../pkg/agentcore/docs/README.md)。
 
 ## 历史资料
 

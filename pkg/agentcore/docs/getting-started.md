@@ -2,9 +2,7 @@
 
 这份文档面向第一次接入 `agentcore` 的使用者，目标是用最小概念把 runtime 跑起来，并快速理解下一步应该从哪里扩展。
 
-如果你还不确定自己属于哪条采用路径，可以先看：
-
-- [adoption-paths.md](../../../docs/archive/agentcore-2026-10/adoption-paths.md)
+分层与推荐组装方式见 [README](../README.md)。
 
 ## 1. 什么时候适合用 Agentcore
 
@@ -43,8 +41,8 @@ import (
 	"log"
 
 	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/storage/files"
 	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suag/pkg/agentcore/storage/files"
 )
 
 func main() {
@@ -108,93 +106,30 @@ func main() {
 
 建议按这个顺序接入：
 
-1. 用 `mock + files` 跑通最小链路
-2. 接一个自定义 `Tool`
+1. 用 `mock` 跑通最小链路（不传 `Storage` 时 run 存在内存里；需要跨进程续跑再传 `files.NewStorage(dir)`）
+2. 用 `tools.NewRegistry()` 接一个自定义 `Tool`
 3. 接一个 `Hook`
 4. 跑通一次 `yield -> resume`
-5. 如果你不想从零实现 `Memory`，先接入 `memory/`
-6. 只有需要更强消息编排时，再替换 `PromptBuilder` / `ContextBuilder`
-7. 最后接真实 `Provider` 和自定义 `Storage`
+5. 换成真实 provider（`llm.NewOpenAIProvider` / `llm.NewClaudeProvider`），加入只读内置工具与审批层，见 `examples/recommended`
+6. 只有需要更强消息编排时，再实现自己的 `PromptBuilder` / `ContextBuilder` / `Memory`
 
-如果你想直接从一个更接近真实 embedding host 的组合起步，当前更推荐继续看：
-
-- [recommended-runtime.md](../../../docs/archive/agentcore-2026-10/recommended-runtime.md)
-- [host-integration.md](./host-integration.md)
-- [migration.md](../../../docs/archive/agentcore-2026-10/migration.md)
-
-当前第一方默认 memory 实现已经提供：
-
-- summary slot
-- recent transcript window
-- system/tool 消息过滤
-
-它适合作为默认起点，再逐步演进成更强的自定义 memory。
-
-对应的第一方 context 组合入口是：
-
-- `context.TranscriptWindow(...)`
-- `context.MemoryFirst(...)`
-- `context.MemoryThenRecent(...)`
-
-推荐理解为：
-
-- 没有 memory 时，先用 `TranscriptWindow`
-- 有默认 `WorkingMemory` 时，优先用 `MemoryFirst`
-- 如果你想保留 summary/derived context 再显式补最近几条原始消息，用 `MemoryThenRecent`
-
-如果你还需要一个更实用的默认 prompt 组合层，当前第一方 prompt 入口有两个：
-
-- `prompt.StaticBuilder`
-- `prompt.Layered(...)`
-
-推荐理解为：
-
-- 只需要固定 system prompt 时，用 `StaticBuilder`
-- 想把 base prompt、`RunState.Metadata` 和固定段落稳定拼接时，用 `Layered(...)`
-
-例如：
+`PromptBuilder` 只有一个方法，固定 system prompt 可以直接写成一个字符串类型：
 
 ```go
-runtime := agentcore.New(agentcore.Config{
-	Provider: mock.NewProvider(mock.Final("hello from agentcore")),
-	Storage:  files.NewStorage(".agentcore-runs"),
-	PromptBuilder: prompt.Layered(prompt.Config{
-		Base: "You are a focused repository assistant.",
-		Metadata: prompt.MetadataConfig{
-			Enabled: true,
-		},
-		Sections: []string{
-			"Prefer grounded answers based on the current run state.",
-			"Keep tool usage minimal and explicit.",
-		},
-	}),
-})
+type staticPrompt string
+
+func (p staticPrompt) BuildSystemPrompt(context.Context, *agentcore.RunState) (string, error) {
+	return string(p), nil
+}
 ```
 
-它的输出顺序固定为：
-
-1. `Base`
-2. `[Run metadata]`
-3. `Sections...`
-
-各段之间使用空行分隔，metadata key 会按字典序稳定输出。
+宿主封装见 [host-integration.md](./host-integration.md)。
 
 ## 6. 下一步看哪里
 
-- API guide: [docs/api.md](./api.md)
-- Compatibility: [docs/compatibility.md](../../../docs/archive/agentcore-2026-10/compatibility.md)
-- Versioning: [docs/versioning.md](../../../docs/archive/agentcore-2026-10/versioning.md)
-- Release readiness: [docs/release-readiness.md](../../../docs/archive/agentcore-2026-10/release-readiness.md)
-- Recommended runtime path: [docs/recommended-runtime.md](../../../docs/archive/agentcore-2026-10/recommended-runtime.md)
-- Roadmap: [docs/roadmap.md](../../../docs/archive/agentcore-2026-10/roadmap.md)
-- Examples: `examples/`
+- API guide: [api.md](./api.md)
+- Runtime policies: [runtime-policies.md](./runtime-policies.md)
+- Host integration: [host-integration.md](./host-integration.md)
+- Examples: [examples/README.md](../examples/README.md)
 
-建议顺序：
-
-1. `examples/minimal`
-2. `examples/prompt`
-3. `examples/recommended`
-4. `examples/host`
-5. `examples/custom`
-6. `examples/resume`
-7. `examples/agentcore/bridge`
+建议顺序：`examples/minimal` → `examples/custom` → `examples/resume` → `examples/recommended` → `examples/host`。

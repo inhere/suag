@@ -171,6 +171,8 @@ type Storage interface {
 }
 ```
 
+不传 `Config.Storage` 时 runtime 使用进程内的 `NewMemoryStorage()`（同时实现可选的 `ArtifactStorage`），进程退出即丢失；`storage/files` 提供文件实现。缺失的 run 应返回包装 `os.ErrNotExist` 的 `*StorageError`，runtime 据此把它当作新 run；非法 runID 返回 `*StorageError`。
+
 建议：
 
 - `LoadMessages` 保持追加顺序
@@ -298,7 +300,9 @@ type ToolRegistry interface {
 
 - `ListTools` 输出保持稳定顺序
 - `ToolResult` 尽量补齐 `CallID` / `Name`
-- 工具失败直接返回原始错误，让 runtime 包装成 `ToolError`
+- 工具失败直接返回原始错误，让 runtime 包装成 `ToolError`；交给 `ToolExecutionPolicy` 转成结果的失败会带 `ToolResult.IsError = true`
+
+不传 `Config.Tools` 时 runtime 使用私有空注册表（不列出工具，调用一律返回未注册的 `*ToolError`）。现成实现在 `agentcore/tools`：`tools.NewRegistry()`、审批层 `tools.NewApproval`、延迟加载 `tools.NewVisibility`，以及工具元数据 `tools.MetaOf` / `tools.KindOf` / `tools.IsMCP`，见 [README](../README.md#工具)。
 
 ## 7. ToolExecutionPolicy
 
@@ -354,47 +358,6 @@ type ContextBuilder interface {
 
 简单场景下，只有 `Memory` 就够了。
 只有需要更强的消息排布控制时，才需要自定义 `ContextBuilder`。
-
-如果你只是想直接使用第一方默认组合，而不是自己写 builder，当前可以看：
-
-- `prompt.StaticBuilder`
-- `prompt.Layered(...)`
-- `context.TranscriptWindow(...)`
-- `context.MemoryFirst(...)`
-- `context.MemoryThenRecent(...)`
-
-其中 prompt 侧分别覆盖：
-
-- 完全静态 prompt
-- `Base + Metadata + Sections` 的稳定文本组合
-
-context 侧分别覆盖：
-
-- transcript-only 路径
-- default memory 路径
-- memory + recent transcript 路径
-
-`prompt.Layered(...)` 当前建议配置是：
-
-```go
-type MetadataConfig struct {
-	Enabled bool
-}
-
-type Config struct {
-	Base     string
-	Metadata MetadataConfig
-	Sections []string
-}
-```
-
-稳定输出规则是：
-
-- 顺序固定为 `Base -> metadata block -> Sections...`
-- metadata block 标题固定为 `[Run metadata]`
-- metadata key 按字典序排序
-- 空 section 跳过
-- 所有内容都为空时返回空字符串
 
 ## 9. Hook
 
@@ -545,68 +508,5 @@ runtime 会对错误做稳定分类：
 
 如果你不只是想看单个接口，而是想直接从当前更推荐的组合起步，再继续看：
 
-- [recommended-runtime.md](../../../docs/archive/agentcore-2026-10/recommended-runtime.md)
+- [examples/recommended](../examples/recommended/main.go)
 - [host-integration.md](./host-integration.md)
-- [migration.md](../../../docs/archive/agentcore-2026-10/migration.md)
-
-## 14. 下一阶段 API 演进重点
-
-如果从未来独立发布和长期演进角度看，当前更值得关注的不是继续堆更多默认实现，而是先把下面几类 public surface 稳住。
-
-### 13.1 Conformance Testing
-
-仅有接口定义还不够，外部实现还需要验证自己是否真正满足 contract。
-
-下一阶段推荐补一层 package-local conformance/testing：
-
-- `Storage` 的 append-only transcript contract tests
-- `ToolRegistry` 的 schema / execute contract tests
-- provider / streaming 的最小兼容 helper
-
-这层能力的定位是：
-
-- 只依赖 public API
-- 帮助外部实现自证兼容
-- 不把仓库内部测试工具直接暴露为正式 runtime 功能
-
-### 13.2 Policy Promotion
-
-当前 runtime 中已经存在一些稳定但尚未显式抽象的策略语义，例如：
-
-- resume 时是否追加输入
-- tool call 的执行上限
-- 某些错误是否应该 yield 而不是 fail
-
-如果这些策略未来频繁依赖 hook 才能表达，更合理的方向通常不是继续堆 hook，而是提升为更小、更明确的正式 contract。
-
-### 13.3 Storage Optional Capabilities
-
-`Storage` 当前保持最小接口是对的，但随着独立 embedding 增加，后续很可能需要 additive optional capabilities，例如：
-
-- artifact store
-- run listing
-- checkpoint store
-- transactional / compare-and-swap 能力
-
-推荐做法是：
-
-- 保持当前主接口不膨胀
-- 通过 optional interface 向上增长
-- 继续守住 `Storage = authority` 的边界
-
-### 13.4 Streaming Phase 2
-
-当前 streaming contract 已经够最小，但还不是最终形态。
-
-下一阶段更合理的方向是：
-
-- additive 扩展 event model
-- 明确 host-facing 增量输出语义
-- 不让 stream delta 进入 authority transcript
-- 不让 streaming 改写 `resume` 与 `final completion` 的核心规则
-
-如果你准备围绕这些方向扩展 `agentcore`，推荐同时参考：
-
-- [streaming-design.md](../../../docs/archive/agentcore-2026-10/streaming-design.md)
-- [release-readiness.md](../../../docs/archive/agentcore-2026-10/release-readiness.md)
-- [roadmap.md](../../../docs/archive/agentcore-2026-10/roadmap.md)

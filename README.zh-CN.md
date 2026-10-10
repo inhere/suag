@@ -126,7 +126,7 @@ make build-all          # 交叉编译到 dist/
 - `cmd/suag`：程序入口；`internal/cli`：每个命令一个文件。
 - `internal/wiring`：为 CLI 与 ACP 组装 provider、工具、skills、系统提示词和 runner。
 - `internal/personal`：回合、压缩、交接和事件；`internal/personal/store`：SQLite 存储。
-- `internal/platform/tools`：内置工具、MCP 客户端、审批与延迟加载层；`internal/platform/llm`：各 provider。
-- `internal/chat`：终端对话；`internal/acpserver`：ACP 服务；`pkg/agentcore`：模型/工具循环（[文档](pkg/agentcore/docs/README.md)）。
+- `internal/chat`：终端对话；`internal/acpserver`：ACP 服务。
+- `pkg/agentcore`：应用层之下可复用的各层，不依赖 `internal/*`（[README](pkg/agentcore/README.md)）：内核（模型/工具循环、run 状态、transcript），以及 `llm`（各 provider）、`tools`（注册表、审批、延迟加载）、`tools/native`（内置工具）、`tools/mcp`（MCP 客户端）与 `skills`。
 
 设计与计划文档在 [docs/](docs/README.md)。CI 在 Ubuntu 和 Windows 上用 Go 1.25 和 stable 跑测试。旧的控制面（team、cron、orchestrator）保留在 `v0.1.0` 标签。

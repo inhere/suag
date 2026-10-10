@@ -49,6 +49,21 @@
 | 根包 `Registry`、`NewToolRegistry` | `pkg/agentcore/tools.go` | `a91b1c1` | 根包内置的内存工具注册表（同名 `Register` 覆盖）；改用 `tools.NewRegistry()`（`pkg/agentcore/tools`），覆盖语义用 `MustRegister`，`Register` 同名 panic；未传 `Config.Tools` 时 runtime 用私有空注册表 |
 | `tools.Tool` 接口（含必需的 `Kind()`） | `internal/platform/tools/registry.go` | `2156068` | 工具接口统一为 `api.Tool`；`Kind()` 改为可选接口 `tools.Kinded`，用 `tools.KindOf(tool)` 读取，缺省 `KindNative`；native 工具删去各自的 `Kind()` |
 
+## 新旧路径与 API 对照（W2–W4）
+
+| 旧 | 新 | 提交 |
+|---|---|---|
+| `internal/capability/skills` | `pkg/agentcore/skills` | `ecff7ab` |
+| `internal/platform/llm` | `pkg/agentcore/llm` | `b418a65` |
+| `internal/platform/tools`（registry、approval、asker、visibility） | `pkg/agentcore/tools` | `a91b1c1` |
+| `internal/platform/tools/native` | `pkg/agentcore/tools/native` | `f69fd01` |
+| `internal/platform/tools/mcp` | `pkg/agentcore/tools/mcp` | `9a46224` |
+| `config.MCPServerSettings` + `config.MCPCallTimeout()`（mcp 包内读全局配置） | `mcp.ServerSettings{CallTimeout}`，由 wiring `withMCPCallTimeout` 填值 | `0d0201c` |
+| `ToolResult.Metadata["is_error"]` | `ToolResult.IsError`（旧数据不兼容） | `2ee7f44` |
+| `personal.AddUsage`、各处逐字段累加 | `api.Usage.Add` | `011c560` |
+| ACP `turnUsage` 收集器 | `personal.RunResult.ModelCalls` / `LastInputTokens` | `63ba336` |
+| `native.Spec.Write`、chat `chatReadOnlyTools`、ACP 按名字的 `toolKind` | 工具元数据 `tools.Meta`（`ToolMeta()`），`tools.MetaOf` / `IsMCP` / `MCPServerOf`；ACP `Runtime.IsMCPTool` 改为 `LookupTool` | `b964691` |
+
 ## 归档文档（T4）
 
 以下文档从 `pkg/agentcore/docs/` 原样移到 [agentcore-2026-10/](agentcore-2026-10/)（删除前提交 `ff052ac`）。原因：多为 2026-10 之前的设计稿、路线图、发布准备与迁移指南，内容与重构后的分层不再一致；保留的 getting-started、architecture、api、runtime-policies、host-integration 按新结构改写。

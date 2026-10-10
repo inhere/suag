@@ -39,4 +39,4 @@ custom := mock.NewTool("lookup",
 
 注册到 `pkg/agentcore/tools` 的注册表后交给 `agentcore.New(agentcore.Config{Provider: p, Tools: reg})` 运行。
 
-旧版 `internal/platform/llm.MockProvider`（含手动步进模式 `WaitForCall`）已删除，原文档存于 [archive](../archive/agentcore-2026-10/llm-mock-usage.md)。
+旧版 llm 包内的 `MockProvider`（含手动步进模式 `WaitForCall`）已删除，原文档存于 [archive](../archive/agentcore-2026-10/llm-mock-usage.md)。

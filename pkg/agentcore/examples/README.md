@@ -9,7 +9,7 @@
 | `authority` | 宿主通过 `LoadAuthorityBundle(...)` 读取 authoritative messages 与 artifacts |
 | `policies` | `ResumePolicy`、`ToolExecutionPolicy`、`ErrorPolicy` 如何组合 |
 | `policyhost` | 宿主把 policy 收拢进自己的 host wrapper |
-| `recommended` | 推荐的组装路径：存储、工具、显式 resume 与可选 streaming |
+| `recommended` | 推荐的组装路径：`llm`（设置 `OPENAI_API_KEY` 时）+ 只读内置工具 + skills + 可选 MCP + 审批层；默认用 mock 离线运行 |
 | `host` | embedding host 封装 `Start/Continue` 入口并把 streaming 转发给上层 UI |
 | `stream` | 最小 streaming contract：转发 text delta，final 结果仍为权威 |
 | `resume` | `yield -> resume` 的最小恢复链路 |

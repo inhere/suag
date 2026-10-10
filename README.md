@@ -126,7 +126,7 @@ make build-all          # cross-compile to dist/
 - `cmd/suag`: entry point; `internal/cli`: one file per command.
 - `internal/wiring`: builds providers, tools, skills, the system prompt and the runner for CLI and ACP.
 - `internal/personal`: turns, compaction, handoff and events; `internal/personal/store` is the SQLite store.
-- `internal/platform/tools`: native tools, MCP client, approval and deferred-tool layers; `internal/platform/llm`: providers.
-- `internal/chat`: terminal chat; `internal/acpserver`: the ACP server; `pkg/agentcore`: the model/tool loop ([docs](pkg/agentcore/docs/README.md)).
+- `internal/chat`: terminal chat; `internal/acpserver`: the ACP server.
+- `pkg/agentcore`: the reusable layers below the app, independent of `internal/*` ([README](pkg/agentcore/README.md)): the kernel (model/tool loop, run state, transcript) plus `llm` (providers), `tools` (registry, approval, deferred tools), `tools/native` (built-in tools), `tools/mcp` (MCP client) and `skills`.
 
 Design notes and plans are in [docs/](docs/README.md). CI runs tests on Ubuntu and Windows with Go 1.25 and stable. The old control plane (team, cron, orchestrator) is kept at the `v0.1.0` tag.
