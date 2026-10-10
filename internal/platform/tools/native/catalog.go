@@ -43,6 +43,12 @@ func Catalog() []Spec {
 		{Name: "file_list", New: func(env Env) tools.Tool {
 			return &FileListTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
 		}},
+		{Name: "file_grep", New: func(env Env) tools.Tool {
+			return &FileGrepTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
+		}},
+		{Name: "file_find", New: func(env Env) tools.Tool {
+			return &FileFindTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
+		}},
 		{Name: "file_write", Write: true, New: func(env Env) tools.Tool {
 			return &FileWriteTool{workspace: env.Workspace}
 		}},

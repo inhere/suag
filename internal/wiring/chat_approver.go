@@ -20,7 +20,7 @@ import (
 // (file_write, shell_exec and any tool added later) is asked about.
 var chatReadOnlyTools = map[string]bool{
 	"file_read": true, "file_list": true, "update_plan": true, "tool_search": true,
-	"web_search": true,
+	"web_search": true, "file_grep": true, "file_find": true,
 }
 
 // chatApprover is the chat tools.Approver: MCP tools keep the cliMCPGate rules

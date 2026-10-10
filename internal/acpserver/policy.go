@@ -327,7 +327,7 @@ func toolKind(name string) (acp.ToolKind, bool) {
 	case "update_plan":
 		// Only writes session state; allowed in read_only without a prompt.
 		return acp.ToolKindThink, true
-	case "web_search":
+	case "web_search", "file_grep", "file_find":
 		return acp.ToolKindSearch, true
 	case "tool_search":
 		// Only loads deferred tool schemas; no side effects, no prompt.
