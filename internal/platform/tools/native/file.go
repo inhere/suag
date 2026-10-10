@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/inhere/suag/internal/platform/tools"
@@ -156,23 +155,6 @@ func writeFileInRoot(workspace, abs string, data []byte) error {
 		return struct{}{}, f.Close()
 	})
 	return err
-}
-
-func readDirInRoot(workspace, abs string) ([]os.DirEntry, error) {
-	return withRoot(workspace, abs, func(root *os.Root, rel string) ([]os.DirEntry, error) {
-		d, err := root.Open(rel)
-		if err != nil {
-			return nil, err
-		}
-		defer d.Close()
-		entries, err := d.ReadDir(-1)
-		if err != nil {
-			return nil, err
-		}
-		// os.ReadDir returns entries sorted by name; keep that behavior.
-		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-		return entries, nil
-	})
 }
 
 // sandboxedPath resolves the named arg as a path confined to workspace.

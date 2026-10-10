@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,19 +15,24 @@ import (
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
 
-// WebSearchTool performs web searches via SerpAPI.
-// Set SERPAPI_KEY environment variable or pass key directly.
+// serpAPIEndpoint is the SerpAPI search URL.
+const serpAPIEndpoint = "https://serpapi.com/search"
+
+// WebSearchTool performs web searches via SerpAPI (serpapi_key). It only
+// reads, so it is registered in read-only mode too.
 type WebSearchTool struct {
-	apiKey string
-	client *http.Client
-	maxOut int // result cap in bytes; 0 = DefaultMaxOutputBytes
+	endpoint string // SerpAPI URL; tests point it at httptest
+	apiKey   string
+	client   *http.Client
+	maxOut   int // result cap in bytes; 0 = DefaultMaxOutputBytes
 }
 
 // NewWebSearchTool creates a WebSearchTool with the given SerpAPI key.
 func NewWebSearchTool(apiKey string) *WebSearchTool {
 	return &WebSearchTool{
-		apiKey: apiKey,
-		client: &http.Client{Timeout: 15 * time.Second},
+		endpoint: serpAPIEndpoint,
+		apiKey:   apiKey,
+		client:   &http.Client{Timeout: 15 * time.Second},
 	}
 }
 
@@ -47,8 +53,8 @@ func (t *WebSearchTool) Schema() api.ToolSchema {
 					"description": "Search query",
 				},
 				"num": map[string]any{
-					"type":        "string",
-					"description": "Number of results (default 5)",
+					"type":        "integer",
+					"description": "Number of results (default 5, max 20)",
 				},
 			},
 			"required": []any{"query"},
@@ -61,19 +67,20 @@ func (t *WebSearchTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 	if query == "" {
 		return nil, fmt.Errorf("web_search: query is required")
 	}
-	num := "5"
-	if n, ok := call.Arguments["num"].(string); ok && n != "" {
-		num = n
+	// num is an integer; older callers sent a string, which numberArg accepts.
+	num := 5
+	if n, ok := numberArg(call.Arguments["num"]); ok && n >= 1 {
+		num = min(int(n), 20)
 	}
 
 	params := url.Values{
 		"api_key": {t.apiKey},
 		"q":       {query},
-		"num":     {num},
+		"num":     {strconv.Itoa(num)},
 		"engine":  {"google"},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://serpapi.com/search?"+params.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.endpoint+"?"+params.Encode(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("web_search build request: %w", err)
 	}

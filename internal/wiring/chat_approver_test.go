@@ -82,7 +82,7 @@ func TestChatApprover(t *testing.T) {
 	t.Run("read-only tools run without asking", func(t *testing.T) {
 		asker := &scriptedAsker{}
 		approval, stubs := newChatApproval(t, false, asker)
-		for _, name := range []string{"file_read", "file_list", "update_plan", "tool_search"} {
+		for _, name := range []string{"file_read", "file_list", "update_plan", "tool_search", "web_search"} {
 			assert.NoErr(t, runTool(approval, name, nil))
 			assert.Eq(t, 1, stubs[name].runs)
 		}

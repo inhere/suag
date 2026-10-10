@@ -56,7 +56,7 @@ func Catalog() []Spec {
 			}
 			return t
 		}},
-		{Name: "web_search", Write: true, New: func(env Env) tools.Tool {
+		{Name: "web_search", New: func(env Env) tools.Tool {
 			if env.SerpAPIKey == "" {
 				return nil
 			}

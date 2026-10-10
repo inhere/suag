@@ -65,3 +65,25 @@ func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 		assert.Eq(t, want(true), names(t, rt, err))
 	})
 }
+
+func TestWebSearchIsARegisteredReadTool(t *testing.T) {
+	resetConfig(t)
+	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k"}})
+	assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
+
+	t.Run("read-only with a key", func(t *testing.T) {
+		assert.NoErr(t, gkconfig.Set("serpapi_key", "k"))
+		rt, err := OpenCLI(context.Background(), Options{})
+		assert.Require(t, assert.NoErr(t, err))
+		t.Cleanup(func() { _ = rt.Close() })
+		assert.Contains(t, rt.Registry.List(), "web_search")
+		assert.NotContains(t, rt.Registry.List(), "shell_exec")
+	})
+	t.Run("no key, no tool", func(t *testing.T) {
+		assert.NoErr(t, gkconfig.Set("serpapi_key", ""))
+		rt, err := OpenCLI(context.Background(), Options{AllowWrite: true})
+		assert.Require(t, assert.NoErr(t, err))
+		t.Cleanup(func() { _ = rt.Close() })
+		assert.NotContains(t, rt.Registry.List(), "web_search")
+	})
+}
