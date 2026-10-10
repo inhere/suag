@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -57,12 +58,26 @@ func TestAgentStorageRunRoundTrip(t *testing.T) {
 	msgs, err := st.LoadMessages(ctx, "turn_1")
 	assert.Require(t, assert.NoErr(t, err))
 
-	// Messages match the in-memory state the runtime saved (user + 3 assistant + 2 tool).
-	assert.Eq(t, len(loaded.Messages), len(msgs))
+	// Messages live only in the entries (user + 3 assistant + 2 tool); the
+	// state snapshot does not repeat them, and the authority view rebuilds
+	// them from the entries.
+	assert.Eq(t, 0, len(loaded.Messages))
+	turn, err := s.GetTurn(ctx, "turn_1")
+	assert.Require(t, assert.NoErr(t, err))
+	assert.NotContains(t, string(turn.StateJSON), "calling first")
 	assert.Eq(t, 6, len(msgs))
-	for i := range msgs {
-		assert.Eq(t, loaded.Messages[i], msgs[i])
-	}
+	hydrated, err := agentcore.LoadRunAuthority(ctx, st, "turn_1")
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, msgs, hydrated.Messages)
+	t.Run("an old snapshot with messages still loads", func(t *testing.T) {
+		old := *hydrated
+		raw, err := json.Marshal(&old)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.NoErr(t, s.UpsertTurnState(ctx, "turn_1", raw))
+		again, err := st.LoadRun(ctx, "turn_1")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, msgs, again.Messages)
+	})
 	assert.Eq(t, "user", msgs[0].Role)
 	assert.Eq(t, "calling first", msgs[1].Content) // assistant text beside a tool call survives
 	assert.Eq(t, "c1", msgs[1].ToolCall.CallID)

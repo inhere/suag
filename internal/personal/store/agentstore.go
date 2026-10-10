@@ -41,12 +41,18 @@ func entryTypeOf(m api.Message) string {
 	}
 }
 
-// SaveRun upserts the RunState snapshot into the turn's state_json.
+// SaveRun upserts the RunState snapshot into the turn's state_json, without
+// Messages: they are already the turn's session entries (AppendMessages), and
+// a resumed run rebuilds them from there (agentcore.LoadRunAuthority replaces
+// state.Messages with LoadMessages). Storing them twice doubled the database.
+// Old rows that still carry Messages load unchanged.
 func (a *AgentStorage) SaveRun(ctx context.Context, state *api.RunState) error {
 	if state == nil || state.RunID == "" {
 		return errors.New("run state with run id is required")
 	}
-	raw, err := json.Marshal(state)
+	snapshot := *state // shallow copy: the caller's state keeps its messages
+	snapshot.Messages = nil
+	raw, err := json.Marshal(&snapshot)
 	if err != nil {
 		return fmt.Errorf("encode run state: %w", err)
 	}
