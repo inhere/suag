@@ -10,7 +10,7 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	capskills "github.com/inhere/suag/internal/capability/skills"
+	capskills "github.com/inhere/suag/pkg/agentcore/skills"
 )
 
 func SetupLogging() {

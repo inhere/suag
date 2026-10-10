@@ -9,9 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inhere/suag/internal/capability/skills"
 	"github.com/inhere/suag/internal/platform/tools"
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/skills"
 )
 
 const (
