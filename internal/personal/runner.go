@@ -298,17 +298,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 				slog.Warn("close personal transcript", "session_id", model.ID, "err", err)
 			}
 		}()
-		if req.SystemContext != "" {
-			if err := transcript.AppendUser(req.SystemContext, true); err != nil {
-				slog.Warn("append personal transcript", "session_id", model.ID, "err", err)
-			}
-		}
-		if req.Prompt != "" {
-			// Only the caller knows whether a person typed this prompt.
-			if err := transcript.AppendUser(req.Prompt, req.Injected); err != nil {
-				slog.Warn("append personal transcript", "session_id", model.ID, "err", err)
-			}
-		}
+		appendTurnInput(transcript, model.ID, req)
 	}
 
 	// run_id == turn_id: the store's agentcore adapter keys run state and
@@ -324,39 +314,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return r.withSessionUsage(ctx, model.ID, result), err
 	}
 
-	// metaPatch collects the session metadata keys this turn changes; it is
-	// applied with PatchSessionMeta so concurrent writers cannot be rolled back.
-	metaPatch := map[string]any{}
-	var rulesUpdate, appendUpdate string
-	if r.cfg.RuleSource != nil {
-		rules, hash, err := r.cfg.RuleSource()
-		if err != nil {
-			return r.withSessionUsage(ctx, model.ID, result), err
-		}
-		if previous, _ := model.Meta["personal_rules_hash"].(string); previous != hash {
-			metaPatch["personal_rules_hash"] = hash
-			metaPatch["personal_rules_content"] = rules
-			// The system prompt is built from the metadata updated above, so it
-			// already carries the new rules this turn. Only send a short notice
-			// instead of repeating the full text (up to 128KB, resent per step).
-			rulesUpdate = "项目规则已更新，以 system prompt 中的版本为准"
-		}
-	}
-
-	// Resume with a caller-supplied append prompt (--append-system-prompt or
-	// SUAG_APPEND_SYSTEM_PROMPT): when it differs from the persisted one, replace
-	// it and send a short notice (same mechanism as rules; the full text lives
-	// only in the system prompt). An unset value keeps the persisted one; an
-	// explicitly supplied empty value clears it.
-	if appended := r.cfg.AppendSystemPrompt; appended != "" || r.cfg.AppendSystemPromptSet {
-		if previous, _ := model.Meta["personal_append_prompt"].(string); previous != appended {
-			// An empty string (not nil) so PatchSessionMeta stores it instead of deleting the key.
-			metaPatch["personal_append_prompt"] = appended
-			appendUpdate = "附加提示已更新，以 system prompt 中的版本为准"
-			if appended == "" {
-				appendUpdate = "附加提示已清除，不再追加"
-			}
-		}
+	metaPatch, notice, err := r.promptMetaPatch(model)
+	if err != nil {
+		return r.withSessionUsage(ctx, model.ID, result), err
 	}
 
 	agentID := strings.TrimSpace(req.AgentID)
@@ -397,13 +357,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	ctx = withPlanEmitter(ctx, func(ctx context.Context, plan native.Plan) error {
 		return emit(ctx, req.Emit, Event{Kind: "plan", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Plan: &plan})
 	})
-	// The collector goes first so a later hook short-circuiting the chain
-	// cannot hide a model call from the usage total. The denial limit hook ends
-	// the turn before the next model call once DenialLimit refusals accumulated.
-	runtimeHooks := append([]agentcore.Hook{usage, denialLimitHook{denials: denials, usage: usage}}, r.cfg.Hooks...)
-	if req.Emit != nil {
-		runtimeHooks = append(runtimeHooks, toolEventHook{sink: req.Emit, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
-	}
+	runtimeHooks := r.turnHooks(usage, denials, req.Emit, result)
 	storage := r.cfg.Repository.AgentStorage()
 	promptBuilder := rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Meta, deferredTools: r.deferredToolsPrompt()}
 	runtime := agentcore.New(agentcore.Config{
@@ -411,7 +365,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		Storage:        storage,
 		Tools:          r.cfg.Tools,
 		PromptBuilder:  promptBuilder,
-		ContextBuilder: r.newContextBuilder(model.ID, turnID, history, promptBuilder, usage, joinContext(joinContext(rulesUpdate, appendUpdate), req.SystemContext)),
+		ContextBuilder: r.newContextBuilder(model.ID, turnID, history, promptBuilder, usage, joinContext(notice, req.SystemContext)),
 		Hooks:          runtimeHooks,
 		MaxSteps:       r.cfg.MaxSteps,
 		MaxStepsWrapUp: maxStepsWrapUp(r.cfg.MaxSteps),
@@ -425,8 +379,83 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		ResumeMode:  agentcore.ResumeAuto,
 		Stream:      stream,
 	})
-	if messages, err := storage.LoadMessages(context.WithoutCancel(ctx), result.RunID); err != nil {
-		slog.Warn("read personal run transcript", "session_id", model.ID, "err", err)
+	if transcript != nil {
+		appendTurnOutput(context.WithoutCancel(ctx), transcript, storage, model.ID, result.RunID, coreResult)
+	}
+	return r.finish(ctx, model, result, turnStart, usage, coreResult, runErr, req.Emit)
+}
+
+// appendTurnInput writes the turn's user lines to the session transcript.
+func appendTurnInput(transcript *Transcript, sessionID string, req RunRequest) {
+	if req.SystemContext != "" {
+		if err := transcript.AppendUser(req.SystemContext, true); err != nil {
+			slog.Warn("append personal transcript", "session_id", sessionID, "err", err)
+		}
+	}
+	if req.Prompt != "" {
+		// Only the caller knows whether a person typed this prompt.
+		if err := transcript.AppendUser(req.Prompt, req.Injected); err != nil {
+			slog.Warn("append personal transcript", "session_id", sessionID, "err", err)
+		}
+	}
+}
+
+// promptMetaPatch returns the session metadata keys this turn changes and the
+// short notice for the model about them. The patch is applied with
+// PatchSessionMeta so concurrent writers cannot be rolled back.
+func (r *Runner) promptMetaPatch(model Session) (map[string]any, string, error) {
+	metaPatch := map[string]any{}
+	var rulesUpdate, appendUpdate string
+	if r.cfg.RuleSource != nil {
+		rules, hash, err := r.cfg.RuleSource()
+		if err != nil {
+			return nil, "", err
+		}
+		if previous, _ := model.Meta["personal_rules_hash"].(string); previous != hash {
+			metaPatch["personal_rules_hash"] = hash
+			metaPatch["personal_rules_content"] = rules
+			// The system prompt is built from the metadata updated above, so it
+			// already carries the new rules this turn. Only send a short notice
+			// instead of repeating the full text (up to 128KB, resent per step).
+			rulesUpdate = "项目规则已更新，以 system prompt 中的版本为准"
+		}
+	}
+
+	// Resume with a caller-supplied append prompt (--append-system-prompt or
+	// SUAG_APPEND_SYSTEM_PROMPT): when it differs from the persisted one, replace
+	// it and send a short notice (same mechanism as rules; the full text lives
+	// only in the system prompt). An unset value keeps the persisted one; an
+	// explicitly supplied empty value clears it.
+	if appended := r.cfg.AppendSystemPrompt; appended != "" || r.cfg.AppendSystemPromptSet {
+		if previous, _ := model.Meta["personal_append_prompt"].(string); previous != appended {
+			// An empty string (not nil) so PatchSessionMeta stores it instead of deleting the key.
+			metaPatch["personal_append_prompt"] = appended
+			appendUpdate = "附加提示已更新，以 system prompt 中的版本为准"
+			if appended == "" {
+				appendUpdate = "附加提示已清除，不再追加"
+			}
+		}
+	}
+	return metaPatch, joinContext(rulesUpdate, appendUpdate), nil
+}
+
+// turnHooks assembles the runtime hooks of one turn. The collector goes first
+// so a later hook short-circuiting the chain cannot hide a model call from the
+// usage total. The denial limit hook ends the turn before the next model call
+// once DenialLimit refusals accumulated.
+func (r *Runner) turnHooks(usage *usageCollector, denials *turnDenials, sink EmitFunc, result RunResult) []agentcore.Hook {
+	hooks := append([]agentcore.Hook{usage, denialLimitHook{denials: denials, usage: usage}}, r.cfg.Hooks...)
+	if sink != nil {
+		hooks = append(hooks, toolEventHook{sink: sink, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
+	}
+	return hooks
+}
+
+// appendTurnOutput replays the turn's tool results (with their call arguments)
+// and the final answer into the session transcript.
+func appendTurnOutput(ctx context.Context, transcript *Transcript, storage agentcore.Storage, sessionID, runID string, coreResult *agentcore.RunResult) {
+	if messages, err := storage.LoadMessages(ctx, runID); err != nil {
+		slog.Warn("read personal run transcript", "session_id", sessionID, "err", err)
 	} else {
 		// Tool arguments live on the assistant's ToolCall message; index them by call id
 		// so each result can be summarized with its call parameters.
@@ -440,20 +469,16 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			if message.ToolResult == nil {
 				continue
 			}
-			toolName := message.ToolResult.Name
-			if transcript != nil {
-				if err := transcript.AppendToolCall(toolName, calls[message.ToolResult.CallID], message.ToolResult.Content); err != nil {
-					slog.Warn("append personal transcript", "session_id", model.ID, "err", err)
-				}
+			if err := transcript.AppendToolCall(message.ToolResult.Name, calls[message.ToolResult.CallID], message.ToolResult.Content); err != nil {
+				slog.Warn("append personal transcript", "session_id", sessionID, "err", err)
 			}
 		}
 	}
-	if coreResult != nil && transcript != nil {
+	if coreResult != nil {
 		if err := transcript.AppendAssistant(coreResult.Output); err != nil {
-			slog.Warn("append personal transcript", "session_id", model.ID, "err", err)
+			slog.Warn("append personal transcript", "session_id", sessionID, "err", err)
 		}
 	}
-	return r.finish(ctx, model, result, turnStart, usage, coreResult, runErr, req.Emit)
 }
 
 // markRunning flips the session to running with this turn as last_turn_id and
