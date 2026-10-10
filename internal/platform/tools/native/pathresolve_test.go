@@ -167,7 +167,11 @@ func TestFileTools_AbsoluteSymlinkTargets(t *testing.T) {
 }
 
 func TestFileTools_WorkspaceRootIsSymlink(t *testing.T) {
-	base := t.TempDir()
+	// Resolve the temp dir first: on Windows CI it is an 8.3 short path
+	// (RUNNER~1), which differs from the long real path the workspace check
+	// resolves to.
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	assert.Require(t, assert.NoErr(t, err))
 	realWs := filepath.Join(base, "realws")
 	assert.NoErr(t, os.MkdirAll(filepath.Join(realWs, "d"), 0o755))
 	assert.NoErr(t, os.WriteFile(filepath.Join(realWs, "d", "ok.txt"), []byte("ok"), 0o644))

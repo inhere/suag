@@ -70,7 +70,9 @@ func TestGrepFiles(t *testing.T) {
 	})
 	t.Run("timeout returns a marked partial result", func(t *testing.T) {
 		old := searchTimeout
-		searchTimeout = time.Nanosecond
+		// Already expired: a 1ns timer may not fire before a fast walk ends
+		// on Windows, where the clock is coarse.
+		searchTimeout = -time.Second
 		t.Cleanup(func() { searchTimeout = old })
 		assert.StrContains(t, execTool(t, tool, map[string]any{"pattern": "Hello"}), "已超时")
 	})
