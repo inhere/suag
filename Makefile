@@ -32,7 +32,7 @@ build:
 	@echo "🐹 Building Go binary ($(VERSION) @ $(GIT_HASH))..."
 	go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY) $(MAIN_DIR)
 	@echo "📦 Compressing binary..."
-	@upx -6 --no-progress $(DIST_DIR)/$(BINARY)
+	@if command -v upx >/dev/null 2>&1; then upx -6 --no-progress $(DIST_DIR)/$(BINARY); else echo "⏭ upx not found; skipping compression"; fi
 	@echo "✅ Binary: $(DIST_DIR)/$(BINARY) ($$(du -sh $(DIST_DIR)/$(BINARY) | cut -f1))"
 
 ## install: install Go binary to $GOPATH/bin

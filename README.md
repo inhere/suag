@@ -1,64 +1,132 @@
 # Suag
 
-Suag is a personal Go agent with one persisted conversation engine and two interfaces: a terminal CLI and an ACP stdio server. Gofer can launch either interface and owns jobs, workers, logs, and interactive approval.
+[![Unit-Tests](https://github.com/inhere/suag/actions/workflows/go.yml/badge.svg)](https://github.com/inhere/suag/actions/workflows/go.yml)
 
-## Build and run
+English | [简体中文](README.zh-CN.md)
 
-Requires Go 1.25. Build the command before running it:
+Suag is a personal coding agent written in Go. One persistent conversation engine serves two interfaces: a terminal CLI (`chat` and one-shot `run`) and an ACP stdio server (`acp`). [Gofer](https://github.com/inhere/gofer) can launch either one and adds jobs, workers, logs and interactive approval on top.
 
-```powershell
-go build -o local/bin/suag.exe ./cmd/suag
-./local/bin/suag.exe run --prompt "Summarize this project" --output-format stream-json --read-only
-./local/bin/suag.exe chat
+- **Development tools**: read files in line windows, list, grep and find files, edit by exact replacement, run shell commands (PowerShell on Windows), fetch web pages, search the web.
+- **Safe by default**: read-only unless writing is enabled; chat asks before writing or running commands; file tools stay inside the workspace; web fetches refuse private networks.
+- **Skills**: standard `SKILL.md` skills from the workspace and `~/.agents/skills`, listed or searched on demand.
+- **Persistent sessions**: one SQLite database with resume, automatic compaction, plans, handoff and an event log for tracing and stats.
+- **MCP**: stdio MCP servers with allowlists and deferred loading for large tool sets.
+
+## Install
+
+Requires Go 1.25+. The repository is private, so build from a checkout:
+
+```bash
+git clone https://github.com/inhere/suag.git && cd suag
+make install            # or: go install ./cmd/suag
 ```
 
-On a host with `make` and `upx`, `make install` builds and installs `suag` to `$(go env GOPATH)/bin`. Ensure that directory is on the PATH of both your shell and any Gofer server process, then check `suag run --help` from a new shell.
+`make install` builds (compressing with `upx` when available) and installs to `$(go env GOPATH)/bin`. On Windows it first moves aside a binary that a running chat is still using. With access to the repository configured (`GOPRIVATE=github.com/inhere/*`), `go install github.com/inhere/suag/cmd/suag@latest` works too. Pushing a `v*` tag runs the release workflow, which attaches prebuilt binaries for Linux, macOS and Windows. Make sure the install directory is on the `PATH` of your shell (and of the Gofer server, if you use it), then check `suag version`.
 
-`run` executes one turn and emits a `session` event, progress events, then one `result` event. The `result`, `input_required` and `error` events carry `usage` (this turn) and `session_usage` (session cumulative, persisted in session metadata), each with `input_tokens` (excluding cache), `output_tokens`, optional `cache_read_tokens`/`cache_write_tokens`, and `total_tokens` (input + output + cache). `chat` keeps a terminal conversation open; enter `:session` to see its ID and `:quit` to leave. Use `--session-id <id>` to create or reuse a named session. Use `--resume <id>` when an existing session is required; an unknown ID fails instead of creating a new one. `suag version` prints `suag <version> (<commit>)`.
+## Quick start
 
-`suag acp` speaks ACP over stdin/stdout. Launch it through an ACP client such as Gofer; stdout is reserved for protocol frames. See [Gofer setup and commands](docs/usage/gofer-personal-agent.md) for the tested `suag` and `suag-acp` configurations.
+Create `~/.suag/config.yaml` (see [config/config.yaml](config/config.yaml) for every field):
 
-## Data and tool boundaries
+```yaml
+model: deepseek/deepseek-chat   # <provider>/<model>
+# providers: openai, anthropic and deepseek are built in and read
+# OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY.
+tools:
+  allow_write: true             # let chat write files and run commands (asks first)
+```
 
-All personal state lives in one SQLite database, `$SUAG_HOME/db/sessions.db` (default `~/.suag/db/sessions.db`, WAL mode), holding sessions, entries, turns and observability events. Its location is decided only by `SUAG_HOME`; `database_url` no longer exists. The databases of earlier versions (`suag.db`, the `agentcore/` run directory) are neither read, migrated nor deleted: old session IDs cannot be resumed, and old sessions registered in Gofer cannot be woken or taken over. `SUAG_HOME` replaces `~/.suag` as the data and configuration root; `SUAG_CONFIG` selects a specific YAML configuration file. Both are read from the process environment only. Suag loads only `$SUAG_HOME/config.yaml` and `$SUAG_HOME/.env` (default under `~/.suag`); the `config.yaml`, `config/config.yaml`, `.env` and `.env.local` of the working directory belong to the user's project and are never read, and `SUAG_HOME` / `SUAG_CONFIG` set inside `$SUAG_HOME/.env` are ignored. Models are configured as `model: <provider>/<model>` plus `providers.<id>` (`type` openai|anthropic, `base_url`, `api_key`, `headers`, `models.<model>.context_window`); `openai`, `anthropic` and `deepseek` are built-in presets. For `run` and `chat`, `--model` overrides `SUAG_MODEL`, which overrides `model` in the configuration file; a value is split at the first `/` only when the prefix is a defined provider, and a bare model id uses the configured model's provider. An `openai` provider posts to `<base_url>/chat/completions`; an `anthropic` provider streams (SSE) from `<base_url>/v1/messages` (`/messages` when `base_url` already ends in `/v1`). The previous `llm` section and the provider-selection flag and environment variable are removed and fail at startup. See [LLM config](docs/usage/llm-config-v0.md). Credentials stay in the configuration file or provider environment variables. Tests use isolated temporary homes and databases.
+```bash
+suag chat                                         # interactive chat in the current directory
+suag run --prompt "Summarize this project"        # one turn, read-only
+suag run --allow-write --prompt "Fix the failing test"
+suag run --resume <session-id> --prompt "Continue"
+```
 
-The CLI starts with read and list tools. `--read-only` makes that intent explicit and restricts MCP tools to `tools.read_only_allow` (every entry must be `server/toolglob`); `tools.auto_allow` never widens it, and other MCP calls are denied through the normal denial path. `--allow-write` opts into workspace write and shell tools for a trusted local invocation; in `chat`, `tools.allow_write: true` (boolean, default false) does the same without the flag. `run` still needs `--allow-write`, `--read-only` always wins, and ACP never reads the setting. In `chat`, `tools.approval` (`ask` default, `auto`) decides what happens next: with `ask`, every non-MCP tool outside the read-only list (`file_read`, `file_list`, `file_grep`, `file_find`, `web_fetch`, `web_search`, `skill`, `update_plan`, `tool_search`) is confirmed on the terminal before it runs (today `file_write`, `file_edit` and `shell_exec`). The question shows the full, redacted command, path with byte count, or query, never truncated. `y`/`yes` allows once, `a`/`always` allows later calls of the same tool for the rest of this chat process, anything else (Enter included) refuses and the turn continues. Ctrl-C or Ctrl-D during the question only cancels that turn (it prints `已取消`) and does not leave `chat`; at the prompt one Ctrl-C only clears the line and hints, a second within 3s exits (Ctrl-D exits at once); input typed ahead during a turn is never taken as the answer. When stdin is not a terminal, every tool that needs confirmation is refused with a hint to set `tools.approval: auto`. Three refusals in one turn end the turn, and the end of a turn lists `本轮被拒绝的工具：…`. MCP tools are not asked about: they keep following `tools.auto_allow` / `tools.read_only_allow`. `run` and `chat` accept repeatable `--mcp-config <file>` flags for Claude-style `mcpServers` JSON with stdio servers. YAML `mcp.servers` supplies default servers. MCP tools require `tools.auto_allow` glob permission; entries are `server/toolglob` (a bare `toolglob` matches that tool from any server, so prefer the qualified form). There is no built-in allowlist: with `tools.auto_allow` and `tools.read_only_allow` both empty every MCP call is refused. A tool name already taken by a built-in tool or an earlier server (configuration order) is not overridden: the later MCP tool is dropped with a warning. MCP subprocesses inherit the environment except credentials (`*_API_KEY`, `*_AUTH_TOKEN`, LLM keys) unless the server's own `env` sets them. `--allow-write` never grants other MCP tools. A denied MCP call returns a tool error to the model; `run --output-format stream-json` also emits `input_required` before its final result and exits normally. `run --output-format stream-json` additionally emits `tool_call` (`name`, `args` summary) and `tool_result` (`name`, `is_error`, redacted and truncated `summary`) lines; existing lines are unchanged, callers without an `ndjson_keep` filter receive them, and the sample Gofer `ndjson_keep` leaves them out. For Gofer tasks that require approval before a tool runs, use `suag-acp` with `permission_policy: ask`. Its `read_only` mode excludes mutating tools, and permission refusal stops a pending write or command before execution. Built-in tools (line-windowed `file_read`, recursive `file_list`, `file_grep`, `file_find`, `file_edit`, `web_fetch`, skills via the `skill` tool, PowerShell `shell_exec` on Windows with per-call `timeout`), the `tools.max_output_bytes` / `tools.shell` / `tools.shell_timeout_max` / `mcp.call_timeout_sec` settings, the base system prompt, and how disabled tools are refused are described in [docs/usage/gofer-personal-agent.md](docs/usage/gofer-personal-agent.md#内置工具与相关配置).
+In chat, `:session` shows the session id, `:compact` compacts the history and `:quit` leaves. Pressing Ctrl+C once at the prompt clears the line; pressing it again within 3 seconds exits. Ctrl+D exits immediately. On exit chat prints token usage and the command that resumes the session.
 
-## Session features
+## Configuration
 
-- Automatic compaction: when the estimated context exceeds the model window minus a reserve, older history is summarized and the summary is persisted as a session entry. In `chat`, `:compact` compacts on demand. `compact_model` (`<provider>/<model>` or a bare id on the main provider) selects a cheaper model for summaries; unset means the turn's own model. `providers.<id>.models.<model>.context_window` overrides the window otherwise derived from the model name. `fallback_models` lists models tried in order when the main model fails.
-- Plans: the `update_plan` tool records the model's plan in the session. `run --output-format stream-json` emits a `plan` event (`explanation`, `entries` of `step`/`status`, always the full list), and ACP maps it to a plan update.
-- Handoff: `suag run --from <session> ...` starts a new session that inherits the source's summary, plan and loaded tools; the source is only read. It cannot be combined with `--resume`; a failed handoff creates no session, so the same `--session-id` can be retried.
-- Chat hooks: `chat` calls the program in `hooks.command` (argv list, no shell) for SessionStart, UserPromptSubmit, PostToolUse, Stop, SessionEnd and Interrupt events, the event as one JSON line on stdin. Hooks are off unless `hooks.command` is set; `SUAG_HOOKS=off` disables them. `hooks.timeout_ms` bounds ordinary events, `hooks.stop_args` is appended to the Stop call only, and `hooks.stop_wait_sec` must be set with it (Stop waits `stop_wait_sec+2` seconds, otherwise `timeout_ms`). PostToolUse is sent only for tools matching the `hooks.post_tool_use.tools` globs, renamed to `hooks.post_tool_use.name` when set.
-- Delivery: `suag send --session <s> --text <t> [--source <label>]` hands text to a running `chat`, shown as `[来自 <label>] <text>` (default label `cli`; text that already starts with a `[...]` tag is kept). `suag run --injected` marks the prompt as not typed by a person in the transcript and hook events.
-- Missing session: when the `--resume` target or `--from` source does not exist, `run`/`chat` exit with code 4 and print `session not found: <id>` to stderr.
+Suag reads only `$SUAG_HOME/config.yaml` and `$SUAG_HOME/.env` (default `~/.suag`); the working directory's config and `.env` files belong to your project and are never read. `SUAG_CONFIG` selects one config file.
 
-## Tools
+| Setting | Meaning |
+|---|---|
+| `model` | Main model, `<provider>/<model>`; overridden by `SUAG_MODEL`, then `--model` |
+| `providers.<id>` | `type` (openai/anthropic), `base_url`, `api_key`, `headers`, `models.<model>.context_window` |
+| `compact_model`, `fallback_models` | Cheaper model for summaries; models tried in order when the main one fails |
+| `tools.allow_write` | Chat only: enable write and shell tools (default false) |
+| `tools.approval` | Chat only: `ask` (default) confirms write/shell tools, `auto` does not |
+| `tools.max_output_bytes` | Cap on one stored tool result (default 30000) |
+| `tools.shell`, `tools.shell_timeout_max` | Shell override (default pwsh/powershell on Windows, sh elsewhere); max seconds per command (600) |
+| `tools.web_fetch.proxy`, `tools.web_fetch.allow_private` | Proxy for `web_fetch`; allow private addresses |
+| `tools.auto_allow`, `tools.read_only_allow` | MCP allowlists, entries `server/toolglob` |
+| `tools.deferred` | Defer MCP tool schemas: `auto` (default), `always`, `never` |
+| `mcp.servers`, `mcp.call_timeout_sec` | Default MCP servers; timeout of one MCP call (120) |
+| `skills.list_max`, `skills.always_load` | Skills listed in the prompt before falling back to search (15); skills preloaded into the prompt |
+| `hooks.*` | Chat hook command (SessionStart, UserPromptSubmit, PostToolUse, Stop, …) |
+| `serpapi_key` | Enables `web_search` |
 
-`tools.deferred` (`auto` default, `always`, `never`) controls whether MCP tool schemas are deferred. When tools are deferred, the model sees only their names and loads them with the built-in `tool_search` tool; loaded tools persist in the session. `auto` defers once the MCP schemas exceed about 10% of the context window.
+All data lives in `$SUAG_HOME/db/sessions.db`. Model and provider details: [LLM config](docs/usage/llm-config-v0.md).
+
+## Tools and permissions
+
+| Tool | Kind | What it does |
+|---|---|---|
+| `file_read` | read | Numbered lines in windows (`offset`/`limit`, 2000 lines by default); reports binary files |
+| `file_list` | read | Directory listing, recursive with `depth` (≤ 5) |
+| `file_grep` | read | RE2 search with `glob`, `ignore_case`, `output: content\|files` |
+| `file_find` | read | `**` glob search, newest first |
+| `web_fetch` | read | Page text (headings, links and code kept); private and local addresses refused |
+| `web_search` | read | SerpAPI search (needs `serpapi_key`) |
+| `skill` | read | Load a skill, read its files, or search skills (`query`, `"*"` lists all names) |
+| `file_write` | write | Write a whole file |
+| `file_edit` | write | Replace an exact, unique string (or all with `replace_all`); keeps CRLF |
+| `shell_exec` | write | Run a command (PowerShell on Windows, `sh` elsewhere) with a timeout; returns output and exit code |
+
+- **Read-only by default.** Write tools exist only with `run --allow-write`, chat with `tools.allow_write: true`, or an ACP session in `default` mode. `--read-only` always wins. If the model calls a disabled tool, it is told how to enable it, and the call counts as a refusal.
+- **Chat asks first.** With `tools.approval: ask`, chat asks before each write or shell call and shows the full command, path or old/new text. Answer `y` (once), `a` (this tool for the rest of the process) or anything else to refuse. Three refusals end the turn.
+- **Boundaries.** File tools go through `os.OpenRoot`, so they cannot follow symlinks out of the workspace. `shell_exec` kills the whole process tree on timeout. `web_fetch` checks the address it actually connects to, which also covers redirects. Every tool result is capped.
+- **MCP.** Use `--mcp-config <file>` (Claude-style `mcpServers` JSON) or `mcp.servers` in the config. MCP calls are refused unless allowed by `tools.auto_allow`, or by `tools.read_only_allow` under `--read-only`. Large tool sets are deferred and loaded through `tool_search`.
+
+Exact semantics: [Gofer setup and tools](docs/usage/gofer-personal-agent.md#内置工具与相关配置).
+
+## Skills
+
+Suag scans `<workspace>/.agents/skills`, `<workspace>/skills` and `~/.agents/skills` once at startup. If two skills share a name, the workspace one wins. If there are no more than `skills.list_max` skills, all of them are listed in the system prompt. Otherwise only workspace skills are listed, and the model finds the rest with `skill(query=…)`. To put a skill's body into every prompt, mark it with `metadata: {always_load: true}` in its frontmatter, or list it in `skills.always_load`.
+
+## Sessions
+
+- **Resume and handoff.** `--session-id` creates or reuses a named session. `--resume` requires an existing one; a missing session exits with code 4. `run --from <session>` starts a new session that inherits the old one's summary, plan and loaded tools.
+- **Compaction.** When the context nears the model window, older history is summarized automatically. `:compact` in chat does it on demand.
+- **Plans.** The `update_plan` tool records the model's plan. stream-json emits it as `plan` events, and ACP sends it as plan updates.
+- **System prompt.** Suag builds the system prompt once per process. It covers OS, shell, workspace, mode and conventions, then project rules (`AGENTS.md`, `CLAUDE.md`, `~/.suag/AGENTS.md`) and any `--append-system-prompt`. `--no-project-rules` skips project rules.
+- **Delivery and hooks.** `suag send --session <s> --text <t>` hands text to a running chat. `hooks.command` receives chat lifecycle events as JSON on stdin.
+
+## Using with Gofer
+
+Gofer launches `suag run` (CLI jobs) or `suag acp` (persistent sessions with per-call approval through `permission_policy`). For agent configuration, read-only and writable runs, the stream-json events and the denial contract, see [docs/usage/gofer-personal-agent.md](docs/usage/gofer-personal-agent.md).
 
 ## Observability
 
-Model calls, tool calls, compactions and denials are recorded as events in the session database:
-
 ```text
-suag trace <session> [--turn <turn-id>] [--json]   # timeline of one session, including update_plan records (`plan ✔/▶/○ step`; `--json` rows have `"kind":"plan"`)
-suag stats [--session <id>] [--since 12h|7d] [--json]  # calls, latency, tokens, cache hits
-suag export <session> [--redact] [-o <file>]       # entries and events as jsonl (--redact drops tool arguments)
-suag gc --older-than 30d [--apply]                 # list (default) or delete sessions idle that long, with their events and transcripts/<id>.jsonl; live sessions are kept
+suag trace <session> [--turn <id>] [--json]       # timeline: model calls, tools, denials, plans
+suag stats [--session <id>] [--since 7d] [--json] # calls, latency, tokens, cache hits
+suag export <session> [--redact] [-o <file>]      # entries and events as jsonl
+suag gc --older-than 30d [--apply]                # list (default) or delete idle sessions
+suag ps                                           # running chat processes
 ```
 
-## Tool denial
+## Development
 
-A denied tool call returns a tool error to the model and the turn continues; three denials in one turn end it. See [Gofer setup](docs/usage/gofer-personal-agent.md#工具拒绝语义) for the exact stream-json and ACP contract.
+```bash
+go test -race ./...     # unit tests
+make smoke-chat         # PTY end-to-end chat tests (Linux/macOS, Python 3)
+make build-all          # cross-compile to dist/
+```
 
-## Structure and checks
+- `cmd/suag`: entry point; `internal/cli`: one file per command.
+- `internal/wiring`: builds providers, tools, skills, the system prompt and the runner for CLI and ACP.
+- `internal/personal`: turns, compaction, handoff and events; `internal/personal/store` is the SQLite store.
+- `internal/platform/tools`: native tools, MCP client, approval and deferred-tool layers; `internal/platform/llm`: providers.
+- `internal/chat`: terminal chat; `internal/acpserver`: the ACP server; `pkg/agentcore`: the model/tool loop ([docs](pkg/agentcore/docs/README.md)).
 
-- `pkg/agentcore` runs the model/tool loop; [its API docs](pkg/agentcore/docs/README.md) cover embedding and extension contracts.
-- `cmd/suag` is only the entry point (`main`, exit reporting, version stamping); `internal/cli` holds one command per file (run, chat, acp, ps, send, trace, stats, export, version).
-- `internal/wiring` assembles providers, tools, the MCP gate, skills and the runner for CLI and ACP; `internal/config` resolves paths, `providers`/`model` settings and provider construction.
-- `internal/personal` owns session turns, compaction, handoff and observability; `internal/personal/store` is the SQLite session store with embedded migrations.
-- `internal/chat` is the terminal conversation loop; `internal/hooks` runs the configured hook command; `internal/output` builds the text and stream-json output lines; `internal/acpserver` maps ACP messages and permissions to the same runner.
-- `internal/platform` holds the LLM providers and tool implementations (native, MCP, approval and deferred-tool wrappers).
-
-Run `go test ./...`, `go list ./...`, and `go build ./cmd/suag` from the Suag root. The old control plane (team, cron, orchestrator) is available at the `v0.1.0` tag.
+Design notes and plans are in [docs/](docs/README.md). CI runs tests on Ubuntu and Windows with Go 1.25 and stable. The old control plane (team, cron, orchestrator) is kept at the `v0.1.0` tag.

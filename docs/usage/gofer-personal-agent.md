@@ -136,6 +136,12 @@ gofer job resume <job-id> --prompt "继续上个问题"
 - `tools.deferred`（`auto`/`always`/`never`，默认 `auto`）在 `~/.suag/config.yaml` 中配置。MCP 工具多时被延迟加载，模型通过内置 `tool_search` 取回；Gofer 不需要额外配置。
 - `compact_model` 指定自动压缩与 `:compact` 使用的模型，`providers.<id>.models.<model>.context_window` 覆盖上下文窗口。
 
+### run 的 stream-json 输出与 chat hooks
+
+- `run --output-format stream-json` 先输出 `session` 事件，再输出过程事件，最后输出一行 `result`。`result`、`input_required`、`error` 都带 `usage`（本回合）和 `session_usage`（会话累计，持久化在会话元数据中）。两者均含 `input_tokens`（不含缓存）、`output_tokens`、可选的 `cache_read_tokens`/`cache_write_tokens`，以及 `total_tokens`（输入、输出与缓存之和）。
+- chat hooks：`hooks.command`（argv 列表，不经 shell）在 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd、Interrupt 事件时被调用，事件以一行 JSON 写入其 stdin。未设 `hooks.command` 时不启用，`SUAG_HOOKS=off` 可整体关闭。`hooks.timeout_ms` 限制普通事件；`hooks.stop_args` 只追加到 Stop 调用，且必须同时设 `hooks.stop_wait_sec`（Stop 最多等 `stop_wait_sec+2` 秒，否则按 `timeout_ms`）。PostToolUse 只对匹配 `hooks.post_tool_use.tools` glob 的工具发送，设了 `hooks.post_tool_use.name` 时改用该名称。
+- `suag run --injected` 把本轮输入标记为非人工输入，transcript 和 hook 事件中都会体现。
+
 ## ACP 常驻与审批
 
 ```powershell
