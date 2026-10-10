@@ -81,12 +81,32 @@ CLI 可在 agent 的 `args` 中加入 `--mcp-config <file>` 接入本机 stdio M
 
 MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目形如 `server/工具glob`：`tools.auto_allow` 用于普通运行；`--read-only` 只认 `tools.read_only_allow`（条目必须带服务名，`auto_allow` 不会扩大它）。两者都为空时所有 MCP 调用被拒绝。Gofer 只读 job 需要的典型配置见「升级迁移」。其余 MCP 工具在 CLI 中被拒绝，即使带 `--allow-write`；拒绝信息作为工具错误交给模型，回合继续。拒绝语义见下文“工具拒绝语义”。需要逐次审批 MCP 写工具时使用 ACP。
 
+### 内置工具与相关配置
+
+内置工具来自同一份清单，run、chat、ACP 共用：读工具 `file_read`（按行分段，`offset`/`limit`，默认 2000 行，带行号）、`file_list`（`depth` ≤ 5、`max_entries` 500，不进入 `.git`/`node_modules`/`vendor`/`dist`，symlink 不跟随）、`web_search`（配置 `serpapi_key` 时注册，只读模式也可用）；写工具 `file_write`、`shell_exec` 只在可写时注册。`update_plan` 各模式都有。
+
+`shell_exec` 在 Windows 用 PowerShell（优先 `pwsh`，否则 `powershell`），输出固定 UTF-8，返回原生命令的退出码；其他系统用 `sh -c`。每次调用可传 `timeout`（秒，默认 120），超时后整组进程（Unix 进程组 / Windows job object）被终止，已有输出与退出码照常返回；后台残留进程占住输出时最多再等 2 秒。命令以 `GIT_TERMINAL_PROMPT=0`、`GIT_PAGER=cat`、`PAGER=cat` 运行，没有标准输入。
+
+配置项（`~/.suag/config.yaml`，均有缺省值）：
+
+- `tools.max_output_bytes`（缺省 30000）：单次工具结果写入会话的上限，按 UTF-8 边界截断；`file_read` 按行截断并提示续读的 `offset`，其他工具保留头尾。
+- `tools.shell`：显式指定 shell（命令名或路径，如 `bash`）；不自动探测。
+- `tools.shell_timeout_max`（缺省 600）：`shell_exec` 的 `timeout` 上限（秒）。
+- `mcp.call_timeout_sec`（缺省 120）：单次 MCP 工具调用的超时。
+
+Suag 每个进程生成一次基础系统提示词（系统与 shell、工作区、只读或可写及开启写工具的方法、使用约定），放在项目规则之前；同一进程内逐字节不变。
+
+Gofer 中两种 `suag run` 用法：
+
+- 只读（模板缺省）：模型只能读文件、列目录、搜索网页，要改文件或跑命令时会说明需要 `--allow-write`。
+- 可写：在 `suag` agent 的 `args` / `session_resume` 中加入 `--allow-write`，模型可写文件、执行 shell（run 没有逐次确认，适合可信的本机任务）。需要逐次审批时用 `suag-acp`：审批请求的等待时长与超时处理由 Gofer 的 `permission_policy` 决定。
+
 ### chat 的写权限与终端确认
 
 仅作用于 `suag chat`（`run` 与 ACP 行为不变）：
 
 - `tools.allow_write`（布尔，缺省 `false`）：为 `true` 时 chat 启用写文件与命令工具，等同 `--allow-write`。`run` 仍需 `--allow-write`；`--read-only` 优先；ACP 不读取该项；非布尔值使 chat 启动失败。
-- `tools.approval`（`ask` 缺省 / `auto`）：`ask` 时，只读名单（`file_read`、`file_list`、`update_plan`、`tool_search`）之外的所有非 MCP 工具（目前是 `file_write`、`shell_exec`，配置 `serpapi_key` 时还有 `web_search`）执行前在终端询问，显示完整命令 / 路径与字节数 / 查询（已脱敏、不截断）。回答 `y`/`yes` 允许一次，`a`/`always` 在本次 chat 进程内放行后续同名工具，其他（含回车）拒绝，回合继续。询问中 Ctrl-C / Ctrl-D 只取消本回合并显示“已取消”，不退出 chat；回合中提前敲的输入不会被当作回答。提示符处按一次 Ctrl-C 只清掉已输入内容并提示，3 秒内再按一次才退出 chat；Ctrl-D 直接退出。`auto` 不询问。
+- `tools.approval`（`ask` 缺省 / `auto`）：`ask` 时，只读名单（`file_read`、`file_list`、`update_plan`、`tool_search`、`web_search`）之外的所有非 MCP 工具（目前是 `file_write`、`shell_exec`）执行前在终端询问，显示完整命令 / 路径与字节数 / 查询（已脱敏、不截断）。回答 `y`/`yes` 允许一次，`a`/`always` 在本次 chat 进程内放行后续同名工具，其他（含回车）拒绝，回合继续。询问中 Ctrl-C / Ctrl-D 只取消本回合并显示“已取消”，不退出 chat；回合中提前敲的输入不会被当作回答。提示符处按一次 Ctrl-C 只清掉已输入内容并提示，3 秒内再按一次才退出 chat；Ctrl-D 直接退出。`auto` 不询问。
 - 标准输入不是终端时，需确认的工具一律拒绝，并提示设置 `tools.approval: auto`。
 - 同一回合 3 次拒绝结束回合；回合末显示“本轮被拒绝的工具：…”。
 - MCP 工具不询问，仍按 `tools.auto_allow` / `tools.read_only_allow`。
@@ -128,6 +148,7 @@ gofer job resume <job-id> --prompt "从上次会话继续"
 - 被拒绝的调用（CLI 未授权的 MCP 工具；ACP 用户选择 reject、`session/request_permission` 请求失败、`read_only` mode 下调用写入/执行类工具）不执行，拒绝信息作为工具错误交给模型，回合继续。每次拒绝在 `suag trace`/`stats` 中记为一条 denial 事件。
 - 同一回合累计被拒 3 次后（`read_only` 的拒绝同样计数），下一次模型调用前结束回合，最终答复说明拒绝次数与工具名。计数按回合重置。
 - 审批被取消（ACP 返回 `cancelled` 结果或 `session/cancel`）时中止回合，不把取消当作工具结果交给模型。
+- 调用清单中但本次未启用的内置工具（只读模式下的写工具、缺 `serpapi_key` 的 `web_search`）按拒绝处理并计数，拒绝信息按入口给出开启方法（run：`--allow-write`；chat：`tools.allow_write: true`；`--read-only`：去掉该参数；ACP：会话 mode 改为 `default`）。完全未知的工具名返回“not found”及可用工具列表，不计入拒绝。
 - 尚未加载的 deferred MCP 工具被直接调用时，由 visibility 层返回“尚未加载”并自动加载，不会触发审批请求。
 
 对外契约：
