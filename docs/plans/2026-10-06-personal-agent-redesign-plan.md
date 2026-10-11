@@ -27,7 +27,7 @@
 
 ## 范围、排除项与授权
 
-- 代码归属：独立 Git 根 `D:/work/inhere/my-tools-dev/inhere-tools/suag`；Gofer 源码根 `D:/work/inhere/hyy-ai-inspect/tools/gofer` 只读。目标主机 Gofer 配置 `D:/work/inhere/config/win-env/gofer/config.yaml` 仅在联调波次按单独 Gate 调整。
+- 代码归属：独立 Git 根 `D:/work/inhere/my-tools-dev/inhere-tools/suag`；Gofer 源码根 `D:/work/inhere/my-tools-dev/gofer` 只读。目标主机 Gofer 配置 `D:/work/inhere/config/win-env/gofer/config.yaml` 仅在联调波次按单独 Gate 调整。
 - 保持现有 SQLite session/run 数据的读取兼容；本计划不实施数据库迁移、不清理已有会话数据、不发布或推送代码。Pigo 仅作设计参考，不引入为依赖。
 - 个人 CLI/ACP 的默认会话数据库为 `~/.suag/db/suag.db`，run/transcript 根为 `~/.suag/db/agentcore/host`；`~` 通过用户主目录解析。显式 `database_url`、`agentcore.run_root` 继续优先；旧 Web 在删除前保留原默认目录。已有仓库 `db/` 不自动迁移或覆盖。
 - 当前用户明确要求本次不用 `bd`；进度与后续事项使用 Suag 仓库的 `.gofer/tracker`、`gofer issue` 和 `gofer memory`。已置 `auto_sync: false`，不把嵌套仓库记录自动镜像到父项目。
