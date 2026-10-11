@@ -457,20 +457,29 @@ func (r *Runner) Compact(ctx context.Context, sessionID string) (CompactResult, 
 // Compact before its commit point (it also matches context.Canceled).
 var ErrPreempted = errors.New("idle consolidation preempted")
 
+// ErrBusy reports an idle consolidation given up at once because a Run or
+// Compact of the session held the gate (nothing was written).
+var ErrBusy = errors.New("session busy")
+
 // ConsolidateIdle starts a new segment between turns with reason idle, as
 // the preemptible holder of the session gate (design D5/D6, chat idle
-// consolidation). It waits for the gate while ctx allows; a Run or Compact
-// arriving meanwhile cancels it and waits for it to let go. Whether the
-// context is large enough to bother is the caller's decision.
+// consolidation). It never waits for the gate: when the gate is taken it
+// returns ErrBusy right away. A Run or Compact arriving meanwhile cancels it
+// and waits for it to let go. Whether the context is large enough to bother
+// is the caller's decision.
 //
 // Results: success (the record was written; a cancellation from the write on
-// does not undo it); ErrNothingToCompact; an error matching context.Canceled
-// (and ErrPreempted when a Run/Compact took over) when it stopped before its
-// commit point - then nothing was written except a cancelled event.
+// does not undo it); ErrBusy; ErrNothingToCompact; an error matching
+// context.Canceled (and ErrPreempted when a Run/Compact took over) when it
+// stopped before its commit point - then nothing was written except a
+// cancelled event.
 func (r *Runner) ConsolidateIdle(ctx context.Context, sessionID string) (CompactResult, error) {
-	release, preempted, err := r.gate(sessionID).AcquirePreemptible(ctx)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return CompactResult{}, err
+	}
+	release, preempted, ok := r.gate(sessionID).TryAcquirePreemptible()
+	if !ok {
+		return CompactResult{}, ErrBusy
 	}
 	defer release()
 	ctx, cancel := context.WithCancelCause(ctx)

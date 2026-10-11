@@ -259,3 +259,19 @@ func ttftMillis(d time.Duration) int64 {
 	}
 	return max(d.Milliseconds(), 1)
 }
+
+// HostEvent is an observability event produced by the host around the runner
+// (chat's scheduler, for one) rather than by a turn.
+type HostEvent struct {
+	Kind, Name, Status string
+	Duration           time.Duration
+	Error              string
+	Attrs              map[string]any
+}
+
+// RecordEvent writes a host event for sessionID outside any turn; best-effort
+// like every event (a failed write is only logged).
+func (r *Runner) RecordEvent(ctx context.Context, sessionID string, ev HostEvent) {
+	r.rec.record(ctx, store.Event{SessionID: sessionID, Kind: ev.Kind, Name: ev.Name, Status: ev.Status,
+		StartedAt: time.Now(), DurationMs: ev.Duration.Milliseconds(), Error: ev.Error, Attrs: ev.Attrs})
+}

@@ -99,6 +99,35 @@ func TestSessionGate(t *testing.T) {
 		}
 		rel()
 	})
+	t.Run("try acquire preemptible never waits", func(t *testing.T) {
+		hold, err := r.gate("s1").Acquire(ctx)
+		assert.NoErr(t, err)
+		_, _, ok := r.gate("s1").TryAcquirePreemptible()
+		assert.False(t, ok) // a regular holder: give up at once
+		assert.Eq(t, 0, gateWaiters(r, "s1"))
+		hold()
+
+		release, preempted, ok := r.gate("s1").TryAcquirePreemptible()
+		assert.Require(t, assert.True(t, ok))
+		_, _, ok = r.gate("s1").TryAcquirePreemptible()
+		assert.False(t, ok) // a preemptible holder is not preempted by another try
+		select {
+		case <-preempted:
+			t.Fatal("TryAcquirePreemptible must not preempt")
+		default:
+		}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			rel, err := r.gate("s1").Acquire(ctx)
+			assert.NoErr(t, err)
+			rel()
+		}()
+		<-preempted // an Acquire asks the try-taken holder to yield
+		release()
+		<-done
+		assert.Eq(t, 0, len(r.gates))
+	})
 	t.Run("acquire gives up with ctx", func(t *testing.T) {
 		hold, err := r.gate("s1").Acquire(ctx)
 		assert.NoErr(t, err)
@@ -333,4 +362,79 @@ func (p ctxSumProv) Generate(ctx context.Context, req *agentcore.GenerateRequest
 		return finalText(p.sum(ctx))
 	}
 	return p.scriptProv.Generate(ctx, req)
+}
+
+// The idle consolidation never waits for the gate: while a Run or Compact
+// holds it, ConsolidateIdle returns ErrBusy at once and writes nothing.
+func TestConsolidateIdleBusy(t *testing.T) {
+	repo := openObserveRepo(t)
+	sp := &scriptProv{name: "main", normal: func(n int, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+		return finalText(fmt.Sprintf("reply-%d", n))
+	}}
+	runner := compactRunner(t, repo, ctxSumProv{sp, func(context.Context) string { return "PKG-BODY" }}, nil,
+		func(c *Config) { c.ContextWindow, c.CompactReserveTokens = 100000, 1000 })
+	ctx := context.Background()
+	res, err := runner.Run(ctx, RunRequest{Prompt: "hello " + strings.Repeat("h", 400)})
+	assert.NoErr(t, err)
+	sid := res.SessionID
+
+	t.Run("busy while held", func(t *testing.T) {
+		hold, err := runner.gate(sid).Acquire(ctx)
+		assert.Require(t, assert.NoErr(t, err))
+		done := make(chan error, 1)
+		go func() {
+			_, err := runner.ConsolidateIdle(ctx, sid)
+			done <- err
+		}()
+		select {
+		case err = <-done:
+		case <-time.After(5 * time.Second):
+			hold()
+			t.Fatal("ConsolidateIdle waited for the gate")
+		}
+		hold()
+		assert.True(t, errors.Is(err, ErrBusy))
+		assert.Eq(t, 0, len(compactionEntries(t, repo, sid)))
+		assert.Eq(t, 0, len(eventsOf(t, repo, sid, store.EventCompaction)))
+	})
+	t.Run("free gate consolidates", func(t *testing.T) {
+		out, err := runner.ConsolidateIdle(ctx, sid)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, 2, out.Segment)
+		recs := compactionEntries(t, repo, sid)
+		assert.Require(t, assert.Eq(t, 1, len(recs)))
+		assert.Eq(t, segmentReasonIdle, recs[0].Reason)
+	})
+}
+
+func TestContextThreshold(t *testing.T) {
+	repo := openObserveRepo(t)
+	sp := &scriptProv{name: "main"}
+	t.Run("from the window", func(t *testing.T) {
+		r := compactRunner(t, repo, sp, nil, func(c *Config) { c.ContextWindow, c.CompactReserveTokens = 1000, 0 })
+		assert.Eq(t, 800, r.ContextThreshold()) // reserve = window*20%
+	})
+	t.Run("default window", func(t *testing.T) {
+		r := compactRunner(t, repo, sp, nil, func(c *Config) { c.ContextWindow, c.CompactReserveTokens = 0, 0 })
+		assert.Eq(t, defaultContextWindow-defaultReserveTokens, r.ContextThreshold())
+	})
+}
+
+func TestRecordHostEvent(t *testing.T) {
+	repo := openObserveRepo(t)
+	runner := compactRunner(t, repo, &scriptProv{name: "main"}, nil, nil)
+	ctx := context.Background()
+	sess, err := runner.NewSession(ctx, "", "t")
+	assert.NoErr(t, err)
+	runner.RecordEvent(ctx, sess.ID, HostEvent{Kind: store.EventSchedule, Name: "idle-consolidate", Status: "fired",
+		Duration: 1500 * time.Millisecond, Error: "x", Attrs: map[string]any{"event": "fired"}})
+	runner.RecordEvent(ctx, "", HostEvent{Kind: store.EventSchedule, Name: "dropped"}) // no session: skipped
+	evs := eventsOf(t, repo, sess.ID, store.EventSchedule)
+	assert.Require(t, assert.Eq(t, 1, len(evs)))
+	assert.Eq(t, "idle-consolidate", evs[0].Name)
+	assert.Eq(t, "fired", evs[0].Status)
+	assert.Eq(t, int64(1500), evs[0].DurationMs)
+	assert.Eq(t, "x", evs[0].Error)
+	assert.Eq(t, "fired", evs[0].Attrs["event"])
+	assert.Eq(t, "", evs[0].TurnID)
 }

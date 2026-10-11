@@ -141,7 +141,8 @@ func (g sessionGate) TryAcquire() (release func(), ok bool) {
 }
 
 // AcquirePreemptible waits until the caller holds the gate as a preemptible
-// holder (idle consolidation). preempted is closed when an Acquire wants the
+// holder (the idle consolidation itself does not wait: it uses
+// TryAcquirePreemptible). preempted is closed when an Acquire wants the
 // gate (immediately if one is already waiting): the holder must then cancel
 // its work and release; the Acquire proceeds after the release. It never
 // preempts anyone itself.
@@ -165,6 +166,20 @@ func (g sessionGate) AcquirePreemptible(ctx context.Context) (release func(), pr
 			return nil, nil, err
 		}
 	}
+}
+
+// TryAcquirePreemptible takes the gate as a preemptible holder only when it
+// is free right now (idle consolidation: "取不到闸门就放弃本次"). ok is false
+// while anyone holds it; it never waits and never preempts.
+func (g sessionGate) TryAcquirePreemptible() (release func(), preempted <-chan struct{}, ok bool) {
+	g.r.gateMu.Lock()
+	defer g.r.gateMu.Unlock()
+	st := g.stateLocked()
+	if st.held {
+		return nil, nil, false
+	}
+	release = g.takeLocked(st, true)
+	return release, st.preempt, true
 }
 
 // HoldSessionLock reserves a session for the lifetime of an interactive chat

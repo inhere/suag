@@ -130,6 +130,12 @@ func (r *Runner) threshold() int {
 	return thresholdOf(window, reserve)
 }
 
+// ContextThreshold is the context size (tokens) at which a turn starts a new
+// segment. It depends only on the runner config, not on the session; chat
+// compares the last request's input tokens with it before an idle
+// consolidation (context.idle_min_ratio).
+func (r *Runner) ContextThreshold() int { return r.threshold() }
+
 // writeHandoff appends the handoff entry and inherits loaded tools into meta.
 func (r *Runner) writeHandoff(ctx context.Context, model Session, rec handoffRecord) error {
 	raw, err := json.Marshal(rec)

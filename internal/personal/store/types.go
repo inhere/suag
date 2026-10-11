@@ -53,6 +53,9 @@ const (
 	// EventTurnContext records what a turn starts with (model, mode, tool
 	// set, rules/memory snapshot hashes, taint); see D9.
 	EventTurnContext = "turn_context"
+	// EventSchedule records a host scheduler event (chat idle consolidation:
+	// name = task name, status and attrs.event = what happened).
+	EventSchedule = "schedule"
 )
 
 // Session is one conversation. Meta holds free-form keys (rules hash, append
