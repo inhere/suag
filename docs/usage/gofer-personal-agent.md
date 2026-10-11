@@ -101,6 +101,23 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 - `tools.shell_timeout_max`（缺省 600）：`shell_exec` 的 `timeout` 上限（秒）。
 - `mcp.call_timeout_sec`（缺省 120）：单次 MCP 工具调用的超时。
 
+另有三组工具，run、chat、ACP 均有：
+
+- `session_search`（全文检索过往消息、工具结果与摘要）与 `recall`（按 ref 读命中附近的消息，或读已外置输出的带行号文本）：只读，但结果算外部内容，用过即把会话标为已污染。
+- `suag_manifest`：以 JSON 返回能力清单，等同在主机上跑 `suag manifest --json`（模型、工具及元数据、MCP、skills、记忆后端及选择原因、输出上限）。
+- `memory`：长期记忆，见下节。
+
+### 输出治理
+
+工具结果超过 `tools.max_output_bytes`（缺省 8000）时，脱敏后的原文存到 `$SUAG_HOME/sessions/<会话 id>/outputs/`，会话里只有头尾各 2000 字节与 ref（`out:<session>:<hex>`），模型用 `recall` 分页读、用 `session_search`（带 `ref`）在其中检索；`file_read` 自己分页，不外置；出错结果不外置。输出外置不影响 stream-json 与 ACP 的事件格式。`tools.max_spill_bytes`（缺省 1 MiB）是单次原始输出的上限。`suag stats --json` 的 `tools` 项给出 `raw_bytes`、`inline_bytes`、`spilled`；`suag trace` 的 `turn_context` 行记录每回合的模型、模式、工具集哈希与是否已污染。
+
+### 记忆
+
+- 范围与后端：用户记忆在 `$SUAG_HOME/memory/user`；项目记忆后端的选择顺序为 `memory.project.backend` > 仓库根 `MEMORY.md`（files，条目在 `.suag/memory/<id>.md`）> 仓库根有 `.gofer/tracker` 时选 gofer > `$SUAG_HOME/projects/<key>/memory`。`memory.user.backend` / `memory.project.backend` 可选 `files`、`exec`（项目另可选 `gofer`），`exec` 需配 `memory.<scope>.command`（可选 `args`、`timeout_sec`）。完整字段见 `config/config.yaml`。
+- 仓库根有 `.gofer/tracker` 且没有 `MEMORY.md` 时，项目记忆自动选 gofer 后端：每条项目记忆写成带 `suag` 标签的 gofer memory（key 形如 `suag-<kind>-<id>`，来源 `suag:<session>`），**会进入该仓库所有 agent 的开场上下文**，所以应简短且对各 agent 都有用；suag 只管理 `suag` 标签条目，不读写、不删除其他 gofer memory。不想写进 gofer 时设 `memory.project.backend: files`。
+- 索引在会话开始时冻结进系统提示词，同会话写入下个会话可见，压缩后刷新。
+- 污染与确认：会话读过外部内容后（`web_fetch`、`web_search`、MCP 工具、`session_search`、`recall`，以及 `memory.taint_tools`、`memory.taint_on_spill`（缺省 `[shell_exec]`）列出的工具）写记忆需要确认，由 `memory.write_tainted`（`ask` 缺省 / `deny` / `allow`）决定。ACP 下确认走 `session/request_permission`（标题“memory: 会话读过外部内容，确认写入记忆”，可用 `gofer job interactions` / `answer` 处理）；`suag run` 没有交互，直接拒绝；chat 在终端询问。`--read-only` 与 ACP `read_only` mode 下 `memory` 只允许 `get`/`search`；`run` 默认模式可写记忆（它是 suag 自身状态，不是工作区写入）。`memory.write: off` 让工具整体只读。
+
 Suag 每个进程生成一次基础系统提示词（系统与 shell、工作区、只读或可写及开启写工具的方法、使用约定），放在项目规则之前；同一进程内逐字节不变。
 
 Gofer 中两种 `suag run` 用法：

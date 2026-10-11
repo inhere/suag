@@ -11,6 +11,9 @@ Suag 是用 Go 写的个人编码 Agent。同一个持久会话引擎提供两�
 - **Skills**：读取工作区和 `~/.agents/skills` 下标准的 `SKILL.md`，按需列出或检索。
 - **持久会话**：单个 SQLite 库，支持续接、自动压缩、计划、会话交接，以及用于 trace 和统计的事件记录。
 - **MCP**：接入 stdio MCP 服务，支持放行名单，工具多时延迟加载。
+- **持久记忆**：跨会话的用户与项目记忆，以 `MEMORY.md` 等文件为事实源，后端可换（files、gofer 或外部命令）。
+- **历史检索**：全文检索过往会话，并可分页读取已保存的工具输出。
+- **大输出外置**：超过阈值的工具结果存到会话目录，上下文只保留头尾与 ref。
 
 ## 安装
 
@@ -52,10 +55,11 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 |---|---|
 | `model` | 主模型，`<provider>/<model>`；可被 `SUAG_MODEL` 覆盖，再被 `--model` 覆盖 |
 | `providers.<id>` | `type`（openai/anthropic）、`base_url`、`api_key`、`headers`、`models.<model>.context_window` |
+| `providers.<id>.models.<model>.price` | 每百万 token 的美元价格（`input`、`output`、`cache_read`、`cache_write`）；provider 不返回成本时，`suag stats` 据此计算 |
 | `compact_model`、`fallback_models` | 生成摘要用的便宜模型；主模型失败时依次尝试的备用模型 |
 | `tools.allow_write` | 仅 chat：启用写文件和 shell 工具（默认 false） |
 | `tools.approval` | 仅 chat：`ask`（默认）执行写/shell 工具前询问，`auto` 不询问 |
-| `tools.max_output_bytes`、`tools.max_spill_bytes` | 单次工具结果完整写入会话的上限（默认 8000，超出时原文存 `sessions/<id>/outputs/`，会话只留 ref 与头尾片段）；单次工具原始输出上限（默认 1 MiB） |
+| `tools.max_output_bytes`、`tools.max_spill_bytes` | 内联阈值：单次工具结果完整写入会话的上限（默认 8000，超出时原文存 `$SUAG_HOME/sessions/<id>/outputs/`，会话只留 ref 与头尾片段）；单次工具原始输出上限（默认 1 MiB） |
 | `tools.shell`、`tools.shell_timeout_max` | 指定 shell（默认 Windows 用 pwsh/powershell，其他系统用 sh）；单条命令最长秒数（600） |
 | `tools.web_fetch.proxy`、`tools.web_fetch.allow_private` | `web_fetch` 使用的代理；允许访问内网地址 |
 | `tools.auto_allow`、`tools.read_only_allow` | MCP 放行名单，条目形如 `server/工具glob` |
@@ -63,6 +67,11 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `mcp.servers`、`mcp.call_timeout_sec` | 默认 MCP 服务；单次 MCP 调用超时（120） |
 | `skills.list_max`、`skills.always_load` | 超过此数量（15）后只列工作区 skills、其余靠检索；预加载正文的 skills |
 | `hooks.*` | chat 的 hook 命令（SessionStart、UserPromptSubmit、PostToolUse、Stop 等） |
+| `memory.write` | `auto`（默认）允许 `memory` 工具写入；`off` 时只读 |
+| `memory.write_tainted` | 读过外部内容的会话写记忆时的处理：`ask`（默认）、`deny`、`allow` |
+| `memory.user.backend`、`memory.project.backend` | `files`、`gofer`（仅项目）或 `exec`。不设时：用户记忆用 files，项目记忆自动选择（见[记忆](#记忆)） |
+| `memory.<scope>.command`、`.args`、`.timeout_sec` | 该范围后端为 `exec` 时要运行的外部命令（此时必填） |
+| `memory.taint_tools`、`memory.taint_on_spill` | 额外会让会话变为“已污染”的工具：每次结果都算，或仅在输出被存成文件时才算（默认 `[shell_exec]`） |
 | `serpapi_key` | 配置后启用 `web_search` |
 
 所有数据都在 `$SUAG_HOME/db/sessions.db`。模型与 provider 的细节见 [LLM 配置](docs/usage/llm-config-v0.md)。
@@ -78,12 +87,17 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `web_fetch` | 读 | 抓取网页正文（保留标题、链接、代码块）；拒绝内网和本机地址 |
 | `web_search` | 读 | SerpAPI 搜索（需 `serpapi_key`） |
 | `skill` | 读 | 加载 skill、读取其文件，或检索 skills（`query`；`"*"` 列出全部名字） |
+| `session_search` | 读 | 全文检索过往消息、工具结果与摘要（`scope`：workspace、current、all）；带 `ref=out:...` 时在那份已保存的输出内检索 |
+| `recall` | 读 | 按 ref 读取命中附近内容：`<session>/<seq>` 起的消息，或已保存输出 `out:<session>:<hex>` 的带行号文本 |
+| `suag_manifest` | 读 | 以 JSON 返回本实例的能力清单（与 `suag manifest` 相同） |
+| `memory` | 状态 | 对长期记忆 `add`、`replace`、`remove`、`get`、`search`（`scope` 为 project 或 user），见[记忆](#记忆) |
 | `file_write` | 写 | 整文件写入 |
 | `file_edit` | 写 | 替换一处唯一的字符串（`replace_all` 替换全部）；保留 CRLF |
 | `shell_exec` | 写 | 执行命令（Windows 用 PowerShell，其他系统用 `sh`），带超时；返回输出与退出码 |
 
 - **默认只读**：写工具只在 `run --allow-write`、chat 设置 `tools.allow_write: true`、或 ACP 会话处于 `default` 模式时才有；`--read-only` 永远优先。模型调用了未开启的工具时，会被告知开启方法，并计入拒绝次数。
 - **chat 先询问**：`tools.approval: ask` 时，每次写文件或执行命令前都会询问，并显示完整命令、路径或改动前后的文本。回答 `y` 允许一次，`a` 在本进程内对该工具始终允许，其他任何回答都是拒绝。一轮里被拒 3 次就结束这一轮。
+- **大输出**：工具结果超过 `tools.max_output_bytes` 时，脱敏后的原文存到 `$SUAG_HOME/sessions/<id>/outputs/`，上下文只留头尾（各 2000 字节）和 ref（形如 `out:<session>:<hex>`）；用 `recall` 读取，用 `session_search` 检索。`file_read` 自己分页，不会被外置。
 - **边界**：文件工具经 `os.OpenRoot` 访问，不会顺着 symlink 跑出工作区；`shell_exec` 超时会终止整个进程树；`web_fetch` 检查实际连接的 IP，跳转也一样受限；所有工具结果都有上限。
 - **MCP**：用 `--mcp-config <file>`（Claude 风格的 `mcpServers` JSON）或配置里的 `mcp.servers` 接入。MCP 调用默认一律拒绝，需在 `tools.auto_allow`（`--read-only` 时用 `tools.read_only_allow`）中放行。工具很多时会延迟加载，模型通过 `tool_search` 取用。
 
@@ -92,6 +106,15 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 ## Skills
 
 启动时扫描一次 `<工作区>/.agents/skills`、`<工作区>/skills` 和 `~/.agents/skills`，同名时工作区的优先。skills 数量不超过 `skills.list_max` 时全部列在系统提示词里；超过时只列工作区的，其余由模型用 `skill(query=…)` 检索。要让某个 skill 的正文每次都放进提示词，可在其 frontmatter 写 `metadata: {always_load: true}`，或把名字加进 `skills.always_load`。
+
+## 记忆
+
+跨会话共享的长期记忆，由模型通过 `memory` 工具写入。
+
+- **四类条目**：`user`（用户是谁、偏好）、`feedback`（纠正与确认过的做法）、`project`（代码里看不出的目标、决定、进展）、`reference`（外部资源在哪）。不记：能从代码或 git 推出的内容、规则文件已有的内容、本次会话的临时细节、密钥。流程类内容应写成 skill。
+- **范围与后端**：用户记忆在 `$SUAG_HOME/memory/user`（files）。项目记忆按顺序选后端：`memory.project.backend` 的配置；仓库根有 `MEMORY.md`（files，仓库模式）；仓库根有 `.gofer/tracker`（gofer）；否则用 `$SUAG_HOME/projects/<key>/memory` 下的 files。仓库模式下索引就是 `MEMORY.md`，每条记忆放在 `.suag/memory/<id>.md`，可随项目提交；根目录的 `MEMORY.md` 不会由 suag 创建。gofer 后端中每条项目记忆是带 `suag` 标签的 gofer memory，只管理这些条目。`suag manifest` 会显示选了哪个后端及原因。
+- **冻结的索引**：记忆索引（仅标题）在会话开始时放进系统提示词，此后不变；本会话写入的内容下个会话才可见，压缩后会刷新。正文用 `memory get` 读取。
+- **污染与确认**：会话一旦读过外部内容（`web_fetch`、`web_search`、MCP 工具、`session_search`、`recall`，以及 `memory.taint_tools` / `memory.taint_on_spill` 中的工具），就永久标记为已污染，此后写记忆需要确认（`memory.write_tainted`）：chat 在终端询问（`y`、`n`，`a` 表示本会话不再问），ACP 发权限请求，`run` 直接拒绝；`deny` 永不写入，`allow` 不询问。`--read-only`（及 ACP `read_only`）下该工具只读。普通 `run` 可以写记忆：它是 suag 自身的状态，不属于工作区写入。
 
 ## 会话
 
@@ -113,13 +136,17 @@ suag stats [--session <id>] [--since 7d] [--json] # 调用次数、耗时、toke
 suag export <session> [--redact] [-o <file>]      # 以 jsonl 导出会话内容与事件
 suag gc --older-than 30d [--apply]                # 列出（默认）或删除长期未活动的会话
 suag ps                                           # 正在运行的 chat 进程
+suag manifest [--json] [--model <p/m>]            # 模型、工具、MCP、skills、记忆后端、输出上限
 ```
+
+`suag trace` 每回合还会显示一行 `turn_context`（模型、模式、工具集哈希、规则与记忆索引哈希、是否已污染）。`suag stats` 显示各模型成本（provider 返回，或按配置的 `price` 计算）；加 `--json` 还有工具输出字节（`raw_bytes`、`inline_bytes`、`spilled`）。
 
 ## 开发
 
 ```bash
 go test -race ./...     # 单元测试
-make smoke-chat         # 伪终端端到端 chat 测试（Linux/macOS，需 Python 3）
+make smoke-chat         # 伪终端端到端 chat 测试，含 chat_memory（Linux/macOS，需 Python 3）
+go run ./scripts/eval --fake --bin tmp/smoke/suag   # 任务评测，见 scripts/eval/README.md
 make build-all          # 交叉编译到 dist/
 ```
 
@@ -127,6 +154,6 @@ make build-all          # 交叉编译到 dist/
 - `internal/wiring`：为 CLI 与 ACP 组装 provider、工具、skills、系统提示词和 runner。
 - `internal/personal`：回合、压缩、交接和事件；`internal/personal/store`：SQLite 存储。
 - `internal/chat`：终端对话；`internal/acpserver`：ACP 服务。
-- `pkg/agentcore`：应用层之下可复用的各层，不依赖 `internal/*`（[README](pkg/agentcore/README.md)）：内核（模型/工具循环、run 状态、transcript），以及 `llm`（各 provider）、`tools`（注册表、审批、延迟加载）、`tools/native`（内置工具）、`tools/mcp`（MCP 客户端）与 `skills`。
+- `pkg/agentcore`：应用层之下可复用的各层，不依赖 `internal/*`（[README](pkg/agentcore/README.md)）：内核（模型/工具循环、run 状态、transcript），以及 `llm`（各 provider）、`tools`（注册表、审批、延迟加载）、`tools/native`（内置工具）、`tools/mcp`（MCP 客户端）、`skills`、`memory`（存储接口、治理、路由；后端 `memory/files`、`memory/execstore`）、`redact`（密钥与隐形文本清理）和 `extproc`（外部命令的 exec 协议 v1 与凭据剥离）。
 
 版本变更见 [CHANGELOG.md](CHANGELOG.md)；设计与计划文档在 [docs/](docs/README.md)。CI 在 Ubuntu 和 Windows 上用 Go 1.26 和 stable 跑测试。旧的控制面（team、cron、orchestrator）保留在 `v0.1.0` 标签。

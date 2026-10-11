@@ -17,13 +17,16 @@
 应用层   suag internal/*: config, wiring, personal(+store), chat, acpserver, cli, hooks, output
             │ 只向下依赖
 能力层   agentcore/llm          OpenAI 兼容与 Claude provider、fallback 池
-         agentcore/tools        注册表、审批层、延迟加载（visibility）、工具元数据
-         agentcore/tools/native 内置工具：文件读写/搜索、shell、web、update_plan、tool_search、skill
+         agentcore/tools        注册表、审批层、延迟加载（visibility）、输出治理（Output/Spiller）、工具元数据
+         agentcore/tools/native 内置工具：文件读写/搜索、shell、web、update_plan、tool_search、skill、memory、session_search、recall、suag_manifest
          agentcore/tools/mcp    stdio MCP 客户端，工具以 MCP kind 注册
          agentcore/skills       SKILL.md 解析、多根目录加载与检索
+         agentcore/memory       长期记忆：Store 接口、Governed 治理层、Router 范围路由；memory/files、memory/execstore 两个内置后端
+         agentcore/redact       密钥脱敏（Secrets）与不可信文本清理（Clean）
+         agentcore/extproc      外部进程 exec 协议 v1 与去凭据环境（exec 记忆后端、MCP 子进程共用）
          agentcore/storage/files 文件存储；mock、testing 用于测试与一致性检查
             │
-内核     agentcore (根包) + agentcore/api：Runtime、契约类型、hooks、policies、内存默认存储
+内核     agentcore (根包) + agentcore/api：Runtime、契约类型（含 api.History）、hooks、policies、内存默认存储
 ```
 
 依赖只能自上而下。`layering_test.go` 守住边界：`pkg/agentcore` 下任何包（含测试）依赖了 `pkg/agentcore` 之外的 `github.com/inhere/suag/...` 即失败。根包不依赖能力层：不传 `Config.Tools` 时用私有空注册表，不传 `Config.Storage` 时用内存存储。
@@ -78,15 +81,27 @@ runtime := agentcore.New(agentcore.Config{
   - `tools.Kinded`（`Kind()`），缺省 native；读取用 `tools.KindOf(tool)`。
   - `tools.Describer`（`ToolMeta()`），声明中性类别（read/edit/execute/search/fetch/think）与只读标记；读取用 `tools.MetaOf(tool)`。
 - MCP 工具：`tools.IsMCP(tool)`、`tools.MCPServerOf(tool)`。`MetaOf` 对 MCP 工具一律返回“其他、非只读”，同名冒充内置工具也不会走只读快速路径。
-- 分层顺序：observe（宿主）→ `tools.Visibility`（延迟加载 MCP schema）→ `tools.Approval`（审批）→ `tools.Registry`。
+- 分层顺序：observe（宿主）→ `tools.Output`（输出治理）→ `tools.Visibility`（延迟加载 MCP schema）→ `tools.Approval`（审批）→ `tools.Registry`。
+- `tools.Output`：结果不超过 `InlineBytes` 原样通过；更大的结果交给宿主实现的 `tools.Spiller` 存下全文，上下文换成 ref 行加头尾片段（未配置 Spiller 时只截断）。错误结果不改写；`Meta.Rereadable` 的工具（自带分页，如 `file_read`、`recall`）不经外置。`Meta.External` 标记结果含外部内容（如 `web_fetch`、MCP 工具），宿主据此做污染标记；`Meta.AgentState` 标记写的是 agent 自身状态而非工作区（如 `memory`）。
+- `native.Env` 的 `InlineBytes`（内联阈值）与 `RawBytes`（单次原始输出上限）取代原 `MaxOutputBytes`。
 - 宿主把类别映射到自己的协议，例如 suag 的 ACP 服务把 `CategoryEdit` 映射为 `acp.ToolKindEdit`；ACP 概念不进入 agentcore。
+
+## 记忆
+
+`memory` 包提供长期记忆的抽象，不含任何产品策略：
+
+- `memory.Store`：`Index`、`Get`、`Write`（add/replace/remove）、`Search` 四个方法；条目分 user、feedback、project、reference 四类，范围为 user 或 project(key)。
+- `memory.Governed`：包在任意 `Store` 外的治理层，负责清理读写内容（`Policy.Sanitize`，宿主传 `redact.Clean`）、已污染会话写入前的确认（`Policy.Confirm`）、条目预算、来源与墓碑（`ProvenanceStore`）和事件回调。
+- `memory.Router`：按范围把请求分给不同后端。
+- 后端：`memory/files`（`MEMORY.md` 索引 + 一条一文件，`DirLayout` 与仓库内的 `RepoLayout`）、`memory/execstore`（经 `extproc` 调外部命令）。gofer 后端依赖 gofer CLI，属于应用层适配器，不在 agentcore 内。
+- 工具 `native.NewMemoryTool(store, opts)` 把 `Store` 暴露给模型；`native.NewSessionSearchTool` / `NewRecallTool` 经窄接口 `native.LedgerSearcher` 检索历史，由宿主实现。
 
 ## 核心契约
 
 - `Provider` 连接 LLM，返回 final answer 或 tool calls；实现 `Stream` 时转发增量文本。
 - `Storage` 保存 run snapshot 与 append-only transcript，是恢复和审计的事实来源；可选 `ArtifactStorage`。
 - `ToolRegistry` 暴露 tool schema 并执行工具调用。
-- `PromptBuilder` 生成 system prompt；`ContextBuilder` 组装发给模型的消息（未提供时走 `Memory.BuildContext`，默认 `Memory` 原样使用完整 transcript）。
+- `PromptBuilder` 生成 system prompt；`ContextBuilder` 组装发给模型的消息（未提供时走 `History.BuildContext`，默认 `History` 原样使用完整 transcript）。`api.History`（`Config.History`）是上下文工程层，原名 `api.Memory`，因“记忆”改指长期记忆而改名。
 - `Hook` 拦截生命周期节点；`ResumePolicy`、`ToolExecutionPolicy`、`ErrorPolicy` 定制恢复、工具错误与可恢复错误的处理。
 - `ToolResult.IsError` 标记失败或被拒绝的工具调用，provider 据此告诉模型（如 Claude `tool_result.is_error`）。
 - `api.Usage.Add` 累加用量。

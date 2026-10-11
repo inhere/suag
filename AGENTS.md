@@ -8,6 +8,7 @@
 - 个人 Agent 的构建与命令以 `README.md` 为准；Gofer CLI/ACP 接入见 `docs/usage/gofer-personal-agent.md`。
 - 设计与实施依据：内置工具与 skills 见 `docs/design/2026-10-10-dev-tools-and-skills-design.md` 与 `docs/plans/2026-10-10-dev-tools-and-skills-plan.md`；配置分层与 chat 见 `docs/design/2026-10-09-config-layering-chat-design.md` 与对应计划（2026-10-08 的 core-capabilities 与 2026-10-06 的 personal-agent-redesign 设计/计划保留为历史）；配置格式见 `docs/usage/llm-config-v0.md`；旧控制面代码见 `v0.1.0` tag。
 - 分层：`pkg/agentcore`（内核 + llm/tools/native/mcp/skills 能力层）不得依赖 `internal/*`，`pkg/agentcore/layering_test.go` 守住；依据见 `docs/design/2026-10-10-agentcore-layering-design.md` 与对应计划，删除与迁移记录见 `docs/archive/removed-2026-10.md`。
+- 状态、记忆与可扩展性（记忆、历史检索、输出治理、manifest、评测）：设计 `docs/design/2026-10-10-state-memory-extensibility-design.md`，计划 `docs/plans/2026-10-11-state-memory-extensibility-plan.md`；用法见 `README.md` 的“Memory”一节。
 - 任务与进度用 `gofer issue`（数据在 `.gofer/tracker`）和 `gofer plan` 跟踪，经验用 `gofer memory`；阶段结果以 issue/plan 状态和实际验证证据为准。
 
 ## 验证

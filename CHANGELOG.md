@@ -4,9 +4,31 @@
 
 ## [未发布]
 
+状态、记忆与可扩展性。依据见 [设计](docs/design/2026-10-10-state-memory-extensibility-design.md) 与 [计划](docs/plans/2026-10-11-state-memory-extensibility-plan.md)。
+
+### 新增
+
+- 长期记忆：`memory` 工具（`add`、`replace`、`remove`、`get`、`search`），四类条目（user、feedback、project、reference），范围为用户与项目。后端可选 files、gofer、exec（外部命令，exec 协议 v1）；项目后端按 `memory.project.backend` > 仓库根 `MEMORY.md` > `.gofer/tracker`（gofer）> `$SUAG_HOME/projects/<key>/memory` 选择。仓库模式下索引是仓库根 `MEMORY.md`，条目在 `.suag/memory/<id>.md`。记忆索引在会话开始时冻结进系统提示词，压缩后刷新。配置见 `memory.*`。
+- 历史检索：`session_search` 全文检索过往会话（消息、工具结果、压缩摘要），`recall` 按 ref 读取命中附近的内容。
+- 输出治理：超过 `tools.max_output_bytes` 的工具结果存到 `$SUAG_HOME/sessions/<id>/outputs/`，上下文只留头尾与 ref；新增 `tools.max_spill_bytes` 限制单次原始输出（含 MCP 工具）。`suag stats --json` 增加工具输出字节。
+- 污染标记：会话读过外部内容（`web_fetch`、`web_search`、MCP、检索结果，以及 `memory.taint_tools` / `memory.taint_on_spill` 配置的工具，后者缺省含 `shell_exec`）后即标记为已污染；此后写记忆需确认（`memory.write_tainted`）：chat 询问、ACP 权限请求、`run` 拒绝。
+- `suag manifest [--json]` 与 `suag_manifest` 工具：列出模型、工具及元数据、MCP、skills、记忆后端及选择原因、输出上限。
+- 模型价格与成本：`providers.<id>.models.<model>.price`，provider 不返回成本时 `suag stats` 与 ACP `usage_update` 据此计算。
+- `suag trace` 记录每回合的 `turn_context`（模型、模式、工具集哈希、规则与记忆索引哈希、是否已污染）。
+- 评测脚本 `go run ./scripts/eval`（见 `scripts/eval/README.md`），`make smoke-chat` 增加 chat_memory 场景。
+
 ### 变更
 
+- 工具输出默认策略：`tools.max_output_bytes` 现在是“内联阈值”，默认由 30000 改为 8000；超过的结果不再被截断丢弃，而是存为文件并可用 `recall` 读取。
+- 密钥脱敏下沉到 `pkg/agentcore/redact`，并统一清理不可见字符、HTML 注释与伪装标签；MCP 与 exec 后端共用 `pkg/agentcore/extproc` 的去凭据环境。
 - 最低 Go 版本提升到 1.26；依赖升级：`modernc.org/sqlite` v1.60.1、`golang.org/x/sys` v0.49.0、`x/net` v0.59.0、`x/term` v0.46.0、`x/text` v0.42.0。CI 改在 Go 1.26 与 stable 上运行。
+
+### 不兼容
+
+- `api.Memory` 改名为 `api.History`（`Config.History`、`HistoryError`、`ErrHistoryStateConflict`），仅影响嵌入 `pkg/agentcore` 的宿主；“Memory”一词改指长期记忆。
+- `tools.max_output_bytes` 默认值 30000 改为 8000，含义改为内联阈值（见上）；依赖旧默认值的配置会更早触发外置，需要更大内联结果时显式调高。
+- `native.Env.MaxOutputBytes` 拆为 `InlineBytes`（内联阈值）与 `RawBytes`（单次原始输出上限），仅影响嵌入 `pkg/agentcore` 的宿主。
+- MCP 的 `env.go`（去凭据环境）移入 `pkg/agentcore/extproc`，仅影响直接引用该实现的嵌入方。
 
 ## [0.9.1] - 2026-10-10
 

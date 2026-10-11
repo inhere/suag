@@ -121,6 +121,31 @@ tools:
   #   - gofer/gofer_work_report
   #   - gofer/gofer_session_list
 
+# Long-term memory (the memory tool). All keys are optional.
+# memory:
+#   write: auto            # auto (default) | off: the memory tool becomes read-only
+#   # A session that read external content (web_fetch, web_search, MCP tools,
+#   # session_search, recall, ...) is tainted. Its memory writes: ask (default:
+#   # chat asks, ACP sends a permission request, run refuses) | deny | allow.
+#   write_tainted: ask
+#   # Extra tools that taint the session: on every result / only when their
+#   # output was saved to a file. shell_exec is the default of taint_on_spill.
+#   taint_tools: []
+#   taint_on_spill: [shell_exec]
+#   user:
+#     backend: files       # files (default, $SUAG_HOME/memory/user) | exec
+#   project:
+#     # Unset: MEMORY.md at the repository root -> files (repository mode,
+#     # entries in .suag/memory/); else .gofer/tracker there -> gofer; else
+#     # files under $SUAG_HOME/projects/<key>/memory. Set to force one:
+#     backend: files       # files | gofer | exec
+#   # exec backend (per scope; the command is required and is never discovered):
+#   # user:
+#   #   backend: exec
+#   #   command: my-memory-store
+#   #   args: ["--db", "/path/to/store"]
+#   #   timeout_sec: 10
+
 # Chat hooks. Disabled unless hooks.command is set; SUAG_HOOKS=off disables
 # them regardless. The command is an argv list (no shell) and receives each
 # event as one JSON line on stdin.
