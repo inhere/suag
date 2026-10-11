@@ -70,6 +70,30 @@ func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 	})
 }
 
+// TestToolSchemasDeclareProperties guards against zero-argument schemas:
+// some OpenAI-compatible gateways turn an empty "properties" object into null
+// and reject the whole request (seen with suag_manifest on opencode-go).
+func TestToolSchemasDeclareProperties(t *testing.T) {
+	resetConfig(t)
+	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k"}})
+	assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
+	assert.NoErr(t, gkconfig.Set("serpapi_key", "k"))
+
+	for _, write := range []bool{false, true} {
+		rt, err := OpenCLI(context.Background(), Options{AllowWrite: write})
+		assert.Require(t, assert.NoErr(t, err))
+		t.Cleanup(func() { _ = rt.Close() })
+		schemas, err := rt.Registry.ListTools(context.Background())
+		assert.Require(t, assert.NoErr(t, err))
+		assert.NotEmpty(t, schemas)
+		for _, s := range schemas {
+			assert.Eq(t, "object", s.InputSchema["type"], s.Name)
+			props, _ := s.InputSchema["properties"].(map[string]any)
+			assert.True(t, len(props) > 0, "%s declares no properties", s.Name)
+		}
+	}
+}
+
 func TestWebSearchIsARegisteredReadTool(t *testing.T) {
 	resetConfig(t)
 	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k"}})

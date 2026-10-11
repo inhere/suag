@@ -33,6 +33,20 @@ func TestManifestTool(t *testing.T) {
 		assert.NoErr(t, json.Unmarshal([]byte(res.Content), &got))
 		assert.Eq(t, "1.2.3", got["version"])
 	})
+	t.Run("section returns one top-level key", func(t *testing.T) {
+		tool := NewManifestTool(func(context.Context) (any, error) {
+			return map[string]any{"version": "1.2.3", "tools": []string{"a"}}, nil
+		})
+		res, err := tool.Execute(context.Background(), api.ToolCall{CallID: "c2", Arguments: map[string]any{"section": "tools"}})
+		assert.Require(t, assert.NoErr(t, err))
+		var got []string
+		assert.NoErr(t, json.Unmarshal([]byte(res.Content), &got))
+		assert.Eq(t, []string{"a"}, got)
+
+		_, err = tool.Execute(context.Background(), api.ToolCall{CallID: "c3", Arguments: map[string]any{"section": "nope"}})
+		assert.Err(t, err)
+		assert.StrContains(t, err.Error(), "tools, version")
+	})
 	t.Run("string value is passed through", func(t *testing.T) {
 		res, err := NewManifestTool(func(context.Context) (any, error) { return `{"a":1}`, nil }).Execute(context.Background(), call)
 		assert.NoErr(t, err)

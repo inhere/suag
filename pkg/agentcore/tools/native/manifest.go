@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/inhere/suag/pkg/agentcore/api"
 	"github.com/inhere/suag/pkg/agentcore/tools"
@@ -41,7 +43,18 @@ func (t *ManifestTool) Schema() api.ToolSchema {
 	return api.ToolSchema{
 		Name:        t.Name(),
 		Description: t.Description(),
-		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+		// An optional parameter keeps "properties" non-empty: some
+		// OpenAI-compatible gateways turn an empty properties object into
+		// null and reject the whole request.
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"section": map[string]any{
+					"type":        "string",
+					"description": "Optional top-level section to return, e.g. models, tools, memory, output; empty returns everything",
+				},
+			},
+		},
 	}
 }
 
@@ -53,11 +66,38 @@ func (t *ManifestTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	if err != nil {
 		return nil, fmt.Errorf("suag_manifest: %w", err)
 	}
+	section, _ := call.Arguments["section"].(string)
+	section = strings.TrimSpace(section)
 	var text string
 	switch x := v.(type) {
 	case string:
+		if section != "" {
+			return nil, errors.New("suag_manifest: section is not supported by this manifest source")
+		}
 		text = x
 	default:
+		if section != "" {
+			// Round-trip through JSON so the section names match the keys
+			// the full output shows.
+			var all map[string]any
+			b, err := json.Marshal(v)
+			if err == nil {
+				err = json.Unmarshal(b, &all)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("suag_manifest: encode: %w", err)
+			}
+			part, ok := all[section]
+			if !ok {
+				keys := make([]string, 0, len(all))
+				for k := range all {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				return nil, fmt.Errorf("suag_manifest: unknown section %q (have: %s)", section, strings.Join(keys, ", "))
+			}
+			v = part
+		}
 		b, err := json.MarshalIndent(v, "", "  ")
 		if err != nil {
 			return nil, fmt.Errorf("suag_manifest: encode: %w", err)
