@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 会话分段与上下文投影（第二期） 设计
 
-> 状态：Draft 0.2 / 待人工计划批准
+> 状态：Draft 0.3 / 已批准进入计划（2026-10-11 用户：“批准设计 0.2”，Q1 补充“再加个到 ctx 50% 以上才触发（这里应该要加定时吧 - 定时/延迟功能对后续的自我触发等很重要，要封装好）”，其他按推荐；0.3 按此补充定时组件）
 
 ## 修订记录
 
@@ -9,6 +9,7 @@
 |---|---|---|---|
 | 0.1 | 2026-10-11 | Claude | 初稿 |
 | 0.2 | 2026-10-11 | Claude | 按合并评审修订：段上下文与交接包写入段起始记录、沿用回合采纳规则，meta 只作缓存，旧 handoff 视为第 0 段（CB1）；段内更新改为 user 角色并持久化回放，生效规则以段记录 + 已采纳更新为准，hook 系统上下文改为 user 角色，删除 promptStale/memoryPromptHook（CB2）；用量改为每次模型调用后输出累计，ACP 区分本 run 与会话累计（CB3）；Runner 按会话单飞，段记录为唯一提交点，覆盖 `:compact` 与 Stop hook（CB4）；稳定前缀只含身份与工作约定，skills 列表移入段上下文；W0 先做前缀缓存探针、W1 以其结果为门槛；Claude 断点改放在段上下文末尾与最后一条消息；交接包带最近 N 条用户请求 |
+| 0.3 | 2026-10-11 | Claude | 按用户批准时的补充：新增通用进程内定时组件 `pkg/agentcore/schedule`（延迟、周期、空闲触发，可取消、可注入时钟、有事件），空闲整理基于它实现，为后续自我触发（people 第二循环、提醒）复用；Q1–Q5 记为已决 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -40,6 +41,7 @@
 - **上下文更新**：段内规则或附加提示变化时追加的 user 角色消息，作为 `context_update` 条目持久化并回放。
 - **断点**：允许重建投影的时刻：会话开始、达到阈值、手动 `:compact`、空闲整理、跨会话 `--from`。
 - **会话单飞**：Runner 对同一会话的 Run、Compact、空闲整理同一时刻只允许一个在执行。
+- **定时组件**：进程内的通用定时与延迟触发能力（一次性延迟、周期、空闲触发），任务带名字、可取消与重置、可注入时钟、产生事件；空闲整理是它的第一个使用者，后续的自我触发复用它。
 
 ## 范围与非目标
 
@@ -48,7 +50,7 @@
 - **W0 观测、探针与评测**：前缀缓存探针（证实网关缓存“system + tools”前缀）；每次模型调用后输出累计用量（stream-json 新增 `type:"usage"` 行，`turn_end`/`result` 同名字段，含 `cache_read_tokens`、`cache_write_tokens`、`tool_calls`）；ACP 中途发 `usage_update`，`_meta` 区分本 run 与会话累计；评测支持多轮任务与“首次请求未命中缓存的输入”指标（含 omp 一侧）。
 - **W1 稳定前缀**（以 W0 探针结果为门槛）：系统提示词只保留身份与工作约定；环境、规则、记忆索引、skills 列表、附加提示、延迟工具列表移入段上下文；段内更新改为持久化的 user 角色上下文更新；hook 系统上下文改为 user 角色；Claude provider 的 `system` 改为 block 数组并在段上下文末尾与最后一条消息加 `cache_control`（先验证网关接受）。
 - **W2 分段交接**：阈值与手动 `:compact` 改为开启新段：段起始记录、面向当前任务的交接包、旧 handoff 视为第 0 段；trace 显示分段。
-- **W3 空闲整理**：chat 进程内计时；会话单飞；段起始记录为唯一提交点；状态行提示。
+- **W3 定时组件与空闲整理**：新建 `pkg/agentcore/schedule`（见“定时组件”）；chat 用它做空闲计时；会话单飞；段起始记录为唯一提交点；状态行提示。
 - **W4 文档**：README、配置样例、CHANGELOG。
 
 非目标：只读子 agent；权限与信任档位；编辑工具稳健性与文件检查点；空闲时提炼记忆候选；people（suag-frgt）；tool_search 加载 MCP 工具导致的工具数组变化（低频，接受其缓存失效）；跨进程或由 gofer 触发的空闲整理。
@@ -95,7 +97,8 @@ W0 先用探针确认 OpenAI 兼容网关（opencode-go → DeepSeek）对“sys
 | `internal/personal/store/types.go` | `context_update` 语义改为“回放”，更新注释 |
 | `pkg/agentcore/llm/claude.go` | `system` 改为 block 数组；在段上下文消息末尾与最后一条消息加 `cache_control`（W0 验证网关接受后启用） |
 | `internal/output`、`internal/acpserver` | 每次模型调用后的累计用量输出；ACP 中途 `usage_update`，`_meta` 区分 run / session |
-| `internal/chat` | 空闲计时、后台分段、取消、状态行；`:compact` 与回合开始先取消再等待 |
+| `pkg/agentcore/schedule`（新） | 通用进程内定时组件，只依赖标准库 |
+| `internal/chat` | 用定时组件注册空闲任务、后台分段、取消、状态行；`:compact` 与回合开始先取消再等待 |
 | `scripts/eval` | 多轮任务（`prompts` 列表）；首次请求未命中指标（suag 取 trace 首个成功的主模型调用，omp 取首个 message_end） |
 
 agentcore 内核不变：段上下文消息、上下文更新都是宿主 `ContextBuilder` 产生的普通消息。
@@ -142,6 +145,25 @@ agentcore 内核不变：段上下文消息、上下文更新都是宿主 `Conte
 键盘输入、投递、Stop hook 产生回合、`:compact`：先取消再等待单飞释放，然后照常执行
 ```
 
+**定时组件（`pkg/agentcore/schedule`）**
+
+```go
+type Scheduler interface {
+	After(name string, d time.Duration, fn Func) Handle              // 一次性延迟
+	Every(name string, d time.Duration, fn Func) Handle              // 周期
+	Idle(name string, d time.Duration, fn Func) Handle               // 空闲触发：Touch 重置，到点触发一次后等待下一次空闲
+	Touch()                                                           // 有活动：重置所有 Idle 任务的计时
+	Close() error                                                     // 取消全部任务并等待运行中的结束
+}
+type Func func(ctx context.Context) error                           // ctx 在 Cancel/Close 时取消
+type Handle interface{ Cancel(); Reset() }
+```
+
+- 同名任务重复注册时替换旧任务；同一任务不会并发执行（上一次没结束则跳过本次并记事件）。
+- 选项：注入时钟（测试用假时钟，不睡眠）、`Observe` 事件回调（scheduled / fired / skipped / cancelled / done / failed，带任务名与耗时），宿主把事件写进 events 表，trace 可见。
+- 只在进程内，不持久化；需要跨进程或持久的计划（如 people 的长期提醒）时再加可选的持久层，不在本期。
+- chat 的空闲整理：`Idle("idle-consolidate", context.idle_after, fn)`，每次输入、回合开始、`:compact` 调用 `Touch()`；fn 内先检查上下文比例（≥ `context.idle_min_ratio`，默认 0.5）再进入分段入口。
+
 **用量（W0）**：每次模型调用结束（AfterModel）输出一行累计用量（本次 run 至此，含缓存与 `tool_calls`）；`turn_end` 与 `result` 带同名字段，`result` 最后覆盖。ACP 在同一时机发 `usage_update`，`_meta` 中给出 `run` 与 `session` 两组累计，并与 gofer 约定预算取 `run`。
 
 ## 安全、数据、运维与回滚
@@ -164,17 +186,18 @@ agentcore 内核不变：段上下文消息、上下文更新都是宿主 `Conte
 | D6 | 空闲整理只在 chat 进程内计时，默认 15 分钟、上下文达阈值 50% | 用户决定；空闲超过缓存有效期后前缀已冷，整理几乎不额外损失缓存 |
 | D7 | W1 以 W0 前缀缓存探针为门槛；Claude 断点放在段上下文末尾与最后一条消息 | 先证实收益再搬内容；Claude 前缀顺序为 tools → system → messages |
 | D8 | 每次模型调用后输出累计用量，ACP 区分 run 与 session | 预算中途生效（评审 CB3）；与 gofer 约定字段 |
+| D9 | 定时能力封装为通用组件 `pkg/agentcore/schedule`，空闲整理是第一个使用者 | 用户要求“定时/延迟功能对后续的自我触发等很重要，要封装好”；people 的第二循环、提醒都需要 |
 
 ## 待确认事项
 
-| ID | 问题 | 推荐 |
+| ID | 问题 | 结论 |
 |---|---|---|
-| Q1 | 空闲阈值默认值 | 15 分钟（`context.idle_after`，`0` 关闭） |
-| Q2 | 新段保留多少原始内容 | 只保留最后一组完整的工具调用/结果；其余靠交接包与 ref |
-| Q3 | 段内规则变化时追加全文还是提示 | 追加全文，下一段并入段上下文 |
-| Q4 | `:compact` 的名字 | 保留 `:compact`，行为改为开启新段 |
-| Q5 | 交接包带几条最近的用户请求 | 3 条（跳过 Stop hook 注入与“继续”类短句） |
+| Q1 | 空闲阈值默认值 | 已决：15 分钟（`context.idle_after`，`0` 关闭），且上下文达阈值 50% 以上（`context.idle_min_ratio`）才触发；定时能力封装为通用组件（D9） |
+| Q2 | 新段保留多少原始内容 | 已决（按推荐）：只保留最后一组完整的工具调用/结果；其余靠交接包与 ref |
+| Q3 | 段内规则变化时追加全文还是提示 | 已决（按推荐）：追加全文，下一段并入段上下文 |
+| Q4 | `:compact` 的名字 | 已决（按推荐）：保留 `:compact`，行为改为开启新段 |
+| Q5 | 交接包带几条最近的用户请求 | 已决（按推荐）：3 条（跳过 Stop hook 注入与“继续”类短句） |
 
 ## 结论与人工计划 Gate
 
-本设计确立第二期范围（W0–W4），合并评审的 4 条阻塞问题已在 0.2 处理。批准后写实施计划，计划同样需要批准后才实施。批准语句示例：“批准设计 0.2，Q1–Q5 按推荐”。
+本设计确立第二期范围（W0–W4），合并评审的 4 条阻塞问题已在 0.2 处理，0.3 按用户批准时的补充加入定时组件。已批准进入计划；计划需要单独批准后才实施。
