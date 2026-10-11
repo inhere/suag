@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -193,6 +192,9 @@ func TestStreamJSONUsageLinesPerModelCall(t *testing.T) {
 
 // End to end through the real flag parser: an explicit empty value (both
 // "--flag ”" and "--flag=") clears the saved append prompt; an absent flag keeps it.
+// The append prompt flags of one session: the first run freezes "saved" in the
+// segment context; later runs append a context update only when the effective
+// value changes (what the model sees; session meta only caches the segment).
 func TestAppendSystemPromptCanBeClearedFromCLI(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
@@ -206,39 +208,63 @@ func TestAppendSystemPromptCanBeClearedFromCLI(t *testing.T) {
 	t.Chdir(workspace)
 	_ = gkconfig.Set("workspace", workspace)
 	_ = gkconfig.Set("model", "openai/m")
+	var mu sync.Mutex
+	var last []string // user message contents of the latest request
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		last = last[:0]
+		for _, m := range body.Messages {
+			if m.Role == "user" {
+				last = append(last, m.Content)
+			}
+		}
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`)
 	}))
 	t.Cleanup(server.Close)
 	setTestProvider(t, server.URL)
 
-	run := func(extra ...string) {
+	const cleared = "附加提示已清除"
+	// run returns the segment context and the context updates the model saw.
+	run := func(extra ...string) (segment string, updates []string) {
 		t.Helper()
 		args := append([]string{"--prompt", "hi", "--read-only", "--session-id", "clear-cli"}, extra...)
 		assert.NoErr(t, RunPersonalCLI(context.Background(), "run", args, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}))
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range last {
+			if strings.HasPrefix(c, "# 上下文更新") {
+				updates = append(updates, c)
+			}
+		}
+		return last[0], updates
 	}
-	stored := func() any {
-		t.Helper()
-		repo, err := store.Open(filepath.Join(home, ".suag", "db", "sessions.db"))
-		assert.NoErr(t, err)
-		defer repo.Close()
-		model, err := repo.GetSession(context.Background(), "clear-cli")
-		assert.NoErr(t, err)
-		return model.Meta["personal_append_prompt"]
-	}
-	run("--append-system-prompt", "saved")
-	assert.Eq(t, "saved", stored())
-	run() // absent flag keeps the saved prompt
-	assert.Eq(t, "saved", stored())
-	run("--append-system-prompt", "") // empty keeps it: Gofer renders an unset system prompt as ""
-	assert.Eq(t, "saved", stored())
-	run("--clear-append-system-prompt")
-	assert.Eq(t, "", stored())
-	run("--append-system-prompt", "again")
-	assert.Eq(t, "again", stored())
-	run("--clear-append-system-prompt", "--append-system-prompt", "") // the Gofer argv shape still clears
-	assert.Eq(t, "", stored())
+	segment, updates := run("--append-system-prompt", "saved")
+	assert.StrContains(t, segment, "saved")
+	assert.Eq(t, 0, len(updates))
+	_, updates = run() // absent flag keeps the saved prompt
+	assert.Eq(t, 0, len(updates))
+	_, updates = run("--append-system-prompt", "") // empty keeps it: Gofer renders an unset system prompt as ""
+	assert.Eq(t, 0, len(updates))
+	_, updates = run("--clear-append-system-prompt")
+	assert.Require(t, assert.Eq(t, 1, len(updates)))
+	assert.StrContains(t, updates[0], cleared)
+	_, updates = run("--append-system-prompt", "again")
+	assert.Require(t, assert.Eq(t, 2, len(updates)))
+	assert.StrContains(t, updates[1], "again")
+	_, updates = run("--clear-append-system-prompt", "--append-system-prompt", "") // the Gofer argv shape still clears
+	assert.Require(t, assert.Eq(t, 3, len(updates)))
+	assert.StrContains(t, updates[2], cleared)
+	_, updates = run() // nothing changes any more
+	assert.Eq(t, 3, len(updates))
 }
 
 // Gofer contract: a missing --resume target or --from source exits 4 with a

@@ -65,12 +65,13 @@ func TestMemorySnapshotFrozenPerSession(t *testing.T) {
 	src := &memorySource{text: memoryLine("first-title")}
 	runner := newMemoryRunner(t, repo, prov, src)
 
-	t.Run("new session prompt has the index after the rules", func(t *testing.T) {
+	t.Run("new session's segment context has the index after the rules", func(t *testing.T) {
 		model, err := runner.NewSession(ctx, "mem-a", "t")
 		assert.Require(t, assert.NoErr(t, err))
 		_, err = runner.Run(ctx, RunRequest{SessionID: model.ID, Prompt: "one"})
 		assert.Require(t, assert.NoErr(t, err))
-		system := prov.requests[0].System
+		assert.NotContains(t, prov.requests[0].System, "## 记忆索引")
+		system := segmentText(prov.requests[0])
 		assert.StrContains(t, system, "## 记忆索引")
 		assert.StrContains(t, system, "- note (user): first-title")
 		assert.True(t, strings.Index(system, "RULES-TEXT") < strings.Index(system, "## 记忆索引"))
@@ -80,7 +81,8 @@ func TestMemorySnapshotFrozenPerSession(t *testing.T) {
 		src.set(memoryLine("second-title"), nil)
 		_, err := runner.Run(ctx, RunRequest{SessionID: "mem-a", Prompt: "two"})
 		assert.Require(t, assert.NoErr(t, err))
-		assert.Eq(t, prov.requests[0].System, prov.requests[1].System)
+		assert.Eq(t, segmentText(prov.requests[0]), segmentText(prov.requests[1]))
+		assert.Eq(t, 0, countUpdates(prov.requests[1].Messages))
 		assert.Eq(t, 1, src.count())
 	})
 	t.Run("turn_context carries the snapshot hash", func(t *testing.T) {
@@ -100,41 +102,53 @@ func TestMemorySnapshotFrozenPerSession(t *testing.T) {
 		res, err := runner.Run(ctx, RunRequest{Prompt: "three"})
 		assert.Require(t, assert.NoErr(t, err))
 		assert.NotEq(t, "mem-a", res.SessionID)
-		assert.StrContains(t, prov.requests[2].System, "second-title")
+		assert.StrContains(t, segmentText(prov.requests[2]), "second-title")
 	})
 	t.Run("empty memory still explains the tool", func(t *testing.T) {
 		assert.StrContains(t, renderMemorySection(""), memoryIndexEmpty)
 	})
 }
 
+// A segment without a memory index (the session predates memory, or the
+// snapshot failed when the segment started) gets it through one context
+// update - the segment record itself is never rewritten (T6 choice; the
+// alternative "no index until the next segment" was rejected because the
+// model would miss memory for a whole segment).
 func TestMemorySnapshotBackfillAndFailure(t *testing.T) {
 	ctx := context.Background()
 	repo := openObserveRepo(t)
 	prov := &rulesProvider{}
 
-	t.Run("old session gets a snapshot on its first turn", func(t *testing.T) {
+	t.Run("old session gets the index as a context update on its first turn", func(t *testing.T) {
 		old := newMemoryRunner(t, repo, prov, nil)
 		res, err := old.Run(ctx, RunRequest{Prompt: "before memory"})
 		assert.Require(t, assert.NoErr(t, err))
-		assert.NotContains(t, prov.requests[0].System, "## 记忆索引")
-		stored, _ := repo.GetSession(ctx, res.SessionID)
-		_, has := stored.Meta[metaMemoryIndexHash]
-		assert.False(t, has)
+		assert.NotContains(t, segmentText(prov.requests[0]), "## 记忆索引")
+		startHash := segmentRecords(t, repo, res.SessionID)[0].Context.Hash
 
 		src := &memorySource{text: memoryLine("backfilled")}
 		runner := newMemoryRunner(t, repo, prov, src)
 		_, err = runner.Run(ctx, RunRequest{SessionID: res.SessionID, Prompt: "after"})
 		assert.Require(t, assert.NoErr(t, err))
-		assert.StrContains(t, prov.requests[1].System, "backfilled")
-		stored, _ = repo.GetSession(ctx, res.SessionID)
-		assert.StrContains(t, metaString(stored.Meta, metaMemoryIndexContent), "backfilled")
+		req := prov.requests[1]
+		assert.NotContains(t, segmentText(req), "backfilled")
+		assert.Eq(t, 1, countUpdates(req.Messages))
+		assert.StrContains(t, updateTexts(req.Messages), "backfilled")
+		// The start record is untouched; the update carries the index.
+		recs := segmentRecords(t, repo, res.SessionID)
+		assert.Eq(t, 1, len(recs))
+		assert.Eq(t, startHash, recs[0].Context.Hash)
+		eff := effectiveOf(t, runner, res.SessionID)
+		assert.StrContains(t, eff.MemoryIndex, "backfilled")
 		events := eventsOf(t, repo, res.SessionID, store.EventTurnContext)
 		assert.Eq(t, "", events[0].Attrs["memory_hash"])
-		assert.Eq(t, metaString(stored.Meta, metaMemoryIndexHash), events[1].Attrs["memory_hash"])
-		// Only once: the next turn keeps the snapshot.
+		assert.Eq(t, eff.MemoryHash, events[1].Attrs["memory_hash"])
+		// Only once: the next turn replays the update and reads nothing.
 		_, err = runner.Run(ctx, RunRequest{SessionID: res.SessionID, Prompt: "again"})
 		assert.NoErr(t, err)
 		assert.Eq(t, 1, src.count())
+		assert.Eq(t, 1, countUpdates(prov.requests[2].Messages))
+		assert.Eq(t, 1, len(contextUpdateEntries(t, repo, res.SessionID)))
 	})
 	t.Run("a failing source does not affect the turn", func(t *testing.T) {
 		src := &memorySource{err: errors.New("backend down")}
@@ -142,29 +156,29 @@ func TestMemorySnapshotBackfillAndFailure(t *testing.T) {
 		res, err := runner.Run(ctx, RunRequest{Prompt: "q"})
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, "ok", res.Output)
-		system := prov.requests[len(prov.requests)-1].System
-		assert.NotContains(t, system, "## 记忆索引")
-		assert.StrContains(t, system, "RULES-TEXT")
-		stored, _ := repo.GetSession(ctx, res.SessionID)
-		_, has := stored.Meta[metaMemoryIndexHash]
-		assert.False(t, has)
-		// The next turn retries and freezes the snapshot once it works.
+		req := prov.requests[len(prov.requests)-1]
+		assert.NotContains(t, segmentText(req), "## 记忆索引")
+		assert.StrContains(t, segmentText(req), "RULES-TEXT")
+		assert.Eq(t, 0, countUpdates(req.Messages))
+		assert.Eq(t, "", segmentRecords(t, repo, res.SessionID)[0].Context.MemoryHash)
+		// The next turn retries and appends the index once it works.
 		src.set(memoryLine("recovered"), nil)
 		_, err = runner.Run(ctx, RunRequest{SessionID: res.SessionID, Prompt: "q2"})
 		assert.NoErr(t, err)
-		assert.StrContains(t, prov.requests[len(prov.requests)-1].System, "recovered")
+		assert.StrContains(t, updateTexts(prov.requests[len(prov.requests)-1].Messages), "recovered")
 	})
 	t.Run("a partial index is kept", func(t *testing.T) {
 		src := &memorySource{text: memoryLine("partial"), err: errors.New("project scope down")}
 		runner := newMemoryRunner(t, repo, prov, src)
 		_, err := runner.Run(ctx, RunRequest{Prompt: "q"})
 		assert.NoErr(t, err)
-		assert.StrContains(t, prov.requests[len(prov.requests)-1].System, "partial")
+		assert.StrContains(t, segmentText(prov.requests[len(prov.requests)-1]), "partial")
 	})
 }
 
 // TestMemorySnapshotRefreshedByCompaction: a compaction re-reads the index
-// and the model call of that very step already uses it.
+// into the new segment's snapshot and the model call of that very step
+// already renders it; the system prompt never changes.
 func TestMemorySnapshotRefreshedByCompaction(t *testing.T) {
 	repo := openObserveRepo(t)
 	src := &memorySource{text: memoryLine("v1")}
@@ -189,10 +203,11 @@ func TestMemorySnapshotRefreshedByCompaction(t *testing.T) {
 	}
 	assert.Require(t, assert.True(t, first > 0))
 	for i, req := range prov.reqs {
+		assert.Eq(t, prov.reqs[0].System, req.System)
 		if i < first {
-			assert.StrContains(t, req.System, "- note (user): v1")
+			assert.StrContains(t, segmentText(req), "- note (user): v1")
 		} else {
-			assert.StrContains(t, req.System, "- note (user): v2")
+			assert.StrContains(t, segmentText(req), "- note (user): v2")
 		}
 	}
 	stored, err := repo.GetSession(context.Background(), res.SessionID)
@@ -205,6 +220,7 @@ func TestMemorySnapshotRefreshedByCompaction(t *testing.T) {
 		assert.NoErr(t, err)
 		stored, _ := repo.GetSession(context.Background(), res.SessionID)
 		assert.StrContains(t, metaString(stored.Meta, metaMemoryIndexContent), "v3")
+		assert.StrContains(t, effectiveOf(t, runner, res.SessionID).MemoryIndex, "v3")
 	})
 }
 

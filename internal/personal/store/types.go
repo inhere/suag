@@ -28,8 +28,10 @@ const (
 	TurnCancelled = "cancelled"
 )
 
-// Entry types stored in entries.type. context_update records are kept for
-// trace audit only and are never replayed into later model context.
+// Entry types stored in entries.type. A context_update records what changed
+// inside a segment (rules, append prompt, environment, a missing memory
+// index); it belongs to a turn, is adopted with it and is replayed as a user
+// message at its seq until the next segment record supersedes it.
 const (
 	EntryUser          = "user"
 	EntryAssistant     = "assistant"

@@ -24,12 +24,14 @@ func (p staticPrompt) BuildSystemPrompt(context.Context, *agentcore.RunState) (s
 	return string(p), nil
 }
 
-// basePrompt is the environment part of the system prompt: OS and shell,
-// workspace, read-only or writable (and how to enable writing), working
-// conventions (including scope discipline and reporting stale rules), and the skills listing (empty until skills are wired). The
-// tool list is not repeated here: tool schemas already carry it. Project
-// rules (AGENTS.md) and the append prompt follow it in the runner.
-func basePrompt(opts Options, skills string) string {
+// basePrompt is the system prompt: identity and working conventions only
+// (design D1). It holds nothing that depends on the workspace, the read/write
+// mode, rules, memory or skills, so two sessions of the same configuration send
+// byte-identical system prompts and the provider prefix cache can reuse them
+// across sessions and workspaces. The environment (environmentPrompt) and the
+// skills listing are given to the runner as sources and go into the segment
+// context; the tool list is not repeated: tool schemas already carry it.
+func basePrompt() string {
 	var b strings.Builder
 	// SUAG_DEBUG_PROMPT_NONCE is a hidden debug switch for the eval's
 	// --probe-prefix control group: a non-empty value is put first so the
@@ -38,10 +40,6 @@ func basePrompt(opts Options, skills string) string {
 	if nonce := os.Getenv(debugPromptNonceEnv); nonce != "" {
 		b.WriteString("nonce: " + nonce + "\n")
 	}
-	// Order matters for prompt caching: the text that is the same for every
-	// session (identity, conventions, skills) comes first so providers can
-	// reuse the cached prefix across sessions and workspaces; the
-	// per-workspace environment (path, mode) comes last.
 	b.WriteString("You are suag, a personal coding agent working in the user's workspace through tools.\n\n")
 	b.WriteString("# Working conventions\n")
 	b.WriteString("- Use the file tools to read, list and search files rather than shell commands.\n")
@@ -52,12 +50,15 @@ func basePrompt(opts Options, skills string) string {
 	b.WriteString("- Change only what the task asks for. Problems you notice outside that scope go into a \"Found, not touched\" section of your report instead of being fixed on the side.\n")
 	b.WriteString("- If injected rules, memory or docs contradict the actual code or environment, say so in your report (what, where, why it looks stale) instead of silently working around it.\n")
 	b.WriteString("- Answer in the user's language.\n")
-	if skills != "" {
-		b.WriteString("\n")
-		b.WriteString(strings.TrimRight(skills, "\n"))
-		b.WriteString("\n")
-	}
-	b.WriteString("\n# Environment\n")
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// environmentPrompt is the environment section of the segment context: OS,
+// workspace, shell (writable), read/write mode and how to enable writing. It
+// is read for every new segment and compared at each turn start.
+func environmentPrompt(opts Options) string {
+	var b strings.Builder
+	b.WriteString("# Environment\n")
 	fmt.Fprintf(&b, "- OS: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 	fmt.Fprintf(&b, "- Workspace (file tools are confined to it): %s\n", opts.Workspace)
 	if opts.AllowWrite {

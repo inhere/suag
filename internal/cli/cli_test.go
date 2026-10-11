@@ -131,7 +131,9 @@ func TestPersonalCLIInjectsRulesAndAppendPrompt(t *testing.T) {
 	t.Chdir(workspace)
 	_ = gkconfig.Set("workspace", workspace)
 	_ = gkconfig.Set("model", "openai/gpt-4o")
-	var systems []string
+	// Rules and the append prompt are in the segment context: the first
+	// user message. The system prompt is the same stable text for both.
+	var systems, contexts []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Messages []struct {
@@ -142,9 +144,11 @@ func TestPersonalCLIInjectsRulesAndAppendPrompt(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
 		}
-		for _, message := range body.Messages {
+		for i, message := range body.Messages {
 			if message.Role == "system" {
 				systems = append(systems, message.Content)
+			} else if i == 1 {
+				contexts = append(contexts, message.Content)
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -162,14 +166,17 @@ func TestPersonalCLIInjectsRulesAndAppendPrompt(t *testing.T) {
 		}
 	}
 	assert.Eq(t, 2, len(systems))
-	assert.Eq(t, true, strings.Contains(systems[0], "user-level rule"))
-	assert.Eq(t, true, strings.Contains(systems[0], "project-level rule"))
-	assert.Eq(t, true, strings.Contains(systems[0], "flag prompt"))
-	assert.Eq(t, false, strings.Contains(systems[0], "environment prompt"))
-	assert.Eq(t, true, strings.Contains(systems[1], "user-level rule"))
-	assert.Eq(t, false, strings.Contains(systems[1], "project-level rule"))
-	assert.Eq(t, true, strings.Contains(systems[1], "environment prompt"))
-	for _, system := range systems {
+	assert.Eq(t, systems[0], systems[1])
+	assert.Eq(t, false, strings.Contains(systems[0], "level rule"))
+	assert.Eq(t, 2, len(contexts))
+	assert.Eq(t, true, strings.Contains(contexts[0], "user-level rule"))
+	assert.Eq(t, true, strings.Contains(contexts[0], "project-level rule"))
+	assert.Eq(t, true, strings.Contains(contexts[0], "flag prompt"))
+	assert.Eq(t, false, strings.Contains(contexts[0], "environment prompt"))
+	assert.Eq(t, true, strings.Contains(contexts[1], "user-level rule"))
+	assert.Eq(t, false, strings.Contains(contexts[1], "project-level rule"))
+	assert.Eq(t, true, strings.Contains(contexts[1], "environment prompt"))
+	for _, system := range append(systems, contexts...) {
 		assert.Eq(t, false, strings.Contains(strings.ToLower(system), "gofer"))
 	}
 }

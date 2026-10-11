@@ -177,7 +177,7 @@ func TestPersonalChatBlockStartsInjectedTurnAndMarksStopActive(t *testing.T) {
 	}
 	provider.mu.Lock()
 	defer provider.mu.Unlock()
-	if len(provider.calls) != 2 || !hasSystemText(provider.calls[0], "startup-context") || !hasSystemText(provider.calls[0], "submit-context") {
+	if len(provider.calls) != 2 || !hasUserText(provider.calls[0], "startup-context") || !hasUserText(provider.calls[0], "submit-context") {
 		t.Fatalf("hook context did not reach the next model request: %#v", provider.calls)
 	}
 }
@@ -681,9 +681,11 @@ func countHookEvents(events []suaghooks.Event, name string) int {
 	return count
 }
 
-func hasSystemText(messages []agentcore.Message, text string) bool {
+// hasUserText reports whether a user message contains text: hook context
+// reaches the model as a user message of its turn (never role=system).
+func hasUserText(messages []agentcore.Message, text string) bool {
 	for _, message := range messages {
-		if message.Role == "system" && strings.Contains(message.Content, text) {
+		if message.Role == "user" && strings.Contains(message.Content, text) {
 			return true
 		}
 	}

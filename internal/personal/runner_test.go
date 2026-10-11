@@ -97,6 +97,11 @@ func (p *rulesProvider) Generate(_ context.Context, req *agentcore.GenerateReque
 	return &agentcore.GenerateResult{Content: "ok", FinishReason: agentcore.FinishFinal}, nil
 }
 
+// Rules and the append prompt live in the segment context; a change inside
+// the segment appends one context update (full text, user role) that every
+// later turn replays at the same place. The system prompt never changes.
+// (Before T6 the new rules went into the system prompt with a one-off
+// role=system notice; that made the system prompt change inside a segment.)
 func TestRunnerRulesPersistAndUpdateOnlyWhenChanged(t *testing.T) {
 	ctx := context.Background()
 	dbPath := newStorePath(t)
@@ -111,6 +116,7 @@ func TestRunnerRulesPersistAndUpdateOnlyWhenChanged(t *testing.T) {
 	// Keep one run store while recreating the runner to mimic --resume.
 	newRunner := func(appendPrompt string) *Runner {
 		runner, err := New(Config{Repository: repo, Provider: provider,
+			PromptBuilder:      staticTestPrompt("BASE"),
 			RuleSource:         func() (string, string, error) { return LoadRules(root, "", false) },
 			AppendSystemPrompt: appendPrompt})
 		if err != nil {
@@ -130,29 +136,44 @@ func TestRunnerRulesPersistAndUpdateOnlyWhenChanged(t *testing.T) {
 	_, err = runner.Run(ctx, RunRequest{SessionID: model.ID, Prompt: "three"})
 	assert.NoErr(t, err)
 	assert.Eq(t, 3, len(provider.requests))
-	assert.Eq(t, true, strings.Contains(provider.requests[0].System, "first rule"))
-	assert.Eq(t, true, strings.Contains(provider.requests[0].System, "extra"))
-	assert.Eq(t, true, strings.Contains(provider.requests[1].System, "replaced on resume"))
-	assert.Eq(t, false, strings.Contains(provider.requests[1].System, "extra"))
-	assert.Eq(t, 1, countNotices(provider.requests[1].Messages, "附加提示已更新"))
-	assert.Eq(t, 0, countNotices(provider.requests[2].Messages, "附加提示已更新"))
-	assert.Eq(t, true, strings.Contains(provider.requests[1].System, "second rule"))
-	assert.Eq(t, 1, countRuleUpdates(provider.requests[1].Messages))
-	// Full rule text appears once (system prompt only), not again in the update message.
-	for _, m := range provider.requests[1].Messages {
-		assert.Eq(t, false, strings.Contains(m.Content, "second rule"))
+	for _, req := range provider.requests {
+		assert.Eq(t, "BASE", req.System)
+		// The segment context stays the one frozen at session start.
+		assert.StrContains(t, segmentText(req), "first rule")
+		assert.StrContains(t, segmentText(req), "extra")
 	}
-	assert.Eq(t, 1, strings.Count(provider.requests[1].System, "second rule"))
-	assert.Eq(t, 0, countRuleUpdates(provider.requests[2].Messages))
-	stored, err := repo.GetSession(ctx, model.ID)
-	assert.NoErr(t, err)
-	assert.Eq(t, true, strings.Contains(stored.Meta["personal_rules_content"].(string), "second rule"))
+	assert.Eq(t, 0, countUpdates(provider.requests[0].Messages))
+	for _, req := range provider.requests[1:] {
+		// One update with the full new text, replayed (not re-appended).
+		assert.Eq(t, 1, countRuleUpdates(req.Messages))
+		assert.Eq(t, 1, countNotices(req.Messages, "replaced on resume"))
+		assert.Eq(t, 1, strings.Count(updateTexts(req.Messages), "second rule"))
+	}
+	assert.Eq(t, 1, len(contextUpdateEntries(t, repo, model.ID)))
+	// The replayed update sits right before the user message of turn "two".
+	msgs := provider.requests[2].Messages
+	for i, m := range msgs {
+		if isContextUpdate(m) {
+			assert.Eq(t, "two", msgs[i+1].Content)
+		}
+	}
+	assert.Eq(t, provider.requests[1].Messages, msgs[:len(provider.requests[1].Messages)])
+	eff := effectiveOf(t, runner, model.ID)
+	assert.StrContains(t, eff.Rules, "second rule")
+	assert.Eq(t, "replaced on resume", eff.AppendPrompt)
+}
+
+// staticTestPrompt is a fixed PromptBuilder for tests.
+type staticTestPrompt string
+
+func (p staticTestPrompt) BuildSystemPrompt(context.Context, *agentcore.RunState) (string, error) {
+	return string(p), nil
 }
 
 func countRuleUpdates(messages []agentcore.Message) int {
 	n := 0
 	for _, message := range messages {
-		if message.Role == "system" && strings.HasPrefix(message.Content, "项目规则已更新") {
+		if isContextUpdate(message) && strings.Contains(message.Content, rulesHeading) {
 			n++
 		}
 	}
@@ -421,10 +442,11 @@ func TestRunnerPersistsCancellationAfterContextEnds(t *testing.T) {
 	assert.Eq(t, store.SessionOpen, storedSession.Status)
 }
 
-func countNotices(messages []agentcore.Message, prefix string) int {
+// countNotices counts the context update messages that contain text.
+func countNotices(messages []agentcore.Message, text string) int {
 	n := 0
 	for _, message := range messages {
-		if message.Role == "system" && strings.Contains(message.Content, prefix) {
+		if isContextUpdate(message) && message.Role == "user" && strings.Contains(message.Content, text) {
 			n++
 		}
 	}
@@ -433,13 +455,12 @@ func countNotices(messages []agentcore.Message, prefix string) int {
 
 func TestRunnerAppendPromptOnResume(t *testing.T) {
 	ctx := context.Background()
-	const notice = "附加提示已更新"
 	// Each case resumes a session created with "orig" using a different runner append prompt.
 	cases := []struct {
-		name, resume, wantStored string
-		wantNotice               int
+		name, resume, wantEffective string
+		wantUpdate                  int
 	}{
-		{"different value updates and notifies once", "fresh-skill-text", "fresh-skill-text", 1},
+		{"different value appends one update", "fresh-skill-text", "fresh-skill-text", 1},
 		{"empty keeps persisted value", "", "orig", 0},
 		{"same value does nothing", "orig", "orig", 0},
 	}
@@ -466,15 +487,14 @@ func TestRunnerAppendPromptOnResume(t *testing.T) {
 			_, err = resumed.Run(ctx, RunRequest{SessionID: model.ID, Prompt: "two"})
 			assert.NoErr(t, err)
 			assert.Eq(t, 2, len(provider.requests))
-			stored, err := repo.GetSession(ctx, model.ID)
-			assert.NoErr(t, err)
-			assert.Eq(t, tc.wantStored, stored.Meta["personal_append_prompt"])
-			assert.Eq(t, true, strings.Contains(provider.requests[0].System, tc.wantStored))
-			assert.Eq(t, tc.wantNotice, countNotices(provider.requests[0].Messages, notice))
-			assert.Eq(t, 0, countNotices(provider.requests[1].Messages, notice))
-			for _, m := range provider.requests[0].Messages {
-				assert.Eq(t, false, strings.Contains(m.Content, "fresh-skill-text"))
+			assert.Eq(t, tc.wantEffective, effectiveOf(t, resumed, model.ID).AppendPrompt)
+			for _, req := range provider.requests {
+				assert.StrContains(t, segmentText(req), "orig")
+				assert.NotContains(t, req.System, "orig")
+				// Appended once in turn one, replayed in turn two.
+				assert.Eq(t, tc.wantUpdate, countNotices(req.Messages, "fresh-skill-text"))
 			}
+			assert.Eq(t, tc.wantUpdate, len(contextUpdateEntries(t, repo, model.ID)))
 		})
 	}
 }

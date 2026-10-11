@@ -179,7 +179,9 @@ func TestTurnContextEvent(t *testing.T) {
 		assert.NotEq(t, toolSetHash([]string{"a", "b"}), toolSetHash([]string{"a", "c"}))
 		assert.Eq(t, toolSetHashLen, len(toolSetHash(nil)))
 	})
-	t.Run("memory hash and mode come from meta and config", func(t *testing.T) {
+	// The hashes come from the adopted segment record (plus context updates),
+	// never from meta: meta is only a cache that may run ahead of the records.
+	t.Run("memory hash comes from the segment record, mode from config", func(t *testing.T) {
 		assert.NoErr(t, repo.PatchSessionMeta(context.Background(), res.SessionID, map[string]any{metaMemoryIndexHash: "memhash9876"}))
 		runner, err := New(Config{Repository: repo, Provider: mock.NewProvider(mock.Final("b"))})
 		assert.NoErr(t, err)
@@ -187,7 +189,8 @@ func TestTurnContextEvent(t *testing.T) {
 		assert.NoErr(t, err)
 		events := eventsOf(t, repo, res.SessionID, store.EventTurnContext)
 		assert.Require(t, assert.Eq(t, 2, len(events)))
-		assert.Eq(t, "memhash9876", events[1].Attrs["memory_hash"])
+		assert.Eq(t, "", events[1].Attrs["memory_hash"])
+		assert.Eq(t, "rules-hash-123456", events[1].Attrs["rules_hash"])
 		assert.Eq(t, "unknown", events[1].Attrs["mode"])
 		assert.Eq(t, float64(0), events[1].Attrs["tools_count"])
 	})

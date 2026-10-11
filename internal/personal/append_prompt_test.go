@@ -37,13 +37,11 @@ func TestRunnerAppendPromptClearedByExplicitEmpty(t *testing.T) {
 			assert.NoErr(t, err)
 			_, err = resumed.Run(ctx, RunRequest{SessionID: model.ID, Prompt: "one"})
 			assert.NoErr(t, err)
-			stored, err := repo.GetSession(ctx, model.ID)
-			assert.NoErr(t, err)
-			assert.Eq(t, tc.wantStored, stored.Meta["personal_append_prompt"])
+			assert.Eq(t, tc.wantStored, effectiveOf(t, resumed, model.ID).AppendPrompt)
 			assert.Eq(t, tc.wantNotice, countNotices(provider.requests[0].Messages, clearedNotice))
-			if tc.set {
-				assert.Eq(t, false, strings.Contains(provider.requests[0].System, "orig"))
-			}
+			// The system prompt never carries the append prompt; the segment
+			// context keeps "orig" and the update clears it.
+			assert.Eq(t, false, strings.Contains(provider.requests[0].System, "orig"))
 		})
 	}
 }

@@ -59,7 +59,7 @@ func (r *Runner) bindVisibility() {
 	})
 }
 
-// deferredToolsPrompt is the system-prompt section listing deferred tools.
+// deferredToolsPrompt is the segment context section listing deferred tools.
 func (r *Runner) deferredToolsPrompt() string {
 	if r.cfg.Visibility == nil {
 		return ""

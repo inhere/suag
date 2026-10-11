@@ -49,7 +49,7 @@ func defaultSkillRoots(workspace, homeDir string) []capskills.Root {
 }
 
 const (
-	// maxSkillDescription bounds one skill line in the system prompt.
+	// maxSkillDescription bounds one skill line in the skills listing.
 	maxSkillDescription = 160
 	// defaultSkillListMax is how many skills are listed before the listing
 	// falls back to workspace skills plus search (skills.list_max).
@@ -58,7 +58,7 @@ const (
 	maxPreloadBytes = 8000
 )
 
-// skillPolicy is how the system prompt presents skills.
+// skillPolicy is how the skills listing (segment context) presents skills.
 type skillPolicy struct {
 	// listMax: with more skills than this, only workspace skills are listed
 	// and the rest are found through skill(query=...).
@@ -77,7 +77,7 @@ func readSkillPolicy() skillPolicy {
 	return p
 }
 
-// skillsPrompt is the system prompt section for skills ("" when there are
+// skillsPrompt is the segment context section for skills ("" when there are
 // none). Preloaded (always_load) skills appear with their body. The others
 // are listed as "name — description" while they number at most listMax;
 // beyond that only workspace skills are listed (up to listMax) and the model

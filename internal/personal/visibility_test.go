@@ -112,8 +112,11 @@ func TestDeferredToolsSearchLoadAndResume(t *testing.T) {
 	assert.NoErr(t, err)
 	sid := res.SessionID
 
-	t.Run("system prompt lists deferred tools by server", func(t *testing.T) {
-		sys := prov.reqs[0].System
+	t.Run("segment context lists deferred tools by server", func(t *testing.T) {
+		// The listing moved from the system prompt into the segment context.
+		assert.NotContains(t, prov.reqs[0].System, "### alpha")
+		assert.Require(t, assert.True(t, isSegmentContext(prov.reqs[0].Messages[0])))
+		sys := prov.reqs[0].Messages[0].Content
 		assert.StrContains(t, sys, "### alpha")
 		assert.Eq(t, true, strings.Index(sys, "### alpha") < strings.Index(sys, "### beta"))
 		assert.StrContains(t, sys, "- mcp_00 — ")

@@ -42,13 +42,24 @@ const (
 type Config struct {
 	// Repository is the single core store: sessions, turns, entries and
 	// agentcore run state (run_id == turn_id) all live in it.
-	Repository         *store.Store
-	Provider           agentcore.Provider
-	Model              string
-	ProviderName       string
-	Tools              agentcore.ToolRegistry
-	PromptBuilder      agentcore.PromptBuilder
-	RuleSource         func() (string, string, error)
+	Repository   *store.Store
+	Provider     agentcore.Provider
+	Model        string
+	ProviderName string
+	Tools        agentcore.ToolRegistry
+	// PromptBuilder is the stable system prompt (identity and working
+	// conventions only, design D1); the runner sends it unchanged.
+	PromptBuilder agentcore.PromptBuilder
+	// RuleSource reads the user/project rules (content, hash). Rules go into
+	// the segment context; a change inside a segment appends a context update.
+	RuleSource func() (string, string, error)
+	// EnvironmentSource and SkillsSource render the environment section (OS,
+	// workspace, shell, read/write mode and how to enable writing) and the
+	// skills listing. Both go into the segment context: read for every new
+	// segment, and the environment is also compared at each turn start (a
+	// resumed session in another mode or workspace gets a context update).
+	EnvironmentSource  func() string
+	SkillsSource       func() string
 	AppendSystemPrompt string
 	// AppendSystemPromptSet marks AppendSystemPrompt as explicitly supplied by
 	// the caller, so an empty value clears the saved prompt instead of keeping it.
@@ -73,7 +84,7 @@ type Config struct {
 	Plans *PlanRecorder
 	// Visibility is the deferred-tool layer already wrapped around Tools; New
 	// binds it to this runner's store (loaded_tools meta) and event recorder,
-	// and its tool list is added to the system prompt.
+	// and its tool list is added to the segment context.
 	Visibility *tools.Visibility
 	// Price looks up the configured price of a (provider id, model); nil or a
 	// miss means cost stays 0 unless the provider reports it.
@@ -98,9 +109,9 @@ type Config struct {
 	Mode string
 	// MemoryIndex returns the rendered memory indexes of every registered
 	// scope (memory.Index.Render, concatenated). The runner freezes them in
-	// the session meta at session start (refreshed only after compaction) and
-	// injects them after the rules; nil means no memory section. A failure is
-	// logged and never affects the turn.
+	// the segment snapshot (re-read at every segment break) and renders them
+	// after the rules; nil means no memory section. A failure is logged and
+	// never affects the turn.
 	MemoryIndex func(ctx context.Context) (string, error)
 	// Workspace is recorded as the cwd of the sessions this runner creates
 	// (and of older sessions without one on their next turn); session_search
@@ -234,20 +245,16 @@ func (r *Runner) NewSession(ctx context.Context, id, title string) (Session, err
 	if model.Title == "" {
 		model.Title = "Session " + id
 	}
-	if r.cfg.RuleSource != nil {
-		rules, hash, err := r.cfg.RuleSource()
-		if err != nil {
-			return Session{}, err
-		}
-		model.Meta["personal_rules_content"] = rules
-		model.Meta["personal_rules_hash"] = hash
+	// The first segment's snapshot (design D2). A RuleSource error fails the
+	// session; a memory index that cannot be read leaves the snapshot without
+	// one and the first turn that can read it appends a context update.
+	seg, err := r.freshSnapshot(ctx, id, nil)
+	if err != nil {
+		return Session{}, err
 	}
-	// Frozen memory index snapshot (design D6); without one the first turn
-	// tries again.
-	if content, hash, ok := r.memorySnapshot(ctx, id); ok {
-		model.Meta[metaMemoryIndexContent], model.Meta[metaMemoryIndexHash] = content, hash
+	for key, value := range segmentMeta(seg) {
+		model.Meta[key] = value
 	}
-	model.Meta["personal_append_prompt"] = r.cfg.AppendSystemPrompt
 	model.Meta["model"] = r.cfg.Model
 	model.Meta["provider"] = r.cfg.ProviderName
 	if err := r.cfg.Repository.CreateSession(ctx, model); err != nil {
@@ -255,7 +262,7 @@ func (r *Runner) NewSession(ctx context.Context, id, title string) (Session, err
 	}
 	// Every new session starts with a segment start record freezing the
 	// snapshot above (design D2). Without it the session is not created.
-	if err := r.writeStartSegment(ctx, model); err != nil {
+	if err := r.writeStartSegment(ctx, model.ID, seg); err != nil {
 		_ = r.cfg.Repository.DeleteSession(context.WithoutCancel(ctx), model.ID)
 		return Session{}, err
 	}
@@ -342,12 +349,15 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err != nil {
 		return r.withSessionUsage(ctx, model.ID, result), err
 	}
-
-	metaPatch, notice, err := r.promptMetaPatch(model)
+	// The segment in effect comes from the adopted records only (never from
+	// meta, which a failed turn's mid-turn break may already have moved).
+	r.resolveSegment(&history, model.Meta)
+	// Rules/append prompt/environment changed inside the segment (or the
+	// memory index is still missing): this turn appends a context update.
+	update, err := r.contextUpdate(ctx, model.ID, history.eff)
 	if err != nil {
 		return r.withSessionUsage(ctx, model.ID, result), err
 	}
-	r.memorySnapshotPatch(ctx, model, metaPatch)
 
 	agentID := strings.TrimSpace(req.AgentID)
 	if agentID == "" {
@@ -361,8 +371,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return costOf(r.cfg.Price, r.cfg.ProviderName, r.cfg.Model, u)
 	}}
 	// Keep session metadata aligned with the provider selected for this turn.
-	metaPatch["model"] = r.cfg.Model
-	metaPatch["provider"] = r.cfg.ProviderName
+	metaPatch := map[string]any{"model": r.cfg.Model, "provider": r.cfg.ProviderName}
 	if err := r.cfg.Repository.PatchSessionMeta(ctx, model.ID, metaPatch); err != nil {
 		return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
 	}
@@ -372,8 +381,19 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err != nil {
 		return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
 	}
+	// The update is an entry of this turn written before the turn's user
+	// message, so it is adopted with the turn and replayed at the same place
+	// (a ctxItem: stable position, a cut candidate, never in state.Messages).
+	if update != nil {
+		item, err := r.writeContextUpdate(ctx, model.ID, turnID, update)
+		if err != nil {
+			return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
+		}
+		history.items = append(history.items, item)
+		update.applyTo(history.eff)
+	}
 	// What this turn starts with (D9); best-effort like every event.
-	r.recordTurnContext(ctx, model, r.currentSegment(history, model.Meta))
+	r.recordTurnContext(ctx, model, history.segment, history.eff)
 	if err := emit(ctx, req.Emit, Event{Kind: "run_started", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID}); err != nil {
 		return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
 	}
@@ -392,12 +412,10 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return emit(ctx, req.Emit, Event{Kind: "plan", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Plan: &plan})
 	})
 	storage := r.cfg.Repository.AgentStorage()
-	promptBuilder := rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Meta, deferredTools: r.deferredToolsPrompt()}
-	contextBuilder := r.newContextBuilder(model.ID, turnID, history, promptBuilder, usage, joinContext(notice, req.SystemContext))
-	// A compaction refreshes the memory snapshot in this metadata map (shared
-	// with promptBuilder), so later steps of this turn use the new index.
-	contextBuilder.meta = model.Meta
-	runtimeHooks := append([]agentcore.Hook{memoryPromptHook{b: contextBuilder}}, r.turnHooks(usage, denials, req.Emit, result)...)
+	promptBuilder := stablePromptBuilder{base: r.cfg.PromptBuilder}
+	// The hook context (req.SystemContext) is a user message of this turn.
+	contextBuilder := r.newContextBuilder(model.ID, turnID, history, promptBuilder, usage, req.SystemContext)
+	runtimeHooks := r.turnHooks(usage, denials, req.Emit, result)
 	runtime := agentcore.New(agentcore.Config{
 		Provider:       r.cfg.Provider,
 		Storage:        storage,
@@ -557,16 +575,6 @@ func (r *Runner) openTranscript(sessionID string) *Transcript {
 		return nil
 	}
 	return transcript
-}
-
-func joinContext(first, second string) string {
-	if first == "" {
-		return second
-	}
-	if second == "" {
-		return first
-	}
-	return first + "\n\n" + second
 }
 
 func (r *Runner) findSession(ctx context.Context, req RunRequest) (Session, error) {

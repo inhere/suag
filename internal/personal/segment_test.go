@@ -154,14 +154,22 @@ func TestSegmentRecordAdoptedWithTurn(t *testing.T) {
 	assert.NoErr(t, err)
 	assert.Eq(t, start.Context.Hash, view.segment.Hash)
 	assert.Eq(t, "", view.summary)
+	// The meta cache already moved to the failed record's snapshot...
+	stored, err := repo.GetSession(ctx, sid)
+	assert.NoErr(t, err)
+	assert.StrContains(t, metaString(stored.Meta, metaMemoryIndexContent), "mem-two")
 
 	// A completed turn's mid-turn record is adopted.
 	prov.mu.Lock()
 	prov.sumReqs = nil
+	nextReq := len(prov.reqs)
 	prov.mu.Unlock()
 	mode = "ok"
 	good, err := runner.Run(ctx, RunRequest{SessionID: sid, Prompt: "long job"})
 	assert.NoErr(t, err)
+	// ...but the next turn renders the adopted (start) record, not meta.
+	assert.StrContains(t, segmentText(prov.reqs[nextReq]), "mem-one")
+	assert.NotContains(t, segmentText(prov.reqs[nextReq]), "mem-two")
 	es, err = repo.ListEntries(ctx, sid, store.EntryFilter{TurnID: good.TurnID, Types: []string{store.EntryCompaction}})
 	assert.NoErr(t, err)
 	assert.Require(t, assert.True(t, len(es) >= 1))
@@ -222,7 +230,12 @@ func TestSegmentLegacySessions(t *testing.T) {
 		msgs := prov.reqs[len(prov.reqs)-1].Messages
 		assert.Eq(t, 2, len(msgs))
 		assert.Eq(t, true, isSegmentContext(msgs[0]))
-		assert.Eq(t, summaryMessage("OLD-SUMMARY").Content, msgs[0].Content)
+		// The legacy view renders the meta snapshot, then the old package.
+		for _, part := range []string{"OLD-RULES", "OLD-MEMORY", "OLD-APPEND"} {
+			assert.StrContains(t, msgs[0].Content, part)
+		}
+		assert.True(t, strings.HasSuffix(msgs[0].Content, summaryMessage("OLD-SUMMARY").Content))
+		assert.NotContains(t, prov.reqs[len(prov.reqs)-1].System, "OLD-RULES")
 	})
 
 	t.Run("old binary record after a start record", func(t *testing.T) {
@@ -328,7 +341,7 @@ func TestSegmentContextMessageIsNotAnItem(t *testing.T) {
 		assert.Eq(t, false, isSegmentContext(view[0]))
 	})
 	t.Run("a handoff package keeps its own wording", func(t *testing.T) {
-		msg, ok := segmentContextMessage("以下是从会话 x 交接过来的上下文", true)
+		msg, ok := segmentContextMessage(nil, "以下是从会话 x 交接过来的上下文", true)
 		assert.Eq(t, true, ok)
 		assert.Eq(t, "以下是从会话 x 交接过来的上下文", msg.Content)
 		assert.Eq(t, true, isSegmentContext(msg))

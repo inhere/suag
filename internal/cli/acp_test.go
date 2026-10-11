@@ -83,7 +83,8 @@ func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {
 		if n == 1 {
 			found := false
 			for _, message := range body.Messages {
-				found = found || message.Role == "system" && message.Content != "" && strings.Contains(message.Content, "ACP project rule")
+				// Rules travel in the segment context (a user message), not the system prompt.
+				found = found || message.Role == "user" && strings.Contains(message.Content, "ACP project rule")
 			}
 			if !found {
 				t.Error("ACP new session omitted project rule")

@@ -26,8 +26,8 @@ type ctxItem struct {
 }
 
 // historyView is the persisted part of a session's context: the current
-// segment's handoff package, its context snapshot and the message entries
-// kept after its start.
+// segment's handoff package, its context snapshot, the adopted context updates
+// and the message entries kept after its start.
 type historyView struct {
 	// summary is the handoff package of the current segment: the latest
 	// adopted compaction summary, or the rendered --from handoff (segment 0;
@@ -36,9 +36,15 @@ type historyView struct {
 	summary     string
 	fromHandoff bool
 	// segment is the context snapshot of the latest adopted segment record;
-	// nil when that record has none (older sessions/binaries): use meta.
+	// nil when that record has none (older sessions/binaries): resolveSegment
+	// then fills in the legacy (meta) view.
 	segment *segmentContext
-	items   []ctxItem
+	// updates are the adopted context updates written after that record, in
+	// order; eff (set by resolveSegment) is segment overlaid with them.
+	updates []contextUpdateRecord
+	eff     *segmentContext
+	// items are the kept message entries and replayed context updates.
+	items []ctxItem
 }
 
 // compactionRecord is the JSON body of a compaction entry.
@@ -69,7 +75,10 @@ type compactionRecord struct {
 // completed turns count; a compaction is adopted only when it was written by a
 // completed turn (or outside any turn, i.e. a manual :compact), so a failed or
 // cancelled turn's compaction never leaks into later turns - exactly like its
-// messages.
+// messages. The same holds for context_update entries (design D3): adopted
+// with their turn, replayed as user messages at their seq. An update written
+// before the latest adopted segment record is superseded by that record's
+// snapshot (it re-read every source) and is neither replayed nor applied.
 func (r *Runner) loadHistory(ctx context.Context, sessionID string) (historyView, error) {
 	turns, err := r.cfg.Repository.ListTurns(ctx, sessionID, store.TurnCompleted)
 	if err != nil {
@@ -80,15 +89,23 @@ func (r *Runner) loadHistory(ctx context.Context, sessionID string) (historyView
 		done[t.ID] = true
 	}
 	entries, err := r.cfg.Repository.ListEntries(ctx, sessionID, store.EntryFilter{
-		Types: []string{store.EntryUser, store.EntryAssistant, store.EntryTool, store.EntryCompaction, store.EntryHandoff},
+		Types: []string{store.EntryUser, store.EntryAssistant, store.EntryTool, store.EntryCompaction, store.EntryHandoff, store.EntryContextUpdate},
 	})
 	if err != nil {
 		return historyView{}, fmt.Errorf("load session history: %w", err)
 	}
 	var view historyView
-	var firstKept int64
-	for _, e := range entries { // ascending: the last adopted record wins
+	var firstKept, segmentSeq int64
+	updates := map[int64]contextUpdateRecord{} // adopted updates by seq
+	for _, e := range entries {                // ascending: the last adopted record wins
 		switch {
+		case e.Type == store.EntryContextUpdate && done[e.TurnID]:
+			var rec contextUpdateRecord
+			if err := json.Unmarshal(e.JSON, &rec); err != nil {
+				return historyView{}, fmt.Errorf("decode context update entry %d: %w", e.Seq, err)
+			}
+			updates[e.Seq] = rec
+			view.updates = append(view.updates, rec)
 		case e.Type == store.EntryHandoff:
 			// A --from handoff belongs to no turn: it is the handoff package of
 			// segment 0 (not a history item), until a later segment record
@@ -104,7 +121,7 @@ func (r *Runner) loadHistory(ctx context.Context, sessionID string) (historyView
 				return historyView{}, fmt.Errorf("decode compaction entry %d: %w", e.Seq, err)
 			}
 			// An older binary's record has no context: fall back to meta.
-			view.segment = rec.Context
+			view.segment, view.updates, segmentSeq = rec.Context, nil, e.Seq
 			if rec.Reason == segmentReasonStart {
 				continue // snapshot only: no package, keeps every message
 			}
@@ -117,6 +134,12 @@ func (r *Runner) loadHistory(ctx context.Context, sessionID string) (historyView
 		}
 		var m agentcore.Message
 		if !done[e.TurnID] {
+			continue
+		}
+		if e.Type == store.EntryContextUpdate {
+			if e.Seq > segmentSeq {
+				view.items = append(view.items, ctxItem{msg: updates[e.Seq].message(), seq: e.Seq})
+			}
 			continue
 		}
 		if err := json.Unmarshal(e.JSON, &m); err != nil {
@@ -134,24 +157,33 @@ func summaryMessage(summary string) agentcore.Message {
 }
 
 // contextBuilder builds the model context of one turn: the segment context
-// message (carrying the handoff package, if any) first, then kept history, the
-// context notice, and this turn's messages. It runs before every model call
-// (agentcore calls ContextBuilder in each step ahead of listTools/model), so
-// the threshold check here also compacts a single very long turn. It never
-// mutates state.Messages.
+// message (snapshot + handoff package) first, then kept history (with replayed
+// context updates, this turn's included), the hook context, and this turn's
+// messages. It runs before every model call (agentcore calls ContextBuilder in
+// each step ahead of listTools/model), so the threshold check here also
+// compacts a single very long turn. It never mutates state.Messages, and the
+// system prompt stays the stable prefix for the whole segment: a segment
+// break only switches what this builder renders.
 type contextBuilder struct {
 	r         *Runner
 	sessionID string
 	turnID    string
 	prompt    agentcore.PromptBuilder
 	usage     *usageCollector
-	update    string // short system notice (rules/append prompt/environment context)
+	// hookContext is the turn's hook context (SystemContext: UserPromptSubmit/
+	// SessionStart additional context, a Stop-wait reply). It is sent as a user
+	// message for this turn only (never role=system), right before the turn.
+	hookContext string
 
-	summary     string    // current segment's handoff package ("" = none)
-	fromHandoff bool      // summary is a --from handoff (segment 0)
-	prev        []ctxItem // kept history before this turn's own messages
-	turnStart   int       // index of the first kept message in state.Messages
-	turnSeqs    []int64   // entries seq of state.Messages[i], loaded lazily
+	summary     string // current segment's handoff package ("" = none)
+	fromHandoff bool   // summary is a --from handoff (segment 0)
+	// seg is the current segment's snapshot (rendered as the segment context
+	// message); eff is it overlaid with the context updates in effect - the
+	// base a segment break carries unreadable sources over from.
+	seg, eff  *segmentContext
+	prev      []ctxItem // kept history before this turn's own messages
+	turnStart int       // index of the first kept message in state.Messages
+	turnSeqs  []int64   // entries seq of state.Messages[i], loaded lazily
 
 	window, reserve, keep int
 	truncLimit            int // tool-result truncation limit in chars; 0 = off
@@ -160,21 +192,13 @@ type contextBuilder struct {
 	haveFixed     bool
 	lastViewChars int // chars of the view sent in the latest model call
 	haveView      bool
-
-	// meta is the running prompt builder's session metadata (nil for a
-	// manual compaction); a compaction refreshes its memory snapshot.
-	meta map[string]any
-	// promptStale marks that the snapshot changed after the step's system
-	// prompt was built; memoryPromptHook rebuilds it from lastState.
-	promptStale bool
-	lastState   *agentcore.RunState
 }
 
-func (r *Runner) newContextBuilder(sessionID, turnID string, hist historyView, prompt agentcore.PromptBuilder, usage *usageCollector, update string) *contextBuilder {
+func (r *Runner) newContextBuilder(sessionID, turnID string, hist historyView, prompt agentcore.PromptBuilder, usage *usageCollector, hookContext string) *contextBuilder {
 	window, reserve, keep := r.compactLimits()
 	return &contextBuilder{
-		r: r, sessionID: sessionID, turnID: turnID, prompt: prompt, usage: usage, update: update,
-		summary: hist.summary, fromHandoff: hist.fromHandoff, prev: hist.items,
+		r: r, sessionID: sessionID, turnID: turnID, prompt: prompt, usage: usage, hookContext: hookContext,
+		summary: hist.summary, fromHandoff: hist.fromHandoff, prev: hist.items, seg: hist.segment, eff: hist.eff,
 		window: window, reserve: reserve, keep: keep,
 	}
 }
@@ -189,7 +213,6 @@ func (b *contextBuilder) BuildMessages(ctx context.Context, state *agentcore.Run
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	b.lastState = state
 	view := b.compose(state)
 	est := b.estimate(ctx, state, view)
 	if est > b.threshold() {
@@ -218,24 +241,25 @@ func (b *contextBuilder) BuildMessages(ctx context.Context, state *agentcore.Run
 	return view, nil
 }
 
-// compose assembles the current view: segment context message, kept history,
-// notice, then the kept part of this turn's messages, with tool results
-// truncated when needed. The segment context message is rendered here only:
-// items() (and so pickCut/validCut) never sees it.
+// compose assembles the current view: segment context message, kept history
+// (replayed context updates included), hook context, then the kept part of
+// this turn's messages, with tool results truncated when needed. The segment
+// context message and the hook context are rendered here only: items() (and
+// so pickCut/validCut) never sees them.
 func (b *contextBuilder) compose(state *agentcore.RunState) []agentcore.Message {
 	var turn []agentcore.Message
 	if state != nil && b.turnStart < len(state.Messages) {
 		turn = state.Messages[b.turnStart:]
 	}
 	out := make([]agentcore.Message, 0, len(b.prev)+len(turn)+2)
-	if msg, ok := segmentContextMessage(b.summary, b.fromHandoff); ok {
+	if msg, ok := segmentContextMessage(b.seg, b.summary, b.fromHandoff); ok {
 		out = append(out, msg)
 	}
 	for _, it := range b.prev {
 		out = append(out, b.limited(it.msg))
 	}
-	if b.update != "" {
-		out = append(out, agentcore.Message{Role: "system", Content: b.update})
+	if b.hookContext != "" {
+		out = append(out, agentcore.Message{Role: "user", Content: b.hookContext})
 	}
 	for _, m := range turn {
 		out = append(out, b.limited(m))

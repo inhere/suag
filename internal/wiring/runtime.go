@@ -294,7 +294,10 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		Model:             settings.Main.Model,
 		ProviderName:      settings.Main.Provider.ID,
 		Tools:             toolRegistry,
-		PromptBuilder:     staticPrompt(basePrompt(opts, skillsPrompt(skillReg, readSkillPolicy()))),
+		PromptBuilder:     staticPrompt(basePrompt()),
+		// Environment and skills go into the segment context (design D1).
+		EnvironmentSource: func() string { return environmentPrompt(opts) },
+		SkillsSource:      func() string { return skillsPrompt(skillReg, readSkillPolicy()) },
 		Hooks:             opts.Hooks,
 		MaxSteps:          gkconfig.Int("max_steps", 100),
 		RuleSource: func() (string, string, error) {

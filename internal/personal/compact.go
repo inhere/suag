@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -205,34 +206,38 @@ func (b *contextBuilder) compact(ctx context.Context, state *agentcore.RunState,
 		firstKept = items[cut].seq
 	}
 
+	// The new segment's context snapshot: every source re-read now (rules,
+	// memory index, environment, skills, deferred tools; design "段开始"). What
+	// cannot be read is carried over from the effective context of the closing
+	// segment. It is frozen in the record; meta only caches it.
+	seg, serr := b.r.freshSnapshot(ctx, b.sessionID, b.eff)
+	if serr != nil {
+		slog.Warn("re-read rules for the new segment; keeping the previous rules", "session_id", b.sessionID, "err", serr)
+	}
+
 	// Switch the view: cut inside the kept history drops its head; a cut inside
 	// this turn drops all history and advances turnStart. The new summary is
-	// the new segment's handoff package (it folded the previous one in).
-	oldSummary, oldHandoff, oldPrev, oldStart := b.summary, b.fromHandoff, b.prev, b.turnStart
+	// the new segment's handoff package (it folded the previous one in), and
+	// the new snapshot supersedes every earlier context update (loadHistory
+	// skips updates before the latest record the same way).
+	oldSummary, oldHandoff, oldPrev, oldStart, oldSeg, oldEff := b.summary, b.fromHandoff, b.prev, b.turnStart, b.seg, b.eff
 	charsBefore := charsOfMessages(b.compose(state))
 	b.summary, b.fromHandoff = summary, false
 	if cut <= len(oldPrev) {
-		b.prev = oldPrev[cut:]
+		b.prev = withoutContextUpdates(oldPrev[cut:])
 	} else {
 		b.prev, b.turnStart = nil, oldStart+(cut-len(oldPrev))
 	}
+	eff := *seg
+	b.seg, b.eff = seg, &eff
 	after := max(before-(charsBefore-charsOfMessages(b.compose(state)))/4, 0)
 
-	// The new segment's context snapshot: the session meta of this turn with
-	// the memory index re-read now (the prompt cache is rebuilt anyway, design
-	// D6). It is frozen in the record; meta is updated after the write.
-	memContent, memHash, memOK := b.r.memorySnapshot(ctx, b.sessionID)
-	seg := b.r.segmentSnapshot(b.meta)
-	if memOK {
-		seg.MemoryIndex, seg.MemoryHash = memContent, memHash
-		seg.seal()
-	}
 	rec := compactionRecord{Summary: summary, FirstKeptSeq: firstKept, TokensBefore: before, TokensAfter: after,
 		Reason: reason, Context: seg}
 	raw, _ := json.Marshal(rec)
 	turnID := b.turnID
 	if _, err := b.r.cfg.Repository.AppendEntries(context.WithoutCancel(ctx), b.sessionID, store.NewEntry{TurnID: turnID, Type: store.EntryCompaction, JSON: raw}); err != nil {
-		b.summary, b.fromHandoff, b.prev, b.turnStart = oldSummary, oldHandoff, oldPrev, oldStart
+		b.summary, b.fromHandoff, b.prev, b.turnStart, b.seg, b.eff = oldSummary, oldHandoff, oldPrev, oldStart, oldSeg, oldEff
 		return fail(fmt.Errorf("write compaction entry: %w", err))
 	}
 	b.r.rec.record(ctx, store.Event{
@@ -241,11 +246,10 @@ func (b *contextBuilder) compact(ctx context.Context, state *agentcore.RunState,
 		Attrs: map[string]any{"trigger": trigger, "reason": reason, "tokens_before": before, "tokens_after": after,
 			"first_kept_seq": firstKept, "dropped_messages": cut, "model": b.r.compactModelName()},
 	})
-	// Use the refreshed memory index from this step on (the system prompt is
-	// still built from meta until T6 moves it into the segment context).
-	if memOK && b.r.storeMemorySnapshot(ctx, b.sessionID, b.meta, memContent, memHash) {
-		b.promptStale, b.haveFixed = true, false
-	}
+	// The meta cache follows the record (best-effort). The system prompt is
+	// the stable prefix and does not change: this very step already renders
+	// the new snapshot through compose.
+	b.r.cacheSegmentMeta(ctx, b.sessionID, seg)
 	return &compactOutcome{tokensBefore: before, tokensAfter: after, firstKeptSeq: firstKept}, nil
 }
 
@@ -267,8 +271,10 @@ func (r *Runner) compactModelName() string {
 
 // summarize asks the model for a structured summary of dropped (plus the
 // previous summary and the latest plan). The transcript is size-capped so the
-// summary request itself fits the window.
+// summary request itself fits the window. Context updates are skipped: the
+// next segment re-reads rules and the rest into its own snapshot.
 func (r *Runner) summarize(ctx context.Context, sessionID, previous string, dropped []ctxItem, threshold int) (string, error) {
+	dropped = withoutContextUpdates(dropped)
 	var sb strings.Builder
 	sb.WriteString(compactTemplate)
 	if previous != "" {
@@ -293,6 +299,27 @@ func (r *Runner) summarize(ctx context.Context, sessionID, previous string, drop
 		return "", errors.New("summarize context: empty summary")
 	}
 	return strings.TrimSpace(res.Content), nil
+}
+
+// withoutContextUpdates returns items without replayed context updates
+// (items itself when there is none).
+func withoutContextUpdates(items []ctxItem) []ctxItem {
+	var out []ctxItem
+	for i, it := range items {
+		if isContextUpdate(it.msg) {
+			if out == nil {
+				out = append(make([]ctxItem, 0, len(items)), items[:i]...)
+			}
+			continue
+		}
+		if out != nil {
+			out = append(out, it)
+		}
+	}
+	if out == nil {
+		return items
+	}
+	return out
 }
 
 // renderTranscript renders items as text, halving the per-item cap (4000 ->
@@ -362,9 +389,8 @@ func (r *Runner) Compact(ctx context.Context, sessionID string) (CompactResult, 
 	if err != nil {
 		return CompactResult{}, err
 	}
+	r.resolveSegment(&hist, model.Meta)
 	b := r.newContextBuilder(model.ID, "", hist, nil, nil, "")
-	// The new segment's snapshot is taken from the session meta.
-	b.meta = model.Meta
 	before := charsOfMessages(b.compose(nil)) / 4
 	out, err := b.compact(ctx, nil, 0, true, before)
 	if errors.Is(err, errNothingToCompact) {
