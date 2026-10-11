@@ -147,29 +147,50 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 // PatchSessionMeta merges patch into meta_json atomically (a nil value deletes
 // the key), so concurrent processes cannot roll back each other's keys.
 func (s *Store) PatchSessionMeta(ctx context.Context, id string, patch map[string]any) error {
+	_, err := s.patchSessionMeta(ctx, id, "", patch)
+	return err
+}
+
+// PatchSessionMetaIfAbsent applies patch only when meta has no guard key yet,
+// in the same transaction as the check, so concurrent writers cannot both
+// apply it (write-once keys such as tainted_at). It reports whether the patch
+// was applied.
+func (s *Store) PatchSessionMetaIfAbsent(ctx context.Context, id, guard string, patch map[string]any) (bool, error) {
+	if guard == "" {
+		return false, errors.New("guard key is required")
+	}
+	return s.patchSessionMeta(ctx, id, guard, patch)
+}
+
+// patchSessionMeta merges patch into meta_json; with a non-empty guard it is a
+// no-op (false) when meta already holds that key.
+func (s *Store) patchSessionMeta(ctx context.Context, id, guard string, patch map[string]any) (bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	// The first statement is a write so the transaction takes the write lock
 	// up front (a read-then-write upgrade can fail with SQLITE_BUSY at once).
 	res, err := tx.ExecContext(ctx, `UPDATE sessions SET updated_at = ? WHERE id = ?`, formatTime(time.Now()), id)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := requireAffected(res, ErrSessionNotFound); err != nil {
-		return err
+		return false, err
 	}
 	var raw string
 	if err := tx.QueryRowContext(ctx, `SELECT meta_json FROM sessions WHERE id = ?`, id).Scan(&raw); err != nil {
-		return err
+		return false, err
 	}
 	meta := map[string]any{}
 	if raw != "" {
 		if err := json.Unmarshal([]byte(raw), &meta); err != nil {
-			return err
+			return false, err
 		}
+	}
+	if _, exists := meta[guard]; guard != "" && exists {
+		return false, nil // rolled back: updated_at stays untouched
 	}
 	for k, v := range patch {
 		if v == nil {
@@ -180,12 +201,15 @@ func (s *Store) PatchSessionMeta(ctx context.Context, id string, patch map[strin
 	}
 	enc, err := encodeMeta(meta)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE sessions SET meta_json = ? WHERE id = ?`, enc, id); err != nil {
-		return err
+		return false, err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func requireAffected(res sql.Result, notFound error) error {

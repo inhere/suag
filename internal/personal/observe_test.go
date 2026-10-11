@@ -190,7 +190,8 @@ func TestTraceTimelineIncludesTurnModelToolAndDenial(t *testing.T) {
 
 	var text bytes.Buffer
 	assert.NoErr(t, WriteTrace(&text, events, nil, false))
-	for _, want := range []string{" turn turn completed ", " model ", " tool broken error ", "err=disk full", " denial mcp_write denied ", "turn=" + res.TurnID} {
+	for _, want := range []string{" turn turn completed ", " model ", " tool broken error ", "err=disk full", " denial mcp_write denied ", "turn=" + res.TurnID,
+		" turn_context model=/ mode=unknown tools=2#"} {
 		assert.Eq(t, true, strings.Contains(text.String(), want))
 	}
 	var jsonOut bytes.Buffer
@@ -201,5 +202,5 @@ func TestTraceTimelineIncludesTurnModelToolAndDenial(t *testing.T) {
 		assert.NoErr(t, json.Unmarshal([]byte(line), &row))
 		kinds[row["kind"].(string)] = true
 	}
-	assert.Eq(t, map[string]bool{"turn": true, "model": true, "tool": true, "denial": true}, kinds)
+	assert.Eq(t, map[string]bool{"turn": true, "turn_context": true, "model": true, "tool": true, "denial": true}, kinds)
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
 	appconfig "github.com/inhere/suag/internal/config"
@@ -156,6 +157,17 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	// memory.taint_tools taint on every result (default none);
+	// memory.taint_on_spill only when the output was externalised (default
+	// shell_exec; an empty list turns it off).
+	taintTools, err := toolNameList("memory.taint_tools", nil)
+	if err != nil {
+		return nil, err
+	}
+	taintOnSpill, err := toolNameList("memory.taint_on_spill", []string{"shell_exec"})
+	if err != nil {
+		return nil, err
+	}
 	provider, err := buildMainProvider(settings)
 	if err != nil {
 		return nil, err
@@ -252,6 +264,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		Plans:           plans,
 		Ledger:          ledger,
 		Workspace:       workspace,
+		Mode:            runMode(allowWrite),
+		TaintTools:      taintTools,
+		TaintOnSpill:    taintOnSpill,
 		Visibility:      vis,
 		Price:           priceLookup(settings),
 		// Tool outputs above tools.max_output_bytes go to
@@ -367,4 +382,42 @@ func priceLookup(settings appconfig.ModelSettings) func(provider, model string) 
 		p, ok := lookup(provider, model)
 		return personal.Price{Input: p.Input, Output: p.Output, CacheRead: p.CacheRead, CacheWrite: p.CacheWrite}, ok
 	}
+}
+
+// runMode names the run mode for turn_context events.
+func runMode(allowWrite bool) string {
+	if allowWrite {
+		return personal.ModeAllowWrite
+	}
+	return personal.ModeReadOnly
+}
+
+// toolNameList reads a list of tool names; unset means def, an explicit empty
+// list means none. Anything but a list of non-empty strings is a startup
+// error.
+func toolNameList(key string, def []string) ([]string, error) {
+	raw := gkconfig.Get(key)
+	if raw == nil {
+		return def, nil
+	}
+	var items []any
+	switch value := raw.(type) {
+	case []string:
+		for _, v := range value {
+			items = append(items, v)
+		}
+	case []any:
+		items = value
+	default:
+		return nil, fmt.Errorf("%s must be a list of tool names", key)
+	}
+	names := make([]string, 0, len(items))
+	for _, item := range items {
+		name, ok := item.(string)
+		if !ok || strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("%s must contain non-empty tool names, got %v", key, item)
+		}
+		names = append(names, strings.TrimSpace(name))
+	}
+	return names, nil
 }

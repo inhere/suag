@@ -87,6 +87,15 @@ type Config struct {
 	// Ledger backs session_search / recall; New binds it to this runner's
 	// store (late binding, like Plans).
 	Ledger *Ledger
+	// TaintTools always taint the session when they return a result
+	// (memory.taint_tools); TaintOnSpill taint it only when their output was
+	// externalised (memory.taint_on_spill). Tools declaring External always
+	// taint.
+	TaintTools   []string
+	TaintOnSpill []string
+	// Mode is the run mode recorded in turn_context events: "read_only" or
+	// "allow_write" (empty = unknown).
+	Mode string
 	// Workspace is recorded as the cwd of the sessions this runner creates
 	// (and of older sessions without one on their next turn); session_search
 	// scope workspace matches sessions by it.
@@ -166,7 +175,8 @@ func New(cfg Config) (*Runner, error) {
 	if cfg.Ledger != nil {
 		cfg.Ledger.bind(cfg.Repository)
 	}
-	rec := &recorder{sink: cfg.Repository, price: cfg.Price}
+	rec := &recorder{sink: cfg.Repository, price: cfg.Price,
+		taint: newTaintMarker(cfg.Repository, cfg.TaintTools, cfg.TaintOnSpill)}
 	cfg.Provider = rec.observeProvider(cfg.Provider, cfg.ProviderName, cfg.Model)
 	if cfg.Tools != nil {
 		// Stack: observe -> output -> (visibility -> approval -> base). The
@@ -370,6 +380,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err != nil {
 		return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
 	}
+	// What this turn starts with (D9); best-effort like every event.
+	r.recordTurnContext(ctx, model)
 	if err := emit(ctx, req.Emit, Event{Kind: "run_started", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID}); err != nil {
 		return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
 	}

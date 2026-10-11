@@ -48,6 +48,9 @@ const (
 	EventTurn       = "turn"
 	EventCompaction = "compaction"
 	EventToolSearch = "tool_search"
+	// EventTurnContext records what a turn starts with (model, mode, tool
+	// set, rules/memory snapshot hashes, taint); see D9.
+	EventTurnContext = "turn_context"
 )
 
 // Session is one conversation. Meta holds free-form keys (rules hash, append

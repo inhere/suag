@@ -52,6 +52,9 @@ type recorder struct {
 	sink eventSink
 	// price looks up a configured model price; nil means no pricing.
 	price func(provider, model string) (Price, bool)
+	// taint flags the session when a tool result brings in external
+	// content; nil disables it.
+	taint *taintMarker
 }
 
 func (r *recorder) record(ctx context.Context, e store.Event) {
@@ -199,6 +202,12 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 		addOutputAttrs(e.Attrs, res)
 	}
 	o.rec.record(ctx, e)
+	// Any returned result (IsError included) entered the context; refused
+	// and failed calls carry only our own error text.
+	if err == nil && res != nil && o.rec.taint != nil {
+		tool, _ := o.Get(call.Name) // nil when unknown: no declared meta
+		o.rec.taint.observe(ctx, tool, call.Name, res)
+	}
 	return res, err
 }
 

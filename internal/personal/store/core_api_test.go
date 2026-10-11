@@ -51,6 +51,23 @@ func TestSessionCRUD(t *testing.T) {
 		assert.Eq(t, "1", got.Meta["z"])
 		assert.Eq(t, 2.0, got.Meta["n"])
 	})
+	t.Run("patch meta if absent writes once", func(t *testing.T) {
+		applied, err := s.PatchSessionMetaIfAbsent(ctx, "a", "once", map[string]any{"once": "first", "by": "x"})
+		assert.NoErr(t, err)
+		assert.True(t, applied)
+		before, _ := s.GetSession(ctx, "a")
+		applied, err = s.PatchSessionMetaIfAbsent(ctx, "a", "once", map[string]any{"once": "second", "by": "y"})
+		assert.NoErr(t, err)
+		assert.False(t, applied)
+		got, _ := s.GetSession(ctx, "a")
+		assert.Eq(t, "first", got.Meta["once"])
+		assert.Eq(t, "x", got.Meta["by"])
+		assert.Eq(t, before.UpdatedAt, got.UpdatedAt) // skipped patch is rolled back
+		_, err = s.PatchSessionMetaIfAbsent(ctx, "nope", "once", map[string]any{"once": 1})
+		assert.Eq(t, ErrSessionNotFound, err)
+		_, err = s.PatchSessionMetaIfAbsent(ctx, "a", "", map[string]any{"once": 1})
+		assert.ErrMsg(t, err, "guard key is required")
+	})
 	t.Run("delete cascades entries", func(t *testing.T) {
 		newSession(t, s, "del")
 		_, err := s.AppendEntries(ctx, "del", NewEntry{Type: EntryUser, JSON: json.RawMessage(`{}`)})

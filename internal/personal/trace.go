@@ -141,6 +141,9 @@ func writePlanRow(w io.Writer, enc *json.Encoder, e store.Entry, asJSON bool) er
 
 // traceLine renders: time kind name status duration [ttft] [tokens] [error] turn.
 func traceLine(e store.Event) string {
+	if e.Kind == store.EventTurnContext {
+		return turnContextLine(e)
+	}
 	parts := []string{
 		e.StartedAt.Local().Format("2006-01-02T15:04:05.000"), e.Kind, e.Name, e.Status,
 		fmt.Sprintf("%dms", e.DurationMs),
@@ -160,6 +163,33 @@ func traceLine(e store.Event) string {
 			msg = string(r[:120]) + "..."
 		}
 		parts = append(parts, "err="+msg)
+	}
+	if e.TurnID != "" {
+		parts = append(parts, "turn="+e.TurnID)
+	}
+	return strings.Join(parts, " ")
+}
+
+// turnContextLine renders a turn_context event briefly: time turn_context
+// model mode tools tainted rules/memory hash prefixes turn.
+func turnContextLine(e store.Event) string {
+	attr := func(key string) string {
+		if v, ok := e.Attrs[key]; ok {
+			return fmt.Sprint(v)
+		}
+		return ""
+	}
+	short := func(hash string) string {
+		if hash == "" {
+			return "-"
+		}
+		return hash[:min(len(hash), 8)]
+	}
+	parts := []string{
+		e.StartedAt.Local().Format("2006-01-02T15:04:05.000"), e.Kind,
+		"model=" + attr("provider") + "/" + attr("model"), "mode=" + attr("mode"),
+		"tools=" + attr("tools_count") + "#" + short(attr("tools")), "tainted=" + attr("tainted"),
+		"rules=" + short(attr("rules_hash")), "memory=" + short(attr("memory_hash")),
 	}
 	if e.TurnID != "" {
 		parts = append(parts, "turn="+e.TurnID)
