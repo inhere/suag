@@ -25,6 +25,7 @@ import (
 
 type options struct {
 	bin, task, model, configFrom, out string
+	agent, ompBin                     string
 	fake                              bool
 	timeout                           time.Duration
 	tasksDir                          string
@@ -33,6 +34,7 @@ type options struct {
 // Result is one results.jsonl line.
 type Result struct {
 	Task        string        `json:"task"`
+	Agent       string        `json:"agent"`
 	Passed      bool          `json:"passed"`
 	Error       string        `json:"error,omitempty"`
 	SessionID   string        `json:"session_id"`
@@ -71,6 +73,8 @@ func run() error {
 	flag.StringVar(&o.configFrom, "config-from", "", "directory whose config.yaml and .env are copied (read-only) into the temp SUAG_HOME")
 	flag.StringVar(&o.out, "out", "", "output directory (default tmp/eval/<run-id>)")
 	flag.DurationVar(&o.timeout, "timeout", 10*time.Minute, "per-task timeout")
+	flag.StringVar(&o.agent, "agent", "suag", "agent under test: suag or omp (oh-my-pi, same model via --model)")
+	flag.StringVar(&o.ompBin, "omp-bin", "omp", "omp executable for --agent omp")
 	flag.StringVar(&o.tasksDir, "tasks-dir", filepath.Join("scripts", "eval", "testdata", "tasks"), "tasks directory")
 	flag.Parse()
 
@@ -81,11 +85,20 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(bin); err != nil {
-		return fmt.Errorf("suag binary: %w", err)
-	}
-	if !o.fake && o.configFrom == "" {
-		return errors.New("need --fake or --config-from <dir>")
+	switch o.agent {
+	case "suag":
+		if _, err := os.Stat(bin); err != nil {
+			return fmt.Errorf("suag binary: %w", err)
+		}
+		if !o.fake && o.configFrom == "" {
+			return errors.New("need --fake or --config-from <dir>")
+		}
+	case "omp":
+		if o.fake {
+			return errors.New("--fake works only with --agent suag")
+		}
+	default:
+		return fmt.Errorf("unknown --agent %q (suag|omp)", o.agent)
 	}
 	runID := time.Now().Format("20060102-150405")
 	if o.out == "" {
@@ -129,7 +142,7 @@ func run() error {
 
 func runTask(o *options, bin, runID string, t *Task) (Result, error) {
 	sid := "eval-" + runID + "-" + t.Name
-	r := Result{Task: t.Name, SessionID: sid, Mode: t.Mode, Model: o.model, Fake: o.fake}
+	r := Result{Task: t.Name, Agent: o.agent, SessionID: sid, Mode: t.Mode, Model: o.model, Fake: o.fake}
 	root := filepath.Join(o.out, t.Name)
 	ws, home := filepath.Join(root, "ws"), filepath.Join(root, "home")
 	if err := copyDir(filepath.Join(t.dir, "fixture"), ws); err != nil {
@@ -143,11 +156,16 @@ func runTask(o *options, bin, runID string, t *Task) (Result, error) {
 	if out, err := exec.Command("git", "-C", ws, "init", "-q").CombinedOutput(); err != nil {
 		return r, fmt.Errorf("git init: %v: %s", err, out)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), o.timeout)
+	defer cancel()
+	if o.agent == "omp" {
+		r.SessionID = ""
+		runOmp(ctx, o, t, ws, &r)
+		return r, nil
+	}
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		return r, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), o.timeout)
-	defer cancel()
 
 	model := o.model
 	if o.fake {
@@ -396,14 +414,17 @@ func copyDir(src, dst string) error {
 
 func printTable(w io.Writer, rs []Result) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "TASK\tRESULT\tCALLS\tTOOLS\tSPILL\tTOKENS(in/out)\tHIT%\tCOST\tTIME")
+	// PROMPT is every prompt token sent (uncached + cache read/write), the
+	// fair basis across agents; TOKENS(in/out) keeps uncached input / output.
+	fmt.Fprintln(tw, "TASK\tAGENT\tRESULT\tCALLS\tTOOLS\tSPILL\tPROMPT\tTOKENS(in/out)\tHIT%\tCOST\tTIME")
 	for _, r := range rs {
 		status := "FAIL"
 		if r.Passed {
 			status = "PASS"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%d\t%d\t%d/%d\t%.1f\t$%.4f\t%.1fs\n", r.Task, status, r.Calls, r.ToolCalls, r.Spilled,
-			r.InputTokens, r.OutputToks, r.CacheHit*100, r.CostUSD, float64(r.DurationMs)/1000)
+		prompt := r.InputTokens + r.CacheRead + r.CacheWrite
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d/%d\t%.1f\t$%.4f\t%.1fs\n", r.Task, r.Agent, status, r.Calls, r.ToolCalls, r.Spilled,
+			prompt, r.InputTokens, r.OutputToks, r.CacheHit*100, r.CostUSD, float64(r.DurationMs)/1000)
 	}
 	_ = tw.Flush()
 }
