@@ -389,4 +389,3 @@ func charsOfMessage(m agentcore.Message) int {
 	}
 	return n
 }
-
