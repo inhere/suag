@@ -32,7 +32,7 @@ func memoryGate(t *testing.T, client *testACPClient) *permissionHook {
 }
 
 // memoryCallStore is the read side of a no-op memory store.
-type memoryCallStore struct{ seen string }
+type memoryCallStore struct{}
 
 func (s *memoryCallStore) Index(context.Context, memory.Scope) (memory.Index, error) {
 	return memory.Index{}, nil

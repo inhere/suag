@@ -380,7 +380,7 @@ func TestNewAndScopes(t *testing.T) {
 	t.Run("governed over files", func(t *testing.T) {
 		s := newStore(t, map[memory.Scope]Layout{user: DirLayout{Dir: t.TempDir()}})
 		g := memory.NewGoverned(s, memory.Policy{})
-		e, err := g.Write(ctx, user, add("Key note​", "token=abc123", memory.KindUser))
+		e, err := g.Write(ctx, user, add("Key note\u200b", "token=abc123", memory.KindUser))
 		assert.NoErr(t, err)
 		got, err := s.Get(ctx, user, e.ID)
 		assert.NoErr(t, err)
