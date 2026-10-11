@@ -8,7 +8,7 @@ import (
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
-type runtimeTestMemory struct {
+type runtimeTestHistory struct {
 	hydrateCalls [][]Message
 	observeCalls [][]Message
 	observeCount int
@@ -20,7 +20,7 @@ type runtimeTestMemory struct {
 	buildErr     error
 }
 
-func (m *runtimeTestMemory) Hydrate(_ context.Context, state *RunState) error {
+func (m *runtimeTestHistory) Hydrate(_ context.Context, state *RunState) error {
 	if m.hydrateErr != nil {
 		return m.hydrateErr
 	}
@@ -32,7 +32,7 @@ func (m *runtimeTestMemory) Hydrate(_ context.Context, state *RunState) error {
 	return nil
 }
 
-func (m *runtimeTestMemory) ObserveMessages(_ context.Context, _ *RunState, messages ...Message) error {
+func (m *runtimeTestHistory) ObserveMessages(_ context.Context, _ *RunState, messages ...Message) error {
 	m.observeCount++
 	if m.observeErr != nil && m.observeErrOn > 0 && m.observeCount == m.observeErrOn {
 		return m.observeErr
@@ -44,7 +44,7 @@ func (m *runtimeTestMemory) ObserveMessages(_ context.Context, _ *RunState, mess
 	return nil
 }
 
-func (m *runtimeTestMemory) BuildContext(_ context.Context, _ *RunState) ([]Message, error) {
+func (m *runtimeTestHistory) BuildContext(_ context.Context, _ *RunState) ([]Message, error) {
 	if m.buildErr != nil {
 		return nil, m.buildErr
 	}
@@ -54,7 +54,7 @@ func (m *runtimeTestMemory) BuildContext(_ context.Context, _ *RunState) ([]Mess
 
 func TestRuntime_Run_DefaultContextUsesMemoryAndObservesMessages(t *testing.T) {
 	store := newRuntimeTestStorage()
-	mem := &runtimeTestMemory{
+	mem := &runtimeTestHistory{
 		context: []Message{
 			{Role: "system", Content: "[Memory summary]: summarized context"},
 			{Role: "user", Content: "hello from memory"},
@@ -70,7 +70,7 @@ func TestRuntime_Run_DefaultContextUsesMemoryAndObservesMessages(t *testing.T) {
 	result, err := New(Config{
 		Provider:      provider,
 		Storage:       store,
-		Memory:        mem,
+		History:       mem,
 		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
 	}).Run(context.Background(), RunInput{
 		RunID:       "run-memory-default-context",
@@ -119,7 +119,7 @@ func TestRuntime_Run_ResumeHydratesMemoryBeforeBuildingContext(t *testing.T) {
 		{Role: "assistant", Content: "persisted draft"},
 	}
 
-	mem := &runtimeTestMemory{
+	mem := &runtimeTestHistory{
 		context: []Message{
 			{Role: "system", Content: "[Memory summary]: resumed summary"},
 			{Role: "user", Content: "persisted question"},
@@ -135,7 +135,7 @@ func TestRuntime_Run_ResumeHydratesMemoryBeforeBuildingContext(t *testing.T) {
 	result, err := New(Config{
 		Provider:      provider,
 		Storage:       store,
-		Memory:        mem,
+		History:       mem,
 		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
 	}).Run(context.Background(), RunInput{
 		RunID:      "run-memory-resume",
@@ -161,7 +161,7 @@ func TestRuntime_Run_ResumeHydratesMemoryBeforeBuildingContext(t *testing.T) {
 	}
 }
 
-func TestRuntime_Run_HydrateFailureReturnsMemoryErrorAndSkipsProvider(t *testing.T) {
+func TestRuntime_Run_HydrateFailureReturnsHistoryErrorAndSkipsProvider(t *testing.T) {
 	store := newRuntimeTestStorage()
 	store.runs["run-memory-hydrate-error"] = &RunState{
 		RunID:   "run-memory-hydrate-error",
@@ -171,7 +171,7 @@ func TestRuntime_Run_HydrateFailureReturnsMemoryErrorAndSkipsProvider(t *testing
 	store.messages["run-memory-hydrate-error"] = []Message{
 		{Role: "user", Content: "persisted"},
 	}
-	mem := &runtimeTestMemory{
+	mem := &runtimeTestHistory{
 		hydrateErr: errors.New("hydrate failed"),
 	}
 	provider := &runtimeTestProvider{
@@ -184,7 +184,7 @@ func TestRuntime_Run_HydrateFailureReturnsMemoryErrorAndSkipsProvider(t *testing
 	_, err := New(Config{
 		Provider:      provider,
 		Storage:       store,
-		Memory:        mem,
+		History:       mem,
 		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
 	}).Run(context.Background(), RunInput{
 		RunID:      "run-memory-hydrate-error",
@@ -193,7 +193,7 @@ func TestRuntime_Run_HydrateFailureReturnsMemoryErrorAndSkipsProvider(t *testing
 	if err == nil {
 		t.Fatal("expected hydrate failure, got nil")
 	}
-	var memoryErr *MemoryError
+	var memoryErr *HistoryError
 	if !errors.As(err, &memoryErr) {
 		t.Fatalf("expected memory error wrapper, got %T %v", err, err)
 	}
@@ -202,9 +202,9 @@ func TestRuntime_Run_HydrateFailureReturnsMemoryErrorAndSkipsProvider(t *testing
 	}
 }
 
-func TestRuntime_Run_DefaultContextBuildFailureReturnsMemoryError(t *testing.T) {
+func TestRuntime_Run_DefaultContextBuildFailureReturnsHistoryError(t *testing.T) {
 	store := newRuntimeTestStorage()
-	mem := &runtimeTestMemory{
+	mem := &runtimeTestHistory{
 		buildErr: errors.New("build context failed"),
 	}
 	provider := &runtimeTestProvider{
@@ -217,7 +217,7 @@ func TestRuntime_Run_DefaultContextBuildFailureReturnsMemoryError(t *testing.T) 
 	_, err := New(Config{
 		Provider:      provider,
 		Storage:       store,
-		Memory:        mem,
+		History:       mem,
 		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
 	}).Run(context.Background(), RunInput{
 		RunID:       "run-memory-build-error",
@@ -227,7 +227,7 @@ func TestRuntime_Run_DefaultContextBuildFailureReturnsMemoryError(t *testing.T) 
 	if err == nil {
 		t.Fatal("expected context build failure, got nil")
 	}
-	var memoryErr *MemoryError
+	var memoryErr *HistoryError
 	if !errors.As(err, &memoryErr) {
 		t.Fatalf("expected memory error wrapper, got %T %v", err, err)
 	}
@@ -238,7 +238,7 @@ func TestRuntime_Run_DefaultContextBuildFailureReturnsMemoryError(t *testing.T) 
 
 func TestRuntime_Run_PersistInputObserveFailureKeepsAuthorityAligned(t *testing.T) {
 	store := newRuntimeTestStorage()
-	mem := &runtimeTestMemory{
+	mem := &runtimeTestHistory{
 		observeErr:   errors.New("observe failed after input append"),
 		observeErrOn: 1,
 	}
@@ -252,7 +252,7 @@ func TestRuntime_Run_PersistInputObserveFailureKeepsAuthorityAligned(t *testing.
 	_, err := New(Config{
 		Provider:      provider,
 		Storage:       store,
-		Memory:        mem,
+		History:       mem,
 		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
 	}).Run(context.Background(), RunInput{
 		RunID:       "run-memory-observe-input-fail",
@@ -262,7 +262,7 @@ func TestRuntime_Run_PersistInputObserveFailureKeepsAuthorityAligned(t *testing.
 	if err == nil {
 		t.Fatal("expected observe failure during input persistence, got nil")
 	}
-	var memoryErr *MemoryError
+	var memoryErr *HistoryError
 	if !errors.As(err, &memoryErr) {
 		t.Fatalf("expected memory error wrapper, got %T %v", err, err)
 	}
@@ -284,7 +284,7 @@ func TestRuntime_Run_PersistInputObserveFailureKeepsAuthorityAligned(t *testing.
 
 func TestRuntime_Run_PersistOutputObserveFailureKeepsAuthorityAligned(t *testing.T) {
 	store := newRuntimeTestStorage()
-	mem := &runtimeTestMemory{
+	mem := &runtimeTestHistory{
 		observeErr:   errors.New("observe failed after final output append"),
 		observeErrOn: 2,
 	}
@@ -306,7 +306,7 @@ func TestRuntime_Run_PersistOutputObserveFailureKeepsAuthorityAligned(t *testing
 	_, err := New(Config{
 		Provider:      provider,
 		Storage:       store,
-		Memory:        mem,
+		History:       mem,
 		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
 	}).Run(context.Background(), RunInput{
 		RunID:       "run-memory-observe-output-fail",
@@ -316,7 +316,7 @@ func TestRuntime_Run_PersistOutputObserveFailureKeepsAuthorityAligned(t *testing
 	if err == nil {
 		t.Fatal("expected observe failure during output persistence, got nil")
 	}
-	var memoryErr *MemoryError
+	var memoryErr *HistoryError
 	if !errors.As(err, &memoryErr) {
 		t.Fatalf("expected memory error wrapper, got %T %v", err, err)
 	}
@@ -347,7 +347,7 @@ func TestRuntime_Run_PersistOutputObserveFailureKeepsAuthorityAligned(t *testing
 
 func TestRuntime_Run_PersistToolOutputObserveFailureKeepsToolTranscriptAuthoritative(t *testing.T) {
 	store := newRuntimeTestStorage()
-	mem := &runtimeTestMemory{
+	mem := &runtimeTestHistory{
 		observeErr:   errors.New("observe failed after tool transcript append"),
 		observeErrOn: 2,
 	}
@@ -378,7 +378,7 @@ func TestRuntime_Run_PersistToolOutputObserveFailureKeepsToolTranscriptAuthorita
 	_, err := New(Config{
 		Provider:      provider,
 		Storage:       store,
-		Memory:        mem,
+		History:       mem,
 		Tools:         reg,
 		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
 	}).Run(context.Background(), RunInput{
@@ -389,7 +389,7 @@ func TestRuntime_Run_PersistToolOutputObserveFailureKeepsToolTranscriptAuthorita
 	if err == nil {
 		t.Fatal("expected observe failure during tool transcript persistence, got nil")
 	}
-	var memoryErr *MemoryError
+	var memoryErr *HistoryError
 	if !errors.As(err, &memoryErr) {
 		t.Fatalf("expected memory error wrapper, got %T %v", err, err)
 	}
@@ -428,7 +428,7 @@ func TestRuntime_Run_PersistToolOutputObserveFailureKeepsToolTranscriptAuthorita
 
 func TestRuntime_Run_PersistMutatedToolOutputObserveFailureKeepsMutatedFactsAuthoritative(t *testing.T) {
 	store := newRuntimeTestStorage()
-	mem := &runtimeTestMemory{
+	mem := &runtimeTestHistory{
 		observeErr:   errors.New("observe failed after mutated tool transcript append"),
 		observeErrOn: 2,
 	}
@@ -478,7 +478,7 @@ func TestRuntime_Run_PersistMutatedToolOutputObserveFailureKeepsMutatedFactsAuth
 	_, err := New(Config{
 		Provider:      provider,
 		Storage:       store,
-		Memory:        mem,
+		History:       mem,
 		Tools:         reg,
 		PromptBuilder: runtimeTestPromptBuilder{prompt: "system"},
 		Hooks:         []Hook{hook},
@@ -490,7 +490,7 @@ func TestRuntime_Run_PersistMutatedToolOutputObserveFailureKeepsMutatedFactsAuth
 	if err == nil {
 		t.Fatal("expected observe failure during mutated tool transcript persistence, got nil")
 	}
-	var memoryErr *MemoryError
+	var memoryErr *HistoryError
 	if !errors.As(err, &memoryErr) {
 		t.Fatalf("expected memory error wrapper, got %T %v", err, err)
 	}

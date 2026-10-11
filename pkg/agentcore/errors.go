@@ -6,7 +6,7 @@ type ProviderError = api.ProviderError
 type ToolError = api.ToolError
 type HookError = api.HookError
 type StorageError = api.StorageError
-type MemoryError = api.MemoryError
+type HistoryError = api.HistoryError
 
 var (
 	ErrEmptyGenerateResult     = api.ErrEmptyGenerateResult
@@ -18,6 +18,6 @@ var (
 	ErrMissingFinishReason     = api.ErrMissingFinishReason
 	ErrProviderRequired        = api.ErrProviderRequired
 	ErrRunNotResumable         = api.ErrRunNotResumable
-	ErrMemoryStateConflict     = api.ErrMemoryStateConflict
+	ErrHistoryStateConflict    = api.ErrHistoryStateConflict
 	ErrToolCallsNotImplemented = api.ErrToolCallsNotImplemented
 )

@@ -9,7 +9,7 @@ import (
 )
 
 func stateForSaveStateFailure(preState *RunState, currentState *RunState, err error) *RunState {
-	var memoryErr *MemoryError
+	var memoryErr *HistoryError
 	if errors.As(err, &memoryErr) {
 		return currentState
 	}
@@ -49,11 +49,11 @@ func (noTools) ExecuteTool(_ context.Context, call ToolCall) (*ToolResult, error
 	return nil, &ToolError{Err: fmt.Errorf("tool %q not registered", call.Name)}
 }
 
-func defaultMemory(memory Memory) Memory {
-	if memory != nil {
-		return memory
+func defaultHistory(history History) History {
+	if history != nil {
+		return history
 	}
-	return noopMemory{}
+	return noopHistory{}
 }
 
 func defaultPromptBuilder(builder PromptBuilder) PromptBuilder {
@@ -84,8 +84,8 @@ func defaultErrorPolicy(policy ErrorPolicy) ErrorPolicy {
 	return DefaultErrorPolicy{}
 }
 
-func defaultContextBuilder(memory Memory) ContextBuilder {
-	return defaultContextBuilderImpl{memory: memory}
+func defaultContextBuilder(history History) ContextBuilder {
+	return defaultContextBuilderImpl{history: history}
 }
 
 func newRunState(runID string, input RunInput) *RunState {
@@ -123,15 +123,15 @@ func wrapStorageError(err error) error {
 	return &StorageError{Err: err}
 }
 
-func wrapMemoryError(err error) error {
+func wrapHistoryError(err error) error {
 	if err == nil {
 		return nil
 	}
-	var memoryErr *MemoryError
+	var memoryErr *HistoryError
 	if errors.As(err, &memoryErr) {
 		return err
 	}
-	return &MemoryError{Err: err}
+	return &HistoryError{Err: err}
 }
 
 func wrapHookError(err error) error {
@@ -159,7 +159,7 @@ func classifyRuntimeError(err error) error {
 		return err
 	case errors.As(err, new(*StorageError)):
 		return err
-	case errors.As(err, new(*MemoryError)):
+	case errors.As(err, new(*HistoryError)):
 		return err
 	case errors.As(err, new(*ToolError)):
 		return err
@@ -371,11 +371,11 @@ func (defaultStaticPromptBuilder) BuildSystemPrompt(context.Context, *RunState) 
 }
 
 type defaultContextBuilderImpl struct {
-	memory Memory
+	history History
 }
 
 func (b defaultContextBuilderImpl) BuildMessages(ctx context.Context, state *RunState) ([]Message, error) {
-	return b.memory.BuildContext(ctx, state)
+	return b.history.BuildContext(ctx, state)
 }
 
 type runtimeHookChain struct {

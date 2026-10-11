@@ -78,19 +78,19 @@ func (e *StorageError) Unwrap() error {
 	return e.Err
 }
 
-// MemoryError classifies memory-layer runtime failures while preserving the wrapped cause.
-type MemoryError struct {
+// HistoryError classifies memory-layer runtime failures while preserving the wrapped cause.
+type HistoryError struct {
 	Err error
 }
 
-func (e *MemoryError) Error() string {
+func (e *HistoryError) Error() string {
 	if e == nil || e.Err == nil {
 		return "memory error"
 	}
 	return "memory error: " + e.Err.Error()
 }
 
-func (e *MemoryError) Unwrap() error {
+func (e *HistoryError) Unwrap() error {
 	if e == nil {
 		return nil
 	}
@@ -107,6 +107,6 @@ var (
 	ErrMissingFinishReason     = errors.New("missing finish reason")
 	ErrProviderRequired        = errors.New("provider is required")
 	ErrRunNotResumable         = errors.New("run cannot be resumed from terminal state")
-	ErrMemoryStateConflict     = errors.New("memory state conflicts with transcript")
+	ErrHistoryStateConflict    = errors.New("memory state conflicts with transcript")
 	ErrToolCallsNotImplemented = errors.New("tool call loop not implemented yet")
 )

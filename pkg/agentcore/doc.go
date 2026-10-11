@@ -23,7 +23,7 @@ Core extension points:
 
   - Provider: connect any LLM backend
   - Storage: persist snapshots and append-only transcripts
-  - Memory: maintain summaries, recall context, and other derived memory views
+  - History: maintain summaries, recall context, and other derived memory views
   - ToolRegistry: expose tool schemas and execute tool calls
   - PromptBuilder: produce the system prompt
   - ContextBuilder: assemble model-facing messages

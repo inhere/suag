@@ -17,7 +17,7 @@ type Runtime interface {
 type Config struct {
 	Provider            Provider
 	Storage             Storage
-	Memory              Memory
+	History             History
 	Tools               ToolRegistry
 	PromptBuilder       PromptBuilder
 	ContextBuilder      ContextBuilder
@@ -38,7 +38,7 @@ type Config struct {
 type DefaultRuntime struct {
 	provider            Provider
 	storage             Storage
-	memory              Memory
+	history             History
 	tools               ToolRegistry
 	promptBuilder       PromptBuilder
 	contextBuilder      ContextBuilder
@@ -56,7 +56,7 @@ func New(cfg Config) *DefaultRuntime {
 	return &DefaultRuntime{
 		provider:            cfg.Provider,
 		storage:             defaultStorage(cfg.Storage),
-		memory:              defaultMemory(cfg.Memory),
+		history:             defaultHistory(cfg.History),
 		tools:               defaultTools(cfg.Tools),
 		promptBuilder:       defaultPromptBuilder(cfg.PromptBuilder),
 		contextBuilder:      cfg.ContextBuilder,
@@ -91,8 +91,8 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 		Timestamp: time.Now(),
 	}
 
-	if err := r.memory.Hydrate(ctx, cloneRunStateValue(state)); err != nil {
-		return r.returnWithHandledError(ctx, input, state, "memory_hydrate", wrapMemoryError(err), ctrl)
+	if err := r.history.Hydrate(ctx, cloneRunStateValue(state)); err != nil {
+		return r.returnWithHandledError(ctx, input, state, "memory_hydrate", wrapHistoryError(err), ctrl)
 	}
 
 	if err := r.runBeforeRun(ctx, runEvent, ctrl); err != nil {
@@ -331,15 +331,15 @@ func (r *DefaultRuntime) buildContext(ctx context.Context, state *RunState, ctrl
 		return event.Messages, nil
 	}
 	builder := r.contextBuilder
-	usingDefaultMemoryContext := false
+	usingDefaultHistoryContext := false
 	if builder == nil {
-		builder = defaultContextBuilder(r.memory)
-		usingDefaultMemoryContext = true
+		builder = defaultContextBuilder(r.history)
+		usingDefaultHistoryContext = true
 	}
 	messages, err := builder.BuildMessages(ctx, state)
 	if err != nil {
-		if usingDefaultMemoryContext {
-			return nil, wrapMemoryError(err)
+		if usingDefaultHistoryContext {
+			return nil, wrapHistoryError(err)
 		}
 		return nil, err
 	}
@@ -417,8 +417,8 @@ func (r *DefaultRuntime) saveState(ctx context.Context, state *RunState, message
 	if err := r.storage.AppendMessages(ctx, state.RunID, messages...); err != nil {
 		return wrapStorageError(err)
 	}
-	if err := r.memory.ObserveMessages(ctx, cloneRunStateValue(state), cloneMessagesValue(messages)...); err != nil {
-		return wrapMemoryError(err)
+	if err := r.history.ObserveMessages(ctx, cloneRunStateValue(state), cloneMessagesValue(messages)...); err != nil {
+		return wrapHistoryError(err)
 	}
 	return nil
 }
