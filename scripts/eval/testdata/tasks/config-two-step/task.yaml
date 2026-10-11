@@ -1,0 +1,11 @@
+name: config-two-step
+mode: allow-write
+fake_mode: edit
+# Turn 2 depends on the conclusion of turn 1 (which default is wrong).
+prompts:
+  - 阅读 config.go，告诉我 Port() 在 APP_PORT 不是合法整数时会返回什么。不要修改任何文件。
+  - 这是个隐患：APP_PORT 不是合法整数时应回退到默认值 8080，而不是返回解析出的 0。请据此修复 Port()，并新增 config_test.go 覆盖 APP_PORT=abc 回退到 8080 的情况，保证 go test ./... 通过。
+checks:
+  - {type: file_contains, path: config_test.go, text: "APP_PORT"}
+  - {type: file_contains, path: config_test.go, text: "8080"}
+  - {type: answer_contains, text: "8080"}

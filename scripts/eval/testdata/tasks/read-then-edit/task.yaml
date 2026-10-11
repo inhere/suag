@@ -1,0 +1,14 @@
+name: read-then-edit
+mode: allow-write
+fake_mode: edit
+# Two turns in one session: read and answer first, then change the code based
+# on that answer. answer_contains judges the last turn's answer.
+prompts:
+  - 阅读 discount.go，告诉我单笔订单折扣的上限是多少个百分点，以及由哪个函数负责校验。不要修改任何文件。
+  - 把你上一轮回答中的折扣上限从当前值改为 50，并同步更新 discount_test.go 里的边界用例（50 允许、51 拒绝），保证 go test ./... 通过。完成后说明改了哪两个文件。
+checks:
+  - {type: file_contains, path: discount.go, text: "const maxPercent = 50"}
+  - {type: file_not_contains, path: discount.go, text: "= 30"}
+  - {type: file_contains, path: discount_test.go, text: "Validate(51)"}
+  - {type: file_not_contains, path: discount_test.go, text: "Validate(31)"}
+  - {type: answer_contains, text: "discount_test.go"}

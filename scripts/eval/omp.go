@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -13,35 +14,63 @@ import (
 
 // runOmp runs one task with oh-my-pi (`omp -p --mode json`) in the prepared
 // workspace and fills r from its JSON event stream. omp keeps its own auth and
-// settings (read only here); --no-session keeps it from writing sessions.
+// settings (read only here); sessions go to the temporary <sessionDir> so a
+// multi-turn task can continue (--continue from the second turn on) without
+// touching the user's real sessions.
 //
 // Unlike `suag run`, omp has no read-only mode switch, so read-only tasks run
 // with omp's full tool set; the comparison notes this.
-func runOmp(ctx context.Context, o *options, t *Task, ws string, r *Result) {
-	args := []string{"-p", "--mode", "json", "--auto-approve", "--no-session", "--no-title",
-		"--cwd", ws, "--max-time", fmt.Sprintf("%ds", int(o.timeout.Seconds()))}
-	if o.model != "" {
-		args = append(args, "--model", o.model)
+func runOmp(ctx context.Context, o *options, t *Task, ws, sessionDir string, r *Result) {
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		r.Error = err.Error()
+		return
 	}
-	args = append(args, t.Prompt)
+	var allOut []byte
+	start := time.Now()
+	var err error
+	turns := t.Turns()
+	for i, prompt := range turns {
+		args := []string{"-p", "--mode", "json", "--auto-approve", "--session-dir", sessionDir, "--no-title",
+			"--cwd", ws, "--max-time", fmt.Sprintf("%ds", int(o.timeout.Seconds()))}
+		if i > 0 {
+			args = append(args, "--continue")
+		}
+		if o.model != "" {
+			args = append(args, "--model", o.model)
+		}
+		args = append(args, prompt)
+		var out []byte
+		out, err = runOmpOnce(ctx, o.ompBin, args, ws)
+		allOut = append(allOut, out...)
+		if err != nil {
+			r.Error = fmt.Sprintf("omp turn %d: %v", i+1, err)
+			break
+		}
+	}
+	r.DurationMs = time.Since(start).Milliseconds()
+	// Usage is summed over all turns; the answer is the last assistant text
+	// (parseOmpEvents keeps overwriting it), i.e. the last turn's.
+	parseOmpEvents(allOut, r)
+	r.Checks = runChecks(ws, r.Answer, t.Checks)
+	r.Passed = err == nil && allPassed(r.Checks)
+}
 
-	cmd := exec.CommandContext(ctx, o.ompBin, args...)
+// runOmpOnce runs one omp invocation and returns its stdout; a failure's error
+// includes the tail of stderr.
+func runOmpOnce(ctx context.Context, bin string, args []string, ws string) ([]byte, error) {
+
+	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = ws
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	start := time.Now()
-	err := cmd.Run()
-	r.DurationMs = time.Since(start).Milliseconds()
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		tail := strings.TrimSpace(stderr.String())
 		if len(tail) > 500 {
 			tail = tail[len(tail)-500:]
 		}
-		r.Error = fmt.Sprintf("omp: %v: %s", err, tail)
+		return stdout.Bytes(), fmt.Errorf("%v: %s", err, tail)
 	}
-	parseOmpEvents(stdout.Bytes(), r)
-	r.Checks = runChecks(ws, r.Answer, t.Checks)
-	r.Passed = err == nil && allPassed(r.Checks)
+	return stdout.Bytes(), nil
 }
 
 // ompMessage is the subset of an omp assistant message the eval reads.
@@ -82,6 +111,10 @@ func parseOmpEvents(raw []byte, r *Result) {
 		}
 		m := ev.Message
 		if m.Usage != nil {
+			if r.FirstUncached == nil { // first assistant message_end; omp's input excludes cache
+				v := m.Usage.Input
+				r.FirstUncached = &v
+			}
 			r.Calls++
 			r.InputTokens += m.Usage.Input
 			r.OutputToks += m.Usage.Output

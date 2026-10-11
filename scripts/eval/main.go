@@ -29,32 +29,39 @@ type options struct {
 	fake                              bool
 	timeout                           time.Duration
 	tasksDir                          string
+	probe                             bool
+	probeRepeat                       int
+	probeGap                          time.Duration
 }
 
 // Result is one results.jsonl line.
 type Result struct {
-	Task        string        `json:"task"`
-	Agent       string        `json:"agent"`
-	Passed      bool          `json:"passed"`
-	Error       string        `json:"error,omitempty"`
-	SessionID   string        `json:"session_id"`
-	Mode        string        `json:"mode"`
-	Model       string        `json:"model"`
-	Fake        bool          `json:"fake"`
-	DurationMs  int64         `json:"duration_ms"`
-	Calls       int           `json:"calls"`
-	InputTokens int64         `json:"input_tokens"`
-	OutputToks  int64         `json:"output_tokens"`
-	CacheRead   int64         `json:"cache_read_tokens"`
-	CacheWrite  int64         `json:"cache_write_tokens"`
-	CacheHit    float64       `json:"cache_hit_rate"`
-	CostUSD     float64       `json:"cost_usd"`
-	ToolCalls   int           `json:"tool_calls"`
-	RawBytes    *int64        `json:"tool_raw_bytes"`
-	InlineBytes *int64        `json:"tool_inline_bytes"`
-	Spilled     int           `json:"tool_spilled"`
-	Answer      string        `json:"answer"`
-	Checks      []CheckResult `json:"checks"`
+	Task        string  `json:"task"`
+	Agent       string  `json:"agent"`
+	Passed      bool    `json:"passed"`
+	Error       string  `json:"error,omitempty"`
+	SessionID   string  `json:"session_id"`
+	Mode        string  `json:"mode"`
+	Model       string  `json:"model"`
+	Fake        bool    `json:"fake"`
+	DurationMs  int64   `json:"duration_ms"`
+	Calls       int     `json:"calls"`
+	InputTokens int64   `json:"input_tokens"`
+	OutputToks  int64   `json:"output_tokens"`
+	CacheRead   int64   `json:"cache_read_tokens"`
+	CacheWrite  int64   `json:"cache_write_tokens"`
+	CacheHit    float64 `json:"cache_hit_rate"`
+	// FirstUncached is the uncached input of the first main-loop model call
+	// (suag: input - cache_read - cache_write from the trace; omp: usage.input).
+	// nil when unavailable (no usable model event).
+	FirstUncached *int64        `json:"first_call_uncached"`
+	CostUSD       float64       `json:"cost_usd"`
+	ToolCalls     int           `json:"tool_calls"`
+	RawBytes      *int64        `json:"tool_raw_bytes"`
+	InlineBytes   *int64        `json:"tool_inline_bytes"`
+	Spilled       int           `json:"tool_spilled"`
+	Answer        string        `json:"answer"`
+	Checks        []CheckResult `json:"checks"`
 }
 
 func main() {
@@ -76,7 +83,18 @@ func run() error {
 	flag.StringVar(&o.agent, "agent", "suag", "agent under test: suag or omp (oh-my-pi, same model via --model)")
 	flag.StringVar(&o.ompBin, "omp-bin", "omp", "omp executable for --agent omp")
 	flag.StringVar(&o.tasksDir, "tasks-dir", filepath.Join("scripts", "eval", "testdata", "tasks"), "tasks directory")
+	flag.BoolVar(&o.probe, "probe-prefix", false, "run the prefix-cache probe (exclusive with tasks; suag only)")
+	flag.IntVar(&o.probeRepeat, "probe-repeat", 3, "probe: repetitions per group")
+	flag.DurationVar(&o.probeGap, "probe-gap", 5*time.Second, "probe: pause between two requests")
 	flag.Parse()
+	taskSet := false
+	flag.Visit(func(f *flag.Flag) { taskSet = taskSet || f.Name == "task" || f.Name == "tasks-dir" })
+	if o.probe && (taskSet || o.agent != "suag") {
+		return errors.New("--probe-prefix is exclusive with --task/--tasks-dir and needs --agent suag")
+	}
+	if o.probe && o.probeRepeat < 1 {
+		return errors.New("--probe-repeat must be >= 1")
+	}
 
 	if runtime.GOOS == "windows" && !strings.HasSuffix(o.bin, ".exe") {
 		o.bin += ".exe"
@@ -106,6 +124,9 @@ func run() error {
 	}
 	if o.out, err = filepath.Abs(o.out); err != nil {
 		return err
+	}
+	if o.probe {
+		return runProbe(&o, bin, runID)
 	}
 	tasks, err := loadTasks(o.tasksDir, o.task)
 	if err != nil {
@@ -160,40 +181,27 @@ func runTask(o *options, bin, runID string, t *Task) (Result, error) {
 	defer cancel()
 	if o.agent == "omp" {
 		r.SessionID = ""
-		runOmp(ctx, o, t, ws, &r)
+		runOmp(ctx, o, t, ws, filepath.Join(root, "omp-sessions"), &r)
 		return r, nil
 	}
-	if err := os.MkdirAll(home, 0o755); err != nil {
+	model, stop, err := setupSuagHome(ctx, o, home, t.FakeMode)
+	if err != nil {
 		return r, err
 	}
-
-	model := o.model
-	if o.fake {
-		stop, port, err := startFake(ctx, t.FakeMode)
-		if err != nil {
-			return r, err
-		}
-		defer stop()
-		if err := writeConfig(home, "", port); err != nil {
-			return r, err
-		}
-		if model == "" {
-			model = "fake/m1"
-		}
-	} else if err := writeConfig(home, o.configFrom, 0); err != nil {
-		return r, err
-	}
+	defer stop()
 
 	env := isolatedEnv(home)
-	args := []string{"run", "--session-id", sid, "--output-format", "stream-json", "--prompt", t.Prompt}
-	if model != "" {
-		args = append(args, "--model", model)
-	}
-	if t.Mode == "allow-write" {
-		args = append(args, "--allow-write")
-	}
+	// A multi-turn task sends its prompts in order to the same session; the
+	// run stops at the first failing turn and checks judge the last answer.
 	start := time.Now()
-	stdout, runErr := runCmd(ctx, bin, args, ws, env)
+	var stdout []byte
+	var runErr error
+	for _, prompt := range t.Turns() {
+		stdout, runErr = runCmd(ctx, bin, suagRunArgs(sid, prompt, model, t.Mode == "allow-write"), ws, env)
+		if runErr != nil {
+			break
+		}
+	}
 	r.DurationMs = time.Since(start).Milliseconds()
 	if runErr != nil {
 		r.Error = runErr.Error()
@@ -210,7 +218,50 @@ func runTask(o *options, bin, runID string, t *Task) (Result, error) {
 	} else {
 		parseStats(sout, &r)
 	}
+	if tout, err := runCmd(context.Background(), bin, []string{"trace", sid, "--json"}, ws, env); err == nil {
+		if c, ok := firstMainCall(tout); ok {
+			v := c.uncached()
+			r.FirstUncached = &v
+		}
+	}
 	return r, nil
+}
+
+// suagRunArgs builds the `suag run` arguments of one turn.
+func suagRunArgs(sid, prompt, model string, allowWrite bool) []string {
+	args := []string{"run", "--session-id", sid, "--output-format", "stream-json", "--prompt", prompt}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	if allowWrite {
+		args = append(args, "--allow-write")
+	}
+	return args
+}
+
+// setupSuagHome creates home with an isolated config (fake provider with a
+// fresh fakellm, or a copy of --config-from) and returns the model to pass
+// (empty = config default) and a stop func for the fake server.
+func setupSuagHome(ctx context.Context, o *options, home, fakeMode string) (string, func(), error) {
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		return "", nil, err
+	}
+	if !o.fake {
+		return o.model, func() {}, writeConfig(home, o.configFrom, 0)
+	}
+	stop, port, err := startFake(ctx, fakeMode)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := writeConfig(home, "", port); err != nil {
+		stop()
+		return "", nil, err
+	}
+	model := o.model
+	if model == "" {
+		model = "fake/m1"
+	}
+	return model, stop, nil
 }
 
 // runCmd runs bin in dir with env and returns its stdout. A non-zero exit
@@ -416,15 +467,20 @@ func printTable(w io.Writer, rs []Result) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	// PROMPT is every prompt token sent (uncached + cache read/write), the
 	// fair basis across agents; TOKENS(in/out) keeps uncached input / output.
-	fmt.Fprintln(tw, "TASK\tAGENT\tRESULT\tCALLS\tTOOLS\tSPILL\tPROMPT\tTOKENS(in/out)\tHIT%\tCOST\tTIME")
+	// FIRST is the uncached input of the first main-loop call ("-" if unknown).
+	fmt.Fprintln(tw, "TASK\tAGENT\tRESULT\tCALLS\tTOOLS\tSPILL\tFIRST\tPROMPT\tTOKENS(in/out)\tHIT%\tCOST\tTIME")
 	for _, r := range rs {
 		status := "FAIL"
 		if r.Passed {
 			status = "PASS"
 		}
 		prompt := r.InputTokens + r.CacheRead + r.CacheWrite
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d/%d\t%.1f\t$%.4f\t%.1fs\n", r.Task, r.Agent, status, r.Calls, r.ToolCalls, r.Spilled,
-			prompt, r.InputTokens, r.OutputToks, r.CacheHit*100, r.CostUSD, float64(r.DurationMs)/1000)
+		first := "-"
+		if r.FirstUncached != nil {
+			first = fmt.Sprint(*r.FirstUncached)
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%s\t%d\t%d/%d\t%.1f\t$%.4f\t%.1fs\n", r.Task, r.Agent, status, r.Calls, r.ToolCalls, r.Spilled,
+			first, prompt, r.InputTokens, r.OutputToks, r.CacheHit*100, r.CostUSD, float64(r.DurationMs)/1000)
 	}
 	_ = tw.Flush()
 }

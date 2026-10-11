@@ -13,7 +13,8 @@ import (
 type Task struct {
 	Name     string     `yaml:"name"`
 	Prompt   string     `yaml:"prompt"`
-	Mode     string     `yaml:"mode"` // read-only | allow-write
+	Prompts  []string   `yaml:"prompts"` // multi-turn: one session, sent in order; exclusive with prompt
+	Mode     string     `yaml:"mode"`    // read-only | allow-write
 	FakeMode string     `yaml:"fake_mode"`
 	Generate []Generate `yaml:"generate"`
 	Checks   []Check    `yaml:"checks"`
@@ -63,8 +64,13 @@ func loadTask(dir string) (*Task, error) {
 	if err := yaml.Unmarshal(raw, &t); err != nil {
 		return nil, fmt.Errorf("%s: %w", dir, err)
 	}
-	if t.Name == "" || t.Prompt == "" {
-		return nil, fmt.Errorf("%s: name and prompt are required", dir)
+	if t.Name == "" || (t.Prompt == "") == (len(t.Prompts) == 0) {
+		return nil, fmt.Errorf("%s: name and exactly one of prompt / prompts are required", dir)
+	}
+	for _, p := range t.Prompts {
+		if strings.TrimSpace(p) == "" {
+			return nil, fmt.Errorf("%s: empty entry in prompts", dir)
+		}
 	}
 	switch t.Mode {
 	case "":
@@ -78,6 +84,15 @@ func loadTask(dir string) (*Task, error) {
 	}
 	t.dir = dir
 	return &t, nil
+}
+
+// Turns returns the prompts to send in order (a single-prompt task has one).
+// answer_contains checks apply to the answer of the last turn.
+func (t *Task) Turns() []string {
+	if len(t.Prompts) > 0 {
+		return t.Prompts
+	}
+	return []string{t.Prompt}
 }
 
 func loadTasks(root, pattern string) ([]*Task, error) {
