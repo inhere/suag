@@ -39,8 +39,20 @@ func TestBasePrompt(t *testing.T) {
 		p := basePrompt(Options{Workspace: "/w"}, "")
 		assert.False(t, regexp.MustCompile(`\d{4}-\d{2}-\d{2}|\d{2}:\d{2}`).MatchString(p))
 	})
-	t.Run("skills listing is appended", func(t *testing.T) {
-		assert.True(t, strings.HasSuffix(basePrompt(Options{}, "# Skills\n- a — b"), "# Skills\n- a — b"))
+	t.Run("skills listing comes before the environment", func(t *testing.T) {
+		p := basePrompt(Options{Workspace: "/w"}, "# Skills\n- a — b")
+		assert.True(t, strings.Index(p, "# Skills\n- a — b") < strings.Index(p, "# Environment"))
+	})
+	t.Run("stable prefix is shared across workspaces and modes", func(t *testing.T) {
+		// Providers cache by prefix: everything before the environment must
+		// not depend on the workspace or the write mode.
+		skills := "# Skills\n- a — b"
+		a := basePrompt(Options{Workspace: "/one"}, skills)
+		b := basePrompt(Options{Workspace: "/two/longer", AllowWrite: true}, skills)
+		cut := strings.Index(a, "# Environment")
+		assert.True(t, cut > 0)
+		assert.Eq(t, a[:cut], b[:cut])
+		assert.StrNotContains(t, a[:cut], "/one")
 	})
 }
 

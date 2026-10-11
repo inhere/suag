@@ -28,20 +28,12 @@ func (p staticPrompt) BuildSystemPrompt(context.Context, *agentcore.RunState) (s
 // rules (AGENTS.md) and the append prompt follow it in the runner.
 func basePrompt(opts Options, skills string) string {
 	var b strings.Builder
+	// Order matters for prompt caching: the text that is the same for every
+	// session (identity, conventions, skills) comes first so providers can
+	// reuse the cached prefix across sessions and workspaces; the
+	// per-workspace environment (path, mode) comes last.
 	b.WriteString("You are suag, a personal coding agent working in the user's workspace through tools.\n\n")
-	b.WriteString("# Environment\n")
-	fmt.Fprintf(&b, "- OS: %s/%s\n", runtime.GOOS, runtime.GOARCH)
-	fmt.Fprintf(&b, "- Workspace (file tools are confined to it): %s\n", opts.Workspace)
-	if opts.AllowWrite {
-		fmt.Fprintf(&b, "- Shell for shell_exec: %s\n", native.ShellName(gkconfig.String("tools.shell")))
-		b.WriteString("- Mode: writable — you may edit files and run commands; the user may be asked to confirm.\n")
-	} else {
-		b.WriteString("- Mode: read-only — tools that write files or run commands are off. ")
-		b.WriteString("If the task needs them, say so and tell the user how to enable them: ")
-		b.WriteString(writeToolHint(opts))
-		b.WriteString("\n")
-	}
-	b.WriteString("\n# Working conventions\n")
+	b.WriteString("# Working conventions\n")
 	b.WriteString("- Use the file tools to read, list and search files rather than shell commands.\n")
 	b.WriteString("- Read large files in windows with file_read offset/limit instead of all at once.\n")
 	b.WriteString("- Read a file before changing it; prefer small exact edits over rewriting whole files.\n")
@@ -52,7 +44,20 @@ func basePrompt(opts Options, skills string) string {
 	b.WriteString("- Answer in the user's language.\n")
 	if skills != "" {
 		b.WriteString("\n")
-		b.WriteString(skills)
+		b.WriteString(strings.TrimRight(skills, "\n"))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n# Environment\n")
+	fmt.Fprintf(&b, "- OS: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Fprintf(&b, "- Workspace (file tools are confined to it): %s\n", opts.Workspace)
+	if opts.AllowWrite {
+		fmt.Fprintf(&b, "- Shell for shell_exec: %s\n", native.ShellName(gkconfig.String("tools.shell")))
+		b.WriteString("- Mode: writable — you may edit files and run commands; the user may be asked to confirm.\n")
+	} else {
+		b.WriteString("- Mode: read-only — tools that write files or run commands are off. ")
+		b.WriteString("If the task needs them, say so and tell the user how to enable them: ")
+		b.WriteString(writeToolHint(opts))
+		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
