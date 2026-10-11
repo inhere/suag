@@ -1,7 +1,7 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # 状态、记忆与可扩展核心（第一期） 实施计划
 
-> 状态：Draft 0.2 / 已批准（2026-10-11 用户：“批准计划 0.2，开始执行”）
+> 状态：Draft 0.3 / 已批准（2026-10-11 用户：“批准计划 0.2，开始执行”；0.3 为实施中用户提出的 T10 补充：“shell_exec 如果返回内容过多，也可以加上标记”）
 
 ## 修订记录
 
@@ -9,6 +9,7 @@
 |---|---|---|---|
 | 0.1 | 2026-10-11 | Claude | 初稿 |
 | 0.2 | 2026-10-11 | Claude | 按合并评审修订：只读模式记忆写入由工具自身在治理层之前拒绝，wiring 增加 `MemoryReadOnly`，ACP 放行点改为 `Decide`，补 5 种模式 × 污染的表格测试（F1）；ACP 确认路径落到 acpserver 与 `cli/acp.go` 并补测试（F2）；`Rereadable` 只给 `file_read` 且包装层不再截断它，`skill`/`file_list` 走外置（F3）；外置文件名改为哈希、ref 严格校验并用 `os.Root` 限定（F4）；评测与 T17 强制 files 后端、fixture 自成 git 根，不写 gofer memory（F5）；fixture 放 `testdata` 且各带 go.mod（F6）；成本先扣缓存 token（F7）；T10/T13 衔接：快照 hash 预留与按结果元数据置污染（F8）；FTS 不依赖 rowid，回填改在迁移 SQL 内一次完成，删除改由 sessions 触发器（F9）；采纳建议：压缩同步更新内存 metadata 与旧会话首回合补快照、包装层透传错误并实现 Lookup、ref 说明行置顶、WAL 备份、修正检查命令；更正证据行号 |
+| 0.3 | 2026-10-11 | Claude | 按用户实施中的要求：T10 增加“输出被外置且工具在 `memory.taint_on_spill`（默认 `[shell_exec]`）中时置污染” |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -197,7 +198,7 @@
 
 ### T10 污染标记与 `turn_context` 事件（W1、D7、D9）
 
-- 文件: `internal/personal/observe.go:176-194`（工具结果返回后，`MetaOf(tool).External` 为真、或结果 `Metadata["external"] == true`（供 T13 的 gofer/exec 读结果按次声明）、或工具在 `memory.taint_tools` 中，且 session meta 无 `tainted_at` 时经 `PatchSessionMeta` 写入）；`internal/personal/runner.go`（每回合开始记录 `turn_context`：model、provider、mode、工具名列表 hash 与数量、规则 hash、`memory_hash`（本任务取 session meta 中的值，T13 前为空）、是否污染）；`internal/cli/trace.go` 显示
+- 文件: `internal/personal/observe.go:176-194`（工具结果返回后，`MetaOf(tool).External` 为真、或结果 `Metadata["external"] == true`（供 T13 的 gofer/exec 读结果按次声明）、或工具在 `memory.taint_tools` 中、或输出被外置（`OutputInfo.Ref` 非空）且工具在 `memory.taint_on_spill`（默认 `[shell_exec]`，空列表关闭）中，且 session meta 无 `tainted_at` 时经 `PatchSessionMeta` 写入）；`internal/personal/runner.go`（每回合开始记录 `turn_context`：model、provider、mode、工具名列表 hash 与数量、规则 hash、`memory_hash`（本任务取 session meta 中的值，T13 前为空）、是否污染）；`internal/cli/trace.go` 显示
 - 动作: 实现与测试（跨回合仍为污染；结果元数据声明 external 时置位；`shell_exec` 默认不置位、配置后置位；`memory_hash` 为空时字段存在且为空）。
 - 验证: 全量测试。
 - 完成标准: 测试通过；`suag trace` 输出含 turn_context 行。
