@@ -2,6 +2,8 @@ package personal
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -124,6 +126,8 @@ func TestRunnerSpillsLargeToolOutput(t *testing.T) {
 	sessions := repoTmp(t)
 	big := "HEAD-MARK\napi_key=sk-live-abcdef123456\n" + strings.Repeat("row of mcp tool output\n", 2200) + "TAIL-MARK"
 	assert.True(t, len(big) > 50000)
+	// Sizes and the hash describe the stored (redacted) text.
+	stored := redact.Secrets(big)
 	reg := tools.NewRegistry()
 	reg.Register(bigMCP{name: "mcp_big", content: big})
 	reg.Register(vMCP{name: "mcp_write", server: "srv"})
@@ -169,7 +173,7 @@ func TestRunnerSpillsLargeToolOutput(t *testing.T) {
 		assert.StrContains(t, msg.ToolResult.Content, "TAIL-MARK")
 		info, ok := tools.OutputInfoOf(msg.ToolResult.Metadata)
 		assert.Require(t, assert.True(t, ok))
-		assert.Eq(t, len(big), info.Bytes)
+		assert.Eq(t, len(stored), info.Bytes)
 		assert.Eq(t, 2203, info.Lines)
 		assert.Eq(t, 64, len(info.SHA256))
 	})
@@ -184,6 +188,8 @@ func TestRunnerSpillsLargeToolOutput(t *testing.T) {
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, redact.Secrets(big), string(got))
 		assert.StrNotContains(t, string(got), "sk-live-abcdef123456")
+		sum := sha256.Sum256(got)
+		assert.Eq(t, hex.EncodeToString(sum[:]), info.SHA256) // the hash describes the stored file
 	})
 
 	t.Run("the model saw the ref line", func(t *testing.T) {
@@ -213,14 +219,14 @@ func TestRunnerSpillsLargeToolOutput(t *testing.T) {
 			}
 		}
 		assert.Require(t, assert.NotNil(t, ev))
-		assert.Eq(t, float64(len(big)), ev.Attrs["raw_bytes"])
+		assert.Eq(t, float64(len(stored)), ev.Attrs["raw_bytes"])
 		assert.Eq(t, float64(len(msg.ToolResult.Content)), ev.Attrs["inline_bytes"])
 		assert.Eq(t, true, ev.Attrs["spilled"])
 		rep, err := repo.BuildReport(ctx, store.EventFilter{SessionID: res.SessionID})
 		assert.NoErr(t, err)
 		for _, st := range rep.Tools {
 			if st.Name == "mcp_big" {
-				assert.Eq(t, int64(len(big)), st.RawBytes)
+				assert.Eq(t, int64(len(stored)), st.RawBytes)
 				assert.Eq(t, 1, st.Spilled)
 			}
 		}

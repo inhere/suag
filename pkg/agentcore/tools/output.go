@@ -42,10 +42,15 @@ type OutputConfig struct {
 	InlineBytes int
 	// Spiller stores oversized results; nil means they are only truncated.
 	Spiller Spiller
+	// Sanitize, when set, cleans an oversized result (e.g. redacts secrets)
+	// before its OutputInfo is computed, it is spilled and the snippet is cut,
+	// so the recorded hash matches the stored file.
+	Sanitize func(string) string
 }
 
 // OutputInfo describes the raw output behind a shortened result. Bytes, Lines
-// and SHA256 are computed over the raw text the tool returned.
+// and SHA256 are computed over the raw text after OutputConfig.Sanitize, i.e.
+// exactly what the Spiller stored.
 type OutputInfo struct {
 	Ref    string // empty when the output was only truncated
 	Bytes  int
@@ -108,6 +113,9 @@ func (o *Output) ExecuteTool(ctx context.Context, call api.ToolCall) (*api.ToolR
 		return res, nil
 	}
 	raw := res.Content
+	if o.cfg.Sanitize != nil {
+		raw = o.cfg.Sanitize(raw)
+	}
 	info := OutputInfo{Bytes: len(raw), Lines: countLines(raw), SHA256: sha256Hex(raw)}
 	out := *res
 	// An error result is never externalised: it is only cut to the threshold.

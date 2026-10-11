@@ -163,7 +163,7 @@ func New(cfg Config) (*Runner, error) {
 		// output layer sits inside observe so tool events see the shortened
 		// result and its OutputInfo.
 		cfg.Tools = rec.observeTools(tools.NewOutput(cfg.Tools, tools.OutputConfig{
-			InlineBytes: cfg.InlineOutputBytes, Spiller: cfg.Spiller,
+			InlineBytes: cfg.InlineOutputBytes, Spiller: cfg.Spiller, Sanitize: redact.Secrets,
 		}))
 	}
 	if cfg.CompactProvider != nil {

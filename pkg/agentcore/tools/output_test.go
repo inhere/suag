@@ -97,6 +97,21 @@ func TestOutput(t *testing.T) {
 		assert.Eq(t, 0, sp.calls)
 	})
 
+	t.Run("sanitize runs before hashing and spilling", func(t *testing.T) {
+		sp := &fakeSpiller{}
+		clean := func(s string) string { return strings.ReplaceAll(s, "HEAD-MARK", "[REDACTED]") }
+		res, err := NewOutput(reg, OutputConfig{Spiller: sp, Sanitize: clean}).ExecuteTool(ctx, api.ToolCall{CallID: "c9", Name: "mcp_big"})
+		assert.Require(t, assert.NoErr(t, err))
+		want := clean(big)
+		assert.Eq(t, want, sp.content)
+		info, ok := OutputInfoOf(res.Metadata)
+		assert.Require(t, assert.True(t, ok))
+		sum := sha256.Sum256([]byte(want))
+		assert.Eq(t, hex.EncodeToString(sum[:]), info.SHA256)
+		assert.Eq(t, len(want), info.Bytes)
+		assert.NotContains(t, res.Content, "HEAD-MARK")
+	})
+
 	t.Run("large MCP result is spilled with a ref line first", func(t *testing.T) {
 		sp := &fakeSpiller{}
 		res, err := NewOutput(reg, OutputConfig{Spiller: sp}).ExecuteTool(ctx, api.ToolCall{CallID: "c2", Name: "mcp_big"})
