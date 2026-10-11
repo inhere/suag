@@ -71,10 +71,9 @@ type Config struct {
 	MaxSteps              int
 	// ContextWindow is the effective model's context window in tokens (0 = 128000).
 	ContextWindow int
-	// CompactReserveTokens / CompactKeepTokens override the compaction reserve
-	// (default 16000) and the recent tail kept verbatim (default 20000).
+	// CompactReserveTokens overrides the compaction reserve (default 16000).
+	// A new segment keeps only the last complete tool exchange verbatim.
 	CompactReserveTokens int
-	CompactKeepTokens    int
 	// CompactProvider/CompactModel summarize history when llm.compact_model is
 	// set; nil means the turn's own provider is used.
 	CompactProvider agentcore.Provider
