@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	gkconfig "github.com/gookit/config/v2"
 
 	"github.com/inhere/suag/internal/adapters/gofermem"
 	axconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suag/pkg/agentcore/memory/execstore"
 	"github.com/inhere/suag/pkg/agentcore/memory/files"
 )
 
@@ -22,7 +24,7 @@ import (
 const (
 	memoryBackendFiles = files.Name
 	memoryBackendGofer = gofermem.Name
-	memoryBackendExec  = "exec"
+	memoryBackendExec  = execstore.Name
 )
 
 // Reasons recorded in MemoryBackendChoice.Reason (shown by the manifest).
@@ -35,10 +37,13 @@ const (
 
 // MemoryConfig is the memory part of the suag configuration.
 type MemoryConfig struct {
-	// UserBackend is memory.user.backend: "" or files (exec arrives with T14).
+	// UserBackend is memory.user.backend: "" (files), files or exec.
 	UserBackend string
 	// ProjectBackend is memory.project.backend: "" (auto), files, gofer or exec.
 	ProjectBackend string
+	// UserExec / ProjectExec are memory.<scope>.command/args/timeout_sec,
+	// used only when that scope's backend is exec.
+	UserExec, ProjectExec MemoryExecConfig
 	// SuagHome is the absolute SUAG_HOME used for the built-in file layouts.
 	SuagHome string
 }
@@ -49,11 +54,80 @@ func loadMemoryConfig() (MemoryConfig, error) {
 	if err != nil {
 		return MemoryConfig{}, err
 	}
+	userExec, err := loadMemoryExec("user")
+	if err != nil {
+		return MemoryConfig{}, err
+	}
+	projectExec, err := loadMemoryExec("project")
+	if err != nil {
+		return MemoryConfig{}, err
+	}
 	return MemoryConfig{
 		UserBackend:    normBackend(gkconfig.String("memory.user.backend")),
 		ProjectBackend: normBackend(gkconfig.String("memory.project.backend")),
+		UserExec:       userExec,
+		ProjectExec:    projectExec,
 		SuagHome:       home,
 	}, nil
+}
+
+// MemoryExecConfig is the external command of an exec memory backend. The
+// command comes only from the configuration file; nothing is auto-discovered.
+type MemoryExecConfig struct {
+	Command    string
+	Args       []string
+	TimeoutSec int
+}
+
+// loadMemoryExec reads memory.<scope>.command / args / timeout_sec. Wrong
+// types are startup errors; a missing command is reported by the selector
+// only when the scope really uses exec.
+func loadMemoryExec(scope string) (MemoryExecConfig, error) {
+	key := "memory." + scope + "."
+	var c MemoryExecConfig
+	if raw := gkconfig.Get(key + "command"); raw != nil {
+		cmd, ok := raw.(string)
+		if !ok {
+			return c, fmt.Errorf("%scommand must be a string, got %v", key, raw)
+		}
+		c.Command = strings.TrimSpace(cmd)
+	}
+	if raw := gkconfig.Get(key + "args"); raw != nil {
+		var items []any
+		switch v := raw.(type) {
+		case []string:
+			for _, a := range v {
+				items = append(items, a)
+			}
+		case []any:
+			items = v
+		default:
+			return c, fmt.Errorf("%sargs must be a list of strings, got %v", key, raw)
+		}
+		for _, it := range items {
+			a, ok := it.(string)
+			if !ok {
+				return c, fmt.Errorf("%sargs must be a list of strings, got %v", key, it)
+			}
+			c.Args = append(c.Args, a)
+		}
+	}
+	if raw := gkconfig.Get(key + "timeout_sec"); raw != nil {
+		n := gkconfig.Int(key + "timeout_sec")
+		if n <= 0 {
+			return c, fmt.Errorf("%stimeout_sec must be a positive integer, got %v", key, raw)
+		}
+		c.TimeoutSec = n
+	}
+	return c, nil
+}
+
+// newExecStore builds the exec backend of one scope; the command is required.
+func newExecStore(scope string, c MemoryExecConfig) (memory.Store, error) {
+	if c.Command == "" {
+		return nil, fmt.Errorf("memory.%s.backend is exec but memory.%s.command is not set (set the command to run, args are optional)", scope, scope)
+	}
+	return execstore.New(execstore.Config{Command: c.Command, Args: c.Args, Timeout: time.Duration(c.TimeoutSec) * time.Second})
 }
 
 func normBackend(v string) string { return strings.ToLower(strings.TrimSpace(v)) }
@@ -62,10 +136,10 @@ func normBackend(v string) string { return strings.ToLower(strings.TrimSpace(v))
 // chosen.
 type MemoryBackendChoice struct {
 	Scope   memory.Scope
-	Backend string // files or gofer
+	Backend string // files, gofer or exec
 	Reason  string // MemoryReason*
 	// Location is the files layout root (directory or repository root) or,
-	// for gofer, the working directory gofer runs in.
+	// for gofer, the working directory gofer runs in; for exec, the command.
 	Location string
 }
 
@@ -107,11 +181,13 @@ func selectUserBackend(cfg MemoryConfig) (memory.Store, MemoryBackendChoice, err
 	case memoryBackendFiles:
 		choice.Reason = MemoryReasonConfig
 	case memoryBackendExec:
-		return nil, choice, errors.New("memory.user.backend: exec is not supported yet")
+		choice.Backend, choice.Reason, choice.Location = memoryBackendExec, MemoryReasonConfig, cfg.UserExec.Command
+		st, err := newExecStore("user", cfg.UserExec)
+		return st, choice, err
 	case memoryBackendGofer:
 		return nil, choice, errors.New("memory.user.backend: gofer only serves project memory; use files")
 	default:
-		return nil, choice, fmt.Errorf("memory.user.backend: unknown backend %q (want files)", cfg.UserBackend)
+		return nil, choice, fmt.Errorf("memory.user.backend: unknown backend %q (want files or exec)", cfg.UserBackend)
 	}
 	if err := requireHome(cfg); err != nil {
 		return nil, choice, err
@@ -124,7 +200,7 @@ func selectUserBackend(cfg MemoryConfig) (memory.Store, MemoryBackendChoice, err
 // selectProjectBackend picks the project-scope backend (design "数据", Q1, Q2):
 //
 //  1. memory.project.backend when set (files still prefers the repository
-//     MEMORY.md when one exists; exec is not supported yet);
+//     MEMORY.md when one exists; exec runs memory.project.command);
 //  2. MEMORY.md at the repository root → files in repository mode (the
 //     file is never created by suag, only used when present);
 //  3. .gofer/tracker at the repository root → gofer;
@@ -166,14 +242,17 @@ func selectProjectBackend(workspaceRoot string, cfg MemoryConfig) (memory.Store,
 		default:
 			backend, reason = memoryBackendFiles, MemoryReasonDefault
 		}
-	case memoryBackendFiles, memoryBackendGofer:
-	case memoryBackendExec:
-		return nil, choice, errors.New("memory.project.backend: exec is not supported yet")
+	case memoryBackendFiles, memoryBackendGofer, memoryBackendExec:
 	default:
 		return nil, choice, fmt.Errorf("memory.project.backend: unknown backend %q (want files, gofer or exec)", backend)
 	}
 	choice.Backend, choice.Reason = backend, reason
 
+	if backend == memoryBackendExec {
+		choice.Location = cfg.ProjectExec.Command
+		st, eerr := newExecStore("project", cfg.ProjectExec)
+		return st, choice, eerr
+	}
 	if backend == memoryBackendGofer {
 		choice.Location = root
 		st, gerr := gofermem.New(gofermem.Config{Dir: root})

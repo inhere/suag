@@ -89,7 +89,7 @@ func TestSelectProjectBackend(t *testing.T) {
 	t.Run("errors", func(t *testing.T) {
 		_, sub := memRepo(t, false, true)
 		for _, tc := range []struct{ name, configured, want string }{
-			{"exec not yet supported", "exec", "not supported yet"},
+			{"exec without command", "exec", "memory.project.command is not set"},
 			{"unknown backend", "sqlite", "unknown backend"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
@@ -180,6 +180,42 @@ func TestBuildMemory(t *testing.T) {
 	})
 }
 
+func TestMemoryExecBackend(t *testing.T) {
+	home := t.TempDir()
+	_, sub := memRepo(t, true, true) // MEMORY.md and tracker present: config still wins
+
+	t.Run("project exec choice", func(t *testing.T) {
+		st, choice, err := selectProjectBackend(sub, MemoryConfig{
+			ProjectBackend: "exec", SuagHome: home,
+			ProjectExec: MemoryExecConfig{Command: "/opt/mem-backend", Args: []string{"--x"}, TimeoutSec: 3},
+		})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "exec", choice.Backend)
+		assert.Eq(t, MemoryReasonConfig, choice.Reason)
+		assert.Eq(t, "/opt/mem-backend", choice.Location)
+		assert.Eq(t, "exec", memory.BackendName(st))
+	})
+	t.Run("user exec choice", func(t *testing.T) {
+		st, choice, err := selectUserBackend(MemoryConfig{
+			UserBackend: "exec", SuagHome: home, UserExec: MemoryExecConfig{Command: "mem-user"},
+		})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "exec", choice.Backend)
+		assert.Eq(t, "mem-user", choice.Location)
+		assert.Eq(t, "exec", memory.BackendName(st))
+	})
+	t.Run("missing command is a clear error", func(t *testing.T) {
+		_, _, err := selectUserBackend(MemoryConfig{UserBackend: "exec", SuagHome: home})
+		assert.Err(t, err)
+		assert.StrContains(t, err.Error(), "memory.user.command is not set")
+		// A command configured for the other scope is not borrowed.
+		_, _, err = selectProjectBackend(sub, MemoryConfig{ProjectBackend: "exec", SuagHome: home,
+			UserExec: MemoryExecConfig{Command: "mem-user"}})
+		assert.Err(t, err)
+		assert.StrContains(t, err.Error(), "memory.project.command is not set")
+	})
+}
+
 func TestLoadMemoryConfig(t *testing.T) {
 	gkconfig.AddDriver(yaml.Driver)
 	resetConfig(t)
@@ -194,4 +230,30 @@ func TestLoadMemoryConfig(t *testing.T) {
 	assert.Require(t, assert.NoErr(t, err))
 	assert.Eq(t, "files", cfg.UserBackend)
 	assert.Eq(t, "gofer", cfg.ProjectBackend)
+}
+
+func TestLoadMemoryExecConfig(t *testing.T) {
+	gkconfig.AddDriver(yaml.Driver)
+	resetConfig(t)
+	yml := "memory:\n  user:\n    backend: exec\n    command: ' /bin/mem '\n    args: [--a, b]\n    timeout_sec: 7\n  project:\n    backend: exec\n    command: pm\n"
+	assert.Require(t, assert.NoErr(t, gkconfig.LoadStrings(gkconfig.Yaml, yml)))
+	cfg, err := loadMemoryConfig()
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, "exec", cfg.UserBackend)
+	assert.Eq(t, MemoryExecConfig{Command: "/bin/mem", Args: []string{"--a", "b"}, TimeoutSec: 7}, cfg.UserExec)
+	assert.Eq(t, MemoryExecConfig{Command: "pm"}, cfg.ProjectExec)
+
+	t.Run("bad types", func(t *testing.T) {
+		for _, bad := range []string{
+			"memory:\n  user:\n    command: [a]\n",
+			"memory:\n  user:\n    args: nope\n",
+			"memory:\n  user:\n    args: [1]\n",
+			"memory:\n  user:\n    timeout_sec: 0\n",
+		} {
+			resetConfig(t)
+			assert.Require(t, assert.NoErr(t, gkconfig.LoadStrings(gkconfig.Yaml, bad)))
+			_, err := loadMemoryConfig()
+			assert.Err(t, err, bad)
+		}
+	})
 }
