@@ -14,6 +14,7 @@ import (
 	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/memory"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
 	"github.com/inhere/suag/pkg/agentcore/tools/native"
@@ -43,9 +44,13 @@ func (r Runtime) close() error {
 // side sends tool_call notifications and collects usage; its Approver side is
 // installed as the approval layer of the tool stack (observe -> visibility ->
 // approval -> base) and asks the client via session/request_permission.
+// ConfirmMemory asks the client (also via session/request_permission) to
+// approve a memory write from a tainted session: nil allows it, a refusal
+// returns an error, a cancelled request returns context.Canceled.
 type TurnGate interface {
 	agentcore.Hook
 	tools.Approver
+	ConfirmMemory(ctx context.Context, s memory.Scope, op memory.Op) error
 }
 
 // OpenRuntime assembles a turn with the selected workspace, tool mode and turn

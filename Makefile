@@ -133,6 +133,7 @@ smoke-chat:
 	go build -o tmp/smoke/suag ./cmd/suag
 	python3 -I scripts/ptysmoke/chat_approval.py --bin tmp/smoke/suag --work tmp/smoke
 	python3 -I scripts/ptysmoke/chat_edit.py --bin tmp/smoke/suag --work tmp/smoke-edit
+	python3 -I scripts/ptysmoke/chat_memory.py --bin tmp/smoke/suag --work tmp/smoke-memory
 
 ## clean: remove build artifacts
 clean:

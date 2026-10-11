@@ -53,6 +53,14 @@ type Options struct {
 	// ChatMode (OpenCLI only) marks the interactive chat: tools.allow_write may
 	// enable write tools there, and tools are approved by the chat approver.
 	ChatMode bool
+	// MemoryReadOnly (--read-only, ACP read_only) limits the memory tool to
+	// get/search. The zero value allows memory writes: memory is suag's own
+	// state, not the workspace, so a plain run may write it.
+	MemoryReadOnly bool
+	// MemoryConfirm confirms memory writes of tainted sessions (ACP: the turn
+	// gate's permission request; chat: set by OpenCLI to ask at the terminal).
+	// nil (run) refuses them.
+	MemoryConfirm MemoryConfirmFunc
 }
 
 // Runtime is one assembled personal runner and the resources it owns.
@@ -116,6 +124,8 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 		}
 		asker = tools.NewBindableAsker()
 		approver = newChatApprover(gate, auto, asker, workspace)
+		// Memory writes of tainted sessions are confirmed at the same terminal.
+		opts.MemoryConfirm = newChatMemoryConfirmer(asker).confirm
 	}
 	opts.Workspace, opts.RuleCWD = workspace, cwd
 	// tools.allow_write applies to chat only: run (often started by a job
@@ -168,6 +178,19 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	memConfig, err := loadMemoryConfig()
+	if err != nil {
+		return nil, err
+	}
+	memPolicy, err := loadMemoryWritePolicy()
+	if err != nil {
+		return nil, err
+	}
+	// Backend selection only (no backend command runs here).
+	memSetup, err := buildMemory(workspace, memConfig)
+	if err != nil {
+		return nil, err
+	}
 	provider, err := buildMainProvider(settings)
 	if err != nil {
 		return nil, err
@@ -190,6 +213,12 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// (including read-only). The recorder is bound to the runner in personal.New.
 	plans := personal.NewPlanRecorder()
 	capabilities.Registry.Register(native.NewUpdatePlanTool(plans))
+	// memory changes suag's own state too, so it is registered in every mode;
+	// read-only modes keep get/search only (the tool refuses writes itself).
+	// The runner and the provenance store are bound after personal.New.
+	memHost := &memoryHost{}
+	mem := newMemoryRuntime(memSetup, memPolicy, opts.MemoryReadOnly, opts.MemoryConfirm, memHost)
+	capabilities.Registry.Register(mem.tool)
 	sessionsDir, err := appconfig.ResolveSessionsDir()
 	if err != nil {
 		_ = capabilities.Close()
@@ -263,6 +292,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		CompactModel:    compactModel,
 		Plans:           plans,
 		Ledger:          ledger,
+		MemoryIndex:     mem.index,
 		Workspace:       workspace,
 		Mode:            runMode(allowWrite),
 		TaintTools:      taintTools,
@@ -299,6 +329,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		_ = capabilities.Close()
 		return nil, err
 	}
+	memHost.bind(runner, repo)
 	return &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
 		ContextWindow: contextWindow, tools: toolRegistry}, nil
 }

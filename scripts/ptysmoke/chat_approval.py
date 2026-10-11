@@ -29,7 +29,10 @@ OK = r"⎿ ok: SMOKE_OK"
 QUESTION = r"允许执行 shell_exec"
 
 
-def write_home(home, port):
+def write_home(home, port, tools_extra="", memory_extra=""):
+    """Writes SUAG_HOME/config.yaml. Project memory is forced to the files
+    backend: the scratch workspace lives inside this repository, whose
+    .gofer/tracker would otherwise select (and call) the real gofer."""
     os.makedirs(home, exist_ok=True)
     with open(os.path.join(home, "config.yaml"), "w", encoding="utf-8") as f:
         f.write(f"""model: fake/m1
@@ -40,7 +43,10 @@ providers:
     api_key: k
 tools:
   allow_write: true
-""")
+{tools_extra}memory:
+  project:
+    backend: files
+{memory_extra}""")
 
 
 def wait_port(proc):

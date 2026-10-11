@@ -107,6 +107,8 @@ func (o personalOptions) wiringOptions(mode string) wiring.Options {
 		ChatMode:   mode == "chat",
 		Model:      o.Model,
 		AllowWrite: o.AllowWrite, ReadOnly: o.ReadOnly,
+		// --read-only also limits the memory tool to get/search.
+		MemoryReadOnly:     o.ReadOnly,
 		MCPConfigs:         o.MCPConfigs,
 		AppendSystemPrompt: o.AppendSystemPrompt, ClearAppendSystemPrompt: o.ClearAppendSystemPrompt,
 		NoProjectRules: o.NoProjectRules,

@@ -173,3 +173,31 @@ func TestRendererBannerToolLine(t *testing.T) {
 		assert.StrNotContains(t, out.String(), "工具：只读")
 	})
 }
+
+// TestRendererMemoryWrites: successful memory writes of the turn are listed
+// before the status line; failed ones and other tools are not.
+func TestRendererMemoryWrites(t *testing.T) {
+	var out bytes.Buffer
+	r := newRenderer(rendererOptions{Out: &out, Err: &out, Model: "m"})
+	r.BeginTurn()
+	for _, e := range []personal.Event{
+		{Kind: "tool_result", ToolName: "memory", Text: "Saved memory use-tabs (project): Use tabs\nkind: feedback"},
+		{Kind: "tool_result", ToolName: "memory", Text: "Updated memory name (user): My name"},
+		{Kind: "tool_result", ToolName: "memory", Text: "Removed memory old (project): Old note"},
+		{Kind: "tool_result", ToolName: "memory", Text: "Saved memory x (project): denied", IsError: true},
+		{Kind: "tool_result", ToolName: "file_read", Text: "Saved memory y (project): not memory"},
+	} {
+		r.Handle(e)
+	}
+	r.Status(personal.RunResult{}, time.Second)
+	assert.StrContains(t, out.String(), "已记住：Use tabs（project）\n已更新：My name（user）\n已删除：Old note（project）\nm · in 0")
+	assert.NotContains(t, out.String(), "denied（")
+	assert.NotContains(t, out.String(), "not memory（")
+
+	t.Run("the next turn starts empty", func(t *testing.T) {
+		out.Reset()
+		r.BeginTurn()
+		r.Status(personal.RunResult{}, time.Second)
+		assert.NotContains(t, out.String(), "已记住")
+	})
+}

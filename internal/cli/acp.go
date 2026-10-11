@@ -40,10 +40,14 @@ func RunPersonalACP(ctx context.Context, input io.Reader, output io.Writer) erro
 		// approval layer treats as deny-all.
 		var hooks []agentcore.Hook
 		var approver tools.Approver
+		var memoryConfirm wiring.MemoryConfirmFunc
 		if gate != nil {
-			hooks, approver = []agentcore.Hook{gate}, gate
+			hooks, approver, memoryConfirm = []agentcore.Hook{gate}, gate, gate.ConfirmMemory
 		}
-		runtime, err := wiring.Open(ctx, wiring.Options{Workspace: workspace, RuleCWD: workspace, AllowWrite: !readOnly, Servers: servers, Hooks: hooks, Approver: approver})
+		// read_only also limits the memory tool to get/search; memory writes of
+		// a tainted session are confirmed through the gate's permission request.
+		runtime, err := wiring.Open(ctx, wiring.Options{Workspace: workspace, RuleCWD: workspace, AllowWrite: !readOnly,
+			MemoryReadOnly: readOnly, MemoryConfirm: memoryConfirm, Servers: servers, Hooks: hooks, Approver: approver})
 		if err != nil {
 			return acpserver.Runtime{}, err
 		}

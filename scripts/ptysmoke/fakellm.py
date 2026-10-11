@@ -8,6 +8,9 @@ Modes (--mode):
   edit  every user message gets file_grep (pattern SMOKE_TARGET), then after
         its result file_edit on target.txt ("SMOKE_TARGET old" -> "... new"),
         then the text --reply.
+  memory  every user message gets shell_exec (--command), then memory add
+        (kind feedback, title "Smoke rule"), then the text --reply; a user
+        message containing "直接" skips the shell_exec.
 
 --delay seconds are slept before each response, so a test can type while a
 turn is running. Each request is logged as one JSON line on stdout.
@@ -41,7 +44,19 @@ def make_handler(args):
             edit_calls = [("file_grep", {"pattern": "SMOKE_TARGET"}),
                           ("file_edit", {"path": "target.txt", "old_string": "SMOKE_TARGET old",
                                          "new_string": "SMOKE_TARGET new"})]
-            if args.mode == "edit" and step < len(edit_calls):
+            memory_calls = [("shell_exec", {"command": args.command}),
+                            ("memory", {"action": "add", "kind": "feedback", "title": "Smoke rule",
+                                        "body": "smoke memory body"})]
+            user_text = next((m.get("content") or "" for m in reversed(body["messages"])
+                              if m.get("role") == "user"), "")
+            if args.mode == "memory" and "直接" in str(user_text):
+                memory_calls = memory_calls[1:]
+            if args.mode == "memory" and step < len(memory_calls):
+                name, arguments = memory_calls[step]
+                call = {"index": 0, "id": "call_%d" % time.time_ns(),
+                        "function": {"name": name, "arguments": json.dumps(arguments)}}
+                chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
+            elif args.mode == "edit" and step < len(edit_calls):
                 name, arguments = edit_calls[step]
                 call = {"index": 0, "id": "call_%d" % time.time_ns(),
                         "function": {"name": name, "arguments": json.dumps(arguments)}}
@@ -75,7 +90,7 @@ def make_handler(args):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, default=18795)
-    p.add_argument("--mode", choices=["tool", "text", "edit"], default="tool")
+    p.add_argument("--mode", choices=["tool", "text", "edit", "memory"], default="tool")
     p.add_argument("--delay", type=float, default=1.0)
     p.add_argument("--command", default="echo SMOKE_OK")
     p.add_argument("--reply", default="完成")
