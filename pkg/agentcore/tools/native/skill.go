@@ -26,7 +26,7 @@ const (
 // reads go through os.OpenRoot(skillDir): nothing outside that directory.
 type SkillTool struct {
 	reg    *skills.Registry
-	maxOut int // result cap in bytes; 0 = DefaultMaxOutputBytes
+	maxOut int // raw result cap in bytes; 0 = DefaultRawOutputBytes
 }
 
 // NewSkillTool serves the skills in reg.
@@ -102,7 +102,7 @@ func (t *SkillTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResu
 		b.WriteString(body)
 		content = b.String()
 	}
-	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: TruncateHeadTail(content, t.maxOut)}, nil
+	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: TruncateHeadTail(content, rawLimit(t.maxOut))}, nil
 }
 
 // readSkillFile reads rel through root, which refuses paths and symlinks

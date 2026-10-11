@@ -21,6 +21,9 @@ type ServerSettings struct {
 	Env     map[string]string
 	// CallTimeout bounds one tools/call; 0 means DefaultCallTimeout.
 	CallTimeout time.Duration
+	// RawBytes caps one tool result (tools.max_spill_bytes); 0 means
+	// tools.DefaultRawOutputBytes.
+	RawBytes int
 }
 
 type toolClient interface {
@@ -71,6 +74,7 @@ func NewProvider(ctx context.Context, settings ServerSettings) (*Provider, error
 		Env:     formatEnvMap(settings.Env),
 
 		CallTimeout: settings.CallTimeout,
+		RawBytes:    settings.RawBytes,
 	}
 
 	// Startup (spawn + initialize + tools/list) is bounded and honors the caller's

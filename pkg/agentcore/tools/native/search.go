@@ -24,7 +24,7 @@ type WebSearchTool struct {
 	endpoint string // SerpAPI URL; tests point it at httptest
 	apiKey   string
 	client   *http.Client
-	maxOut   int // result cap in bytes; 0 = DefaultMaxOutputBytes
+	maxOut   int // raw result cap in bytes; 0 = DefaultRawOutputBytes
 }
 
 // NewWebSearchTool creates a WebSearchTool with the given SerpAPI key.
@@ -107,7 +107,7 @@ func (t *WebSearchTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 	return &api.ToolResult{
 		CallID:  call.CallID,
 		Name:    t.Name(),
-		Content: TruncateHeadTail(content, t.maxOut),
+		Content: TruncateHeadTail(content, rawLimit(t.maxOut)),
 	}, nil
 }
 

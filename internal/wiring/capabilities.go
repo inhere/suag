@@ -82,9 +82,13 @@ func (c defaultCapabilities) Close() error {
 
 // nativeEnv reads the tools.* settings native tools are built with.
 func nativeEnv(workspace string) native.Env {
+	inline := gkconfig.Int("tools.max_output_bytes", native.DefaultMaxOutputBytes)
 	return native.Env{
-		Workspace:         workspace,
-		MaxOutputBytes:    gkconfig.Int("tools.max_output_bytes", native.DefaultMaxOutputBytes),
+		Workspace:   workspace,
+		InlineBytes: inline,
+		// Until the output layer is wired in, tools keep cutting their raw
+		// output at the stored-result cap.
+		RawBytes:          inline,
 		SerpAPIKey:        gkconfig.String("serpapi_key"),
 		Shell:             gkconfig.String("tools.shell"),
 		FetchAllowPrivate: gkconfig.Bool("tools.web_fetch.allow_private"),

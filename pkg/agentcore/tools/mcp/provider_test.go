@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
@@ -180,4 +181,20 @@ func TestClientAdapterIsMCPTool(t *testing.T) {
 	assert.Require(t, assert.True(t, ok))
 	assert.Eq(t, "srv", named.MCPServer())
 	assert.Eq(t, "file_read", tool.Name())
+}
+
+func TestClientCapRaw(t *testing.T) {
+	t.Run("configured cap keeps head and tail", func(t *testing.T) {
+		c := &Client{cfg: ServerConfig{RawBytes: 100}}
+		out := c.capRaw("HEAD" + strings.Repeat("x", 1000) + "TAIL")
+		assert.True(t, strings.HasPrefix(out, "HEAD"))
+		assert.True(t, strings.HasSuffix(out, "TAIL"))
+		assert.True(t, len(out) < 200)
+	})
+	t.Run("zero uses the raw default", func(t *testing.T) {
+		c := &Client{}
+		s := strings.Repeat("y", tools.DefaultRawOutputBytes)
+		assert.Eq(t, s, c.capRaw(s))
+		assert.StrContains(t, c.capRaw(s+"z"), "省略")
+	})
 }

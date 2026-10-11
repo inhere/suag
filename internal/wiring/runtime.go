@@ -182,7 +182,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// mode) and the prompt listing exist only when some skill was found.
 	skillReg := buildDefaultSkillRegistry(workspace)
 	if skillReg.Len() > 0 {
-		capabilities.Registry.Register(native.NewSkillTool(skillReg, nativeEnv(workspace).MaxOutputBytes))
+		capabilities.Registry.Register(native.NewSkillTool(skillReg, nativeEnv(workspace).RawBytes))
 	}
 	// Tool registry stack, outer to inner: observe (added in personal.New) ->
 	// visibility -> approval -> base registry. Unloaded deferred tools are

@@ -18,7 +18,7 @@ const defaultFindResults = 200
 // FileFindTool finds files by glob pattern in the workspace.
 type FileFindTool struct {
 	workspace string
-	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
+	maxOut    int // raw result cap in bytes; 0 = DefaultRawOutputBytes
 }
 
 func (t *FileFindTool) Name() string { return "file_find" }
@@ -108,5 +108,5 @@ func (t *FileFindTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	if timedOut {
 		content += fmt.Sprintf("\n[已超时（%s），结果不完整]", searchTimeout)
 	}
-	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: TruncateHeadTail(content, t.maxOut)}, nil
+	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: TruncateHeadTail(content, rawLimit(t.maxOut))}, nil
 }

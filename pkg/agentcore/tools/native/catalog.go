@@ -12,8 +12,13 @@ import (
 type Env struct {
 	// Workspace confines file tools and is the shell working directory.
 	Workspace string
-	// MaxOutputBytes caps one tool result (tools.max_output_bytes).
-	MaxOutputBytes int
+	// InlineBytes is the inline threshold (tools.max_output_bytes): file_read
+	// pages its own output to it. Other tools leave the inline cut to the
+	// output layer (tools.NewOutput).
+	InlineBytes int
+	// RawBytes caps the raw result of every other tool (tools.max_spill_bytes),
+	// i.e. how much the output layer may save to the session directory.
+	RawBytes int
 	// SerpAPIKey enables web_search; empty leaves it unavailable.
 	SerpAPIKey string
 	// Shell overrides the shell_exec shell (tools.shell); empty = OS default.
@@ -43,23 +48,23 @@ type Spec struct {
 func Catalog() []Spec {
 	return []Spec{
 		{Name: "file_read", New: func(env Env) api.Tool {
-			return &FileReadTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
+			return &FileReadTool{workspace: env.Workspace, maxOut: env.InlineBytes}
 		}},
 		{Name: "file_list", New: func(env Env) api.Tool {
-			return &FileListTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
+			return &FileListTool{workspace: env.Workspace, maxOut: env.RawBytes}
 		}},
 		{Name: "file_grep", New: func(env Env) api.Tool {
-			return &FileGrepTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
+			return &FileGrepTool{workspace: env.Workspace, maxOut: env.RawBytes}
 		}},
 		{Name: "file_find", New: func(env Env) api.Tool {
-			return &FileFindTool{workspace: env.Workspace, maxOut: env.MaxOutputBytes}
+			return &FileFindTool{workspace: env.Workspace, maxOut: env.RawBytes}
 		}},
 		{Name: "web_fetch", New: func(env Env) api.Tool {
 			t, err := NewWebFetchTool(env.FetchAllowPrivate, env.FetchProxy)
 			if err != nil {
 				return nil // invalid proxy: rejected earlier by wiring
 			}
-			t.maxOut = env.MaxOutputBytes
+			t.maxOut = env.RawBytes
 			return t
 		}},
 		{Name: "file_write", New: func(env Env) api.Tool {
@@ -71,7 +76,7 @@ func Catalog() []Spec {
 		{Name: "shell_exec", New: func(env Env) api.Tool {
 			t := NewShellExecTool(env.Workspace, 0)
 			t.shell = resolveShell(env.Shell)
-			t.maxOut = env.MaxOutputBytes
+			t.maxOut = env.RawBytes
 			if env.ShellTimeoutMax > 0 {
 				t.maxTimeout = env.ShellTimeoutMax
 				t.timeout = min(t.timeout, t.maxTimeout)
@@ -83,7 +88,7 @@ func Catalog() []Spec {
 				return nil
 			}
 			t := NewWebSearchTool(env.SerpAPIKey)
-			t.maxOut = env.MaxOutputBytes
+			t.maxOut = env.RawBytes
 			return t
 		}},
 	}

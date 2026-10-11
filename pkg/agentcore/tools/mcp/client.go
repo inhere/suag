@@ -32,6 +32,10 @@ type ServerConfig struct {
 	// CallTimeout bounds one tools/call (mcp.call_timeout_sec); 0 means
 	// DefaultCallTimeout. A server that never answers must not hang the turn.
 	CallTimeout time.Duration
+	// RawBytes caps the text of one tool result (head and tail kept); 0 means
+	// tools.DefaultRawOutputBytes. MCP servers have no output limit of their
+	// own, so this is what bounds the output layer's saved copy.
+	RawBytes int
 }
 
 // DefaultCallTimeout is the default bound on one tools/call.
@@ -394,7 +398,7 @@ func (a *mcpToolAdapter) Execute(ctx context.Context, call api.ToolCall) (*api.T
 		return &api.ToolResult{
 			CallID:  call.CallID,
 			Name:    a.def.Name,
-			Content: string(result),
+			Content: a.client.capRaw(string(result)),
 		}, nil
 	}
 	var buf bytes.Buffer
@@ -404,6 +408,15 @@ func (a *mcpToolAdapter) Execute(ctx context.Context, call api.ToolCall) (*api.T
 	return &api.ToolResult{
 		CallID:  call.CallID,
 		Name:    a.def.Name,
-		Content: buf.String(),
+		Content: a.client.capRaw(buf.String()),
 	}, nil
+}
+
+// capRaw cuts a tool result to the configured raw-output cap.
+func (c *Client) capRaw(s string) string {
+	limit := c.cfg.RawBytes
+	if limit <= 0 {
+		limit = tools.DefaultRawOutputBytes
+	}
+	return tools.TruncateHeadTail(s, limit)
 }

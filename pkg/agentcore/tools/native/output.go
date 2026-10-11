@@ -1,20 +1,34 @@
 package native
 
 import (
-	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
-// DefaultMaxOutputBytes is the default cap on one tool result stored in the
-// session (tools.max_output_bytes). It truncates the stored content for good,
-// unlike the context builder's view-only trimming.
-const DefaultMaxOutputBytes = 30000
+// DefaultMaxOutputBytes is the default inline threshold (tools.max_output_bytes):
+// file_read pages its own output to this size, and the output layer
+// (tools.NewOutput) externalises any other result larger than it.
+const DefaultMaxOutputBytes = tools.DefaultInlineOutputBytes
 
-// outputLimit returns limit, or the default when limit is not positive.
+// DefaultRawOutputBytes is the default cap on the raw output of every other
+// native tool (tools.max_spill_bytes). It bounds what the output layer may
+// save to the session directory, not what enters the context.
+const DefaultRawOutputBytes = tools.DefaultRawOutputBytes
+
+// outputLimit returns limit, or the inline default when limit is not positive.
 func outputLimit(limit int) int {
 	if limit <= 0 {
 		return DefaultMaxOutputBytes
+	}
+	return limit
+}
+
+// rawLimit returns limit, or the raw-output default when limit is not positive.
+func rawLimit(limit int) int {
+	if limit <= 0 {
+		return DefaultRawOutputBytes
 	}
 	return limit
 }
@@ -30,26 +44,11 @@ func utf8Cut(s string, cut int) int {
 	return cut
 }
 
-// utf8CutFrom moves start forward so that s[start:] begins on a rune start.
-func utf8CutFrom(s string, start int) int {
-	for start < len(s) && !utf8.RuneStart(s[start]) {
-		start++
-	}
-	return start
-}
-
 // TruncateHeadTail keeps the head and tail of s within limit bytes (UTF-8
-// safe) and notes how many bytes were omitted in between. The tail usually
-// holds errors and exit status, so both ends are kept.
+// safe) and notes how many bytes were omitted in between; limit <= 0 uses
+// DefaultMaxOutputBytes. See tools.TruncateHeadTail.
 func TruncateHeadTail(s string, limit int) string {
-	limit = outputLimit(limit)
-	if len(s) <= limit {
-		return s
-	}
-	headLen := utf8Cut(s, limit/2)
-	tailStart := utf8CutFrom(s, len(s)-(limit-headLen))
-	omitted := tailStart - headLen
-	return fmt.Sprintf("%s\n…[省略 %d 字节，输出上限 %d 字节]…\n%s", s[:headLen], omitted, limit, s[tailStart:])
+	return tools.TruncateHeadTail(s, outputLimit(limit))
 }
 
 // TruncateLines keeps whole lines of s while they fit in limit bytes. It

@@ -45,7 +45,7 @@ func publicIP(ip netip.Addr) bool {
 // WebFetchTool downloads a web page and returns its readable text.
 type WebFetchTool struct {
 	client *http.Client
-	maxOut int // result cap in bytes; 0 = DefaultMaxOutputBytes
+	maxOut int // raw result cap in bytes; 0 = DefaultRawOutputBytes
 	// checkTarget vets a URL before it is requested (and on every redirect)
 	// when a proxy is used; nil without a proxy, where the dial check applies.
 	checkTarget func(ctx context.Context, u *url.URL) error
@@ -202,7 +202,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	if n, ok := numberArg(call.Arguments["max_bytes"]); ok && n >= 1 {
 		maxBytes = int(n)
 	}
-	maxBytes = min(maxBytes, outputLimit(t.maxOut))
+	maxBytes = min(maxBytes, rawLimit(t.maxOut))
 
 	if t.checkTarget != nil {
 		if err := t.checkTarget(ctx, u); err != nil {

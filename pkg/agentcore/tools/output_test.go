@@ -1,0 +1,226 @@
+package tools
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+	"unicode/utf8"
+
+	"github.com/gookit/goutil/x/assert"
+	"github.com/inhere/suag/pkg/agentcore/api"
+)
+
+// outTool is a stub tool with a configurable kind, meta and result.
+type outTool struct {
+	name string
+	kind Kind
+	meta Meta
+	res  *api.ToolResult
+	err  error
+}
+
+func (t *outTool) Name() string           { return t.name }
+func (t *outTool) Description() string    { return t.name }
+func (t *outTool) Kind() Kind             { return t.kind }
+func (t *outTool) ToolMeta() Meta         { return t.meta }
+func (t *outTool) Schema() api.ToolSchema { return api.ToolSchema{Name: t.name} }
+func (t *outTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	if t.err != nil {
+		return nil, t.err
+	}
+	res := *t.res
+	res.CallID, res.Name = call.CallID, t.name
+	return &res, nil
+}
+
+// fakeSpiller records what it was asked to store.
+type fakeSpiller struct {
+	calls   int
+	content string
+	err     error
+}
+
+func (s *fakeSpiller) Spill(_ context.Context, call api.ToolCall, content string) (string, error) {
+	s.calls++
+	s.content = content
+	if s.err != nil {
+		return "", s.err
+	}
+	return "out:sess-1:0123456789abcdef", nil
+}
+
+// bigText builds n lines of distinct text with a recognisable head and tail.
+func bigText(n int) string {
+	var b strings.Builder
+	b.WriteString("HEAD-MARK\n")
+	for i := 0; i < n; i++ {
+		b.WriteString("line of tool output that is fairly long ")
+		b.WriteString(strings.Repeat("x", i%7))
+		b.WriteString("\n")
+	}
+	b.WriteString("TAIL-MARK")
+	return b.String()
+}
+
+func outRegistry(ts ...*outTool) *Registry {
+	reg := NewRegistry()
+	for _, t := range ts {
+		reg.Register(t)
+	}
+	return reg
+}
+
+func TestOutput(t *testing.T) {
+	ctx := context.Background()
+	big := bigText(2000) // ~90 KB
+	sum := sha256.Sum256([]byte(big))
+	wantSHA := hex.EncodeToString(sum[:])
+	mcpBig := &outTool{name: "mcp_big", kind: KindMCP, res: &api.ToolResult{Content: big, Metadata: map[string]any{"exit_code": 0}}}
+	small := &outTool{name: "small", res: &api.ToolResult{Content: "fine"}}
+	reread := &outTool{name: "file_read", meta: Meta{Rereadable: true}, res: &api.ToolResult{Content: big}}
+	// An MCP tool cannot claim Rereadable to dodge the output layer.
+	fakeReread := &outTool{name: "mcp_reread", kind: KindMCP, meta: Meta{Rereadable: true}, res: &api.ToolResult{Content: big}}
+	errBig := &outTool{name: "err_big", res: &api.ToolResult{Content: big, IsError: true}}
+	denied := &outTool{name: "denied", err: Denied("not allowed")}
+	reg := outRegistry(mcpBig, small, reread, fakeReread, errBig, denied)
+
+	t.Run("small result passes unchanged", func(t *testing.T) {
+		sp := &fakeSpiller{}
+		res, err := NewOutput(reg, OutputConfig{Spiller: sp}).ExecuteTool(ctx, api.ToolCall{CallID: "c1", Name: "small"})
+		assert.NoErr(t, err)
+		assert.Eq(t, "fine", res.Content)
+		assert.Nil(t, res.Metadata)
+		assert.Eq(t, 0, sp.calls)
+	})
+
+	t.Run("large MCP result is spilled with a ref line first", func(t *testing.T) {
+		sp := &fakeSpiller{}
+		res, err := NewOutput(reg, OutputConfig{Spiller: sp}).ExecuteTool(ctx, api.ToolCall{CallID: "c2", Name: "mcp_big"})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, 1, sp.calls)
+		assert.Eq(t, big, sp.content)
+		assert.True(t, len(res.Content) <= DefaultInlineOutputBytes, "inline %d", len(res.Content))
+		first, rest, _ := strings.Cut(res.Content, "\n")
+		assert.StrContains(t, first, "ref out:sess-1:0123456789abcdef")
+		assert.StrContains(t, first, "recall(ref, offset, limit)")
+		assert.True(t, strings.HasPrefix(rest, "HEAD-MARK"))
+		assert.True(t, strings.HasSuffix(res.Content, "TAIL-MARK"))
+		assert.StrContains(t, res.Content, "省略")
+
+		info, ok := OutputInfoOf(res.Metadata)
+		assert.Require(t, assert.True(t, ok))
+		assert.Eq(t, "out:sess-1:0123456789abcdef", info.Ref)
+		assert.Eq(t, len(big), info.Bytes)
+		assert.Eq(t, 2002, info.Lines)
+		assert.Eq(t, wantSHA, info.SHA256)
+		// Keys the tool set itself are kept.
+		assert.Eq(t, 0, res.Metadata["exit_code"])
+		// The inner result's metadata map is not mutated.
+		assert.Nil(t, mcpBig.res.Metadata[OutputMetaKey])
+	})
+
+	t.Run("rereadable tool passes through untouched", func(t *testing.T) {
+		sp := &fakeSpiller{}
+		res, err := NewOutput(reg, OutputConfig{Spiller: sp}).ExecuteTool(ctx, api.ToolCall{CallID: "c3", Name: "file_read"})
+		assert.NoErr(t, err)
+		assert.Eq(t, big, res.Content)
+		assert.Eq(t, 0, sp.calls)
+		_, ok := OutputInfoOf(res.Metadata)
+		assert.False(t, ok)
+	})
+
+	t.Run("MCP tool claiming rereadable is still spilled", func(t *testing.T) {
+		sp := &fakeSpiller{}
+		res, err := NewOutput(reg, OutputConfig{Spiller: sp}).ExecuteTool(ctx, api.ToolCall{CallID: "c4", Name: "mcp_reread"})
+		assert.NoErr(t, err)
+		assert.Eq(t, 1, sp.calls)
+		assert.True(t, len(res.Content) <= DefaultInlineOutputBytes)
+	})
+
+	t.Run("error result is truncated, never spilled", func(t *testing.T) {
+		sp := &fakeSpiller{}
+		res, err := NewOutput(reg, OutputConfig{Spiller: sp}).ExecuteTool(ctx, api.ToolCall{CallID: "c5", Name: "err_big"})
+		assert.NoErr(t, err)
+		assert.True(t, res.IsError)
+		assert.Eq(t, 0, sp.calls)
+		assert.Eq(t, TruncateHeadTail(big, DefaultInlineOutputBytes), res.Content)
+		info, ok := OutputInfoOf(res.Metadata)
+		assert.True(t, ok)
+		assert.Eq(t, "", info.Ref)
+	})
+
+	t.Run("errors pass through as is", func(t *testing.T) {
+		sp := &fakeSpiller{}
+		res, err := NewOutput(reg, OutputConfig{Spiller: sp}).ExecuteTool(ctx, api.ToolCall{CallID: "c6", Name: "denied"})
+		assert.Nil(t, res)
+		assert.True(t, errors.Is(err, ErrDenied))
+		assert.Eq(t, "not allowed", err.Error())
+	})
+
+	t.Run("no spiller falls back to head/tail truncation", func(t *testing.T) {
+		res, err := NewOutput(reg, OutputConfig{InlineBytes: 3000}).ExecuteTool(ctx, api.ToolCall{CallID: "c7", Name: "mcp_big"})
+		assert.NoErr(t, err)
+		assert.Eq(t, TruncateHeadTail(big, 3000), res.Content)
+		info, ok := OutputInfoOf(res.Metadata)
+		assert.True(t, ok)
+		assert.Eq(t, "", info.Ref)
+		assert.Eq(t, len(big), info.Bytes)
+	})
+
+	t.Run("spill failure keeps a snippet and says the text was not saved", func(t *testing.T) {
+		sp := &fakeSpiller{err: errors.New("disk full")}
+		res, err := NewOutput(reg, OutputConfig{Spiller: sp}).ExecuteTool(ctx, api.ToolCall{CallID: "c8", Name: "mcp_big"})
+		assert.NoErr(t, err)
+		first, _, _ := strings.Cut(res.Content, "\n")
+		assert.StrContains(t, first, "未能保存原文")
+		assert.StrNotContains(t, res.Content, "ref out:")
+		assert.True(t, len(res.Content) <= DefaultInlineOutputBytes)
+		info, ok := OutputInfoOf(res.Metadata)
+		assert.True(t, ok)
+		assert.Eq(t, "", info.Ref)
+		assert.Eq(t, wantSHA, info.SHA256)
+	})
+
+	t.Run("snippet never splits a rune", func(t *testing.T) {
+		cjk := &outTool{name: "cjk", kind: KindMCP, res: &api.ToolResult{Content: strings.Repeat("中文输出", 3000)}}
+		res, err := NewOutput(outRegistry(cjk), OutputConfig{Spiller: &fakeSpiller{}}).ExecuteTool(ctx, api.ToolCall{Name: "cjk"})
+		assert.NoErr(t, err)
+		assert.True(t, utf8.ValidString(res.Content))
+		assert.True(t, len(res.Content) <= DefaultInlineOutputBytes)
+	})
+
+	t.Run("lookup and listing pass through", func(t *testing.T) {
+		out := NewOutput(reg, OutputConfig{})
+		tool, err := out.Get("mcp_big")
+		assert.NoErr(t, err)
+		assert.True(t, IsMCP(tool))
+		schemas, err := out.ListTools(ctx)
+		assert.NoErr(t, err)
+		assert.Eq(t, 6, len(schemas))
+	})
+
+	t.Run("info survives a JSON round trip", func(t *testing.T) {
+		res, err := NewOutput(reg, OutputConfig{Spiller: &fakeSpiller{}}).ExecuteTool(ctx, api.ToolCall{Name: "mcp_big"})
+		assert.NoErr(t, err)
+		raw, err := json.Marshal(res.Metadata)
+		assert.NoErr(t, err)
+		var md map[string]any
+		assert.NoErr(t, json.Unmarshal(raw, &md))
+		info, ok := OutputInfoOf(md)
+		assert.True(t, ok)
+		assert.Eq(t, len(big), info.Bytes)
+		assert.Eq(t, 2002, info.Lines)
+	})
+}
+
+func TestTruncateHeadTailShared(t *testing.T) {
+	assert.Eq(t, "abc", TruncateHeadTail("abc", 0))
+	assert.Eq(t, "abc", TruncateHeadTail("abc", 10))
+	out := TruncateHeadTail(strings.Repeat("中", 100), 31)
+	assert.True(t, utf8.ValidString(out))
+	assert.StrContains(t, out, "省略")
+}

@@ -1,0 +1,238 @@
+package tools
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/inhere/suag/pkg/agentcore/api"
+)
+
+const (
+	// DefaultInlineOutputBytes is the default inline threshold: a tool result
+	// larger than this is not kept whole in the session (tools.max_output_bytes).
+	DefaultInlineOutputBytes = 8000
+	// DefaultRawOutputBytes is the default cap on the raw output one tool call
+	// may produce before the output layer sees it (tools.max_spill_bytes).
+	DefaultRawOutputBytes = 1 << 20
+	// outputSnippetBytes is how much of the head and of the tail an
+	// externalised result keeps inline.
+	outputSnippetBytes = 2000
+	// OutputMetaKey is the ToolResult.Metadata key the output layer writes its
+	// OutputInfo under (a nested map, so tool-defined keys are never touched).
+	OutputMetaKey = "output"
+)
+
+// Spiller stores the full text of an oversized tool result outside the
+// session history and returns a ref the model can use to read it back.
+// Implementations take the session/turn from ctx; an error makes the output
+// layer fall back to plain head/tail truncation.
+type Spiller interface {
+	Spill(ctx context.Context, call api.ToolCall, content string) (ref string, err error)
+}
+
+// OutputConfig configures NewOutput.
+type OutputConfig struct {
+	// InlineBytes is the largest result kept whole (<=0 = DefaultInlineOutputBytes).
+	InlineBytes int
+	// Spiller stores oversized results; nil means they are only truncated.
+	Spiller Spiller
+}
+
+// OutputInfo describes the raw output behind a shortened result. Bytes, Lines
+// and SHA256 are computed over the raw text the tool returned.
+type OutputInfo struct {
+	Ref    string // empty when the output was only truncated
+	Bytes  int
+	Lines  int
+	SHA256 string
+}
+
+// Output is the output-governance layer of the tool registry stack (order:
+// observe -> output -> visibility -> approval -> base). Results up to
+// InlineBytes pass unchanged; larger ones are replaced by a ref line plus a
+// head/tail snippet, with the full text handed to the Spiller. Tools that
+// paginate on their own (Meta.Rereadable) pass through untouched, and errors
+// are never rewritten, so denial accounting in outer layers is unaffected.
+type Output struct {
+	inner api.ToolRegistry
+	cfg   OutputConfig
+}
+
+var _ api.ToolRegistry = (*Output)(nil)
+var _ Lookup = (*Output)(nil)
+
+// NewOutput wraps inner with output governance.
+func NewOutput(inner api.ToolRegistry, cfg OutputConfig) *Output {
+	return &Output{inner: inner, cfg: cfg}
+}
+
+func (o *Output) ListTools(ctx context.Context) ([]api.ToolSchema, error) {
+	return o.inner.ListTools(ctx)
+}
+
+// Get passes tool lookup through to the wrapped layers.
+func (o *Output) Get(name string) (api.Tool, error) {
+	if l, ok := o.inner.(Lookup); ok {
+		return l.Get(name)
+	}
+	return nil, errors.New("tool lookup is not supported by the wrapped registry")
+}
+
+func (o *Output) inlineBytes() int {
+	if o.cfg.InlineBytes > 0 {
+		return o.cfg.InlineBytes
+	}
+	return DefaultInlineOutputBytes
+}
+
+// rereadable reports whether the named tool declares Meta.Rereadable. Unknown
+// tools (lookup failure) are treated as not rereadable.
+func (o *Output) rereadable(name string) bool {
+	t, err := o.Get(name)
+	return err == nil && MetaOf(t).Rereadable
+}
+
+func (o *Output) ExecuteTool(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	res, err := o.inner.ExecuteTool(ctx, call)
+	if err != nil || res == nil {
+		return res, err // errors (ErrDenied, ErrAborted ...) pass through as is
+	}
+	limit := o.inlineBytes()
+	if len(res.Content) <= limit || o.rereadable(call.Name) {
+		return res, nil
+	}
+	raw := res.Content
+	info := OutputInfo{Bytes: len(raw), Lines: countLines(raw), SHA256: sha256Hex(raw)}
+	out := *res
+	// An error result is never externalised: it is only cut to the threshold.
+	if res.IsError || o.cfg.Spiller == nil {
+		out.Content = TruncateHeadTail(raw, limit)
+		out.Metadata = withOutputInfo(res.Metadata, info)
+		return &out, nil
+	}
+	snippet := min(outputSnippetBytes, limit/4)
+	ref, spillErr := o.cfg.Spiller.Spill(ctx, call, raw)
+	var header string
+	if spillErr != nil {
+		slog.Warn("spill tool output", "tool", call.Name, "call_id", call.CallID, "err", spillErr)
+		header = fmt.Sprintf("[输出 %d 字节 / %d 行，未能保存原文，只保留头尾片段]", info.Bytes, info.Lines)
+	} else {
+		info.Ref = ref
+		// The ref line comes first so that any later head/tail trimming of
+		// the context (which keeps the head) still shows it.
+		header = fmt.Sprintf("[输出 %d 字节 / %d 行已保存为 ref %s；recall(ref, offset, limit) 分段读，session_search(query, ref) 在其中搜]",
+			info.Bytes, info.Lines, ref)
+	}
+	out.Content = header + "\n" + headTailSnippet(raw, snippet)
+	out.Metadata = withOutputInfo(res.Metadata, info)
+	return &out, nil
+}
+
+// OutputInfoOf reads the OutputInfo the output layer recorded in md. It
+// accepts both in-memory values (int) and JSON round-tripped ones (float64).
+func OutputInfoOf(md map[string]any) (OutputInfo, bool) {
+	m, ok := md[OutputMetaKey].(map[string]any)
+	if !ok {
+		return OutputInfo{}, false
+	}
+	info := OutputInfo{}
+	info.Ref, _ = m["ref"].(string)
+	info.SHA256, _ = m["sha256"].(string)
+	info.Bytes = anyInt(m["bytes"])
+	info.Lines = anyInt(m["lines"])
+	return info, true
+}
+
+func anyInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	}
+	return 0
+}
+
+// withOutputInfo returns a copy of md with info added under OutputMetaKey;
+// every other key the tool set is kept as is.
+func withOutputInfo(md map[string]any, info OutputInfo) map[string]any {
+	out := make(map[string]any, len(md)+1)
+	for k, v := range md {
+		out[k] = v
+	}
+	m := map[string]any{"bytes": info.Bytes, "lines": info.Lines, "sha256": info.SHA256}
+	if info.Ref != "" {
+		m["ref"] = info.Ref
+	}
+	out[OutputMetaKey] = m
+	return out
+}
+
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+// countLines counts lines the way a line-window reader sees them: a trailing
+// newline does not start another line.
+func countLines(s string) int {
+	if s == "" {
+		return 0
+	}
+	n := strings.Count(s, "\n")
+	if !strings.HasSuffix(s, "\n") {
+		n++
+	}
+	return n
+}
+
+// headTailSnippet keeps n bytes of the head and of the tail of s (UTF-8 safe)
+// with an omission marker in between.
+func headTailSnippet(s string, n int) string {
+	if len(s) <= 2*n {
+		return s
+	}
+	headLen := utf8Cut(s, n)
+	tailStart := utf8CutFrom(s, len(s)-n)
+	return fmt.Sprintf("%s\n…[省略 %d 字节]…\n%s", s[:headLen], tailStart-headLen, s[tailStart:])
+}
+
+// TruncateHeadTail keeps the head and tail of s within limit bytes (UTF-8
+// safe) and notes how many bytes were omitted in between. The tail usually
+// holds errors and exit status, so both ends are kept. limit <= 0 returns s.
+func TruncateHeadTail(s string, limit int) string {
+	if limit <= 0 || len(s) <= limit {
+		return s
+	}
+	headLen := utf8Cut(s, limit/2)
+	tailStart := utf8CutFrom(s, len(s)-(limit-headLen))
+	omitted := tailStart - headLen
+	return fmt.Sprintf("%s\n…[省略 %d 字节，输出上限 %d 字节]…\n%s", s[:headLen], omitted, limit, s[tailStart:])
+}
+
+// utf8Cut moves cut back so that s[:cut] does not split a multi-byte rune.
+func utf8Cut(s string, cut int) int {
+	if cut >= len(s) {
+		return len(s)
+	}
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return cut
+}
+
+// utf8CutFrom moves start forward so that s[start:] begins on a rune start.
+func utf8CutFrom(s string, start int) int {
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return start
+}

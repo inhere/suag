@@ -24,7 +24,7 @@ const (
 // FileReadTool reads a file within the workspace, a window of lines at a time.
 type FileReadTool struct {
 	workspace string
-	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
+	maxOut    int // page cap in bytes (inline threshold); 0 = DefaultMaxOutputBytes
 }
 
 func (t *FileReadTool) Name() string { return "file_read" }

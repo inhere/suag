@@ -105,7 +105,7 @@ type ShellExecTool struct {
 	shell      shellSpec
 	timeout    time.Duration // default per call
 	maxTimeout time.Duration
-	maxOut     int // result cap in bytes; 0 = DefaultMaxOutputBytes
+	maxOut     int // raw result cap in bytes; 0 = DefaultRawOutputBytes
 }
 
 // NewShellExecTool returns a ShellExecTool scoped to workspace using the OS
@@ -208,7 +208,7 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 		sb.WriteString("\n[stderr]\n")
 		sb.WriteString(strings.TrimRight(errOut, "\r\n"))
 	}
-	output := TruncateHeadTail(strings.TrimLeft(sb.String(), "\n"), t.maxOut)
+	output := TruncateHeadTail(strings.TrimLeft(sb.String(), "\n"), rawLimit(t.maxOut))
 
 	exitCode := cmd.ProcessState.ExitCode()
 	var status string

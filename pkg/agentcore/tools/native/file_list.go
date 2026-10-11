@@ -25,7 +25,7 @@ var ignoredDirs = map[string]bool{".git": true, "node_modules": true, "vendor": 
 // FileListTool lists files in a workspace directory, optionally recursively.
 type FileListTool struct {
 	workspace string
-	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
+	maxOut    int // raw result cap in bytes; 0 = DefaultRawOutputBytes
 }
 
 func (t *FileListTool) Name() string { return "file_list" }
@@ -94,7 +94,7 @@ func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	return &api.ToolResult{
 		CallID:  call.CallID,
 		Name:    t.Name(),
-		Content: TruncateHeadTail(content, t.maxOut),
+		Content: TruncateHeadTail(content, rawLimit(t.maxOut)),
 	}, nil
 }
 

@@ -25,7 +25,7 @@ const (
 // expression, in pure Go (no external rg).
 type FileGrepTool struct {
 	workspace string
-	maxOut    int // result cap in bytes; 0 = DefaultMaxOutputBytes
+	maxOut    int // raw result cap in bytes; 0 = DefaultRawOutputBytes
 }
 
 func (t *FileGrepTool) Name() string { return "file_grep" }
@@ -117,7 +117,7 @@ func (t *FileGrepTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	if timedOut {
 		content += fmt.Sprintf("\n[已超时（%s），结果不完整]", searchTimeout)
 	}
-	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: TruncateHeadTail(content, t.maxOut)}, nil
+	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: TruncateHeadTail(content, rawLimit(t.maxOut))}, nil
 }
 
 // grepFile returns up to limit matches in one file: "rel:line: text" lines,
