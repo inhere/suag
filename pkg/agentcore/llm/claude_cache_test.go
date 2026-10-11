@@ -31,19 +31,21 @@ func marshalBody(t *testing.T, p *ClaudeProvider, req *agentcoreapi.GenerateRequ
 }
 
 func TestClaudePromptCache(t *testing.T) {
-	t.Run("off: system is block array and no cache_control", func(t *testing.T) {
+	t.Run("off: system stays a string and no cache_control", func(t *testing.T) {
 		data, _ := json.Marshal(NewClaudeProvider(ClaudeConfig{}).buildRequestBody(cacheTestReq(), "m"))
 		assert.False(t, strings.Contains(string(data), "cache_control"))
 		body := marshalBody(t, NewClaudeProvider(ClaudeConfig{}), cacheTestReq())
-		sys := body["system"].([]any)
-		assert.Eq(t, 1, len(sys))
-		assert.Eq(t, "sys", sys[0].(map[string]any)["text"])
+		assert.Eq(t, "sys", body["system"])
 		// string content stays a string when caching is off
 		assert.Eq(t, "segment ctx", body["messages"].([]any)[0].(map[string]any)["content"])
 	})
 
 	t.Run("on: breakpoints on segment message and last message", func(t *testing.T) {
 		body := marshalBody(t, NewClaudeProvider(ClaudeConfig{PromptCache: true}), cacheTestReq())
+		// with caching on, system is a block array
+		sys, ok := body["system"].([]any)
+		assert.Require(t, assert.True(t, ok))
+		assert.Eq(t, "sys", sys[0].(map[string]any)["text"])
 		msgs := body["messages"].([]any)
 		// segment message: string content converted to a text block with the breakpoint
 		seg := msgs[0].(map[string]any)["content"].([]any)

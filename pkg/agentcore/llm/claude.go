@@ -178,8 +178,13 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 		body["max_tokens"] = req.MaxTokens
 	}
 	if system != "" {
-		// system is always a block array so a breakpoint can be attached later.
-		body["system"] = []map[string]any{{"type": "text", "text": system}}
+		// A block array only when prompt caching is on: Anthropic accepts both
+		// shapes, but some /v1/messages-compatible gateways only take a string.
+		if p.promptCache {
+			body["system"] = []map[string]any{{"type": "text", "text": system}}
+		} else {
+			body["system"] = system
+		}
 	}
 	if p.promptCache {
 		markClaudeCacheBreakpoints(msgs, segmentIdx)
