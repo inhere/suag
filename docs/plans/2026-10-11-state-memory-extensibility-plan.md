@@ -1,13 +1,14 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # 状态、记忆与可扩展核心（第一期） 实施计划
 
-> 状态：Draft 0.1 / 待人工计划批准
+> 状态：Draft 0.2 / 待人工计划批准
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-11 | Claude | 初稿 |
+| 0.2 | 2026-10-11 | Claude | 按合并评审修订：只读模式记忆写入由工具自身在治理层之前拒绝，wiring 增加 `MemoryReadOnly`，ACP 放行点改为 `Decide`，补 5 种模式 × 污染的表格测试（F1）；ACP 确认路径落到 acpserver 与 `cli/acp.go` 并补测试（F2）；`Rereadable` 只给 `file_read` 且包装层不再截断它，`skill`/`file_list` 走外置（F3）；外置文件名改为哈希、ref 严格校验并用 `os.Root` 限定（F4）；评测与 T17 强制 files 后端、fixture 自成 git 根，不写 gofer memory（F5）；fixture 放 `testdata` 且各带 go.mod（F6）；成本先扣缓存 token（F7）；T10/T13 衔接：快照 hash 预留与按结果元数据置污染（F8）；FTS 不依赖 rowid，回填改在迁移 SQL 内一次完成，删除改由 sessions 触发器（F9）；采纳建议：压缩同步更新内存 metadata 与旧会话首回合补快照、包装层透传错误并实现 Lookup、ref 说明行置顶、WAL 备份、修正检查命令；更正证据行号 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -35,8 +36,11 @@
 - 内联阈值沿用现有键 `tools.max_output_bytes`（其文档含义就是“存储的单个工具结果上限”），默认从 30000 改为 8000；新增 `tools.max_spill_bytes`（原文上限，默认 1 MiB）。设计中的 `tools.inline_output_bytes` 不另建。
 - “头尾各 2000 字符”按字节实现（各 2000 字节、UTF-8 安全），保证片段不超过内联阈值。
 - `--read-only`（及 ACP 只读模式）下 `memory` 只允许 get/search；默认 `run`（未开写工具）允许写记忆——记忆是 suag 自身状态，不是工作区写入（D7、D12）。
+- 设计 D16 把 `file_list` 列为可重读，但它没有分页参数；只有 `file_read` 标 `Rereadable`（自身已按行分页并给出 offset 提示，包装层不再截断它），`file_list`、`skill` 走外置。
+- 设计“数据”一节的“FTS 行 rowid 等于 entries rowid、打开 store 时分批回填”改为：FTS 使用自身 rowid、以 `session_id`/`seq` 列定位；删除由 `AFTER DELETE ON sessions` 触发器按 `session_id` 清理；存量回填在迁移 SQL 中一次完成。原因：`entries` 为隐式 rowid 表，gc 的 VACUUM 不保证 rowid 不变；迁移内回填避免每次打开（ACP 每回合）的扫描与写库。用户可见行为不变。
+- 外置文件名不用 `<turn>-<call>`（call_id 来自模型、可含 `:`、`../`），改为 `sha256(turn_id+call_id)` 前 16 位十六进制；ref 为 `out:<session_id>:<hex>`。
 
-授权：本计划批准即授权按任务本地原子提交（SR1211），以及下列验证动作：经 `gofer job run -p my-tools-dev -a exec --runner local --cwd inhere-tools/suag --sync` 在主机跑 `go test ./...`、staticcheck、`make install` 与 `go run ./scripts/eval`（真实模型，按 Q4 用 `opencode-go/deepseek-v4.1-flash`，评测使用隔离的临时 `SUAG_HOME`，只读复制主机 `~/.suag/config.yaml` 与 `.env`）；`make install` 前在主机复制一份 `~/.suag/db/sessions.db` 备份（新迁移会在主机库上执行）。push、发版不在授权内。
+授权：本计划批准即授权按任务本地原子提交（SR1211），以及下列验证动作：经 `gofer job run -p my-tools-dev -a exec --runner local --cwd inhere-tools/suag --sync` 在主机跑 `go test ./...`、staticcheck、`make install` 与 `go run ./scripts/eval`（真实模型，按 Q4 用 `opencode-go/deepseek-v4.1-flash`，评测使用隔离的临时 `SUAG_HOME`，只读复制主机 `~/.suag/config.yaml` 与 `.env`，临时配置强制 `memory.user.backend: files`、`memory.project.backend: files`）；`make install` 前在主机确认 `suag ps` 无运行中的进程后，把 `~/.suag/db/sessions.db` 连同 `-wal`、`-shm` 一起复制备份（新迁移会在主机库上执行）。不授权写入任何真实 gofer memory：评测与 T17 的记忆写入只落在临时目录的 files 后端，用后删除。push、发版不在授权内。
 
 - `host_or_non_offline_action=REQUIRED`
 
@@ -44,8 +48,9 @@
 
 - 设计：`docs/design/2026-10-10-state-memory-extensibility-design.md` Draft 0.3（1f47b5a，批准记录 ed861f5）；用户原话：“批准设计 0.3，Q5–Q6 按推荐”；此前 Q1–Q4 “待确认按推荐”，Q1 补充“项目下的 MEMORY.md 用仓库根目录”，输出治理“原始输出的大内容不进入 db……进会话目录下的文件，db 只存 meta 信息/前 N 字符等”。
 - 设计评审：合并轴评审 NEEDS_REVISION（5 条 CORE_BLOCKING）→ 0.2 全部处理；0.3 的输出治理由本计划评审覆盖。
-- 代码事实（2026-10-11 检索）：迁移 `internal/personal/store/store.go:20,105`（embed + `schema_migrations` 账本）；`AppendEntries` `entries.go:15`；`DeleteSession` `sessions.go:119`（外键级联）；`PatchSessionMeta` `sessions.go:129`；`NewSession` `runner.go:203`（规则 meta `:225-228`）；提示词 `rulesPromptBuilder.BuildSystemPrompt` `runner.go:711`；压缩落点 `compact.go:222`；观测 `observe.go:176`（工具）、`:97-100`（模型 cost）；`observeScope{sessionID,turnID}` 经 ctx 传递（`observe.go:41`）；工具组装 `internal/wiring/runtime.go:187-197`、`personal.New` 包 observe（`runner.go:150-151`）；`native.Env` `catalog.go:12`、`BuildTools` `:95`；`tools.Meta` `meta.go:21`；MCP 结果 `mcp/client.go:393,403`、凭据剥离 `mcp/env.go:15,34`；`RedactSecretValues` 调用方 10 处（chat、render、streamjson、runner、transcript、chat_approver）；chat 审批 `chat_approver.go:56`、ACP `policy.go:79,141`；CLI 注册 `internal/cli/root.go:47-56`；配置 `internal/config/providers.go:20`（`ModelConfig`）、`paths.go:30`（`ResolveSuagHome`）；transcripts 路径在 `chat.go:115`、`cli/gc.go:89` 各自拼接；`api.Memory` 非测试引用 `api/memory.go`、`types.go:76`、`runtime.go:20,41,59`、`runtime_helpers.go:52,87,374`、`doc.go:26`。
-- 基线：HEAD ed861f5；Go 1.26.0。
+- 代码事实（2026-10-11 检索）：迁移 `internal/personal/store/store.go:20,105`（embed + `schema_migrations` 账本）；`AppendEntries` `entries.go:15`；`DeleteSession` `sessions.go:119`（外键级联）；`PatchSessionMeta` `sessions.go:129`；`NewSession` `runner.go:203`（规则 meta `:225-228`）；提示词 `rulesPromptBuilder.BuildSystemPrompt` `runner.go:711`；压缩落点 `compact.go:222`；观测 `observe.go:176`（工具）、`:97-100`（模型 cost）；`observeScope{sessionID,turnID}` 经 ctx 传递（`observe.go:41`）；工具组装 `internal/wiring/runtime.go:187-197`、`personal.New` 包 observe（`runner.go:150-151`）；`native.Env` `catalog.go:12`、`BuildTools` `:95`；`tools.Meta` `meta.go:21`；MCP 结果 `mcp/client.go:393,403`、凭据剥离 `mcp/env.go:15,34`；`RedactSecretValues` 调用方 10 处（chat、render、streamjson、runner、transcript、chat_approver）；chat 审批 `chat_approver.go:56`、ACP 审批 `policy.go:113`（`Decide`，只读拒绝 `:137`、`RequestPermission` `:141`；`BeforeTool` `:79` 只发公告）；ACP 打开 runtime 只传 `AllowWrite: !readOnly`（`internal/cli/acp.go:45`），`TurnGate` 在 `acpserver/server.go:46`；`run` 的审批器 `cliMCPGate` 从不询问；`ReportUsage` 说明 `InputTokens` 已含缓存读写（`personal/usage.go:78-84`）；`skill` 参数只有 name/query/file（`skill.go:52-58`）；gc 执行 VACUUM（`store/gc.go:71`）；`entries.json` 为 `api.Message` 默认字段名（`Content`、`ToolResult.Content`）；CLI 注册 `internal/cli/root.go:47-56`；配置 `internal/config/providers.go:20`（`ModelConfig`）、`paths.go:30`（`ResolveSuagHome`）；transcripts 路径在 `chat.go:115`、`cli/gc.go:89` 各自拼接；`api.Memory` 非测试引用 `api/memory.go`、`types.go:76`、`runtime.go:20,41,59`、`runtime_helpers.go:52,87,374`、`doc.go:26`。
+- 基线：计划提交时 HEAD 为本计划的提交（0.1 为 6f96655）；Go 1.26.0。
+- 计划评审：合并轴评审 NEEDS_REVISION（9 条 CORE_BLOCKING）→ 0.2 全部处理并采纳 5 条建议。
 
 ## Capability Discovery
 
@@ -88,7 +93,7 @@
 
 ## 前置检查与 fail-closed 条件
 
-- workspace baseline：Git root `inhere-tools/suag`，branch `main`，HEAD ed861f5（实施前以 T0 实测为准）；`git status --short` 中 `.gofer/tracker/issues.jsonl`、`docs/plans/2026-10-06-personal-agent-redesign-plan.md` 为他人改动，全程不暂存、不修改（Ownership Conflict 时停止）；Go 1.26；主机 gofer 可用。
+- workspace baseline：Git root `inhere-tools/suag`，branch `main`，HEAD 为计划最终提交（实施前以 T0 实测为准）；`git status --short` 中 `.gofer/tracker/issues.jsonl`、`docs/plans/2026-10-06-personal-agent-redesign-plan.md` 为他人改动，全程不暂存、不修改（Ownership Conflict 时停止）；Go 1.26；主机 gofer 可用。
 - 测试隔离：测试的 `SUAG_HOME`/`HOME` 指向临时目录，不触碰真实 `~/.suag`；评测同样使用临时 `SUAG_HOME`。
 - 每个任务：改动 → `gofmt -l .` 为空 → `go build ./... && go vet ./...` → 全量 `go test -race ./... > tmp/sm-tN.log 2>&1; echo $?` → 提交；以退出码判定。终端交互改动（T7、T13）另跑 `make smoke-chat`。
 - fail-closed：全量回归即停止修复；分层守卫失败或出现 import cycle 即停止并回到设计；单文件超 1000 行先拆分；实施中发现的新路径按计划合同四类分类记录，Semantic Amendment 停止并回到计划 Gate。
@@ -123,7 +128,7 @@
 - 文件: `AC/api/memory.go`→`history.go`（`History`、`HistoryError`、`ErrHistoryStateConflict`）；`AC/types.go:76`、`AC/errors.go`、`AC/api/errors.go`；`AC/runtime.go:20,41,59`（`Config.History`）；`AC/runtime_helpers.go:52,87,374`；`AC/doc.go:26`；`AC/runtime_memory_test.go`→`runtime_history_test.go`
 - 动作: 机械改名；不动 `MemoryStorage`/`NewMemoryStorage`；改完 `rg -n "Memory" pkg/agentcore --type go < /dev/null` 逐条确认剩余均为内存存储。
 - 验证: 全量测试。
-- 完成标准: 测试通过；`rg -n "api\.Memory|Config\.Memory|MemoryError" pkg internal --type go < /dev/null` 为空。
+- 完成标准: 测试通过；`rg -n "api\.Memory\b|cfg\.Memory\b|Memory:\s|MemoryError|ErrMemoryStateConflict|defaultMemory" pkg internal --type go < /dev/null` 为空。
 - 依赖: T0
 
 ### T2 脱敏下沉 `AC/redact`（D14）
@@ -144,56 +149,56 @@
 
 ### T4 工具元数据扩展（D7、D16）
 
-- 文件: `AC/tools/meta.go`：`Meta` 增加 `External`（结果来自外部，触发污染）、`Rereadable`（原文可由工具重读，不外置）、`AgentState`（只改 agent 自身状态，审批交给工具自身治理）；`MetaOf` 对 MCP 工具返回 `External=true`；`AC/tools/native/*.go` 的 `ToolMeta`：`web_fetch`、`web_search` 置 `External`，`file_read`、`file_list`、`skill` 置 `Rereadable`；`internal/wiring/chat_approver.go:56` 与 `internal/acpserver/policy.go:79` 对 `AgentState` 工具直接放行；只读注册路径（`runtime.go:312-315`）保留 `AgentState` 工具；`internal/wiring/approval_table_test.go` 增加 `AgentState` 行
-- 动作: 实现与表格测试；本任务尚无 `AgentState` 工具，用测试桩验证。
-- 验证: 全量测试；`go test ./internal/wiring/ -run Approval -v`。
+- 文件: `AC/tools/meta.go`：`Meta` 增加 `External`（结果来自外部，触发污染）、`Rereadable`（工具自身分页，包装层不截断不外置）、`AgentState`（只改 agent 自身状态，写入权限由工具自己按模式判定）；`MetaOf` 对 MCP 工具返回 `External=true`、`AgentState=false`（MCP 不能借此绕过审批）；`AC/tools/native/*.go` 的 `ToolMeta`：`web_fetch`、`web_search` 置 `External`，仅 `file_read` 置 `Rereadable`；`internal/wiring/chat_approver.go:56` 对 `AgentState` 工具直接放行；`internal/acpserver/policy.go:113`（`Decide`）在 `:137` 只读拒绝分支之前对 `AgentState` 放行；`internal/wiring/approval_table_test.go` 增加 `AgentState` 行（含“同名 MCP 工具声明 AgentState 仍需审批”）
+- 动作: 实现与表格测试；本任务尚无 `AgentState` 工具，用测试桩验证。只读模式下的写拒绝由 T13 的 memory 工具自己实现。
+- 验证: 全量测试；`go test ./internal/wiring/ ./internal/acpserver/ -run 'Approval|Policy' -v`。
 - 完成标准: 表格测试中原有行结果不变，新行符合预期。
 - 依赖: T3
 
 ### T5 模型价格与成本（W0、D10）
 
 - 文件: `internal/config/providers.go`（`ModelConfig.Price{Input, Output, CacheRead, CacheWrite}`，美元/百万 token，解析于 `:134` 附近）；`internal/personal/observe.go:97-100`（`cost_usd` 为 0 且有价格时计算）；价格查找经 `Config` 注入 personal（不在 personal 读全局配置）；`config/config.yaml` 示例
-- 动作: 实现与单测（有返回值时以返回值为准；缓存读写按各自单价）。
+- 动作: 实现与单测：有返回值时以返回值为准；否则非缓存输入 = `InputTokens - CacheReadTokens - CacheWriteTokens`（与 `ReportUsage` 同一归一化，下限 0）按 `Input` 单价，缓存读、写、输出各按单价。
 - 验证: 全量测试。
-- 完成标准: 测试中配置价格后 `store` 汇总的 `CostUSD` 等于手算值。
+- 完成标准: 测试中（含缓存命中的用例）配置价格后 `store` 汇总的 `CostUSD` 等于手算值。
 - 依赖: T4
 
 ### T6 评测运行器 `scripts/eval`（W0、Q4）
 
-- 文件: 新建 `scripts/eval/main.go`、`scripts/eval/README.md`、`scripts/eval/tasks/<name>/{task.yaml,fixture/}`（首批 6 个：定位并修复失败测试、跨文件改名、读大日志找错误、按说明改配置、只读调研回答问题、长输出命令后基于结果作答）
-- 动作: `task.yaml` 含 `prompt`、`mode`（read-only/allow-write）、`checks`（`file_contains`、`file_equals`、`answer_contains`，不用 shell，保证 Windows 可跑）；运行器为每个任务复制 fixture 到 `tmp/eval/<run>/<task>/`，以临时 `SUAG_HOME` 运行 `suag run --session-id eval-<run>-<task>`，`--fake` 时启动 `fakellm.py`（仅做管线验证），否则复制 `--config-from` 指定目录的 `config.yaml`/`.env`；判定 checks；读 `suag stats --session <id> --json` 汇总调用次数、token、缓存命中、成本、工具输出字节（T7 后可用，之前为空）；输出表格与 `results.jsonl`
-- 验证: `go vet ./scripts/...`；`go run ./scripts/eval --fake --bin tmp/smoke/suag` 退出 0。
+- 文件: 新建 `scripts/eval/main.go`、`scripts/eval/README.md`、`scripts/eval/testdata/tasks/<name>/{task.yaml,fixture/}`（首批 6 个：定位并修复失败测试、跨文件改名、读大日志找错误、按说明改配置、只读调研回答问题、长输出命令后基于结果作答）；`testdata` 不参与 `./...`，每个 fixture 根目录另带 `go.mod`（复制出去后成为独立模块，不进入主模块的 build/vet/test）
+- 动作: `task.yaml` 含 `prompt`、`mode`（read-only/allow-write）、`checks`（`file_contains`、`file_equals`、`answer_contains`，不用 shell，保证 Windows 可跑）；运行器为每个任务复制 fixture 到 `tmp/eval/<run>/<task>/` 并在其中 `git init`（自成 git 根，项目记忆后端探测不到上层仓库的 `.gofer/tracker`），以临时 `SUAG_HOME` 运行 `suag run --session-id eval-<run>-<task>`；临时 `config.yaml` 强制 `memory.user.backend: files`、`memory.project.backend: files`（T11 前该键被忽略）；`--fake` 时启动 `fakellm.py`（仅做管线验证），否则合并 `--config-from` 目录的 `config.yaml`/`.env`；判定 checks；读 `suag stats --session <id> --json` 汇总调用次数、token、缓存命中、成本，工具输出字节字段在 T7 后才有值、之前输出空值不报错；输出表格与 `results.jsonl`
+- 验证: `go vet ./scripts/...`；`go build -o tmp/smoke/suag ./cmd/suag && go run ./scripts/eval --fake --bin tmp/smoke/suag` 退出 0；随后全量测试仍通过（证明 fixture 不进入主模块）。
 - 完成标准: 假模型下全部任务跑完（成败不要求），结果文件字段齐全。
 - 依赖: T5
 
 ### T7 输出治理与会话目录（W1、D16、D17）
 
-- 文件: 新建 `AC/tools/output.go`(+test)：`Spiller` 接口 `Spill(ctx, call api.ToolCall, content string) (ref string, err error)`、`NewOutput(inner, OutputConfig{InlineBytes, Spiller})`——超阈值时：`Rereadable` 工具只做头尾截断加“用 offset/limit 继续读”；其余调用 `Spill` 并返回头尾各 2000 字节 + 说明行，结果 `Metadata` 记 `{ref, bytes, lines, sha256}`；无 `Spiller` 时退化为头尾截断；`internal/config/paths.go` 增加 `ResolveSessionsDir()`；新建 `internal/personal/spill.go`（按 ctx 中 `observeScope` 写 `sessions/<sid>/outputs/<turn>-<call>.txt`，写前 `redact.Secrets`，目录权限沿用运行目录保护）；`internal/personal/runner.go:151` 改为 `observeTools(tools.NewOutput(cfg.Tools, …))`；`AC/tools/native/catalog.go` 的 `Env` 改为 `InlineBytes`（Rereadable 工具自用）与 `RawBytes`（其余工具的原文上限）；`code_exec.go:211`、`fetch.go:205`、`grep.go:120`、`find.go:111` 改用原文上限；`AC/tools/mcp/client.go:393,403` 截到原文上限；`internal/wiring/capabilities.go:87`（`tools.max_output_bytes` 默认 8000、新增 `tools.max_spill_bytes` 默认 1 MiB）；`observe.go:182` attrs 增加 `raw_bytes`、`inline_bytes`、`spilled`；`internal/cli/gc.go:85-89` 与 `store/gc.go` 删除会话目录；`internal/cli/export.go` 增加 `--with-outputs`
-- 动作: 实现与测试：MCP 大结果被外置、Rereadable 不外置、无 Spiller 退化、元数据完整、gc 后目录消失、导出带文件。
+- 文件: 新建 `AC/tools/output.go`(+test)：`Spiller` 接口 `Spill(ctx, call api.ToolCall, content string) (ref string, err error)`、`NewOutput(inner, OutputConfig{InlineBytes, Spiller})`——`Rereadable` 工具原样透传（自身按 `InlineBytes` 分页）；其余超阈值时调用 `Spill`，返回内容为**首行说明**（`[输出 N 字节 / M 行已保存为 ref out:<sid>:<hex>；recall(ref, offset, limit) 分段读，session_search(query, ref) 在其中搜]`）+ 头尾各 2000 字节，结果 `Metadata` 记 `{ref, bytes, lines, sha256}`；说明行置顶，保证上下文截断阶梯最小档（2000）仍保留 ref；error 与 `IsError` 结果原样透传（拒绝计数 `observe.go:186` 不受影响）；实现 `tools.Lookup`；无 `Spiller` 时退化为头尾截断；`internal/config/paths.go` 增加 `ResolveSessionsDir()`；新建 `internal/personal/spill.go`：文件名 `sha256(turn_id+call_id)` 前 16 位十六进制，写入 `sessions/<sid>/outputs/<hex>.txt`，经 `os.Root` 打开会话 outputs 目录后写入，写前 `redact.Secrets`，目录权限沿用运行目录保护；`internal/personal/runner.go:151` 改为 `observeTools(tools.NewOutput(cfg.Tools, …))`；`AC/tools/native/catalog.go` 的 `Env` 改为 `InlineBytes`（`file_read` 自用）与 `RawBytes`（其余工具的原文上限）；`code_exec.go:211`、`fetch.go:205`、`grep.go:120`、`find.go:111`、`file_list.go:97`、`skill.go:105` 改用原文上限；`AC/tools/mcp/client.go:393,403` 截到原文上限；`internal/wiring/capabilities.go:87`（`tools.max_output_bytes` 默认 8000、新增 `tools.max_spill_bytes` 默认 1 MiB）；`observe.go:182` attrs 增加 `raw_bytes`、`inline_bytes`、`spilled`；`internal/cli/gc.go:85-89` 删除会话目录（与删 transcripts 同处；store 不知道 SUAG_HOME）；`internal/cli/export.go` 增加 `--with-outputs`
+- 动作: 实现与测试：MCP 大结果被外置、`file_read` 不截断不外置、`skill` 超阈值被外置、无 Spiller 退化、错误透传、元数据完整、call_id 含 `:`/`../` 时文件名安全、gc 后目录消失、导出带文件、上下文截断到 2000 档后 ref 仍在。
 - 验证: 全量测试；`make smoke-chat`。
 - 完成标准: 测试通过；手工用 fakellm 返回 50 KB 工具输出时，`entries` 中该结果不超过 8000 字节且文件存在。
 - 依赖: T6
 
 ### T8 FTS 迁移、删除同步与回填（W1、D8）
 
-- 文件: 新建 `internal/personal/store/migrations/<ts>-add-ledger-fts-memory-meta.sql`（GR105 命名；`entries_fts` trigram、`AFTER DELETE ON entries` 触发器、`memory_meta` 表）；`store/entries.go:15`（`AppendEntries` 同事务以 entries rowid 写 FTS，文本提取函数新建于 `store/fts.go`）；`store/store.go:70`（`Open` 后执行有界分批回填，按 rowid `NOT EXISTS` 去重）
-- 动作: 实现与测试：中文 ≥3 字命中、2 字走 LIKE、删会话与 gc 后搜不到、回填重入不重复、回填与新写入交叠不重复。
+- 文件: 新建 `internal/personal/store/migrations/<ts>-add-ledger-fts-memory-meta.sql`（GR105 命名）：`entries_fts(session_id UNINDEXED, seq UNINDEXED, role UNINDEXED, text, tokenize='trigram')`（FTS 自身 rowid）；`AFTER DELETE ON sessions` 触发器 `DELETE FROM entries_fts WHERE session_id = old.id`；存量回填 `INSERT INTO entries_fts SELECT … FROM entries`，文本表达式为 `json_extract(json,'$.Content')` 与 `json_extract(json,'$.ToolResult.Content')` 拼接（实施前先用一条真实 entries 行确认字段名，不符即停止并按 Operational Discovery 记录）；`memory_meta` 表；`store/entries.go:15`（`AppendEntries` 同事务 `INSERT INTO entries_fts SELECT <同一表达式> FROM entries WHERE session_id=? AND seq=?`，表达式定义一次供迁移与写入共用的说明写在 `store/fts.go`）
+- 动作: 实现与测试：中文 ≥3 字命中、2 字走 LIKE、删会话（`DeleteSession`）与 gc（含 VACUUM）后搜不到且其余会话命中与 `session_id/seq` 定位正确、迁移在含历史数据的库上执行后可检索、迁移只执行一次（`schema_migrations`）。
 - 验证: 全量测试；`go test ./internal/personal/store/ -run FTS -race -v`。
-- 完成标准: 上述用例全部通过；旧库（T0 前生成的测试库副本）打开后可检索历史。
+- 完成标准: 上述用例全部通过；`Open` 不新增任何回填扫描。
 - 依赖: T7
 
 ### T9 `session_search` / `recall`（W1、D8、D18）
 
-- 文件: `AC/tools/native/ledger.go`（`LedgerSearcher` 窄接口、两个工具，`ToolMeta{Category: search, ReadOnly: true, External: true}`）；`internal/personal/ledger.go`（实现：scope current/workspace/all，workspace 按 `sessions.cwd` 前缀；ref `<sid>/<seq>` 读消息窗口、`out:<turn>-<call>` 读外置文件行窗口；`session_search(query, ref)` 对单个外置文件逐行扫描；查询逐词转义、按 rune 数决定 MATCH/LIKE；结果过 `redact.Clean`）；`internal/wiring/runtime.go:179-186` 注册
-- 动作: 实现与测试（含 FTS 语法字符、跨工作区隔离、ref 不存在的错误信息）。
+- 文件: `AC/tools/native/ledger.go`（`LedgerSearcher` 窄接口、两个工具，`ToolMeta{Category: search, ReadOnly: true, External: true}`）；`internal/personal/ledger.go`（实现：scope current/workspace/all，workspace 按 `sessions.cwd` 前缀；ref `<sid>/<seq>` 读消息窗口、`out:<sid>:<hex>` 读外置文件行窗口——ref 先用正则 `^out:sess_[0-9a-z]+:[0-9a-f]{16}$`（会话 ID 格式以 `personal/ids.go` 为准）校验，再经 `os.Root` 打开该会话 outputs 目录读取；`session_search(query, ref)` 对单个外置文件逐行扫描；查询逐词转义、按 rune 数决定 MATCH/LIKE；结果过 `redact.Clean`）；`internal/wiring/runtime.go:179-186` 注册
+- 动作: 实现与测试（含 FTS 语法字符、跨工作区隔离、ref 不存在、ref 含 `../`、`:`、绝对路径时被拒、跨会话读取外置输出）。
 - 验证: 全量测试。
 - 完成标准: 测试通过；工具出现在只读注册清单中。
 - 依赖: T8
 
 ### T10 污染标记与 `turn_context` 事件（W1、D7、D9）
 
-- 文件: `internal/personal/observe.go:176-194`（工具结果返回后，`MetaOf(tool).External` 为真且 session meta 无 `tainted_at` 时写入；`memory.taint_tools` 追加的工具同样处理）；`internal/personal/runner.go`（每回合开始记录 `turn_context`：model、provider、mode、工具名列表 hash 与数量、规则 hash、记忆快照 hash、是否污染）；`internal/cli/trace.go` 显示
-- 动作: 实现与测试（跨回合仍为污染；`shell_exec` 默认不置位、配置后置位）。
+- 文件: `internal/personal/observe.go:176-194`（工具结果返回后，`MetaOf(tool).External` 为真、或结果 `Metadata["external"] == true`（供 T13 的 gofer/exec 读结果按次声明）、或工具在 `memory.taint_tools` 中，且 session meta 无 `tainted_at` 时经 `PatchSessionMeta` 写入）；`internal/personal/runner.go`（每回合开始记录 `turn_context`：model、provider、mode、工具名列表 hash 与数量、规则 hash、`memory_hash`（本任务取 session meta 中的值，T13 前为空）、是否污染）；`internal/cli/trace.go` 显示
+- 动作: 实现与测试（跨回合仍为污染；结果元数据声明 external 时置位；`shell_exec` 默认不置位、配置后置位；`memory_hash` 为空时字段存在且为空）。
 - 验证: 全量测试。
 - 完成标准: 测试通过；`suag trace` 输出含 turn_context 行。
 - 依赖: T9
@@ -216,10 +221,10 @@
 
 ### T13 `memory` 工具、快照注入与确认（W2、D5–D7）
 
-- 文件: `AC/tools/native/memory.go`（工具：add/replace/remove/get/search，说明含四类与不记清单、gofer note 会进入所有 agent 开场的提示；`ToolMeta{AgentState: true}`，get/search 结果对 gofer/exec 后端置 `External`）；`internal/personal/runner.go:203-229`（新建会话写 `memory_index_content`/`memory_index_hash`）、`compact.go:222` 之后刷新快照、`runner.go:711` 在规则后注入记忆索引；`internal/wiring/memory.go`（`Policy`：`Tainted` 读 session meta，`Confirm` 在 chat 经 `tools.Asker` 询问 `[y]是 [N]否 [a]本会话不再问`、在 ACP 经 `RequestPermission`、在 `run` 返回拒绝并提示，`--read-only` 时写操作拒绝）；`internal/chat/render.go`（回合结束显示“已记住：…”）；配置键 `memory.write`、`memory.write_tainted`、`memory.taint_tools`、`memory.project.backend`、`memory.user.backend`
-- 动作: 实现与测试；`internal/chat/` 若有交互变化，在 `scripts/ptysmoke/chat_approval.py` 补“污染后写记忆询问”检查。
+- 文件: `AC/tools/native/memory.go`（工具：add/replace/remove/get/search，说明含四类与不记清单、gofer note 会进入所有 agent 开场的提示；`ToolMeta{AgentState: true}`；构造参数 `Writable bool`——为 false 时写操作在进入 Governed 之前直接返回拒绝及原因；get/search 结果来自 gofer/exec 后端时在结果 `Metadata` 置 `external: true`，由 T10 的观测层置污染）；`internal/wiring/runtime.go`（`Options.MemoryReadOnly`（零值即可写，chat 无需改动）；在 `:179` 与 update_plan 同处注册 memory 工具）；`internal/cli/run.go`（CLI 传 `ReadOnly`）、`internal/cli/acp.go:33-45`（ACP 传 `readOnly`，并把确认回调传入 wiring）；`internal/acpserver/server.go:46`（`TurnGate` 增加记忆确认方法，经 `RequestPermission` 发出）与 `internal/acpserver/policy.go`；`internal/personal/runner.go:203-229`（新建会话写 `memory_index_content`/`memory_index_hash`；已有会话在首回合发现缺少快照时补写一次）、`compact.go:222` 之后刷新快照并同步更新内存中的 `rulesPromptBuilder.metadata`（`runner.go:362`），`runner.go:711` 在规则后注入记忆索引，`turn_context` 的 `memory_hash` 取快照 hash；`internal/wiring/memory.go`（`Policy`：`Tainted` 读 session meta；`Confirm` 在 chat 经 `tools.Asker` 询问 `[y]是 [N]否 [a]本会话不再问`、在 ACP 经 `TurnGate`、在 `run` 返回拒绝并提示）；`internal/chat/render.go`（回合结束显示“已记住：…”）；配置键 `memory.write`、`memory.write_tainted`、`memory.taint_tools`、`memory.project.backend`、`memory.user.backend`
+- 动作: 实现与测试：表格测试覆盖 chat / `run` / `run --read-only` / ACP default / ACP read_only × 未污染 / 已污染 共 10 种组合的写入结果（只读两种一律拒绝写、允许读；其余未污染直接写，已污染按确认结果）；acpserver 测试覆盖确认的允许、拒绝、取消；`scripts/ptysmoke/chat_approval.py` 补“污染后写记忆询问”检查。
 - 验证: 全量测试；`make smoke-chat`。
-- 完成标准: 新会话系统提示词含记忆索引；同一会话内写入后提示词不变（缓存不破）；压缩后刷新；三种模式确认行为符合预期。
+- 完成标准: 新会话系统提示词含记忆索引；同一会话内写入后提示词不变（缓存不破）；压缩后当回合即使用新索引；旧会话首回合补快照；10 种组合与 ACP 三例全部符合预期。
 - 依赖: T12
 
 ### T14 exec 记忆后端（W3、D11）
@@ -249,7 +254,7 @@
 ### T17 全量与真实验证
 
 - 文件: 无（发现问题时回到对应任务修复）
-- 动作: 容器全量 race、vet、`make smoke-chat`；主机 `go test ./...` 与 staticcheck；主机备份 `~/.suag/db/sessions.db` 后 `make install`，`suag version` 等于 HEAD；主机运行 `go run ./scripts/eval --model opencode-go/deepseek-v4.1-flash --config-from <主机 ~/.suag>`；经 gofer suag agent 跑一次真实会话：触发一次大输出外置、一次 `session_search`、一次 `memory` 写入，`suag trace` 核对事件。
+- 动作: 容器全量 race、vet、`make smoke-chat`；主机 `go test ./...` 与 staticcheck；主机确认 `suag ps` 为空后复制 `sessions.db` 与 `-wal`、`-shm` 备份，再 `make install`，`suag version` 等于 HEAD；主机运行 `go run ./scripts/eval --model opencode-go/deepseek-v4.1-flash --config-from <主机 ~/.suag>`；真实会话在主机的临时 git 仓库（`tmp/eval/real-<ts>/`，`git init`，临时 `SUAG_HOME`，配置强制 files 后端）中用 `suag run --allow-write` 跑一次：触发一次大输出外置、一次 `session_search`、一次 `memory` 写入，`suag trace` 核对事件，结束后删除该目录与临时 `SUAG_HOME`。
 - 验证: 各命令退出码与输出记录到 gofer plan 备注；eval 结果文件路径记入。
 - 完成标准: 全部通过；真实模型评测完成并记录基线数字（成功率、平均 token、缓存命中、每回合工具输出字节）。
 - 依赖: T16
