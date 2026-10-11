@@ -1,0 +1,533 @@
+package gofermem
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gookit/goutil/x/assert"
+
+	"github.com/inhere/suag/pkg/agentcore/memory"
+)
+
+// The test binary doubles as a fake gofer: when fakeStateEnv is set, TestMain
+// runs fakeGofer instead of the tests. The real gofer is never executed.
+const (
+	fakeStateEnv     = "FAKE_GOFER_STATE"      // JSON file holding []record
+	fakeLogEnv       = "FAKE_GOFER_LOG"        // JSON lines: one call per line
+	fakeIgnoreTagEnv = "FAKE_GOFER_IGNORE_TAG" // "1": ls ignores --tag (proves the local filter)
+	fakeFailEnv      = "FAKE_GOFER_FAIL"       // "1": every call fails with a non-not-found error
+	fakeSleepEnv     = "FAKE_GOFER_SLEEP"      // "1": hang (timeout test)
+	fakeShowUntagEnv = "FAKE_GOFER_SHOW_UNTAG" // "1": show drops the tags (re-tagged since the listing)
+	leakProbeEnv     = "GOFERMEM_TEST_API_KEY" // credential that must be stripped
+	keepProbeEnv     = "GOFER_CONFIG_DIR"      // gofer setting that must be inherited
+)
+
+func TestMain(m *testing.M) {
+	if os.Getenv(fakeStateEnv) != "" {
+		os.Exit(fakeGofer(os.Args[1:]))
+	}
+	os.Exit(m.Run())
+}
+
+// call is one logged fake gofer invocation.
+type call struct {
+	Args   []string `json:"args"`
+	Dir    string   `json:"dir"`
+	Leaked bool     `json:"leaked"`
+	Kept   string   `json:"kept"`
+}
+
+// fakeGofer mimics `gofer memory ls|show|set|rm --json` on the local tracker
+// with a JSON file as storage, including gofer's not-found errors (exit 2).
+func fakeGofer(args []string) int {
+	statePath := os.Getenv(fakeStateEnv)
+	dir, _ := os.Getwd()
+	_, leaked := os.LookupEnv(leakProbeEnv)
+	logLine, _ := json.Marshal(call{Args: args, Dir: dir, Leaked: leaked, Kept: os.Getenv(keepProbeEnv)})
+	if f, err := os.OpenFile(os.Getenv(fakeLogEnv), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+		_, _ = f.Write(append(logLine, '\n'))
+		_ = f.Close()
+	}
+	if os.Getenv(fakeSleepEnv) == "1" {
+		time.Sleep(30 * time.Second)
+	}
+	if os.Getenv(fakeFailEnv) == "1" {
+		fmt.Fprintln(os.Stderr, "\x1b[97;41mERROR: \x1b[0mtracker is locked")
+		return 2
+	}
+	if len(args) < 2 || args[0] != "memory" {
+		fmt.Fprintln(os.Stderr, "fake gofer: unexpected args", args)
+		return 64
+	}
+	sub := args[1]
+	flags := map[string]string{}
+	var tags []string
+	var pos []string
+	for i := 2; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--":
+			pos = append(pos, args[i+1:]...)
+			i = len(args)
+		case a == "--json":
+			flags["json"] = "1"
+		case strings.HasPrefix(a, "--"):
+			v := args[i+1]
+			i++
+			if a == "--tag" {
+				tags = append(tags, v)
+			}
+			flags[strings.TrimPrefix(a, "--")] = v
+		default:
+			pos = append(pos, a)
+		}
+	}
+	var recs []record
+	if data, err := os.ReadFile(statePath); err == nil {
+		_ = json.Unmarshal(data, &recs)
+	}
+	save := func() {
+		data, _ := json.Marshal(recs)
+		_ = os.WriteFile(statePath, data, 0o600)
+	}
+	find := func(key string) int {
+		for i, r := range recs {
+			if r.Key == key {
+				return i
+			}
+		}
+		return -1
+	}
+	emit := func(v any) {
+		data, _ := json.Marshal(v)
+		fmt.Println(string(data))
+	}
+
+	switch sub {
+	case "ls":
+		kw := ""
+		if len(pos) > 0 {
+			kw = strings.ToLower(pos[0])
+		}
+		out := []record{}
+		for _, r := range recs {
+			if kw != "" && !strings.Contains(strings.ToLower(r.Key+"\n"+r.Summary+"\n"+r.Content), kw) {
+				continue
+			}
+			if os.Getenv(fakeIgnoreTagEnv) != "1" && len(tags) > 0 && !hasTag(r.Tags, tags[0]) {
+				continue
+			}
+			out = append(out, r)
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+		emit(out)
+	case "show":
+		i := find(pos[0])
+		if i < 0 {
+			fmt.Println("[]")
+			fmt.Fprintln(os.Stderr, "\x1b[97;41mERROR: \x1b[0mmemory not found: "+pos[0])
+			return 2
+		}
+		if os.Getenv(fakeShowUntagEnv) == "1" {
+			recs[i].Tags = nil
+		}
+		emit(recs[i])
+	case "set":
+		key, content := pos[0], pos[1]
+		i := find(key)
+		if i < 0 {
+			recs = append(recs, record{Key: key})
+			i = len(recs) - 1
+		}
+		r := &recs[i]
+		r.Content = content
+		r.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		if v, ok := flags["tag"]; ok {
+			r.Tags = strings.Split(v, ",")
+		}
+		if v, ok := flags["summary"]; ok {
+			r.Summary = v
+		}
+		if v, ok := flags["kind"]; ok {
+			r.Kind = v
+		}
+		if v, ok := flags["source"]; ok {
+			r.Source = v
+		}
+		save()
+		emit(*r)
+	case "rm":
+		i := find(pos[0])
+		if i < 0 {
+			fmt.Fprintln(os.Stderr, "\x1b[97;41mERROR: \x1b[0mmemory "+pos[0]+" not found")
+			return 2
+		}
+		recs = append(recs[:i], recs[i+1:]...)
+		save()
+		emit(map[string]string{"removed": pos[0]})
+	default:
+		fmt.Fprintln(os.Stderr, "fake gofer: unknown subcommand", sub)
+		return 64
+	}
+	return 0
+}
+
+// fake is a test fixture around one fake gofer state.
+type fake struct {
+	t     *testing.T
+	dir   string // workspace dir passed as Config.Dir
+	state string
+	log   string
+}
+
+func newFake(t *testing.T, seed ...record) (*fake, *Store) {
+	t.Helper()
+	tmp := t.TempDir()
+	f := &fake{t: t, dir: filepath.Join(tmp, "ws"), state: filepath.Join(tmp, "state.json"), log: filepath.Join(tmp, "calls.jsonl")}
+	assert.Require(t, assert.NoErr(t, os.MkdirAll(f.dir, 0o700)))
+	if seed == nil {
+		seed = []record{}
+	}
+	f.writeState(seed)
+	st, err := New(Config{Bin: os.Args[0], Dir: f.dir, Timeout: 10 * time.Second,
+		// GORACE: a -race child otherwise sleeps 1s at exit (atexit_sleep_ms).
+		Env: []string{fakeStateEnv + "=" + f.state, fakeLogEnv + "=" + f.log, "GORACE=atexit_sleep_ms=0"}})
+	assert.Require(t, assert.NoErr(t, err))
+	return f, st
+}
+
+func (f *fake) writeState(recs []record) {
+	data, err := json.Marshal(recs)
+	assert.Require(f.t, assert.NoErr(f.t, err))
+	assert.Require(f.t, assert.NoErr(f.t, os.WriteFile(f.state, data, 0o600)))
+}
+
+func (f *fake) records() map[string]record {
+	data, err := os.ReadFile(f.state)
+	assert.Require(f.t, assert.NoErr(f.t, err))
+	var recs []record
+	assert.Require(f.t, assert.NoErr(f.t, json.Unmarshal(data, &recs)))
+	m := map[string]record{}
+	for _, r := range recs {
+		m[r.Key] = r
+	}
+	return m
+}
+
+func (f *fake) calls() []call {
+	data, err := os.ReadFile(f.log)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	assert.Require(f.t, assert.NoErr(f.t, err))
+	var out []call
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if line == "" {
+			continue
+		}
+		var c call
+		assert.Require(f.t, assert.NoErr(f.t, json.Unmarshal([]byte(line), &c)))
+		out = append(out, c)
+	}
+	return out
+}
+
+// writeCalls returns the set/rm invocations (the only ones that write).
+func (f *fake) writeCalls() []call {
+	var out []call
+	for _, c := range f.calls() {
+		if c.Args[1] == "set" || c.Args[1] == "rm" {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+var (
+	ctx  = context.Background()
+	proj = memory.ProjectScope("demo")
+)
+
+// foreign entries every isolation test seeds: a note of another agent, a
+// rule with a suag-looking key but no suag tag, and a suag-tagged entry whose
+// key does not follow the suag pattern.
+func foreignSeed() []record {
+	return []record{
+		{Key: "team-rule", Content: "always run make lint before pushing", Tags: []string{"conventions"}, Kind: "rule",
+			Summary: "lint before push", UpdatedAt: "2026-10-01T00:00:00Z"},
+		{Key: "suag-project-foreign", Content: "impostor body mentions lint", Tags: []string{"other"}, Kind: "note",
+			Summary: "Foreign", UpdatedAt: "2026-10-01T00:00:00Z"},
+		{Key: "handwritten", Content: "tagged by hand, lint", Tags: []string{"suag"}, Kind: "note",
+			Summary: "hand", UpdatedAt: "2026-10-01T00:00:00Z"},
+	}
+}
+
+func TestNewAndScope(t *testing.T) {
+	t.Run("dir is required", func(t *testing.T) {
+		_, err := New(Config{})
+		assert.True(t, errors.Is(err, memory.ErrInvalid))
+	})
+	t.Run("only the project scope is served", func(t *testing.T) {
+		f, st := newFake(t)
+		_, err := st.Index(ctx, memory.UserScope())
+		assert.True(t, errors.Is(err, memory.ErrInvalid))
+		_, err = st.Write(ctx, memory.UserScope(), memory.Op{Action: memory.ActionAdd, Title: "x", Body: "y", Kind: memory.KindUser})
+		assert.True(t, errors.Is(err, memory.ErrInvalid))
+		assert.Empty(t, f.calls())
+		assert.Eq(t, "gofer", st.BackendName())
+	})
+}
+
+func TestKeyMapping(t *testing.T) {
+	assert.Eq(t, "suag-feedback-run-tests", Key(memory.KindFeedback, "run-tests"))
+	for _, tc := range []struct {
+		key  string
+		kind memory.Kind
+		id   string
+		ok   bool
+	}{
+		{"suag-project-release-flow", memory.KindProject, "release-flow", true},
+		{"suag-reference-docs-2", memory.KindReference, "docs-2", true},
+		{"suag-unknown-x", "", "", false},
+		{"suag-project-", "", "", false},
+		{"suag-project-Bad_ID", "", "", false},
+		{"team-rule", "", "", false},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			k, id, ok := ParseKey(tc.key)
+			assert.Eq(t, tc.ok, ok)
+			assert.Eq(t, tc.kind, k)
+			assert.Eq(t, tc.id, id)
+		})
+	}
+}
+
+func TestWriteReadRoundTrip(t *testing.T) {
+	f, st := newFake(t)
+	t.Setenv(leakProbeEnv, "sk-secret")
+	t.Setenv(keepProbeEnv, "/cfg/gofer")
+
+	e, err := st.Write(ctx, proj, memory.Op{Action: memory.ActionAdd, Title: "Release flow", Body: "- tag first\n- then push",
+		Kind: memory.KindProject, Prov: memory.Provenance{SessionID: "sess-1"}})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, "release-flow", e.ID)
+	assert.False(t, e.Updated.IsZero())
+
+	t.Run("set arguments follow the mapping", func(t *testing.T) {
+		w := f.writeCalls()
+		assert.Require(t, assert.Len(t, w, 1))
+		assert.Eq(t, []string{"memory", "set", "--json", "--kind", "note", "--tag", "suag,project",
+			"--summary", "Release flow", "--source", "suag:sess-1", "--", "suag-project-release-flow", "- tag first\n- then push"}, w[0].Args)
+		r := f.records()["suag-project-release-flow"]
+		assert.Eq(t, []string{"suag", "project"}, r.Tags)
+		assert.Eq(t, "note", r.Kind)
+	})
+	t.Run("runs in the workspace with credentials stripped", func(t *testing.T) {
+		for _, c := range f.calls() {
+			assert.Eq(t, f.dir, c.Dir)
+			assert.False(t, c.Leaked)
+			assert.Eq(t, "/cfg/gofer", c.Kept)
+		}
+	})
+	t.Run("get index search", func(t *testing.T) {
+		got, err := st.Get(ctx, proj, "release-flow")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "Release flow", got.Title)
+		assert.Eq(t, "- tag first\n- then push", got.Body)
+		assert.Eq(t, memory.KindProject, got.Kind)
+
+		ix, err := st.Index(ctx, proj)
+		assert.NoErr(t, err)
+		assert.Eq(t, []memory.IndexLine{{ID: "release-flow", Title: "Release flow", Kind: memory.KindProject}}, ix.Lines)
+
+		hits, err := st.Search(ctx, proj, "PUSH tag", 0)
+		assert.NoErr(t, err)
+		assert.Require(t, assert.Len(t, hits, 1))
+		assert.Eq(t, "release-flow", hits[0].ID)
+		assert.StrContains(t, hits[0].Snippet, "push")
+
+		hits, err = st.Search(ctx, proj, "push missing-term", 0)
+		assert.NoErr(t, err)
+		assert.Empty(t, hits)
+	})
+	t.Run("source without a session", func(t *testing.T) {
+		_, err := st.Write(ctx, proj, memory.Op{Action: memory.ActionAdd, Title: "Docs", Body: "see docs/", Kind: memory.KindReference})
+		assert.NoErr(t, err)
+		w := f.writeCalls()
+		assert.Contains(t, strings.Join(w[len(w)-1].Args, " "), "--source suag --")
+	})
+	t.Run("missing id", func(t *testing.T) {
+		_, err := st.Get(ctx, proj, "nope")
+		assert.True(t, errors.Is(err, memory.ErrNotFound))
+	})
+}
+
+func TestReplaceAndRemove(t *testing.T) {
+	f, st := newFake(t)
+	e, err := st.Write(ctx, proj, memory.Op{Action: memory.ActionAdd, Title: "Use make lint", Body: "before commits", Kind: memory.KindProject})
+	assert.Require(t, assert.NoErr(t, err))
+
+	t.Run("replace keeps the key", func(t *testing.T) {
+		got, err := st.Write(ctx, proj, memory.Op{Action: memory.ActionReplace, ID: e.ID, Title: "Use make lint-all", Body: "before every commit"})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, memory.KindProject, got.Kind)
+		r := f.records()["suag-project-use-make-lint"]
+		assert.Eq(t, "before every commit", r.Content)
+		assert.Eq(t, "Use make lint-all", r.Summary)
+	})
+	t.Run("kind change moves the key", func(t *testing.T) {
+		got, err := st.Write(ctx, proj, memory.Op{Action: memory.ActionReplace, ID: e.ID, Title: "Use make lint-all",
+			Body: "before every commit", Kind: memory.KindFeedback})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, memory.KindFeedback, got.Kind)
+		recs := f.records()
+		_, oldThere := recs["suag-project-use-make-lint"]
+		assert.False(t, oldThere)
+		assert.Eq(t, []string{"suag", "feedback"}, recs["suag-feedback-use-make-lint"].Tags)
+	})
+	t.Run("remove returns the removed entry", func(t *testing.T) {
+		old, err := st.Write(ctx, proj, memory.Op{Action: memory.ActionRemove, ID: e.ID})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "Use make lint-all", old.Title)
+		assert.Eq(t, "before every commit", old.Body)
+		assert.Eq(t, memory.KindFeedback, old.Kind)
+		assert.Empty(t, f.records())
+		_, err = st.Get(ctx, proj, e.ID)
+		assert.True(t, errors.Is(err, memory.ErrNotFound))
+		_, err = st.Write(ctx, proj, memory.Op{Action: memory.ActionRemove, ID: e.ID})
+		assert.True(t, errors.Is(err, memory.ErrNotFound))
+	})
+	t.Run("long titles are refused before gofer runs", func(t *testing.T) {
+		before := len(f.calls())
+		_, err := st.Write(ctx, proj, memory.Op{Action: memory.ActionAdd, Title: strings.Repeat("长", MaxTitleRunes+1), Body: "b", Kind: memory.KindUser})
+		assert.True(t, errors.Is(err, memory.ErrInvalid))
+		assert.Eq(t, before, len(f.calls()))
+	})
+}
+
+// TestForeignEntriesAreInvisible proves that entries without the suag tag (or
+// without a suag key) can never be listed, read, changed or removed, even
+// when gofer itself ignores the --tag filter.
+func TestForeignEntriesAreInvisible(t *testing.T) {
+	for _, ignoreTag := range []bool{false, true} {
+		t.Run(fmt.Sprintf("gofer ignores --tag=%v", ignoreTag), func(t *testing.T) {
+			if ignoreTag {
+				t.Setenv(fakeIgnoreTagEnv, "1")
+			}
+			f, st := newFake(t, foreignSeed()...)
+			want := foreignSeed()
+
+			ix, err := st.Index(ctx, proj)
+			assert.NoErr(t, err)
+			assert.Empty(t, ix.Lines)
+
+			hits, err := st.Search(ctx, proj, "lint", 0)
+			assert.NoErr(t, err)
+			assert.Empty(t, hits)
+
+			_, err = st.Get(ctx, proj, "foreign")
+			assert.True(t, errors.Is(err, memory.ErrNotFound))
+
+			_, err = st.Write(ctx, proj, memory.Op{Action: memory.ActionReplace, ID: "foreign", Title: "hijack", Body: "x"})
+			assert.True(t, errors.Is(err, memory.ErrNotFound))
+			_, err = st.Write(ctx, proj, memory.Op{Action: memory.ActionRemove, ID: "foreign"})
+			assert.True(t, errors.Is(err, memory.ErrNotFound))
+			assert.Empty(t, f.writeCalls())
+
+			// An add whose slug collides with the impostor key gets a new id.
+			e, err := st.Write(ctx, proj, memory.Op{Action: memory.ActionAdd, Title: "Foreign", Body: "mine", Kind: memory.KindProject})
+			assert.Require(t, assert.NoErr(t, err))
+			assert.Eq(t, "foreign-2", e.ID)
+
+			recs := f.records()
+			for _, w := range want {
+				assert.Eq(t, w, recs[w.Key])
+			}
+			ix, err = st.Index(ctx, proj)
+			assert.NoErr(t, err)
+			assert.Eq(t, []memory.IndexLine{{ID: "foreign-2", Title: "Foreign", Kind: memory.KindProject}}, ix.Lines)
+		})
+	}
+}
+
+// TestShowRechecksTag covers an entry that lost its suag tag between the
+// listing and the read: the listing (fake ignores --tag) still names it, the
+// authoritative show must not.
+func TestShowRechecksTag(t *testing.T) {
+	f, st := newFake(t, record{Key: "suag-user-pref", Content: "c", Tags: []string{"suag", "user"}, Summary: "pref",
+		UpdatedAt: "2026-10-01T00:00:00Z"})
+	_, err := st.Get(ctx, proj, "pref")
+	assert.Require(t, assert.NoErr(t, err))
+
+	t.Setenv(fakeShowUntagEnv, "1")
+	_, err = st.Get(ctx, proj, "pref")
+	assert.True(t, errors.Is(err, memory.ErrNotFound))
+	_, err = st.Write(ctx, proj, memory.Op{Action: memory.ActionRemove, ID: "pref"})
+	assert.True(t, errors.Is(err, memory.ErrNotFound))
+	assert.Empty(t, f.writeCalls())
+}
+
+func TestGoferFailures(t *testing.T) {
+	t.Run("errors carry stderr without colors", func(t *testing.T) {
+		_, st := newFake(t)
+		t.Setenv(fakeFailEnv, "1")
+		_, err := st.Index(ctx, proj)
+		assert.Err(t, err)
+		assert.StrContains(t, err.Error(), "tracker is locked")
+		assert.NotContains(t, err.Error(), "\x1b[")
+		assert.False(t, errors.Is(err, memory.ErrNotFound))
+	})
+	t.Run("timeout", func(t *testing.T) {
+		_, st := newFake(t)
+		st.cfg.Timeout = 300 * time.Millisecond
+		t.Setenv(fakeSleepEnv, "1")
+		start := time.Now()
+		_, err := st.Index(ctx, proj)
+		assert.Err(t, err)
+		assert.StrContains(t, err.Error(), "timed out")
+		assert.True(t, time.Since(start) < 10*time.Second)
+	})
+	t.Run("missing binary", func(t *testing.T) {
+		st, err := New(Config{Bin: filepath.Join(t.TempDir(), "no-gofer"), Dir: t.TempDir()})
+		assert.Require(t, assert.NoErr(t, err))
+		_, err = st.Index(ctx, proj)
+		assert.Err(t, err)
+	})
+}
+
+// TestGovernedTombstoneShape checks the removed entry carries what Governed
+// needs to fingerprint it.
+func TestGovernedTombstoneShape(t *testing.T) {
+	_, st := newFake(t)
+	prov := &memProv{}
+	g := memory.NewGoverned(st, memory.Policy{Provenance: prov})
+	e, err := g.Write(ctx, proj, memory.Op{Action: memory.ActionAdd, Title: "Ports", Body: "api on 8080", Kind: memory.KindProject})
+	assert.Require(t, assert.NoErr(t, err))
+	_, err = g.Write(ctx, proj, memory.Op{Action: memory.ActionRemove, ID: e.ID})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, memory.Fingerprint("Ports", "api on 8080"), prov.tomb)
+	assert.Eq(t, "gofer", prov.backend)
+	_, err = g.Write(ctx, proj, memory.Op{Action: memory.ActionAdd, Title: "Ports", Body: "api on 8080", Kind: memory.KindProject})
+	assert.True(t, errors.Is(err, memory.ErrTombstoned))
+}
+
+type memProv struct{ backend, tomb string }
+
+func (p *memProv) Record(context.Context, string, memory.Scope, memory.Entry, string) error {
+	return nil
+}
+func (p *memProv) Tombstone(_ context.Context, backend string, _ memory.Scope, _ string, fp string) error {
+	p.backend, p.tomb = backend, fp
+	return nil
+}
+func (p *memProv) IsTombstoned(_ context.Context, _ string, _ memory.Scope, fp string) (bool, error) {
+	return fp != "" && fp == p.tomb, nil
+}
