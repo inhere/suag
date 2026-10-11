@@ -390,5 +390,3 @@ func charsOfMessage(m agentcore.Message) int {
 	return n
 }
 
-// tokensOfMessage is the chars/4 approximation plus a small per-message overhead.
-func tokensOfMessage(m agentcore.Message) int { return charsOfMessage(m)/4 + 4 }
