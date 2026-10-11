@@ -9,6 +9,7 @@ import (
 
 	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/llm"
 )
 
 // Segment start reasons (compactionRecord.Reason). A record without a reason
@@ -23,7 +24,7 @@ const (
 // metaSegmentContext marks the segment context message in Message.Metadata.
 // The message is rendered by compose for every request: it is not a stored
 // entry, not a ctxItem, never a cut candidate and never part of items().
-const metaSegmentContext = "suag.segment_context"
+const metaSegmentContext = llm.SegmentContextMetaKey
 
 // segmentContext is the frozen context snapshot of one segment (design
 // "段起始记录"): what the segment sees besides its history. It is stored in

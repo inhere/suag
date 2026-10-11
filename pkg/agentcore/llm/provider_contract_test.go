@@ -205,11 +205,11 @@ func TestClaudeProvider_BuildRequestBody_MovesSystemMessagesToSystemField(t *tes
 	for _, m := range msgs {
 		assert.Eq(t, "user", m["role"])
 	}
-	assert.Eq(t, "base\n\n项目规则已更新", body["system"])
+	assert.Eq(t, []map[string]any{{"type": "text", "text": "base\n\n项目规则已更新"}}, body["system"])
 
 	// Without a base system prompt the system message becomes the system field.
 	body = provider.buildRequestBody(&agentcoreapi.GenerateRequest{
 		Messages: []agentcoreapi.Message{{Role: "system", Content: "only"}, {Role: "user", Content: "a"}},
 	}, "m")
-	assert.Eq(t, "only", body["system"])
+	assert.Eq(t, []map[string]any{{"type": "text", "text": "only"}}, body["system"])
 }

@@ -346,3 +346,19 @@ providers:
 		assert.False(t, ok)
 	})
 }
+
+func TestReadProvidersPromptCache(t *testing.T) {
+	loadYAML(t, `
+providers:
+  anthropic:
+    prompt_cache: true
+  gw:
+    type: anthropic
+    base_url: https://gw.example
+`)
+	ps, err := ReadProviders()
+	assert.NoErr(t, err)
+	assert.True(t, ps["anthropic"].PromptCache)
+	assert.False(t, ps["gw"].PromptCache) // default off
+	assert.False(t, ps["openai"].PromptCache)
+}

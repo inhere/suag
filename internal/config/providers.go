@@ -42,6 +42,9 @@ type ProviderConfig struct {
 	APIKey  string
 	Headers map[string]string
 	Models  map[string]ModelConfig
+	// PromptCache (providers.<id>.prompt_cache) enables Claude cache_control
+	// breakpoints; only meaningful for type anthropic.
+	PromptCache bool
 }
 
 // ModelSpec is a model bound to the provider that serves it.
@@ -96,6 +99,7 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 			Headers: expandEnvMap(normalizeStringMap(entry["headers"])),
 			Models:  readModelConfigs(entry["models"]),
 		}
+		promptCache, promptCacheSet := entry["prompt_cache"].(bool)
 
 		merged, isPreset := providers[id]
 		if !isPreset {
@@ -109,6 +113,9 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 		}
 		if user.Models != nil {
 			merged.Models = user.Models
+		}
+		if promptCacheSet {
+			merged.PromptCache = promptCache
 		}
 		if merged.Type == "" {
 			return nil, fmt.Errorf("providers.%s: type is required for a non-preset provider (openai|anthropic)", id)

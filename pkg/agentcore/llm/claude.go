@@ -28,7 +28,15 @@ type ClaudeProvider struct {
 	client       *http.Client
 	streamClient *http.Client
 	headers      map[string]string
+	promptCache  bool
 }
+
+// SegmentContextMetaKey is the Message.Metadata key (bool true) that marks the
+// segment context message. With PromptCache on, the Claude provider puts a
+// cache breakpoint at the end of that message so the stable prefix (system +
+// tools + segment context) is cached across turns. The application layer
+// must set the same key when it builds that message.
+const SegmentContextMetaKey = "suag.segment_context"
 
 // ClaudeConfig configures a ClaudeProvider.
 type ClaudeConfig struct {
@@ -41,6 +49,10 @@ type ClaudeConfig struct {
 	Model   string // default: claude-sonnet-4-6
 	// Headers are extra request headers; see applyHeaders for SessionIDPlaceholder.
 	Headers map[string]string
+	// PromptCache adds cache_control breakpoints (at most 2 of Anthropic's 4):
+	// the segment context message's last block and the request's last block.
+	// Default off, since gateways may reject cache_control.
+	PromptCache bool
 }
 
 // NewClaudeProvider creates a ClaudeProvider.
@@ -59,6 +71,7 @@ func NewClaudeProvider(cfg ClaudeConfig) *ClaudeProvider {
 		client:       &http.Client{Timeout: 120 * time.Second},
 		streamClient: newStreamClient(),
 		headers:      cfg.Headers,
+		promptCache:  cfg.PromptCache,
 	}
 }
 
@@ -112,6 +125,7 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 	// Anthropic messages only accept user/assistant roles; mid-conversation
 	// system messages (rule updates, hook context) go to the top-level system.
 	system := req.System
+	segmentIdx := -1 // index in msgs of the segment context message, if any
 	for _, m := range req.Messages {
 		switch {
 		case m.Role == "system" && m.ToolCall == nil && m.ToolResult == nil:
@@ -148,6 +162,9 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 				"input": m.ToolCall.Arguments,
 			})
 		default:
+			if v, _ := m.Metadata[SegmentContextMetaKey].(bool); v {
+				segmentIdx = len(msgs)
+			}
 			msgs = append(msgs, map[string]any{"role": m.Role, "content": m.Content})
 		}
 	}
@@ -161,7 +178,11 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 		body["max_tokens"] = req.MaxTokens
 	}
 	if system != "" {
-		body["system"] = system
+		// system is always a block array so a breakpoint can be attached later.
+		body["system"] = []map[string]any{{"type": "text", "text": system}}
+	}
+	if p.promptCache {
+		markClaudeCacheBreakpoints(msgs, segmentIdx)
 	}
 
 	if len(req.Tools) > 0 {
@@ -177,6 +198,39 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 	}
 
 	return body
+}
+
+// markClaudeCacheBreakpoints adds cache_control to the last content block of the
+// segment context message (segmentIdx, -1 when absent) and of the final
+// message. Both pointing at one block yields a single breakpoint. String
+// content is converted to a text block first.
+func markClaudeCacheBreakpoints(msgs []map[string]any, segmentIdx int) {
+	if len(msgs) == 0 {
+		return
+	}
+	last := len(msgs) - 1
+	if segmentIdx >= 0 && segmentIdx < last {
+		markClaudeLastBlock(msgs[segmentIdx])
+	}
+	markClaudeLastBlock(msgs[last])
+}
+
+func markClaudeLastBlock(msg map[string]any) {
+	var blocks []map[string]any
+	switch c := msg["content"].(type) {
+	case string:
+		if c == "" {
+			return // Anthropic rejects cache_control on empty text blocks
+		}
+		blocks = []map[string]any{{"type": "text", "text": c}}
+	case []map[string]any:
+		blocks = c
+	}
+	if len(blocks) == 0 {
+		return
+	}
+	blocks[len(blocks)-1]["cache_control"] = map[string]any{"type": "ephemeral"}
+	msg["content"] = blocks
 }
 
 func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResult, error) {

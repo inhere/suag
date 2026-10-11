@@ -18,6 +18,8 @@ func BuildProvider(spec ModelSpec) (llm.Provider, error) {
 			Model:   spec.Model,
 			Headers: p.Headers,
 			Name:    p.ID,
+			// Claude cache breakpoints, see ProviderConfig.PromptCache.
+			PromptCache: p.PromptCache,
 		}), nil
 	case ProviderTypeOpenAI:
 		return llm.NewOpenAIProvider(llm.OpenAIConfig{
