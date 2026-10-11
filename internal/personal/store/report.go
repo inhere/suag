@@ -38,6 +38,12 @@ type ToolStat struct {
 	Denials   int     `json:"denials"`
 	P50Ms     int64   `json:"p50_ms"`
 	P95Ms     int64   `json:"p95_ms"`
+	// RawBytes / InlineBytes sum the tool output produced and the part kept in
+	// the session (event attrs raw_bytes / inline_bytes); Spilled counts calls
+	// whose full output was saved to the session directory.
+	RawBytes    int64 `json:"raw_bytes"`
+	InlineBytes int64 `json:"inline_bytes"`
+	Spilled     int   `json:"spilled"`
 }
 
 // Report is the result of `suag stats`.
@@ -110,6 +116,11 @@ func AggregateEvents(events []Event) Report {
 				a.stat.Errors++
 			}
 			a.durs = append(a.durs, e.DurationMs)
+			a.stat.RawBytes += attrInt64(e.Attrs["raw_bytes"])
+			a.stat.InlineBytes += attrInt64(e.Attrs["inline_bytes"])
+			if spilled, _ := e.Attrs["spilled"].(bool); spilled {
+				a.stat.Spilled++
+			}
 		case EventDenial:
 			tool(e.Name).stat.Denials++
 		case EventCompaction:
@@ -168,4 +179,17 @@ func Percentile(vals []int64, p float64) int64 {
 	rank := int(math.Ceil(p / 100 * float64(len(sorted))))
 	rank = min(max(rank, 1), len(sorted))
 	return sorted[rank-1]
+}
+
+// attrInt64 reads a numeric event attr (float64 after a JSON round trip).
+func attrInt64(v any) int64 {
+	switch n := v.(type) {
+	case float64:
+		return int64(n)
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	}
+	return 0
 }

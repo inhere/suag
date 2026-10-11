@@ -82,6 +82,11 @@ func Start(root, sessionID, name, cwd string, deliver DeliverFunc) (*Server, err
 	})
 }
 
+// SecureDir restricts an existing directory to the current user: 0700 on
+// Unix, a protected inheritable DACL (current user + SYSTEM) on Windows, so
+// files created inside later get the same restriction.
+func SecureDir(dir string) error { return secureDir(dir) }
+
 func StartWait(root, sessionID, name, cwd string, deliver DeliverWaitFunc) (*Server, error) {
 	if strings.TrimSpace(root) == "" || strings.TrimSpace(sessionID) == "" {
 		return nil, fmt.Errorf("process registration requires root and session ID")

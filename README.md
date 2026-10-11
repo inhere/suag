@@ -55,7 +55,7 @@ Suag reads only `$SUAG_HOME/config.yaml` and `$SUAG_HOME/.env` (default `~/.suag
 | `compact_model`, `fallback_models` | Cheaper model for summaries; models tried in order when the main one fails |
 | `tools.allow_write` | Chat only: enable write and shell tools (default false) |
 | `tools.approval` | Chat only: `ask` (default) confirms write/shell tools, `auto` does not |
-| `tools.max_output_bytes` | Cap on one stored tool result (default 30000) |
+| `tools.max_output_bytes`, `tools.max_spill_bytes` | Largest tool result kept whole in the session (default 8000; larger ones are saved under `sessions/<id>/outputs/` and kept as a ref plus head/tail); raw output cap per call (default 1 MiB) |
 | `tools.shell`, `tools.shell_timeout_max` | Shell override (default pwsh/powershell on Windows, sh elsewhere); max seconds per command (600) |
 | `tools.web_fetch.proxy`, `tools.web_fetch.allow_private` | Proxy for `web_fetch`; allow private addresses |
 | `tools.auto_allow`, `tools.read_only_allow` | MCP allowlists, entries `server/toolglob` |

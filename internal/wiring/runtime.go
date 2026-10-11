@@ -216,6 +216,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	lockRoot := filepath.Join(home, "run", "locks")
 	processRoot := filepath.Join(home, "run")
+	sessionsDir, err := appconfig.ResolveSessionsDir()
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, fmt.Errorf("resolve sessions directory: %w", err)
+	}
 	repo, err := store.Open(dbPath)
 	if err != nil {
 		_ = capabilities.Close()
@@ -241,14 +246,18 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		Plans:           plans,
 		Visibility:      vis,
 		Price:           priceLookup(settings),
-		Repository:      repo,
-		Provider:        provider,
-		Model:           settings.Main.Model,
-		ProviderName:    settings.Main.Provider.ID,
-		Tools:           toolRegistry,
-		PromptBuilder:   staticPrompt(basePrompt(opts, skillsPrompt(skillReg, readSkillPolicy()))),
-		Hooks:           opts.Hooks,
-		MaxSteps:        gkconfig.Int("max_steps", 100),
+		// Tool outputs above tools.max_output_bytes go to
+		// <SUAG_HOME>/sessions/<id>/outputs/ and the session keeps a ref.
+		InlineOutputBytes: inlineOutputBytes(),
+		Spiller:           personal.NewSessionSpiller(sessionsDir),
+		Repository:        repo,
+		Provider:          provider,
+		Model:             settings.Main.Model,
+		ProviderName:      settings.Main.Provider.ID,
+		Tools:             toolRegistry,
+		PromptBuilder:     staticPrompt(basePrompt(opts, skillsPrompt(skillReg, readSkillPolicy()))),
+		Hooks:             opts.Hooks,
+		MaxSteps:          gkconfig.Int("max_steps", 100),
 		RuleSource: func() (string, string, error) {
 			home, err := appconfig.ResolveSuagHome()
 			if err != nil {

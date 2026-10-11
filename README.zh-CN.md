@@ -55,7 +55,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `compact_model`、`fallback_models` | 生成摘要用的便宜模型；主模型失败时依次尝试的备用模型 |
 | `tools.allow_write` | 仅 chat：启用写文件和 shell 工具（默认 false） |
 | `tools.approval` | 仅 chat：`ask`（默认）执行写/shell 工具前询问，`auto` 不询问 |
-| `tools.max_output_bytes` | 单次工具结果写入会话的上限（默认 30000） |
+| `tools.max_output_bytes`、`tools.max_spill_bytes` | 单次工具结果完整写入会话的上限（默认 8000，超出时原文存 `sessions/<id>/outputs/`，会话只留 ref 与头尾片段）；单次工具原始输出上限（默认 1 MiB） |
 | `tools.shell`、`tools.shell_timeout_max` | 指定 shell（默认 Windows 用 pwsh/powershell，其他系统用 sh）；单条命令最长秒数（600） |
 | `tools.web_fetch.proxy`、`tools.web_fetch.allow_private` | `web_fetch` 使用的代理；允许访问内网地址 |
 | `tools.auto_allow`、`tools.read_only_allow` | MCP 放行名单，条目形如 `server/工具glob` |

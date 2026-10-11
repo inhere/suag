@@ -195,8 +195,23 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 	case res != nil && res.IsError:
 		e.Status, e.Error = eventError, "tool reported an error result"
 	}
+	if err == nil && res != nil {
+		addOutputAttrs(e.Attrs, res)
+	}
 	o.rec.record(ctx, e)
 	return res, err
+}
+
+// addOutputAttrs records the output size of a tool result: raw_bytes is what
+// the tool produced, inline_bytes what entered the session, spilled whether
+// the full text was saved under a ref. Results the output layer left alone
+// have raw == inline.
+func addOutputAttrs(attrs map[string]any, res *agentcore.ToolResult) {
+	inline := len(res.Content)
+	attrs["raw_bytes"], attrs["inline_bytes"], attrs["spilled"] = inline, inline, false
+	if info, ok := tools.OutputInfoOf(res.Metadata); ok {
+		attrs["raw_bytes"], attrs["spilled"] = info.Bytes, info.Ref != ""
+	}
 }
 
 // ttftMillis rounds a measured sub-millisecond TTFT up to 1ms so "a first delta

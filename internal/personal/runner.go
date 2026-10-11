@@ -78,6 +78,12 @@ type Config struct {
 	// Price looks up the configured price of a (provider id, model); nil or a
 	// miss means cost stays 0 unless the provider reports it.
 	Price func(provider, model string) (Price, bool)
+	// InlineOutputBytes is the output layer's inline threshold
+	// (tools.max_output_bytes; 0 = tools.DefaultInlineOutputBytes).
+	InlineOutputBytes int
+	// Spiller stores tool outputs above the threshold (e.g. a SessionSpiller);
+	// nil means they are only truncated.
+	Spiller tools.Spiller
 }
 
 // Event is one transport-neutral lifecycle or model-stream update.
@@ -152,7 +158,14 @@ func New(cfg Config) (*Runner, error) {
 	}
 	rec := &recorder{sink: cfg.Repository, price: cfg.Price}
 	cfg.Provider = rec.observeProvider(cfg.Provider, cfg.ProviderName, cfg.Model)
-	cfg.Tools = rec.observeTools(cfg.Tools)
+	if cfg.Tools != nil {
+		// Stack: observe -> output -> (visibility -> approval -> base). The
+		// output layer sits inside observe so tool events see the shortened
+		// result and its OutputInfo.
+		cfg.Tools = rec.observeTools(tools.NewOutput(cfg.Tools, tools.OutputConfig{
+			InlineBytes: cfg.InlineOutputBytes, Spiller: cfg.Spiller,
+		}))
+	}
 	if cfg.CompactProvider != nil {
 		cfg.CompactProvider = rec.observeProvider(cfg.CompactProvider, cfg.ProviderName, cfg.CompactModel)
 	}

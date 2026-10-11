@@ -26,6 +26,16 @@ func personalDBDir() (string, error) {
 	return filepath.Join(home, "db"), nil
 }
 
+// ResolveSessionsDir returns the per-session file root ($SUAG_HOME/sessions):
+// <sessions>/<session_id>/outputs/ holds externalised tool outputs.
+func ResolveSessionsDir() (string, error) {
+	home, err := ResolveSuagHome()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "sessions"), nil
+}
+
 // ResolveSuagHome locates user-level instructions from the data store location.
 func ResolveSuagHome() (string, error) {
 	if root := strings.TrimSpace(os.Getenv("SUAG_HOME")); root != "" {

@@ -20,7 +20,11 @@ type capabilityToolProvider interface {
 }
 
 var mcpProviderFactory = func(ctx context.Context, settings toolsmcp.ServerSettings) (capabilityToolProvider, error) {
-	return toolsmcp.NewProvider(ctx, withMCPCallTimeout(settings))
+	settings = withMCPCallTimeout(settings)
+	if settings.RawBytes == 0 {
+		settings.RawBytes = rawOutputBytes()
+	}
+	return toolsmcp.NewProvider(ctx, settings)
 }
 
 // withMCPCallTimeout applies mcp.call_timeout_sec to a server without its own
@@ -80,15 +84,25 @@ func (c defaultCapabilities) Close() error {
 	return firstErr
 }
 
+// inlineOutputBytes is tools.max_output_bytes: the largest tool result kept
+// whole in the session (file_read pages to it; the output layer externalises
+// anything larger).
+func inlineOutputBytes() int {
+	return gkconfig.Int("tools.max_output_bytes", native.DefaultMaxOutputBytes)
+}
+
+// rawOutputBytes is tools.max_spill_bytes: the raw output cap of one tool call
+// (native and MCP), i.e. the most the output layer saves to a session file.
+func rawOutputBytes() int {
+	return gkconfig.Int("tools.max_spill_bytes", native.DefaultRawOutputBytes)
+}
+
 // nativeEnv reads the tools.* settings native tools are built with.
 func nativeEnv(workspace string) native.Env {
-	inline := gkconfig.Int("tools.max_output_bytes", native.DefaultMaxOutputBytes)
 	return native.Env{
-		Workspace:   workspace,
-		InlineBytes: inline,
-		// Until the output layer is wired in, tools keep cutting their raw
-		// output at the stored-result cap.
-		RawBytes:          inline,
+		Workspace:         workspace,
+		InlineBytes:       inlineOutputBytes(),
+		RawBytes:          rawOutputBytes(),
 		SerpAPIKey:        gkconfig.String("serpapi_key"),
 		Shell:             gkconfig.String("tools.shell"),
 		FetchAllowPrivate: gkconfig.Bool("tools.web_fetch.allow_private"),

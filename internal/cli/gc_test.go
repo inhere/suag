@@ -31,8 +31,12 @@ func TestGCCommand(t *testing.T) {
 	assert.NoErr(t, repo.Close())
 	transcripts := filepath.Join(home, "transcripts")
 	assert.NoErr(t, os.MkdirAll(transcripts, 0o700))
+	sessionsDir := filepath.Join(home, "sessions")
 	for _, id := range []string{"gc-idle", "gc-busy"} {
 		assert.NoErr(t, os.WriteFile(filepath.Join(transcripts, id+".jsonl"), []byte("{}\n"), 0o600))
+		outputs := filepath.Join(sessionsDir, id, "outputs")
+		assert.NoErr(t, os.MkdirAll(outputs, 0o700))
+		assert.NoErr(t, os.WriteFile(filepath.Join(outputs, "0123456789abcdef.txt"), []byte("out"), 0o600))
 	}
 
 	exists := func(id string) bool {
@@ -70,5 +74,19 @@ func TestGCCommand(t *testing.T) {
 		assert.True(t, exists("gc-new"))
 		assert.False(t, fsutil.IsFile(filepath.Join(transcripts, "gc-idle.jsonl")))
 		assert.True(t, fsutil.IsFile(filepath.Join(transcripts, "gc-busy.jsonl")))
+		// The session directory (externalised outputs) goes with its session.
+		assert.False(t, fsutil.PathExists(filepath.Join(sessionsDir, "gc-idle")))
+		assert.True(t, fsutil.IsDir(filepath.Join(sessionsDir, "gc-busy", "outputs")))
 	})
+}
+
+func TestSessionDirRejectsNonLocalIDs(t *testing.T) {
+	root := filepath.Join("x", "sessions")
+	dir, ok := sessionDir(root, "sess_1")
+	assert.True(t, ok)
+	assert.Eq(t, filepath.Join(root, "sess_1"), dir)
+	for _, id := range []string{"", ".", "..", "../x", "a/b", `a\b`, "/abs", "C:x"} {
+		_, ok := sessionDir(root, id)
+		assert.False(t, ok, id)
+	}
 }

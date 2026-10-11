@@ -95,7 +95,8 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 
 配置项（`~/.suag/config.yaml`，均有缺省值）：
 
-- `tools.max_output_bytes`（缺省 30000）：单次工具结果写入会话的上限，按 UTF-8 边界截断；`file_read` 按行截断并提示续读的 `offset`，其他工具保留头尾。
+- `tools.max_output_bytes`（缺省 8000）：单次工具结果完整写入会话的上限；`file_read` 按行分页并提示续读的 `offset`，其他工具超出时原文（脱敏后）存入 `~/.suag/sessions/<id>/outputs/`，会话只保留 ref 与头尾各 2000 字节。
+- `tools.max_spill_bytes`（缺省 1048576）：单次工具（含 MCP）原始输出上限，超出部分按 UTF-8 边界保留头尾截断。
 - `tools.shell`：显式指定 shell（命令名或路径，如 `bash`）；不自动探测。
 - `tools.shell_timeout_max`（缺省 600）：`shell_exec` 的 `timeout` 上限（秒）。
 - `mcp.call_timeout_sec`（缺省 120）：单次 MCP 工具调用的超时。

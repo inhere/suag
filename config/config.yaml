@@ -100,7 +100,9 @@ tools:
   # skill, update_plan, tool_search) on the terminal;
   # auto never asks. Without a terminal, tools needing confirmation are refused.
   # approval: ask
-  # max_output_bytes: 30000  # cap on one stored tool result (UTF-8 safe)
+  # max_output_bytes: 8000   # largest tool result kept whole in the session; larger ones are
+  #                          # saved to ~/.suag/sessions/<id>/outputs/ and kept as ref + head/tail
+  # max_spill_bytes: 1048576 # raw output cap of one tool call (native and MCP)
   # shell: ""                # shell_exec shell; default pwsh/powershell on Windows, sh elsewhere
   # shell_timeout_max: 600   # max seconds a shell_exec call may ask for (default 120 per call)
   # web_fetch:

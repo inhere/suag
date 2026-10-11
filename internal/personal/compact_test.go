@@ -198,7 +198,9 @@ func TestCompactHugeToolResultTruncatesOrFails(t *testing.T) {
 			}
 			return finalText("ok")
 		}}
-		runner := compactRunner(t, repo, prov, bigToolRegistry(60000, nil), nil)
+		// The output layer would cut the result first; lift its threshold so
+		// the huge result reaches the context builder's truncation ladder.
+		runner := compactRunner(t, repo, prov, bigToolRegistry(60000, nil), func(c *Config) { c.InlineOutputBytes = 1 << 20 })
 		res, err := runner.Run(context.Background(), RunRequest{Prompt: "read it"})
 		assert.NoErr(t, err)
 		assert.Eq(t, "ok", res.Output)
@@ -226,6 +228,7 @@ func TestCompactHugeToolResultTruncatesOrFails(t *testing.T) {
 		}}
 		runner := compactRunner(t, repo, prov, bigToolRegistry(60000, nil), func(c *Config) {
 			c.ContextWindow, c.CompactReserveTokens = 600, 100 // threshold 500 tokens < 2000 chars floor
+			c.InlineOutputBytes = 1 << 20
 		})
 		res, err := runner.Run(context.Background(), RunRequest{Prompt: "read it"})
 		assert.Eq(t, true, errors.Is(err, ErrContextOverflow))

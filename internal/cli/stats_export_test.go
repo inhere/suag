@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -159,5 +160,26 @@ func TestExportCommand(t *testing.T) {
 	t.Run("unknown session", func(t *testing.T) {
 		_, err := runCLI(t, ctx, "export", "nope")
 		assert.Err(t, err)
+	})
+	t.Run("with outputs", func(t *testing.T) {
+		sessionsDir, err := appconfig.ResolveSessionsDir()
+		assert.Require(t, assert.NoErr(t, err))
+		outputs := filepath.Join(sessionsDir, "obs-1", "outputs")
+		assert.NoErr(t, os.MkdirAll(outputs, 0o700))
+		assert.NoErr(t, os.WriteFile(filepath.Join(outputs, "0123456789abcdef.txt"), []byte("full output\nline 2"), 0o600))
+
+		plain, err := runCLI(t, ctx, "export", "obs-1")
+		assert.NoErr(t, err)
+		assert.StrNotContains(t, plain, `"kind":"output"`)
+
+		out, err := runCLI(t, ctx, "export", "obs-1", "--with-outputs")
+		assert.NoErr(t, err)
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		assert.Eq(t, 10, len(lines))
+		var row map[string]any
+		assert.NoErr(t, json.Unmarshal([]byte(lines[len(lines)-1]), &row))
+		assert.Eq(t, "output", row["kind"])
+		assert.Eq(t, "out:obs-1:0123456789abcdef", row["ref"])
+		assert.Eq(t, "full output\nline 2", row["content"])
 	})
 }

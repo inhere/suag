@@ -3,19 +3,23 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/gookit/goutil/cflag/capp"
+	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/personal/store"
 )
 
 // newExportCommand builds `suag export`.
 func newExportCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
-	var redact bool
+	var redact, withOutputs bool
 	var outFile string
 	cmd := capp.NewCmd("export", "Export a session's entries and events as jsonl", func(c *capp.Cmd) error {
 		// Flags may follow the session ID, which the flag parser leaves in the remaining args.
@@ -25,6 +29,8 @@ func newExportCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 			switch {
 			case rest[i] == "--redact" || rest[i] == "-redact":
 				redact = true
+			case rest[i] == "--with-outputs" || rest[i] == "-with-outputs":
+				withOutputs = true
 			case (rest[i] == "-o" || rest[i] == "--o" || rest[i] == "--output") && i+1 < len(rest):
 				i++
 				outFile = rest[i]
@@ -33,18 +39,28 @@ func newExportCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 			}
 		}
 		if len(positional) != 1 {
-			return fmt.Errorf("usage: suag export <session> [--redact] [-o file]")
+			return fmt.Errorf("usage: suag export <session> [--redact] [--with-outputs] [-o file]")
 		}
-		return runExport(ctx, stdout, positional[0], redact, outFile)
+		return runExport(ctx, stdout, positional[0], exportOptions{redact: redact, withOutputs: withOutputs, outFile: outFile})
 	})
 	cmd.SetOutput(stderr)
 	cmd.BoolVar(&redact, "redact", false, "drop tool call arguments")
+	cmd.BoolVar(&withOutputs, "with-outputs", false, "append the session's externalised tool outputs (one output row per file)")
 	cmd.StringVar(&outFile, "output", "", "write to this file (mode 0600) instead of stdout;;o")
 	return cmd
 }
 
-// runExport writes a session's entries and events (merged by time) as jsonl.
-func runExport(ctx context.Context, stdout io.Writer, sessionID string, redact bool, outFile string) error {
+// exportOptions are the flags of `suag export`.
+type exportOptions struct {
+	redact      bool
+	withOutputs bool
+	outFile     string
+}
+
+// runExport writes a session's entries and events (merged by time) as jsonl;
+// with withOutputs the files under sessions/<id>/outputs/ follow as rows of
+// kind "output".
+func runExport(ctx context.Context, stdout io.Writer, sessionID string, opts exportOptions) error {
 	repo, err := openCoreStore()
 	if err != nil {
 		return err
@@ -62,14 +78,70 @@ func runExport(ctx context.Context, stdout io.Writer, sessionID string, redact b
 		return err
 	}
 	var buf strings.Builder
-	if err := writeExport(&buf, entries, events, redact); err != nil {
+	if err := writeExport(&buf, entries, events, opts.redact); err != nil {
 		return err
 	}
-	if outFile == "" {
+	if opts.withOutputs {
+		if err := writeExportOutputs(&buf, sessionID); err != nil {
+			return err
+		}
+	}
+	if opts.outFile == "" {
 		_, err = io.WriteString(stdout, buf.String())
 		return err
 	}
-	return os.WriteFile(outFile, []byte(buf.String()), 0o600)
+	return os.WriteFile(opts.outFile, []byte(buf.String()), 0o600)
+}
+
+// writeExportOutputs appends one {"kind":"output","ref",...,"content"} row per
+// file in the session's outputs directory, sorted by name. Files are read
+// through os.Root so a planted symlink cannot pull in anything outside it; a
+// session without outputs adds nothing.
+func writeExportOutputs(w io.Writer, sessionID string) error {
+	sessionsDir, err := appconfig.ResolveSessionsDir()
+	if err != nil {
+		return err
+	}
+	dir, ok := sessionDir(sessionsDir, sessionID)
+	if !ok {
+		return nil
+	}
+	root, err := os.OpenRoot(filepath.Join(dir, "outputs"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	f, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	names, err := f.Readdirnames(-1)
+	_ = f.Close()
+	if err != nil {
+		return err
+	}
+	sort.Strings(names)
+	enc := json.NewEncoder(w)
+	for _, name := range names {
+		stem, isText := strings.CutSuffix(name, ".txt")
+		if !isText {
+			continue
+		}
+		body, err := root.ReadFile(name)
+		if err != nil {
+			return fmt.Errorf("read output %s: %w", name, err)
+		}
+		if err := enc.Encode(map[string]any{
+			"kind": "output", "session_id": sessionID, "ref": "out:" + sessionID + ":" + stem,
+			"bytes": len(body), "content": string(body),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // secretArgKeys are event attr keys that may hold tool-call arguments.

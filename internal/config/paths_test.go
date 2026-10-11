@@ -56,3 +56,12 @@ func TestResolveWorkspacePath(t *testing.T) {
 		assert.Eq(t, dir, ResolveWorkspacePath())
 	})
 }
+
+func TestResolveSessionsDir(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", "..", "tmp", "t7-sessions-home"))
+	assert.Require(t, assert.NoErr(t, err))
+	t.Setenv("SUAG_HOME", root)
+	got, err := ResolveSessionsDir()
+	assert.NoErr(t, err)
+	assert.Eq(t, filepath.Join(root, "sessions"), got)
+}

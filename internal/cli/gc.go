@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gookit/goutil/cflag/capp"
@@ -85,14 +86,35 @@ func runGC(ctx context.Context, out io.Writer, cutoff time.Time, apply bool) err
 		// The readable per-session transcript (transcripts/<id>.jsonl) is not
 		// in the database; remove it with its session whatever the current
 		// transcripts setting, since an earlier run may have written it.
+		// Likewise the session directory (sessions/<id>/, externalised tool
+		// outputs) lives outside the database and goes with its session.
+		sessionsDir, err := appconfig.ResolveSessionsDir()
+		if err != nil {
+			return err
+		}
 		for _, session := range report.Sessions {
 			if err := os.Remove(filepath.Join(home, "transcripts", session.ID+".jsonl")); err != nil && !errors.Is(err, os.ErrNotExist) {
 				fmt.Fprintf(out, "warning: remove transcript of %s: %v\n", session.ID, err)
+			}
+			if dir, ok := sessionDir(sessionsDir, session.ID); ok {
+				if err := os.RemoveAll(dir); err != nil {
+					fmt.Fprintf(out, "warning: remove session directory of %s: %v\n", session.ID, err)
+				}
 			}
 		}
 	}
 	writeGCReport(out, report, cutoff)
 	return nil
+}
+
+// sessionDir returns sessions/<id> when id is a plain single path element; an
+// id that could name another place (separators, "..", absolute) yields false,
+// so a stored id can never make gc remove anything outside the sessions root.
+func sessionDir(sessionsDir, id string) (string, bool) {
+	if id == "" || id == "." || strings.ContainsAny(id, `/\:`) || !filepath.IsLocal(id) {
+		return "", false
+	}
+	return filepath.Join(sessionsDir, id), true
 }
 
 func writeGCReport(out io.Writer, report store.GCReport, cutoff time.Time) {
@@ -107,7 +129,7 @@ func writeGCReport(out io.Writer, report store.GCReport, cutoff time.Time) {
 	if report.Applied {
 		verb = "已删除"
 	}
-	fmt.Fprintf(out, "%s %d 个会话（%s 之前未更新，含其 transcript 文件）与 %d 条事件记录", verb, len(report.Sessions),
+	fmt.Fprintf(out, "%s %d 个会话（%s 之前未更新，含其 transcript 文件与会话目录）与 %d 条事件记录", verb, len(report.Sessions),
 		cutoff.Local().Format("2006-01-02 15:04"), report.Events)
 	if !report.Applied {
 		fmt.Fprint(out, "；加 --apply 执行")
