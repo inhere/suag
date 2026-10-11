@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+## [0.10.0] - 2026-10-11
+
 状态、记忆与可扩展性。依据见 [设计](docs/design/2026-10-10-state-memory-extensibility-design.md) 与 [计划](docs/plans/2026-10-11-state-memory-extensibility-plan.md)。
 
 ### 新增
@@ -160,7 +162,8 @@
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suag/compare/v0.9.1...HEAD
+[未发布]: https://github.com/inhere/suag/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/inhere/suag/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/inhere/suag/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/inhere/suag/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/inhere/suag/compare/v0.7.0...v0.8.0
