@@ -194,7 +194,9 @@ func (t *RecallTool) Description() string {
 	return "Read earlier history by ref. A message ref <session>/<seq> (from session_search) returns the " +
 		"messages from that seq on: offset skips messages, limit counts them (default 20, at most 100). " +
 		"An output ref out:<session>:<hex> (a saved large tool output) returns numbered lines: offset is " +
-		"the 1-based start line, limit the line count (default 200, at most 2000)."
+		"the 1-based start line, limit the line count (default 200, at most 2000). For a long output, first " +
+		"locate lines with session_search(query, ref) and then recall a small window around them; do not page " +
+		"through the whole output."
 }
 
 // ToolMeta: read-only, pages on its own, results are external content.

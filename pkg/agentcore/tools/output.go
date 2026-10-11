@@ -134,7 +134,9 @@ func (o *Output) ExecuteTool(ctx context.Context, call api.ToolCall) (*api.ToolR
 		info.Ref = ref
 		// The ref line comes first so that any later head/tail trimming of
 		// the context (which keeps the head) still shows it.
-		header = fmt.Sprintf("[输出 %d 字节 / %d 行已保存为 ref %s；recall(ref, offset, limit) 分段读，session_search(query, ref) 在其中搜]",
+		// Search first: paging a long output with recall costs one model
+		// call per window (seen in eval: 38 recalls over 4000 lines).
+		header = fmt.Sprintf("[输出 %d 字节 / %d 行已保存为 ref %s；先用 session_search(query, ref) 定位相关行，再用 recall(ref, offset, limit) 读附近窗口，不要逐页读完]",
 			info.Bytes, info.Lines, ref)
 	}
 	out.Content = header + "\n" + headTailSnippet(raw, snippet)
