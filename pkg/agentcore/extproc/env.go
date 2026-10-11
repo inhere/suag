@@ -1,4 +1,4 @@
-package mcp
+package extproc
 
 import "strings"
 
@@ -10,7 +10,7 @@ var credentialEnvNames = []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DEEPSE
 var credentialEnvSuffixes = []string{"_API_KEY", "_AUTH_TOKEN"}
 
 // isCredentialEnv reports whether an environment variable name looks like a
-// credential that an MCP subprocess must not inherit. Names are compared
+// credential that a child process must not inherit. Names are compared
 // case-insensitively because Windows environment names are.
 func isCredentialEnv(name string) bool {
 	upper := strings.ToUpper(name)
@@ -27,11 +27,11 @@ func isCredentialEnv(name string) bool {
 	return false
 }
 
-// buildServerEnv returns the MCP subprocess environment: the parent
-// environment minus credential variables, then the server's own configured
-// entries. Configured entries are passed as-is, so a server may still be given
-// a credential explicitly. Everything else is inherited.
-func buildServerEnv(parent, configured []string) []string {
+// StripCredentials returns a child-process environment: the parent
+// environment minus credential variables, then the configured entries.
+// Configured entries are passed as-is, so a child may still be given a
+// credential explicitly. Everything else is inherited.
+func StripCredentials(parent, configured []string) []string {
 	env := make([]string, 0, len(parent)+len(configured))
 	for _, kv := range parent {
 		name, _, _ := strings.Cut(kv, "=")

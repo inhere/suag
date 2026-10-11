@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/extproc"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
@@ -87,7 +88,7 @@ func (c *Client) Start(ctx context.Context) error {
 	c.cmd = exec.Command(c.cfg.Command, c.cfg.Args...)
 	// MCP server env extends the process env (PATH and the like survive) minus LLM
 	// credentials; the server's own configured env is appended last and wins.
-	c.cmd.Env = buildServerEnv(os.Environ(), c.cfg.Env)
+	c.cmd.Env = extproc.StripCredentials(os.Environ(), c.cfg.Env)
 	c.cmd.Stderr = c.stderr
 
 	stdin, err := c.cmd.StdinPipe()
