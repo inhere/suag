@@ -29,6 +29,13 @@ OK = r"⎿ ok: SMOKE_OK"
 QUESTION = r"允许执行 shell_exec"
 
 
+def isolate_ws(ws):
+    """Make ws its own git root, so suag does not pick up the enclosing
+    repository (e.g. its root MEMORY.md would switch project memory to the
+    repository layout and the smoke would write into the real repo)."""
+    subprocess.run(["git", "init", "-q", ws], check=True)
+
+
 def write_home(home, port, tools_extra="", memory_extra=""):
     """Writes SUAG_HOME/config.yaml. Project memory is forced to the files
     backend: the scratch workspace lives inside this repository, whose
@@ -130,6 +137,7 @@ def main():
     ws = os.path.abspath(os.path.join(args.work, "ws"))
     shutil.rmtree(home, ignore_errors=True)
     os.makedirs(ws, exist_ok=True)
+    isolate_ws(ws)
     write_home(home, args.port)
     env = dict(os.environ, SUAG_HOME=home, SUAG_HOOKS="off", TERM="xterm", NO_COLOR="1")
 

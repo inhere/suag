@@ -22,7 +22,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ptydrive import CTRL_C, PtySession  # noqa: E402
-from chat_approval import wait_port, write_home  # noqa: E402
+from chat_approval import isolate_ws, wait_port, write_home  # noqa: E402
 
 QUESTION = r"写入记忆？\[y\]是 \[N\]否 \[a\]本会话不再问"
 SAVED = r"已记住：Smoke rule（project）"
@@ -81,6 +81,7 @@ def main():
     ws = os.path.abspath(os.path.join(args.work, "ws"))
     shutil.rmtree(args.work, ignore_errors=True)
     os.makedirs(ws, exist_ok=True)
+    isolate_ws(ws)
     write_home(home, args.port, tools_extra="  approval: auto\n", memory_extra="  taint_tools: [shell_exec]\n")
     env = dict(os.environ, SUAG_HOME=home, HOME=home, SUAG_HOOKS="off", TERM="xterm", NO_COLOR="1")
 

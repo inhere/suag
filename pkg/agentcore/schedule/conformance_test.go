@@ -165,8 +165,7 @@ func TestConfCancelRunning(t *testing.T) {
 func TestConfEventsAndObserverReentry(t *testing.T) {
 	var mu sync.Mutex
 	kinds := map[string]bool{}
-	var s schedule.Scheduler
-	s = schedule.New(schedule.WithObserver(func(e schedule.Event) {
+	s := schedule.New(schedule.WithObserver(func(e schedule.Event) {
 		mu.Lock()
 		kinds[fmt.Sprint(e.Kind)] = true
 		mu.Unlock()

@@ -19,7 +19,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ptydrive import CTRL_C, PtySession  # noqa: E402
-from chat_approval import wait_port, write_home  # noqa: E402
+from chat_approval import isolate_ws, wait_port, write_home  # noqa: E402
 
 
 def scenario(s, ws):
@@ -56,6 +56,7 @@ def main():
     shutil.rmtree(home, ignore_errors=True)
     shutil.rmtree(ws, ignore_errors=True)
     os.makedirs(ws, exist_ok=True)
+    isolate_ws(ws)
     with open(os.path.join(ws, "target.txt"), "w", encoding="utf-8") as f:
         f.write("line one\nSMOKE_TARGET old\nline three\n")
     write_home(home, args.port)
