@@ -1,0 +1,174 @@
+package wiring
+
+import (
+	"context"
+	"encoding/json"
+	"path/filepath"
+	"slices"
+	"testing"
+
+	gkconfig "github.com/gookit/config/v2"
+	"github.com/gookit/goutil/x/assert"
+
+	"github.com/inhere/suag/pkg/agentcore/api"
+)
+
+// manifestConfig sets a fake provider and a workspace outside any git
+// repository (so the project backend is the built-in files one, never gofer).
+func manifestConfig(t *testing.T) (workspace string) {
+	t.Helper()
+	resetConfig(t)
+	workspace = t.TempDir()
+	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k", "base_url": "http://127.0.0.1:1/v1"}})
+	assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
+	assert.NoErr(t, gkconfig.Set("compact_model", "openai/gpt-4o-mini"))
+	assert.NoErr(t, gkconfig.Set("fallback_models", []string{"openai/gpt-4.1"}))
+	assert.NoErr(t, gkconfig.Set("workspace", workspace))
+	assert.NoErr(t, gkconfig.Set("memory.project.backend", "files"))
+	assert.NoErr(t, gkconfig.Set("memory.taint_tools", []string{"web_fetch"}))
+	assert.NoErr(t, gkconfig.Set("memory.write_tainted", "deny"))
+	assert.NoErr(t, gkconfig.Set("tools.max_output_bytes", 1234))
+	assert.NoErr(t, gkconfig.Set("tools.max_spill_bytes", 99999))
+	assert.NoErr(t, gkconfig.Set("mcp.servers", []any{map[string]any{"id": "srv", "command": "/bin/srv", "args": []any{"--token", "secret"}}}))
+	return workspace
+}
+
+func toolByName(m Manifest, name string) (ManifestTool, bool) {
+	for _, tool := range m.Tools {
+		if tool.Name == name {
+			return tool, true
+		}
+	}
+	return ManifestTool{}, false
+}
+
+func TestLoadManifest(t *testing.T) {
+	workspace := manifestConfig(t)
+	SetBuildVersion("9.9.9")
+	t.Cleanup(func() { SetBuildVersion("dev") })
+
+	m, err := LoadManifest(ManifestOptions{})
+	assert.Require(t, assert.NoErr(t, err))
+
+	t.Run("version and models", func(t *testing.T) {
+		assert.Eq(t, "9.9.9", m.Version)
+		assert.Eq(t, "openai", m.Models.Main.Provider)
+		assert.Eq(t, "gpt-4o", m.Models.Main.Model)
+		assert.True(t, m.Models.Main.ContextWindow > 0)
+		assert.Require(t, assert.NotNil(t, m.Models.Compact))
+		assert.Eq(t, "gpt-4o-mini", m.Models.Compact.Model)
+		assert.Len(t, m.Models.Fallbacks, 1)
+		assert.Eq(t, "gpt-4.1", m.Models.Fallbacks[0].Model)
+	})
+	t.Run("tools carry their metadata", func(t *testing.T) {
+		fr, ok := toolByName(m, "file_read")
+		assert.Require(t, assert.True(t, ok))
+		assert.True(t, fr.ReadOnly)
+		assert.True(t, fr.Rereadable)
+		assert.False(t, fr.NeedsAllowWrite)
+		wf, _ := toolByName(m, "web_fetch")
+		assert.True(t, wf.External)
+		sh, ok := toolByName(m, "shell_exec")
+		assert.True(t, ok)
+		assert.True(t, sh.NeedsAllowWrite)
+		mem, ok := toolByName(m, "memory")
+		assert.True(t, ok)
+		assert.True(t, mem.AgentState)
+		sm, ok := toolByName(m, "suag_manifest")
+		assert.True(t, ok)
+		assert.True(t, sm.ReadOnly)
+		assert.False(t, sm.MCP)
+		assert.True(t, slices.IsSortedFunc(m.Tools, func(a, b ManifestTool) int {
+			if a.Name < b.Name {
+				return -1
+			}
+			return 1
+		}))
+	})
+	t.Run("MCP servers hide arguments", func(t *testing.T) {
+		assert.Eq(t, []ManifestMCPServer{{ID: "srv", Command: "/bin/srv"}}, m.MCPServers)
+		raw, _ := json.Marshal(m)
+		assert.NotContains(t, string(raw), "secret")
+		assert.NotContains(t, string(raw), "api_key")
+	})
+	t.Run("skills", func(t *testing.T) {
+		assert.Contains(t, m.Skills.Roots, filepath.Join(workspace, ".agents", "skills"))
+		assert.Eq(t, 0, m.Skills.Count)
+	})
+	t.Run("memory scopes", func(t *testing.T) {
+		assert.Len(t, m.Memory, 2)
+		assert.Eq(t, "user", m.Memory[0].Scope)
+		assert.Eq(t, "files", m.Memory[0].Backend)
+		assert.Eq(t, MemoryReasonDefault, m.Memory[0].Reason)
+		assert.True(t, m.Memory[0].Replaceable)
+		assert.Eq(t, "files", m.Memory[1].Backend)
+		assert.Eq(t, MemoryReasonConfig, m.Memory[1].Reason)
+		assert.NotEmpty(t, m.Memory[1].Location)
+		assert.True(t, m.Memory[1].Replaceable)
+	})
+	t.Run("output, taint and write policy", func(t *testing.T) {
+		assert.Eq(t, 1234, m.Output.InlineBytes)
+		assert.Eq(t, 99999, m.Output.SpillBytes)
+		assert.True(t, filepath.IsAbs(m.Output.SessionsDir))
+		assert.Eq(t, []string{"web_fetch"}, m.Taint.TaintTools)
+		assert.Eq(t, []string{"shell_exec"}, m.Taint.TaintOnSpill)
+		assert.Eq(t, ManifestWritePolicy{MemoryWrite: "auto", MemoryWriteTainted: "deny"}, m.WritePolicy)
+	})
+	t.Run("exec backend reports the command", func(t *testing.T) {
+		assert.NoErr(t, gkconfig.Set("memory.user.backend", "exec"))
+		assert.NoErr(t, gkconfig.Set("memory.user.command", "/opt/mem"))
+		m, err := LoadManifest(ManifestOptions{})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "exec", m.Memory[0].Backend)
+		assert.Eq(t, "/opt/mem", m.Memory[0].Location)
+	})
+	t.Run("missing model fails", func(t *testing.T) {
+		assert.NoErr(t, gkconfig.Set("model", ""))
+		_, err := LoadManifest(ManifestOptions{})
+		assert.Err(t, err)
+	})
+}
+
+// TestManifestMatchesRuntimeTools guards against drift: the tools the static
+// manifest lists are the tools a writable runtime registers (minus
+// tool_search, which exists only when tools are deferred).
+func TestManifestMatchesRuntimeTools(t *testing.T) {
+	manifestConfig(t)
+	assert.NoErr(t, gkconfig.Set("mcp.servers", nil))
+	m, err := LoadManifest(ManifestOptions{})
+	assert.Require(t, assert.NoErr(t, err))
+	var fromManifest []string
+	for _, tool := range m.Tools {
+		fromManifest = append(fromManifest, tool.Name)
+	}
+
+	rt, err := OpenCLI(context.Background(), Options{AllowWrite: true})
+	assert.Require(t, assert.NoErr(t, err))
+	t.Cleanup(func() { _ = rt.Close() })
+	runtimeNames := rt.Registry.List()
+	runtimeNames = slices.DeleteFunc(runtimeNames, func(n string) bool { return n == "tool_search" })
+	slices.Sort(runtimeNames)
+	assert.Eq(t, runtimeNames, fromManifest)
+
+	t.Run("suag_manifest tool returns the live manifest", func(t *testing.T) {
+		res, err := rt.Registry.ExecuteTool(context.Background(), api.ToolCall{CallID: "c", Name: "suag_manifest"})
+		assert.Require(t, assert.NoErr(t, err))
+		var got Manifest
+		assert.Require(t, assert.NoErr(t, json.Unmarshal([]byte(res.Content), &got)))
+		assert.Eq(t, "openai", got.Models.Main.Provider)
+		assert.Eq(t, m.Memory, got.Memory)
+		assert.Eq(t, m.Output, got.Output)
+		_, ok := toolByName(got, "suag_manifest")
+		assert.True(t, ok)
+	})
+}
+
+func TestManifestToolInReadOnlySet(t *testing.T) {
+	manifestConfig(t)
+	assert.NoErr(t, gkconfig.Set("mcp.servers", nil))
+	rt, err := OpenCLI(context.Background(), Options{}) // read-only run
+	assert.Require(t, assert.NoErr(t, err))
+	t.Cleanup(func() { _ = rt.Close() })
+	assert.Contains(t, rt.Registry.List(), "suag_manifest")
+	assert.NotContains(t, rt.Registry.List(), "shell_exec")
+}

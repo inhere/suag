@@ -31,7 +31,7 @@ func catalogNames(write bool) []string {
 }
 
 // TestRegisteredToolsFollowTheCatalog pins the run/chat/ACP tool sets to the
-// one native catalog plus update_plan, session_search, recall and memory,
+// one native catalog plus update_plan, session_search, recall, memory and suag_manifest,
 // which Open registers in every mode.
 func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 	resetConfig(t)
@@ -47,7 +47,7 @@ func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 		return got
 	}
 	want := func(write bool) []string {
-		w := append(catalogNames(write), "update_plan", "session_search", "recall", "memory")
+		w := append(catalogNames(write), "update_plan", "session_search", "recall", "memory", "suag_manifest")
 		slices.Sort(w)
 		return w
 	}

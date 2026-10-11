@@ -84,6 +84,7 @@ func policyRows() []policyRow {
 		wired("recall", acp.ToolKindSearch, func(*testing.T, string) agentcore.Tool {
 			return native.NewRecallTool(personal.NewLedger(""), 0)
 		}),
+		wired("suag_manifest", acp.ToolKindRead, func(*testing.T, string) agentcore.Tool { return native.NewManifestTool(nil) }),
 		// Unknown tools require permission and are refused in read_only.
 		{name: "future_tool", tool: func(*testing.T, string) agentcore.Tool { return &countingTool{name: "future_tool"} },
 			kind: acp.ToolKindOther, readOnly: "deny", normal: "ask", nilTool: "ask"},

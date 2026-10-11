@@ -8,6 +8,7 @@ import (
 
 	"github.com/gookit/goutil/cflag"
 	"github.com/gookit/goutil/cflag/capp"
+	"github.com/inhere/suag/internal/wiring"
 )
 
 // Build carries the binary's version metadata injected by cmd/suag.
@@ -22,6 +23,7 @@ type Build struct {
 // New builds the root command with all subcommands registered.
 func New(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, build Build) *capp.App {
 	var showVersion bool
+	wiring.SetBuildVersion(build.Version) // shown by the manifest
 	root := capp.NewApp()
 	root.Name = "suag"
 	root.Desc = "Personal agent with CLI and ACP interfaces"
@@ -52,6 +54,7 @@ func New(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, build B
 		newSendCommand(stdin, stderr),
 		newTraceCommand(ctx, stdout, stderr),
 		newStatsCommand(ctx, stdout, stderr),
+		newManifestCommand(ctx, stdout, stderr),
 		newGCCommand(ctx, stdout, stderr),
 		newExportCommand(ctx, stdout, stderr),
 	)

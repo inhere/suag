@@ -163,34 +163,12 @@ func toolsAllowWrite() (bool, error) {
 // Open assembles one runtime.
 func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	workspace, ruleCWD, allowWrite, servers := opts.Workspace, opts.RuleCWD, opts.AllowWrite, opts.Servers
-	settings, err := appconfig.ReadModelSettings(opts.Model)
+	rs, err := loadRuntimeSettings(workspace, opts.Model)
 	if err != nil {
 		return nil, err
 	}
-	// memory.taint_tools taint on every result (default none);
-	// memory.taint_on_spill only when the output was externalised (default
-	// shell_exec; an empty list turns it off).
-	taintTools, err := toolNameList("memory.taint_tools", nil)
-	if err != nil {
-		return nil, err
-	}
-	taintOnSpill, err := toolNameList("memory.taint_on_spill", []string{"shell_exec"})
-	if err != nil {
-		return nil, err
-	}
-	memConfig, err := loadMemoryConfig()
-	if err != nil {
-		return nil, err
-	}
-	memPolicy, err := loadMemoryWritePolicy()
-	if err != nil {
-		return nil, err
-	}
-	// Backend selection only (no backend command runs here).
-	memSetup, err := buildMemory(workspace, memConfig)
-	if err != nil {
-		return nil, err
-	}
+	settings, taintTools, taintOnSpill := rs.models, rs.taintTools, rs.taintOnSpill
+	memSetup, memPolicy, sessionsDir := rs.memSetup, rs.memPolicy, rs.sessionsDir
 	provider, err := buildMainProvider(settings)
 	if err != nil {
 		return nil, err
@@ -219,11 +197,6 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	memHost := &memoryHost{}
 	mem := newMemoryRuntime(memSetup, memPolicy, opts.MemoryReadOnly, opts.MemoryConfirm, memHost)
 	capabilities.Registry.Register(mem.tool)
-	sessionsDir, err := appconfig.ResolveSessionsDir()
-	if err != nil {
-		_ = capabilities.Close()
-		return nil, fmt.Errorf("resolve sessions directory: %w", err)
-	}
 	// session_search / recall only read the session store and the saved
 	// outputs, so they are registered in every mode as well; the ledger is
 	// bound to the runner's store in personal.New.
@@ -236,6 +209,19 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if skillReg.Len() > 0 {
 		capabilities.Registry.Register(native.NewSkillTool(skillReg, nativeEnv(workspace).RawBytes))
 	}
+	// suag_manifest is read-only local data, so it is registered in every
+	// mode. It reports the live registry (MCP tools included) when called.
+	userHome, _ := os.UserHomeDir()
+	capabilities.Registry.Register(native.NewManifestTool(func(context.Context) (any, error) {
+		return BuildManifest(ManifestInput{
+			Version: buildVersion, Settings: settings, Registry: capabilities.Registry,
+			MCPServers: append(appconfig.ReadMCPServerSettings(), servers...),
+			SkillRoots: defaultSkillRoots(workspace, userHome), Skills: skillReg,
+			Memory: memSetup, Policy: memPolicy,
+			InlineBytes: rs.inlineBytes, SpillBytes: rs.spillBytes, SessionsDir: sessionsDir,
+			TaintTools: taintTools, TaintOnSpill: taintOnSpill,
+		}), nil
+	}))
 	// Tool registry stack, outer to inner: observe (added in personal.New) ->
 	// visibility -> approval -> base registry. Unloaded deferred tools are
 	// answered by visibility and never reach the approver.
