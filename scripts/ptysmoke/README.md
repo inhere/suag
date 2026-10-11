@@ -4,10 +4,11 @@
 
 | 文件 | 作用 |
 |---|---|
-| `fakellm.py` | OpenAI 兼容的 SSE 假模型：`--mode tool` 先返回 `shell_exec` 调用、工具结果后回复文本；`--mode text` 只回复文本；`--mode edit` 依次返回 `file_grep`、`file_edit` 调用再回复；`--mode memory` 先 `shell_exec` 再 `memory` add（用户消息含“直接”时跳过 shell）；`--delay` 控制每次响应前的等待 |
+| `fakellm.py` | OpenAI 兼容的 SSE 假模型：`--mode tool` 先返回 `shell_exec` 调用、工具结果后回复文本；`--mode text` 只回复文本；`--mode edit` 依次返回 `file_grep`、`file_edit` 调用再回复；`--mode memory` 先 `shell_exec` 再 `memory` add（用户消息含“直接”时跳过 shell）；`--delay` 控制每次响应前的等待；`--prompt-tokens` 设定上报的输入用量；`"stream": false` 的请求（如 compaction 摘要）回一个 JSON 响应；多线程服务（流式与非流式请求走不同连接） |
 | `ptydrive.py` | PTY 驱动库：`mark()` 后只检查新输出、`until()` 等待模式出现再输入、`check()` 记录结果 |
 | `chat_approval.py` | 现成场景：开场模型、❯ 提示符、写工具确认（y/n/a/Ctrl-C、回合中提前输入不放行）、提示符处单次 Ctrl-C 只提示、连按两次退出（汇总与续接命令）、非 TTY 拒绝 |
 | `chat_edit.py` | `file_grep` 免确认、`file_edit` 确认显示原文/改为、确认后文件被修改、两次 Ctrl-C 退出 |
+| `chat_idle.py` | 空闲整理：`context.idle_after: 2s` + 小 `context_window`，回合时长超过 idle_after 时回合中不触发；回合结束后出现“空闲整理中…”与“已整理上下文：X → Y token”；之后输入正常；整理进行中输入会抢占它（无成功提示、回合照常回答）；`suag trace` 可见 schedule 事件与 reason=idle 的分段 |
 | `chat_memory.py` | 未污染会话直接写记忆并显示“已记住”；`shell_exec` 置污染（`memory.taint_tools`）后写记忆询问（显示范围/类型/标题/正文），y 写入、n 拒绝、a 本会话不再问；条目落在 SUAG_HOME 的 files 后端 |
 
 运行：

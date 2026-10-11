@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/inhere/suag/internal/chat"
+	appconfig "github.com/inhere/suag/internal/config"
 	suaghooks "github.com/inhere/suag/internal/hooks"
 	"github.com/inhere/suag/internal/wiring"
 )
@@ -17,9 +18,14 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 	if err != nil {
 		return err
 	}
+	idle, err := appconfig.ReadIdleSettings()
+	if err != nil {
+		return err
+	}
 	return chat.Run(ctx, runtime.Runner, chat.Options{
 		SessionID: opts.SessionID, ResumeID: opts.ResumeID, FromID: opts.FromID,
 		Asker: runtime.Asker, WriteTools: runtime.WriteTools,
+		IdleAfter: idle.After, IdleMinRatio: idle.MinRatio,
 	}, stdin, stdout, stderr, hooks)
 }
 

@@ -17,6 +17,7 @@ import (
 	personalprocess "github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/redact"
+	"github.com/inhere/suag/pkg/agentcore/schedule"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
@@ -38,6 +39,14 @@ type Options struct {
 	Asker *tools.BindableAsker
 	// WriteTools tells the banner whether file_write/shell_exec are available.
 	WriteTools bool
+	// IdleAfter and IdleMinRatio configure the idle consolidation
+	// (context.idle_after, context.idle_min_ratio); IdleAfter 0 turns it off.
+	IdleAfter    time.Duration
+	IdleMinRatio float64
+	// scheduleOptions are extra scheduler options (tests inject a fake clock);
+	// scheduleObserver sees every scheduler event synchronously (tests).
+	scheduleOptions  []schedule.Option
+	scheduleObserver func(schedule.Event)
 }
 
 // Run drives the interactive chat REPL on top of runner; hooks may be nil.
@@ -131,6 +140,11 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		Provider: runner.ProviderName(), Model: runner.Model(),
 		WriteTools: opts.WriteTools,
 	})
+	// Background idle consolidation; closed before the input source, so its
+	// last status line still goes through it.
+	idle := newIdleConsolidation(runner, sessionID, opts.IdleAfter, opts.IdleMinRatio, render, opts.scheduleOptions,
+		opts.scheduleObserver)
+	defer idle.Close()
 	if opts.Asker != nil && inputSource.terminal != nil {
 		opts.Asker.Bind(chatAsker{source: inputSource, render: render})
 		defer opts.Asker.Bind(nil)
@@ -210,6 +224,10 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			return nil
 		}
 		line = strings.TrimSpace(line)
+		// Any input (keyboard, delivery, Stop hook reply) is activity: the idle
+		// clock starts over. A running consolidation is preempted by the
+		// Run/Compact below through the session gate.
+		idle.Touch()
 		switch line {
 		case "":
 			continue
@@ -220,13 +238,18 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			continue
 		case ":compact":
 			// Compress the session context now; token figures are estimates.
+			idle.Pause()
 			if out, err := runner.Compact(ctx, sessionID); err != nil {
 				fmt.Fprintln(stderr, "Compact:", err)
 			} else {
+				idle.Compacted()
 				fmt.Fprintf(inputSource, "Compacted context: ~%d -> ~%d tokens (estimate)\n", out.TokensBefore, out.TokensAfter)
 			}
+			idle.Resume()
 			continue
 		}
+		// A turn starts: no idle consolidation until it has ended (EndTurn).
+		idle.Pause()
 		if createdAtStartup {
 			if err := runner.SetSessionTitle(ctx, sessionID, line); err != nil {
 				return err
@@ -326,6 +349,8 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			stop.StopHookActive = turnStopActive
 			waiting = hooks.StartStop(ctx, stop)
 		}
+		// The turn is over (Stop sent): the idle clock runs from now.
+		idle.EndTurn(result)
 	}
 }
 

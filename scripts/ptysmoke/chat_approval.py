@@ -36,10 +36,11 @@ def isolate_ws(ws):
     subprocess.run(["git", "init", "-q", ws], check=True)
 
 
-def write_home(home, port, tools_extra="", memory_extra=""):
+def write_home(home, port, tools_extra="", memory_extra="", provider_extra="", extra=""):
     """Writes SUAG_HOME/config.yaml. Project memory is forced to the files
     backend: the scratch workspace lives inside this repository, whose
-    .gofer/tracker would otherwise select (and call) the real gofer."""
+    .gofer/tracker would otherwise select (and call) the real gofer.
+    provider_extra goes under providers.fake, extra at the top level."""
     os.makedirs(home, exist_ok=True)
     with open(os.path.join(home, "config.yaml"), "w", encoding="utf-8") as f:
         f.write(f"""model: fake/m1
@@ -48,12 +49,12 @@ providers:
     type: openai
     base_url: http://127.0.0.1:{port}/v1
     api_key: k
-tools:
+{provider_extra}tools:
   allow_write: true
 {tools_extra}memory:
   project:
     backend: files
-{memory_extra}""")
+{memory_extra}{extra}""")
 
 
 def wait_port(proc):

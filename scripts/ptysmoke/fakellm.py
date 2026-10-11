@@ -13,7 +13,10 @@ Modes (--mode):
         message containing "直接" skips the shell_exec.
 
 --delay seconds are slept before each response, so a test can type while a
-turn is running. Each request is logged as one JSON line on stdout.
+turn is running. A request with "stream": false gets one JSON completion
+instead of SSE (the compaction summary). --prompt-tokens sets the reported prompt usage (the idle
+consolidation compares it with the context threshold). Each request is
+logged as one JSON line on stdout.
 
   python3 -I fakellm.py --port 18795 --mode tool --delay 1
 """
@@ -68,8 +71,24 @@ def make_handler(args):
                 chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
             else:
                 chunks = [{"choices": [{"delta": {"content": args.reply}}]}]
-            chunks.append({"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 2,
-                                                    "total_tokens": 12}})
+            usage = {"prompt_tokens": args.prompt_tokens, "completion_tokens": 2,
+                     "total_tokens": args.prompt_tokens + 2}
+            if not body.get("stream"):
+                # Non-streaming calls (e.g. the compaction summary) get one JSON body.
+                delta = chunks[0]["choices"][0]["delta"]
+                message = {"role": "assistant", "content": delta.get("content")}
+                if "tool_calls" in delta:
+                    message["tool_calls"] = [dict(c, type="function") for c in delta["tool_calls"]]
+                finish = "tool_calls" if "tool_calls" in delta else "stop"
+                raw = json.dumps({"id": "fake", "object": "chat.completion", "usage": usage,
+                                  "choices": [{"index": 0, "message": message, "finish_reason": finish}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+            chunks.append({"choices": [], "usage": usage})
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Transfer-Encoding", "chunked")
@@ -87,6 +106,18 @@ def make_handler(args):
     return Handler
 
 
+class QuietServer(http.server.ThreadingHTTPServer):
+    """Threads: stream and non-stream calls use separate client connections,
+    and a kept-alive idle connection must not block the other one. A client
+    that hangs up (Ctrl-C, a preempted idle consolidation) is not an error."""
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, default=18795)
@@ -94,8 +125,9 @@ def main():
     p.add_argument("--delay", type=float, default=1.0)
     p.add_argument("--command", default="echo SMOKE_OK")
     p.add_argument("--reply", default="完成")
+    p.add_argument("--prompt-tokens", type=int, default=10)
     args = p.parse_args()
-    server = http.server.HTTPServer(("127.0.0.1", args.port), make_handler(args))
+    server = QuietServer(("127.0.0.1", args.port), make_handler(args))
     print(json.dumps({"listening": args.port}), flush=True)
     try:
         server.serve_forever()
