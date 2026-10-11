@@ -17,6 +17,7 @@
 应用层   suag internal/*: config, wiring, personal(+store), chat, acpserver, cli, hooks, output
             │ 只向下依赖
 能力层   agentcore/llm          OpenAI 兼容与 Claude provider、fallback 池
+         agentcore/schedule     进程内定时：After/Every/Idle，只依赖标准库
          agentcore/tools        注册表、审批层、延迟加载（visibility）、输出治理（Output/Spiller）、工具元数据
          agentcore/tools/native 内置工具：文件读写/搜索、shell、web、update_plan、tool_search、skill、memory、session_search、recall、suag_manifest
          agentcore/tools/mcp    stdio MCP 客户端，工具以 MCP kind 注册
@@ -85,6 +86,28 @@ runtime := agentcore.New(agentcore.Config{
 - `tools.Output`：结果不超过 `InlineBytes` 原样通过；更大的结果交给宿主实现的 `tools.Spiller` 存下全文，上下文换成 ref 行加头尾片段（未配置 Spiller 时只截断）。错误结果不改写；`Meta.Rereadable` 的工具（自带分页，如 `file_read`、`recall`）不经外置。`Meta.External` 标记结果含外部内容（如 `web_fetch`、MCP 工具），宿主据此做污染标记；`Meta.AgentState` 标记写的是 agent 自身状态而非工作区（如 `memory`）。
 - `native.Env` 的 `InlineBytes`（内联阈值）与 `RawBytes`（单次原始输出上限）取代原 `MaxOutputBytes`。
 - 宿主把类别映射到自己的协议，例如 suag 的 ACP 服务把 `CategoryEdit` 映射为 `acp.ToolKindEdit`；ACP 概念不进入 agentcore。
+
+## llm：Claude 缓存与段上下文
+
+- `llm.ClaudeConfig.PromptCache`（默认关）：开启后在两处加 `cache_control` 断点（至多 2 个，Anthropic 上限 4 个），`system` 改为块数组；关闭时 `system` 仍是字符串，网关不接受 `cache_control` 时保持关闭。
+- 断点位置：带 `llm.SegmentContextMetaKey`（`Message.Metadata["suag.segment_context"] = true`）的消息的最后一个块，以及请求的最后一个块。宿主构建段上下文消息时要设置同一个 key，稳定前缀（system + tools + 段上下文）才会被缓存。
+
+## schedule：进程内定时
+
+`schedule.New(opts...)` 返回 `Scheduler`，任务按名字注册，`Func` 收到的 ctx 在任务取消或调度器关闭时取消：
+
+| 方法 | 作用 |
+|---|---|
+| `After(name, d, fn)` | d 后触发一次，然后注销 |
+| `Every(name, d, fn)` | 每隔 d 触发 |
+| `Idle(name, d, fn)` | 最后一次 `Touch` 之后 d 触发一次，再等下一次 `Touch` |
+| `Touch()` | 有活动：重置所有 Idle 计时 |
+| `Close()` | 取消全部任务并等待运行中的任务结束 |
+
+- 三个注册方法返回 `Handle`：`Cancel`（注销，运行中的调用看到 ctx 取消）、`Reset`、`Pause`、`Resume`。同名再次注册会替换旧任务。
+- 同一任务不会并发：上一次还在运行时到点的触发记为 `skipped`。
+- `WithClock(Clock)` 注入假时钟（测试用）；`WithObserver(func(Event))` 接收事件（scheduled、fired、skipped、cancelled、paused、resumed、done、failed）。观察者在调度器锁外调用，可以重入调度器（如在事件里 `Touch` 或 `Close`）；极短的任务可能先收到 `done` 再收到 `fired`，需要顺序时按 `Event.At` 排序。
+- suag 的 chat 用它做空闲整理（`Idle` 任务 + 回合期间 `Pause`）。
 
 ## 记忆
 

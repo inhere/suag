@@ -46,6 +46,9 @@ providers:
   # Override a preset, e.g. an Anthropic gateway:
   # anthropic:
   #   base_url: "https://gateway.example.com"
+  #   # Claude type only, default off: add cache_control breakpoints (system
+  #   # becomes a block array). Some gateways reject cache_control.
+  #   prompt_cache: true
 
 # Optional cheaper model for context summaries (same reference rules as model;
 # a bare id uses the main model's provider). Unset: the turn's own model.
@@ -55,6 +58,13 @@ providers:
 # fallback_models:
 #   - anthropic/claude-sonnet-4-6
 #   - deepseek-chat # bare id: served by the main model's provider
+
+# Context segments. Chat only: after idle_after without input, if the context
+# has reached idle_min_ratio of the segment threshold, a new segment is started
+# in the background (never during a turn; typing cancels it).
+# context:
+#   idle_after: 15m     # duration such as 30s / 15m, or seconds; 0 turns it off
+#   idle_min_ratio: 0.5 # 0..1
 
 # Workspace directory for file and shell tools
 # Defaults to current working directory

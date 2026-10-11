@@ -4,6 +4,32 @@
 
 ## [未发布]
 
+会话分段与上下文投影。依据见 [设计](docs/design/2026-10-11-segments-projection-design.md) 与 [计划](docs/plans/2026-10-11-segments-projection-plan.md)。
+
+### 新增
+
+- 会话分段：阈值、`:compact`、空闲整理开启新段；每段以段起始记录开头，带上下文消息和交接包（面向当前任务的摘要、最近 3 条用户请求原文、相关 ref）。旧段内容可用 `session_search` / `recall` 取回。`suag trace` 显示分段行（`segment=#N reason=... tokens=前->后`）。
+- chat 空闲整理：`context.idle_after`（默认 `15m`，`0` 关闭）无输入、且上下文达到阈值的 `context.idle_min_ratio`（默认 `0.5`）时，后台开启新段；回合中不触发，输入即取消。`suag trace` 记录 `schedule` 事件，`make smoke-chat` 增加 chat_idle 场景。
+- stream-json 在每次模型调用后输出 `usage` 行（本次 run 的累计值：`input_tokens`、`output_tokens`、`cache_read_tokens`、`cache_write_tokens`、`total_tokens`、`cost_usd`、`tool_calls`）；`turn_end` 与 `result` 带同名 `usage`。ACP 在同一时机发送 `usage_update`，`_meta` 另附 `run`、`session` 两个嵌套对象。
+- `providers.<id>.prompt_cache`（仅 Claude/`anthropic` 类型，默认关）：加 `cache_control` 断点缓存稳定前缀。
+- `pkg/agentcore/schedule`：进程内 After/Every/Idle 定时组件；`llm.SegmentContextMetaKey` 与 `llm.ClaudeConfig.PromptCache`。
+- 评测脚本：多轮任务（`prompts`）、`first_call_uncached` 指标（FIRST 列）、`--probe-prefix` 三组前缀缓存探针、`--agent omp` 对照运行。
+
+### 变更
+
+- 系统提示词只含稳定内容（身份与使用约定），同一模式下跨会话、跨工作区字节相同；环境、项目规则、`--append-system-prompt`、记忆索引、skills 列表和延迟工具列表移到每段开头的上下文消息。段内规则变化以“上下文更新”消息追加。
+- 记忆索引在每段开始时刷新（原为会话开始与压缩后）。
+- `:compact` 与自动压缩的交接摘要改为面向当前任务的模板，并附最近用户请求原文。
+- 模型调用事件增加 `purpose`（compact 调用标为 `compact`）（`suag trace --json` 的 `attrs.purpose`），评测据此跳过。
+
+### 不兼容
+
+- 系统提示词内容大幅缩减：规则、记忆索引、环境等不再在系统提示词里，而在段上下文消息中；依赖系统提示词文本的外部处理（解析、断言）需要改读上下文消息。
+- `:compact` 与自动压缩改为开启新段，原样保留的只有最后一组完整的工具调用/结果（原为按 token 保留近期尾部）；`personal.Config.CompactKeepTokens` 不再生效。
+- Claude provider 开启 `prompt_cache` 时，请求的 `system` 是块数组（关闭时仍为字符串）。
+- ACP `usage_update` 的 `_meta` 顶层扁平键改为本次 run 的累计值（原为会话累计）；会话累计在 `_meta.session`，顶层 `cost.amount` 仍为会话累计。
+- `context_update` 条目开始回放：段内规则变化会在后续回合以上下文更新消息出现。旧二进制不会回放这些条目；旧会话没有段记录时按旧快照渲染，下一断点起写段记录。
+
 ## [0.10.0] - 2026-10-11
 
 状态、记忆与可扩展性。依据见 [设计](docs/design/2026-10-10-state-memory-extensibility-design.md) 与 [计划](docs/plans/2026-10-11-state-memory-extensibility-plan.md)。

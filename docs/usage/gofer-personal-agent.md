@@ -89,7 +89,7 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 - 写工具（`--allow-write` / `tools.allow_write` / ACP `default` mode）：`file_write`（整文件写）、`file_edit`（按唯一字符串替换，`replace_all` 替换全部，保留 CRLF）、`shell_exec`。
 - 文件类工具都经 `os.OpenRoot` 限制在工作区内，不跟随指向外部的 symlink；`file_list`/`file_grep`/`file_find` 不进入 `.git`、`node_modules`、`vendor`、`dist` 与根 `.gitignore` 的简单模式（不支持 `!` 与子目录 `.gitignore`），`file_grep` 跳过二进制与超过 1MB 的文件；搜索超过 10 秒返回已有结果并注明不完整。
 - `web_fetch` 在拨号时检查实际连接的 IP，拒绝回环、私网、链路本地（含云元数据地址）、CGNAT 与组播地址，跳转与 DNS 重绑定同样受限；不读取环境代理（`HTTPS_PROXY` 等）。需要代理才能访问的站点，设 `tools.web_fetch.proxy`（`http://`、`https://` 或 `socks5://` 地址，如 `http://127.0.0.1:7890`）：此时连接只发往代理，改为在请求前与每次跳转时解析目标域名并校验其 IP，解析失败也拒绝（代理端若对同一域名解析出不同地址则无法察觉，保护弱于直连）；格式错误时启动报错。`tools.web_fetch.allow_private: true` 可放开内网限制。
-- skills：启动时扫描一次 `<工作区>/.agents/skills`、`<工作区>/skills`、`~/.agents/skills` 下的 `SKILL.md`（frontmatter 含 `name`、`description`，可选 `allowed-tools` 仅展示），同名时工作区优先，无效文件记警告后跳过。系统提示词按数量呈现 skills：总数不超过 `skills.list_max`（缺省 15）时全部列出“名字 — 描述”（描述截到 160 字符）；超过时只列工作区内的 skills，其余只给数量，模型用 `skill` 工具的 `query`（关键词，名字命中优先，中文按两字切分；`*` 按工作区/用户分组列出全部名字）检索后再按名字加载。模型用 `skill`（`name`）取正文与目录文件列表，`file` 参数只能读该 skill 目录内的文件。需要每次都生效的 skill 可预加载：在 SKILL.md frontmatter 写 `metadata: {always_load: true}`（或顶层 `always_load: true`），或在 `~/.suag/config.yaml` 设 `skills.always_load: [名字]`；其正文（每个上限 8000 字节）直接放进系统提示词。
+- skills：启动时扫描一次 `<工作区>/.agents/skills`、`<工作区>/skills`、`~/.agents/skills` 下的 `SKILL.md`（frontmatter 含 `name`、`description`，可选 `allowed-tools` 仅展示），同名时工作区优先，无效文件记警告后跳过。段上下文消息按数量呈现 skills：总数不超过 `skills.list_max`（缺省 15）时全部列出“名字 — 描述”（描述截到 160 字符）；超过时只列工作区内的 skills，其余只给数量，模型用 `skill` 工具的 `query`（关键词，名字命中优先，中文按两字切分；`*` 按工作区/用户分组列出全部名字）检索后再按名字加载。模型用 `skill`（`name`）取正文与目录文件列表，`file` 参数只能读该 skill 目录内的文件。需要每次都生效的 skill 可预加载：在 SKILL.md frontmatter 写 `metadata: {always_load: true}`（或顶层 `always_load: true`），或在 `~/.suag/config.yaml` 设 `skills.always_load: [名字]`；其正文（每个上限 8000 字节）放进段上下文消息。
 
 `shell_exec` 在 Windows 用 PowerShell（优先 `pwsh`，否则 `powershell`），输出固定 UTF-8，返回原生命令的退出码；其他系统用 `sh -c`。每次调用可传 `timeout`（秒，默认 120），超时后整组进程（Unix 进程组 / Windows job object）被终止，已有输出与退出码照常返回；后台残留进程占住输出时最多再等 2 秒。命令以 `GIT_TERMINAL_PROMPT=0`、`GIT_PAGER=cat`、`PAGER=cat` 运行，没有标准输入。
 
@@ -115,10 +115,10 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 
 - 范围与后端：用户记忆在 `$SUAG_HOME/memory/user`；项目记忆后端的选择顺序为 `memory.project.backend` > 仓库根 `MEMORY.md`（files，条目在 `.suag/memory/<id>.md`）> 仓库根有 `.gofer/tracker` 时选 gofer > `$SUAG_HOME/projects/<key>/memory`。`memory.user.backend` / `memory.project.backend` 可选 `files`、`exec`（项目另可选 `gofer`），`exec` 需配 `memory.<scope>.command`（可选 `args`、`timeout_sec`）。完整字段见 `config/config.yaml`。
 - 仓库根有 `.gofer/tracker` 且没有 `MEMORY.md` 时，项目记忆自动选 gofer 后端：每条项目记忆写成带 `suag` 标签的 gofer memory（key 形如 `suag-<kind>-<id>`，来源 `suag:<session>`），**会进入该仓库所有 agent 的开场上下文**，所以应简短且对各 agent 都有用；suag 只管理 `suag` 标签条目，不读写、不删除其他 gofer memory。不想写进 gofer 时设 `memory.project.backend: files`。
-- 索引在会话开始时冻结进系统提示词，同会话写入下个会话可见，压缩后刷新。
+- 索引在每段开始时冻结进段上下文消息，本段内写入下一段可见，开启新段时刷新。
 - 污染与确认：会话读过外部内容后（`web_fetch`、`web_search`、MCP 工具、`session_search`、`recall`，以及 `memory.taint_tools`、`memory.taint_on_spill`（缺省 `[shell_exec]`）列出的工具）写记忆需要确认，由 `memory.write_tainted`（`ask` 缺省 / `deny` / `allow`）决定。ACP 下确认走 `session/request_permission`（标题“memory: 会话读过外部内容，确认写入记忆”，可用 `gofer job interactions` / `answer` 处理）；`suag run` 没有交互，直接拒绝；chat 在终端询问。`--read-only` 与 ACP `read_only` mode 下 `memory` 只允许 `get`/`search`；`run` 默认模式可写记忆（它是 suag 自身状态，不是工作区写入）。`memory.write: off` 让工具整体只读。
 
-Suag 每个进程生成一次基础系统提示词（系统与 shell、工作区、只读或可写及开启写工具的方法、使用约定），放在项目规则之前；同一进程内逐字节不变。
+系统提示词只含稳定内容（身份、使用约定），同一模式下逐字节不变，利于提供方做前缀缓存。环境（系统与 shell、工作区、只读或可写及开启写工具的方法）、项目规则、记忆索引、skills 列表在每段开头的上下文消息里；段内规则变化以“上下文更新”消息追加，并随会话回放。
 
 Gofer 中两种 `suag run` 用法：
 
@@ -152,11 +152,12 @@ gofer job resume <job-id> --prompt "继续上个问题"
 - `run` 的 stream-json 另有两种新增行：`tool_call`（`name`、`args` 摘要）与 `tool_result`（`name`、`is_error`、脱敏并截断的 `summary`）；已有行不变。未配置 `ndjson_keep` 的调用方会收到它们，上面的示例 `ndjson_keep` 不含它们，需要在 Gofer 中显示工具调用时再加入。`suag trace` 会显示 plan 行（文本 `plan ✔/▶/○ 步骤`，`--json` 为 `{"kind":"plan",...}`）。
 - `run` 的 stream-json 在 `plan` 事件上输出完整计划；`ndjson_keep` 示例未保留它，需要在 Gofer 中显示计划时把 `plan` 加入 `ndjson_keep`。
 - `tools.deferred`（`auto`/`always`/`never`，默认 `auto`）在 `~/.suag/config.yaml` 中配置。MCP 工具多时被延迟加载，模型通过内置 `tool_search` 取回；Gofer 不需要额外配置。
-- `compact_model` 指定自动压缩与 `:compact` 使用的模型，`providers.<id>.models.<model>.context_window` 覆盖上下文窗口。
+- `compact_model` 指定分段交接摘要（自动、`:compact`、空闲整理）使用的模型；会话按段组织，旧段可用 `session_search`/`recall` 取回；`providers.<id>.models.<model>.context_window` 覆盖上下文窗口。
 
 ### run 的 stream-json 输出与 chat hooks
 
 - `run --output-format stream-json` 先输出 `session` 事件，再输出过程事件，最后输出一行 `result`。`result`、`input_required`、`error` 都带 `usage`（本回合）和 `session_usage`（会话累计，持久化在会话元数据中）。两者均含 `input_tokens`（不含缓存）、`output_tokens`、可选的 `cache_read_tokens`/`cache_write_tokens`，以及 `total_tokens`（输入、输出与缓存之和）。
+- 每次模型调用结束后，`run` 还会输出一行 `usage`：`{"type":"usage","usage":{input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,total_tokens,cost_usd,tool_calls}}`，为**本次 run 的累计值**（run 口径，含 compact 调用，`input_tokens` 不含缓存；`tool_calls` 为本次 run 的工具调用次数，含被拒的）。`turn_end` 与 `result` 带同名 `usage`，`result` 的是最终值；`usage` 逐行单调递增，因此调用方可以在运行中途读取。Gofer 已读取该行并显示 `tools N`，`--max-tokens` 在运行中途就能生效，不必等到 `result`。
 - chat hooks：`hooks.command`（argv 列表，不经 shell）在 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd、Interrupt 事件时被调用，事件以一行 JSON 写入其 stdin。未设 `hooks.command` 时不启用，`SUAG_HOOKS=off` 可整体关闭。`hooks.timeout_ms` 限制普通事件；`hooks.stop_args` 只追加到 Stop 调用，且必须同时设 `hooks.stop_wait_sec`（Stop 最多等 `stop_wait_sec+2` 秒，否则按 `timeout_ms`）。PostToolUse 只对匹配 `hooks.post_tool_use.tools` glob 的工具发送，设了 `hooks.post_tool_use.name` 时改用该名称。
 - `suag run --injected` 把本轮输入标记为非人工输入，transcript 和 hook 事件中都会体现。
 
@@ -190,7 +191,7 @@ gofer job resume <job-id> --prompt "从上次会话继续"
 
 ### ACP 用量上报
 
-每轮结束（含被取消的回合）发送 `usage_update`：`_meta` 的 `input_tokens`/`output_tokens`/`total_tokens`（及可选 `cache_read_tokens`/`cache_write_tokens`/`cost_usd`）和顶层 `cost.amount` 均为**会话累计值**；顶层 `used` 是最近一次模型请求的上下文 token 数，`size` 是模型上下文窗口。窗口取 `providers.<id>.models.<model>.context_window`（可选配置），否则按实际生效的模型（`--model`/`SUAG_MODEL` 覆盖后的值）名取保守默认（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k），未知模型为 128k。会话累计保存在会话 metadata（`sessions.metadata_json`），`session/load` 或重启后从已保存值继续累计。`input_tokens` 不含缓存，缓存另报 `cache_read_tokens`/`cache_write_tokens`，`total_tokens` = input + output + cache_read + cache_write（与 Gofer 口径一致）。
+每次模型调用结束后以及每轮结束（含被取消的回合）都发送 `usage_update`：`_meta` 顶层的扁平键 `input_tokens`/`output_tokens`/`cache_read_tokens`/`cache_write_tokens`/`total_tokens`/`cost_usd`/`tool_calls` 为**本次 run 的累计值**（run 口径，Gofer 只读这些扁平键，所以预算按 run 计）；另附嵌套对象 `_meta.run`（同一 run 值）和 `_meta.session`（会话累计，含本次 run；无 `tool_calls`）；顶层 `cost.amount` 仍为**会话累计值**；顶层 `used` 是最近一次模型请求的上下文 token 数，`size` 是模型上下文窗口。窗口取 `providers.<id>.models.<model>.context_window`（可选配置），否则按实际生效的模型（`--model`/`SUAG_MODEL` 覆盖后的值）名取保守默认（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k），未知模型为 128k。会话累计（`_meta.session`）保存在会话 metadata（`sessions.metadata_json`），`session/load` 或重启后从已保存值继续累计。`input_tokens` 不含缓存，缓存另报 `cache_read_tokens`/`cache_write_tokens`，`total_tokens` = input + output + cache_read + cache_write（与 Gofer 口径一致）。
 
 ## 升级迁移
 

@@ -45,7 +45,7 @@ suag run --allow-write --prompt "修好失败的测试"
 suag run --resume <session-id> --prompt "继续"
 ```
 
-chat 中：`:session` 显示会话 ID，`:compact` 压缩历史，`:quit` 退出。在提示符处按一次 Ctrl+C 清掉已输入的内容，3 秒内再按一次才退出；Ctrl+D 直接退出。退出时会显示 token 用量和续接本会话的命令。
+chat 中：`:session` 显示会话 ID，`:compact` 开启新段（见[会话](#会话)），`:quit` 退出。在提示符处按一次 Ctrl+C 清掉已输入的内容，3 秒内再按一次才退出；Ctrl+D 直接退出。退出时会显示 token 用量和续接本会话的命令。
 
 ## 配置
 
@@ -57,6 +57,8 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `providers.<id>` | `type`（openai/anthropic）、`base_url`、`api_key`、`headers`、`models.<model>.context_window` |
 | `providers.<id>.models.<model>.price` | 每百万 token 的美元价格（`input`、`output`、`cache_read`、`cache_write`）；provider 不返回成本时，`suag stats` 据此计算 |
 | `compact_model`、`fallback_models` | 生成摘要用的便宜模型；主模型失败时依次尝试的备用模型 |
+| `context.idle_after`、`context.idle_min_ratio` | 仅 chat：安静超过此时长（默认 `15m`，`0` 关闭），且上下文已达分段阈值的此比例（默认 `0.5`）时，在后台开启新段 |
+| `providers.<id>.prompt_cache` | 仅 Claude（`anthropic` 类型），默认关：加 `cache_control` 断点（system 变为块数组）；部分网关不接受 |
 | `tools.allow_write` | 仅 chat：启用写文件和 shell 工具（默认 false） |
 | `tools.approval` | 仅 chat：`ask`（默认）执行写/shell 工具前询问，`auto` 不询问 |
 | `tools.max_output_bytes`、`tools.max_spill_bytes` | 内联阈值：单次工具结果完整写入会话的上限（默认 8000，超出时原文存 `$SUAG_HOME/sessions/<id>/outputs/`，会话只留 ref 与头尾片段）；单次工具原始输出上限（默认 1 MiB） |
@@ -113,15 +115,16 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 
 - **四类条目**：`user`（用户是谁、偏好）、`feedback`（纠正与确认过的做法）、`project`（代码里看不出的目标、决定、进展）、`reference`（外部资源在哪）。不记：能从代码或 git 推出的内容、规则文件已有的内容、本次会话的临时细节、密钥。流程类内容应写成 skill。
 - **范围与后端**：用户记忆在 `$SUAG_HOME/memory/user`（files）。项目记忆按顺序选后端：`memory.project.backend` 的配置；仓库根有 `MEMORY.md`（files，仓库模式）；仓库根有 `.gofer/tracker`（gofer）；否则用 `$SUAG_HOME/projects/<key>/memory` 下的 files。仓库模式下索引就是 `MEMORY.md`，每条记忆放在 `.suag/memory/<id>.md`，可随项目提交；根目录的 `MEMORY.md` 不会由 suag 创建。gofer 后端中每条项目记忆是带 `suag` 标签的 gofer memory，只管理这些条目。`suag manifest` 会显示选了哪个后端及原因。
-- **冻结的索引**：记忆索引（仅标题）在会话开始时放进系统提示词，此后不变；本会话写入的内容下个会话才可见，压缩后会刷新。正文用 `memory get` 读取。
+- **冻结的索引**：记忆索引（仅标题）放在段上下文消息里，本段内不变；本会话写入的内容下一段才可见，开启新段时刷新。正文用 `memory get` 读取。
 - **污染与确认**：会话一旦读过外部内容（`web_fetch`、`web_search`、MCP 工具、`session_search`、`recall`，以及 `memory.taint_tools` / `memory.taint_on_spill` 中的工具），就永久标记为已污染，此后写记忆需要确认（`memory.write_tainted`）：chat 在终端询问（`y`、`n`，`a` 表示本会话不再问），ACP 发权限请求，`run` 直接拒绝；`deny` 永不写入，`allow` 不询问。`--read-only`（及 ACP `read_only`）下该工具只读。普通 `run` 可以写记忆：它是 suag 自身的状态，不属于工作区写入。
 
 ## 会话
 
 - **续接与交接**：`--session-id` 创建或复用指定 ID 的会话；`--resume` 要求会话已存在，不存在时以退出码 4 退出。`run --from <session>` 新建一个会话，继承来源会话的摘要、计划和已加载的工具。
-- **压缩**：上下文接近模型窗口时，较早的历史会自动生成摘要；chat 中 `:compact` 可手动触发。
+- **分段**：会话是一串段。每段以一条段起始记录开头（原因：开始、阈值、`:compact`、空闲、`--from`），记录里有上下文消息；第一段之后还有交接包：面向当前任务的摘要、最近的用户请求原文和仍相关的 ref。上下文接近模型窗口或执行 `:compact` 时开启新段，原样保留的只有最后一组完整的工具调用/结果。旧段仍在库里，用 `session_search` 和 `recall` 取回。
+- **空闲整理（chat）**：超过 `context.idle_after`（默认 15m）没有输入，且上下文已达阈值的 `context.idle_min_ratio`（默认 0.5）时，chat 在后台开启新段。回合进行中不会触发，开始输入即取消。
 - **计划**：`update_plan` 工具记录模型的计划。stream-json 中输出为 `plan` 事件，ACP 中转为计划更新。
-- **系统提示词**：每个进程生成一次，依次包含系统、shell、工作区、读写模式和使用约定，然后是项目规则（`AGENTS.md`、`CLAUDE.md`、`~/.suag/AGENTS.md`）和 `--append-system-prompt`。`--no-project-rules` 跳过项目规则。
+- **系统提示词与段上下文**：系统提示词只含稳定内容（身份与工作约定），同一模式下跨会话、跨工作区字节相同。环境（系统、shell、工作区）、项目规则（`AGENTS.md`、`CLAUDE.md`、`~/.suag/AGENTS.md`）、`--append-system-prompt`、记忆索引、skills 列表和延迟工具列表放在每段开头的上下文消息里。段内发生变化（如规则文件被改）时，追加一条“上下文更新”消息，不改写已有内容。`--no-project-rules` 跳过项目规则。
 - **投递与 hooks**：`suag send --session <s> --text <t>` 把文本送进正在运行的 chat；`hooks.command` 以 stdin 上的 JSON 接收 chat 的生命周期事件。
 
 ## 配合 Gofer 使用
@@ -139,21 +142,25 @@ suag ps                                           # 正在运行的 chat 进程
 suag manifest [--json] [--model <p/m>]            # 模型、工具、MCP、skills、记忆后端、输出上限
 ```
 
-`suag trace` 每回合还会显示一行 `turn_context`（模型、模式、工具集哈希、规则与记忆索引哈希、是否已污染）。`suag stats` 显示各模型成本（provider 返回，或按配置的 `price` 计算）；加 `--json` 还有工具输出字节（`raw_bytes`、`inline_bytes`、`spilled`）。
+`suag trace` 每回合还会显示一行 `turn_context`（模型、模式、工具集哈希、规则与记忆索引哈希、是否已污染），每次分段显示一行（`segment=#N reason=... tokens=前->后`），以及 `schedule` 事件（chat 空闲整理：fired、done、cancelled、skipped）。`suag stats` 显示各模型成本（provider 返回，或按配置的 `price` 计算）；加 `--json` 还有工具输出字节（`raw_bytes`、`inline_bytes`、`spilled`）。
+
+`run --output-format stream-json` 在每次模型调用后输出一行 `usage`，为本次 run 的累计值：`input_tokens`（不含缓存）、`output_tokens`、`cache_read_tokens`、`cache_write_tokens`、`total_tokens`、`cost_usd`、`tool_calls`。`turn_end` 与 `result` 带同名 `usage`，调用方可在运行中途做预算控制。ACP 在同一时机发 `usage_update`（[说明](docs/usage/gofer-personal-agent.md#acp-用量上报)）。
 
 ## 开发
 
 ```bash
 go test -race ./...     # 单元测试
-make smoke-chat         # 伪终端端到端 chat 测试，含 chat_memory（Linux/macOS，需 Python 3）
+make smoke-chat         # 伪终端端到端 chat 测试，含 chat_memory 与 chat_idle（Linux/macOS，需 Python 3）
 go run ./scripts/eval --fake --bin tmp/smoke/suag   # 任务评测，见 scripts/eval/README.md
 make build-all          # 交叉编译到 dist/
 ```
 
+评测支持多轮任务（`task.yaml` 的 `prompts`，同一会话依次发送），并报告 `first_call_uncached`（表格 FIRST 列：首个主循环模型调用的未缓存输入）。`--probe-prefix` 跑三组前缀缓存探针：同工作区、跨工作区、系统提示词带随机 nonce 的对照组。`--agent omp` 用 omp 跑同样的任务做对比。
+
 - `cmd/suag`：程序入口；`internal/cli`：每个命令一个文件。
 - `internal/wiring`：为 CLI 与 ACP 组装 provider、工具、skills、系统提示词和 runner。
-- `internal/personal`：回合、压缩、交接和事件；`internal/personal/store`：SQLite 存储。
+- `internal/personal`：回合、分段、交接和事件；`internal/personal/store`：SQLite 存储。
 - `internal/chat`：终端对话；`internal/acpserver`：ACP 服务。
-- `pkg/agentcore`：应用层之下可复用的各层，不依赖 `internal/*`（[README](pkg/agentcore/README.md)）：内核（模型/工具循环、run 状态、transcript），以及 `llm`（各 provider）、`tools`（注册表、审批、延迟加载）、`tools/native`（内置工具）、`tools/mcp`（MCP 客户端）、`skills`、`memory`（存储接口、治理、路由；后端 `memory/files`、`memory/execstore`）、`redact`（密钥与隐形文本清理）和 `extproc`（外部命令的 exec 协议 v1 与凭据剥离）。
+- `pkg/agentcore`：应用层之下可复用的各层，不依赖 `internal/*`（[README](pkg/agentcore/README.md)）：内核（模型/工具循环、run 状态、transcript），以及 `llm`（各 provider）、`schedule`（进程内 After/Every/Idle 定时）、`tools`（注册表、审批、延迟加载）、`tools/native`（内置工具）、`tools/mcp`（MCP 客户端）、`skills`、`memory`（存储接口、治理、路由；后端 `memory/files`、`memory/execstore`）、`redact`（密钥与隐形文本清理）和 `extproc`（外部命令的 exec 协议 v1 与凭据剥离）。
 
 版本变更见 [CHANGELOG.md](CHANGELOG.md)；设计与计划文档在 [docs/](docs/README.md)。CI 在 Ubuntu 和 Windows 上用 Go 1.26 和 stable 跑测试。旧的控制面（team、cron、orchestrator）保留在 `v0.1.0` 标签。

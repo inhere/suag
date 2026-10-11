@@ -45,7 +45,7 @@ suag run --allow-write --prompt "Fix the failing test"
 suag run --resume <session-id> --prompt "Continue"
 ```
 
-In chat, `:session` shows the session id, `:compact` compacts the history and `:quit` leaves. Pressing Ctrl+C once at the prompt clears the line; pressing it again within 3 seconds exits. Ctrl+D exits immediately. On exit chat prints token usage and the command that resumes the session.
+In chat, `:session` shows the session id, `:compact` starts a new segment (see [Sessions](#sessions)) and `:quit` leaves. Pressing Ctrl+C once at the prompt clears the line; pressing it again within 3 seconds exits. Ctrl+D exits immediately. On exit chat prints token usage and the command that resumes the session.
 
 ## Configuration
 
@@ -57,6 +57,8 @@ Suag reads only `$SUAG_HOME/config.yaml` and `$SUAG_HOME/.env` (default `~/.suag
 | `providers.<id>` | `type` (openai/anthropic), `base_url`, `api_key`, `headers`, `models.<model>.context_window` |
 | `providers.<id>.models.<model>.price` | USD per million tokens (`input`, `output`, `cache_read`, `cache_write`); `suag stats` computes cost from it when the provider reports none |
 | `compact_model`, `fallback_models` | Cheaper model for summaries; models tried in order when the main one fails |
+| `context.idle_after`, `context.idle_min_ratio` | Chat only: after this much quiet (default `15m`; `0` turns it off) and when the context has reached this share of the segment threshold (default `0.5`), start a new segment in the background |
+| `providers.<id>.prompt_cache` | Claude/`anthropic` type only, default off: add `cache_control` breakpoints (system becomes a block array); some gateways reject them |
 | `tools.allow_write` | Chat only: enable write and shell tools (default false) |
 | `tools.approval` | Chat only: `ask` (default) confirms write/shell tools, `auto` does not |
 | `tools.max_output_bytes`, `tools.max_spill_bytes` | Inline threshold: largest tool result kept whole in the session (default 8000; larger ones are saved under `$SUAG_HOME/sessions/<id>/outputs/` and kept as a ref plus head/tail); raw output cap per call (default 1 MiB) |
@@ -113,15 +115,16 @@ Long-term memory shared across sessions, written by the model through the `memor
 
 - **Four kinds**: `user` (who the user is, preferences), `feedback` (corrections and confirmed choices), `project` (goals, decisions, progress the code does not show), `reference` (where external resources live). Not stored: anything derivable from code or git, what rule files already say, session-local details, secrets. Procedures belong in skills.
 - **Scopes and backends.** User memory lives in `$SUAG_HOME/memory/user` (files). Project memory picks its backend in this order: `memory.project.backend`; a `MEMORY.md` at the repository root (files, repository mode); a `.gofer/tracker` at the repository root (gofer); otherwise files under `$SUAG_HOME/projects/<key>/memory`. In repository mode the index is `MEMORY.md` and each entry is `.suag/memory/<id>.md`, so memory can be committed with the project. suag never creates the root `MEMORY.md`. With the gofer backend each project entry is a gofer memory tagged `suag`; only those are managed. `suag manifest` shows what was chosen and why.
-- **Frozen index.** The memory index (titles only) is added to the system prompt when a session starts and stays unchanged for it. Writes in this session show up in the next one; compaction refreshes it. Read a body with `memory get`.
+- **Frozen index.** The memory index (titles only) goes into the segment context message and stays unchanged for the segment. Writes in this session show up in the next segment; a new segment refreshes it. Read a body with `memory get`.
 - **Tainted sessions.** Once a session has read external content (`web_fetch`, `web_search`, MCP tools, `session_search`, `recall`, or the tools in `memory.taint_tools` / `memory.taint_on_spill`) it is marked tainted for good, and memory writes need confirmation (`memory.write_tainted`): chat asks (`y`, `n`, or `a` for the rest of the session), ACP sends a permission request, and `run` refuses. `deny` never writes, `allow` skips the question. Under `--read-only` (and ACP `read_only`) the tool only reads. Plain `run` may write memory, since it is suag's own state rather than the workspace.
 
 ## Sessions
 
 - **Resume and handoff.** `--session-id` creates or reuses a named session. `--resume` requires an existing one; a missing session exits with code 4. `run --from <session>` starts a new session that inherits the old one's summary, plan and loaded tools.
-- **Compaction.** When the context nears the model window, older history is summarized automatically. `:compact` in chat does it on demand.
+- **Segments.** A session is a chain of segments. Each segment starts with a record (reason: start, threshold, `:compact`, idle, `--from`) that holds the context message and, after the first segment, a handoff: a summary for the current task, the last user requests verbatim and the refs that still matter. When the context nears the model window, or on `:compact`, a new segment starts; only the last complete tool call/result group is kept verbatim. Earlier segments stay in the database: fetch them with `session_search` and `recall`.
+- **Idle consolidation (chat).** After `context.idle_after` (default 15m) without input, if the context has reached `context.idle_min_ratio` (default 0.5) of the threshold, chat starts a new segment in the background. It never fires during a turn, and typing cancels it.
 - **Plans.** The `update_plan` tool records the model's plan. stream-json emits it as `plan` events, and ACP sends it as plan updates.
-- **System prompt.** Suag builds the system prompt once per process. It covers OS, shell, workspace, mode and conventions, then project rules (`AGENTS.md`, `CLAUDE.md`, `~/.suag/AGENTS.md`) and any `--append-system-prompt`. `--no-project-rules` skips project rules.
+- **System prompt and segment context.** The system prompt holds only stable content (identity and working conventions), so it stays byte-identical across sessions and workspaces of one mode. Environment (OS, shell, workspace), project rules (`AGENTS.md`, `CLAUDE.md`, `~/.suag/AGENTS.md`), `--append-system-prompt`, the memory index, the skills list and deferred tools go into a context message at the start of each segment. A change inside a segment (for example edited rules) is appended as a "context update" message instead of rewriting earlier text. `--no-project-rules` skips project rules.
 - **Delivery and hooks.** `suag send --session <s> --text <t>` hands text to a running chat. `hooks.command` receives chat lifecycle events as JSON on stdin.
 
 ## Using with Gofer
@@ -139,21 +142,25 @@ suag ps                                           # running chat processes
 suag manifest [--json] [--model <p/m>]            # models, tools, MCP, skills, memory backends, output limits
 ```
 
-`suag trace` also shows a `turn_context` line per turn (model, mode, tool set hash, rules and memory index hashes, tainted). `suag stats` shows cost per model (from the provider, or from `price` in the config) and, with `--json`, tool output bytes (`raw_bytes`, `inline_bytes`, `spilled`).
+`suag trace` also shows a `turn_context` line per turn (model, mode, tool set hash, rules and memory index hashes, tainted), a line for each segment break (`segment=#N reason=... tokens=before->after`) and `schedule` events (chat idle consolidation: fired, done, cancelled, skipped). `suag stats` shows cost per model (from the provider, or from `price` in the config) and, with `--json`, tool output bytes (`raw_bytes`, `inline_bytes`, `spilled`).
+
+`run --output-format stream-json` prints a `usage` line after every model call, with the run's running totals: `input_tokens` (cache excluded), `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `total_tokens`, `cost_usd` and `tool_calls`. `turn_end` and `result` carry the same `usage`, so a consumer can enforce a budget mid-run. ACP sends `usage_update` at the same moments ([details](docs/usage/gofer-personal-agent.md#acp-用量上报)).
 
 ## Development
 
 ```bash
 go test -race ./...     # unit tests
-make smoke-chat         # PTY end-to-end chat tests incl. chat_memory (Linux/macOS, Python 3)
+make smoke-chat         # PTY end-to-end chat tests incl. chat_memory and chat_idle (Linux/macOS, Python 3)
 go run ./scripts/eval --fake --bin tmp/smoke/suag   # task evals, see scripts/eval/README.md
 make build-all          # cross-compile to dist/
 ```
 
+The eval has multi-turn tasks (`prompts` in `task.yaml`, one session) and reports `first_call_uncached` (FIRST column: uncached input of the first main model call). `--probe-prefix` runs three probes of the prefix cache: same workspace, a different workspace, and a control with a random nonce in the system prompt. `--agent omp` runs the same tasks on omp for comparison.
+
 - `cmd/suag`: entry point; `internal/cli`: one file per command.
 - `internal/wiring`: builds providers, tools, skills, the system prompt and the runner for CLI and ACP.
-- `internal/personal`: turns, compaction, handoff and events; `internal/personal/store` is the SQLite store.
+- `internal/personal`: turns, segments, handoff and events; `internal/personal/store` is the SQLite store.
 - `internal/chat`: terminal chat; `internal/acpserver`: the ACP server.
-- `pkg/agentcore`: the reusable layers below the app, independent of `internal/*` ([README](pkg/agentcore/README.md)): the kernel (model/tool loop, run state, transcript) plus `llm` (providers), `tools` (registry, approval, deferred tools), `tools/native` (built-in tools), `tools/mcp` (MCP client), `skills`, `memory` (store interface, governance, router; `memory/files` and `memory/execstore` backends), `redact` (secret and invisible-text cleaning) and `extproc` (exec protocol v1 and credential stripping for external commands).
+- `pkg/agentcore`: the reusable layers below the app, independent of `internal/*` ([README](pkg/agentcore/README.md)): the kernel (model/tool loop, run state, transcript) plus `llm` (providers), `schedule` (in-process After/Every/Idle timers), `tools` (registry, approval, deferred tools), `tools/native` (built-in tools), `tools/mcp` (MCP client), `skills`, `memory` (store interface, governance, router; `memory/files` and `memory/execstore` backends), `redact` (secret and invisible-text cleaning) and `extproc` (exec protocol v1 and credential stripping for external commands).
 
 Release notes are in [CHANGELOG.md](CHANGELOG.md); design notes and plans are in [docs/](docs/README.md). CI runs tests on Ubuntu and Windows with Go 1.26 and stable. The old control plane (team, cron, orchestrator) is kept at the `v0.1.0` tag.
