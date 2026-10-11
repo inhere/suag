@@ -11,28 +11,36 @@ import (
 // Func is called with a context cancelled when its task is cancelled or the scheduler closes.
 type Func func(ctx context.Context) error
 
+// Handle controls one registered task.
 type Handle interface {
-	Cancel()
-	Reset()
-	Pause()
-	Resume()
+	Cancel() // unregister the task; a running call sees its ctx cancelled
+	Reset()  // restart the timer from now
+	Pause()  // stop the timer until Resume
+	Resume() // restart the timer from now
 }
 
+// Scheduler runs named delayed, periodic and idle tasks in-process.
+// Registering a name again replaces the old task; one task never runs
+// concurrently with itself; observers are called outside the scheduler lock,
+// so they may call back into the scheduler.
 type Scheduler interface {
-	After(name string, d time.Duration, fn Func) Handle
-	Every(name string, d time.Duration, fn Func) Handle
-	Idle(name string, d time.Duration, fn Func) Handle
-	Touch()
-	Close() error
+	After(name string, d time.Duration, fn Func) Handle // fire once after d, then unregister
+	Every(name string, d time.Duration, fn Func) Handle // fire every d
+	Idle(name string, d time.Duration, fn Func) Handle  // fire once d after the last Touch, then wait for the next Touch
+	Touch()                                             // activity: restart every Idle timer
+	Close() error                                       // cancel all tasks and wait for running ones
 }
 
+// Timer is the part of *time.Timer the scheduler uses.
 type Timer interface{ Stop() bool }
 
+// Clock is the time source; tests inject a fake one.
 type Clock interface {
 	Now() time.Time
 	AfterFunc(d time.Duration, f func()) Timer
 }
 
+// EventKind names a scheduler event.
 type EventKind string
 
 const (
@@ -46,6 +54,7 @@ const (
 	Failed    EventKind = "failed"
 )
 
+// Event is passed to the observer set by WithObserver.
 type Event struct {
 	Name     string
 	Kind     EventKind
@@ -54,8 +63,10 @@ type Event struct {
 	At       time.Time
 }
 
+// Option configures New.
 type Option func(*scheduler)
 
+// WithClock replaces the real clock (nil keeps it).
 func WithClock(clock Clock) Option {
 	return func(s *scheduler) {
 		if clock != nil {
@@ -64,10 +75,14 @@ func WithClock(clock Clock) Option {
 	}
 }
 
+// WithObserver sets the event callback, called outside the scheduler lock.
+// Events of one run may arrive out of order ("done" before "fired" for a
+// very short run); order by Event.At when it matters.
 func WithObserver(observer func(Event)) Option {
 	return func(s *scheduler) { s.observer = observer }
 }
 
+// New returns a Scheduler using the real clock unless WithClock is given.
 func New(opts ...Option) Scheduler {
 	s := &scheduler{clock: realClock{}, tasks: make(map[string]*task)}
 	for _, opt := range opts {
@@ -207,6 +222,8 @@ func (t *task) fire(gen uint64) {
 	start := s.clock.Now()
 	event := t.eventLocked(Fired, nil, 0)
 	s.mu.Unlock()
+	// The run starts before "fired" is emitted, so an observer may call Close
+	// (which waits for running tasks) from that event without deadlocking.
 	go t.run(ctx, start)
 	s.emit(event)
 }
