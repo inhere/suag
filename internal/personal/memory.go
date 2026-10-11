@@ -71,15 +71,12 @@ func (r *Runner) memorySnapshotPatch(ctx context.Context, model Session, patch m
 	}
 }
 
-// refreshMemorySnapshot re-reads the index after a compaction (the prompt
-// cache is rebuilt anyway), stores it in the session meta and updates meta
-// (the in-memory metadata of the running prompt builder; may be nil). It
-// reports whether the section changed. A failure keeps the old snapshot.
-func (r *Runner) refreshMemorySnapshot(ctx context.Context, sessionID string, meta map[string]any) bool {
-	content, hash, ok := r.memorySnapshot(ctx, sessionID)
-	if !ok {
-		return false
-	}
+// storeMemorySnapshot stores a memory index snapshot taken at a segment break
+// (compaction; the prompt cache is rebuilt anyway) in the session meta and
+// updates meta (the in-memory metadata of the running prompt builder; may be
+// nil). It reports whether the section changed. A failure keeps the old
+// snapshot.
+func (r *Runner) storeMemorySnapshot(ctx context.Context, sessionID string, meta map[string]any, content, hash string) bool {
 	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := r.cfg.Repository.PatchSessionMeta(wctx, sessionID, map[string]any{

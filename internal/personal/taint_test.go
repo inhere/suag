@@ -170,6 +170,8 @@ func TestTurnContextEvent(t *testing.T) {
 		"model": "m-1", "provider": "p-1", "mode": ModeReadOnly,
 		"tools": toolSetHash(names), "tools_count": float64(len(names)),
 		"rules_hash": "rules-hash-123456", "memory_hash": "", "tainted": false,
+		// The new session's start record holds the segment snapshot.
+		"segment_hash": segmentRecords(t, repo, res.SessionID)[0].Context.Hash,
 	}, e.Attrs)
 
 	t.Run("tool set hash ignores order", func(t *testing.T) {

@@ -253,6 +253,12 @@ func (r *Runner) NewSession(ctx context.Context, id, title string) (Session, err
 	if err := r.cfg.Repository.CreateSession(ctx, model); err != nil {
 		return Session{}, fmt.Errorf("create personal session: %w", err)
 	}
+	// Every new session starts with a segment start record freezing the
+	// snapshot above (design D2). Without it the session is not created.
+	if err := r.writeStartSegment(ctx, model); err != nil {
+		_ = r.cfg.Repository.DeleteSession(context.WithoutCancel(ctx), model.ID)
+		return Session{}, err
+	}
 	return model, nil
 }
 
@@ -367,7 +373,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
 	}
 	// What this turn starts with (D9); best-effort like every event.
-	r.recordTurnContext(ctx, model)
+	r.recordTurnContext(ctx, model, r.currentSegment(history, model.Meta))
 	if err := emit(ctx, req.Emit, Event{Kind: "run_started", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID}); err != nil {
 		return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
 	}

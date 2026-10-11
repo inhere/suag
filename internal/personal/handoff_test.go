@@ -61,12 +61,14 @@ func TestHandoffGeneratesSummaryWithoutTouchingSource(t *testing.T) {
 		assert.Eq(t, 0, len(compactionEntries(t, repo, src)))
 	})
 	t.Run("handoff entry and inherited tools", func(t *testing.T) {
+		// The new session's segment start record, then the handoff.
 		es, err := repo.ListEntries(ctx, "child-1", store.EntryFilter{})
 		assert.NoErr(t, err)
-		assert.Eq(t, 1, len(es))
-		assert.Eq(t, store.EntryHandoff, es[0].Type)
+		assert.Eq(t, 2, len(es))
+		assert.Eq(t, store.EntryCompaction, es[0].Type)
+		assert.Eq(t, store.EntryHandoff, es[1].Type)
 		var rec handoffRecord
-		assert.NoErr(t, json.Unmarshal(es[0].JSON, &rec))
+		assert.NoErr(t, json.Unmarshal(es[1].JSON, &rec))
 		assert.Eq(t, src, rec.Source)
 		assert.Eq(t, "SUMMARY-main-1", rec.Summary)
 		assert.Eq(t, []string{"mcp_a", "mcp_b"}, rec.LoadedTools)
@@ -179,7 +181,7 @@ func TestHandoffSummaryFailureReleasesID(t *testing.T) {
 	assert.NoErr(t, err)
 	assert.Eq(t, "child-retry", got.ID)
 	assert.Eq(t, store.SessionOpen, got.Status)
-	assert.Eq(t, 1, entryCount(t, repo, "child-retry"))
+	assert.Eq(t, 2, entryCount(t, repo, "child-retry")) // segment start + handoff
 }
 
 func errorsIs(err, target error) bool { return errors.Is(err, target) }

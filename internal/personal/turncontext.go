@@ -27,8 +27,9 @@ const toolSetHashLen = 12
 
 // recordTurnContext writes the turn_context event (D9): enough to answer
 // "what did the model see when this turn started" without storing the prompt
-// itself. model is the session as of the turn start (patched metadata).
-func (r *Runner) recordTurnContext(ctx context.Context, model Session) {
+// itself. model is the session as of the turn start (patched metadata); seg
+// is the segment context in effect (its hash identifies the segment snapshot).
+func (r *Runner) recordTurnContext(ctx context.Context, model Session, seg *segmentContext) {
 	var names []string
 	if r.cfg.Tools != nil {
 		schemas, err := r.cfg.Tools.ListTools(ctx)
@@ -54,8 +55,9 @@ func (r *Runner) recordTurnContext(ctx context.Context, model Session) {
 			"tools_count": len(names),
 			"rules_hash":  metaString(model.Meta, "personal_rules_hash"),
 			// Always present (empty when no memory snapshot is recorded).
-			"memory_hash": metaString(model.Meta, metaMemoryIndexHash),
-			"tainted":     tainted,
+			"memory_hash":  metaString(model.Meta, metaMemoryIndexHash),
+			"tainted":      tainted,
+			"segment_hash": seg.Hash,
 		},
 	})
 }

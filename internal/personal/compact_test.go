@@ -117,7 +117,22 @@ func assertWellFormed(t *testing.T, msgs []agentcore.Message) {
 	}
 }
 
+// compactionEntries lists the session's compaction records that start a
+// segment with a summary (the reason=start record of a new session excluded,
+// see segmentRecords).
 func compactionEntries(t *testing.T, repo *store.Store, sessionID string) []compactionRecord {
+	t.Helper()
+	var out []compactionRecord
+	for _, rec := range segmentRecords(t, repo, sessionID) {
+		if rec.Reason != segmentReasonStart {
+			out = append(out, rec)
+		}
+	}
+	return out
+}
+
+// segmentRecords lists every compaction (segment start) record of the session.
+func segmentRecords(t *testing.T, repo *store.Store, sessionID string) []compactionRecord {
 	t.Helper()
 	es, err := repo.ListEntries(context.Background(), sessionID, store.EntryFilter{Types: []string{store.EntryCompaction}})
 	assert.NoErr(t, err)

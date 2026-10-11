@@ -25,10 +25,19 @@ type ctxItem struct {
 	seq int64
 }
 
-// historyView is the persisted part of a session's context: the latest adopted
-// compaction summary and the message entries kept after it.
+// historyView is the persisted part of a session's context: the current
+// segment's handoff package, its context snapshot and the message entries
+// kept after its start.
 type historyView struct {
-	summary string
+	// summary is the handoff package of the current segment: the latest
+	// adopted compaction summary, or the rendered --from handoff (segment 0;
+	// fromHandoff set). It is also the previous package a later segment
+	// break folds in, so --from content survives every later break.
+	summary     string
+	fromHandoff bool
+	// segment is the context snapshot of the latest adopted segment record;
+	// nil when that record has none (older sessions/binaries): use meta.
+	segment *segmentContext
 	items   []ctxItem
 }
 
@@ -39,11 +48,21 @@ type historyView struct {
 // turn is "summary + message entries of completed turns with seq >= first_kept_seq",
 // which equals the in-memory view because a turn's messages are persisted as
 // they are produced. A cut after the very last message uses lastSeq+1.
+//
+// The same record is the segment start record (design D2): Reason, Context,
+// RecentRequests and Refs are added fields; Summary always holds the full
+// rendered handoff package ("" for a start record), so an older binary that
+// decodes only the original fields still sees the whole context.
 type compactionRecord struct {
 	Summary      string `json:"summary"`
 	FirstKeptSeq int64  `json:"first_kept_seq"`
 	TokensBefore int    `json:"tokens_before"`
 	TokensAfter  int    `json:"tokens_after"`
+
+	Reason         string          `json:"reason,omitempty"`
+	Context        *segmentContext `json:"context,omitempty"`
+	RecentRequests []string        `json:"recent_requests,omitempty"`
+	Refs           []string        `json:"refs,omitempty"`
 }
 
 // loadHistory rebuilds the persisted context of a session. Only entries of
@@ -68,32 +87,35 @@ func (r *Runner) loadHistory(ctx context.Context, sessionID string) (historyView
 	}
 	var view historyView
 	var firstKept int64
-	for _, e := range entries { // ascending: the last adopted compaction wins
-		if e.Type != store.EntryCompaction || (e.TurnID != "" && !done[e.TurnID]) {
-			continue
-		}
-		var rec compactionRecord
-		if err := json.Unmarshal(e.JSON, &rec); err != nil {
-			return historyView{}, fmt.Errorf("decode compaction entry %d: %w", e.Seq, err)
-		}
-		view.summary, firstKept = rec.Summary, rec.FirstKeptSeq
-	}
-	for _, e := range entries {
-		if e.Type == store.EntryCompaction || e.Seq < firstKept {
-			continue
-		}
-		var m agentcore.Message
-		if e.Type == store.EntryHandoff {
-			// A handoff belongs to no turn and is the session's first context
-			// message; once a compaction passes it, firstKept drops it (the
-			// summary was built from it).
+	for _, e := range entries { // ascending: the last adopted record wins
+		switch {
+		case e.Type == store.EntryHandoff:
+			// A --from handoff belongs to no turn: it is the handoff package of
+			// segment 0 (not a history item), until a later segment record
+			// replaces it with a package that folded it in.
 			var rec handoffRecord
 			if err := json.Unmarshal(e.JSON, &rec); err != nil {
 				return historyView{}, fmt.Errorf("decode handoff entry %d: %w", e.Seq, err)
 			}
-			view.items = append(view.items, ctxItem{msg: handoffMessage(rec), seq: e.Seq})
+			view.summary, view.fromHandoff = handoffMessage(rec).Content, true
+		case e.Type == store.EntryCompaction && (e.TurnID == "" || done[e.TurnID]):
+			var rec compactionRecord
+			if err := json.Unmarshal(e.JSON, &rec); err != nil {
+				return historyView{}, fmt.Errorf("decode compaction entry %d: %w", e.Seq, err)
+			}
+			// An older binary's record has no context: fall back to meta.
+			view.segment = rec.Context
+			if rec.Reason == segmentReasonStart {
+				continue // snapshot only: no package, keeps every message
+			}
+			view.summary, view.fromHandoff, firstKept = rec.Summary, false, rec.FirstKeptSeq
+		}
+	}
+	for _, e := range entries {
+		if e.Type == store.EntryCompaction || e.Type == store.EntryHandoff || e.Seq < firstKept {
 			continue
 		}
+		var m agentcore.Message
 		if !done[e.TurnID] {
 			continue
 		}
@@ -105,16 +127,18 @@ func (r *Runner) loadHistory(ctx context.Context, sessionID string) (historyView
 	return view, nil
 }
 
-// summaryMessage is the first user message that carries a compaction summary.
+// summaryMessage renders a compaction summary as a user message (the segment
+// context message wraps its content, see segmentContextMessage).
 func summaryMessage(summary string) agentcore.Message {
 	return agentcore.Message{Role: "user", Content: "以下是此前对话的压缩摘要（早期消息已被省略）：\n\n" + summary}
 }
 
-// contextBuilder builds the model context of one turn: summary (if any) as the
-// first user message, then kept history, the context notice, and this turn's
-// messages. It runs before every model call (agentcore calls ContextBuilder in
-// each step ahead of listTools/model), so the threshold check here also
-// compacts a single very long turn. It never mutates state.Messages.
+// contextBuilder builds the model context of one turn: the segment context
+// message (carrying the handoff package, if any) first, then kept history, the
+// context notice, and this turn's messages. It runs before every model call
+// (agentcore calls ContextBuilder in each step ahead of listTools/model), so
+// the threshold check here also compacts a single very long turn. It never
+// mutates state.Messages.
 type contextBuilder struct {
 	r         *Runner
 	sessionID string
@@ -123,10 +147,11 @@ type contextBuilder struct {
 	usage     *usageCollector
 	update    string // short system notice (rules/append prompt/environment context)
 
-	summary   string    // current compaction summary ("" before any compaction)
-	prev      []ctxItem // kept history before this turn's own messages
-	turnStart int       // index of the first kept message in state.Messages
-	turnSeqs  []int64   // entries seq of state.Messages[i], loaded lazily
+	summary     string    // current segment's handoff package ("" = none)
+	fromHandoff bool      // summary is a --from handoff (segment 0)
+	prev        []ctxItem // kept history before this turn's own messages
+	turnStart   int       // index of the first kept message in state.Messages
+	turnSeqs    []int64   // entries seq of state.Messages[i], loaded lazily
 
 	window, reserve, keep int
 	truncLimit            int // tool-result truncation limit in chars; 0 = off
@@ -149,7 +174,8 @@ func (r *Runner) newContextBuilder(sessionID, turnID string, hist historyView, p
 	window, reserve, keep := r.compactLimits()
 	return &contextBuilder{
 		r: r, sessionID: sessionID, turnID: turnID, prompt: prompt, usage: usage, update: update,
-		summary: hist.summary, prev: hist.items, window: window, reserve: reserve, keep: keep,
+		summary: hist.summary, fromHandoff: hist.fromHandoff, prev: hist.items,
+		window: window, reserve: reserve, keep: keep,
 	}
 }
 
@@ -192,16 +218,18 @@ func (b *contextBuilder) BuildMessages(ctx context.Context, state *agentcore.Run
 	return view, nil
 }
 
-// compose assembles the current view: summary, kept history, notice, then the
-// kept part of this turn's messages, with tool results truncated when needed.
+// compose assembles the current view: segment context message, kept history,
+// notice, then the kept part of this turn's messages, with tool results
+// truncated when needed. The segment context message is rendered here only:
+// items() (and so pickCut/validCut) never sees it.
 func (b *contextBuilder) compose(state *agentcore.RunState) []agentcore.Message {
 	var turn []agentcore.Message
 	if state != nil && b.turnStart < len(state.Messages) {
 		turn = state.Messages[b.turnStart:]
 	}
 	out := make([]agentcore.Message, 0, len(b.prev)+len(turn)+2)
-	if b.summary != "" {
-		out = append(out, summaryMessage(b.summary))
+	if msg, ok := segmentContextMessage(b.summary, b.fromHandoff); ok {
+		out = append(out, msg)
 	}
 	for _, it := range b.prev {
 		out = append(out, b.limited(it.msg))

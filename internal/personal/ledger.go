@@ -297,6 +297,11 @@ func renderEntry(b *strings.Builder, e store.Entry) {
 	if e.Type == store.EntryCompaction {
 		var rec compactionRecord
 		_ = json.Unmarshal(e.JSON, &rec)
+		if rec.Summary == "" {
+			// A segment start record without a handoff package (session start).
+			fmt.Fprintf(b, "[%s] segment start (%s)\n\n", ref, stamp)
+			return
+		}
 		fmt.Fprintf(b, "[%s] compaction summary (%s)\n%s\n\n", ref, stamp, capText(rec.Summary, maxMessageBytes))
 		return
 	}
