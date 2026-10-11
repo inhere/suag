@@ -1,0 +1,8 @@
+name: readonly-research
+mode: read-only
+fake_mode: text
+prompt: 只读调研，不要修改任何文件：这个包里哪个函数负责校验邮箱地址？它拒绝邮箱的条件有哪些？回答中给出函数名和所在文件。
+checks:
+  - {type: answer_contains, text: ValidateEmail}
+  - {type: answer_contains, text: validate.go}
+  - {type: file_not_contains, path: validate.go, text: TODO}

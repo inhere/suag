@@ -1,0 +1,9 @@
+name: edit-config
+mode: allow-write
+fake_mode: edit
+prompt: 把 config.yaml 里的服务端口改成 9090，把 debug 改成 true，其它配置保持不变。
+checks:
+  - {type: file_contains, path: config.yaml, text: "port: 9090"}
+  - {type: file_contains, path: config.yaml, text: "debug: true"}
+  - {type: file_contains, path: config.yaml, text: "name: evalsvc"}
+  - {type: file_not_contains, path: config.yaml, text: "port: 8080"}

@@ -1,0 +1,6 @@
+name: long-output-answer
+mode: allow-write
+fake_mode: tool
+prompt: 运行 `go run ./gen`，它会打印很多行，最后一行形如 TOTAL=数字。告诉我 TOTAL 的值，并说明输出一共有多少行。
+checks:
+  - {type: answer_contains, text: "6003000"}

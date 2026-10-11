@@ -1,0 +1,10 @@
+name: rename-func
+mode: allow-write
+fake_mode: edit
+prompt: 把函数 ComputeTotal 重命名为 SumPrices，并更新所有调用处和测试，保证 go test ./... 仍然通过。
+checks:
+  - {type: file_contains, path: cart.go, text: "func SumPrices("}
+  - {type: file_not_contains, path: cart.go, text: ComputeTotal}
+  - {type: file_not_contains, path: order.go, text: ComputeTotal}
+  - {type: file_not_contains, path: cart_test.go, text: ComputeTotal}
+  - {type: file_contains, path: order.go, text: "SumPrices("}

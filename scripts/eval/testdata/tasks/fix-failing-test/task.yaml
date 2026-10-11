@@ -1,0 +1,7 @@
+name: fix-failing-test
+mode: allow-write
+fake_mode: edit
+prompt: 运行 go test ./... 找出失败的测试，定位 bug 并修复实现（不要修改测试文件），修复后再次运行测试确认通过。
+checks:
+  - {type: file_not_contains, path: stats.go, text: "i < len(xs)-1"}
+  - {type: file_contains, path: stats_test.go, text: "TestAverage"}

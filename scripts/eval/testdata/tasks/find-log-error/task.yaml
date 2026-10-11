@@ -1,0 +1,13 @@
+name: find-log-error
+mode: read-only
+fake_mode: text
+prompt: logs/app.log 是一个很大的日志文件，里面只有一条 ERROR 级别的记录。找到它，告诉我它的错误码（形如 ERR-数字）和出错的组件。
+generate:
+  - path: logs/app.log
+    count: 6000
+    line: "2026-10-10T08:00:00Z INFO  worker-{i} processed batch {i} in 12ms without any problem, queue depth stable"
+    inserts:
+      - {at: 4217, text: "2026-10-10T08:07:01Z ERROR billing-sync failed code=ERR-7731 reason=upstream gateway timeout after 30s"}
+checks:
+  - {type: answer_contains, text: "ERR-7731"}
+  - {type: answer_contains, text: "billing-sync"}
