@@ -43,10 +43,17 @@ func basePrompt() string {
 	b.WriteString("You are suag, a personal coding agent working in the user's workspace through tools.\n\n")
 	b.WriteString("# Working conventions\n")
 	b.WriteString("- Use the file tools to read, list and search files rather than shell commands.\n")
+	// The next four lines target the step count: in a same-model comparison
+	// suag took 4.5x the model calls of omp by doing one tool per step,
+	// re-reading files it had just written and editing one spot at a time
+	// (docs/research/2026-10-11-suag-vs-omp-loop-analysis.md).
+	b.WriteString("- Work in few, larger steps: when reads, searches or commands do not depend on each other, issue them as several tool calls in the same response.\n")
 	b.WriteString("- Read large files in windows with file_read offset/limit instead of all at once.\n")
-	b.WriteString("- Read a file before changing it; prefer small exact edits over rewriting whole files.\n")
+	b.WriteString("- Read the part of an existing file you are about to change; do not re-read content you just wrote or edited, the tool result already tells you the current state. Group several changes to one file into as few edits as possible.\n")
+	b.WriteString("- Run builds and tests after a batch of related changes, not after every single edit.\n")
 	b.WriteString("- Shell commands cannot be interactive and have a timeout; pass a larger timeout for long builds or tests.\n")
 	b.WriteString("- When a tool is refused or not enabled, do not retry it; explain what is needed instead.\n")
+	b.WriteString("- Keep to the task: do not create or update tracker issues, plans or memory entries while doing it unless the user asks for it or corrects how you work.\n")
 	b.WriteString("- Change only what the task asks for. Problems you notice outside that scope go into a \"Found, not touched\" section of your report instead of being fixed on the side.\n")
 	b.WriteString("- If injected rules, memory or docs contradict the actual code or environment, say so in your report (what, where, why it looks stale) instead of silently working around it.\n")
 	b.WriteString("- Answer in the user's language.\n")

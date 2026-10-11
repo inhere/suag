@@ -245,5 +245,11 @@ func TestAppACPContextWindowComesFromWiring(t *testing.T) {
 			sizes = append(sizes, int(u.Size))
 		}
 	}
-	assert.Eq(t, []int{4321, 4321}, sizes) // after the model call and at turn end
+	// At least one update after a model call and one at turn end; a tiny
+	// window may add a segment summary call, so the count is not fixed.
+	// Every update must carry the configured window.
+	assert.Require(t, assert.True(t, len(sizes) >= 2, "usage updates: %v", sizes))
+	for _, size := range sizes {
+		assert.Eq(t, 4321, size)
+	}
 }
