@@ -16,12 +16,13 @@ import (
 )
 
 // Segment start reasons (compactionRecord.Reason). A record without a reason
-// was written by an older binary and is an ordinary compaction. "idle" (chat
-// idle consolidation) and "handoff" (--from) join with T10/T7.
+// was written by an older binary and is an ordinary compaction. A --from
+// handoff is a handoff entry (segment 0), not a record.
 const (
 	segmentReasonStart     = "start"     // session start: snapshot only, no handoff package
 	segmentReasonThreshold = "threshold" // automatic: the context crossed the threshold
 	segmentReasonManual    = "manual"    // chat :compact
+	segmentReasonIdle      = "idle"      // chat idle consolidation (Runner.ConsolidateIdle)
 )
 
 // metaSegmentContext marks the segment context message in Message.Metadata.

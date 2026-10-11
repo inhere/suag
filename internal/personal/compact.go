@@ -172,6 +172,10 @@ type compactOutcome struct {
 	segment                   int // ordinal of the new segment record
 }
 
+// eventCancelled is the status of a compaction event whose segment break was
+// cancelled before its commit point (not an error).
+const eventCancelled = "cancelled"
+
 // compactTrigger maps a segment reason to the compaction event's legacy
 // trigger attribute (auto/manual/idle).
 func compactTrigger(reason string) string {
@@ -200,12 +204,18 @@ func (b *contextBuilder) startSegment(ctx context.Context, state *agentcore.RunS
 	}
 	started := time.Now()
 	trigger := compactTrigger(reason)
+	// fail records why no segment started. A cancellation (preempted idle
+	// consolidation, interrupted turn) is not an error: status cancelled.
 	fail := func(err error) (*compactOutcome, error) {
-		b.r.rec.record(ctx, store.Event{
+		e := store.Event{
 			Kind: store.EventCompaction, Name: "compact", Status: eventError, Error: err.Error(),
 			StartedAt: started, DurationMs: time.Since(started).Milliseconds(),
 			Attrs: map[string]any{"trigger": trigger, "reason": reason, "tokens_before": before},
-		})
+		}
+		if errors.Is(err, context.Canceled) {
+			e.Status, e.Error = eventCancelled, ""
+		}
+		b.r.rec.record(ctx, e)
 		return nil, err
 	}
 	pkg, err := b.r.buildPackage(ctx, b.sessionID, b.turnID, b.summary, items, cut, b.threshold())
@@ -224,6 +234,13 @@ func (b *contextBuilder) startSegment(ctx context.Context, state *agentcore.RunS
 	seg, serr := b.r.freshSnapshot(ctx, b.sessionID, b.eff)
 	if serr != nil {
 		slog.Warn("re-read rules for the new segment; keeping the previous rules", "session_id", b.sessionID, "err", serr)
+	}
+
+	// The segment record is the single commit point (design D5). Cancelled
+	// before it: nothing is written (no record, no meta), only a cancelled
+	// event. From the write on the break completes regardless of ctx.
+	if err := ctx.Err(); err != nil {
+		return fail(err)
 	}
 
 	// Switch the view: cut inside the kept history drops its head; a cut inside
@@ -425,8 +442,51 @@ type CompactResult struct {
 
 // Compact starts a new segment of the session right now (chat :compact,
 // reason manual). The record belongs to no turn, so it is adopted immediately.
+// It holds the session gate: a running Run finishes first, an idle
+// consolidation is preempted (cancelled before its commit point).
 func (r *Runner) Compact(ctx context.Context, sessionID string) (CompactResult, error) {
+	release, err := r.gate(sessionID).Acquire(ctx)
+	if err != nil {
+		return CompactResult{}, err
+	}
+	defer release()
 	return r.breakSegment(ctx, sessionID, segmentReasonManual)
+}
+
+// ErrPreempted reports an idle consolidation that gave way to a Run or
+// Compact before its commit point (it also matches context.Canceled).
+var ErrPreempted = errors.New("idle consolidation preempted")
+
+// ConsolidateIdle starts a new segment between turns with reason idle, as
+// the preemptible holder of the session gate (design D5/D6, chat idle
+// consolidation). It waits for the gate while ctx allows; a Run or Compact
+// arriving meanwhile cancels it and waits for it to let go. Whether the
+// context is large enough to bother is the caller's decision.
+//
+// Results: success (the record was written; a cancellation from the write on
+// does not undo it); ErrNothingToCompact; an error matching context.Canceled
+// (and ErrPreempted when a Run/Compact took over) when it stopped before its
+// commit point - then nothing was written except a cancelled event.
+func (r *Runner) ConsolidateIdle(ctx context.Context, sessionID string) (CompactResult, error) {
+	release, preempted, err := r.gate(sessionID).AcquirePreemptible(ctx)
+	if err != nil {
+		return CompactResult{}, err
+	}
+	defer release()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	go func() {
+		select {
+		case <-preempted:
+			cancel(ErrPreempted)
+		case <-ctx.Done():
+		}
+	}()
+	out, err := r.breakSegment(ctx, sessionID, segmentReasonIdle)
+	if err != nil && errors.Is(context.Cause(ctx), ErrPreempted) && errors.Is(err, context.Canceled) {
+		err = fmt.Errorf("%w: %w", ErrPreempted, err)
+	}
+	return out, err
 }
 
 // breakSegment starts a new segment between turns (manual or idle): it loads

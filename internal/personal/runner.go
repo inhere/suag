@@ -184,7 +184,11 @@ type Runner struct {
 	cfg       Config
 	locksMu   sync.Mutex
 	heldLocks map[string]*process.SessionLock
-	rec       *recorder
+	// gateMu guards gates, the in-process single-flight gates by session
+	// (see gate.go).
+	gateMu sync.Mutex
+	gates  map[string]*gateState
+	rec    *recorder
 }
 
 func New(cfg Config) (*Runner, error) {
@@ -311,6 +315,19 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if strings.TrimSpace(req.Prompt) == "" {
 		return RunResult{}, fmt.Errorf("prompt is required for a new turn")
 	}
+	// Session single flight (design D5): another Run or a :compact of this
+	// session in this process finishes first, an idle consolidation is
+	// preempted. Then re-read the session the previous holder may have changed.
+	release, err := r.gate(model.ID).Acquire(ctx)
+	if err != nil {
+		return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), err
+	}
+	defer release()
+	fresh, err := r.LoadSession(ctx, model.ID)
+	if err != nil {
+		return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), err
+	}
+	model = fresh
 	if model.Status == store.SessionArchived || model.Status == store.SessionRunning {
 		return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), fmt.Errorf("session %q is not ready for a new turn: %s", model.ID, model.Status)
 	}
