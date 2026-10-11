@@ -19,7 +19,7 @@ const (
 )
 
 // metaMemoryIndexHash is the session meta key of the frozen memory index
-// snapshot hash (filled once memory snapshots exist; "" until then).
+// snapshot hash (see memory.go; "" without a memory source).
 const metaMemoryIndexHash = "memory_index_hash"
 
 // toolSetHashLen is how many hex digits of the tool set hash are kept.
@@ -53,7 +53,7 @@ func (r *Runner) recordTurnContext(ctx context.Context, model Session) {
 			"tools":       toolSetHash(names),
 			"tools_count": len(names),
 			"rules_hash":  metaString(model.Meta, "personal_rules_hash"),
-			// Always present (empty until a memory snapshot is recorded).
+			// Always present (empty when no memory snapshot is recorded).
 			"memory_hash": metaString(model.Meta, metaMemoryIndexHash),
 			"tainted":     tainted,
 		},

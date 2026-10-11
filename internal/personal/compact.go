@@ -229,6 +229,11 @@ func (b *contextBuilder) compact(ctx context.Context, state *agentcore.RunState,
 		Attrs: map[string]any{"trigger": trigger, "tokens_before": before, "tokens_after": after,
 			"first_kept_seq": firstKept, "dropped_messages": cut, "model": b.r.compactModelName()},
 	})
+	// The prompt cache is rebuilt after a compaction anyway: refresh the
+	// frozen memory index now (design D6) and use it from this step on.
+	if b.r.refreshMemorySnapshot(ctx, b.sessionID, b.meta) {
+		b.promptStale, b.haveFixed = true, false
+	}
 	return &compactOutcome{tokensBefore: before, tokensAfter: after, firstKeptSeq: firstKept}, nil
 }
 

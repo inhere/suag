@@ -135,6 +135,14 @@ type contextBuilder struct {
 	haveFixed     bool
 	lastViewChars int // chars of the view sent in the latest model call
 	haveView      bool
+
+	// meta is the running prompt builder's session metadata (nil for a
+	// manual compaction); a compaction refreshes its memory snapshot.
+	meta map[string]any
+	// promptStale marks that the snapshot changed after the step's system
+	// prompt was built; memoryPromptHook rebuilds it from lastState.
+	promptStale bool
+	lastState   *agentcore.RunState
 }
 
 func (r *Runner) newContextBuilder(sessionID, turnID string, hist historyView, prompt agentcore.PromptBuilder, usage *usageCollector, update string) *contextBuilder {
@@ -155,6 +163,7 @@ func (b *contextBuilder) BuildMessages(ctx context.Context, state *agentcore.Run
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	b.lastState = state
 	view := b.compose(state)
 	est := b.estimate(ctx, state, view)
 	if est > b.threshold() {

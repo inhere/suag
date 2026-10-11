@@ -96,6 +96,12 @@ type Config struct {
 	// Mode is the run mode recorded in turn_context events: "read_only" or
 	// "allow_write" (empty = unknown).
 	Mode string
+	// MemoryIndex returns the rendered memory indexes of every registered
+	// scope (memory.Index.Render, concatenated). The runner freezes them in
+	// the session meta at session start (refreshed only after compaction) and
+	// injects them after the rules; nil means no memory section. A failure is
+	// logged and never affects the turn.
+	MemoryIndex func(ctx context.Context) (string, error)
 	// Workspace is recorded as the cwd of the sessions this runner creates
 	// (and of older sessions without one on their next turn); session_search
 	// scope workspace matches sessions by it.
@@ -265,6 +271,11 @@ func (r *Runner) NewSession(ctx context.Context, id, title string) (Session, err
 		model.Meta["personal_rules_content"] = rules
 		model.Meta["personal_rules_hash"] = hash
 	}
+	// Frozen memory index snapshot (design D6); without one the first turn
+	// tries again.
+	if content, hash, ok := r.memorySnapshot(ctx, id); ok {
+		model.Meta[metaMemoryIndexContent], model.Meta[metaMemoryIndexHash] = content, hash
+	}
 	model.Meta["personal_append_prompt"] = r.cfg.AppendSystemPrompt
 	model.Meta["model"] = r.cfg.Model
 	model.Meta["provider"] = r.cfg.ProviderName
@@ -356,6 +367,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err != nil {
 		return r.withSessionUsage(ctx, model.ID, result), err
 	}
+	r.memorySnapshotPatch(ctx, model, metaPatch)
 
 	agentID := strings.TrimSpace(req.AgentID)
 	if agentID == "" {
@@ -399,15 +411,19 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	ctx = withPlanEmitter(ctx, func(ctx context.Context, plan native.Plan) error {
 		return emit(ctx, req.Emit, Event{Kind: "plan", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Plan: &plan})
 	})
-	runtimeHooks := r.turnHooks(usage, denials, req.Emit, result)
 	storage := r.cfg.Repository.AgentStorage()
 	promptBuilder := rulesPromptBuilder{base: r.cfg.PromptBuilder, metadata: model.Meta, deferredTools: r.deferredToolsPrompt()}
+	contextBuilder := r.newContextBuilder(model.ID, turnID, history, promptBuilder, usage, joinContext(notice, req.SystemContext))
+	// A compaction refreshes the memory snapshot in this metadata map (shared
+	// with promptBuilder), so later steps of this turn use the new index.
+	contextBuilder.meta = model.Meta
+	runtimeHooks := append([]agentcore.Hook{memoryPromptHook{b: contextBuilder}}, r.turnHooks(usage, denials, req.Emit, result)...)
 	runtime := agentcore.New(agentcore.Config{
 		Provider:       r.cfg.Provider,
 		Storage:        storage,
 		Tools:          r.cfg.Tools,
 		PromptBuilder:  promptBuilder,
-		ContextBuilder: r.newContextBuilder(model.ID, turnID, history, promptBuilder, usage, joinContext(notice, req.SystemContext)),
+		ContextBuilder: contextBuilder,
 		Hooks:          runtimeHooks,
 		MaxSteps:       r.cfg.MaxSteps,
 		MaxStepsWrapUp: maxStepsWrapUp(r.cfg.MaxSteps),
@@ -763,7 +779,8 @@ func (b rulesPromptBuilder) BuildSystemPrompt(ctx context.Context, state *agentc
 		}
 		parts = append(parts, base)
 	}
-	for _, key := range []string{"personal_rules_content", "personal_append_prompt"} {
+	// The memory index snapshot goes right after the rules.
+	for _, key := range []string{"personal_rules_content", metaMemoryIndexContent, "personal_append_prompt"} {
 		if value, _ := b.metadata[key].(string); value != "" {
 			parts = append(parts, value)
 		}
