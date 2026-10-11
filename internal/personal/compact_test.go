@@ -373,6 +373,36 @@ func TestCompactModelConfigured(t *testing.T) {
 	})
 }
 
+// Compaction calls are tagged purpose=compact on their model events; the main
+// loop's calls carry no purpose (eval's first_call_uncached skips compact).
+func TestCompactModelEventPurpose(t *testing.T) {
+	repo := openObserveRepo(t)
+	main := &scriptProv{name: "main", normal: func(int, *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+		return finalText(strings.Repeat("a", 900))
+	}}
+	runner := compactRunner(t, repo, main, nil, nil)
+	var sid string
+	for i := 0; i < 12; i++ {
+		res, err := runner.Run(context.Background(), RunRequest{SessionID: sid, Prompt: strings.Repeat("q", 900)})
+		assert.NoErr(t, err)
+		sid = res.SessionID
+	}
+	assert.Eq(t, true, len(main.sumReqs) >= 1)
+	var compact, plain int
+	for _, e := range eventsOf(t, repo, sid, store.EventModel) {
+		switch e.Attrs["purpose"] {
+		case "compact":
+			compact++
+		case nil:
+			plain++
+		default:
+			t.Fatalf("unexpected purpose %v", e.Attrs["purpose"])
+		}
+	}
+	assert.Eq(t, len(main.sumReqs), compact)
+	assert.Eq(t, 12, plain)
+}
+
 func TestCompactResumeRebuildsSameView(t *testing.T) {
 	repo := openObserveRepo(t)
 	prov := &scriptProv{name: "main", normal: func(n int, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {

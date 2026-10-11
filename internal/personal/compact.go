@@ -270,7 +270,7 @@ func (r *Runner) summarize(ctx context.Context, sessionID, previous string, drop
 	sb.WriteString("\n\n# 待压缩的对话\n")
 	sb.WriteString(renderTranscript(dropped, max(threshold*3, 8000)))
 
-	res, err := r.compactProvider().Generate(ctx, &agentcore.GenerateRequest{
+	res, err := r.compactProvider().Generate(withPurpose(ctx, purposeCompact), &agentcore.GenerateRequest{
 		System:   compactSystemPrompt,
 		Messages: []agentcore.Message{{Role: "user", Content: sb.String()}},
 	})

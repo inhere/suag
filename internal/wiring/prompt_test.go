@@ -17,6 +17,20 @@ import (
 	"github.com/inhere/suag/internal/personal"
 )
 
+func TestBasePromptDebugNonce(t *testing.T) {
+	t.Run("unset has no nonce", func(t *testing.T) {
+		t.Setenv(debugPromptNonceEnv, "")
+		p := basePrompt(Options{Workspace: "/w"}, "")
+		assert.Eq(t, false, strings.Contains(p, "nonce:"))
+		assert.Eq(t, true, strings.HasPrefix(p, "You are suag"))
+	})
+	t.Run("set goes first", func(t *testing.T) {
+		t.Setenv(debugPromptNonceEnv, "abc123")
+		p := basePrompt(Options{Workspace: "/w"}, "")
+		assert.Eq(t, true, strings.HasPrefix(p, "nonce: abc123\nYou are suag"))
+	})
+}
+
 func TestBasePrompt(t *testing.T) {
 	t.Run("read-only names the enable hint for the entry", func(t *testing.T) {
 		p := basePrompt(Options{Workspace: "/w", CLIMode: true}, "")

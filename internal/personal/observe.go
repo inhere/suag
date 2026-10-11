@@ -41,6 +41,22 @@ func withObserveScope(ctx context.Context, sessionID, turnID string) context.Con
 	return context.WithValue(ctx, scopeKey{}, observeScope{sessionID: sessionID, turnID: turnID})
 }
 
+type purposeKey struct{}
+
+// purposeCompact marks model calls made for context compaction, so the eval
+// can tell them from the main-loop calls (event attrs "purpose").
+const purposeCompact = "compact"
+
+// withPurpose tags provider calls made with the returned ctx.
+func withPurpose(ctx context.Context, purpose string) context.Context {
+	return context.WithValue(ctx, purposeKey{}, purpose)
+}
+
+func purposeFrom(ctx context.Context) string {
+	p, _ := ctx.Value(purposeKey{}).(string)
+	return p
+}
+
 func observeScopeFrom(ctx context.Context) observeScope {
 	s, _ := ctx.Value(scopeKey{}).(observeScope)
 	return s
@@ -100,6 +116,9 @@ func (r *recorder) attemptObserver(defName, defModel string) llm.AttemptObserver
 			InputTokens: int64(a.Usage.InputTokens), OutputTokens: int64(a.Usage.OutputTokens),
 			CacheReadTokens: int64(a.Usage.CacheReadTokens), CacheWriteTokens: int64(a.Usage.CacheWriteTokens),
 			Attrs: map[string]any{"model": model, "attempt": a.Index, "streamed": a.Streamed},
+		}
+		if p := purposeFrom(ctx); p != "" { // ordinary calls carry no purpose
+			e.Attrs["purpose"] = p
 		}
 		// Provider-reported cost wins; otherwise price the call from config.
 		// The store's session/stats totals sum this attr.

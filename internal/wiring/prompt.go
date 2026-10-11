@@ -3,6 +3,7 @@ package wiring
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
+
+const debugPromptNonceEnv = "SUAG_DEBUG_PROMPT_NONCE"
 
 // staticPrompt is a system prompt built once per process. It holds no time or
 // per-turn data, so every turn of the process sends the same bytes and the
@@ -28,6 +31,13 @@ func (p staticPrompt) BuildSystemPrompt(context.Context, *agentcore.RunState) (s
 // rules (AGENTS.md) and the append prompt follow it in the runner.
 func basePrompt(opts Options, skills string) string {
 	var b strings.Builder
+	// SUAG_DEBUG_PROMPT_NONCE is a hidden debug switch for the eval's
+	// --probe-prefix control group: a non-empty value is put first so the
+	// whole prompt prefix differs per run and cannot hit a provider cache.
+	// It is never set in normal use.
+	if nonce := os.Getenv(debugPromptNonceEnv); nonce != "" {
+		b.WriteString("nonce: " + nonce + "\n")
+	}
 	// Order matters for prompt caching: the text that is the same for every
 	// session (identity, conventions, skills) comes first so providers can
 	// reuse the cached prefix across sessions and workspaces; the
