@@ -1,0 +1,14 @@
+name: dump-log-recall
+mode: allow-write
+fake_mode: tool
+prompt: |
+  用 shell_exec 把 logs/access.log 原样完整打印出来（例如 PowerShell 的 Get-Content logs/access.log 或 cat logs/access.log），不要加任何过滤、管道、搜索或截取命令。
+  然后基于这次输出回答：哪一行的 status 是 503？告诉我那一行的 rid 值。
+generate:
+  - path: logs/access.log
+    count: 5000
+    line: "2026-10-11T09:00:00Z GET /api/items/{i} status=200 bytes=512 rid=- ua=probe/1.0 latency=4ms"
+    inserts:
+      - {at: 3517, text: "2026-10-11T09:58:37Z GET /api/billing/sync status=503 bytes=0 rid=Q7XK-2291 ua=probe/1.0 latency=30000ms"}
+checks:
+  - {type: answer_contains, text: "Q7XK-2291"}

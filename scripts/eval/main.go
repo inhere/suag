@@ -50,6 +50,7 @@ type Result struct {
 	ToolCalls   int           `json:"tool_calls"`
 	RawBytes    *int64        `json:"tool_raw_bytes"`
 	InlineBytes *int64        `json:"tool_inline_bytes"`
+	Spilled     int           `json:"tool_spilled"`
 	Answer      string        `json:"answer"`
 	Checks      []CheckResult `json:"checks"`
 }
@@ -263,6 +264,7 @@ func parseStats(raw []byte, r *Result) {
 			Calls       int    `json:"calls"`
 			RawBytes    *int64 `json:"raw_bytes"`
 			InlineBytes *int64 `json:"inline_bytes"`
+			Spilled     int    `json:"spilled"`
 		} `json:"tools"`
 	}
 	if json.Unmarshal(bytes.TrimSpace(raw), &rep) != nil {
@@ -283,6 +285,7 @@ func parseStats(raw []byte, r *Result) {
 		r.ToolCalls += t.Calls
 		r.RawBytes = addPtr(r.RawBytes, t.RawBytes)
 		r.InlineBytes = addPtr(r.InlineBytes, t.InlineBytes)
+		r.Spilled += t.Spilled
 	}
 }
 
@@ -393,13 +396,13 @@ func copyDir(src, dst string) error {
 
 func printTable(w io.Writer, rs []Result) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "TASK\tRESULT\tCALLS\tTOKENS(in/out)\tHIT%\tCOST\tTIME")
+	fmt.Fprintln(tw, "TASK\tRESULT\tCALLS\tTOOLS\tSPILL\tTOKENS(in/out)\tHIT%\tCOST\tTIME")
 	for _, r := range rs {
 		status := "FAIL"
 		if r.Passed {
 			status = "PASS"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%d/%d\t%.1f\t$%.4f\t%.1fs\n", r.Task, status, r.Calls,
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%d\t%d\t%d/%d\t%.1f\t$%.4f\t%.1fs\n", r.Task, status, r.Calls, r.ToolCalls, r.Spilled,
 			r.InputTokens, r.OutputToks, r.CacheHit*100, r.CostUSD, float64(r.DurationMs)/1000)
 	}
 	_ = tw.Flush()
