@@ -1,0 +1,105 @@
+name: long-coding-schedule
+mode: allow-write
+timeout: 25m
+acceptance: acceptance   # 运行结束后注入 acceptance/schedule/zz_acceptance_test.go（agent 看不到）
+prompt: |
+  在当前 Go 模块（evalfixture/longcoding，Go 1.22）中新建一个通用的进程内定时组件，包目录为 `schedule/`（导入路径 evalfixture/longcoding/schedule），只依赖 Go 标准库，并写完整的单元测试。
+
+  ## 运行环境限制
+
+  本机没有 cgo（没有 64 位 C 工具链），`go test -race` 无法运行。用 `go test -count=3` 代替，不要尝试安装或配置 C 工具链。
+
+  ## 要求
+
+  只新增 `schedule/` 下的文件（建议 `schedule.go`、`schedule_test.go`，单个文件不超过 1000 行），不要修改其他文件。测试只使用标准库 `testing`，不要引入任何外部依赖。
+
+  ### 公开 API（签名必须完全一致）
+
+  ```go
+  package schedule
+
+  // Func 的 ctx 在任务被取消或 Scheduler 关闭时取消。
+  type Func func(ctx context.Context) error
+
+  type Handle interface {
+  	Cancel() // 注销任务；运行中的那次收到 ctx 取消
+  	Reset()  // 从现在起重新计时
+  	Pause()  // 停止计时，直到 Resume
+  	Resume() // 从现在起重新计时
+  }
+
+  type Scheduler interface {
+  	After(name string, d time.Duration, fn Func) Handle // 一次性延迟，触发一次后自动注销
+  	Every(name string, d time.Duration, fn Func) Handle // 周期执行
+  	Idle(name string, d time.Duration, fn Func) Handle  // 自最近一次 Touch（或注册、Resume）起满 d 触发一次，之后等待下一次 Touch 才重新计时
+  	Touch()                                             // 有活动：重置所有 Idle 任务的计时
+  	Close() error                                       // 注销全部任务、取消运行中的、并等待它们结束
+  }
+
+  // Timer 是 *time.Timer 中调度器用到的部分。
+  type Timer interface{ Stop() bool }
+
+  // Clock 是时间源；测试可注入假时钟。
+  type Clock interface {
+  	Now() time.Time
+  	AfterFunc(d time.Duration, f func()) Timer
+  }
+
+  type EventKind string
+
+  const (
+  	Scheduled EventKind = "scheduled"
+  	Fired     EventKind = "fired"
+  	Skipped   EventKind = "skipped"
+  	Cancelled EventKind = "cancelled"
+  	Paused    EventKind = "paused"
+  	Resumed   EventKind = "resumed"
+  	Done      EventKind = "done"
+  	Failed    EventKind = "failed"
+  )
+
+  // Event 传给 WithObserver 设置的回调。
+  type Event struct {
+  	Name     string
+  	Kind     EventKind
+  	Err      error
+  	Duration time.Duration // fn 耗时，done/failed 时有值
+  	At       time.Time
+  }
+
+  type Option func(*scheduler) // scheduler 为你自己的未导出实现类型
+
+  func WithClock(clock Clock) Option          // nil 保持真实时钟
+  func WithObserver(observer func(Event)) Option
+  func New(opts ...Option) Scheduler          // 默认真实时间
+  ```
+
+  ### 行为
+
+  - 任务有名字；同名任务再次注册时替换旧任务（旧任务按 Cancel 处理）。
+  - 同一任务不会并发执行：到点时若上一次还在运行，本次跳过并记一个 skipped 事件。
+  - fn 在独立 goroutine 中运行；fn 返回 error 记 failed 事件，不影响调度。
+  - Pause 期间不触发；Resume 后从当下重新计时（Idle 与 After 同理）。
+  - Close 后再注册返回一个空操作的 Handle（所有方法都不 panic、不触发任务）。
+  - Close 返回 error（正常关闭为 nil），可重复调用。
+  - 观察者在调度器锁之外被调用，因此可以在回调里再调用调度器（例如 Touch）而不会死锁。一次运行的事件可能乱序到达（很短的运行可能先收到 done 再收到 fired），需要顺序时按 Event.At 排序。
+  - 事件含义：注册/替换记 scheduled，到点开始运行记 fired，因上次未结束被跳过记 skipped，Cancel（含同名替换、Close）记 cancelled，Pause/Resume 记 paused/resumed，fn 正常返回记 done，返回 error 记 failed。
+  - 并发安全。
+  - 关键逻辑加注释；包注释说明用途：给 agent 宿主做延迟、周期与空闲触发。
+
+  ### 测试
+
+  在 `schedule/` 下写你自己的单元测试（包内测试，只用标准库 testing；用一个可手动推进的假时钟 + WithClock，测试不得 time.Sleep 等待触发）。至少覆盖：After 延迟触发一次；Every 周期；Idle 被 Touch 推迟、触发后需再次 Touch；Pause 期间不触发且 Resume 后重新计时；Cancel 与 Reset；Close 取消运行中的任务并等待；同名替换；上次未结束时跳过并发；Observer 收到各类事件。
+
+  ## 验收（全部要实际运行并通过）
+
+  ```
+  gofmt -l .          # 无输出
+  go vet ./...
+  go test -count=3 ./schedule/...
+  ```
+
+  另外会有你看不到的黑盒验收测试（真实时钟、短时长）对你的实现做检查，请严格遵守上面的签名与行为。
+checks:
+  - {type: command, args: [go, vet, ./...], timeout: 5m}
+  - {type: command, args: [go, test, -count=1, ./schedule/...], timeout: 5m}

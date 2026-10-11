@@ -43,7 +43,15 @@ checks:
   - {type: file_not_contains, path: a.go, text: "..."}
   - {type: file_equals, path: a.txt, text: "..."}   # 忽略末尾换行
   - {type: answer_contains, text: "..."}            # 在最终回答中查找
+  - {type: command, args: [go, test, -count=1, ./...], timeout: 5m}   # 在工作区内执行，退出码 0 为通过
+timeout: 25m             # 可选：任务级超时，覆盖全局 --timeout（omp 的 --max-time 同步使用）
+acceptance: acceptance   # 可选：任务目录下的子目录名；agent 结束后、判定 checks 之前，其中文件按相对路径复制进工作区（覆盖同名）
 ```
+
+`command` check 直接 exec `args`（不经 shell，Windows 可用），工作目录为工作区，`timeout` 默认 5m。
+结果里 `text` 为拼接后的命令行，另有 `exit_code`（未能启动或超时为 -1）与 `output`（合并输出的尾部，最多 4000 字节）；
+汇总表与其余指标不变。`acceptance` 用于注入 agent 看不到的验收测试：它在 agent 运行结束后才复制，因此 agent 自己的文件与验收文件会一起被 checks 执行；
+acceptance 目录不存在或复制失败时该任务判为失败。
 
 每个 fixture 根目录自带 `go.mod`（`module evalfixture/<name>`），复制出去后是独立模块；
 `testdata` 与 `tmp/` 都不会进入主模块的 `./...`。
@@ -51,6 +59,15 @@ checks:
 多轮任务：suag 用同一个 `--session-id` 依次 `suag run`；omp 用临时 `--session-dir <out>/<task>/omp-sessions`，
 第二轮起加 `--continue`（单轮任务也用临时 session-dir，不再用 `--no-session`）。用量按各轮累加，任一轮失败即停止。
 现有多轮任务：`read-then-edit`（先读代码回答，再据此改文件）、`config-two-step`（先找隐患，再修复并补测试）。
+
+## 长编码任务
+
+`long-coding-schedule`：fixture 只有 `go.mod`（`module evalfixture/longcoding`）与说明 README，agent 需从零写出
+`schedule/` 包（进程内定时组件，接口与 `pkg/agentcore/schedule` 的公开 API 一致，说明改写自 T9）及其单元测试。
+`timeout: 25m`；`acceptance/schedule/zz_acceptance_test.go` 是黑盒验收测试（真实时钟、短时长，含观察者重入不死锁），运行结束后注入；
+checks 为 `go vet ./...` 与 `go test -count=1 ./schedule/...`（agent 自己的测试与验收测试一起跑）。
+`--fake` 下假模型不会写代码，checks 失败属预期，只用来确认注入与 command 执行的管线。
+验收测试对 `pkg/agentcore/schedule` 参考实现应全部通过（把 `schedule.go` 复制到临时工作区的 `schedule/` 下验证）。
 
 ## first_call_uncached
 

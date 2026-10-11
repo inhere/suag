@@ -79,7 +79,7 @@ func run() error {
 	flag.BoolVar(&o.fake, "fake", false, "use scripts/ptysmoke/fakellm.py (pipeline check only)")
 	flag.StringVar(&o.configFrom, "config-from", "", "directory whose config.yaml and .env are copied (read-only) into the temp SUAG_HOME")
 	flag.StringVar(&o.out, "out", "", "output directory (default tmp/eval/<run-id>)")
-	flag.DurationVar(&o.timeout, "timeout", 10*time.Minute, "per-task timeout")
+	flag.DurationVar(&o.timeout, "timeout", 10*time.Minute, "per-task timeout (a task's own timeout field overrides it)")
 	flag.StringVar(&o.agent, "agent", "suag", "agent under test: suag or omp (oh-my-pi, same model via --model)")
 	flag.StringVar(&o.ompBin, "omp-bin", "omp", "omp executable for --agent omp")
 	flag.StringVar(&o.tasksDir, "tasks-dir", filepath.Join("scripts", "eval", "testdata", "tasks"), "tasks directory")
@@ -177,11 +177,12 @@ func runTask(o *options, bin, runID string, t *Task) (Result, error) {
 	if out, err := exec.Command("git", "-C", ws, "init", "-q").CombinedOutput(); err != nil {
 		return r, fmt.Errorf("git init: %v: %s", err, out)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), o.timeout)
+	timeout := t.effectiveTimeout(o.timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	if o.agent == "omp" {
 		r.SessionID = ""
-		runOmp(ctx, o, t, ws, filepath.Join(root, "omp-sessions"), &r)
+		runOmp(ctx, o, t, timeout, ws, filepath.Join(root, "omp-sessions"), &r)
 		return r, nil
 	}
 	model, stop, err := setupSuagHome(ctx, o, home, t.FakeMode)
@@ -207,7 +208,7 @@ func runTask(o *options, bin, runID string, t *Task) (Result, error) {
 		r.Error = runErr.Error()
 	}
 	r.Answer = finalAnswer(stdout)
-	r.Checks = runChecks(ws, r.Answer, t.Checks)
+	t.finish(ws, r.Answer, &r)
 	r.Passed = runErr == nil && allPassed(r.Checks)
 
 	sout, err := runCmd(context.Background(), bin, []string{"stats", "--session", sid, "--json"}, ws, env)

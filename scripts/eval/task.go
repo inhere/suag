@@ -1,10 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/goccy/go-yaml"
 )
@@ -18,8 +24,15 @@ type Task struct {
 	FakeMode string     `yaml:"fake_mode"`
 	Generate []Generate `yaml:"generate"`
 	Checks   []Check    `yaml:"checks"`
+	// Timeout overrides the global --timeout for this task (e.g. "20m").
+	Timeout string `yaml:"timeout"`
+	// Acceptance names a subdirectory of the task directory whose files are
+	// copied into the workspace (overwriting) after the agent finishes and
+	// before the checks run: tests the agent never saw.
+	Acceptance string `yaml:"acceptance"`
 
-	dir string // task directory (holds fixture/)
+	dir     string        // task directory (holds fixture/)
+	timeout time.Duration // parsed Timeout; 0 = use the global one
 }
 
 // Generate describes a file produced at run time inside the workspace, so big
@@ -39,11 +52,14 @@ type Insert struct {
 }
 
 // Check is one pass/fail assertion. Types: file_contains, file_equals,
-// file_not_contains (use path+text) and answer_contains (text only).
+// file_not_contains (use path+text), answer_contains (text only) and command
+// (args [+ timeout]: exec in the workspace without a shell, exit 0 passes).
 type Check struct {
-	Type string `yaml:"type"`
-	Path string `yaml:"path"`
-	Text string `yaml:"text"`
+	Type    string   `yaml:"type"`
+	Path    string   `yaml:"path"`
+	Text    string   `yaml:"text"`
+	Args    []string `yaml:"args"`
+	Timeout string   `yaml:"timeout"` // command only; default 5m
 }
 
 // CheckResult is the recorded outcome of one Check.
@@ -53,7 +69,16 @@ type CheckResult struct {
 	Text   string `json:"text"`
 	Passed bool   `json:"passed"`
 	Detail string `json:"detail,omitempty"`
+	// command checks: exit code (-1 when not started / timed out) and the
+	// tail of the combined output.
+	ExitCode *int   `json:"exit_code,omitempty"`
+	Output   string `json:"output,omitempty"`
 }
+
+const (
+	defaultCommandTimeout = 5 * time.Minute
+	maxCheckOutput        = 4000
+)
 
 func loadTask(dir string) (*Task, error) {
 	raw, err := os.ReadFile(filepath.Join(dir, "task.yaml"))
@@ -82,8 +107,62 @@ func loadTask(dir string) (*Task, error) {
 	if t.FakeMode == "" {
 		t.FakeMode = "text"
 	}
+	if t.Timeout != "" {
+		d, err := time.ParseDuration(t.Timeout)
+		if err != nil || d <= 0 {
+			return nil, fmt.Errorf("%s: bad timeout %q", dir, t.Timeout)
+		}
+		t.timeout = d
+	}
+	if t.Acceptance != "" {
+		if _, err := safeJoin(dir, t.Acceptance); err != nil {
+			return nil, fmt.Errorf("%s: acceptance: %w", dir, err)
+		}
+	}
+	for _, c := range t.Checks {
+		if c.Type != "command" {
+			continue
+		}
+		if len(c.Args) == 0 {
+			return nil, fmt.Errorf("%s: command check needs args", dir)
+		}
+		if c.Timeout != "" {
+			if d, err := time.ParseDuration(c.Timeout); err != nil || d <= 0 {
+				return nil, fmt.Errorf("%s: bad command check timeout %q", dir, c.Timeout)
+			}
+		}
+	}
 	t.dir = dir
 	return &t, nil
+}
+
+// effectiveTimeout is the task timeout, or def when the task sets none.
+func (t *Task) effectiveTimeout(def time.Duration) time.Duration {
+	if t.timeout > 0 {
+		return t.timeout
+	}
+	return def
+}
+
+// injectAcceptance copies the task's acceptance directory into ws.
+func (t *Task) injectAcceptance(ws string) error {
+	if t.Acceptance == "" {
+		return nil
+	}
+	src, err := safeJoin(t.dir, t.Acceptance)
+	if err != nil {
+		return err
+	}
+	return copyDir(src, ws)
+}
+
+// finish injects the acceptance files and evaluates the checks.
+func (t *Task) finish(ws, answer string, r *Result) {
+	accErr := t.injectAcceptance(ws)
+	r.Checks = runChecks(ws, answer, t.Checks)
+	if accErr != nil { // a task that cannot be judged must not pass
+		r.Checks = append(r.Checks, CheckResult{Type: "acceptance", Text: t.Acceptance, Detail: accErr.Error()})
+	}
 }
 
 // Turns returns the prompts to send in order (a single-prompt task has one).
@@ -163,6 +242,10 @@ func runChecks(ws, answer string, checks []Check) []CheckResult {
 			out = append(out, r)
 			continue
 		}
+		if c.Type == "command" {
+			out = append(out, runCommandCheck(ws, c))
+			continue
+		}
 		p, err := safeJoin(ws, c.Path)
 		var data []byte
 		if err == nil {
@@ -196,4 +279,58 @@ func allPassed(rs []CheckResult) bool {
 		}
 	}
 	return true
+}
+
+// runCommandCheck execs c.Args in ws directly (no shell, so it works on
+// Windows); exit code 0 passes.
+func runCommandCheck(ws string, c Check) CheckResult {
+	r := CheckResult{Type: c.Type, Text: strings.Join(c.Args, " ")}
+	timeout := defaultCommandTimeout
+	if c.Timeout != "" {
+		if d, err := time.ParseDuration(c.Timeout); err == nil && d > 0 {
+			timeout = d
+		}
+	}
+	code := -1
+	r.ExitCode = &code
+	if len(c.Args) == 0 {
+		r.Detail = "empty args"
+		return r
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.Args[0], c.Args[1:]...)
+	cmd.Dir = ws
+	cmd.WaitDelay = 5 * time.Second
+	var buf bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &buf, &buf
+	err := cmd.Run()
+	r.Output = tailString(buf.String(), maxCheckOutput)
+	switch {
+	case err == nil:
+		code = 0
+		r.Passed = true
+	case ctx.Err() != nil:
+		r.Detail = fmt.Sprintf("timed out after %s", timeout)
+	default:
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			code = ee.ExitCode()
+		}
+		r.Detail = err.Error()
+	}
+	return r
+}
+
+// tailString keeps the last n bytes of s (on a rune boundary).
+func tailString(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	s = s[len(s)-n:]
+	for len(s) > 0 && !utf8.RuneStart(s[0]) {
+		s = s[1:]
+	}
+	return "..." + s
 }

@@ -20,7 +20,7 @@ import (
 //
 // Unlike `suag run`, omp has no read-only mode switch, so read-only tasks run
 // with omp's full tool set; the comparison notes this.
-func runOmp(ctx context.Context, o *options, t *Task, ws, sessionDir string, r *Result) {
+func runOmp(ctx context.Context, o *options, t *Task, timeout time.Duration, ws, sessionDir string, r *Result) {
 	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
 		r.Error = err.Error()
 		return
@@ -31,7 +31,7 @@ func runOmp(ctx context.Context, o *options, t *Task, ws, sessionDir string, r *
 	turns := t.Turns()
 	for i, prompt := range turns {
 		args := []string{"-p", "--mode", "json", "--auto-approve", "--session-dir", sessionDir, "--no-title",
-			"--cwd", ws, "--max-time", fmt.Sprintf("%ds", int(o.timeout.Seconds()))}
+			"--cwd", ws, "--max-time", fmt.Sprintf("%ds", int(timeout.Seconds()))}
 		if i > 0 {
 			args = append(args, "--continue")
 		}
@@ -51,7 +51,7 @@ func runOmp(ctx context.Context, o *options, t *Task, ws, sessionDir string, r *
 	// Usage is summed over all turns; the answer is the last assistant text
 	// (parseOmpEvents keeps overwriting it), i.e. the last turn's.
 	parseOmpEvents(allOut, r)
-	r.Checks = runChecks(ws, r.Answer, t.Checks)
+	t.finish(ws, r.Answer, r)
 	r.Passed = err == nil && allPassed(r.Checks)
 }
 
