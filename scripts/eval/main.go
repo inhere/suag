@@ -32,12 +32,16 @@ type options struct {
 	probe                             bool
 	probeRepeat                       int
 	probeGap                          time.Duration
+	suagArgs, ompArgs                 string
+	repeat                            int
 }
 
 // Result is one results.jsonl line.
 type Result struct {
 	Task        string  `json:"task"`
+	Round       int     `json:"round"`
 	Agent       string  `json:"agent"`
+	AgentArgs   string  `json:"agent_args,omitempty"`
 	Passed      bool    `json:"passed"`
 	Error       string  `json:"error,omitempty"`
 	SessionID   string  `json:"session_id"`
@@ -54,14 +58,15 @@ type Result struct {
 	// FirstUncached is the uncached input of the first main-loop model call
 	// (suag: input - cache_read - cache_write from the trace; omp: usage.input).
 	// nil when unavailable (no usable model event).
-	FirstUncached *int64        `json:"first_call_uncached"`
-	CostUSD       float64       `json:"cost_usd"`
-	ToolCalls     int           `json:"tool_calls"`
-	RawBytes      *int64        `json:"tool_raw_bytes"`
-	InlineBytes   *int64        `json:"tool_inline_bytes"`
-	Spilled       int           `json:"tool_spilled"`
-	Answer        string        `json:"answer"`
-	Checks        []CheckResult `json:"checks"`
+	FirstUncached *int64         `json:"first_call_uncached"`
+	CostUSD       float64        `json:"cost_usd"`
+	ToolCalls     int            `json:"tool_calls"`
+	ToolCounts    map[string]int `json:"tool_counts,omitempty"`
+	RawBytes      *int64         `json:"tool_raw_bytes"`
+	InlineBytes   *int64         `json:"tool_inline_bytes"`
+	Spilled       int            `json:"tool_spilled"`
+	Answer        string         `json:"answer"`
+	Checks        []CheckResult  `json:"checks"`
 }
 
 func main() {
@@ -86,7 +91,13 @@ func run() error {
 	flag.BoolVar(&o.probe, "probe-prefix", false, "run the prefix-cache probe (exclusive with tasks; suag only)")
 	flag.IntVar(&o.probeRepeat, "probe-repeat", 3, "probe: repetitions per group")
 	flag.DurationVar(&o.probeGap, "probe-gap", 5*time.Second, "probe: pause between two requests")
+	flag.StringVar(&o.suagArgs, "suag-args", "", "extra `suag run` arguments appended after the built-in ones (split on whitespace)")
+	flag.StringVar(&o.ompArgs, "omp-args", "", "extra `omp -p` arguments placed before the prompt (split on whitespace)")
+	flag.IntVar(&o.repeat, "repeat", 1, "rounds per task (outputs go to <out>/<task>-r<i>/ when > 1)")
 	flag.Parse()
+	if o.repeat < 1 {
+		return errors.New("--repeat must be >= 1")
+	}
 	taskSet := false
 	flag.Visit(func(f *flag.Flag) { taskSet = taskSet || f.Name == "task" || f.Name == "tasks-dir" })
 	if o.probe && (taskSet || o.agent != "suag") {
@@ -147,39 +158,42 @@ func run() error {
 
 	var results []Result
 	for _, t := range tasks {
-		r, err := runTask(&o, bin, runID, t)
-		if err != nil { // runner-side failure of this task: record and go on
-			r.Error = err.Error()
-		}
-		results = append(results, r)
-		if err := enc.Encode(r); err != nil {
-			return err
+		for round := 1; round <= o.repeat; round++ {
+			r, err := runTask(&o, bin, runID, t, round)
+			if err != nil { // runner-side failure of this task: record and go on
+				r.Error = err.Error()
+			}
+			results = append(results, r)
+			if err := enc.Encode(r); err != nil {
+				return err
+			}
 		}
 	}
-	printTable(os.Stdout, results)
+	printTable(os.Stdout, results, o.repeat > 1)
 	fmt.Printf("\nresults: %s\n", filepath.Join(o.out, "results.jsonl"))
 	return nil
 }
 
-func runTask(o *options, bin, runID string, t *Task) (Result, error) {
-	sid := "eval-" + runID + "-" + t.Name
-	r := Result{Task: t.Name, Agent: o.agent, SessionID: sid, Mode: t.Mode, Model: o.model, Fake: o.fake}
-	root := filepath.Join(o.out, t.Name)
+func runTask(o *options, bin, runID string, t *Task, round int) (Result, error) {
+	name := t.Name
+	if o.repeat > 1 {
+		name = fmt.Sprintf("%s-r%d", t.Name, round)
+	}
+	sid := "eval-" + runID + "-" + name
+	r := Result{Task: t.Name, Round: round, Agent: o.agent, SessionID: sid, Mode: t.Mode, Model: o.model, Fake: o.fake}
+	if o.agent == "omp" {
+		r.AgentArgs = strings.Join(splitArgs(o.ompArgs), " ")
+	} else {
+		r.AgentArgs = strings.Join(splitArgs(o.suagArgs), " ")
+	}
+	root := filepath.Join(o.out, name)
 	ws, home := filepath.Join(root, "ws"), filepath.Join(root, "home")
-	if err := copyDir(filepath.Join(t.dir, "fixture"), ws); err != nil {
-		return r, fmt.Errorf("copy fixture: %w", err)
-	}
-	for _, g := range t.Generate {
-		if err := g.write(ws); err != nil {
-			return r, fmt.Errorf("generate: %w", err)
-		}
-	}
-	if out, err := exec.Command("git", "-C", ws, "init", "-q").CombinedOutput(); err != nil {
-		return r, fmt.Errorf("git init: %v: %s", err, out)
-	}
 	timeout := t.effectiveTimeout(o.timeout)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	if err := t.prepareWorkspace(ctx, ws); err != nil {
+		return r, err
+	}
 	if o.agent == "omp" {
 		r.SessionID = ""
 		runOmp(ctx, o, t, timeout, ws, filepath.Join(root, "omp-sessions"), &r)
@@ -198,7 +212,7 @@ func runTask(o *options, bin, runID string, t *Task) (Result, error) {
 	var stdout []byte
 	var runErr error
 	for _, prompt := range t.Turns() {
-		stdout, runErr = runCmd(ctx, bin, suagRunArgs(sid, prompt, model, t.Mode == "allow-write"), ws, env)
+		stdout, runErr = runCmd(ctx, bin, suagRunArgs(sid, prompt, model, t.Mode == "allow-write", splitArgs(o.suagArgs)), ws, env)
 		if runErr != nil {
 			break
 		}
@@ -229,7 +243,9 @@ func runTask(o *options, bin, runID string, t *Task) (Result, error) {
 }
 
 // suagRunArgs builds the `suag run` arguments of one turn.
-func suagRunArgs(sid, prompt, model string, allowWrite bool) []string {
+// extra (from --suag-args) goes last: `suag run` takes only flags, so their
+// position relative to --prompt does not matter.
+func suagRunArgs(sid, prompt, model string, allowWrite bool, extra []string) []string {
 	args := []string{"run", "--session-id", sid, "--output-format", "stream-json", "--prompt", prompt}
 	if model != "" {
 		args = append(args, "--model", model)
@@ -237,7 +253,7 @@ func suagRunArgs(sid, prompt, model string, allowWrite bool) []string {
 	if allowWrite {
 		args = append(args, "--allow-write")
 	}
-	return args
+	return append(args, extra...)
 }
 
 // setupSuagHome creates home with an isolated config (fake provider with a
@@ -331,6 +347,7 @@ func parseStats(raw []byte, r *Result) {
 			Cost       float64 `json:"cost_usd"`
 		} `json:"models"`
 		Tools []struct {
+			Name        string `json:"name"`
 			Calls       int    `json:"calls"`
 			RawBytes    *int64 `json:"raw_bytes"`
 			InlineBytes *int64 `json:"inline_bytes"`
@@ -353,6 +370,12 @@ func parseStats(raw []byte, r *Result) {
 	}
 	for _, t := range rep.Tools {
 		r.ToolCalls += t.Calls
+		if t.Name != "" && t.Calls > 0 {
+			if r.ToolCounts == nil {
+				r.ToolCounts = map[string]int{}
+			}
+			r.ToolCounts[t.Name] += t.Calls
+		}
 		r.RawBytes = addPtr(r.RawBytes, t.RawBytes)
 		r.InlineBytes = addPtr(r.InlineBytes, t.InlineBytes)
 		r.Spilled += t.Spilled
@@ -464,13 +487,13 @@ func copyDir(src, dst string) error {
 	})
 }
 
-func printTable(w io.Writer, rs []Result) {
+func printTable(w io.Writer, rs []Result, repeated bool) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	// PROMPT is every prompt token sent (uncached + cache read/write), the
 	// fair basis across agents; TOKENS(in/out) keeps uncached input / output.
 	// FIRST is the uncached input of the first main-loop call ("-" if unknown).
-	fmt.Fprintln(tw, "TASK\tAGENT\tRESULT\tCALLS\tTOOLS\tSPILL\tFIRST\tPROMPT\tTOKENS(in/out)\tHIT%\tCOST\tTIME")
-	for _, r := range rs {
+	fmt.Fprintln(tw, "TASK\tAGENT\tRESULT\tCALLS\tTOOLS\tSPILL\tFIRST\tPROMPT\tTOKENS(in/out)\tHIT%\tCOST\tTIME\tARGS")
+	for i, r := range rs {
 		status := "FAIL"
 		if r.Passed {
 			status = "PASS"
@@ -480,8 +503,64 @@ func printTable(w io.Writer, rs []Result) {
 		if r.FirstUncached != nil {
 			first = fmt.Sprint(*r.FirstUncached)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%s\t%d\t%d/%d\t%.1f\t$%.4f\t%.1fs\n", r.Task, r.Agent, status, r.Calls, r.ToolCalls, r.Spilled,
-			first, prompt, r.InputTokens, r.OutputToks, r.CacheHit*100, r.CostUSD, float64(r.DurationMs)/1000)
+		label := r.Task
+		if repeated {
+			label = fmt.Sprintf("%s-r%d", r.Task, r.Round)
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%s\t%d\t%d/%d\t%.1f\t$%.4f\t%.1fs\t%s\n", label, r.Agent, status, r.Calls, r.ToolCalls, r.Spilled,
+			first, prompt, r.InputTokens, r.OutputToks, r.CacheHit*100, r.CostUSD, float64(r.DurationMs)/1000, truncArgs(r.AgentArgs, 24))
+		if repeated && (i == len(rs)-1 || rs[i+1].Task != r.Task) {
+			j := i
+			for j > 0 && rs[j-1].Task == r.Task {
+				j--
+			}
+			a := averageRounds(rs[j : i+1])
+			fmt.Fprintf(tw, "%s\t%s\t%d/%d\t%.1f\t%.1f\t-\t-\t%.0f\t%.0f/%.0f\t-\t-\t%.1fs\t%s\n", r.Task+" (avg)", r.Agent, a.Passed, a.Rounds,
+				a.Calls, a.ToolCalls, a.Prompt, a.Uncached, a.Out, a.Seconds, truncArgs(r.AgentArgs, 24))
+		}
 	}
 	_ = tw.Flush()
+}
+
+// Average is the per-task mean over the rounds of a --repeat run.
+type Average struct {
+	Rounds, Passed int
+	Calls          float64
+	ToolCalls      float64
+	Prompt         float64 // all prompt tokens (uncached + cache read/write)
+	Uncached       float64 // uncached input tokens
+	Out            float64
+	Seconds        float64
+}
+
+// averageRounds averages the rounds of one task.
+func averageRounds(rs []Result) Average {
+	a := Average{Rounds: len(rs)}
+	if len(rs) == 0 {
+		return a
+	}
+	for _, r := range rs {
+		if r.Passed {
+			a.Passed++
+		}
+		a.Calls += float64(r.Calls)
+		a.ToolCalls += float64(r.ToolCalls)
+		a.Prompt += float64(r.InputTokens + r.CacheRead + r.CacheWrite)
+		a.Uncached += float64(r.InputTokens)
+		a.Out += float64(r.OutputToks)
+		a.Seconds += float64(r.DurationMs) / 1000
+	}
+	n := float64(len(rs))
+	a.Calls, a.ToolCalls, a.Prompt, a.Uncached, a.Out, a.Seconds = a.Calls/n, a.ToolCalls/n, a.Prompt/n, a.Uncached/n, a.Out/n, a.Seconds/n
+	return a
+}
+
+func truncArgs(s string, n int) string {
+	if s == "" {
+		return "-"
+	}
+	if r := []rune(s); len(r) > n {
+		return string(r[:n-1]) + "~"
+	}
+	return s
 }

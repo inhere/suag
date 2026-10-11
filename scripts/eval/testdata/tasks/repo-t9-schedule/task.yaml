@@ -1,0 +1,75 @@
+name: repo-t9-schedule
+mode: allow-write
+timeout: 25m
+acceptance: acceptance   # 运行结束后注入 acceptance/pkg/agentcore/schedule/zz_acceptance_test.go（agent 看不到）
+repo:
+  ref: 202bfa0           # 仓库模式：只能在 suag 仓库内运行 eval；该 ref 里还没有 pkg/agentcore/schedule
+checks:
+  - {type: command, args: [go, vet, ./pkg/agentcore/schedule/]}
+  - {type: command, args: [go, test, -count=1, ./pkg/agentcore/schedule/...]}
+  - {type: command, args: [go, test, ./pkg/agentcore/, -run, Layering]}
+prompt: |
+  在当前 Go 仓库（模块 github.com/inhere/suag，Go 1.26）中新建一个通用的进程内定时组件 `pkg/agentcore/schedule`，只依赖 Go 标准库，并写完整的单元测试。完成后在当前分支提交一次。
+
+  ## 运行环境限制
+
+  本机没有 cgo（没有 64 位 C 工具链），`go test -race` 无法运行。用 `go test -count=3` 代替，不要尝试安装或配置 C 工具链。
+
+  ## 要求
+
+  只新增 `pkg/agentcore/schedule/` 下的文件（建议 `schedule.go`、`schedule_test.go`，单个文件不超过 1000 行），不要修改仓库里的其他文件。
+
+  ### 接口
+
+  ```go
+  package schedule
+
+  type Func func(ctx context.Context) error // ctx 在任务被取消或 Scheduler 关闭时取消
+
+  type Handle interface {
+  	Cancel() // 注销任务；运行中的那次收到 ctx 取消
+  	Reset()  // 从现在起重新计时
+  	Pause()  // 停止计时，直到 Resume
+  	Resume() // 从现在起重新计时
+  }
+
+  type Scheduler interface {
+  	After(name string, d time.Duration, fn Func) Handle // 一次性延迟，触发一次后自动注销
+  	Every(name string, d time.Duration, fn Func) Handle // 周期执行
+  	Idle(name string, d time.Duration, fn Func) Handle  // 空闲触发：自最近一次 Touch（或注册、Resume）起满 d 触发一次，之后等待下一次 Touch 才重新计时
+  	Touch()                                             // 有活动：重置所有 Idle 任务的计时
+  	Close() error                                       // 注销全部任务、取消运行中的、并等待它们结束
+  }
+
+  func New(opts ...Option) Scheduler
+  ```
+
+  ### 行为
+
+  - 任务有名字；同名任务再次注册时替换旧任务（旧任务按 Cancel 处理）。
+  - 同一任务不会并发执行：到点时若上一次还在运行，本次跳过并记一个 skipped 事件。
+  - fn 在独立 goroutine 中运行；fn 返回 error 记 failed 事件，不影响调度。
+  - Pause 期间不触发；Resume 后从当下重新计时（Idle 与 After 同理）。
+  - Close 后再注册返回一个空操作的 Handle，不 panic。
+  - 选项：
+    - `WithClock(Clock)`：注入时钟。定义 `Clock` 接口（如 `Now() time.Time` 与 `AfterFunc(d, f) Timer`，Timer 有 `Stop() bool`），默认用真实时间；测试里实现一个可手动推进的假时钟，测试不得 `time.Sleep` 等待触发。
+    - `WithObserver(func(Event))`：事件回调。`Event` 含 `Name`、`Kind`（scheduled / fired / skipped / cancelled / paused / resumed / done / failed）、`Err`、`Duration`（fn 耗时，done/failed 时）、`At`。
+  - 并发安全。
+  - 关键逻辑加注释；包注释说明用途：给 agent 宿主做延迟、周期与空闲触发。
+
+  ### 测试
+
+  用 `github.com/gookit/goutil/x/assert` 断言（如 `assert.Eq(t, want, got)`，需要终止时 `assert.Require(t, assert.Eq(...))`），同一方法的多个用例用 `t.Run` 分组。至少覆盖：After 延迟触发一次；Every 周期；Idle 被 Touch 推迟、触发后需再次 Touch；Pause 期间不触发且 Resume 后重新计时；Cancel 与 Reset；Close 取消运行中的任务并等待；同名替换；上次未结束时跳过并发；Observer 收到各类事件。
+
+  ## 验收（全部要实际运行并通过）
+
+  ```
+  gofmt -l pkg/agentcore/schedule             # 无输出
+  go build ./... && go vet ./pkg/agentcore/schedule/
+  go test -count=3 ./pkg/agentcore/schedule/...
+  go test ./pkg/agentcore/ -run Layering      # 分层守卫：pkg/agentcore 不得依赖 internal/
+  ```
+
+  ## 提交
+
+  只 `git add pkg/agentcore/schedule/`，提交信息英文，如 `feat(schedule): add in-process schedule component`。不要 push，不要改其他文件，不要用 git stash / reset。最后用几行中文汇报：做了什么、验收命令的结果。

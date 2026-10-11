@@ -17,6 +17,7 @@ go run ./scripts/eval --model opencode-go/deepseek-v4.1-flash --config-from ~/.s
 
 参数：`--bin`（默认 `tmp/smoke/suag`，Windows 自动补 `.exe`）、`--task`（任务名 glob，默认全部）、
 `--model`、`--fake`、`--config-from <dir>`、`--out`（默认 `tmp/eval/<run-id>/`）、`--timeout`（每任务，默认 10m）、
+`--suag-args` / `--omp-args` / `--repeat`（见“附加参数、tool_counts 与重复运行”）、
 `--probe-prefix` / `--probe-repeat` / `--probe-gap`（见“前缀缓存探针”）。
 终端输出汇总表；`<out>/results.jsonl` 每任务一行（成败、checks 明细、答案、调用/token/命中率/成本/工具调用数、
 `tool_raw_bytes`/`tool_inline_bytes`，后两项在 `suag stats` 提供之前为 null）。个别任务失败退出码仍为 0，运行器自身出错才非 0。
@@ -45,6 +46,7 @@ checks:
   - {type: answer_contains, text: "..."}            # 在最终回答中查找
   - {type: command, args: [go, test, -count=1, ./...], timeout: 5m}   # 在工作区内执行，退出码 0 为通过
 timeout: 25m             # 可选：任务级超时，覆盖全局 --timeout（omp 的 --max-time 同步使用）
+repo: {ref: 202bfa0}     # 可选：仓库模式（与 fixture/ 二选一），见“仓库模式”
 acceptance: acceptance   # 可选：任务目录下的子目录名；agent 结束后、判定 checks 之前，其中文件按相对路径复制进工作区（覆盖同名）
 ```
 
@@ -68,6 +70,35 @@ acceptance 目录不存在或复制失败时该任务判为失败。
 checks 为 `go vet ./...` 与 `go test -count=1 ./schedule/...`（agent 自己的测试与验收测试一起跑）。
 `--fake` 下假模型不会写代码，checks 失败属预期，只用来确认注入与 command 执行的管线。
 验收测试对 `pkg/agentcore/schedule` 参考实现应全部通过（把 `schedule.go` 复制到临时工作区的 `schedule/` 下验证）。
+
+## 仓库模式
+
+task.yaml 写 `repo: {ref: <git ref>}`（不要同时有 `fixture/`）时，工作区不是 fixture 副本，而是 eval 启动目录所在 git 仓库的 `<ref>` 快照：
+运行器执行 `git archive --format=tar <ref>`（exec，不经 shell），用 Go 的 `archive/tar` 解包到 `<out>/<task>/ws/`（不依赖 tar 命令，Windows 可用），
+再在 ws 里 `git init -q`、`git add -A`、`git -c user.name=eval -c user.email=eval@local commit -q -m base`，agent 看到的是只有一个 `base` 提交的干净仓库。
+`generate`、`acceptance` 与 checks 照常工作（generate 在 base 提交之前写入）。
+
+**仓库模式只能在 suag 仓库内运行 eval**（从仓库根目录执行，`--tasks-dir` 与 `--bin` 的相对路径也以此为准；`ref` 必须在该仓库里存在）。
+示例：`repo-t9-schedule`（ref `202bfa0`，该提交里还没有 `pkg/agentcore/schedule`，agent 需新建；prompt 即 T9 说明，
+验收测试注入到 `pkg/agentcore/schedule/zz_acceptance_test.go`，checks 为 `go vet`、`go test -count=1` 与 `go test ./pkg/agentcore/ -run Layering`）：
+
+```bash
+go run ./scripts/eval --task repo-t9-schedule --model <model> --config-from ~/.suag --suag-args "--no-project-rules"
+```
+
+## 附加参数、tool_counts 与重复运行
+
+- `--suag-args "<args>"` / `--omp-args "<args>"`：按空白切分（无引号处理），suag 附加在 `suag run` 参数末尾（`--prompt` 之后；run 只有 flag，位置无关），
+  omp 放在 `omp -p ...` 参数之后、prompt 之前（prompt 是最后的位置参数）。记录在 results.jsonl 的 `agent_args`，表格新增 ARGS 列（超过 24 字符截断，空为 `-`）。
+- `tool_counts`（results.jsonl，`map[工具名]次数`，无工具调用时省略；表格不加列）：suag 取 `suag stats --session <id> --json` 的 `tools[].name/calls`；
+  omp 取事件流 `tool_execution_start` 的 `toolName`，没有该事件时退回统计 assistant 消息里 toolCall 块的 `name`。
+- `--repeat N`（默认 1）：每个任务依次跑 N 轮。N>1 时输出目录为 `<out>/<task>-r<i>/`（N=1 保持 `<out>/<task>/`），session id 同样带 `-r<i>`；
+  results.jsonl 每轮一行，新增 `round`（从 1 起）。表格逐轮显示（TASK 列为 `<task>-r<i>`），每个任务末尾追加一行 `<task> (avg)`：
+  RESULT 为通过轮数/总轮数，CALLS、TOOLS、PROMPT、TOKENS(in/out)（未缓存输入/输出）与 TIME 为各轮平均，其余列为 `-`。
+
+```bash
+go run ./scripts/eval --fake --task repo-t9-schedule --repeat 2 --suag-args "--no-project-rules"
+```
 
 ## first_call_uncached
 

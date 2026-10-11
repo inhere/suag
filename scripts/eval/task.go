@@ -31,6 +31,10 @@ type Task struct {
 	// before the checks run: tests the agent never saw.
 	Acceptance string `yaml:"acceptance"`
 
+	// Repo makes the workspace a snapshot of a git ref of the repository the
+	// eval is started in (exclusive with fixture/). See repo.go.
+	Repo *RepoSpec `yaml:"repo"`
+
 	dir     string        // task directory (holds fixture/)
 	timeout time.Duration // parsed Timeout; 0 = use the global one
 }
@@ -130,6 +134,14 @@ func loadTask(dir string) (*Task, error) {
 			if d, err := time.ParseDuration(c.Timeout); err != nil || d <= 0 {
 				return nil, fmt.Errorf("%s: bad command check timeout %q", dir, c.Timeout)
 			}
+		}
+	}
+	if t.Repo != nil {
+		if strings.TrimSpace(t.Repo.Ref) == "" {
+			return nil, fmt.Errorf("%s: repo.ref is required", dir)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "fixture")); err == nil {
+			return nil, fmt.Errorf("%s: repo and fixture/ are mutually exclusive", dir)
 		}
 	}
 	t.dir = dir

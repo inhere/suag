@@ -149,7 +149,7 @@ func (p *prober) request(ctx context.Context, name, ws, nonce string) (traceCall
 	rctx, cancel := context.WithTimeout(ctx, p.o.timeout)
 	defer cancel()
 	sid := "probe-" + p.runID + "-" + name
-	if _, err := runCmd(rctx, p.bin, suagRunArgs(sid, probePrompt, model, false), ws, env); err != nil {
+	if _, err := runCmd(rctx, p.bin, suagRunArgs(sid, probePrompt, model, false, nil), ws, env); err != nil {
 		return traceCall{}, err
 	}
 	tout, err := runCmd(ctx, p.bin, []string{"trace", sid, "--json"}, ws, env)

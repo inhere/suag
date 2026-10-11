@@ -38,7 +38,8 @@ func runOmp(ctx context.Context, o *options, t *Task, timeout time.Duration, ws,
 		if o.model != "" {
 			args = append(args, "--model", o.model)
 		}
-		args = append(args, prompt)
+		args = append(args, splitArgs(o.ompArgs)...)
+		args = append(args, prompt) // the message is the last positional argument
 		var out []byte
 		out, err = runOmpOnce(ctx, o.ompBin, args, ws)
 		allOut = append(allOut, out...)
@@ -79,6 +80,7 @@ type ompMessage struct {
 	Content []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
+		Name string `json:"name"` // toolCall blocks
 	} `json:"content"`
 	Usage *struct {
 		Input      int64 `json:"input"` // excludes cache reads/writes
@@ -97,16 +99,32 @@ type ompMessage struct {
 func parseOmpEvents(raw []byte, r *Result) {
 	sc := bufio.NewScanner(bytes.NewReader(raw))
 	sc.Buffer(make([]byte, 0, 1<<20), 256<<20) // message_update lines can be large
+	started, fromMsgs := map[string]int{}, map[string]int{}
+	defer func() { // tool_execution_start is authoritative; toolCall blocks are the fallback
+		if len(started) > 0 {
+			r.ToolCounts = started
+		} else if len(fromMsgs) > 0 {
+			r.ToolCounts = fromMsgs
+		}
+	}()
 	for sc.Scan() {
 		line := bytes.TrimSpace(sc.Bytes())
 		if len(line) == 0 || line[0] != '{' {
 			continue
 		}
 		var ev struct {
-			Type    string     `json:"type"`
-			Message ompMessage `json:"message"`
+			Type     string     `json:"type"`
+			ToolName string     `json:"toolName"`
+			Message  ompMessage `json:"message"`
 		}
-		if json.Unmarshal(line, &ev) != nil || ev.Type != "message_end" || ev.Message.Role != "assistant" {
+		if json.Unmarshal(line, &ev) != nil {
+			continue
+		}
+		if ev.Type == "tool_execution_start" && ev.ToolName != "" {
+			started[ev.ToolName]++
+			continue
+		}
+		if ev.Type != "message_end" || ev.Message.Role != "assistant" {
 			continue
 		}
 		m := ev.Message
@@ -127,6 +145,9 @@ func parseOmpEvents(raw []byte, r *Result) {
 			switch {
 			case strings.Contains(strings.ToLower(c.Type), "tool"):
 				r.ToolCalls++
+				if c.Name != "" {
+					fromMsgs[c.Name]++
+				}
 			case c.Type == "text" && strings.TrimSpace(c.Text) != "":
 				text = append(text, c.Text)
 			}
