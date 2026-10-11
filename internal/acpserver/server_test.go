@@ -147,6 +147,8 @@ type countingTool struct {
 	// name and mcp let a test pose as another tool; defaults are the native file_write.
 	name string
 	mcp  bool
+	// agentState makes the stub declare Meta.AgentState.
+	agentState bool
 }
 
 type countedUsageProvider struct{ *mock.Provider }
@@ -170,6 +172,9 @@ func (*countingTool) Description() string { return "write test file" }
 // ToolMeta gives the stub the metadata of the catalog tool it poses as
 // (file_write by default); other names declare nothing.
 func (t *countingTool) ToolMeta() tools.Meta {
+	if t.agentState {
+		return tools.Meta{Category: tools.CategoryOther, AgentState: true}
+	}
 	for _, spec := range native.Catalog() {
 		if spec.Name == t.Name() {
 			return tools.MetaOf(spec.New(native.Env{SerpAPIKey: "test-key"}))

@@ -24,6 +24,19 @@ type Meta struct {
 	// files, searching, fetching, updating the plan): approval layers may run
 	// them without asking, and read-only tool sets keep only them.
 	ReadOnly bool
+	// External marks tools whose results come from outside the workspace
+	// (web pages, search results): the session is flagged as tainted once such
+	// a result enters the context.
+	External bool
+	// Rereadable marks tools that paginate on their own (the model can re-read
+	// the rest by calling again): output wrapping layers neither truncate nor
+	// externalise their results.
+	Rereadable bool
+	// AgentState marks tools that only change the agent's own state (e.g.
+	// memory). Approval layers let them through without asking; the tool
+	// itself decides whether a write is allowed in the current run mode
+	// (e.g. read-only). Never honoured for MCP tools.
+	AgentState bool
 }
 
 // Describer is the optional interface a tool implements to declare its Meta.
@@ -32,11 +45,13 @@ type Describer interface {
 }
 
 // MetaOf returns t's declared Meta. A tool without Describer, a nil tool and
-// every MCP tool get {CategoryOther, false}: MCP tools are never trusted as
-// read-only by name or declaration.
+// every MCP tool get {CategoryOther, ReadOnly: false, AgentState: false,
+// Rereadable: false}; MCP results are always External. MCP tools are never
+// trusted as read-only, agent-state or rereadable by name or declaration, so
+// an MCP tool cannot pose as a built-in to bypass approval.
 func MetaOf(t api.Tool) Meta {
 	if t == nil || IsMCP(t) {
-		return Meta{Category: CategoryOther}
+		return Meta{Category: CategoryOther, External: t != nil}
 	}
 	if d, ok := t.(Describer); ok {
 		meta := d.ToolMeta()

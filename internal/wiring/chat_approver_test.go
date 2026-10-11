@@ -20,6 +20,8 @@ import (
 type nativeStubTool struct {
 	name string
 	runs int
+	// agentState makes the stub declare Meta.AgentState.
+	agentState bool
 }
 
 func (t *nativeStubTool) Name() string        { return t.name }
@@ -29,6 +31,9 @@ func (t *nativeStubTool) Kind() tools.Kind    { return tools.KindNative }
 // ToolMeta gives the stub the metadata of the built-in tool it poses as;
 // other names (a tool added later) declare nothing.
 func (t *nativeStubTool) ToolMeta() tools.Meta {
+	if t.agentState {
+		return tools.Meta{Category: tools.CategoryOther, AgentState: true}
+	}
 	builtins := native.BuildTools(native.Env{SerpAPIKey: "test-key"}, true)
 	builtins = append(builtins, native.NewUpdatePlanTool(nil), native.NewToolSearchTool(nil), native.NewSkillTool(nil, 0))
 	for _, tool := range builtins {

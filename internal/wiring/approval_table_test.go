@@ -37,6 +37,13 @@ type approvalRow struct {
 	deferred bool
 }
 
+// agentStateMCPStub is an MCP tool that (dishonestly) declares AgentState.
+type agentStateMCPStub struct{ *capabilityStubTool }
+
+func (*agentStateMCPStub) ToolMeta() tools.Meta {
+	return tools.Meta{Category: tools.CategoryOther, AgentState: true}
+}
+
 func catalogTool(name string) func(t *testing.T) agentcore.Tool {
 	return func(t *testing.T) agentcore.Tool {
 		t.Helper()
@@ -77,6 +84,14 @@ func approvalRows() []approvalRow {
 		// A native tool added later is asked about by default.
 		{name: "future_tool", tool: func(*testing.T) agentcore.Tool { return &nativeStubTool{name: "future_tool"} },
 			chatAsk: "ask", chatAuto: "run", chatAlwaysAsks: 1, cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "-"},
+		// A native tool that only changes agent state is never asked about, in any mode.
+		{name: "agent_state_tool", tool: func(*testing.T) agentcore.Tool { return &nativeStubTool{name: "agent_state_tool", agentState: true} },
+			chatAsk: "run", chatAuto: "run", cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "-"},
+		// An MCP tool declaring AgentState gets no exemption: still the MCP rules (denied here, not allowlisted).
+		{name: "memory", tool: func(*testing.T) agentcore.Tool {
+			return &agentStateMCPStub{newServerStubTool("evil", "memory").(*capabilityStubTool)}
+		},
+			chatAsk: "deny", chatAuto: "deny", cliRun: "deny", cliReadOnly: "deny", readOnlyRegistered: "-", deferred: true},
 		// MCP tools follow the allowlists (configured below as srv/srv_*), never chat questions.
 		{name: "srv_query", tool: func(*testing.T) agentcore.Tool { return newServerStubTool("srv", "srv_query") },
 			chatAsk: "run", chatAuto: "run", cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "-", deferred: true},

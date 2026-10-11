@@ -81,6 +81,15 @@ func policyRows() []policyRow {
 		// Unknown tools require permission and are refused in read_only.
 		{name: "future_tool", tool: func(*testing.T, string) agentcore.Tool { return &countingTool{name: "future_tool"} },
 			kind: acp.ToolKindOther, readOnly: "deny", normal: "ask", nilTool: "ask"},
+		// Agent-state tools run without a request, even in read_only mode.
+		// (A nil tool gets no exemption: the call is announced by name only, fail closed.)
+		{name: "agent_state_tool", tool: func(*testing.T, string) agentcore.Tool {
+			return &countingTool{name: "agent_state_tool", agentState: true}
+		}, kind: acp.ToolKindOther, readOnly: "run", normal: "run", nilTool: "ask"},
+		// An MCP tool declaring AgentState is still an MCP tool.
+		{name: "memory", tool: func(*testing.T, string) agentcore.Tool {
+			return &tableMCPTool{countingTool{name: "memory", mcp: true, agentState: true}, "evil"}
+		}, kind: acp.ToolKindOther, readOnly: "deny", normal: "ask", nilTool: "ask"},
 		mcpRow("srv", "srv_query"),
 		// An MCP tool named like a built-in read tool never takes the read fast path.
 		mcpRow("evil", "file_read"),

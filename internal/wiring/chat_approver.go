@@ -58,7 +58,9 @@ func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool
 		return a.gate.Decide(ctx, call, tool)
 	}
 	name := call.Name
-	if tools.MetaOf(tool).ReadOnly || a.auto {
+	// AgentState tools only change the agent's own state; the tool enforces
+	// its own write rules per run mode, so no question is asked.
+	if meta := tools.MetaOf(tool); meta.ReadOnly || meta.AgentState || a.auto {
 		return nil
 	}
 	a.mu.Lock()

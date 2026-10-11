@@ -43,7 +43,7 @@ func (t *WebSearchTool) Description() string {
 
 // ToolMeta marks the tool as a read-only search.
 func (*WebSearchTool) ToolMeta() tools.Meta {
-	return tools.Meta{Category: tools.CategorySearch, ReadOnly: true}
+	return tools.Meta{Category: tools.CategorySearch, ReadOnly: true, External: true}
 }
 func (t *WebSearchTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

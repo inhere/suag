@@ -175,7 +175,7 @@ func (t *WebFetchTool) Description() string {
 
 // ToolMeta marks the tool as a read-only fetch.
 func (*WebFetchTool) ToolMeta() tools.Meta {
-	return tools.Meta{Category: tools.CategoryFetch, ReadOnly: true}
+	return tools.Meta{Category: tools.CategoryFetch, ReadOnly: true, External: true}
 }
 func (t *WebFetchTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

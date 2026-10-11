@@ -133,6 +133,11 @@ func (h *permissionHook) Decide(ctx context.Context, call agentcore.ToolCall, to
 	kind, readTool := pending.kind, pending.readTool
 	if tools.IsMCP(tool) {
 		kind, readTool = acp.ToolKindOther, false
+	} else if tools.MetaOf(tool).AgentState {
+		// Agent-state tools pass even in read_only mode: the tool decides
+		// itself whether the write is allowed. Checked before the read-only
+		// refusal below; MCP tools never take this path.
+		readTool = true
 	}
 	if h.readOnly && !readTool {
 		return h.deny(ctx, id, pending, ErrReadOnly)

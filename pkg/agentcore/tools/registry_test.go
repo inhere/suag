@@ -355,9 +355,27 @@ func TestMetaOf(t *testing.T) {
 	assert.Eq(t, read, MetaOf(describedTool{meta: read}))
 	assert.Eq(t, Meta{Category: CategoryOther, ReadOnly: true}, MetaOf(describedTool{meta: Meta{ReadOnly: true}}))
 	// An MCP tool is never trusted by its own declaration.
-	assert.Eq(t, other, MetaOf(describedTool{meta: read, mcp: true}))
+	assert.Eq(t, Meta{Category: CategoryOther, External: true}, MetaOf(describedTool{meta: read, mcp: true}))
 	assert.True(t, IsMCP(describedTool{mcp: true}))
 	assert.False(t, IsMCP(nil))
 	assert.Eq(t, "srv", MCPServerOf(describedTool{}))
 	assert.Eq(t, "", MCPServerOf(plainTool{}))
+}
+
+func TestMetaOfExtensions(t *testing.T) {
+	full := Meta{Category: CategoryRead, ReadOnly: true, External: true, Rereadable: true, AgentState: true}
+	t.Run("native keeps declared flags", func(t *testing.T) {
+		assert.Eq(t, full, MetaOf(describedTool{meta: full}))
+	})
+	t.Run("mcp is external and never agent-state or rereadable", func(t *testing.T) {
+		got := MetaOf(describedTool{meta: full, mcp: true})
+		assert.True(t, got.External)
+		assert.False(t, got.AgentState)
+		assert.False(t, got.Rereadable)
+		assert.False(t, got.ReadOnly)
+	})
+	t.Run("nil and undeclared tools are not external", func(t *testing.T) {
+		assert.False(t, MetaOf(nil).External)
+		assert.False(t, MetaOf(plainTool{}).External)
+	})
 }
