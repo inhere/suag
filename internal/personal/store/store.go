@@ -102,7 +102,11 @@ func (s *Store) Path() string { return s.path }
 
 // migrate applies embedded UP sections in file-name order, recording each in
 // schema_migrations so that a second Open skips them.
-func (s *Store) migrate(ctx context.Context) error {
+func (s *Store) migrate(ctx context.Context) error { return s.migrateUpTo(ctx, "") }
+
+// migrateUpTo is migrate stopping after the file named last ("" = all); tests
+// use it to build a database at an older schema version.
+func (s *Store) migrateUpTo(ctx context.Context, last string) error {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`); err != nil {
 		return fmt.Errorf("create migration ledger: %w", err)
@@ -119,6 +123,9 @@ func (s *Store) migrate(ctx context.Context) error {
 	}
 	sort.Strings(names)
 	for _, name := range names {
+		if last != "" && name > last {
+			break
+		}
 		var n int
 		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE name = ?`, name).Scan(&n); err != nil {
 			return err

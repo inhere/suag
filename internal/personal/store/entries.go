@@ -48,6 +48,11 @@ func (s *Store) AppendEntries(ctx context.Context, sessionID string, in ...NewEn
 		if err != nil {
 			return nil, fmt.Errorf("append entry: %w", err)
 		}
+		// Same transaction: the entry and its full-text row commit together
+		// (skipped by the SQL for non-indexed types and empty text, see fts.go).
+		if _, err := tx.ExecContext(ctx, ftsInsertEntrySQL, sessionID, seq); err != nil {
+			return nil, fmt.Errorf("index entry: %w", err)
+		}
 		out = append(out, Entry{SessionID: sessionID, Seq: seq, TurnID: e.TurnID, Type: e.Type, JSON: body, CreatedAt: now.UTC()})
 	}
 	if err := tx.Commit(); err != nil {
