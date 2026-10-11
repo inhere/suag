@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	gkconfig "github.com/gookit/config/v2"
@@ -18,6 +20,7 @@ import (
 	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
 // cachedUsageProvider reports provider-normalized usage where input_tokens
@@ -49,7 +52,11 @@ func lastJSONLine(t *testing.T, out string) map[string]any {
 }
 
 func TestStreamJSONUsageUsesAnthropicAccounting(t *testing.T) {
-	want := map[string]any{"input_tokens": float64(10), "output_tokens": float64(6), "cache_read_tokens": float64(4), "total_tokens": float64(20)}
+	// usage is the run total (every field present, plus tool_calls);
+	// session_usage keeps the compact shape without zero cache/cost fields.
+	want := map[string]any{"input_tokens": float64(10), "output_tokens": float64(6), "cache_read_tokens": float64(4),
+		"cache_write_tokens": float64(0), "total_tokens": float64(20), "cost_usd": float64(0), "tool_calls": float64(0)}
+	wantSession := map[string]any{"input_tokens": float64(10), "output_tokens": float64(6), "cache_read_tokens": float64(4), "total_tokens": float64(20)}
 	t.Run("result line", func(t *testing.T) {
 		runner, _ := newCLITestRunner(t, cachedUsageProvider{})
 		var stdout, stderr bytes.Buffer
@@ -57,7 +64,7 @@ func TestStreamJSONUsageUsesAnthropicAccounting(t *testing.T) {
 		line := lastJSONLine(t, stdout.String())
 		assert.Eq(t, "result", line["type"])
 		assert.Eq(t, want, line["usage"])
-		assert.Eq(t, want, line["session_usage"])
+		assert.Eq(t, wantSession, line["session_usage"])
 	})
 	t.Run("input_required line", func(t *testing.T) {
 		runner, _ := newCLITestRunner(t, cachedUsageProvider{}, yieldAfterModelHook{})
@@ -67,7 +74,7 @@ func TestStreamJSONUsageUsesAnthropicAccounting(t *testing.T) {
 		line := lastJSONLine(t, stdout.String())
 		assert.Eq(t, "input_required", line["type"])
 		assert.Eq(t, want, line["usage"])
-		assert.Eq(t, want, line["session_usage"])
+		assert.Eq(t, wantSession, line["session_usage"])
 	})
 	t.Run("error line carries usage fields", func(t *testing.T) {
 		runner, _ := newCLITestRunner(t, mock.NewProvider(mock.Error(errors.New("boom"))))
@@ -76,9 +83,112 @@ func TestStreamJSONUsageUsesAnthropicAccounting(t *testing.T) {
 		assert.Eq(t, true, err != nil)
 		line := lastJSONLine(t, stdout.String())
 		assert.Eq(t, "error", line["type"])
-		assert.Eq(t, map[string]any{"input_tokens": float64(0), "output_tokens": float64(0), "total_tokens": float64(0)}, line["usage"])
+		assert.Eq(t, map[string]any{"input_tokens": float64(0), "output_tokens": float64(0), "cache_read_tokens": float64(0),
+			"cache_write_tokens": float64(0), "total_tokens": float64(0), "cost_usd": float64(0), "tool_calls": float64(0)}, line["usage"])
 		assert.Eq(t, true, line["session_usage"] != nil)
 	})
+}
+
+// compactingUsageProvider drives a long tool loop: calls with tools answer
+// with a "big" tool call (the first `steps` times) and then a final answer;
+// a call without tools is the compaction summary request. Every call reports
+// usage (input includes the cache read part, like the real providers).
+type compactingUsageProvider struct {
+	mu          sync.Mutex
+	steps       int
+	main, sums  int
+	outPerMain  int
+	outPerSum   int
+	cacheReadIn int
+}
+
+func (*compactingUsageProvider) Name() string { return "compacting-usage" }
+
+func (p *compactingUsageProvider) Generate(_ context.Context, req *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(req.Tools) == 0 {
+		p.sums++
+		return &agentcore.GenerateResult{Content: "SUMMARY", FinishReason: agentcore.FinishFinal,
+			Usage: agentcore.Usage{InputTokens: 300, OutputTokens: p.outPerSum}}, nil
+	}
+	p.main++
+	// A realistic input size (~4 chars per token): the runner estimates the
+	// next request from the last reported input, so a tiny number would
+	// never let the context reach the compaction threshold.
+	chars := len(req.System)
+	for _, m := range req.Messages {
+		chars += len(m.Content)
+	}
+	usage := agentcore.Usage{InputTokens: chars/4 + p.cacheReadIn, OutputTokens: p.outPerMain, CacheReadTokens: p.cacheReadIn}
+	if p.main <= p.steps {
+		return &agentcore.GenerateResult{FinishReason: agentcore.FinishToolCalls, Usage: usage,
+			ToolCalls: []agentcore.ToolCall{{CallID: fmt.Sprintf("c%d", p.main), Name: "big", Arguments: map[string]any{}}}}, nil
+	}
+	return &agentcore.GenerateResult{Content: "done", FinishReason: agentcore.FinishFinal, Usage: usage}, nil
+}
+
+// bigOutputTool returns a large result so a small context window compacts.
+type bigOutputTool struct{}
+
+func (bigOutputTool) Name() string        { return "big" }
+func (bigOutputTool) Description() string { return "big output" }
+func (bigOutputTool) Schema() agentcore.ToolSchema {
+	return agentcore.ToolSchema{Name: "big", InputSchema: map[string]any{"type": "object"}}
+}
+func (bigOutputTool) Execute(context.Context, agentcore.ToolCall) (*agentcore.ToolResult, error) {
+	return &agentcore.ToolResult{Name: "big", Content: strings.Repeat("x", 2000)}, nil
+}
+
+// Each model call (compaction included) prints a run-cumulative "usage" line;
+// they only grow, and turn_end/result carry the last value.
+func TestStreamJSONUsageLinesPerModelCall(t *testing.T) {
+	repo, err := store.Open(newTestStorePath(t))
+	assert.Require(t, assert.NoErr(t, err))
+	t.Cleanup(func() { _ = repo.Close() })
+	reg := tools.NewRegistry()
+	reg.Register(bigOutputTool{})
+	prov := &compactingUsageProvider{steps: 8, outPerMain: 5, outPerSum: 20, cacheReadIn: 10}
+	runner, err := personal.New(personal.Config{
+		Repository: repo, Provider: prov, Tools: reg, Model: "m", ProviderName: "p", MaxSteps: 40,
+		// threshold = 3000-500 tokens (~10000 chars): a few 2000-char results compact.
+		ContextWindow: 3000, CompactReserveTokens: 500, CompactKeepTokens: 800,
+	})
+	assert.Require(t, assert.NoErr(t, err))
+	var stdout, stderr bytes.Buffer
+	assert.Require(t, assert.NoErr(t, executePersonalRun(context.Background(), runner, personalOptions{Prompt: "long job", OutputFormat: "stream-json"}, &stdout, &stderr)))
+
+	var usages []map[string]any
+	var turnEnd, result map[string]any
+	for _, raw := range strings.Split(strings.TrimSpace(stdout.String()), "\n") {
+		var line map[string]any
+		assert.Require(t, assert.NoErr(t, json.Unmarshal([]byte(raw), &line)))
+		switch line["type"] {
+		case "usage":
+			assert.Eq(t, true, line["session_id"] != "" && line["run_id"] != "")
+			usages = append(usages, line["usage"].(map[string]any))
+		case "turn_end":
+			turnEnd = line["usage"].(map[string]any)
+		case "result":
+			result = line["usage"].(map[string]any)
+		}
+	}
+	assert.Require(t, assert.Gt(t, prov.sums, 0)) // at least one compaction call
+	assert.Require(t, assert.Eq(t, prov.main+prov.sums, len(usages)))
+	for i := 1; i < len(usages); i++ {
+		prev, cur := usages[i-1], usages[i]
+		for _, key := range []string{"input_tokens", "output_tokens", "cache_read_tokens", "tool_calls"} {
+			assert.Eq(t, true, cur[key].(float64) >= prev[key].(float64), key)
+		}
+		assert.Eq(t, true, cur["total_tokens"].(float64) > prev["total_tokens"].(float64))
+	}
+	last := usages[len(usages)-1]
+	assert.Eq(t, last, turnEnd)
+	assert.Eq(t, last, result)
+	// The run total includes the compaction calls and counts every tool call.
+	assert.Eq(t, float64(prov.main*5+prov.sums*20), result["output_tokens"])
+	assert.Eq(t, float64(prov.main*10), result["cache_read_tokens"])
+	assert.Eq(t, float64(8), result["tool_calls"])
 }
 
 // End to end through the real flag parser: an explicit empty value (both

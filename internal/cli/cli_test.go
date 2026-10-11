@@ -78,7 +78,7 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 		strings.NewReader(""), &firstOut, &firstErr)
 	assert.NoErr(t, err)
 	assert.Eq(t, true, strings.Contains(firstOut.String(), `"result":"reply-1"`))
-	assert.Eq(t, true, strings.Contains(firstOut.String(), `"usage":{"input_tokens":4,"output_tokens":2,"total_tokens":6}`))
+	assert.Eq(t, true, strings.Contains(firstOut.String(), `"usage":{"input_tokens":4,"output_tokens":2,"cache_read_tokens":0,"cache_write_tokens":0,"total_tokens":6,"cost_usd":0,"tool_calls":0}`))
 	var secondOut, secondErr bytes.Buffer
 	err = RunPersonalCLI(context.Background(), "run", []string{"--prompt", "follow up", "--output-format", "stream-json", "--read-only", "--resume", "path-test"},
 		strings.NewReader(""), &secondOut, &secondErr)

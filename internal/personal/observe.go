@@ -103,13 +103,20 @@ func (r *recorder) attemptObserver(defName, defModel string) llm.AttemptObserver
 		}
 		// Provider-reported cost wins; otherwise price the call from config.
 		// The store's session/stats totals sum this attr.
-		if cost := costOf(r.price, name, model, a.Usage); cost != 0 {
+		cost := costOf(r.price, name, model, a.Usage)
+		if cost != 0 {
 			e.Attrs["cost_usd"] = cost
 		}
 		if a.Err != nil {
 			e.Status, e.Error = eventError, a.Err.Error()
 		}
 		r.record(ctx, e)
+		// The run-scoped total (stream-json "usage" lines, ACP usage_update)
+		// counts exactly what this model event recorded, so it covers
+		// compaction calls and failed attempts that reported usage.
+		priced := a.Usage
+		priced.CostUSD = cost
+		runUsageFrom(ctx).addModel(ctx, a.Usage, priced, a.Err != nil)
 	}
 }
 
@@ -202,6 +209,8 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 		addOutputAttrs(e.Attrs, res)
 	}
 	o.rec.record(ctx, e)
+	// Every call reaching the registry counts, refused ones included.
+	runUsageFrom(ctx).addTool()
 	// Any returned result (IsError included) entered the context; refused
 	// and failed calls carry only our own error text.
 	if err == nil && res != nil && o.rec.taint != nil {

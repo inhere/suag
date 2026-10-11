@@ -22,6 +22,16 @@ func EventLine(event personal.Event) (line map[string]any, ok bool) {
 		data["type"] = "turn_start"
 	case "run_finished":
 		data["type"], data["status"] = "turn_end", event.State
+		if event.Usage != nil {
+			data["usage"] = personal.ReportRunUsage(event.Usage.Run)
+		}
+	case "usage":
+		// Run-cumulative usage after each model call; the last one equals the
+		// turn_end/result "usage" unless tool calls followed it.
+		if event.Usage == nil {
+			return nil, false
+		}
+		data["type"], data["usage"] = "usage", personal.ReportRunUsage(event.Usage.Run)
 	case string(agentcore.StreamEventTextDelta):
 		data["type"], data["text"] = "message_delta", event.Text
 	case "plan":

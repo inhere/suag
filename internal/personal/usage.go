@@ -2,6 +2,7 @@ package personal
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 
 	"github.com/inhere/suag/internal/personal/store"
@@ -96,4 +97,133 @@ func ReportUsage(u agentcore.Usage) ReportedUsage {
 		TotalTokens: input + u.OutputTokens + u.CacheReadTokens + u.CacheWriteTokens,
 		CostUSD:     u.CostUSD,
 	}
+}
+
+// RunUsage is the run-scoped usage counted at the observe layer (design D8).
+// Unlike usageCollector (runtime AfterModel hook) it sees every model attempt
+// of the run: main turn calls, compaction calls and failed attempts that
+// reported usage. A failed attempt without usage (e.g. a cancelled request) is
+// not counted.
+type RunUsage struct {
+	// Usage is provider-normalized (input includes cache, see ReportUsage);
+	// the cost of each attempt is the one written on its model event.
+	Usage agentcore.Usage
+	// ToolCalls counts the run's tool calls, refused ones included.
+	ToolCalls int
+}
+
+// UsageUpdate is carried by the "usage" event (after each counted model call)
+// and by "run_finished" (the final value).
+type UsageUpdate struct {
+	Run RunUsage
+	// Session is the session-cumulative usage: earlier runs plus this run so far.
+	Session agentcore.Usage
+	// LastInputTokens is the input (cache included) of the model call behind a
+	// "usage" event, i.e. that request's context size; 0 on run_finished.
+	LastInputTokens int
+}
+
+// ReportedRunUsage is the reported shape of RunUsage on the stream-json
+// usage/turn_end/result/input_required/error lines and the ACP usage_update
+// _meta. Accounting matches ReportedUsage (input_tokens excludes cache), but
+// every field is always present and tool_calls is added.
+type ReportedRunUsage struct {
+	InputTokens      int     `json:"input_tokens"`
+	OutputTokens     int     `json:"output_tokens"`
+	CacheReadTokens  int     `json:"cache_read_tokens"`
+	CacheWriteTokens int     `json:"cache_write_tokens"`
+	TotalTokens      int     `json:"total_tokens"`
+	CostUSD          float64 `json:"cost_usd"`
+	ToolCalls        int     `json:"tool_calls"`
+}
+
+// ReportRunUsage converts a run total to the reported shape.
+func ReportRunUsage(u RunUsage) ReportedRunUsage {
+	rep := ReportUsage(u.Usage)
+	return ReportedRunUsage{
+		InputTokens: rep.InputTokens, OutputTokens: rep.OutputTokens,
+		CacheReadTokens: rep.CacheReadTokens, CacheWriteTokens: rep.CacheWriteTokens,
+		TotalTokens: rep.TotalTokens, CostUSD: rep.CostUSD, ToolCalls: u.ToolCalls,
+	}
+}
+
+type runUsageKey struct{}
+
+// runUsageMeter accumulates RunUsage for one Run. It travels in ctx so the
+// observe wrappers (provider attempts, tool calls) can find it; outside a Run
+// (e.g. a manual compaction) there is none and nothing is counted.
+type runUsageMeter struct {
+	// notifyMu serializes notifications so the "usage" events of one run are
+	// emitted in counting order (monotonic for the reader).
+	notifyMu sync.Mutex
+	mu       sync.Mutex
+	run      RunUsage
+	// base is the session-cumulative usage before this run.
+	base agentcore.Usage
+	// onModel receives the update after each counted model call (nil: none).
+	onModel func(context.Context, UsageUpdate)
+}
+
+func withRunUsage(ctx context.Context, m *runUsageMeter) context.Context {
+	return context.WithValue(ctx, runUsageKey{}, m)
+}
+
+func runUsageFrom(ctx context.Context) *runUsageMeter {
+	m, _ := ctx.Value(runUsageKey{}).(*runUsageMeter)
+	return m
+}
+
+// addModel counts one model attempt. raw is the usage the provider reported
+// (used to skip failed attempts without usage); priced is raw with the cost
+// recorded on the model event.
+func (m *runUsageMeter) addModel(ctx context.Context, raw, priced agentcore.Usage, failed bool) {
+	if m == nil || (failed && raw == (agentcore.Usage{})) {
+		return
+	}
+	m.notifyMu.Lock()
+	defer m.notifyMu.Unlock()
+	m.mu.Lock()
+	m.run.Usage = m.run.Usage.Add(priced)
+	update := UsageUpdate{Run: m.run, Session: m.base.Add(m.run.Usage), LastInputTokens: raw.InputTokens}
+	notify := m.onModel
+	m.mu.Unlock()
+	if notify != nil {
+		notify(ctx, update)
+	}
+}
+
+// addTool counts one tool call (executed, failed or refused).
+func (m *runUsageMeter) addTool() {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.run.ToolCalls++
+	m.mu.Unlock()
+}
+
+// snapshot returns the run total so far (zero for a nil meter).
+func (m *runUsageMeter) snapshot() RunUsage {
+	if m == nil {
+		return RunUsage{}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.run
+}
+
+// newRunUsageMeter starts the run-scoped meter of one turn: base is the
+// session total before the turn, and every counted model call is published
+// as a "usage" event. Emit failures are only logged, like tool events.
+func (r *Runner) newRunUsageMeter(ctx context.Context, sessionID, turnID string, sink EmitFunc) *runUsageMeter {
+	m := &runUsageMeter{base: r.withSessionUsage(ctx, sessionID, RunResult{}).SessionUsage}
+	if sink != nil {
+		m.onModel = func(ctx context.Context, u UsageUpdate) {
+			event := Event{Kind: "usage", SessionID: sessionID, TurnID: turnID, RunID: turnID, Usage: &u}
+			if err := emit(ctx, sink, event); err != nil {
+				slog.Warn("emit usage event", "session_id", sessionID, "err", err)
+			}
+		}
+	}
+	return m
 }

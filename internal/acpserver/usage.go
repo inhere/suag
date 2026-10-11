@@ -26,26 +26,50 @@ func (s *sessionState) recordUsage(a *Agent, result personal.RunResult) (agentco
 	return s.total, s.lastContext
 }
 
-// usageUpdate builds the usage_update payload. _meta carries session-cumulative
-// snake_case fields (clients may replace their totals with them) in the reported shape
-// (input_tokens excludes cache, see personal.ReportUsage); used is the context
-// size of the last request; size is the model context window.
-func usageUpdate(total agentcore.Usage, used, size int) acp.SessionUpdate {
-	rep := personal.ReportUsage(total)
-	meta := map[string]any{
-		"input_tokens": rep.InputTokens, "output_tokens": rep.OutputTokens,
-		"total_tokens": rep.TotalTokens,
-	}
+// lastContextSize is the context size of the previous turn's last request.
+func (s *sessionState) lastContextSize(a *Agent) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return s.lastContext
+}
+
+// usageUpdate builds the usage_update payload, sent after every model call and
+// once more at the end of the turn. _meta carries, in the reported shape
+// (input_tokens excludes cache, see personal.ReportUsage):
+//   - flat snake_case keys (input_tokens, output_tokens, cache_read_tokens,
+//     cache_write_tokens, total_tokens, cost_usd, tool_calls): the run total of
+//     this session/prompt so far, always present. Gofer reads only these keys,
+//     so its budget is per run;
+//   - "run": the same run total as a nested object;
+//   - "session": the session-cumulative total (earlier turns plus this run).
+//
+// used is the context size of the latest request; size is the model context
+// window; cost (the ACP field) stays session-cumulative.
+func usageUpdate(run personal.RunUsage, session agentcore.Usage, used, size int) acp.SessionUpdate {
+	meta := runUsageMeta(run)
+	meta["run"] = runUsageMeta(run)
+	meta["session"] = sessionUsageMeta(session)
 	update := &acp.SessionUsageUpdate{Used: used, Size: size, Meta: meta}
-	if rep.CacheReadTokens != 0 {
-		meta["cache_read_tokens"] = rep.CacheReadTokens
-	}
-	if rep.CacheWriteTokens != 0 {
-		meta["cache_write_tokens"] = rep.CacheWriteTokens
-	}
-	if rep.CostUSD != 0 {
-		meta["cost_usd"] = rep.CostUSD
-		update.Cost = &acp.Cost{Amount: rep.CostUSD, Currency: "USD"}
+	if cost := personal.ReportUsage(session).CostUSD; cost != 0 {
+		update.Cost = &acp.Cost{Amount: cost, Currency: "USD"}
 	}
 	return acp.SessionUpdate{UsageUpdate: update}
+}
+
+func runUsageMeta(run personal.RunUsage) map[string]any {
+	rep := personal.ReportRunUsage(run)
+	return map[string]any{
+		"input_tokens": rep.InputTokens, "output_tokens": rep.OutputTokens,
+		"cache_read_tokens": rep.CacheReadTokens, "cache_write_tokens": rep.CacheWriteTokens,
+		"total_tokens": rep.TotalTokens, "cost_usd": rep.CostUSD, "tool_calls": rep.ToolCalls,
+	}
+}
+
+func sessionUsageMeta(session agentcore.Usage) map[string]any {
+	rep := personal.ReportUsage(session)
+	return map[string]any{
+		"input_tokens": rep.InputTokens, "output_tokens": rep.OutputTokens,
+		"cache_read_tokens": rep.CacheReadTokens, "cache_write_tokens": rep.CacheWriteTokens,
+		"total_tokens": rep.TotalTokens, "cost_usd": rep.CostUSD,
+	}
 }

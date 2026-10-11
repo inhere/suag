@@ -216,8 +216,15 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		return acp.PromptResponse{}, err
 	}
 	hook.lookup = runtime.LookupTool
+	window := runtime.ContextWindow
+	if window <= 0 {
+		window = appconfig.DefaultContextWindow
+	}
 	textSent := false
 	emit := func(ctx context.Context, event personal.Event) error {
+		if event.Kind == "usage" && event.Usage != nil {
+			return a.sendRunningUsage(ctx, req.SessionId, state, window, *event.Usage)
+		}
 		if event.Kind == "plan" && event.Plan != nil {
 			return a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: planUpdate(event.Plan)})
 		}
@@ -228,11 +235,7 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		return a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: acp.UpdateAgentMessageText(event.Text)})
 	}
 	result, runErr := runtime.Runner.Run(turnCtx, personal.RunRequest{SessionID: string(req.SessionId), Prompt: prompt, Emit: emit})
-	window := runtime.ContextWindow
 	closeErr := runtime.close()
-	if window <= 0 {
-		window = appconfig.DefaultContextWindow
-	}
 	if turnCtx.Err() != nil || errors.Is(runErr, context.Canceled) {
 		// A cancelled turn still consumed tokens; report them before returning.
 		// The SDK cancels the request ctx on session/cancel, so detach from it
@@ -268,10 +271,24 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 	return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
 }
 
-// sendUsage reports session-cumulative usage after a turn (completed or cancelled).
+// sendUsage reports the final usage of a turn (completed or cancelled): the
+// run total plus the session-cumulative total.
 func (a *Agent) sendUsage(ctx context.Context, id acp.SessionId, state *sessionState, window int, result personal.RunResult) error {
 	total, used := state.recordUsage(a, result)
-	if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: usageUpdate(total, used, window)}); err != nil {
+	if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: usageUpdate(result.RunUsage, total, used, window)}); err != nil {
+		return fmt.Errorf("send usage update: %w", err)
+	}
+	return nil
+}
+
+// sendRunningUsage reports the usage after one model call in the middle of a
+// turn, so clients (gofer budgets) see it before the turn ends.
+func (a *Agent) sendRunningUsage(ctx context.Context, id acp.SessionId, state *sessionState, window int, u personal.UsageUpdate) error {
+	used := u.LastInputTokens
+	if used <= 0 {
+		used = state.lastContextSize(a)
+	}
+	if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: usageUpdate(u.Run, u.Session, used, window)}); err != nil {
 		return fmt.Errorf("send usage update: %w", err)
 	}
 	return nil

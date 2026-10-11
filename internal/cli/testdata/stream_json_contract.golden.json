@@ -25,7 +25,8 @@
         "run_id",
         "session_id",
         "status",
-        "type"
+        "type",
+        "usage"
       ]
     },
     {
@@ -107,7 +108,8 @@
         "run_id",
         "session_id",
         "status",
-        "type"
+        "type",
+        "usage"
       ]
     },
     {
@@ -116,6 +118,15 @@
         "run_id",
         "session_id",
         "type"
+      ]
+    },
+    {
+      "type": "usage",
+      "fields": [
+        "run_id",
+        "session_id",
+        "type",
+        "usage"
       ]
     }
   ],
@@ -157,7 +168,8 @@
         "run_id",
         "session_id",
         "status",
-        "type"
+        "type",
+        "usage"
       ]
     },
     {
@@ -166,6 +178,15 @@
         "run_id",
         "session_id",
         "type"
+      ]
+    },
+    {
+      "type": "usage",
+      "fields": [
+        "run_id",
+        "session_id",
+        "type",
+        "usage"
       ]
     }
   ]

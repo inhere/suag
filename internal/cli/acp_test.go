@@ -141,12 +141,13 @@ func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertOnlySessionsDB(t, filepath.Join(home, ".suag", "db"))
-	// The session-cumulative usage_update keeps growing after session/load in a new Agent.
-	if got := usageTotals(firstClient); len(got) != 1 || got[0] != 6 {
-		t.Fatalf("first process usage totals = %v, want [6]", got)
+	// The session-cumulative usage_update keeps growing after session/load in a
+	// new Agent (one update after the model call, one at turn end).
+	if got := usageTotals(firstClient); len(got) != 2 || got[0] != 6 || got[1] != 6 {
+		t.Fatalf("first process usage totals = %v, want [6 6]", got)
 	}
-	if got := usageTotals(secondClient); len(got) != 1 || got[0] != 12 {
-		t.Fatalf("loaded process usage totals = %v, want [12]", got)
+	if got := usageTotals(secondClient); len(got) != 2 || got[0] != 12 || got[1] != 12 {
+		t.Fatalf("loaded process usage totals = %v, want [12 12]", got)
 	}
 	if _, err := os.Stat(filepath.Join(cwd, "db")); !os.IsNotExist(err) {
 		t.Fatalf("ACP wrote a database inside workspace: %v", err)
@@ -172,7 +173,8 @@ func usageTotals(client *appACPClient) []float64 {
 	var out []float64
 	for _, update := range client.updates {
 		if u := update.Update.UsageUpdate; u != nil {
-			if total, ok := u.Meta["total_tokens"].(float64); ok {
+			session, _ := u.Meta["session"].(map[string]any)
+			if total, ok := session["total_tokens"].(float64); ok {
 				out = append(out, total)
 			}
 		}
@@ -242,5 +244,5 @@ func TestAppACPContextWindowComesFromWiring(t *testing.T) {
 			sizes = append(sizes, int(u.Size))
 		}
 	}
-	assert.Eq(t, []int{4321}, sizes)
+	assert.Eq(t, []int{4321, 4321}, sizes) // after the model call and at turn end
 }

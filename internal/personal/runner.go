@@ -119,7 +119,10 @@ type Event struct {
 	// IsError is set on "tool_result" events whose tool call failed or was refused.
 	IsError bool
 	// Plan is set on "plan" events (the full replaced task list).
-	Plan   *native.Plan
+	Plan *native.Plan
+	// Usage is set on "usage" events (after each counted model call) and on
+	// "run_finished" (the final run total).
+	Usage  *UsageUpdate
 	Status agentcore.RunStatus
 	State  RunState
 }
@@ -150,6 +153,10 @@ type RunResult struct {
 	// ModelCalls counts the successful model calls of this invocation,
 	// including those of a failed or cancelled turn.
 	ModelCalls int
+	// RunUsage is the observe-layer run total: every model call of this run
+	// (compaction and failed attempts that reported usage included) and the
+	// tool calls (refused included). stream-json and ACP report it as "usage".
+	RunUsage RunUsage
 	// LastInputTokens is the input tokens (cache included) of the most recent
 	// model call, i.e. the context size of the last request; 0 without a call.
 	LastInputTokens int
@@ -321,6 +328,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	ctx = withObserveScope(ctx, model.ID, turnID)
 	// Refused tool calls are counted per turn in ctx (see denial.go).
 	ctx, denials := withTurnDenials(ctx)
+	// The run-scoped usage is counted at the observe layer and published after
+	// every model call (design D8).
+	ctx = withRunUsage(ctx, r.newRunUsageMeter(ctx, model.ID, turnID, req.Emit))
 	result := RunResult{SessionID: model.ID, TurnID: turnID, RunID: turnID}
 	history, err := r.loadHistory(ctx, model.ID)
 	if err != nil {
@@ -649,6 +659,7 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	// Session-cumulative usage is derived from the model events of the session,
 	// which already include this turn's calls (written synchronously above).
 	result = r.withSessionUsage(finishCtx, model.ID, result)
+	result.RunUsage = runUsageFrom(ctx).snapshot()
 	// Back to open with the current metadata (status columns only).
 	if fresh, err := r.cfg.Repository.GetSession(finishCtx, model.ID); err != nil {
 		persistErr = errors.Join(persistErr, err)
@@ -658,7 +669,8 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 			persistErr = errors.Join(persistErr, err)
 		}
 	}
-	if err := emit(finishCtx, sink, Event{Kind: "run_finished", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Status: result.Status, State: result.State, Text: result.Output}); err != nil {
+	final := &UsageUpdate{Run: result.RunUsage, Session: result.SessionUsage}
+	if err := emit(finishCtx, sink, Event{Kind: "run_finished", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Status: result.Status, State: result.State, Text: result.Output, Usage: final}); err != nil {
 		persistErr = errors.Join(persistErr, err)
 	}
 	return result, errors.Join(runErr, persistErr)
