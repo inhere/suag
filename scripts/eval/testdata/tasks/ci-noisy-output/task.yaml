@@ -2,7 +2,7 @@ name: ci-noisy-output
 mode: allow-write
 fake_mode: tool
 prompt: |
-  运行 `go run ./ci`，它模拟一次很吵的 CI，会打印几千行。请直接运行并查看完整输出，不要加过滤、管道或搜索命令。
+  运行 `go run ./ci`，它模拟一次很吵的 CI，会打印几千行。运行这条命令时不要加过滤或管道（让完整输出被保存下来）；之后用什么工具查看输出由你决定。
   告诉我哪个步骤失败了，以及失败的具体原因（涉及哪个变量、哪个文件）。
 checks:
   - {type: answer_contains, text: "cfgPath"}
