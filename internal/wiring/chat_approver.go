@@ -11,8 +11,8 @@ import (
 	"unicode"
 
 	gkconfig "github.com/gookit/config/v2"
-	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/redact"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
@@ -111,7 +111,7 @@ func (a *chatApprover) question(call agentcore.ToolCall) tools.Question {
 		details = []string{"参数：" + string(raw)}
 	}
 	for i, detail := range details {
-		details[i] = displaySafe(personal.RedactSecretValues(detail))
+		details[i] = displaySafe(redact.Secrets(detail))
 	}
 	return tools.Question{
 		Tool:    call.Name,

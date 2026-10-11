@@ -7,17 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-)
 
-var (
-	transcriptSecretValue = regexp.MustCompile(`(?i)([a-z0-9_.-]*(?:api[_-]?key|token|secret|password|authorization)[a-z0-9_.-]*)(\s*[:=]\s*)([^\s,;]+)`)
-	transcriptBearerValue = regexp.MustCompile(`(?i)(authorization\s*:\s*bearer\s+)[^\s,;]+`)
-	transcriptJSONSecret  = regexp.MustCompile(`(?i)(["'][^"']*(?:api[_-]?key|token|secret|password|authorization)[^"']*["']\s*:\s*["'])([^"']*)(["'])`)
+	"github.com/inhere/suag/pkg/agentcore/redact"
 )
 
 type Transcript struct {
@@ -63,14 +58,14 @@ func (t *Transcript) Path() string {
 }
 
 func (t *Transcript) AppendUser(text string, injected bool) error {
-	return t.append(transcriptEntry{Type: "user", Text: RedactSecretValues(text), Injected: &injected})
+	return t.append(transcriptEntry{Type: "user", Text: redact.Secrets(text), Injected: &injected})
 }
 
 func (t *Transcript) AppendAssistant(text string) error {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
-	return t.append(transcriptEntry{Type: "assistant", Text: RedactSecretValues(text)})
+	return t.append(transcriptEntry{Type: "assistant", Text: redact.Secrets(text)})
 }
 
 func (t *Transcript) AppendTool(name, content string) error {
@@ -91,7 +86,7 @@ func (t *Transcript) AppendToolCall(name string, args map[string]any, _ string) 
 	} else {
 		summary += " result; output omitted"
 	}
-	summary = truncateRunes(RedactSecretValues(summary), 200)
+	summary = truncateRunes(redact.Secrets(summary), 200)
 	return t.append(transcriptEntry{Type: "tool", Name: name, Summary: summary})
 }
 
@@ -137,19 +132,6 @@ func summarizeToolArgs(args map[string]any) string {
 func toolArgText(v any) string {
 	text := strings.Join(strings.Fields(fmt.Sprint(v)), " ")
 	return truncateRunes(text, toolArgValueLimit)
-}
-
-// RedactSecretValues removes credential-like values before tool data leaves the runtime.
-func RedactSecretValues(value string) string {
-	value = transcriptJSONSecret.ReplaceAllString(value, "$1[REDACTED]$3")
-	value = transcriptBearerValue.ReplaceAllString(value, "$1[REDACTED]")
-	return transcriptSecretValue.ReplaceAllStringFunc(value, func(match string) string {
-		groups := transcriptSecretValue.FindStringSubmatch(match)
-		if len(groups) == 4 && strings.EqualFold(groups[1], "authorization") && strings.EqualFold(groups[3], "Bearer") {
-			return match
-		}
-		return groups[1] + "=[REDACTED]"
-	})
 }
 
 func (t *Transcript) append(entry transcriptEntry) error {

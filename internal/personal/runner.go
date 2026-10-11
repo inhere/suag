@@ -14,6 +14,7 @@ import (
 	"github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/redact"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
@@ -541,7 +542,7 @@ func toolArgSummary(args map[string]any) string {
 	if err != nil {
 		return ""
 	}
-	return truncateRunes(RedactSecretValues(string(data)), toolArgSummaryLimit)
+	return truncateRunes(redact.Secrets(string(data)), toolArgSummaryLimit)
 }
 
 func (r *Runner) openTranscript(sessionID string) *Transcript {

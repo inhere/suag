@@ -16,6 +16,7 @@ import (
 	"github.com/inhere/suag/internal/personal"
 	personalprocess "github.com/inhere/suag/internal/personal/process"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/redact"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
@@ -239,7 +240,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		}
 		if hooks != nil {
 			submit := baseEvent("UserPromptSubmit")
-			submit.Prompt = personal.RedactSecretValues(line)
+			submit.Prompt = redact.Secrets(line)
 			// injected covers every non-keyboard source (Stop block reasons and socket
 			// deliveries both flow through nextChatInput), same flag the transcript records.
 			submit.Injected = injected
@@ -278,7 +279,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 				}
 				postTool := baseEvent("PostToolUse")
 				postTool.ToolName = toolName
-				postTool.ToolOutput = suaghooks.TruncateOutput(personal.RedactSecretValues(event.Text), toolHookLimit)
+				postTool.ToolOutput = suaghooks.TruncateOutput(redact.Secrets(event.Text), toolHookLimit)
 				showHookNotice(stderr, hooks.Call(eventCtx, postTool))
 				return nil
 			},
@@ -321,7 +322,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		}
 		if hooks != nil {
 			stop := baseEvent("Stop")
-			stop.LastAssistant = suaghooks.TruncateOutput(personal.RedactSecretValues(stopMessage), stopHookLimit)
+			stop.LastAssistant = suaghooks.TruncateOutput(redact.Secrets(stopMessage), stopHookLimit)
 			stop.StopHookActive = turnStopActive
 			waiting = hooks.StartStop(ctx, stop)
 		}

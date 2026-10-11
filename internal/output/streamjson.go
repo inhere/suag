@@ -5,6 +5,7 @@ import (
 
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/redact"
 )
 
 // SessionLine is the first stream-json line of a run.
@@ -49,7 +50,7 @@ const toolSummaryLimit = 200
 // redacted first and the result truncated afterwards, so a cut can never leave
 // a partially redacted credential behind.
 func ToolResultSummary(content string) string {
-	text := strings.Join(strings.Fields(personal.RedactSecretValues(content)), " ")
+	text := strings.Join(strings.Fields(redact.Secrets(content)), " ")
 	if r := []rune(text); len(r) > toolSummaryLimit {
 		return string(r[:toolSummaryLimit-1]) + "…"
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/gookit/color"
 	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/pkg/agentcore/redact"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 	"golang.org/x/term"
 )
@@ -100,7 +101,7 @@ func (r *Renderer) Handle(event personal.Event) {
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, line))
 	case "tool_result":
 		r.live.Finish()
-		summary := truncateLine(personal.RedactSecretValues(event.Text), resultSummaryLimit)
+		summary := truncateLine(redact.Secrets(event.Text), resultSummaryLimit)
 		if event.IsError {
 			fmt.Fprintln(r.opts.Out, r.paint(color.Red, strings.TrimRight("  ⎿ error: "+summary, " ")))
 		} else {
