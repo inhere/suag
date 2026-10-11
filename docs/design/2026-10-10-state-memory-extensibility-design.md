@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 状态、记忆与可扩展核心（总纲 + 第一期） 设计
 
-> 状态：Draft 0.2 / 待人工计划批准
+> 状态：Draft 0.3 / 待人工计划批准（Q1–Q4 已按推荐决定，2026-10-11 用户：“待确认按推荐”；Q1 补充为仓库根 `MEMORY.md`）
 
 ## 修订记录
 
@@ -9,6 +9,7 @@
 |---|---|---|---|
 | 0.1 | 2026-10-10 | Claude | 初稿 |
 | 0.2 | 2026-10-10 | Claude | 按合并评审修订：污染改为会话粒度、粘住不清除，由观测层按工具声明置位并注入治理层，污染源写全（F1）；索引快照改为按会话冻结在 session meta，压缩时刷新（F2）；脱敏与凭据剥离下沉到 `pkg/agentcore`（F3）；recall 不做通用抽象，只在消费方声明窄接口（F4）；FTS 行与 entries 同 rowid，删除触发器 + 幂等分批回填（F5）；gofer 后端只管理带 suag 标签的条目；查询转义与结果脱敏；能力清单改名 `suag manifest`；更正“系统提示词每进程构建一次”的事实 |
+| 0.3 | 2026-10-11 | Claude | 按用户答复：记录 Q1–Q4 决议；项目记忆支持仓库根 `MEMORY.md`（Q1、Q5）；W1 新增输出治理——大输出存会话目录文件、DB 只存元信息与头尾片段、对所有工具（含 MCP）生效、可按 ref 回读与搜索（D16–D18） |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -21,13 +22,15 @@
 - “核心能力定接口，有很强的内置，同时可替换，为自我更新/扩展能力留下口子”
 - “在基本安全的前提下尽量不限制它的能力和扩展/成长性（我用 codex 感觉限制很多，麻烦），内置能力已经是极简依赖下的最强（减少依赖，但是能通过依赖外部工具让他更强）”
 - 项目记忆可以走 gofer memory，但“不是强绑定”。
+- （2026-10-11）“项目下的 MEMORY.md 用仓库根目录；输出治理是需要的，原始输出的大内容不进入 db 避免无意义的膨胀，而是进会话目录下的文件，db 只存 meta 信息/前 N 字符等”。
 
 用户可见结果：
 
 1. `go run ./scripts/eval` 跑一组固定任务，输出每个任务的成败、调用次数、token、缓存命中率和成本；配置模型价格后，`suag stats` / `suag trace` 的成本列不再是 0。
 2. 模型可以用 `session_search` 检索所有历史会话（中文可搜），用 `recall` 按引用取回原文；每个回合在 trace 中能看到“当时用的模型、模式、工具集、规则与记忆快照摘要”。
-3. 模型可以用 `memory` 工具记住和修改用户、反馈、项目、参考四类条目；新会话自动带上记忆索引；你能直接打开 Markdown 文件查看、编辑、删除；项目记忆可配置为走 gofer memory，不配置时由内置文件完整提供。
-4. `suag manifest` 列出每项核心能力当前由哪个后端提供、能否替换；新后端可以用任意语言写成可执行文件，通过配置接入，无需重新编译 suag。
+3. 任何工具（含 MCP）的大输出不再灌进上下文、也不再撑大 DB：超过阈值的原文存进会话目录下的文件，上下文与 DB 里只有头尾片段和一个 ref；模型可以按 ref 分段读回或在其中搜索，原文不再丢失。
+4. 模型可以用 `memory` 工具记住和修改用户、反馈、项目、参考四类条目；新会话自动带上记忆索引；你能直接打开 Markdown 文件查看、编辑、删除；仓库根有 `MEMORY.md` 时项目记忆就放在仓库里，也可以配置为走 gofer memory，都没有时由 `~/.suag` 下的内置文件完整提供。
+5. `suag manifest` 列出每项核心能力当前由哪个后端提供、能否替换；新后端可以用任意语言写成可执行文件，通过配置接入，无需重新编译 suag。
 
 ### 定位：和其他 agent/harness 比，suag 的特色在哪里
 
@@ -59,13 +62,15 @@ suag 真正不同的是这个组合：**会话是持久对象 + 为被编排而�
 - **墓碑（tombstone）**：被删除条目的记录，防止同一事实被后续写入悄悄复活。
 - **exec 协议**：外部后端的统一调用方式：一次调用起一个进程，stdin 一行 JSON 请求，stdout 一行 JSON 响应。
 - **能力清单**：当前装了哪些能力、各由哪个后端提供、是否可替换的机器可读描述。
+- **会话目录**：`~/.suag/sessions/<session_id>/`，放不适合进 DB 的会话大文件；本期只有 `outputs/`。
+- **外置输出（spill）**：超过内联阈值的工具原文写入会话目录 `outputs/` 下的文件，上下文与 DB 中只留头尾片段、元信息和 ref。
 
 ## 范围与非目标
 
 范围（仓库 `inhere-tools/suag`）：
 
-- **W0 评测与成本**：模型价格配置与成本计算；`scripts/eval`（任务定义、运行器、汇总）。
-- **W1 底账检索**：FTS5 全文索引、删除同步与回填；`session_search`、`recall` 两个只读工具（消费方窄接口，见 D2）；每回合 `turn_context` 事件；会话污染标记。
+- **W0 评测与成本**：模型价格配置与成本计算；`scripts/eval`（任务定义、运行器、汇总）；工具事件记录原文与内联字节数，评测汇总“每回合工具输出字节数”。
+- **W1 底账检索与输出治理**：FTS5 全文索引、删除同步与回填；`session_search`、`recall` 两个只读工具（消费方窄接口，见 D2）；每回合 `turn_context` 事件；会话污染标记；工具输出包装层（对所有工具含 MCP 生效）与会话目录外置输出、gc 同步删除。
 - **W2 记忆 v1**：`memory` 包（类型、接口、治理层、路由）；内置 `files` 后端；gofer 后端（应用层）；`memory` 工具；索引快照按会话冻结并注入提示词；脱敏下沉到 `pkg/agentcore/redact`；`api.Memory` 改名。
 - **W3 扩展面**：exec 协议 v1（首个使用者是记忆的 `exec` 后端；MCP 的凭据剥离一并移入）；`suag manifest` 与只读工具 `suag_manifest`。
 - **W4 文档**：README、`pkg/agentcore/README.md`、配置样例、CHANGELOG。
@@ -82,6 +87,9 @@ suag 真正不同的是这个组合：**会话是持久对象 + 为被编排而�
 - 规则加载：include 只展开一层（`internal/personal/rules.go:19`）。
 - `api.Memory`（Hydrate/ObserveMessages/BuildContext）只被 runtime 默认实现使用（`pkg/agentcore/runtime.go:20,41,59`，`runtime_helpers.go`），`internal/` 无引用；语义是“组装历史”，与长期记忆无关。
 - `api.Storage` 只按 runID（suag 中即回合）读写（`pkg/agentcore/api/storage.go:6-11`），不能列会话、不能按 `(session, seq)` 定位。
+- 工具输出：内置工具各自按 `tools.max_output_bytes`（默认 30000）保留头尾截断，中间部分永久丢弃（`pkg/agentcore/tools/native/output.go:12,44`）；MCP 工具结果**没有任何上限**，全文原样返回并写入底账（`pkg/agentcore/tools/mcp/client.go:403`）；上下文只在接近阈值时按 16000→2000 逐级应急截断（`internal/personal/context.go:260`）。
+- DB 体积：dev-tools 设计时主机实测 `entries` 0.54 MB 中工具结果 64 条占 0.47 MB（`docs/design/2026-10-10-dev-tools-and-skills-design.md:56`）；用户当时提出的 DB 优化（W7）只落地了“状态不重复存消息”（eed9479），“会话明细改存文件”当时列为非目标、未实施。
+- 现有会话外文件只有 `~/.suag/transcripts/<id>.jsonl` 导出（gofer 集成设计），gc 会一并删除。
 - `RedactSecretValues` 在 `internal/personal/transcript.go:143`；MCP 子进程的凭据剥离在 `pkg/agentcore/tools/mcp/env.go`（未导出）。
 - hooks 已有“每次调用起一个进程、stdin 一行 JSON”的协议（`internal/hooks/hooks.go:3`）。
 - `gofer memory` 有 `ls [kw] --json`、`show <keys...>`、`set`（`--summary`、`--kind rule|note|handoff`、`--tag`、`--source`）、`rm <key>`；没有 title 字段；rule/note 会注入所有 agent 的开场上下文。
@@ -104,14 +112,15 @@ suag 真正不同的是这个组合：**会话是持久对象 + 为被编排而�
 应用层  internal/*
         wiring: 组装 Router、治理层、工具；污染标记与索引快照接到 session meta
         adapters/gofermem: 记忆的 gofer 后端（调用 `gofer memory`）
-        personal: 污染置位（观测层）、索引快照冻结与刷新
-        personal/store: 底账检索的 SQLite 实现（FTS5）、memory_meta 旁表
+        personal: 污染置位（观测层）、索引快照冻结与刷新、会话目录（outputs/）的 Spill 实现
+        personal/store: 底账检索的 SQLite 实现（FTS5）、memory_meta 旁表；gc 同时删会话目录
         cli: manifest 子命令；scripts/eval 只经 CLI 交互
           │
 能力层  agentcore/memory        类型、Store 接口、可选接口、Governed、Router
         agentcore/memory/files  内置后端：MEMORY.md 索引 + 一事一文件
         agentcore/extproc       exec 协议 v1：请求/响应信封、超时、凭据剥离（MCP 共用）
         agentcore/redact        密钥脱敏、隐形字符与伪装标签清理（personal 改用它）
+        agentcore/tools         Output 包装层（内联阈值、头尾片段、Spill 接口），挂在 observe 与 Visibility 之间
         agentcore/tools/native  memory、session_search、recall、suag_manifest 工具
           │
 内核    agentcore + api         History（原 Memory）、ContextBuilder 等不变
@@ -158,7 +167,7 @@ package native // 底账检索只有一个真实实现，接口在消费方声�
 
 type LedgerSearcher interface {
 	Search(ctx context.Context, q LedgerQuery) ([]LedgerHit, error) // Hit 带 Ref{Session, Seq} 与片段
-	Fetch(ctx context.Context, ref LedgerRef, before, after int) ([]api.Message, error)
+	Fetch(ctx context.Context, ref string, offset, limit int) (string, error) // 底账消息窗口或外置文件行窗口（D18）
 }
 ```
 
@@ -193,7 +202,23 @@ type LedgerSearcher interface {
   → 记录 memory_write 事件（范围、id、来源、是否污染）；回合结束 chat 显示“已记住：…（:memory 查看）”
 ```
 
-**检索历史**：`session_search(query, scope=current|workspace|all, limit)` → 查询按空白切词，每个词转义成 FTS5 短语；全部词不少于 3 个 rune 时走 `MATCH`（trigram），否则整体退回 `LIKE` → 命中列表，每条带 `ref` 与片段；`recall(ref, before, after)` 取回原文窗口。片段与原文返回前都过 `redact.Clean`；`scope` 默认 `workspace`（同一工作区的会话），`all` 才跨项目。两个工具只读、零模型调用，结果会让会话污染（旧的外部内容可能被取回）。
+**工具输出（输出治理）**：
+
+```text
+工具返回原文（内置工具的上限改为“原文上限”，默认 1 MB；MCP 同样受此上限）
+  → tools.Output 包装层：
+      ≤ 内联阈值（tools.inline_output_bytes，默认 8000）→ 原样返回
+      > 阈值：
+        工具声明可重读（file_read、file_list 等，Meta.Rereadable）→ 头尾片段 + “用 offset/limit 继续读”，不外置
+        否则 → redact 后交给 Spill 写入 sessions/<sid>/outputs/<turn>-<call>.txt，返回：
+          头 N + 尾 N 字符（各 2000）
+          [输出 48213 字节 / 912 行已保存为 ref out:<turn>-<call>；recall(ref, offset, limit) 分段读，session_search(query, ref) 在其中搜]
+  → 进上下文与 entries 的都只是上面这段；entries 的消息 metadata 记 {ref, bytes, lines, sha256}
+```
+
+`Spill` 是 agentcore 里的小接口，宿主不提供时退化为现有的头尾截断（嵌入 agentcore 的程序行为不变）。外置文件不进 FTS，避免 DB 膨胀；`session_search(query, ref)` 对单个文件做逐行扫描，`recall(ref, offset, limit)` 按行窗口读。读回内容同样过 `redact.Clean` 并使会话污染。
+
+**检索历史**：`session_search(query, scope=current|workspace|all, limit)` → 查询按空白切词，每个词转义成 FTS5 短语；全部词不少于 3 个 rune 时走 `MATCH`（trigram），否则整体退回 `LIKE` → 命中列表，每条带 `ref` 与片段；`recall(ref, offset, limit)` 取回原文窗口（D18）。片段与原文返回前都过 `redact.Clean`；`scope` 默认 `workspace`（同一工作区的会话），`all` 才跨项目。两个工具只读、零模型调用，结果会让会话污染（旧的外部内容可能被取回）。
 
 **外部后端（exec 协议 v1）**：
 
@@ -214,7 +239,8 @@ stdout {"ok":true,"result":{…}}   或   {"ok":false,"error":"…"}
   - `memory_meta`：`backend, scope, entry_id, session_id, turn_id, source, tainted, deleted_at, fingerprint, created_at, updated_at`；墓碑即 `deleted_at` 非空的行。
 - 回填：按 rowid 幂等——只插入 `NOT EXISTS (SELECT 1 FROM entries_fts WHERE rowid = e.rowid)` 的行，每批 500 行一个事务；在打开 store 时同步执行，单次最多处理固定批数，剩余留给下次打开。不用后台 goroutine，也不需要完成标记；新写入与回填交叠时由 rowid 去重。
 - gofer 映射：条目 id → gofer key（`suag-<kind>-<slug>`）；标题 → `--summary`；正文 → 内容；kind 统一为 `note`，四类写进 `--tag suag,<kind>`；`--source suag:<session>`。后端只列出、修改、删除带 `suag` 标签的条目，预算与“先删旧条目”只作用于这些条目，不碰其他 agent 的共享记忆。注意 note 会进入所有 agent 的开场上下文——这正是“项目共享记忆”的用意，写进工具说明。
-- 记忆文件（内置后端）：默认 `~/.suag/memory/user/` 与 `~/.suag/projects/<key>/memory/`（Q1），`<key>` 为工作区 git 根路径的可读 slug。
+- 会话目录：`~/.suag/sessions/<session_id>/outputs/<turn_id>-<call_id>.txt`（UTF-8，已脱敏，单文件以原文上限为界）；目录权限沿用运行目录的保护（Windows 受保护 DACL）；`suag gc` 删除会话时同时删除目录，`suag export` 默认只导出 ref 与元信息，`--with-outputs` 时附带文件。
+- 记忆文件（内置后端）：用户范围 `~/.suag/memory/user/`；项目范围按顺序选择：配置 `memory.project.backend` 显式指定 > 仓库根存在 `MEMORY.md`（索引即该文件，条目文件放 `.suag/memory/<id>.md`，见 Q5）> 工作区有 `.gofer/tracker`（gofer 后端）> `~/.suag/projects/<key>/memory/`（`<key>` 为 git 根路径的可读 slug）。仓库根 `MEMORY.md` 只在已存在时启用，suag 不自动创建；索引里手写的、不符合条目格式的行原样保留、只读。
 - 价格配置：`providers.<id>.models.<model>.price: {input, output, cache_read, cache_write}`（美元 / 百万 token）；provider 返回 `cost_usd` 时以返回值为准。
 
 ## 安全、数据、运维与回滚
@@ -244,16 +270,21 @@ stdout {"ok":true,"result":{…}}   或   {"ok":false,"error":"…"}
 | D13 | `api.Memory` 改名为 `api.History`（含 `Config.Memory`、`MemoryError`、`ErrMemoryStateConflict`、doc 与 4 篇文档），不做兼容；`NewMemoryStorage` 是无关的内存存储，保持原名 | 把“memory”留给长期记忆；v0 无需兼容；`internal/` 不受影响 |
 | D14 | 脱敏与凭据剥离下沉到 `pkg/agentcore`（`redact`、`extproc`），personal 与 MCP 改用下沉后的实现 | 治理层与 exec 后端都需要它们，又不能依赖 `internal/*` |
 | D15 | 能力清单命名为 `suag manifest` / 工具 `suag_manifest` | `internal/wiring/capabilities.go` 已占用“capabilities”一词 |
+| D16 | 输出治理做成 `tools.Output` 包装层，对所有工具（含 MCP）生效；内联阈值默认 8000 字节，超过则头尾各 2000 字符 + ref；可重读的工具（`file_read`、`file_list`）只截断不外置 | 用户 2026-10-11；context-mode 的结论（大输出灌满上下文）；MCP 目前无上限 |
+| D17 | 大原文存会话目录文件，DB 只存头尾片段与元信息（ref、字节数、行数、sha256）；外置文件不进 FTS | 用户“原始输出的大内容不进入 db”；DB 体积大部分来自工具结果 |
+| D18 | `recall` 统一按 ref 读：`<session>/<seq>` 读底账消息窗口，`out:<turn>-<call>` 按行窗口读外置文件；`session_search` 加 `ref` 参数在单个外置文件内逐行搜索 | 一套取回方式，模型只需记一个 ref |
 
 ## 待确认事项
 
-| ID | 问题 | 推荐 |
+| ID | 问题 | 结论 / 推荐 |
 |---|---|---|
-| Q1 | 项目记忆的内置文件放在哪里 | `~/.suag/projects/<key>/memory/`：不污染仓库；想进 git 的约定写 AGENTS.md |
-| Q2 | 工作区有 `.gofer/tracker` 时，项目范围是否自动用 gofer 后端 | 自动探测，可用 `memory.project.backend` 覆盖；没有 gofer 时回到内置文件 |
-| Q3 | suag 是否可以向 gofer memory 写入（会让对应仓库的 tracker 变脏） | 可以，写入时带 `--summary`，记 `memory_write` 事件；提交仍由仓库的功能提交带走 |
-| Q4 | 评测的真实模型 | `opencode-go/deepseek-v4.1-flash`（当前主力），另跑一次假模型保证可离线回归 |
+| Q1 | 项目记忆的内置文件放在哪里 | 已决（按推荐 + 用户补充）：仓库根有 `MEMORY.md` 时用仓库，否则 `~/.suag/projects/<key>/memory/`；优先级见“数据” |
+| Q2 | 工作区有 `.gofer/tracker` 时，项目范围是否自动用 gofer 后端 | 已决：自动探测，可用 `memory.project.backend` 覆盖；优先级低于仓库根 `MEMORY.md` |
+| Q3 | suag 是否可以向 gofer memory 写入 | 已决：可以，带 `--summary`，记 `memory_write` 事件 |
+| Q4 | 评测的真实模型 | 已决：`opencode-go/deepseek-v4.1-flash`，另跑假模型做离线回归 |
+| Q5 | 仓库模式下条目文件放哪 | 推荐 `.suag/memory/<id>.md`（根目录只多一个 `MEMORY.md`）；备选：条目全部内联在 `MEMORY.md` 里（一个文件，适合条目少的项目） |
+| Q6 | 内联阈值 8000 字节、头尾各 2000 字符是否合适 | 推荐先用这组默认值，W0 评测加“每回合工具输出字节数”指标后再调 |
 
 ## 结论与人工计划 Gate
 
-本设计确立总纲与第一期（W0–W4）。批准后写实施计划；计划同样需要批准后才实施。批准语句示例：“批准设计 0.2，Q1–Q4 按推荐”。
+本设计确立总纲与第一期（W0–W4）。批准后写实施计划；计划同样需要批准后才实施。批准语句示例：“批准设计 0.3，Q5–Q6 按推荐”。
