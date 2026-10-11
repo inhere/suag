@@ -50,6 +50,8 @@ func observeScopeFrom(ctx context.Context) observeScope {
 // and never affects the turn. Events are written outside any entry transaction.
 type recorder struct {
 	sink eventSink
+	// price looks up a configured model price; nil means no pricing.
+	price func(provider, model string) (Price, bool)
 }
 
 func (r *recorder) record(ctx context.Context, e store.Event) {
@@ -96,8 +98,10 @@ func (r *recorder) attemptObserver(defName, defModel string) llm.AttemptObserver
 			CacheReadTokens: int64(a.Usage.CacheReadTokens), CacheWriteTokens: int64(a.Usage.CacheWriteTokens),
 			Attrs: map[string]any{"model": model, "attempt": a.Index, "streamed": a.Streamed},
 		}
-		if a.Usage.CostUSD != 0 {
-			e.Attrs["cost_usd"] = a.Usage.CostUSD
+		// Provider-reported cost wins; otherwise price the call from config.
+		// The store's session/stats totals sum this attr.
+		if cost := costOf(r.price, name, model, a.Usage); cost != 0 {
+			e.Attrs["cost_usd"] = cost
 		}
 		if a.Err != nil {
 			e.Status, e.Error = eventError, a.Err.Error()

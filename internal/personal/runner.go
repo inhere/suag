@@ -75,6 +75,9 @@ type Config struct {
 	// binds it to this runner's store (loaded_tools meta) and event recorder,
 	// and its tool list is added to the system prompt.
 	Visibility *tools.Visibility
+	// Price looks up the configured price of a (provider id, model); nil or a
+	// miss means cost stays 0 unless the provider reports it.
+	Price func(provider, model string) (Price, bool)
 }
 
 // Event is one transport-neutral lifecycle or model-stream update.
@@ -147,7 +150,7 @@ func New(cfg Config) (*Runner, error) {
 	if cfg.Plans != nil {
 		cfg.Plans.bind(cfg.Repository)
 	}
-	rec := &recorder{sink: cfg.Repository}
+	rec := &recorder{sink: cfg.Repository, price: cfg.Price}
 	cfg.Provider = rec.observeProvider(cfg.Provider, cfg.ProviderName, cfg.Model)
 	cfg.Tools = rec.observeTools(cfg.Tools)
 	if cfg.CompactProvider != nil {
@@ -328,7 +331,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return r.withSessionUsage(ctx, model.ID, result), fmt.Errorf("create turn: %w", err)
 	}
 	// Collect this turn's per-call usage (the session total comes from model events).
-	usage := &usageCollector{}
+	usage := &usageCollector{cost: func(u agentcore.Usage) float64 {
+		return costOf(r.cfg.Price, r.cfg.ProviderName, r.cfg.Model, u)
+	}}
 	// Keep session metadata aligned with the provider selected for this turn.
 	metaPatch["model"] = r.cfg.Model
 	metaPatch["provider"] = r.cfg.ProviderName

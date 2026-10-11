@@ -20,6 +20,10 @@ type usageCollector struct {
 	// lastInput is the input_tokens of the most recent model call; the context
 	// builder uses it to estimate the next request size.
 	lastInput int
+	// cost prices a call whose provider reported no cost (nil: leave as is).
+	// It uses the turn's main model, so a fallback model's call is priced at
+	// the main rate here; the per-attempt model events price it exactly.
+	cost func(agentcore.Usage) float64
 }
 
 func (c *usageCollector) AfterModel(_ context.Context, event *agentcore.ModelEvent, _ *agentcore.Control) error {
@@ -27,7 +31,11 @@ func (c *usageCollector) AfterModel(_ context.Context, event *agentcore.ModelEve
 		return nil
 	}
 	c.mu.Lock()
-	c.sum = c.sum.Add(event.Result.Usage)
+	usage := event.Result.Usage
+	if usage.CostUSD == 0 && c.cost != nil {
+		usage.CostUSD = c.cost(usage)
+	}
+	c.sum = c.sum.Add(usage)
 	c.calls++
 	c.lastInput = event.Result.Usage.InputTokens
 	c.mu.Unlock()

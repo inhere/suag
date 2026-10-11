@@ -19,7 +19,19 @@ const (
 // ModelConfig is the per-model override under providers.<id>.models.<model>.
 type ModelConfig struct {
 	ContextWindow int
+	// Price is the optional per-million-token price used to compute cost when
+	// the provider reports none; the zero value means "no price configured".
+	Price Price
 }
+
+// Price is a model price in US dollars per million tokens
+// (providers.<id>.models.<model>.price: input, output, cache_read, cache_write).
+type Price struct {
+	Input, Output, CacheRead, CacheWrite float64
+}
+
+// IsZero reports whether no price is configured.
+func (p Price) IsZero() bool { return p == Price{} }
 
 // ProviderConfig is one resolved providers.<id> entry (preset merged with user
 // config). Headers values may contain llm.SessionIDPlaceholder, kept verbatim.
@@ -132,10 +144,41 @@ func readModelConfigs(raw any) map[string]ModelConfig {
 		var cfg ModelConfig
 		if entry, ok := item.(map[string]any); ok {
 			cfg.ContextWindow = intValue(entry["context_window"])
+			cfg.Price = readPrice(entry["price"])
 		}
 		models[strings.TrimSpace(name)] = cfg
 	}
 	return models
+}
+
+// readPrice parses a models.<model>.price map; negative or non-numeric values
+// count as 0 (unset).
+func readPrice(raw any) Price {
+	entry, ok := raw.(map[string]any)
+	if !ok {
+		return Price{}
+	}
+	return Price{
+		Input: floatValue(entry["input"]), Output: floatValue(entry["output"]),
+		CacheRead: floatValue(entry["cache_read"]), CacheWrite: floatValue(entry["cache_write"]),
+	}
+}
+
+func floatValue(raw any) float64 {
+	var v float64
+	switch n := raw.(type) {
+	case int:
+		v = float64(n)
+	case int64:
+		v = float64(n)
+	case uint64:
+		v = float64(n)
+	case float64:
+		v = n
+	case float32:
+		v = float64(n)
+	}
+	return max(v, 0)
 }
 
 func intValue(raw any) int {
@@ -247,4 +290,27 @@ func ContextWindowFor(spec ModelSpec) int {
 		return cfg.ContextWindow
 	}
 	return ContextWindowForModel(spec.Model)
+}
+
+// PriceFor returns the configured price of spec's model.
+func PriceFor(spec ModelSpec) (Price, bool) {
+	cfg, ok := spec.Provider.Models[spec.Model]
+	return cfg.Price, ok && !cfg.Price.IsZero()
+}
+
+// PriceLookup returns a (provider id, model) price lookup over the main,
+// compact and fallback models of s. Models outside these are unknown.
+func (s ModelSettings) PriceLookup() func(provider, model string) (Price, bool) {
+	specs := append([]ModelSpec{s.Main}, s.Fallbacks...)
+	if s.Compact != nil {
+		specs = append(specs, *s.Compact)
+	}
+	return func(provider, model string) (Price, bool) {
+		for _, spec := range specs {
+			if spec.Provider.ID == provider && spec.Model == model {
+				return PriceFor(spec)
+			}
+		}
+		return Price{}, false
+	}
 }

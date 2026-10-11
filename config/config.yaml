@@ -21,6 +21,9 @@ providers:
     # models:
     #   glm-5:
     #     context_window: 128000
+    #     # Optional price in USD per million tokens; used for the cost shown by
+    #     # `suag stats` / usage_update when the provider reports no cost.
+    #     price: {input: 0.27, output: 1.1, cache_read: 0.07, cache_write: 0}
     # Optional extra request headers. "{{session_id}}" becomes the current suag
     # session id (skipped when there is none); User-Agent defaults to "suag".
     # headers:

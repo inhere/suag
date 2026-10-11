@@ -307,3 +307,42 @@ providers:
 	assert.Eq(t, "team-a", gw.Headers["x-tag"])
 	assert.Eq(t, "{{session_id}}", gw.Headers["x-session"])
 }
+
+func TestModelPrice(t *testing.T) {
+	loadYAML(t, `
+providers:
+  deepseek:
+    models:
+      deepseek-chat:
+        price: {input: 0.27, output: 1.1, cache_read: 0.07, cache_write: 2}
+      deepseek-reasoner:
+        context_window: 64000
+`)
+	ps, err := ReadProviders()
+	assert.NoErr(t, err)
+	t.Run("parsed", func(t *testing.T) {
+		spec, err := ResolveModel("deepseek/deepseek-chat", ps, "")
+		assert.NoErr(t, err)
+		price, ok := PriceFor(spec)
+		assert.True(t, ok)
+		assert.Eq(t, Price{Input: 0.27, Output: 1.1, CacheRead: 0.07, CacheWrite: 2}, price)
+	})
+	t.Run("absent price is unknown", func(t *testing.T) {
+		spec, err := ResolveModel("deepseek/deepseek-reasoner", ps, "")
+		assert.NoErr(t, err)
+		_, ok := PriceFor(spec)
+		assert.False(t, ok)
+	})
+	t.Run("lookup by provider and model", func(t *testing.T) {
+		spec, err := ResolveModel("deepseek/deepseek-chat", ps, "")
+		assert.NoErr(t, err)
+		lookup := ModelSettings{Main: spec}.PriceLookup()
+		price, ok := lookup("deepseek", "deepseek-chat")
+		assert.True(t, ok)
+		assert.Eq(t, 0.27, price.Input)
+		_, ok = lookup("other", "deepseek-chat")
+		assert.False(t, ok)
+		_, ok = lookup("deepseek", "nope")
+		assert.False(t, ok)
+	})
+}

@@ -240,6 +240,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		CompactModel:    compactModel,
 		Plans:           plans,
 		Visibility:      vis,
+		Price:           priceLookup(settings),
 		Repository:      repo,
 		Provider:        provider,
 		Model:           settings.Main.Model,
@@ -339,4 +340,14 @@ func buildPersonalCLICapabilities(ctx context.Context, workspace string, allowWr
 		built.closers = append(built.closers, provider)
 	}
 	return built, nil
+}
+
+// priceLookup adapts the configured model prices for personal, which never
+// reads global configuration itself.
+func priceLookup(settings appconfig.ModelSettings) func(provider, model string) (personal.Price, bool) {
+	lookup := settings.PriceLookup()
+	return func(provider, model string) (personal.Price, bool) {
+		p, ok := lookup(provider, model)
+		return personal.Price{Input: p.Input, Output: p.Output, CacheRead: p.CacheRead, CacheWrite: p.CacheWrite}, ok
+	}
 }

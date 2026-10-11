@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
@@ -141,5 +142,94 @@ func TestRunnerEarlyFailureKeepsSessionUsage(t *testing.T) {
 		res, err := runner.Run(ctx, RunRequest{SessionID: "early-fail", Prompt: "three"})
 		assert.Err(t, err)
 		assert.Eq(t, first.SessionUsage, res.SessionUsage)
+	})
+}
+
+func TestPriceCost(t *testing.T) {
+	price := Price{Input: 2, Output: 10, CacheRead: 0.5, CacheWrite: 4}
+	t.Run("cache hit is billed at its own rates", func(t *testing.T) {
+		// Provider-normalized: input 1_000_000 includes 600_000 cache read and
+		// 100_000 cache write, so plain input is 300_000.
+		u := agentcore.Usage{InputTokens: 1_000_000, OutputTokens: 200_000, CacheReadTokens: 600_000, CacheWriteTokens: 100_000}
+		// 0.3*2 + 0.2*10 + 0.6*0.5 + 0.1*4 = 0.6 + 2 + 0.3 + 0.4
+		assert.Eq(t, 3.3, math.Round(price.Cost(u)*1e9)/1e9)
+	})
+	t.Run("cache larger than input floors plain input at zero", func(t *testing.T) {
+		u := agentcore.Usage{InputTokens: 10, CacheReadTokens: 1_000_000}
+		assert.Eq(t, 0.5, math.Round(price.Cost(u)*1e9)/1e9)
+	})
+}
+
+func TestCostOf(t *testing.T) {
+	lookup := func(provider, model string) (Price, bool) {
+		if provider == "p" && model == "m" {
+			return Price{Input: 1, Output: 2}, true
+		}
+		return Price{}, false
+	}
+	u := agentcore.Usage{InputTokens: 1_000_000, OutputTokens: 1_000_000}
+	t.Run("provider cost wins", func(t *testing.T) {
+		u := u
+		u.CostUSD = 0.25
+		assert.Eq(t, 0.25, costOf(lookup, "p", "m", u))
+	})
+	t.Run("price used when provider reports none", func(t *testing.T) {
+		assert.Eq(t, 3.0, costOf(lookup, "p", "m", u))
+	})
+	t.Run("no price means zero", func(t *testing.T) {
+		assert.Eq(t, 0.0, costOf(lookup, "p", "other", u))
+		assert.Eq(t, 0.0, costOf(nil, "p", "m", u))
+	})
+}
+
+// pricedProvider reports usage without a cost, like most providers do.
+type pricedProvider struct{ cost float64 }
+
+func (*pricedProvider) Name() string { return "prov" }
+func (p *pricedProvider) Generate(context.Context, *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	return &agentcore.GenerateResult{
+		Content: "ok", FinishReason: agentcore.FinishFinal,
+		Usage: agentcore.Usage{InputTokens: 1_000_000, OutputTokens: 100_000, CacheReadTokens: 400_000, CacheWriteTokens: 100_000, CostUSD: p.cost},
+	}, nil
+}
+
+// A configured price must reach the model event, the turn usage and the
+// session total (store.SumUsage, behind stats and ACP usage_update).
+func TestRunnerPricesUsage(t *testing.T) {
+	ctx := context.Background()
+	price := func(provider, model string) (Price, bool) {
+		if provider == "prov" && model == "mod" {
+			return Price{Input: 2, Output: 10, CacheRead: 0.5, CacheWrite: 4}, true
+		}
+		return Price{}, false
+	}
+	run := func(t *testing.T, provider *pricedProvider, price func(string, string) (Price, bool)) (RunResult, store.Usage) {
+		repo, err := store.Open(newStorePath(t))
+		assert.NoErr(t, err)
+		t.Cleanup(func() { _ = repo.Close() })
+		runner, err := New(Config{Repository: repo, Provider: provider, Model: "mod", ProviderName: "prov", Price: price})
+		assert.NoErr(t, err)
+		res, err := runner.Run(ctx, RunRequest{Prompt: "hi"})
+		assert.NoErr(t, err)
+		sum, err := repo.SumUsage(ctx, res.SessionID)
+		assert.NoErr(t, err)
+		return res, sum
+	}
+	t.Run("priced from config", func(t *testing.T) {
+		// plain input 500k*2 + out 100k*10 + read 400k*0.5 + write 100k*4 = 1+1+0.2+0.4
+		res, sum := run(t, &pricedProvider{}, price)
+		assert.Eq(t, 2.6, math.Round(sum.CostUSD*1e9)/1e9)
+		assert.Eq(t, 2.6, math.Round(res.Usage.CostUSD*1e9)/1e9)
+		assert.Eq(t, 2.6, math.Round(res.SessionUsage.CostUSD*1e9)/1e9)
+	})
+	t.Run("provider cost wins", func(t *testing.T) {
+		res, sum := run(t, &pricedProvider{cost: 0.75}, price)
+		assert.Eq(t, 0.75, sum.CostUSD)
+		assert.Eq(t, 0.75, res.Usage.CostUSD)
+	})
+	t.Run("no price means zero", func(t *testing.T) {
+		res, sum := run(t, &pricedProvider{}, nil)
+		assert.Eq(t, 0.0, sum.CostUSD)
+		assert.Eq(t, 0.0, res.Usage.CostUSD)
 	})
 }
