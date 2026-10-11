@@ -70,7 +70,9 @@ func TestHandoffGeneratesSummaryWithoutTouchingSource(t *testing.T) {
 		var rec handoffRecord
 		assert.NoErr(t, json.Unmarshal(es[1].JSON, &rec))
 		assert.Eq(t, src, rec.Source)
-		assert.Eq(t, "SUMMARY-main-1", rec.Summary)
+		// The package body plus the source's recent request verbatim (the
+		// plan stays in rec.Plan).
+		assert.Eq(t, "SUMMARY-main-1\n\n"+recentRequestsHeading+"\n1. source work", rec.Summary)
 		assert.Eq(t, []string{"mcp_a", "mcp_b"}, rec.LoadedTools)
 		assert.Eq(t, true, strings.Contains(string(rec.Plan), "ship T08"))
 		assert.Eq(t, []string{"mcp_a", "mcp_b"}, loadedToolNames(model.Meta))
@@ -127,7 +129,9 @@ func TestHandoffReusesCompactionSummary(t *testing.T) {
 	assert.NoErr(t, err)
 	var rec handoffRecord
 	assert.NoErr(t, json.Unmarshal(e.JSON, &rec))
-	assert.Eq(t, "SUMMARY-main-1", rec.Summary)
+	// The adopted package is reused verbatim.
+	assert.Eq(t, compactionEntries(t, repo, src)[0].Summary, rec.Summary)
+	assert.True(t, strings.HasPrefix(rec.Summary, "SUMMARY-main-1\n\n"+recentRequestsHeading))
 
 	t.Run("new content after the compaction forces a fresh summary", func(t *testing.T) {
 		_, err := runner.Run(ctx, RunRequest{SessionID: src, Prompt: "more work"})

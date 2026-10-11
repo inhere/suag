@@ -99,11 +99,19 @@ func (r *Runner) buildHandoff(ctx context.Context, src Session) (handoffRecord, 
 	}
 	rec := handoffRecord{Source: src.ID, Summary: view.summary, LoadedTools: loadedToolNames(src.Meta)}
 	// A summary only stands for itself when no message is kept after it (e.g.
-	// a manual :compact); a kept tail must be folded in, so summarize again.
+	// a manual :compact); a kept tail must be folded in, so build a package
+	// the same way a segment break does (the plan stays in rec.Plan).
 	if len(view.items) > 0 {
-		if rec.Summary, err = r.summarize(ctx, src.ID, view.summary, view.items, r.threshold()); err != nil {
+		requests, err := r.recentRequests(ctx, src.ID, "", recentRequestCount)
+		if err != nil {
 			return handoffRecord{}, err
 		}
+		body, err := r.summarize(ctx, packageInput{previous: view.summary, dropped: view.items, plan: r.latestPlan(ctx, src.ID),
+			requests: requests, candidates: refCandidates(src.ID, view.items, len(view.items))}, r.threshold())
+		if err != nil {
+			return handoffRecord{}, err
+		}
+		rec.Summary = renderPackage(body, requests, "")
 	}
 	if strings.TrimSpace(rec.Summary) == "" {
 		return handoffRecord{}, errors.New("source session has no content to hand off")
@@ -118,7 +126,7 @@ func (r *Runner) buildHandoff(ctx context.Context, src Session) (handoffRecord, 
 
 // threshold mirrors contextBuilder.threshold for the summary size cap.
 func (r *Runner) threshold() int {
-	window, reserve, _ := r.compactLimits()
+	window, reserve := r.compactLimits()
 	return thresholdOf(window, reserve)
 }
 

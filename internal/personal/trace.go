@@ -157,6 +157,9 @@ func traceLine(e store.Event) string {
 	if n, ok := e.Attrs["attempt"]; ok {
 		parts = append(parts, fmt.Sprintf("attempt=%v", n))
 	}
+	if e.Kind == store.EventCompaction && e.Name == "compact" {
+		parts = append(parts, segmentTraceParts(e)...)
+	}
 	if e.Error != "" {
 		msg := strings.Join(strings.Fields(e.Error), " ")
 		if r := []rune(msg); len(r) > 120 {
@@ -195,4 +198,26 @@ func turnContextLine(e store.Event) string {
 		parts = append(parts, "turn="+e.TurnID)
 	}
 	return strings.Join(parts, " ")
+}
+
+// segmentTraceParts renders a segment break (compaction "compact" event):
+// segment number (the ordinal of its segment record), reason and the token
+// estimate before -> after; missing attributes are left out (older events).
+func segmentTraceParts(e store.Event) []string {
+	var parts []string
+	if n, ok := e.Attrs["segment"]; ok && fmt.Sprint(n) != "0" {
+		parts = append(parts, fmt.Sprintf("segment=#%v", n))
+	}
+	if reason, ok := e.Attrs["reason"]; ok {
+		parts = append(parts, fmt.Sprintf("reason=%v", reason))
+	}
+	before, okB := e.Attrs["tokens_before"]
+	after, okA := e.Attrs["tokens_after"]
+	switch {
+	case okB && okA:
+		parts = append(parts, fmt.Sprintf("tokens=%v->%v", before, after))
+	case okB:
+		parts = append(parts, fmt.Sprintf("tokens_before=%v", before))
+	}
+	return parts
 }

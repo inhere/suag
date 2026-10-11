@@ -151,7 +151,7 @@ func TestStreamJSONUsageLinesPerModelCall(t *testing.T) {
 	runner, err := personal.New(personal.Config{
 		Repository: repo, Provider: prov, Tools: reg, Model: "m", ProviderName: "p", MaxSteps: 40,
 		// threshold = 3000-500 tokens (~10000 chars): a few 2000-char results compact.
-		ContextWindow: 3000, CompactReserveTokens: 500, CompactKeepTokens: 800,
+		ContextWindow: 3000, CompactReserveTokens: 500,
 	})
 	assert.Require(t, assert.NoErr(t, err))
 	var stdout, stderr bytes.Buffer

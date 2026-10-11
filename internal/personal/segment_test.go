@@ -288,6 +288,8 @@ func TestHandoffSurvivesSegmentBreaks(t *testing.T) {
 	assert.Eq(t, 2, len(msgs))
 	assert.Eq(t, true, isSegmentContext(msgs[0]))
 	assert.StrContains(t, msgs[0].Content, "ship T08")
+	// The latest package also carries the child's own requests verbatim.
+	assert.StrContains(t, msgs[0].Content, recentRequestsHeading+"\n1. child work 1\n2. child work 2")
 	assert.Eq(t, "after two breaks", msgs[1].Content)
 
 	t.Run("old record structure decodes the full package", func(t *testing.T) {
@@ -330,7 +332,7 @@ func TestSegmentContextMessageIsNotAnItem(t *testing.T) {
 	for _, it := range items {
 		assert.Eq(t, false, isSegmentContext(it.msg))
 	}
-	cut := pickCut(items, 6, false) // ~2 short messages kept
+	cut := segmentCut(items, false) // the last exchange stays
 	assert.Eq(t, true, cut > 0 && validCut(items, cut))
 	assert.Eq(t, false, isSegmentContext(items[cut].msg))
 

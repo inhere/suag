@@ -185,8 +185,8 @@ type contextBuilder struct {
 	turnStart int       // index of the first kept message in state.Messages
 	turnSeqs  []int64   // entries seq of state.Messages[i], loaded lazily
 
-	window, reserve, keep int
-	truncLimit            int // tool-result truncation limit in chars; 0 = off
+	window, reserve int
+	truncLimit      int // tool-result truncation limit in chars; 0 = off
 
 	fixedChars    int // system prompt + tool schemas, computed once
 	haveFixed     bool
@@ -195,11 +195,11 @@ type contextBuilder struct {
 }
 
 func (r *Runner) newContextBuilder(sessionID, turnID string, hist historyView, prompt agentcore.PromptBuilder, usage *usageCollector, hookContext string) *contextBuilder {
-	window, reserve, keep := r.compactLimits()
+	window, reserve := r.compactLimits()
 	return &contextBuilder{
 		r: r, sessionID: sessionID, turnID: turnID, prompt: prompt, usage: usage, hookContext: hookContext,
 		summary: hist.summary, fromHandoff: hist.fromHandoff, prev: hist.items, seg: hist.segment, eff: hist.eff,
-		window: window, reserve: reserve, keep: keep,
+		window: window, reserve: reserve,
 	}
 }
 
@@ -216,15 +216,14 @@ func (b *contextBuilder) BuildMessages(ctx context.Context, state *agentcore.Run
 	view := b.compose(state)
 	est := b.estimate(ctx, state, view)
 	if est > b.threshold() {
-		out, err := b.compact(ctx, state, b.keep, false, est)
+		_, err := b.startSegment(ctx, state, segmentReasonThreshold, est)
 		switch {
 		case err == nil:
 			view = b.compose(state)
-			_ = out
 			est = b.estimate(ctx, state, view)
 		case ctx.Err() != nil:
 			return nil, ctx.Err()
-		case errors.Is(err, errNothingToCompact):
+		case errors.Is(err, ErrNothingToCompact):
 			// Nothing cuttable (e.g. one huge tool result): truncation below.
 		default:
 			// A failed summary must not kill the turn while truncation may still fit.
@@ -245,7 +244,7 @@ func (b *contextBuilder) BuildMessages(ctx context.Context, state *agentcore.Run
 // (replayed context updates included), hook context, then the kept part of
 // this turn's messages, with tool results truncated when needed. The segment
 // context message and the hook context are rendered here only: items() (and
-// so pickCut/validCut) never sees them.
+// so segmentCut/validCut) never sees them.
 func (b *contextBuilder) compose(state *agentcore.RunState) []agentcore.Message {
 	var turn []agentcore.Message
 	if state != nil && b.turnStart < len(state.Messages) {

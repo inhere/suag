@@ -18,57 +18,52 @@ import (
 const (
 	defaultContextWindow = 128000
 	defaultReserveTokens = 16000
-	defaultKeepTokens    = 20000
 )
 
-// errNothingToCompact means no legal cut point exists that would drop anything.
-var errNothingToCompact = errors.New("nothing to compact")
+// ErrNothingToCompact means no legal cut point exists that would drop
+// anything: the segment break is skipped (:compact reports it, the idle
+// consolidation simply does nothing).
+var ErrNothingToCompact = errors.New("nothing to compact")
 
-// compactSystemPrompt is the fixed summarizer instruction; tests match on it
-// to tell summary calls from ordinary turns.
-const compactSystemPrompt = "你是对话压缩助手。把给定的对话历史压缩成一份供同一个智能体继续工作的摘要。" +
-	"只输出摘要正文，不要寒暄，不要调用工具。必须保留所有对继续工作有用的事实、路径、命令、标识符和数值。"
+// compactSystemPrompt is the fixed handoff-package instruction; tests match on
+// it to tell summary calls from ordinary turns.
+const compactSystemPrompt = "你是会话交接助手。把给定的对话历史整理成一份交接包，供同一个智能体在新的一段对话里继续当前任务。" +
+	"只输出交接包正文，不要寒暄，不要调用工具。必须保留所有对继续当前任务有用的事实、路径、命令、标识符和数值；" +
+	"引用只能从给出的候选 ref 中挑选并原样写出。"
 
-// compactTemplate is the fixed summary structure the summarizer must follow.
-const compactTemplate = `请按下列固定结构输出摘要（没有内容的小节写“无”）：
-## 目标
-## 约束
-## 进展
-- 已完成：
-- 进行中：
-- 阻塞：
+// refsHeading heads the handoff section the refs are parsed from.
+const refsHeading = "## 与当前任务相关的引用"
+
+// compactTemplate is the fixed handoff package structure (design "交接包模板").
+const compactTemplate = `请按下列固定结构输出交接包正文（没有内容的小节写“无”）：
+## 当前任务（最近的用户请求原文会附在交接包里，不必复述）
+## 目标与约束
+## 进展（已完成 / 进行中 / 阻塞）
 ## 当前计划
 ## 关键决策
 ## 涉及文件
+` + refsHeading + `（ref + 一句话说明，可用 recall 读取）
 ## 下一步`
 
-// compactLimits resolves the window, reserve and keep budgets (tokens).
+// compactLimits resolves the window and reserve budgets (tokens).
 //
-// Defaults scale with the window so small windows stay usable:
+// The reserve scales with the window so small windows stay usable:
 //
 //	reserve   = min(16000, window*20%)
 //	threshold = window - reserve        (window/2 when the reserve eats it all)
-//	keep      = min(20000, threshold*40%)
 //
-// so a compacted context (~keep + summary) sits well below the threshold (about
-// 60% or less) and the next turns have room before compacting again; a fixed
-// keep close to the threshold made every turn compact and drop 1-2 messages.
-// Explicit CompactReserveTokens/CompactKeepTokens win, except that keep is
-// always capped at threshold*50% to keep that headroom.
-func (r *Runner) compactLimits() (window, reserve, keep int) {
-	window, reserve, keep = r.cfg.ContextWindow, r.cfg.CompactReserveTokens, r.cfg.CompactKeepTokens
+// A segment break keeps only the last complete tool call/result group
+// verbatim (design Q2, see segmentCut), so the new segment starts far below
+// the threshold whatever the window. An explicit CompactReserveTokens wins.
+func (r *Runner) compactLimits() (window, reserve int) {
+	window, reserve = r.cfg.ContextWindow, r.cfg.CompactReserveTokens
 	if window <= 0 {
 		window = defaultContextWindow
 	}
 	if reserve <= 0 {
 		reserve = min(defaultReserveTokens, window/5)
 	}
-	t := thresholdOf(window, reserve)
-	if keep <= 0 {
-		keep = min(defaultKeepTokens, t*2/5)
-	}
-	keep = min(keep, t/2)
-	return window, reserve, keep
+	return window, reserve
 }
 
 // thresholdOf is the estimated size above which compaction triggers.
@@ -103,36 +98,40 @@ func validEnd(items []ctxItem) bool {
 	return last.Role == "tool" || (last.Role == "assistant" && last.ToolCall == nil)
 }
 
-// pickCut returns the index of the first kept item, or 0 when nothing can be
-// dropped. It walks back from the tail until about keep tokens are covered and
-// then aligns toward the end (keeping less, never more) to the nearest legal
-// cut. allowEnd (manual compaction) also permits dropping everything.
-func pickCut(items []ctxItem, keep int, allowEnd bool) int {
+// segmentCut returns the index of the first item the new segment keeps
+// verbatim, or 0 when nothing can be dropped (design Q2: only the last
+// complete tool call/result group stays; the rest lives on in the handoff
+// package and its refs). Cut legality is always validCut's:
+//
+//   - when the view ends with a tool result (work in progress, mid-turn), the
+//     group is the last assistant{ToolCall} with its result; the cut is the
+//     nearest legal one at or before its start, so it is kept whole (with
+//     A1,T1,A2,T2 that is A2,T2; a group right after its user request keeps
+//     that request too);
+//   - otherwise the least legal tail is kept: nothing at all when allowEnd (a
+//     break between turns) and the view ends with a final answer, else a
+//     pending user request alone (or the last exchange).
+func segmentCut(items []ctxItem, allowEnd bool) int {
 	n := len(items)
-	start := n
-	if keep > 0 {
-		start = -1
-		acc := 0
-		for i := n - 1; i >= 0; i-- {
-			if acc += tokensOfMessage(items[i].msg); acc >= keep {
-				start = i
-				break
+	if n > 0 && items[n-1].msg.Role == "tool" {
+		start := n - 1
+		if start > 0 && items[start-1].msg.Role == "assistant" && items[start-1].msg.ToolCall != nil {
+			start--
+		}
+		for i := start; i >= 1; i-- {
+			if validCut(items, i) {
+				return i
 			}
 		}
-		if start < 0 {
-			// The whole context is below the keep budget yet compaction was
-			// triggered (fixed prompt/tool overhead, or a tiny window): keep
-			// less instead, from the first legal cut.
-			start = 1
-		}
-	}
-	for i := max(start, 1); i < n; i++ {
-		if validCut(items, i) {
-			return i
-		}
+		return 0 // the group reaches back to the first item: nothing to drop
 	}
 	if allowEnd && validEnd(items) {
 		return n
+	}
+	for i := n - 1; i >= 1; i-- {
+		if validCut(items, i) {
+			return i
+		}
 	}
 	return 0
 }
@@ -170,25 +169,37 @@ func (b *contextBuilder) items(ctx context.Context, state *agentcore.RunState) (
 type compactOutcome struct {
 	tokensBefore, tokensAfter int
 	firstKeptSeq              int64
+	segment                   int // ordinal of the new segment record
 }
 
-// compact summarizes the oldest part of the current view, writes a compaction
-// entry plus event, and switches this builder to the shorter view. before is
-// the caller's token estimate of the view being compacted.
-func (b *contextBuilder) compact(ctx context.Context, state *agentcore.RunState, keep int, manual bool, before int) (*compactOutcome, error) {
+// compactTrigger maps a segment reason to the compaction event's legacy
+// trigger attribute (auto/manual/idle).
+func compactTrigger(reason string) string {
+	if reason == segmentReasonThreshold {
+		return "auto"
+	}
+	return reason
+}
+
+// startSegment is the single segment break entry (design "段开始"): the
+// threshold check of BuildMessages (mid-turn), the manual :compact and the
+// idle consolidation all come here. It builds the handoff package from the
+// part of the view that leaves the raw context, freezes a fresh context
+// snapshot, writes the segment start record and switches this builder to the
+// new segment. before is the caller's token estimate of the current view.
+func (b *contextBuilder) startSegment(ctx context.Context, state *agentcore.RunState, reason string, before int) (*compactOutcome, error) {
 	items, err := b.items(ctx, state)
 	if err != nil {
 		return nil, err
 	}
-	cut := pickCut(items, keep, manual)
+	// A threshold break runs mid-turn and must keep the pending request;
+	// the between-turn breaks (manual, idle) may drop everything.
+	cut := segmentCut(items, reason != segmentReasonThreshold)
 	if cut == 0 {
-		return nil, errNothingToCompact
+		return nil, ErrNothingToCompact
 	}
 	started := time.Now()
-	trigger, reason := "auto", segmentReasonThreshold
-	if manual {
-		trigger, reason = "manual", segmentReasonManual
-	}
+	trigger := compactTrigger(reason)
 	fail := func(err error) (*compactOutcome, error) {
 		b.r.rec.record(ctx, store.Event{
 			Kind: store.EventCompaction, Name: "compact", Status: eventError, Error: err.Error(),
@@ -197,7 +208,7 @@ func (b *contextBuilder) compact(ctx context.Context, state *agentcore.RunState,
 		})
 		return nil, err
 	}
-	summary, err := b.r.summarize(ctx, b.sessionID, b.summary, items[:cut], b.threshold())
+	pkg, err := b.r.buildPackage(ctx, b.sessionID, b.turnID, b.summary, items, cut, b.threshold())
 	if err != nil {
 		return fail(err)
 	}
@@ -216,13 +227,13 @@ func (b *contextBuilder) compact(ctx context.Context, state *agentcore.RunState,
 	}
 
 	// Switch the view: cut inside the kept history drops its head; a cut inside
-	// this turn drops all history and advances turnStart. The new summary is
-	// the new segment's handoff package (it folded the previous one in), and
-	// the new snapshot supersedes every earlier context update (loadHistory
-	// skips updates before the latest record the same way).
+	// this turn drops all history and advances turnStart. The new package is
+	// the new segment's handoff (it folded the previous one in), and the new
+	// snapshot supersedes every earlier context update (loadHistory skips
+	// updates before the latest record the same way).
 	oldSummary, oldHandoff, oldPrev, oldStart, oldSeg, oldEff := b.summary, b.fromHandoff, b.prev, b.turnStart, b.seg, b.eff
 	charsBefore := charsOfMessages(b.compose(state))
-	b.summary, b.fromHandoff = summary, false
+	b.summary, b.fromHandoff = pkg.rendered, false
 	if cut <= len(oldPrev) {
 		b.prev = withoutContextUpdates(oldPrev[cut:])
 	} else {
@@ -232,25 +243,50 @@ func (b *contextBuilder) compact(ctx context.Context, state *agentcore.RunState,
 	b.seg, b.eff = seg, &eff
 	after := max(before-(charsBefore-charsOfMessages(b.compose(state)))/4, 0)
 
-	rec := compactionRecord{Summary: summary, FirstKeptSeq: firstKept, TokensBefore: before, TokensAfter: after,
-		Reason: reason, Context: seg}
+	// Summary holds the full rendered package, so an older binary decoding
+	// only the original fields still sees everything this one renders.
+	rec := compactionRecord{Summary: pkg.rendered, FirstKeptSeq: firstKept, TokensBefore: before, TokensAfter: after,
+		Reason: reason, Context: seg, RecentRequests: pkg.requests, Refs: pkg.refs}
 	raw, _ := json.Marshal(rec)
-	turnID := b.turnID
-	if _, err := b.r.cfg.Repository.AppendEntries(context.WithoutCancel(ctx), b.sessionID, store.NewEntry{TurnID: turnID, Type: store.EntryCompaction, JSON: raw}); err != nil {
+	wctx := context.WithoutCancel(ctx)
+	es, err := b.r.cfg.Repository.AppendEntries(wctx, b.sessionID, store.NewEntry{TurnID: b.turnID, Type: store.EntryCompaction, JSON: raw})
+	if err != nil {
 		b.summary, b.fromHandoff, b.prev, b.turnStart, b.seg, b.eff = oldSummary, oldHandoff, oldPrev, oldStart, oldSeg, oldEff
 		return fail(fmt.Errorf("write compaction entry: %w", err))
 	}
-	b.r.rec.record(ctx, store.Event{
+	segment := b.r.segmentOrdinal(wctx, b.sessionID, es)
+	b.r.rec.record(wctx, store.Event{
 		Kind: store.EventCompaction, Name: "compact", Status: eventOK,
 		StartedAt: started, DurationMs: time.Since(started).Milliseconds(),
 		Attrs: map[string]any{"trigger": trigger, "reason": reason, "tokens_before": before, "tokens_after": after,
-			"first_kept_seq": firstKept, "dropped_messages": cut, "model": b.r.compactModelName()},
+			"first_kept_seq": firstKept, "dropped_messages": cut, "model": b.r.compactModelName(),
+			"segment": segment, "requests": len(pkg.requests), "refs": len(pkg.refs)},
 	})
 	// The meta cache follows the record (best-effort). The system prompt is
 	// the stable prefix and does not change: this very step already renders
 	// the new snapshot through compose.
-	b.r.cacheSegmentMeta(ctx, b.sessionID, seg)
-	return &compactOutcome{tokensBefore: before, tokensAfter: after, firstKeptSeq: firstKept}, nil
+	b.r.cacheSegmentMeta(wctx, b.sessionID, seg)
+	return &compactOutcome{tokensBefore: before, tokensAfter: after, firstKeptSeq: firstKept, segment: segment}, nil
+}
+
+// segmentOrdinal is the segment number of the record just written: its
+// position among the session's segment (compaction) records, 1-based. 0 when
+// it cannot be counted (trace then omits it).
+func (r *Runner) segmentOrdinal(ctx context.Context, sessionID string, written []store.Entry) int {
+	if len(written) == 0 {
+		return 0
+	}
+	es, err := r.cfg.Repository.ListEntries(ctx, sessionID, store.EntryFilter{Types: []string{store.EntryCompaction}})
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range es {
+		if e.Seq <= written[0].Seq {
+			n++
+		}
+	}
+	return n
 }
 
 // compactProvider is the model used for summaries: llm.compact_model when
@@ -269,22 +305,43 @@ func (r *Runner) compactModelName() string {
 	return r.cfg.Model
 }
 
-// summarize asks the model for a structured summary of dropped (plus the
-// previous summary and the latest plan). The transcript is size-capped so the
-// summary request itself fits the window. Context updates are skipped: the
-// next segment re-reads rules and the rest into its own snapshot.
-func (r *Runner) summarize(ctx context.Context, sessionID, previous string, dropped []ctxItem, threshold int) (string, error) {
-	dropped = withoutContextUpdates(dropped)
+// packageInput is what a handoff package is summarized from.
+type packageInput struct {
+	previous   string         // the current segment's package ("" = none)
+	dropped    []ctxItem      // the part of the view leaving the raw context
+	plan       string         // latest plan entry JSON ("" = none)
+	requests   []string       // recent user requests, original text, oldest first
+	candidates []refCandidate // refs the model may pick from
+}
+
+// summarize asks the model for the handoff package body (compactTemplate) of
+// in.dropped, folding in the previous package and the latest plan, pointed at
+// the current task by the recent requests and offered the candidate refs. The
+// transcript is size-capped so the request itself fits the window. Context
+// updates are skipped: the next segment re-reads rules and the rest into its
+// own snapshot.
+func (r *Runner) summarize(ctx context.Context, in packageInput, threshold int) (string, error) {
+	dropped := withoutContextUpdates(in.dropped)
 	var sb strings.Builder
 	sb.WriteString(compactTemplate)
-	if previous != "" {
-		sb.WriteString("\n\n# 已有摘要（需并入新摘要）\n" + previous)
+	if in.previous != "" {
+		sb.WriteString("\n\n# 已有摘要（需并入新摘要）\n" + in.previous)
 	}
-	plan := "无"
-	if e, err := r.cfg.Repository.LatestEntry(ctx, sessionID, store.EntryPlan); err == nil && e != nil && len(e.JSON) > 0 {
-		plan = string(e.JSON)
+	plan := in.plan
+	if plan == "" {
+		plan = "无"
 	}
-	sb.WriteString("\n\n# 当前计划（原样写入“当前计划”小节）\n" + plan)
+	sb.WriteString("\n\n# 当前计划（原文会附在交接包里；“当前计划”一节写清进度即可）\n" + plan)
+	if len(in.requests) > 0 {
+		sb.WriteString("\n\n# 最近的用户请求（原文会附在交接包里；“当前任务”一节据此概括）\n")
+		sb.WriteString(renderRequests(in.requests))
+	}
+	if len(in.candidates) > 0 {
+		sb.WriteString("\n\n# 候选引用（“与当前任务相关的引用”一节只能从这里挑选与当前任务相关的，ref 原样写出并附一句说明）\n")
+		for _, c := range in.candidates {
+			sb.WriteString("- " + c.ref + " — " + c.note + "\n")
+		}
+	}
 	sb.WriteString("\n\n# 待压缩的对话\n")
 	sb.WriteString(renderTranscript(dropped, max(threshold*3, 8000)))
 
@@ -356,17 +413,25 @@ func renderTranscript(items []ctxItem, maxChars int) string {
 	return truncateMiddle(out, maxChars)
 }
 
-// CompactResult reports a manual compaction (token figures are estimates of the
-// message context only, excluding system prompt and tool schemas).
+// CompactResult reports a segment break between turns (token figures are
+// estimates of the message context only, excluding system prompt and tool
+// schemas).
 type CompactResult struct {
 	TokensBefore, TokensAfter int
 	FirstKeptSeq              int64
+	// Segment is the ordinal of the new segment record (1-based; 0 unknown).
+	Segment int
 }
 
-// Compact compresses the session's persisted context right now (chat
-// :compact). It drops everything older than the summary; the compaction entry
-// belongs to no turn, so it is adopted immediately.
+// Compact starts a new segment of the session right now (chat :compact,
+// reason manual). The record belongs to no turn, so it is adopted immediately.
 func (r *Runner) Compact(ctx context.Context, sessionID string) (CompactResult, error) {
+	return r.breakSegment(ctx, sessionID, segmentReasonManual)
+}
+
+// breakSegment starts a new segment between turns (manual or idle): it loads
+// the persisted view and runs the shared segment entry on it.
+func (r *Runner) breakSegment(ctx context.Context, sessionID, reason string) (CompactResult, error) {
 	model, err := r.LoadSession(ctx, sessionID)
 	if err != nil {
 		return CompactResult{}, err
@@ -392,12 +457,9 @@ func (r *Runner) Compact(ctx context.Context, sessionID string) (CompactResult, 
 	r.resolveSegment(&hist, model.Meta)
 	b := r.newContextBuilder(model.ID, "", hist, nil, nil, "")
 	before := charsOfMessages(b.compose(nil)) / 4
-	out, err := b.compact(ctx, nil, 0, true, before)
-	if errors.Is(err, errNothingToCompact) {
-		return CompactResult{}, errors.New("nothing to compact")
-	}
+	out, err := b.startSegment(ctx, nil, reason, before)
 	if err != nil {
 		return CompactResult{}, err
 	}
-	return CompactResult{TokensBefore: out.tokensBefore, TokensAfter: out.tokensAfter, FirstKeptSeq: out.firstKeptSeq}, nil
+	return CompactResult{TokensBefore: out.tokensBefore, TokensAfter: out.tokensAfter, FirstKeptSeq: out.firstKeptSeq, Segment: out.segment}, nil
 }

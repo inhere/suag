@@ -411,7 +411,12 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	ctx = withPlanEmitter(ctx, func(ctx context.Context, plan native.Plan) error {
 		return emit(ctx, req.Emit, Event{Kind: "plan", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Plan: &plan})
 	})
-	storage := r.cfg.Repository.AgentStorage()
+	var storage agentcore.Storage = r.cfg.Repository.AgentStorage()
+	if req.Injected {
+		// Persist the existing "not typed by a person" marker on the turn's
+		// request, so a later handoff package can tell it apart (D4).
+		storage = &injectedStorage{Storage: storage}
+	}
 	promptBuilder := stablePromptBuilder{base: r.cfg.PromptBuilder}
 	// The hook context (req.SystemContext) is a user message of this turn.
 	contextBuilder := r.newContextBuilder(model.ID, turnID, history, promptBuilder, usage, req.SystemContext)

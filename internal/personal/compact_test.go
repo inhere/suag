@@ -16,11 +16,10 @@ import (
 )
 
 // Small window so a few KB of text crosses the threshold:
-// threshold = 3000-500 = 2500 tokens (~10000 chars); keep ~800 tokens (~3200 chars).
+// threshold = 3000-500 = 2500 tokens (~10000 chars).
 const (
 	testWindow  = 3000
 	testReserve = 500
-	testKeep    = 800
 )
 
 // scriptProv answers summary requests itself and delegates ordinary model
@@ -87,7 +86,7 @@ func compactRunner(t *testing.T, repo *store.Store, prov agentcore.Provider, reg
 	t.Helper()
 	cfg := Config{
 		Repository: repo, Provider: prov, Tools: reg, Model: "m", ProviderName: "p", MaxSteps: 80,
-		ContextWindow: testWindow, CompactReserveTokens: testReserve, CompactKeepTokens: testKeep,
+		ContextWindow: testWindow, CompactReserveTokens: testReserve,
 	}
 	if mut != nil {
 		mut(&cfg)
@@ -252,7 +251,7 @@ func TestCompactHugeToolResultTruncatesOrFails(t *testing.T) {
 	})
 }
 
-func TestPickCutNeverSplitsCallAndResult(t *testing.T) {
+func TestSegmentCutKeepsLastGroup(t *testing.T) {
 	user := func(s string) ctxItem { return ctxItem{msg: agentcore.Message{Role: "user", Content: s}} }
 	call := func(id string) ctxItem {
 		return ctxItem{msg: agentcore.Message{Role: "assistant", ToolCall: &agentcore.ToolCall{CallID: id, Name: "t"}}}
@@ -274,21 +273,35 @@ func TestPickCutNeverSplitsCallAndResult(t *testing.T) {
 		// before u2(6), before final(5), between T1 and A2(3); never before T(2,4) or A1/A2 after a user(1).
 		assert.Eq(t, map[int]bool{3: true, 5: true, 6: true}, legal)
 	})
-	t.Run("aligned cut is legal for every keep budget", func(t *testing.T) {
-		for keep := 1; keep < 600; keep += 7 {
-			cut := pickCut(items, keep, false)
-			if cut == 0 {
-				continue
-			}
-			assert.Eq(t, true, validCut(items, cut))
-			kept := items[cut:]
-			// the kept part starts at a user or at an assistant message, never a dangling result
-			assert.Eq(t, true, kept[0].msg.Role != "tool")
-		}
+	t.Run("mid-turn: only the last call/result group stays", func(t *testing.T) {
+		assert.Eq(t, 3, segmentCut(items[:5], false)) // A2,T2
+		assert.Eq(t, 3, segmentCut(items[:5], true))
+		// A group right after the user cannot be split from it: keep u1 too.
+		assert.Eq(t, 0, segmentCut(items[:3], false))
+		assert.Eq(t, 1, segmentCut([]ctxItem{user("u0"), user("u1"), call("1"), result("1")}, false))
 	})
-	t.Run("end cut only after a closed pair or final answer", func(t *testing.T) {
-		assert.Eq(t, 7, pickCut(items[:6], 0, true)+1)
-		assert.Eq(t, 0, pickCut([]ctxItem{user("a"), user("b")}, 0, true))
+	t.Run("a finished group is history", func(t *testing.T) {
+		assert.Eq(t, 6, segmentCut(items, false)) // pending u2 alone
+		assert.Eq(t, 5, segmentCut(items[:6], false))
+	})
+	t.Run("between turns the whole view may go", func(t *testing.T) {
+		assert.Eq(t, 6, segmentCut(items[:6], true))
+		noTools := []ctxItem{user("a"), final, user("b"), final}
+		assert.Eq(t, 4, segmentCut(noTools, true))
+		assert.Eq(t, 2, segmentCut(noTools, false)) // the last exchange
+		assert.Eq(t, 0, segmentCut([]ctxItem{user("a")}, true))
+	})
+	t.Run("every cut is legal", func(t *testing.T) {
+		for n := 1; n <= len(items); n++ {
+			for _, end := range []bool{false, true} {
+				cut := segmentCut(items[:n], end)
+				if cut == 0 || cut == n {
+					continue
+				}
+				assert.Eq(t, true, validCut(items[:n], cut))
+				assert.Eq(t, true, items[cut].msg.Role != "tool")
+			}
+		}
 	})
 }
 
@@ -468,7 +481,9 @@ func TestManualCompactAndPlanInSummary(t *testing.T) {
 
 	out, err := runner.Compact(context.Background(), res.SessionID)
 	assert.NoErr(t, err)
-	assert.Eq(t, true, out.TokensAfter < out.TokensBefore)
+	// The 2000-char request stays verbatim in the package, so the estimate
+	// does not shrink here; the dropped reply is gone.
+	assert.Eq(t, true, out.TokensAfter > 0 && out.TokensBefore > 0)
 	assert.Eq(t, 1, len(prov.sumReqs))
 	assert.Eq(t, true, strings.Contains(prov.sumReqs[0].Messages[0].Content, "ship T06"))
 	assert.Eq(t, true, strings.Contains(prov.sumReqs[0].Messages[0].Content, "hello there"))
@@ -478,6 +493,9 @@ func TestManualCompactAndPlanInSummary(t *testing.T) {
 	msgs := prov.reqs[len(prov.reqs)-1].Messages
 	assert.Eq(t, 2, len(msgs))
 	assert.Eq(t, true, strings.Contains(msgs[0].Content, "SUMMARY-main-1"))
+	assert.StrContains(t, msgs[0].Content, recentRequestsHeading+"\n1. hello there ")
+	assert.StrContains(t, msgs[0].Content, packagePlanHeading+"\n- ▶ ship T06")
+	assert.NotContains(t, msgs[0].Content, "reply-1")
 	assert.Eq(t, "after compact", msgs[1].Content)
 
 	// A second compact folds the earlier summary in.
@@ -510,11 +528,10 @@ func TestCompactScalesWithWindow(t *testing.T) {
 				return finalText(fmt.Sprintf("answer-%d %s", n, strings.Repeat("a", size)))
 			}}
 			runner := compactRunner(t, repo, prov, nil, func(c *Config) {
-				c.ContextWindow, c.CompactReserveTokens, c.CompactKeepTokens = window, 0, 0
+				c.ContextWindow, c.CompactReserveTokens = window, 0
 			})
-			_, reserve, keep := runner.compactLimits()
+			_, reserve := runner.compactLimits()
 			thr := thresholdOf(window, reserve)
-			assert.Eq(t, true, keep*10 <= thr*6) // compacted view leaves >= 40% headroom
 
 			turns, sid := 12, ""
 			if window == 40000 {
@@ -531,7 +548,7 @@ func TestCompactScalesWithWindow(t *testing.T) {
 				assert.Eq(t, true, len(recs) <= 2)
 			}
 			for _, rec := range recs {
-				assert.Eq(t, true, rec.TokensAfter*10 <= thr*6+keep) // roughly keep + summary
+				assert.Eq(t, true, rec.TokensAfter*10 <= thr*6) // the last group + package: ample headroom
 			}
 			for _, req := range prov.reqs {
 				assertWellFormed(t, req.Messages)
@@ -541,31 +558,29 @@ func TestCompactScalesWithWindow(t *testing.T) {
 	}
 }
 
-// TestCompactLimitsExplicit checks explicit values win but keep is capped.
+// TestCompactLimitsExplicit checks an explicit reserve wins and the defaults.
 func TestCompactLimitsExplicit(t *testing.T) {
-	mk := func(w, rs, k int) *Runner {
-		return &Runner{cfg: Config{ContextWindow: w, CompactReserveTokens: rs, CompactKeepTokens: k}}
+	mk := func(w, rs int) *Runner {
+		return &Runner{cfg: Config{ContextWindow: w, CompactReserveTokens: rs}}
 	}
-	_, rs, k := mk(100000, 1000, 5000).compactLimits()
+	_, rs := mk(100000, 1000).compactLimits()
 	assert.Eq(t, 1000, rs)
-	assert.Eq(t, 5000, k)
-	_, _, k = mk(100000, 1000, 90000).compactLimits()
-	assert.Eq(t, 99000/2, k)
-	w, rs, k := mk(0, 0, 0).compactLimits()
+	w, rs := mk(0, 0).compactLimits()
 	assert.Eq(t, 128000, w)
 	assert.Eq(t, 16000, rs)
-	assert.Eq(t, 20000, k)
+	_, rs = mk(3000, 0).compactLimits()
+	assert.Eq(t, 600, rs) // scales with a small window
 }
 
-// TestPickCutKeepsLessWhenContextBelowKeep: a context smaller than keep but
-// over the threshold still gets a legal cut (never the unanswered last user).
-func TestPickCutKeepsLessWhenContextBelowKeep(t *testing.T) {
+// TestSegmentCutKeepsPendingRequest: a threshold break never drops the
+// unanswered last user request, even when nothing else is kept.
+func TestSegmentCutKeepsPendingRequest(t *testing.T) {
 	msg := func(role string) ctxItem { return ctxItem{msg: agentcore.Message{Role: role, Content: "x"}} }
 	items := []ctxItem{msg("user"), msg("assistant"), msg("user"), msg("assistant"), msg("user")}
-	cut := pickCut(items, 100000, false)
-	assert.Eq(t, true, cut > 0 && validCut(items, cut))
-	assert.Eq(t, "user", items[len(items)-1].msg.Role)
-	assert.Eq(t, true, cut < len(items)) // the pending user request is kept
+	cut := segmentCut(items, false)
+	assert.Eq(t, len(items)-1, cut) // only the pending request stays
+	assert.Eq(t, 0, segmentCut(items[:1], true))
+	assert.Eq(t, 4, segmentCut(items[:4], true)) // between turns: drop everything
 }
 
 // TestCompactSmallWindowRecoversAfterOverflow: a turn that overflows a small
@@ -580,7 +595,7 @@ func TestCompactSmallWindowRecoversAfterOverflow(t *testing.T) {
 		return finalText("ok " + strings.Repeat("a", 600))
 	}}
 	runner := compactRunner(t, repo, prov, bigToolRegistry(60000, nil), func(c *Config) {
-		c.ContextWindow, c.CompactReserveTokens, c.CompactKeepTokens = 3000, 0, 0
+		c.ContextWindow, c.CompactReserveTokens = 3000, 0
 		c.Tools = nil
 	})
 	first, err := runner.Run(context.Background(), RunRequest{Prompt: "hello " + strings.Repeat("h", 600)})
@@ -588,14 +603,14 @@ func TestCompactSmallWindowRecoversAfterOverflow(t *testing.T) {
 	// Same session on a runner whose tool result can never fit.
 	big = true
 	runner = compactRunner(t, repo, prov, bigToolRegistry(60000, nil), func(c *Config) {
-		c.ContextWindow, c.CompactReserveTokens, c.CompactKeepTokens = 600, 100, 0
+		c.ContextWindow, c.CompactReserveTokens = 600, 100
 	})
 	bad, err := runner.Run(context.Background(), RunRequest{SessionID: first.SessionID, Prompt: "read it"})
 	assert.Eq(t, true, errors.Is(err, ErrContextOverflow))
 	assert.Eq(t, RunFailed, bad.State)
 	big = false
 	runner = compactRunner(t, repo, prov, nil, func(c *Config) {
-		c.ContextWindow, c.CompactReserveTokens, c.CompactKeepTokens = 3000, 0, 0
+		c.ContextWindow, c.CompactReserveTokens = 3000, 0
 	})
 	for i := 0; i < 12; i++ {
 		_, err = runner.Run(context.Background(), RunRequest{SessionID: first.SessionID, Prompt: fmt.Sprintf("again %d %s", i, strings.Repeat("g", 800))})
