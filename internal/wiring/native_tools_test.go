@@ -31,7 +31,8 @@ func catalogNames(write bool) []string {
 }
 
 // TestRegisteredToolsFollowTheCatalog pins the run/chat/ACP tool sets to the
-// one native catalog plus update_plan, which Open registers in every mode.
+// one native catalog plus update_plan, session_search and recall, which Open
+// registers in every mode.
 func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 	resetConfig(t)
 	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k"}})
@@ -46,7 +47,7 @@ func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 		return got
 	}
 	want := func(write bool) []string {
-		w := append(catalogNames(write), "update_plan")
+		w := append(catalogNames(write), "update_plan", "session_search", "recall")
 		slices.Sort(w)
 		return w
 	}

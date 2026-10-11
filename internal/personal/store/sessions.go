@@ -96,6 +96,26 @@ func (s *Store) ListSessions(ctx context.Context) ([]Session, error) {
 	return out, rows.Err()
 }
 
+// SessionCwds returns id -> cwd of every session with a recorded cwd. It reads
+// only those two columns (meta_json can be large), for callers that match
+// paths themselves (e.g. with path-separator boundaries).
+func (s *Store) SessionCwds(ctx context.Context) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, cwd FROM sessions WHERE cwd <> ''`)
+	if err != nil {
+		return nil, fmt.Errorf("list session cwds: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var id, cwd string
+		if err := rows.Scan(&id, &cwd); err != nil {
+			return nil, err
+		}
+		out[id] = cwd
+	}
+	return out, rows.Err()
+}
+
 // UpdateSession overwrites title, cwd, status, last_turn_id and meta of an
 // existing session. UpdatedAt defaults to now when zero.
 func (s *Store) UpdateSession(ctx context.Context, in Session) error {

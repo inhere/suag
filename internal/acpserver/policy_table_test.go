@@ -78,6 +78,12 @@ func policyRows() []policyRow {
 			return native.NewToolSearchTool(tools.NewVisibility(tools.NewRegistry(), tools.VisibilityOptions{}))
 		}),
 		wired("skill", acp.ToolKindRead, func(*testing.T, string) agentcore.Tool { return native.NewSkillTool(skills.NewRegistry(), 0) }),
+		wired("session_search", acp.ToolKindSearch, func(*testing.T, string) agentcore.Tool {
+			return native.NewSessionSearchTool(personal.NewLedger(""))
+		}),
+		wired("recall", acp.ToolKindSearch, func(*testing.T, string) agentcore.Tool {
+			return native.NewRecallTool(personal.NewLedger(""), 0)
+		}),
 		// Unknown tools require permission and are refused in read_only.
 		{name: "future_tool", tool: func(*testing.T, string) agentcore.Tool { return &countingTool{name: "future_tool"} },
 			kind: acp.ToolKindOther, readOnly: "deny", normal: "ask", nilTool: "ask"},

@@ -84,6 +84,13 @@ type Config struct {
 	// Spiller stores tool outputs above the threshold (e.g. a SessionSpiller);
 	// nil means they are only truncated.
 	Spiller tools.Spiller
+	// Ledger backs session_search / recall; New binds it to this runner's
+	// store (late binding, like Plans).
+	Ledger *Ledger
+	// Workspace is recorded as the cwd of the sessions this runner creates
+	// (and of older sessions without one on their next turn); session_search
+	// scope workspace matches sessions by it.
+	Workspace string
 }
 
 // Event is one transport-neutral lifecycle or model-stream update.
@@ -155,6 +162,9 @@ func New(cfg Config) (*Runner, error) {
 	// (including later compaction calls) and tool call emits events.
 	if cfg.Plans != nil {
 		cfg.Plans.bind(cfg.Repository)
+	}
+	if cfg.Ledger != nil {
+		cfg.Ledger.bind(cfg.Repository)
 	}
 	rec := &recorder{sink: cfg.Repository, price: cfg.Price}
 	cfg.Provider = rec.observeProvider(cfg.Provider, cfg.ProviderName, cfg.Model)
@@ -228,6 +238,7 @@ func (r *Runner) NewSession(ctx context.Context, id, title string) (Session, err
 	model := Session{
 		ID:        id,
 		Title:     strings.TrimSpace(title),
+		Cwd:       r.cfg.Workspace,
 		Status:    store.SessionOpen,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -508,6 +519,10 @@ func (r *Runner) markRunning(ctx context.Context, sessionID, turnID string) (Ses
 		return Session{}, err
 	}
 	fresh.Status, fresh.LastTurnID, fresh.UpdatedAt = store.SessionRunning, turnID, time.Now().UTC()
+	// Sessions created before cwd was recorded pick it up on their next turn.
+	if fresh.Cwd == "" {
+		fresh.Cwd = r.cfg.Workspace
+	}
 	if err := r.cfg.Repository.UpdateSession(ctx, fresh); err != nil {
 		return fresh, err
 	}

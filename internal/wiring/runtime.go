@@ -178,6 +178,17 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// (including read-only). The recorder is bound to the runner in personal.New.
 	plans := personal.NewPlanRecorder()
 	capabilities.Registry.Register(native.NewUpdatePlanTool(plans))
+	sessionsDir, err := appconfig.ResolveSessionsDir()
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, fmt.Errorf("resolve sessions directory: %w", err)
+	}
+	// session_search / recall only read the session store and the saved
+	// outputs, so they are registered in every mode as well; the ledger is
+	// bound to the runner's store in personal.New.
+	ledger := personal.NewLedger(sessionsDir)
+	capabilities.Registry.Register(native.NewSessionSearchTool(ledger))
+	capabilities.Registry.Register(native.NewRecallTool(ledger, inlineOutputBytes()))
 	// Skills are scanned once per process; the skill tool (read-only, every
 	// mode) and the prompt listing exist only when some skill was found.
 	skillReg := buildDefaultSkillRegistry(workspace)
@@ -216,11 +227,6 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	lockRoot := filepath.Join(home, "run", "locks")
 	processRoot := filepath.Join(home, "run")
-	sessionsDir, err := appconfig.ResolveSessionsDir()
-	if err != nil {
-		_ = capabilities.Close()
-		return nil, fmt.Errorf("resolve sessions directory: %w", err)
-	}
 	repo, err := store.Open(dbPath)
 	if err != nil {
 		_ = capabilities.Close()
@@ -244,6 +250,8 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		CompactProvider: compactProvider,
 		CompactModel:    compactModel,
 		Plans:           plans,
+		Ledger:          ledger,
+		Workspace:       workspace,
 		Visibility:      vis,
 		Price:           priceLookup(settings),
 		// Tool outputs above tools.max_output_bytes go to
