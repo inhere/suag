@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.12.0] - 2026-10-12
+
+工具效率与稳健性：同模型对比 omp 时发现的步数与中断问题。依据见 [分析](docs/research/2026-10-11-suag-vs-omp-loop-analysis.md)。
+
 ### 新增
 
 - `file_edit` 支持 `edits` 列表：同一文件的多处替换一次调用完成，按顺序作用于上一处的结果，任一处失败则文件不变；ACP 差异预览与 chat 审批提示逐处显示。
@@ -210,7 +214,8 @@
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suag/compare/v0.11.0...HEAD
+[未发布]: https://github.com/inhere/suag/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/inhere/suag/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/inhere/suag/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/inhere/suag/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/inhere/suag/compare/v0.9.0...v0.9.1
