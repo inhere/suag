@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/inhere/suag/internal/personal/store"
@@ -78,6 +79,8 @@ type recorder struct {
 	// prefix compares each request with the session's previous one; its
 	// report goes on the model event (cache attribution).
 	prefix *prefixTracker
+	// workspace is shortened to <ws> in recorded argument summaries.
+	workspace string
 }
 
 func (r *recorder) record(ctx context.Context, e store.Event) {
@@ -239,7 +242,7 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 	if err == nil && res != nil {
 		addOutputAttrs(e.Attrs, res)
 	}
-	addCallAttrs(e.Attrs, call, res)
+	addCallAttrs(e.Attrs, call, res, o.rec.workspace)
 	o.rec.record(ctx, e)
 	// Every call reaching the registry counts, refused ones included.
 	runUsageFrom(ctx).addTool()
@@ -253,11 +256,22 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 }
 
 // addCallAttrs records what a tool call was about, for trace and analysis:
-// arg (a redacted one-line summary of the key arguments), target (the file
-// or directory paths of file tools) and exit_code (shell results).
-func addCallAttrs(attrs map[string]any, call agentcore.ToolCall, res *agentcore.ToolResult) {
+// arg (a redacted one-line summary of the key arguments, the workspace path
+// shortened to <ws>), target (the file or directory paths of file tools),
+// changes (the replacements of a file_edit call) and, for shell results,
+// exit_code, stderr (the command wrote to stderr) and test_failed (a test
+// command whose output reports a failure, whatever the exit code: a pipe or a
+// later command in a ";" list hides a failing test's exit code).
+func addCallAttrs(attrs map[string]any, call agentcore.ToolCall, res *agentcore.ToolResult, workspace string) {
 	if summary := summarizeToolArgs(call.Arguments); summary != "" {
-		attrs["arg"] = truncateRunes(redact.Secrets(summary), 160)
+		attrs["arg"] = truncateRunes(redact.Secrets(shortenWorkspace(summary, workspace)), 160)
+	}
+	if call.Name == "file_edit" {
+		changes := 1
+		if list, ok := call.Arguments["edits"].([]any); ok && len(list) > 0 {
+			changes = len(list)
+		}
+		attrs["changes"] = changes
 	}
 	var targets []string
 	for _, key := range []string{"path", "dir"} {
@@ -280,8 +294,37 @@ func addCallAttrs(attrs map[string]any, call agentcore.ToolCall, res *agentcore.
 			if code, err := strconv.Atoi(m[len(m)-1][1]); err == nil {
 				attrs["exit_code"] = code
 			}
+			if strings.HasPrefix(res.Content, "[stderr]\n") || strings.Contains(res.Content, "\n[stderr]\n") {
+				attrs["stderr"] = true
+			}
+			if command, _ := call.Arguments["command"].(string); testCommandPattern.MatchString(command) {
+				attrs["test_failed"] = testFailurePattern.MatchString(res.Content)
+			}
 		}
 	}
+}
+
+// testFailurePattern finds a failure report in test output (go test, cargo,
+// jest/vitest, pytest, maven, gradle), see addCallAttrs.
+var testFailurePattern = regexp.MustCompile(`(?m)^\s*--- FAIL|^FAIL\b|^panic: |test result: FAILED|^\s*FAIL\s+\S|\b[1-9]\d* (failed|failing)\b|^(FAILED|ERROR) |BUILD FAILURE|BUILD FAILED|^\S+\.go:\d+:\d+: `)
+
+// shortenWorkspace writes the workspace path (either slash form, any case on
+// Windows paths) as <ws> in an argument summary.
+func shortenWorkspace(s, workspace string) string {
+	if workspace == "" {
+		return s
+	}
+	lower := strings.ToLower(s)
+	if len(lower) != len(s) {
+		return s // case folding changed byte offsets (non-ASCII); leave it
+	}
+	for _, form := range []string{workspace, filepath.ToSlash(workspace), strings.ReplaceAll(workspace, "/", "\\")} {
+		if i := strings.Index(lower, strings.ToLower(form)); i >= 0 && form != "" {
+			s = s[:i] + "<ws>" + s[i+len(form):]
+			return shortenWorkspace(s, workspace)
+		}
+	}
+	return s
 }
 
 // exitCodePattern finds shell_exec's "[exit code: N]" trailer.

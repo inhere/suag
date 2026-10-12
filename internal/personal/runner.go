@@ -213,7 +213,7 @@ func New(cfg Config) (*Runner, error) {
 	}
 	rec := &recorder{sink: cfg.Repository, price: cfg.Price,
 		taint:  newTaintMarker(cfg.Repository, cfg.TaintTools, cfg.TaintOnSpill),
-		prefix: newPrefixTracker()}
+		prefix: newPrefixTracker(), workspace: cfg.Workspace}
 	cfg.Provider = rec.observeProvider(cfg.Provider, cfg.ProviderName, cfg.Model)
 	if cfg.Tools != nil {
 		// Stack: observe -> output -> (visibility -> approval -> base). The

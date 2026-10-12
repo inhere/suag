@@ -12,7 +12,7 @@
 - `--model`（以及 `SUAG_MODEL`、`model` 等引用）支持简单匹配：名字不是已配置的模型时按其一部分查找（不区分大小写，查键与 `model_id`，`provider/` 前缀限定范围），唯一匹配即用，如 `--model haiku`；多个匹配时报错并列出候选。
 - `anthropic` 类型支持思考档位：Claude 4.6 及以后的模型发送 adaptive thinking 与 `output_config.effort`，4.5 及更早的模型发送 `budget_tokens` 并带 interleaved-thinking beta 头；带签名的 thinking 块随工具调用保存并原样回传。主模型为 `anthropic` 类型时不做历史折叠（折叠会改写早先消息，使 thinking 签名失效）。原先设置档位只会警告并忽略。
 - 模型级 `type` 与 `base_url`（`providers.<id>.models.<model>.type` / `base_url`）覆盖 provider 的：同一网关的 Claude 模型可走 Anthropic 协议、其余模型走 OpenAI 兼容，不必拆成两个 provider。原先模型下写 `type` 会被忽略，Claude 模型仍按 OpenAI 协议请求而报错。
-- `suag trace <session> --analyze [--json]`：循环分析——步数与并行步数、各工具次数与失败、重复读与写后回读、每个文件的编辑次数、重复执行的命令、测试运行次数及首次通过后又跑了几次、转存/折叠/压缩、最慢的模型调用，以及未命中缓存的输入按来源拆分：新增内容、前缀断开后重发的早先内容（按 fold/segment/system/tools/rewrite）与 provider 侧未命中（按请求 JSON 大小估算）。工具事件新增 `arg`（脱敏参数摘要）、`target`（文件路径）、`exit_code`（shell），模型事件新增 `tool_calls`、`reasoning_chars`、`text_chars` 与前缀对比 `prefix`、`prefix_reused`、`prefix_rebuilt`、`prefix_fresh`；`suag trace` 的工具行显示退出码、字节数、转存与参数摘要，模型行显示 `calls=N`、`cached=N`，前缀断开时显示 `prefix=原因(rebuilt=…)`。
+- `suag trace <session> --analyze [--json]`：循环分析——步数与并行步数、各工具次数与失败、重复读与写后回读、每个文件的编辑次数、重复执行的命令、测试运行次数及首次通过后又跑了几次、转存/折叠/压缩、最慢的模型调用、模型与工具各自的耗时、阶段拆分（探索 / 首次写入到测试首次通过 / 通过后）、编辑步数与单处修改步数、退出码为 0 但有 stderr 的 shell 次数，以及未命中缓存的输入按来源拆分：新增内容、前缀断开后重发的早先内容（按 fold/segment/system/tools/rewrite）与 provider 侧未命中（按请求 JSON 大小估算）。工具事件新增 `arg`（脱敏参数摘要）、`target`（文件路径）、`exit_code`（shell），模型事件新增 `tool_calls`、`reasoning_chars`、`text_chars` 与前缀对比 `prefix`、`prefix_reused`、`prefix_rebuilt`、`prefix_fresh`，shell 事件新增 `stderr`、`test_failed`（按输出判断，管道或 `;` 隐藏的失败也能识别），file_edit 事件新增 `changes`，参数摘要中的工作区路径写作 `<ws>`；`suag trace` 的工具行显示退出码、字节数、转存与参数摘要，模型行显示 `calls=N`、`cached=N`，前缀断开时显示 `prefix=原因(rebuilt=…)`。
 
 ### 修复
 
@@ -25,6 +25,8 @@
 
 ### 变更
 
+- shell_exec 的输出去掉 ANSI 颜色码（如 gookit/assert 的失败报告即使不在终端也带颜色），不再进入上下文。
+- 使用约定新增两条：彼此独立的修改一起发（同一文件多处用 file_edit 的 `edits`，不同文件在同一次回复里）；依赖的 API 用一条命令列出（`go doc <包>` 或 grep 导出函数）。依据 R6 中 suag 一步只改一处、依赖查询逐文件读取的分析。
 - 历史折叠改为默认关闭（`context.fold_every` 默认 0，设为 10 恢复原行为）：P5 复测中折叠后重建缓存前缀约占未命中输入的三分之一，且关闭后与 omp 的对比更直接。
 - 同一次回复的多个工具调用在之后的请求里按原样作为并行调用回传：一条助手消息带全部调用，其后是各自的结果（OpenAI 兼容与 Anthropic 都是）；原先存成“调用、结果、调用、结果”交替排列，模型在历史里看不到并行的样例。只影响新产生的历史。
 - OpenAI 兼容 provider 只在带工具调用的助手消息上回传 `reasoning_content`，普通文本回答不再携带（减少输入 token；DeepSeek 已实测接受）。

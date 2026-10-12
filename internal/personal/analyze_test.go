@@ -63,7 +63,14 @@ func TestAnalyzeTrace(t *testing.T) {
 	assert.Eq(t, 1, a.TestRunsAfterPass) // the -count=3 run after the first pass
 	assert.Eq(t, 1, a.Folds)
 	assert.Eq(t, 400, a.ReasoningChars)
+	// steps: 1 read+list, 2 write, 3 failing test, 4 edit, 5 passing test, 6 test, 7 read, 8 answer
+	assert.Eq(t, 1, a.ExploreSteps)
+	assert.Eq(t, 4, a.WriteToGreenSteps)
+	assert.Eq(t, 3, a.AfterGreenSteps)
+	assert.Eq(t, 2, a.EditSteps)
+	assert.Eq(t, 2, a.SingleEditSteps)
 	assert.Eq(t, int64(9000), a.Slowest[0].DurationMs)
+	assert.Eq(t, int64(21000), a.ModelMs) // the compaction call is not counted
 
 	var out bytes.Buffer
 	assert.NoErr(t, WriteTraceAnalysis(&out, a, false))
@@ -72,6 +79,8 @@ func TestAnalyzeTrace(t *testing.T) {
 		"re-reads               a.go x2",
 		"reads after own write  1",
 		"tests                  3 runs, 1 after the first pass",
+		"phases                 explore 1, first write to green 4, after green 3 (model calls)",
+		"edit steps             2, 2 with a single change",
 		"slowest model calls    step 8 9.0s",
 	} {
 		assert.StrContains(t, out.String(), want)
@@ -147,4 +156,60 @@ func TestAnalyzeTraceCacheAttribution(t *testing.T) {
 	a = AnalyzeTrace([]store.Event{model(1000, 900, prefixFold, 2000, 1000, 1000)})
 	assert.Eq(t, int64(100), a.UncachedFresh+a.UncachedRebuilt[prefixFold])
 	assert.Eq(t, int64(0), a.UncachedProvider)
+}
+
+// TestAnalyzeTraceTestOutcome: a test run whose output reports a failure is
+// no pass even when the command exited 0 (a pipe or a later command), and
+// a step with several changes is no single-change step.
+func TestAnalyzeTraceTestOutcome(t *testing.T) {
+	model := store.Event{Kind: store.EventModel, Status: eventOK, Attrs: map[string]any{}}
+	shell := func(code int, failed bool) store.Event {
+		return store.Event{Kind: store.EventTool, Name: "shell_exec", Status: eventOK,
+			Attrs: map[string]any{"arg": "command=go test ./... | tail -5", "exit_code": float64(code), "test_failed": failed}}
+	}
+	edit := func(changes int) store.Event {
+		return store.Event{Kind: store.EventTool, Name: "file_edit", Status: eventOK,
+			Attrs: map[string]any{"target": []any{"a.go"}, "changes": float64(changes)}}
+	}
+	a := AnalyzeTrace([]store.Event{
+		model, edit(1),
+		model, shell(0, true), // exit 0, but the output reports a failure
+		model, edit(3),
+		model, edit(1), edit(1),
+		model, shell(0, false),
+		model,
+	})
+	assert.Eq(t, 0, a.ExploreSteps)
+	assert.Eq(t, 5, a.WriteToGreenSteps)
+	assert.Eq(t, 1, a.AfterGreenSteps)
+	assert.Eq(t, 3, a.EditSteps)
+	assert.Eq(t, 1, a.SingleEditSteps)
+	assert.Eq(t, 0, a.TestRunsAfterPass)
+
+	none := AnalyzeTrace([]store.Event{model, edit(1), model})
+	assert.Eq(t, -1, none.WriteToGreenSteps)
+	assert.Eq(t, -1, none.AfterGreenSteps)
+}
+
+func TestCallAttrsShellAndEdit(t *testing.T) {
+	ws := `D:\work\x\ws`
+	attrs := map[string]any{}
+	addCallAttrs(attrs, agentcore.ToolCall{Name: "shell_exec", Arguments: map[string]any{
+		"command": `cd D:\Work\x\ws; go vet ./...; go test ./... | tail -3`}},
+		&agentcore.ToolResult{Content: "--- FAIL: TestA (0.00s)\nFAIL\n[stderr]\nvet: x.go:1:2: bad\n[exit code: 0]"}, ws)
+	assert.Eq(t, "command=cd <ws>; go vet ./...; go test ./... | tail -3", attrs["arg"])
+	assert.Eq(t, true, attrs["stderr"])
+	assert.Eq(t, true, attrs["test_failed"])
+	assert.Eq(t, 0, attrs["exit_code"])
+
+	attrs = map[string]any{}
+	addCallAttrs(attrs, agentcore.ToolCall{Name: "shell_exec", Arguments: map[string]any{"command": "go test ./..."}},
+		&agentcore.ToolResult{Content: "ok  \tx\t0.1s\n[exit code: 0]"}, ws)
+	assert.Eq(t, false, attrs["test_failed"])
+	assert.Nil(t, attrs["stderr"])
+
+	attrs = map[string]any{}
+	addCallAttrs(attrs, agentcore.ToolCall{Name: "file_edit", Arguments: map[string]any{"path": "a.go",
+		"edits": []any{map[string]any{}, map[string]any{}}}}, nil, ws)
+	assert.Eq(t, 2, attrs["changes"])
 }

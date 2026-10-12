@@ -150,7 +150,7 @@ gofer job resume <job-id> --prompt "继续上个问题"
 
 - `--from <session>`：`suag run --from <旧会话> --prompt ...` 新建会话并继承来源的摘要、计划与已加载工具（来源只读，不能与 `--resume` 同用）。可同时传 `--session-id` 指定新会话 ID；交接失败（如生成摘要失败）时不会创建会话，同一 ID 可直接重试。Gofer 目前没有对应的模板变量（Gofer 侧计划以 `--from-session` 参数支持），在此之前需要在 job 的 agent args 中手工写入 `--from <session-id>`。
 - 会话不存在：`run`/`chat` 的 `--resume` 目标或 `--from` 来源不存在时，退出码为 4，stderr 输出 `session not found: <id>`；被 Ctrl-C / SIGTERM 中断时退出码为 130，stderr 输出 `已中断`；其他失败为 1。旧版本的会话 ID 在新库中都属于这种情况，可据此改用 `--from` 或新建会话。
-- `suag trace <session> [--turn id] [--json] [--analyze]`（`--analyze` 输出循环分析：步数、并行调用、重复读、写后回读、重复命令、首次通过后的测试次数、未命中缓存输入的来源拆分等）、`suag stats [--session id] [--since 7d] [--json]`、`suag export <session> [--redact] [-o file]` 读取同一个会话库，在运行 Suag 的主机上执行（Gofer worker 所在用户的 `SUAG_HOME`）；`export --redact` 去掉工具参数，适合外发。
+- `suag trace <session> [--turn id] [--json] [--analyze]`（`--analyze` 输出循环分析：步数、并行调用、重复读、写后回读、重复命令、首次通过后的测试次数、阶段拆分（探索 / 首次写入到转绿 / 转绿后）、单处编辑步、未命中缓存输入的来源拆分等）、`suag stats [--session id] [--since 7d] [--json]`、`suag export <session> [--redact] [-o file]` 读取同一个会话库，在运行 Suag 的主机上执行（Gofer worker 所在用户的 `SUAG_HOME`）；`export --redact` 去掉工具参数，适合外发。
 - `run` 的 stream-json 另有两种新增行：`tool_call`（`name`、`args` 摘要）与 `tool_result`（`name`、`is_error`、脱敏并截断的 `summary`）；已有行不变。未配置 `ndjson_keep` 的调用方会收到它们，上面的示例 `ndjson_keep` 不含它们，需要在 Gofer 中显示工具调用时再加入。`suag trace` 会显示 plan 行（文本 `plan ✔/▶/○ 步骤`，`--json` 为 `{"kind":"plan",...}`）。
 - `run` 的 stream-json 在 `plan` 事件上输出完整计划；`ndjson_keep` 示例未保留它，需要在 Gofer 中显示计划时把 `plan` 加入 `ndjson_keep`。
 - `tools.deferred`（`auto`/`always`/`never`，默认 `auto`）在 `~/.suag/config.yaml` 中配置。MCP 工具多时被延迟加载，模型通过内置 `tool_search` 取回；Gofer 不需要额外配置。

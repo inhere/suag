@@ -20,17 +20,21 @@ var testCommandPattern = regexp.MustCompile(`\b(go test|pytest|cargo test|npm (r
 // from the events alone (tool attrs arg/target/exit_code, model attr
 // tool_calls), so older sessions without these attrs give partial numbers.
 type TraceAnalysis struct {
-	ModelCalls      int            `json:"model_calls"`
-	ToolCalls       int            `json:"tool_calls"`
-	ParallelSteps   int            `json:"parallel_steps"`     // model calls that issued more than one tool call
-	MaxCallsPerStep int            `json:"max_calls_per_step"` // most tool calls one model call issued
-	InputTokens     int64          `json:"input_tokens"`
-	CacheReadTokens int64          `json:"cache_read_tokens"`
-	OutputTokens    int64          `json:"output_tokens"`
-	ReasoningChars  int            `json:"reasoning_chars"`
-	TextChars       int            `json:"text_chars"`
-	Tools           map[string]int `json:"tools"`
-	ToolErrors      map[string]int `json:"tool_errors,omitempty"`
+	ModelCalls      int   `json:"model_calls"`
+	ToolCalls       int   `json:"tool_calls"`
+	ParallelSteps   int   `json:"parallel_steps"`     // model calls that issued more than one tool call
+	MaxCallsPerStep int   `json:"max_calls_per_step"` // most tool calls one model call issued
+	InputTokens     int64 `json:"input_tokens"`
+	CacheReadTokens int64 `json:"cache_read_tokens"`
+	OutputTokens    int64 `json:"output_tokens"`
+	// ModelMs and ToolMs are the time spent in main model calls and in tool
+	// calls (side calls such as compaction are not counted).
+	ModelMs        int64          `json:"model_ms"`
+	ToolMs         int64          `json:"tool_ms"`
+	ReasoningChars int            `json:"reasoning_chars"`
+	TextChars      int            `json:"text_chars"`
+	Tools          map[string]int `json:"tools"`
+	ToolErrors     map[string]int `json:"tool_errors,omitempty"`
 	// Rereads lists files read more than once; ReadsAfterWrite counts reads
 	// of a file this session had already written or edited.
 	Rereads         []Count `json:"rereads,omitempty"`
@@ -44,9 +48,24 @@ type TraceAnalysis struct {
 	// came after the first passing one (re-verification).
 	TestRuns          int `json:"test_runs"`
 	TestRunsAfterPass int `json:"test_runs_after_pass"`
-	Spills            int `json:"spills"`
-	Minimized         int `json:"minimized"` // results tidied by the output minimizer
-	Folds             int `json:"folds"`
+	// Phases, in model calls: before the first write or edit, from that step
+	// to the first passing test run, and after it (-1 when the run never got
+	// there). A test run passes when its output reports no failure (attr
+	// test_failed) and it exited 0.
+	ExploreSteps      int `json:"explore_steps"`
+	WriteToGreenSteps int `json:"write_to_green_steps"`
+	AfterGreenSteps   int `json:"after_green_steps"`
+	// EditSteps are model calls that wrote or edited files; SingleEditSteps
+	// those whose only call made a single change (one file_edit replacement
+	// or one file_write): fixes sent one per step instead of together.
+	EditSteps       int `json:"edit_steps"`
+	SingleEditSteps int `json:"single_edit_steps"`
+	// ShellStderrOK counts shell runs that exited 0 but wrote to stderr (a
+	// failing command before ";" hides its exit code).
+	ShellStderrOK int `json:"shell_stderr_exit0"`
+	Spills        int `json:"spills"`
+	Minimized     int `json:"minimized"` // results tidied by the output minimizer
+	Folds         int `json:"folds"`
 	// Cache attribution from the model attrs prefix*: the input tokens the
 	// provider did not serve from its cache, split into content new since
 	// the previous request, earlier content sent again after a prefix break
@@ -86,18 +105,32 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 	written := map[string]bool{}
 	passed := false
 	var slow []SlowCall
+	firstWrite, green := -1, -1
+	// the current step's calls: how many, how many edits, changes made
+	stepCalls, stepEdits, stepChanges := 0, 0, 0
+	closeStep := func() {
+		if stepEdits > 0 {
+			a.EditSteps++
+			if stepCalls == 1 && stepChanges == 1 {
+				a.SingleEditSteps++
+			}
+		}
+		stepCalls, stepEdits, stepChanges = 0, 0, 0
+	}
 	for _, e := range events {
 		switch e.Kind {
 		case store.EventModel:
 			if p, _ := e.Attrs["purpose"].(string); p != "" {
 				continue // compaction and other side calls are not steps
 			}
+			closeStep()
 			a.ModelCalls++
 			calls := attrInt(e.Attrs["tool_calls"])
 			if calls > 1 {
 				a.ParallelSteps++
 			}
 			a.MaxCallsPerStep = max(a.MaxCallsPerStep, calls)
+			a.ModelMs += e.DurationMs
 			a.InputTokens += e.InputTokens
 			a.CacheReadTokens += e.CacheReadTokens
 			a.OutputTokens += e.OutputTokens
@@ -107,6 +140,8 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 			slow = append(slow, SlowCall{Step: a.ModelCalls, DurationMs: e.DurationMs, OutputTokens: e.OutputTokens, ToolCalls: calls})
 		case store.EventTool, store.EventDenial:
 			a.ToolCalls++
+			a.ToolMs += e.DurationMs
+			stepCalls++
 			a.Tools[e.Name]++
 			if e.Status != eventOK {
 				a.ToolErrors[e.Name]++
@@ -131,6 +166,11 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 					edits[t]++
 					written[t] = true
 				}
+				if firstWrite < 0 {
+					firstWrite = a.ModelCalls
+				}
+				stepEdits++
+				stepChanges += max(attrInt(e.Attrs["changes"]), 1)
 			case "shell_exec":
 				a.ShellRuns++
 				arg, _ := e.Attrs["arg"].(string)
@@ -139,14 +179,20 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 				failed := e.Status != eventOK || (hasCode && attrInt(code) != 0)
 				if failed {
 					a.ShellFailures++
+				} else if stderr, _ := e.Attrs["stderr"].(bool); stderr {
+					a.ShellStderrOK++
 				}
-				if testCommandPattern.MatchString(arg) {
+				testFailed, reported := e.Attrs["test_failed"].(bool)
+				if reported || testCommandPattern.MatchString(arg) {
 					a.TestRuns++
 					if passed {
 						a.TestRunsAfterPass++
 					}
-					if !failed && hasCode {
+					if !failed && hasCode && !testFailed {
 						passed = true
+						if green < 0 && firstWrite >= 0 {
+							green = a.ModelCalls
+						}
 					}
 				}
 			}
@@ -157,6 +203,17 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 				a.Compactions++
 			}
 		}
+	}
+	closeStep()
+	// Steps are 1-based model calls; firstWrite and green name the step a
+	// call belonged to.
+	a.ExploreSteps, a.WriteToGreenSteps, a.AfterGreenSteps = a.ModelCalls, -1, -1
+	if firstWrite > 0 {
+		a.ExploreSteps = firstWrite - 1
+	}
+	if green > 0 {
+		a.WriteToGreenSteps = green - firstWrite + 1
+		a.AfterGreenSteps = a.ModelCalls - green
 	}
 	a.Rereads = countsAbove(reads, 1)
 	a.EditsPerFile = countsAbove(edits, 0)
@@ -218,13 +275,17 @@ func WriteTraceAnalysis(w io.Writer, a TraceAnalysis, asJSON bool) error {
 		a.ModelCalls, a.ToolCalls, a.ParallelSteps, a.MaxCallsPerStep)
 	row("tokens", "in %s (cache read %s), out %s; reasoning %s chars, text %s chars",
 		human(a.InputTokens), human(a.CacheReadTokens), human(a.OutputTokens), human(int64(a.ReasoningChars)), human(int64(a.TextChars)))
+	row("time", "model %.1fs, tools %.1fs", float64(a.ModelMs)/1000, float64(a.ToolMs)/1000)
 	row("tools", "%s", joinCounts(sortedCounts(a.Tools), a.ToolErrors))
 	row("re-reads", "%s", orNone(joinCounts(a.Rereads, nil)))
 	row("reads after own write", "%d", a.ReadsAfterWrite)
 	row("edits per file", "%s", orNone(joinCounts(a.EditsPerFile, nil)))
-	row("shell", "%d runs, %d failed (exit != 0)", a.ShellRuns, a.ShellFailures)
+	row("shell", "%d runs, %d failed (exit != 0), %d exited 0 with stderr output", a.ShellRuns, a.ShellFailures, a.ShellStderrOK)
 	row("repeated commands", "%s", orNone(joinCounts(a.RepeatedCommands, nil)))
 	row("tests", "%d runs, %d after the first pass", a.TestRuns, a.TestRunsAfterPass)
+	row("phases", "explore %d, first write to green %s, after green %s (model calls)",
+		a.ExploreSteps, phaseSteps(a.WriteToGreenSteps), phaseSteps(a.AfterGreenSteps))
+	row("edit steps", "%d, %d with a single change (one file_edit replacement or one file_write)", a.EditSteps, a.SingleEditSteps)
 	row("uncached input", "%s", uncachedSummary(a))
 	row("spills / folds", "%d / %d (compactions %d, tidied outputs %d)", a.Spills, a.Folds, a.Compactions, a.Minimized)
 	var slow []string
@@ -346,4 +407,12 @@ func intCounts(m map[string]int64) map[string]int {
 		out[k] = int(v)
 	}
 	return out
+}
+
+// phaseSteps renders a phase length, "-" when the run never got there.
+func phaseSteps(n int) string {
+	if n < 0 {
+		return "-"
+	}
+	return fmt.Sprint(n)
 }

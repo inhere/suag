@@ -524,7 +524,7 @@ providers:
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, "cc/claude-haiku-5-5", s.Main.Ref())
 		assert.Eq(t, ProviderTypeAnthropic, s.Main.Provider.Type) // the model's own type still applies
-		s, err = resolve(t, "KIMI") // another provider, any case
+		s, err = resolve(t, "KIMI")                               // another provider, any case
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, "oc/kimi-k3", s.Main.Ref())
 	})
