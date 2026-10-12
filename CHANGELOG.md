@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.14.0] - 2026-10-13
+
+工具结果给出可信证据、并发读取与并行调用回传、缓存未命中归因与循环分析、Claude 思考档位；历史折叠改为默认关闭。同模型 T9 对比中模型调用从 44.7 降到 21.7（omp 23.3），依据见 [分析](docs/research/2026-10-11-suag-vs-omp-loop-analysis.md)。
+
 ### 新增
 
 - shell 输出整理（`tools.minimize_output`，默认开）：去掉颜色码与进度重绘，折叠连续相同的行；测试与构建输出按输出规则裁剪：全部通过时只留各包结果和一行汇总（如 `go test: 1 package(s) ok, 20 test(s) passed`），有失败时只留失败用例及其信息、日志与编译错误。内置规则覆盖 go test、cargo test、jest/vitest/mocha 与 npm/pnpm/yarn/bun test、pytest、Maven、Gradle；`$SUAG_HOME/output-rules.yaml` 与 `<workspace>/.suag/output-rules.yaml` 可按名字替换、新增或用 `enabled: false` 关闭规则（格式见内置的 `output_rules.yaml`）。命令本身用管道过滤了输出时不套用规则（R6 中模型用 `go test -v | Select-String` 列用例名，被整理掉后只好 `recall` 原文）。原文保存为 ref，结果末尾注明，可用 `recall` 取回；`suag trace` 显示 `tidied(raw=…)`，`--analyze` 统计整理次数。
@@ -264,7 +268,8 @@
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suag/compare/v0.13.0...HEAD
+[未发布]: https://github.com/inhere/suag/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/inhere/suag/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/inhere/suag/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/inhere/suag/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/inhere/suag/compare/v0.10.0...v0.11.0
