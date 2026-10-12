@@ -32,13 +32,20 @@ const (
 )
 
 // psPrefix makes PowerShell write UTF-8 (both its own output and what it
-// pipes to native commands) so Chinese text is not mangled.
-const psPrefix = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;\n"
+// pipes to native commands) so Chinese text is not mangled, turns off ANSI
+// colors (PowerShell 7 only; they cost tokens and carry no information), and
+// opens the script block psSuffix closes.
+const psPrefix = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;" +
+	"if ($PSStyle) { $PSStyle.OutputRendering='PlainText' }\n& {\n"
 
-// psSuffix makes the native command's exit code the process exit code; a
-// failed cmdlet (with no native exit code) exits 1. -Command alone would
-// report only whether the last statement succeeded.
-const psSuffix = "\n$__ok=$?; if ($LASTEXITCODE) { exit $LASTEXITCODE }; if (-not $__ok) { exit 1 }; exit 0"
+// psSuffix pipes the command's output to Out-Default before exiting: implicit
+// table formatting (Get-ChildItem, Select-Object, ...) waits about 300 ms to
+// size its columns, and an exit inside that window dropped the whole table,
+// so the model saw an empty result with exit code 0. It also makes the native
+// command's exit code the process exit code; a failed cmdlet (with no native
+// exit code) exits 1. -Command alone would report only whether the last
+// statement succeeded.
+const psSuffix = "\n$global:__ok=$? } | Out-Default\nif ($LASTEXITCODE) { exit $LASTEXITCODE }; if (-not $__ok) { exit 1 }; exit 0"
 
 // shellSpec is the resolved shell the tool runs commands with.
 type shellSpec struct {

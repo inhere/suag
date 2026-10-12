@@ -33,6 +33,17 @@ func TestShellExecWindows(t *testing.T) {
 		res, _ := runShell(t, tool, map[string]any{"command": "Get-Item does-not-exist-xyz"})
 		assert.StrContains(t, res.Content, "[exit code: 1]")
 	})
+	t.Run("table output is not dropped", func(t *testing.T) {
+		res, _ := runShell(t, tool, map[string]any{"command": `Get-ChildItem $env:WINDIR | Select-Object -First 2 Name`})
+		assert.StrContains(t, res.Content, "Name")
+		assert.StrContains(t, res.Content, "----")
+		assert.StrContains(t, res.Content, "[exit code: 0]")
+		assert.StrNotContains(t, res.Content, "\x1b[")
+	})
+	t.Run("exit inside the command", func(t *testing.T) {
+		res, _ := runShell(t, tool, map[string]any{"command": "$x = 5; $x * 2; exit 7"})
+		assert.StrContains(t, res.Content, "10\n[exit code: 7]")
+	})
 	t.Run("success exits 0", func(t *testing.T) {
 		res, _ := runShell(t, tool, map[string]any{"command": "Write-Output ok"})
 		assert.StrContains(t, res.Content, "ok\n[exit code: 0]")
