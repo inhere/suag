@@ -102,6 +102,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `memory` | 状态 | 对长期记忆 `add`、`replace`、`remove`、`get`、`search`（`scope` 为 project 或 user），见[记忆](#记忆) |
 | `file_write` | 写 | 整文件写入 |
 | `file_edit` | 写 | 替换一处唯一的字符串（`replace_all` 替换全部）；保留 CRLF |
+| `file_remove` | 写 | 删除文件，或带 `recursive` 删除目录：移入 `$SUAG_HOME/trash/` 保留 7 天（`origin.json` 记录原路径），单次最多 1000 个文件。被 `.gitignore` 忽略的目录（以及 `node_modules`、`vendor`、`dist`），如被忽略的 `tmp/` 下的测试仓库，视为可再生：不遍历、不计数、直接永久删除，并在结果中列出；被忽略的单个文件（如 `.env`）仍进回收区。拒绝工作区根、工作区自己的 `.git`、用户主目录、通配符与工作区外路径 |
 | `shell_exec` | 写 | 执行命令（Windows 用 PowerShell，其他系统用 `sh`），带超时；返回输出与退出码 |
 
 - **默认只读**：写工具只在 `run --allow-write`、chat 设置 `tools.allow_write: true`、或 ACP 会话处于 `default` 模式时才有；`--read-only` 永远优先。模型调用了未开启的工具时，会被告知开启方法，并计入拒绝次数。

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -115,6 +116,16 @@ func readRoots() ([]native.ReadRoot, []error) {
 	return append(roots, extra...), errs
 }
 
+// trashDir is where file_remove moves removed paths: <SUAG_HOME>/trash, or
+// "" (file_remove unavailable) when SUAG_HOME cannot be resolved.
+func trashDir() string {
+	home, err := axconfig.ResolveSuagHome()
+	if err != nil || !filepath.IsAbs(home) {
+		return ""
+	}
+	return filepath.Join(home, "trash")
+}
+
 // nativeEnv reads the tools.* settings native tools are built with.
 func nativeEnv(workspace string) native.Env {
 	roots, errs := readRoots()
@@ -125,6 +136,7 @@ func nativeEnv(workspace string) native.Env {
 	})
 	return native.Env{
 		Workspace:         workspace,
+		TrashDir:          trashDir(),
 		ReadRoots:         native.RootPaths(roots),
 		InlineBytes:       inlineOutputBytes(),
 		RawBytes:          rawOutputBytes(),

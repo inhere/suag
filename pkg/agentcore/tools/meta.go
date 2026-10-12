@@ -7,8 +7,10 @@ import "github.com/inhere/suag/pkg/agentcore/api"
 type Category string
 
 const (
-	CategoryRead    Category = "read"
-	CategoryEdit    Category = "edit"
+	CategoryRead Category = "read"
+	CategoryEdit Category = "edit"
+	// CategoryDelete removes files (file_remove).
+	CategoryDelete  Category = "delete"
 	CategoryExecute Category = "execute"
 	CategorySearch  Category = "search"
 	CategoryFetch   Category = "fetch"

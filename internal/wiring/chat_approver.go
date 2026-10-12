@@ -93,6 +93,22 @@ func (a *chatApprover) question(call agentcore.ToolCall) tools.Question {
 	switch call.Name {
 	case "shell_exec":
 		details = []string{"命令：" + argText(args["command"])}
+	case "file_remove":
+		details = []string{"路径：" + a.fullPath(argText(args["path"]))}
+		plan, err := native.PlanRemove(a.workspace, args)
+		switch {
+		case err != nil:
+			details = append(details, "检查："+err.Error())
+		case plan.Purge:
+			details = append(details, "被忽略的可再生内容：直接永久删除，不进回收区")
+		case plan.Dir:
+			details = append(details, fmt.Sprintf("目录：%d 个文件，%d 字节，移入回收区保留 7 天", plan.Files, plan.Bytes))
+		default:
+			details = append(details, fmt.Sprintf("文件：%d 字节，移入回收区保留 7 天", plan.Bytes))
+		}
+		if err == nil && len(plan.PurgeDirs) > 0 {
+			details = append(details, fmt.Sprintf("直接永久删除 %d 个被忽略的目录：%s", len(plan.PurgeDirs), native.NotedDirs(plan.PurgeDirs)))
+		}
 	case "file_write":
 		details = []string{
 			"路径：" + a.fullPath(argText(args["path"])),

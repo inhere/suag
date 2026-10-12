@@ -39,7 +39,7 @@ func policyCatalogTool(name string) func(t *testing.T, cwd string) agentcore.Too
 		t.Helper()
 		for _, spec := range native.Catalog() {
 			if spec.Name == name {
-				tool := spec.New(native.Env{Workspace: cwd, SerpAPIKey: "test-key"})
+				tool := spec.New(native.Env{Workspace: cwd, SerpAPIKey: "test-key", TrashDir: t.TempDir()})
 				assert.Require(t, assert.NotNil(t, tool))
 				return tool
 			}
@@ -70,7 +70,7 @@ func policyRows() []policyRow {
 		allowed("file_grep", acp.ToolKindSearch), allowed("file_find", acp.ToolKindSearch),
 		allowed("web_search", acp.ToolKindSearch), allowed("web_fetch", acp.ToolKindFetch),
 		gated("file_write", acp.ToolKindEdit, true), gated("file_edit", acp.ToolKindEdit, true),
-		gated("shell_exec", acp.ToolKindExecute, false),
+		gated("shell_exec", acp.ToolKindExecute, false), gated("file_remove", acp.ToolKindDelete, false),
 		wired("update_plan", acp.ToolKindThink, func(*testing.T, string) agentcore.Tool {
 			return native.NewUpdatePlanTool(personal.NewPlanRecorder())
 		}),

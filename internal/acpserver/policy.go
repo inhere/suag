@@ -359,6 +359,7 @@ func (h *permissionHook) tool(name string) agentcore.Tool {
 var acpKinds = map[tools.Category]acp.ToolKind{
 	tools.CategoryRead:    acp.ToolKindRead,
 	tools.CategoryEdit:    acp.ToolKindEdit,
+	tools.CategoryDelete:  acp.ToolKindDelete,
 	tools.CategoryExecute: acp.ToolKindExecute,
 	tools.CategorySearch:  acp.ToolKindSearch,
 	tools.CategoryFetch:   acp.ToolKindFetch,

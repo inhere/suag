@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -210,6 +211,18 @@ func TestChatApproverQuestion(t *testing.T) {
 	t.Run("file_write shows the full path and the content size", func(t *testing.T) {
 		q := approver.question(agentcore.ToolCall{Name: "file_write", Arguments: map[string]any{"path": "dir/a.txt", "content": "你好"}})
 		assert.Eq(t, []string{"路径：" + filepath.Join(filepath.FromSlash("/work"), "dir/a.txt"), "内容：6 字节"}, q.Details)
+	})
+	t.Run("file_remove shows the path and what would be removed", func(t *testing.T) {
+		ws := t.TempDir()
+		assert.NoErr(t, os.MkdirAll(filepath.Join(ws, "out"), 0o755))
+		assert.NoErr(t, os.WriteFile(filepath.Join(ws, "out", "a.txt"), []byte("abc"), 0o644))
+		assert.NoErr(t, os.MkdirAll(filepath.Join(ws, "out", "node_modules", "m"), 0o755))
+		ra := newChatApprover(nil, false, nil, ws)
+		q := ra.question(agentcore.ToolCall{Name: "file_remove", Arguments: map[string]any{"path": "out", "recursive": true}})
+		assert.Eq(t, []string{"路径：" + filepath.Join(ws, "out"), "目录：1 个文件，3 字节，移入回收区保留 7 天",
+			"直接永久删除 1 个被忽略的目录：out/node_modules/"}, q.Details)
+		q = ra.question(agentcore.ToolCall{Name: "file_remove", Arguments: map[string]any{"path": "."}})
+		assert.StrContains(t, q.Details[1], "检查：refusing to remove the workspace root")
 	})
 	t.Run("file_edit previews old and new text", func(t *testing.T) {
 		long := strings.Repeat("line\n", 30)

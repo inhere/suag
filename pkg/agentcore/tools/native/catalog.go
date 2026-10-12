@@ -12,6 +12,9 @@ import (
 type Env struct {
 	// Workspace confines file tools and is the shell working directory.
 	Workspace string
+	// TrashDir is where file_remove moves removed paths (kept TrashRetention);
+	// empty leaves file_remove unavailable.
+	TrashDir string
 	// ReadRoots are directories outside the workspace the read-only file tools
 	// may read too (dependency sources, tools.read_roots). Writes never go there.
 	ReadRoots []string
@@ -75,6 +78,12 @@ func Catalog() []Spec {
 		}},
 		{Name: "file_edit", New: func(env Env) api.Tool {
 			return &FileEditTool{workspace: env.Workspace}
+		}},
+		{Name: "file_remove", New: func(env Env) api.Tool {
+			if env.TrashDir == "" {
+				return nil
+			}
+			return NewFileRemoveTool(env.Workspace, env.TrashDir)
 		}},
 		{Name: "shell_exec", New: func(env Env) api.Tool {
 			t := NewShellExecTool(env.Workspace, 0)

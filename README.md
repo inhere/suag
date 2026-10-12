@@ -102,6 +102,7 @@ All data lives in `$SUAG_HOME/db/sessions.db`. Model and provider details: [LLM 
 | `memory` | state | `add`, `replace`, `remove`, `get`, `search` on long-term memory (`scope` project or user); see [Memory](#memory) |
 | `file_write` | write | Write a whole file |
 | `file_edit` | write | Replace an exact, unique string (or all with `replace_all`), or several with `edits` in one call (all or nothing); keeps CRLF |
+| `file_remove` | write | Remove a file, or a directory with `recursive`: moved to `$SUAG_HOME/trash/` and kept 7 days (`origin.json` records where it came from), at most 1000 files per call. Directories ignored by `.gitignore` (and `node_modules`, `vendor`, `dist`), such as a test repository under an ignored `tmp/`, are regenerable: deleted for good without being walked or counted, and listed in the result. Ignored single files like `.env` still go to the trash. Refuses the workspace root, its own `.git`, the home directory, wildcards and paths outside the workspace |
 | `shell_exec` | write | Run a command (PowerShell on Windows, `sh` elsewhere) with a timeout; returns output and exit code |
 
 - **Read-only by default.** Write tools exist only with `run --allow-write`, chat with `tools.allow_write: true`, or an ACP session in `default` mode. `--read-only` always wins. If the model calls a disabled tool, it is told how to enable it, and the call counts as a refusal.

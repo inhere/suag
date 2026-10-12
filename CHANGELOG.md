@@ -6,6 +6,7 @@
 
 ### 新增
 
+- 内置工具 `file_remove`：删除工作区内的文件或目录（目录需 `recursive`），移入 `$SUAG_HOME/trash/` 保留 7 天、可恢复，单次最多 1000 个文件。被 `.gitignore` 忽略的目录（及 `node_modules`、`vendor`、`dist`）视为可再生：不遍历、不计数、直接永久删除并在结果中列出（被忽略的 `tmp/` 下的测试仓库可整体删除，回收区不会被缓存撑大）；被忽略的单个文件（如 `.env`）仍进回收区。拒绝工作区根、工作区自己的 `.git`、用户主目录、通配符与工作区外路径。chat 询问显示进回收区的文件数与将直接删除的目录，ACP 报为 `delete` 类型；使用约定要求删除用它而不是 shell。
 - `providers.<id>.models.<key>.model_id`：请求里发送的模型 id，可给很长的上游 id 起短名（如 `deepseek-v4.1-flash` → `deepseek/deepseek-v4.1-flash`）；引用、trace、统计与价格按短名，用完整 id 引用也能对应到短名。`suag manifest` 显示实际发送的 id。
 - 思考档位：`run`/`chat`/`manifest` 新增 `--thinking`（`off|minimal|low|medium|high|xhigh|max|auto`，与 omp 相同），配置为 `providers.<id>.thinking` 与 `models.<model>.thinking`；`openai` 类型作为 `reasoning_effort` 原样发送，不设或 `auto` 不发送。`anthropic` 类型暂不支持。
 - `providers.<id>.context_window`：provider 下所有模型的默认上下文窗口，优先级在模型级之后、按名推断之前。

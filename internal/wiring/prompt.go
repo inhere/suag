@@ -46,6 +46,7 @@ func basePrompt() string {
 	b.WriteString("- Read large files in windows with file_read offset/limit instead of all at once.\n")
 	b.WriteString("- Read a file before changing it; prefer small exact edits over rewriting whole files.\n")
 	b.WriteString("- Shell commands cannot be interactive and have a timeout; pass a larger timeout for long builds or tests.\n")
+	b.WriteString("- Delete files and directories with file_remove (it keeps them in a trash), not with shell rm/del/Remove-Item.\n")
 	b.WriteString("- When a tool is refused or not enabled, do not retry it; explain what is needed instead.\n")
 	// Kept from the step-count experiment: a mid-task memory write disappeared
 	// with it, while the other step-count conventions made no difference
