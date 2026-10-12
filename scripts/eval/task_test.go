@@ -147,7 +147,8 @@ func TestPrepareWorkspaceRepo(t *testing.T) {
 	assert.NoErr(t, task.prepareWorkspace(ctx, ws))
 	b, err := os.ReadFile(filepath.Join(ws, "a.txt"))
 	assert.NoErr(t, err)
-	assert.Eq(t, "v1\n", string(b))
+	// git archive applies the eol settings (core.autocrlf=true on Windows CI).
+	assert.Eq(t, "v1\n", strings.ReplaceAll(string(b), "\r\n", "\n"))
 	_, err = os.Stat(filepath.Join(ws, "sub", "b.go"))
 	assert.NoErr(t, err)
 	assert.Eq(t, "", strings.TrimSpace(gitIn(t, ws, "status", "--porcelain")))
