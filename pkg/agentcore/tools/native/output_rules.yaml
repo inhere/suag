@@ -1,0 +1,110 @@
+# Built-in shell output rules for the output minimizer (tools.minimize_output).
+# A rule applies when its `match` regex matches the shell command. It drops
+# lines that only say something passed and keeps everything that may matter;
+# the original output is always kept under a ref. Users override or add
+# rules by name in $SUAG_HOME/output-rules.yaml or <repo>/.suag/output-rules.yaml
+# (`enabled: false` turns a built-in rule off).
+#
+# Fields:
+#   match    regex on the command
+#   drop     lines removed (outside a failing block)
+#   block    per-test grouping: lines matching `body` after `start`, or after a
+#            `pass` line, belong to that test; a `pass` line drops them, a
+#            `fail` line keeps them
+#   failure  lines that mean something failed (kept; no summary then)
+#   count    name -> regex; matching lines are counted for the summary
+#   summary  printed when nothing failed and a count is > 0; {name} = count,
+#            a [part] whose counts are all 0 is left out
+
+rules:
+  - name: go-test
+    match: '\bgo test\b'
+    drop:
+      - '^\s*=== (RUN|PAUSE|CONT|NAME)\s'
+      - '^\s*--- (PASS|SKIP): '
+      - '^PASS$'
+      - '^\?\s+\S+\s+\[no test files\]$'
+    block:
+      start: '^\s*=== RUN\s'
+      body: '^ {4}'
+      pass: '^\s*--- PASS: '
+      fail: '^\s*--- FAIL: '
+    failure:
+      - '^\s*--- FAIL: '
+      - '^FAIL\b'
+      - '^panic: '
+      - '^\S+\.go:\d+:\d+: '
+    count:
+      packages: '^ok\s+\S+'
+      passed: '^\s*--- PASS: '
+    summary: 'go test: {packages} package(s) ok[, {passed} test(s) passed]'
+
+  - name: cargo-test
+    match: '\bcargo (test|nextest)\b'
+    drop:
+      - '^test \S+ \.\.\. ok$'
+      - '^\s*(Compiling|Downloaded|Downloading|Fresh) '
+    failure:
+      - '^test \S+ \.\.\. FAILED$'
+      - '^failures:$'
+      - 'panicked at'
+      - '^error(\[E\d+\])?:'
+      - 'test result: FAILED'
+    count:
+      passed: '^test \S+ \.\.\. ok$'
+    summary: 'cargo test: {passed} test(s) passed'
+
+  - name: js-test
+    match: '\b(jest|vitest|mocha)\b|\b(npm|pnpm|yarn|bun) (run )?test\b'
+    drop:
+      - '^\s*(✓|√|✔) '
+      - '^\s*PASS\s+\S'
+    failure:
+      - '^\s*(✕|×|✗|✘) '
+      - '^\s*FAIL\s+\S'
+      - '●'
+      - 'AssertionError'
+      - '\d+ (failed|failing)'
+    count:
+      passed: '^\s*(✓|√|✔) '
+    summary: 'tests: {passed} passed'
+
+  - name: pytest
+    match: '\bpytest\b|\bpython3? -m pytest\b'
+    drop:
+      - ' PASSED( |$)'
+      - '^\S+ \.+( +\[ *\d+%\])?$'
+    failure:
+      - ' (FAILED|ERROR)( |$)'
+      - '^E\s'
+      - '^(FAILED|ERROR) '
+      - '^_{3,} .* _{3,}$'
+    count:
+      passed: ' PASSED( |$)'
+    summary: 'pytest: {passed} test(s) passed'
+
+  - name: maven
+    match: '\bmvnw?\b'
+    drop:
+      - '^\[INFO\] (Download(ing|ed) from|Progress)'
+      - '^\[INFO\] Running \S'
+      - '^\[INFO\] Tests run: \d+, Failures: 0, Errors: 0, Skipped: \d+, Time elapsed'
+    failure:
+      - '^\[ERROR\]'
+      - 'BUILD FAILURE'
+      - 'Tests run: \d+, Failures: [1-9]'
+      - 'Tests run: \d+, Failures: \d+, Errors: [1-9]'
+
+  - name: gradle
+    match: '\bgradlew?\b'
+    drop:
+      - '^> Task \S+ (UP-TO-DATE|NO-SOURCE|FROM-CACHE|SKIPPED)$'
+      - ' PASSED$'
+    failure:
+      - ' FAILED$'
+      - 'BUILD FAILED'
+      - '^e: '
+      - 'error:'
+    count:
+      passed: ' PASSED$'
+    summary: 'gradle: {passed} test(s) passed'

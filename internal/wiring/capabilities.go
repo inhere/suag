@@ -117,13 +117,29 @@ func readRoots() ([]native.ReadRoot, []error) {
 }
 
 // minimizeOutput is the tool result tidier (tools.minimize_output, default
-// true): test summaries, folded repeats, no colour codes; nil when off.
-func minimizeOutput() func(agentcore.ToolCall, string) (string, bool) {
+// true): test summaries, folded repeats, no colour codes; nil when off. Its
+// output rules are the built-in ones, overridden and extended by
+// $SUAG_HOME/output-rules.yaml and then <workspace>/.suag/output-rules.yaml.
+func minimizeOutput(workspace string) func(agentcore.ToolCall, string) (string, bool) {
 	if !gkconfig.Bool("tools.minimize_output", true) {
 		return nil
 	}
-	return native.MinimizeToolOutput
+	var files []string
+	if home, err := axconfig.ResolveSuagHome(); err == nil && filepath.IsAbs(home) {
+		files = append(files, filepath.Join(home, outputRulesFile))
+	}
+	if workspace != "" {
+		files = append(files, filepath.Join(workspace, ".suag", outputRulesFile))
+	}
+	rules, errs := native.LoadOutputRules(files...)
+	for _, err := range errs {
+		slog.Warn("skip output rules file", "err", err)
+	}
+	return native.NewOutputMinimizer(rules).Minimize
 }
+
+// outputRulesFile names the user and project output rule files.
+const outputRulesFile = "output-rules.yaml"
 
 // trashDir is where file_remove moves removed paths: <SUAG_HOME>/trash, or
 // "" (file_remove unavailable) when SUAG_HOME cannot be resolved.

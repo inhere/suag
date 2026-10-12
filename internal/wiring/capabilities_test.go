@@ -293,3 +293,33 @@ func TestWithMCPCallTimeout(t *testing.T) {
 	assert.Eq(t, 7*time.Second, withMCPCallTimeout(toolsmcp.ServerSettings{ID: "a"}).CallTimeout)
 	assert.Eq(t, time.Second, withMCPCallTimeout(toolsmcp.ServerSettings{ID: "a", CallTimeout: time.Second}).CallTimeout)
 }
+
+func TestMinimizeOutputLoadsRuleFiles(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	home, workspace := t.TempDir(), t.TempDir()
+	t.Setenv("SUAG_HOME", home)
+	rule := func(summary string) []byte {
+		return []byte("rules:\n  - name: check\n    match: '\\bmake check\\b'\n    drop: ['^CHECK OK ']\n" +
+			"    count: {passed: '^CHECK OK '}\n    summary: '" + summary + ": {passed} ok'\n")
+	}
+	assert.NoErr(t, os.WriteFile(filepath.Join(home, "output-rules.yaml"), rule("user"), 0o644))
+	var b strings.Builder
+	for i := 0; i < 40; i++ {
+		b.WriteString("CHECK OK item of the project check suite\n")
+	}
+	call := agentcoreapi.ToolCall{Name: "shell_exec", Arguments: map[string]any{"command": "make check"}}
+
+	tidy, ok := minimizeOutput(workspace)(call, b.String())
+	assert.Require(t, assert.True(t, ok))
+	assert.StrContains(t, tidy, "user: 40 ok")
+
+	assert.NoErr(t, os.MkdirAll(filepath.Join(workspace, ".suag"), 0o755))
+	assert.NoErr(t, os.WriteFile(filepath.Join(workspace, ".suag", "output-rules.yaml"), rule("project"), 0o644))
+	tidy, ok = minimizeOutput(workspace)(call, b.String())
+	assert.Require(t, assert.True(t, ok))
+	assert.StrContains(t, tidy, "project: 40 ok") // the project file wins
+
+	gkconfig.Set("tools.minimize_output", false)
+	assert.Nil(t, minimizeOutput(workspace))
+}
