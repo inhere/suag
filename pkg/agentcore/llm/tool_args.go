@@ -13,7 +13,7 @@ func decodeToolArguments(raw json.RawMessage, toolName string) (map[string]any, 
 	}
 
 	var payload any
-	if err := json.Unmarshal(trimmed, &payload); err != nil {
+	if err := unmarshalLenient(trimmed, &payload); err != nil {
 		return nil, fmt.Errorf("decode tool call %q arguments: %w", toolName, err)
 	}
 
@@ -25,7 +25,7 @@ func decodeToolArguments(raw json.RawMessage, toolName string) (map[string]any, 
 		if encoded == "" || encoded == "null" {
 			return nil, fmt.Errorf("tool call %q arguments must be a JSON object", toolName)
 		}
-		if err := json.Unmarshal([]byte(encoded), &payload); err != nil {
+		if err := unmarshalLenient([]byte(encoded), &payload); err != nil {
 			return nil, fmt.Errorf("decode tool call %q arguments string: %w", toolName, err)
 		}
 	}
@@ -35,4 +35,55 @@ func decodeToolArguments(raw json.RawMessage, toolName string) (map[string]any, 
 		return nil, fmt.Errorf("tool call %q arguments must be a JSON object", toolName)
 	}
 	return args, nil
+}
+
+// unmarshalLenient is json.Unmarshal that, when strict decoding fails, retries
+// once with raw control characters inside string literals escaped. Models
+// writing code often emit literal tabs or newlines in argument strings (Go
+// indentation), which strict JSON rejects; the escaped text is exactly what
+// the model meant. The strict error is returned if the retry fails too.
+func unmarshalLenient(data []byte, v any) error {
+	err := json.Unmarshal(data, v)
+	if err == nil {
+		return nil
+	}
+	if fixed, changed := escapeControlInStrings(data); changed && json.Unmarshal(fixed, v) == nil {
+		return nil
+	}
+	return err
+}
+
+// escapeControlInStrings escapes bytes below 0x20 that appear inside JSON
+// string literals, tracking quotes and backslash escapes; bytes outside
+// strings (insignificant whitespace) are left alone.
+func escapeControlInStrings(data []byte) ([]byte, bool) {
+	var out bytes.Buffer
+	inString, escaped, changed := false, false, false
+	for _, c := range data {
+		switch {
+		case !inString:
+			inString = c == '"'
+		case escaped:
+			escaped = false
+		case c == '\\':
+			escaped = true
+		case c == '"':
+			inString = false
+		case c < 0x20:
+			changed = true
+			switch c {
+			case '\t':
+				out.WriteString(`\t`)
+			case '\n':
+				out.WriteString(`\n`)
+			case '\r':
+				out.WriteString(`\r`)
+			default:
+				fmt.Fprintf(&out, `\u%04x`, c)
+			}
+			continue
+		}
+		out.WriteByte(c)
+	}
+	return out.Bytes(), changed
 }
