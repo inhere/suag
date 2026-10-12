@@ -186,6 +186,11 @@ func TestAnalyzeTraceTestOutcome(t *testing.T) {
 	assert.Eq(t, 1, a.SingleEditSteps)
 	assert.Eq(t, 0, a.TestRunsAfterPass)
 
+	// A passing baseline run before the first write is no first pass.
+	baseline := AnalyzeTrace([]store.Event{model, shell(0, false), model, edit(1), model, shell(0, false), model, shell(0, false)})
+	assert.Eq(t, 1, baseline.TestRunsAfterPass)
+	assert.Eq(t, 2, baseline.WriteToGreenSteps)
+
 	none := AnalyzeTrace([]store.Event{model, edit(1), model})
 	assert.Eq(t, -1, none.WriteToGreenSteps)
 	assert.Eq(t, -1, none.AfterGreenSteps)

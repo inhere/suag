@@ -106,6 +106,15 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 	passed := false
 	var slow []SlowCall
 	firstWrite, green := -1, -1
+	// wroteLater: the run writes or edits a file at some point; a pass
+	// before that write is then no "first pass" (see the test runs below).
+	wroteLater := false
+	for _, e := range events {
+		if e.Kind == store.EventTool && (e.Name == "file_write" || e.Name == "file_edit") {
+			wroteLater = true
+			break
+		}
+	}
 	// the current step's calls: how many, how many edits, changes made
 	stepCalls, stepEdits, stepChanges := 0, 0, 0
 	closeStep := func() {
@@ -185,10 +194,12 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 				testFailed, reported := e.Attrs["test_failed"].(bool)
 				if reported || testCommandPattern.MatchString(arg) {
 					a.TestRuns++
+					// After the first pass that followed a change: a test run
+					// before any write (a baseline check) does not count.
 					if passed {
 						a.TestRunsAfterPass++
 					}
-					if !failed && hasCode && !testFailed {
+					if !failed && hasCode && !testFailed && (firstWrite >= 0 || !wroteLater) {
 						passed = true
 						if green < 0 && firstWrite >= 0 {
 							green = a.ModelCalls
