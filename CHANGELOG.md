@@ -14,12 +14,15 @@
 
 - 工具调用缺少必填参数时不再让整次运行失败：该调用不执行，模型收到点名缺哪个参数的错误结果，同一回复的其他调用照常执行。
 - 回复被输出上限截断（OpenAI 兼容 `finish_reason=length`、Claude `stop_reason=max_tokens`）时，其中的工具调用一律不执行，回一条“请拆小后重发”的错误结果，不再用可能残缺的参数执行。
+- 缓存命中统计兼容 DeepSeek 原生字段 `prompt_cache_hit_tokens`（网关只透传它时原先记为 0）。
 - 按工具 schema 自动修复常见的参数形态：JSON 字符串形式的数组/对象、数字字符串、`"true"`/`"false"`，并去掉 null 值。
 
 - `file_grep` 的 `glob` 与 `file_find` 的 `pattern` 也按相对 `path` 的路径匹配（原先只按相对工作区或读根的路径）：在模块缓存里搜 `path=…/goutil@v0.8.2`、`glob=x/assert/*.go` 原先返回 no matches。搜索路径不存在时报“… does not exist”。
 
 ### 变更
 
+- OpenAI 兼容 provider 只在带工具调用的助手消息上回传 `reasoning_content`，普通文本回答不再携带（减少输入 token；DeepSeek 已实测接受）。
+- 历史折叠的说明改为 `[folded: N chars sent in an earlier step]`，去掉“需要时重读文件”的提示（它会诱导多余的读取）。
 - `file_read` 每页上限与工具结果的内联阈值分开：新增 `tools.read_page_bytes`（默认 32 KiB，原为与 `tools.max_output_bytes` 相同的 8000 字节），多数源码文件一次读完；`paths` 一次最多四页。
 - 使用约定：独立的读取、搜索、命令放在同一次回复里；能一次读完的文件整体读；编辑或写入成功无需回读；验证由近及广，通过即停，不为确认而重跑或回读。依据同模型对比的步数分析（研究文档“suag-jz0l 评审”一节）。
 - chat 开头一行在模型后显示思考档位与上下文窗口，如 `Suag chat · command-code/deepseek-v4.1-flash · thinking high · ctx 950k`（未设档位时不显示该项）。

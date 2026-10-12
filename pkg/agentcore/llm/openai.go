@@ -147,9 +147,10 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 			msgs = append(msgs, msg)
 			continue
 		}
-		msg := map[string]any{"role": m.Role, "content": m.Content}
-		withReasoning(msg, m, thinking)
-		msgs = append(msgs, msg)
+		// A plain assistant answer carries no reasoning_content: thinking-mode
+		// APIs need it only on tool-call messages (DeepSeek-Reasonix does the
+		// same), and an earlier answer's reasoning would only cost input tokens.
+		msgs = append(msgs, map[string]any{"role": m.Role, "content": m.Content})
 	}
 
 	body := map[string]any{
@@ -181,6 +182,16 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 		body["tools"] = tools
 	}
 	return body
+}
+
+// cachedTokens is the prompt tokens served from cache: the OpenAI field
+// prompt_tokens_details.cached_tokens, or DeepSeek's prompt_cache_hit_tokens
+// when a gateway passes only the native one through.
+func cachedTokens(openai, deepseek int) int {
+	if openai > 0 {
+		return openai
+	}
+	return deepseek
 }
 
 // withReasoning echoes an assistant message's reasoning as reasoning_content.
@@ -217,7 +228,9 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 			PromptTokensDetails struct {
 				CachedTokens int `json:"cached_tokens"`
 			} `json:"prompt_tokens_details"`
-			CostUSD float64 `json:"cost_usd"`
+			// DeepSeek's native cache field (see cachedTokens).
+			PromptCacheHitTokens int     `json:"prompt_cache_hit_tokens"`
+			CostUSD              float64 `json:"cost_usd"`
 		} `json:"usage"`
 		Error *struct {
 			Message string `json:"message"`
@@ -242,7 +255,7 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 			InputTokens:     raw.Usage.PromptTokens,
 			OutputTokens:    raw.Usage.CompletionTokens,
 			TotalTokens:     raw.Usage.TotalTokens,
-			CacheReadTokens: raw.Usage.PromptTokensDetails.CachedTokens,
+			CacheReadTokens: cachedTokens(raw.Usage.PromptTokensDetails.CachedTokens, raw.Usage.PromptCacheHitTokens),
 			CostUSD:         raw.Usage.CostUSD,
 		},
 	}

@@ -133,8 +133,8 @@ func TestOpenAIProvider_ReasoningContentRoundTrip(t *testing.T) {
 		msgs := p.buildRequestBody(&agentcoreapi.GenerateRequest{Messages: ms}, "m", false)["messages"].([]map[string]any)
 		assert.Eq(t, 5, len(msgs))
 		assert.Eq(t, "think-1", msgs[1]["reasoning_content"])
-		assert.Eq(t, "think-2", msgs[3]["reasoning_content"])
-		for _, i := range []int{0, 2, 4} {
+		// A plain answer does not carry its reasoning back (tool-call messages only).
+		for _, i := range []int{0, 2, 3, 4} {
 			_, has := msgs[i]["reasoning_content"]
 			assert.Eq(t, false, has)
 		}

@@ -153,7 +153,8 @@ type streamChunk struct {
 		PromptTokensDetails struct {
 			CachedTokens int `json:"cached_tokens"`
 		} `json:"prompt_tokens_details"`
-		CostUSD float64 `json:"cost_usd"`
+		PromptCacheHitTokens int     `json:"prompt_cache_hit_tokens"` // DeepSeek native
+		CostUSD              float64 `json:"cost_usd"`
 	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
@@ -196,7 +197,7 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		if u := chunk.Usage; u != nil {
 			res.Usage = agentcoreapi.Usage{
 				InputTokens: u.PromptTokens, OutputTokens: u.CompletionTokens, TotalTokens: u.TotalTokens,
-				CacheReadTokens: u.PromptTokensDetails.CachedTokens, CostUSD: u.CostUSD,
+				CacheReadTokens: cachedTokens(u.PromptTokensDetails.CachedTokens, u.PromptCacheHitTokens), CostUSD: u.CostUSD,
 			}
 		}
 		for _, choice := range chunk.Choices {

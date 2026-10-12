@@ -126,7 +126,8 @@ func foldValue(v any) any {
 	switch x := v.(type) {
 	case string:
 		if len(x) > foldArgChars {
-			return fmt.Sprintf("[folded: %d chars sent in an earlier step; re-read the file if you need its content]", len(x))
+			// No "re-read" hint: it invited reads the step did not need.
+			return fmt.Sprintf("[folded: %d chars sent in an earlier step]", len(x))
 		}
 		return x
 	case map[string]any:

@@ -98,3 +98,21 @@ func TestTruncatedResponseMarksToolCalls(t *testing.T) {
 		assert.Eq(t, "", res.ToolCalls[0].ArgumentsError)
 	})
 }
+
+func TestCachedTokensFallback(t *testing.T) {
+	res, err := NewOpenAIProvider(OpenAIConfig{}).parseResponse([]byte(`{"choices":[{"message":{"content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":5,"total_tokens":105,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":20}}`))
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, 80, res.Usage.CacheReadTokens) // DeepSeek native field
+	res, err = NewOpenAIProvider(OpenAIConfig{}).parseResponse([]byte(`{"choices":[{"message":{"content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":5,"total_tokens":105,"prompt_tokens_details":{"cached_tokens":64},"prompt_cache_hit_tokens":80}}`))
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, 64, res.Usage.CacheReadTokens) // the OpenAI field wins
+	server := sseServer(t, 200, strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}`,
+		`data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"prompt_cache_hit_tokens":7}}`,
+		`data: [DONE]`, ``,
+	}, "\n"), nil)
+	req := &agentcoreapi.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "hi"}}}
+	sres, err := NewOpenAIProvider(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "m"}).Stream(context.Background(), req, nil)
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, 7, sres.Usage.CacheReadTokens)
+}
