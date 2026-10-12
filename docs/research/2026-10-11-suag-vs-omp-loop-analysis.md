@@ -269,3 +269,50 @@ token 差 9 倍 ≈ 调用次数 4.5 倍 × 每次上下文 2 倍；耗时主要
 - 与 ec32cd0 那次一致：提示词约定改不动这个模型的单步习惯，需要机制层面的改动。
 - 发现一个机制层面的候选原因：同一次回复的多个工具调用被存成“助手 → 结果 → 助手 → 结果”交替排列，请求构造只合并**相邻**的助手调用，因此历史里从不出现“一次回复多个调用”的样例（`pkg/agentcore/runtime.go` persistToolTranscript、`pkg/agentcore/llm/openai.go` buildRequestBody）。模型第一步（没有历史）也很少并行，所以这不是全部原因。
 - 32 KiB 页上限保留（不增加步数，单次读取更完整）；约定保留与否待后续机制改动一并评估。
+
+## 主流 agent 源码对照：减少步数的机制（2026-10-12）
+
+只读阅读源码（WP `tmp/refs/`）：oh-my-pi `3a9b01d`、DeepSeek-Reasonix `9c37134`、openai/codex `6e5f665`、block/goose `4617040`、sst/opencode `bcf23b6`、cline/cline `8eba11b`，加上一节的 pi-go 与 pigo。各项附具体文件与行号的原始报告未入库，结论如下。
+
+**omp 为什么少一半调用**：差距主要不在提示词（suag 已有意思相近的约定，L3 也证明约定改不动模型），而在**工具结果本身给出可信证据**。DeepSeek 在 omp 里使用 `replace`（old/new）编辑模式，与 suag 可比。
+
+- 编辑结果带行号的紧凑 diff 预览，编辑前能解析、编辑后不能时当场警告“introduced a syntax error near line N”（tree-sitter）。
+- `write` 后默认跑 LSP 诊断并把结果放进返回值：新写的 Go 文件不用跑 build 就能看到编译错误。
+- shell 输出 minimizer 默认开启：`go test` 全部通过压成一行 `go test: N packages ok`，失败只留 FAIL 与定位行（头 140、尾 80 行）；内联上限 50KB 取尾部，提示词禁止 head/tail。
+- 读取：不带范围读 100 行以上的代码文件时返回声明大纲和被省略的精确行段；同一输出连续 3 次追加“再读也不会变”。
+- 上下文剪枝：同一文件被完整重读后，旧读取结果换成 `[Superseded by a newer read of this file]`（避开已热的缓存前缀）。
+- 卡死检测：连续 5 轮规范化后完全相同的调用，注入“NEVER call … with those arguments again”。
+- 并行：只读工具默认 shared，同一响应内全部并发；edit/write/todo 为 exclusive。
+- 截断（stop=length）时不执行本轮调用，给每个调用一个占位结果，要求拆成小调用。
+- 参数自动修复：双重编码的 JSON、扁平化数组、null 占位、枚举空白；工具名错时给 “Did you mean”。
+
+**各家共同做法**（出现于两家以上）：
+
+| 机制 | 出处 | 对应 suag 的问题 |
+|---|---|---|
+| 编辑结果带 diff / 改动处片段；失败时给最相似片段与行号 | omp、pigo、Cline；goose（失败提示） | 读自己文件 4–12 次；`file_edit` 失败提示“re-read the file” |
+| 测试/构建输出压成明确的 PASS/FAIL 摘要 | omp、pi-go | 全绿之后 15–27 步 |
+| 写后诊断（LSP/编译） | omp、pi-go | 写完再单独跑 build/vet |
+| 只读工具并发执行、结果按调用顺序回填 | omp、codex（读写锁）、Reasonix（上限 8）、pigo、opencode（边流式边执行） | 每步耗时；suag 串行 |
+| 旧读取结果被新读取/编辑取代后作废（批量改写以保护缓存） | omp、Cline、pi-go | 重复读的内容一直留在上下文 |
+| 重复调用检测，先提醒后升级 | omp（5 轮）、Cline（3 次软 / 5 次硬）、pi-go、goose | 重复跑同一条测试命令 |
+| 截断回复不执行残缺调用，要求拆分重发 | omp、pigo、Reasonix、Cline、opencode | 残缺参数被执行或整次失败 |
+| 参数错误逐个调用回给模型，不中断整轮 | codex、goose | suag 缺必填参数时整次运行失败 |
+| 长命令转后台 + wait/kill | codex、pi-go、pigo、opencode、Cline | 超时即杀、重跑 |
+
+**DeepSeek 专项**（Reasonix）：缓存命中优先读 `prompt_cache_hit_tokens`，退到 `prompt_tokens_details.cached_tokens`（suag 只读后者，直连 DeepSeek 会算成 0）；`reasoning_content` 只在带 tool_calls 的助手消息上回传；发送前修复未应答的 tool_call 与截断的参数 JSON；对缓存未命中做归因（逐消息累计哈希，定位是 system、tools 还是 fold 改变了前缀）。
+
+**观测**：omp `stats` 按请求记录耗时/TTFT/stop_reason/缓存，工具记录 `calls_in_turn`、参数与结果字符数，trace 视图汇总 modelMs/toolMs/idleMs；opencode 用 SQL 汇总每个工具的成功/失败/未完成与耗时；codex 把工具耗时拆成“等待调度”与“实际执行”；pi-go/goose 走 OTEL gen_ai span。
+
+### suag 改进清单（按预期收益排序）
+
+1. **`file_edit` 结果带改动处的行号片段**（必要时限长），Go 文件附 `go/parser` 解析回归警告；失败时返回最相似片段与行号，不再只说“re-read the file”。
+2. **shell 输出摘要**：识别 `go test/build/vet`（可扩展到其他测试命令），全部通过压成一行，失败只留 FAIL 与定位行；原文仍转存可取。
+3. **健壮性**：截断回复不执行残缺调用并要求拆分；缺必填参数等校验错误逐个调用回给模型（替换现在的整次失败）；常见参数形态自动修复。
+4. **DeepSeek 修正**：缓存命中字段回退链；`reasoning_content` 只回传在工具调用消息上；折叠在 DeepSeek 上成本持平，评估改为按上下文阈值触发或加大批次，并改掉折叠说明里“需要时重读文件”的诱导。
+5. **只读工具并发执行**，并修正历史里并行调用被拆成交替消息的问题（见 L3 一节）。
+6. **反重复**：旧读取结果作废（批量改写保护缓存）、同一调用重复 N 次时注入提醒。
+7. **写后诊断**（Go：编辑后对所在包跑 `go vet` 或 `gofmt -e`，可配置）。
+8. **观测**：工具耗时拆分、缓存未命中归因、每次运行一条固定格式汇总，接入 `trace --analyze` 与后续 `trace --web`（suag-nmed）。
+
+建议先做 1–4（改动集中在工具结果与 provider 层，风险小），T9 同模型同档位 A/B 验证后再做 5–7。
