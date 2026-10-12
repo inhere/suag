@@ -74,6 +74,9 @@ type Config struct {
 	// CompactReserveTokens overrides the compaction reserve (default 16000).
 	// A new segment keeps only the last complete tool exchange verbatim.
 	CompactReserveTokens int
+	// FoldEvery/FoldKeep enable the experimental history folding
+	// (context.fold_every / context.fold_keep, see foldHistory); 0 = off.
+	FoldEvery, FoldKeep int
 	// CompactProvider/CompactModel summarize history when llm.compact_model is
 	// set; nil means the turn's own provider is used.
 	CompactProvider agentcore.Provider

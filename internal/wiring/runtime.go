@@ -273,7 +273,10 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		compactProvider, compactModel = built, settings.Compact.Model
 	}
 	runner, err := personal.New(personal.Config{
-		ContextWindow:   contextWindow,
+		ContextWindow: contextWindow,
+		// Experimental (R3 history folding A/B); undocumented, off by default.
+		FoldEvery:       gkconfig.Int("context.fold_every", 0),
+		FoldKeep:        gkconfig.Int("context.fold_keep", 4),
 		CompactProvider: compactProvider,
 		CompactModel:    compactModel,
 		Plans:           plans,

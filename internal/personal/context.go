@@ -263,7 +263,7 @@ func (b *contextBuilder) compose(state *agentcore.RunState) []agentcore.Message 
 	for _, m := range turn {
 		out = append(out, b.limited(m))
 	}
-	return out
+	return foldHistory(out, b.r.cfg.FoldEvery, b.r.cfg.FoldKeep)
 }
 
 // limited returns a tool message with its content truncated to truncLimit; the
