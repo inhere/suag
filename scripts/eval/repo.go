@@ -40,9 +40,15 @@ func (t *Task) prepareWorkspace(ctx context.Context, ws string) error {
 	if t.Repo == nil {
 		return nil
 	}
+	// The identity is repo-local: suag runs with an isolated HOME (no global
+	// gitconfig) while omp keeps the real one, so without it only suag's
+	// commits failed and cost extra steps.
 	for _, args := range [][]string{
+		{"config", "user.name", "eval"},
+		{"config", "user.email", "eval@local"},
+		{"config", "commit.gpgsign", "false"},
 		{"add", "-A"},
-		{"-c", "user.name=eval", "-c", "user.email=eval@local", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "base"},
+		{"commit", "-q", "-m", "base"},
 	} {
 		if out, err := exec.CommandContext(ctx, "git", append([]string{"-C", ws}, args...)...).CombinedOutput(); err != nil {
 			return fmt.Errorf("git %s: %v: %s", args[len(args)-1], err, out)
