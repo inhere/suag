@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.13.0] - 2026-10-12
+
+历史折叠（默认开启）、安全删除工具 `file_remove`、思考档位与模型短名。依据见 [分析](docs/research/2026-10-11-suag-vs-omp-loop-analysis.md) 与 [历史折叠设计](docs/design/2026-10-12-history-folding-design.md)。
+
 ### 新增
 
 - 内置工具 `file_remove`：删除工作区内的文件或目录（目录需 `recursive`），移入 `$SUAG_HOME/trash/` 保留 7 天、可恢复，单次最多 1000 个文件。被 `.gitignore` 忽略的目录（及 `node_modules`、`vendor`、`dist`）视为可再生：不遍历、不计数、直接永久删除并在结果中列出（被忽略的 `tmp/` 下的测试仓库可整体删除，回收区不会被缓存撑大）；被忽略的单个文件（如 `.env`）仍进回收区。拒绝工作区根、工作区自己的 `.git`、用户主目录、通配符与工作区外路径。chat 询问显示进回收区的文件数与将直接删除的目录，ACP 报为 `delete` 类型；使用约定要求删除用它而不是 shell。
@@ -229,7 +233,8 @@
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suag/compare/v0.12.0...HEAD
+[未发布]: https://github.com/inhere/suag/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/inhere/suag/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/inhere/suag/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/inhere/suag/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/inhere/suag/compare/v0.9.1...v0.10.0
