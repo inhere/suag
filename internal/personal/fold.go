@@ -11,9 +11,9 @@ import (
 // step is replaced by a short note (a whole file written, a long edit).
 const foldArgChars = 1000
 
-// foldHistory is the experimental history folding (context.fold_every,
-// docs/research/2026-10-11-suag-vs-omp-loop-analysis.md, R3): in the request
-// view, assistant steps before a boundary lose their reasoning and their long
+// foldHistory is history folding (context.fold_every / context.fold_keep,
+// docs/design/2026-10-12-history-folding-design.md): in the request view,
+// assistant steps before a boundary lose their reasoning and their long
 // string arguments. The boundary only moves every `every` steps, keeping at
 // least `keep` recent steps whole, so the cached request prefix changes once
 // per batch rather than at every step. msgs is not modified; the stored

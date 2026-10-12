@@ -276,9 +276,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	runner, err := personal.New(personal.Config{
 		ContextWindow: contextWindow,
-		// Experimental (R3 history folding A/B); undocumented, off by default.
-		FoldEvery:       gkconfig.Int("context.fold_every", 0),
-		FoldKeep:        gkconfig.Int("context.fold_keep", 4),
+		// History folding of the request view (context.fold_every/fold_keep).
+		FoldEvery:       rs.fold.Every,
+		FoldKeep:        rs.fold.Keep,
 		CompactProvider: compactProvider,
 		CompactModel:    compactModel,
 		Plans:           plans,

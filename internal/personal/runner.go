@@ -74,8 +74,8 @@ type Config struct {
 	// CompactReserveTokens overrides the compaction reserve (default 16000).
 	// A new segment keeps only the last complete tool exchange verbatim.
 	CompactReserveTokens int
-	// FoldEvery/FoldKeep enable the experimental history folding
-	// (context.fold_every / context.fold_keep, see foldHistory); 0 = off.
+	// FoldEvery/FoldKeep configure history folding of the request view
+	// (context.fold_every / context.fold_keep, see foldHistory); FoldEvery 0 = off.
 	FoldEvery, FoldKeep int
 	// CompactProvider/CompactModel summarize history when llm.compact_model is
 	// set; nil means the turn's own provider is used.
@@ -230,6 +230,9 @@ func (r *Runner) ProcessRoot() string { return r.cfg.ProcessRoot }
 // calls; chat shows them in its per-turn status line.
 func (r *Runner) ProviderName() string { return r.cfg.ProviderName }
 func (r *Runner) Model() string        { return r.cfg.Model }
+
+// Fold returns the history folding settings (every, keep); every 0 = off.
+func (r *Runner) Fold() (every, keep int) { return r.cfg.FoldEvery, r.cfg.FoldKeep }
 
 func (r *Runner) NewSession(ctx context.Context, id, title string) (Session, error) {
 	if id == "" {

@@ -130,6 +130,12 @@ func TestLoadManifest(t *testing.T) {
 		_, err = LoadManifest(ManifestOptions{Thinking: "huge"})
 		assert.ErrMsgContains(t, err, "--thinking: unknown thinking level")
 	})
+	t.Run("invalid fold settings fail", func(t *testing.T) {
+		assert.NoErr(t, gkconfig.Set("context.fold_keep", 0))
+		t.Cleanup(func() { _ = gkconfig.Set("context.fold_keep", 5) })
+		_, err := LoadManifest(ManifestOptions{})
+		assert.ErrMsgContains(t, err, "context.fold_keep must be an integer >= 1")
+	})
 	t.Run("missing model fails", func(t *testing.T) {
 		assert.NoErr(t, gkconfig.Set("model", ""))
 		_, err := LoadManifest(ManifestOptions{})

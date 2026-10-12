@@ -263,6 +263,7 @@ type runtimeSettings struct {
 	memPolicy                memoryWritePolicy
 	sessionsDir              string
 	inlineBytes, spillBytes  int
+	fold                     appconfig.FoldSettings
 }
 
 // loadRuntimeSettings reads and validates the settings that need no I/O
@@ -277,6 +278,9 @@ func loadRuntimeSettings(workspace, model, thinking string) (runtimeSettings, er
 	// keep their configured levels.
 	if s.models.Main.Thinking, err = appconfig.ParseThinking(thinking); err != nil {
 		return s, fmt.Errorf("--thinking: %w", err)
+	}
+	if s.fold, err = appconfig.ReadFoldSettings(); err != nil {
+		return s, err
 	}
 	// memory.taint_tools taint on every result (default none);
 	// memory.taint_on_spill only when the output was externalised (default
