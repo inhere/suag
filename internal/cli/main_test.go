@@ -14,6 +14,10 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	_ = os.Setenv("SUAG_HOME", home)
+	// A developer's (or an eval's) model and config file must not decide
+	// what the CLI tests resolve.
+	_ = os.Unsetenv("SUAG_CONFIG")
+	_ = os.Unsetenv("SUAG_MODEL")
 	_ = os.Setenv("SUAG_HOOKS", "off")
 	code := m.Run()
 	_ = os.RemoveAll(home)
