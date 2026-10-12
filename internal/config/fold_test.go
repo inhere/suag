@@ -7,17 +7,17 @@ import (
 )
 
 func TestReadFoldSettings(t *testing.T) {
-	t.Run("defaults: on, 10/5", func(t *testing.T) {
+	t.Run("defaults: off, keep 5", func(t *testing.T) {
 		loadYAML(t, "")
 		s, err := ReadFoldSettings()
 		assert.NoErr(t, err)
-		assert.Eq(t, FoldSettings{Every: 10, Keep: 5}, s)
+		assert.Eq(t, FoldSettings{Every: 0, Keep: 5}, s)
 	})
-	t.Run("configured and off", func(t *testing.T) {
-		loadYAML(t, "context:\n  fold_every: 0\n  fold_keep: 2\n")
+	t.Run("configured on", func(t *testing.T) {
+		loadYAML(t, "context:\n  fold_every: 10\n  fold_keep: 2\n")
 		s, err := ReadFoldSettings()
 		assert.NoErr(t, err)
-		assert.Eq(t, FoldSettings{Every: 0, Keep: 2}, s)
+		assert.Eq(t, FoldSettings{Every: 10, Keep: 2}, s)
 	})
 	t.Run("invalid values", func(t *testing.T) {
 		for doc, want := range map[string]string{

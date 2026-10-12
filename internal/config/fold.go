@@ -8,10 +8,13 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 )
 
-// History folding defaults (docs/design/2026-10-12-history-folding-design.md,
-// Q1: on, every 10 steps, keep the last 5 whole).
+// History folding defaults (docs/design/2026-10-12-history-folding-design.md).
+// Folding is off by default since 2026-10-12: rebuilding the prefix after
+// each fold was about a third of the uncached input in the P5 retest (see
+// docs/research/2026-10-11-suag-vs-omp-loop-analysis.md), and runs compare
+// more directly with omp without it. context.fold_every: 10 turns it on.
 const (
-	DefaultFoldEvery = 10
+	DefaultFoldEvery = 0
 	DefaultFoldKeep  = 5
 )
 

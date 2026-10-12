@@ -154,7 +154,7 @@ gofer job resume <job-id> --prompt "继续上个问题"
 - `run` 的 stream-json 另有两种新增行：`tool_call`（`name`、`args` 摘要）与 `tool_result`（`name`、`is_error`、脱敏并截断的 `summary`）；已有行不变。未配置 `ndjson_keep` 的调用方会收到它们，上面的示例 `ndjson_keep` 不含它们，需要在 Gofer 中显示工具调用时再加入。`suag trace` 会显示 plan 行（文本 `plan ✔/▶/○ 步骤`，`--json` 为 `{"kind":"plan",...}`）。
 - `run` 的 stream-json 在 `plan` 事件上输出完整计划；`ndjson_keep` 示例未保留它，需要在 Gofer 中显示计划时把 `plan` 加入 `ndjson_keep`。
 - `tools.deferred`（`auto`/`always`/`never`，默认 `auto`）在 `~/.suag/config.yaml` 中配置。MCP 工具多时被延迟加载，模型通过内置 `tool_search` 取回；Gofer 不需要额外配置。
-- 历史折叠（默认开启）：`context.fold_every`（默认 10，`0` 关闭）与 `context.fold_keep`（默认 5）。最近 5 步之前的步骤在请求中去掉思考内容，超过 1000 字符的字符串参数换成说明；折叠点每 10 步前移一次。只影响请求，存储不变；`suag trace` 显示 `fold` 行。
+- 历史折叠（默认关闭）：`context.fold_every`（默认 0 即关闭，设为如 10 开启）与 `context.fold_keep`（默认 5）。最近 5 步之前的步骤在请求中去掉思考内容，超过 1000 字符的字符串参数换成说明；折叠点每 10 步前移一次。只影响请求，存储不变；`suag trace` 显示 `fold` 行。
 - `compact_model` 指定分段交接摘要（自动、`:compact`、空闲整理）使用的模型；会话按段组织，旧段可用 `session_search`/`recall` 取回；`providers.<id>.models.<model>.context_window` 覆盖上下文窗口。
 
 ### run 的 stream-json 输出与 chat hooks

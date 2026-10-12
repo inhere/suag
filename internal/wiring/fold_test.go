@@ -9,7 +9,7 @@ import (
 )
 
 // TestRunnerFoldSettings checks that the runner gets the folding defaults
-// (on, 10/5) and the configured values.
+// (off, keep 5) and the configured values.
 func TestRunnerFoldSettings(t *testing.T) {
 	resetConfig(t)
 	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k"}})
@@ -23,12 +23,12 @@ func TestRunnerFoldSettings(t *testing.T) {
 	}
 
 	every, keep := fold(t)
-	assert.Eq(t, 10, every)
+	assert.Eq(t, 0, every)
 	assert.Eq(t, 5, keep)
 
-	assert.NoErr(t, gkconfig.Set("context.fold_every", 0))
+	assert.NoErr(t, gkconfig.Set("context.fold_every", 10))
 	every, _ = fold(t)
-	assert.Eq(t, 0, every)
+	assert.Eq(t, 10, every)
 }
 
 // TestRunnerFoldOffForAnthropic: folding rewrites earlier messages, which
@@ -37,6 +37,7 @@ func TestRunnerFoldOffForAnthropic(t *testing.T) {
 	resetConfig(t)
 	setProviders(t, map[string]any{"anthropic": map[string]any{"api_key": "k"}})
 	assert.NoErr(t, gkconfig.Set("model", "anthropic/claude-opus-5-5"))
+	assert.NoErr(t, gkconfig.Set("context.fold_every", 10)) // even when turned on
 	rt, err := OpenCLI(context.Background(), Options{})
 	assert.Require(t, assert.NoErr(t, err))
 	t.Cleanup(func() { _ = rt.Close() })
