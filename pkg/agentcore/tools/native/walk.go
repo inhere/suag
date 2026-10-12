@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -42,7 +43,9 @@ func walkWorkspace(ctx context.Context, workspace, start string, noIgnore bool, 
 		ign := newIgnoreMatcher(root, noIgnore)
 		fsStart := filepath.ToSlash(relStart)
 		info, err := root.Lstat(relStart)
-		if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return struct{}{}, fmt.Errorf("%s does not exist", start)
+		} else if err != nil {
 			return struct{}{}, err
 		}
 		if info.Mode().IsRegular() { // a single file

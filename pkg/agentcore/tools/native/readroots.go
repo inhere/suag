@@ -171,6 +171,22 @@ func (r readTarget) show(rel string) string {
 	return filepath.Join(r.base, filepath.FromSlash(rel))
 }
 
+// matchUnder reports whether the glob matches rel (slash-separated, relative
+// to base) or rel taken relative to the search start: models naturally write
+// a glob relative to the path they search (path=goutil@v0.8.2, glob=x/assert/*.go),
+// while the walk reports paths relative to the workspace or read root.
+func (r readTarget) matchUnder(glob, rel string) bool {
+	if globMatch(glob, rel) {
+		return true
+	}
+	start, err := filepath.Rel(r.base, r.abs)
+	if err != nil || start == "." {
+		return false
+	}
+	prefix := filepath.ToSlash(start) + "/"
+	return strings.HasPrefix(rel, prefix) && globMatch(glob, strings.TrimPrefix(rel, prefix))
+}
+
 // resolveRead resolves a read-only tool's path argument: inside the workspace
 // as ResolveSandboxedPath does, otherwise an absolute path under one of roots.
 func resolveRead(workspace string, roots []string, arg string) (readTarget, error) {

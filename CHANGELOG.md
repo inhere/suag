@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 修复
+
+- `file_grep` 的 `glob` 与 `file_find` 的 `pattern` 也按相对 `path` 的路径匹配（原先只按相对工作区或读根的路径）：在模块缓存里搜 `path=…/goutil@v0.8.2`、`glob=x/assert/*.go` 原先返回 no matches。搜索路径不存在时报“… does not exist”。
+
 ### 变更
 
 - chat 开头一行在模型后显示思考档位与上下文窗口，如 `Suag chat · command-code/deepseek-v4.1-flash · thinking high · ctx 950k`（未设档位时不显示该项）。

@@ -50,7 +50,7 @@ func (t *FileGrepTool) Schema() api.ToolSchema {
 			"properties": map[string]any{
 				"pattern":     map[string]any{"type": "string", "description": "RE2 regular expression"},
 				"path":        map[string]any{"type": "string", "description": "File or directory to search (default: workspace root); may be absolute under a read-only dependency root"},
-				"glob":        map[string]any{"type": "string", "description": "Only files matching this glob, e.g. *.go or internal/**/*.go"},
+				"glob":        map[string]any{"type": "string", "description": "Only files matching this glob, e.g. *.go or internal/**/*.go (relative to path or to the workspace)"},
 				"ignore_case": map[string]any{"type": "boolean", "description": "Case-insensitive match"},
 				"output":      map[string]any{"type": "string", "enum": []any{"content", "files"}, "description": "content (default): matching lines; files: matching file paths"},
 				"max_results": map[string]any{"type": "integer", "description": fmt.Sprintf("Maximum lines or files (default %d, max %d)", defaultGrepResults, maxGrepResults)},
@@ -91,7 +91,7 @@ func (t *FileGrepTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	full := false
 	noIgnore, _ := args["no_ignore"].(bool)
 	walk, err := walkWorkspace(ctx, start.base, start.abs, noIgnore, func(root *os.Root, rel string, d fs.DirEntry) error {
-		if glob != "" && !globMatch(glob, rel) {
+		if glob != "" && !start.matchUnder(glob, rel) {
 			return nil
 		}
 		if info, err := d.Info(); err != nil || info.Size() > maxSearchFileBytes {

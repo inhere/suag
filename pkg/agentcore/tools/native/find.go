@@ -41,7 +41,7 @@ func (t *FileFindTool) Schema() api.ToolSchema {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"pattern":     map[string]any{"type": "string", "description": "Glob, e.g. *.md or cmd/**/main.go"},
+				"pattern":     map[string]any{"type": "string", "description": "Glob, e.g. *.md or cmd/**/main.go (relative to path or to the workspace)"},
 				"path":        map[string]any{"type": "string", "description": "Directory to search (default: workspace root); may be absolute under a read-only dependency root"},
 				"max_results": map[string]any{"type": "integer", "description": fmt.Sprintf("Maximum paths (default %d)", defaultFindResults)},
 				"no_ignore":   map[string]any{"type": "boolean", "description": "Also search .gitignore matches and node_modules/vendor/dist (.git is always skipped)"},
@@ -74,7 +74,7 @@ func (t *FileFindTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	var hits []hit
 	noIgnore, _ := call.Arguments["no_ignore"].(bool)
 	walk, err := walkWorkspace(ctx, start.base, start.abs, noIgnore, func(_ *os.Root, rel string, d fs.DirEntry) error {
-		if !globMatch(pattern, rel) {
+		if !start.matchUnder(pattern, rel) {
 			return nil
 		}
 		var mod time.Time
