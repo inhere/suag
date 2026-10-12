@@ -66,18 +66,23 @@ func (t *FileEditTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	if err != nil {
 		return nil, fmt.Errorf("file_edit: %w", err)
 	}
-	updated, n, err := ApplyEdit(string(data), call.Arguments)
+	updated, spans, err := applyEditSpans(string(data), call.Arguments)
 	if err != nil {
 		return nil, fmt.Errorf("file_edit %s: %w", path, err)
 	}
 	if err := writeFileInRoot(t.workspace, path, []byte(updated)); err != nil {
 		return nil, fmt.Errorf("file_edit: %w", err)
 	}
-	return &api.ToolResult{
-		CallID:  call.CallID,
-		Name:    t.Name(),
-		Content: fmt.Sprintf("edited %s: %d replacement(s)", path, n),
-	}, nil
+	// The edited lines are the verification: the model sees the result and
+	// needs no re-read (suag-jz0l review; omp, pigo and Cline do the same).
+	out := fmt.Sprintf("edited %s: %d replacement(s)", path, len(spans))
+	if warn := syntaxRegression(path, string(data), updated); warn != "" {
+		out += "\n" + warn
+	}
+	if snippet := editSnippet(updated, spans); snippet != "" {
+		out += "\n" + snippet
+	}
+	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: out}, nil
 }
 
 // ApplyEdit applies file_edit's arguments (old_string, new_string,
@@ -87,23 +92,72 @@ func (t *FileEditTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 // use bare LF, the strings are converted so the file keeps CRLF. Exported so
 // ACP can preview the exact result as a diff.
 func ApplyEdit(content string, args map[string]any) (string, int, error) {
+	updated, spans, err := applyEditSpans(content, args)
+	return updated, len(spans), err
+}
+
+// applyEditSpans is ApplyEdit that also returns where every replacement
+// ended up in the final content (byte spans of the inserted text), so the
+// result can show the edited lines.
+func applyEditSpans(content string, args map[string]any) (string, []span, error) {
 	edits, err := EditList(args)
 	if err != nil {
-		return "", 0, err
+		return "", nil, err
 	}
-	total := 0
+	var spans []span
 	for i, edit := range edits {
-		var n int
-		content, n, err = applyOne(content, edit)
+		var placed []replacement
+		content, placed, err = applyOne(content, edit)
 		if err != nil {
 			if len(edits) > 1 {
 				err = fmt.Errorf("edits[%d]: %w (no edit was applied)", i, err)
 			}
-			return "", 0, err
+			return "", nil, err
 		}
-		total += n
+		spans = shiftSpans(spans, placed)
+		for _, r := range placed {
+			spans = append(spans, span{r.newStart, r.newStart + r.newLen})
+		}
 	}
-	return content, total, nil
+	return content, spans, nil
+}
+
+// span is a byte range [start, end) of the edited content.
+type span struct{ start, end int }
+
+// replacement is one replaced occurrence: where it was in the content before
+// the edit (oldStart, oldLen) and where its new text is after it.
+type replacement struct{ oldStart, oldLen, newStart, newLen int }
+
+// shiftSpans maps spans recorded by earlier edits through the replacements
+// of a later edit (placed, in increasing order).
+func shiftSpans(spans []span, placed []replacement) []span {
+	for i, sp := range spans {
+		spans[i] = span{mapPos(sp.start, placed, false), mapPos(sp.end, placed, true)}
+	}
+	return spans
+}
+
+// mapPos maps a byte position of the content before an edit to the content
+// after it. A position inside a replaced range moves to the start of the new
+// text, or to its end when isEnd is set, so a span stays over the new text.
+func mapPos(pos int, placed []replacement, isEnd bool) int {
+	delta := 0
+	for _, r := range placed {
+		oldEnd := r.oldStart + r.oldLen
+		switch {
+		case oldEnd <= pos:
+			delta += r.newLen - r.oldLen
+		case r.oldStart >= pos:
+			return pos + delta
+		default: // inside the replaced range
+			if isEnd {
+				return r.newStart + r.newLen
+			}
+			return r.newStart
+		}
+	}
+	return pos + delta
 }
 
 // EditList returns file_edit's replacements as a list: the edits argument,
@@ -137,16 +191,17 @@ func EditList(args map[string]any) ([]map[string]any, error) {
 	return edits, nil
 }
 
-// applyOne applies a single replacement (old_string, new_string, replace_all).
-func applyOne(content string, args map[string]any) (string, int, error) {
+// applyOne applies a single replacement (old_string, new_string,
+// replace_all) and reports where each replaced occurrence went.
+func applyOne(content string, args map[string]any) (string, []replacement, error) {
 	oldStr, _ := args["old_string"].(string)
 	newStr, _ := args["new_string"].(string)
 	replaceAll, _ := args["replace_all"].(bool)
 	if oldStr == "" {
-		return "", 0, fmt.Errorf("old_string is required (use file_write to create a file)")
+		return "", nil, fmt.Errorf("old_string is required (use file_write to create a file)")
 	}
 	if oldStr == newStr {
-		return "", 0, fmt.Errorf("old_string and new_string are identical")
+		return "", nil, fmt.Errorf("old_string and new_string are identical")
 	}
 	if strings.Contains(content, "\r\n") && !strings.Contains(oldStr, "\r\n") {
 		oldStr = strings.ReplaceAll(oldStr, "\n", "\r\n")
@@ -155,12 +210,26 @@ func applyOne(content string, args map[string]any) (string, int, error) {
 	n := strings.Count(content, oldStr)
 	switch {
 	case n == 0:
-		return "", 0, fmt.Errorf("old_string not found; re-read the file and copy the text exactly (whitespace and indentation included)")
+		return "", nil, fmt.Errorf("old_string not found%s", closestMatchHint(content, oldStr))
 	case n > 1 && !replaceAll:
-		return "", 0, fmt.Errorf("old_string matches %d places; add surrounding lines to make it unique or set replace_all", n)
+		return "", nil, fmt.Errorf("old_string matches %d places (%s); add surrounding lines to make it unique or set replace_all",
+			n, matchLines(content, oldStr, 10))
 	}
+	limit := 1
 	if replaceAll {
-		return strings.ReplaceAll(content, oldStr, newStr), n, nil
+		limit = n
 	}
-	return strings.Replace(content, oldStr, newStr, 1), 1, nil
+	var b strings.Builder
+	var placed []replacement
+	rest, offset := content, 0
+	for i := 0; i < limit; i++ {
+		idx := strings.Index(rest, oldStr)
+		b.WriteString(rest[:idx])
+		placed = append(placed, replacement{oldStart: offset + idx, oldLen: len(oldStr), newStart: b.Len(), newLen: len(newStr)})
+		b.WriteString(newStr)
+		rest = rest[idx+len(oldStr):]
+		offset += idx + len(oldStr)
+	}
+	b.WriteString(rest)
+	return b.String(), placed, nil
 }

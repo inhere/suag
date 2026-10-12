@@ -186,7 +186,7 @@ func TestFileReadPaths(t *testing.T) {
 func TestFileReadPageCap(t *testing.T) {
 	ws := t.TempDir()
 	line := strings.Repeat("x", 99) + "\n" // 100 bytes
-	big := strings.Repeat(line, 300)        // 30000 bytes: one default page
+	big := strings.Repeat(line, 300)       // 30000 bytes: one default page
 	for _, name := range []string{"a.txt", "b.txt", "c.txt", "d.txt", "e.txt", "f.txt"} {
 		assert.NoErr(t, os.WriteFile(filepath.Join(ws, name), []byte(big), 0o644))
 	}
