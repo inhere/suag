@@ -115,6 +115,10 @@ tools:
   # max_spill_bytes: 1048576 # raw output cap of one tool call (native and MCP)
   # shell: ""                # shell_exec shell; default pwsh/powershell on Windows, sh elsewhere
   # shell_timeout_max: 600   # max seconds a shell_exec call may ask for (default 120 per call)
+  # Read-only directories outside the workspace (file_read/file_list/file_grep/file_find,
+  # absolute paths). Writes stay in the workspace.
+  # dependency_roots: true   # detect Go module cache, GOROOT/src, ~/.cargo/registry/src
+  # read_roots: []           # extra directories, e.g. ["~/src/sdk"]
   # web_fetch:
   #   allow_private: false   # true lets web_fetch reach private/local addresses
   #   proxy: ""             # http://, https:// or socks5:// proxy for web_fetch, e.g. http://127.0.0.1:7890

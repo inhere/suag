@@ -93,6 +93,15 @@ func TestTranscriptToolSummaryIncludesNameAndKeyArgs(t *testing.T) {
 			t.Fatalf("summary = %v", got)
 		}
 	})
+	t.Run("paths", func(t *testing.T) {
+		root := t.TempDir()
+		tr, _ := OpenTranscript(root, "s")
+		defer tr.Close()
+		_ = tr.AppendToolCall("file_read", map[string]any{"paths": []any{"a.go", "b.go"}}, "body")
+		if got := read(t, root)["summary"]; got != "file_read paths=[a.go b.go]" {
+			t.Fatalf("summary = %v", got)
+		}
+	})
 	t.Run("long command truncated on rune boundary", func(t *testing.T) {
 		root := t.TempDir()
 		tr, _ := OpenTranscript(root, "s")

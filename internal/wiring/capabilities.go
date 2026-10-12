@@ -3,6 +3,8 @@ package wiring
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"sync"
 	"time"
 
 	gkconfig "github.com/gookit/config/v2"
@@ -97,10 +99,33 @@ func rawOutputBytes() int {
 	return gkconfig.Int("tools.max_spill_bytes", native.DefaultRawOutputBytes)
 }
 
+// warnReadRootsOnce reports rejected tools.read_roots entries once per process
+// (nativeEnv runs several times).
+var warnReadRootsOnce sync.Once
+
+// readRoots returns the directories outside the workspace the read-only file
+// tools may read: the detected dependency sources (tools.dependency_roots,
+// default true) followed by tools.read_roots.
+func readRoots() ([]native.ReadRoot, []error) {
+	var roots []native.ReadRoot
+	if gkconfig.Bool("tools.dependency_roots", true) {
+		roots = native.DependencyRoots()
+	}
+	extra, errs := native.ConfiguredReadRoots(gkconfig.Strings("tools.read_roots"))
+	return append(roots, extra...), errs
+}
+
 // nativeEnv reads the tools.* settings native tools are built with.
 func nativeEnv(workspace string) native.Env {
+	roots, errs := readRoots()
+	warnReadRootsOnce.Do(func() {
+		for _, err := range errs {
+			slog.Warn("skip read root", "err", err)
+		}
+	})
 	return native.Env{
 		Workspace:         workspace,
+		ReadRoots:         native.RootPaths(roots),
 		InlineBytes:       inlineOutputBytes(),
 		RawBytes:          rawOutputBytes(),
 		SerpAPIKey:        gkconfig.String("serpapi_key"),

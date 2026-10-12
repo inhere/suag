@@ -63,6 +63,7 @@ Suag reads only `$SUAG_HOME/config.yaml` and `$SUAG_HOME/.env` (default `~/.suag
 | `tools.approval` | Chat only: `ask` (default) confirms write/shell tools, `auto` does not |
 | `tools.max_output_bytes`, `tools.max_spill_bytes` | Inline threshold: largest tool result kept whole in the session (default 8000; larger ones are saved under `$SUAG_HOME/sessions/<id>/outputs/` and kept as a ref plus head/tail); raw output cap per call (default 1 MiB) |
 | `tools.shell`, `tools.shell_timeout_max` | Shell override (default pwsh/powershell on Windows, sh elsewhere); max seconds per command (600) |
+| `tools.dependency_roots`, `tools.read_roots` | Read-only directories outside the workspace for `file_read`/`file_list`/`file_grep`/`file_find` (absolute paths): the detected Go module cache, Go standard library sources and Rust crate sources (default `true`; `false` turns detection off), plus a list of extra directories (`~` expands). Writes stay in the workspace; the roots are listed in the environment section of the prompt |
 | `tools.web_fetch.proxy`, `tools.web_fetch.allow_private` | Proxy for `web_fetch`; allow private addresses |
 | `tools.auto_allow`, `tools.read_only_allow` | MCP allowlists, entries `server/toolglob` |
 | `tools.deferred` | Defer MCP tool schemas: `auto` (default), `always`, `never` |
@@ -82,7 +83,7 @@ All data lives in `$SUAG_HOME/db/sessions.db`. Model and provider details: [LLM 
 
 | Tool | Kind | What it does |
 |---|---|---|
-| `file_read` | read | Numbered lines in windows (`offset`/`limit`, 2000 lines by default); reports binary files |
+| `file_read` | read | Numbered lines in windows (`offset`/`limit`, 2000 lines by default); `paths` reads up to 10 files in one call; reports binary files |
 | `file_list` | read | Directory listing, recursive with `depth` (≤ 5) |
 | `file_grep` | read | RE2 search with `glob`, `ignore_case`, `output: content\|files` |
 | `file_find` | read | `**` glob search, newest first |

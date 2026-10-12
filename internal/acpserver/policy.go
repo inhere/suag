@@ -231,7 +231,18 @@ func toolLocations(cwd string, args map[string]any) []acp.ToolCallLocation {
 		path, _ = args["dir"].(string)
 	}
 	if path == "" {
-		return nil
+		// file_read with paths: point at every file inside the workspace.
+		list, err := native.ReadPathList(map[string]any{"paths": args["paths"]})
+		if err != nil {
+			return nil
+		}
+		var locations []acp.ToolCallLocation
+		for _, p := range list {
+			if resolved, err := native.ResolveSandboxedPath(cwd, p); err == nil {
+				locations = append(locations, acp.ToolCallLocation{Path: resolved})
+			}
+		}
+		return locations
 	}
 	resolved, err := native.ResolveSandboxedPath(cwd, path)
 	if err != nil {

@@ -12,6 +12,9 @@ import (
 type Env struct {
 	// Workspace confines file tools and is the shell working directory.
 	Workspace string
+	// ReadRoots are directories outside the workspace the read-only file tools
+	// may read too (dependency sources, tools.read_roots). Writes never go there.
+	ReadRoots []string
 	// InlineBytes is the inline threshold (tools.max_output_bytes): file_read
 	// pages its own output to it. Other tools leave the inline cut to the
 	// output layer (tools.NewOutput).
@@ -48,16 +51,16 @@ type Spec struct {
 func Catalog() []Spec {
 	return []Spec{
 		{Name: "file_read", New: func(env Env) api.Tool {
-			return &FileReadTool{workspace: env.Workspace, maxOut: env.InlineBytes}
+			return &FileReadTool{workspace: env.Workspace, readRoots: env.ReadRoots, maxOut: env.InlineBytes}
 		}},
 		{Name: "file_list", New: func(env Env) api.Tool {
-			return &FileListTool{workspace: env.Workspace, maxOut: env.RawBytes}
+			return &FileListTool{workspace: env.Workspace, readRoots: env.ReadRoots, maxOut: env.RawBytes}
 		}},
 		{Name: "file_grep", New: func(env Env) api.Tool {
-			return &FileGrepTool{workspace: env.Workspace, maxOut: env.RawBytes}
+			return &FileGrepTool{workspace: env.Workspace, readRoots: env.ReadRoots, maxOut: env.RawBytes}
 		}},
 		{Name: "file_find", New: func(env Env) api.Tool {
-			return &FileFindTool{workspace: env.Workspace, maxOut: env.RawBytes}
+			return &FileFindTool{workspace: env.Workspace, readRoots: env.ReadRoots, maxOut: env.RawBytes}
 		}},
 		{Name: "web_fetch", New: func(env Env) api.Tool {
 			t, err := NewWebFetchTool(env.FetchAllowPrivate, env.FetchProxy)

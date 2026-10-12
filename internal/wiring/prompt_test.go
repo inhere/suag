@@ -58,6 +58,22 @@ func TestEnvironmentPrompt(t *testing.T) {
 		assert.StrContains(t, p, "Workspace (file tools are confined to it): /w")
 		assert.NotContains(t, p, "Shell for shell_exec")
 	})
+	t.Run("read roots are listed", func(t *testing.T) {
+		resetConfig(t)
+		dir := t.TempDir()
+		assert.NoErr(t, gkconfig.Set("tools.dependency_roots", false))
+		assert.NoErr(t, gkconfig.Set("tools.read_roots", []string{dir}))
+		p := environmentPrompt(Options{Workspace: "/w"})
+		assert.StrContains(t, p, "Read-only roots outside the workspace")
+		assert.StrContains(t, p, "  - configured: "+dir)
+		assert.Eq(t, []string{dir}, nativeEnv("/w").ReadRoots)
+	})
+	t.Run("no read roots, no section", func(t *testing.T) {
+		resetConfig(t)
+		assert.NoErr(t, gkconfig.Set("tools.dependency_roots", false))
+		assert.NotContains(t, environmentPrompt(Options{Workspace: "/w"}), "Read-only roots")
+		assert.Empty(t, nativeEnv("/w").ReadRoots)
+	})
 	t.Run("writable names the shell", func(t *testing.T) {
 		p := environmentPrompt(Options{Workspace: "/w", AllowWrite: true})
 		assert.StrContains(t, p, "Mode: writable")

@@ -136,6 +136,16 @@ func TestToolLocationOmitsLineWhenUnknown(t *testing.T) {
 	assert.Eq(t, 7, *locations[0].Line)
 }
 
+func TestToolLocationsForReadPaths(t *testing.T) {
+	cwd := t.TempDir()
+	outside := filepath.Join(filepath.Dir(cwd), "outside.txt")
+	locations := toolLocations(cwd, map[string]any{"paths": []any{"a.txt", outside, "sub/b.txt"}})
+	assert.Eq(t, 2, len(locations)) // the path outside the workspace has nothing to point at
+	assert.Eq(t, filepath.Join(cwd, "a.txt"), locations[0].Path)
+	assert.Eq(t, filepath.Join(cwd, "sub", "b.txt"), locations[1].Path)
+	assert.Empty(t, toolLocations(cwd, map[string]any{"paths": "[not json"}))
+}
+
 func TestToolUpdatesDoNotRepeatDiff(t *testing.T) {
 	cwd := t.TempDir()
 	path := filepath.Join(cwd, "t.txt")

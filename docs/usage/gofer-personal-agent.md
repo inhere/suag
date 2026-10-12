@@ -85,7 +85,7 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 
 内置工具来自同一份清单，run、chat、ACP 共用：
 
-- 读工具（只读模式也有，chat 不询问）：`file_read`（按行分段，`offset`/`limit`，默认 2000 行，带行号）、`file_list`（`depth` ≤ 5、`max_entries` 500）、`file_grep`（RE2 正则，`path`/`glob`/`ignore_case`/`output: content|files`/`max_results` 默认 100 上限 1000）、`file_find`（`**` glob，按修改时间新到旧，默认 200 条）、`web_fetch`（http(s)，20 秒、下载上限 5MB、最多 5 次跳转，HTML 转为保留标题/链接/代码块的文本，默认返回 20000 字节）、`web_search`（配置 `serpapi_key` 时注册）、`skill`（见下）。`update_plan` 各模式都有。
+- 读工具（只读模式也有，chat 不询问）：`file_read`（按行分段，`offset`/`limit`，默认 2000 行，带行号；`paths` 一次读最多 10 个文件，`offset`/`limit` 对每个文件生效，某个文件出错只在它的位置报错）、`file_list`（`depth` ≤ 5、`max_entries` 500）、`file_grep`（RE2 正则，`path`/`glob`/`ignore_case`/`output: content|files`/`max_results` 默认 100 上限 1000）、`file_find`（`**` glob，按修改时间新到旧，默认 200 条）、`web_fetch`（http(s)，20 秒、下载上限 5MB、最多 5 次跳转，HTML 转为保留标题/链接/代码块的文本，默认返回 20000 字节）、`web_search`（配置 `serpapi_key` 时注册）、`skill`（见下）。`update_plan` 各模式都有。
 - 写工具（`--allow-write` / `tools.allow_write` / ACP `default` mode）：`file_write`（整文件写）、`file_edit`（按唯一字符串替换，`replace_all` 替换全部，`edits` 一次多处且全成或全不改，保留 CRLF）、`shell_exec`。
 - 文件类工具都经 `os.OpenRoot` 限制在工作区内，不跟随指向外部的 symlink；`file_list`/`file_grep`/`file_find` 不进入 `.git`、`node_modules`、`vendor`、`dist` 与根 `.gitignore` 的简单模式（不支持 `!` 与子目录 `.gitignore`），`file_grep` 跳过二进制与超过 1MB 的文件；搜索超过 10 秒返回已有结果并注明不完整。
 - `web_fetch` 在拨号时检查实际连接的 IP，拒绝回环、私网、链路本地（含云元数据地址）、CGNAT 与组播地址，跳转与 DNS 重绑定同样受限；不读取环境代理（`HTTPS_PROXY` 等）。需要代理才能访问的站点，设 `tools.web_fetch.proxy`（`http://`、`https://` 或 `socks5://` 地址，如 `http://127.0.0.1:7890`）：此时连接只发往代理，改为在请求前与每次跳转时解析目标域名并校验其 IP，解析失败也拒绝（代理端若对同一域名解析出不同地址则无法察觉，保护弱于直连）；格式错误时启动报错。`tools.web_fetch.allow_private: true` 可放开内网限制。
@@ -99,6 +99,7 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 - `tools.max_spill_bytes`（缺省 1048576）：单次工具（含 MCP）原始输出上限，超出部分按 UTF-8 边界保留头尾截断。
 - `tools.shell`：显式指定 shell（命令名或路径，如 `bash`）；不自动探测。
 - `tools.shell_timeout_max`（缺省 600）：`shell_exec` 的 `timeout` 上限（秒）。
+- `tools.dependency_roots`（缺省 `true`）与 `tools.read_roots`（目录列表，支持 `~`，须为已存在的绝对路径）：工作区外的只读目录。`file_read`、`file_list`、`file_grep`、`file_find` 可用绝对路径读取其中文件，写工具与 `shell_exec` 的工作目录不受影响。自动识别只取源码目录：Go 模块缓存（`GOMODCACHE`，或 `go env -w` 写的值，或 `GOPATH/pkg/mod`）、Go 标准库（`GOROOT/src`，未设置时按 PATH 中 `go` 的位置推断）、Rust crate 源码（`CARGO_HOME/registry/src`），不会放开整个 `~/.cargo`、`~/.m2` 这类含凭据的目录；Java 依赖多为 jar，需要时把解压后的源码目录写进 `tools.read_roots`。识别结果列在提示词的环境一节，grep/find 在这些目录里输出绝对路径。
 - `mcp.call_timeout_sec`（缺省 120）：单次 MCP 工具调用的超时。
 
 另有三组工具，run、chat、ACP 均有：

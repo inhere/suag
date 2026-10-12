@@ -63,6 +63,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `tools.approval` | 仅 chat：`ask`（默认）执行写/shell 工具前询问，`auto` 不询问 |
 | `tools.max_output_bytes`、`tools.max_spill_bytes` | 内联阈值：单次工具结果完整写入会话的上限（默认 8000，超出时原文存 `$SUAG_HOME/sessions/<id>/outputs/`，会话只留 ref 与头尾片段）；单次工具原始输出上限（默认 1 MiB） |
 | `tools.shell`、`tools.shell_timeout_max` | 指定 shell（默认 Windows 用 pwsh/powershell，其他系统用 sh）；单条命令最长秒数（600） |
+| `tools.dependency_roots`、`tools.read_roots` | 工作区外的只读目录，`file_read`/`file_list`/`file_grep`/`file_find` 可用绝对路径读取：自动识别的 Go 模块缓存、Go 标准库源码与 Rust crate 源码（默认 `true`，`false` 关闭识别），以及额外目录列表（支持 `~`）。写入仍只限工作区；这些目录会列在提示词的环境一节 |
 | `tools.web_fetch.proxy`、`tools.web_fetch.allow_private` | `web_fetch` 使用的代理；允许访问内网地址 |
 | `tools.auto_allow`、`tools.read_only_allow` | MCP 放行名单，条目形如 `server/工具glob` |
 | `tools.deferred` | MCP 工具 schema 是否延迟加载：`auto`（默认）、`always`、`never` |
@@ -82,7 +83,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 
 | 工具 | 类型 | 作用 |
 |---|---|---|
-| `file_read` | 读 | 带行号分段读取（`offset`/`limit`，默认 2000 行）；二进制文件只报告不输出 |
+| `file_read` | 读 | 带行号分段读取（`offset`/`limit`，默认 2000 行）；`paths` 一次读最多 10 个文件；二进制文件只报告不输出 |
 | `file_list` | 读 | 列目录，`depth`（≤ 5）可递归 |
 | `file_grep` | 读 | RE2 正则搜索，支持 `glob`、`ignore_case`、`output: content\|files` |
 | `file_find` | 读 | 支持 `**` 的 glob 查找，按修改时间从新到旧 |

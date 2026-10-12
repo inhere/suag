@@ -25,7 +25,8 @@ var ignoredDirs = map[string]bool{".git": true, "node_modules": true, "vendor": 
 // FileListTool lists files in a workspace directory, optionally recursively.
 type FileListTool struct {
 	workspace string
-	maxOut    int // raw result cap in bytes; 0 = DefaultRawOutputBytes
+	readRoots []string // read-only directories outside the workspace
+	maxOut    int      // raw result cap in bytes; 0 = DefaultRawOutputBytes
 }
 
 func (t *FileListTool) Name() string { return "file_list" }
@@ -47,7 +48,7 @@ func (t *FileListTool) Schema() api.ToolSchema {
 			"properties": map[string]any{
 				"dir": map[string]any{
 					"type":        "string",
-					"description": "Relative directory path (empty = workspace root)",
+					"description": "Relative directory path (empty = workspace root), or an absolute one under a read-only dependency root",
 				},
 				"depth": map[string]any{
 					"type":        "integer",
@@ -67,7 +68,7 @@ func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	if dirArg == "" {
 		dirArg = "."
 	}
-	base, err := ResolveSandboxedPath(t.workspace, dirArg)
+	target, err := resolveRead(t.workspace, t.readRoots, dirArg)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +80,7 @@ func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 		maxEntries = int(n)
 	}
 
-	list, err := withRoot(t.workspace, base, func(root *os.Root, rel string) (listing, error) {
+	list, err := withRoot(target.base, target.abs, func(root *os.Root, rel string) (listing, error) {
 		var out listing
 		err := listDir(root, rel, "", depth, maxEntries, &out)
 		return out, err

@@ -25,7 +25,8 @@ const (
 // expression, in pure Go (no external rg).
 type FileGrepTool struct {
 	workspace string
-	maxOut    int // raw result cap in bytes; 0 = DefaultRawOutputBytes
+	readRoots []string // read-only directories outside the workspace
+	maxOut    int      // raw result cap in bytes; 0 = DefaultRawOutputBytes
 }
 
 func (t *FileGrepTool) Name() string { return "file_grep" }
@@ -47,7 +48,7 @@ func (t *FileGrepTool) Schema() api.ToolSchema {
 			"type": "object",
 			"properties": map[string]any{
 				"pattern":     map[string]any{"type": "string", "description": "RE2 regular expression"},
-				"path":        map[string]any{"type": "string", "description": "File or directory to search (default: workspace root)"},
+				"path":        map[string]any{"type": "string", "description": "File or directory to search (default: workspace root); may be absolute under a read-only dependency root"},
 				"glob":        map[string]any{"type": "string", "description": "Only files matching this glob, e.g. *.go or internal/**/*.go"},
 				"ignore_case": map[string]any{"type": "boolean", "description": "Case-insensitive match"},
 				"output":      map[string]any{"type": "string", "enum": []any{"content", "files"}, "description": "content (default): matching lines; files: matching file paths"},
@@ -71,7 +72,7 @@ func (t *FileGrepTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	if err != nil {
 		return nil, fmt.Errorf("file_grep: invalid pattern: %w", err)
 	}
-	start, err := searchStart(t.workspace, args)
+	start, err := searchStart(t.workspace, t.readRoots, args)
 	if err != nil {
 		return nil, err
 	}
@@ -86,14 +87,14 @@ func (t *FileGrepTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	defer cancel()
 	var out []string
 	full := false
-	timedOut, err := walkWorkspace(ctx, t.workspace, start, func(root *os.Root, rel string, d fs.DirEntry) error {
+	timedOut, err := walkWorkspace(ctx, start.base, start.abs, func(root *os.Root, rel string, d fs.DirEntry) error {
 		if glob != "" && !globMatch(glob, rel) {
 			return nil
 		}
 		if info, err := d.Info(); err != nil || info.Size() > maxSearchFileBytes {
 			return nil
 		}
-		matches, err := grepFile(root, rel, re, filesOnly, limit-len(out))
+		matches, err := grepFile(root, rel, start.show(rel), re, filesOnly, limit-len(out))
 		if err != nil {
 			return nil // unreadable file: skip
 		}
@@ -120,9 +121,10 @@ func (t *FileGrepTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: TruncateHeadTail(content, rawLimit(t.maxOut))}, nil
 }
 
-// grepFile returns up to limit matches in one file: "rel:line: text" lines,
-// or just rel when filesOnly. Binary files yield nothing.
-func grepFile(root *os.Root, rel string, re *regexp.Regexp, filesOnly bool, limit int) ([]string, error) {
+// grepFile returns up to limit matches in one file: "name:line: text" lines,
+// or just name when filesOnly; name is how the file is shown (rel, or its
+// absolute path under a read root). Binary files yield nothing.
+func grepFile(root *os.Root, rel, name string, re *regexp.Regexp, filesOnly bool, limit int) ([]string, error) {
 	f, err := root.Open(rel)
 	if err != nil {
 		return nil, err
@@ -149,21 +151,22 @@ func grepFile(root *os.Root, rel string, re *regexp.Regexp, filesOnly bool, limi
 			continue
 		}
 		if filesOnly {
-			return []string{rel}, nil
+			return []string{name}, nil
 		}
 		if len(line) > maxGrepLineBytes {
 			line = line[:utf8Cut(line, maxGrepLineBytes)] + "…"
 		}
-		out = append(out, fmt.Sprintf("%s:%d: %s", rel, lineNo, line))
+		out = append(out, fmt.Sprintf("%s:%d: %s", name, lineNo, line))
 	}
 	return out, nil
 }
 
-// searchStart resolves the optional path argument (default: the workspace).
-func searchStart(workspace string, args map[string]any) (string, error) {
+// searchStart resolves the optional path argument (default: the workspace),
+// which may also be an absolute path under one of the read roots.
+func searchStart(workspace string, roots []string, args map[string]any) (readTarget, error) {
 	p, _ := args["path"].(string)
 	if p == "" {
 		p = "."
 	}
-	return ResolveSandboxedPath(workspace, p)
+	return resolveRead(workspace, roots, p)
 }

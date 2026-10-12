@@ -7,6 +7,8 @@
 ### 新增
 
 - `file_edit` 支持 `edits` 列表：同一文件的多处替换一次调用完成，按顺序作用于上一处的结果，任一处失败则文件不变；ACP 差异预览与 chat 审批提示逐处显示。
+- `file_read` 支持 `paths`：一次读最多 10 个文件，按 `==> 路径 <==` 分段输出，`offset`/`limit` 对每个文件生效，某个文件出错只在它的位置报错。
+- 只读文件工具（`file_read`、`file_list`、`file_grep`、`file_find`）可读工作区外的依赖源码：自动识别 Go 模块缓存、Go 标准库源码与 Rust crate 源码（`tools.dependency_roots`，默认开），另可用 `tools.read_roots` 列出额外目录。只放源码目录，写入仍只限工作区；这些目录列在提示词的环境一节，grep/find 在其中输出绝对路径。
 - 评测脚本：仓库模式任务（`repo: {ref}`）、长编码任务 `long-coding-schedule`（任务级 `timeout`、结束后注入的 `acceptance` 测试、`command` 检查）、`--suag-args` / `--omp-args`、`--suag-set key=value`（改写临时配置）、`--repeat N`（附平均行）、结果中的 `tool_counts`。
 
 ### 修复

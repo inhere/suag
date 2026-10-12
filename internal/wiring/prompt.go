@@ -65,6 +65,14 @@ func environmentPrompt(opts Options) string {
 	b.WriteString("# Environment\n")
 	fmt.Fprintf(&b, "- OS: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 	fmt.Fprintf(&b, "- Workspace (file tools are confined to it): %s\n", opts.Workspace)
+	if roots, _ := readRoots(); len(roots) > 0 {
+		// Dependency sources: read them with the file tools instead of shell
+		// detours (docs/research/2026-10-11-suag-vs-omp-loop-analysis.md).
+		b.WriteString("- Read-only roots outside the workspace (file_read, file_list, file_grep and file_find accept absolute paths under them):\n")
+		for _, r := range roots {
+			fmt.Fprintf(&b, "  - %s: %s\n", r.Label, r.Path)
+		}
+	}
 	if opts.AllowWrite {
 		fmt.Fprintf(&b, "- Shell for shell_exec: %s\n", native.ShellName(gkconfig.String("tools.shell")))
 		b.WriteString("- Mode: writable — you may edit files and run commands; the user may be asked to confirm.\n")

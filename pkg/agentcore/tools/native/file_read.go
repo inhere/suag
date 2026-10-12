@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,19 +20,25 @@ const (
 	defaultReadLines = 2000
 	// binarySniffBytes is how much of a file is checked for NUL bytes.
 	binarySniffBytes = 8 << 10
+	// maxReadPaths is how many files one file_read call may read via paths.
+	maxReadPaths = 10
 )
 
-// FileReadTool reads a file within the workspace, a window of lines at a time.
+// FileReadTool reads files within the workspace (or a read root), a window of
+// lines at a time.
 type FileReadTool struct {
 	workspace string
-	maxOut    int // page cap in bytes (inline threshold); 0 = DefaultMaxOutputBytes
+	readRoots []string // read-only directories outside the workspace
+	maxOut    int      // page cap in bytes per file (inline threshold); 0 = DefaultMaxOutputBytes
 }
 
 func (t *FileReadTool) Name() string { return "file_read" }
 func (t *FileReadTool) Description() string {
 	return fmt.Sprintf("Read a text file in the workspace. Lines are prefixed with their number and a tab "+
 		"(the prefix is not part of the file). Returns at most %d lines per call; for large files pass "+
-		"offset (1-based start line) and limit to read further. Binary files are reported, not dumped.", defaultReadLines)
+		"offset (1-based start line) and limit to read further. To read several files in one call pass "+
+		"paths (up to %d) instead of path; offset and limit then apply to each file. "+
+		"Binary files are reported, not dumped.", defaultReadLines, maxReadPaths)
 }
 
 // ToolMeta marks the tool as a read-only read.
@@ -47,7 +54,12 @@ func (t *FileReadTool) Schema() api.ToolSchema {
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "Path within workspace (relative, or absolute inside it)",
+					"description": "Path within workspace (relative, or absolute inside it or under a read-only dependency root)",
+				},
+				"paths": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": fmt.Sprintf("Several files to read in one call (up to %d), instead of path", maxReadPaths),
 				},
 				"offset": map[string]any{
 					"type":        "integer",
@@ -58,15 +70,14 @@ func (t *FileReadTool) Schema() api.ToolSchema {
 					"description": fmt.Sprintf("Maximum lines to return (default %d)", defaultReadLines),
 				},
 			},
-			"required": []any{"path"},
 		},
 	}
 }
 
 func (t *FileReadTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
-	path, err := sandboxedPath(t.workspace, call.Arguments, "path")
+	paths, err := ReadPathList(call.Arguments)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("file_read: %w", err)
 	}
 	offset, limit := 1, defaultReadLines
 	if n, ok := numberArg(call.Arguments["offset"]); ok && n >= 1 {
@@ -75,7 +86,41 @@ func (t *FileReadTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	if n, ok := numberArg(call.Arguments["limit"]); ok && n >= 1 {
 		limit = int(n)
 	}
-	content, err := withRoot(t.workspace, path, func(root *os.Root, rel string) (string, error) {
+	var content string
+	if len(paths) == 1 {
+		if content, err = t.readOne(paths[0], offset, limit); err != nil {
+			return nil, err
+		}
+	} else {
+		// Several files: each gets its own page cap, as if read one by one, and
+		// a failing path is reported in place so the others still come back.
+		var sb strings.Builder
+		for i, p := range paths {
+			if i > 0 {
+				sb.WriteString("\n\n")
+			}
+			text, err := t.readOne(p, offset, limit)
+			if err != nil {
+				text = "[error: " + err.Error() + "]"
+			}
+			fmt.Fprintf(&sb, "==> %s <==\n%s", p, text)
+		}
+		content = sb.String()
+	}
+	return &api.ToolResult{
+		CallID:  call.CallID,
+		Name:    t.Name(),
+		Content: content,
+	}, nil
+}
+
+// readOne reads the line window of one path argument.
+func (t *FileReadTool) readOne(arg string, offset, limit int) (string, error) {
+	target, err := resolveRead(t.workspace, t.readRoots, arg)
+	if err != nil {
+		return "", err
+	}
+	content, err := withRoot(target.base, target.abs, func(root *os.Root, rel string) (string, error) {
 		f, err := root.Open(rel)
 		if err != nil {
 			return "", err
@@ -84,13 +129,56 @@ func (t *FileReadTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 		return readLineWindow(f, offset, limit, outputLimit(t.maxOut))
 	})
 	if err != nil {
-		return nil, fmt.Errorf("file_read: %w", err)
+		return "", fmt.Errorf("file_read: %w", err)
 	}
-	return &api.ToolResult{
-		CallID:  call.CallID,
-		Name:    t.Name(),
-		Content: content,
-	}, nil
+	return content, nil
+}
+
+// ReadPathList returns file_read's paths: path, then the entries of paths
+// (duplicates dropped). paths may arrive as a JSON-encoded string, as some
+// models encode arrays that way, or as a single plain string.
+func ReadPathList(args map[string]any) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	add := func(p string) {
+		if p != "" && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	if p, _ := args["path"].(string); p != "" {
+		add(p)
+	}
+	raw := args["paths"]
+	if text, isText := raw.(string); isText {
+		if strings.HasPrefix(strings.TrimSpace(text), "[") {
+			if err := json.Unmarshal([]byte(text), &raw); err != nil {
+				return nil, fmt.Errorf("paths must be an array of strings: %w", err)
+			}
+		} else {
+			raw = []any{text}
+		}
+	}
+	if raw != nil {
+		items, isList := raw.([]any)
+		if !isList {
+			return nil, fmt.Errorf("paths must be an array of strings")
+		}
+		for i, item := range items {
+			p, isText := item.(string)
+			if !isText {
+				return nil, fmt.Errorf("paths[%d] must be a string", i)
+			}
+			add(p)
+		}
+	}
+	switch {
+	case len(out) == 0:
+		return nil, fmt.Errorf("%q arg is required", "path")
+	case len(out) > maxReadPaths:
+		return nil, fmt.Errorf("at most %d paths per call, got %d", maxReadPaths, len(out))
+	}
+	return out, nil
 }
 
 // readLineWindow returns lines [offset, offset+limit) of f with line numbers,

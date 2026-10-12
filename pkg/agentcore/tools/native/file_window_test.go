@@ -110,3 +110,61 @@ func TestFileListDepth(t *testing.T) {
 		assert.NotContains(t, out, "secret.txt")
 	})
 }
+
+func TestFileReadPaths(t *testing.T) {
+	ws := t.TempDir()
+	for name, text := range map[string]string{"a.txt": "one\ntwo\n", "b.txt": "three\n", "c.txt": "four\nfive\nsix\n"} {
+		assert.NoErr(t, os.WriteFile(filepath.Join(ws, name), []byte(text), 0o644))
+	}
+	tool := &FileReadTool{workspace: ws}
+
+	t.Run("several files in one call", func(t *testing.T) {
+		out := execTool(t, tool, map[string]any{"paths": []any{"a.txt", "b.txt"}})
+		assert.Eq(t, "==> a.txt <==\n1\tone\n2\ttwo\n\n==> b.txt <==\n1\tthree", out)
+	})
+	t.Run("path comes first and duplicates are dropped", func(t *testing.T) {
+		out := execTool(t, tool, map[string]any{"path": "b.txt", "paths": []any{"a.txt", "b.txt"}})
+		assert.True(t, strings.HasPrefix(out, "==> b.txt <==\n"), out)
+		assert.Eq(t, 2, strings.Count(out, "==> "))
+	})
+	t.Run("offset and limit apply to each file", func(t *testing.T) {
+		out := execTool(t, tool, map[string]any{"paths": []any{"a.txt", "c.txt"}, "offset": 2, "limit": 1})
+		assert.StrContains(t, out, "==> a.txt <==\n2\ttwo\n")
+		assert.StrContains(t, out, "==> c.txt <==\n2\tfive\n[truncated at limit 1 lines; continue with offset=3]")
+	})
+	t.Run("a failing path is reported in place", func(t *testing.T) {
+		out := execTool(t, tool, map[string]any{"paths": []any{"missing.txt", "../x.txt", "b.txt"}})
+		assert.StrContains(t, out, "==> missing.txt <==\n[error: file_read: ")
+		assert.StrContains(t, out, "==> ../x.txt <==\n[error: path escape")
+		assert.StrContains(t, out, "==> b.txt <==\n1\tthree")
+	})
+	t.Run("paths as a JSON string or a plain string", func(t *testing.T) {
+		out := execTool(t, tool, map[string]any{"paths": `["a.txt","b.txt"]`})
+		assert.Eq(t, 2, strings.Count(out, "==> "))
+		out = execTool(t, tool, map[string]any{"paths": "b.txt"})
+		assert.Eq(t, "1\tthree", out) // one path reads like path
+	})
+	t.Run("one path keeps the plain form and errors", func(t *testing.T) {
+		out := execTool(t, tool, map[string]any{"paths": []any{"a.txt"}})
+		assert.Eq(t, "1\tone\n2\ttwo", out)
+		_, err := tool.Execute(context.Background(), api.ToolCall{CallID: "c", Arguments: map[string]any{"path": "missing.txt"}})
+		assert.Err(t, err)
+	})
+	t.Run("invalid arguments", func(t *testing.T) {
+		many := make([]any, maxReadPaths+1)
+		for i := range many {
+			many[i] = fmt.Sprintf("f%d.txt", i)
+		}
+		for args, want := range map[*map[string]any]string{
+			{}:                         `"path" arg is required`,
+			{"paths": []any{}}:         `"path" arg is required`,
+			{"paths": []any{"a", 1.0}}: "paths[1] must be a string",
+			{"paths": `["a",`}:         "paths must be an array of strings",
+			{"paths": 3.0}:             "paths must be an array of strings",
+			{"paths": many}:            fmt.Sprintf("at most %d paths per call", maxReadPaths),
+		} {
+			_, err := tool.Execute(context.Background(), api.ToolCall{CallID: "c", Arguments: *args})
+			assert.ErrMsgContains(t, err, want)
+		}
+	})
+}

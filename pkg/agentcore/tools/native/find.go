@@ -18,7 +18,8 @@ const defaultFindResults = 200
 // FileFindTool finds files by glob pattern in the workspace.
 type FileFindTool struct {
 	workspace string
-	maxOut    int // raw result cap in bytes; 0 = DefaultRawOutputBytes
+	readRoots []string // read-only directories outside the workspace
+	maxOut    int      // raw result cap in bytes; 0 = DefaultRawOutputBytes
 }
 
 func (t *FileFindTool) Name() string { return "file_find" }
@@ -40,7 +41,7 @@ func (t *FileFindTool) Schema() api.ToolSchema {
 			"type": "object",
 			"properties": map[string]any{
 				"pattern":     map[string]any{"type": "string", "description": "Glob, e.g. *.md or cmd/**/main.go"},
-				"path":        map[string]any{"type": "string", "description": "Directory to search (default: workspace root)"},
+				"path":        map[string]any{"type": "string", "description": "Directory to search (default: workspace root); may be absolute under a read-only dependency root"},
 				"max_results": map[string]any{"type": "integer", "description": fmt.Sprintf("Maximum paths (default %d)", defaultFindResults)},
 			},
 			"required": []any{"pattern"},
@@ -53,7 +54,7 @@ func (t *FileFindTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	if pattern == "" {
 		return nil, fmt.Errorf("file_find: pattern is required")
 	}
-	start, err := searchStart(t.workspace, call.Arguments)
+	start, err := searchStart(t.workspace, t.readRoots, call.Arguments)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +70,7 @@ func (t *FileFindTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 		mod time.Time
 	}
 	var hits []hit
-	timedOut, err := walkWorkspace(ctx, t.workspace, start, func(_ *os.Root, rel string, d fs.DirEntry) error {
+	timedOut, err := walkWorkspace(ctx, start.base, start.abs, func(_ *os.Root, rel string, d fs.DirEntry) error {
 		if !globMatch(pattern, rel) {
 			return nil
 		}
@@ -96,7 +97,7 @@ func (t *FileFindTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	}
 	lines := make([]string, len(hits))
 	for i, h := range hits {
-		lines[i] = h.rel
+		lines[i] = start.show(h.rel)
 	}
 	content := strings.Join(lines, "\n")
 	if total == 0 {
