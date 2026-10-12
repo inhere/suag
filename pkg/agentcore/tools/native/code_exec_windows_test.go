@@ -4,6 +4,7 @@ package native
 
 import (
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -60,12 +61,16 @@ func TestShellExecWindows(t *testing.T) {
 		assert.True(t, took < 6*time.Second, "took %s", took)
 	})
 	t.Run("timeout kills child processes", func(t *testing.T) {
-		marker := "127.0.0.1"
-		res, took := runShell(t, tool, map[string]any{"command": "ping -n 60 " + marker, "timeout": 2})
+		// Check this run's own child by PID: other test runs on the machine
+		// (parallel evals) may have a ping of their own running.
+		res, took := runShell(t, tool, map[string]any{"command": "$p = Start-Process -FilePath ping.exe " +
+			"-ArgumentList '-n','60','127.0.0.1' -NoNewWindow -PassThru; Write-Output \"child=$($p.Id)\"; $p.WaitForExit()", "timeout": 2})
 		assert.StrContains(t, res.Content, "[timeout after 2s")
 		assert.True(t, took < 6*time.Second, "took %s", took)
+		m := regexp.MustCompile(`child=(\d+)`).FindStringSubmatch(res.Content)
+		assert.Require(t, assert.NotNil(t, m, "no child pid in %q", res.Content))
 		time.Sleep(500 * time.Millisecond)
-		out, _ := exec.Command("tasklist", "/FI", "IMAGENAME eq PING.EXE", "/FO", "CSV", "/NH").Output()
-		assert.False(t, strings.Contains(strings.ToUpper(string(out)), "PING.EXE"), "ping still running: %s", out)
+		out, _ := exec.Command("tasklist", "/FI", "PID eq "+m[1], "/FO", "CSV", "/NH").Output()
+		assert.False(t, strings.Contains(strings.ToUpper(string(out)), "PING.EXE"), "ping %s still running: %s", m[1], out)
 	})
 }
