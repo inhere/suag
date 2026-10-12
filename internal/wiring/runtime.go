@@ -72,6 +72,9 @@ type Runtime struct {
 	Registry *tools.Registry
 	// ContextWindow is the window of the model actually used by the provider.
 	ContextWindow int
+	// Thinking is the main model's effective thinking level ("" = the
+	// provider's default).
+	Thinking string
 	// Asker (chat mode only, else nil) is where the chat approver asks its
 	// questions; chat binds its terminal input to it. Unbound, every tool that
 	// needs a confirmation is refused.
@@ -325,7 +328,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	memHost.bind(runner, repo)
 	return &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
-		ContextWindow: contextWindow, tools: toolRegistry}, nil
+		ContextWindow: contextWindow, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry}, nil
 }
 
 // buildMainProvider builds the main provider; with fallback_models the result

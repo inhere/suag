@@ -136,7 +136,18 @@ func TestBannerAndExitSummary(t *testing.T) {
 	t.Run("banner shows the model", func(t *testing.T) {
 		var out bytes.Buffer
 		newRenderer(rendererOptions{Out: &out, Provider: "opencode-go", Model: "deepseek-v4-flash"}).Banner()
-		assert.StrContains(t, out.String(), "Suag chat · opencode-go/deepseek-v4-flash")
+		assert.StrContains(t, out.String(), "Suag chat · opencode-go/deepseek-v4-flash\n")
+	})
+	t.Run("banner adds the thinking level and the context window", func(t *testing.T) {
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out, Provider: "command-code", Model: "deepseek-v4.1-flash",
+			Thinking: "high", ContextWindow: 950000}).Banner()
+		assert.StrContains(t, out.String(), "Suag chat · command-code/deepseek-v4.1-flash · thinking high · ctx 950k\n")
+	})
+	t.Run("token counts", func(t *testing.T) {
+		for n, want := range map[int]string{512: "512", 128000: "128k", 950000: "950k", 1000000: "1M", 1048576: "1.05M", 200500: "200.5k"} {
+			assert.Eq(t, want, formatTokens(n), n)
+		}
 	})
 	t.Run("exit summary", func(t *testing.T) {
 		var s chatStats

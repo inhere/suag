@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,9 @@ type rendererOptions struct {
 	Color, ErrColor bool
 	// Provider and Model label the per-turn status line; either may be empty.
 	Provider, Model string
+	// Thinking and ContextWindow follow the model in the banner when set.
+	Thinking      string
+	ContextWindow int
 	// WriteTools selects the banner's tool line (write and shell on or off).
 	WriteTools bool
 }
@@ -240,6 +244,12 @@ func (r *Renderer) Banner() {
 	if label := modelLabel(r.opts.Provider, r.opts.Model); label != "" {
 		head += " · " + label
 	}
+	if r.opts.Thinking != "" {
+		head += " · thinking " + r.opts.Thinking
+	}
+	if r.opts.ContextWindow > 0 {
+		head += " · ctx " + formatTokens(r.opts.ContextWindow)
+	}
 	fmt.Fprintln(r.opts.Out, r.paint(color.Cyan, head))
 	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "输入任务开始对话；:session 显示会话，:compact 压缩上下文，:quit 退出。"))
 	if r.opts.WriteTools {
@@ -249,6 +259,18 @@ func (r *Renderer) Banner() {
 		// are off unless SUAG_HOME/config.yaml sets tools.allow_write.
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "工具：只读。要写文件、执行 shell，在 SUAG_HOME/config.yaml 设 tools.allow_write: true。"))
 	}
+}
+
+// formatTokens renders a token count compactly: 950000 -> "950k",
+// 1000000 -> "1M", 1500000 -> "1.5M", 512 -> "512".
+func formatTokens(n int) string {
+	switch {
+	case n >= 1_000_000:
+		return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%.2f", float64(n)/1e6), "0"), ".") + "M"
+	case n >= 1000:
+		return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%.1f", float64(n)/1e3), "0"), ".") + "k"
+	}
+	return strconv.Itoa(n)
 }
 
 // ModelLabel is "provider/model" (or whichever part is known).

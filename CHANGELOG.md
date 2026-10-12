@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 变更
+
+- chat 开头一行在模型后显示思考档位与上下文窗口，如 `Suag chat · command-code/deepseek-v4.1-flash · thinking high · ctx 950k`（未设档位时不显示该项）。
+
 ## [0.13.0] - 2026-10-12
 
 历史折叠（默认开启）、安全删除工具 `file_remove`、思考档位与模型短名。依据见 [分析](docs/research/2026-10-11-suag-vs-omp-loop-analysis.md) 与 [历史折叠设计](docs/design/2026-10-12-history-folding-design.md)。

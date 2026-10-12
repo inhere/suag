@@ -39,6 +39,10 @@ type Options struct {
 	Asker *tools.BindableAsker
 	// WriteTools tells the banner whether file_write/shell_exec are available.
 	WriteTools bool
+	// Thinking (the effective thinking level, "" = provider default) and
+	// ContextWindow (tokens, 0 = unknown) are shown in the banner.
+	Thinking      string
+	ContextWindow int
 	// IdleAfter and IdleMinRatio configure the idle consolidation
 	// (context.idle_after, context.idle_min_ratio); IdleAfter 0 turns it off.
 	IdleAfter    time.Duration
@@ -138,6 +142,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		Out: inputSource, Err: stderr,
 		Color: colorEnabledFor(stdout), ErrColor: colorEnabledFor(stderr),
 		Provider: runner.ProviderName(), Model: runner.Model(),
+		Thinking: opts.Thinking, ContextWindow: opts.ContextWindow,
 		WriteTools: opts.WriteTools,
 	})
 	// Background idle consolidation; closed before the input source, so its
