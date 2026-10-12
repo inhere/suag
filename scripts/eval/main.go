@@ -25,7 +25,8 @@ import (
 
 type options struct {
 	bin, task, model, configFrom, out string
-	agent, ompBin                     string
+	agent, ompBin, claudeBin          string
+	claudeConfigFrom, claudeArgs      string
 	fake                              bool
 	timeout                           time.Duration
 	tasksDir                          string
@@ -92,8 +93,11 @@ func run() error {
 	flag.StringVar(&o.configFrom, "config-from", "", "directory whose config.yaml and .env are copied (read-only) into the temp SUAG_HOME")
 	flag.StringVar(&o.out, "out", "", "output directory (default tmp/eval/<run-id>)")
 	flag.DurationVar(&o.timeout, "timeout", 10*time.Minute, "per-task timeout (a task's own timeout field overrides it)")
-	flag.StringVar(&o.agent, "agent", "suag", "agent under test: suag or omp (oh-my-pi, same model via --model)")
+	flag.StringVar(&o.agent, "agent", "suag", "agent under test: suag, omp (oh-my-pi) or claude (Claude Code); same model via --model")
 	flag.StringVar(&o.ompBin, "omp-bin", "omp", "omp executable for --agent omp")
+	flag.StringVar(&o.claudeBin, "claude-bin", "claude", "Claude Code executable for --agent claude")
+	flag.StringVar(&o.claudeConfigFrom, "claude-config-from", "", "directory whose settings.json env (gateway URL, token, model mapping) the temp CLAUDE_CONFIG_DIR gets (default ~/.claude)")
+	flag.StringVar(&o.claudeArgs, "claude-args", "", "extra `claude -p` arguments placed before the prompt (split on whitespace)")
 	flag.StringVar(&o.tasksDir, "tasks-dir", filepath.Join("scripts", "eval", "testdata", "tasks"), "tasks directory")
 	flag.BoolVar(&o.probe, "probe-prefix", false, "run the prefix-cache probe (exclusive with tasks; suag only)")
 	flag.IntVar(&o.probeRepeat, "probe-repeat", 3, "probe: repetitions per group")
@@ -130,12 +134,12 @@ func run() error {
 		if !o.fake && o.configFrom == "" {
 			return errors.New("need --fake or --config-from <dir>")
 		}
-	case "omp":
+	case "omp", "claude":
 		if o.fake {
 			return errors.New("--fake works only with --agent suag")
 		}
 	default:
-		return fmt.Errorf("unknown --agent %q (suag|omp)", o.agent)
+		return fmt.Errorf("unknown --agent %q (suag|omp|claude)", o.agent)
 	}
 	runID := time.Now().Format("20060102-150405")
 	if o.out == "" {
@@ -189,9 +193,12 @@ func runTask(o *options, bin, runID string, t *Task, round int) (Result, error) 
 	}
 	sid := "eval-" + runID + "-" + name
 	r := Result{Task: t.Name, Round: round, Agent: o.agent, SessionID: sid, Mode: t.Mode, Model: o.model, Fake: o.fake}
-	if o.agent == "omp" {
+	switch o.agent {
+	case "omp":
 		r.AgentArgs = strings.Join(splitArgs(o.ompArgs), " ")
-	} else {
+	case "claude":
+		r.AgentArgs = strings.Join(splitArgs(o.claudeArgs), " ")
+	default:
 		r.AgentArgs = strings.Join(append(splitArgs(o.suagArgs), o.suagSet...), " ")
 	}
 	root := filepath.Join(o.out, name)
@@ -205,6 +212,11 @@ func runTask(o *options, bin, runID string, t *Task, round int) (Result, error) 
 	if o.agent == "omp" {
 		r.SessionID = ""
 		runOmp(ctx, o, t, timeout, ws, filepath.Join(root, "omp-sessions"), &r)
+		return r, nil
+	}
+	if o.agent == "claude" {
+		r.SessionID = ""
+		runClaude(ctx, o, t, timeout, ws, filepath.Join(root, "claude-home"), &r)
 		return r, nil
 	}
 	model, stop, err := setupSuagHome(ctx, o, home, t.FakeMode)

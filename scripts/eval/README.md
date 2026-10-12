@@ -103,8 +103,20 @@ go run ./scripts/eval --fake --task repo-t9-schedule --repeat 2 --suag-args "--n
 
 ## 历史折叠与思考档位
 
-- suag 默认开启历史折叠（`context.fold_every: 10`、`context.fold_keep: 5`）；不折叠的对照组加 `--suag-set context.fold_every=0`。每轮的 `suag trace` 中 `fold` 行给出折叠点与视图字符数。
+- suag 默认不折叠历史（`context.fold_every: 0`）；折叠组加 `--suag-set context.fold_every=10`。每轮的 `suag trace` 中 `fold` 行给出折叠点与视图字符数。
 - 与 omp 对比时两边要用同一思考档位：omp 以 `--thinking`（或其配置）为准，suag 用 `--suag-args "--thinking high"` 或 provider 配置的 `thinking`；不设时 suag 不发送 `reasoning_effort`，用 provider 默认。
+
+## Claude Code（`--agent claude`）
+
+```bash
+go run ./scripts/eval --agent claude --claude-args "--effort high" --task repo-t9-schedule --repeat 3 \
+  --out D:/work/inhere/tmp/suag-eval/<run>
+```
+
+- 运行 `claude -p <prompt> --output-format stream-json --verbose --dangerously-skip-permissions --strict-mcp-config`，多轮任务从第二轮起加 `--continue`；`--model` 原样传给 claude，`--claude-args` 放在 prompt 之前。
+- 隔离：`CLAUDE_CONFIG_DIR=<out>/<task>/claude-home`，其中的 settings.json 只取 `--claude-config-from`（默认 `~/.claude`）settings.json 的 `env`（网关地址、令牌、模型映射），另加 `disableAllHooks`，所以用户的 hooks、skills、agents、插件、记忆与会话都不进入评测；不加载 MCP；关闭自动更新、非必要流量与 auto memory。settings.json 含令牌，权限 0600，运行结束即删除。
+- **工作区必须在任何含 CLAUDE.md / AGENTS.md 的目录之外**：Claude Code 从工作目录一直向上读这些文件（越过工作区自己的 git 根，AGENTS.md 由内置插件读取），在 WP 里运行会把 WP 与 suag 仓库的说明带进去（实测确认；omp 与 suag 在 git 根停止，不受影响）。上层有这类文件时该任务直接报错，`--out` 改到外面，如 `D:/work/inhere/tmp/suag-eval/...`。
+- 统计：模型调用按 assistant 事件的 `message.id` 去重（一次响应可拆成多条事件），工具调用数 tool_use 块；token 取每轮 result 事件的 `modelUsage` 之和（含子 agent），经网关时逐条消息的 usage 为 0，因此 FIRST 列为空。原始事件流存为 `<out>/<task>/claude-events.jsonl`。`total_cost_usd` 是 claude 按 Claude 价目的估算，经网关换了模型时无意义。
 
 ## first_call_uncached
 
