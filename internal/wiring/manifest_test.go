@@ -122,6 +122,14 @@ func TestLoadManifest(t *testing.T) {
 		assert.Eq(t, "exec", m.Memory[0].Backend)
 		assert.Eq(t, "/opt/mem", m.Memory[0].Location)
 	})
+	t.Run("thinking override is validated and reported", func(t *testing.T) {
+		m, err := LoadManifest(ManifestOptions{Thinking: "High"})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "high", m.Models.Main.Thinking)
+		assert.Eq(t, "", m.Models.Compact.Thinking) // --thinking applies to the main model only
+		_, err = LoadManifest(ManifestOptions{Thinking: "huge"})
+		assert.ErrMsgContains(t, err, "--thinking: unknown thinking level")
+	})
 	t.Run("missing model fails", func(t *testing.T) {
 		assert.NoErr(t, gkconfig.Set("model", ""))
 		_, err := LoadManifest(ManifestOptions{})

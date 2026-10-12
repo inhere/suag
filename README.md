@@ -56,6 +56,7 @@ Suag reads only `$SUAG_HOME/config.yaml` and `$SUAG_HOME/.env` (default `~/.suag
 | `model` | Main model, `<provider>/<model>`; overridden by `SUAG_MODEL`, then `--model` |
 | `providers.<id>` | `type` (openai/anthropic), `base_url`, `api_key`, `headers`, `models.<model>.context_window` |
 | `providers.<id>.models.<model>.price` | USD per million tokens (`input`, `output`, `cache_read`, `cache_write`); `suag stats` computes cost from it when the provider reports none |
+| `providers.<id>.thinking`, `providers.<id>.models.<model>.thinking` | Thinking level `off\|minimal\|low\|medium\|high\|xhigh\|max\|auto`, sent as `reasoning_effort` by `openai` providers (unset/`auto` sends nothing); `run`/`chat --thinking` overrides it for the main model |
 | `providers.<id>.context_window` | Default context window for every model of the provider (a `models.<model>.context_window` still wins; otherwise inferred from the model name) |
 | `providers.<id>.models.<model>.model_id` | Model id sent to the provider when it differs from the key, e.g. key `deepseek-v4.1-flash` with `model_id: deepseek/deepseek-v4.1-flash`; everything else uses the key |
 | `compact_model`, `fallback_models` | Cheaper model for summaries; models tried in order when the main one fails |

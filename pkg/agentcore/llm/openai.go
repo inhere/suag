@@ -26,6 +26,8 @@ type OpenAIProvider struct {
 	streamClient *http.Client
 	name         string
 	headers      map[string]string
+	// reasoningEffort is sent as reasoning_effort when set (OpenAIConfig).
+	reasoningEffort string
 }
 
 // OpenAIConfig configures an OpenAIProvider.
@@ -36,6 +38,9 @@ type OpenAIConfig struct {
 	Name    string // default: "openai"
 	// Headers are extra request headers; see applyHeaders for SessionIDPlaceholder.
 	Headers map[string]string
+	// ReasoningEffort is sent as the reasoning_effort request field (e.g.
+	// "low", "high", "none"); empty leaves the provider's default.
+	ReasoningEffort string
 }
 
 // NewOpenAIProvider creates an OpenAIProvider from cfg.
@@ -57,6 +62,8 @@ func NewOpenAIProvider(cfg OpenAIConfig) *OpenAIProvider {
 		streamClient: newStreamClient(),
 		name:         cfg.Name,
 		headers:      cfg.Headers,
+
+		reasoningEffort: cfg.ReasoningEffort,
 	}
 }
 
@@ -154,6 +161,9 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 	}
 	if req.Temperature > 0 {
 		body["temperature"] = req.Temperature
+	}
+	if p.reasoningEffort != "" {
+		body["reasoning_effort"] = p.reasoningEffort
 	}
 	if len(req.Tools) > 0 {
 		tools := make([]map[string]any, len(req.Tools))

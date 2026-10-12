@@ -16,12 +16,12 @@ import (
 // without contacting the provider or starting any MCP server.
 func newManifestCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	var asJSON bool
-	var model string
+	var model, thinking string
 	cmd := capp.NewCmd("manifest", "Show capabilities: models, tools, MCP, skills, memory backends, output limits", func(c *capp.Cmd) error {
 		if len(c.RemainArgs()) > 0 {
-			return fmt.Errorf("usage: suag manifest [--model m] [--json]")
+			return fmt.Errorf("usage: suag manifest [--model m] [--thinking level] [--json]")
 		}
-		m, err := wiring.LoadManifest(wiring.ManifestOptions{Model: model})
+		m, err := wiring.LoadManifest(wiring.ManifestOptions{Model: model, Thinking: thinking})
 		if err != nil {
 			return err
 		}
@@ -34,6 +34,7 @@ func newManifestCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd
 	})
 	cmd.SetOutput(stderr)
 	cmd.StringVar(&model, "model", "", "model to report, provider/model;;m")
+	cmd.StringVar(&thinking, "thinking", "", "thinking level to report (like run --thinking)")
 	cmd.BoolVar(&asJSON, "json", false, "write the manifest as JSON")
 	return cmd
 }
@@ -47,6 +48,9 @@ func writeManifestText(out io.Writer, m wiring.Manifest) error {
 	sends := ""
 	if main.ModelID != "" {
 		sends = ", sends " + main.ModelID
+	}
+	if main.Thinking != "" {
+		sends += ", thinking " + main.Thinking
 	}
 	fmt.Fprintf(&b, "  main      %s/%s (context %d%s)\n", main.Provider, main.Model, main.ContextWindow, sends)
 	if c := m.Models.Compact; c != nil {

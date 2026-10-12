@@ -25,6 +25,9 @@ type ModelConfig struct {
 	// "deepseek/deepseek-v4.1-flash" can be referenced by a short key.
 	ModelID       string
 	ContextWindow int
+	// Thinking (models.<key>.thinking) is the model's thinking level, see
+	// ThinkingLevels; "" falls back to the provider's.
+	Thinking string
 	// Price is the optional per-million-token price used to compute cost when
 	// the provider reports none; the zero value means "no price configured".
 	Price Price
@@ -52,6 +55,9 @@ type ProviderConfig struct {
 	// model of this provider without its own models.<model>.context_window;
 	// 0 = infer from the model name.
 	ContextWindow int
+	// Thinking (providers.<id>.thinking) is the default thinking level of the
+	// provider's models; "" leaves the provider's own default.
+	Thinking string
 	// PromptCache (providers.<id>.prompt_cache) enables Claude cache_control
 	// breakpoints; only meaningful for type anthropic.
 	PromptCache bool
@@ -61,6 +67,9 @@ type ProviderConfig struct {
 type ModelSpec struct {
 	Provider ProviderConfig
 	Model    string
+	// Thinking overrides the configured thinking level (--thinking for the
+	// main model); "" uses the configuration, see ThinkingLevel.
+	Thinking string
 }
 
 // Ref returns the canonical "provider/model" form.
@@ -120,9 +129,13 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 			Models:  readModelConfigs(entry["models"]),
 			// Negative or non-numeric counts as unset, like the per-model value.
 			ContextWindow: intValue(entry["context_window"]),
+			Thinking:      stringValue(entry["thinking"]),
 		}
 		promptCache, promptCacheSet := entry["prompt_cache"].(bool)
 
+		if err := normalizeThinking(id, &user); err != nil {
+			return nil, err
+		}
 		merged, isPreset := providers[id]
 		if !isPreset {
 			merged = ProviderConfig{ID: id}
@@ -139,6 +152,7 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 		if user.ContextWindow > 0 {
 			merged.ContextWindow = user.ContextWindow
 		}
+		merged.Thinking = firstNonEmpty(user.Thinking, merged.Thinking)
 		if promptCacheSet {
 			merged.PromptCache = promptCache
 		}
@@ -151,6 +165,22 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 		providers[id] = merged
 	}
 	return providers, nil
+}
+
+// normalizeThinking validates the provider's and its models' thinking levels.
+func normalizeThinking(id string, p *ProviderConfig) error {
+	level, err := ParseThinking(p.Thinking)
+	if err != nil {
+		return fmt.Errorf("providers.%s.thinking: %w", id, err)
+	}
+	p.Thinking = level
+	for key, cfg := range p.Models {
+		if cfg.Thinking, err = ParseThinking(cfg.Thinking); err != nil {
+			return fmt.Errorf("providers.%s.models.%s.thinking: %w", id, key, err)
+		}
+		p.Models[key] = cfg
+	}
+	return nil
 }
 
 // expandEnv resolves ${VAR} references. The raw map read of providers bypasses
@@ -179,6 +209,7 @@ func readModelConfigs(raw any) map[string]ModelConfig {
 				cfg.ModelID = strings.TrimSpace(id)
 			}
 			cfg.ContextWindow = intValue(entry["context_window"])
+			cfg.Thinking = stringValue(entry["thinking"])
 			cfg.Price = readPrice(entry["price"])
 		}
 		models[strings.TrimSpace(name)] = cfg

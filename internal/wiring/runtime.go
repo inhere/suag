@@ -28,6 +28,8 @@ type Options struct {
 	Workspace string
 	RuleCWD   string
 	Model     string
+	// Thinking overrides the main model's thinking level (--thinking).
+	Thinking string
 	// AllowWrite exposes workspace write and shell tools.
 	AllowWrite bool
 	// ReadOnly (OpenCLI only) narrows the MCP gate to tools.read_only_allow and
@@ -163,7 +165,7 @@ func toolsAllowWrite() (bool, error) {
 // Open assembles one runtime.
 func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	workspace, ruleCWD, allowWrite, servers := opts.Workspace, opts.RuleCWD, opts.AllowWrite, opts.Servers
-	rs, err := loadRuntimeSettings(workspace, opts.Model)
+	rs, err := loadRuntimeSettings(workspace, opts.Model, opts.Thinking)
 	if err != nil {
 		return nil, err
 	}

@@ -23,6 +23,7 @@ var ErrInputRequired = errors.New("turn requires more input")
 type personalOptions struct {
 	Prompt    string
 	Model     string
+	Thinking  string
 	SessionID string
 	ResumeID  string
 	// FromID starts a NEW session that inherits summary, plan and loaded tools
@@ -84,6 +85,7 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.SetOutput(stderr)
 	cmd.StringVar(&opts.Prompt, "prompt", "", "task prompt for run mode;;p")
 	cmd.StringVar(&opts.Model, "model", "", "model, <provider>/<model> or a bare model id (overrides SUAG_MODEL)")
+	cmd.StringVar(&opts.Thinking, "thinking", "", "thinking level of the main model: off, minimal, low, medium, high, xhigh, max, auto (overrides the config)")
 	cmd.StringVar(&opts.SessionID, "session-id", "", "create or use this session ID;;sid")
 	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID;;r")
 	cmd.StringVar(&opts.FromID, "from", "", "start a new session that inherits the summary, plan and loaded tools of this session")
@@ -106,6 +108,7 @@ func (o personalOptions) wiringOptions(mode string) wiring.Options {
 	return wiring.Options{
 		ChatMode:   mode == "chat",
 		Model:      o.Model,
+		Thinking:   o.Thinking,
 		AllowWrite: o.AllowWrite, ReadOnly: o.ReadOnly,
 		// --read-only also limits the memory tool to get/search.
 		MemoryReadOnly:     o.ReadOnly,

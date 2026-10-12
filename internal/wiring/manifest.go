@@ -45,6 +45,7 @@ type ManifestModel struct {
 	Model         string `json:"model"`
 	ModelID       string `json:"model_id,omitempty"` // sent to the provider when it differs from model
 	ContextWindow int    `json:"context_window"`
+	Thinking      string `json:"thinking,omitempty"` // effective thinking level ("" = provider default)
 }
 
 // ManifestModels is the effective model selection.
@@ -191,7 +192,7 @@ func BuildManifest(in ManifestInput) Manifest {
 }
 
 func manifestModel(s appconfig.ModelSpec) ManifestModel {
-	m := ManifestModel{Provider: s.Provider.ID, Model: s.Model, ContextWindow: appconfig.ContextWindowFor(s)}
+	m := ManifestModel{Provider: s.Provider.ID, Model: s.Model, ContextWindow: appconfig.ContextWindowFor(s), Thinking: s.ThinkingLevel()}
 	if id := s.APIModel(); id != s.Model {
 		m.ModelID = id
 	}
@@ -209,6 +210,8 @@ func nonNil(s []string) []string {
 type ManifestOptions struct {
 	// Model overrides the configured model (like --model).
 	Model string
+	// Thinking overrides the main model's thinking level (like --thinking).
+	Thinking string
 }
 
 // LoadManifest builds the manifest from the current configuration without
@@ -220,7 +223,7 @@ func LoadManifest(opts ManifestOptions) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, fmt.Errorf("resolve workspace: %w", err)
 	}
-	st, err := loadRuntimeSettings(workspace, opts.Model)
+	st, err := loadRuntimeSettings(workspace, opts.Model, opts.Thinking)
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -264,11 +267,16 @@ type runtimeSettings struct {
 
 // loadRuntimeSettings reads and validates the settings that need no I/O
 // beyond configuration and path resolution. It runs no backend command.
-func loadRuntimeSettings(workspace, model string) (runtimeSettings, error) {
+func loadRuntimeSettings(workspace, model, thinking string) (runtimeSettings, error) {
 	var s runtimeSettings
 	var err error
 	if s.models, err = appconfig.ReadModelSettings(model); err != nil {
 		return s, err
+	}
+	// --thinking applies to the main model only; compact and fallback models
+	// keep their configured levels.
+	if s.models.Main.Thinking, err = appconfig.ParseThinking(thinking); err != nil {
+		return s, fmt.Errorf("--thinking: %w", err)
 	}
 	// memory.taint_tools taint on every result (default none);
 	// memory.taint_on_spill only when the output was externalised (default
