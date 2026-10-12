@@ -53,6 +53,40 @@ func TestEditFile(t *testing.T) {
 		assert.ErrMsgContains(t, edit(map[string]any{"path": "f.go", "old_string": "z", "new_string": "z"}), "identical")
 		assert.ErrMsgContains(t, edit(map[string]any{"path": "f.go", "old_string": "", "new_string": "z"}), "file_write")
 	})
+	t.Run("edits apply in order in one write", func(t *testing.T) {
+		write("g.go", "a := 1\nb := 2\nc := 3\n")
+		res, err := tool.Execute(t.Context(), callWith(map[string]any{"path": "g.go", "edits": []any{
+			map[string]any{"old_string": "a := 1", "new_string": "a := 10"},
+			map[string]any{"old_string": "a := 10\nb", "new_string": "a := 10\nbb"},
+			map[string]any{"old_string": " 3", "new_string": " 30", "replace_all": true},
+		}}))
+		assert.Require(t, assert.NoErr(t, err))
+		assert.StrContains(t, res.Content, "3 replacement(s)")
+		assert.Eq(t, "a := 10\nbb := 2\nc := 30\n", read("g.go"))
+	})
+	t.Run("a failing edit leaves the file unchanged", func(t *testing.T) {
+		write("h.go", "a := 1\nb := 2\n")
+		err := edit(map[string]any{"path": "h.go", "edits": []any{
+			map[string]any{"old_string": "a := 1", "new_string": "a := 10"},
+			map[string]any{"old_string": "nope", "new_string": "x"},
+		}})
+		assert.ErrMsgContains(t, err, "edits[1]")
+		assert.ErrMsgContains(t, err, "no edit was applied")
+		assert.Eq(t, "a := 1\nb := 2\n", read("h.go"))
+	})
+	t.Run("edits as a JSON string", func(t *testing.T) {
+		write("i.go", "x\ny\n")
+		assert.NoErr(t, edit(map[string]any{"path": "i.go", "edits": `[{"old_string":"x","new_string":"X"},{"old_string":"y","new_string":"Y"}]`}))
+		assert.Eq(t, "X\nY\n", read("i.go"))
+	})
+	t.Run("bad edits shapes are errors", func(t *testing.T) {
+		write("j.go", "x\n")
+		assert.ErrMsgContains(t, edit(map[string]any{"path": "j.go", "edits": []any{}}), "non-empty array")
+		assert.ErrMsgContains(t, edit(map[string]any{"path": "j.go", "edits": []any{"x"}}), "edits[0] must be an object")
+		assert.ErrMsgContains(t, edit(map[string]any{"path": "j.go", "old_string": "x", "new_string": "y",
+			"edits": []any{map[string]any{"old_string": "x", "new_string": "z"}}}), "not both")
+		assert.Eq(t, "x\n", read("j.go"))
+	})
 	t.Run("outside the workspace is rejected", func(t *testing.T) {
 		assert.ErrMsgContains(t, edit(map[string]any{"path": "../x.go", "old_string": "a", "new_string": "b"}), "path escape")
 	})

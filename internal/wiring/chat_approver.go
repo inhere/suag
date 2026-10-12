@@ -14,6 +14,7 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/redact"
 	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
 
 // chatApprover is the chat tools.Approver: MCP tools keep the cliMCPGate rules
@@ -98,13 +99,23 @@ func (a *chatApprover) question(call agentcore.ToolCall) tools.Question {
 			fmt.Sprintf("内容：%d 字节", len(argText(args["content"]))),
 		}
 	case "file_edit":
-		details = []string{
-			"路径：" + a.fullPath(argText(args["path"])),
-			"原文：\n" + previewLines(argText(args["old_string"])),
-			"改为：\n" + previewLines(argText(args["new_string"])),
+		details = []string{"路径：" + a.fullPath(argText(args["path"]))}
+		edits, err := native.EditList(args)
+		if err != nil {
+			raw, _ := json.Marshal(args["edits"])
+			details = append(details, "参数："+string(raw))
 		}
-		if all, _ := args["replace_all"].(bool); all {
-			details = append(details, "替换全部匹配处")
+		for i, edit := range edits {
+			label := ""
+			if len(edits) > 1 {
+				label = fmt.Sprintf("第 %d 处", i+1)
+			}
+			details = append(details,
+				label+"原文：\n"+previewLines(argText(edit["old_string"])),
+				label+"改为：\n"+previewLines(argText(edit["new_string"])))
+			if all, _ := edit["replace_all"].(bool); all {
+				details = append(details, label+"替换全部匹配处")
+			}
 		}
 	case "web_search":
 		details = []string{"查询：" + argText(args["query"])}

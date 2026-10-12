@@ -220,6 +220,14 @@ func TestChatApproverQuestion(t *testing.T) {
 		assert.StrContains(t, q.Details[2], "…（共 31 行）")
 		assert.Eq(t, "替换全部匹配处", q.Details[3])
 	})
+	t.Run("file_edit previews every edit", func(t *testing.T) {
+		q := approver.question(agentcore.ToolCall{Name: "file_edit", Arguments: map[string]any{"path": "a.go", "edits": []any{
+			map[string]any{"old_string": "a", "new_string": "b"},
+			map[string]any{"old_string": "c", "new_string": "d", "replace_all": true},
+		}}})
+		assert.Eq(t, []string{"路径：" + filepath.Join(filepath.FromSlash("/work"), "a.go"),
+			"第 1 处原文：\na", "第 1 处改为：\nb", "第 2 处原文：\nc", "第 2 处改为：\nd", "第 2 处替换全部匹配处"}, q.Details)
+	})
 	t.Run("web_search shows the query", func(t *testing.T) {
 		q := approver.question(agentcore.ToolCall{Name: "web_search", Arguments: map[string]any{"query": "golang tcflush"}})
 		assert.Eq(t, []string{"查询：golang tcflush"}, q.Details)

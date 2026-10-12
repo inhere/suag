@@ -260,9 +260,12 @@ func toolDiff(cwd string, kind acp.ToolKind, locations []acp.ToolCallLocation, a
 	if kind != acp.ToolKindEdit || len(locations) == 0 || args == nil {
 		return nil
 	}
-	// file_edit carries old_string/new_string: the new text is the current
-	// file with the replacement applied, computed once the file is read.
+	// file_edit carries old_string/new_string or edits: the new text is the
+	// current file with the replacements applied, computed once it is read.
 	_, isEdit := args["old_string"]
+	if _, multi := args["edits"]; multi {
+		isEdit = true
+	}
 	newText, ok := args["content"].(string)
 	if !isEdit && (!ok || len(newText) > maxDiffBytes || !textual(newText)) {
 		return nil
