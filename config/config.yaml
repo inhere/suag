@@ -115,6 +115,7 @@ tools:
   # max_output_bytes: 8000   # largest tool result kept whole in the session; larger ones are
   #                          # saved to ~/.suag/sessions/<id>/outputs/ and kept as ref + head/tail
   # max_spill_bytes: 1048576 # raw output cap of one tool call (native and MCP)
+  # read_page_bytes: 32768   # one file_read page per file (most source files fit in one read)
   # shell: ""                # shell_exec shell; default pwsh/powershell on Windows, sh elsewhere
   # shell_timeout_max: 600   # max seconds a shell_exec call may ask for (default 120 per call)
   # Read-only directories outside the workspace (file_read/file_list/file_grep/file_find,

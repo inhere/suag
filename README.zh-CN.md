@@ -107,7 +107,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 
 - **默认只读**：写工具只在 `run --allow-write`、chat 设置 `tools.allow_write: true`、或 ACP 会话处于 `default` 模式时才有；`--read-only` 永远优先。模型调用了未开启的工具时，会被告知开启方法，并计入拒绝次数。
 - **chat 先询问**：`tools.approval: ask` 时，每次写文件或执行命令前都会询问，并显示完整命令、路径或改动前后的文本。回答 `y` 允许一次，`a` 在本进程内对该工具始终允许，其他任何回答都是拒绝。一轮里被拒 3 次就结束这一轮。
-- **大输出**：工具结果超过 `tools.max_output_bytes` 时，脱敏后的原文存到 `$SUAG_HOME/sessions/<id>/outputs/`，上下文只留头尾（各 2000 字节）和 ref（形如 `out:<session>:<hex>`）；用 `recall` 读取，用 `session_search` 检索。`file_read` 自己分页，不会被外置。
+- **大输出**：工具结果超过 `tools.max_output_bytes` 时，脱敏后的原文存到 `$SUAG_HOME/sessions/<id>/outputs/`，上下文只留头尾（各 2000 字节）和 ref（形如 `out:<session>:<hex>`）；用 `recall` 读取，用 `session_search` 检索。`file_read` 自己分页（每个文件一页最多 `tools.read_page_bytes`，默认 32 KiB；`paths` 一次最多四页），不会被外置。
 - **边界**：文件工具经 `os.OpenRoot` 访问，不会顺着 symlink 跑出工作区；`shell_exec` 超时会终止整个进程树；`web_fetch` 检查实际连接的 IP，跳转也一样受限；所有工具结果都有上限。
 - **MCP**：用 `--mcp-config <file>`（Claude 风格的 `mcpServers` JSON）或配置里的 `mcp.servers` 接入。MCP 调用默认一律拒绝，需在 `tools.auto_allow`（`--read-only` 时用 `tools.read_only_allow`）中放行。工具很多时会延迟加载，模型通过 `tool_search` 取用。
 

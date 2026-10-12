@@ -18,10 +18,13 @@ type Env struct {
 	// ReadRoots are directories outside the workspace the read-only file tools
 	// may read too (dependency sources, tools.read_roots). Writes never go there.
 	ReadRoots []string
-	// InlineBytes is the inline threshold (tools.max_output_bytes): file_read
-	// pages its own output to it. Other tools leave the inline cut to the
-	// output layer (tools.NewOutput).
+	// InlineBytes is the inline threshold (tools.max_output_bytes). Tools
+	// leave the inline cut to the output layer (tools.NewOutput); file_read
+	// pages by itself with ReadPageBytes instead.
 	InlineBytes int
+	// ReadPageBytes caps one file_read page (tools.read_page_bytes);
+	// 0 = DefaultReadPageBytes.
+	ReadPageBytes int
 	// RawBytes caps the raw result of every other tool (tools.max_spill_bytes),
 	// i.e. how much the output layer may save to the session directory.
 	RawBytes int
@@ -54,7 +57,7 @@ type Spec struct {
 func Catalog() []Spec {
 	return []Spec{
 		{Name: "file_read", New: func(env Env) api.Tool {
-			return &FileReadTool{workspace: env.Workspace, readRoots: env.ReadRoots, maxOut: env.InlineBytes}
+			return &FileReadTool{workspace: env.Workspace, readRoots: env.ReadRoots, maxOut: env.ReadPageBytes}
 		}},
 		{Name: "file_list", New: func(env Env) api.Tool {
 			return &FileListTool{workspace: env.Workspace, readRoots: env.ReadRoots, maxOut: env.RawBytes}

@@ -74,7 +74,8 @@ func TestOutputLayerWithNativeTools(t *testing.T) {
 		res := run("file_read", map[string]any{"path": "big.log"})
 		assert.Eq(t, 0, sp.calls["file_read"])
 		// One page of lines plus the "continue with offset" hint.
-		assert.True(t, len(res.Content) <= DefaultMaxOutputBytes+100, "page %d", len(res.Content))
+		assert.True(t, len(res.Content) <= DefaultReadPageBytes+100, "page %d", len(res.Content))
+		assert.True(t, len(res.Content) > DefaultMaxOutputBytes, "a page is larger than the inline threshold and still not spilled")
 		assert.StrNotContains(t, res.Content, "省略")
 		assert.StrContains(t, res.Content, "continue with offset=")
 		assert.StrNotContains(t, res.Content, "ref out:")

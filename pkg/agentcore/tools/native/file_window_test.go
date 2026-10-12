@@ -182,3 +182,27 @@ func TestFileReadPaths(t *testing.T) {
 		}
 	})
 }
+
+func TestFileReadPageCap(t *testing.T) {
+	ws := t.TempDir()
+	line := strings.Repeat("x", 99) + "\n" // 100 bytes
+	big := strings.Repeat(line, 300)        // 30000 bytes: one default page
+	for _, name := range []string{"a.txt", "b.txt", "c.txt", "d.txt", "e.txt", "f.txt"} {
+		assert.NoErr(t, os.WriteFile(filepath.Join(ws, name), []byte(big), 0o644))
+	}
+	t.Run("a 30KB file fits in one default page", func(t *testing.T) {
+		out := execTool(t, &FileReadTool{workspace: ws}, map[string]any{"path": "a.txt"})
+		assert.NotContains(t, out, "[truncated")
+		assert.StrContains(t, out, "300\t")
+	})
+	t.Run("a smaller configured page pages the same file", func(t *testing.T) {
+		out := execTool(t, &FileReadTool{workspace: ws, maxOut: 8000}, map[string]any{"path": "a.txt"})
+		assert.StrContains(t, out, "[truncated at output cap 8000 bytes")
+	})
+	t.Run("paths stop after four pages in all", func(t *testing.T) {
+		out := execTool(t, &FileReadTool{workspace: ws, maxOut: 10000}, map[string]any{
+			"paths": []any{"a.txt", "b.txt", "c.txt", "d.txt", "e.txt", "f.txt"}})
+		assert.Eq(t, 4, strings.Count(out, "==> "))
+		assert.StrContains(t, out, "[output cap reached; not read: e.txt, f.txt")
+	})
+}

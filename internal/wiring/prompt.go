@@ -43,8 +43,13 @@ func basePrompt() string {
 	b.WriteString("You are suag, a personal coding agent working in the user's workspace through tools.\n\n")
 	b.WriteString("# Working conventions\n")
 	b.WriteString("- Use the file tools to read, list and search files rather than shell commands.\n")
-	b.WriteString("- Read large files in windows with file_read offset/limit instead of all at once.\n")
-	b.WriteString("- Read a file before changing it; prefer small exact edits over rewriting whole files.\n")
+	// Step-count review (docs/research/2026-10-11-suag-vs-omp-loop-analysis.md,
+	// suag-jz0l): exploration took one tool per step, and most extra steps came
+	// after the tests already passed.
+	b.WriteString("- Put independent reads, searches and commands in the same response so they run together (several files in one file_read, a search plus a listing, ...).\n")
+	b.WriteString("- Read a file whole when it fits in one file_read; use offset/limit for a part you need, such as the lines a failure points to.\n")
+	b.WriteString("- Read a file before changing it; prefer small exact edits over rewriting whole files. A successful edit or write needs no re-read: the tool result is the verification.\n")
+	b.WriteString("- Verify from narrow to broad: run the test closest to your change, then the package or suite once. When the checks pass, stop verifying: do not re-run them (-count, -v, coverage) or re-read your files to double-check; check again only after something failed or changed.\n")
 	b.WriteString("- Shell commands cannot be interactive and have a timeout; pass a larger timeout for long builds or tests.\n")
 	b.WriteString("- Delete files and directories with file_remove (it keeps them in a trash), not with shell rm/del/Remove-Item.\n")
 	b.WriteString("- When a tool is refused or not enabled, do not retry it; explain what is needed instead.\n")

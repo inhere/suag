@@ -22,6 +22,12 @@ const (
 	binarySniffBytes = 8 << 10
 	// maxReadPaths is how many files one file_read call may read via paths.
 	maxReadPaths = 10
+	// DefaultReadPageBytes is the default page cap of one file_read
+	// (tools.read_page_bytes): most source files fit in one read, so the model
+	// does not page through files it just wrote (suag-jz0l review).
+	DefaultReadPageBytes = 32 << 10
+	// readPathsPages bounds a paths call: at most this many pages in all.
+	readPathsPages = 4
 )
 
 // FileReadTool reads files within the workspace (or a read root), a window of
@@ -29,7 +35,7 @@ const (
 type FileReadTool struct {
 	workspace string
 	readRoots []string // read-only directories outside the workspace
-	maxOut    int      // page cap in bytes per file (inline threshold); 0 = DefaultMaxOutputBytes
+	maxOut    int      // page cap in bytes per file; 0 = DefaultReadPageBytes
 }
 
 func (t *FileReadTool) Name() string { return "file_read" }
@@ -96,6 +102,10 @@ func (t *FileReadTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 		// a failing path is reported in place so the others still come back.
 		var sb strings.Builder
 		for i, p := range paths {
+			if sb.Len() >= readPathsPages*t.pageBytes() {
+				fmt.Fprintf(&sb, "\n\n[output cap reached; not read: %s - read them in another call]", strings.Join(paths[i:], ", "))
+				break
+			}
 			if i > 0 {
 				sb.WriteString("\n\n")
 			}
@@ -114,6 +124,14 @@ func (t *FileReadTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	}, nil
 }
 
+// pageBytes is the page cap of one file.
+func (t *FileReadTool) pageBytes() int {
+	if t.maxOut > 0 {
+		return t.maxOut
+	}
+	return DefaultReadPageBytes
+}
+
 // readOne reads the line window of one path argument.
 func (t *FileReadTool) readOne(arg string, offset, limit int) (string, error) {
 	target, err := resolveRead(t.workspace, t.readRoots, arg)
@@ -126,7 +144,7 @@ func (t *FileReadTool) readOne(arg string, offset, limit int) (string, error) {
 			return "", err
 		}
 		defer f.Close()
-		return readLineWindow(f, offset, limit, outputLimit(t.maxOut))
+		return readLineWindow(f, offset, limit, t.pageBytes())
 	})
 	if err != nil {
 		return "", fmt.Errorf("file_read: %w", err)

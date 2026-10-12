@@ -139,6 +139,7 @@ func nativeEnv(workspace string) native.Env {
 		TrashDir:          trashDir(),
 		ReadRoots:         native.RootPaths(roots),
 		InlineBytes:       inlineOutputBytes(),
+		ReadPageBytes:     gkconfig.Int("tools.read_page_bytes", native.DefaultReadPageBytes),
 		RawBytes:          rawOutputBytes(),
 		SerpAPIKey:        gkconfig.String("serpapi_key"),
 		Shell:             gkconfig.String("tools.shell"),
