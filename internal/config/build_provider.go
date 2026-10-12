@@ -15,7 +15,7 @@ func BuildProvider(spec ModelSpec) (llm.Provider, error) {
 		return llm.NewClaudeProvider(llm.ClaudeConfig{
 			APIKey:  p.APIKey,
 			BaseURL: p.BaseURL,
-			Model:   spec.Model,
+			Model:   spec.APIModel(),
 			Headers: p.Headers,
 			Name:    p.ID,
 			// Claude cache breakpoints, see ProviderConfig.PromptCache.
@@ -25,7 +25,7 @@ func BuildProvider(spec ModelSpec) (llm.Provider, error) {
 		return llm.NewOpenAIProvider(llm.OpenAIConfig{
 			APIKey:  p.APIKey,
 			BaseURL: p.BaseURL,
-			Model:   spec.Model,
+			Model:   spec.APIModel(),
 			Name:    p.ID,
 			Headers: p.Headers,
 		}), nil

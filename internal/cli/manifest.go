@@ -43,7 +43,12 @@ func writeManifestText(out io.Writer, m wiring.Manifest) error {
 	fmt.Fprintf(&b, "suag %s\n\n", m.Version)
 
 	b.WriteString("Models\n")
-	fmt.Fprintf(&b, "  main      %s/%s (context %d)\n", m.Models.Main.Provider, m.Models.Main.Model, m.Models.Main.ContextWindow)
+	main := m.Models.Main
+	sends := ""
+	if main.ModelID != "" {
+		sends = ", sends " + main.ModelID
+	}
+	fmt.Fprintf(&b, "  main      %s/%s (context %d%s)\n", main.Provider, main.Model, main.ContextWindow, sends)
 	if c := m.Models.Compact; c != nil {
 		fmt.Fprintf(&b, "  compact   %s/%s\n", c.Provider, c.Model)
 	}

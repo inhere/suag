@@ -3,7 +3,9 @@ package axconfig
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
+	"slices"
 	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
@@ -18,6 +20,10 @@ const (
 
 // ModelConfig is the per-model override under providers.<id>.models.<model>.
 type ModelConfig struct {
+	// ModelID (models.<key>.model_id) is the model id sent to the provider when
+	// it differs from the configured key, so a long upstream id such as
+	// "deepseek/deepseek-v4.1-flash" can be referenced by a short key.
+	ModelID       string
 	ContextWindow int
 	// Price is the optional per-million-token price used to compute cost when
 	// the provider reports none; the zero value means "no price configured".
@@ -55,6 +61,16 @@ type ModelSpec struct {
 
 // Ref returns the canonical "provider/model" form.
 func (s ModelSpec) Ref() string { return s.Provider.ID + "/" + s.Model }
+
+// APIModel is the model id sent to the provider: models.<key>.model_id when
+// set, otherwise the key itself. Everything else (refs, trace, stats, price
+// and context window lookups) uses the key.
+func (s ModelSpec) APIModel() string {
+	if cfg, ok := s.Provider.Models[s.Model]; ok && cfg.ModelID != "" {
+		return cfg.ModelID
+	}
+	return s.Model
+}
 
 // ModelSettings is the effective model selection: main, optional compact
 // (summary) model and ordered fallbacks.
@@ -150,6 +166,9 @@ func readModelConfigs(raw any) map[string]ModelConfig {
 	for name, item := range items {
 		var cfg ModelConfig
 		if entry, ok := item.(map[string]any); ok {
+			if id, ok := entry["model_id"].(string); ok {
+				cfg.ModelID = strings.TrimSpace(id)
+			}
 			cfg.ContextWindow = intValue(entry["context_window"])
 			cfg.Price = readPrice(entry["price"])
 		}
@@ -226,7 +245,46 @@ func ResolveModel(ref string, providers map[string]ProviderConfig, defaultProvid
 	if !ok {
 		return ModelSpec{}, fmt.Errorf("provider %q is not defined (presets: openai, anthropic, deepseek; add it under providers:)", providerID)
 	}
-	return ModelSpec{Provider: provider, Model: model}, nil
+	return ModelSpec{Provider: provider, Model: modelKey(provider, model)}, nil
+}
+
+// modelKey maps a model reference to its models.<key>: the key itself, or the
+// key whose model_id it names (so the full upstream id keeps working after a
+// model is given a short key). Anything else is returned unchanged.
+func modelKey(provider ProviderConfig, model string) string {
+	if _, ok := provider.Models[model]; ok {
+		return model
+	}
+	keys := make([]string, 0, len(provider.Models))
+	for key, cfg := range provider.Models {
+		if cfg.ModelID == model {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 {
+		return model
+	}
+	slices.Sort(keys) // deterministic when two keys share a model_id
+	return keys[0]
+}
+
+// unlistedModelWarning returns a warning when the provider lists models but
+// spec's model is none of them: usually a typo the provider would reject with
+// a less helpful message. Providers without a models list are not checked.
+func unlistedModelWarning(what string, spec ModelSpec) string {
+	if len(spec.Provider.Models) == 0 {
+		return ""
+	}
+	if _, ok := spec.Provider.Models[spec.Model]; ok {
+		return ""
+	}
+	keys := make([]string, 0, len(spec.Provider.Models))
+	for key := range spec.Provider.Models {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return fmt.Sprintf("%s: %q is not under providers.%s.models (configured: %s); sending it to the provider as is",
+		what, spec.Model, spec.Provider.ID, strings.Join(keys, ", "))
 }
 
 // CheckLegacyConfig rejects the removed llm: section and SUAG_PROVIDER.
@@ -272,6 +330,9 @@ func ReadModelSettings(flagModel string) (ModelSettings, error) {
 		return ModelSettings{}, fmt.Errorf("model: %w", err)
 	}
 	settings := ModelSettings{Main: main}
+	if w := unlistedModelWarning("model", main); w != "" {
+		slog.Warn(w)
+	}
 
 	if ref := strings.TrimSpace(gkconfig.String("compact_model")); ref != "" {
 		spec, err := ResolveModel(ref, providers, main.Provider.ID)
@@ -296,7 +357,7 @@ func ContextWindowFor(spec ModelSpec) int {
 	if cfg, ok := spec.Provider.Models[spec.Model]; ok && cfg.ContextWindow > 0 {
 		return cfg.ContextWindow
 	}
-	return ContextWindowForModel(spec.Model)
+	return ContextWindowForModel(spec.APIModel())
 }
 
 // PriceFor returns the configured price of spec's model.

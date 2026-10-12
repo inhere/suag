@@ -32,6 +32,8 @@ fallback_models:
 - `providers.<id>.base_url`、`api_key`：地址与密钥，值支持 `${VAR}`。
 - `providers.<id>.headers`：附加的 HTTP 请求头，值支持 `${VAR}`。
 - `providers.<id>.models.<model>.context_window`：该模型的上下文窗口；未配置时按模型名推断（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k，未知为 128k）。
+- `providers.<id>.models.<model>.model_id`：实际发给 provider 的模型 id；不设时发送 `<model>` 本身。用它给很长的上游 id 起一个短名：引用、trace、统计、价格与上下文窗口都按短名，只有请求里用 `model_id`。用完整的上游 id 引用也会对应到这个短名。
+- provider 写了 `models` 而引用的模型不在其中（既不是某个键，也不是某个 `model_id`）时，启动时在 stderr 警告一次并照原样发送，多半是模型名写错。没有 `models` 的 provider 不检查。
 - `compact_model`：自动压缩与 `:compact` 使用的模型，引用规则同 `model`；裸模型名使用主模型的 provider；不设则用当前回合的模型。
 - `fallback_models`：主模型失败后按顺序尝试的模型列表，引用规则同 `compact_model`。
 
@@ -92,6 +94,24 @@ providers:
 ```
 
 之后可用 `--model opencode-go-claude/<model>` 临时切换到 Anthropic 端点。
+
+## 示例：短模型名（model_id）
+
+```yaml
+model: command-code/deepseek-v4.1-flash
+
+providers:
+  command-code:
+    type: openai
+    base_url: "https://api.commandcode.ai/provider/v1"
+    api_key: "${COMMAND_CODE_API_KEY}"
+    models:
+      deepseek-v4.1-flash:                 # suag 里用的短名
+        model_id: deepseek/deepseek-v4.1-flash   # 请求里发送的 id
+        context_window: 900000
+```
+
+`--model command-code/deepseek-v4.1-flash` 或（`model` 已指向 command-code 时）`--model deepseek-v4.1-flash` 都会请求 `deepseek/deepseek-v4.1-flash`；`--model command-code/deepseek/deepseek-v4.1-flash` 同样可用。`suag manifest` 在主模型一行显示实际发送的 id。
 
 ## 从旧配置迁移
 

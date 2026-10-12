@@ -6,6 +6,8 @@
 
 ### 新增
 
+- `providers.<id>.models.<key>.model_id`：请求里发送的模型 id，可给很长的上游 id 起短名（如 `deepseek-v4.1-flash` → `deepseek/deepseek-v4.1-flash`）；引用、trace、统计与价格按短名，用完整 id 引用也能对应到短名。`suag manifest` 显示实际发送的 id。
+- 引用的模型不在 provider 已配置的 `models` 中时，启动时警告一次（多半是模型名写错），仍照原样发送。
 - `file_grep`、`file_find`、`file_list` 新增 `no_ignore` 参数：包含 `.gitignore` 匹配与 `node_modules`/`vendor`/`dist`（`.git` 始终跳过）。
 
 ### 变更

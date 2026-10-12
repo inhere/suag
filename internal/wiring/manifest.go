@@ -43,6 +43,7 @@ type Manifest struct {
 type ManifestModel struct {
 	Provider      string `json:"provider"`
 	Model         string `json:"model"`
+	ModelID       string `json:"model_id,omitempty"` // sent to the provider when it differs from model
 	ContextWindow int    `json:"context_window"`
 }
 
@@ -190,7 +191,11 @@ func BuildManifest(in ManifestInput) Manifest {
 }
 
 func manifestModel(s appconfig.ModelSpec) ManifestModel {
-	return ManifestModel{Provider: s.Provider.ID, Model: s.Model, ContextWindow: appconfig.ContextWindowFor(s)}
+	m := ManifestModel{Provider: s.Provider.ID, Model: s.Model, ContextWindow: appconfig.ContextWindowFor(s)}
+	if id := s.APIModel(); id != s.Model {
+		m.ModelID = id
+	}
+	return m
 }
 
 func nonNil(s []string) []string {

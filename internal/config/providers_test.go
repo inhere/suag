@@ -1,12 +1,20 @@
 package axconfig
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/config/v2/yaml"
 	"github.com/gookit/goutil/x/assert"
+
+	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/llm"
 )
 
 // loadYAML replaces the global config with the given YAML and isolates the
@@ -361,4 +369,66 @@ providers:
 	assert.True(t, ps["anthropic"].PromptCache)
 	assert.False(t, ps["gw"].PromptCache) // default off
 	assert.False(t, ps["openai"].PromptCache)
+}
+
+func TestModelID(t *testing.T) {
+	doc := `
+model: cc/deepseek-v4.1-flash
+providers:
+  cc:
+    type: openai
+    base_url: https://cc.example/v1
+    models:
+      deepseek-v4.1-flash:
+        model_id: deepseek/deepseek-v4.1-flash
+        context_window: 900000
+      glm-5:
+        context_window: 200000
+`
+	t.Run("the short key is used everywhere but the request", func(t *testing.T) {
+		loadYAML(t, doc)
+		s, err := ReadModelSettings("")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "deepseek-v4.1-flash", s.Main.Model)
+		assert.Eq(t, "cc/deepseek-v4.1-flash", s.Main.Ref())
+		assert.Eq(t, "deepseek/deepseek-v4.1-flash", s.Main.APIModel())
+		assert.Eq(t, 900000, ContextWindowFor(s.Main))
+		var sent map[string]any
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&sent)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`)
+		}))
+		defer srv.Close()
+		spec := s.Main
+		spec.Provider.BaseURL = srv.URL
+		p, err := BuildProvider(spec)
+		assert.Require(t, assert.NoErr(t, err))
+		_, err = p.Generate(context.Background(), &llm.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "hi"}}})
+		assert.NoErr(t, err)
+		assert.Eq(t, "deepseek/deepseek-v4.1-flash", sent["model"]) // the request carries model_id
+	})
+	t.Run("the full upstream id maps back to its key", func(t *testing.T) {
+		loadYAML(t, doc)
+		s, err := ReadModelSettings("cc/deepseek/deepseek-v4.1-flash")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "deepseek-v4.1-flash", s.Main.Model)
+		assert.Eq(t, 900000, ContextWindowFor(s.Main))
+	})
+	t.Run("a bare key uses the default provider", func(t *testing.T) {
+		loadYAML(t, doc)
+		s, err := ReadModelSettings("glm-5")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "cc/glm-5", s.Main.Ref())
+		assert.Eq(t, "glm-5", s.Main.APIModel()) // no model_id: the key is sent
+	})
+	t.Run("an unlisted model is sent as is, with a warning", func(t *testing.T) {
+		loadYAML(t, doc)
+		s, err := ReadModelSettings("cc/deepseek-v4-1-flash")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "deepseek-v4-1-flash", s.Main.APIModel())
+		assert.Eq(t, `model: "deepseek-v4-1-flash" is not under providers.cc.models `+
+			`(configured: deepseek-v4.1-flash, glm-5); sending it to the provider as is`, unlistedModelWarning("model", s.Main))
+		assert.Eq(t, "", unlistedModelWarning("model", ModelSpec{Provider: ProviderConfig{ID: "x"}, Model: "any"}))
+	})
 }
