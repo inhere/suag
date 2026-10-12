@@ -16,6 +16,7 @@
 - Windows 上 `shell_exec` 丢失 PowerShell 的表格输出（`Get-ChildItem`、`Select-Object` 等）：命令结束后立即退出，格式化输出还在约 300ms 的延迟中就被丢弃，模型拿到空结果、退出码 0，只能反复换写法重试。现在命令输出先经 `Out-Default` 写完再退出，并关闭 PowerShell 7 的 ANSI 颜色。
 - 评测的仓库模式任务写入仓库级 git 身份：suag 在隔离 HOME 下运行，原先只有它提交失败。
 - 工具调用参数的字符串里出现未转义的制表符、换行等控制字符（模型写 Go 代码时常见）时不再让整次运行失败：严格解析失败后转义这些字符再解析一次。
+- 模型响应读到一半网络断开（`read openai stream: unexpected EOF` 等）时，若还没有向前端推送任何正文，整次请求最多重发 2 次，不再直接结束运行；已推送正文后仍按失败处理，避免重复显示。OpenAI 兼容与 Claude 两类 provider 都适用。
 - 模型返回既无正文也无工具调用的空响应（推理模型偶尔只输出思考内容）时，同一请求最多重发 2 次，不再直接以 `provider error: empty result` 结束运行。
 
 ### 变更

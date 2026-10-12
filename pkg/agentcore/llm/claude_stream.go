@@ -17,8 +17,9 @@ import (
 
 // Stream implements the public streaming contract with Anthropic SSE: text
 // deltas are emitted as they arrive; tool_use input, thinking and usage are
-// accumulated into the returned result. Only the connection (before any byte
-// of the body is read) is retried, so a delta is never emitted twice.
+// accumulated into the returned result. The connection is retried by
+// openStream; a stream that breaks while being read is requested again only
+// until it has emitted text (retryStream), so a delta is never emitted twice.
 func (p *ClaudeProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 	model := req.Model
 	if model == "" {
@@ -28,23 +29,25 @@ func (p *ClaudeProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateR
 	body["stream"] = true
 	logProviderRequest(p.Name(), "/messages", body)
 
-	resp, err := p.openStream(ctx, body)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if !strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
-		// Some gateways ignore stream=true and answer with a plain message.
-		return p.readWhole(ctx, resp.Body, emit)
-	}
-	return p.readStream(ctx, resp.Body, emit)
+	return retryStream(ctx, p.Name(), emit, func(emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+		resp, err := p.openStream(ctx, body)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if !strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+			// Some gateways ignore stream=true and answer with a plain message.
+			return p.readWhole(ctx, resp.Body, emit)
+		}
+		return p.readStream(ctx, resp.Body, emit)
+	})
 }
 
 // readWhole parses a non-streamed message and emits its text in one delta.
 func (p *ClaudeProvider) readWhole(ctx context.Context, r io.Reader, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
-		return nil, fmt.Errorf("read claude response: %w", err)
+		return nil, &streamReadError{fmt.Errorf("read claude response: %w", err)}
 	}
 	logProviderResponse(p.Name(), "/messages", http.StatusOK, data)
 	res, err := p.parseResponse(data)
@@ -232,7 +235,7 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("read claude stream: %w", err)
+		return nil, &streamReadError{fmt.Errorf("read claude stream: %w", err)}
 	}
 
 	in := usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens
