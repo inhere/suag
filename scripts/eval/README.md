@@ -101,6 +101,11 @@ go run ./scripts/eval --task repo-t9-schedule --model <model> --config-from ~/.s
 go run ./scripts/eval --fake --task repo-t9-schedule --repeat 2 --suag-args "--no-project-rules"
 ```
 
+## 历史折叠与思考档位
+
+- suag 默认开启历史折叠（`context.fold_every: 10`、`context.fold_keep: 5`）；不折叠的对照组加 `--suag-set context.fold_every=0`。每轮的 `suag trace` 中 `fold` 行给出折叠点与视图字符数。
+- 与 omp 对比时两边要用同一思考档位：omp 以 `--thinking`（或其配置）为准，suag 用 `--suag-args "--thinking high"` 或 provider 配置的 `thinking`；不设时 suag 不发送 `reasoning_effort`，用 provider 默认。
+
 ## first_call_uncached
 
 `results.jsonl` 的 `first_call_uncached`（表格 FIRST 列）= 第一个主循环模型调用的未缓存输入 token，度量“冷启动前缀”的代价；取不到为 null。

@@ -65,6 +65,8 @@ providers:
 # context:
 #   idle_after: 15m     # duration such as 30s / 15m, or seconds; 0 turns it off
 #   idle_min_ratio: 0.5 # 0..1
+#   fold_every: 10      # history folding: fold older steps every N steps; 0 turns it off
+#   fold_keep: 5        # steps kept whole (>= 1)
 
 # Workspace directory for file and shell tools
 # Defaults to current working directory

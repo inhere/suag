@@ -60,6 +60,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `providers.<id>.context_window` | 该 provider 所有模型的默认上下文窗口（模型级 `models.<model>.context_window` 优先；都没有时按模型名推断） |
 | `providers.<id>.models.<model>.model_id` | 请求里发送的模型 id（与键不同时），如键 `deepseek-v4.1-flash`、`model_id: deepseek/deepseek-v4.1-flash`；其余地方都用键 |
 | `compact_model`、`fallback_models` | 生成摘要用的便宜模型；主模型失败时依次尝试的备用模型 |
+| `context.fold_every`、`context.fold_keep` | 历史折叠（默认开启，`10` / `5`；`fold_every: 0` 关闭）：较早步骤发送时去掉思考内容，过长的字符串参数换成一句说明。只改发给模型的请求，存储的历史保持完整 |
 | `context.idle_after`、`context.idle_min_ratio` | 仅 chat：安静超过此时长（默认 `15m`，`0` 关闭），且上下文已达分段阈值的此比例（默认 `0.5`）时，在后台开启新段 |
 | `providers.<id>.prompt_cache` | 仅 Claude（`anthropic` 类型），默认关：加 `cache_control` 断点（system 变为块数组）；部分网关不接受 |
 | `tools.allow_write` | 仅 chat：启用写文件和 shell 工具（默认 false） |
@@ -128,6 +129,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 
 - **续接与交接**：`--session-id` 创建或复用指定 ID 的会话；`--resume` 要求会话已存在，不存在时以退出码 4 退出。`run --from <session>` 新建一个会话，继承来源会话的摘要、计划和已加载的工具。
 - **分段**：会话是一串段。每段以一条段起始记录开头（原因：开始、阈值、`:compact`、空闲、`--from`），记录里有上下文消息；第一段之后还有交接包：面向当前任务的摘要、最近的用户请求原文和仍相关的 ref。上下文接近模型窗口或执行 `:compact` 时开启新段，原样保留的只有最后一组完整的工具调用/结果。旧段仍在库里，用 `session_search` 和 `recall` 取回。
+- **历史折叠**：每次请求都会重发此前的对话，其中大部分是模型自己的思考内容和整文件写入。`context.fold_every`（默认 10）与 `context.fold_keep`（默认 5）开启后，最近 5 步之前的步骤发送时去掉思考内容，超过 1000 字符的字符串参数（整文件写入、长编辑）换成一句说明，提示需要时重读文件。折叠点每 10 步才前移一次，期间缓存前缀保持有效。存储的会话不变；折叠点前移时 `suag trace` 显示一条 `fold`。T9 对比中每次请求的上下文减半、prompt 总量下降 59%（见 docs/research/2026-10-11-suag-vs-omp-loop-analysis.md）。`context.fold_every: 0` 关闭。
 - **空闲整理（chat）**：超过 `context.idle_after`（默认 15m）没有输入，且上下文已达阈值的 `context.idle_min_ratio`（默认 0.5）时，chat 在后台开启新段。回合进行中不会触发，开始输入即取消。
 - **计划**：`update_plan` 工具记录模型的计划。stream-json 中输出为 `plan` 事件，ACP 中转为计划更新。
 - **系统提示词与段上下文**：系统提示词只含稳定内容（身份与工作约定），同一模式下跨会话、跨工作区字节相同。环境（系统、shell、工作区）、项目规则（`AGENTS.md`、`CLAUDE.md`、`~/.suag/AGENTS.md`）、`--append-system-prompt`、记忆索引、skills 列表和延迟工具列表放在每段开头的上下文消息里。段内发生变化（如规则文件被改）时，追加一条“上下文更新”消息，不改写已有内容。`--no-project-rules` 跳过项目规则。
