@@ -224,7 +224,7 @@ func TestAppACPContextWindowComesFromWiring(t *testing.T) {
 	assert.NoErr(t, gkconfig.Set("model", "openai/ctx-model"))
 	assert.NoErr(t, gkconfig.Set("providers", map[string]any{"openai": map[string]any{
 		"type": "openai", "api_key": "k", "base_url": provider.URL,
-		"models": map[string]any{"ctx-model": map[string]any{"context_window": 4321}},
+		"models": map[string]any{"ctx-model": map[string]any{"context_window": 654321}},
 	}}))
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
@@ -245,11 +245,11 @@ func TestAppACPContextWindowComesFromWiring(t *testing.T) {
 			sizes = append(sizes, int(u.Size))
 		}
 	}
-	// At least one update after a model call and one at turn end; a tiny
-	// window may add a segment summary call, so the count is not fixed.
-	// Every update must carry the configured window.
+	// At least one update after a model call and one at turn end. The window
+	// is a distinctive value large enough that prompt growth never triggers
+	// compaction here; every update must carry it.
 	assert.Require(t, assert.True(t, len(sizes) >= 2, "usage updates: %v", sizes))
 	for _, size := range sizes {
-		assert.Eq(t, 4321, size)
+		assert.Eq(t, 654321, size)
 	}
 }
