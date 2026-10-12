@@ -23,7 +23,12 @@ type ModelConfig struct {
 	// ModelID (models.<key>.model_id) is the model id sent to the provider when
 	// it differs from the configured key, so a long upstream id such as
 	// "deepseek/deepseek-v4.1-flash" can be referenced by a short key.
-	ModelID       string
+	ModelID string
+	// Type and BaseURL (models.<key>.type / base_url) override the provider's
+	// for this model: a gateway such as command-code serves Claude models over
+	// the Anthropic protocol and the others over OpenAI's, often at another
+	// base URL. "" keeps the provider's.
+	Type, BaseURL string
 	ContextWindow int
 	// Thinking (models.<key>.thinking) is the model's thinking level, see
 	// ThinkingLevels; "" falls back to the provider's.
@@ -159,12 +164,21 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 		if merged.Type == "" {
 			return nil, fmt.Errorf("providers.%s: type is required for a non-preset provider (openai|anthropic)", id)
 		}
-		if merged.Type != ProviderTypeOpenAI && merged.Type != ProviderTypeAnthropic {
+		if !validProviderType(merged.Type) {
 			return nil, fmt.Errorf("providers.%s: unsupported type %q (want openai|anthropic)", id, merged.Type)
+		}
+		for key, cfg := range merged.Models {
+			if cfg.Type != "" && !validProviderType(cfg.Type) {
+				return nil, fmt.Errorf("providers.%s.models.%s: unsupported type %q (want openai|anthropic)", id, key, cfg.Type)
+			}
 		}
 		providers[id] = merged
 	}
 	return providers, nil
+}
+
+func validProviderType(t string) bool {
+	return t == ProviderTypeOpenAI || t == ProviderTypeAnthropic
 }
 
 // normalizeThinking validates the provider's and its models' thinking levels.
@@ -208,6 +222,8 @@ func readModelConfigs(raw any) map[string]ModelConfig {
 			if id, ok := entry["model_id"].(string); ok {
 				cfg.ModelID = strings.TrimSpace(id)
 			}
+			cfg.Type = normalizeConfigToken(stringValue(entry["type"]))
+			cfg.BaseURL = expandEnv(stringValue(entry["base_url"]))
 			cfg.ContextWindow = intValue(entry["context_window"])
 			cfg.Thinking = stringValue(entry["thinking"])
 			cfg.Price = readPrice(entry["price"])
@@ -285,7 +301,15 @@ func ResolveModel(ref string, providers map[string]ProviderConfig, defaultProvid
 	if !ok {
 		return ModelSpec{}, fmt.Errorf("provider %q is not defined (presets: openai, anthropic, deepseek; add it under providers:)", providerID)
 	}
-	return ModelSpec{Provider: provider, Model: modelKey(provider, model)}, nil
+	key := modelKey(provider, model)
+	// A model's own type and base_url win over the provider's; the spec gets
+	// its own copy of the provider, so everything downstream (BuildProvider,
+	// manifest, thinking checks) sees the protocol actually used.
+	if cfg, ok := provider.Models[key]; ok {
+		provider.Type = firstNonEmpty(cfg.Type, provider.Type)
+		provider.BaseURL = firstNonEmpty(cfg.BaseURL, provider.BaseURL)
+	}
+	return ModelSpec{Provider: provider, Model: key}, nil
 }
 
 // modelKey maps a model reference to its models.<key>: the key itself, or the

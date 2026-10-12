@@ -59,6 +59,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `providers.<id>.thinking`、`providers.<id>.models.<model>.thinking` | 思考档位 `off\|minimal\|low\|medium\|high\|xhigh\|max\|auto`，`openai` 类型作为 `reasoning_effort` 发送（不设或 `auto` 不发送）；`run`/`chat --thinking` 可覆盖主模型的档位 |
 | `providers.<id>.context_window` | 该 provider 所有模型的默认上下文窗口（模型级 `models.<model>.context_window` 优先；都没有时按模型名推断） |
 | `providers.<id>.models.<model>.model_id` | 请求里发送的模型 id（与键不同时），如键 `deepseek-v4.1-flash`、`model_id: deepseek/deepseek-v4.1-flash`；其余地方都用键 |
+| `providers.<id>.models.<model>.type`、`base_url` | 该模型自己的协议与地址，覆盖 provider 的；如网关的 Claude 模型写 `type: anthropic`，其余模型仍走 OpenAI 兼容 |
 | `compact_model`、`fallback_models` | 生成摘要用的便宜模型；主模型失败时依次尝试的备用模型 |
 | `context.fold_every`、`context.fold_keep` | 历史折叠（默认开启，`10` / `5`；`fold_every: 0` 关闭）：较早步骤发送时去掉思考内容，过长的字符串参数换成一句说明。只改发给模型的请求，存储的历史保持完整 |
 | `context.idle_after`、`context.idle_min_ratio` | 仅 chat：安静超过此时长（默认 `15m`，`0` 关闭），且上下文已达分段阈值的此比例（默认 `0.5`）时，在后台开启新段 |
