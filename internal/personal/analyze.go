@@ -14,6 +14,9 @@ import (
 // testCommandPattern recognises shell commands that run tests.
 var testCommandPattern = regexp.MustCompile(`\b(go test|pytest|cargo test|npm (run )?test|pnpm (run )?test|yarn test|jest|vitest|mvn( \S+)* test|gradle( \S+)* test|make test|phpunit|rspec|ctest|dotnet test)\b`)
 
+// focusedTestPattern recognises test runs limited to some tests.
+var focusedTestPattern = regexp.MustCompile(`(^|\s)(-run|-k|--test|-t)(\s|=)`)
+
 // TraceAnalysis summarizes a session's events for loop analysis (suag trace
 // --analyze): how many steps, which tools, repeated reads and commands, and
 // how much verification happened after the tests first passed. It is derived
@@ -51,7 +54,7 @@ type TraceAnalysis struct {
 	// Phases, in model calls: before the first write or edit, from that step
 	// to the first passing test run, and after it (-1 when the run never got
 	// there). A test run passes when its output reports no failure (attr
-	// test_failed) and it exited 0.
+	// test_failed) and it exited 0; a focused run (-run, -k) does not count.
 	ExploreSteps      int `json:"explore_steps"`
 	WriteToGreenSteps int `json:"write_to_green_steps"`
 	AfterGreenSteps   int `json:"after_green_steps"`
@@ -192,6 +195,9 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 					a.ShellStderrOK++
 				}
 				testFailed, reported := e.Attrs["test_failed"].(bool)
+				// A focused run (go test -run X, pytest -k X) checks one test,
+				// often a scratch one written to probe a bug: it is no "green".
+				focused := focusedTestPattern.MatchString(arg)
 				if reported || testCommandPattern.MatchString(arg) {
 					a.TestRuns++
 					// After the first pass that followed a change: a test run
@@ -199,7 +205,7 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 					if passed {
 						a.TestRunsAfterPass++
 					}
-					if !failed && hasCode && !testFailed && (firstWrite >= 0 || !wroteLater) {
+					if !failed && hasCode && !testFailed && !focused && (firstWrite >= 0 || !wroteLater) {
 						passed = true
 						if green < 0 && firstWrite >= 0 {
 							green = a.ModelCalls

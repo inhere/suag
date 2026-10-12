@@ -186,6 +186,13 @@ func TestAnalyzeTraceTestOutcome(t *testing.T) {
 	assert.Eq(t, 1, a.SingleEditSteps)
 	assert.Eq(t, 0, a.TestRunsAfterPass)
 
+	// A focused run (-run) of a scratch test is no green.
+	focusedRun := shell(0, false)
+	focusedRun.Attrs = map[string]any{"arg": "command=go test -count=1 -run TestScratch -v ./", "exit_code": float64(0), "test_failed": false}
+	scratch := AnalyzeTrace([]store.Event{model, edit(1), model, focusedRun, model, edit(1), model, shell(0, false), model})
+	assert.Eq(t, 4, scratch.WriteToGreenSteps)
+	assert.Eq(t, 1, scratch.AfterGreenSteps)
+
 	// A passing baseline run before the first write is no first pass.
 	baseline := AnalyzeTrace([]store.Event{model, shell(0, false), model, edit(1), model, shell(0, false), model, shell(0, false)})
 	assert.Eq(t, 1, baseline.TestRunsAfterPass)

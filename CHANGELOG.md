@@ -4,6 +4,11 @@
 
 ## [未发布]
 
+### 修复
+
+- `suag trace --analyze`：只跑部分用例的测试（`go test -run`、`pytest -k` 等，常是为排查 bug 临时写的测试）不再算作“测试转绿”，阶段拆分以整包或整套测试首次通过为准。
+- 测试不再受开发者环境中的 `SUAG_HOME`、`SUAG_CONFIG`、`SUAG_MODEL` 影响（原先设置了这些变量时 config 的 5 个 Load 测试与 CLI 的 manifest 测试会失败）；Windows 的“超时杀掉子进程”测试改为按子进程 PID 检查，不再被同机并行的测试误判。
+
 ## [0.14.0] - 2026-10-13
 
 工具结果给出可信证据、并发读取与并行调用回传、缓存未命中归因与循环分析、Claude 思考档位；历史折叠改为默认关闭。同模型 T9 对比中模型调用从 44.7 降到 21.7（omp 23.3），依据见 [分析](docs/research/2026-10-11-suag-vs-omp-loop-analysis.md)。
