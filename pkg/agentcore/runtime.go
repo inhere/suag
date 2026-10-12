@@ -359,6 +359,10 @@ func (r *DefaultRuntime) listTools(ctx context.Context) ([]ToolSchema, error) {
 	return tools, nil
 }
 
+// emptyResultRetries is how many times callModel re-sends a request whose
+// response was empty before failing the run.
+const emptyResultRetries = 2
+
 func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *GenerateRequest, ctrl *Control, stream StreamFunc) (*GenerateResult, error) {
 	event := &ModelEvent{
 		RunID:     state.RunID,
@@ -374,12 +378,23 @@ func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *Ge
 		return nil, nil
 	}
 
-	result, err := r.invokeProvider(ctx, event.Request, stream)
-	if err != nil {
-		return nil, wrapProviderError(err)
-	}
-	if err := result.Validate(); err != nil {
-		return nil, wrapProviderError(err)
+	// A response with neither text nor tool calls (seen with reasoning models
+	// that spend the whole reply on reasoning) is re-sampled a few times before
+	// the run fails: the same request usually yields a usable reply.
+	var result *GenerateResult
+	for attempt := 0; ; attempt++ {
+		var err error
+		result, err = r.invokeProvider(ctx, event.Request, stream)
+		if err != nil {
+			return nil, wrapProviderError(err)
+		}
+		err = result.Validate()
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, ErrEmptyGenerateResult) || attempt >= emptyResultRetries || ctx.Err() != nil {
+			return nil, wrapProviderError(err)
+		}
 	}
 
 	event.Result = cloneGenerateResultValue(result)
