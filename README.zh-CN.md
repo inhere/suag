@@ -121,7 +121,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 跨会话共享的长期记忆，由模型通过 `memory` 工具写入。
 
 - **四类条目**：`user`（用户是谁、偏好）、`feedback`（纠正与确认过的做法）、`project`（代码里看不出的目标、决定、进展）、`reference`（外部资源在哪）。不记：能从代码或 git 推出的内容、规则文件已有的内容、本次会话的临时细节、密钥。流程类内容应写成 skill。
-- **范围与后端**：用户记忆在 `$SUAG_HOME/memory/user`（files）。项目记忆按顺序选后端：`memory.project.backend` 的配置；仓库根有 `MEMORY.md`（files，仓库模式）；仓库根有 `.gofer/tracker`（gofer）；否则用 `$SUAG_HOME/projects/<key>/memory` 下的 files。仓库模式下索引就是 `MEMORY.md`，每条记忆放在 `.suag/memory/<id>.md`，可随项目提交；根目录的 `MEMORY.md` 不会由 suag 创建。gofer 后端中每条项目记忆是带 `suag` 标签的 gofer memory，只管理这些条目。`suag manifest` 会显示选了哪个后端及原因。
+- **范围与后端**：用户记忆在 `$SUAG_HOME/memory/user`（files）。项目记忆按顺序选后端：`memory.project.backend` 的配置；仓库根有 `MEMORY.md`（files，仓库模式）；仓库根有 `.gofer/tracker`（gofer）；否则用 `$SUAG_HOME/projects/<key>/memory` 下的 files，`<key>` 为仓库目录名加完整路径的短哈希（如 `suag-5cb0fa32`，也显示为作用域 `project:<key>`）。仓库模式下索引就是 `MEMORY.md`，每条记忆放在 `.suag/memory/<id>.md`，可随项目提交；根目录的 `MEMORY.md` 不会由 suag 创建。gofer 后端中每条项目记忆是带 `suag` 标签的 gofer memory，只管理这些条目。`suag manifest` 会显示选了哪个后端及原因。
 - **冻结的索引**：记忆索引（仅标题）放在段上下文消息里，本段内不变；本会话写入的内容下一段才可见，开启新段时刷新。正文用 `memory get` 读取。
 - **污染与确认**：会话一旦读过外部内容（`web_fetch`、`web_search`、MCP 工具、`session_search`、`recall`，以及 `memory.taint_tools` / `memory.taint_on_spill` 中的工具），就永久标记为已污染，此后写记忆需要确认（`memory.write_tainted`）：chat 在终端询问（`y`、`n`，`a` 表示本会话不再问），ACP 发权限请求，`run` 直接拒绝；`deny` 永不写入，`allow` 不询问。`--read-only`（及 ACP `read_only`）下该工具只读。普通 `run` 可以写记忆：它是 suag 自身的状态，不属于工作区写入。
 

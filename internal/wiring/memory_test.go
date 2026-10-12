@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	gkconfig "github.com/gookit/config/v2"
@@ -126,23 +127,76 @@ func TestSelectProjectBackend(t *testing.T) {
 
 func TestProjectKey(t *testing.T) {
 	keyPattern := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*-[0-9a-f]{8}$`)
-	t.Run("readable slug plus hash", func(t *testing.T) {
+	t.Run("directory name plus hash of the full path", func(t *testing.T) {
 		k := projectKey("/D/Work/inhere-tools/Suag_Dev")
 		assert.True(t, keyPattern.MatchString(k), k)
-		assert.StrContains(t, k, "d-work-inhere-tools-suag-dev-")
+		assert.True(t, strings.HasPrefix(k, "suag-dev-"), k)
+		assert.Eq(t, len("suag-dev-")+8, len(k))
 		assert.Eq(t, k, projectKey("/D/Work/inhere-tools/Suag_Dev/"), "stable after Clean")
 		assert.NoErr(t, memory.ProjectScope(k).Validate())
 	})
-	t.Run("same slug different paths", func(t *testing.T) {
-		assert.NotEq(t, projectKey("/a/b-c"), projectKey("/a/b/c"))
+	t.Run("same directory name, different paths", func(t *testing.T) {
+		a, b := projectKey("/work/a/suag"), projectKey("/work/b/suag")
+		assert.NotEq(t, a, b)
+		assert.True(t, strings.HasPrefix(a, "suag-") && strings.HasPrefix(b, "suag-"))
 	})
-	t.Run("long and non-ASCII paths", func(t *testing.T) {
-		long := projectKey("/x/very/deeply/nested/directory/structure/for/the/project/named/suag-agent")
+	t.Run("long and non-ASCII names", func(t *testing.T) {
+		long := projectKey("/x/" + strings.Repeat("very-long-name-", 6))
 		assert.True(t, keyPattern.MatchString(long), long)
 		assert.True(t, len(long) <= projectKeySlugLen+9)
-		assert.StrContains(t, long, "suag-agent-")
 		cn := projectKey("/项目/记忆")
 		assert.True(t, regexp.MustCompile(`^[0-9a-f]{8}$`).MatchString(cn), cn)
+	})
+	t.Run("legacy key keeps the old whole-path form", func(t *testing.T) {
+		k := legacyProjectKey("/D/Work/inhere-tools/Suag_Dev")
+		assert.True(t, strings.HasPrefix(k, "d-work-inhere-tools-suag-dev-"), k)
+		assert.Eq(t, k[len(k)-8:], projectKey("/D/Work/inhere-tools/Suag_Dev")[len("suag-dev-"):]) // same hash
+	})
+}
+
+func TestMigrateProjectDir(t *testing.T) {
+	root := "/work/repo/suag"
+	key, legacy := projectKey(root), legacyProjectKey(root)
+	write := func(t *testing.T, home, k, text string) {
+		t.Helper()
+		dir := filepath.Join(home, "projects", k, "memory")
+		assert.NoErr(t, os.MkdirAll(dir, 0o755))
+		assert.NoErr(t, os.WriteFile(filepath.Join(dir, "note.md"), []byte(text), 0o644))
+	}
+	t.Run("the legacy directory moves to the new key", func(t *testing.T) {
+		home := t.TempDir()
+		write(t, home, legacy, "old")
+		dir := migrateProjectDir(home, key, legacy)
+		assert.Eq(t, filepath.Join(home, "projects", key), dir)
+		data, err := os.ReadFile(filepath.Join(dir, "memory", "note.md"))
+		assert.NoErr(t, err)
+		assert.Eq(t, "old", string(data))
+		_, err = os.Stat(filepath.Join(home, "projects", legacy))
+		assert.True(t, os.IsNotExist(err))
+	})
+	t.Run("an existing new directory wins and the legacy one is left alone", func(t *testing.T) {
+		home := t.TempDir()
+		write(t, home, legacy, "old")
+		write(t, home, key, "new")
+		dir := migrateProjectDir(home, key, legacy)
+		assert.Eq(t, filepath.Join(home, "projects", key), dir)
+		_, err := os.Stat(filepath.Join(home, "projects", legacy, "memory", "note.md"))
+		assert.NoErr(t, err)
+	})
+	t.Run("nothing to move", func(t *testing.T) {
+		home := t.TempDir()
+		assert.Eq(t, filepath.Join(home, "projects", key), migrateProjectDir(home, key, legacy))
+	})
+	t.Run("selectProjectBackend uses the moved directory", func(t *testing.T) {
+		home := t.TempDir()
+		repoRoot, sub := memRepo(t, false, false)
+		write(t, home, legacyProjectKey(repoRoot), "old")
+		_, choice, err := selectProjectBackend(sub, MemoryConfig{SuagHome: home})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, filepath.Join(home, "projects", projectKey(repoRoot), "memory"), choice.Location)
+		data, err := os.ReadFile(filepath.Join(choice.Location, "note.md"))
+		assert.NoErr(t, err)
+		assert.Eq(t, "old", string(data))
 	})
 }
 

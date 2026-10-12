@@ -5,7 +5,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -266,7 +268,8 @@ func selectProjectBackend(workspaceRoot string, cfg MemoryConfig) (memory.Store,
 		if err := requireHome(cfg); err != nil {
 			return nil, choice, err
 		}
-		choice.Location = filepath.Join(cfg.SuagHome, "projects", choice.Scope.Key, "memory")
+		dir := migrateProjectDir(cfg.SuagHome, choice.Scope.Key, legacyProjectKey(root))
+		choice.Location = filepath.Join(dir, "memory")
 		layout = files.DirLayout{Dir: choice.Location}
 	}
 	st, err := files.New(map[memory.Scope]files.Layout{choice.Scope: layout})
@@ -296,22 +299,50 @@ func gitRoot(dir string) (string, error) {
 	}
 }
 
-// projectKeySlugLen bounds the readable part of a project key; the tail of
-// the path is kept because it names the project.
+// projectKeySlugLen bounds the readable part of a project key.
 const projectKeySlugLen = 48
 
-// projectKey turns an absolute repository path into a readable, file-name
-// safe key: lowercase ASCII letters and digits joined by '-', followed by a
-// short hash of the full path so different paths with the same slug (or with
-// non-ASCII names) do not collide. Windows paths are hashed case-insensitively.
+// projectKey turns an absolute repository path into a short, file-name safe
+// key: the slug of the directory name (lowercase ASCII letters and digits
+// joined by '-') followed by a short hash of the full path, so two
+// repositories with the same directory name (or a non-ASCII one) do not
+// collide, e.g. "suag-5cb0fa32". Windows paths are hashed case-insensitively.
 func projectKey(root string) string {
+	p := projectPath(root)
+	slug := keySlug(path.Base(p))
+	if len(slug) > projectKeySlugLen {
+		slug = strings.TrimRight(slug[:projectKeySlugLen], "-")
+	}
+	return joinKey(slug, pathHash(p))
+}
+
+// legacyProjectKey is the key before 0.13: the slug of the whole path (its
+// last projectKeySlugLen characters) plus the same hash. Only used to move an
+// existing <SUAG_HOME>/projects/<key> directory to the new key.
+func legacyProjectKey(root string) string {
+	p := projectPath(root)
+	slug := keySlug(p)
+	if len(slug) > projectKeySlugLen {
+		slug = strings.TrimLeft(slug[len(slug)-projectKeySlugLen:], "-")
+	}
+	return joinKey(slug, pathHash(p))
+}
+
+// projectPath is the cleaned, slash-separated path a key is derived from
+// (lowercased on Windows).
+func projectPath(root string) string {
 	p := filepath.ToSlash(filepath.Clean(root))
 	if runtime.GOOS == "windows" {
 		p = strings.ToLower(p)
 	}
+	return p
+}
+
+// keySlug keeps lowercase ASCII letters and digits, joining runs with '-'.
+func keySlug(s string) string {
 	var b strings.Builder
 	dash := false
-	for _, r := range strings.ToLower(p) {
+	for _, r := range strings.ToLower(s) {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			if dash && b.Len() > 0 {
 				b.WriteByte('-')
@@ -322,16 +353,45 @@ func projectKey(root string) string {
 		}
 		dash = true
 	}
-	slug := b.String()
-	if len(slug) > projectKeySlugLen {
-		slug = strings.TrimLeft(slug[len(slug)-projectKeySlugLen:], "-")
-	}
+	return b.String()
+}
+
+// pathHash is the first 4 bytes of the path's SHA-256, in hex.
+func pathHash(p string) string {
 	sum := sha256.Sum256([]byte(p))
-	h := hex.EncodeToString(sum[:4])
+	return hex.EncodeToString(sum[:4])
+}
+
+func joinKey(slug, hash string) string {
 	if slug == "" {
-		return h
+		return hash
 	}
-	return slug + "-" + h
+	return slug + "-" + hash
+}
+
+// migrateProjectDir moves <home>/projects/<legacy key> to the new key when
+// only the legacy directory exists, so project memory written before the key
+// change is kept. It returns the directory to use: the new one, or the legacy
+// one when the move failed (with a warning).
+func migrateProjectDir(home, key, legacy string) string {
+	dir := filepath.Join(home, "projects", key)
+	if legacy == key {
+		return dir
+	}
+	old := filepath.Join(home, "projects", legacy)
+	if ok, _ := isDir(dir); ok {
+		return dir
+	}
+	if ok, _ := isDir(old); !ok {
+		return dir
+	}
+	if err := os.Rename(old, dir); err != nil {
+		slog.Warn("memory: could not move the project directory to its new key; keep using the old one",
+			"from", old, "to", dir, "err", err)
+		return old
+	}
+	slog.Info("memory: moved the project directory to its new key", "from", old, "to", dir)
+	return dir
 }
 
 func isFile(path string) (bool, error) {

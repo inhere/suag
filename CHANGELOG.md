@@ -15,6 +15,7 @@
 ### 变更
 
 - 历史折叠默认开启（`context.fold_every: 10`、`context.fold_keep: 5`，`fold_every: 0` 关闭）：每次请求中，最近 5 步之前的步骤去掉思考内容、超过 1000 字符的字符串参数换成说明，折叠点每 10 步前移一次以保持缓存前缀；存储的会话不变。T9 对比中每次请求的上下文减半、prompt 总量 −59%、耗时 −35%（未命中输入 +48%）。折叠点前移记录为 `fold` 事件，`suag trace` 可见。设计见 docs/design/2026-10-12-history-folding-design.md。
+- 项目记忆的 key（作用域 `project:<key>` 与 `$SUAG_HOME/projects/<key>`）改为“仓库目录名 + 完整路径短哈希”，如 `suag-5cb0fa32`（原为整条路径的 slug，如 `d-work-inhere-my-tools-dev-inhere-tools-suag-5cb0fa32`，哈希不变）。用 SUAG_HOME 下文件存放的项目记忆在首次使用时自动从旧目录改名过来；改名失败时继续用旧目录并警告。
 - 搜索与递归列目录按完整的 `.gitignore` 规则跳过路径：各级目录的 `.gitignore` 都生效，支持 `!` 取反、`**`、`/` 锚定与只匹配目录的 `name/`（原先只读工作区根的 `.gitignore`，不支持取反）；结果末尾一行注明跳过了哪些目录与多少文件。`file_list` 递归时不再进入 `.gitignore` 匹配的目录。
 
 ## [0.12.0] - 2026-10-12
