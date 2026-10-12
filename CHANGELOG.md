@@ -4,6 +4,20 @@
 
 ## [未发布]
 
+### 新增
+
+- `file_edit` 支持 `edits` 列表：同一文件的多处替换一次调用完成，按顺序作用于上一处的结果，任一处失败则文件不变；ACP 差异预览与 chat 审批提示逐处显示。
+- 评测脚本：仓库模式任务（`repo: {ref}`）、长编码任务 `long-coding-schedule`（任务级 `timeout`、结束后注入的 `acceptance` 测试、`command` 检查）、`--suag-args` / `--omp-args`、`--repeat N`（附平均行）、结果中的 `tool_counts`。
+
+### 修复
+
+- Windows 上 `shell_exec` 丢失 PowerShell 的表格输出（`Get-ChildItem`、`Select-Object` 等）：命令结束后立即退出，格式化输出还在约 300ms 的延迟中就被丢弃，模型拿到空结果、退出码 0，只能反复换写法重试。现在命令输出先经 `Out-Default` 写完再退出，并关闭 PowerShell 7 的 ANSI 颜色。
+- 评测的仓库模式任务写入仓库级 git 身份：suag 在隔离 HOME 下运行，原先只有它提交失败。
+
+### 变更
+
+- 使用约定增加一条：执行任务时不主动创建或更新 tracker、计划与记忆，除非用户要求。
+
 ## [0.11.0] - 2026-10-11
 
 会话分段与上下文投影。依据见 [设计](docs/design/2026-10-11-segments-projection-design.md)、[计划](docs/plans/2026-10-11-segments-projection-plan.md) 与 [复盘](docs/plans/2026-10-11-segments-projection-retrospective.md)。
