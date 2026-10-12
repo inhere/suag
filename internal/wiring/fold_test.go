@@ -30,3 +30,16 @@ func TestRunnerFoldSettings(t *testing.T) {
 	every, _ = fold(t)
 	assert.Eq(t, 0, every)
 }
+
+// TestRunnerFoldOffForAnthropic: folding rewrites earlier messages, which
+// would invalidate Claude's signed thinking, so it is off for such models.
+func TestRunnerFoldOffForAnthropic(t *testing.T) {
+	resetConfig(t)
+	setProviders(t, map[string]any{"anthropic": map[string]any{"api_key": "k"}})
+	assert.NoErr(t, gkconfig.Set("model", "anthropic/claude-opus-5-5"))
+	rt, err := OpenCLI(context.Background(), Options{})
+	assert.Require(t, assert.NoErr(t, err))
+	t.Cleanup(func() { _ = rt.Close() })
+	every, _ := rt.Runner.Fold()
+	assert.Eq(t, 0, every)
+}

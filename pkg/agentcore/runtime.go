@@ -189,7 +189,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 
 		switch res.FinishReason {
 		case FinishToolCalls:
-			if result, err, handled := r.executeToolCalls(ctx, state, tools, res.ToolCalls, leadOutput{text: res.Content, reasoning: res.Reasoning}); handled {
+			if result, err, handled := r.executeToolCalls(ctx, state, tools, res.ToolCalls, leadOutput{text: res.Content, reasoning: res.Reasoning, meta: res.Metadata}); handled {
 				return r.finishRun(ctx, input, state, result, err)
 			}
 			continue
@@ -452,10 +452,14 @@ func (r *DefaultRuntime) effectiveMaxSteps(input RunInput) int {
 	return r.maxSteps
 }
 
-// leadOutput is the model output accompanying a batch of tool calls; text and
-// reasoning are stored on the first assistant tool-call message only, batch
+// leadOutput is the model output accompanying a batch of tool calls; text,
+// reasoning and the result's metadata (e.g. a provider's signed thinking
+// blocks) are stored on the first assistant tool-call message only, batch
 // (api.ToolBatchMetaKey, set when the reply holds several calls) on each.
-type leadOutput struct{ text, reasoning, batch string }
+type leadOutput struct {
+	text, reasoning, batch string
+	meta                   map[string]any
+}
 
 func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, schemas []ToolSchema, calls []ToolCall, lead leadOutput) (*RunResult, error, bool) {
 	prepareToolCalls(schemas, calls)
@@ -575,8 +579,14 @@ func (r *DefaultRuntime) persistToolTranscript(ctx context.Context, state *RunSt
 		ToolCall:  cloneToolCallValue(&call),
 		Reasoning: lead.reasoning,
 	}
-	if lead.batch != "" {
-		assistantMessage.Metadata = map[string]any{ToolBatchMetaKey: lead.batch}
+	if len(lead.meta) > 0 || lead.batch != "" {
+		assistantMessage.Metadata = cloneMetadata(lead.meta)
+		if assistantMessage.Metadata == nil {
+			assistantMessage.Metadata = map[string]any{}
+		}
+		if lead.batch != "" {
+			assistantMessage.Metadata[ToolBatchMetaKey] = lead.batch
+		}
 	}
 	toolMessage := Message{
 		Role:       "tool",

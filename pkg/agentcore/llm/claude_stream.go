@@ -85,6 +85,7 @@ func (p *ClaudeProvider) openStream(ctx context.Context, body map[string]any) (*
 		httpReq.Header.Set("Accept", "text/event-stream")
 		httpReq.Header.Set("x-api-key", p.apiKey)
 		httpReq.Header.Set("anthropic-version", claudeAPIVersion)
+		setThinkingBeta(httpReq, body)
 
 		resp, err := p.streamClient.Do(httpReq)
 		if err != nil {
@@ -136,12 +137,14 @@ type claudeStreamEvent struct {
 		Type string `json:"type"`
 		ID   string `json:"id"`
 		Name string `json:"name"`
+		Data string `json:"data"` // redacted_thinking
 	} `json:"content_block"`
 	Delta struct {
 		Type        string `json:"type"`
 		Text        string `json:"text"`
 		PartialJSON string `json:"partial_json"`
 		Thinking    string `json:"thinking"`
+		Signature   string `json:"signature"`
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
 	Usage *claudeUsage `json:"usage"`
@@ -161,6 +164,8 @@ type claudeStreamTool struct {
 func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 	var content, reasoning strings.Builder
 	calls := map[int]*claudeStreamTool{}
+	// thinking blocks by content index, kept to be sent back (ClaudeThinkingMetaKey)
+	thinking := map[int]map[string]any{}
 	res := &agentcoreapi.GenerateResult{}
 	var usage claudeUsage
 	stopReason, eventName, emitted := "", "", false
@@ -196,8 +201,13 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		case "message_start":
 			usage = ev.Message.Usage
 		case "content_block_start":
-			if ev.ContentBlock.Type == "tool_use" {
+			switch ev.ContentBlock.Type {
+			case "tool_use":
 				calls[ev.Index] = &claudeStreamTool{id: ev.ContentBlock.ID, name: ev.ContentBlock.Name}
+			case "thinking":
+				thinking[ev.Index] = thinkingBlock("", "")
+			case "redacted_thinking":
+				thinking[ev.Index] = map[string]any{"type": "redacted_thinking", "data": ev.ContentBlock.Data}
 			}
 		case "content_block_delta":
 			switch ev.Delta.Type {
@@ -218,6 +228,13 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 				}
 			case "thinking_delta":
 				reasoning.WriteString(ev.Delta.Thinking)
+				if b := thinking[ev.Index]; b != nil {
+					b["thinking"] = b["thinking"].(string) + ev.Delta.Thinking
+				}
+			case "signature_delta":
+				if b := thinking[ev.Index]; b != nil {
+					b["signature"] = b["signature"].(string) + ev.Delta.Signature
+				}
 			}
 		case "message_delta":
 			if ev.Delta.StopReason != "" {
@@ -247,6 +264,18 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		CacheWriteTokens: usage.CacheCreationInputTokens,
 	}
 	res.Content, res.Reasoning = content.String(), reasoning.String()
+	if len(thinking) > 0 {
+		order := make([]int, 0, len(thinking))
+		for i := range thinking {
+			order = append(order, i)
+		}
+		sort.Ints(order)
+		blocks := make([]any, 0, len(order))
+		for _, i := range order {
+			blocks = append(blocks, thinking[i])
+		}
+		res.Metadata = map[string]any{ClaudeThinkingMetaKey: blocks}
+	}
 
 	indexes := make([]int, 0, len(calls))
 	for i := range calls {

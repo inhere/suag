@@ -282,6 +282,12 @@ func loadRuntimeSettings(workspace, model, thinking string) (runtimeSettings, er
 	if s.fold, err = appconfig.ReadFoldSettings(); err != nil {
 		return s, err
 	}
+	// Folding rewrites earlier messages, which breaks Claude's signed
+	// thinking (the signature binds the request prefix) and Claude prompt
+	// caching anyway: no folding when the main model speaks Anthropic.
+	if s.models.Main.Provider.Type == appconfig.ProviderTypeAnthropic {
+		s.fold.Every = 0
+	}
 	// memory.taint_tools taint on every result (default none);
 	// memory.taint_on_spill only when the output was externalised (default
 	// shell_exec; an empty list turns it off).

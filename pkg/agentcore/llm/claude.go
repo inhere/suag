@@ -29,6 +29,7 @@ type ClaudeProvider struct {
 	streamClient *http.Client
 	headers      map[string]string
 	promptCache  bool
+	thinking     string
 }
 
 // SegmentContextMetaKey is the Message.Metadata key (bool true) that marks the
@@ -45,6 +46,13 @@ const SegmentContextMetaKey = "suag.segment_context"
 // message even when no remaining step carries reasoning.
 const ReasoningFoldedMetaKey = "suag.reasoning_folded"
 
+// ClaudeThinkingMetaKey is the GenerateResult / Message metadata key holding
+// a reply's thinking blocks as Anthropic returned them ([]any of maps:
+// {type: thinking, thinking, signature} or {type: redacted_thinking, data}).
+// They are sent back unchanged before the tool_use blocks of that reply, as
+// extended thinking with tools requires.
+const ClaudeThinkingMetaKey = "suag.claude_thinking"
+
 // ClaudeConfig configures a ClaudeProvider.
 type ClaudeConfig struct {
 	// Name is the provider name reported by Name(); default: anthropic.
@@ -60,6 +68,10 @@ type ClaudeConfig struct {
 	// the segment context message's last block and the request's last block.
 	// Default off, since gateways may reject cache_control.
 	PromptCache bool
+	// Thinking is the thinking level (off, minimal, low, medium, high, xhigh,
+	// max, auto; see applyClaudeThinking). "", "auto" and "off" send no
+	// thinking parameters.
+	Thinking string
 }
 
 // NewClaudeProvider creates a ClaudeProvider.
@@ -79,6 +91,7 @@ func NewClaudeProvider(cfg ClaudeConfig) *ClaudeProvider {
 		streamClient: newStreamClient(),
 		headers:      cfg.Headers,
 		promptCache:  cfg.PromptCache,
+		thinking:     cfg.Thinking,
 	}
 }
 
@@ -158,6 +171,11 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 			}
 			msgs = appendClaudeBlock(msgs, "user", block)
 		case m.ToolCall != nil:
+			// The reply's thinking blocks go back first and unchanged, as
+			// extended thinking with tools requires.
+			for _, block := range claudeThinkingBlocks(m) {
+				msgs = appendClaudeBlock(msgs, "assistant", block)
+			}
 			// Text the model emitted alongside the call precedes tool_use in the same turn.
 			if m.Content != "" {
 				msgs = appendClaudeBlock(msgs, "assistant", map[string]any{"type": "text", "text": m.Content})
@@ -184,6 +202,7 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 	if req.MaxTokens > 0 {
 		body["max_tokens"] = req.MaxTokens
 	}
+	applyClaudeThinking(body, model, p.thinking, req.MaxTokens > 0)
 	if system != "" {
 		// A block array only when prompt caching is on: Anthropic accepts both
 		// shapes, but some /v1/messages-compatible gateways only take a string.
@@ -248,11 +267,14 @@ func markClaudeLastBlock(msg map[string]any) {
 func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResult, error) {
 	var raw struct {
 		Content []struct {
-			Type  string          `json:"type"`
-			Text  string          `json:"text"`
-			ID    string          `json:"id"`
-			Name  string          `json:"name"`
-			Input json.RawMessage `json:"input"`
+			Type      string          `json:"type"`
+			Text      string          `json:"text"`
+			ID        string          `json:"id"`
+			Name      string          `json:"name"`
+			Input     json.RawMessage `json:"input"`
+			Thinking  string          `json:"thinking"`
+			Signature string          `json:"signature"`
+			Data      string          `json:"data"`
 		} `json:"content"`
 		StopReason string `json:"stop_reason"`
 		Usage      struct {
@@ -283,13 +305,22 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		},
 	}
 
+	var thinking []any
 	for _, block := range raw.Content {
 		switch block.Type {
 		case "text":
 			resp.Content += block.Text
 		case "tool_use":
 			resp.ToolCalls = append(resp.ToolCalls, newToolCall(block.ID, block.Name, block.Input))
+		case "thinking":
+			resp.Reasoning += block.Thinking
+			thinking = append(thinking, thinkingBlock(block.Thinking, block.Signature))
+		case "redacted_thinking":
+			thinking = append(thinking, map[string]any{"type": "redacted_thinking", "data": block.Data})
 		}
+	}
+	if len(thinking) > 0 {
+		resp.Metadata = map[string]any{ClaudeThinkingMetaKey: thinking}
 	}
 	if raw.StopReason == "max_tokens" {
 		markTruncated(resp.ToolCalls)
@@ -329,6 +360,7 @@ func (p *ClaudeProvider) doRequest(ctx context.Context, body map[string]any) ([]
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("x-api-key", p.apiKey)
 		httpReq.Header.Set("anthropic-version", claudeAPIVersion)
+		setThinkingBeta(httpReq, body)
 
 		httpResp, err := p.client.Do(httpReq)
 		if err != nil {
@@ -351,4 +383,17 @@ func (p *ClaudeProvider) doRequest(ctx context.Context, body map[string]any) ([]
 		return respData, nil
 	}
 	return nil, fmt.Errorf("claude request failed after retries: %w", lastErr)
+}
+
+func thinkingBlock(text, signature string) map[string]any {
+	return map[string]any{"type": "thinking", "thinking": text, "signature": signature}
+}
+
+// setThinkingBeta adds the interleaved-thinking beta when body uses
+// budget-mode thinking, unless the configured headers set anthropic-beta.
+func setThinkingBeta(req *http.Request, body map[string]any) {
+	t, _ := body["thinking"].(map[string]any)
+	if t["type"] == "enabled" && req.Header.Get("anthropic-beta") == "" {
+		req.Header.Set("anthropic-beta", claudeInterleavedBeta)
+	}
 }

@@ -56,7 +56,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `model` | 主模型，`<provider>/<model>`；可被 `SUAG_MODEL` 覆盖，再被 `--model` 覆盖 |
 | `providers.<id>` | `type`（openai/anthropic）、`base_url`、`api_key`、`headers`、`models.<model>.context_window` |
 | `providers.<id>.models.<model>.price` | 每百万 token 的美元价格（`input`、`output`、`cache_read`、`cache_write`）；provider 不返回成本时，`suag stats` 据此计算 |
-| `providers.<id>.thinking`、`providers.<id>.models.<model>.thinking` | 思考档位 `off\|minimal\|low\|medium\|high\|xhigh\|max\|auto`，`openai` 类型作为 `reasoning_effort` 发送（不设或 `auto` 不发送）；`run`/`chat --thinking` 可覆盖主模型的档位 |
+| `providers.<id>.thinking`、`providers.<id>.models.<model>.thinking` | 思考档位 `off\|minimal\|low\|medium\|high\|xhigh\|max\|auto`，`openai` 类型作为 `reasoning_effort` 发送，`anthropic` 类型作为 extended thinking 发送（adaptive + `output_config.effort`，Claude 4.5 及更早用 `budget_tokens`）；不设、`auto` 或 `off` 不发送；`run`/`chat --thinking` 可覆盖主模型的档位 |
 | `providers.<id>.context_window` | 该 provider 所有模型的默认上下文窗口（模型级 `models.<model>.context_window` 优先；都没有时按模型名推断） |
 | `providers.<id>.models.<model>.model_id` | 请求里发送的模型 id（与键不同时），如键 `deepseek-v4.1-flash`、`model_id: deepseek/deepseek-v4.1-flash`；其余地方都用键 |
 | `providers.<id>.models.<model>.type`、`base_url` | 该模型自己的协议与地址，覆盖 provider 的；如网关的 Claude 模型写 `type: anthropic`，其余模型仍走 OpenAI 兼容 |
