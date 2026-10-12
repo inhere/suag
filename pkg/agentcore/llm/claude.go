@@ -38,6 +38,13 @@ type ClaudeProvider struct {
 // must set the same key when it builds that message.
 const SegmentContextMetaKey = "suag.segment_context"
 
+// ReasoningFoldedMetaKey is the Message.Metadata key (bool true) that marks an
+// assistant message whose reasoning was removed from the request (history
+// folding). The OpenAI provider still treats the request as a thinking-mode
+// session then, so reasoning_content keeps being echoed on every assistant
+// message even when no remaining step carries reasoning.
+const ReasoningFoldedMetaKey = "suag.reasoning_folded"
+
 // ClaudeConfig configures a ClaudeProvider.
 type ClaudeConfig struct {
 	// Name is the provider name reported by Name(); default: anthropic.

@@ -153,6 +153,21 @@ func TestOpenAIProvider_ReasoningContentRoundTrip(t *testing.T) {
 		_, has = msgs[2]["reasoning_content"] // tool messages never carry it
 		assert.Eq(t, false, has)
 	})
+	t.Run("a folded step keeps the session in thinking mode", func(t *testing.T) {
+		// History folding removed the only reasoning; the remaining steps of a
+		// parallel batch never had any. Every assistant message still echoes it.
+		folded := toolPair("c1", "ls", "ok", false)
+		folded[0].Metadata = map[string]any{ReasoningFoldedMetaKey: true}
+		rest := toolPair("c2", "ls", "ok", false)
+		ms := append([]agentcoreapi.Message{{Role: "user", Content: "go"}}, folded...)
+		ms = append(ms, rest...)
+		msgs := p.buildRequestBody(&agentcoreapi.GenerateRequest{Messages: ms}, "m", true)["messages"].([]map[string]any)
+		for _, i := range []int{1, 3} {
+			got, has := msgs[i]["reasoning_content"]
+			assert.Eq(t, true, has)
+			assert.Eq(t, "", got)
+		}
+	})
 	t.Run("absent when empty", func(t *testing.T) {
 		msgs := p.buildRequestBody(&agentcoreapi.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "go"}, {Role: "assistant", Content: "hi"}}}, "m", false)["messages"].([]map[string]any)
 		_, has := msgs[1]["reasoning_content"]

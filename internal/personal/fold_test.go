@@ -7,6 +7,7 @@ import (
 	"github.com/gookit/goutil/x/assert"
 
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/llm"
 )
 
 // foldSteps builds a user message plus n assistant tool steps (each with
@@ -62,8 +63,20 @@ func TestFoldHistory(t *testing.T) {
 		last := out[len(out)-2]
 		assert.Eq(t, "think", last.Reasoning)
 		assert.Eq(t, foldArgChars+1, len(last.ToolCall.Arguments["content"].(string)))
+		assert.Eq(t, true, first.Metadata[llm.ReasoningFoldedMetaKey]) // keeps thinking mode on the wire
+		assert.Nil(t, last.Metadata)
 		// The stored history is untouched.
 		assert.Eq(t, "think", msgs[1].Reasoning)
+		assert.Nil(t, msgs[1].Metadata)
 		assert.Eq(t, foldArgChars+1, len(msgs[1].ToolCall.Arguments["content"].(string)))
+	})
+	t.Run("steps without reasoning get no mark", func(t *testing.T) {
+		msgs := foldSteps(9)
+		for i := range msgs {
+			msgs[i].Reasoning = ""
+		}
+		for _, m := range foldHistory(msgs, 4, 4) {
+			assert.Nil(t, m.Metadata)
+		}
 	})
 }

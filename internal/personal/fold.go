@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/llm"
 )
 
 // foldArgChars is the size above which a string tool argument of a folded
@@ -42,7 +43,16 @@ func foldHistory(msgs []agentcore.Message, every, keep int) []agentcore.Message 
 			break
 		}
 		step++
-		m.Reasoning = ""
+		if m.Reasoning != "" {
+			// Keep the provider in thinking mode (llm.ReasoningFoldedMetaKey).
+			meta := make(map[string]any, len(m.Metadata)+1)
+			for k, v := range m.Metadata {
+				meta[k] = v
+			}
+			meta[llm.ReasoningFoldedMetaKey] = true
+			m.Metadata = meta
+			m.Reasoning = ""
+		}
 		if m.ToolCall != nil {
 			tc := *m.ToolCall
 			tc.Arguments, _ = foldValue(tc.Arguments).(map[string]any)

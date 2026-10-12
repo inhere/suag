@@ -92,10 +92,11 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 	msgs := make([]map[string]any, 0, len(req.Messages)+1)
 	// A thinking-mode session echoes reasoning_content on every assistant
 	// message, even a step whose reasoning was empty: DeepSeek rejects a request
-	// with tools when any earlier assistant message lacks the field.
+	// with tools when any earlier assistant message lacks the field. A step whose
+	// reasoning was folded away still marks the session as thinking.
 	thinking := false
 	for _, m := range req.Messages {
-		if m.Role == "assistant" && m.Reasoning != "" {
+		if folded, _ := m.Metadata[ReasoningFoldedMetaKey].(bool); m.Role == "assistant" && (m.Reasoning != "" || folded) {
 			thinking = true
 			break
 		}
