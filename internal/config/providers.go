@@ -280,21 +280,29 @@ func intValue(raw any) int {
 // ResolveModel parses "provider/model" or a bare model id. It splits only at
 // the first "/" and only when the prefix is a defined provider; otherwise the
 // whole string is the model id (e.g. "meta/llama-3") served by defaultProvider.
+//
+// A name that is no configured model of a provider listing its models (and a
+// bare name without a default provider) is then looked up loosely, see
+// matchModels: a single match is used, several are an error listing them,
+// none keeps the name as it is.
 func ResolveModel(ref string, providers map[string]ProviderConfig, defaultProvider string) (ModelSpec, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return ModelSpec{}, errors.New("model reference is empty")
 	}
-	providerID, model := defaultProvider, ref
+	providerID, model, explicit := defaultProvider, ref, false
 	if prefix, rest, found := strings.Cut(ref, "/"); found {
 		if _, defined := providers[prefix]; defined {
-			providerID, model = prefix, rest
+			providerID, model, explicit = prefix, rest, true
 		}
 	}
 	if model == "" {
 		return ModelSpec{}, fmt.Errorf("model reference %q has no model id", ref)
 	}
 	if providerID == "" {
+		if spec, ok, err := looseModel(ref, model, providers, ""); ok || err != nil {
+			return spec, err
+		}
 		return ModelSpec{}, fmt.Errorf("model %q has no provider; use <provider>/<model>", ref)
 	}
 	provider, ok := providers[providerID]
@@ -302,14 +310,89 @@ func ResolveModel(ref string, providers map[string]ProviderConfig, defaultProvid
 		return ModelSpec{}, fmt.Errorf("provider %q is not defined (presets: openai, anthropic, deepseek; add it under providers:)", providerID)
 	}
 	key := modelKey(provider, model)
-	// A model's own type and base_url win over the provider's; the spec gets
-	// its own copy of the provider, so everything downstream (BuildProvider,
-	// manifest, thinking checks) sees the protocol actually used.
+	if _, listed := provider.Models[key]; !listed && len(provider.Models) > 0 {
+		scope := ""
+		if explicit {
+			scope = providerID
+		}
+		if spec, ok, err := looseModel(ref, model, providers, scope); ok || err != nil {
+			return spec, err
+		}
+	}
+	return bindModel(provider, key), nil
+}
+
+// bindModel returns the spec of a model key: a model's own type and base_url
+// win over the provider's; the spec gets its own copy of the provider, so
+// everything downstream (BuildProvider, manifest, thinking checks) sees the
+// protocol actually used.
+func bindModel(provider ProviderConfig, key string) ModelSpec {
 	if cfg, ok := provider.Models[key]; ok {
 		provider.Type = firstNonEmpty(cfg.Type, provider.Type)
 		provider.BaseURL = firstNonEmpty(cfg.BaseURL, provider.BaseURL)
 	}
-	return ModelSpec{Provider: provider, Model: key}, nil
+	return ModelSpec{Provider: provider, Model: key}
+}
+
+// maxListedMatches bounds the candidates an ambiguous model name lists.
+const maxListedMatches = 20
+
+// looseModel resolves name with matchModels in the provider scope ("" = all
+// providers): ok with the single match, an error naming the candidates when
+// there are several, neither when nothing matches.
+func looseModel(ref, name string, providers map[string]ProviderConfig, scope string) (ModelSpec, bool, error) {
+	matches := matchModels(name, providers, scope)
+	switch len(matches) {
+	case 0:
+		return ModelSpec{}, false, nil
+	case 1:
+		return bindModel(providers[matches[0].provider], matches[0].key), true, nil
+	}
+	names := make([]string, 0, min(len(matches), maxListedMatches))
+	for i, m := range matches {
+		if i == maxListedMatches {
+			names = append(names, fmt.Sprintf("... %d more", len(matches)-i))
+			break
+		}
+		names = append(names, m.provider+"/"+m.key)
+	}
+	return ModelSpec{}, false, fmt.Errorf("model %q matches several configured models: %s; give one of them", ref, strings.Join(names, ", "))
+}
+
+type modelMatch struct{ provider, key string }
+
+// matchModels finds the configured models (providers.<id>.models keys and
+// their model_id) containing name, case-insensitively; when some equal it,
+// only those count. scope limits the search to one provider. The result is
+// sorted by provider and key.
+func matchModels(name string, providers map[string]ProviderConfig, scope string) []modelMatch {
+	want := strings.ToLower(strings.TrimSpace(name))
+	if want == "" {
+		return nil
+	}
+	var exact, partial []modelMatch
+	for id, p := range providers {
+		if scope != "" && id != scope {
+			continue
+		}
+		for key, cfg := range p.Models {
+			k, mid := strings.ToLower(key), strings.ToLower(cfg.ModelID)
+			switch {
+			case k == want || (mid != "" && mid == want):
+				exact = append(exact, modelMatch{id, key})
+			case strings.Contains(k, want) || (mid != "" && strings.Contains(mid, want)):
+				partial = append(partial, modelMatch{id, key})
+			}
+		}
+	}
+	out := partial
+	if len(exact) > 0 {
+		out = exact
+	}
+	slices.SortFunc(out, func(a, b modelMatch) int {
+		return strings.Compare(a.provider+"/"+a.key, b.provider+"/"+b.key)
+	})
+	return out
 }
 
 // modelKey maps a model reference to its models.<key>: the key itself, or the

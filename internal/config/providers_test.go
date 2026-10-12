@@ -493,3 +493,72 @@ providers:
 		assert.ErrMsg(t, err, `providers.cc.models.sonnet: unsupported type "gemini" (want openai|anthropic)`)
 	})
 }
+
+func TestResolveModelLooseMatch(t *testing.T) {
+	doc := `
+model: cc/deepseek-v4.1-flash
+providers:
+  cc:
+    type: openai
+    base_url: https://cc.example/v1
+    models:
+      deepseek-v4.1-flash:
+        model_id: deepseek/deepseek-v4.1-flash
+      deepseek-v4.1-flash-fast: {}
+      claude-haiku-5-5:
+        type: anthropic
+      glm-5: {}
+  oc:
+    type: openai
+    base_url: https://oc.example/v1
+    models:
+      kimi-k3: {}
+      glm-5: {}
+`
+	resolve := func(t *testing.T, ref string) (ModelSettings, error) {
+		loadYAML(t, doc)
+		return ReadModelSettings(ref)
+	}
+	t.Run("a unique part of a name", func(t *testing.T) {
+		s, err := resolve(t, "haiku")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "cc/claude-haiku-5-5", s.Main.Ref())
+		assert.Eq(t, ProviderTypeAnthropic, s.Main.Provider.Type) // the model's own type still applies
+		s, err = resolve(t, "KIMI") // another provider, any case
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "oc/kimi-k3", s.Main.Ref())
+	})
+	t.Run("an exact name wins over longer ones", func(t *testing.T) {
+		s, err := resolve(t, "cc/DeepSeek-V4.1-Flash")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "cc/deepseek-v4.1-flash", s.Main.Ref())
+	})
+	t.Run("several matches are listed", func(t *testing.T) {
+		_, err := resolve(t, "flash")
+		assert.ErrMsg(t, err, `model: model "flash" matches several configured models: `+
+			`cc/deepseek-v4.1-flash, cc/deepseek-v4.1-flash-fast; give one of them`)
+		_, err = resolve(t, "glm") // in two providers
+		assert.ErrMsg(t, err, `model: model "glm" matches several configured models: cc/glm-5, oc/glm-5; give one of them`)
+		s, err := resolve(t, "glm-5") // a key of the default provider resolves as before
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "cc/glm-5", s.Main.Ref())
+	})
+	t.Run("a provider prefix limits the search", func(t *testing.T) {
+		s, err := resolve(t, "oc/glm")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "oc/glm-5", s.Main.Ref())
+	})
+	t.Run("a bare name without a configured model", func(t *testing.T) {
+		loadYAML(t, strings.Replace(doc, "model: cc/deepseek-v4.1-flash\n", "", 1))
+		s, err := ReadModelSettings("kimi")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "oc/kimi-k3", s.Main.Ref())
+		_, err = ReadModelSettings("qwen")
+		assert.ErrMsg(t, err, `model: model "qwen" has no provider; use <provider>/<model>`)
+	})
+	t.Run("no match keeps the name", func(t *testing.T) {
+		s, err := resolve(t, "cc/qwen-max")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "cc/qwen-max", s.Main.Ref())
+	})
+}
