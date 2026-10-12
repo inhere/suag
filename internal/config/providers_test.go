@@ -267,6 +267,12 @@ providers:
     models:
       deepseek-chat:
         context_window: 64000
+  cc:
+    type: openai
+    context_window: 1000000
+    models:
+      small:
+        context_window: 32000
 llm:
   context_window: 99999
 `)
@@ -281,6 +287,8 @@ llm:
 		{"inferred from name", "deepseek/deepseek-reasoner", 128000},
 		{"inferred claude", "anthropic/claude-sonnet-4-6", 200000},
 		{"unknown default, ignores llm.context_window", "openai/mystery", DefaultContextWindow},
+		{"provider default beats name inference", "cc/claude-sonnet-4-6", 1000000},
+		{"model value beats provider default", "cc/small", 32000},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

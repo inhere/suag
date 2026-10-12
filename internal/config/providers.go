@@ -48,6 +48,10 @@ type ProviderConfig struct {
 	APIKey  string
 	Headers map[string]string
 	Models  map[string]ModelConfig
+	// ContextWindow (providers.<id>.context_window) is the window of every
+	// model of this provider without its own models.<model>.context_window;
+	// 0 = infer from the model name.
+	ContextWindow int
 	// PromptCache (providers.<id>.prompt_cache) enables Claude cache_control
 	// breakpoints; only meaningful for type anthropic.
 	PromptCache bool
@@ -114,6 +118,8 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 			APIKey:  expandEnv(stringValue(entry["api_key"])),
 			Headers: expandEnvMap(normalizeStringMap(entry["headers"])),
 			Models:  readModelConfigs(entry["models"]),
+			// Negative or non-numeric counts as unset, like the per-model value.
+			ContextWindow: intValue(entry["context_window"]),
 		}
 		promptCache, promptCacheSet := entry["prompt_cache"].(bool)
 
@@ -129,6 +135,9 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 		}
 		if user.Models != nil {
 			merged.Models = user.Models
+		}
+		if user.ContextWindow > 0 {
+			merged.ContextWindow = user.ContextWindow
 		}
 		if promptCacheSet {
 			merged.PromptCache = promptCache
@@ -352,10 +361,14 @@ func ReadModelSettings(flagModel string) (ModelSettings, error) {
 }
 
 // ContextWindowFor returns providers.<id>.models.<model>.context_window when
-// set, otherwise the window inferred from the model name.
+// set, then providers.<id>.context_window, otherwise the window inferred from
+// the model id sent to the provider.
 func ContextWindowFor(spec ModelSpec) int {
 	if cfg, ok := spec.Provider.Models[spec.Model]; ok && cfg.ContextWindow > 0 {
 		return cfg.ContextWindow
+	}
+	if spec.Provider.ContextWindow > 0 {
+		return spec.Provider.ContextWindow
 	}
 	return ContextWindowForModel(spec.APIModel())
 }

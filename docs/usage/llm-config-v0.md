@@ -31,7 +31,8 @@ fallback_models:
 - `providers.<id>.type`：协议，`openai` 或 `anthropic`。内置预设可省略；自定义 provider 必填。
 - `providers.<id>.base_url`、`api_key`：地址与密钥，值支持 `${VAR}`。
 - `providers.<id>.headers`：附加的 HTTP 请求头，值支持 `${VAR}`。
-- `providers.<id>.models.<model>.context_window`：该模型的上下文窗口；未配置时按模型名推断（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k，未知为 128k）。
+- `providers.<id>.context_window`：该 provider 下所有模型的默认上下文窗口（如网关统一为 1M 时写一次即可）。
+- `providers.<id>.models.<model>.context_window`：该模型的上下文窗口。取值顺序：模型级 > provider 级 > 按模型名推断（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k，未知为 128k）。
 - `providers.<id>.models.<model>.model_id`：实际发给 provider 的模型 id；不设时发送 `<model>` 本身。用它给很长的上游 id 起一个短名：引用、trace、统计、价格与上下文窗口都按短名，只有请求里用 `model_id`。用完整的上游 id 引用也会对应到这个短名。
 - provider 写了 `models` 而引用的模型不在其中（既不是某个键，也不是某个 `model_id`）时，启动时在 stderr 警告一次并照原样发送，多半是模型名写错。没有 `models` 的 provider 不检查。
 - `compact_model`：自动压缩与 `:compact` 使用的模型，引用规则同 `model`；裸模型名使用主模型的 provider；不设则用当前回合的模型。
@@ -105,10 +106,10 @@ providers:
     type: openai
     base_url: "https://api.commandcode.ai/provider/v1"
     api_key: "${COMMAND_CODE_API_KEY}"
+    context_window: 1000000                # 本 provider 所有模型的默认窗口
     models:
       deepseek-v4.1-flash:                 # suag 里用的短名
         model_id: deepseek/deepseek-v4.1-flash   # 请求里发送的 id
-        context_window: 900000
 ```
 
 `--model command-code/deepseek-v4.1-flash` 或（`model` 已指向 command-code 时）`--model deepseek-v4.1-flash` 都会请求 `deepseek/deepseek-v4.1-flash`；`--model command-code/deepseek/deepseek-v4.1-flash` 同样可用。`suag manifest` 在主模型一行显示实际发送的 id。
