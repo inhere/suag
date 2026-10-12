@@ -33,7 +33,8 @@ func (t *FileGrepTool) Name() string { return "file_grep" }
 func (t *FileGrepTool) Description() string {
 	return "Search file contents in the workspace with a Go (RE2) regular expression. " +
 		"Returns path:line: text (paths relative to the workspace, / separated), or only paths with output=files. " +
-		"Skips .git, node_modules, vendor, dist, .gitignore matches, binary files and files over 1MB. Prefer this over shell grep."
+		"Skips .git, node_modules, vendor, dist, .gitignore matches (any directory's .gitignore; the result says what was skipped, " +
+		"no_ignore includes it), binary files and files over 1MB. Prefer this over shell grep."
 }
 
 // ToolMeta marks the tool as a read-only search.
@@ -53,6 +54,7 @@ func (t *FileGrepTool) Schema() api.ToolSchema {
 				"ignore_case": map[string]any{"type": "boolean", "description": "Case-insensitive match"},
 				"output":      map[string]any{"type": "string", "enum": []any{"content", "files"}, "description": "content (default): matching lines; files: matching file paths"},
 				"max_results": map[string]any{"type": "integer", "description": fmt.Sprintf("Maximum lines or files (default %d, max %d)", defaultGrepResults, maxGrepResults)},
+				"no_ignore":   map[string]any{"type": "boolean", "description": "Also search .gitignore matches and node_modules/vendor/dist (.git is always skipped)"},
 			},
 			"required": []any{"pattern"},
 		},
@@ -87,7 +89,8 @@ func (t *FileGrepTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	defer cancel()
 	var out []string
 	full := false
-	timedOut, err := walkWorkspace(ctx, start.base, start.abs, func(root *os.Root, rel string, d fs.DirEntry) error {
+	noIgnore, _ := args["no_ignore"].(bool)
+	walk, err := walkWorkspace(ctx, start.base, start.abs, noIgnore, func(root *os.Root, rel string, d fs.DirEntry) error {
 		if glob != "" && !globMatch(glob, rel) {
 			return nil
 		}
@@ -115,8 +118,11 @@ func (t *FileGrepTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	if full {
 		content += fmt.Sprintf("\n[stopped at %d results; narrow path/glob or raise max_results]", limit)
 	}
-	if timedOut {
+	if walk.timedOut {
 		content += fmt.Sprintf("\n[已超时（%s），结果不完整]", searchTimeout)
+	}
+	if walk.ignoreNote != "" {
+		content += "\n" + walk.ignoreNote
 	}
 	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: TruncateHeadTail(content, rawLimit(t.maxOut))}, nil
 }

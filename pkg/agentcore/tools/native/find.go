@@ -26,7 +26,8 @@ func (t *FileFindTool) Name() string { return "file_find" }
 func (t *FileFindTool) Description() string {
 	return "Find files in the workspace by glob pattern (** matches any directories, e.g. **/*_test.go; " +
 		"a pattern without / matches file names at any depth). Newest first; paths relative to the workspace. " +
-		"Skips .git, node_modules, vendor, dist and .gitignore matches."
+		"Skips .git, node_modules, vendor, dist and .gitignore matches (any directory's .gitignore; the result says what was " +
+		"skipped, no_ignore includes it)."
 }
 
 // ToolMeta marks the tool as a read-only search.
@@ -43,6 +44,7 @@ func (t *FileFindTool) Schema() api.ToolSchema {
 				"pattern":     map[string]any{"type": "string", "description": "Glob, e.g. *.md or cmd/**/main.go"},
 				"path":        map[string]any{"type": "string", "description": "Directory to search (default: workspace root); may be absolute under a read-only dependency root"},
 				"max_results": map[string]any{"type": "integer", "description": fmt.Sprintf("Maximum paths (default %d)", defaultFindResults)},
+				"no_ignore":   map[string]any{"type": "boolean", "description": "Also search .gitignore matches and node_modules/vendor/dist (.git is always skipped)"},
 			},
 			"required": []any{"pattern"},
 		},
@@ -70,7 +72,8 @@ func (t *FileFindTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 		mod time.Time
 	}
 	var hits []hit
-	timedOut, err := walkWorkspace(ctx, start.base, start.abs, func(_ *os.Root, rel string, d fs.DirEntry) error {
+	noIgnore, _ := call.Arguments["no_ignore"].(bool)
+	walk, err := walkWorkspace(ctx, start.base, start.abs, noIgnore, func(_ *os.Root, rel string, d fs.DirEntry) error {
 		if !globMatch(pattern, rel) {
 			return nil
 		}
@@ -106,8 +109,11 @@ func (t *FileFindTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	if total > limit {
 		content += fmt.Sprintf("\n[showing %d of %d; narrow the pattern or path]", limit, total)
 	}
-	if timedOut {
+	if walk.timedOut {
 		content += fmt.Sprintf("\n[已超时（%s），结果不完整]", searchTimeout)
+	}
+	if walk.ignoreNote != "" {
+		content += "\n" + walk.ignoreNote
 	}
 	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: TruncateHeadTail(content, rawLimit(t.maxOut))}, nil
 }

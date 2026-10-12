@@ -1,11 +1,9 @@
 package native
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -24,78 +22,24 @@ const maxSearchFileBytes = 1 << 20
 // errSearchFull stops a walk once enough results were collected.
 var errSearchFull = errors.New("search result limit reached")
 
-// gitignore holds the simple patterns of the workspace root .gitignore. It is
-// best effort: negation (!) and nested .gitignore files are not supported.
-type gitignore struct {
-	patterns []ignorePattern
-}
-
-type ignorePattern struct {
-	glob     string // slash-separated, without leading/trailing slash
-	dirOnly  bool   // pattern ended with "/"
-	anchored bool   // pattern contains a "/" before its end: match the full path
-}
-
-// loadGitignore reads <root>/.gitignore through root; a missing file is an
-// empty matcher.
-func loadGitignore(root *os.Root) *gitignore {
-	g := &gitignore{}
-	f, err := root.Open(".gitignore")
-	if err != nil {
-		return g
-	}
-	defer f.Close()
-	sc := bufio.NewScanner(io.LimitReader(f, 256<<10))
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "!") {
-			continue
-		}
-		p := ignorePattern{}
-		if strings.HasSuffix(line, "/") {
-			p.dirOnly = true
-			line = strings.TrimRight(line, "/")
-		}
-		line = strings.TrimPrefix(line, "**/")
-		if strings.Contains(line, "/") {
-			p.anchored = true
-			line = strings.TrimPrefix(line, "/")
-		}
-		if line != "" {
-			p.glob = line
-			g.patterns = append(g.patterns, p)
-		}
-	}
-	return g
-}
-
-// ignored reports whether rel (slash-separated, relative to the workspace)
-// matches a pattern.
-func (g *gitignore) ignored(rel string, isDir bool) bool {
-	for _, p := range g.patterns {
-		if p.dirOnly && !isDir {
-			continue
-		}
-		target := path.Base(rel)
-		if p.anchored {
-			target = rel
-		}
-		if ok, _ := path.Match(p.glob, target); ok {
-			return true
-		}
-	}
-	return false
+// walkResult says how a walk ended: timedOut marks an incomplete result and
+// ignoreNote what was skipped as ignored (empty when nothing was).
+type walkResult struct {
+	timedOut   bool
+	ignoreNote string
 }
 
 // walkWorkspace visits the regular files under start (a path inside workspace)
 // in lexical order, calling fn with the slash-separated path relative to the
 // workspace. Every open goes through os.Root and symlinks are never followed,
-// so nothing outside the workspace is read. ignoredDirs and the root
-// .gitignore are skipped. fn may return errSearchFull to stop early. The walk
-// ends at ctx's deadline; timedOut then reports an incomplete result.
-func walkWorkspace(ctx context.Context, workspace, start string, fn func(root *os.Root, rel string, d fs.DirEntry) error) (timedOut bool, err error) {
-	_, err = withRoot(workspace, start, func(root *os.Root, relStart string) (struct{}, error) {
-		ign := loadGitignore(root)
+// so nothing outside the workspace is read. Directories and files ignored by
+// the .gitignore files or ignoredDirs are skipped unless noIgnore is set
+// (.git always is); start itself is always searched, even when ignored. fn may
+// return errSearchFull to stop early. The walk ends at ctx's deadline.
+func walkWorkspace(ctx context.Context, workspace, start string, noIgnore bool, fn func(root *os.Root, rel string, d fs.DirEntry) error) (walkResult, error) {
+	var res walkResult
+	_, err := withRoot(workspace, start, func(root *os.Root, relStart string) (struct{}, error) {
+		ign := newIgnoreMatcher(root, noIgnore)
 		fsStart := filepath.ToSlash(relStart)
 		info, err := root.Lstat(relStart)
 		if err != nil {
@@ -106,7 +50,7 @@ func walkWorkspace(ctx context.Context, workspace, start string, fn func(root *o
 		}
 		werr := fs.WalkDir(root.FS(), fsStart, func(rel string, d fs.DirEntry, err error) error {
 			if ctx.Err() != nil {
-				timedOut = true
+				res.timedOut = true
 				return fs.SkipAll
 			}
 			if err != nil {
@@ -116,12 +60,12 @@ func walkWorkspace(ctx context.Context, workspace, start string, fn func(root *o
 				return nil // unreadable entry: skip it
 			}
 			if d.IsDir() {
-				if rel != fsStart && (ignoredDirs[d.Name()] || ign.ignored(rel, true)) {
+				if rel != fsStart && ign.skipDir(rel, d.Name()) {
 					return fs.SkipDir
 				}
 				return nil
 			}
-			if !d.Type().IsRegular() || ign.ignored(rel, false) {
+			if !d.Type().IsRegular() || ign.skipFile(rel) {
 				return nil // symlinks and special files are not followed
 			}
 			return fn(root, rel, d)
@@ -129,9 +73,10 @@ func walkWorkspace(ctx context.Context, workspace, start string, fn func(root *o
 		if errors.Is(werr, errSearchFull) {
 			werr = nil
 		}
+		res.ignoreNote = ign.note()
 		return struct{}{}, werr
 	})
-	return timedOut, err
+	return res, err
 }
 
 // isBinaryHead reports whether head (the start of a file) looks binary.

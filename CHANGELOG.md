@@ -4,6 +4,14 @@
 
 ## [未发布]
 
+### 新增
+
+- `file_grep`、`file_find`、`file_list` 新增 `no_ignore` 参数：包含 `.gitignore` 匹配与 `node_modules`/`vendor`/`dist`（`.git` 始终跳过）。
+
+### 变更
+
+- 搜索与递归列目录按完整的 `.gitignore` 规则跳过路径：各级目录的 `.gitignore` 都生效，支持 `!` 取反、`**`、`/` 锚定与只匹配目录的 `name/`（原先只读工作区根的 `.gitignore`，不支持取反）；结果末尾一行注明跳过了哪些目录与多少文件。`file_list` 递归时不再进入 `.gitignore` 匹配的目录。
+
 ## [0.12.0] - 2026-10-12
 
 工具效率与稳健性：同模型对比 omp 时发现的步数与中断问题。依据见 [分析](docs/research/2026-10-11-suag-vs-omp-loop-analysis.md)。

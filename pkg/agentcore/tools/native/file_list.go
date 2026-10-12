@@ -18,10 +18,6 @@ const (
 	maxListDepth       = 5
 )
 
-// ignoredDirs are listed but never descended into: they are large and rarely
-// what the model is looking for.
-var ignoredDirs = map[string]bool{".git": true, "node_modules": true, "vendor": true, "dist": true}
-
 // FileListTool lists files in a workspace directory, optionally recursively.
 type FileListTool struct {
 	workspace string
@@ -32,7 +28,8 @@ type FileListTool struct {
 func (t *FileListTool) Name() string { return "file_list" }
 func (t *FileListTool) Description() string {
 	return "List a workspace directory. Directories end with /, symlinks with @ (not followed). " +
-		"depth>1 lists recursively as relative paths; .git, node_modules, vendor and dist are shown but not entered."
+		"depth>1 lists recursively as relative paths; .git, node_modules, vendor, dist and .gitignore'd directories are " +
+		"shown but not entered (the result says which; no_ignore enters them, except .git)."
 }
 
 // ToolMeta marks the tool as a read-only read.
@@ -58,6 +55,10 @@ func (t *FileListTool) Schema() api.ToolSchema {
 					"type":        "integer",
 					"description": fmt.Sprintf("Maximum entries to return (default %d)", defaultListEntries),
 				},
+				"no_ignore": map[string]any{
+					"type":        "boolean",
+					"description": "Also enter .gitignore'd directories and node_modules/vendor/dist (.git is never entered)",
+				},
 			},
 		},
 	}
@@ -80,9 +81,14 @@ func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 		maxEntries = int(n)
 	}
 
+	noIgnore, _ := call.Arguments["no_ignore"].(bool)
 	list, err := withRoot(target.base, target.abs, func(root *os.Root, rel string) (listing, error) {
 		var out listing
-		err := listDir(root, rel, "", depth, maxEntries, &out)
+		ign := newIgnoreMatcher(root, noIgnore)
+		err := listDir(root, ign, rel, "", depth, maxEntries, &out)
+		if depth > 1 {
+			out.note = ign.note() // depth 1 enters nothing, so there is nothing to report
+		}
 		return out, err
 	})
 	if err != nil {
@@ -91,6 +97,9 @@ func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	content := strings.Join(list.entries, "\n")
 	if list.truncated {
 		content += fmt.Sprintf("\n[truncated at %d entries; narrow dir or depth]", maxEntries)
+	}
+	if list.note != "" {
+		content += "\n" + list.note
 	}
 	return &api.ToolResult{
 		CallID:  call.CallID,
@@ -102,12 +111,13 @@ func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 type listing struct {
 	entries   []string
 	truncated bool
+	note      string // what was not entered as ignored
 }
 
 // listDir appends the entries of dir (relative to root) to out, prefixed by
-// prefix, descending while depth > 1. Symlinks are never followed and
-// os.Root keeps every open inside the workspace.
-func listDir(root *os.Root, dir, prefix string, depth, maxEntries int, out *listing) error {
+// prefix, descending while depth > 1 into directories ign does not skip.
+// Symlinks are never followed and os.Root keeps every open inside the root.
+func listDir(root *os.Root, ign *ignoreMatcher, dir, prefix string, depth, maxEntries int, out *listing) error {
 	d, err := root.Open(dir)
 	if err != nil {
 		return err
@@ -129,8 +139,9 @@ func listDir(root *os.Root, dir, prefix string, depth, maxEntries int, out *list
 			out.entries = append(out.entries, name+"@")
 		case e.IsDir():
 			out.entries = append(out.entries, name+"/")
-			if depth > 1 && !ignoredDirs[e.Name()] {
-				if err := listDir(root, filepath.Join(dir, e.Name()), name, depth-1, maxEntries, out); err != nil {
+			child := filepath.Join(dir, e.Name())
+			if depth > 1 && !ign.skipDir(filepath.ToSlash(child), e.Name()) {
+				if err := listDir(root, ign, child, name, depth-1, maxEntries, out); err != nil {
 					return err
 				}
 			}

@@ -87,6 +87,8 @@ All data lives in `$SUAG_HOME/db/sessions.db`. Model and provider details: [LLM 
 | `file_list` | read | Directory listing, recursive with `depth` (≤ 5) |
 | `file_grep` | read | RE2 search with `glob`, `ignore_case`, `output: content\|files` |
 | `file_find` | read | `**` glob search, newest first |
+
+`file_grep`, `file_find` and recursive `file_list` skip `.git`, `node_modules`, `vendor`, `dist` and what the `.gitignore` files match (every directory's `.gitignore`, with `!` and `**`); the result ends with a line naming what was skipped, and `no_ignore: true` includes it (`.git` excepted).
 | `web_fetch` | read | Page text (headings, links and code kept); private and local addresses refused |
 | `web_search` | read | SerpAPI search (needs `serpapi_key`) |
 | `skill` | read | Load a skill, read its files, or search skills (`query`, `"*"` lists all names) |

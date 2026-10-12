@@ -93,7 +93,21 @@ func TestFileListDepth(t *testing.T) {
 	})
 	t.Run("depth recurses and skips ignored dirs", func(t *testing.T) {
 		out := execTool(t, tool, map[string]any{"depth": 5})
-		assert.Eq(t, "a/\na/b/\na/b/c/\na/b/c/d.txt\na/x.go\nnode_modules/\ntop.md", out)
+		assert.Eq(t, "a/\na/b/\na/b/c/\na/b/c/d.txt\na/x.go\nnode_modules/\ntop.md\n"+
+			"[skipped 1 ignored dir(s): node_modules/ (.gitignore and node_modules/vendor/dist); pass no_ignore: true to include them]", out)
+	})
+	t.Run("no_ignore enters ignored dirs", func(t *testing.T) {
+		out := execTool(t, tool, map[string]any{"depth": 5, "no_ignore": true})
+		assert.StrContains(t, out, "node_modules/m/i.js")
+		assert.NotContains(t, out, "[skipped")
+	})
+	t.Run(".gitignore'd dirs are listed but not entered", func(t *testing.T) {
+		assert.NoErr(t, os.WriteFile(filepath.Join(ws, ".gitignore"), []byte("/a/b/\n"), 0o644))
+		t.Cleanup(func() { _ = os.Remove(filepath.Join(ws, ".gitignore")) })
+		out := execTool(t, tool, map[string]any{"depth": 5})
+		assert.StrContains(t, out, "a/b/\n")
+		assert.NotContains(t, out, "a/b/c/")
+		assert.StrContains(t, out, "2 ignored dir(s): a/b/, node_modules/")
 	})
 	t.Run("max_entries truncates", func(t *testing.T) {
 		out := execTool(t, tool, map[string]any{"depth": 5, "max_entries": 2})

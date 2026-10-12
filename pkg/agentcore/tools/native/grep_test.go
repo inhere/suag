@@ -35,6 +35,17 @@ func searchWorkspace(t *testing.T) string {
 	return ws
 }
 
+// withoutIgnoreNote drops the trailing "[skipped ...]" line of a search result.
+func withoutIgnoreNote(out string) string {
+	if i := strings.LastIndex(out, "\n[skipped "); i >= 0 {
+		return out[:i]
+	}
+	return out
+}
+
+const searchIgnoreNote = "[skipped 2 ignored dir(s): build/, node_modules/; 1 ignored file(s) " +
+	"(.gitignore and node_modules/vendor/dist); pass no_ignore: true to include them]"
+
 func TestGrepFiles(t *testing.T) {
 	ws := searchWorkspace(t)
 	tool := &FileGrepTool{workspace: ws}
@@ -45,12 +56,20 @@ func TestGrepFiles(t *testing.T) {
 		assert.StrContains(t, out, "main.go:3: func main() { Hello() }")
 		assert.StrContains(t, out, "docs/中文.md:2: 你好 Hello 世界")
 		for _, skipped := range []string{"node_modules", "build/", "app.log", "bin.dat"} {
-			assert.NotContains(t, out, skipped)
+			assert.NotContains(t, withoutIgnoreNote(out), skipped)
 		}
+		assert.True(t, strings.HasSuffix(out, "\n"+searchIgnoreNote), out)
+	})
+	t.Run("no_ignore searches ignored paths", func(t *testing.T) {
+		out := execTool(t, tool, map[string]any{"pattern": "Hello", "no_ignore": true})
+		assert.StrContains(t, out, "node_modules/x/index.js:1: Hello()")
+		assert.StrContains(t, out, "build/out.go:1:")
+		assert.StrContains(t, out, "logs/app.log:1:")
+		assert.NotContains(t, out, "[skipped")
 	})
 	t.Run("files output, glob and ignore_case", func(t *testing.T) {
 		out := execTool(t, tool, map[string]any{"pattern": "hello", "ignore_case": true, "glob": "internal/**/*.go", "output": "files"})
-		assert.Eq(t, "internal/a/a.go\ninternal/a/a_test.go", out)
+		assert.Eq(t, "internal/a/a.go\ninternal/a/a_test.go", withoutIgnoreNote(out))
 	})
 	t.Run("path narrows the search", func(t *testing.T) {
 		out := execTool(t, tool, map[string]any{"pattern": "Hello", "path": "docs"})
@@ -63,10 +82,10 @@ func TestGrepFiles(t *testing.T) {
 	t.Run("max_results stops early", func(t *testing.T) {
 		out := execTool(t, tool, map[string]any{"pattern": "Hello", "max_results": 1})
 		assert.StrContains(t, out, "[stopped at 1 results")
-		assert.Eq(t, 2, len(strings.Split(out, "\n")))
+		assert.Eq(t, 2, len(strings.Split(withoutIgnoreNote(out), "\n")))
 	})
 	t.Run("no matches", func(t *testing.T) {
-		assert.Eq(t, "no matches", execTool(t, tool, map[string]any{"pattern": "zzz_nothing"}))
+		assert.Eq(t, "no matches\n"+searchIgnoreNote, execTool(t, tool, map[string]any{"pattern": "zzz_nothing"}))
 	})
 	t.Run("timeout returns a marked partial result", func(t *testing.T) {
 		old := searchTimeout
@@ -84,7 +103,7 @@ func TestGrepFiles(t *testing.T) {
 		}
 		assert.NoErr(t, os.Symlink(filepath.Join(outside, "secret.go"), filepath.Join(ws, "flink.go")))
 		out := execTool(t, tool, map[string]any{"pattern": "secret"})
-		assert.Eq(t, "no matches", out)
+		assert.Eq(t, "no matches", withoutIgnoreNote(out))
 		_, err := tool.Execute(t.Context(), callWith(map[string]any{"pattern": "secret", "path": "link"}))
 		assert.Err(t, err)
 	})
@@ -102,18 +121,18 @@ func TestFindFiles(t *testing.T) {
 
 	t.Run("base-name pattern at any depth, newest first", func(t *testing.T) {
 		out := execTool(t, tool, map[string]any{"pattern": "*.go"})
-		lines := strings.Split(out, "\n")
+		lines := strings.Split(withoutIgnoreNote(out), "\n")
 		assert.Eq(t, 3, len(lines))
 		assert.Eq(t, "main.go", lines[2]) // oldest last; build/ is ignored
 	})
 	t.Run("double star", func(t *testing.T) {
-		assert.Eq(t, "internal/a/a_test.go", execTool(t, tool, map[string]any{"pattern": "**/*_test.go"}))
+		assert.Eq(t, "internal/a/a_test.go", withoutIgnoreNote(execTool(t, tool, map[string]any{"pattern": "**/*_test.go"})))
 	})
 	t.Run("limit", func(t *testing.T) {
 		assert.StrContains(t, execTool(t, tool, map[string]any{"pattern": "*.go", "max_results": 1}), "[showing 1 of 3")
 	})
 	t.Run("nothing found", func(t *testing.T) {
-		assert.Eq(t, "no files found", execTool(t, tool, map[string]any{"pattern": "*.rs"}))
+		assert.Eq(t, "no files found\n"+searchIgnoreNote, execTool(t, tool, map[string]any{"pattern": "*.rs"}))
 	})
 }
 
