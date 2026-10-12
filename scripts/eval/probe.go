@@ -133,13 +133,13 @@ func (p *prober) request(ctx context.Context, name, ws, nonce string) (traceCall
 	}
 	model := p.o.model
 	if p.o.fake {
-		if err := writeConfig(home, "", p.port); err != nil {
+		if err := writeConfig(home, "", p.port, p.o.suagSet); err != nil {
 			return traceCall{}, err
 		}
 		if model == "" {
 			model = "fake/m1"
 		}
-	} else if err := writeConfig(home, p.o.configFrom, 0); err != nil {
+	} else if err := writeConfig(home, p.o.configFrom, 0, p.o.suagSet); err != nil {
 		return traceCall{}, err
 	}
 	env := isolatedEnv(home)

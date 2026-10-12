@@ -90,6 +90,7 @@ go run ./scripts/eval --task repo-t9-schedule --model <model> --config-from ~/.s
 
 - `--suag-args "<args>"` / `--omp-args "<args>"`：按空白切分（无引号处理），suag 附加在 `suag run` 参数末尾（`--prompt` 之后；run 只有 flag，位置无关），
   omp 放在 `omp -p ...` 参数之后、prompt 之前（prompt 是最后的位置参数）。记录在 results.jsonl 的 `agent_args`，表格新增 ARGS 列（超过 24 字符截断，空为 `-`）。
+- `--suag-set dotted.key=value`（可重复）：改写临时 SUAG_HOME 的 config.yaml（值按 YAML 标量解析），例如 `--suag-set "tools.shell=C:/Program Files/Git/usr/bin/bash.exe"`；同样记入 `agent_args`。
 - `tool_counts`（results.jsonl，`map[工具名]次数`，无工具调用时省略；表格不加列）：suag 取 `suag stats --session <id> --json` 的 `tools[].name/calls`；
   omp 取事件流 `tool_execution_start` 的 `toolName`，没有该事件时退回统计 assistant 消息里 toolCall 块的 `name`。
 - `--repeat N`（默认 1）：每个任务依次跑 N 轮。N>1 时输出目录为 `<out>/<task>-r<i>/`（N=1 保持 `<out>/<task>/`），session id 同样带 `-r<i>`；

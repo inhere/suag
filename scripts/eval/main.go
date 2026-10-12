@@ -33,8 +33,15 @@ type options struct {
 	probeRepeat                       int
 	probeGap                          time.Duration
 	suagArgs, ompArgs                 string
+	suagSet                           setFlags // --suag-set key=value config overrides
 	repeat                            int
 }
+
+// setFlags collects repeated key=value flags.
+type setFlags []string
+
+func (s *setFlags) String() string     { return strings.Join(*s, ",") }
+func (s *setFlags) Set(v string) error { *s = append(*s, v); return nil }
 
 // Result is one results.jsonl line.
 type Result struct {
@@ -91,6 +98,7 @@ func run() error {
 	flag.BoolVar(&o.probe, "probe-prefix", false, "run the prefix-cache probe (exclusive with tasks; suag only)")
 	flag.IntVar(&o.probeRepeat, "probe-repeat", 3, "probe: repetitions per group")
 	flag.DurationVar(&o.probeGap, "probe-gap", 5*time.Second, "probe: pause between two requests")
+	flag.Var(&o.suagSet, "suag-set", "set a key in the temp suag config.yaml, as dotted.key=value (YAML scalar); repeatable")
 	flag.StringVar(&o.suagArgs, "suag-args", "", "extra `suag run` arguments appended after the built-in ones (split on whitespace)")
 	flag.StringVar(&o.ompArgs, "omp-args", "", "extra `omp -p` arguments placed before the prompt (split on whitespace)")
 	flag.IntVar(&o.repeat, "repeat", 1, "rounds per task (outputs go to <out>/<task>-r<i>/ when > 1)")
@@ -184,7 +192,7 @@ func runTask(o *options, bin, runID string, t *Task, round int) (Result, error) 
 	if o.agent == "omp" {
 		r.AgentArgs = strings.Join(splitArgs(o.ompArgs), " ")
 	} else {
-		r.AgentArgs = strings.Join(splitArgs(o.suagArgs), " ")
+		r.AgentArgs = strings.Join(append(splitArgs(o.suagArgs), o.suagSet...), " ")
 	}
 	root := filepath.Join(o.out, name)
 	ws, home := filepath.Join(root, "ws"), filepath.Join(root, "home")
@@ -264,13 +272,13 @@ func setupSuagHome(ctx context.Context, o *options, home, fakeMode string) (stri
 		return "", nil, err
 	}
 	if !o.fake {
-		return o.model, func() {}, writeConfig(home, o.configFrom, 0)
+		return o.model, func() {}, writeConfig(home, o.configFrom, 0, o.suagSet)
 	}
 	stop, port, err := startFake(ctx, fakeMode)
 	if err != nil {
 		return "", nil, err
 	}
-	if err := writeConfig(home, "", port); err != nil {
+	if err := writeConfig(home, "", port, o.suagSet); err != nil {
 		stop()
 		return "", nil, err
 	}
@@ -394,9 +402,9 @@ func addPtr(a, b *int64) *int64 {
 }
 
 // writeConfig writes <home>/config.yaml (copying fromDir's config.yaml and
-// .env when fromDir is set, else a fake-provider config) and forces the files
-// memory backends.
-func writeConfig(home, fromDir string, fakePort int) error {
+// .env when fromDir is set, else a fake-provider config), forces the files
+// memory backends and applies the dotted.key=value overrides in sets.
+func writeConfig(home, fromDir string, fakePort int, sets []string) error {
 	cfg := map[string]any{}
 	if fromDir != "" {
 		raw, err := os.ReadFile(filepath.Join(fromDir, "config.yaml"))
@@ -429,11 +437,41 @@ func writeConfig(home, fromDir string, fakePort int) error {
 		mem[scope] = sm
 	}
 	cfg["memory"] = mem
+	for _, kv := range sets {
+		if err := setConfigKey(cfg, kv); err != nil {
+			return err
+		}
+	}
 	out, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(home, "config.yaml"), out, 0o600)
+}
+
+// setConfigKey applies one dotted.key=value override to cfg, creating
+// intermediate maps; the value is parsed as a YAML scalar (true, 3, text).
+func setConfigKey(cfg map[string]any, kv string) error {
+	key, value, ok := strings.Cut(kv, "=")
+	if !ok || key == "" {
+		return fmt.Errorf("--suag-set %q: want dotted.key=value", kv)
+	}
+	var v any
+	if err := yaml.Unmarshal([]byte(value), &v); err != nil || v == nil {
+		v = value
+	}
+	parts := strings.Split(key, ".")
+	node := cfg
+	for _, part := range parts[:len(parts)-1] {
+		next, _ := node[part].(map[string]any)
+		if next == nil {
+			next = map[string]any{}
+			node[part] = next
+		}
+		node = next
+	}
+	node[parts[len(parts)-1]] = v
+	return nil
 }
 
 // startFake launches fakellm.py on a free port and returns a stop func.

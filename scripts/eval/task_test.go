@@ -224,3 +224,15 @@ func TestAverageRounds(t *testing.T) {
 	assert.Eq(t, 3.0, a.Seconds)
 	assert.Eq(t, 0, averageRounds(nil).Rounds)
 }
+
+func TestSetConfigKey(t *testing.T) {
+	cfg := map[string]any{"tools": map[string]any{"allow_write": false}}
+	assert.NoErr(t, setConfigKey(cfg, "tools.shell=C:/Program Files/Git/usr/bin/bash.exe"))
+	assert.NoErr(t, setConfigKey(cfg, "tools.allow_write=true"))
+	assert.NoErr(t, setConfigKey(cfg, "context.idle_after=0"))
+	tools := cfg["tools"].(map[string]any)
+	assert.Eq(t, "C:/Program Files/Git/usr/bin/bash.exe", tools["shell"])
+	assert.Eq(t, true, tools["allow_write"])
+	assert.NotNil(t, cfg["context"].(map[string]any)["idle_after"])
+	assert.Err(t, setConfigKey(cfg, "no-equals"))
+}
