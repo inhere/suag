@@ -100,6 +100,9 @@ type Config struct {
 	// MinimizeOutput tidies tool results before they enter the context
 	// (tools.minimize_output, see tools.OutputConfig.Minimize); nil = off.
 	MinimizeOutput func(call agentcore.ToolCall, content string) (string, bool)
+	// PrefetchTools runs a reply's local read calls ahead concurrently
+	// (tools.parallel_reads, see agentcore.Config.PrefetchTools); nil = off.
+	PrefetchTools func(ctx context.Context, calls []agentcore.ToolCall)
 	// Ledger backs session_search / recall; New binds it to this runner's
 	// store (late binding, like Plans).
 	Ledger *Ledger
@@ -460,6 +463,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		MaxStepsWrapUp: maxStepsWrapUp(r.cfg.MaxSteps),
 		// Refused calls become tool results; aborted approvals end the turn.
 		ToolExecutionPolicy: abortingToolPolicy{},
+		PrefetchTools:       r.cfg.PrefetchTools,
 	})
 	coreResult, runErr := runtime.Run(ctx, agentcore.RunInput{
 		RunID:       result.RunID,

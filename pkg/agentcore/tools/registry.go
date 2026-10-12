@@ -59,6 +59,8 @@ type Lookup interface {
 type Registry struct {
 	mu    sync.RWMutex
 	tools map[string]api.Tool
+	// prefetched are the calls of the current reply run ahead, see Prefetch.
+	prefetched prefetchState
 }
 
 // NewRegistry returns an empty Registry.
@@ -148,6 +150,18 @@ func (r *Registry) ListTools(context.Context) ([]api.ToolSchema, error) {
 
 // ExecuteTool dispatches a public tool call to a registered tool.
 func (r *Registry) ExecuteTool(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
+	if p := r.takePrefetched(call); p != nil {
+		select {
+		case <-p.done:
+			return p.res, p.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return r.execute(ctx, call)
+}
+
+func (r *Registry) execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	t, err := r.Get(call.Name)
 	if err != nil {
 		return nil, err

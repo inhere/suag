@@ -34,7 +34,7 @@ func (t *FileListTool) Description() string {
 
 // ToolMeta marks the tool as a read-only read.
 func (*FileListTool) ToolMeta() tools.Meta {
-	return tools.Meta{Category: tools.CategoryRead, ReadOnly: true}
+	return tools.Meta{Category: tools.CategoryRead, ReadOnly: true, Prefetchable: true}
 }
 func (t *FileListTool) Schema() api.ToolSchema {
 	return api.ToolSchema{

@@ -483,3 +483,45 @@ func TestRuntime_Run_PersistsArtifactsToOptionalArtifactStorage(t *testing.T) {
 		t.Fatalf("expected artifact capability store to receive final artifacts, got %#v", store.artifacts["run-artifact-capability-save"])
 	}
 }
+
+func TestRuntime_Run_PrefetchesMultiCallReplies(t *testing.T) {
+	reg := tools.NewRegistry()
+	tool := &runtimeTestTool{name: "file_read", description: "Read file"}
+	reg.MustRegister(tool)
+	provider := &runtimeTestProvider{
+		results: []*GenerateResult{
+			{ToolCalls: []ToolCall{
+				{CallID: "c1", Name: "file_read", Arguments: map[string]any{"path": "a"}},
+				{CallID: "c2", Name: "file_read", ArgumentsError: "arguments are not valid JSON"},
+				{CallID: "c3", Name: "file_read", Arguments: map[string]any{"path": "b"}},
+			}, FinishReason: FinishToolCalls},
+			{ToolCalls: []ToolCall{{CallID: "c4", Name: "file_read", Arguments: map[string]any{"path": "c"}}}, FinishReason: FinishToolCalls},
+			{Content: "done", FinishReason: FinishFinal},
+		},
+	}
+	var prefetched [][]string
+	result, err := New(Config{
+		Provider:       provider,
+		Storage:        newRuntimeTestStorage(),
+		Tools:          reg,
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: runtimeTestContextBuilder{},
+		PrefetchTools: func(_ context.Context, calls []ToolCall) {
+			var ids []string
+			for _, c := range calls {
+				ids = append(ids, c.CallID)
+			}
+			prefetched = append(prefetched, ids)
+		},
+	}).Run(context.Background(), RunInput{RunID: "run-prefetch", AgentID: "agent-1", Instruction: "read"})
+	if err != nil || result == nil || result.Output != "done" {
+		t.Fatalf("expected the run to finish, got %#v, %v", result, err)
+	}
+	// Only the multi-call reply, without the call whose arguments did not decode.
+	if len(prefetched) != 1 || strings.Join(prefetched[0], ",") != "c1,c3" {
+		t.Fatalf("expected one prefetch of c1,c3, got %v", prefetched)
+	}
+	if len(tool.calls) != 3 {
+		t.Fatalf("expected every runnable call to run through the registry, got %d", len(tool.calls))
+	}
+}

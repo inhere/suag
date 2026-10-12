@@ -298,6 +298,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		InlineOutputBytes: inlineOutputBytes(),
 		Spiller:           personal.NewSessionSpiller(sessionsDir),
 		MinimizeOutput:    minimizeOutput(workspace),
+		PrefetchTools:     prefetchTools(capabilities.Registry),
 		Repository:        repo,
 		Provider:          provider,
 		Model:             settings.Main.Model,

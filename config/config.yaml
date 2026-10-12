@@ -120,6 +120,7 @@ tools:
   # max_output_bytes: 8000   # largest tool result kept whole in the session; larger ones are
   #                          # saved to ~/.suag/sessions/<id>/outputs/ and kept as ref + head/tail
   # max_spill_bytes: 1048576 # raw output cap of one tool call (native and MCP)
+  # parallel_reads: true     # run a reply's file_read/list/grep/find calls concurrently
   # read_page_bytes: 32768   # one file_read page per file (most source files fit in one read)
   # minimize_output: true    # tidy shell results (test summaries, folded repeats, no colours); original kept as a ref.
   #                           # Rules: built-in, then $SUAG_HOME/output-rules.yaml, then <workspace>/.suag/output-rules.yaml

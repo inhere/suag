@@ -95,6 +95,7 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 
 配置项（`~/.suag/config.yaml`，均有缺省值）：
 
+- `tools.parallel_reads`（缺省 `true`）：同一次回复里的多个本地读取调用（`file_read`、`file_list`、`file_grep`、`file_find`）并发执行；审批、污染追踪与 trace 仍按调用顺序进行。
 - `tools.max_output_bytes`（缺省 8000）：单次工具结果完整写入会话的上限；`file_read` 不受它限制，按 `tools.read_page_bytes`（缺省 32 KiB，`paths` 一次最多四页）按行分页并提示续读的 `offset`；其他工具超出时原文（脱敏后）存入 `~/.suag/sessions/<id>/outputs/`，会话只保留 ref 与头尾各 2000 字节。
 - `tools.max_spill_bytes`（缺省 1048576）：单次工具（含 MCP）原始输出上限，超出部分按 UTF-8 边界保留头尾截断。
 - `tools.shell`：显式指定 shell（命令名或路径，如 `bash`）；不自动探测。

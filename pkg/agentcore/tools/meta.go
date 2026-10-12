@@ -39,6 +39,10 @@ type Meta struct {
 	// itself decides whether a write is allowed in the current run mode
 	// (e.g. read-only). Never honoured for MCP tools.
 	AgentState bool
+	// Prefetchable marks tools that only read local files and keep no state,
+	// so a reply's calls to them may run ahead concurrently (Registry.Prefetch).
+	// Never honoured for MCP tools.
+	Prefetchable bool
 }
 
 // Describer is the optional interface a tool implements to declare its Meta.

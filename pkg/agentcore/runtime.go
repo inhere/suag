@@ -32,6 +32,11 @@ type Config struct {
 	// request only (not persisted) as a user message. The run still fails with
 	// the max-steps error if the model keeps requesting tools.
 	MaxStepsWrapUp string
+	// PrefetchTools, when set, gets every reply with more than one tool call
+	// before the calls run one by one. It may start the side-effect-free ones
+	// concurrently, as long as each call still runs through the registry in
+	// order (see tools.Registry.Prefetch).
+	PrefetchTools func(ctx context.Context, calls []ToolCall)
 }
 
 // DefaultRuntime provides the minimal public runtime orchestration.
@@ -49,6 +54,7 @@ type DefaultRuntime struct {
 	maxSteps            int
 	maxToolCallsPerStep int
 	maxStepsWrapUp      string
+	prefetchTools       func(ctx context.Context, calls []ToolCall)
 }
 
 // New constructs a runnable runtime, filling in built-in defaults when possible.
@@ -67,6 +73,7 @@ func New(cfg Config) *DefaultRuntime {
 		maxSteps:            cfg.MaxSteps,
 		maxToolCallsPerStep: cfg.MaxToolCallsPerStep,
 		maxStepsWrapUp:      cfg.MaxStepsWrapUp,
+		prefetchTools:       cfg.PrefetchTools,
 	}
 }
 
@@ -453,6 +460,15 @@ func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, 
 	prepareToolCalls(schemas, calls)
 	if err := r.toolPolicy.ValidateToolCalls(ctx, state, cloneToolCallsValue(calls)); err != nil {
 		return r.handleErrorResult(ctx, state, "max_tool_calls", err, NewControl())
+	}
+	if r.prefetchTools != nil && len(calls) > 1 {
+		runnable := make([]ToolCall, 0, len(calls))
+		for _, call := range calls {
+			if call.ArgumentsError == "" {
+				runnable = append(runnable, call)
+			}
+		}
+		r.prefetchTools(ctx, cloneToolCallsValue(runnable))
 	}
 
 	for i, call := range calls {

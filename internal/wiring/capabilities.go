@@ -138,6 +138,16 @@ func minimizeOutput(workspace string) func(agentcore.ToolCall, string) (string, 
 	return native.NewOutputMinimizer(rules).Minimize
 }
 
+// prefetchTools lets a reply's local read calls (file_read, file_list,
+// file_grep, file_find) run concurrently (tools.parallel_reads, default true);
+// nil when off.
+func prefetchTools(reg *tools.Registry) func(context.Context, []agentcore.ToolCall) {
+	if reg == nil || !gkconfig.Bool("tools.parallel_reads", true) {
+		return nil
+	}
+	return reg.Prefetch
+}
+
 // outputRulesFile names the user and project output rule files.
 const outputRulesFile = "output-rules.yaml"
 

@@ -39,7 +39,7 @@ func (t *FileGrepTool) Description() string {
 
 // ToolMeta marks the tool as a read-only search.
 func (*FileGrepTool) ToolMeta() tools.Meta {
-	return tools.Meta{Category: tools.CategorySearch, ReadOnly: true}
+	return tools.Meta{Category: tools.CategorySearch, ReadOnly: true, Prefetchable: true}
 }
 func (t *FileGrepTool) Schema() api.ToolSchema {
 	return api.ToolSchema{
