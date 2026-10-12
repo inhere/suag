@@ -15,6 +15,11 @@ func TestShellExecWindows(t *testing.T) {
 	tool := NewShellExecTool(t.TempDir(), 0)
 	assert.True(t, tool.shell.powershell)
 
+	t.Run("colour codes are removed", func(t *testing.T) {
+		res, _ := runShell(t, tool, map[string]any{"command": "Write-Output \"$([char]27)[32mTest Name$([char]27)[0m: x\""})
+		assert.StrContains(t, res.Content, "Test Name: x")
+		assert.NotContains(t, res.Content, "\x1b")
+	})
 	t.Run("Chinese output is not mangled", func(t *testing.T) {
 		res, _ := runShell(t, tool, map[string]any{"command": `Write-Output "中文输出"; cmd /c echo 原生中文`})
 		assert.StrContains(t, res.Content, "中文输出")

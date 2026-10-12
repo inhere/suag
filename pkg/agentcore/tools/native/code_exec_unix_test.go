@@ -29,6 +29,11 @@ func TestShellExecUnix(t *testing.T) {
 		assert.StrContains(t, res.Content, "started")
 		assert.True(t, took < 3*time.Second, "took %s", took)
 	})
+	t.Run("colour codes are removed", func(t *testing.T) {
+		res, _ := runShell(t, tool, map[string]any{"command": `printf '\033[32mTest Name\033[0m: x\n'; printf '\033[31mFAIL\033[0m\n' >&2`})
+		assert.StrContains(t, res.Content, "Test Name: x\n[stderr]\nFAIL")
+		assert.NotContains(t, res.Content, "\x1b")
+	})
 	t.Run("git does not prompt", func(t *testing.T) {
 		res, _ := runShell(t, tool, map[string]any{"command": "echo $GIT_TERMINAL_PROMPT $GIT_PAGER"})
 		assert.StrContains(t, res.Content, "0 cat")

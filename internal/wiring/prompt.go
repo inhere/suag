@@ -47,6 +47,10 @@ func basePrompt() string {
 	// suag-jz0l): exploration took one tool per step, and most extra steps came
 	// after the tests already passed.
 	b.WriteString("- Put independent reads, searches and commands in the same response so they run together (several files in one file_read, a search plus a listing, ...).\n")
+	// R6 write-to-green review: suag made one edit per step where omp sent
+	// all fixes for a test run at once; file_edit's edits went unused.
+	b.WriteString("- Make independent changes together: several replacements in one file in one file_edit call (edits), and edits to different files in the same response, e.g. every fix a failed test run calls for.\n")
+	b.WriteString("- To learn a dependency's API, list it with one command (go doc <package>, or a grep for its exported functions) instead of reading its files one by one.\n")
 	b.WriteString("- Read a file whole when it fits in one file_read; use offset/limit for a part you need, such as the lines a failure points to.\n")
 	b.WriteString("- Read a file before changing it; prefer small exact edits over rewriting whole files. A successful edit or write needs no re-read: the tool result is the verification.\n")
 	b.WriteString("- Verify from narrow to broad: run the test closest to your change, then the package or suite once. When the checks pass, stop verifying: do not re-run them (-count, -v, coverage) or re-read your files to double-check; check again only after something failed or changed.\n")

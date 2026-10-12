@@ -207,11 +207,13 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 	err := cmd.Wait()
 	tree.close() // also ends background children left behind by the command
 
+	// Colour codes carry nothing for the model (test libraries such as
+	// gookit/assert colour their failure reports even without a terminal).
 	var sb strings.Builder
-	if out := decodeOutput(stdout.Bytes()); out != "" {
+	if out := ansiPattern.ReplaceAllString(decodeOutput(stdout.Bytes()), ""); out != "" {
 		sb.WriteString(strings.TrimRight(out, "\r\n"))
 	}
-	if errOut := decodeOutput(stderr.Bytes()); strings.TrimSpace(errOut) != "" {
+	if errOut := ansiPattern.ReplaceAllString(decodeOutput(stderr.Bytes()), ""); strings.TrimSpace(errOut) != "" {
 		sb.WriteString("\n[stderr]\n")
 		sb.WriteString(strings.TrimRight(errOut, "\r\n"))
 	}
