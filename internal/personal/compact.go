@@ -282,7 +282,8 @@ func (b *contextBuilder) startSegment(ctx context.Context, state *agentcore.RunS
 	// The meta cache follows the record (best-effort). The system prompt is
 	// the stable prefix and does not change: this very step already renders
 	// the new snapshot through compose.
-	b.r.cacheSegmentMeta(wctx, b.sessionID, seg)
+	b.r.cacheSegmentMeta(wctx, b.sessionID, seg) // also resets the fold baseline
+	b.foldBase, b.foldPending = 0, nil
 	return &compactOutcome{tokensBefore: before, tokensAfter: after, firstKeptSeq: firstKept, segment: segment}, nil
 }
 

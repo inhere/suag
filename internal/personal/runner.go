@@ -442,6 +442,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	promptBuilder := stablePromptBuilder{base: r.cfg.PromptBuilder}
 	// The hook context (req.SystemContext) is a user message of this turn.
 	contextBuilder := r.newContextBuilder(model.ID, turnID, history, promptBuilder, usage, req.SystemContext)
+	// Fold events already recorded in this segment (an earlier turn's builder).
+	contextBuilder.foldBase = metaCount(model.Meta[metaFoldBoundary])
 	runtimeHooks := r.turnHooks(usage, denials, req.Emit, result)
 	runtime := agentcore.New(agentcore.Config{
 		Provider:       r.cfg.Provider,

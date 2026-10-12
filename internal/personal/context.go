@@ -192,6 +192,12 @@ type contextBuilder struct {
 	haveFixed     bool
 	lastViewChars int // chars of the view sent in the latest model call
 	haveView      bool
+
+	// foldBase is the fold boundary already recorded in this segment (session
+	// meta fold_boundary); foldPending is a larger boundary seen by the latest
+	// compose, recorded by recordFold once the view is final.
+	foldBase    int
+	foldPending *foldStats
 }
 
 func (r *Runner) newContextBuilder(sessionID, turnID string, hist historyView, prompt agentcore.PromptBuilder, usage *usageCollector, hookContext string) *contextBuilder {
@@ -237,6 +243,7 @@ func (b *contextBuilder) BuildMessages(ctx context.Context, state *agentcore.Run
 		}
 	}
 	b.lastViewChars, b.haveView = charsOfMessages(view), true
+	b.recordFold(ctx)
 	return view, nil
 }
 
@@ -263,7 +270,18 @@ func (b *contextBuilder) compose(state *agentcore.RunState) []agentcore.Message 
 	for _, m := range turn {
 		out = append(out, b.limited(m))
 	}
-	return foldHistory(out, b.r.cfg.FoldEvery, b.r.cfg.FoldKeep)
+	every, keep := b.r.cfg.FoldEvery, b.r.cfg.FoldKeep
+	b.foldPending = nil
+	boundary, steps := foldBoundary(out, every, keep)
+	if boundary == 0 {
+		return out
+	}
+	folded := foldHistory(out, every, keep)
+	if boundary > b.foldBase {
+		b.foldPending = &foldStats{boundary: boundary, steps: steps,
+			charsBefore: charsOfMessages(out), charsAfter: charsOfMessages(folded)}
+	}
+	return folded
 }
 
 // limited returns a tool message with its content truncated to truncLimit; the

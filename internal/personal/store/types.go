@@ -56,6 +56,9 @@ const (
 	// EventSchedule records a host scheduler event (chat idle consolidation:
 	// name = task name, status and attrs.event = what happened).
 	EventSchedule = "schedule"
+	// EventFold records a history folding boundary move: attrs boundary,
+	// steps, chars_before and chars_after of the request view.
+	EventFold = "fold"
 )
 
 // Session is one conversation. Meta holds free-form keys (rules hash, append

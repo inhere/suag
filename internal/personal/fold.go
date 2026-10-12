@@ -1,8 +1,12 @@
 package personal
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
+	"time"
 
+	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/llm"
 )
@@ -19,16 +23,7 @@ const foldArgChars = 1000
 // per batch rather than at every step. msgs is not modified; the stored
 // history stays complete.
 func foldHistory(msgs []agentcore.Message, every, keep int) []agentcore.Message {
-	if every <= 0 {
-		return msgs
-	}
-	steps := 0
-	for _, m := range msgs {
-		if m.Role == "assistant" {
-			steps++
-		}
-	}
-	boundary := (max(steps-keep, 0) / every) * every
+	boundary, _ := foldBoundary(msgs, every, keep)
 	if boundary == 0 {
 		return msgs
 	}
@@ -61,6 +56,67 @@ func foldHistory(msgs []agentcore.Message, every, keep int) []agentcore.Message 
 		out[i] = m
 	}
 	return out
+}
+
+// foldBoundary returns how many leading assistant steps of msgs are folded
+// and how many steps there are: ((steps - keep) / every) * every, 0 when
+// folding is off (every <= 0).
+func foldBoundary(msgs []agentcore.Message, every, keep int) (boundary, steps int) {
+	for _, m := range msgs {
+		if m.Role == "assistant" {
+			steps++
+		}
+	}
+	if every <= 0 {
+		return 0, steps
+	}
+	return (max(steps-keep, 0) / every) * every, steps
+}
+
+// metaFoldBoundary is the session meta key holding the fold boundary last
+// recorded as a fold event in the current segment (reset by segmentMeta).
+const metaFoldBoundary = "fold_boundary"
+
+// metaCount reads a non-negative count stored in session meta (JSON numbers
+// come back as float64); anything else is 0.
+func metaCount(v any) int {
+	switch n := v.(type) {
+	case float64:
+		return max(int(n), 0)
+	case int:
+		return max(n, 0)
+	case int64:
+		return max(int(n), 0)
+	}
+	return 0
+}
+
+// foldStats describes a fold boundary move waiting to be recorded.
+type foldStats struct {
+	boundary, steps         int
+	charsBefore, charsAfter int
+}
+
+// recordFold writes the pending boundary move (set by compose) as a fold
+// event and stores the new baseline in the session meta, so a later turn's
+// builder does not record it again. Best-effort, like other events.
+func (b *contextBuilder) recordFold(ctx context.Context) {
+	f := b.foldPending
+	b.foldPending = nil
+	if f == nil || f.boundary <= b.foldBase {
+		return
+	}
+	b.foldBase = f.boundary
+	b.r.rec.record(ctx, store.Event{
+		Kind: store.EventFold, Name: "fold", Status: eventOK, StartedAt: time.Now(),
+		Attrs: map[string]any{"boundary": f.boundary, "steps": f.steps,
+			"chars_before": f.charsBefore, "chars_after": f.charsAfter},
+	})
+	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := b.r.cfg.Repository.PatchSessionMeta(wctx, b.sessionID, map[string]any{metaFoldBoundary: f.boundary}); err != nil {
+		slog.Warn("store fold boundary in session meta", "session_id", b.sessionID, "err", err)
+	}
 }
 
 // foldValue returns v with every string longer than foldArgChars replaced by

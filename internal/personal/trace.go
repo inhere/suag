@@ -160,6 +160,11 @@ func traceLine(e store.Event) string {
 	if e.Kind == store.EventCompaction && e.Name == "compact" {
 		parts = append(parts, segmentTraceParts(e)...)
 	}
+	if e.Kind == store.EventFold {
+		// boundary = folded steps of steps; view chars before -> after folding.
+		parts = append(parts, fmt.Sprintf("folded=%v/%v chars=%v->%v",
+			e.Attrs["boundary"], e.Attrs["steps"], e.Attrs["chars_before"], e.Attrs["chars_after"]))
+	}
 	if e.Error != "" {
 		msg := strings.Join(strings.Fields(e.Error), " ")
 		if r := []rune(msg); len(r) > 120 {
