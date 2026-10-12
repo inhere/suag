@@ -161,6 +161,13 @@ func run() error {
 	if err := os.MkdirAll(o.out, 0o755); err != nil {
 		return err
 	}
+	// The output usually lies inside the suag module (tmp/eval/...): an
+	// empty go.mod makes it a module of its own, so the Go files a run
+	// leaves outside its workspace (the trash of file_remove under home/)
+	// are not packages of suag's "go test ./...".
+	if err := writeOutGoMod(o.out); err != nil {
+		return err
+	}
 	jf, err := os.Create(filepath.Join(o.out, "results.jsonl"))
 	if err != nil {
 		return err
@@ -613,4 +620,13 @@ func truncArgs(s string, n int) string {
 		return string(r[:n-1]) + "~"
 	}
 	return s
+}
+
+// writeOutGoMod writes <out>/go.mod (module evalout) unless one exists.
+func writeOutGoMod(out string) error {
+	path := filepath.Join(out, "go.mod")
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	return os.WriteFile(path, []byte("module evalout\n"), 0o644)
 }

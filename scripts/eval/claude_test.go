@@ -84,3 +84,15 @@ func TestAncestorInstructions(t *testing.T) {
 	assert.NoErr(t, os.WriteFile(filepath.Join(root, "a", "AGENTS.md"), []byte("x"), 0o644))
 	assert.Eq(t, filepath.Join(root, "a", "AGENTS.md"), ancestorInstructions(ws))
 }
+
+func TestWriteOutGoMod(t *testing.T) {
+	out := t.TempDir()
+	assert.NoErr(t, writeOutGoMod(out))
+	raw, err := os.ReadFile(filepath.Join(out, "go.mod"))
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, "module evalout\n", string(raw))
+	assert.NoErr(t, os.WriteFile(filepath.Join(out, "go.mod"), []byte("module kept\n"), 0o644))
+	assert.NoErr(t, writeOutGoMod(out)) // an existing one is kept
+	raw, _ = os.ReadFile(filepath.Join(out, "go.mod"))
+	assert.Eq(t, "module kept\n", string(raw))
+}
