@@ -157,6 +157,12 @@ func traceLine(e store.Event) string {
 	if n, ok := e.Attrs["attempt"]; ok {
 		parts = append(parts, fmt.Sprintf("attempt=%v", n))
 	}
+	if n, ok := e.Attrs["tool_calls"]; ok && fmt.Sprint(n) != "0" {
+		parts = append(parts, fmt.Sprintf("calls=%v", n))
+	}
+	if e.Kind == store.EventTool {
+		parts = append(parts, toolTraceParts(e)...)
+	}
 	if e.Kind == store.EventCompaction && e.Name == "compact" {
 		parts = append(parts, segmentTraceParts(e)...)
 	}
@@ -203,6 +209,25 @@ func turnContextLine(e store.Event) string {
 		parts = append(parts, "turn="+e.TurnID)
 	}
 	return strings.Join(parts, " ")
+}
+
+// toolTraceParts renders what a tool call did: exit code (shell), the size
+// that entered the context, a spill marker and the argument summary last.
+func toolTraceParts(e store.Event) []string {
+	var parts []string
+	if code, ok := e.Attrs["exit_code"]; ok {
+		parts = append(parts, fmt.Sprintf("exit=%v", code))
+	}
+	if n, ok := e.Attrs["inline_bytes"]; ok {
+		parts = append(parts, fmt.Sprintf("bytes=%v", n))
+	}
+	if spilled, _ := e.Attrs["spilled"].(bool); spilled {
+		parts = append(parts, fmt.Sprintf("spilled(raw=%v)", e.Attrs["raw_bytes"]))
+	}
+	if arg, ok := e.Attrs["arg"].(string); ok && arg != "" {
+		parts = append(parts, "["+arg+"]")
+	}
+	return parts
 }
 
 // segmentTraceParts renders a segment break (compaction "compact" event):

@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/llm"
+	"github.com/inhere/suag/pkg/agentcore/redact"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
@@ -115,7 +119,8 @@ func (r *recorder) attemptObserver(defName, defModel string) llm.AttemptObserver
 			// Provider-normalized: InputTokens includes cache (see ReportUsage).
 			InputTokens: int64(a.Usage.InputTokens), OutputTokens: int64(a.Usage.OutputTokens),
 			CacheReadTokens: int64(a.Usage.CacheReadTokens), CacheWriteTokens: int64(a.Usage.CacheWriteTokens),
-			Attrs: map[string]any{"model": model, "attempt": a.Index, "streamed": a.Streamed},
+			Attrs: map[string]any{"model": model, "attempt": a.Index, "streamed": a.Streamed,
+				"tool_calls": a.ToolCalls, "reasoning_chars": a.ReasoningChars, "text_chars": a.TextChars},
 		}
 		if p := purposeFrom(ctx); p != "" { // ordinary calls carry no purpose
 			e.Attrs["purpose"] = p
@@ -227,6 +232,7 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 	if err == nil && res != nil {
 		addOutputAttrs(e.Attrs, res)
 	}
+	addCallAttrs(e.Attrs, call, res)
 	o.rec.record(ctx, e)
 	// Every call reaching the registry counts, refused ones included.
 	runUsageFrom(ctx).addTool()
@@ -238,6 +244,41 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 	}
 	return res, err
 }
+
+// addCallAttrs records what a tool call was about, for trace and analysis:
+// arg (a redacted one-line summary of the key arguments), target (the file
+// or directory paths of file tools) and exit_code (shell results).
+func addCallAttrs(attrs map[string]any, call agentcore.ToolCall, res *agentcore.ToolResult) {
+	if summary := summarizeToolArgs(call.Arguments); summary != "" {
+		attrs["arg"] = truncateRunes(redact.Secrets(summary), 160)
+	}
+	var targets []string
+	for _, key := range []string{"path", "dir"} {
+		if p, ok := call.Arguments[key].(string); ok && p != "" {
+			targets = append(targets, filepath.ToSlash(p))
+		}
+	}
+	if list, ok := call.Arguments["paths"].([]any); ok {
+		for _, item := range list {
+			if p, ok := item.(string); ok && p != "" {
+				targets = append(targets, filepath.ToSlash(p))
+			}
+		}
+	}
+	if len(targets) > 0 {
+		attrs["target"] = targets
+	}
+	if res != nil {
+		if m := exitCodePattern.FindAllStringSubmatch(res.Content, -1); len(m) > 0 {
+			if code, err := strconv.Atoi(m[len(m)-1][1]); err == nil {
+				attrs["exit_code"] = code
+			}
+		}
+	}
+}
+
+// exitCodePattern finds shell_exec's "[exit code: N]" trailer.
+var exitCodePattern = regexp.MustCompile(`\[exit code: (-?\d+)\]`)
 
 // addOutputAttrs records the output size of a tool result: raw_bytes is what
 // the tool produced, inline_bytes what entered the session, spilled whether

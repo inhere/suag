@@ -21,6 +21,10 @@ type Attempt struct {
 	TTFT  time.Duration
 	Usage agentcoreapi.Usage
 	Err   error
+	// ToolCalls, ReasoningChars and TextChars describe the response: how
+	// many tool calls it issued (more than one = a parallel step) and how
+	// long its reasoning and text were. Zero when the attempt failed.
+	ToolCalls, ReasoningChars, TextChars int
 }
 
 // AttemptObserver receives every provider attempt. It must not block.
@@ -74,6 +78,7 @@ func report(ctx context.Context, obs AttemptObserver, prov agentcoreapi.Provider
 		StartedAt: start, Duration: time.Since(start), TTFT: ttft, Err: err}
 	if res != nil {
 		a.Usage = res.Usage
+		a.ToolCalls, a.ReasoningChars, a.TextChars = len(res.ToolCalls), len(res.Reasoning), len(res.Content)
 	}
 	obs(ctx, a)
 }

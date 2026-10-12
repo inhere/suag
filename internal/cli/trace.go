@@ -13,7 +13,7 @@ import (
 
 func newTraceCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	var traceTurn string
-	var traceJSON bool
+	var traceJSON, traceAnalyze bool
 	trace := capp.NewCmd("trace", "Show the turn/model/tool/denial timeline of a session", func(c *capp.Cmd) error {
 		// Flags may also follow the session ID, which the flag parser leaves in the remaining args.
 		var positional []string
@@ -22,6 +22,8 @@ func newTraceCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 			switch {
 			case rest[i] == "--json" || rest[i] == "-json":
 				traceJSON = true
+			case rest[i] == "--analyze" || rest[i] == "-analyze":
+				traceAnalyze = true
 			case (rest[i] == "--turn" || rest[i] == "-turn") && i+1 < len(rest):
 				i++
 				traceTurn = rest[i]
@@ -30,18 +32,19 @@ func newTraceCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 			}
 		}
 		if len(positional) != 1 {
-			return fmt.Errorf("usage: suag trace <session> [--turn id] [--json]")
+			return fmt.Errorf("usage: suag trace <session> [--turn id] [--json] [--analyze]")
 		}
-		return runTrace(ctx, stdout, positional[0], traceTurn, traceJSON)
+		return runTrace(ctx, stdout, positional[0], traceTurn, traceJSON, traceAnalyze)
 	})
 	trace.SetOutput(stderr)
 	trace.StringVar(&traceTurn, "turn", "", "only show events of this turn ID")
 	trace.BoolVar(&traceJSON, "json", false, "write one JSON object per line")
+	trace.BoolVar(&traceAnalyze, "analyze", false, "summarize the loop: steps, parallel calls, re-reads, repeated commands, tests after the first pass")
 	return trace
 }
 
 // runTrace prints the event timeline of one session from the core store.
-func runTrace(ctx context.Context, out io.Writer, sessionID, turnID string, asJSON bool) error {
+func runTrace(ctx context.Context, out io.Writer, sessionID, turnID string, asJSON, analyze bool) error {
 	dbPath, err := appconfig.ResolveCoreStorePath()
 	if err != nil {
 		return err
@@ -57,6 +60,9 @@ func runTrace(ctx context.Context, out io.Writer, sessionID, turnID string, asJS
 	events, err := repo.ListEvents(ctx, store.EventFilter{SessionID: sessionID, TurnID: turnID})
 	if err != nil {
 		return err
+	}
+	if analyze {
+		return personal.WriteTraceAnalysis(out, personal.AnalyzeTrace(events), asJSON)
 	}
 	// Plan entries come from the entries table and are merged by creation time.
 	plans, err := repo.ListEntries(ctx, sessionID, store.EntryFilter{Types: []string{store.EntryPlan}, TurnID: turnID})

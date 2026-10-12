@@ -144,6 +144,7 @@ Gofer launches `suag run` (CLI jobs) or `suag acp` (persistent sessions with per
 
 ```text
 suag trace <session> [--turn <id>] [--json]       # timeline: model calls, tools, denials, plans
+suag trace <session> --analyze [--json]          # loop summary: steps, parallel calls, re-reads, repeated commands, tests after the first pass
 suag stats [--session <id>] [--since 7d] [--json] # calls, latency, tokens, cache hits
 suag export <session> [--redact] [-o <file>]      # entries and events as jsonl
 suag gc --older-than 30d [--apply]                # list (default) or delete idle sessions
@@ -151,7 +152,7 @@ suag ps                                           # running chat processes
 suag manifest [--json] [--model <p/m>]            # models, tools, MCP, skills, memory backends, output limits
 ```
 
-`suag trace` also shows a `turn_context` line per turn (model, mode, tool set hash, rules and memory index hashes, tainted), a line for each segment break (`segment=#N reason=... tokens=before->after`) and `schedule` events (chat idle consolidation: fired, done, cancelled, skipped). `suag stats` shows cost per model (from the provider, or from `price` in the config) and, with `--json`, tool output bytes (`raw_bytes`, `inline_bytes`, `spilled`).
+Tool lines show the exit code (shell), the bytes that entered the context, a spill marker and a redacted argument summary; model lines show how many tool calls the response issued (`calls=N`). `--analyze` derives from the same events: steps and parallel steps, tool counts and failures, files read more than once and reads of files the session had just written, edits per file, identical shell commands run again, test runs and how many came after the first passing one, spills, folds, compactions and the slowest model calls. `suag trace` also shows a `turn_context` line per turn (model, mode, tool set hash, rules and memory index hashes, tainted), a line for each segment break (`segment=#N reason=... tokens=before->after`) and `schedule` events (chat idle consolidation: fired, done, cancelled, skipped). `suag stats` shows cost per model (from the provider, or from `price` in the config) and, with `--json`, tool output bytes (`raw_bytes`, `inline_bytes`, `spilled`).
 
 `run --output-format stream-json` prints a `usage` line after every model call, with the run's running totals: `input_tokens` (cache excluded), `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `total_tokens`, `cost_usd` and `tool_calls`. `turn_end` and `result` carry the same `usage`, so a consumer can enforce a budget mid-run. ACP sends `usage_update` at the same moments ([details](docs/usage/gofer-personal-agent.md#acp-用量上报)).
 

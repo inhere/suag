@@ -211,6 +211,13 @@ func TestTraceCommandPrintsSessionTimeline(t *testing.T) {
 		assert.Eq(t, true, strings.Contains(out, "err=boom"))
 		assert.Eq(t, true, strings.Contains(out, " denial mcp_write denied "))
 	})
+	t.Run("analyze", func(t *testing.T) {
+		out := run("trace", "trace-s1", "--analyze")
+		assert.StrContains(t, out, "steps                  1 model calls, 1 tool calls")
+		assert.StrContains(t, out, "mcp_write x1 (1 failed)")
+		js := run("trace", "trace-s1", "--analyze", "--json")
+		assert.StrContains(t, js, `"model_calls":1`)
+	})
 	t.Run("turn filter with json", func(t *testing.T) {
 		out := run("trace", "trace-s1", "--turn", "t2", "--json")
 		lines := strings.Split(strings.TrimSpace(out), "\n")

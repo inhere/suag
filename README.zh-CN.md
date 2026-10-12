@@ -144,6 +144,7 @@ Gofer 拉起 `suag run`（CLI 作业），或 `suag acp`（常驻会话，通过
 
 ```text
 suag trace <session> [--turn <id>] [--json]       # 时间线：模型调用、工具、拒绝、计划
+suag trace <session> --analyze [--json]          # 循环分析：步数、并行调用、重复读、重复命令、首次通过后的测试
 suag stats [--session <id>] [--since 7d] [--json] # 调用次数、耗时、token、缓存命中
 suag export <session> [--redact] [-o <file>]      # 以 jsonl 导出会话内容与事件
 suag gc --older-than 30d [--apply]                # 列出（默认）或删除长期未活动的会话
@@ -151,7 +152,7 @@ suag ps                                           # 正在运行的 chat 进程
 suag manifest [--json] [--model <p/m>]            # 模型、工具、MCP、skills、记忆后端、输出上限
 ```
 
-`suag trace` 每回合还会显示一行 `turn_context`（模型、模式、工具集哈希、规则与记忆索引哈希、是否已污染），每次分段显示一行（`segment=#N reason=... tokens=前->后`），以及 `schedule` 事件（chat 空闲整理：fired、done、cancelled、skipped）。`suag stats` 显示各模型成本（provider 返回，或按配置的 `price` 计算）；加 `--json` 还有工具输出字节（`raw_bytes`、`inline_bytes`、`spilled`）。
+工具行显示退出码（shell）、进入上下文的字节数、转存标记与脱敏后的参数摘要；模型行显示这次回复发出了几个工具调用（`calls=N`）。`--analyze` 从同一组事件得出：步数与并行步数、各工具次数与失败、读了多次的文件和写完又回读的次数、每个文件的编辑次数、重复执行的相同命令、测试运行次数及首次通过之后又跑了几次、转存/折叠/压缩次数、最慢的几次模型调用。`suag trace` 每回合还会显示一行 `turn_context`（模型、模式、工具集哈希、规则与记忆索引哈希、是否已污染），每次分段显示一行（`segment=#N reason=... tokens=前->后`），以及 `schedule` 事件（chat 空闲整理：fired、done、cancelled、skipped）。`suag stats` 显示各模型成本（provider 返回，或按配置的 `price` 计算）；加 `--json` 还有工具输出字节（`raw_bytes`、`inline_bytes`、`spilled`）。
 
 `run --output-format stream-json` 在每次模型调用后输出一行 `usage`，为本次 run 的累计值：`input_tokens`（不含缓存）、`output_tokens`、`cache_read_tokens`、`cache_write_tokens`、`total_tokens`、`cost_usd`、`tool_calls`。`turn_end` 与 `result` 带同名 `usage`，调用方可在运行中途做预算控制。ACP 在同一时机发 `usage_update`（[说明](docs/usage/gofer-personal-agent.md#acp-用量上报)）。
 
