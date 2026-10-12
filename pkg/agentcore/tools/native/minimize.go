@@ -54,9 +54,14 @@ func (m *OutputMinimizer) Minimize(call api.ToolCall, content string) (string, b
 	}
 	command, _ := call.Arguments["command"].(string)
 	lines := strings.Split(cleanTerminal(content), "\n")
-	for _, r := range m.rules {
-		if r.compiled != nil && r.compiled.match.MatchString(command) {
-			lines = r.compiled.apply(lines, r.Summary)
+	// A command that pipes its output (| grep, | Select-String, | tail ...)
+	// already shows what the model asked for: the rules would drop the very
+	// lines it filtered for (e.g. "--- PASS" names), sending it to recall.
+	if !hasPipe(command) {
+		for _, r := range m.rules {
+			if r.compiled != nil && r.compiled.match.MatchString(command) {
+				lines = r.compiled.apply(lines, r.Summary)
+			}
 		}
 	}
 	lines = foldRepeats(lines)
@@ -110,4 +115,32 @@ func foldRepeats(lines []string) []string {
 		i = j
 	}
 	return out
+}
+
+// hasPipe reports whether command pipes output into another command: a "|"
+// outside quotes that is not part of "||". A "|" inside a quoted argument
+// (go test -run 'A|B', a regex) is not a pipe.
+func hasPipe(command string) bool {
+	var quote rune
+	runes := []rune(command)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		switch {
+		case quote != 0:
+			// No backslash escapes: on Windows the shell is PowerShell, where
+			// "\" is a path separator ("D:\dir\" must close the quote).
+			if c == quote {
+				quote = 0
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '|':
+			if i+1 < len(runes) && runes[i+1] == '|' {
+				i++ // "||": or, not a pipe
+				continue
+			}
+			return true
+		}
+	}
+	return false
 }

@@ -6,7 +6,7 @@
 
 ### 新增
 
-- shell 输出整理（`tools.minimize_output`，默认开）：去掉颜色码与进度重绘，折叠连续相同的行；测试与构建输出按输出规则裁剪：全部通过时只留各包结果和一行汇总（如 `go test: 1 package(s) ok, 20 test(s) passed`），有失败时只留失败用例及其信息、日志与编译错误。内置规则覆盖 go test、cargo test、jest/vitest/mocha 与 npm/pnpm/yarn/bun test、pytest、Maven、Gradle；`$SUAG_HOME/output-rules.yaml` 与 `<workspace>/.suag/output-rules.yaml` 可按名字替换、新增或用 `enabled: false` 关闭规则（格式见内置的 `output_rules.yaml`）。原文保存为 ref，结果末尾注明，可用 `recall` 取回；`suag trace` 显示 `tidied(raw=…)`，`--analyze` 统计整理次数。
+- shell 输出整理（`tools.minimize_output`，默认开）：去掉颜色码与进度重绘，折叠连续相同的行；测试与构建输出按输出规则裁剪：全部通过时只留各包结果和一行汇总（如 `go test: 1 package(s) ok, 20 test(s) passed`），有失败时只留失败用例及其信息、日志与编译错误。内置规则覆盖 go test、cargo test、jest/vitest/mocha 与 npm/pnpm/yarn/bun test、pytest、Maven、Gradle；`$SUAG_HOME/output-rules.yaml` 与 `<workspace>/.suag/output-rules.yaml` 可按名字替换、新增或用 `enabled: false` 关闭规则（格式见内置的 `output_rules.yaml`）。命令本身用管道过滤了输出时不套用规则（R6 中模型用 `go test -v | Select-String` 列用例名，被整理掉后只好 `recall` 原文）。原文保存为 ref，结果末尾注明，可用 `recall` 取回；`suag trace` 显示 `tidied(raw=…)`，`--analyze` 统计整理次数。
 - `file_edit` 的结果带改动处的行号片段（前后各 2 行，最多 60 行），改 Go 文件时若编辑引入语法错误会附警告；`old_string` 找不到时指出缩进不同的同一行或最相似的行并给出该处内容，匹配多处时列出行号——模型不必为确认或定位再读一遍文件。
 - 同一次回复里的多个本地读取调用（`file_read`、`file_list`、`file_grep`、`file_find`）并发执行（`tools.parallel_reads`，默认开）：读取在基础层提前并发进行，审批、污染追踪、trace 记录与持久化仍按调用顺序，参数被 hook 改过的调用照常重新执行。
 - `--model`（以及 `SUAG_MODEL`、`model` 等引用）支持简单匹配：名字不是已配置的模型时按其一部分查找（不区分大小写，查键与 `model_id`，`provider/` 前缀限定范围），唯一匹配即用，如 `--model haiku`；多个匹配时报错并列出候选。
