@@ -425,3 +425,27 @@ token 差 9 倍 ≈ 调用次数 4.5 倍 × 每次上下文 2 倍；耗时主要
 - 模型调用均值首次低于 omp；单处修改的编辑步占比从 R6 的 5/6、5/6、8/8 降到 2/4、5/10、4/5，约定在历史已出现并行样例后起了作用。
 - 阶段（`--analyze`）：探索 5 / 6 / 4，写入到转绿 6 / 21 / 8，转绿后 6 / 5 / 4；耗时 95% 以上在模型（工具 8–101s，r2 的 101s 为并发测试超时）。
 - 通过率 1/3：两轮失败分别是 `TestConfCancelRunning` 与 `TestConfObserverReentryNoDeadlock`，即 omp、Claude Code 同样反复失败的两个并发验收用例。历次 suag 为 1/3、1/3、3/3、3/3、1/3，三轮样本下属正常波动；需要更大样本（或更多任务）才能判断步数减少是否影响正确性，列为后续评测项。
+
+## S2/S3：扩大样本——4 个仓库任务各 5 轮（2026-10-13，plan-20261013-002736-46d99988）
+
+新增 3 个取自 suag 历史的仓库任务（8602339，见 eval README）：`repo-fix-glob`（只给症状的 bug，涉及 grep/find/walk）、`repo-feat-model-type`（跨层配置功能，含文档）、`repo-pipe-minimize`（小改动多边界）；隐藏验收测试即原提交的测试，已验证在起点断言失败、在原提交通过。suag v0.14.0 与 omp 同时段、同模型（command-code deepseek-v4.1-flash，high）各跑 4 任务 × 5 轮（服务端把 job 时长截到 1 小时，分批补跑后合并）。
+
+| 任务 | suag 通过 | suag 调用（均值/中位） | omp 通过 | omp 调用（均值/中位） |
+|---|---|---|---|---|
+| repo-feat-model-type | 5/5 | 29.4 / 31 | 5/5 | 32.8 / 28 |
+| repo-fix-glob | 5/5 | 38.2 / 35 | 4/5（实为 5/5） | 48.2 / 46 |
+| repo-pipe-minimize | 5/5 | 18.6 / 19 | 4/5（实为 5/5） | 17.4 / 17 |
+| repo-t9-schedule | 3/5 | 26.8 / 27 | 3/5 | 23.2 / 21 |
+| 合计 | 18/20 | 28.3 | 16/20（实为 18/20） | 30.4 |
+
+**评测本身的两个干扰（都已修）**：
+1. omp 的两次“失败”是 suag 自己的测试 `TestShellExecWindows/timeout_kills_child_processes` 误报：它检查全机有没有 PING.EXE，同机并行的其他评测正在跑同一测试时就失败。改为按子进程 PID 检查（3a50c9c），omp 实际 18/20。
+2. **环境泄漏让 suag 吃亏**：eval 给 suag 进程设了 `SUAG_HOME`，模型经 shell 跑的 `go test` 继承了它，而 `internal/config` 的 5 个 Load 测试（以及 CLI 的 manifest 测试）只隔离了 HOME，于是读到评测目录的真实配置而失败。suag 在 feat-model-type 5 轮、fix-glob 5 轮、pipe-minimize 2 轮里都撞上这个与任务无关的失败并为之排查（有的轮次 `git stash` 回起点确认），omp 进程没有该变量，不受影响。测试已隔离（962c0cd），但任务起点是旧提交，仍会触发——除非 suag 不把自身的私有环境变量传给 shell 命令（待定，见下）。另：评测输出目录在 suag 模块里，file_remove 回收区中的 `.go` 文件会被 `go test ./...` 当作包，已给输出目录加独立 go.mod（9cee54b）。
+
+**正确性与步数**：失败只出现在 T9 的两个并发验收用例上，两边各 2 次。suag 失败的两轮调用 27、33（通过的为 19、22、33），步数少并不对应失败；omp 失败的两轮恰是它最短的两轮（14、15）。在本样本里，suag 的步数减少没有带来正确性下降。
+
+**步数**：suag 在 fix-glob 少 21%、feat-model-type 少 10%（尽管被环境泄漏拖累），pipe-minimize 多 7%，T9 多 16%；四任务均值 28.3 对 30.4。
+
+**观测修正**：只跑部分用例的测试（`-run`、`-k`）不再算“转绿”——fix-glob 中模型写临时测试（zzscratch/zzreal/zzwalk）用 `-run` 单独跑来排查，原口径把大部分修复都算成了“转绿后”（2e0bbaf）。
+
+**待定**：suag 的 shell_exec 是否应去掉自身的私有环境变量（`SUAG_HOME`、`SUAG_CONFIG`、`SUAG_MODEL`）再执行命令。去掉后，模型在用户项目里跑的命令不再受 suag 自身配置影响（本次干扰的根因），评测也更公平；代价是 agent 在 shell 里再调用 suag 时会落回默认的 `~/.suag`。
