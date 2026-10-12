@@ -500,9 +500,10 @@ func TestRuntime_Run_PrefetchesMultiCallReplies(t *testing.T) {
 		},
 	}
 	var prefetched [][]string
+	store := newRuntimeTestStorage()
 	result, err := New(Config{
 		Provider:       provider,
-		Storage:        newRuntimeTestStorage(),
+		Storage:        store,
 		Tools:          reg,
 		PromptBuilder:  runtimeTestPromptBuilder{},
 		ContextBuilder: runtimeTestContextBuilder{},
@@ -523,5 +524,16 @@ func TestRuntime_Run_PrefetchesMultiCallReplies(t *testing.T) {
 	}
 	if len(tool.calls) != 3 {
 		t.Fatalf("expected every runnable call to run through the registry, got %d", len(tool.calls))
+	}
+	// The calls of the multi-call reply share a batch; the single call has none.
+	var batches []string
+	for _, m := range store.messages["run-prefetch"] {
+		if m.Role == "assistant" && m.ToolCall != nil {
+			batch, _ := m.Metadata[ToolBatchMetaKey].(string)
+			batches = append(batches, m.ToolCall.CallID+"="+batch)
+		}
+	}
+	if got := strings.Join(batches, ","); got != "c1=c1,c2=c1,c3=c1,c4=" {
+		t.Fatalf("unexpected batches %s", got)
 	}
 }

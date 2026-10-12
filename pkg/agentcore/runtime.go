@@ -452,9 +452,10 @@ func (r *DefaultRuntime) effectiveMaxSteps(input RunInput) int {
 	return r.maxSteps
 }
 
-// leadOutput is the model output accompanying a batch of tool calls; it is
-// stored on the first assistant tool-call message only.
-type leadOutput struct{ text, reasoning string }
+// leadOutput is the model output accompanying a batch of tool calls; text and
+// reasoning are stored on the first assistant tool-call message only, batch
+// (api.ToolBatchMetaKey, set when the reply holds several calls) on each.
+type leadOutput struct{ text, reasoning, batch string }
 
 func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, schemas []ToolSchema, calls []ToolCall, lead leadOutput) (*RunResult, error, bool) {
 	prepareToolCalls(schemas, calls)
@@ -471,10 +472,16 @@ func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, 
 		r.prefetchTools(ctx, cloneToolCallsValue(runnable))
 	}
 
+	if len(calls) > 1 {
+		lead.batch = calls[0].CallID
+		if lead.batch == "" {
+			lead.batch = fmt.Sprintf("step-%d", state.Step)
+		}
+	}
 	for i, call := range calls {
 		// The model's text and reasoning accompanying the tool calls are kept on
 		// the first assistant tool-call message only; parallel calls carry no duplicate.
-		var callLead leadOutput
+		callLead := leadOutput{batch: lead.batch}
 		if i == 0 {
 			callLead = lead
 		}
@@ -567,6 +574,9 @@ func (r *DefaultRuntime) persistToolTranscript(ctx context.Context, state *RunSt
 		Content:   lead.text,
 		ToolCall:  cloneToolCallValue(&call),
 		Reasoning: lead.reasoning,
+	}
+	if lead.batch != "" {
+		assistantMessage.Metadata = map[string]any{ToolBatchMetaKey: lead.batch}
 	}
 	toolMessage := Message{
 		Role:       "tool",

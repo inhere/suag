@@ -23,6 +23,7 @@
 
 ### 变更
 
+- 同一次回复的多个工具调用在之后的请求里按原样作为并行调用回传：一条助手消息带全部调用，其后是各自的结果（OpenAI 兼容与 Anthropic 都是）；原先存成“调用、结果、调用、结果”交替排列，模型在历史里看不到并行的样例。只影响新产生的历史。
 - OpenAI 兼容 provider 只在带工具调用的助手消息上回传 `reasoning_content`，普通文本回答不再携带（减少输入 token；DeepSeek 已实测接受）。
 - 历史折叠的说明改为 `[folded: N chars sent in an earlier step]`，去掉“需要时重读文件”的提示（它会诱导多余的读取）。
 - `file_read` 每页上限与工具结果的内联阈值分开：新增 `tools.read_page_bytes`（默认 32 KiB，原为与 `tools.max_output_bytes` 相同的 8000 字节），多数源码文件一次读完；`paths` 一次最多四页。

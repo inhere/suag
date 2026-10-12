@@ -108,7 +108,7 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 		msgs = append(msgs, map[string]any{"role": "system", "content": system})
 	}
 
-	for _, m := range req.Messages {
+	for _, m := range groupToolBatches(req.Messages) {
 		// Tool messages carry both ToolCall and ToolResult in agentcore; OpenAI
 		// wants role=tool with only tool_call_id+content (no tool_calls).
 		if m.ToolResult != nil || m.Role == "tool" {

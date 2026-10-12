@@ -35,6 +35,10 @@ const (
 )
 
 type Message = api.Message
+
+// ToolBatchMetaKey marks the tool calls of one reply, see api.ToolBatchMetaKey.
+const ToolBatchMetaKey = api.ToolBatchMetaKey
+
 type Artifact = api.Artifact
 type Usage = api.Usage
 type Yield = api.Yield

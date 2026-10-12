@@ -174,3 +174,51 @@ func TestOpenAIProvider_ReasoningContentRoundTrip(t *testing.T) {
 		assert.Eq(t, false, has)
 	})
 }
+
+// batchPairs is a stored multi-call reply: call, result, call, result ...,
+// every call tagged with the batch; the first carries the reply's text and
+// reasoning (agentcore persistToolTranscript).
+func batchPairs(batch string, ids ...string) []agentcoreapi.Message {
+	var out []agentcoreapi.Message
+	for i, id := range ids {
+		pair := toolPair(id, "read", "r-"+id, false)
+		pair[0].Metadata = map[string]any{agentcoreapi.ToolBatchMetaKey: batch}
+		if i == 0 {
+			pair[0].Content, pair[0].Reasoning = "reading", "plan"
+		}
+		out = append(out, pair...)
+	}
+	return out
+}
+
+func TestToolBatchesSentAsParallelCalls(t *testing.T) {
+	user := agentcoreapi.Message{Role: "user", Content: "go"}
+	t.Run("openai: one assistant message with every call", func(t *testing.T) {
+		p := NewOpenAIProvider(OpenAIConfig{})
+		ms := append([]agentcoreapi.Message{user}, batchPairs("c1", "c1", "c2", "c3")...)
+		ms = append(ms, toolPair("c4", "edit", "ok", false)...) // the next reply: its own message
+		msgs := p.buildRequestBody(&agentcoreapi.GenerateRequest{Messages: ms}, "m", false)["messages"].([]map[string]any)
+		assert.Eq(t, 7, len(msgs))
+		assert.Eq(t, "reading", msgs[1]["content"])
+		assert.Eq(t, "plan", msgs[1]["reasoning_content"])
+		assert.Eq(t, 3, len(msgs[1]["tool_calls"].([]map[string]any)))
+		for i, id := range []string{"c1", "c2", "c3"} {
+			assert.Eq(t, id, msgs[2+i]["tool_call_id"])
+		}
+		assert.Eq(t, 1, len(msgs[5]["tool_calls"].([]map[string]any)))
+	})
+	t.Run("claude: tool_use blocks then tool_result blocks", func(t *testing.T) {
+		p := NewClaudeProvider(ClaudeConfig{})
+		ms := append([]agentcoreapi.Message{user}, batchPairs("c1", "c1", "c2")...)
+		msgs := p.buildRequestBody(&agentcoreapi.GenerateRequest{Messages: ms}, "m")["messages"].([]map[string]any)
+		assert.Eq(t, 3, len(msgs))
+		assert.Eq(t, 3, len(msgs[1]["content"].([]map[string]any))) // text + 2 tool_use
+		assert.Eq(t, 2, len(msgs[2]["content"].([]map[string]any))) // 2 tool_result
+	})
+	t.Run("untagged calls and a cut-short batch stay as stored", func(t *testing.T) {
+		ms := append(toolPair("c1", "a", "r1", false), toolPair("c2", "b", "r2", false)...)
+		assert.Eq(t, ms, groupToolBatches(ms))
+		cut := batchPairs("c1", "c1", "c2")[:3] // the second call has no result
+		assert.Eq(t, cut, groupToolBatches(cut))
+	})
+}

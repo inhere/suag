@@ -133,7 +133,7 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 	// system messages (rule updates, hook context) go to the top-level system.
 	system := req.System
 	segmentIdx := -1 // index in msgs of the segment context message, if any
-	for _, m := range req.Messages {
+	for _, m := range groupToolBatches(req.Messages) {
 		switch {
 		case m.Role == "system" && m.ToolCall == nil && m.ToolResult == nil:
 			if m.Content != "" {
