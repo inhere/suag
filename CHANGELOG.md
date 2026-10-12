@@ -7,12 +7,14 @@
 ### 新增
 
 - `file_edit` 支持 `edits` 列表：同一文件的多处替换一次调用完成，按顺序作用于上一处的结果，任一处失败则文件不变；ACP 差异预览与 chat 审批提示逐处显示。
-- 评测脚本：仓库模式任务（`repo: {ref}`）、长编码任务 `long-coding-schedule`（任务级 `timeout`、结束后注入的 `acceptance` 测试、`command` 检查）、`--suag-args` / `--omp-args`、`--repeat N`（附平均行）、结果中的 `tool_counts`。
+- 评测脚本：仓库模式任务（`repo: {ref}`）、长编码任务 `long-coding-schedule`（任务级 `timeout`、结束后注入的 `acceptance` 测试、`command` 检查）、`--suag-args` / `--omp-args`、`--suag-set key=value`（改写临时配置）、`--repeat N`（附平均行）、结果中的 `tool_counts`。
 
 ### 修复
 
 - Windows 上 `shell_exec` 丢失 PowerShell 的表格输出（`Get-ChildItem`、`Select-Object` 等）：命令结束后立即退出，格式化输出还在约 300ms 的延迟中就被丢弃，模型拿到空结果、退出码 0，只能反复换写法重试。现在命令输出先经 `Out-Default` 写完再退出，并关闭 PowerShell 7 的 ANSI 颜色。
 - 评测的仓库模式任务写入仓库级 git 身份：suag 在隔离 HOME 下运行，原先只有它提交失败。
+- 工具调用参数的字符串里出现未转义的制表符、换行等控制字符（模型写 Go 代码时常见）时不再让整次运行失败：严格解析失败后转义这些字符再解析一次。
+- 模型返回既无正文也无工具调用的空响应（推理模型偶尔只输出思考内容）时，同一请求最多重发 2 次，不再直接以 `provider error: empty result` 结束运行。
 
 ### 变更
 
