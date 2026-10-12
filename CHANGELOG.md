@@ -10,7 +10,7 @@
 - `file_edit` 的结果带改动处的行号片段（前后各 2 行，最多 60 行），改 Go 文件时若编辑引入语法错误会附警告；`old_string` 找不到时指出缩进不同的同一行或最相似的行并给出该处内容，匹配多处时列出行号——模型不必为确认或定位再读一遍文件。
 - 同一次回复里的多个本地读取调用（`file_read`、`file_list`、`file_grep`、`file_find`）并发执行（`tools.parallel_reads`，默认开）：读取在基础层提前并发进行，审批、污染追踪、trace 记录与持久化仍按调用顺序，参数被 hook 改过的调用照常重新执行。
 - 模型级 `type` 与 `base_url`（`providers.<id>.models.<model>.type` / `base_url`）覆盖 provider 的：同一网关的 Claude 模型可走 Anthropic 协议、其余模型走 OpenAI 兼容，不必拆成两个 provider。原先模型下写 `type` 会被忽略，Claude 模型仍按 OpenAI 协议请求而报错。
-- `suag trace <session> --analyze [--json]`：循环分析——步数与并行步数、各工具次数与失败、重复读与写后回读、每个文件的编辑次数、重复执行的命令、测试运行次数及首次通过后又跑了几次、转存/折叠/压缩、最慢的模型调用。工具事件新增 `arg`（脱敏参数摘要）、`target`（文件路径）、`exit_code`（shell），模型事件新增 `tool_calls`、`reasoning_chars`、`text_chars`；`suag trace` 的工具行显示退出码、字节数、转存与参数摘要，模型行显示 `calls=N`。
+- `suag trace <session> --analyze [--json]`：循环分析——步数与并行步数、各工具次数与失败、重复读与写后回读、每个文件的编辑次数、重复执行的命令、测试运行次数及首次通过后又跑了几次、转存/折叠/压缩、最慢的模型调用，以及未命中缓存的输入按来源拆分：新增内容、前缀断开后重发的早先内容（按 fold/segment/system/tools/rewrite）与 provider 侧未命中（按请求 JSON 大小估算）。工具事件新增 `arg`（脱敏参数摘要）、`target`（文件路径）、`exit_code`（shell），模型事件新增 `tool_calls`、`reasoning_chars`、`text_chars` 与前缀对比 `prefix`、`prefix_reused`、`prefix_rebuilt`、`prefix_fresh`；`suag trace` 的工具行显示退出码、字节数、转存与参数摘要，模型行显示 `calls=N`、`cached=N`，前缀断开时显示 `prefix=原因(rebuilt=…)`。
 
 ### 修复
 

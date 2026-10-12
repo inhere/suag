@@ -75,6 +75,9 @@ type recorder struct {
 	// taint flags the session when a tool result brings in external
 	// content; nil disables it.
 	taint *taintMarker
+	// prefix compares each request with the session's previous one; its
+	// report goes on the model event (cache attribution).
+	prefix *prefixTracker
 }
 
 func (r *recorder) record(ctx context.Context, e store.Event) {
@@ -124,6 +127,10 @@ func (r *recorder) attemptObserver(defName, defModel string) llm.AttemptObserver
 		}
 		if p := purposeFrom(ctx); p != "" { // ordinary calls carry no purpose
 			e.Attrs["purpose"] = p
+		} else if rep, ok := r.prefix.report(observeScopeFrom(ctx).sessionID); ok {
+			// How this request relates to the previous one (cache attribution).
+			e.Attrs["prefix"] = rep.Reason
+			e.Attrs["prefix_reused"], e.Attrs["prefix_rebuilt"], e.Attrs["prefix_fresh"] = rep.Reused, rep.Rebuilt, rep.Fresh
 		}
 		// Provider-reported cost wins; otherwise price the call from config.
 		// The store's session/stats totals sum this attr.

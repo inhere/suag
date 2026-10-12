@@ -153,6 +153,14 @@ func traceLine(e store.Event) string {
 	}
 	if e.InputTokens > 0 || e.OutputTokens > 0 {
 		parts = append(parts, fmt.Sprintf("in=%d out=%d", e.InputTokens, e.OutputTokens))
+		if e.CacheReadTokens > 0 {
+			parts = append(parts, fmt.Sprintf("cached=%d", e.CacheReadTokens))
+		}
+	}
+	// A request that broke the previous one's prefix: why, and how much of
+	// the earlier content (JSON chars) had to be sent again.
+	if reason, _ := e.Attrs["prefix"].(string); reason != "" && reason != prefixAppend {
+		parts = append(parts, fmt.Sprintf("prefix=%s(rebuilt=%s)", reason, human(int64(attrInt(e.Attrs["prefix_rebuilt"])))))
 	}
 	if n, ok := e.Attrs["attempt"]; ok {
 		parts = append(parts, fmt.Sprintf("attempt=%v", n))

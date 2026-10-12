@@ -212,7 +212,8 @@ func New(cfg Config) (*Runner, error) {
 		cfg.Ledger.bind(cfg.Repository)
 	}
 	rec := &recorder{sink: cfg.Repository, price: cfg.Price,
-		taint: newTaintMarker(cfg.Repository, cfg.TaintTools, cfg.TaintOnSpill)}
+		taint:  newTaintMarker(cfg.Repository, cfg.TaintTools, cfg.TaintOnSpill),
+		prefix: newPrefixTracker()}
 	cfg.Provider = rec.observeProvider(cfg.Provider, cfg.ProviderName, cfg.Model)
 	if cfg.Tools != nil {
 		// Stack: observe -> output -> (visibility -> approval -> base). The
@@ -498,7 +499,8 @@ func appendTurnInput(transcript *Transcript, sessionID string, req RunRequest) {
 // usage total. The denial limit hook ends the turn before the next model call
 // once DenialLimit refusals accumulated.
 func (r *Runner) turnHooks(usage *usageCollector, denials *turnDenials, sink EmitFunc, result RunResult) []agentcore.Hook {
-	hooks := append([]agentcore.Hook{usage, denialLimitHook{denials: denials, usage: usage}}, r.cfg.Hooks...)
+	hooks := append([]agentcore.Hook{usage, denialLimitHook{denials: denials, usage: usage},
+		prefixHook{tracker: r.rec.prefix}}, r.cfg.Hooks...)
 	if sink != nil {
 		hooks = append(hooks, toolEventHook{sink: sink, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
 	}

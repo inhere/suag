@@ -47,7 +47,19 @@ type TraceAnalysis struct {
 	Spills            int `json:"spills"`
 	Minimized         int `json:"minimized"` // results tidied by the output minimizer
 	Folds             int `json:"folds"`
-	Compactions       int `json:"compactions"`
+	// Cache attribution from the model attrs prefix*: the input tokens the
+	// provider did not serve from its cache, split into content new since
+	// the previous request, earlier content sent again after a prefix break
+	// (by reason: fold, segment, system, tools, rewrite) and content the
+	// prefix should have let the provider serve but it did not (expired or
+	// not yet written cache). Estimated from JSON sizes; calls without the
+	// attrs (older sessions) count in Uncached only.
+	Uncached         int64            `json:"uncached_input_tokens"`
+	UncachedFresh    int64            `json:"uncached_fresh"`
+	UncachedRebuilt  map[string]int64 `json:"uncached_rebuilt,omitempty"`
+	UncachedProvider int64            `json:"uncached_provider"`
+	PrefixBreaks     map[string]int   `json:"prefix_breaks,omitempty"`
+	Compactions      int              `json:"compactions"`
 	// Slowest are the longest model calls.
 	Slowest []SlowCall `json:"slowest,omitempty"`
 }
@@ -68,7 +80,8 @@ type SlowCall struct {
 
 // AnalyzeTrace derives a TraceAnalysis from a session's events (in order).
 func AnalyzeTrace(events []store.Event) TraceAnalysis {
-	a := TraceAnalysis{Tools: map[string]int{}, ToolErrors: map[string]int{}}
+	a := TraceAnalysis{Tools: map[string]int{}, ToolErrors: map[string]int{},
+		UncachedRebuilt: map[string]int64{}, PrefixBreaks: map[string]int{}}
 	reads, edits, commands := map[string]int{}, map[string]int{}, map[string]int{}
 	written := map[string]bool{}
 	passed := false
@@ -88,6 +101,7 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 			a.InputTokens += e.InputTokens
 			a.CacheReadTokens += e.CacheReadTokens
 			a.OutputTokens += e.OutputTokens
+			a.attributeCache(e)
 			a.ReasoningChars += attrInt(e.Attrs["reasoning_chars"])
 			a.TextChars += attrInt(e.Attrs["text_chars"])
 			slow = append(slow, SlowCall{Step: a.ModelCalls, DurationMs: e.DurationMs, OutputTokens: e.OutputTokens, ToolCalls: calls})
@@ -152,7 +166,43 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 	if len(a.ToolErrors) == 0 {
 		a.ToolErrors = nil
 	}
+	if len(a.UncachedRebuilt) == 0 {
+		a.UncachedRebuilt = nil
+	}
+	if len(a.PrefixBreaks) == 0 {
+		a.PrefixBreaks = nil
+	}
 	return a
+}
+
+// attributeCache splits one model call's uncached input by cause (see
+// TraceAnalysis.Uncached*): the reported input tokens are spread over the
+// request's reused, rebuilt and fresh parts by their JSON sizes; what the
+// provider left uncached beyond rebuilt + fresh is a provider-side miss, and
+// when it served more than expected the shares shrink in proportion.
+func (a *TraceAnalysis) attributeCache(e store.Event) {
+	miss := max(e.InputTokens-e.CacheReadTokens, 0)
+	a.Uncached += miss
+	reason, _ := e.Attrs["prefix"].(string)
+	reused, rebuilt, fresh := attrInt(e.Attrs["prefix_reused"]), attrInt(e.Attrs["prefix_rebuilt"]), attrInt(e.Attrs["prefix_fresh"])
+	total := reused + rebuilt + fresh
+	if reason == "" || total == 0 {
+		return
+	}
+	if reason != prefixAppend && reason != prefixFirst {
+		a.PrefixBreaks[reason]++
+	}
+	perChar := float64(e.InputTokens) / float64(total)
+	expFresh, expRebuilt := float64(fresh)*perChar, float64(rebuilt)*perChar
+	if expected := expFresh + expRebuilt; expected > float64(miss) && expected > 0 {
+		scale := float64(miss) / expected
+		expFresh, expRebuilt = expFresh*scale, expRebuilt*scale
+	}
+	a.UncachedFresh += int64(expFresh)
+	if rebuilt > 0 {
+		a.UncachedRebuilt[reason] += int64(expRebuilt)
+	}
+	a.UncachedProvider += max(miss-int64(expFresh)-int64(expRebuilt), 0)
 }
 
 // WriteTraceAnalysis prints the analysis as text, or as one JSON object.
@@ -175,6 +225,7 @@ func WriteTraceAnalysis(w io.Writer, a TraceAnalysis, asJSON bool) error {
 	row("shell", "%d runs, %d failed (exit != 0)", a.ShellRuns, a.ShellFailures)
 	row("repeated commands", "%s", orNone(joinCounts(a.RepeatedCommands, nil)))
 	row("tests", "%d runs, %d after the first pass", a.TestRuns, a.TestRunsAfterPass)
+	row("uncached input", "%s", uncachedSummary(a))
 	row("spills / folds", "%d / %d (compactions %d, tidied outputs %d)", a.Spills, a.Folds, a.Compactions, a.Minimized)
 	var slow []string
 	for _, s := range a.Slowest {
@@ -266,4 +317,33 @@ func human(n int64) string {
 		return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%.1f", float64(n)/1e3), "0"), ".") + "k"
 	}
 	return fmt.Sprint(n)
+}
+
+// uncachedSummary renders the cache attribution row: the total, then the
+// estimated parts and the prefix breaks by reason.
+func uncachedSummary(a TraceAnalysis) string {
+	out := human(a.Uncached)
+	if a.UncachedFresh == 0 && len(a.UncachedRebuilt) == 0 && a.UncachedProvider == 0 {
+		return out // no prefix attrs (older session)
+	}
+	var rebuilt []string
+	var sum int64
+	for _, c := range sortedCounts(intCounts(a.UncachedRebuilt)) {
+		rebuilt = append(rebuilt, fmt.Sprintf("%s %s x%d", c.Name, human(a.UncachedRebuilt[c.Name]), a.PrefixBreaks[c.Name]))
+		sum += a.UncachedRebuilt[c.Name]
+	}
+	out += fmt.Sprintf(" ≈ fresh %s + rebuilt %s", human(a.UncachedFresh), human(sum))
+	if len(rebuilt) > 0 {
+		out += " (" + strings.Join(rebuilt, ", ") + ")"
+	}
+	return out + fmt.Sprintf(" + provider-side %s", human(a.UncachedProvider))
+}
+
+// intCounts narrows token sums to ints for sorting by size.
+func intCounts(m map[string]int64) map[string]int {
+	out := make(map[string]int, len(m))
+	for k, v := range m {
+		out[k] = int(v)
+	}
+	return out
 }

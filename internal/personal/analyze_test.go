@@ -106,9 +106,45 @@ func TestToolEventsCarryCallAttrs(t *testing.T) {
 	assert.Eq(t, []any{"a.go", "dir/b.go"}, events[1].Attrs["target"])
 	models := eventsOf(t, repo, res.SessionID, store.EventModel)
 	assert.Eq(t, float64(1), models[0].Attrs["tool_calls"])
+	// Every request of the run is compared with the one before (cache attribution).
+	assert.Require(t, assert.Eq(t, 3, len(models)))
+	assert.Eq(t, prefixFirst, models[0].Attrs["prefix"])
+	assert.Eq(t, prefixAppend, models[1].Attrs["prefix"])
+	assert.Eq(t, prefixAppend, models[2].Attrs["prefix"])
+	assert.Gt(t, models[2].Attrs["prefix_reused"].(float64), models[1].Attrs["prefix_reused"].(float64))
 	assert.StrContains(t, traceLine(events[0]), "exit=1")
 
 	a := AnalyzeTrace(eventsOf(t, repo, res.SessionID))
 	assert.Eq(t, 1, a.ShellFailures)
 	assert.Eq(t, 1, a.TestRuns)
+}
+
+func TestAnalyzeTraceCacheAttribution(t *testing.T) {
+	model := func(in, cached int64, reason string, reused, rebuilt, fresh int) store.Event {
+		return store.Event{Kind: store.EventModel, Status: eventOK, InputTokens: in, CacheReadTokens: cached,
+			Attrs: map[string]any{"prefix": reason, "prefix_reused": float64(reused),
+				"prefix_rebuilt": float64(rebuilt), "prefix_fresh": float64(fresh)}}
+	}
+	a := AnalyzeTrace([]store.Event{
+		// 1 token per 4 chars throughout.
+		model(1000, 0, prefixFirst, 0, 0, 4000),                    // all fresh
+		model(1200, 1000, prefixAppend, 4000, 0, 800),              // 200 fresh
+		model(1300, 600, prefixFold, 2400, 2000, 800),              // 500 rebuilt, 200 fresh
+		model(1400, 900, prefixAppend, 5200, 0, 400),               // 100 fresh, 400 the provider missed
+		{Kind: store.EventModel, Status: eventOK, InputTokens: 50}, // no attrs (older session)
+	})
+	assert.Eq(t, int64(1000+200+700+500+50), a.Uncached)
+	assert.Eq(t, int64(1000+200+200+100), a.UncachedFresh)
+	assert.Eq(t, map[string]int64{prefixFold: 500}, a.UncachedRebuilt)
+	assert.Eq(t, int64(400), a.UncachedProvider)
+	assert.Eq(t, map[string]int{prefixFold: 1}, a.PrefixBreaks)
+
+	var out bytes.Buffer
+	assert.NoErr(t, WriteTraceAnalysis(&out, a, false))
+	assert.StrContains(t, out.String(), "uncached input         2.5k ≈ fresh 1.5k + rebuilt 500 (fold 500 x1) + provider-side 400")
+
+	// The provider served more than the prefix promised: the shares shrink.
+	a = AnalyzeTrace([]store.Event{model(1000, 900, prefixFold, 2000, 1000, 1000)})
+	assert.Eq(t, int64(100), a.UncachedFresh+a.UncachedRebuilt[prefixFold])
+	assert.Eq(t, int64(0), a.UncachedProvider)
 }
