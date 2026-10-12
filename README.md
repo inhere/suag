@@ -94,7 +94,7 @@ All data lives in `$SUAG_HOME/db/sessions.db`. Model and provider details: [LLM 
 | `suag_manifest` | read | This instance's capabilities as JSON (same data as `suag manifest`) |
 | `memory` | state | `add`, `replace`, `remove`, `get`, `search` on long-term memory (`scope` project or user); see [Memory](#memory) |
 | `file_write` | write | Write a whole file |
-| `file_edit` | write | Replace an exact, unique string (or all with `replace_all`); keeps CRLF |
+| `file_edit` | write | Replace an exact, unique string (or all with `replace_all`), or several with `edits` in one call (all or nothing); keeps CRLF |
 | `shell_exec` | write | Run a command (PowerShell on Windows, `sh` elsewhere) with a timeout; returns output and exit code |
 
 - **Read-only by default.** Write tools exist only with `run --allow-write`, chat with `tools.allow_write: true`, or an ACP session in `default` mode. `--read-only` always wins. If the model calls a disabled tool, it is told how to enable it, and the call counts as a refusal.
