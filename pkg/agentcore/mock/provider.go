@@ -189,11 +189,8 @@ func cloneResult(result *api.GenerateResult) *api.GenerateResult {
 	if len(result.ToolCalls) > 0 {
 		cloned.ToolCalls = make([]api.ToolCall, len(result.ToolCalls))
 		for i, call := range result.ToolCalls {
-			cloned.ToolCalls[i] = api.ToolCall{
-				CallID:    call.CallID,
-				Name:      call.Name,
-				Arguments: cloneMap(call.Arguments),
-			}
+			call.Arguments = cloneMap(call.Arguments)
+			cloned.ToolCalls[i] = call
 		}
 	}
 

@@ -428,11 +428,7 @@ func cloneGenerateResult(result *GenerateResult) *GenerateResult {
 	if len(result.ToolCalls) > 0 {
 		cloned.ToolCalls = make([]ToolCall, len(result.ToolCalls))
 		for i, call := range result.ToolCalls {
-			cloned.ToolCalls[i] = ToolCall{
-				CallID:    call.CallID,
-				Name:      call.Name,
-				Arguments: cloneMetadata(call.Arguments),
-			}
+			cloned.ToolCalls[i] = *cloneToolCallValue(&call)
 		}
 	}
 	return cloned

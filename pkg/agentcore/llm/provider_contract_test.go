@@ -29,10 +29,10 @@ func TestClaudeProvider_ImplementsAgentcoreProviderContracts(t *testing.T) {
 	assert.Eq(t, "anthropic", provider.Name())
 }
 
-func TestOpenAIProvider_ParseResponse_RejectsInvalidToolArguments(t *testing.T) {
+func TestOpenAIProvider_ParseResponse_MarksInvalidToolArguments(t *testing.T) {
 	provider := NewOpenAIProvider(OpenAIConfig{})
 
-	_, err := provider.parseResponse([]byte(`{
+	resp, err := provider.parseResponse([]byte(`{
 		"choices": [{
 			"message": {
 				"tool_calls": [{
@@ -52,10 +52,13 @@ func TestOpenAIProvider_ParseResponse_RejectsInvalidToolArguments(t *testing.T) 
 		}
 	}`))
 
-	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "tool call")
-	assert.Contains(t, err.Error(), "file_read")
-	assert.Contains(t, err.Error(), "arguments")
+	// The response is kept; the call carries the error for the runtime to answer.
+	assert.NoErr(t, err)
+	assert.Eq(t, 1, len(resp.ToolCalls))
+	assert.Eq(t, "file_read", resp.ToolCalls[0].Name)
+	assert.StrContains(t, resp.ToolCalls[0].ArgumentsError, "tool call")
+	assert.StrContains(t, resp.ToolCalls[0].ArgumentsError, "file_read")
+	assert.StrContains(t, resp.ToolCalls[0].ArgumentsError, "arguments")
 }
 
 func TestOpenAIProvider_ParseResponse_AcceptsStringifiedToolArguments(t *testing.T) {
@@ -138,10 +141,10 @@ func TestOpenAIProvider_ParseResponse_KeepsTextWithToolCalls(t *testing.T) {
 	assert.Eq(t, 1, len(resp.ToolCalls))
 }
 
-func TestClaudeProvider_ParseResponse_RejectsInvalidToolArguments(t *testing.T) {
+func TestClaudeProvider_ParseResponse_MarksInvalidToolArguments(t *testing.T) {
 	provider := NewClaudeProvider(ClaudeConfig{})
 
-	_, err := provider.parseResponse([]byte(`{
+	resp, err := provider.parseResponse([]byte(`{
 		"content": [{
 			"type": "tool_use",
 			"id": "call-1",
@@ -154,10 +157,13 @@ func TestClaudeProvider_ParseResponse_RejectsInvalidToolArguments(t *testing.T) 
 		}
 	}`))
 
-	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "tool call")
-	assert.Contains(t, err.Error(), "file_read")
-	assert.Contains(t, err.Error(), "arguments")
+	// The response is kept; the call carries the error for the runtime to answer.
+	assert.NoErr(t, err)
+	assert.Eq(t, 1, len(resp.ToolCalls))
+	assert.Eq(t, "file_read", resp.ToolCalls[0].Name)
+	assert.StrContains(t, resp.ToolCalls[0].ArgumentsError, "tool call")
+	assert.StrContains(t, resp.ToolCalls[0].ArgumentsError, "file_read")
+	assert.StrContains(t, resp.ToolCalls[0].ArgumentsError, "arguments")
 }
 
 func TestClaudeProvider_ParseResponse_KeepsTextWithToolCalls(t *testing.T) {

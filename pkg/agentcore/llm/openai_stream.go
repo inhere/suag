@@ -245,11 +245,7 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		if strings.TrimSpace(raw) == "" {
 			raw = "{}" // a no-argument call may stream no argument fragment at all
 		}
-		args, err := decodeToolArguments(json.RawMessage(raw), call.name)
-		if err != nil {
-			return nil, err
-		}
-		res.ToolCalls = append(res.ToolCalls, agentcoreapi.ToolCall{CallID: call.id, Name: call.name, Arguments: args})
+		res.ToolCalls = append(res.ToolCalls, newToolCall(call.id, call.name, json.RawMessage(raw)))
 	}
 	if len(res.ToolCalls) > 0 {
 		res.FinishReason = agentcoreapi.FinishToolCalls

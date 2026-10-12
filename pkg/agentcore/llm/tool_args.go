@@ -4,7 +4,21 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+
+	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 )
+
+// newToolCall builds the tool call the model requested. Arguments that cannot
+// be decoded do not fail the response: the call carries the decode error in
+// ArgumentsError (with empty arguments) and the runtime answers it with an
+// error result, so one malformed call costs a step instead of the whole run.
+func newToolCall(id, name string, raw json.RawMessage) agentcoreapi.ToolCall {
+	args, err := decodeToolArguments(raw, name)
+	if err != nil {
+		return agentcoreapi.ToolCall{CallID: id, Name: name, Arguments: map[string]any{}, ArgumentsError: err.Error()}
+	}
+	return agentcoreapi.ToolCall{CallID: id, Name: name, Arguments: args}
+}
 
 func decodeToolArguments(raw json.RawMessage, toolName string) (map[string]any, error) {
 	trimmed := bytes.TrimSpace(raw)

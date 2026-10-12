@@ -259,11 +259,7 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		if strings.TrimSpace(raw) == "" {
 			raw = "{}" // a no-argument call streams no input_json_delta
 		}
-		args, err := decodeToolArguments(json.RawMessage(raw), call.name)
-		if err != nil {
-			return nil, err
-		}
-		res.ToolCalls = append(res.ToolCalls, agentcoreapi.ToolCall{CallID: call.id, Name: call.name, Arguments: args})
+		res.ToolCalls = append(res.ToolCalls, newToolCall(call.id, call.name, json.RawMessage(raw)))
 	}
 	if len(res.ToolCalls) > 0 || stopReason == "tool_use" {
 		res.FinishReason = agentcoreapi.FinishToolCalls

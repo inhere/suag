@@ -237,15 +237,7 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 	}
 
 	for _, tc := range choice.Message.ToolCalls {
-		args, err := decodeToolArguments(tc.Function.Arguments, tc.Function.Name)
-		if err != nil {
-			return nil, err
-		}
-		resp.ToolCalls = append(resp.ToolCalls, agentcoreapi.ToolCall{
-			CallID:    tc.ID,
-			Name:      tc.Function.Name,
-			Arguments: args,
-		})
+		resp.ToolCalls = append(resp.ToolCalls, newToolCall(tc.ID, tc.Function.Name, tc.Function.Arguments))
 	}
 	if len(resp.ToolCalls) > 0 {
 		// Text emitted alongside the tool calls is kept in resp.Content; the runtime

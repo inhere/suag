@@ -181,11 +181,8 @@ func (r *Registry) List() []string {
 }
 
 func cloneToolCall(call api.ToolCall) api.ToolCall {
-	return api.ToolCall{
-		CallID:    call.CallID,
-		Name:      call.Name,
-		Arguments: cloneMap(call.Arguments),
-	}
+	call.Arguments = cloneMap(call.Arguments)
+	return call
 }
 
 func cloneMap(src map[string]any) map[string]any {

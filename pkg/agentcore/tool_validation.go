@@ -21,8 +21,8 @@ func validateToolCallsAgainstSchemas(schemas []ToolSchema, calls []ToolCall) err
 
 	for _, call := range calls {
 		schema, ok := schemaByName[strings.TrimSpace(call.Name)]
-		if !ok {
-			continue
+		if !ok || call.ArgumentsError != "" {
+			continue // undecodable arguments are answered with an error result instead
 		}
 		if err := validateToolCallRequiredArguments(schema, call); err != nil {
 			return &ToolError{Err: fmt.Errorf("%w: %v", ErrToolArgumentsInvalid, err)}

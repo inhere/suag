@@ -473,6 +473,18 @@ func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, 
 }
 
 func (r *DefaultRuntime) executeSingleTool(ctx context.Context, state *RunState, call ToolCall, lead leadOutput) (*RunResult, error, bool) {
+	if call.ArgumentsError != "" {
+		// The provider could not decode the arguments: nothing runs (no hooks,
+		// no approval), the model gets the decode error and can resend the call.
+		result := &ToolResult{CallID: call.CallID, Name: call.Name, IsError: true, Content: fmt.Sprintf(
+			"error: the arguments of this %s call are not valid JSON (%s), so it was not run. "+
+				"Send the call again with valid JSON arguments: inside strings escape double quotes, backslashes and newlines.",
+			call.Name, call.ArgumentsError)}
+		if result, err, handled := r.persistToolTranscript(ctx, state, call, result, lead); handled {
+			return result, err, true
+		}
+		return nil, nil, false
+	}
 	ctrl := NewControl()
 	event := &ToolEvent{
 		RunID:     state.RunID,
