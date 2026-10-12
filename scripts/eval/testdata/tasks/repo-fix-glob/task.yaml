@@ -1,0 +1,29 @@
+name: repo-fix-glob
+mode: allow-write
+timeout: 20m
+acceptance: acceptance   # 运行结束后注入 zz_acceptance_test.go（agent 看不到）
+repo:
+  ref: f1676ff           # 9776de0 的父提交：glob 只按相对工作区/读根的路径匹配
+checks:
+  - {type: command, args: [go, vet, ./pkg/agentcore/tools/native/]}
+  - {type: command, args: [go, test, -count=1, ./pkg/agentcore/tools/native/]}
+prompt: |
+  这是 Go 仓库 github.com/inhere/suag（Go 1.26）。请修复下面的问题，并补上回归测试。完成后在当前分支提交一次。
+
+  ## 运行环境限制
+
+  本机没有 cgo，`go test -race` 无法运行，用 `go test -count=1` 代替，不要尝试安装 C 工具链。
+
+  ## 问题
+
+  内置工具 `file_grep` 的 `glob` 参数与 `file_find` 的 `pattern` 参数，在给了 `path` 时，按“相对 path 的路径”写的 glob 匹配不到任何文件。例如在 Go 模块缓存（只读读根）里：
+
+  - `file_grep` `path=<读根>/github.com/gookit/goutil@v0.8.2`、`glob=x/assert/*.go`、`pattern=Exported` 返回 no matches，而这些文件确实存在且包含该词；
+  - 工作区内同理：`file_grep` `path=internal`、`glob=a/*.go` 搜不到 `internal/a/x.go`；`file_find` `path=internal`、`pattern=a/x.go` 也找不到。
+
+  ## 期望
+
+  1. `glob`（file_grep）与 `pattern`（file_find）既可以相对搜索路径 `path` 写，也继续支持原来相对工作区（或读根）写的形式，两种写法都能匹配。返回结果中的路径形式保持不变。
+  2. 搜索路径不存在时（工作区内或读根下），file_find 与 file_grep 返回错误，错误信息包含 `does not exist`。
+
+  只改 `pkg/agentcore/tools/native/` 下的代码与测试，不要修改其他文件。

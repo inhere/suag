@@ -1,0 +1,27 @@
+name: repo-feat-model-type
+mode: allow-write
+timeout: 20m
+acceptance: acceptance   # 运行结束后注入 zz_acceptance_test.go（agent 看不到）
+repo:
+  ref: 6f792b6           # b121dab 的父提交：type/base_url 只能写在 provider 上
+checks:
+  - {type: command, args: [go, vet, ./internal/config/]}
+  - {type: command, args: [go, test, -count=1, ./internal/config/]}
+prompt: |
+  这是 Go 仓库 github.com/inhere/suag（Go 1.26）。请实现下面的配置功能，补上单元测试，并更新 `docs/usage/llm-config-v0.md` 的字段说明。完成后在当前分支提交一次。
+
+  ## 运行环境限制
+
+  本机没有 cgo，`go test -race` 无法运行，用 `go test -count=1` 代替，不要尝试安装 C 工具链。
+
+  ## 背景
+
+  现在 `providers.<id>.type`（`openai` 或 `anthropic`）与 `base_url` 只能写在 provider 上。同一个网关（如 command-code）常把 Claude 模型放在 Anthropic 协议的端点、其余模型放在 OpenAI 兼容端点；在 `providers.<id>.models.<key>` 下写 `type` 目前会被忽略，Claude 模型仍按 OpenAI 协议请求。
+
+  ## 要求
+
+  1. `providers.<id>.models.<key>.type` 与 `providers.<id>.models.<key>.base_url` 覆盖该 provider 的 `type` 与 `base_url`，只作用于这个模型；其他模型仍用 provider 的。`base_url` 支持 `${VAR}` 环境变量引用（与 provider 上的 base_url 相同）。
+  2. 通过 `ReadModelSettings` 解析出的 `ModelSpec` 里，`Provider.Type` 与 `Provider.BaseURL` 是该模型实际生效的值，`BuildProvider` 据此构建对应协议的 provider（anthropic 类型发往 `<base_url>/v1/messages`）。
+  3. 模型上的 `type` 只允许 `openai` 或 `anthropic`；其他值让 `ReadProviders` 报错，错误信息形如 `providers.<id>.models.<key>: unsupported type "<值>" (want openai|anthropic)`。
+
+  只改 `internal/config/` 与上述文档，不要修改其他文件。

@@ -86,6 +86,14 @@ task.yaml 写 `repo: {ref: <git ref>}`（不要同时有 `fixture/`）时，工�
 go run ./scripts/eval --task repo-t9-schedule --model <model> --config-from ~/.suag --suag-args "--no-project-rules"
 ```
 
+另外三个仓库任务取自 suag 自己的历史提交：起点是某次修复/功能提交的父提交，prompt 只描述症状或需求，隐藏验收测试就是那次提交新增的测试（改名为 `TestAccept…` 以免与 agent 自写的测试重名；已验证在起点失败、在原提交通过，且起点上为断言失败而非编译错误）：
+
+| 任务 | 起点 | 类型 | 验收 |
+|---|---|---|---|
+| `repo-fix-glob` | `9776de0^` | 修 bug：只给症状（glob 相对搜索路径时搜不到），需在 grep/find/walk 间定位 | `TestAcceptGlobRelativeToSearchPath` |
+| `repo-feat-model-type` | `b121dab^` | 跨层功能：模型级 `type`/`base_url` 覆盖 provider，含文档 | `TestAcceptModelTypeOverride` |
+| `repo-pipe-minimize` | `e20d71e^` | 小改动多边界：管道判断（引号、`\|\|`、反斜杠不转义） | `TestAcceptMinimizeSkipsPipedCommands` |
+
 ## 附加参数、tool_counts 与重复运行
 
 - `--suag-args "<args>"` / `--omp-args "<args>"`：按空白切分（无引号处理），suag 附加在 `suag run` 参数末尾（`--prompt` 之后；run 只有 flag，位置无关），

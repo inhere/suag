@@ -1,0 +1,32 @@
+name: repo-pipe-minimize
+mode: allow-write
+timeout: 20m
+acceptance: acceptance   # 运行结束后注入 zz_acceptance_test.go（agent 看不到）
+repo:
+  ref: d37ffb8           # e20d71e 的父提交：管道过滤的命令也套用整理规则
+checks:
+  - {type: command, args: [go, vet, ./pkg/agentcore/tools/native/]}
+  - {type: command, args: [go, test, -count=1, ./pkg/agentcore/tools/native/]}
+prompt: |
+  这是 Go 仓库 github.com/inhere/suag（Go 1.26）。请修改 shell 输出整理器的行为并补上单元测试。完成后在当前分支提交一次。
+
+  ## 运行环境限制
+
+  本机没有 cgo，`go test -race` 无法运行，用 `go test -count=1` 代替，不要尝试安装 C 工具链。
+
+  ## 背景
+
+  `shell_exec` 的结果会先经过输出整理（`pkg/agentcore/tools/native` 中的 `MinimizeToolOutput` / 输出规则），例如 `go test -v` 全部通过时把 `=== RUN`、`--- PASS` 行压成一行汇总。但当模型自己用管道筛选输出时，比如
+  `go test -v ./x/... 2>&1 | Select-String -Pattern "^(=== RUN|--- |ok|FAIL|PASS)"`，
+  它要的正是这些用例行，整理后它只能再取回原文，白多一步。
+
+  ## 要求
+
+  1. 命令中含有管道时，不再套用测试/构建的输出规则（去颜色码、折叠重复行等通用清理可以保留）。整理结果里应保留 `--- PASS: TestXxx` 这类被筛出的行。
+  2. 管道指引号之外的单个 `|`。以下都**不是**管道，此时仍按原规则整理：
+     - 单引号或双引号内的 `|`，如 `go test -v -run 'TestA|TestB' ./...`、`go test -v -run "TestA|TestB" ./...`；
+     - `||`，如 `go test -v ./... || echo failed`。
+  3. 解析引号时不要把反斜杠当转义符：Windows 上 shell 是 PowerShell，反斜杠是路径分隔符，`cd "D:\work\x\" ; go test -v ./...` 中的引号在 `x\"` 处结束，后面没有管道。
+  4. `| grep`、`| Select-String`、`|tail -50`（无空格）都算管道。
+
+  只改 `pkg/agentcore/tools/native/` 下的代码与测试，不要修改其他文件。
