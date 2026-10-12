@@ -288,7 +288,10 @@ func addOutputAttrs(attrs map[string]any, res *agentcore.ToolResult) {
 	inline := len(res.Content)
 	attrs["raw_bytes"], attrs["inline_bytes"], attrs["spilled"] = inline, inline, false
 	if info, ok := tools.OutputInfoOf(res.Metadata); ok {
-		attrs["raw_bytes"], attrs["spilled"] = info.Bytes, info.Ref != ""
+		attrs["raw_bytes"], attrs["spilled"] = info.Bytes, info.Ref != "" && !info.Minimized
+		if info.Minimized {
+			attrs["minimized"] = true
+		}
 	}
 }
 

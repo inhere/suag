@@ -297,6 +297,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		// <SUAG_HOME>/sessions/<id>/outputs/ and the session keeps a ref.
 		InlineOutputBytes: inlineOutputBytes(),
 		Spiller:           personal.NewSessionSpiller(sessionsDir),
+		MinimizeOutput:    minimizeOutput(),
 		Repository:        repo,
 		Provider:          provider,
 		Model:             settings.Main.Model,

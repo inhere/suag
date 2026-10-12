@@ -45,6 +45,7 @@ type TraceAnalysis struct {
 	TestRuns          int `json:"test_runs"`
 	TestRunsAfterPass int `json:"test_runs_after_pass"`
 	Spills            int `json:"spills"`
+	Minimized         int `json:"minimized"` // results tidied by the output minimizer
 	Folds             int `json:"folds"`
 	Compactions       int `json:"compactions"`
 	// Slowest are the longest model calls.
@@ -98,6 +99,9 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 			}
 			if spilled, _ := e.Attrs["spilled"].(bool); spilled {
 				a.Spills++
+			}
+			if minimized, _ := e.Attrs["minimized"].(bool); minimized {
+				a.Minimized++
 			}
 			targets := attrStrings(e.Attrs["target"])
 			switch e.Name {
@@ -171,7 +175,7 @@ func WriteTraceAnalysis(w io.Writer, a TraceAnalysis, asJSON bool) error {
 	row("shell", "%d runs, %d failed (exit != 0)", a.ShellRuns, a.ShellFailures)
 	row("repeated commands", "%s", orNone(joinCounts(a.RepeatedCommands, nil)))
 	row("tests", "%d runs, %d after the first pass", a.TestRuns, a.TestRunsAfterPass)
-	row("spills / folds", "%d / %d (compactions %d)", a.Spills, a.Folds, a.Compactions)
+	row("spills / folds", "%d / %d (compactions %d, tidied outputs %d)", a.Spills, a.Folds, a.Compactions, a.Minimized)
 	var slow []string
 	for _, s := range a.Slowest {
 		slow = append(slow, fmt.Sprintf("step %d %.1fs out=%d calls=%d", s.Step, float64(s.DurationMs)/1000, s.OutputTokens, s.ToolCalls))

@@ -6,6 +6,7 @@
 
 ### 新增
 
+- shell 输出整理（`tools.minimize_output`，默认开）：去掉颜色码与进度重绘，折叠连续相同的行；`go test` 全部通过时只留各包结果和一行汇总（如 `go test: 1 package(s) ok, 20 test(s) passed`），有失败时只留失败用例及其信息、日志与编译错误。原文保存为 ref，结果末尾注明，可用 `recall` 取回；`suag trace` 显示 `tidied(raw=…)`，`--analyze` 统计整理次数。
 - `file_edit` 的结果带改动处的行号片段（前后各 2 行，最多 60 行），改 Go 文件时若编辑引入语法错误会附警告；`old_string` 找不到时指出缩进不同的同一行或最相似的行并给出该处内容，匹配多处时列出行号——模型不必为确认或定位再读一遍文件。
 - `suag trace <session> --analyze [--json]`：循环分析——步数与并行步数、各工具次数与失败、重复读与写后回读、每个文件的编辑次数、重复执行的命令、测试运行次数及首次通过后又跑了几次、转存/折叠/压缩、最慢的模型调用。工具事件新增 `arg`（脱敏参数摘要）、`target`（文件路径）、`exit_code`（shell），模型事件新增 `tool_calls`、`reasoning_chars`、`text_chars`；`suag trace` 的工具行显示退出码、字节数、转存与参数摘要，模型行显示 `calls=N`。
 

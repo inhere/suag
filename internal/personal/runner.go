@@ -97,6 +97,9 @@ type Config struct {
 	// Spiller stores tool outputs above the threshold (e.g. a SessionSpiller);
 	// nil means they are only truncated.
 	Spiller tools.Spiller
+	// MinimizeOutput tidies tool results before they enter the context
+	// (tools.minimize_output, see tools.OutputConfig.Minimize); nil = off.
+	MinimizeOutput func(call agentcore.ToolCall, content string) (string, bool)
 	// Ledger backs session_search / recall; New binds it to this runner's
 	// store (late binding, like Plans).
 	Ledger *Ledger
@@ -214,6 +217,7 @@ func New(cfg Config) (*Runner, error) {
 		// result and its OutputInfo.
 		cfg.Tools = rec.observeTools(tools.NewOutput(cfg.Tools, tools.OutputConfig{
 			InlineBytes: cfg.InlineOutputBytes, Spiller: cfg.Spiller, Sanitize: redact.Secrets,
+			Minimize: cfg.MinimizeOutput,
 		}))
 	}
 	if cfg.CompactProvider != nil {

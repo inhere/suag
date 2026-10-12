@@ -110,7 +110,7 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 
 ### 输出治理
 
-工具结果超过 `tools.max_output_bytes`（缺省 8000）时，脱敏后的原文存到 `$SUAG_HOME/sessions/<会话 id>/outputs/`，会话里只有头尾各 2000 字节与 ref（`out:<session>:<hex>`），模型用 `recall` 分页读、用 `session_search`（带 `ref`）在其中检索；`file_read` 自己分页，不外置；出错结果不外置。输出外置不影响 stream-json 与 ACP 的事件格式。`tools.max_spill_bytes`（缺省 1 MiB）是单次原始输出的上限。`suag stats --json` 的 `tools` 项给出 `raw_bytes`、`inline_bytes`、`spilled`；`suag trace` 的 `turn_context` 行记录每回合的模型、模式、工具集哈希与是否已污染。
+工具结果超过 `tools.max_output_bytes`（缺省 8000）时，脱敏后的原文存到 `$SUAG_HOME/sessions/<会话 id>/outputs/`，会话里只有头尾各 2000 字节与 ref（`out:<session>:<hex>`），模型用 `recall` 分页读、用 `session_search`（带 `ref`）在其中检索；`file_read` 自己分页，不外置；出错结果不外置。输出外置不影响 stream-json 与 ACP 的事件格式。`tools.max_spill_bytes`（缺省 1 MiB）是单次原始输出的上限。`tools.minimize_output`（缺省 `true`）：shell 结果进入上下文前先整理——去掉颜色码与进度重绘、折叠连续相同的行、`go test` 全部通过时只留各包结果和一行汇总、有失败时只留失败用例及其信息；原文保存为 ref 并在结果中注明，`suag trace` 的工具行显示 `tidied(raw=…)`。`suag stats --json` 的 `tools` 项给出 `raw_bytes`、`inline_bytes`、`spilled`；`suag trace` 的 `turn_context` 行记录每回合的模型、模式、工具集哈希与是否已污染。
 
 ### 记忆
 

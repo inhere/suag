@@ -239,3 +239,48 @@ func TestTruncateHeadTailShared(t *testing.T) {
 	assert.True(t, utf8.ValidString(out))
 	assert.StrContains(t, out, "省略")
 }
+
+func TestOutputMinimize(t *testing.T) {
+	ctx := context.Background()
+	noisy := strings.Repeat("noise\n", 300) + "result"
+	shell := &outTool{name: "shell_exec", res: &api.ToolResult{Content: noisy}}
+	failed := &outTool{name: "failing", res: &api.ToolResult{Content: noisy, IsError: true}}
+	huge := &outTool{name: "huge", res: &api.ToolResult{Content: strings.Repeat("z", 20000)}}
+	reg := outRegistry(shell, failed, huge)
+	tidy := func(_ api.ToolCall, content string) (string, bool) {
+		if strings.HasPrefix(content, "noise") {
+			return "noise (x300)\nresult", true
+		}
+		return "", false
+	}
+
+	t.Run("the tidy text replaces the result and the original is spilled", func(t *testing.T) {
+		sp := &fakeSpiller{}
+		res, err := NewOutput(reg, OutputConfig{Spiller: sp, Minimize: tidy}).ExecuteTool(ctx, api.ToolCall{CallID: "c", Name: "shell_exec"})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.True(t, strings.HasPrefix(res.Content, "noise (x300)\nresult\n[已整理输出：原文 "))
+		assert.StrContains(t, res.Content, "ref out:sess-1:0123456789abcdef")
+		assert.Eq(t, noisy, sp.content)
+		info, ok := OutputInfoOf(res.Metadata)
+		assert.True(t, ok)
+		assert.True(t, info.Minimized)
+		assert.Eq(t, len(noisy), info.Bytes)
+	})
+	t.Run("errors are not tidied", func(t *testing.T) {
+		sp := &fakeSpiller{}
+		res, err := NewOutput(reg, OutputConfig{Spiller: sp, Minimize: tidy}).ExecuteTool(ctx, api.ToolCall{CallID: "c", Name: "failing"})
+		assert.NoErr(t, err)
+		assert.Eq(t, noisy, res.Content)
+		assert.Eq(t, 0, sp.calls)
+	})
+	t.Run("a tidy text over the threshold is cut, not spilled twice", func(t *testing.T) {
+		sp := &fakeSpiller{}
+		long := func(api.ToolCall, string) (string, bool) { return strings.Repeat("y", 5000), true }
+		res, err := NewOutput(reg, OutputConfig{Spiller: sp, Minimize: long, InlineBytes: 1000}).ExecuteTool(ctx, api.ToolCall{CallID: "c", Name: "huge"})
+		assert.NoErr(t, err)
+		assert.Eq(t, 1, sp.calls)
+		assert.True(t, len(res.Content) <= 1000, "len %d", len(res.Content))
+		info, _ := OutputInfoOf(res.Metadata)
+		assert.True(t, info.Minimized)
+	})
+}

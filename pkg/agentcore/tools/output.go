@@ -46,6 +46,11 @@ type OutputConfig struct {
 	// before its OutputInfo is computed, it is spilled and the snippet is cut,
 	// so the recorded hash matches the stored file.
 	Sanitize func(string) string
+	// Minimize, when set, may return a tidied version of a successful result
+	// (test summaries, collapsed repeats, no colour codes). The original is
+	// then spilled and the result carries the tidy text plus its ref, so
+	// nothing is lost; ok=false leaves the result alone.
+	Minimize func(call api.ToolCall, content string) (tidy string, ok bool)
 }
 
 // OutputInfo describes the raw output behind a shortened result. Bytes, Lines
@@ -56,6 +61,8 @@ type OutputInfo struct {
 	Bytes  int
 	Lines  int
 	SHA256 string
+	// Minimized marks a result replaced by OutputConfig.Minimize's tidy text.
+	Minimized bool
 }
 
 // Output is the output-governance layer of the tool registry stack (order:
@@ -108,6 +115,11 @@ func (o *Output) ExecuteTool(ctx context.Context, call api.ToolCall) (*api.ToolR
 	if err != nil || res == nil {
 		return res, err // errors (ErrDenied, ErrAborted ...) pass through as is
 	}
+	if o.cfg.Minimize != nil && !res.IsError && !o.rereadable(call.Name) {
+		if tidy, ok := o.cfg.Minimize(call, res.Content); ok && len(tidy) < len(res.Content) {
+			res = o.minimized(ctx, call, res, tidy)
+		}
+	}
 	limit := o.inlineBytes()
 	if len(res.Content) <= limit || o.rereadable(call.Name) {
 		return res, nil
@@ -144,6 +156,37 @@ func (o *Output) ExecuteTool(ctx context.Context, call api.ToolCall) (*api.ToolR
 	return &out, nil
 }
 
+// minimized replaces res with the tidy text, spilling the original (when a
+// Spiller is set) so it can still be read with recall.
+func (o *Output) minimized(ctx context.Context, call api.ToolCall, res *api.ToolResult, tidy string) *api.ToolResult {
+	raw := res.Content
+	if o.cfg.Sanitize != nil {
+		raw = o.cfg.Sanitize(raw)
+	}
+	info := OutputInfo{Bytes: len(raw), Lines: countLines(raw), SHA256: sha256Hex(raw), Minimized: true}
+	note := fmt.Sprintf("[已整理输出：原文 %d 字节 / %d 行", info.Bytes, info.Lines)
+	if o.cfg.Spiller != nil {
+		if ref, err := o.cfg.Spiller.Spill(ctx, call, raw); err == nil {
+			info.Ref = ref
+			note += "已保存为 ref " + ref + "，需要细节时用 session_search(query, ref) 或 recall(ref, offset, limit)"
+		} else {
+			slog.Warn("spill tool output", "tool", call.Name, "call_id", call.CallID, "err", err)
+		}
+	}
+	note += "]"
+	// The original is kept under the ref: a tidy text that still does not
+	// fit is cut here rather than spilled a second time.
+	// truncateMarkerBytes leaves room for TruncateHeadTail's own marker line.
+	const truncateMarkerBytes = 96
+	if budget := o.inlineBytes() - len(note) - 1; len(tidy) > budget {
+		tidy = TruncateHeadTail(tidy, max(budget-truncateMarkerBytes, 0))
+	}
+	out := *res
+	out.Content = tidy + "\n" + note
+	out.Metadata = withOutputInfo(res.Metadata, info)
+	return &out
+}
+
 // OutputInfoOf reads the OutputInfo the output layer recorded in md. It
 // accepts both in-memory values (int) and JSON round-tripped ones (float64).
 func OutputInfoOf(md map[string]any) (OutputInfo, bool) {
@@ -156,6 +199,7 @@ func OutputInfoOf(md map[string]any) (OutputInfo, bool) {
 	info.SHA256, _ = m["sha256"].(string)
 	info.Bytes = anyInt(m["bytes"])
 	info.Lines = anyInt(m["lines"])
+	info.Minimized, _ = m["minimized"].(bool)
 	return info, true
 }
 
@@ -181,6 +225,9 @@ func withOutputInfo(md map[string]any, info OutputInfo) map[string]any {
 	m := map[string]any{"bytes": info.Bytes, "lines": info.Lines, "sha256": info.SHA256}
 	if info.Ref != "" {
 		m["ref"] = info.Ref
+	}
+	if info.Minimized {
+		m["minimized"] = true
 	}
 	out[OutputMetaKey] = m
 	return out

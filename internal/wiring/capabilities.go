@@ -116,6 +116,15 @@ func readRoots() ([]native.ReadRoot, []error) {
 	return append(roots, extra...), errs
 }
 
+// minimizeOutput is the tool result tidier (tools.minimize_output, default
+// true): test summaries, folded repeats, no colour codes; nil when off.
+func minimizeOutput() func(agentcore.ToolCall, string) (string, bool) {
+	if !gkconfig.Bool("tools.minimize_output", true) {
+		return nil
+	}
+	return native.MinimizeToolOutput
+}
+
 // trashDir is where file_remove moves removed paths: <SUAG_HOME>/trash, or
 // "" (file_remove unavailable) when SUAG_HOME cannot be resolved.
 func trashDir() string {

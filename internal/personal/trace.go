@@ -224,6 +224,9 @@ func toolTraceParts(e store.Event) []string {
 	if spilled, _ := e.Attrs["spilled"].(bool); spilled {
 		parts = append(parts, fmt.Sprintf("spilled(raw=%v)", e.Attrs["raw_bytes"]))
 	}
+	if minimized, _ := e.Attrs["minimized"].(bool); minimized {
+		parts = append(parts, fmt.Sprintf("tidied(raw=%v)", e.Attrs["raw_bytes"]))
+	}
 	if arg, ok := e.Attrs["arg"].(string); ok && arg != "" {
 		parts = append(parts, "["+arg+"]")
 	}
