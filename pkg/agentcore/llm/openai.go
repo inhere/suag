@@ -250,6 +250,9 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 	for _, tc := range choice.Message.ToolCalls {
 		resp.ToolCalls = append(resp.ToolCalls, newToolCall(tc.ID, tc.Function.Name, tc.Function.Arguments))
 	}
+	if choice.FinishReason == "length" {
+		markTruncated(resp.ToolCalls)
+	}
 	if len(resp.ToolCalls) > 0 {
 		// Text emitted alongside the tool calls is kept in resp.Content; the runtime
 		// persists it with the first tool-call message.

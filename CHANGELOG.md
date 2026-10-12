@@ -12,6 +12,10 @@
 
 ### 修复
 
+- 工具调用缺少必填参数时不再让整次运行失败：该调用不执行，模型收到点名缺哪个参数的错误结果，同一回复的其他调用照常执行。
+- 回复被输出上限截断（OpenAI 兼容 `finish_reason=length`、Claude `stop_reason=max_tokens`）时，其中的工具调用一律不执行，回一条“请拆小后重发”的错误结果，不再用可能残缺的参数执行。
+- 按工具 schema 自动修复常见的参数形态：JSON 字符串形式的数组/对象、数字字符串、`"true"`/`"false"`，并去掉 null 值。
+
 - `file_grep` 的 `glob` 与 `file_find` 的 `pattern` 也按相对 `path` 的路径匹配（原先只按相对工作区或读根的路径）：在模块缓存里搜 `path=…/goutil@v0.8.2`、`glob=x/assert/*.go` 原先返回 no matches。搜索路径不存在时报“… does not exist”。
 
 ### 变更

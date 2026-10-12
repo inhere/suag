@@ -450,9 +450,7 @@ func (r *DefaultRuntime) effectiveMaxSteps(input RunInput) int {
 type leadOutput struct{ text, reasoning string }
 
 func (r *DefaultRuntime) executeToolCalls(ctx context.Context, state *RunState, schemas []ToolSchema, calls []ToolCall, lead leadOutput) (*RunResult, error, bool) {
-	if err := validateToolCallsAgainstSchemas(schemas, calls); err != nil {
-		return r.handleErrorResult(ctx, state, "tool_validation", err, NewControl())
-	}
+	prepareToolCalls(schemas, calls)
 	if err := r.toolPolicy.ValidateToolCalls(ctx, state, cloneToolCallsValue(calls)); err != nil {
 		return r.handleErrorResult(ctx, state, "max_tool_calls", err, NewControl())
 	}
@@ -477,9 +475,7 @@ func (r *DefaultRuntime) executeSingleTool(ctx context.Context, state *RunState,
 		// The provider could not decode the arguments: nothing runs (no hooks,
 		// no approval), the model gets the decode error and can resend the call.
 		result := &ToolResult{CallID: call.CallID, Name: call.Name, IsError: true, Content: fmt.Sprintf(
-			"error: the arguments of this %s call are not valid JSON (%s), so it was not run. "+
-				"Send the call again with valid JSON arguments: inside strings escape double quotes, backslashes and newlines.",
-			call.Name, call.ArgumentsError)}
+			"error: this %s call was not run: %s", call.Name, call.ArgumentsError)}
 		if result, err, handled := r.persistToolTranscript(ctx, state, call, result, lead); handled {
 			return result, err, true
 		}

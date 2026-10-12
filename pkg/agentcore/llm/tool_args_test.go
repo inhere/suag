@@ -70,3 +70,31 @@ func TestStreamKeepsUndecodableToolCall(t *testing.T) {
 	assert.StrContains(t, res.ToolCalls[0].ArgumentsError, "decode tool call")
 	assert.Eq(t, agentcoreapi.FinishToolCalls, res.FinishReason)
 }
+
+func TestTruncatedResponseMarksToolCalls(t *testing.T) {
+	req := &agentcoreapi.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "hi"}}}
+	t.Run("openai stream finish_reason length", func(t *testing.T) {
+		server := sseServer(t, 200, strings.Join([]string{
+			`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"file_write","arguments":"{\"path\":\"a.go\",\"content\":\"pack"}}]},"finish_reason":"length"}]}`,
+			`data: [DONE]`, ``,
+		}, "\n"), nil)
+		res, err := NewOpenAIProvider(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "m"}).Stream(context.Background(), req, nil)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, truncatedCallError, res.ToolCalls[0].ArgumentsError)
+	})
+	t.Run("a complete call of a cut-off response is not run either", func(t *testing.T) {
+		res, err := NewOpenAIProvider(OpenAIConfig{}).parseResponse([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"c1","function":{"name":"file_read","arguments":"{\"path\":\"a.go\"}"}}]},"finish_reason":"length"}]}`))
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, truncatedCallError, res.ToolCalls[0].ArgumentsError)
+	})
+	t.Run("claude stop_reason max_tokens", func(t *testing.T) {
+		res, err := NewClaudeProvider(ClaudeConfig{}).parseResponse([]byte(`{"content":[{"type":"tool_use","id":"c1","name":"file_read","input":{"path":"a.go"}}],"stop_reason":"max_tokens","usage":{"input_tokens":1,"output_tokens":1}}`))
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, truncatedCallError, res.ToolCalls[0].ArgumentsError)
+	})
+	t.Run("a normal stop leaves calls alone", func(t *testing.T) {
+		res, err := NewOpenAIProvider(OpenAIConfig{}).parseResponse([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"c1","function":{"name":"file_read","arguments":"{\"path\":\"a.go\"}"}}]},"finish_reason":"tool_calls"}]}`))
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "", res.ToolCalls[0].ArgumentsError)
+	})
+}

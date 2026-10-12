@@ -145,7 +145,9 @@ func TestRuntime_Run_ToolErrorBecomesMessage(t *testing.T) {
 	}
 }
 
-func TestRuntime_Run_RejectsToolCallMissingRequiredArgumentsBeforeExecution(t *testing.T) {
+// A call missing a required argument is not run; the model gets an error
+// result naming the argument and the run goes on (it used to fail the run).
+func TestRuntime_Run_AnswersToolCallMissingRequiredArguments(t *testing.T) {
 	store := newRuntimeTestStorage()
 	reg := tools.NewRegistry()
 	tool := &runtimeTestToolWithSchema{
@@ -165,14 +167,10 @@ func TestRuntime_Run_RejectsToolCallMissingRequiredArgumentsBeforeExecution(t *t
 	}
 	reg.MustRegister(tool)
 	provider := &runtimeTestProvider{
-		results: []*GenerateResult{{
-			ToolCalls: []ToolCall{{
-				CallID:    "call-1",
-				Name:      "file_read",
-				Arguments: nil,
-			}},
-			FinishReason: FinishToolCalls,
-		}},
+		results: []*GenerateResult{
+			{ToolCalls: []ToolCall{{CallID: "call-1", Name: "file_read", Arguments: nil}}, FinishReason: FinishToolCalls},
+			{Content: "asked again", FinishReason: FinishFinal},
+		},
 	}
 
 	result, err := New(Config{
@@ -186,25 +184,21 @@ func TestRuntime_Run_RejectsToolCallMissingRequiredArgumentsBeforeExecution(t *t
 		AgentID:     "agent-1",
 		Instruction: "read file without path",
 	})
-	if result != nil {
-		t.Fatalf("expected run to fail before tool execution, got %#v", result)
-	}
-	var toolErr *ToolError
-	if !errors.As(err, &toolErr) {
-		t.Fatalf("expected missing required args to surface as ToolError, got %T %v", err, err)
-	}
-	if !strings.Contains(err.Error(), "missing required argument \"path\"") {
-		t.Fatalf("expected required-argument failure, got %v", err)
+	if err != nil || result == nil || result.Output != "asked again" {
+		t.Fatalf("expected the run to go on, got %#v, %v", result, err)
 	}
 	if len(tool.calls) != 0 {
 		t.Fatalf("expected tool execution to be skipped for invalid call, got %#v", tool.calls)
 	}
-	if len(store.messages["run-missing-required-tool-args"]) != 1 || store.messages["run-missing-required-tool-args"][0].Role != "user" {
-		t.Fatalf("expected invalid tool call not to persist tool transcript, got %#v", store.messages["run-missing-required-tool-args"])
+	msgs := store.messages["run-missing-required-tool-args"]
+	var toolMsg *Message
+	for i := range msgs {
+		if msgs[i].Role == "tool" {
+			toolMsg = &msgs[i]
+		}
 	}
-	saved := store.runs["run-missing-required-tool-args"]
-	if saved == nil || saved.Status != RunFailed || !strings.Contains(saved.LastError, "missing required argument \"path\"") {
-		t.Fatalf("expected failed run state with required argument error, got %#v", saved)
+	if toolMsg == nil || !toolMsg.ToolResult.IsError || !strings.Contains(toolMsg.Content, "missing required argument \"path\"") {
+		t.Fatalf("expected an error result naming the argument, got %#v", toolMsg)
 	}
 }
 

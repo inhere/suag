@@ -15,9 +15,25 @@ import (
 func newToolCall(id, name string, raw json.RawMessage) agentcoreapi.ToolCall {
 	args, err := decodeToolArguments(raw, name)
 	if err != nil {
-		return agentcoreapi.ToolCall{CallID: id, Name: name, Arguments: map[string]any{}, ArgumentsError: err.Error()}
+		return agentcoreapi.ToolCall{CallID: id, Name: name, Arguments: map[string]any{}, ArgumentsError: err.Error() +
+			" (arguments are not valid JSON); send the call again with valid JSON: inside strings escape double quotes, backslashes and newlines"}
 	}
 	return agentcoreapi.ToolCall{CallID: id, Name: name, Arguments: args}
+}
+
+// truncatedCallError explains a tool call of a response cut off by the
+// output limit: its arguments may be incomplete, so it is not run.
+const truncatedCallError = "the response was cut off by the output limit, so this call may be incomplete; " +
+	"send it again in smaller pieces (write a large file in parts, or split one big edit into several)"
+
+// markTruncated flags every tool call of a truncated response (OpenAI
+// finish_reason "length", Claude stop_reason "max_tokens"); the runtime then
+// answers them with an error result instead of running cut-off arguments.
+func markTruncated(calls []agentcoreapi.ToolCall) {
+	for i := range calls {
+		// The cut is the cause: it replaces a decode error of the same call.
+		calls[i].ArgumentsError = truncatedCallError
+	}
 }
 
 func decodeToolArguments(raw json.RawMessage, toolName string) (map[string]any, error) {

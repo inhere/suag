@@ -172,6 +172,7 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 	calls := map[int]*streamToolCall{}
 	res := &agentcoreapi.GenerateResult{}
 	emitted := false
+	finishReason := "" // the last non-empty finish_reason ("length" = cut off)
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
@@ -199,6 +200,9 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 			}
 		}
 		for _, choice := range chunk.Choices {
+			if choice.FinishReason != "" {
+				finishReason = choice.FinishReason
+			}
 			d := choice.Delta
 			reasoning.WriteString(d.ReasoningContent)
 			if d.Content != "" {
@@ -246,6 +250,9 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 			raw = "{}" // a no-argument call may stream no argument fragment at all
 		}
 		res.ToolCalls = append(res.ToolCalls, newToolCall(call.id, call.name, json.RawMessage(raw)))
+	}
+	if finishReason == "length" {
+		markTruncated(res.ToolCalls)
 	}
 	if len(res.ToolCalls) > 0 {
 		res.FinishReason = agentcoreapi.FinishToolCalls

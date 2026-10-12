@@ -291,6 +291,9 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 			resp.ToolCalls = append(resp.ToolCalls, newToolCall(block.ID, block.Name, block.Input))
 		}
 	}
+	if raw.StopReason == "max_tokens" {
+		markTruncated(resp.ToolCalls)
+	}
 	if len(resp.ToolCalls) > 0 {
 		// Text emitted alongside the tool calls is kept in resp.Content; the runtime
 		// persists it with the first tool-call message.

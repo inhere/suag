@@ -261,6 +261,9 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		}
 		res.ToolCalls = append(res.ToolCalls, newToolCall(call.id, call.name, json.RawMessage(raw)))
 	}
+	if stopReason == "max_tokens" {
+		markTruncated(res.ToolCalls)
+	}
 	if len(res.ToolCalls) > 0 || stopReason == "tool_use" {
 		res.FinishReason = agentcoreapi.FinishToolCalls
 	} else {
