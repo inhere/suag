@@ -3,12 +3,14 @@
 package process
 
 import (
-	"github.com/gookit/goutil/x/assert"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf16"
 	"unsafe"
 
+	"github.com/gookit/goutil/x/assert"
 	"golang.org/x/sys/windows"
 )
 
@@ -103,4 +105,26 @@ func shortWindowsTemp(t *testing.T) string {
 	assert.Require(t, assert.NoErr(t, err))
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return dir
+}
+
+// TestValidateSocketPathWindows pins the Windows AF_UNIX limit of 100 UTF-16 code units,
+// including the reason it is measured in UTF-16 units: an emoji counts twice.
+func TestValidateSocketPathWindows(t *testing.T) {
+	t.Run("length at the limit is accepted", func(t *testing.T) {
+		path := `C:\` + strings.Repeat("d", 97)
+		assert.Eq(t, 100, len(utf16.Encode([]rune(path))))
+		assert.NoErr(t, validateSocketPath(path))
+	})
+	t.Run("length over the limit is rejected", func(t *testing.T) {
+		path := `C:\` + strings.Repeat("d", 98)
+		err := validateSocketPath(path)
+		// The message names the limit and the offending path: chat prints it to the user.
+		assert.Err(t, err)
+		assert.ErrSubMsg(t, err, "100")
+	})
+	t.Run("limit counts UTF-16 code units, not runes", func(t *testing.T) {
+		// 50 astral runes are 100 code units (accepted), 51 are 102 (rejected).
+		assert.NoErr(t, validateSocketPath(strings.Repeat("\U0001F600", 50)))
+		assert.Err(t, validateSocketPath(strings.Repeat("\U0001F600", 51)))
+	})
 }
