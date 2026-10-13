@@ -4,6 +4,19 @@
 
 ## [未发布]
 
+### 新增
+
+- 内置配置与使用向导 skill `suga-guide`（完整配置项参考、首次配置向导、provider 与 gofer 接入细节）：内嵌在二进制中，首次运行时释放到 `$SUGA_HOME/skills/suga-guide/`；升级后若用户没改过则自动更新，改过的或用户自己的同名目录不会被覆盖。README 的配置一节只保留常用项。
+- 新的 skills 根目录 `$SUGA_HOME/skills`，优先级在工作区 skills 之后、`~/.agents/skills` 之前。
+- chat 在终端渲染模型输出的 markdown（标题、粗体/斜体、行内代码、代码块、列表、引用、链接、分隔线）；配置 `chat.markdown`（默认开），非终端或 `NO_COLOR` 时原样输出。
+- chat 等待模型输出时显示“思考中… Ns”动态提示，正文、工具调用、审批等输出开始前清除；配置 `chat.spinner`（默认开），非终端或 `NO_COLOR` 时不显示。
+- `suga send` 的消息文本可直接写成位置参数：`suga send --session <id> 文本`，与 `--text` 二选一。
+
+### 修复
+
+- 会话 socket 路径超过平台上限（Linux 107 字节、macOS 等 103 字节、Windows 100 个 UTF-16 单元）时，chat 不再直接退出：打印一行提示后继续运行，该会话收不到 `suga send` 与 gofer 投递。
+- skill 的文件列表不再列出隐藏文件。
+
 ## [0.19.0] - 2026-10-13
 
 项目改名 suag → suga（suag-s6f1）：命令、模块路径、环境变量、数据目录与持久化键全部换成新名，不保留兼容；本地配置用随附的迁移脚本处理。另修复子 agent 未跟随会话模型。
