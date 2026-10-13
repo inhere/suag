@@ -146,6 +146,7 @@ Gofer 拉起 `suag run`（CLI 作业），或 `suag acp`（常驻会话，通过
 
 ```text
 suag trace <session> [--turn <id>] [--json]       # 时间线：模型调用、工具、拒绝、计划
+suag sessions [关键词] [-n 10] [--since 7d] [--until 2026-10-01] [--cwd .] [--json]  # 会话列表，最新在前；关键词匹配标题、id、目录、模型或对话内容
 suag trace <session> --analyze [--json]          # 循环分析：步数、并行调用、重复读、重复命令、首次通过后的测试
 suag trace <session> --web [--addr 127.0.0.1:0]  # 本机网页：时间线、详情、上下文组成、分析（Ctrl-C 结束）
 suag stats [--session <id>] [--since 7d] [--json] # 调用次数、耗时、token、缓存命中

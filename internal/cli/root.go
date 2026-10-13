@@ -53,6 +53,7 @@ func New(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, build B
 		newPSCommand(stdout, stderr),
 		newSendCommand(stdin, stderr),
 		newTraceCommand(ctx, stdout, stderr),
+		newSessionsCommand(ctx, stdout, stderr),
 		newStatsCommand(ctx, stdout, stderr),
 		newManifestCommand(ctx, stdout, stderr),
 		newGCCommand(ctx, stdout, stderr),

@@ -230,6 +230,9 @@ func turnContextLine(e store.Event) string {
 		"tools=" + attr("tools_count") + "#" + short(attr("tools")), "tainted=" + attr("tainted"),
 		"rules=" + short(attr("rules_hash")), "memory=" + short(attr("memory_hash")),
 	}
+	if v := attr("version"); v != "" {
+		parts = append(parts, "suag="+v)
+	}
 	if e.TurnID != "" {
 		parts = append(parts, "turn="+e.TurnID)
 	}

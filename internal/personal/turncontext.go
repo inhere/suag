@@ -46,7 +46,7 @@ func (r *Runner) recordTurnContext(ctx context.Context, model Session, seg, eff 
 		mode = "unknown"
 	}
 	_, tainted := model.Meta[metaTaintedAt]
-	r.rec.record(ctx, store.Event{
+	e := store.Event{
 		Kind: store.EventTurnContext, Name: store.EventTurnContext, Status: eventOK, StartedAt: time.Now(),
 		Attrs: map[string]any{
 			"model":       r.cfg.Model,
@@ -60,7 +60,11 @@ func (r *Runner) recordTurnContext(ctx context.Context, model Session, seg, eff 
 			"tainted":      tainted,
 			"segment_hash": seg.Hash,
 		},
-	})
+	}
+	if r.cfg.Version != "" {
+		e.Attrs["version"] = r.cfg.Version
+	}
+	r.rec.record(ctx, e)
 }
 
 // toolSetHash is the first toolSetHashLen hex digits of sha256 over the

@@ -6,6 +6,9 @@
 
 ### 新增
 
+- `suag sessions`：列出会话（最近活动在前，默认 10 条，`-n 0` 全部），按时间（`--since`/`--until`：`12h`、`7d` 或日期）、关键词（标题、id、目录、模型或对话内容，内容命中显示片段）、目录前缀（`--cwd`，`.` 为当前目录）过滤，`--json` 输出。
+- 会话记录 suag 版本：每回合的 `turn_context` 带 `version`（`suag trace` 显示 `suag=…`），会话 meta 的 `suag_version` 为最近一次运行它的版本。
+
 - `suag trace <session> --web [--addr]`：本机网页查看一个会话的时间线（瀑布图、筛选与搜索、详情面板含完整参数与结果、思考与正文、审批与前缀对比）、每回合上下文组成（堆叠条与各部分原文）、每次调用的缓存命中与 `--analyze` 结果；只绑回环地址，页面嵌在二进制里，`#ev=<id>`、`#tab=context` 可直接定位。
 
 - trace 补充观测：每回合的 `context` 事件（上下文组成：系统提示词、工具及 MCP 数量、环境、规则、记忆索引、skills、延迟工具、交接摘要、历史、hook 注入、本轮输入的字符数，估算 token 与窗口）；`hook` 事件（chat 的每次 hook 运行：事件、耗时、block、注入字符数）；工具事件加审批来源与等人时间（`approval`、`approval_wait_ms`）、编辑增删行数；模型事件加 `finish`（截断标记）；回合事件加输入长度与是否注入。设计见 `docs/design/2026-10-13-trace-web-design.md`。

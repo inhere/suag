@@ -121,6 +121,9 @@ type Config struct {
 	// after the rules; nil means no memory section. A failure is logged and
 	// never affects the turn.
 	MemoryIndex func(ctx context.Context) (string, error)
+	// Version is the suag build version, recorded on each turn (turn_context)
+	// and as the session's suag_version meta (the last version that ran it).
+	Version string
 	// Workspace is recorded as the cwd of the sessions this runner creates
 	// (and of older sessions without one on their next turn); session_search
 	// scope workspace matches sessions by it.
@@ -403,6 +406,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	}}
 	// Keep session metadata aligned with the provider selected for this turn.
 	metaPatch := map[string]any{"model": r.cfg.Model, "provider": r.cfg.ProviderName}
+	if r.cfg.Version != "" {
+		metaPatch[metaSuagVersion] = r.cfg.Version
+	}
 	if err := r.cfg.Repository.PatchSessionMeta(ctx, model.ID, metaPatch); err != nil {
 		return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
 	}
@@ -769,3 +775,7 @@ type turnInput struct {
 }
 
 type turnInputKey struct{}
+
+// metaSuagVersion is the session meta key of the suag version that last ran
+// a turn of it.
+const metaSuagVersion = "suag_version"

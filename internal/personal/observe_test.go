@@ -177,7 +177,7 @@ func TestTraceTimelineIncludesTurnModelToolAndDenial(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(fnTool{name: "broken", fn: func() (*agentcore.ToolResult, error) { return nil, errors.New("disk full") }})
 	registry.Register(fnTool{name: "mcp_write", fn: func() (*agentcore.ToolResult, error) { return nil, tools.Denied("需要许可：mcp_write") }})
-	runner, err := New(Config{Repository: repo, Tools: registry, Provider: mock.NewProvider(
+	runner, err := New(Config{Repository: repo, Tools: registry, Version: "0.14.1", Provider: mock.NewProvider(
 		mock.ToolCall("c1", "broken", map[string]any{}),
 		mock.ToolCall("c2", "mcp_write", map[string]any{}),
 		mock.Final("done"),
@@ -203,6 +203,12 @@ func TestTraceTimelineIncludesTurnModelToolAndDenial(t *testing.T) {
 		kinds[row["kind"].(string)] = true
 	}
 	assert.Eq(t, map[string]bool{"turn": true, "turn_context": true, "context": true, "model": true, "tool": true, "denial": true}, kinds)
+
+	// The suag version is on the turn and in the session meta.
+	sess, err := repo.GetSession(context.Background(), res.SessionID)
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, "0.14.1", sess.Meta["suag_version"])
+	assert.StrContains(t, text.String(), " suag=0.14.1 ")
 
 	// The context event says what the turn's first request is made of.
 	var ctxEvent *store.Event

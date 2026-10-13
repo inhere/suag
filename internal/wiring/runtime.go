@@ -288,6 +288,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		Ledger:          ledger,
 		MemoryIndex:     mem.index,
 		Workspace:       workspace,
+		Version:         buildVersion,
 		Mode:            runMode(allowWrite),
 		TaintTools:      taintTools,
 		TaintOnSpill:    taintOnSpill,
