@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.17.0] - 2026-10-13
+
+后台任务第二、三阶段：ACP 支持后台任务，新增监听任务（定时或文件变化时重跑，结果变化才通知）与后台 Stop hook；trace 的分析与网页显示后台任务；会话库改用 `synchronous=NORMAL`，修复 Windows 负载下的 `database is locked`；修复已看到的任务结束仍重复通知的竞争。
+
 ### 新增
 
 - 后台任务支持 ACP（suag-ol03 第二阶段）：任务属于 `suag acp` 进程，跨 prompt 继续运行，结束通知进入该会话的下一个 prompt；`session/cancel` 只取消回合，连接关闭时终止仍在运行的任务。
@@ -14,6 +18,7 @@
 - 运行中的后台任务也能发通知（监听结果变化），`tasks.wake_on_exit` 对它同样唤醒空闲的 chat；通知标题为 `Background task updates`，每条写成 `t2 (watch) reports: ...`。
 - trace：任务事件按种类显示（监听的运行与变化次数、Stop hook）；`--analyze` 增加监听任务数、运行次数、变化次数与后台 Stop hook 次数；`--web` 的任务徽标区分后台、监听与 Stop hook。
 - 伪终端冒烟新增 `chat_watch.py`（监听唤醒与后台 Stop hook），已加入 `make smoke-chat`。
+- `scripts/acpprobe/acp_probe.py`：最小 ACP 客户端，用真实模型验证 ACP 行为（隔离 SUAG_HOME，不复制 `.env`）。
 
 ### 变更
 
@@ -22,6 +27,16 @@
 - 任务管理器支持函数任务（监听、hook，以后的子 agent 也用它）；`tasks.Manager.Wait` 返回结束方式（超时、结束、运行中有进展）而不是布尔值。
 - 任务结束事件改由任务管理器直接写入会话库，不再经过回合的 Runner：ACP 两个回合之间或进程退出时结束的任务也会出现在 trace 里。
 - `task` 工具的 trace 事件带 `action` 与 `id` 属性。
+
+### 修复
+
+- 后台任务被 `task kill` 或 `task wait` 看到结束后，偶尔仍会再留一条结束通知（任务自身结束与 Kill/Wait 竞争时，通知在 `done` 关闭之后才排队）；Windows 主机全量测试偶发失败暴露了它，压力测试可稳定复现，现已修复。
+- Windows 负载下会话库偶发 `database is locked` 与 ACP 多回合超时（suag-5o5g），见“变更”中的会话库设置。
+
+### 不兼容
+
+- `pkg/agentcore/tasks`（库接口）：`Config.OnExit` 改名为 `OnNotice`（运行中任务的通知也会调用）；`Manager.Wait` 返回 `WaitOutcome`（`WaitTimedOut`、`WaitEnded`、`WaitUpdated`）而不是 `bool`。
+- `tasks.wake_on_exit` 现在对运行中任务的通知（监听结果变化、后台 Stop hook 的 block）同样唤醒空闲的 chat。
 
 ## [0.16.0] - 2026-10-13
 
@@ -345,7 +360,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suag/compare/v0.16.0...HEAD
+[未发布]: https://github.com/inhere/suag/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/inhere/suag/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/inhere/suag/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/inhere/suag/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/inhere/suag/compare/v0.13.0...v0.14.0
