@@ -9,6 +9,10 @@
 - 模型请求统一重试（`retry:`，对所有 provider 生效）。网络错误、HTTP 408/429/5xx 和读流时断开都会重试，默认共 6 次。等待从 1s 指数增长，最多 60s，带抖动，并遵守 `Retry-After`。同一 provider 的请求共用等待档位，2 分钟没有失败就回落。原先只有 HTTP 请求有固定退避，流断开后最多重试 2 次，已输出文本后断开则直接失败。现在已输出文本后断开也会重试：先发 `retry` 事件说明前面的回复不完整，再从头输出这条消息。chat 显示 `↻` 提示行，`run` 输出到 stderr，stream-json 输出 `retry` 行，ACP 发 thought。
 - trace 记录重试：model 事件新增 `retries`、`retry_wait_ms`、`retry_reason`。`suag trace` 行显示 `retries=N(…)`，`--analyze` 与 `--web` 汇总重试次数和等待时间。
 
+### 变更
+
+- 会话标题取任务本身的第一行，最多 100 字。gofer 派任务时在提示前面注入的规则段、工具段与 skills 段会被跳过；原先标题是整段提示，`suag sessions` 里只能看到规则开头。ACP 新建的会话原先一直叫 `Session <id>`，现在用第一条提示做标题。
+
 ## [0.15.0] - 2026-10-13
 
 OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线页面与观测补齐（上下文组成、审批、hook、版本）、`suag sessions` 会话列表；shell 命令不再继承 suag 自身的 SUAG_* 变量。扩大评测（4 个仓库任务各 5 轮）中 suag 与 omp 正确性持平（18/20），依据见 [分析](docs/research/2026-10-11-suag-vs-omp-loop-analysis.md)。

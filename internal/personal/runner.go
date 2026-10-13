@@ -268,7 +268,7 @@ func (r *Runner) NewSession(ctx context.Context, id, title string) (Session, err
 	now := time.Now().UTC()
 	model := Session{
 		ID:        id,
-		Title:     strings.TrimSpace(title),
+		Title:     SessionTitle(title),
 		Cwd:       r.cfg.Workspace,
 		Status:    store.SessionOpen,
 		CreatedAt: now,
@@ -276,7 +276,7 @@ func (r *Runner) NewSession(ctx context.Context, id, title string) (Session, err
 		Meta:      map[string]any{},
 	}
 	if model.Title == "" {
-		model.Title = "Session " + id
+		model.Title = defaultTitle(id)
 	}
 	// The first segment's snapshot (design D2). A RuleSource error fails the
 	// session; a memory index that cannot be read leaves the snapshot without
@@ -308,7 +308,7 @@ func (r *Runner) SetSessionTitle(ctx context.Context, sessionID, title string) e
 	if err != nil {
 		return err
 	}
-	model.Title = strings.TrimSpace(title)
+	model.Title = SessionTitle(title)
 	model.UpdatedAt = time.Now().UTC()
 	if err := r.cfg.Repository.UpdateSession(ctx, model); err != nil {
 		return fmt.Errorf("update personal session title: %w", err)
@@ -643,6 +643,16 @@ func (r *Runner) findSession(ctx context.Context, req RunRequest) (Session, erro
 	}
 	model, err := r.LoadSession(ctx, req.SessionID)
 	if err == nil {
+		// A session created without a title (ACP session/new) takes its
+		// first prompt's.
+		if model.Title == defaultTitle(model.ID) && !req.Injected {
+			if title := SessionTitle(req.Prompt); title != "" {
+				if err := r.SetSessionTitle(ctx, model.ID, title); err != nil {
+					return Session{}, err
+				}
+				model.Title = title
+			}
+		}
 		return model, nil
 	}
 	if req.CreateIfMissing && errors.Is(err, ErrSessionNotFound) {
