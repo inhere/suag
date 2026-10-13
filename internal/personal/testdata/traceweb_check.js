@@ -67,11 +67,20 @@ check("timeline: background task row is named 后台 t1", taskRow > 0 && rows[ta
 check("timeline: task row sits at the task start, before the later wait", taskRow >= 0 && waitRow > taskRow);
 check("timeline: the starting shell_exec row links to the task", starterRow >= 0 && starterRow < taskRow && rows[starterRow].includes("后台 t1"));
 
+// P3: the badge names the task by its kind (a watch, a Stop hook) and the
+// summary of a function task shows what it reported.
+const watchRow = lineOf("5 次运行"), watchStarter = lineOf("command=go vet"), hookRow = lineOf("Stop hook · exit=0");
+check("timeline: a watch row is named 监听 t2", watchRow > 0 && rows[watchRow - 1].includes("监听 t2"));
+check("timeline: a watch summary shows runs and changes", watchRow >= 0 && rows[watchRow].includes("5 次运行") && rows[watchRow].includes("2 次变化"));
+check("timeline: the watch's shell_exec links to it as a watch", watchStarter >= 0 && rows[watchStarter].includes("监听 t2"));
+check("timeline: a Stop hook task row is named by its summary", hookRow > 0 && rows[hookRow - 1].includes("Stop hook t3"));
+
 tab = "context";
 const cx = new Node("main");
 renderContext(cx);
 text = __dump(cx);
 check("context: a task notice is labelled, not shown as an input", text.includes("后台任务通知") && text.includes("[background task notice] t1 ended"));
+check("context: a running task's report is a notice too", text.includes("reports: run 5") && (text.match(/后台任务通知/g) || []).length === 2);
 check("context: the person input is labelled as an input", text.includes("用户输入") && text.includes("read a.go"));
 
 tab = "analysis";
@@ -79,6 +88,11 @@ const an = new Node("main");
 renderAnalysis(an);
 text = __dump(an);
 check("analysis: background task numbers", ["background_tasks", "background_overlap_ms", "task_waits", "task_wait_ms", "immediate_waits"].every(k => text.includes(k)));
+// Each kv row is a key cell and a value cell on their own lines; rows run into
+// each other (a value line starts with the value and ends with the next key),
+// so a value is checked at the start of the line after its key.
+const arows = text.split(String.fromCharCode(10)), kvVal = k => { const i = arows.findIndex(l => l.endsWith(k)); return i >= 0 ? arows[i + 1] : ""; };
+check("analysis: watch and Stop hook numbers", [["watch_tasks", "1"], ["watch_runs", "5"], ["watch_changes", "2"], ["stop_hooks", "1"]].every(([k, v]) => kvVal(k).startsWith(v)));
 check("analysis: no [object ...]", !text.includes("[object"));
 process.exitCode = bad ? 1 : 0;
 `;

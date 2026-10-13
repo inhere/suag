@@ -96,11 +96,29 @@ function category(e) {
   return "mark";
 }
 
+// taskBadge: how a background task is named: a shell task by its id, a watch
+// as a watch, a Stop hook by its summary (attrs.kind is the task's kind).
+function taskBadge(e) {
+  const a = e.attrs || {};
+  if (a.kind === "watch") return "监听 " + e.name;
+  if (a.kind === "hook") return (a.arg || "Stop hook") + " " + e.name;
+  return "后台 " + e.name;
+}
+
+// taskSummary: what a task ran, plus what a watch reported (how often its
+// command ran and how often the result changed, or its last state).
+function taskSummary(e) {
+  const a = e.attrs || {};
+  let extra = "";
+  if (a.kind === "watch") extra = a.runs != null ? ` · ${a.runs} 次运行（${a.changes||0} 次变化）` : (a.progress ? " · " + a.progress : "");
+  return `${a.arg || ""} · exit=${a.exit_code} · ${human(a.bytes)}B / ${a.lines||0} 行` + extra + (e.error ? " · " + e.error : "");
+}
+
 function summary(e) {
   const a = e.attrs || {};
   switch (e.kind) {
     case "model": return `in ${human(e.input_tokens)} (缓存 ${human(e.cache_read_tokens)}) out ${human(e.output_tokens)}` + (a.tool_calls ? ` · ${a.tool_calls} 个调用` : "") + (a.prefix && a.prefix !== "append" ? ` · 前缀 ${a.prefix}` : "") + (a.finish === "truncated" ? " · 截断" : "") + (a.retries ? ` · 重试 ${a.retries} 次（${a.retry_reason}，等 ${(a.retry_wait_ms / 1000).toFixed(1)}s）` : "");
-    case "task": return `${a.arg || ""} · exit=${a.exit_code} · ${human(a.bytes)}B / ${a.lines||0} 行` + (e.error ? " · " + e.error : "");
+    case "task": return taskSummary(e);
     case "tool": case "denial": return (a.arg || "") + (a.exit_code != null ? ` · exit=${a.exit_code}` : "") + (a.lines_added != null ? ` · +${a.lines_added}/-${a.lines_removed||0}` : "") + (a.approval && a.approval !== "rule" ? ` · 审批 ${a.approval}` : "") + (e.error ? " · " + e.error : "");
     case "context": return [`约 ${human(a.est_tokens)} / ${human(a.window)} tokens`, `工具 ${a.tools_count||0} 个`, skillsText(a)].filter(Boolean).join(" · ");
     case "hook": return [a.decision && "decision="+a.decision, a.additional_chars && "注入 "+a.additional_chars+" 字符", a.reason_chars && "reason "+a.reason_chars].filter(Boolean).join(" · ");
@@ -169,7 +187,7 @@ function renderTimeline(main) {
   }
   function links(e) {
     if (e.kind === "task" && starters.has(e.name)) return [jump("启动行", starters.get(e.name), "跳到启动这个后台任务的 shell_exec")];
-    if (e.attrs && e.attrs.task_id && tasks.has(e.attrs.task_id)) return [jump("后台 " + e.attrs.task_id, tasks.get(e.attrs.task_id), "跳到这个后台任务的横条")];
+    if (e.attrs && e.attrs.task_id && tasks.has(e.attrs.task_id)) return [jump(taskBadge(tasks.get(e.attrs.task_id)), tasks.get(e.attrs.task_id), "跳到这个后台任务的横条")];
     return [];
   }
   function draw() {
@@ -185,7 +203,7 @@ function renderTimeline(main) {
       if (rel.length) what.append(" ", ...rel);
       const tr = el("tr", {class: (e.kind === "turn" ? "turn " : "") + (selected === e ? "sel" : ""), onclick: () => { selected = e; history.replaceState(null, "", "#ev=" + e.id); showDetail(detail, e); draw(); }},
         el("td", {class:"when", title: off(at(e) - t0)}, clock(at(e))),
-        el("td", {class:"kind"}, el("span", {class:"k", style:"background:" + COLORS[cat]}, e.kind === "task" ? "后台 " + e.name : e.kind === "tool" ? e.name : e.kind)),
+        el("td", {class:"kind"}, el("span", {class:"k", style:"background:" + COLORS[cat]}, e.kind === "task" ? taskBadge(e) : e.kind === "tool" ? e.name : e.kind)),
         what,
         el("td", {class:"mute"}, e.duration_ms ? secs(e.duration_ms) : ""),
         el("td", {class:"bar"}, el("div", {class:"barw"}, el("span", {style:`left:${left}%;width:${width}%;background:${COLORS[cat]}`}))));

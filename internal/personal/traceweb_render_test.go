@@ -44,9 +44,27 @@ func TestTraceWebRenders(t *testing.T) {
 			Start: start.Add(1300 * time.Millisecond), DurationMs: 10, Attrs: map[string]any{"arg": "action=wait id=t1"}},
 		webEvent{ID: 9002, TurnID: turn, Kind: store.EventTask, Name: "t1", Status: eventOK,
 			Start: start.Add(80 * time.Millisecond), DurationMs: 1200,
-			Attrs: map[string]any{"arg": "go test ./... -count=1", "exit_code": 0, "bytes": 1200, "lines": 30}})
+			Attrs: map[string]any{"arg": "go test ./... -count=1", "exit_code": 0, "bytes": 1200, "lines": 30}},
+		// P3: a watch (its counters and its starting shell_exec) and a background
+		// Stop hook (named by its summary). Their rows start after the shell task's.
+		webEvent{ID: 9011, TurnID: turn, Kind: store.EventTool, Name: "shell_exec", Status: eventOK,
+			Start: start.Add(100 * time.Millisecond), DurationMs: 15,
+			Attrs: map[string]any{"arg": "command=go vet ./... every=30 watch_paths=**/*.go", "task_id": "t2", "exit_code": 0}},
+		webEvent{ID: 9012, TurnID: turn, Kind: store.EventTask, Name: "t2", Status: eventOK,
+			Start: start.Add(100 * time.Millisecond), DurationMs: 30000,
+			Attrs: map[string]any{"kind": "watch", "arg": "go vet ./... (every 30s and on changes of **/*.go)",
+				"exit_code": 1, "runs": 5, "changes": 2, "progress": "run 5, last exit 1, 2 changes", "bytes": 800, "lines": 12}},
+		webEvent{ID: 9013, TurnID: turn, Kind: store.EventTask, Name: "t3", Status: eventOK,
+			Start: start.Add(2000 * time.Millisecond), DurationMs: 2100,
+			Attrs: map[string]any{"kind": "hook", "arg": "Stop hook", "exit_code": 0, "bytes": 12, "lines": 2}})
 	view.Entries = append(view.Entries, traceEntry{Seq: 9004, TurnID: turn, Type: store.EntryUser, Role: "user",
 		Time: start.Add(1400 * time.Millisecond), Content: "[background task notice] t1 ended", Notice: true})
+	// A running task's report (a watch whose result changed) is stored as a
+	// notice entry too and must not read as the person's input.
+	view.Entries = append(view.Entries, traceEntry{Seq: 9014, TurnID: turn, Type: store.EntryUser, Role: "user",
+		Time: start.Add(1500 * time.Millisecond), Notice: true,
+		Content: "[background task notice] Background task updates (read more with the task tool or recall the ref):\n" +
+			"- t2 (watch) reports: run 5 (files: a.go): exit 0 -> 1"})
 	// The 分析 tab shows the numbers of the events the page got.
 	traceEvents := make([]store.Event, 0, len(view.Events))
 	for _, e := range view.Events {
