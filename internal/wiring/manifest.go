@@ -252,6 +252,8 @@ func loadManifest(opts ManifestOptions) (Manifest, manifestParts, error) {
 		reg.Register(t)
 	}
 	reg.Register(native.NewUpdatePlanTool(nil))
+	// chat and run add the task tool next to shell_exec (background tasks).
+	reg.Register(native.NewTaskTool(nil, 0))
 	mem := newMemoryRuntime(st.memSetup, st.memPolicy, false, nil, &memoryHost{})
 	reg.Register(mem.tool)
 	ledger := personal.NewLedger(st.sessionsDir)

@@ -95,3 +95,28 @@ func (s *SessionSpiller) Spill(ctx context.Context, call agentcore.ToolCall, con
 	}
 	return outputRefPrefix + scope.sessionID + ":" + name, nil
 }
+
+// TaskOutput names the output file of background task taskID of a session
+// (tasks.Config.Output) and its ref: <sessions>/<sid>/outputs/<hex>.txt, so
+// recall and session_search read it like any saved output while it grows.
+// The task writes it itself (redacted line by line).
+func (s *SessionSpiller) TaskOutput(sessionID, taskID string) (string, string, error) {
+	if s == nil || strings.TrimSpace(s.dir) == "" {
+		return "", "", errors.New("task output: no sessions directory")
+	}
+	if err := validateSessionID(sessionID); err != nil {
+		return "", "", fmt.Errorf("task output: %w", err)
+	}
+	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+		return "", "", fmt.Errorf("task output: create sessions directory: %w", err)
+	}
+	if err := process.SecureDir(s.dir); err != nil {
+		return "", "", fmt.Errorf("task output: secure %s: %w", s.dir, err)
+	}
+	dir := SessionOutputsDir(s.dir, sessionID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", "", fmt.Errorf("task output: create outputs directory: %w", err)
+	}
+	name := OutputFileName("task\x00"+sessionID, taskID)
+	return filepath.Join(dir, name+".txt"), outputRefPrefix + sessionID + ":" + name, nil
+}

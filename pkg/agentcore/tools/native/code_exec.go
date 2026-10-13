@@ -14,6 +14,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/inhere/suag/pkg/agentcore/internal/proctree"
+	"github.com/inhere/suag/pkg/agentcore/redact"
+	"github.com/inhere/suag/pkg/agentcore/tasks"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 	"golang.org/x/text/encoding/simplifiedchinese"
 
@@ -114,7 +116,12 @@ type ShellExecTool struct {
 	timeout    time.Duration // default per call
 	maxTimeout time.Duration
 	maxOut     int // raw result cap in bytes; 0 = DefaultRawOutputBytes
+	// tasks runs commands with background: true; nil hides the option.
+	tasks *tasks.Manager
 }
+
+// SetTasks enables background: true (the host owns m and its lifetime).
+func (t *ShellExecTool) SetTasks(m *tasks.Manager) { t.tasks = m }
 
 // NewShellExecTool returns a ShellExecTool scoped to workspace using the OS
 // default shell. timeout is the default per call (0 = DefaultShellTimeout).
@@ -136,10 +143,16 @@ func (t *ShellExecTool) Description() string {
 	if t.shell.powershell {
 		syntax = "PowerShell syntax (use ; not &&, $env:NAME for env vars)"
 	}
-	return fmt.Sprintf("Execute a command with %s in the workspace directory; write %s. "+
+	desc := fmt.Sprintf("Execute a command with %s in the workspace directory; write %s. "+
 		"Returns stdout, stderr and the exit code; output gathered before a timeout is kept. "+
 		"Default timeout %ds, max %ds. No interactive input: stdin is empty.",
 		t.shell.name(), syntax, int(t.timeout.Seconds()), int(t.maxTimeout.Seconds()))
+	if t.tasks != nil {
+		desc += fmt.Sprintf(" With background: true it starts the command in the background and returns a task id at once "+
+			"(long builds, full test runs, servers, watchers; ended after %s): keep working, read its output or wait for it "+
+			"with the task tool; you are told when it ends.", t.tasks.Limits().MaxDuration)
+	}
+	return desc
 }
 
 // ToolMeta marks the tool as an execute: it runs commands.
@@ -147,7 +160,7 @@ func (*ShellExecTool) ToolMeta() tools.Meta {
 	return tools.Meta{Category: tools.CategoryExecute, ReadOnly: false}
 }
 func (t *ShellExecTool) Schema() api.ToolSchema {
-	return api.ToolSchema{
+	schema := api.ToolSchema{
 		Name:        t.Name(),
 		Description: t.Description(),
 		InputSchema: map[string]any{
@@ -165,6 +178,14 @@ func (t *ShellExecTool) Schema() api.ToolSchema {
 			"required": []any{"command"},
 		},
 	}
+	if t.tasks != nil {
+		props := schema.InputSchema["properties"].(map[string]any)
+		props["background"] = map[string]any{
+			"type":        "boolean",
+			"description": "Run in the background and return a task id at once (timeout does not apply)",
+		}
+	}
+	return schema
 }
 
 // callTimeout reads the optional timeout argument, clamped to maxTimeout.
@@ -185,6 +206,9 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 	if strings.TrimSpace(command) == "" {
 		return nil, fmt.Errorf("shell_exec: command is required")
 	}
+	if bg, _ := call.Arguments["background"].(bool); bg && t.tasks != nil {
+		return t.startBackground(ctx, call, command)
+	}
 	timeout := t.callTimeout(call.Arguments)
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -192,7 +216,7 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 	argv := t.shell.argv(command)
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
 	cmd.Dir = t.workspace
-	cmd.Env = append(commandEnv(os.Environ()), "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat", "PAGER=cat")
+	cmd.Env = shellEnv()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr // stdin stays nil: the null device
 	// tree is the OS process group / job object; Cancel kills all of it, and
@@ -244,6 +268,45 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 		Content:  content,
 		Metadata: map[string]any{"exit_code": exitCode},
 	}, nil
+}
+
+// shellEnv is the environment of a command: suag's own settings removed,
+// git and pagers kept from waiting for input.
+func shellEnv() []string {
+	return append(commandEnv(os.Environ()), "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat", "PAGER=cat")
+}
+
+// startBackground starts command as a background task of the session.
+func (t *ShellExecTool) startBackground(ctx context.Context, call api.ToolCall, command string) (*api.ToolResult, error) {
+	argv := t.shell.argv(command)
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Dir, cmd.Env = t.workspace, shellEnv()
+	info, err := t.tasks.Start(ctx, tasks.Spec{Kind: "shell", Summary: taskSummary(command), Cmd: cmd, Clean: cleanTaskLine})
+	if err != nil {
+		return nil, fmt.Errorf("shell_exec: background: %w", err)
+	}
+	return &api.ToolResult{
+		CallID: call.CallID,
+		Name:   t.Name(),
+		Content: fmt.Sprintf("[background task %s started]\nOutput: %s (read it with task output, or recall with the ref). "+
+			"You will be told when it ends; task wait blocks on it, task kill stops it.", info.ID, info.Ref),
+		Metadata: map[string]any{"task_id": info.ID, "background": true},
+	}, nil
+}
+
+// taskSummary is the command on one line, cut to 200 runes.
+func taskSummary(command string) string {
+	s := strings.Join(strings.Fields(command), " ")
+	if utf8.RuneCountInString(s) > 200 {
+		s = string([]rune(s)[:199]) + "…"
+	}
+	return redact.Secrets(s)
+}
+
+// cleanTaskLine is one line of a background task's output as text: decoded,
+// colour codes dropped, secrets masked.
+func cleanTaskLine(line []byte) string {
+	return redact.Secrets(ansiPattern.ReplaceAllString(decodeOutput(line), ""))
 }
 
 // decodeOutput returns b as text. Non-UTF-8 output (a native Windows program

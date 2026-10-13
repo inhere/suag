@@ -11,6 +11,7 @@ import (
 	"github.com/gookit/goutil/x/assert"
 
 	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suag/pkg/agentcore/tasks"
 )
 
 // manifestConfig sets a fake provider and a workspace outside any git
@@ -156,7 +157,14 @@ func TestManifestMatchesRuntimeTools(t *testing.T) {
 		fromManifest = append(fromManifest, tool.Name)
 	}
 
-	rt, err := OpenCLI(context.Background(), Options{AllowWrite: true})
+	// chat and run hand in a task manager: shell_exec gets background and
+	// the task tool is registered.
+	dir := t.TempDir()
+	taskManager := tasks.NewManager(tasks.Config{Output: func(sid, id string) (string, string, error) {
+		return filepath.Join(dir, id), "out:" + sid + ":" + id, nil
+	}})
+	t.Cleanup(taskManager.Close)
+	rt, err := OpenCLI(context.Background(), Options{AllowWrite: true, Tasks: taskManager})
 	assert.Require(t, assert.NoErr(t, err))
 	t.Cleanup(func() { _ = rt.Close() })
 	runtimeNames := rt.Registry.List()

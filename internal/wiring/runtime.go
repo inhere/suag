@@ -16,6 +16,7 @@ import (
 	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/llm"
+	"github.com/inhere/suag/pkg/agentcore/tasks"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
 	"github.com/inhere/suag/pkg/agentcore/tools/native"
@@ -59,6 +60,10 @@ type Options struct {
 	// get/search. The zero value allows memory writes: memory is suag's own
 	// state, not the workspace, so a plain run may write it.
 	MemoryReadOnly bool
+	// Tasks runs shell_exec with background: true and backs the task tool
+	// (write modes only); nil leaves background tasks off. The host owns it
+	// and closes it (killing its tasks) when the session or process ends.
+	Tasks *tasks.Manager
 	// MemoryConfirm confirms memory writes of tainted sessions (ACP: the turn
 	// gate's permission request; chat: set by OpenCLI to ask at the terminal).
 	// nil (run) refuses them.
@@ -197,6 +202,15 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	// Background tasks need shell_exec, so they exist in write modes only.
+	if opts.Tasks != nil && allowWrite {
+		if t, err := capabilities.Registry.Get("shell_exec"); err == nil {
+			if shell, ok := t.(*native.ShellExecTool); ok {
+				shell.SetTasks(opts.Tasks)
+				capabilities.Registry.Register(native.NewTaskTool(opts.Tasks, nativeEnv(workspace).ShellTimeoutMax))
+			}
+		}
 	}
 	// update_plan only writes session state, so it is registered in every mode
 	// (including read-only). The recorder is bound to the runner in personal.New.
