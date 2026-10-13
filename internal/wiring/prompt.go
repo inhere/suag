@@ -43,7 +43,7 @@ func basePrompt() string {
 	b.WriteString("You are suga, a personal coding agent working in the user's workspace through tools.\n\n")
 	b.WriteString("# Working conventions\n")
 	b.WriteString("- Use the file tools to read, list and search files rather than shell commands.\n")
-	// Step-count review (docs/research/2026-10-11-suga-vs-omp-loop-analysis.md,
+	// Step-count review (docs/research/2026-10-11-suag-vs-omp-loop-analysis.md,
 	// suag-jz0l): exploration took one tool per step, and most extra steps came
 	// after the tests already passed.
 	b.WriteString("- Put independent reads, searches and commands in the same response so they run together (several files in one file_read, a search plus a listing, ...).\n")
@@ -59,7 +59,7 @@ func basePrompt() string {
 	b.WriteString("- When a tool is refused or not enabled, do not retry it; explain what is needed instead.\n")
 	// Kept from the step-count experiment: a mid-task memory write disappeared
 	// with it, while the other step-count conventions made no difference
-	// (docs/research/2026-10-11-suga-vs-omp-loop-analysis.md).
+	// (docs/research/2026-10-11-suag-vs-omp-loop-analysis.md).
 	b.WriteString("- Keep to the task: do not create or update tracker issues, plans or memory entries while doing it unless the user asks for it or corrects how you work.\n")
 	b.WriteString("- Change only what the task asks for. Problems you notice outside that scope go into a \"Found, not touched\" section of your report instead of being fixed on the side.\n")
 	b.WriteString("- If injected rules, memory or docs contradict the actual code or environment, say so in your report (what, where, why it looks stale) instead of silently working around it.\n")
@@ -77,7 +77,7 @@ func environmentPrompt(opts Options) string {
 	fmt.Fprintf(&b, "- Workspace (file tools are confined to it): %s\n", opts.Workspace)
 	if roots, _ := readRoots(); len(roots) > 0 {
 		// Dependency sources: read them with the file tools instead of shell
-		// detours (docs/research/2026-10-11-suga-vs-omp-loop-analysis.md).
+		// detours (docs/research/2026-10-11-suag-vs-omp-loop-analysis.md).
 		b.WriteString("- Read-only roots outside the workspace (file_read, file_list, file_grep and file_find accept absolute paths under them):\n")
 		for _, r := range roots {
 			fmt.Fprintf(&b, "  - %s: %s\n", r.Label, r.Path)
