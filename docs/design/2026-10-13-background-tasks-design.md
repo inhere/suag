@@ -119,3 +119,61 @@
 
 - P1（v0.16.0）：管理器、`shell_exec` 的 `background`、`task` 工具、通知、trace 的 `task` 事件，chat 与 run 两个入口。
 - P2 ACP（2026-10-13）：管理器挂在 ACP 进程上（`RunPersonalACP` 创建，按会话 id 分开），每个 prompt 新建的 runtime 通过 `wiring.Options.Tasks` 拿到它，所以任务跨回合存活，结束通知进入该会话的下一个 prompt。`session/cancel` 只取消回合；连接关闭后 `Serve` 返回，再终止仍在运行的任务。任务结束事件改由 `wiring.NewTaskManager` 设置的回调自己打开 store 写入（`personal.RecordTaskEndIn`），不再经过回合的 Runner：ACP 两个回合之间、进程退出时没有打开的 Runner，chat 与 run 也走同一条路径。只读模式的回合不注册后台能力，也不取通知，通知留到下一个写模式回合。
+
+## P3 细化：watch 任务与后台 Stop hook（2026-10-13，待确认）
+
+### 现状要点
+
+- 任务管理器只接受 `*exec.Cmd`（`tasks.Spec.Cmd`），通知只在任务结束时产生，每个任务至多一条。
+- 外部命令 hook 只有 chat 接入，全局一条 `hooks.command`，事件为 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd。Stop 已是异步（`StartStop`）：chat 立刻回到提示符；返回 block 加 reason 时，reason 作为注入输入开始新回合。但用户一打字、socket 投递或任务唤醒都会中断它（发 Interrupt 后取消进程），耗时的 Stop（例如跑全量测试）因此常被打断。
+- 仓库没有文件监听依赖，也没有轮询文件的代码；`pkg/agentcore/schedule` 有 Every 与 Idle，但目前只给 chat 空闲整理用。
+
+### 1. 管理器扩展：函数任务与运行中通知
+
+- `tasks.Spec` 增加 `Run func(ctx context.Context, out io.Writer, n Notifier) (exitCode int, err error)`，与 `Cmd` 二选一。函数任务没有进程树：Kill 和 `max_duration` 取消它的 ctx。`Kind` 由调用方填（`shell`、`watch`、`hook`，P4 的 `agent` 也走这条路）。
+- 运行中通知：`Notifier.Notify(text)` 让仍在运行的任务产生一条通知（watch 的结果变化）。待通知队列从“任务 id”改为“任务 id 加文本”；`TakeNotices` 返回的 `Info` 新增 `Notice` 字段，为空时表示结束通知（文本仍是 Describe 加最后几行）。同一个任务最多保留一条未取走的运行中通知，新的替换旧的，避免刷屏。Wait 与 Kill 只清掉结束通知。
+- 唤醒：运行中通知与结束通知一样触发 `OnExit`（改名为 `OnNotice`），所以空闲的 chat 会被唤醒。
+
+### 2. watch 任务
+
+- 入口：`shell_exec` 在 `background: true` 时再接受 `every`（秒，至少 10）与/或 `watch_paths`（相对工作区的 glob，支持 `**`）。审批、只读模式、危险删除拦截都沿用 `shell_exec`；不带 `background` 时这两个参数报错。没有挂管理器时 schema 里不出现。
+- 运行：先立即跑一次作为基线，之后在每个触发点再跑：
+  - `every` 到时；
+  - `watch_paths` 匹配的文件有变化：每 2 秒轮询一次匹配文件的 mtime 与大小，跳过 `.git`，最多 5000 个文件，检测到变化后再等 1 秒没有新变化才触发（去抖）。
+  - 两次运行不会重叠，运行期间的多次触发合并成运行结束后的一次。
+- 每次运行的超时用 `tools.shell_timeout`（受 `shell_timeout_max` 限制）。输出追加到任务的输出文件，每次运行前写一行 `=== run N (every|files: a.go, b.go) ===`，结束写 `=== exit X ===`。
+- 通知：退出码或归一化后的输出与上一次不同才通知。归一化会去掉耗时与时间戳（如 `0.123s`、`12ms`、RFC3339 时间），让 `ok pkg 0.4s` 这类每次都变的数字不算变化。基线运行只在失败时通知。通知文本形如 `t3 watch run 5 (files: calc.go): exit 0 -> 1`，再加最后几行。
+- 生命周期：计入 `max_running`；`max_duration` 到时结束（timed_out）；`task kill` 或会话结束时终止。`task list` 显示运行次数与最近一次退出码。
+- trace：结束事件的 attrs 加 `runs`、`changes`；每条通知本身作为 user entry 落库（同 P1）。
+
+### 3. 后台 Stop hook
+
+- 配置 `hooks.stop_background: true`，默认 false，只在 chat 生效（run 与 ACP 没有外部 hook）。开启后，Stop hook 作为 `hook` 类任务（摘要 `Stop hook`）进入管理器：
+  - 用户输入、投递、任务唤醒都不再中断它，用户可以继续对话；
+  - 返回 block 加 reason 时产生一条通知 `[background task notice] Stop hook asks to continue: <reason>`。chat 空闲时唤醒并开始注入回合（与现在的 block 效果相同），回合进行中则在下一次模型请求前带上；
+  - 其他结果（不 block、失败、超时）不通知，只记 trace 的 hook 事件；stderr 写进任务输出。
+  - 超时：设了 `hooks.stop_wait_sec` 时用它加 2 秒，否则用 `tasks.max_duration`。
+  - 新的 Stop 到来时，如果上一个后台 Stop 还在跑，就终止旧的再启动新的（只关心最新状态）。
+  - 由这条通知触发的回合，其 Stop 事件带 `stop_hook_active=true`，防止循环，语义同现在。
+- UserPromptSubmit 与 PostToolUse 仍然同步：它们的结果必须在本回合生效。
+
+### 4. 观测与文档
+
+- trace、`--analyze`、`--web` 显示任务种类（watch、hook）、watch 的运行次数与变化次数（交给 suag job）。
+- README 中英、配置说明。
+
+### 5. 测试
+
+- 单测：函数任务的取消与超时、运行中通知的替换与唤醒；watch 的轮询、去抖、合并触发、归一化比较（短间隔加真实文件）。
+- 伪终端冒烟（加进 `make smoke-chat`，并做反向验证）：
+  - 后台 Stop hook：hook 脚本睡 2 秒后 block；期间用户输入不中断它，结果到达后开始注入回合；
+  - watch：fakellm 启动监听某文件的 watch，脚本改这个文件，空闲的 chat 被通知唤醒。
+- 真实模型评测：新增 `watch-tests`，模型用 watch 监听测试，修代码后从通知得知测试转绿。
+
+### 待定（请用户确认，建议值在前）
+
+1. watch 的入口放在 `shell_exec`（复用审批与危险删除拦截）；另一种做法是 `task` 工具新增 action，但 `task` 不经审批，需要另加。
+2. 文件变化用轮询（2 秒，无新依赖，跨平台行为一致）；另一种做法是引入 fsnotify（更及时，但要处理递归目录与各平台差异）。
+3. 基线运行只在失败时通知；另一种做法是总通知一次。
+4. 后台 Stop 默认关闭，需配置开启；新的 Stop 到来时终止旧的。
+5. 比较输出前做归一化，忽略耗时与时间戳的变化。
