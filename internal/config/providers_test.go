@@ -490,7 +490,7 @@ providers:
 	t.Run("an unknown model type is rejected", func(t *testing.T) {
 		loadYAML(t, strings.Replace(doc, "type: anthropic", "type: gemini", 1))
 		_, err := ReadProviders()
-		assert.ErrMsg(t, err, `providers.cc.models.sonnet: unsupported type "gemini" (want openai|anthropic)`)
+		assert.ErrMsg(t, err, `providers.cc.models.sonnet: unsupported type "gemini" (want openai|openai-responses|anthropic)`)
 	})
 }
 
@@ -561,4 +561,43 @@ providers:
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, "cc/qwen-max", s.Main.Ref())
 	})
+}
+
+func TestOpenAIResponsesType(t *testing.T) {
+	var path string
+	var sent map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&sent)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`)
+	}))
+	defer srv.Close()
+	loadYAML(t, `
+model: cc/flash
+providers:
+  cc:
+    type: openai
+    base_url: `+srv.URL+`/v1
+    compat: [deepseek]
+    thinking: high
+    models:
+      flash:
+        type: openai-responses
+        model_id: deepseek/deepseek-v4.1-flash
+`)
+	s, err := ReadModelSettings("")
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, ProviderTypeOpenAIResponses, s.Main.Provider.Type)
+	assert.Eq(t, []string{"deepseek"}, s.Main.Provider.Compat)
+	p, err := BuildProvider(s.Main)
+	assert.Require(t, assert.NoErr(t, err))
+	res, err := p.Generate(context.Background(), &llm.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "hi"}}})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, "ok", res.Content)
+	assert.Eq(t, "/v1/responses", path)
+	assert.Eq(t, "deepseek/deepseek-v4.1-flash", sent["model"])
+	assert.Eq(t, map[string]any{"effort": "high"}, sent["reasoning"])
+	assert.NotNil(t, sent["input"])
+	assert.Nil(t, sent["messages"])
 }

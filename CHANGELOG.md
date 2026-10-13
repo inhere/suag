@@ -4,6 +4,11 @@
 
 ## [未发布]
 
+### 新增
+
+- provider 类型 `openai-responses`（OpenAI Responses API，`POST {base_url}/responses`），可写在 provider 或单个模型上：完整历史、`store: false`，思考档位为 `reasoning.effort`，推理项（含加密推理）随工具调用保存并回传，流式按 `response.output_text.delta` 输出、以终止事件为准，截断（`max_output_tokens`）时不执行残缺调用。设计见 `docs/design/2026-10-13-openai-responses-design.md`。
+- 网关适配层（`pkg/agentcore/llm/compat_*.go`）：按 base_url 域名与模型 id 自动匹配 `openai`、`commandcode`、`deepseek` 的差异处理，`providers.<id>.compat` 可显式追加；DeepSeek 的缓存命中字段回退移入其中。
+
 ### 变更
 
 - `shell_exec` 不再把 suag 自身的 `SUAG_HOME`、`SUAG_CONFIG`、`SUAG_MODEL` 传给执行的命令：项目里读这些变量的代码或测试（如 suag 自己的测试）原先会作用在 agent 的配置上。在 shell 里再调用 suag 时落回默认的 `~/.suag`，需要时在命令中显式设置。

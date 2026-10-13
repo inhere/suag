@@ -28,7 +28,9 @@ fallback_models:
 ## 字段
 
 - `model`：主模型，`<provider>/<model>`。
-- `providers.<id>.type`：协议，`openai` 或 `anthropic`。内置预设可省略；自定义 provider 必填。
+- `providers.<id>.type`：协议，`openai`（`/chat/completions`）、`openai-responses`（OpenAI Responses API，`/responses`）或 `anthropic`（`/v1/messages`）。内置预设可省略；自定义 provider 必填。也可写在单个模型上（见下）。
+- `openai-responses`：每次发送完整历史（`store: false`，不用 `previous_response_id`），系统提示放在 `instructions`；思考档位作为 `reasoning.effort`（`off` 发送 `none`），推理项随工具调用保存并在之后的请求里原样回传；会话 id 作为 `prompt_cache_key`。
+- `providers.<id>.compat`：网关适配名列表（可选）。适配按 base_url 域名与模型 id 自动匹配：`openai`（api.openai.com）、`commandcode`（api.commandcode.ai：推理摘要与加密推理、不发 tool_choice、输出上限 64000）、`deepseek`（模型 id 含 deepseek 或 api.deepseek.com：思考模式下每个助手回合回传推理文本、缓存命中读 `prompt_cache_hit_tokens`）；自动匹配不到时在这里写名字追加。适配实现在 `pkg/agentcore/llm/compat_*.go`，新增网关加一个文件。
 - `providers.<id>.base_url`、`api_key`：地址与密钥，值支持 `${VAR}`。
 - `providers.<id>.headers`：附加的 HTTP 请求头，值支持 `${VAR}`。
 - `providers.<id>.context_window`：该 provider 下所有模型的默认上下文窗口（如网关统一为 1M 时写一次即可）。

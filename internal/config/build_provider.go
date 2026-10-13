@@ -24,6 +24,19 @@ func BuildProvider(spec ModelSpec) (llm.Provider, error) {
 			// older models (see llm.applyClaudeThinking).
 			Thinking: spec.ThinkingLevel(),
 		}), nil
+	case ProviderTypeOpenAIResponses:
+		return llm.NewResponsesProvider(llm.ResponsesConfig{
+			OpenAIConfig: llm.OpenAIConfig{
+				APIKey:  p.APIKey,
+				BaseURL: p.BaseURL,
+				Model:   spec.APIModel(),
+				Name:    p.ID,
+				Headers: p.Headers,
+				// Thinking level as reasoning.effort ("off" is "none").
+				ReasoningEffort: reasoningEffort(spec.ThinkingLevel()),
+			},
+			Compat: p.Compat,
+		}), nil
 	case ProviderTypeOpenAI:
 		return llm.NewOpenAIProvider(llm.OpenAIConfig{
 			APIKey:  p.APIKey,
@@ -35,6 +48,6 @@ func BuildProvider(spec ModelSpec) (llm.Provider, error) {
 			ReasoningEffort: reasoningEffort(spec.ThinkingLevel()),
 		}), nil
 	default:
-		return nil, fmt.Errorf("providers.%s: unsupported type %q (want openai|anthropic)", p.ID, p.Type)
+		return nil, fmt.Errorf("providers.%s: unsupported type %q (want openai|openai-responses|anthropic)", p.ID, p.Type)
 	}
 }

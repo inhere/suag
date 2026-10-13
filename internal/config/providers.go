@@ -16,6 +16,9 @@ import (
 const (
 	ProviderTypeOpenAI    = "openai"
 	ProviderTypeAnthropic = "anthropic"
+	// ProviderTypeOpenAIResponses is the OpenAI Responses API
+	// (POST {base_url}/responses), see llm.ResponsesProvider.
+	ProviderTypeOpenAIResponses = "openai-responses"
 )
 
 // ModelConfig is the per-model override under providers.<id>.models.<model>.
@@ -66,6 +69,9 @@ type ProviderConfig struct {
 	// PromptCache (providers.<id>.prompt_cache) enables Claude cache_control
 	// breakpoints; only meaningful for type anthropic.
 	PromptCache bool
+	// Compat (providers.<id>.compat) names gateway adapters applied on top
+	// of the ones matched by base URL and model (llm.ResolveCompat).
+	Compat []string
 }
 
 // ModelSpec is a model bound to the provider that serves it.
@@ -137,6 +143,7 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 			Thinking:      stringValue(entry["thinking"]),
 		}
 		promptCache, promptCacheSet := entry["prompt_cache"].(bool)
+		user.Compat = normalizeStringList(entry["compat"])
 
 		if err := normalizeThinking(id, &user); err != nil {
 			return nil, err
@@ -161,15 +168,18 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 		if promptCacheSet {
 			merged.PromptCache = promptCache
 		}
+		if len(user.Compat) > 0 {
+			merged.Compat = user.Compat
+		}
 		if merged.Type == "" {
-			return nil, fmt.Errorf("providers.%s: type is required for a non-preset provider (openai|anthropic)", id)
+			return nil, fmt.Errorf("providers.%s: type is required for a non-preset provider (openai|openai-responses|anthropic)", id)
 		}
 		if !validProviderType(merged.Type) {
-			return nil, fmt.Errorf("providers.%s: unsupported type %q (want openai|anthropic)", id, merged.Type)
+			return nil, fmt.Errorf("providers.%s: unsupported type %q (want openai|openai-responses|anthropic)", id, merged.Type)
 		}
 		for key, cfg := range merged.Models {
 			if cfg.Type != "" && !validProviderType(cfg.Type) {
-				return nil, fmt.Errorf("providers.%s.models.%s: unsupported type %q (want openai|anthropic)", id, key, cfg.Type)
+				return nil, fmt.Errorf("providers.%s.models.%s: unsupported type %q (want openai|openai-responses|anthropic)", id, key, cfg.Type)
 			}
 		}
 		providers[id] = merged
@@ -178,7 +188,7 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 }
 
 func validProviderType(t string) bool {
-	return t == ProviderTypeOpenAI || t == ProviderTypeAnthropic
+	return t == ProviderTypeOpenAI || t == ProviderTypeOpenAIResponses || t == ProviderTypeAnthropic
 }
 
 // normalizeThinking validates the provider's and its models' thinking levels.

@@ -184,16 +184,6 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 	return body
 }
 
-// cachedTokens is the prompt tokens served from cache: the OpenAI field
-// prompt_tokens_details.cached_tokens, or DeepSeek's prompt_cache_hit_tokens
-// when a gateway passes only the native one through.
-func cachedTokens(openai, deepseek int) int {
-	if openai > 0 {
-		return openai
-	}
-	return deepseek
-}
-
 // withReasoning echoes an assistant message's reasoning as reasoning_content.
 // Thinking-mode APIs (DeepSeek, Kimi, ...) reject a request with tools whose
 // earlier assistant messages lack it. Without any reasoning in the request

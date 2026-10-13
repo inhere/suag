@@ -13,7 +13,7 @@ model: bailian/glm-5
 # entry with the same id overrides them field by field. Any other id needs type.
 providers:
   bailian:
-    type: openai # openai | anthropic
+    type: openai # openai (chat/completions) | openai-responses (Responses API) | anthropic
     base_url: "${BAILIAN_BASE_URL}" # openai type appends /chat/completions
     api_key: "${BAILIAN_API_KEY}"
     # Optional per-model overrides; the context window is otherwise derived
