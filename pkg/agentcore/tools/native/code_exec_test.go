@@ -63,3 +63,8 @@ func TestShellExecOutputIsCapped(t *testing.T) {
 	assert.StrContains(t, res.Content, "省略")
 	assert.StrContains(t, res.Content, "[exit code: 0]")
 }
+
+func TestCommandEnv(t *testing.T) {
+	got := commandEnv([]string{"PATH=/bin", "SUAG_HOME=/h", "suag_config=/c", "SUAG_MODEL=m", "SUAG_HOOKS=off", "SUAG_HOMEX=1"})
+	assert.Eq(t, []string{"PATH=/bin", "SUAG_HOOKS=off", "SUAG_HOMEX=1"}, got)
+}

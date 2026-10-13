@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 变更
+
+- `shell_exec` 不再把 suag 自身的 `SUAG_HOME`、`SUAG_CONFIG`、`SUAG_MODEL` 传给执行的命令：项目里读这些变量的代码或测试（如 suag 自己的测试）原先会作用在 agent 的配置上。在 shell 里再调用 suag 时落回默认的 `~/.suag`，需要时在命令中显式设置。
+
 ### 修复
 
 - `suag trace --analyze`：只跑部分用例的测试（`go test -run`、`pytest -k` 等，常是为排查 bug 临时写的测试）不再算作“测试转绿”，阶段拆分以整包或整套测试首次通过为准。

@@ -191,7 +191,7 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 	argv := t.shell.argv(command)
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
 	cmd.Dir = t.workspace
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat", "PAGER=cat")
+	cmd.Env = append(commandEnv(os.Environ()), "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat", "PAGER=cat")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr // stdin stays nil: the null device
 	// tree is the OS process group / job object; Cancel kills all of it, and
@@ -274,4 +274,26 @@ func numberArg(v any) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// privateEnv are suag's own settings. Commands run for the user's project do
+// not inherit them: a project's code or tests that read SUAG_HOME (suag's
+// own tests, for one) would otherwise act on the agent's configuration.
+var privateEnv = []string{"SUAG_HOME", "SUAG_CONFIG", "SUAG_MODEL"}
+
+// commandEnv returns env without privateEnv (names compared without case:
+// Windows environment names are case-insensitive).
+func commandEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+next:
+	for _, kv := range env {
+		name, _, _ := strings.Cut(kv, "=")
+		for _, p := range privateEnv {
+			if strings.EqualFold(name, p) {
+				continue next
+			}
+		}
+		out = append(out, kv)
+	}
+	return out
 }

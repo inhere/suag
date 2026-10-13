@@ -91,7 +91,7 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 - `web_fetch` 在拨号时检查实际连接的 IP，拒绝回环、私网、链路本地（含云元数据地址）、CGNAT 与组播地址，跳转与 DNS 重绑定同样受限；不读取环境代理（`HTTPS_PROXY` 等）。需要代理才能访问的站点，设 `tools.web_fetch.proxy`（`http://`、`https://` 或 `socks5://` 地址，如 `http://127.0.0.1:7890`）：此时连接只发往代理，改为在请求前与每次跳转时解析目标域名并校验其 IP，解析失败也拒绝（代理端若对同一域名解析出不同地址则无法察觉，保护弱于直连）；格式错误时启动报错。`tools.web_fetch.allow_private: true` 可放开内网限制。
 - skills：启动时扫描一次 `<工作区>/.agents/skills`、`<工作区>/skills`、`~/.agents/skills` 下的 `SKILL.md`（frontmatter 含 `name`、`description`，可选 `allowed-tools` 仅展示），同名时工作区优先，无效文件记警告后跳过。段上下文消息按数量呈现 skills：总数不超过 `skills.list_max`（缺省 15）时全部列出“名字 — 描述”（描述截到 160 字符）；超过时只列工作区内的 skills，其余只给数量，模型用 `skill` 工具的 `query`（关键词，名字命中优先，中文按两字切分；`*` 按工作区/用户分组列出全部名字）检索后再按名字加载。模型用 `skill`（`name`）取正文与目录文件列表，`file` 参数只能读该 skill 目录内的文件。需要每次都生效的 skill 可预加载：在 SKILL.md frontmatter 写 `metadata: {always_load: true}`（或顶层 `always_load: true`），或在 `~/.suag/config.yaml` 设 `skills.always_load: [名字]`；其正文（每个上限 8000 字节）放进段上下文消息。
 
-`shell_exec` 在 Windows 用 PowerShell（优先 `pwsh`，否则 `powershell`），输出固定 UTF-8，返回原生命令的退出码；其他系统用 `sh -c`。每次调用可传 `timeout`（秒，默认 120），超时后整组进程（Unix 进程组 / Windows job object）被终止，已有输出与退出码照常返回；后台残留进程占住输出时最多再等 2 秒。命令以 `GIT_TERMINAL_PROMPT=0`、`GIT_PAGER=cat`、`PAGER=cat` 运行，没有标准输入。
+`shell_exec` 在 Windows 用 PowerShell（优先 `pwsh`，否则 `powershell`），输出固定 UTF-8，返回原生命令的退出码；其他系统用 `sh -c`。每次调用可传 `timeout`（秒，默认 120），超时后整组进程（Unix 进程组 / Windows job object）被终止，已有输出与退出码照常返回；后台残留进程占住输出时最多再等 2 秒。命令以 `GIT_TERMINAL_PROMPT=0`、`GIT_PAGER=cat`、`PAGER=cat` 运行，没有标准输入；suag 自身的 `SUAG_HOME`、`SUAG_CONFIG`、`SUAG_MODEL` 不传给命令（在 shell 里再调用 suag 时用默认的 `~/.suag`，需要时在命令里显式设置）。输出去掉 ANSI 颜色码。
 
 配置项（`~/.suag/config.yaml`，均有缺省值）：
 
