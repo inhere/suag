@@ -86,8 +86,10 @@ type TraceAnalysis struct {
 	// model call, side calls included) and RetryWaitMs the time waited.
 	Retries     int   `json:"retries"`
 	RetryWaitMs int64 `json:"retry_wait_ms"`
-	// BackgroundTasks / BackgroundMs: background tasks that ended and how
-	// long they ran in all (time the loop did not have to wait for).
+	// BackgroundTasks / BackgroundMs: background tasks that ended (of every
+	// kind) and how long the commands among them ran in all (time the loop
+	// did not have to wait for). A watch or a Stop hook stays for as long as
+	// it is wanted, so its time is not waiting saved: they count apart.
 	BackgroundTasks int   `json:"background_tasks"`
 	BackgroundMs    int64 `json:"background_ms"`
 	// By kind: WatchTasks counts the watch tasks of the session, WatchRuns the
@@ -99,8 +101,8 @@ type TraceAnalysis struct {
 	WatchRuns    int `json:"watch_runs"`
 	WatchChanges int `json:"watch_changes"`
 	StopHooks    int `json:"stop_hooks"`
-	// BackgroundOverlapMs is the part of that time the loop spent in model
-	// calls and foreground tool calls anyway: the time the backgrounding saved
+	// BackgroundOverlapMs is the part of the commands' time the loop spent in
+	// model calls and foreground tool calls anyway: the time the backgrounding saved
 	// (spans count once where calls overlap, as in a parallel batch).
 	BackgroundOverlapMs int64 `json:"background_overlap_ms"`
 	// TaskWaits / TaskWaitMs: calls of the task tool that waited for a task to
@@ -169,10 +171,10 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 		switch e.Kind {
 		case store.EventTask:
 			a.BackgroundTasks++
-			a.BackgroundMs += e.DurationMs
-			bgSpans = appendSpan(bgSpans, e)
 			// The kind a task ran as (tasks.Spec.Kind): a watch ends with its runs
-			// and changes counters, a background Stop hook has no counters.
+			// and changes counters, a background Stop hook has no counters; only a
+			// command run in the background (shell, or no kind: older events) is
+			// time the loop would otherwise have waited for.
 			switch kind, _ := e.Attrs["kind"].(string); kind {
 			case taskKindWatch:
 				a.WatchTasks++
@@ -180,6 +182,9 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 				a.WatchChanges += attrInt(e.Attrs["changes"])
 			case taskKindHook:
 				a.StopHooks++
+			default:
+				a.BackgroundMs += e.DurationMs
+				bgSpans = appendSpan(bgSpans, e)
 			}
 		case store.EventModel:
 			a.Retries += attrInt(e.Attrs["retries"])

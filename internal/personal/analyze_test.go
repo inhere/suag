@@ -230,12 +230,16 @@ func TestAnalyzeTraceBackground(t *testing.T) {
 			Attrs: map[string]any{"kind": "hook", "arg": "Stop hook"}}
 
 		// A shell task counts in BackgroundTasks, but as neither kind.
-		a := AnalyzeTrace([]store.Event{model(0, 100), task("t1", 100, 10), watch, hook})
+		// A model call while the watch runs (1000-1500ms) is no time saved.
+		a := AnalyzeTrace([]store.Event{model(0, 100), task("t1", 100, 10), watch, model(1000, 500), hook})
 		assert.Eq(t, 3, a.BackgroundTasks)
 		assert.Eq(t, 1, a.WatchTasks)
 		assert.Eq(t, 5, a.WatchRuns)
 		assert.Eq(t, 2, a.WatchChanges)
 		assert.Eq(t, 1, a.StopHooks)
+		// Their time is not waiting saved: only the shell task's counts.
+		assert.Eq(t, int64(10), a.BackgroundMs)
+		assert.Eq(t, AnalyzeTrace([]store.Event{model(0, 100), task("t1", 100, 10), model(1000, 500)}).BackgroundOverlapMs, a.BackgroundOverlapMs)
 
 		// The text rows appear only for the kinds the session had.
 		var out bytes.Buffer

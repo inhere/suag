@@ -9,9 +9,16 @@
 - 后台任务支持 ACP（suag-ol03 第二阶段）：任务属于 `suag acp` 进程，跨 prompt 继续运行，结束通知进入该会话的下一个 prompt；`session/cancel` 只取消回合，连接关闭时终止仍在运行的任务。
 - `suag trace --analyze` 的后台统计：任务运行期间循环在模型与工具调用上花的时间（`background_overlap_ms`，即省下的等待）、`task wait` 的次数与阻塞时长、启动后立刻 wait 的次数（`immediate_waits`）。
 - `suag trace --web`：后台任务行显示在任务开始的位置并画出整段横条，与启动它的 `shell_exec` 行互相跳转；上下文页列出各回合的 user entry，后台任务通知单独标注，不再当成用户输入。
+- 监听任务（suag-ol03 第三阶段）：`shell_exec` 在 `background: true` 时可带 `every`（秒，至少 10）和/或 `watch_paths`（工作区内的 glob），命令先跑一次，之后定时或文件变化时（每 2 秒轮询、去抖）再跑；只有退出码或输出（忽略耗时与时间戳）与上一次不同才通知模型，基线只在失败时通知；对监听调用 `task wait` 会在下一轮结束时返回。评测新增 `watch-tests`：真实模型 2/2 通过，平均 42 秒。
+- 后台 Stop hook：`hooks.stop_background: true`（chat）让 Stop hook 作为后台任务运行，用户输入、投递、任务唤醒都不再中断它；返回 block 时以任务通知的形式交给模型（空闲时唤醒 chat），新的 Stop 会终止旧的。
+- 运行中的后台任务也能发通知（监听结果变化），`tasks.wake_on_exit` 对它同样唤醒空闲的 chat；通知标题为 `Background task updates`，每条写成 `t2 (watch) reports: ...`。
+- trace：任务事件按种类显示（监听的运行与变化次数、Stop hook）；`--analyze` 增加监听任务数、运行次数、变化次数与后台 Stop hook 次数；`--web` 的任务徽标区分后台、监听与 Stop hook。
+- 伪终端冒烟新增 `chat_watch.py`（监听唤醒与后台 Stop hook），已加入 `make smoke-chat`。
 
 ### 变更
 
+- `--analyze` 的 `background_ms` 与 `background_overlap_ms` 只计后台命令，不再包含监听与 Stop hook 的常驻时长。
+- 任务管理器支持函数任务（监听、hook，以后的子 agent 也用它）；`tasks.Manager.Wait` 返回结束方式（超时、结束、运行中有进展）而不是布尔值。
 - 任务结束事件改由任务管理器直接写入会话库，不再经过回合的 Runner：ACP 两个回合之间或进程退出时结束的任务也会出现在 trace 里。
 - `task` 工具的 trace 事件带 `action` 与 `id` 属性。
 
