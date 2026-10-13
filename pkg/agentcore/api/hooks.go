@@ -33,13 +33,29 @@ func (NopHook) AfterTool(context.Context, *ToolEvent, *Control) error           
 func (NopHook) AfterRun(context.Context, *RunEvent, *Control) error               { return nil }
 func (NopHook) OnError(context.Context, *ErrorEvent, *Control) error              { return nil }
 
-// Control allows hooks to short-circuit or yield a run.
+// Control allows hooks to short-circuit or yield a run, or ask it to wrap up.
 type Control struct {
 	ShortCircuited bool
 	Yielded        bool
 	Replacement    any
 	YieldReason    string
 	YieldMetadata  map[string]any
+	// WrapUpReason and WrapUpInstruction are set by RequestWrapUp.
+	WrapUpReason      string
+	WrapUpInstruction string
+}
+
+// RequestWrapUp asks the run to end with an answer from what it knows: the
+// next model request carries instruction as a last user message (tools stay
+// declared) and its reply ends the run, as at the max steps limit. reason
+// names why ("max_tokens", "timeout"; RunResult.WrapUp reports it). Only the
+// run's control counts (the model hooks get it; a tool hook's does not); the
+// first request wins.
+func (c *Control) RequestWrapUp(reason, instruction string) {
+	if c == nil || c.WrapUpReason != "" || reason == "" || instruction == "" {
+		return
+	}
+	c.WrapUpReason, c.WrapUpInstruction = reason, instruction
 }
 
 // NewControl creates an empty lifecycle control object.

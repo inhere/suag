@@ -110,4 +110,7 @@ type RunResult struct {
 	Steps  int
 	Usage  Usage
 	Yield  *Yield
+	// WrapUp is why the run ended with a wrap-up answer ("max_steps", or the
+	// reason a hook gave Control.RequestWrapUp); empty for a normal answer.
+	WrapUp string
 }

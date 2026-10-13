@@ -122,14 +122,21 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 	}
 
 	maxSteps := r.effectiveMaxSteps(input)
+	// wrappingUp: this step's request asks for a final answer (wrapUp says
+	// why and wrapUpText how): at the max steps limit, or when a hook asked
+	// through the run's control (Control.RequestWrapUp).
 	wrappingUp := false
+	wrapUp, wrapUpText := "", ""
 
 	for {
 		if maxSteps > 0 && state.Step >= maxSteps {
 			if r.maxStepsWrapUp == "" || wrappingUp {
 				return r.returnWithHandledError(ctx, input, state, "max_steps", fmt.Errorf("max steps exceeded: %d", maxSteps), NewControl())
 			}
-			wrappingUp = true
+			wrappingUp, wrapUp, wrapUpText = true, "max_steps", r.maxStepsWrapUp
+		}
+		if !wrappingUp && ctrl.WrapUpReason != "" {
+			wrappingUp, wrapUp, wrapUpText = true, ctrl.WrapUpReason, ctrl.WrapUpInstruction
 		}
 
 		systemPrompt, err := r.buildPrompt(ctx, state, ctrl)
@@ -156,7 +163,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 		if wrappingUp {
 			// Tools stay declared (some APIs reject tool history without them);
 			// the instruction asks for a final answer from what is known.
-			messages = append(messages, Message{Role: "user", Content: r.maxStepsWrapUp})
+			messages = append(messages, Message{Role: "user", Content: wrapUpText})
 		}
 		req := &GenerateRequest{
 			System:   systemPrompt,
@@ -184,6 +191,9 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 		}
 
 		if wrappingUp && res.FinishReason == FinishToolCalls {
+			if wrapUp != "max_steps" {
+				return r.returnWithHandledError(ctx, input, state, "wrap_up", fmt.Errorf("%w (%s)", ErrWrapUpIgnored, wrapUp), NewControl())
+			}
 			return r.returnWithHandledError(ctx, input, state, "max_steps", fmt.Errorf("max steps exceeded: %d", maxSteps), NewControl())
 		}
 
@@ -197,6 +207,9 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 			result, err := r.persistFinalAnswer(ctx, input, state, res)
 			if err != nil {
 				return nil, err
+			}
+			if wrappingUp && result != nil {
+				result.WrapUp = wrapUp
 			}
 			return r.finishRun(ctx, input, state, result, nil)
 		default:

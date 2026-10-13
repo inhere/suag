@@ -507,6 +507,9 @@ func TestRuntime_Run_MaxStepsWrapUp(t *testing.T) {
 		if err != nil || res == nil || res.Status != RunCompleted || res.Output != "summary so far" {
 			t.Fatalf("expected completed wrap-up run, got %#v, %v", res, err)
 		}
+		if res.WrapUp != "max_steps" {
+			t.Fatalf("expected WrapUp max_steps, got %q", res.WrapUp)
+		}
 		last := provider.calls[1].Messages[len(provider.calls[1].Messages)-1]
 		if last.Role != "user" || last.Content != "WRAP UP" {
 			t.Fatalf("expected wrap-up instruction last in the request, got %#v", last)
@@ -524,6 +527,69 @@ func TestRuntime_Run_MaxStepsWrapUp(t *testing.T) {
 		}
 		if len(provider.calls) != 2 || store.runs["run-wrap"].Status != RunFailed {
 			t.Fatalf("expected exactly one wrap-up call and a failed run")
+		}
+	})
+}
+
+// wrapUpHook asks for a wrap-up after the model call number at.
+type wrapUpHook struct {
+	NopHook
+	at, calls int
+}
+
+func (h *wrapUpHook) AfterModel(_ context.Context, _ *ModelEvent, ctrl *Control) error {
+	h.calls++
+	if h.calls == h.at {
+		ctrl.RequestWrapUp("max_tokens", "TOKENS SPENT, ANSWER NOW")
+	}
+	return nil
+}
+
+func TestRuntime_Run_RequestedWrapUp(t *testing.T) {
+	newRun := func(results ...*GenerateResult) (*runtimeTestProvider, *RunResult, error) {
+		reg := tools.NewRegistry()
+		reg.MustRegister(&runtimeTestTool{name: "lookup"})
+		provider := &runtimeTestProvider{results: results}
+		res, err := New(Config{
+			Provider:       provider,
+			Storage:        newRuntimeTestStorage(),
+			Tools:          reg,
+			PromptBuilder:  runtimeTestPromptBuilder{},
+			ContextBuilder: runtimeTestContextBuilder{},
+			MaxSteps:       10,
+			MaxStepsWrapUp: "WRAP UP",
+			Hooks:          []Hook{&wrapUpHook{at: 1}},
+		}).Run(context.Background(), RunInput{RunID: "run-req", AgentID: "agent-1", Instruction: "explore"})
+		return provider, res, err
+	}
+	call := &GenerateResult{ToolCalls: []ToolCall{{CallID: "call-1", Name: "lookup"}}, FinishReason: FinishToolCalls}
+
+	t.Run("the next request wraps up and the answer ends the run", func(t *testing.T) {
+		provider, res, err := newRun(call, &GenerateResult{Content: "what I found", FinishReason: FinishFinal})
+		if err != nil || res == nil || res.Status != RunCompleted || res.Output != "what I found" {
+			t.Fatalf("expected completed run, got %#v, %v", res, err)
+		}
+		if res.WrapUp != "max_tokens" {
+			t.Fatalf("expected WrapUp max_tokens, got %q", res.WrapUp)
+		}
+		last := provider.calls[1].Messages[len(provider.calls[1].Messages)-1]
+		if last.Role != "user" || last.Content != "TOKENS SPENT, ANSWER NOW" {
+			t.Fatalf("expected the requested instruction last, got %#v", last)
+		}
+	})
+	t.Run("tool calls after the request fail with ErrWrapUpIgnored", func(t *testing.T) {
+		provider, _, err := newRun(call, call, call)
+		if !errors.Is(err, ErrWrapUpIgnored) || !strings.Contains(err.Error(), "max_tokens") {
+			t.Fatalf("expected ErrWrapUpIgnored (max_tokens), got %v", err)
+		}
+		if len(provider.calls) != 2 {
+			t.Fatalf("expected exactly one wrap-up call, got %d calls", len(provider.calls))
+		}
+	})
+	t.Run("a normal answer has no WrapUp", func(t *testing.T) {
+		_, res, err := newRun(&GenerateResult{Content: "done", FinishReason: FinishFinal})
+		if err != nil || res.WrapUp != "" {
+			t.Fatalf("expected a plain answer, got %#v, %v", res, err)
 		}
 	})
 }

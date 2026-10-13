@@ -20,4 +20,5 @@ var (
 	ErrRunNotResumable         = api.ErrRunNotResumable
 	ErrHistoryStateConflict    = api.ErrHistoryStateConflict
 	ErrToolCallsNotImplemented = api.ErrToolCallsNotImplemented
+	ErrWrapUpIgnored           = api.ErrWrapUpIgnored
 )

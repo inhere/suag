@@ -64,6 +64,7 @@ func TestRunnerWrapsUpAtMaxSteps(t *testing.T) {
 	res, err := runner.Run(context.Background(), RunRequest{Prompt: "explore"})
 	assert.NoErr(t, err)
 	assert.Eq(t, "partial findings", res.Output)
+	assert.Eq(t, "max_steps", res.WrapUp)
 	assert.Eq(t, 3, len(prov.reqs))
 	last := prov.reqs[2].Messages[len(prov.reqs[2].Messages)-1]
 	assert.Eq(t, true, strings.Contains(last.Content, "步数上限（2 步）"))

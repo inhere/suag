@@ -109,4 +109,7 @@ var (
 	ErrRunNotResumable         = errors.New("run cannot be resumed from terminal state")
 	ErrHistoryStateConflict    = errors.New("memory state conflicts with transcript")
 	ErrToolCallsNotImplemented = errors.New("tool call loop not implemented yet")
+	// ErrWrapUpIgnored: the reply to a wrap-up request (Control.RequestWrapUp)
+	// called tools instead of answering.
+	ErrWrapUpIgnored = errors.New("the model called tools after the wrap-up request")
 )

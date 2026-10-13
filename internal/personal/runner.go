@@ -207,6 +207,10 @@ type RunResult struct {
 	// DenialLimitReached is true when the turn was ended because DenialLimit
 	// refusals accumulated (ACP maps it to stopReason refusal).
 	DenialLimitReached bool
+	// WrapUp is why the answer was a wrap-up ("max_steps", or the reason a
+	// hook asked for one, e.g. a sub-agent's "max_tokens"); empty for a
+	// normal answer.
+	WrapUp string
 }
 
 // Runner owns one synchronous turn at a time for a persisted personal session.
@@ -688,6 +692,7 @@ func (r *Runner) withSessionUsage(ctx context.Context, sessionID string, result 
 func (r *Runner) finish(ctx context.Context, model Session, result RunResult, turnStart time.Time, usage *usageCollector, coreResult *agentcore.RunResult, runErr error, sink EmitFunc) (RunResult, error) {
 	if coreResult != nil {
 		result.Status, result.Output, result.Usage = coreResult.Status, coreResult.Output, coreResult.Usage
+		result.WrapUp = coreResult.WrapUp
 	}
 	// Prefer the hook-collected sum: it also covers failed/cancelled turns.
 	turnUsage, calls, lastInput := usage.snapshot()
