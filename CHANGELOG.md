@@ -4,6 +4,33 @@
 
 ## [未发布]
 
+### 新增
+
+- 子 agent（suag-dmv6）：新工具 `agent`，把一件独立的探索或调研任务交给只读的子 agent，在独立会话里完成，只返回报告（末尾一行注明子会话、步数、token、耗时、结束原因）。
+  - 类型：`explore`（工作区只读工具）、`research`（另加 web_fetch、web_search）。
+  - 后台：`background: true` 时作为 `agent` 类任务运行，任务输出就是报告，结束时通知报告开头；只读会话现在也有 `task` 工具与任务通知（shell 的后台运行仍只在写模式）。
+  - 配置 `agents.*`：`enabled`（默认 true）、`model`（默认主模型）、`max_steps`（30）、`max_tokens`（400000，按未命中缓存的输入加输出计）、`timeout`（10m，软截止，再给 60 秒宽限）。到上限时子 agent 收尾，基于已有信息给出报告。
+  - 用量：子 agent 的模型调用计入父会话当前进行中的 run（stream-json 与 ACP 的 usage 包含它），会话累计用量与 `suag stats --session` 包含子会话。
+  - 污染：子 agent 读过外部内容时，父会话随之被标记。
+  - 显示：chat 在 agent 调用下显示子 agent 的工具调用；stream-json 新增 `agent_progress` 行；ACP 的标题为 `agent: <描述>`；trace、`--analyze`、`--web` 显示子 agent 的会话、步数、token、成本与结束原因。
+  - 子会话不出现在 `suag sessions`、会话搜索与 `session_search` 中（`suag sessions --agents` 列出并标明父会话）；gc 时随父会话删除。
+- agentcore：hook 可以通过 `Control.RequestWrapUp` 请求运行收尾，`RunResult.WrapUp` 记录收尾原因。
+- 任务管理器：`Reporter.Label` 记录文本信息（不唤醒 `task wait`）。
+- 评测新增 `explore-callers`；伪终端冒烟新增 `chat_agent.py`（进度、报告、Ctrl-C、后台），已加入 `make smoke-chat`。
+
+### 变更
+
+- `task wait` 等到任务结束时，一并取走它的报告通知并显示在结果里（后台子 agent 不会再重复通知）。
+
+### 修复
+
+- `suag trace --web`：同一回合的模型调用与它产生的消息改为按顺序配对；此前提供方响应极快、两次调用落在同一毫秒时（Windows CI 上出现过），消息会挂到下一次调用上。
+- 每轮更新会话状态时不再整行写回读出的 meta：此前同一时间由其他写入方补上的 meta（如后台任务标记的 `tainted_at`）会被覆盖。
+
+### 不兼容
+
+- `pkg/agentcore/tasks`（库接口）：`Reporter` 新增 `Label` 方法，自行实现 `Reporter` 的代码需要补上。
+
 ## [0.17.0] - 2026-10-13
 
 后台任务第二、三阶段：ACP 支持后台任务，新增监听任务（定时或文件变化时重跑，结果变化才通知）与后台 Stop hook；trace 的分析与网页显示后台任务；会话库改用 `synchronous=NORMAL`，修复 Windows 负载下的 `database is locked`；修复已看到的任务结束仍重复通知的竞争。

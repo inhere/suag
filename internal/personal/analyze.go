@@ -122,8 +122,8 @@ type TraceAnalysis struct {
 	// calls included), the model steps and tool calls they ran, the tokens and
 	// cost of their own model calls and the time they ran in all (the same
 	// numbers its trace line shows). A background call returns a task id at
-	// once, so only its call counts here at first; its steps and tool calls
-	// arrive with its task's end event, and its tokens stay unknown. AgentStops
+	// once, so only its call counts here at first; what it spent (steps, tool
+	// calls, tokens, cost, stop) arrives with its task's end event. AgentStops
 	// is why the calls that reported an end stopped: final, max_steps,
 	// max_tokens, timeout, cancelled or failed.
 	AgentCalls           int            `json:"agent_calls"`
