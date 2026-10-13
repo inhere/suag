@@ -42,7 +42,7 @@ func (t *TaskTool) Name() string { return "task" }
 func (t *TaskTool) Description() string {
 	return "Manage the background tasks of this session (started by shell_exec with background: true). " +
 		"action list: every task and its state. output: lines of a task's output (default the last 100; " +
-		"offset/limit page from a line, grep filters by RE2). wait: block until the task ends (a watch: until its "+
+		"offset/limit page from a line, grep filters by RE2). wait: block until the task ends (a watch: until its " +
 		"next run is done) or timeout seconds pass, then its state and last lines. kill: stop the task and its child processes."
 }
 
