@@ -293,3 +293,24 @@ func TestWaitOnFunctionTask(t *testing.T) {
 		assert.Empty(t, m.TakeNotices("s1")) // not noticed again
 	})
 }
+
+// TestSeenEndLeavesNoNotice: an end the caller saw through Kill or Wait never
+// leaves a notice behind, however the task's own end and the caller race
+// (the notice used to be queued after done was closed).
+func TestSeenEndLeavesNoNotice(t *testing.T) {
+	m, ctx := newTestManager(t, Limits{MaxRunning: 1000}, nil)
+	// It ends by itself while Kill or Wait already waits for it.
+	quick := func(context.Context, io.Writer, Reporter) (int, error) { time.Sleep(time.Millisecond); return 0, nil }
+	for i := 0; i < 300; i++ {
+		info, err := m.Start(ctx, Spec{Run: quick})
+		assert.Require(t, assert.NoErr(t, err))
+		if i%2 == 0 {
+			_, _ = m.Kill("s1", info.ID)
+		} else {
+			_, _, _ = m.Wait(ctx, "s1", info.ID, 5*time.Second)
+		}
+		if got := m.TakeNotices("s1"); len(got) != 0 {
+			t.Fatalf("run %d: %s's end was seen, yet left a notice", i, got[0].ID)
+		}
+	}
+}

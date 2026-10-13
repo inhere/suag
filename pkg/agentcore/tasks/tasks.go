@@ -330,15 +330,18 @@ func (m *Manager) finish(s *session, t *task, status Status, code int, errMsg st
 	if fn := m.onEnd.Load(); fn != nil && *fn != nil {
 		(*fn)(t.snapshot())
 	}
+	// The end notice is queued before done is closed: Kill and Wait return on
+	// done and then drop it (markSeen), so it must already be there, or it
+	// would be queued after they dropped it and tell the model twice.
+	m.mu.Lock()
 	t.mu.Lock()
 	seen := t.seen
 	t.mu.Unlock()
-	close(t.done)
-	m.mu.Lock()
 	if !seen {
 		s.notices = append(s.notices, pending{id: t.info.ID})
 	}
 	m.mu.Unlock()
+	close(t.done)
 	if !seen && m.cfg.OnNotice != nil {
 		m.cfg.OnNotice(t.snapshot())
 	}
