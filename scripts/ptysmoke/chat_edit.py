@@ -32,7 +32,9 @@ def scenario(s, ws):
     s.check("edit: old text shown", s.contains(r"原文：\s+SMOKE_TARGET old", m))
     s.check("edit: new text shown", s.contains(r"改为：\s+SMOKE_TARGET new", m))
     s.line("y")
-    s.check("edit: applied", s.until(r"1 replacement", m) and s.until(r"完成", m))
+    # The result line is cut to the terminal width after the absolute path, so
+    # match its start; the disk check below proves the replacement.
+    s.check("edit: applied", s.until(r"ok: edited ", m) and s.until(r"完成", m))
     time.sleep(0.3)
     with open(os.path.join(ws, "target.txt"), encoding="utf-8") as f:
         s.check("edit: file changed on disk", f.read() == "line one\nSMOKE_TARGET new\nline three\n")
