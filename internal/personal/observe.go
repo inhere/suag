@@ -131,6 +131,9 @@ func (r *recorder) attemptObserver(defName, defModel string) llm.AttemptObserver
 		if a.Finish != "" {
 			e.Attrs["finish"] = a.Finish
 		}
+		if a.Retries > 0 { // transient failures the provider retried (llm.RetryPolicy)
+			e.Attrs["retries"], e.Attrs["retry_wait_ms"], e.Attrs["retry_reason"] = a.Retries, a.RetryWait.Milliseconds(), a.RetryReason
+		}
 		if p := purposeFrom(ctx); p != "" { // ordinary calls carry no purpose
 			e.Attrs["purpose"] = p
 		} else if rep, ok := r.prefix.report(observeScopeFrom(ctx).sessionID); ok {

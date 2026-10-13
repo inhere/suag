@@ -13,7 +13,9 @@ Modes (--mode):
         message containing "直接" skips the shell_exec.
 
 --delay seconds are slept before each response, so a test can type while a
-turn is running. A request with "stream": false gets one JSON completion
+turn is running. --fail-first N answers the first N requests with HTTP 503;
+--break-first M then streams half of the next M responses' text and drops
+the connection (a broken stream), for the retry smoke. A request with "stream": false gets one JSON completion
 instead of SSE (the compaction summary). --prompt-tokens sets the reported prompt usage (the idle
 consolidation compares it with the context threshold). Each request is
 logged as one JSON line on stdout.
@@ -24,10 +26,14 @@ import argparse
 import http.server
 import json
 import sys
+import threading
 import time
 
 
 def make_handler(args):
+    served = [0]  # requests so far (the server runs handlers in threads)
+    lock = threading.Lock()
+
     class Handler(http.server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -36,6 +42,18 @@ def make_handler(args):
             print(json.dumps({"path": self.path, "stream": body.get("stream"),
                               "last_role": body["messages"][-1].get("role")}), flush=True)
             time.sleep(args.delay)
+            with lock:
+                served[0] += 1
+                n = served[0]
+            if n <= args.fail_first:
+                raw = b'{"error":{"message":"overloaded"}}'
+                self.send_response(503)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+            broken = n <= args.fail_first + args.break_first
             last = body["messages"][-1]
             # Tool results since the last user message: the step of this turn.
             step = 0
@@ -93,12 +111,17 @@ def make_handler(args):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
-            for chunk in chunks + ["[DONE]"]:
+            if broken:
+                # Half of the text, then hang up without ending the body.
+                text = args.reply[: max(1, len(args.reply) // 2)]
+                chunks, self.close_connection = [{"choices": [{"delta": {"content": text}}]}], True
+            for chunk in chunks + ([] if broken else ["[DONE]"]):
                 data = "data: " + (chunk if isinstance(chunk, str) else json.dumps(chunk)) + "\n\n"
                 raw = data.encode()
                 self.wfile.write(b"%x\r\n%s\r\n" % (len(raw), raw))
                 self.wfile.flush()
-            self.wfile.write(b"0\r\n\r\n")
+            if not broken:
+                self.wfile.write(b"0\r\n\r\n")
 
         def log_message(self, *a):
             pass
@@ -126,6 +149,8 @@ def main():
     p.add_argument("--command", default="echo SMOKE_OK")
     p.add_argument("--reply", default="完成")
     p.add_argument("--prompt-tokens", type=int, default=10)
+    p.add_argument("--fail-first", type=int, default=0, help="answer the first N requests with HTTP 503")
+    p.add_argument("--break-first", type=int, default=0, help="then break the next M streams after half the text")
     args = p.parse_args()
     server = QuietServer(("127.0.0.1", args.port), make_handler(args))
     print(json.dumps({"listening": args.port}), flush=True)

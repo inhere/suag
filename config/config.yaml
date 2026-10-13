@@ -64,6 +64,17 @@ providers:
 #   - anthropic/claude-sonnet-4-6
 #   - deepseek-chat # bare id: served by the main model's provider
 
+# Retries of a model request after a network error, HTTP 408/429/5xx or a
+# broken response stream (every provider). Waits double from base_delay up to
+# max_delay (+-20% jitter, a server's Retry-After is honoured) and fall back to
+# base_delay after reset_after without a failure. Durations: 500ms / 30s / 2m,
+# or seconds.
+# retry:
+#   max_attempts: 6   # attempts per request, the first included; 1 = no retries
+#   base_delay: 1s
+#   max_delay: 60s
+#   reset_after: 2m
+
 # Context segments. Chat only: after idle_after without input, if the context
 # has reached idle_min_ratio of the segment threshold, a new segment is started
 # in the background (never during a turn; typing cancels it).

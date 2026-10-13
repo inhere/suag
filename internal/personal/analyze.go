@@ -82,6 +82,10 @@ type TraceAnalysis struct {
 	UncachedProvider int64            `json:"uncached_provider"`
 	PrefixBreaks     map[string]int   `json:"prefix_breaks,omitempty"`
 	Compactions      int              `json:"compactions"`
+	// Retries are the model request retries after transient failures (every
+	// model call, side calls included) and RetryWaitMs the time waited.
+	Retries     int   `json:"retries"`
+	RetryWaitMs int64 `json:"retry_wait_ms"`
 	// Slowest are the longest model calls.
 	Slowest []SlowCall `json:"slowest,omitempty"`
 }
@@ -132,6 +136,8 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 	for _, e := range events {
 		switch e.Kind {
 		case store.EventModel:
+			a.Retries += attrInt(e.Attrs["retries"])
+			a.RetryWaitMs += int64(attrInt(e.Attrs["retry_wait_ms"]))
 			if p, _ := e.Attrs["purpose"].(string); p != "" {
 				continue // compaction and other side calls are not steps
 			}
@@ -305,6 +311,7 @@ func WriteTraceAnalysis(w io.Writer, a TraceAnalysis, asJSON bool) error {
 	row("edit steps", "%d, %d with a single change (one file_edit replacement or one file_write)", a.EditSteps, a.SingleEditSteps)
 	row("uncached input", "%s", uncachedSummary(a))
 	row("spills / folds", "%d / %d (compactions %d, tidied outputs %d)", a.Spills, a.Folds, a.Compactions, a.Minimized)
+	row("model retries", "%d (waited %.1fs)", a.Retries, float64(a.RetryWaitMs)/1000)
 	var slow []string
 	for _, s := range a.Slowest {
 		slow = append(slow, fmt.Sprintf("step %d %.1fs out=%d calls=%d", s.Step, float64(s.DurationMs)/1000, s.OutputTokens, s.ToolCalls))

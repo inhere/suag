@@ -64,6 +64,12 @@ func runContractScenario(t *testing.T, scenario string) []contractLine {
 	server := httptest.NewServer(http.HandlerFunc(handler))
 	t.Cleanup(server.Close)
 	setTestProvider(t, server.URL)
+	if scenario == "error" {
+		// One quick retry: the 500 also pins the retry line.
+		assert.NoErr(t, gkconfig.Set("retry.max_attempts", 2))
+		assert.NoErr(t, gkconfig.Set("retry.base_delay", "1ms"))
+		assert.NoErr(t, gkconfig.Set("retry.max_delay", "1ms"))
+	}
 
 	if scenario == "input_required" {
 		// A write MCP tool without --allow-write is denied by the CLI gate.

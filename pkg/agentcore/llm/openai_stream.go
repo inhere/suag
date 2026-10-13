@@ -29,9 +29,8 @@ func newStreamClient() *http.Client {
 // Stream implements the public streaming contract with Server-Sent Events:
 // text deltas are emitted as they arrive; tool calls, reasoning_content and
 // usage are accumulated into the returned result. The connection is retried
-// by openStream; a stream that breaks while being read is requested again
-// only until it has emitted text (retryStream), so a delta is never emitted
-// twice.
+// by openStream; a stream that breaks while being read is requested again by
+// retryStream (after a StreamEventRetry when text was already emitted).
 func (p *OpenAIProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 	model := req.Model
 	if model == "" {
@@ -41,7 +40,7 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateR
 	body["stream_options"] = map[string]any{"include_usage": true}
 	logProviderRequest(p.Name(), "/chat/completions", body)
 
-	return retryStream(ctx, p.Name(), emit, func(emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	return retryStream(ctx, p.retry, p.Name(), emit, func(ctx context.Context, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 		resp, err := p.openStream(ctx, "/chat/completions", body)
 		if err != nil {
 			return nil, err
@@ -73,60 +72,42 @@ func (p *OpenAIProvider) readWhole(ctx context.Context, r io.Reader, emit agentc
 }
 
 // openStream sends the request and returns a 2xx response whose body is the
-// event stream. Network errors and 5xx are retried like doRequest.
+// event stream; transient failures are retried by postWithRetry.
 func (p *OpenAIProvider) openStream(ctx context.Context, path string, body map[string]any) (*http.Response, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-time.After(time.Duration(1<<attempt) * time.Second):
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		}
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+path, bytes.NewReader(data))
+	resp, err := postWithRetry(ctx, p.streamClient, p.retry, p.Name(), path, func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+path, bytes.NewReader(data))
 		if err != nil {
 			return nil, fmt.Errorf("build request: %w", err)
 		}
-		applyHeaders(ctx, httpReq, p.headers)
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("Accept", "text/event-stream")
-		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-		resp, err := p.streamClient.Do(httpReq)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			lastErr = err
-			continue
-		}
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return resp, nil
-		}
-		respData, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		logProviderResponse(p.Name(), path, resp.StatusCode, respData)
-		if resp.StatusCode >= 500 {
-			lastErr = fmt.Errorf("server error %d: %s", resp.StatusCode, string(respData))
-			continue
-		}
-		// 4xx: report the API's own message, as parseResponse does.
-		var apiErr struct {
-			Error *struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
-			return nil, fmt.Errorf("openai api error: %s", apiErr.Error.Message)
-		}
-		return nil, fmt.Errorf("openai api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData)))
+		applyHeaders(ctx, req, p.headers)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		return req, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("openai request failed after retries: %w", lastErr)
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return resp, nil
+	}
+	respData, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	logProviderResponse(p.Name(), path, resp.StatusCode, respData)
+	// 4xx: report the API's own message, as parseResponse does.
+	var apiErr struct {
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
+		return nil, fmt.Errorf("openai api error: %s", apiErr.Error.Message)
+	}
+	return nil, fmt.Errorf("openai api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData)))
 }
 
 // streamChunk is one chat.completion.chunk event.

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"time"
 
 	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 )
@@ -18,8 +17,8 @@ import (
 // Stream implements the public streaming contract with Anthropic SSE: text
 // deltas are emitted as they arrive; tool_use input, thinking and usage are
 // accumulated into the returned result. The connection is retried by
-// openStream; a stream that breaks while being read is requested again only
-// until it has emitted text (retryStream), so a delta is never emitted twice.
+// openStream; a stream that breaks while being read is requested again by
+// retryStream (after a StreamEventRetry when text was already emitted).
 func (p *ClaudeProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 	model := req.Model
 	if model == "" {
@@ -29,7 +28,7 @@ func (p *ClaudeProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateR
 	body["stream"] = true
 	logProviderRequest(p.Name(), "/messages", body)
 
-	return retryStream(ctx, p.Name(), emit, func(emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	return retryStream(ctx, p.retry, p.Name(), emit, func(ctx context.Context, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 		resp, err := p.openStream(ctx, body)
 		if err != nil {
 			return nil, err
@@ -60,62 +59,44 @@ func (p *ClaudeProvider) readWhole(ctx context.Context, r io.Reader, emit agentc
 	return res, emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventMessageStop})
 }
 
-// openStream sends the request and returns a 2xx response. Network errors and
-// 5xx are retried; 4xx fails immediately with the API's own message.
+// openStream sends the request and returns a 2xx response whose body is the
+// event stream; transient failures are retried by postWithRetry.
 func (p *ClaudeProvider) openStream(ctx context.Context, body map[string]any) (*http.Response, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal claude request: %w", err)
 	}
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-time.After(time.Duration(1<<attempt) * time.Second):
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		}
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.messagesURL, bytes.NewReader(data))
+	resp, err := postWithRetry(ctx, p.streamClient, p.retry, p.Name(), "/messages", func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.messagesURL, bytes.NewReader(data))
 		if err != nil {
 			return nil, fmt.Errorf("build request: %w", err)
 		}
-		applyHeaders(ctx, httpReq, p.headers)
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("Accept", "text/event-stream")
-		httpReq.Header.Set("x-api-key", p.apiKey)
-		httpReq.Header.Set("anthropic-version", claudeAPIVersion)
-		setThinkingBeta(httpReq, body)
-
-		resp, err := p.streamClient.Do(httpReq)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			lastErr = err
-			continue
-		}
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return resp, nil
-		}
-		respData, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		logProviderResponse(p.Name(), "/messages", resp.StatusCode, respData)
-		if resp.StatusCode >= 500 {
-			lastErr = fmt.Errorf("claude server error %d: %s", resp.StatusCode, string(respData))
-			continue
-		}
-		var apiErr struct {
-			Error *struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
-			return nil, fmt.Errorf("claude api error: %s", apiErr.Error.Message)
-		}
-		return nil, fmt.Errorf("claude api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData)))
+		applyHeaders(ctx, req, p.headers)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("x-api-key", p.apiKey)
+		req.Header.Set("anthropic-version", claudeAPIVersion)
+		setThinkingBeta(req, body)
+		return req, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("claude request failed after retries: %w", lastErr)
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return resp, nil
+	}
+	respData, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	logProviderResponse(p.Name(), "/messages", resp.StatusCode, respData)
+	var apiErr struct {
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
+		return nil, fmt.Errorf("claude api error: %s", apiErr.Error.Message)
+	}
+	return nil, fmt.Errorf("claude api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData)))
 }
 
 // claudeUsage is the usage object shared by message_start and message_delta.

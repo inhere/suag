@@ -61,6 +61,7 @@ type StreamEventKind = api.StreamEventKind
 const (
 	StreamEventTextDelta   = api.StreamEventTextDelta
 	StreamEventMessageStop = api.StreamEventMessageStop
+	StreamEventRetry       = api.StreamEventRetry
 )
 
 type StreamEvent = api.StreamEvent

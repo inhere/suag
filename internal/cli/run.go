@@ -159,6 +159,9 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 	emit := func(_ context.Context, event personal.Event) error {
 		if encoder == nil {
 			live.Handle(event) // text mode prints the answer as it streams
+			if event.Kind == string(agentcore.StreamEventRetry) {
+				fmt.Fprintln(stderr, output.RetryNotice(event)) // stdout stays the answer only
+			}
 			return nil
 		}
 		line, ok := output.EventLine(event)

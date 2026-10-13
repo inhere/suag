@@ -144,9 +144,22 @@ type Event struct {
 	Plan *native.Plan
 	// Usage is set on "usage" events (after each counted model call) and on
 	// "run_finished" (the final run total).
-	Usage  *UsageUpdate
+	Usage *UsageUpdate
+	// Retry is set on "retry" events: a model request failed for a transient
+	// reason and is retried after Wait; Text is the reason.
+	Retry  *RetryInfo
 	Status agentcore.RunStatus
 	State  RunState
+}
+
+// RetryInfo describes a model request retry (see agentcore.StreamEventRetry).
+type RetryInfo struct {
+	// Attempt counts the failed attempts so far (1 for the first retry).
+	Attempt int
+	Wait    time.Duration
+	// Restart: the failed attempt had already streamed text; the message is
+	// streamed again from its start.
+	Restart bool
 }
 
 type EmitFunc func(context.Context, Event) error
@@ -442,6 +455,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			TurnID:    result.TurnID,
 			RunID:     result.RunID,
 			Text:      update.Delta,
+			Retry:     retryInfoOf(update),
 		})
 	}
 	// update_plan reaches the caller through this turn's Emit callback.
@@ -779,3 +793,17 @@ type turnInputKey struct{}
 // metaSuagVersion is the session meta key of the suag version that last ran
 // a turn of it.
 const metaSuagVersion = "suag_version"
+
+// retryInfoOf reads a StreamEventRetry's metadata; nil for other events.
+func retryInfoOf(ev agentcore.StreamEvent) *RetryInfo {
+	if ev.Kind != agentcore.StreamEventRetry {
+		return nil
+	}
+	info := &RetryInfo{}
+	info.Attempt, _ = ev.Metadata["attempt"].(int)
+	if ms, ok := ev.Metadata["wait_ms"].(int64); ok {
+		info.Wait = time.Duration(ms) * time.Millisecond
+	}
+	info.Restart, _ = ev.Metadata["restart"].(bool)
+	return info
+}

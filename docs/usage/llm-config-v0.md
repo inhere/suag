@@ -41,6 +41,9 @@ fallback_models:
 - 简单匹配：provider 写了 `models` 而引用的模型不在其中（既不是某个键，也不是某个 `model_id`）时，按名字的一部分查找已配置的模型（不区分大小写，查键与 `model_id`；写了 `provider/` 前缀只查该 provider，否则查所有列了模型的 provider；有完全相同的只取它）。唯一匹配就用它，如 `--model haiku` 选中 `command-code/claude-haiku-5-5`；多个匹配时报错并列出候选；没有匹配时在 stderr 警告一次并照原样发送，多半是模型名写错。没有 `models` 的 provider 不做匹配也不检查。未配置 `model` 时，裸名同样按此在所有 provider 中查找。`model`、`--model`、`SUAG_MODEL`、`compact_model`、`fallback_models` 都适用。
 - `compact_model`：自动压缩与 `:compact` 使用的模型，引用规则同 `model`；裸模型名使用主模型的 provider；不设则用当前回合的模型。
 - `fallback_models`：主模型失败后按顺序尝试的模型列表，引用规则同 `compact_model`。
+- `retry`：模型请求遇到临时故障时的重试，对所有 provider 生效。临时故障指网络错误、HTTP 408/429/5xx，以及读响应流时连接断开。`max_attempts` 是一次请求的总次数，含第一次，默认 6，设为 1 即关闭重试。等待从 `base_delay`（默认 1s）起每次翻倍，最多到 `max_delay`（默认 60s），带 ±20% 抖动。服务端给了 `Retry-After` 时按它等，同样不超过 `max_delay`。等待档位由同一 provider 的请求共用，连续 `reset_after`（默认 2m）没有失败就回到 `base_delay`。这样故障持续时退避逐渐拉长，过后偶发的抖动又能很快重试。时长写成 `500ms`、`30s`、`2m`，或直接写秒数。
+  - 流式输出中途断开时整条消息重新请求。如果断开前已输出部分文本，前端会先收到一个 `retry` 事件（`restart: true`）：chat 显示提示行，stream-json 输出 `retry` 行，ACP 发一段 thought，然后从头重新输出这条消息。其它 4xx 与流内的 API 错误不重试，重试用尽后才按 `fallback_models` 换模型。
+  - 每次模型调用的重试次数、等待时长与最后原因记在 trace 的 model 事件上（`retries`、`retry_wait_ms`、`retry_reason`），`suag trace --analyze` 汇总。
 
 ### 内置预设
 

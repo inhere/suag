@@ -11,6 +11,18 @@
       ]
     },
     {
+      "type": "retry",
+      "fields": [
+        "attempt",
+        "reason",
+        "restart",
+        "run_id",
+        "session_id",
+        "type",
+        "wait_ms"
+      ]
+    },
+    {
       "type": "session",
       "fields": [
         "id",

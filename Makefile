@@ -136,6 +136,7 @@ smoke-chat:
 	python3 -I scripts/ptysmoke/chat_memory.py --bin tmp/smoke/suag --work tmp/smoke-memory
 	python3 -I scripts/ptysmoke/chat_idle.py --bin tmp/smoke/suag --work tmp/smoke-idle
 	python3 -I scripts/ptysmoke/chat_observe.py --bin tmp/smoke/suag --work tmp/smoke-observe
+	python3 -I scripts/ptysmoke/chat_retry.py --bin tmp/smoke/suag --work tmp/smoke-retry
 
 ## clean: remove build artifacts
 clean:

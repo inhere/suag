@@ -88,7 +88,7 @@ function category(e) {
 function summary(e) {
   const a = e.attrs || {};
   switch (e.kind) {
-    case "model": return `in ${human(e.input_tokens)} (缓存 ${human(e.cache_read_tokens)}) out ${human(e.output_tokens)}` + (a.tool_calls ? ` · ${a.tool_calls} 个调用` : "") + (a.prefix && a.prefix !== "append" ? ` · 前缀 ${a.prefix}` : "") + (a.finish === "truncated" ? " · 截断" : "");
+    case "model": return `in ${human(e.input_tokens)} (缓存 ${human(e.cache_read_tokens)}) out ${human(e.output_tokens)}` + (a.tool_calls ? ` · ${a.tool_calls} 个调用` : "") + (a.prefix && a.prefix !== "append" ? ` · 前缀 ${a.prefix}` : "") + (a.finish === "truncated" ? " · 截断" : "") + (a.retries ? ` · 重试 ${a.retries} 次（${a.retry_reason}，等 ${(a.retry_wait_ms / 1000).toFixed(1)}s）` : "");
     case "tool": case "denial": return (a.arg || "") + (a.exit_code != null ? ` · exit=${a.exit_code}` : "") + (a.lines_added != null ? ` · +${a.lines_added}/-${a.lines_removed||0}` : "") + (a.approval && a.approval !== "rule" ? ` · 审批 ${a.approval}` : "") + (e.error ? " · " + e.error : "");
     case "context": return `约 ${human(a.est_tokens)} / ${human(a.window)} tokens · 工具 ${a.tools_count||0} 个`;
     case "hook": return [a.decision && "decision="+a.decision, a.additional_chars && "注入 "+a.additional_chars+" 字符", a.reason_chars && "reason "+a.reason_chars].filter(Boolean).join(" · ");

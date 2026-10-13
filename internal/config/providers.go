@@ -10,6 +10,8 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/envutil"
+
+	"github.com/inhere/suag/pkg/agentcore/llm"
 )
 
 // Provider protocol types accepted in providers.<id>.type.
@@ -72,6 +74,9 @@ type ProviderConfig struct {
 	// Compat (providers.<id>.compat) names gateway adapters applied on top
 	// of the ones matched by base URL and model (llm.ResolveCompat).
 	Compat []string
+	// Retry is the global retry: policy (ReadRetryPolicy), the same for
+	// every provider.
+	Retry llm.RetryPolicy
 }
 
 // ModelSpec is a model bound to the provider that serves it.
@@ -183,6 +188,14 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 			}
 		}
 		providers[id] = merged
+	}
+	retry, err := ReadRetryPolicy()
+	if err != nil {
+		return nil, err
+	}
+	for id, p := range providers {
+		p.Retry = retry
+		providers[id] = p
 	}
 	return providers, nil
 }

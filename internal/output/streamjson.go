@@ -34,6 +34,13 @@ func EventLine(event personal.Event) (line map[string]any, ok bool) {
 		data["type"], data["usage"] = "usage", personal.ReportRunUsage(event.Usage.Run)
 	case string(agentcore.StreamEventTextDelta):
 		data["type"], data["text"] = "message_delta", event.Text
+	case string(agentcore.StreamEventRetry):
+		// restart: the message_delta text since the last message start is
+		// void; the message is streamed again from its start.
+		data["type"], data["reason"] = "retry", event.Text
+		if event.Retry != nil {
+			data["attempt"], data["wait_ms"], data["restart"] = event.Retry.Attempt, event.Retry.Wait.Milliseconds(), event.Retry.Restart
+		}
 	case "plan":
 		// Same shape as the ACP plan update: the full list, replaced each time.
 		entries := make([]map[string]string, 0, len(event.Plan.Steps))

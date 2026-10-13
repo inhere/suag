@@ -14,6 +14,11 @@ type StreamEventKind string
 const (
 	StreamEventTextDelta   StreamEventKind = "text_delta"
 	StreamEventMessageStop StreamEventKind = "message_stop"
+	// StreamEventRetry announces that the request failed for a transient
+	// reason and is retried after a wait: Delta is the reason, Metadata has
+	// "attempt", "wait_ms" and "restart" (true when text of the failed attempt
+	// was already emitted; the message streams again from its start).
+	StreamEventRetry StreamEventKind = "retry"
 )
 
 // StreamEvent is the minimal host-facing streaming event contract.

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"time"
 
@@ -28,6 +27,8 @@ type OpenAIProvider struct {
 	headers      map[string]string
 	// reasoningEffort is sent as reasoning_effort when set (OpenAIConfig).
 	reasoningEffort string
+	// retry is the provider's shared retry state (OpenAIConfig.Retry).
+	retry *backoff
 }
 
 // OpenAIConfig configures an OpenAIProvider.
@@ -41,6 +42,8 @@ type OpenAIConfig struct {
 	// ReasoningEffort is sent as the reasoning_effort request field (e.g.
 	// "low", "high", "none"); empty leaves the provider's default.
 	ReasoningEffort string
+	// Retry is the retry policy; zero fields take DefaultRetryPolicy's.
+	Retry RetryPolicy
 }
 
 // NewOpenAIProvider creates an OpenAIProvider from cfg.
@@ -64,6 +67,7 @@ func NewOpenAIProvider(cfg OpenAIConfig) *OpenAIProvider {
 		headers:      cfg.Headers,
 
 		reasoningEffort: cfg.ReasoningEffort,
+		retry:           newBackoff(cfg.Retry),
 	}
 }
 
@@ -267,55 +271,34 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 	return resp, nil
 }
 
-// doRequest sends a POST to the OpenAI API and returns the raw response body.
+// doRequest sends a POST to the OpenAI API and returns the raw response body
+// (an API error's too: the caller parses it). Transient failures are retried
+// by postWithRetry.
 func (p *OpenAIProvider) doRequest(ctx context.Context, path string, body map[string]any) ([]byte, error) {
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		if attempt > 0 {
-			backoff := time.Duration(math.Pow(2, float64(attempt))) * time.Second
-			select {
-			case <-time.After(backoff):
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		}
-
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("marshal request: %w", err)
-		}
-
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+path, bytes.NewReader(data))
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	resp, err := postWithRetry(ctx, p.client, p.retry, p.Name(), path, func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+path, bytes.NewReader(data))
 		if err != nil {
 			return nil, fmt.Errorf("build request: %w", err)
 		}
-		applyHeaders(ctx, httpReq, p.headers)
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-		httpResp, err := p.client.Do(httpReq)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		defer httpResp.Body.Close()
-
-		respData, err := io.ReadAll(httpResp.Body)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		if httpResp.StatusCode >= 500 {
-			logProviderResponse(p.Name(), path, httpResp.StatusCode, respData)
-			lastErr = fmt.Errorf("server error %d: %s", httpResp.StatusCode, string(respData))
-			continue
-		}
-
-		logProviderResponse(p.Name(), path, httpResp.StatusCode, respData)
-		return respData, nil
+		applyHeaders(ctx, req, p.headers)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		return req, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("openai request failed after retries: %w", lastErr)
+	defer resp.Body.Close()
+	respData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read %s response: %w", p.Name(), err)
+	}
+	logProviderResponse(p.Name(), path, resp.StatusCode, respData)
+	return respData, nil
 }
 
 func mustJSON(v any) string {

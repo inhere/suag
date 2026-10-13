@@ -3,19 +3,12 @@ package llm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
 	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 )
-
-// streamReadRetries is how many times a response that broke while its body was
-// being read is requested again.
-const streamReadRetries = 2
-
-// streamRetryDelay is the wait before the n-th retry (n from 1); a var so tests
-// can shorten it.
-var streamRetryDelay = func(n int) time.Duration { return time.Duration(n) * time.Second }
 
 // streamReadError marks a network error while reading a response body (the
 // connection dropped mid-stream). It is the only failure retryStream retries:
@@ -26,34 +19,47 @@ func (e *streamReadError) Error() string { return e.err.Error() }
 func (e *streamReadError) Unwrap() error { return e.err }
 
 // retryStream runs one streamed request (attempt) and repeats it from the
-// start when it fails with a streamReadError before any text delta was
-// emitted. Until then everything the stream produced (reasoning, tool call
-// fragments, usage) was only accumulated, so a retry is invisible to the
-// frontend. After a text delta the error is returned as is: repeating would
-// show the text twice. attempt receives emit wrapped to record text deltas.
-func retryStream(ctx context.Context, provider string, emit agentcoreapi.StreamFunc,
-	attempt func(emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error)) (*agentcoreapi.GenerateResult, error) {
-	for n := 0; ; n++ {
-		sent := false
-		var tracked agentcoreapi.StreamFunc
-		if emit != nil {
-			tracked = func(ctx context.Context, ev agentcoreapi.StreamEvent) error {
-				if ev.Kind == agentcoreapi.StreamEventTextDelta && ev.Delta != "" {
-					sent = true
-				}
-				return emit(ctx, ev)
+// start when it fails with a streamReadError, up to the policy's attempts
+// with b's waits. Each retry, including the HTTP retries inside attempt
+// (postWithRetry), is announced to emit as a StreamEventRetry before the
+// wait, so a frontend can tell the user why nothing happens. When the broken
+// attempt already emitted text the event's metadata has restart=true: the
+// next attempt streams the message again from its start. attempt receives
+// the context carrying that notifier and emit wrapped to record text deltas.
+func retryStream(ctx context.Context, b *backoff, provider string, emit agentcoreapi.StreamFunc,
+	attempt func(ctx context.Context, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error)) (*agentcoreapi.GenerateResult, error) {
+	sent := false // the current attempt emitted text
+	var tracked agentcoreapi.StreamFunc
+	if emit != nil {
+		tracked = func(ctx context.Context, ev agentcoreapi.StreamEvent) error {
+			if ev.Kind == agentcoreapi.StreamEventTextDelta && ev.Delta != "" {
+				sent = true
 			}
+			return emit(ctx, ev)
 		}
-		res, err := attempt(tracked)
+		ctx = withRetryNotifier(ctx, func(ctx context.Context, attempt int, wait time.Duration, reason string) error {
+			return emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventRetry, Delta: reason, Metadata: map[string]any{
+				"attempt": attempt, "wait_ms": wait.Milliseconds(), "restart": sent,
+			}})
+		})
+	}
+	for n := 1; ; n++ {
+		sent = false
+		res, err := attempt(ctx, tracked)
 		var readErr *streamReadError
-		if err == nil || !errors.As(err, &readErr) || sent || n >= streamReadRetries || ctx.Err() != nil {
+		if err == nil || !errors.As(err, &readErr) || ctx.Err() != nil {
 			return res, err
 		}
-		slog.Warn("llm stream broke before any text was shown, requesting again", "provider", provider, "attempt", n+1, "err", err)
-		select {
-		case <-time.After(streamRetryDelay(n + 1)):
-		case <-ctx.Done():
-			return nil, ctx.Err()
+		if n >= b.attempts() {
+			return nil, fmt.Errorf("%s stream broke %d times: %w", provider, n, err)
+		}
+		wait := b.next(0)
+		slog.Warn("llm stream broke, requesting again", "provider", provider, "attempt", n, "text_shown", sent, "wait", wait.Round(time.Millisecond), "err", err)
+		if err := noteRetry(ctx, n, wait, "stream broken"); err != nil {
+			return nil, err
+		}
+		if err := sleepRetry(ctx, wait); err != nil {
+			return nil, err
 		}
 	}
 }

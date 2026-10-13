@@ -36,15 +36,10 @@ func brokenStreamServer(t *testing.T, partial, whole string, breaks int32, hits 
 	return server
 }
 
-func noStreamRetryDelay(t *testing.T) {
-	t.Helper()
-	prev := streamRetryDelay
-	streamRetryDelay = func(int) time.Duration { return 0 }
-	t.Cleanup(func() { streamRetryDelay = prev })
-}
+// fastRetry is a retry policy with millisecond waits for tests.
+var fastRetry = RetryPolicy{MaxAttempts: 3, BaseDelay: time.Millisecond, MaxDelay: 5 * time.Millisecond}
 
 func TestStreamRetriesBrokenReads(t *testing.T) {
-	noStreamRetryDelay(t)
 	req := &agentcoreapi.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "hi"}}}
 	sse := func(lines ...string) string { return strings.Join(lines, "\n") + "\n" }
 	toolPartial := sse(
@@ -56,7 +51,7 @@ func TestStreamRetriesBrokenReads(t *testing.T) {
 		`data: [DONE]`,
 	)
 	openai := func(url string) *OpenAIProvider {
-		return NewOpenAIProvider(OpenAIConfig{APIKey: "k", BaseURL: url, Model: "m"})
+		return NewOpenAIProvider(OpenAIConfig{APIKey: "k", BaseURL: url, Model: "m", Retry: fastRetry})
 	}
 
 	t.Run("broken before any text: requested again", func(t *testing.T) {
@@ -74,22 +69,33 @@ func TestStreamRetriesBrokenReads(t *testing.T) {
 			assert.NotEq(t, agentcoreapi.StreamEventTextDelta, ev.Kind)
 		}
 	})
-	t.Run("broken after text: not repeated", func(t *testing.T) {
+	t.Run("broken after text: a restart retry event, then the whole message", func(t *testing.T) {
 		var hits atomic.Int32
 		partial := sse(`data: {"choices":[{"delta":{"content":"Hel"}}]}`)
 		server := brokenStreamServer(t, partial, sse(`data: {"choices":[{"delta":{"content":"Hello"}}]}`, `data: [DONE]`), 1, &hits)
 		var events []agentcoreapi.StreamEvent
-		_, err := openai(server.URL).Stream(context.Background(), req, collect(&events))
-		assert.ErrMsgContains(t, err, "read openai stream")
-		assert.Eq(t, int32(1), hits.Load())
-		assert.Eq(t, 1, len(events)) // only the "Hel" delta, shown once
+		ctx, report := withRetryReport(context.Background())
+		res, err := openai(server.URL).Stream(ctx, req, collect(&events))
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, int32(2), hits.Load())
+		assert.Eq(t, "Hello", res.Content) // the broken attempt's text is not kept
+		assert.Require(t, assert.True(t, len(events) >= 3))
+		assert.Eq(t, "Hel", events[0].Delta)
+		assert.Eq(t, agentcoreapi.StreamEventRetry, events[1].Kind)
+		assert.Eq(t, "stream broken", events[1].Delta)
+		assert.Eq(t, true, events[1].Metadata["restart"])
+		assert.Eq(t, 1, events[1].Metadata["attempt"])
+		assert.Eq(t, "Hello", events[2].Delta)
+		assert.Eq(t, 1, report.Retries)
+		assert.Eq(t, "stream broken", report.Last)
 	})
 	t.Run("keeps breaking: gives up after the retries", func(t *testing.T) {
 		var hits atomic.Int32
 		server := brokenStreamServer(t, toolPartial, toolWhole, 100, &hits)
 		_, err := openai(server.URL).Stream(context.Background(), req, nil)
 		assert.ErrMsgContains(t, err, "read openai stream")
-		assert.Eq(t, int32(1+streamReadRetries), hits.Load())
+		assert.ErrMsgContains(t, err, "stream broke 3 times")
+		assert.Eq(t, int32(fastRetry.MaxAttempts), hits.Load())
 	})
 	t.Run("a bad chunk is not retried", func(t *testing.T) {
 		var hits atomic.Int32
@@ -113,10 +119,12 @@ func TestStreamRetriesBrokenReads(t *testing.T) {
 		)
 		server := brokenStreamServer(t, partial, whole, 1, &hits)
 		var events []agentcoreapi.StreamEvent
-		res, err := NewClaudeProvider(ClaudeConfig{APIKey: "k", BaseURL: server.URL}).Stream(context.Background(), req, collect(&events))
+		res, err := NewClaudeProvider(ClaudeConfig{APIKey: "k", BaseURL: server.URL, Retry: fastRetry}).Stream(context.Background(), req, collect(&events))
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, int32(2), hits.Load())
 		assert.Eq(t, "ok", res.Content)
-		assert.Eq(t, "ok", events[0].Delta)
+		assert.Eq(t, agentcoreapi.StreamEventRetry, events[0].Kind) // announced, nothing to take back
+		assert.Eq(t, false, events[0].Metadata["restart"])
+		assert.Eq(t, "ok", events[1].Delta)
 	})
 }

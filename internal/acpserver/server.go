@@ -12,6 +12,7 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	appconfig "github.com/inhere/suag/internal/config"
+	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/memory"
@@ -227,6 +228,10 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		}
 		if event.Kind == "plan" && event.Plan != nil {
 			return a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: planUpdate(event.Plan)})
+		}
+		if event.Kind == string(agentcore.StreamEventRetry) {
+			// A thought, so the notice never becomes part of the answer text.
+			return a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: acp.UpdateAgentThoughtText(output.RetryNotice(event) + "\n")})
 		}
 		if event.Kind != string(agentcore.StreamEventTextDelta) || event.Text == "" {
 			return nil

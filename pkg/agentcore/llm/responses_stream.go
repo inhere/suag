@@ -18,12 +18,11 @@ import (
 // Server-Sent Events: output_text deltas are emitted as they arrive; the
 // result comes from the terminal event's response object (or, without one,
 // the items of response.output_item.done). A stream that ends without a
-// terminal event is a broken stream, requested again by retryStream until
-// text was shown.
+// terminal event is a broken stream, requested again by retryStream.
 func (p *ResponsesProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 	body := p.buildResponsesBody(ctx, req, true)
 	logProviderRequest(p.Name(), responsesPath, body)
-	return retryStream(ctx, p.Name(), emit, func(emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	return retryStream(ctx, p.retry, p.Name(), emit, func(ctx context.Context, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 		resp, err := p.openStream(ctx, responsesPath, body)
 		if err != nil {
 			return nil, err

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -30,6 +29,8 @@ type ClaudeProvider struct {
 	headers      map[string]string
 	promptCache  bool
 	thinking     string
+	// retry is the provider's shared retry state (ClaudeConfig.Retry).
+	retry *backoff
 }
 
 // SegmentContextMetaKey is the Message.Metadata key (bool true) that marks the
@@ -72,6 +73,8 @@ type ClaudeConfig struct {
 	// max, auto; see applyClaudeThinking). "", "auto" and "off" send no
 	// thinking parameters.
 	Thinking string
+	// Retry is the retry policy; zero fields take DefaultRetryPolicy's.
+	Retry RetryPolicy
 }
 
 // NewClaudeProvider creates a ClaudeProvider.
@@ -92,6 +95,7 @@ func NewClaudeProvider(cfg ClaudeConfig) *ClaudeProvider {
 		headers:      cfg.Headers,
 		promptCache:  cfg.PromptCache,
 		thinking:     cfg.Thinking,
+		retry:        newBackoff(cfg.Retry),
 	}
 }
 
@@ -335,54 +339,36 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 	return resp, nil
 }
 
+// doRequest sends the request and returns the raw response body (an API
+// error's too: parseResponse reports it). Transient failures are retried by
+// postWithRetry.
 func (p *ClaudeProvider) doRequest(ctx context.Context, body map[string]any) ([]byte, error) {
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		if attempt > 0 {
-			backoff := time.Duration(math.Pow(2, float64(attempt))) * time.Second
-			select {
-			case <-time.After(backoff):
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		}
-
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("marshal claude request: %w", err)
-		}
-
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.messagesURL, bytes.NewReader(data))
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal claude request: %w", err)
+	}
+	resp, err := postWithRetry(ctx, p.client, p.retry, p.Name(), "/messages", func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.messagesURL, bytes.NewReader(data))
 		if err != nil {
 			return nil, err
 		}
-		applyHeaders(ctx, httpReq, p.headers)
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("x-api-key", p.apiKey)
-		httpReq.Header.Set("anthropic-version", claudeAPIVersion)
-		setThinkingBeta(httpReq, body)
-
-		httpResp, err := p.client.Do(httpReq)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		defer httpResp.Body.Close()
-
-		respData, err := io.ReadAll(httpResp.Body)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if httpResp.StatusCode >= 500 {
-			logProviderResponse(p.Name(), "/messages", httpResp.StatusCode, respData)
-			lastErr = fmt.Errorf("claude server error %d: %s", httpResp.StatusCode, string(respData))
-			continue
-		}
-		logProviderResponse(p.Name(), "/messages", httpResp.StatusCode, respData)
-		return respData, nil
+		applyHeaders(ctx, req, p.headers)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-api-key", p.apiKey)
+		req.Header.Set("anthropic-version", claudeAPIVersion)
+		setThinkingBeta(req, body)
+		return req, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("claude request failed after retries: %w", lastErr)
+	defer resp.Body.Close()
+	respData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read claude response: %w", err)
+	}
+	logProviderResponse(p.Name(), "/messages", resp.StatusCode, respData)
+	return respData, nil
 }
 
 func thinkingBlock(text, signature string) map[string]any {

@@ -23,6 +23,7 @@ func BuildProvider(spec ModelSpec) (llm.Provider, error) {
 			// Extended thinking: adaptive + effort, or a token budget on
 			// older models (see llm.applyClaudeThinking).
 			Thinking: spec.ThinkingLevel(),
+			Retry:    p.Retry,
 		}), nil
 	case ProviderTypeOpenAIResponses:
 		return llm.NewResponsesProvider(llm.ResponsesConfig{
@@ -34,6 +35,7 @@ func BuildProvider(spec ModelSpec) (llm.Provider, error) {
 				Headers: p.Headers,
 				// Thinking level as reasoning.effort ("off" is "none").
 				ReasoningEffort: reasoningEffort(spec.ThinkingLevel()),
+				Retry:           p.Retry,
 			},
 			Compat: p.Compat,
 		}), nil
@@ -46,6 +48,7 @@ func BuildProvider(spec ModelSpec) (llm.Provider, error) {
 			Headers: p.Headers,
 			// Thinking level as reasoning_effort, see reasoningEffort.
 			ReasoningEffort: reasoningEffort(spec.ThinkingLevel()),
+			Retry:           p.Retry,
 		}), nil
 	default:
 		return nil, fmt.Errorf("providers.%s: unsupported type %q (want openai|openai-responses|anthropic)", p.ID, p.Type)

@@ -12,6 +12,7 @@ import (
 	"github.com/gookit/color"
 	"github.com/inhere/suag/internal/output"
 	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/redact"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 	"github.com/inhere/suag/pkg/agentcore/tools/native"
@@ -124,6 +125,8 @@ func (r *Renderer) Handle(event personal.Event) {
 			r.live.Finish()
 			r.renderPlan(event)
 		}
+	case string(agentcore.StreamEventRetry):
+		fmt.Fprintln(r.opts.Out, r.paint(color.Yellow, output.RetryNotice(event)))
 	}
 }
 

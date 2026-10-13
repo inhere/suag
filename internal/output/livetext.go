@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/pkg/agentcore"
@@ -46,8 +47,26 @@ func (l *LiveText) Handle(event personal.Event) bool {
 		l.closeLine()
 		l.started = false
 		return true
+	case string(agentcore.StreamEventRetry):
+		// The caller prints the notice (RetryNotice) on a line of its own;
+		// a restarted message gets its prefix again.
+		l.closeLine()
+		l.started = false
 	}
 	return false
+}
+
+// RetryNotice is the one-line notice for a "retry" event.
+func RetryNotice(event personal.Event) string {
+	info := event.Retry
+	if info == nil {
+		info = &personal.RetryInfo{}
+	}
+	line := fmt.Sprintf("↻ 模型请求失败（%s），%s 后重试（第 %d 次）", event.Text, info.Wait.Round(100*time.Millisecond), info.Attempt)
+	if info.Restart {
+		line += "；上面的回复不完整，将重新输出"
+	}
+	return line
 }
 
 func (l *LiveText) closeLine() {

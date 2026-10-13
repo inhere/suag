@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/internal/personal"
@@ -41,4 +42,23 @@ func TestPrefixedLiveTextMarksEachMessage(t *testing.T) {
 	live.Handle(delta("done"))
 	live.Finish()
 	assert.Eq(t, "▣ let me check\n▣ done\n", out.String())
+}
+
+func TestLiveTextRetry(t *testing.T) {
+	var out bytes.Buffer
+	live := NewPrefixedLiveText(&out, "▣ ")
+	delta := func(s string) personal.Event {
+		return personal.Event{Kind: string(agentcore.StreamEventTextDelta), Text: s}
+	}
+	retry := personal.Event{Kind: string(agentcore.StreamEventRetry), Text: "stream broken",
+		Retry: &personal.RetryInfo{Attempt: 1, Wait: 1234 * time.Millisecond, Restart: true}}
+	live.Handle(delta("Hel"))
+	// The caller prints the notice: the line is closed and the next message
+	// gets its marker again.
+	assert.Eq(t, false, live.Handle(retry))
+	out.WriteString(RetryNotice(retry) + "\n")
+	live.Handle(delta("Hello"))
+	live.Finish()
+	assert.Eq(t, "▣ Hel\n↻ 模型请求失败（stream broken），1.2s 后重试（第 1 次）；上面的回复不完整，将重新输出\n▣ Hello\n", out.String())
+	assert.Eq(t, "↻ 模型请求失败（HTTP 503），0s 后重试（第 0 次）", RetryNotice(personal.Event{Kind: "retry", Text: "HTTP 503"}))
 }

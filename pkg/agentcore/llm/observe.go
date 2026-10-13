@@ -28,6 +28,12 @@ type Attempt struct {
 	// Finish is how the response ended: "tool_calls", "final", or
 	// "truncated" when the output limit cut it off; "" when it failed.
 	Finish string
+	// Retries is how often the provider retried the request after a
+	// transient failure (RetryPolicy), RetryWait the time spent waiting and
+	// RetryReason the reason of the last retry ("HTTP 503", "stream broken").
+	Retries     int
+	RetryWait   time.Duration
+	RetryReason string
 }
 
 // AttemptObserver receives every provider attempt. It must not block.
@@ -46,8 +52,9 @@ func providerModel(p agentcoreapi.Provider) string {
 // GenerateObserved calls prov.Generate and reports the attempt to obs (may be nil).
 func GenerateObserved(ctx context.Context, prov agentcoreapi.Provider, req *agentcoreapi.GenerateRequest, index int, obs AttemptObserver) (*agentcoreapi.GenerateResult, error) {
 	start := time.Now()
+	ctx, retries := withRetryReport(ctx)
 	res, err := prov.Generate(ctx, req)
-	report(ctx, obs, prov, index, false, start, 0, res, err)
+	report(ctx, obs, prov, index, false, start, 0, retries, res, err)
 	return res, err
 }
 
@@ -68,17 +75,20 @@ func StreamObserved(ctx context.Context, prov agentcoreapi.StreamingProvider, re
 			return emit(ctx, ev)
 		}
 	}
+	ctx, retries := withRetryReport(ctx)
 	res, err := prov.Stream(ctx, req, wrapped)
-	report(ctx, obs, prov, index, true, start, ttft, res, err)
+	report(ctx, obs, prov, index, true, start, ttft, retries, res, err)
 	return res, err
 }
 
-func report(ctx context.Context, obs AttemptObserver, prov agentcoreapi.Provider, index int, streamed bool, start time.Time, ttft time.Duration, res *agentcoreapi.GenerateResult, err error) {
+func report(ctx context.Context, obs AttemptObserver, prov agentcoreapi.Provider, index int, streamed bool, start time.Time, ttft time.Duration,
+	retries *RetryReport, res *agentcoreapi.GenerateResult, err error) {
 	if obs == nil {
 		return
 	}
 	a := Attempt{Provider: prov.Name(), Model: providerModel(prov), Index: index, Streamed: streamed,
-		StartedAt: start, Duration: time.Since(start), TTFT: ttft, Err: err}
+		StartedAt: start, Duration: time.Since(start), TTFT: ttft, Err: err,
+		Retries: retries.Retries, RetryWait: retries.Wait, RetryReason: retries.Last}
 	if res != nil {
 		a.Usage = res.Usage
 		a.ToolCalls, a.ReasoningChars, a.TextChars = len(res.ToolCalls), len(res.Reasoning), len(res.Content)
