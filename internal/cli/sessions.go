@@ -22,6 +22,9 @@ type sessionsOptions struct {
 	since, until string
 	query, cwd   string
 	asJSON       bool
+	// agents lists sub-agent sessions too (kept out by default: they belong
+	// to the session that started them).
+	agents bool
 }
 
 func newSessionsCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
@@ -41,6 +44,7 @@ func newSessionsCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd
 	cmd.StringVar(&opts.query, "query", "", "keywords (all must match) in the title, id, directory, model or the conversation;;q")
 	cmd.StringVar(&opts.cwd, "cwd", "", "only sessions whose directory starts with this path (. = current directory)")
 	cmd.BoolVar(&opts.asJSON, "json", false, "write a JSON array")
+	cmd.BoolVar(&opts.agents, "agents", false, "list sub-agent sessions too (each names its parent session)")
 	cmd.AddArg("keywords", "keywords, like --query", false, nil, true)
 	return cmd
 }
@@ -58,6 +62,8 @@ type sessionRow struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 	// Match is a snippet of the conversation when the keyword matched there.
 	Match string `json:"match,omitempty"`
+	// Parent is the session that started this sub-agent session (--agents).
+	Parent string `json:"parent,omitempty"`
 }
 
 func runSessions(ctx context.Context, out io.Writer, opts sessionsOptions, now time.Time) error {
@@ -93,7 +99,7 @@ func runSessions(ctx context.Context, out io.Writer, opts sessionsOptions, now t
 	terms := strings.Fields(strings.ToLower(opts.query))
 	snippets := map[string]string{}
 	if len(terms) > 0 {
-		hits, err := repo.SearchEntries(ctx, store.EntrySearch{Query: opts.query, Limit: 100})
+		hits, err := repo.SearchEntries(ctx, store.EntrySearch{Query: opts.query, Limit: 100, IncludeAgents: opts.agents})
 		if err != nil {
 			return err
 		}
@@ -108,6 +114,9 @@ func runSessions(ctx context.Context, out io.Writer, opts sessionsOptions, now t
 		if !from.IsZero() && s.UpdatedAt.Before(from) || !to.IsZero() && s.UpdatedAt.After(to) {
 			continue
 		}
+		if store.IsAgentSession(s) && !opts.agents {
+			continue
+		}
 		if cwd != "" && !pathHasPrefix(s.Cwd, cwd) {
 			continue
 		}
@@ -116,6 +125,7 @@ func runSessions(ctx context.Context, out io.Writer, opts sessionsOptions, now t
 		row.Provider, _ = s.Meta["provider"].(string)
 		row.Model, _ = s.Meta["model"].(string)
 		row.SuagVersion, _ = s.Meta["suag_version"].(string)
+		row.Parent = store.ParentSession(s)
 		if len(terms) > 0 {
 			own := strings.ToLower(strings.Join([]string{s.ID, s.Title, s.Cwd, row.Provider, row.Model}, " "))
 			matched := true
@@ -156,8 +166,12 @@ func writeSessionRows(out io.Writer, rows []sessionRow, total int) error {
 		if r.Provider != "" {
 			model = r.Provider + "/" + r.Model
 		}
+		title := clip(oneLine(r.Title), 40)
+		if r.Parent != "" { // a sub-agent session (--agents) names its parent
+			title = "[agent of " + r.Parent + "] " + title
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", r.UpdatedAt.Local().Format("01-02 15:04"), r.ID,
-			orDash(model), orDash(r.SuagVersion), orDash(clip(oneLine(r.Title), 40)), orDash(shortDir(r.Cwd)))
+			orDash(model), orDash(r.SuagVersion), orDash(title), orDash(shortDir(r.Cwd)))
 		if r.Match != "" {
 			fmt.Fprintf(tw, "\t  ↳ %s\t\t\t\t\n", clip(oneLine(r.Match), 100))
 		}

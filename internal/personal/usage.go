@@ -162,6 +162,22 @@ type runUsageMeter struct {
 	base agentcore.Usage
 	// onModel receives the update after each counted model call (nil: none).
 	onModel func(context.Context, UsageUpdate)
+	// parent is the meter of the run that started this one as a sub-agent:
+	// every model call counted here is counted there too (addChild).
+	parent *runUsageMeter
+}
+
+type childRunKey struct{}
+
+// withChildRun marks ctx as the start of a sub-agent run: its meter forwards
+// its model usage to the meter of the run that started it (in ctx).
+func withChildRun(ctx context.Context) context.Context {
+	return context.WithValue(ctx, childRunKey{}, true)
+}
+
+func isChildRun(ctx context.Context) bool {
+	child, _ := ctx.Value(childRunKey{}).(bool)
+	return child
 }
 
 func withRunUsage(ctx context.Context, m *runUsageMeter) context.Context {
@@ -190,6 +206,28 @@ func (m *runUsageMeter) addModel(ctx context.Context, raw, priced agentcore.Usag
 	if notify != nil {
 		notify(ctx, update)
 	}
+	m.parent.addChild(ctx, priced)
+}
+
+// addChild counts a sub-agent's model call in this run (the session total
+// includes the sub-agent sessions, see Store.SumUsageTree). The update
+// carries no LastInputTokens: the sub-agent's request size is not this
+// session's context size.
+func (m *runUsageMeter) addChild(ctx context.Context, priced agentcore.Usage) {
+	if m == nil {
+		return
+	}
+	m.notifyMu.Lock()
+	defer m.notifyMu.Unlock()
+	m.mu.Lock()
+	m.run.Usage = m.run.Usage.Add(priced)
+	update := UsageUpdate{Run: m.run, Session: m.base.Add(m.run.Usage)}
+	notify := m.onModel
+	m.mu.Unlock()
+	if notify != nil {
+		notify(ctx, update)
+	}
+	m.parent.addChild(ctx, priced)
 }
 
 // addTool counts one tool call (executed, failed or refused).
@@ -217,6 +255,9 @@ func (m *runUsageMeter) snapshot() RunUsage {
 // as a "usage" event. Emit failures are only logged, like tool events.
 func (r *Runner) newRunUsageMeter(ctx context.Context, sessionID, turnID string, sink EmitFunc) *runUsageMeter {
 	m := &runUsageMeter{base: r.withSessionUsage(ctx, sessionID, RunResult{}).SessionUsage}
+	if isChildRun(ctx) {
+		m.parent = runUsageFrom(ctx) // the run that started this sub-agent
+	}
 	if sink != nil {
 		m.onModel = func(ctx context.Context, u UsageUpdate) {
 			event := Event{Kind: "usage", SessionID: sessionID, TurnID: turnID, RunID: turnID, Usage: &u}

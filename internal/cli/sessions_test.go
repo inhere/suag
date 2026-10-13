@@ -112,3 +112,23 @@ func TestSessionsCommand(t *testing.T) {
 		assert.True(t, strings.Contains(out, "s05"))
 	})
 }
+
+func TestSessionsCommandAgentSessions(t *testing.T) {
+	t.Setenv("SUAG_HOME", shortCLIHome(t))
+	t.Setenv("SUAG_HOOKS", "off")
+	dbPath, err := appconfig.ResolveCoreStorePath()
+	assert.Require(t, assert.NoErr(t, err))
+	repo, err := store.Open(dbPath)
+	assert.Require(t, assert.NoErr(t, err))
+	ctx := context.Background()
+	assert.NoErr(t, repo.CreateSession(ctx, store.Session{ID: "parent", Title: "main work"}))
+	assert.NoErr(t, repo.CreateSession(ctx, store.Session{ID: "child", Title: "find callers",
+		Meta: map[string]any{store.MetaKind: store.KindAgent, store.MetaParentSession: "parent"}}))
+	assert.NoErr(t, repo.Close())
+
+	assert.Eq(t, []string{"parent"}, listed(t, ctx))
+	assert.Eq(t, 2, len(listed(t, ctx, "--agents")))
+	out, err := runCLI(t, ctx, "sessions", "--agents")
+	assert.Require(t, assert.NoErr(t, err))
+	assert.StrContains(t, out, "[agent of parent] find callers")
+}

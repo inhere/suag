@@ -17,8 +17,9 @@ type GCReport struct {
 	Applied bool
 }
 
-// CollectGarbage removes sessions not updated since cutoff, with their turns
-// and entries (ON DELETE CASCADE) and their events, plus events older than
+// CollectGarbage removes sessions not updated since cutoff (and the sub-agent
+// sessions they started), with their turns and entries (ON DELETE CASCADE)
+// and their events, plus events older than
 // cutoff that belong to no session. keep lists session IDs never removed
 // (sessions with a live process). Without apply nothing is written. After a
 // removal the file is VACUUMed so the space is returned to the disk.
@@ -29,8 +30,26 @@ func (s *Store) CollectGarbage(ctx context.Context, cutoff time.Time, keep map[s
 	}
 	var report GCReport
 	ids := make([]any, 0)
+	// A sub-agent session goes with its parent: removed when the parent is,
+	// kept while the parent stays; one whose parent is already gone is
+	// judged by its own age.
+	exists, removed := map[string]bool{}, map[string]bool{}
 	for _, session := range sessions {
-		if session.UpdatedAt.Before(cutoff) && !keep[session.ID] {
+		exists[session.ID] = true
+	}
+	stale := func(session Session) bool { return session.UpdatedAt.Before(cutoff) && !keep[session.ID] }
+	for _, session := range sessions {
+		if parent := ParentSession(session); IsAgentSession(session) && exists[parent] {
+			continue
+		}
+		if stale(session) {
+			removed[session.ID] = true
+		}
+	}
+	for _, session := range sessions {
+		parent := ParentSession(session)
+		child := IsAgentSession(session) && exists[parent]
+		if (child && removed[parent] && !keep[session.ID]) || (!child && removed[session.ID]) {
 			report.Sessions = append(report.Sessions, session)
 			ids = append(ids, session.ID)
 		}

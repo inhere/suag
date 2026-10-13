@@ -100,7 +100,7 @@ func (s *Store) ListSessions(ctx context.Context) ([]Session, error) {
 // only those two columns (meta_json can be large), for callers that match
 // paths themselves (e.g. with path-separator boundaries).
 func (s *Store) SessionCwds(ctx context.Context) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, cwd FROM sessions WHERE cwd <> ''`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, cwd FROM sessions WHERE cwd <> '' AND `+notAgentSession("meta_json"))
 	if err != nil {
 		return nil, fmt.Errorf("list session cwds: %w", err)
 	}
@@ -114,6 +114,35 @@ func (s *Store) SessionCwds(ctx context.Context) (map[string]string, error) {
 		out[id] = cwd
 	}
 	return out, rows.Err()
+}
+
+// Sub-agent sessions: a session a sub-agent ran in carries meta kind
+// "agent" and the id of the session that started it. They are kept out of
+// session lists and searches (they belong to their parent), counted in the
+// parent's cumulative usage (SumUsageTree) and removed with the parent (gc).
+const (
+	MetaKind          = "kind"
+	KindAgent         = "agent"
+	MetaParentSession = "parent_session_id"
+)
+
+// notAgentSession is the SQL condition that leaves out sub-agent sessions,
+// over the meta column named metaCol (e.g. "ss.meta_json").
+func notAgentSession(metaCol string) string {
+	return `COALESCE(json_extract(` + metaCol + `, '$.` + MetaKind + `'), '') <> '` + KindAgent + `'`
+}
+
+// IsAgentSession reports whether a sub-agent ran in the session.
+func IsAgentSession(sess Session) bool {
+	kind, _ := sess.Meta[MetaKind].(string)
+	return kind == KindAgent
+}
+
+// ParentSession is the session that started a sub-agent session ("" for
+// others).
+func ParentSession(sess Session) string {
+	id, _ := sess.Meta[MetaParentSession].(string)
+	return id
 }
 
 // UpdateSessionFields sets title, cwd, status, last_turn_id and updated_at

@@ -82,6 +82,9 @@ type EntrySearch struct {
 	CWDPrefix string
 	// Limit caps the hits: <=0 means 20, at most 100.
 	Limit int
+	// IncludeAgents searches sub-agent sessions too (they belong to their
+	// parent session and are left out by default).
+	IncludeAgents bool
 }
 
 // EntryHit is one matching entry, located by SessionID/Seq.
@@ -141,6 +144,9 @@ func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, e
 		for _, id := range q.SessionIDs {
 			args = append(args, id)
 		}
+	}
+	if !q.IncludeAgents {
+		where += ` AND ` + notAgentSession("ss.meta_json")
 	}
 	if q.CWDPrefix != "" {
 		// substr/length instead of LIKE: exact, case-sensitive, no escaping.

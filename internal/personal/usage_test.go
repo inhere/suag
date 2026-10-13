@@ -233,3 +233,38 @@ func TestRunnerPricesUsage(t *testing.T) {
 		assert.Eq(t, 0.0, res.Usage.CostUSD)
 	})
 }
+
+// TestChildRunUsage: a sub-agent's model calls count in the run that started
+// it, without passing the sub-agent's request size off as the parent's
+// context size; only a run marked as a child forwards.
+func TestChildRunUsage(t *testing.T) {
+	repo := openObserveRepo(t)
+	runner, err := New(Config{Repository: repo, Provider: &scriptProvider{}})
+	assert.Require(t, assert.NoErr(t, err))
+	var updates []UsageUpdate
+	parent := &runUsageMeter{base: agentcore.Usage{InputTokens: 1000},
+		onModel: func(_ context.Context, u UsageUpdate) { updates = append(updates, u) }}
+	ctx := withRunUsage(context.Background(), parent)
+
+	t.Run("a plain nested meter does not forward", func(t *testing.T) {
+		m := runner.newRunUsageMeter(ctx, "s-other", "t", nil)
+		assert.Nil(t, m.parent)
+	})
+	t.Run("a child meter forwards its model usage", func(t *testing.T) {
+		child := runner.newRunUsageMeter(withChildRun(ctx), "s-child", "t", nil)
+		assert.Require(t, assert.True(t, child.parent == parent))
+		parent.addModel(ctx, agentcore.Usage{InputTokens: 300, OutputTokens: 30}, agentcore.Usage{InputTokens: 300, OutputTokens: 30}, false)
+		child.addModel(ctx, agentcore.Usage{InputTokens: 5000, OutputTokens: 50}, agentcore.Usage{InputTokens: 5000, OutputTokens: 50, CostUSD: 0.1}, false)
+		child.addTool()
+
+		run := parent.snapshot()
+		assert.Eq(t, 5300, run.Usage.InputTokens)
+		assert.Eq(t, 80, run.Usage.OutputTokens)
+		assert.Eq(t, 0, run.ToolCalls) // the sub-agent's tool calls stay its own
+		assert.Require(t, assert.Len(t, updates, 2))
+		assert.Eq(t, 300, updates[0].LastInputTokens)
+		assert.Eq(t, 0, updates[1].LastInputTokens) // not the parent's context size
+		assert.Eq(t, 6300, updates[1].Session.InputTokens)
+		assert.Eq(t, 0.1, updates[1].Run.Usage.CostUSD)
+	})
+}

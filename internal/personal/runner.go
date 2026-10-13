@@ -269,6 +269,13 @@ func (r *Runner) Model() string        { return r.cfg.Model }
 func (r *Runner) Fold() (every, keep int) { return r.cfg.FoldEvery, r.cfg.FoldKeep }
 
 func (r *Runner) NewSession(ctx context.Context, id, title string) (Session, error) {
+	return r.NewSessionWithMeta(ctx, id, title, nil)
+}
+
+// NewSessionWithMeta is NewSession with extra meta stored as the session is
+// created (a sub-agent session names its parent from the start, so it is
+// never listed as a session of its own, not even after a crash).
+func (r *Runner) NewSessionWithMeta(ctx context.Context, id, title string, extra map[string]any) (Session, error) {
 	if id == "" {
 		id = NewSessionID()
 	}
@@ -300,6 +307,9 @@ func (r *Runner) NewSession(ctx context.Context, id, title string) (Session, err
 	}
 	model.Meta["model"] = r.cfg.Model
 	model.Meta["provider"] = r.cfg.ProviderName
+	for key, value := range extra {
+		model.Meta[key] = value
+	}
 	if err := r.cfg.Repository.CreateSession(ctx, model); err != nil {
 		return Session{}, fmt.Errorf("create personal session: %w", err)
 	}
@@ -675,12 +685,12 @@ func (r *Runner) findSession(ctx context.Context, req RunRequest) (Session, erro
 }
 
 // withSessionUsage fills result.SessionUsage with the session-cumulative usage
-// (model events of the session). Error returns that happen before finish use it
+// (model events of the session and of its sub-agent sessions). Error returns that happen before finish use it
 // too, so callers such as the ACP usage_update keep the previously known total
 // instead of seeing a zero value. A lookup failure leaves the value untouched.
 func (r *Runner) withSessionUsage(ctx context.Context, sessionID string, result RunResult) RunResult {
 	// The caller's ctx may already be cancelled or timed out (lock wait).
-	sum, err := r.cfg.Repository.SumUsage(context.WithoutCancel(ctx), sessionID)
+	sum, err := r.cfg.Repository.SumUsageTree(context.WithoutCancel(ctx), sessionID)
 	if err != nil {
 		slog.Warn("sum session usage", "session_id", sessionID, "err", err)
 		return result

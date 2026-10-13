@@ -89,6 +89,19 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 	return out, rows.Err()
 }
 
+// SumUsageTree is SumUsage over the session and its sub-agent sessions
+// (meta parent_session_id = sessionID): what the session spent in all, as its
+// cumulative usage reports it.
+func (s *Store) SumUsageTree(ctx context.Context, sessionID string) (Usage, error) {
+	var u Usage
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(1), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
+		COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_write_tokens),0),
+		COALESCE(SUM(json_extract(attrs_json, '$.cost_usd')),0) FROM events WHERE kind = ? AND (session_id = ?
+		OR session_id IN (SELECT id FROM sessions WHERE json_extract(meta_json, '$.`+MetaParentSession+`') = ?))`,
+		EventModel, sessionID, sessionID).Scan(&u.Calls, &u.InputTokens, &u.OutputTokens, &u.CacheReadTokens, &u.CacheWriteTokens, &u.CostUSD)
+	return u, err
+}
+
 // SumUsage totals tokens over kind=model events only; turn/tool events carry
 // no per-call usage of their own, so nothing is counted twice. Cost is the sum
 // of the optional attrs.cost_usd of those events.
