@@ -58,7 +58,8 @@ def scenario(s):
 
     raw = s.buf[m:].decode("utf-8", "replace")
     hint = raw.rfind("思考中")
-    answer = raw.rfind("▣ " + REPLY)
+    # The raw bytes carry color codes around the "▣" prefix: find the reply itself.
+    answer = raw.rfind(REPLY)
     s.check("the last hint was erased before the answer",
             hint >= 0 and answer > hint and ERASE in raw[hint:answer])
 
