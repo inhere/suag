@@ -140,6 +140,7 @@ smoke-chat:
 	python3 -I scripts/ptysmoke/chat_danger.py --bin tmp/smoke/suag --work tmp/smoke-danger
 	python3 -I scripts/ptysmoke/chat_tasks.py --bin tmp/smoke/suag --work tmp/smoke-tasks
 	python3 -I scripts/ptysmoke/chat_watch.py --bin tmp/smoke/suag --work tmp/smoke-watch
+	python3 -I scripts/ptysmoke/chat_agent.py --bin tmp/smoke/suag --work tmp/smoke-agent
 
 ## clean: remove build artifacts
 clean:

@@ -18,7 +18,11 @@ turn is running. --fail-first N answers the first N requests with HTTP 503;
 the connection (a broken stream), for the retry smoke. --background makes
 the tool-mode shell_exec call a background task; a user message that is a
 background task notice or reminder ("[background task") gets the text reply;
---watch-paths a,b adds watch_paths (a watch task). A request with "stream": false gets one JSON completion
+--watch-paths a,b adds watch_paths (a watch task). --agent makes the
+tool-mode call the agent tool (description "smoke survey", with background
+when --background); a sub-agent's request (its system prompt names a "suag
+sub-agent") greps SMOKE once, then reports "SUBREPORT: ..." after
+--child-delay seconds more. A request with "stream": false gets one JSON completion
 instead of SSE (the compaction summary). --prompt-tokens sets the reported prompt usage (the idle
 consolidation compares it with the context threshold). Each request is
 logged as one JSON line on stdout.
@@ -44,7 +48,11 @@ def make_handler(args):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             print(json.dumps({"path": self.path, "stream": body.get("stream"),
                               "last_role": body["messages"][-1].get("role")}), flush=True)
-            time.sleep(args.delay)
+            system = " ".join(str(m.get("content")) for m in body["messages"] if m.get("role") == "system")
+            child = "suag sub-agent" in system
+            # --child-delay slows the sub-agent's report (after its grep).
+            reporting = child and body["messages"][-1].get("role") == "tool"
+            time.sleep(args.delay + (args.child_delay if reporting else 0))
             with lock:
                 served[0] += 1
                 n = served[0]
@@ -75,7 +83,15 @@ def make_handler(args):
                               if m.get("role") == "user"), "")
             if args.mode == "memory" and "直接" in str(user_text):
                 memory_calls = memory_calls[1:]
-            if args.mode == "memory" and step < len(memory_calls):
+            if child:
+                # A sub-agent: one grep, then the report.
+                if last.get("role") != "tool":
+                    call = {"index": 0, "id": "call_%d" % time.time_ns(),
+                            "function": {"name": "file_grep", "arguments": json.dumps({"pattern": "SMOKE"})}}
+                    chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
+                else:
+                    chunks = [{"choices": [{"delta": {"content": "SUBREPORT: SMOKE is in target.txt"}}]}]
+            elif args.mode == "memory" and step < len(memory_calls):
                 name, arguments = memory_calls[step]
                 call = {"index": 0, "id": "call_%d" % time.time_ns(),
                         "function": {"name": name, "arguments": json.dumps(arguments)}}
@@ -84,6 +100,13 @@ def make_handler(args):
                 name, arguments = edit_calls[step]
                 call = {"index": 0, "id": "call_%d" % time.time_ns(),
                         "function": {"name": name, "arguments": json.dumps(arguments)}}
+                chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
+            elif args.mode == "tool" and args.agent and last.get("role") != "tool" and "[background task" not in str(user_text):
+                agent_args = {"description": "smoke survey", "prompt": "Where is SMOKE? Report file:line."}
+                if args.background:
+                    agent_args["background"] = True
+                call = {"index": 0, "id": "call_%d" % time.time_ns(),
+                        "function": {"name": "agent", "arguments": json.dumps(agent_args)}}
                 chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
             elif args.mode == "tool" and last.get("role") != "tool" and "[background task" not in str(user_text):
                 shell_args = {"command": args.command}
@@ -158,6 +181,8 @@ def main():
     p.add_argument("--prompt-tokens", type=int, default=10)
     p.add_argument("--background", action="store_true", help="tool mode: shell_exec with background: true")
     p.add_argument("--watch-paths", default="", help="tool mode with --background: comma-separated watch_paths")
+    p.add_argument("--agent", action="store_true", help="tool mode: call the agent tool instead of shell_exec")
+    p.add_argument("--child-delay", type=float, default=0, help="extra seconds before each sub-agent response")
     p.add_argument("--fail-first", type=int, default=0, help="answer the first N requests with HTTP 503")
     p.add_argument("--break-first", type=int, default=0, help="then break the next M streams after half the text")
     args = p.parse_args()

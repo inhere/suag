@@ -14,6 +14,7 @@
 | `chat_danger.py` | 危险删除：`tools.approval: auto`、HOME 指向临时目录，假模型调用 `rm -rf ~`；检查仍会询问并显示危险原因、答 `y` 被拒且临时目录还在、答 `yes` 才执行且目录被删，trace 两条 shell_exec 事件带 `danger` 与审批来源 |
 | `chat_tasks.py` | 后台任务：假模型以 `background: true` 启动 `sleep 1.5; echo TASK_DONE` 后直接回复；检查回合先结束、任务结束后空闲的 chat 被自动唤醒并显示通知（退出码与输出），trace 有带 `task_id` 的 shell_exec 与 `task` 事件；再用 `suag run` 启动 `sleep 30`：提醒一次（两个回合）、退出时终止任务并在 stderr 注明、不等满 30s |
 | `chat_watch.py` | watch 与后台 Stop hook：假模型启动监听 `a.txt` 的 watch，脚本把文件改到命令失败，空闲 chat 被通知唤醒（`exit 0 -> 3`），再写入相同内容只运行不通知，trace 的任务事件有 runs/changes；`hooks.stop_background` 下 hook 睡 3 秒后 block，第一轮后立即输入第二句：hook 从不收到 Interrupt，第一个 Stop 任务被第二个终止，block 以通知唤醒 chat，随后的 Stop 带 stop_hook_active。`--no-stop-background` 用于反向验证 |
+| `chat_agent.py` | 子 agent：假模型调用 `agent` 工具，子 agent（按系统提示词识别）grep 一次后交报告。同步：agent 调用下显示 `  · file_grep` 进度行、报告作为结果、trace 的 agent 事件带子会话 id 与 stop=final、`suag sessions` 隐藏子会话而 `--agents` 列出；Ctrl-C 打断慢的子 agent 时 chat 正常退出且子会话不停在 running；后台：立即返回任务 id，子 agent 结束后以报告通知唤醒空闲 chat。`--agents-off` 用于反向验证 |
 | `chat_memory.py` | 未污染会话直接写记忆并显示“已记住”；`shell_exec` 置污染（`memory.taint_tools`）后写记忆询问（显示范围/类型/标题/正文），y 写入、n 拒绝、a 本会话不再问；条目落在 SUAG_HOME 的 files 后端 |
 
 运行：
