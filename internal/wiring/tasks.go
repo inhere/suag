@@ -11,13 +11,14 @@ import (
 
 // NewTaskManager returns the background task manager of a host process
 // (chat, run, acp) with the tasks.* limits; task output goes to the
-// session's outputs directory, so recall reads it. onExit (may be nil) is
-// told of tasks that ended without the model seeing it. The host closes it.
+// session's outputs directory, so recall reads it. onNotice (may be nil) is
+// told of every notice left for the model (a task that ended unseen, a
+// running task's notice), e.g. to wake an idle chat. The host closes it.
 //
 // Every task end is recorded in the session's trace through its own store
 // handle, not the turn's runner: ACP opens a runtime per prompt, so a task
 // may end between turns (or at shutdown) when no runner is open.
-func NewTaskManager(onExit func(tasks.Info)) (*tasks.Manager, appconfig.TaskSettings, error) {
+func NewTaskManager(onNotice func(tasks.Info)) (*tasks.Manager, appconfig.TaskSettings, error) {
 	settings, err := appconfig.ReadTaskSettings()
 	if err != nil {
 		return nil, settings, err
@@ -31,7 +32,7 @@ func NewTaskManager(onExit func(tasks.Info)) (*tasks.Manager, appconfig.TaskSett
 		return nil, settings, err
 	}
 	spiller := personal.NewSessionSpiller(dir)
-	m := tasks.NewManager(tasks.Config{Limits: settings.Limits, Output: spiller.TaskOutput, OnExit: onExit})
+	m := tasks.NewManager(tasks.Config{Limits: settings.Limits, Output: spiller.TaskOutput, OnNotice: onNotice})
 	m.SetOnEnd(func(info tasks.Info) { recordTaskEnd(dbPath, info) })
 	return m, settings, nil
 }

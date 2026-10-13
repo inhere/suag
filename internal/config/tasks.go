@@ -13,8 +13,9 @@ import (
 // TaskSettings configure background tasks (tasks.*).
 type TaskSettings struct {
 	Limits tasks.Limits
-	// WakeOnExit: in chat, a task that ends while chat waits for input
-	// starts a turn with its notice (tasks.wake_on_exit, default true).
+	// WakeOnExit: in chat, a notice left while chat waits for input (a task
+	// that ended, a watch whose result changed) starts a turn with it
+	// (tasks.wake_on_exit, default true).
 	WakeOnExit bool
 }
 

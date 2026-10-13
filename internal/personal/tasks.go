@@ -25,11 +25,23 @@ const metaTaskNotice = "suag.task_notice"
 // noticeTailLines are shown per task in a notice.
 const noticeTailLines = 5
 
-// TaskNoticeText is the text of a notice for ended tasks.
+// TaskNoticeText is the text of a notice for ended tasks and for what
+// running tasks reported (a watch whose result changed).
 func TaskNoticeText(infos []tasks.Info) string {
 	var b strings.Builder
-	b.WriteString("[background task notice] These background tasks ended (read more with the task tool or recall the ref):")
+	head := "These background tasks ended"
 	for _, info := range infos {
+		if info.Notice != "" {
+			head = "Background task updates"
+			break
+		}
+	}
+	b.WriteString("[background task notice] " + head + " (read more with the task tool or recall the ref):")
+	for _, info := range infos {
+		if info.Notice != "" { // the report of a task (sent while it ran)
+			b.WriteString("\n- " + info.ID + " (" + info.Kind + ") reports: " + strings.ReplaceAll(info.Notice, "\n", "\n  "))
+			continue
+		}
 		b.WriteString("\n- " + tasks.Describe(info))
 		if tail := tasks.TailText(info, noticeTailLines); tail != "" {
 			b.WriteString("\n  last lines:\n  " + strings.ReplaceAll(tail, "\n", "\n  "))

@@ -2,7 +2,9 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,7 +57,7 @@ func helper(mode string, env ...string) *exec.Cmd {
 func newTestManager(t *testing.T, limits Limits, onExit func(Info)) (*Manager, context.Context) {
 	t.Helper()
 	dir := t.TempDir()
-	m := NewManager(Config{Limits: limits, OnExit: onExit, Output: func(sid, id string) (string, string, error) {
+	m := NewManager(Config{Limits: limits, OnNotice: onExit, Output: func(sid, id string) (string, string, error) {
 		return filepath.Join(dir, sid+"-"+id+".txt"), "out:" + sid + ":" + id, nil
 	}})
 	t.Cleanup(m.Close)
@@ -103,7 +105,7 @@ func TestManager(t *testing.T) {
 		assert.Eq(t, 2, matched)
 		assert.Eq(t, "3: line 3 token=[REDACTED]", hits[1])
 	})
-	t.Run("an unseen end leaves one notice and calls OnExit", func(t *testing.T) {
+	t.Run("an unseen end leaves one notice and calls OnNotice", func(t *testing.T) {
 		var exits atomic.Int32
 		m, ctx := newTestManager(t, Limits{}, func(Info) { exits.Add(1) })
 		_, err := m.Start(ctx, Spec{Kind: "shell", Cmd: helper("lines", "TASKS_LINES=1")})
@@ -160,5 +162,90 @@ func TestManager(t *testing.T) {
 		assert.Eq(t, Killed, got.Status)
 		_, err = m.Start(ctx, Spec{Kind: "shell", Cmd: helper("sleep")})
 		assert.ErrMsgContains(t, err, "shut down")
+	})
+}
+
+func TestFunctionTasks(t *testing.T) {
+	t.Run("writes output, reports progress and counters, ends with its exit code", func(t *testing.T) {
+		m, ctx := newTestManager(t, Limits{}, nil)
+		info, err := m.Start(ctx, Spec{Kind: "watch", Summary: "fn", Run: func(_ context.Context, out io.Writer, r Reporter) (int, error) {
+			fmt.Fprintln(out, "run 1")
+			r.Progress("run 1, exit 0")
+			r.Count("runs", 1)
+			return 3, nil
+		}})
+		assert.Require(t, assert.NoErr(t, err))
+		ended, done, err := m.Wait(ctx, "s1", info.ID, 5*time.Second)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.True(t, done)
+		assert.Eq(t, Exited, ended.Status)
+		assert.Eq(t, 3, ended.ExitCode)
+		assert.Eq(t, []string{"run 1"}, ended.Tail)
+		assert.Eq(t, map[string]int{"runs": 1}, ended.Counters)
+		assert.StrContains(t, Describe(ended), "run 1, exit 0")
+		assert.Empty(t, m.TakeNotices("s1")) // Wait saw the end
+	})
+	t.Run("an error marks it failed", func(t *testing.T) {
+		m, ctx := newTestManager(t, Limits{}, nil)
+		info, err := m.Start(ctx, Spec{Kind: "hook", Run: func(context.Context, io.Writer, Reporter) (int, error) {
+			return -1, errors.New("boom")
+		}})
+		assert.Require(t, assert.NoErr(t, err))
+		ended, _, _ := m.Wait(ctx, "s1", info.ID, 5*time.Second)
+		assert.Eq(t, Failed, ended.Status)
+		assert.Eq(t, "boom", ended.Error)
+		assert.StrContains(t, Describe(ended), "failed after")
+		assert.StrContains(t, Describe(ended), ": boom")
+	})
+	t.Run("kill and the time limit cancel its context", func(t *testing.T) {
+		m, ctx := newTestManager(t, Limits{MaxDuration: 300 * time.Millisecond}, nil)
+		block := func(ctx context.Context, _ io.Writer, _ Reporter) (int, error) {
+			<-ctx.Done()
+			return -1, nil
+		}
+		killed, err := m.Start(ctx, Spec{Run: block})
+		assert.Require(t, assert.NoErr(t, err))
+		timed, err := m.Start(ctx, Spec{Run: block})
+		assert.Require(t, assert.NoErr(t, err))
+		info, err := m.Kill("s1", killed.ID)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, Killed, info.Status)
+		info, done, _ := m.Wait(ctx, "s1", timed.ID, 5*time.Second)
+		assert.True(t, done)
+		assert.Eq(t, TimedOut, info.Status)
+	})
+	t.Run("running notices: the newest replaces a pending one, the end notice stays apart", func(t *testing.T) {
+		var notified atomic.Int32
+		m, ctx := newTestManager(t, Limits{}, func(Info) { notified.Add(1) })
+		step := make(chan struct{})
+		info, err := m.Start(ctx, Spec{Kind: "watch", Run: func(_ context.Context, _ io.Writer, r Reporter) (int, error) {
+			r.Notify("changed: exit 0 -> 1")
+			r.Notify("changed: exit 1 -> 0")
+			<-step
+			r.Notify("changed: exit 0 -> 2")
+			return 0, nil // it ends by itself, unseen
+		}})
+		assert.Require(t, assert.NoErr(t, err))
+		waitFor(t, func() bool { return notified.Load() == 2 })
+		got := m.TakeNotices("s1")
+		assert.Require(t, assert.Len(t, got, 1))
+		assert.Eq(t, info.ID, got[0].ID)
+		assert.Eq(t, "changed: exit 1 -> 0", got[0].Notice)
+		assert.Eq(t, Running, got[0].Status)
+
+		close(step)
+		waitFor(t, func() bool { return notified.Load() == 4 }) // the notice and the end
+		got = m.TakeNotices("s1")
+		assert.Require(t, assert.Len(t, got, 2))
+		assert.Eq(t, "changed: exit 0 -> 2", got[0].Notice)
+		assert.Eq(t, "", got[1].Notice)
+		assert.Eq(t, Exited, got[1].Status)
+	})
+	t.Run("a spec needs exactly one of Cmd and Run", func(t *testing.T) {
+		m, ctx := newTestManager(t, Limits{}, nil)
+		_, err := m.Start(ctx, Spec{})
+		assert.Err(t, err)
+		_, err = m.Start(ctx, Spec{Cmd: helper("sleep"), Run: func(context.Context, io.Writer, Reporter) (int, error) { return 0, nil }})
+		assert.Err(t, err)
 	})
 }

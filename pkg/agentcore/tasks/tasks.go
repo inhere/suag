@@ -1,17 +1,21 @@
-// Package tasks runs commands in the background for an agent session: start
-// one and get an id at once, read its output while it runs, wait for it with
-// a timeout, kill it. Output goes line by line (cleaned by the caller, e.g.
-// decoded and redacted) to a file the host names per session. A finished
-// task leaves a notice the host hands to the model before its next request
-// (TakeNotices), unless the model already saw the end through Wait or Kill.
-// The whole process tree of every task is killed by Kill, by the limits and
-// by Close; nothing outlives the manager.
+// Package tasks runs work in the background for an agent session: start a
+// command (or a function: a watch loop, a hook, later a sub-agent) and get an
+// id at once, read its output while it runs, wait for it with a timeout, kill
+// it. Output goes line by line (cleaned by the caller, e.g. decoded and
+// redacted) to a file the host names per session. A finished task leaves a
+// notice the host hands to the model before its next request (TakeNotices),
+// unless the model already saw the end through Wait or Kill; a running
+// function task may leave notices too (Reporter.Notify). The whole process
+// tree of every command task is killed by Kill, by the limits and by Close;
+// a function task's context is cancelled. Nothing outlives the manager.
 package tasks
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"slices"
@@ -71,18 +75,38 @@ type Config struct {
 	// Session returns the session a call belongs to; nil uses
 	// llm.SessionIDFrom.
 	Session func(ctx context.Context) string
-	// OnExit, when set, is called (in its own goroutine) for every task that
-	// ended with a notice pending, e.g. to wake an idle chat.
-	OnExit func(Info)
+	// OnNotice, when set, is called for every notice left pending: a task
+	// that ended unseen, or a running task's Reporter.Notify (e.g. to wake an
+	// idle chat). It runs in the task's goroutine and must not block.
+	OnNotice func(Info)
 }
 
-// Spec is one task to start.
+// Reporter is what a function task (Spec.Run) tells the manager while it runs.
+type Reporter interface {
+	// Notify leaves a notice for the model now, while the task keeps running
+	// (e.g. a watch whose result changed). A newer notice of the same task
+	// replaces one the host has not taken yet.
+	Notify(text string)
+	// Progress sets a short state shown with the task (e.g. "run 5, exit 0").
+	Progress(text string)
+	// Count sets a named counter reported with the task (Info.Counters).
+	Count(name string, n int)
+}
+
+// RunFunc is a function task: it writes its output to out (line by line,
+// cleaned like a command's) and returns its exit code. ctx is cancelled by
+// Kill, by Limits.MaxDuration and by Close; a non-nil error marks it failed.
+type RunFunc func(ctx context.Context, out io.Writer, r Reporter) (exitCode int, err error)
+
+// Spec is one task to start: a command (Cmd) or a function (Run).
 type Spec struct {
-	Kind    string // "shell"
+	Kind    string // "shell", "watch", "hook"
 	Summary string // what it runs, shown in lists and notices
 	// Cmd is ready to Start (path, args, dir, env); its Stdout, Stderr and
 	// SysProcAttr are set by the manager.
 	Cmd *exec.Cmd
+	// Run is a function task, instead of Cmd.
+	Run RunFunc
 	// Clean turns raw output into text for the file and the tail, one line
 	// at a time (no trailing newline); nil keeps the bytes as they are.
 	Clean func(line []byte) string
@@ -106,6 +130,14 @@ type Info struct {
 	Ref       string `json:"ref"`
 	// Tail is the last lines of the output (up to tailLines / tailBytes).
 	Tail []string `json:"tail,omitempty"`
+	// Error is why a function task failed.
+	Error string `json:"error,omitempty"`
+	// Progress and Counters are what a function task reported (Reporter).
+	Progress string         `json:"progress,omitempty"`
+	Counters map[string]int `json:"counters,omitempty"`
+	// Notice is set on a notice of a running task (TakeNotices): its text.
+	// Empty on an end notice.
+	Notice string `json:"notice,omitempty"`
 }
 
 // Duration is how long the task ran (so far, while running).
@@ -139,7 +171,13 @@ type session struct {
 	seq     int
 	tasks   map[string]*task
 	order   []string
-	notices []string // ids of ended tasks whose notice is pending
+	notices []pending // notices not taken yet, in order
+}
+
+// pending is one notice: a task's end (text "") or a running task's Notify.
+type pending struct {
+	id   string
+	text string
 }
 
 // NewManager returns a Manager; cfg.Output is required.
@@ -172,8 +210,8 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Info, error) {
 	if sid == "" {
 		return Info{}, errors.New("background tasks need a session")
 	}
-	if spec.Cmd == nil {
-		return Info{}, errors.New("no command")
+	if (spec.Cmd == nil) == (spec.Run == nil) {
+		return Info{}, errors.New("a task needs a command or a function")
 	}
 	m.mu.Lock()
 	if m.closed {
@@ -209,6 +247,13 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Info, error) {
 		done: make(chan struct{}),
 	}
 	t.out = newLineWriter(file, spec.Clean, m.limits.MaxOutputBytes)
+	if spec.Run != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		t.cancel = cancel
+		m.register(s, t)
+		go m.runFunc(s, t, ctx, spec.Run)
+		return t.snapshot(), nil
+	}
 	cmd := spec.Cmd
 	cmd.Stdin = nil
 	cmd.Stdout, cmd.Stderr = t.out, t.out
@@ -221,31 +266,56 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Info, error) {
 		return Info{}, fmt.Errorf("start: %w", err)
 	}
 	t.tree.Started()
-	m.mu.Lock()
-	s.tasks[id] = t
-	s.order = append(s.order, id)
-	m.mu.Unlock()
-	t.timer = time.AfterFunc(m.limits.MaxDuration, func() { t.end(TimedOut) })
+	m.register(s, t)
 	go m.wait(s, t, cmd)
 	return t.snapshot(), nil
+}
+
+// register adds a started task to its session and arms its time limit.
+func (m *Manager) register(s *session, t *task) {
+	m.mu.Lock()
+	s.tasks[t.info.ID] = t
+	s.order = append(s.order, t.info.ID)
+	m.mu.Unlock()
+	t.timer = time.AfterFunc(m.limits.MaxDuration, func() { t.end(TimedOut) })
 }
 
 // wait reaps the command and records how it ended.
 func (m *Manager) wait(s *session, t *task, cmd *exec.Cmd) {
 	err := cmd.Wait()
 	t.tree.Close() // also ends children left running in the background
+	code := cmd.ProcessState.ExitCode()
+	status := Exited
+	if err != nil && code < 0 {
+		status = Failed
+	}
+	m.finish(s, t, status, code, "")
+}
+
+// runFunc runs a function task and records how it ended.
+func (m *Manager) runFunc(s *session, t *task, ctx context.Context, run RunFunc) {
+	code, err := run(ctx, t.out, reporter{m: m, s: s, t: t})
+	t.cancel()
+	status, msg := Exited, ""
+	if err != nil {
+		status, msg = Failed, err.Error()
+	}
+	m.finish(s, t, status, code, msg)
+}
+
+// finish records a task's end (status unless Kill or the time limit ended
+// it), tells the host and leaves the end notice unless the model saw it.
+func (m *Manager) finish(s *session, t *task, status Status, code int, errMsg string) {
 	t.timer.Stop()
 	t.out.finish()
 	t.mu.Lock()
 	t.info.Ended = time.Now()
-	t.info.ExitCode = cmd.ProcessState.ExitCode()
-	switch {
-	case t.ending != "":
+	t.info.ExitCode = code
+	t.info.Status = status
+	if t.ending != "" {
 		t.info.Status = t.ending
-	case err != nil && t.info.ExitCode < 0:
-		t.info.Status = Failed
-	default:
-		t.info.Status = Exited
+	} else if status == Failed {
+		t.info.Error = errMsg
 	}
 	t.mu.Unlock()
 	// The end is recorded before Wait and Kill return: a host that exits
@@ -259,12 +329,50 @@ func (m *Manager) wait(s *session, t *task, cmd *exec.Cmd) {
 	close(t.done)
 	m.mu.Lock()
 	if !seen {
-		s.notices = append(s.notices, t.info.ID)
+		s.notices = append(s.notices, pending{id: t.info.ID})
 	}
 	m.mu.Unlock()
-	if !seen && m.cfg.OnExit != nil {
-		m.cfg.OnExit(t.snapshot())
+	if !seen && m.cfg.OnNotice != nil {
+		m.cfg.OnNotice(t.snapshot())
 	}
+}
+
+// reporter is the Reporter of one function task.
+type reporter struct {
+	m *Manager
+	s *session
+	t *task
+}
+
+func (r reporter) Notify(text string) {
+	if text == "" {
+		return
+	}
+	r.m.mu.Lock()
+	// A newer notice replaces the task's pending one (not its end notice).
+	r.s.notices = slices.DeleteFunc(r.s.notices, func(p pending) bool { return p.id == r.t.info.ID && p.text != "" })
+	r.s.notices = append(r.s.notices, pending{id: r.t.info.ID, text: text})
+	r.m.mu.Unlock()
+	if r.m.cfg.OnNotice != nil {
+		info := r.t.snapshot()
+		info.Notice = text
+		r.m.cfg.OnNotice(info)
+	}
+}
+
+func (r reporter) Progress(text string) {
+	r.t.mu.Lock()
+	r.t.info.Progress = text
+	r.t.mu.Unlock()
+}
+
+func (r reporter) Count(name string, n int) {
+	r.t.mu.Lock()
+	if r.t.info.Counters == nil {
+		r.t.info.Counters = map[string]int{}
+	}
+	r.t.info.Counters[name] = n
+	r.t.mu.Unlock()
 }
 
 // List returns the session's tasks, in start order.
@@ -347,7 +455,7 @@ func (m *Manager) markSeen(sessionID string, t *task) {
 	t.mu.Unlock()
 	m.mu.Lock()
 	if s := m.sessions[sessionID]; s != nil {
-		s.notices = slices.DeleteFunc(s.notices, func(id string) bool { return id == t.info.ID })
+		s.notices = slices.DeleteFunc(s.notices, func(p pending) bool { return p.id == t.info.ID && p.text == "" })
 	}
 	m.mu.Unlock()
 }
@@ -357,21 +465,25 @@ func (m *Manager) markSeen(sessionID string, t *task) {
 func (m *Manager) TakeNotices(sessionID string) []Info {
 	m.mu.Lock()
 	s := m.sessions[sessionID]
-	var ids []string
+	var taken []pending
 	if s != nil {
-		ids, s.notices = s.notices, nil
+		taken, s.notices = s.notices, nil
 	}
-	var tasks []*task
-	for _, id := range ids {
-		tasks = append(tasks, s.tasks[id])
+	tasks := make([]*task, len(taken))
+	for i, p := range taken {
+		tasks[i] = s.tasks[p.id]
 	}
 	m.mu.Unlock()
-	out := make([]Info, 0, len(tasks))
-	for _, t := range tasks {
-		t.mu.Lock()
-		t.seen = true
-		t.mu.Unlock()
-		out = append(out, t.snapshot())
+	out := make([]Info, 0, len(taken))
+	for i, t := range tasks {
+		if taken[i].text == "" { // an end notice: the model sees the end
+			t.mu.Lock()
+			t.seen = true
+			t.mu.Unlock()
+		}
+		info := t.snapshot()
+		info.Notice = taken[i].text
+		out = append(out, info)
 	}
 	return out
 }
@@ -420,13 +532,14 @@ func (m *Manager) Close() {
 	}
 }
 
-// task is one background command.
+// task is one background command or function.
 type task struct {
 	mu     sync.Mutex
 	info   Info
-	ending Status // set by end before the kill: how the end is reported
-	seen   bool   // the model saw the end (Wait, Kill or a notice)
-	tree   *proctree.Tree
+	ending Status             // set by end before the kill: how the end is reported
+	seen   bool               // the model saw the end (Wait, Kill or a notice)
+	tree   *proctree.Tree     // a command's process tree
+	cancel context.CancelFunc // a function's context
 	out    *lineWriter
 	timer  *time.Timer
 	done   chan struct{}
@@ -447,12 +560,17 @@ func (t *task) end(how Status) {
 	}
 	t.ending = how
 	t.mu.Unlock()
-	_ = t.tree.Kill()
+	if t.tree != nil {
+		_ = t.tree.Kill()
+	} else {
+		t.cancel()
+	}
 }
 
 func (t *task) snapshot() Info {
 	t.mu.Lock()
 	info := t.info
+	info.Counters = maps.Clone(t.info.Counters)
 	t.mu.Unlock()
 	info.Bytes, info.Lines, info.Truncated, info.Tail = t.out.stats()
 	return info

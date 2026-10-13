@@ -8,7 +8,8 @@ import (
 
 // Describe is a one-line account of a task, shared by the task tool, the
 // end notices and the trace: "t3 exited (exit 0) after 4m12s · 1.2 MB / 3400
-// lines · go test ./... · out:sess:ab12".
+// lines · go test ./... · out:sess:ab12"; a function task adds its error and
+// progress ("t4 running for 3m · run 5, exit 0 · ...").
 func Describe(i Info) string {
 	state := string(i.Status)
 	switch i.Status {
@@ -23,7 +24,14 @@ func Describe(i Info) string {
 	if i.Truncated {
 		size += " (output cut)"
 	}
-	parts := []string{i.ID + " " + state, size}
+	parts := []string{i.ID + " " + state}
+	if i.Error != "" {
+		parts[0] += ": " + i.Error
+	}
+	if i.Progress != "" {
+		parts = append(parts, i.Progress)
+	}
+	parts = append(parts, size)
 	if i.Summary != "" {
 		parts = append(parts, i.Summary)
 	}

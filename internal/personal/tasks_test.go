@@ -105,3 +105,20 @@ func TestTaskNoticesReachTheModel(t *testing.T) {
 		assert.True(t, events[0].DurationMs >= 59000)
 	})
 }
+
+func TestTaskNoticeText(t *testing.T) {
+	ended := tasks.Info{ID: "t1", Kind: "shell", Summary: "go test ./...", Status: tasks.Exited,
+		Started: time.Now().Add(-time.Second), Ended: time.Now(), Tail: []string{"ok"}}
+	t.Run("ended tasks", func(t *testing.T) {
+		text := TaskNoticeText([]tasks.Info{ended})
+		assert.StrContains(t, text, "[background task notice] These background tasks ended")
+		assert.StrContains(t, text, "- t1 exited (exit 0)")
+	})
+	t.Run("a running task's report", func(t *testing.T) {
+		watch := tasks.Info{ID: "t2", Kind: "watch", Status: tasks.Running, Notice: "run 3 (files: a.go): exit 0 -> 1\nlast lines:\nFAIL"}
+		text := TaskNoticeText([]tasks.Info{watch, ended})
+		assert.StrContains(t, text, "[background task notice] Background task updates")
+		assert.StrContains(t, text, "- t2 (watch) reports: run 3 (files: a.go): exit 0 -> 1\n  last lines:\n  FAIL")
+		assert.StrContains(t, text, "- t1 exited (exit 0)")
+	})
+}
