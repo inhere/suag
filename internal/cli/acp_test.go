@@ -35,12 +35,19 @@ func (c *appACPClient) SessionUpdate(_ context.Context, update acp.SessionNotifi
 
 func connectAppACP(t *testing.T) (*acp.ClientSideConnection, *appACPClient) {
 	t.Helper()
+	client := &appACPClient{}
+	return connectAppACPWith(t, client), client
+}
+
+// connectAppACPWith serves RunPersonalACP to client over pipes; the server
+// stops (and must return) at cleanup.
+func connectAppACPWith(t *testing.T, client acp.Client) *acp.ClientSideConnection {
+	t.Helper()
 	clientToAgentR, clientToAgentW := io.Pipe()
 	agentToClientR, agentToClientW := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- RunPersonalACP(ctx, clientToAgentR, agentToClientW) }()
-	client := &appACPClient{}
 	conn := acp.NewClientSideConnection(client, clientToAgentW, agentToClientR)
 	t.Cleanup(func() {
 		cancel()
@@ -54,7 +61,7 @@ func connectAppACP(t *testing.T) (*acp.ClientSideConnection, *appACPClient) {
 			t.Error("ACP stdio server did not exit")
 		}
 	})
-	return conn, client
+	return conn
 }
 
 func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {

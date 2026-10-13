@@ -364,9 +364,6 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	memHost.bind(runner, repo)
-	if taskNotices != nil {
-		opts.Tasks.SetOnEnd(runner.RecordTaskEnd) // task ends go to the trace
-	}
 	return &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
 		ContextWindow: contextWindow, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry}, nil
 }

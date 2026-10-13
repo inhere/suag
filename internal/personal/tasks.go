@@ -77,6 +77,18 @@ func (b *contextBuilder) takeTaskNotices(ctx context.Context, state *agentcore.R
 // RecordTaskEnd records a background task's end in the trace (a task event
 // spanning its whole run). It is called from the task's own goroutine.
 func (r *Runner) RecordTaskEnd(info tasks.Info) {
+	r.rec.record(context.Background(), taskEndEvent(info))
+}
+
+// RecordTaskEndIn records a task end straight into repo, for hosts whose
+// tasks outlive the runner (ACP opens a runner per prompt, so a task may end
+// between turns).
+func RecordTaskEndIn(repo *store.Store, info tasks.Info) {
+	(&recorder{sink: repo}).record(context.Background(), taskEndEvent(info))
+}
+
+// taskEndEvent is the task event of an ended task.
+func taskEndEvent(info tasks.Info) store.Event {
 	attrs := map[string]any{"arg": info.Summary, "kind": info.Kind, "exit_code": info.ExitCode,
 		"bytes": info.Bytes, "lines": info.Lines, "ref": info.Ref}
 	if info.Truncated {
@@ -86,9 +98,9 @@ func (r *Runner) RecordTaskEnd(info tasks.Info) {
 	if info.Status != tasks.Exited || info.ExitCode != 0 {
 		status = string(info.Status)
 	}
-	r.rec.record(context.Background(), store.Event{Kind: store.EventTask, Name: info.ID, SessionID: info.SessionID,
+	return store.Event{Kind: store.EventTask, Name: info.ID, SessionID: info.SessionID,
 		Status: status, StartedAt: info.Started, DurationMs: info.Duration().Milliseconds(), Attrs: attrs,
-		Error: errorOfTask(info)})
+		Error: errorOfTask(info)}
 }
 
 func errorOfTask(info tasks.Info) string {

@@ -30,6 +30,15 @@ func newACPCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Write
 
 // RunPersonalACP serves the same persistent personal runner used by CLI over stdio.
 func RunPersonalACP(ctx context.Context, input io.Reader, output io.Writer) error {
+	// Background tasks belong to the ACP process, not a prompt: each prompt
+	// opens its own runtime, while a task keeps running across turns (its end
+	// notice goes into the session's next prompt). session/cancel cancels the
+	// turn only; tasks still running when the connection closes are killed.
+	taskManager, _, err := wiring.NewTaskManager(nil)
+	if err != nil {
+		return err
+	}
+	defer taskManager.Close()
 	return acpserver.Serve(ctx, input, output, func(ctx context.Context, cwd string, readOnly bool, servers []mcp.ServerSettings, gate acpserver.TurnGate) (acpserver.Runtime, error) {
 		workspace, err := filepath.Abs(cwd)
 		if err != nil {
@@ -47,7 +56,8 @@ func RunPersonalACP(ctx context.Context, input io.Reader, output io.Writer) erro
 		// read_only also limits the memory tool to get/search; memory writes of
 		// a tainted session are confirmed through the gate's permission request.
 		runtime, err := wiring.Open(ctx, wiring.Options{Workspace: workspace, RuleCWD: workspace, AllowWrite: !readOnly,
-			MemoryReadOnly: readOnly, MemoryConfirm: memoryConfirm, Servers: servers, Hooks: hooks, Approver: approver})
+			MemoryReadOnly: readOnly, MemoryConfirm: memoryConfirm, Servers: servers, Hooks: hooks, Approver: approver,
+			Tasks: taskManager})
 		if err != nil {
 			return acpserver.Runtime{}, err
 		}
