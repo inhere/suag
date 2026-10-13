@@ -1,6 +1,6 @@
 # Changelog
 
-本文件记录 suag 各版本的用户可见变更，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。当前处于 `v0`，次版本之间可能有不兼容变更，会在“不兼容”一节写明。
+本文件记录 suga（原名 suag）各版本的用户可见变更，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。当前处于 `v0`，次版本之间可能有不兼容变更，会在“不兼容”一节写明。
 
 ## [未发布]
 
@@ -410,4 +410,4 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 [0.4.0]: https://github.com/inhere/suga/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/inhere/suga/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/inhere/suga/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/inhere/suag/releases/tag/v0.1.0
+[0.1.0]: https://github.com/inhere/suga/releases/tag/v0.1.0

@@ -73,7 +73,7 @@ BAILIAN_API_KEY=<你的密钥>
 BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
-也可将这两个变量设为 Gofer server 进程可用的环境变量。仓库的 `config/config.yaml` 是字段样例；Suga 只加载 `~/.suga/config.yaml` 与 `~/.suga/.env`（或 `SUGA_HOME` 下的同名文件），不读取当前工作目录的配置和 `.env`。`SUGA_HOME` 替换 `~/.suga` 作为数据与配置根，`SUGA_CONFIG` 指定唯一配置文件。模型优先级是 `--model` > `SUGA_MODEL` > 配置 `model`（`<provider>/<model>`）；这些选项不会接收密钥。OpenAI、Anthropic、DeepSeek 是内置预设，换用时改 `model` 并提供对应环境变量即可；完整字段见 [LLM 配置](llm-config-v0.md)。不要把真实密钥写入 agent argv、job `--env` 或任务文本：Gofer 会持久化 job 请求。会话库位置只由 `SUGA_HOME` 决定（`$SUGA_HOME/db/sessions.db`），`database_url` 与 `agentcore.run_root` 已移除。旧版本的库（`suga.db`、`agentcore/` 目录）不读取、不迁移、也不删除，仍留在磁盘上：旧会话 ID 无法用 `--resume`/`--session-id` 续接，Gofer 中登记的旧 Suga 会话（`session_family: suga`）无法再被唤醒或接管，需要新建会话。
+也可将这两个变量设为 Gofer server 进程可用的环境变量。仓库的 `config/config.yaml` 是字段样例；Suga 只加载 `~/.suga/config.yaml` 与 `~/.suga/.env`（或 `SUGA_HOME` 下的同名文件），不读取当前工作目录的配置和 `.env`。`SUGA_HOME` 替换 `~/.suga` 作为数据与配置根，`SUGA_CONFIG` 指定唯一配置文件。模型优先级是 `--model` > `SUGA_MODEL` > 配置 `model`（`<provider>/<model>`）；这些选项不会接收密钥。OpenAI、Anthropic、DeepSeek 是内置预设，换用时改 `model` 并提供对应环境变量即可；完整字段见 [LLM 配置](llm-config-v0.md)。不要把真实密钥写入 agent argv、job `--env` 或任务文本：Gofer 会持久化 job 请求。会话库位置只由 `SUGA_HOME` 决定（`$SUGA_HOME/db/sessions.db`），`database_url` 与 `agentcore.run_root` 已移除。旧版本的库（`suag.db`、`agentcore/` 目录）不读取、不迁移、也不删除，仍留在磁盘上：旧会话 ID 无法用 `--resume`/`--session-id` 续接，Gofer 中登记的旧 Suag 会话（`session_family: suag`）无法再被唤醒或接管，需要新建会话。
 
 ## 批处理 CLI
 
@@ -155,7 +155,7 @@ gofer job logs <job-id> --stream stdout --tail -n 20
 gofer job resume <job-id> --prompt "继续上个问题"
 ```
 
-首个 CLI job 的 `stdout` 是 Gofer 提取的最终答复；`session_id` 可从 `job show` 读取。Gofer 0.118.0 的 `job resume` 已验证继承源 job 的环境，并将最终答复投影到 `stdout`；原始 NDJSON 保留在 `stderr` 供排查。真实凭据仍应放在 Suga 私有配置或稳定的进程环境中。历史作业若使用已移除的 `suga-cli` agent 键，不能直接用当前的 `suga` 键续接。
+首个 CLI job 的 `stdout` 是 Gofer 提取的最终答复；`session_id` 可从 `job show` 读取。Gofer 0.118.0 的 `job resume` 已验证继承源 job 的环境，并将最终答复投影到 `stdout`；原始 NDJSON 保留在 `stderr` 供排查。真实凭据仍应放在 Suga 私有配置或稳定的进程环境中。历史作业若使用已移除的 `suag-cli` agent 键，不能直接用当前的 `suga` 键续接。
 
 ### 会话交接、观测与 deferred 工具
 
