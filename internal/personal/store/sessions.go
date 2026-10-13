@@ -116,6 +116,24 @@ func (s *Store) SessionCwds(ctx context.Context) (map[string]string, error) {
 	return out, rows.Err()
 }
 
+// UpdateSessionFields sets title, cwd, status, last_turn_id and updated_at
+// of an existing session and leaves its meta alone. Meta is patched by key
+// (PatchSessionMeta, PatchSessionMetaIfAbsent) by several writers, e.g. a
+// background task marking the session tainted while a turn runs; writing back
+// a meta read earlier (UpdateSession) would drop what they added meanwhile.
+// UpdatedAt defaults to now when zero.
+func (s *Store) UpdateSessionFields(ctx context.Context, in Session) error {
+	if in.UpdatedAt.IsZero() {
+		in.UpdatedAt = time.Now()
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE sessions SET title=?, cwd=?, status=?, last_turn_id=?, updated_at=? WHERE id=?`,
+		in.Title, in.Cwd, in.Status, in.LastTurnID, formatTime(in.UpdatedAt), in.ID)
+	if err != nil {
+		return fmt.Errorf("update session %q: %w", in.ID, err)
+	}
+	return requireAffected(res, ErrSessionNotFound)
+}
+
 // UpdateSession overwrites title, cwd, status, last_turn_id and meta of an
 // existing session. UpdatedAt defaults to now when zero.
 func (s *Store) UpdateSession(ctx context.Context, in Session) error {

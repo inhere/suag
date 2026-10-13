@@ -230,3 +230,27 @@ func TestEventsAndUsage(t *testing.T) {
 		assert.Eq(t, 1, len(byTurn))
 	})
 }
+
+// TestUpdateSessionFieldsKeepsMeta: a meta key patched after the session was
+// read survives a state update made from that read (the turn's status
+// changes while a background task marks the session tainted).
+func TestUpdateSessionFieldsKeepsMeta(t *testing.T) {
+	s := openTemp(t)
+	ctx := context.Background()
+	assert.Require(t, assert.NoErr(t, s.CreateSession(ctx, Session{ID: "s1", Status: SessionOpen, Meta: map[string]any{"loaded_tools": []any{"x"}}})))
+	stale, err := s.GetSession(ctx, "s1")
+	assert.Require(t, assert.NoErr(t, err))
+	assert.NoErr(t, s.PatchSessionMeta(ctx, "s1", map[string]any{"tainted_at": "2026-10-13T10:00:00Z"}))
+
+	stale.Status, stale.LastTurnID, stale.Title = SessionRunning, "turn_1", "title"
+	assert.Require(t, assert.NoErr(t, s.UpdateSessionFields(ctx, stale)))
+	got, err := s.GetSession(ctx, "s1")
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, SessionRunning, got.Status)
+	assert.Eq(t, "turn_1", got.LastTurnID)
+	assert.Eq(t, "title", got.Title)
+	assert.Eq(t, "2026-10-13T10:00:00Z", got.Meta["tainted_at"])
+	assert.NotNil(t, got.Meta["loaded_tools"])
+
+	assert.ErrIs(t, s.UpdateSessionFields(ctx, Session{ID: "missing"}), ErrSessionNotFound)
+}

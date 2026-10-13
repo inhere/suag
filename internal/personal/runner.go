@@ -316,7 +316,7 @@ func (r *Runner) SetSessionTitle(ctx context.Context, sessionID, title string) e
 	}
 	model.Title = SessionTitle(title)
 	model.UpdatedAt = time.Now().UTC()
-	if err := r.cfg.Repository.UpdateSession(ctx, model); err != nil {
+	if err := r.cfg.Repository.UpdateSessionFields(ctx, model); err != nil {
 		return fmt.Errorf("update personal session title: %w", err)
 	}
 	return nil
@@ -576,7 +576,7 @@ func (r *Runner) markRunning(ctx context.Context, sessionID, turnID string) (Ses
 	if fresh.Cwd == "" {
 		fresh.Cwd = r.cfg.Workspace
 	}
-	if err := r.cfg.Repository.UpdateSession(ctx, fresh); err != nil {
+	if err := r.cfg.Repository.UpdateSessionFields(ctx, fresh); err != nil {
 		return fresh, err
 	}
 	return fresh, nil
@@ -763,7 +763,7 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 		persistErr = errors.Join(persistErr, err)
 	} else {
 		fresh.Status, fresh.UpdatedAt = store.SessionOpen, now
-		if err := r.cfg.Repository.UpdateSession(finishCtx, fresh); err != nil {
+		if err := r.cfg.Repository.UpdateSessionFields(finishCtx, fresh); err != nil {
 			persistErr = errors.Join(persistErr, err)
 		}
 	}
