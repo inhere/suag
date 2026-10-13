@@ -4,6 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"os/signal"
+	"runtime"
 
 	"github.com/gookit/goutil/cflag/capp"
 	appconfig "github.com/inhere/suag/internal/config"
@@ -12,8 +16,8 @@ import (
 )
 
 func newTraceCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
-	var traceTurn string
-	var traceJSON, traceAnalyze bool
+	var traceTurn, traceAddr string
+	var traceJSON, traceAnalyze, traceWeb bool
 	trace := capp.NewCmd("trace", "Show the turn/model/tool/denial timeline of a session", func(c *capp.Cmd) error {
 		// Flags may also follow the session ID, which the flag parser leaves in the remaining args.
 		var positional []string
@@ -24,6 +28,11 @@ func newTraceCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 				traceJSON = true
 			case rest[i] == "--analyze" || rest[i] == "-analyze":
 				traceAnalyze = true
+			case rest[i] == "--web" || rest[i] == "-web":
+				traceWeb = true
+			case (rest[i] == "--addr" || rest[i] == "-addr") && i+1 < len(rest):
+				i++
+				traceAddr = rest[i]
 			case (rest[i] == "--turn" || rest[i] == "-turn") && i+1 < len(rest):
 				i++
 				traceTurn = rest[i]
@@ -32,13 +41,18 @@ func newTraceCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 			}
 		}
 		if len(positional) != 1 {
-			return fmt.Errorf("usage: suag trace <session> [--turn id] [--json] [--analyze]")
+			return fmt.Errorf("usage: suag trace <session> [--turn id] [--json] [--analyze] [--web [--addr 127.0.0.1:0]]")
+		}
+		if traceWeb {
+			return runTraceWeb(ctx, stdout, positional[0], traceAddr)
 		}
 		return runTrace(ctx, stdout, positional[0], traceTurn, traceJSON, traceAnalyze)
 	})
 	trace.SetOutput(stderr)
 	trace.StringVar(&traceTurn, "turn", "", "only show events of this turn ID")
 	trace.BoolVar(&traceJSON, "json", false, "write one JSON object per line")
+	trace.BoolVar(&traceWeb, "web", false, "serve the session timeline as a local web page (Ctrl-C to stop)")
+	trace.StringVar(&traceAddr, "addr", "127.0.0.1:0", "loopback address for --web (port 0 picks a free one)")
 	trace.BoolVar(&traceAnalyze, "analyze", false, "summarize the loop: steps, parallel calls, re-reads, repeated commands, tests after the first pass")
 	return trace
 }
@@ -70,4 +84,49 @@ func runTrace(ctx context.Context, out io.Writer, sessionID, turnID string, asJS
 		return err
 	}
 	return personal.WriteTrace(out, events, plans, asJSON)
+}
+
+// runTraceWeb serves the session timeline page until ctx ends (Ctrl-C).
+func runTraceWeb(ctx context.Context, out io.Writer, sessionID, addr string) error {
+	if addr == "" {
+		addr = "127.0.0.1:0"
+	}
+	dbPath, err := appconfig.ResolveCoreStorePath()
+	if err != nil {
+		return err
+	}
+	repo, err := store.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer repo.Close()
+	if _, err := personal.BuildTraceView(ctx, repo, sessionID); err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+	defer stop()
+	load := func(ctx context.Context) (*personal.TraceView, error) {
+		return personal.BuildTraceView(ctx, repo, sessionID)
+	}
+	return personal.ServeTraceView(ctx, addr, load, func(url string) {
+		fmt.Fprintf(out, "trace of %s: %s (Ctrl-C to stop)\n", sessionID, url)
+		openBrowser(url)
+	})
+}
+
+// openBrowser opens url in the default browser, best-effort.
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	default:
+		if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+			return // no desktop: the printed URL is enough
+		}
+		cmd = exec.Command("xdg-open", url)
+	}
+	_ = cmd.Start()
 }

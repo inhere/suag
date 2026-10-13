@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>suag trace</title>
+<style>
+:root { --bg:#fafafa; --fg:#222; --mute:#777; --line:#e3e3e3; --model:#5b8def; --read:#3fb27f; --write:#e39b2d; --shell:#9b6bd6; --err:#e5484d; --other:#8a8a8a; --mark:#c0c0c0; }
+* { box-sizing: border-box; }
+body { margin:0; font:13px/1.45 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color:var(--fg); background:var(--bg); }
+header { padding:10px 16px; background:#fff; border-bottom:1px solid var(--line); }
+header h1 { font-size:15px; margin:0 0 4px; }
+.mute { color:var(--mute); }
+.chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.chip { background:#f1f3f5; border-radius:10px; padding:2px 9px; font-size:12px; }
+nav { display:flex; gap:4px; padding:6px 16px 0; background:#fff; border-bottom:1px solid var(--line); }
+nav button { border:0; background:none; padding:6px 12px; cursor:pointer; border-bottom:2px solid transparent; font-size:13px; }
+nav button.on { border-color:var(--model); color:var(--model); }
+main { display:flex; height:calc(100vh - 118px); }
+#left { flex:1.4; overflow:auto; border-right:1px solid var(--line); }
+#detail { flex:1; overflow:auto; padding:10px 14px; background:#fff; }
+.filters { position:sticky; top:0; background:#fff; padding:6px 10px; border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; gap:8px; align-items:center; z-index:1; }
+.filters label { font-size:12px; }
+.filters input[type=search] { width:180px; padding:2px 6px; }
+table.tl { border-collapse:collapse; width:100%; }
+table.tl td { padding:2px 6px; border-bottom:1px solid #f0f0f0; white-space:nowrap; vertical-align:middle; }
+table.tl tr { cursor:pointer; }
+table.tl tr:hover { background:#f5f8ff; }
+table.tl tr.sel { background:#e8efff; }
+table.tl tr.turn td { background:#f3f3f3; font-weight:600; }
+td.when { color:var(--mute); font-variant-numeric:tabular-nums; width:62px; }
+td.kind { width:76px; }
+td.what { max-width:420px; overflow:hidden; text-overflow:ellipsis; }
+td.bar { width:34%; position:relative; }
+.barw { position:relative; height:12px; }
+.barw span { position:absolute; top:1px; height:10px; border-radius:2px; min-width:2px; }
+.k { display:inline-block; padding:0 6px; border-radius:8px; font-size:11px; color:#fff; }
+.indent { padding-left:22px !important; }
+.err { color:var(--err); }
+pre { white-space:pre-wrap; word-break:break-word; background:#f7f7f7; padding:8px; border-radius:4px; max-height:420px; overflow:auto; font:12px/1.4 ui-monospace, Consolas, monospace; }
+h3 { font-size:13px; margin:12px 0 4px; }
+table.kv td { padding:1px 8px 1px 0; vertical-align:top; font-size:12px; }
+table.kv td:first-child { color:var(--mute); white-space:nowrap; }
+details summary { cursor:pointer; color:var(--mute); }
+.stack { display:flex; height:16px; border-radius:3px; overflow:hidden; margin:3px 0; background:#eee; }
+.stack span { height:100%; }
+.legend { display:flex; flex-wrap:wrap; gap:8px; font-size:11px; margin:6px 0; }
+.legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:3px; vertical-align:-1px; }
+.pane { padding:10px 16px; overflow:auto; width:100%; }
+.callbars { display:flex; align-items:flex-end; gap:2px; height:160px; border-bottom:1px solid var(--line); }
+.callbars div { flex:1; display:flex; flex-direction:column-reverse; min-width:3px; height:100%; }
+.callbars span { display:block; width:100%; }
+</style>
+</head>
+<body>
+<header><h1 id="title">suag trace</h1><div id="sub" class="mute"></div><div class="chips" id="chips"></div></header>
+<nav><button data-tab="timeline" class="on">时间线</button><button data-tab="context">上下文</button><button data-tab="analysis">分析</button></nav>
+<main id="main"></main>
+<script>
+"use strict";
+const COLORS = { model:"var(--model)", read:"var(--read)", write:"var(--write)", shell:"var(--shell)", error:"var(--err)", other:"var(--other)", mark:"var(--mark)" };
+const PARTS = [["system","系统提示","#5b8def"],["tools","工具定义","#8fb3f5"],["environment","环境","#3fb27f"],["rules","规则","#e39b2d"],["memory_index","记忆索引","#9b6bd6"],["skills","skills","#c58be0"],["append_prompt","追加提示","#d9b44a"],["deferred_tools","延迟工具","#a0c4ff"],["handoff","交接摘要","#ff9f80"],["history","历史","#b0b0b0"],["hook_context","hook 注入","#e5484d"],["input","本轮输入","#222"]];
+const READ_TOOLS = new Set(["file_read","file_list","file_grep","file_find","recall","session_search","web_fetch","web_search","skill","tool_search","suag_manifest"]);
+const WRITE_TOOLS = new Set(["file_write","file_edit","file_remove","update_plan","memory"]);
+let data, t0, entryBySeq = new Map(), selected = null, tab = "timeline";
+const filt = { kinds: new Set(["turn","model","tool","denial","context","hook","fold","compaction"]), errors:false, slow:false, q:"" };
+
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") n.className = v; else if (k === "style") n.style.cssText = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null) n.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return n;
+}
+const human = n => n >= 1e6 ? (n/1e6).toFixed(2).replace(/\.?0+$/,"")+"M" : n >= 1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"k" : String(n||0);
+const secs = ms => ms >= 1000 ? (ms/1000).toFixed(1)+"s" : (ms||0)+"ms";
+const at = e => new Date(e.start || e.time).getTime();
+const off = ms => { const s = Math.max(0, Math.round(ms/1000)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); };
+
+function category(e) {
+  if (e.status === "error" || e.kind === "denial" || e.attrs?.test_failed) return "error";
+  if (e.kind === "model") return "model";
+  if (e.kind === "tool") return e.name === "shell_exec" ? "shell" : READ_TOOLS.has(e.name) ? "read" : WRITE_TOOLS.has(e.name) ? "write" : "other";
+  return "mark";
+}
+
+function summary(e) {
+  const a = e.attrs || {};
+  switch (e.kind) {
+    case "model": return `in ${human(e.input_tokens)} (缓存 ${human(e.cache_read_tokens)}) out ${human(e.output_tokens)}` + (a.tool_calls ? ` · ${a.tool_calls} 个调用` : "") + (a.prefix && a.prefix !== "append" ? ` · 前缀 ${a.prefix}` : "") + (a.finish === "truncated" ? " · 截断" : "");
+    case "tool": case "denial": return (a.arg || "") + (a.exit_code != null ? ` · exit=${a.exit_code}` : "") + (a.lines_added != null ? ` · +${a.lines_added}/-${a.lines_removed||0}` : "") + (a.approval && a.approval !== "rule" ? ` · 审批 ${a.approval}` : "") + (e.error ? " · " + e.error : "");
+    case "context": return `约 ${human(a.est_tokens)} / ${human(a.window)} tokens · 工具 ${a.tools_count||0} 个`;
+    case "hook": return [a.decision && "decision="+a.decision, a.additional_chars && "注入 "+a.additional_chars+" 字符", a.reason_chars && "reason "+a.reason_chars].filter(Boolean).join(" · ");
+    case "fold": return `折叠 ${a.boundary}/${a.steps} 步，${human(a.chars_before)}→${human(a.chars_after)} 字符`;
+    case "compaction": return `${e.name} ${a.reason||""} ${a.tokens_before ? human(a.tokens_before)+"→"+human(a.tokens_after) : ""}`;
+    case "turn": return [e.status, a.stop_reason, a.prompt_chars != null && `输入 ${a.prompt_chars} 字符`, a.injected && "注入"].filter(Boolean).join(" · ");
+    default: return e.name;
+  }
+}
+
+function visible(e) {
+  if (!filt.kinds.has(e.kind) && !(e.kind === "turn_context" && filt.kinds.has("context"))) return false;
+  if (filt.errors && category(e) !== "error") return false;
+  if (filt.slow && (e.duration_ms || 0) < 10000) return false;
+  if (filt.q) {
+    const hay = (e.name + " " + summary(e) + " " + JSON.stringify(e.attrs||{}) + " " + (e.entries||[]).map(s => { const en = entryBySeq.get(s); return en ? (en.content||"") + JSON.stringify(en.args||{}) : ""; }).join(" ")).toLowerCase();
+    if (!hay.includes(filt.q.toLowerCase())) return false;
+  }
+  return true;
+}
+
+function renderHeader() {
+  const s = data.session, a = data.analysis;
+  document.getElementById("title").textContent = (s.title || "suag 会话") + " · " + s.id;
+  const tc = data.events.find(e => e.kind === "turn_context");
+  document.getElementById("sub").textContent = [s.cwd, tc && (tc.attrs.provider + "/" + tc.attrs.model), new Date(s.created_at).toLocaleString()].filter(Boolean).join(" · ");
+  const chips = document.getElementById("chips"); chips.replaceChildren();
+  const add = t => chips.append(el("span", {class:"chip"}, t));
+  add(`模型调用 ${a.model_calls}（并行步 ${a.parallel_steps}）`); add(`工具调用 ${a.tool_calls}`);
+  add(`输入 ${human(a.input_tokens)}（缓存 ${human(a.cache_read_tokens)}）· 输出 ${human(a.output_tokens)}`);
+  add(`耗时 模型 ${secs(a.model_ms)} · 工具 ${secs(a.tool_ms)}`);
+  add(`测试 ${a.test_runs} 次（通过后 ${a.test_runs_after_pass}）`);
+  add(`阶段 探索 ${a.explore_steps} · 写入→转绿 ${a.write_to_green_steps < 0 ? "-" : a.write_to_green_steps} · 转绿后 ${a.after_green_steps < 0 ? "-" : a.after_green_steps}`);
+  add(`未命中输入 ${human(a.uncached_input_tokens)}`);
+  const errs = Object.values(a.tool_errors || {}).reduce((x, y) => x + y, 0); if (errs) add(`工具失败 ${errs}`);
+}
+
+function renderTimeline(main) {
+  const left = el("div", {id:"left"}), detail = el("div", {id:"detail"}, el("p", {class:"mute"}, "点击左侧一行查看详情"));
+  const kinds = [["turn","回合"],["model","模型"],["tool","工具"],["denial","拒绝"],["context","上下文"],["hook","hook"],["fold","折叠"],["compaction","分段/压缩"]];
+  const bar = el("div", {class:"filters"},
+    kinds.map(([k, label]) => el("label", {}, el("input", {type:"checkbox", ...(filt.kinds.has(k) ? {checked:""} : {}), onchange: ev => { ev.target.checked ? filt.kinds.add(k) : filt.kinds.delete(k); draw(); }}), " " + label)),
+    el("label", {}, el("input", {type:"checkbox", ...(filt.errors ? {checked:""} : {}), onchange: ev => { filt.errors = ev.target.checked; draw(); }}), " 仅错误"),
+    el("label", {}, el("input", {type:"checkbox", ...(filt.slow ? {checked:""} : {}), onchange: ev => { filt.slow = ev.target.checked; draw(); }}), " 慢于 10s"),
+    el("input", {type:"search", placeholder:"搜索参数/输出…", value: filt.q, oninput: ev => { filt.q = ev.target.value; draw(); }}));
+  const table = el("table", {class:"tl"});
+  left.append(bar, table);
+  main.replaceChildren(left, detail);
+  const end = Math.max(...data.events.map(e => at(e) + (e.duration_ms || 0)), t0 + 1);
+  const span = end - t0;
+  function draw() {
+    table.replaceChildren();
+    let inModel = false;
+    for (const e of data.events) {
+      if (e.kind === "model") inModel = true; else if (e.kind === "turn") inModel = false;
+      if (!visible(e)) continue;
+      const cat = category(e);
+      const left = (at(e) - t0) / span * 100, width = Math.max((e.duration_ms || 0) / span * 100, 0.15);
+      const tr = el("tr", {class: (e.kind === "turn" ? "turn " : "") + (selected === e ? "sel" : ""), onclick: () => { selected = e; history.replaceState(null, "", "#ev=" + e.id); showDetail(detail, e); draw(); }},
+        el("td", {class:"when"}, off(at(e) - t0)),
+        el("td", {class:"kind"}, el("span", {class:"k", style:"background:" + COLORS[cat]}, e.kind === "tool" ? e.name : e.kind)),
+        el("td", {class:"what" + ((e.kind === "tool" || e.kind === "denial") && inModel ? " indent" : "") + (cat === "error" ? " err" : "")}, summary(e)),
+        el("td", {class:"mute"}, e.duration_ms ? secs(e.duration_ms) : ""),
+        el("td", {class:"bar"}, el("div", {class:"barw"}, el("span", {style:`left:${left}%;width:${width}%;background:${COLORS[cat]}`}))));
+      table.append(tr);
+    }
+  }
+  draw();
+  if (selected) showDetail(detail, selected);
+}
+
+function kv(obj) {
+  return el("table", {class:"kv"}, Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && v !== "").map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", {}, typeof v === "object" ? JSON.stringify(v) : String(v)))));
+}
+
+function latestSegment(time) {
+  let seg = null;
+  for (const en of data.entries) if (en.type === "compaction" && new Date(en.time).getTime() <= time && en.raw?.context) seg = en.raw;
+  return seg;
+}
+
+function stackBar(attrs) {
+  const total = PARTS.reduce((s, [k]) => s + (attrs[k] || 0), 0) || 1;
+  return el("div", {class:"stack", title: PARTS.map(([k, l]) => `${l} ${human(attrs[k]||0)}`).join("\n")}, PARTS.filter(([k]) => attrs[k]).map(([k, l, c]) => el("span", {style:`width:${attrs[k]/total*100}%;background:${c}`, title:`${l} ${human(attrs[k])} 字符`})));
+}
+const legend = () => el("div", {class:"legend"}, PARTS.map(([, l, c]) => el("span", {}, el("i", {style:"background:" + c}), l)));
+
+function showDetail(box, e) {
+  box.replaceChildren(el("h3", {}, `${e.kind} · ${e.name}`), el("div", {class:"mute"}, new Date(e.start).toLocaleTimeString() + (e.duration_ms ? " · " + secs(e.duration_ms) : "") + (e.ttft_ms ? " · TTFT " + secs(e.ttft_ms) : "")));
+  if (e.error) box.append(el("pre", {class:"err"}, e.error));
+  const tokens = {input: e.input_tokens, cache_read: e.cache_read_tokens, cache_write: e.cache_write_tokens, output: e.output_tokens};
+  if (e.kind === "model") box.append(el("h3", {}, "token"), kv(tokens));
+  if (e.kind === "context") {
+    box.append(el("h3", {}, "上下文组成（字符）"), stackBar(e.attrs), legend(), kv(Object.fromEntries(PARTS.map(([k, l]) => [l, e.attrs[k] ? human(e.attrs[k]) : ""]))));
+    const seg = latestSegment(at(e) + 1000);
+    if (seg) {
+      box.append(el("h3", {}, "分段上下文原文"));
+      for (const [k, l] of PARTS) if (seg.context[k]) box.append(el("details", {}, el("summary", {}, `${l}（${human(seg.context[k].length)} 字符）`), el("pre", {}, seg.context[k])));
+      if (seg.summary) box.append(el("details", {}, el("summary", {}, `交接摘要（${human(seg.summary.length)} 字符）`), el("pre", {}, seg.summary)));
+    }
+  }
+  for (const seq of e.entries || []) {
+    const en = entryBySeq.get(seq); if (!en) continue;
+    if (en.args) box.append(el("h3", {}, "参数"), el("pre", {}, JSON.stringify(en.args, null, 2)));
+    else if (en.role === "tool") box.append(el("h3", {class: en.is_error ? "err" : ""}, en.is_error ? "结果（错误）" : "结果"), el("pre", {}, en.content || ""));
+    if (en.role === "assistant") {
+      if (en.reasoning) box.append(el("details", {}, el("summary", {}, `思考（${human(en.reasoning.length)} 字符）`), el("pre", {}, en.reasoning)));
+      if (en.content) box.append(el("h3", {}, "正文"), el("pre", {}, en.content));
+      if (en.tool) box.append(el("div", {class:"mute"}, `→ 调用 ${en.tool}${en.batch ? "（并行批次 " + en.batch + "）" : ""}`));
+    }
+  }
+  box.append(el("h3", {}, "属性"), kv(e.attrs || {}));
+}
+
+function renderContext(main) {
+  const pane = el("div", {class:"pane"});
+  const ctxs = data.events.filter(e => e.kind === "context");
+  pane.append(el("h3", {}, "每回合上下文组成（首次请求，字符）"), legend());
+  if (!ctxs.length) pane.append(el("p", {class:"mute"}, "这个会话没有 context 事件（较早的版本不记录）。"));
+  ctxs.forEach((e, i) => pane.append(el("div", {class:"mute"}, `回合 ${i + 1} · ${off(at(e) - t0)} · 约 ${human(e.attrs.est_tokens)} tokens`), stackBar(e.attrs)));
+  const models = data.events.filter(e => e.kind === "model" && !(e.attrs || {}).purpose);
+  const max = Math.max(...models.map(e => e.input_tokens + e.output_tokens), 1);
+  pane.append(el("h3", {}, "每次模型调用的输入（深色 = 命中缓存）与输出"),
+    el("div", {class:"callbars"}, models.map(e => el("div", {title:`in ${human(e.input_tokens)} 缓存 ${human(e.cache_read_tokens)} out ${human(e.output_tokens)}`},
+      el("span", {style:`height:${e.cache_read_tokens / max * 100}%;background:#3a6fd8`}),
+      el("span", {style:`height:${(e.input_tokens - e.cache_read_tokens) / max * 100}%;background:#a8c2f5`}),
+      el("span", {style:`height:${e.output_tokens / max * 100}%;background:#e39b2d`})))),
+    el("div", {class:"legend"}, el("span", {}, el("i", {style:"background:#3a6fd8"}), "缓存命中"), el("span", {}, el("i", {style:"background:#a8c2f5"}), "未命中输入"), el("span", {}, el("i", {style:"background:#e39b2d"}), "输出")));
+  main.replaceChildren(pane);
+}
+
+function renderAnalysis(main) {
+  main.replaceChildren(el("div", {class:"pane"}, el("h3", {}, "trace --analyze"), kv(data.analysis)));
+}
+
+function render() {
+  const main = document.getElementById("main");
+  if (tab === "timeline") renderTimeline(main); else if (tab === "context") renderContext(main); else renderAnalysis(main);
+}
+
+function setTab(name) {
+  tab = name; document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x.dataset.tab === name)); render();
+}
+document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
+
+fetch("api/session").then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(t))).then(d => {
+  data = d; data.events = data.events || []; data.entries = data.entries || [];
+  for (const en of data.entries) entryBySeq.set(en.seq, en);
+  t0 = Math.min(...data.events.map(at), ...data.entries.map(at), Date.now());
+  // #tab=context or #ev=<event id> open a tab or select a row (shareable).
+  const hash = new URLSearchParams(location.hash.slice(1));
+  if (hash.get("ev")) selected = data.events.find(e => String(e.id) === hash.get("ev")) || null;
+  renderHeader();
+  setTab(hash.get("tab") || "timeline");
+}).catch(err => { document.getElementById("main").replaceChildren(el("pre", {class:"err"}, String(err))); });
+</script>
+</body>
+</html>
