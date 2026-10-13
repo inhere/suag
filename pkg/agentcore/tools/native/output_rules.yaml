@@ -2,7 +2,7 @@
 # A rule applies when its `match` regex matches the shell command. It drops
 # lines that only say something passed and keeps everything that may matter;
 # the original output is always kept under a ref. Users override or add
-# rules by name in $SUAG_HOME/output-rules.yaml or <repo>/.suag/output-rules.yaml
+# rules by name in $SUGA_HOME/output-rules.yaml or <repo>/.suga/output-rules.yaml
 # (`enabled: false` turns a built-in rule off).
 #
 # Fields:

@@ -3,7 +3,7 @@
 -- table (T12).
 --
 -- entries_fts keeps its own rowid and locates its entry by session_id/seq:
--- entries is an implicit-rowid table and VACUUM (suag gc) may renumber it.
+-- entries is an implicit-rowid table and VACUUM (suga gc) may renumber it.
 --
 -- NOTE: the indexed-type list and the role/text expressions of the backfill
 -- below MUST stay identical to ftsIndexedTypes/ftsRoleExpr/ftsTextExpr in
