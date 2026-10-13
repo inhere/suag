@@ -111,6 +111,15 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 - `suag_manifest`：以 JSON 返回能力清单，等同在主机上跑 `suag manifest --json`（模型、工具及元数据、MCP、skills、记忆后端及选择原因、输出上限）。
 - `memory`：长期记忆，见下节。
 
+### 子 agent（`agent` 工具）
+
+`agent` 工具把一件独立任务交给只读子 agent：`type` 为 `explore`（缺省，工作区只读工具）或 `research`（再加 `web_fetch`、`web_search`），它只把最终报告带回来，`description` 就是它的名字。完整说明（两种类型、后台运行、上限与 `agents.*` 配置、用量与污染口径、子会话的列表/搜索/gc）见 [README 的“子 agent”一节](../../README.zh-CN.md#子-agent)。这里只列接入方会看到的部分：
+
+- **只读会话也可用**：子 agent 自己只读（不能写文件、执行命令、询问用户，也不能再派子 agent），所以 `agent` 工具在 `read_only` mode、chat 默认模式与 `run` 缺省模式都注册，且不触发审批。只读模式下注册的是 `task`（`list`/`output`/`wait`/`kill`），用于 `background: true` 的子 agent；`shell_exec` 的 `background` 仍只在写模式出现。
+- **ACP 标题**：每次子 agent 调用是一条普通 `tool_call`，标题为 `agent: <description>`（`toolCallId` 与状态序列与其它工具一致），并按只读工具放行；子 agent 内部的工具调用不发给客户端（第一期），只在 trace 里可见。
+- **用量**：子 agent 的模型调用计入调用它的那次 run——prompt 进行中发出的 `usage_update`（顶层扁平键与 `_meta.run`）已包含子 agent 的 token 与成本；`_meta.session` 与顶层 `cost.amount` 是会话累计，等于父会话加它的全部子会话。后台子 agent 结束时会话若没有进行中的 run，用量暂存到下一个 run 一起上报（不在已结束的 run 之后补发）。
+- **观测**：父会话里有一条 `agent` 工具事件（attrs 含 `child_session_id`、`agent_type`、`steps`、`tool_calls`、`input_tokens`、`cache_read_tokens`、`output_tokens`、`cost_usd`、`stop`），后台子 agent 结束时是一条 `kind=agent` 的 task 事件；子会话自己的事件用 `suag trace <子会话 id>` 查看，`suag sessions --agents` 会列出子会话。
+
 ### 输出治理
 
 工具结果超过 `tools.max_output_bytes`（缺省 8000）时，脱敏后的原文存到 `$SUAG_HOME/sessions/<会话 id>/outputs/`，会话里只有头尾各 2000 字节与 ref（`out:<session>:<hex>`），模型用 `recall` 分页读、用 `session_search`（带 `ref`）在其中检索；`file_read` 自己分页，不外置；出错结果不外置。输出外置不影响 stream-json 与 ACP 的事件格式。`tools.max_spill_bytes`（缺省 1 MiB）是单次原始输出的上限。`tools.minimize_output`（缺省 `true`）：shell 结果进入上下文前先整理——去掉颜色码与进度重绘、折叠连续相同的行、测试与构建输出按输出规则裁剪（全部通过时只留各包结果和一行汇总、有失败时只留失败用例及其信息）；原文保存为 ref 并在结果中注明，`suag trace` 的工具行显示 `tidied(raw=…)`。内置规则覆盖 go test、cargo test、jest/vitest/mocha 与 npm/pnpm/yarn/bun test、pytest、Maven、Gradle，字段说明见 `pkg/agentcore/tools/native/output_rules.yaml`；用户级 `$SUAG_HOME/output-rules.yaml`、项目级 `<workspace>/.suag/output-rules.yaml` 依次覆盖（同名替换、新名追加、`enabled: false` 关闭），文件有错时启动警告并跳过整个文件。命令本身用管道过滤了输出（引号外的 `|`，不含 `||`）时不套用规则。`suag stats --json` 的 `tools` 项给出 `raw_bytes`、`inline_bytes`、`spilled`；`suag trace` 的 `turn_context` 行记录每回合的模型、模式、工具集哈希与是否已污染。

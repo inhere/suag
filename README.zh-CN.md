@@ -67,6 +67,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `rules.file` | 每一级目录读取的项目规则文件名（每级只读一个，从 Git 根或 cwd 到 cwd），默认 `AGENTS.md`，可改成 `CLAUDE.md`；只接受文件名，不能带路径。`~/.suag/AGENTS.md` 仍会读取 |
 | `providers.<id>.prompt_cache` | 仅 Claude（`anthropic` 类型），默认关：加 `cache_control` 断点（system 变为块数组）；部分网关不接受 |
 | `tools.allow_write` | 仅 chat：启用写文件和 shell 工具（默认 false） |
+| `agents.enabled`、`agents.model`、`agents.max_steps`、`agents.max_tokens`、`agents.timeout` | `agent` 工具（见[子 agent](#子-agent)）：是否注册（默认 true）、子 agent 使用的模型（默认主模型）、步数上限（30）、token 上限（400000，按未命中缓存的输入加输出计）、软时间上限（10m） |
 | `tasks.max_running`、`tasks.max_duration`、`tasks.max_output_bytes`、`tasks.wake_on_exit` | 后台任务：每个会话同时在跑的数量（4）、单次最长运行时间（`2h`）、输出文件上限（64 MiB）、任务结束时是否唤醒空闲的 chat（true；运行中的任务发来通知时同样唤醒，见监听任务） |
 | `tools.approval` | 仅 chat：`ask`（默认）执行写/shell 工具前询问，`auto` 不询问 |
 | `tools.max_output_bytes`、`tools.max_spill_bytes` | 内联阈值：单次工具结果完整写入会话的上限（默认 8000，超出时原文存 `$SUAG_HOME/sessions/<id>/outputs/`，会话只留 ref 与头尾片段）；单次工具原始输出上限（默认 1 MiB） |
@@ -100,6 +101,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `skill` | 读 | 加载 skill、读取其文件，或检索 skills（`query`；`"*"` 列出全部名字） |
 | `session_search` | 读 | 全文检索过往消息、工具结果与摘要（`scope`：workspace、current、all）；带 `ref=out:...` 时在那份已保存的输出内检索 |
 | `recall` | 读 | 按 ref 读取命中附近内容：`<session>/<seq>` 起的消息，或已保存输出 `out:<session>:<hex>` 的带行号文本 |
+| `agent` | 读 | 把一件独立的任务交给子 agent：它在自己的上下文里大量读取，只把报告带回来（`description`、`prompt`、`type`：`explore` 或 `research`、`background`）；见[子 agent](#子-agent) |
 | `suag_manifest` | 读 | 以 JSON 返回本实例的能力清单（与 `suag manifest` 相同） |
 | `memory` | 状态 | 对长期记忆 `add`、`replace`、`remove`、`get`、`search`（`scope` 为 project 或 user），见[记忆](#记忆) |
 | `file_write` | 写 | 整文件写入 |
@@ -122,6 +124,16 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 - **MCP**：用 `--mcp-config <file>`（Claude 风格的 `mcpServers` JSON）或配置里的 `mcp.servers` 接入。MCP 调用默认一律拒绝，需在 `tools.auto_allow`（`--read-only` 时用 `tools.read_only_allow`）中放行。工具很多时会延迟加载，模型通过 `tool_search` 取用。
 
 完整语义见 [Gofer 接入与工具说明](docs/usage/gofer-personal-agent.md#内置工具与相关配置)。
+
+## 子 agent
+
+`agent` 工具把一件独立的任务交给子 agent：它是一个在自己的会话里运行的模型，只有只读工具，最终回答就是带回给主 agent 的报告。要大量阅读的任务——追调用链、比对多个实现、查清一个依赖的用法——因此只花掉父上下文一份报告，而不是每个读过的文件。
+
+- **两种类型**：`explore`（默认）拿到工作区只读工具（`file_read`、`file_list`、`file_grep`、`file_find`）；`research` 再加 `web_fetch` 与 `web_search`。子 agent 不能写文件、不能执行命令、不能询问用户，也不能再派子 agent，并且看不到本会话的任何内容。调用里的 `description` 就是它在 chat、ACP 与 trace 里的名字。
+- **后台**：传 `background: true` 时它作为任务（种类 `agent`）运行：调用立刻返回任务 id，`task wait` 等它结束，报告就是该任务的输出（结束时还有一条带报告开头的通知）。可以一次派几个并行探索（与 shell 任务共用 `tasks.max_running` 槽位）。只读会话也有 `task` 工具，因为它只用到 `list`/`output`/`wait`/`kill`（`shell_exec` 仍只在写模式后台运行）。
+- **上限**：`agents.max_steps`（30）、`agents.max_tokens`（400000，按未命中缓存的输入加输出累计，长上下文命中缓存不会很快耗尽它）、`agents.timeout`（10m，软截止，之后 60 秒宽限）。到任一个上限时子 agent 被要求收尾，基于已有信息给出报告；报告末尾一行是 `[sub-agent <会话> · N steps · in … / out … · <耗时> · stop=<原因>]`，原因有 `final`、`max_steps`、`max_tokens`、`timeout`、`cancelled`、`failed`。`agents.model` 可让子 agent 跑在更便宜的模型上；`agents.enabled: false` 则不注册该工具。
+- **用量与污染**：子 agent 的模型调用计入调用它的会话当前进行中的 run（stream-json 与 ACP 的 `usage_update` 都含它，ACP 在 prompt 进行中上报），也计入会话累计——会话累计 = 父会话加它的全部子会话（`suag stats --session`）。子 agent 读过的外部内容会和其它外部读取一样把父会话标记为已污染：`research` 类型的子 agent（或读到了引用网页内容的文件）会让之后的写记忆需要确认。
+- **子会话**：每次调用都在一个自己的会话里运行——`kind: agent`，带 `parent_session_id`、`agent_type` 以及发起它的回合与工具调用，标题就是 description。`suag sessions` 与 `session_search` 默认不列出子会话；`suag sessions --agents` 会列出并标明各自的父会话。`suag trace <会话>` 可以照常查看某一个子会话，`suag gc` 随父会话一起删除它。
 
 ## Skills
 
@@ -154,9 +166,9 @@ Gofer 拉起 `suag run`（CLI 作业），或 `suag acp`（常驻会话，通过
 
 ```text
 suag trace <session> [--turn <id>] [--json]       # 时间线：模型调用、工具、拒绝、计划
-suag sessions [关键词] [-n 10] [--since 7d] [--until 2026-10-01] [--cwd .] [--json]  # 会话列表，最新在前；关键词匹配标题、id、目录、模型或对话内容
-suag trace <session> --analyze [--json]          # 循环分析：步数、并行调用、重复读、重复命令、首次通过后的测试
-suag trace <session> --web [--addr 127.0.0.1:0]  # 本机网页：时间线（后台任务横条、任务通知标注）、详情、上下文组成、分析、本机环境（Ctrl-C 结束）
+suag sessions [关键词] [-n 10] [--since 7d] [--until 2026-10-01] [--cwd .] [--agents] [--json]  # 会话列表，最新在前；关键词匹配标题、id、目录、模型或对话内容；--agents 连子会话一起列出
+suag trace <session> --analyze [--json]          # 循环分析：步数、并行调用、重复读、重复命令、首次通过后的测试、子 agent
+suag trace <session> --web [--addr 127.0.0.1:0]  # 本机网页：时间线（后台任务横条、任务通知标注、子 agent 行及其子会话 trace 命令）、详情、上下文组成、分析、本机环境（Ctrl-C 结束）
 suag stats [--session <id>] [--since 7d] [--json] # 调用次数、耗时、token、缓存命中
 suag export <session> [--redact] [-o <file>]      # 以 jsonl 导出会话内容与事件
 suag gc --older-than 30d [--apply]                # 列出（默认）或删除长期未活动的会话
@@ -164,7 +176,7 @@ suag ps                                           # 正在运行的 chat 进程
 suag manifest [--json] [--model <p/m>]            # 模型、工具、MCP、skills、记忆后端、输出上限
 ```
 
-工具行显示退出码（shell）、进入上下文的字节数、转存标记与脱敏后的参数摘要；模型行显示这次回复发出了几个工具调用（`calls=N`）、被输出上限截断时的 `truncated`、请求重试时的 `retries=N(reason, waited Xs)`、命中缓存的输入 token（`cached=N`），以及请求没有延续上一次时的原因和重新发送的早先内容量（`prefix=fold(rebuilt=12k)`，原因有 fold、segment、system、tools、rewrite）。`--analyze` 从同一组事件得出：步数与并行步数、各工具次数与失败、读了多次的文件和写完又回读的次数、每个文件的编辑次数、重复执行的相同命令、测试运行次数及首次通过之后又跑了几次（输出报告了失败的不算通过，不论退出码）、各阶段的模型调用数（首次写入前的探索、首次写入到测试首次通过、通过之后）、编辑步数及其中只改一处的步数、退出码为 0 但有 stderr 输出的 shell 次数、未命中缓存的输入按来源拆分（上次请求之后新增的内容、前缀断开后重新发送的早先内容（按原因）、前缀本可命中但 provider 没有命中的部分，按请求大小估算）、转存/折叠/压缩/模型重试次数、最慢的几次模型调用。有后台任务时还会补充：任务运行期间循环用于模型与工具调用的时间（`background_overlap_ms`，即省下的等待，只计后台命令，不含监听与 Stop hook；重叠的前台调用只算一次）、`task wait` 的次数与阻塞时长，以及其中在任务启动后立刻 wait 的次数（`immediate_waits`，把后台当前台用）；按种类还会补充本会话的数字：watch 任务数及其运行与变化次数（`watch_tasks`、`watch_runs`、`watch_changes`），以及后台 Stop hook 的运行次数（`stop_hooks`）。`task` 行（后台任务结束）会显示任务的种类：watch 带 `runs=N changes=M` 或最近一次状态，Stop hook 显示它的摘要。工具行还会显示编辑的增删行数（`+新增/-删除`），问过人时显示 `approval=user(wait=3.2s)`。每回合有一行 `context`，列出该回合第一次请求由哪些部分组成（系统提示词、工具及其数量与 MCP 占比、环境、规则、记忆索引、skills、延迟工具、交接摘要、历史、hook 注入、本轮输入的字符数）以及估算 token 与窗口；每次 hook 运行记一行 `hook`（事件、耗时、是否 block、注入的上下文）。回合行记录输入长度及是否为注入而非人工输入。`suag trace` 每回合还会显示一行 `turn_context`（模型、模式、工具集哈希、规则与记忆索引哈希、是否已污染），每次分段显示一行（`segment=#N reason=... tokens=前->后`），以及 `schedule` 事件（chat 空闲整理：fired、done、cancelled、skipped）。`suag stats` 显示各模型成本（provider 返回，或按配置的 `price` 计算）；加 `--json` 还有工具输出字节（`raw_bytes`、`inline_bytes`、`spilled`）。
+工具行显示退出码（shell）、进入上下文的字节数、转存标记与脱敏后的参数摘要；`agent` 行（子 agent 调用）还会显示它运行的会话、类型、步数（连带子 agent 自己的工具调用数）、token 与成本、以及结束原因（`sub=<会话> type=explore steps=12 calls=5 in=85k(cache 60k) out=3k cost=$0.0123 stop=final`），而后台子 agent 的 task 行显示 `agent steps=N calls=M`；模型行显示这次回复发出了几个工具调用（`calls=N`）、被输出上限截断时的 `truncated`、请求重试时的 `retries=N(reason, waited Xs)`、命中缓存的输入 token（`cached=N`），以及请求没有延续上一次时的原因和重新发送的早先内容量（`prefix=fold(rebuilt=12k)`，原因有 fold、segment、system、tools、rewrite）。`--analyze` 从同一组事件得出：步数与并行步数、各工具次数与失败、读了多次的文件和写完又回读的次数、每个文件的编辑次数、重复执行的相同命令、测试运行次数及首次通过之后又跑了几次（输出报告了失败的不算通过，不论退出码）、各阶段的模型调用数（首次写入前的探索、首次写入到测试首次通过、通过之后）、编辑步数及其中只改一处的步数、退出码为 0 但有 stderr 输出的 shell 次数、未命中缓存的输入按来源拆分（上次请求之后新增的内容、前缀断开后重新发送的早先内容（按原因）、前缀本可命中但 provider 没有命中的部分，按请求大小估算）、转存/折叠/压缩/模型重试次数、最慢的几次模型调用，以及本会话子 agent 的开销（调用次数、步数、工具调用数、token、成本与耗时，见 `agent_calls`、`agent_steps`、`agent_tool_calls`、`agent_input_tokens`、`agent_cache_read_tokens`、`agent_output_tokens`、`agent_cost_usd`、`agent_ms`；`agent_stops` 记录各结束原因的分布）。有后台任务时还会补充：任务运行期间循环用于模型与工具调用的时间（`background_overlap_ms`，即省下的等待，只计后台命令，不含监听与 Stop hook；重叠的前台调用只算一次）、`task wait` 的次数与阻塞时长，以及其中在任务启动后立刻 wait 的次数（`immediate_waits`，把后台当前台用）；按种类还会补充本会话的数字：watch 任务数及其运行与变化次数（`watch_tasks`、`watch_runs`、`watch_changes`），以及后台 Stop hook 的运行次数（`stop_hooks`）。`task` 行（后台任务结束）会显示任务的种类：watch 带 `runs=N changes=M` 或最近一次状态，Stop hook 显示它的摘要，agent 任务显示子 agent 跑的步数。工具行还会显示编辑的增删行数（`+新增/-删除`），问过人时显示 `approval=user(wait=3.2s)`。每回合有一行 `context`，列出该回合第一次请求由哪些部分组成（系统提示词、工具及其数量与 MCP 占比、环境、规则、记忆索引、skills、延迟工具、交接摘要、历史、hook 注入、本轮输入的字符数）以及估算 token 与窗口；每次 hook 运行记一行 `hook`（事件、耗时、是否 block、注入的上下文）。回合行记录输入长度及是否为注入而非人工输入。`suag trace` 每回合还会显示一行 `turn_context`（模型、模式、工具集哈希、规则与记忆索引哈希、是否已污染），每次分段显示一行（`segment=#N reason=... tokens=前->后`），以及 `schedule` 事件（chat 空闲整理：fired、done、cancelled、skipped）。`suag stats` 显示各模型成本（provider 返回，或按配置的 `price` 计算）；加 `--json` 还有工具输出字节（`raw_bytes`、`inline_bytes`、`spilled`）。
 
 `run --output-format stream-json` 在每次模型调用后输出一行 `usage`，为本次 run 的累计值：`input_tokens`（不含缓存）、`output_tokens`、`cache_read_tokens`、`cache_write_tokens`、`total_tokens`、`cost_usd`、`tool_calls`。`turn_end` 与 `result` 带同名 `usage`，调用方可在运行中途做预算控制。模型请求因瞬时故障重试时会输出一行 `retry`（`reason`、`attempt`、`wait_ms`、`restart`）；`restart: true` 表示这条消息此前输出的 `message_delta` 文本作废，会从头重新流式输出。chat 把这种重试显示为一行 `↻` 提示，`run` 打到 stderr，ACP 作为 thought 块下发。ACP 在同一时机发 `usage_update`（[说明](docs/usage/gofer-personal-agent.md#acp-用量上报)）。
 
