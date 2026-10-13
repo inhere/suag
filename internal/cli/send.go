@@ -13,27 +13,36 @@ import (
 // maxSendStdinBytes caps `suga send` stdin; exit codes: 2 ambiguous, 3 offline, 4 too large.
 const maxSendStdinBytes = 1 << 20
 
+// sendHelp documents the three text sources of `suga send`, including the way
+// to pass text that would otherwise be read as an option.
+const sendHelp = `The message text comes from arguments, --text, or stdin; the first source that is
+given wins, and arguments cannot be combined with --text:
+  suga send --session <id> 你好 世界      arguments, joined with a single space
+  suga send --session <id> --text 你好    the --text option
+  echo 你好 | suga send --session <id>    stdin, when neither of the above is used
+Options may be written before or after the arguments. Everything after a "--"
+separator counts as text, which is how to pass text that starts with "-":
+  suga send --session <id> -- -hello`
+
+// sendExamples is shown under "Examples:" by `suga send --help`.
+const sendExamples = `suga send --session 1a2b 你好 世界
+suga send --session 1a2b --text 你好
+echo 你好 | suga send --session 1a2b
+suga send --session 1a2b --wait 你好
+suga send --session 1a2b -- -hello`
+
 func newSendCommand(stdin io.Reader, stderr io.Writer) *capp.Cmd {
 	var sendSession, sendText, sendSource string
 	var sendWait bool
 	send := capp.NewCmd("send", "Send text to a local Suga chat process", func(c *capp.Cmd) error {
-		if len(c.RemainArgs()) != 0 {
-			return fmt.Errorf("suga send does not accept arguments")
-		}
+		// The session check runs before any stdin read, so a missing --session
+		// fails at once instead of blocking on input.
 		if strings.TrimSpace(sendSession) == "" {
 			return fmt.Errorf("--session is required")
 		}
-		text := sendText
-		if text == "" {
-			// Read one byte past the cap so oversize input is rejected, never truncated.
-			data, err := io.ReadAll(io.LimitReader(stdin, maxSendStdinBytes+1))
-			if err != nil {
-				return err
-			}
-			if len(data) > maxSendStdinBytes {
-				return processExitError{code: 4, err: fmt.Errorf("stdin exceeds the %d byte (1 MiB) limit; nothing was sent", maxSendStdinBytes)}
-			}
-			text = string(data)
+		text, err := sendMessageText(sendText, c.RemainArgs(), stdin)
+		if err != nil {
+			return err
 		}
 		root, err := localProcessRoot()
 		if err != nil {
@@ -71,9 +80,44 @@ func newSendCommand(stdin io.Reader, stderr io.Writer) *capp.Cmd {
 		return nil
 	})
 	send.SetOutput(stderr)
+	send.Usage = "suga send --session <id> [--text <text> | <text>...] [--source <label>] [--wait]"
+	send.Example = sendExamples
+	send.LongHelp = sendHelp
 	send.StringVar(&sendSession, "session", "", "session ID, prefix, or name")
-	send.StringVar(&sendText, "text", "", "message text; defaults to stdin{[]}")
+	send.StringVar(&sendText, "text", "", "message text; cannot be combined with arguments; defaults to stdin{[]}")
 	send.StringVar(&sendSource, "source", "cli", "source label the chat shows before the text as [来自 <source>]; text already starting with a [...] tag is shown as is{[]}")
 	send.BoolVar(&sendWait, "wait", false, "wait until a queued message starts a turn; exit 3 if it is discarded{[]}")
 	return send
+}
+
+// sendMessageText resolves the message from the three accepted sources: the
+// positional arguments, the --text option, or stdin. Arguments and --text are
+// mutually exclusive, so a typo cannot silently drop half of the message; when
+// neither is given (or the arguments are all blank, like a quoted "") the text
+// is read from stdin up to maxSendStdinBytes.
+func sendMessageText(textFlag string, args []string, stdin io.Reader) (string, error) {
+	// A run of blank arguments counts as absent, so `--text ""` and `suga send
+	// --session <id> ""` both fall through to stdin instead of sending nothing.
+	positional := strings.Join(args, " ")
+	if strings.TrimSpace(positional) == "" {
+		positional = ""
+	}
+	if positional != "" && textFlag != "" {
+		return "", fmt.Errorf("arguments and --text are mutually exclusive: pass the text as arguments or with --text, not both")
+	}
+	if positional != "" {
+		return positional, nil
+	}
+	if textFlag != "" {
+		return textFlag, nil
+	}
+	// Read one byte past the cap so oversize input is rejected, never truncated.
+	data, err := io.ReadAll(io.LimitReader(stdin, maxSendStdinBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > maxSendStdinBytes {
+		return "", processExitError{code: 4, err: fmt.Errorf("stdin exceeds the %d byte (1 MiB) limit; nothing was sent", maxSendStdinBytes)}
+	}
+	return string(data), nil
 }
