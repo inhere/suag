@@ -60,7 +60,7 @@
   - `output`：读输出。参数 `id`、`offset`、`limit`、`grep`，复用 `readOutputLines` 和 `searchOutput`，结果也可以用 ref 交给 `recall`。
   - `wait`：等待结束，参数 `id`、`timeout`（秒，上限是 `tools.shell_timeout_max`）。结束时返回尾部输出与退出码，超时则返回“仍在运行”和最新的几行。
   - `kill`：终止整棵进程树。
-- 审批：`background: true` 的 shell_exec 走原有审批与危险删除守卫（`dangerGuard` 按 `command` 判断，不受 background 影响）。`task kill` 只作用于本会话自己启动的任务，不需要询问。只读模式没有 shell_exec，也就没有后台任务；`task` 工具在只读模式下只允许 list 和 output。
+- 审批：`background: true` 的 shell_exec 走原有审批与危险删除守卫（`dangerGuard` 按 `command` 判断，不受 background 影响）。`task kill` 只作用于本会话自己启动的任务，不需要询问。只读模式没有 shell_exec，也就没有后台任务；`task` 工具在只读模式下只允许 list 和 output。（P4 修订：只读模式也注册 `task` 工具并取通知，以支持后台子 agent；shell 的 `background` 仍只在写模式出现，见 docs/design/2026-10-13-subagents-design.md。）
 
 ### 结束通知
 
