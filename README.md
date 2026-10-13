@@ -8,7 +8,7 @@ Suga is a personal coding agent written in Go. One persistent conversation engin
 
 - **Development tools**: read files in line windows, list, grep and find files, edit by exact replacement, run shell commands (PowerShell on Windows), fetch web pages, search the web.
 - **Safe by default**: read-only unless writing is enabled; chat asks before writing or running commands; file tools stay inside the workspace; web fetches refuse private networks.
-- **Skills**: standard `SKILL.md` skills from the workspace and `~/.agents/skills`, listed or searched on demand.
+- **Skills**: standard `SKILL.md` skills from the workspace, `~/.suga/skills` and `~/.agents/skills`, listed or searched on demand; a built-in configuration and usage guide skill, `suga-guide`.
 - **Persistent sessions**: one SQLite database with resume, automatic compaction, plans, handoff and an event log for tracing and stats.
 - **MCP**: stdio MCP servers with allowlists and deferred loading for large tool sets.
 - **Persistent memory**: user and project memory that outlives sessions. Plain `MEMORY.md` files are the source of truth, and the backend can be swapped (files, gofer or an external command).
@@ -136,7 +136,7 @@ Long-term memory shared across sessions, written by the model through the `memor
 - **Idle consolidation (chat).** After `context.idle_after` (default 15m) without input, if the context has reached `context.idle_min_ratio` (default 0.5) of the threshold, chat starts a new segment in the background. It never fires during a turn, and typing cancels it.
 - **Plans.** The `update_plan` tool records the model's plan. stream-json emits it as `plan` events, and ACP sends it as plan updates.
 - **System prompt and segment context.** The system prompt holds only stable content (identity and working conventions), so it stays byte-identical across sessions and workspaces of one mode. Environment (OS, shell, workspace), project rules (one file per level, `rules.file`, default `AGENTS.md`, plus `~/.suga/AGENTS.md`), `--append-system-prompt`, the memory index, the skills list and deferred tools go into a context message at the start of each segment. A change inside a segment (for example edited rules) is appended as a "context update" message instead of rewriting earlier text. `--no-project-rules` skips project rules.
-- **Delivery and hooks.** `suga send --session <s> --text <t>` hands text to a running chat. `hooks.command` receives chat lifecycle events as JSON on stdin.
+- **Delivery and hooks.** `suga send --session <s> <text>` (or `--text <text>`, not both) hands text to a running chat. `hooks.command` receives chat lifecycle events as JSON on stdin.
 
 ## Using with Gofer
 

@@ -8,7 +8,7 @@ Suga 是用 Go 写的个人编码 Agent。同一个持久会话引擎提供两�
 
 - **开发工具**：按行分段读文件、列目录、搜索内容与文件名、按字符串精确修改、执行 shell 命令（Windows 上用 PowerShell）、抓取网页、网页搜索。
 - **默认安全**：不开启就是只读；chat 写文件、执行命令前会先询问；文件工具限制在工作区内；网页抓取拒绝内网地址。
-- **Skills**：读取工作区和 `~/.agents/skills` 下标准的 `SKILL.md`，按需列出或检索。
+- **Skills**：读取工作区、`~/.suga/skills` 和 `~/.agents/skills` 下标准的 `SKILL.md`，按需列出或检索；内置配置与使用向导 skill `suga-guide`。
 - **持久会话**：单个 SQLite 库，支持续接、自动压缩、计划、会话交接，以及用于 trace 和统计的事件记录。
 - **MCP**：接入 stdio MCP 服务，支持放行名单，工具多时延迟加载。
 - **持久记忆**：跨会话的用户与项目记忆，以 `MEMORY.md` 等文件为事实源，后端可换（files、gofer 或外部命令）。
@@ -136,7 +136,7 @@ Suga 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`
 - **空闲整理（chat）**：超过 `context.idle_after`（默认 15m）没有输入，且上下文已达阈值的 `context.idle_min_ratio`（默认 0.5）时，chat 在后台开启新段。回合进行中不会触发，开始输入即取消。
 - **计划**：`update_plan` 工具记录模型的计划。stream-json 中输出为 `plan` 事件，ACP 中转为计划更新。
 - **系统提示词与段上下文**：系统提示词只含稳定内容（身份与工作约定），同一模式下跨会话、跨工作区字节相同。环境（系统、shell、工作区）、项目规则（每级一个文件，`rules.file`，默认 `AGENTS.md`，另有 `~/.suga/AGENTS.md`）、`--append-system-prompt`、记忆索引、skills 列表和延迟工具列表放在每段开头的上下文消息里。段内发生变化（如规则文件被改）时，追加一条“上下文更新”消息，不改写已有内容。`--no-project-rules` 跳过项目规则。
-- **投递与 hooks**：`suga send --session <s> --text <t>` 把文本送进正在运行的 chat；`hooks.command` 以 stdin 上的 JSON 接收 chat 的生命周期事件。
+- **投递与 hooks**：`suga send --session <s> <文本>`（或 `--text <文本>`，二选一）把文本送进正在运行的 chat；`hooks.command` 以 stdin 上的 JSON 接收 chat 的生命周期事件。
 
 ## 配合 Gofer 使用
 
