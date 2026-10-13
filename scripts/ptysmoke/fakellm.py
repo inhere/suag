@@ -17,7 +17,8 @@ turn is running. --fail-first N answers the first N requests with HTTP 503;
 --break-first M then streams half of the next M responses' text and drops
 the connection (a broken stream), for the retry smoke. --background makes
 the tool-mode shell_exec call a background task; a user message that is a
-background task notice or reminder ("[background task") gets the text reply. A request with "stream": false gets one JSON completion
+background task notice or reminder ("[background task") gets the text reply;
+--watch-paths a,b adds watch_paths (a watch task). A request with "stream": false gets one JSON completion
 instead of SSE (the compaction summary). --prompt-tokens sets the reported prompt usage (the idle
 consolidation compares it with the context threshold). Each request is
 logged as one JSON line on stdout.
@@ -88,6 +89,8 @@ def make_handler(args):
                 shell_args = {"command": args.command}
                 if args.background:
                     shell_args["background"] = True
+                if args.watch_paths:
+                    shell_args["watch_paths"] = args.watch_paths.split(",")
                 call = {"index": 0, "id": "call_%d" % time.time_ns(),
                         "function": {"name": "shell_exec", "arguments": json.dumps(shell_args)}}
                 chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
@@ -154,6 +157,7 @@ def main():
     p.add_argument("--reply", default="完成")
     p.add_argument("--prompt-tokens", type=int, default=10)
     p.add_argument("--background", action="store_true", help="tool mode: shell_exec with background: true")
+    p.add_argument("--watch-paths", default="", help="tool mode with --background: comma-separated watch_paths")
     p.add_argument("--fail-first", type=int, default=0, help="answer the first N requests with HTTP 503")
     p.add_argument("--break-first", type=int, default=0, help="then break the next M streams after half the text")
     args = p.parse_args()

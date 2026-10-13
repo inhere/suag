@@ -31,6 +31,8 @@ class PtySession:
 
     # --- output ---------------------------------------------------------
     def pump(self, seconds):
+        """Read and DROP output for seconds (keeps the child from blocking on
+        a full pty). To wait and still check what came, use until."""
         end = time.time() + seconds
         while time.time() < end:
             ready, _, _ = select.select([self.fd], [], [], 0.1)
