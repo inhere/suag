@@ -44,6 +44,43 @@ func TestPrefixedLiveTextMarksEachMessage(t *testing.T) {
 	assert.Eq(t, "▣ let me check\n▣ done\n", out.String())
 }
 
+// TestLiveTextMarkdownStreamsRenderedLines: with markdown on, the text is
+// rendered per line as it streams, and the message prefix stays on the first
+// line.
+func TestLiveTextMarkdownStreamsRenderedLines(t *testing.T) {
+	var out bytes.Buffer
+	live := NewPrefixedLiveText(&out, "▣ ")
+	live.SetMarkdown(false)
+	delta := func(s string) personal.Event {
+		return personal.Event{Kind: string(agentcore.StreamEventTextDelta), Text: s}
+	}
+	stop := personal.Event{Kind: string(agentcore.StreamEventMessageStop)}
+
+	live.Handle(delta("## Ti"))
+	assert.Eq(t, "▣ ", out.String()) // the incomplete line waits for its newline
+	live.Handle(delta("tle\n"))
+	assert.Eq(t, "▣ Title\n", out.String())
+	// A tool call follows the commentary: message_stop ends its last line.
+	live.Handle(delta("**done**"))
+	live.Handle(stop)
+	assert.Eq(t, "▣ Title\ndone\n", out.String())
+	// The next message gets its own prefix.
+	live.Handle(delta("- item\n"))
+	live.Finish()
+	assert.Eq(t, "▣ Title\ndone\n▣ • item\n", out.String())
+	assert.Eq(t, true, live.Finish())
+}
+
+// TestLiveTextMarkdownOffIsRaw: without markdown the deltas are printed byte for
+// byte, prefix aside.
+func TestLiveTextMarkdownOffIsRaw(t *testing.T) {
+	var out bytes.Buffer
+	live := NewPrefixedLiveText(&out, "▣ ")
+	live.Handle(personal.Event{Kind: string(agentcore.StreamEventTextDelta), Text: "## Title\n**bold**"})
+	live.Finish()
+	assert.Eq(t, "▣ ## Title\n**bold**\n", out.String())
+}
+
 func TestLiveTextRetry(t *testing.T) {
 	var out bytes.Buffer
 	live := NewPrefixedLiveText(&out, "▣ ")

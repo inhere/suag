@@ -15,10 +15,11 @@ import (
 // do not run together.
 type LiveText struct {
 	w        io.Writer
-	prefix   string // printed before each model message; empty for none
-	streamed bool   // any delta printed this turn
-	open     bool   // the last printed delta did not end with a newline
-	started  bool   // the current model message already printed its prefix
+	prefix   string  // printed before each model message; empty for none
+	md       *MDTerm // non-nil: the text is rendered as terminal markdown
+	streamed bool    // any delta printed this turn
+	open     bool    // the last printed delta did not end with a newline
+	started  bool    // the current model message already printed its prefix
 }
 
 // NewLiveText returns a LiveText writing to w.
@@ -28,6 +29,15 @@ func NewLiveText(w io.Writer) *LiveText { return &LiveText{w: w} }
 func NewPrefixedLiveText(w io.Writer, prefix string) *LiveText {
 	return &LiveText{w: w, prefix: prefix}
 }
+
+// SetMarkdown renders the streamed text as terminal markdown, line by line,
+// instead of printing the deltas as they are (chat). color styles the rendered
+// lines; without it the markers are still replaced, but nothing is colored.
+func (l *LiveText) SetMarkdown(color bool) { l.md = NewMDTerm(l.w, color) }
+
+// Markdown returns the markdown renderer of this text, or nil when markdown is
+// off. The caller uses it for text it prints itself (chat's final answer).
+func (l *LiveText) Markdown() *MDTerm { return l.md }
 
 // Handle prints a text delta or closes the line on message_stop; it reports
 // whether the event was a streaming event.
@@ -39,8 +49,7 @@ func (l *LiveText) Handle(event personal.Event) bool {
 				fmt.Fprint(l.w, l.prefix)
 				l.started = true
 			}
-			fmt.Fprint(l.w, event.Text)
-			l.streamed, l.open = true, !strings.HasSuffix(event.Text, "\n")
+			l.writeText(event.Text)
 		}
 		return true
 	case string(agentcore.StreamEventMessageStop):
@@ -69,7 +78,25 @@ func RetryNotice(event personal.Event) string {
 	return line
 }
 
+// writeText emits one delta: as it is, or through the markdown renderer, which
+// buffers the incomplete line until its newline arrives.
+func (l *LiveText) writeText(text string) {
+	l.streamed = true
+	if l.md != nil {
+		l.md.Write(text)
+		return
+	}
+	fmt.Fprint(l.w, text)
+	l.open = !strings.HasSuffix(text, "\n")
+}
+
+// closeLine ends the current model message: markdown renders what is left of
+// its last line (an open code block ends with it).
 func (l *LiveText) closeLine() {
+	if l.md != nil {
+		l.md.Flush()
+		return
+	}
 	if l.open {
 		fmt.Fprintln(l.w)
 		l.open = false
