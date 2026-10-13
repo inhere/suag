@@ -42,8 +42,8 @@ func (t *TaskTool) Name() string { return "task" }
 func (t *TaskTool) Description() string {
 	return "Manage the background tasks of this session (started by shell_exec with background: true). " +
 		"action list: every task and its state. output: lines of a task's output (default the last 100; " +
-		"offset/limit page from a line, grep filters by RE2). wait: block until the task ends or timeout " +
-		"seconds pass, then its state and last lines. kill: stop the task and its child processes."
+		"offset/limit page from a line, grep filters by RE2). wait: block until the task ends (a watch: until its "+
+		"next run is done) or timeout seconds pass, then its state and last lines. kill: stop the task and its child processes."
 }
 
 // ToolMeta: it only acts on tasks this session started, so it is agent
@@ -162,13 +162,20 @@ func (t *TaskTool) wait(ctx context.Context, sid, id string, args map[string]any
 	if n, ok := numberArg(args["timeout"]); ok && n > 0 {
 		timeout = min(time.Duration(n*float64(time.Second)), t.maxWait)
 	}
-	info, done, err := t.m.Wait(ctx, sid, id, timeout)
+	info, how, err := t.m.Wait(ctx, sid, id, timeout)
 	if err != nil {
 		return "", err
 	}
 	text := tasks.Describe(info) + withTail(info)
-	if !done {
+	switch how {
+	case tasks.WaitTimedOut:
 		text = fmt.Sprintf("[still running after waiting %s]\n", timeout) + text
+	case tasks.WaitUpdated: // a watch finished a run; it keeps running
+		head := "[reported while running]\n"
+		if info.Notice != "" {
+			head = "[reported while running: " + info.Notice + "]\n"
+		}
+		text = head + text
 	}
 	return text, nil
 }

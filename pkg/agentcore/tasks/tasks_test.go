@@ -86,7 +86,7 @@ func TestManager(t *testing.T) {
 		assert.Eq(t, "out:s1:t1", info.Ref)
 		info, done, err := m.Wait(ctx, "s1", "t1", 10*time.Second)
 		assert.Require(t, assert.NoErr(t, err))
-		assert.True(t, done)
+		assert.Eq(t, WaitEnded, done)
 		assert.Eq(t, Exited, info.Status)
 		assert.Eq(t, 3, info.ExitCode)
 		assert.Eq(t, 4, info.Lines) // the last one without a newline too
@@ -138,7 +138,7 @@ func TestManager(t *testing.T) {
 		assert.ErrMsgContains(t, err, "already running")
 		info, done, err := m.Wait(ctx, "s1", "t1", 10*time.Second)
 		assert.NoErr(t, err)
-		assert.True(t, done)
+		assert.Eq(t, WaitEnded, done)
 		assert.Eq(t, TimedOut, info.Status)
 
 		info, err = m.Start(ctx, Spec{Kind: "shell", Cmd: helper("lines", "TASKS_LINES=50")})
@@ -175,9 +175,12 @@ func TestFunctionTasks(t *testing.T) {
 			return 3, nil
 		}})
 		assert.Require(t, assert.NoErr(t, err))
+		// A Wait while it runs could return at its Progress (WaitUpdated); wait
+		// for the end first.
+		waitFor(t, func() bool { got, _ := m.Get("s1", info.ID); return got.Status != Running })
 		ended, done, err := m.Wait(ctx, "s1", info.ID, 5*time.Second)
 		assert.Require(t, assert.NoErr(t, err))
-		assert.True(t, done)
+		assert.Eq(t, WaitEnded, done)
 		assert.Eq(t, Exited, ended.Status)
 		assert.Eq(t, 3, ended.ExitCode)
 		assert.Eq(t, []string{"run 1"}, ended.Tail)
@@ -211,7 +214,7 @@ func TestFunctionTasks(t *testing.T) {
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, Killed, info.Status)
 		info, done, _ := m.Wait(ctx, "s1", timed.ID, 5*time.Second)
-		assert.True(t, done)
+		assert.Eq(t, WaitEnded, done)
 		assert.Eq(t, TimedOut, info.Status)
 	})
 	t.Run("running notices: the newest replaces a pending one, the end notice stays apart", func(t *testing.T) {
@@ -261,4 +264,32 @@ func TestNoEndNotice(t *testing.T) {
 	got := m.TakeNotices("s1")
 	assert.Require(t, assert.Len(t, got, 1))
 	assert.Eq(t, "asks to continue", got[0].Notice)
+}
+
+func TestWaitOnFunctionTask(t *testing.T) {
+	m, ctx := newTestManager(t, Limits{}, nil)
+	step := make(chan struct{})
+	info, err := m.Start(ctx, Spec{Kind: "watch", Run: func(ctx context.Context, _ io.Writer, r Reporter) (int, error) {
+		<-step
+		r.Notify("run 2: exit 1 -> 0")
+		r.Progress("run 2, last exit 0")
+		<-ctx.Done()
+		return 0, nil
+	}})
+	assert.Require(t, assert.NoErr(t, err))
+	t.Run("no progress: the timeout", func(t *testing.T) {
+		_, how, err := m.Wait(ctx, "s1", info.ID, 100*time.Millisecond)
+		assert.NoErr(t, err)
+		assert.Eq(t, WaitTimedOut, how)
+	})
+	t.Run("progress returns it and takes the notice", func(t *testing.T) {
+		go func() { time.Sleep(50 * time.Millisecond); close(step) }()
+		got, how, err := m.Wait(ctx, "s1", info.ID, 5*time.Second)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, WaitUpdated, how)
+		assert.Eq(t, Running, got.Status)
+		assert.Eq(t, "run 2, last exit 0", got.Progress)
+		assert.Eq(t, "run 2: exit 1 -> 0", got.Notice)
+		assert.Empty(t, m.TakeNotices("s1")) // not noticed again
+	})
 }

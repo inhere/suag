@@ -202,6 +202,21 @@ func TestWatch(t *testing.T) {
 		f.waitRuns(t, id, 3)
 		assert.Empty(t, f.notices())
 	})
+	t.Run("task wait returns after the next run, with its report", func(t *testing.T) {
+		f := newWatchFixture(t)
+		f.write(t, "a.txt", "one\n")
+		id := f.start(t, map[string]any{"command": check, "watch_paths": []any{"*.txt"}})
+		f.waitRuns(t, id, 1)
+		task := NewTaskTool(f.m, 0)
+		f.write(t, "a.txt", "bad\n")
+		start := time.Now()
+		res, err := task.Execute(f.ctx, api.ToolCall{CallID: "w", Name: "task", Arguments: map[string]any{"action": "wait", "id": id, "timeout": float64(60)}})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.True(t, time.Since(start) < 10*time.Second)
+		assert.StrContains(t, res.Content, "[reported while running: run 2 (files: a.txt): exit 0 -> 3")
+		assert.StrContains(t, res.Content, "run 2, last exit 3, 1 changes")
+		assert.Empty(t, f.notices()) // the wait showed it
+	})
 	t.Run("watch arguments need background", func(t *testing.T) {
 		f := newWatchFixture(t)
 		_, err := f.shell.Execute(f.ctx, api.ToolCall{CallID: "c", Name: "shell_exec",

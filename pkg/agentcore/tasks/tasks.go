@@ -82,6 +82,8 @@ type Config struct {
 }
 
 // Reporter is what a function task (Spec.Run) tells the manager while it runs.
+// Progress also returns a Wait on the task (WaitUpdated), taking a notice
+// left before it: report a step as Count, Notify, then Progress.
 type Reporter interface {
 	// Notify leaves a notice for the model now, while the task keeps running
 	// (e.g. a watch whose result changed). A newer notice of the same task
@@ -247,8 +249,9 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Info, error) {
 	t := &task{
 		info: Info{ID: id, SessionID: sid, Kind: spec.Kind, Summary: spec.Summary, Status: Running,
 			ExitCode: -1, Started: time.Now(), Path: path, Ref: ref},
-		done: make(chan struct{}),
-		seen: spec.NoEndNotice,
+		done:    make(chan struct{}),
+		updated: make(chan struct{}),
+		seen:    spec.NoEndNotice,
 	}
 	t.out = newLineWriter(file, spec.Clean, m.limits.MaxOutputBytes)
 	if spec.Run != nil {
@@ -368,6 +371,15 @@ func (r reporter) Progress(text string) {
 	r.t.mu.Lock()
 	r.t.info.Progress = text
 	r.t.mu.Unlock()
+	r.t.signal()
+}
+
+// signal wakes the Waits of the task (it reported).
+func (t *task) signal() {
+	t.mu.Lock()
+	close(t.updated)
+	t.updated = make(chan struct{})
+	t.mu.Unlock()
 }
 
 func (r reporter) Count(name string, n int) {
@@ -417,24 +429,63 @@ func (m *Manager) Get(sessionID, id string) (Info, error) {
 	return t.snapshot(), nil
 }
 
-// Wait waits up to timeout for the task to end and reports whether it did.
-// An ended task's notice is dropped: the caller saw the end.
-func (m *Manager) Wait(ctx context.Context, sessionID, id string, timeout time.Duration) (Info, bool, error) {
+// WaitOutcome is how a Wait returned.
+type WaitOutcome int
+
+const (
+	WaitTimedOut WaitOutcome = iota // still running after the timeout
+	WaitEnded                       // the task ended; its end notice is dropped
+	// WaitUpdated: a running function task reported progress (a watch
+	// finished a run); a notice it left is taken into Info.Notice.
+	WaitUpdated
+)
+
+// Wait waits up to timeout for the task to end or, for a function task, to
+// report progress (Reporter.Progress): a watch never ends by itself, so
+// waiting for it means waiting for its next run. What the caller saw is not
+// noticed again.
+func (m *Manager) Wait(ctx context.Context, sessionID, id string, timeout time.Duration) (Info, WaitOutcome, error) {
 	t, err := m.get(sessionID, id)
 	if err != nil {
-		return Info{}, false, err
+		return Info{}, WaitTimedOut, err
 	}
+	t.mu.Lock()
+	updated := t.updated
+	t.mu.Unlock()
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case <-t.done:
 		m.markSeen(sessionID, t)
-		return t.snapshot(), true, nil
+		return t.snapshot(), WaitEnded, nil
+	case <-updated:
+		info := t.snapshot()
+		info.Notice = m.takeRunningNotice(sessionID, t.info.ID)
+		return info, WaitUpdated, nil
 	case <-timer.C:
-		return t.snapshot(), false, nil
+		return t.snapshot(), WaitTimedOut, nil
 	case <-ctx.Done():
-		return t.snapshot(), false, ctx.Err()
+		return t.snapshot(), WaitTimedOut, ctx.Err()
 	}
+}
+
+// takeRunningNotice drops the task's pending running notice and returns it.
+func (m *Manager) takeRunningNotice(sessionID, id string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.sessions[sessionID]
+	if s == nil {
+		return ""
+	}
+	text := ""
+	s.notices = slices.DeleteFunc(s.notices, func(p pending) bool {
+		if p.id == id && p.text != "" {
+			text = p.text
+			return true
+		}
+		return false
+	})
+	return text
 }
 
 // Kill ends the task's process tree and waits (briefly) for it to be reaped.
@@ -544,9 +595,11 @@ type task struct {
 	seen   bool               // the model saw the end (Wait, Kill or a notice)
 	tree   *proctree.Tree     // a command's process tree
 	cancel context.CancelFunc // a function's context
-	out    *lineWriter
-	timer  *time.Timer
-	done   chan struct{}
+	// updated is closed (and replaced) when a function task reports.
+	updated chan struct{}
+	out     *lineWriter
+	timer   *time.Timer
+	done    chan struct{}
 }
 
 func (t *task) status() Status {

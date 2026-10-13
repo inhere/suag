@@ -147,10 +147,12 @@ func (w *watcher) run(ctx context.Context, out io.Writer, r tasks.Reporter) (int
 		if files != nil {
 			files = w.snapshot(ctx) // what the run itself wrote is no change
 		}
+		// The notice of this run, if its result differs from the last one.
+		notice := ""
 		switch {
 		case prev == nil:
 			if res.exit != 0 {
-				r.Notify(fmt.Sprintf("run 1 (%s) failed: exit %d%s", trigger, res.exit, lastLines(res.lines)))
+				notice = fmt.Sprintf("run 1 (%s) failed: exit %d%s", trigger, res.exit, lastLines(res.lines))
 			}
 		case res.key != prev.key:
 			changes++
@@ -158,12 +160,16 @@ func (w *watcher) run(ctx context.Context, out io.Writer, r tasks.Reporter) (int
 			if res.exit == prev.exit {
 				what = fmt.Sprintf("output changed (exit %d)", res.exit)
 			}
-			r.Notify(fmt.Sprintf("run %d (%s): %s%s", runs, trigger, what, lastLines(res.lines)))
+			notice = fmt.Sprintf("run %d (%s): %s%s", runs, trigger, what, lastLines(res.lines))
 		}
 		prev, lastExit = &res, res.exit
-		r.Progress(fmt.Sprintf("run %d, last exit %d, %d changes", runs, res.exit, changes))
+		// Progress last: it returns a task wait, which takes the notice.
 		r.Count("runs", runs)
 		r.Count("changes", changes)
+		if notice != "" {
+			r.Notify(notice)
+		}
+		r.Progress(fmt.Sprintf("run %d, last exit %d, %d changes", runs, res.exit, changes))
 	}
 
 	runOnce("start")

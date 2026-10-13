@@ -1,0 +1,9 @@
+name: watch-tests
+mode: allow-write
+prompt: >-
+  calc.go 的 Mul 对负数的结果不对，测试大约要跑 5 秒。先用 shell_exec 的 background: true 加 watch_paths: ["*.go"]
+  启动对 go test ./... 的监听，之后不要再在前台运行 go test；然后修复 Mul。监听会在测试结果变化时通知你，
+  据此确认测试通过后，新建 NOTES.md 写一行 `tests: pass`。
+checks:
+  - {type: file_contains, path: NOTES.md, text: "tests: pass"}
+  - {type: command, args: [go, test, -count=1, ./...], timeout: 2m}
