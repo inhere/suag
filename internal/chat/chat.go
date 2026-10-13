@@ -178,7 +178,11 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	if runner.ProcessRoot() != "" {
 		processServer, err = startChatProcessRegistration(sessionID, runner.ProcessRoot(), runner, inputSource)
 		if err != nil {
-			return err
+			// Registration only adds the local session socket (`suga send`, gofer delivery);
+			// losing it must not end the chat. The common cause is a SUGA_HOME deep enough
+			// that <root>/<pid>.sock exceeds the platform's socket path limit.
+			processServer = nil
+			fmt.Fprintf(stderr, "提示：本会话未注册本地会话 socket（%v），因此收不到 suga send 与 gofer 投递；建议缩短 SUGA_HOME 路径。聊天继续运行。\n", err)
 		}
 	}
 	var pendingContext string
