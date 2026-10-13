@@ -139,6 +139,9 @@ const (
 type ApprovalReport struct {
 	Source string
 	Wait   time.Duration
+	// Danger is why the call needed a stricter decision (a dangerous delete
+	// command), "" for an ordinary call.
+	Danger string
 }
 
 type approvalReportKey struct{}
@@ -154,6 +157,13 @@ func WithApprovalReport(ctx context.Context) (context.Context, *ApprovalReport) 
 func ReportApproval(ctx context.Context, source string, wait time.Duration) {
 	if r, _ := ctx.Value(approvalReportKey{}).(*ApprovalReport); r != nil {
 		r.Source, r.Wait = source, wait
+	}
+}
+
+// ReportDanger records in ctx's report why the call is dangerous.
+func ReportDanger(ctx context.Context, reason string) {
+	if r, _ := ctx.Value(approvalReportKey{}).(*ApprovalReport); r != nil {
+		r.Danger = reason
 	}
 }
 

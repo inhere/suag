@@ -254,6 +254,9 @@ func toolTraceParts(e store.Event) []string {
 		}
 		parts = append(parts, item)
 	}
+	if d, _ := e.Attrs["danger"].(string); d != "" {
+		parts = append(parts, fmt.Sprintf("danger=%q", d))
+	}
 	if code, ok := e.Attrs["exit_code"]; ok {
 		parts = append(parts, fmt.Sprintf("exit=%v", code))
 	}

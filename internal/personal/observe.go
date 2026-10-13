@@ -258,6 +258,9 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 	if approval.Wait > 0 {
 		e.Attrs["approval_wait_ms"] = approval.Wait.Milliseconds()
 	}
+	if approval.Danger != "" {
+		e.Attrs["danger"] = approval.Danger
+	}
 	o.rec.record(ctx, e)
 	// Every call reaching the registry counts, refused ones included.
 	runUsageFrom(ctx).addTool()

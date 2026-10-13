@@ -230,7 +230,8 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// Tool registry stack, outer to inner: observe (added in personal.New) ->
 	// visibility -> approval -> base registry. Unloaded deferred tools are
 	// answered by visibility and never reach the approver.
-	approval := tools.NewApproval(capabilities.Registry, opts.Approver)
+	// Dangerous deletes are stopped before any approver (guardDangerous).
+	approval := tools.NewApproval(capabilities.Registry, guardDangerous(opts.Approver))
 	approval.SetDisabled(disabledToolHints(capabilities.Registry, opts))
 	vis, err := newToolVisibility(capabilities.Registry, approval, contextWindow)
 	if err != nil {

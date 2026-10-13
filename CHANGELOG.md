@@ -6,6 +6,8 @@
 
 ### 新增
 
+- `shell_exec` 拦截危险删除（suag-dtom）：递归删除（`rm -r`、`Remove-Item -Recurse`、`rd /s`，也识别 `sh -c`、`cmd /c`、`pwsh -Command` 里的写法，并跟踪同一行里的 `cd`）的目标是 `/`、`~`/`$HOME`、盘符根、工作区或其上级目录，或以可能为空的变量开头（`"$X/"`、`"$dir\*"`）时，在审批前拦下；对这些目录用通配（`rm ~/*`）不带 `-r` 也算。chat 每次都询问（`tools.approval: auto` 或之前答过 `a` 也问），必须输入 `yes` 才执行；`run` 与 ACP 直接拒绝并提示改用 `file_remove`。trace 的工具事件记录 `danger`。这是防常见误操作，不是安全边界。
+
 - 模型请求统一重试（`retry:`，对所有 provider 生效）。网络错误、HTTP 408/429/5xx 和读流时断开都会重试，默认共 6 次。等待从 1s 指数增长，最多 60s，带抖动，并遵守 `Retry-After`。同一 provider 的请求共用等待档位，2 分钟没有失败就回落。原先只有 HTTP 请求有固定退避，流断开后最多重试 2 次，已输出文本后断开则直接失败。现在已输出文本后断开也会重试：先发 `retry` 事件说明前面的回复不完整，再从头输出这条消息。chat 显示 `↻` 提示行，`run` 输出到 stderr，stream-json 输出 `retry` 行，ACP 发 thought。
 - trace 记录重试：model 事件新增 `retries`、`retry_wait_ms`、`retry_reason`。`suag trace` 行显示 `retries=N(…)`，`--analyze` 与 `--web` 汇总重试次数和等待时间。
 
