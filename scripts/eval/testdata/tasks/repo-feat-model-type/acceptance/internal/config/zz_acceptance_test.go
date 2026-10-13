@@ -66,6 +66,6 @@ providers:
 	t.Run("an unknown model type is rejected", func(t *testing.T) {
 		loadYAML(t, strings.Replace(doc, "type: anthropic", "type: gemini", 1))
 		_, err := ReadProviders()
-		assert.ErrMsg(t, err, `providers.cc.models.sonnet: unsupported type "gemini" (want openai|openai-responses|anthropic)`)
+		assert.ErrMsg(t, err, `providers.cc.models.sonnet: unsupported type "gemini" (want openai|anthropic)`)
 	})
 }
