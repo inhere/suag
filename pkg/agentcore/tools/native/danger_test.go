@@ -48,8 +48,8 @@ func TestDangerousDelete(t *testing.T) {
 			`bash -c "rm -rf ~"`:               "用户主目录",
 			`sh -lc 'rm -r $HOME'`:             "用户主目录",
 			`env X=1 /bin/rm -rf ~`:            "用户主目录",
-			`rm -rf ` + home:                   "用户主目录",
-			`rm -rf ` + ws:                     "删除整个工作区",
+			`rm -rf ` + filepath.ToSlash(home): "用户主目录", // sh reads \ as an escape
+			`rm -rf ` + filepath.ToSlash(ws):   "删除整个工作区",
 		} {
 			check(t, false, command, want)
 		}
