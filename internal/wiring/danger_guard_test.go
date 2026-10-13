@@ -3,6 +3,7 @@ package wiring
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
@@ -16,6 +17,11 @@ func TestDangerGuard(t *testing.T) {
 	shell := native.NewShellExecTool(ws, 0)
 	call := func(command string) agentcore.ToolCall {
 		return agentcore.ToolCall{CallID: "c1", Name: "shell_exec", Arguments: map[string]any{"command": command}}
+	}
+	// A delete of ~ in the OS default shell (PowerShell on Windows).
+	danger := "rm -rf ~"
+	if runtime.GOOS == "windows" {
+		danger = "Remove-Item -Recurse -Force ~"
 	}
 	innerRuns := 0
 	inner := tools.ApproverFunc(func(context.Context, agentcore.ToolCall, agentcore.Tool) error {
@@ -32,9 +38,9 @@ func TestDangerGuard(t *testing.T) {
 	t.Run("run and ACP refuse, with the reason in the trace", func(t *testing.T) {
 		innerRuns = 0
 		ctx, report := tools.WithApprovalReport(context.Background())
-		err := guardDangerous(inner).Decide(ctx, call("rm -rf ~"), shell)
+		err := guardDangerous(inner).Decide(ctx, call(danger), shell)
 		assert.True(t, errors.Is(err, tools.ErrDenied))
-		assert.ErrMsgContains(t, err, "已拒绝危险删除：rm -rf ~：删除用户主目录")
+		assert.ErrMsgContains(t, err, "已拒绝危险删除："+danger+"：删除用户主目录")
 		assert.ErrMsgContains(t, err, "file_remove")
 		assert.Eq(t, 0, innerRuns)
 		assert.StrContains(t, report.Danger, "用户主目录")
@@ -43,19 +49,19 @@ func TestDangerGuard(t *testing.T) {
 		asker := &scriptedAsker{answers: []string{"y", "YES"}}
 		guard := guardDangerous(newChatApprover(nil, true, asker, ws))
 		ctx, report := tools.WithApprovalReport(context.Background())
-		err := guard.Decide(ctx, call("rm -rf ~"), shell)
+		err := guard.Decide(ctx, call(danger), shell)
 		assert.ErrMsgContains(t, err, "用户拒绝执行危险删除") // "y" is not enough
 		assert.Eq(t, tools.AskedAndDenied, report.Source)
 		ctx, report = tools.WithApprovalReport(context.Background())
-		assert.NoErr(t, guard.Decide(ctx, call("rm -rf ~"), shell))
+		assert.NoErr(t, guard.Decide(ctx, call(danger), shell))
 		assert.Eq(t, tools.ApprovedByUser, report.Source)
 		assert.Require(t, assert.Len(t, asker.questions, 2))
-		assert.StrContains(t, asker.questions[0].Details[1], "⚠ 危险删除：rm -rf ~：删除用户主目录")
+		assert.StrContains(t, asker.questions[0].Details[1], "⚠ 危险删除："+danger+"：删除用户主目录")
 		assert.StrContains(t, asker.questions[0].Prompt, "输入 yes 执行")
 	})
 	t.Run("chat without a terminal refuses", func(t *testing.T) {
 		guard := guardDangerous(newChatApprover(nil, false, &scriptedAsker{err: tools.ErrCannotAsk}, ws))
-		err := guard.Decide(context.Background(), call("rm -rf ~"), shell)
+		err := guard.Decide(context.Background(), call(danger), shell)
 		assert.ErrMsgContains(t, err, "无法向用户确认")
 	})
 }
