@@ -175,8 +175,7 @@ func capWebText(s string, n int) string {
 }
 
 // joinEntries links entries to events: a tool event gets its call and
-// result (by call id), a model event the assistant messages written after
-// it started and before the next model call of the turn.
+// result (by call id), a model event the assistant message it produced.
 func joinEntries(view *TraceView) {
 	byCall := map[string][]int64{}
 	for _, en := range view.Entries {
@@ -199,6 +198,46 @@ func joinEntries(view *TraceView) {
 		}
 	}
 	sort.SliceStable(models, func(a, b int) bool { return view.Events[models[a]].Start.Before(view.Events[models[b]].Start) })
+	byTurn := map[string][]int{}
+	var turns []string
+	for _, i := range models {
+		id := view.Events[i].TurnID
+		if _, ok := byTurn[id]; !ok {
+			turns = append(turns, id)
+		}
+		byTurn[id] = append(byTurn[id], i)
+	}
+	for _, turn := range turns {
+		joinTurnModels(view, byTurn[turn])
+	}
+}
+
+// joinTurnModels links the main model calls of one turn (in time order) to
+// the turn's assistant messages. Each call that succeeded wrote one message,
+// so they pair in order; times alone cannot tell them apart when a fast
+// provider puts two calls and their messages in the same millisecond (as on
+// Windows CI). When the counts differ (a turn cut short, older data), a call
+// gets the messages written from its start until the next call's start.
+func joinTurnModels(view *TraceView, models []int) {
+	turn := view.Events[models[0]].TurnID
+	var answers []int64
+	for _, en := range view.Entries {
+		if en.Type == store.EntryAssistant && en.TurnID == turn {
+			answers = append(answers, en.Seq)
+		}
+	}
+	var ok []int
+	for _, i := range models {
+		if view.Events[i].Status == eventOK {
+			ok = append(ok, i)
+		}
+	}
+	if len(ok) == len(answers) {
+		for k, i := range ok {
+			view.Events[i].Entries = append(view.Events[i].Entries, answers[k])
+		}
+		return
+	}
 	for k, i := range models {
 		e := &view.Events[i]
 		var until time.Time
@@ -206,7 +245,7 @@ func joinEntries(view *TraceView) {
 			until = view.Events[models[k+1]].Start
 		}
 		for _, en := range view.Entries {
-			if en.Type != store.EntryAssistant || en.TurnID != e.TurnID || en.Time.Before(e.Start) {
+			if en.Type != store.EntryAssistant || en.TurnID != turn || en.Time.Before(e.Start) {
 				continue
 			}
 			if !until.IsZero() && !en.Time.Before(until) {

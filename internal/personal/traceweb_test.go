@@ -169,3 +169,40 @@ func TestCapWebText(t *testing.T) {
 	got := capWebText(strings.Repeat("中", 10), 7) // cut inside a rune: back to its start
 	assert.True(t, strings.HasPrefix(got, "中中\n[... 24 more bytes"))
 }
+
+// TestJoinEntriesSameMillisecond: a fast provider puts two model calls of a
+// turn and their messages in the same millisecond (Windows CI); each call
+// still gets the message it produced, in order.
+func TestJoinEntriesSameMillisecond(t *testing.T) {
+	at := time.Date(2026, 10, 13, 10, 0, 0, 0, time.UTC)
+	model := func(id int64, status string) webEvent {
+		return webEvent{ID: id, TurnID: "u1", Kind: store.EventModel, Status: status, Start: at}
+	}
+	answer := func(seq int64) traceEntry {
+		return traceEntry{Seq: seq, TurnID: "u1", Type: store.EntryAssistant, Time: at}
+	}
+	t.Run("pairs in order", func(t *testing.T) {
+		view := &TraceView{Events: []webEvent{model(1, eventOK), model(2, eventOK)},
+			Entries: []traceEntry{answer(10), answer(11)}}
+		joinEntries(view)
+		assert.Eq(t, []int64{10}, view.Events[0].Entries)
+		assert.Eq(t, []int64{11}, view.Events[1].Entries)
+	})
+	t.Run("a failed call writes no message", func(t *testing.T) {
+		view := &TraceView{Events: []webEvent{model(1, "error"), model(2, eventOK)},
+			Entries: []traceEntry{answer(10)}}
+		joinEntries(view)
+		assert.Empty(t, view.Events[0].Entries)
+		assert.Eq(t, []int64{10}, view.Events[1].Entries)
+	})
+	t.Run("counts that differ fall back to times", func(t *testing.T) {
+		later := func(e traceEntry, ms int) traceEntry { e.Time = at.Add(time.Duration(ms) * time.Millisecond); return e }
+		m2 := model(2, eventOK)
+		m2.Start = at.Add(5 * time.Millisecond)
+		view := &TraceView{Events: []webEvent{model(1, eventOK), m2},
+			Entries: []traceEntry{later(answer(10), 1), later(answer(11), 2), later(answer(12), 6)}}
+		joinEntries(view)
+		assert.Eq(t, []int64{10, 11}, view.Events[0].Entries)
+		assert.Eq(t, []int64{12}, view.Events[1].Entries)
+	})
+}
