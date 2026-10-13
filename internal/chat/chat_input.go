@@ -64,6 +64,11 @@ type chatInputSource struct {
 	events     chan chatInputEvent
 	activity   chan struct{}
 	deliveries chan chatInputEvent
+	// taskWake signals a background task end (tasks.wake_on_exit); nil when
+	// off. taskNotice takes the pending notices as the text of an injected
+	// turn ("" when the running turn already took them).
+	taskWake   <-chan struct{}
+	taskNotice func() string
 	done       chan struct{}
 	mu         sync.Mutex
 	pending    bool

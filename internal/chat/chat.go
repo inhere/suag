@@ -18,6 +18,7 @@ import (
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/redact"
 	"github.com/inhere/suag/pkg/agentcore/schedule"
+	"github.com/inhere/suag/pkg/agentcore/tasks"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
@@ -47,6 +48,11 @@ type Options struct {
 	// (context.idle_after, context.idle_min_ratio); IdleAfter 0 turns it off.
 	IdleAfter    time.Duration
 	IdleMinRatio float64
+	// Tasks are the background tasks of this chat (nil: none); TaskWake
+	// signals a task end that should start a turn when chat is idle
+	// (tasks.wake_on_exit; nil: never).
+	Tasks    *tasks.Manager
+	TaskWake <-chan struct{}
 	// scheduleOptions are extra scheduler options (tests inject a fake clock);
 	// scheduleObserver sees every scheduler event synchronously (tests).
 	scheduleOptions  []schedule.Option
@@ -133,6 +139,16 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		return suaghooks.Event{Name: name, SessionID: sessionID, CWD: cwd, TranscriptPath: transcriptPath(sessionID)}
 	}
 	inputSource, err := newChatInputSource(ctx, stdin, stdout)
+	if err == nil && opts.Tasks != nil {
+		inputSource.taskWake = opts.TaskWake
+		inputSource.taskNotice = func() string {
+			infos := opts.Tasks.TakeNotices(sessionID)
+			if len(infos) == 0 {
+				return ""
+			}
+			return personal.TaskNoticeText(infos)
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -410,6 +426,18 @@ func nextChatInput(ctx context.Context, source *chatInputSource, render *Rendere
 			}
 			in.interrupted = interrupted
 			return in, err
+		case <-source.taskWake:
+			// A background task ended while chat waits: its notice starts a turn.
+			text := source.taskNotice()
+			if text == "" {
+				continue
+			}
+			if waiting != nil {
+				*lost = appendContext(*lost, waiting.Interrupt(context.Background()))
+				interrupted = true
+			}
+			render.External(text)
+			return chatInput{line: text, hasLine: true, injected: true, interrupted: interrupted}, nil
 		case delivery := <-source.deliveries:
 			if waiting != nil {
 				*lost = appendContext(*lost, waiting.Interrupt(context.Background()))
@@ -441,6 +469,18 @@ func nextChatInput(ctx context.Context, source *chatInputSource, render *Rendere
 			}
 			render.External(result.Response.Reason)
 			return chatInput{line: result.Response.Reason, hasLine: true, stopDone: true, injected: true, interrupted: interrupted}, nil
+		case <-source.taskWake:
+			// A background task ended while chat waits: its notice starts a turn.
+			text := source.taskNotice()
+			if text == "" {
+				continue
+			}
+			if waiting != nil {
+				*lost = appendContext(*lost, waiting.Interrupt(context.Background()))
+				interrupted = true
+			}
+			render.External(text)
+			return chatInput{line: text, hasLine: true, injected: true, interrupted: interrupted}, nil
 		case delivery := <-source.deliveries:
 			if waiting != nil {
 				*lost = appendContext(*lost, waiting.Interrupt(context.Background()))

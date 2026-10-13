@@ -247,6 +247,13 @@ func (m *Manager) wait(s *session, t *task, cmd *exec.Cmd) {
 	default:
 		t.info.Status = Exited
 	}
+	t.mu.Unlock()
+	// The end is recorded before Wait and Kill return: a host that exits
+	// right after Kill (run) still gets it into its store.
+	if fn := m.onEnd.Load(); fn != nil && *fn != nil {
+		(*fn)(t.snapshot())
+	}
+	t.mu.Lock()
 	seen := t.seen
 	t.mu.Unlock()
 	close(t.done)
@@ -255,9 +262,6 @@ func (m *Manager) wait(s *session, t *task, cmd *exec.Cmd) {
 		s.notices = append(s.notices, t.info.ID)
 	}
 	m.mu.Unlock()
-	if fn := m.onEnd.Load(); fn != nil && *fn != nil {
-		(*fn)(t.snapshot())
-	}
 	if !seen && m.cfg.OnExit != nil {
 		m.cfg.OnExit(t.snapshot())
 	}

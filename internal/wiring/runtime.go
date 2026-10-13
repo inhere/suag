@@ -298,7 +298,13 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		}
 		compactProvider, compactModel = built, settings.Compact.Model
 	}
+	// A nil manager must stay a nil interface (no tasks).
+	var taskNotices personal.TaskNotices
+	if opts.Tasks != nil && allowWrite {
+		taskNotices = opts.Tasks
+	}
 	runner, err := personal.New(personal.Config{
+		Tasks:         taskNotices,
 		ContextWindow: contextWindow,
 		// History folding of the request view (context.fold_every/fold_keep).
 		FoldEvery:       rs.fold.Every,
@@ -358,6 +364,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	memHost.bind(runner, repo)
+	if taskNotices != nil {
+		opts.Tasks.SetOnEnd(runner.RecordTaskEnd) // task ends go to the trace
+	}
 	return &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
 		ContextWindow: contextWindow, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry}, nil
 }

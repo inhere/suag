@@ -16,6 +16,7 @@ import (
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/internal/wiring"
 	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suag/pkg/agentcore/tasks"
 )
 
 var ErrInputRequired = errors.New("turn requires more input")
@@ -43,6 +44,9 @@ type personalOptions struct {
 	Injected   bool
 	MCPConfigs []string
 	CLIMode    bool
+	// tasks is the run's background task manager (set by RunPersonalCLI, not
+	// a flag); nil in tests that build a runner themselves.
+	tasks *tasks.Manager
 }
 
 // RunPersonalCLI is the shared headless and interactive entry, independent of the old Web host.
@@ -54,14 +58,36 @@ func RunPersonalCLI(ctx context.Context, mode string, args []string, stdin io.Re
 }
 
 func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) (retErr error) {
-	runtime, err := wiring.OpenCLI(ctx, opts.wiringOptions(mode))
+	// Background tasks (write modes): chat wakes on a task end while it
+	// waits for input; the manager is closed (its tasks killed) before the
+	// runtime, so their end events still reach the store.
+	wake := make(chan struct{}, 1)
+	taskManager, taskSettings, err := wiring.NewTaskManager(func(tasks.Info) {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	})
 	if err != nil {
 		return err
 	}
-	defer func() { retErr = errors.Join(retErr, runtime.Close()) }()
-	if mode == "chat" {
-		return runChat(ctx, runtime, opts, stdin, stdout, stderr)
+	wopts := opts.wiringOptions(mode)
+	wopts.Tasks = taskManager
+	runtime, err := wiring.OpenCLI(ctx, wopts)
+	if err != nil {
+		taskManager.Close()
+		return err
 	}
+	defer func() { retErr = errors.Join(retErr, runtime.Close()) }()
+	defer taskManager.Close()
+	if mode == "chat" {
+		var taskWake <-chan struct{}
+		if taskSettings.WakeOnExit {
+			taskWake = wake
+		}
+		return runChat(ctx, runtime, opts, stdin, stdout, stderr, taskManager, taskWake)
+	}
+	opts.tasks = taskManager
 	return executePersonalRun(ctx, runtime.Runner, opts, stdout, stderr)
 }
 
@@ -172,6 +198,9 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 	}
 	runStart := time.Now()
 	result, err := runner.Run(ctx, personal.RunRequest{SessionID: sessionID, Prompt: opts.Prompt, Injected: opts.Injected, Emit: emit})
+	if err == nil && result.State == personal.RunCompleted && opts.tasks != nil {
+		result, err = finishBackgroundTasks(ctx, runner, opts.tasks, sessionID, result, emit, live, stderr)
+	}
 	streamed := live.Finish() // end the streamed line before any error or status output
 	if encoder == nil {
 		// Text mode: a usage summary on stderr (stdout stays the answer only).
@@ -253,4 +282,30 @@ func runSummary(runner *personal.Runner, result personal.RunResult, elapsed time
 		line += fmt.Sprintf("（会话累计 in %d / out %d）", s.InputTokens, s.OutputTokens)
 	}
 	return line + " · " + chat.FormatElapsed(elapsed)
+}
+
+// finishBackgroundTasks runs once more when the turn ended with background
+// tasks still running: run exits after the turn and takes them along, so the
+// model is reminded (once) to wait for or kill them first. Whatever still
+// runs afterwards is killed now and named on stderr.
+func finishBackgroundTasks(ctx context.Context, runner *personal.Runner, m *tasks.Manager, sessionID string,
+	result personal.RunResult, emit personal.EmitFunc, live *output.LiveText, stderr io.Writer) (personal.RunResult, error) {
+	if running := m.Running(sessionID); len(running) > 0 {
+		live.Finish()
+		var b strings.Builder
+		fmt.Fprintf(&b, "[background tasks still running] This run ends after your answer and kills them:")
+		for _, info := range running {
+			b.WriteString("\n- " + tasks.Describe(info))
+		}
+		b.WriteString("\nWait for them (task wait) or kill them (task kill) as the task needs, then give your final answer again.")
+		next, err := runner.Run(ctx, personal.RunRequest{SessionID: sessionID, Prompt: b.String(), Injected: true, Emit: emit})
+		if err != nil {
+			return next, err
+		}
+		result = next
+	}
+	for _, info := range m.KillSession(sessionID) {
+		fmt.Fprintln(stderr, "killed background task at exit: "+tasks.Describe(info))
+	}
+	return result, nil
 }

@@ -15,7 +15,9 @@ Modes (--mode):
 --delay seconds are slept before each response, so a test can type while a
 turn is running. --fail-first N answers the first N requests with HTTP 503;
 --break-first M then streams half of the next M responses' text and drops
-the connection (a broken stream), for the retry smoke. A request with "stream": false gets one JSON completion
+the connection (a broken stream), for the retry smoke. --background makes
+the tool-mode shell_exec call a background task; a user message that is a
+background task notice or reminder ("[background task") gets the text reply. A request with "stream": false gets one JSON completion
 instead of SSE (the compaction summary). --prompt-tokens sets the reported prompt usage (the idle
 consolidation compares it with the context threshold). Each request is
 logged as one JSON line on stdout.
@@ -82,10 +84,12 @@ def make_handler(args):
                 call = {"index": 0, "id": "call_%d" % time.time_ns(),
                         "function": {"name": name, "arguments": json.dumps(arguments)}}
                 chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
-            elif args.mode == "tool" and last.get("role") != "tool":
+            elif args.mode == "tool" and last.get("role") != "tool" and "[background task" not in str(user_text):
+                shell_args = {"command": args.command}
+                if args.background:
+                    shell_args["background"] = True
                 call = {"index": 0, "id": "call_%d" % time.time_ns(),
-                        "function": {"name": "shell_exec",
-                                     "arguments": json.dumps({"command": args.command})}}
+                        "function": {"name": "shell_exec", "arguments": json.dumps(shell_args)}}
                 chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
             else:
                 chunks = [{"choices": [{"delta": {"content": args.reply}}]}]
@@ -149,6 +153,7 @@ def main():
     p.add_argument("--command", default="echo SMOKE_OK")
     p.add_argument("--reply", default="完成")
     p.add_argument("--prompt-tokens", type=int, default=10)
+    p.add_argument("--background", action="store_true", help="tool mode: shell_exec with background: true")
     p.add_argument("--fail-first", type=int, default=0, help="answer the first N requests with HTTP 503")
     p.add_argument("--break-first", type=int, default=0, help="then break the next M streams after half the text")
     args = p.parse_args()

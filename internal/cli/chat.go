@@ -9,11 +9,13 @@ import (
 	appconfig "github.com/inhere/suag/internal/config"
 	suaghooks "github.com/inhere/suag/internal/hooks"
 	"github.com/inhere/suag/internal/wiring"
+	"github.com/inhere/suag/pkg/agentcore/tasks"
 )
 
 // runChat starts the interactive REPL on an assembled runner.
 // The runtime's asker (chat approver questions) is bound by chat when stdin is a terminal.
-func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) error {
+func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer,
+	taskManager *tasks.Manager, taskWake <-chan struct{}) error {
 	hooks, err := suaghooks.New()
 	if err != nil {
 		return err
@@ -27,6 +29,7 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 		Asker: runtime.Asker, WriteTools: runtime.WriteTools,
 		Thinking: runtime.Thinking, ContextWindow: runtime.ContextWindow,
 		IdleAfter: idle.After, IdleMinRatio: idle.MinRatio,
+		Tasks: taskManager, TaskWake: taskWake,
 	}, stdin, stdout, stderr, hooks)
 }
 
