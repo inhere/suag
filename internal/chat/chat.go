@@ -174,9 +174,6 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		Thinking: opts.Thinking, ContextWindow: opts.ContextWindow,
 		WriteTools: opts.WriteTools, Markdown: opts.Markdown, Spinner: opts.Spinner,
 	})
-	// The waiting line must never outlive the chat: a frame goroutine left
-	// behind would keep writing over the exit summary.
-	defer render.stopThinking()
 	// Background idle consolidation; closed before the input source, so its
 	// last status line still goes through it.
 	idle := newIdleConsolidation(runner, sessionID, opts.IdleAfter, opts.IdleMinRatio, render, opts.scheduleOptions,
@@ -231,6 +228,10 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	}()
 
 	render.Banner()
+	// Registered after every other defer, so it runs first on the way out: the
+	// waiting line is down before the exit warnings, the SessionEnd hook and the
+	// usage summary print, and no frame goroutine is left behind.
+	defer render.stopThinking()
 	stopHookActive := false
 	var lastInterrupt time.Time
 	for {

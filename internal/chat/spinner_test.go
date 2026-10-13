@@ -294,6 +294,29 @@ func TestSpinnerOff(t *testing.T) {
 	}
 }
 
+// TestSpinnerRealClock: with no injected clock (the real time.Ticker behind
+// chat) the line still appears within its frame interval and is erased on the
+// first text delta.
+func TestSpinnerRealClock(t *testing.T) {
+	plainColor(t)
+	out := &syncOutput{}
+	r := newRenderer(rendererOptions{Out: out, Spinner: true, Color: true})
+	r.BeginTurn()
+	assert.Require(t, waitOutput(t, out, spinnerLabel))
+	// The frame ends with the elapsed seconds ("… 0s", or more on a slow machine).
+	hint := out.String()[strings.Index(out.String(), spinnerLabel)+len(spinnerLabel):]
+	assert.True(t, len(hint) > 1 && hint[0] == ' ' && hint[1] >= '0' && hint[1] <= '9')
+
+	r.Handle(personal.Event{Kind: "text_delta", Text: "hi"})
+	assert.False(t, spinnerRunning(r.spin))
+	got := out.String()
+	answer := strings.Index(got, "▣ ")
+	assert.Require(t, answer > 0)
+	assert.True(t, strings.HasSuffix(got[:answer], spinnerClear))
+	r.Finish()
+	assert.False(t, spinnerRunning(r.spin))
+}
+
 // TestSpinnerPaintsTheLine: on a colored terminal the frame is dimmed (gray,
 // like the tool lines) as one piece.
 func TestSpinnerPaintsTheLine(t *testing.T) {
