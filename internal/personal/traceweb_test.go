@@ -14,6 +14,7 @@ import (
 	"github.com/inhere/suag/internal/personal/store"
 	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suag/pkg/agentcore/tasks"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
@@ -82,6 +83,34 @@ func TestBuildTraceView(t *testing.T) {
 	// the first model call carries the assistant message that asked for the tool
 	assert.Require(t, assert.NotEmpty(t, firstModel.Entries))
 	assert.Eq(t, "file_read", entry[firstModel.Entries[0]].Tool)
+}
+
+// TestTraceViewTaskNotice: a user entry that carries the task notice metadata
+// is marked, so the page shows it as a notice and not as the person's input.
+func TestTraceViewTaskNotice(t *testing.T) {
+	repo, sid := traceRun(t)
+	raw, err := json.Marshal(TaskNoticeMessage([]tasks.Info{{ID: "t1", Kind: "shell", Summary: "go test ./...", Status: tasks.Exited}}))
+	assert.Require(t, assert.NoErr(t, err))
+	_, err = repo.AppendEntries(context.Background(), sid, store.NewEntry{Type: store.EntryUser, JSON: raw})
+	assert.Require(t, assert.NoErr(t, err))
+
+	view, err := BuildTraceView(context.Background(), repo, sid)
+	assert.Require(t, assert.NoErr(t, err))
+	notices, inputs := 0, 0
+	for _, en := range view.Entries {
+		if en.Type != store.EntryUser {
+			continue
+		}
+		if en.Notice {
+			notices++
+			assert.StrContains(t, en.Content, "[background task notice]")
+			continue
+		}
+		inputs++
+		assert.Eq(t, "read a.go", en.Content) // the prompt the turn stored
+	}
+	assert.Eq(t, 1, notices)
+	assert.Eq(t, 1, inputs)
 }
 
 func TestServeTraceView(t *testing.T) {

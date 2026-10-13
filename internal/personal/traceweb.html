@@ -54,6 +54,7 @@ details summary { cursor:pointer; color:var(--mute); }
 .envlist div.item:hover { background:#f5f8ff; }
 .envlist div.item.sel { background:#e8efff; }
 .ok { color:var(--read); } .diff { color:var(--err); }
+a.jump { color:var(--model); text-decoration:none; border-bottom:1px dotted var(--model); }
 </style>
 </head>
 <body>
@@ -99,8 +100,8 @@ function summary(e) {
   const a = e.attrs || {};
   switch (e.kind) {
     case "model": return `in ${human(e.input_tokens)} (缓存 ${human(e.cache_read_tokens)}) out ${human(e.output_tokens)}` + (a.tool_calls ? ` · ${a.tool_calls} 个调用` : "") + (a.prefix && a.prefix !== "append" ? ` · 前缀 ${a.prefix}` : "") + (a.finish === "truncated" ? " · 截断" : "") + (a.retries ? ` · 重试 ${a.retries} 次（${a.retry_reason}，等 ${(a.retry_wait_ms / 1000).toFixed(1)}s）` : "");
-    case "task": return `后台 ${e.name} · ${a.arg || ""} · exit=${a.exit_code} · ${human(a.bytes)}B / ${a.lines||0} 行` + (e.error ? " · " + e.error : "");
-    case "tool": case "denial": return (a.arg || "") + (a.task_id ? ` · 后台任务 ${a.task_id}` : "") + (a.exit_code != null ? ` · exit=${a.exit_code}` : "") + (a.lines_added != null ? ` · +${a.lines_added}/-${a.lines_removed||0}` : "") + (a.approval && a.approval !== "rule" ? ` · 审批 ${a.approval}` : "") + (e.error ? " · " + e.error : "");
+    case "task": return `${a.arg || ""} · exit=${a.exit_code} · ${human(a.bytes)}B / ${a.lines||0} 行` + (e.error ? " · " + e.error : "");
+    case "tool": case "denial": return (a.arg || "") + (a.exit_code != null ? ` · exit=${a.exit_code}` : "") + (a.lines_added != null ? ` · +${a.lines_added}/-${a.lines_removed||0}` : "") + (a.approval && a.approval !== "rule" ? ` · 审批 ${a.approval}` : "") + (e.error ? " · " + e.error : "");
     case "context": return [`约 ${human(a.est_tokens)} / ${human(a.window)} tokens`, `工具 ${a.tools_count||0} 个`, skillsText(a)].filter(Boolean).join(" · ");
     case "hook": return [a.decision && "decision="+a.decision, a.additional_chars && "注入 "+a.additional_chars+" 字符", a.reason_chars && "reason "+a.reason_chars].filter(Boolean).join(" · ");
     case "fold": return `折叠 ${a.boundary}/${a.steps} 步，${human(a.chars_before)}→${human(a.chars_after)} 字符`;
@@ -150,18 +151,42 @@ function renderTimeline(main) {
   main.replaceChildren(left, detail);
   const end = Math.max(...data.events.map(e => at(e) + (e.duration_ms || 0)), t0 + 1);
   const span = end - t0;
+  // A row shows a task where it started, not where its end event was stored.
+  const rows = data.events.slice().sort((a, b) => at(a) - at(b));
+  // A task event (name = task id) and the shell_exec that started it
+  // (attrs.task_id) link to each other.
+  const tasks = new Map(), starters = new Map();
+  for (const e of data.events) {
+    if (e.kind === "task") tasks.set(e.name, e);
+    else if (e.attrs && e.attrs.task_id) starters.set(e.attrs.task_id, e);
+  }
+  function jump(label, target, hint) {
+    return el("a", {class:"jump", href:"#ev=" + target.id, title:hint, onclick: ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      selected = target; history.replaceState(null, "", "#ev=" + target.id);
+      showDetail(detail, target); draw();
+    }}, label);
+  }
+  function links(e) {
+    if (e.kind === "task" && starters.has(e.name)) return [jump("启动行", starters.get(e.name), "跳到启动这个后台任务的 shell_exec")];
+    if (e.attrs && e.attrs.task_id && tasks.has(e.attrs.task_id)) return [jump("后台 " + e.attrs.task_id, tasks.get(e.attrs.task_id), "跳到这个后台任务的横条")];
+    return [];
+  }
   function draw() {
     table.replaceChildren();
     let inModel = false;
-    for (const e of data.events) {
+    for (const e of rows) {
       if (e.kind === "model") inModel = true; else if (e.kind === "turn") inModel = false;
       if (!visible(e)) continue;
       const cat = category(e);
       const left = (at(e) - t0) / span * 100, width = Math.max((e.duration_ms || 0) / span * 100, 0.15);
+      const what = el("td", {class:"what" + ((e.kind === "tool" || e.kind === "denial") && inModel ? " indent" : "") + (cat === "error" ? " err" : "")}, summary(e));
+      const rel = links(e);
+      if (rel.length) what.append(" ", ...rel);
       const tr = el("tr", {class: (e.kind === "turn" ? "turn " : "") + (selected === e ? "sel" : ""), onclick: () => { selected = e; history.replaceState(null, "", "#ev=" + e.id); showDetail(detail, e); draw(); }},
         el("td", {class:"when", title: off(at(e) - t0)}, clock(at(e))),
-        el("td", {class:"kind"}, el("span", {class:"k", style:"background:" + COLORS[cat]}, e.kind === "tool" ? e.name : e.kind)),
-        el("td", {class:"what" + ((e.kind === "tool" || e.kind === "denial") && inModel ? " indent" : "") + (cat === "error" ? " err" : "")}, summary(e)),
+        el("td", {class:"kind"}, el("span", {class:"k", style:"background:" + COLORS[cat]}, e.kind === "task" ? "后台 " + e.name : e.kind === "tool" ? e.name : e.kind)),
+        what,
         el("td", {class:"mute"}, e.duration_ms ? secs(e.duration_ms) : ""),
         el("td", {class:"bar"}, el("div", {class:"barw"}, el("span", {style:`left:${left}%;width:${width}%;background:${COLORS[cat]}`}))));
       table.append(tr);
@@ -228,6 +253,18 @@ function showDetail(box, e) {
   box.append(el("h3", {}, "属性"), kv(e.attrs || {}));
 }
 
+// turnNumbers maps a turn id to the turn's 1-based position in the session.
+function turnNumbers() {
+  const m = new Map();
+  data.events.filter(e => e.kind === "turn").forEach((e, i) => m.set(e.turn_id, i + 1));
+  return m;
+}
+
+// userEntries are the session's user messages in order: what the person typed
+// and what was injected instead. A background task notice is stored as a user
+// entry but carries notice = true and is no input of the person.
+function userEntries() { return data.entries.filter(en => en.type === "user"); }
+
 function renderContext(main) {
   const pane = el("div", {class:"pane"});
   const ctxs = data.events.filter(e => e.kind === "context");
@@ -242,6 +279,21 @@ function renderContext(main) {
       el("span", {style:`height:${(e.input_tokens - e.cache_read_tokens) / max * 100}%;background:#a8c2f5`}),
       el("span", {style:`height:${e.output_tokens / max * 100}%;background:#e39b2d`})))),
     el("div", {class:"legend"}, el("span", {}, el("i", {style:"background:#3a6fd8"}), "缓存命中"), el("span", {}, el("i", {style:"background:#a8c2f5"}), "未命中输入"), el("span", {}, el("i", {style:"background:#e39b2d"}), "输出")));
+  // The entries the model gets as user messages (the turn's input and what was
+  // injected before a request), so a task notice is not read as the person's
+  // input.
+  const users = userEntries();
+  if (users.length) {
+    const nums = turnNumbers();
+    pane.append(el("h3", {}, "各回合的 user entry（人的输入与注入）"));
+    for (const en of users) {
+      const head = [nums.has(en.turn_id) ? `回合 ${nums.get(en.turn_id)}` : "回合 -", clock(at(en)),
+        en.notice ? "后台任务通知" : "用户输入"].join(" · ");
+      const body = [el("summary", {class: en.notice ? "mute" : ""}, `${head}（${human((en.content || "").length)} 字符）`),
+        el("pre", {}, en.content || "（空）")];
+      pane.append(en.notice ? el("details", {}, ...body) : el("details", {open:""}, ...body));
+    }
+  }
   main.replaceChildren(pane);
 }
 

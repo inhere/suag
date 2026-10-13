@@ -53,6 +53,33 @@ showDetail(box, ctx);
 text = __dump(box);
 check("old context: the tools the session called", text.includes("没有工具名单") && text.includes("本会话调用过的工具："));
 for (const e of data.events) { const b = new Node("div"); showDetail(b, e); if (__dump(b).includes("[object")) check("detail " + e.kind + ": no [object ...]", false); }
+
+// P2: the background task view — the timeline row at the task's start with its
+// links, the analysis numbers and the notice label of the context tab.
+tab = "timeline";
+const tl = new Node("main");
+renderTimeline(tl);
+text = __dump(tl);
+const rows = text.split("\\n"), lineOf = s => rows.findIndex(l => l.includes(s));
+const taskRow = lineOf("启动行"), waitRow = lineOf("action=wait id=t1"), starterRow = lineOf("command=go test");
+// The name cell is the line above the summary cell of the same row.
+check("timeline: background task row is named 后台 t1", taskRow > 0 && rows[taskRow - 1].includes("后台 t1"));
+check("timeline: task row sits at the task start, before the later wait", taskRow >= 0 && waitRow > taskRow);
+check("timeline: the starting shell_exec row links to the task", starterRow >= 0 && starterRow < taskRow && rows[starterRow].includes("后台 t1"));
+
+tab = "context";
+const cx = new Node("main");
+renderContext(cx);
+text = __dump(cx);
+check("context: a task notice is labelled, not shown as an input", text.includes("后台任务通知") && text.includes("[background task notice] t1 ended"));
+check("context: the person input is labelled as an input", text.includes("用户输入") && text.includes("read a.go"));
+
+tab = "analysis";
+const an = new Node("main");
+renderAnalysis(an);
+text = __dump(an);
+check("analysis: background task numbers", ["background_tasks", "background_overlap_ms", "task_waits", "task_wait_ms", "immediate_waits"].every(k => text.includes(k)));
+check("analysis: no [object ...]", !text.includes("[object"));
 process.exitCode = bad ? 1 : 0;
 `;
 vm.runInThisContext(page + checks);

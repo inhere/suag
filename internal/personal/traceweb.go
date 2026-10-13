@@ -64,19 +64,23 @@ type webEvent struct {
 }
 
 type traceEntry struct {
-	Seq       int64           `json:"seq"`
-	TurnID    string          `json:"turn_id,omitempty"`
-	Type      string          `json:"type"`
-	Time      time.Time       `json:"time"`
-	Role      string          `json:"role,omitempty"`
-	Content   string          `json:"content,omitempty"`
-	Reasoning string          `json:"reasoning,omitempty"`
-	CallID    string          `json:"call_id,omitempty"`
-	Tool      string          `json:"tool,omitempty"`
-	Args      map[string]any  `json:"args,omitempty"`
-	IsError   bool            `json:"is_error,omitempty"`
-	Batch     string          `json:"batch,omitempty"`
-	Raw       json.RawMessage `json:"raw,omitempty"` // non-message entries (segment, plan, handoff, context update)
+	Seq       int64          `json:"seq"`
+	TurnID    string         `json:"turn_id,omitempty"`
+	Type      string         `json:"type"`
+	Time      time.Time      `json:"time"`
+	Role      string         `json:"role,omitempty"`
+	Content   string         `json:"content,omitempty"`
+	Reasoning string         `json:"reasoning,omitempty"`
+	CallID    string         `json:"call_id,omitempty"`
+	Tool      string         `json:"tool,omitempty"`
+	Args      map[string]any `json:"args,omitempty"`
+	IsError   bool           `json:"is_error,omitempty"`
+	Batch     string         `json:"batch,omitempty"`
+	// Notice marks a user entry that is no input of the person: a background
+	// task notice (message metadata suag.task_notice, see metaTaskNotice), so
+	// the page can label it as such.
+	Notice bool            `json:"notice,omitempty"`
+	Raw    json.RawMessage `json:"raw,omitempty"` // non-message entries (segment, plan, handoff, context update)
 }
 
 // BuildTraceView loads one session for the trace page.
@@ -135,6 +139,9 @@ func webEntry(e store.Entry) traceEntry {
 			out.Content = capWebText(m.ToolResult.Content, maxWebText)
 		}
 		out.Batch, _ = m.Metadata[agentcore.ToolBatchMetaKey].(string)
+		// A background task notice is stored as a user message; mark it, so the
+		// page does not present it as the person's input.
+		out.Notice, _ = m.Metadata[metaTaskNotice].(bool)
 	default:
 		out.Raw = e.JSON
 	}
