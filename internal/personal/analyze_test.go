@@ -272,6 +272,48 @@ func TestAnalyzeTraceBackground(t *testing.T) {
 	})
 }
 
+// TestAnalyzeTraceSubAgents: a synchronous sub-agent call brings its steps,
+// tool calls, tokens, cost, time and stop with its tool event; a background
+// call counts as a call when it starts and brings its steps and tool calls
+// with its task's end event (its tokens stay unknown); the text rows appear
+// only when sub-agents ran.
+func TestAnalyzeTraceSubAgents(t *testing.T) {
+	model := func() store.Event {
+		return store.Event{Kind: store.EventModel, Status: eventOK, Attrs: map[string]any{}}
+	}
+	syncCall := store.Event{Kind: store.EventTool, Name: "agent", Status: eventOK, DurationMs: 41300,
+		Attrs: map[string]any{"child_session_id": "sess_child", "agent_type": "explore", "steps": float64(12),
+			"tool_calls": float64(5), "input_tokens": float64(85000), "cache_read_tokens": float64(60000),
+			"output_tokens": float64(3000), "cost_usd": 0.0123, "stop": "final"}}
+	start := store.Event{Kind: store.EventTool, Name: "agent", Status: eventOK, DurationMs: 6,
+		Attrs: map[string]any{"task_id": "t4", "background": true, "agent_type": "research"}}
+	task := store.Event{Kind: store.EventTask, Name: "t4", Status: eventOK, DurationMs: 20000,
+		Attrs: map[string]any{"kind": "agent", "arg": "agent: survey deps", "steps": float64(7), "tool_calls": float64(3)}}
+
+	a := AnalyzeTrace([]store.Event{model(), syncCall, model(), start, model(), task})
+	assert.Eq(t, 2, a.AgentCalls)
+	assert.Eq(t, 19, a.AgentSteps)
+	assert.Eq(t, 8, a.AgentToolCalls)
+	assert.Eq(t, int64(85000), a.AgentInputTokens)
+	assert.Eq(t, int64(60000), a.AgentCacheReadTokens)
+	assert.Eq(t, int64(3000), a.AgentOutputTokens)
+	assert.Eq(t, 0.0123, a.AgentCostUSD)
+	assert.Eq(t, int64(61306), a.AgentMs) // 41300 + 6 + 20000
+	assert.Eq(t, map[string]int{"final": 1}, a.AgentStops)
+	// The agent task is background work the loop did not wait for, like a shell task.
+	assert.Eq(t, 1, a.BackgroundTasks)
+	assert.Eq(t, int64(20000), a.BackgroundMs)
+
+	var out bytes.Buffer
+	assert.NoErr(t, WriteTraceAnalysis(&out, a, false))
+	assert.StrContains(t, out.String(), "2 calls, 19 steps, 8 tool calls, in 85k (cache 60k), out 3k, cost $0.0123, ran 61.3s")
+	assert.StrContains(t, out.String(), "sub-agent stops        final x1")
+
+	out.Reset()
+	assert.NoErr(t, WriteTraceAnalysis(&out, AnalyzeTrace([]store.Event{model()}), false))
+	assert.NotContains(t, out.String(), "sub-agent")
+}
+
 func TestAnalyzeTraceCacheAttribution(t *testing.T) {
 	model := func(in, cached int64, reason string, reused, rebuilt, fresh int) store.Event {
 		return store.Event{Kind: store.EventModel, Status: eventOK, InputTokens: in, CacheReadTokens: cached,

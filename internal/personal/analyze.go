@@ -87,9 +87,10 @@ type TraceAnalysis struct {
 	Retries     int   `json:"retries"`
 	RetryWaitMs int64 `json:"retry_wait_ms"`
 	// BackgroundTasks / BackgroundMs: background tasks that ended (of every
-	// kind) and how long the commands among them ran in all (time the loop
-	// did not have to wait for). A watch or a Stop hook stays for as long as
-	// it is wanted, so its time is not waiting saved: they count apart.
+	// kind) and how long the tasks among them ran in all (time the loop did not
+	// have to wait for). A watch or a Stop hook stays for as long as it is
+	// wanted, so its time is not waiting saved: they count apart. A background
+	// sub-agent counts here like a shell task, its own numbers in AgentMs.
 	BackgroundTasks int   `json:"background_tasks"`
 	BackgroundMs    int64 `json:"background_ms"`
 	// By kind: WatchTasks counts the watch tasks of the session, WatchRuns the
@@ -116,6 +117,23 @@ type TraceAnalysis struct {
 	ImmediateWaits int `json:"immediate_waits"`
 	// Slowest are the longest model calls.
 	Slowest []SlowCall `json:"slowest,omitempty"`
+	// Sub-agents (the agent tool): the calls the session made (background
+	// calls included), the model steps and tool calls they ran, the tokens and
+	// cost of their own model calls and the time they ran in all (the same
+	// numbers its trace line shows). A background call returns a task id at
+	// once, so only its call counts here at first; its steps and tool calls
+	// arrive with its task's end event, and its tokens stay unknown. AgentStops
+	// is why the calls that reported an end stopped: final, max_steps,
+	// max_tokens, timeout, cancelled or failed.
+	AgentCalls           int            `json:"agent_calls"`
+	AgentSteps           int            `json:"agent_steps"`
+	AgentToolCalls       int            `json:"agent_tool_calls"`
+	AgentInputTokens     int64          `json:"agent_input_tokens"`
+	AgentCacheReadTokens int64          `json:"agent_cache_read_tokens"`
+	AgentOutputTokens    int64          `json:"agent_output_tokens"`
+	AgentCostUSD         float64        `json:"agent_cost_usd"`
+	AgentMs              int64          `json:"agent_ms"`
+	AgentStops           map[string]int `json:"agent_stops,omitempty"`
 }
 
 // Count is a named count (a path or a command).
@@ -173,8 +191,8 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 			a.BackgroundTasks++
 			// The kind a task ran as (tasks.Spec.Kind): a watch ends with its runs
 			// and changes counters, a background Stop hook has no counters; only a
-			// command run in the background (shell, or no kind: older events) is
-			// time the loop would otherwise have waited for.
+			// task the loop would otherwise have waited for (shell, agent, or no
+			// kind: older events) is time the backgrounding saved.
 			switch kind, _ := e.Attrs["kind"].(string); kind {
 			case taskKindWatch:
 				a.WatchTasks++
@@ -182,6 +200,14 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 				a.WatchChanges += attrInt(e.Attrs["changes"])
 			case taskKindHook:
 				a.StopHooks++
+			case taskKindAgent:
+				// A background sub-agent: its end event carries the steps its task
+				// counted (see agentCall).
+				a.AgentSteps += attrInt(e.Attrs["steps"])
+				a.AgentToolCalls += attrInt(e.Attrs["tool_calls"])
+				a.AgentMs += e.DurationMs
+				a.BackgroundMs += e.DurationMs
+				bgSpans = appendSpan(bgSpans, e)
 			default:
 				a.BackgroundMs += e.DurationMs
 				bgSpans = appendSpan(bgSpans, e)
@@ -215,6 +241,11 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 			a.ToolMs += e.DurationMs
 			stepCalls++
 			a.Tools[e.Name]++
+			// A sub-agent call is counted here (a background call too); what the
+			// sub-agent spent is added by agentCall.
+			if e.Name == "agent" {
+				a.agentCall(e)
+			}
 			// A task wait is no time saved (it blocks the loop until the task
 			// ends), so it adds no foreground span; every other call does, and a
 			// call that started a background task marks that task as just started
@@ -337,6 +368,30 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 	return a
 }
 
+// agentCall adds one sub-agent invocation (an agent tool event: a synchronous
+// call, or the start of a background one) to the sub-agent numbers. A
+// background call hands back a task id at once, so it has none of the numbers
+// itself: they come with its task's end event.
+func (a *TraceAnalysis) agentCall(e store.Event) {
+	a.AgentCalls++
+	a.AgentMs += e.DurationMs
+	if _, ok := e.Attrs["steps"]; !ok {
+		return
+	}
+	a.AgentSteps += attrInt(e.Attrs["steps"])
+	a.AgentToolCalls += attrInt(e.Attrs["tool_calls"])
+	a.AgentInputTokens += int64(attrInt(e.Attrs["input_tokens"]))
+	a.AgentCacheReadTokens += int64(attrInt(e.Attrs["cache_read_tokens"]))
+	a.AgentOutputTokens += int64(attrInt(e.Attrs["output_tokens"]))
+	a.AgentCostUSD += attrFloat(e.Attrs["cost_usd"])
+	if stop, _ := e.Attrs["stop"].(string); stop != "" {
+		if a.AgentStops == nil {
+			a.AgentStops = map[string]int{}
+		}
+		a.AgentStops[stop]++
+	}
+}
+
 // attributeCache splits one model call's uncached input by cause (see
 // TraceAnalysis.Uncached*): the reported input tokens are spread over the
 // request's reused, rebuilt and fresh parts by their JSON sizes; what the
@@ -407,6 +462,13 @@ func WriteTraceAnalysis(w io.Writer, a TraceAnalysis, asJSON bool) error {
 	if a.StopHooks > 0 {
 		row("stop hooks", "%d background Stop hook runs", a.StopHooks)
 	}
+	// The sub-agent rows appear only when the session used sub-agents.
+	if a.AgentCalls > 0 {
+		row("sub-agents", "%d calls, %d steps, %d tool calls, in %s (cache %s), out %s, cost $%.4f, ran %.1fs",
+			a.AgentCalls, a.AgentSteps, a.AgentToolCalls, human(a.AgentInputTokens), human(a.AgentCacheReadTokens),
+			human(a.AgentOutputTokens), a.AgentCostUSD, float64(a.AgentMs)/1000)
+		row("sub-agent stops", "%s", orNone(joinCounts(sortedCounts(a.AgentStops), nil)))
+	}
 	var slow []string
 	for _, s := range a.Slowest {
 		slow = append(slow, fmt.Sprintf("step %d %.1fs out=%d calls=%d", s.Step, float64(s.DurationMs)/1000, s.OutputTokens, s.ToolCalls))
@@ -424,6 +486,20 @@ func attrInt(v any) int {
 		return n
 	case int64:
 		return int(n)
+	}
+	return 0
+}
+
+// attrFloat reads a numeric attribute (a cost, say); json numbers arrive as
+// float64, but a host built in-process may store an int.
+func attrFloat(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
 	}
 	return 0
 }
@@ -543,6 +619,7 @@ const taskWaitAction = "wait"
 const (
 	taskKindWatch = "watch"
 	taskKindHook  = "hook"
+	taskKindAgent = "agent"
 )
 
 // taskAction returns the action of a `task` tool call (list, output, wait,
