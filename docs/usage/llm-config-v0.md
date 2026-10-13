@@ -37,13 +37,13 @@ fallback_models:
 - `providers.<id>.models.<model>.context_window`：该模型的上下文窗口。取值顺序：模型级 > provider 级 > 按模型名推断（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k，未知为 128k）。
 - `providers.<id>.models.<model>.model_id`：实际发给 provider 的模型 id；不设时发送 `<model>` 本身。用它给很长的上游 id 起一个短名：引用、trace、统计、价格与上下文窗口都按短名，只有请求里用 `model_id`。用完整的上游 id 引用也会对应到这个短名。
 - `providers.<id>.models.<model>.type`、`base_url`：该模型自己的协议与地址，覆盖 provider 的。同一个网关（command-code、opencode 等）常把 Claude 模型放在 Anthropic 协议的端点、其余模型放在 OpenAI 兼容端点，这时在 Claude 模型上写 `type: anthropic` 和对应的 `base_url` 即可，不必再拆一个 provider；`api_key`、`headers` 等仍沿用 provider 的。
-- `providers.<id>.thinking` 与 `providers.<id>.models.<model>.thinking`：思考档位，取值 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`、`auto`（与 omp 相同）。优先级：命令行 `--thinking`（只作用于主模型）> 模型级 > provider 级；都不设或 `auto` 时不发送，用 provider 的默认。`openai` 类型作为请求字段 `reasoning_effort` 原样发送，各 provider 支持的取值不同（如 command-code 为 `off|low|medium|high|xhigh|max`，OpenAI 为 `none|minimal|low|medium|high`），不支持的取值由 provider 报错。`anthropic` 类型走 extended thinking：Claude 4.6 及以后的模型发送 `thinking: {type: adaptive, display: summarized}` 与 `output_config.effort`（`minimal` 按 `low`），4.5 及更早的模型发送 `thinking: {type: enabled, budget_tokens}`（minimal 1024 … max 31000）并带 interleaved-thinking beta 头；设置档位且请求未指定时 `max_tokens` 为 32000；`off`、`auto` 与不设都不发送思考参数（部分新模型默认就会思考，也不接受关闭）。带签名的 thinking 块随工具调用保存，并在之后的请求里原样回传。签名绑定请求前缀，所以主模型为 `anthropic` 类型时不做历史折叠（`context.fold_every` 不生效）。`suag manifest` 显示主模型生效的档位。
-- 简单匹配：provider 写了 `models` 而引用的模型不在其中（既不是某个键，也不是某个 `model_id`）时，按名字的一部分查找已配置的模型（不区分大小写，查键与 `model_id`；写了 `provider/` 前缀只查该 provider，否则查所有列了模型的 provider；有完全相同的只取它）。唯一匹配就用它，如 `--model haiku` 选中 `command-code/claude-haiku-5-5`；多个匹配时报错并列出候选；没有匹配时在 stderr 警告一次并照原样发送，多半是模型名写错。没有 `models` 的 provider 不做匹配也不检查。未配置 `model` 时，裸名同样按此在所有 provider 中查找。`model`、`--model`、`SUAG_MODEL`、`compact_model`、`fallback_models` 都适用。
+- `providers.<id>.thinking` 与 `providers.<id>.models.<model>.thinking`：思考档位，取值 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`、`auto`（与 omp 相同）。优先级：命令行 `--thinking`（只作用于主模型）> 模型级 > provider 级；都不设或 `auto` 时不发送，用 provider 的默认。`openai` 类型作为请求字段 `reasoning_effort` 原样发送，各 provider 支持的取值不同（如 command-code 为 `off|low|medium|high|xhigh|max`，OpenAI 为 `none|minimal|low|medium|high`），不支持的取值由 provider 报错。`anthropic` 类型走 extended thinking：Claude 4.6 及以后的模型发送 `thinking: {type: adaptive, display: summarized}` 与 `output_config.effort`（`minimal` 按 `low`），4.5 及更早的模型发送 `thinking: {type: enabled, budget_tokens}`（minimal 1024 … max 31000）并带 interleaved-thinking beta 头；设置档位且请求未指定时 `max_tokens` 为 32000；`off`、`auto` 与不设都不发送思考参数（部分新模型默认就会思考，也不接受关闭）。带签名的 thinking 块随工具调用保存，并在之后的请求里原样回传。签名绑定请求前缀，所以主模型为 `anthropic` 类型时不做历史折叠（`context.fold_every` 不生效）。`suga manifest` 显示主模型生效的档位。
+- 简单匹配：provider 写了 `models` 而引用的模型不在其中（既不是某个键，也不是某个 `model_id`）时，按名字的一部分查找已配置的模型（不区分大小写，查键与 `model_id`；写了 `provider/` 前缀只查该 provider，否则查所有列了模型的 provider；有完全相同的只取它）。唯一匹配就用它，如 `--model haiku` 选中 `command-code/claude-haiku-5-5`；多个匹配时报错并列出候选；没有匹配时在 stderr 警告一次并照原样发送，多半是模型名写错。没有 `models` 的 provider 不做匹配也不检查。未配置 `model` 时，裸名同样按此在所有 provider 中查找。`model`、`--model`、`SUGA_MODEL`、`compact_model`、`fallback_models` 都适用。
 - `compact_model`：自动压缩与 `:compact` 使用的模型，引用规则同 `model`；裸模型名使用主模型的 provider；不设则用当前回合的模型。
 - `fallback_models`：主模型失败后按顺序尝试的模型列表，引用规则同 `compact_model`。
 - `retry`：模型请求遇到临时故障时的重试，对所有 provider 生效。临时故障指网络错误、HTTP 408/429/5xx，以及读响应流时连接断开。`max_attempts` 是一次请求的总次数，含第一次，默认 6，设为 1 即关闭重试。等待从 `base_delay`（默认 1s）起每次翻倍，最多到 `max_delay`（默认 60s），带 ±20% 抖动。服务端给了 `Retry-After` 时按它等，同样不超过 `max_delay`。等待档位由同一 provider 的请求共用，连续 `reset_after`（默认 2m）没有失败就回到 `base_delay`。这样故障持续时退避逐渐拉长，过后偶发的抖动又能很快重试。时长写成 `500ms`、`30s`、`2m`，或直接写秒数。
   - 流式输出中途断开时整条消息重新请求。如果断开前已输出部分文本，前端会先收到一个 `retry` 事件（`restart: true`）：chat 显示提示行，stream-json 输出 `retry` 行，ACP 发一段 thought，然后从头重新输出这条消息。其它 4xx 与流内的 API 错误不重试，重试用尽后才按 `fallback_models` 换模型。
-  - 每次模型调用的重试次数、等待时长与最后原因记在 trace 的 model 事件上（`retries`、`retry_wait_ms`、`retry_reason`），`suag trace --analyze` 汇总。
+  - 每次模型调用的重试次数、等待时长与最后原因记在 trace 的 model 事件上（`retries`、`retry_wait_ms`、`retry_reason`），`suga trace --analyze` 汇总。
 
 ### 内置预设
 
@@ -59,9 +59,9 @@ fallback_models:
 
 1. 只按第一个 `/` 切分，且前缀必须是已定义的 provider（预设或 `providers` 下的 id）。
 2. 前缀不是已定义 provider 时，整串都是模型名，使用默认 provider。例如 `meta/llama-3` 是模型名，不是 provider `meta`。
-3. 默认 provider：`--model` / `SUAG_MODEL` 与 `compact_model` / `fallback_models` 中的裸模型名，分别使用配置 `model` 的 provider 与主模型的 provider。
+3. 默认 provider：`--model` / `SUGA_MODEL` 与 `compact_model` / `fallback_models` 中的裸模型名，分别使用配置 `model` 的 provider 与主模型的 provider。
 
-主模型优先级：`--model` > `SUAG_MODEL` > 配置 `model`。`--model gpt-5` 这类裸名使用配置 `model` 的 provider。provider 未定义、没有模型名或没有配置模型时启动报错。
+主模型优先级：`--model` > `SUGA_MODEL` > 配置 `model`。`--model gpt-5` 这类裸名使用配置 `model` 的 provider。provider 未定义、没有模型名或没有配置模型时启动报错。
 
 ## base_url 拼接
 
@@ -70,13 +70,13 @@ fallback_models:
 
 ## headers
 
-- 值中的 `{{session_id}}` 替换为当前 suag 会话 ID，同一会话固定不变；没有会话 ID 时（不经过会话的调用）这类头不发送。
-- 默认带 `User-Agent: suag`，可在 `headers` 中覆盖。
+- 值中的 `{{session_id}}` 替换为当前 suga 会话 ID，同一会话固定不变；没有会话 ID 时（不经过会话的调用）这类头不发送。
+- 默认带 `User-Agent: suga`，可在 `headers` 中覆盖。
 
 ## 环境变量
 
-- `${VAR}` 在 `api_key`、`base_url`、`headers` 中展开，来源为进程环境或 `$SUAG_HOME/.env`（默认 `~/.suag/.env`）。
-- 配置文件为 `$SUAG_HOME/config.yaml`，`SUAG_CONFIG` 可指定其它文件；不读取当前工作目录的配置与 `.env`。
+- `${VAR}` 在 `api_key`、`base_url`、`headers` 中展开，来源为进程环境或 `$SUGA_HOME/.env`（默认 `~/.suga/.env`）。
+- 配置文件为 `$SUGA_HOME/config.yaml`，`SUGA_CONFIG` 可指定其它文件；不读取当前工作目录的配置与 `.env`。
 - 真实密钥放在 `.env` 或环境变量，不写进命令行参数。
 
 ## 示例：OpenCode Go
@@ -90,7 +90,7 @@ providers:
   opencode-go:                    # /chat/completions
     type: openai
     base_url: "https://opencode.ai/zen/go/v1"
-    api_key: "${OPENCODE_API_KEY}"   # 写在 $SUAG_HOME/.env
+    api_key: "${OPENCODE_API_KEY}"   # 写在 $SUGA_HOME/.env
     headers:
       x-opencode-session: "{{session_id}}"
   opencode-go-claude:             # 实际请求 https://opencode.ai/zen/go/v1/messages
@@ -116,7 +116,7 @@ providers:
     context_window: 1000000                # 本 provider 所有模型的默认窗口
     thinking: high                         # 默认思考档位（--thinking 可临时覆盖）
     models:
-      deepseek-v4.1-flash:                 # suag 里用的短名
+      deepseek-v4.1-flash:                 # suga 里用的短名
         model_id: deepseek/deepseek-v4.1-flash   # 请求里发送的 id
 ```
 
@@ -132,7 +132,7 @@ providers:
         model_id: claude-sonnet-4-5
 ```
 
-`--model command-code/deepseek-v4.1-flash` 或（`model` 已指向 command-code 时）`--model deepseek-v4.1-flash` 都会请求 `deepseek/deepseek-v4.1-flash`；`--model command-code/deepseek/deepseek-v4.1-flash` 同样可用。`suag manifest` 在主模型一行显示实际发送的 id。
+`--model command-code/deepseek-v4.1-flash` 或（`model` 已指向 command-code 时）`--model deepseek-v4.1-flash` 都会请求 `deepseek/deepseek-v4.1-flash`；`--model command-code/deepseek/deepseek-v4.1-flash` 同样可用。`suga manifest` 在主模型一行显示实际发送的 id。
 
 ## 从旧配置迁移
 
@@ -173,4 +173,4 @@ providers:
 | `llm.api_key` / `llm.base_url` / `llm.headers` | `providers.<id>.api_key` / `base_url` / `headers` |
 | `llm.compact_model` | 顶层 `compact_model: <provider>/<model>`（可用裸名沿用主 provider） |
 | `llm.context_window` | `providers.<id>.models.<model>.context_window` |
-| `SUAG_PROVIDER` / `--provider` | `SUAG_MODEL=<provider>/<model>` / `--model <provider>/<model>` |
+| `SUGA_PROVIDER` / `--provider` | `SUGA_MODEL=<provider>/<model>` / `--model <provider>/<model>` |

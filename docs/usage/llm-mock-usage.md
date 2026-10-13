@@ -10,7 +10,7 @@
 import (
 	"errors"
 
-	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/mock"
 )
 
 p := mock.NewProvider(

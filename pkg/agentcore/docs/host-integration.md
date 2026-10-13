@@ -310,7 +310,7 @@ func NewRuntime(provider agentcore.Provider, storage agentcore.Storage, workspac
 }
 ```
 
-suag 自己的组装（provider 池、MCP、技能、延迟加载与审批层）在应用层 `internal/wiring`，是这个模式的完整版本。
+suga 自己的组装（provider 池、MCP、技能、延迟加载与审批层）在应用层 `internal/wiring`，是这个模式的完整版本。
 
 这样做的价值是：
 

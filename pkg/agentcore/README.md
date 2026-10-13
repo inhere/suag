@@ -1,6 +1,6 @@
 # agentcore
 
-`agentcore` 是 suag 的 Agent 内核与能力层：单 agent 的模型/工具循环、可恢复的 run 状态与 transcript，以及可直接组装的 provider、工具、技能与 MCP 接入。它不依赖 suag 的应用层（`internal/*`），可以单独嵌入；当前为 `v0`，接口仍可能调整。
+`agentcore` 是 suga 的 Agent 内核与能力层：单 agent 的模型/工具循环、可恢复的 run 状态与 transcript，以及可直接组装的 provider、工具、技能与 MCP 接入。它不依赖 suga 的应用层（`internal/*`），可以单独嵌入；当前为 `v0`，接口仍可能调整。
 
 它负责：
 
@@ -9,17 +9,17 @@
 - 持久化 snapshot 与 append-only transcript
 - 暴露 hooks、policies 与稳定的错误分类
 
-它不负责：会话产品逻辑（会话、压缩、交接）、配置读取、终端与 ACP 接入、多 agent 编排——这些属于宿主（suag 的 `internal/*`）。
+它不负责：会话产品逻辑（会话、压缩、交接）、配置读取、终端与 ACP 接入、多 agent 编排——这些属于宿主（suga 的 `internal/*`）。
 
 ## 分层
 
 ```text
-应用层   suag internal/*: config, wiring, personal(+store), chat, acpserver, cli, hooks, output
+应用层   suga internal/*: config, wiring, personal(+store), chat, acpserver, cli, hooks, output
             │ 只向下依赖
 能力层   agentcore/llm          OpenAI 兼容与 Claude provider、fallback 池
          agentcore/schedule     进程内定时：After/Every/Idle，只依赖标准库
          agentcore/tools        注册表、审批层、延迟加载（visibility）、输出治理（Output/Spiller）、工具元数据
-         agentcore/tools/native 内置工具：文件读写/搜索、shell、web、update_plan、tool_search、skill、memory、session_search、recall、suag_manifest
+         agentcore/tools/native 内置工具：文件读写/搜索、shell、web、update_plan、tool_search、skill、memory、session_search、recall、suga_manifest
          agentcore/tools/mcp    stdio MCP 客户端，工具以 MCP kind 注册
          agentcore/skills       SKILL.md 解析、多根目录加载与检索
          agentcore/memory       长期记忆：Store 接口、Governed 治理层、Router 范围路由；memory/files、memory/execstore 两个内置后端
@@ -30,7 +30,7 @@
 内核     agentcore (根包) + agentcore/api：Runtime、契约类型（含 api.History）、hooks、policies、内存默认存储
 ```
 
-依赖只能自上而下。`layering_test.go` 守住边界：`pkg/agentcore` 下任何包（含测试）依赖了 `pkg/agentcore` 之外的 `github.com/inhere/suag/...` 即失败。根包不依赖能力层：不传 `Config.Tools` 时用私有空注册表，不传 `Config.Storage` 时用内存存储。
+依赖只能自上而下。`layering_test.go` 守住边界：`pkg/agentcore` 下任何包（含测试）依赖了 `pkg/agentcore` 之外的 `github.com/inhere/suga/...` 即失败。根包不依赖能力层：不传 `Config.Tools` 时用私有空注册表，不传 `Config.Storage` 时用内存存储。
 
 ## Quick Start
 
@@ -85,12 +85,12 @@ runtime := agentcore.New(agentcore.Config{
 - 分层顺序：observe（宿主）→ `tools.Output`（输出治理）→ `tools.Visibility`（延迟加载 MCP schema）→ `tools.Approval`（审批）→ `tools.Registry`。
 - `tools.Output`：结果不超过 `InlineBytes` 原样通过；更大的结果交给宿主实现的 `tools.Spiller` 存下全文，上下文换成 ref 行加头尾片段（未配置 Spiller 时只截断）。错误结果不改写；`Meta.Rereadable` 的工具（自带分页，如 `file_read`、`recall`）不经外置。`Meta.External` 标记结果含外部内容（如 `web_fetch`、MCP 工具），宿主据此做污染标记；`Meta.AgentState` 标记写的是 agent 自身状态而非工作区（如 `memory`）。
 - `native.Env` 的 `InlineBytes`（内联阈值）与 `RawBytes`（单次原始输出上限）取代原 `MaxOutputBytes`。
-- 宿主把类别映射到自己的协议，例如 suag 的 ACP 服务把 `CategoryEdit` 映射为 `acp.ToolKindEdit`；ACP 概念不进入 agentcore。
+- 宿主把类别映射到自己的协议，例如 suga 的 ACP 服务把 `CategoryEdit` 映射为 `acp.ToolKindEdit`；ACP 概念不进入 agentcore。
 
 ## llm：Claude 缓存与段上下文
 
 - `llm.ClaudeConfig.PromptCache`（默认关）：开启后在两处加 `cache_control` 断点（至多 2 个，Anthropic 上限 4 个），`system` 改为块数组；关闭时 `system` 仍是字符串，网关不接受 `cache_control` 时保持关闭。
-- 断点位置：带 `llm.SegmentContextMetaKey`（`Message.Metadata["suag.segment_context"] = true`）的消息的最后一个块，以及请求的最后一个块。宿主构建段上下文消息时要设置同一个 key，稳定前缀（system + tools + 段上下文）才会被缓存。
+- 断点位置：带 `llm.SegmentContextMetaKey`（`Message.Metadata["suga.segment_context"] = true`）的消息的最后一个块，以及请求的最后一个块。宿主构建段上下文消息时要设置同一个 key，稳定前缀（system + tools + 段上下文）才会被缓存。
 
 ## schedule：进程内定时
 
@@ -107,7 +107,7 @@ runtime := agentcore.New(agentcore.Config{
 - 三个注册方法返回 `Handle`：`Cancel`（注销，运行中的调用看到 ctx 取消）、`Reset`、`Pause`、`Resume`。同名再次注册会替换旧任务。
 - 同一任务不会并发：上一次还在运行时到点的触发记为 `skipped`。
 - `WithClock(Clock)` 注入假时钟（测试用）；`WithObserver(func(Event))` 接收事件（scheduled、fired、skipped、cancelled、paused、resumed、done、failed）。观察者在调度器锁外调用，可以重入调度器（如在事件里 `Touch` 或 `Close`）；极短的任务可能先收到 `done` 再收到 `fired`，需要顺序时按 `Event.At` 排序。
-- suag 的 chat 用它做空闲整理（`Idle` 任务 + 回合期间 `Pause`）。
+- suga 的 chat 用它做空闲整理（`Idle` 任务 + 回合期间 `Pause`）。
 
 ## 记忆
 

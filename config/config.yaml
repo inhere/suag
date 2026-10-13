@@ -1,11 +1,11 @@
-# suag configuration
-# Copy to $SUAG_HOME/config.yaml (default ~/.suag/config.yaml); ${VAR} values are
-# expanded from the environment or $SUAG_HOME/.env.
+# suga configuration
+# Copy to $SUGA_HOME/config.yaml (default ~/.suga/config.yaml); ${VAR} values are
+# expanded from the environment or $SUGA_HOME/.env.
 
 # Main model, "<provider>/<model>". The prefix must be a defined provider (the
 # presets openai, anthropic, deepseek, or one under providers:); only the first
 # "/" splits, otherwise the whole string is the model id of the provider of
-# this setting. Overridden by SUAG_MODEL, then by --model.
+# this setting. Overridden by SUGA_MODEL, then by --model.
 model: bailian/glm-5
 
 # Providers. openai / anthropic / deepseek are built in (default base_url and
@@ -22,15 +22,15 @@ providers:
     #   glm-5:
     #     context_window: 128000
     #     # Optional price in USD per million tokens; used for the cost shown by
-    #     # `suag stats` / usage_update when the provider reports no cost.
+    #     # `suga stats` / usage_update when the provider reports no cost.
     #     price: {input: 0.27, output: 1.1, cache_read: 0.07, cache_write: 0}
     #   sonnet:
     #     # A model may use its own protocol and address (e.g. the Claude
     #     # models of a gateway whose other models speak OpenAI).
     #     type: anthropic
     #     base_url: "https://gateway.example/anthropic"
-    # Optional extra request headers. "{{session_id}}" becomes the current suag
-    # session id (skipped when there is none); User-Agent defaults to "suag".
+    # Optional extra request headers. "{{session_id}}" becomes the current suga
+    # session id (skipped when there is none); User-Agent defaults to "suga".
     # headers:
     #   x-extra: "value"
 
@@ -105,7 +105,7 @@ providers:
 #   fold_keep: 5        # steps kept whole (>= 1)
 
 # Project rules: one file per directory level, from the Git root (or cwd) down
-# to cwd, plus $SUAG_HOME/AGENTS.md for the user level. Only a file name (no
+# to cwd, plus $SUGA_HOME/AGENTS.md for the user level. Only a file name (no
 # path) is accepted; set it to CLAUDE.md to read that one instead.
 # rules:
 #   file: AGENTS.md
@@ -156,12 +156,12 @@ tools:
   # auto never asks. Without a terminal, tools needing confirmation are refused.
   # approval: ask
   # max_output_bytes: 8000   # largest tool result kept whole in the session; larger ones are
-  #                          # saved to ~/.suag/sessions/<id>/outputs/ and kept as ref + head/tail
+  #                          # saved to ~/.suga/sessions/<id>/outputs/ and kept as ref + head/tail
   # max_spill_bytes: 1048576 # raw output cap of one tool call (native and MCP)
   # parallel_reads: true     # run a reply's file_read/list/grep/find calls concurrently
   # read_page_bytes: 32768   # one file_read page per file (most source files fit in one read)
   # minimize_output: true    # tidy shell results (test summaries, folded repeats, no colours); original kept as a ref.
-  #                           # Rules: built-in, then $SUAG_HOME/output-rules.yaml, then <workspace>/.suag/output-rules.yaml
+  #                           # Rules: built-in, then $SUGA_HOME/output-rules.yaml, then <workspace>/.suga/output-rules.yaml
   # shell: ""                # shell_exec shell; default pwsh/powershell on Windows, sh elsewhere
   # shell_timeout_max: 600   # max seconds a shell_exec call may ask for (default 120 per call)
   # Read-only directories outside the workspace (file_read/file_list/file_grep/file_find,
@@ -196,11 +196,11 @@ tools:
 #   taint_tools: []
 #   taint_on_spill: [shell_exec]
 #   user:
-#     backend: files       # files (default, $SUAG_HOME/memory/user) | exec
+#     backend: files       # files (default, $SUGA_HOME/memory/user) | exec
 #   project:
 #     # Unset: MEMORY.md at the repository root -> files (repository mode,
-#     # entries in .suag/memory/); else .gofer/tracker there -> gofer; else
-#     # files under $SUAG_HOME/projects/<key>/memory. Set to force one:
+#     # entries in .suga/memory/); else .gofer/tracker there -> gofer; else
+#     # files under $SUGA_HOME/projects/<key>/memory. Set to force one:
 #     backend: files       # files | gofer | exec
 #   # exec backend (per scope; the command is required and is never discovered):
 #   # user:
@@ -209,11 +209,11 @@ tools:
 #   #   args: ["--db", "/path/to/store"]
 #   #   timeout_sec: 10
 
-# Chat hooks. Disabled unless hooks.command is set; SUAG_HOOKS=off disables
+# Chat hooks. Disabled unless hooks.command is set; SUGA_HOOKS=off disables
 # them regardless. The command is an argv list (no shell) and receives each
 # event as one JSON line on stdin.
 # hooks:
-#   command: [gofer, hook, generic, --agent, suag]
+#   command: [gofer, hook, generic, --agent, suga]
 #   timeout_ms: 3000 # ordinary events (default 3000)
 #   # Appended to the Stop event argv only. Always set stop_wait_sec together
 #   # with it, or Stop is ended after timeout_ms.

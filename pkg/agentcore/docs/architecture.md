@@ -9,7 +9,7 @@
 - 为什么这些能力要拆成现在这几个 contract
 - 一个 run 在 kernel 内部如何流动
 
-本文描述内核（根包 + `api`）。内核之上的能力层（`llm`、`tools`、`tools/native`、`tools/mcp`、`skills`、`storage/files`）与 suag 应用层的划分见 [README 的分层图](../README.md#分层)；工具审批、只读判定与延迟加载属于能力层 `agentcore/tools`，不在内核里。
+本文描述内核（根包 + `api`）。内核之上的能力层（`llm`、`tools`、`tools/native`、`tools/mcp`、`skills`、`storage/files`）与 suga 应用层的划分见 [README 的分层图](../README.md#分层)；工具审批、只读判定与延迟加载属于能力层 `agentcore/tools`，不在内核里。
 
 ---
 
