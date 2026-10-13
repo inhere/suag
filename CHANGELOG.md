@@ -17,6 +17,7 @@
 
 ### 变更
 
+- 会话库（SQLite，WAL）改用 `synchronous=NORMAL`，`busy_timeout` 由 5 秒提高到 15 秒：提交不再逐次 fsync（只在 checkpoint 时），断电可能丢最后几笔提交但不会损坏库。Windows 负载下两个写入方各写 50 次由 1.4–5.0 秒降到约 0.04 秒，不再出现 `database is locked`（suag-5o5g）。
 - `--analyze` 的 `background_ms` 与 `background_overlap_ms` 只计后台命令，不再包含监听与 Stop hook 的常驻时长。
 - 任务管理器支持函数任务（监听、hook，以后的子 agent 也用它）；`tasks.Manager.Wait` 返回结束方式（超时、结束、运行中有进展）而不是布尔值。
 - 任务结束事件改由任务管理器直接写入会话库，不再经过回合的 Runner：ACP 两个回合之间或进程退出时结束的任务也会出现在 trace 里。

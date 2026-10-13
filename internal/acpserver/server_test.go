@@ -478,7 +478,10 @@ func TestPersonalACPTwoTurnsAndNewConnectionLoad(t *testing.T) {
 	open := testACPRuntime(t, provider, nil)
 	client := &testACPClient{}
 	conn := connectPersonalACP(t, open, client)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// One budget for six steps, three of them full turns that each open a
+	// runtime and write the store: a guard against a hang, roomy enough for a
+	// loaded Windows host (suag-5o5g).
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	initialized, err := conn.Initialize(ctx, acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber})
 	if err != nil || !initialized.AgentCapabilities.LoadSession {

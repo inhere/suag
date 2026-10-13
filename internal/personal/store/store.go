@@ -52,6 +52,16 @@ type Store struct {
 
 // buildDSN makes every pooled connection run the pragmas on open (modernc
 // executes each _pragma value as "PRAGMA ..." for every new connection).
+//
+// Several handles write the same file (a chat runtime, the task-end recorder,
+// other suag processes), so a writer may wait for another's lock:
+//   - busy_timeout 15s: SQLite's busy wait is a sleep-and-retry, not a queue,
+//     so a writer can lose the lock to a busy one several times in a row;
+//   - synchronous NORMAL (the setting SQLite recommends with WAL): a commit
+//     no longer fsyncs the WAL, only a checkpoint does. On Windows under
+//     load an fsync took 15-50ms, enough for 100 commits of two writers to
+//     run past a 5s busy_timeout (suag-5o5g). A power loss may drop the last
+//     commits, never corrupt the database.
 func buildDSN(path string) string {
 	p := filepath.ToSlash(path)
 	if !strings.HasPrefix(p, "/") {
@@ -59,8 +69,9 @@ func buildDSN(path string) string {
 	}
 	u := url.URL{Path: p}
 	q := url.Values{}
-	q.Add("_pragma", "busy_timeout(5000)")
+	q.Add("_pragma", "busy_timeout(15000)")
 	q.Add("_pragma", "journal_mode(WAL)")
+	q.Add("_pragma", "synchronous(NORMAL)")
 	q.Add("_pragma", "foreign_keys(1)")
 	return "file://" + u.EscapedPath() + "?" + q.Encode()
 }

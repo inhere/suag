@@ -53,13 +53,15 @@ func TestPragmasApplyToEveryPooledConnection(t *testing.T) {
 		assert.Require(t, assert.NoErr(t, err))
 		conns = append(conns, c)
 		var mode string
-		var busy, fk int
+		var busy, fk, sync int
 		assert.NoErr(t, c.QueryRowContext(ctx, `PRAGMA journal_mode`).Scan(&mode))
 		assert.NoErr(t, c.QueryRowContext(ctx, `PRAGMA busy_timeout`).Scan(&busy))
 		assert.NoErr(t, c.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&fk))
+		assert.NoErr(t, c.QueryRowContext(ctx, `PRAGMA synchronous`).Scan(&sync))
 		assert.Eq(t, "wal", mode)
-		assert.Eq(t, 5000, busy)
+		assert.Eq(t, 15000, busy)
 		assert.Eq(t, 1, fk)
+		assert.Eq(t, 1, sync) // NORMAL
 	}
 	for _, c := range conns {
 		_ = c.Close()
