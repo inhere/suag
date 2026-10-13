@@ -65,6 +65,28 @@ func TestTraceWebRenders(t *testing.T) {
 		Time: start.Add(1500 * time.Millisecond), Notice: true,
 		Content: "[background task notice] Background task updates (read more with the task tool or recall the ref):\n" +
 			"- t2 (watch) reports: run 5 (files: a.go): exit 0 -> 1"})
+	// P4: sub-agent calls — a synchronous one (its numbers on the tool event,
+	// its label on the call entry) and a background one (its start plus the end
+	// of the agent task it started).
+	view.Events = append(view.Events,
+		webEvent{ID: 9020, TurnID: turn, Kind: store.EventTool, Name: "agent", Status: eventOK,
+			Start: start.Add(3000 * time.Millisecond), DurationMs: 41300,
+			Attrs: map[string]any{"arg": "background=false description=find the callers prompt=trace who calls run",
+				"child_session_id": "sess_child1", "agent_type": "explore", "steps": 12, "tool_calls": 5,
+				"input_tokens": 85000, "cache_read_tokens": 60000, "output_tokens": 3000,
+				"cost_usd": 0.0123, "stop": "final"},
+			Entries: []int64{9021}},
+		webEvent{ID: 9022, TurnID: turn, Kind: store.EventTool, Name: "agent", Status: eventOK,
+			Start: start.Add(4000 * time.Millisecond), DurationMs: 6,
+			Attrs: map[string]any{"arg": "background=true description=survey the deps prompt=survey them",
+				"task_id": "t4", "background": true, "agent_type": "research"}},
+		webEvent{ID: 9023, TurnID: turn, Kind: store.EventTask, Name: "t4", Status: eventOK,
+			Start: start.Add(4000 * time.Millisecond), DurationMs: 20000,
+			Attrs: map[string]any{"kind": "agent", "arg": "agent: survey the deps", "exit_code": 0,
+				"steps": 7, "tool_calls": 3, "bytes": 900, "lines": 20}})
+	view.Entries = append(view.Entries, traceEntry{Seq: 9021, TurnID: turn, Type: store.EntryAssistant, Role: "assistant",
+		Time: start.Add(3000 * time.Millisecond), CallID: "c9", Tool: "agent",
+		Args: map[string]any{"description": "find the callers", "prompt": "trace who calls run"}})
 	// The 分析 tab shows the numbers of the events the page got.
 	traceEvents := make([]store.Event, 0, len(view.Events))
 	for _, e := range view.Events {

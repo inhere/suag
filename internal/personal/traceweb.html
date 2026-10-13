@@ -97,20 +97,59 @@ function category(e) {
 }
 
 // taskBadge: how a background task is named: a shell task by its id, a watch
-// as a watch, a Stop hook by its summary (attrs.kind is the task's kind).
+// as a watch, a Stop hook by its summary, a sub-agent by its description
+// (attrs.kind is the task's kind).
 function taskBadge(e) {
   const a = e.attrs || {};
   if (a.kind === "watch") return "监听 " + e.name;
   if (a.kind === "hook") return (a.arg || "Stop hook") + " " + e.name;
+  if (a.kind === "agent") return "子 agent " + String(a.arg || "").replace(/^agent:\s*/, "");
   return "后台 " + e.name;
 }
 
+// agentDesc: the label of a sub-agent call: the description argument when the
+// page has the call, else the one in the event's argument summary (attrs.arg).
+function agentDesc(e) {
+  for (const seq of e.entries || []) {
+    const en = entryBySeq.get(seq);
+    if (en && en.args && en.args.description) return en.args.description;
+  }
+  const m = /(?:^|\s)description=(.*?)(?:\s+(?:background|prompt|type)=|$)/.exec((e.attrs || {}).arg || "");
+  return m ? m[1] : "";
+}
+
+// badge: the label of the kind cell: a sub-agent call by its description, a
+// background task by its kind, else the tool name or the event kind.
+function badge(e) {
+  if (e.kind === "task") return taskBadge(e);
+  if (e.kind === "tool" && e.name === "agent") {
+    const d = agentDesc(e);
+    return "子 agent" + (d ? " " + d : "");
+  }
+  return e.kind === "tool" ? e.name : e.kind;
+}
+
+// agentSummary: what a sub-agent call spent, why it stopped and the command
+// that opens its own trace; a background call only started a task (its row
+// links to it), so the numbers arrive with the task row instead.
+function agentSummary(e) {
+  const a = e.attrs || {};
+  if (a.steps == null) return a.arg || "";
+  const parts = [`${a.steps} 步`, `in ${human(a.input_tokens)}（缓存 ${human(a.cache_read_tokens)}）`, `out ${human(a.output_tokens)}`];
+  if (a.cost_usd) parts.push("$" + Number(a.cost_usd).toFixed(4));
+  if (a.stop) parts.push("stop=" + a.stop);
+  if (a.child_session_id) parts.push("suag trace " + a.child_session_id + " --web");
+  return parts.join(" · ");
+}
+
 // taskSummary: what a task ran, plus what a watch reported (how often its
-// command ran and how often the result changed, or its last state).
+// command ran and how often the result changed, or its last state) and the
+// steps a background sub-agent ran.
 function taskSummary(e) {
   const a = e.attrs || {};
   let extra = "";
   if (a.kind === "watch") extra = a.runs != null ? ` · ${a.runs} 次运行（${a.changes||0} 次变化）` : (a.progress ? " · " + a.progress : "");
+  else if (a.kind === "agent") extra = ` · ${a.steps||0} 步`;
   return `${a.arg || ""} · exit=${a.exit_code} · ${human(a.bytes)}B / ${a.lines||0} 行` + extra + (e.error ? " · " + e.error : "");
 }
 
@@ -119,7 +158,7 @@ function summary(e) {
   switch (e.kind) {
     case "model": return `in ${human(e.input_tokens)} (缓存 ${human(e.cache_read_tokens)}) out ${human(e.output_tokens)}` + (a.tool_calls ? ` · ${a.tool_calls} 个调用` : "") + (a.prefix && a.prefix !== "append" ? ` · 前缀 ${a.prefix}` : "") + (a.finish === "truncated" ? " · 截断" : "") + (a.retries ? ` · 重试 ${a.retries} 次（${a.retry_reason}，等 ${(a.retry_wait_ms / 1000).toFixed(1)}s）` : "");
     case "task": return taskSummary(e);
-    case "tool": case "denial": return (a.arg || "") + (a.exit_code != null ? ` · exit=${a.exit_code}` : "") + (a.lines_added != null ? ` · +${a.lines_added}/-${a.lines_removed||0}` : "") + (a.approval && a.approval !== "rule" ? ` · 审批 ${a.approval}` : "") + (e.error ? " · " + e.error : "");
+    case "tool": case "denial": return e.name === "agent" ? agentSummary(e) : (a.arg || "") + (a.exit_code != null ? ` · exit=${a.exit_code}` : "") + (a.lines_added != null ? ` · +${a.lines_added}/-${a.lines_removed||0}` : "") + (a.approval && a.approval !== "rule" ? ` · 审批 ${a.approval}` : "") + (e.error ? " · " + e.error : "");
     case "context": return [`约 ${human(a.est_tokens)} / ${human(a.window)} tokens`, `工具 ${a.tools_count||0} 个`, skillsText(a)].filter(Boolean).join(" · ");
     case "hook": return [a.decision && "decision="+a.decision, a.additional_chars && "注入 "+a.additional_chars+" 字符", a.reason_chars && "reason "+a.reason_chars].filter(Boolean).join(" · ");
     case "fold": return `折叠 ${a.boundary}/${a.steps} 步，${human(a.chars_before)}→${human(a.chars_after)} 字符`;
@@ -203,7 +242,7 @@ function renderTimeline(main) {
       if (rel.length) what.append(" ", ...rel);
       const tr = el("tr", {class: (e.kind === "turn" ? "turn " : "") + (selected === e ? "sel" : ""), onclick: () => { selected = e; history.replaceState(null, "", "#ev=" + e.id); showDetail(detail, e); draw(); }},
         el("td", {class:"when", title: off(at(e) - t0)}, clock(at(e))),
-        el("td", {class:"kind"}, el("span", {class:"k", style:"background:" + COLORS[cat]}, e.kind === "task" ? taskBadge(e) : e.kind === "tool" ? e.name : e.kind)),
+        el("td", {class:"kind"}, el("span", {class:"k", style:"background:" + COLORS[cat]}, badge(e))),
         what,
         el("td", {class:"mute"}, e.duration_ms ? secs(e.duration_ms) : ""),
         el("td", {class:"bar"}, el("div", {class:"barw"}, el("span", {style:`left:${left}%;width:${width}%;background:${COLORS[cat]}`}))));
@@ -267,6 +306,10 @@ function showDetail(box, e) {
       if (en.content) box.append(el("h3", {}, "正文"), el("pre", {}, en.content));
       if (en.tool) box.append(el("div", {class:"mute"}, `→ 调用 ${en.tool}${en.batch ? "（并行批次 " + en.batch + "）" : ""}`));
     }
+  }
+  if (e.name === "agent" && e.attrs && e.attrs.child_session_id) {
+    // The sub-agent ran in a session of its own: its events are there.
+    box.append(el("h3", {}, "子会话"), el("pre", {}, "suag trace " + e.attrs.child_session_id + " --web"));
   }
   box.append(el("h3", {}, "属性"), kv(e.attrs || {}));
 }

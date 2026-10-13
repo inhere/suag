@@ -75,6 +75,20 @@ check("timeline: a watch summary shows runs and changes", watchRow >= 0 && rows[
 check("timeline: the watch's shell_exec links to it as a watch", watchStarter >= 0 && rows[watchStarter].includes("监听 t2"));
 check("timeline: a Stop hook task row is named by its summary", hookRow > 0 && rows[hookRow - 1].includes("Stop hook t3"));
 
+// P4: sub-agent calls — the badge names the sub-agent by its description, the
+// summary shows what it spent and the command that opens its own trace.
+const agentRow = lineOf("12 步"), taskAgentRow = lineOf("agent: survey the deps");
+check("timeline: a sub-agent row is named by its description", agentRow > 0 && rows[agentRow - 1].includes("子 agent find the callers"));
+check("timeline: a sub-agent summary shows steps, tokens and stop", agentRow >= 0 && rows[agentRow].includes("in 85k（缓存 60k）") && rows[agentRow].includes("out 3k") && rows[agentRow].includes("stop=final"));
+check("timeline: the row names the command that opens its trace", agentRow >= 0 && rows[agentRow].includes("suag trace sess_child1 --web"));
+check("timeline: a background sub-agent's task row is named by its description", taskAgentRow > 0 && rows[taskAgentRow - 1].includes("子 agent survey the deps"));
+check("timeline: the agent task row shows the steps its sub-agent ran", taskAgentRow >= 0 && rows[taskAgentRow].includes("7 步"));
+const agentEv = data.events.find(e => e.name === "agent" && e.attrs && e.attrs.child_session_id);
+const agentBox = new Node("div");
+showDetail(agentBox, agentEv);
+const agentText = __dump(agentBox);
+check("detail: a sub-agent shows the command for its own trace", agentText.includes("子会话") && agentText.includes("suag trace sess_child1 --web"));
+
 tab = "context";
 const cx = new Node("main");
 renderContext(cx);
@@ -94,6 +108,9 @@ check("analysis: background task numbers", ["background_tasks", "background_over
 const arows = text.split(String.fromCharCode(10)), kvVal = k => { const i = arows.findIndex(l => l.endsWith(k)); return i >= 0 ? arows[i + 1] : ""; };
 check("analysis: watch and Stop hook numbers", [["watch_tasks", "1"], ["watch_runs", "5"], ["watch_changes", "2"], ["stop_hooks", "1"]].every(([k, v]) => kvVal(k).startsWith(v)));
 check("analysis: no [object ...]", !text.includes("[object"));
+check("analysis: sub-agent numbers", ["agent_calls", "agent_steps", "agent_tool_calls", "agent_input_tokens", "agent_cost_usd", "agent_ms", "agent_stops"].every(k => text.includes(k)));
+check("analysis: sub-agent counts", [["agent_calls", "2"], ["agent_steps", "19"], ["agent_tool_calls", "8"]].every(([k, v]) => kvVal(k).startsWith(v)));
+check("analysis: why the sub-agents stopped", kvVal("agent_stops").includes('"final":1'));
 process.exitCode = bad ? 1 : 0;
 `;
 vm.runInThisContext(page + checks);
