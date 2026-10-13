@@ -22,9 +22,12 @@ import (
 // tools by type, a sub-agent prompt and environment, and the agents.* limits.
 type subAgents struct {
 	workspace, ruleCWD string
-	noProjectRules     bool
-	ruleFile           string
-	settings           appconfig.AgentSettings
+	// mainModel is the parent runtime's --model override ("" = the config's
+	// model); sub-agents use it unless agents.model names their own.
+	mainModel      string
+	noProjectRules bool
+	ruleFile       string
+	settings       appconfig.AgentSettings
 }
 
 var _ native.SubAgents = (*subAgents)(nil)
@@ -86,7 +89,11 @@ func markTainted(ctx context.Context, session, by string) error {
 
 // build assembles the Runner of one sub-agent run; the func closes it.
 func (s *subAgents) build(kind string) (*personal.Runner, func(), error) {
-	rs, err := loadRuntimeSettings(s.workspace, s.settings.Model, "")
+	model := s.settings.Model
+	if model == "" {
+		model = s.mainModel // the parent's model, --model included
+	}
+	rs, err := loadRuntimeSettings(s.workspace, model, "")
 	if err != nil {
 		return nil, nil, fmt.Errorf("agents.model: %w", err)
 	}

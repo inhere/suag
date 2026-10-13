@@ -221,7 +221,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	if agentSettings.Enabled {
-		agentTool := native.NewAgentTool(&subAgents{workspace: workspace, ruleCWD: ruleCWD,
+		agentTool := native.NewAgentTool(&subAgents{workspace: workspace, ruleCWD: ruleCWD, mainModel: opts.Model,
 			noProjectRules: opts.NoProjectRules, ruleFile: ruleFile, settings: agentSettings})
 		if opts.Tasks != nil {
 			agentTool.SetTasks(opts.Tasks)

@@ -67,7 +67,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `rules.file` | 每一级目录读取的项目规则文件名（每级只读一个，从 Git 根或 cwd 到 cwd），默认 `AGENTS.md`，可改成 `CLAUDE.md`；只接受文件名，不能带路径。`~/.suag/AGENTS.md` 仍会读取 |
 | `providers.<id>.prompt_cache` | 仅 Claude（`anthropic` 类型），默认关：加 `cache_control` 断点（system 变为块数组）；部分网关不接受 |
 | `tools.allow_write` | 仅 chat：启用写文件和 shell 工具（默认 false） |
-| `agents.enabled`、`agents.model`、`agents.max_steps`、`agents.max_tokens`、`agents.timeout` | `agent` 工具（见[子 agent](#子-agent)）：是否注册（默认 true）、子 agent 使用的模型（默认主模型）、步数上限（30）、token 上限（400000，按未命中缓存的输入加输出计）、软时间上限（10m） |
+| `agents.enabled`、`agents.model`、`agents.max_steps`、`agents.max_tokens`、`agents.timeout` | `agent` 工具（见[子 agent](#子-agent)）：是否注册（默认 true）、子 agent 使用的模型（写法同 `model`：`<provider>/<model>`，只写模型 id 时用主模型的 provider；默认用会话自身的模型，含 `--model` 覆盖）、步数上限（30）、token 上限（400000，按未命中缓存的输入加输出计）、软时间上限（10m） |
 | `tasks.max_running`、`tasks.max_duration`、`tasks.max_output_bytes`、`tasks.wake_on_exit` | 后台任务：每个会话同时在跑的数量（4）、单次最长运行时间（`2h`）、输出文件上限（64 MiB）、任务结束时是否唤醒空闲的 chat（true；运行中的任务发来通知时同样唤醒，见监听任务） |
 | `tools.approval` | 仅 chat：`ask`（默认）执行写/shell 工具前询问，`auto` 不询问 |
 | `tools.max_output_bytes`、`tools.max_spill_bytes` | 内联阈值：单次工具结果完整写入会话的上限（默认 8000，超出时原文存 `$SUAG_HOME/sessions/<id>/outputs/`，会话只留 ref 与头尾片段）；单次工具原始输出上限（默认 1 MiB） |

@@ -64,12 +64,25 @@ providers:
 #   - anthropic/claude-sonnet-4-6
 #   - deepseek-chat # bare id: served by the main model's provider
 
-# Background tasks (shell_exec background: true, the task tool; run and chat).
+# Background tasks: shell_exec background: true (write modes; with every /
+# watch_paths a watch), agent background: true (every mode); the task tool
+# lists, reads, waits for and kills them. run, chat and ACP.
 # tasks:
 #   max_running: 4          # per session
 #   max_duration: 2h        # longer tasks are killed
 #   max_output_bytes: 67108864
-#   wake_on_exit: true      # chat: a task end starts a turn while chat waits
+#   wake_on_exit: true      # chat: a task notice (end, watch change) starts a turn while chat waits
+
+# Sub-agents: the agent tool hands a read-only exploration or research task to a
+# model run in a session of its own and gets only its report back.
+# agents:
+#   enabled: true           # false: no agent tool
+#   model: bailian/glm-4-flash  # same reference rules as model (a bare id uses
+#                           # the main model's provider); unset: the session's
+#                           # own model (--model included). A cheaper one saves cost.
+#   max_steps: 30           # then it reports from what it has (wrap-up)
+#   max_tokens: 400000      # uncached input + output of its model calls; then wrap-up
+#   timeout: 10m            # soft: then wrap-up; cancelled 60s later
 
 # Retries of a model request after a network error, HTTP 408/429/5xx or a
 # broken response stream (every provider). Waits double from base_delay up to
@@ -206,6 +219,8 @@ tools:
 #   # with it, or Stop is ended after timeout_ms.
 #   stop_args: [--wait, "7140"]
 #   stop_wait_sec: 7140 # Stop waits stop_wait_sec+2 seconds
+#   stop_background: false # chat: run Stop as a background task that typing does not
+#                          # interrupt; a block reply arrives as a task notice
 #   # PostToolUse is sent only for tools matching these globs (none: never),
 #   # renamed to "name" when set. Globs use path.Match; "*" does not match "/".
 #   post_tool_use:
