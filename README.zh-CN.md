@@ -49,44 +49,24 @@ chat 中：`:session` 显示会话 ID，`:compact` 开启新段（见[会话](#�
 
 ## 配置
 
-Suga 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`）。工作目录下的配置和 `.env` 属于你的项目，不会被读取。`SUGA_CONFIG` 可以指定唯一的配置文件。
+Suga 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`）。工作目录下的配置和 `.env` 属于你的项目，不会被读取。`SUGA_CONFIG` 可以指定唯一的配置文件。密钥写进 `$SUGA_HOME/.env`（如 `BAILIAN_API_KEY=...`），配置里的 `${VAR}` 从这里或进程环境展开。最常用的配置：
 
 | 配置项 | 含义 |
 |---|---|
 | `model` | 主模型，`<provider>/<model>`；可被 `SUGA_MODEL` 覆盖，再被 `--model` 覆盖 |
-| `providers.<id>` | `type`（openai 即 chat/completions、openai-responses 即 Responses API、anthropic）、`compat`（网关适配，见 docs/usage/llm-config-v0.md）、`base_url`、`api_key`、`headers`、`models.<model>.context_window` |
-| `providers.<id>.models.<model>.price` | 每百万 token 的美元价格（`input`、`output`、`cache_read`、`cache_write`）；provider 不返回成本时，`suga stats` 据此计算 |
-| `providers.<id>.thinking`、`providers.<id>.models.<model>.thinking` | 思考档位 `off\|minimal\|low\|medium\|high\|xhigh\|max\|auto`，`openai` 类型作为 `reasoning_effort` 发送，`anthropic` 类型作为 extended thinking 发送（adaptive + `output_config.effort`，Claude 4.5 及更早用 `budget_tokens`）；不设、`auto` 或 `off` 不发送；`run`/`chat --thinking` 可覆盖主模型的档位 |
-| `providers.<id>.context_window` | 该 provider 所有模型的默认上下文窗口（模型级 `models.<model>.context_window` 优先；都没有时按模型名推断） |
-| `providers.<id>.models.<model>.model_id` | 请求里发送的模型 id（与键不同时），如键 `deepseek-v4.1-flash`、`model_id: deepseek/deepseek-v4.1-flash`；其余地方都用键 |
-| `providers.<id>.models.<model>.type`、`base_url` | 该模型自己的协议与地址，覆盖 provider 的；如网关的 Claude 模型写 `type: anthropic`，其余模型仍走 OpenAI 兼容 |
+| `providers.<id>` | `type`（`openai` 即 chat/completions、`openai-responses` 即 Responses API、`anthropic`）、`base_url`、`api_key`、`headers`；`openai`、`anthropic`、`deepseek` 是内置预设，分别读取 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` |
+| `providers.<id>.models.<model>` | `context_window`、`model_id`（与键不同时请求里发送的模型 id）、`type`/`base_url`（该模型可用自己的协议与地址）、`price`、`thinking` |
 | `compact_model`、`fallback_models` | 生成摘要用的便宜模型；主模型失败时依次尝试的备用模型 |
-| `retry.max_attempts`、`retry.base_delay`、`retry.max_delay`、`retry.reset_after` | 模型请求因网络错误、HTTP 408/429/5xx 或流中断后的重试（所有 provider）：含首次在内的尝试次数（默认 6，`1` 关闭重试）；等待从 `base_delay`（`1s`）起逐次翻倍，最多 `max_delay`（`60s`），另有 ±20% 抖动；服务端返回的 `Retry-After` 会被遵守；距上次失败超过 `reset_after`（`2m`）后等待回落到 `base_delay` |
-| `context.fold_every`、`context.fold_keep` | 历史折叠（默认关闭；`fold_every: 10`、`fold_keep: 5` 开启）：较早步骤发送时去掉思考内容，过长的字符串参数换成一句说明。只改发给模型的请求，存储的历史保持完整 |
-| `context.idle_after`、`context.idle_min_ratio` | 仅 chat：安静超过此时长（默认 `15m`，`0` 关闭），且上下文已达分段阈值的此比例（默认 `0.5`）时，在后台开启新段 |
-| `rules.file` | 每一级目录读取的项目规则文件名（每级只读一个，从 Git 根或 cwd 到 cwd），默认 `AGENTS.md`，可改成 `CLAUDE.md`；只接受文件名，不能带路径。`~/.suga/AGENTS.md` 仍会读取 |
-| `providers.<id>.prompt_cache` | 仅 Claude（`anthropic` 类型），默认关：加 `cache_control` 断点（system 变为块数组）；部分网关不接受 |
-| `tools.allow_write` | 仅 chat：启用写文件和 shell 工具（默认 false） |
-| `agents.enabled`、`agents.model`、`agents.max_steps`、`agents.max_tokens`、`agents.timeout` | `agent` 工具（见[子 agent](#子-agent)）：是否注册（默认 true）、子 agent 使用的模型（写法同 `model`：`<provider>/<model>`，只写模型 id 时用主模型的 provider；默认用会话自身的模型，含 `--model` 覆盖）、步数上限（30）、token 上限（400000，按未命中缓存的输入加输出计）、软时间上限（10m） |
-| `tasks.max_running`、`tasks.max_duration`、`tasks.max_output_bytes`、`tasks.wake_on_exit` | 后台任务：每个会话同时在跑的数量（4）、单次最长运行时间（`2h`）、输出文件上限（64 MiB）、任务结束时是否唤醒空闲的 chat（true；运行中的任务发来通知时同样唤醒，见监听任务） |
-| `tools.approval` | 仅 chat：`ask`（默认）执行写/shell 工具前询问，`auto` 不询问 |
-| `tools.max_output_bytes`、`tools.max_spill_bytes` | 内联阈值：单次工具结果完整写入会话的上限（默认 8000，超出时原文存 `$SUGA_HOME/sessions/<id>/outputs/`，会话只留 ref 与头尾片段）；单次工具原始输出上限（默认 1 MiB） |
-| `tools.shell`、`tools.shell_timeout_max` | 指定 shell（默认 Windows 用 pwsh/powershell，其他系统用 sh）；单条命令最长秒数（600） |
-| `tools.dependency_roots`、`tools.read_roots` | 工作区外的只读目录，`file_read`/`file_list`/`file_grep`/`file_find` 可用绝对路径读取：自动识别的 Go 模块缓存、Go 标准库源码与 Rust crate 源码（默认 `true`，`false` 关闭识别），以及额外目录列表（支持 `~`）。写入仍只限工作区；这些目录会列在提示词的环境一节 |
-| `tools.web_fetch.proxy`、`tools.web_fetch.allow_private` | `web_fetch` 使用的代理；允许访问内网地址 |
-| `tools.auto_allow`、`tools.read_only_allow` | MCP 放行名单，条目形如 `server/工具glob` |
-| `tools.deferred` | MCP 工具 schema 是否延迟加载：`auto`（默认）、`always`、`never` |
-| `mcp.servers`、`mcp.call_timeout_sec` | 默认 MCP 服务；单次 MCP 调用超时（120） |
-| `skills.list_max`、`skills.always_load` | 带说明列出的 skills 数量（15；超过后只列工作区 skills，其余只列名字）；预加载正文的 skills |
-| `hooks.*`、`hooks.stop_background` | chat 的 hook 命令（SessionStart、UserPromptSubmit、PostToolUse、Stop 等）；`hooks.stop_background` 让 Stop hook 作为后台任务运行，不再在提示符处等待 |
-| `memory.write` | `auto`（默认）允许 `memory` 工具写入；`off` 时只读 |
-| `memory.write_tainted` | 读过外部内容的会话写记忆时的处理：`ask`（默认）、`deny`、`allow` |
-| `memory.user.backend`、`memory.project.backend` | `files`、`gofer`（仅项目）或 `exec`。不设时：用户记忆用 files，项目记忆自动选择（见[记忆](#记忆)） |
-| `memory.<scope>.command`、`.args`、`.timeout_sec` | 该范围后端为 `exec` 时要运行的外部命令（此时必填） |
-| `memory.taint_tools`、`memory.taint_on_spill` | 额外会让会话变为“已污染”的工具：每次结果都算，或仅在输出被存成文件时才算（默认 `[shell_exec]`） |
-| `serpapi_key` | 配置后启用 `web_search` |
+| `tools.allow_write`、`tools.approval` | 仅 chat：启用写文件与 shell 工具（默认 false）；`ask`（默认）每次写/shell 调用前询问，`auto` 不询问 |
+| `mcp.servers`、`tools.auto_allow`、`tools.read_only_allow` | MCP 服务，以及 MCP 放行名单（条目形如 `server/工具glob`）；两者都为空时所有 MCP 调用被拒绝 |
+| `memory.user.backend`、`memory.project.backend`、`memory.write_tainted` | 各范围的记忆后端（`files`、项目可用 `gofer`、`exec`），以及读过外部内容的会话写记忆时的处理（`ask`、`deny`、`allow`） |
+| `hooks.command`、`hooks.post_tool_use` | chat 的 hook 命令（argv 列表）与哪些工具调用发 PostToolUse；不设 `hooks.command` 即不启用 hooks |
+| `skills.list_max`、`skills.always_load` | 带说明列出的 skills 数量；正文每次进提示词的 skills |
+| `workspace` | 文件与 shell 工具的工作区根（默认：启动 suga 时所在的目录） |
 
-所有数据都在 `$SUGA_HOME/db/sessions.db`。模型与 provider 的细节见 [LLM 配置](docs/usage/llm-config-v0.md)。
+其余配置（每一项的默认值）、provider 与模型的细节，以及分步配置向导（选 provider、写 `config.yaml`、把密钥放进 `.env`、验证第一次运行、看懂报错）都在内置 skill **suga-guide** 里：suga 首次运行会释放到 `~/.suga/skills/suga-guide/`。在 chat 里直接问怎么配置 suga 即可，模型会加载该 skill 并照着回答。
+
+所有数据都在 `$SUGA_HOME/db/sessions.db`。
 
 ## 工具与权限
 
@@ -137,7 +117,7 @@ Suga 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`
 
 ## Skills
 
-启动时扫描一次 `<工作区>/.agents/skills`、`<工作区>/skills` 和 `~/.agents/skills`，同名时工作区的优先。skills 数量不超过 `skills.list_max` 时全部列在系统提示词里；超过时只列工作区 skills 的说明，其余只列名字（名字总计最多 3000 字节，再多只给数量），模型可以按名字加载任意一个，或用 `skill(query=…)` 检索。要让某个 skill 的正文每次都放进提示词，可在其 frontmatter 写 `metadata: {always_load: true}`，或把名字加进 `skills.always_load`。
+启动时按顺序扫描 `<工作区>/.agents/skills`、`<工作区>/skills`、`<SUGA_HOME>/skills`（默认 `~/.suga/skills`）与 `~/.agents/skills`；同名时先扫到的优先。`<SUGA_HOME>/skills/suga-guide` 是内置的配置与使用向导：首次运行会写到这里，升级后只要目录里每个文件仍是 suga 写入的那份就会刷新。它旁边的 `.suga-builtin.json` 记录 suga 写了什么（版本与每个文件的哈希）：你改过、加过文件的目录，或没有这个标记的目录（你自己的同名 skill）永远不被动。skills 数量不超过 `skills.list_max` 时全部列在系统提示词里；超过时只列工作区 skills 的说明，其余只列名字（名字总计最多 3000 字节，再多只给数量），模型可以按名字加载任意一个，或用 `skill(query=…)` 检索。要让某个 skill 的正文每次都放进提示词，可在其 frontmatter 写 `metadata: {always_load: true}`，或把名字加进 `skills.always_load`。
 
 ## 记忆
 

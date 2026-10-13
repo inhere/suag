@@ -49,44 +49,24 @@ In chat, `:session` shows the session id, `:compact` starts a new segment (see [
 
 ## Configuration
 
-Suga reads only `$SUGA_HOME/config.yaml` and `$SUGA_HOME/.env` (default `~/.suga`); the working directory's config and `.env` files belong to your project and are never read. `SUGA_CONFIG` selects one config file.
+Suga reads only `$SUGA_HOME/config.yaml` and `$SUGA_HOME/.env` (default `~/.suga`); the working directory's config and `.env` files belong to your project and are never read. `SUGA_CONFIG` selects one config file. Secrets go into `$SUGA_HOME/.env` (e.g. `BAILIAN_API_KEY=...`); a `${VAR}` in the config is expanded from there or from the process environment. The settings used most:
 
 | Setting | Meaning |
 |---|---|
 | `model` | Main model, `<provider>/<model>`; overridden by `SUGA_MODEL`, then `--model` |
-| `providers.<id>` | `type` (openai = chat/completions, openai-responses = Responses API, anthropic), `compat` (gateway adapters, see docs/usage/llm-config-v0.md), `base_url`, `api_key`, `headers`, `models.<model>.context_window` |
-| `providers.<id>.models.<model>.price` | USD per million tokens (`input`, `output`, `cache_read`, `cache_write`); `suga stats` computes cost from it when the provider reports none |
-| `providers.<id>.thinking`, `providers.<id>.models.<model>.thinking` | Thinking level `off\|minimal\|low\|medium\|high\|xhigh\|max\|auto`, sent as `reasoning_effort` by `openai` providers and as extended thinking (adaptive + `output_config.effort`, or `budget_tokens` on Claude 4.5 and earlier) by `anthropic` ones (unset/`auto`/`off` send nothing); `run`/`chat --thinking` overrides it for the main model |
-| `providers.<id>.context_window` | Default context window for every model of the provider (a `models.<model>.context_window` still wins; otherwise inferred from the model name) |
-| `providers.<id>.models.<model>.model_id` | Model id sent to the provider when it differs from the key, e.g. key `deepseek-v4.1-flash` with `model_id: deepseek/deepseek-v4.1-flash`; everything else uses the key |
-| `providers.<id>.models.<model>.type`, `base_url` | Per-model protocol and address overriding the provider's, e.g. `type: anthropic` for the Claude models of a gateway whose other models speak OpenAI |
+| `providers.<id>` | `type` (`openai` = chat/completions, `openai-responses` = Responses API, `anthropic`), `base_url`, `api_key`, `headers`; the presets `openai`, `anthropic` and `deepseek` are built in and read `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` |
+| `providers.<id>.models.<model>` | `context_window`, `model_id` (the id sent to the provider when it differs from the key), `type`/`base_url` (a model may use its own protocol), `price`, `thinking` |
 | `compact_model`, `fallback_models` | Cheaper model for summaries; models tried in order when the main one fails |
-| `retry.max_attempts`, `retry.base_delay`, `retry.max_delay`, `retry.reset_after` | Retries of a model request after a network error, HTTP 408/429/5xx or a broken stream (every provider): attempts including the first (default 6; `1` turns retries off); waits double from `base_delay` (`1s`) up to `max_delay` (`60s`) with ±20% jitter, a server's `Retry-After` is honoured, and the wait falls back to `base_delay` after `reset_after` (`2m`) without a failure |
-| `context.fold_every`, `context.fold_keep` | History folding of each request (default off; `fold_every: 10` with `fold_keep: 5` turns it on): older steps are sent without their reasoning and with long string arguments replaced by a note. Only the request changes; the stored history stays complete |
-| `context.idle_after`, `context.idle_min_ratio` | Chat only: after this much quiet (default `15m`; `0` turns it off) and when the context has reached this share of the segment threshold (default `0.5`), start a new segment in the background |
-| `rules.file` | Project rule file read at each directory level (one file per level, from the Git root or cwd down to cwd), default `AGENTS.md`, e.g. `CLAUDE.md`; only a file name, no path. `~/.suga/AGENTS.md` is read as well |
-| `providers.<id>.prompt_cache` | Claude/`anthropic` type only, default off: add `cache_control` breakpoints (system becomes a block array); some gateways reject them |
-| `tools.allow_write` | Chat only: enable write and shell tools (default false) |
-| `agents.enabled`, `agents.model`, `agents.max_steps`, `agents.max_tokens`, `agents.timeout` | The `agent` tool (see [Sub-agents](#sub-agents)): register it (default true), the model its sub-agents run on (`<provider>/<model>`, a bare id uses the main model's provider; default the session's own model, `--model` included), and their step limit (30), token limit (400000, uncached input plus output) and soft time limit (10m) |
-| `tasks.max_running`, `tasks.max_duration`, `tasks.max_output_bytes`, `tasks.wake_on_exit` | Background tasks: running per session (4), longest run (`2h`), output file cap (64 MiB), whether a task end wakes an idle chat (true; it also wakes for what a still running task reports, see watch tasks) |
-| `tools.approval` | Chat only: `ask` (default) confirms write/shell tools, `auto` does not |
-| `tools.max_output_bytes`, `tools.max_spill_bytes` | Inline threshold: largest tool result kept whole in the session (default 8000; larger ones are saved under `$SUGA_HOME/sessions/<id>/outputs/` and kept as a ref plus head/tail); raw output cap per call (default 1 MiB) |
-| `tools.shell`, `tools.shell_timeout_max` | Shell override (default pwsh/powershell on Windows, sh elsewhere); max seconds per command (600) |
-| `tools.dependency_roots`, `tools.read_roots` | Read-only directories outside the workspace for `file_read`/`file_list`/`file_grep`/`file_find` (absolute paths): the detected Go module cache, Go standard library sources and Rust crate sources (default `true`; `false` turns detection off), plus a list of extra directories (`~` expands). Writes stay in the workspace; the roots are listed in the environment section of the prompt |
-| `tools.web_fetch.proxy`, `tools.web_fetch.allow_private` | Proxy for `web_fetch`; allow private addresses |
-| `tools.auto_allow`, `tools.read_only_allow` | MCP allowlists, entries `server/toolglob` |
-| `tools.deferred` | Defer MCP tool schemas: `auto` (default), `always`, `never` |
-| `mcp.servers`, `mcp.call_timeout_sec` | Default MCP servers; timeout of one MCP call (120) |
-| `skills.list_max`, `skills.always_load` | Skills listed with their description (15; beyond that only workspace skills, the rest by name only); skills preloaded into the prompt |
-| `hooks.*`, `hooks.stop_background` | Chat hook command (SessionStart, UserPromptSubmit, PostToolUse, Stop, …); `hooks.stop_background` runs the Stop hook as a background task instead of a wait at the prompt |
-| `memory.write` | `auto` (default) lets the `memory` tool write; `off` makes it read-only |
-| `memory.write_tainted` | What a session that has read external content does on a memory write: `ask` (default), `deny`, `allow` |
-| `memory.user.backend`, `memory.project.backend` | `files`, `gofer` (project only) or `exec`. Unset: user = files; project = auto (see [Memory](#memory)) |
-| `memory.<scope>.command`, `.args`, `.timeout_sec` | The external command when that scope's backend is `exec` (required then) |
-| `memory.taint_tools`, `memory.taint_on_spill` | Extra tools whose results mark the session as tainted: always, or only when the output was saved to a file (default `[shell_exec]`) |
-| `serpapi_key` | Enables `web_search` |
+| `tools.allow_write`, `tools.approval` | Chat only: enable write and shell tools (default false); `ask` (default) confirms every write and shell call, `auto` does not |
+| `mcp.servers`, `tools.auto_allow`, `tools.read_only_allow` | MCP servers, and the MCP allowlists (`server/toolglob`); every MCP call is refused while both are empty |
+| `memory.user.backend`, `memory.project.backend`, `memory.write_tainted` | Memory backend per scope (`files`, `gofer` for the project, `exec`) and what a session that read external content does on a write (`ask`, `deny`, `allow`) |
+| `hooks.command`, `hooks.post_tool_use` | Chat hook command (an argv list) and which tool calls get a PostToolUse event; no `hooks.command`, no hooks |
+| `skills.list_max`, `skills.always_load` | How many skills are listed with their description; skills whose body goes into every prompt |
+| `workspace` | Workspace root of the file and shell tools (default: the directory suga was started in) |
 
-All data lives in `$SUGA_HOME/db/sessions.db`. Model and provider details: [LLM config](docs/usage/llm-config-v0.md).
+Everything else — every setting with its default, the provider and model details, and a step-by-step setup guide (choosing a provider, writing `config.yaml`, putting the key in `.env`, checking the first run, reading the errors) — is in the built-in **suga-guide** skill, released on the first run to `~/.suga/skills/suga-guide/`. In chat you can simply ask how to configure suga; the model loads that skill and answers from it.
+
+All data lives in `$SUGA_HOME/db/sessions.db`.
 
 ## Tools and permissions
 
@@ -137,7 +117,7 @@ The `agent` tool hands one self-contained task to a sub-agent: a model run in a 
 
 ## Skills
 
-Suga scans `<workspace>/.agents/skills`, `<workspace>/skills` and `~/.agents/skills` once at startup. If two skills share a name, the workspace one wins. If there are no more than `skills.list_max` skills, all of them are listed in the system prompt. Otherwise only workspace skills are listed with their description and the rest by name only (up to 3000 bytes of names; beyond that a count), so the model can load any of them by name or search with `skill(query=…)`. To put a skill's body into every prompt, mark it with `metadata: {always_load: true}` in its frontmatter, or list it in `skills.always_load`.
+Suga scans `<workspace>/.agents/skills`, `<workspace>/skills`, `<SUGA_HOME>/skills` (default `~/.suga/skills`) and `~/.agents/skills` once at startup, in that order; a skill found earlier wins a name that appears again later. `<SUGA_HOME>/skills/suga-guide` is the built-in configuration and usage guide: the first run writes it there, and an upgrade refreshes it as long as every file is still the one suga wrote. The `.suga-builtin.json` marker beside it records what suga wrote (version and the hash of each file): a directory you edited, added a file to, or that has no marker at all (your own skill of that name) is never touched. If there are no more than `skills.list_max` skills, all of them are listed in the system prompt. Otherwise only workspace skills are listed with their description and the rest by name only (up to 3000 bytes of names; beyond that a count), so the model can load any of them by name or search with `skill(query=…)`. To put a skill's body into every prompt, mark it with `metadata: {always_load: true}` in its frontmatter, or list it in `skills.always_load`.
 
 ## Memory
 
