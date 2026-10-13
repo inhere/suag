@@ -223,6 +223,33 @@ func TestAnalyzeTraceBackground(t *testing.T) {
 		assert.Eq(t, int64(230), a.BackgroundOverlapMs) // 0-10, 20-30 and 40-140, once per task
 	})
 
+	t.Run("watch and Stop hook tasks are counted by kind", func(t *testing.T) {
+		watch := store.Event{Kind: store.EventTask, Name: "t2", Status: eventOK, StartedAt: at(100), DurationMs: 30000,
+			Attrs: map[string]any{"kind": "watch", "arg": "go test ./... (every 30s)", "runs": float64(5), "changes": float64(2)}}
+		hook := store.Event{Kind: store.EventTask, Name: "t3", Status: eventOK, StartedAt: at(31000), DurationMs: 2100,
+			Attrs: map[string]any{"kind": "hook", "arg": "Stop hook"}}
+
+		// A shell task counts in BackgroundTasks, but as neither kind.
+		a := AnalyzeTrace([]store.Event{model(0, 100), task("t1", 100, 10), watch, hook})
+		assert.Eq(t, 3, a.BackgroundTasks)
+		assert.Eq(t, 1, a.WatchTasks)
+		assert.Eq(t, 5, a.WatchRuns)
+		assert.Eq(t, 2, a.WatchChanges)
+		assert.Eq(t, 1, a.StopHooks)
+
+		// The text rows appear only for the kinds the session had.
+		var out bytes.Buffer
+		assert.NoErr(t, WriteTraceAnalysis(&out, AnalyzeTrace([]store.Event{model(0, 100), task("t1", 0, 300)}), false))
+		assert.NotContains(t, out.String(), "watch tasks")
+		assert.NotContains(t, out.String(), "stop hooks")
+
+		out.Reset()
+		assert.NoErr(t, WriteTraceAnalysis(&out, AnalyzeTrace([]store.Event{watch, hook}), false))
+		assert.StrContains(t, out.String(), "watch tasks")
+		assert.StrContains(t, out.String(), "1 (5 runs, 2 changes)")
+		assert.StrContains(t, out.String(), "1 background Stop hook runs")
+	})
+
 	t.Run("the text output adds a row only with background tasks", func(t *testing.T) {
 		var out bytes.Buffer
 		none := AnalyzeTrace([]store.Event{model(0, 100)})

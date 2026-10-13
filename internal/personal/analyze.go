@@ -90,6 +90,15 @@ type TraceAnalysis struct {
 	// long they ran in all (time the loop did not have to wait for).
 	BackgroundTasks int   `json:"background_tasks"`
 	BackgroundMs    int64 `json:"background_ms"`
+	// By kind: WatchTasks counts the watch tasks of the session, WatchRuns the
+	// times their command ran and WatchChanges the times a run's result
+	// differed from the previous one; StopHooks counts the runs of the
+	// background Stop hook (hooks.stop_background). These are parts of
+	// BackgroundTasks.
+	WatchTasks   int `json:"watch_tasks"`
+	WatchRuns    int `json:"watch_runs"`
+	WatchChanges int `json:"watch_changes"`
+	StopHooks    int `json:"stop_hooks"`
 	// BackgroundOverlapMs is the part of that time the loop spent in model
 	// calls and foreground tool calls anyway: the time the backgrounding saved
 	// (spans count once where calls overlap, as in a parallel batch).
@@ -162,6 +171,16 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 			a.BackgroundTasks++
 			a.BackgroundMs += e.DurationMs
 			bgSpans = appendSpan(bgSpans, e)
+			// The kind a task ran as (tasks.Spec.Kind): a watch ends with its runs
+			// and changes counters, a background Stop hook has no counters.
+			switch kind, _ := e.Attrs["kind"].(string); kind {
+			case taskKindWatch:
+				a.WatchTasks++
+				a.WatchRuns += attrInt(e.Attrs["runs"])
+				a.WatchChanges += attrInt(e.Attrs["changes"])
+			case taskKindHook:
+				a.StopHooks++
+			}
 		case store.EventModel:
 			a.Retries += attrInt(e.Attrs["retries"])
 			a.RetryWaitMs += int64(attrInt(e.Attrs["retry_wait_ms"]))
@@ -371,10 +390,17 @@ func WriteTraceAnalysis(w io.Writer, a TraceAnalysis, asJSON bool) error {
 	row("spills / folds", "%d / %d (compactions %d, tidied outputs %d)", a.Spills, a.Folds, a.Compactions, a.Minimized)
 	row("model retries", "%d (waited %.1fs)", a.Retries, float64(a.RetryWaitMs)/1000)
 	row("background tasks", "%d (ran %.1fs in all)", a.BackgroundTasks, float64(a.BackgroundMs)/1000)
+	// The overlap and the per-kind rows appear only when the session had
+	// tasks of that kind at all.
 	if a.BackgroundTasks > 0 {
-		// No extra row for sessions without background tasks.
 		row("background overlap", "%.1fs while model/tool calls ran (waiting saved); %d waits (%.1fs), %d right after the start",
 			float64(a.BackgroundOverlapMs)/1000, a.TaskWaits, float64(a.TaskWaitMs)/1000, a.ImmediateWaits)
+	}
+	if a.WatchTasks > 0 {
+		row("watch tasks", "%d (%d runs, %d changes)", a.WatchTasks, a.WatchRuns, a.WatchChanges)
+	}
+	if a.StopHooks > 0 {
+		row("stop hooks", "%d background Stop hook runs", a.StopHooks)
 	}
 	var slow []string
 	for _, s := range a.Slowest {
@@ -507,6 +533,12 @@ func phaseSteps(n int) string {
 
 // taskWaitAction is the task tool action that waits for a task to end.
 const taskWaitAction = "wait"
+
+// Task kinds of a task end event (attrs kind, from tasks.Spec.Kind).
+const (
+	taskKindWatch = "watch"
+	taskKindHook  = "hook"
+)
 
 // taskAction returns the action of a `task` tool call (list, output, wait,
 // kill) and the task id it names. The action is read from the call's argument
