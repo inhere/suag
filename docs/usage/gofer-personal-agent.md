@@ -53,7 +53,7 @@ Suga 创建会话时从外层到内层读取项目规则，每一级只读一个
 
 Gofer agent 可配置 `deliver_command: [send, --session, "{{session_id}}"]` 和 `deliver_stdin: true`，由 Gofer 在会话所在 worker 上调用 Suga。Suga chat 忙时最多排队 8 条；空闲时送入下一轮。`send` 的 `--source <label>`（默认 `cli`）决定 chat 中的显示前缀 `[来自 <label>] `；文本首行已带 `[...] ` 标签时原样保留。送话作为注入输入记录。`UserPromptSubmit` 事件对这类输入（含 Stop block 注入的回复和 `[gofer job 完成]` 通知）带 `"injected": true`；终端手敲的输入不带该字段，其它事件也不带。`run` 和 ACP 续接同一会话时使用会话锁，避免与仍运行的 chat 同时写入；chat 退出后进程登记、socket 和锁会清理。
 
-`interactive_args: [chat]` 允许 Gofer 在原进程退出后以交互终端启动 `suga chat --resume`；`session_resume_interactive` 给出续接参数。Windows 本机 socket 路径最多支持 100 个 UTF-16 code units；超长的 `SUGA_HOME/run/<pid>.sock` 会明确报错，需要将 `SUGA_HOME` 配置得更短。
+`interactive_args: [chat]` 允许 Gofer 在原进程退出后以交互终端启动 `suga chat --resume`；`session_resume_interactive` 给出续接参数。本机会话 socket `SUGA_HOME/run/<pid>.sock` 有路径长度上限：Windows 100 个 UTF-16 code units，Linux 107 字节，macOS 等 103 字节。超长时 chat 照常运行，但打印一行提示且不注册会话进程，该会话收不到 `suga send` 与 Gofer 投递；需要投递时把 `SUGA_HOME` 配置得更短。
 
 模型地址与认证由启动 Suga 的用户配置。例如在该用户的 `~/.suga/config.yaml` 中设置：
 
