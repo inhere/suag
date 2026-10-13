@@ -31,8 +31,8 @@ func catalogNames(write bool) []string {
 }
 
 // TestRegisteredToolsFollowTheCatalog pins the run/chat/ACP tool sets to the
-// one native catalog plus update_plan, session_search, recall, memory and suag_manifest,
-// which Open registers in every mode.
+// one native catalog plus update_plan, session_search, recall, memory,
+// suag_manifest and agent, which Open registers in every mode.
 func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 	resetConfig(t)
 	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k"}})
@@ -47,7 +47,7 @@ func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 		return got
 	}
 	want := func(write bool) []string {
-		w := append(catalogNames(write), "update_plan", "session_search", "recall", "memory", "suag_manifest")
+		w := append(catalogNames(write), "update_plan", "session_search", "recall", "memory", "suag_manifest", "agent")
 		slices.Sort(w)
 		return w
 	}
@@ -67,6 +67,12 @@ func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 	t.Run("ACP writable", func(t *testing.T) {
 		rt, err := Open(context.Background(), Options{Workspace: t.TempDir(), RuleCWD: t.TempDir(), AllowWrite: true})
 		assert.Eq(t, want(true), names(t, rt, err))
+	})
+	t.Run("agents.enabled false drops the agent tool", func(t *testing.T) {
+		assert.NoErr(t, gkconfig.Set("agents.enabled", false))
+		t.Cleanup(func() { _ = gkconfig.Set("agents.enabled", true) })
+		rt, err := OpenCLI(context.Background(), Options{})
+		assert.NotContains(t, names(t, rt, err), "agent")
 	})
 }
 

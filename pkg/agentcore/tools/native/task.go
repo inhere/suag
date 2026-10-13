@@ -21,8 +21,8 @@ const (
 	taskTailLines = 20
 )
 
-// TaskTool manages the session's background tasks (started by shell_exec
-// with background: true): list, read output, wait, kill.
+// TaskTool manages the session's background tasks (started by shell_exec or
+// agent with background: true): list, read output, wait, kill.
 type TaskTool struct {
 	m       *tasks.Manager
 	maxWait time.Duration
@@ -40,7 +40,8 @@ func NewTaskTool(m *tasks.Manager, maxWait time.Duration) *TaskTool {
 func (t *TaskTool) Name() string { return "task" }
 
 func (t *TaskTool) Description() string {
-	return "Manage the background tasks of this session (started by shell_exec with background: true). " +
+	return "Manage the background tasks of this session (started with background: true by shell_exec, a command or a watch, " +
+		"or by agent, a sub-agent whose output is its report). " +
 		"action list: every task and its state. output: lines of a task's output (default the last 100; " +
 		"offset/limit page from a line, grep filters by RE2). wait: block until the task ends (a watch: until its " +
 		"next run is done) or timeout seconds pass, then its state and last lines. kill: stop the task and its child processes."
@@ -168,6 +169,10 @@ func (t *TaskTool) wait(ctx context.Context, sid, id string, args map[string]any
 	}
 	text := tasks.Describe(info) + withTail(info)
 	switch how {
+	case tasks.WaitEnded:
+		if info.Notice != "" { // what it reported last (an agent task's report)
+			text = info.Notice + "\n" + tasks.Describe(info)
+		}
 	case tasks.WaitTimedOut:
 		text = fmt.Sprintf("[still running after waiting %s]\n", timeout) + text
 	case tasks.WaitUpdated: // a watch finished a run; it keeps running

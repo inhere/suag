@@ -331,6 +331,16 @@ func addCallAttrs(attrs map[string]any, call agentcore.ToolCall, res *agentcore.
 		if id, _ := res.Metadata["task_id"].(string); id != "" {
 			attrs["task_id"] = id
 		}
+		// agent: the sub-agent session and what it spent; its report is prose,
+		// never parsed for an exit code.
+		if call.Name == "agent" {
+			for _, key := range agentAttrKeys {
+				if v, ok := res.Metadata[key]; ok {
+					attrs[key] = v
+				}
+			}
+			return
+		}
 		if m := exitCodePattern.FindAllStringSubmatch(res.Content, -1); len(m) > 0 {
 			if code, err := strconv.Atoi(m[len(m)-1][1]); err == nil {
 				attrs["exit_code"] = code
@@ -367,6 +377,10 @@ func shortenWorkspace(s, workspace string) string {
 	}
 	return s
 }
+
+// agentAttrKeys are the agent tool's result metadata kept on its tool event.
+var agentAttrKeys = []string{"child_session_id", "agent_type", "steps", "tool_calls", "input_tokens",
+	"cache_read_tokens", "output_tokens", "cost_usd", "stop"}
 
 // exitCodePattern finds shell_exec's "[exit code: N]" trailer.
 var exitCodePattern = regexp.MustCompile(`\[exit code: (-?\d+)\]`)

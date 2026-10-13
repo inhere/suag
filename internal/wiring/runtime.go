@@ -203,14 +203,30 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Background tasks need shell_exec, so they exist in write modes only.
-	if opts.Tasks != nil && allowWrite {
-		if t, err := capabilities.Registry.Get("shell_exec"); err == nil {
+	// Background tasks: shell commands in write modes (they need
+	// shell_exec); sub-agents (below) in every mode, so the task tool and the
+	// notices are there in read-only sessions too.
+	if opts.Tasks != nil {
+		if t, err := capabilities.Registry.Get("shell_exec"); err == nil && allowWrite {
 			if shell, ok := t.(*native.ShellExecTool); ok {
 				shell.SetTasks(opts.Tasks)
-				capabilities.Registry.Register(native.NewTaskTool(opts.Tasks, nativeEnv(workspace).ShellTimeoutMax))
 			}
 		}
+		capabilities.Registry.Register(native.NewTaskTool(opts.Tasks, nativeEnv(workspace).ShellTimeoutMax))
+	}
+	// agent hands a task to a read-only sub-agent (every mode; agents.enabled).
+	agentSettings, err := appconfig.ReadAgentSettings()
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, err
+	}
+	if agentSettings.Enabled {
+		agentTool := native.NewAgentTool(&subAgents{workspace: workspace, ruleCWD: ruleCWD,
+			noProjectRules: opts.NoProjectRules, ruleFile: ruleFile, settings: agentSettings})
+		if opts.Tasks != nil {
+			agentTool.SetTasks(opts.Tasks)
+		}
+		capabilities.Registry.Register(agentTool)
 	}
 	// update_plan only writes session state, so it is registered in every mode
 	// (including read-only). The recorder is bound to the runner in personal.New.
@@ -300,7 +316,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	// A nil manager must stay a nil interface (no tasks).
 	var taskNotices personal.TaskNotices
-	if opts.Tasks != nil && allowWrite {
+	if opts.Tasks != nil {
 		taskNotices = opts.Tasks
 	}
 	runner, err := personal.New(personal.Config{

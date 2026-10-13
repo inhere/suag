@@ -437,7 +437,7 @@ type WaitOutcome int
 
 const (
 	WaitTimedOut WaitOutcome = iota // still running after the timeout
-	WaitEnded                       // the task ended; its end notice is dropped
+	WaitEnded                       // the task ended; its notices are taken (Info.Notice: its last report)
 	// WaitUpdated: a running function task reported progress (a watch
 	// finished a run); a notice it left is taken into Info.Notice.
 	WaitUpdated
@@ -460,7 +460,9 @@ func (m *Manager) Wait(ctx context.Context, sessionID, id string, timeout time.D
 	select {
 	case <-t.done:
 		m.markSeen(sessionID, t)
-		return t.snapshot(), WaitEnded, nil
+		info := t.snapshot()
+		info.Notice = m.takeRunningNotice(sessionID, t.info.ID) // e.g. an agent task's report
+		return info, WaitEnded, nil
 	case <-updated:
 		info := t.snapshot()
 		info.Notice = m.takeRunningNotice(sessionID, t.info.ID)

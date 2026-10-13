@@ -234,28 +234,33 @@ func TestRunnerPricesUsage(t *testing.T) {
 	})
 }
 
-// TestChildRunUsage: a sub-agent's model calls count in the run that started
-// it, without passing the sub-agent's request size off as the parent's
-// context size; only a run marked as a child forwards.
+// TestChildRunUsage: a sub-agent's model calls count in the run in progress
+// of the session that started it, without passing the sub-agent's request
+// size off as the parent's context size; with no run in progress they are
+// held for the session's next run (moved from its base, which already holds
+// them, to its run); a run not started as a sub-agent forwards nothing.
 func TestChildRunUsage(t *testing.T) {
 	repo := openObserveRepo(t)
 	runner, err := New(Config{Repository: repo, Provider: &scriptProvider{}})
 	assert.Require(t, assert.NoErr(t, err))
-	var updates []UsageUpdate
-	parent := &runUsageMeter{base: agentcore.Usage{InputTokens: 1000},
-		onModel: func(_ context.Context, u UsageUpdate) { updates = append(updates, u) }}
-	ctx := withRunUsage(context.Background(), parent)
+	ctx := context.Background()
+	used := func(in, out int) agentcore.Usage { return agentcore.Usage{InputTokens: in, OutputTokens: out} }
 
-	t.Run("a plain nested meter does not forward", func(t *testing.T) {
-		m := runner.newRunUsageMeter(ctx, "s-other", "t", nil)
-		assert.Nil(t, m.parent)
-	})
-	t.Run("a child meter forwards its model usage", func(t *testing.T) {
-		child := runner.newRunUsageMeter(withChildRun(ctx), "s-child", "t", nil)
-		assert.Require(t, assert.True(t, child.parent == parent))
-		parent.addModel(ctx, agentcore.Usage{InputTokens: 300, OutputTokens: 30}, agentcore.Usage{InputTokens: 300, OutputTokens: 30}, false)
-		child.addModel(ctx, agentcore.Usage{InputTokens: 5000, OutputTokens: 50}, agentcore.Usage{InputTokens: 5000, OutputTokens: 50, CostUSD: 0.1}, false)
+	t.Run("into the run in progress", func(t *testing.T) {
+		var updates []UsageUpdate
+		parent := &runUsageMeter{base: used(1000, 0), onModel: func(_ context.Context, u UsageUpdate) { updates = append(updates, u) }}
+		defer activateMeter("p1", parent)()
+		plain := runner.newRunUsageMeter(ctx, "s-other", "t", nil)
+		assert.Eq(t, "", plain.parentSession)
+		child := runner.newRunUsageMeter(withChildOf(ctx, "p1"), "s-child", "t", nil)
+		assert.Eq(t, "p1", child.parentSession)
+
+		parent.addModel(ctx, used(300, 30), used(300, 30), false)
+		priced := used(5000, 50)
+		priced.CostUSD = 0.1
+		child.addModel(ctx, used(5000, 50), priced, false)
 		child.addTool()
+		plain.addModel(ctx, used(9, 9), used(9, 9), false)
 
 		run := parent.snapshot()
 		assert.Eq(t, 5300, run.Usage.InputTokens)
@@ -266,5 +271,20 @@ func TestChildRunUsage(t *testing.T) {
 		assert.Eq(t, 0, updates[1].LastInputTokens) // not the parent's context size
 		assert.Eq(t, 6300, updates[1].Session.InputTokens)
 		assert.Eq(t, 0.1, updates[1].Run.Usage.CostUSD)
+	})
+	t.Run("held for the next run", func(t *testing.T) {
+		child := runner.newRunUsageMeter(withChildOf(ctx, "p2"), "s-child2", "t", nil)
+		child.addModel(ctx, used(400, 40), used(400, 40), false)
+		// The next run's base (the session tree total) already holds the call.
+		next := &runUsageMeter{base: used(1400, 40)}
+		end := activateMeter("p2", next)
+		run := next.snapshot()
+		assert.Eq(t, 400, run.Usage.InputTokens)
+		assert.Eq(t, 1000, next.base.InputTokens)
+		assert.Eq(t, 1400, next.base.Add(run.Usage).InputTokens) // the session total does not move
+		end()
+		again := &runUsageMeter{}
+		defer activateMeter("p2", again)()
+		assert.Eq(t, 0, again.snapshot().Usage.InputTokens) // taken once
 	})
 }

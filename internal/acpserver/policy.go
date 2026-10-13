@@ -100,7 +100,7 @@ func (h *permissionHook) BeforeTool(ctx context.Context, event *agentcore.ToolEv
 	// request (so the approver sees it); later status updates carry status only.
 	if err := h.conn.SessionUpdate(ctx, acp.SessionNotification{
 		SessionId: h.sessionID,
-		Update:    acp.StartToolCall(id, call.Name, acp.WithStartKind(kind), acp.WithStartStatus(acp.ToolCallStatusPending), acp.WithStartLocations(locations), acp.WithStartContent(content)),
+		Update:    acp.StartToolCall(id, callTitle(*call), acp.WithStartKind(kind), acp.WithStartStatus(acp.ToolCallStatusPending), acp.WithStartLocations(locations), acp.WithStartContent(content)),
 	}); err != nil {
 		return fmt.Errorf("send tool update: %w", err)
 	}
@@ -149,7 +149,7 @@ func (h *permissionHook) Decide(ctx context.Context, call agentcore.ToolCall, to
 			SessionId: h.sessionID,
 			ToolCall: acp.ToolCallUpdate{
 				ToolCallId: id,
-				Title:      acp.Ptr(call.Name),
+				Title:      acp.Ptr(callTitle(call)),
 				Kind:       acp.Ptr(kind),
 				Locations:  pending.locations,
 				Content:    pending.content,
@@ -373,6 +373,17 @@ var acpKinds = map[tools.Category]acp.ToolKind{
 // toolKind returns the ACP kind of tool and whether it is read-only (runs
 // without a permission request, also in read_only mode). Unknown tools, MCP
 // tools and tools that declare nothing are Other and require permission.
+// callTitle is the title of a tool call in the client: the tool name, or for
+// the agent tool its task description ("agent: find callers of Foo").
+func callTitle(call agentcore.ToolCall) string {
+	if call.Name == "agent" {
+		if desc, _ := call.Arguments["description"].(string); strings.TrimSpace(desc) != "" {
+			return "agent: " + strings.TrimSpace(desc)
+		}
+	}
+	return call.Name
+}
+
 func toolKind(tool agentcore.Tool) (acp.ToolKind, bool) {
 	meta := tools.MetaOf(tool)
 	kind, ok := acpKinds[meta.Category]

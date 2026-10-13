@@ -12,6 +12,7 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/gookit/goutil/x/assert"
+	"github.com/inhere/suag/pkg/agentcore"
 	"github.com/inhere/suag/pkg/agentcore/mock"
 	"github.com/inhere/suag/pkg/agentcore/tools/native"
 )
@@ -249,4 +250,16 @@ func TestToolDiffFileEdit(t *testing.T) {
 	t.Run("a missing file has no diff", func(t *testing.T) {
 		assert.Len(t, editDiff(t, cwd, map[string]any{"path": "new.go", "old_string": "a", "new_string": "b"}), 0)
 	})
+}
+
+func TestCallTitle(t *testing.T) {
+	if got := callTitle(agentcore.ToolCall{Name: "file_read"}); got != "file_read" {
+		t.Fatalf("plain tool title = %q", got)
+	}
+	if got := callTitle(agentcore.ToolCall{Name: "agent", Arguments: map[string]any{"description": " find callers "}}); got != "agent: find callers" {
+		t.Fatalf("agent title = %q", got)
+	}
+	if got := callTitle(agentcore.ToolCall{Name: "agent"}); got != "agent" {
+		t.Fatalf("agent without description = %q", got)
+	}
 }

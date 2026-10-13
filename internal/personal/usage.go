@@ -162,22 +162,83 @@ type runUsageMeter struct {
 	base agentcore.Usage
 	// onModel receives the update after each counted model call (nil: none).
 	onModel func(context.Context, UsageUpdate)
-	// parent is the meter of the run that started this one as a sub-agent:
-	// every model call counted here is counted there too (addChild).
-	parent *runUsageMeter
+	// parentSession is the session that started this run as a sub-agent:
+	// every model call counted here counts in that session's run as well
+	// (forwardChildUsage).
+	parentSession string
 }
 
 type childRunKey struct{}
 
-// withChildRun marks ctx as the start of a sub-agent run: its meter forwards
-// its model usage to the meter of the run that started it (in ctx).
-func withChildRun(ctx context.Context) context.Context {
-	return context.WithValue(ctx, childRunKey{}, true)
+// withChildOf marks ctx as the start of a sub-agent run of parentSession: its
+// meter forwards its model usage to that session (forwardChildUsage).
+func withChildOf(ctx context.Context, parentSession string) context.Context {
+	return context.WithValue(ctx, childRunKey{}, parentSession)
 }
 
-func isChildRun(ctx context.Context) bool {
-	child, _ := ctx.Value(childRunKey{}).(bool)
-	return child
+func childOf(ctx context.Context) string {
+	parent, _ := ctx.Value(childRunKey{}).(string)
+	return parent
+}
+
+// Sub-agent usage reaches the session that started it through the run in
+// progress there (a sub-agent run synchronously inside a turn, or in the
+// background while one runs); with none it is held until the session's next
+// run starts. Sessions and their runs belong to this process, so the
+// registry is process-wide (a sub-agent runs on a Runner of its own).
+var (
+	childUsageMu  sync.Mutex
+	activeMeters  = map[string]*runUsageMeter{} // session id -> its run in progress
+	pendingUsages = map[string]agentcore.Usage{}
+)
+
+// activateMeter registers m as sessionID's run in progress and takes the
+// sub-agent usage held for the session into it; the returned func ends it.
+// The held usage is already in the session's cumulative total (its model
+// events are stored), so it moves from base to run instead of adding twice.
+func activateMeter(sessionID string, m *runUsageMeter) func() {
+	childUsageMu.Lock()
+	activeMeters[sessionID] = m
+	held, ok := pendingUsages[sessionID]
+	delete(pendingUsages, sessionID)
+	childUsageMu.Unlock()
+	if ok {
+		m.mu.Lock()
+		m.run.Usage = m.run.Usage.Add(held)
+		m.base = subUsage(m.base, held)
+		m.mu.Unlock()
+	}
+	return func() {
+		childUsageMu.Lock()
+		if activeMeters[sessionID] == m {
+			delete(activeMeters, sessionID)
+		}
+		childUsageMu.Unlock()
+	}
+}
+
+// forwardChildUsage counts a sub-agent's model call in parentSession's run in
+// progress, or holds it for the session's next run.
+func forwardChildUsage(ctx context.Context, parentSession string, priced agentcore.Usage) {
+	if parentSession == "" {
+		return
+	}
+	childUsageMu.Lock()
+	m := activeMeters[parentSession]
+	if m == nil {
+		pendingUsages[parentSession] = pendingUsages[parentSession].Add(priced)
+	}
+	childUsageMu.Unlock()
+	m.addChild(ctx, priced)
+}
+
+// subUsage is a minus b, field by field (never below zero).
+func subUsage(a, b agentcore.Usage) agentcore.Usage {
+	return agentcore.Usage{
+		InputTokens: max(a.InputTokens-b.InputTokens, 0), OutputTokens: max(a.OutputTokens-b.OutputTokens, 0),
+		TotalTokens: max(a.TotalTokens-b.TotalTokens, 0), CacheReadTokens: max(a.CacheReadTokens-b.CacheReadTokens, 0),
+		CacheWriteTokens: max(a.CacheWriteTokens-b.CacheWriteTokens, 0), CostUSD: max(a.CostUSD-b.CostUSD, 0),
+	}
 }
 
 func withRunUsage(ctx context.Context, m *runUsageMeter) context.Context {
@@ -206,7 +267,7 @@ func (m *runUsageMeter) addModel(ctx context.Context, raw, priced agentcore.Usag
 	if notify != nil {
 		notify(ctx, update)
 	}
-	m.parent.addChild(ctx, priced)
+	forwardChildUsage(ctx, m.parentSession, priced)
 }
 
 // addChild counts a sub-agent's model call in this run (the session total
@@ -227,7 +288,6 @@ func (m *runUsageMeter) addChild(ctx context.Context, priced agentcore.Usage) {
 	if notify != nil {
 		notify(ctx, update)
 	}
-	m.parent.addChild(ctx, priced)
 }
 
 // addTool counts one tool call (executed, failed or refused).
@@ -255,9 +315,7 @@ func (m *runUsageMeter) snapshot() RunUsage {
 // as a "usage" event. Emit failures are only logged, like tool events.
 func (r *Runner) newRunUsageMeter(ctx context.Context, sessionID, turnID string, sink EmitFunc) *runUsageMeter {
 	m := &runUsageMeter{base: r.withSessionUsage(ctx, sessionID, RunResult{}).SessionUsage}
-	if isChildRun(ctx) {
-		m.parent = runUsageFrom(ctx) // the run that started this sub-agent
-	}
+	m.parentSession = childOf(ctx) // the session that started this sub-agent
 	if sink != nil {
 		m.onModel = func(ctx context.Context, u UsageUpdate) {
 			event := Event{Kind: "usage", SessionID: sessionID, TurnID: turnID, RunID: turnID, Usage: &u}

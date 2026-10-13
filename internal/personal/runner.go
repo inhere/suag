@@ -75,6 +75,11 @@ type Config struct {
 	LockRoot              string
 	ProcessRoot           string
 	MaxSteps              int
+	// MaxRunTokens and RunTimeout ask a run to wrap up (answer from what it
+	// has) past that many tokens (uncached input plus output) or that long;
+	// 0 = no limit. Sub-agent runners set them.
+	MaxRunTokens int
+	RunTimeout   time.Duration
 	// ContextWindow is the effective model's context window in tokens (0 = 128000).
 	ContextWindow int
 	// CompactReserveTokens overrides the compaction reserve (default 16000).
@@ -153,7 +158,10 @@ type Event struct {
 	Usage *UsageUpdate
 	// Retry is set on "retry" events: a model request failed for a transient
 	// reason and is retried after Wait; Text is the reason.
-	Retry  *RetryInfo
+	Retry *RetryInfo
+	// Agent is set on "agent_progress" events (a sub-agent's tool call,
+	// ToolName and Text as on "tool_call"): the sub-agent's description.
+	Agent  string
 	Status agentcore.RunStatus
 	State  RunState
 }
@@ -410,7 +418,10 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	ctx, denials := withTurnDenials(ctx)
 	// The run-scoped usage is counted at the observe layer and published after
 	// every model call (design D8).
-	ctx = withRunUsage(ctx, r.newRunUsageMeter(ctx, model.ID, turnID, req.Emit))
+	meter := r.newRunUsageMeter(ctx, model.ID, turnID, req.Emit)
+	ctx = withRunUsage(ctx, meter)
+	// Sub-agents of this session count their usage in this run (usage.go).
+	defer activateMeter(model.ID, meter)()
 	result := RunResult{SessionID: model.ID, TurnID: turnID, RunID: turnID}
 	history, err := r.loadHistory(ctx, model.ID)
 	if err != nil {
@@ -482,6 +493,13 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	ctx = withPlanEmitter(ctx, func(ctx context.Context, plan native.Plan) error {
 		return emit(ctx, req.Emit, Event{Kind: "plan", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Plan: &plan})
 	})
+	// So does a sub-agent's progress (AgentProgress; subagent.go).
+	if req.Emit != nil {
+		ctx = context.WithValue(ctx, agentEmitKey{}, EmitFunc(func(ctx context.Context, e Event) error {
+			e.SessionID, e.TurnID, e.RunID = result.SessionID, result.TurnID, result.RunID
+			return emit(ctx, req.Emit, e)
+		}))
+	}
 	var storage agentcore.Storage = r.cfg.Repository.AgentStorage()
 	if req.Injected {
 		// Persist the existing "not typed by a person" marker on the turn's
@@ -542,6 +560,13 @@ func appendTurnInput(transcript *Transcript, sessionID string, req RunRequest) {
 func (r *Runner) turnHooks(usage *usageCollector, denials *turnDenials, sink EmitFunc, result RunResult) []agentcore.Hook {
 	hooks := append([]agentcore.Hook{usage, denialLimitHook{denials: denials, usage: usage},
 		prefixHook{tracker: r.rec.prefix}}, r.cfg.Hooks...)
+	if r.cfg.MaxRunTokens > 0 || r.cfg.RunTimeout > 0 {
+		limits := limitHook{maxTokens: r.cfg.MaxRunTokens}
+		if r.cfg.RunTimeout > 0 {
+			limits.deadline = time.Now().Add(r.cfg.RunTimeout)
+		}
+		hooks = append(hooks, limits)
+	}
 	if sink != nil {
 		hooks = append(hooks, toolEventHook{sink: sink, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
 	}

@@ -212,3 +212,19 @@ func TestRendererMemoryWrites(t *testing.T) {
 		assert.NotContains(t, out.String(), "已记住")
 	})
 }
+
+// TestRendererAgentProgress: a sub-agent's tool calls show indented under the
+// agent call, its result as usual.
+func TestRendererAgentProgress(t *testing.T) {
+	var out bytes.Buffer
+	r := newRenderer(rendererOptions{Out: &out, Err: &out})
+	r.Handle(personal.Event{Kind: "tool_call", ToolName: "agent", Text: `{"description":"find Foo"}`})
+	r.Handle(personal.Event{Kind: "agent_progress", Agent: "find Foo", ToolName: "file_grep", Text: `{"pattern":"Foo"}`})
+	r.Handle(personal.Event{Kind: "tool_result", ToolName: "agent", Text: "Foo is in a.go:3"})
+	assert.Eq(t, strings.Join([]string{
+		`⏺ agent {"description":"find Foo"}`,
+		`  · file_grep {"pattern":"Foo"}`,
+		"  ⎿ ok: Foo is in a.go:3",
+		"",
+	}, "\n"), out.String())
+}

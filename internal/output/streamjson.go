@@ -54,6 +54,9 @@ func EventLine(event personal.Event) (line map[string]any, ok bool) {
 	case "tool_result":
 		data["type"], data["name"], data["is_error"] = "tool_result", event.ToolName, event.IsError
 		data["summary"] = ToolResultSummary(event.Text)
+	case "agent_progress":
+		// A sub-agent's tool call (agent tool); agent is its description.
+		data["type"], data["agent"], data["name"], data["args"] = "agent_progress", event.Agent, event.ToolName, event.Text
 	default:
 		return nil, false
 	}

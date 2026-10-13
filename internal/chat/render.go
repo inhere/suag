@@ -120,6 +120,14 @@ func (r *Renderer) Handle(event personal.Event) {
 			fmt.Fprintln(r.opts.Out, r.paint(color.Gray, strings.TrimRight("  ⎿ ok: "+summary, " ")))
 			r.noteMemory(event)
 		}
+	case "agent_progress":
+		// A sub-agent's tool call, under the agent call that started it.
+		r.live.Finish()
+		line := "  · " + event.ToolName
+		if args := truncateLine(event.Text, callArgsLimit); args != "" {
+			line += " " + args
+		}
+		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, line))
 	case "plan":
 		if event.Plan != nil {
 			r.live.Finish()
