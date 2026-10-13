@@ -14,13 +14,13 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 type testACPClient struct {

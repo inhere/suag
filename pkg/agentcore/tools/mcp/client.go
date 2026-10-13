@@ -18,9 +18,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/extproc"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/extproc"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // ServerConfig describes an MCP server to connect to.
@@ -121,7 +121,7 @@ func (c *Client) Start(ctx context.Context) error {
 	// Handshake: initialize.
 	_, err = c.call(ctx, "initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
-		"clientInfo":      map[string]any{"name": "suag", "version": "0.1.0"},
+		"clientInfo":      map[string]any{"name": "suga", "version": "0.1.0"},
 		"capabilities":    map[string]any{},
 	})
 	if err != nil {

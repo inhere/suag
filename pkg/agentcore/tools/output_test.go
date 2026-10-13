@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // outTool is a stub tool with a configurable kind, meta and result.

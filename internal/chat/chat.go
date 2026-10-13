@@ -10,16 +10,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/internal/chat/lineedit"
-	appconfig "github.com/inhere/suag/internal/config"
-	suaghooks "github.com/inhere/suag/internal/hooks"
-	"github.com/inhere/suag/internal/personal"
-	personalprocess "github.com/inhere/suag/internal/personal/process"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/redact"
-	"github.com/inhere/suag/pkg/agentcore/schedule"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/internal/chat/lineedit"
+	appconfig "github.com/inhere/suga/internal/config"
+	sugahooks "github.com/inhere/suga/internal/hooks"
+	"github.com/inhere/suga/internal/personal"
+	personalprocess "github.com/inhere/suga/internal/personal/process"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/redact"
+	"github.com/inhere/suga/pkg/agentcore/schedule"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 const (
@@ -64,7 +64,7 @@ type Options struct {
 }
 
 // Run drives the interactive chat REPL on top of runner; hooks may be nil.
-func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Reader, stdout, stderr io.Writer, hooks suaghooks.Client) error {
+func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Reader, stdout, stderr io.Writer, hooks sugahooks.Client) error {
 	hooks = recordHooks(hooks, runner)
 	sessionID := ""
 	source := "startup"
@@ -133,14 +133,14 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		if id == "" || !appconfig.TranscriptsEnabled() {
 			return ""
 		}
-		home, err := appconfig.ResolveSuagHome()
+		home, err := appconfig.ResolveSugaHome()
 		if err != nil {
 			return ""
 		}
 		return filepath.Join(home, "transcripts", id+".jsonl")
 	}
-	baseEvent := func(name string) suaghooks.Event {
-		return suaghooks.Event{Name: name, SessionID: sessionID, CWD: cwd, TranscriptPath: transcriptPath(sessionID)}
+	baseEvent := func(name string) sugahooks.Event {
+		return sugahooks.Event{Name: name, SessionID: sessionID, CWD: cwd, TranscriptPath: transcriptPath(sessionID)}
 	}
 	inputSource, err := newChatInputSource(ctx, stdin, stdout)
 	if err == nil && opts.Tasks != nil {
@@ -188,9 +188,9 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		start.Source = source
 		startResp := hooks.Call(ctx, start)
 		showHookNotice(stderr, startResp)
-		pendingContext = suaghooks.AdditionalContext(startResp)
+		pendingContext = sugahooks.AdditionalContext(startResp)
 	}
-	var waiting suaghooks.Wait
+	var waiting sugahooks.Wait
 	var bgStop *backgroundStop
 	if hooks != nil && opts.StopBackground && opts.Tasks != nil && sessionID != "" {
 		bgStop = &backgroundStop{hooks: hooks, tasks: opts.Tasks, sessionID: sessionID}
@@ -199,7 +199,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	// It is folded into the next turn's context; if the chat ends first, warn on stderr.
 	var lostReply string
 	defer func() {
-		// Messages queued by `suag send` that never became a turn: fail their senders
+		// Messages queued by `suga send` that never became a turn: fail their senders
 		// (exit 3 for `send --wait` style callers) and tell the person how many were dropped.
 		if n := inputSource.DiscardQueued(); n > 0 {
 			fmt.Fprintf(stderr, "Warning: %d queued message(s) were discarded on exit and not run.\n", n)
@@ -208,7 +208,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			lostReply = appendContext(lostReply, waiting.Interrupt(context.Background()))
 		}
 		if lostReply != "" {
-			fmt.Fprintln(stderr, "Warning: hook reply was not delivered:", suaghooks.TruncateOutput(lostReply, 200))
+			fmt.Fprintln(stderr, "Warning: hook reply was not delivered:", sugahooks.TruncateOutput(lostReply, 200))
 		}
 		if hooks != nil && sessionID != "" {
 			hooks.Call(context.Background(), baseEvent("SessionEnd"))
@@ -299,11 +299,11 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			submit.Injected = injected
 			submitResp := hooks.Call(ctx, submit)
 			showHookNotice(stderr, submitResp)
-			pendingContext = appendContext(pendingContext, suaghooks.AdditionalContext(submitResp))
+			pendingContext = appendContext(pendingContext, sugahooks.AdditionalContext(submitResp))
 		}
 		if lostReply != "" {
 			// A reply received during an interrupt race still reaches the model as next-turn context.
-			fmt.Fprintln(stderr, "Note: delivering hook reply received while interrupting:", suaghooks.TruncateOutput(lostReply, 200))
+			fmt.Fprintln(stderr, "Note: delivering hook reply received while interrupting:", sugahooks.TruncateOutput(lostReply, 200))
 			pendingContext = appendContext(pendingContext, lostReply)
 			lostReply = ""
 		}
@@ -333,7 +333,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 				}
 				postTool := baseEvent("PostToolUse")
 				postTool.ToolName = toolName
-				postTool.ToolOutput = suaghooks.TruncateOutput(redact.Secrets(event.Text), toolHookLimit)
+				postTool.ToolOutput = sugahooks.TruncateOutput(redact.Secrets(event.Text), toolHookLimit)
 				showHookNotice(stderr, hooks.Call(eventCtx, postTool))
 				return nil
 			},
@@ -376,7 +376,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		}
 		if hooks != nil {
 			stop := baseEvent("Stop")
-			stop.LastAssistant = suaghooks.TruncateOutput(redact.Secrets(stopMessage), stopHookLimit)
+			stop.LastAssistant = sugahooks.TruncateOutput(redact.Secrets(stopMessage), stopHookLimit)
 			stop.StopHookActive = turnStopActive
 			if bgStop == nil {
 				waiting = hooks.StartStop(ctx, stop)
@@ -419,11 +419,11 @@ type chatInput struct {
 	hasLine, stopDone, injected, interrupted bool
 }
 
-func nextChatInput(ctx context.Context, source *chatInputSource, render *Renderer, waiting suaghooks.Wait, lost *string) (chatInput, error) {
+func nextChatInput(ctx context.Context, source *chatInputSource, render *Renderer, waiting sugahooks.Wait, lost *string) (chatInput, error) {
 	if !source.Request(render.Prompt(waiting != nil)) {
 		return chatInput{}, ctx.Err()
 	}
-	var stopDone <-chan suaghooks.Result
+	var stopDone <-chan sugahooks.Result
 	if waiting != nil {
 		stopDone = waiting.Done()
 	}
@@ -513,7 +513,7 @@ func nextChatInput(ctx context.Context, source *chatInputSource, render *Rendere
 // processChatInputEvent turns one reader event into input. again reports an
 // event that only cut a Stop wait short (typing, or Ctrl-C/EOF while waiting):
 // the caller keeps reading instead of returning it.
-func processChatInputEvent(source *chatInputSource, event chatInputEvent, waiting suaghooks.Wait, lost *string) (in chatInput, again bool, err error) {
+func processChatInputEvent(source *chatInputSource, event chatInputEvent, waiting sugahooks.Wait, lost *string) (in chatInput, again bool, err error) {
 	if event.activity {
 		if waiting != nil {
 			*lost = appendContext(*lost, waiting.Interrupt(context.Background()))
@@ -541,7 +541,7 @@ func appendContext(current, next string) string {
 
 // showHookNotice prints the server-provided notice (if any) for the person at the terminal.
 // It always goes to stderr so it never mixes into the conversation output.
-func showHookNotice(w io.Writer, response suaghooks.Response) {
+func showHookNotice(w io.Writer, response sugahooks.Response) {
 	if response.Notice != "" {
 		fmt.Fprintln(w, response.Notice)
 	}
@@ -577,5 +577,5 @@ func (s chatStats) print(w io.Writer, sessionID string, elapsed time.Duration) {
 		line += fmt.Sprintf("（会话累计 in %d / out %d）", s.session.InputTokens, s.session.OutputTokens)
 	}
 	// Leading newline: Ctrl-C/Ctrl-D at the prompt leaves the cursor after "❯ ".
-	fmt.Fprintf(w, "\n%s · 运行 %s\n续接：suag chat --resume %s\n", line, formatElapsed(elapsed), sessionID)
+	fmt.Fprintf(w, "\n%s · 运行 %s\n续接：suga chat --resume %s\n", line, formatElapsed(elapsed), sessionID)
 }

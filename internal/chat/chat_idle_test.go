@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/schedule"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/schedule"
 )
 
 // idleFakeClock is a manual schedule.Clock: Advance runs due timers in the

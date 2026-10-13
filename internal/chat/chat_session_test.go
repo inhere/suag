@@ -10,13 +10,13 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/mock"
 )
 
-// shortTestHome returns a short SUAG_HOME (unix socket paths have a length limit).
+// shortTestHome returns a short SUGA_HOME (unix socket paths have a length limit).
 func shortTestHome(t *testing.T) string {
 	t.Helper()
 	_, source, _, ok := runtime.Caller(0)

@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/storage/files"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/storage/files"
 )
 
 func main() {
@@ -22,7 +22,7 @@ func main() {
 				agentcore.StreamEvent{Kind: agentcore.StreamEventMessageStop},
 			),
 		),
-		Storage: files.NewStorage(filepath.Join(os.TempDir(), "suag-agentcore-examples", "stream")),
+		Storage: files.NewStorage(filepath.Join(os.TempDir(), "suga-agentcore-examples", "stream")),
 	})
 
 	result, err := runtime.Run(context.Background(), agentcore.RunInput{

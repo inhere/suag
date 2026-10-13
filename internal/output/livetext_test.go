@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/pkg/agentcore"
 )
 
 func TestLiveTextPrintsDeltasPerMessage(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // TestMetaFlags locks which built-ins are External (taint the session) and

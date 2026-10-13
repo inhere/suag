@@ -1,6 +1,6 @@
 package personal
 
-import "github.com/inhere/suag/pkg/agentcore"
+import "github.com/inhere/suga/pkg/agentcore"
 
 // Price is a model price in US dollars per million tokens.
 type Price struct {

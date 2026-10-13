@@ -13,10 +13,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/coder/acp-go-sdk"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 var ErrPermissionDenied = errors.New("ACP tool permission denied")

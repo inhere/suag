@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // serpAPIEndpoint is the SerpAPI search URL.

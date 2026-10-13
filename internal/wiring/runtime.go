@@ -11,15 +11,15 @@ import (
 	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/llm"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // Options carries everything needed to assemble one runtime.
@@ -57,7 +57,7 @@ type Options struct {
 	// enable write tools there, and tools are approved by the chat approver.
 	ChatMode bool
 	// MemoryReadOnly (--read-only, ACP read_only) limits the memory tool to
-	// get/search. The zero value allows memory writes: memory is suag's own
+	// get/search. The zero value allows memory writes: memory is suga's own
 	// state, not the workspace, so a plain run may write it.
 	MemoryReadOnly bool
 	// Tasks runs shell_exec with background: true and backs the task tool
@@ -232,7 +232,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// (including read-only). The recorder is bound to the runner in personal.New.
 	plans := personal.NewPlanRecorder()
 	capabilities.Registry.Register(native.NewUpdatePlanTool(plans))
-	// memory changes suag's own state too, so it is registered in every mode;
+	// memory changes suga's own state too, so it is registered in every mode;
 	// read-only modes keep get/search only (the tool refuses writes itself).
 	// The runner and the provenance store are bound after personal.New.
 	memHost := &memoryHost{}
@@ -250,7 +250,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if skillReg.Len() > 0 {
 		capabilities.Registry.Register(native.NewSkillTool(skillReg, nativeEnv(workspace).RawBytes))
 	}
-	// suag_manifest is read-only local data, so it is registered in every
+	// suga_manifest is read-only local data, so it is registered in every
 	// mode. It reports the live registry (MCP tools included) when called.
 	userHome, _ := os.UserHomeDir()
 	capabilities.Registry.Register(native.NewManifestTool(func(context.Context) (any, error) {
@@ -282,14 +282,14 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	transcriptDir := ""
 	if appconfig.TranscriptsEnabled() {
-		home, err := appconfig.ResolveSuagHome()
+		home, err := appconfig.ResolveSugaHome()
 		if err != nil {
 			_ = capabilities.Close()
 			return nil, fmt.Errorf("resolve transcript root: %w", err)
 		}
 		transcriptDir = filepath.Join(home, "transcripts")
 	}
-	home, err := appconfig.ResolveSuagHome()
+	home, err := appconfig.ResolveSugaHome()
 	if err != nil {
 		_ = capabilities.Close()
 		return nil, fmt.Errorf("resolve session process root: %w", err)
@@ -338,7 +338,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		Visibility:      vis,
 		Price:           priceLookup(settings),
 		// Tool outputs above tools.max_output_bytes go to
-		// <SUAG_HOME>/sessions/<id>/outputs/ and the session keeps a ref.
+		// <SUGA_HOME>/sessions/<id>/outputs/ and the session keeps a ref.
 		InlineOutputBytes: inlineOutputBytes(),
 		Spiller:           personal.NewSessionSpiller(sessionsDir),
 		MinimizeOutput:    minimizeOutput(workspace),
@@ -362,7 +362,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		Hooks:    opts.Hooks,
 		MaxSteps: gkconfig.Int("max_steps", 100),
 		RuleSource: func() (string, string, error) {
-			home, err := appconfig.ResolveSuagHome()
+			home, err := appconfig.ResolveSugaHome()
 			if err != nil {
 				return "", "", err
 			}
@@ -410,7 +410,7 @@ func appendSystemPrompt(flagValue string) string {
 	if flagValue != "" {
 		return flagValue
 	}
-	return os.Getenv("SUAG_APPEND_SYSTEM_PROMPT")
+	return os.Getenv("SUGA_APPEND_SYSTEM_PROMPT")
 }
 
 func buildPersonalCapabilities(workspace string, allowWrite bool) (defaultCapabilities, error) {

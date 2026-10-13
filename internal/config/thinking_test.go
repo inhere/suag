@@ -10,8 +10,8 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/llm"
+	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 // sentBody builds spec's provider against a fake server and returns the JSON

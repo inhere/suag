@@ -6,19 +6,19 @@ import (
 )
 
 // TestMain keeps tests from running a hook command configured on the developer's
-// machine (SUAG_HOOKS=off). SUAG_HOME also points at a throwaway directory so
-// tests never touch ~/.suag.
+// machine (SUGA_HOOKS=off). SUGA_HOME also points at a throwaway directory so
+// tests never touch ~/.suga.
 func TestMain(m *testing.M) {
-	home, err := os.MkdirTemp("", "suag-test-home-*")
+	home, err := os.MkdirTemp("", "suga-test-home-*")
 	if err != nil {
 		panic(err)
 	}
-	_ = os.Setenv("SUAG_HOME", home)
+	_ = os.Setenv("SUGA_HOME", home)
 	// A developer's (or an eval's) model and config file must not decide
 	// what the CLI tests resolve.
-	_ = os.Unsetenv("SUAG_CONFIG")
-	_ = os.Unsetenv("SUAG_MODEL")
-	_ = os.Setenv("SUAG_HOOKS", "off")
+	_ = os.Unsetenv("SUGA_CONFIG")
+	_ = os.Unsetenv("SUGA_MODEL")
+	_ = os.Setenv("SUGA_HOOKS", "off")
 	code := m.Run()
 	_ = os.RemoveAll(home)
 	os.Exit(code)

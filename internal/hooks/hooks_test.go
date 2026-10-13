@@ -21,10 +21,10 @@ import (
 
 // TestFakeHookProcess is the fake hook command: tests run the test binary itself
 // with -test.run=^TestFakeHookProcess$ so no real hook program is needed. It
-// appends {"args","event"} to SUAG_FAKE_HOOK_LOG, sleeps SUAG_FAKE_HOOK_SLEEP_MS,
-// then prints SUAG_FAKE_HOOK_STDOUT / SUAG_FAKE_HOOK_STDERR.
+// appends {"args","event"} to SUGA_FAKE_HOOK_LOG, sleeps SUGA_FAKE_HOOK_SLEEP_MS,
+// then prints SUGA_FAKE_HOOK_STDOUT / SUGA_FAKE_HOOK_STDERR.
 func TestFakeHookProcess(t *testing.T) {
-	logPath := os.Getenv("SUAG_FAKE_HOOK_LOG")
+	logPath := os.Getenv("SUGA_FAKE_HOOK_LOG")
 	if logPath == "" {
 		return
 	}
@@ -38,11 +38,11 @@ func TestFakeHookProcess(t *testing.T) {
 	}
 	_, _ = file.Write(append(line, '\n'))
 	_ = file.Close()
-	if ms, _ := strconv.Atoi(os.Getenv("SUAG_FAKE_HOOK_SLEEP_MS")); ms > 0 {
+	if ms, _ := strconv.Atoi(os.Getenv("SUGA_FAKE_HOOK_SLEEP_MS")); ms > 0 {
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 	}
-	fmt.Fprint(os.Stdout, os.Getenv("SUAG_FAKE_HOOK_STDOUT"))
-	fmt.Fprint(os.Stderr, os.Getenv("SUAG_FAKE_HOOK_STDERR"))
+	fmt.Fprint(os.Stdout, os.Getenv("SUGA_FAKE_HOOK_STDOUT"))
+	fmt.Fprint(os.Stderr, os.Getenv("SUGA_FAKE_HOOK_STDERR"))
 	// Exit before the testing framework prints PASS on stdout.
 	os.Exit(0)
 }
@@ -57,11 +57,11 @@ type fakeHookCall struct {
 func useFakeHook(t *testing.T, baseArgs ...string) func() []fakeHookCall {
 	t.Helper()
 	logPath := filepath.Join(t.TempDir(), "hook.log")
-	t.Setenv("SUAG_HOOKS", "")
-	t.Setenv("SUAG_FAKE_HOOK_LOG", logPath)
-	t.Setenv("SUAG_FAKE_HOOK_SLEEP_MS", "")
-	t.Setenv("SUAG_FAKE_HOOK_STDOUT", "")
-	t.Setenv("SUAG_FAKE_HOOK_STDERR", "")
+	t.Setenv("SUGA_HOOKS", "")
+	t.Setenv("SUGA_FAKE_HOOK_LOG", logPath)
+	t.Setenv("SUGA_FAKE_HOOK_SLEEP_MS", "")
+	t.Setenv("SUGA_FAKE_HOOK_STDOUT", "")
+	t.Setenv("SUGA_FAKE_HOOK_STDERR", "")
 	// A -race child otherwise sleeps 1s at exit, which would blur the timeout checks.
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	assert.NoErr(t, gkconfig.Set("hooks.command", append([]string{os.Args[0], "-test.run=^TestFakeHookProcess$"}, baseArgs...)))
@@ -91,7 +91,7 @@ func mustNew(t *testing.T) Client {
 func TestNewIsOffUnlessConfigured(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOOKS", "") // exercise the config, not the TestMain override
+	t.Setenv("SUGA_HOOKS", "") // exercise the config, not the TestMain override
 
 	t.Run("no hooks.command", func(t *testing.T) {
 		// Other hooks keys alone never enable hooks.
@@ -111,11 +111,11 @@ func TestNewIsOffUnlessConfigured(t *testing.T) {
 		assert.NoErr(t, gkconfig.Set("gofer.command", os.Args[0]))
 		assert.Nil(t, mustNew(t))
 	})
-	t.Run("SUAG_HOOKS=off wins over hooks.command", func(t *testing.T) {
+	t.Run("SUGA_HOOKS=off wins over hooks.command", func(t *testing.T) {
 		assert.NoErr(t, gkconfig.Set("hooks.command", []string{os.Args[0]}))
-		t.Setenv("SUAG_HOOKS", "OFF")
+		t.Setenv("SUGA_HOOKS", "OFF")
 		assert.Nil(t, mustNew(t))
-		t.Setenv("SUAG_HOOKS", "")
+		t.Setenv("SUGA_HOOKS", "")
 		assert.NotNil(t, mustNew(t))
 	})
 	t.Run("a job id no longer disables hooks", func(t *testing.T) {
@@ -141,7 +141,7 @@ func TestNewRejectsMalformedConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			gkconfig.Reset()
 			t.Cleanup(gkconfig.Reset)
-			t.Setenv("SUAG_HOOKS", "")
+			t.Setenv("SUGA_HOOKS", "")
 			if tc.key != "hooks.command" {
 				assert.NoErr(t, gkconfig.Set("hooks.command", []string{os.Args[0]}))
 			}
@@ -156,7 +156,7 @@ func TestNewRejectsMalformedConfig(t *testing.T) {
 func TestHookFailuresAreBestEffort(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOOKS", "")
+	t.Setenv("SUGA_HOOKS", "")
 	assert.NoErr(t, gkconfig.Set("hooks.command", []string{filepath.Join(t.TempDir(), "missing-hook-command-7cb7")}))
 	h := mustNew(t)
 	// A configured but failing hook process yields an empty response, never a panic.
@@ -168,7 +168,7 @@ func TestHookFailuresAreBestEffort(t *testing.T) {
 func TestHookCommandArgvAndStopArgs(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	calls := useFakeHook(t, "hook", "generic", "--agent", "suag")
+	calls := useFakeHook(t, "hook", "generic", "--agent", "suga")
 	assert.NoErr(t, gkconfig.Set("hooks.stop_args", []string{"--wait", "7"}))
 	h := mustNew(t)
 	for _, name := range []string{"SessionStart", "UserPromptSubmit", "PostToolUse"} {
@@ -178,7 +178,7 @@ func TestHookCommandArgvAndStopArgs(t *testing.T) {
 	assert.NoErr(t, result.Err)
 	h.Call(context.Background(), Event{Name: "SessionEnd"})
 
-	base := []string{"hook", "generic", "--agent", "suag"}
+	base := []string{"hook", "generic", "--agent", "suga"}
 	got := calls()
 	assert.Eq(t, 5, len(got))
 	for _, call := range got {
@@ -198,7 +198,7 @@ func TestStopInterruptSendsInterruptWithoutStopArgs(t *testing.T) {
 	assert.NoErr(t, gkconfig.Set("hooks.stop_args", []string{"--wait", "7"}))
 	assert.NoErr(t, gkconfig.Set("hooks.stop_wait_sec", 7))
 	h := mustNew(t)
-	t.Setenv("SUAG_FAKE_HOOK_SLEEP_MS", "300")
+	t.Setenv("SUGA_FAKE_HOOK_SLEEP_MS", "300")
 	wait := h.StartStop(context.Background(), Event{Name: "Stop"})
 	assert.Eq(t, "", wait.Interrupt(context.Background()))
 	var interrupt *fakeHookCall
@@ -217,7 +217,7 @@ func TestCancelledStopIsNotReportedAsAFailure(t *testing.T) {
 	useFakeHook(t, "base")
 	assert.NoErr(t, gkconfig.Set("hooks.stop_wait_sec", 7))
 	h := mustNew(t)
-	t.Setenv("SUAG_FAKE_HOOK_SLEEP_MS", "2000")
+	t.Setenv("SUGA_FAKE_HOOK_SLEEP_MS", "2000")
 
 	var logs bytes.Buffer
 	previous := slog.Default()
@@ -246,7 +246,7 @@ func TestHookTimeouts(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	useFakeHook(t)
-	t.Setenv("SUAG_FAKE_HOOK_STDOUT", `{"decision":"block","reason":"late"}`)
+	t.Setenv("SUGA_FAKE_HOOK_STDOUT", `{"decision":"block","reason":"late"}`)
 
 	t.Run("limits from config", func(t *testing.T) {
 		h := mustNew(t).(*commandClient)
@@ -263,7 +263,7 @@ func TestHookTimeouts(t *testing.T) {
 	t.Run("stop without stop_wait_sec uses timeout_ms", func(t *testing.T) {
 		assert.NoErr(t, gkconfig.Set("hooks.timeout_ms", 200))
 		assert.NoErr(t, gkconfig.Set("hooks.stop_wait_sec", 0))
-		t.Setenv("SUAG_FAKE_HOOK_SLEEP_MS", "1500")
+		t.Setenv("SUGA_FAKE_HOOK_SLEEP_MS", "1500")
 		start := time.Now()
 		result := <-mustNew(t).StartStop(context.Background(), Event{Name: "Stop"}).Done()
 		assert.Err(t, result.Err)
@@ -273,7 +273,7 @@ func TestHookTimeouts(t *testing.T) {
 		assert.NoErr(t, gkconfig.Set("hooks.timeout_ms", 200))
 		// Stop may take up to 3+2s; the 800ms command finishes well inside that.
 		assert.NoErr(t, gkconfig.Set("hooks.stop_wait_sec", 3))
-		t.Setenv("SUAG_FAKE_HOOK_SLEEP_MS", "800")
+		t.Setenv("SUGA_FAKE_HOOK_SLEEP_MS", "800")
 		h := mustNew(t)
 		result := <-h.StartStop(context.Background(), Event{Name: "Stop"}).Done()
 		assert.NoErr(t, result.Err)
@@ -308,7 +308,7 @@ func TestPostToolFilter(t *testing.T) {
 	t.Run("from config", func(t *testing.T) {
 		gkconfig.Reset()
 		t.Cleanup(gkconfig.Reset)
-		t.Setenv("SUAG_HOOKS", "")
+		t.Setenv("SUGA_HOOKS", "")
 		assert.NoErr(t, gkconfig.Set("hooks.command", []string{os.Args[0]}))
 		_, ok := mustNew(t).PostToolName("shell_exec")
 		assert.False(t, ok)
@@ -364,7 +364,7 @@ func TestHooksCaptureStderrAsNotice(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	useFakeHook(t)
-	t.Setenv("SUAG_FAKE_HOOK_STDERR", "taken over on web\n")
+	t.Setenv("SUGA_FAKE_HOOK_STDERR", "taken over on web\n")
 	resp := mustNew(t).Call(context.Background(), Event{Name: "UserPromptSubmit"})
 	assert.Eq(t, "taken over on web", resp.Notice)
 }

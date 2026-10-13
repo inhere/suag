@@ -7,18 +7,18 @@ import (
 	"strings"
 
 	"github.com/gookit/goutil/cflag/capp"
-	personalprocess "github.com/inhere/suag/internal/personal/process"
+	personalprocess "github.com/inhere/suga/internal/personal/process"
 )
 
-// maxSendStdinBytes caps `suag send` stdin; exit codes: 2 ambiguous, 3 offline, 4 too large.
+// maxSendStdinBytes caps `suga send` stdin; exit codes: 2 ambiguous, 3 offline, 4 too large.
 const maxSendStdinBytes = 1 << 20
 
 func newSendCommand(stdin io.Reader, stderr io.Writer) *capp.Cmd {
 	var sendSession, sendText, sendSource string
 	var sendWait bool
-	send := capp.NewCmd("send", "Send text to a local Suag chat process", func(c *capp.Cmd) error {
+	send := capp.NewCmd("send", "Send text to a local Suga chat process", func(c *capp.Cmd) error {
 		if len(c.RemainArgs()) != 0 {
-			return fmt.Errorf("suag send does not accept arguments")
+			return fmt.Errorf("suga send does not accept arguments")
 		}
 		if strings.TrimSpace(sendSession) == "" {
 			return fmt.Errorf("--session is required")

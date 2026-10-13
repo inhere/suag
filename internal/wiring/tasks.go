@@ -3,10 +3,10 @@ package wiring
 import (
 	"log/slog"
 
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
 // NewTaskManager returns the background task manager of a host process

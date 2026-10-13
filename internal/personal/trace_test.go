@@ -6,7 +6,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
 // TestTraceAgentLines: a sub-agent call line shows the session it ran in, its

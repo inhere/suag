@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // traceEvent is the jsonl shape of one timeline event.
@@ -239,7 +239,7 @@ func turnContextLine(e store.Event) string {
 		"rules=" + short(attr("rules_hash")), "memory=" + short(attr("memory_hash")),
 	}
 	if v := attr("version"); v != "" {
-		parts = append(parts, "suag="+v)
+		parts = append(parts, "suga="+v)
 	}
 	if e.TurnID != "" {
 		parts = append(parts, "turn="+e.TurnID)

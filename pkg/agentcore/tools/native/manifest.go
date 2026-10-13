@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // ManifestSource produces the manifest value (any JSON-encodable value) on
@@ -17,17 +17,17 @@ import (
 // configuration layer.
 type ManifestSource func(ctx context.Context) (any, error)
 
-// ManifestTool (suag_manifest) reports what this suag instance can do: the
+// ManifestTool (suga_manifest) reports what this suga instance can do: the
 // model and tool set, memory backends, output limits. It is read-only and
 // makes no network request.
 type ManifestTool struct {
 	source ManifestSource
 }
 
-// NewManifestTool creates the suag_manifest tool reading from source.
+// NewManifestTool creates the suga_manifest tool reading from source.
 func NewManifestTool(source ManifestSource) *ManifestTool { return &ManifestTool{source: source} }
 
-func (*ManifestTool) Name() string { return "suag_manifest" }
+func (*ManifestTool) Name() string { return "suga_manifest" }
 
 func (*ManifestTool) Description() string {
 	return "Show this agent's capabilities as JSON: version, models, tools with their metadata, MCP servers, " +
@@ -60,11 +60,11 @@ func (t *ManifestTool) Schema() api.ToolSchema {
 
 func (t *ManifestTool) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	if t.source == nil {
-		return nil, errors.New("suag_manifest: no manifest source configured")
+		return nil, errors.New("suga_manifest: no manifest source configured")
 	}
 	v, err := t.source(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("suag_manifest: %w", err)
+		return nil, fmt.Errorf("suga_manifest: %w", err)
 	}
 	section, _ := call.Arguments["section"].(string)
 	section = strings.TrimSpace(section)
@@ -72,7 +72,7 @@ func (t *ManifestTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	switch x := v.(type) {
 	case string:
 		if section != "" {
-			return nil, errors.New("suag_manifest: section is not supported by this manifest source")
+			return nil, errors.New("suga_manifest: section is not supported by this manifest source")
 		}
 		text = x
 	default:
@@ -85,7 +85,7 @@ func (t *ManifestTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 				err = json.Unmarshal(b, &all)
 			}
 			if err != nil {
-				return nil, fmt.Errorf("suag_manifest: encode: %w", err)
+				return nil, fmt.Errorf("suga_manifest: encode: %w", err)
 			}
 			part, ok := all[section]
 			if !ok {
@@ -94,13 +94,13 @@ func (t *ManifestTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 					keys = append(keys, k)
 				}
 				sort.Strings(keys)
-				return nil, fmt.Errorf("suag_manifest: unknown section %q (have: %s)", section, strings.Join(keys, ", "))
+				return nil, fmt.Errorf("suga_manifest: unknown section %q (have: %s)", section, strings.Join(keys, ", "))
 			}
 			v = part
 		}
 		b, err := json.MarshalIndent(v, "", "  ")
 		if err != nil {
-			return nil, fmt.Errorf("suag_manifest: encode: %w", err)
+			return nil, fmt.Errorf("suga_manifest: encode: %w", err)
 		}
 		text = string(b)
 	}

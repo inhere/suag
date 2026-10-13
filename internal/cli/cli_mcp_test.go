@@ -19,7 +19,7 @@ import (
 )
 
 func TestFakeMCPServerProcess(t *testing.T) {
-	if os.Getenv("SUAG_FAKE_MCP") != "1" {
+	if os.Getenv("SUGA_FAKE_MCP") != "1" {
 		return
 	}
 	scanner := bufio.NewScanner(os.Stdin)
@@ -77,7 +77,7 @@ func TestPersonalRunWithStdioMCPReadAndDeniedWrite(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			gkconfig.Reset()
 			t.Cleanup(gkconfig.Reset)
-			t.Setenv("SUAG_HOME", shortTestHome(t))
+			t.Setenv("SUGA_HOME", shortTestHome(t))
 			workspace := t.TempDir()
 			t.Chdir(workspace)
 			assert.NoErr(t, gkconfig.Set("workspace", workspace))
@@ -91,7 +91,7 @@ func TestPersonalRunWithStdioMCPReadAndDeniedWrite(t *testing.T) {
 			mcpConfig := filepath.Join(t.TempDir(), "mcp.json")
 			config, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"gofer": map[string]any{
 				"command": os.Args[0], "args": []string{"-test.run=TestFakeMCPServerProcess"},
-				"env": map[string]string{"SUAG_FAKE_MCP": "1"},
+				"env": map[string]string{"SUGA_FAKE_MCP": "1"},
 			}}})
 			assert.NoErr(t, err)
 			assert.NoErr(t, os.WriteFile(mcpConfig, config, 0600))
@@ -100,7 +100,7 @@ func TestPersonalRunWithStdioMCPReadAndDeniedWrite(t *testing.T) {
 			if tc.defaultMCP {
 				assert.NoErr(t, gkconfig.Set("mcp.servers", []map[string]any{{
 					"id": "gofer", "command": os.Args[0], "args": []string{"-test.run=TestFakeMCPServerProcess"},
-					"env": map[string]any{"SUAG_FAKE_MCP": "1"},
+					"env": map[string]any{"SUGA_FAKE_MCP": "1"},
 				}}))
 			}
 			var count int

@@ -7,7 +7,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/api"
 )
 
 func runShell(t *testing.T, tool *ShellExecTool, args map[string]any) (*api.ToolResult, time.Duration) {
@@ -65,6 +65,6 @@ func TestShellExecOutputIsCapped(t *testing.T) {
 }
 
 func TestCommandEnv(t *testing.T) {
-	got := commandEnv([]string{"PATH=/bin", "SUAG_HOME=/h", "suag_config=/c", "SUAG_MODEL=m", "SUAG_HOOKS=off", "SUAG_HOMEX=1"})
-	assert.Eq(t, []string{"PATH=/bin", "SUAG_HOOKS=off", "SUAG_HOMEX=1"}, got)
+	got := commandEnv([]string{"PATH=/bin", "SUGA_HOME=/h", "suga_config=/c", "SUGA_MODEL=m", "SUGA_HOOKS=off", "SUGA_HOMEX=1"})
+	assert.Eq(t, []string{"PATH=/bin", "SUGA_HOOKS=off", "SUGA_HOMEX=1"}, got)
 }

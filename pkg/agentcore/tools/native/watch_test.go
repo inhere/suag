@@ -11,9 +11,9 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/llm"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
 func TestParseWatch(t *testing.T) {

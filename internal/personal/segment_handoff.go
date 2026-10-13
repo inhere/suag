@@ -9,10 +9,10 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // Handoff package (design D4, "交接包模板"): the model-written body (see
@@ -42,9 +42,9 @@ var continueWords = map[string]bool{
 
 // metaInjected marks (Message.Metadata, never sent by providers) a turn's
 // user message that was not typed by a person: RunRequest.Injected - a Stop
-// hook block reason, a socket delivery or `suag run --injected`. It is the
+// hook block reason, a socket delivery or `suga run --injected`. It is the
 // persisted form of that existing marker; recent requests prefer the others.
-const metaInjected = "suag.injected"
+const metaInjected = "suga.injected"
 
 // segmentPackage is a built handoff package.
 type segmentPackage struct {

@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	suaghooks "github.com/inhere/suag/internal/hooks"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/store"
+	sugahooks "github.com/inhere/suga/internal/hooks"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
 // recordingHooks records every hook run as a "hook" event of the session:
@@ -15,7 +15,7 @@ import (
 // model sees (additional context, a Stop reply starting a turn), so trace
 // shows them with the turns.
 type recordingHooks struct {
-	suaghooks.Client
+	sugahooks.Client
 	runner eventRecorder
 }
 
@@ -24,25 +24,25 @@ type eventRecorder interface {
 	RecordEvent(ctx context.Context, sessionID string, ev personal.HostEvent)
 }
 
-func recordHooks(inner suaghooks.Client, runner *personal.Runner) suaghooks.Client {
+func recordHooks(inner sugahooks.Client, runner *personal.Runner) sugahooks.Client {
 	if inner == nil || runner == nil {
 		return inner
 	}
 	return &recordingHooks{Client: inner, runner: runner}
 }
 
-func (h *recordingHooks) Call(ctx context.Context, ev suaghooks.Event) suaghooks.Response {
+func (h *recordingHooks) Call(ctx context.Context, ev sugahooks.Event) sugahooks.Response {
 	start := time.Now()
 	resp := h.Client.Call(ctx, ev)
-	h.record(ev, suaghooks.Result{Response: resp}, time.Since(start))
+	h.record(ev, sugahooks.Result{Response: resp}, time.Since(start))
 	return resp
 }
 
 // StartStop wraps the Stop wait: its result is recorded when it arrives and
 // passed on unchanged.
-func (h *recordingHooks) StartStop(ctx context.Context, ev suaghooks.Event) suaghooks.Wait {
+func (h *recordingHooks) StartStop(ctx context.Context, ev sugahooks.Event) sugahooks.Wait {
 	inner := h.Client.StartStop(ctx, ev)
-	w := &recordingWait{inner: inner, out: make(chan suaghooks.Result, 1)}
+	w := &recordingWait{inner: inner, out: make(chan sugahooks.Result, 1)}
 	start := time.Now()
 	go func() {
 		defer close(w.out)
@@ -56,7 +56,7 @@ func (h *recordingHooks) StartStop(ctx context.Context, ev suaghooks.Event) suag
 	return w
 }
 
-func (h *recordingHooks) record(ev suaghooks.Event, r suaghooks.Result, d time.Duration) {
+func (h *recordingHooks) record(ev sugahooks.Event, r sugahooks.Result, d time.Duration) {
 	if ev.SessionID == "" {
 		return
 	}
@@ -67,7 +67,7 @@ func (h *recordingHooks) record(ev suaghooks.Event, r suaghooks.Result, d time.D
 	if n := len(r.Response.Reason); n > 0 {
 		attrs["reason_chars"] = n
 	}
-	if n := len(suaghooks.AdditionalContext(r.Response)); n > 0 {
+	if n := len(sugahooks.AdditionalContext(r.Response)); n > 0 {
 		attrs["additional_chars"] = n
 	}
 	if r.Response.Notice != "" {
@@ -85,11 +85,11 @@ func (h *recordingHooks) record(ev suaghooks.Event, r suaghooks.Result, d time.D
 // the inner contract: the inner wait sends Interrupt and is cancelled, and a
 // reply that arrived but was not taken from Done is handed back.
 type recordingWait struct {
-	inner suaghooks.Wait
-	out   chan suaghooks.Result
+	inner sugahooks.Wait
+	out   chan sugahooks.Result
 }
 
-func (w *recordingWait) Done() <-chan suaghooks.Result { return w.out }
+func (w *recordingWait) Done() <-chan sugahooks.Result { return w.out }
 
 func (w *recordingWait) Interrupt(ctx context.Context) string {
 	reply := w.inner.Interrupt(ctx)

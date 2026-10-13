@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore"
 )
 
 // The model's reasoning is stored on the assistant messages (tool-call and

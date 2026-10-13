@@ -11,7 +11,7 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/envutil"
 
-	"github.com/inhere/suag/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 // Provider protocol types accepted in providers.<id>.type.
@@ -457,18 +457,18 @@ func unlistedModelWarning(what string, spec ModelSpec) string {
 		what, spec.Model, spec.Provider.ID, strings.Join(keys, ", "))
 }
 
-// CheckLegacyConfig rejects the removed llm: section and SUAG_PROVIDER.
+// CheckLegacyConfig rejects the removed llm: section and SUGA_PROVIDER.
 func CheckLegacyConfig() error {
 	if gkconfig.Get("llm") != nil {
 		return errors.New("llm: section is no longer supported; use `model: <provider>/<model>` and `providers:` (see docs/usage/llm-config-v0.md)")
 	}
-	if strings.TrimSpace(os.Getenv("SUAG_PROVIDER")) != "" {
-		return errors.New("SUAG_PROVIDER is no longer supported; use SUAG_MODEL=<provider>/<model> (or --model <provider>/<model>)")
+	if strings.TrimSpace(os.Getenv("SUGA_PROVIDER")) != "" {
+		return errors.New("SUGA_PROVIDER is no longer supported; use SUGA_MODEL=<provider>/<model> (or --model <provider>/<model>)")
 	}
 	return nil
 }
 
-// ReadModelSettings resolves the main model (flagModel > SUAG_MODEL > model),
+// ReadModelSettings resolves the main model (flagModel > SUGA_MODEL > model),
 // compact_model and fallback_models. The main ref's provider is the default
 // provider for bare model ids in compact_model and fallback_models.
 func ReadModelSettings(flagModel string) (ModelSettings, error) {
@@ -481,7 +481,7 @@ func ReadModelSettings(flagModel string) (ModelSettings, error) {
 	}
 
 	// The configured model names the default provider; a bare --model or
-	// SUAG_MODEL (no known provider prefix) then selects a model of that provider.
+	// SUGA_MODEL (no known provider prefix) then selects a model of that provider.
 	configRef := strings.TrimSpace(gkconfig.String("model"))
 	defaultProvider := ""
 	if configRef != "" {
@@ -491,9 +491,9 @@ func ReadModelSettings(flagModel string) (ModelSettings, error) {
 		}
 		defaultProvider = spec.Provider.ID
 	}
-	mainRef := firstNonEmpty(flagModel, os.Getenv("SUAG_MODEL"), configRef)
+	mainRef := firstNonEmpty(flagModel, os.Getenv("SUGA_MODEL"), configRef)
 	if strings.TrimSpace(mainRef) == "" {
-		return ModelSettings{}, errors.New("model is not configured; set `model: <provider>/<model>` (or SUAG_MODEL / --model)")
+		return ModelSettings{}, errors.New("model is not configured; set `model: <provider>/<model>` (or SUGA_MODEL / --model)")
 	}
 	main, err := ResolveModel(mainRef, providers, defaultProvider)
 	if err != nil {

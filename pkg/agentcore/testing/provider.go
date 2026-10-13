@@ -6,7 +6,7 @@ import (
 	"reflect"
 	stdtesting "testing"
 
-	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore"
 )
 
 // GenerateCase describes one expected Generate call against a provider.

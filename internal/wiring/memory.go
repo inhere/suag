@@ -15,11 +15,11 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	"github.com/inhere/suag/internal/adapters/gofermem"
-	axconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/pkg/agentcore/memory"
-	"github.com/inhere/suag/pkg/agentcore/memory/execstore"
-	"github.com/inhere/suag/pkg/agentcore/memory/files"
+	"github.com/inhere/suga/internal/adapters/gofermem"
+	axconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/memory/execstore"
+	"github.com/inhere/suga/pkg/agentcore/memory/files"
 )
 
 // Memory backend names accepted by memory.<scope>.backend.
@@ -34,10 +34,10 @@ const (
 	MemoryReasonConfig       = "config"         // memory.<scope>.backend set explicitly
 	MemoryReasonRepoIndex    = "repo_memory_md" // MEMORY.md exists at the repository root
 	MemoryReasonGoferTracker = "gofer_tracker"  // .gofer/tracker exists at the repository root
-	MemoryReasonDefault      = "default"        // built-in files backend under SUAG_HOME
+	MemoryReasonDefault      = "default"        // built-in files backend under SUGA_HOME
 )
 
-// MemoryConfig is the memory part of the suag configuration.
+// MemoryConfig is the memory part of the suga configuration.
 type MemoryConfig struct {
 	// UserBackend is memory.user.backend: "" (files), files or exec.
 	UserBackend string
@@ -46,13 +46,13 @@ type MemoryConfig struct {
 	// UserExec / ProjectExec are memory.<scope>.command/args/timeout_sec,
 	// used only when that scope's backend is exec.
 	UserExec, ProjectExec MemoryExecConfig
-	// SuagHome is the absolute SUAG_HOME used for the built-in file layouts.
-	SuagHome string
+	// SugaHome is the absolute SUGA_HOME used for the built-in file layouts.
+	SugaHome string
 }
 
 // loadMemoryConfig reads memory.*.backend from the loaded configuration.
 func loadMemoryConfig() (MemoryConfig, error) {
-	home, err := axconfig.ResolveSuagHome()
+	home, err := axconfig.ResolveSugaHome()
 	if err != nil {
 		return MemoryConfig{}, err
 	}
@@ -69,7 +69,7 @@ func loadMemoryConfig() (MemoryConfig, error) {
 		ProjectBackend: normBackend(gkconfig.String("memory.project.backend")),
 		UserExec:       userExec,
 		ProjectExec:    projectExec,
-		SuagHome:       home,
+		SugaHome:       home,
 	}, nil
 }
 
@@ -175,7 +175,7 @@ func buildMemory(workspaceRoot string, cfg MemoryConfig) (*MemorySetup, error) {
 }
 
 // selectUserBackend returns the user-scope backend: files under
-// <SUAG_HOME>/memory/user.
+// <SUGA_HOME>/memory/user.
 func selectUserBackend(cfg MemoryConfig) (memory.Store, MemoryBackendChoice, error) {
 	choice := MemoryBackendChoice{Scope: memory.UserScope(), Backend: memoryBackendFiles, Reason: MemoryReasonDefault}
 	switch cfg.UserBackend {
@@ -194,7 +194,7 @@ func selectUserBackend(cfg MemoryConfig) (memory.Store, MemoryBackendChoice, err
 	if err := requireHome(cfg); err != nil {
 		return nil, choice, err
 	}
-	choice.Location = filepath.Join(cfg.SuagHome, "memory", "user")
+	choice.Location = filepath.Join(cfg.SugaHome, "memory", "user")
 	st, err := files.New(map[memory.Scope]files.Layout{choice.Scope: files.DirLayout{Dir: choice.Location}})
 	return st, choice, err
 }
@@ -204,9 +204,9 @@ func selectUserBackend(cfg MemoryConfig) (memory.Store, MemoryBackendChoice, err
 //  1. memory.project.backend when set (files still prefers the repository
 //     MEMORY.md when one exists; exec runs memory.project.command);
 //  2. MEMORY.md at the repository root → files in repository mode (the
-//     file is never created by suag, only used when present);
+//     file is never created by suga, only used when present);
 //  3. .gofer/tracker at the repository root → gofer;
-//  4. otherwise files under <SUAG_HOME>/projects/<key>/memory.
+//  4. otherwise files under <SUGA_HOME>/projects/<key>/memory.
 //
 // The repository root is the Git root above workspaceRoot (workspaceRoot
 // itself without one); <key> is derived from it by projectKey.
@@ -268,7 +268,7 @@ func selectProjectBackend(workspaceRoot string, cfg MemoryConfig) (memory.Store,
 		if err := requireHome(cfg); err != nil {
 			return nil, choice, err
 		}
-		dir := migrateProjectDir(cfg.SuagHome, choice.Scope.Key, legacyProjectKey(root))
+		dir := migrateProjectDir(cfg.SugaHome, choice.Scope.Key, legacyProjectKey(root))
 		choice.Location = filepath.Join(dir, "memory")
 		layout = files.DirLayout{Dir: choice.Location}
 	}
@@ -277,8 +277,8 @@ func selectProjectBackend(workspaceRoot string, cfg MemoryConfig) (memory.Store,
 }
 
 func requireHome(cfg MemoryConfig) error {
-	if cfg.SuagHome == "" || !filepath.IsAbs(cfg.SuagHome) {
-		return fmt.Errorf("memory: SUAG_HOME must be an absolute path, got %q", cfg.SuagHome)
+	if cfg.SugaHome == "" || !filepath.IsAbs(cfg.SugaHome) {
+		return fmt.Errorf("memory: SUGA_HOME must be an absolute path, got %q", cfg.SugaHome)
 	}
 	return nil
 }
@@ -306,7 +306,7 @@ const projectKeySlugLen = 48
 // key: the slug of the directory name (lowercase ASCII letters and digits
 // joined by '-') followed by a short hash of the full path, so two
 // repositories with the same directory name (or a non-ASCII one) do not
-// collide, e.g. "suag-5cb0fa32". Windows paths are hashed case-insensitively.
+// collide, e.g. "suga-5cb0fa32". Windows paths are hashed case-insensitively.
 func projectKey(root string) string {
 	p := projectPath(root)
 	slug := keySlug(path.Base(p))
@@ -318,7 +318,7 @@ func projectKey(root string) string {
 
 // legacyProjectKey is the key before 0.13: the slug of the whole path (its
 // last projectKeySlugLen characters) plus the same hash. Only used to move an
-// existing <SUAG_HOME>/projects/<key> directory to the new key.
+// existing <SUGA_HOME>/projects/<key> directory to the new key.
 func legacyProjectKey(root string) string {
 	p := projectPath(root)
 	slug := keySlug(p)

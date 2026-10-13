@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
 // testCommandPattern recognises shell commands that run tests.
@@ -18,7 +18,7 @@ var testCommandPattern = regexp.MustCompile(`\b(go test|pytest|cargo test|npm (r
 // focusedTestPattern recognises test runs limited to some tests.
 var focusedTestPattern = regexp.MustCompile(`(^|\s)(-run|-k|--test|-t)(\s|=)`)
 
-// TraceAnalysis summarizes a session's events for loop analysis (suag trace
+// TraceAnalysis summarizes a session's events for loop analysis (suga trace
 // --analyze): how many steps, which tools, repeated reads and commands, and
 // how much verification happened after the tests first passed. It is derived
 // from the events alone (tool attrs arg/target/exit_code, model attr

@@ -3,9 +3,9 @@ package output
 import (
 	"strings"
 
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/redact"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/redact"
 )
 
 // SessionLine is the first stream-json line of a run.

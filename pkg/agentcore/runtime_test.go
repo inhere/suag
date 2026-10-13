@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 func TestRuntime_Run_FinalAnswer(t *testing.T) {

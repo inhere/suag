@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
+	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
 )
 
 // ReadClaudeMCPConfigs reads repeatable Claude-style stdio MCP configuration files.

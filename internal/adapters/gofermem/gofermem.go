@@ -4,16 +4,16 @@
 //
 // Mapping (design "数据", D11, Q2, Q3):
 //
-//   - entry id   ↔ gofer key "suag-<kind>-<id>"
+//   - entry id   ↔ gofer key "suga-<kind>-<id>"
 //   - title      → --summary (gofer limits it to 80 characters)
 //   - body       → the content argument
-//   - kind       → --kind note always; the suag kind goes into --tag suag,<kind>
-//   - provenance → --source suag:<session> ("suag" without a session)
+//   - kind       → --kind note always; the suga kind goes into --tag suga,<kind>
+//   - provenance → --source suga:<session> ("suga" without a session)
 //
-// The backend owns only entries that carry the "suag" tag AND have a key of
+// The backend owns only entries that carry the "suga" tag AND have a key of
 // the form above. Everything else in the shared gofer memory (rules, notes and
 // handoffs of other agents or humans) is never listed, returned, modified or
-// removed, even if its key happens to start with "suag-". The tag filter is
+// removed, even if its key happens to start with "suga-". The tag filter is
 // applied locally on every read; the --tag flag passed to gofer only narrows
 // the output and is not relied upon.
 //
@@ -37,18 +37,18 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/inhere/suag/pkg/agentcore/extproc"
-	"github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/extproc"
+	"github.com/inhere/suga/pkg/agentcore/memory"
 )
 
 const (
 	// Name is the backend name reported by BackendName.
 	Name = "gofer"
-	// Tag marks every gofer memory written by suag; only tagged entries are
+	// Tag marks every gofer memory written by suga; only tagged entries are
 	// visible to this backend.
-	Tag = "suag"
-	// KeyPrefix starts every gofer key written by suag.
-	KeyPrefix = "suag-"
+	Tag = "suga"
+	// KeyPrefix starts every gofer key written by suga.
+	KeyPrefix = "suga-"
 	// MaxTitleRunes is gofer's summary limit; longer titles are rejected
 	// instead of truncated so the title round-trips unchanged.
 	MaxTitleRunes = 80
@@ -121,8 +121,8 @@ type record struct {
 // Key returns the gofer key of entry id with kind k.
 func Key(k memory.Kind, id string) string { return KeyPrefix + string(k) + "-" + id }
 
-// ParseKey splits a gofer key written by suag into kind and id. Keys that do
-// not follow "suag-<kind>-<id>" with a valid kind and id are rejected.
+// ParseKey splits a gofer key written by suga into kind and id. Keys that do
+// not follow "suga-<kind>-<id>" with a valid kind and id are rejected.
 func ParseKey(key string) (memory.Kind, string, bool) {
 	rest, ok := strings.CutPrefix(key, KeyPrefix)
 	if !ok {
@@ -139,7 +139,7 @@ func ParseKey(key string) (memory.Kind, string, bool) {
 	return k, id, true
 }
 
-// owned reports whether r belongs to suag: it carries the suag tag and its
+// owned reports whether r belongs to suga: it carries the suga tag and its
 // key maps to a kind and id. This is the single guard that keeps the backend
 // away from every other gofer memory.
 func owned(r record) (memory.Kind, string, bool) {
@@ -187,7 +187,7 @@ type ownedEntry struct {
 	id   string
 }
 
-// ownedOnly keeps the suag entries of recs. When a crashed kind change left
+// ownedOnly keeps the suga entries of recs. When a crashed kind change left
 // two keys with the same id, the most recently updated one wins.
 func ownedOnly(recs []record) map[string]ownedEntry {
 	out := map[string]ownedEntry{}
@@ -211,7 +211,7 @@ func checkScope(sc memory.Scope) error {
 	return sc.Validate()
 }
 
-// Index implements memory.Store: one line per suag entry, sorted by id so the
+// Index implements memory.Store: one line per suga entry, sorted by id so the
 // rendered index (and its snapshot hash) is stable.
 func (s *Store) Index(ctx context.Context, sc memory.Scope) (memory.Index, error) {
 	if err := checkScope(sc); err != nil {
@@ -229,8 +229,8 @@ func (s *Store) Index(ctx context.Context, sc memory.Scope) (memory.Index, error
 	return ix, nil
 }
 
-// Get implements memory.Store: the key is resolved from the suag listing,
-// then read with `gofer memory show` and checked again for the suag tag.
+// Get implements memory.Store: the key is resolved from the suga listing,
+// then read with `gofer memory show` and checked again for the suga tag.
 func (s *Store) Get(ctx context.Context, sc memory.Scope, id string) (memory.Entry, error) {
 	if err := checkScope(sc); err != nil {
 		return memory.Entry{}, err
@@ -278,7 +278,7 @@ func (s *Store) get(ctx context.Context, id string) (ownedEntry, error) {
 // Write implements memory.Store.
 //
 //   - add: the id is derived from the title and made unique against every
-//     key in gofer (suag or not), so an add never overwrites a foreign entry.
+//     key in gofer (suga or not), so an add never overwrites a foreign entry.
 //   - replace: the entry must be an owned one (see get); a kind change moves
 //     it to the new key (set the new key first, then remove the old one).
 //   - remove: the owned entry is read first and returned after `rm`.
@@ -360,11 +360,11 @@ func (s *Store) Write(ctx context.Context, sc memory.Scope, op memory.Op) (memor
 	}
 }
 
-// set writes one suag entry with `gofer memory set` (create or overwrite).
+// set writes one suga entry with `gofer memory set` (create or overwrite).
 func (s *Store) set(ctx context.Context, k memory.Kind, id string, op memory.Op) (memory.Entry, error) {
-	source := "suag"
+	source := "suga"
 	if sid := strings.TrimSpace(op.Prov.SessionID); sid != "" {
-		source = "suag:" + sid
+		source = "suga:" + sid
 	}
 	key := Key(k, id)
 	flags := []string{"--kind", "note", "--tag", Tag + "," + string(k), "--summary", op.Title, "--source", source}
@@ -423,11 +423,11 @@ func (s *Store) Search(ctx context.Context, sc memory.Scope, q string, limit int
 	return hits, nil
 }
 
-// list runs `gofer memory ls --json` with an optional keyword. suagOnly
-// passes --tag suag to narrow the output; callers still filter with owned.
-func (s *Store) list(ctx context.Context, kw string, suagOnly bool) ([]record, error) {
+// list runs `gofer memory ls --json` with an optional keyword. sugaOnly
+// passes --tag suga to narrow the output; callers still filter with owned.
+func (s *Store) list(ctx context.Context, kw string, sugaOnly bool) ([]record, error) {
 	var flags []string
-	if suagOnly {
+	if sugaOnly {
 		flags = []string{"--tag", Tag}
 	}
 	var pos []string

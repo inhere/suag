@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/redact"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/redact"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // dangerChecker is implemented by shell_exec (native.ShellExecTool).

@@ -3,7 +3,7 @@ package personal
 import (
 	"context"
 
-	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore"
 )
 
 // stablePromptBuilder is the system prompt of every turn: only the stable

@@ -24,7 +24,7 @@ type SessionLock struct {
 	rec  lockRecord
 }
 
-var ErrSessionLocked = errors.New("session is locked by another Suag process")
+var ErrSessionLocked = errors.New("session is locked by another Suga process")
 
 // AcquireSessionLock holds an OS file lock (flock / LockFileEx) on <root>/<session>.lock.
 // The OS releases it when the owner exits, so a crashed owner never needs PID-based

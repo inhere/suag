@@ -17,8 +17,8 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal/store"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
 // subAgentServer is a fake OpenAI endpoint: the parent model calls the agent
@@ -42,7 +42,7 @@ func (s *subAgentServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(raw, &body)
 	child := false
 	for _, m := range body.Messages {
-		if m.Role == "system" && strings.Contains(fmt.Sprint(m.Content), "suag sub-agent") {
+		if m.Role == "system" && strings.Contains(fmt.Sprint(m.Content), "suga sub-agent") {
 			child = true
 		}
 	}
@@ -81,7 +81,7 @@ func (s *subAgentServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func TestRunWithSubAgent(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOME", shortTestHome(t))
+	t.Setenv("SUGA_HOME", shortTestHome(t))
 	workspace := t.TempDir()
 	assert.NoErr(t, os.WriteFile(filepath.Join(workspace, "a.go"), []byte("package a\n\nfunc Foo() {}\n"), 0o644))
 	t.Chdir(workspace)

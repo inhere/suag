@@ -11,19 +11,19 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/cflag/capp"
-	appconfig "github.com/inhere/suag/internal/config"
-	personalprocess "github.com/inhere/suag/internal/personal/process"
-	"github.com/inhere/suag/internal/personal/store"
+	appconfig "github.com/inhere/suga/internal/config"
+	personalprocess "github.com/inhere/suga/internal/personal/process"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
-// newGCCommand builds `suag gc`: remove sessions idle for longer than
+// newGCCommand builds `suga gc`: remove sessions idle for longer than
 // --older-than. It only reports by default; --apply deletes.
 func newGCCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	var olderThan string
 	var apply bool
 	cmd := capp.NewCmd("gc", "Remove sessions (and their events) not updated within --older-than; dry run unless --apply", func(c *capp.Cmd) error {
 		if len(c.RemainArgs()) > 0 || olderThan == "" {
-			return fmt.Errorf("usage: suag gc --older-than 30d [--apply]")
+			return fmt.Errorf("usage: suga gc --older-than 30d [--apply]")
 		}
 		age, err := parseSince(olderThan)
 		if err != nil {
@@ -38,7 +38,7 @@ func newGCCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 }
 
 func runGC(ctx context.Context, out io.Writer, cutoff time.Time, apply bool) error {
-	home, err := appconfig.ResolveSuagHome()
+	home, err := appconfig.ResolveSugaHome()
 	if err != nil {
 		return err
 	}

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
+	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
 )
 
 const (
@@ -38,21 +38,21 @@ type ClaudeProvider struct {
 // cache breakpoint at the end of that message so the stable prefix (system +
 // tools + segment context) is cached across turns. The application layer
 // must set the same key when it builds that message.
-const SegmentContextMetaKey = "suag.segment_context"
+const SegmentContextMetaKey = "suga.segment_context"
 
 // ReasoningFoldedMetaKey is the Message.Metadata key (bool true) that marks an
 // assistant message whose reasoning was removed from the request (history
 // folding). The OpenAI provider still treats the request as a thinking-mode
 // session then, so reasoning_content keeps being echoed on every assistant
 // message even when no remaining step carries reasoning.
-const ReasoningFoldedMetaKey = "suag.reasoning_folded"
+const ReasoningFoldedMetaKey = "suga.reasoning_folded"
 
 // ClaudeThinkingMetaKey is the GenerateResult / Message metadata key holding
 // a reply's thinking blocks as Anthropic returned them ([]any of maps:
 // {type: thinking, thinking, signature} or {type: redacted_thinking, data}).
 // They are sent back unchanged before the tool_use blocks of that reply, as
 // extended thinking with tools requires.
-const ClaudeThinkingMetaKey = "suag.claude_thinking"
+const ClaudeThinkingMetaKey = "suga.claude_thinking"
 
 // ClaudeConfig configures a ClaudeProvider.
 type ClaudeConfig struct {

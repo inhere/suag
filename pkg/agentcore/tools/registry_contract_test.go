@@ -7,9 +7,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	agentcoretesting "github.com/inhere/suag/pkg/agentcore/testing"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	agentcoretesting "github.com/inhere/suga/pkg/agentcore/testing"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 func TestRegistry_AgentcoreToolRegistryContract(t *testing.T) {

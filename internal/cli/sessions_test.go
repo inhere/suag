@@ -10,8 +10,8 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal/store"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
 // seedSessions creates 12 sessions, one per hour back from now (s00 newest),
@@ -19,8 +19,8 @@ import (
 // ping test" in its conversation.
 func seedSessions(t *testing.T) context.Context {
 	t.Helper()
-	t.Setenv("SUAG_HOME", shortCLIHome(t))
-	t.Setenv("SUAG_HOOKS", "off")
+	t.Setenv("SUGA_HOME", shortCLIHome(t))
+	t.Setenv("SUGA_HOOKS", "off")
 	dbPath, err := appconfig.ResolveCoreStorePath()
 	assert.NoErr(t, err)
 	repo, err := store.Open(dbPath)
@@ -39,7 +39,7 @@ func seedSessions(t *testing.T) context.Context {
 		}
 		at := now.Add(-time.Duration(i) * time.Hour)
 		assert.NoErr(t, repo.CreateSession(ctx, store.Session{ID: fmt.Sprintf("s%02d", i), Title: title, Cwd: cwd,
-			CreatedAt: at, UpdatedAt: at, Meta: map[string]any{"provider": "cc", "model": "flash", "suag_version": "0.14.1"}}))
+			CreatedAt: at, UpdatedAt: at, Meta: map[string]any{"provider": "cc", "model": "flash", "suga_version": "0.14.1"}}))
 	}
 	_, err = repo.AppendEntries(ctx, "s05", store.NewEntry{Type: store.EntryUser,
 		JSON: json.RawMessage(`{"Role":"user","Content":"why does the flaky ping test fail?"}`)})
@@ -114,8 +114,8 @@ func TestSessionsCommand(t *testing.T) {
 }
 
 func TestSessionsCommandAgentSessions(t *testing.T) {
-	t.Setenv("SUAG_HOME", shortCLIHome(t))
-	t.Setenv("SUAG_HOOKS", "off")
+	t.Setenv("SUGA_HOME", shortCLIHome(t))
+	t.Setenv("SUGA_HOOKS", "off")
 	dbPath, err := appconfig.ResolveCoreStorePath()
 	assert.Require(t, assert.NoErr(t, err))
 	repo, err := store.Open(dbPath)

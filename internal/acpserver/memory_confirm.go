@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/coder/acp-go-sdk"
-	"github.com/inhere/suag/pkg/agentcore/memory"
-	"github.com/inhere/suag/pkg/agentcore/redact"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	"github.com/inhere/suga/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/redact"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // ErrMemoryWriteRejected is the refusal of a memory write confirmation.

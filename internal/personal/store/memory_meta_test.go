@@ -8,8 +8,8 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/memory"
-	"github.com/inhere/suag/pkg/agentcore/memory/files"
+	"github.com/inhere/suga/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/memory/files"
 )
 
 func TestMemoryProvenance(t *testing.T) {

@@ -10,8 +10,8 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
 // manifestConfig sets a fake provider and a workspace outside any git
@@ -75,7 +75,7 @@ func TestLoadManifest(t *testing.T) {
 		mem, ok := toolByName(m, "memory")
 		assert.True(t, ok)
 		assert.True(t, mem.AgentState)
-		sm, ok := toolByName(m, "suag_manifest")
+		sm, ok := toolByName(m, "suga_manifest")
 		assert.True(t, ok)
 		assert.True(t, sm.ReadOnly)
 		assert.False(t, sm.MCP)
@@ -172,15 +172,15 @@ func TestManifestMatchesRuntimeTools(t *testing.T) {
 	slices.Sort(runtimeNames)
 	assert.Eq(t, runtimeNames, fromManifest)
 
-	t.Run("suag_manifest tool returns the live manifest", func(t *testing.T) {
-		res, err := rt.Registry.ExecuteTool(context.Background(), api.ToolCall{CallID: "c", Name: "suag_manifest"})
+	t.Run("suga_manifest tool returns the live manifest", func(t *testing.T) {
+		res, err := rt.Registry.ExecuteTool(context.Background(), api.ToolCall{CallID: "c", Name: "suga_manifest"})
 		assert.Require(t, assert.NoErr(t, err))
 		var got Manifest
 		assert.Require(t, assert.NoErr(t, json.Unmarshal([]byte(res.Content), &got)))
 		assert.Eq(t, "openai", got.Models.Main.Provider)
 		assert.Eq(t, m.Memory, got.Memory)
 		assert.Eq(t, m.Output, got.Output)
-		_, ok := toolByName(got, "suag_manifest")
+		_, ok := toolByName(got, "suga_manifest")
 		assert.True(t, ok)
 	})
 }
@@ -191,6 +191,6 @@ func TestManifestToolInReadOnlySet(t *testing.T) {
 	rt, err := OpenCLI(context.Background(), Options{}) // read-only run
 	assert.Require(t, assert.NoErr(t, err))
 	t.Cleanup(func() { _ = rt.Close() })
-	assert.Contains(t, rt.Registry.List(), "suag_manifest")
+	assert.Contains(t, rt.Registry.List(), "suga_manifest")
 	assert.NotContains(t, rt.Registry.List(), "shell_exec")
 }

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // DenialLimit is how many refused tool calls one turn may accumulate before the

@@ -1,7 +1,7 @@
-// Package llm implements first-party model providers for Suag.
+// Package llm implements first-party model providers for Suga.
 package llm
 
-import agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
+import agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
 
 type Provider = agentcoreapi.Provider
 type StreamingProvider = agentcoreapi.StreamingProvider

@@ -12,8 +12,8 @@ import (
 	"github.com/gookit/config/v2/yaml"
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/internal/adapters/gofermem"
-	"github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suga/internal/adapters/gofermem"
+	"github.com/inhere/suga/pkg/agentcore/memory"
 )
 
 // memRepo builds a fake repository: <tmp>/repo with .git, optionally a root
@@ -47,14 +47,14 @@ func TestSelectProjectBackend(t *testing.T) {
 		{name: "repo MEMORY.md", index: true, wantBackend: "files", wantReason: MemoryReasonRepoIndex, wantRepo: true},
 		{name: "MEMORY.md wins over gofer tracker", index: true, tracker: true, wantBackend: "files", wantReason: MemoryReasonRepoIndex, wantRepo: true},
 		{name: "gofer tracker", tracker: true, wantBackend: "gofer", wantReason: MemoryReasonGoferTracker},
-		{name: "default files under SUAG_HOME", wantBackend: "files", wantReason: MemoryReasonDefault},
+		{name: "default files under SUGA_HOME", wantBackend: "files", wantReason: MemoryReasonDefault},
 		{name: "config files overrides tracker", tracker: true, configured: "files", wantBackend: "files", wantReason: MemoryReasonConfig},
 		{name: "config files keeps repo MEMORY.md", index: true, tracker: true, configured: "files", wantBackend: "files", wantReason: MemoryReasonConfig, wantRepo: true},
 		{name: "config gofer overrides MEMORY.md", index: true, configured: "gofer", wantBackend: "gofer", wantReason: MemoryReasonConfig},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root, sub := memRepo(t, tc.index, tc.tracker)
-			st, choice, err := selectProjectBackend(sub, MemoryConfig{ProjectBackend: tc.configured, SuagHome: home})
+			st, choice, err := selectProjectBackend(sub, MemoryConfig{ProjectBackend: tc.configured, SugaHome: home})
 			assert.Require(t, assert.NoErr(t, err))
 			assert.Eq(t, tc.wantBackend, choice.Backend)
 			assert.Eq(t, tc.wantReason, choice.Reason)
@@ -79,7 +79,7 @@ func TestSelectProjectBackend(t *testing.T) {
 				assert.Require(t, assert.NoErr(t, err))
 				entry := filepath.Join(choice.Location, e.ID+".md")
 				if tc.wantRepo {
-					entry = filepath.Join(root, ".suag", "memory", e.ID+".md")
+					entry = filepath.Join(root, ".suga", "memory", e.ID+".md")
 				}
 				_, serr := os.Stat(entry)
 				assert.NoErr(t, serr)
@@ -94,15 +94,15 @@ func TestSelectProjectBackend(t *testing.T) {
 			{"unknown backend", "sqlite", "unknown backend"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				_, _, err := selectProjectBackend(sub, MemoryConfig{ProjectBackend: tc.configured, SuagHome: home})
+				_, _, err := selectProjectBackend(sub, MemoryConfig{ProjectBackend: tc.configured, SugaHome: home})
 				assert.Err(t, err)
 				assert.StrContains(t, err.Error(), tc.want)
 			})
 		}
-		_, _, err := selectProjectBackend("", MemoryConfig{SuagHome: home})
+		_, _, err := selectProjectBackend("", MemoryConfig{SugaHome: home})
 		assert.Err(t, err)
 		_, _, err = selectProjectBackend(sub, MemoryConfig{ProjectBackend: "files"})
-		assert.Err(t, err, "the SUAG_HOME layout needs an absolute home")
+		assert.Err(t, err, "the SUGA_HOME layout needs an absolute home")
 	})
 
 	t.Run("MEMORY.md directory and tracker file are ignored", func(t *testing.T) {
@@ -110,7 +110,7 @@ func TestSelectProjectBackend(t *testing.T) {
 		assert.NoErr(t, os.MkdirAll(filepath.Join(root, "MEMORY.md"), 0o700))
 		assert.NoErr(t, os.MkdirAll(filepath.Join(root, ".gofer"), 0o700))
 		assert.NoErr(t, os.WriteFile(filepath.Join(root, ".gofer", "tracker"), nil, 0o600))
-		_, choice, err := selectProjectBackend(sub, MemoryConfig{SuagHome: home})
+		_, choice, err := selectProjectBackend(sub, MemoryConfig{SugaHome: home})
 		assert.NoErr(t, err)
 		assert.Eq(t, MemoryReasonDefault, choice.Reason)
 	})
@@ -118,7 +118,7 @@ func TestSelectProjectBackend(t *testing.T) {
 	t.Run("no git root uses the workspace itself", func(t *testing.T) {
 		ws := t.TempDir()
 		assert.NoErr(t, os.WriteFile(filepath.Join(ws, "MEMORY.md"), nil, 0o600))
-		_, choice, err := selectProjectBackend(ws, MemoryConfig{SuagHome: home})
+		_, choice, err := selectProjectBackend(ws, MemoryConfig{SugaHome: home})
 		assert.NoErr(t, err)
 		assert.Eq(t, MemoryReasonRepoIndex, choice.Reason)
 		assert.Eq(t, ws, choice.Location)
@@ -128,17 +128,17 @@ func TestSelectProjectBackend(t *testing.T) {
 func TestProjectKey(t *testing.T) {
 	keyPattern := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*-[0-9a-f]{8}$`)
 	t.Run("directory name plus hash of the full path", func(t *testing.T) {
-		k := projectKey("/D/Work/inhere-tools/Suag_Dev")
+		k := projectKey("/D/Work/inhere-tools/Suga_Dev")
 		assert.True(t, keyPattern.MatchString(k), k)
-		assert.True(t, strings.HasPrefix(k, "suag-dev-"), k)
-		assert.Eq(t, len("suag-dev-")+8, len(k))
-		assert.Eq(t, k, projectKey("/D/Work/inhere-tools/Suag_Dev/"), "stable after Clean")
+		assert.True(t, strings.HasPrefix(k, "suga-dev-"), k)
+		assert.Eq(t, len("suga-dev-")+8, len(k))
+		assert.Eq(t, k, projectKey("/D/Work/inhere-tools/Suga_Dev/"), "stable after Clean")
 		assert.NoErr(t, memory.ProjectScope(k).Validate())
 	})
 	t.Run("same directory name, different paths", func(t *testing.T) {
-		a, b := projectKey("/work/a/suag"), projectKey("/work/b/suag")
+		a, b := projectKey("/work/a/suga"), projectKey("/work/b/suga")
 		assert.NotEq(t, a, b)
-		assert.True(t, strings.HasPrefix(a, "suag-") && strings.HasPrefix(b, "suag-"))
+		assert.True(t, strings.HasPrefix(a, "suga-") && strings.HasPrefix(b, "suga-"))
 	})
 	t.Run("long and non-ASCII names", func(t *testing.T) {
 		long := projectKey("/x/" + strings.Repeat("very-long-name-", 6))
@@ -148,14 +148,14 @@ func TestProjectKey(t *testing.T) {
 		assert.True(t, regexp.MustCompile(`^[0-9a-f]{8}$`).MatchString(cn), cn)
 	})
 	t.Run("legacy key keeps the old whole-path form", func(t *testing.T) {
-		k := legacyProjectKey("/D/Work/inhere-tools/Suag_Dev")
-		assert.True(t, strings.HasPrefix(k, "d-work-inhere-tools-suag-dev-"), k)
-		assert.Eq(t, k[len(k)-8:], projectKey("/D/Work/inhere-tools/Suag_Dev")[len("suag-dev-"):]) // same hash
+		k := legacyProjectKey("/D/Work/inhere-tools/Suga_Dev")
+		assert.True(t, strings.HasPrefix(k, "d-work-inhere-tools-suga-dev-"), k)
+		assert.Eq(t, k[len(k)-8:], projectKey("/D/Work/inhere-tools/Suga_Dev")[len("suga-dev-"):]) // same hash
 	})
 }
 
 func TestMigrateProjectDir(t *testing.T) {
-	root := "/work/repo/suag"
+	root := "/work/repo/suga"
 	key, legacy := projectKey(root), legacyProjectKey(root)
 	write := func(t *testing.T, home, k, text string) {
 		t.Helper()
@@ -191,7 +191,7 @@ func TestMigrateProjectDir(t *testing.T) {
 		home := t.TempDir()
 		repoRoot, sub := memRepo(t, false, false)
 		write(t, home, legacyProjectKey(repoRoot), "old")
-		_, choice, err := selectProjectBackend(sub, MemoryConfig{SuagHome: home})
+		_, choice, err := selectProjectBackend(sub, MemoryConfig{SugaHome: home})
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, filepath.Join(home, "projects", projectKey(repoRoot), "memory"), choice.Location)
 		data, err := os.ReadFile(filepath.Join(choice.Location, "note.md"))
@@ -205,14 +205,14 @@ func TestBuildMemory(t *testing.T) {
 	_, sub := memRepo(t, false, true)
 
 	t.Run("user files and project gofer", func(t *testing.T) {
-		setup, err := buildMemory(sub, MemoryConfig{SuagHome: home})
+		setup, err := buildMemory(sub, MemoryConfig{SugaHome: home})
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, []memory.RouteInfo{{Scope: "project", Backend: "gofer"}, {Scope: "user", Backend: "files"}}, setup.Router.Backends())
 		assert.Eq(t, MemoryBackendChoice{Scope: memory.UserScope(), Backend: "files", Reason: MemoryReasonDefault,
 			Location: filepath.Join(home, "memory", "user")}, setup.User)
 		assert.Eq(t, MemoryReasonGoferTracker, setup.Project.Reason)
 
-		// The user scope writes under SUAG_HOME through the router.
+		// The user scope writes under SUGA_HOME through the router.
 		e, err := setup.Router.Write(context.Background(), memory.UserScope(), memory.Op{Action: memory.ActionAdd,
 			Title: "Prefers Chinese replies", Body: "reply in Chinese", Kind: memory.KindUser})
 		assert.Require(t, assert.NoErr(t, err))
@@ -220,16 +220,16 @@ func TestBuildMemory(t *testing.T) {
 		assert.NoErr(t, serr)
 	})
 	t.Run("user backend config", func(t *testing.T) {
-		setup, err := buildMemory(sub, MemoryConfig{UserBackend: "files", SuagHome: home})
+		setup, err := buildMemory(sub, MemoryConfig{UserBackend: "files", SugaHome: home})
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, MemoryReasonConfig, setup.User.Reason)
 		for _, bad := range []string{"gofer", "exec", "nope"} {
-			_, err := buildMemory(sub, MemoryConfig{UserBackend: bad, SuagHome: home})
+			_, err := buildMemory(sub, MemoryConfig{UserBackend: bad, SugaHome: home})
 			assert.Err(t, err, bad)
 		}
 	})
 	t.Run("project error propagates", func(t *testing.T) {
-		_, err := buildMemory(sub, MemoryConfig{ProjectBackend: "exec", SuagHome: home})
+		_, err := buildMemory(sub, MemoryConfig{ProjectBackend: "exec", SugaHome: home})
 		assert.Err(t, err)
 	})
 }
@@ -240,7 +240,7 @@ func TestMemoryExecBackend(t *testing.T) {
 
 	t.Run("project exec choice", func(t *testing.T) {
 		st, choice, err := selectProjectBackend(sub, MemoryConfig{
-			ProjectBackend: "exec", SuagHome: home,
+			ProjectBackend: "exec", SugaHome: home,
 			ProjectExec: MemoryExecConfig{Command: "/opt/mem-backend", Args: []string{"--x"}, TimeoutSec: 3},
 		})
 		assert.Require(t, assert.NoErr(t, err))
@@ -251,7 +251,7 @@ func TestMemoryExecBackend(t *testing.T) {
 	})
 	t.Run("user exec choice", func(t *testing.T) {
 		st, choice, err := selectUserBackend(MemoryConfig{
-			UserBackend: "exec", SuagHome: home, UserExec: MemoryExecConfig{Command: "mem-user"},
+			UserBackend: "exec", SugaHome: home, UserExec: MemoryExecConfig{Command: "mem-user"},
 		})
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, "exec", choice.Backend)
@@ -259,11 +259,11 @@ func TestMemoryExecBackend(t *testing.T) {
 		assert.Eq(t, "exec", memory.BackendName(st))
 	})
 	t.Run("missing command is a clear error", func(t *testing.T) {
-		_, _, err := selectUserBackend(MemoryConfig{UserBackend: "exec", SuagHome: home})
+		_, _, err := selectUserBackend(MemoryConfig{UserBackend: "exec", SugaHome: home})
 		assert.Err(t, err)
 		assert.StrContains(t, err.Error(), "memory.user.command is not set")
 		// A command configured for the other scope is not borrowed.
-		_, _, err = selectProjectBackend(sub, MemoryConfig{ProjectBackend: "exec", SuagHome: home,
+		_, _, err = selectProjectBackend(sub, MemoryConfig{ProjectBackend: "exec", SugaHome: home,
 			UserExec: MemoryExecConfig{Command: "mem-user"}})
 		assert.Err(t, err)
 		assert.StrContains(t, err.Error(), "memory.project.command is not set")
@@ -277,7 +277,7 @@ func TestLoadMemoryConfig(t *testing.T) {
 	assert.Require(t, assert.NoErr(t, err))
 	assert.Eq(t, "", cfg.ProjectBackend)
 	assert.Eq(t, "", cfg.UserBackend)
-	assert.True(t, filepath.IsAbs(cfg.SuagHome))
+	assert.True(t, filepath.IsAbs(cfg.SugaHome))
 
 	assert.Require(t, assert.NoErr(t, gkconfig.LoadStrings(gkconfig.Yaml, "memory:\n  user:\n    backend: Files\n  project:\n    backend: ' gofer '\n")))
 	cfg, err = loadMemoryConfig()

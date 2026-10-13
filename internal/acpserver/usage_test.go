@@ -11,10 +11,10 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/gookit/goutil/x/assert"
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/mock"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/mock"
 )
 
 // growingUsageProvider reports a larger input context on every model call, so
@@ -272,7 +272,7 @@ func TestUsageUpdateInputExcludesCache(t *testing.T) {
 // internal/runner/acp/usage.go usageFromUpdate and internal/runner/usage.go
 // UsageFromObject): the update object's own fields, overlaid by the TOP-LEVEL
 // flat keys of _meta (nested objects are ignored); a zero counter never
-// overrides. It is copied here on purpose: suag must not import gofer.
+// overrides. It is copied here on purpose: suga must not import gofer.
 type goferUsage struct {
 	Input, Output, CacheRead, CacheWrite, Total int64
 	Cost                                        float64

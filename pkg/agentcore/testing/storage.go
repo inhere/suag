@@ -6,9 +6,9 @@ import (
 	"reflect"
 	stdtesting "testing"
 
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // StorageFactory creates an isolated storage implementation for one test case.

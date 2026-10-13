@@ -12,11 +12,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/gookit/goutil/cflag/capp"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
-// sessionsOptions are the filters of `suag sessions`.
+// sessionsOptions are the filters of `suga sessions`.
 type sessionsOptions struct {
 	limit        int
 	since, until string
@@ -57,7 +57,7 @@ type sessionRow struct {
 	Status      string    `json:"status"`
 	Provider    string    `json:"provider,omitempty"`
 	Model       string    `json:"model,omitempty"`
-	SuagVersion string    `json:"suag_version,omitempty"`
+	SugaVersion string    `json:"suga_version,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	// Match is a snippet of the conversation when the keyword matched there.
@@ -124,7 +124,7 @@ func runSessions(ctx context.Context, out io.Writer, opts sessionsOptions, now t
 		row := sessionRow{ID: s.ID, Title: personal.SessionTitle(s.Title), Cwd: s.Cwd, Status: s.Status, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt}
 		row.Provider, _ = s.Meta["provider"].(string)
 		row.Model, _ = s.Meta["model"].(string)
-		row.SuagVersion, _ = s.Meta["suag_version"].(string)
+		row.SugaVersion, _ = s.Meta["suga_version"].(string)
 		row.Parent = store.ParentSession(s)
 		if len(terms) > 0 {
 			own := strings.ToLower(strings.Join([]string{s.ID, s.Title, s.Cwd, row.Provider, row.Model}, " "))
@@ -160,7 +160,7 @@ func writeSessionRows(out io.Writer, rows []sessionRow, total int) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "UPDATED\tID\tMODEL\tSUAG\tTITLE\tDIRECTORY")
+	fmt.Fprintln(tw, "UPDATED\tID\tMODEL\tSUGA\tTITLE\tDIRECTORY")
 	for _, r := range rows {
 		model := r.Model
 		if r.Provider != "" {
@@ -171,7 +171,7 @@ func writeSessionRows(out io.Writer, rows []sessionRow, total int) error {
 			title = "[agent of " + r.Parent + "] " + title
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", r.UpdatedAt.Local().Format("01-02 15:04"), r.ID,
-			orDash(model), orDash(r.SuagVersion), orDash(title), orDash(shortDir(r.Cwd)))
+			orDash(model), orDash(r.SugaVersion), orDash(title), orDash(shortDir(r.Cwd)))
 		if r.Match != "" {
 			fmt.Fprintf(tw, "\t  ↳ %s\t\t\t\t\n", clip(oneLine(r.Match), 100))
 		}

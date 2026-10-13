@@ -9,7 +9,7 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 func TestReadRetryPolicy(t *testing.T) {
@@ -18,8 +18,8 @@ func TestReadRetryPolicy(t *testing.T) {
 		gkconfig.Reset()
 		t.Cleanup(gkconfig.Reset)
 		root := t.TempDir()
-		t.Setenv("SUAG_HOME", root)
-		t.Setenv("SUAG_CONFIG", "")
+		t.Setenv("SUGA_HOME", root)
+		t.Setenv("SUGA_CONFIG", "")
 		t.Chdir(t.TempDir())
 		assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte(body), 0600))
 		assert.NoErr(t, Load())

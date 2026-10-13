@@ -44,7 +44,7 @@ func validateSocketPath(path string) error {
 
 // secureDir replaces dir's DACL with a protected (non-inherited) one granting full control
 // only to the current user and SYSTEM. os.Chmod does not touch ACLs on Windows, and an
-// AF_UNIX socket otherwise inherits the parent's ACL (e.g. a shared C:\suag grants
+// AF_UNIX socket otherwise inherits the parent's ACL (e.g. a shared C:\suga grants
 // Authenticated Users access). Administrators are deliberately not listed: they can take
 // ownership regardless, and an explicit ACE would only widen the surface. SYSTEM is kept
 // so backup/AV services do not break. The ACEs are inheritable so the socket, record and

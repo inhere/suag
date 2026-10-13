@@ -17,10 +17,10 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/redact"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/redact"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // Ledger window limits.
@@ -60,7 +60,7 @@ var ledgerMessageTypes = []string{store.EntryUser, store.EntryAssistant, store.E
 type Ledger struct {
 	mu   sync.Mutex
 	repo *store.Store
-	// dir is the sessions root (<SUAG_HOME>/sessions).
+	// dir is the sessions root (<SUGA_HOME>/sessions).
 	dir string
 	// foldCase compares workspace paths case-insensitively (Windows).
 	foldCase bool

@@ -8,15 +8,15 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/cflag/capp"
-	appconfig "github.com/inhere/suag/internal/config"
-	personalprocess "github.com/inhere/suag/internal/personal/process"
+	appconfig "github.com/inhere/suga/internal/config"
+	personalprocess "github.com/inhere/suga/internal/personal/process"
 )
 
 func newPSCommand(stdout, stderr io.Writer) *capp.Cmd {
 	var psJSON bool
-	ps := capp.NewCmd("ps", "List local Suag chat processes", func(c *capp.Cmd) error {
+	ps := capp.NewCmd("ps", "List local Suga chat processes", func(c *capp.Cmd) error {
 		if len(c.RemainArgs()) != 0 {
-			return fmt.Errorf("suag ps does not accept arguments")
+			return fmt.Errorf("suga ps does not accept arguments")
 		}
 		root, err := localProcessRoot()
 		if err != nil {
@@ -40,7 +40,7 @@ func newPSCommand(stdout, stderr io.Writer) *capp.Cmd {
 }
 
 func localProcessRoot() (string, error) {
-	home, err := appconfig.ResolveSuagHome()
+	home, err := appconfig.ResolveSugaHome()
 	if err != nil {
 		return "", err
 	}

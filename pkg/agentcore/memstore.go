@@ -8,7 +8,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/inhere/suag/pkg/agentcore/internal/runid"
+	"github.com/inhere/suga/pkg/agentcore/internal/runid"
 )
 
 // MemoryStorage is the in-process Storage and ArtifactStorage used when

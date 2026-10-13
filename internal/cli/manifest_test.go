@@ -10,17 +10,17 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/internal/wiring"
+	"github.com/inhere/suga/internal/wiring"
 )
 
-// manifestCLIEnv isolates SUAG_HOME and the workspace (outside any git
+// manifestCLIEnv isolates SUGA_HOME and the workspace (outside any git
 // repository, so memory never selects gofer) and configures a fake provider
 // that must never be contacted.
 func manifestCLIEnv(t *testing.T) {
 	t.Helper()
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOME", t.TempDir())
+	t.Setenv("SUGA_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("USERPROFILE", t.TempDir())
 	ws := t.TempDir()
@@ -51,7 +51,7 @@ func TestManifestCommand(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"manifest"})
 		assert.Require(t, assert.NoErr(t, err))
-		for _, section := range []string{"Models", "Tools", "MCP servers", "Skills", "Memory", "Output", "Taint", "suag_manifest", "write_tainted="} {
+		for _, section := range []string{"Models", "Tools", "MCP servers", "Skills", "Memory", "Output", "Taint", "suga_manifest", "write_tainted="} {
 			assert.StrContains(t, stdout.String(), section)
 		}
 	})

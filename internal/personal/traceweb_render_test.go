@@ -11,7 +11,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
 // TestTraceWebRenders runs the page script of traceweb.html with node against

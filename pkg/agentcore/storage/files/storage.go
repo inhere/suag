@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/internal/runid"
-	internalutils "github.com/inhere/suag/pkg/agentcore/internal/utils"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/internal/runid"
+	internalutils "github.com/inhere/suga/pkg/agentcore/internal/utils"
 )
 
 const (

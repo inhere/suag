@@ -3,8 +3,8 @@ package personal
 import (
 	"context"
 
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // loadedToolsStore keeps the session's loaded deferred tool names in session

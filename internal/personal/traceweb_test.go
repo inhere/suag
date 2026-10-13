@@ -11,11 +11,11 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // traceRun runs a turn with a reply text, a tool call and a final answer.
@@ -143,7 +143,7 @@ func TestServeTraceView(t *testing.T) {
 	}
 	ctype, page := get("")
 	assert.StrContains(t, ctype, "text/html")
-	assert.StrContains(t, page, "<title>suag trace</title>")
+	assert.StrContains(t, page, "<title>suga trace</title>")
 	ctype, body := get("api/session")
 	assert.StrContains(t, ctype, "application/json")
 	var view TraceView

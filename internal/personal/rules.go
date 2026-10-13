@@ -18,15 +18,15 @@ const (
 
 // DefaultRuleFile is the project rule file read at every directory level when
 // the caller has none configured (rules.file). The user-level file is fixed:
-// $SUAG_HOME/AGENTS.md.
+// $SUGA_HOME/AGENTS.md.
 const DefaultRuleFile = "AGENTS.md"
 
 // LoadRules reads user and project instructions in authority order. Project
 // rules come from one file per directory level (the Git root down to cwd),
 // named by ruleFile; "" means DefaultRuleFile. Includes are deliberately one
 // level deep so a rule file cannot recursively expand a tree.
-func LoadRules(cwd, suagHome string, noProject bool, ruleFile string) (string, string, error) {
-	paths, workspaceRoot, err := rulePaths(cwd, suagHome, noProject, ruleFile)
+func LoadRules(cwd, sugaHome string, noProject bool, ruleFile string) (string, string, error) {
+	paths, workspaceRoot, err := rulePaths(cwd, sugaHome, noProject, ruleFile)
 	if err != nil {
 		return "", "", err
 	}
@@ -40,7 +40,7 @@ func LoadRules(cwd, suagHome string, noProject bool, ruleFile string) (string, s
 		}
 		if content != "" {
 			sections = append(sections, fmt.Sprintf("# %s\n%s", path, content))
-			hashSections = append(hashSections, fmt.Sprintf("# %s\n%s", ruleHashLabel(path, suagHome, workspaceRoot), content))
+			hashSections = append(hashSections, fmt.Sprintf("# %s\n%s", ruleHashLabel(path, sugaHome, workspaceRoot), content))
 		}
 		if remaining == 0 {
 			break
@@ -56,13 +56,13 @@ func LoadRules(cwd, suagHome string, noProject bool, ruleFile string) (string, s
 // RuleFiles lists the rule files LoadRules reads, in order: the user-level
 // file, then the project file of each level (the user-level one may not
 // exist; LoadRules skips it then).
-func RuleFiles(cwd, suagHome string, noProject bool, ruleFile string) ([]string, error) {
-	paths, _, err := rulePaths(cwd, suagHome, noProject, ruleFile)
+func RuleFiles(cwd, sugaHome string, noProject bool, ruleFile string) ([]string, error) {
+	paths, _, err := rulePaths(cwd, sugaHome, noProject, ruleFile)
 	return paths, err
 }
 
 // rulePaths returns the rule file candidates and the workspace root.
-func rulePaths(cwd, suagHome string, noProject bool, ruleFile string) ([]string, string, error) {
+func rulePaths(cwd, sugaHome string, noProject bool, ruleFile string) ([]string, string, error) {
 	name := ruleFile
 	if name == "" {
 		name = DefaultRuleFile
@@ -74,8 +74,8 @@ func rulePaths(cwd, suagHome string, noProject bool, ruleFile string) ([]string,
 	}
 	var paths []string
 	workspaceRoot := ""
-	if suagHome != "" {
-		paths = append(paths, filepath.Join(suagHome, DefaultRuleFile))
+	if sugaHome != "" {
+		paths = append(paths, filepath.Join(sugaHome, DefaultRuleFile))
 	}
 	if !noProject {
 		project, root, err := projectRulePaths(cwd, name)
@@ -89,11 +89,11 @@ func rulePaths(cwd, suagHome string, noProject bool, ruleFile string) ([]string,
 }
 
 // ruleHashLabel returns a machine-independent identity for a rule file: files
-// under suagHome are "suag-home/<rel>", files under the workspace root are the
+// under sugaHome are "suga-home/<rel>", files under the workspace root are the
 // slash-separated relative path, anything else keeps only its base name.
-func ruleHashLabel(path, suagHome, workspaceRoot string) string {
-	if rel, ok := relInside(suagHome, path); ok {
-		return "suag-home/" + rel
+func ruleHashLabel(path, sugaHome, workspaceRoot string) string {
+	if rel, ok := relInside(sugaHome, path); ok {
+		return "suga-home/" + rel
 	}
 	if rel, ok := relInside(workspaceRoot, path); ok {
 		return rel

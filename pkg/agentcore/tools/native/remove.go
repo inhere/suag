@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 const (
@@ -48,7 +48,7 @@ type FileRemoveTool struct {
 }
 
 // NewFileRemoveTool builds file_remove; trashDir must be an absolute directory
-// outside the workspace (e.g. <SUAG_HOME>/trash).
+// outside the workspace (e.g. <SUGA_HOME>/trash).
 func NewFileRemoveTool(workspace, trashDir string) *FileRemoveTool {
 	return &FileRemoveTool{workspace: filepath.Clean(workspace), trashDir: trashDir, now: time.Now}
 }

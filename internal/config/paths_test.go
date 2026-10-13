@@ -12,21 +12,21 @@ func TestResolveCoreStorePath(t *testing.T) {
 	t.Run("default under user home", func(t *testing.T) {
 		gkconfig.Reset()
 		t.Cleanup(gkconfig.Reset)
-		t.Setenv("SUAG_HOME", "")
+		t.Setenv("SUGA_HOME", "")
 		home := t.TempDir()
 		t.Setenv("HOME", home)
 		t.Setenv("USERPROFILE", home)
 
 		got, err := ResolveCoreStorePath()
 		assert.NoErr(t, err)
-		assert.Eq(t, filepath.Join(home, ".suag", "db", "sessions.db"), got)
+		assert.Eq(t, filepath.Join(home, ".suga", "db", "sessions.db"), got)
 	})
 
-	t.Run("SUAG_HOME replaces the root", func(t *testing.T) {
+	t.Run("SUGA_HOME replaces the root", func(t *testing.T) {
 		gkconfig.Reset()
 		t.Cleanup(gkconfig.Reset)
 		root := t.TempDir()
-		t.Setenv("SUAG_HOME", root)
+		t.Setenv("SUGA_HOME", root)
 
 		got, err := ResolveCoreStorePath()
 		assert.NoErr(t, err)
@@ -38,7 +38,7 @@ func TestResolveWorkspacePath(t *testing.T) {
 	t.Run("unset is the working directory", func(t *testing.T) {
 		gkconfig.Reset()
 		t.Cleanup(gkconfig.Reset)
-		t.Setenv("SUAG_HOME", t.TempDir())
+		t.Setenv("SUGA_HOME", t.TempDir())
 		dir := t.TempDir()
 		t.Chdir(dir)
 		got, err := filepath.EvalSymlinks(ResolveWorkspacePath())
@@ -60,7 +60,7 @@ func TestResolveWorkspacePath(t *testing.T) {
 func TestResolveSessionsDir(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", "..", "tmp", "t7-sessions-home"))
 	assert.Require(t, assert.NoErr(t, err))
-	t.Setenv("SUAG_HOME", root)
+	t.Setenv("SUGA_HOME", root)
 	got, err := ResolveSessionsDir()
 	assert.NoErr(t, err)
 	assert.Eq(t, filepath.Join(root, "sessions"), got)

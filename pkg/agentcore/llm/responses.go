@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"strings"
 
-	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
+	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // ResponsesReasoningMetaKey is the GenerateResult / Message metadata key
 // holding a reply's reasoning items as the Responses API returned them
 // ([]any of maps, without id and status). They are sent back first in that
 // reply's turn on later requests.
-const ResponsesReasoningMetaKey = "suag.responses_reasoning"
+const ResponsesReasoningMetaKey = "suga.responses_reasoning"
 
 // reasoningPlaceholder fills a reasoning item a turn must carry but whose
 // text is unknown (ReasoningEveryTurn).

@@ -1,6 +1,6 @@
 package tools
 
-import "github.com/inhere/suag/pkg/agentcore/api"
+import "github.com/inhere/suga/pkg/agentcore/api"
 
 // Category is a protocol-neutral class of what a tool does. Hosts map it onto
 // their own vocabulary (e.g. ACP tool kinds) and approval prompts.

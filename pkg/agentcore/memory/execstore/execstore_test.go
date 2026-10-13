@@ -11,8 +11,8 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/extproc"
-	"github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/extproc"
+	"github.com/inhere/suga/pkg/agentcore/memory"
 )
 
 const (
@@ -235,7 +235,7 @@ func TestBackendFailures(t *testing.T) {
 		assert.StrContains(t, err.Error(), "invalid JSON")
 	})
 	t.Run("missing command", func(t *testing.T) {
-		st, err := New(Config{Command: "/nonexistent/suag-memory-backend"})
+		st, err := New(Config{Command: "/nonexistent/suga-memory-backend"})
 		assert.NoErr(t, err)
 		_, err = st.Index(ctx, sc)
 		assert.Err(t, err)

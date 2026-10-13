@@ -1,6 +1,6 @@
 package agentcore
 
-import "github.com/inhere/suag/pkg/agentcore/api"
+import "github.com/inhere/suga/pkg/agentcore/api"
 
 type ProviderError = api.ProviderError
 type ToolError = api.ToolError

@@ -16,18 +16,18 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // TestFakeServerProcess is the fake stdio MCP server: the test binary re-executes
-// itself with SUAG_FAKE_MCP_MODE set. Without the variable it is a no-op.
+// itself with SUGA_FAKE_MCP_MODE set. Without the variable it is a no-op.
 func TestFakeServerProcess(t *testing.T) {
-	mode := os.Getenv("SUAG_FAKE_MCP_MODE")
+	mode := os.Getenv("SUGA_FAKE_MCP_MODE")
 	if mode == "" {
 		return
 	}
-	if f := os.Getenv("SUAG_FAKE_MCP_PIDFILE"); f != "" {
+	if f := os.Getenv("SUGA_FAKE_MCP_PIDFILE"); f != "" {
 		_ = os.WriteFile(f, []byte(strconv.Itoa(os.Getpid())), 0o600)
 	}
 	fmt.Fprintln(os.Stderr, "fake-mcp: boot diagnostics")
@@ -70,7 +70,7 @@ func fakeConfig(t *testing.T, mode string) (ServerConfig, string) {
 		Name:    "fake",
 		Command: os.Args[0],
 		Args:    []string{"-test.run=^TestFakeServerProcess$"},
-		Env:     []string{"SUAG_FAKE_MCP_MODE=" + mode, "SUAG_FAKE_MCP_PIDFILE=" + pidFile},
+		Env:     []string{"SUGA_FAKE_MCP_MODE=" + mode, "SUGA_FAKE_MCP_PIDFILE=" + pidFile},
 	}, pidFile
 }
 

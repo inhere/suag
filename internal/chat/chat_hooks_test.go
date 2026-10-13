@@ -15,14 +15,14 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
-	appconfig "github.com/inhere/suag/internal/config"
-	suaghooks "github.com/inhere/suag/internal/hooks"
-	"github.com/inhere/suag/internal/personal"
-	personalprocess "github.com/inhere/suag/internal/personal/process"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	appconfig "github.com/inhere/suga/internal/config"
+	sugahooks "github.com/inhere/suga/internal/hooks"
+	"github.com/inhere/suga/internal/personal"
+	personalprocess "github.com/inhere/suga/internal/personal/process"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 type hookTestProvider struct {
@@ -42,7 +42,7 @@ func (p *hookTestProvider) Generate(_ context.Context, req *agentcore.GenerateRe
 
 type fakeHookClient struct {
 	mu         sync.Mutex
-	events     []suaghooks.Event
+	events     []sugahooks.Event
 	stopCount  int
 	startCount chan struct{}
 	eventWake  chan struct{}
@@ -52,7 +52,7 @@ type fakeHookClient struct {
 	// startNotice is returned as the SessionStart response Notice.
 	startNotice string
 	// postTool selects PostToolUse tools; empty sends none, like an unset hooks.post_tool_use.
-	postTool suaghooks.PostToolFilter
+	postTool sugahooks.PostToolFilter
 }
 
 func (f *fakeHookClient) PostToolName(tool string) (string, bool) { return f.postTool.Match(tool) }
@@ -61,7 +61,7 @@ func newFakeHookClient() *fakeHookClient {
 	return &fakeHookClient{startCount: make(chan struct{}, 8), eventWake: make(chan struct{}, 64), blockFirst: true}
 }
 
-func (f *fakeHookClient) record(event suaghooks.Event) {
+func (f *fakeHookClient) record(event sugahooks.Event) {
 	f.mu.Lock()
 	f.events = append(f.events, event)
 	f.mu.Unlock()
@@ -71,27 +71,27 @@ func (f *fakeHookClient) record(event suaghooks.Event) {
 	}
 }
 
-func (f *fakeHookClient) Call(_ context.Context, event suaghooks.Event) suaghooks.Response {
+func (f *fakeHookClient) Call(_ context.Context, event sugahooks.Event) sugahooks.Response {
 	f.record(event)
 	if event.Name == "SessionStart" {
-		return suaghooks.Response{AdditionalContext: "startup-context", Notice: f.startNotice}
+		return sugahooks.Response{AdditionalContext: "startup-context", Notice: f.startNotice}
 	}
 	if event.Name == "UserPromptSubmit" {
-		return suaghooks.Response{AdditionalContext: "submit-context"}
+		return sugahooks.Response{AdditionalContext: "submit-context"}
 	}
-	return suaghooks.Response{}
+	return sugahooks.Response{}
 }
 
-func (f *fakeHookClient) StartStop(_ context.Context, event suaghooks.Event) suaghooks.Wait {
+func (f *fakeHookClient) StartStop(_ context.Context, event sugahooks.Event) sugahooks.Wait {
 	f.record(event)
 	f.mu.Lock()
 	f.stopCount++
 	stopCount := f.stopCount
 	f.mu.Unlock()
 	f.startCount <- struct{}{}
-	done := make(chan suaghooks.Result, 1)
+	done := make(chan sugahooks.Result, 1)
 	if stopCount == 1 && f.blockFirst {
-		done <- suaghooks.Result{Response: suaghooks.Response{Decision: "block", Reason: "[gofer web 回复] continue"}}
+		done <- sugahooks.Result{Response: sugahooks.Response{Decision: "block", Reason: "[gofer web 回复] continue"}}
 	}
 	return &fakeStopWait{done: done, interrupt: func() {
 		interrupt := event
@@ -101,20 +101,20 @@ func (f *fakeHookClient) StartStop(_ context.Context, event suaghooks.Event) sua
 	}, lost: f.lostOnInterrupt}
 }
 
-func (f *fakeHookClient) snapshot() []suaghooks.Event {
+func (f *fakeHookClient) snapshot() []sugahooks.Event {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]suaghooks.Event(nil), f.events...)
+	return append([]sugahooks.Event(nil), f.events...)
 }
 
 type fakeStopWait struct {
-	done      chan suaghooks.Result
+	done      chan sugahooks.Result
 	interrupt func()
 	// lost is the undelivered web reply Interrupt reports back (race simulation).
 	lost string
 }
 
-func (w *fakeStopWait) Done() <-chan suaghooks.Result { return w.done }
+func (w *fakeStopWait) Done() <-chan sugahooks.Result { return w.done }
 func (w *fakeStopWait) Interrupt(context.Context) string {
 	w.interrupt()
 	return w.lost
@@ -124,7 +124,7 @@ func TestPersonalChatBlockStartsInjectedTurnAndMarksStopActive(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	home := t.TempDir()
-	t.Setenv("SUAG_HOME", home)
+	t.Setenv("SUGA_HOME", home)
 	provider := &hookTestProvider{}
 	runner, _ := newCLITestRunner(t, provider)
 	hooks := newFakeHookClient()
@@ -147,8 +147,8 @@ func TestPersonalChatBlockStartsInjectedTurnAndMarksStopActive(t *testing.T) {
 	}
 
 	events := hooks.snapshot()
-	var prompts []suaghooks.Event
-	var stops []suaghooks.Event
+	var prompts []sugahooks.Event
+	var stops []sugahooks.Event
 	for _, event := range events {
 		if event.Name == "UserPromptSubmit" {
 			prompts = append(prompts, event)
@@ -184,7 +184,7 @@ func TestPersonalChatBlockStartsInjectedTurnAndMarksStopActive(t *testing.T) {
 
 func TestPersonalChatInterruptsStopBeforeNextPromptAndContinuesWithoutHooks(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SUAG_HOME", home)
+	t.Setenv("SUGA_HOME", home)
 	runner, _ := newCLITestRunner(t, &hookTestProvider{})
 	hooks := newFakeHookClient()
 	var stdout, stderr strings.Builder
@@ -216,7 +216,7 @@ func TestPersonalChatInterruptsStopBeforeNextPromptAndContinuesWithoutHooks(t *t
 func TestPersonalChatInterruptsOnFirstByteBeforeLineSubmission(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOME", t.TempDir())
+	t.Setenv("SUGA_HOME", t.TempDir())
 	runner, _ := newCLITestRunner(t, &hookTestProvider{})
 	hooks := newFakeHookClient()
 	hooks.blockFirst = false
@@ -376,18 +376,18 @@ func TestEmptyChatRegistersRealSessionThenUpdatesTitleOnFirstPrompt(t *testing.T
 func TestChatProcessDeliveryTranscriptIsInjectedAndTerminalPromptIsNot(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	suagHome := shortTestHome(t)
-	t.Setenv("SUAG_HOME", suagHome)
+	sugaHome := shortTestHome(t)
+	t.Setenv("SUGA_HOME", sugaHome)
 	repo, err := store.Open(newTestStorePath(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = repo.Close() })
-	processRoot := filepath.Join(suagHome, "run")
+	processRoot := filepath.Join(sugaHome, "run")
 	provider := &hookTestProvider{}
 	runner, err := personal.New(personal.Config{
 		Repository: repo, Provider: provider,
-		TranscriptDir: filepath.Join(suagHome, "transcripts"),
+		TranscriptDir: filepath.Join(sugaHome, "transcripts"),
 		LockRoot:      filepath.Join(processRoot, "locks"), ProcessRoot: processRoot,
 	})
 	if err != nil {
@@ -415,7 +415,7 @@ func TestChatProcessDeliveryTranscriptIsInjectedAndTerminalPromptIsNot(t *testin
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(suagHome, "transcripts", record.SessionID+".jsonl"))
+	data, err := os.ReadFile(filepath.Join(sugaHome, "transcripts", record.SessionID+".jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,18 +437,18 @@ func TestChatProcessDeliveryTranscriptIsInjectedAndTerminalPromptIsNot(t *testin
 func TestChatProcessDeliveryUserPromptSubmitCarriesInjected(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	suagHome := shortTestHome(t)
-	t.Setenv("SUAG_HOME", suagHome)
+	sugaHome := shortTestHome(t)
+	t.Setenv("SUGA_HOME", sugaHome)
 	repo, err := store.Open(newTestStorePath(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = repo.Close() })
-	processRoot := filepath.Join(suagHome, "run")
+	processRoot := filepath.Join(sugaHome, "run")
 	provider := &hookTestProvider{}
 	runner, err := personal.New(personal.Config{
 		Repository: repo, Provider: provider,
-		TranscriptDir: filepath.Join(suagHome, "transcripts"),
+		TranscriptDir: filepath.Join(sugaHome, "transcripts"),
 		LockRoot:      filepath.Join(processRoot, "locks"), ProcessRoot: processRoot,
 	})
 	if err != nil {
@@ -479,7 +479,7 @@ func TestChatProcessDeliveryUserPromptSubmitCarriesInjected(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	var prompts []suaghooks.Event
+	var prompts []sugahooks.Event
 	for _, event := range hooks.snapshot() {
 		if event.Name == "UserPromptSubmit" {
 			prompts = append(prompts, event)
@@ -560,9 +560,9 @@ func (p *blockingChatProvider) Generate(ctx context.Context, _ *agentcore.Genera
 func TestPersonalChatSurvivesFailingHookCommand(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOOKS", "") // exercise the config value, not the TestMain override
+	t.Setenv("SUGA_HOOKS", "") // exercise the config value, not the TestMain override
 	_ = gkconfig.Set("hooks.command", []string{filepath.Join(t.TempDir(), "missing-hook-command-7cb7")})
-	hooks, err := suaghooks.New()
+	hooks, err := sugahooks.New()
 	assert.Require(t, assert.NoErr(t, err))
 	assert.Require(t, assert.NotNil(t, hooks))
 	runner, _ := newCLITestRunner(t, &hookTestProvider{})
@@ -590,7 +590,7 @@ func TestTranscriptsCanBeDisabledByConfig(t *testing.T) {
 func TestPersonalChatSendsOnlyBoundedRedactedShellOutputToPostToolUse(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOME", t.TempDir())
+	t.Setenv("SUGA_HOME", t.TempDir())
 	repo, err := store.Open(newTestStorePath(t))
 	if err != nil {
 		t.Fatal(err)
@@ -610,13 +610,13 @@ func TestPersonalChatSendsOnlyBoundedRedactedShellOutputToPostToolUse(t *testing
 		t.Fatal(err)
 	}
 	hooks := newFakeHookClient()
-	hooks.postTool = suaghooks.PostToolFilter{Tools: []string{"shell_*"}, Name: "shell"}
+	hooks.postTool = sugahooks.PostToolFilter{Tools: []string{"shell_*"}, Name: "shell"}
 	var stdout, stderr strings.Builder
 	err = Run(context.Background(), runner, Options{}, strings.NewReader("run command\n:quit\n"), &stdout, &stderr, hooks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var postTool *suaghooks.Event
+	var postTool *sugahooks.Event
 	postToolIndex, stopIndex := -1, -1
 	for i, event := range hooks.snapshot() {
 		if event.Name == "PostToolUse" {
@@ -671,7 +671,7 @@ func waitHookEvent(t *testing.T, hooks *fakeHookClient, name string, count int) 
 	}
 }
 
-func countHookEvents(events []suaghooks.Event, name string) int {
+func countHookEvents(events []sugahooks.Event, name string) int {
 	count := 0
 	for _, event := range events {
 		if event.Name == name {
@@ -709,7 +709,7 @@ func TestPersonalChatSendsStopWhenTurnFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed turn should not end chat with an error: %v", err)
 	}
-	var stops []suaghooks.Event
+	var stops []sugahooks.Event
 	for _, event := range hooks.snapshot() {
 		if event.Name == "Stop" {
 			stops = append(stops, event)
@@ -726,7 +726,7 @@ func TestPersonalChatSendsStopWhenTurnFails(t *testing.T) {
 func TestPersonalChatKeepsWebReplyReceivedDuringInterrupt(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOME", t.TempDir())
+	t.Setenv("SUGA_HOME", t.TempDir())
 	t.Run("delivered as next-turn context", func(t *testing.T) {
 		provider := &hookTestProvider{}
 		runner, _ := newCLITestRunner(t, provider)
@@ -759,7 +759,7 @@ func TestPersonalChatKeepsWebReplyReceivedDuringInterrupt(t *testing.T) {
 }
 
 func TestHookEventTranscriptPathAndSource(t *testing.T) {
-	run := func(t *testing.T, opts Options) []suaghooks.Event {
+	run := func(t *testing.T, opts Options) []sugahooks.Event {
 		runner, _ := newCLITestRunner(t, &hookTestProvider{})
 		hooks := newFakeHookClient()
 		hooks.blockFirst = false
@@ -767,19 +767,19 @@ func TestHookEventTranscriptPathAndSource(t *testing.T) {
 		assert.Require(t, assert.NoErr(t, Run(context.Background(), runner, opts, strings.NewReader(":quit\n"), &stdout, &stderr, hooks)))
 		return hooks.snapshot()
 	}
-	startOf := func(events []suaghooks.Event) suaghooks.Event {
+	startOf := func(events []sugahooks.Event) sugahooks.Event {
 		for _, e := range events {
 			if e.Name == "SessionStart" {
 				return e
 			}
 		}
 		t.Fatal("no SessionStart")
-		return suaghooks.Event{}
+		return sugahooks.Event{}
 	}
 	t.Run("transcripts off omits transcript_path", func(t *testing.T) {
 		gkconfig.Reset()
 		t.Cleanup(gkconfig.Reset)
-		t.Setenv("SUAG_HOME", t.TempDir())
+		t.Setenv("SUGA_HOME", t.TempDir())
 		_ = gkconfig.Set("transcripts", "off")
 		start := startOf(run(t, Options{}))
 		assert.Eq(t, "", start.TranscriptPath)
@@ -789,13 +789,13 @@ func TestHookEventTranscriptPathAndSource(t *testing.T) {
 	t.Run("transcripts on reports path", func(t *testing.T) {
 		gkconfig.Reset()
 		t.Cleanup(gkconfig.Reset)
-		t.Setenv("SUAG_HOME", t.TempDir())
+		t.Setenv("SUGA_HOME", t.TempDir())
 		assert.NotEq(t, "", startOf(run(t, Options{})).TranscriptPath)
 	})
 	t.Run("existing --session-id reports resume", func(t *testing.T) {
 		gkconfig.Reset()
 		t.Cleanup(gkconfig.Reset)
-		t.Setenv("SUAG_HOME", t.TempDir())
+		t.Setenv("SUGA_HOME", t.TempDir())
 		runner, _ := newCLITestRunner(t, &hookTestProvider{})
 		var sources []string
 		for range 2 {
@@ -811,7 +811,7 @@ func TestHookEventTranscriptPathAndSource(t *testing.T) {
 func TestHookNoticeIsShownOnStderr(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOME", t.TempDir())
+	t.Setenv("SUGA_HOME", t.TempDir())
 	runner, _ := newCLITestRunner(t, &hookTestProvider{})
 	hooks := newFakeHookClient()
 	hooks.blockFirst = false
@@ -823,7 +823,7 @@ func TestHookNoticeIsShownOnStderr(t *testing.T) {
 }
 
 func TestPersonalChatCompactCommandCompressesSession(t *testing.T) {
-	t.Setenv("SUAG_HOME", t.TempDir())
+	t.Setenv("SUGA_HOME", t.TempDir())
 	provider := &hookTestProvider{}
 	runner, _ := newCLITestRunner(t, provider)
 	var stdout, stderr strings.Builder

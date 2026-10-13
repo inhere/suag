@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // maxPrefetch bounds the calls of one reply run ahead at the same time.

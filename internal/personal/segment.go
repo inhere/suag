@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/llm"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 // Segment start reasons (compactionRecord.Reason). A record without a reason
@@ -33,7 +33,7 @@ const metaSegmentContext = llm.SegmentContextMetaKey
 // metaContextUpdate marks a replayed context_update message (Message.Metadata,
 // never sent by providers). Summaries skip it: the next segment re-reads the
 // sources anyway.
-const metaContextUpdate = "suag.context_update"
+const metaContextUpdate = "suga.context_update"
 
 // segmentContext is the frozen context snapshot of one segment (design
 // "段起始记录"): what the segment sees besides the stable system prompt and its
@@ -133,7 +133,7 @@ func (r *Runner) skills() string {
 }
 
 // currentAppendPrompt is the append prompt in effect for this process: the
-// caller-supplied one (--append-system-prompt / SUAG_APPEND_SYSTEM_PROMPT; an
+// caller-supplied one (--append-system-prompt / SUGA_APPEND_SYSTEM_PROMPT; an
 // explicitly supplied empty value clears it), otherwise the persisted one.
 func (r *Runner) currentAppendPrompt(persisted string) string {
 	if r.cfg.AppendSystemPrompt != "" || r.cfg.AppendSystemPromptSet {

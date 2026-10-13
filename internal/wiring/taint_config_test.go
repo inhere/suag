@@ -7,7 +7,7 @@ import (
 	"github.com/gookit/config/v2/yaml"
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suga/internal/personal"
 )
 
 // TestTaintConfigLists pins memory.taint_tools (default none) and

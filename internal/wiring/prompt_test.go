@@ -14,7 +14,7 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suga/internal/personal"
 )
 
 func TestBasePromptDebugNonce(t *testing.T) {
@@ -22,12 +22,12 @@ func TestBasePromptDebugNonce(t *testing.T) {
 		t.Setenv(debugPromptNonceEnv, "")
 		p := basePrompt()
 		assert.Eq(t, false, strings.Contains(p, "nonce:"))
-		assert.Eq(t, true, strings.HasPrefix(p, "You are suag"))
+		assert.Eq(t, true, strings.HasPrefix(p, "You are suga"))
 	})
 	t.Run("set goes first", func(t *testing.T) {
 		t.Setenv(debugPromptNonceEnv, "abc123")
 		p := basePrompt()
-		assert.Eq(t, true, strings.HasPrefix(p, "nonce: abc123\nYou are suag"))
+		assert.Eq(t, true, strings.HasPrefix(p, "nonce: abc123\nYou are suga"))
 	})
 }
 

@@ -15,13 +15,13 @@ func TestLoadReadsPrivateModelSettingsFromUserHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	t.Setenv("SUAG_TEST_PRIVATE_API_KEY", "")
+	t.Setenv("SUGA_TEST_PRIVATE_API_KEY", "")
 	t.Chdir(t.TempDir())
 
-	privateDir := filepath.Join(home, ".suag")
+	privateDir := filepath.Join(home, ".suga")
 	assert.NoErr(t, os.MkdirAll(privateDir, 0700))
-	assert.NoErr(t, os.WriteFile(filepath.Join(privateDir, ".env"), []byte("SUAG_TEST_PRIVATE_API_KEY=test-key\n"), 0600))
-	config := "model: openai/private-model\nproviders:\n  openai:\n    api_key: \"${SUAG_TEST_PRIVATE_API_KEY}\"\n"
+	assert.NoErr(t, os.WriteFile(filepath.Join(privateDir, ".env"), []byte("SUGA_TEST_PRIVATE_API_KEY=test-key\n"), 0600))
+	config := "model: openai/private-model\nproviders:\n  openai:\n    api_key: \"${SUGA_TEST_PRIVATE_API_KEY}\"\n"
 	assert.NoErr(t, os.WriteFile(filepath.Join(privateDir, "config.yaml"), []byte(config), 0600))
 
 	assert.NoErr(t, Load())
@@ -31,12 +31,12 @@ func TestLoadReadsPrivateModelSettingsFromUserHome(t *testing.T) {
 	assert.Eq(t, "test-key", settings.Main.Provider.APIKey)
 }
 
-func TestLoadUsesSuagConfigFromSuagHome(t *testing.T) {
+func TestLoadUsesSugaConfigFromSugaHome(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	root := t.TempDir()
-	t.Setenv("SUAG_HOME", root)
-	t.Setenv("SUAG_CONFIG", "")
+	t.Setenv("SUGA_HOME", root)
+	t.Setenv("SUGA_CONFIG", "")
 	t.Chdir(t.TempDir())
 	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte("model: openai/home-model\n"), 0600))
 	assert.NoErr(t, Load())
@@ -47,12 +47,12 @@ func TestLoadUsesExplicitConfigFile(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	root := t.TempDir()
-	t.Setenv("SUAG_HOME", root)
+	t.Setenv("SUGA_HOME", root)
 	t.Chdir(t.TempDir())
 	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte("model: openai/home-model\n"), 0600))
 	configPath := filepath.Join(t.TempDir(), "chosen.yaml")
 	assert.NoErr(t, os.WriteFile(configPath, []byte("model: openai/chosen-model\n"), 0600))
-	t.Setenv("SUAG_CONFIG", configPath)
+	t.Setenv("SUGA_CONFIG", configPath)
 	assert.NoErr(t, Load())
 	assertMainModel(t, "chosen-model")
 }
@@ -61,28 +61,28 @@ func TestLoadIgnoresWorkingDirectoryDotenv(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	root := t.TempDir()
-	t.Setenv("SUAG_HOME", root)
-	t.Setenv("SUAG_CONFIG", "")
-	t.Setenv("SUAG_TEST_CWD_ONLY", "")
-	t.Setenv("SUAG_TEST_CWD_ONLY2", "")
+	t.Setenv("SUGA_HOME", root)
+	t.Setenv("SUGA_CONFIG", "")
+	t.Setenv("SUGA_TEST_CWD_ONLY", "")
+	t.Setenv("SUGA_TEST_CWD_ONLY2", "")
 	cwd := t.TempDir()
 	t.Chdir(cwd)
 	other := t.TempDir()
-	body := "SUAG_TEST_CWD_ONLY2=1\nSUAG_HOME=" + other + "\nSUAG_TEST_CWD_ONLY=1\n"
+	body := "SUGA_TEST_CWD_ONLY2=1\nSUGA_HOME=" + other + "\nSUGA_TEST_CWD_ONLY=1\n"
 	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, ".env"), []byte(body), 0600))
 	assert.NoErr(t, os.WriteFile(filepath.Join(cwd, ".env.local"), []byte(body), 0600))
 	assert.NoErr(t, Load())
-	assert.Eq(t, "", os.Getenv("SUAG_TEST_CWD_ONLY2"))
-	assert.Eq(t, "", os.Getenv("SUAG_TEST_CWD_ONLY"))
-	assert.Eq(t, root, os.Getenv("SUAG_HOME"))
+	assert.Eq(t, "", os.Getenv("SUGA_TEST_CWD_ONLY2"))
+	assert.Eq(t, "", os.Getenv("SUGA_TEST_CWD_ONLY"))
+	assert.Eq(t, root, os.Getenv("SUGA_HOME"))
 }
 
 func TestLoadIgnoresWorkingDirectoryConfig(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	root := t.TempDir()
-	t.Setenv("SUAG_HOME", root)
-	t.Setenv("SUAG_CONFIG", "")
+	t.Setenv("SUGA_HOME", root)
+	t.Setenv("SUGA_CONFIG", "")
 	cwd := t.TempDir()
 	t.Chdir(cwd)
 	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte("model: openai/home-model\n"), 0600))
@@ -93,35 +93,35 @@ func TestLoadIgnoresWorkingDirectoryConfig(t *testing.T) {
 	assertMainModel(t, "home-model")
 }
 
-func TestLoadSuagHomeDotenv(t *testing.T) {
+func TestLoadSugaHomeDotenv(t *testing.T) {
 	t.Run("ordinary variables apply", func(t *testing.T) {
 		gkconfig.Reset()
 		t.Cleanup(gkconfig.Reset)
 		root := t.TempDir()
-		t.Setenv("SUAG_HOME", root)
-		t.Setenv("SUAG_TEST_HOME_VAR", "")
+		t.Setenv("SUGA_HOME", root)
+		t.Setenv("SUGA_TEST_HOME_VAR", "")
 		t.Chdir(t.TempDir())
-		assert.NoErr(t, os.WriteFile(filepath.Join(root, ".env"), []byte("SUAG_TEST_HOME_VAR=ok\n"), 0600))
+		assert.NoErr(t, os.WriteFile(filepath.Join(root, ".env"), []byte("SUGA_TEST_HOME_VAR=ok\n"), 0600))
 		assert.NoErr(t, Load())
-		assert.Eq(t, "ok", os.Getenv("SUAG_TEST_HOME_VAR"))
+		assert.Eq(t, "ok", os.Getenv("SUGA_TEST_HOME_VAR"))
 	})
-	t.Run("SUAG_HOME and SUAG_CONFIG in .env do not move the root", func(t *testing.T) {
+	t.Run("SUGA_HOME and SUGA_CONFIG in .env do not move the root", func(t *testing.T) {
 		gkconfig.Reset()
 		t.Cleanup(gkconfig.Reset)
 		root := t.TempDir()
 		other := t.TempDir()
-		t.Setenv("SUAG_HOME", root)
+		t.Setenv("SUGA_HOME", root)
 		// Unset in the process env: the .env value must not stick afterwards.
-		t.Setenv("SUAG_CONFIG", "")
-		os.Unsetenv("SUAG_CONFIG")
+		t.Setenv("SUGA_CONFIG", "")
+		os.Unsetenv("SUGA_CONFIG")
 		t.Chdir(t.TempDir())
-		body := "SUAG_HOME=" + other + "\nSUAG_CONFIG=" + filepath.Join(other, "x.yaml") + "\n"
+		body := "SUGA_HOME=" + other + "\nSUGA_CONFIG=" + filepath.Join(other, "x.yaml") + "\n"
 		assert.NoErr(t, os.WriteFile(filepath.Join(root, ".env"), []byte(body), 0600))
 		assert.NoErr(t, Load())
-		assert.Eq(t, root, os.Getenv("SUAG_HOME"))
-		_, has := os.LookupEnv("SUAG_CONFIG")
+		assert.Eq(t, root, os.Getenv("SUGA_HOME"))
+		_, has := os.LookupEnv("SUGA_CONFIG")
 		assert.False(t, has)
-		got, err := ResolveSuagHome()
+		got, err := ResolveSugaHome()
 		assert.NoErr(t, err)
 		assert.Eq(t, root, got)
 	})
@@ -140,11 +140,11 @@ func TestLoadReadsProviderHeaders(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	root := t.TempDir()
-	t.Setenv("SUAG_HOME", root)
-	t.Setenv("SUAG_CONFIG", "")
-	t.Setenv("SUAG_TEST_GATEWAY_TAG", "team-a")
+	t.Setenv("SUGA_HOME", root)
+	t.Setenv("SUGA_CONFIG", "")
+	t.Setenv("SUGA_TEST_GATEWAY_TAG", "team-a")
 	t.Chdir(t.TempDir())
-	config := "model: gw/m\nproviders:\n  gw:\n    type: openai\n    headers:\n      x-opencode-session: \"{{session_id}}\"\n      X-Gateway-Tag: \"${SUAG_TEST_GATEWAY_TAG}\"\n"
+	config := "model: gw/m\nproviders:\n  gw:\n    type: openai\n    headers:\n      x-opencode-session: \"{{session_id}}\"\n      X-Gateway-Tag: \"${SUGA_TEST_GATEWAY_TAG}\"\n"
 	assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte(config), 0600))
 	assert.NoErr(t, Load())
 	settings, err := ReadModelSettings("")

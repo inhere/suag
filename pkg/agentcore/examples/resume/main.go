@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/storage/files"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/storage/files"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 type yieldAfterToolHook struct {
@@ -29,7 +29,7 @@ func (h *yieldAfterToolHook) BeforeModel(_ context.Context, _ *agentcore.ModelEv
 
 func main() {
 	runID := "example-resume"
-	storageDir := filepath.Join(os.TempDir(), "suag-agentcore-examples", "resume")
+	storageDir := filepath.Join(os.TempDir(), "suga-agentcore-examples", "resume")
 
 	reg := tools.NewRegistry()
 	reg.Register(mock.NewTool(

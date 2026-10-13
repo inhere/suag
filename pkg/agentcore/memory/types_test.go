@@ -29,13 +29,13 @@ func TestKind(t *testing.T) {
 
 func TestScope(t *testing.T) {
 	t.Run("string and parse round trip", func(t *testing.T) {
-		for _, s := range []Scope{UserScope(), ProjectScope("suag"), {Kind: ScopePeople, Key: "alice"}, ProjectScope("a:b")} {
+		for _, s := range []Scope{UserScope(), ProjectScope("suga"), {Kind: ScopePeople, Key: "alice"}, ProjectScope("a:b")} {
 			got, err := ParseScope(s.String())
 			assert.NoErr(t, err)
 			assert.Eq(t, s, got)
 		}
 		assert.Eq(t, "user", UserScope().String())
-		assert.Eq(t, "project:suag", ProjectScope("suag").String())
+		assert.Eq(t, "project:suga", ProjectScope("suga").String())
 	})
 	t.Run("invalid", func(t *testing.T) {
 		for _, v := range []string{"", "team", "project", "project:", "people: ", "user:x", "project:a\nb"} {
@@ -140,11 +140,11 @@ func TestOpValidate(t *testing.T) {
 
 func TestIndexRender(t *testing.T) {
 	assert.Eq(t, "", Index{Scope: UserScope()}.Render())
-	ix := Index{Scope: ProjectScope("suag"), Lines: []IndexLine{
+	ix := Index{Scope: ProjectScope("suga"), Lines: []IndexLine{
 		{ID: "table-tests", Title: "Prefer table tests", Kind: KindFeedback},
 		{ID: "ci", Title: "CI runs on host", Kind: KindProject},
 	}}
-	want := "### Memory: project:suag\n- table-tests (feedback): Prefer table tests\n- ci (project): CI runs on host\n"
+	want := "### Memory: project:suga\n- table-tests (feedback): Prefer table tests\n- ci (project): CI runs on host\n"
 	assert.Eq(t, want, ix.Render())
 	assert.Eq(t, len(want), ix.size())
 }
@@ -162,10 +162,10 @@ func TestDependencies(t *testing.T) {
 	out, err := cmd.Output()
 	assert.Require(t, assert.NoErr(t, err))
 	allowed := []string{
-		"github.com/inhere/suag/pkg/agentcore/memory",
-		"github.com/inhere/suag/pkg/agentcore/memory/files",
-		"github.com/inhere/suag/pkg/agentcore/redact",
-		"github.com/inhere/suag/pkg/agentcore/api",
+		"github.com/inhere/suga/pkg/agentcore/memory",
+		"github.com/inhere/suga/pkg/agentcore/memory/files",
+		"github.com/inhere/suga/pkg/agentcore/redact",
+		"github.com/inhere/suga/pkg/agentcore/api",
 	}
 	for _, path := range strings.Fields(string(out)) {
 		ok := false

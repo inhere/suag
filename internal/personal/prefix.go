@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 // Request prefix outcomes recorded on model events (attr "prefix"): how the

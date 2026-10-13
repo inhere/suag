@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 func TestDefaultToolExecutionPolicy_PreservesExistingSemantics(t *testing.T) {

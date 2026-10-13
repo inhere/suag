@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/inhere/suag/pkg/agentcore/storage/files"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/storage/files"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 func TestRuntime_Run_ResumeMatrix(t *testing.T) {

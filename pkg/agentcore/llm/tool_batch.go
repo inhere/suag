@@ -1,6 +1,6 @@
 package llm
 
-import agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
+import agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
 
 // groupToolBatches reorders each stored multi-call reply - its calls each
 // followed by their result (call, result, call, result), all calls sharing

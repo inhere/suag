@@ -14,10 +14,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 	"golang.org/x/net/html/charset"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/api"
 )
 
 const (
@@ -213,7 +213,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	if err != nil {
 		return nil, fmt.Errorf("web_fetch: %w", err)
 	}
-	req.Header.Set("User-Agent", "suag-web-fetch/1.0")
+	req.Header.Set("User-Agent", "suga-web-fetch/1.0")
 	req.Header.Set("Accept", "text/html,text/plain,application/json;q=0.9,*/*;q=0.5")
 	resp, err := t.client.Do(req)
 	if err != nil {

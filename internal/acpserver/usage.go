@@ -2,8 +2,8 @@ package acpserver
 
 import (
 	"github.com/coder/acp-go-sdk"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/pkg/agentcore"
 )
 
 // recordUsage returns the session-cumulative usage after a turn together with

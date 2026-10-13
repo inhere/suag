@@ -9,17 +9,17 @@ import (
 	"text/tabwriter"
 
 	"github.com/gookit/goutil/cflag/capp"
-	"github.com/inhere/suag/internal/wiring"
+	"github.com/inhere/suga/internal/wiring"
 )
 
-// newManifestCommand builds `suag manifest`: what this instance can do,
+// newManifestCommand builds `suga manifest`: what this instance can do,
 // without contacting the provider or starting any MCP server.
 func newManifestCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	var asJSON bool
 	var model, thinking string
 	cmd := capp.NewCmd("manifest", "Show capabilities: models, tools, MCP, skills, memory backends, output limits", func(c *capp.Cmd) error {
 		if len(c.RemainArgs()) > 0 {
-			return fmt.Errorf("usage: suag manifest [--model m] [--thinking level] [--json]")
+			return fmt.Errorf("usage: suga manifest [--model m] [--thinking level] [--json]")
 		}
 		m, err := wiring.LoadManifest(wiring.ManifestOptions{Model: model, Thinking: thinking})
 		if err != nil {
@@ -42,7 +42,7 @@ func newManifestCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd
 
 func writeManifestText(out io.Writer, m wiring.Manifest) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "suag %s\n\n", m.Version)
+	fmt.Fprintf(&b, "suga %s\n\n", m.Version)
 
 	b.WriteString("Models\n")
 	main := m.Models.Main

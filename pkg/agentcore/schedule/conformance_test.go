@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/schedule"
+	"github.com/inhere/suga/pkg/agentcore/schedule"
 )
 
 // Black-box conformance tests on the public API with the real clock and short

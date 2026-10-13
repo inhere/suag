@@ -11,7 +11,7 @@ import (
 // History folding defaults (docs/design/2026-10-12-history-folding-design.md).
 // Folding is off by default since 2026-10-12: rebuilding the prefix after
 // each fold was about a third of the uncached input in the P5 retest (see
-// docs/research/2026-10-11-suag-vs-omp-loop-analysis.md), and runs compare
+// docs/research/2026-10-11-suga-vs-omp-loop-analysis.md), and runs compare
 // more directly with omp without it. context.fold_every: 10 turns it on.
 const (
 	DefaultFoldEvery = 0

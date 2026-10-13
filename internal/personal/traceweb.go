@@ -11,18 +11,18 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
 )
 
 //go:embed traceweb.html
 var traceWebHTML []byte
 
 // maxWebText caps one text (message, tool argument value, tool result) sent
-// to the trace page; the full text stays in the store (suag export).
+// to the trace page; the full text stays in the store (suga export).
 const maxWebText = 64 * 1024
 
-// TraceView is what `suag trace --web` serves at /api/session: the session,
+// TraceView is what `suga trace --web` serves at /api/session: the session,
 // its events, its transcript entries joined to them (tool results to tool
 // events by call id, assistant messages to the model call that produced
 // them) and the loop analysis.
@@ -77,7 +77,7 @@ type traceEntry struct {
 	IsError   bool           `json:"is_error,omitempty"`
 	Batch     string         `json:"batch,omitempty"`
 	// Notice marks a user entry that is no input of the person: a background
-	// task notice (message metadata suag.task_notice, see metaTaskNotice), so
+	// task notice (message metadata suga.task_notice, see metaTaskNotice), so
 	// the page can label it as such.
 	Notice bool            `json:"notice,omitempty"`
 	Raw    json.RawMessage `json:"raw,omitempty"` // non-message entries (segment, plan, handoff, context update)
@@ -171,7 +171,7 @@ func capWebText(s string, n int) string {
 	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}
-	return s[:cut] + fmt.Sprintf("\n[... %d more bytes; full text: suag export]", len(s)-cut)
+	return s[:cut] + fmt.Sprintf("\n[... %d more bytes; full text: suga export]", len(s)-cut)
 }
 
 // joinEntries links entries to events: a tool event gets its call and

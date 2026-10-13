@@ -1,5 +1,5 @@
 // Package extproc runs external helper processes (exec backends) over the
-// suag exec protocol v1 and provides the credential-stripped environment
+// suga exec protocol v1 and provides the credential-stripped environment
 // shared with MCP subprocesses.
 //
 // Protocol v1: one process per call. The caller writes ONE line of JSON to

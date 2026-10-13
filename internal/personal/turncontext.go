@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
 // Run modes recorded in turn_context (Config.Mode).

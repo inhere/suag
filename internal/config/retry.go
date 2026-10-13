@@ -8,7 +8,7 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	"github.com/inhere/suag/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 // ReadRetryPolicy reads retry: (how every provider retries a model request

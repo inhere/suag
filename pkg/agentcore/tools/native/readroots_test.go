@@ -10,7 +10,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // readRootFixture makes a workspace with a.txt and a separate dependency root

@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // subAgents runs the agent tool's sub-agents (docs/design/2026-10-13-
@@ -132,7 +132,7 @@ func (s *subAgents) build(kind string) (*personal.Runner, func(), error) {
 		PromptBuilder:     staticPrompt(subAgentPrompt()),
 		EnvironmentSource: func() string { return subAgentEnvironment(s.workspace, kind) },
 		RuleSource: func() (string, string, error) {
-			home, err := appconfig.ResolveSuagHome()
+			home, err := appconfig.ResolveSugaHome()
 			if err != nil {
 				return "", "", err
 			}
@@ -163,7 +163,7 @@ func subAgentDisabledHints(registry *tools.Registry) map[string]string {
 // so it is cache-stable like basePrompt).
 func subAgentPrompt() string {
 	var b strings.Builder
-	b.WriteString("You are a suag sub-agent: another agent handed you one task. Work it out with your read-only tools and answer with a report for that agent; nobody else reads it, and you cannot ask questions.\n\n")
+	b.WriteString("You are a suga sub-agent: another agent handed you one task. Work it out with your read-only tools and answer with a report for that agent; nobody else reads it, and you cannot ask questions.\n\n")
 	b.WriteString("# Working conventions\n")
 	b.WriteString("- Start with the most precise search that can answer the task (one file_grep with a specific pattern often does); read files only for what the matches leave open, never one by one through a directory. Put independent searches and reads in the same response.\n")
 	b.WriteString("- Stay on the task; stop as soon as you can answer it. Few steps are the goal: the agent waiting for you pays for each one.\n")

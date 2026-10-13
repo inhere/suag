@@ -3,7 +3,7 @@ package llm
 import (
 	"strings"
 
-	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
+	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // Extended thinking for the Claude provider (ClaudeConfig.Thinking). Claude
@@ -67,7 +67,7 @@ func applyClaudeThinking(body map[string]any, model, level string, maxTokensSet 
 		body["thinking"] = map[string]any{"type": "enabled", "budget_tokens": max(budget, 1024)}
 		return
 	}
-	// summarized: newer models omit the thinking text by default; suag shows
+	// summarized: newer models omit the thinking text by default; suga shows
 	// and records it like other providers' reasoning.
 	body["thinking"] = map[string]any{"type": "adaptive", "display": "summarized"}
 	body["output_config"] = map[string]any{"effort": effort}

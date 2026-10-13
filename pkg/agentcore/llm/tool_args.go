@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
+	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // newToolCall builds the tool call the model requested. Arguments that cannot

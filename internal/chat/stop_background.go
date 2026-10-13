@@ -9,9 +9,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	suaghooks "github.com/inhere/suag/internal/hooks"
-	"github.com/inhere/suag/pkg/agentcore/llm"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
+	sugahooks "github.com/inhere/suga/internal/hooks"
+	"github.com/inhere/suga/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
 // backgroundStop runs each turn's Stop hook as a background task
@@ -22,7 +22,7 @@ import (
 // it before its next model request. A newer Stop kills the previous one, as
 // only the latest turn's state matters.
 type backgroundStop struct {
-	hooks     suaghooks.Client
+	hooks     sugahooks.Client
 	tasks     *tasks.Manager
 	sessionID string
 
@@ -35,7 +35,7 @@ type backgroundStop struct {
 
 // start runs the Stop event in the background, killing a previous one still
 // running. A failure to start is returned (the caller falls back to a wait).
-func (b *backgroundStop) start(ctx context.Context, stop suaghooks.Event) error {
+func (b *backgroundStop) start(ctx context.Context, stop sugahooks.Event) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.current != "" {
@@ -59,7 +59,7 @@ func (b *backgroundStop) start(ctx context.Context, stop suaghooks.Event) error 
 
 // run is the Stop task: it calls the hook (the recording client traces it as
 // a hook event) and turns a block reply into a notice.
-func (b *backgroundStop) run(ctx context.Context, stop suaghooks.Event, out io.Writer, r tasks.Reporter) (int, error) {
+func (b *backgroundStop) run(ctx context.Context, stop sugahooks.Event, out io.Writer, r tasks.Reporter) (int, error) {
 	result := <-b.hooks.StartStop(ctx, stop).Done()
 	if notice := strings.TrimSpace(result.Response.Notice); notice != "" {
 		fmt.Fprintln(out, "notice: "+notice)

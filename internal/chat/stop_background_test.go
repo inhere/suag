@@ -8,27 +8,27 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	suaghooks "github.com/inhere/suag/internal/hooks"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
+	sugahooks "github.com/inhere/suga/internal/hooks"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
 // gatedStops answers each Stop with the next value sent on replies, or with
 // the cancellation error when the Stop's context ends first.
 type gatedStops struct {
-	suaghooks.Client
-	started chan suaghooks.Event
-	replies chan suaghooks.Result
+	sugahooks.Client
+	started chan sugahooks.Event
+	replies chan sugahooks.Result
 }
 
-func (g *gatedStops) StartStop(ctx context.Context, event suaghooks.Event) suaghooks.Wait {
+func (g *gatedStops) StartStop(ctx context.Context, event sugahooks.Event) sugahooks.Wait {
 	g.started <- event
-	done := make(chan suaghooks.Result, 1)
+	done := make(chan sugahooks.Result, 1)
 	go func() {
 		select {
 		case r := <-g.replies:
 			done <- r
 		case <-ctx.Done():
-			done <- suaghooks.Result{Err: ctx.Err()}
+			done <- sugahooks.Result{Err: ctx.Err()}
 		}
 		close(done)
 	}()
@@ -42,7 +42,7 @@ func newBackgroundStop(t *testing.T) (*backgroundStop, *gatedStops) {
 		return filepath.Join(dir, id+".txt"), "out:" + sid + ":" + id, nil
 	}})
 	t.Cleanup(m.Close)
-	hooks := &gatedStops{started: make(chan suaghooks.Event, 4), replies: make(chan suaghooks.Result)}
+	hooks := &gatedStops{started: make(chan sugahooks.Event, 4), replies: make(chan sugahooks.Result)}
 	return &backgroundStop{hooks: hooks, tasks: m, sessionID: "s1"}, hooks
 }
 
@@ -62,9 +62,9 @@ func waitStatus(t *testing.T, m *tasks.Manager, id string, want tasks.Status) ta
 func TestBackgroundStop(t *testing.T) {
 	t.Run("a block reply is a notice and marks the next turn", func(t *testing.T) {
 		b, hooks := newBackgroundStop(t)
-		assert.Require(t, assert.NoErr(t, b.start(context.Background(), suaghooks.Event{Name: "Stop"})))
+		assert.Require(t, assert.NoErr(t, b.start(context.Background(), sugahooks.Event{Name: "Stop"})))
 		<-hooks.started
-		hooks.replies <- suaghooks.Result{Response: suaghooks.Response{Decision: "block", Reason: "fix the failing test"}}
+		hooks.replies <- sugahooks.Result{Response: sugahooks.Response{Decision: "block", Reason: "fix the failing test"}}
 		info := waitStatus(t, b.tasks, b.current, tasks.Exited)
 		assert.Eq(t, "hook", info.Kind)
 		got := b.tasks.TakeNotices("s1")
@@ -75,14 +75,14 @@ func TestBackgroundStop(t *testing.T) {
 	})
 	t.Run("a newer Stop kills the running one", func(t *testing.T) {
 		b, hooks := newBackgroundStop(t)
-		assert.Require(t, assert.NoErr(t, b.start(context.Background(), suaghooks.Event{Name: "Stop"})))
+		assert.Require(t, assert.NoErr(t, b.start(context.Background(), sugahooks.Event{Name: "Stop"})))
 		<-hooks.started
 		first := b.current
-		assert.Require(t, assert.NoErr(t, b.start(context.Background(), suaghooks.Event{Name: "Stop", StopHookActive: true})))
+		assert.Require(t, assert.NoErr(t, b.start(context.Background(), sugahooks.Event{Name: "Stop", StopHookActive: true})))
 		<-hooks.started
 		assert.Eq(t, tasks.Killed, waitStatus(t, b.tasks, first, tasks.Killed).Status)
 		assert.NotEq(t, first, b.current)
-		hooks.replies <- suaghooks.Result{Response: suaghooks.Response{Decision: "approve"}}
+		hooks.replies <- sugahooks.Result{Response: sugahooks.Response{Decision: "approve"}}
 		waitStatus(t, b.tasks, b.current, tasks.Exited)
 		assert.Empty(t, b.tasks.TakeNotices("s1")) // no block, no notice
 		assert.False(t, b.takeBlocked())

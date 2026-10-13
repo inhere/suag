@@ -1,5 +1,5 @@
 // Package execstore is a memory.Store backed by an external command that
-// speaks the suag exec protocol v1 (see package extproc): every operation runs
+// speaks the suga exec protocol v1 (see package extproc): every operation runs
 // the command once, writes one JSON request line to its stdin and reads one
 // JSON response line from its stdout.
 //
@@ -39,8 +39,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/extproc"
-	"github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/extproc"
+	"github.com/inhere/suga/pkg/agentcore/memory"
 )
 
 // Name is the backend name reported by BackendName.

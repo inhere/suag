@@ -13,13 +13,13 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/memory"
 )
 
 var (
 	ctx     = context.Background()
 	user    = memory.UserScope()
-	project = memory.ProjectScope("suag")
+	project = memory.ProjectScope("suga")
 	fixed   = time.Date(2026, 10, 11, 8, 0, 0, 0, time.UTC)
 )
 
@@ -52,7 +52,7 @@ func TestRoundTrip(t *testing.T) {
 		{"dir layout", func(d string) Layout { return DirLayout{Dir: filepath.Join(d, "mem")} },
 			func(d, id string) string { return filepath.Join(d, "mem", id+".md") }, ""},
 		{"repo layout", func(d string) Layout { return RepoLayout{Root: d} },
-			func(d, id string) string { return filepath.Join(d, ".suag", "memory", id+".md") }, ".suag/memory/"},
+			func(d, id string) string { return filepath.Join(d, ".suga", "memory", id+".md") }, ".suga/memory/"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -137,8 +137,8 @@ func TestPermissions(t *testing.T) {
 		mem:                                   0o700,
 		filepath.Join(mem, "x.md"):            0o600,
 		filepath.Join(mem, indexFile):         0o600,
-		filepath.Join(dir, ".suag", "memory"): 0o700,
-		filepath.Join(dir, ".suag", "memory", "x.md"): 0o600,
+		filepath.Join(dir, ".suga", "memory"): 0o700,
+		filepath.Join(dir, ".suga", "memory", "x.md"): 0o600,
 	} {
 		fi, err := os.Stat(path)
 		assert.Require(t, assert.NoErr(t, err))
@@ -154,12 +154,12 @@ func TestHandWrittenLines(t *testing.T) {
 	original := strings.Join([]string{
 		"# Project memory",
 		"",
-		"Notes kept by hand; suag must not touch them.",
-		"- [Existing](.suag/memory/existing.md) — project",
+		"Notes kept by hand; suga must not touch them.",
+		"- [Existing](.suga/memory/existing.md) — project",
 		"- a plain list item",
 		"- [Escapes the root](../outside.md) — project",
-		"- [Unknown kind](.suag/memory/odd.md) — note",
-		"- [Dup](.suag/memory/existing.md) — user",
+		"- [Unknown kind](.suga/memory/odd.md) — note",
+		"- [Dup](.suga/memory/existing.md) — user",
 		"",
 		"## Footer",
 	}, "\n") + "\n"
@@ -173,19 +173,19 @@ func TestHandWrittenLines(t *testing.T) {
 
 	e, err := s.Write(ctx, project, add("New one", "body", memory.KindUser))
 	assert.NoErr(t, err)
-	assert.Eq(t, original+"- [New one](.suag/memory/new-one.md) — user\n", readText(t, index), "appended at the end")
+	assert.Eq(t, original+"- [New one](.suga/memory/new-one.md) — user\n", readText(t, index), "appended at the end")
 
 	// Replacing an indexed entry whose file is missing creates the file in place.
 	_, err = s.Write(ctx, project, memory.Op{Action: memory.ActionReplace, ID: "existing", Title: "Existing v2", Body: "now with a file"})
 	assert.NoErr(t, err)
-	want := strings.Replace(original, "- [Existing](.suag/memory/existing.md) — project", "- [Existing v2](.suag/memory/existing.md) — project", 1)
-	assert.Eq(t, want+"- [New one](.suag/memory/new-one.md) — user\n", readText(t, index))
+	want := strings.Replace(original, "- [Existing](.suga/memory/existing.md) — project", "- [Existing v2](.suga/memory/existing.md) — project", 1)
+	assert.Eq(t, want+"- [New one](.suga/memory/new-one.md) — user\n", readText(t, index))
 
 	_, err = s.Write(ctx, project, memory.Op{Action: memory.ActionRemove, ID: e.ID})
 	assert.NoErr(t, err)
 	_, err = s.Write(ctx, project, memory.Op{Action: memory.ActionRemove, ID: "existing"})
 	assert.NoErr(t, err)
-	wantAfter := strings.Replace(original, "- [Existing](.suag/memory/existing.md) — project\n", "", 1)
+	wantAfter := strings.Replace(original, "- [Existing](.suga/memory/existing.md) — project\n", "", 1)
 	assert.Eq(t, wantAfter, readText(t, index), "only managed lines changed")
 
 	t.Run("crlf files keep crlf", func(t *testing.T) {
@@ -252,7 +252,7 @@ func TestSymlinkEscape(t *testing.T) {
 	t.Run("entry dir symlink cannot be written through", func(t *testing.T) {
 		repo := filepath.Join(dir, "repo")
 		assert.NoErr(t, os.MkdirAll(repo, 0o700))
-		if err := os.Symlink(outside, filepath.Join(repo, ".suag")); err != nil {
+		if err := os.Symlink(outside, filepath.Join(repo, ".suga")); err != nil {
 			t.Skipf("symlinks unavailable: %v", err)
 		}
 		s := newStore(t, map[memory.Scope]Layout{project: RepoLayout{Root: repo}})

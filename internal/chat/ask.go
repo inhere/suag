@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // errAskCancelled is returned when the person ends an approval question with

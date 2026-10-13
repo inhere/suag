@@ -12,12 +12,12 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suga/internal/personal"
 
-	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
-	capskills "github.com/inhere/suag/pkg/agentcore/skills"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	toolsmcp "github.com/inhere/suag/pkg/agentcore/tools/mcp"
+	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
+	capskills "github.com/inhere/suga/pkg/agentcore/skills"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	toolsmcp "github.com/inhere/suga/pkg/agentcore/tools/mcp"
 )
 
 func TestBuildDefaultCapabilities_RegistersNativeTools(t *testing.T) {
@@ -303,7 +303,7 @@ func TestMinimizeOutputLoadsRuleFiles(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	home, workspace := t.TempDir(), t.TempDir()
-	t.Setenv("SUAG_HOME", home)
+	t.Setenv("SUGA_HOME", home)
 	rule := func(summary string) []byte {
 		return []byte("rules:\n  - name: check\n    match: '\\bmake check\\b'\n    drop: ['^CHECK OK ']\n" +
 			"    count: {passed: '^CHECK OK '}\n    summary: '" + summary + ": {passed} ok'\n")
@@ -319,8 +319,8 @@ func TestMinimizeOutputLoadsRuleFiles(t *testing.T) {
 	assert.Require(t, assert.True(t, ok))
 	assert.StrContains(t, tidy, "user: 40 ok")
 
-	assert.NoErr(t, os.MkdirAll(filepath.Join(workspace, ".suag"), 0o755))
-	assert.NoErr(t, os.WriteFile(filepath.Join(workspace, ".suag", "output-rules.yaml"), rule("project"), 0o644))
+	assert.NoErr(t, os.MkdirAll(filepath.Join(workspace, ".suga"), 0o755))
+	assert.NoErr(t, os.WriteFile(filepath.Join(workspace, ".suga", "output-rules.yaml"), rule("project"), 0o644))
 	tidy, ok = minimizeOutput(workspace)(call, b.String())
 	assert.Require(t, assert.True(t, ok))
 	assert.StrContains(t, tidy, "project: 40 ok") // the project file wins

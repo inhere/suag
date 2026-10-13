@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/storage/files"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/storage/files"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 type auditHook struct {
@@ -49,7 +49,7 @@ func main() {
 			mock.ToolCall("call-echo", "echo", map[string]any{"text": "hello from custom example"}),
 			mock.Final("tool finished successfully"),
 		),
-		Storage: files.NewStorage(filepath.Join(os.TempDir(), "suag-agentcore-examples", "custom")),
+		Storage: files.NewStorage(filepath.Join(os.TempDir(), "suga-agentcore-examples", "custom")),
 		Tools:   reg,
 		Hooks:   []agentcore.Hook{auditHook{}},
 	})

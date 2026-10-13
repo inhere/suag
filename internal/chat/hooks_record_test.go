@@ -8,8 +8,8 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	suaghooks "github.com/inhere/suag/internal/hooks"
-	"github.com/inhere/suag/internal/personal"
+	sugahooks "github.com/inhere/suga/internal/hooks"
+	"github.com/inhere/suga/internal/personal"
 )
 
 type eventSink struct {
@@ -31,27 +31,27 @@ func (s *eventSink) all() []personal.HostEvent {
 
 // stubHooks answers Call with resp and StartStop with a wait on done.
 type stubHooks struct {
-	resp suaghooks.Response
-	done chan suaghooks.Result
+	resp sugahooks.Response
+	done chan sugahooks.Result
 }
 
-func (s *stubHooks) Call(context.Context, suaghooks.Event) suaghooks.Response { return s.resp }
-func (s *stubHooks) StartStop(context.Context, suaghooks.Event) suaghooks.Wait {
+func (s *stubHooks) Call(context.Context, sugahooks.Event) sugahooks.Response { return s.resp }
+func (s *stubHooks) StartStop(context.Context, sugahooks.Event) sugahooks.Wait {
 	return &fakeStopWait{done: s.done, interrupt: func() {}}
 }
 func (s *stubHooks) PostToolName(tool string) (string, bool) { return tool, true }
 
 func TestRecordingHooks(t *testing.T) {
 	sink := &eventSink{}
-	stub := &stubHooks{resp: suaghooks.Response{Notice: "taken over"}, done: make(chan suaghooks.Result, 1)}
+	stub := &stubHooks{resp: sugahooks.Response{Notice: "taken over"}, done: make(chan sugahooks.Result, 1)}
 	h := &recordingHooks{Client: stub, runner: sink}
 
-	h.Call(context.Background(), suaghooks.Event{Name: "UserPromptSubmit", SessionID: "s1"})
-	stub.done <- suaghooks.Result{Response: suaghooks.Response{Decision: "block", Reason: "go on"}}
-	w := h.StartStop(context.Background(), suaghooks.Event{Name: "Stop", SessionID: "s1"})
+	h.Call(context.Background(), sugahooks.Event{Name: "UserPromptSubmit", SessionID: "s1"})
+	stub.done <- sugahooks.Result{Response: sugahooks.Response{Decision: "block", Reason: "go on"}}
+	w := h.StartStop(context.Background(), sugahooks.Event{Name: "Stop", SessionID: "s1"})
 	r := <-w.Done() // passed on unchanged
 	assert.Eq(t, "go on", r.Response.Reason)
-	h.Call(context.Background(), suaghooks.Event{Name: "SessionEnd"}) // no session: not recorded
+	h.Call(context.Background(), sugahooks.Event{Name: "SessionEnd"}) // no session: not recorded
 
 	events := sink.all()
 	assert.Require(t, assert.Len(t, events, 2))
@@ -61,9 +61,9 @@ func TestRecordingHooks(t *testing.T) {
 	assert.Eq(t, map[string]any{"decision": "block", "reason_chars": 5}, events[1].Attrs)
 
 	t.Run("an interrupt hands back a reply nobody read", func(t *testing.T) {
-		stub.done = make(chan suaghooks.Result, 1)
-		stub.done <- suaghooks.Result{Response: suaghooks.Response{Decision: "block", Reason: "pending"}}
-		w := h.StartStop(context.Background(), suaghooks.Event{Name: "Stop", SessionID: "s1"})
+		stub.done = make(chan sugahooks.Result, 1)
+		stub.done <- sugahooks.Result{Response: sugahooks.Response{Decision: "block", Reason: "pending"}}
+		w := h.StartStop(context.Background(), sugahooks.Event{Name: "Stop", SessionID: "s1"})
 		time.Sleep(20 * time.Millisecond) // the forwarder took it
 		assert.Eq(t, "pending", w.Interrupt(context.Background()))
 	})

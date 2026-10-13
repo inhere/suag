@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/inhere/suag/internal/personal/process"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/redact"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/internal/personal/process"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/redact"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // outputRefPrefix starts every ref to an externalised tool output:
@@ -24,7 +24,7 @@ const outputRefPrefix = "out:"
 // <sessions>/<session_id>/outputs/<hex>.txt (tools.Spiller). The session and
 // turn come from the observe scope in ctx.
 type SessionSpiller struct {
-	dir string // the sessions root, e.g. ~/.suag/sessions
+	dir string // the sessions root, e.g. ~/.suga/sessions
 }
 
 var _ tools.Spiller = (*SessionSpiller)(nil)

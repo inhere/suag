@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // AgentStorage implements api.Storage on top of the core store with

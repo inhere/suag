@@ -55,7 +55,7 @@ func TestSessionLockReleasedWhenOwnerIsKilled(t *testing.T) {
 	lockRoot := filepath.Join(root, "locks")
 	ready := filepath.Join(root, "lock.ready")
 	cmd := exec.Command(os.Args[0], "-test.run=TestLockChildFixture")
-	cmd.Env = append(os.Environ(), "SUAG_LOCK_FIXTURE=1", "SUAG_LOCK_ROOT="+lockRoot, "SUAG_LOCK_READY="+ready)
+	cmd.Env = append(os.Environ(), "SUGA_LOCK_FIXTURE=1", "SUGA_LOCK_ROOT="+lockRoot, "SUGA_LOCK_READY="+ready)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -82,13 +82,13 @@ func TestSessionLockReleasedWhenOwnerIsKilled(t *testing.T) {
 }
 
 func TestLockChildFixture(t *testing.T) {
-	if os.Getenv("SUAG_LOCK_FIXTURE") != "1" {
+	if os.Getenv("SUGA_LOCK_FIXTURE") != "1" {
 		return
 	}
-	if _, err := AcquireSessionLock(os.Getenv("SUAG_LOCK_ROOT"), "crashed", 0); err != nil {
+	if _, err := AcquireSessionLock(os.Getenv("SUGA_LOCK_ROOT"), "crashed", 0); err != nil {
 		os.Exit(10)
 	}
-	_ = os.WriteFile(os.Getenv("SUAG_LOCK_READY"), nil, 0o600)
+	_ = os.WriteFile(os.Getenv("SUGA_LOCK_READY"), nil, 0o600)
 	for {
 		time.Sleep(time.Second)
 	}

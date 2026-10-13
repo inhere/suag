@@ -19,7 +19,7 @@ import (
 func TestStreamJSONPlanEvent(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOME", shortTestHome(t))
+	t.Setenv("SUGA_HOME", shortTestHome(t))
 	workspace := t.TempDir()
 	t.Chdir(workspace)
 	assert.NoErr(t, gkconfig.Set("workspace", workspace))

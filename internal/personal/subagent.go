@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
 )
 
 // Sub-agents (docs/design/2026-10-13-subagents-design.md): a turn's agent tool

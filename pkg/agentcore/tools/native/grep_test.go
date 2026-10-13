@@ -9,7 +9,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // searchWorkspace builds a small tree for the grep/find tests.
@@ -145,7 +145,7 @@ func TestWalkGlobMatch(t *testing.T) {
 		{"**/*.go", "c.go", true},
 		{"internal/**/*.go", "internal/x/y/z.go", true},
 		{"internal/**/*.go", "cmd/z.go", false},
-		{"cmd/*/main.go", "cmd/suag/main.go", true},
+		{"cmd/*/main.go", "cmd/suga/main.go", true},
 		{"cmd/*/main.go", "cmd/a/b/main.go", false},
 	} {
 		assert.Eq(t, tc.want, globMatch(tc.pattern, tc.rel), tc.pattern+" "+tc.rel)

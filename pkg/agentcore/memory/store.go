@@ -32,7 +32,7 @@ type Named interface {
 
 // ProvenanceStore keeps provenance and tombstones for entries. A backend that
 // can store them itself implements it; otherwise the host injects one through
-// Policy.Provenance (suag uses a SQLite side table). backend is the backend
+// Policy.Provenance (suga uses a SQLite side table). backend is the backend
 // name (see Named) so one store can serve several backends.
 type ProvenanceStore interface {
 	// Record upserts the provenance of an added or replaced entry together

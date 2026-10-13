@@ -8,7 +8,7 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore"
 )
 
 // retryingProvider streams a retry announcement, then the answer.

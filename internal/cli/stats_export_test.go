@@ -12,14 +12,14 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/x/assert"
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal/store"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
 func seedObserve(t *testing.T) context.Context {
 	t.Helper()
-	t.Setenv("SUAG_HOME", shortCLIHome(t))
-	t.Setenv("SUAG_HOOKS", "off")
+	t.Setenv("SUGA_HOME", shortCLIHome(t))
+	t.Setenv("SUGA_HOOKS", "off")
 	dbPath, err := appconfig.ResolveCoreStorePath()
 	assert.NoErr(t, err)
 	repo, err := store.Open(dbPath)

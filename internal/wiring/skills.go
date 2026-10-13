@@ -10,13 +10,13 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	"github.com/inhere/suag/internal/personal"
-	capskills "github.com/inhere/suag/pkg/agentcore/skills"
+	"github.com/inhere/suga/internal/personal"
+	capskills "github.com/inhere/suga/pkg/agentcore/skills"
 )
 
 func SetupLogging() {
 	level := slog.LevelInfo
-	debugMode := os.Getenv("SUAG_DEBUG") != ""
+	debugMode := os.Getenv("SUGA_DEBUG") != ""
 	if debugMode {
 		level = slog.LevelDebug
 	}

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/inhere/suag/internal/chat/lineedit"
-	"github.com/inhere/suag/internal/personal/process"
+	"github.com/inhere/suga/internal/chat/lineedit"
+	"github.com/inhere/suga/internal/personal/process"
 	"golang.org/x/term"
 )
 
@@ -186,7 +186,7 @@ func hasSourceTag(text string) bool {
 	return end > 1 && end+1 < len(firstLine) && firstLine[end+1] == ' '
 }
 
-// safeSender is the source label: the request's From (`suag send --source`),
+// safeSender is the source label: the request's From (`suga send --source`),
 // "unknown" when empty, with control characters dropped and at most 64 runes.
 func safeSender(from string) string {
 	from = strings.TrimSpace(from)
@@ -207,7 +207,7 @@ func safeSender(from string) string {
 }
 
 // SetBusy marks a turn start/end. Starting a turn forces the tty back to cooked mode even when a
-// line read begun earlier is still blocked (a `suag send` delivery can start a turn while the
+// line read begun earlier is still blocked (a `suga send` delivery can start a turn while the
 // prompt is waiting); otherwise Ctrl-C would arrive as byte 0x03 and never interrupt the turn.
 func (s *chatInputSource) SetBusy(busy bool) {
 	s.mu.Lock()

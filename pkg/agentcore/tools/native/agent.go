@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // Sub-agent types (the agent tool's type argument).

@@ -5,7 +5,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	appconfig "github.com/inhere/suag/internal/config"
+	appconfig "github.com/inhere/suga/internal/config"
 )
 
 // TestSubAgentModel: a sub-agent runs on agents.model when set, else on the

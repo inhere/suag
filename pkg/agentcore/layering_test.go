@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// TestLayeringNoAppImports keeps pkg/agentcore independent of the suag
+// TestLayeringNoAppImports keeps pkg/agentcore independent of the suga
 // application: no package under pkg/agentcore, tests included, may depend on
-// another github.com/inhere/suag package.
+// another github.com/inhere/suga package.
 func TestLayeringNoAppImports(t *testing.T) {
 	goBin, err := exec.LookPath("go")
 	if err != nil {
@@ -26,7 +26,7 @@ func TestLayeringNoAppImports(t *testing.T) {
 		}
 		t.Fatalf("go list failed: %v\n%s", err, stderr)
 	}
-	const module, allowed = "github.com/inhere/suag/", "github.com/inhere/suag/pkg/agentcore"
+	const module, allowed = "github.com/inhere/suga/", "github.com/inhere/suga/pkg/agentcore"
 	var leaks []string
 	for _, path := range strings.Fields(string(out)) {
 		// go list -test also prints test variants such as "pkg [pkg.test]".
@@ -35,6 +35,6 @@ func TestLayeringNoAppImports(t *testing.T) {
 		}
 	}
 	if len(leaks) > 0 {
-		t.Fatalf("pkg/agentcore must not depend on the suag application; found:\n  %s", strings.Join(leaks, "\n  "))
+		t.Fatalf("pkg/agentcore must not depend on the suga application; found:\n  %s", strings.Join(leaks, "\n  "))
 	}
 }

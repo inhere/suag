@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/storage/files"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/storage/files"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 type staticPrompt string
@@ -94,7 +94,7 @@ func (p *scriptedProvider) Generate(context.Context, *agentcore.GenerateRequest)
 func main() {
 	ctx := context.Background()
 	runID := "example-authority"
-	root := filepath.Join(os.TempDir(), "suag-agentcore-examples", "authority")
+	root := filepath.Join(os.TempDir(), "suga-agentcore-examples", "authority")
 	if err := os.RemoveAll(root); err != nil {
 		log.Fatal(err)
 	}

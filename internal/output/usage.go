@@ -1,6 +1,6 @@
 package output
 
-import "github.com/inhere/suag/internal/personal"
+import "github.com/inhere/suga/internal/personal"
 
 // WithUsage adds usage to a stream-json line: "usage" is this run's total
 // (observe layer: every model call including compaction and failed attempts

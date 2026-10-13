@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/storage/files"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/storage/files"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 type StartRequest struct {
@@ -155,7 +155,7 @@ func (passthroughContext) BuildMessages(_ context.Context, state *agentcore.RunS
 
 func main() {
 	ctx := context.Background()
-	root := filepath.Join(os.TempDir(), "suag-agentcore-examples", "policyhost")
+	root := filepath.Join(os.TempDir(), "suga-agentcore-examples", "policyhost")
 	if err := os.RemoveAll(root); err != nil {
 		log.Fatal(err)
 	}

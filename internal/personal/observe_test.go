@@ -9,11 +9,11 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/llm"
-	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 func openObserveRepo(t *testing.T) *store.Store {
@@ -205,11 +205,11 @@ func TestTraceTimelineIncludesTurnModelToolAndDenial(t *testing.T) {
 	}
 	assert.Eq(t, map[string]bool{"turn": true, "turn_context": true, "context": true, "model": true, "tool": true, "denial": true}, kinds)
 
-	// The suag version is on the turn and in the session meta.
+	// The suga version is on the turn and in the session meta.
 	sess, err := repo.GetSession(context.Background(), res.SessionID)
 	assert.Require(t, assert.NoErr(t, err))
-	assert.Eq(t, "0.14.1", sess.Meta["suag_version"])
-	assert.StrContains(t, text.String(), " suag=0.14.1 ")
+	assert.Eq(t, "0.14.1", sess.Meta["suga_version"])
+	assert.StrContains(t, text.String(), " suga=0.14.1 ")
 
 	// The context event says what the turn's first request is made of.
 	var ctxEvent *store.Event

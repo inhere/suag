@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/memory"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // Actions of the memory tool.
@@ -81,7 +81,7 @@ func (t *MemoryTool) Description() string {
 		"agents working in the repository: keep it short and generally useful."
 }
 
-// ToolMeta: an agent-state write tool (memory is suag's own state, not the
+// ToolMeta: an agent-state write tool (memory is suga's own state, not the
 // workspace); read-only mode is enforced inside Execute.
 func (*MemoryTool) ToolMeta() tools.Meta {
 	return tools.Meta{Category: tools.CategoryEdit, AgentState: true}
@@ -259,7 +259,7 @@ func (t *MemoryTool) parse(args map[string]any) (memoryRequest, error) {
 	return req, nil
 }
 
-// external reports whether reads from s come from outside suag's own files.
+// external reports whether reads from s come from outside suga's own files.
 func (t *MemoryTool) external(s memory.Scope) bool {
 	if t.opts.Backend == nil {
 		return true

@@ -36,7 +36,7 @@ const (
 // runtime stores each call with its result right after it; providers use the
 // key to send such a reply back as one assistant message with all its calls
 // followed by the results, so the history shows parallel calls as they were.
-const ToolBatchMetaKey = "suag.tool_batch"
+const ToolBatchMetaKey = "suga.tool_batch"
 
 // Message is the public conversation unit exchanged with prompt, context, and model layers.
 type Message struct {

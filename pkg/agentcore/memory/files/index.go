@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/memory"
 )
 
 // indexFile is the index name in both layouts.

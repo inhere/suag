@@ -13,13 +13,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/inhere/suag/pkg/agentcore/internal/proctree"
-	"github.com/inhere/suag/pkg/agentcore/redact"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/internal/proctree"
+	"github.com/inhere/suga/pkg/agentcore/redact"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 	"golang.org/x/text/encoding/simplifiedchinese"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/api"
 )
 
 const (
@@ -292,7 +292,7 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 	}, nil
 }
 
-// shellEnv is the environment of a command: suag's own settings removed,
+// shellEnv is the environment of a command: suga's own settings removed,
 // git and pagers kept from waiting for input.
 func shellEnv() []string {
 	return append(commandEnv(os.Environ()), "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat", "PAGER=cat")
@@ -362,10 +362,10 @@ func numberArg(v any) (float64, bool) {
 	return 0, false
 }
 
-// privateEnv are suag's own settings. Commands run for the user's project do
-// not inherit them: a project's code or tests that read SUAG_HOME (suag's
+// privateEnv are suga's own settings. Commands run for the user's project do
+// not inherit them: a project's code or tests that read SUGA_HOME (suga's
 // own tests, for one) would otherwise act on the agent's configuration.
-var privateEnv = []string{"SUAG_HOME", "SUAG_CONFIG", "SUAG_MODEL"}
+var privateEnv = []string{"SUGA_HOME", "SUGA_CONFIG", "SUGA_MODEL"}
 
 // commandEnv returns env without privateEnv (names compared without case:
 // Windows environment names are case-insensitive).

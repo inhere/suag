@@ -46,7 +46,7 @@ func (r *rig) lastEvent() Event {
 
 var (
 	ctx   = context.Background()
-	scope = ProjectScope("suag")
+	scope = ProjectScope("suga")
 )
 
 func addOp(title, body string) Op {

@@ -18,10 +18,10 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/mock"
 )
 
 func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
@@ -30,8 +30,8 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	t.Setenv("SUAG_HOME", "") // fall back to HOME/.suag despite the TestMain default
-	t.Setenv("SUAG_MODEL", "environment-model")
+	t.Setenv("SUGA_HOME", "") // fall back to HOME/.suga despite the TestMain default
+	t.Setenv("SUGA_MODEL", "environment-model")
 	workspace := t.TempDir()
 	t.Chdir(workspace)
 	_ = gkconfig.Set("workspace", workspace)
@@ -86,12 +86,12 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	assert.Eq(t, true, strings.Contains(secondOut.String(), `"result":"reply-2"`))
 	assert.Eq(t, int32(2), requestCount.Load())
 	assert.Eq(t, []string{"flag-model", "environment-model"}, requestedModels)
-	transcript, err := os.ReadFile(filepath.Join(home, ".suag", "transcripts", "path-test.jsonl"))
+	transcript, err := os.ReadFile(filepath.Join(home, ".suga", "transcripts", "path-test.jsonl"))
 	assert.NoErr(t, err)
 	assert.Eq(t, true, strings.Contains(string(transcript), "hello"))
 	assert.Eq(t, true, strings.Contains(string(transcript), "reply-2"))
 
-	personalDB := filepath.Join(home, ".suag", "db", "sessions.db")
+	personalDB := filepath.Join(home, ".suga", "db", "sessions.db")
 	_, err = os.Stat(personalDB)
 	assert.NoErr(t, err)
 	repo, err := store.Open(personalDB)
@@ -99,7 +99,7 @@ func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
 	defer repo.Close()
 	stored, err := repo.GetSession(context.Background(), "path-test")
 	assert.NoErr(t, err)
-	assertOnlySessionsDB(t, filepath.Join(home, ".suag", "db"))
+	assertOnlySessionsDB(t, filepath.Join(home, ".suga", "db"))
 	turns, err := repo.ListTurns(context.Background(), "path-test", store.TurnCompleted)
 	assert.NoErr(t, err)
 	assert.Eq(t, 2, len(turns))
@@ -115,13 +115,13 @@ func TestPersonalCLIInjectsRulesAndAppendPrompt(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	t.Setenv("SUAG_HOME", "") // fall back to HOME/.suag despite the TestMain default
-	suagHome := t.TempDir()
-	t.Setenv("SUAG_HOME", suagHome)
-	t.Setenv("SUAG_APPEND_SYSTEM_PROMPT", "environment prompt")
+	t.Setenv("SUGA_HOME", "") // fall back to HOME/.suga despite the TestMain default
+	sugaHome := t.TempDir()
+	t.Setenv("SUGA_HOME", sugaHome)
+	t.Setenv("SUGA_APPEND_SYSTEM_PROMPT", "environment prompt")
 	// A job id in the environment no longer adds any prompt text.
 	t.Setenv("GOFER_JOB_ID", "test-job")
-	if err := os.WriteFile(filepath.Join(suagHome, "AGENTS.md"), []byte("user-level rule"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(sugaHome, "AGENTS.md"), []byte("user-level rule"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	workspace := t.TempDir()
@@ -357,8 +357,8 @@ func TestPersonalFromHandoff(t *testing.T) {
 func TestPersonalRunInjectedFlagMarksTranscript(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	suagHome := t.TempDir()
-	t.Setenv("SUAG_HOME", suagHome)
+	sugaHome := t.TempDir()
+	t.Setenv("SUGA_HOME", sugaHome)
 	workspace := t.TempDir()
 	t.Chdir(workspace)
 	_ = gkconfig.Set("workspace", workspace)
@@ -378,7 +378,7 @@ func TestPersonalRunInjectedFlagMarksTranscript(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		assert.NoErr(t, RunPersonalCLI(context.Background(), "run", args, strings.NewReader(""), &stdout, &stderr))
 	}
-	data, err := os.ReadFile(filepath.Join(suagHome, "transcripts", "injected-test.jsonl"))
+	data, err := os.ReadFile(filepath.Join(sugaHome, "transcripts", "injected-test.jsonl"))
 	assert.Require(t, assert.NoErr(t, err))
 	got := map[string]bool{}
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {

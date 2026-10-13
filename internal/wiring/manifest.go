@@ -6,26 +6,26 @@ import (
 	"path/filepath"
 	"slices"
 
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal"
-	capskills "github.com/inhere/suag/pkg/agentcore/skills"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal"
+	capskills "github.com/inhere/suga/pkg/agentcore/skills"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
-// buildVersion is the suag version shown by the manifest; the CLI sets it
+// buildVersion is the suga version shown by the manifest; the CLI sets it
 // from the binary's build info.
 var buildVersion = "dev"
 
-// SetBuildVersion records the suag version for the manifest.
+// SetBuildVersion records the suga version for the manifest.
 func SetBuildVersion(v string) {
 	if v != "" {
 		buildVersion = v
 	}
 }
 
-// Manifest describes what this suag instance can do (design D15). It holds
+// Manifest describes what this suga instance can do (design D15). It holds
 // no secrets: no API keys, base URLs, MCP arguments or environment values.
 type Manifest struct {
 	Version     string              `json:"version"`

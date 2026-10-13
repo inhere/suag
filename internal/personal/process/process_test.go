@@ -152,7 +152,7 @@ func TestSeparateProcessesAreAddressableBySession(t *testing.T) {
 		t.Helper()
 		ready := filepath.Join(root, sessionID+".ready")
 		cmd := exec.Command(os.Args[0], "-test.run=TestProcessChildFixture")
-		cmd.Env = append(os.Environ(), "SUAG_PROCESS_FIXTURE=1", "SUAG_PROCESS_ROOT="+root, "SUAG_PROCESS_SESSION="+sessionID, "SUAG_PROCESS_READY="+ready)
+		cmd.Env = append(os.Environ(), "SUGA_PROCESS_FIXTURE=1", "SUGA_PROCESS_ROOT="+root, "SUGA_PROCESS_SESSION="+sessionID, "SUGA_PROCESS_READY="+ready)
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
@@ -193,17 +193,17 @@ func TestSeparateProcessesAreAddressableBySession(t *testing.T) {
 }
 
 func TestProcessChildFixture(t *testing.T) {
-	if os.Getenv("SUAG_PROCESS_FIXTURE") != "1" {
+	if os.Getenv("SUGA_PROCESS_FIXTURE") != "1" {
 		return
 	}
-	root, sessionID := os.Getenv("SUAG_PROCESS_ROOT"), os.Getenv("SUAG_PROCESS_SESSION")
+	root, sessionID := os.Getenv("SUGA_PROCESS_ROOT"), os.Getenv("SUGA_PROCESS_SESSION")
 	server, err := Start(root, sessionID, sessionID, root, func(text, from string) (bool, error) {
 		return false, os.WriteFile(filepath.Join(root, sessionID+".delivered"), []byte(from+":"+text), 0o600)
 	})
 	if err != nil {
 		os.Exit(10)
 	}
-	_ = os.WriteFile(os.Getenv("SUAG_PROCESS_READY"), nil, 0o600)
+	_ = os.WriteFile(os.Getenv("SUGA_PROCESS_READY"), nil, 0o600)
 	for {
 		time.Sleep(time.Second)
 		_ = server

@@ -11,14 +11,14 @@ import (
 	"time"
 
 	"github.com/coder/acp-go-sdk"
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/output"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/memory"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/output"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // Runtime is one opening of the shared personal session store and Agent core.

@@ -11,12 +11,12 @@ import (
 
 	"github.com/gookit/goutil/cflag"
 	"github.com/gookit/goutil/cflag/capp"
-	"github.com/inhere/suag/internal/chat"
-	"github.com/inhere/suag/internal/output"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/wiring"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
+	"github.com/inhere/suga/internal/chat"
+	"github.com/inhere/suga/internal/output"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/wiring"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
 var ErrInputRequired = errors.New("turn requires more input")
@@ -110,7 +110,7 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	})
 	cmd.SetOutput(stderr)
 	cmd.StringVar(&opts.Prompt, "prompt", "", "task prompt for run mode;;p")
-	cmd.StringVar(&opts.Model, "model", "", "model, <provider>/<model> or a bare model id (overrides SUAG_MODEL)")
+	cmd.StringVar(&opts.Model, "model", "", "model, <provider>/<model> or a bare model id (overrides SUGA_MODEL)")
 	cmd.StringVar(&opts.Thinking, "thinking", "", "thinking level of the main model: off, minimal, low, medium, high, xhigh, max, auto (overrides the config)")
 	cmd.StringVar(&opts.SessionID, "session-id", "", "create or use this session ID;;sid")
 	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID;;r")

@@ -70,7 +70,7 @@ func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	t.Setenv("SUAG_HOME", "") // fall back to HOME/.suag despite the TestMain default
+	t.Setenv("SUGA_HOME", "") // fall back to HOME/.suga despite the TestMain default
 	cwd := t.TempDir()
 	if err := os.WriteFile(filepath.Join(cwd, "AGENTS.md"), []byte("ACP project rule"), 0644); err != nil {
 		t.Fatal(err)
@@ -145,10 +145,10 @@ func TestAppACPUsesPersonalStorageAndLoadsInNewServer(t *testing.T) {
 	if calls.Load() != 2 {
 		t.Fatalf("provider calls = %d, want 2", calls.Load())
 	}
-	if _, err := os.Stat(filepath.Join(home, ".suag", "db", "sessions.db")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".suga", "db", "sessions.db")); err != nil {
 		t.Fatal(err)
 	}
-	assertOnlySessionsDB(t, filepath.Join(home, ".suag", "db"))
+	assertOnlySessionsDB(t, filepath.Join(home, ".suga", "db"))
 	// The session-cumulative usage_update keeps growing after session/load in a
 	// new Agent (one update after the model call, one at turn end).
 	if got := usageTotals(firstClient); len(got) != 2 || got[0] != 6 || got[1] != 6 {
@@ -218,8 +218,8 @@ func assertOnlySessionsDB(t *testing.T, dir string) {
 func TestAppACPContextWindowComesFromWiring(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOME", shortTestHome(t))
-	t.Setenv("SUAG_MODEL", "")
+	t.Setenv("SUGA_HOME", shortTestHome(t))
+	t.Setenv("SUGA_MODEL", "")
 	cwd := t.TempDir()
 	t.Chdir(cwd)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

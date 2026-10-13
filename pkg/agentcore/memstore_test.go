@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/pkg/agentcore"
-	agentcoretesting "github.com/inhere/suag/pkg/agentcore/testing"
+	"github.com/inhere/suga/pkg/agentcore"
+	agentcoretesting "github.com/inhere/suga/pkg/agentcore/testing"
 )
 
 func TestMemoryStorageSuite(t *testing.T) {

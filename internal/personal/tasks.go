@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
 // TaskNotices hands over the session's ended background tasks the model has
@@ -20,7 +20,7 @@ type TaskNotices interface {
 }
 
 // metaTaskNotice marks the user message carrying background task notices.
-const metaTaskNotice = "suag.task_notice"
+const metaTaskNotice = "suga.task_notice"
 
 // noticeTailLines are shown per task in a notice.
 const noticeTailLines = 5

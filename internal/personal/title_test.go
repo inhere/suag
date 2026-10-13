@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/mock"
 )
 
 // goferPrompt is shaped like a gofer job prompt: rules, tools and skills

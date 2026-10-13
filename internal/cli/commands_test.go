@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/x/assert"
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/process"
-	"github.com/inhere/suag/internal/personal/store"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/personal/process"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
 func TestCLIRegistersPersonalCommands(t *testing.T) {
@@ -31,7 +31,7 @@ func TestCLIRegistersPersonalCommands(t *testing.T) {
 
 func TestCLIRegistersProcessCommandsAndSendExitCodes(t *testing.T) {
 	home := shortCLIHome(t)
-	t.Setenv("SUAG_HOME", home)
+	t.Setenv("SUGA_HOME", home)
 	root := filepath.Join(home, "run")
 	delivered := make(chan string, 1)
 	server, err := process.Start(root, "session-cli-123", "CLI test", t.TempDir(), func(text, from string) (bool, error) {
@@ -116,7 +116,7 @@ func TestVersionFlagsWriteConfiguredOutputAndDoNotAffectNextApp(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{flag})
 			assert.NoErr(t, err)
-			assert.Eq(t, "suag dev (dev)\n", stdout.String())
+			assert.Eq(t, "suga dev (dev)\n", stdout.String())
 			assert.Eq(t, "", stderr.String())
 		})
 	}
@@ -132,7 +132,7 @@ func TestVersionCommandWritesOneLine(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"version"})
 	assert.NoErr(t, err)
-	assert.Eq(t, "suag dev (dev)\n", stdout.String())
+	assert.Eq(t, "suga dev (dev)\n", stdout.String())
 	assert.Eq(t, "", stderr.String())
 }
 
@@ -140,7 +140,7 @@ func TestSendWaitReportsQueuedFate(t *testing.T) {
 	start := func(t *testing.T, sessionID string, settled chan error) {
 		t.Helper()
 		home := shortCLIHome(t)
-		t.Setenv("SUAG_HOME", home)
+		t.Setenv("SUGA_HOME", home)
 		server, err := process.StartWait(filepath.Join(home, "run"), sessionID, "wait", t.TempDir(), func(text, from string) (bool, <-chan error, error) {
 			return true, settled, nil
 		})
@@ -183,7 +183,7 @@ func TestSendRejectsOversizeStdinInsteadOfTruncating(t *testing.T) {
 }
 
 func TestTraceCommandPrintsSessionTimeline(t *testing.T) {
-	t.Setenv("SUAG_HOME", shortCLIHome(t))
+	t.Setenv("SUGA_HOME", shortCLIHome(t))
 	dbPath, err := appconfig.ResolveCoreStorePath()
 	assert.NoErr(t, err)
 	repo, err := store.Open(dbPath)
@@ -234,7 +234,7 @@ func TestTraceCommandPrintsSessionTimeline(t *testing.T) {
 }
 
 func TestTraceCommandShowsPlan(t *testing.T) {
-	t.Setenv("SUAG_HOME", shortCLIHome(t))
+	t.Setenv("SUGA_HOME", shortCLIHome(t))
 	dbPath, err := appconfig.ResolveCoreStorePath()
 	assert.NoErr(t, err)
 	repo, err := store.Open(dbPath)

@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/cflag/capp"
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal/store"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
-// newExportCommand builds `suag export`.
+// newExportCommand builds `suga export`.
 func newExportCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	var redact, withOutputs bool
 	var outFile string
@@ -32,7 +32,7 @@ func newExportCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	return cmd
 }
 
-// exportOptions are the flags of `suag export`.
+// exportOptions are the flags of `suga export`.
 type exportOptions struct {
 	redact      bool
 	withOutputs bool

@@ -10,11 +10,11 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	axconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	toolsmcp "github.com/inhere/suag/pkg/agentcore/tools/mcp"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	axconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	toolsmcp "github.com/inhere/suga/pkg/agentcore/tools/mcp"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 type capabilityToolProvider interface {
@@ -119,17 +119,17 @@ func readRoots() ([]native.ReadRoot, []error) {
 // minimizeOutput is the tool result tidier (tools.minimize_output, default
 // true): test summaries, folded repeats, no colour codes; nil when off. Its
 // output rules are the built-in ones, overridden and extended by
-// $SUAG_HOME/output-rules.yaml and then <workspace>/.suag/output-rules.yaml.
+// $SUGA_HOME/output-rules.yaml and then <workspace>/.suga/output-rules.yaml.
 func minimizeOutput(workspace string) func(agentcore.ToolCall, string) (string, bool) {
 	if !gkconfig.Bool("tools.minimize_output", true) {
 		return nil
 	}
 	var files []string
-	if home, err := axconfig.ResolveSuagHome(); err == nil && filepath.IsAbs(home) {
+	if home, err := axconfig.ResolveSugaHome(); err == nil && filepath.IsAbs(home) {
 		files = append(files, filepath.Join(home, outputRulesFile))
 	}
 	if workspace != "" {
-		files = append(files, filepath.Join(workspace, ".suag", outputRulesFile))
+		files = append(files, filepath.Join(workspace, ".suga", outputRulesFile))
 	}
 	rules, errs := native.LoadOutputRules(files...)
 	for _, err := range errs {
@@ -151,10 +151,10 @@ func prefetchTools(reg *tools.Registry) func(context.Context, []agentcore.ToolCa
 // outputRulesFile names the user and project output rule files.
 const outputRulesFile = "output-rules.yaml"
 
-// trashDir is where file_remove moves removed paths: <SUAG_HOME>/trash, or
-// "" (file_remove unavailable) when SUAG_HOME cannot be resolved.
+// trashDir is where file_remove moves removed paths: <SUGA_HOME>/trash, or
+// "" (file_remove unavailable) when SUGA_HOME cannot be resolved.
 func trashDir() string {
-	home, err := axconfig.ResolveSuagHome()
+	home, err := axconfig.ResolveSugaHome()
 	if err != nil || !filepath.IsAbs(home) {
 		return ""
 	}

@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>suag trace</title>
+<title>suga trace</title>
 <style>
 :root { --bg:#fafafa; --fg:#222; --mute:#777; --line:#e3e3e3; --model:#5b8def; --read:#3fb27f; --write:#e39b2d; --shell:#9b6bd6; --err:#e5484d; --other:#8a8a8a; --mark:#c0c0c0; }
 * { box-sizing: border-box; }
@@ -58,14 +58,14 @@ a.jump { color:var(--model); text-decoration:none; border-bottom:1px dotted var(
 </style>
 </head>
 <body>
-<header><h1 id="title">suag trace</h1><div id="sub" class="mute"></div><div class="chips" id="chips"></div></header>
+<header><h1 id="title">suga trace</h1><div id="sub" class="mute"></div><div class="chips" id="chips"></div></header>
 <nav><button data-tab="timeline" class="on">时间线</button><button data-tab="context">上下文</button><button data-tab="analysis">分析</button><button data-tab="env">本机环境</button></nav>
 <main id="main"></main>
 <script>
 "use strict";
 const COLORS = { model:"var(--model)", read:"var(--read)", write:"var(--write)", shell:"var(--shell)", error:"var(--err)", other:"var(--other)", mark:"var(--mark)" };
 const PARTS = [["system","系统提示","#5b8def"],["tools","工具定义","#8fb3f5"],["environment","环境","#3fb27f"],["rules","规则","#e39b2d"],["memory_index","记忆索引","#9b6bd6"],["skills","skills","#c58be0"],["append_prompt","追加提示","#d9b44a"],["deferred_tools","延迟工具","#a0c4ff"],["handoff","交接摘要","#ff9f80"],["history","历史","#b0b0b0"],["hook_context","hook 注入","#e5484d"],["input","本轮输入","#222"]];
-const READ_TOOLS = new Set(["file_read","file_list","file_grep","file_find","recall","session_search","web_fetch","web_search","skill","tool_search","suag_manifest"]);
+const READ_TOOLS = new Set(["file_read","file_list","file_grep","file_find","recall","session_search","web_fetch","web_search","skill","tool_search","suga_manifest"]);
 const WRITE_TOOLS = new Set(["file_write","file_edit","file_remove","update_plan","memory"]);
 let data, t0, entryBySeq = new Map(), selected = null, tab = "timeline";
 const filt = { kinds: new Set(["turn","model","tool","denial","task","context","hook","fold","compaction"]), errors:false, slow:false, q:"" };
@@ -138,7 +138,7 @@ function agentSummary(e) {
   const parts = [`${a.steps} 步`, `in ${human(a.input_tokens)}（缓存 ${human(a.cache_read_tokens)}）`, `out ${human(a.output_tokens)}`];
   if (a.cost_usd) parts.push("$" + Number(a.cost_usd).toFixed(4));
   if (a.stop) parts.push("stop=" + a.stop);
-  if (a.child_session_id) parts.push("suag trace " + a.child_session_id + " --web");
+  if (a.child_session_id) parts.push("suga trace " + a.child_session_id + " --web");
   return parts.join(" · ");
 }
 
@@ -181,7 +181,7 @@ function visible(e) {
 
 function renderHeader() {
   const s = data.session, a = data.analysis;
-  document.getElementById("title").textContent = (s.title || "suag 会话") + " · " + s.id;
+  document.getElementById("title").textContent = (s.title || "suga 会话") + " · " + s.id;
   const tc = data.events.find(e => e.kind === "turn_context");
   document.getElementById("sub").textContent = [s.cwd, tc && (tc.attrs.provider + "/" + tc.attrs.model), new Date(s.created_at).toLocaleString()].filter(Boolean).join(" · ");
   const chips = document.getElementById("chips"); chips.replaceChildren();
@@ -288,7 +288,7 @@ function showDetail(box, e) {
         // Sessions recorded before tool_names: name the tools the session called.
         const used = [...new Set(data.events.filter(x => x.kind === "tool" || x.kind === "denial").map(x => x.name))].sort();
         box.append(el("details", {open:""}, el("summary", {}, head),
-          el("p", {class:"mute"}, "这次会话的记录没有工具名单（记录它的 suag 版本较旧）；本机当前的工具定义见「本机环境」页。下面是本会话调用过的工具："),
+          el("p", {class:"mute"}, "这次会话的记录没有工具名单（记录它的 suga 版本较旧）；本机当前的工具定义见「本机环境」页。下面是本会话调用过的工具："),
           el("pre", {}, used.join("\n") || "（没有调用工具）")));
       }
     }
@@ -309,7 +309,7 @@ function showDetail(box, e) {
   }
   if (e.name === "agent" && e.attrs && e.attrs.child_session_id) {
     // The sub-agent ran in a session of its own: its events are there.
-    box.append(el("h3", {}, "子会话"), el("pre", {}, "suag trace " + e.attrs.child_session_id + " --web"));
+    box.append(el("h3", {}, "子会话"), el("pre", {}, "suga trace " + e.attrs.child_session_id + " --web"));
   }
   box.append(el("h3", {}, "属性"), kv(e.attrs || {}));
 }
@@ -373,7 +373,7 @@ function lastEvent(kind) { for (let i = data.events.length - 1; i >= 0; i--) if 
 function envChecks() {
   const tc = lastEvent("turn_context")?.attrs || {}, ctx = lastEvent("context")?.attrs || {}, m = env.manifest, rows = [];
   const add = (item, then, now, note) => rows.push({item, then: then ?? "-", now: now ?? "-", same: String(then) === String(now), note});
-  add("suag 版本", tc.version, m.version);
+  add("suga 版本", tc.version, m.version);
   add("主模型", tc.provider && tc.provider + "/" + tc.model, m.models.main.provider + "/" + m.models.main.model);
   add("规则哈希", tc.rules_hash && tc.rules_hash.slice(0, 12), env.rules.hash && env.rules.hash.slice(0, 12), "规则文件或内容变了就不同");
   if (ctx.tool_names) {
@@ -415,7 +415,7 @@ function envDetail(box, key) {
       el("h3", {}, "合并后的规则文本"), el("pre", {}, env.rules.text || "（无）"));
   } else if (kind === "hooks") {
     const h = env.hooks;
-    box.append(el("h3", {}, "Hooks（仅 chat 运行）"), kv({状态: h.enabled ? "启用" : h.off ? "SUAG_HOOKS=off 关闭" : "未配置", 错误: h.error}), el("pre", {}, h.config || "（无 hooks 配置）"));
+    box.append(el("h3", {}, "Hooks（仅 chat 运行）"), kv({状态: h.enabled ? "启用" : h.off ? "SUGA_HOOKS=off 关闭" : "未配置", 错误: h.error}), el("pre", {}, h.config || "（无 hooks 配置）"));
   } else if (kind === "mcp") {
     const s = env.mcp_servers.find(x => x.id === name);
     box.append(el("h3", {}, "MCP " + name), kv({命令: s.command, 参数: (s.args || []).join(" "), 环境变量: (s.env_keys || []).join(", ")}), el("p", {class:"mute"}, "工具列表需要启动服务后才有，这里不启动。"));

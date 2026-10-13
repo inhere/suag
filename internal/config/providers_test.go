@@ -13,8 +13,8 @@ import (
 	"github.com/gookit/config/v2/yaml"
 	"github.com/gookit/goutil/x/assert"
 
-	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/llm"
+	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 // loadYAML replaces the global config with the given YAML and isolates the
@@ -27,7 +27,7 @@ func loadYAML(t *testing.T, doc string) {
 	if doc != "" {
 		assert.NoErr(t, gkconfig.LoadSources(gkconfig.Yaml, []byte(doc)))
 	}
-	for _, k := range []string{"SUAG_MODEL", "SUAG_PROVIDER", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY"} {
+	for _, k := range []string{"SUGA_MODEL", "SUGA_PROVIDER", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY"} {
 		t.Setenv(k, "")
 	}
 }
@@ -163,7 +163,7 @@ fallback_models:
 
 	t.Run("priority flag over env over config", func(t *testing.T) {
 		loadYAML(t, doc)
-		t.Setenv("SUAG_MODEL", "anthropic/claude-sonnet-4-6")
+		t.Setenv("SUGA_MODEL", "anthropic/claude-sonnet-4-6")
 		s, err := ReadModelSettings("openai/gpt-4o")
 		assert.NoErr(t, err)
 		assert.Eq(t, "openai/gpt-4o", s.Main.Ref())
@@ -211,7 +211,7 @@ fallback_models:
 		assert.NoErr(t, err)
 		assert.Eq(t, "deepseek/deepseek-reasoner", s.Main.Ref())
 
-		t.Setenv("SUAG_MODEL", "deepseek-coder")
+		t.Setenv("SUGA_MODEL", "deepseek-coder")
 		s, err = ReadModelSettings("")
 		assert.NoErr(t, err)
 		assert.Eq(t, "deepseek/deepseek-coder", s.Main.Ref())
@@ -244,12 +244,12 @@ func TestCheckLegacyConfig(t *testing.T) {
 		assert.Err(t, err)
 	})
 
-	t.Run("SUAG_PROVIDER", func(t *testing.T) {
+	t.Run("SUGA_PROVIDER", func(t *testing.T) {
 		loadYAML(t, "model: openai/gpt-4o\n")
-		t.Setenv("SUAG_PROVIDER", "deepseek")
+		t.Setenv("SUGA_PROVIDER", "deepseek")
 		err := CheckLegacyConfig()
 		assert.Err(t, err)
-		assert.True(t, strings.Contains(err.Error(), "SUAG_MODEL=<provider>/<model>"))
+		assert.True(t, strings.Contains(err.Error(), "SUGA_MODEL=<provider>/<model>"))
 		_, err = ReadModelSettings("")
 		assert.Err(t, err)
 	})
@@ -306,15 +306,15 @@ func TestReadProvidersExpandsEnvReferences(t *testing.T) {
 providers:
   gw:
     type: openai
-    api_key: "${SUAG_TEST_GW_KEY}"
-    base_url: "${SUAG_TEST_GW_URL}"
+    api_key: "${SUGA_TEST_GW_KEY}"
+    base_url: "${SUGA_TEST_GW_URL}"
     headers:
       x-session: "{{session_id}}"
-      x-tag: "${SUAG_TEST_GW_TAG}"
+      x-tag: "${SUGA_TEST_GW_TAG}"
 `)
-	t.Setenv("SUAG_TEST_GW_KEY", "sk-env")
-	t.Setenv("SUAG_TEST_GW_URL", "https://gw.example/v1")
-	t.Setenv("SUAG_TEST_GW_TAG", "team-a")
+	t.Setenv("SUGA_TEST_GW_KEY", "sk-env")
+	t.Setenv("SUGA_TEST_GW_URL", "https://gw.example/v1")
+	t.Setenv("SUGA_TEST_GW_TAG", "team-a")
 	ps, err := ReadProviders()
 	assert.NoErr(t, err)
 	gw := ps["gw"]

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore"
 )
 
 type mutatingPromptHook struct{}

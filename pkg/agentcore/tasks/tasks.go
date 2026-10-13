@@ -24,8 +24,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/internal/proctree"
-	"github.com/inhere/suag/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore/internal/proctree"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 // Status is where a task is in its life.

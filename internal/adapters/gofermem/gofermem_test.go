@@ -14,7 +14,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/memory"
 )
 
 // The test binary doubles as a fake gofer: when fakeStateEnv is set, TestMain
@@ -257,15 +257,15 @@ var (
 )
 
 // foreign entries every isolation test seeds: a note of another agent, a
-// rule with a suag-looking key but no suag tag, and a suag-tagged entry whose
-// key does not follow the suag pattern.
+// rule with a suga-looking key but no suga tag, and a suga-tagged entry whose
+// key does not follow the suga pattern.
 func foreignSeed() []record {
 	return []record{
 		{Key: "team-rule", Content: "always run make lint before pushing", Tags: []string{"conventions"}, Kind: "rule",
 			Summary: "lint before push", UpdatedAt: "2026-10-01T00:00:00Z"},
-		{Key: "suag-project-foreign", Content: "impostor body mentions lint", Tags: []string{"other"}, Kind: "note",
+		{Key: "suga-project-foreign", Content: "impostor body mentions lint", Tags: []string{"other"}, Kind: "note",
 			Summary: "Foreign", UpdatedAt: "2026-10-01T00:00:00Z"},
-		{Key: "handwritten", Content: "tagged by hand, lint", Tags: []string{"suag"}, Kind: "note",
+		{Key: "handwritten", Content: "tagged by hand, lint", Tags: []string{"suga"}, Kind: "note",
 			Summary: "hand", UpdatedAt: "2026-10-01T00:00:00Z"},
 	}
 }
@@ -287,18 +287,18 @@ func TestNewAndScope(t *testing.T) {
 }
 
 func TestKeyMapping(t *testing.T) {
-	assert.Eq(t, "suag-feedback-run-tests", Key(memory.KindFeedback, "run-tests"))
+	assert.Eq(t, "suga-feedback-run-tests", Key(memory.KindFeedback, "run-tests"))
 	for _, tc := range []struct {
 		key  string
 		kind memory.Kind
 		id   string
 		ok   bool
 	}{
-		{"suag-project-release-flow", memory.KindProject, "release-flow", true},
-		{"suag-reference-docs-2", memory.KindReference, "docs-2", true},
-		{"suag-unknown-x", "", "", false},
-		{"suag-project-", "", "", false},
-		{"suag-project-Bad_ID", "", "", false},
+		{"suga-project-release-flow", memory.KindProject, "release-flow", true},
+		{"suga-reference-docs-2", memory.KindReference, "docs-2", true},
+		{"suga-unknown-x", "", "", false},
+		{"suga-project-", "", "", false},
+		{"suga-project-Bad_ID", "", "", false},
 		{"team-rule", "", "", false},
 	} {
 		t.Run(tc.key, func(t *testing.T) {
@@ -324,10 +324,10 @@ func TestWriteReadRoundTrip(t *testing.T) {
 	t.Run("set arguments follow the mapping", func(t *testing.T) {
 		w := f.writeCalls()
 		assert.Require(t, assert.Len(t, w, 1))
-		assert.Eq(t, []string{"memory", "set", "--json", "--kind", "note", "--tag", "suag,project",
-			"--summary", "Release flow", "--source", "suag:sess-1", "--", "suag-project-release-flow", "- tag first\n- then push"}, w[0].Args)
-		r := f.records()["suag-project-release-flow"]
-		assert.Eq(t, []string{"suag", "project"}, r.Tags)
+		assert.Eq(t, []string{"memory", "set", "--json", "--kind", "note", "--tag", "suga,project",
+			"--summary", "Release flow", "--source", "suga:sess-1", "--", "suga-project-release-flow", "- tag first\n- then push"}, w[0].Args)
+		r := f.records()["suga-project-release-flow"]
+		assert.Eq(t, []string{"suga", "project"}, r.Tags)
 		assert.Eq(t, "note", r.Kind)
 	})
 	t.Run("runs in the workspace with credentials stripped", func(t *testing.T) {
@@ -362,7 +362,7 @@ func TestWriteReadRoundTrip(t *testing.T) {
 		_, err := st.Write(ctx, proj, memory.Op{Action: memory.ActionAdd, Title: "Docs", Body: "see docs/", Kind: memory.KindReference})
 		assert.NoErr(t, err)
 		w := f.writeCalls()
-		assert.Contains(t, strings.Join(w[len(w)-1].Args, " "), "--source suag --")
+		assert.Contains(t, strings.Join(w[len(w)-1].Args, " "), "--source suga --")
 	})
 	t.Run("missing id", func(t *testing.T) {
 		_, err := st.Get(ctx, proj, "nope")
@@ -379,7 +379,7 @@ func TestReplaceAndRemove(t *testing.T) {
 		got, err := st.Write(ctx, proj, memory.Op{Action: memory.ActionReplace, ID: e.ID, Title: "Use make lint-all", Body: "before every commit"})
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, memory.KindProject, got.Kind)
-		r := f.records()["suag-project-use-make-lint"]
+		r := f.records()["suga-project-use-make-lint"]
 		assert.Eq(t, "before every commit", r.Content)
 		assert.Eq(t, "Use make lint-all", r.Summary)
 	})
@@ -389,9 +389,9 @@ func TestReplaceAndRemove(t *testing.T) {
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, memory.KindFeedback, got.Kind)
 		recs := f.records()
-		_, oldThere := recs["suag-project-use-make-lint"]
+		_, oldThere := recs["suga-project-use-make-lint"]
 		assert.False(t, oldThere)
-		assert.Eq(t, []string{"suag", "feedback"}, recs["suag-feedback-use-make-lint"].Tags)
+		assert.Eq(t, []string{"suga", "feedback"}, recs["suga-feedback-use-make-lint"].Tags)
 	})
 	t.Run("remove returns the removed entry", func(t *testing.T) {
 		old, err := st.Write(ctx, proj, memory.Op{Action: memory.ActionRemove, ID: e.ID})
@@ -413,8 +413,8 @@ func TestReplaceAndRemove(t *testing.T) {
 	})
 }
 
-// TestForeignEntriesAreInvisible proves that entries without the suag tag (or
-// without a suag key) can never be listed, read, changed or removed, even
+// TestForeignEntriesAreInvisible proves that entries without the suga tag (or
+// without a suga key) can never be listed, read, changed or removed, even
 // when gofer itself ignores the --tag filter.
 func TestForeignEntriesAreInvisible(t *testing.T) {
 	for _, ignoreTag := range []bool{false, true} {
@@ -458,11 +458,11 @@ func TestForeignEntriesAreInvisible(t *testing.T) {
 	}
 }
 
-// TestShowRechecksTag covers an entry that lost its suag tag between the
+// TestShowRechecksTag covers an entry that lost its suga tag between the
 // listing and the read: the listing (fake ignores --tag) still names it, the
 // authoritative show must not.
 func TestShowRechecksTag(t *testing.T) {
-	f, st := newFake(t, record{Key: "suag-user-pref", Content: "c", Tags: []string{"suag", "user"}, Summary: "pref",
+	f, st := newFake(t, record{Key: "suga-user-pref", Content: "c", Tags: []string{"suga", "user"}, Summary: "pref",
 		UpdatedAt: "2026-10-01T00:00:00Z"})
 	_, err := st.Get(ctx, proj, "pref")
 	assert.Require(t, assert.NoErr(t, err))

@@ -13,18 +13,18 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
-	suaghooks "github.com/inhere/suag/internal/hooks"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	sugahooks "github.com/inhere/suga/internal/hooks"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // TestFakeHookProcess is the fake hook command for chat tests: the test binary
 // re-runs itself with -test.run=^TestFakeHookProcess$ and appends the hook args
-// and event name to SUAG_FAKE_HOOK_LOG. It answers with an empty response.
+// and event name to SUGA_FAKE_HOOK_LOG. It answers with an empty response.
 func TestFakeHookProcess(t *testing.T) {
-	logPath := os.Getenv("SUAG_FAKE_HOOK_LOG")
+	logPath := os.Getenv("SUGA_FAKE_HOOK_LOG")
 	if logPath == "" {
 		return
 	}
@@ -51,8 +51,8 @@ type recordedHookCall struct {
 func configureFakeHook(t *testing.T) string {
 	t.Helper()
 	logPath := filepath.Join(t.TempDir(), "hook.log")
-	t.Setenv("SUAG_HOOKS", "")
-	t.Setenv("SUAG_FAKE_HOOK_LOG", logPath)
+	t.Setenv("SUGA_HOOKS", "")
+	t.Setenv("SUGA_FAKE_HOOK_LOG", logPath)
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	assert.NoErr(t, gkconfig.Set("hooks.command", []string{os.Args[0], "-test.run=^TestFakeHookProcess$", "base"}))
 	return logPath
@@ -97,14 +97,14 @@ func newShellToolRunner(t *testing.T) *personal.Runner {
 func TestPersonalChatRunsConfiguredHookCommand(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOME", t.TempDir())
+	t.Setenv("SUGA_HOME", t.TempDir())
 
 	t.Run("events and stop_args", func(t *testing.T) {
 		logPath := configureFakeHook(t)
 		assert.NoErr(t, gkconfig.Set("hooks.stop_args", []string{"--wait", "5"}))
 		assert.NoErr(t, gkconfig.Set("hooks.post_tool_use.tools", []string{"shell_*"}))
 		assert.NoErr(t, gkconfig.Set("hooks.post_tool_use.name", "shell"))
-		hooks, err := suaghooks.New()
+		hooks, err := sugahooks.New()
 		assert.Require(t, assert.NoErr(t, err))
 		// :quit only after the Stop command ran: an earlier :quit interrupts and may
 		// kill the Stop process before it starts, which is the normal interrupt path.
@@ -149,7 +149,7 @@ func TestPersonalChatRunsConfiguredHookCommand(t *testing.T) {
 		logPath := configureFakeHook(t)
 		assert.NoErr(t, gkconfig.Set("hooks.command", []string{}))
 		assert.NoErr(t, gkconfig.Set("hooks.post_tool_use.tools", []string{"*"}))
-		hooks, err := suaghooks.New()
+		hooks, err := sugahooks.New()
 		assert.NoErr(t, err)
 		assert.Require(t, assert.Nil(t, hooks))
 		var stdout, stderr strings.Builder
@@ -157,11 +157,11 @@ func TestPersonalChatRunsConfiguredHookCommand(t *testing.T) {
 		assert.StrContains(t, stdout.String(), "finished")
 		assert.Nil(t, readHookLog(t, logPath))
 	})
-	t.Run("SUAG_HOOKS=off runs nothing", func(t *testing.T) {
+	t.Run("SUGA_HOOKS=off runs nothing", func(t *testing.T) {
 		gkconfig.Reset()
 		configureFakeHook(t)
-		t.Setenv("SUAG_HOOKS", "off")
-		hooks, err := suaghooks.New()
+		t.Setenv("SUGA_HOOKS", "off")
+		hooks, err := sugahooks.New()
 		assert.NoErr(t, err)
 		assert.Nil(t, hooks)
 	})
@@ -170,17 +170,17 @@ func TestPersonalChatRunsConfiguredHookCommand(t *testing.T) {
 func TestPersonalChatPostToolUseFollowsConfig(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOME", t.TempDir())
+	t.Setenv("SUGA_HOME", t.TempDir())
 	for _, tc := range []struct {
 		name   string
-		filter suaghooks.PostToolFilter
+		filter sugahooks.PostToolFilter
 		// want is the PostToolUse tool name; empty means no PostToolUse is sent.
 		want string
 	}{
-		{name: "unconfigured sends none", filter: suaghooks.PostToolFilter{Name: "shell"}},
-		{name: "unmatched tool sends none", filter: suaghooks.PostToolFilter{Tools: []string{"file_*", "exec"}}},
-		{name: "glob match keeps the name", filter: suaghooks.PostToolFilter{Tools: []string{"shell_*"}}, want: "shell_exec"},
-		{name: "exact match is renamed", filter: suaghooks.PostToolFilter{Tools: []string{"shell_exec"}, Name: "shell"}, want: "shell"},
+		{name: "unconfigured sends none", filter: sugahooks.PostToolFilter{Name: "shell"}},
+		{name: "unmatched tool sends none", filter: sugahooks.PostToolFilter{Tools: []string{"file_*", "exec"}}},
+		{name: "glob match keeps the name", filter: sugahooks.PostToolFilter{Tools: []string{"shell_*"}}, want: "shell_exec"},
+		{name: "exact match is renamed", filter: sugahooks.PostToolFilter{Tools: []string{"shell_exec"}, Name: "shell"}, want: "shell"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			hooks := newFakeHookClient()

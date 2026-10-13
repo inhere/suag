@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/inhere/suag/internal/personal/process"
+	"github.com/inhere/suga/internal/personal/process"
 )
 
 // Session single flight (design D5). Three mechanisms keep one session's work
@@ -19,7 +19,7 @@ import (
 //     otherwise Run/Compact take it for one call. It does not order the
 //     callers inside one process (chat already holds it for all of them).
 //   - markRunning / store.SessionRunning is the persisted status other
-//     processes (suag ps, a second suag run) read; it is set only while a turn
+//     processes (suga ps, a second suga run) read; it is set only while a turn
 //     runs, under both of the above.
 //
 // Callers take the gate first, then the file lock, so a waiting caller never

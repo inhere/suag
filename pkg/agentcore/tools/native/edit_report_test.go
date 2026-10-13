@@ -10,7 +10,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/api"
 )
 
 func runEdit(t *testing.T, ws string, args map[string]any) (string, error) {

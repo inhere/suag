@@ -11,7 +11,7 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // DeferredMode is the tools.deferred setting.

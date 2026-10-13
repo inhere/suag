@@ -1,8 +1,8 @@
 package wiring
 
 import (
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // writeToolHint says why write tools are off in this runtime and how the
@@ -10,11 +10,11 @@ import (
 func writeToolHint(opts Options) string {
 	switch {
 	case opts.CLIMode && opts.ReadOnly:
-		return "本次以 --read-only 启动，写文件与执行命令的工具不可用；去掉 --read-only 后，run 加 --allow-write，chat 在 SUAG_HOME/config.yaml 设 tools.allow_write: true"
+		return "本次以 --read-only 启动，写文件与执行命令的工具不可用；去掉 --read-only 后，run 加 --allow-write，chat 在 SUGA_HOME/config.yaml 设 tools.allow_write: true"
 	case opts.CLIMode && opts.ChatMode:
-		return "chat 默认只读；在 SUAG_HOME/config.yaml 设 tools.allow_write: true 后重新打开 chat"
+		return "chat 默认只读；在 SUGA_HOME/config.yaml 设 tools.allow_write: true 后重新打开 chat"
 	case opts.CLIMode:
-		return "suag run 默认只读；加 --allow-write 重新运行（由任务调度器拉起时，需在其 suag run 命令模板中加 --allow-write）"
+		return "suga run 默认只读；加 --allow-write 重新运行（由任务调度器拉起时，需在其 suga run 命令模板中加 --allow-write）"
 	default:
 		return "ACP 会话处于 read_only 模式；需由 ACP 客户端把会话模式设为 default（可写）"
 	}
@@ -31,7 +31,7 @@ func disabledToolHints(registry *tools.Registry, opts Options) map[string]string
 			continue
 		}
 		if spec.Name == "web_search" {
-			hints[spec.Name] = "未配置 serpapi_key；在 SUAG_HOME/config.yaml 设 serpapi_key 后可用"
+			hints[spec.Name] = "未配置 serpapi_key；在 SUGA_HOME/config.yaml 设 serpapi_key 后可用"
 			continue
 		}
 		// Building with an empty Env only reads the tool's own metadata.

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 func TestDefaultErrorPolicy_PreservesExistingSemantics(t *testing.T) {

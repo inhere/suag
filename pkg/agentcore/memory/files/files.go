@@ -5,9 +5,9 @@
 // Two layouts are supported:
 //
 //   - DirLayout{Dir}: index <Dir>/MEMORY.md, entries <Dir>/<id>.md
-//     (user memory, ~/.suag/projects/<key>/memory).
+//     (user memory, ~/.suga/projects/<key>/memory).
 //   - RepoLayout{Root}: index <Root>/MEMORY.md, entries
-//     <Root>/.suag/memory/<id>.md (project memory kept in the repository).
+//     <Root>/.suga/memory/<id>.md (project memory kept in the repository).
 //
 // Index lines have the form "- [Title](relative/path.md) — kind". Lines that
 // do not match (headings, prose, other lists) are hand-written and preserved
@@ -36,7 +36,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/memory"
 )
 
 // Name is the backend name reported by BackendName.
@@ -46,7 +46,7 @@ const (
 	dirPerm  = 0o700
 	filePerm = 0o600
 	// repoEntryDir is where RepoLayout keeps entry files, relative to Root.
-	repoEntryDir = ".suag/memory"
+	repoEntryDir = ".suga/memory"
 	// defaultSearchLimit applies when Search is called with limit <= 0.
 	defaultSearchLimit = 10
 )
@@ -62,7 +62,7 @@ type Layout interface {
 type DirLayout struct{ Dir string }
 
 // RepoLayout keeps MEMORY.md at the repository root and entries under
-// .suag/memory/. Root must already exist; it is never created.
+// .suga/memory/. Root must already exist; it is never created.
 type RepoLayout struct{ Root string }
 
 type layoutPaths struct {

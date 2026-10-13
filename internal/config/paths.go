@@ -9,7 +9,7 @@ import (
 )
 
 // ResolveCoreStorePath returns the single-file core store location
-// ($SUAG_HOME/db/sessions.db).
+// ($SUGA_HOME/db/sessions.db).
 func ResolveCoreStorePath() (string, error) {
 	dir, err := personalDBDir()
 	if err != nil {
@@ -19,38 +19,38 @@ func ResolveCoreStorePath() (string, error) {
 }
 
 func personalDBDir() (string, error) {
-	home, err := ResolveSuagHome()
+	home, err := ResolveSugaHome()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(home, "db"), nil
 }
 
-// ResolveSessionsDir returns the per-session file root ($SUAG_HOME/sessions):
+// ResolveSessionsDir returns the per-session file root ($SUGA_HOME/sessions):
 // <sessions>/<session_id>/outputs/ holds externalised tool outputs.
 func ResolveSessionsDir() (string, error) {
-	home, err := ResolveSuagHome()
+	home, err := ResolveSugaHome()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(home, "sessions"), nil
 }
 
-// ResolveSuagHome locates user-level instructions from the data store location.
-func ResolveSuagHome() (string, error) {
-	if root := strings.TrimSpace(os.Getenv("SUAG_HOME")); root != "" {
+// ResolveSugaHome locates user-level instructions from the data store location.
+func ResolveSugaHome() (string, error) {
+	if root := strings.TrimSpace(os.Getenv("SUGA_HOME")); root != "" {
 		return filepath.Abs(root)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".suag"), nil
+	return filepath.Join(home, ".suga"), nil
 }
 
 func ResolveWorkspacePath() string {
-	// Unset means the directory suag was started in, as the config sample
-	// documents: `suag run` in a project works on that project, and a job
+	// Unset means the directory suga was started in, as the config sample
+	// documents: `suga run` in a project works on that project, and a job
 	// runner's working directory applies the same way the ACP session cwd does.
 	if workspace := strings.TrimSpace(gkconfig.String("workspace")); workspace != "" {
 		return workspace

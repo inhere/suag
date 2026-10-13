@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
+	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // streamReadError marks a network error while reading a response body (the

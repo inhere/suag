@@ -5,7 +5,7 @@ import (
 	"time"
 
 	gkconfig "github.com/gookit/config/v2"
-	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
+	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
 )
 
 func ReadMCPServerSettings() []mcp.ServerSettings {

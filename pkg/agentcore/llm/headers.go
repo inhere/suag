@@ -6,16 +6,16 @@ import (
 	"strings"
 )
 
-// DefaultUserAgent identifies suag to model APIs; llm.headers can override it.
-const DefaultUserAgent = "suag"
+// DefaultUserAgent identifies suga to model APIs; llm.headers can override it.
+const DefaultUserAgent = "suga"
 
 // SessionIDPlaceholder in an llm.headers value is replaced with the current
-// suag session id, e.g. a gateway's per-conversation routing header.
+// suga session id, e.g. a gateway's per-conversation routing header.
 const SessionIDPlaceholder = "{{session_id}}"
 
 type sessionIDKey struct{}
 
-// WithSessionID marks ctx with the suag session the model call belongs to.
+// WithSessionID marks ctx with the suga session the model call belongs to.
 func WithSessionID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, sessionIDKey{}, id)
 }

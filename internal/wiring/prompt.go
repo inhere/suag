@@ -9,11 +9,11 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
-const debugPromptNonceEnv = "SUAG_DEBUG_PROMPT_NONCE"
+const debugPromptNonceEnv = "SUGA_DEBUG_PROMPT_NONCE"
 
 // staticPrompt is a system prompt built once per process. It holds no time or
 // per-turn data, so every turn of the process sends the same bytes and the
@@ -33,21 +33,21 @@ func (p staticPrompt) BuildSystemPrompt(context.Context, *agentcore.RunState) (s
 // context; the tool list is not repeated: tool schemas already carry it.
 func basePrompt() string {
 	var b strings.Builder
-	// SUAG_DEBUG_PROMPT_NONCE is a hidden debug switch for the eval's
+	// SUGA_DEBUG_PROMPT_NONCE is a hidden debug switch for the eval's
 	// --probe-prefix control group: a non-empty value is put first so the
 	// whole prompt prefix differs per run and cannot hit a provider cache.
 	// It is never set in normal use.
 	if nonce := os.Getenv(debugPromptNonceEnv); nonce != "" {
 		b.WriteString("nonce: " + nonce + "\n")
 	}
-	b.WriteString("You are suag, a personal coding agent working in the user's workspace through tools.\n\n")
+	b.WriteString("You are suga, a personal coding agent working in the user's workspace through tools.\n\n")
 	b.WriteString("# Working conventions\n")
 	b.WriteString("- Use the file tools to read, list and search files rather than shell commands.\n")
-	// Step-count review (docs/research/2026-10-11-suag-vs-omp-loop-analysis.md,
+	// Step-count review (docs/research/2026-10-11-suga-vs-omp-loop-analysis.md,
 	// suag-jz0l): exploration took one tool per step, and most extra steps came
 	// after the tests already passed.
 	b.WriteString("- Put independent reads, searches and commands in the same response so they run together (several files in one file_read, a search plus a listing, ...).\n")
-	// R6 write-to-green review: suag made one edit per step where omp sent
+	// R6 write-to-green review: suga made one edit per step where omp sent
 	// all fixes for a test run at once; file_edit's edits went unused.
 	b.WriteString("- Make independent changes together: several replacements in one file in one file_edit call (edits), and edits to different files in the same response, e.g. every fix a failed test run calls for.\n")
 	b.WriteString("- To learn a dependency's API, list it with one command (go doc <package>, or a grep for its exported functions) instead of reading its files one by one.\n")
@@ -59,7 +59,7 @@ func basePrompt() string {
 	b.WriteString("- When a tool is refused or not enabled, do not retry it; explain what is needed instead.\n")
 	// Kept from the step-count experiment: a mid-task memory write disappeared
 	// with it, while the other step-count conventions made no difference
-	// (docs/research/2026-10-11-suag-vs-omp-loop-analysis.md).
+	// (docs/research/2026-10-11-suga-vs-omp-loop-analysis.md).
 	b.WriteString("- Keep to the task: do not create or update tracker issues, plans or memory entries while doing it unless the user asks for it or corrects how you work.\n")
 	b.WriteString("- Change only what the task asks for. Problems you notice outside that scope go into a \"Found, not touched\" section of your report instead of being fixed on the side.\n")
 	b.WriteString("- If injected rules, memory or docs contradict the actual code or environment, say so in your report (what, where, why it looks stale) instead of silently working around it.\n")
@@ -77,7 +77,7 @@ func environmentPrompt(opts Options) string {
 	fmt.Fprintf(&b, "- Workspace (file tools are confined to it): %s\n", opts.Workspace)
 	if roots, _ := readRoots(); len(roots) > 0 {
 		// Dependency sources: read them with the file tools instead of shell
-		// detours (docs/research/2026-10-11-suag-vs-omp-loop-analysis.md).
+		// detours (docs/research/2026-10-11-suga-vs-omp-loop-analysis.md).
 		b.WriteString("- Read-only roots outside the workspace (file_read, file_list, file_grep and file_find accept absolute paths under them):\n")
 		for _, r := range roots {
 			fmt.Fprintf(&b, "  - %s: %s\n", r.Label, r.Path)

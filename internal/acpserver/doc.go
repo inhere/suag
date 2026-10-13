@@ -1,2 +1,2 @@
-// Package acpserver will adapt Suag's personal agent to ACP over stdio.
+// Package acpserver will adapt Suga's personal agent to ACP over stdio.
 package acpserver

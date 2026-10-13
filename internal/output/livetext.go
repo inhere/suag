@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/pkg/agentcore"
 )
 
 // LiveText prints a turn's text deltas as they stream in. Each model message

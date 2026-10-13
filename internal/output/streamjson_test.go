@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suga/internal/personal"
 )
 
 func TestEventLineToolEvents(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 func TestManifestTool(t *testing.T) {
@@ -19,7 +19,7 @@ func TestManifestTool(t *testing.T) {
 		assert.True(t, m.ReadOnly)
 		assert.False(t, m.External)
 		assert.Eq(t, tools.CategoryRead, m.Category)
-		assert.Eq(t, "suag_manifest", NewManifestTool(nil).Schema().Name)
+		assert.Eq(t, "suga_manifest", NewManifestTool(nil).Schema().Name)
 	})
 	t.Run("struct value is encoded as JSON", func(t *testing.T) {
 		tool := NewManifestTool(func(context.Context) (any, error) {
@@ -27,7 +27,7 @@ func TestManifestTool(t *testing.T) {
 		})
 		res, err := tool.Execute(context.Background(), call)
 		assert.Require(t, assert.NoErr(t, err))
-		assert.Eq(t, "suag_manifest", res.Name)
+		assert.Eq(t, "suga_manifest", res.Name)
 		assert.Eq(t, "c1", res.CallID)
 		var got map[string]any
 		assert.NoErr(t, json.Unmarshal([]byte(res.Content), &got))

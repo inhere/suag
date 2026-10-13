@@ -10,17 +10,17 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/cflag/capp"
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal/store"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
-// newStatsCommand builds `suag stats`.
+// newStatsCommand builds `suga stats`.
 func newStatsCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	var since, session string
 	var asJSON bool
 	cmd := capp.NewCmd("stats", "Summarize model/tool calls, latency, tokens and cache hits", func(c *capp.Cmd) error {
 		if len(c.RemainArgs()) > 0 {
-			return fmt.Errorf("usage: suag stats [--since 7d] [--session id] [--json]")
+			return fmt.Errorf("usage: suga stats [--since 7d] [--session id] [--json]")
 		}
 		return runStats(ctx, stdout, since, session, asJSON)
 	})

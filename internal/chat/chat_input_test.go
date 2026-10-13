@@ -3,7 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
-	"github.com/inhere/suag/internal/personal/process"
+	"github.com/inhere/suga/internal/personal/process"
 	"io"
 	"strings"
 	"sync"
@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/chat/lineedit"
+	"github.com/inhere/suga/internal/chat/lineedit"
 )
 
 // fakeTTY records raw/cooked transitions without touching a real terminal.

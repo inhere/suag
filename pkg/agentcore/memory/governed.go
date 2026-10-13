@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inhere/suag/pkg/agentcore/redact"
+	"github.com/inhere/suga/pkg/agentcore/redact"
 )
 
 // Default index budget per scope (design D6). Over-budget writes fail; the

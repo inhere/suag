@@ -12,12 +12,12 @@ import (
 	"github.com/gookit/config/v2/yaml"
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/memory"
-	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // memoryAsker answers memory questions from a list and records them.
@@ -50,7 +50,7 @@ type memEnv struct {
 
 func newMemEnv(t *testing.T, policy memoryWritePolicy, readOnly bool, confirm MemoryConfirmFunc) *memEnv {
 	t.Helper()
-	setup, err := buildMemory(t.TempDir(), MemoryConfig{SuagHome: t.TempDir()})
+	setup, err := buildMemory(t.TempDir(), MemoryConfig{SugaHome: t.TempDir()})
 	assert.Require(t, assert.NoErr(t, err))
 	assert.Require(t, assert.Eq(t, "files", setup.Project.Backend))
 	repo, err := store.Open(filepath.Join(t.TempDir(), "db", "sessions.db"))

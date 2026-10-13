@@ -7,7 +7,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/skills"
+	"github.com/inhere/suga/pkg/agentcore/skills"
 )
 
 func TestSkillTool(t *testing.T) {

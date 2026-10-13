@@ -10,10 +10,10 @@ import (
 	"runtime"
 
 	"github.com/gookit/goutil/cflag/capp"
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/internal/wiring"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/internal/wiring"
 )
 
 func newTraceCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {

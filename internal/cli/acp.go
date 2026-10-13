@@ -7,17 +7,17 @@ import (
 	"path/filepath"
 
 	"github.com/gookit/goutil/cflag/capp"
-	"github.com/inhere/suag/internal/acpserver"
-	"github.com/inhere/suag/internal/wiring"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/mcp"
+	"github.com/inhere/suga/internal/acpserver"
+	"github.com/inhere/suga/internal/wiring"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
 )
 
 func newACPCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) *capp.Cmd {
 	acp := capp.NewCmd("acp", "Serve an ACP session over stdio", func(c *capp.Cmd) error {
 		if len(c.RemainArgs()) != 0 {
-			return fmt.Errorf("suag acp does not accept arguments")
+			return fmt.Errorf("suga acp does not accept arguments")
 		}
 		if err := RunPersonalACP(ctx, stdin, stdout); err != nil {
 			return fmt.Errorf("acp: %w", err)

@@ -34,11 +34,11 @@ func TestShellExecUnix(t *testing.T) {
 		assert.StrContains(t, res.Content, "Test Name: x\n[stderr]\nFAIL")
 		assert.NotContains(t, res.Content, "\x1b")
 	})
-	t.Run("suag's own settings are not passed on", func(t *testing.T) {
-		t.Setenv("SUAG_HOME", "/private/suag")
-		t.Setenv("SUAG_MODEL", "x/y")
-		t.Setenv("SUAG_KEEP_ME", "kept")
-		res, _ := runShell(t, tool, map[string]any{"command": `echo "home=[$SUAG_HOME] model=[$SUAG_MODEL] other=[$SUAG_KEEP_ME]"`})
+	t.Run("suga's own settings are not passed on", func(t *testing.T) {
+		t.Setenv("SUGA_HOME", "/private/suga")
+		t.Setenv("SUGA_MODEL", "x/y")
+		t.Setenv("SUGA_KEEP_ME", "kept")
+		res, _ := runShell(t, tool, map[string]any{"command": `echo "home=[$SUGA_HOME] model=[$SUGA_MODEL] other=[$SUGA_KEEP_ME]"`})
 		assert.StrContains(t, res.Content, "home=[] model=[] other=[kept]")
 	})
 	t.Run("git does not prompt", func(t *testing.T) {

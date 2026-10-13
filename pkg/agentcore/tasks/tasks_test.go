@@ -16,7 +16,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suag/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 // The test binary doubles as the task command: TASKS_HELPER selects what it

@@ -14,30 +14,30 @@ import (
 // Load initializes environment and YAML-backed configuration sources for the
 // current process. Call it once near process startup before reading settings.
 func Load() error {
-	privateDir, err := ResolveSuagHome()
+	privateDir, err := ResolveSugaHome()
 	if err != nil {
-		return fmt.Errorf("resolve suag home for config: %w", err)
+		return fmt.Errorf("resolve suga home for config: %w", err)
 	}
 
-	// Only SUAG_HOME/.env is read. The working directory's .env belongs to the
-	// user's project (suag runs inside it) and must not rewrite suag's database
-	// or config root. SUAG_HOME/SUAG_CONFIG are honoured from the process
+	// Only SUGA_HOME/.env is read. The working directory's .env belongs to the
+	// user's project (suga runs inside it) and must not rewrite suga's database
+	// or config root. SUGA_HOME/SUGA_CONFIG are honoured from the process
 	// environment only: the root was resolved above, so a value injected by the
 	// .env file is reverted to keep the config root and data root consistent.
-	guarded := snapshotEnv("SUAG_HOME", "SUAG_CONFIG")
+	guarded := snapshotEnv("SUGA_HOME", "SUGA_CONFIG")
 	dotenv.LoadExistFiles(filepath.Join(privateDir, ".env"))
 	guarded.restore()
 
 	gkconfig.AddDriver(yaml.Driver)
 	gkconfig.WithOptions(gkconfig.ParseEnv)
-	if configPath := os.Getenv("SUAG_CONFIG"); configPath != "" {
+	if configPath := os.Getenv("SUGA_CONFIG"); configPath != "" {
 		if err := gkconfig.LoadFiles(configPath); err != nil {
-			return fmt.Errorf("load SUAG_CONFIG: %w", err)
+			return fmt.Errorf("load SUGA_CONFIG: %w", err)
 		}
 		return nil
 	}
-	// Like .env, config.yaml is read from SUAG_HOME only: a config.yaml in the
-	// user's project directory is that project's file, not suag's.
+	// Like .env, config.yaml is read from SUGA_HOME only: a config.yaml in the
+	// user's project directory is that project's file, not suga's.
 	if err := gkconfig.LoadExists(filepath.Join(privateDir, "config.yaml")); err != nil {
 		slog.Error("loading config file", "err", err)
 		return err

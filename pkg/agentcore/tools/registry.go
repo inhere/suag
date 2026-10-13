@@ -8,7 +8,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // Kind classifies the runtime type of a tool.

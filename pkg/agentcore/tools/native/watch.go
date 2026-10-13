@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/internal/proctree"
-	"github.com/inhere/suag/pkg/agentcore/tasks"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/internal/proctree"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
 // A watch is a background shell_exec with every and/or watch_paths: the

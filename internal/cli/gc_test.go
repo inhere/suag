@@ -9,15 +9,15 @@ import (
 
 	"github.com/gookit/goutil/fsutil"
 	"github.com/gookit/goutil/x/assert"
-	appconfig "github.com/inhere/suag/internal/config"
-	personalprocess "github.com/inhere/suag/internal/personal/process"
-	"github.com/inhere/suag/internal/personal/store"
+	appconfig "github.com/inhere/suga/internal/config"
+	personalprocess "github.com/inhere/suga/internal/personal/process"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
 func TestGCCommand(t *testing.T) {
 	home := shortCLIHome(t)
-	t.Setenv("SUAG_HOME", home)
-	t.Setenv("SUAG_HOOKS", "off")
+	t.Setenv("SUGA_HOME", home)
+	t.Setenv("SUGA_HOOKS", "off")
 	ctx := context.Background()
 	dbPath, err := appconfig.ResolveCoreStorePath()
 	assert.Require(t, assert.NoErr(t, err))

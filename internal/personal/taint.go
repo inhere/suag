@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // Session meta keys of the taint flag (D7): written once, never cleared.

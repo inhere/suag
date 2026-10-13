@@ -14,15 +14,15 @@ import (
 	"golang.org/x/term"
 )
 
-// TestMain follows the repo rule for new test packages: SUAG_HOME points at a
-// throwaway directory and hooks are off, so tests never touch ~/.suag.
+// TestMain follows the repo rule for new test packages: SUGA_HOME points at a
+// throwaway directory and hooks are off, so tests never touch ~/.suga.
 func TestMain(m *testing.M) {
-	home, err := os.MkdirTemp("", "suag-test-home-*")
+	home, err := os.MkdirTemp("", "suga-test-home-*")
 	if err != nil {
 		panic(err)
 	}
-	_ = os.Setenv("SUAG_HOME", home)
-	_ = os.Setenv("SUAG_HOOKS", "off")
+	_ = os.Setenv("SUGA_HOME", home)
+	_ = os.Setenv("SUGA_HOOKS", "off")
 	code := m.Run()
 	_ = os.RemoveAll(home)
 	os.Exit(code)

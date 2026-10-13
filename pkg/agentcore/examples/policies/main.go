@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/mock"
-	"github.com/inhere/suag/pkg/agentcore/storage/files"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/storage/files"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 type resumeWithoutAppendingPolicy struct {
@@ -79,7 +79,7 @@ func (yieldProviderErrorPolicy) HandleRecoverable(_ context.Context, _ *agentcor
 func main() {
 	ctx := context.Background()
 	runID := "example-policies"
-	root := filepath.Join(os.TempDir(), "suag-agentcore-examples", "policies")
+	root := filepath.Join(os.TempDir(), "suga-agentcore-examples", "policies")
 	if err := os.RemoveAll(root); err != nil {
 		log.Fatal(err)
 	}

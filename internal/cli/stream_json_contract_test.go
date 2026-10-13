@@ -29,7 +29,7 @@ type contractLine struct {
 
 // goldenEnv, when set to a path, makes TestStreamJSONContract (re)write the golden
 // file there instead of comparing; used once against the pre-store baseline.
-const goldenEnv = "SUAG_WRITE_STREAM_GOLDEN"
+const goldenEnv = "SUGA_WRITE_STREAM_GOLDEN"
 
 // runContractScenario drives RunPersonalCLI("run") against a fake OpenAI server and
 // returns the distinct stream-json line shapes it emitted.
@@ -37,7 +37,7 @@ func runContractScenario(t *testing.T, scenario string) []contractLine {
 	t.Helper()
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOME", shortTestHome(t))
+	t.Setenv("SUGA_HOME", shortTestHome(t))
 	workspace := t.TempDir()
 	t.Chdir(workspace)
 	assert.NoErr(t, gkconfig.Set("workspace", workspace))
@@ -76,7 +76,7 @@ func runContractScenario(t *testing.T, scenario string) []contractLine {
 		mcpConfig := filepath.Join(t.TempDir(), "mcp.json")
 		config, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"gofer": map[string]any{
 			"command": os.Args[0], "args": []string{"-test.run=TestFakeMCPServerProcess"},
-			"env": map[string]string{"SUAG_FAKE_MCP": "1"},
+			"env": map[string]string{"SUGA_FAKE_MCP": "1"},
 		}}})
 		assert.NoErr(t, err)
 		assert.NoErr(t, os.WriteFile(mcpConfig, config, 0600))

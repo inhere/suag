@@ -9,9 +9,9 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
-	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // catalogNames returns the native catalog tool names, read tools only unless
@@ -32,7 +32,7 @@ func catalogNames(write bool) []string {
 
 // TestRegisteredToolsFollowTheCatalog pins the run/chat/ACP tool sets to the
 // one native catalog plus update_plan, session_search, recall, memory,
-// suag_manifest and agent, which Open registers in every mode.
+// suga_manifest and agent, which Open registers in every mode.
 func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 	resetConfig(t)
 	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k"}})
@@ -47,7 +47,7 @@ func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 		return got
 	}
 	want := func(write bool) []string {
-		w := append(catalogNames(write), "update_plan", "session_search", "recall", "memory", "suag_manifest", "agent")
+		w := append(catalogNames(write), "update_plan", "session_search", "recall", "memory", "suga_manifest", "agent")
 		slices.Sort(w)
 		return w
 	}
@@ -78,7 +78,7 @@ func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 
 // TestToolSchemasDeclareProperties guards against zero-argument schemas:
 // some OpenAI-compatible gateways turn an empty "properties" object into null
-// and reject the whole request (seen with suag_manifest on opencode-go).
+// and reject the whole request (seen with suga_manifest on opencode-go).
 func TestToolSchemasDeclareProperties(t *testing.T) {
 	resetConfig(t)
 	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k"}})

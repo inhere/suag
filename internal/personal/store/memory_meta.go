@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/memory"
+	"github.com/inhere/suga/pkg/agentcore/memory"
 )
 
 // The memory_meta side table keeps provenance and tombstones for memory

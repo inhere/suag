@@ -11,11 +11,11 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/skills"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/skills"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // policyRow is one tool of the ACP policy table. Outcomes: "run" (allowed
@@ -84,7 +84,7 @@ func policyRows() []policyRow {
 		wired("recall", acp.ToolKindSearch, func(*testing.T, string) agentcore.Tool {
 			return native.NewRecallTool(personal.NewLedger(""), 0)
 		}),
-		wired("suag_manifest", acp.ToolKindRead, func(*testing.T, string) agentcore.Tool { return native.NewManifestTool(nil) }),
+		wired("suga_manifest", acp.ToolKindRead, func(*testing.T, string) agentcore.Tool { return native.NewManifestTool(nil) }),
 		// Unknown tools require permission and are refused in read_only.
 		{name: "future_tool", tool: func(*testing.T, string) agentcore.Tool { return &countingTool{name: "future_tool"} },
 			kind: acp.ToolKindOther, readOnly: "deny", normal: "ask", nilTool: "ask"},

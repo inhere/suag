@@ -9,11 +9,11 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/skills"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/skills"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // approvalRow is one tool of the approval table. Outcomes are "run" (allowed
@@ -83,7 +83,7 @@ func approvalRows() []approvalRow {
 		wired("skill", func(*testing.T) agentcore.Tool { return native.NewSkillTool(skills.NewRegistry(), 0) }),
 		wired("session_search", func(*testing.T) agentcore.Tool { return native.NewSessionSearchTool(personal.NewLedger("")) }),
 		wired("recall", func(*testing.T) agentcore.Tool { return native.NewRecallTool(personal.NewLedger(""), 0) }),
-		wired("suag_manifest", func(*testing.T) agentcore.Tool { return native.NewManifestTool(nil) }),
+		wired("suga_manifest", func(*testing.T) agentcore.Tool { return native.NewManifestTool(nil) }),
 		// A native tool added later is asked about by default.
 		{name: "future_tool", tool: func(*testing.T) agentcore.Tool { return &nativeStubTool{name: "future_tool"} },
 			chatAsk: "ask", chatAuto: "run", chatAlwaysAsks: 1, cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "-"},

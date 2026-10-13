@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	"github.com/inhere/suag/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // ServerSettings describes one stdio MCP server. The host fills it from its
@@ -78,7 +78,7 @@ func NewProvider(ctx context.Context, settings ServerSettings) (*Provider, error
 	}
 
 	// Startup (spawn + initialize + tools/list) is bounded and honors the caller's
-	// ctx, so a broken server can never hang `suag run`.
+	// ctx, so a broken server can never hang `suga run`.
 	startCtx, cancel := context.WithTimeout(ctx, startupTimeout)
 	defer cancel()
 

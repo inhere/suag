@@ -16,8 +16,8 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/personal/store"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
 // allowingACPClient allows every permission request.
@@ -56,7 +56,7 @@ func taskEvents(t *testing.T, sessionID string) []store.Event {
 func TestAppACPBackgroundTasks(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	t.Setenv("SUAG_HOME", shortCLIHome(t))
+	t.Setenv("SUGA_HOME", shortCLIHome(t))
 	cwd := t.TempDir()
 	quick, slow := "echo TASK_DONE", "sleep 30"
 	if runtime.GOOS == "windows" {

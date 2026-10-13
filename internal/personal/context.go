@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"unicode/utf8"
 
-	"github.com/inhere/suag/internal/personal/store"
-	"github.com/inhere/suag/pkg/agentcore"
+	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
 )
 
 // ErrContextOverflow ends a turn whose model context still exceeds the window

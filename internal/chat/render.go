@@ -10,12 +10,12 @@ import (
 
 	"github.com/gookit/cliui/show/symbols"
 	"github.com/gookit/color"
-	"github.com/inhere/suag/internal/output"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/pkg/agentcore"
-	"github.com/inhere/suag/pkg/agentcore/redact"
-	"github.com/inhere/suag/pkg/agentcore/tools"
-	"github.com/inhere/suag/pkg/agentcore/tools/native"
+	"github.com/inhere/suga/internal/output"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/redact"
+	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 	"golang.org/x/term"
 )
 
@@ -163,7 +163,7 @@ func (r *Renderer) Finish() bool { return r.live.Finish() }
 func (r *Renderer) Answer(text string) { fmt.Fprintln(r.opts.Out, r.answerPrefix()+text) }
 
 // External prints input that did not come from this keyboard (a reply sent
-// from elsewhere through `suag send` or a Stop hook) in its own color, so it
+// from elsewhere through `suga send` or a Stop hook) in its own color, so it
 // stands out from the model's answer. Each line is painted separately.
 func (r *Renderer) External(text string) {
 	lines := strings.Split(text, "\n")
@@ -251,7 +251,7 @@ func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration) {
 
 // Banner prints the chat header: the model in use and the commands.
 func (r *Renderer) Banner() {
-	head := "Suag chat"
+	head := "Suga chat"
 	if label := modelLabel(r.opts.Provider, r.opts.Model); label != "" {
 		head += " · " + label
 	}
@@ -267,8 +267,8 @@ func (r *Renderer) Banner() {
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "工具：可读写文件、执行 shell（tools.approval 决定是否先确认）。"))
 	} else {
 		// The usual reason the model says it has no shell_exec: write tools
-		// are off unless SUAG_HOME/config.yaml sets tools.allow_write.
-		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "工具：只读。要写文件、执行 shell，在 SUAG_HOME/config.yaml 设 tools.allow_write: true。"))
+		// are off unless SUGA_HOME/config.yaml sets tools.allow_write.
+		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "工具：只读。要写文件、执行 shell，在 SUGA_HOME/config.yaml 设 tools.allow_write: true。"))
 	}
 }
 

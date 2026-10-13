@@ -54,7 +54,7 @@ type Store struct {
 // executes each _pragma value as "PRAGMA ..." for every new connection).
 //
 // Several handles write the same file (a chat runtime, the task-end recorder,
-// other suag processes), so a writer may wait for another's lock:
+// other suga processes), so a writer may wait for another's lock:
 //   - busy_timeout 15s: SQLite's busy wait is a sleep-and-retry, not a queue,
 //     so a writer can lose the lock to a busy one several times in a row;
 //   - synchronous NORMAL (the setting SQLite recommends with WAL): a commit

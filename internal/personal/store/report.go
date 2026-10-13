@@ -46,7 +46,7 @@ type ToolStat struct {
 	Spilled     int   `json:"spilled"`
 }
 
-// Report is the result of `suag stats`.
+// Report is the result of `suga stats`.
 type Report struct {
 	Models      []ModelStat `json:"models"`
 	Tools       []ToolStat  `json:"tools"`

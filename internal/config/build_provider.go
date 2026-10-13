@@ -3,7 +3,7 @@ package axconfig
 import (
 	"fmt"
 
-	"github.com/inhere/suag/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 // BuildProvider constructs the llm provider for one resolved model. The

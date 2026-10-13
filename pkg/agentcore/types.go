@@ -3,8 +3,8 @@ package agentcore
 import (
 	"context"
 
-	"github.com/inhere/suag/pkg/agentcore/api"
-	internalutils "github.com/inhere/suag/pkg/agentcore/internal/utils"
+	"github.com/inhere/suga/pkg/agentcore/api"
+	internalutils "github.com/inhere/suga/pkg/agentcore/internal/utils"
 )
 
 type ContextBuilder = api.ContextBuilder

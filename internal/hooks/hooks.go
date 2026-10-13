@@ -2,7 +2,7 @@
 //
 // Each event runs hooks.command once with the event as one JSON line on stdin.
 // Events follow the Claude Code hook format (SessionStart, UserPromptSubmit,
-// PostToolUse, Stop, SessionEnd) plus the suag-specific Interrupt, sent when the
+// PostToolUse, Stop, SessionEnd) plus the suga-specific Interrupt, sent when the
 // person types while a Stop call is still waiting. The command answers on stdout
 // with optional JSON ({"decision","reason","hookSpecificOutput":{"additionalContext"}});
 // a Stop answer with decision "block" and a reason starts a new turn with that
@@ -120,7 +120,7 @@ func (f PostToolFilter) Match(tool string) (string, bool) {
 }
 
 // New returns the hook client for the current configuration, or nil when hooks
-// are disabled: hooks.command is unset or empty, or SUAG_HOOKS=off (tests use it
+// are disabled: hooks.command is unset or empty, or SUGA_HOOKS=off (tests use it
 // so a local `go test` never runs a developer's configured hook command).
 // Configuration keys:
 //   - hooks.command: argv list, executed directly (never through a shell)
@@ -131,7 +131,7 @@ func (f PostToolFilter) Match(tool string) (string, bool) {
 //   - hooks.stop_background: run Stop as a background task (see StopBackground)
 //   - hooks.post_tool_use.tools / .name: PostToolUse tool globs and the name sent
 func New() (Client, error) {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("SUAG_HOOKS")), "off") {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("SUGA_HOOKS")), "off") {
 		return nil, nil
 	}
 	argv, err := stringList("hooks.command")

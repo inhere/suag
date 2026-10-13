@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suga/internal/personal/store"
 )
 
 // An explicitly supplied empty append prompt clears the saved one; an unset

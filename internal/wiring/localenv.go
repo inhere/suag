@@ -8,10 +8,10 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/hooks"
-	"github.com/inhere/suag/internal/personal"
-	"github.com/inhere/suag/pkg/agentcore/redact"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/hooks"
+	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/pkg/agentcore/redact"
 )
 
 // LocalEnv is what a session in a workspace would get on this machine now:
@@ -70,7 +70,7 @@ type EnvRuleFile struct {
 // EnvHooks is the chat hook configuration (hooks run in chat only).
 type EnvHooks struct {
 	Enabled bool   `json:"enabled"`
-	Off     bool   `json:"off"` // SUAG_HOOKS=off
+	Off     bool   `json:"off"` // SUGA_HOOKS=off
 	Config  string `json:"config,omitempty"`
 	Error   string `json:"error,omitempty"`
 }
@@ -148,7 +148,7 @@ func loadEnvRules(workspace string) EnvRules {
 		return out
 	}
 	out.File = name
-	home, err := appconfig.ResolveSuagHome()
+	home, err := appconfig.ResolveSugaHome()
 	if err != nil {
 		out.Error = err.Error()
 		return out
@@ -174,7 +174,7 @@ func loadEnvRules(workspace string) EnvRules {
 // loadEnvHooks reports whether chat hooks are on and their configuration
 // (redacted).
 func loadEnvHooks() EnvHooks {
-	out := EnvHooks{Off: strings.EqualFold(strings.TrimSpace(os.Getenv("SUAG_HOOKS")), "off")}
+	out := EnvHooks{Off: strings.EqualFold(strings.TrimSpace(os.Getenv("SUGA_HOOKS")), "off")}
 	if raw := gkconfig.Get("hooks"); raw != nil {
 		if data, err := json.MarshalIndent(raw, "", "  "); err == nil {
 			out.Config = redact.Secrets(string(data))
