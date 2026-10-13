@@ -449,3 +449,18 @@ token 差 9 倍 ≈ 调用次数 4.5 倍 × 每次上下文 2 倍；耗时主要
 **观测修正**：只跑部分用例的测试（`-run`、`-k`）不再算“转绿”——fix-glob 中模型写临时测试（zzscratch/zzreal/zzwalk）用 `-run` 单独跑来排查，原口径把大部分修复都算成了“转绿后”（2e0bbaf）。
 
 **待定**：suag 的 shell_exec 是否应去掉自身的私有环境变量（`SUAG_HOME`、`SUAG_CONFIG`、`SUAG_MODEL`）再执行命令。去掉后，模型在用户项目里跑的命令不再受 suag 自身配置影响（本次干扰的根因），评测也更公平；代价是 agent 在 shell 里再调用 suag 时会落回默认的 `~/.suag`。
+
+## R2：Responses API 与 chat/completions 同模型 A/B（2026-10-13，plan-20261013-002736-46d99988）
+
+同一二进制（b7bfb5e，SUAG_* 不传给命令），command-code `deepseek/deepseek-v4.1-flash`、high，同时段：`openai-responses`（`--suag-set providers.command-code.type=openai-responses`）对 `openai`；T9 各 3 轮，3 个新任务各 2 轮。
+
+| 任务 | Responses 通过 / 调用 | chat 通过 / 调用 | Responses 输出 | chat 输出 |
+|---|---|---|---|---|
+| repo-feat-model-type | 2/2，27.5（32, 23） | 2/2，39.0（31, 47） | 18.5k | 18.7k |
+| repo-fix-glob | 2/2，34.0（39, 29） | 2/2，42.5（34, 51） | 21.5k | 27.9k |
+| repo-pipe-minimize | 2/2，21.5（20, 23） | 2/2，19.5（24, 15） | 13.9k | 12.7k |
+| repo-t9-schedule | 1/3，有效两轮 23.5（20, 27） | 1/3，24.3（27, 22, 24） | 41.7k | 68.1k |
+
+- 三个新任务上 Responses 调用均值 27.7 对 33.7（-18%），T9 持平；缓存命中率两边都在 0.94–0.96。样本小（每格 2–3 轮），方向值得在更多轮次上确认，暂不改默认协议。
+- Responses 的 T9 第 1 轮丢了：网关在第 5 次调用（首字节 62 秒）72 秒时关闭了流，没有终止事件；文本已输出，不能透明重试，整轮失败。已改为：所有已开始的输出项都已完成时用这些项组成结果（d1ef82d），只有仍有未完成项才按断流处理。
+- command-code 对 DeepSeek 只返回推理摘要、不返回加密推理，回合靠适配层补齐的 `reasoning_text` 被接受。
