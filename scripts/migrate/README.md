@@ -56,7 +56,7 @@ sh scripts/migrate/suag-to-suga.sh --apply
    - Linux / macOS：**不改任何文件**，只列出 `~/.bashrc`、`~/.zshrc`、`~/.profile` 中出现
      `SUAG_` 的行号，由你手工改（只打印行号与文件名，不打印行内容）。
 5. **可选 `-GoferAgents <agents.yaml>`**：agent key `suag` / `suag-acp` → `suga` / `suga-acp`；
-   `command: suag` → `command: suga`；`env` 里的 `SUAG_` 变量名 → `SUGA_`。
+   `command: suag` → `command: suga`；指向 `.suag` 的路径 → `.suga`；`env` 里的 `SUAG_` 变量名 → `SUGA_`。
 
 每个被改动的文件在改动前备份为 `<文件名>.bak-<时间戳>`，例如
 `agents.yaml.bak-20261013T2200`。备份名不以 `.yaml` 结尾，避免被 gofer 当成
