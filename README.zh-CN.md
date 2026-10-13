@@ -61,6 +61,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `providers.<id>.models.<model>.model_id` | 请求里发送的模型 id（与键不同时），如键 `deepseek-v4.1-flash`、`model_id: deepseek/deepseek-v4.1-flash`；其余地方都用键 |
 | `providers.<id>.models.<model>.type`、`base_url` | 该模型自己的协议与地址，覆盖 provider 的；如网关的 Claude 模型写 `type: anthropic`，其余模型仍走 OpenAI 兼容 |
 | `compact_model`、`fallback_models` | 生成摘要用的便宜模型；主模型失败时依次尝试的备用模型 |
+| `retry.max_attempts`、`retry.base_delay`、`retry.max_delay`、`retry.reset_after` | 模型请求因网络错误、HTTP 408/429/5xx 或流中断后的重试（所有 provider）：含首次在内的尝试次数（默认 6，`1` 关闭重试）；等待从 `base_delay`（`1s`）起逐次翻倍，最多 `max_delay`（`60s`），另有 ±20% 抖动；服务端返回的 `Retry-After` 会被遵守；距上次失败超过 `reset_after`（`2m`）后等待回落到 `base_delay` |
 | `context.fold_every`、`context.fold_keep` | 历史折叠（默认关闭；`fold_every: 10`、`fold_keep: 5` 开启）：较早步骤发送时去掉思考内容，过长的字符串参数换成一句说明。只改发给模型的请求，存储的历史保持完整 |
 | `context.idle_after`、`context.idle_min_ratio` | 仅 chat：安静超过此时长（默认 `15m`，`0` 关闭），且上下文已达分段阈值的此比例（默认 `0.5`）时，在后台开启新段 |
 | `rules.file` | 每一级目录读取的项目规则文件名（每级只读一个，从 Git 根或 cwd 到 cwd），默认 `AGENTS.md`，可改成 `CLAUDE.md`；只接受文件名，不能带路径。`~/.suag/AGENTS.md` 仍会读取 |
@@ -74,7 +75,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `tools.auto_allow`、`tools.read_only_allow` | MCP 放行名单，条目形如 `server/工具glob` |
 | `tools.deferred` | MCP 工具 schema 是否延迟加载：`auto`（默认）、`always`、`never` |
 | `mcp.servers`、`mcp.call_timeout_sec` | 默认 MCP 服务；单次 MCP 调用超时（120） |
-| `skills.list_max`、`skills.always_load` | 超过此数量（15）后只列工作区 skills、其余靠检索；预加载正文的 skills |
+| `skills.list_max`、`skills.always_load` | 带说明列出的 skills 数量（15；超过后只列工作区 skills，其余只列名字）；预加载正文的 skills |
 | `hooks.*` | chat 的 hook 命令（SessionStart、UserPromptSubmit、PostToolUse、Stop 等） |
 | `memory.write` | `auto`（默认）允许 `memory` 工具写入；`off` 时只读 |
 | `memory.write_tainted` | 读过外部内容的会话写记忆时的处理：`ask`（默认）、`deny`、`allow` |
@@ -109,6 +110,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 
 - **默认只读**：写工具只在 `run --allow-write`、chat 设置 `tools.allow_write: true`、或 ACP 会话处于 `default` 模式时才有；`--read-only` 永远优先。模型调用了未开启的工具时，会被告知开启方法，并计入拒绝次数。
 - **chat 先询问**：`tools.approval: ask` 时，每次写文件或执行命令前都会询问，并显示完整命令、路径或改动前后的文本。回答 `y` 允许一次，`a` 在本进程内对该工具始终允许，其他任何回答都是拒绝。一轮里被拒 3 次就结束这一轮。
+- **危险删除**：递归删除的 `shell_exec` 命令（`rm -r`、`Remove-Item -Recurse`、`rd /s`，以及 `sh -c`、`cmd /c`、`pwsh -Command` 里的同类命令）在审批前就会被拦下：目标是 `/`、`~` 或 `$HOME`、盘符根、工作区或其上级目录，或路径以变量开头、变量为空时会落到根目录（`"$X/"`、`"$dir\*"`）时；对这些目录用通配符（`rm ~/*`）时没有 `-r` 也算。chat 每次都询问，`tools.approval: auto` 或之前回答过的 `a` 也不例外，只有手动输入 `yes` 才执行；`run` 和 ACP 直接拒绝，并提示模型改用 `file_remove`。trace 里记下原因（`danger=…`）。这能挡住常见的误操作，挡不住刻意构造的命令：它不是安全边界。
 - **并发读取**：同一次回复里有多个 `file_read`、`file_list`、`file_grep`、`file_find` 调用时并发执行（`tools.parallel_reads`，默认开）；每个调用仍按顺序经过审批、污染追踪与 trace 记录，只有读取本身重叠。
 - **大输出**：工具结果超过 `tools.max_output_bytes` 时，脱敏后的原文存到 `$SUAG_HOME/sessions/<id>/outputs/`，上下文只留头尾（各 2000 字节）和 ref（形如 `out:<session>:<hex>`）；用 `recall` 读取，用 `session_search` 检索。在此之前，shell 结果会先整理（`tools.minimize_output`，默认开）：去掉颜色码与进度重绘，折叠连续相同的行，测试与构建输出按输出规则裁剪——全部通过时只留各包结果和一行汇总，有失败时只留失败用例及其信息与日志；原文保存为 ref，结果中注明。内置规则覆盖 `go test`、`cargo test`、jest/vitest/mocha 与 `npm|pnpm|yarn|bun test`、pytest、Maven、Gradle（格式见 [output_rules.yaml](pkg/agentcore/tools/native/output_rules.yaml)）；`$SUAG_HOME/output-rules.yaml` 与其后的 `<workspace>/.suag/output-rules.yaml` 可按名字替换规则、新增规则，或用 `enabled: false` 关掉某条。命令本身用管道过滤了输出（`| grep`、`| Select-String`、`| tail` 等）时不套用这些规则，保留它筛出的内容。`file_read` 自己分页（每个文件一页最多 `tools.read_page_bytes`，默认 32 KiB；`paths` 一次最多四页），不会被外置。
 - **边界**：文件工具经 `os.OpenRoot` 访问，不会顺着 symlink 跑出工作区；`shell_exec` 超时会终止整个进程树；`web_fetch` 检查实际连接的 IP，跳转也一样受限；所有工具结果都有上限。
@@ -118,7 +120,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 
 ## Skills
 
-启动时扫描一次 `<工作区>/.agents/skills`、`<工作区>/skills` 和 `~/.agents/skills`，同名时工作区的优先。skills 数量不超过 `skills.list_max` 时全部列在系统提示词里；超过时只列工作区的，其余由模型用 `skill(query=…)` 检索。要让某个 skill 的正文每次都放进提示词，可在其 frontmatter 写 `metadata: {always_load: true}`，或把名字加进 `skills.always_load`。
+启动时扫描一次 `<工作区>/.agents/skills`、`<工作区>/skills` 和 `~/.agents/skills`，同名时工作区的优先。skills 数量不超过 `skills.list_max` 时全部列在系统提示词里；超过时只列工作区 skills 的说明，其余只列名字（名字总计最多 3000 字节，再多只给数量），模型可以按名字加载任意一个，或用 `skill(query=…)` 检索。要让某个 skill 的正文每次都放进提示词，可在其 frontmatter 写 `metadata: {always_load: true}`，或把名字加进 `skills.always_load`。
 
 ## 记忆
 
@@ -157,9 +159,9 @@ suag ps                                           # 正在运行的 chat 进程
 suag manifest [--json] [--model <p/m>]            # 模型、工具、MCP、skills、记忆后端、输出上限
 ```
 
-工具行显示退出码（shell）、进入上下文的字节数、转存标记与脱敏后的参数摘要；模型行显示这次回复发出了几个工具调用（`calls=N`）、被输出上限截断时的 `truncated`、命中缓存的输入 token（`cached=N`），以及请求没有延续上一次时的原因和重新发送的早先内容量（`prefix=fold(rebuilt=12k)`，原因有 fold、segment、system、tools、rewrite）。`--analyze` 从同一组事件得出：步数与并行步数、各工具次数与失败、读了多次的文件和写完又回读的次数、每个文件的编辑次数、重复执行的相同命令、测试运行次数及首次通过之后又跑了几次（输出报告了失败的不算通过，不论退出码）、各阶段的模型调用数（首次写入前的探索、首次写入到测试首次通过、通过之后）、编辑步数及其中只改一处的步数、退出码为 0 但有 stderr 输出的 shell 次数、未命中缓存的输入按来源拆分（上次请求之后新增的内容、前缀断开后重新发送的早先内容（按原因）、前缀本可命中但 provider 没有命中的部分，按请求大小估算）、转存/折叠/压缩次数、最慢的几次模型调用。工具行还会显示编辑的增删行数（`+新增/-删除`），问过人时显示 `approval=user(wait=3.2s)`。每回合有一行 `context`，列出该回合第一次请求由哪些部分组成（系统提示词、工具及其数量与 MCP 占比、环境、规则、记忆索引、skills、延迟工具、交接摘要、历史、hook 注入、本轮输入的字符数）以及估算 token 与窗口；每次 hook 运行记一行 `hook`（事件、耗时、是否 block、注入的上下文）。回合行记录输入长度及是否为注入而非人工输入。`suag trace` 每回合还会显示一行 `turn_context`（模型、模式、工具集哈希、规则与记忆索引哈希、是否已污染），每次分段显示一行（`segment=#N reason=... tokens=前->后`），以及 `schedule` 事件（chat 空闲整理：fired、done、cancelled、skipped）。`suag stats` 显示各模型成本（provider 返回，或按配置的 `price` 计算）；加 `--json` 还有工具输出字节（`raw_bytes`、`inline_bytes`、`spilled`）。
+工具行显示退出码（shell）、进入上下文的字节数、转存标记与脱敏后的参数摘要；模型行显示这次回复发出了几个工具调用（`calls=N`）、被输出上限截断时的 `truncated`、请求重试时的 `retries=N(reason, waited Xs)`、命中缓存的输入 token（`cached=N`），以及请求没有延续上一次时的原因和重新发送的早先内容量（`prefix=fold(rebuilt=12k)`，原因有 fold、segment、system、tools、rewrite）。`--analyze` 从同一组事件得出：步数与并行步数、各工具次数与失败、读了多次的文件和写完又回读的次数、每个文件的编辑次数、重复执行的相同命令、测试运行次数及首次通过之后又跑了几次（输出报告了失败的不算通过，不论退出码）、各阶段的模型调用数（首次写入前的探索、首次写入到测试首次通过、通过之后）、编辑步数及其中只改一处的步数、退出码为 0 但有 stderr 输出的 shell 次数、未命中缓存的输入按来源拆分（上次请求之后新增的内容、前缀断开后重新发送的早先内容（按原因）、前缀本可命中但 provider 没有命中的部分，按请求大小估算）、转存/折叠/压缩/模型重试次数、最慢的几次模型调用。工具行还会显示编辑的增删行数（`+新增/-删除`），问过人时显示 `approval=user(wait=3.2s)`。每回合有一行 `context`，列出该回合第一次请求由哪些部分组成（系统提示词、工具及其数量与 MCP 占比、环境、规则、记忆索引、skills、延迟工具、交接摘要、历史、hook 注入、本轮输入的字符数）以及估算 token 与窗口；每次 hook 运行记一行 `hook`（事件、耗时、是否 block、注入的上下文）。回合行记录输入长度及是否为注入而非人工输入。`suag trace` 每回合还会显示一行 `turn_context`（模型、模式、工具集哈希、规则与记忆索引哈希、是否已污染），每次分段显示一行（`segment=#N reason=... tokens=前->后`），以及 `schedule` 事件（chat 空闲整理：fired、done、cancelled、skipped）。`suag stats` 显示各模型成本（provider 返回，或按配置的 `price` 计算）；加 `--json` 还有工具输出字节（`raw_bytes`、`inline_bytes`、`spilled`）。
 
-`run --output-format stream-json` 在每次模型调用后输出一行 `usage`，为本次 run 的累计值：`input_tokens`（不含缓存）、`output_tokens`、`cache_read_tokens`、`cache_write_tokens`、`total_tokens`、`cost_usd`、`tool_calls`。`turn_end` 与 `result` 带同名 `usage`，调用方可在运行中途做预算控制。ACP 在同一时机发 `usage_update`（[说明](docs/usage/gofer-personal-agent.md#acp-用量上报)）。
+`run --output-format stream-json` 在每次模型调用后输出一行 `usage`，为本次 run 的累计值：`input_tokens`（不含缓存）、`output_tokens`、`cache_read_tokens`、`cache_write_tokens`、`total_tokens`、`cost_usd`、`tool_calls`。`turn_end` 与 `result` 带同名 `usage`，调用方可在运行中途做预算控制。模型请求因瞬时故障重试时会输出一行 `retry`（`reason`、`attempt`、`wait_ms`、`restart`）；`restart: true` 表示这条消息此前输出的 `message_delta` 文本作废，会从头重新流式输出。chat 把这种重试显示为一行 `↻` 提示，`run` 打到 stderr，ACP 作为 thought 块下发。ACP 在同一时机发 `usage_update`（[说明](docs/usage/gofer-personal-agent.md#acp-用量上报)）。
 
 ## 开发
 
