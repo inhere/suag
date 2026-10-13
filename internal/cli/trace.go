@@ -19,34 +19,11 @@ func newTraceCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	var traceTurn, traceAddr string
 	var traceJSON, traceAnalyze, traceWeb bool
 	trace := capp.NewCmd("trace", "Show the turn/model/tool/denial timeline of a session", func(c *capp.Cmd) error {
-		// Flags may also follow the session ID, which the flag parser leaves in the remaining args.
-		var positional []string
-		rest := c.RemainArgs()
-		for i := 0; i < len(rest); i++ {
-			switch {
-			case rest[i] == "--json" || rest[i] == "-json":
-				traceJSON = true
-			case rest[i] == "--analyze" || rest[i] == "-analyze":
-				traceAnalyze = true
-			case rest[i] == "--web" || rest[i] == "-web":
-				traceWeb = true
-			case (rest[i] == "--addr" || rest[i] == "-addr") && i+1 < len(rest):
-				i++
-				traceAddr = rest[i]
-			case (rest[i] == "--turn" || rest[i] == "-turn") && i+1 < len(rest):
-				i++
-				traceTurn = rest[i]
-			default:
-				positional = append(positional, rest[i])
-			}
-		}
-		if len(positional) != 1 {
-			return fmt.Errorf("usage: suag trace <session> [--turn id] [--json] [--analyze] [--web [--addr 127.0.0.1:0]]")
-		}
+		sessionID := c.Arg("session").String()
 		if traceWeb {
-			return runTraceWeb(ctx, stdout, positional[0], traceAddr)
+			return runTraceWeb(ctx, stdout, sessionID, traceAddr)
 		}
-		return runTrace(ctx, stdout, positional[0], traceTurn, traceJSON, traceAnalyze)
+		return runTrace(ctx, stdout, sessionID, traceTurn, traceJSON, traceAnalyze)
 	})
 	trace.SetOutput(stderr)
 	trace.StringVar(&traceTurn, "turn", "", "only show events of this turn ID")
@@ -54,6 +31,8 @@ func newTraceCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	trace.BoolVar(&traceWeb, "web", false, "serve the session timeline as a local web page (Ctrl-C to stop)")
 	trace.StringVar(&traceAddr, "addr", "127.0.0.1:0", "loopback address for --web (port 0 picks a free one)")
 	trace.BoolVar(&traceAnalyze, "analyze", false, "summarize the loop: steps, parallel calls, re-reads, repeated commands, tests after the first pass")
+	// Flags may also follow the session ID (capp parses them interspersed).
+	trace.AddArg("session", "the session ID", true)
 	return trace
 }
 

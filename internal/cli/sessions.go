@@ -26,8 +26,8 @@ type sessionsOptions struct {
 func newSessionsCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	opts := sessionsOptions{limit: 10}
 	cmd := capp.NewCmd("sessions", "List sessions, newest first (default the last 10)", func(c *capp.Cmd) error {
-		// Words after the flags are the keyword, like --query.
-		if words := strings.Join(c.RemainArgs(), " "); words != "" {
+		// Keyword arguments add to --query.
+		if words := strings.Join(c.Arg("keywords").Strings(), " "); words != "" {
 			opts.query = strings.TrimSpace(opts.query + " " + words)
 		}
 		return runSessions(ctx, stdout, opts, time.Now())
@@ -39,6 +39,7 @@ func newSessionsCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd
 	cmd.StringVar(&opts.query, "query", "", "keywords (all must match) in the title, id, directory, model or the conversation;;q")
 	cmd.StringVar(&opts.cwd, "cwd", "", "only sessions whose directory starts with this path (. = current directory)")
 	cmd.BoolVar(&opts.asJSON, "json", false, "write a JSON array")
+	cmd.AddArg("keywords", "keywords, like --query", false, nil, true)
 	return cmd
 }
 

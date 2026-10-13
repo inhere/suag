@@ -22,31 +22,13 @@ func newExportCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	var redact, withOutputs bool
 	var outFile string
 	cmd := capp.NewCmd("export", "Export a session's entries and events as jsonl", func(c *capp.Cmd) error {
-		// Flags may follow the session ID, which the flag parser leaves in the remaining args.
-		var positional []string
-		rest := c.RemainArgs()
-		for i := 0; i < len(rest); i++ {
-			switch {
-			case rest[i] == "--redact" || rest[i] == "-redact":
-				redact = true
-			case rest[i] == "--with-outputs" || rest[i] == "-with-outputs":
-				withOutputs = true
-			case (rest[i] == "-o" || rest[i] == "--o" || rest[i] == "--output") && i+1 < len(rest):
-				i++
-				outFile = rest[i]
-			default:
-				positional = append(positional, rest[i])
-			}
-		}
-		if len(positional) != 1 {
-			return fmt.Errorf("usage: suag export <session> [--redact] [--with-outputs] [-o file]")
-		}
-		return runExport(ctx, stdout, positional[0], exportOptions{redact: redact, withOutputs: withOutputs, outFile: outFile})
+		return runExport(ctx, stdout, c.Arg("session").String(), exportOptions{redact: redact, withOutputs: withOutputs, outFile: outFile})
 	})
 	cmd.SetOutput(stderr)
 	cmd.BoolVar(&redact, "redact", false, "drop tool call arguments")
 	cmd.BoolVar(&withOutputs, "with-outputs", false, "append the session's externalised tool outputs (one output row per file)")
 	cmd.StringVar(&outFile, "output", "", "write to this file (mode 0600) instead of stdout;;o")
+	cmd.AddArg("session", "the session ID", true)
 	return cmd
 }
 
