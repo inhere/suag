@@ -211,9 +211,11 @@ func joinEntries(view *TraceView) {
 }
 
 // ServeTraceView serves the trace page for view on addr (a loopback
-// address; ":0" picks a port) until ctx ends. ready receives the URL once
-// the listener is up.
-func ServeTraceView(ctx context.Context, addr string, load func(context.Context) (*TraceView, error), ready func(url string)) error {
+// address; ":0" picks a port) until ctx ends. env, when set, serves
+// /api/env: this machine's current environment for the session (the 本机环境
+// tab). ready receives the URL once the listener is up.
+func ServeTraceView(ctx context.Context, addr string, load func(context.Context) (*TraceView, error),
+	env func(context.Context) (any, error), ready func(url string)) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return fmt.Errorf("trace --web address %q: %w", addr, err)
@@ -243,6 +245,19 @@ func ServeTraceView(ctx context.Context, addr string, load func(context.Context)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(view)
+	})
+	mux.HandleFunc("/api/env", func(w http.ResponseWriter, r *http.Request) {
+		if env == nil {
+			http.NotFound(w, r)
+			return
+		}
+		data, err := env(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(data)
 	})
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {

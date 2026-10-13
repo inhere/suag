@@ -93,6 +93,8 @@ func TestServeTraceView(t *testing.T) {
 	go func() {
 		done <- ServeTraceView(ctx, "127.0.0.1:0", func(ctx context.Context) (*TraceView, error) {
 			return BuildTraceView(ctx, repo, sid)
+		}, func(context.Context) (any, error) {
+			return map[string]any{"workspace": "/w"}, nil
 		}, func(url string) { urls <- url })
 	}()
 	var url string
@@ -118,6 +120,9 @@ func TestServeTraceView(t *testing.T) {
 	var view TraceView
 	assert.NoErr(t, json.Unmarshal([]byte(body), &view))
 	assert.Eq(t, sid, view.Session.ID)
+	ctype, body = get("api/env")
+	assert.StrContains(t, ctype, "application/json")
+	assert.StrContains(t, body, `"workspace":"/w"`)
 	cancel()
 	select {
 	case err := <-done:
@@ -126,7 +131,7 @@ func TestServeTraceView(t *testing.T) {
 		t.Fatal("server did not stop")
 	}
 
-	err := ServeTraceView(context.Background(), "0.0.0.0:0", nil, nil)
+	err := ServeTraceView(context.Background(), "0.0.0.0:0", nil, nil, nil)
 	assert.ErrMsgContains(t, err, "loopback address only")
 }
 

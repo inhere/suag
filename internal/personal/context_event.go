@@ -13,7 +13,10 @@ import (
 // SkillsStats counts the installed skills by how the skills listing
 // presents them: with their description, by name only, or preloaded whole.
 type SkillsStats struct {
-	Listed, Named, Preloaded, Total int
+	Listed    int `json:"listed"`
+	Named     int `json:"named"`
+	Preloaded int `json:"preloaded"`
+	Total     int `json:"total"`
 }
 
 // recordContext writes the turn's context event once, at its first model

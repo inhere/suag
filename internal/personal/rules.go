@@ -26,27 +26,9 @@ const DefaultRuleFile = "AGENTS.md"
 // named by ruleFile; "" means DefaultRuleFile. Includes are deliberately one
 // level deep so a rule file cannot recursively expand a tree.
 func LoadRules(cwd, suagHome string, noProject bool, ruleFile string) (string, string, error) {
-	name := ruleFile
-	if name == "" {
-		name = DefaultRuleFile
-	}
-	// Only a file name is accepted, so the value cannot leave the directory of
-	// a level (config validates rules.file for the same reason).
-	if !validRuleFileName(name) {
-		return "", "", fmt.Errorf("project rule file name %q must be a bare file name without a path separator", name)
-	}
-	var paths []string
-	workspaceRoot := ""
-	if suagHome != "" {
-		paths = append(paths, filepath.Join(suagHome, DefaultRuleFile))
-	}
-	if !noProject {
-		project, root, err := projectRulePaths(cwd, name)
-		if err != nil {
-			return "", "", err
-		}
-		workspaceRoot = root
-		paths = append(paths, project...)
+	paths, workspaceRoot, err := rulePaths(cwd, suagHome, noProject, ruleFile)
+	if err != nil {
+		return "", "", err
 	}
 	var sections, hashSections []string
 	remaining := maxRuleTotalBytes
@@ -69,6 +51,41 @@ func LoadRules(cwd, suagHome string, noProject bool, ruleFile string) (string, s
 	// container or Windows path), so it covers path-neutral labels plus content.
 	hash := sha256.Sum256([]byte(strings.Join(hashSections, "\n\n")))
 	return rules, hex.EncodeToString(hash[:]), nil
+}
+
+// RuleFiles lists the rule files LoadRules reads, in order: the user-level
+// file, then the project file of each level (the user-level one may not
+// exist; LoadRules skips it then).
+func RuleFiles(cwd, suagHome string, noProject bool, ruleFile string) ([]string, error) {
+	paths, _, err := rulePaths(cwd, suagHome, noProject, ruleFile)
+	return paths, err
+}
+
+// rulePaths returns the rule file candidates and the workspace root.
+func rulePaths(cwd, suagHome string, noProject bool, ruleFile string) ([]string, string, error) {
+	name := ruleFile
+	if name == "" {
+		name = DefaultRuleFile
+	}
+	// Only a file name is accepted, so the value cannot leave the directory of
+	// a level (config validates rules.file for the same reason).
+	if !validRuleFileName(name) {
+		return nil, "", fmt.Errorf("project rule file name %q must be a bare file name without a path separator", name)
+	}
+	var paths []string
+	workspaceRoot := ""
+	if suagHome != "" {
+		paths = append(paths, filepath.Join(suagHome, DefaultRuleFile))
+	}
+	if !noProject {
+		project, root, err := projectRulePaths(cwd, name)
+		if err != nil {
+			return nil, "", err
+		}
+		workspaceRoot = root
+		paths = append(paths, project...)
+	}
+	return paths, workspaceRoot, nil
 }
 
 // ruleHashLabel returns a machine-independent identity for a rule file: files

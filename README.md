@@ -151,7 +151,7 @@ Gofer launches `suag run` (CLI jobs) or `suag acp` (persistent sessions with per
 suag trace <session> [--turn <id>] [--json]       # timeline: model calls, tools, denials, plans
 suag sessions [keywords] [-n 10] [--since 7d] [--until 2026-10-01] [--cwd .] [--json]  # sessions, newest first; keywords match title, id, directory, model or the conversation
 suag trace <session> --analyze [--json]          # loop summary: steps, parallel calls, re-reads, repeated commands, tests after the first pass
-suag trace <session> --web [--addr 127.0.0.1:0]  # local web page: timeline, details, context composition, analysis (Ctrl-C to stop)
+suag trace <session> --web [--addr 127.0.0.1:0]  # local web page: timeline, details, context composition, analysis, this machine's environment (Ctrl-C to stop)
 suag stats [--session <id>] [--since 7d] [--json] # calls, latency, tokens, cache hits
 suag export <session> [--redact] [-o <file>]      # entries and events as jsonl
 suag gc --older-than 30d [--apply]                # list (default) or delete idle sessions

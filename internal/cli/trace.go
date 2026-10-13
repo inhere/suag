@@ -13,6 +13,7 @@ import (
 	appconfig "github.com/inhere/suag/internal/config"
 	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/internal/personal/store"
+	"github.com/inhere/suag/internal/wiring"
 )
 
 func newTraceCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
@@ -79,7 +80,8 @@ func runTraceWeb(ctx context.Context, out io.Writer, sessionID, addr string) err
 		return err
 	}
 	defer repo.Close()
-	if _, err := personal.BuildTraceView(ctx, repo, sessionID); err != nil {
+	view, err := personal.BuildTraceView(ctx, repo, sessionID)
+	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
@@ -87,7 +89,10 @@ func runTraceWeb(ctx context.Context, out io.Writer, sessionID, addr string) err
 	load := func(ctx context.Context) (*personal.TraceView, error) {
 		return personal.BuildTraceView(ctx, repo, sessionID)
 	}
-	return personal.ServeTraceView(ctx, addr, load, func(url string) {
+	// The environment a session in its directory would get now; read per
+	// request, so an edited config shows on reload.
+	env := func(context.Context) (any, error) { return wiring.LoadLocalEnv(view.Session.Cwd) }
+	return personal.ServeTraceView(ctx, addr, load, env, func(url string) {
 		fmt.Fprintf(out, "trace of %s: %s (Ctrl-C to stop)\n", sessionID, url)
 		openBrowser(url)
 	})

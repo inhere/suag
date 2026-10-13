@@ -49,11 +49,16 @@ details summary { cursor:pointer; color:var(--mute); }
 .callbars { display:flex; align-items:flex-end; gap:2px; height:160px; border-bottom:1px solid var(--line); }
 .callbars div { flex:1; display:flex; flex-direction:column-reverse; min-width:3px; height:100%; }
 .callbars span { display:block; width:100%; }
+.envlist h4 { margin:10px 10px 2px; font-size:12px; color:var(--mute); }
+.envlist div.item { padding:3px 10px 3px 18px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.envlist div.item:hover { background:#f5f8ff; }
+.envlist div.item.sel { background:#e8efff; }
+.ok { color:var(--read); } .diff { color:var(--err); }
 </style>
 </head>
 <body>
 <header><h1 id="title">suag trace</h1><div id="sub" class="mute"></div><div class="chips" id="chips"></div></header>
-<nav><button data-tab="timeline" class="on">时间线</button><button data-tab="context">上下文</button><button data-tab="analysis">分析</button></nav>
+<nav><button data-tab="timeline" class="on">时间线</button><button data-tab="context">上下文</button><button data-tab="analysis">分析</button><button data-tab="env">本机环境</button></nav>
 <main id="main"></main>
 <script>
 "use strict";
@@ -234,9 +239,95 @@ function renderAnalysis(main) {
   main.replaceChildren(el("div", {class:"pane"}, el("h3", {}, "trace --analyze"), kv(data.analysis)));
 }
 
+// The 本机环境 tab: what a session in this directory would get on this
+// machine now (/api/env, loaded once), with a check against what the
+// session recorded last.
+let env = null, envSel = "check";
+const SHOWN = { listed:"列出描述", named:"仅名称", preloaded:"预载正文", counted:"仅计数" };
+
+function lastEvent(kind) { for (let i = data.events.length - 1; i >= 0; i--) if (data.events[i].kind === kind) return data.events[i]; return null; }
+
+function envChecks() {
+  const tc = lastEvent("turn_context")?.attrs || {}, ctx = lastEvent("context")?.attrs || {}, m = env.manifest, rows = [];
+  const add = (item, then, now, note) => rows.push({item, then: then ?? "-", now: now ?? "-", same: String(then) === String(now), note});
+  add("suag 版本", tc.version, m.version);
+  add("主模型", tc.provider && tc.provider + "/" + tc.model, m.models.main.provider + "/" + m.models.main.model);
+  add("规则哈希", tc.rules_hash && tc.rules_hash.slice(0, 12), env.rules.hash && env.rules.hash.slice(0, 12), "规则文件或内容变了就不同");
+  if (ctx.tool_names) {
+    // A read-only session has no write tools: compare against the tools of its mode.
+    const writeTool = new Set(env.manifest.tools.filter(t => t.needs_allow_write).map(t => t.name));
+    const inMode = env.tools.map(t => t.name).filter(n => tc.mode === "allow_write" || !writeTool.has(n));
+    const then = new Set(ctx.tool_names), now = new Set(inMode);
+    const gone = [...then].filter(n => !now.has(n)), added = [...now].filter(n => !then.has(n));
+    rows.push({item:`工具（${tc.mode === "allow_write" ? "可写" : "只读"}模式）`, then:`${then.size} 个`, now:`${now.size} 个`, same: !gone.length && !added.length,
+      note: [gone.length && "会话有、本机无：" + gone.join(", ") + "（MCP 工具要运行时才有）", added.length && "本机多出：" + added.join(", ")].filter(Boolean).join("；")});
+  }
+  const st = env.skills_stats || {};
+  if (ctx.skills_total != null) add("skills（描述/名称/预载/共）", `${ctx.skills_listed}/${ctx.skills_named}/${ctx.skills_preloaded}/${ctx.skills_total}`, `${st.listed||0}/${st.named||0}/${st.preloaded||0}/${st.total||0}`);
+  return rows;
+}
+
+function envDetail(box, key) {
+  const [kind, name] = key.split(":");
+  box.replaceChildren();
+  if (kind === "check") {
+    box.append(el("h3", {}, "与会话记录核对（会话最后一回合 vs 本机现在）"),
+      el("table", {class:"kv"}, el("tr", {}, el("td", {}, "项目"), el("td", {}, "会话"), el("td", {}, "本机"), el("td", {}, "")),
+        envChecks().map(r => el("tr", {}, el("td", {}, r.item), el("td", {}, String(r.then)), el("td", {}, String(r.now)),
+          el("td", {class: r.same ? "ok" : "diff"}, r.same ? "一致" : "不同" + (r.note ? "：" + r.note : ""))))),
+      el("p", {class:"mute"}, "工作区：" + env.workspace));
+  } else if (kind === "model") {
+    box.append(el("h3", {}, "模型"), el("pre", {}, JSON.stringify(env.manifest.models, null, 2)));
+  } else if (kind === "tool") {
+    const t = env.tools.find(x => x.name === name), meta = env.manifest.tools.find(x => x.name === name);
+    box.append(el("h3", {}, "工具 " + name), el("p", {}, t.description), el("h3", {}, "属性"), kv(meta || {}), el("h3", {}, "参数 schema"), el("pre", {}, JSON.stringify(t.input_schema || {}, null, 2)));
+  } else if (kind === "skill") {
+    const s = env.skills.find(x => x.name === name);
+    box.append(el("h3", {}, "skill " + name), kv({呈现: SHOWN[s.shown] || s.shown, 位置: s.workspace ? "工作区" : "用户", 文件: s.path}), el("p", {}, s.description));
+  } else if (kind === "skills") {
+    box.append(el("h3", {}, "注入上下文的 skills 段"), el("div", {class:"mute"}, skillsText({skills_listed: env.skills_stats.listed, skills_named: env.skills_stats.named, skills_preloaded: env.skills_stats.preloaded, skills_total: env.skills_stats.total})), el("pre", {}, env.skills_text || "（无）"));
+  } else if (kind === "rules") {
+    box.append(el("h3", {}, `规则（rules.file = ${env.rules.file || "-"}）`), env.rules.error ? el("pre", {class:"err"}, env.rules.error) : "",
+      el("table", {class:"kv"}, (env.rules.files || []).map(f => el("tr", {}, el("td", {}, f.exists ? human(f.bytes) + " 字节" : "不存在"), el("td", {}, f.path)))),
+      el("h3", {}, "合并后的规则文本"), el("pre", {}, env.rules.text || "（无）"));
+  } else if (kind === "hooks") {
+    const h = env.hooks;
+    box.append(el("h3", {}, "Hooks（仅 chat 运行）"), kv({状态: h.enabled ? "启用" : h.off ? "SUAG_HOOKS=off 关闭" : "未配置", 错误: h.error}), el("pre", {}, h.config || "（无 hooks 配置）"));
+  } else if (kind === "mcp") {
+    const s = env.mcp_servers.find(x => x.id === name);
+    box.append(el("h3", {}, "MCP " + name), kv({命令: s.command, 参数: (s.args || []).join(" "), 环境变量: (s.env_keys || []).join(", ")}), el("p", {class:"mute"}, "工具列表需要启动服务后才有，这里不启动。"));
+  } else if (kind === "memory") {
+    box.append(el("h3", {}, "记忆后端"), el("pre", {}, JSON.stringify({memory: env.manifest.memory, write_policy: env.manifest.write_policy, taint: env.manifest.taint, output: env.manifest.output}, null, 2)));
+  }
+}
+
+function renderEnv(main) {
+  if (!env) {
+    main.replaceChildren(el("p", {class:"pane mute"}, "读取本机环境…"));
+    fetch("api/env").then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(t)))
+      .then(d => { env = d; if (tab === "env") renderEnv(main); })
+      .catch(err => main.replaceChildren(el("pre", {class:"err pane"}, "读取本机环境失败：" + err)));
+    return;
+  }
+  const left = el("div", {id:"left", class:"envlist"}), detail = el("div", {id:"detail"});
+  const item = (key, label) => el("div", {class:"item" + (envSel === key ? " sel" : ""), title: label, onclick: () => { envSel = key; renderEnv(main); }}, label);
+  const st = env.skills_stats || {};
+  left.append(
+    el("h4", {}, "核对"), item("check", "与会话记录核对"), item("model:", "模型 " + env.manifest.models.main.provider + "/" + env.manifest.models.main.model),
+    el("h4", {}, `工具（${env.tools.length}）`), env.tools.map(t => item("tool:" + t.name, t.name)),
+    el("h4", {}, `Skills（描述 ${st.listed||0} · 仅名称 ${st.named||0} · 预载 ${st.preloaded||0} / 共 ${st.total||0}）`), item("skills:", "注入的 skills 段"),
+    env.skills.map(s => item("skill:" + s.name, `${s.name} · ${SHOWN[s.shown] || s.shown}`)),
+    el("h4", {}, "规则"), item("rules:", `${(env.rules.files || []).filter(f => f.exists).length} 个文件（${env.rules.file || "-"}）`),
+    el("h4", {}, "Hooks"), item("hooks:", env.hooks.enabled ? "已启用" : "未启用"),
+    el("h4", {}, `MCP（${env.mcp_servers.length}）`), env.mcp_servers.map(s => item("mcp:" + s.id, s.id + " · " + s.command)),
+    el("h4", {}, "记忆"), item("memory:", env.manifest.memory.map(x => x.scope + "=" + x.backend).join(" · ")));
+  main.replaceChildren(left, detail);
+  envDetail(detail, envSel);
+}
+
 function render() {
   const main = document.getElementById("main");
-  if (tab === "timeline") renderTimeline(main); else if (tab === "context") renderContext(main); else renderAnalysis(main);
+  if (tab === "timeline") renderTimeline(main); else if (tab === "context") renderContext(main); else if (tab === "env") renderEnv(main); else renderAnalysis(main);
 }
 
 function setTab(name) {

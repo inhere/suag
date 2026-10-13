@@ -212,6 +212,9 @@ type ManifestOptions struct {
 	Model string
 	// Thinking overrides the main model's thinking level (like --thinking).
 	Thinking string
+	// Workspace is the directory whose skills and rules apply; "" resolves
+	// the configured workspace (or the current directory).
+	Workspace string
 }
 
 // LoadManifest builds the manifest from the current configuration without
@@ -219,13 +222,30 @@ type ManifestOptions struct {
 // are not started and the session database is not opened. Tools are the
 // built-in set with every mode enabled (see ManifestTool.NeedsAllowWrite).
 func LoadManifest(opts ManifestOptions) (Manifest, error) {
-	workspace, err := filepath.Abs(appconfig.ResolveWorkspacePath())
+	m, _, err := loadManifest(opts)
+	return m, err
+}
+
+// manifestParts are what loadManifest built besides the manifest, for
+// LoadLocalEnv.
+type manifestParts struct {
+	workspace string
+	registry  *tools.Registry
+	skills    *capskills.Registry
+}
+
+func loadManifest(opts ManifestOptions) (Manifest, manifestParts, error) {
+	workspace := opts.Workspace
+	if workspace == "" {
+		workspace = appconfig.ResolveWorkspacePath()
+	}
+	workspace, err := filepath.Abs(workspace)
 	if err != nil {
-		return Manifest{}, fmt.Errorf("resolve workspace: %w", err)
+		return Manifest{}, manifestParts{}, fmt.Errorf("resolve workspace: %w", err)
 	}
 	st, err := loadRuntimeSettings(workspace, opts.Model, opts.Thinking)
 	if err != nil {
-		return Manifest{}, err
+		return Manifest{}, manifestParts{}, err
 	}
 	reg := tools.NewRegistry()
 	for _, t := range native.BuildTools(nativeEnv(workspace), true) {
@@ -244,14 +264,15 @@ func LoadManifest(opts ManifestOptions) (Manifest, error) {
 	reg.Register(native.NewManifestTool(nil))
 
 	home, _ := os.UserHomeDir()
-	return BuildManifest(ManifestInput{
+	m := BuildManifest(ManifestInput{
 		Version: buildVersion, Settings: st.models, Registry: reg,
 		MCPServers: appconfig.ReadMCPServerSettings(),
 		SkillRoots: defaultSkillRoots(workspace, home), Skills: skillReg,
 		Memory: st.memSetup, Policy: st.memPolicy,
 		InlineBytes: st.inlineBytes, SpillBytes: st.spillBytes, SessionsDir: st.sessionsDir,
 		TaintTools: st.taintTools, TaintOnSpill: st.taintOnSpill,
-	}), nil
+	})
+	return m, manifestParts{workspace: workspace, registry: reg, skills: skillReg}, nil
 }
 
 // runtimeSettings are the configuration-derived inputs shared by Open and

@@ -89,34 +89,12 @@ func readSkillPolicy() skillPolicy {
 // to maxSkillNamesBytes), so the model knows every skill without a large
 // personal collection costing each turn its whole listing.
 func skillsPrompt(reg *capskills.Registry, pol skillPolicy) (string, personal.SkillsStats) {
-	all := reg.List()
-	stats := personal.SkillsStats{Total: len(all)}
-	if len(all) == 0 {
+	plan := planSkills(reg, pol)
+	stats := personal.SkillsStats{Total: plan.total, Listed: len(plan.listed), Named: len(plan.named), Preloaded: len(plan.preload)}
+	if plan.total == 0 {
 		return "", stats
 	}
-	var preload, rest []capskills.Skill
-	for _, s := range all {
-		if s.AlwaysLoad || pol.alwaysLoad[strings.ToLower(s.Name)] {
-			preload = append(preload, s)
-		} else {
-			rest = append(rest, s)
-		}
-	}
-	for name := range pol.alwaysLoad {
-		if _, ok := reg.Get(name); !ok {
-			slog.Warn("skills.always_load names an unknown skill", "name", name)
-		}
-	}
-	listed := rest
-	if len(rest) > pol.listMax {
-		listed = nil
-		for _, s := range rest {
-			if s.Workspace && len(listed) < pol.listMax {
-				listed = append(listed, s)
-			}
-		}
-	}
-	stats.Listed, stats.Preloaded = len(listed), len(preload)
+	listed, preload := plan.listed, plan.preload
 
 	var b strings.Builder
 	b.WriteString("# Skills\n")
@@ -128,8 +106,7 @@ func skillsPrompt(reg *capskills.Registry, pol skillPolicy) (string, personal.Sk
 		}
 		fmt.Fprintf(&b, "- %s — %s\n", s.Name, desc)
 	}
-	if names, unnamed := unlistedSkillNames(rest, listed); len(names) > 0 || unnamed > 0 {
-		stats.Named = len(names)
+	if names, unnamed := plan.named, plan.unnamed; len(names) > 0 || unnamed > 0 {
 		b.WriteString("Also installed (no description here; load by name with the skill tool, or search with its query argument when unsure")
 		if len(names) > 0 {
 			b.WriteString("): " + strings.Join(names, ", "))
@@ -153,6 +130,46 @@ func skillsPrompt(reg *capskills.Registry, pol skillPolicy) (string, personal.Sk
 		fmt.Fprintf(&b, "\n## Skill %s (preloaded; directory %s)\n%s\n", s.Name, s.Dir, strings.TrimSpace(body))
 	}
 	return b.String(), stats
+}
+
+// skillPlan is how the skills listing presents the installed skills.
+type skillPlan struct {
+	preload, listed []capskills.Skill
+	named           []string // by name only
+	unnamed         int      // neither listed nor named (over maxSkillNamesBytes)
+	total           int
+}
+
+// planSkills splits the installed skills by presentation: preloaded
+// (always_load), listed with their description (all while they number at
+// most listMax, else the workspace ones up to listMax), and the rest by name.
+func planSkills(reg *capskills.Registry, pol skillPolicy) skillPlan {
+	all := reg.List()
+	plan := skillPlan{total: len(all)}
+	var rest []capskills.Skill
+	for _, s := range all {
+		if s.AlwaysLoad || pol.alwaysLoad[strings.ToLower(s.Name)] {
+			plan.preload = append(plan.preload, s)
+		} else {
+			rest = append(rest, s)
+		}
+	}
+	for name := range pol.alwaysLoad {
+		if _, ok := reg.Get(name); !ok {
+			slog.Warn("skills.always_load names an unknown skill", "name", name)
+		}
+	}
+	plan.listed = rest
+	if len(rest) > pol.listMax {
+		plan.listed = nil
+		for _, s := range rest {
+			if s.Workspace && len(plan.listed) < pol.listMax {
+				plan.listed = append(plan.listed, s)
+			}
+		}
+	}
+	plan.named, plan.unnamed = unlistedSkillNames(rest, plan.listed)
+	return plan
 }
 
 // unlistedSkillNames returns the names of the skills in rest that are not
