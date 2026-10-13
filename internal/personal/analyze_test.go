@@ -288,26 +288,29 @@ func TestAnalyzeTraceSubAgents(t *testing.T) {
 	start := store.Event{Kind: store.EventTool, Name: "agent", Status: eventOK, DurationMs: 6,
 		Attrs: map[string]any{"task_id": "t4", "background": true, "agent_type": "research"}}
 	task := store.Event{Kind: store.EventTask, Name: "t4", Status: eventOK, DurationMs: 20000,
-		Attrs: map[string]any{"kind": "agent", "arg": "agent: survey deps", "steps": float64(7), "tool_calls": float64(3)}}
+		Attrs: map[string]any{"kind": "agent", "arg": "agent: survey deps", "steps": float64(7), "tool_calls": float64(3),
+			"input_tokens": float64(15000), "cache_read_tokens": float64(10000), "output_tokens": float64(1000),
+			"child_session_id": "sess_bg", "stop": "max_tokens", "cost_usd": "0.0077"}} // labels are text
 
 	a := AnalyzeTrace([]store.Event{model(), syncCall, model(), start, model(), task})
 	assert.Eq(t, 2, a.AgentCalls)
 	assert.Eq(t, 19, a.AgentSteps)
 	assert.Eq(t, 8, a.AgentToolCalls)
-	assert.Eq(t, int64(85000), a.AgentInputTokens)
-	assert.Eq(t, int64(60000), a.AgentCacheReadTokens)
-	assert.Eq(t, int64(3000), a.AgentOutputTokens)
-	assert.Eq(t, 0.0123, a.AgentCostUSD)
+	assert.Eq(t, int64(100000), a.AgentInputTokens)
+	assert.Eq(t, int64(70000), a.AgentCacheReadTokens)
+	assert.Eq(t, int64(4000), a.AgentOutputTokens)
+	assert.Eq(t, 0.02, a.AgentCostUSD)
 	assert.Eq(t, int64(61306), a.AgentMs) // 41300 + 6 + 20000
-	assert.Eq(t, map[string]int{"final": 1}, a.AgentStops)
+	assert.Eq(t, map[string]int{"final": 1, "max_tokens": 1}, a.AgentStops)
 	// The agent task is background work the loop did not wait for, like a shell task.
 	assert.Eq(t, 1, a.BackgroundTasks)
 	assert.Eq(t, int64(20000), a.BackgroundMs)
 
 	var out bytes.Buffer
 	assert.NoErr(t, WriteTraceAnalysis(&out, a, false))
-	assert.StrContains(t, out.String(), "2 calls, 19 steps, 8 tool calls, in 85k (cache 60k), out 3k, cost $0.0123, ran 61.3s")
-	assert.StrContains(t, out.String(), "sub-agent stops        final x1")
+	assert.StrContains(t, out.String(), "2 calls, 19 steps, 8 tool calls, in 100k (cache 70k), out 4k, cost $0.0200, ran 61.3s")
+	assert.StrContains(t, out.String(), "final x1")
+	assert.StrContains(t, out.String(), "max_tokens x1")
 
 	out.Reset()
 	assert.NoErr(t, WriteTraceAnalysis(&out, AnalyzeTrace([]store.Event{model()}), false))

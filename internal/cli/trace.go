@@ -31,7 +31,7 @@ func newTraceCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	trace.BoolVar(&traceJSON, "json", false, "write one JSON object per line")
 	trace.BoolVar(&traceWeb, "web", false, "serve the session timeline as a local web page (Ctrl-C to stop)")
 	trace.StringVar(&traceAddr, "addr", "127.0.0.1:0", "loopback address for --web (port 0 picks a free one)")
-	trace.BoolVar(&traceAnalyze, "analyze", false, "summarize the loop: steps, parallel calls, re-reads, repeated commands, tests after the first pass")
+	trace.BoolVar(&traceAnalyze, "analyze", false, "summarize the loop: steps, parallel calls, re-reads, repeated commands, tests after the first pass, background tasks and sub-agents")
 	// Flags may also follow the session ID (capp parses them interspersed).
 	trace.AddArg("session", "the session ID", true)
 	return trace

@@ -110,6 +110,9 @@ func taskEndEvent(info tasks.Info) store.Event {
 	for name, n := range info.Counters {
 		attrs[name] = n
 	}
+	for name, value := range info.Labels {
+		attrs[name] = value
+	}
 	if info.Progress != "" {
 		attrs["progress"] = info.Progress
 	}

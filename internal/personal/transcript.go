@@ -94,7 +94,8 @@ const toolArgValueLimit = 120
 
 // summaryArgKeys are the argument names that best identify what a tool call did,
 // in display priority order.
-var summaryArgKeys = []string{"path", "paths", "file_path", "filepath", "file", "command", "cmd", "pattern", "query", "url"}
+var summaryArgKeys = []string{"path", "paths", "file_path", "filepath", "file", "command", "cmd", "pattern", "query", "url",
+	"description"} // the agent tool: its short label, not the whole prompt
 
 func summarizeToolArgs(args map[string]any) string {
 	var parts []string

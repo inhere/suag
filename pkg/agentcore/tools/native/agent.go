@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -176,8 +177,16 @@ func (t *AgentTool) startBackground(ctx context.Context, call api.ToolCall, req 
 	info, err := t.tasks.Start(ctx, tasks.Spec{Kind: "agent", Summary: "agent: " + req.Description, NoEndNotice: true,
 		Run: func(ctx context.Context, out io.Writer, r tasks.Reporter) (int, error) {
 			rep, err := t.agents.RunAgent(ctx, req)
+			// What the sub-agent spent and where it ran go to the task's end
+			// event (trace, --analyze), as on a synchronous call's tool event.
 			r.Count("steps", rep.Steps)
 			r.Count("tool_calls", rep.ToolCalls)
+			r.Count("input_tokens", rep.Usage.InputTokens)
+			r.Count("cache_read_tokens", rep.Usage.CacheReadTokens)
+			r.Count("output_tokens", rep.Usage.OutputTokens)
+			r.Label("child_session_id", rep.SessionID)
+			r.Label("stop", rep.Stop)
+			r.Label("cost_usd", strconv.FormatFloat(rep.Usage.CostUSD, 'f', -1, 64))
 			footer := agentFooter(rep)
 			if err != nil {
 				fmt.Fprintf(out, "sub-agent failed: %v\n%s\n", err, footer)

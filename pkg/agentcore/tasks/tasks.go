@@ -93,6 +93,9 @@ type Reporter interface {
 	Progress(text string)
 	// Count sets a named counter reported with the task (Info.Counters).
 	Count(name string, n int)
+	// Label sets a named text reported with the task (Info.Labels), e.g. the
+	// session a sub-agent ran in. Unlike Progress it returns no Wait.
+	Label(name, value string)
 }
 
 // RunFunc is a function task: it writes its output to out (line by line,
@@ -138,8 +141,9 @@ type Info struct {
 	// Error is why a function task failed.
 	Error string `json:"error,omitempty"`
 	// Progress and Counters are what a function task reported (Reporter).
-	Progress string         `json:"progress,omitempty"`
-	Counters map[string]int `json:"counters,omitempty"`
+	Progress string            `json:"progress,omitempty"`
+	Counters map[string]int    `json:"counters,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty"`
 	// Notice is set on a notice of a running task (TakeNotices): its text.
 	// Empty on an end notice.
 	Notice string `json:"notice,omitempty"`
@@ -383,6 +387,15 @@ func (t *task) signal() {
 	close(t.updated)
 	t.updated = make(chan struct{})
 	t.mu.Unlock()
+}
+
+func (r reporter) Label(name, value string) {
+	r.t.mu.Lock()
+	if r.t.info.Labels == nil {
+		r.t.info.Labels = map[string]string{}
+	}
+	r.t.info.Labels[name] = value
+	r.t.mu.Unlock()
 }
 
 func (r reporter) Count(name string, n int) {
@@ -633,6 +646,7 @@ func (t *task) snapshot() Info {
 	t.mu.Lock()
 	info := t.info
 	info.Counters = maps.Clone(t.info.Counters)
+	info.Labels = maps.Clone(t.info.Labels)
 	t.mu.Unlock()
 	info.Bytes, info.Lines, info.Truncated, info.Tail = t.out.stats()
 	return info

@@ -6,6 +6,7 @@ import (
 	"io"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/inhere/suag/internal/personal/store"
@@ -201,10 +202,9 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 			case taskKindHook:
 				a.StopHooks++
 			case taskKindAgent:
-				// A background sub-agent: its end event carries the steps its task
-				// counted (see agentCall).
-				a.AgentSteps += attrInt(e.Attrs["steps"])
-				a.AgentToolCalls += attrInt(e.Attrs["tool_calls"])
+				// A background sub-agent: its end event carries what its task
+				// counted, as a synchronous call's tool event does (agentSpent).
+				a.agentSpent(e.Attrs)
 				a.AgentMs += e.DurationMs
 				a.BackgroundMs += e.DurationMs
 				bgSpans = appendSpan(bgSpans, e)
@@ -378,13 +378,19 @@ func (a *TraceAnalysis) agentCall(e store.Event) {
 	if _, ok := e.Attrs["steps"]; !ok {
 		return
 	}
-	a.AgentSteps += attrInt(e.Attrs["steps"])
-	a.AgentToolCalls += attrInt(e.Attrs["tool_calls"])
-	a.AgentInputTokens += int64(attrInt(e.Attrs["input_tokens"]))
-	a.AgentCacheReadTokens += int64(attrInt(e.Attrs["cache_read_tokens"]))
-	a.AgentOutputTokens += int64(attrInt(e.Attrs["output_tokens"]))
-	a.AgentCostUSD += attrFloat(e.Attrs["cost_usd"])
-	if stop, _ := e.Attrs["stop"].(string); stop != "" {
+	a.agentSpent(e.Attrs)
+}
+
+// agentSpent adds what one sub-agent run spent, from the attrs of its
+// synchronous call's tool event or of its background task's end event.
+func (a *TraceAnalysis) agentSpent(attrs map[string]any) {
+	a.AgentSteps += attrInt(attrs["steps"])
+	a.AgentToolCalls += attrInt(attrs["tool_calls"])
+	a.AgentInputTokens += int64(attrInt(attrs["input_tokens"]))
+	a.AgentCacheReadTokens += int64(attrInt(attrs["cache_read_tokens"]))
+	a.AgentOutputTokens += int64(attrInt(attrs["output_tokens"]))
+	a.AgentCostUSD += attrFloat(attrs["cost_usd"])
+	if stop, _ := attrs["stop"].(string); stop != "" {
 		if a.AgentStops == nil {
 			a.AgentStops = map[string]int{}
 		}
@@ -500,6 +506,9 @@ func attrFloat(v any) float64 {
 		return float64(n)
 	case int64:
 		return float64(n)
+	case string: // a task label (a background sub-agent's cost)
+		f, _ := strconv.ParseFloat(n, 64)
+		return f
 	}
 	return 0
 }
