@@ -4,6 +4,29 @@
 
 ## [未发布]
 
+## [0.19.0] - 2026-10-13
+
+项目改名 suag → suga（suag-s6f1）：命令、模块路径、环境变量、数据目录与持久化键全部换成新名，不保留兼容；本地配置用随附的迁移脚本处理。另修复子 agent 未跟随会话模型。
+
+### 改名
+
+- 命令 `suga`（`cmd/suga`），模块路径 `github.com/inhere/suga`，仓库 <https://github.com/inhere/suga>；release 资产为 `suga-<os>-<arch>`。
+- 环境变量 `SUGA_*`（`SUGA_HOME`、`SUGA_CONFIG`、`SUGA_MODEL`、`SUGA_HOOKS`、`SUGA_PROVIDER`、`SUGA_APPEND_SYSTEM_PROMPT` 等），数据目录 `~/.suga`，仓库模式记忆与输出整理规则目录 `<repo>/.suga/`。
+- 文档与示例中的 gofer agent key 为 `suga`、`suga-acp`；hook 命令写作 `--agent suga`。
+- 迁移脚本 `scripts/migrate/suag-to-suga.ps1`（Windows）与 `suag-to-suga.sh`（Linux/macOS）：默认只预览，加 `-Apply`/`--apply` 执行；把 `~/.suag` 改名为 `~/.suga`，改写 `config.yaml` 中的 agent 名、`.suag` 路径与 `SUAG_` 变量名、`.env` 中的 `SUAG_` 变量名（值不变、不输出）、Windows 用户级 `SUAG_*` 环境变量，可选改写 gofer 的 `agents.yaml`；改前备份为 `<文件>.bak-<时间>`。说明见 `scripts/migrate/README.md`。
+
+### 修复
+
+- 子 agent 未设置 `agents.model` 时改用会话当前的模型（含 `--model` 与 `SUGA_MODEL` 覆盖）；此前用配置文件里的 `model`。示例配置补上 `agents.*` 与 `hooks.stop_background`。
+- 评测与伪终端冒烟的子进程不再继承宿主的 `SUGA_CONFIG`。
+
+### 不兼容
+
+- 不认旧名：`suag` 命令、`SUAG_*` 环境变量、`~/.suag` 与 `<repo>/.suag/` 都不再读取；升级前用迁移脚本迁移本地配置，或手工改名。
+- 持久化键改名（会话 meta 的 `suga.*`、`suga_version`，工具名 `suga_manifest`，规则哈希标签 `suga-home/`，gofer 记忆后端的 tag 与 key 前缀 `suga`）：v0.18.0 及更早的会话可以查看（trace、sessions 照常），续接时读不到折叠记录、段上下文、注入标记、任务通知与思考签名等元数据，规则会重新注入一次、提示缓存失效；带 Claude 思考签名的旧会话续接可能被提供方拒绝。建议新开会话。
+- gofer：agent key 改为 `suga`/`suga-acp` 后，旧 key 下登记的会话与历史 job 不能再续接或投递，用量统计中新旧 key 分开显示。
+- 库接口：Go 模块路径变为 `github.com/inhere/suga`，引用 `pkg/agentcore` 的代码需要改 import。
+
 ## [0.18.0] - 2026-10-13
 
 子 agent：新工具 `agent` 把探索或调研任务交给只读子 agent，在独立会话里完成并只返回报告，可后台运行；用量计入父会话、子会话不出现在列表中；agentcore 支持 hook 请求收尾；修复会话 meta 被状态更新覆盖、trace 网页同毫秒消息配对错误。
@@ -391,7 +414,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.18.0...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/inhere/suga/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/inhere/suga/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/inhere/suga/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/inhere/suga/compare/v0.15.0...v0.16.0
