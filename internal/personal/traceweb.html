@@ -196,11 +196,19 @@ function showDetail(box, e) {
     box.append(el("h3", {}, "上下文组成（字符）"), stackBar(e.attrs), legend(), kv(Object.fromEntries(PARTS.map(([k, l]) => [l, e.attrs[k] ? human(e.attrs[k]) : ""]))));
     if (e.attrs.skills_total != null) box.append(el("div", {class:"mute"}, skillsText(e.attrs)));
     const seg = latestSegment(at(e) + 1000);
-    if (seg || e.attrs.tool_names) {
+    if (seg || e.attrs.tools_count) {
       box.append(el("h3", {}, "分段上下文原文"));
       // Tool schemas go with every request, not in the segment text: the names are recorded.
       const names = e.attrs.tool_names || [];
-      if (names.length) box.append(el("details", {}, el("summary", {}, `工具定义（${names.length} 个${e.attrs.tools_mcp ? "，MCP " + e.attrs.tools_mcp : ""}，${human(e.attrs.tools)} 字符）`), el("pre", {}, names.join("\n"))));
+      const head = `工具定义（${e.attrs.tools_count || names.length} 个${e.attrs.tools_mcp ? "，MCP " + e.attrs.tools_mcp : ""}，${human(e.attrs.tools)} 字符）`;
+      if (names.length) box.append(el("details", {open:""}, el("summary", {}, head), el("pre", {}, names.join("\n"))));
+      else {
+        // Sessions recorded before tool_names: name the tools the session called.
+        const used = [...new Set(data.events.filter(x => x.kind === "tool" || x.kind === "denial").map(x => x.name))].sort();
+        box.append(el("details", {open:""}, el("summary", {}, head),
+          el("p", {class:"mute"}, "这次会话的记录没有工具名单（记录它的 suag 版本较旧）；本机当前的工具定义见「本机环境」页。下面是本会话调用过的工具："),
+          el("pre", {}, used.join("\n") || "（没有调用工具）")));
+      }
     }
     if (seg) {
       for (const [k, l] of PARTS) if (seg.context[k]) box.append(el("details", {}, el("summary", {}, `${l}（${human(seg.context[k].length)} 字符）`), el("pre", {}, seg.context[k])));
@@ -314,7 +322,8 @@ function renderEnv(main) {
   const left = el("div", {id:"left", class:"envlist"}), detail = el("div", {id:"detail"});
   const item = (key, label) => el("div", {class:"item" + (envSel === key ? " sel" : ""), title: label, onclick: () => { envSel = key; renderEnv(main); }}, label);
   const st = env.skills_stats || {};
-  left.append(
+  // DOM append does not flatten arrays (it would print "[object HTMLDivElement]").
+  left.append(...[
     el("h4", {}, "核对"), item("check", "与会话记录核对"), item("model:", "模型 " + env.manifest.models.main.provider + "/" + env.manifest.models.main.model),
     el("h4", {}, `工具（${env.tools.length}）`), env.tools.map(t => item("tool:" + t.name, t.name)),
     el("h4", {}, `Skills（描述 ${st.listed||0} · 仅名称 ${st.named||0} · 预载 ${st.preloaded||0} / 共 ${st.total||0}）`), item("skills:", "注入的 skills 段"),
@@ -322,7 +331,7 @@ function renderEnv(main) {
     el("h4", {}, "规则"), item("rules:", `${(env.rules.files || []).filter(f => f.exists).length} 个文件（${env.rules.file || "-"}）`),
     el("h4", {}, "Hooks"), item("hooks:", env.hooks.enabled ? "已启用" : "未启用"),
     el("h4", {}, `MCP（${env.mcp_servers.length}）`), env.mcp_servers.map(s => item("mcp:" + s.id, s.id + " · " + s.command)),
-    el("h4", {}, "记忆"), item("memory:", env.manifest.memory.map(x => x.scope + "=" + x.backend).join(" · ")));
+    el("h4", {}, "记忆"), item("memory:", env.manifest.memory.map(x => x.scope + "=" + x.backend).join(" · "))].flat());
   main.replaceChildren(left, detail);
   envDetail(detail, envSel);
 }
