@@ -104,6 +104,23 @@ func TestTaskNoticesReachTheModel(t *testing.T) {
 		assert.Eq(t, "go test ./...", events[0].Attrs["arg"])
 		assert.True(t, events[0].DurationMs >= 59000)
 	})
+	t.Run("a watch end carries its counters and progress", func(t *testing.T) {
+		watch := tasks.Info{ID: "t2", SessionID: res.SessionID, Kind: "watch", Status: tasks.Killed, ExitCode: 1,
+			Started: time.Now().Add(-time.Minute), Ended: time.Now(), Progress: "run 4, last exit 1, 2 changes",
+			Counters: map[string]int{"runs": 4, "changes": 2}}
+		runner.RecordTaskEnd(watch)
+		failed := tasks.Info{ID: "t3", SessionID: res.SessionID, Kind: "hook", Status: tasks.Failed, ExitCode: -1,
+			Started: time.Now(), Ended: time.Now(), Error: "exec: not found"}
+		runner.RecordTaskEnd(failed)
+		events := eventsOf(t, repo, res.SessionID, store.EventTask)
+		assert.Require(t, assert.Len(t, events, 3))
+		assert.Eq(t, "watch", events[1].Attrs["kind"])
+		assert.Eq(t, float64(4), events[1].Attrs["runs"])
+		assert.Eq(t, float64(2), events[1].Attrs["changes"])
+		assert.Eq(t, "run 4, last exit 1, 2 changes", events[1].Attrs["progress"])
+		assert.Eq(t, "failed", events[2].Status)
+		assert.Eq(t, "exec: not found", events[2].Error)
+	})
 }
 
 func TestTaskNoticeText(t *testing.T) {

@@ -106,6 +106,13 @@ func taskEndEvent(info tasks.Info) store.Event {
 	if info.Truncated {
 		attrs["truncated"] = true
 	}
+	// What a function task reported: a watch's runs and changes, its state.
+	for name, n := range info.Counters {
+		attrs[name] = n
+	}
+	if info.Progress != "" {
+		attrs["progress"] = info.Progress
+	}
 	status := eventOK
 	if info.Status != tasks.Exited || info.ExitCode != 0 {
 		status = string(info.Status)
@@ -122,5 +129,5 @@ func errorOfTask(info tasks.Info) string {
 	if info.Status == tasks.TimedOut {
 		return "ran past tasks.max_duration " + time.Duration(info.Duration()).Round(time.Second).String()
 	}
-	return ""
+	return info.Error // a function task that failed
 }
