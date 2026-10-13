@@ -123,7 +123,8 @@ func readSkillFile(root *os.Root, rel string) (string, error) {
 	return string(data), nil
 }
 
-// skillFiles lists the files of the skill directory except SKILL.md (two
+// skillFiles lists the files of the skill directory except SKILL.md and
+// hidden files such as an installer's marker file (two
 // levels, slash-separated).
 func skillFiles(root *os.Root) []string {
 	var out []string
@@ -140,7 +141,7 @@ func skillFiles(root *os.Root) []string {
 			switch {
 			case e.IsDir() && depth < 2 && !strings.HasPrefix(e.Name(), "."):
 				walk(filepath.Join(dir, e.Name()), depth+1)
-			case e.Type().IsRegular() && !strings.EqualFold(rel, "SKILL.md"):
+			case e.Type().IsRegular() && !strings.EqualFold(rel, "SKILL.md") && !strings.HasPrefix(e.Name(), "."):
 				out = append(out, rel)
 			}
 		}

@@ -16,13 +16,16 @@ func TestSkillTool(t *testing.T) {
 	assert.NoErr(t, os.MkdirAll(filepath.Join(dir, "references"), 0o755))
 	assert.NoErr(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: demo\ndescription: d\n---\n# Demo\nDo it.\n"), 0o644))
 	assert.NoErr(t, os.WriteFile(filepath.Join(dir, "references", "usage.md"), []byte("usage text"), 0o644))
+	// A hidden file (suga's release marker) is not listed.
+	assert.NoErr(t, os.WriteFile(filepath.Join(dir, ".suga-builtin.json"), []byte("{}"), 0o644))
 	assert.NoErr(t, os.WriteFile(filepath.Join(root, "secret.txt"), []byte("secret"), 0o644))
 	tool := NewSkillTool(skills.LoadRoots([]skills.Root{{Dir: root}}), 0)
 
 	t.Run("body and file list", func(t *testing.T) {
 		out := execTool(t, tool, map[string]any{"name": "demo"})
 		assert.StrContains(t, out, "# Skill: demo\nDirectory: "+dir)
-		assert.StrContains(t, out, "Files (read with file=...): references/usage.md")
+		assert.StrContains(t, out, "Files (read with file=...): references/usage.md\n")
+		assert.NotContains(t, out, ".suga-builtin.json")
 		assert.StrContains(t, out, "# Demo\nDo it.")
 	})
 	t.Run("a file of the skill", func(t *testing.T) {
