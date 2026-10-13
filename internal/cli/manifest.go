@@ -32,6 +32,7 @@ func newManifestCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd
 		}
 		return writeManifestText(stdout, m)
 	})
+	cmd.Aliases = []string{"info"}
 	cmd.SetOutput(stderr)
 	cmd.StringVar(&model, "model", "", "model to report, provider/model;;m")
 	cmd.StringVar(&thinking, "thinking", "", "thinking level to report (like run --thinking)")

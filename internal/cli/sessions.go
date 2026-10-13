@@ -33,6 +33,7 @@ func newSessionsCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd
 		}
 		return runSessions(ctx, stdout, opts, time.Now())
 	})
+	cmd.Aliases = []string{"ls"}
 	cmd.SetOutput(stderr)
 	cmd.IntVar(&opts.limit, "limit", 10, "how many sessions to show, 0 shows all;;n")
 	cmd.StringVar(&opts.since, "since", "", "only sessions active since: 12h, 7d, or a date like 2026-10-01")
