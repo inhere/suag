@@ -120,7 +120,7 @@
 - P1（v0.16.0）：管理器、`shell_exec` 的 `background`、`task` 工具、通知、trace 的 `task` 事件，chat 与 run 两个入口。
 - P2 ACP（2026-10-13）：管理器挂在 ACP 进程上（`RunPersonalACP` 创建，按会话 id 分开），每个 prompt 新建的 runtime 通过 `wiring.Options.Tasks` 拿到它，所以任务跨回合存活，结束通知进入该会话的下一个 prompt。`session/cancel` 只取消回合；连接关闭后 `Serve` 返回，再终止仍在运行的任务。任务结束事件改由 `wiring.NewTaskManager` 设置的回调自己打开 store 写入（`personal.RecordTaskEndIn`），不再经过回合的 Runner：ACP 两个回合之间、进程退出时没有打开的 Runner，chat 与 run 也走同一条路径。只读模式的回合不注册后台能力，也不取通知，通知留到下一个写模式回合。
 
-## P3 细化：watch 任务与后台 Stop hook（2026-10-13，待确认）
+## P3 细化：watch 任务与后台 Stop hook（2026-10-13）
 
 ### 现状要点
 
@@ -170,7 +170,7 @@
   - watch：fakellm 启动监听某文件的 watch，脚本改这个文件，空闲的 chat 被通知唤醒。
 - 真实模型评测：新增 `watch-tests`，模型用 watch 监听测试，修代码后从通知得知测试转绿。
 
-### 待定（请用户确认，建议值在前）
+### 已定（2026-10-13 用户确认按建议）
 
 1. watch 的入口放在 `shell_exec`（复用审批与危险删除拦截）；另一种做法是 `task` 工具新增 action，但 `task` 不经审批，需要另加。
 2. 文件变化用轮询（2 秒，无新依赖，跨平台行为一致）；另一种做法是引入 fsnotify（更及时，但要处理递归目录与各平台差异）。
