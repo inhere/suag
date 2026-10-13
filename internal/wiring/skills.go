@@ -10,6 +10,7 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
+	"github.com/inhere/suag/internal/personal"
 	capskills "github.com/inhere/suag/pkg/agentcore/skills"
 )
 
@@ -56,6 +57,9 @@ const (
 	defaultSkillListMax = 15
 	// maxPreloadBytes bounds the body of one always_load skill in the prompt.
 	maxPreloadBytes = 8000
+	// maxSkillNamesBytes bounds the names-only line of the skills past
+	// list_max; the rest are counted and found through search.
+	maxSkillNamesBytes = 3000
 )
 
 // skillPolicy is how the skills listing (segment context) presents skills.
@@ -78,15 +82,17 @@ func readSkillPolicy() skillPolicy {
 }
 
 // skillsPrompt is the segment context section for skills ("" when there are
-// none). Preloaded (always_load) skills appear with their body. The others
-// are listed as "name — description" while they number at most listMax;
-// beyond that only workspace skills are listed (up to listMax) and the model
-// is told how many more exist and to search for them, so a large personal
-// skill collection does not cost every turn its whole listing.
-func skillsPrompt(reg *capskills.Registry, pol skillPolicy) string {
+// none) and how many skills it presents in which form. Preloaded
+// (always_load) skills appear with their body. The others are listed as
+// "name — description" while they number at most listMax; beyond that only
+// workspace skills are listed (up to listMax) and the rest by name only (up
+// to maxSkillNamesBytes), so the model knows every skill without a large
+// personal collection costing each turn its whole listing.
+func skillsPrompt(reg *capskills.Registry, pol skillPolicy) (string, personal.SkillsStats) {
 	all := reg.List()
+	stats := personal.SkillsStats{Total: len(all)}
 	if len(all) == 0 {
-		return ""
+		return "", stats
 	}
 	var preload, rest []capskills.Skill
 	for _, s := range all {
@@ -110,7 +116,7 @@ func skillsPrompt(reg *capskills.Registry, pol skillPolicy) string {
 			}
 		}
 	}
-	hidden := len(rest) - len(listed)
+	stats.Listed, stats.Preloaded = len(listed), len(preload)
 
 	var b strings.Builder
 	b.WriteString("# Skills\n")
@@ -122,9 +128,18 @@ func skillsPrompt(reg *capskills.Registry, pol skillPolicy) string {
 		}
 		fmt.Fprintf(&b, "- %s — %s\n", s.Name, desc)
 	}
-	if hidden > 0 {
-		fmt.Fprintf(&b, "%d more skills are installed but not listed. When a task may match one (a workflow, tool, "+
-			"framework or kind of document), first search with the skill tool's query argument (query \"*\" lists all names) and load a match.\n", hidden)
+	if names, unnamed := unlistedSkillNames(rest, listed); len(names) > 0 || unnamed > 0 {
+		stats.Named = len(names)
+		b.WriteString("Also installed (no description here; load by name with the skill tool, or search with its query argument when unsure")
+		if len(names) > 0 {
+			b.WriteString("): " + strings.Join(names, ", "))
+		} else {
+			b.WriteString(")")
+		}
+		if unnamed > 0 {
+			fmt.Fprintf(&b, " … and %d more (query \"*\" lists all names)", unnamed)
+		}
+		b.WriteString(".\n")
 	}
 	for _, s := range preload {
 		_, body, err := capskills.ParseFile(s.Path)
@@ -137,7 +152,29 @@ func skillsPrompt(reg *capskills.Registry, pol skillPolicy) string {
 		}
 		fmt.Fprintf(&b, "\n## Skill %s (preloaded; directory %s)\n%s\n", s.Name, s.Dir, strings.TrimSpace(body))
 	}
-	return b.String()
+	return b.String(), stats
+}
+
+// unlistedSkillNames returns the names of the skills in rest that are not
+// listed, within maxSkillNamesBytes, and how many did not fit.
+func unlistedSkillNames(rest, listed []capskills.Skill) (names []string, unnamed int) {
+	shown := make(map[string]bool, len(listed))
+	for _, s := range listed {
+		shown[s.Name] = true
+	}
+	size := 0
+	for _, s := range rest {
+		if shown[s.Name] {
+			continue
+		}
+		if size+len(s.Name)+2 > maxSkillNamesBytes {
+			unnamed++
+			continue
+		}
+		names = append(names, s.Name)
+		size += len(s.Name) + 2
+	}
+	return names, unnamed
 }
 
 // utf8Cut moves cut back to a rune start.

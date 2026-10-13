@@ -74,7 +74,7 @@ Suag reads only `$SUAG_HOME/config.yaml` and `$SUAG_HOME/.env` (default `~/.suag
 | `tools.auto_allow`, `tools.read_only_allow` | MCP allowlists, entries `server/toolglob` |
 | `tools.deferred` | Defer MCP tool schemas: `auto` (default), `always`, `never` |
 | `mcp.servers`, `mcp.call_timeout_sec` | Default MCP servers; timeout of one MCP call (120) |
-| `skills.list_max`, `skills.always_load` | Skills listed in the prompt before falling back to search (15); skills preloaded into the prompt |
+| `skills.list_max`, `skills.always_load` | Skills listed with their description (15; beyond that only workspace skills, the rest by name only); skills preloaded into the prompt |
 | `hooks.*` | Chat hook command (SessionStart, UserPromptSubmit, PostToolUse, Stop, …) |
 | `memory.write` | `auto` (default) lets the `memory` tool write; `off` makes it read-only |
 | `memory.write_tainted` | What a session that has read external content does on a memory write: `ask` (default), `deny`, `allow` |
@@ -119,7 +119,7 @@ Exact semantics: [Gofer setup and tools](docs/usage/gofer-personal-agent.md#内�
 
 ## Skills
 
-Suag scans `<workspace>/.agents/skills`, `<workspace>/skills` and `~/.agents/skills` once at startup. If two skills share a name, the workspace one wins. If there are no more than `skills.list_max` skills, all of them are listed in the system prompt. Otherwise only workspace skills are listed, and the model finds the rest with `skill(query=…)`. To put a skill's body into every prompt, mark it with `metadata: {always_load: true}` in its frontmatter, or list it in `skills.always_load`.
+Suag scans `<workspace>/.agents/skills`, `<workspace>/skills` and `~/.agents/skills` once at startup. If two skills share a name, the workspace one wins. If there are no more than `skills.list_max` skills, all of them are listed in the system prompt. Otherwise only workspace skills are listed with their description and the rest by name only (up to 3000 bytes of names; beyond that a count), so the model can load any of them by name or search with `skill(query=…)`. To put a skill's body into every prompt, mark it with `metadata: {always_load: true}` in its frontmatter, or list it in `skills.always_load`.
 
 ## Memory
 

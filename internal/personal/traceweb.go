@@ -94,7 +94,8 @@ func BuildTraceView(ctx context.Context, repo *store.Store, sessionID string) (*
 		return nil, err
 	}
 	view := &TraceView{
-		Session: traceSession{ID: sess.ID, Title: sess.Title, Cwd: sess.Cwd, Status: sess.Status,
+		// Older sessions stored the whole first prompt as the title.
+		Session: traceSession{ID: sess.ID, Title: SessionTitle(sess.Title), Cwd: sess.Cwd, Status: sess.Status,
 			CreatedAt: sess.CreatedAt, UpdatedAt: sess.UpdatedAt, Meta: sess.Meta},
 		Analysis: AnalyzeTrace(events),
 	}

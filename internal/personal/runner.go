@@ -58,8 +58,11 @@ type Config struct {
 	// skills listing. Both go into the segment context: read for every new
 	// segment, and the environment is also compared at each turn start (a
 	// resumed session in another mode or workspace gets a context update).
-	EnvironmentSource  func() string
-	SkillsSource       func() string
+	EnvironmentSource func() string
+	SkillsSource      func() string
+	// SkillsStats counts the skills by how the listing presents them; the
+	// context event records it.
+	SkillsStats        func() SkillsStats
 	AppendSystemPrompt string
 	// AppendSystemPromptSet marks AppendSystemPrompt as explicitly supplied by
 	// the caller, so an empty value clears the saved prompt instead of keeping it.

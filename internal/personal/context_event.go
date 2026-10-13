@@ -10,6 +10,12 @@ import (
 	"github.com/inhere/suag/pkg/agentcore/tools"
 )
 
+// SkillsStats counts the installed skills by how the skills listing
+// presents them: with their description, by name only, or preloaded whole.
+type SkillsStats struct {
+	Listed, Named, Preloaded, Total int
+}
+
 // recordContext writes the turn's context event once, at its first model
 // request: what the context is made of, in chars per part, so trace and the
 // web view can show where the window goes (the parts' text is in the
@@ -29,6 +35,11 @@ func (b *contextBuilder) recordContext(ctx context.Context, state *agentcore.Run
 		if schemas, err := reg.ListTools(ctx); err == nil {
 			raw, _ := json.Marshal(schemas)
 			attrs["tools"], attrs["tools_count"] = len(raw), len(schemas)
+			names := make([]string, len(schemas))
+			for i, s := range schemas {
+				names[i] = s.Name
+			}
+			attrs["tool_names"] = names
 			if l, ok := reg.(tools.Lookup); ok {
 				mcp := 0
 				for _, s := range schemas {
@@ -47,6 +58,10 @@ func (b *contextBuilder) recordContext(ctx context.Context, state *agentcore.Run
 			attrs[key] = len(text)
 		}
 		attrs["segment_hash"] = seg.Hash
+	}
+	if src := b.r.cfg.SkillsStats; src != nil {
+		st := src()
+		attrs["skills_listed"], attrs["skills_named"], attrs["skills_preloaded"], attrs["skills_total"] = st.Listed, st.Named, st.Preloaded, st.Total
 	}
 	attrs["handoff"] = len(b.summary)
 	history := 0

@@ -309,9 +309,16 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		PromptBuilder:     staticPrompt(basePrompt()),
 		// Environment and skills go into the segment context (design D1).
 		EnvironmentSource: func() string { return environmentPrompt(opts) },
-		SkillsSource:      func() string { return skillsPrompt(skillReg, readSkillPolicy()) },
-		Hooks:             opts.Hooks,
-		MaxSteps:          gkconfig.Int("max_steps", 100),
+		SkillsSource: func() string {
+			text, _ := skillsPrompt(skillReg, readSkillPolicy())
+			return text
+		},
+		SkillsStats: func() personal.SkillsStats {
+			_, stats := skillsPrompt(skillReg, readSkillPolicy())
+			return stats
+		},
+		Hooks:    opts.Hooks,
+		MaxSteps: gkconfig.Int("max_steps", 100),
 		RuleSource: func() (string, string, error) {
 			home, err := appconfig.ResolveSuagHome()
 			if err != nil {

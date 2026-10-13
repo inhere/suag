@@ -2,6 +2,7 @@ package wiring
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,6 +12,7 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
+	"github.com/inhere/suag/internal/personal"
 
 	agentcoreapi "github.com/inhere/suag/pkg/agentcore/api"
 	capskills "github.com/inhere/suag/pkg/agentcore/skills"
@@ -159,13 +161,14 @@ func TestSkillsPrompt(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	pol := skillPolicy{listMax: 3, alwaysLoad: map[string]bool{}}
-	assert.Eq(t, "", skillsPrompt(buildDefaultSkillRegistry(workspace), pol))
+	empty, _ := skillsPrompt(buildDefaultSkillRegistry(workspace), pol)
+	assert.Eq(t, "", empty)
 
 	writeSkill(t, filepath.Join(workspace, "skills", "a"), "alpha", "Short one.")
 	writeSkill(t, filepath.Join(home, ".agents", "skills", "b"), "beta", strings.Repeat("长", 100))
 
 	t.Run("few skills are all listed", func(t *testing.T) {
-		p := skillsPrompt(buildDefaultSkillRegistry(workspace), pol)
+		p, _ := skillsPrompt(buildDefaultSkillRegistry(workspace), pol)
 		assert.StrContains(t, p, "# Skills\n")
 		assert.StrContains(t, p, "- alpha — Short one.\n")
 		assert.StrContains(t, p, "- beta — "+strings.Repeat("长", 53)+"…\n")
@@ -175,11 +178,13 @@ func TestSkillsPrompt(t *testing.T) {
 		for _, n := range []string{"c", "d", "e"} {
 			writeSkill(t, filepath.Join(home, ".agents", "skills", n), "user-"+n, "User skill "+n+".")
 		}
-		p := skillsPrompt(buildDefaultSkillRegistry(workspace), pol)
+		p, stats := skillsPrompt(buildDefaultSkillRegistry(workspace), pol)
 		assert.StrContains(t, p, "- alpha — Short one.\n")
 		assert.NotContains(t, p, "- beta")
-		assert.NotContains(t, p, "user-c")
-		assert.StrContains(t, p, "4 more skills are installed but not listed")
+		assert.NotContains(t, p, "- user-c")
+		assert.StrContains(t, p, "Also installed (no description here;")
+		assert.StrContains(t, p, "): beta, user-c, user-d, user-e.\n") // the rest by name
+		assert.Eq(t, personal.SkillsStats{Listed: 1, Named: 4, Total: 5}, stats)
 	})
 	t.Run("always_load puts the body in the prompt", func(t *testing.T) {
 		dir := filepath.Join(home, ".agents", "skills", "pre")
@@ -187,10 +192,10 @@ func TestSkillsPrompt(t *testing.T) {
 		assert.NoErr(t, os.WriteFile(filepath.Join(dir, "SKILL.md"),
 			[]byte("---\nname: pre\ndescription: p\nmetadata:\n  always_load: true\n---\n# Pre\nAlways do X.\n"), 0o644))
 		cfg := skillPolicy{listMax: 3, alwaysLoad: map[string]bool{"user-c": true}}
-		p := skillsPrompt(buildDefaultSkillRegistry(workspace), cfg)
+		p, _ := skillsPrompt(buildDefaultSkillRegistry(workspace), cfg)
 		assert.StrContains(t, p, "## Skill pre (preloaded; directory "+dir+")\n# Pre\nAlways do X.")
 		assert.StrContains(t, p, "## Skill user-c (preloaded;")
-		assert.StrContains(t, p, "3 more skills are installed") // beta, user-d, user-e
+		assert.StrContains(t, p, "): beta, user-d, user-e.\n")
 	})
 }
 
@@ -322,4 +327,16 @@ func TestMinimizeOutputLoadsRuleFiles(t *testing.T) {
 
 	gkconfig.Set("tools.minimize_output", false)
 	assert.Nil(t, minimizeOutput(workspace))
+}
+
+func TestUnlistedSkillNames(t *testing.T) {
+	var rest []capskills.Skill
+	for i := range 400 {
+		rest = append(rest, capskills.Skill{Name: fmt.Sprintf("skill-%03d", i)})
+	}
+	names, unnamed := unlistedSkillNames(rest, rest[:2])
+	assert.Eq(t, "skill-002", names[0]) // listed ones are not repeated
+	assert.True(t, len(strings.Join(names, ", ")) <= maxSkillNamesBytes)
+	assert.Eq(t, 398, len(names)+unnamed)
+	assert.True(t, unnamed > 0)
 }

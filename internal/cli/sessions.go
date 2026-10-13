@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gookit/goutil/cflag/capp"
+	"github.com/inhere/suag/internal/personal"
 	"github.com/inhere/suag/internal/personal/store"
 )
 
@@ -109,7 +110,8 @@ func runSessions(ctx context.Context, out io.Writer, opts sessionsOptions, now t
 		if cwd != "" && !pathHasPrefix(s.Cwd, cwd) {
 			continue
 		}
-		row := sessionRow{ID: s.ID, Title: s.Title, Cwd: s.Cwd, Status: s.Status, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt}
+		// Older sessions stored the whole first prompt as the title.
+		row := sessionRow{ID: s.ID, Title: personal.SessionTitle(s.Title), Cwd: s.Cwd, Status: s.Status, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt}
 		row.Provider, _ = s.Meta["provider"].(string)
 		row.Model, _ = s.Meta["model"].(string)
 		row.SuagVersion, _ = s.Meta["suag_version"].(string)

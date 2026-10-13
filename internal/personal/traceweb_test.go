@@ -40,6 +40,17 @@ func TestBuildTraceView(t *testing.T) {
 	assert.Require(t, assert.NoErr(t, err))
 	assert.Eq(t, sid, view.Session.ID)
 	assert.Eq(t, 2, view.Analysis.ModelCalls)
+	assert.Eq(t, "read a.go", view.Session.Title)
+
+	t.Run("an old whole-prompt title shows as its task line", func(t *testing.T) {
+		sess, err := repo.GetSession(context.Background(), sid)
+		assert.Require(t, assert.NoErr(t, err))
+		sess.Title = goferPrompt
+		assert.NoErr(t, repo.UpdateSession(context.Background(), sess))
+		v, err := BuildTraceView(context.Background(), repo, sid)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "修复 sessions 列表的排序", v.Session.Title)
+	})
 
 	entry := map[int64]traceEntry{}
 	for _, en := range view.Entries {

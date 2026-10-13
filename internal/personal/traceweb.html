@@ -27,7 +27,7 @@ table.tl tr { cursor:pointer; }
 table.tl tr:hover { background:#f5f8ff; }
 table.tl tr.sel { background:#e8efff; }
 table.tl tr.turn td { background:#f3f3f3; font-weight:600; }
-td.when { color:var(--mute); font-variant-numeric:tabular-nums; width:62px; }
+td.when { color:var(--mute); font-variant-numeric:tabular-nums; width:70px; }
 td.kind { width:76px; }
 td.what { max-width:420px; overflow:hidden; text-overflow:ellipsis; }
 td.bar { width:34%; position:relative; }
@@ -76,7 +76,11 @@ function el(tag, attrs, ...kids) {
 const human = n => n >= 1e6 ? (n/1e6).toFixed(2).replace(/\.?0+$/,"")+"M" : n >= 1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"")+"k" : String(n||0);
 const secs = ms => ms >= 1000 ? (ms/1000).toFixed(1)+"s" : (ms||0)+"ms";
 const at = e => new Date(e.start || e.time).getTime();
-const off = ms => { const s = Math.max(0, Math.round(ms/1000)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); };
+// clock is the local time of day; off the offset from the session start.
+const clock = t => new Date(t).toLocaleTimeString("zh-CN", {hour12:false});
+const off = ms => { const s = Math.max(0, ms/1000); return "+" + (s < 60 ? s.toFixed(1) + "s" : Math.floor(s/60) + ":" + (s%60).toFixed(1).padStart(4, "0")); };
+// skillsText: how the skills listing presented the installed skills.
+const skillsText = a => a.skills_total == null ? "" : `skills 描述 ${a.skills_listed||0} · 仅名称 ${a.skills_named||0} · 预载 ${a.skills_preloaded||0} / 共 ${a.skills_total}`;
 
 function category(e) {
   if (e.status === "error" || e.kind === "denial" || e.attrs?.test_failed) return "error";
@@ -90,7 +94,7 @@ function summary(e) {
   switch (e.kind) {
     case "model": return `in ${human(e.input_tokens)} (缓存 ${human(e.cache_read_tokens)}) out ${human(e.output_tokens)}` + (a.tool_calls ? ` · ${a.tool_calls} 个调用` : "") + (a.prefix && a.prefix !== "append" ? ` · 前缀 ${a.prefix}` : "") + (a.finish === "truncated" ? " · 截断" : "") + (a.retries ? ` · 重试 ${a.retries} 次（${a.retry_reason}，等 ${(a.retry_wait_ms / 1000).toFixed(1)}s）` : "");
     case "tool": case "denial": return (a.arg || "") + (a.exit_code != null ? ` · exit=${a.exit_code}` : "") + (a.lines_added != null ? ` · +${a.lines_added}/-${a.lines_removed||0}` : "") + (a.approval && a.approval !== "rule" ? ` · 审批 ${a.approval}` : "") + (e.error ? " · " + e.error : "");
-    case "context": return `约 ${human(a.est_tokens)} / ${human(a.window)} tokens · 工具 ${a.tools_count||0} 个`;
+    case "context": return [`约 ${human(a.est_tokens)} / ${human(a.window)} tokens`, `工具 ${a.tools_count||0} 个`, skillsText(a)].filter(Boolean).join(" · ");
     case "hook": return [a.decision && "decision="+a.decision, a.additional_chars && "注入 "+a.additional_chars+" 字符", a.reason_chars && "reason "+a.reason_chars].filter(Boolean).join(" · ");
     case "fold": return `折叠 ${a.boundary}/${a.steps} 步，${human(a.chars_before)}→${human(a.chars_after)} 字符`;
     case "compaction": return `${e.name} ${a.reason||""} ${a.tokens_before ? human(a.tokens_before)+"→"+human(a.tokens_after) : ""}`;
@@ -148,7 +152,7 @@ function renderTimeline(main) {
       const cat = category(e);
       const left = (at(e) - t0) / span * 100, width = Math.max((e.duration_ms || 0) / span * 100, 0.15);
       const tr = el("tr", {class: (e.kind === "turn" ? "turn " : "") + (selected === e ? "sel" : ""), onclick: () => { selected = e; history.replaceState(null, "", "#ev=" + e.id); showDetail(detail, e); draw(); }},
-        el("td", {class:"when"}, off(at(e) - t0)),
+        el("td", {class:"when", title: off(at(e) - t0)}, clock(at(e))),
         el("td", {class:"kind"}, el("span", {class:"k", style:"background:" + COLORS[cat]}, e.kind === "tool" ? e.name : e.kind)),
         el("td", {class:"what" + ((e.kind === "tool" || e.kind === "denial") && inModel ? " indent" : "") + (cat === "error" ? " err" : "")}, summary(e)),
         el("td", {class:"mute"}, e.duration_ms ? secs(e.duration_ms) : ""),
@@ -177,15 +181,21 @@ function stackBar(attrs) {
 const legend = () => el("div", {class:"legend"}, PARTS.map(([, l, c]) => el("span", {}, el("i", {style:"background:" + c}), l)));
 
 function showDetail(box, e) {
-  box.replaceChildren(el("h3", {}, `${e.kind} · ${e.name}`), el("div", {class:"mute"}, new Date(e.start).toLocaleTimeString() + (e.duration_ms ? " · " + secs(e.duration_ms) : "") + (e.ttft_ms ? " · TTFT " + secs(e.ttft_ms) : "")));
+  box.replaceChildren(el("h3", {}, `${e.kind} · ${e.name}`), el("div", {class:"mute"}, new Date(e.start).toLocaleString("zh-CN", {hour12:false}) + " · 会话开始后 " + off(at(e) - t0) + (e.duration_ms ? " · 耗时 " + secs(e.duration_ms) : "") + (e.ttft_ms ? " · TTFT " + secs(e.ttft_ms) : "")));
   if (e.error) box.append(el("pre", {class:"err"}, e.error));
   const tokens = {input: e.input_tokens, cache_read: e.cache_read_tokens, cache_write: e.cache_write_tokens, output: e.output_tokens};
   if (e.kind === "model") box.append(el("h3", {}, "token"), kv(tokens));
   if (e.kind === "context") {
     box.append(el("h3", {}, "上下文组成（字符）"), stackBar(e.attrs), legend(), kv(Object.fromEntries(PARTS.map(([k, l]) => [l, e.attrs[k] ? human(e.attrs[k]) : ""]))));
+    if (e.attrs.skills_total != null) box.append(el("div", {class:"mute"}, skillsText(e.attrs)));
     const seg = latestSegment(at(e) + 1000);
-    if (seg) {
+    if (seg || e.attrs.tool_names) {
       box.append(el("h3", {}, "分段上下文原文"));
+      // Tool schemas go with every request, not in the segment text: the names are recorded.
+      const names = e.attrs.tool_names || [];
+      if (names.length) box.append(el("details", {}, el("summary", {}, `工具定义（${names.length} 个${e.attrs.tools_mcp ? "，MCP " + e.attrs.tools_mcp : ""}，${human(e.attrs.tools)} 字符）`), el("pre", {}, names.join("\n"))));
+    }
+    if (seg) {
       for (const [k, l] of PARTS) if (seg.context[k]) box.append(el("details", {}, el("summary", {}, `${l}（${human(seg.context[k].length)} 字符）`), el("pre", {}, seg.context[k])));
       if (seg.summary) box.append(el("details", {}, el("summary", {}, `交接摘要（${human(seg.summary.length)} 字符）`), el("pre", {}, seg.summary)));
     }
@@ -208,7 +218,7 @@ function renderContext(main) {
   const ctxs = data.events.filter(e => e.kind === "context");
   pane.append(el("h3", {}, "每回合上下文组成（首次请求，字符）"), legend());
   if (!ctxs.length) pane.append(el("p", {class:"mute"}, "这个会话没有 context 事件（较早的版本不记录）。"));
-  ctxs.forEach((e, i) => pane.append(el("div", {class:"mute"}, `回合 ${i + 1} · ${off(at(e) - t0)} · 约 ${human(e.attrs.est_tokens)} tokens`), stackBar(e.attrs)));
+  ctxs.forEach((e, i) => pane.append(el("div", {class:"mute"}, [`回合 ${i + 1}`, clock(at(e)), `约 ${human(e.attrs.est_tokens)} tokens`, `工具 ${e.attrs.tools_count||0} 个`, skillsText(e.attrs)].filter(Boolean).join(" · ")), stackBar(e.attrs)));
   const models = data.events.filter(e => e.kind === "model" && !(e.attrs || {}).purpose);
   const max = Math.max(...models.map(e => e.input_tokens + e.output_tokens), 1);
   pane.append(el("h3", {}, "每次模型调用的输入（深色 = 命中缓存）与输出"),

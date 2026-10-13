@@ -177,11 +177,12 @@ func TestTraceTimelineIncludesTurnModelToolAndDenial(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(fnTool{name: "broken", fn: func() (*agentcore.ToolResult, error) { return nil, errors.New("disk full") }})
 	registry.Register(fnTool{name: "mcp_write", fn: func() (*agentcore.ToolResult, error) { return nil, tools.Denied("需要许可：mcp_write") }})
-	runner, err := New(Config{Repository: repo, Tools: registry, Version: "0.14.1", Provider: mock.NewProvider(
-		mock.ToolCall("c1", "broken", map[string]any{}),
-		mock.ToolCall("c2", "mcp_write", map[string]any{}),
-		mock.Final("done"),
-	)})
+	runner, err := New(Config{Repository: repo, Tools: registry, Version: "0.14.1",
+		SkillsStats: func() SkillsStats { return SkillsStats{Listed: 2, Named: 5, Preloaded: 1, Total: 8} }, Provider: mock.NewProvider(
+			mock.ToolCall("c1", "broken", map[string]any{}),
+			mock.ToolCall("c2", "mcp_write", map[string]any{}),
+			mock.Final("done"),
+		)})
 	assert.NoErr(t, err)
 	res, err := runner.Run(context.Background(), RunRequest{Prompt: "go"})
 	assert.NoErr(t, err)
@@ -223,4 +224,8 @@ func TestTraceTimelineIncludesTurnModelToolAndDenial(t *testing.T) {
 	assert.Gt(t, ctxEvent.Attrs["input"].(float64), float64(0))
 	assert.NotNil(t, ctxEvent.Attrs["environment"])
 	assert.NotNil(t, ctxEvent.Attrs["est_tokens"])
+	assert.Eq(t, []any{"broken", "mcp_write"}, ctxEvent.Attrs["tool_names"])
+	assert.Eq(t, float64(2), ctxEvent.Attrs["skills_listed"])
+	assert.Eq(t, float64(5), ctxEvent.Attrs["skills_named"])
+	assert.Eq(t, float64(8), ctxEvent.Attrs["skills_total"])
 }
