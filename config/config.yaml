@@ -64,6 +64,13 @@ providers:
 #   - anthropic/claude-sonnet-4-6
 #   - deepseek-chat # bare id: served by the main model's provider
 
+# Background tasks (shell_exec background: true, the task tool; run and chat).
+# tasks:
+#   max_running: 4          # per session
+#   max_duration: 2h        # longer tasks are killed
+#   max_output_bytes: 67108864
+#   wake_on_exit: true      # chat: a task end starts a turn while chat waits
+
 # Retries of a model request after a network error, HTTP 408/429/5xx or a
 # broken response stream (every provider). Waits double from base_delay up to
 # max_delay (+-20% jitter, a server's Retry-After is honoured) and fall back to

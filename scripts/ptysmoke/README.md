@@ -4,7 +4,7 @@
 
 | 文件 | 作用 |
 |---|---|
-| `fakellm.py` | OpenAI 兼容的 SSE 假模型：`--mode tool` 先返回 `shell_exec` 调用、工具结果后回复文本；`--mode text` 只回复文本；`--mode edit` 依次返回 `file_grep`、`file_edit` 调用再回复；`--mode memory` 先 `shell_exec` 再 `memory` add（用户消息含“直接”时跳过 shell）；`--delay` 控制每次响应前的等待；`--prompt-tokens` 设定上报的输入用量；`"stream": false` 的请求（如 compaction 摘要）回一个 JSON 响应；多线程服务（流式与非流式请求走不同连接）；`--fail-first N` 前 N 个请求回 HTTP 503，`--break-first M` 随后 M 个流只发一半回复就断开连接（重试冒烟用） |
+| `fakellm.py` | OpenAI 兼容的 SSE 假模型：`--mode tool` 先返回 `shell_exec` 调用、工具结果后回复文本；`--mode text` 只回复文本；`--mode edit` 依次返回 `file_grep`、`file_edit` 调用再回复；`--mode memory` 先 `shell_exec` 再 `memory` add（用户消息含“直接”时跳过 shell）；`--delay` 控制每次响应前的等待；`--prompt-tokens` 设定上报的输入用量；`"stream": false` 的请求（如 compaction 摘要）回一个 JSON 响应；多线程服务（流式与非流式请求走不同连接）；`--background` 让 tool 模式的 shell_exec 带 `background: true`（收到 `[background task` 开头的通知或提醒只回文本）；`--fail-first N` 前 N 个请求回 HTTP 503，`--break-first M` 随后 M 个流只发一半回复就断开连接（重试冒烟用） |
 | `ptydrive.py` | PTY 驱动库：`mark()` 后只检查新输出、`until()` 等待模式出现再输入、`check()` 记录结果 |
 | `chat_approval.py` | 现成场景：开场模型、❯ 提示符、写工具确认（y/n/a/Ctrl-C、回合中提前输入不放行）、提示符处单次 Ctrl-C 只提示、连按两次退出（汇总与续接命令）、非 TTY 拒绝 |
 | `chat_edit.py` | `file_grep` 免确认、`file_edit` 确认显示原文/改为、确认后文件被修改、两次 Ctrl-C 退出 |
@@ -12,6 +12,7 @@
 | `chat_observe.py` | 观测进入 trace：配置一个 hook 命令（UserPromptSubmit 注入上下文），在审批提示处停 1.2s 再答 y，退出后检查 `suag trace --json`：SessionStart / UserPromptSubmit（注入字符数）/ Stop 三个 hook 事件，shell_exec 的 `approval=user` 与等待时间，回合 context 事件计入 hook 注入 |
 | `chat_retry.py` | 模型重试：`retry` 配成 200ms 级等待，假模型先回 503、再断一次流、再完整回复；检查 chat 显示 503 重试提示与“将重新输出”的断流提示、之后完整回复，`suag trace --json` 的 model 事件 `retries=2`、`retry_reason=stream broken` 与等待时间 |
 | `chat_danger.py` | 危险删除：`tools.approval: auto`、HOME 指向临时目录，假模型调用 `rm -rf ~`；检查仍会询问并显示危险原因、答 `y` 被拒且临时目录还在、答 `yes` 才执行且目录被删，trace 两条 shell_exec 事件带 `danger` 与审批来源 |
+| `chat_tasks.py` | 后台任务：假模型以 `background: true` 启动 `sleep 1.5; echo TASK_DONE` 后直接回复；检查回合先结束、任务结束后空闲的 chat 被自动唤醒并显示通知（退出码与输出），trace 有带 `task_id` 的 shell_exec 与 `task` 事件；再用 `suag run` 启动 `sleep 30`：提醒一次（两个回合）、退出时终止任务并在 stderr 注明、不等满 30s |
 | `chat_memory.py` | 未污染会话直接写记忆并显示“已记住”；`shell_exec` 置污染（`memory.taint_tools`）后写记忆询问（显示范围/类型/标题/正文），y 写入、n 拒绝、a 本会话不再问；条目落在 SUAG_HOME 的 files 后端 |
 
 运行：

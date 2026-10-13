@@ -6,6 +6,16 @@
 
 ### 新增
 
+- 后台任务（suag-ol03 第一阶段，`run` 与 chat）：
+  - `shell_exec` 加 `background: true`，立即返回任务 id。
+  - 新工具 `task`，可以 `list`、`output`（尾部、按行分页、`grep`）、`wait`、`kill`（杀整棵进程树）。
+  - 输出逐行脱敏后写入会话的 outputs 目录，`recall` 也能读。
+  - 模型没看到结束的任务，会在下一次模型请求前附上一条通知（退出码、耗时、输出量、最后几行），通知存进会话记录并原位回放。chat 空闲时任务结束会自动开始一个回合（`tasks.wake_on_exit`）。`run` 的答复里还有任务在跑时，先提醒一次，退出时再终止并在 stderr 注明。
+  - 上限 `tasks.max_running`（每会话 4 个）、`tasks.max_duration`（2h）、`tasks.max_output_bytes`（64 MiB）。
+  - trace 新增 `task` 事件，`--analyze` 和 `--web` 能看到后台任务。
+  - 评测新增 `background-tests`：真实模型 2/2 通过，测试在后台跑时同时完成了其余工作。
+  - 设计见 `docs/design/2026-10-13-background-tasks-design.md`。
+
 - `shell_exec` 拦截危险删除（suag-dtom）：递归删除（`rm -r`、`Remove-Item -Recurse`、`rd /s`，也识别 `sh -c`、`cmd /c`、`pwsh -Command` 里的写法，并跟踪同一行里的 `cd`）的目标是 `/`、`~`/`$HOME`、盘符根、工作区或其上级目录，或以可能为空的变量开头（`"$X/"`、`"$dir\*"`）时，在审批前拦下；对这些目录用通配（`rm ~/*`）不带 `-r` 也算。chat 每次都询问（`tools.approval: auto` 或之前答过 `a` 也问），必须输入 `yes` 才执行；`run` 与 ACP 直接拒绝并提示改用 `file_remove`。trace 的工具事件记录 `danger`。这是防常见误操作，不是安全边界。
 
 - 模型请求统一重试（`retry:`，对所有 provider 生效）。网络错误、HTTP 408/429/5xx 和读流时断开都会重试，默认共 6 次。等待从 1s 指数增长，最多 60s，带抖动，并遵守 `Retry-After`。同一 provider 的请求共用等待档位，2 分钟没有失败就回落。原先只有 HTTP 请求有固定退避，流断开后最多重试 2 次，已输出文本后断开则直接失败。现在已输出文本后断开也会重试：先发 `retry` 事件说明前面的回复不完整，再从头输出这条消息。chat 显示 `↻` 提示行，`run` 输出到 stderr，stream-json 输出 `retry` 行，ACP 发 thought。

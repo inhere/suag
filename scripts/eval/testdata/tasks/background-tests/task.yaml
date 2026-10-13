@@ -1,0 +1,8 @@
+name: background-tests
+mode: allow-write
+prompt: >-
+  这个仓库的测试要跑约 15 秒。用 shell_exec 的 background: true 把 go test ./... 放到后台运行，不要干等；在它运行时阅读 calc.go，新建 NOTES.md，为 Add 和 Mul 各写一行说明。测试结束后，在 NOTES.md 最后一行写上测试结果：通过写 `tests: pass`，失败写 `tests: fail`。
+checks:
+  - {type: file_contains, path: NOTES.md, text: "Add"}
+  - {type: file_contains, path: NOTES.md, text: "Mul"}
+  - {type: file_contains, path: NOTES.md, text: "tests: pass"}
