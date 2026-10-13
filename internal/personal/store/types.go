@@ -143,10 +143,12 @@ type Event struct {
 // EventFilter narrows ListEvents; zero values mean no restriction.
 type EventFilter struct {
 	SessionID string
-	TurnID    string
-	Kinds     []string
-	Since     time.Time
-	Limit     int
+	// WithAgents widens SessionID to its sub-agent sessions too.
+	WithAgents bool
+	TurnID     string
+	Kinds      []string
+	Since      time.Time
+	Limit      int
 }
 
 // Usage is the token total returned by SumUsage.

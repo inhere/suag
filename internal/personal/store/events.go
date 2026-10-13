@@ -40,7 +40,10 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 	q := `SELECT id, session_id, turn_id, kind, name, status, started_at, duration_ms, ttft_ms,
 		input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, error, attrs_json FROM events WHERE 1=1`
 	var args []any
-	if f.SessionID != "" {
+	if f.SessionID != "" && f.WithAgents {
+		q += ` AND (session_id = ? OR session_id IN (SELECT id FROM sessions WHERE json_extract(meta_json, '$.` + MetaParentSession + `') = ?))`
+		args = append(args, f.SessionID, f.SessionID)
+	} else if f.SessionID != "" {
 		q += ` AND session_id = ?`
 		args = append(args, f.SessionID)
 	}

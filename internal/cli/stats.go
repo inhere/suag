@@ -58,7 +58,8 @@ func parseSince(s string) (time.Duration, error) {
 }
 
 func runStats(ctx context.Context, out io.Writer, since, session string, asJSON bool) error {
-	f := store.EventFilter{SessionID: session}
+	// A session's stats include its sub-agent sessions (what it spent in all).
+	f := store.EventFilter{SessionID: session, WithAgents: true}
 	if since != "" {
 		d, err := parseSince(since)
 		if err != nil {

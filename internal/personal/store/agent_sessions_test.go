@@ -49,6 +49,14 @@ func TestAgentSessions(t *testing.T) {
 		assert.Eq(t, int64(14), tree.OutputTokens)
 		assert.Eq(t, 0.75, tree.CostUSD)
 	})
+	t.Run("ListEvents WithAgents adds the sub-agent sessions", func(t *testing.T) {
+		own, err := s.ListEvents(ctx, EventFilter{SessionID: "p", Kinds: []string{EventModel}})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Len(t, own, 1)
+		tree, err := s.ListEvents(ctx, EventFilter{SessionID: "p", WithAgents: true, Kinds: []string{EventModel}})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Len(t, tree, 2)
+	})
 	t.Run("SessionCwds leaves them out", func(t *testing.T) {
 		cwds, err := s.SessionCwds(ctx)
 		assert.Require(t, assert.NoErr(t, err))

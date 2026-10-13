@@ -151,5 +151,18 @@ func TestRunWithSubAgent(t *testing.T) {
 		listedOut, err := runCLI(t, context.Background(), "sessions", "--json")
 		assert.Require(t, assert.NoErr(t, err))
 		assert.NotContains(t, listedOut, child.ID)
+		// The parent's stats include what its sub-agent spent.
+		statsOut, err := runCLI(t, context.Background(), "stats", "--session", parent.ID, "--json")
+		assert.Require(t, assert.NoErr(t, err))
+		var rep struct {
+			Models []struct {
+				Calls       int `json:"calls"`
+				InputTokens int `json:"input_tokens"`
+			} `json:"models"`
+		}
+		assert.Require(t, assert.NoErr(t, json.Unmarshal([]byte(statsOut), &rep)), statsOut)
+		assert.Require(t, assert.Len(t, rep.Models, 1), statsOut)
+		assert.Eq(t, 4, rep.Models[0].Calls)
+		assert.Eq(t, 220, rep.Models[0].InputTokens)
 	})
 }
