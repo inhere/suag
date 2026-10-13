@@ -4,6 +4,17 @@
 
 ## [未发布]
 
+### 新增
+
+- 后台任务支持 ACP（suag-ol03 第二阶段）：任务属于 `suag acp` 进程，跨 prompt 继续运行，结束通知进入该会话的下一个 prompt；`session/cancel` 只取消回合，连接关闭时终止仍在运行的任务。
+- `suag trace --analyze` 的后台统计：任务运行期间循环在模型与工具调用上花的时间（`background_overlap_ms`，即省下的等待）、`task wait` 的次数与阻塞时长、启动后立刻 wait 的次数（`immediate_waits`）。
+- `suag trace --web`：后台任务行显示在任务开始的位置并画出整段横条，与启动它的 `shell_exec` 行互相跳转；上下文页列出各回合的 user entry，后台任务通知单独标注，不再当成用户输入。
+
+### 变更
+
+- 任务结束事件改由任务管理器直接写入会话库，不再经过回合的 Runner：ACP 两个回合之间或进程退出时结束的任务也会出现在 trace 里。
+- `task` 工具的 trace 事件带 `action` 与 `id` 属性。
+
 ## [0.16.0] - 2026-10-13
 
 后台任务（`shell_exec` 的 `background` 与 `task` 工具，chat 与 run）、模型请求统一重试、`shell_exec` 危险删除拦截；`suag trace --web` 新增本机环境页并修正时间与标题显示；项目规则每级只读一个文件（默认 `AGENTS.md`）。

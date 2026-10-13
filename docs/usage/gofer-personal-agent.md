@@ -93,6 +93,8 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 
 `shell_exec` 在 Windows 用 PowerShell（优先 `pwsh`，否则 `powershell`），输出固定 UTF-8，返回原生命令的退出码；其他系统用 `sh -c`。每次调用可传 `timeout`（秒，默认 120），超时后整组进程（Unix 进程组 / Windows job object）被终止，已有输出与退出码照常返回；后台残留进程占住输出时最多再等 2 秒。命令以 `GIT_TERMINAL_PROMPT=0`、`GIT_PAGER=cat`、`PAGER=cat` 运行，没有标准输入；suag 自身的 `SUAG_HOME`、`SUAG_CONFIG`、`SUAG_MODEL` 不传给命令（在 shell 里再调用 suag 时用默认的 `~/.suag`，需要时在命令里显式设置）。输出去掉 ANSI 颜色码。
 
+后台任务（`shell_exec` 传 `background: true`，写模式才有）在两种 agent 下生命周期不同：`suag`（run）在回答前若仍有任务在跑，会提醒模型一次先 `task wait` 或 `task kill`，进程退出时终止剩下的任务并写到 stderr；`suag-acp` 的任务属于 `suag acp` 进程，跨 prompt 继续运行，结束提示进入该会话的下一个 prompt，`session/cancel` 只取消当前回合，连接关闭（Gofer 结束会话）时终止仍在运行的任务，trace 里记为 killed。所以一次性的 ACP 作业里，需要结果的任务要在本回合内 `task wait`。
+
 配置项（`~/.suag/config.yaml`，均有缺省值）：
 
 - `tools.parallel_reads`（缺省 `true`）：同一次回复里的多个本地读取调用（`file_read`、`file_list`、`file_grep`、`file_find`）并发执行；审批、污染追踪与 trace 仍按调用顺序进行。
