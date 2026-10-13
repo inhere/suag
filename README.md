@@ -95,8 +95,6 @@ All data lives in `$SUAG_HOME/db/sessions.db`. Model and provider details: [LLM 
 | `file_list` | read | Directory listing, recursive with `depth` (≤ 5) |
 | `file_grep` | read | RE2 search with `glob`, `ignore_case`, `output: content\|files` |
 | `file_find` | read | `**` glob search, newest first |
-
-`file_grep`, `file_find` and recursive `file_list` skip `.git`, `node_modules`, `vendor`, `dist` and what the `.gitignore` files match (every directory's `.gitignore`, with `!` and `**`); the result ends with a line naming what was skipped, and `no_ignore: true` includes it (`.git` excepted).
 | `web_fetch` | read | Page text (headings, links and code kept); private and local addresses refused |
 | `web_search` | read | SerpAPI search (needs `serpapi_key`) |
 | `skill` | read | Load a skill, read its files, or search skills (`query`, `"*"` lists all names) |
@@ -109,6 +107,8 @@ All data lives in `$SUAG_HOME/db/sessions.db`. Model and provider details: [LLM 
 | `file_remove` | write | Remove a file, or a directory with `recursive`: moved to `$SUAG_HOME/trash/` and kept 7 days (`origin.json` records where it came from), at most 1000 files per call. Directories ignored by `.gitignore` (and `node_modules`, `vendor`, `dist`), such as a test repository under an ignored `tmp/`, are regenerable: deleted for good without being walked or counted, and listed in the result. Ignored single files like `.env` still go to the trash. Refuses the workspace root, its own `.git`, the home directory, wildcards and paths outside the workspace |
 | `shell_exec` | write | Run a command (PowerShell on Windows, `sh` elsewhere) with a timeout; returns output and exit code. In `run` and chat, `background: true` starts it as a background task and returns a task id at once |
 | `task` | state | The session's background tasks: `list`, `output` (the last lines, `offset`/`limit`, `grep`), `wait` (with `timeout`), `kill` (the whole process tree) |
+
+`file_grep`, `file_find` and recursive `file_list` skip `.git`, `node_modules`, `vendor`, `dist` and what the `.gitignore` files match (every directory's `.gitignore`, with `!` and `**`); the result ends with a line naming what was skipped, and `no_ignore: true` includes it (`.git` excepted).
 
 - **Read-only by default.** Write tools exist only with `run --allow-write`, chat with `tools.allow_write: true`, or an ACP session in `default` mode. `--read-only` always wins. If the model calls a disabled tool, it is told how to enable it, and the call counts as a refusal.
 - **Chat asks first.** With `tools.approval: ask`, chat asks before each write or shell call and shows the full command, path or old/new text. Answer `y` (once), `a` (this tool for the rest of the process) or anything else to refuse. Three refusals end the turn.
