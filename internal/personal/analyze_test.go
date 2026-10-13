@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"testing"
+	"time"
 
 	"github.com/gookit/goutil/x/assert"
 
@@ -131,6 +132,113 @@ func TestToolEventsCarryCallAttrs(t *testing.T) {
 	a := AnalyzeTrace(eventsOf(t, repo, res.SessionID))
 	assert.Eq(t, 1, a.ShellFailures)
 	assert.Eq(t, 1, a.TestRuns)
+}
+
+// TestAnalyzeTraceBackground covers the background task numbers: the overlap
+// of the task runs with foreground work, the task tool's waits and the waits
+// that came right after a task was started.
+func TestAnalyzeTraceBackground(t *testing.T) {
+	base := time.Date(2026, 10, 13, 10, 0, 0, 0, time.UTC)
+	at := func(ms int64) time.Time { return base.Add(time.Duration(ms) * time.Millisecond) }
+	// Events are built with explicit times: the task end events are stored when
+	// the tasks end, so their place in the list is unrelated to their run.
+	model := func(startMs, durMs int64) store.Event {
+		return store.Event{Kind: store.EventModel, Status: eventOK, StartedAt: at(startMs), DurationMs: durMs, Attrs: map[string]any{}}
+	}
+	tool := func(name string, startMs, durMs int64, attrs map[string]any) store.Event {
+		if attrs == nil {
+			attrs = map[string]any{}
+		}
+		return store.Event{Kind: store.EventTool, Name: name, Status: eventOK, StartedAt: at(startMs), DurationMs: durMs, Attrs: attrs}
+	}
+	task := func(id string, startMs, durMs int64) store.Event {
+		return store.Event{Kind: store.EventTask, Name: id, Status: eventOK, StartedAt: at(startMs), DurationMs: durMs, Attrs: map[string]any{}}
+	}
+	background := func(startMs, durMs int64, id string) store.Event {
+		return tool("shell_exec", startMs, durMs, map[string]any{"arg": "command=go test ./...", "task_id": id})
+	}
+
+	t.Run("overlap with model and tool calls that overlap each other", func(t *testing.T) {
+		a := AnalyzeTrace([]store.Event{
+			model(0, 1000), // 0-1000
+			tool("file_read", 1000, 500, nil),
+			tool("file_grep", 1200, 800, nil), // covers 1200-2000, overlaps the read
+			task("t1", 0, 3000),
+		})
+		assert.Eq(t, 1, a.BackgroundTasks)
+		assert.Eq(t, int64(3000), a.BackgroundMs)
+		// 0-1000 model plus the merged 1000-2000 of the two parallel calls.
+		assert.Eq(t, int64(2000), a.BackgroundOverlapMs)
+		assert.Eq(t, 0, a.TaskWaits)
+		assert.Eq(t, 0, a.ImmediateWaits)
+	})
+
+	t.Run("a wait does not count as saved time", func(t *testing.T) {
+		a := AnalyzeTrace([]store.Event{
+			model(0, 1000),
+			background(1000, 10, "t1"),
+			tool("task", 2000, 3000, map[string]any{"arg": "action=wait id=t1"}), // 2000-5000, blocks the loop
+			task("t1", 1000, 5000), // 1000-6000
+			tool("task", 6500, 10, map[string]any{"arg": "action=output id=t1"}),
+			model(7000, 1000),
+		})
+		assert.Eq(t, 1, a.BackgroundTasks)
+		assert.Eq(t, 1, a.TaskWaits)
+		assert.Eq(t, int64(3000), a.TaskWaitMs)
+		assert.Eq(t, 1, a.ImmediateWaits) // started at 1000ms, waited at 2000ms
+		// Only the shell_exec that started it overlaps the task's run.
+		assert.Eq(t, int64(10), a.BackgroundOverlapMs)
+		assert.Eq(t, 3, a.ToolCalls) // shell_exec, task wait, task output
+	})
+
+	t.Run("a wait after another tool call is no immediate wait", func(t *testing.T) {
+		a := AnalyzeTrace([]store.Event{
+			background(0, 10, "t1"),
+			model(20, 100),
+			tool("file_read", 200, 1000, nil), // the loop did other work meanwhile
+			model(1200, 100),
+			tool("task", 1500, 500, map[string]any{"arg": "action=wait id=t1"}),
+			task("t1", 0, 3000),
+		})
+		assert.Eq(t, 1, a.TaskWaits)
+		assert.Eq(t, int64(500), a.TaskWaitMs)
+		assert.Eq(t, 0, a.ImmediateWaits)
+		// 0-10 start, 20-120 and 1200-1300 model, 200-1200 read.
+		assert.Eq(t, int64(1210), a.BackgroundOverlapMs)
+	})
+
+	t.Run("two tasks started together, then waited for one", func(t *testing.T) {
+		a := AnalyzeTrace([]store.Event{
+			tool("shell_exec", 0, 10, map[string]any{"arg": "command=go build ./...", "task_id": "t1"}),
+			background(20, 10, "t2"),
+			model(40, 100),
+			tool("task", 200, 100, map[string]any{"arg": "action=wait id=t1"}),
+			tool("task", 400, 100, map[string]any{"arg": "action=wait id=t2"}),
+			task("t1", 0, 300),
+			task("t2", 20, 500),
+		})
+		assert.Eq(t, 2, a.TaskWaits)
+		assert.Eq(t, int64(200), a.TaskWaitMs)
+		assert.Eq(t, 2, a.ImmediateWaits)
+		assert.Eq(t, int64(230), a.BackgroundOverlapMs) // 0-10, 20-30 and 40-140, once per task
+	})
+
+	t.Run("the text output adds a row only with background tasks", func(t *testing.T) {
+		var out bytes.Buffer
+		none := AnalyzeTrace([]store.Event{model(0, 100)})
+		assert.NoErr(t, WriteTraceAnalysis(&out, none, false))
+		assert.StrContains(t, out.String(), "background tasks")
+		assert.NotContains(t, out.String(), "background overlap")
+
+		out.Reset()
+		a := AnalyzeTrace([]store.Event{
+			model(0, 1000),
+			tool("task", 1500, 500, map[string]any{"arg": "action=wait id=t1"}),
+			task("t1", 0, 3000),
+		})
+		assert.NoErr(t, WriteTraceAnalysis(&out, a, false))
+		assert.StrContains(t, out.String(), "background overlap     1.0s while model/tool calls ran (waiting saved); 1 waits (0.5s), 0 right after the start")
+	})
 }
 
 func TestAnalyzeTraceCacheAttribution(t *testing.T) {

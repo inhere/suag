@@ -90,6 +90,19 @@ type TraceAnalysis struct {
 	// long they ran in all (time the loop did not have to wait for).
 	BackgroundTasks int   `json:"background_tasks"`
 	BackgroundMs    int64 `json:"background_ms"`
+	// BackgroundOverlapMs is the part of that time the loop spent in model
+	// calls and foreground tool calls anyway: the time the backgrounding saved
+	// (spans count once where calls overlap, as in a parallel batch).
+	BackgroundOverlapMs int64 `json:"background_overlap_ms"`
+	// TaskWaits / TaskWaitMs: calls of the task tool that waited for a task to
+	// end (action=wait) and the time they blocked the loop.
+	TaskWaits  int   `json:"task_waits"`
+	TaskWaitMs int64 `json:"task_wait_ms"`
+	// ImmediateWaits counts those waits that came right after the task was
+	// started: between the shell_exec that returned the task id and the wait
+	// lay no other tool call, only model calls. It finds tasks run as if they
+	// were foreground work.
+	ImmediateWaits int `json:"immediate_waits"`
 	// Slowest are the longest model calls.
 	Slowest []SlowCall `json:"slowest,omitempty"`
 }
@@ -126,6 +139,12 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 			break
 		}
 	}
+	// Background tasks (see BackgroundOverlapMs, TaskWaits, ImmediateWaits):
+	// the spans the tasks ran (from their end events), the spans of foreground
+	// work (model and tool calls, without the task wait that blocks the loop)
+	// and the tasks started by a call, still without another call after them.
+	var bgSpans, fgSpans []span
+	fresh := map[string]bool{}
 	// the current step's calls: how many, how many edits, changes made
 	stepCalls, stepEdits, stepChanges := 0, 0, 0
 	closeStep := func() {
@@ -142,9 +161,13 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 		case store.EventTask:
 			a.BackgroundTasks++
 			a.BackgroundMs += e.DurationMs
+			bgSpans = appendSpan(bgSpans, e)
 		case store.EventModel:
 			a.Retries += attrInt(e.Attrs["retries"])
 			a.RetryWaitMs += int64(attrInt(e.Attrs["retry_wait_ms"]))
+			// A model call is foreground work like a tool call (side calls such as
+			// compaction too): the loop waits for it while a task may run.
+			fgSpans = appendSpan(fgSpans, e)
 			if p, _ := e.Attrs["purpose"].(string); p != "" {
 				continue // compaction and other side calls are not steps
 			}
@@ -168,6 +191,29 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 			a.ToolMs += e.DurationMs
 			stepCalls++
 			a.Tools[e.Name]++
+			// A task wait is no time saved (it blocks the loop until the task
+			// ends), so it adds no foreground span; every other call does, and a
+			// call that started a background task marks that task as just started
+			// while any other call means nothing counts as just started anymore.
+			if e.Name == "task" {
+				action, id := taskAction(e)
+				if action != taskWaitAction {
+					fgSpans = appendSpan(fgSpans, e)
+				} else {
+					a.TaskWaits++
+					a.TaskWaitMs += e.DurationMs
+					if fresh[id] {
+						a.ImmediateWaits++
+						delete(fresh, id)
+					}
+				}
+			} else if id, _ := e.Attrs["task_id"].(string); id != "" {
+				fgSpans = appendSpan(fgSpans, e)
+				fresh[id] = true // the shell_exec that started this background task
+			} else {
+				fgSpans = appendSpan(fgSpans, e)
+				clear(fresh)
+			}
 			if e.Status != eventOK {
 				a.ToolErrors[e.Name]++
 			}
@@ -235,6 +281,11 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 		}
 	}
 	closeStep()
+	// The background runs that met foreground work: the time the loop spent in
+	// model and tool calls while a task ran in the background. Each task adds
+	// its own share, so tasks running at the same time count their shared time
+	// twice (as their run time does above).
+	a.BackgroundOverlapMs = overlapMs(sortSpans(bgSpans), mergeSpans(fgSpans))
 	// Steps are 1-based model calls; firstWrite and green name the step a
 	// call belonged to.
 	a.ExploreSteps, a.WriteToGreenSteps, a.AfterGreenSteps = a.ModelCalls, -1, -1
@@ -320,6 +371,11 @@ func WriteTraceAnalysis(w io.Writer, a TraceAnalysis, asJSON bool) error {
 	row("spills / folds", "%d / %d (compactions %d, tidied outputs %d)", a.Spills, a.Folds, a.Compactions, a.Minimized)
 	row("model retries", "%d (waited %.1fs)", a.Retries, float64(a.RetryWaitMs)/1000)
 	row("background tasks", "%d (ran %.1fs in all)", a.BackgroundTasks, float64(a.BackgroundMs)/1000)
+	if a.BackgroundTasks > 0 {
+		// No extra row for sessions without background tasks.
+		row("background overlap", "%.1fs while model/tool calls ran (waiting saved); %d waits (%.1fs), %d right after the start",
+			float64(a.BackgroundOverlapMs)/1000, a.TaskWaits, float64(a.TaskWaitMs)/1000, a.ImmediateWaits)
+	}
 	var slow []string
 	for _, s := range a.Slowest {
 		slow = append(slow, fmt.Sprintf("step %d %.1fs out=%d calls=%d", s.Step, float64(s.DurationMs)/1000, s.OutputTokens, s.ToolCalls))
@@ -447,4 +503,89 @@ func phaseSteps(n int) string {
 		return "-"
 	}
 	return fmt.Sprint(n)
+}
+
+// taskWaitAction is the task tool action that waits for a task to end.
+const taskWaitAction = "wait"
+
+// taskAction returns the action of a `task` tool call (list, output, wait,
+// kill) and the task id it names. The action is read from the call's argument
+// summary (attrs arg, "action=wait id=t1"); an explicit action attr wins when
+// a newer recorder writes one.
+func taskAction(e store.Event) (action, id string) {
+	if a, _ := e.Attrs["action"].(string); a != "" {
+		id, _ = e.Attrs["id"].(string)
+		return a, id
+	}
+	arg, _ := e.Attrs["arg"].(string)
+	for _, field := range strings.Fields(arg) {
+		key, value, ok := strings.Cut(field, "=")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "action":
+			action = value
+		case "id":
+			id = value
+		}
+	}
+	return action, id
+}
+
+// span is a half-open time interval in milliseconds since the epoch.
+type span struct{ start, end int64 }
+
+// appendSpan adds the interval an event occupied: from its start for its
+// duration. An event without a start time carries no timing and is left out.
+func appendSpan(spans []span, e store.Event) []span {
+	if e.StartedAt.IsZero() {
+		return spans
+	}
+	start := e.StartedAt.UnixMilli()
+	return append(spans, span{start: start, end: start + max(e.DurationMs, 0)})
+}
+
+// mergeSpans sorts spans by start and merges the ones that overlap or touch,
+// so every instant is covered by one span only (parallel calls count once).
+func mergeSpans(spans []span) []span {
+	if len(spans) < 2 {
+		return spans
+	}
+	sortSpans(spans)
+	out := make([]span, 1, len(spans))
+	out[0] = spans[0]
+	for _, s := range spans[1:] {
+		last := &out[len(out)-1]
+		if s.start <= last.end {
+			last.end = max(last.end, s.end)
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// sortSpans orders spans by start, earliest first.
+func sortSpans(spans []span) []span {
+	sort.SliceStable(spans, func(i, j int) bool { return spans[i].start < spans[j].start })
+	return spans
+}
+
+// overlapMs is the time the spans in a (sorted by start, possibly overlapping
+// each other) share with the merged spans in b (also sorted). A span of a
+// without any part inside b adds nothing.
+func overlapMs(a, b []span) int64 {
+	var total int64
+	for j, i := 0, 0; i < len(a); i++ {
+		for j < len(b) && b[j].end <= a[i].start {
+			j++
+		}
+		for k := j; k < len(b) && b[k].start < a[i].end; k++ {
+			if shared := min(a[i].end, b[k].end) - max(a[i].start, b[k].start); shared > 0 {
+				total += shared
+			}
+		}
+	}
+	return total
 }
