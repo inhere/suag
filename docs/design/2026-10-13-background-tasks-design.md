@@ -114,3 +114,8 @@
 2. run 模式：最终答复前若有运行中的任务，提醒一次先 wait 或 kill；之后仍在运行的在退出前终止并注明。
 3. ACP 先不在回合外推送，通知留到下一个 prompt 的回合。
 4. 默认上限：同时运行 4 个、单个最长 2h、输出 64 MiB。
+
+## 实施记录
+
+- P1（v0.16.0）：管理器、`shell_exec` 的 `background`、`task` 工具、通知、trace 的 `task` 事件，chat 与 run 两个入口。
+- P2 ACP（2026-10-13）：管理器挂在 ACP 进程上（`RunPersonalACP` 创建，按会话 id 分开），每个 prompt 新建的 runtime 通过 `wiring.Options.Tasks` 拿到它，所以任务跨回合存活，结束通知进入该会话的下一个 prompt。`session/cancel` 只取消回合；连接关闭后 `Serve` 返回，再终止仍在运行的任务。任务结束事件改由 `wiring.NewTaskManager` 设置的回调自己打开 store 写入（`personal.RecordTaskEndIn`），不再经过回合的 Runner：ACP 两个回合之间、进程退出时没有打开的 Runner，chat 与 run 也走同一条路径。只读模式的回合不注册后台能力，也不取通知，通知留到下一个写模式回合。
