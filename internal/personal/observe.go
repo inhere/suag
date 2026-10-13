@@ -319,6 +319,10 @@ func addCallAttrs(attrs map[string]any, call agentcore.ToolCall, res *agentcore.
 		attrs["target"] = targets
 	}
 	if res != nil {
+		// shell_exec with background: true started a task (its end is a task event).
+		if id, _ := res.Metadata["task_id"].(string); id != "" {
+			attrs["task_id"] = id
+		}
 		if m := exitCodePattern.FindAllStringSubmatch(res.Content, -1); len(m) > 0 {
 			if code, err := strconv.Atoi(m[len(m)-1][1]); err == nil {
 				attrs["exit_code"] = code

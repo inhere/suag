@@ -66,6 +66,10 @@ const (
 	// EventHook records a run of the user's hook command: name = hook event,
 	// attrs decision, additional_chars, notice.
 	EventHook = "hook"
+	// EventTask records the end of a background task: name = task id, attrs
+	// arg (the command), exit_code, bytes, lines, ref, truncated; started_at
+	// and duration cover the task's whole run.
+	EventTask = "task"
 )
 
 // Session is one conversation. Meta holds free-form keys (rules hash, append

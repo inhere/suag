@@ -86,6 +86,10 @@ type TraceAnalysis struct {
 	// model call, side calls included) and RetryWaitMs the time waited.
 	Retries     int   `json:"retries"`
 	RetryWaitMs int64 `json:"retry_wait_ms"`
+	// BackgroundTasks / BackgroundMs: background tasks that ended and how
+	// long they ran in all (time the loop did not have to wait for).
+	BackgroundTasks int   `json:"background_tasks"`
+	BackgroundMs    int64 `json:"background_ms"`
 	// Slowest are the longest model calls.
 	Slowest []SlowCall `json:"slowest,omitempty"`
 }
@@ -135,6 +139,9 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 	}
 	for _, e := range events {
 		switch e.Kind {
+		case store.EventTask:
+			a.BackgroundTasks++
+			a.BackgroundMs += e.DurationMs
 		case store.EventModel:
 			a.Retries += attrInt(e.Attrs["retries"])
 			a.RetryWaitMs += int64(attrInt(e.Attrs["retry_wait_ms"]))
@@ -312,6 +319,7 @@ func WriteTraceAnalysis(w io.Writer, a TraceAnalysis, asJSON bool) error {
 	row("uncached input", "%s", uncachedSummary(a))
 	row("spills / folds", "%d / %d (compactions %d, tidied outputs %d)", a.Spills, a.Folds, a.Compactions, a.Minimized)
 	row("model retries", "%d (waited %.1fs)", a.Retries, float64(a.RetryWaitMs)/1000)
+	row("background tasks", "%d (ran %.1fs in all)", a.BackgroundTasks, float64(a.BackgroundMs)/1000)
 	var slow []string
 	for _, s := range a.Slowest {
 		slow = append(slow, fmt.Sprintf("step %d %.1fs out=%d calls=%d", s.Step, float64(s.DurationMs)/1000, s.OutputTokens, s.ToolCalls))

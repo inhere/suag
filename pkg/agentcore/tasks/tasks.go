@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/inhere/suag/pkg/agentcore/internal/proctree"
@@ -126,7 +127,13 @@ type Manager struct {
 	mu       sync.Mutex
 	sessions map[string]*session
 	closed   bool
+	// onEnd is told of every task end (SetOnEnd).
+	onEnd atomic.Pointer[func(Info)]
 }
+
+// SetOnEnd sets a function told (in the task's goroutine) of every task that
+// ends, seen or not, e.g. to record it in the trace; the latest call wins.
+func (m *Manager) SetOnEnd(fn func(Info)) { m.onEnd.Store(&fn) }
 
 type session struct {
 	seq     int
@@ -248,6 +255,9 @@ func (m *Manager) wait(s *session, t *task, cmd *exec.Cmd) {
 		s.notices = append(s.notices, t.info.ID)
 	}
 	m.mu.Unlock()
+	if fn := m.onEnd.Load(); fn != nil && *fn != nil {
+		(*fn)(t.snapshot())
+	}
 	if !seen && m.cfg.OnExit != nil {
 		m.cfg.OnExit(t.snapshot())
 	}

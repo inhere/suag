@@ -67,7 +67,7 @@ const PARTS = [["system","系统提示","#5b8def"],["tools","工具定义","#8fb
 const READ_TOOLS = new Set(["file_read","file_list","file_grep","file_find","recall","session_search","web_fetch","web_search","skill","tool_search","suag_manifest"]);
 const WRITE_TOOLS = new Set(["file_write","file_edit","file_remove","update_plan","memory"]);
 let data, t0, entryBySeq = new Map(), selected = null, tab = "timeline";
-const filt = { kinds: new Set(["turn","model","tool","denial","context","hook","fold","compaction"]), errors:false, slow:false, q:"" };
+const filt = { kinds: new Set(["turn","model","tool","denial","task","context","hook","fold","compaction"]), errors:false, slow:false, q:"" };
 
 function el(tag, attrs, ...kids) {
   const n = document.createElement(tag);
@@ -91,6 +91,7 @@ function category(e) {
   if (e.status === "error" || e.kind === "denial" || e.attrs?.test_failed) return "error";
   if (e.kind === "model") return "model";
   if (e.kind === "tool") return e.name === "shell_exec" ? "shell" : READ_TOOLS.has(e.name) ? "read" : WRITE_TOOLS.has(e.name) ? "write" : "other";
+  if (e.kind === "task") return "shell";
   return "mark";
 }
 
@@ -98,7 +99,8 @@ function summary(e) {
   const a = e.attrs || {};
   switch (e.kind) {
     case "model": return `in ${human(e.input_tokens)} (缓存 ${human(e.cache_read_tokens)}) out ${human(e.output_tokens)}` + (a.tool_calls ? ` · ${a.tool_calls} 个调用` : "") + (a.prefix && a.prefix !== "append" ? ` · 前缀 ${a.prefix}` : "") + (a.finish === "truncated" ? " · 截断" : "") + (a.retries ? ` · 重试 ${a.retries} 次（${a.retry_reason}，等 ${(a.retry_wait_ms / 1000).toFixed(1)}s）` : "");
-    case "tool": case "denial": return (a.arg || "") + (a.exit_code != null ? ` · exit=${a.exit_code}` : "") + (a.lines_added != null ? ` · +${a.lines_added}/-${a.lines_removed||0}` : "") + (a.approval && a.approval !== "rule" ? ` · 审批 ${a.approval}` : "") + (e.error ? " · " + e.error : "");
+    case "task": return `后台 ${e.name} · ${a.arg || ""} · exit=${a.exit_code} · ${human(a.bytes)}B / ${a.lines||0} 行` + (e.error ? " · " + e.error : "");
+    case "tool": case "denial": return (a.arg || "") + (a.task_id ? ` · 后台任务 ${a.task_id}` : "") + (a.exit_code != null ? ` · exit=${a.exit_code}` : "") + (a.lines_added != null ? ` · +${a.lines_added}/-${a.lines_removed||0}` : "") + (a.approval && a.approval !== "rule" ? ` · 审批 ${a.approval}` : "") + (e.error ? " · " + e.error : "");
     case "context": return [`约 ${human(a.est_tokens)} / ${human(a.window)} tokens`, `工具 ${a.tools_count||0} 个`, skillsText(a)].filter(Boolean).join(" · ");
     case "hook": return [a.decision && "decision="+a.decision, a.additional_chars && "注入 "+a.additional_chars+" 字符", a.reason_chars && "reason "+a.reason_chars].filter(Boolean).join(" · ");
     case "fold": return `折叠 ${a.boundary}/${a.steps} 步，${human(a.chars_before)}→${human(a.chars_after)} 字符`;
@@ -137,7 +139,7 @@ function renderHeader() {
 
 function renderTimeline(main) {
   const left = el("div", {id:"left"}), detail = el("div", {id:"detail"}, el("p", {class:"mute"}, "点击左侧一行查看详情"));
-  const kinds = [["turn","回合"],["model","模型"],["tool","工具"],["denial","拒绝"],["context","上下文"],["hook","hook"],["fold","折叠"],["compaction","分段/压缩"]];
+  const kinds = [["turn","回合"],["model","模型"],["tool","工具"],["denial","拒绝"],["task","后台任务"],["context","上下文"],["hook","hook"],["fold","折叠"],["compaction","分段/压缩"]];
   const bar = el("div", {class:"filters"},
     kinds.map(([k, label]) => el("label", {}, el("input", {type:"checkbox", ...(filt.kinds.has(k) ? {checked:""} : {}), onchange: ev => { ev.target.checked ? filt.kinds.add(k) : filt.kinds.delete(k); draw(); }}), " " + label)),
     el("label", {}, el("input", {type:"checkbox", ...(filt.errors ? {checked:""} : {}), onchange: ev => { filt.errors = ev.target.checked; draw(); }}), " 仅错误"),

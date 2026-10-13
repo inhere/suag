@@ -174,7 +174,7 @@ func traceLine(e store.Event) string {
 	if n := attrInt(e.Attrs["retries"]); n > 0 {
 		parts = append(parts, fmt.Sprintf("retries=%d(%s, waited %.1fs)", n, e.Attrs["retry_reason"], float64(attrInt(e.Attrs["retry_wait_ms"]))/1000))
 	}
-	if e.Kind == store.EventTool {
+	if e.Kind == store.EventTool || e.Kind == store.EventTask {
 		parts = append(parts, toolTraceParts(e)...)
 	}
 	if e.Kind == store.EventContext {

@@ -62,7 +62,10 @@ type Config struct {
 	SkillsSource      func() string
 	// SkillsStats counts the skills by how the listing presents them; the
 	// context event records it.
-	SkillsStats        func() SkillsStats
+	SkillsStats func() SkillsStats
+	// Tasks hands over the notices of background tasks that ended unseen;
+	// they are added before the next model request (nil: no tasks).
+	Tasks              TaskNotices
 	AppendSystemPrompt string
 	// AppendSystemPromptSet marks AppendSystemPrompt as explicitly supplied by
 	// the caller, so an empty value clears the saved prompt instead of keeping it.

@@ -201,6 +201,10 @@ type contextBuilder struct {
 
 	// contextRecorded: this turn's context event (recordContext) is written.
 	contextRecorded bool
+	// notices are background task notices taken during this turn, rendered
+	// at their place among this turn's messages (they are stored entries,
+	// never part of state.Messages).
+	notices []turnNotice
 }
 
 func (r *Runner) newContextBuilder(sessionID, turnID string, hist historyView, prompt agentcore.PromptBuilder, usage *usageCollector, hookContext string) *contextBuilder {
@@ -222,6 +226,7 @@ func (b *contextBuilder) BuildMessages(ctx context.Context, state *agentcore.Run
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	b.takeTaskNotices(ctx, state)
 	view := b.compose(state)
 	est := b.estimate(ctx, state, view)
 	if est > b.threshold() {
@@ -271,8 +276,17 @@ func (b *contextBuilder) compose(state *agentcore.RunState) []agentcore.Message 
 	if b.hookContext != "" {
 		out = append(out, agentcore.Message{Role: "user", Content: b.hookContext})
 	}
-	for _, m := range turn {
+	next := 0 // the next notice to place
+	for i, m := range turn {
+		for ; next < len(b.notices) && b.notices[next].at <= b.turnStart+i; next++ {
+			if b.notices[next].at >= b.turnStart {
+				out = append(out, b.notices[next].msg)
+			}
+		}
 		out = append(out, b.limited(m))
+	}
+	for ; next < len(b.notices); next++ {
+		out = append(out, b.notices[next].msg)
 	}
 	every, keep := b.r.cfg.FoldEvery, b.r.cfg.FoldKeep
 	b.foldPending = nil
