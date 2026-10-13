@@ -53,6 +53,10 @@ type Options struct {
 	// (tasks.wake_on_exit; nil: never).
 	Tasks    *tasks.Manager
 	TaskWake <-chan struct{}
+	// StopBackground runs each Stop hook as a background task of Tasks
+	// (hooks.stop_background): typing does not interrupt it and a block
+	// reply arrives as a task notice. Needs Tasks.
+	StopBackground bool
 	// scheduleOptions are extra scheduler options (tests inject a fake clock);
 	// scheduleObserver sees every scheduler event synchronously (tests).
 	scheduleOptions  []schedule.Option
@@ -187,6 +191,10 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		pendingContext = suaghooks.AdditionalContext(startResp)
 	}
 	var waiting suaghooks.Wait
+	var bgStop *backgroundStop
+	if hooks != nil && opts.StopBackground && opts.Tasks != nil && sessionID != "" {
+		bgStop = &backgroundStop{hooks: hooks, tasks: opts.Tasks, sessionID: sessionID}
+	}
 	// lostReply holds a web reply that arrived while the user interrupted the Stop wait.
 	// It is folded into the next turn's context; if the chat ends first, warn on stderr.
 	var lostReply string
@@ -299,7 +307,8 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			pendingContext = appendContext(pendingContext, lostReply)
 			lostReply = ""
 		}
-		turnStopActive := stopHookActive
+		// A background Stop that asked to continue makes this turn its follow-up.
+		turnStopActive := stopHookActive || bgStop.takeBlocked()
 		stopHookActive = false
 		inputSource.SetBusy(true)
 		if processServer != nil {
@@ -369,7 +378,13 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			stop := baseEvent("Stop")
 			stop.LastAssistant = suaghooks.TruncateOutput(redact.Secrets(stopMessage), stopHookLimit)
 			stop.StopHookActive = turnStopActive
-			waiting = hooks.StartStop(ctx, stop)
+			if bgStop == nil {
+				waiting = hooks.StartStop(ctx, stop)
+			} else if err := bgStop.start(ctx, stop); err != nil {
+				// No task slot (tasks.max_running): wait at the prompt as before.
+				render.Notice("Stop hook 未能在后台运行，改为等待：" + err.Error())
+				waiting = hooks.StartStop(ctx, stop)
+			}
 		}
 		// The turn is over (Stop sent): the idle clock runs from now.
 		idle.EndTurn(result)

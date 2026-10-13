@@ -249,3 +249,16 @@ func TestFunctionTasks(t *testing.T) {
 		assert.Err(t, err)
 	})
 }
+
+func TestNoEndNotice(t *testing.T) {
+	m, ctx := newTestManager(t, Limits{}, nil)
+	info, err := m.Start(ctx, Spec{Kind: "hook", NoEndNotice: true, Run: func(_ context.Context, _ io.Writer, r Reporter) (int, error) {
+		r.Notify("asks to continue")
+		return 0, nil
+	}})
+	assert.Require(t, assert.NoErr(t, err))
+	waitFor(t, func() bool { got, _ := m.Get("s1", info.ID); return got.Status == Exited })
+	got := m.TakeNotices("s1")
+	assert.Require(t, assert.Len(t, got, 1))
+	assert.Eq(t, "asks to continue", got[0].Notice)
+}

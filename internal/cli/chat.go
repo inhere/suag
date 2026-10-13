@@ -29,7 +29,7 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 		Asker: runtime.Asker, WriteTools: runtime.WriteTools,
 		Thinking: runtime.Thinking, ContextWindow: runtime.ContextWindow,
 		IdleAfter: idle.After, IdleMinRatio: idle.MinRatio,
-		Tasks: taskManager, TaskWake: taskWake,
+		Tasks: taskManager, TaskWake: taskWake, StopBackground: suaghooks.StopBackground(),
 	}, stdin, stdout, stderr, hooks)
 }
 

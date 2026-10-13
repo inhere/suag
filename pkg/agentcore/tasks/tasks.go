@@ -107,6 +107,9 @@ type Spec struct {
 	Cmd *exec.Cmd
 	// Run is a function task, instead of Cmd.
 	Run RunFunc
+	// NoEndNotice: the task reports what matters through Reporter.Notify,
+	// so its end leaves no notice (a Stop hook run).
+	NoEndNotice bool
 	// Clean turns raw output into text for the file and the tail, one line
 	// at a time (no trailing newline); nil keeps the bytes as they are.
 	Clean func(line []byte) string
@@ -245,6 +248,7 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Info, error) {
 		info: Info{ID: id, SessionID: sid, Kind: spec.Kind, Summary: spec.Summary, Status: Running,
 			ExitCode: -1, Started: time.Now(), Path: path, Ref: ref},
 		done: make(chan struct{}),
+		seen: spec.NoEndNotice,
 	}
 	t.out = newLineWriter(file, spec.Clean, m.limits.MaxOutputBytes)
 	if spec.Run != nil {

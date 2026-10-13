@@ -79,6 +79,15 @@ type Client interface {
 
 const defaultTimeoutMS = 3000
 
+// backgroundStopTimeout is the hook's own bound on a background Stop: longer
+// than any tasks.max_duration, which ends it first.
+const backgroundStopTimeout = 7 * 24 * time.Hour
+
+// StopBackground reports hooks.stop_background: chat runs the Stop hook as a
+// background task that typing does not interrupt; a block reply reaches the
+// model as a task notice (and wakes an idle chat).
+func StopBackground() bool { return gkconfig.Bool("hooks.stop_background", false) }
+
 // commandClient runs the configured argv once per event, the event JSON on stdin.
 type commandClient struct {
 	argv     []string
@@ -118,6 +127,8 @@ func (f PostToolFilter) Match(tool string) (string, bool) {
 //   - hooks.timeout_ms: timeout of every non-Stop event (default 3000)
 //   - hooks.stop_args: argv appended only to the Stop event
 //   - hooks.stop_wait_sec: Stop waits up to stop_wait_sec+2 seconds; 0 uses timeout_ms
+//     (with stop_background: no limit of its own, tasks.max_duration applies)
+//   - hooks.stop_background: run Stop as a background task (see StopBackground)
 //   - hooks.post_tool_use.tools / .name: PostToolUse tool globs and the name sent
 func New() (Client, error) {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("SUAG_HOOKS")), "off") {
@@ -158,6 +169,10 @@ func New() (Client, error) {
 	// The extra 2s lets a command that waits stop_wait_sec answer before it is killed.
 	if waitSec := gkconfig.Int("hooks.stop_wait_sec", 0); waitSec > 0 {
 		stopTimeout = time.Duration(waitSec+2) * time.Second
+	} else if StopBackground() {
+		// A background Stop (a full test run, say) is bounded by the task
+		// manager's tasks.max_duration instead.
+		stopTimeout = backgroundStopTimeout
 	}
 	return &commandClient{
 		argv: argv, stopArgs: stopArgs, timeout: timeout, stopTimeout: stopTimeout,
