@@ -174,8 +174,11 @@ func traceLine(e store.Event) string {
 	if n := attrInt(e.Attrs["retries"]); n > 0 {
 		parts = append(parts, fmt.Sprintf("retries=%d(%s, waited %.1fs)", n, e.Attrs["retry_reason"], float64(attrInt(e.Attrs["retry_wait_ms"]))/1000))
 	}
-	if e.Kind == store.EventTool || e.Kind == store.EventTask {
+	if e.Kind == store.EventTool {
 		parts = append(parts, toolTraceParts(e)...)
+	}
+	if e.Kind == store.EventTask {
+		parts = append(parts, taskTraceParts(e)...)
 	}
 	if e.Kind == store.EventContext {
 		parts = append(parts, contextTraceParts(e))
@@ -276,6 +279,43 @@ func toolTraceParts(e store.Event) []string {
 		parts = append(parts, "["+arg+"]")
 	}
 	return parts
+}
+
+// taskTraceParts renders what a background task ran (a task event spans the
+// whole run of one task, its name is the task id): the command and the exit
+// code, plus what the task's kind adds. A watch shows how often its command
+// ran and how often the result changed, or its last state when no counters
+// arrived; a Stop hook shows its summary ("Stop hook"), which names it, in
+// place of the command bracket. Shell tasks and older events without a kind
+// render as before.
+func taskTraceParts(e store.Event) []string {
+	kind, _ := e.Attrs["kind"].(string)
+	arg, _ := e.Attrs["arg"].(string)
+	switch kind {
+	case "watch", "hook":
+		var parts []string
+		switch {
+		case kind == "watch":
+			parts = append(parts, "watch")
+			if _, ok := e.Attrs["runs"]; ok {
+				parts = append(parts, fmt.Sprintf("runs=%d changes=%d",
+					attrInt(e.Attrs["runs"]), attrInt(e.Attrs["changes"])))
+			} else if p, _ := e.Attrs["progress"].(string); p != "" {
+				parts = append(parts, "progress="+p)
+			}
+		case arg != "":
+			parts = append(parts, arg)
+		}
+		if code, ok := e.Attrs["exit_code"]; ok {
+			parts = append(parts, fmt.Sprintf("exit=%v", code))
+		}
+		if kind == "watch" && arg != "" {
+			parts = append(parts, "["+arg+"]")
+		}
+		return parts
+	default:
+		return toolTraceParts(e)
+	}
 }
 
 // segmentTraceParts renders a segment break (compaction "compact" event):
