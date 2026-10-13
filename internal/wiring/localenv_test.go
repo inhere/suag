@@ -43,9 +43,9 @@ func TestLoadLocalEnv(t *testing.T) {
 		for _, s := range env.Skills {
 			shown[s.Name] = s.Shown
 		}
-		assert.Eq(t, map[string]string{"alpha": "listed", "beta": "named"}, shown)
-		assert.Eq(t, 2, env.SkillsStats.Total)
-		assert.StrContains(t, env.SkillsText, "): beta.")
+		assert.Eq(t, map[string]string{"alpha": "listed", "beta": "named", "suga-guide": "named"}, shown)
+		assert.Eq(t, 3, env.SkillsStats.Total)
+		assert.StrContains(t, env.SkillsText, "): beta, suga-guide.")
 	})
 	t.Run("rules: only AGENTS.md", func(t *testing.T) {
 		assert.Eq(t, "AGENTS.md", env.Rules.File)

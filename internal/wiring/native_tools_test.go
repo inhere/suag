@@ -32,7 +32,8 @@ func catalogNames(write bool) []string {
 
 // TestRegisteredToolsFollowTheCatalog pins the run/chat/ACP tool sets to the
 // one native catalog plus update_plan, session_search, recall, memory,
-// suga_manifest and agent, which Open registers in every mode.
+// suga_manifest, agent and skill, which Open registers in every mode (skill is
+// always there: the built-in guide is released into SUGA_HOME/skills).
 func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 	resetConfig(t)
 	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k"}})
@@ -47,7 +48,7 @@ func TestRegisteredToolsFollowTheCatalog(t *testing.T) {
 		return got
 	}
 	want := func(write bool) []string {
-		w := append(catalogNames(write), "update_plan", "session_search", "recall", "memory", "suga_manifest", "agent")
+		w := append(catalogNames(write), "update_plan", "session_search", "recall", "memory", "suga_manifest", "agent", "skill")
 		slices.Sort(w)
 		return w
 	}

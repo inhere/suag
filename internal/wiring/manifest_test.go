@@ -10,6 +10,7 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
+	appconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/pkg/agentcore/api"
 	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
@@ -94,7 +95,10 @@ func TestLoadManifest(t *testing.T) {
 	})
 	t.Run("skills", func(t *testing.T) {
 		assert.Contains(t, m.Skills.Roots, filepath.Join(workspace, ".agents", "skills"))
-		assert.Eq(t, 0, m.Skills.Count)
+		sugaHome, err := appconfig.ResolveSugaHome()
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Contains(t, m.Skills.Roots, filepath.Join(sugaHome, "skills"))
+		assert.Eq(t, 1, m.Skills.Count) // the built-in guide released into SUGA_HOME/skills
 	})
 	t.Run("memory scopes", func(t *testing.T) {
 		assert.Len(t, m.Memory, 2)

@@ -244,20 +244,20 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	ledger := personal.NewLedger(sessionsDir)
 	capabilities.Registry.Register(native.NewSessionSearchTool(ledger))
 	capabilities.Registry.Register(native.NewRecallTool(ledger, inlineOutputBytes()))
-	// Skills are scanned once per process; the skill tool (read-only, every
-	// mode) and the prompt listing exist only when some skill was found.
+	// Skills are scanned once per process (the built-in ones are released into
+	// <SUGA_HOME>/skills first); the skill tool (read-only, every mode) and the
+	// prompt listing exist only when some skill was found.
 	skillReg := buildDefaultSkillRegistry(workspace)
 	if skillReg.Len() > 0 {
 		capabilities.Registry.Register(native.NewSkillTool(skillReg, nativeEnv(workspace).RawBytes))
 	}
 	// suga_manifest is read-only local data, so it is registered in every
 	// mode. It reports the live registry (MCP tools included) when called.
-	userHome, _ := os.UserHomeDir()
 	capabilities.Registry.Register(native.NewManifestTool(func(context.Context) (any, error) {
 		return BuildManifest(ManifestInput{
 			Version: buildVersion, Settings: settings, Registry: capabilities.Registry,
 			MCPServers: append(appconfig.ReadMCPServerSettings(), servers...),
-			SkillRoots: defaultSkillRoots(workspace, userHome), Skills: skillReg,
+			SkillRoots: skillRoots(workspace), Skills: skillReg,
 			Memory: memSetup, Policy: memPolicy,
 			InlineBytes: rs.inlineBytes, SpillBytes: rs.spillBytes, SessionsDir: sessionsDir,
 			TaintTools: taintTools, TaintOnSpill: taintOnSpill,

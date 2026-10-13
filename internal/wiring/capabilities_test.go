@@ -134,35 +134,50 @@ func writeSkill(t *testing.T, dir, name, desc string) {
 
 func TestDefaultSkillRootsPreferWorkspace(t *testing.T) {
 	workspace, home := t.TempDir(), t.TempDir()
+	sugaHome := t.TempDir()
+	assert.Eq(t, []capskills.Root{
+		{Dir: filepath.Join(workspace, ".agents", "skills"), Workspace: true},
+		{Dir: filepath.Join(workspace, "skills"), Workspace: true},
+		{Dir: filepath.Join(sugaHome, "skills")},
+		{Dir: filepath.Join(home, ".agents", "skills")},
+	}, defaultSkillRoots(workspace, home, sugaHome))
+	// An unresolvable SUGA_HOME drops that root instead of adding an empty one.
 	assert.Eq(t, []capskills.Root{
 		{Dir: filepath.Join(workspace, ".agents", "skills"), Workspace: true},
 		{Dir: filepath.Join(workspace, "skills"), Workspace: true},
 		{Dir: filepath.Join(home, ".agents", "skills")},
-	}, defaultSkillRoots(workspace, home))
+	}, defaultSkillRoots(workspace, home, ""))
 }
 
 func TestBuildSkillRegistry_WorkspaceWinsDuplicateNames(t *testing.T) {
 	workspace, home := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("SUGA_HOME", t.TempDir())
 	writeSkill(t, filepath.Join(home, ".agents", "skills", "brainstorming"), "brainstorming", "User brainstorming skill.")
 	writeSkill(t, filepath.Join(workspace, ".agents", "skills", "brainstorming"), "brainstorming", "Workspace brainstorming skill.")
 	writeSkill(t, filepath.Join(home, ".agents", "skills", "review"), "review", "User review skill.")
 
 	list := buildDefaultSkillRegistry(workspace).List()
-	assert.Require(t, assert.Eq(t, 2, len(list)))
+	assert.Require(t, assert.Eq(t, 3, len(list)))
 	assert.Eq(t, "Workspace brainstorming skill.", list[0].Description)
 	assert.True(t, strings.HasPrefix(list[0].Path, workspace))
 	assert.Eq(t, "review", list[1].Name)
+	// The built-in guide was released into SUGA_HOME/skills on this run.
+	assert.Eq(t, "suga-guide", list[2].Name)
 }
 
 func TestSkillsPrompt(t *testing.T) {
 	workspace, home := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("SUGA_HOME", t.TempDir())
 	pol := skillPolicy{listMax: 3, alwaysLoad: map[string]bool{}}
-	empty, _ := skillsPrompt(buildDefaultSkillRegistry(workspace), pol)
-	assert.Eq(t, "", empty)
+	// The built-in guide is released into SUGA_HOME/skills, so even a workspace
+	// without skills of its own has one.
+	builtin, _ := skillsPrompt(buildDefaultSkillRegistry(workspace), pol)
+	assert.StrContains(t, builtin, "- suga-guide — ")
+	assert.NotContains(t, builtin, "- alpha")
 
 	writeSkill(t, filepath.Join(workspace, "skills", "a"), "alpha", "Short one.")
 	writeSkill(t, filepath.Join(home, ".agents", "skills", "b"), "beta", strings.Repeat("长", 100))
@@ -172,6 +187,7 @@ func TestSkillsPrompt(t *testing.T) {
 		assert.StrContains(t, p, "# Skills\n")
 		assert.StrContains(t, p, "- alpha — Short one.\n")
 		assert.StrContains(t, p, "- beta — "+strings.Repeat("长", 53)+"…\n")
+		assert.StrContains(t, p, "- suga-guide — ")
 		assert.NotContains(t, p, "more skills are installed")
 	})
 	t.Run("past list_max only workspace skills are listed", func(t *testing.T) {
@@ -183,8 +199,8 @@ func TestSkillsPrompt(t *testing.T) {
 		assert.NotContains(t, p, "- beta")
 		assert.NotContains(t, p, "- user-c")
 		assert.StrContains(t, p, "Also installed (no description here;")
-		assert.StrContains(t, p, "): beta, user-c, user-d, user-e.\n") // the rest by name
-		assert.Eq(t, personal.SkillsStats{Listed: 1, Named: 4, Total: 5}, stats)
+		assert.StrContains(t, p, "): beta, suga-guide, user-c, user-d, user-e.\n") // the rest by name
+		assert.Eq(t, personal.SkillsStats{Listed: 1, Named: 5, Total: 6}, stats)
 	})
 	t.Run("always_load puts the body in the prompt", func(t *testing.T) {
 		dir := filepath.Join(home, ".agents", "skills", "pre")
@@ -195,7 +211,7 @@ func TestSkillsPrompt(t *testing.T) {
 		p, _ := skillsPrompt(buildDefaultSkillRegistry(workspace), cfg)
 		assert.StrContains(t, p, "## Skill pre (preloaded; directory "+dir+")\n# Pre\nAlways do X.")
 		assert.StrContains(t, p, "## Skill user-c (preloaded;")
-		assert.StrContains(t, p, "): beta, user-d, user-e.\n")
+		assert.StrContains(t, p, "): beta, suga-guide, user-d, user-e.\n")
 	})
 }
 

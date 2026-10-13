@@ -10,6 +10,7 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
+	appconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/internal/personal"
 	capskills "github.com/inhere/suga/pkg/agentcore/skills"
 )
@@ -26,27 +27,46 @@ func SetupLogging() {
 	}
 }
 
-// buildDefaultSkillRegistry scans the skill roots once at startup.
+// buildDefaultSkillRegistry scans the skill roots once at startup, releasing
+// the built-in skills into <SUGA_HOME>/skills first so they are found like any
+// other skill.
 func buildDefaultSkillRegistry(workspace string) *capskills.Registry {
+	sugaHome := sugaHomeWithBuiltinSkills()
 	homeDir, _ := os.UserHomeDir()
-	return capskills.LoadRoots(defaultSkillRoots(workspace, homeDir))
+	return capskills.LoadRoots(defaultSkillRoots(workspace, homeDir, sugaHome))
 }
 
 // defaultSkillRoots lists the skill directories in priority order: the
 // workspace's own skills first, so a project can override a user skill of the
-// same name.
-func defaultSkillRoots(workspace, homeDir string) []capskills.Root {
-	roots := make([]capskills.Root, 0, 3)
+// same name, then the suga home (the built-in guide and user skills next to it)
+// and finally the user's own ~/.agents/skills. sugaHome is passed in apart from
+// homeDir because SUGA_HOME may point somewhere else than the home directory.
+func defaultSkillRoots(workspace, homeDir, sugaHome string) []capskills.Root {
+	roots := make([]capskills.Root, 0, 4)
 	if strings.TrimSpace(workspace) != "" {
 		roots = append(roots,
 			capskills.Root{Dir: filepath.Join(workspace, ".agents", "skills"), Workspace: true},
 			capskills.Root{Dir: filepath.Join(workspace, "skills"), Workspace: true},
 		)
 	}
+	if strings.TrimSpace(sugaHome) != "" {
+		roots = append(roots, capskills.Root{Dir: filepath.Join(sugaHome, builtinSkillsRoot)})
+	}
 	if strings.TrimSpace(homeDir) != "" {
 		roots = append(roots, capskills.Root{Dir: filepath.Join(homeDir, ".agents", "skills")})
 	}
 	return roots
+}
+
+// skillRoots resolves the home directory and SUGA_HOME and returns this
+// machine's skill roots in priority order (the manifest lists them).
+func skillRoots(workspace string) []capskills.Root {
+	homeDir, _ := os.UserHomeDir()
+	sugaHome, err := appconfig.ResolveSugaHome()
+	if err != nil {
+		sugaHome = ""
+	}
+	return defaultSkillRoots(workspace, homeDir, sugaHome)
 }
 
 const (

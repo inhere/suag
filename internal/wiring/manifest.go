@@ -2,7 +2,6 @@ package wiring
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 
@@ -268,11 +267,10 @@ func loadManifest(opts ManifestOptions) (Manifest, manifestParts, error) {
 	}
 	reg.Register(native.NewManifestTool(nil))
 
-	home, _ := os.UserHomeDir()
 	m := BuildManifest(ManifestInput{
 		Version: buildVersion, Settings: st.models, Registry: reg,
 		MCPServers: appconfig.ReadMCPServerSettings(),
-		SkillRoots: defaultSkillRoots(workspace, home), Skills: skillReg,
+		SkillRoots: skillRoots(workspace), Skills: skillReg,
 		Memory: st.memSetup, Policy: st.memPolicy,
 		InlineBytes: st.inlineBytes, SpillBytes: st.spillBytes, SessionsDir: st.sessionsDir,
 		TaintTools: st.taintTools, TaintOnSpill: st.taintOnSpill,
