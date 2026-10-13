@@ -151,6 +151,9 @@ func (t *ShellExecTool) Description() string {
 		desc += fmt.Sprintf(" With background: true it starts the command in the background and returns a task id at once "+
 			"(long builds, full test runs, servers, watchers; ended after %s): keep working, read its output or wait for it "+
 			"with the task tool; you are told when it ends.", t.tasks.Limits().MaxDuration)
+		desc += fmt.Sprintf(" Adding every (seconds, at least %d) and/or watch_paths (globs) makes it a watch: the command "+
+			"runs now and again on each tick or change of the matching files, and you are told only when its exit code or "+
+			"output changes (e.g. keep the tests running while you edit).", int(minWatchEvery.Seconds()))
 	}
 	return desc
 }
@@ -182,7 +185,16 @@ func (t *ShellExecTool) Schema() api.ToolSchema {
 		props := schema.InputSchema["properties"].(map[string]any)
 		props["background"] = map[string]any{
 			"type":        "boolean",
-			"description": "Run in the background and return a task id at once (timeout does not apply)",
+			"description": "Run in the background and return a task id at once (timeout does not apply, except to each run of a watch)",
+		}
+		props["every"] = map[string]any{
+			"type":        "integer",
+			"description": fmt.Sprintf("With background: run the command again every N seconds (at least %d); a watch", int(minWatchEvery.Seconds())),
+		}
+		props["watch_paths"] = map[string]any{
+			"type":        "array",
+			"items":       map[string]any{"type": "string"},
+			"description": "With background: run the command again when files matching these globs (relative to the workspace, ** spans directories, *.go matches at any depth) change; a watch",
 		}
 	}
 	return schema
@@ -206,7 +218,17 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 	if strings.TrimSpace(command) == "" {
 		return nil, fmt.Errorf("shell_exec: command is required")
 	}
-	if bg, _ := call.Arguments["background"].(bool); bg && t.tasks != nil {
+	watch, isWatch, err := parseWatch(call.Arguments)
+	if err != nil {
+		return nil, fmt.Errorf("shell_exec: %w", err)
+	}
+	bg, _ := call.Arguments["background"].(bool)
+	switch {
+	case isWatch && (!bg || t.tasks == nil):
+		return nil, fmt.Errorf("shell_exec: every and watch_paths need background: true")
+	case isWatch:
+		return t.startWatch(ctx, call, command, watch)
+	case bg && t.tasks != nil:
 		return t.startBackground(ctx, call, command)
 	}
 	timeout := t.callTimeout(call.Arguments)
@@ -229,7 +251,7 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 		return nil, fmt.Errorf("shell_exec: start %s: %w", t.shell.name(), err)
 	}
 	tree.Started()
-	err := cmd.Wait()
+	err = cmd.Wait()
 	tree.Close() // also ends background children left behind by the command
 
 	// Colour codes carry nothing for the model (test libraries such as
