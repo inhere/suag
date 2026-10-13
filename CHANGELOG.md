@@ -4,15 +4,16 @@
 
 ## [未发布]
 
+## [0.15.0] - 2026-10-13
+
+OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线页面与观测补齐（上下文组成、审批、hook、版本）、`suag sessions` 会话列表；shell 命令不再继承 suag 自身的 SUAG_* 变量。扩大评测（4 个仓库任务各 5 轮）中 suag 与 omp 正确性持平（18/20），依据见 [分析](docs/research/2026-10-11-suag-vs-omp-loop-analysis.md)。
+
 ### 新增
 
 - `suag sessions`：列出会话（最近活动在前，默认 10 条，`-n 0` 全部），按时间（`--since`/`--until`：`12h`、`7d` 或日期）、关键词（标题、id、目录、模型或对话内容，内容命中显示片段）、目录前缀（`--cwd`，`.` 为当前目录）过滤，`--json` 输出。
 - 会话记录 suag 版本：每回合的 `turn_context` 带 `version`（`suag trace` 显示 `suag=…`），会话 meta 的 `suag_version` 为最近一次运行它的版本。
-
 - `suag trace <session> --web [--addr]`：本机网页查看一个会话的时间线（瀑布图、筛选与搜索、详情面板含完整参数与结果、思考与正文、审批与前缀对比）、每回合上下文组成（堆叠条与各部分原文）、每次调用的缓存命中与 `--analyze` 结果；只绑回环地址，页面嵌在二进制里，`#ev=<id>`、`#tab=context` 可直接定位。
-
 - trace 补充观测：每回合的 `context` 事件（上下文组成：系统提示词、工具及 MCP 数量、环境、规则、记忆索引、skills、延迟工具、交接摘要、历史、hook 注入、本轮输入的字符数，估算 token 与窗口）；`hook` 事件（chat 的每次 hook 运行：事件、耗时、block、注入字符数）；工具事件加审批来源与等人时间（`approval`、`approval_wait_ms`）、编辑增删行数；模型事件加 `finish`（截断标记）；回合事件加输入长度与是否注入。设计见 `docs/design/2026-10-13-trace-web-design.md`。
-
 - provider 类型 `openai-responses`（OpenAI Responses API，`POST {base_url}/responses`），可写在 provider 或单个模型上：完整历史、`store: false`，思考档位为 `reasoning.effort`，推理项（含加密推理）随工具调用保存并回传，流式按 `response.output_text.delta` 输出、以终止事件为准，截断（`max_output_tokens`）时不执行残缺调用。设计见 `docs/design/2026-10-13-openai-responses-design.md`。
 - 网关适配层（`pkg/agentcore/llm/compat_*.go`）：按 base_url 域名与模型 id 自动匹配 `openai`、`commandcode`、`deepseek` 的差异处理，`providers.<id>.compat` 可显式追加；DeepSeek 的缓存命中字段回退移入其中。
 
@@ -289,7 +290,8 @@
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suag/compare/v0.14.0...HEAD
+[未发布]: https://github.com/inhere/suag/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/inhere/suag/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/inhere/suag/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/inhere/suag/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/inhere/suag/compare/v0.11.0...v0.12.0
