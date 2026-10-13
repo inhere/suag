@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/inhere/suag/pkg/agentcore/internal/proctree"
 	"github.com/inhere/suag/pkg/agentcore/tools"
 	"golang.org/x/text/encoding/simplifiedchinese"
 
@@ -196,16 +197,16 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr // stdin stays nil: the null device
 	// tree is the OS process group / job object; Cancel kills all of it, and
 	// WaitDelay forces Wait to return when a leftover child keeps a pipe open.
-	tree := newProcessTree(cmd)
-	cmd.Cancel = tree.kill
+	tree := proctree.New(cmd)
+	cmd.Cancel = tree.Kill
 	cmd.WaitDelay = shellWaitDelay
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("shell_exec: start %s: %w", t.shell.name(), err)
 	}
-	tree.started()
+	tree.Started()
 	err := cmd.Wait()
-	tree.close() // also ends background children left behind by the command
+	tree.Close() // also ends background children left behind by the command
 
 	// Colour codes carry nothing for the model (test libraries such as
 	// gookit/assert colour their failure reports even without a terminal).

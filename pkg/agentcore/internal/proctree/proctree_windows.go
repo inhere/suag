@@ -1,6 +1,6 @@
 //go:build windows
 
-package native
+package proctree
 
 import (
 	"os/exec"
@@ -9,17 +9,18 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// processTree is a job object holding the shell and every process it starts.
+// Tree is a job object holding the shell and every process it starts.
 // The job is created with KILL_ON_JOB_CLOSE, so closing it ends leftovers.
 // Between Start and the assignment a child could escape; that window is a
 // few microseconds and accepted.
-type processTree struct {
+type Tree struct {
 	cmd *exec.Cmd
 	job windows.Handle
 }
 
-func newProcessTree(cmd *exec.Cmd) *processTree {
-	p := &processTree{cmd: cmd}
+// New prepares cmd (before Start) so its whole process tree can be killed.
+func New(cmd *exec.Cmd) *Tree {
+	p := &Tree{cmd: cmd}
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return p // fall back to killing the shell alone
@@ -38,8 +39,8 @@ func newProcessTree(cmd *exec.Cmd) *processTree {
 	return p
 }
 
-// started puts the shell into the job; children inherit the job.
-func (p *processTree) started() {
+// Started puts the shell into the job; children inherit the job.
+func (p *Tree) Started() {
 	if p.job == 0 || p.cmd.Process == nil {
 		return
 	}
@@ -51,9 +52,9 @@ func (p *processTree) started() {
 	_ = windows.CloseHandle(h)
 }
 
-// kill terminates the whole job, and the shell directly in case it was not
+// Kill terminates the whole job, and the shell directly in case it was not
 // assigned yet.
-func (p *processTree) kill() error {
+func (p *Tree) Kill() error {
 	if p.job != 0 {
 		_ = windows.TerminateJobObject(p.job, 1)
 	}
@@ -63,8 +64,8 @@ func (p *processTree) kill() error {
 	return nil
 }
 
-// close releases the job; KILL_ON_JOB_CLOSE ends background leftovers.
-func (p *processTree) close() {
+// Close releases the job; KILL_ON_JOB_CLOSE ends background leftovers.
+func (p *Tree) Close() {
 	if p.job != 0 {
 		_ = windows.CloseHandle(p.job)
 		p.job = 0
