@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.16.0] - 2026-10-13
+
+后台任务（`shell_exec` 的 `background` 与 `task` 工具，chat 与 run）、模型请求统一重试、`shell_exec` 危险删除拦截；`suag trace --web` 新增本机环境页并修正时间与标题显示；项目规则每级只读一个文件（默认 `AGENTS.md`）。
+
 ### 新增
 
 - 后台任务（suag-ol03 第一阶段，`run` 与 chat）：
@@ -31,7 +35,10 @@
   - context 事件记录工具名列表（`tool_names`）与 skills 呈现统计（`skills_listed`、`skills_named`、`skills_preloaded`、`skills_total`）；上下文详情显示工具定义列表和“描述 / 仅名称 / 预载 / 共”的 skills 数量。
 
 - 会话标题取任务本身的第一行，最多 100 字。gofer 派任务时在提示前面注入的规则段、工具段与 skills 段会被跳过；原先标题是整段提示，`suag sessions` 里只能看到规则开头。ACP 新建的会话原先一直叫 `Session <id>`，现在用第一条提示做标题。
-- 项目规则在每一级目录只读一个文件，文件名由 `rules.file` 决定（默认 `AGENTS.md`，可改成 `CLAUDE.md`）。原先每级同时读 `AGENTS.md` 与 `CLAUDE.md`（同级的 `CLAUDE.md` 只是 `@AGENTS.md` 或内容相同时跳过），两个文件都在的仓库会重复注入同一份规则，trace 里的规则来源也变乱。`~/.suag/AGENTS.md`（用户级）与 `@` 引入行为不变；`rules.file` 只接受文件名，非法值在启动时报错。
+
+### 不兼容
+
+- 项目规则在每一级目录只读一个文件，文件名由 `rules.file` 决定（默认 `AGENTS.md`，可改成 `CLAUDE.md`）。原先每级同时读 `AGENTS.md` 与 `CLAUDE.md`（同级的 `CLAUDE.md` 只是 `@AGENTS.md` 或内容相同时跳过），两个文件都在的仓库会重复注入同一份规则，trace 里的规则来源也变乱。只有 `CLAUDE.md` 的仓库升级后读不到项目规则，需要设 `rules.file: CLAUDE.md` 或加一个 `AGENTS.md`。`~/.suag/AGENTS.md`（用户级）与 `@` 引入行为不变；`rules.file` 只接受文件名，非法值在启动时报错。
 
 ## [0.15.0] - 2026-10-13
 
@@ -319,7 +326,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suag/compare/v0.15.0...HEAD
+[未发布]: https://github.com/inhere/suag/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/inhere/suag/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/inhere/suag/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/inhere/suag/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/inhere/suag/compare/v0.12.0...v0.13.0
