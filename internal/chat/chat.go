@@ -40,6 +40,10 @@ type Options struct {
 	Asker *tools.BindableAsker
 	// WriteTools tells the banner whether file_write/shell_exec are available.
 	WriteTools bool
+	// Markdown renders the model's text as terminal markdown (config
+	// chat.markdown, on by default). Only a colored terminal uses it: a pipe,
+	// a redirected output or NO_COLOR keeps the raw text.
+	Markdown bool
 	// Thinking (the effective thinking level, "" = provider default) and
 	// ContextWindow (tokens, 0 = unknown) are shown in the banner.
 	Thinking      string
@@ -164,7 +168,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		Color: colorEnabledFor(stdout), ErrColor: colorEnabledFor(stderr),
 		Provider: runner.ProviderName(), Model: runner.Model(),
 		Thinking: opts.Thinking, ContextWindow: opts.ContextWindow,
-		WriteTools: opts.WriteTools,
+		WriteTools: opts.WriteTools, Markdown: opts.Markdown,
 	})
 	// Background idle consolidation; closed before the input source, so its
 	// last status line still goes through it.

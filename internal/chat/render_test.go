@@ -98,6 +98,50 @@ func TestRendererColoredTurn(t *testing.T) {
 	assert.StrContains(t, errOut.String(), "\x1b[31mError: boom\x1b[0m")
 }
 
+// TestRendererMarkdown: chat renders the model's markdown on a colored
+// terminal; without colors (a pipe, a redirect or NO_COLOR) or with
+// chat.markdown off the text is printed exactly as it streams. The ▣ prefix
+// stays on the first line of the message in every case.
+func TestRendererMarkdown(t *testing.T) {
+	color.ForceColor()
+	t.Cleanup(func() { color.RevertColorLevel() })
+
+	stream := func(opts rendererOptions) string {
+		var out bytes.Buffer
+		opts.Out = &out
+		r := newRenderer(opts)
+		r.Handle(personal.Event{Kind: "text_delta", Text: "## Title\nsee **docs**\n"})
+		r.Handle(personal.Event{Kind: "message_stop"})
+		r.Finish()
+		return out.String()
+	}
+	const raw = "▣ ## Title\nsee **docs**\n"
+
+	t.Run("terminal with colors", func(t *testing.T) {
+		got := stream(rendererOptions{Color: true, Markdown: true})
+		assert.StrContains(t, got, "\x1b[32m▣\x1b[0m \x1b[1;36mTitle\x1b[0m\n")
+		assert.StrContains(t, got, "see \x1b[1mdocs\x1b[0m\n")
+		assert.StrNotContains(t, got, "##")
+	})
+	t.Run("no colors: the text is raw", func(t *testing.T) {
+		assert.Eq(t, raw, stream(rendererOptions{Markdown: true}))
+	})
+	t.Run("markdown off: the text is raw", func(t *testing.T) {
+		assert.StrContains(t, stream(rendererOptions{Color: true}), "\x1b[32m▣\x1b[0m ## Title\nsee **docs**\n")
+	})
+	t.Run("a final answer that was not streamed", func(t *testing.T) {
+		var out bytes.Buffer
+		r := newRenderer(rendererOptions{Out: &out, Color: true, Markdown: true})
+		r.Answer("## Title\nsee **docs**")
+		assert.Eq(t, "\x1b[32m▣\x1b[0m \x1b[1;36mTitle\x1b[0m\nsee \x1b[1mdocs\x1b[0m\n", out.String())
+	})
+	t.Run("an answer without markdown", func(t *testing.T) {
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out, Color: true}).Answer("## Title")
+		assert.Eq(t, "\x1b[32m▣\x1b[0m ## Title\n", out.String())
+	})
+}
+
 func TestColorEnabled(t *testing.T) {
 	t.Run("tty without NO_COLOR", func(t *testing.T) {
 		t.Setenv("NO_COLOR", "")

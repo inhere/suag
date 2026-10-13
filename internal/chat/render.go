@@ -41,6 +41,9 @@ type rendererOptions struct {
 	ContextWindow int
 	// WriteTools selects the banner's tool line (write and shell on or off).
 	WriteTools bool
+	// Markdown renders the model's text as terminal markdown (config
+	// chat.markdown); it only applies to a colored terminal.
+	Markdown bool
 }
 
 // Renderer owns all terminal output of one chat: prompt, streamed model text,
@@ -91,6 +94,11 @@ func (r *Renderer) Prompt(waiting bool) string {
 // BeginTurn resets the per-turn text streaming state.
 func (r *Renderer) BeginTurn() {
 	r.live = output.NewPrefixedLiveText(r.opts.Out, r.answerPrefix())
+	// Markdown needs a terminal: Color is exactly "a terminal without NO_COLOR",
+	// so a pipe, a redirected output or NO_COLOR keeps the raw text.
+	if r.opts.Markdown && r.opts.Color {
+		r.live.SetMarkdown(true)
+	}
 	r.memory = nil
 }
 
@@ -159,8 +167,18 @@ func (r *Renderer) renderPlan(event personal.Event) {
 // Finish closes the turn's streamed text and reports whether any was shown.
 func (r *Renderer) Finish() bool { return r.live.Finish() }
 
-// Answer prints a final answer that was not streamed.
-func (r *Renderer) Answer(text string) { fmt.Fprintln(r.opts.Out, r.answerPrefix()+text) }
+// Answer prints a final answer that was not streamed. With markdown on it goes
+// through the same renderer as the streamed text (a multi-line answer would
+// otherwise show its raw markers).
+func (r *Renderer) Answer(text string) {
+	md := r.live.Markdown()
+	if md == nil {
+		fmt.Fprintln(r.opts.Out, r.answerPrefix()+text)
+		return
+	}
+	fmt.Fprint(r.opts.Out, r.answerPrefix())
+	md.Print(text)
+}
 
 // External prints input that did not come from this keyboard (a reply sent
 // from elsewhere through `suga send` or a Stop hook) in its own color, so it
