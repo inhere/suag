@@ -219,17 +219,18 @@ step_agents() {
         sayerr "错误：agents.yaml 不存在：$file"
         return 1
     fi
-    if sed -e "$key_sed" -e "$cmd_sed" -e "$var_sed" "$file" | file_unchanged "$file"; then
+    if sed -e "$key_sed" -e "$cmd_sed" -e "$path_sed" -e "$var_sed" "$file" | file_unchanged "$file"; then
         say "  $(basename "$file")：无需修改"
         return 0
     fi
     if [ "$apply" -eq 1 ]; then
         backup_file "$file" || return 1
-        apply_file "$file" -e "$key_sed" -e "$cmd_sed" -e "$var_sed" || return 1
+        apply_file "$file" -e "$key_sed" -e "$cmd_sed" -e "$path_sed" -e "$var_sed" || return 1
         printf '  [已执行] %s：已改写\n' "$(basename "$file")"
     else
         show_rule_col "$file" "$(basename "$file")" "agent key" "$key_sed" no
         show_rule_col "$file" "$(basename "$file")" "command: suag" "$cmd_sed" no
+        show_rule_col "$file" "$(basename "$file")" "指向 .suag 的路径" "$path_sed" no
         show_rule_col "$file" "$(basename "$file")" "SUAG_ 变量名" "$var_sed" no
     fi
     return 0

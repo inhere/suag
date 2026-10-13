@@ -118,15 +118,14 @@ $AgentsOriginal = @(
     ''
 ) -join "`n"
 
-# 步骤 5 只改 agent key、command 与 env 的变量名；env 的值（包括指向 .suag 的路径）原样保留，
-# 所以 SUAG_HOME 的值仍是 /home/x/.suag（见 README 的“限制”一节）
+# 步骤 5 改 agent key、command、指向 .suag 的路径（目录已改名）与 env 的变量名
 $AgentsExpected = @(
     'agents:'
     '  suga:'
     '    type: cli-agent'
     '    command: suga'
     '    env:'
-    '      SUGA_HOME: /home/x/.suag'
+    '      SUGA_HOME: /home/x/.suga'
     '      SUGA_MODEL: glm-5'
     '  suga-acp:'
     '    type: acp-agent'

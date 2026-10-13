@@ -125,11 +125,12 @@ function Get-ConfigRules {
     )
 }
 
-# gofer agents.yaml：agent key、command: suag、env 里的 SUAG_
+# gofer agents.yaml：agent key、command: suag、指向 .suag 的路径（目录已改名）、env 里的 SUAG_
 function Get-GoferAgentsRules {
     return @(
         [pscustomobject]@{ Name = 'agent key'; Pattern = '^(?<ind>[ \t]*)suag(?<suf>-acp)?(?<rest>\s*:)'; Replacement = '${ind}suga${suf}${rest}' },
         [pscustomobject]@{ Name = 'command: suag'; Pattern = '(?<pre>command\s*:\s*)suag(?![A-Za-z0-9_])'; Replacement = '${pre}suga' },
+        [pscustomobject]@{ Name = '指向 .suag 的路径'; Pattern = '\.suag(?![A-Za-z0-9_])'; Replacement = '.suga' },
         [pscustomobject]@{ Name = 'SUAG_ 变量名'; Pattern = '(?<![A-Za-z0-9_])SUAG_'; Replacement = 'SUGA_' }
     )
 }

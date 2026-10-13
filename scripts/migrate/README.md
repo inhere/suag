@@ -92,8 +92,7 @@ sh scripts/migrate/suag-to-suga.sh --apply
 
 ## 限制
 
-- `-GoferAgents` 只改 agent key、`command:` 和 `env` 的变量名，**不改 `env` 的值**：如果那里写了
-  指向 `~/.suag` 的路径，需要自己改成 `~/.suga`。
+- `-GoferAgents` 改 agent key、`command:`、指向 `.suag` 的路径和 `env` 的变量名，其它值不改。
 - `config.yaml` 里只改上述三类内容，别的 `suag` 字样（注释、User-Agent 等）原样保留。
 - 只处理默认的 `.env` / `config.yaml` 文件名；`SUAG_CONFIG` 指向的其它配置文件请手工处理。
 - Windows 的 Git for Windows 只能表示 POSIX 权限的只读位，`test.sh` 里的 `.env` 600 权限断言会

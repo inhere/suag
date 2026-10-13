@@ -139,7 +139,7 @@ agents:
 EOF
 }
 
-# 期望结果（步骤 5 只改 agent key、command 与 env 的变量名，env 的值原样保留）
+# 期望结果（步骤 5 改 agent key、command、指向 .suag 的路径与 env 的变量名）
 config_expected() {
     cat <<'EOF'
 # suag configuration
@@ -159,7 +159,7 @@ agents:
     type: cli-agent
     command: suga
     env:
-      SUGA_HOME: /home/x/.suag
+      SUGA_HOME: /home/x/.suga
       SUGA_MODEL: glm-5
   suga-acp:
     type: acp-agent
