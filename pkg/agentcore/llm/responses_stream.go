@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -71,6 +72,7 @@ type responsesEvent struct {
 
 func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 	done := map[int]map[string]json.RawMessage{} // output items by index
+	added := map[int]bool{}                      // items started (output_item.added)
 	emitted := false
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 16*1024*1024)
@@ -96,6 +98,8 @@ func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader
 				return nil, err
 			}
 			emitted = true
+		case "response.output_item.added":
+			added[ev.OutputIndex] = true
 		case "response.output_item.done":
 			if ev.Item != nil {
 				done[ev.OutputIndex] = ev.Item
@@ -135,7 +139,29 @@ func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader
 		}
 		return nil, &streamReadError{fmt.Errorf("read responses stream: %w", err)}
 	}
+	// The gateway closed the stream before the terminal event. When every
+	// item it started was also finished, the reply is complete but for the
+	// summary event (and its usage): use the finished items rather than fail
+	// a turn whose text was already shown and cannot be requested again.
+	if len(done) > 0 && allDone(added, done) {
+		slog.Warn("responses stream ended without a terminal event; using the finished output items", "provider", p.Name(), "items", len(done))
+		res, err := p.resultOf(responsesBody{Status: "completed", Output: orderedItems(done)})
+		if err == nil && emitted && emit != nil {
+			err = emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventMessageStop})
+		}
+		return res, err
+	}
 	return nil, &streamReadError{fmt.Errorf("responses stream ended without a terminal event")}
+}
+
+// allDone reports whether every started output item has finished.
+func allDone(added map[int]bool, done map[int]map[string]json.RawMessage) bool {
+	for i := range added {
+		if done[i] == nil {
+			return false
+		}
+	}
+	return true
 }
 
 // orderedItems returns the collected output items by output_index.

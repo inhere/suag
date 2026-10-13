@@ -191,6 +191,29 @@ func TestResponsesStream(t *testing.T) {
 		assert.Eq(t, "ok", res.Content)
 		assert.Eq(t, "c2", res.ToolCalls[0].CallID)
 	})
+	t.Run("cut before the terminal event but with every item finished", func(t *testing.T) {
+		stream := strings.Join([]string{
+			`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}`,
+			`data: {"type":"response.output_text.delta","output_index":0,"delta":"ok"}`,
+			item(0, `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}`),
+			`data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call"}}`,
+			item(1, `{"type":"function_call","call_id":"c9","name":"x","arguments":"{}"}`),
+		}, "\n")
+		res, err := p.readResponsesStream(context.Background(), strings.NewReader(stream), nil)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, "ok", res.Content)
+		assert.Eq(t, "c9", res.ToolCalls[0].CallID)
+
+		unfinished := strings.Join([]string{
+			`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}`,
+			item(0, `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}`),
+			`data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call"}}`,
+			`data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"pa"}`,
+		}, "\n")
+		_, err = p.readResponsesStream(context.Background(), strings.NewReader(unfinished), nil)
+		var broken *streamReadError
+		assert.True(t, errors.As(err, &broken))
+	})
 	t.Run("broken and failed streams", func(t *testing.T) {
 		_, err := p.readResponsesStream(context.Background(), strings.NewReader(`data: {"type":"response.output_text.delta","delta":"x"}`), nil)
 		var broken *streamReadError
