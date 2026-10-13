@@ -166,6 +166,7 @@ gofer job resume <job-id> --prompt "继续上个问题"
 - `run --output-format stream-json` 先输出 `session` 事件，再输出过程事件，最后输出一行 `result`。`result`、`input_required`、`error` 都带 `usage`（本回合）和 `session_usage`（会话累计，持久化在会话元数据中）。两者均含 `input_tokens`（不含缓存）、`output_tokens`、可选的 `cache_read_tokens`/`cache_write_tokens`，以及 `total_tokens`（输入、输出与缓存之和）。
 - 每次模型调用结束后，`run` 还会输出一行 `usage`：`{"type":"usage","usage":{input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,total_tokens,cost_usd,tool_calls}}`，为**本次 run 的累计值**（run 口径，含 compact 调用，`input_tokens` 不含缓存；`tool_calls` 为本次 run 的工具调用次数，含被拒的）。`turn_end` 与 `result` 带同名 `usage`，`result` 的是最终值；`usage` 逐行单调递增，因此调用方可以在运行中途读取。Gofer 已读取该行并显示 `tools N`，`--max-tokens` 在运行中途就能生效，不必等到 `result`。
 - chat hooks：`hooks.command`（argv 列表，不经 shell）在 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd、Interrupt 事件时被调用，事件以一行 JSON 写入其 stdin。未设 `hooks.command` 时不启用，`SUAG_HOOKS=off` 可整体关闭。`hooks.timeout_ms` 限制普通事件；`hooks.stop_args` 只追加到 Stop 调用，且必须同时设 `hooks.stop_wait_sec`（Stop 最多等 `stop_wait_sec+2` 秒，否则按 `timeout_ms`）。PostToolUse 只对匹配 `hooks.post_tool_use.tools` glob 的工具发送，设了 `hooks.post_tool_use.name` 时改用该名称。
+- 后台 Stop hook：`hooks.stop_background: true`（默认 false，仅 chat）把 Stop 作为 `hook` 类后台任务运行，不再在提示符处等待：用户输入、投递与任务唤醒都不会中断它，耗时的 Stop（如跑全量测试）因此能跑完。hook 返回 block 加 reason 时产生通知 `Stop hook asks to continue: <reason>`：空闲的 chat 被唤醒并开始注入回合，回合进行中则在下一次模型请求前带上（带 `stop_hook_active=true`，语义同同步等待）。新的 Stop 到来时先终止还在跑的上一个；没有空闲任务槽位时退回原来的等待。超时：设了 `hooks.stop_wait_sec` 时仍用 `stop_wait_sec+2` 秒，否则不再套用 `hooks.timeout_ms`，而是由任务管理器的 `tasks.max_duration`（默认 2h）限制。
 - `suag run --injected` 把本轮输入标记为非人工输入，transcript 和 hook 事件中都会体现。
 
 ## ACP 常驻与审批
@@ -230,7 +231,7 @@ gofer job resume <job-id> --prompt "从上次会话继续"
       name: shell
   ```
 
-  只配 `stop_args` 不配 `stop_wait_sec` 会让 Stop 在 `timeout_ms`（默认 3000）后被结束，两者必须同时配置。`post_tool_use.tools` 不配置则不发送 PostToolUse。
+  只配 `stop_args` 不配 `stop_wait_sec` 会让 Stop 在 `timeout_ms`（默认 3000）后被结束，两者必须同时配置。`post_tool_use.tools` 不配置则不发送 PostToolUse。耗时的 Stop（如跑全量测试）可再加 `hooks.stop_background: true` 让它作为后台任务运行，不被输入与唤醒中断：此时 `stop_wait_sec` 只决定 hook 自身的超时（`stop_wait_sec+2` 秒），不设该值时由 `tasks.max_duration`（默认 2h）限制。
 
 - provider 名变化：trace/stats 中的 provider 名是配置里的 id（原 `claude` 变为 `anthropic` 或自定义 id）。
 

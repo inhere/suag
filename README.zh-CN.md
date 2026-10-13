@@ -67,7 +67,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `rules.file` | 每一级目录读取的项目规则文件名（每级只读一个，从 Git 根或 cwd 到 cwd），默认 `AGENTS.md`，可改成 `CLAUDE.md`；只接受文件名，不能带路径。`~/.suag/AGENTS.md` 仍会读取 |
 | `providers.<id>.prompt_cache` | 仅 Claude（`anthropic` 类型），默认关：加 `cache_control` 断点（system 变为块数组）；部分网关不接受 |
 | `tools.allow_write` | 仅 chat：启用写文件和 shell 工具（默认 false） |
-| `tasks.max_running`、`tasks.max_duration`、`tasks.max_output_bytes`、`tasks.wake_on_exit` | 后台任务：每个会话同时在跑的数量（4）、单次最长运行时间（`2h`）、输出文件上限（64 MiB）、任务结束时是否唤醒空闲的 chat（true） |
+| `tasks.max_running`、`tasks.max_duration`、`tasks.max_output_bytes`、`tasks.wake_on_exit` | 后台任务：每个会话同时在跑的数量（4）、单次最长运行时间（`2h`）、输出文件上限（64 MiB）、任务结束时是否唤醒空闲的 chat（true；运行中的任务发来通知时同样唤醒，见监听任务） |
 | `tools.approval` | 仅 chat：`ask`（默认）执行写/shell 工具前询问，`auto` 不询问 |
 | `tools.max_output_bytes`、`tools.max_spill_bytes` | 内联阈值：单次工具结果完整写入会话的上限（默认 8000，超出时原文存 `$SUAG_HOME/sessions/<id>/outputs/`，会话只留 ref 与头尾片段）；单次工具原始输出上限（默认 1 MiB） |
 | `tools.shell`、`tools.shell_timeout_max` | 指定 shell（默认 Windows 用 pwsh/powershell，其他系统用 sh）；单条命令最长秒数（600） |
@@ -77,7 +77,7 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 | `tools.deferred` | MCP 工具 schema 是否延迟加载：`auto`（默认）、`always`、`never` |
 | `mcp.servers`、`mcp.call_timeout_sec` | 默认 MCP 服务；单次 MCP 调用超时（120） |
 | `skills.list_max`、`skills.always_load` | 带说明列出的 skills 数量（15；超过后只列工作区 skills，其余只列名字）；预加载正文的 skills |
-| `hooks.*` | chat 的 hook 命令（SessionStart、UserPromptSubmit、PostToolUse、Stop 等） |
+| `hooks.*`、`hooks.stop_background` | chat 的 hook 命令（SessionStart、UserPromptSubmit、PostToolUse、Stop 等）；`hooks.stop_background` 让 Stop hook 作为后台任务运行，不再在提示符处等待 |
 | `memory.write` | `auto`（默认）允许 `memory` 工具写入；`off` 时只读 |
 | `memory.write_tainted` | 读过外部内容的会话写记忆时的处理：`ask`（默认）、`deny`、`allow` |
 | `memory.user.backend`、`memory.project.backend` | `files`、`gofer`（仅项目）或 `exec`。不设时：用户记忆用 files，项目记忆自动选择（见[记忆](#记忆)） |
@@ -113,7 +113,9 @@ Suag 只读取 `$SUAG_HOME/config.yaml` 和 `$SUAG_HOME/.env`（默认 `~/.suag`
 - **默认只读**：写工具只在 `run --allow-write`、chat 设置 `tools.allow_write: true`、或 ACP 会话处于 `default` 模式时才有；`--read-only` 永远优先。模型调用了未开启的工具时，会被告知开启方法，并计入拒绝次数。
 - **chat 先询问**：`tools.approval: ask` 时，每次写文件或执行命令前都会询问，并显示完整命令、路径或改动前后的文本。回答 `y` 允许一次，`a` 在本进程内对该工具始终允许，其他任何回答都是拒绝。一轮里被拒 3 次就结束这一轮。
 - **危险删除**：递归删除的 `shell_exec` 命令（`rm -r`、`Remove-Item -Recurse`、`rd /s`，以及 `sh -c`、`cmd /c`、`pwsh -Command` 里的同类命令）在审批前就会被拦下：目标是 `/`、`~` 或 `$HOME`、盘符根、工作区或其上级目录，或路径以变量开头、变量为空时会落到根目录（`"$X/"`、`"$dir\*"`）时；对这些目录用通配符（`rm ~/*`）时没有 `-r` 也算。chat 每次都询问，`tools.approval: auto` 或之前回答过的 `a` 也不例外，只有手动输入 `yes` 才执行；`run` 和 ACP 直接拒绝，并提示模型改用 `file_remove`。trace 里记下原因（`danger=…`）。这能挡住常见的误操作，挡不住刻意构造的命令：它不是安全边界。
-- **后台任务**：`shell_exec` 传 `background: true`（`run`、chat 与 ACP 的写模式）后，长时间构建、完整测试、服务或监听进程可以在模型继续工作的同时运行。输出逐行脱敏写入会话的 outputs（`recall` 也能读它的 ref）。任务在模型看到之前就结束时，会留下一条提示，在下一次模型请求前加入（退出码、耗时、大小、末尾几行）；正等待输入的 chat 会被它唤醒并开始一轮（`tasks.wake_on_exit`，默认 true）。`run` 在回答后仍有任务在跑时提醒模型一次，退出时终止它们并在 stderr 中列出名字。ACP 下任务属于 `suag acp` 进程：跨 prompt 继续运行，结束提示进入该会话的下一个 prompt；`session/cancel` 不影响它们，连接关闭时终止。上限：`tasks.max_running`（每会话 4）、`tasks.max_duration`（2h）、`tasks.max_output_bytes`（64 MiB）。trace 里每个任务记一条 `task` 事件，`--analyze` 会统计。设计见 docs/design/2026-10-13-background-tasks-design.md。
+- **后台任务**：`shell_exec` 传 `background: true`（`run`、chat 与 ACP 的写模式）后，长时间构建、完整测试、服务或监听进程可以在模型继续工作的同时运行。输出逐行脱敏写入会话的 outputs（`recall` 也能读它的 ref）。任务在模型看到之前就结束时，会留下一条提示，在下一次模型请求前加入（退出码、耗时、大小、末尾几行）；正等待输入的 chat 会被它唤醒并开始一轮（`tasks.wake_on_exit`，默认 true，运行中的任务发来通知时同样唤醒）。`run` 在回答后仍有任务在跑时提醒模型一次，退出时终止它们并在 stderr 中列出名字。ACP 下任务属于 `suag acp` 进程：跨 prompt 继续运行，结束提示进入该会话的下一个 prompt；`session/cancel` 不影响它们，连接关闭时终止。上限：`tasks.max_running`（每会话 4）、`tasks.max_duration`（2h）、`tasks.max_output_bytes`（64 MiB）。trace 里每个任务记一条 `task` 事件（带种类，watch 还带运行与变化次数），`--analyze` 按种类统计，包括 watch 任务数与后台 Stop hook 次数。设计见 docs/design/2026-10-13-background-tasks-design.md。
+- **监听任务**：`shell_exec` 传 `background: true` 并带 `every`（秒，至少 10）和/或 `watch_paths`（相对工作区的 glob，`**` 跨目录，不含 `/` 的模式匹配任意深度的同名文件）时命令变成监听：启动时先跑一次，之后每个周期到点、以及被监听文件变化（每 2 秒轮询，变化停止后的下一次轮询才触发）时再跑。运行之间不会重叠，每次运行受调用的 `timeout` 限制（运行自身写入被监听的文件不算变化）。任务的输出文件里每轮以 `=== run N (触发原因) HH:MM:SS ===` 开头、`=== exit X ===` 结尾。只有退出码或输出（忽略耗时与时间戳）与上一次不同才通知模型，基线运行只在失败时通知，所以模型可以改代码、再从下一轮通知得知测试是否转绿。`task list` 显示运行次数与最近一次退出码，`task kill` 停止监听。
+- **后台 Stop hook**：配置 `hooks.stop_background: true`（仅 chat）后，Stop hook 作为 `hook` 类任务运行，不再在提示符处等待：用户输入、投递、任务唤醒都不会中断它。hook 返回 block 加 reason 时产生通知 `Stop hook asks to continue: <reason>`：空闲的 chat 被唤醒并开始注入回合，回合进行中则在下一次模型请求前带上。新的 Stop 到来时终止正在跑的那个。设了 `hooks.stop_wait_sec` 时 hook 超时为它加 2 秒，否则由 `tasks.max_duration` 限制；没有空闲任务槽位时退回原来的等待。
 - **并发读取**：同一次回复里有多个 `file_read`、`file_list`、`file_grep`、`file_find` 调用时并发执行（`tools.parallel_reads`，默认开）；每个调用仍按顺序经过审批、污染追踪与 trace 记录，只有读取本身重叠。
 - **大输出**：工具结果超过 `tools.max_output_bytes` 时，脱敏后的原文存到 `$SUAG_HOME/sessions/<id>/outputs/`，上下文只留头尾（各 2000 字节）和 ref（形如 `out:<session>:<hex>`）；用 `recall` 读取，用 `session_search` 检索。在此之前，shell 结果会先整理（`tools.minimize_output`，默认开）：去掉颜色码与进度重绘，折叠连续相同的行，测试与构建输出按输出规则裁剪——全部通过时只留各包结果和一行汇总，有失败时只留失败用例及其信息与日志；原文保存为 ref，结果中注明。内置规则覆盖 `go test`、`cargo test`、jest/vitest/mocha 与 `npm|pnpm|yarn|bun test`、pytest、Maven、Gradle（格式见 [output_rules.yaml](pkg/agentcore/tools/native/output_rules.yaml)）；`$SUAG_HOME/output-rules.yaml` 与其后的 `<workspace>/.suag/output-rules.yaml` 可按名字替换规则、新增规则，或用 `enabled: false` 关掉某条。命令本身用管道过滤了输出（`| grep`、`| Select-String`、`| tail` 等）时不套用这些规则，保留它筛出的内容。`file_read` 自己分页（每个文件一页最多 `tools.read_page_bytes`，默认 32 KiB；`paths` 一次最多四页），不会被外置。
 - **边界**：文件工具经 `os.OpenRoot` 访问，不会顺着 symlink 跑出工作区；`shell_exec` 超时会终止整个进程树；`web_fetch` 检查实际连接的 IP，跳转也一样受限；所有工具结果都有上限。
