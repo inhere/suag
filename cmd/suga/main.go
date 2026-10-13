@@ -1,4 +1,4 @@
-// Command suag runs the personal agent through CLI or ACP stdio.
+// Command suga runs the personal agent through CLI or ACP stdio.
 package main
 
 import (
@@ -9,9 +9,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/inhere/suag/internal/cli"
-	appconfig "github.com/inhere/suag/internal/config"
-	"github.com/inhere/suag/internal/wiring"
+	"github.com/inhere/suga/internal/cli"
+	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/wiring"
 )
 
 var (
@@ -59,5 +59,5 @@ func formatVersion(version, commit string) string {
 	if commit == "" {
 		commit = "dev"
 	}
-	return "suag " + version + " (" + commit + ")"
+	return "suga " + version + " (" + commit + ")"
 }

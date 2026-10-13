@@ -37,7 +37,7 @@ jobs:
         run: |
           make build-all
           ls -alh ./dist
-          ./dist/suag-linux-amd64 version
+          ./dist/suga-linux-amd64 version
 
       - name: Generate changelog
         run: |

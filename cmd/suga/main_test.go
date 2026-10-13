@@ -6,12 +6,12 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suag/internal/personal"
+	"github.com/inhere/suga/internal/personal"
 )
 
 func TestFormatVersionIncludesAvailableBuildMetadata(t *testing.T) {
-	assert.Eq(t, "suag dev (dev)", formatVersion("dev", ""))
-	assert.Eq(t, "suag 1.2.3 (abc123)", formatVersion("1.2.3", "abc123"))
+	assert.Eq(t, "suga dev (dev)", formatVersion("dev", ""))
+	assert.Eq(t, "suga 1.2.3 (abc123)", formatVersion("1.2.3", "abc123"))
 }
 
 func TestExitReportInterrupted(t *testing.T) {

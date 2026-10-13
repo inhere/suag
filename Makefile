@@ -1,7 +1,7 @@
-## suag — Makefile
+## suga — Makefile
 
-APP     := suag
-MAIN_DIR := ./cmd/suag
+APP     := suga
+MAIN_DIR := ./cmd/suga
 GOEXE = $(shell go env GOEXE)
 GOPATH = $(shell go env GOPATH)
 BINARY  := $(APP)$(GOEXE)
@@ -130,17 +130,17 @@ release: build-all ## Create release archives for all platforms TODO 还未启�
 ## smoke-chat: build to tmp/smoke and run the PTY end-to-end chat smoke test (Linux/macOS)
 smoke-chat:
 	@mkdir -p tmp/smoke
-	go build -o tmp/smoke/suag ./cmd/suag
-	python3 -I scripts/ptysmoke/chat_approval.py --bin tmp/smoke/suag --work tmp/smoke
-	python3 -I scripts/ptysmoke/chat_edit.py --bin tmp/smoke/suag --work tmp/smoke-edit
-	python3 -I scripts/ptysmoke/chat_memory.py --bin tmp/smoke/suag --work tmp/smoke-memory
-	python3 -I scripts/ptysmoke/chat_idle.py --bin tmp/smoke/suag --work tmp/smoke-idle
-	python3 -I scripts/ptysmoke/chat_observe.py --bin tmp/smoke/suag --work tmp/smoke-observe
-	python3 -I scripts/ptysmoke/chat_retry.py --bin tmp/smoke/suag --work tmp/smoke-retry
-	python3 -I scripts/ptysmoke/chat_danger.py --bin tmp/smoke/suag --work tmp/smoke-danger
-	python3 -I scripts/ptysmoke/chat_tasks.py --bin tmp/smoke/suag --work tmp/smoke-tasks
-	python3 -I scripts/ptysmoke/chat_watch.py --bin tmp/smoke/suag --work tmp/smoke-watch
-	python3 -I scripts/ptysmoke/chat_agent.py --bin tmp/smoke/suag --work tmp/smoke-agent
+	go build -o tmp/smoke/suga ./cmd/suga
+	python3 -I scripts/ptysmoke/chat_approval.py --bin tmp/smoke/suga --work tmp/smoke
+	python3 -I scripts/ptysmoke/chat_edit.py --bin tmp/smoke/suga --work tmp/smoke-edit
+	python3 -I scripts/ptysmoke/chat_memory.py --bin tmp/smoke/suga --work tmp/smoke-memory
+	python3 -I scripts/ptysmoke/chat_idle.py --bin tmp/smoke/suga --work tmp/smoke-idle
+	python3 -I scripts/ptysmoke/chat_observe.py --bin tmp/smoke/suga --work tmp/smoke-observe
+	python3 -I scripts/ptysmoke/chat_retry.py --bin tmp/smoke/suga --work tmp/smoke-retry
+	python3 -I scripts/ptysmoke/chat_danger.py --bin tmp/smoke/suga --work tmp/smoke-danger
+	python3 -I scripts/ptysmoke/chat_tasks.py --bin tmp/smoke/suga --work tmp/smoke-tasks
+	python3 -I scripts/ptysmoke/chat_watch.py --bin tmp/smoke/suga --work tmp/smoke-watch
+	python3 -I scripts/ptysmoke/chat_agent.py --bin tmp/smoke/suga --work tmp/smoke-agent
 
 ## clean: remove build artifacts
 clean:
@@ -156,6 +156,6 @@ clean-dist:
 
 ## help: show this help
 help:
-	@echo "suag Build System"
+	@echo "suga Build System"
 	@echo ""
 	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## /  /'

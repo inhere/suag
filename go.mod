@@ -1,4 +1,4 @@
-module github.com/inhere/suag
+module github.com/inhere/suga
 
 go 1.26.0
 
