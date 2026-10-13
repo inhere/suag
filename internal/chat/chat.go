@@ -44,6 +44,10 @@ type Options struct {
 	// chat.markdown, on by default). Only a colored terminal uses it: a pipe,
 	// a redirected output or NO_COLOR keeps the raw text.
 	Markdown bool
+	// Spinner shows the "思考中…" waiting line while the model is asked for its
+	// next message (config chat.spinner, on by default). Like Markdown it needs
+	// a colored terminal: a pipe, a redirected output or NO_COLOR keeps it off.
+	Spinner bool
 	// Thinking (the effective thinking level, "" = provider default) and
 	// ContextWindow (tokens, 0 = unknown) are shown in the banner.
 	Thinking      string
@@ -168,8 +172,11 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		Color: colorEnabledFor(stdout), ErrColor: colorEnabledFor(stderr),
 		Provider: runner.ProviderName(), Model: runner.Model(),
 		Thinking: opts.Thinking, ContextWindow: opts.ContextWindow,
-		WriteTools: opts.WriteTools, Markdown: opts.Markdown,
+		WriteTools: opts.WriteTools, Markdown: opts.Markdown, Spinner: opts.Spinner,
 	})
+	// The waiting line must never outlive the chat: a frame goroutine left
+	// behind would keep writing over the exit summary.
+	defer render.stopThinking()
 	// Background idle consolidation; closed before the input source, so its
 	// last status line still goes through it.
 	idle := newIdleConsolidation(runner, sessionID, opts.IdleAfter, opts.IdleMinRatio, render, opts.scheduleOptions,
@@ -342,7 +349,12 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 				postTool := baseEvent("PostToolUse")
 				postTool.ToolName = toolName
 				postTool.ToolOutput = sugahooks.TruncateOutput(redact.Secrets(event.Text), toolHookLimit)
+				// The notice goes to stderr while the waiting line sits on stdout: take
+				// that line down (the tool result above started a new one) so the two
+				// never end up on the same screen line, and put it back afterwards.
+				render.stopThinking()
 				showHookNotice(stderr, hooks.Call(eventCtx, postTool))
+				render.startThinking()
 				return nil
 			},
 		})

@@ -110,8 +110,13 @@ providers:
 #                       # model's text exactly. Only a terminal with colors
 #                       # renders it (NO_COLOR turns it off); run, stream-json and
 #                       # ACP always keep the raw text.
+#   spinner: true       # show "思考中… 3s" while the model is asked for its next
+#                       # message (every turn start and after every tool result),
+#                       # erased as soon as it answers; false turns the line off.
+#                       # Needs a terminal with colors, like markdown.
 # chat:
 #   markdown: true
+#   spinner: true
 
 # Project rules: one file per directory level, from the Git root (or cwd) down
 # to cwd, plus $SUGA_HOME/AGENTS.md for the user level. Only a file name (no

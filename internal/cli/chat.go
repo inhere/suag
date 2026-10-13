@@ -29,6 +29,7 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 		Asker: runtime.Asker, WriteTools: runtime.WriteTools,
 		Thinking: runtime.Thinking, ContextWindow: runtime.ContextWindow,
 		Markdown:  appconfig.ChatMarkdownEnabled(),
+		Spinner:   appconfig.ChatSpinnerEnabled(),
 		IdleAfter: idle.After, IdleMinRatio: idle.MinRatio,
 		Tasks: taskManager, TaskWake: taskWake, StopBackground: sugahooks.StopBackground(),
 	}, stdin, stdout, stderr, hooks)

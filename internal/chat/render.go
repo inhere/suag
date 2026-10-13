@@ -44,6 +44,14 @@ type rendererOptions struct {
 	// Markdown renders the model's text as terminal markdown (config
 	// chat.markdown); it only applies to a colored terminal.
 	Markdown bool
+	// Spinner shows the "思考中…" waiting line while the model is asked for its
+	// next message (config chat.spinner, on by default). Like Markdown it needs
+	// a colored terminal: a pipe, a redirected output or NO_COLOR keeps it off.
+	Spinner bool
+	// spinnerNow and spinnerTicks drive that waiting line in tests (nil: the
+	// real clock and a time.Ticker).
+	spinnerNow   func() time.Time
+	spinnerTicks func(time.Duration) (<-chan time.Time, func())
 }
 
 // Renderer owns all terminal output of one chat: prompt, streamed model text,
@@ -51,16 +59,31 @@ type rendererOptions struct {
 type Renderer struct {
 	opts rendererOptions
 	live *output.LiveText
+	// spin is the waiting line between a model request and its first output.
+	spin *thinkingSpinner
 	// memory collects this turn's successful memory writes, shown with the
 	// status line ("已记住：...").
 	memory []string
 }
 
+// newRenderer returns a renderer that shows no waiting line yet: the first turn
+// starts it (chat prints the banner before that).
 func newRenderer(opts rendererOptions) *Renderer {
 	r := &Renderer{opts: opts}
-	r.BeginTurn()
+	r.spin = newThinkingSpinner(spinnerConfig{
+		enabled: opts.Spinner && opts.Color,
+		out:     opts.Out,
+		paint:   r.paintDim,
+		speed:   spinnerSpeed,
+		now:     opts.spinnerNow,
+		ticks:   opts.spinnerTicks,
+	})
+	r.resetLive()
 	return r
 }
+
+// paintDim dims a line (gray, like the tool lines) on a colored terminal.
+func (r *Renderer) paintDim(s string) string { return r.paint(color.Gray, s) }
 
 // colorEnabledFor reports whether w is a terminal and NO_COLOR is not set.
 func colorEnabledFor(w io.Writer) bool {
@@ -91,8 +114,16 @@ func (r *Renderer) Prompt(waiting bool) string {
 	return r.paint(color.Cyan, promptText)
 }
 
-// BeginTurn resets the per-turn text streaming state.
+// BeginTurn resets the per-turn text streaming state and starts the waiting
+// line: the model was just asked for a new message.
 func (r *Renderer) BeginTurn() {
+	r.stopThinking() // nothing of the previous turn may linger on the line
+	r.resetLive()
+	r.startThinking()
+}
+
+// resetLive resets the per-turn text streaming state.
+func (r *Renderer) resetLive() {
 	r.live = output.NewPrefixedLiveText(r.opts.Out, r.answerPrefix())
 	// Markdown needs a terminal: Color is exactly "a terminal without NO_COLOR",
 	// so a pipe, a redirected output or NO_COLOR keeps the raw text.
@@ -102,12 +133,26 @@ func (r *Renderer) BeginTurn() {
 	r.memory = nil
 }
 
+// startThinking shows the waiting line: the model is working on its next
+// message. A no-op while the line is already shown or the spinner is off.
+func (r *Renderer) startThinking() { r.spin.Start() }
+
+// stopThinking erases that line. Every write of this renderer goes through it
+// first, so a frame can never mix into a tool line, an answer or a prompt, and
+// the caller prints on a line of its own.
+func (r *Renderer) stopThinking() { r.spin.Stop() }
+
 // answerPrefix marks the start of each model message so it stands apart from
 // tool lines and the user's input.
 func (r *Renderer) answerPrefix() string { return r.paint(color.Green, "▣") + " " }
 
 // Handle renders one runner event: text deltas, tool calls/results and plans.
+// Events the chat does not render (run_started, usage, ...) leave the waiting
+// line alone; the model may still be answering through them.
 func (r *Renderer) Handle(event personal.Event) {
+	if stopsWaiting(event) {
+		r.stopThinking()
+	}
 	if r.live.Handle(event) {
 		return
 	}
@@ -128,6 +173,7 @@ func (r *Renderer) Handle(event personal.Event) {
 			fmt.Fprintln(r.opts.Out, r.paint(color.Gray, strings.TrimRight("  ⎿ ok: "+summary, " ")))
 			r.noteMemory(event)
 		}
+		r.startThinking() // the model reads the result and thinks on
 	case "agent_progress":
 		// A sub-agent's tool call, under the agent call that started it.
 		r.live.Finish()
@@ -136,14 +182,31 @@ func (r *Renderer) Handle(event personal.Event) {
 			line += " " + args
 		}
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, line))
+		r.startThinking() // the model waits for the sub-agent
 	case "plan":
 		if event.Plan != nil {
 			r.live.Finish()
 			r.renderPlan(event)
+			r.startThinking()
 		}
 	case string(agentcore.StreamEventRetry):
 		fmt.Fprintln(r.opts.Out, r.paint(color.Yellow, output.RetryNotice(event)))
+		r.startThinking() // the request is retried: still waiting for the model
 	}
+}
+
+// stopsWaiting reports whether event ends the "the model is answering" state:
+// its text, a tool call it asked for, a plan it published, or the next request
+// after a failed one.
+func stopsWaiting(event personal.Event) bool {
+	switch event.Kind {
+	case string(agentcore.StreamEventTextDelta), string(agentcore.StreamEventMessageStop),
+		string(agentcore.StreamEventRetry), "tool_call", "tool_result", "agent_progress":
+		return true
+	case "plan":
+		return event.Plan != nil // an empty plan prints nothing
+	}
+	return false
 }
 
 func (r *Renderer) renderPlan(event personal.Event) {
@@ -165,12 +228,16 @@ func (r *Renderer) renderPlan(event personal.Event) {
 }
 
 // Finish closes the turn's streamed text and reports whether any was shown.
-func (r *Renderer) Finish() bool { return r.live.Finish() }
+func (r *Renderer) Finish() bool {
+	r.stopThinking()
+	return r.live.Finish()
+}
 
 // Answer prints a final answer that was not streamed. With markdown on it goes
 // through the same renderer as the streamed text (a multi-line answer would
 // otherwise show its raw markers).
 func (r *Renderer) Answer(text string) {
+	r.stopThinking()
 	md := r.live.Markdown()
 	if md == nil {
 		fmt.Fprintln(r.opts.Out, r.answerPrefix()+text)
@@ -184,6 +251,7 @@ func (r *Renderer) Answer(text string) {
 // from elsewhere through `suga send` or a Stop hook) in its own color, so it
 // stands out from the model's answer. Each line is painted separately.
 func (r *Renderer) External(text string) {
+	r.stopThinking()
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
 		lines[i] = r.paint(color.Magenta, line)
@@ -195,6 +263,7 @@ func (r *Renderer) External(text string) {
 // indented item per detail (continuation lines indented further). Nothing is
 // truncated: the person must see exactly what will run.
 func (r *Renderer) ApprovalDetails(q tools.Question) string {
+	r.stopThinking()
 	var b strings.Builder
 	for _, detail := range q.Details {
 		for i, line := range strings.Split(detail, "\n") {
@@ -211,17 +280,25 @@ func (r *Renderer) ApprovalDetails(q tools.Question) string {
 
 // ApprovalPrompt is the line the approval answer is typed on.
 func (r *Renderer) ApprovalPrompt(q tools.Question) string {
+	r.stopThinking()
 	return r.paint(color.Yellow, q.Prompt)
 }
 
 // Hint prints a gray one-line hint on the chat output.
-func (r *Renderer) Hint(text string) { fmt.Fprintln(r.opts.Out, r.paint(color.Gray, text)) }
+func (r *Renderer) Hint(text string) {
+	r.stopThinking()
+	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, text))
+}
 
 // Notice prints a plain informational line on the chat output.
-func (r *Renderer) Notice(text string) { fmt.Fprintln(r.opts.Out, text) }
+func (r *Renderer) Notice(text string) {
+	r.stopThinking()
+	fmt.Fprintln(r.opts.Out, text)
+}
 
 // Error prints a failed turn on the error stream.
 func (r *Renderer) Error(err error) {
+	r.stopThinking()
 	text := "Error: " + err.Error()
 	if r.opts.ErrColor {
 		text = color.Red.Text(text)
@@ -253,6 +330,7 @@ func (r *Renderer) noteMemory(event personal.Event) {
 // Status prints the grey end-of-turn line: model, token usage and elapsed
 // time, preceded by one line per memory write of the turn.
 func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration) {
+	r.stopThinking()
 	for _, line := range r.memory {
 		fmt.Fprintln(r.opts.Out, r.paint(color.Green, line))
 	}
@@ -269,6 +347,7 @@ func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration) {
 
 // Banner prints the chat header: the model in use and the commands.
 func (r *Renderer) Banner() {
+	r.stopThinking()
 	head := "Suga chat"
 	if label := modelLabel(r.opts.Provider, r.opts.Model); label != "" {
 		head += " · " + label

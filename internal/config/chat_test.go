@@ -12,17 +12,7 @@ import (
 // TestChatMarkdownEnabled: chat.markdown is on unless it is turned off; the key
 // takes a bool or a string.
 func TestChatMarkdownEnabled(t *testing.T) {
-	load := func(t *testing.T, body string) {
-		t.Helper()
-		gkconfig.Reset()
-		t.Cleanup(gkconfig.Reset)
-		root := t.TempDir()
-		t.Setenv("SUGA_HOME", root)
-		t.Setenv("SUGA_CONFIG", "")
-		t.Chdir(t.TempDir())
-		assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte(body), 0600))
-		assert.NoErr(t, Load())
-	}
+	load := chatConfigLoader(t)
 	t.Run("default on", func(t *testing.T) {
 		load(t, "model: openai/m\n")
 		assert.True(t, ChatMarkdownEnabled())
@@ -43,4 +33,47 @@ func TestChatMarkdownEnabled(t *testing.T) {
 		load(t, "chat:\n  other: 1\n")
 		assert.True(t, ChatMarkdownEnabled())
 	})
+}
+
+// TestChatSpinnerEnabled: chat.spinner takes the same values as chat.markdown
+// and is on by default; each key decides on its own.
+func TestChatSpinnerEnabled(t *testing.T) {
+	load := chatConfigLoader(t)
+	t.Run("default on", func(t *testing.T) {
+		load(t, "model: openai/m\n")
+		assert.True(t, ChatSpinnerEnabled())
+	})
+	t.Run("bool off", func(t *testing.T) {
+		load(t, "chat:\n  spinner: false\n")
+		assert.False(t, ChatSpinnerEnabled())
+	})
+	t.Run("string off", func(t *testing.T) {
+		load(t, "chat:\n  spinner: \"off\"\n")
+		assert.False(t, ChatSpinnerEnabled())
+	})
+	t.Run("bool on", func(t *testing.T) {
+		load(t, "chat:\n  spinner: true\n")
+		assert.True(t, ChatSpinnerEnabled())
+	})
+	t.Run("markdown does not decide it", func(t *testing.T) {
+		load(t, "chat:\n  markdown: false\n")
+		assert.True(t, ChatSpinnerEnabled())
+	})
+}
+
+// chatConfigLoader returns a helper writing body to a fresh SUGA_HOME's
+// config.yaml and loading it.
+func chatConfigLoader(t *testing.T) func(t *testing.T, body string) {
+	t.Helper()
+	return func(t *testing.T, body string) {
+		t.Helper()
+		gkconfig.Reset()
+		t.Cleanup(gkconfig.Reset)
+		root := t.TempDir()
+		t.Setenv("SUGA_HOME", root)
+		t.Setenv("SUGA_CONFIG", "")
+		t.Chdir(t.TempDir())
+		assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte(body), 0600))
+		assert.NoErr(t, Load())
+	}
 }
