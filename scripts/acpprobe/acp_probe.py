@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""Drive `suag acp` over stdio with a real model: a minimal ACP client.
+
+It starts the suag binary as an ACP server in an isolated SUAG_HOME (the
+sessions and traces land there, never in the real ~/.suag), opens one session
+in --cwd and sends each --prompt in turn, allowing every permission request.
+--wait N sleeps N seconds before the next prompt (background tasks keep
+running). After the last prompt it closes the connection, then prints the
+session's task events from `suag trace --json`.
+
+The real provider config: --config-from DIR uses DIR/config.yaml through
+SUAG_CONFIG and reads DIR/.env into the server's environment (in memory; the
+file is never copied).
+
+  python3 -I scripts/acpprobe/acp_probe.py --bin tmp/acp/suag --cwd tmp/acp/ws \\
+      --config-from ~/.suag --prompt "..." --wait 15 --prompt "..."
+
+Prints a line per prompt (stop reason, answer text, tool calls) and exits 0
+when every prompt ended with end_turn.
+"""
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import threading
+import time
+
+
+def read_dotenv(path):
+    """KEY=VALUE lines of a .env file (no export, no interpolation)."""
+    env = {}
+    if not os.path.exists(path):
+        return env
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            env[key.strip()] = value.strip().strip('"').strip("'")
+    return env
+
+
+class Client:
+    """JSON-RPC over the server's stdin/stdout, one JSON object per line."""
+
+    def __init__(self, proc):
+        self.proc = proc
+        self.next_id = 0
+        self.pending = {}
+        self.lock = threading.Lock()
+        self.updates = []  # session/update params, in order
+        self.reader = threading.Thread(target=self.read, daemon=True)
+        self.reader.start()
+
+    def send(self, msg):
+        data = json.dumps(msg, ensure_ascii=False) + "\n"
+        self.proc.stdin.write(data.encode("utf-8"))
+        self.proc.stdin.flush()
+
+    def call(self, method, params, timeout=600):
+        with self.lock:
+            self.next_id += 1
+            rid = self.next_id
+            box = {"done": threading.Event()}
+            self.pending[rid] = box
+        self.send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+        if not box["done"].wait(timeout):
+            raise TimeoutError(f"{method} timed out after {timeout}s")
+        if "error" in box:
+            raise RuntimeError(f"{method}: {box['error']}")
+        return box["result"]
+
+    def read(self):
+        for raw in self.proc.stdout:
+            try:
+                msg = json.loads(raw)
+            except ValueError:
+                continue
+            if "method" in msg and "id" in msg:  # a request from the agent
+                self.answer(msg)
+            elif "method" in msg:  # a notification
+                if msg["method"] == "session/update":
+                    self.updates.append(msg["params"])
+            else:
+                with self.lock:
+                    box = self.pending.pop(msg.get("id"), None)
+                if box is not None:
+                    if "error" in msg:
+                        box["error"] = msg["error"]
+                    box["result"] = msg.get("result")
+                    box["done"].set()
+
+    def answer(self, msg):
+        if msg["method"] == "session/request_permission":
+            options = msg["params"].get("options", [])
+            pick = next((o for o in options if o.get("kind") == "allow_once"), None) or \
+                next((o for o in options if str(o.get("kind", "")).startswith("allow")), options[0] if options else {})
+            tool = (msg["params"].get("toolCall") or {}).get("title", "")
+            print(f"  permission: {tool} -> {pick.get('optionId')}", flush=True)
+            self.send({"jsonrpc": "2.0", "id": msg["id"],
+                       "result": {"outcome": {"outcome": "selected", "optionId": pick.get("optionId")}}})
+        else:
+            self.send({"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32601, "message": "not supported"}})
+
+
+def summarize(updates):
+    """The answer text and the tool calls of a prompt's updates."""
+    text, tools = [], []
+    for p in updates:
+        u = p.get("update", {})
+        kind = u.get("sessionUpdate")
+        if kind == "agent_message_chunk":
+            text.append((u.get("content") or {}).get("text", ""))
+        elif kind == "tool_call":
+            tools.append(u.get("title") or u.get("toolCallId", ""))
+    return "".join(text).strip(), tools
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--bin", required=True, help="suag binary")
+    p.add_argument("--cwd", required=True, help="session workspace (created if missing)")
+    p.add_argument("--home", default="tmp/acp/home", help="isolated SUAG_HOME (reset at start)")
+    p.add_argument("--config-from", required=True, help="dir with the real config.yaml and .env")
+    p.add_argument("--prompt", action="append", default=[], help="a prompt (repeatable, sent in order)")
+    p.add_argument("--wait", action="append", type=float, default=[],
+                   help="seconds to sleep after the prompt of the same position (repeatable)")
+    args = p.parse_args()
+
+    binary = os.path.abspath(args.bin)
+    cwd = os.path.abspath(args.cwd)
+    home = os.path.abspath(args.home)
+    src = os.path.abspath(os.path.expanduser(args.config_from))
+    shutil.rmtree(home, ignore_errors=True)
+    os.makedirs(home, exist_ok=True)
+    os.makedirs(cwd, exist_ok=True)
+    env = dict(os.environ)
+    for key in ("SUAG_MODEL", "SUAG_CONFIG", "SUAG_HOME"):
+        env.pop(key, None)
+    env.update(read_dotenv(os.path.join(src, ".env")))
+    env.update(SUAG_HOME=home, SUAG_CONFIG=os.path.join(src, "config.yaml"), SUAG_HOOKS="off")
+
+    proc = subprocess.Popen([binary, "acp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=open(os.path.join(home, "acp.stderr.log"), "wb"), env=env, cwd=cwd)
+    client = Client(proc)
+    ok = True
+    try:
+        client.call("initialize", {"protocolVersion": 1, "clientCapabilities": {}}, timeout=60)
+        sid = client.call("session/new", {"cwd": cwd, "mcpServers": []}, timeout=60)["sessionId"]
+        print(f"session {sid}", flush=True)
+        for i, text in enumerate(args.prompt):
+            start, mark = time.time(), len(client.updates)
+            res = client.call("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": text}]})
+            answer, tools = summarize(client.updates[mark:])
+            stop = res.get("stopReason")
+            ok = ok and stop == "end_turn"
+            print(f"prompt {i + 1} ({time.time() - start:.1f}s) stop={stop} tools={tools}\n  answer: {answer[:600]}", flush=True)
+            if i < len(args.wait) and args.wait[i] > 0:
+                time.sleep(args.wait[i])
+    finally:
+        proc.stdin.close()  # the connection closes: running tasks are killed
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            ok = False
+            print("suag acp did not exit after the connection closed")
+    trace = subprocess.run([binary, "trace", sid, "--json"], capture_output=True, text=True, env=env, timeout=60)
+    for line in trace.stdout.splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("kind") == "task" or (e.get("kind") == "tool" and e.get("name") in ("shell_exec", "task")):
+            a = e.get("attrs") or {}
+            print(f"  trace {e.get('kind')} {e.get('name')} status={e.get('status')} "
+                  f"task_id={a.get('task_id', '')} arg={str(a.get('arg', ''))[:80]}")
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()
