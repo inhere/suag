@@ -61,6 +61,7 @@ def main():
         f.write("line one\nSMOKE_TARGET old\nline three\n")
     write_home(home, args.port)
     env = dict(os.environ, SUGA_HOME=home, HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
+    env.pop("SUGA_CONFIG", None)  # the child reads its own SUGA_HOME config
 
     here = os.path.dirname(os.path.abspath(__file__))
     fake = subprocess.Popen([sys.executable, "-I", os.path.join(here, "fakellm.py"),

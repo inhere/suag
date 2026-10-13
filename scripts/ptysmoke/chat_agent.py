@@ -135,6 +135,7 @@ def main():
             port = args.port + len(homes)
             write_home(home, port, extra=extra)
             env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
+            env.pop("SUGA_CONFIG", None)  # the child reads its own SUGA_HOME config
             fake = start_fake(port, *fake_args)
             s = PtySession([binary, "chat"], env=env, cwd=ws)
             run(s, env)

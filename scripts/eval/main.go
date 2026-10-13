@@ -330,8 +330,11 @@ func runCmd(ctx context.Context, bin string, args []string, dir string, env []st
 	return so.Bytes(), nil
 }
 
+// isolatedEnv builds the environment of a task's child process: the caller's
+// environment minus the variables that would point the agent at a real home or
+// config instead of the task's temp ones.
 func isolatedEnv(home string) []string {
-	drop := map[string]bool{"SUGA_HOME": true, "SUGA_MODEL": true, "HOME": true, "USERPROFILE": true}
+	drop := map[string]bool{"SUGA_HOME": true, "SUGA_CONFIG": true, "SUGA_MODEL": true, "HOME": true, "USERPROFILE": true}
 	var env []string
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")

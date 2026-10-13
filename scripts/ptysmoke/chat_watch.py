@@ -158,6 +158,7 @@ def main():
         isolate_ws(ws)
         write_home(home, args.port, tools_extra="  approval: auto\n")
         env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
+        env.pop("SUGA_CONFIG", None)  # the child reads its own SUGA_HOME config
         fake = start_fake(args.port, "--mode", "tool", "--background", "--watch-paths", "a.txt",
                           "--command", "cat a.txt; if grep -q bad a.txt; then exit 3; fi")
         s = PtySession([binary, "chat"], env=env, cwd=ws)
@@ -181,6 +182,7 @@ def main():
         write_home(home, args.port + 1, extra=f"hooks:\n  command: [{json.dumps(sys.executable)}, -I, {json.dumps(hook)}]\n"
                                                f"  stop_background: {background}\n  stop_wait_sec: 10\n")
         env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="on", TERM="xterm", NO_COLOR="1")
+        env.pop("SUGA_CONFIG", None)  # the child reads its own SUGA_HOME config
         fake = start_fake(args.port + 1, "--mode", "text")
         s = PtySession([binary, "chat"], env=env, cwd=ws)
         stop_scenario(s, binary, env, home)

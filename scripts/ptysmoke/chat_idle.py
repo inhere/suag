@@ -79,6 +79,7 @@ def main():
     write_home(home, args.port, provider_extra="    models:\n      m1:\n        context_window: 16000\n",
                extra="context:\n  idle_after: 2s\n  idle_min_ratio: 0.5\n")
     env = dict(os.environ, SUGA_HOME=home, HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
+    env.pop("SUGA_CONFIG", None)  # the child reads its own SUGA_HOME config
 
     here = os.path.dirname(os.path.abspath(__file__))
     fake = subprocess.Popen([sys.executable, "-I", os.path.join(here, "fakellm.py"), "--port", str(args.port),

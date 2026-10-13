@@ -90,6 +90,7 @@ def main():
     isolate_ws(ws)
     write_home(home, args.port, tools_extra="  approval: auto\n")
     env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
+    env.pop("SUGA_CONFIG", None)  # the child reads its own SUGA_HOME config
     here = os.path.dirname(os.path.abspath(__file__))
 
     def start_fake(command):

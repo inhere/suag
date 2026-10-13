@@ -100,6 +100,7 @@ def main():
     write_home(home, args.port, extra=f"hooks:\n  command: [{json.dumps(sys.executable)}, -I, {json.dumps(hook)}]\n")
     # Hooks on (the other scenarios turn them off).
     env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="on", TERM="xterm", NO_COLOR="1")
+    env.pop("SUGA_CONFIG", None)  # the child reads its own SUGA_HOME config
 
     here = os.path.dirname(os.path.abspath(__file__))
     fake = subprocess.Popen([sys.executable, "-I", os.path.join(here, "fakellm.py"),
