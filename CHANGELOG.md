@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.18.0] - 2026-10-13
+
+子 agent：新工具 `agent` 把探索或调研任务交给只读子 agent，在独立会话里完成并只返回报告，可后台运行；用量计入父会话、子会话不出现在列表中；agentcore 支持 hook 请求收尾；修复会话 meta 被状态更新覆盖、trace 网页同毫秒消息配对错误。
+
 ### 新增
 
 - 子 agent（suag-dmv6）：新工具 `agent`，把一件独立的探索或调研任务交给只读的子 agent，在独立会话里完成，只返回报告（末尾一行注明子会话、步数、token、耗时、结束原因）。
@@ -387,7 +391,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suag/compare/v0.17.0...HEAD
+[未发布]: https://github.com/inhere/suag/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/inhere/suag/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/inhere/suag/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/inhere/suag/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/inhere/suag/compare/v0.14.0...v0.15.0
