@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Drive `suag acp` over stdio with a real model: a minimal ACP client.
+"""Drive `suga acp` over stdio with a real model: a minimal ACP client.
 
-It starts the suag binary as an ACP server in an isolated SUAG_HOME (the
-sessions and traces land there, never in the real ~/.suag), opens one session
+It starts the suga binary as an ACP server in an isolated SUGA_HOME (the
+sessions and traces land there, never in the real ~/.suga), opens one session
 in --cwd and sends each --prompt in turn, allowing every permission request.
 --wait N sleeps N seconds before the next prompt (background tasks keep
 running). After the last prompt it closes the connection, then prints the
-session's task events from `suag trace --json`.
+session's task events from `suga trace --json`.
 
 The real provider config: --config-from DIR uses DIR/config.yaml through
-SUAG_CONFIG and reads DIR/.env into the server's environment (in memory; the
+SUGA_CONFIG and reads DIR/.env into the server's environment (in memory; the
 file is never copied).
 
-  python3 -I scripts/acpprobe/acp_probe.py --bin tmp/acp/suag --cwd tmp/acp/ws \\
-      --config-from ~/.suag --prompt "..." --wait 15 --prompt "..."
+  python3 -I scripts/acpprobe/acp_probe.py --bin tmp/acp/suga --cwd tmp/acp/ws \\
+      --config-from ~/.suga --prompt "..." --wait 15 --prompt "..."
 
 Prints a line per prompt (stop reason, answer text, tool calls) and exits 0
 when every prompt ended with end_turn.
@@ -121,9 +121,9 @@ def summarize(updates):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--bin", required=True, help="suag binary")
+    p.add_argument("--bin", required=True, help="suga binary")
     p.add_argument("--cwd", required=True, help="session workspace (created if missing)")
-    p.add_argument("--home", default="tmp/acp/home", help="isolated SUAG_HOME (reset at start)")
+    p.add_argument("--home", default="tmp/acp/home", help="isolated SUGA_HOME (reset at start)")
     p.add_argument("--config-from", required=True, help="dir with the real config.yaml and .env")
     p.add_argument("--prompt", action="append", default=[], help="a prompt (repeatable, sent in order)")
     p.add_argument("--wait", action="append", type=float, default=[],
@@ -138,10 +138,10 @@ def main():
     os.makedirs(home, exist_ok=True)
     os.makedirs(cwd, exist_ok=True)
     env = dict(os.environ)
-    for key in ("SUAG_MODEL", "SUAG_CONFIG", "SUAG_HOME"):
+    for key in ("SUGA_MODEL", "SUGA_CONFIG", "SUGA_HOME"):
         env.pop(key, None)
     env.update(read_dotenv(os.path.join(src, ".env")))
-    env.update(SUAG_HOME=home, SUAG_CONFIG=os.path.join(src, "config.yaml"), SUAG_HOOKS="off")
+    env.update(SUGA_HOME=home, SUGA_CONFIG=os.path.join(src, "config.yaml"), SUGA_HOOKS="off")
 
     proc = subprocess.Popen([binary, "acp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=open(os.path.join(home, "acp.stderr.log"), "wb"), env=env, cwd=cwd)
@@ -167,7 +167,7 @@ def main():
         except subprocess.TimeoutExpired:
             proc.kill()
             ok = False
-            print("suag acp did not exit after the connection closed")
+            print("suga acp did not exit after the connection closed")
     trace = subprocess.run([binary, "trace", sid, "--json"], capture_output=True, text=True, env=env, timeout=60)
     for line in trace.stdout.splitlines():
         try:

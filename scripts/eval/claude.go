@@ -22,12 +22,12 @@ import (
 // the gateway) plus disableAllHooks, so the user's hooks, skills, agents,
 // plugins, memory and sessions stay out; --strict-mcp-config with no
 // --mcp-config loads no MCP servers. settings.json carries the gateway token:
-// it is written 0600 and removed when the run ends, like the copied suag .env.
+// it is written 0600 and removed when the run ends, like the copied suga .env.
 func runClaude(ctx context.Context, o *options, t *Task, timeout time.Duration, ws, configDir string, r *Result) {
 	if found := ancestorInstructions(ws); found != "" {
 		// Claude Code reads CLAUDE.md (and, through its built-in plugin,
 		// AGENTS.md) from the working directory up to the root, past the
-		// workspace's git root; omp and suag stop there. An eval inside
+		// workspace's git root; omp and suga stop there. An eval inside
 		// another project would hand claude that project's instructions.
 		r.Error = fmt.Sprintf("claude would read %s above the workspace; use --out outside that tree", found)
 		return

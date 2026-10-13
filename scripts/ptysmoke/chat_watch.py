@@ -15,7 +15,7 @@ after the first turn. Checks: the hook never gets an Interrupt event; the
 first Stop is killed by the second; the second's block reply wakes chat as a
 task notice and the turn it starts sends Stop with stop_hook_active.
 
-  python3 -I scripts/ptysmoke/chat_watch.py --bin tmp/smoke/suag
+  python3 -I scripts/ptysmoke/chat_watch.py --bin tmp/smoke/suga
 
 Exit status 0 when every check passes. The work dir defaults to tmp/smoke-watch.
 """
@@ -56,7 +56,7 @@ def start_fake(port, *extra):
 
 def exit_chat(s):
     m = s.mark(); time.sleep(0.3); s.send(CTRL_C); time.sleep(0.3); s.send(CTRL_C)
-    s.until(r"续接：suag chat --resume sess_", m)
+    s.until(r"续接：suga chat --resume sess_", m)
     found = re.search(r"--resume (sess_\S+)", s.text(m))
     return found.group(1) if found else ""
 
@@ -136,8 +136,8 @@ def stop_scenario(s, binary, env, home):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--bin", default="tmp/smoke/suag", help="suag binary to test")
-    p.add_argument("--work", default="tmp/smoke-watch", help="scratch dir (SUAG_HOME and workspace)")
+    p.add_argument("--bin", default="tmp/smoke/suga", help="suga binary to test")
+    p.add_argument("--work", default="tmp/smoke-watch", help="scratch dir (SUGA_HOME and workspace)")
     p.add_argument("--port", type=int, default=18801)
     p.add_argument("--keep", action="store_true", help="keep the scratch homes after the run")
     p.add_argument("--no-stop-background", action="store_true", help="reverse check: leave hooks.stop_background off")
@@ -157,7 +157,7 @@ def main():
         os.makedirs(ws, exist_ok=True)
         isolate_ws(ws)
         write_home(home, args.port, tools_extra="  approval: auto\n")
-        env = dict(os.environ, SUAG_HOME=home, SUAG_HOOKS="off", TERM="xterm", NO_COLOR="1")
+        env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
         fake = start_fake(args.port, "--mode", "tool", "--background", "--watch-paths", "a.txt",
                           "--command", "cat a.txt; if grep -q bad a.txt; then exit 3; fi")
         s = PtySession([binary, "chat"], env=env, cwd=ws)
@@ -180,7 +180,7 @@ def main():
         background = "false" if args.no_stop_background else "true"
         write_home(home, args.port + 1, extra=f"hooks:\n  command: [{json.dumps(sys.executable)}, -I, {json.dumps(hook)}]\n"
                                                f"  stop_background: {background}\n  stop_wait_sec: 10\n")
-        env = dict(os.environ, SUAG_HOME=home, SUAG_HOOKS="on", TERM="xterm", NO_COLOR="1")
+        env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="on", TERM="xterm", NO_COLOR="1")
         fake = start_fake(args.port + 1, "--mode", "text")
         s = PtySession([binary, "chat"], env=env, cwd=ws)
         stop_scenario(s, binary, env, home)

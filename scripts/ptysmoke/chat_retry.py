@@ -4,12 +4,12 @@
 
 Starts scripts/ptysmoke/fakellm.py (text mode, --fail-first 1 --break-first 1:
 an HTTP 503, then a stream that breaks after half the reply, then the whole
-reply) and `suag chat` in a PTY with short retry waits, sends one prompt and
+reply) and `suga chat` in a PTY with short retry waits, sends one prompt and
 checks: a retry notice for the 503, a restart notice for the broken stream,
 the whole reply after them, and the session's model event in
-`suag trace --json` with retries=2.
+`suga trace --json` with retries=2.
 
-  python3 -I scripts/ptysmoke/chat_retry.py --bin tmp/smoke/suag
+  python3 -I scripts/ptysmoke/chat_retry.py --bin tmp/smoke/suga
 
 Exit status 0 when every check passes. The work dir defaults to tmp/smoke-retry.
 """
@@ -38,7 +38,7 @@ def scenario(s):
     s.check("notice: broken stream restarts", s.until(r"↻ 模型请求失败（stream broken）.*将重新输出", m))
     s.check("whole reply after the restart", s.until(r"▣ " + REPLY, m) and s.until(r"tokens · ", m))
     m = s.mark(); time.sleep(0.3); s.send(CTRL_C); time.sleep(0.3); s.send(CTRL_C)
-    s.check("exit: resume command", s.until(r"续接：suag chat --resume sess_", m))
+    s.check("exit: resume command", s.until(r"续接：suga chat --resume sess_", m))
     found = re.search(r"--resume (sess_\S+)", s.text(m))
     return found.group(1) if found else ""
 
@@ -53,8 +53,8 @@ def check_trace(s, events):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--bin", default="tmp/smoke/suag", help="suag binary to test")
-    p.add_argument("--work", default="tmp/smoke-retry", help="scratch dir (SUAG_HOME and workspace)")
+    p.add_argument("--bin", default="tmp/smoke/suga", help="suga binary to test")
+    p.add_argument("--work", default="tmp/smoke-retry", help="scratch dir (SUGA_HOME and workspace)")
     p.add_argument("--port", type=int, default=18798)
     p.add_argument("--keep", action="store_true", help="keep the scratch home after the run")
     args = p.parse_args()
@@ -66,7 +66,7 @@ def main():
     os.makedirs(ws, exist_ok=True)
     isolate_ws(ws)
     write_home(home, args.port, extra=RETRY_CONFIG)
-    env = dict(os.environ, SUAG_HOME=home, SUAG_HOOKS="off", TERM="xterm", NO_COLOR="1")
+    env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
 
     here = os.path.dirname(os.path.abspath(__file__))
     fake = subprocess.Popen([sys.executable, "-I", os.path.join(here, "fakellm.py"),

@@ -16,7 +16,7 @@ import (
 
 // probeNonceEnv must match internal/wiring's hidden debug variable: a
 // non-empty value is put first in the system prompt, defeating prefix caches.
-const probeNonceEnv = "SUAG_DEBUG_PROMPT_NONCE"
+const probeNonceEnv = "SUGA_DEBUG_PROMPT_NONCE"
 
 // probePrompt is the minimal request every probe run sends.
 const probePrompt = "只回复 ok"
@@ -38,13 +38,13 @@ type ProbeRun struct {
 // runProbe measures whether the request prefix (system prompt + tools) is
 // served from the provider cache across sessions and workspaces. Every group
 // repeats probeRepeat times; each repetition first sends a warm-up request
-// (not counted) and then the measured one, both in fresh SUAG_HOMEs and fresh
+// (not counted) and then the measured one, both in fresh SUGA_HOMEs and fresh
 // sessions, o.probeGap apart:
 //
 //	same    warm-up and run use the same workspace path (<out>/probe/ws)
 //	cross   warm-up uses <out>/probe/ws-warm, the run <out>/probe/ws-<i>
 //	control same as "same", but warm-up and run carry different random
-//	        SUAG_DEBUG_PROMPT_NONCE values, so no cache hit is possible
+//	        SUGA_DEBUG_PROMPT_NONCE values, so no cache hit is possible
 func runProbe(o *options, bin, runID string) error {
 	ctx := context.Background()
 	root := filepath.Join(o.out, "probe")
@@ -115,7 +115,7 @@ type prober struct {
 	port  int // fake server port; 0 with a real model
 }
 
-// request resets ws, runs one minimal prompt in a fresh SUAG_HOME and session
+// request resets ws, runs one minimal prompt in a fresh SUGA_HOME and session
 // and returns the first main-loop model call from its trace.
 func (p *prober) request(ctx context.Context, name, ws, nonce string) (traceCall, error) {
 	if err := os.RemoveAll(ws); err != nil {
@@ -133,13 +133,13 @@ func (p *prober) request(ctx context.Context, name, ws, nonce string) (traceCall
 	}
 	model := p.o.model
 	if p.o.fake {
-		if err := writeConfig(home, "", p.port, p.o.suagSet); err != nil {
+		if err := writeConfig(home, "", p.port, p.o.sugaSet); err != nil {
 			return traceCall{}, err
 		}
 		if model == "" {
 			model = "fake/m1"
 		}
-	} else if err := writeConfig(home, p.o.configFrom, 0, p.o.suagSet); err != nil {
+	} else if err := writeConfig(home, p.o.configFrom, 0, p.o.sugaSet); err != nil {
 		return traceCall{}, err
 	}
 	env := isolatedEnv(home)
@@ -149,7 +149,7 @@ func (p *prober) request(ctx context.Context, name, ws, nonce string) (traceCall
 	rctx, cancel := context.WithTimeout(ctx, p.o.timeout)
 	defer cancel()
 	sid := "probe-" + p.runID + "-" + name
-	if _, err := runCmd(rctx, p.bin, suagRunArgs(sid, probePrompt, model, false, nil), ws, env); err != nil {
+	if _, err := runCmd(rctx, p.bin, sugaRunArgs(sid, probePrompt, model, false, nil), ws, env); err != nil {
 		return traceCall{}, err
 	}
 	tout, err := runCmd(ctx, p.bin, []string{"trace", sid, "--json"}, ws, env)

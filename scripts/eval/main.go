@@ -1,5 +1,5 @@
-// Command eval runs the suag evaluation tasks in scripts/eval/testdata/tasks
-// in isolated temporary workspaces and SUAG_HOMEs. See README.md.
+// Command eval runs the suga evaluation tasks in scripts/eval/testdata/tasks
+// in isolated temporary workspaces and SUGA_HOMEs. See README.md.
 package main
 
 import (
@@ -33,8 +33,8 @@ type options struct {
 	probe                             bool
 	probeRepeat                       int
 	probeGap                          time.Duration
-	suagArgs, ompArgs                 string
-	suagSet                           setFlags // --suag-set key=value config overrides
+	sugaArgs, ompArgs                 string
+	sugaSet                           setFlags // --suga-set key=value config overrides
 	repeat                            int
 }
 
@@ -64,7 +64,7 @@ type Result struct {
 	CacheWrite  int64   `json:"cache_write_tokens"`
 	CacheHit    float64 `json:"cache_hit_rate"`
 	// FirstUncached is the uncached input of the first main-loop model call
-	// (suag: input - cache_read - cache_write from the trace; omp: usage.input).
+	// (suga: input - cache_read - cache_write from the trace; omp: usage.input).
 	// nil when unavailable (no usable model event).
 	FirstUncached *int64         `json:"first_call_uncached"`
 	CostUSD       float64        `json:"cost_usd"`
@@ -86,24 +86,24 @@ func main() {
 
 func run() error {
 	var o options
-	flag.StringVar(&o.bin, "bin", filepath.Join("tmp", "smoke", "suag"), "suag executable (.exe is added on Windows)")
+	flag.StringVar(&o.bin, "bin", filepath.Join("tmp", "smoke", "suga"), "suga executable (.exe is added on Windows)")
 	flag.StringVar(&o.task, "task", "*", "glob of task names")
-	flag.StringVar(&o.model, "model", "", "model passed to `suag run --model`")
+	flag.StringVar(&o.model, "model", "", "model passed to `suga run --model`")
 	flag.BoolVar(&o.fake, "fake", false, "use scripts/ptysmoke/fakellm.py (pipeline check only)")
-	flag.StringVar(&o.configFrom, "config-from", "", "directory whose config.yaml and .env are copied (read-only) into the temp SUAG_HOME")
+	flag.StringVar(&o.configFrom, "config-from", "", "directory whose config.yaml and .env are copied (read-only) into the temp SUGA_HOME")
 	flag.StringVar(&o.out, "out", "", "output directory (default tmp/eval/<run-id>)")
 	flag.DurationVar(&o.timeout, "timeout", 10*time.Minute, "per-task timeout (a task's own timeout field overrides it)")
-	flag.StringVar(&o.agent, "agent", "suag", "agent under test: suag, omp (oh-my-pi) or claude (Claude Code); same model via --model")
+	flag.StringVar(&o.agent, "agent", "suga", "agent under test: suga, omp (oh-my-pi) or claude (Claude Code); same model via --model")
 	flag.StringVar(&o.ompBin, "omp-bin", "omp", "omp executable for --agent omp")
 	flag.StringVar(&o.claudeBin, "claude-bin", "claude", "Claude Code executable for --agent claude")
 	flag.StringVar(&o.claudeConfigFrom, "claude-config-from", "", "directory whose settings.json env (gateway URL, token, model mapping) the temp CLAUDE_CONFIG_DIR gets (default ~/.claude)")
 	flag.StringVar(&o.claudeArgs, "claude-args", "", "extra `claude -p` arguments placed before the prompt (split on whitespace)")
 	flag.StringVar(&o.tasksDir, "tasks-dir", filepath.Join("scripts", "eval", "testdata", "tasks"), "tasks directory")
-	flag.BoolVar(&o.probe, "probe-prefix", false, "run the prefix-cache probe (exclusive with tasks; suag only)")
+	flag.BoolVar(&o.probe, "probe-prefix", false, "run the prefix-cache probe (exclusive with tasks; suga only)")
 	flag.IntVar(&o.probeRepeat, "probe-repeat", 3, "probe: repetitions per group")
 	flag.DurationVar(&o.probeGap, "probe-gap", 5*time.Second, "probe: pause between two requests")
-	flag.Var(&o.suagSet, "suag-set", "set a key in the temp suag config.yaml, as dotted.key=value (YAML scalar); repeatable")
-	flag.StringVar(&o.suagArgs, "suag-args", "", "extra `suag run` arguments appended after the built-in ones (split on whitespace)")
+	flag.Var(&o.sugaSet, "suga-set", "set a key in the temp suga config.yaml, as dotted.key=value (YAML scalar); repeatable")
+	flag.StringVar(&o.sugaArgs, "suga-args", "", "extra `suga run` arguments appended after the built-in ones (split on whitespace)")
 	flag.StringVar(&o.ompArgs, "omp-args", "", "extra `omp -p` arguments placed before the prompt (split on whitespace)")
 	flag.IntVar(&o.repeat, "repeat", 1, "rounds per task (outputs go to <out>/<task>-r<i>/ when > 1)")
 	flag.Parse()
@@ -112,8 +112,8 @@ func run() error {
 	}
 	taskSet := false
 	flag.Visit(func(f *flag.Flag) { taskSet = taskSet || f.Name == "task" || f.Name == "tasks-dir" })
-	if o.probe && (taskSet || o.agent != "suag") {
-		return errors.New("--probe-prefix is exclusive with --task/--tasks-dir and needs --agent suag")
+	if o.probe && (taskSet || o.agent != "suga") {
+		return errors.New("--probe-prefix is exclusive with --task/--tasks-dir and needs --agent suga")
 	}
 	if o.probe && o.probeRepeat < 1 {
 		return errors.New("--probe-repeat must be >= 1")
@@ -127,19 +127,19 @@ func run() error {
 		return err
 	}
 	switch o.agent {
-	case "suag":
+	case "suga":
 		if _, err := os.Stat(bin); err != nil {
-			return fmt.Errorf("suag binary: %w", err)
+			return fmt.Errorf("suga binary: %w", err)
 		}
 		if !o.fake && o.configFrom == "" {
 			return errors.New("need --fake or --config-from <dir>")
 		}
 	case "omp", "claude":
 		if o.fake {
-			return errors.New("--fake works only with --agent suag")
+			return errors.New("--fake works only with --agent suga")
 		}
 	default:
-		return fmt.Errorf("unknown --agent %q (suag|omp|claude)", o.agent)
+		return fmt.Errorf("unknown --agent %q (suga|omp|claude)", o.agent)
 	}
 	runID := time.Now().Format("20060102-150405")
 	if o.out == "" {
@@ -161,10 +161,10 @@ func run() error {
 	if err := os.MkdirAll(o.out, 0o755); err != nil {
 		return err
 	}
-	// The output usually lies inside the suag module (tmp/eval/...): an
+	// The output usually lies inside the suga module (tmp/eval/...): an
 	// empty go.mod makes it a module of its own, so the Go files a run
 	// leaves outside its workspace (the trash of file_remove under home/)
-	// are not packages of suag's "go test ./...".
+	// are not packages of suga's "go test ./...".
 	if err := writeOutGoMod(o.out); err != nil {
 		return err
 	}
@@ -206,7 +206,7 @@ func runTask(o *options, bin, runID string, t *Task, round int) (Result, error) 
 	case "claude":
 		r.AgentArgs = strings.Join(splitArgs(o.claudeArgs), " ")
 	default:
-		r.AgentArgs = strings.Join(append(splitArgs(o.suagArgs), o.suagSet...), " ")
+		r.AgentArgs = strings.Join(append(splitArgs(o.sugaArgs), o.sugaSet...), " ")
 	}
 	root := filepath.Join(o.out, name)
 	ws, home := filepath.Join(root, "ws"), filepath.Join(root, "home")
@@ -226,7 +226,7 @@ func runTask(o *options, bin, runID string, t *Task, round int) (Result, error) 
 		runClaude(ctx, o, t, timeout, ws, filepath.Join(root, "claude-home"), &r)
 		return r, nil
 	}
-	model, stop, err := setupSuagHome(ctx, o, home, t.FakeMode)
+	model, stop, err := setupSugaHome(ctx, o, home, t.FakeMode)
 	if err != nil {
 		return r, err
 	}
@@ -239,7 +239,7 @@ func runTask(o *options, bin, runID string, t *Task, round int) (Result, error) 
 	var stdout []byte
 	var runErr error
 	for _, prompt := range t.Turns() {
-		stdout, runErr = runCmd(ctx, bin, suagRunArgs(sid, prompt, model, t.Mode == "allow-write", splitArgs(o.suagArgs)), ws, env)
+		stdout, runErr = runCmd(ctx, bin, sugaRunArgs(sid, prompt, model, t.Mode == "allow-write", splitArgs(o.sugaArgs)), ws, env)
 		if runErr != nil {
 			break
 		}
@@ -269,10 +269,10 @@ func runTask(o *options, bin, runID string, t *Task, round int) (Result, error) 
 	return r, nil
 }
 
-// suagRunArgs builds the `suag run` arguments of one turn.
-// extra (from --suag-args) goes last: `suag run` takes only flags, so their
+// sugaRunArgs builds the `suga run` arguments of one turn.
+// extra (from --suga-args) goes last: `suga run` takes only flags, so their
 // position relative to --prompt does not matter.
-func suagRunArgs(sid, prompt, model string, allowWrite bool, extra []string) []string {
+func sugaRunArgs(sid, prompt, model string, allowWrite bool, extra []string) []string {
 	args := []string{"run", "--session-id", sid, "--output-format", "stream-json", "--prompt", prompt}
 	if model != "" {
 		args = append(args, "--model", model)
@@ -283,21 +283,21 @@ func suagRunArgs(sid, prompt, model string, allowWrite bool, extra []string) []s
 	return append(args, extra...)
 }
 
-// setupSuagHome creates home with an isolated config (fake provider with a
+// setupSugaHome creates home with an isolated config (fake provider with a
 // fresh fakellm, or a copy of --config-from) and returns the model to pass
 // (empty = config default) and a stop func for the fake server.
-func setupSuagHome(ctx context.Context, o *options, home, fakeMode string) (string, func(), error) {
+func setupSugaHome(ctx context.Context, o *options, home, fakeMode string) (string, func(), error) {
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		return "", nil, err
 	}
 	if !o.fake {
-		return o.model, func() {}, writeConfig(home, o.configFrom, 0, o.suagSet)
+		return o.model, func() {}, writeConfig(home, o.configFrom, 0, o.sugaSet)
 	}
 	stop, port, err := startFake(ctx, fakeMode)
 	if err != nil {
 		return "", nil, err
 	}
-	if err := writeConfig(home, "", port, o.suagSet); err != nil {
+	if err := writeConfig(home, "", port, o.sugaSet); err != nil {
 		stop()
 		return "", nil, err
 	}
@@ -331,7 +331,7 @@ func runCmd(ctx context.Context, bin string, args []string, dir string, env []st
 }
 
 func isolatedEnv(home string) []string {
-	drop := map[string]bool{"SUAG_HOME": true, "SUAG_MODEL": true, "HOME": true, "USERPROFILE": true}
+	drop := map[string]bool{"SUGA_HOME": true, "SUGA_MODEL": true, "HOME": true, "USERPROFILE": true}
 	var env []string
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
@@ -339,7 +339,7 @@ func isolatedEnv(home string) []string {
 			env = append(env, kv)
 		}
 	}
-	env = append(env, "SUAG_HOME="+home, "HOME="+home)
+	env = append(env, "SUGA_HOME="+home, "HOME="+home)
 	if runtime.GOOS == "windows" {
 		env = append(env, "USERPROFILE="+home)
 	}
@@ -473,7 +473,7 @@ func writeConfig(home, fromDir string, fakePort int, sets []string) error {
 func setConfigKey(cfg map[string]any, kv string) error {
 	key, value, ok := strings.Cut(kv, "=")
 	if !ok || key == "" {
-		return fmt.Errorf("--suag-set %q: want dotted.key=value", kv)
+		return fmt.Errorf("--suga-set %q: want dotted.key=value", kv)
 	}
 	var v any
 	if err := yaml.Unmarshal([]byte(value), &v); err != nil || v == nil {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fake OpenAI-compatible chat model that streams SSE, for suag smoke tests.
+"""Fake OpenAI-compatible chat model that streams SSE, for suga smoke tests.
 
 Modes (--mode):
   tool  every user message first gets a shell_exec call (--command), and the
@@ -20,7 +20,7 @@ the tool-mode shell_exec call a background task; a user message that is a
 background task notice or reminder ("[background task") gets the text reply;
 --watch-paths a,b adds watch_paths (a watch task). --agent makes the
 tool-mode call the agent tool (description "smoke survey", with background
-when --background); a sub-agent's request (its system prompt names a "suag
+when --background); a sub-agent's request (its system prompt names a "suga
 sub-agent") greps SMOKE once, then reports "SUBREPORT: ..." after
 --child-delay seconds more. A request with "stream": false gets one JSON completion
 instead of SSE (the compaction summary). --prompt-tokens sets the reported prompt usage (the idle
@@ -49,7 +49,7 @@ def make_handler(args):
             print(json.dumps({"path": self.path, "stream": body.get("stream"),
                               "last_role": body["messages"][-1].get("role")}), flush=True)
             system = " ".join(str(m.get("content")) for m in body["messages"] if m.get("role") == "system")
-            child = "suag sub-agent" in system
+            child = "suga sub-agent" in system
             # --child-delay slows the sub-agent's report (after its grep).
             reporting = child and body["messages"][-1].get("role") == "tool"
             time.sleep(args.delay + (args.child_delay if reporting else 0))

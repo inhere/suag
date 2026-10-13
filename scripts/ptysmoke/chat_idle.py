@@ -3,15 +3,15 @@
 
 Starts fakellm.py in text mode (each response delayed longer than the idle
 time, reporting a prompt size above half the context threshold), writes a
-temporary SUAG_HOME with context.idle_after: 2s and a small context_window,
-runs `suag chat` in a PTY and checks: a turn longer than idle_after does not
+temporary SUGA_HOME with context.idle_after: 2s and a small context_window,
+runs `suga chat` in a PTY and checks: a turn longer than idle_after does not
 trigger it; a few seconds after the turn "空闲整理中…" then "已整理上下文：X → Y
 token" appear; input afterwards works; typing while a consolidation runs
-preempts it (no success line, the turn answers); `suag trace` shows the
+preempts it (no success line, the turn answers); `suga trace` shows the
 schedule events and the idle segment.
 
   make smoke-chat                        # runs this after chat_memory.py
-  python3 -I scripts/ptysmoke/chat_idle.py --bin tmp/smoke/suag
+  python3 -I scripts/ptysmoke/chat_idle.py --bin tmp/smoke/suga
 """
 import argparse
 import os
@@ -34,7 +34,7 @@ def scenario(s):
         return s.until(r"tokens · ", start)
 
     m = s.mark()
-    s.check("banner", s.until(r"Suag chat · fake/m1", m))
+    s.check("banner", s.until(r"Suga chat · fake/m1", m))
 
     # Each response takes 2.5s, longer than idle_after (2s): the turn pauses it.
     m = s.mark(); s.line("你好")
@@ -58,12 +58,12 @@ def scenario(s):
     # Wait for the prompt: input typed before it stays in the line unsubmitted.
     time.sleep(0.5)
     m = s.mark(); s.line(":quit")
-    s.check("quit", s.until(r"续接：suag chat --resume sess_", m))
+    s.check("quit", s.until(r"续接：suga chat --resume sess_", m))
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--bin", default="tmp/smoke/suag")
+    p.add_argument("--bin", default="tmp/smoke/suga")
     p.add_argument("--work", default="tmp/smoke-idle")
     p.add_argument("--port", type=int, default=18801)
     p.add_argument("--keep", action="store_true")
@@ -78,7 +78,7 @@ def main():
     # Window 16000 -> threshold 12800; the fake reports 8000 prompt tokens (0.62).
     write_home(home, args.port, provider_extra="    models:\n      m1:\n        context_window: 16000\n",
                extra="context:\n  idle_after: 2s\n  idle_min_ratio: 0.5\n")
-    env = dict(os.environ, SUAG_HOME=home, HOME=home, SUAG_HOOKS="off", TERM="xterm", NO_COLOR="1")
+    env = dict(os.environ, SUGA_HOME=home, HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
 
     here = os.path.dirname(os.path.abspath(__file__))
     fake = subprocess.Popen([sys.executable, "-I", os.path.join(here, "fakellm.py"), "--port", str(args.port),

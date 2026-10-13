@@ -2,13 +2,13 @@
 """End-to-end smoke test: chat stops a dangerous delete (Linux/macOS).
 
 Starts scripts/ptysmoke/fakellm.py (tool mode, command `rm -rf ~`) and
-`suag chat` in a PTY with tools.approval: auto and HOME pointing at a scratch
+`suga chat` in a PTY with tools.approval: auto and HOME pointing at a scratch
 directory (the only thing the command could ever delete). Checks: the call
 is still confirmed, with the danger shown; "y" is not enough (refused, the
 scratch home survives); "yes" runs it (the scratch home is gone); the trace
 records both calls with danger and the approval source.
 
-  python3 -I scripts/ptysmoke/chat_danger.py --bin tmp/smoke/suag
+  python3 -I scripts/ptysmoke/chat_danger.py --bin tmp/smoke/suga
 
 Exit status 0 when every check passes. The work dir defaults to tmp/smoke-danger.
 """
@@ -43,7 +43,7 @@ def scenario(s, fake_home):
     s.check("yes: executed", s.until(r"⎿ ok", m) and s.until(r"tokens · ", m))
     s.check("yes: scratch home removed", not os.path.exists(fake_home))
     m = s.mark(); time.sleep(0.3); s.send(CTRL_C); time.sleep(0.3); s.send(CTRL_C)
-    s.check("exit: resume command", s.until(r"续接：suag chat --resume sess_", m))
+    s.check("exit: resume command", s.until(r"续接：suga chat --resume sess_", m))
     found = re.search(r"--resume (sess_\S+)", s.text(m))
     return found.group(1) if found else ""
 
@@ -62,8 +62,8 @@ def check_trace(s, events):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--bin", default="tmp/smoke/suag", help="suag binary to test")
-    p.add_argument("--work", default="tmp/smoke-danger", help="scratch dir (SUAG_HOME, HOME and workspace)")
+    p.add_argument("--bin", default="tmp/smoke/suga", help="suga binary to test")
+    p.add_argument("--work", default="tmp/smoke-danger", help="scratch dir (SUGA_HOME, HOME and workspace)")
     p.add_argument("--port", type=int, default=18799)
     p.add_argument("--keep", action="store_true", help="keep the scratch home after the run")
     args = p.parse_args()
@@ -78,7 +78,7 @@ def main():
     isolate_ws(ws)
     write_home(home, args.port, tools_extra="  approval: auto\n")
     # HOME is the scratch dir: `rm -rf ~` can only ever delete it.
-    env = dict(os.environ, SUAG_HOME=home, HOME=fake_home, SUAG_HOOKS="off", TERM="xterm", NO_COLOR="1")
+    env = dict(os.environ, SUGA_HOME=home, HOME=fake_home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
 
     here = os.path.dirname(os.path.abspath(__file__))
     fake = subprocess.Popen([sys.executable, "-I", os.path.join(here, "fakellm.py"),

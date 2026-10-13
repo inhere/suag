@@ -18,7 +18,7 @@ import (
 // multi-turn task can continue (--continue from the second turn on) without
 // touching the user's real sessions.
 //
-// Unlike `suag run`, omp has no read-only mode switch, so read-only tasks run
+// Unlike `suga run`, omp has no read-only mode switch, so read-only tasks run
 // with omp's full tool set; the comparison notes this.
 func runOmp(ctx context.Context, o *options, t *Task, timeout time.Duration, ws, sessionDir string, r *Result) {
 	if err := os.MkdirAll(sessionDir, 0o755); err != nil {

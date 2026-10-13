@@ -12,7 +12,7 @@ run: the same fake model starts `sleep 30` in the background and answers.
 Checks: run reminds the model once (a second turn), then kills the task at
 exit and says so on stderr; the process ends quickly.
 
-  python3 -I scripts/ptysmoke/chat_tasks.py --bin tmp/smoke/suag
+  python3 -I scripts/ptysmoke/chat_tasks.py --bin tmp/smoke/suga
 
 Exit status 0 when every check passes. The work dir defaults to tmp/smoke-tasks.
 """
@@ -42,7 +42,7 @@ def chat_scenario(s):
     s.check("notice: exit and output", s.until(r"t1 exited \(exit 0\)", m) and s.until(r"TASK_DONE", m))
     s.check("notice turn ends", s.until(r"tokens · ", m))
     m = s.mark(); time.sleep(0.3); s.send(CTRL_C); time.sleep(0.3); s.send(CTRL_C)
-    s.check("exit: resume command", s.until(r"续接：suag chat --resume sess_", m))
+    s.check("exit: resume command", s.until(r"续接：suga chat --resume sess_", m))
     found = re.search(r"--resume (sess_\S+)", s.text(m))
     return found.group(1) if found else ""
 
@@ -76,8 +76,8 @@ def run_scenario(s, binary, env, ws):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--bin", default="tmp/smoke/suag", help="suag binary to test")
-    p.add_argument("--work", default="tmp/smoke-tasks", help="scratch dir (SUAG_HOME and workspace)")
+    p.add_argument("--bin", default="tmp/smoke/suga", help="suga binary to test")
+    p.add_argument("--work", default="tmp/smoke-tasks", help="scratch dir (SUGA_HOME and workspace)")
     p.add_argument("--port", type=int, default=18800)
     p.add_argument("--keep", action="store_true", help="keep the scratch home after the run")
     args = p.parse_args()
@@ -89,7 +89,7 @@ def main():
     os.makedirs(ws, exist_ok=True)
     isolate_ws(ws)
     write_home(home, args.port, tools_extra="  approval: auto\n")
-    env = dict(os.environ, SUAG_HOME=home, SUAG_HOOKS="off", TERM="xterm", NO_COLOR="1")
+    env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
     here = os.path.dirname(os.path.abspath(__file__))
 
     def start_fake(command):

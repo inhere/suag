@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""End-to-end smoke test of `suag chat` in a pseudo terminal (Linux/macOS).
+"""End-to-end smoke test of `suga chat` in a pseudo terminal (Linux/macOS).
 
-Starts scripts/ptysmoke/fakellm.py (tool mode), writes a temporary SUAG_HOME
-with tools.allow_write: true, runs `suag chat` in a PTY and checks:
+Starts scripts/ptysmoke/fakellm.py (tool mode), writes a temporary SUGA_HOME
+with tools.allow_write: true, runs `suga chat` in a PTY and checks:
 banner with model, ❯ prompt, approval question with the full command,
 pre-typed "y⏎" during a turn does not approve, n denies and the turn goes on,
 y runs the tool, Ctrl-C at the question only cancels the turn, a stops further
@@ -10,8 +10,8 @@ questions, one Ctrl-C at the prompt only hints, two in a row print the resume
 command and usage summary,
 and piped (non-TTY) input denies write tools.
 
-  make smoke-chat                        # builds tmp/smoke/suag and runs this
-  python3 -I scripts/ptysmoke/chat_approval.py --bin tmp/smoke/suag
+  make smoke-chat                        # builds tmp/smoke/suga and runs this
+  python3 -I scripts/ptysmoke/chat_approval.py --bin tmp/smoke/suga
 
 Exit status 0 when every check passes. The work dir defaults to tmp/smoke.
 """
@@ -30,14 +30,14 @@ QUESTION = r"允许执行 shell_exec"
 
 
 def isolate_ws(ws):
-    """Make ws its own git root, so suag does not pick up the enclosing
+    """Make ws its own git root, so suga does not pick up the enclosing
     repository (e.g. its root MEMORY.md would switch project memory to the
     repository layout and the smoke would write into the real repo)."""
     subprocess.run(["git", "init", "-q", ws], check=True)
 
 
 def write_home(home, port, tools_extra="", memory_extra="", provider_extra="", extra=""):
-    """Writes SUAG_HOME/config.yaml. Project memory is forced to the files
+    """Writes SUGA_HOME/config.yaml. Project memory is forced to the files
     backend: the scratch workspace lives inside this repository, whose
     .gofer/tracker would otherwise select (and call) the real gofer.
     provider_extra goes under providers.fake, extra at the top level."""
@@ -68,7 +68,7 @@ def scenario(s):
         return s.until(r"tokens · ", start)
 
     m = s.mark()
-    s.check("banner shows model", s.until(r"Suag chat · fake/m1", m))
+    s.check("banner shows model", s.until(r"Suga chat · fake/m1", m))
     s.check("banner shows write tools on", s.until(r"工具：可读写文件、执行 shell", m))
     s.check("❯ prompt", s.until(r"❯ ", m))
 
@@ -115,7 +115,7 @@ def scenario(s):
 
     m = s.mark(); time.sleep(0.3); s.send(CTRL_C)
     s.check("exit: usage summary", s.until(r"本次 \d+ 轮 · in \d+ / out \d+ tokens", m))
-    s.check("exit: resume command", s.until(r"续接：suag chat --resume sess_", m))
+    s.check("exit: resume command", s.until(r"续接：suga chat --resume sess_", m))
 
 
 def non_tty(binary, env, cwd):
@@ -127,8 +127,8 @@ def non_tty(binary, env, cwd):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--bin", default="tmp/smoke/suag", help="suag binary to test")
-    p.add_argument("--work", default="tmp/smoke", help="scratch dir (SUAG_HOME and workspace)")
+    p.add_argument("--bin", default="tmp/smoke/suga", help="suga binary to test")
+    p.add_argument("--work", default="tmp/smoke", help="scratch dir (SUGA_HOME and workspace)")
     p.add_argument("--port", type=int, default=18795)
     p.add_argument("--keep", action="store_true", help="keep the scratch home after the run")
     args = p.parse_args()
@@ -140,7 +140,7 @@ def main():
     os.makedirs(ws, exist_ok=True)
     isolate_ws(ws)
     write_home(home, args.port)
-    env = dict(os.environ, SUAG_HOME=home, SUAG_HOOKS="off", TERM="xterm", NO_COLOR="1")
+    env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
 
     here = os.path.dirname(os.path.abspath(__file__))
     fake = subprocess.Popen([sys.executable, "-I", os.path.join(here, "fakellm.py"),

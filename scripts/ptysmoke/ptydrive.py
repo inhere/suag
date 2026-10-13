@@ -1,4 +1,4 @@
-"""Drive an interactive suag process in a pseudo terminal (Linux/macOS).
+"""Drive an interactive suga process in a pseudo terminal (Linux/macOS).
 
 Lessons built in (see docs/plans/2026-10-09-chat-write-approval-retrospective.md):
   - assertions only look at output produced after a mark, never the whole buffer;

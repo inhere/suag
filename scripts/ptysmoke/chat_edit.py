@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""End-to-end smoke test of file_grep -> file_edit in `suag chat` (Linux/macOS).
+"""End-to-end smoke test of file_grep -> file_edit in `suga chat` (Linux/macOS).
 
-Starts fakellm.py in edit mode, writes a temporary SUAG_HOME with
-tools.allow_write: true and a workspace with target.txt, runs `suag chat` in
+Starts fakellm.py in edit mode, writes a temporary SUGA_HOME with
+tools.allow_write: true and a workspace with target.txt, runs `suga chat` in
 a PTY and checks: file_grep runs without a question and finds the line, the
 file_edit question previews old and new text, y applies the edit on disk, and
 two Ctrl-C exit.
 
   make smoke-chat                        # runs this after chat_approval.py
-  python3 -I scripts/ptysmoke/chat_edit.py --bin tmp/smoke/suag
+  python3 -I scripts/ptysmoke/chat_edit.py --bin tmp/smoke/suga
 """
 import argparse
 import os
@@ -24,7 +24,7 @@ from chat_approval import isolate_ws, wait_port, write_home  # noqa: E402
 
 def scenario(s, ws):
     m = s.mark()
-    s.check("banner", s.until(r"Suag chat · fake/m1", m))
+    s.check("banner", s.until(r"Suga chat · fake/m1", m))
     m = s.mark(); s.line("把 old 改成 new")
     s.check("grep: ran without a question", s.until(r"target.txt:2: SMOKE_TARGET old", m)
             and not s.contains(r"允许执行 file_grep", m))
@@ -39,12 +39,12 @@ def scenario(s, ws):
     m = s.mark(); time.sleep(0.5); s.send(CTRL_C)
     s.check("ctrl-c once: hint", s.until(r"再按一次 Ctrl\+C 退出", m))
     m = s.mark(); s.send(CTRL_C)
-    s.check("ctrl-c twice: exit", s.until(r"续接：suag chat --resume sess_", m))
+    s.check("ctrl-c twice: exit", s.until(r"续接：suga chat --resume sess_", m))
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--bin", default="tmp/smoke/suag")
+    p.add_argument("--bin", default="tmp/smoke/suga")
     p.add_argument("--work", default="tmp/smoke-edit")
     p.add_argument("--port", type=int, default=18797)
     p.add_argument("--keep", action="store_true")
@@ -60,7 +60,7 @@ def main():
     with open(os.path.join(ws, "target.txt"), "w", encoding="utf-8") as f:
         f.write("line one\nSMOKE_TARGET old\nline three\n")
     write_home(home, args.port)
-    env = dict(os.environ, SUAG_HOME=home, HOME=home, SUAG_HOOKS="off", TERM="xterm", NO_COLOR="1")
+    env = dict(os.environ, SUGA_HOME=home, HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
 
     here = os.path.dirname(os.path.abspath(__file__))
     fake = subprocess.Popen([sys.executable, "-I", os.path.join(here, "fakellm.py"),

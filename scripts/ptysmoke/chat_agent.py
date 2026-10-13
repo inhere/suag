@@ -6,8 +6,8 @@ sub-agent's requests (its system prompt names it) grep once and report.
 
 sync: the sub-agent's grep shows as a progress line under the agent call,
 the report comes back as the tool result, the turn ends; the trace has the
-agent tool event naming the sub-agent session, which `suag sessions` hides
-and `suag sessions --agents` lists.
+agent tool event naming the sub-agent session, which `suga sessions` hides
+and `suga sessions --agents` lists.
 
 cancel: the sub-agent is slow (--child-delay); Ctrl-C during it ends chat
 cleanly (resume line), and the sub-agent session is not left running.
@@ -15,7 +15,7 @@ cleanly (resume line), and the sub-agent session is not left running.
 background: the agent call has background: true; the turn ends at once and
 the sub-agent's end wakes the idle chat with a notice holding its report.
 
-  python3 -I scripts/ptysmoke/chat_agent.py --bin tmp/smoke/suag
+  python3 -I scripts/ptysmoke/chat_agent.py --bin tmp/smoke/suga
 
 Exit status 0 when every check passes. --agents-off is the reverse check
 (agents.enabled: false). The work dir defaults to tmp/smoke-agent.
@@ -46,7 +46,7 @@ def start_fake(port, *extra):
 
 def exit_chat(s):
     m = s.mark(); time.sleep(0.3); s.send(CTRL_C); time.sleep(0.3); s.send(CTRL_C)
-    s.until(r"续接：suag chat --resume sess_", m)
+    s.until(r"续接：suga chat --resume sess_", m)
     found = re.search(r"--resume (sess_\S+)", s.text(m))
     return found.group(1) if found else ""
 
@@ -85,7 +85,7 @@ def cancel_scenario(s, binary, env):
     m = s.mark(); s.line("调研一下")
     s.check("cancel: sub-agent at work", s.until(r"  · file_grep", m))
     m = s.mark(); s.send(CTRL_C)  # while its report is slow to come
-    s.check("cancel: chat ends with the resume line", s.until(r"续接：suag chat --resume sess_", m, timeout=15))
+    s.check("cancel: chat ends with the resume line", s.until(r"续接：suga chat --resume sess_", m, timeout=15))
     s.pump(0.5)
     rows = sessions(binary, env, "--agents")
     child = next((r for r in rows if r.get("parent")), {})
@@ -107,8 +107,8 @@ def background_scenario(s):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--bin", default="tmp/smoke/suag", help="suag binary to test")
-    p.add_argument("--work", default="tmp/smoke-agent", help="scratch dir (SUAG_HOME and workspace)")
+    p.add_argument("--bin", default="tmp/smoke/suga", help="suga binary to test")
+    p.add_argument("--work", default="tmp/smoke-agent", help="scratch dir (SUGA_HOME and workspace)")
     p.add_argument("--port", type=int, default=18803)
     p.add_argument("--keep", action="store_true", help="keep the scratch homes after the run")
     p.add_argument("--agents-off", action="store_true", help="reverse check: agents.enabled false")
@@ -134,7 +134,7 @@ def main():
                 f.write("SMOKE_TARGET here\n")
             port = args.port + len(homes)
             write_home(home, port, extra=extra)
-            env = dict(os.environ, SUAG_HOME=home, SUAG_HOOKS="off", TERM="xterm", NO_COLOR="1")
+            env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
             fake = start_fake(port, *fake_args)
             s = PtySession([binary, "chat"], env=env, cwd=ws)
             run(s, env)

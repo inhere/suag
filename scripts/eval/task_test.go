@@ -154,7 +154,7 @@ func TestPrepareWorkspaceRepo(t *testing.T) {
 	assert.Eq(t, "", strings.TrimSpace(gitIn(t, ws, "status", "--porcelain")))
 	assert.Eq(t, "base", strings.TrimSpace(gitIn(t, ws, "log", "-1", "--format=%s")))
 	assert.Eq(t, "1", strings.TrimSpace(gitIn(t, ws, "rev-list", "--count", "HEAD")))
-	// The agent can commit without a global identity (suag runs with an isolated HOME).
+	// The agent can commit without a global identity (suga runs with an isolated HOME).
 	assert.Eq(t, "eval", strings.TrimSpace(gitIn(t, ws, "config", "--local", "user.name")))
 
 	assert.Err(t, archiveRef(ctx, src, "nope", filepath.Join(t.TempDir(), "x")))
@@ -180,10 +180,10 @@ func TestLoadTaskRepo(t *testing.T) {
 	assert.Eq(t, []string{"go", "test", "./pkg/agentcore/", "-run", "Layering"}, real.Checks[2].Args)
 }
 
-func TestSplitArgsAndSuagRunArgs(t *testing.T) {
+func TestSplitArgsAndSugaRunArgs(t *testing.T) {
 	assert.Eq(t, []string{"--no-project-rules", "--x", "1"}, splitArgs("  --no-project-rules\t--x   1 "))
 	assert.Eq(t, 0, len(splitArgs("")))
-	args := suagRunArgs("s", "p", "", false, splitArgs("--a --b"))
+	args := sugaRunArgs("s", "p", "", false, splitArgs("--a --b"))
 	assert.Eq(t, []string{"--a", "--b"}, args[len(args)-2:])
 }
 
