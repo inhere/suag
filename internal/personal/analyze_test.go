@@ -345,6 +345,20 @@ func TestCallAttrsShellAndEdit(t *testing.T) {
 	assert.Eq(t, 3, attrs["lines_added"])
 }
 
+// TestCallAttrsTask: a task call records its action and id as attrs, so the
+// analysis does not depend on parsing the argument summary (a grep pattern
+// with spaces or "id=" in it would mislead the parse).
+func TestCallAttrsTask(t *testing.T) {
+	attrs := map[string]any{}
+	addCallAttrs(attrs, agentcore.ToolCall{Name: "task", Arguments: map[string]any{
+		"action": "output", "id": "t2", "grep": "FAIL id=t9 x"}}, nil, "")
+	assert.Eq(t, "output", attrs["action"])
+	assert.Eq(t, "t2", attrs["id"])
+	action, id := taskAction(store.Event{Attrs: attrs})
+	assert.Eq(t, "output", action)
+	assert.Eq(t, "t2", id)
+}
+
 func TestContextAndFinishTraceLines(t *testing.T) {
 	line := traceLine(store.Event{Kind: store.EventContext, Name: "turn", Status: eventOK, Attrs: map[string]any{
 		"system": float64(3000), "tools": float64(12000), "tools_count": float64(14), "tools_mcp": float64(2),

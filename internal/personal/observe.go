@@ -301,6 +301,14 @@ func addCallAttrs(attrs map[string]any, call agentcore.ToolCall, res *agentcore.
 		attrs["lines_added"], attrs["lines_removed"] = added, removed
 	case "file_write":
 		attrs["lines_added"] = lineCount(call.Arguments["content"])
+	case "task":
+		// The action and task id as attrs, so --analyze and the web page need
+		// not parse them out of the argument summary.
+		for _, key := range []string{"action", "id"} {
+			if v, _ := call.Arguments[key].(string); v != "" {
+				attrs[key] = v
+			}
+		}
 	}
 	var targets []string
 	for _, key := range []string{"path", "dir"} {
