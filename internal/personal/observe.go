@@ -128,6 +128,9 @@ func (r *recorder) attemptObserver(defName, defModel string) llm.AttemptObserver
 			Attrs: map[string]any{"model": model, "attempt": a.Index, "streamed": a.Streamed,
 				"tool_calls": a.ToolCalls, "reasoning_chars": a.ReasoningChars, "text_chars": a.TextChars},
 		}
+		if a.Finish != "" {
+			e.Attrs["finish"] = a.Finish
+		}
 		if p := purposeFrom(ctx); p != "" { // ordinary calls carry no purpose
 			e.Attrs["purpose"] = p
 		} else if rep, ok := r.prefix.report(observeScopeFrom(ctx).sessionID); ok {
@@ -223,6 +226,7 @@ func (o *observedTools) Get(name string) (agentcore.Tool, error) {
 
 func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	start := time.Now()
+	ctx, approval := tools.WithApprovalReport(ctx)
 	res, err := o.inner.ExecuteTool(ctx, call)
 	e := store.Event{
 		Kind: store.EventTool, Name: call.Name, Status: eventOK, StartedAt: start,
@@ -243,6 +247,14 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 		addOutputAttrs(e.Attrs, res)
 	}
 	addCallAttrs(e.Attrs, call, res, o.rec.workspace)
+	// Who let the call run (or refused it) and how long the person took:
+	// the event's duration includes that wait.
+	if approval.Source != "" {
+		e.Attrs["approval"] = approval.Source
+	}
+	if approval.Wait > 0 {
+		e.Attrs["approval_wait_ms"] = approval.Wait.Milliseconds()
+	}
 	o.rec.record(ctx, e)
 	// Every call reaching the registry counts, refused ones included.
 	runUsageFrom(ctx).addTool()
@@ -266,12 +278,23 @@ func addCallAttrs(attrs map[string]any, call agentcore.ToolCall, res *agentcore.
 	if summary := summarizeToolArgs(call.Arguments); summary != "" {
 		attrs["arg"] = truncateRunes(redact.Secrets(shortenWorkspace(summary, workspace)), 160)
 	}
-	if call.Name == "file_edit" {
-		changes := 1
+	switch call.Name {
+	case "file_edit":
+		edits := []any{call.Arguments}
 		if list, ok := call.Arguments["edits"].([]any); ok && len(list) > 0 {
-			changes = len(list)
+			edits = list
 		}
-		attrs["changes"] = changes
+		attrs["changes"] = len(edits)
+		added, removed := 0, 0
+		for _, item := range edits {
+			if edit, ok := item.(map[string]any); ok {
+				removed += lineCount(edit["old_string"])
+				added += lineCount(edit["new_string"])
+			}
+		}
+		attrs["lines_added"], attrs["lines_removed"] = added, removed
+	case "file_write":
+		attrs["lines_added"] = lineCount(call.Arguments["content"])
 	}
 	var targets []string
 	for _, key := range []string{"path", "dir"} {
@@ -368,4 +391,13 @@ type HostEvent struct {
 func (r *Runner) RecordEvent(ctx context.Context, sessionID string, ev HostEvent) {
 	r.rec.record(ctx, store.Event{SessionID: sessionID, Kind: ev.Kind, Name: ev.Name, Status: ev.Status,
 		StartedAt: time.Now(), DurationMs: ev.Duration.Milliseconds(), Error: ev.Error, Attrs: ev.Attrs})
+}
+
+// lineCount is the number of lines of a string argument (0 for "").
+func lineCount(v any) int {
+	s, _ := v.(string)
+	if s == "" {
+		return 0
+	}
+	return strings.Count(strings.TrimSuffix(s, "\n"), "\n") + 1
 }

@@ -198,6 +198,9 @@ type contextBuilder struct {
 	// compose, recorded by recordFold once the view is final.
 	foldBase    int
 	foldPending *foldStats
+
+	// contextRecorded: this turn's context event (recordContext) is written.
+	contextRecorded bool
 }
 
 func (r *Runner) newContextBuilder(sessionID, turnID string, hist historyView, prompt agentcore.PromptBuilder, usage *usageCollector, hookContext string) *contextBuilder {
@@ -244,6 +247,7 @@ func (b *contextBuilder) BuildMessages(ctx context.Context, state *agentcore.Run
 	}
 	b.lastViewChars, b.haveView = charsOfMessages(view), true
 	b.recordFold(ctx)
+	b.recordContext(ctx, state, est)
 	return view, nil
 }
 

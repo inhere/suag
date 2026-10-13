@@ -59,6 +59,13 @@ const (
 	// EventFold records a history folding boundary move: attrs boundary,
 	// steps, chars_before and chars_after of the request view.
 	EventFold = "fold"
+	// EventContext records what the first model request of a turn is made
+	// of: chars per part (system prompt, tools, segment context parts,
+	// history, hook context, the turn's input) and the window.
+	EventContext = "context"
+	// EventHook records a run of the user's hook command: name = hook event,
+	// attrs decision, additional_chars, notice.
+	EventHook = "hook"
 )
 
 // Session is one conversation. Meta holds free-form keys (rules hash, append

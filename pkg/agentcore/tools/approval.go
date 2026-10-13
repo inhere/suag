@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/inhere/suag/pkg/agentcore/api"
 )
@@ -94,6 +95,9 @@ func (a *Approval) ExecuteTool(ctx context.Context, call api.ToolCall) (*api.Too
 		}
 		return nil, &abortedError{err: err}
 	}
+	if r := approvalReportOf(ctx); r != nil && r.Source == "" {
+		r.Source = ApprovedByRule
+	}
 	return a.inner.ExecuteTool(ctx, call)
 }
 
@@ -112,4 +116,48 @@ func (a *Approval) availableNames(ctx context.Context) string {
 		names = append(names, s.Name)
 	}
 	return strings.Join(names, ", ")
+}
+
+// Approval sources (ApprovalReport.Source).
+const (
+	// ApprovedByRule: the policy let the call run without asking (read-only
+	// or agent-state tool, approval auto, an MCP rule).
+	ApprovedByRule = "rule"
+	// ApprovedByUser: the person was asked and allowed it.
+	ApprovedByUser = "user"
+	// ApprovedAlways: the person had answered "always" for this tool.
+	ApprovedAlways = "always"
+	// AskedAndDenied: the person was asked and refused.
+	AskedAndDenied = "user_denied"
+)
+
+// ApprovalReport says how a call was approved: who decided and how long the
+// person took to answer. The observing layer puts one in the context
+// (WithApprovalReport) and reads it after the call; approvers that ask a
+// person fill it in (ReportApproval); a call the Approver let through
+// without reporting is ApprovedByRule.
+type ApprovalReport struct {
+	Source string
+	Wait   time.Duration
+}
+
+type approvalReportKey struct{}
+
+// WithApprovalReport returns ctx carrying a fresh report.
+func WithApprovalReport(ctx context.Context) (context.Context, *ApprovalReport) {
+	r := &ApprovalReport{}
+	return context.WithValue(ctx, approvalReportKey{}, r), r
+}
+
+// ReportApproval records the source and the person's answer time in ctx's
+// report, if any.
+func ReportApproval(ctx context.Context, source string, wait time.Duration) {
+	if r, _ := ctx.Value(approvalReportKey{}).(*ApprovalReport); r != nil {
+		r.Source, r.Wait = source, wait
+	}
+}
+
+func approvalReportOf(ctx context.Context) *ApprovalReport {
+	r, _ := ctx.Value(approvalReportKey{}).(*ApprovalReport)
+	return r
 }

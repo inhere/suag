@@ -168,8 +168,25 @@ func traceLine(e store.Event) string {
 	if n, ok := e.Attrs["tool_calls"]; ok && fmt.Sprint(n) != "0" {
 		parts = append(parts, fmt.Sprintf("calls=%v", n))
 	}
+	if f, _ := e.Attrs["finish"].(string); f == "truncated" {
+		parts = append(parts, "truncated")
+	}
 	if e.Kind == store.EventTool {
 		parts = append(parts, toolTraceParts(e)...)
+	}
+	if e.Kind == store.EventContext {
+		parts = append(parts, contextTraceParts(e))
+	}
+	if e.Kind == store.EventHook {
+		if d, _ := e.Attrs["decision"].(string); d != "" {
+			parts = append(parts, "decision="+d)
+		}
+		if n := attrInt(e.Attrs["additional_chars"]); n > 0 {
+			parts = append(parts, fmt.Sprintf("context+=%d", n))
+		}
+		if n := attrInt(e.Attrs["reason_chars"]); n > 0 {
+			parts = append(parts, fmt.Sprintf("reason=%d", n))
+		}
 	}
 	if e.Kind == store.EventCompaction && e.Name == "compact" {
 		parts = append(parts, segmentTraceParts(e)...)
@@ -223,8 +240,19 @@ func turnContextLine(e store.Event) string {
 // that entered the context, a spill marker and the argument summary last.
 func toolTraceParts(e store.Event) []string {
 	var parts []string
+	// Only a person's decision is shown; rule approvals are the norm.
+	if src, _ := e.Attrs["approval"].(string); src != "" && src != "rule" {
+		item := "approval=" + src
+		if ms := attrInt(e.Attrs["approval_wait_ms"]); ms > 0 {
+			item += fmt.Sprintf("(wait=%.1fs)", float64(ms)/1000)
+		}
+		parts = append(parts, item)
+	}
 	if code, ok := e.Attrs["exit_code"]; ok {
 		parts = append(parts, fmt.Sprintf("exit=%v", code))
+	}
+	if _, ok := e.Attrs["lines_added"]; ok {
+		parts = append(parts, fmt.Sprintf("+%d/-%d", attrInt(e.Attrs["lines_added"]), attrInt(e.Attrs["lines_removed"])))
 	}
 	if n, ok := e.Attrs["inline_bytes"]; ok {
 		parts = append(parts, fmt.Sprintf("bytes=%v", n))
@@ -261,4 +289,34 @@ func segmentTraceParts(e store.Event) []string {
 		parts = append(parts, fmt.Sprintf("tokens_before=%v", before))
 	}
 	return parts
+}
+
+// contextParts are the parts of a context event in the order they are sent.
+var contextParts = []string{"system", "tools", "environment", "rules", "memory_index", "skills",
+	"append_prompt", "deferred_tools", "handoff", "history", "hook_context", "input"}
+
+// contextTraceParts renders a context event: the chars of each non-empty part
+// (tools with their count), then the estimated tokens of the window.
+func contextTraceParts(e store.Event) string {
+	var parts []string
+	for _, key := range contextParts {
+		n := attrInt(e.Attrs[key])
+		if n == 0 {
+			continue
+		}
+		item := key + "=" + human(int64(n))
+		if key == "tools" {
+			item += fmt.Sprintf("(%d", attrInt(e.Attrs["tools_count"]))
+			if mcp := attrInt(e.Attrs["tools_mcp"]); mcp > 0 {
+				item += fmt.Sprintf(", %d mcp", mcp)
+			}
+			item += ")"
+		}
+		parts = append(parts, item)
+	}
+	out := "chars " + strings.Join(parts, " ")
+	if est, window := attrInt(e.Attrs["est_tokens"]), attrInt(e.Attrs["window"]); est > 0 && window > 0 {
+		out += fmt.Sprintf(" est=%s/%s tokens", human(int64(est)), human(int64(window)))
+	}
+	return out
 }

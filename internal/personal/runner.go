@@ -369,6 +369,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	turnID := NewTurnID()
 	turnStart := time.Now()
 	ctx = withObserveScope(ctx, model.ID, turnID)
+	ctx = context.WithValue(ctx, turnInputKey{}, turnInput{chars: len(req.Prompt), injected: req.Injected})
 	// Refused tool calls are counted per turn in ctx (see denial.go).
 	ctx, denials := withTurnDenials(ctx)
 	// The run-scoped usage is counted at the observe layer and published after
@@ -700,6 +701,14 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	// The turn event is written outside the entry transactions and is
 	// best-effort; it is also what the trace timeline anchors on.
 	turnAttrs := map[string]any{"stop_reason": stopReason, "status": string(result.Status)}
+	// What started the turn: the input's length and whether a person typed
+	// it (injected = a hook reply, gofer delivery, ...).
+	if in, ok := ctx.Value(turnInputKey{}).(turnInput); ok {
+		turnAttrs["prompt_chars"] = in.chars
+		if in.injected {
+			turnAttrs["injected"] = true
+		}
+	}
 	if n := denials.count(); n > 0 {
 		turnAttrs["denials"] = n
 		turnAttrs["denial_limit_reached"] = result.DenialLimitReached
@@ -752,3 +761,11 @@ func emit(ctx context.Context, sink EmitFunc, event Event) error {
 	}
 	return sink(ctx, event)
 }
+
+// turnInput is the turn's input as seen by finish (the turn event).
+type turnInput struct {
+	chars    int
+	injected bool
+}
+
+type turnInputKey struct{}

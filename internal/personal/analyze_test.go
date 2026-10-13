@@ -123,6 +123,11 @@ func TestToolEventsCarryCallAttrs(t *testing.T) {
 	assert.Gt(t, models[2].Attrs["prefix_reused"].(float64), models[1].Attrs["prefix_reused"].(float64))
 	assert.StrContains(t, traceLine(events[0]), "exit=1")
 
+	turns := eventsOf(t, repo, res.SessionID, store.EventTurn)
+	assert.Require(t, assert.Len(t, turns, 1))
+	assert.Eq(t, float64(2), turns[0].Attrs["prompt_chars"]) // "go"
+	assert.Nil(t, turns[0].Attrs["injected"])
+
 	a := AnalyzeTrace(eventsOf(t, repo, res.SessionID))
 	assert.Eq(t, 1, a.ShellFailures)
 	assert.Eq(t, 1, a.TestRuns)
@@ -222,6 +227,25 @@ func TestCallAttrsShellAndEdit(t *testing.T) {
 
 	attrs = map[string]any{}
 	addCallAttrs(attrs, agentcore.ToolCall{Name: "file_edit", Arguments: map[string]any{"path": "a.go",
-		"edits": []any{map[string]any{}, map[string]any{}}}}, nil, ws)
+		"edits": []any{map[string]any{"old_string": "a\nb\n", "new_string": "a\nb\nc\n"}, map[string]any{"old_string": "x", "new_string": ""}}}}, nil, ws)
 	assert.Eq(t, 2, attrs["changes"])
+	assert.Eq(t, 3, attrs["lines_added"])
+	assert.Eq(t, 3, attrs["lines_removed"])
+
+	attrs = map[string]any{}
+	addCallAttrs(attrs, agentcore.ToolCall{Name: "file_write", Arguments: map[string]any{"path": "b.go", "content": "package b\n\nfunc B() {}\n"}}, nil, ws)
+	assert.Eq(t, 3, attrs["lines_added"])
+}
+
+func TestContextAndFinishTraceLines(t *testing.T) {
+	line := traceLine(store.Event{Kind: store.EventContext, Name: "turn", Status: eventOK, Attrs: map[string]any{
+		"system": float64(3000), "tools": float64(12000), "tools_count": float64(14), "tools_mcp": float64(2),
+		"rules": float64(1500), "history": float64(0), "input": float64(80), "est_tokens": float64(4500), "window": float64(1000000)}})
+	assert.StrContains(t, line, "chars system=3k tools=12k(14, 2 mcp) rules=1.5k input=80 est=4.5k/1M tokens")
+	tool := traceLine(store.Event{Kind: store.EventTool, Name: "shell_exec", Status: eventOK, Attrs: map[string]any{"approval": "user", "approval_wait_ms": float64(3200)}})
+	assert.StrContains(t, tool, "approval=user(wait=3.2s)")
+	assert.NotContains(t, traceLine(store.Event{Kind: store.EventTool, Name: "file_read", Status: eventOK, Attrs: map[string]any{"approval": "rule"}}), "approval")
+	model := traceLine(store.Event{Kind: store.EventModel, Name: "m", Status: eventOK, Attrs: map[string]any{"finish": "truncated"}})
+	assert.StrContains(t, model, " truncated")
+	assert.NotContains(t, traceLine(store.Event{Kind: store.EventModel, Name: "m", Status: eventOK, Attrs: map[string]any{"finish": "final"}}), "final")
 }

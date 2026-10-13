@@ -6,6 +6,8 @@
 
 ### 新增
 
+- trace 补充观测：每回合的 `context` 事件（上下文组成：系统提示词、工具及 MCP 数量、环境、规则、记忆索引、skills、延迟工具、交接摘要、历史、hook 注入、本轮输入的字符数，估算 token 与窗口）；`hook` 事件（chat 的每次 hook 运行：事件、耗时、block、注入字符数）；工具事件加审批来源与等人时间（`approval`、`approval_wait_ms`）、编辑增删行数；模型事件加 `finish`（截断标记）；回合事件加输入长度与是否注入。设计见 `docs/design/2026-10-13-trace-web-design.md`。
+
 - provider 类型 `openai-responses`（OpenAI Responses API，`POST {base_url}/responses`），可写在 provider 或单个模型上：完整历史、`store: false`，思考档位为 `reasoning.effort`，推理项（含加密推理）随工具调用保存并回传，流式按 `response.output_text.delta` 输出、以终止事件为准，截断（`max_output_tokens`）时不执行残缺调用。设计见 `docs/design/2026-10-13-openai-responses-design.md`。
 - 网关适配层（`pkg/agentcore/llm/compat_*.go`）：按 base_url 域名与模型 id 自动匹配 `openai`、`commandcode`、`deepseek` 的差异处理，`providers.<id>.compat` 可显式追加；DeepSeek 的缓存命中字段回退移入其中。
 

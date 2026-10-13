@@ -25,6 +25,9 @@ type Attempt struct {
 	// many tool calls it issued (more than one = a parallel step) and how
 	// long its reasoning and text were. Zero when the attempt failed.
 	ToolCalls, ReasoningChars, TextChars int
+	// Finish is how the response ended: "tool_calls", "final", or
+	// "truncated" when the output limit cut it off; "" when it failed.
+	Finish string
 }
 
 // AttemptObserver receives every provider attempt. It must not block.
@@ -79,6 +82,20 @@ func report(ctx context.Context, obs AttemptObserver, prov agentcoreapi.Provider
 	if res != nil {
 		a.Usage = res.Usage
 		a.ToolCalls, a.ReasoningChars, a.TextChars = len(res.ToolCalls), len(res.Reasoning), len(res.Content)
+		a.Finish = finishOf(res)
 	}
 	obs(ctx, a)
+}
+
+// finishOf names how a response ended (Attempt.Finish).
+func finishOf(res *agentcoreapi.GenerateResult) string {
+	for _, c := range res.ToolCalls {
+		if c.ArgumentsError == truncatedCallError {
+			return "truncated"
+		}
+	}
+	if res.FinishReason == agentcoreapi.FinishToolCalls {
+		return "tool_calls"
+	}
+	return "final"
 }

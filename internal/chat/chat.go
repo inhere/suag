@@ -55,6 +55,7 @@ type Options struct {
 
 // Run drives the interactive chat REPL on top of runner; hooks may be nil.
 func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Reader, stdout, stderr io.Writer, hooks suaghooks.Client) error {
+	hooks = recordHooks(hooks, runner)
 	sessionID := ""
 	source := "startup"
 	createdAtStartup := false

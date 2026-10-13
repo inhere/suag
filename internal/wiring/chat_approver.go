@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	gkconfig "github.com/gookit/config/v2"
@@ -67,8 +68,10 @@ func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.always[name] {
+		tools.ReportApproval(ctx, tools.ApprovedAlways, 0)
 		return nil
 	}
+	asked := time.Now()
 	answer, err := a.asker.Ask(ctx, a.question(call))
 	if errors.Is(err, tools.ErrCannotAsk) {
 		return tools.Denied(fmt.Sprintf("无法确认执行 %s（标准输入不是终端），已拒绝；如需在 chat 中自动放行，请设置 tools.approval: auto", name))
@@ -76,13 +79,17 @@ func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool
 	if err != nil {
 		return err // not a refusal: the approval layer aborts the turn
 	}
+	wait := time.Since(asked)
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "y", "yes":
+		tools.ReportApproval(ctx, tools.ApprovedByUser, wait)
 		return nil
 	case "a", "always":
 		a.always[name] = true
+		tools.ReportApproval(ctx, tools.ApprovedByUser, wait)
 		return nil
 	}
+	tools.ReportApproval(ctx, tools.AskedAndDenied, wait)
 	return tools.Denied("用户拒绝执行 " + name)
 }
 

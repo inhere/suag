@@ -313,3 +313,27 @@ func TestOpenCLIChatApproval(t *testing.T) {
 		assert.StrContains(t, err.Error(), "tools.approval")
 	})
 }
+
+func TestChatApproverReportsSource(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	run := func(approval *tools.Approval, name string) (*tools.ApprovalReport, error) {
+		ctx, rep := tools.WithApprovalReport(context.Background())
+		_, err := approval.ExecuteTool(ctx, agentcore.ToolCall{CallID: "c", Name: name, Arguments: map[string]any{"command": "echo"}})
+		return rep, err
+	}
+	asker := &scriptedAsker{answers: []string{"a", "n"}}
+	approval, _ := newChatApproval(t, false, asker)
+	rep, err := run(approval, "file_read")
+	assert.NoErr(t, err)
+	assert.Eq(t, tools.ApprovedByRule, rep.Source) // read-only: never asked
+	rep, err = run(approval, "shell_exec")
+	assert.NoErr(t, err)
+	assert.Eq(t, tools.ApprovedByUser, rep.Source) // answered "always"
+	rep, err = run(approval, "shell_exec")
+	assert.NoErr(t, err)
+	assert.Eq(t, tools.ApprovedAlways, rep.Source) // not asked again
+	rep, err = run(approval, "file_write")
+	assert.Error(t, err)
+	assert.Eq(t, tools.AskedAndDenied, rep.Source)
+}

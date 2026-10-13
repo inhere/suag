@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/coder/acp-go-sdk"
@@ -143,6 +144,7 @@ func (h *permissionHook) Decide(ctx context.Context, call agentcore.ToolCall, to
 		return h.deny(ctx, id, pending, ErrReadOnly)
 	}
 	if !readTool {
+		asked := time.Now()
 		decision, err := h.conn.RequestPermission(ctx, acp.RequestPermissionRequest{
 			SessionId: h.sessionID,
 			ToolCall: acp.ToolCallUpdate{
@@ -168,8 +170,10 @@ func (h *permissionHook) Decide(ctx context.Context, call agentcore.ToolCall, to
 			return context.Canceled
 		}
 		if decision.Outcome.Selected == nil || decision.Outcome.Selected.OptionId != "allow" {
+			tools.ReportApproval(ctx, tools.AskedAndDenied, time.Since(asked))
 			return h.deny(ctx, id, pending, ErrPermissionDenied)
 		}
+		tools.ReportApproval(ctx, tools.ApprovedByUser, time.Since(asked))
 	}
 	h.mu.Lock()
 	pending.state = callInProgress

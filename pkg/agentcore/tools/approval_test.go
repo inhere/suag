@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suag/pkg/agentcore/api"
@@ -73,5 +74,31 @@ func TestApproval(t *testing.T) {
 		_, err := a.ExecuteTool(context.Background(), api.ToolCall{Name: "missing"})
 		assert.Err(t, err)
 		assert.Eq(t, false, asked)
+	})
+}
+
+func TestApprovalReport(t *testing.T) {
+	call := api.ToolCall{CallID: "c1", Name: "act"}
+	reg := NewRegistry()
+	reg.Register(&approvalTool{})
+	t.Run("let through without a word is the rule", func(t *testing.T) {
+		a := NewApproval(reg, ApproverFunc(func(context.Context, api.ToolCall, api.Tool) error { return nil }))
+		ctx, rep := WithApprovalReport(context.Background())
+		_, err := a.ExecuteTool(ctx, call)
+		assert.NoErr(t, err)
+		assert.Eq(t, ApprovedByRule, rep.Source)
+	})
+	t.Run("an approver that asked reports it", func(t *testing.T) {
+		a := NewApproval(reg, ApproverFunc(func(ctx context.Context, _ api.ToolCall, _ api.Tool) error {
+			ReportApproval(ctx, ApprovedByUser, 1500*time.Millisecond)
+			return nil
+		}))
+		ctx, rep := WithApprovalReport(context.Background())
+		_, err := a.ExecuteTool(ctx, call)
+		assert.NoErr(t, err)
+		assert.Eq(t, ApprovalReport{Source: ApprovedByUser, Wait: 1500 * time.Millisecond}, *rep)
+	})
+	t.Run("without a report in the context nothing breaks", func(t *testing.T) {
+		ReportApproval(context.Background(), ApprovedByUser, time.Second)
 	})
 }

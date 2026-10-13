@@ -202,5 +202,19 @@ func TestTraceTimelineIncludesTurnModelToolAndDenial(t *testing.T) {
 		assert.NoErr(t, json.Unmarshal([]byte(line), &row))
 		kinds[row["kind"].(string)] = true
 	}
-	assert.Eq(t, map[string]bool{"turn": true, "turn_context": true, "model": true, "tool": true, "denial": true}, kinds)
+	assert.Eq(t, map[string]bool{"turn": true, "turn_context": true, "context": true, "model": true, "tool": true, "denial": true}, kinds)
+
+	// The context event says what the turn's first request is made of.
+	var ctxEvent *store.Event
+	for i := range events {
+		if events[i].Kind == store.EventContext {
+			ctxEvent = &events[i]
+		}
+	}
+	assert.Require(t, assert.NotNil(t, ctxEvent))
+	assert.Eq(t, float64(2), ctxEvent.Attrs["tools_count"])
+	assert.Gt(t, ctxEvent.Attrs["tools"].(float64), float64(0))
+	assert.Gt(t, ctxEvent.Attrs["input"].(float64), float64(0))
+	assert.NotNil(t, ctxEvent.Attrs["environment"])
+	assert.NotNil(t, ctxEvent.Attrs["est_tokens"])
 }
