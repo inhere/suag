@@ -16,16 +16,32 @@ const (
 	maxRuleTotalBytes = 128 * 1024
 )
 
-// LoadRules reads user and project instructions in authority order. Includes are
-// deliberately one level deep so a rule file cannot recursively expand a tree.
-func LoadRules(cwd, suagHome string, noProject bool) (string, string, error) {
+// DefaultRuleFile is the project rule file read at every directory level when
+// the caller has none configured (rules.file). The user-level file is fixed:
+// $SUAG_HOME/AGENTS.md.
+const DefaultRuleFile = "AGENTS.md"
+
+// LoadRules reads user and project instructions in authority order. Project
+// rules come from one file per directory level (the Git root down to cwd),
+// named by ruleFile; "" means DefaultRuleFile. Includes are deliberately one
+// level deep so a rule file cannot recursively expand a tree.
+func LoadRules(cwd, suagHome string, noProject bool, ruleFile string) (string, string, error) {
+	name := ruleFile
+	if name == "" {
+		name = DefaultRuleFile
+	}
+	// Only a file name is accepted, so the value cannot leave the directory of
+	// a level (config validates rules.file for the same reason).
+	if !validRuleFileName(name) {
+		return "", "", fmt.Errorf("project rule file name %q must be a bare file name without a path separator", name)
+	}
 	var paths []string
 	workspaceRoot := ""
 	if suagHome != "" {
-		paths = append(paths, filepath.Join(suagHome, "AGENTS.md"))
+		paths = append(paths, filepath.Join(suagHome, DefaultRuleFile))
 	}
 	if !noProject {
-		project, root, err := projectRulePaths(cwd)
+		project, root, err := projectRulePaths(cwd, name)
 		if err != nil {
 			return "", "", err
 		}
@@ -35,22 +51,7 @@ func LoadRules(cwd, suagHome string, noProject bool) (string, string, error) {
 	var sections, hashSections []string
 	remaining := maxRuleTotalBytes
 	seenPaths := make(map[string]struct{})
-	previousPath := ""
-	var previousContent string
 	for _, path := range paths {
-		raw, _, err := readRuleFile(path)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return "", "", fmt.Errorf("read rule %s: %w", path, err)
-		}
-		if sameLevelRulePair(previousPath, path) && previousContent == raw {
-			seenPaths[rulePathKey(path)] = struct{}{}
-			previousPath, previousContent = path, raw
-			continue
-		}
-		previousPath, previousContent = path, raw
 		content, err := expandRuleFile(path, &remaining, seenPaths)
 		if err != nil {
 			return "", "", err
@@ -95,15 +96,16 @@ func relInside(root, path string) (string, bool) {
 	return filepath.ToSlash(rel), true
 }
 
-func sameLevelRulePair(first, second string) bool {
-	return strings.EqualFold(filepath.Base(first), "AGENTS.md") &&
-		strings.EqualFold(filepath.Base(second), "CLAUDE.md") &&
-		rulePathKey(filepath.Dir(first)) == rulePathKey(filepath.Dir(second))
+// validRuleFileName reports whether name is a bare file name: non-empty and
+// without a path separator, so it stays inside the directory it is joined to.
+func validRuleFileName(name string) bool {
+	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, `/\`)
 }
 
-// projectRulePaths also returns the workspace root: the Git root, or cwd when
-// there is no Git root.
-func projectRulePaths(cwd string) ([]string, string, error) {
+// projectRulePaths returns the ruleFile of every level from the workspace root
+// down to cwd, and the workspace root itself: the Git root, or cwd when there
+// is no Git root.
+func projectRulePaths(cwd, ruleFile string) ([]string, string, error) {
 	dir, err := filepath.Abs(cwd)
 	if err != nil {
 		return nil, "", err
@@ -123,13 +125,11 @@ func projectRulePaths(cwd string) ([]string, string, error) {
 	}
 	var paths []string
 	for i := len(levels) - 1; i >= 0; i-- {
-		for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
-			path := filepath.Join(levels[i], name)
-			if info, err := os.Stat(path); err == nil && !info.IsDir() {
-				paths = append(paths, path)
-			} else if err != nil && !os.IsNotExist(err) {
-				return nil, "", err
-			}
+		path := filepath.Join(levels[i], ruleFile)
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			paths = append(paths, path)
+		} else if err != nil && !os.IsNotExist(err) {
+			return nil, "", err
 		}
 	}
 	return paths, levels[len(levels)-1], nil

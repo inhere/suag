@@ -172,6 +172,12 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Project rules are one file per level, named by rules.file; a bad name is a
+	// startup error rather than a silently skipped rule file.
+	ruleFile, err := appconfig.ReadRuleFileName()
+	if err != nil {
+		return nil, err
+	}
 	settings, taintTools, taintOnSpill := rs.models, rs.taintTools, rs.taintOnSpill
 	memSetup, memPolicy, sessionsDir := rs.memSetup, rs.memPolicy, rs.sessionsDir
 	provider, err := buildMainProvider(settings)
@@ -324,7 +330,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 			if err != nil {
 				return "", "", err
 			}
-			return personal.LoadRules(ruleCWD, home, opts.NoProjectRules)
+			return personal.LoadRules(ruleCWD, home, opts.NoProjectRules, ruleFile)
 		},
 		AppendSystemPrompt:    appendSystemPrompt(opts.AppendSystemPrompt),
 		AppendSystemPromptSet: opts.ClearAppendSystemPrompt,

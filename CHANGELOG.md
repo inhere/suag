@@ -20,6 +20,7 @@
   - context 事件记录工具名列表（`tool_names`）与 skills 呈现统计（`skills_listed`、`skills_named`、`skills_preloaded`、`skills_total`）；上下文详情显示工具定义列表和“描述 / 仅名称 / 预载 / 共”的 skills 数量。
 
 - 会话标题取任务本身的第一行，最多 100 字。gofer 派任务时在提示前面注入的规则段、工具段与 skills 段会被跳过；原先标题是整段提示，`suag sessions` 里只能看到规则开头。ACP 新建的会话原先一直叫 `Session <id>`，现在用第一条提示做标题。
+- 项目规则在每一级目录只读一个文件，文件名由 `rules.file` 决定（默认 `AGENTS.md`，可改成 `CLAUDE.md`）。原先每级同时读 `AGENTS.md` 与 `CLAUDE.md`（同级的 `CLAUDE.md` 只是 `@AGENTS.md` 或内容相同时跳过），两个文件都在的仓库会重复注入同一份规则，trace 里的规则来源也变乱。`~/.suag/AGENTS.md`（用户级）与 `@` 引入行为不变；`rules.file` 只接受文件名，非法值在启动时报错。
 
 ## [0.15.0] - 2026-10-13
 

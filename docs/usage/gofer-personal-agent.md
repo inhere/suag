@@ -45,7 +45,7 @@ agents:
 
 用 `gofer config validate server` 检查文件，再按当前 Gofer 服务的配置管理流程 reload，并用 `gofer agent list --runner server` 确认两项可用。`detect` 使用 `suag version`，其输出为单行 `suag <version> (<commit>)`。
 
-Suag 创建会话时从外层到内层读取项目规则；每一级按顺序读取 `AGENTS.md`、`CLAUDE.md`（若存在），并在最前加入 `~/.suag/AGENTS.md`。展开后的真实文件路径会去重，因此两个规则文件共同引入的文件只读取一次。规则里的独占行 `@相对文件` 展开一层；规则和 `--append-system-prompt` 在会话创建时保存，续接时只在规则文件变化后向下一轮补充更新消息。`SUAG_APPEND_SYSTEM_PROMPT` 可提供默认追加提示，命令行参数优先；不传或传空串都沿用会话已保存的追加提示（Gofer 模板在 job 没有系统提示时会渲染出空串），用 `--clear-append-system-prompt` 清空；`--no-project-rules` 可在调试时跳过项目文件。Suag 不再因 `GOFER_JOB_ID` 自动追加任何提示；Gofer job 需要的汇报提示（`gofer work report` / `gofer issue`）由 Gofer 经 `SUAG_APPEND_SYSTEM_PROMPT` 或 `--append-system-prompt` 提供（见「升级迁移」）。
+Suag 创建会话时从外层到内层读取项目规则，每一级只读一个文件：文件名由 `rules.file` 决定（默认 `AGENTS.md`，可设为 `CLAUDE.md`），并在最前加入 `~/.suag/AGENTS.md`。展开后的真实文件路径会去重，同一个文件（包括经 `@` 引入的）只读取一次。规则里的独占行 `@相对文件` 展开一层；规则和 `--append-system-prompt` 在会话创建时保存，续接时只在规则文件变化后向下一轮补充更新消息。`SUAG_APPEND_SYSTEM_PROMPT` 可提供默认追加提示，命令行参数优先；不传或传空串都沿用会话已保存的追加提示（Gofer 模板在 job 没有系统提示时会渲染出空串），用 `--clear-append-system-prompt` 清空；`--no-project-rules` 可在调试时跳过项目文件。Suag 不再因 `GOFER_JOB_ID` 自动追加任何提示；Gofer job 需要的汇报提示（`gofer work report` / `gofer issue`）由 Gofer 经 `SUAG_APPEND_SYSTEM_PROMPT` 或 `--append-system-prompt` 提供（见「升级迁移」）。
 
 ## 本机 chat 会话送话
 

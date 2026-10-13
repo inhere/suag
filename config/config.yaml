@@ -84,6 +84,12 @@ providers:
 #   fold_every: 0       # history folding: fold older steps every N steps (e.g. 10); 0 (default) = off
 #   fold_keep: 5        # steps kept whole (>= 1)
 
+# Project rules: one file per directory level, from the Git root (or cwd) down
+# to cwd, plus $SUAG_HOME/AGENTS.md for the user level. Only a file name (no
+# path) is accepted; set it to CLAUDE.md to read that one instead.
+# rules:
+#   file: AGENTS.md
+
 # Workspace directory for file and shell tools
 # Defaults to current working directory
 workspace: ""

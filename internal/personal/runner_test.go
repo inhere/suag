@@ -117,7 +117,7 @@ func TestRunnerRulesPersistAndUpdateOnlyWhenChanged(t *testing.T) {
 	newRunner := func(appendPrompt string) *Runner {
 		runner, err := New(Config{Repository: repo, Provider: provider,
 			PromptBuilder:      staticTestPrompt("BASE"),
-			RuleSource:         func() (string, string, error) { return LoadRules(root, "", false) },
+			RuleSource:         func() (string, string, error) { return LoadRules(root, "", false, "") },
 			AppendSystemPrompt: appendPrompt})
 		if err != nil {
 			t.Fatal(err)
