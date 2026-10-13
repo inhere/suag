@@ -165,7 +165,9 @@ func traceLine(e store.Event) string {
 	if n, ok := e.Attrs["attempt"]; ok {
 		parts = append(parts, fmt.Sprintf("attempt=%v", n))
 	}
-	if n, ok := e.Attrs["tool_calls"]; ok && fmt.Sprint(n) != "0" {
+	// A sub-agent's own tool calls are rendered with its other numbers (see
+	// agentTraceParts), not here.
+	if n, ok := e.Attrs["tool_calls"]; ok && fmt.Sprint(n) != "0" && !agentEvent(e) {
 		parts = append(parts, fmt.Sprintf("calls=%v", n))
 	}
 	if f, _ := e.Attrs["finish"].(string); f == "truncated" {
@@ -246,8 +248,12 @@ func turnContextLine(e store.Event) string {
 }
 
 // toolTraceParts renders what a tool call did: exit code (shell), the size
-// that entered the context, a spill marker and the argument summary last.
+// that entered the context, a spill marker and the argument summary last. An
+// agent call is rendered by its own parts.
 func toolTraceParts(e store.Event) []string {
+	if e.Name == "agent" {
+		return append(agentTraceParts(e), toolArgPart(e)...)
+	}
 	var parts []string
 	// Only a person's decision is shown; rule approvals are the norm.
 	if src, _ := e.Attrs["approval"].(string); src != "" && src != "rule" {
@@ -275,10 +281,61 @@ func toolTraceParts(e store.Event) []string {
 	if minimized, _ := e.Attrs["minimized"].(bool); minimized {
 		parts = append(parts, fmt.Sprintf("tidied(raw=%v)", e.Attrs["raw_bytes"]))
 	}
+	return append(parts, toolArgPart(e)...)
+}
+
+// toolArgPart is the redacted argument summary of a tool call, rendered last
+// and in brackets.
+func toolArgPart(e store.Event) []string {
 	if arg, ok := e.Attrs["arg"].(string); ok && arg != "" {
-		parts = append(parts, "["+arg+"]")
+		return []string{"[" + arg + "]"}
+	}
+	return nil
+}
+
+// agentTraceParts renders a sub-agent call (the agent tool): the session it
+// ran in, its type, the steps it took (with its own tool calls), the tokens it
+// spent and why it stopped. A background call returns a task id at once: its
+// start event has none of these (they are on the task's end event).
+func agentTraceParts(e store.Event) []string {
+	var parts []string
+	if id, _ := e.Attrs["child_session_id"].(string); id != "" {
+		parts = append(parts, "sub="+id)
+	}
+	if kind, _ := e.Attrs["agent_type"].(string); kind != "" {
+		parts = append(parts, "type="+kind)
+	}
+	if _, ok := e.Attrs["steps"]; ok {
+		parts = append(parts, fmt.Sprintf("steps=%d calls=%d", attrInt(e.Attrs["steps"]), attrInt(e.Attrs["tool_calls"])))
+	}
+	if in, out := attrInt(e.Attrs["input_tokens"]), attrInt(e.Attrs["output_tokens"]); in > 0 || out > 0 {
+		item := "in=" + human(int64(in))
+		if cached := attrInt(e.Attrs["cache_read_tokens"]); cached > 0 {
+			item += "(cache " + human(int64(cached)) + ")"
+		}
+		parts = append(parts, item, "out="+human(int64(out)))
+	}
+	if cost := attrFloat(e.Attrs["cost_usd"]); cost > 0 {
+		parts = append(parts, fmt.Sprintf("cost=$%.4f", cost))
+	}
+	if stop, _ := e.Attrs["stop"].(string); stop != "" {
+		parts = append(parts, "stop="+stop)
 	}
 	return parts
+}
+
+// agentEvent reports whether e is a sub-agent call: the agent tool event or
+// the task event of a background sub-agent. Both render their numbers as one
+// group of parts, so the generic calls= part leaves them alone.
+func agentEvent(e store.Event) bool {
+	switch e.Kind {
+	case store.EventTool:
+		return e.Name == "agent"
+	case store.EventTask:
+		kind, _ := e.Attrs["kind"].(string)
+		return kind == taskKindAgent
+	}
+	return false
 }
 
 // taskTraceParts renders what a background task ran (a task event spans the
@@ -286,13 +343,25 @@ func toolTraceParts(e store.Event) []string {
 // code, plus what the task's kind adds. A watch shows how often its command
 // ran and how often the result changed, or its last state when no counters
 // arrived; a Stop hook shows its summary ("Stop hook"), which names it, in
-// place of the command bracket. Shell tasks and older events without a kind
-// render as before.
+// place of the command bracket; an agent task shows the steps its sub-agent
+// ran. Shell tasks and older events without a kind render as before.
 func taskTraceParts(e store.Event) []string {
 	kind, _ := e.Attrs["kind"].(string)
 	arg, _ := e.Attrs["arg"].(string)
 	switch kind {
-	case "watch", "hook":
+	case taskKindAgent:
+		parts := []string{"agent"}
+		if _, ok := e.Attrs["steps"]; ok {
+			parts = append(parts, fmt.Sprintf("steps=%d calls=%d", attrInt(e.Attrs["steps"]), attrInt(e.Attrs["tool_calls"])))
+		}
+		if code, ok := e.Attrs["exit_code"]; ok {
+			parts = append(parts, fmt.Sprintf("exit=%v", code))
+		}
+		if arg != "" {
+			parts = append(parts, "["+arg+"]")
+		}
+		return parts
+	case taskKindWatch, taskKindHook:
 		var parts []string
 		switch {
 		case kind == "watch":
