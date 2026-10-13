@@ -83,7 +83,8 @@ func (t *AgentTool) Description() string {
 		"implementations, surveying a dependency) and you only need the conclusion; for one or two files, read them " +
 		"yourself. Give it a full prompt: what to find, where, and what the report should hold (findings with " +
 		"file:line). type explore (default): workspace read tools; research: also web_fetch and web_search. " +
-		"The sub-agent cannot write files, run commands or ask the user; it sees nothing of this conversation."
+		"The sub-agent cannot write files, run commands or ask the user; it sees nothing of this conversation. " +
+		"Its report is the result: do not repeat its searches to check it; read only what you then need to change."
 	if t.tasks != nil {
 		desc += " With background: true it runs as a background task and returns a task id at once; you are told " +
 			"when it ends (task wait / task output read its report): start several to explore in parallel."

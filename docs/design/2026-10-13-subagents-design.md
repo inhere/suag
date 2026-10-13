@@ -166,3 +166,20 @@ personal 层新增 `Runner.RunChild(ctx, ChildRequest)`，wiring 层新增子 ag
 - **子会话**：`NewSession` 带 meta；SQL 过滤；`--agents`；gc 随父会话处理。
 - **验证**：`agents.enabled` 开关；评测比较父加子的总量；fakellm 子 agent 模式；Ctrl-C 冒烟提前到 S2。
 - **其他**：不需要“按次覆盖步数上限”，子 Runner 有自己的 MaxSteps；报告长度限制；`addCallAttrs` 的 agent 分支跳过 exit code 解析。
+
+## 评测记录（2026-10-13，explore-callers，真实模型，--thinking=high，各 2 次）
+
+任务：30 多个文件里找出 `cfg.Validate` 的全部调用（7 处，另有同名方法、ValidateAll、注释等干扰）。用量取 `suag stats --session`，包含子会话。
+
+| 组 | 通过 | 平均调用 | 平均提示 token | 平均耗时 |
+|---|---|---|---|---|
+| 关闭子 agent（`agents.enabled=false`） | 2/2 | 6.0 | 64k | 27s |
+| 开启子 agent（初版提示词） | 2/2 | 9.5 | 172k | 52s |
+| 开启子 agent（调整提示词后） | 2/2 | 11.0 | 138k（51k / 224k） | 52s |
+
+结论：
+
+- 功能正确：两种方式都能找全且不误报。
+- 对这种一次 grep 就能回答的窄任务，子 agent 只增加开销。子 agent 读完了全部文件（只为排除别名导入），父会话拿到报告后又复查了一遍。
+- 调整提示词后（工具描述写明“报告就是结果，不要重复搜索”；子 agent 提示词强调先精确搜索、少步数），父会话的复查从读文件变成几次 grep，但子 agent 的“周全”倾向仍在，结果波动大。
+- 子 agent 的价值在于父会话的上下文保持很小（父会话末次输入约 20k，子 agent 自己涨到 68k），对之后的多轮对话有利；单轮评测反映不出来。后续需要一个多轮或大范围探索的评测来衡量。

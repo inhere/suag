@@ -1,0 +1,17 @@
+name: explore-callers
+mode: allow-write
+prompt: >-
+  这个仓库有 30 多个文件。找出所有调用 cfg 包 Validate 函数（即 cfg.Validate(...)，不是其他类型的同名方法，也不是 ValidateAll）的位置，
+  在 CALLERS.md 里每行写一个 `路径:行号`（路径相对仓库根）。只读代码，不需要运行命令。
+  如果你有 agent 工具，先派一个 explore 子 agent 去查找，再按它的报告写文件。
+checks:
+  - {type: file_contains, path: CALLERS.md, text: "api/handler.go"}
+  - {type: file_contains, path: CALLERS.md, text: "api/admin.go"}
+  - {type: file_contains, path: CALLERS.md, text: "jobs/nightly.go"}
+  - {type: file_contains, path: CALLERS.md, text: "jobs/import.go"}
+  - {type: file_contains, path: CALLERS.md, text: "cli/run.go"}
+  - {type: file_contains, path: CALLERS.md, text: "store/load.go"}
+  - {type: file_contains, path: CALLERS.md, text: "web/form.go"}
+  - {type: file_not_contains, path: CALLERS.md, text: "jobs/other.go"}
+  - {type: file_not_contains, path: CALLERS.md, text: "web/widget.go"}
+  - {type: file_not_contains, path: CALLERS.md, text: "docs/notes.go"}
