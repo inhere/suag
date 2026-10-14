@@ -307,6 +307,28 @@ func (p *abortProv) Generate(ctx context.Context, req *agentcore.GenerateRequest
 	return nil, ctx.Err()
 }
 
+// abortOnModel cancels the turn right before its n-th model request goes out -
+// i.e. after that step's request context was built - and runs onAbort then.
+type abortOnModel struct {
+	agentcore.NopHook
+	at      int
+	calls   int
+	cancel  context.CancelFunc
+	onAbort func()
+}
+
+func (h *abortOnModel) BeforeModel(context.Context, *agentcore.ModelEvent, *agentcore.Control) error {
+	h.calls++
+	if h.calls != h.at {
+		return nil
+	}
+	if h.onAbort != nil {
+		h.onAbort()
+	}
+	h.cancel()
+	return nil
+}
+
 // A turn cancelled between BuildMessages and its model request returns every
 // steer: the delivered one (its entry does not replay either) and the ones
 // still in the inbox (design D4), the delivered one first.
@@ -319,24 +341,21 @@ func TestSteerIsReturnedWhenTheTurnIsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	provider := &abortProv{}
+	abort := &abortOnModel{at: 2, cancel: cancel, onAbort: func() {
+		// The second steer arrives after the first one was delivered, then the
+		// turn is aborted before the request goes out.
+		accepted, err := runner.Steer(sid, second)
+		assert.NoErr(t, err)
+		assert.Eq(t, true, accepted)
+	}}
 	runner = compactRunner(t, repo, provider, workRegistry(func() {
 		accepted, err := runner.Steer(sid, first)
 		assert.NoErr(t, err)
 		assert.Eq(t, true, accepted)
-	}), nil)
+	}), func(c *Config) { c.Hooks = []agentcore.Hook{abort} })
 	_, err := runner.NewSession(context.Background(), sid, "steer cancel")
 	assert.Require(t, assert.NoErr(t, err))
-	rec := &eventRecorder{on: func(ev Event) {
-		if ev.Kind != "steer_delivered" || ev.SteerID != first.ID {
-			return
-		}
-		// The first steer is in the request that is about to go out; a second one
-		// arrives after it, then the turn is aborted.
-		accepted, err := runner.Steer(sid, second)
-		assert.NoErr(t, err)
-		assert.Eq(t, true, accepted)
-		cancel()
-	}}
+	rec := &eventRecorder{}
 
 	res, err := runner.Run(ctx, RunRequest{SessionID: sid, Prompt: "run the job", Emit: rec.emit})
 	// An aborted turn comes back as a cancellation error (the runtime saves the
