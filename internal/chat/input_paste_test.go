@@ -119,3 +119,45 @@ func TestChatInputSource_BracketedPasteMode(t *testing.T) {
 		assert.Eq(t, "y", h.answer(t, done).line)
 	})
 }
+
+// TestChatInputSource_PastedNewlinesDuringTurn: the input line a running turn keeps
+// open (chat.steering, S2b) takes a multi-line paste exactly as the prompt's line
+// does — the newlines inside the paste are text and only the person's own Enter
+// sends it, here as one inserted message of the turn (design D3/N4).
+func TestChatInputSource_PastedNewlinesDuringTurn(t *testing.T) {
+	// newTurnSource: a source whose turn-time input line is on (SetSteering and
+	// SetBusy as chat.go does when chat.steering is on), read through the fake
+	// keyboard, whose byte-ready wait is the keyboard's own buffer (kbWait above).
+	newTurnSource := func(t *testing.T) *askHarness {
+		t.Helper()
+		h := newAskHarness(t)
+		h.source.inputWait = kbWait(h.kb)
+		h.source.SetSteering(true)
+		h.source.SetBusy(true)
+		h.requestSteer(t)
+		// The turn reads raw as well, so the terminal brackets its pastes too.
+		waitUntil(t, "bracketed paste on during the turn", func() bool {
+			return strings.Contains(h.out.String(), bracketPasteOn)
+		})
+		return h
+	}
+
+	t.Run("a bracketed paste becomes one inserted message", func(t *testing.T) {
+		h := newTurnSource(t)
+		h.kb.Type("\x1b[200~第一行\n第二行\x1b[201~")
+		time.Sleep(20 * time.Millisecond) // the paste on its own submits nothing
+		assert.Eq(t, 0, len(h.source.turnEvents))
+		h.kb.Type("\r")
+		event := h.nextTurnEvent(t)
+		assert.Eq(t, "第一行\n第二行", event.line)
+		assert.Eq(t, keyNone, event.key)
+	})
+
+	t.Run("without markers the byte after the newline tells the paste", func(t *testing.T) {
+		h := newTurnSource(t)
+		h.kb.Type("第一行\n第二行\r") // the paste arrives as one chunk
+		event := h.nextTurnEvent(t)
+		assert.Eq(t, "第一行\n第二行", event.line)
+		assert.Eq(t, keyNone, event.key)
+	})
+}

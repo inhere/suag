@@ -10,6 +10,11 @@ turn only. The scenarios (each on its own scratch home and fake model):
              it (fakellm's request log records the last messages of every
              request), the turn ends with one turn event and a steer delivered
              event, and the end-of-turn line counts the message.
+  paste      two lines pasted into the running turn: the paste stays one piece on
+             the input line (its line break submits nothing), and only the
+             person's own Enter sends it — the request after the tool result
+             carries both lines as ONE user message (fakellm's request log), and
+             the trace records one delivery.
   next-turn  the message arrives while the model answers (text mode, a slow
              reply): the answer stands and the message becomes the next turn at
              once (design D3) - the second request carries it as its prompt, the
@@ -40,6 +45,10 @@ Linux container:
   cancel in turnInput.endTurn: abort fails (the turn ends the chat, no 已中断本轮).
 - drop PrependLine from putSteersBack: abort fails (the message is gone from the
   input line, Enter runs nothing and the second request never comes).
+- let a turn keep the terminal cooked (SetBusy(true) without the raw mode steering
+  on enters, or turnActive left set): paste fails, the turn no longer asks the
+  terminal to bracket pastes (and a real terminal would send no paste markers at
+  all), and the line break of the paste is no longer one piece of text.
 - with steering on, drop shell_exec's cmd.Cancel: abort fails, the tool's sleep
   keeps the turn running (in a PTY Ctrl-C no longer reaches the foreground
   process group; the turn's context is what ends the tool).
@@ -78,6 +87,14 @@ STARTED = "steer-tool-started"
 QUICK_TOOL = "touch {marker}; sleep 4; echo TOOL_DONE"
 # The tool that keeps running until the turn is ended.
 SLOW_TOOL = "touch {marker}; sleep 60; echo TOOL_DONE"
+# The tool of the paste scenario: long enough for the paste and its checks to
+# happen while it runs (the model is asked again once it ends).
+PASTE_TOOL = "touch {marker}; sleep 10; echo TOOL_DONE"
+# The terminal bracketing chat asks for while a line is editable
+# (lineedit.SetBracketedPasteMode): its marker ESC[?2004h, and the two lines the
+# paste scenario types into the running turn.
+PASTE_ON = r"\x1b\[\?2004h"
+PASTE_TEXT = "第一行\n第二行"
 # The pty window the screen scenario runs in: each reply line is wider than it, so
 # the terminal wraps the line and the chat has to know that width (SetSize).
 PTY_COLS = 60
@@ -117,6 +134,12 @@ def wrapped_rows(text, cols, prefix=""):
     for line in (prefix + text).split("\n"):
         rows += [line[i:i + cols] for i in range(0, len(line), cols)]
     return rows
+
+
+def paste(s, text):
+    """Sends a bracketed paste of text, the way a terminal does: the markers
+    around the text and its line break passed through as it is (chat_paste.py)."""
+    s.send("\x1b[200~" + text + "\x1b[201~")
 
 
 class FakeLog:
@@ -247,6 +270,63 @@ def same_turn_scenario(c):
     c.check("one turn only", len([e for e in events if e.get("kind") == "turn"]) == 1)
     delivered = [e for e in events if e.get("kind") == "steer" and e.get("name") == "delivered"]
     c.check("the trace records the delivery", len(delivered) == 1)
+    c.check("it names the keyboard source",
+            all((e.get("attrs") or {}).get("source") == "keyboard" for e in delivered))
+
+
+def paste_scenario(c):
+    """Two lines pasted into the running turn become ONE inserted message."""
+    s = c.session
+    m = s.mark()
+    c.check("❯ prompt", s.until(r"❯ ", m))
+    m = s.mark()
+    s.line("跑一个长命令")
+    c.check("tool call shown", s.until(r"⏺ shell_exec", m))
+    c.check("the prompt becomes ↳ while the turn runs", s.until(STEER_PROMPT, m))
+    # The turn keeps its line editable and bracketed: the prompt read asked for
+    # the paste markers and turned them off when it ended, so the marker after
+    # the line above was submitted is the turn's own read asking again.
+    c.check("bracketed paste is on for the turn", s.until_raw(PASTE_ON, m))
+    if not c.wait_file(STARTED, 30):
+        c.check("tool started (marker file)", False)
+        return
+    c.check("tool started (marker file)", True)
+
+    # A two-line paste into the running turn: one piece of text on the input line
+    # and no submit at its line break. (The rows are looked for in the raw output:
+    # the editor's own CR LF reaches the pty with one more CR while raw input
+    # keeps output processing on; chat_paste.two_rows.)
+    m = s.mark()
+    paste(s, PASTE_TEXT)
+    c.check("both lines are on the input line", s.until_raw(r"第一行\r*\n第二行", m))
+    c.check("the paste submits nothing", not s.contains(r"\[插话\]", m))
+    time.sleep(0.3)
+    c.check("no request carried it while it waited", len(c.log.requests()) == 1)
+
+    # The person's own Enter sends both lines as ONE inserted message.
+    m = s.mark()
+    s.send("\r")
+    c.check("the message is shown as waiting", s.until(r"\[插话\] 第一行 第二行（等待送达）", m))
+    c.check("tool result shown", s.until(r"⎿ ok: TOOL_DONE", m))
+    c.check("shown as delivered", s.until(r"\[插话\] 第一行 第二行（已送达）", m))
+    c.check("the turn answers", s.until(c.reply, m))
+    c.check("the end-of-turn line counts one message", s.until(r"插话 1", m))
+
+    requests = c.log.wait(2)
+    c.check("two requests", len(requests) >= 2)
+    if len(requests) >= 2:
+        c.check("the first request has no inserted message",
+                "第一行" not in " ".join(user_texts(requests[0])))
+        # fakellm collapses the whitespace of a message (its line break included),
+        # so the paste shows as "第一行 第二行": one user message, both lines.
+        tail = requests[1].get("tail", [])
+        roles = [msg.get("role") for msg in tail]
+        c.check("the second request carries both lines as one message",
+                last_user(requests[1]) == "第一行 第二行" and "tool" in roles and roles[-1:] == ["user"])
+
+    events = c.trace()
+    delivered = [e for e in events if e.get("kind") == "steer" and e.get("name") == "delivered"]
+    c.check("the trace records one delivery", len(delivered) == 1)
     c.check("it names the keyboard source",
             all((e.get("attrs") or {}).get("source") == "keyboard" for e in delivered))
 
@@ -547,6 +627,10 @@ def main():
     scenarios = [
         ("same-turn", ["--mode", "tool", "--delay", "0.2", "--reply", reply], QUICK_TOOL, auto, "",
          same_turn_scenario, {}),
+        # A two-line paste into the running turn: one piece of text on the input
+        # line, one inserted message once the person's own Enter follows.
+        ("paste", ["--mode", "tool", "--delay", "0.2", "--reply", reply], PASTE_TOOL, auto, "",
+         paste_scenario, {}),
         ("next-turn", ["--mode", "text", "--delay", "3", "--reply", reply], QUICK_TOOL, auto, "",
          next_turn_scenario, {}),
         ("abort", ["--mode", "tool", "--delay", "0.2", "--reply", reply], SLOW_TOOL, auto, "",
