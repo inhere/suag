@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
-"""End-to-end smoke test: resuming a chat shows the model's last reply
-(Linux/macOS).
+"""End-to-end smoke test: a chat resumed after the process that ran its last
+turn was killed (Linux/macOS).
 
 Runs scripts/ptysmoke/fakellm.py (text mode, a 51-line reply) and `suga chat` in
-a PTY with colors ON (the label above the reply is dim, and the reply goes
-through the markdown renderer like an answer):
+a PTY with colors ON (the label above the reply is dim, the reply goes through
+the markdown renderer like an answer):
 a first chat answers once, then a second turn is killed while the model is asked
-for it, leaving the session marked running with a long reply behind it. Two
-chats continue that session, `--resume <id>` and `--session-id <id>` (the path
-gofer uses): check the dim "上一次回复：" label, the last reply in full, the
-"上一回合未正常结束" note of the killed turn and the "已截断前 N 行" hint naming
-`suga trace` — all of it above the first ❯ prompt, which is what tells history
-from a fresh answer.
+for it, leaving the session marked running with a long reply behind it (what a
+kill -9 or a crash leaves). Two chats continue that session, `--resume <id>` and
+`--session-id <id>` (the path gofer uses): check the dim "上一次回复：" label, the
+last reply in full, the "上一回合未正常结束" note of the killed turn and the
+"已截断前 N 行" hint naming `suga trace` — all of it above the first ❯ prompt,
+which is what tells history from a fresh answer, and all of it without calling
+the model. The second continue then sends a prompt: the session was left running
+by a process that is gone, so it is recovered first ("已恢复会话", trace event
+"session recovered") and the turn answers; its own next turn is killed to leave
+the session running again. `suga run --resume <id>` covers the other entry
+point: it takes the session lock itself, recovers the session, prints the notice
+on stderr and answers on stdout. Finally `suga trace --json` shows one recovered
+event per recovery, naming the cancelled turn.
 
   python3 -I scripts/ptysmoke/chat_resume.py --bin tmp/smoke/suga
 
@@ -41,6 +48,7 @@ FIRST_SHOWN = "SMOKE line %02d" % (OMITTED + 1)
 LAST_HIDDEN = "SMOKE line %02d" % OMITTED
 LABEL = "上一次回复："
 INCOMPLETE = "上一回合未正常结束"
+RECOVERED = "已恢复会话"
 
 
 class ModelLog:
@@ -99,7 +107,8 @@ def preview(s, m):
     return text if cut < 0 else text[:cut]
 
 
-def resume_scenario(s, sid, name):
+def preview_checks(s, sid, name):
+    """What a chat continuing the session shows above its first ❯ prompt."""
     m = s.mark()
     s.check(name + ": ❯ prompt", s.until(r"❯ ", m))
     # Everything chat printed before the prompt, i.e. the preview. find() (not
@@ -115,9 +124,30 @@ def resume_scenario(s, sid, name):
             "已截断前 %d 行，完整记录见 suga trace %s" % (OMITTED, sid) in before)
     s.check(name + ": the killed turn is flagged", INCOMPLETE in before)
 
+
+def quit_chat(s, name):
     m = s.mark()
     s.line(":quit")
     s.check(name + ": exit summary", s.until(r"续接：suga chat --resume ", m))
+
+
+def recover_turn(s, name, prompt):
+    """The first prompt of a continue: the stale session is recovered and the
+    turn answers."""
+    m = s.mark()
+    s.line(prompt)
+    s.check(name + ": the stale session is recovered", s.until(RECOVERED, m))
+    s.check(name + ": the new turn answers", s.until(TAIL, m) and s.until(r"tokens · ", m))
+    text = s.text(m)
+    s.check(name + ": the notice is above the answer", 0 <= text.find(RECOVERED) < text.find(TAIL))
+
+
+def kill_turn(s, log, prompt, want):
+    """Starts a turn and kills the chat while the model is asked for it: the
+    session is left running, like the first scenario."""
+    m = s.mark()
+    s.line(prompt)
+    s.check("the killed turn reached the model", log.wait(want))
 
 
 def last_session(binary, env, ws):
@@ -129,12 +159,31 @@ def last_session(binary, env, ws):
 
 
 def check_trace(s, events):
-    """Neither continued chat may have called the model or opened a turn."""
+    """The whole scenario: three turns answered, two stale sessions recovered."""
     kinds = {}
     for e in events:
         kinds[e.get("kind")] = kinds.get(e.get("kind"), 0) + 1
-    s.check("trace: one model call (the continues added none)", kinds.get("model") == 1)
-    s.check("trace: one turn event (the killed turn wrote none)", kinds.get("turn") == 1)
+    s.check("trace: one model call per answered turn (the killed ones wrote none)", kinds.get("model") == 3)
+    s.check("trace: one turn event per answered turn (the killed ones wrote none)", kinds.get("turn") == 3)
+    recovered = [e for e in events if e.get("kind") == "session" and e.get("name") == "recovered"]
+    s.check("trace: one recovered event per recovery", len(recovered) == 2)
+    s.check("trace: each recovery names its killed turn and the old status",
+            all((e.get("attrs") or {}).get("previous_status") == "running"
+                and (e.get("attrs") or {}).get("turn_status") == "cancelled" and e.get("turn_id")
+                for e in recovered))
+    s.check("trace: the two recoveries belong to different turns",
+            len({e.get("turn_id") for e in recovered}) == len(recovered))
+
+
+def run_resume(binary, env, ws, s, sid):
+    """`suga run --resume` on the session the killed chat left running: it takes
+    the session lock itself, so it recovers it too; the notice goes to stderr
+    and stdout keeps the answer."""
+    out = subprocess.run([binary, "run", "--read-only", "--resume", sid, "--prompt", "第五句"],
+                         capture_output=True, encoding="utf-8", errors="replace", env=env, cwd=ws, timeout=120)
+    s.check("run --resume: exits 0", out.returncode == 0)
+    s.check("run --resume: the stale session is recovered", RECOVERED in out.stderr)
+    s.check("run --resume: the answer is on stdout", TAIL in out.stdout)
 
 
 def main():
@@ -174,18 +223,27 @@ def main():
         first.check("session id", bool(sid))
         sid = sid or "sess_missing"
 
+        # Continuing only reads the session: the preview, no model call and
+        # nothing recovered yet (the session is still running afterwards).
         resumed = PtySession([binary, "chat", "--resume", sid], env=env, cwd=ws)
         sessions.append(resumed)
-        resume_scenario(resumed, sid, "resume")
+        preview_checks(resumed, sid, "resume")
         resumed.check("resume: no model call", log.poll() == 2)
+        quit_chat(resumed, "resume")
         resumed.close()
 
         by_id = PtySession([binary, "chat", "--session-id", sid], env=env, cwd=ws)
         sessions.append(by_id)
-        resume_scenario(by_id, sid, "--session-id")
-        by_id.check("no model call in either continue", log.poll() == 2)
-        by_id.close()
+        preview_checks(by_id, sid, "--session-id")
+        # The session is running with no live process behind it: the first prompt
+        # recovers it and the turn answers.
+        recover_turn(by_id, "--session-id", "第三句")
+        by_id.check("--session-id: the model was asked once more", log.poll() == 3)
+        # Leave it running again, for the `run --resume` path below.
+        kill_turn(by_id, log, "第四句", 4)
+        by_id.close(grace=0)
 
+        run_resume(binary, env, ws, by_id, sid)
         check_trace(by_id, trace_events(binary, env, sid))
     finally:
         for session in sessions:

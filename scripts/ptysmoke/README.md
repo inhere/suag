@@ -17,7 +17,7 @@
 | `chat_agent.py` | 子 agent：假模型调用 `agent` 工具，子 agent（按系统提示词识别）grep 一次后交报告。同步：agent 调用下显示 `  · file_grep` 进度行、报告作为结果、trace 的 agent 事件带子会话 id 与 stop=final、`suga sessions` 隐藏子会话而 `--agents` 列出；Ctrl-C 打断慢的子 agent 时被中断的回合显示“已中断本轮”（不出现原样的 `context canceled`）、chat 正常退出且子会话不停在 running；后台：立即返回任务 id，子 agent 结束后以报告通知唤醒空闲 chat。`--agents-off` 用于反向验证 |
 | `chat_memory.py` | 未污染会话直接写记忆并显示“已记住”；`shell_exec` 置污染（`memory.taint_tools`）后写记忆询问（显示范围/类型/标题/正文），y 写入、n 拒绝、a 本会话不再问；条目落在 SUGA_HOME 的 files 后端 |
 | `chat_spinner.py` | “思考中…”等待行：本场景显式不带 `NO_COLOR`（该行只在有色终端显示），假模型 `--delay 2` 让提示可见；检查首个回合前不显示、等待模型首个消息时出现（带已用秒数）、工具调用行替换它、工具结果后再次出现、答案前最后一条提示已被 `ESC[2K` 清除（看原始缓冲，`text()` 会剥掉 ANSI）；另一个 `chat.spinner: false` 的会话完全不显示该行 |
-| `chat_resume.py` | 续接会话显示上一次回复：假模型（text 模式，回复 51 行）先答一轮，第二轮在模型回复前 SIGKILL 掉 chat（会话停在 running）；再用 `--resume <id>` 与 `--session-id <id>`（gofer 走的路径）续接，检查首个 ❯ 提示符之前出现淡色“上一次回复：”、正文最后 40 行（保留 `▣` 标记）、头部被截断并提示 `已截断前 N 行，完整记录见 suga trace <id>`、被杀回合显示“上一回合未正常结束”；两次续接都不调用模型（假模型请求数不变、trace 里 model/turn 事件仍各 1 条） |
+| `chat_resume.py` | 续接被强杀的会话：假模型（text 模式，回复 51 行）先答一轮，第二轮在模型回复前 SIGKILL 掉 chat（会话停在 running）；再用 `--resume <id>` 与 `--session-id <id>`（gofer 走的路径）续接，检查首个 ❯ 提示符之前出现淡色“上一次回复：”、正文最后 40 行（保留 `▣` 标记）、头部被截断并提示 `已截断前 N 行，完整记录见 suga trace <id>`、被杀回合显示“上一回合未正常结束”；两次续接都不调用模型（假模型请求数不变、trace 里 model/turn 事件仍各 1 条）。随后 `--session-id` 会话发一条消息：先显示“已恢复会话”再照常回答（会话从 running 恢复为 open），再把自己的下一轮杀掉留成 running，用 `suga run --resume` 走另一条入口（Run 自己取锁）：stderr 显示恢复提示、stdout 是回答；`suga trace --json` 有两条 `session recovered` 事件（带被杀回合 id 及 `previous_status=running`、`turn_status=cancelled`） |
 
 运行：
 
