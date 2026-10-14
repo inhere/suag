@@ -3,7 +3,6 @@ package chat
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -77,9 +76,10 @@ type chatInputSource struct {
 	// decides the activity handshake, the lone-Esc decision and the channel a result
 	// is delivered to. request sets it, Ask switches it to modeAsk.
 	readMode inputMode
-	// escWait reports whether more input is ready within the timeout, the wait behind
-	// the lone-Esc decision (inputwait_*.go); nil without a terminal.
-	escWait func(timeout time.Duration) bool
+	// inputWait reports whether more input is ready within the timeout, without
+	// reading it: the wait behind the lone-Esc and the pasted-newline decisions of
+	// the byte pump. nil without a terminal.
+	inputWait func(timeout time.Duration) bool
 	// readErr is the input's end (io.EOF) once it has ended: every later request
 	// answers it at once instead of blocking in a read.
 	readErr error
@@ -143,9 +143,9 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 			source.screenWidth = width
 		}
 		source.flushInput = func() error { return flushTerminalInput(fd) }
-		// The wait behind the lone-Esc decision: a steer read asks it whether a byte
-		// followed the 0x1b, without reading it (inputwait_*.go).
-		source.escWait = func(timeout time.Duration) bool { return waitTerminalInput(fd, timeout) }
+		// The wait behind the lone-Esc and pasted-newline decisions: "is a byte
+		// ready?", asked without reading it (inputwait_*.go).
+		source.inputWait = func(timeout time.Duration) bool { return waitTerminalInput(fd, timeout) }
 		source.reader = &chatActivityReader{source: source, input: input}
 		terminalIO := &chatTerminalIO{reader: source.reader, output: source.output}
 		source.terminal = lineedit.NewTerminal(terminalIO, "")
@@ -382,6 +382,12 @@ func (s *chatInputSource) enterRawLocked() error {
 		return fmt.Errorf("enable terminal input editing: %w", err)
 	}
 	s.restoreRaw = restore
+	// Ask the terminal to bracket pastes for as long as a line is being edited
+	// (SetBracketedPasteMode), so a pasted multi-line text reaches the editor as
+	// one chunk with its newlines and does not submit at the first of them. A
+	// terminal that does not support it is unaffected: the byte pump recognises
+	// such a paste by the bytes that follow (input_pump.go).
+	s.setBracketedPasteLocked(true)
 	return nil
 }
 
@@ -396,9 +402,21 @@ func (s *chatInputSource) leaveRawLocked() error {
 	if s.restoreRaw == nil {
 		return nil
 	}
+	// The line is done (or the terminal goes back to cooked mode for a turn): the
+	// terminal must not keep bracketing pastes, whose markers would otherwise
+	// reach a cooked-mode line read as bytes (SetBracketedPasteMode).
+	s.setBracketedPasteLocked(false)
 	err := s.restoreRaw()
 	s.restoreRaw = nil
 	return err
+}
+
+// setBracketedPasteLocked asks the terminal to bracket pastes (on) or to stop
+// (off); without a terminal there is nothing to ask.
+func (s *chatInputSource) setBracketedPasteLocked(on bool) {
+	if s.terminal != nil {
+		s.terminal.SetBracketedPasteMode(on)
+	}
 }
 
 // run serves one read request after another, so no read is started before one was
@@ -470,9 +488,6 @@ func (s *chatInputSource) readLine(request chatInputRequest) (string, error) {
 				s.terminal.SetPendingLine(saved)
 			}
 			line, err = s.terminal.ReadLine()
-		}
-		if errors.Is(err, lineedit.ErrPasteIndicator) {
-			err = nil
 		}
 		return line, err
 	}

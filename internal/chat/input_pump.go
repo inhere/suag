@@ -61,10 +61,21 @@ const (
 // Esc as a key press of its own (design D2).
 const escWaitTimeout = 50 * time.Millisecond
 
+// pasteNewlineTimeout is how long a read waits for a byte after a newline before
+// taking it as a submit where the terminal does not bracket pastes. A paste
+// arrives as one chunk, so the byte after one of its line breaks is already
+// readable within a few milliseconds, while a person's Enter is followed by
+// nothing: no key press comes that fast (fastest typing and key repeat are
+// around 30-50ms apart). Only platforms whose wait really reports a ready byte
+// are asked (waitInputSupported).
+const pasteNewlineTimeout = 8 * time.Millisecond
+
 // chatActivityReader is the byte pump the line editor reads through: it hands over
 // one byte per Read (the editor keeps partial key sequences itself), signals the
-// first byte of a read before that byte reaches the editor, and decides whether a
-// 0x1b byte is the Esc key on its own or the start of an escape sequence.
+// first byte of a read before that byte reaches the editor, and decides what the
+// editor cannot tell by itself: whether a 0x1b byte is the Esc key on its own or
+// the start of an escape sequence, and whether a newline is pasted text or a
+// submit.
 type chatActivityReader struct {
 	source       *chatInputSource
 	input        io.Reader
@@ -74,6 +85,16 @@ type chatActivityReader struct {
 	// paste), not an Enter of its own — x/term drops the same LF when both bytes
 	// arrive in one read. Any other byte clears it.
 	crHanded bool
+	// held is a byte the pump read one step ahead while deciding whether a newline
+	// is pasted text, with the epoch it was read in: it is handed to the editor by
+	// the next Read like any other byte.
+	held *heldByte
+}
+
+// heldByte is one byte of input read ahead of the editor (see chatActivityReader.held).
+type heldByte struct {
+	b     byte
+	epoch uint64
 }
 
 func (r *chatActivityReader) Read(p []byte) (int, error) {
@@ -88,27 +109,31 @@ func (r *chatActivityReader) Read(p []byte) (int, error) {
 		if err := r.source.stickyEOF(); err != nil {
 			return 0, err
 		}
-		var one [1]byte
-		n, err := r.input.Read(one[:])
-		if n == 0 {
-			r.source.recordEOF(err)
+		b, epoch, ok, err := r.nextByte()
+		if err != nil {
 			return 0, err
 		}
-		// The LF of a CRLF pair belongs to the CR before it: drop it instead of letting
-		// it submit an empty line at the next prompt read (see crHanded).
-		pairLF := one[0] == lfByte && r.crHanded
-		r.crHanded = one[0] == crByte
-		if pairLF {
+		if !ok {
+			// The LF of a CRLF pair belongs to the CR before it: it is dropped, so
+			// the read goes on with the byte after the pair (see crHanded).
 			continue
 		}
-		epoch := r.source.currentEpoch()
 		if !r.activitySent {
 			r.activitySent = true
 			if err := r.source.signalActivity(); err != nil {
 				return 0, err
 			}
 		}
-		if one[0] == escByte && r.source.escKeyWanted() && !r.source.waitInput(escWaitTimeout) {
+		if b == crByte || b == lfByte {
+			// The newline may be text of a paste instead of a submit, which a
+			// terminal without bracketed paste gives no other sign of. Decide it
+			// before handing the byte over, so the editor inserts the newline
+			// instead of ending the read on it (lineedit.SetNewlineAsText).
+			if r.newlineIsPaste(b) {
+				r.source.declareNewlineAsText()
+			}
+		}
+		if b == escByte && r.source.escKeyWanted() && !r.source.waitInput(escWaitTimeout) {
 			// Nothing followed the 0x1b within escWaitTimeout: it is the Esc key, not
 			// the start of a sequence. Declare it before handing the byte over, so the
 			// editor reports the key instead of waiting for the rest of a sequence.
@@ -116,7 +141,7 @@ func (r *chatActivityReader) Read(p []byte) (int, error) {
 				continue
 			}
 			r.source.declareEscLone()
-			p[0] = one[0]
+			p[0] = b
 			return 1, nil
 		}
 		// A byte held here (e.g. during the activity handshake, or the lone-Esc wait)
@@ -124,8 +149,85 @@ func (r *chatActivityReader) Read(p []byte) (int, error) {
 		if !r.source.handOver(epoch) {
 			continue
 		}
-		p[0] = one[0]
+		p[0] = b
 		return 1, nil
+	}
+}
+
+// nextByte returns the next byte to hand to the editor together with the epoch it
+// was read in (the input may have been flushed since, and such a byte must not
+// reach the editor). ok is false for a byte that belongs to the byte before it —
+// the LF of a CRLF pair — the caller reading on instead of handing it over.
+func (r *chatActivityReader) nextByte() (b byte, epoch uint64, ok bool, err error) {
+	if h := r.held; h != nil {
+		r.held = nil
+		return h.b, h.epoch, true, nil
+	}
+	var one [1]byte
+	n, err := r.input.Read(one[:])
+	if n == 0 {
+		r.source.recordEOF(err)
+		return 0, 0, false, err
+	}
+	pairLF := one[0] == lfByte && r.crHanded
+	r.crHanded = one[0] == crByte
+	if pairLF {
+		return 0, 0, false, nil
+	}
+	return one[0], r.source.currentEpoch(), true, nil
+}
+
+// newlineIsPaste reports whether the newline byte b is text of a paste rather
+// than a submit: a paste goes on with the next byte within pasteNewlineTimeout,
+// while a person's Enter is followed by nothing (see pasteNewlineTimeout).
+//
+// A CR followed by the LF of a CRLF pair is the one case that needs a second
+// look: such a pair is a typed Enter on a Windows console, so it is a submit
+// unless something follows the pair as well (then the pair is a line break of a
+// pasted CRLF text). The byte looked at is held for the next Read.
+//
+// The decision reads the byte the wait promised, so a platform wait that reports a
+// byte which is not there blocks this read — the same hazard the lone-Esc wait has
+// (inputwait_*.go).
+func (r *chatActivityReader) newlineIsPaste(b byte) bool {
+	if !r.source.pasteNewlineWanted() || !r.source.waitInput(pasteNewlineTimeout) {
+		return false
+	}
+	if b != crByte {
+		return true
+	}
+	next, epoch, ok, err := r.nextByte()
+	if err != nil {
+		// Nothing left to read: the input ended right after the newline, which is
+		// what a submit looks like (the error is reported by the next Read).
+		return false
+	}
+	if ok {
+		r.held = &heldByte{b: next, epoch: epoch}
+		return true
+	}
+	// The pair's LF stays dropped; what follows it decides.
+	return r.source.waitInput(pasteNewlineTimeout)
+}
+
+// pasteNewlineWanted reports whether the pump may take a newline for pasted text:
+// only a read on a terminal whose platform wait really reports a ready byte
+// (waitInputSupported). Elsewhere the wait would answer "a byte follows" for
+// every newline, so a typed Enter could never submit a line.
+func (s *chatInputSource) pasteNewlineWanted() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.terminal != nil && s.inputWait != nil && waitInputSupported
+}
+
+// declareNewlineAsText marks the newline byte the pump is about to hand over as
+// text of a paste (lineedit.SetNewlineAsText); only the pump declares one.
+func (s *chatInputSource) declareNewlineAsText() {
+	s.mu.Lock()
+	terminal := s.terminal
+	s.mu.Unlock()
+	if terminal != nil {
+		terminal.SetNewlineAsText()
 	}
 }
 
@@ -135,18 +237,20 @@ func (r *chatActivityReader) Read(p []byte) (int, error) {
 func (s *chatInputSource) escKeyWanted() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.readMode == modeSteer && s.terminal != nil && s.escWait != nil
+	return s.readMode == modeSteer && s.terminal != nil && s.inputWait != nil
 }
 
 // waitInput reports whether more input is ready within timeout, without reading it
 // (inputwait_*.go: poll(2) on Unix, WaitForSingleObject on Windows). It is the wait
-// behind the lone-Esc decision, so the timeout leaves no read pending.
+// behind the lone-Esc decision and the pasted-newline decision, so the timeout
+// leaves no read pending.
 func (s *chatInputSource) waitInput(timeout time.Duration) bool {
 	s.mu.Lock()
-	wait := s.escWait
+	wait := s.inputWait
 	s.mu.Unlock()
 	if wait == nil {
-		// No wait wired up: leave the Esc byte to the editor as a sequence.
+		// No wait wired up: leave the Esc byte to the editor as a sequence and the
+		// newline as a submit.
 		return true
 	}
 	return wait(timeout)

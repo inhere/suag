@@ -8,6 +8,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// waitInputSupported reports that waitTerminalInput really asks the platform
+// whether a byte is ready: the decisions built on it (a lone Esc, a pasted
+// newline) may then trust an answer of "nothing ready".
+const waitInputSupported = true
+
 // waitTerminalInput reports whether the console input has a byte ready within
 // timeout, without reading it (WaitForSingleObject on the console input handle,
 // which stays signalled while input waits to be read). Whether a Ctrl+C pressed

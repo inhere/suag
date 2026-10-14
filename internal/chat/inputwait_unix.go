@@ -8,6 +8,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// waitInputSupported reports that waitTerminalInput really asks the platform
+// whether a byte is ready: the decisions built on it (a lone Esc, a pasted
+// newline) may then trust an answer of "nothing ready".
+const waitInputSupported = true
+
 // waitTerminalInput reports whether the terminal has a byte ready within timeout,
 // without reading it (poll(2)): the wait behind the lone-Esc decision, which must
 // not leave a group+blocked read behind. A poll that fails (a closed terminal, no

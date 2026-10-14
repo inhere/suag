@@ -25,6 +25,12 @@
 // Addition for a lone Esc the caller already decided on (esc.go): SetEscAlone
 // and EscCallback.
 //
+// Change to bracketed pastes (paste.go): a newline inside a paste is inserted
+// into the line instead of ending the read, so a pasted multi-line text lands on
+// the input line as one piece; SetNewlineAsText lets a caller declare the same
+// for a terminal that does not bracket pastes. Upstream's ErrPasteIndicator (a
+// line that consists only of pasted data) is gone with it: no paste ends a read.
+//
 // This file holds the terminal itself and the read loop; key parsing is in
 // keys.go, the cursor and repainting helpers are in render.go.
 //
@@ -66,8 +72,14 @@ type Terminal struct {
 	// echo is true if local echo is enabled
 	echo bool
 	// pasteActive is true iff there is a bracketed paste operation in
-	// progress.
+	// progress: a newline read while it is set is text of the paste, not a
+	// submit (paste.go).
 	pasteActive bool
+	// newlineAsText is set by SetNewlineAsText: the next newline key is text of a
+	// paste, not a submit. A terminal that does not bracket pastes gives the same
+	// bytes for a pasted and a typed newline, so a caller that can tell them apart
+	// declares it (paste.go).
+	newlineAsText bool
 
 	// cursorX contains the current X value of the cursor where the left
 	// edge is 0. cursorY contains the row number where the first row of
@@ -180,8 +192,6 @@ func (t *Terminal) readLine() (line string, err error) {
 		t.repaintLocked()
 	}
 
-	lineIsPasted := t.pasteActive
-
 	for {
 		rest := t.remainder
 		lineOk := false
@@ -216,17 +226,11 @@ func (t *Terminal) readLine() (line string, err error) {
 				}
 				if key == keyPasteStart {
 					t.pasteActive = true
-					if len(t.line) == 0 {
-						lineIsPasted = true
-					}
 					continue
 				}
 			} else if key == keyPasteEnd {
 				t.pasteActive = false
 				continue
-			}
-			if !t.pasteActive {
-				lineIsPasted = false
 			}
 			line, lineOk = t.handleKey(key)
 		}
@@ -239,9 +243,6 @@ func (t *Terminal) readLine() (line string, err error) {
 				if !t.noHistory {
 					t.history.Add(line)
 				}
-			}
-			if lineIsPasted {
-				err = ErrPasteIndicator
 			}
 			return
 		}
@@ -288,12 +289,6 @@ func (t *Terminal) UpdatePrompt(prompt string) error {
 	return t.repaintLocked()
 }
 
-type pasteIndicatorError struct{}
-
-func (pasteIndicatorError) Error() string {
-	return "terminal: ErrPasteIndicator not correctly handled"
-}
-
 // ErrInterrupt is returned by ReadLine for Ctrl-C. It matches io.EOF too,
 // so callers that only know "input ended" keep treating it that way, while
 // chat can tell it apart from Ctrl-D to ask for a second Ctrl-C.
@@ -304,17 +299,10 @@ type interruptError struct{}
 func (interruptError) Error() string        { return "interrupted (Ctrl-C)" }
 func (interruptError) Is(target error) bool { return target == io.EOF }
 
-// ErrPasteIndicator may be returned from ReadLine as the error, in addition
-// to valid line data. It indicates that bracketed paste mode is enabled and
-// that the returned line consists only of pasted data. Programs may wish to
-// interpret pasted data more literally than typed data.
-var ErrPasteIndicator = pasteIndicatorError{}
-
 // SetBracketedPasteMode requests that the terminal bracket paste operations
-// with markers. Not all terminals support this but, if it is supported, then
-// enabling this mode will stop any autocomplete callback from running due to
-// pastes. Additionally, any lines that are completely pasted will be returned
-// from ReadLine with the error set to ErrPasteIndicator.
+// with markers. Not all terminals support this; where it is supported a paste
+// reaches the editor as one chunk with its own start and end markers, which is
+// what tells its newlines from a typed Enter (paste.go).
 func (t *Terminal) SetBracketedPasteMode(on bool) {
 	if on {
 		io.WriteString(t.c, "\x1b[?2004h")

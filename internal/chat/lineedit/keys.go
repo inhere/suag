@@ -164,8 +164,23 @@ func isPrintable(key rune) bool {
 // handleKey processes the given key and, optionally, returns a line of text
 // that the user has entered.
 func (t *Terminal) handleKey(key rune) (line string, ok bool) {
-	if t.pasteActive && key != keyEnter {
+	// A newline the caller declared as pasted text (paste.go) is handled like one
+	// inside a paste; the declaration is for this key only, so it goes away even
+	// when another key follows it.
+	declaredNewline := t.newlineAsText
+	t.newlineAsText = false
+	if t.pasteActive {
+		if key == keyEnter || key == keyLF {
+			// Text of the paste, not a submit: the line stays on screen and the
+			// person's own Enter (with nothing following it) ends the read.
+			t.addKeyToLine('\n')
+			return
+		}
 		t.addKeyToLine(key)
+		return
+	}
+	if declaredNewline && (key == keyEnter || key == keyLF) {
+		t.addKeyToLine('\n')
 		return
 	}
 

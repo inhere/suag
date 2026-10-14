@@ -14,26 +14,42 @@ import (
 // steerPrompt is the prompt a steer read shows; S2b draws "↳ " there.
 const steerPrompt = "↳ "
 
-// escWaiter stands in for the platform wait behind the lone-Esc decision
-// (waitTerminalInput): it records the timeouts it was asked for and answers with a
-// fixed result, so a test decides whether a byte followed the 0x1b.
-type escWaiter struct {
+// kbWaiter stands in for the platform wait behind the decisions of the byte pump
+// (waitTerminalInput): it answers "is a byte ready?" from the fake keyboard's
+// buffer, exactly as the real wait answers from the terminal's input, and records
+// the timeouts it was asked for — the lone-Esc wait and the pasted-newline wait
+// share it.
+type kbWaiter struct {
+	kb       *fakeKeyboard
 	mu       sync.Mutex
-	ready    bool
 	timeouts []time.Duration
 }
 
-func (w *escWaiter) wait(timeout time.Duration) bool {
+func newKBWaiter(kb *fakeKeyboard) *kbWaiter { return &kbWaiter{kb: kb} }
+
+func (w *kbWaiter) wait(timeout time.Duration) bool {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	w.timeouts = append(w.timeouts, timeout)
-	return w.ready
+	w.mu.Unlock()
+	return w.kb.Unread() > 0
 }
 
-func (w *escWaiter) calls() []time.Duration {
+func (w *kbWaiter) calls() []time.Duration {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return append([]time.Duration(nil), w.timeouts...)
+}
+
+// escWaits is the lone-Esc waits among the recorded ones: the same injected wait
+// also answers the pasted-newline decision (pasteNewlineTimeout).
+func escWaits(w *kbWaiter) []time.Duration {
+	var only []time.Duration
+	for _, d := range w.calls() {
+		if d == escWaitTimeout {
+			only = append(only, d)
+		}
+	}
+	return only
 }
 
 // nextTurnEvent reads the next event of a steer read.
@@ -111,20 +127,20 @@ func TestChatInputSource_SteerRead(t *testing.T) {
 func TestChatInputSource_EscKey(t *testing.T) {
 	t.Run("a lone Esc asks to end the turn after the 50ms wait", func(t *testing.T) {
 		h := newAskHarness(t)
-		waiter := &escWaiter{ready: false} // no byte followed the 0x1b
-		h.source.escWait = waiter.wait
+		waiter := newKBWaiter(h.kb) // nothing follows the 0x1b
+		h.source.inputWait = waiter.wait
 		h.source.SetBusy(true)
 		assert.True(t, h.source.RequestSteer(steerPrompt))
 		h.kb.Type("\x1b")
 		assert.Eq(t, keyAbort, h.nextTurnEvent(t).key)
-		assert.Eq(t, []time.Duration{escWaitTimeout}, waiter.calls())
+		assert.Eq(t, []time.Duration{escWaitTimeout}, escWaits(waiter))
 		assert.Eq(t, 50*time.Millisecond, escWaitTimeout)
 	})
 
 	t.Run("an escape sequence stays a sequence", func(t *testing.T) {
 		h := newAskHarness(t)
-		waiter := &escWaiter{ready: true} // a byte is already there
-		h.source.escWait = waiter.wait
+		waiter := newKBWaiter(h.kb) // the rest of the sequence is already there
+		h.source.inputWait = waiter.wait
 		h.source.SetBusy(true)
 		assert.True(t, h.source.RequestSteer(steerPrompt))
 		h.kb.Type("ab\x1b[Dc\r")
@@ -133,17 +149,17 @@ func TestChatInputSource_EscKey(t *testing.T) {
 		// Esc byte was handled as the sequence it is, not as the Esc key.
 		assert.Eq(t, "acb", event.line)
 		assert.Eq(t, keyNone, event.key)
-		assert.True(t, len(waiter.calls()) > 0)
+		assert.True(t, len(escWaits(waiter)) > 0)
 	})
 
 	t.Run("a prompt read leaves the Esc to the editor as a sequence", func(t *testing.T) {
 		h := newAskHarness(t)
-		waiter := &escWaiter{ready: false} // would report a lone Esc
-		h.source.escWait = waiter.wait
+		waiter := newKBWaiter(h.kb) // would report a lone Esc
+		h.source.inputWait = waiter.wait
 		assert.True(t, h.source.Request("> "))
 		h.kb.Type("\x1b")
-		time.Sleep(20 * time.Millisecond)    // give a wrong decision time to happen
-		assert.Eq(t, 0, len(waiter.calls())) // the mode decides: no wait, no Esc key
+		time.Sleep(20 * time.Millisecond)      // give a wrong decision time to happen
+		assert.Eq(t, 0, len(escWaits(waiter))) // the mode decides: no wait, no Esc key
 		assert.Eq(t, 0, len(h.source.turnEvents))
 		// The Esc and the letter after it are one unknown key sequence, as with
 		// x/term: the submitted line is empty.

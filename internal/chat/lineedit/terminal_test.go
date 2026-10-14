@@ -231,31 +231,17 @@ func TestTerminal_asciiParity(t *testing.T) {
 	}
 }
 
-func TestTerminal_pasteIndicator(t *testing.T) {
-	tm, mem := newMem("", 0)
-	mem.in = []string{"\x1b[200~你好\r\x1b[201~"}
-	line, err := tm.ReadLine()
-	assert.Eq(t, "你好", line)
-	assert.True(t, errors.Is(err, ErrPasteIndicator))
-}
-
 // TestTerminal_lineFeedIsEnter: Enter reaches the editor as LF when the line was
 // typed in cooked mode (the terminal's line discipline turned its CR into LF before
 // the raw-mode read) and on the Windows console (CRLF); it must submit the line like
-// CR does. Inside a bracketed paste a LF stays part of the pasted text.
+// CR does. A newline inside a bracketed paste is text of the paste instead
+// (TestTerminal_pasteIsText).
 func TestTerminal_lineFeedIsEnter(t *testing.T) {
 	t.Run("a bare LF submits the line", func(t *testing.T) {
 		tm, mem := newMem("> ", 0)
 		lines := readAll(t, tm, mem, "你好\n")
 		assert.Eq(t, []string{"你好"}, lines)
 		assert.StrContains(t, mem.out.String(), "> 你好\r\n") // echoed and submitted
-	})
-
-	t.Run("inside a paste the LF stays in the text", func(t *testing.T) {
-		tm, mem := newMem("> ", 0)
-		line, err := readOne(t, tm, mem, "\x1b[200~a\nb\r\x1b[201~")
-		assert.True(t, errors.Is(err, ErrPasteIndicator))
-		assert.Eq(t, "a\nb", line) // the newline is pasted text, not a submit
 	})
 }
 

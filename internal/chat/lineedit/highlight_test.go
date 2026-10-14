@@ -1,7 +1,6 @@
 package lineedit
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -89,8 +88,8 @@ func TestTerminal_submitHighlight(t *testing.T) {
 	t.Run("a pasted multi-line input paints every line", func(t *testing.T) {
 		tm, mem := newMem("> ", 10)
 		tm.SetInputStyle(highlight)
-		line, err := readOne(t, tm, mem, "\x1b[200~a\nb\r\x1b[201~")
-		assert.True(t, errors.Is(err, ErrPasteIndicator))
+		line, err := readOne(t, tm, mem, "\x1b[200~a\nb\x1b[201~\r")
+		assert.NoErr(t, err)
 		assert.Eq(t, "a\nb", line)
 		// The pasted newline is a real row break in the echo, and both rows carry
 		// the background to the end of the row.
@@ -132,11 +131,11 @@ func TestTerminal_submitHighlight(t *testing.T) {
 // OPOST off: a bare LF would only move the cursor down and keep the column).
 func TestTerminal_pastedNewlineBreaksTheRow(t *testing.T) {
 	tm, mem := newMem("> ", 10)
-	line, err := readOne(t, tm, mem, "\x1b[200~abc\ndef\r\x1b[201~")
-	assert.True(t, errors.Is(err, ErrPasteIndicator))
+	line, err := readOne(t, tm, mem, "\x1b[200~abc\ndef\x1b[201~\r")
+	assert.NoErr(t, err)
 	assert.Eq(t, "abc\ndef", line)
 	// "def" starts a new row at column 0, not at the column the LF left; the
-	// Enter that ends the paste then moves on to the next row.
+	// person's Enter, which sends the line, then moves on to the next row.
 	assert.Eq(t, "> abc\r\ndef\r\n", mem.out.String())
 
 	t.Run("positions after the break are on the next row", func(t *testing.T) {

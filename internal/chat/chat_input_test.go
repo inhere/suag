@@ -169,6 +169,15 @@ func (b *lockedBuffer) String() string {
 // TestChatInputSource_InputHighlight: with chat.highlight_input on, the line
 // submitted at the prompt is repainted where it is, its background filled to the
 // terminal width; without a style the plain Enter path writes no escapes.
+//
+// bracketPasteOn/Off are what every line edit brackets itself with (see
+// TestChatInputSource_BracketedPasteMode); they show up here because this test
+// compares the whole output of a read.
+const (
+	bracketPasteOn  = "\x1b[?2004h"
+	bracketPasteOff = "\x1b[?2004l"
+)
+
 func TestChatInputSource_InputHighlight(t *testing.T) {
 	submitted := func(t *testing.T, style lineedit.InputStyle) string {
 		t.Helper()
@@ -202,14 +211,17 @@ func TestChatInputSource_InputHighlight(t *testing.T) {
 		got := submitted(t, lineedit.InputStyle{Prefix: inputHighlightPrefix, Suffix: highlightSuffix,
 			FillWidth: lineedit.DefaultWidth})
 		// The prompt and the echo first, then the repaint: prompt and line again on
-		// the background, filled with spaces to the end of the terminal row.
-		want := "> hi" + "\x1b[4D" + inputHighlightPrefix + "> " + inputHighlightPrefix + "hi" +
-			strings.Repeat(" ", lineedit.DefaultWidth-4) + highlightSuffix + "\r\n"
+		// the background, filled with spaces to the end of the terminal row. Around
+		// it the bracketed-paste mode the line is edited in (enterRaw/
+		// leaveRawLocked: a pasted multi-line text must reach the editor in one
+		// piece instead of submitting at its first newline).
+		want := bracketPasteOn + "> hi" + "\x1b[4D" + inputHighlightPrefix + "> " + inputHighlightPrefix + "hi" +
+			strings.Repeat(" ", lineedit.DefaultWidth-4) + highlightSuffix + "\r\n" + bracketPasteOff
 		assert.Eq(t, want, got)
 	})
 
 	t.Run("without a style the line stays plain", func(t *testing.T) {
-		assert.Eq(t, "> hi\r\n", submitted(t, lineedit.InputStyle{}))
+		assert.Eq(t, bracketPasteOn+"> hi\r\n"+bracketPasteOff, submitted(t, lineedit.InputStyle{}))
 	})
 }
 
