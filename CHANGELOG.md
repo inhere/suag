@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.22.0] - 2026-10-14
+
+会话级附加目录 `--add-dir`（只读/读写，记入会话）；会话短名称与终端标题；Java 构建输出精简与依赖 API 查询；模型忽略收尾指令时不再失败；回合中途有后台任务通知时压缩不再失败。
+
 ### 新增
 
 - `run` 与 `chat` 新增可重复参数 `--add-dir <绝对目录>[:ro|:rw]`（默认只读），以及等价的环境变量 `SUGA_ADD_DIRS`（按系统路径列表分隔符分隔，Windows 为 `;`，便于外部工具按任务注入）：只对本次会话生效，可把工作区外的目录（项目根、兄弟模块、`../../docs`）交给文件工具，不必再绕 `shell_exec` 读取，也不会因此产生大输出外置。`:ro` 目录加入本会话的只读根（与 `tools.read_roots`、自动识别的依赖根合并去重），`:rw` 目录同时允许 `file_write`/`file_edit`/`file_remove` 写入，审批、危险删除拦截与拒绝工作区根/自身 `.git`/主目录的规则与工作区一致；`shell_exec` 的 cwd 仍是工作区。目录写入会话元数据（`add_dirs`），`--resume`/`--session-id` 续接沿用，同路径重给时以本次的权限为准；`--read-only` 下只以只读生效并提示。环境段列出每个目录及其权限，`turn_context` 事件记录本次生效的集合。只接受已存在的绝对目录；非法的 `--add-dir` 直接报错退出，`SUGA_ADD_DIRS` 中的非法项启动时告警并忽略（ACP 暂不支持附加目录）。
@@ -472,7 +476,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.21.0...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/inhere/suga/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/inhere/suga/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/inhere/suga/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/inhere/suga/compare/v0.18.0...v0.19.0
