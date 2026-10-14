@@ -11,6 +11,9 @@ Modes (--mode):
   memory  every user message gets shell_exec (--command), then memory add
         (kind feedback, title "Smoke rule"), then the text --reply; a user
         message containing "直接" skips the shell_exec.
+  adddir  every user message first gets file_read (--read-path), then
+        file_write (--write-path with --write-body), then the text --reply:
+        the smoke for --add-dir, where both paths live outside the workspace.
 
 --delay seconds are slept before each response, so a test can type while a
 turn is running. --fail-first N answers the first N requests with HTTP 503;
@@ -76,6 +79,8 @@ def make_handler(args):
             edit_calls = [("file_grep", {"pattern": "SMOKE_TARGET"}),
                           ("file_edit", {"path": "target.txt", "old_string": "SMOKE_TARGET old",
                                          "new_string": "SMOKE_TARGET new"})]
+            adddir_calls = [("file_read", {"path": args.read_path}),
+                            ("file_write", {"path": args.write_path, "content": args.write_body})]
             memory_calls = [("shell_exec", {"command": args.command}),
                             ("memory", {"action": "add", "kind": "feedback", "title": "Smoke rule",
                                         "body": "smoke memory body"})]
@@ -93,6 +98,11 @@ def make_handler(args):
                     chunks = [{"choices": [{"delta": {"content": "SUBREPORT: SMOKE is in target.txt"}}]}]
             elif args.mode == "memory" and step < len(memory_calls):
                 name, arguments = memory_calls[step]
+                call = {"index": 0, "id": "call_%d" % time.time_ns(),
+                        "function": {"name": name, "arguments": json.dumps(arguments)}}
+                chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
+            elif args.mode == "adddir" and step < len(adddir_calls):
+                name, arguments = adddir_calls[step]
                 call = {"index": 0, "id": "call_%d" % time.time_ns(),
                         "function": {"name": name, "arguments": json.dumps(arguments)}}
                 chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
@@ -174,13 +184,16 @@ class QuietServer(http.server.ThreadingHTTPServer):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, default=18795)
-    p.add_argument("--mode", choices=["tool", "text", "edit", "memory"], default="tool")
+    p.add_argument("--mode", choices=["tool", "text", "edit", "memory", "adddir"], default="tool")
     p.add_argument("--delay", type=float, default=1.0)
     p.add_argument("--command", default="echo SMOKE_OK")
     p.add_argument("--reply", default="完成")
     p.add_argument("--prompt-tokens", type=int, default=10)
     p.add_argument("--background", action="store_true", help="tool mode: shell_exec with background: true")
     p.add_argument("--watch-paths", default="", help="tool mode with --background: comma-separated watch_paths")
+    p.add_argument("--read-path", default="", help="adddir mode: file to read (outside the workspace)")
+    p.add_argument("--write-path", default="", help="adddir mode: file to write (under a :rw added directory)")
+    p.add_argument("--write-body", default="SMOKE_ADD_DIR_WRITE", help="adddir mode: content of the written file")
     p.add_argument("--agent", action="store_true", help="tool mode: call the agent tool instead of shell_exec")
     p.add_argument("--child-delay", type=float, default=0, help="extra seconds before each sub-agent response")
     p.add_argument("--fail-first", type=int, default=0, help="answer the first N requests with HTTP 503")

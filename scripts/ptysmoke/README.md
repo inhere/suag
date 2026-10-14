@@ -4,7 +4,7 @@
 
 | 文件 | 作用 |
 |---|---|
-| `fakellm.py` | OpenAI 兼容的 SSE 假模型：`--mode tool` 先返回 `shell_exec` 调用、工具结果后回复文本；`--mode text` 只回复文本；`--mode edit` 依次返回 `file_grep`、`file_edit` 调用再回复；`--mode memory` 先 `shell_exec` 再 `memory` add（用户消息含“直接”时跳过 shell）；`--delay` 控制每次响应前的等待；`--prompt-tokens` 设定上报的输入用量；`"stream": false` 的请求（如 compaction 摘要）回一个 JSON 响应；多线程服务（流式与非流式请求走不同连接）；`--background` 让 tool 模式的 shell_exec 带 `background: true`（收到 `[background task` 开头的通知或提醒只回文本）；`--fail-first N` 前 N 个请求回 HTTP 503，`--break-first M` 随后 M 个流只发一半回复就断开连接（重试冒烟用） |
+| `fakellm.py` | OpenAI 兼容的 SSE 假模型：`--mode tool` 先返回 `shell_exec` 调用、工具结果后回复文本；`--mode text` 只回复文本；`--mode edit` 依次返回 `file_grep`、`file_edit` 调用再回复；`--mode memory` 先 `shell_exec` 再 `memory` add（用户消息含“直接”时跳过 shell）；`--mode adddir` 依次返回 `file_read`（`--read-path`）、`file_write`（`--write-path`、`--write-body`）调用再回复；`--delay` 控制每次响应前的等待；`--prompt-tokens` 设定上报的输入用量；`"stream": false` 的请求（如 compaction 摘要）回一个 JSON 响应；多线程服务（流式与非流式请求走不同连接）；`--background` 让 tool 模式的 shell_exec 带 `background: true`（收到 `[background task` 开头的通知或提醒只回文本）；`--fail-first N` 前 N 个请求回 HTTP 503，`--break-first M` 随后 M 个流只发一半回复就断开连接（重试冒烟用） |
 | `ptydrive.py` | PTY 驱动库：`mark()` 后只检查新输出、`until()` 等待模式出现再输入、`check()` 记录结果 |
 | `chat_approval.py` | 现成场景：开场模型、❯ 提示符、写工具确认（y/n/a/Ctrl-C、回合中提前输入不放行）、提示符处单次 Ctrl-C 只提示、连按两次退出（汇总与续接命令）、非 TTY 拒绝 |
 | `chat_edit.py` | `file_grep` 免确认、`file_edit` 确认显示原文/改为、确认后文件被修改、两次 Ctrl-C 退出 |
@@ -20,6 +20,7 @@
 | `chat_tool_ctrlc.py` | 前台工具调用中按 Ctrl-C（suga-nrf2 的预期行为）：假模型 `--command` 先写 `tool-started` 再 `sleep 60`；脚本等标记文件出现后发 `\x03`，检查回合被中断（“已中断”）、chat 退出并打印汇总、进程结束，且命令的第二标记 `tool-finished` 从未出现（整棵进程树随回合一起结束）。Windows 对应物是 `scripts/wincons`（Windows 控制台无法用 Python 驱动） |
 | `chat_resume.py` | 续接被强杀的会话：假模型（text 模式，回复 51 行）先答一轮，第二轮在模型回复前 SIGKILL 掉 chat（会话停在 running）；再用 `--resume <id>` 与 `--session-id <id>`（gofer 走的路径）续接，检查首个 ❯ 提示符之前出现淡色“上一次回复：”、正文最后 40 行（保留 `▣` 标记）、头部被截断并提示 `已截断前 N 行，完整记录见 suga trace <id>`、被杀回合显示“上一回合未正常结束”；两次续接都不调用模型（假模型请求数不变、trace 里 model/turn 事件仍各 1 条）。随后 `--session-id` 会话发一条消息：先显示“已恢复会话”再照常回答（会话从 running 恢复为 open），再把自己的下一轮杀掉留成 running，用 `suga run --resume` 走另一条入口（Run 自己取锁）：stderr 显示恢复提示、stdout 是回答；`suga trace --json` 有两条 `session recovered` 事件（带被杀回合 id 及 `previous_status=running`、`turn_status=cancelled`） |
 | `chat_shortname.py` | 会话短名称：工作目录名 `Smoke_WS` → 横幅显示 `smokews-xy`（小写、清洗过），`suga ps` 与 `--json` 都列出该名称，`suga send --session <短名称>` 投递成功并开启一轮，`:session` 同时显示 id 与名称，退出摘要的续接命令后带名称；首条消息正文不再作为名字（`--session 第一句话` 退出码 3，且进程记录仍是短名称）；`--resume` 续接沿用同一名称，chat 退出后该地址不再可达（退出码 3） |
+| `chat_adddir.py` | 会话级附加目录（`--add-dir`）：启动 `suga chat --add-dir <工作区外目录> --add-dir <共享目录>:rw`，假模型先 `file_read` 工作区外文件（只读目录生效）、再 `file_write` 写进 `:rw` 目录（`tools.approval: auto`，不询问），检查工具结果、磁盘上的文件，以及 `suga trace --json` 的 `turn_context` 事件 `add_dirs` 为 `["<目录>:ro", "<目录>:rw"]`；`--keep` 保留工作目录便于反向验证（去掉附加目录注入后读/写在 chat 里应失败） |
 
 运行：
 
