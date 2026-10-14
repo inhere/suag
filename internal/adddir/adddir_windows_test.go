@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
+	"golang.org/x/sys/windows"
 )
 
 // TestEntryWindowsDrive checks that the colon of a drive letter ("D:\docs") is
@@ -33,4 +34,34 @@ func TestEntryWindowsDrive(t *testing.T) {
 		assert.Eq(t, 1, len(merged))
 		assert.True(t, merged[0].Writable)
 	})
+	t.Run("the same path twice in different spellings is one entry", func(t *testing.T) {
+		short := windowsShortPath(t, dir)
+		if short == dir {
+			t.Skip("8.3 short names are not generated on this volume")
+		}
+		// A directory authorized at an outside-directory question is recorded in
+		// its resolved (long) spelling while a typed :add-dir keeps what the
+		// person wrote, so the two spellings really do meet.
+		merged := Merge([]Dir{{Path: dir}}, []Dir{{Path: short, Writable: true}})
+		assert.Require(t, assert.Eq(t, 1, len(merged)))
+		assert.True(t, merged[0].Writable)
+		assert.True(t, Has(merged, short))
+		assert.Empty(t, Without(merged, short))
+	})
+}
+
+// windowsShortPath returns the 8.3 short name of path.
+func windowsShortPath(t *testing.T, path string) string {
+	t.Helper()
+	ptr, err := windows.UTF16PtrFromString(path)
+	assert.Require(t, assert.NoErr(t, err))
+	buf := make([]uint16, windows.MAX_PATH)
+	for {
+		n, err := windows.GetShortPathName(ptr, &buf[0], uint32(len(buf)))
+		assert.Require(t, assert.NoErr(t, err))
+		if int(n) < len(buf) {
+			return windows.UTF16ToString(buf[:n])
+		}
+		buf = make([]uint16, n+1)
+	}
 }
