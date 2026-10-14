@@ -128,6 +128,8 @@ release: build-all ## Create release archives for all platforms TODO 还未启�
 	@echo "Release archives created in release/"
 
 ## smoke-chat: build to tmp/smoke and run the PTY end-to-end chat smoke test (Linux/macOS)
+## chat_tool_ctrlc covers Ctrl-C during a foreground shell_exec; the Windows
+## twin is scripts/wincons (a Windows console cannot be driven from Python).
 smoke-chat:
 	@mkdir -p tmp/smoke
 	go build -o tmp/smoke/suga ./cmd/suga
@@ -143,6 +145,7 @@ smoke-chat:
 	python3 -I scripts/ptysmoke/chat_agent.py --bin tmp/smoke/suga --work tmp/smoke-agent
 	python3 -I scripts/ptysmoke/chat_spinner.py --bin tmp/smoke/suga --work tmp/smoke-spinner
 	python3 -I scripts/ptysmoke/chat_resume.py --bin tmp/smoke/suga --work tmp/smoke-resume
+	python3 -I scripts/ptysmoke/chat_tool_ctrlc.py --bin tmp/smoke/suga --work tmp/smoke-tool-ctrlc
 
 ## clean: remove build artifacts
 clean:
