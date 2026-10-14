@@ -119,10 +119,19 @@ providers:
 #                       # reply, a task notice) on a low-saturation background, so
 #                       # your own words stand apart from the model's answer; the two
 #                       # get different backgrounds. Needs a terminal with colors.
+#   terminal_title: true # name the terminal's window/tab after the session:
+#                       # "suga · <short name> · <session title>" (the session title,
+#                       # its first message or the one a resumed session stores, cut
+#                       # to 30 characters). The terminal's own title is saved at
+#                       # startup and given back on exit (empty title, then xterm's
+#                       # CSI 23;0t restore). Control characters are stripped, so a
+#                       # prompt cannot inject an escape sequence. Needs a terminal
+#                       # with colors, like markdown.
 # chat:
 #   markdown: true
 #   spinner: true
 #   highlight_input: true
+#   terminal_title: true
 
 # Project rules: one file per directory level, from the Git root (or cwd) down
 # to cwd, plus $SUGA_HOME/AGENTS.md for the user level. Only a file name (no
