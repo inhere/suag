@@ -181,6 +181,7 @@ func nativeEnv(workspace string, dirs *native.AddDirs) native.Env {
 		RawBytes:          rawOutputBytes(),
 		SerpAPIKey:        gkconfig.String("serpapi_key"),
 		Shell:             gkconfig.String("tools.shell"),
+		Interpreters:      detectInterpreters(),
 		FetchAllowPrivate: gkconfig.Bool("tools.web_fetch.allow_private"),
 		FetchProxy:        gkconfig.String("tools.web_fetch.proxy"),
 		ShellTimeoutMax: time.Duration(gkconfig.Int("tools.shell_timeout_max",

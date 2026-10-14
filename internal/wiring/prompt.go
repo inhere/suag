@@ -15,6 +15,14 @@ import (
 
 const debugPromptNonceEnv = "SUGA_DEBUG_PROMPT_NONCE"
 
+// detectInterpreters probes PATH for script interpreters (tools.interpreters).
+// It is shared by the environment section (environmentPrompt) and the native
+// tool catalog (shell_exec's description), and is a variable so tests can run
+// without depending on the machine's PATH.
+var detectInterpreters = func() []native.Interpreter {
+	return native.DetectInterpreters(gkconfig.Get("tools.interpreters"))
+}
+
 // staticPrompt is a system prompt built once per process. It holds no time or
 // per-turn data, so every turn of the process sends the same bytes and the
 // provider's prefix cache keeps hitting.
@@ -104,6 +112,17 @@ func environmentPrompt(opts Options) string {
 	}
 	if opts.AllowWrite {
 		fmt.Fprintf(&b, "- Shell for shell_exec: %s\n", native.ShellName(gkconfig.String("tools.shell")))
+		// Interpreters found on PATH (tools.interpreters): with one at hand the
+		// model should write a script file instead of quoting complex text on a
+		// shell line (suga-bkt8). Nothing is written when none was found — the
+		// model stays with the shell — and none is written in read-only mode,
+		// where shell_exec is off. Only the segment context carries this line, so
+		// a newly installed interpreter does not invalidate the prompt prefix
+		// cache; the probe itself runs once per process (DetectInterpreters
+		// caches per setting).
+		if hint := native.InterpreterHint(detectInterpreters()); hint != "" {
+			fmt.Fprintf(&b, "- %s\n", hint)
+		}
 		b.WriteString("- Mode: writable — you may edit files and run commands; the user may be asked to confirm.\n")
 	} else {
 		b.WriteString("- Mode: read-only — tools that write files or run commands are off. ")

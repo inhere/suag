@@ -15,6 +15,7 @@ import (
 	"github.com/gookit/goutil/x/assert"
 
 	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 func TestBasePromptDebugNonce(t *testing.T) {
@@ -91,6 +92,62 @@ func TestEnvironmentPrompt(t *testing.T) {
 		assert.StrContains(t, p, "Mode: writable")
 		assert.StrContains(t, p, "Shell for shell_exec: ")
 	})
+}
+
+// stubInterpreters makes the environment section and the native tool catalog
+// see the given interpreters instead of the machine's PATH.
+func stubInterpreters(t *testing.T, list []native.Interpreter) {
+	t.Helper()
+	prev := detectInterpreters
+	detectInterpreters = func() []native.Interpreter { return list }
+	t.Cleanup(func() { detectInterpreters = prev })
+}
+
+// TestEnvironmentPromptInterpreters: the interpreters found on PATH are named
+// in the environment section with the write-a-script advice, and nothing at all
+// is written when none was found (suga-bkt8).
+func TestEnvironmentPromptInterpreters(t *testing.T) {
+	t.Run("listed when an interpreter exists", func(t *testing.T) {
+		stubInterpreters(t, []native.Interpreter{
+			{Name: "python", Path: `C:\Python312\python.exe`, Version: "3.12.4"},
+			{Name: "node", Path: `/usr/bin/node`, Version: "22.6.0"},
+		})
+		p := environmentPrompt(Options{Workspace: "/w", AllowWrite: true})
+		assert.StrContains(t, p, "- 可用解释器：python 3.12.4（python）、node 22.6.0（node）。")
+		assert.StrContains(t, p, "先用 file_write 把脚本写到工作区 tmp/ 下再用解释器执行")
+	})
+	t.Run("nothing when no interpreter exists", func(t *testing.T) {
+		stubInterpreters(t, nil)
+		p := environmentPrompt(Options{Workspace: "/w", AllowWrite: true})
+		assert.StrContains(t, p, "Shell for shell_exec: ")
+		assert.NotContains(t, p, "可用解释器")
+		assert.NotContains(t, p, "先用 file_write")
+	})
+	t.Run("read-only has no shell_exec", func(t *testing.T) {
+		stubInterpreters(t, []native.Interpreter{{Name: "node", Path: "/usr/bin/node", Version: "22.6.0"}})
+		assert.NotContains(t, environmentPrompt(Options{Workspace: "/w"}), "可用解释器")
+	})
+}
+
+// TestNativeEnvInterpretersReachShellTool: the interpreters the environment
+// section names also reach shell_exec's description, through nativeEnv and the
+// catalog.
+func TestNativeEnvInterpretersReachShellTool(t *testing.T) {
+	resetConfig(t)
+	assert.NoErr(t, gkconfig.Set("tools.shell", "pwsh"))
+	stubInterpreters(t, []native.Interpreter{{Name: "python", Path: `C:\Python312\python.exe`, Version: "3.12.4"}})
+
+	env := nativeEnv(t.TempDir(), nil)
+	assert.Eq(t, 1, len(env.Interpreters))
+	for _, tool := range native.BuildTools(env, true) {
+		if tool.Name() != "shell_exec" {
+			continue
+		}
+		assert.StrContains(t, tool.Description(), "先用 file_write")
+		assert.StrContains(t, tool.Description(), "整体加引号")
+		return
+	}
+	assert.Fail(t, "shell_exec is not in the catalog")
 }
 
 // requestRecorder is an OpenAI-compatible fake that keeps every request's

@@ -50,6 +50,38 @@ func TestResolveShellExplicit(t *testing.T) {
 	assert.Eq(t, []string{"bash", "-c", "ls"}, resolveShell("bash").argv("ls"))
 }
 
+// TestShellExecDescriptionQuoteAndScriptAdvice: PowerShell needs the quoting
+// advice (suga-cfeq) and, with an interpreter at hand, the write-a-script
+// advice (suga-bkt8); a POSIX shell needs neither.
+func TestShellExecDescriptionQuoteAndScriptAdvice(t *testing.T) {
+	powerShell := shellSpec{path: "pwsh", powershell: true}
+	t.Run("powershell with interpreters", func(t *testing.T) {
+		tool := NewShellExecTool(t.TempDir(), 0)
+		tool.shell = powerShell
+		tool.interpreters = []Interpreter{{Name: "python3", Path: "/usr/bin/python3", Version: "3.12.4"}}
+		desc := tool.Description()
+		assert.StrContains(t, desc, PowerShellQuoteAdvice)
+		assert.StrContains(t, desc, `"-Dincludes=g:a"`)
+		assert.StrContains(t, desc, WriteScriptAdvice)
+	})
+	t.Run("powershell without interpreters", func(t *testing.T) {
+		tool := NewShellExecTool(t.TempDir(), 0)
+		tool.shell = powerShell
+		desc := tool.Description()
+		assert.StrContains(t, desc, PowerShellQuoteAdvice)
+		assert.NotContains(t, desc, "先用 file_write")
+	})
+	t.Run("posix shell", func(t *testing.T) {
+		tool := NewShellExecTool(t.TempDir(), 0)
+		tool.shell = shellSpec{path: "sh"}
+		tool.interpreters = []Interpreter{{Name: "node", Path: "/usr/bin/node", Version: "22.6.0"}}
+		desc := tool.Description()
+		assert.NotContains(t, desc, "整体加引号")
+		assert.NotContains(t, desc, "先用 file_write")
+		assert.StrContains(t, desc, "POSIX sh syntax")
+	})
+}
+
 func TestShellExecOutputIsCapped(t *testing.T) {
 	tool := NewShellExecTool(t.TempDir(), 0)
 	tool.maxOut = 200

@@ -36,6 +36,9 @@ type Env struct {
 	SerpAPIKey string
 	// Shell overrides the shell_exec shell (tools.shell); empty = OS default.
 	Shell string
+	// Interpreters are the script interpreters detected on PATH
+	// (tools.interpreters, see DetectInterpreters); empty = none, no hint.
+	Interpreters []Interpreter
 	// ShellTimeoutMax caps a shell_exec timeout (tools.shell_timeout_max).
 	ShellTimeoutMax time.Duration
 	// FetchAllowPrivate lets web_fetch reach private and local addresses
@@ -97,6 +100,7 @@ func Catalog() []Spec {
 		{Name: "shell_exec", New: func(env Env) api.Tool {
 			t := NewShellExecTool(env.Workspace, 0)
 			t.shell = resolveShell(env.Shell)
+			t.interpreters = env.Interpreters
 			t.maxOut = env.RawBytes
 			if env.ShellTimeoutMax > 0 {
 				t.maxTimeout = env.ShellTimeoutMax

@@ -116,6 +116,10 @@ type ShellExecTool struct {
 	timeout    time.Duration // default per call
 	maxTimeout time.Duration
 	maxOut     int // raw result cap in bytes; 0 = DefaultRawOutputBytes
+	// interpreters are the script interpreters detected on PATH
+	// (tools.interpreters); non-empty adds the write-a-script advice to the
+	// description.
+	interpreters []Interpreter
 	// tasks runs commands with background: true; nil hides the option.
 	tasks *tasks.Manager
 }
@@ -147,6 +151,14 @@ func (t *ShellExecTool) Description() string {
 		"Returns stdout, stderr and the exit code; output gathered before a timeout is kept. "+
 		"Default timeout %ds, max %ds. No interactive input: stdin is empty.",
 		t.shell.name(), syntax, int(t.timeout.Seconds()), int(t.maxTimeout.Seconds()))
+	if t.shell.powershell {
+		desc += " " + PowerShellQuoteAdvice
+		// With an interpreter at hand a script file beats a long single line of
+		// PowerShell quoting (the environment section names the interpreters).
+		if len(t.interpreters) > 0 {
+			desc += " " + WriteScriptAdvice
+		}
+	}
 	if t.tasks != nil {
 		desc += fmt.Sprintf(" With background: true it starts the command in the background and returns a task id at once "+
 			"(long builds, full test runs, servers, watchers; ended after %s): keep working, read its output or wait for it "+
