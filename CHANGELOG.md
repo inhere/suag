@@ -13,6 +13,7 @@
 - 授权变更记入会话事件：每次 `:add-dir`/`:rm-dir` 与越界授权写一条 `add_dir` 事件（`name` 为 `add`/`remove`，`attrs.path`、`attrs.mode`（`ro`/`rw`）、`attrs.from`（`keyboard`/`ask`）），`suga trace` 因此能看出谁在何时放宽了会话的可达范围。元数据每条目录另存来源（`source`），`:dirs` 与越界问题都以它标注。
 - 启动时探测 PATH 上的脚本解释器（默认 `python3`、`python`、`node`）：每进程探测一次并缓存（`exec.LookPath` + 2 秒超时的 `--version`，按符号链接解析后的路径去重，所以指向同一个二进制的 `python3`/`python` 只列一次），命中的解释器写进环境段（可写模式）并提示优先写脚本：“可用解释器：python 3.14.4（python）、node 24.15.0（node）。多行文本处理、复杂引号、JSON/正则处理时，先用 file_write 把脚本写到工作区 tmp/ 下再用解释器执行，不要在 shell 一行里拼复杂引号。”一个也没探测到时这行不写，行为与之前完全相同（仍用系统 shell）。配置 `tools.interpreters`：缺省自动探测，`false`（或 `off`）关闭，也可给名称或绝对路径列表（如 `[python, C:\Python312\python.exe]`）只认这几个。Windows 上自动探测会跳过 `%LOCALAPPDATA%\Microsoft\WindowsApps` 下的应用商店别名（它只会跳商店或不输出版本，不是可用的解释器）；配置里写绝对路径时按你的选择只校验 `--version`，而商店包自身的安装目录（`C:\Program Files\WindowsApps\...`）算正常安装。环境段在段上下文里，不使稳定系统提示的前缀缓存失效。
 - `shell_exec` 的工具描述在 shell 为 PowerShell 时补上参数引号提醒：含 `,` `=` `.` `@` 的参数要整体加引号（例如 `"-Dtest=A,B"`、`"-Dincludes=g:a"`），否则逗号会被当成数组分隔；有可用解释器时同处再提示优先写脚本。`file_write` 的描述写明写出结果的编码与换行（UTF-8 无 BOM，换行按内容原样，不做 CRLF 转换），不必再按字节核验新文件。
+- `suga trace --analyze` 认 Java/Gradle 的测试命令：`./mvnw`/`mvnw.cmd`/`mvn`（`test` 与 `verify`）与 `gradlew`/`gradlew.bat`/`gradle`（含 `./gradlew :app:test` 这类子项目任务）都算一次测试运行；定向运行识别补上 Maven 的 `-Dtest=` 与 Gradle 的 `--tests`，与 `go test -run`、`pytest -k` 一致，这类只跑部分用例的命令不算一次“通过”，因此不影响“首次通过”的步数与复测统计。
 
 ### 变更
 
