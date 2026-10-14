@@ -80,25 +80,34 @@ def sync_scenario(s, binary, env):
     s.check("sync: sessions --agents lists it", child in [r["id"] for r in sessions(binary, env, "--agents")])
 
 
-def cancel_scenario(s, binary, env):
+def cancel_scenario(s, binary, env, label="cancel", steering=True):
+    """Ctrl-C while a slow sub-agent runs: with steering on it ends this turn only
+    (chat asks for the next line again, a second press leaves), with steering off it
+    ends the whole chat as before."""
+    def check(name, ok):
+        return s.check(f"{label}: {name}", ok)
+
     m = s.mark()
-    s.check("cancel: ❯ prompt", s.until(r"❯ ", m))
-    m = s.mark(); s.line("调研一下")
-    s.check("cancel: sub-agent at work", s.until(r"  · file_grep", m))
-    m = s.mark(); s.send(CTRL_C)  # while its report is slow to come
+    check("❯ prompt", s.until(r"❯ ", m))
+    m = s.mark()
+    s.line("调研一下")
+    check("sub-agent at work", s.until(r"  · file_grep", m))
+    m = s.mark()
+    s.send(CTRL_C)  # while its report is slow to come
     # The interrupted turn is reported as 已中断本轮: the runner's raw
     # "context canceled" must not reach the terminal.
-    s.check("cancel: interrupted turn reads 已中断本轮", s.until(r"已中断本轮", m, timeout=15))
-    # chat.steering (on by default): the first Ctrl-C ends this turn only - chat stays
-    # at the prompt, and a second Ctrl-C within the confirmation window leaves chat.
-    s.check("cancel: the first Ctrl-C keeps chat", s.until(r"(?s)已中断本轮.*?❯ ", m, timeout=15))
-    m = s.mark(); s.send(CTRL_C)
-    s.check("cancel: chat ends with the resume line", s.until(r"续接：suga chat --resume sess_", m, timeout=15))
-    s.check("cancel: never shows the raw context canceled", not s.contains(r"context canceled", m))
+    check("interrupted turn reads 已中断本轮", s.until(r"已中断本轮", m, timeout=15))
+    if steering:
+        # Only the turn ended: chat is still there and takes the next line.
+        check("chat stays after one Ctrl-C", not s.contains(r"续接：", m))
+        time.sleep(0.3)
+        s.send(CTRL_C)  # the first press counts: within the confirmation window
+    check("chat ends with the resume line", s.until(r"续接：suga chat --resume sess_", m, timeout=15))
+    check("never shows the raw context canceled", not s.contains(r"context canceled", m))
     s.pump(0.5)
     rows = sessions(binary, env, "--agents")
     child = next((r for r in rows if r.get("parent")), {})
-    s.check("cancel: the sub-agent session is not left running", child and child.get("status") != "running")
+    check("the sub-agent session is not left running", child and child.get("status") != "running")
 
 
 def background_scenario(s):
@@ -126,13 +135,18 @@ def main():
     binary = os.path.abspath(args.bin)
     results, homes = [], []
     s = fake = None
-    extra = "agents:\n  enabled: false\n" if args.agents_off else ""
+    agents = "agents:\n  enabled: false\n" if args.agents_off else ""
+    scenarios = [
+        ("sync", [], "", lambda s, env: sync_scenario(s, binary, env)),
+        # The two Ctrl-C groups (plan F1): with steering on (the default) a press
+        # ends the turn only, with chat.steering false it ends chat as before.
+        ("cancel", ["--child-delay", "30"], "", lambda s, env: cancel_scenario(s, binary, env)),
+        ("cancel-off", ["--child-delay", "30"], "chat:\n  steering: false\n",
+         lambda s, env: cancel_scenario(s, binary, env, label="cancel-off", steering=False)),
+        ("background", ["--background"], "", lambda s, env: background_scenario(s)),
+    ]
     try:
-        for name, fake_args, run in [
-            ("sync", [], lambda s, env: sync_scenario(s, binary, env)),
-            ("cancel", ["--child-delay", "30"], lambda s, env: cancel_scenario(s, binary, env)),
-            ("background", ["--background"], lambda s, env: background_scenario(s)),
-        ]:
+        for name, fake_args, extra, run in scenarios:
             home = os.path.abspath(os.path.join(args.work, "home-" + name))
             ws = os.path.abspath(os.path.join(args.work, "ws-" + name))
             homes.append(home)
@@ -142,7 +156,7 @@ def main():
             with open(os.path.join(ws, "target.txt"), "w") as f:
                 f.write("SMOKE_TARGET here\n")
             port = args.port + len(homes)
-            write_home(home, port, extra=extra)
+            write_home(home, port, extra=agents + extra)
             env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
             env.pop("SUGA_CONFIG", None)  # the child reads its own SUGA_HOME config
             fake = start_fake(port, *fake_args)

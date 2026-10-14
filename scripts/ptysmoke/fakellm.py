@@ -33,10 +33,12 @@ sub-agent") greps SMOKE once, then reports "SUBREPORT: ..." after
 --child-delay seconds more. A request with "stream": false gets one JSON completion
 instead of SSE (the compaction summary). --prompt-tokens sets the reported prompt usage (the idle
 consolidation compares it with the context threshold). Each request is
-logged as one JSON line on stdout: "user" is the last user message and "seen"
-is one token per message in order, which is what a smoke checks when it has to
-see more than the last message ("user:<head>" of the text, "a" or "a:file_write"
-for an assistant message and its tool calls, "tool:<head>" for a tool result).
+logged as one JSON line on stdout: "user" is the last user message, "seen" is one
+token per message in order, which is what a smoke checks when it has to see more
+than the last message ("user:<head>" of the text, "a" or "a:file_write" for an
+assistant message and its tool calls, "tool:<head>" for a tool result), and "tail"
+the last few messages as {"role", "text"} (a steer a person inserted into the
+running turn shows up there, after the tool result).
 
   python3 -I fakellm.py --port 18795 --mode tool --delay 1
 """
@@ -62,6 +64,32 @@ def message_token(m):
     return "%s:%s" % (role, head)
 
 
+def last_index(messages, role):
+    """The index of the last message with role (-1 when there is none)."""
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == role:
+            return i
+    return -1
+
+
+def message_tail(messages, count=4, limit=90):
+    """The last few messages as {"role", "text"}, so a smoke can see what a
+    request actually carried: the tool result of the step and any message a
+    person inserted into the running turn (a steer) come after it."""
+    out = []
+    for m in messages[-count:]:
+        content = m.get("content")
+        if isinstance(content, list):
+            content = " ".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
+        text = " ".join(str(content or "").split())
+        calls = m.get("tool_calls") or []
+        if calls:
+            names = ",".join(str((c.get("function") or {}).get("name", "?")) for c in calls)
+            text = (text + " tool_calls:" + names).strip()
+        out.append({"role": m.get("role"), "text": text[:limit]})
+    return out
+
+
 def make_handler(args):
     served = [0]  # requests so far (the server runs handlers in threads)
     lock = threading.Lock()
@@ -78,8 +106,8 @@ def make_handler(args):
             print(json.dumps({"path": self.path, "stream": body.get("stream"),
                               "last_role": body["messages"][-1].get("role"),
                               "user": user_text,
-                              "seen": [message_token(m) for m in body["messages"]]}),
-                  flush=True)
+                              "seen": [message_token(m) for m in body["messages"]],
+                              "tail": message_tail(body["messages"])}), flush=True)
             system = " ".join(str(m.get("content")) for m in body["messages"] if m.get("role") == "system")
             child = "suga sub-agent" in system
             # --child-delay slows the sub-agent's report (after its grep).
@@ -100,6 +128,11 @@ def make_handler(args):
                 return
             broken = n <= args.fail_first + args.break_first
             last = body["messages"][-1]
+            # The step's tool result is already in this request: the model answers
+            # instead of calling the tool again. Reading only the last message
+            # would call it again when a message inserted into the turn (a steer)
+            # follows the result.
+            tool_done = last_index(body["messages"], "tool") > last_index(body["messages"], "assistant")
             # Tool results since the last user message: the step of this turn.
             step = 0
             for m in reversed(body["messages"]):
@@ -147,14 +180,14 @@ def make_handler(args):
                 call = {"index": 0, "id": "call_%d" % time.time_ns(),
                         "function": {"name": name, "arguments": json.dumps(arguments)}}
                 chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
-            elif args.mode == "tool" and args.agent and last.get("role") != "tool" and "[background task" not in str(user_text):
+            elif args.mode == "tool" and args.agent and not tool_done and "[background task" not in str(user_text):
                 agent_args = {"description": "smoke survey", "prompt": "Where is SMOKE? Report file:line."}
                 if args.background:
                     agent_args["background"] = True
                 call = {"index": 0, "id": "call_%d" % time.time_ns(),
                         "function": {"name": "agent", "arguments": json.dumps(agent_args)}}
                 chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
-            elif args.mode == "tool" and last.get("role") != "tool" and "[background task" not in str(user_text):
+            elif args.mode == "tool" and not tool_done and "[background task" not in str(user_text):
                 shell_args = {"command": args.command}
                 if args.background:
                     shell_args["background"] = True
