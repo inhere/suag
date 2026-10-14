@@ -14,6 +14,8 @@ Modes (--mode):
   adddir  every user message first gets file_read (--read-path), then
         file_write (--write-path with --write-body), then the text --reply:
         the smoke for --add-dir, where both paths live outside the workspace.
+        A user message containing "只读" or "只写" narrows it to that one call,
+        so a smoke can drive the read and the write of one turn separately.
 
 --delay seconds are slept before each response, so a test can type while a
 turn is running. --fail-first N answers the first N requests with HTTP 503;
@@ -86,6 +88,13 @@ def make_handler(args):
                                         "body": "smoke memory body"})]
             user_text = next((m.get("content") or "" for m in reversed(body["messages"])
                               if m.get("role") == "user"), "")
+            if args.mode == "adddir":
+                # 只读/只写 asks for one of the two calls only (a smoke that needs
+                # one of them to meet a question of its own first).
+                if "只读" in str(user_text):
+                    adddir_calls = adddir_calls[:1]
+                elif "只写" in str(user_text):
+                    adddir_calls = adddir_calls[1:]
             if args.mode == "memory" and "直接" in str(user_text):
                 memory_calls = memory_calls[1:]
             if child:
