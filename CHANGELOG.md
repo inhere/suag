@@ -4,6 +4,12 @@
 
 ## [未发布]
 
+chat 里被 Ctrl-C 中断的回合改显示“已中断本轮”，不再出现原样的 `context canceled`。
+
+### 修复
+
+- chat 终端显示：回合被 Ctrl-C 中断时显示“已中断本轮”，不再把 `context canceled` 原样打在屏幕上；回合被取消但 chat 继续运行的同一条路径（例如模型调用被取消）同样处理，`:compact` 被中断显示 `Compact: 已中断`。只改 chat 的显示：`run`、ACP、stream-json 的错误文本与退出码不变，取消确认问题仍显示“已取消”。
+
 ## [0.20.0] - 2026-10-14
 
 内置配置与使用向导 skill `suga-guide`（首次运行释放到 `$SUGA_HOME/skills`）；chat 增加 markdown 渲染、“思考中”提示与续接时显示上一次回复；`suga send` 支持位置参数；会话 socket 路径超长时 chat 不再退出。
