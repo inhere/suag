@@ -93,30 +93,48 @@ def ask_scenario(s, outside_real, shared, write_path):
     s.check("banner names the directory commands", s.until(r":add-dir/:dirs/:rm-dir 管理附加目录", m))
     s.check("❯ prompt", s.until(r"❯ ", m))
 
+    # Send only once the next prompt is up: a line typed ahead of the line
+    # editor is lost (suga-uxmu).
+    s.until(r"\n❯ ", m)
     m = s.mark()
     s.line(":dirs")
     s.check(":dirs starts with the workspace only",
             s.until(r"工作区：.+（读写）", m) and s.until(r"附加目录：无", m))
 
     # A read of a file outside the workspace: chat asks before the tool runs.
+    # Send only once the next prompt is up: a line typed ahead of the line
+    # editor is lost (suga-uxmu).
+    s.until(r"\n❯ ", m)
     m = s.mark()
     s.line("只读：看看外面的说明")
+    # The question is longer than the line editor's 80 columns and wraps, so
+    # it is matched with the wrap's line breaks taken out.
     s.check("outside read: question asked",
-            s.until(r"授权访问 " + re.escape(outside_real) + r"？\[r\] 只读 \[w\] 读写 \[n\] 拒绝：", m))
+            s.until(r"\[n\] 拒绝：", m)
+            and ("授权访问 " + outside_real + "？[r] 只读 [w] 读写 [n] 拒绝：") in unwrap(s.text(m)))
     s.check("outside read: the tool is held back until the answer", not s.contains(READ_MARK, m))
     s.line("r")
     s.check("outside read: r authorizes it and the read runs", s.until(READ_MARK, m))
     s.check("outside read: turn ends", s.until(r"tokens · ", m))
 
+    # Send only once the next prompt is up: a line typed ahead of the line
+    # editor is lost (suga-uxmu).
+    s.until(r"\n❯ ", m)
     m = s.mark()
     s.line(":dirs")
     s.check(":dirs names the asked directory as 越界授权",
             s.until(r"  " + re.escape(outside_real) + r"（只读 · 越界授权）", m))
 
+    # Send only once the next prompt is up: a line typed ahead of the line
+    # editor is lost (suga-uxmu).
+    s.until(r"\n❯ ", m)
     m = s.mark()
     s.line(":add-dir " + shared + ":rw")
     s.check(":add-dir rw confirms", s.until(r"已授权：" + re.escape(shared) + r"（读写）", m))
 
+    # Send only once the next prompt is up: a line typed ahead of the line
+    # editor is lost (suga-uxmu).
+    s.until(r"\n❯ ", m)
     m = s.mark()
     s.line("只写：写个文件")
     s.check("the write into the added directory runs", s.until(r"wrote \d+ bytes to ", m))
@@ -124,6 +142,9 @@ def ask_scenario(s, outside_real, shared, write_path):
     s.check("write: file on disk", os.path.exists(write_path)
             and open(write_path, encoding="utf-8").read() == WRITE_MARK)
 
+    # Send only once the next prompt is up: a line typed ahead of the line
+    # editor is lost (suga-uxmu).
+    s.until(r"\n❯ ", m)
     m = s.mark()
     s.line(":dirs")
     s.check(":dirs shows both directories with mode and origin",
@@ -131,10 +152,16 @@ def ask_scenario(s, outside_real, shared, write_path):
             and s.until(r"  " + re.escape(shared) + r"（读写 · 会话中追加）", m))
     s.check(":dirs labels the workspace too", s.contains(r"工作区：.+（读写）", m))
 
+    # Send only once the next prompt is up: a line typed ahead of the line
+    # editor is lost (suga-uxmu).
+    s.until(r"\n❯ ", m)
     m = s.mark()
     s.line(":rm-dir " + shared)
     s.check(":rm-dir revokes it", s.until(r"已撤销：" + re.escape(shared), m))
 
+    # Send only once the next prompt is up: a line typed ahead of the line
+    # editor is lost (suga-uxmu).
+    s.until(r"\n❯ ", m)
     m = s.mark()
     s.line(":add-dir docs")
     s.check("a relative :add-dir is refused with the usage",
@@ -144,10 +171,18 @@ def ask_scenario(s, outside_real, shared, write_path):
     # file appears (the one of the earlier turn was removed here).
     if os.path.exists(write_path):
         os.remove(write_path)
+    # Send only once the next prompt is up: a line typed ahead of the line
+    # editor is lost (suga-uxmu).
+    s.until(r"\n❯ ", m)
     m = s.mark()
     s.line("只写：再写一次")
-    s.check("the write after :rm-dir is refused",
-            s.until(r"outside the workspace and the added read-write directories", m))
+    # Out of reach again, so chat asks again (chat.ask_outside_dirs is on);
+    # answering n leaves the write refused.
+    s.check("the write after :rm-dir asks again",
+            s.until(r"\[n\] 拒绝：", m)
+            and ("授权访问 " + shared + "？") in unwrap(s.text(m)))
+    s.line("n")
+    s.check("the write after :rm-dir is refused", s.until(r"用户拒绝授权访问 ", m))
     s.check("the write after :rm-dir wrote nothing", not os.path.exists(write_path))
     s.check("turn ends after the refusal", s.until(r"tokens · ", m))
 
@@ -159,6 +194,11 @@ def ask_scenario(s, outside_real, shared, write_path):
     s.check("exit: resume command", s.until(r"续接：suga chat --resume sess_", m))
     found = re.search(r"--resume (sess_\S+)", s.text(m))
     return found.group(1) if found else ""
+
+
+def unwrap(text):
+    """The output with the terminal's line wraps (CR LF) removed."""
+    return text.replace("\r\n", "")
 
 
 def check_trace(s, events, outside_real, shared):
@@ -260,11 +300,14 @@ def main():
         sid = re.search(r"session id: (sess_\S+)", s2.text(0))
         s2.check("second chat: session id", bool(sid))
         if sid:
+            s2.until(r"\n❯ ", m)
+            m = s2.mark()
             code, err = send(binary, env2, sid.group(1), ":add-dir " + delivery)
             s2.check("the delivered :add-dir reaches the chat", code == 0 and err == "delivered")
             s2.check("the delivered text is shown as a message",
                      s2.until(r"\[来自 cli\] :add-dir " + re.escape(delivery), m))
             s2.check("the model answers the delivered text", s2.until(REPLY_TEXT, m) and s2.until(r"tokens · ", m))
+            s2.until(r"\n❯ ", m)
             m2 = s2.mark()
             s2.line(":dirs")
             s2.check(":dirs has no delivered directory",
