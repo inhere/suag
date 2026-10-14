@@ -65,8 +65,10 @@ def check_trace(s, events, outside, shared):
     if not turns:
         return
     dirs = (turns[0].get("attrs") or {}).get("add_dirs")
-    s.check("trace: add_dirs lists both directories with their modes",
-            dirs == [outside + ":ro", shared + ":rw"], repr(dirs))
+    ok = s.check("trace: add_dirs lists both directories with their modes",
+                 dirs == [outside + ":ro", shared + ":rw"])
+    if not ok:
+        print("  add_dirs:", repr(dirs), flush=True)
 
 
 def main():
