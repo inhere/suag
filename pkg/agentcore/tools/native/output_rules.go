@@ -205,7 +205,7 @@ func compileRule(r *OutputRule) (*compiledRule, error) {
 // matches and holds one; ok is false otherwise.
 func sumValue(re *regexp.Regexp, line string) (int, bool) {
 	m := re.FindStringSubmatch(line)
-	if m == nil || len(m) < 2 {
+	if len(m) < 2 {
 		return 0, false
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(m[1]))
