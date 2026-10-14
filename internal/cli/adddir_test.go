@@ -67,7 +67,8 @@ func runAddDirs(t *testing.T, args ...string) (string, string, error) {
 // TestRunAddDirs covers the CLI side of --add-dir and SUGA_ADD_DIRS: the flag is
 // repeatable and its value must be an existing directory, SUGA_ADD_DIRS adds
 // more (a bad entry only warns) and the recorded metadata keeps the mode the
-// user asked for, even in a --read-only run.
+// user asked for, even in a --read-only run, together with where the directory
+// came from (source, which chat's :dirs shows).
 func TestRunAddDirs(t *testing.T) {
 	setupAddDirsRun(t)
 	setTestProvider(t, addDirsServer(t).URL)
@@ -79,8 +80,8 @@ func TestRunAddDirs(t *testing.T) {
 		assert.NoErr(t, err)
 		assert.Eq(t, "", stderr)
 		assert.Eq(t, []any{
-			map[string]any{"path": ro, "mode": "ro"},
-			map[string]any{"path": rw, "mode": "rw"},
+			map[string]any{"path": ro, "mode": "ro", "source": "flag"},
+			map[string]any{"path": rw, "mode": "rw", "source": "flag"},
 		}, sessionAddDirs(t, "adddir-cli-1"))
 	})
 	t.Run("a resumed session keeps its directories", func(t *testing.T) {
@@ -88,8 +89,8 @@ func TestRunAddDirs(t *testing.T) {
 		assert.NoErr(t, err)
 		// The :ro entry stays, the path given again takes this invocation's mode.
 		assert.Eq(t, []any{
-			map[string]any{"path": ro, "mode": "rw"},
-			map[string]any{"path": rw, "mode": "rw"},
+			map[string]any{"path": ro, "mode": "rw", "source": "flag"},
+			map[string]any{"path": rw, "mode": "rw", "source": "flag"},
 		}, sessionAddDirs(t, "adddir-cli-1"))
 	})
 	t.Run("SUGA_ADD_DIRS adds directories and warns about a bad entry", func(t *testing.T) {
@@ -98,13 +99,13 @@ func TestRunAddDirs(t *testing.T) {
 		assert.NoErr(t, err)
 		assert.StrContains(t, stderr, "warning: SUGA_ADD_DIRS: skipping")
 		assert.StrContains(t, stderr, "is not an existing directory")
-		assert.Eq(t, []any{map[string]any{"path": rw, "mode": "ro"}}, sessionAddDirs(t, "adddir-cli-2"))
+		assert.Eq(t, []any{map[string]any{"path": rw, "mode": "ro", "source": "env"}}, sessionAddDirs(t, "adddir-cli-2"))
 	})
 	t.Run("a --read-only run warns and keeps the requested mode", func(t *testing.T) {
 		_, stderr, err := runAddDirs(t, "--session-id", "adddir-cli-3", "--read-only", "--add-dir", rw+":rw")
 		assert.NoErr(t, err)
 		assert.StrContains(t, stderr, "warning: --read-only: "+rw+" is readable only in this run")
-		assert.Eq(t, []any{map[string]any{"path": rw, "mode": "rw"}}, sessionAddDirs(t, "adddir-cli-3"))
+		assert.Eq(t, []any{map[string]any{"path": rw, "mode": "rw", "source": "flag"}}, sessionAddDirs(t, "adddir-cli-3"))
 	})
 	t.Run("a bad --add-dir value fails before the model runs", func(t *testing.T) {
 		stdout, _, err := runAddDirs(t, "--session-id", "adddir-cli-4", "--add-dir", filepath.Join(ro, "missing"))

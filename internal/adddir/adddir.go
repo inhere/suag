@@ -25,11 +25,38 @@ const MetaKey = "add_dirs"
 // how the native tools compare paths.
 var foldCase = runtime.GOOS == "windows"
 
+// Sources of an added directory: where it entered the session. The value is
+// stored with the entry (ToMeta) so :dirs can still name the origin after a
+// restart; an entry of an older session has none.
+const (
+	// SourceFlag: the --add-dir values of the invocation.
+	SourceFlag = "flag"
+	// SourceEnv: the SUGA_ADD_DIRS entries of the invocation.
+	SourceEnv = "env"
+	// SourceSession: typed in chat (:add-dir).
+	SourceSession = "session"
+	// SourceAsk: authorized at an outside-directory question in chat.
+	SourceAsk = "ask"
+)
+
+// IsSource reports whether value names where a directory came from (one of the
+// Source* constants).
+func IsSource(value string) bool {
+	switch value {
+	case "", SourceFlag, SourceEnv, SourceSession, SourceAsk:
+		return true
+	}
+	return false
+}
+
 // Dir is one additional directory of a session. Path is absolute and cleaned;
 // Writable is the :rw mode (:ro, the default, is readable but not writable).
+// Source is one of the Source* constants ("" when unknown, e.g. a session
+// written by an older version).
 type Dir struct {
 	Path     string
 	Writable bool
+	Source   string
 }
 
 // Entry parses one --add-dir value (or one SUGA_ADD_DIRS item):
@@ -88,6 +115,7 @@ func Parse(values []string) ([]Dir, error) {
 		if err != nil {
 			return nil, fmt.Errorf("--add-dir: %w", err)
 		}
+		dir.Source = SourceFlag
 		dirs = append(dirs, dir)
 	}
 	return dirs, nil
@@ -108,6 +136,7 @@ func ParseEnv(value string) ([]Dir, []string) {
 			warnings = append(warnings, fmt.Sprintf("%s: skipping %v", EnvVar, err))
 			continue
 		}
+		dir.Source = SourceEnv
 		dirs = append(dirs, dir)
 	}
 	return dirs, warnings
@@ -200,7 +229,8 @@ func Effective(dirs []Dir, readOnly bool) []Dir {
 	return out
 }
 
-// ToMeta renders the set for the session metadata (MetaKey).
+// ToMeta renders the set for the session metadata (MetaKey): {path, mode} and,
+// when known, where the directory came from (source).
 func ToMeta(dirs []Dir) []map[string]any {
 	out := make([]map[string]any, len(dirs))
 	for i, dir := range dirs {
@@ -208,7 +238,11 @@ func ToMeta(dirs []Dir) []map[string]any {
 		if dir.Writable {
 			mode = "rw"
 		}
-		out[i] = map[string]any{"path": dir.Path, "mode": mode}
+		entry := map[string]any{"path": dir.Path, "mode": mode}
+		if dir.Source != "" {
+			entry["source"] = dir.Source
+		}
+		out[i] = entry
 	}
 	return out
 }
@@ -241,11 +275,17 @@ func FromMeta(value any) ([]Dir, error) {
 		if !filepath.IsAbs(path) {
 			return nil, fmt.Errorf("%s[%d]: %q is not an absolute path", MetaKey, i, path)
 		}
+		// An unknown source is dropped rather than refused: it only names where
+		// the directory came from, and :dirs shows it as unknown then.
+		source, _ := obj["source"].(string)
+		if !IsSource(source) {
+			source = ""
+		}
 		switch mode, _ := obj["mode"].(string); mode {
 		case "", "ro":
-			dirs = append(dirs, Dir{Path: filepath.Clean(path)})
+			dirs = append(dirs, Dir{Path: filepath.Clean(path), Source: source})
 		case "rw":
-			dirs = append(dirs, Dir{Path: filepath.Clean(path), Writable: true})
+			dirs = append(dirs, Dir{Path: filepath.Clean(path), Writable: true, Source: source})
 		default:
 			return nil, fmt.Errorf("%s[%d]: unknown mode %q", MetaKey, i, mode)
 		}
@@ -254,17 +294,42 @@ func FromMeta(value any) ([]Dir, error) {
 }
 
 // Equal reports whether two sets name the same paths in the same order with
-// the same modes, i.e. whether the session metadata has to be rewritten.
+// the same modes and sources, i.e. whether the session metadata has to be
+// rewritten.
 func Equal(a, b []Dir) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if pathKey(a[i].Path) != pathKey(b[i].Path) || a[i].Writable != b[i].Writable {
+		if pathKey(a[i].Path) != pathKey(b[i].Path) || a[i].Writable != b[i].Writable || a[i].Source != b[i].Source {
 			return false
 		}
 	}
 	return true
+}
+
+// Without returns dirs without path, keeping the order of the rest. It is how
+// chat's :rm-dir revokes a directory.
+func Without(dirs []Dir, path string) []Dir {
+	key := pathKey(path)
+	out := make([]Dir, 0, len(dirs))
+	for _, dir := range dirs {
+		if pathKey(dir.Path) != key {
+			out = append(out, dir)
+		}
+	}
+	return out
+}
+
+// Has reports whether path is one of dirs.
+func Has(dirs []Dir, path string) bool {
+	key := pathKey(path)
+	for _, dir := range dirs {
+		if pathKey(dir.Path) == key {
+			return true
+		}
+	}
+	return false
 }
 
 // pathKey normalises a path for the duplicate check (case-insensitive on

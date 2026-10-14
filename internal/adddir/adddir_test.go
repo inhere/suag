@@ -69,7 +69,7 @@ func TestParse(t *testing.T) {
 	t.Run("flag values keep their order and modes", func(t *testing.T) {
 		dirs, err := Parse([]string{dir + ":rw", "", "  "})
 		assert.NoErr(t, err)
-		assert.Eq(t, []Dir{{Path: dir, Writable: true}}, dirs)
+		assert.Eq(t, []Dir{{Path: dir, Writable: true, Source: SourceFlag}}, dirs)
 	})
 	t.Run("a bad flag value is an error", func(t *testing.T) {
 		_, err := Parse([]string{dir, "relative/dir"})
@@ -85,12 +85,12 @@ func TestParseEnv(t *testing.T) {
 		value := strings.Join([]string{a, b + ":rw"}, string(os.PathListSeparator))
 		dirs, warnings := ParseEnv(value)
 		assert.Empty(t, warnings)
-		assert.Eq(t, []Dir{{Path: a}, {Path: b, Writable: true}}, dirs)
+		assert.Eq(t, []Dir{{Path: a, Source: SourceEnv}, {Path: b, Writable: true, Source: SourceEnv}}, dirs)
 	})
 	t.Run("a bad entry warns and is skipped", func(t *testing.T) {
 		value := strings.Join([]string{a, "relative", filepath.Join(b, "missing"), b + ":rw"}, string(os.PathListSeparator))
 		dirs, warnings := ParseEnv(value)
-		assert.Eq(t, []Dir{{Path: a}, {Path: b, Writable: true}}, dirs)
+		assert.Eq(t, []Dir{{Path: a, Source: SourceEnv}, {Path: b, Writable: true, Source: SourceEnv}}, dirs)
 		assert.Eq(t, 2, len(warnings))
 		assert.StrContains(t, warnings[0], EnvVar+": skipping")
 		assert.StrContains(t, warnings[0], "not an absolute path")
@@ -122,17 +122,17 @@ func TestResolve(t *testing.T) {
 		dirs, warnings, err := Resolve([]string{flagDir + ":rw"}, envDir, false)
 		assert.NoErr(t, err)
 		assert.Empty(t, warnings)
-		assert.Eq(t, []Dir{{Path: flagDir, Writable: true}, {Path: envDir}}, dirs)
+		assert.Eq(t, []Dir{{Path: flagDir, Writable: true, Source: SourceFlag}, {Path: envDir, Source: SourceEnv}}, dirs)
 	})
 	t.Run("the same path in both keeps the flag mode", func(t *testing.T) {
 		dirs, _, err := Resolve([]string{flagDir + ":rw"}, flagDir, false)
 		assert.NoErr(t, err)
-		assert.Eq(t, []Dir{{Path: flagDir, Writable: true}}, dirs)
+		assert.Eq(t, []Dir{{Path: flagDir, Writable: true, Source: SourceFlag}}, dirs)
 	})
 	t.Run("read-only warns about a :rw entry", func(t *testing.T) {
 		dirs, warnings, err := Resolve([]string{flagDir + ":rw", envDir}, "", true)
 		assert.NoErr(t, err)
-		assert.Eq(t, []Dir{{Path: flagDir, Writable: true}, {Path: envDir}}, dirs)
+		assert.Eq(t, []Dir{{Path: flagDir, Writable: true, Source: SourceFlag}, {Path: envDir, Source: SourceFlag}}, dirs)
 		assert.Eq(t, 1, len(warnings))
 		assert.StrContains(t, warnings[0], "--read-only:")
 	})
@@ -158,10 +158,17 @@ func TestMerge(t *testing.T) {
 		got := Merge([]Dir{{Path: a, Writable: true}, {Path: b}}, []Dir{{Path: a}, {Path: c, Writable: true}})
 		assert.Eq(t, []Dir{{Path: a}, {Path: b}, {Path: c, Writable: true}}, got)
 	})
+	t.Run("a path given again takes the new source", func(t *testing.T) {
+		got := Merge([]Dir{{Path: a, Source: SourceFlag}}, []Dir{{Path: a, Writable: true, Source: SourceAsk}})
+		assert.Eq(t, []Dir{{Path: a, Writable: true, Source: SourceAsk}}, got)
+	})
 	t.Run("equal sets do not need a rewrite", func(t *testing.T) {
 		stored := []Dir{{Path: a}, {Path: b, Writable: true}}
 		assert.True(t, Equal(stored, Merge(stored, nil)))
 		assert.False(t, Equal(stored, Merge(stored, []Dir{{Path: b}})))
+	})
+	t.Run("a changed source needs a rewrite", func(t *testing.T) {
+		assert.False(t, Equal([]Dir{{Path: a, Source: SourceFlag}}, []Dir{{Path: a, Source: SourceSession}}))
 	})
 }
 
@@ -211,5 +218,42 @@ func TestMeta(t *testing.T) {
 		got, err := FromMeta([]any{map[string]any{"path": a}})
 		assert.NoErr(t, err)
 		assert.Eq(t, []Dir{{Path: a}}, got)
+	})
+	t.Run("the source is kept", func(t *testing.T) {
+		raw, err := json.Marshal(ToMeta([]Dir{{Path: a, Source: SourceSession}, {Path: b, Writable: true, Source: SourceAsk}}))
+		assert.NoErr(t, err)
+		var stored any
+		assert.NoErr(t, json.Unmarshal(raw, &stored))
+		got, err := FromMeta(stored)
+		assert.NoErr(t, err)
+		assert.Eq(t, []Dir{{Path: a, Source: SourceSession}, {Path: b, Writable: true, Source: SourceAsk}}, got)
+	})
+	t.Run("an unknown source is dropped", func(t *testing.T) {
+		got, err := FromMeta([]any{map[string]any{"path": a, "mode": "rw", "source": "guess"}})
+		assert.NoErr(t, err)
+		assert.Eq(t, []Dir{{Path: a, Writable: true}}, got)
+	})
+	t.Run("an entry without a source stays unknown", func(t *testing.T) {
+		raw, err := json.Marshal(ToMeta([]Dir{{Path: a}}))
+		assert.NoErr(t, err)
+		assert.StrNotContains(t, string(raw), "source")
+	})
+}
+
+func TestWithout(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+
+	t.Run("the path is dropped and the order kept", func(t *testing.T) {
+		got := Without([]Dir{{Path: a}, {Path: b, Writable: true}}, a)
+		assert.Eq(t, []Dir{{Path: b, Writable: true}}, got)
+	})
+	t.Run("an absent path changes nothing", func(t *testing.T) {
+		dirs := []Dir{{Path: a}}
+		assert.Eq(t, dirs, Without(dirs, b))
+	})
+	t.Run("has reports membership", func(t *testing.T) {
+		dirs := []Dir{{Path: a}}
+		assert.True(t, Has(dirs, filepath.Clean(a)))
+		assert.False(t, Has(dirs, b))
 	})
 }
