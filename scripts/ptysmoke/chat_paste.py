@@ -18,6 +18,11 @@ Checked:
   5. a paste from a terminal WITHOUT bracketed paste support: the text comes
      without markers and is recognised by the bytes that follow each newline.
 
+  The two rows of the input line are looked for in the raw output with two_rows:
+  raw input keeps output processing on, so the editor's CR LF reaches the pty as
+  CR CR LF. The same paste into a *running turn* has its own scenario (chat_steer,
+  "paste").
+
 Reverse verification: drop the paste handling — bracketed paste not enabled, the
 byte pump's newline decision off, and a newline inside a paste submitting again —
 and a paste submits at its first line break: the ESC[?2004h check, the "no turn
@@ -30,6 +35,7 @@ Exit status 0 when every check passes. The work dir defaults to tmp/smoke-paste.
 import argparse
 import json
 import os
+import re
 import select
 import shutil
 import subprocess
@@ -128,6 +134,14 @@ def paste(s, text):
     s.send("\x1b[200~" + text + "\x1b[201~")
 
 
+def two_rows(first, second):
+    """A pattern for two rows of the input line in the raw output: the line editor
+    writes its own CR LF and raw input keeps output processing on (OPOST|ONLCR,
+    termios_linux.go), which turns that LF into one more CR, so the row break
+    arrives as CR CR LF (CR LF where no output processing is in play)."""
+    return re.escape(first) + r"\r*\n" + re.escape(second)
+
+
 def scenario(s, log):
     m = s.mark()
     s.check("❯ prompt", s.until(r"❯ ", m))
@@ -136,7 +150,7 @@ def scenario(s, log):
     # A paste with an LF line break: both lines on the input line, no turn.
     m = s.mark()
     paste(s, "第一行\n第二行")
-    s.check("LF paste: both lines are on the input line", s.until_raw("第一行\r\n第二行", m))
+    s.check("LF paste: both lines are on the input line", s.until_raw(two_rows("第一行", "第二行"), m))
     s.check("LF paste: no turn starts", log.drain() == [])
     m = s.mark()
     s.send("\r")
@@ -150,7 +164,7 @@ def scenario(s, log):
     # A paste with a CR line break (what a terminal usually sends inside a paste).
     m = s.mark()
     paste(s, "第三行\r第四行")
-    s.check("CR paste: both lines are on the input line", s.until_raw("第三行\r\n第四行", m))
+    s.check("CR paste: both lines are on the input line", s.until_raw(two_rows("第三行", "第四行"), m))
     s.check("CR paste: no turn starts", log.drain() == [])
     m = s.mark()
     s.send("\r")
@@ -162,7 +176,7 @@ def scenario(s, log):
     # it within a few milliseconds, otherwise the paste submits at its first line.
     m = s.mark()
     s.send("第五行\n第六行")
-    s.check("a terminal without markers: both lines on the input line", s.until_raw("第五行\r\n第六行", m))
+    s.check("a terminal without markers: both lines on the input line", s.until_raw(two_rows("第五行", "第六行"), m))
     s.check("a terminal without markers: no turn starts", log.drain() == [])
     m = s.mark()
     s.send("\r")
