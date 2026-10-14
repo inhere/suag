@@ -3,6 +3,7 @@ package chat
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,62 @@ func runTurn(r *Renderer, elapsed time.Duration) {
 	}
 	r.Finish()
 	r.Status(personal.RunResult{Usage: agentcore.Usage{InputTokens: 1200, OutputTokens: 34}}, elapsed)
+}
+
+// TestRendererLastReply: a continued session shows the model's last reply
+// above the first prompt, with a dim label, the usual ▣ marker and the same
+// markdown rendering as an answer; long replies are cut to their tail with a
+// hint naming the trace command.
+func TestRendererLastReply(t *testing.T) {
+	t.Run("plain: the label, then the reply with the answer marker", func(t *testing.T) {
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out}).LastReply("第一行\n第二行", "sess_1", false)
+		assert.Eq(t, "上一次回复：\n▣ 第一行\n第二行\n", out.String())
+		assert.StrNotContains(t, out.String(), "\x1b[")
+	})
+	t.Run("colored: the label is dim", func(t *testing.T) {
+		color.ForceColor()
+		t.Cleanup(func() { color.RevertColorLevel() })
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out, Color: true}).LastReply("回答", "sess_1", false)
+		assert.Eq(t, "\x1b[90m上一次回复：\x1b[0m\n\x1b[32m▣\x1b[0m 回答\n", out.String())
+	})
+	t.Run("markdown on a colored terminal renders the reply", func(t *testing.T) {
+		color.ForceColor()
+		t.Cleanup(func() { color.RevertColorLevel() })
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out, Color: true, Markdown: true}).LastReply("## 标题", "sess_1", false)
+		assert.StrContains(t, out.String(), "\x1b[32m▣\x1b[0m \x1b[1;36m标题\x1b[0m\n")
+		assert.StrNotContains(t, out.String(), "##")
+	})
+	t.Run("incomplete adds the note", func(t *testing.T) {
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out}).LastReply("回答", "sess_1", true)
+		assert.Eq(t, "上一次回复：\n上一回合未正常结束\n▣ 回答\n", out.String())
+	})
+	t.Run("a long reply shows its last lines with a trace hint", func(t *testing.T) {
+		lines := make([]string, 45)
+		for i := range lines {
+			lines[i] = fmt.Sprintf("line%02d", i+1)
+		}
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out}).LastReply(strings.Join(lines, "\n"), "sess_1", false)
+		got := out.String()
+		assert.StrContains(t, got, "已截断前 5 行，完整记录见 suga trace sess_1\n")
+		assert.StrNotContains(t, got, "line05")
+		assert.StrContains(t, got, "▣ line06\n")
+		assert.StrContains(t, got, "line45\n")
+	})
+	t.Run("exactly the line limit is shown whole", func(t *testing.T) {
+		lines := make([]string, replyTailLines)
+		for i := range lines {
+			lines[i] = fmt.Sprintf("line%02d", i+1)
+		}
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out}).LastReply(strings.Join(lines, "\n"), "sess_1", false)
+		assert.StrContains(t, out.String(), "▣ line01\n")
+		assert.StrNotContains(t, out.String(), "已截断")
+	})
 }
 
 func TestRendererPlainTurn(t *testing.T) {

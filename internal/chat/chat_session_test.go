@@ -81,6 +81,30 @@ func TestPersonalChatReusesOneSession(t *testing.T) {
 	assert.Eq(t, 2, len(turns))
 }
 
+// TestPersonalChatResumeShowsLastReply: continuing an existing session prints
+// the model's last reply above the first prompt, so the person can go on from
+// it; a new session prints nothing of the kind.
+func TestPersonalChatResumeShowsLastReply(t *testing.T) {
+	runner, repo := newCLITestRunner(t, mock.NewProvider(mock.Final("第一次的回答")))
+	ctx := context.Background()
+	var stdout, stderr bytes.Buffer
+	assert.NoErr(t, Run(ctx, runner, Options{}, strings.NewReader("你好\n:quit\n"), &stdout, &stderr, nil))
+	assert.StrNotContains(t, stdout.String(), "上一次回复")
+
+	sessions, err := repo.ListSessions(ctx)
+	assert.NoErr(t, err)
+	assert.Require(t, assert.Eq(t, 1, len(sessions)))
+	stdout.Reset()
+	assert.NoErr(t, Run(ctx, runner, Options{ResumeID: sessions[0].ID}, strings.NewReader(":quit\n"), &stdout, &stderr, nil))
+
+	got := stdout.String()
+	assert.StrContains(t, got, "上一次回复：\n▣ 第一次的回答")
+	// Above the first prompt: it must read as history, not as an answer to input.
+	assert.True(t, strings.Index(got, "第一次的回答") < strings.Index(got, "❯ "))
+	// That turn ended normally, so the note stays away.
+	assert.StrNotContains(t, got, "上一回合未正常结束")
+}
+
 // newTestStorePath returns a fresh core store path under the test's temp dir.
 func newTestStorePath(t *testing.T) string {
 	t.Helper()
