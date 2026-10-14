@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 """End-to-end smoke test: chat shows the "思考中…" waiting line while the model
-thinks and erases it before the next output, and paints the line the person
-submitted on a background of its own (Linux/macOS).
+thinks and erases it before the next output, paints the line the person
+submitted on a background of its own, and names the terminal tab after the
+session (Linux/macOS).
 
 Starts scripts/ptysmoke/fakellm.py (tool mode with --delay 2, shell_exec
 approved automatically) and `suga chat` in a PTY with colors ON (NO_COLOR is
-dropped: neither the waiting line nor the input background shows on a terminal
-without colors), sends one prompt and checks: nothing is shown before the first
-turn, the line with the elapsed seconds appears while the model is asked for its
-first message, the tool call replaces it, it comes back while the model reads the
-tool result, and the answer is printed on a line the hint was erased from, and
-the submitted line comes back on a 256-color background filled to the end of the
-row. A second chat, configured with chat.spinner: false and
-chat.highlight_input: false, shows neither.
+dropped: neither the waiting line, the input background nor the terminal title
+shows on a terminal without colors), sends one prompt and checks: nothing is
+shown before the first turn, the line with the elapsed seconds appears while the
+model is asked for its first message, the tool call replaces it, it comes back
+while the model reads the tool result, and the answer is printed on a line the
+hint was erased from, and the submitted line comes back on a 256-color
+background filled to the end of the row. On the terminal title: the terminal's
+own title is saved and the session named at startup (no session title yet), the
+title is updated with the first message's title, and leaving chat clears the
+title and pops the saved one. A second chat, configured with chat.spinner:
+false, chat.highlight_input: false and chat.terminal_title: false, shows none of
+them (dropping the title code without dropping `terminal_title: false` here
+turns these checks red in either direction).
 
   python3 -I scripts/ptysmoke/chat_spinner.py --bin tmp/smoke/suga
 
@@ -25,7 +31,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ptydrive import PtySession  # noqa: E402
+from ptydrive import CTRL_D, PtySession  # noqa: E402
 from chat_approval import isolate_ws, wait_port, write_home  # noqa: E402
 
 HINT = r"思考中… \d+s"
@@ -39,11 +45,17 @@ ERASE = "\x1b[2K"
 # The background chat paints the submitted line with (chat.highlight_input);
 # the checks look at the raw output, text() drops the escape codes.
 INPUT_BG = r"\x1b\[48;5;236m"
+# The terminal title (chat.terminal_title): OSC 0 with the program, the session's
+# short name ("ws-<two chars>", the workspace directory) and the session title.
+TITLE = r"\x1b\]0;suga"
+TITLE_SAVE = r"\x1b\[22;0t"
+TITLE_RESTORE = r"\x1b\[23;0t"
+TITLE_CLEAR = r"\x1b\]0;\x07"
 
 
 def off_chat_config():
-    """Top-level config of the second run: both switches turn their feature off."""
-    return "chat:\n  spinner: false\n  highlight_input: false\n"
+    """Top-level config of the second run: every switch turns its feature off."""
+    return "chat:\n  spinner: false\n  highlight_input: false\n  terminal_title: false\n"
 
 
 def scenario(s):
@@ -51,10 +63,21 @@ def scenario(s):
     s.check("banner shows model", s.until(r"Suga chat · fake/m1", m))
     s.check("❯ prompt", s.until(r"❯ ", m))
     s.check("nothing before the first turn", not s.contains("思考中", m))
+    # The terminal title is set before the banner: saved first, then named after
+    # the session (no session title before the first message).
+    s.check("title: the terminal's own title is saved", s.until_raw(TITLE_SAVE, m))
+    s.check("title: names the program and the session's short name",
+            s.until_raw(TITLE + r" · ws-[a-z0-9]{2}\x07", m))
+    s.check("title: no session title before the first message",
+            not s.contains_raw(r"\x1b\]0;suga · ws-[a-z0-9]{2} · ", m))
 
     m = s.mark()
     s.line("你好")
     s.check("line while waiting for the first message", s.until(HINT, m))
+    # The first message is the session title, so the terminal title changes with
+    # it (the same title the session stores).
+    s.check("title: updated with the session title",
+            s.until_raw(TITLE + r" · ws-[a-z0-9]{2} · 你好\x07", m))
     # The repaint: the style, the prompt (which carries its own colors and ends
     # with a reset), the style again, what was typed, then spaces to the row end.
     s.check("input line: painted on a background", s.until_raw(INPUT_BG, m))
@@ -76,10 +99,22 @@ def scenario(s):
     s.check("the last hint was erased before the answer",
             hint >= 0 and answer > hint and ERASE in raw[hint:answer])
 
+    # Ctrl-D at the prompt leaves chat: the terminal title is emptied (a
+    # terminal that keeps no title stack then shows its own default) and the
+    # saved title popped after it.
+    m = s.mark()
+    s.send(CTRL_D)
+    s.check("title: cleared on exit", s.until_raw(TITLE_CLEAR, m))
+    s.check("title: the saved title is popped on exit", s.until_raw(TITLE_RESTORE, m))
+
 
 def off_scenario(s):
-    """chat.spinner: false and chat.highlight_input: false show neither, in a
-    colored terminal (the reverse of the checks above)."""
+    """chat.spinner: false, chat.highlight_input: false and chat.terminal_title:
+    false show none of them, in a colored terminal (the reverse of the checks
+    above)."""
+    # The whole session is searched for the title sequences: a title set at
+    # startup would sit before the first mark, too.
+    start = 0
     m = s.mark()
     s.check("off: ❯ prompt", s.until(r"❯ ", m))
     m = s.mark()
@@ -87,6 +122,9 @@ def off_scenario(s):
     s.check("off: answer", s.until(r"▣ " + REPLY, m) and s.until(r"tokens · ", m))
     s.check("off: no waiting line anywhere", not s.contains("思考中", m))
     s.check("off: the submitted line has no background", not s.contains_raw(r"\x1b\[48;5;236m", m))
+    s.check("off: no terminal title anywhere", not s.contains_raw(r"\x1b\]0;", start))
+    s.check("off: no title save or restore either",
+            not s.contains_raw(r"\x1b\[2[23];0t", start))
 
 
 def main():

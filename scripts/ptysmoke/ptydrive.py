@@ -16,6 +16,7 @@ import time
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 ENTER = "\r"
 CTRL_C = "\x03"
+CTRL_D = "\x04"
 CTRL_U = "\x15"
 
 
