@@ -397,6 +397,7 @@ func cloneGenerateRequest(req *GenerateRequest) *GenerateRequest {
 		MaxTokens:   req.MaxTokens,
 		Temperature: req.Temperature,
 		Metadata:    cloneMetadata(req.Metadata),
+		ToolChoice:  req.ToolChoice,
 	}
 	if len(req.Messages) > 0 {
 		cloned.Messages = cloneMessages(req.Messages)

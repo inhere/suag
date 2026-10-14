@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+// wrapUpReasonMaxSteps is the wrap-up reason the runtime itself reports when a
+// step limit asked for the final answer; a hook's Control.RequestWrapUp brings
+// its own reason (a token budget, a timeout).
+const wrapUpReasonMaxSteps = "max_steps"
+
 // Runtime executes agent runs using the public agentcore contracts.
 type Runtime interface {
 	Run(ctx context.Context, input RunInput) (*RunResult, error)
@@ -133,7 +138,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 			if r.maxStepsWrapUp == "" || wrappingUp {
 				return r.returnWithHandledError(ctx, input, state, "max_steps", fmt.Errorf("max steps exceeded: %d", maxSteps), NewControl())
 			}
-			wrappingUp, wrapUp, wrapUpText = true, "max_steps", r.maxStepsWrapUp
+			wrappingUp, wrapUp, wrapUpText = true, wrapUpReasonMaxSteps, r.maxStepsWrapUp
 		}
 		if !wrappingUp && ctrl.WrapUpReason != "" {
 			wrappingUp, wrapUp, wrapUpText = true, ctrl.WrapUpReason, ctrl.WrapUpInstruction
@@ -191,10 +196,9 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 		}
 
 		if wrappingUp && res.FinishReason == FinishToolCalls {
-			if wrapUp != "max_steps" {
-				return r.returnWithHandledError(ctx, input, state, "wrap_up", fmt.Errorf("%w (%s)", ErrWrapUpIgnored, wrapUp), NewControl())
-			}
-			return r.returnWithHandledError(ctx, input, state, "max_steps", fmt.Errorf("max steps exceeded: %d", maxSteps), NewControl())
+			// The model ignored the wrap-up instruction: the turn still ends with
+			// an answer instead of failing and losing the work done so far.
+			return r.finishIgnoredWrapUp(ctx, input, state, req, res, wrapUp, maxSteps, ctrl)
 		}
 
 		switch res.FinishReason {
@@ -644,6 +648,124 @@ func (r *DefaultRuntime) persistFinalAnswer(ctx context.Context, input RunInput,
 		Steps:  state.Step,
 		Usage:  state.Usage,
 	}, nil
+}
+
+// finishIgnoredWrapUp ends a wrap-up step whose reply asked for tools again
+// instead of answering, so the turn reports what it has instead of failing with
+// everything done before the limit lost. In order:
+//
+//  1. Text sent alongside the tool calls is the answer; the calls do not run.
+//  2. Without text, the same request goes out again asking for a reply without
+//     tools (GenerateRequest.ToolChoice), when the provider takes one. Its
+//     usage counts, but it is not a step, so the limit is not checked again.
+//  3. Still without text, a fixed notice naming why the turn ended answers,
+//     repeating the run's last text so the work is not lost.
+//
+// The run completes as an ordinary wrap-up (WrapUp keeps the reason: the step
+// limit or what a hook requested), which hosts present as a completed run.
+func (r *DefaultRuntime) finishIgnoredWrapUp(ctx context.Context, input RunInput, state *RunState, req *GenerateRequest, res *GenerateResult, wrapUp string, maxSteps int, ctrl *Control) (*RunResult, error) {
+	if strings.TrimSpace(res.Content) != "" {
+		// The reply's own turn metadata (signed thinking blocks, reasoning
+		// items) belongs to the tool calls that do not run, so only the text is
+		// kept as the answer.
+		return r.finishWrapUpAnswer(ctx, input, state, &GenerateResult{
+			Content:      res.Content,
+			Reasoning:    res.Reasoning,
+			FinishReason: FinishFinal,
+		}, wrapUp)
+	}
+
+	if r.supportsToolChoice() {
+		// Same messages, same wrap-up instruction: only tool use is forbidden.
+		retryReq := *req
+		retryReq.ToolChoice = ToolChoiceNone
+		retryRes, err := r.callModel(ctx, state, &retryReq, ctrl, input.Stream)
+		if err != nil {
+			return r.returnWithHandledError(ctx, input, state, "model", err, ctrl)
+		}
+		if retryRes == nil {
+			if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+				return r.finishRun(ctx, input, state, result, err)
+			}
+			return r.returnWithHandledError(ctx, input, state, "model", fmt.Errorf("model execution returned no result"), ctrl)
+		}
+		state.Usage = state.Usage.Add(retryRes.Usage)
+		if result, err, handled := r.resolveControl(ctx, state, ctrl); handled {
+			return r.finishRun(ctx, input, state, result, err)
+		}
+		if strings.TrimSpace(retryRes.Content) != "" {
+			// Any tool calls of the retry are ignored like the first reply's.
+			return r.finishWrapUpAnswer(ctx, input, state, retryRes, wrapUp)
+		}
+	}
+
+	return r.finishWrapUpAnswer(ctx, input, state, &GenerateResult{
+		Content:      wrapUpFallbackNotice(wrapUp, maxSteps, state),
+		FinishReason: FinishFinal,
+	}, wrapUp)
+}
+
+// finishWrapUpAnswer persists answer as the run's final answer and completes the
+// run, keeping the wrap-up reason on the result (what the FinishFinal branch of
+// Run does for a model that complied).
+func (r *DefaultRuntime) finishWrapUpAnswer(ctx context.Context, input RunInput, state *RunState, answer *GenerateResult, wrapUp string) (*RunResult, error) {
+	result, err := r.persistFinalAnswer(ctx, input, state, answer)
+	if err != nil {
+		return nil, err
+	}
+	if result != nil {
+		result.WrapUp = wrapUp
+	}
+	return r.finishRun(ctx, input, state, result, nil)
+}
+
+// supportsToolChoice reports whether the provider honours a request that asks
+// for a reply without tools (the wrap-up retry): a provider that does not
+// declare the capability is never asked.
+func (r *DefaultRuntime) supportsToolChoice() bool {
+	chooser, ok := r.provider.(ToolChooser)
+	return ok && chooser.SupportsToolChoice()
+}
+
+// wrapUpFallbackNotice is the fixed answer of a wrap-up step whose model never
+// sent any text, not even when asked again without tools: it names why the turn
+// ended and repeats the run's last text, so a short answer is not mistaken for
+// a finished task and the work before the limit is not lost.
+func wrapUpFallbackNotice(reason string, maxSteps int, state *RunState) string {
+	var why string
+	switch reason {
+	case wrapUpReasonMaxSteps:
+		if maxSteps > 0 {
+			why = fmt.Sprintf("本轮因步数上限（%d 步）收尾", maxSteps)
+			break
+		}
+		why = "本轮因步数上限收尾"
+	case "":
+		why = "本轮收尾"
+	default:
+		why = fmt.Sprintf("本轮因 %s 收尾", reason)
+	}
+	notice := why + "，模型未给出汇报。"
+	if last := lastAssistantText(state); last != "" {
+		notice += "\n\n最后一次有正文的回复如下：\n\n" + last
+	}
+	return notice
+}
+
+// lastAssistantText is the text of the run's last assistant message that has
+// any ("" when none did): the model's last words besides its tool calls, which
+// the wrap-up fallback repeats.
+func lastAssistantText(state *RunState) string {
+	if state == nil {
+		return ""
+	}
+	for i := len(state.Messages) - 1; i >= 0; i-- {
+		message := state.Messages[i]
+		if message.Role == "assistant" && strings.TrimSpace(message.Content) != "" {
+			return message.Content
+		}
+	}
+	return ""
 }
 
 func (r *DefaultRuntime) handleErrorResult(ctx context.Context, state *RunState, stage string, err error, ctrl *Control) (*RunResult, error, bool) {

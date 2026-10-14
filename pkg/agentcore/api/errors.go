@@ -110,6 +110,9 @@ var (
 	ErrHistoryStateConflict    = errors.New("memory state conflicts with transcript")
 	ErrToolCallsNotImplemented = errors.New("tool call loop not implemented yet")
 	// ErrWrapUpIgnored: the reply to a wrap-up request (Control.RequestWrapUp)
-	// called tools instead of answering.
+	// called tools instead of answering. The default runtime no longer reports
+	// it, since such a turn ends with a wrap-up answer instead (see
+	// DefaultRuntime.finishIgnoredWrapUp); it stays for hosts that surface the
+	// case themselves.
 	ErrWrapUpIgnored = errors.New("the model called tools after the wrap-up request")
 )

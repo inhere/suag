@@ -520,13 +520,18 @@ func TestRuntime_Run_MaxStepsWrapUp(t *testing.T) {
 			}
 		}
 	})
-	t.Run("more tool calls still fail", func(t *testing.T) {
-		store, provider, _, err := newRun(call, call)
-		if err == nil || !strings.Contains(err.Error(), "max steps") {
-			t.Fatalf("expected max-steps failure, got %v", err)
+	t.Run("more tool calls end the run with the notice", func(t *testing.T) {
+		store, provider, res, err := newRun(call, call)
+		if err != nil || res == nil || res.Status != RunCompleted {
+			// The reply took no tool_choice (the test provider has none), so the
+			// fixed notice answers instead.
+			t.Fatalf("expected a completed wrap-up run, got %#v, %v", res, err)
 		}
-		if len(provider.calls) != 2 || store.runs["run-wrap"].Status != RunFailed {
-			t.Fatalf("expected exactly one wrap-up call and a failed run")
+		if res.WrapUp != "max_steps" || !strings.Contains(res.Output, "本轮因步数上限（1 步）收尾") {
+			t.Fatalf("expected a max_steps notice, got %#v", res)
+		}
+		if len(provider.calls) != 2 || store.runs["run-wrap"].Status != RunCompleted {
+			t.Fatalf("expected exactly one wrap-up call and a completed run")
 		}
 	})
 }
@@ -577,11 +582,19 @@ func TestRuntime_Run_RequestedWrapUp(t *testing.T) {
 			t.Fatalf("expected the requested instruction last, got %#v", last)
 		}
 	})
-	t.Run("tool calls after the request fail with ErrWrapUpIgnored", func(t *testing.T) {
-		provider, _, err := newRun(call, call, call)
-		if !errors.Is(err, ErrWrapUpIgnored) || !strings.Contains(err.Error(), "max_tokens") {
-			t.Fatalf("expected ErrWrapUpIgnored (max_tokens), got %v", err)
+	t.Run("tool calls after the request end the run with its text", func(t *testing.T) {
+		provider, res, err := newRun(call, &GenerateResult{
+			Content:      "what I found so far",
+			ToolCalls:    []ToolCall{{CallID: "call-2", Name: "lookup"}},
+			FinishReason: FinishToolCalls,
+		})
+		if err != nil || res == nil || res.Status != RunCompleted || res.WrapUp != "max_tokens" {
+			t.Fatalf("expected a completed wrap-up run, got %#v, %v", res, err)
 		}
+		if res.Output != "what I found so far" {
+			t.Fatalf("expected the reply's text as the answer, got %q", res.Output)
+		}
+		// The ignored calls did not run and no further request went out.
 		if len(provider.calls) != 2 {
 			t.Fatalf("expected exactly one wrap-up call, got %d calls", len(provider.calls))
 		}
