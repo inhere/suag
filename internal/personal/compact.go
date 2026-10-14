@@ -503,7 +503,9 @@ func withoutContextUpdates(items []ctxItem) []ctxItem {
 }
 
 // renderTranscript renders items as text, halving the per-item cap (4000 ->
-// 500 chars) until the total fits maxChars.
+// 500 chars) until the total fits maxChars. A message a person typed into the
+// running turn (a steer) is labeled as such instead of "[user]", so a summary
+// does not read it as a request of the turn.
 func renderTranscript(items []ctxItem, maxChars int) string {
 	var out string
 	for limit := 4000; ; limit /= 2 {
@@ -511,6 +513,8 @@ func renderTranscript(items []ctxItem, maxChars int) string {
 		for _, it := range items {
 			m := it.msg
 			switch {
+			case isSteerItem(m):
+				fmt.Fprintf(&sb, "%s %s\n", steerLabel(m), truncateMiddle(m.Content, limit))
 			case m.Role == "tool":
 				content := m.Content
 				if m.ToolResult != nil && len(m.ToolResult.Content) > len(content) {

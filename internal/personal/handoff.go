@@ -111,7 +111,7 @@ func (r *Runner) buildHandoff(ctx context.Context, src Session) (handoffRecord, 
 		if err != nil {
 			return handoffRecord{}, err
 		}
-		rec.Summary = renderPackage(body, requests, "")
+		rec.Summary = renderPackage(body, requests, nil, "")
 	}
 	if strings.TrimSpace(rec.Summary) == "" {
 		return handoffRecord{}, errors.New("source session has no content to hand off")

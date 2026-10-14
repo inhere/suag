@@ -16,9 +16,10 @@ import (
 )
 
 // Handoff package (design D4, "交接包模板"): the model-written body (see
-// compactTemplate), then the recent user requests verbatim and the current
-// plan verbatim. The rendered text is what the segment record's Summary holds
-// and what the segment context message shows.
+// compactTemplate), then the recent user requests verbatim, the steering
+// messages a person typed into the turn that is being cut (design D10) and the
+// current plan verbatim. The rendered text is what the segment record's Summary
+// holds and what the segment context message shows.
 const (
 	// recentRequestCount is how many recent user requests a package carries (Q5).
 	recentRequestCount = 3
@@ -30,6 +31,7 @@ const (
 	shortRequestRunes = 6
 
 	recentRequestsHeading = "## 最近的用户请求（原文）"
+	turnSteersHeading     = "## 本回合插话（原文）"
 	packagePlanHeading    = "## 当前计划（原文）"
 )
 
@@ -56,9 +58,14 @@ type segmentPackage struct {
 // buildPackage builds the handoff package of a segment break: items is the
 // closing view and items[:cut] the part leaving the raw context; previous is
 // the current segment's package; turnID ("" between turns) lets the current
-// turn's request count before the turn completes.
+// turn's request count before the turn completes - and lets the package name
+// the steering messages of that turn, which are not requests of it (D10).
 func (r *Runner) buildPackage(ctx context.Context, sessionID, turnID, previous string, items []ctxItem, cut, threshold int) (segmentPackage, error) {
 	requests, err := r.recentRequests(ctx, sessionID, turnID, recentRequestCount)
+	if err != nil {
+		return segmentPackage{}, err
+	}
+	steers, err := r.turnSteers(ctx, sessionID, turnID)
 	if err != nil {
 		return segmentPackage{}, err
 	}
@@ -71,7 +78,7 @@ func (r *Runner) buildPackage(ctx context.Context, sessionID, turnID, previous s
 	return segmentPackage{
 		requests: requests,
 		refs:     parseRefs(body, sessionID, cands),
-		rendered: renderPackage(body, requests, plan),
+		rendered: renderPackage(body, requests, steers, plan),
 	}, nil
 }
 
@@ -255,12 +262,16 @@ func renderRequests(requests []string) string {
 	return sb.String()
 }
 
-// renderPackage renders the full handoff package: the model-written body,
-// the recent requests verbatim and the plan verbatim (when there is one).
-func renderPackage(body string, requests []string, plan string) string {
+// renderPackage renders the full handoff package: the model-written body, the
+// recent requests verbatim, the steering messages of the turn being cut
+// (design D10) and the plan verbatim (when there is one).
+func renderPackage(body string, requests, steers []string, plan string) string {
 	parts := []string{strings.TrimSpace(body)}
 	if len(requests) > 0 {
 		parts = append(parts, recentRequestsHeading+"\n"+strings.TrimRight(renderRequests(requests), "\n"))
+	}
+	if len(steers) > 0 {
+		parts = append(parts, turnSteersHeading+"\n"+strings.TrimRight(renderRequests(steers), "\n"))
 	}
 	if p := renderPlan(plan); p != "" {
 		parts = append(parts, packagePlanHeading+"\n"+p)
