@@ -34,8 +34,9 @@ type Config struct {
 	MaxToolCallsPerStep int
 	// MaxStepsWrapUp, when set, makes reaching MaxSteps ask the model for one
 	// more answer instead of failing at once: the text is appended to that
-	// request only (not persisted) as a user message. The run still fails with
-	// the max-steps error if the model keeps requesting tools.
+	// request only (not persisted) as a user message. A model that keeps
+	// requesting tools anyway still ends the run with an answer (see
+	// finishIgnoredWrapUp), never with the max-steps error.
 	MaxStepsWrapUp string
 	// PrefetchTools, when set, gets every reply with more than one tool call
 	// before the calls run one by one. It may start the side-effect-free ones
@@ -665,14 +666,7 @@ func (r *DefaultRuntime) persistFinalAnswer(ctx context.Context, input RunInput,
 // limit or what a hook requested), which hosts present as a completed run.
 func (r *DefaultRuntime) finishIgnoredWrapUp(ctx context.Context, input RunInput, state *RunState, req *GenerateRequest, res *GenerateResult, wrapUp string, maxSteps int, ctrl *Control) (*RunResult, error) {
 	if strings.TrimSpace(res.Content) != "" {
-		// The reply's own turn metadata (signed thinking blocks, reasoning
-		// items) belongs to the tool calls that do not run, so only the text is
-		// kept as the answer.
-		return r.finishWrapUpAnswer(ctx, input, state, &GenerateResult{
-			Content:      res.Content,
-			Reasoning:    res.Reasoning,
-			FinishReason: FinishFinal,
-		}, wrapUp)
+		return r.finishWrapUpAnswer(ctx, input, state, wrapUpAnswerOf(res), wrapUp)
 	}
 
 	if r.supportsToolChoice() {
@@ -695,7 +689,7 @@ func (r *DefaultRuntime) finishIgnoredWrapUp(ctx context.Context, input RunInput
 		}
 		if strings.TrimSpace(retryRes.Content) != "" {
 			// Any tool calls of the retry are ignored like the first reply's.
-			return r.finishWrapUpAnswer(ctx, input, state, retryRes, wrapUp)
+			return r.finishWrapUpAnswer(ctx, input, state, wrapUpAnswerOf(retryRes), wrapUp)
 		}
 	}
 
@@ -703,6 +697,23 @@ func (r *DefaultRuntime) finishIgnoredWrapUp(ctx context.Context, input RunInput
 		Content:      wrapUpFallbackNotice(wrapUp, maxSteps, state),
 		FinishReason: FinishFinal,
 	}, wrapUp)
+}
+
+// wrapUpAnswerOf turns a reply into the answer its turn ends with. A reply that
+// asked for tools keeps its text only: the calls do not run, so its turn
+// metadata (signed thinking blocks, reasoning items) belongs to them and is not
+// replayed later.
+func wrapUpAnswerOf(res *GenerateResult) *GenerateResult {
+	answer := &GenerateResult{
+		Content:      res.Content,
+		Reasoning:    res.Reasoning,
+		FinishReason: FinishFinal,
+	}
+	if len(res.ToolCalls) == 0 {
+		answer.Metadata = cloneMetadata(res.Metadata)
+		answer.Artifacts = res.Artifacts
+	}
+	return answer
 }
 
 // finishWrapUpAnswer persists answer as the run's final answer and completes the

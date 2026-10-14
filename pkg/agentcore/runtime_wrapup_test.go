@@ -61,7 +61,11 @@ func TestRuntime_Run_IgnoredWrapUp(t *testing.T) {
 	}
 
 	t.Run("text alongside the tool calls answers the turn", func(t *testing.T) {
-		store, provider, res, err := newRun(t, true, call(""), call("summary of what I found"))
+		reply := call("summary of what I found")
+		// The reply's turn metadata (thinking blocks, reasoning items) belongs to
+		// the calls that do not run, so it is not persisted with the answer.
+		reply.Metadata = map[string]any{"provider_turn_item": true}
+		store, provider, res, err := newRun(t, true, call(""), reply)
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, RunCompleted, res.Status)
 		assert.Eq(t, "max_steps", res.WrapUp)
@@ -73,6 +77,7 @@ func TestRuntime_Run_IgnoredWrapUp(t *testing.T) {
 		assert.Require(t, assert.Len(t, msgs, 4))
 		assert.Eq(t, "summary of what I found", msgs[3].Content)
 		assert.Nil(t, msgs[3].ToolCall)
+		assert.Nil(t, msgs[3].Metadata)
 		assert.Eq(t, RunCompleted, store.runs[runID].Status)
 	})
 
