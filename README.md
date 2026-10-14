@@ -45,7 +45,7 @@ suga run --allow-write --prompt "Fix the failing test"
 suga run --resume <session-id> --prompt "Continue"
 ```
 
-In chat, `:session` shows the session id, `:compact` starts a new segment (see [Sessions](#sessions)) and `:quit` leaves. Pressing Ctrl+C once at the prompt clears the line; pressing it again within 3 seconds exits. Ctrl+D exits immediately. On exit chat prints token usage and the command that resumes the session.
+In chat, `:session` shows the session id, `:compact` starts a new segment (see [Sessions](#sessions)) and `:quit` leaves. Pressing Ctrl+C once at the prompt clears the line; pressing it again within 3 seconds exits. Ctrl+D exits immediately. On exit chat prints token usage and the command that resumes the session. Continuing an existing session (`--resume <id>`, or `--session-id <id>` naming one that exists) first shows the last reply the model gave with text, above the first prompt, so you can go on from it: a dim "上一次回复：" (last reply) sets it apart, a long reply is cut to its last 40 lines with the `suga trace` command for the rest, and a turn that was interrupted or failed is marked "上一回合未正常结束" (the previous turn did not end normally). It only reads: no model call, no session entry.
 
 ## Configuration
 
