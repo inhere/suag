@@ -47,6 +47,9 @@ type fakeHookClient struct {
 	startCount chan struct{}
 	eventWake  chan struct{}
 	blockFirst bool
+	// stopReason is the block reason of the first Stop (default: a web reply
+	// marker); a test may make it look like a chat command.
+	stopReason string
 	// lostOnInterrupt makes every Stop wait report this web reply when interrupted.
 	lostOnInterrupt string
 	// startNotice is returned as the SessionStart response Notice.
@@ -91,7 +94,11 @@ func (f *fakeHookClient) StartStop(_ context.Context, event sugahooks.Event) sug
 	f.startCount <- struct{}{}
 	done := make(chan sugahooks.Result, 1)
 	if stopCount == 1 && f.blockFirst {
-		done <- sugahooks.Result{Response: sugahooks.Response{Decision: "block", Reason: "[gofer web 回复] continue"}}
+		reason := f.stopReason
+		if reason == "" {
+			reason = "[gofer web 回复] continue"
+		}
+		done <- sugahooks.Result{Response: sugahooks.Response{Decision: "block", Reason: reason}}
 	}
 	return &fakeStopWait{done: done, interrupt: func() {
 		interrupt := event

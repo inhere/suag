@@ -111,6 +111,55 @@ func TestChatDirCommandsWithoutHandle(t *testing.T) {
 	assert.StrNotContains(t, stderr.String(), "已授权")
 }
 
+// TestChatHookReplyIsNeverCommand: an injected line that carries no delivery
+// label, a Stop hook's block reason, is an ordinary message as well. Such a
+// reply reading ":add-dir <目录>" reaches the model as that prompt and
+// authorizes nothing; without the keyboard-only guard (the `case injected:` of
+// the command switch in chat.go) chat would run it as a command instead, print
+// 已授权 and start no turn, which is what this test fails on.
+func TestChatHookReplyIsNeverCommand(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	t.Setenv("SUGA_HOME", t.TempDir())
+	dir := t.TempDir()
+	handle := &fakeSessionDirs{workspace: filepath.FromSlash("/ws")}
+	provider := &hookTestProvider{}
+	runner, _ := newCLITestRunner(t, provider)
+	hooks := newFakeHookClient()
+	hooks.stopReason = ":add-dir " + dir
+
+	reader, writer := io.Pipe()
+	var stdout, stderr strings.Builder
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(context.Background(), runner, Options{Dirs: handle}, reader, &stdout, &stderr, hooks)
+	}()
+	if _, err := io.WriteString(writer, "first prompt\n"); err != nil {
+		t.Fatal(err)
+	}
+	// The hook's reply starts a turn of its own: the text was taken as a prompt.
+	waitProviderCalls(t, provider, 2)
+	if _, err := io.WriteString(writer, ":quit\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = writer.Close()
+	assert.NoErr(t, <-done)
+
+	assert.Empty(t, handle.added)
+	assert.Empty(t, handle.removed)
+	assert.StrNotContains(t, stdout.String(), "已授权")
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	assert.Require(t, assert.Eq(t, 2, len(provider.calls)))
+	var found bool
+	for _, message := range provider.calls[1] {
+		if strings.Contains(message.Content, ":add-dir "+dir) {
+			found = true
+		}
+	}
+	assert.True(t, found, "the hook's reply should reach the model as a user message")
+}
+
 // TestChatDeliveredCommandIsNeverCommand: a message delivered by `suga send`
 // (here through the session socket) is always an ordinary message, so a
 // delivered ":add-dir /etc" authorizes nothing and a delivered ":quit" does not
