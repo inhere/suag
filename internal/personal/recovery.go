@@ -58,17 +58,30 @@ const (
 // open and records the turn that was running as cancelled, so the next turn can
 // start. lockHeld reports whether this process holds the session's
 // cross-process lock (it took it for this turn, or chat holds it for its whole
-// lifetime), which is the proof described above; without it nothing is changed
-// and false is returned.
+// lifetime), which is the proof described above; without it nothing is changed.
 //
-// It returns the session (status open once recovered), whether it recovered it,
-// and an error when the store could not be written. The recovery is
-// observable: a store event in the trace (kind store.EventSession, name
-// "recovered") and the EventSessionRecovered notice for the caller; a failure
-// of either is logged and never fails the turn.
-func (r *Runner) recoverStaleSession(ctx context.Context, model Session, lockHeld bool, sink EmitFunc) (Session, bool, error) {
+// It returns the session as it is after the call: status open when it recovered
+// it (or when another process had already finished its turn), still running when
+// it could not prove the status stale - the caller refuses that one. An error
+// means the store could not be read or written. The recovery is observable: a
+// store event in the trace (kind store.EventSession, name "recovered") and the
+// EventSessionRecovered notice for the caller; a failure of either is only
+// logged and never fails the turn.
+func (r *Runner) recoverStaleSession(ctx context.Context, model Session, lockHeld bool, sink EmitFunc) (Session, error) {
+	if model.Status != store.SessionRunning {
+		return model, nil
+	}
+	// The read that found running happened before this process took the lock:
+	// another process may have finished its turn (and released the lock) since.
+	// While the lock is held nothing else can set the status, so this read is the
+	// one that decides whether there is anything to recover at all.
+	fresh, err := r.cfg.Repository.GetSession(ctx, model.ID)
+	if err != nil {
+		return model, fmt.Errorf("recover session %q: %w", model.ID, err)
+	}
+	model = fresh
 	if model.Status != store.SessionRunning || !lockHeld || store.IsAgentSession(model) {
-		return model, false, nil
+		return model, nil
 	}
 	now := time.Now().UTC()
 	// The turn the dead process was running: markRunning wrote it as the
@@ -82,14 +95,14 @@ func (r *Runner) recoverStaleSession(ctx context.Context, model Session, lockHel
 		case errors.Is(err, store.ErrTurnNotFound):
 			// Nothing to finish: the row is gone (gc) or was never written.
 		case err != nil:
-			return model, false, fmt.Errorf("recover session %q: read turn %q: %w", model.ID, turnID, err)
+			return model, fmt.Errorf("recover session %q: read turn %q: %w", model.ID, turnID, err)
 		case turn.Status == store.TurnRunning:
 			// Cancelled, the terminal state of a turn that did not end: what it
 			// managed to write stays as history it never answered (the same
 			// status a turn interrupted at an approval question gets).
 			ended := store.Turn{ID: turnID, Status: store.TurnCancelled, StopReason: turnStopStaleProcess, EndedAt: now}
 			if err := r.cfg.Repository.UpdateTurn(ctx, ended); err != nil {
-				return model, false, fmt.Errorf("recover session %q: cancel turn %q: %w", model.ID, turnID, err)
+				return model, fmt.Errorf("recover session %q: cancel turn %q: %w", model.ID, turnID, err)
 			}
 			turnStatus = store.TurnCancelled
 		}
@@ -106,7 +119,7 @@ func (r *Runner) recoverStaleSession(ctx context.Context, model Session, lockHel
 	// the session is already usable again (the event is only an observation).
 	model.Status, model.UpdatedAt = store.SessionOpen, now
 	if err := r.cfg.Repository.UpdateSessionFields(ctx, model); err != nil {
-		return model, false, fmt.Errorf("recover session %q: %w", model.ID, err)
+		return model, fmt.Errorf("recover session %q: %w", model.ID, err)
 	}
 	// The scope is set here because the turn scope of the caller's ctx may
 	// belong to another turn (a sub-agent run inherits its parent's).
@@ -117,5 +130,5 @@ func (r *Runner) recoverStaleSession(ctx context.Context, model Session, lockHel
 	if err := emit(ctx, sink, Event{Kind: EventSessionRecovered, SessionID: model.ID, TurnID: turnID}); err != nil {
 		slog.Warn("emit recovered session", "session_id", model.ID, "err", err)
 	}
-	return model, true, nil
+	return model, nil
 }

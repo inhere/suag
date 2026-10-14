@@ -414,17 +414,15 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		lockHeld = true
 	}
 	// A session left running by a process that died mid-turn is taken back to
-	// open when nothing live can be running it, instead of refusing the turn; a
-	// running status a live process may be behind is still refused (recovery.go).
+	// open when nothing live can be running it; a running status this process
+	// cannot disprove is still refused (recovery.go).
 	if model.Status == store.SessionRunning {
-		var recovered bool
-		model, recovered, err = r.recoverStaleSession(ctx, model, lockHeld, req.Emit)
-		if err != nil {
+		if model, err = r.recoverStaleSession(ctx, model, lockHeld, req.Emit); err != nil {
 			return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), err
 		}
-		if !recovered {
-			return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), fmt.Errorf("session %q is not ready for a new turn: %s", model.ID, model.Status)
-		}
+	}
+	if model.Status == store.SessionRunning {
+		return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), fmt.Errorf("session %q is not ready for a new turn: %s", model.ID, model.Status)
 	}
 	transcript := r.openTranscript(model.ID)
 	if transcript != nil {

@@ -201,6 +201,26 @@ func TestRunRecoversStaleRunningSession(t *testing.T) {
 		traceEvents(t, repo, "")
 	})
 
+	t.Run("the turn ended after the read that found running", func(t *testing.T) {
+		// That read happened before the lock was taken: by then another process
+		// may have finished its turn (and released the lock). With the lock held
+		// nothing else can set the status, so a second read decides - and here it
+		// finds nothing to recover.
+		repo := openObserveRepo(t)
+		runner := newRunner(t, repo, t.TempDir())
+		create(t, repo, nil, store.TurnCompleted)
+		staleSnapshot := Session{ID: "s1", Status: store.SessionRunning, LastTurnID: "t1"}
+		sess := session(t, repo) // the other process finished the turn meanwhile
+		sess.Status = store.SessionOpen
+		assert.NoErr(t, repo.UpdateSessionFields(ctx, sess))
+
+		got, err := runner.recoverStaleSession(ctx, staleSnapshot, true, nil)
+		assert.NoErr(t, err)
+		assert.Eq(t, store.SessionOpen, got.Status)
+		assert.Eq(t, 0, len(eventsOf(t, repo, "s1", store.EventSession)))
+		assert.Eq(t, store.TurnCompleted, turn(t, repo).Status)
+	})
+
 	t.Run("a session that is not running is untouched", func(t *testing.T) {
 		repo := openObserveRepo(t)
 		runner := newRunner(t, repo, t.TempDir())
