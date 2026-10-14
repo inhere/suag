@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 运行中插入消息（steering）与只中止当前回合 设计
 
-> 状态：Draft 0.5 / 待人工计划批准
+> 状态：Approved 0.5（2026-10-14 用户批准：“批准 steering 设计 Draft 0.5”）/ 实施计划见 `docs/plans/2026-10-14-steering-plan.md`
 
 ## 修订记录
 
