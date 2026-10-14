@@ -127,6 +127,15 @@ func TestEnvironmentPromptInterpreters(t *testing.T) {
 		stubInterpreters(t, []native.Interpreter{{Name: "node", Path: "/usr/bin/node", Version: "22.6.0"}})
 		assert.NotContains(t, environmentPrompt(Options{Workspace: "/w"}), "可用解释器")
 	})
+	t.Run("the configuration drives the detection", func(t *testing.T) {
+		// No stub here: the real probe runs, bounded by the configured list. A
+		// name that exists nowhere yields nothing — were the configuration
+		// ignored, auto-detection would find the machine's own python/node and
+		// write the line anyway.
+		resetConfig(t)
+		assert.NoErr(t, gkconfig.Set("tools.interpreters", []any{"definitely-not-an-interpreter-e1"}))
+		assert.NotContains(t, environmentPrompt(Options{Workspace: "/w", AllowWrite: true}), "可用解释器")
+	})
 }
 
 // TestNativeEnvInterpretersReachShellTool: the interpreters the environment
