@@ -52,7 +52,7 @@ func compactWithSteerRunner(t *testing.T, steerAt int, steer Steer) (*scriptProv
 	assert.Require(t, assert.NoErr(t, err))
 	assert.Eq(t, "done", res.Output)
 	assert.Require(t, assert.Eq(t, 1, len(prov.sumReqs))) // the break summarized, no truncation fallback
-	assert.Empty(t, res.ReturnedSteers)                  // the steer was delivered
+	assert.Empty(t, res.ReturnedSteers)                   // the steer was delivered
 	return prov, repo, res
 }
 
