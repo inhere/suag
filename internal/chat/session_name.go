@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/inhere/suga/internal/personal"
 	personalprocess "github.com/inhere/suga/internal/personal/process"
@@ -59,7 +60,7 @@ func registerChatProcess(sessionID string, runner *personal.Runner, input *chatI
 		return nil, "", err
 	}
 	cwd, _ := os.Getwd()
-	name, save, notice := resolveChatShortName(stored, records, cwd, personalprocess.RandomSuffix)
+	name, save, notice := resolveChatShortName(stored, records, chatNameDir(runner, sessionID, cwd), personalprocess.RandomSuffix)
 	server, err := personalprocess.StartWait(runner.ProcessRoot(), sessionID, name, cwd, input.DeliverWait)
 	if err != nil {
 		return nil, "", err
@@ -75,4 +76,16 @@ func registerChatProcess(sessionID string, runner *personal.Runner, input *chatI
 		fmt.Fprint(stderr, notice)
 	}
 	return server, name, nil
+}
+
+// chatNameDir is the directory a chat's short name comes from: the workspace
+// recorded on the session (config `workspace`, else the directory chat was
+// started in, which is what fallback holds). Reading the session must never fail
+// the registration, so an error keeps the fallback.
+func chatNameDir(runner *personal.Runner, sessionID, fallback string) string {
+	model, err := runner.LoadSession(context.Background(), sessionID)
+	if err == nil && strings.TrimSpace(model.Cwd) != "" {
+		return model.Cwd
+	}
+	return fallback
 }

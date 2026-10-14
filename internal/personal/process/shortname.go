@@ -11,8 +11,8 @@ import (
 // like "suga-k7" — so it can be addressed as an address instead of a session ID:
 // `suga send --session suga-k7 你好`. The name is generated when the session
 // first registers its local session socket, from the directory chat runs in plus
-// a short random suffix, and is unique among the live chat processes of this
-// machine (the records in the process root).
+// a short random suffix, and is unique among the live chat processes of one
+// process root (the SUGA_HOME that `suga ps` and `suga send` read).
 const (
 	// shortNameMaxDirLen caps the directory part of a short name in characters.
 	shortNameMaxDirLen = 20

@@ -100,3 +100,51 @@ func TestChatShowsAndRegistersStoredShortName(t *testing.T) {
 	// The exit summary names the session next to the resume command.
 	assert.StrContains(t, stderr.String(), "续接：suga chat --resume "+model.ID+"（会话 ws-k7）")
 }
+
+// TestChatNamesTheSessionAfterItsWorkspace: a new chat generates a name from the
+// workspace directory recorded on the session (config `workspace`), cleans it and
+// stores it; the directory chat was started in only serves as a fallback.
+func TestChatNamesTheSessionAfterItsWorkspace(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	home := shortTestHome(t)
+	processRoot := filepath.Join(home, "run")
+	// A workspace directory needing cleaning: upper case and an underscore.
+	workspace := filepath.Join(t.TempDir(), "My_Work")
+	assert.NoErr(t, os.MkdirAll(workspace, 0o700))
+	repo, err := store.Open(newTestStorePath(t))
+	assert.Require(t, assert.NoErr(t, err))
+	t.Cleanup(func() { _ = repo.Close() })
+	runner, err := personal.New(personal.Config{
+		Repository: repo, Provider: mock.NewProvider(mock.Final("ok")),
+		Workspace: workspace, ProcessRoot: processRoot,
+	})
+	assert.Require(t, assert.NoErr(t, err))
+
+	reader, writer := io.Pipe()
+	var stdout, stderr strings.Builder
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(context.Background(), runner, Options{}, reader, &stdout, &stderr, nil)
+	}()
+	var record personalprocess.Record
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		records, err := personalprocess.List(processRoot)
+		if err == nil && len(records) == 1 {
+			record = records[0]
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.StrContains(t, record.Name, "mywork-")
+	// Stored on the first registration, so a resume keeps the address.
+	saved, err := runner.SessionShortName(context.Background(), record.SessionID)
+	assert.NoErr(t, err)
+	assert.Eq(t, record.Name, saved)
+
+	_, err = io.WriteString(writer, ":quit\n")
+	assert.NoErr(t, err)
+	assert.NoErr(t, writer.Close())
+	assert.NoErr(t, <-done)
+}
