@@ -35,13 +35,21 @@ func (a chatAsker) Ask(ctx context.Context, q tools.Question) (string, error) {
 //     next raises SIGINT again.
 //  2. Unread terminal input is flushed; a byte the reader already holds is
 //     dropped (inputEpoch) and one already passed to the editor is waited for.
-//  3. A read started before the turn may still be pending:
-//     - its line already finished (in events, or on the way): that line is
-//     kept as the next input after the turn and a new read asks the question;
-//     - still editing: the half-typed line is taken out (prefilled into the
-//     next prompt read) and the same read answers the question.
+//     A byte the byte pump holds (the activity handshake, or the lone-Esc wait)
+//     is dropped the same way: it was read before the flush, so its epoch no
+//     longer matches by the time the pump hands it over.
+//  3. A read started before the turn may still be pending: a line that already
+//     finished (in events, or on the way) is kept as the next input after the
+//     turn and a new read asks the question, while a read still editing has its
+//     half-typed line taken out (prefilled into the next prompt read) and
+//     answers the question itself.
 //  4. activity events are acknowledged; the answer stays out of history;
 //     deliveries keep queueing (they are never read here).
+//
+// The read answers in modeAsk, so the answer goes to "answers" — Ask's own
+// channel — and no consumer of the prompt or turn channel can take it (N5); a
+// pending read that started in another mode keeps its channel (the mode is
+// switched for the answer, endAsk gives it back).
 //
 // Ctrl-C/Ctrl-D returns errAskCancelled. Without a terminal it returns
 // tools.ErrCannotAsk.
@@ -58,7 +66,12 @@ func (s *chatInputSource) Ask(ctx context.Context, detail, prompt string) (strin
 		return "", tools.ErrCannotAsk
 	}
 	s.turnActive = false
+	// The read in progress is the answer read now: its result goes to answers, so no
+	// other consumer can take it as input of its own.
+	prevMode := s.readMode
+	s.readMode = modeAsk
 	if err := s.enterRawLocked(); err != nil {
+		s.readMode = prevMode
 		s.turnActive = true
 		s.mu.Unlock()
 		return "", err
@@ -67,6 +80,16 @@ func (s *chatInputSource) Ask(ctx context.Context, detail, prompt string) (strin
 		_ = s.flushInput() // best effort: the epoch below still drops held bytes
 	}
 	s.inputEpoch++
+	// An answer left over from a question that was cancelled must not be read as the
+	// answer of this one: drop it (and acknowledge its activity, which the pump may
+	// be waiting for).
+	select {
+	case event := <-s.answers:
+		if event.activity {
+			s.AckActivity()
+		}
+	default:
+	}
 	for s.handing {
 		s.cond.Wait()
 	}
@@ -75,7 +98,7 @@ func (s *chatInputSource) Ask(ctx context.Context, detail, prompt string) (strin
 
 	var held *chatInputEvent
 	answerRead := false // an answer read is outstanding (its event not consumed)
-	defer func() { s.endAsk(held, answerRead) }()
+	defer func() { s.endAsk(held, answerRead, prevMode) }()
 
 	reuse := false
 	if pending {
@@ -98,7 +121,7 @@ func (s *chatInputSource) Ask(ctx context.Context, detail, prompt string) (strin
 		s.pending = true
 		s.mu.Unlock()
 		select {
-		case s.requests <- chatInputRequest{prompt: prompt, ask: true}:
+		case s.requests <- chatInputRequest{prompt: prompt}:
 		case <-ctx.Done():
 			s.CompleteLine() // the request was never taken
 			answerRead = false
@@ -108,24 +131,26 @@ func (s *chatInputSource) Ask(ctx context.Context, detail, prompt string) (strin
 		}
 	}
 	for {
+		var event chatInputEvent
 		select {
-		case event := <-s.events:
-			if event.activity {
-				s.AckActivity()
-				continue
-			}
-			s.CompleteLine()
-			answerRead = false
-			if event.err != nil {
-				s.terminal.AbortLine()
-				return "", errAskCancelled
-			}
-			return event.line, nil
+		case event = <-s.answers:
+		case event = <-s.events:
 		case <-ctx.Done():
 			return "", ctx.Err()
 		case <-s.ctx.Done():
 			return "", s.ctx.Err()
 		}
+		if event.activity {
+			s.AckActivity()
+			continue
+		}
+		s.CompleteLine()
+		answerRead = false
+		if event.err != nil {
+			s.terminal.AbortLine()
+			return "", errAskCancelled
+		}
+		return event.line, nil
 	}
 }
 
@@ -143,6 +168,16 @@ func (s *chatInputSource) settlePendingRead(ctx context.Context) (held *chatInpu
 		return &event
 	}
 	for {
+		// The finished line may wait on either channel: a prompt read delivers to
+		// events, a read that already answered a question to answers.
+		select {
+		case event := <-s.answers:
+			if held = take(event); held != nil {
+				return held, false, nil
+			}
+			continue
+		default:
+		}
 		select {
 		case event := <-s.events:
 			if held = take(event); held != nil {
@@ -158,6 +193,10 @@ func (s *chatInputSource) settlePendingRead(ctx context.Context) (held *chatInpu
 		}
 		// Not editing: the read is just starting, or its line is on the way.
 		select {
+		case event := <-s.answers:
+			if held = take(event); held != nil {
+				return held, false, nil
+			}
 		case event := <-s.events:
 			if held = take(event); held != nil {
 				return held, false, nil
@@ -171,14 +210,15 @@ func (s *chatInputSource) settlePendingRead(ctx context.Context) (held *chatInpu
 	}
 }
 
-// endAsk restores the turn state: cooked mode and turnActive, and a line that
-// finished before the question goes back to events as the next input (unless
-// an answer read is still outstanding, which only happens when the turn is
-// being cancelled).
-func (s *chatInputSource) endAsk(held *chatInputEvent, answerRead bool) {
+// endAsk restores the turn state: cooked mode and turnActive, the mode the question
+// replaced (a steer read goes on as one), and a line that finished before the
+// question goes back to events as the next input (unless an answer read is still
+// outstanding, which only happens when the turn is being cancelled).
+func (s *chatInputSource) endAsk(held *chatInputEvent, answerRead bool, mode inputMode) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.turnActive = true
+	s.readMode = mode
 	_ = s.leaveRawLocked()
 	if held != nil && !answerRead {
 		s.pending = true

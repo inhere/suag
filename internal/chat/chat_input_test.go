@@ -55,6 +55,13 @@ func waitTTY(t *testing.T, f *fakeTTY, raw bool) {
 	t.Fatalf("tty raw=%v never reached (now %v)", raw, f.isRaw())
 }
 
+// newTestTerminal wires a line editor onto the source's byte pump exactly as
+// newChatInputSource does for a real terminal, the lone-Esc callback included.
+func newTestTerminal(source *chatInputSource) {
+	source.terminal = lineedit.NewTerminal(&chatTerminalIO{reader: source.reader, output: source.output}, "")
+	source.terminal.EscCallback = source.escKeyPressed
+}
+
 // newFakeTTYSource builds a terminal-mode input source whose "keyboard" is the returned pipe.
 func newFakeTTYSource(t *testing.T) (*chatInputSource, *fakeTTY, *io.PipeWriter) {
 	t.Helper()
@@ -64,7 +71,7 @@ func newFakeTTYSource(t *testing.T) (*chatInputSource, *fakeTTY, *io.PipeWriter)
 	tty := &fakeTTY{}
 	source.makeRaw = tty.makeRaw
 	source.reader = &chatActivityReader{source: source, input: pr}
-	source.terminal = lineedit.NewTerminal(&chatTerminalIO{reader: source.reader, output: source.output}, "")
+	newTestTerminal(source)
 	t.Cleanup(func() { _ = source.Close(); _ = pw.Close(); _ = pr.Close() })
 	return source, tty, pw
 }
@@ -172,7 +179,7 @@ func TestChatInputSource_InputHighlight(t *testing.T) {
 		tty := &fakeTTY{}
 		source.makeRaw = tty.makeRaw
 		source.reader = &chatActivityReader{source: source, input: pr}
-		source.terminal = lineedit.NewTerminal(&chatTerminalIO{reader: source.reader, output: source.output}, "")
+		newTestTerminal(source)
 		t.Cleanup(func() { _ = source.Close(); _ = pw.Close(); _ = pr.Close() })
 		// Input from a pipe is no terminal: the width falls back to the editor's.
 		assert.Eq(t, lineedit.DefaultWidth, source.highlightWidth())

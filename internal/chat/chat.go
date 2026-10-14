@@ -294,7 +294,6 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	// waiting line is down before the exit warnings, the SessionEnd hook and the
 	// usage summary print, and no frame goroutine is left behind.
 	defer render.stopThinking()
-	var lastInterrupt time.Time
 	for {
 		in, err := nextChatInput(ctx, inputSource, render, state.waiting, &state.lostReply)
 		line, hasLine, stopDone, injected, interrupted := in.line, in.hasLine, in.stopDone, in.injected, in.interrupted
@@ -312,9 +311,9 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		if err != nil {
 			// Ctrl-C at the prompt exits only when pressed twice in a row
 			// within exitConfirmWindow, so a stray one does not end the chat.
-			// Ctrl-D (EOF) still exits at once.
-			if errors.Is(err, lineedit.ErrInterrupt) && time.Since(lastInterrupt) > exitConfirmWindow {
-				lastInterrupt = time.Now()
+			// Ctrl-D (EOF) still exits at once. The clock belongs to the input
+			// source, shared with the reads during a turn (m7).
+			if errors.Is(err, lineedit.ErrInterrupt) && !inputSource.takeInterrupt() {
 				if inputSource.terminal != nil {
 					inputSource.terminal.AbortLine()
 				}
@@ -326,7 +325,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			}
 			return err
 		}
-		lastInterrupt = time.Time{}
+		inputSource.clearInterrupt()
 		if !hasLine {
 			return nil
 		}

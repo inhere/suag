@@ -11,18 +11,20 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/x/assert"
-	"github.com/inhere/suga/internal/chat/lineedit"
 	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
 // fakeKeyboard models a tty input queue: typed bytes wait in a buffer until
-// read, and Flush drops them (like tcflush).
+// read, and Flush drops them (like tcflush). It also counts its Read calls, so a
+// test can see whether anything read between two requests.
 type fakeKeyboard struct {
 	mu      sync.Mutex
 	cond    *sync.Cond
 	buf     []byte
 	closed  bool
 	flushes int
+	reads   int // Read calls started
+	reading int // Read calls in flight (a read waiting for input)
 }
 
 func newFakeKeyboard() *fakeKeyboard {
@@ -34,6 +36,9 @@ func newFakeKeyboard() *fakeKeyboard {
 func (k *fakeKeyboard) Read(p []byte) (int, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
+	k.reads++
+	k.reading++
+	defer func() { k.reading-- }()
 	for len(k.buf) == 0 && !k.closed {
 		k.cond.Wait()
 	}
@@ -43,6 +48,21 @@ func (k *fakeKeyboard) Read(p []byte) (int, error) {
 	n := copy(p, k.buf)
 	k.buf = k.buf[n:]
 	return n, nil
+}
+
+// Reads is how many Read calls the input has seen.
+func (k *fakeKeyboard) Reads() int {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.reads
+}
+
+// Reading is how many Read calls are in flight, that is how many reads are
+// blocked waiting for input right now.
+func (k *fakeKeyboard) Reading() int {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.reading
 }
 
 func (k *fakeKeyboard) Type(s string) {
@@ -115,7 +135,7 @@ func newAskHarness(t *testing.T) *askHarness {
 	source.makeRaw = tty.makeRaw
 	source.flushInput = kb.Flush
 	source.reader = &chatActivityReader{source: source, input: kb}
-	source.terminal = lineedit.NewTerminal(&chatTerminalIO{reader: source.reader, output: source.output}, "")
+	newTestTerminal(source)
 	t.Cleanup(func() { _ = source.Close(); kb.Close() })
 	return &askHarness{source: source, kb: kb, tty: tty, out: out}
 }

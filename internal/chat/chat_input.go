@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/inhere/suga/internal/chat/lineedit"
 	"github.com/inhere/suga/internal/personal/process"
@@ -20,6 +21,9 @@ type chatInputEvent struct {
 	line     string
 	err      error
 	injected bool
+	// key is what a steer read reports when a key, not a message, was pressed
+	// during a turn (turnKey).
+	key turnKey
 	// settled (deliveries only) reports the final fate of a queued delivery: nil once it starts
 	// a turn, an error if it is discarded at exit. Buffered(1); nil when nobody waits.
 	settled chan error
@@ -36,12 +40,11 @@ func (e chatInputEvent) settle(err error) {
 	}
 }
 
-// chatInputRequest asks the reader goroutine for one line. ask marks the answer
-// to an approval question: it is read outside history and never gets the
-// half-typed line saved for the next prompt.
+// chatInputRequest asks the reader goroutine for one read. The mode of that read is
+// the source's readMode (see request): one read at a time, and a read in flight can
+// change mode (ask.go) without being restarted.
 type chatInputRequest struct {
 	prompt string
-	ask    bool
 }
 
 // chatInputSource reads exactly one prompt per request and signals its first byte before
@@ -63,9 +66,29 @@ type chatInputSource struct {
 	closed      bool // set by DiscardQueued/Close: deliveries are refused afterwards (guarded by mu)
 	terminal    *lineedit.Terminal
 	requests    chan chatInputRequest
-	events      chan chatInputEvent
-	activity    chan struct{}
-	deliveries  chan chatInputEvent
+	// events carries the result of a prompt read (Next); answers the answer of a
+	// question (Ask) and turnEvents what a steer read reports (S2b). Each mode has
+	// its own channel, so an answer can never be taken as a prompt line or as an
+	// inserted message (design N5). All buffered(1).
+	events     chan chatInputEvent
+	answers    chan chatInputEvent
+	turnEvents chan chatInputEvent
+	// readMode is the mode of the read the reader is serving (guarded by mu): it
+	// decides the activity handshake, the lone-Esc decision and the channel a result
+	// is delivered to. request sets it, Ask switches it to modeAsk.
+	readMode inputMode
+	// escWait reports whether more input is ready within the timeout, the wait behind
+	// the lone-Esc decision (inputwait_*.go); nil without a terminal.
+	escWait func(timeout time.Duration) bool
+	// readErr is the input's end (io.EOF) once it has ended: every later request
+	// answers it at once instead of blocking in a read.
+	readErr error
+	// lastInterrupt and interruptSeen time the Ctrl-C presses that confirm leaving
+	// chat (exitConfirmWindow); the prompt read and the steer read share them (m7).
+	lastInterrupt time.Time
+	interruptSeen bool
+	activity      chan struct{}
+	deliveries    chan chatInputEvent
 	// taskWake signals a background task end (tasks.wake_on_exit); nil when
 	// off. taskNotice takes the pending notices as the text of an injected
 	// turn ("" when the running turn already took them).
@@ -99,28 +122,36 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 	source := &chatInputSource{
 		ctx: ctx, cancel: cancel, input: input, output: &lockedWriter{w: output},
 		requests: make(chan chatInputRequest), events: make(chan chatInputEvent, 1),
+		answers: make(chan chatInputEvent, 1), turnEvents: make(chan chatInputEvent, 1),
 		activity: make(chan struct{}), deliveries: make(chan chatInputEvent, 8), done: make(chan struct{}),
 	}
 	source.cond = sync.NewCond(&source.mu)
 	if file, ok := input.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
+		fd := int(file.Fd())
 		// Raw mode is entered per line in readLine, not here: during model/tool execution the
 		// terminal must stay cooked so Ctrl-C raises SIGINT and stderr keeps CR translation.
 		source.makeRaw = func() (func() error, error) {
-			state, err := term.MakeRaw(int(file.Fd()))
+			state, err := term.MakeRaw(fd)
 			if err != nil {
 				return nil, err
 			}
-			return func() error { return term.Restore(int(file.Fd()), state) }, nil
+			return func() error { return term.Restore(fd, state) }, nil
 		}
 		// The real width is used to fill the background of highlighted lines; the
 		// line editor keeps laying lines out with its own default.
-		if width, _, err := term.GetSize(int(file.Fd())); err == nil && width > 0 {
+		if width, _, err := term.GetSize(fd); err == nil && width > 0 {
 			source.screenWidth = width
 		}
-		source.flushInput = func() error { return flushTerminalInput(int(file.Fd())) }
+		source.flushInput = func() error { return flushTerminalInput(fd) }
+		// The wait behind the lone-Esc decision: a steer read asks it whether a byte
+		// followed the 0x1b, without reading it (inputwait_*.go).
+		source.escWait = func(timeout time.Duration) bool { return waitTerminalInput(fd, timeout) }
 		source.reader = &chatActivityReader{source: source, input: input}
 		terminalIO := &chatTerminalIO{reader: source.reader, output: source.output}
 		source.terminal = lineedit.NewTerminal(terminalIO, "")
+		// A lone Esc during a turn is the Esc key (end this turn). The pump declares
+		// it before handing the byte over; prompt and ask reads never declare one.
+		source.terminal.EscCallback = source.escKeyPressed
 	}
 	go source.run()
 	return source, nil
@@ -216,6 +247,8 @@ func safeSender(from string) string {
 // SetBusy marks a turn start/end. Starting a turn forces the tty back to cooked mode even when a
 // line read begun earlier is still blocked (a `suga send` delivery can start a turn while the
 // prompt is waiting); otherwise Ctrl-C would arrive as byte 0x03 and never interrupt the turn.
+// (S2b turns this into the steer read when chat.steering is on; until then the turn keeps the
+// cooked behaviour.)
 func (s *chatInputSource) SetBusy(busy bool) {
 	s.mu.Lock()
 	s.busy = busy
@@ -249,8 +282,24 @@ func (s *chatInputSource) highlightWidth() int {
 	return lineedit.DefaultWidth
 }
 
-func (s *chatInputSource) Request(prompt string) bool {
+// Request asks for one prompt line (between turns): the chat loop takes the result
+// from Next.
+func (s *chatInputSource) Request(prompt string) bool { return s.request(prompt, modePrompt) }
+
+// RequestSteer asks for a read during a turn (S2b): the input line stays available
+// while the model works, Enter submits an inserted message and Ctrl-C/Esc ask to end
+// the turn. Results arrive on TurnEvents. No chat path uses it yet.
+func (s *chatInputSource) RequestSteer(prompt string) bool {
+	return s.request(prompt, modeSteer)
+}
+
+// request asks the reader goroutine for one read in mode. The mode is set here, under
+// the same lock as pending: a read already waiting for input continues as this read
+// (only its prompt and mode change), a finished one starts a new request — and between
+// the two nothing reads, so input typed meanwhile is never taken early.
+func (s *chatInputSource) request(prompt string, mode inputMode) bool {
 	s.mu.Lock()
+	s.readMode = mode
 	// Back at a prompt: raw mode is allowed again. If a read from before the turn is still
 	// blocked it continues as this prompt's read, so switch to raw for it right here.
 	s.turnActive = false
@@ -279,6 +328,11 @@ func (s *chatInputSource) Request(prompt string) bool {
 }
 
 func (s *chatInputSource) Next() <-chan chatInputEvent { return s.events }
+
+// TurnEvents is where a steer read reports what the person asked for during a turn:
+// a line for an inserted message, a key for abort/exit. The turn consumer reads it
+// (S2b); while chat.steering is off nothing is written to it.
+func (s *chatInputSource) TurnEvents() <-chan chatInputEvent { return s.turnEvents }
 
 func (s *chatInputSource) AckActivity() {
 	select {
@@ -347,27 +401,55 @@ func (s *chatInputSource) leaveRawLocked() error {
 	return err
 }
 
+// run serves one read request after another, so no read is started before one was
+// asked for (see request).
 func (s *chatInputSource) run() {
 	defer close(s.done)
 	for {
+		var request chatInputRequest
 		select {
 		case <-s.ctx.Done():
 			return
-		case request := <-s.requests:
-			line, err := s.readLine(request)
-			s.byteConsumed() // the line editor is done with every byte it got
-			event := chatInputEvent{line: line, err: err}
-			select {
-			case s.events <- event:
-			case <-s.ctx.Done():
-				return
-			}
+		case request = <-s.requests:
+		}
+		s.serve(request)
+	}
+}
+
+// serve reads for one request (a prompt line, or a steer read while a turn runs; an
+// ask read is requested by Ask) and delivers what it read to the channel of the mode
+// the read is in. A steer read also reads on for input a turn does not act on
+// (Ctrl-D on an empty line), so the input line stays available for the whole turn;
+// the turn consumer ends it by asking for the next prompt read. Every other read ends
+// with the one event it produced.
+func (s *chatInputSource) serve(request chatInputRequest) {
+	for {
+		line, err := s.readLine(request)
+		s.byteConsumed() // the line editor is done with every byte it got
+		if s.ctx.Err() != nil {
+			return
+		}
+		mode := s.currentReadMode()
+		event, ok := s.readResult(mode, line, err)
+		if !ok {
+			continue
+		}
+		if !s.deliver(mode, event) {
+			return
+		}
+		if mode != modeSteer {
+			return
 		}
 	}
 }
 
 func (s *chatInputSource) readLine(request chatInputRequest) (string, error) {
 	prompt := request.prompt
+	// An input that already ended answers its EOF at once (also for input that is not
+	// a terminal, whose read would return it again anyway).
+	if err := s.stickyEOF(); err != nil {
+		return "", err
+	}
 	if s.terminal != nil {
 		// Raw mode only while editing a line. Ctrl-C here arrives as byte 0x03 (no SIGINT) and the
 		// line editor returns io.EOF, so the prompt exits chat like SIGINT did with cooked line reads.
@@ -379,7 +461,8 @@ func (s *chatInputSource) readLine(request chatInputRequest) (string, error) {
 		s.reader.activitySent = false
 		var line string
 		var err error
-		if request.ask {
+		if s.currentReadMode() == modeAsk {
+			// The answer of a question stays out of history.
 			line, err = s.terminal.ReadLineNoHistory()
 		} else {
 			// Give back a half-typed line that a question took out of an earlier read.
@@ -400,53 +483,13 @@ func (s *chatInputSource) readLine(request chatInputRequest) (string, error) {
 	scanner.Buffer(make([]byte, 4096), 1024*1024)
 	if !scanner.Scan() {
 		if err := scanner.Err(); err != nil {
+			s.recordEOF(err)
 			return "", err
 		}
+		s.recordEOF(io.EOF)
 		return "", io.EOF
 	}
 	return scanner.Text(), nil
-}
-
-type chatActivityReader struct {
-	source       *chatInputSource
-	input        io.Reader
-	activitySent bool
-}
-
-func (r *chatActivityReader) Read(p []byte) (int, error) {
-	if len(p) == 0 {
-		return 0, nil
-	}
-	// Asking for more input means the previous byte has been processed.
-	r.source.byteConsumed()
-	for {
-		var one [1]byte
-		n, err := r.input.Read(one[:])
-		if n == 0 {
-			return 0, err
-		}
-		epoch := r.source.currentEpoch()
-		if !r.activitySent {
-			r.activitySent = true
-			select {
-			case r.source.events <- chatInputEvent{activity: true}:
-			case <-r.source.ctx.Done():
-				return 0, r.source.ctx.Err()
-			}
-			select {
-			case <-r.source.activity:
-			case <-r.source.ctx.Done():
-				return 0, r.source.ctx.Err()
-			}
-		}
-		// A byte held here (e.g. during the activity handshake) while a question
-		// flushed the input was typed before the question: drop it.
-		if !r.source.handOver(epoch) {
-			continue
-		}
-		p[0] = one[0]
-		return 1, nil
-	}
 }
 
 type chatTerminalIO struct {
