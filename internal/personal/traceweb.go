@@ -78,8 +78,11 @@ type traceEntry struct {
 	Batch     string         `json:"batch,omitempty"`
 	// Notice marks a user entry that is no input of the person: a background
 	// task notice (message metadata suga.task_notice, see metaTaskNotice), so
-	// the page can label it as such.
+	// the page can label it as such. Steer marks the other kind of user entry a
+	// running turn injected: a message a person typed into it (metadata
+	// suga.steer, see metaSteer), which the page labels "插话".
 	Notice bool            `json:"notice,omitempty"`
+	Steer  bool            `json:"steer,omitempty"`
 	Raw    json.RawMessage `json:"raw,omitempty"` // non-message entries (segment, plan, handoff, context update)
 }
 
@@ -140,8 +143,10 @@ func webEntry(e store.Entry) traceEntry {
 		}
 		out.Batch, _ = m.Metadata[agentcore.ToolBatchMetaKey].(string)
 		// A background task notice is stored as a user message; mark it, so the
-		// page does not present it as the person's input.
+		// page does not present it as the person's input. A steer is marked too,
+		// so the page shows it as the input it was (typed into a running turn).
 		out.Notice, _ = m.Metadata[metaTaskNotice].(bool)
+		out.Steer = isSteerItem(m)
 	default:
 		out.Raw = e.JSON
 	}

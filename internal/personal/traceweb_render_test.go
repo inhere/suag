@@ -59,6 +59,10 @@ func TestTraceWebRenders(t *testing.T) {
 			Attrs: map[string]any{"kind": "hook", "arg": "Stop hook", "exit_code": 0, "bytes": 12, "lines": 2}})
 	view.Entries = append(view.Entries, traceEntry{Seq: 9004, TurnID: turn, Type: store.EntryUser, Role: "user",
 		Time: start.Add(1400 * time.Millisecond), Content: "[background task notice] t1 ended", Notice: true})
+	// P5: a steering message is an entry of the turn too, but a person typed it:
+	// the page labels it 插话 and shows it like an input, not as a notice.
+	view.Entries = append(view.Entries, traceEntry{Seq: 9005, TurnID: turn, Type: store.EntryUser, Role: "user",
+		Time: start.Add(1450 * time.Millisecond), Content: "only change the README", Steer: true})
 	// A running task's report (a watch whose result changed) is stored as a
 	// notice entry too and must not read as the person's input.
 	view.Entries = append(view.Entries, traceEntry{Seq: 9014, TurnID: turn, Type: store.EntryUser, Role: "user",

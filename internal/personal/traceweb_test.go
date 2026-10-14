@@ -113,6 +113,30 @@ func TestTraceViewTaskNotice(t *testing.T) {
 	assert.Eq(t, 1, inputs)
 }
 
+// TestTraceViewSteer: a user entry a person typed into a running turn carries
+// the steering metadata and is marked, so the page shows it as a 插话 instead
+// of plain input (and not as a notice).
+func TestTraceViewSteer(t *testing.T) {
+	repo, sid := traceRun(t)
+	raw, err := json.Marshal(SteerMessage(Steer{ID: "s1", Text: "only change the README", Source: steerSourceKeyboard}))
+	assert.Require(t, assert.NoErr(t, err))
+	_, err = repo.AppendEntries(context.Background(), sid, store.NewEntry{Type: store.EntryUser, JSON: raw})
+	assert.Require(t, assert.NoErr(t, err))
+
+	view, err := BuildTraceView(context.Background(), repo, sid)
+	assert.Require(t, assert.NoErr(t, err))
+	var steers []traceEntry
+	for _, en := range view.Entries {
+		if en.Steer {
+			steers = append(steers, en)
+		}
+		assert.False(t, en.Steer && en.Notice)
+	}
+	assert.Require(t, assert.Len(t, steers, 1))
+	assert.Eq(t, "user", steers[0].Role)
+	assert.Eq(t, "only change the README", steers[0].Content)
+}
+
 func TestServeTraceView(t *testing.T) {
 	repo, sid := traceRun(t)
 	ctx, cancel := context.WithCancel(context.Background())

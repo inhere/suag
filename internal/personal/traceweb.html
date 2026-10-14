@@ -323,7 +323,8 @@ function turnNumbers() {
 
 // userEntries are the session's user messages in order: what the person typed
 // and what was injected instead. A background task notice is stored as a user
-// entry but carries notice = true and is no input of the person.
+// entry but carries notice = true and is no input of the person; a steer carries
+// steer = true (typed into the running turn).
 function userEntries() { return data.entries.filter(en => en.type === "user"); }
 
 function renderContext(main) {
@@ -342,14 +343,15 @@ function renderContext(main) {
     el("div", {class:"legend"}, el("span", {}, el("i", {style:"background:#3a6fd8"}), "缓存命中"), el("span", {}, el("i", {style:"background:#a8c2f5"}), "未命中输入"), el("span", {}, el("i", {style:"background:#e39b2d"}), "输出")));
   // The entries the model gets as user messages (the turn's input and what was
   // injected before a request), so a task notice is not read as the person's
-  // input.
+  // input and a steer is shown as the input it was.
   const users = userEntries();
   if (users.length) {
     const nums = turnNumbers();
     pane.append(el("h3", {}, "各回合的 user entry（人的输入与注入）"));
     for (const en of users) {
+      const kind = en.notice ? "后台任务通知" : (en.steer ? "插话" : "用户输入");
       const head = [nums.has(en.turn_id) ? `回合 ${nums.get(en.turn_id)}` : "回合 -", clock(at(en)),
-        en.notice ? "后台任务通知" : "用户输入"].join(" · ");
+        kind].join(" · ");
       const body = [el("summary", {class: en.notice ? "mute" : ""}, `${head}（${human((en.content || "").length)} 字符）`),
         el("pre", {}, en.content || "（空）")];
       pane.append(en.notice ? el("details", {}, ...body) : el("details", {open:""}, ...body));

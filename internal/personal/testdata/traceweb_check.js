@@ -96,6 +96,7 @@ text = __dump(cx);
 check("context: a task notice is labelled, not shown as an input", text.includes("后台任务通知") && text.includes("[background task notice] t1 ended"));
 check("context: a running task's report is a notice too", text.includes("reports: run 5") && (text.match(/后台任务通知/g) || []).length === 2);
 check("context: the person input is labelled as an input", text.includes("用户输入") && text.includes("read a.go"));
+check("context: a steering message is labelled as such, not as an input", text.includes("插话") && text.includes("only change the README"));
 
 tab = "analysis";
 const an = new Node("main");
