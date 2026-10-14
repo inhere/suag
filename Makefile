@@ -21,7 +21,7 @@ LDFLAGS := -s -w \
 DIST_DIR := dist
 # 注：值会经 `echo "description: $(DESCRIPTION)"` 写入 latest.yaml，避免 `;`/`:`/引号等
 # shell/YAML 元字符（否则 recipe 展开后会被截断成多条命令）。
-DESCRIPTION := small SSH helper CLI for managing hosts, running remote commands.
+DESCRIPTION := Suga is a personal coding agent written in Go.
 
 ## all: build (default)
 all: build
