@@ -228,6 +228,12 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	}()
 
 	render.Banner()
+	// Continuing an existing session: show the model's last reply above the first
+	// prompt, so the person can go on from it (read-only: no model call, no entry
+	// written, no hook). A handoff (--from) starts a new session and shows nothing.
+	if source == "resume" {
+		showLastReply(ctx, runner, render, sessionID, stderr)
+	}
 	// Registered after every other defer, so it runs first on the way out: the
 	// waiting line is down before the exit warnings, the SessionEnd hook and the
 	// usage summary print, and no frame goroutine is left behind.
@@ -410,6 +416,22 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		// The turn is over (Stop sent): the idle clock runs from now.
 		idle.EndTurn(result)
 	}
+}
+
+// showLastReply prints the last model reply of a session chat continues, under
+// the banner and before the first prompt. A session without a reply (new, or
+// handed off with --from) shows nothing; failing to read the reply only warns
+// on stderr, since chat itself must still start.
+func showLastReply(ctx context.Context, runner *personal.Runner, render *Renderer, sessionID string, stderr io.Writer) {
+	text, incomplete, err := runner.LastReply(ctx, sessionID)
+	if err != nil {
+		fmt.Fprintln(stderr, "读取上一次回复失败：", err)
+		return
+	}
+	if text == "" {
+		return
+	}
+	render.LastReply(text, sessionID, incomplete)
 }
 
 func startChatProcessRegistration(sessionID, processRoot string, runner *personal.Runner, input *chatInputSource) (*personalprocess.Server, error) {

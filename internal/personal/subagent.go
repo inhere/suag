@@ -2,7 +2,6 @@ package personal
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -148,18 +147,15 @@ func (r *Runner) sessionTainted(ctx context.Context, sessionID string) bool {
 // lastAnswer is the text of the last assistant message of the session that
 // has any (a sub-agent stopped mid-way: what it found so far), or a note.
 func (r *Runner) lastAnswer(ctx context.Context, sessionID string) string {
-	entries, err := r.cfg.Repository.ListEntries(ctx, sessionID, store.EntryFilter{Types: []string{store.EntryAssistant}})
+	text, _, err := r.LastReply(ctx, sessionID)
 	if err != nil {
 		slog.Warn("read sub-agent answers", "session_id", sessionID, "err", err)
 		return childNoAnswer
 	}
-	for i := len(entries) - 1; i >= 0; i-- {
-		var m agentcore.Message
-		if json.Unmarshal(entries[i].JSON, &m) == nil && strings.TrimSpace(m.Content) != "" {
-			return m.Content
-		}
+	if text == "" {
+		return childNoAnswer
 	}
-	return childNoAnswer
+	return text
 }
 
 type agentEmitKey struct{}

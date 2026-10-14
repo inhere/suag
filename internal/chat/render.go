@@ -27,6 +27,11 @@ const (
 
 	promptText        = "❯ "
 	promptWaitingText = "❯ (可等待外部回复) "
+
+	// replyTailLines caps how much of a continued session's last reply chat shows
+	// above the first prompt: the tail is what the person goes on from, and the
+	// whole text stays readable with `suga trace`.
+	replyTailLines = 40
 )
 
 // rendererOptions configures a Renderer. Color switches ANSI styling for Out
@@ -343,6 +348,26 @@ func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration) {
 		fmt.Sprintf("in %d / out %d tokens", result.Usage.InputTokens, result.Usage.OutputTokens),
 		formatElapsed(elapsed))
 	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, strings.Join(parts, " · ")))
+}
+
+// LastReply prints the last reply of a session chat continues, above the first
+// prompt: a dim label first, so it is not taken for a fresh answer, and a dim
+// note when the previous turn did not end normally (incomplete) or when only
+// the tail of a long reply is shown. sessionID only names the trace command of
+// that truncation note.
+func (r *Renderer) LastReply(text, sessionID string, incomplete bool) {
+	r.stopThinking()
+	fmt.Fprintln(r.opts.Out, r.paintDim("上一次回复："))
+	if incomplete {
+		fmt.Fprintln(r.opts.Out, r.paintDim("上一回合未正常结束"))
+	}
+	lines := strings.Split(strings.TrimRight(text, "\r\n"), "\n")
+	if omitted := len(lines) - replyTailLines; omitted > 0 {
+		lines = lines[omitted:]
+		fmt.Fprintln(r.opts.Out, r.paintDim(fmt.Sprintf("已截断前 %d 行，完整记录见 suga trace %s", omitted, sessionID)))
+	}
+	// The same marker and markdown rendering as a streamed answer.
+	r.Answer(strings.Join(lines, "\n"))
 }
 
 // Banner prints the chat header: the model in use and the commands.
