@@ -1,0 +1,51 @@
+# Git: `git log`, `git diff` / `git show` and `git status` output (see README.md
+# for the fields and the file layout). Each rule asks for the output shape it
+# was written for (match_output), so the compact forms it could only spoil -
+# `git log --oneline`, `git status --short/--porcelain`, `git diff --stat` -
+# are left alone even though their command matches.
+rules:
+  # Default `git log`: the five lines of a commit (commit, Author, Date, an
+  # empty line, the indented subject) become one line
+  # "short hash [decoration]  date  author  subject". A merge keeps its parents
+  # and a commit's body (below the subject) stays as it is.
+  - name: git-log
+    match: '^\s*git\s+log\b'
+    match_output: '(?m)^commit [0-9a-f]{7,40}( \([^\n]*\))?$'
+    replace:
+      - pattern: '^commit ([0-9a-f]{7})[0-9a-f]{33}( \([^\n]*\))?\nMerge: ([0-9a-f]+ [0-9a-f]+)\nAuthor: ([^\n<]*?)(?: <[^\n>]*>)?\nDate: +([^\n]*\S)\n\n {4}([^\n]*)'
+        with: '$1$2  $5  $4  Merge: $3  $6'
+      - pattern: '^commit ([0-9a-f]{7})[0-9a-f]{33}( \([^\n]*\))?\nAuthor: ([^\n<]*?)(?: <[^\n>]*>)?\nDate: +([^\n]*\S)\n\n {4}([^\n]*)'
+        with: '$1$2  $4  $3  $5'
+    min_bytes: 200
+    min_saving: 0.05
+
+  # `git diff` / `git show`: the hunks of a lock file or generated file (the
+  # list below; extend it in your own rule file if your project has more) fold
+  # into a single line naming the file. A very long diff keeps its head and its
+  # tail. {lines} counts the lines of the folded section.
+  - name: git-diff
+    match: '^\s*git\s+(diff|show)\b'
+    match_output: '(?m)^diff --git '
+    fold:
+      - start: '^diff --git a/(\S*(?:go\.sum|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|\.min\.js)|vendor/\S+) b/'
+        body: '^(?:[ +@-]|index |old mode |new mode |new file mode |deleted file mode |similarity index |rename from |rename to |Binary files |GIT binary patch)'
+        text: '已折叠 {1} 的 {lines} 行改动'
+    head: 80
+    tail: 20
+    min_bytes: 200
+    min_saving: 0.05
+
+  # `git status` in its long form: the hints for the next step
+  # ("(use \"git add ...\")", "no changes added to commit ...") go, the file
+  # list stays. --short/--porcelain print no hints, so the rule does not apply
+  # to them (match_output).
+  - name: git-status
+    match: '^\s*git\s+status\b'
+    match_output: '(?m)^(On branch |HEAD detached|You are in |Untracked files:|Changes to be committed:|Changes not staged for commit:|Changes staged for commit:)'
+    drop:
+      - '^\s*\(use "git '
+      - '^\s*\(create/copy files'
+      - '^no changes added to commit'
+      - '^nothing added to commit'
+    min_bytes: 200
+    min_saving: 0.05

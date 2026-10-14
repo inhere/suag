@@ -21,27 +21,33 @@ var builtinRuleFiles embed.FS
 
 // builtinRuleFileOrder is the order the rule files are read in: it is the order
 // the rules had when they lived in one output_rules.yaml (go, rust, js, python,
-// java, whose file holds maven and gradle). The order matters - every rule whose
-// match matches the command is applied in turn, so it decides the result on a
-// command several rules match - and the loader's test keeps this list and the
-// embedded files in step.
+// java, whose file holds maven and gradle), with the tool rules (git, grep)
+// appended. The order matters - every rule whose match matches the command is
+// applied in turn, so it decides the result on a command several rules match -
+// and the loader's test keeps this list and the embedded files in step.
 var builtinRuleFileOrder = []string{
 	"rules/go.yaml",
 	"rules/rust.yaml",
 	"rules/js.yaml",
 	"rules/python.yaml",
 	"rules/java.yaml",
+	"rules/git.yaml",
+	"rules/grep.yaml",
 }
 
 // OutputRule tidies the output of the shell commands it matches; see
 // rules/README.md for the fields. Rules are data so new tools and languages are
 // added without code (omp's shell minimizer works the same way).
 type OutputRule struct {
-	Name    string   `yaml:"name"`
-	Enabled *bool    `yaml:"enabled"` // nil = on
-	Match   string   `yaml:"match"`
-	Drop    []string `yaml:"drop"`
-	Block   struct {
+	Name    string `yaml:"name"`
+	Enabled *bool  `yaml:"enabled"` // nil = on
+	Match   string `yaml:"match"`
+	// MatchOutput, when set, requires the output to hold this pattern as well: a
+	// rule written for one output shape (the header of a git diff, say) then
+	// stays out of the way of the same command printing something else.
+	MatchOutput string   `yaml:"match_output"`
+	Drop        []string `yaml:"drop"`
+	Block       struct {
 		Start string `yaml:"start"`
 		Body  string `yaml:"body"`
 		Pass  string `yaml:"pass"`
@@ -51,16 +57,40 @@ type OutputRule struct {
 	Count   map[string]string `yaml:"count"`
 	Sum     map[string]string `yaml:"sum"`
 	Fold    []FoldBlock       `yaml:"fold"`
-	Summary string            `yaml:"summary"`
+	// Replace rewrites what the rule keeps (after drop/fold/block, before
+	// group_by); see ReplaceBlock.
+	Replace []ReplaceBlock `yaml:"replace"`
+	// GroupBy is a regexp with a capture group holding a group key: neighbouring
+	// lines sharing the key merge into one header line and the rest of every
+	// line, indented (a grep hit's file path is printed once).
+	GroupBy string `yaml:"group_by"`
+	// Head and Tail keep the first/last N lines of the rule's result, the lines
+	// in between go; they act before the global line cap (minimize.go).
+	Head int `yaml:"head"`
+	Tail int `yaml:"tail"`
+	// MinBytes and MinSaving lower the global gates for this rule (of all rules
+	// matching a command the most permissive value wins); nil = global default.
+	MinBytes  *int     `yaml:"min_bytes"`
+	MinSaving *float64 `yaml:"min_saving"`
+	Summary   string   `yaml:"summary"`
 
 	compiled *compiledRule
 }
 
+// ReplaceBlock is one `replace` item: pattern is a Go regexp compiled in
+// multi-line mode (so ^/$ anchor on a line while a pattern may still cross
+// lines with \n) and with replaces every match of it, with $1 / ${name}
+// standing for a capture group.
+type ReplaceBlock struct {
+	Pattern string `yaml:"pattern"`
+	With    string `yaml:"with"`
+}
+
 // FoldBlock collapses a run of lines repeating the same noise into one line:
 // start matches its first line, body every following line of the run, and text
-// is what replaces the run ({lines} = the number of lines folded; empty text
-// drops the whole run). Maven's effective-model warnings are the case it was
-// added for.
+// is what replaces the run ({lines} = the number of lines folded, {1}/{name} =
+// a capture group of the start line; empty text drops the whole run). Maven's
+// effective-model warnings are the case it was added for.
 type FoldBlock struct {
 	Start string `yaml:"start"`
 	Body  string `yaml:"body"`
@@ -68,19 +98,30 @@ type FoldBlock struct {
 }
 
 type compiledRule struct {
-	match                   *regexp.Regexp
+	match, matchOutput      *regexp.Regexp
 	drop, failure           []*regexp.Regexp
 	start, body, pass, fail *regexp.Regexp
 	countNames              []string
 	counts                  map[string]*regexp.Regexp
 	sums                    map[string]*regexp.Regexp
 	folds                   []compiledFold
+	replaces                []compiledReplace
+	group                   *regexp.Regexp
+	groupKey                int // submatch index holding the group_by key
+	head, tail              int
 }
 
 // compiledFold is a compiled FoldBlock.
 type compiledFold struct {
 	start, body *regexp.Regexp
+	names       []string // the start regexp's group names ({name} in the text)
 	text        string
+}
+
+// compiledReplace is a compiled ReplaceBlock.
+type compiledReplace struct {
+	re   *regexp.Regexp
+	with string
 }
 
 type outputRuleFile struct {
@@ -206,6 +247,7 @@ func compileRule(r *OutputRule) (*compiledRule, error) {
 		return out
 	}
 	c.match = one(r.Match)
+	c.matchOutput = one(r.MatchOutput)
 	c.drop, c.failure = many(r.Drop), many(r.Failure)
 	c.start, c.body, c.pass, c.fail = one(r.Block.Start), one(r.Block.Body), one(r.Block.Pass), one(r.Block.Fail)
 	for name, expr := range r.Count {
@@ -222,10 +264,59 @@ func compileRule(r *OutputRule) (*compiledRule, error) {
 	for _, f := range r.Fold {
 		fold := compiledFold{start: one(f.Start), body: one(f.Body), text: f.Text}
 		if fold.start != nil {
+			fold.names = fold.start.SubexpNames()
 			c.folds = append(c.folds, fold)
 		}
 	}
+	for _, item := range r.Replace {
+		if item.Pattern == "" {
+			return nil, errors.New("replace: pattern is required")
+		}
+		// Multi-line mode, so ^/$ anchor on a line: a pattern reads like a
+		// per-line one and may still span lines by writing \n.
+		re, reErr := regexp.Compile("(?m)" + item.Pattern)
+		if reErr != nil {
+			return nil, fmt.Errorf("replace %q: %w", item.Pattern, reErr)
+		}
+		c.replaces = append(c.replaces, compiledReplace{re: re, with: item.With})
+	}
+	if r.GroupBy != "" {
+		re, reErr := regexp.Compile(r.GroupBy)
+		if reErr != nil {
+			return nil, fmt.Errorf("group_by %q: %w", r.GroupBy, reErr)
+		}
+		key := groupKeyIndex(re)
+		if key < 1 {
+			return nil, fmt.Errorf("group_by %q: needs a capture group for the group key", r.GroupBy)
+		}
+		c.group, c.groupKey = re, key
+	}
+	if r.Head < 0 || r.Tail < 0 {
+		return nil, errors.New("head and tail must not be negative")
+	}
+	c.head, c.tail = r.Head, r.Tail
+	if r.MinBytes != nil && *r.MinBytes < 0 {
+		return nil, errors.New("min_bytes must not be negative")
+	}
+	if r.MinSaving != nil && (*r.MinSaving < 0 || *r.MinSaving > 1) {
+		return nil, errors.New("min_saving must be between 0 and 1")
+	}
 	return c, err
+}
+
+// groupKeyIndex returns the submatch index whose text is the group_by key: the
+// first named group when the regexp has one, else the first capture group (0
+// when the regexp captures nothing at all).
+func groupKeyIndex(re *regexp.Regexp) int {
+	for i, name := range re.SubexpNames() {
+		if i > 0 && name != "" {
+			return i
+		}
+	}
+	if re.NumSubexp() > 0 {
+		return 1
+	}
+	return 0
 }
 
 // sumValue returns the number in the first capture group of re when the line
@@ -243,13 +334,30 @@ func sumValue(re *regexp.Regexp, line string) (int, bool) {
 }
 
 // apply runs the rule over lines: per-test blocks of passed tests and the
-// drop lines go, everything else stays; when nothing failed and a count is
-// positive, the summary line is appended.
+// drop lines go, the rest is shaped by the rule's replace, group_by and
+// head/tail, and the summary line is appended last - so it is never cut away.
 func (c *compiledRule) apply(lines []string, summary string) []string {
+	out, counts, failed := c.filter(lines)
+	out = c.applyReplace(out)
+	out = c.groupBy(out)
+	out = c.headTail(out)
+	if failed || summary == "" {
+		return out
+	}
+	if text := renderSummary(summary, c.countNames, counts); text != "" {
+		out = append(out, text)
+	}
+	return out
+}
+
+// filter keeps what matters: per-test blocks of passed tests and the drop
+// lines go, the counts and sums of the retained lines are gathered for the
+// summary, and failed reports whether anything failed (no summary then).
+func (c *compiledRule) filter(lines []string) (out []string, counts map[string]int, failed bool) {
 	lines = c.foldNoise(lines)
-	var out, pending []string
-	counts := map[string]int{}
-	failed, inPassed := false, false
+	var pending []string
+	counts = map[string]int{}
+	inPassed := false
 	flush := func() {
 		out = append(out, pending...)
 		pending = pending[:0]
@@ -311,13 +419,7 @@ func (c *compiledRule) apply(lines []string, summary string) []string {
 		out = append(out, l)
 	}
 	flush()
-	if failed || summary == "" {
-		return out
-	}
-	if text := renderSummary(summary, c.countNames, counts); text != "" {
-		out = append(out, text)
-	}
-	return out
+	return out, counts, failed
 }
 
 // foldNoise replaces every fold block - its start line and the following lines
@@ -329,24 +431,25 @@ func (c *compiledRule) foldNoise(lines []string) []string {
 	}
 	out := make([]string, 0, len(lines))
 	for i := 0; i < len(lines); {
-		found, n := c.foldAt(lines, i)
+		found, n, m := c.foldAt(lines, i)
 		if n == 0 {
 			out = append(out, lines[i])
 			i++
 			continue
 		}
 		if found.text != "" {
-			out = append(out, strings.ReplaceAll(found.text, "{lines}", strconv.Itoa(n)))
+			out = append(out, renderFoldText(found, n, m))
 		}
 		i += n
 	}
 	return out
 }
 
-// foldAt returns the first fold block whose start matches lines[i] and how many
-// lines it swallows (0 when no block starts there). A following line joins the
-// run while it matches the block's body.
-func (c *compiledRule) foldAt(lines []string, i int) (compiledFold, int) {
+// foldAt returns the first fold block whose start matches lines[i], how many
+// lines it swallows (0 when no block starts there) and the start line's
+// capture groups. A following line joins the run while it matches the block's
+// body.
+func (c *compiledRule) foldAt(lines []string, i int) (compiledFold, int, []string) {
 	for _, fold := range c.folds {
 		if !fold.start.MatchString(lines[i]) {
 			continue
@@ -355,9 +458,9 @@ func (c *compiledRule) foldAt(lines []string, i int) (compiledFold, int) {
 		for fold.body != nil && i+n < len(lines) && fold.body.MatchString(lines[i+n]) {
 			n++
 		}
-		return fold, n
+		return fold, n, fold.start.FindStringSubmatch(lines[i])
 	}
-	return compiledFold{}, 0
+	return compiledFold{}, 0, nil
 }
 
 var optionalPart = regexp.MustCompile(`\[([^\[\]]*)\]`)

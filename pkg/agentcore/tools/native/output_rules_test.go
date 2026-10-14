@@ -306,7 +306,7 @@ func TestBuiltinRuleFiles(t *testing.T) {
 	listed := append([]string(nil), builtinRuleFileOrder...)
 	sort.Strings(listed)
 	assert.Eq(t, embedded, listed)
-	assert.Eq(t, []string{"rules/go.yaml", "rules/rust.yaml", "rules/js.yaml", "rules/python.yaml", "rules/java.yaml"}, builtinRuleFileOrder)
+	assert.Eq(t, []string{"rules/go.yaml", "rules/rust.yaml", "rules/js.yaml", "rules/python.yaml", "rules/java.yaml", "rules/git.yaml", "rules/grep.yaml"}, builtinRuleFileOrder)
 }
 
 // TestDefaultOutputRuleFields locks the built-in rules' names, their match
@@ -324,6 +324,10 @@ func TestDefaultOutputRuleFields(t *testing.T) {
 		`pytest | \bpytest\b|\bpython3? -m pytest\b | pytest: {passed} test(s) passed`,
 		`maven | \bmvnw?\b | maven: [Tests run {tests}, Failures: {failures}, Errors: {errors}, Skipped: {skipped}; ]BUILD SUCCESS`,
 		`gradle | \bgradlew?\b | gradle: {passed} test(s) passed`,
+		`git-log | ^\s*git\s+log\b | `,
+		`git-diff | ^\s*git\s+(diff|show)\b | `,
+		`git-status | ^\s*git\s+status\b | `,
+		`grep | ^\s*(rg|grep)\b | `,
 	}, got)
 }
 
@@ -338,7 +342,7 @@ func TestLoadOutputRules(t *testing.T) {
 	t.Run("built-in only", func(t *testing.T) {
 		rules, errs := LoadOutputRules(filepath.Join(t.TempDir(), "missing.yaml"))
 		assert.Empty(t, errs)
-		assert.Eq(t, "go-test,cargo-test,js-test,pytest,maven,gradle", names(rules))
+		assert.Eq(t, "go-test,cargo-test,js-test,pytest,maven,gradle,git-log,git-diff,git-status,grep", names(rules))
 	})
 	t.Run("user then project: override, add, switch off", func(t *testing.T) {
 		dir := t.TempDir()
@@ -363,7 +367,7 @@ rules:
 `), 0o644))
 		rules, errs := LoadOutputRules(user, project)
 		assert.Empty(t, errs)
-		assert.Eq(t, "go-test,cargo-test,js-test,pytest,gradle,make-check", names(rules))
+		assert.Eq(t, "go-test,cargo-test,js-test,pytest,gradle,git-log,git-diff,git-status,grep,make-check", names(rules))
 
 		m := NewOutputMinimizer(rules)
 		tidy, ok := m.Minimize(shellCall("make check"), repeatLines(40, "CHECK OK item %d")+"[exit code: 0]")
@@ -379,7 +383,7 @@ rules:
 		rules, errs := LoadOutputRules(bad)
 		assert.Require(t, assert.Len(t, errs, 1))
 		assert.StrContains(t, errs[0].Error(), "bad.yaml: rule x:")
-		assert.Eq(t, "go-test,cargo-test,js-test,pytest,maven,gradle", names(rules))
+		assert.Eq(t, "go-test,cargo-test,js-test,pytest,maven,gradle,git-log,git-diff,git-status,grep", names(rules))
 
 		assert.NoErr(t, os.WriteFile(bad, []byte("rules:\n  - match: 'x'\n"), 0o644))
 		_, errs = LoadOutputRules(bad)

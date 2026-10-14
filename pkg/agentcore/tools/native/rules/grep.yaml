@@ -1,0 +1,17 @@
+# Search tools: `rg` and `grep` matches of the form path:line:text (see
+# README.md for the fields and the file layout). The hits of one file are
+# grouped - the path is printed once as the group header - and very long lines
+# are cut. `grep -c` / `grep -l` print no match text, so the rule does not apply
+# to them (match_output).
+rules:
+  - name: grep
+    match: '^\s*(rg|grep)\b'
+    match_output: '(?m)^[^\s:]+:\d+:|^[^\s:]+:[^\d\s]'
+    group_by: '^((?:[A-Za-z]:)?[^:]+):'
+    replace:
+      # Cut the text of a long hit (the line keeps its path and line number):
+      # 300 characters plus an ellipsis is plenty for the model.
+      - pattern: '^(.{300}).+$'
+        with: '$1…'
+    min_bytes: 200
+    min_saving: 0.05

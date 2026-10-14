@@ -10,8 +10,12 @@ import (
 )
 
 const (
-	// minimizeMinBytes: smaller outputs are left as they are.
+	// minimizeMinBytes: smaller outputs are left as they are (a rule may lower
+	// this for itself with min_bytes).
 	minimizeMinBytes = 600
+	// minimizeMinSaving: tidying has to save at least this share of the output
+	// (a rule may lower this for itself with min_saving).
+	minimizeMinSaving = 0.2
 	// minimizeMaxLines caps a tidied output (head and tail kept).
 	minimizeMaxLines = 300
 	// repeatRun is how many identical consecutive lines are folded into one.
@@ -49,20 +53,21 @@ func MinimizeToolOutput(call api.ToolCall, content string) (string, bool) {
 // Minimize returns the tidied content; ok is false when nothing worth it
 // changed.
 func (m *OutputMinimizer) Minimize(call api.ToolCall, content string) (string, bool) {
-	if call.Name != "shell_exec" || len(content) < minimizeMinBytes {
+	if call.Name != "shell_exec" {
 		return "", false
 	}
 	command, _ := call.Arguments["command"].(string)
+	matched := m.matchingRules(command, content)
+	// The gates are global unless a rule covering this command asks for a
+	// tighter one (a git diff or a grep hit is worth tidying earlier than an
+	// unnamed command).
+	minBytes, minSaving := ruleGates(matched)
+	if len(content) < minBytes {
+		return "", false
+	}
 	lines := strings.Split(cleanTerminal(content), "\n")
-	// A command that pipes its output (| grep, | Select-String, | tail ...)
-	// already shows what the model asked for: the rules would drop the very
-	// lines it filtered for (e.g. "--- PASS" names), sending it to recall.
-	if !hasPipe(command) {
-		for _, r := range m.rules {
-			if r.compiled != nil && r.compiled.match.MatchString(command) {
-				lines = r.compiled.apply(lines, r.Summary)
-			}
-		}
+	for _, r := range matched {
+		lines = r.compiled.apply(lines, r.Summary)
 	}
 	lines = foldRepeats(lines)
 	if len(lines) > minimizeMaxLines {
@@ -71,11 +76,55 @@ func (m *OutputMinimizer) Minimize(call api.ToolCall, content string) (string, b
 		lines = append(append(lines[:head:head], fmt.Sprintf("[... %d lines omitted ...]", cut)), lines[len(lines)-tail:]...)
 	}
 	tidy := strings.Join(lines, "\n")
+	// A rule may reshape more than it shortens: hand back only what is really
+	// shorter than the original.
+	if len(tidy) >= len(content) {
+		return "", false
+	}
 	// Worth it only when it saves a fair share.
-	if len(content)-len(tidy) < len(content)/5 {
+	if len(content)-len(tidy) < int(float64(len(content))*minSaving) {
 		return "", false
 	}
 	return tidy, true
+}
+
+// matchingRules returns the rules that apply to a call: a rule whose match
+// matches the command and, when it sets one, whose match_output matches the
+// output too. A command that pipes its output (| grep, | Select-String, |
+// tail ...) gets no rule at all: it already shows what the model asked for and
+// the rules would drop the very lines it filtered for (e.g. "--- PASS" names),
+// sending it to recall.
+func (m *OutputMinimizer) matchingRules(command, content string) []OutputRule {
+	if hasPipe(command) {
+		return nil
+	}
+	var matched []OutputRule
+	for _, r := range m.rules {
+		if r.compiled == nil || !r.compiled.match.MatchString(command) {
+			continue
+		}
+		if r.compiled.matchOutput != nil && !r.compiled.matchOutput.MatchString(content) {
+			continue
+		}
+		matched = append(matched, r)
+	}
+	return matched
+}
+
+// ruleGates returns the size and saving a tidied output has to reach for these
+// rules: the global defaults, lowered by every rule that asks for less (of
+// several matching rules the most permissive one wins).
+func ruleGates(matched []OutputRule) (minBytes int, minSaving float64) {
+	minBytes, minSaving = minimizeMinBytes, minimizeMinSaving
+	for _, r := range matched {
+		if r.MinBytes != nil && *r.MinBytes < minBytes {
+			minBytes = *r.MinBytes
+		}
+		if r.MinSaving != nil && *r.MinSaving < minSaving {
+			minSaving = *r.MinSaving
+		}
+	}
+	return minBytes, minSaving
 }
 
 // cleanTerminal removes ANSI escapes and keeps, for a line redrawn with \r
