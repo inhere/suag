@@ -83,6 +83,10 @@ type Options struct {
 	// scheduleObserver sees every scheduler event synchronously (tests).
 	scheduleOptions  []schedule.Option
 	scheduleObserver func(schedule.Event)
+	// SetupSession, when set, runs once the session is open and before the first
+	// turn (the CLI publishes the session's added directories there); a failure
+	// stops the chat.
+	SetupSession func(ctx context.Context, sessionID string) error
 }
 
 // Run drives the interactive chat REPL on top of runner; hooks may be nil.
@@ -131,6 +135,11 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		sessionID, createdAtStartup = model.ID, true
 	}
 	fmt.Fprintln(stderr, "session id:", sessionID)
+	if opts.SetupSession != nil {
+		if err := opts.SetupSession(ctx, sessionID); err != nil {
+			return err
+		}
+	}
 	// Registered first so it runs last, after the terminal is restored: how to
 	// continue this session and what this chat process used.
 	chatStart := time.Now()

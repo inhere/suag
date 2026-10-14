@@ -48,12 +48,12 @@ type defaultCapabilities struct {
 // buildDefaultCapabilities assembles native and configured MCP tools for the
 // personal Agent's writable mode.
 func buildDefaultCapabilities(workspace string) (defaultCapabilities, error) {
-	return buildDefaultCapabilitiesWithServers(context.Background(), workspace, nil)
+	return buildDefaultCapabilitiesWithServers(context.Background(), workspace, nil, nil)
 }
 
-func buildDefaultCapabilitiesWithServers(ctx context.Context, workspace string, additional []toolsmcp.ServerSettings) (defaultCapabilities, error) {
+func buildDefaultCapabilitiesWithServers(ctx context.Context, workspace string, dirs *native.AddDirs, additional []toolsmcp.ServerSettings) (defaultCapabilities, error) {
 	registry := tools.NewRegistry()
-	for _, tool := range native.BuildTools(nativeEnv(workspace), true) {
+	for _, tool := range native.BuildTools(nativeEnv(workspace, dirs), true) {
 		registry.MustRegister(tool)
 	}
 	built := defaultCapabilities{Registry: registry}
@@ -161,8 +161,10 @@ func trashDir() string {
 	return filepath.Join(home, "trash")
 }
 
-// nativeEnv reads the tools.* settings native tools are built with.
-func nativeEnv(workspace string) native.Env {
+// nativeEnv reads the tools.* settings native tools are built with. dirs is
+// the session's additional-directory set (--add-dir), which the tools read at
+// every call, so it may still be empty here (nil = none).
+func nativeEnv(workspace string, dirs *native.AddDirs) native.Env {
 	roots, errs := readRoots()
 	warnReadRootsOnce.Do(func() {
 		for _, err := range errs {
@@ -171,6 +173,7 @@ func nativeEnv(workspace string) native.Env {
 	})
 	return native.Env{
 		Workspace:         workspace,
+		AddDirs:           dirs,
 		TrashDir:          trashDir(),
 		ReadRoots:         native.RootPaths(roots),
 		InlineBytes:       inlineOutputBytes(),

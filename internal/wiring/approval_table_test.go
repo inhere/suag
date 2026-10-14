@@ -145,12 +145,12 @@ func TestApprovalTable(t *testing.T) {
 		tool := row.tool(t)
 		t.Run(fmt.Sprintf("%02d_%s", i, row.name), func(t *testing.T) {
 			askAsker := &scriptedAsker{answers: []string{"n"}}
-			assert.Eq(t, row.chatAsk, decideOutcome(t, newChatApprover(runGate, false, askAsker, "/work"), askAsker, row.name, tool), "chat ask")
+			assert.Eq(t, row.chatAsk, decideOutcome(t, newChatApprover(runGate, false, askAsker, "/work", nil), askAsker, row.name, tool), "chat ask")
 			autoAsker := &scriptedAsker{}
-			assert.Eq(t, row.chatAuto, decideOutcome(t, newChatApprover(runGate, true, autoAsker, "/work"), autoAsker, row.name, tool), "chat auto")
+			assert.Eq(t, row.chatAuto, decideOutcome(t, newChatApprover(runGate, true, autoAsker, "/work", nil), autoAsker, row.name, tool), "chat auto")
 
 			alwaysAsker := &scriptedAsker{answers: []string{"a"}}
-			always := newChatApprover(runGate, false, alwaysAsker, "/work")
+			always := newChatApprover(runGate, false, alwaysAsker, "/work", nil)
 			call := agentcore.ToolCall{CallID: "c", Name: row.name, Arguments: map[string]any{}}
 			_ = always.Decide(context.Background(), call, tool)
 			_ = always.Decide(context.Background(), call, tool)
@@ -179,7 +179,7 @@ func TestApprovalTable(t *testing.T) {
 
 	t.Run("unregistered tool is a plain error, never asked", func(t *testing.T) {
 		asker := &scriptedAsker{answers: []string{"y"}}
-		approval := tools.NewApproval(tools.NewRegistry(), newChatApprover(runGate, false, asker, "/work"))
+		approval := tools.NewApproval(tools.NewRegistry(), newChatApprover(runGate, false, asker, "/work", nil))
 		_, err := approval.ExecuteTool(context.Background(), agentcore.ToolCall{CallID: "c", Name: "nope"})
 		assert.Err(t, err)
 		assert.False(t, errors.Is(err, tools.ErrDenied))

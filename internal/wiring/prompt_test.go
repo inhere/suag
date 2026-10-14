@@ -78,13 +78,13 @@ func TestEnvironmentPrompt(t *testing.T) {
 		p := environmentPrompt(Options{Workspace: "/w"})
 		assert.StrContains(t, p, "Read-only roots outside the workspace")
 		assert.StrContains(t, p, "  - configured: "+dir)
-		assert.Eq(t, []string{dir}, nativeEnv("/w").ReadRoots)
+		assert.Eq(t, []string{dir}, nativeEnv("/w", nil).ReadRoots)
 	})
 	t.Run("no read roots, no section", func(t *testing.T) {
 		resetConfig(t)
 		assert.NoErr(t, gkconfig.Set("tools.dependency_roots", false))
 		assert.NotContains(t, environmentPrompt(Options{Workspace: "/w"}), "Read-only roots")
-		assert.Empty(t, nativeEnv("/w").ReadRoots)
+		assert.Empty(t, nativeEnv("/w", nil).ReadRoots)
 	})
 	t.Run("writable names the shell", func(t *testing.T) {
 		p := environmentPrompt(Options{Workspace: "/w", AllowWrite: true})

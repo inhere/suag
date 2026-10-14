@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/gookit/goutil/cflag"
 	"github.com/gookit/goutil/cflag/capp"
+	"github.com/inhere/suga/internal/adddir"
 	"github.com/inhere/suga/internal/chat"
 	"github.com/inhere/suga/internal/output"
 	"github.com/inhere/suga/internal/personal"
@@ -47,6 +49,12 @@ type personalOptions struct {
 	MaxSteps   int
 	MCPConfigs []string
 	CLIMode    bool
+	// AddDirs are this invocation's --add-dir values ("<absolute
+	// directory>[:ro|:rw]", default :ro); SUGA_ADD_DIRS is read alongside them.
+	AddDirs []string
+	// setupSession runs once the session is open and before the first turn: the
+	// CLI publishes the session's added directories there.
+	setupSession func(ctx context.Context, sessionID string) error
 	// tasks is the run's background task manager (set by RunPersonalCLI, not
 	// a flag); nil in tests that build a runner themselves.
 	tasks *tasks.Manager
@@ -61,6 +69,16 @@ func RunPersonalCLI(ctx context.Context, mode string, args []string, stdin io.Re
 }
 
 func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptions, stdin io.Reader, stdout, stderr io.Writer) (retErr error) {
+	// The session's additional directories (--add-dir, SUGA_ADD_DIRS) are parsed
+	// first: a bad --add-dir value is a startup error, a bad SUGA_ADD_DIRS entry
+	// is a warning (an outer tool set it, this process cannot fix it).
+	dirs, warnings, err := adddir.Resolve(opts.AddDirs, os.Getenv(adddir.EnvVar), opts.ReadOnly)
+	if err != nil {
+		return err
+	}
+	for _, warning := range warnings {
+		fmt.Fprintln(stderr, "warning: "+warning)
+	}
 	// Background tasks (write modes): chat wakes on a task end while it
 	// waits for input; the manager is closed (its tasks killed) before the
 	// runtime, so their end events still reach the store.
@@ -75,6 +93,7 @@ func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptio
 		return err
 	}
 	wopts := opts.wiringOptions(mode)
+	wopts.AddDirs = dirs
 	wopts.Tasks = taskManager
 	runtime, err := wiring.OpenCLI(ctx, wopts)
 	if err != nil {
@@ -83,6 +102,12 @@ func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptio
 	}
 	defer func() { retErr = errors.Join(retErr, runtime.Close()) }()
 	defer taskManager.Close()
+	// The session is opened after the runtime is assembled, so its own
+	// additional directories (the metadata of a resumed session) are published
+	// once it is known, before the first turn.
+	opts.setupSession = func(ctx context.Context, sessionID string) error {
+		return runtime.ApplyAddDirs(ctx, sessionID)
+	}
 	if mode == "chat" {
 		var taskWake <-chan struct{}
 		if taskSettings.WakeOnExit {
@@ -125,6 +150,7 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.BoolVar(&opts.ClearAppendSystemPrompt, "clear-append-system-prompt", false, "clear the session's saved append prompt (a non-empty --append-system-prompt still replaces it)")
 	cmd.BoolVar(&opts.NoProjectRules, "no-project-rules", false, "skip project rule files for debugging")
 	cmd.Var((*cflag.Strings)(&opts.MCPConfigs), "mcp-config", "Claude-style JSON MCP server config")
+	cmd.Var((*cflag.Strings)(&opts.AddDirs), "add-dir", "extra absolute directory for this session as \"<directory>[:ro|:rw]\" (default :ro), repeatable; SUGA_ADD_DIRS adds more")
 	if mode == "run" {
 		cmd.BoolVar(&opts.Injected, "injected", false, "mark this turn's prompt as not typed by a person")
 		cmd.IntVar(&opts.MaxSteps, "max-steps", 0, "max tool steps in this turn, >= 1 (overrides SUGA_MAX_STEPS and max_steps); sub-agent agents.max_steps is unaffected")
@@ -178,6 +204,13 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 	sessionID, err := openRequestedSession(ctx, runner, opts)
 	if err != nil {
 		return err
+	}
+	// Publish the session's additional directories (--add-dir) now that the
+	// session is known and before the first turn.
+	if opts.setupSession != nil {
+		if err := opts.setupSession(ctx, sessionID); err != nil {
+			return err
+		}
 	}
 	var encoder *json.Encoder
 	if opts.OutputFormat == "stream-json" {

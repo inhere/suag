@@ -13,7 +13,7 @@ import (
 
 func TestPersonalReadOnlyToolsCannotWrite(t *testing.T) {
 	workspace := t.TempDir()
-	capabilities, err := buildPersonalCapabilities(workspace, false)
+	capabilities, err := buildPersonalCapabilities(workspace, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}

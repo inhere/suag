@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
+	"github.com/inhere/suga/internal/adddir"
 	appconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/internal/personal/store"
@@ -71,6 +72,14 @@ type Options struct {
 	// gate's permission request; chat: set by OpenCLI to ask at the terminal).
 	// nil (run) refuses them.
 	MemoryConfirm MemoryConfirmFunc
+	// AddDirs are the additional directories this invocation asks for
+	// (--add-dir, SUGA_ADD_DIRS, already parsed by the front end). A session
+	// keeps them in its metadata; ApplyAddDirs publishes the merged set.
+	AddDirs []adddir.Dir
+	// sessionDirs is the live set the tools and the environment prompt read. It
+	// is created by OpenCLI so the chat approver and the tools share one set; nil
+	// (a runtime assembled directly) means no additional directory.
+	sessionDirs *native.AddDirs
 }
 
 // Runtime is one assembled personal runner and the resources it owns.
@@ -89,9 +98,18 @@ type Runtime struct {
 	Asker *tools.BindableAsker
 	// WriteTools reports whether workspace write and shell tools are exposed.
 	WriteTools bool
+	// AddDirs is the session's additional-directory set (--add-dir): the tools
+	// read it at every call, so the front end fills it once the session is known
+	// (ApplyAddDirs).
+	AddDirs *native.AddDirs
 
 	repo         *store.Store
 	capabilities defaultCapabilities
+	// requested is Options.AddDirs, replayed by ApplyAddDirs; readOnly is
+	// Options.ReadOnly, which downgrades the effective view (a read-only runtime
+	// has no write tool at all).
+	requested []adddir.Dir
+	readOnly  bool
 	// tools is the registry stack the runner calls (visibility -> approval
 	// -> base); kept for tests.
 	tools agentcore.ToolRegistry
@@ -126,6 +144,11 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	// One additional-directory set per runtime, shared by the tools, the
+	// environment prompt and the chat approver; the tools read it per call, so
+	// the session opened later can still fill it (ApplyAddDirs).
+	dirs := native.NewAddDirs()
+	opts.sessionDirs = dirs
 	var approver tools.Approver = gate
 	var asker *tools.BindableAsker
 	if opts.ChatMode {
@@ -136,7 +159,7 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 			return nil, err
 		}
 		asker = tools.NewBindableAsker()
-		approver = newChatApprover(gate, auto, asker, workspace)
+		approver = newChatApprover(gate, auto, asker, workspace, dirs)
 		// Memory writes of tainted sessions are confirmed at the same terminal.
 		opts.MemoryConfirm = newChatMemoryConfirmer(asker).confirm
 	}
@@ -176,6 +199,16 @@ func toolsAllowWrite() (bool, error) {
 // Open assembles one runtime.
 func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	workspace, ruleCWD, allowWrite, servers := opts.Workspace, opts.RuleCWD, opts.AllowWrite, opts.Servers
+	// The session's additional directories (--add-dir): the tools read the set at
+	// every call, so the requested ones are published here already (a new
+	// session's first segment lists them) and ApplyAddDirs merges the session's
+	// own ones in once it is open. A read-only run exposes the read-only view.
+	dirs := opts.sessionDirs
+	if dirs == nil {
+		dirs = native.NewAddDirs()
+	}
+	dirs.Set(nativeAddDirs(adddir.Effective(opts.AddDirs, opts.ReadOnly)))
+	opts.sessionDirs = dirs
 	rs, err := loadRuntimeSettings(workspace, opts.Model, opts.Thinking)
 	if err != nil {
 		return nil, err
@@ -204,9 +237,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	var capabilities defaultCapabilities
 	if opts.CLIMode {
-		capabilities, err = buildPersonalCLICapabilities(ctx, workspace, allowWrite, servers)
+		capabilities, err = buildPersonalCLICapabilities(ctx, workspace, dirs, allowWrite, servers)
 	} else {
-		capabilities, err = buildPersonalCapabilitiesWithServers(ctx, workspace, allowWrite, servers)
+		capabilities, err = buildPersonalCapabilitiesWithServers(ctx, workspace, dirs, allowWrite, servers)
 	}
 	if err != nil {
 		return nil, err
@@ -220,7 +253,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 				shell.SetTasks(opts.Tasks)
 			}
 		}
-		capabilities.Registry.Register(native.NewTaskTool(opts.Tasks, nativeEnv(workspace).ShellTimeoutMax))
+		capabilities.Registry.Register(native.NewTaskTool(opts.Tasks, nativeEnv(workspace, dirs).ShellTimeoutMax))
 	}
 	// agent hands a task to a read-only sub-agent (every mode; agents.enabled).
 	agentSettings, err := appconfig.ReadAgentSettings()
@@ -230,7 +263,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	if agentSettings.Enabled {
 		agentTool := native.NewAgentTool(&subAgents{workspace: workspace, ruleCWD: ruleCWD, mainModel: opts.Model,
-			noProjectRules: opts.NoProjectRules, ruleFile: ruleFile, settings: agentSettings})
+			noProjectRules: opts.NoProjectRules, ruleFile: ruleFile, settings: agentSettings, addDirs: dirs})
 		if opts.Tasks != nil {
 			agentTool.SetTasks(opts.Tasks)
 		}
@@ -257,7 +290,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// prompt listing exist only when some skill was found.
 	skillReg := buildDefaultSkillRegistry(workspace)
 	if skillReg.Len() > 0 {
-		capabilities.Registry.Register(native.NewSkillTool(skillReg, nativeEnv(workspace).RawBytes))
+		capabilities.Registry.Register(native.NewSkillTool(skillReg, nativeEnv(workspace, dirs).RawBytes))
 	}
 	// suga_manifest is read-only local data, so it is registered in every
 	// mode. It reports the live registry (MCP tools included) when called.
@@ -359,6 +392,8 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		PromptBuilder:     staticPrompt(basePrompt()),
 		// Environment and skills go into the segment context (design D1).
 		EnvironmentSource: func() string { return environmentPrompt(opts) },
+		// The turn_context event records the session's added directories.
+		AddDirs: func() []string { return dirs.List() },
 		SkillsSource: func() string {
 			text, _ := skillsPrompt(skillReg, readSkillPolicy())
 			return text
@@ -389,7 +424,8 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	memHost.bind(runner, repo)
 	return &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
-		ContextWindow: contextWindow, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry}, nil
+		ContextWindow: contextWindow, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry,
+		AddDirs: dirs, requested: opts.AddDirs, readOnly: opts.ReadOnly}, nil
 }
 
 // buildMainProvider builds the main provider; with fallback_models the result
@@ -421,29 +457,29 @@ func appendSystemPrompt(flagValue string) string {
 	return os.Getenv("SUGA_APPEND_SYSTEM_PROMPT")
 }
 
-func buildPersonalCapabilities(workspace string, allowWrite bool) (defaultCapabilities, error) {
-	return buildPersonalCapabilitiesWithServers(context.Background(), workspace, allowWrite, nil)
+func buildPersonalCapabilities(workspace string, dirs *native.AddDirs, allowWrite bool) (defaultCapabilities, error) {
+	return buildPersonalCapabilitiesWithServers(context.Background(), workspace, dirs, allowWrite, nil)
 }
 
-func buildPersonalCapabilitiesWithServers(ctx context.Context, workspace string, allowWrite bool, servers []mcp.ServerSettings) (defaultCapabilities, error) {
+func buildPersonalCapabilitiesWithServers(ctx context.Context, workspace string, dirs *native.AddDirs, allowWrite bool, servers []mcp.ServerSettings) (defaultCapabilities, error) {
 	if allowWrite {
-		return buildDefaultCapabilitiesWithServers(ctx, workspace, servers)
+		return buildDefaultCapabilitiesWithServers(ctx, workspace, dirs, servers)
 	}
 	// Read-only: only the catalog's read tools, and no MCP (ACP read_only
 	// sessions must not start MCP servers).
 	registry := tools.NewRegistry()
-	for _, tool := range native.BuildTools(nativeEnv(workspace), false) {
+	for _, tool := range native.BuildTools(nativeEnv(workspace, dirs), false) {
 		registry.Register(tool)
 	}
 	return defaultCapabilities{Registry: registry}, nil
 }
 
 // CLI always exposes configured MCP tools; the dispatch gate enforces their permissions.
-func buildPersonalCLICapabilities(ctx context.Context, workspace string, allowWrite bool, servers []mcp.ServerSettings) (defaultCapabilities, error) {
+func buildPersonalCLICapabilities(ctx context.Context, workspace string, dirs *native.AddDirs, allowWrite bool, servers []mcp.ServerSettings) (defaultCapabilities, error) {
 	if allowWrite {
-		return buildDefaultCapabilitiesWithServers(ctx, workspace, servers)
+		return buildDefaultCapabilitiesWithServers(ctx, workspace, dirs, servers)
 	}
-	built, err := buildPersonalCapabilitiesWithServers(ctx, workspace, false, nil)
+	built, err := buildPersonalCapabilitiesWithServers(ctx, workspace, dirs, false, nil)
 	if err != nil {
 		return defaultCapabilities{}, err
 	}

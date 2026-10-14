@@ -27,6 +27,9 @@ type chatApprover struct {
 	auto      bool
 	asker     tools.Asker
 	workspace string
+	// dirs is the session's additional-directory set: a file_remove prompt for a
+	// path under a :rw directory is planned with the same rules as the workspace.
+	dirs *native.AddDirs
 
 	// mu serializes questions and guards always: the tools answered "a"
 	// (always) run without asking for the rest of this process.
@@ -34,8 +37,8 @@ type chatApprover struct {
 	always map[string]bool
 }
 
-func newChatApprover(gate *cliMCPGate, auto bool, asker tools.Asker, workspace string) *chatApprover {
-	return &chatApprover{gate: gate, auto: auto, asker: asker, workspace: workspace, always: map[string]bool{}}
+func newChatApprover(gate *cliMCPGate, auto bool, asker tools.Asker, workspace string, dirs *native.AddDirs) *chatApprover {
+	return &chatApprover{gate: gate, auto: auto, asker: asker, workspace: workspace, dirs: dirs, always: map[string]bool{}}
 }
 
 // toolsApprovalAuto reads tools.approval: "ask" (default) or "auto". Any other
@@ -102,7 +105,7 @@ func (a *chatApprover) question(call agentcore.ToolCall) tools.Question {
 		details = []string{"命令：" + argText(args["command"])}
 	case "file_remove":
 		details = []string{"路径：" + a.fullPath(argText(args["path"]))}
-		plan, err := native.PlanRemove(a.workspace, args)
+		plan, err := native.PlanRemoveWithDirs(a.workspace, a.dirs.WritePaths(), args)
 		switch {
 		case err != nil:
 			details = append(details, "检查："+err.Error())

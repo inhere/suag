@@ -247,7 +247,7 @@ func loadManifest(opts ManifestOptions) (Manifest, manifestParts, error) {
 		return Manifest{}, manifestParts{}, err
 	}
 	reg := tools.NewRegistry()
-	for _, t := range native.BuildTools(nativeEnv(workspace), true) {
+	for _, t := range native.BuildTools(nativeEnv(workspace, nil), true) {
 		reg.Register(t)
 	}
 	reg.Register(native.NewUpdatePlanTool(nil))

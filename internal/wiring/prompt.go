@@ -90,6 +90,18 @@ func environmentPrompt(opts Options) string {
 			fmt.Fprintf(&b, "  - %s: %s\n", r.Label, r.Path)
 		}
 	}
+	if dirs := opts.sessionDirs.Snapshot(); len(dirs) > 0 {
+		// The session's own additional directories (--add-dir): named so the
+		// model uses the file tools there instead of a shell detour.
+		b.WriteString("- Additional directories of this session (--add-dir; the file tools accept absolute paths under them):\n")
+		for _, d := range dirs {
+			mode := "read-only"
+			if d.Writable {
+				mode = "read-write — file_write, file_edit and file_remove may change files there, like in the workspace"
+			}
+			fmt.Fprintf(&b, "  - %s: %s\n", d.Path, mode)
+		}
+	}
 	if opts.AllowWrite {
 		fmt.Fprintf(&b, "- Shell for shell_exec: %s\n", native.ShellName(gkconfig.String("tools.shell")))
 		b.WriteString("- Mode: writable — you may edit files and run commands; the user may be asked to confirm.\n")

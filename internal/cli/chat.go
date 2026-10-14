@@ -34,6 +34,7 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 		TerminalTitle:  appconfig.ChatTerminalTitleEnabled(),
 		IdleAfter:      idle.After, IdleMinRatio: idle.MinRatio,
 		Tasks: taskManager, TaskWake: taskWake, StopBackground: sugahooks.StopBackground(),
+		SetupSession: opts.setupSession,
 	}, stdin, stdout, stderr, hooks)
 }
 

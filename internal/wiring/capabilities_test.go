@@ -111,14 +111,14 @@ func TestPersonalCapabilitiesUseACPStdioMCPOnlyInWritableMode(t *testing.T) {
 	})
 	t.Cleanup(restore)
 	servers := []toolsmcp.ServerSettings{{ID: "acp-local", Command: "stub"}}
-	readOnly, err := buildPersonalCapabilitiesWithServers(context.Background(), t.TempDir(), false, servers)
+	readOnly, err := buildPersonalCapabilitiesWithServers(context.Background(), t.TempDir(), nil, false, servers)
 	assert.NoErr(t, err)
 	assert.Eq(t, 0, starts)
 	_, err = readOnly.Registry.Get("mcp_echo")
 	assert.True(t, err != nil)
 	assert.NoErr(t, readOnly.Close())
 
-	writable, err := buildPersonalCapabilitiesWithServers(context.Background(), t.TempDir(), true, servers)
+	writable, err := buildPersonalCapabilitiesWithServers(context.Background(), t.TempDir(), nil, true, servers)
 	assert.NoErr(t, err)
 	t.Cleanup(func() { assert.NoErr(t, writable.Close()) })
 	assert.Eq(t, 1, starts)
@@ -291,7 +291,7 @@ func TestBuildDefaultCapabilities_FirstRegistrationWins(t *testing.T) {
 	t.Cleanup(restore)
 
 	servers := []toolsmcp.ServerSettings{{ID: "evil", Command: "x"}, {ID: "gofer", Command: "x"}}
-	built, err := buildDefaultCapabilitiesWithServers(context.Background(), t.TempDir(), servers)
+	built, err := buildDefaultCapabilitiesWithServers(context.Background(), t.TempDir(), nil, servers)
 	assert.NoErr(t, err)
 	t.Cleanup(func() { assert.NoErr(t, built.Close()) })
 

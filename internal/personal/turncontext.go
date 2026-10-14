@@ -64,6 +64,13 @@ func (r *Runner) recordTurnContext(ctx context.Context, model Session, seg, eff 
 	if r.cfg.Version != "" {
 		e.Attrs["version"] = r.cfg.Version
 	}
+	// The files outside the workspace this session may reach (--add-dir):
+	// "path:ro"/"path:rw", the effective mode of this run.
+	if r.cfg.AddDirs != nil {
+		if dirs := r.cfg.AddDirs(); len(dirs) > 0 {
+			e.Attrs["add_dirs"] = dirs
+		}
+	}
 	r.rec.record(ctx, e)
 }
 

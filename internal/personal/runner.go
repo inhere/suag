@@ -60,6 +60,10 @@ type Config struct {
 	// resumed session in another mode or workspace gets a context update).
 	EnvironmentSource func() string
 	SkillsSource      func() string
+	// AddDirs returns the session's additional directories (--add-dir) as
+	// "path:ro"/"path:rw" entries; the turn_context event records them so a
+	// trace shows what the session could reach. nil = none.
+	AddDirs func() []string
 	// SkillsStats counts the skills by how the listing presents them; the
 	// context event records it.
 	SkillsStats func() SkillsStats
@@ -363,6 +367,15 @@ func (r *Runner) LoadSession(ctx context.Context, id string) (Session, error) {
 		return Session{}, fmt.Errorf("load personal session: %w", err)
 	}
 	return model, nil
+}
+
+// SaveSessionMeta merges patch into the stored session metadata (a nil value
+// deletes a key). The front end records the session's added directories here.
+func (r *Runner) SaveSessionMeta(ctx context.Context, sessionID string, patch map[string]any) error {
+	if err := r.cfg.Repository.PatchSessionMeta(ctx, sessionID, patch); err != nil {
+		return fmt.Errorf("update personal session metadata: %w", err)
+	}
+	return nil
 }
 
 // Run executes one new turn (run_id == turn_id) of the session. A turn that

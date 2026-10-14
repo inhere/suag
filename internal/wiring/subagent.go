@@ -28,6 +28,9 @@ type subAgents struct {
 	noProjectRules bool
 	ruleFile       string
 	settings       appconfig.AgentSettings
+	// addDirs is the parent session's additional-directory set (--add-dir): a
+	// sub-agent works on the same task, so it reads the same directories.
+	addDirs *native.AddDirs
 }
 
 var _ native.SubAgents = (*subAgents)(nil)
@@ -102,7 +105,7 @@ func (s *subAgents) build(kind string) (*personal.Runner, func(), error) {
 		return nil, nil, err
 	}
 	registry := tools.NewRegistry()
-	for _, tool := range native.BuildTools(nativeEnv(s.workspace), false) {
+	for _, tool := range native.BuildTools(nativeEnv(s.workspace, s.addDirs), false) {
 		for _, name := range subAgentTools[kind] {
 			if tool.Name() == name {
 				registry.Register(tool)
