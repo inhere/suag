@@ -1,0 +1,16 @@
+# Rust: `cargo test` / `cargo nextest` output (see README.md).
+rules:
+  - name: cargo-test
+    match: '\bcargo (test|nextest)\b'
+    drop:
+      - '^test \S+ \.\.\. ok$'
+      - '^\s*(Compiling|Downloaded|Downloading|Fresh) '
+    failure:
+      - '^test \S+ \.\.\. FAILED$'
+      - '^failures:$'
+      - 'panicked at'
+      - '^error(\[E\d+\])?:'
+      - 'test result: FAILED'
+    count:
+      passed: '^test \S+ \.\.\. ok$'
+    summary: 'cargo test: {passed} test(s) passed'

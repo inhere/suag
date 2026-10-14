@@ -1,0 +1,15 @@
+# Python: pytest output (see README.md).
+rules:
+  - name: pytest
+    match: '\bpytest\b|\bpython3? -m pytest\b'
+    drop:
+      - ' PASSED( |$)'
+      - '^\S+ \.+( +\[ *\d+%\])?$'
+    failure:
+      - ' (FAILED|ERROR)( |$)'
+      - '^E\s'
+      - '^(FAILED|ERROR) '
+      - '^_{3,} .* _{3,}$'
+    count:
+      passed: ' PASSED( |$)'
+    summary: 'pytest: {passed} test(s) passed'

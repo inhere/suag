@@ -1,7 +1,7 @@
 package native
 
 import (
-	_ "embed"
+	"embed"
 	"errors"
 	"fmt"
 	"os"
@@ -12,13 +12,30 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-//go:embed output_rules.yaml
-var builtinOutputRules []byte
+// The built-in output rules live one file per language under rules/ (embedded
+// below into the binary); rules/README.md documents the fields and how users
+// override a rule.
+//
+//go:embed rules/*.yaml
+var builtinRuleFiles embed.FS
+
+// builtinRuleFileOrder is the order the rule files are read in: it is the order
+// the rules had when they lived in one output_rules.yaml (go, rust, js, python,
+// java, whose file holds maven and gradle). The order matters - every rule whose
+// match matches the command is applied in turn, so it decides the result on a
+// command several rules match - and the loader's test keeps this list and the
+// embedded files in step.
+var builtinRuleFileOrder = []string{
+	"rules/go.yaml",
+	"rules/rust.yaml",
+	"rules/js.yaml",
+	"rules/python.yaml",
+	"rules/java.yaml",
+}
 
 // OutputRule tidies the output of the shell commands it matches; see
-// output_rules.yaml for the fields. Rules are data so new tools and
-// languages are added without code (omp's shell minimizer works the same
-// way).
+// rules/README.md for the fields. Rules are data so new tools and languages are
+// added without code (omp's shell minimizer works the same way).
 type OutputRule struct {
 	Name    string   `yaml:"name"`
 	Enabled *bool    `yaml:"enabled"` // nil = on
@@ -70,12 +87,22 @@ type outputRuleFile struct {
 	Rules []OutputRule `yaml:"rules"`
 }
 
-// DefaultOutputRules returns the built-in rules (go test, cargo test, jest
-// and vitest, pytest, maven, gradle).
+// DefaultOutputRules returns the built-in rules (go test, cargo test, jest and
+// vitest, pytest, maven, gradle), read from the embedded rule files in
+// builtinRuleFileOrder. A rule file that does not parse is a build error: the
+// rules ship with the binary.
 func DefaultOutputRules() []OutputRule {
-	rules, err := parseOutputRules(builtinOutputRules)
-	if err != nil {
-		panic("native: built-in output rules: " + err.Error())
+	var rules []OutputRule
+	for _, name := range builtinRuleFileOrder {
+		data, err := builtinRuleFiles.ReadFile(name)
+		if err != nil {
+			panic("native: built-in output rules: " + err.Error())
+		}
+		file, err := parseOutputRules(data)
+		if err != nil {
+			panic("native: built-in output rules " + name + ": " + err.Error())
+		}
+		rules = append(rules, file...)
 	}
 	return rules
 }

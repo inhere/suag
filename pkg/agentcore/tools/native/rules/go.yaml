@@ -1,0 +1,23 @@
+# Go: `go test` output (see README.md for the fields and the file layout).
+rules:
+  - name: go-test
+    match: '\bgo test\b'
+    drop:
+      - '^\s*=== (RUN|PAUSE|CONT|NAME)\s'
+      - '^\s*--- (PASS|SKIP): '
+      - '^PASS$'
+      - '^\?\s+\S+\s+\[no test files\]$'
+    block:
+      start: '^\s*=== RUN\s'
+      body: '^ {4}'
+      pass: '^\s*--- PASS: '
+      fail: '^\s*--- FAIL: '
+    failure:
+      - '^\s*--- FAIL: '
+      - '^FAIL\b'
+      - '^panic: '
+      - '^\S+\.go:\d+:\d+: '
+    count:
+      packages: '^ok\s+\S+'
+      passed: '^\s*--- PASS: '
+    summary: 'go test: {packages} package(s) ok[, {passed} test(s) passed]'

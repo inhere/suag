@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -285,6 +286,45 @@ rules:
 		assert.Require(t, assert.True(t, ok))
 		assert.Eq(t, "[WARNING] fix them\n[exit code: 0]", tidy)
 	})
+}
+
+// TestBuiltinRuleFiles: the built-in rules come from the embedded files under
+// rules/, and builtinRuleFileOrder lists every one of them (a new file that is
+// not listed there would be silently ignored) exactly once.
+func TestBuiltinRuleFiles(t *testing.T) {
+	entries, err := builtinRuleFiles.ReadDir("rules")
+	assert.NoErr(t, err)
+	var embedded []string
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".yaml") {
+			embedded = append(embedded, "rules/"+entry.Name())
+		}
+	}
+	// ReadDir reports sorted names, so the listed order must be a permutation of
+	// it (same files, no duplicate) - and it is the order the rules are applied
+	// in, which is the one of the former single output_rules.yaml.
+	listed := append([]string(nil), builtinRuleFileOrder...)
+	sort.Strings(listed)
+	assert.Eq(t, embedded, listed)
+	assert.Eq(t, []string{"rules/go.yaml", "rules/rust.yaml", "rules/js.yaml", "rules/python.yaml", "rules/java.yaml"}, builtinRuleFileOrder)
+}
+
+// TestDefaultOutputRuleFields locks the built-in rules' names, their match
+// regexes and their summaries: splitting the rules into rules/ (suga-xt0o) keeps
+// every field as it was.
+func TestDefaultOutputRuleFields(t *testing.T) {
+	var got []string
+	for _, rule := range DefaultOutputRules() {
+		got = append(got, rule.Name+" | "+rule.Match+" | "+rule.Summary)
+	}
+	assert.Eq(t, []string{
+		`go-test | \bgo test\b | go test: {packages} package(s) ok[, {passed} test(s) passed]`,
+		`cargo-test | \bcargo (test|nextest)\b | cargo test: {passed} test(s) passed`,
+		`js-test | \b(jest|vitest|mocha)\b|\b(npm|pnpm|yarn|bun) (run )?test\b | tests: {passed} passed`,
+		`pytest | \bpytest\b|\bpython3? -m pytest\b | pytest: {passed} test(s) passed`,
+		`maven | \bmvnw?\b | maven: [Tests run {tests}, Failures: {failures}, Errors: {errors}, Skipped: {skipped}; ]BUILD SUCCESS`,
+		`gradle | \bgradlew?\b | gradle: {passed} test(s) passed`,
+	}, got)
 }
 
 func TestLoadOutputRules(t *testing.T) {
