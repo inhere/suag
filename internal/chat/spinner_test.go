@@ -266,8 +266,9 @@ func TestSpinnerTurnEnd(t *testing.T) {
 	assert.StrContains(t, out.String(), "in 0 / out 0 tokens")
 }
 
-// TestSpinnerOff: with chat.spinner: false or without a colored terminal (a
-// pipe, a redirected output, NO_COLOR) no frame is ever written.
+// TestSpinnerOff: with chat.spinner: false, without a colored terminal (a pipe,
+// a redirected output, NO_COLOR) or while chat keeps its input line on screen
+// (chat.steering) no frame is ever written.
 func TestSpinnerOff(t *testing.T) {
 	cases := []struct {
 		name string
@@ -275,6 +276,9 @@ func TestSpinnerOff(t *testing.T) {
 	}{
 		{"chat.spinner off", rendererOptions{Spinner: false, Color: true}},
 		{"no colored terminal", rendererOptions{Spinner: true}},
+		// The frame would share the row of the input line, which chat keeps up for
+		// the whole turn (r3 M1).
+		{"input line on screen", rendererOptions{Spinner: true, Color: true, InputLineUp: true}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

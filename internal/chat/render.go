@@ -66,12 +66,14 @@ type rendererOptions struct {
 	// Markdown renders the model's text as terminal markdown (config
 	// chat.markdown); it only applies to a colored terminal.
 	Markdown bool
-	// WholeLines makes the streamed text wait for line ends (r3 M1): only complete
-	// lines are written, the unfinished rest is buffered until its newline or the
-	// end of the message. Chat turns it on while it keeps an input line on screen
-	// during a turn (chat.steering): the line editor repaints its line after every
-	// write, so a partial line would be left next to the line being edited.
-	WholeLines bool
+	// InputLineUp is true while chat keeps its input line on screen for the whole
+	// turn running (chat.steering with a terminal). The output then works around
+	// that line (r3 M1): the streamed text leaves only complete lines - the line
+	// editor repaints its line after every write, so a partial one would stay next
+	// to it - and the waiting line stays off, because a frame is a bare carriage
+	// return plus erase on the current row (spinnerClear) and would fight the input
+	// line for that row.
+	InputLineUp bool
 	// Spinner shows the "思考中…" waiting line while the model is asked for its
 	// next message (config chat.spinner, on by default). Like Markdown it needs
 	// a colored terminal: a pipe, a redirected output or NO_COLOR keeps it off.
@@ -177,7 +179,7 @@ func (r *Renderer) resetLive() {
 	r.live = output.NewPrefixedLiveText(r.opts.Out, r.answerPrefix())
 	// Whole lines first: the markdown renderer is built knowing whether it prints the
 	// message prefix itself.
-	r.live.SetWholeLines(r.opts.WholeLines)
+	r.live.SetWholeLines(r.opts.InputLineUp)
 	// Markdown needs a terminal: Color is exactly "a terminal without NO_COLOR",
 	// so a pipe, a redirected output or NO_COLOR keeps the raw text.
 	if r.opts.Markdown && r.opts.Color {
@@ -187,8 +189,16 @@ func (r *Renderer) resetLive() {
 }
 
 // startThinking shows the waiting line: the model is working on its next
-// message. A no-op while the line is already shown or the spinner is off.
-func (r *Renderer) startThinking() { r.spin.Start() }
+// message. A no-op while the line is already shown, the spinner is off, or chat
+// keeps an input line on screen (chat.steering): a frame would fight that line for
+// the row it is on, and the input line itself shows that the turn is running
+// (design r3 M1).
+func (r *Renderer) startThinking() {
+	if r.opts.InputLineUp {
+		return
+	}
+	r.spin.Start()
+}
 
 // stopThinking erases that line. Every write of this renderer goes through it
 // first, so a frame can never mix into a tool line, an answer or a prompt, and

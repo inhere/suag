@@ -12,7 +12,12 @@ shown before the first turn, the line with the elapsed seconds appears while the
 model is asked for its first message, the tool call replaces it, it comes back
 while the model reads the tool result, and the answer is printed on a line the
 hint was erased from, and the submitted line comes back on a 256-color
-background filled to the end of the row. On the terminal title: the terminal's
+background filled to the end of the row. The frame checks run with
+`chat.steering: false`: while chat keeps the input line on screen for the whole
+turn (chat.steering, the default) the waiting line stays off - a frame is a bare
+carriage return plus erase on the current row and would fight that line for it
+(T3b/r3 M1); the steering side of it is checked in chat_steer.py. On the terminal
+title: the terminal's
 own title is saved and the session named at startup (no session title yet), the
 title is updated with the first message's title, and leaving chat clears the
 title and pops the saved one. A second chat, configured with chat.spinner:
@@ -51,6 +56,13 @@ TITLE = r"\x1b\]0;suga"
 TITLE_SAVE = r"\x1b\[22;0t"
 TITLE_RESTORE = r"\x1b\[23;0t"
 TITLE_CLEAR = r"\x1b\]0;\x07"
+
+
+# The frame checks need chat.steering: false: with steering on (the default) the
+# waiting line stays off while a turn runs, because chat keeps the input line on
+# screen then and a frame would fight it for the row (see the docstring).
+def on_chat_config():
+    return "chat:\n  steering: false\n"
 
 
 def off_chat_config():
@@ -143,7 +155,7 @@ def main():
     shutil.rmtree(off_home, ignore_errors=True)
     os.makedirs(ws, exist_ok=True)
     isolate_ws(ws)
-    write_home(home, args.port, tools_extra=TOOLS_EXTRA)
+    write_home(home, args.port, tools_extra=TOOLS_EXTRA, extra=on_chat_config())
     write_home(off_home, args.port, tools_extra=TOOLS_EXTRA, extra=off_chat_config())
     # Colors on: the waiting line needs a terminal without NO_COLOR (the other
     # scenarios keep the default NO_COLOR=1).

@@ -234,8 +234,8 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		WriteTools: opts.WriteTools, Markdown: opts.Markdown, Spinner: opts.Spinner,
 		HighlightInput: opts.HighlightInput, HighlightWidth: inputSource.highlightWidth,
 		// The input line stays on screen while a turn runs: the streamed text then
-		// leaves only complete lines (r3 M1).
-		WholeLines: steering,
+		// leaves only complete lines and the waiting line stays off (r3 M1).
+		InputLineUp: steering,
 	})
 	// The terminal's window/tab title (chat.terminal_title): set below, once the
 	// session's short name and title are known, and given back on the way out.
