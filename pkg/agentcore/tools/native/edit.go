@@ -10,9 +10,12 @@ import (
 	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
-// FileEditTool replaces exact strings in a workspace file: one replacement
-// (old_string/new_string) or several in one call (edits).
-type FileEditTool struct{ workspace string }
+// FileEditTool replaces exact strings in a workspace file (or a file under a
+// directory the session added as read-write): one replacement (old_string/new_string) or several in one call (edits).
+type FileEditTool struct {
+	workspace string
+	addDirs   *AddDirs
+}
 
 func (t *FileEditTool) Name() string { return "file_edit" }
 func (t *FileEditTool) Description() string {
@@ -34,7 +37,7 @@ func (t *FileEditTool) Schema() api.ToolSchema {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path":        map[string]any{"type": "string", "description": "Path within workspace (relative, or absolute inside it)"},
+				"path":        map[string]any{"type": "string", "description": "Path within the workspace (relative, or absolute inside it), or an absolute path under a directory added as read-write"},
 				"old_string":  map[string]any{"type": "string", "description": "Exact text to replace"},
 				"new_string":  map[string]any{"type": "string", "description": "Replacement text"},
 				"replace_all": map[string]any{"type": "boolean", "description": "Replace every occurrence (default false)"},
@@ -58,11 +61,12 @@ func (t *FileEditTool) Schema() api.ToolSchema {
 }
 
 func (t *FileEditTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
-	path, err := sandboxedPath(t.workspace, call.Arguments, "path")
+	target, err := writeTargetPath(t.workspace, t.addDirs, call.Arguments)
 	if err != nil {
 		return nil, err
 	}
-	data, err := readFileInRoot(t.workspace, path)
+	path := target.abs
+	data, err := readFileInRoot(target.base, path)
 	if err != nil {
 		return nil, fmt.Errorf("file_edit: %w", err)
 	}
@@ -70,7 +74,7 @@ func (t *FileEditTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	if err != nil {
 		return nil, fmt.Errorf("file_edit %s: %w", path, err)
 	}
-	if err := writeFileInRoot(t.workspace, path, []byte(updated)); err != nil {
+	if err := writeFileInRoot(target.base, path, []byte(updated)); err != nil {
 		return nil, fmt.Errorf("file_edit: %w", err)
 	}
 	// The edited lines are the verification: the model sees the result and

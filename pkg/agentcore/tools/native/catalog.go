@@ -18,6 +18,10 @@ type Env struct {
 	// ReadRoots are directories outside the workspace the read-only file tools
 	// may read too (dependency sources, tools.read_roots). Writes never go there.
 	ReadRoots []string
+	// AddDirs are the additional directories of the session being served
+	// (--add-dir): the tools read the set at every call, because the runtime is
+	// assembled before the session is opened. nil = no additional directory.
+	AddDirs *AddDirs
 	// InlineBytes is the inline threshold (tools.max_output_bytes). Tools
 	// leave the inline cut to the output layer (tools.NewOutput); file_read
 	// pages by itself with ReadPageBytes instead.
@@ -57,16 +61,16 @@ type Spec struct {
 func Catalog() []Spec {
 	return []Spec{
 		{Name: "file_read", New: func(env Env) api.Tool {
-			return &FileReadTool{workspace: env.Workspace, readRoots: env.ReadRoots, maxOut: env.ReadPageBytes}
+			return &FileReadTool{workspace: env.Workspace, readRoots: env.ReadRoots, addDirs: env.AddDirs, maxOut: env.ReadPageBytes}
 		}},
 		{Name: "file_list", New: func(env Env) api.Tool {
-			return &FileListTool{workspace: env.Workspace, readRoots: env.ReadRoots, maxOut: env.RawBytes}
+			return &FileListTool{workspace: env.Workspace, readRoots: env.ReadRoots, addDirs: env.AddDirs, maxOut: env.RawBytes}
 		}},
 		{Name: "file_grep", New: func(env Env) api.Tool {
-			return &FileGrepTool{workspace: env.Workspace, readRoots: env.ReadRoots, maxOut: env.RawBytes}
+			return &FileGrepTool{workspace: env.Workspace, readRoots: env.ReadRoots, addDirs: env.AddDirs, maxOut: env.RawBytes}
 		}},
 		{Name: "file_find", New: func(env Env) api.Tool {
-			return &FileFindTool{workspace: env.Workspace, readRoots: env.ReadRoots, maxOut: env.RawBytes}
+			return &FileFindTool{workspace: env.Workspace, readRoots: env.ReadRoots, addDirs: env.AddDirs, maxOut: env.RawBytes}
 		}},
 		{Name: "web_fetch", New: func(env Env) api.Tool {
 			t, err := NewWebFetchTool(env.FetchAllowPrivate, env.FetchProxy)
@@ -77,16 +81,18 @@ func Catalog() []Spec {
 			return t
 		}},
 		{Name: "file_write", New: func(env Env) api.Tool {
-			return &FileWriteTool{workspace: env.Workspace}
+			return &FileWriteTool{workspace: env.Workspace, addDirs: env.AddDirs}
 		}},
 		{Name: "file_edit", New: func(env Env) api.Tool {
-			return &FileEditTool{workspace: env.Workspace}
+			return &FileEditTool{workspace: env.Workspace, addDirs: env.AddDirs}
 		}},
 		{Name: "file_remove", New: func(env Env) api.Tool {
 			if env.TrashDir == "" {
 				return nil
 			}
-			return NewFileRemoveTool(env.Workspace, env.TrashDir)
+			t := NewFileRemoveTool(env.Workspace, env.TrashDir)
+			t.addDirs = env.AddDirs
+			return t
 		}},
 		{Name: "shell_exec", New: func(env Env) api.Tool {
 			t := NewShellExecTool(env.Workspace, 0)

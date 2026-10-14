@@ -35,6 +35,7 @@ const (
 type FileReadTool struct {
 	workspace string
 	readRoots []string // read-only directories outside the workspace
+	addDirs   *AddDirs // the session's added directories, read at call time
 	maxOut    int      // page cap in bytes per file; 0 = DefaultReadPageBytes
 }
 
@@ -134,7 +135,7 @@ func (t *FileReadTool) pageBytes() int {
 
 // readOne reads the line window of one path argument.
 func (t *FileReadTool) readOne(arg string, offset, limit int) (string, error) {
-	target, err := resolveRead(t.workspace, t.readRoots, arg)
+	target, err := resolveRead(t.workspace, withAddDirs(t.readRoots, t.addDirs), arg)
 	if err != nil {
 		return "", err
 	}

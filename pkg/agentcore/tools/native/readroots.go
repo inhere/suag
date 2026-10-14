@@ -218,9 +218,9 @@ func RootPaths(roots []ReadRoot) []string {
 	return paths
 }
 
-// readTarget is where a read-only tool's path argument points: base is the
-// directory that confines the I/O (the workspace or a read root) and abs the
-// absolute path under it.
+// readTarget is where a tool's path argument points: base is the directory that
+// confines the I/O (the workspace, a read root or an added read-write
+// directory) and abs the absolute path under it.
 type readTarget struct {
 	base, abs string
 	outside   bool // base is a read root, not the workspace
@@ -255,6 +255,21 @@ func (r readTarget) matchUnder(glob, rel string) bool {
 // resolveRead resolves a read-only tool's path argument: inside the workspace
 // as ResolveSandboxedPath does, otherwise an absolute path under one of roots.
 func resolveRead(workspace string, roots []string, arg string) (readTarget, error) {
+	return resolveRooted(workspace, roots, arg, "the read-only dependency roots")
+}
+
+// resolveWrite resolves a write tool's path argument the same way against the
+// session's read-write directories (--add-dir ...:rw). Such a directory is
+// treated exactly like the workspace: same approvals, same delete guards.
+func resolveWrite(workspace string, roots []string, arg string) (readTarget, error) {
+	return resolveRooted(workspace, roots, arg, "the added read-write directories")
+}
+
+// resolveRooted maps a tool's path argument to the directory that confines the
+// I/O: the workspace, or one of roots (absolute, in order). A relative path is
+// only ever resolved inside the workspace. what names the roots in the
+// refusal, so the model learns where it may go instead.
+func resolveRooted(workspace string, roots []string, arg, what string) (readTarget, error) {
 	abs, err := ResolveSandboxedPath(workspace, arg)
 	if err == nil {
 		return readTarget{base: workspace, abs: abs}, nil
@@ -267,5 +282,19 @@ func resolveRead(workspace string, roots []string, arg string) (readTarget, erro
 			return readTarget{base: root, abs: mapped, outside: true}, nil
 		}
 	}
-	return readTarget{}, fmt.Errorf("path escape: %q is outside the workspace and the read-only dependency roots", arg)
+	return readTarget{}, fmt.Errorf("path escape: %q is outside the workspace and %s", arg, what)
+}
+
+// withAddDirs appends the session's added directories to a tool's configured
+// read roots: whatever their mode, they are readable; only writing differs.
+// The static list comes back as is when the session added nothing, so the
+// common case allocates nothing.
+func withAddDirs(static []string, dirs *AddDirs) []string {
+	extra := dirs.ReadPaths()
+	if len(extra) == 0 {
+		return static
+	}
+	out := make([]string, 0, len(static)+len(extra))
+	out = append(out, static...)
+	return append(out, extra...)
 }

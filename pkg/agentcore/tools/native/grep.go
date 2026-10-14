@@ -26,6 +26,7 @@ const (
 type FileGrepTool struct {
 	workspace string
 	readRoots []string // read-only directories outside the workspace
+	addDirs   *AddDirs // the session's added directories, read at call time
 	maxOut    int      // raw result cap in bytes; 0 = DefaultRawOutputBytes
 }
 
@@ -74,7 +75,7 @@ func (t *FileGrepTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	if err != nil {
 		return nil, fmt.Errorf("file_grep: invalid pattern: %w", err)
 	}
-	start, err := searchStart(t.workspace, t.readRoots, args)
+	start, err := searchStart(t.workspace, withAddDirs(t.readRoots, t.addDirs), args)
 	if err != nil {
 		return nil, err
 	}

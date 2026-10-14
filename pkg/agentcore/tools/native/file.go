@@ -13,8 +13,12 @@ import (
 	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
-// FileWriteTool writes/creates a file within the workspace.
-type FileWriteTool struct{ workspace string }
+// FileWriteTool writes/creates a file within the workspace, or under a
+// directory the session added as read-write (--add-dir ...:rw).
+type FileWriteTool struct {
+	workspace string
+	addDirs   *AddDirs
+}
 
 // NewFileTools returns the three file tools scoped to workspace.
 func NewFileTools(workspace string) []api.Tool {
@@ -45,7 +49,7 @@ func (t *FileWriteTool) Schema() api.ToolSchema {
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "Path within workspace (relative, or absolute inside it)",
+					"description": "Path within the workspace (relative, or absolute inside it), or an absolute path under a directory added as read-write",
 				},
 				"content": map[string]any{
 					"type":        "string",
@@ -58,19 +62,19 @@ func (t *FileWriteTool) Schema() api.ToolSchema {
 }
 
 func (t *FileWriteTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
-	path, err := sandboxedPath(t.workspace, call.Arguments, "path")
+	target, err := writeTargetPath(t.workspace, t.addDirs, call.Arguments)
 	if err != nil {
 		return nil, err
 	}
 	content, _ := call.Arguments["content"].(string)
 
-	if err := writeFileInRoot(t.workspace, path, []byte(content)); err != nil {
+	if err := writeFileInRoot(target.base, target.abs, []byte(content)); err != nil {
 		return nil, fmt.Errorf("file_write: %w", err)
 	}
 	return &api.ToolResult{
 		CallID:  call.CallID,
 		Name:    t.Name(),
-		Content: fmt.Sprintf("wrote %d bytes to %s", len(content), path),
+		Content: fmt.Sprintf("wrote %d bytes to %s", len(content), target.abs),
 	}, nil
 }
 
@@ -161,11 +165,13 @@ func writeFileInRoot(workspace, abs string, data []byte) error {
 	return err
 }
 
-// sandboxedPath resolves the named arg as a path confined to workspace.
-func sandboxedPath(workspace string, args map[string]any, key string) (string, error) {
-	rel, _ := args[key].(string)
+// writeTargetPath resolves the "path" argument of a write tool against the
+// workspace and the session's read-write directories (--add-dir ...:rw), and
+// nothing else: a path outside both is refused.
+func writeTargetPath(workspace string, dirs *AddDirs, args map[string]any) (readTarget, error) {
+	rel, _ := args["path"].(string)
 	if rel == "" {
-		return "", fmt.Errorf("%q arg is required", key)
+		return readTarget{}, fmt.Errorf("%q arg is required", "path")
 	}
-	return ResolveSandboxedPath(workspace, rel)
+	return resolveWrite(workspace, dirs.WritePaths(), rel)
 }

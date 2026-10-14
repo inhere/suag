@@ -22,6 +22,7 @@ const (
 type FileListTool struct {
 	workspace string
 	readRoots []string // read-only directories outside the workspace
+	addDirs   *AddDirs // the session's added directories, read at call time
 	maxOut    int      // raw result cap in bytes; 0 = DefaultRawOutputBytes
 }
 
@@ -69,7 +70,7 @@ func (t *FileListTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	if dirArg == "" {
 		dirArg = "."
 	}
-	target, err := resolveRead(t.workspace, t.readRoots, dirArg)
+	target, err := resolveRead(t.workspace, withAddDirs(t.readRoots, t.addDirs), dirArg)
 	if err != nil {
 		return nil, err
 	}

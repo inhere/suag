@@ -19,6 +19,7 @@ const defaultFindResults = 200
 type FileFindTool struct {
 	workspace string
 	readRoots []string // read-only directories outside the workspace
+	addDirs   *AddDirs // the session's added directories, read at call time
 	maxOut    int      // raw result cap in bytes; 0 = DefaultRawOutputBytes
 }
 
@@ -56,7 +57,7 @@ func (t *FileFindTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	if pattern == "" {
 		return nil, fmt.Errorf("file_find: pattern is required")
 	}
-	start, err := searchStart(t.workspace, t.readRoots, call.Arguments)
+	start, err := searchStart(t.workspace, withAddDirs(t.readRoots, t.addDirs), call.Arguments)
 	if err != nil {
 		return nil, err
 	}
