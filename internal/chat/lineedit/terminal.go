@@ -22,6 +22,9 @@
 // SetPendingLine, ReadLineNoHistory and AbortLine; a Ctrl-C/Ctrl-D that ends
 // a read is consumed instead of staying in the input remainder.
 //
+// Addition for a lone Esc the caller already decided on (esc.go): SetEscAlone
+// and EscCallback.
+//
 // This file holds the terminal itself and the read loop; key parsing is in
 // keys.go, the cursor and repainting helpers are in render.go.
 //
@@ -99,6 +102,15 @@ type Terminal struct {
 	reading     bool
 	noHistory   bool
 	pendingLine string
+	// escAlone is set by SetEscAlone: the next Esc byte is the Esc key on its own
+	// rather than the start of a sequence (esc.go).
+	escAlone bool
+	// EscCallback, when non-nil, is called for a lone Esc press the caller declared
+	// with SetEscAlone. It is called from inside ReadLine with the terminal lock
+	// released (like AutoCompleteCallback), so it must not use the terminal; a
+	// declared Esc without a callback is dropped like any other key the editor has no
+	// use for.
+	EscCallback func()
 	// inputStyle paints a submitted line (highlight.go); zero by default.
 	inputStyle InputStyle
 }
@@ -177,7 +189,17 @@ func (t *Terminal) readLine() (line string, err error) {
 			var key rune
 			key, rest = bytesToKey(rest, t.pasteActive)
 			if key == utf8.RuneError {
-				break
+				if !t.takeEscAlone(&rest) {
+					break
+				}
+				// A lone Esc the caller declared (SetEscAlone): report the key now
+				// instead of waiting for the rest of a sequence (esc.go).
+				if escCallback := t.EscCallback; escCallback != nil {
+					t.lock.Unlock()
+					escCallback()
+					t.lock.Lock()
+				}
+				continue
 			}
 			if !t.pasteActive {
 				// Local change: the key is consumed (kept out of t.remainder),
