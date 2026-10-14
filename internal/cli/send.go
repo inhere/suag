@@ -14,18 +14,24 @@ import (
 const maxSendStdinBytes = 1 << 20
 
 // sendHelp documents the three text sources of `suga send`, including the way
-// to pass text that would otherwise be read as an option.
+// to pass text that would otherwise be read as an option, and what --session
+// accepts.
 const sendHelp = `The message text comes from arguments, --text, or stdin; the first source that is
 given wins, and arguments cannot be combined with --text:
-  suga send --session <id> 你好 世界      arguments, joined with a single space
-  suga send --session <id> --text 你好    the --text option
-  echo 你好 | suga send --session <id>    stdin, when neither of the above is used
+  suga send --session <id|name> 你好 世界      arguments, joined with a single space
+  suga send --session <id|name> --text 你好    the --text option
+  echo 你好 | suga send --session <id|name>    stdin, when neither of the above is used
 Options may be written before or after the arguments. Everything after a "--"
 separator counts as text, which is how to pass text that starts with "-":
-  suga send --session <id> -- -hello`
+  suga send --session <id|name> -- -hello
+
+--session takes a session ID, a session ID prefix, or the short name of a
+running chat (suga ps, like suga-k7); the full ID wins over a short name, which
+wins over a prefix. A selector that matches several processes exits 2.`
 
 // sendExamples is shown under "Examples:" by `suga send --help`.
 const sendExamples = `suga send --session 1a2b 你好 世界
+suga send --session suga-k7 你好 世界
 suga send --session 1a2b --text 你好
 echo 你好 | suga send --session 1a2b
 suga send --session 1a2b --wait 你好
@@ -80,10 +86,10 @@ func newSendCommand(stdin io.Reader, stderr io.Writer) *capp.Cmd {
 		return nil
 	})
 	send.SetOutput(stderr)
-	send.Usage = "suga send --session <id> [--text <text> | <text>...] [--source <label>] [--wait]"
+	send.Usage = "suga send --session <id|name> [--text <text> | <text>...] [--source <label>] [--wait]"
 	send.Example = sendExamples
 	send.LongHelp = sendHelp
-	send.StringVar(&sendSession, "session", "", "session ID, prefix, or name")
+	send.StringVar(&sendSession, "session", "", "session ID, ID prefix, or the short name of a running chat (suga ps)")
 	send.StringVar(&sendText, "text", "", "message text; cannot be combined with arguments; defaults to stdin{[]}")
 	send.StringVar(&sendSource, "source", "cli", "source label the chat shows before the text as [来自 <source>]; text already starting with a [...] tag is shown as is{[]}")
 	send.BoolVar(&sendWait, "wait", false, "wait until a queued message starts a turn; exit 3 if it is discarded{[]}")

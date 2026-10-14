@@ -34,7 +34,7 @@ func TestCLIRegistersProcessCommandsAndSendExitCodes(t *testing.T) {
 	t.Setenv("SUGA_HOME", home)
 	root := filepath.Join(home, "run")
 	delivered := make(chan string, 1)
-	server, err := process.Start(root, "session-cli-123", "CLI test", t.TempDir(), func(text, from string) (bool, error) {
+	server, err := process.Start(root, "session-cli-123", "suga-k7", t.TempDir(), func(text, from string) (bool, error) {
 		delivered <- from + ":" + text
 		return false, nil
 	})
@@ -63,6 +63,14 @@ func TestCLIRegistersProcessCommandsAndSendExitCodes(t *testing.T) {
 	assert.NoErr(t, json.Unmarshal(stdout.Bytes(), &records))
 	assert.Eq(t, 1, len(records))
 	assert.Eq(t, "session-cli-123", records[0].SessionID)
+	// The name column is the short name `suga send --session <name>` takes; the
+	// chat banner of that session shows the same one.
+	assert.Eq(t, "suga-k7", records[0].Name)
+
+	stdout.Reset()
+	err = newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"ps"})
+	assert.NoErr(t, err)
+	assert.StrContains(t, stdout.String(), "session-cli-123\tsuga-k7\t")
 
 	err = newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"send", "--session", "missing-session", "--text", "hello"})
 	var exitCoder interface{ ExitCode() int }

@@ -21,10 +21,17 @@ type sendHarness struct {
 
 func newSendHarness(t *testing.T, sessionID string) *sendHarness {
 	t.Helper()
+	return newNamedSendHarness(t, sessionID, "send test")
+}
+
+// newNamedSendHarness is newSendHarness with an explicit short name, the address
+// `suga send --session <name>` accepts.
+func newNamedSendHarness(t *testing.T, sessionID, name string) *sendHarness {
+	t.Helper()
 	home := shortCLIHome(t)
 	t.Setenv("SUGA_HOME", home)
 	delivered := make(chan string, 8)
-	server, err := process.Start(filepath.Join(home, "run"), sessionID, "send test", t.TempDir(), func(text, from string) (bool, error) {
+	server, err := process.Start(filepath.Join(home, "run"), sessionID, name, t.TempDir(), func(text, from string) (bool, error) {
 		delivered <- from + ":" + text
 		return false, nil
 	})
@@ -148,14 +155,44 @@ func (unreadableStdin) Read([]byte) (int, error) {
 	return 0, errors.New("stdin must not be read without --session")
 }
 
+func TestSendResolvesByShortName(t *testing.T) {
+	h := newNamedSendHarness(t, "sess_abc123", "ws-k7")
+	t.Run("--session takes the short name from suga ps", func(t *testing.T) {
+		h.session = "ws-k7"
+		_, err := h.run(t, "", "你好")
+		assert.NoErr(t, err)
+		assert.Eq(t, "cli:你好", h.next(t))
+	})
+	t.Run("the short name matches without case", func(t *testing.T) {
+		h.session = "WS-K7"
+		_, err := h.run(t, "", "你好")
+		assert.NoErr(t, err)
+		assert.Eq(t, "cli:你好", h.next(t))
+	})
+	t.Run("the session ID still wins over a short name", func(t *testing.T) {
+		h.session = "sess_abc123"
+		_, err := h.run(t, "", "你好")
+		assert.NoErr(t, err)
+		assert.Eq(t, "cli:你好", h.next(t))
+	})
+	t.Run("an unknown short name exits 3", func(t *testing.T) {
+		h.session = "other-aa"
+		_, err := h.run(t, "", "你好")
+		assert.Eq(t, 3, ExitCode(err))
+	})
+}
+
 func TestSendHelpShowsBothTextForms(t *testing.T) {
 	t.Setenv("SUGA_HOME", shortCLIHome(t))
 	var stdout, stderr bytes.Buffer
 	err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"send", "--help"})
 	assert.NoErr(t, err)
 	help := stderr.String()
-	assert.StrContains(t, help, "suga send --session <id> [--text <text> | <text>...]")
-	assert.StrContains(t, help, "suga send --session <id> 你好 世界")
-	assert.StrContains(t, help, "suga send --session <id> -- -hello")
+	assert.StrContains(t, help, "suga send --session <id|name> [--text <text> | <text>...]")
+	assert.StrContains(t, help, "suga send --session <id|name> 你好 世界")
+	assert.StrContains(t, help, "suga send --session <id|name> -- -hello")
 	assert.StrContains(t, help, "arguments cannot be combined with --text")
+	// --session documents the short names `suga ps` lists.
+	assert.StrContains(t, help, "suga send --session suga-k7 你好 世界")
+	assert.StrContains(t, help, "short name of a")
 }
