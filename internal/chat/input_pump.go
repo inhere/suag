@@ -49,6 +49,14 @@ const (
 // makes it the start of an escape sequence (arrow keys, paste markers).
 const escByte = 0x1b
 
+// crByte and lfByte are the bytes a terminal hands over for Enter: CR in raw mode,
+// LF for a line typed in cooked mode (ICRNL on Unix; the Windows console sends CRLF),
+// which the line editor takes as Enter too (lineedit.keyLF).
+const (
+	crByte = 0x0d
+	lfByte = 0x0a
+)
+
 // escWaitTimeout is how long a read waits for a byte after 0x1b before taking the
 // Esc as a key press of its own (design D2).
 const escWaitTimeout = 50 * time.Millisecond
@@ -61,6 +69,11 @@ type chatActivityReader struct {
 	source       *chatInputSource
 	input        io.Reader
 	activitySent bool
+	// crHanded is true while the byte read last is a CR: the LF directly after it is
+	// the LF half of a CRLF pair (a pre-typed line from the Windows console, a CRLF
+	// paste), not an Enter of its own — x/term drops the same LF when both bytes
+	// arrive in one read. Any other byte clears it.
+	crHanded bool
 }
 
 func (r *chatActivityReader) Read(p []byte) (int, error) {
@@ -80,6 +93,13 @@ func (r *chatActivityReader) Read(p []byte) (int, error) {
 		if n == 0 {
 			r.source.recordEOF(err)
 			return 0, err
+		}
+		// The LF of a CRLF pair belongs to the CR before it: drop it instead of letting
+		// it submit an empty line at the next prompt read (see crHanded).
+		pairLF := one[0] == lfByte && r.crHanded
+		r.crHanded = one[0] == crByte
+		if pairLF {
+			continue
 		}
 		epoch := r.source.currentEpoch()
 		if !r.activitySent {

@@ -37,10 +37,14 @@ var vt100EscapeCodes = EscapeCodes{
 }
 
 const (
-	keyCtrlC     = 3
-	keyCtrlD     = 4
-	keyCtrlU     = 21
-	keyEnter     = '\r'
+	keyCtrlC = 3
+	keyCtrlD = 4
+	keyCtrlU = 21
+	keyEnter = '\r'
+	// keyLF is Enter as well: a terminal hands Enter over as LF when the line was
+	// typed in cooked mode (a line buffered before the prompt: ICRNL on Unix, or
+	// the Windows console's CRLF), and x/term takes a bare LF as Enter too.
+	keyLF        = '\n'
 	keyEscape    = 27
 	keyBackspace = 127
 	keyUnknown   = 0xd800 /* UTF-16 surrogate area */ + iota
@@ -230,7 +234,7 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 				t.setLine(runes, len(runes))
 			}
 		}
-	case keyEnter:
+	case keyEnter, keyLF:
 		// A submitted line stays on screen, repainted on the input style's
 		// background when one is set (highlight.go).
 		if !t.repaintSubmittedLine() {
