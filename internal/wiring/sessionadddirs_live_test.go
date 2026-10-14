@@ -103,6 +103,8 @@ func TestSessionAddDirsLive(t *testing.T) {
 		events := addDirEvents(t, rt, sessionID)
 		assert.Eq(t, "remove", events[len(events)-1].Name)
 		assert.Eq(t, granted, events[len(events)-1].Attrs["path"])
+		// The event names the mode the session loses.
+		assert.Eq(t, "ro", events[len(events)-1].Attrs["mode"])
 	})
 	t.Run("a read-only session only accepts read-only directories", func(t *testing.T) {
 		readOnlyRT, _ := openAddDirsChatSession(t, Options{ReadOnly: true})

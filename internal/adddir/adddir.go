@@ -339,15 +339,22 @@ func Without(dirs []Dir, path string) []Dir {
 	return out
 }
 
-// Has reports whether path is one of dirs.
-func Has(dirs []Dir, path string) bool {
+// Find returns the entry of dirs for path; ok is false when path is not in the
+// set.
+func Find(dirs []Dir, path string) (Dir, bool) {
 	key := pathKey(path)
 	for _, dir := range dirs {
 		if pathKey(dir.Path) == key {
-			return true
+			return dir, true
 		}
 	}
-	return false
+	return Dir{}, false
+}
+
+// Has reports whether path is one of dirs.
+func Has(dirs []Dir, path string) bool {
+	_, ok := Find(dirs, path)
+	return ok
 }
 
 // pathKey normalises a path for the duplicate check (case-insensitive on

@@ -185,12 +185,15 @@ func (h *SessionAddDirs) Remove(ctx context.Context, value string) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	if !adddir.Has(current, path) {
+	// The event names the entry that went away: its mode is what the session
+	// loses.
+	gone, ok := adddir.Find(current, path)
+	if !ok {
 		return false, nil
 	}
 	merged := adddir.Without(current, path)
 	err = h.publish(ctx, sessionID, current, merged, func() personal.HostEvent {
-		return addDirEvent("remove", adddir.Dir{Path: path}, adddir.SourceSession)
+		return addDirEvent("remove", gone, adddir.SourceSession)
 	})
 	return err == nil, err
 }
