@@ -81,7 +81,9 @@ rules:
 3. `replace` rewrites the text that is kept: its patterns are compiled in
    multi-line mode, so `^`/`$` are line anchors (a pattern written per line
    behaves like one) and a pattern may span lines by writing `\n` - `.` still
-   does not match a newline, add `(?s)` for that. The items run in order.
+   does not match a newline, add `(?s)` for that. Every match of a pattern is
+   replaced (a literal `$` in `with` is written `$$`), and the items run in
+   order, so a later one sees what an earlier one produced.
 4. `group_by` merges the neighbouring lines that share a key. A key with a
    single line keeps its own shape: grouping it would only add a line.
 5. `head`/`tail` keep the first and last N lines, the rest becomes a marker.
