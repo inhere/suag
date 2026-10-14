@@ -101,6 +101,47 @@ func TestRendererLastReply(t *testing.T) {
 	})
 }
 
+// TestRendererToolArgsAreReadable: encoding/json escapes <, > and & as
+// \u003c, \u003e and \u0026 (its HTML escaping), which turns the command of a
+// shell call such as `gofer issue ready 2>&1 | grep x < in > out` into unreadable
+// escapes on the tool line. The line shows the arguments as they were written;
+// the events, the transcript and stream-json keep the escaped machine text.
+func TestRendererToolArgsAreReadable(t *testing.T) {
+	const args = `{"command":"gofer issue ready 2>&1 | Select-Object -First 40 < in > out","timeout":120}`
+
+	t.Run("a shell command is shown as it is", func(t *testing.T) {
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out}).Handle(personal.Event{
+			Kind: "tool_call", ToolName: "shell_exec", Text: args})
+		assert.Eq(t, "⏺ shell_exec "+args+"\n", out.String())
+		assert.StrNotContains(t, out.String(), `\u00`)
+	})
+
+	t.Run("a sub-agent's tool call as well", func(t *testing.T) {
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out}).Handle(personal.Event{Kind: "agent_progress", Agent: "survey",
+			ToolName: "file_grep", Text: `{"pattern":"a<b>c&d"}`})
+		assert.Eq(t, `  · file_grep {"pattern":"a<b>c&d"}`+"\n", out.String())
+	})
+
+	t.Run("numbers keep their exact form", func(t *testing.T) {
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out}).Handle(personal.Event{Kind: "tool_call", ToolName: "t",
+			Text: `{"timeout":120,"big":9007199254740993,"ratio":1.50}`})
+		// Keys are encoded sorted, like the summary itself was (a map).
+		assert.Eq(t, `⏺ t {"big":9007199254740993,"ratio":1.50,"timeout":120}`+"\n", out.String())
+	})
+
+	t.Run("anything that is not one JSON value is shown as it is", func(t *testing.T) {
+		for _, text := range []string{"not json 2>&1", `{"a":1} {"b":"<x>"}`, ""} {
+			var out bytes.Buffer
+			newRenderer(rendererOptions{Out: &out}).Handle(personal.Event{Kind: "tool_call", ToolName: "t", Text: text})
+			want := "⏺ t" + map[bool]string{true: " " + text, false: ""}[text != ""] + "\n"
+			assert.Eq(t, want, out.String())
+		}
+	})
+}
+
 func TestRendererPlainTurn(t *testing.T) {
 	var out, errOut bytes.Buffer
 	r := newRenderer(rendererOptions{Out: &out, Err: &errOut, Provider: "opencode", Model: "glm-5", now: testClock})

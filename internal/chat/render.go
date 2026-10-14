@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -200,7 +202,7 @@ func (r *Renderer) Handle(event personal.Event) {
 	case "tool_call":
 		r.live.Finish() // never start a tool line in the middle of streamed text
 		line := "⏺ " + event.ToolName
-		if args := truncateLine(event.Text, callArgsLimit); args != "" {
+		if args := truncateLine(toolArgsText(event.Text), callArgsLimit); args != "" {
 			line += " " + args
 		}
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, line))
@@ -218,7 +220,7 @@ func (r *Renderer) Handle(event personal.Event) {
 		// A sub-agent's tool call, under the agent call that started it.
 		r.live.Finish()
 		line := "  · " + event.ToolName
-		if args := truncateLine(event.Text, callArgsLimit); args != "" {
+		if args := truncateLine(toolArgsText(event.Text), callArgsLimit); args != "" {
 			line += " " + args
 		}
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, line))
@@ -512,4 +514,36 @@ func truncateLine(s string, limit int) string {
 		return s
 	}
 	return string(runes[:limit-1]) + "…"
+}
+
+// toolArgsText makes the arguments of a tool call (event.Text, the compact JSON
+// of personal.toolArgSummary) readable. encoding/json escapes <, > and & as
+// \u003c, \u003e and \u0026 for HTML, which turns the command of a shell call
+// such as `gofer ready 2>&1 | grep x` into unreadable escapes on the tool line:
+// decode the text and encode it again with HTML escaping off. Numbers keep their
+// exact form (decoder.UseNumber) and the keys keep the order the summary has
+// (both encode a map by sorted key). Anything that is not JSON is shown as it is.
+// Only the display changes; the events, the transcript and stream-json keep the
+// escaped text.
+func toolArgsText(text string) string {
+	if text == "" {
+		return ""
+	}
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.UseNumber()
+	var value any
+	if err := dec.Decode(&value); err != nil {
+		return text
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return text // more than one value: not the summary this is written for
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(value); err != nil {
+		return text
+	}
+	// Encoder.Encode ends every value with a newline; the tool line is one line.
+	return strings.TrimSuffix(buf.String(), "\n")
 }
