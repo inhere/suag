@@ -4,7 +4,14 @@
 
 ## [未发布]
 
-chat 里被 Ctrl-C 中断的回合改显示“已中断本轮”，不再出现原样的 `context canceled`。
+### 新增
+
+- `suga run --max-steps N`（N 至少 1）覆盖本轮的步数上限：优先于环境变量 `SUGA_MAX_STEPS`，再优先于配置 `max_steps`（默认 100）；子 agent 的 `agents.max_steps` 不受影响。
+- 到达上限收尾不再需要猜：stream-json 的 `result` 行在收尾时带 `wrap_up`（步数上限为 `"max_steps"`），正常答复不带该字段；`--output-format text` 在 stderr 打印一行说明（如“本轮因步数上限（100 步）收尾，以上答复只基于此前已获得的信息”），stdout 仍只有答复正文。
+
+### 变更
+
+- 收尾指令统一要求模型在报告开头如实写明真实原因（步数上限 / token 预算 / 时间上限），并说明不得写成超时或其它原因：此前模型把因步数上限截短的汇报说成“超时提前收尾”。
 
 ### 修复
 

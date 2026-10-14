@@ -56,7 +56,7 @@
 |---|---|---|
 | `workspace` | `""`（当前工作目录） | 文件与 shell 工具的工作区根 |
 | `rules.file` | `AGENTS.md` | 每级目录读取的项目规则文件名（只接受文件名，不能带路径），如 `CLAUDE.md`；`$SUGA_HOME/AGENTS.md` 始终读取 |
-| `max_steps` | `100` | 一次任务的最大 ReAct 循环步数 |
+| `max_steps` | `100` | 一次任务（一轮）的最大 ReAct 循环步数；可被环境变量 `SUGA_MAX_STEPS` 与 `run --max-steps N` 覆盖（子 agent 用 `agents.max_steps`），到顶时要求模型收尾并在答复开头写明是步数上限 |
 | `serpapi_key` | `""` | 配置后注册 `web_search`（支持 `${VAR}`） |
 | `transcripts` | 开 | 会话记录（transcript）写到 `$SUGA_HOME/transcripts`；`false` 或 `"off"` 关闭（键值接受布尔或字符串） |
 
@@ -107,7 +107,7 @@
 |---|---|---|
 | `agents.enabled` | `true` | 是否注册 `agent` 工具 |
 | `agents.model` | 不设（会话自身的模型） | 子 agent 使用的模型，写法同 `model`（裸 id 用主模型 provider） |
-| `agents.max_steps` | `30` | 步数上限，达到后要求收尾 |
+| `agents.max_steps` | `30` | 步数上限，达到后要求收尾（不受 `SUGA_MAX_STEPS` / `run --max-steps` 影响） |
 | `agents.max_tokens` | `400000` | 未命中缓存的输入 + 输出上限，达到后要求收尾 |
 | `agents.timeout` | `10m` | 软时间上限（之后 60 秒宽限） |
 
@@ -191,7 +191,7 @@ suga run --prompt "..."   # 单轮；[--allow-write] [--read-only] [--model] [--
                           # [--session-id <id>] [--resume <id>] [--from <id>]
                           # [--output-format text|stream-json] [--mcp-config <file>]
                           # [--append-system-prompt <text>] [--clear-append-system-prompt]
-                          # [--no-project-rules] [--injected]
+                          # [--no-project-rules] [--injected] [--max-steps <N>]
 suga acp                  # 以 ACP stdio 服务（供 gofer 等客户端接入）
 suga send --session <id|前缀> --text <文本>   # 给正在运行的 chat 送话（--wait 等真正开始）
 suga ps                   # 正在运行的 chat 进程
