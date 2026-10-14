@@ -182,7 +182,25 @@ func CurrentTurn(ctx context.Context) (sessionID, turnID string) {
 type limitHook struct {
 	agentcore.NopHook
 	maxTokens int
-	deadline  time.Time
+	// now reads the clock the deadline was computed with (Runner.clock). It is
+	// injected so a test reaches the limit deterministically instead of relying
+	// on the real clock advancing between the two reads (see past).
+	now      func() time.Time
+	deadline time.Time
+}
+
+// past reports whether the run is past its time limit. It compares the
+// injected clock (the real one when the hook was built without one) rather
+// than calling time.Now directly, so the comparison is testable.
+func (h limitHook) past() bool {
+	if h.deadline.IsZero() {
+		return false
+	}
+	now := h.now
+	if now == nil {
+		now = time.Now
+	}
+	return now().After(h.deadline)
 }
 
 func (h limitHook) AfterModel(ctx context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
@@ -193,7 +211,7 @@ func (h limitHook) AfterModel(ctx context.Context, _ *agentcore.ModelEvent, ctrl
 			return nil
 		}
 	}
-	if !h.deadline.IsZero() && time.Now().After(h.deadline) {
+	if h.past() {
 		ctrl.RequestWrapUp(StopTimeout, "已到本次任务的时间上限。不要再调用任何工具，直接根据目前已获得的信息给出报告：结论、证据（文件:行号）、尚未查清的部分。")
 	}
 	return nil

@@ -80,6 +80,12 @@ type Config struct {
 	// 0 = no limit. Sub-agent runners set them.
 	MaxRunTokens int
 	RunTimeout   time.Duration
+	// Now is the clock of the run time limit (RunTimeout): a turn's deadline is
+	// Now()+RunTimeout and the limit hook checks Now() against it after every
+	// model call. nil means time.Now. A test injects a clock because the check
+	// needs the clock to have moved on, which the real one does not guarantee
+	// within so short a limit (its resolution can exceed the limit).
+	Now func() time.Time
 	// ContextWindow is the effective model's context window in tokens (0 = 128000).
 	ContextWindow int
 	// CompactReserveTokens overrides the compaction reserve (default 16000).
@@ -561,9 +567,9 @@ func (r *Runner) turnHooks(usage *usageCollector, denials *turnDenials, sink Emi
 	hooks := append([]agentcore.Hook{usage, denialLimitHook{denials: denials, usage: usage},
 		prefixHook{tracker: r.rec.prefix}}, r.cfg.Hooks...)
 	if r.cfg.MaxRunTokens > 0 || r.cfg.RunTimeout > 0 {
-		limits := limitHook{maxTokens: r.cfg.MaxRunTokens}
+		limits := limitHook{maxTokens: r.cfg.MaxRunTokens, now: r.clock()}
 		if r.cfg.RunTimeout > 0 {
-			limits.deadline = time.Now().Add(r.cfg.RunTimeout)
+			limits.deadline = limits.now().Add(r.cfg.RunTimeout)
 		}
 		hooks = append(hooks, limits)
 	}
@@ -571,6 +577,15 @@ func (r *Runner) turnHooks(usage *usageCollector, denials *turnDenials, sink Emi
 		hooks = append(hooks, toolEventHook{sink: sink, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
 	}
 	return hooks
+}
+
+// clock is the time source of the run time limit (Config.Now; the real clock
+// when none was injected).
+func (r *Runner) clock() func() time.Time {
+	if r.cfg.Now != nil {
+		return r.cfg.Now
+	}
+	return time.Now
 }
 
 // appendTurnOutput replays the turn's tool results (with their call arguments)
