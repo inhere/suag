@@ -246,6 +246,13 @@ const (
 	installRetryDelay = 10 * time.Millisecond
 )
 
+// asideRetries and asideRetryDelay bound how long a release waits for another
+// process to stop reading the released directory (see moveAside).
+const (
+	asideRetries    = 10
+	asideRetryDelay = 50 * time.Millisecond
+)
+
 // targetReady reports whether target is a directory, polling briefly so a
 // release that lost the race to another process sees that process's finished
 // directory (the copy is complete by then: it is renamed into place).
@@ -257,6 +264,41 @@ func targetReady(target string) bool {
 		time.Sleep(installRetryDelay)
 	}
 	return false
+}
+
+// releasedCurrent reports whether target already holds the release this call
+// wants: a directory present (polled like targetReady, because another release
+// may have finished it a moment ago) whose marker records exactly embedded. The
+// file hashes decide, not the version string, the same rule as the early
+// return: a build with another version string but identical files is already
+// what this release would write.
+func releasedCurrent(target string, embedded map[string]string) bool {
+	if !targetReady(target) {
+		return false
+	}
+	marker, ok := readBuiltinMarker(target)
+	return ok && maps.Equal(marker.Files, embedded)
+}
+
+// moveAside renames the directory target aside so the new copy can be renamed
+// into place. Windows refuses that rename while another process reads a file
+// inside target (ERROR_ACCESS_DENIED) or holds the directory itself open
+// (ERROR_SHARING_VIOLATION), and a second suga starting at the same moment does
+// exactly that: it reads the released marker (suga-se0o). Such a refusal is
+// momentary, so it is retried for a moment; a target that went away in the
+// meantime is no error either, because another release just moved it.
+func moveAside(target, aside string) error {
+	var err error
+	for i := 0; i < asideRetries; i++ {
+		switch err = os.Rename(target, aside); {
+		case err == nil, errors.Is(err, fs.ErrNotExist):
+			return nil
+		case !renameConflict(err):
+			return err
+		}
+		time.Sleep(asideRetryDelay)
+	}
+	return err
 }
 
 // installBuiltinSkill writes one released skill directory.
@@ -280,7 +322,14 @@ func installBuiltinSkill(target string, files map[string][]byte, marker builtinM
 	var aside string
 	if _, err := os.Stat(target); err == nil {
 		aside = tmp + ".old"
-		if err := os.Rename(target, aside); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := moveAside(target, aside); err != nil {
+			// Another release of the same version may have finished the upgrade
+			// while this one waited for it to stop reading: then the directory
+			// already holds what this release would write and it is done.
+			if releasedCurrent(target, marker.Files) {
+				slog.Debug("built-in skill already released by another process", "dir", target)
+				return nil
+			}
 			return fmt.Errorf("move the old %s aside: %w", target, err)
 		}
 		defer func() { _ = os.RemoveAll(aside) }()
