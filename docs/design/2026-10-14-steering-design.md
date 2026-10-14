@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 运行中插入消息（steering）与只中止当前回合 设计
 
-> 状态：Draft 0.4 / 待人工计划批准
+> 状态：Draft 0.5 / 待人工计划批准
 
 ## 修订记录
 
@@ -11,6 +11,7 @@
 | 0.2 | 2026-10-14 | Claude（监督会话） | 按独立评审 r1（codex job 20261014-114209-25b62278，结论 BLOCKED）修订：取消时交还本回合全部插话；续跑点的精确条件；chat 输入层按模式分流与回合期间消费者；插话在段交接/压缩中的语义；收件箱容量、`--steer` 回退与 `--wait` 完成点、验收口径 |
 | 0.3 | 2026-10-14 | Claude（监督会话） | 记录用户对 Q1–Q4 的答复（均按建议）：提示符 `↳ `、不做 follow-up 键（suga-8pug）、Esc 中止不确认、按 S1/S2/S3 分阶段；ACP steering 登记为 suga-lkf7；会话间互发登记为 suga-hko7 |
 | 0.4 | 2026-10-14 | Claude（监督会话） | 按子 agent 复评 r2（结论 BLOCKED）修订：用户选 N1 方案 B——放弃“同一回合续跑”，模型给出最终回复即正常结束，未送达插话作为下一回合（D3）；S1 先修 suga-0lxy（回合中途压缩条数不一致）（N2）；中止时退回的插话一律回到输入行、不自动开回合，`--wait` 与 trace 语义重定（N3）；回合中 raw 模式保留输出换行处理、回合中所有输出经输入源（N4）；输入层的 Ask 分流、Esc 超时、半行交接（N5）；收尾时由 agentcore 告知不取插话（N6）；yield、提前返回、stream-json、UserPromptSubmit、开关归属等（N7） |
+| 0.5 | 2026-10-14 | Claude（监督会话） | 按改动确认 r3（结论 PASS_WITH_ISSUES）补 M1：输入行常驻期间的输出方式（只把完整行交给 `Terminal.Write`、未结束尾部缓冲、steer 模式下 spinner 并入状态行）与对应冒烟；r3 的 8 项 MINOR（m1–m8）列为计划阶段事项 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -72,7 +73,7 @@
 
 - 只有在读一行时才进入 raw 模式；回合进行中 `SetBusy(true)` 置 `turnActive` 并强制回到 cooked 模式（`internal/chat/chat_input.go:212-220、292-294`）。注释写明原因：回合中要让 Ctrl-C 产生 SIGINT、stderr 保留换行转换（`chat_input.go:105-108`）。x/term 的 MakeRaw 在 Unix 上清除 OPOST（r2 核对 `term_unix.go:33`）。
 - 输入源是“一次 `Request` 读一行”，`events` 缓冲 1，读到首字节先发 activity 并等 `AckActivity`；回合进行中主循环阻塞在 `runner.Run`，没有消费者（`chat_input.go:47-103、350-411`）。
-- raw 模式下 Ctrl-C 被 lineedit 读成 0x03 并返回 `io.EOF`（`chat_input.go:372-394`）；lineedit 把单独的 ESC 当作未完成序列（`lineedit/terminal.go:247-261`）。
+- raw 模式下 Ctrl-C 被 lineedit 读成 0x03 并返回 `ErrInterrupt`（`lineedit/terminal.go:806、962`；chat 将其与 EOF 一并视为退出，`chat_input.go:372-394`）；lineedit 把单独的 ESC 当作未完成序列（`lineedit/terminal.go:247-261`）。
 - 回合中的 Ctrl-C 是 SIGINT：`cmd/suga/main.go:36` 取消进程级 ctx，chat 回合返回后 `return ctx.Err()` 退出（`internal/chat/chat.go` 回合错误分支）。chat 没有回合级 ctx。
 - 已有“只结束本轮”的路径：审批提问时 Ctrl-C/Ctrl-D 返回 `errAskCancelled`，经 `abortingToolPolicy` 让回合失败，chat 显示“已取消”并继续（`internal/chat/ask.go:14`、`internal/personal/denial.go:116-125`）。Ask 通过 `events` 读答案、`flushInput`/`inputEpoch` 接管读取（`ask.go:48-190`）。
 - chat 在回合中有直接写 stderr 的位置（如 hook 提示、错误输出，`chat.go` 约 185、379 行）。
@@ -147,13 +148,18 @@ S2 先重构输入层，再接入插话与中止。
    事件经按模式区分的通道分发：回合消费者只接收 `steer/abort/exit`，Ask 只接收自己的答案，避免审批答案被当成插话（N5）。
 2. **Esc 判定**：读取协程读到 0x1b 后，若 50ms 内没有后续字节，向 lineedit 送出“单独 Esc”键；有后续字节则按转义序列处理。lineedit 相应修改：单独 Esc 不再挂起等待序列（`terminal.go:247-261`）。
 3. **回合期间的消费者**：chat 在回合开始时启动回合输入协程（与 `runner.Run` 并行），`steer` → `Runner.Steer`（不接受时暂存为“待退回”）；`abort` → 取消回合级 ctx；`exit` → 取消回合并标记退出。回合结束时停止消费者并切回 `prompt`。
-4. **终端模式（N4）**：回合中使用“输入 raw、输出保留换行处理”的模式——Unix 上在 MakeRaw 之后恢复 `OPOST|ONLCR`；Windows 上 MakeRaw 只改输入句柄，输出处理不受影响（实施时核实）。回合中 chat 的所有输出（含 hook 提示、错误）都经输入源写出（`Terminal.Write` 在输入行上方输出并重绘输入行），不再直接写 stderr。
-5. **半行交接（N5）**：回合结束切回 `prompt` 时，`steer` 模式的半行经 `savedLine` 带入提示符读取；Ctrl-C 中止本轮不清除半行。
-6. **回合级 ctx**：`runner.Run` 使用 `context.WithCancel(ctx)` 派生的回合 ctx；`abort` 只取消它，显示“已中断本轮”，回合记 cancelled。raw 模式下 Ctrl-C 不产生 SIGINT，工具子进程随回合 ctx 取消被进程树清理（与现有超时路径相同）。SIGTERM 仍终止整个 chat。
-7. **显示**：`steer` 模式提示符 `↳ `；Enter 提交后在输出区显示淡色“[插话] <文本>（等待送达）”，收到 `steer_delivered` 后以输入行背景样式（suga-lebs）显示为已送达。
-8. **开关**：`chat.steering`（默认开）在 S2 引入；关闭时 `SetBusy(true)` 保持现行为（cooked，Ctrl-C 为 SIGINT）。
-9. **Windows**：S2 前置定位 suga-nrf2；Windows 控制台 raw 模式下 Ctrl+C 作为 0x03 读取在技术上可行（r2 核对 x/term），真机行为需确认，无法自动化部分记 UNVERIFIED_REAL_ENV。
-10. 非终端模式（stdin 不是 tty）不变：不支持插话，Ctrl-C 仍为 SIGINT。
+4. **输出方式（r3 M1）**：`Terminal.Write` 假定写入以换行结尾、写完从第 0 列重画提示符（`lineedit/terminal.go:694-739`），而流式回复按增量写出、spinner 每帧写 `\r\x1b[2K`，都不带换行。回合中输入行常驻后：
+   - 流式输出只把完整行交给 `Terminal.Write`，未结束的尾部先缓冲，回复结束（`message_stop`）或换行时再输出；
+   - steer 模式下不单独绘制 spinner，等待提示并入输入行上方的一行状态（或停用），避免与输入行争用同一行；
+   - 超出行宽的行按终端宽度折行计算，避免光标行数算错留下残行。
+   冒烟必须覆盖“长流式回复（含超宽行）+ 正在输入插话”，并做反向验证。
+5. **终端模式（N4）**：回合中使用“输入 raw、输出保留换行处理”的模式——Unix 上在 MakeRaw 之后恢复 `OPOST|ONLCR`；Windows 上 MakeRaw 只改输入句柄，输出处理不受影响（实施时核实）。回合中 chat 的所有输出（含 hook 提示、错误）都经输入源写出（`Terminal.Write` 在输入行上方输出并重绘输入行），不再直接写 stderr。
+6. **半行交接（N5）**：回合结束切回 `prompt` 时，`steer` 模式的半行经 `savedLine` 带入提示符读取；Ctrl-C 中止本轮不清除半行。
+7. **回合级 ctx**：`runner.Run` 使用 `context.WithCancel(ctx)` 派生的回合 ctx；`abort` 只取消它，显示“已中断本轮”，回合记 cancelled。raw 模式下 Ctrl-C 不产生 SIGINT，工具子进程随回合 ctx 取消被进程树清理（与现有超时路径相同）。SIGTERM 仍终止整个 chat。
+8. **显示**：`steer` 模式提示符 `↳ `；Enter 提交后在输出区显示淡色“[插话] <文本>（等待送达）”，收到 `steer_delivered` 后以输入行背景样式（suga-lebs）显示为已送达。
+9. **开关**：`chat.steering`（默认开）在 S2 引入；关闭时 `SetBusy(true)` 保持现行为（cooked，Ctrl-C 为 SIGINT）。
+10. **Windows**：S2 前置定位 suga-nrf2；Windows 控制台 raw 模式下 Ctrl+C 作为 0x03 读取在技术上可行（r2 核对 x/term），真机行为需确认，无法自动化部分记 UNVERIFIED_REAL_ENV。
+11. 非终端模式（stdin 不是 tty）不变：不支持插话，Ctrl-C 仍为 SIGINT。
 
 ### chat：退回插话的处理（D3、D4、N3）
 
@@ -241,6 +247,8 @@ S2 先重构输入层，再接入插话与中止。
 
 Q1–Q4（2026-10-14，均按建议）与 r2 N1（方案 B）均已由用户答复；当前无待确认事项。
 
+计划阶段需落实的事项（r3 MINOR，见 `local/reviews/2026-10-14-steering-design-review-r3.md`）：m1 completed 回合退回插话与 deliveries/taskWake 的先后、合并 prompt 的 injected 标记、chat 先退出时 send 插话的 settle；m2 `Response` 增加 steered 及第二段响应条件、DeliverWaitFunc 带 mode；m3 Esc 判定需要字节泵协程或平台 VTIME，并保证 Ask 的 flushInput 仍有效；m4 `RunState.WrapUp` 为瞬时字段（不进 JSON），每步重新赋值；m5 恢复 OPOST 按平台取 termios 请求码，slog 直写 stderr 的处理；m6 已更正为 `ErrInterrupt`；m7 两次 Ctrl-C 的计时在 prompt 与 steer 模式间共用；m8 收件箱打开前的短窗口内键入的插话成为下一回合（接受，写入文档）。
+
 <details><summary>原问题（存档）</summary>
 
 - **Q1** 回合中的输入提示符样式：建议 `↳ `。
@@ -255,4 +263,4 @@ Q1–Q4（2026-10-14，均按建议）与 r2 N1（方案 B）均已由用户答�
 
 方案以“会话收件箱（取出登记、结束退回）”为核心，回合结束条件不变（方案 B），chat 键盘（先重构输入层）与 `send --steer` 作为入口，ACP 与 run 不提供插话入口；主要风险在回合中 raw 输入后的终端行为（含 Windows），通过 `chat.steering` 开关回退。
 
-评审经过：Draft 0.1 → r1（codex）BLOCKED → 0.2；0.3 记录 Q1–Q4；r2（子 agent）BLOCKED → 0.4（N1 方案 B 由用户选定）。下一步：对 0.4 的改动部分做一次确认；无 CORE_BLOCKING 后请用户批准本设计 → 起草实施计划。批准设计不授权实施。
+评审经过：Draft 0.1 → r1（codex）BLOCKED → 0.2；0.3 记录 Q1–Q4；r2（子 agent）BLOCKED → 0.4（N1 方案 B 由用户选定）→ r3 改动确认 PASS_WITH_ISSUES（无 CORE_BLOCKING）→ 0.5 补 M1。下一步：请用户批准本设计 → 起草实施计划（落实 m1–m8）。批准设计不授权实施。
