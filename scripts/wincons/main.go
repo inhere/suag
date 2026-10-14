@@ -76,8 +76,22 @@ const (
 
 	keyEventType = 0x0001
 	vkReturn     = 0x0D
-	promptWait   = 30 * time.Second
-	ctrlCByte    = "\x03"
+	// vkC and leftCtrlPressed are the key a real Ctrl+C press reports; its
+	// character is 0x03 (ctrlCChar), the byte a raw reader gets for the key.
+	vkC             = 0x43
+	leftCtrlPressed = 0x0008
+	ctrlCChar       = 0x03
+	promptWait      = 30 * time.Second
+	ctrlCByte       = "\x03"
+
+	// What the scenarios wait for in the chat's output: the prompt, the notice
+	// that only this turn ended, the line of an inserted message, and the resume
+	// command chat prints on its way out (its absence means chat is still there).
+	promptMarker  = "❯ "
+	abortMarker   = "已中断本轮"
+	steerMarker   = "[插话]"
+	resumeMarker  = "续接：suga chat --resume sess_"
+	confirmWindow = 3 * time.Second
 )
 
 // keyEventRecord is the KEY_EVENT_RECORD of a console input record.
@@ -109,6 +123,16 @@ type options struct {
 	deliver   bool
 	ptyProbe  bool
 	selfChild bool
+	// scenario selects what the harness expects of Ctrl+C during a tool call:
+	// "steer" (chat.steering on, the default) presses the key so the console -
+	// raw while the turn runs - hands the reader the byte 0x03, which must end
+	// this turn only; "exit" configures chat.steering: false, the console stays
+	// cooked, the key becomes SIGINT and chat exits at once (the behaviour before
+	// steering).
+	scenario string
+	// steerMessage is what scenario "steer" types into the running turn before
+	// pressing Ctrl+C.
+	steerMessage string
 	// consoleOutput gives the chat the console itself as stdout/stderr instead
 	// of a pipe: colour, the spinner and the input highlight are then on, as in a
 	// person's terminal (the pipe and NO_COLOR turn them off), but the output can
@@ -128,6 +152,8 @@ func main() {
 	flag.BoolVar(&opts.noEvent, "no-ctrl-c", false, "do not send Ctrl+C (control run: the turn keeps running)")
 	flag.BoolVar(&opts.consoleOutput, "console-output", false, "let the chat write to the console (colour, spinner, highlight on), as a person's terminal does")
 	flag.BoolVar(&opts.deliver, "deliver", false, "start the turn with `suga send` instead of typing (a turn while the prompt read is pending)")
+	flag.StringVar(&opts.scenario, "scenario", "steer", "what Ctrl+C must do: steer (chat.steering on: end this turn only) or exit (chat.steering off: end chat)")
+	flag.StringVar(&opts.steerMessage, "steer-message", "改一下", "message typed into the running turn (scenario steer)")
 	flag.BoolVar(&opts.ptyProbe, "pty-probe", false, "check what the Ctrl+C byte does to a child in a pseudoconsole")
 	flag.BoolVar(&opts.selfChild, "self-child", false, "run as the child of --pty-probe")
 	flag.Parse()
@@ -144,6 +170,16 @@ func main() {
 	}
 	if _, err := os.Stat(opts.bin); err != nil {
 		fmt.Fprintf(os.Stderr, "suga binary %s: %v\n", opts.bin, err)
+		os.Exit(2)
+	}
+	if opts.scenario != "steer" && opts.scenario != "exit" {
+		fmt.Fprintf(os.Stderr, "unknown -scenario %q (steer or exit)\n", opts.scenario)
+		os.Exit(2)
+	}
+	if opts.scenario == "steer" && opts.consoleOutput {
+		// The steer scenario asserts on the output (the notice, the put-back
+		// line), and --console-output sends it to the console instead.
+		fmt.Fprintln(os.Stderr, "-scenario steer needs the output: do not combine it with -console-output")
 		os.Exit(2)
 	}
 	if opts.command == "" {
@@ -166,7 +202,8 @@ func main() {
 // chatConsole drives one `suga chat` process on a Windows console.
 type chatConsole interface {
 	TypeLine(text string) error     // type a message and Enter, as a keyboard does
-	SendCtrlC() error               // press Ctrl+C
+	SendCtrlC() error               // press Ctrl+C the way a cooked console reports it
+	SendCtrlCByte() error           // write the byte the Ctrl+C key is in raw input mode
 	ModeReport() string             // the console input mode flags seen while the turn ran
 	Output() string                 // what the program printed so far
 	WaitExit(d time.Duration) error // wait for the program to end
@@ -235,16 +272,79 @@ func run(opts options) error {
 	}
 
 	start := time.Now()
-	if err := cons.SendCtrlC(); err != nil {
+	return runInterruptScenario(opts, cons, ws, start)
+}
+
+// runInterruptScenario presses Ctrl+C during the running tool call and checks
+// what it ended. With chat.steering off ("exit") the console stays cooked, the
+// key becomes SIGINT and chat exits at once - the behaviour before steering.
+// With chat.steering on ("steer") the console is raw while the turn runs, so the
+// key arrives as the byte 0x03, which must end this turn only: chat stays (no
+// resume line), the message typed into the turn comes back to the input line,
+// and a second press within confirmWindow leaves chat.
+func runInterruptScenario(opts options, cons chatConsole, ws string, start time.Time) error {
+	steering := opts.scenario == "steer"
+	if steering {
+		// A message typed while the tool runs: with the console raw the editor takes
+		// it, and the turn's end must hand it back to the input line.
+		if err := cons.TypeLine(opts.steerMessage); err != nil {
+			return fmt.Errorf("type the inserted message: %w", err)
+		}
+		if err := waitForOutput(cons, steerMarker, promptWait); err != nil {
+			fmt.Printf("output:\n%s\n", tail(cons.Output(), 40))
+			return fmt.Errorf("the inserted message was never shown: %w", err)
+		}
+		fmt.Printf("the inserted message is on screen at %s\n", time.Now().Format("15:04:05.000"))
+		start = time.Now()
+	}
+	press := cons.SendCtrlC
+	if steering {
+		press = cons.SendCtrlCByte
+	}
+	if err := press(); err != nil {
 		return fmt.Errorf("Ctrl+C: %w", err)
 	}
-	exited := cons.WaitExit(opts.timeout)
-	fmt.Printf("output:\n%s\n", tail(cons.Output(), 40))
-	fmt.Printf("tool finished on its own: %v\n", fileExists(filepath.Join(ws, finishedMarker)))
-	if exited != nil {
-		return fmt.Errorf("suga did not exit within %s after Ctrl+C", opts.timeout)
+	if !steering {
+		if err := cons.WaitExit(opts.timeout); err != nil {
+			fmt.Printf("output:\n%s\n", tail(cons.Output(), 40))
+			return fmt.Errorf("suga did not exit within %s after Ctrl+C", opts.timeout)
+		}
+		fmt.Printf("output:\n%s\n", tail(cons.Output(), 40))
+		fmt.Printf("tool finished on its own: %v\n", fileExists(filepath.Join(ws, finishedMarker)))
+		fmt.Printf("RESULT: chat.steering off: Ctrl+C ended chat %s after the press (SIGINT)\n",
+			time.Since(start).Round(time.Millisecond))
+		return nil
 	}
-	fmt.Printf("RESULT: suga exited %s after Ctrl+C\n", time.Since(start).Round(time.Millisecond))
+	if err := waitForOutput(cons, abortMarker, opts.timeout); err != nil {
+		fmt.Printf("output:\n%s\n", tail(cons.Output(), 40))
+		return fmt.Errorf("one Ctrl+C did not end the turn: %w", err)
+	}
+	// The turn ended: chat must be back at the prompt (the input line, with the
+	// inserted message back in it), and must not have printed its resume command.
+	aborted := time.Since(start)
+	_ = waitForOutput(cons, promptMarker, opts.timeout)
+	out := cons.Output()
+	if strings.Contains(out, resumeMarker) {
+		fmt.Printf("output:\n%s\n", tail(out, 40))
+		return fmt.Errorf("one Ctrl+C ended the whole chat; it must end this turn only")
+	}
+	if !strings.Contains(out, opts.steerMessage) {
+		fmt.Printf("output:\n%s\n", tail(out, 40))
+		return fmt.Errorf("the inserted message %q is not back in the input line", opts.steerMessage)
+	}
+	fmt.Printf("output:\n%s\n", tail(out, 40))
+	fmt.Printf("tool finished on its own: %v\n", fileExists(filepath.Join(ws, finishedMarker)))
+	fmt.Printf("RESULT: one Ctrl+C ended this turn only %s after the press; chat is still running\n",
+		aborted.Round(time.Millisecond))
+	second := time.Now()
+	if err := cons.SendCtrlCByte(); err != nil {
+		return fmt.Errorf("second Ctrl+C: %w", err)
+	}
+	if err := cons.WaitExit(opts.timeout); err != nil {
+		return fmt.Errorf("suga did not exit within %s after the second Ctrl+C", opts.timeout)
+	}
+	fmt.Printf("RESULT: the second Ctrl+C %s after the first (window %s) left chat\n",
+		second.Sub(start).Round(time.Millisecond), confirmWindow)
 	return nil
 }
 
@@ -316,6 +416,23 @@ func (c *classicConsole) TypeLine(text string) error {
 	return nil
 }
 
+// SendCtrlCByte writes the Ctrl+C key into the console input buffer as a
+// KEY_EVENT: with ENABLE_PROCESSED_INPUT off (raw, which suga sets while a turn
+// runs with chat.steering) the console does not raise a CTRL_C_EVENT for the key
+// but hands its character 0x03 to whoever reads - exactly what a person pressing
+// Ctrl+C on a raw console gets.
+func (c *classicConsole) SendCtrlCByte() error {
+	records := []inputRecord{ctrlCKeyRecord(true), ctrlCKeyRecord(false)}
+	var written uint32
+	r, _, e := procWriteConsoleInputW.Call(c.in.Fd(), uintptr(unsafe.Pointer(&records[0])),
+		uintptr(len(records)), uintptr(unsafe.Pointer(&written)))
+	if r == 0 {
+		return fmt.Errorf("WriteConsoleInput: %v", e)
+	}
+	fmt.Printf("wrote the Ctrl+C key (char 0x03) to the console input at %s\n", time.Now().Format("15:04:05.000"))
+	return nil
+}
+
 // SendCtrlC asks the console to deliver CTRL_C_EVENT to its processes: what it
 // does itself for a real Ctrl+C while ENABLE_PROCESSED_INPUT is set.
 func (c *classicConsole) SendCtrlC() error {
@@ -379,6 +496,14 @@ func (c *ptyConsole) TypeLine(text string) error { return c.pty.Write(text + "\r
 // that ends up as a CTRL_C_EVENT or as input to the program is exactly what the
 // console mode decides.
 func (c *ptyConsole) SendCtrlC() error {
+	fmt.Printf("writing the Ctrl+C byte 0x03 to the pseudoconsole input at %s\n", time.Now().Format("15:04:05.000"))
+	return c.pty.Write(ctrlCByte)
+}
+
+// SendCtrlCByte writes the byte the terminal sends for the Ctrl+C key: on a raw
+// console (chat.steering on) that byte reaches the program as input, on a cooked
+// one it becomes a CTRL_C_EVENT.
+func (c *ptyConsole) SendCtrlCByte() error {
 	fmt.Printf("writing the Ctrl+C byte 0x03 to the pseudoconsole input at %s\n", time.Now().Format("15:04:05.000"))
 	return c.pty.Write(ctrlCByte)
 }
@@ -576,6 +701,11 @@ memory:
   project:
     backend: files
 `, port)
+	if opts.scenario == "exit" {
+		// The behaviour before steering: a turn leaves the console cooked, so Ctrl+C
+		// raises SIGINT and ends chat.
+		config += "chat:\n  steering: false\n"
+	}
 	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte(config), 0o644); err != nil {
 		return err
 	}
@@ -695,6 +825,21 @@ func keyRecord(char uint16, down bool) inputRecord {
 	k := keyEventRecord{RepeatCount: 1, VirtualKeyCode: char, UnicodeChar: char}
 	if char >= 'a' && char <= 'z' {
 		k.VirtualKeyCode = char - 'a' + 'A'
+	}
+	if down {
+		k.KeyDown = 1
+	}
+	copy(rec.Event[:], (*[16]byte)(unsafe.Pointer(&k))[:])
+	return rec
+}
+
+// ctrlCKeyRecord is the KEY_EVENT the console reports for a Ctrl+C press: the C
+// key with the Ctrl state held, whose character is 0x03.
+func ctrlCKeyRecord(down bool) inputRecord {
+	rec := inputRecord{EventType: keyEventType}
+	k := keyEventRecord{
+		RepeatCount: 1, VirtualKeyCode: vkC, UnicodeChar: ctrlCChar,
+		ControlKeyState: leftCtrlPressed,
 	}
 	if down {
 		k.KeyDown = 1
