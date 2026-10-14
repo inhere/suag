@@ -19,6 +19,7 @@
 | `chat_spinner.py` | “思考中…”等待行：本场景显式不带 `NO_COLOR`（该行只在有色终端显示），假模型 `--delay 2` 让提示可见；检查首个回合前不显示、等待模型首个消息时出现（带已用秒数）、工具调用行替换它、工具结果后再次出现、答案前最后一条提示已被 `ESC[2K` 清除（看原始缓冲，`text()` 会剥掉 ANSI）；另一个 `chat.spinner: false` 的会话完全不显示该行 |
 | `chat_tool_ctrlc.py` | 前台工具调用中按 Ctrl-C（suga-nrf2 的预期行为）：假模型 `--command` 先写 `tool-started` 再 `sleep 60`；脚本等标记文件出现后发 `\x03`，检查回合被中断（“已中断”）、chat 退出并打印汇总、进程结束，且命令的第二标记 `tool-finished` 从未出现（整棵进程树随回合一起结束）。Windows 对应物是 `scripts/wincons`（Windows 控制台无法用 Python 驱动） |
 | `chat_resume.py` | 续接被强杀的会话：假模型（text 模式，回复 51 行）先答一轮，第二轮在模型回复前 SIGKILL 掉 chat（会话停在 running）；再用 `--resume <id>` 与 `--session-id <id>`（gofer 走的路径）续接，检查首个 ❯ 提示符之前出现淡色“上一次回复：”、正文最后 40 行（保留 `▣` 标记）、头部被截断并提示 `已截断前 N 行，完整记录见 suga trace <id>`、被杀回合显示“上一回合未正常结束”；两次续接都不调用模型（假模型请求数不变、trace 里 model/turn 事件仍各 1 条）。随后 `--session-id` 会话发一条消息：先显示“已恢复会话”再照常回答（会话从 running 恢复为 open），再把自己的下一轮杀掉留成 running，用 `suga run --resume` 走另一条入口（Run 自己取锁）：stderr 显示恢复提示、stdout 是回答；`suga trace --json` 有两条 `session recovered` 事件（带被杀回合 id 及 `previous_status=running`、`turn_status=cancelled`） |
+| `chat_shortname.py` | 会话短名称：工作目录名 `Smoke_WS` → 横幅显示 `smokews-xy`（小写、清洗过），`suga ps` 与 `--json` 都列出该名称，`suga send --session <短名称>` 投递成功并开启一轮，`:session` 同时显示 id 与名称，退出摘要的续接命令后带名称；首条消息正文不再作为名字（`--session 第一句话` 退出码 3，且进程记录仍是短名称）；`--resume` 续接沿用同一名称，chat 退出后该地址不再可达（退出码 3） |
 
 运行：
 
