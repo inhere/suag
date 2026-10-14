@@ -10,6 +10,7 @@ import (
 
 	"github.com/gookit/cliui/show/symbols"
 	"github.com/gookit/color"
+	"github.com/inhere/suga/internal/chat/lineedit"
 	"github.com/inhere/suga/internal/output"
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/pkg/agentcore"
@@ -65,6 +66,14 @@ type rendererOptions struct {
 	// now supplies the local wall clock of the end-of-turn time on the status
 	// line (nil: time.Now). Tests inject a fixed clock.
 	now func() time.Time
+	// HighlightInput paints the messages that come from elsewhere (External) on a
+	// background of their own (config chat.highlight_input); the input source
+	// paints the line the person submitted with the same switch. Like Markdown it
+	// needs a colored terminal.
+	HighlightInput bool
+	// HighlightWidth is the column count a highlighted line is filled to, so its
+	// background reaches the end of the terminal row (0: the line's own text only).
+	HighlightWidth int
 	// spinnerNow and spinnerTicks drive that waiting line in tests (nil: the
 	// real clock and a time.Ticker).
 	spinnerNow   func() time.Time
@@ -282,15 +291,27 @@ func (r *Renderer) Answer(text string) {
 
 // External prints input that did not come from this keyboard (a reply sent
 // from elsewhere through `suga send` or a Stop hook) in its own color, so it
-// stands out from the model's answer. Each line is painted separately.
+// stands out from the model's answer. With chat.highlight_input on and a colored
+// terminal each line is painted on a background of its own instead (the magenta
+// family, so it is not taken for the person's own line), reaching the end of the
+// terminal row.
 func (r *Renderer) External(text string) {
 	r.stopThinking()
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
+		if r.highlightInput() {
+			lines[i] = externalHighlightPrefix + lineedit.PadLine(line, r.opts.HighlightWidth) + highlightSuffix
+			continue
+		}
 		lines[i] = r.paint(color.Magenta, line)
 	}
 	fmt.Fprintln(r.opts.Out, strings.Join(lines, "\n"))
 }
+
+// highlightInput reports whether the highlighted input lines are on: config
+// chat.highlight_input with a colored terminal (a pipe, a redirected output or
+// NO_COLOR keeps the plain colors).
+func (r *Renderer) highlightInput() bool { return r.opts.Color && r.opts.HighlightInput }
 
 // ApprovalDetails formats the full key arguments of an approval question, one
 // indented item per detail (continuation lines indented further). Nothing is

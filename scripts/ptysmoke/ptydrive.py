@@ -78,6 +78,24 @@ class PtySession:
     def contains(self, pattern, start):
         return bool(re.search(pattern, self.text(start)))
 
+    def text_raw(self, start=0):
+        """The raw output after start, escape codes kept: text() strips them, so
+        it hides color-only output such as the background of an input line."""
+        return self.buf[start:].decode("utf-8", "replace")
+
+    def until_raw(self, pattern, start, timeout=20.0):
+        """Wait until pattern (regex) appears in the raw output after start."""
+        end = time.time() + timeout
+        while time.time() < end:
+            if re.search(pattern, self.text_raw(start)):
+                return True
+            if not self._read_once(0.2):
+                return bool(re.search(pattern, self.text_raw(start)))
+        return False
+
+    def contains_raw(self, pattern, start):
+        return bool(re.search(pattern, self.text_raw(start)))
+
     # --- input ----------------------------------------------------------
     def send(self, s):
         os.write(self.fd, s.encode())

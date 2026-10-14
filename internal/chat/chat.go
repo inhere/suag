@@ -48,6 +48,11 @@ type Options struct {
 	// next message (config chat.spinner, on by default). Like Markdown it needs
 	// a colored terminal: a pipe, a redirected output or NO_COLOR keeps it off.
 	Spinner bool
+	// HighlightInput paints the line the person submitted at the prompt, and the
+	// messages delivered from elsewhere, on a background of their own (config
+	// chat.highlight_input, on by default). Like Markdown it needs a colored
+	// terminal: a pipe, a redirected output or NO_COLOR keeps the plain text.
+	HighlightInput bool
 	// Thinking (the effective thinking level, "" = provider default) and
 	// ContextWindow (tokens, 0 = unknown) are shown in the banner.
 	Thinking      string
@@ -167,12 +172,22 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	defer inputSource.Close()
 	// All conversation output goes through the renderer (and the input source,
 	// which keeps the line editor's screen state consistent).
+	color := colorEnabledFor(stdout)
+	if opts.HighlightInput && color {
+		// The line just submitted is repainted where it is, its background reaching
+		// the end of every row it occupies; the width is the terminal's when known.
+		inputSource.SetInputHighlight(lineedit.InputStyle{
+			Prefix: inputHighlightPrefix, Suffix: highlightSuffix,
+			FillWidth: inputSource.highlightWidth(),
+		})
+	}
 	render := newRenderer(rendererOptions{
 		Out: inputSource, Err: stderr,
-		Color: colorEnabledFor(stdout), ErrColor: colorEnabledFor(stderr),
+		Color: color, ErrColor: colorEnabledFor(stderr),
 		Provider: runner.ProviderName(), Model: runner.Model(),
 		Thinking: opts.Thinking, ContextWindow: opts.ContextWindow,
 		WriteTools: opts.WriteTools, Markdown: opts.Markdown, Spinner: opts.Spinner,
+		HighlightInput: opts.HighlightInput, HighlightWidth: inputSource.highlightWidth(),
 	})
 	// Background idle consolidation; closed before the input source, so its
 	// last status line still goes through it.

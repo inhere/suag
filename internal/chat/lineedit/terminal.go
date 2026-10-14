@@ -121,7 +121,13 @@ type Terminal struct {
 	reading     bool
 	noHistory   bool
 	pendingLine string
+	// inputStyle paints a submitted line (highlight.go); zero by default.
+	inputStyle InputStyle
 }
+
+// DefaultWidth is the terminal width the editor lays lines out with until it is
+// told the real one (SetSize).
+const DefaultWidth = 80
 
 // NewTerminal runs a VT100 terminal on the given ReadWriter. If the ReadWriter is
 // a local terminal, that terminal must first have been put into raw mode.
@@ -132,7 +138,7 @@ func NewTerminal(c io.ReadWriter, prompt string) *Terminal {
 		Escape:       &vt100EscapeCodes,
 		c:            c,
 		prompt:       []rune(prompt),
-		termWidth:    80,
+		termWidth:    DefaultWidth,
 		termHeight:   24,
 		echo:         true,
 		historyIndex: -1,
@@ -542,7 +548,11 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 			}
 		}
 	case keyEnter:
-		t.moveCursorToPos(len(t.line))
+		// A submitted line stays on screen, repainted on the input style's
+		// background when one is set (highlight.go).
+		if !t.repaintSubmittedLine() {
+			t.moveCursorToPos(len(t.line))
+		}
 		t.queue([]rune("\r\n"))
 		line = string(t.line)
 		ok = true
@@ -626,10 +636,22 @@ func (t *Terminal) addKeyToLine(key rune) {
 
 // writeLine writes line at the cursor, wrapping by display width. A wide rune
 // never straddles two rows: when only the last column is left it is filled
-// with a space first (the same rule posToXY applies).
+// with a space first (the same rule posToXY applies). A newline inside the line
+// (pasted multi-line input) starts a new row at column 0.
 func (t *Terminal) writeLine(line []rune) {
 	var esc escapeState
 	for i := range line {
+		if line[i] == '\n' {
+			// Raw mode has OPOST off, so echoing a bare LF would move the cursor
+			// down and keep the column, drifting away from cursorX/cursorY.
+			t.outBuf = append(t.outBuf, '\r', '\n')
+			t.cursorX = 0
+			t.cursorY++
+			if t.cursorY > t.maxLine {
+				t.maxLine = t.cursorY
+			}
+			continue
+		}
 		w := esc.width(line[i])
 		if w == 2 && t.termWidth >= 2 && t.cursorX == t.termWidth-1 {
 			t.queue(space)

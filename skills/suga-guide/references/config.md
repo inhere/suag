@@ -60,6 +60,16 @@
 | `serpapi_key` | `""` | 配置后注册 `web_search`（支持 `${VAR}`） |
 | `transcripts` | 开 | 会话记录（transcript）写到 `$SUGA_HOME/transcripts`；`false` 或 `"off"` 关闭（键值接受布尔或字符串） |
 
+## `chat.*`（仅 chat 的终端显示）
+
+| 键 | 默认 | 含义 |
+|---|---|---|
+| `chat.markdown` | `true` | 在终端渲染模型输出的 markdown（标题、粗体、行内代码、代码块、列表、引用、链接） |
+| `chat.spinner` | `true` | 等待模型输出时显示“思考中… Ns”，正文/工具调用/审批问题之前清除 |
+| `chat.highlight_input` | `true` | 提示符提交的那行（含粘贴的多行）与外部投递的消息（`suga send`、Stop hook 回复、任务通知）整行加低饱和背景，与模型回答区分；两者背景色不同 |
+
+三个键都接受布尔或字符串（`"off"` / `"false"` 关闭）。都只在彩色终端生效：非终端、重定向输出或 `NO_COLOR` 时按原文显示，不加任何转义。
+
 ## `tools.*`
 
 | 键 | 默认 | 含义 / 作用范围 |

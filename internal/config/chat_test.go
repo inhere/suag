@@ -61,6 +61,32 @@ func TestChatSpinnerEnabled(t *testing.T) {
 	})
 }
 
+// TestChatHighlightInputEnabled: chat.highlight_input takes the same values as
+// chat.markdown, is on by default and is decided on its own.
+func TestChatHighlightInputEnabled(t *testing.T) {
+	load := chatConfigLoader(t)
+	t.Run("default on", func(t *testing.T) {
+		load(t, "model: openai/m\n")
+		assert.True(t, ChatHighlightInputEnabled())
+	})
+	t.Run("bool off", func(t *testing.T) {
+		load(t, "chat:\n  highlight_input: false\n")
+		assert.False(t, ChatHighlightInputEnabled())
+	})
+	t.Run("string off", func(t *testing.T) {
+		load(t, "chat:\n  highlight_input: \"off\"\n")
+		assert.False(t, ChatHighlightInputEnabled())
+	})
+	t.Run("bool on", func(t *testing.T) {
+		load(t, "chat:\n  highlight_input: true\n")
+		assert.True(t, ChatHighlightInputEnabled())
+	})
+	t.Run("spinner does not decide it", func(t *testing.T) {
+		load(t, "chat:\n  spinner: false\n")
+		assert.True(t, ChatHighlightInputEnabled())
+	})
+}
+
 // chatConfigLoader returns a helper writing body to a fresh SUGA_HOME's
 // config.yaml and loading it.
 func chatConfigLoader(t *testing.T) func(t *testing.T, body string) {

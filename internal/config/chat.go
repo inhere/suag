@@ -21,6 +21,14 @@ func ChatSpinnerEnabled() bool {
 	return chatSwitch("chat.spinner")
 }
 
+// ChatHighlightInputEnabled reports whether chat paints a background behind the
+// line the person submitted at the prompt, and behind messages delivered from
+// elsewhere (chat.highlight_input, on by default). It takes the same values as
+// chat.markdown; a non-terminal output or NO_COLOR turns the background off.
+func ChatHighlightInputEnabled() bool {
+	return chatSwitch("chat.highlight_input")
+}
+
 // chatSwitch reads a chat.* switch: a missing key is on, a bool is used as is,
 // and a string is off for "off"/"false" (any case, surrounding spaces ignored).
 func chatSwitch(key string) bool {

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"github.com/inhere/suga/internal/personal/process"
@@ -137,6 +138,72 @@ func TestChatInputSource_DiscardQueued(t *testing.T) {
 
 	_, _, err = source.DeliverWait("late", "cli")
 	assert.True(t, errors.Is(err, process.ErrSessionClosed))
+}
+
+// lockedBuffer collects what the line editor writes; it is written from the
+// reader goroutine and read by the test.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// TestChatInputSource_InputHighlight: with chat.highlight_input on, the line
+// submitted at the prompt is repainted where it is, its background filled to the
+// terminal width; without a style the plain Enter path writes no escapes.
+func TestChatInputSource_InputHighlight(t *testing.T) {
+	submitted := func(t *testing.T, style lineedit.InputStyle) string {
+		t.Helper()
+		pr, pw := io.Pipe()
+		out := &lockedBuffer{}
+		source, err := newChatInputSource(context.Background(), pr, out)
+		assert.Require(t, assert.NoErr(t, err))
+		tty := &fakeTTY{}
+		source.makeRaw = tty.makeRaw
+		source.reader = &chatActivityReader{source: source, input: pr}
+		source.terminal = lineedit.NewTerminal(&chatTerminalIO{reader: source.reader, output: source.output}, "")
+		t.Cleanup(func() { _ = source.Close(); _ = pw.Close(); _ = pr.Close() })
+		// Input from a pipe is no terminal: the width falls back to the editor's.
+		assert.Eq(t, lineedit.DefaultWidth, source.highlightWidth())
+		source.SetInputHighlight(style)
+
+		assert.True(t, source.Request("> "))
+		waitTTY(t, tty, true)
+		go func() { _, _ = io.WriteString(pw, "hi\r") }()
+		event := <-source.Next()
+		assert.True(t, event.activity)
+		source.AckActivity()
+		event = <-source.Next()
+		assert.NoErr(t, event.err)
+		assert.Eq(t, "hi", event.line)
+		source.CompleteLine()
+		return out.String()
+	}
+
+	t.Run("the submitted line carries the background", func(t *testing.T) {
+		got := submitted(t, lineedit.InputStyle{Prefix: inputHighlightPrefix, Suffix: highlightSuffix,
+			FillWidth: lineedit.DefaultWidth})
+		// The prompt and the echo first, then the repaint: prompt and line again on
+		// the background, filled with spaces to the end of the terminal row.
+		want := "> hi" + "\x1b[4D" + inputHighlightPrefix + "> " + inputHighlightPrefix + "hi" +
+			strings.Repeat(" ", lineedit.DefaultWidth-4) + highlightSuffix + "\r\n"
+		assert.Eq(t, want, got)
+	})
+
+	t.Run("without a style the line stays plain", func(t *testing.T) {
+		assert.Eq(t, "> hi\r\n", submitted(t, lineedit.InputStyle{}))
+	})
 }
 
 func TestDeliveryLine(t *testing.T) {

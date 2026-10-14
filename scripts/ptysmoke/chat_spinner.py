@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """End-to-end smoke test: chat shows the "思考中…" waiting line while the model
-thinks and erases it before the next output (Linux/macOS).
+thinks and erases it before the next output, and paints the line the person
+submitted on a background of its own (Linux/macOS).
 
 Starts scripts/ptysmoke/fakellm.py (tool mode with --delay 2, shell_exec
 approved automatically) and `suga chat` in a PTY with colors ON (NO_COLOR is
-dropped: the line only shows on a colored terminal), sends one prompt and
-checks: nothing is shown before the first turn, the line with the elapsed
-seconds appears while the model is asked for its first message, the tool call
-replaces it, it comes back while the model reads the tool result, and the answer
-is printed on a line the hint was erased from. A second chat, configured with
-chat.spinner: false, shows no line at all.
+dropped: neither the waiting line nor the input background shows on a terminal
+without colors), sends one prompt and checks: nothing is shown before the first
+turn, the line with the elapsed seconds appears while the model is asked for its
+first message, the tool call replaces it, it comes back while the model reads the
+tool result, and the answer is printed on a line the hint was erased from, and
+the submitted line comes back on a 256-color background filled to the end of the
+row. A second chat, configured with chat.spinner: false and
+chat.highlight_input: false, shows neither.
 
   python3 -I scripts/ptysmoke/chat_spinner.py --bin tmp/smoke/suga
 
@@ -33,11 +36,14 @@ TOOLS_EXTRA = "  approval: auto\n"
 # The line is erased with ESC[2K (carriage return + erase line); ptydrive strips
 # those codes from text(), so the raw buffer is needed to see the erase.
 ERASE = "\x1b[2K"
+# The background chat paints the submitted line with (chat.highlight_input);
+# the checks look at the raw output, text() drops the escape codes.
+INPUT_BG = r"\x1b\[48;5;236m"
 
 
 def off_chat_config():
-    """Top-level config of the second run: the switch turns the line off."""
-    return "chat:\n  spinner: false\n"
+    """Top-level config of the second run: both switches turn their feature off."""
+    return "chat:\n  spinner: false\n  highlight_input: false\n"
 
 
 def scenario(s):
@@ -49,6 +55,13 @@ def scenario(s):
     m = s.mark()
     s.line("你好")
     s.check("line while waiting for the first message", s.until(HINT, m))
+    # The repaint: the style, the prompt (which carries its own colors and ends
+    # with a reset), the style again, what was typed, then spaces to the row end.
+    s.check("input line: painted on a background", s.until_raw(INPUT_BG, m))
+    s.check("input line: the text sits on it",
+            s.until_raw(INPUT_BG + r"[\s\S]*?❯ (?:\x1b\[[0-9;]*m)*" + INPUT_BG + r"(?:\x1b\[[0-9;]*m)*你好", m))
+    s.check("input line: the background reaches the row end",
+            s.until_raw(INPUT_BG + r"[\s\S]*?你好 +\x1b\[0m", m))
     s.check("tool call line", s.until(r"⏺ shell_exec", m))
     s.check("tool result line", s.until(OK, m))
 
@@ -65,13 +78,15 @@ def scenario(s):
 
 
 def off_scenario(s):
-    """chat.spinner: false shows no waiting line, in a colored terminal."""
+    """chat.spinner: false and chat.highlight_input: false show neither, in a
+    colored terminal (the reverse of the checks above)."""
     m = s.mark()
     s.check("off: ❯ prompt", s.until(r"❯ ", m))
     m = s.mark()
     s.line("你好")
     s.check("off: answer", s.until(r"▣ " + REPLY, m) and s.until(r"tokens · ", m))
     s.check("off: no waiting line anywhere", not s.contains("思考中", m))
+    s.check("off: the submitted line has no background", not s.contains_raw(r"\x1b\[48;5;236m", m))
 
 
 def main():

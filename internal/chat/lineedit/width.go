@@ -55,7 +55,7 @@ func (e *escapeState) width(r rune) int {
 // posToXY returns the screen position (relative to the start of the prompt)
 // of the logical position pos in t.line, laying the runes out exactly like
 // writeLine: a wide rune that would start in the last column wraps whole to
-// the next row.
+// the next row, and a newline starts a new row at column 0.
 func (t *Terminal) posToXY(pos int) (x, y int) {
 	x = visualLength(t.prompt)
 	y = x / t.termWidth
@@ -63,6 +63,10 @@ func (t *Terminal) posToXY(pos int) (x, y int) {
 
 	var esc escapeState
 	for _, r := range t.line[:pos] {
+		if r == '\n' {
+			x, y = 0, y+1
+			continue
+		}
 		w := esc.width(r)
 		if w == 2 && t.termWidth >= 2 && x == t.termWidth-1 {
 			x, y = 0, y+1

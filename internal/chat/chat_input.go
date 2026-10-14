@@ -58,12 +58,14 @@ type chatInputSource struct {
 	// turnActive is true from SetBusy(true) until the next Request: while set the tty must stay
 	// cooked so Ctrl-C raises SIGINT, even if a line read started earlier is still blocked.
 	turnActive bool
-	closed     bool // set by DiscardQueued/Close: deliveries are refused afterwards (guarded by mu)
-	terminal   *lineedit.Terminal
-	requests   chan chatInputRequest
-	events     chan chatInputEvent
-	activity   chan struct{}
-	deliveries chan chatInputEvent
+	// screenWidth is the terminal's column count when it could be read (0: unknown).
+	screenWidth int
+	closed      bool // set by DiscardQueued/Close: deliveries are refused afterwards (guarded by mu)
+	terminal    *lineedit.Terminal
+	requests    chan chatInputRequest
+	events      chan chatInputEvent
+	activity    chan struct{}
+	deliveries  chan chatInputEvent
 	// taskWake signals a background task end (tasks.wake_on_exit); nil when
 	// off. taskNotice takes the pending notices as the text of an injected
 	// turn ("" when the running turn already took them).
@@ -109,6 +111,11 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 				return nil, err
 			}
 			return func() error { return term.Restore(int(file.Fd()), state) }, nil
+		}
+		// The real width is used to fill the background of highlighted lines; the
+		// line editor keeps laying lines out with its own default.
+		if width, _, err := term.GetSize(int(file.Fd())); err == nil && width > 0 {
+			source.screenWidth = width
 		}
 		source.flushInput = func() error { return flushTerminalInput(int(file.Fd())) }
 		source.reader = &chatActivityReader{source: source, input: input}
@@ -217,6 +224,29 @@ func (s *chatInputSource) SetBusy(busy bool) {
 		_ = s.leaveRawLocked()
 	}
 	s.mu.Unlock()
+}
+
+// SetInputHighlight paints the line the person submits at the prompt
+// (chat.highlight_input): the style is written around a repaint of the line, its
+// background reaching the end of every terminal row. A zero style turns it off;
+// input that is not a terminal has no line to paint.
+func (s *chatInputSource) SetInputHighlight(style lineedit.InputStyle) {
+	if s.terminal != nil {
+		s.terminal.SetInputStyle(style)
+	}
+}
+
+// highlightWidth is the number of columns chat fills a highlighted line to: the
+// terminal's width when it reports one, else the width the line editor lays
+// lines out with. 0 when input is not a terminal (no line editing, no filling).
+func (s *chatInputSource) highlightWidth() int {
+	if s.terminal == nil {
+		return 0
+	}
+	if s.screenWidth > 0 {
+		return s.screenWidth
+	}
+	return lineedit.DefaultWidth
 }
 
 func (s *chatInputSource) Request(prompt string) bool {

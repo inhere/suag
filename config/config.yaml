@@ -114,9 +114,15 @@ providers:
 #                       # message (every turn start and after every tool result),
 #                       # erased as soon as it answers; false turns the line off.
 #                       # Needs a terminal with colors, like markdown.
+#   highlight_input: true # paint the line you submitted at the prompt (and the
+#                       # messages delivered from elsewhere: suga send, a Stop hook
+#                       # reply, a task notice) on a low-saturation background, so
+#                       # your own words stand apart from the model's answer; the two
+#                       # get different backgrounds. Needs a terminal with colors.
 # chat:
 #   markdown: true
 #   spinner: true
+#   highlight_input: true
 
 # Project rules: one file per directory level, from the Git root (or cwd) down
 # to cwd, plus $SUGA_HOME/AGENTS.md for the user level. Only a file name (no
