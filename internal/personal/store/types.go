@@ -74,6 +74,11 @@ const (
 	// turn: name "recovered" is a session left running by a process that died
 	// mid-turn taken back to open (attrs previous_status, stale_ms, turn_status).
 	EventSession = "session"
+	// EventSteer records one message a person typed into a running turn
+	// (steering): name "delivered" is a steer a model request carried (attrs
+	// steer_id, source, chars, step), "returned" one the turn handed back
+	// (attrs steer_id, source, chars, reason, disposition).
+	EventSteer = "steer"
 )
 
 // Session is one conversation. Meta holds free-form keys (rules hash, append

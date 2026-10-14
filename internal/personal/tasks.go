@@ -55,11 +55,12 @@ func TaskNoticeMessage(infos []tasks.Info) agentcore.Message {
 	return agentcore.Message{Role: "user", Content: TaskNoticeText(infos), Metadata: map[string]any{metaTaskNotice: true}}
 }
 
-// turnNotice is a task notice taken during the turn and where it goes: after
-// the first at messages of state.Messages. seq is the store's entry seq of the
-// notice (0 when it could not be stored: the notice then stays in the view for
-// the rest of the turn and never takes part in a cut).
-type turnNotice struct {
+// turnInjected is an entry injected into the running turn - a background task
+// notice or a steer - and where it goes: after the first at messages of
+// state.Messages. seq is the store's entry seq of the entry (0 when it could
+// not be stored: it then stays in the view for the rest of the turn and never
+// takes part in a cut).
+type turnInjected struct {
 	at  int
 	seq int64
 	msg agentcore.Message
@@ -78,7 +79,7 @@ func (b *contextBuilder) takeTaskNotices(ctx context.Context, state *agentcore.R
 		return
 	}
 	msg := TaskNoticeMessage(infos)
-	notice := turnNotice{at: len(state.Messages), msg: msg}
+	notice := turnInjected{at: len(state.Messages), msg: msg}
 	raw, err := json.Marshal(msg)
 	if err == nil {
 		var entries []store.Entry
@@ -91,7 +92,7 @@ func (b *contextBuilder) takeTaskNotices(ctx context.Context, state *agentcore.R
 	if err != nil {
 		slog.Warn("store task notice", "session_id", b.sessionID, "err", err)
 	}
-	b.notices = append(b.notices, notice)
+	b.injected = append(b.injected, notice)
 	// The turn's stored entries changed: the cached view of items() is stale.
 	b.turnItemsCache = nil
 }

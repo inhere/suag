@@ -63,6 +63,10 @@ func (r *Runner) withSessionUsage(ctx context.Context, sessionID string, result 
 }
 
 func (r *Runner) finish(ctx context.Context, model Session, result RunResult, turnStart time.Time, usage *usageCollector, coreResult *agentcore.RunResult, runErr error, sink EmitFunc) (RunResult, error) {
+	// The turn's outcome is being decided: no steer is accepted any more, the
+	// ones left over go back to the caller once the status is known (below).
+	inbox := steerInboxOf(ctx)
+	inbox.close()
 	if coreResult != nil {
 		result.Status, result.Output, result.Usage = coreResult.Status, coreResult.Output, coreResult.Usage
 		result.WrapUp = coreResult.WrapUp
@@ -107,6 +111,11 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	result.State = runState
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
+	// The steers this turn did not deliver go back to the caller (design D4): a
+	// completed turn only its untaken ones - the delivered ones entered the turn's
+	// history and replay with it -, a cancelled or failed turn all of them (its
+	// entries do not replay).
+	result.ReturnedSteers = r.returnSteers(finishCtx, inbox, result, turnStatus, sink)
 	now := time.Now().UTC()
 	var persistErr error
 	if err := r.cfg.Repository.UpdateTurn(finishCtx, store.Turn{ID: result.TurnID, Status: turnStatus, StopReason: stopReason, EndedAt: now}); err != nil {

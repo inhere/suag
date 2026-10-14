@@ -171,9 +171,14 @@ type Event struct {
 	Retry *RetryInfo
 	// Agent is set on "agent_progress" events (a sub-agent's tool call,
 	// ToolName and Text as on "tool_call"): the sub-agent's description.
-	Agent  string
-	Status agentcore.RunStatus
-	State  RunState
+	Agent string
+	// SteerID and SteerSource are set on "steer_delivered" and "steer_returned"
+	// events - Text is the steer's text: the id and the source ("keyboard",
+	// "send:<from>") of the message the event is about.
+	SteerID     string
+	SteerSource string
+	Status      agentcore.RunStatus
+	State       RunState
 }
 
 // RetryInfo describes a model request retry (see agentcore.StreamEventRetry).
@@ -229,6 +234,12 @@ type RunResult struct {
 	// hook asked for one, e.g. a sub-agent's "max_tokens"); empty for a
 	// normal answer.
 	WrapUp string
+	// ReturnedSteers are the steering messages the caller has to take care of
+	// after the turn (design D4), in arrival order: the ones the turn did not
+	// deliver (a completed turn) or all of them (a cancelled or failed turn, the
+	// delivered ones first). The caller runs them as the next turn or puts them
+	// back into its input line.
+	ReturnedSteers []Steer
 }
 
 // Runner owns one synchronous turn at a time for a persisted personal session.
@@ -236,6 +247,10 @@ type Runner struct {
 	cfg       Config
 	locksMu   sync.Mutex
 	heldLocks map[string]*process.SessionLock
+	// steerMu guards steers, the open per-session steering inboxes (one while a
+	// turn of that session runs in this process, see steer.go).
+	steerMu sync.Mutex
+	steers  map[string]*steerInbox
 	// gateMu guards gates, the in-process single-flight gates by session
 	// (see gate.go).
 	gateMu sync.Mutex
@@ -271,7 +286,8 @@ func New(cfg Config) (*Runner, error) {
 	if cfg.CompactProvider != nil {
 		cfg.CompactProvider = rec.observeProvider(cfg.CompactProvider, cfg.ProviderName, cfg.CompactModel)
 	}
-	runner := &Runner{cfg: cfg, heldLocks: make(map[string]*process.SessionLock), rec: rec}
+	runner := &Runner{cfg: cfg, heldLocks: make(map[string]*process.SessionLock),
+		steers: make(map[string]*steerInbox), rec: rec}
 	runner.bindVisibility()
 	return runner, nil
 }
@@ -550,6 +566,15 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	contextBuilder := r.newContextBuilder(model.ID, turnID, history, promptBuilder, usage, req.SystemContext)
 	// Fold events already recorded in this segment (an earlier turn's builder).
 	contextBuilder.foldBase = metaCount(model.Meta[metaFoldBoundary])
+	// The session's steering inbox is open from here to the end of the turn
+	// (design N7): every early return above happens before this point, so a Steer
+	// arriving earlier is not accepted and becomes the caller's next turn. finish
+	// closes it (the defer is only the safety net for a panic). The builder takes
+	// the pending steers before every non-wrap-up request and reports them.
+	inbox := r.openSteerInbox(model.ID)
+	defer r.dropSteerInbox(model.ID, inbox)
+	contextBuilder.steers, contextBuilder.emit = inbox, req.Emit
+	ctx = withSteerInbox(ctx, inbox)
 	runtimeHooks := r.turnHooks(usage, denials, req.Emit, result)
 	runtime := agentcore.New(agentcore.Config{
 		Provider:       r.cfg.Provider,

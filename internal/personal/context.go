@@ -29,12 +29,12 @@ type ctxItem struct {
 
 // injectedItemKeys are the Message.Metadata keys marking a user entry the
 // runtime injected into a running turn instead of a person writing it:
-// background task notices (metaTaskNotice) and, from steering on, steering
-// messages. Such an entry is stored with the turn's EntryUser type and
-// replayed in place, so the turn view (items), the notices compose renders and
-// the user requests (recentRequests) all have to tell it apart from the turn's
-// own messages and requests.
-var injectedItemKeys = []string{metaTaskNotice}
+// background task notices (metaTaskNotice) and steering messages (metaSteer).
+// Such an entry is stored with the turn's EntryUser type and replayed in place,
+// so the turn view (items), the notices compose renders and the user requests
+// (recentRequests) all have to tell it apart from the turn's own messages and
+// requests.
+var injectedItemKeys = []string{metaTaskNotice, metaSteer}
 
 // isInjectedItem reports whether m is an entry injected into a running turn
 // (one of injectedItemKeys set true in its metadata).
@@ -212,8 +212,8 @@ type contextBuilder struct {
 	// drop the messages before turnStart and an injected entry that sits between
 	// them, so a message index alone cannot express where the view starts. It is
 	// filled lazily: the runtime only appends to state.Messages, so another
-	// length invalidates the cache, and takeTaskNotices drops it when it stores
-	// a notice.
+	// length invalidates the cache, and takeTaskNotices/takeSteers drop it when
+	// they store an injected entry.
 	turnItemsCache []ctxItem
 	turnMsgs       int
 	turnFrom       int
@@ -234,11 +234,16 @@ type contextBuilder struct {
 
 	// contextRecorded: this turn's context event (recordContext) is written.
 	contextRecorded bool
-	// notices are background task notices taken during this turn, rendered
-	// at their place among this turn's messages (they are stored entries,
-	// never part of state.Messages). A segment cut of this turn drops the
-	// notices it cut away (see keptNotices).
-	notices []turnNotice
+	// injected are the entries injected into this turn while it ran - task
+	// notices and steers - rendered at their place among this turn's messages:
+	// they are stored entries and never part of state.Messages. A segment cut of
+	// this turn drops the ones it cut away (see keptInjected).
+	injected []turnInjected
+	// steers is the session inbox of this turn (nil outside a turn, e.g. for a
+	// between-turn :compact) and emit is the turn's event sink: takeSteers hands
+	// the steers it delivers to the context through both.
+	steers *steerInbox
+	emit   EmitFunc
 }
 
 func (r *Runner) newContextBuilder(sessionID, turnID string, hist historyView, prompt agentcore.PromptBuilder, usage *usageCollector, hookContext string) *contextBuilder {
@@ -261,6 +266,7 @@ func (b *contextBuilder) BuildMessages(ctx context.Context, state *agentcore.Run
 		return nil, err
 	}
 	b.takeTaskNotices(ctx, state)
+	b.takeSteers(ctx, state)
 	view := b.compose(state)
 	est := b.estimate(ctx, state, view)
 	if est > b.threshold() {
@@ -310,17 +316,18 @@ func (b *contextBuilder) compose(state *agentcore.RunState) []agentcore.Message 
 	if b.hookContext != "" {
 		out = append(out, agentcore.Message{Role: "user", Content: b.hookContext})
 	}
-	// The notices gone from the list were cut away by a segment break of this
-	// turn (see keptNotices); every remaining one is in the view, at its place.
-	next := 0 // the next notice to place
+	// The injected entries gone from the list were cut away by a segment break
+	// of this turn (see keptInjected); every remaining one is in the view, at its
+	// place.
+	next := 0 // the next injected entry to place
 	for i, m := range turn {
-		for ; next < len(b.notices) && b.notices[next].at <= b.turnStart+i; next++ {
-			out = append(out, b.notices[next].msg)
+		for ; next < len(b.injected) && b.injected[next].at <= b.turnStart+i; next++ {
+			out = append(out, b.injected[next].msg)
 		}
 		out = append(out, b.limited(m))
 	}
-	for ; next < len(b.notices); next++ {
-		out = append(out, b.notices[next].msg)
+	for ; next < len(b.injected); next++ {
+		out = append(out, b.injected[next].msg)
 	}
 	every, keep := b.r.cfg.FoldEvery, b.r.cfg.FoldKeep
 	b.foldPending = nil

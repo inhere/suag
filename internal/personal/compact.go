@@ -157,9 +157,9 @@ func (b *contextBuilder) items(ctx context.Context, state *agentcore.RunState) (
 // turnItems returns this turn's items that are still in the view, from the
 // first item the view keeps on (turnFrom). The turn's entries are listed
 // lazily and cached: the runtime only appends to state.Messages, so another
-// message count reloads them, and takeTaskNotices drops the cache when it
-// stores a notice. The stored form of a turn is append-only, so the merged
-// layout (and with it turnFrom) stays valid across a reload.
+// message count reloads them, and takeTaskNotices/takeSteers drop the cache
+// when they store an injected entry. The stored form of a turn is append-only,
+// so the merged layout (and with it turnFrom) stays valid across a reload.
 func (b *contextBuilder) turnItems(ctx context.Context, state *agentcore.RunState) ([]ctxItem, error) {
 	if b.turnItemsCache == nil || b.turnMsgs != len(state.Messages) {
 		entries, err := b.r.cfg.Repository.ListEntries(ctx, b.sessionID, store.EntryFilter{
@@ -248,13 +248,13 @@ func countTurnMessages(items []ctxItem) int {
 	return n
 }
 
-// keptNotices returns the notices a cut of this turn leaves in the view:
-// every notice whose stored entry is at or after firstKeptSeq, i.e. every
-// notice that is not part of the cut prefix (which goes into the summary). A
-// notice whose entry could not be stored (seq 0) was never part of the cut.
-func keptNotices(notices []turnNotice, firstKeptSeq int64) []turnNotice {
-	out := make([]turnNotice, 0, len(notices))
-	for _, n := range notices {
+// keptInjected returns the injected entries a cut of this turn leaves in the
+// view: every entry whose stored entry is at or after firstKeptSeq, i.e. every
+// entry that is not part of the cut prefix (which goes into the summary). An
+// entry whose entry could not be stored (seq 0) was never part of the cut.
+func keptInjected(injected []turnInjected, firstKeptSeq int64) []turnInjected {
+	out := make([]turnInjected, 0, len(injected))
+	for _, n := range injected {
 		if n.seq <= 0 || n.seq >= firstKeptSeq {
 			out = append(out, n)
 		}
@@ -347,7 +347,7 @@ func (b *contextBuilder) startSegment(ctx context.Context, state *agentcore.RunS
 	// every earlier context update (loadHistory skips updates before the latest
 	// record the same way).
 	oldSummary, oldHandoff, oldPrev, oldFrom, oldStart, oldSeg, oldEff := b.summary, b.fromHandoff, b.prev, b.turnFrom, b.turnStart, b.seg, b.eff
-	oldNotices := b.notices
+	oldInjected := b.injected
 	charsBefore := charsOfMessages(b.compose(state))
 	b.summary, b.fromHandoff = pkg.rendered, false
 	if cut <= len(oldPrev) {
@@ -358,7 +358,7 @@ func (b *contextBuilder) startSegment(ctx context.Context, state *agentcore.RunS
 		dropped := items[len(oldPrev):cut]
 		b.prev, b.turnFrom = nil, oldFrom+len(dropped)
 		b.turnStart = oldStart + countTurnMessages(dropped)
-		b.notices = keptNotices(oldNotices, firstKept)
+		b.injected = keptInjected(oldInjected, firstKept)
 	}
 	eff := *seg
 	b.seg, b.eff = seg, &eff
@@ -373,7 +373,7 @@ func (b *contextBuilder) startSegment(ctx context.Context, state *agentcore.RunS
 	es, err := b.r.cfg.Repository.AppendEntries(wctx, b.sessionID, store.NewEntry{TurnID: b.turnID, Type: store.EntryCompaction, JSON: raw})
 	if err != nil {
 		b.summary, b.fromHandoff, b.prev, b.turnFrom, b.turnStart, b.seg, b.eff = oldSummary, oldHandoff, oldPrev, oldFrom, oldStart, oldSeg, oldEff
-		b.notices = oldNotices
+		b.injected = oldInjected
 		return fail(fmt.Errorf("write compaction entry: %w", err))
 	}
 	segment := b.r.segmentOrdinal(wctx, b.sessionID, es)
