@@ -51,8 +51,13 @@ def make_handler(args):
 
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            user_text = next((m.get("content") or "" for m in reversed(body["messages"])
+                              if m.get("role") == "user"), "")
+            # "user" is the last user message: what a smoke can check the model
+            # actually received (e.g. a pasted multi-line text as one message).
             print(json.dumps({"path": self.path, "stream": body.get("stream"),
-                              "last_role": body["messages"][-1].get("role")}), flush=True)
+                              "last_role": body["messages"][-1].get("role"),
+                              "user": user_text}), flush=True)
             system = " ".join(str(m.get("content")) for m in body["messages"] if m.get("role") == "system")
             child = "suga sub-agent" in system
             # --child-delay slows the sub-agent's report (after its grep).
@@ -86,8 +91,6 @@ def make_handler(args):
             memory_calls = [("shell_exec", {"command": args.command}),
                             ("memory", {"action": "add", "kind": "feedback", "title": "Smoke rule",
                                         "body": "smoke memory body"})]
-            user_text = next((m.get("content") or "" for m in reversed(body["messages"])
-                              if m.get("role") == "user"), "")
             if args.mode == "adddir":
                 # 只读/只写 asks for one of the two calls only (a smoke that needs
                 # one of them to meet a question of its own first).

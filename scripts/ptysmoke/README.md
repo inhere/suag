@@ -22,6 +22,7 @@
 | `chat_shortname.py` | 会话短名称：工作目录名 `Smoke_WS` → 横幅显示 `smokews-xy`（小写、清洗过），`suga ps` 与 `--json` 都列出该名称，`suga send --session <短名称>` 投递成功并开启一轮，`:session` 同时显示 id 与名称，退出摘要的续接命令后带名称；首条消息正文不再作为名字（`--session 第一句话` 退出码 3，且进程记录仍是短名称）；`--resume` 续接沿用同一名称，chat 退出后该地址不再可达（退出码 3） |
 | `chat_adddir.py` | 会话级附加目录（`--add-dir`）：启动 `suga chat --add-dir <工作区外目录> --add-dir <共享目录>:rw`，假模型先 `file_read` 工作区外文件（只读目录生效）、再 `file_write` 写进 `:rw` 目录（`tools.approval: auto`，不询问），检查工具结果、磁盘上的文件，以及 `suga trace --json` 的 `turn_context` 事件 `add_dirs` 为 `["<目录>:ro", "<目录>:rw"]`；`--keep` 保留工作目录便于反向验证（去掉附加目录注入后读/写在 chat 里应失败） |
 | `chat_adddir_cmds.py` | 会话中途改授权目录：不带 `--add-dir` 起 chat，模型读工作区外文件时出现 `授权访问 <目录>？[r] 只读 [w] 读写 [n] 拒绝`（答 `r` 后同一步就读到内容），`:dirs` 标出 `越界授权`，`:add-dir <目录>:rw` 后下一次 `file_write` 成功，`:rm-dir` 后同一写入又被拒（磁盘上无文件），`:add-dir docs` 只报错+用法；`suga trace --json` 有 3 条 `add_dir` 事件（路径/权限/来源：ask 与 keyboard），`turn_context.add_dirs` 逐回合跟上授权变化。第二个 chat（text 模式）里 `suga send` 投递 `:add-dir <目录>` 只当普通消息（显示 `[来自 cli] …`、模型作答、`:dirs` 里没有它），证明投递文本改不了授权；反向验证见脚本 docstring |
+| `chat_paste.py` | 多行粘贴（suga-b1md）：`text` 模式的假模型；检查行编辑期间终端收到 `ESC[?2004h`；`ESC[200~第一行\n第二行ESC[201~` 后两行都出现在输入行且**不**开始回合（假模型没被调用），回车后模型收到的**一条** user 消息正是 `第一行\n第二行`（`fakellm.py` 每个请求的 stdout JSON 带上 `user`）；CR 换行的粘贴同样；随后手打回车仍照常提交一行。反向验证：去掉粘贴处理（lineedit 里粘贴内换行又变成提交）后三条检查都失败 |
 
 运行：
 

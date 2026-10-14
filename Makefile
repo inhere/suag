@@ -149,6 +149,7 @@ smoke-chat:
 	python3 -I scripts/ptysmoke/chat_shortname.py --bin tmp/smoke/suga --work tmp/smoke-shortname
 	python3 -I scripts/ptysmoke/chat_adddir.py --bin tmp/smoke/suga --work tmp/smoke-adddir
 	python3 -I scripts/ptysmoke/chat_adddir_cmds.py --bin tmp/smoke/suga --work tmp/smoke-adddir-cmds
+	python3 -I scripts/ptysmoke/chat_paste.py --bin tmp/smoke/suga --work tmp/smoke-paste
 
 ## clean: remove build artifacts
 clean:
