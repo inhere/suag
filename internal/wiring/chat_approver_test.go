@@ -224,6 +224,18 @@ func TestChatApproverQuestion(t *testing.T) {
 		q = ra.question(agentcore.ToolCall{Name: "file_remove", Arguments: map[string]any{"path": "."}})
 		assert.StrContains(t, q.Details[1], "检查：refusing to remove the workspace root")
 	})
+	t.Run("file_remove under an added :rw directory is planned like the workspace", func(t *testing.T) {
+		ws, shared := t.TempDir(), t.TempDir()
+		assert.NoErr(t, os.WriteFile(filepath.Join(shared, "a.txt"), []byte("abc"), 0o644))
+		dirs := native.NewAddDirs()
+		dirs.Set([]native.AddDir{{Path: shared, Writable: true}})
+		ra := newChatApprover(nil, false, nil, ws, dirs)
+		q := ra.question(agentcore.ToolCall{Name: "file_remove", Arguments: map[string]any{"path": filepath.Join(shared, "a.txt")}})
+		assert.Eq(t, []string{"路径：" + filepath.Join(shared, "a.txt"), "文件：3 字节，移入回收区保留 7 天"}, q.Details)
+		// The directory itself is still refused, like the workspace root.
+		q = ra.question(agentcore.ToolCall{Name: "file_remove", Arguments: map[string]any{"path": shared, "recursive": true}})
+		assert.StrContains(t, q.Details[1], "检查：refusing to remove the root of an added directory")
+	})
 	t.Run("file_edit previews old and new text", func(t *testing.T) {
 		long := strings.Repeat("line\n", 30)
 		q := approver.question(agentcore.ToolCall{Name: "file_edit", Arguments: map[string]any{
