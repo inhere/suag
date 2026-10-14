@@ -66,6 +66,12 @@ type rendererOptions struct {
 	// Markdown renders the model's text as terminal markdown (config
 	// chat.markdown); it only applies to a colored terminal.
 	Markdown bool
+	// WholeLines makes the streamed text wait for line ends (r3 M1): only complete
+	// lines are written, the unfinished rest is buffered until its newline or the
+	// end of the message. Chat turns it on while it keeps an input line on screen
+	// during a turn (chat.steering): the line editor repaints its line after every
+	// write, so a partial line would be left next to the line being edited.
+	WholeLines bool
 	// Spinner shows the "思考中…" waiting line while the model is asked for its
 	// next message (config chat.spinner, on by default). Like Markdown it needs
 	// a colored terminal: a pipe, a redirected output or NO_COLOR keeps it off.
@@ -169,6 +175,9 @@ func (r *Renderer) BeginTurn() {
 // resetLive resets the per-turn text streaming state.
 func (r *Renderer) resetLive() {
 	r.live = output.NewPrefixedLiveText(r.opts.Out, r.answerPrefix())
+	// Whole lines first: the markdown renderer is built knowing whether it prints the
+	// message prefix itself.
+	r.live.SetWholeLines(r.opts.WholeLines)
 	// Markdown needs a terminal: Color is exactly "a terminal without NO_COLOR",
 	// so a pipe, a redirected output or NO_COLOR keeps the raw text.
 	if r.opts.Markdown && r.opts.Color {
@@ -284,18 +293,12 @@ func (r *Renderer) Finish() bool {
 	return r.live.Finish()
 }
 
-// Answer prints a final answer that was not streamed. With markdown on it goes
-// through the same renderer as the streamed text (a multi-line answer would
-// otherwise show its raw markers).
+// Answer prints a final answer that was not streamed: the streamed text's own
+// renderer does it, so the message prefix, markdown and whole-line handling stay
+// exactly the ones the streamed case uses (r3 M1).
 func (r *Renderer) Answer(text string) {
 	r.stopThinking()
-	md := r.live.Markdown()
-	if md == nil {
-		fmt.Fprintln(r.opts.Out, r.answerPrefix()+text)
-		return
-	}
-	fmt.Fprint(r.opts.Out, r.answerPrefix())
-	md.Print(text)
+	r.live.Answer(text)
 }
 
 // SteerWaiting prints the line of a message a person inserted into the running

@@ -208,6 +208,9 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	// The turn-time input line (chat.steering): a turn then reads it instead of
 	// letting the tty go cooked, so the person can steer or end the turn.
 	inputSource.SetSteering(opts.Steering)
+	// steering is true while a turn keeps reading the input line (chat.steering with
+	// a terminal): the turn's output then has to keep that line out of its way.
+	steering := opts.Steering && inputSource.terminal != nil
 	// Output that may land while the input line is on screen (hook notices, errors)
 	// goes through the input source: it is printed above the line and the line is
 	// repainted, instead of sitting on top of it (design N4). The process log is not
@@ -230,6 +233,9 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		Thinking: opts.Thinking, ContextWindow: opts.ContextWindow,
 		WriteTools: opts.WriteTools, Markdown: opts.Markdown, Spinner: opts.Spinner,
 		HighlightInput: opts.HighlightInput, HighlightWidth: inputSource.highlightWidth,
+		// The input line stays on screen while a turn runs: the streamed text then
+		// leaves only complete lines (r3 M1).
+		WholeLines: steering,
 	})
 	// The terminal's window/tab title (chat.terminal_title): set below, once the
 	// session's short name and title are known, and given back on the way out.
@@ -267,7 +273,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		stderr: stderr, errOut: errOut, baseEvent: baseEvent, title: title, idle: idle,
 		server: processServer, stats: &stats, sessionID: sessionID, sessionName: sessionName,
 		createdAtStartup: createdAtStartup, dirs: opts.Dirs,
-		steering: opts.Steering && inputSource.terminal != nil,
+		steering: steering,
 	}
 	if hooks != nil && sessionID != "" {
 		ensureTranscriptFile(transcriptPath(sessionID), sessionID)

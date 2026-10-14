@@ -20,6 +20,10 @@ type LiveText struct {
 	streamed bool    // any delta printed this turn
 	open     bool    // the last printed delta did not end with a newline
 	started  bool    // the current model message already printed its prefix
+	// whole makes the text wait for line ends (SetWholeLines): only complete lines
+	// leave, the unfinished rest waits in tail.
+	whole bool
+	tail  string // text after the last newline of the current message
 }
 
 // NewLiveText returns a LiveText writing to w.
@@ -33,11 +37,36 @@ func NewPrefixedLiveText(w io.Writer, prefix string) *LiveText {
 // SetMarkdown renders the streamed text as terminal markdown, line by line,
 // instead of printing the deltas as they are (chat). color styles the rendered
 // lines; without it the markers are still replaced, but nothing is colored.
-func (l *LiveText) SetMarkdown(color bool) { l.md = NewMDTerm(l.w, color) }
+func (l *LiveText) SetMarkdown(color bool) {
+	l.md = NewMDTerm(l.w, color)
+	l.md.SetLinePrefix(l.wholePrefix())
+}
 
-// Markdown returns the markdown renderer of this text, or nil when markdown is
-// off. The caller uses it for text it prints itself (chat's final answer).
-func (l *LiveText) Markdown() *MDTerm { return l.md }
+// SetWholeLines makes the streamed text wait for line ends: only complete lines
+// are written, the unfinished rest stays buffered until its newline or the end of
+// the message (closeLine). chat turns it on while it keeps an input line on screen
+// during a turn (chat.steering): the line editor repaints its line after every
+// write, so a partial line would be left on screen next to the line being edited.
+// With markdown on the renderer is already line based; it then prints the message
+// prefix itself, since the prefix may not leave as a write of its own.
+func (l *LiveText) SetWholeLines(on bool) {
+	if l.whole == on {
+		return
+	}
+	l.whole = on
+	if l.md != nil {
+		l.md.SetLinePrefix(l.wholePrefix())
+	}
+}
+
+// wholePrefix is the prefix the markdown renderer prints itself ("" when the
+// text prints it, i.e. when whole lines are off).
+func (l *LiveText) wholePrefix() string {
+	if l.whole {
+		return l.prefix
+	}
+	return ""
+}
 
 // Handle prints a text delta or closes the line on message_stop; it reports
 // whether the event was a streaming event.
@@ -45,11 +74,7 @@ func (l *LiveText) Handle(event personal.Event) bool {
 	switch event.Kind {
 	case string(agentcore.StreamEventTextDelta):
 		if event.Text != "" {
-			if !l.started {
-				fmt.Fprint(l.w, l.prefix)
-				l.started = true
-			}
-			l.writeText(event.Text)
+			l.writeDelta(event.Text)
 		}
 		return true
 	case string(agentcore.StreamEventMessageStop):
@@ -78,29 +103,92 @@ func RetryNotice(event personal.Event) string {
 	return line
 }
 
-// writeText emits one delta: as it is, or through the markdown renderer, which
-// buffers the incomplete line until its newline arrives.
-func (l *LiveText) writeText(text string) {
+// writeDelta emits one delta of the current model message: as it is, buffered to
+// complete lines while chat keeps an input line on screen (whole-line mode), or
+// through the markdown renderer - which buffers the incomplete line even without
+// whole-line mode and prints the message prefix itself in whole-line mode.
+func (l *LiveText) writeDelta(text string) {
 	l.streamed = true
-	if l.md != nil {
+	switch {
+	case l.md != nil:
+		// In whole-line mode the markdown renderer prints the prefix (with the line
+		// it belongs to); otherwise the prefix goes out before the first delta.
+		if !l.whole && !l.started {
+			fmt.Fprint(l.w, l.prefix)
+			l.started = true
+		}
 		l.md.Write(text)
-		return
+	case l.whole:
+		l.writeWholeLines(text)
+	default:
+		if !l.started {
+			fmt.Fprint(l.w, l.prefix)
+			l.started = true
+		}
+		fmt.Fprint(l.w, text)
+		l.open = !strings.HasSuffix(text, "\n")
 	}
-	fmt.Fprint(l.w, text)
-	l.open = !strings.HasSuffix(text, "\n")
+}
+
+// writeWholeLines writes every line a delta completes (newline included); the rest
+// waits in tail for the next delta or for closeLine (whole-line mode).
+func (l *LiveText) writeWholeLines(text string) {
+	l.tail += text
+	for {
+		end := strings.IndexByte(l.tail, '\n')
+		if end < 0 {
+			return
+		}
+		l.writeWholeLine(l.tail[:end+1])
+		l.tail = l.tail[end+1:]
+	}
+}
+
+// writeWholeLine writes one complete line, with the message prefix in front of it
+// while this message has not shown one yet.
+func (l *LiveText) writeWholeLine(line string) {
+	if !l.started {
+		line, l.started = l.prefix+line, true
+	}
+	fmt.Fprint(l.w, line)
 }
 
 // closeLine ends the current model message: markdown renders what is left of
-// its last line (an open code block ends with it).
+// its last line (an open code block ends with it), whole-line mode writes the
+// buffered tail, and otherwise the open line gets its newline.
 func (l *LiveText) closeLine() {
 	if l.md != nil {
 		l.md.Flush()
+		return
+	}
+	if l.whole {
+		if l.tail != "" {
+			l.writeWholeLine(l.tail + "\n")
+			l.tail = ""
+		}
 		return
 	}
 	if l.open {
 		fmt.Fprintln(l.w)
 		l.open = false
 	}
+}
+
+// Answer prints the final text of a turn that was not streamed: with markdown on
+// it goes through the renderer of the streamed text (a multi-line answer would
+// otherwise show its raw markers), otherwise the prefix and the text are one line.
+// The prefix goes out with a line whoever owns it: the markdown renderer while
+// whole lines are on (it may not leave as a write of its own), this text
+// otherwise.
+func (l *LiveText) Answer(text string) {
+	if l.md == nil {
+		fmt.Fprintln(l.w, l.prefix+text)
+		return
+	}
+	if !l.whole {
+		fmt.Fprint(l.w, l.prefix)
+	}
+	l.md.Print(text)
 }
 
 // Finish ends the turn's output and reports whether anything was streamed.

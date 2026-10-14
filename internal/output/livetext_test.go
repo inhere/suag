@@ -81,6 +81,54 @@ func TestLiveTextMarkdownOffIsRaw(t *testing.T) {
 	assert.Eq(t, "▣ ## Title\n**bold**\n", out.String())
 }
 
+// TestLiveTextWholeLines: with whole lines on (chat keeps an input line on screen
+// during a turn) only complete lines leave; the unfinished rest waits for its
+// newline or for the end of the message, and with markdown on the message prefix
+// goes out with the first line instead of as a write of its own (r3 M1).
+func TestLiveTextWholeLines(t *testing.T) {
+	delta := func(s string) personal.Event {
+		return personal.Event{Kind: string(agentcore.StreamEventTextDelta), Text: s}
+	}
+	stop := personal.Event{Kind: string(agentcore.StreamEventMessageStop)}
+
+	t.Run("only complete lines leave", func(t *testing.T) {
+		var out bytes.Buffer
+		live := NewPrefixedLiveText(&out, "▣ ")
+		live.SetWholeLines(true)
+		live.Handle(delta("第"))
+		live.Handle(delta("一行\n第二")) // a delta may split a line anywhere
+		assert.Eq(t, "▣ 第一行\n", out.String())
+		live.Handle(stop) // the message ends: the tail gets its newline
+		assert.Eq(t, "▣ 第一行\n第二\n", out.String())
+		live.Handle(delta("最末一句"))
+		live.Finish()
+		assert.Eq(t, "▣ 第一行\n第二\n▣ 最末一句\n", out.String())
+	})
+
+	t.Run("turning it off streams the deltas as before", func(t *testing.T) {
+		var out bytes.Buffer
+		live := NewPrefixedLiveText(&out, "▣ ")
+		live.SetWholeLines(true)
+		live.SetWholeLines(false)
+		live.Handle(delta("半"))
+		assert.Eq(t, "▣ 半", out.String())
+	})
+
+	t.Run("markdown carries the prefix on the first line", func(t *testing.T) {
+		var out bytes.Buffer
+		live := NewPrefixedLiveText(&out, "▣ ")
+		live.SetWholeLines(true)
+		live.SetMarkdown(false)
+		live.Handle(delta("## Ti"))
+		assert.Eq(t, "", out.String()) // the incomplete line waits for its newline
+		live.Handle(delta("tle\n"))
+		assert.Eq(t, "▣ Title\n", out.String())
+		live.Handle(stop)
+		live.Answer("尾句") // a message of its own: the prefix again
+		assert.Eq(t, "▣ Title\n▣ 尾句\n", out.String())
+	})
+}
+
 func TestLiveTextRetry(t *testing.T) {
 	var out bytes.Buffer
 	live := NewPrefixedLiveText(&out, "▣ ")

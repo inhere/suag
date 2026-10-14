@@ -18,8 +18,21 @@ func renderMD(text string) string {
 	return out.String()
 }
 
+// TestMDTermLinePrefix: a caller that may not write the message prefix itself
+// (chat keeps an input line on screen while a turn runs) has the renderer put it
+// at the start of every message's first line.
+func TestMDTermLinePrefix(t *testing.T) {
+	var out bytes.Buffer
+	term := NewMDTerm(&out, false)
+	term.SetLinePrefix("▣ ")
+	term.Write("第一行\n第二行\n")
+	term.Flush()
+	term.Write("下一条")
+	term.Flush()
+	assert.Eq(t, "▣ 第一行\n第二行\n▣ 下一条\n", out.String())
+}
+
 // TestMDTermRendersElements covers every supported element, one table case each.
-// Plain mode: only the markers change, nothing is colored.
 func TestMDTermRendersElements(t *testing.T) {
 	for _, tc := range []struct{ name, in, want string }{
 		{"heading", "## Title\n", "Title\n"},

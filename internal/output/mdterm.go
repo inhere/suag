@@ -49,10 +49,20 @@ type MDTerm struct {
 	color   bool
 	pending string // text after the last newline, not rendered yet
 	block   bool   // inside a fenced code block; spans the lines of one message
+	// prefix, when set, is printed at the start of every message's first line: a
+	// caller that cannot write the prefix itself (it would be a write without a
+	// newline while an input line is on screen, see LiveText.SetWholeLines) has the
+	// renderer, which knows where a line starts, do it.
+	prefix  string
+	started bool // the current message already printed its prefix
 }
 
 // NewMDTerm returns an MDTerm writing rendered lines to w; color styles them.
 func NewMDTerm(w io.Writer, color bool) *MDTerm { return &MDTerm{w: w, color: color} }
+
+// SetLinePrefix sets the text printed at the start of every message's first line
+// ("" removes it).
+func (t *MDTerm) SetLinePrefix(prefix string) { t.prefix = prefix }
 
 // Write takes the next chunk of markdown text and prints every line it
 // completes; the rest waits in the buffer for its newline.
@@ -94,9 +104,17 @@ func (t *MDTerm) Flush() {
 		t.print(line)
 	}
 	t.block = false
+	// The next message gets the line prefix again.
+	t.started = false
 }
 
-func (t *MDTerm) print(line string) { fmt.Fprintln(t.w, t.renderLine(line)) }
+func (t *MDTerm) print(line string) {
+	rendered := t.renderLine(line)
+	if t.prefix != "" && !t.started {
+		rendered, t.started = t.prefix+rendered, true
+	}
+	fmt.Fprintln(t.w, rendered)
+}
 
 // renderLine renders one complete markdown line, without its newline.
 func (t *MDTerm) renderLine(s string) string {
