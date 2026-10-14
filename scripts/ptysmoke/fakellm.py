@@ -18,7 +18,11 @@ Modes (--mode):
         so a smoke can drive the read and the write of one turn separately.
 
 --delay seconds are slept before each response, so a test can type while a
-turn is running. --fail-first N answers the first N requests with HTTP 503;
+turn is running. --chunk splits a streamed text reply into pieces of that many
+characters with --chunk-delay seconds between them (a reply that arrives slowly,
+one line at a time), and --lines/--wide turn the text reply into a long answer of
+that many lines, each padded to that many columns (a line wider than the
+terminal window). --fail-first N answers the first N requests with HTTP 503;
 --break-first M then streams half of the next M responses' text and drops
 the connection (a broken stream), for the retry smoke. --fail-from N
 [--fail-count M] fails from the Nth request on, M times (M <= 0: every later
@@ -87,6 +91,37 @@ def message_tail(messages, count=4, limit=90):
             names = ",".join(str((c.get("function") or {}).get("name", "?")) for c in calls)
             text = (text + " tool_calls:" + names).strip()
         out.append({"role": m.get("role"), "text": text[:limit]})
+    return out
+
+
+def build_reply(args):
+    """The text the model answers with: --reply, or a long answer of --lines lines
+    of --wide columns each when the short one should not make the point."""
+    if args.mode != "text" or args.lines <= 1:
+        return args.reply
+    out = []
+    for i in range(args.lines):
+        line = "%s-%02d " % (args.reply, i + 1)
+        out.append(line.ljust(args.wide, ".") if args.wide > len(line) else line)
+    return "\n".join(out)
+
+
+def chunked(chunks, size):
+    """Splits every text chunk into pieces of size characters: the reply then
+    streams in small steps, so a scenario can type while it arrives."""
+    out = []
+    for chunk in chunks:
+        text = None
+        choices = chunk.get("choices") or []
+        if len(choices) == 1:
+            delta = choices[0].get("delta") or {}
+            if set(delta) == {"content"}:
+                text = delta["content"]
+        if not text or len(text) <= size:
+            out.append(chunk)
+            continue
+        for i in range(0, len(text), size):
+            out.append({"choices": [{"delta": {"content": text[i:i + size]}}]})
     return out
 
 
@@ -197,9 +232,10 @@ def make_handler(args):
                         "function": {"name": "shell_exec", "arguments": json.dumps(shell_args)}}
                 chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
             else:
-                chunks = [{"choices": [{"delta": {"content": args.reply}}]}]
+                chunks = [{"choices": [{"delta": {"content": build_reply(args)}}]}]
             usage = {"prompt_tokens": args.prompt_tokens, "completion_tokens": 2,
                      "total_tokens": args.prompt_tokens + 2}
+            chunks = chunked(chunks, args.chunk) if args.chunk > 0 else chunks
             if not body.get("stream"):
                 # Non-streaming calls (e.g. the compaction summary) get one JSON body.
                 delta = chunks[0]["choices"][0]["delta"]
@@ -225,6 +261,8 @@ def make_handler(args):
                 text = args.reply[: max(1, len(args.reply) // 2)]
                 chunks, self.close_connection = [{"choices": [{"delta": {"content": text}}]}], True
             for chunk in chunks + ([] if broken else ["[DONE]"]):
+                if args.chunk_delay > 0 and isinstance(chunk, dict) and chunk.get("choices"):
+                    time.sleep(args.chunk_delay)
                 data = "data: " + (chunk if isinstance(chunk, str) else json.dumps(chunk)) + "\n\n"
                 raw = data.encode()
                 self.wfile.write(b"%x\r\n%s\r\n" % (len(raw), raw))
@@ -266,6 +304,10 @@ def main():
     p.add_argument("--delay", type=float, default=1.0)
     p.add_argument("--command", default="echo SMOKE_OK")
     p.add_argument("--reply", default="完成")
+    p.add_argument("--lines", type=int, default=0, help="text mode: answer with this many lines")
+    p.add_argument("--wide", type=int, default=0, help="text mode with --lines: pad every line to this many columns")
+    p.add_argument("--chunk", type=int, default=0, help="split a streamed text reply into pieces of this many characters")
+    p.add_argument("--chunk-delay", type=float, default=0.05, help="seconds between two chunks of a streamed reply")
     p.add_argument("--prompt-tokens", type=int, default=10)
     p.add_argument("--background", action="store_true", help="tool mode: shell_exec with background: true")
     p.add_argument("--watch-paths", default="", help="tool mode with --background: comma-separated watch_paths")
