@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -39,6 +40,55 @@ func setupAddDirsRun(t *testing.T) string {
 	assert.NoErr(t, gkconfig.Set("workspace", workspace))
 	assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
 	return workspace
+}
+
+// TestChatAddDirCommands covers the chat front end of the mid-session
+// authorization: the CLI hands chat the runtime's directory handle, so
+// `:add-dir` from the keyboard writes the session metadata (and the resumed
+// chat lists it again), while the same text delivered by a job runner cannot.
+func TestChatAddDirCommands(t *testing.T) {
+	setupAddDirsRun(t)
+	setTestProvider(t, addDirsServer(t).URL)
+	// A writable chat: only then may a directory be authorized read-write.
+	assert.NoErr(t, gkconfig.Set("tools.allow_write", true))
+	dir := t.TempDir()
+
+	chat := func(input string, extra ...string) (string, string, error) {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		argv := append([]string{}, extra...)
+		err := RunPersonalCLI(context.Background(), "chat", argv, strings.NewReader(input), &stdout, &stderr)
+		return stdout.String(), stderr.String(), err
+	}
+
+	t.Run(":add-dir writes the session metadata", func(t *testing.T) {
+		stdout, stderr, err := chat(":dirs\n:add-dir " + dir + ":rw\n:dirs\n:quit\n")
+		assert.NoErr(t, err)
+		assert.StrContains(t, stdout, "附加目录：无")
+		assert.StrContains(t, stdout, "已授权："+dir+"（读写）")
+		assert.StrContains(t, stdout, "  "+dir+"（读写 · 会话中追加）")
+		found := regexp.MustCompile(`session id: (sess_\S+)`).FindStringSubmatch(stderr)
+		assert.Require(t, assert.Len(t, found, 2))
+		assert.Eq(t, []any{map[string]any{"path": dir, "mode": "rw", "source": "session"}},
+			sessionAddDirs(t, found[1]))
+
+		t.Run("a resumed chat still lists it", func(t *testing.T) {
+			stdout, _, err := chat(":dirs\n:quit\n", "--resume", found[1])
+			assert.NoErr(t, err)
+			assert.StrContains(t, stdout, "  "+dir+"（读写 · 会话中追加）")
+		})
+	})
+
+	t.Run(":rm-dir revokes it again", func(t *testing.T) {
+		stdout, stderr, err := chat(":add-dir " + dir + "\n:rm-dir " + dir + "\n:dirs\n:quit\n")
+		assert.NoErr(t, err)
+		assert.StrContains(t, stdout, "已授权："+dir+"（只读）")
+		assert.StrContains(t, stdout, "已撤销："+dir)
+		assert.StrContains(t, stdout, "附加目录：无")
+		found := regexp.MustCompile(`session id: (sess_\S+)`).FindStringSubmatch(stderr)
+		assert.Require(t, assert.Len(t, found, 2))
+		assert.Empty(t, sessionAddDirs(t, found[1]))
+	})
 }
 
 // sessionAddDirs reads the add_dirs metadata of a stored session.
