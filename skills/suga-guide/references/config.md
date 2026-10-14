@@ -86,7 +86,7 @@
 | `tools.shell` | `""`（Windows：pwsh 优先，否则 powershell；其它：sh） | `shell_exec` 使用的 shell（命令名或路径） |
 | `tools.shell_timeout_max` | `600` | `shell_exec` 单次 `timeout` 的上限秒数（单次默认 120） |
 | `tools.dependency_roots` | `true` | 自动识别工作区外的只读目录（Go 模块缓存、`GOROOT/src`、Rust crate 源码） |
-| `tools.read_roots` | `[]` | 额外只读目录列表（绝对路径，支持 `~`）。只影响 file_read/list/grep/find |
+| `tools.read_roots` | `[]` | 额外只读目录列表（绝对路径，支持 `~`）。只影响 file_read/list/grep/find。只想对某个会话生效时用 `--add-dir <目录>` 或 `SUGA_ADD_DIRS`（`:rw` 可写） |
 | `tools.web_fetch.allow_private` | `false` | 允许 `web_fetch` 访问私网/本机地址 |
 | `tools.web_fetch.proxy` | `""` | `web_fetch` 的代理（`http://`、`https://`、`socks5://`）；只影响 web_fetch，不影响模型请求 |
 | `tools.auto_allow` | `[]` | MCP 放行名单（普通运行），条目 `server/toolglob`（裸 `toolglob` 也接受，会匹配任意 server） |
@@ -197,12 +197,13 @@
 
 ```text
 suga                      # 等价 suga chat（交互式对话）
-suga chat [--resume <id>|--session-id <id>] [--model <p/m>] [--thinking <level>]
+suga chat [--resume <id>|--session-id <id>] [--model <p/m>] [--thinking <level>] [--add-dir <目录>[:ro|:rw]]
 suga run --prompt "..."   # 单轮；[--allow-write] [--read-only] [--model] [--thinking]
                           # [--session-id <id>] [--resume <id>] [--from <id>]
                           # [--output-format text|stream-json] [--mcp-config <file>]
                           # [--append-system-prompt <text>] [--clear-append-system-prompt]
                           # [--no-project-rules] [--injected] [--max-steps <N>]
+                          # [--add-dir <绝对目录>[:ro|:rw]]（可重复；也可用 SUGA_ADD_DIRS）
 suga acp                  # 以 ACP stdio 服务（供 gofer 等客户端接入）
 suga send --session <id|短名称|前缀> --text <文本>   # 给正在运行的 chat 送话（--wait 等真正开始）
 suga ps                   # 正在运行的 chat 进程（第二列是短名称）
