@@ -132,6 +132,11 @@ providers:
 #   spinner: true
 #   highlight_input: true
 #   terminal_title: true
+#   # Ask before a file tool reaches outside the workspace and the added
+#   # directories (--add-dir): the question authorizes the directory (read-only
+#   # or read-write) for the rest of the session. run, ACP and a chat without a
+#   # terminal never ask; they keep refusing such a path.
+#   ask_outside_dirs: true
 
 # Project rules: one file per directory level, from the Git root (or cwd) down
 # to cwd, plus $SUGA_HOME/AGENTS.md for the user level. Only a file name (no

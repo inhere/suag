@@ -79,6 +79,13 @@ const (
 	// steer_id, source, chars, step), "returned" one the turn handed back
 	// (attrs steer_id, source, chars, reason, disposition).
 	EventSteer = "steer"
+	// EventAddDir records a change of the session's added directories
+	// (--add-dir) outside any turn: name "add" or "remove", attrs path, mode
+	// (ro/rw) and from (keyboard: typed in chat; ask: authorized at an
+	// outside-directory question). It is how a trace shows who widened the
+	// session's reach and when; chat's :add-dir/:rm-dir and the authorization
+	// write it.
+	EventAddDir = "add_dir"
 )
 
 // Session is one conversation. Meta holds free-form keys (rules hash, append

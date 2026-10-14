@@ -37,6 +37,15 @@ func ChatTerminalTitleEnabled() bool {
 	return chatSwitch("chat.terminal_title")
 }
 
+// ChatAskOutsideDirs reports whether an interactive chat asks the person to
+// authorize a directory a file tool wants to reach outside the workspace and the
+// session's added directories (chat.ask_outside_dirs, on by default). It takes
+// the same values as chat.markdown. The question is asked on the terminal, so
+// run, ACP and a chat without a terminal keep refusing such a call as before.
+func ChatAskOutsideDirs() bool {
+	return chatSwitch("chat.ask_outside_dirs")
+}
+
 // chatSwitch reads a chat.* switch: a missing key is on, a bool is used as is,
 // and a string is off for "off"/"false" (any case, surrounding spaces ignored).
 func chatSwitch(key string) bool {

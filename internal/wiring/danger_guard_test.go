@@ -47,7 +47,7 @@ func TestDangerGuard(t *testing.T) {
 	})
 	t.Run("chat asks even with approval auto; only yes runs", func(t *testing.T) {
 		asker := &scriptedAsker{answers: []string{"y", "YES"}}
-		guard := guardDangerous(newChatApprover(nil, true, asker, ws, nil))
+		guard := guardDangerous(testChatApprover(nil, true, asker, ws, nil))
 		ctx, report := tools.WithApprovalReport(context.Background())
 		err := guard.Decide(ctx, call(danger), shell)
 		assert.ErrMsgContains(t, err, "用户拒绝执行危险删除") // "y" is not enough
@@ -60,7 +60,7 @@ func TestDangerGuard(t *testing.T) {
 		assert.StrContains(t, asker.questions[0].Prompt, "输入 yes 执行")
 	})
 	t.Run("chat without a terminal refuses", func(t *testing.T) {
-		guard := guardDangerous(newChatApprover(nil, false, &scriptedAsker{err: tools.ErrCannotAsk}, ws, nil))
+		guard := guardDangerous(testChatApprover(nil, false, &scriptedAsker{err: tools.ErrCannotAsk}, ws, nil))
 		err := guard.Decide(context.Background(), call(danger), shell)
 		assert.ErrMsgContains(t, err, "无法向用户确认")
 	})

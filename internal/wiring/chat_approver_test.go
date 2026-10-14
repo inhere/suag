@@ -72,6 +72,13 @@ func (a *scriptedAsker) Ask(_ context.Context, q tools.Question) (string, error)
 	return answer, nil
 }
 
+// testChatApprover builds a chat approver over an existing added-directory set,
+// as the older tests used: the outside-directory question stays off (they do not
+// wire the session handle) and only the other rules are exercised.
+func testChatApprover(gate *cliMCPGate, auto bool, asker tools.Asker, workspace string, dirs *native.AddDirs) *chatApprover {
+	return newChatApprover(chatApproverOptions{gate: gate, auto: auto, asker: asker, workspace: workspace, dirs: dirs})
+}
+
 // newChatApproval builds the chat approval layer over stub tools.
 func newChatApproval(t *testing.T, auto bool, asker tools.Asker) (*tools.Approval, map[string]*nativeStubTool) {
 	t.Helper()
@@ -86,7 +93,7 @@ func newChatApproval(t *testing.T, auto bool, asker tools.Asker) (*tools.Approva
 	}
 	gate, err := newCLIMCPGate(false)
 	assert.Require(t, assert.NoErr(t, err))
-	return tools.NewApproval(registry, newChatApprover(gate, auto, asker, "/work", nil)), stubs
+	return tools.NewApproval(registry, testChatApprover(gate, auto, asker, "/work", nil)), stubs
 }
 
 func runTool(approval *tools.Approval, name string, args map[string]any) error {
@@ -196,7 +203,7 @@ func TestChatApprover(t *testing.T) {
 }
 
 func TestChatApproverQuestion(t *testing.T) {
-	approver := newChatApprover(nil, false, nil, filepath.FromSlash("/work"), nil)
+	approver := testChatApprover(nil, false, nil, filepath.FromSlash("/work"), nil)
 	t.Run("shell command is full and redacted", func(t *testing.T) {
 		long := "echo start-" + strings.Repeat("x", 500) + "-end"
 		q := approver.question(agentcore.ToolCall{Name: "shell_exec", Arguments: map[string]any{
@@ -217,7 +224,7 @@ func TestChatApproverQuestion(t *testing.T) {
 		assert.NoErr(t, os.MkdirAll(filepath.Join(ws, "out"), 0o755))
 		assert.NoErr(t, os.WriteFile(filepath.Join(ws, "out", "a.txt"), []byte("abc"), 0o644))
 		assert.NoErr(t, os.MkdirAll(filepath.Join(ws, "out", "node_modules", "m"), 0o755))
-		ra := newChatApprover(nil, false, nil, ws, nil)
+		ra := testChatApprover(nil, false, nil, ws, nil)
 		q := ra.question(agentcore.ToolCall{Name: "file_remove", Arguments: map[string]any{"path": "out", "recursive": true}})
 		assert.Eq(t, []string{"路径：" + filepath.Join(ws, "out"), "目录：1 个文件，3 字节，移入回收区保留 7 天",
 			"直接永久删除 1 个被忽略的目录：out/node_modules/"}, q.Details)
@@ -229,7 +236,7 @@ func TestChatApproverQuestion(t *testing.T) {
 		assert.NoErr(t, os.WriteFile(filepath.Join(shared, "a.txt"), []byte("abc"), 0o644))
 		dirs := native.NewAddDirs()
 		dirs.Set([]native.AddDir{{Path: shared, Writable: true}})
-		ra := newChatApprover(nil, false, nil, ws, dirs)
+		ra := testChatApprover(nil, false, nil, ws, dirs)
 		q := ra.question(agentcore.ToolCall{Name: "file_remove", Arguments: map[string]any{"path": filepath.Join(shared, "a.txt")}})
 		assert.Eq(t, []string{"路径：" + filepath.Join(shared, "a.txt"), "文件：3 字节，移入回收区保留 7 天"}, q.Details)
 		// The directory itself is still refused, like the workspace root.

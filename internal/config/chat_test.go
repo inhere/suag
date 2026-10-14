@@ -113,6 +113,32 @@ func TestChatTerminalTitleEnabled(t *testing.T) {
 	})
 }
 
+// TestChatAskOutsideDirs: chat.ask_outside_dirs takes the same values as
+// chat.markdown, is on by default and is decided on its own.
+func TestChatAskOutsideDirs(t *testing.T) {
+	load := chatConfigLoader(t)
+	t.Run("default on", func(t *testing.T) {
+		load(t, "model: openai/m\n")
+		assert.True(t, ChatAskOutsideDirs())
+	})
+	t.Run("bool off", func(t *testing.T) {
+		load(t, "chat:\n  ask_outside_dirs: false\n")
+		assert.False(t, ChatAskOutsideDirs())
+	})
+	t.Run("string off", func(t *testing.T) {
+		load(t, "chat:\n  ask_outside_dirs: \"off\"\n")
+		assert.False(t, ChatAskOutsideDirs())
+	})
+	t.Run("bool on", func(t *testing.T) {
+		load(t, "chat:\n  ask_outside_dirs: true\n")
+		assert.True(t, ChatAskOutsideDirs())
+	})
+	t.Run("terminal_title does not decide it", func(t *testing.T) {
+		load(t, "chat:\n  terminal_title: false\n")
+		assert.True(t, ChatAskOutsideDirs())
+	})
+}
+
 // chatConfigLoader returns a helper writing body to a fresh SUGA_HOME's
 // config.yaml and loading it.
 func chatConfigLoader(t *testing.T) func(t *testing.T, body string) {

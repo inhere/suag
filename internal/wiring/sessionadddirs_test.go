@@ -32,6 +32,17 @@ func openAddDirsRuntime(t *testing.T, opts Options) *Runtime {
 	return rt
 }
 
+// openAddDirsChatSession opens a runtime, a session and publishes its added
+// directories, as chat does through chat.Options.SetupSession.
+func openAddDirsChatSession(t *testing.T, opts Options) (*Runtime, string) {
+	t.Helper()
+	rt := openAddDirsRuntime(t, opts)
+	model, err := rt.Runner.NewSession(context.Background(), "", "测试")
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Require(t, assert.NoErr(t, rt.ApplyAddDirs(context.Background(), model.ID)))
+	return rt, model.ID
+}
+
 // storedAddDirs reads the session's recorded additional directories.
 func storedAddDirs(t *testing.T, rt *Runtime, sessionID string) []adddir.Dir {
 	t.Helper()

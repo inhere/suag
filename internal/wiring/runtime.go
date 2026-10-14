@@ -105,14 +105,24 @@ type Runtime struct {
 
 	repo         *store.Store
 	capabilities defaultCapabilities
-	// requested is Options.AddDirs, replayed by ApplyAddDirs; readOnly is
-	// Options.ReadOnly, which downgrades the effective view (a read-only runtime
-	// has no write tool at all).
-	requested []adddir.Dir
-	readOnly  bool
+	// sessionDirs is the handle on the session's added directories: ApplyAddDirs
+	// publishes them through it, chat's :add-dir/:rm-dir commands and the
+	// outside-directory question change them through it too, so the metadata and
+	// the live set stay in step.
+	sessionDirs *SessionAddDirs
 	// tools is the registry stack the runner calls (visibility -> approval
 	// -> base); kept for tests.
 	tools agentcore.ToolRegistry
+}
+
+// SessionAddDirs is the runtime's handle on the session's added directories
+// (--add-dir): the chat front end lists and changes them through it after the
+// session is open (ApplyAddDirs).
+func (p *Runtime) SessionAddDirs() *SessionAddDirs {
+	if p == nil {
+		return nil
+	}
+	return p.sessionDirs
 }
 
 // Close releases the session store and tool providers.
@@ -151,6 +161,7 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 	opts.sessionDirs = dirs
 	var approver tools.Approver = gate
 	var asker *tools.BindableAsker
+	var chatGate *chatApprover
 	if opts.ChatMode {
 		// chat wraps the gate: MCP rules unchanged, other tools confirmed
 		// through the asker (bound later by chat) per tools.approval.
@@ -159,7 +170,16 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 			return nil, err
 		}
 		asker = tools.NewBindableAsker()
-		approver = newChatApprover(gate, auto, asker, workspace, dirs)
+		// The outside-directory question needs the tool's static read roots (a
+		// path under one needs no authorization) and the session's added-directory
+		// set, both read once here.
+		roots, _ := readRoots()
+		chatGate = newChatApprover(chatApproverOptions{
+			gate: gate, auto: auto, asker: asker, workspace: workspace, dirs: dirs,
+			readRoots: native.RootPaths(roots), readOnly: opts.ReadOnly,
+			askOutside: appconfig.ChatAskOutsideDirs(),
+		})
+		approver = chatGate
 		// Memory writes of tainted sessions are confirmed at the same terminal.
 		opts.MemoryConfirm = newChatMemoryConfirmer(asker).confirm
 	}
@@ -180,6 +200,11 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	rt.Asker, rt.WriteTools = asker, opts.AllowWrite
+	if chatGate != nil {
+		// The outside-directory question authorizes a path through the same
+		// handle ApplyAddDirs publishes the session's directories with.
+		chatGate.SetAddDirs(rt.sessionDirs)
+	}
 	return rt, nil
 }
 
@@ -423,9 +448,14 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	memHost.bind(runner, repo)
-	return &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
+	rt := &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
 		ContextWindow: contextWindow, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry,
-		AddDirs: dirs, requested: opts.AddDirs, readOnly: opts.ReadOnly}, nil
+		AddDirs: dirs}
+	// The added directories of the session being served (--add-dir): the front
+	// end fills the set once the session is open (ApplyAddDirs) through this
+	// handle, which chat's commands and the outside-directory question share.
+	rt.sessionDirs = newSessionAddDirs(runner, dirs, opts.AddDirs, opts.ReadOnly, workspace)
+	return rt, nil
 }
 
 // buildMainProvider builds the main provider; with fallback_models the result

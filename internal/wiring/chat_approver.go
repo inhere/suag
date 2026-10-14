@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	gkconfig "github.com/gookit/config/v2"
+	"github.com/inhere/suga/internal/adddir"
 	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/redact"
 	"github.com/inhere/suga/pkg/agentcore/tools"
@@ -21,15 +22,28 @@ import (
 // chatApprover is the chat tools.Approver: MCP tools keep the cliMCPGate rules
 // (never asked), read-only tools (tools.MetaOf) run, and every other tool
 // (file_write, shell_exec and any tool that declares nothing) is confirmed by
-// the person (tools.approval: ask) or run (tools.approval: auto).
+// the person (tools.approval: ask) or run (tools.approval: auto). A file call
+// that reaches outside the workspace and the session's directories is asked
+// about separately (chat.ask_outside_dirs), read-only tools included.
 type chatApprover struct {
 	gate      *cliMCPGate
 	auto      bool
 	asker     tools.Asker
 	workspace string
-	// dirs is the session's additional-directory set: a file_remove prompt for a
-	// path under a :rw directory is planned with the same rules as the workspace.
-	dirs *native.AddDirs
+	// liveDirs is the session's additional-directory set: a file_remove prompt for
+	// a path under a :rw directory is planned with the same rules as the workspace.
+	liveDirs *native.AddDirs
+	// readRoots are the configured read-only roots (native.RootPaths): a path under
+	// one is already reachable and needs no authorization.
+	readRoots []string
+	// readOnly marks a --read-only session: it has no write tool at all, so only a
+	// read-only directory can be authorized.
+	readOnly bool
+	// askOutside turns the outside-directory question on (chat.ask_outside_dirs,
+	// on by default); addDirs is the session's added-directory handle it works
+	// through (nil: the question stays off).
+	askOutside bool
+	addDirs    *SessionAddDirs
 
 	// mu serializes questions and guards always: the tools answered "a"
 	// (always) run without asking for the rest of this process.
@@ -37,9 +51,29 @@ type chatApprover struct {
 	always map[string]bool
 }
 
-func newChatApprover(gate *cliMCPGate, auto bool, asker tools.Asker, workspace string, dirs *native.AddDirs) *chatApprover {
-	return &chatApprover{gate: gate, auto: auto, asker: asker, workspace: workspace, dirs: dirs, always: map[string]bool{}}
+// chatApproverOptions are the inputs of the chat approver, read when the runtime
+// is assembled (the session does not exist yet).
+type chatApproverOptions struct {
+	gate       *cliMCPGate
+	auto       bool
+	asker      tools.Asker
+	workspace  string
+	dirs       *native.AddDirs
+	readRoots  []string
+	readOnly   bool
+	askOutside bool
 }
+
+func newChatApprover(opts chatApproverOptions) *chatApprover {
+	return &chatApprover{gate: opts.gate, auto: opts.auto, asker: opts.asker, workspace: opts.workspace,
+		liveDirs: opts.dirs, readRoots: opts.readRoots, readOnly: opts.readOnly, askOutside: opts.askOutside,
+		always: map[string]bool{}}
+}
+
+// SetAddDirs wires the session's added-directory handle: the outside-directory
+// question authorizes a directory through it, the same handle ApplyAddDirs
+// publishes the session's directories with. nil keeps the question off.
+func (a *chatApprover) SetAddDirs(dirs *SessionAddDirs) { a.addDirs = dirs }
 
 // toolsApprovalAuto reads tools.approval: "ask" (default) or "auto". Any other
 // value is a startup error (fail closed), never guessed.
@@ -61,6 +95,14 @@ func toolsApprovalAuto() (bool, error) {
 func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool agentcore.Tool) error {
 	if tools.IsMCP(tool) {
 		return a.gate.Decide(ctx, call, tool)
+	}
+	// A file call that reaches outside the workspace and the session's
+	// directories is asked about first, read-only tools included: what such a
+	// call needs is a new directory, not the permission for one call, so the
+	// question stands apart from the per-call approvals below (a granted write
+	// still gets its own confirmation there).
+	if err, stop := a.askOutsideDir(ctx, call); stop {
+		return err
 	}
 	name := call.Name
 	// AgentState tools only change the agent's own state; the tool enforces
@@ -96,6 +138,89 @@ func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool
 	return tools.Denied("用户拒绝执行 " + name)
 }
 
+// askOutsideDir asks the person to authorize the directory a file tool call
+// wants to reach outside the workspace and the session's added directories
+// (chat.ask_outside_dirs), before the call runs. The question's subject is the
+// directory the tool would really resolve (native.OutsideOf), never a path the
+// model described in words, so a call cannot talk its way into another
+// directory.
+//
+// A granted directory is recorded and published at once (source ask), so this
+// call and the ones after it reach the directory; the call then goes on through
+// the ordinary rules, so a write still gets its own confirmation. A refusal is a
+// denied call, and the tool keeps refusing by itself. stop is true when the call
+// was decided here; it is false when this call needs no question (another tool,
+// a reachable path, the question turned off, no session handle, or no terminal
+// to ask on - a piped chat refuses as ever) and when a question was answered
+// with a grant.
+func (a *chatApprover) askOutsideDir(ctx context.Context, call agentcore.ToolCall) (err error, stop bool) {
+	if !a.askOutside || a.addDirs == nil {
+		return nil, false
+	}
+	pending, ok := native.OutsideOf(a.workspace, a.readRoots, a.liveDirs, call.Name, call.Arguments)
+	if !ok {
+		return nil, false
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	askedAt := time.Now()
+	answer, askErr := a.asker.Ask(ctx, a.outsideQuestion(call, pending))
+	if errors.Is(askErr, tools.ErrCannotAsk) {
+		// No terminal: the tool refuses the path by itself, and a message here
+		// would only hide that reason.
+		return nil, false
+	}
+	if askErr != nil {
+		return askErr, true
+	}
+	wait := time.Since(askedAt)
+	writable, refuse := outsideAnswer(answer)
+	if refuse {
+		tools.ReportApproval(ctx, tools.AskedAndDenied, wait)
+		return tools.Denied("用户拒绝授权访问 " + pending.Path), true
+	}
+	if _, err := a.addDirs.add(ctx, adddir.Dir{Path: pending.Path, Writable: writable}, adddir.SourceAsk); err != nil {
+		tools.ReportApproval(ctx, tools.AskedAndDenied, wait)
+		return tools.Denied("授权访问 " + pending.Path + " 失败：" + err.Error()), true
+	}
+	tools.ReportApproval(ctx, tools.ApprovedByUser, wait)
+	// The call runs now: nothing was refused before the question, so this very
+	// step reaches the directory (its result follows the answer).
+	return nil, false
+}
+
+// outsideAnswer reads the answer to an outside-directory question: [r] a
+// read-only directory (the default for anything that is not [w]), [w] a
+// read-write one. refuse is true for "n", an empty answer and anything else.
+func outsideAnswer(answer string) (writable, refuse bool) {
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "r", "ro", "read", "只读":
+		return false, false
+	case "w", "rw", "write", "读写":
+		return true, false
+	}
+	return false, true
+}
+
+// outsideQuestion is the question of one outside-directory authorization: the
+// tool that asked, the path it gave and the canonical directory to authorize.
+// A --read-only session offers the read-only answer only: it has no write tool
+// to use a read-write directory with.
+func (a *chatApprover) outsideQuestion(call agentcore.ToolCall, pending native.OutsideDir) tools.Question {
+	details := []string{"工具：" + call.Name, "要访问：" + pending.Target}
+	if pending.Path != pending.Target {
+		details = append(details, "目录："+pending.Path)
+	}
+	prompt := fmt.Sprintf("授权访问 %s？[r] 只读 [w] 读写 [n] 拒绝：", pending.Path)
+	if a.readOnly {
+		prompt = fmt.Sprintf("授权访问 %s？[r] 只读 [n] 拒绝（本会话为 --read-only）：", pending.Path)
+	}
+	for i, detail := range details {
+		details[i] = displaySafe(redact.Secrets(detail))
+	}
+	return tools.Question{Tool: call.Name, Details: details, Prompt: prompt}
+}
+
 // question shows the full key arguments of the call: redacted, never truncated.
 func (a *chatApprover) question(call agentcore.ToolCall) tools.Question {
 	args := call.Arguments
@@ -105,7 +230,7 @@ func (a *chatApprover) question(call agentcore.ToolCall) tools.Question {
 		details = []string{"命令：" + argText(args["command"])}
 	case "file_remove":
 		details = []string{"路径：" + a.fullPath(argText(args["path"]))}
-		plan, err := native.PlanRemoveWithDirs(a.workspace, a.dirs.WritePaths(), args)
+		plan, err := native.PlanRemoveWithDirs(a.workspace, a.liveDirs.WritePaths(), args)
 		switch {
 		case err != nil:
 			details = append(details, "检查："+err.Error())
