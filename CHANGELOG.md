@@ -7,6 +7,7 @@
 ### 新增
 
 - `suga run --max-steps N`（N 至少 1）覆盖本轮的步数上限：优先于环境变量 `SUGA_MAX_STEPS`，再优先于配置 `max_steps`（默认 100）；子 agent 的 `agents.max_steps` 不受影响。
+- 单轮步数上限 `max_steps` 的默认值由 100 调到 240（按轮计，不是整个会话；一步是一次模型请求）：gofer 中较大的单轮任务常在 100 步收尾。
 - 到达上限收尾不再需要猜：stream-json 的 `result` 行在收尾时带 `wrap_up`（步数上限为 `"max_steps"`），正常答复不带该字段；`--output-format text` 在 stderr 打印一行说明（如“本轮因步数上限（100 步）收尾，以上答复只基于此前已获得的信息”），stdout 仍只有答复正文。
 
 ### 变更

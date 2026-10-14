@@ -109,7 +109,7 @@ gofer job answer <job-id> <interaction-id> reject|allow
 ## 用量与观测
 
 - stream-json 每次模型调用后输出一行 `usage`（本次 run 的累计值：`input_tokens`（不含缓存）、`output_tokens`、`cache_read_tokens`、`cache_write_tokens`、`total_tokens`、`cost_usd`、`tool_calls`）；`turn_end` 与 `result` 带同名 `usage`，`result` 是最终值。
-- `result` 行在因上限收尾时带 `wrap_up`（步数上限为 `"max_steps"`），正常答复不带该字段；`--output-format text` 时该原因打到 stderr，stdout 仍只有答复正文。单轮步数上限可用 `run --max-steps N`（N 至少 1，需自己加进 agent args）或环境变量 `SUGA_MAX_STEPS` 覆盖配置 `max_steps`（默认 100）；子 agent 用 `agents.max_steps`。
+- `result` 行在因上限收尾时带 `wrap_up`（步数上限为 `"max_steps"`），正常答复不带该字段；`--output-format text` 时该原因打到 stderr，stdout 仍只有答复正文。单轮步数上限可用 `run --max-steps N`（N 至少 1，需自己加进 agent args）或环境变量 `SUGA_MAX_STEPS` 覆盖配置 `max_steps`（默认 240）；子 agent 用 `agents.max_steps`。
 - ACP 每次模型调用后与每轮结束都发 `usage_update`：`_meta` 顶层扁平键是**本次 run** 的累计（Gofer 的预算按此计），另附 `_meta.run` 与 `_meta.session`（会话累计）；顶层 `cost.amount` 是会话累计；`used`/`size` 是最近一次请求的上下文与窗口。
 - 观测命令在**运行 suga 的那台主机**上执行（Gofer worker 用户的 `SUGA_HOME`）：
 

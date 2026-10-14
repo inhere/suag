@@ -56,7 +56,7 @@
 |---|---|---|
 | `workspace` | `""`（当前工作目录） | 文件与 shell 工具的工作区根 |
 | `rules.file` | `AGENTS.md` | 每级目录读取的项目规则文件名（只接受文件名，不能带路径），如 `CLAUDE.md`；`$SUGA_HOME/AGENTS.md` 始终读取 |
-| `max_steps` | `100` | 一次任务（一轮）的最大 ReAct 循环步数；可被环境变量 `SUGA_MAX_STEPS` 与 `run --max-steps N` 覆盖（子 agent 用 `agents.max_steps`），到顶时要求模型收尾并在答复开头写明是步数上限 |
+| `max_steps` | `240` | 一次任务（一轮，不是整个会话）的最大 ReAct 循环步数；可被环境变量 `SUGA_MAX_STEPS` 与 `run --max-steps N` 覆盖（子 agent 用 `agents.max_steps`），到顶时要求模型收尾并在答复开头写明是步数上限 |
 | `serpapi_key` | `""` | 配置后注册 `web_search`（支持 `${VAR}`） |
 | `transcripts` | 开 | 会话记录（transcript）写到 `$SUGA_HOME/transcripts`；`false` 或 `"off"` 关闭（键值接受布尔或字符串） |
 

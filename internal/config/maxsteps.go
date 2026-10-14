@@ -11,11 +11,11 @@ import (
 
 // DefaultMaxSteps is the per-turn step limit of the main agent when neither
 // max_steps nor SUGA_MAX_STEPS is set.
-const DefaultMaxSteps = 100
+const DefaultMaxSteps = 240
 
 // ReadMaxSteps resolves the step limit of one main-agent turn. Precedence is
 // the same as for the model settings: --max-steps > SUGA_MAX_STEPS > config
-// max_steps (default 100); flagMaxSteps 0 means "not given". A value below 1
+// max_steps (default 240); flagMaxSteps 0 means "not given". A value below 1
 // from the flag or the environment is an error rather than a silent "no limit";
 // a non-positive max_steps in the config keeps its older meaning (no limit).
 // The sub-agent limit agents.max_steps is a separate setting (ReadAgentSettings).

@@ -155,8 +155,8 @@ mcp:
 #   list_max: 15
 #   always_load: []
 
-# Max ReAct loop steps per agent task
-max_steps: 100
+# Max ReAct loop steps (model requests) of one turn, not of the session
+max_steps: 240
 
 # MCP tool schema deferral: auto (defer when schemas exceed ~10% of the context
 # window) | always | never. Deferred tools are loaded via the tool_search tool.

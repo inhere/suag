@@ -73,7 +73,7 @@ BAILIAN_API_KEY=<你的密钥>
 BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
-也可将这两个变量设为 Gofer server 进程可用的环境变量。仓库的 `config/config.yaml` 是字段样例；Suga 只加载 `~/.suga/config.yaml` 与 `~/.suga/.env`（或 `SUGA_HOME` 下的同名文件），不读取当前工作目录的配置和 `.env`。`SUGA_HOME` 替换 `~/.suga` 作为数据与配置根，`SUGA_CONFIG` 指定唯一配置文件。模型优先级是 `--model` > `SUGA_MODEL` > 配置 `model`（`<provider>/<model>`）；这些选项不会接收密钥。单轮步数上限同理由 `run --max-steps` > `SUGA_MAX_STEPS` > 配置 `max_steps`（默认 100）决定。OpenAI、Anthropic、DeepSeek 是内置预设，换用时改 `model` 并提供对应环境变量即可；完整字段见 [LLM 配置](llm-config-v0.md)。不要把真实密钥写入 agent argv、job `--env` 或任务文本：Gofer 会持久化 job 请求。会话库位置只由 `SUGA_HOME` 决定（`$SUGA_HOME/db/sessions.db`），`database_url` 与 `agentcore.run_root` 已移除。旧版本的库（`suag.db`、`agentcore/` 目录）不读取、不迁移、也不删除，仍留在磁盘上：旧会话 ID 无法用 `--resume`/`--session-id` 续接，Gofer 中登记的旧 Suag 会话（`session_family: suag`）无法再被唤醒或接管，需要新建会话。
+也可将这两个变量设为 Gofer server 进程可用的环境变量。仓库的 `config/config.yaml` 是字段样例；Suga 只加载 `~/.suga/config.yaml` 与 `~/.suga/.env`（或 `SUGA_HOME` 下的同名文件），不读取当前工作目录的配置和 `.env`。`SUGA_HOME` 替换 `~/.suga` 作为数据与配置根，`SUGA_CONFIG` 指定唯一配置文件。模型优先级是 `--model` > `SUGA_MODEL` > 配置 `model`（`<provider>/<model>`）；这些选项不会接收密钥。单轮步数上限同理由 `run --max-steps` > `SUGA_MAX_STEPS` > 配置 `max_steps`（默认 240）决定。OpenAI、Anthropic、DeepSeek 是内置预设，换用时改 `model` 并提供对应环境变量即可；完整字段见 [LLM 配置](llm-config-v0.md)。不要把真实密钥写入 agent argv、job `--env` 或任务文本：Gofer 会持久化 job 请求。会话库位置只由 `SUGA_HOME` 决定（`$SUGA_HOME/db/sessions.db`），`database_url` 与 `agentcore.run_root` 已移除。旧版本的库（`suag.db`、`agentcore/` 目录）不读取、不迁移、也不删除，仍留在磁盘上：旧会话 ID 无法用 `--resume`/`--session-id` 续接，Gofer 中登记的旧 Suag 会话（`session_family: suag`）无法再被唤醒或接管，需要新建会话。
 
 ## 批处理 CLI
 
@@ -178,7 +178,7 @@ gofer job resume <job-id> --prompt "继续上个问题"
 - chat hooks：`hooks.command`（argv 列表，不经 shell）在 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd、Interrupt 事件时被调用，事件以一行 JSON 写入其 stdin。未设 `hooks.command` 时不启用，`SUGA_HOOKS=off` 可整体关闭。`hooks.timeout_ms` 限制普通事件；`hooks.stop_args` 只追加到 Stop 调用，且必须同时设 `hooks.stop_wait_sec`（Stop 最多等 `stop_wait_sec+2` 秒，否则按 `timeout_ms`）。PostToolUse 只对匹配 `hooks.post_tool_use.tools` glob 的工具发送，设了 `hooks.post_tool_use.name` 时改用该名称。
 - 后台 Stop hook：`hooks.stop_background: true`（默认 false，仅 chat）把 Stop 作为 `hook` 类后台任务运行，不再在提示符处等待：用户输入、投递与任务唤醒都不会中断它，耗时的 Stop（如跑全量测试）因此能跑完。hook 返回 block 加 reason 时产生通知 `Stop hook asks to continue: <reason>`：空闲的 chat 被唤醒并开始注入回合，回合进行中则在下一次模型请求前带上（带 `stop_hook_active=true`，语义同同步等待）。新的 Stop 到来时先终止还在跑的上一个；没有空闲任务槽位时退回原来的等待。超时：设了 `hooks.stop_wait_sec` 时仍用 `stop_wait_sec+2` 秒，否则不再套用 `hooks.timeout_ms`，而是由任务管理器的 `tasks.max_duration`（默认 2h）限制。
 - `suga run --injected` 把本轮输入标记为非人工输入，transcript 和 hook 事件中都会体现。
-- `suga run --max-steps N`（N 至少 1）覆盖本轮的步数上限，优先于环境变量 `SUGA_MAX_STEPS`，再优先于配置 `max_steps`（默认 100）；子 agent 的 `agents.max_steps` 不受影响。要在 Gofer 里限制 CLI job 的单轮步数，在该 agent 的 args 中加 `--max-steps`，或给 worker 进程设 `SUGA_MAX_STEPS`。
+- `suga run --max-steps N`（N 至少 1）覆盖本轮的步数上限，优先于环境变量 `SUGA_MAX_STEPS`，再优先于配置 `max_steps`（默认 240）；子 agent 的 `agents.max_steps` 不受影响。要在 Gofer 里限制 CLI job 的单轮步数，在该 agent 的 args 中加 `--max-steps`，或给 worker 进程设 `SUGA_MAX_STEPS`。
 
 ## ACP 常驻与审批
 
