@@ -16,6 +16,7 @@
 ### 修复
 
 - chat 终端显示：回合被 Ctrl-C 中断时显示“已中断本轮”，不再把 `context canceled` 原样打在屏幕上；回合被取消但 chat 继续运行的同一条路径（例如模型调用被取消）同样处理，`:compact` 被中断显示 `Compact: 已中断`。只改 chat 的显示：`run`、ACP、stream-json 的错误文本与退出码不变，取消确认问题仍显示“已取消”。
+- 进程被强杀（kill -9、崩溃）后会话停在 `running`，续接时报 `session "…" is not ready for a new turn: running`、无法开始新回合：`chat --resume` / `--session-id`、`run --resume` 在能证明没有活着的进程在跑该会话时（本进程持有会话的跨进程锁——chat 持有整个生命周期，`run`/ACP 在回合内持有）把它恢复为 `open`，并把仍处于运行状态的上一回合记为 `cancelled`（`stop_reason=stale_process`），随后照常开始新回合。恢复时 chat 与 `run` 显示一行“上一回合异常中断，已恢复会话”，trace 记一条 `session recovered` 事件；无法证明时（未配置锁目录、子 agent 会话）行为不变，仍然拒绝。
 
 ## [0.20.0] - 2026-10-14
 
