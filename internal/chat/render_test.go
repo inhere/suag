@@ -319,7 +319,7 @@ func TestBannerAndExitSummary(t *testing.T) {
 		s.add(personal.RunResult{Usage: agentcore.Usage{InputTokens: 100, OutputTokens: 20}})
 		var out bytes.Buffer
 		s.print(&out, "sess_x", "ws-k7", time.Second)
-		assert.StrContains(t, out.String(), "\n续接：suga chat --resume sess_x（会话 ws-k7）\n")
+		assert.StrContains(t, out.String(), "\n会话 ws-k7 · 续接：suga chat --resume sess_x\n")
 	})
 	t.Run("no session no summary", func(t *testing.T) {
 		var out bytes.Buffer

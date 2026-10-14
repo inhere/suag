@@ -647,10 +647,12 @@ func (s chatStats) print(w io.Writer, sessionID, shortName string, elapsed time.
 	if s.session.InputTokens > 0 || s.session.OutputTokens > 0 {
 		line += fmt.Sprintf("（会话累计 in %d / out %d）", s.session.InputTokens, s.session.OutputTokens)
 	}
+	// The short name goes before the resume command, which ends the line so it
+	// can be copied as it is (a name glued after the id broke the command).
 	name := ""
 	if shortName != "" {
-		name = "（会话 " + shortName + "）"
+		name = "会话 " + shortName + " · "
 	}
 	// Leading newline: Ctrl-C/Ctrl-D at the prompt leaves the cursor after "❯ ".
-	fmt.Fprintf(w, "\n%s · 运行 %s\n续接：suga chat --resume %s%s\n", line, formatElapsed(elapsed), sessionID, name)
+	fmt.Fprintf(w, "\n%s · 运行 %s\n%s续接：suga chat --resume %s\n", line, formatElapsed(elapsed), name, sessionID)
 }

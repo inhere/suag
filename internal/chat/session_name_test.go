@@ -98,7 +98,7 @@ func TestChatShowsAndRegistersStoredShortName(t *testing.T) {
 	assert.StrContains(t, stdout.String(), "Suga chat · 会话 ws-k7\n")
 	assert.StrContains(t, stdout.String(), "session id: "+model.ID+" · 会话 ws-k7")
 	// The exit summary names the session next to the resume command.
-	assert.StrContains(t, stderr.String(), "续接：suga chat --resume "+model.ID+"（会话 ws-k7）")
+	assert.StrContains(t, stderr.String(), "会话 ws-k7 · 续接：suga chat --resume "+model.ID+"\n")
 }
 
 // TestChatNamesTheSessionAfterItsWorkspace: a new chat generates a name from the

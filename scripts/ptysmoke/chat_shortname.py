@@ -102,7 +102,7 @@ def scenario(s, binary, env):
     time.sleep(0.3)
     s.send(CTRL_C)
     s.check("exit summary names the session",
-            s.until(r"续接：suga chat --resume " + re.escape(sid) + r"（会话 " + re.escape(name) + r"）", m))
+            s.until(r"会话 " + re.escape(name) + r" · 续接：suga chat --resume " + re.escape(sid) + r"\r?\n", m))
     return sid, name
 
 
@@ -121,7 +121,7 @@ def resume(binary, env, ws, sid, name):
         m = s.mark()
         s.line(":quit")
         s.check("resume exit summary keeps the name",
-                s.until(r"续接：suga chat --resume " + re.escape(sid) + r"（会话 " + re.escape(name) + r"）", m))
+                s.until(r"会话 " + re.escape(name) + r" · 续接：suga chat --resume " + re.escape(sid) + r"\r?\n", m))
     finally:
         s.close(grace=0)
     return s
