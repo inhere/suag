@@ -56,10 +56,12 @@ func relUnderRoot(root, p string, fold bool) (rel string, ok bool) {
 // absUnderWorkspace maps an absolute path argument to a path under workspace
 // when it lies inside it. A path under the workspace's symlink-resolved real
 // location is accepted too, so a model quoting the real path of a symlinked
-// workspace root is not rejected.
+// workspace root is not rejected. Both sides are compared in their canonical
+// spelling (CanonicalPath: a Windows 8.3 short name versus the long one), while
+// the result keeps the workspace's own spelling.
 func absUnderWorkspace(workspace, arg string, fold bool) (string, bool) {
-	p := filepath.Clean(arg)
-	if rel, ok := relUnderRoot(workspace, p, fold); ok {
+	p := CanonicalPath(arg)
+	if rel, ok := relUnderRoot(CanonicalPath(workspace), p, fold); ok {
 		return filepath.Join(workspace, rel), true
 	}
 	if real, err := filepath.EvalSymlinks(workspace); err == nil && real != workspace {

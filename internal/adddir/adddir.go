@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // EnvVar is the environment variable an outer tool (a job runner) uses instead
@@ -358,9 +360,12 @@ func Has(dirs []Dir, path string) bool {
 }
 
 // pathKey normalises a path for the duplicate check (case-insensitive on
-// Windows, where two spellings name one directory).
+// Windows, where two spellings name one directory). native.CanonicalPath is the
+// same normalization the file tools resolve a path with, so a directory is one
+// entry whether it was typed with a Windows 8.3 short name, recorded as the
+// authorized real path, or both.
 func pathKey(path string) string {
-	path = filepath.Clean(path)
+	path = native.CanonicalPath(path)
 	if foldCase {
 		return strings.ToLower(path)
 	}

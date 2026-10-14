@@ -39,12 +39,19 @@ type outsideCaseOptions struct {
 	auto bool
 	// readRoots are the approver's static read-only roots.
 	readRoots []string
+	// paths respells the workspace and the outside directory of the case, so a
+	// test can drive it through the spellings a Windows CI runner's %TEMP% has
+	// (8.3 short names). nil keeps each directory as t.TempDir made it.
+	paths func(dir string) string
 }
 
 // newOutsideCase builds the case; the asker is answered by the calling test.
 func newOutsideCase(t *testing.T, asker tools.Asker, o outsideCaseOptions) outsideCase {
 	t.Helper()
 	ws, outside := t.TempDir(), t.TempDir()
+	if o.paths != nil {
+		ws, outside = o.paths(ws), o.paths(outside)
+	}
 	assert.NoErr(t, os.WriteFile(filepath.Join(ws, "in.txt"), []byte("inside\n"), 0o644))
 	assert.NoErr(t, os.WriteFile(filepath.Join(outside, "b.txt"), []byte("outside\n"), 0o644))
 	addDirsSessionConfig(t, ws)
@@ -65,6 +72,17 @@ func (c outsideCase) read(ctx context.Context, path string) (*api.ToolResult, er
 	return c.approval.ExecuteTool(ctx, api.ToolCall{CallID: "read", Name: "file_read", Arguments: map[string]any{"path": path}})
 }
 
+// realDir is the spelling the outside-directory flow records for dir: the
+// question's subject and the session's entry are the resolved real directory
+// (native.OutsideOf), so on a CI runner's short-spelled %TEMP%
+// ("C:\Users\RUNNER~1\...") they read as the long spelling instead.
+func realDir(t *testing.T, dir string) string {
+	t.Helper()
+	real, err := filepath.EvalSymlinks(dir)
+	assert.Require(t, assert.NoErr(t, err))
+	return real
+}
+
 // TestChatApproverOutsideDirs covers the outside-directory question
 // (chat.ask_outside_dirs): a file call that reaches outside the workspace and the
 // session's directories asks the person first, and the answer authorizes the
@@ -76,31 +94,31 @@ func TestChatApproverOutsideDirs(t *testing.T) {
 		asker := &scriptedAsker{answers: []string{"r"}}
 		c := newOutsideCase(t, asker, outsideCaseOptions{})
 		res, err := c.read(ctx, filepath.Join(c.outside, "b.txt"))
-		assert.NoErr(t, err)
+		assert.Require(t, assert.NoErr(t, err))
 		assert.StrContains(t, res.Content, "outside")
 
 		assert.Require(t, assert.Len(t, asker.questions, 1))
 		q := asker.questions[0]
 		assert.Eq(t, "file_read", q.Tool)
-		assert.Eq(t, "授权访问 "+c.outside+"？[r] 只读 [w] 读写 [n] 拒绝：", q.Prompt)
+		assert.Eq(t, "授权访问 "+realDir(t, c.outside)+"？[r] 只读 [w] 读写 [n] 拒绝：", q.Prompt)
 		details := strings.Join(q.Details, "\n")
 		assert.StrContains(t, details, "工具：file_read")
 		assert.StrContains(t, details, "要访问："+filepath.Join(c.outside, "b.txt"))
 
 		// The authorization is live and recorded, outside any turn.
-		assert.Eq(t, []string{c.outside + ":ro"}, c.rt.AddDirs.List())
-		assert.Eq(t, []adddir.Dir{{Path: c.outside, Source: adddir.SourceAsk}}, storedAddDirs(t, c.rt, c.sessionID))
+		assert.Eq(t, []string{realDir(t, c.outside) + ":ro"}, c.rt.AddDirs.List())
+		assert.Eq(t, []adddir.Dir{{Path: realDir(t, c.outside), Source: adddir.SourceAsk}}, storedAddDirs(t, c.rt, c.sessionID))
 		events := addDirEvents(t, c.rt, c.sessionID)
 		assert.Require(t, assert.Len(t, events, 1))
 		assert.Eq(t, "add", events[0].Name)
 		assert.Eq(t, "", events[0].TurnID)
-		assert.Eq(t, c.outside, events[0].Attrs["path"])
+		assert.Eq(t, realDir(t, c.outside), events[0].Attrs["path"])
 		assert.Eq(t, "ro", events[0].Attrs["mode"])
 		assert.Eq(t, "ask", events[0].Attrs["from"])
 
 		// A second file in the same directory needs no question.
 		res, err = c.read(ctx, filepath.Join(c.outside, "b.txt"))
-		assert.NoErr(t, err)
+		assert.Require(t, assert.NoErr(t, err))
 		assert.StrContains(t, res.Content, "outside")
 		assert.Len(t, asker.questions, 1)
 	})
@@ -111,8 +129,8 @@ func TestChatApproverOutsideDirs(t *testing.T) {
 		out := filepath.Join(c.outside, "new.txt")
 		_, err := c.approval.ExecuteTool(ctx, api.ToolCall{CallID: "w", Name: "file_write",
 			Arguments: map[string]any{"path": out, "content": "written\n"}})
-		assert.NoErr(t, err)
-		assert.Eq(t, []string{c.outside + ":rw"}, c.rt.AddDirs.List())
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, []string{realDir(t, c.outside) + ":rw"}, c.rt.AddDirs.List())
 		body, readErr := os.ReadFile(out)
 		assert.NoErr(t, readErr)
 		assert.Eq(t, "written\n", string(body))
@@ -127,7 +145,7 @@ func TestChatApproverOutsideDirs(t *testing.T) {
 			c := newOutsideCase(t, asker, outsideCaseOptions{})
 			_, err := c.read(ctx, filepath.Join(c.outside, "b.txt"))
 			assert.True(t, errors.Is(err, tools.ErrDenied), "answer %q", answer)
-			assert.ErrMsgContains(t, err, "用户拒绝授权访问 "+c.outside)
+			assert.ErrMsgContains(t, err, "用户拒绝授权访问 "+realDir(t, c.outside))
 			assert.Empty(t, c.rt.AddDirs.List())
 			assert.Len(t, addDirEvents(t, c.rt, c.sessionID), 0)
 		}
@@ -159,22 +177,22 @@ func TestChatApproverOutsideDirs(t *testing.T) {
 		_, err := c.read(ctx, filepath.Join(c.outside, "b.txt"))
 		assert.True(t, errors.Is(err, tools.ErrDenied))
 		assert.Require(t, assert.Len(t, asker.questions, 1))
-		assert.Eq(t, "授权访问 "+c.outside+"？[r] 只读 [n] 拒绝（本会话为 --read-only）：", asker.questions[0].Prompt)
+		assert.Eq(t, "授权访问 "+realDir(t, c.outside)+"？[r] 只读 [n] 拒绝（本会话为 --read-only）：", asker.questions[0].Prompt)
 		assert.Empty(t, c.rt.AddDirs.List())
 		assert.Len(t, addDirEvents(t, c.rt, c.sessionID), 0)
 
 		// The read-only answer works in the same session.
 		asker.answers = []string{"r"}
 		_, err = c.read(ctx, filepath.Join(c.outside, "b.txt"))
-		assert.NoErr(t, err)
-		assert.Eq(t, []string{c.outside + ":ro"}, c.rt.AddDirs.List())
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, []string{realDir(t, c.outside) + ":ro"}, c.rt.AddDirs.List())
 	})
 
 	t.Run("the question is asked even with tools.approval auto", func(t *testing.T) {
 		asker := &scriptedAsker{answers: []string{"r"}}
 		c := newOutsideCase(t, asker, outsideCaseOptions{auto: true})
 		_, err := c.read(ctx, filepath.Join(c.outside, "b.txt"))
-		assert.NoErr(t, err)
+		assert.Require(t, assert.NoErr(t, err))
 		assert.Len(t, asker.questions, 1)
 	})
 }
