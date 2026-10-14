@@ -2,6 +2,7 @@ package personal
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -121,6 +122,40 @@ func TestTaskNoticesReachTheModel(t *testing.T) {
 		assert.Eq(t, "failed", events[2].Status)
 		assert.Eq(t, "exec: not found", events[2].Error)
 	})
+}
+
+// recentRequests never counts the entry injected into a running turn (a task
+// notice) as a user request (issue suga-0lxy).
+func TestRecentRequestsSkipTaskNotices(t *testing.T) {
+	repo := openObserveRepo(t)
+	notices := &fakeNotices{}
+	registry := tools.NewRegistry()
+	registry.Register(fnTool{name: "work", fn: func() (*agentcore.ToolResult, error) {
+		notices.set(tasks.Info{ID: "t1", Kind: "shell", Summary: "go test ./...", Status: tasks.Exited,
+			ExitCode: 1, Started: time.Now(), Ended: time.Now(), Tail: []string{"FAIL"}})
+		return &agentcore.ToolResult{Content: "worked"}, nil
+	}})
+	runner, err := New(Config{Repository: repo, Tools: registry, Provider: &scriptProvider{}, Tasks: notices})
+	assert.Require(t, assert.NoErr(t, err))
+	res, err := runner.Run(context.Background(), RunRequest{Prompt: "fix the parser bug"})
+	assert.Require(t, assert.NoErr(t, err))
+
+	// The notice of the turn is stored as a user entry ...
+	es, err := repo.ListEntries(context.Background(), res.SessionID, store.EntryFilter{Types: []string{store.EntryUser}})
+	assert.NoErr(t, err)
+	noticed := 0
+	for _, e := range es {
+		var m agentcore.Message
+		assert.NoErr(t, json.Unmarshal(e.JSON, &m))
+		if isInjectedItem(m) {
+			noticed++
+		}
+	}
+	assert.Eq(t, 1, noticed)
+	// ... but it is not one of the turn's user requests.
+	got, err := runner.recentRequests(context.Background(), res.SessionID, "", recentRequestCount)
+	assert.NoErr(t, err)
+	assert.Eq(t, []string{"fix the parser bug"}, got)
 }
 
 func TestTaskNoticeText(t *testing.T) {
