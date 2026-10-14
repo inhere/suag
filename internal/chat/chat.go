@@ -53,6 +53,15 @@ type Options struct {
 	// chat.highlight_input, on by default). Like Markdown it needs a colored
 	// terminal: a pipe, a redirected output or NO_COLOR keeps the plain text.
 	HighlightInput bool
+	// TerminalTitle sets the terminal's window/tab title to the session, "suga ·
+	// <short name> · <session title>" (config chat.terminal_title, on by
+	// default). Like Markdown it needs a colored terminal: a pipe, a redirected
+	// output or NO_COLOR leaves the title alone.
+	TerminalTitle bool
+	// terminalTitleOut is where the title sequences go (nil: the chat output);
+	// tests point it at a buffer to check when the title changes without a
+	// terminal.
+	terminalTitleOut io.Writer
 	// Thinking (the effective thinking level, "" = provider default) and
 	// ContextWindow (tokens, 0 = unknown) are shown in the banner.
 	Thinking      string
@@ -80,6 +89,10 @@ type Options struct {
 func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Reader, stdout, stderr io.Writer, hooks sugahooks.Client) error {
 	hooks = recordHooks(hooks, runner)
 	sessionID := ""
+	// startupTitle is the stored title of a session this chat continues ("" for a
+	// new one, which gets its title from the first message); it names the terminal
+	// title from the start.
+	startupTitle := ""
 	source := "startup"
 	createdAtStartup := false
 	if opts.FromID != "" {
@@ -94,12 +107,12 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		if err != nil {
 			return personal.SessionNotFound(err, opts.ResumeID)
 		}
-		sessionID = model.ID
+		sessionID, startupTitle = model.ID, model.Title
 	} else if opts.SessionID != "" {
 		model, err := runner.LoadSession(ctx, opts.SessionID)
 		if err == nil {
 			// Opening an existing session by --session-id continues it: report resume, like claude.
-			sessionID = model.ID
+			sessionID, startupTitle = model.ID, model.Title
 			source = "resume"
 		} else if errors.Is(err, personal.ErrSessionNotFound) {
 			model, err = runner.NewSession(ctx, opts.SessionID, "New chat")
@@ -192,6 +205,10 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		WriteTools: opts.WriteTools, Markdown: opts.Markdown, Spinner: opts.Spinner,
 		HighlightInput: opts.HighlightInput, HighlightWidth: inputSource.highlightWidth(),
 	})
+	// The terminal's window/tab title (chat.terminal_title): set below, once the
+	// session's short name and title are known, and given back on the way out.
+	title := newTerminalTitle(opts.terminalTitleWriter(inputSource), stdout, opts.terminalTitleEnabled(color))
+	defer title.Restore()
 	// Background idle consolidation; closed before the input source, so its
 	// last status line still goes through it.
 	idle := newIdleConsolidation(runner, sessionID, opts.IdleAfter, opts.IdleMinRatio, render, opts.scheduleOptions,
@@ -213,6 +230,9 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	}
 	// The banner names the session; the short name is only known after registration.
 	render.SetSessionName(sessionName)
+	// The same two names label the terminal: a resumed session starts with its
+	// stored title, a new one gets the first message's title below.
+	title.Set(sessionName, startupTitle)
 	var pendingContext string
 	if hooks != nil && sessionID != "" {
 		ensureTranscriptFile(transcriptPath(sessionID), sessionID)
@@ -327,6 +347,9 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			if err := runner.SetSessionTitle(ctx, sessionID, line); err != nil {
 				return err
 			}
+			// The first message names the session: the terminal title follows the
+			// stored title (same derivation, so both read the same).
+			title.Set(sessionName, personal.SessionTitle(line))
 			createdAtStartup = false
 		}
 		if hooks != nil {
