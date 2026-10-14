@@ -133,6 +133,17 @@ func TestRendererPlainTurn(t *testing.T) {
 	})
 }
 
+// TestRendererInterrupt: an interrupted turn reads 已中断本轮 on the chat output
+// (the runner's raw cancellation error never reaches the screen; it goes to
+// stderr and the session record instead).
+func TestRendererInterrupt(t *testing.T) {
+	var out, errOut bytes.Buffer
+	newRenderer(rendererOptions{Out: &out, Err: &errOut}).Interrupt()
+	assert.Eq(t, interruptNotice+"\n", out.String())
+	assert.Eq(t, "", errOut.String())
+	assert.StrNotContains(t, out.String(), "context canceled")
+}
+
 func TestRendererColoredTurn(t *testing.T) {
 	// Force the color library on regardless of the test environment.
 	color.ForceColor()

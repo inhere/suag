@@ -10,7 +10,8 @@ agent tool event naming the sub-agent session, which `suga sessions` hides
 and `suga sessions --agents` lists.
 
 cancel: the sub-agent is slow (--child-delay); Ctrl-C during it ends chat
-cleanly (resume line), and the sub-agent session is not left running.
+cleanly (resume line), the interrupted turn reads 已中断本轮 (never the raw
+"context canceled"), and the sub-agent session is not left running.
 
 background: the agent call has background: true; the turn ends at once and
 the sub-agent's end wakes the idle chat with a notice holding its report.
@@ -85,7 +86,11 @@ def cancel_scenario(s, binary, env):
     m = s.mark(); s.line("调研一下")
     s.check("cancel: sub-agent at work", s.until(r"  · file_grep", m))
     m = s.mark(); s.send(CTRL_C)  # while its report is slow to come
+    # The interrupted turn is reported as 已中断本轮: the runner's raw
+    # "context canceled" must not reach the terminal.
+    s.check("cancel: interrupted turn reads 已中断本轮", s.until(r"已中断本轮", m, timeout=15))
     s.check("cancel: chat ends with the resume line", s.until(r"续接：suga chat --resume sess_", m, timeout=15))
+    s.check("cancel: never shows the raw context canceled", not s.contains(r"context canceled", m))
     s.pump(0.5)
     rows = sessions(binary, env, "--agents")
     child = next((r for r in rows if r.get("parent")), {})

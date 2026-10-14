@@ -292,7 +292,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			// Compress the session context now; token figures are estimates.
 			idle.Pause()
 			if out, err := runner.Compact(ctx, sessionID); err != nil {
-				fmt.Fprintln(stderr, "Compact:", err)
+				fmt.Fprintln(stderr, formatCommandError("Compact", err))
 			} else {
 				idle.Compacted()
 				fmt.Fprintf(inputSource, "Compacted context: ~%d -> ~%d tokens (estimate)\n", out.TokensBefore, out.TokensAfter)
@@ -376,13 +376,23 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		stopMessage := ""
 		if runErr != nil {
 			render.Finish()
-			if ctx.Err() != nil {
+			switch {
+			case ctx.Err() != nil:
+				// Ctrl-C (SIGINT) cut this turn short: chat ends here as before
+				// (cmd/suga reports 已中断 with exit 130), and the turn itself is
+				// reported as interrupted rather than with the runner's raw
+				// "context canceled".
+				render.Interrupt()
 				return ctx.Err()
-			}
-			if errors.Is(runErr, tools.ErrAborted) {
+			case errors.Is(runErr, tools.ErrAborted):
 				// Ctrl-C/Ctrl-D at an approval question: only this turn ends.
 				render.Notice("已取消")
-			} else {
+			case errors.Is(runErr, context.Canceled):
+				// A cancelled turn that did not cancel this chat itself (a
+				// cancelled model call): the raw error would read
+				// "context canceled".
+				render.Interrupt()
+			default:
 				render.Error(runErr)
 			}
 			stopMessage = "Error: " + runErr.Error()
@@ -570,6 +580,16 @@ func processChatInputEvent(source *chatInputSource, event chatInputEvent, waitin
 	}
 	source.CompleteLine()
 	return chatInput{line: event.line, hasLine: event.err == nil}, false, event.err
+}
+
+// formatCommandError is the line chat prints for a failed :command. An
+// interrupted one reads 已中断 instead of the runner's raw "context canceled"
+// (the display only: run, ACP and stream-json keep the raw error text).
+func formatCommandError(name string, err error) string {
+	if errors.Is(err, context.Canceled) {
+		return name + ": " + interruptText
+	}
+	return name + ": " + err.Error()
 }
 
 func appendContext(current, next string) string {
