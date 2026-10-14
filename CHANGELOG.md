@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.21.0] - 2026-10-14
+
+上限收尾可见（stream-json `wrap_up`、汇报写明原因）并支持 `run --max-steps` / `SUGA_MAX_STEPS`，默认单轮步数上限调到 240；进程被强杀后停在 running 的会话续接时自动恢复；chat 输入行浅色背景、`:exit` 别名、信息行显示时间、中断显示“已中断本轮”。
+
 ### 新增
 
 - `suga run --max-steps N`（N 至少 1）覆盖本轮的步数上限：优先于环境变量 `SUGA_MAX_STEPS`，再优先于配置 `max_steps`（默认 100）；子 agent 的 `agents.max_steps` 不受影响。
@@ -451,7 +455,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.20.0...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/inhere/suga/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/inhere/suga/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/inhere/suga/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/inhere/suga/compare/v0.17.0...v0.18.0
