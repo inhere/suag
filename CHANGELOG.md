@@ -4,6 +4,13 @@
 
 ## [未发布]
 
+进程日志落盘：交互式 chat 不再把日志打到终端。
+
+### 变更
+
+- 进程日志（slog 的诊断）写入 `$SUGA_HOME/logs/suga.log`（0600、追加、不轮转）。交互式 `chat` 只写文件：它的 stderr 就是渲染答复的终端（Gofer 也用 pty 起 chat），日志行直写会打断实时输出；`suga run` 与被 Gofer 拉起的 `suga acp` 是管道，仍在 stderr 保留一份，`job logs --stderr` 与 Gofer 对 `session id:` 行的提取都不受影响。日志文件打不开时回退到 stderr 并提示一行。
+- `SUGA_DEBUG=1` 时 `DEBUG MODE ENABLED` 行写在日志文件里（并带 `log_file=<路径>`），不再出现在终端；轮转与日志配置项（级别/路径/是否写 stderr）待后续补齐。
+
 ## [0.23.1] - 2026-10-14
 
 Windows 修复：8.3 短文件名路径下越界授权后仍被拒；多个 suga 同时首次启动时内置 skill 释放偶发失败。

@@ -165,6 +165,8 @@ suga manifest [--json] [--model <p/m>]            # 模型、工具、MCP、skil
 
 `run --output-format stream-json` 在每次模型调用后输出一行 `usage`，为本次 run 的累计值：`input_tokens`（不含缓存）、`output_tokens`、`cache_read_tokens`、`cache_write_tokens`、`total_tokens`、`cost_usd`、`tool_calls`。`turn_end` 与 `result` 带同名 `usage`，调用方可在运行中途做预算控制。模型请求因瞬时故障重试时会输出一行 `retry`（`reason`、`attempt`、`wait_ms`、`restart`）；`restart: true` 表示这条消息此前输出的 `message_delta` 文本作废，会从头重新流式输出。chat 把这种重试显示为一行 `↻` 提示，`run` 打到 stderr，ACP 作为 thought 块下发。ACP 在同一时机发 `usage_update`（[说明](docs/usage/gofer-personal-agent.md#acp-用量上报)）。因上限收尾而非正常作答的回合会在最后的 `result` 行上带 `wrap_up`（到步数上限时为 `"max_steps"`，正常答复不带该字段）；文本模式把该原因打到 stderr，短答复因此不会被当成完成，也不会被当成超时。
 
+进程诊断日志写 `$SUGA_HOME/logs/suga.log`（0600，各次运行都追加、不轮转）。交互式 `chat` 不再把它们打到屏幕上：它的 stderr 就是渲染答复的终端，日志行会打断实时输出；被 Gofer 拉起的 `suga run` 与 `suga acp` 仍在 stderr 保留一份，job 日志照旧收集。日志文件打不开时回退到 stderr。`SUGA_DEBUG=1` 追加 debug 记录并在日志里写明日志文件路径。
+
 ## 开发
 
 ```bash

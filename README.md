@@ -165,6 +165,8 @@ Tool lines show the exit code (shell), the bytes that entered the context, a spi
 
 `run --output-format stream-json` prints a `usage` line after every model call, with the run's running totals: `input_tokens` (cache excluded), `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `total_tokens`, `cost_usd` and `tool_calls`. `turn_end` and `result` carry the same `usage`, so a consumer can enforce a budget mid-run. A `retry` line (`reason`, `attempt`, `wait_ms`, `restart`) announces a model request retried after a transient failure; with `restart: true` the message's `message_delta` text so far is void and the message streams again from its start. Chat prints such a retry as a `↻` notice line, `run` prints it to stderr and ACP sends it as a thought chunk. ACP sends `usage_update` at the same moments ([details](docs/usage/gofer-personal-agent.md#acp-用量上报)). A turn that ended with a wrap-up answer instead of a normal one marks it in the closing `result` line with `wrap_up` (`"max_steps"` when it hit the step limit, absent otherwise); text mode prints that reason on stderr, so a short answer is not taken for a finished one — or for a timeout.
 
+Process diagnostics go to `$SUGA_HOME/logs/suga.log` (0600, appended by every run, never rotated). An interactive `chat` keeps them off the screen — its stderr is the terminal that renders the answer, and a log line written there breaks the live output — while `suga run` and `suga acp` under Gofer also keep them on stderr, where the job log collects them; if the log file cannot be opened, stderr gets them either way. `SUGA_DEBUG=1` adds debug records and names the log file.
+
 ## Development
 
 ```bash

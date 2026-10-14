@@ -15,18 +15,6 @@ import (
 	capskills "github.com/inhere/suga/pkg/agentcore/skills"
 )
 
-func SetupLogging() {
-	level := slog.LevelInfo
-	debugMode := os.Getenv("SUGA_DEBUG") != ""
-	if debugMode {
-		level = slog.LevelDebug
-	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
-	if debugMode {
-		slog.Debug("DEBUG MODE ENABLED - Verbose logging is active")
-	}
-}
-
 // buildDefaultSkillRegistry scans the skill roots once at startup, releasing
 // the built-in skills into <SUGA_HOME>/skills first so they are found like any
 // other skill.
