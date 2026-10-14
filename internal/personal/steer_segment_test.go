@@ -63,7 +63,7 @@ func compactWithSteerRunner(t *testing.T, steerAt int, steer Steer) (*scriptProv
 // A steer taken before the cut point leaves the raw context with the messages
 // before it and is summarized; the package still names it in its own section.
 func TestSteerBeforeTheCutGoesIntoTheSummary(t *testing.T) {
-	steer := Steer{ID: "s1", Text: "only change the README", Source: steerSourceKeyboard}
+	steer := Steer{ID: "s1", Text: "only change the README", Source: SteerSourceKeyboard}
 	prov, repo, res := compactWithSteerRunner(t, 1, steer)
 
 	// The break keeps the last call/result group (the huge result included):

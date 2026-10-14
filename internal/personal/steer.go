@@ -27,9 +27,20 @@ const steerCapacity = 8
 // without bound.
 var ErrSteerQueueFull = errors.New("steering queue is full")
 
-// steerSourceKeyboard is the source of a steer a person typed into the chat (a
+// SteerSourceKeyboard is the source of a steer a person typed into the chat (a
 // steer delivered by `suga send --steer` carries "send:<from>" instead).
-const steerSourceKeyboard = "keyboard"
+const SteerSourceKeyboard = "keyboard"
+
+// SteerSender returns the sender of a steer source: the <from> of "send:<from>",
+// or "" for a steer a person typed at this keyboard (SteerSourceKeyboard, an
+// unknown source). The chat labels a message from elsewhere with it ("[来自 x]").
+func SteerSender(source string) string {
+	from, ok := strings.CutPrefix(source, "send:")
+	if !ok {
+		return ""
+	}
+	return from
+}
 
 // metaSteer marks a user entry a person typed into a running turn (steering).
 // Such an entry is not the turn's request (see injectedItemKeys) and is replayed

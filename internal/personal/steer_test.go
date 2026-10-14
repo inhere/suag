@@ -154,7 +154,7 @@ func TestSteerIsDeliveredToTheRunningTurn(t *testing.T) {
 	repo := openObserveRepo(t)
 	const sid = "s-steer-turn"
 	steers := []Steer{
-		{ID: "s1", Text: "only change the README", Source: steerSourceKeyboard},
+		{ID: "s1", Text: "only change the README", Source: SteerSourceKeyboard},
 		{ID: "s2", Text: "and run the tests", Source: "send:alice"},
 	}
 	var runner *Runner
@@ -218,7 +218,7 @@ func TestSteerIsDeliveredToTheRunningTurn(t *testing.T) {
 		events := steerEventsOf(t, repo, sid, "delivered")
 		assert.Require(t, assert.Len(t, events, 2))
 		assert.Eq(t, "s1", events[0].Attrs["steer_id"])
-		assert.Eq(t, steerSourceKeyboard, events[0].Attrs["source"])
+		assert.Eq(t, SteerSourceKeyboard, events[0].Attrs["source"])
 		assert.Eq(t, float64(len(steers[0].Text)), events[0].Attrs["chars"])
 		assert.Eq(t, float64(1), events[0].Attrs["step"]) // taken by the step after the tool call
 		assert.Eq(t, res.TurnID, events[0].TurnID)
@@ -242,7 +242,7 @@ func TestSteerIsDeliveredToTheRunningTurn(t *testing.T) {
 func TestSteerIsNotTakenOnAWrapUpStep(t *testing.T) {
 	repo := openObserveRepo(t)
 	const sid = "s-steer-wrapup"
-	steer := Steer{ID: "s1", Text: "stop and explain", Source: steerSourceKeyboard}
+	steer := Steer{ID: "s1", Text: "stop and explain", Source: SteerSourceKeyboard}
 	var runner *Runner
 	provider := &scriptProv{name: "main", normal: func(n int, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
 		if n == 1 {
@@ -335,8 +335,8 @@ func (h *abortOnModel) BeforeModel(context.Context, *agentcore.ModelEvent, *agen
 func TestSteerIsReturnedWhenTheTurnIsCancelled(t *testing.T) {
 	repo := openObserveRepo(t)
 	const sid = "s-steer-cancel"
-	first := Steer{ID: "s1", Text: "stop, wrong file", Source: steerSourceKeyboard}
-	second := Steer{ID: "s2", Text: "and revert it", Source: steerSourceKeyboard}
+	first := Steer{ID: "s1", Text: "stop, wrong file", Source: SteerSourceKeyboard}
+	second := Steer{ID: "s2", Text: "and revert it", Source: SteerSourceKeyboard}
 	var runner *Runner
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -417,8 +417,8 @@ func (p *pushProv) Generate(_ context.Context, req *agentcore.GenerateRequest) (
 func TestSteerUntakenIsReturnedWhenTheTurnCompletes(t *testing.T) {
 	repo := openObserveRepo(t)
 	const sid = "s-steer-complete"
-	delivered := Steer{ID: "s1", Text: "only change the README", Source: steerSourceKeyboard}
-	late := Steer{ID: "s2", Text: "one more thing", Source: steerSourceKeyboard}
+	delivered := Steer{ID: "s1", Text: "only change the README", Source: SteerSourceKeyboard}
+	late := Steer{ID: "s2", Text: "one more thing", Source: SteerSourceKeyboard}
 	var runner *Runner
 	refusedLate := true
 	provider := &pushProv{push: func() {

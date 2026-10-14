@@ -118,7 +118,7 @@ func TestTraceViewTaskNotice(t *testing.T) {
 // of plain input (and not as a notice).
 func TestTraceViewSteer(t *testing.T) {
 	repo, sid := traceRun(t)
-	raw, err := json.Marshal(SteerMessage(Steer{ID: "s1", Text: "only change the README", Source: steerSourceKeyboard}))
+	raw, err := json.Marshal(SteerMessage(Steer{ID: "s1", Text: "only change the README", Source: SteerSourceKeyboard}))
 	assert.Require(t, assert.NoErr(t, err))
 	_, err = repo.AppendEntries(context.Background(), sid, store.NewEntry{Type: store.EntryUser, JSON: raw})
 	assert.Require(t, assert.NoErr(t, err))
