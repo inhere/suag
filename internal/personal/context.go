@@ -19,10 +19,32 @@ var ErrContextOverflow = errors.New("context window exceeded even after compacti
 
 // ctxItem is one context message together with the entries seq it was
 // persisted under. Every message of a turn is persisted right after it is
-// produced, so in-turn messages also have a seq (see turnSeqs).
+// produced, so in-turn messages also have a seq (see turnItems). An injected
+// entry (isInjectedItem) is a stored entry of the turn that is not an
+// in-memory message; it carries its own seq the same way.
 type ctxItem struct {
 	msg agentcore.Message
 	seq int64
+}
+
+// injectedItemKeys are the Message.Metadata keys marking a user entry the
+// runtime injected into a running turn instead of a person writing it:
+// background task notices (metaTaskNotice) and, from steering on, steering
+// messages. Such an entry is stored with the turn's EntryUser type and
+// replayed in place, so the turn view (items), the notices compose renders and
+// the user requests (recentRequests) all have to tell it apart from the turn's
+// own messages and requests.
+var injectedItemKeys = []string{metaTaskNotice}
+
+// isInjectedItem reports whether m is an entry injected into a running turn
+// (one of injectedItemKeys set true in its metadata).
+func isInjectedItem(m agentcore.Message) bool {
+	for _, key := range injectedItemKeys {
+		if v, _ := m.Metadata[key].(bool); v {
+			return true
+		}
+	}
+	return false
 }
 
 // historyView is the persisted part of a session's context: the current
@@ -183,7 +205,18 @@ type contextBuilder struct {
 	seg, eff  *segmentContext
 	prev      []ctxItem // kept history before this turn's own messages
 	turnStart int       // index of the first kept message in state.Messages
-	turnSeqs  []int64   // entries seq of state.Messages[i], loaded lazily
+	// turnItemsCache is this turn's merged view - state.Messages with the turn's
+	// injected entries at their stored position (turnItems) - and turnMsgs the
+	// number of in-memory messages it was built from. turnFrom is the index of
+	// the first item of it the view still keeps: a segment cut of this turn may
+	// drop the messages before turnStart and an injected entry that sits between
+	// them, so a message index alone cannot express where the view starts. It is
+	// filled lazily: the runtime only appends to state.Messages, so another
+	// length invalidates the cache, and takeTaskNotices drops it when it stores
+	// a notice.
+	turnItemsCache []ctxItem
+	turnMsgs       int
+	turnFrom       int
 
 	window, reserve int
 	truncLimit      int // tool-result truncation limit in chars; 0 = off
@@ -203,7 +236,8 @@ type contextBuilder struct {
 	contextRecorded bool
 	// notices are background task notices taken during this turn, rendered
 	// at their place among this turn's messages (they are stored entries,
-	// never part of state.Messages).
+	// never part of state.Messages). A segment cut of this turn drops the
+	// notices it cut away (see keptNotices).
 	notices []turnNotice
 }
 
@@ -276,12 +310,12 @@ func (b *contextBuilder) compose(state *agentcore.RunState) []agentcore.Message 
 	if b.hookContext != "" {
 		out = append(out, agentcore.Message{Role: "user", Content: b.hookContext})
 	}
+	// The notices gone from the list were cut away by a segment break of this
+	// turn (see keptNotices); every remaining one is in the view, at its place.
 	next := 0 // the next notice to place
 	for i, m := range turn {
 		for ; next < len(b.notices) && b.notices[next].at <= b.turnStart+i; next++ {
-			if b.notices[next].at >= b.turnStart {
-				out = append(out, b.notices[next].msg)
-			}
+			out = append(out, b.notices[next].msg)
 		}
 		out = append(out, b.limited(m))
 	}

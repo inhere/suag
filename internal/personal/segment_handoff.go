@@ -88,7 +88,9 @@ func (r *Runner) latestPlan(ctx context.Context, sessionID string) string {
 // whose messages are stored but not yet adopted). Filler requests ("继续",
 // "go on", anything under 6 characters) are skipped; injected ones (Stop hook
 // replies, deliveries) are skipped too while typed ones remain, and only fill
-// up the list when fewer than n typed requests exist.
+// up the list when fewer than n typed requests exist. Entries injected into a
+// running turn (task notices, later steers) are never requests: they are part
+// of the turn's history, not something a person asked for.
 func (r *Runner) recentRequests(ctx context.Context, sessionID, turnID string, n int) ([]string, error) {
 	turns, err := r.cfg.Repository.ListTurns(ctx, sessionID, store.TurnCompleted)
 	if err != nil {
@@ -116,7 +118,7 @@ func (r *Runner) recentRequests(ctx context.Context, sessionID, turnID string, n
 			continue
 		}
 		var m agentcore.Message
-		if err := json.Unmarshal(e.JSON, &m); err != nil || m.Role != "user" || isContextUpdate(m) || isSegmentContext(m) {
+		if err := json.Unmarshal(e.JSON, &m); err != nil || m.Role != "user" || isContextUpdate(m) || isSegmentContext(m) || isInjectedItem(m) {
 			continue
 		}
 		text := strings.TrimSpace(m.Content)

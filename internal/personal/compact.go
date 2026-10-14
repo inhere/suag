@@ -136,34 +136,130 @@ func segmentCut(items []ctxItem, allowEnd bool) int {
 	return 0
 }
 
-// items lists the current view's messages (kept history + this turn's kept
-// messages) with their entries seq.
+// items lists the current view's items: the kept history, then this turn's
+// kept messages with their entries seq. The entries injected into this turn
+// (task notices, later steers; see isInjectedItem) are items of the view too,
+// at the position they were stored in: a segment cut splits them with
+// everything else, so an injected entry before the cut is summarized instead
+// of being dropped unnoticed (issue suga-0lxy).
 func (b *contextBuilder) items(ctx context.Context, state *agentcore.RunState) ([]ctxItem, error) {
 	out := append([]ctxItem(nil), b.prev...)
-	if state == nil || b.turnStart >= len(state.Messages) {
+	if state == nil {
 		return out, nil
 	}
-	if len(b.turnSeqs) != len(state.Messages) {
-		// The runtime persists every message right after producing it, so the
-		// i-th message of the turn is the i-th message entry of the turn.
+	turn, err := b.turnItems(ctx, state)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, turn...), nil
+}
+
+// turnItems returns this turn's items that are still in the view, from the
+// first item the view keeps on (turnFrom). The turn's entries are listed
+// lazily and cached: the runtime only appends to state.Messages, so another
+// message count reloads them, and takeTaskNotices drops the cache when it
+// stores a notice. The stored form of a turn is append-only, so the merged
+// layout (and with it turnFrom) stays valid across a reload.
+func (b *contextBuilder) turnItems(ctx context.Context, state *agentcore.RunState) ([]ctxItem, error) {
+	if b.turnItemsCache == nil || b.turnMsgs != len(state.Messages) {
 		entries, err := b.r.cfg.Repository.ListEntries(ctx, b.sessionID, store.EntryFilter{
 			TurnID: b.turnID, Types: []string{store.EntryUser, store.EntryAssistant, store.EntryTool},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("list turn entries: %w", err)
 		}
-		if len(entries) != len(state.Messages) {
-			return nil, fmt.Errorf("turn %s has %d stored messages but %d in memory", b.turnID, len(entries), len(state.Messages))
+		merged, err := mergeTurnItems(b.turnID, state.Messages, entries)
+		if err != nil {
+			return nil, err
 		}
-		b.turnSeqs = b.turnSeqs[:0]
-		for _, e := range entries {
-			b.turnSeqs = append(b.turnSeqs, e.Seq)
-		}
+		b.turnItemsCache, b.turnMsgs = merged, len(state.Messages)
 	}
-	for i := b.turnStart; i < len(state.Messages); i++ {
-		out = append(out, ctxItem{msg: state.Messages[i], seq: b.turnSeqs[i]})
+	if b.turnFrom >= len(b.turnItemsCache) {
+		return nil, nil
+	}
+	return b.turnItemsCache[b.turnFrom:], nil
+}
+
+// turnEntryHead decodes only what is needed to classify a stored turn entry.
+// The field name matches the stored metadata key whatever its case (encoding/
+// json matches field names case-insensitively), and the possibly huge content
+// and tool result of an ordinary entry are skipped rather than decoded: their
+// in-memory copies are used instead.
+type turnEntryHead struct {
+	Metadata map[string]any
+}
+
+// mergeTurnItems merges a turn's stored entries with its in-memory messages:
+// the entries hold the turn's messages plus the entries injected into the
+// running turn (isInjectedItem), all under the message entry types. Every
+// non-injected entry lines up with the next in-memory message (the runtime
+// stores a message right after producing it); an injected entry takes its
+// stored position in the view.
+func mergeTurnItems(turnID string, msgs []agentcore.Message, entries []store.Entry) ([]ctxItem, error) {
+	out := make([]ctxItem, 0, len(entries))
+	stored := 0 // message entries seen, injected ones excluded
+	for _, e := range entries {
+		msg, injected, err := decodeTurnEntry(e)
+		if err != nil {
+			return nil, err
+		}
+		if injected {
+			out = append(out, ctxItem{msg: msg, seq: e.Seq})
+			continue
+		}
+		if stored < len(msgs) {
+			out = append(out, ctxItem{msg: msgs[stored], seq: e.Seq})
+		}
+		stored++
+	}
+	if stored != len(msgs) {
+		return nil, fmt.Errorf("turn %s has %d stored messages but %d in memory", turnID, stored, len(msgs))
 	}
 	return out, nil
+}
+
+// decodeTurnEntry classifies one stored message entry: injected entries are
+// returned in full, ordinary ones are only recognized as such (the caller uses
+// the in-memory message).
+func decodeTurnEntry(e store.Entry) (agentcore.Message, bool, error) {
+	var head turnEntryHead
+	if err := json.Unmarshal(e.JSON, &head); err != nil {
+		return agentcore.Message{}, false, fmt.Errorf("decode turn entry %d: %w", e.Seq, err)
+	}
+	if !isInjectedItem(agentcore.Message{Metadata: head.Metadata}) {
+		return agentcore.Message{}, false, nil
+	}
+	var m agentcore.Message
+	if err := json.Unmarshal(e.JSON, &m); err != nil {
+		return m, false, fmt.Errorf("decode turn entry %d: %w", e.Seq, err)
+	}
+	return m, true, nil
+}
+
+// countTurnMessages counts the items of a turn slice that are in-memory
+// messages (an injected entry has no index in state.Messages).
+func countTurnMessages(items []ctxItem) int {
+	n := 0
+	for _, it := range items {
+		if !isInjectedItem(it.msg) {
+			n++
+		}
+	}
+	return n
+}
+
+// keptNotices returns the notices a cut of this turn leaves in the view:
+// every notice whose stored entry is at or after firstKeptSeq, i.e. every
+// notice that is not part of the cut prefix (which goes into the summary). A
+// notice whose entry could not be stored (seq 0) was never part of the cut.
+func keptNotices(notices []turnNotice, firstKeptSeq int64) []turnNotice {
+	out := make([]turnNotice, 0, len(notices))
+	for _, n := range notices {
+		if n.seq <= 0 || n.seq >= firstKeptSeq {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 type compactOutcome struct {
@@ -244,17 +340,25 @@ func (b *contextBuilder) startSegment(ctx context.Context, state *agentcore.RunS
 	}
 
 	// Switch the view: cut inside the kept history drops its head; a cut inside
-	// this turn drops all history and advances turnStart. The new package is
-	// the new segment's handoff (it folded the previous one in), and the new
-	// snapshot supersedes every earlier context update (loadHistory skips
-	// updates before the latest record the same way).
-	oldSummary, oldHandoff, oldPrev, oldStart, oldSeg, oldEff := b.summary, b.fromHandoff, b.prev, b.turnStart, b.seg, b.eff
+	// this turn drops all history and every item before it (the injected entries
+	// included: they went into the summary through buildPackage), and turnStart
+	// follows the first kept message. The new package is the new segment's
+	// handoff (it folded the previous one in), and the new snapshot supersedes
+	// every earlier context update (loadHistory skips updates before the latest
+	// record the same way).
+	oldSummary, oldHandoff, oldPrev, oldFrom, oldStart, oldSeg, oldEff := b.summary, b.fromHandoff, b.prev, b.turnFrom, b.turnStart, b.seg, b.eff
+	oldNotices := b.notices
 	charsBefore := charsOfMessages(b.compose(state))
 	b.summary, b.fromHandoff = pkg.rendered, false
 	if cut <= len(oldPrev) {
 		b.prev = withoutContextUpdates(oldPrev[cut:])
 	} else {
-		b.prev, b.turnStart = nil, oldStart+(cut-len(oldPrev))
+		// An injected entry among the dropped items has no message index, so it
+		// advances turnFrom but not turnStart.
+		dropped := items[len(oldPrev):cut]
+		b.prev, b.turnFrom = nil, oldFrom+len(dropped)
+		b.turnStart = oldStart + countTurnMessages(dropped)
+		b.notices = keptNotices(oldNotices, firstKept)
 	}
 	eff := *seg
 	b.seg, b.eff = seg, &eff
@@ -268,7 +372,8 @@ func (b *contextBuilder) startSegment(ctx context.Context, state *agentcore.RunS
 	wctx := context.WithoutCancel(ctx)
 	es, err := b.r.cfg.Repository.AppendEntries(wctx, b.sessionID, store.NewEntry{TurnID: b.turnID, Type: store.EntryCompaction, JSON: raw})
 	if err != nil {
-		b.summary, b.fromHandoff, b.prev, b.turnStart, b.seg, b.eff = oldSummary, oldHandoff, oldPrev, oldStart, oldSeg, oldEff
+		b.summary, b.fromHandoff, b.prev, b.turnFrom, b.turnStart, b.seg, b.eff = oldSummary, oldHandoff, oldPrev, oldFrom, oldStart, oldSeg, oldEff
+		b.notices = oldNotices
 		return fail(fmt.Errorf("write compaction entry: %w", err))
 	}
 	segment := b.r.segmentOrdinal(wctx, b.sessionID, es)
