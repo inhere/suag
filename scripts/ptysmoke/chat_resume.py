@@ -102,13 +102,14 @@ def preview(s, m):
 def resume_scenario(s, sid, name):
     m = s.mark()
     s.check(name + ": ❯ prompt", s.until(r"❯ ", m))
-    # Everything chat printed before the prompt, i.e. the preview.
+    # Everything chat printed before the prompt, i.e. the preview. find() (not
+    # index()) so a missing preview fails a check instead of raising.
     before = preview(s, m)
+    marker, reply = before.find("▣"), before.find(FIRST_SHOWN)
     s.check(name + ": the label is above the first prompt", LABEL in before)
-    s.check(name + ": the reply keeps the ▣ marker",
-            "▣" in before and before.index("▣") < before.index(FIRST_SHOWN))
-    s.check(name + ": the label comes before the reply", before.index(LABEL) < before.index(FIRST_SHOWN))
-    s.check(name + ": the last lines of the reply are shown", TAIL in before and FIRST_SHOWN in before)
+    s.check(name + ": the label comes before the reply", 0 <= before.find(LABEL) < reply)
+    s.check(name + ": the reply keeps the ▣ marker", 0 <= marker < reply)
+    s.check(name + ": the last lines of the reply are shown", TAIL in before and reply >= 0)
     s.check(name + ": the head of the long reply is not shown", LAST_HIDDEN not in before)
     s.check(name + ": the truncation hint names the trace command",
             "已截断前 %d 行，完整记录见 suga trace %s" % (OMITTED, sid) in before)
