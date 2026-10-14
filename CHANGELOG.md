@@ -4,7 +4,7 @@
 
 ## [未发布]
 
-会话中途可追加或撤销授权目录（chat 的 `:add-dir`/`:dirs`/`:rm-dir`），文件工具越界时可询问一次授权（`chat.ask_outside_dirs`，默认开）；启动时探测 PATH 上的脚本解释器，环境段与 `shell_exec` 描述提示优先写脚本；chat 的本地命令只在键盘输入时生效，投递文本一律是普通消息。
+会话中途可追加或撤销授权目录（chat 的 `:add-dir`/`:dirs`/`:rm-dir`），文件工具越界时可询问一次授权（`chat.ask_outside_dirs`，默认开）；启动时探测 PATH 上的脚本解释器，环境段与 `shell_exec` 描述提示优先写脚本；chat 的本地命令只在键盘输入时生效，投递文本一律是普通消息；shell 输出规则可改写与分组，并新增 git（log/diff/status）与 grep（rg/grep）内置规则。
 
 ### 新增
 
@@ -14,6 +14,7 @@
 - 启动时探测 PATH 上的脚本解释器（默认 `python3`、`python`、`node`）：每进程探测一次并缓存（`exec.LookPath` + 2 秒超时的 `--version`，按符号链接解析后的路径去重，所以指向同一个二进制的 `python3`/`python` 只列一次），命中的解释器写进环境段（可写模式）并提示优先写脚本：“可用解释器：python 3.14.4（python）、node 24.15.0（node）。多行文本处理、复杂引号、JSON/正则处理时，先用 file_write 把脚本写到工作区 tmp/ 下再用解释器执行，不要在 shell 一行里拼复杂引号。”一个也没探测到时这行不写，行为与之前完全相同（仍用系统 shell）。配置 `tools.interpreters`：缺省自动探测，`false`（或 `off`）关闭，也可给名称或绝对路径列表（如 `[python, C:\Python312\python.exe]`）只认这几个。Windows 上自动探测会跳过 `%LOCALAPPDATA%\Microsoft\WindowsApps` 下的应用商店别名（它只会跳商店或不输出版本，不是可用的解释器）；配置里写绝对路径时按你的选择只校验 `--version`，而商店包自身的安装目录（`C:\Program Files\WindowsApps\...`）算正常安装。环境段在段上下文里，不使稳定系统提示的前缀缓存失效。
 - `shell_exec` 的工具描述在 shell 为 PowerShell 时补上参数引号提醒：含 `,` `=` `.` `@` 的参数要整体加引号（例如 `"-Dtest=A,B"`、`"-Dincludes=g:a"`），否则逗号会被当成数组分隔；有可用解释器时同处再提示优先写脚本。`file_write` 的描述写明写出结果的编码与换行（UTF-8 无 BOM，换行按内容原样，不做 CRLF 转换），不必再按字节核验新文件。
 - `suga trace --analyze` 认 Java/Gradle 的测试命令：`./mvnw`/`mvnw.cmd`/`mvn`（`test` 与 `verify`）与 `gradlew`/`gradlew.bat`/`gradle`（含 `./gradlew :app:test` 这类子项目任务）都算一次测试运行；定向运行识别补上 Maven 的 `-Dtest=` 与 Gradle 的 `--tests`，与 `go test -run`、`pytest -k` 一致，这类只跑部分用例的命令不算一次“通过”，因此不影响“首次通过”的步数与复测统计。
+- shell 输出规则可以改写与分组，并补上 git 与搜索工具的内置规则：规则新增 `replace`（对整理后保留的文本做正则替换，多行模式编译，`^`/`$` 是行首行尾，写 `\n` 可跨行，`with` 支持 `$1`/`${name}`）、`group_by`（带命名组或第一捕获组的正则：相邻且同键的行合并成“组头 + 缩进的行”，例如 grep 命中按文件分组、路径只写一次）、`head`/`tail`（保留规则结果的首尾 N 行，中间写明省了多少行）、`match_output`（命令匹配之外还要求输出含某模式才应用，例如 diff 头；RE2 没有反向断言，紧凑格式靠它排除）、`min_bytes`/`min_saving`（按规则覆盖全局门槛：默认 <600 字节不处理、省不到 20% 放弃；多条规则命中时取最宽松的，0 表示不设该门槛），`fold.text` 还能引用 start 行的捕获组，折叠行因此能带上文件名。规则可以把输出改写得更短，但不会更长：整理结果不短于原文时整段不交给模型。内置规则新增：`git log` 默认格式压成一行/提交（短 hash + 装饰 + 日期 + 作者 + 标题，merge 保留父提交，commit body 原样保留）、`git diff`/`git show` 把 go.sum、package-lock.json、yarn.lock、pnpm-lock.yaml、*.min.js、vendor/ 的 hunk 折叠成一行“已折叠 <文件> 的 N 行改动”并截断超长 diff（前 80 行 / 后 20 行）、`git status` 长格式去掉 (use "git add ...") 等提示、保留分支行与文件列表、`rg`/`grep` 命中按文件分组并把超长行截到 300 字符 + …。已经精简的格式（`--oneline`、`--graph`、`--stat`、`-s`/`--short`/`--porcelain`、`grep -c`/`-l`）不会套用，带管道的命令照旧整段跳过；字段、执行顺序与覆盖方式见 [rules/README.md](pkg/agentcore/tools/native/rules/README.md)。
 
 ### 变更
 

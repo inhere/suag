@@ -82,7 +82,7 @@
 | `tools.max_spill_bytes` | `1048576`（1 MiB） | 单次工具（含 MCP）原始输出上限 |
 | `tools.parallel_reads` | `true` | 同一次回复里的多个本地读调用（file_read/list/grep/find）并发执行 |
 | `tools.read_page_bytes` | `32768` | `file_read` 每页字节数（它自己分页，不受 `max_output_bytes` 限制） |
-| `tools.minimize_output` | `true` | shell 结果进上下文前整理（去色、折叠重复行、按输出规则裁剪测试/构建输出），原文留 ref |
+| `tools.minimize_output` | `true` | shell 结果进上下文前整理（去色、折叠重复行、按输出规则裁剪测试/构建/git/grep 输出），原文留 ref |
 | `tools.shell` | `""`（Windows：pwsh 优先，否则 powershell；其它：sh） | `shell_exec` 使用的 shell（命令名或路径） |
 | `tools.interpreters` | 自动探测 | 启动时探测 PATH 上的脚本解释器（默认候选 `python3`、`python`、`node`）：每进程探测一次并缓存（`--version`，2 秒超时），命中的写进环境段（可写模式）并提示优先写脚本执行。`false`（或 `off`）关闭；也可给名称或绝对路径列表，如 `[python, C:\Python312\python.exe]`（绝对路径按你的选择只校验 `--version`）。Windows 上自动探测会跳过 `%LOCALAPPDATA%\Microsoft\WindowsApps` 下的应用商店别名（运行只会跳商店或不出输出版本），商店包自身的安装目录（`C:\Program Files\WindowsApps\...`）不受影响 |
 | `tools.shell_timeout_max` | `600` | `shell_exec` 单次 `timeout` 的上限秒数（单次默认 120） |
@@ -93,7 +93,7 @@
 | `tools.auto_allow` | `[]` | MCP 放行名单（普通运行），条目 `server/toolglob`（裸 `toolglob` 也接受，会匹配任意 server） |
 | `tools.read_only_allow` | `[]` | `--read-only` 时**唯一**使用的放行名单，条目必须写成 `server/toolglob` |
 
-输出规则文件：内置规则 → `$SUGA_HOME/output-rules.yaml` → `<workspace>/.suga/output-rules.yaml`（同名替换、新名追加、`enabled: false` 关闭）。
+输出规则：内置规则按语言/工具分文件（`go`、`rust`、`js`、`python`、`java`、`git`、`grep`）→ `$SUGA_HOME/output-rules.yaml` → `<workspace>/.suga/output-rules.yaml`（同名替换、新名追加、`enabled: false` 关闭）。一条规则可按命令（可加 `match_output` 再按输出）匹配，然后丢行、折叠噪声、按正则改写（`replace`）、按捕获键分组合并（`group_by`）、保留首尾 N 行（`head`/`tail`），并用 `min_bytes`/`min_saving` 给自己设更低的处理门槛（默认 <600 字节不动、省不到 20% 放弃）；整理结果永远不短于原文时不交给模型。字段与执行顺序见 `pkg/agentcore/tools/native/rules/README.md`。
 
 ## `mcp.*`
 
