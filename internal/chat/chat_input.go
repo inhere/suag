@@ -75,9 +75,6 @@ type chatInputSource struct {
 	steerGen uint64
 	// screenWidth is the terminal's column count when it could be read (0: unknown).
 	screenWidth int
-	// inputFD is the terminal's file descriptor, set with screenWidth: the platform
-	// helpers (flushInput, inputWait, restoreOutputProcessing) work on it.
-	inputFD int
 	// sizeFD is the descriptor the terminal size is read from (-1 without a
 	// terminal): the output when it is a terminal, else the input. Windows needs a
 	// screen-buffer handle for it and the input handle fails inside a ConPTY.
@@ -164,13 +161,21 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 	source.cond = sync.NewCond(&source.mu)
 	if file, ok := input.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
 		fd := int(file.Fd())
-		// Raw mode is entered per line in readLine, not here: during model/tool execution the
-		// terminal must stay cooked so Ctrl-C raises SIGINT and stderr keeps CR translation.
+		// Raw mode is entered per line in readLine, not here: with chat.steering off
+		// the terminal must stay cooked while model and tools run (Ctrl-C raises SIGINT,
+		// stderr keeps CR translation), and with it on the turn's own read enters raw
+		// through readLine just the same.
 		source.makeRaw = func() (func() error, error) {
 			state, err := term.MakeRaw(fd)
 			if err != nil {
 				return nil, err
 			}
+			// Raw input, output processing kept: with OPOST off a bare "\n"
+			// written to the terminal straight (the process log, a hook or tool
+			// holding the tty) would keep its column and drift next to the input
+			// line. Best effort: a terminal that cannot be adjusted still edits
+			// fine (design N4, termios_*.go).
+			_ = restoreOutputProcessing(fd)
 			return func() error { return term.Restore(fd, state) }, nil
 		}
 		source.flushInput = func() error { return flushTerminalInput(fd) }
@@ -183,7 +188,6 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 		// A lone Esc during a turn is the Esc key (end this turn). The pump declares
 		// it before handing the byte over; prompt and ask reads never declare one.
 		source.terminal.EscCallback = source.escKeyPressed
-		source.inputFD = fd
 		// The terminal's real size drives the line editor's layout: it wraps a line
 		// at termWidth and the highlighted rows are filled to the same width. Without
 		// this the editor keeps wrapping at lineedit.DefaultWidth (80) however wide
