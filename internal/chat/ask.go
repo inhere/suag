@@ -46,10 +46,11 @@ func (a chatAsker) Ask(ctx context.Context, q tools.Question) (string, error) {
 //  4. activity events are acknowledged; the answer stays out of history;
 //     deliveries keep queueing (they are never read here).
 //
-// The read answers in modeAsk, so the answer goes to "answers" — Ask's own
-// channel — and no consumer of the prompt or turn channel can take it (N5); a
-// pending read that started in another mode keeps its channel (the mode is
-// switched for the answer, endAsk gives it back).
+// The read in progress answers in modeAsk: whatever it reads while the question is
+// on screen goes to "answers", Ask's own channel, so no consumer of the prompt or
+// turn channel can take an answer as input of its own (N5). A line that finished just
+// before the question is taken out of either channel (settlePendingRead), and endAsk
+// gives the read its mode back.
 //
 // Ctrl-C/Ctrl-D returns errAskCancelled. Without a terminal it returns
 // tools.ErrCannotAsk.
