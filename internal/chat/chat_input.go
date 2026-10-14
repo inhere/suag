@@ -420,6 +420,18 @@ func (s *chatInputSource) steerGenNow() uint64 {
 	return s.steerGen
 }
 
+// lineOnScreen reports whether the line editor's line is on screen right now:
+// chat.steering is on and a read is pending (a turn keeps reading for its whole
+// length, and the prompt reads between turns). What is written while it is up
+// has to go through the input source: lineedit.Terminal.Write prints it above
+// the line and repaints the line afterwards, while a direct write would land on
+// top of the line, which the editor cannot know about (design N4).
+func (s *chatInputSource) lineOnScreen() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.steering && s.pending
+}
+
 // request asks the reader goroutine for one read in mode. The mode is set here, under
 // the same lock as pending: a read already waiting for input continues as this read
 // (only its prompt and mode change), a finished one starts a new request — and between

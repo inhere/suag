@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 
@@ -223,6 +224,24 @@ func (t *turnInput) drain() {
 			return
 		}
 	}
+}
+
+// steerOut is where chat writes what may land while the input line is on screen
+// (chat.steering): hook notices, errors and the process log. A direct write to
+// stderr would sit on top of the line the person is editing - the editor repaints
+// only what it wrote itself - so while the line is up those writes go through the
+// input source (lineedit prints them above the line and redraws it), and
+// otherwise to the stream they always used (design N4).
+type steerOut struct {
+	source   *chatInputSource
+	fallback io.Writer
+}
+
+func (w steerOut) Write(p []byte) (int, error) {
+	if w.source.lineOnScreen() {
+		return w.source.Write(p)
+	}
+	return w.fallback.Write(p)
 }
 
 // steerReturn is one message inserted into a finished turn that no model request

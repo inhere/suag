@@ -22,12 +22,16 @@ import (
 // another parameter of Run.
 type chatState struct {
 	// Wiring made once by Run.
-	ctx         context.Context
-	runner      *personal.Runner
-	hooks       sugahooks.Client
-	source      *chatInputSource
-	render      *Renderer
-	stderr      io.Writer
+	ctx    context.Context
+	runner *personal.Runner
+	hooks  sugahooks.Client
+	source *chatInputSource
+	render *Renderer
+	stderr io.Writer
+	// errOut is where what may land while the input line is on screen goes: a
+	// steer-aware writer (steering.go), set by Run when chat.steering is on, and a
+	// nil field falls back to stderr (the tests build a state directly).
+	errOut      io.Writer
 	baseEvent   func(name string) sugahooks.Event
 	title       *terminalTitle
 	idle        *idleConsolidation
@@ -65,6 +69,15 @@ type chatState struct {
 	// steersDropped counts the inserted messages chat did not run because it is
 	// exiting; the exit summary warns about them, like queued deliveries.
 	steersDropped int
+}
+
+// errWriter is where chat writes what must not land on the input line: the
+// steer-aware writer Run wired (steering on) or stderr.
+func (s *chatState) errWriter() io.Writer {
+	if s.errOut != nil {
+		return s.errOut
+	}
+	return s.stderr
 }
 
 // runTurn executes one turn of the chat, and the turns the messages inserted
@@ -115,12 +128,12 @@ func (s *chatState) runOneTurn(line string, injected bool) (*steerTurn, error) {
 		// deliveries both flow through nextChatInput), same flag the transcript records.
 		submit.Injected = injected
 		submitResp := s.hooks.Call(s.ctx, submit)
-		showHookNotice(s.stderr, submitResp)
+		showHookNotice(s.errWriter(), submitResp)
 		s.pendingContext = appendContext(s.pendingContext, sugahooks.AdditionalContext(submitResp))
 	}
 	if s.lostReply != "" {
 		// A reply received during an interrupt race still reaches the model as next-turn context.
-		fmt.Fprintln(s.stderr, "Note: delivering hook reply received while interrupting:", sugahooks.TruncateOutput(s.lostReply, 200))
+		fmt.Fprintln(s.errWriter(), "Note: delivering hook reply received while interrupting:", sugahooks.TruncateOutput(s.lostReply, 200))
 		s.pendingContext = appendContext(s.pendingContext, s.lostReply)
 		s.lostReply = ""
 	}
@@ -165,7 +178,7 @@ func (s *chatState) runOneTurn(line string, injected bool) (*steerTurn, error) {
 			// that line down (the tool result above started a new one) so the two
 			// never end up on the same screen line, and put it back afterwards.
 			s.render.stopThinking()
-			showHookNotice(s.stderr, s.hooks.Call(eventCtx, postTool))
+			showHookNotice(s.errWriter(), s.hooks.Call(eventCtx, postTool))
 			s.render.startThinking()
 			return nil
 		},

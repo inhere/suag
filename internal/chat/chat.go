@@ -208,6 +208,12 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	// The turn-time input line (chat.steering): a turn then reads it instead of
 	// letting the tty go cooked, so the person can steer or end the turn.
 	inputSource.SetSteering(opts.Steering)
+	// Output that may land while the input line is on screen (hook notices, errors)
+	// goes through the input source: it is printed above the line and the line is
+	// repainted, instead of sitting on top of it (design N4). The process log is not
+	// among them any more: it goes to <SUGA_HOME>/logs/suga.log and never to the
+	// terminal (internal/wiring/logging.go), so nothing has to be rerouted for it.
+	errOut := steerOut{source: inputSource, fallback: stderr}
 	// All conversation output goes through the renderer (and the input source,
 	// which keeps the line editor's screen state consistent).
 	color := colorEnabledFor(stdout)
@@ -218,7 +224,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		inputSource.SetInputHighlight(lineedit.InputStyle{Prefix: inputHighlightPrefix, Suffix: highlightSuffix})
 	}
 	render := newRenderer(rendererOptions{
-		Out: inputSource, Err: stderr,
+		Out: inputSource, Err: errOut,
 		Color: color, ErrColor: colorEnabledFor(stderr),
 		Provider: runner.ProviderName(), Model: runner.Model(),
 		Thinking: opts.Thinking, ContextWindow: opts.ContextWindow,
@@ -258,7 +264,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	// setup, the main loop and the exit handling only.
 	state := &chatState{
 		ctx: ctx, runner: runner, hooks: hooks, source: inputSource, render: render,
-		stderr: stderr, baseEvent: baseEvent, title: title, idle: idle,
+		stderr: stderr, errOut: errOut, baseEvent: baseEvent, title: title, idle: idle,
 		server: processServer, stats: &stats, sessionID: sessionID, sessionName: sessionName,
 		createdAtStartup: createdAtStartup, dirs: opts.Dirs,
 		steering: opts.Steering && inputSource.terminal != nil,
