@@ -68,17 +68,11 @@ func Entry(value string) (Dir, error) {
 	if raw == "" {
 		return Dir{}, fmt.Errorf("%q is empty", value)
 	}
-	path, writable := raw, false
-	switch {
-	case strings.HasSuffix(raw, ":rw"):
-		path, writable = raw[:len(raw)-3], true
-	case strings.HasSuffix(raw, ":ro"):
-		path = raw[:len(raw)-3]
-	}
-	if strings.TrimSpace(path) == "" {
+	path, writable := StripMode(raw), strings.HasSuffix(raw, ":rw")
+	if path == "" {
 		return Dir{}, fmt.Errorf("%q names no directory", raw)
 	}
-	dir := filepath.Clean(expandHome(path))
+	dir := Expand(path)
 	if !filepath.IsAbs(dir) {
 		return Dir{}, fmt.Errorf("%q is not an absolute path", raw)
 	}
@@ -87,6 +81,29 @@ func Entry(value string) (Dir, error) {
 	}
 	return Dir{Path: dir, Writable: writable}, nil
 }
+
+// StripMode removes a trailing ":ro"/":rw" mode from a value and trims the
+// spaces around what is left. Only a trailing mode counts, the same rule Entry
+// applies; a command that revokes a directory accepts such a value too, because
+// it is copied from a listing that shows the mode.
+func StripMode(value string) string {
+	raw := strings.TrimSpace(value)
+	switch {
+	case strings.HasSuffix(raw, ":rw"), strings.HasSuffix(raw, ":ro"):
+		raw = raw[:len(raw)-3]
+	}
+	return strings.TrimSpace(raw)
+}
+
+// Expand cleans a path and expands a leading "~", like Entry and the file
+// tools do.
+func Expand(path string) string {
+	return filepath.Clean(expandHome(strings.TrimSpace(path)))
+}
+
+// IsAbsPath reports whether path names an absolute location once "~" is
+// expanded.
+func IsAbsPath(path string) bool { return filepath.IsAbs(Expand(path)) }
 
 // expandHome turns a leading "~" into the user's home directory.
 func expandHome(dir string) string {
@@ -217,14 +234,15 @@ func Merge(stored, added []Dir) []Dir {
 }
 
 // Effective applies a run mode to the set: a read-only run has no write tool at
-// all, so every directory is reported read-only.
+// all, so every directory is reported read-only (the source is kept: it says
+// where the directory came from, not what may be done with it).
 func Effective(dirs []Dir, readOnly bool) []Dir {
 	if !readOnly {
 		return dirs
 	}
 	out := make([]Dir, len(dirs))
 	for i, dir := range dirs {
-		out[i] = Dir{Path: dir.Path}
+		out[i] = Dir{Path: dir.Path, Source: dir.Source}
 	}
 	return out
 }
