@@ -70,6 +70,10 @@ const (
 	// arg (the command), exit_code, bytes, lines, ref, truncated; started_at
 	// and duration cover the task's whole run.
 	EventTask = "task"
+	// EventSession records a change of the session's own lifecycle, outside any
+	// turn: name "recovered" is a session left running by a process that died
+	// mid-turn taken back to open (attrs previous_status, stale_ms, turn_status).
+	EventSession = "session"
 )
 
 // Session is one conversation. Meta holds free-form keys (rules hash, append

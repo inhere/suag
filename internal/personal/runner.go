@@ -395,18 +395,36 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), err
 	}
 	model = fresh
-	if model.Status == store.SessionArchived || model.Status == store.SessionRunning {
+	if model.Status == store.SessionArchived {
 		return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), fmt.Errorf("session %q is not ready for a new turn: %s", model.ID, model.Status)
 	}
 	r.locksMu.Lock()
 	_, heldByChat := r.heldLocks[model.ID]
 	r.locksMu.Unlock()
+	// lockHeld: this process holds the session's cross-process lock, so no other
+	// live process can be inside a turn of it. Either chat holds it for its whole
+	// lifetime (HoldSessionLock) or the turn takes it just below (recovery.go).
+	lockHeld := r.cfg.LockRoot != "" && heldByChat
 	if r.cfg.LockRoot != "" && !heldByChat {
 		lock, err := process.AcquireSessionLockContext(ctx, r.cfg.LockRoot, model.ID, 30*time.Second)
 		if err != nil {
 			return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), err
 		}
 		defer lock.Close()
+		lockHeld = true
+	}
+	// A session left running by a process that died mid-turn is taken back to
+	// open when nothing live can be running it, instead of refusing the turn; a
+	// running status a live process may be behind is still refused (recovery.go).
+	if model.Status == store.SessionRunning {
+		var recovered bool
+		model, recovered, err = r.recoverStaleSession(ctx, model, lockHeld, req.Emit)
+		if err != nil {
+			return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), err
+		}
+		if !recovered {
+			return r.withSessionUsage(ctx, model.ID, RunResult{SessionID: model.ID}), fmt.Errorf("session %q is not ready for a new turn: %s", model.ID, model.Status)
+		}
 	}
 	transcript := r.openTranscript(model.ID)
 	if transcript != nil {

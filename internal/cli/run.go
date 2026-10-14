@@ -191,6 +191,13 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 	}
 	live := output.NewLiveText(stdout)
 	emit := func(_ context.Context, event personal.Event) error {
+		if event.Kind == personal.EventSessionRecovered {
+			// The session was left running by a process that died mid-turn and has
+			// been taken back to open before this turn (personal/recovery.go);
+			// stdout keeps the answer alone, like the retry notice below.
+			fmt.Fprintln(stderr, personal.SessionRecoveredNotice)
+			return nil
+		}
 		if encoder == nil {
 			live.Handle(event) // text mode prints the answer as it streams
 			if event.Kind == string(agentcore.StreamEventRetry) {

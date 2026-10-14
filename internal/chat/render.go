@@ -206,6 +206,13 @@ func (r *Renderer) Handle(event personal.Event) {
 	case string(agentcore.StreamEventRetry):
 		fmt.Fprintln(r.opts.Out, r.paint(color.Yellow, output.RetryNotice(event)))
 		r.startThinking() // the request is retried: still waiting for the model
+	case personal.EventSessionRecovered:
+		// The session was left running by a process that died mid-turn and has
+		// been taken back to open before this turn (personal/recovery.go): say so
+		// on a line of its own, then keep waiting for the model.
+		r.stopThinking()
+		fmt.Fprintln(r.opts.Out, r.paint(color.Yellow, personal.SessionRecoveredNotice))
+		r.startThinking()
 	}
 }
 
