@@ -38,7 +38,7 @@ func runTurn(r *Renderer, elapsed time.Duration) {
 		r.Handle(e)
 	}
 	r.Finish()
-	r.Status(personal.RunResult{Usage: agentcore.Usage{InputTokens: 1200, OutputTokens: 34}}, elapsed)
+	r.Status(personal.RunResult{Usage: agentcore.Usage{InputTokens: 1200, OutputTokens: 34}}, elapsed, 0)
 }
 
 // testClock is the local clock chat tests inject into the status line, so the
@@ -173,14 +173,14 @@ func TestRendererPlainTurn(t *testing.T) {
 	})
 	t.Run("status without model", func(t *testing.T) {
 		var b bytes.Buffer
-		newRenderer(rendererOptions{Out: &b, now: testClock}).Status(personal.RunResult{}, 40*time.Millisecond)
+		newRenderer(rendererOptions{Out: &b, now: testClock}).Status(personal.RunResult{}, 40*time.Millisecond, 0)
 		assert.Eq(t, "in 0 / out 0 tokens · 40ms · 12:34\n", b.String())
 	})
 	t.Run("status ends with the end-of-turn local time", func(t *testing.T) {
 		var b bytes.Buffer
 		newRenderer(rendererOptions{Out: &b, Model: "m", now: func() time.Time {
 			return time.Date(2026, 10, 13, 0, 3, 59, 0, time.Local)
-		}}).Status(personal.RunResult{}, time.Second)
+		}}).Status(personal.RunResult{}, time.Second, 0)
 		assert.Eq(t, "m · in 0 / out 0 tokens · 1.0s · 00:03\n", b.String())
 	})
 	t.Run("status shows how full the context is", func(t *testing.T) {
@@ -196,7 +196,7 @@ func TestRendererPlainTurn(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				var b bytes.Buffer
 				newRenderer(rendererOptions{Out: &b, Model: "m", ContextWindow: tc.window, now: testClock}).
-					Status(personal.RunResult{Usage: agentcore.Usage{InputTokens: 12, OutputTokens: 3}, LastInputTokens: tc.lastIn}, time.Second)
+					Status(personal.RunResult{Usage: agentcore.Usage{InputTokens: 12, OutputTokens: 3}, LastInputTokens: tc.lastIn}, time.Second, 0)
 				assert.Eq(t, "m · in 12 / out 3 tokens · "+tc.want+" · 1.0s · 12:34\n", b.String())
 			})
 		}
@@ -208,7 +208,7 @@ func TestRendererPlainTurn(t *testing.T) {
 		} {
 			var b bytes.Buffer
 			o.Out = &b
-			newRenderer(o).Status(personal.RunResult{Usage: agentcore.Usage{InputTokens: 12}}, time.Second)
+			newRenderer(o).Status(personal.RunResult{Usage: agentcore.Usage{InputTokens: 12}}, time.Second, 0)
 			assert.Eq(t, "m · in 12 / out 0 tokens · 1.0s · 12:34\n", b.String())
 		}
 	})
@@ -433,7 +433,7 @@ func TestRendererMemoryWrites(t *testing.T) {
 	} {
 		r.Handle(e)
 	}
-	r.Status(personal.RunResult{}, time.Second)
+	r.Status(personal.RunResult{}, time.Second, 0)
 	assert.StrContains(t, out.String(), "已记住：Use tabs（project）\n已更新：My name（user）\n已删除：Old note（project）\nm · in 0")
 	assert.NotContains(t, out.String(), "denied（")
 	assert.NotContains(t, out.String(), "not memory（")
@@ -441,7 +441,7 @@ func TestRendererMemoryWrites(t *testing.T) {
 	t.Run("the next turn starts empty", func(t *testing.T) {
 		out.Reset()
 		r.BeginTurn()
-		r.Status(personal.RunResult{}, time.Second)
+		r.Status(personal.RunResult{}, time.Second, 0)
 		assert.NotContains(t, out.String(), "已记住")
 	})
 }

@@ -307,10 +307,17 @@ func (s *chatInputSource) declareEscLone() {
 
 // escKeyPressed is the lone Esc of a steer read (lineedit.EscCallback): the person
 // asks to end this turn only (design D2). The pump declared the key, so this runs
-// inside the read that was not waiting for a sequence.
+// inside the read that was not waiting for a sequence; a read that is no longer the
+// steer read (the turn ended in between) reports nothing.
 func (s *chatInputSource) escKeyPressed() {
+	s.mu.Lock()
+	steer, gen := s.readMode == modeSteer, s.steerGen
+	s.mu.Unlock()
+	if !steer {
+		return
+	}
 	select {
-	case s.turnEvents <- chatInputEvent{key: keyAbort}:
+	case s.turnEvents <- chatInputEvent{key: keyAbort, gen: gen}:
 	case <-s.ctx.Done():
 	}
 }
@@ -366,15 +373,15 @@ func (s *chatInputSource) readResult(mode inputMode, line string, err error) (ch
 	case mode != modeSteer:
 		return chatInputEvent{line: line, err: err}, true
 	case err == nil:
-		return chatInputEvent{line: line}, true
+		return chatInputEvent{line: line, gen: s.steerGenNow()}, true
 	case errors.Is(err, lineedit.ErrInterrupt):
 		// Ctrl-C during a turn: end this turn only. A second press within
 		// exitConfirmWindow asks to leave chat; the clock is the source's, shared with
 		// the prompt read (m7).
 		if s.takeInterrupt() {
-			return chatInputEvent{key: keyExit}, true
+			return chatInputEvent{key: keyExit, gen: s.steerGenNow()}, true
 		}
-		return chatInputEvent{key: keyAbort}, true
+		return chatInputEvent{key: keyAbort, gen: s.steerGenNow()}, true
 	case errors.Is(err, io.EOF) && s.stickyEOF() == nil:
 		// Ctrl-D on an empty line: a turn ignores it.
 		return chatInputEvent{}, false

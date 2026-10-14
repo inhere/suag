@@ -173,26 +173,12 @@ func (t *Terminal) ReadLine() (line string, err error) {
 	return t.readLine()
 }
 
-// ReadLineNoEcho reads a line without drawing a prompt or echoing what is typed:
-// the caller wants the keys (a lone Esc, a Ctrl-C, a submitted line) without an
-// input line sitting on the screen, so its own output never has to be written
-// around one. The line and the key handling are the same as ReadLine's.
-func (t *Terminal) ReadLineNoEcho() (line string, err error) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
-	t.echo = false
-	line, err = t.readLine()
-	t.echo = true
-	return
-}
-
-// SetEcho turns echoing on or off for the read in progress and records the mode: a
-// turn's read runs with echoing off (no input line next to the model's output), the
-// prompt read and an approval question that borrow the same read need it on. Turning
-// it off forgets the input line without writing anything (the turn's output owns the
-// screen again); turning it on draws nothing by itself - the caller sets the prompt
-// (UpdatePrompt) or lets the read do it.
+// SetEcho turns echoing on or off for the read in progress and records the mode.
+// The turn's steer read echoes like the prompt read (chat.steering keeps the person's
+// input line on screen for the whole turn), so the switch is only needed where a read
+// changes hands - an approval question borrowing the turn's read, or giving it back.
+// Turning it off forgets the input line without writing anything; turning it on draws
+// nothing by itself - the caller sets the prompt (UpdatePrompt) or lets the read do it.
 func (t *Terminal) SetEcho(on bool) {
 	t.lock.Lock()
 	defer t.lock.Unlock()

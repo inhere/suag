@@ -129,6 +129,78 @@ func TestChatInputSource_RawModeFollowsTurns(t *testing.T) {
 	})
 }
 
+// TestChatInputSource_SteeringTurn: with chat.steering on a turn keeps the tty raw
+// and the input line readable (the steer read), instead of forcing cooked mode, and
+// the read goes on as the prompt's read when the turn is over.
+func TestChatInputSource_SteeringTurn(t *testing.T) {
+	t.Run("a turn keeps the tty raw and reads the input line", func(t *testing.T) {
+		source, tty, pw := newFakeTTYSource(t)
+		source.SetSteering(true)
+		assert.True(t, source.Request("> "))
+		waitTTY(t, tty, true)
+		go func() { _, _ = io.WriteString(pw, "任务\r") }()
+		event := <-source.Next()
+		assert.True(t, event.activity)
+		source.AckActivity()
+		event = <-source.Next()
+		assert.Eq(t, "任务", event.line)
+		source.CompleteLine()
+
+		source.SetBusy(true) // the turn starts
+		assert.True(t, tty.isRaw())
+		gen, ok := source.RequestSteer(steerPrompt)
+		assert.True(t, ok)
+		go func() { _, _ = io.WriteString(pw, "只改 README\r") }()
+		event = <-source.TurnEvents()
+		assert.Eq(t, "只改 README", event.line)
+		assert.Eq(t, gen, event.gen) // the turn reads the events of its own read
+		assert.Eq(t, 0, len(source.events))
+	})
+
+	t.Run("a turn started while the prompt waits keeps the line readable", func(t *testing.T) {
+		source, tty, pw := newFakeTTYSource(t)
+		source.SetSteering(true)
+		assert.True(t, source.Request("> ")) // a delivery starts a turn while this read waits
+		waitTTY(t, tty, true)
+		source.SetBusy(true)
+		assert.True(t, tty.isRaw())
+		_, ok := source.RequestSteer(steerPrompt)
+		assert.True(t, ok)
+		go func() { _, _ = io.WriteString(pw, "插一句\r") }()
+		event := <-source.TurnEvents()
+		assert.Eq(t, "插一句", event.line)
+		assert.Eq(t, 0, len(source.events)) // nothing reached the prompt's channel
+	})
+
+	t.Run("the read goes on as the prompt's after the turn, half line kept", func(t *testing.T) {
+		source, tty, pw := newFakeTTYSource(t)
+		source.SetSteering(true)
+		source.SetBusy(true)
+		_, ok := source.RequestSteer(steerPrompt)
+		assert.True(t, ok)
+		source.SetBusy(false)
+		assert.True(t, source.Request("> ")) // back at the prompt: the read is reused
+		waitTTY(t, tty, true)
+		go func() { _, _ = io.WriteString(pw, "半行") }()
+		event := <-source.Next()
+		assert.True(t, event.activity)
+		source.AckActivity()
+		go func() { _, _ = io.WriteString(pw, "续\r") }()
+		event = <-source.Next()
+		assert.Eq(t, "半行续", event.line)
+	})
+
+	t.Run("without a terminal steering stays off", func(t *testing.T) {
+		source, err := newChatInputSource(context.Background(), strings.NewReader(""), io.Discard)
+		assert.Require(t, assert.NoErr(t, err))
+		t.Cleanup(func() { _ = source.Close() })
+		source.SetSteering(true)
+		source.mu.Lock()
+		defer source.mu.Unlock()
+		assert.False(t, source.steering)
+	})
+}
+
 func TestChatInputSource_DiscardQueued(t *testing.T) {
 	source, err := newChatInputSource(context.Background(), strings.NewReader(""), io.Discard)
 	assert.Require(t, assert.NoErr(t, err))

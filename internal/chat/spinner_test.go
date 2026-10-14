@@ -258,7 +258,7 @@ func TestSpinnerTurnEnd(t *testing.T) {
 	assert.False(t, spinnerRunning(r.spin))
 	assert.True(t, strings.HasSuffix(out.String(), spinnerClear))
 
-	r.Status(personal.RunResult{}, time.Second)
+	r.Status(personal.RunResult{}, time.Second, 0)
 	clock.tick(time.Second) // a frame delivered late changes nothing
 	time.Sleep(20 * time.Millisecond)
 	assert.False(t, spinnerRunning(r.spin))

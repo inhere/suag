@@ -11,10 +11,6 @@ import (
 	"github.com/gookit/goutil/x/assert"
 )
 
-// steerPrompt is the prompt a steer read shows (RequestSteer, S2b): chat itself
-// does not start one yet - a turn reads its keys without an input line.
-const steerPrompt = "↳ "
-
 // kbWaiter stands in for the platform wait behind the decisions of the byte pump
 // (waitTerminalInput): it answers "is a byte ready?" from the fake keyboard's
 // buffer, exactly as the real wait answers from the terminal's input, and records
@@ -53,6 +49,14 @@ func escWaits(w *kbWaiter) []time.Duration {
 	return only
 }
 
+// requestSteer asks for a steer read (the prompt steering.go draws) and asserts
+// it was accepted.
+func (h *askHarness) requestSteer(t *testing.T) {
+	t.Helper()
+	_, ok := h.source.RequestSteer(steerPrompt)
+	assert.Require(t, assert.True(t, ok))
+}
+
 // nextTurnEvent reads the next event of a steer read.
 func (h *askHarness) nextTurnEvent(t *testing.T) chatInputEvent {
 	t.Helper()
@@ -72,7 +76,7 @@ func TestChatInputSource_SteerRead(t *testing.T) {
 	t.Run("Enter submits an inserted message and sends no activity", func(t *testing.T) {
 		h := newAskHarness(t)
 		h.source.SetBusy(true)
-		assert.True(t, h.source.RequestSteer(steerPrompt))
+		h.requestSteer(t)
 		h.kb.Type("只改 README\r")
 		event := h.nextTurnEvent(t)
 		assert.Eq(t, "只改 README", event.line)
@@ -86,7 +90,7 @@ func TestChatInputSource_SteerRead(t *testing.T) {
 	t.Run("Ctrl-C ends the turn, a second one within the window leaves chat", func(t *testing.T) {
 		h := newAskHarness(t)
 		h.source.SetBusy(true)
-		assert.True(t, h.source.RequestSteer(steerPrompt))
+		h.requestSteer(t)
 		h.kb.Type("\x03")
 		assert.Eq(t, keyAbort, h.nextTurnEvent(t).key)
 		// The clock is the input source's, so this press is the second of the two.
@@ -97,7 +101,7 @@ func TestChatInputSource_SteerRead(t *testing.T) {
 	t.Run("the interrupt clock is shared with the prompt read", func(t *testing.T) {
 		h := newAskHarness(t)
 		h.source.SetBusy(true)
-		assert.True(t, h.source.RequestSteer(steerPrompt))
+		h.requestSteer(t)
 		h.kb.Type("\x03")
 		assert.Eq(t, keyAbort, h.nextTurnEvent(t).key)
 		// The turn is over and chat is back at the prompt: the Ctrl-C that ended it
@@ -112,7 +116,7 @@ func TestChatInputSource_SteerRead(t *testing.T) {
 	t.Run("Ctrl-D during a turn is ignored", func(t *testing.T) {
 		h := newAskHarness(t)
 		h.source.SetBusy(true)
-		assert.True(t, h.source.RequestSteer(steerPrompt))
+		h.requestSteer(t)
 		h.kb.Type("\x04")
 		// The read goes on for the turn, so the next line is the inserted message.
 		h.kb.Type("还在吗\r")
@@ -131,7 +135,7 @@ func TestChatInputSource_EscKey(t *testing.T) {
 		waiter := newKBWaiter(h.kb) // nothing follows the 0x1b
 		h.source.inputWait = waiter.wait
 		h.source.SetBusy(true)
-		assert.True(t, h.source.RequestSteer(steerPrompt))
+		h.requestSteer(t)
 		h.kb.Type("\x1b")
 		assert.Eq(t, keyAbort, h.nextTurnEvent(t).key)
 		assert.Eq(t, []time.Duration{escWaitTimeout}, escWaits(waiter))
@@ -143,7 +147,7 @@ func TestChatInputSource_EscKey(t *testing.T) {
 		waiter := newKBWaiter(h.kb) // the rest of the sequence is already there
 		h.source.inputWait = waiter.wait
 		h.source.SetBusy(true)
-		assert.True(t, h.source.RequestSteer(steerPrompt))
+		h.requestSteer(t)
 		h.kb.Type("ab\x1b[Dc\r")
 		event := h.nextTurnEvent(t)
 		// The Left key moved the cursor, so the 'c' went in before the 'b': the

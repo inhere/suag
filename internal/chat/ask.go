@@ -231,9 +231,11 @@ func (s *chatInputSource) endAsk(held *chatInputEvent, answerRead bool, mode inp
 		_ = s.leaveRawLocked()
 	}
 	if mode == modeSteer && s.terminal != nil {
-		// Back to the turn's silent key read: echoing off, and no line on the screen
-		// (the question's line stays there as plain output of the turn).
-		s.terminal.SetEcho(false)
+		// Back at the turn's own input line: it echoes again (the question borrowed
+		// the same read) and shows the turn's prompt instead of the question's, so
+		// the person can go on typing.
+		s.terminal.SetEcho(true)
+		_ = s.terminal.UpdatePrompt(steerPrompt)
 	}
 	if held != nil && !answerRead {
 		s.pending = true

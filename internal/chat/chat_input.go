@@ -24,6 +24,10 @@ type chatInputEvent struct {
 	// key is what a steer read reports when a key, not a message, was pressed
 	// during a turn (turnKey).
 	key turnKey
+	// gen is the steer read (RequestSteer) an event of a steer read was produced
+	// in: the turn consumer owns one generation and drops the keys of an older
+	// one (a lone Esc the pump decided just as the previous turn ended).
+	gen uint64
 	// settled (deliveries only) reports the final fate of a queued delivery: nil once it starts
 	// a turn, an error if it is discarded at exit. Buffered(1); nil when nobody waits.
 	settled chan error
@@ -61,6 +65,14 @@ type chatInputSource struct {
 	// turnActive is true from SetBusy(true) until the next Request: while set the tty must stay
 	// cooked so Ctrl-C raises SIGINT, even if a line read started earlier is still blocked.
 	turnActive bool
+	// steering is true while chat.steering is on and the input is a terminal: a turn
+	// then reads the input line instead of going cooked (SetBusy, design
+	// "chat：输入层按模式分流"). Set once, before the main loop.
+	steering bool
+	// steerGen counts the steer reads (RequestSteer): events of a read carry the
+	// generation they were produced in, so a key the pump decided just as a turn
+	// ended cannot end the next one.
+	steerGen uint64
 	// screenWidth is the terminal's column count when it could be read (0: unknown).
 	screenWidth int
 	// inputFD is the terminal's file descriptor, set with screenWidth: the platform
@@ -69,10 +81,7 @@ type chatInputSource struct {
 	// sizeFD is the descriptor the terminal size is read from (-1 without a
 	// terminal): the output when it is a terminal, else the input. Windows needs a
 	// screen-buffer handle for it and the input handle fails inside a ConPTY.
-	sizeFD int
-	// steering keeps the keyboard readable while a turn runs (chat.steering):
-	// SetBusy(true) then keeps raw input and readTurnKeys reads the keys.
-	steering bool
+	sizeFD   int
 	closed   bool // set by DiscardQueued/Close: deliveries are refused afterwards (guarded by mu)
 	terminal *lineedit.Terminal
 	requests chan chatInputRequest
@@ -277,35 +286,34 @@ func safeSender(from string) string {
 	return clean
 }
 
-// SetBusy marks a turn start/end. Starting a turn without chat.steering forces the tty back to
-// cooked mode even when a line read begun earlier is still blocked (a `suga send` delivery can
-// start a turn while the prompt is waiting); otherwise Ctrl-C would arrive as byte 0x03 and never
-// interrupt the turn. With chat.steering (on by default) the turn keeps raw input and reads the
-// keys instead: Esc and Ctrl-C then end the turn as bytes, without depending on the console
-// turning Ctrl-C into a CTRL_C_EVENT - the path that fails inside a ConPTY (suga-nrf2).
+// SetSteering turns the turn-time input line on or off (chat.steering): with it
+// on, SetBusy(true) keeps the tty raw and the turn reads the input line, with it
+// off a turn goes back to cooked mode (Ctrl-C as SIGINT). Without a terminal the
+// flag stays off: there is no line to edit and no read to make during a turn.
+func (s *chatInputSource) SetSteering(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.steering = on && s.terminal != nil
+}
+
+// SetBusy marks a turn start/end. Starting a turn forces the tty back to cooked mode even when a
+// line read begun earlier is still blocked (a `suga send` delivery can start a turn while the
+// prompt is waiting); otherwise Ctrl-C would arrive as byte 0x03 and never interrupt the turn.
+// With chat.steering on the opposite holds: the turn keeps reading the input line (the steer read
+// RequestSteer asks for), so the tty stays raw and Ctrl-C/Esc arrive as bytes.
 func (s *chatInputSource) SetBusy(busy bool) {
 	s.mu.Lock()
 	s.busy = busy
-	switch {
-	case busy:
-		s.turnActive = true
+	if busy {
 		if s.steering {
-			// Raw input clears the output flags chat's own output needs (the line
-			// editor writes its own CRLF, tool results and notices do not), so put
-			// them back right away.
+			// turnActive would keep the coming steer read cooked (enterRawLocked) and
+			// with it turn a Ctrl-C into SIGINT; leave it clear and go raw at once, so
+			// the key is a byte from the turn's first moment on.
+			s.turnActive = false
 			_ = s.enterRawLocked()
-			_ = restoreOutputProcessing(s.inputFD)
 		} else {
+			s.turnActive = true
 			_ = s.leaveRawLocked()
-		}
-	case s.steering:
-		// Between turns: cooked again until the next prompt read asks for raw mode
-		// (request), and the read a turn borrowed echoes again - request draws its
-		// prompt. A read still blocked from the turn goes on, cooked, like any read
-		// that a delivery started.
-		_ = s.leaveRawLocked()
-		if s.terminal != nil {
-			s.terminal.SetEcho(true)
 		}
 	}
 	s.mu.Unlock()
@@ -389,13 +397,27 @@ func (s *chatInputSource) applyTerminalSize() {
 // from Next.
 func (s *chatInputSource) Request(prompt string) bool { return s.request(prompt, modePrompt) }
 
-// RequestSteer asks for a read during a turn (S2b): the input stays available while
-// the model works, Esc / Ctrl-C ask to end the turn and Enter submits a line (which
-// runTurn keeps for the next prompt). Results arrive on TurnEvents; runTurn starts it
-// at the beginning of a turn when chat.steering is on and reacts to what it reports.
-// The read draws nothing (ReadLineNoEcho): a turn has no input line on the screen.
-func (s *chatInputSource) RequestSteer(prompt string) bool {
-	return s.request(prompt, modeSteer)
+// RequestSteer asks for a read during a turn (S2b): the input line stays available
+// while the model works, Enter submits an inserted message and Ctrl-C/Esc ask to end
+// the turn. Results arrive on TurnEvents, tagged with the generation this read
+// returns: the turn consumer acts on its own generation only. ok=false means the
+// source is closing (the read could not be asked for).
+func (s *chatInputSource) RequestSteer(prompt string) (gen uint64, ok bool) {
+	s.mu.Lock()
+	s.steerGen++
+	gen = s.steerGen
+	s.mu.Unlock()
+	if !s.request(prompt, modeSteer) {
+		return 0, false
+	}
+	return gen, true
+}
+
+// steerGenNow is the generation of the steer read in progress.
+func (s *chatInputSource) steerGenNow() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.steerGen
 }
 
 // request asks the reader goroutine for one read in mode. The mode is set here, under
@@ -457,6 +479,16 @@ func (s *chatInputSource) Write(p []byte) (int, error) {
 		return s.terminal.Write(p)
 	}
 	return s.output.Write(p)
+}
+
+// putBackLine writes text into the prompt's input line, in front of whatever was
+// already typed, without submitting it: what chat uses to hand messages that a
+// cancelled or failed turn could not deliver back to the person (design D4).
+// Input that is not a terminal has no line to put them in.
+func (s *chatInputSource) putBackLine(text string) {
+	if s.terminal != nil {
+		s.terminal.PrependLine(text)
+	}
 }
 
 func (s *chatInputSource) Close() error {
@@ -589,15 +621,13 @@ func (s *chatInputSource) readLine(request chatInputRequest) (string, error) {
 		s.reader.activitySent = false
 		var line string
 		var err error
-		switch s.currentReadMode() {
-		case modeAsk:
+		if s.currentReadMode() == modeAsk {
 			// The answer of a question stays out of history.
 			line, err = s.terminal.ReadLineNoHistory()
-		case modeSteer:
-			// A turn reads its keys without an input line on the screen: the model's
-			// own output must not be written around one (design M1).
-			line, err = s.terminal.ReadLineNoEcho()
-		default:
+		} else {
+			// A steer read keeps the person's input line too (chat.steering): the turn
+			// and the prompt read the same line, so a message typed during a turn is
+			// either inserted or kept for the next prompt.
 			// Give back a half-typed line that a question took out of an earlier read.
 			if saved := s.takeSavedLine(); saved != "" {
 				s.terminal.SetPendingLine(saved)

@@ -29,6 +29,16 @@ func ChatHighlightInputEnabled() bool {
 	return chatSwitch("chat.highlight_input")
 }
 
+// ChatSteeringEnabled reports whether chat keeps the input line available while
+// a turn runs (chat.steering, on by default): the person can insert a message
+// into the running turn (Enter), end this turn only (Esc, a single Ctrl-C) or
+// leave chat (a second Ctrl-C within a few seconds). It takes the same values as
+// chat.markdown; a non-terminal input keeps the old behaviour anyway (no line
+// editing, no reading during a turn).
+func ChatSteeringEnabled() bool {
+	return chatSwitch("chat.steering")
+}
+
 // ChatTerminalTitleEnabled reports whether chat sets the terminal's window/tab
 // title to the session, "suga · <短名称> · <会话标题>" (chat.terminal_title, on by
 // default). It takes the same values as chat.markdown; a non-terminal output or
@@ -44,15 +54,6 @@ func ChatTerminalTitleEnabled() bool {
 // run, ACP and a chat without a terminal keep refusing such a call as before.
 func ChatAskOutsideDirs() bool {
 	return chatSwitch("chat.ask_outside_dirs")
-}
-
-// ChatSteeringEnabled reports whether chat keeps reading the keyboard while a
-// turn runs (chat.steering, on by default): Esc or a single Ctrl-C ends the turn
-// (chat stays), a second Ctrl-C within a few seconds leaves chat. With it off a
-// turn keeps the terminal cooked and Ctrl-C has to reach chat as SIGINT. It takes
-// the same values as chat.markdown; without a terminal there is nothing to read.
-func ChatSteeringEnabled() bool {
-	return chatSwitch("chat.steering")
 }
 
 // chatSwitch reads a chat.* switch: a missing key is on, a bool is used as is,

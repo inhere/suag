@@ -298,6 +298,40 @@ func (r *Renderer) Answer(text string) {
 	md.Print(text)
 }
 
+// SteerWaiting prints the line of a message a person inserted into the running
+// turn that no model request has picked up yet: dim, like a tool line, so it is
+// not taken for the model's answer.
+func (r *Renderer) SteerWaiting(text string) {
+	r.stopThinking()
+	fmt.Fprintln(r.opts.Out, r.paintDim(steerNotice(text, steerWaitingSuffix)))
+}
+
+// SteerLate prints that line when the turn did not take the message (it was
+// already ending, or its inbox was full): it becomes the person's next input.
+func (r *Renderer) SteerLate(text string) {
+	r.stopThinking()
+	fmt.Fprintln(r.opts.Out, r.paintDim(steerNotice(text, steerLateSuffix)))
+}
+
+// SteerDelivered prints the message again once a model request of the turn
+// carried it (its "steer_delivered" event), on the background of the person's
+// own input line (chat.highlight_input) - the same style the line submitted at
+// the prompt gets, so a delivered message reads as the person's own.
+func (r *Renderer) SteerDelivered(text string) {
+	r.stopThinking()
+	line := steerNotice(text, steerTakenSuffix)
+	if r.highlightInput() {
+		line = inputHighlightPrefix + lineedit.PadLine(line, r.opts.HighlightWidth()) + highlightSuffix
+	}
+	fmt.Fprintln(r.opts.Out, line)
+}
+
+// steerNotice is the one-line display of an inserted message: the marker, the
+// message collapsed like a tool line, and its state.
+func steerNotice(text, suffix string) string {
+	return "[插话] " + truncateLine(text, resultSummaryLimit) + suffix
+}
+
 // External prints input that did not come from this keyboard (a reply sent
 // from elsewhere through `suga send` or a Stop hook) in its own color, so it
 // stands out from the model's answer. With chat.highlight_input on and a colored
@@ -403,9 +437,10 @@ func (r *Renderer) noteMemory(event personal.Event) {
 }
 
 // Status prints the grey end-of-turn line: model, token usage, the share of the
-// context window the last request used, elapsed time and the local time the turn
-// ended at, preceded by one line per memory write of the turn.
-func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration) {
+// context window the last request used, elapsed time, the local time the turn
+// ended at and how many messages the person inserted while it ran, preceded by
+// one line per memory write of the turn.
+func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration, steers int) {
 	r.stopThinking()
 	for _, line := range r.memory {
 		fmt.Fprintln(r.opts.Out, r.paint(color.Green, line))
@@ -427,6 +462,11 @@ func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration) {
 		formatElapsed(elapsed),
 		// When the turn ended, so the person can tell long sessions apart (:03).
 		clockTime(r.localNow()))
+	// Inserted messages (steering) only, so the line is unchanged for a turn
+	// nobody typed into.
+	if steers > 0 {
+		parts = append(parts, fmt.Sprintf("插话 %d", steers))
+	}
 	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, strings.Join(parts, " · ")))
 }
 

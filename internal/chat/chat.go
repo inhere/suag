@@ -52,16 +52,17 @@ type Options struct {
 	// chat.highlight_input, on by default). Like Markdown it needs a colored
 	// terminal: a pipe, a redirected output or NO_COLOR keeps the plain text.
 	HighlightInput bool
+	// Steering keeps the input line available while a turn runs (config
+	// chat.steering, on by default): Enter inserts a message into the running
+	// turn, Esc or a single Ctrl-C ends this turn only, a second Ctrl-C within
+	// three seconds leaves chat. It needs a terminal: with a pipe or a redirected
+	// input a turn keeps the plain behaviour (nothing is read while it runs).
+	Steering bool
 	// TerminalTitle sets the terminal's window/tab title to the session, "suga ·
 	// <short name> · <session title>" (config chat.terminal_title, on by
 	// default). Like Markdown it needs a colored terminal: a pipe, a redirected
 	// output or NO_COLOR leaves the title alone.
 	TerminalTitle bool
-	// Steering keeps the keyboard readable while a turn runs (config
-	// chat.steering, on by default): Esc or a single Ctrl-C ends the turn and
-	// chat stays, a second Ctrl-C within a few seconds leaves chat. With it off
-	// the turn keeps the terminal cooked and Ctrl-C has to arrive as SIGINT.
-	Steering bool
 	// terminalTitleOut is where the title sequences go (nil: the chat output);
 	// tests point it at a buffer to check when the title changes without a
 	// terminal.
@@ -204,9 +205,9 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		return err
 	}
 	defer inputSource.Close()
-	// chat.steering: a running turn keeps reading the keyboard (Esc / Ctrl-C end
-	// it). Without a terminal (piped input) there is no keyboard to read.
-	inputSource.steering = opts.Steering && inputSource.terminal != nil
+	// The turn-time input line (chat.steering): a turn then reads it instead of
+	// letting the tty go cooked, so the person can steer or end the turn.
+	inputSource.SetSteering(opts.Steering)
 	// All conversation output goes through the renderer (and the input source,
 	// which keeps the line editor's screen state consistent).
 	color := colorEnabledFor(stdout)
@@ -260,6 +261,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		stderr: stderr, baseEvent: baseEvent, title: title, idle: idle,
 		server: processServer, stats: &stats, sessionID: sessionID, sessionName: sessionName,
 		createdAtStartup: createdAtStartup, dirs: opts.Dirs,
+		steering: opts.Steering && inputSource.terminal != nil,
 	}
 	if hooks != nil && sessionID != "" {
 		ensureTranscriptFile(transcriptPath(sessionID), sessionID)
@@ -277,6 +279,11 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		// (exit 3 for `send --wait` style callers) and tell the person how many were dropped.
 		if n := inputSource.DiscardQueued(); n > 0 {
 			fmt.Fprintf(stderr, "Warning: %d queued message(s) were discarded on exit and not run.\n", n)
+		}
+		if n := state.steersDropped; n > 0 {
+			// Messages inserted into the last turn that chat did not run (it was
+			// leaving, or the turn was): the person sees how many are gone.
+			fmt.Fprintf(stderr, "Warning: %d inserted message(s) were not run on exit.\n", n)
 		}
 		if state.waiting != nil {
 			state.lostReply = appendContext(state.lostReply, state.waiting.Interrupt(context.Background()))
@@ -371,6 +378,11 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		}
 		// The turn itself, from the idle pause to its Stop hook (chat_turn.go).
 		if err := state.runTurn(line, injected); err != nil {
+			if errors.Is(err, errExitChat) {
+				// A second Ctrl-C during a turn: leave chat like the second one at
+				// the prompt does, with the usual summary on the way out.
+				return nil
+			}
 			return err
 		}
 	}

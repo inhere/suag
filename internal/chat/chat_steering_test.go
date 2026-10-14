@@ -26,9 +26,12 @@ func TestSetBusySteeringKeepsRawInput(t *testing.T) {
 		source.SetBusy(true)
 		assert.Eq(t, 1, *raw)
 		assert.NotNil(t, source.restoreRaw)
+		// The end of a turn does not hand the terminal back: the input line stays
+		// available (the turn's read goes on as the next prompt's), and the read that
+		// put the tty into raw mode restores it when it returns (readLine's leaveRaw).
 		source.SetBusy(false)
-		assert.Eq(t, 1, *restored)
-		assert.Nil(t, source.restoreRaw)
+		assert.Eq(t, 0, *restored)
+		assert.NotNil(t, source.restoreRaw)
 	})
 
 	t.Run("steering off: the turn keeps cooked mode", func(t *testing.T) {
