@@ -19,6 +19,14 @@ turn only. The scenarios (each on its own scratch home and fake model):
              Ctrl-C ends a turn the same way, two of them leave chat.
   approval   typing at an approval question is the answer, never an inserted
              message: no 插话 line, no request carrying that text, no steer event.
+  screen     a long, overwide reply streams in slowly while a message is typed:
+             the minimal VT screen model (ptydrive.Screen) says the reply keeps
+             its rows, whole, and the input line stays one line of its own - the
+             check for "only complete lines leave" (r3 M1), for the terminal
+             width the line is laid out with, and for the waiting line being off.
+  hook       a PostToolUse hook writes a line straight to the terminal and one
+             to stderr (chat prints the latter as a notice) while a message is
+             typed: the input line keeps its place (task 4/N4, r3 M1).
   off        chat.steering: false keeps the old behaviour: no ↳ prompt during the
              turn, nothing is read, a single Ctrl-C still ends the chat.
 
@@ -37,6 +45,13 @@ Linux container:
   process group; the turn's context is what ends the tool).
 - drop the generation check in turnInput.handle: nothing here fails, it is a race
   guard (its unit tests are in internal/chat/steering_test.go).
+- whole lines off (LiveText.SetWholeLines left a no-op): screen fails, the reply's
+  partial line is written next to the input line and the model's rows split.
+- no SetSize (the line editor back at its 80-column default): screen fails, the
+  rows of a reply wrapped at the pty's 60 columns are counted wrongly.
+- no restoreOutputProcessing (OPOST|ONLCR left off in raw mode): hook fails, the
+  line the hook wrote straight to the terminal keeps its column and the input line
+  is repainted into it.
 """
 import argparse
 import json
@@ -49,16 +64,59 @@ import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ptydrive import CTRL_C, PtySession  # noqa: E402
+import fakellm  # noqa: E402
+from ptydrive import CTRL_C, PtySession, Screen  # noqa: E402
 from chat_approval import isolate_ws, wait_port, write_home  # noqa: E402
 from chat_observe import trace_events  # noqa: E402
 
 STEER_PROMPT = r"↳ "
+# The prompt as the text it is (an exact row of the screen model).
+STEER = "↳ "
+PROMPT = "❯ "
 STARTED = "steer-tool-started"
 # The tool whose result a scenario waits for (the model is asked again after it).
 QUICK_TOOL = "touch {marker}; sleep 4; echo TOOL_DONE"
 # The tool that keeps running until the turn is ended.
 SLOW_TOOL = "touch {marker}; sleep 60; echo TOOL_DONE"
+# The pty window the screen scenario runs in: each reply line is wider than it, so
+# the terminal wraps the line and the chat has to know that width (SetSize).
+PTY_COLS = 60
+LONG = "STEER_LONG"
+LONG_LINES = 3
+# Not a multiple of PTY_COLS, and neither is a line with the ▣ prefix: a line that
+# ends exactly at the right edge makes the row count ambiguous (a terminal holds the
+# wrap back until the next character), which is not what this scenario is about.
+LONG_WIDE = 175
+# The long reply of the screen scenario, built by fakellm itself (--lines/--wide),
+# so the expectation cannot drift from the answer.
+LONG_REPLY = fakellm.build_reply(argparse.Namespace(mode="text", reply=LONG, lines=LONG_LINES, wide=LONG_WIDE))
+# What the hook scenario's hook writes while the turn runs: a line straight to the
+# terminal (a bare newline) and one to stderr, which chat prints as a notice.
+HOOK_TTY = "HOOK_TTY_LINE"
+HOOK_TTY2 = "HOOK_TTY_NEXT"
+HOOK_NOTICE = "HOOK_NOTICE_LINE"
+HOOK_SCRIPT = '''import json, sys
+event = json.loads(sys.stdin.readline() or "{}")
+name = event.get("hook_event_name") or event.get("name") or event.get("Name") or ""
+if name == "PostToolUse":
+    # A bare newline written to the terminal straight: the chat's raw input mode
+    # has to keep the output post-processing on (OPOST|ONLCR), or the line keeps
+    # its column and the input line is repainted into it.
+    with open("/dev/tty", "w", encoding="utf-8") as tty:
+        tty.write(%r + "\\n" + %r + "\\n")
+    sys.stderr.write(%r + "\\n")
+print(json.dumps({"hookSpecificOutput": {"additionalContext": "SMOKE hook context"}}))
+''' % (HOOK_TTY, HOOK_TTY2, HOOK_NOTICE)
+
+
+def wrapped_rows(text, cols, prefix=""):
+    """The screen rows a text of whole lines takes on a cols column screen: the
+    prefix marks the start of the model message (its first line only, like LiveText
+    prints it) and the terminal wraps every line at the window width."""
+    rows = []
+    for line in (prefix + text).split("\n"):
+        rows += [line[i:i + cols] for i in range(0, len(line), cols)]
+    return rows
 
 
 class FakeLog:
@@ -115,9 +173,10 @@ class Scenario:
     """What one scenario works with: the session, the fake model's request log,
     the workspace, and the binary and environment a trace check needs."""
 
-    def __init__(self, session, log, ws, binary, env, reply):
+    def __init__(self, session, log, ws, binary, env, reply, cols=80):
         self.session, self.log, self.ws, self.binary, self.env = session, log, ws, binary, env
         self.reply = reply
+        self.cols = cols
 
     def check(self, name, ok):
         return self.session.check(name, ok)
@@ -265,6 +324,115 @@ def abort_scenario(c):
     c.exit_chat()
 
 
+def screen_scenario(c):
+    """A long, overwide reply streams slowly while a message is typed: the reply
+    keeps its rows, whole, and the input line stays one line of its own (r3 M1)."""
+    s = c.session
+    m = s.mark()
+    c.check("❯ prompt", s.until(r"❯ ", m))
+    m = s.mark()
+    s.line("长回答")
+    c.check("the prompt becomes ↳ while the model answers", s.until(STEER_PROMPT, m))
+    # The waiting line is off while the input line is up (a frame would fight it
+    # for the row).
+    c.check("no waiting line while the input line is up", not s.contains(r"思考中", m))
+
+    # Type while the reply streams: the chunks arrive slowly (--chunk-delay).
+    time.sleep(0.8)
+    for part in ["插", "话", "abc"]:
+        s.send(part)
+        time.sleep(0.4)
+    typed = "插话abc"
+    c.check("the half line is echoed", s.until(re.escape(typed), m))
+    c.check("the reply streams in", s.until(re.escape(LONG + "-01 "), m, timeout=60))
+    c.check("its last line arrived", s.until(re.escape("%s-%02d " % (LONG, LONG_LINES)), m, timeout=60))
+    c.check("the turn ends", s.until(r"tokens · ", m, timeout=60))
+    # The half line comes back on the next prompt (during the turn its prompt was
+    # ↳): wait for that redraw before looking at the screen.
+    c.check("the half line is back at the prompt", s.until(r"❯ " + re.escape(typed), m, timeout=10))
+
+    # The screen, as a terminal would show it: the rows the reply occupies and the
+    # one row the input line lives on.
+    screen = Screen(width=c.cols)
+    screen.feed(s.text_raw(0))
+    lines = screen.screen_lines()
+    expected = wrapped_rows(LONG_REPLY, c.cols, prefix="▣ ")
+    start = next((i for i, _ in enumerate(lines) if lines[i:i + len(expected)] == expected), None)
+    if start is None:
+        print("--- screen ---")
+        print("\n".join("%3d|%s" % (i, row) for i, row in enumerate(lines)))
+        print("--- the rows the reply should occupy ---")
+        print("\n".join("   |%s" % row for row in expected))
+    c.check("the reply's rows are whole and in place", start is not None)
+    typed_rows = [i for i, row in enumerate(lines) if typed in row]
+    c.check("the half line is on one row only", len(typed_rows) == 1)
+    c.check("the input line is the last row", bool(typed_rows) and typed_rows[-1] == len(lines) - 1)
+    if typed_rows:
+        # Whichever end of the turn it is: the running one (↳) or the prompt the
+        # half line was handed to (❯, design N5).
+        c.check("the input line carries its prompt",
+                lines[typed_rows[-1]] in (STEER + typed, PROMPT + typed))
+    if start is not None:
+        # Nothing of the streamed text is left between the reply and the input line:
+        # no fragment of it, and no row that is only its fill character.
+        after = lines[start + len(expected):]
+        residue = [row for row in after if "STEER_LONG" in row or (row and set(row) == {"."})]
+        if residue:
+            print("--- screen rows after the reply ---")
+            print("\n".join("   |%s" % row for row in after))
+        c.check("nothing of the reply is left after it", not residue)
+    c.exit_chat()
+
+
+def hook_scenario(c):
+    """A hook's notice and the line it writes straight to the terminal arrive
+    while a message is typed: the input line keeps its place (N4, r3 M1)."""
+    s = c.session
+    m = s.mark()
+    c.check("❯ prompt", s.until(r"❯ ", m))
+    m = s.mark()
+    s.line("跑一下")
+    c.check("tool call shown", s.until(r"⏺ shell_exec", m))
+    # Type while the hook runs (PostToolUse fires right after the tool result).
+    for part in ["插", "一句"]:
+        s.send(part)
+        time.sleep(0.3)
+    typed = "插一句"
+    c.check("the hook wrote to the terminal itself", s.until(HOOK_TTY, m, timeout=30))
+    c.check("the hook's notice reached chat", s.until(HOOK_NOTICE, m, timeout=30))
+    c.check("the half line is echoed", s.until(re.escape(typed), m))
+    c.check("no waiting line while the input line is up", not s.contains(r"思考中", m))
+
+    screen = Screen(width=c.cols)
+    screen.feed(s.text_raw(0))
+    lines = screen.screen_lines()
+    typed_rows = [i for i, row in enumerate(lines) if typed in row]
+    # A process writing to the terminal itself (the hook) moves the cursor without
+    # the line editor knowing, so the input line can be repainted a row lower: what
+    # must hold is that it is there, whole, as the last row - and that the hook's own
+    # line did not end up glued to chat's notice of it, which is what happens when
+    # the raw output has no newline processing left (the erase after it only reaches
+    # from the column the write stopped at).
+    c.check("the input line is the last row", bool(typed_rows) and typed_rows[-1] == len(lines) - 1)
+    if typed_rows:
+        c.check("the input line carries its prompt",
+                lines[typed_rows[-1]] in (STEER + typed, PROMPT + typed))
+    # Two lines written straight to the terminal: with output processing kept on
+    # (OPOST|ONLCR) the second starts at column 0; without it, it starts where the
+    # first one ended (a staircase).
+    c.check("a second line the hook wrote starts at column 0",
+            any(row.rstrip() == HOOK_TTY2 for row in lines))
+    c.check("the hook's own line stayed a row of its own",
+            not any(HOOK_TTY in row and HOOK_NOTICE in row for row in lines))
+    if not any(row.rstrip() == HOOK_TTY or HOOK_NOTICE in row for row in lines):
+        print("--- screen ---")
+        print("\n".join("%3d|%s" % (i, row) for i, row in enumerate(lines)))
+    # End the turn only, then leave chat.
+    s.send("\x1b")
+    c.check("esc ends this turn only", s.until(r"已中断本轮", m, timeout=15))
+    c.exit_chat()
+
+
 def approval_scenario(c):
     """An approval answer is never taken as an inserted message."""
     s = c.session
@@ -307,14 +475,25 @@ def off_scenario(c):
     c.check("one ctrl-c still ends the chat", s.until(r"续接：suga chat --resume sess_", m))
 
 
-def run(name, binary, work, port, fake_args, tool, tools_extra, extra, scenario, keep, reply, dump=False):
+def run(name, binary, work, port, fake_args, tool, tools_extra, extra, scenario, keep, reply,
+        dump=False, cols=None, hooks=False):
     home = os.path.abspath(os.path.join(work, "home"))
     ws = os.path.abspath(os.path.join(work, "ws"))
     shutil.rmtree(home, ignore_errors=True)
     os.makedirs(ws, exist_ok=True)
     isolate_ws(ws)
+    if hooks:
+        # The hook scenario's command: it writes a line straight to the terminal and
+        # one to stderr (chat prints that as a notice), so both arrive while the
+        # input line is up. PostToolUse is off unless the config asks for it.
+        os.makedirs(home, exist_ok=True)
+        hook = os.path.join(home, "hook.py")
+        with open(hook, "w", encoding="utf-8") as f:
+            f.write(HOOK_SCRIPT)
+        extra += ("hooks:\n  command: [%s, -I, %s]\n  post_tool_use:\n    tools: ['*']\n"
+                  % (json.dumps(sys.executable), json.dumps(hook)))
     write_home(home, port, tools_extra=tools_extra, extra=extra)
-    env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
+    env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="on" if hooks else "off", TERM="xterm", NO_COLOR="1")
     env.pop("SUGA_CONFIG", None)
 
     here = os.path.dirname(os.path.abspath(__file__))
@@ -327,9 +506,12 @@ def run(name, binary, work, port, fake_args, tool, tools_extra, extra, scenario,
     try:
         wait_port(fake)
         log = FakeLog(fake)
-        s = PtySession([binary, "chat"], env=env, cwd=ws)
+        # The pty's window size is what the chat reads as the terminal width (and
+        # what a terminal would wrap the lines at); only the screen scenarios need a
+        # size of their own, the others keep the pty's default.
+        s = PtySession([binary, "chat"], env=env, cwd=ws, size=(cols, 24) if cols else None)
         print(f"\n== {name} ==")
-        scenario(Scenario(s, log, ws, binary, env, reply))
+        scenario(Scenario(s, log, ws, binary, env, reply, cols=cols or 80))
         if dump:
             print("--- output ---")
             print(s.text())
@@ -364,22 +546,31 @@ def main():
     reply = "STEER_OK"
     scenarios = [
         ("same-turn", ["--mode", "tool", "--delay", "0.2", "--reply", reply], QUICK_TOOL, auto, "",
-         same_turn_scenario),
+         same_turn_scenario, {}),
         ("next-turn", ["--mode", "text", "--delay", "3", "--reply", reply], QUICK_TOOL, auto, "",
-         next_turn_scenario),
+         next_turn_scenario, {}),
         ("abort", ["--mode", "tool", "--delay", "0.2", "--reply", reply], SLOW_TOOL, auto, "",
-         abort_scenario),
+         abort_scenario, {}),
+        # A long, overwide reply in small chunks: the screen model checks where its
+        # lines and the input line ended up. The pty is 60 columns wide, so every
+        # reply line is wrapped by the terminal.
+        ("screen", ["--mode", "text", "--reply", LONG, "--lines", str(LONG_LINES),
+                    "--wide", str(LONG_WIDE), "--chunk", "20", "--chunk-delay", "0.12"],
+         QUICK_TOOL, auto, "", screen_scenario, {"cols": PTY_COLS}),
+        # A hook writing to the terminal and to stderr while the turn runs.
+        ("hook", ["--mode", "tool", "--delay", "4", "--reply", reply], "sleep 2; echo SMOKE_OK", auto, "",
+         hook_scenario, {"cols": PTY_COLS, "hooks": True}),
         ("approval", ["--mode", "tool", "--delay", "0.2", "--reply", reply], QUICK_TOOL, "", "",
-         approval_scenario),
+         approval_scenario, {}),
         ("off", ["--mode", "tool", "--delay", "0.2", "--reply", reply], SLOW_TOOL, auto,
-         "chat:\n  steering: false\n", off_scenario),
+         "chat:\n  steering: false\n", off_scenario, {}),
     ]
     results = []
-    for i, (name, fake_args, tool, tools_extra, extra, scenario) in enumerate(scenarios):
+    for i, (name, fake_args, tool, tools_extra, extra, scenario, opts) in enumerate(scenarios):
         if args.only and name != args.only:
             continue
         results += run(name, binary, os.path.abspath(f"{args.work}-{name}"), args.port + i,
-                       fake_args, tool, tools_extra, extra, scenario, args.keep, reply, args.dump)
+                       fake_args, tool, tools_extra, extra, scenario, args.keep, reply, args.dump, **opts)
     failed = [name for name, ok in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} passed")
     if failed:

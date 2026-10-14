@@ -7,10 +7,13 @@ Lessons built in (see docs/plans/2026-10-09-chat-write-approval-retrospective.md
   - Enter is "\\r" in raw mode, Ctrl-C is "\\x03";
   - check result lines ("⎿ ok: ...") rather than text a prompt also echoes.
 """
+import fcntl
 import os
 import pty
 import re
 import select
+import struct
+import termios
 import time
 import unicodedata
 
@@ -216,11 +219,15 @@ class PtySession:
                 os.chdir(cwd)
             os.execve(argv[0], argv, env or dict(os.environ))
         if size:
+            # The window size belongs to the child (it reads it through GetSize and
+            # gets a SIGWINCH for it), so the parent sets it after the fork.
             self.resize(size[0], size[1])
 
-    def resize(self, cols, rows):
-        """Resize the pty's window, the way a person resizes the terminal: chat
-        gets SIGWINCH (or notices on its next poll where there is no signal)."""
+    def resize(self, cols, rows=24):
+        """Resize the pty's window, the way a person resizes the terminal: the
+        kernel hands the child SIGWINCH (and chat notices on its next poll where
+        there is no signal). This is the width the program lays lines out with and
+        the width a terminal would wrap them at, so the screen model follows it."""
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
     # --- output ---------------------------------------------------------
