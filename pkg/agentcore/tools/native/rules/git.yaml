@@ -38,12 +38,14 @@ rules:
   # `git status` in its long form: the hints for the next step
   # ("(use \"git add ...\")", "no changes added to commit ...") go, the file
   # list stays. --short/--porcelain print no hints, so the rule does not apply
-  # to them (match_output).
+  # to them (match_output names the lines only the long form has, among them
+  # the rebase/merge state a detached or in-progress tree prints).
   - name: git-status
     match: '^\s*git\s+status\b'
-    match_output: '(?m)^(On branch |HEAD detached|You are in |Untracked files:|Changes to be committed:|Changes not staged for commit:|Changes staged for commit:)'
+    match_output: '(?m)^(On branch |HEAD detached|Not currently on any branch|You are |Your branch is |Untracked files:|Unmerged paths:|Changes to be committed:|Changes not staged for commit:|Changes staged for commit:|No commits yet|nothing to commit)'
     drop:
       - '^\s*\(use "git '
+      - '^\s*\(fix conflicts'
       - '^\s*\(create/copy files'
       - '^no changes added to commit'
       - '^nothing added to commit'

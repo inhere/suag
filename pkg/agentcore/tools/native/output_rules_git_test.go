@@ -151,6 +151,22 @@ func TestBuiltinGitRules(t *testing.T) {
 			notWant: []string{"(use \"git add", "(use \"git restore", "no changes added to commit"},
 		},
 		{
+			name:    "git status during a rebase keeps the conflict list",
+			command: "git status",
+			output: "interactive rebase in progress; onto 1fe2662\n" +
+				"You are currently rebasing branch 'feature' on '1fe2662'.\n" +
+				"  (fix conflicts and then run \"git rebase --continue\")\n" +
+				"  (use \"git rebase --skip\" to skip this patch)\n" +
+				"  (use \"git rebase --abort\" to check out the original branch)\n" +
+				"\nUnmerged paths:\n" +
+				"  (use \"git add <file>...\" to mark resolution)\n" +
+				"\tboth modified:   pkg/sub/a.go\n" +
+				"\tboth modified:   vendor/github.com/x/x.go\n" +
+				"\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n",
+			want:    []string{"Unmerged paths:", "\tboth modified:   pkg/sub/a.go", "\tboth modified:   vendor"},
+			notWant: []string{"(use \"git rebase", "(use \"git add", "no changes added to commit"},
+		},
+		{
 			name:    "git status --short has no hints to drop",
 			command: "git status --short",
 			output: repeatLines(30, " M pkg/agentcore/tools/native/file%d.go") +
