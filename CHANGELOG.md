@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.20.0] - 2026-10-14
+
+内置配置与使用向导 skill `suga-guide`（首次运行释放到 `$SUGA_HOME/skills`）；chat 增加 markdown 渲染、“思考中”提示与续接时显示上一次回复；`suga send` 支持位置参数；会话 socket 路径超长时 chat 不再退出。
+
 ### 新增
 
 - 内置配置与使用向导 skill `suga-guide`（完整配置项参考、首次配置向导、provider 与 gofer 接入细节）：内嵌在二进制中，首次运行时释放到 `$SUGA_HOME/skills/suga-guide/`；升级后若用户没改过则自动更新，改过的或用户自己的同名目录不会被覆盖。README 的配置一节只保留常用项。
@@ -428,7 +432,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.19.0...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/inhere/suga/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/inhere/suga/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/inhere/suga/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/inhere/suga/compare/v0.16.0...v0.17.0
