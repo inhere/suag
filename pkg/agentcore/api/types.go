@@ -100,6 +100,13 @@ type RunState struct {
 	Scratch   map[string]any
 	Usage     Usage
 	LastError string
+	// WrappingUp tells the ContextBuilder that the step it is building for asks
+	// the model for a final answer instead of more work ("" = an ordinary step);
+	// the value is why ("max_steps" or a hook's Control.RequestWrapUp reason).
+	// The runtime sets it before every BuildMessages call. It is transient: it is
+	// never persisted and never marshalled (RunResult.WrapUp is the persisted,
+	// caller-facing reason a run ended with a wrap-up answer).
+	WrappingUp string `json:"-"`
 }
 
 // RunResult is the public outcome contract returned by a runtime execution.

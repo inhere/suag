@@ -2,6 +2,7 @@ package agentcore
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -161,6 +162,47 @@ func TestRuntime_Run_IgnoredWrapUp(t *testing.T) {
 		assert.Require(t, assert.NoErr(t, err))
 		assert.StrContains(t, res.Output, "模型未给出汇报")
 		assert.Eq(t, 2, len(provider.calls))
+	})
+}
+
+// TestRuntime_WrapUpStateIsSeenByTheContextBuilder covers the contract a host
+// leans on for steering (design D5): RunState.WrappingUp tells the builder of
+// each step whether that step asks for a final answer, and it never reaches the
+// persisted state (json:"-").
+func TestRuntime_WrapUpStateIsSeenByTheContextBuilder(t *testing.T) {
+	var seen []string
+	builder := runtimeTestContextBuilder{onBuild: func(state *RunState) error {
+		seen = append(seen, state.WrappingUp)
+		return nil
+	}}
+	provider := &runtimeTestProvider{results: []*GenerateResult{
+		{ToolCalls: []ToolCall{{CallID: "call-1", Name: "lookup"}}, FinishReason: FinishToolCalls},
+		{Content: "answered", FinishReason: FinishFinal},
+	}}
+	reg := tools.NewRegistry()
+	reg.MustRegister(&runtimeTestTool{name: "lookup"})
+	res, err := New(Config{
+		Provider:       provider,
+		Storage:        newRuntimeTestStorage(),
+		Tools:          reg,
+		PromptBuilder:  runtimeTestPromptBuilder{},
+		ContextBuilder: builder,
+		MaxSteps:       1,
+		MaxStepsWrapUp: "WRAP UP",
+	}).Run(context.Background(), RunInput{RunID: "run-wrapup-state", AgentID: "agent-1", Instruction: "explore"})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, RunCompleted, res.Status)
+	assert.Eq(t, "max_steps", res.WrapUp)
+	assert.Eq(t, []string{"", "max_steps"}, seen)
+
+	t.Run("the field is transient", func(t *testing.T) {
+		raw, err := json.Marshal(&RunState{RunID: "run-1", WrappingUp: "max_steps"})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.NotContains(t, string(raw), "WrappingUp")
+		assert.NotContains(t, string(raw), "WrapUp")
+		var back RunState
+		assert.NoErr(t, json.Unmarshal([]byte(`{"RunID":"run-1","WrappingUp":"max_steps"}`), &back))
+		assert.Eq(t, "", back.WrappingUp)
 	})
 }
 

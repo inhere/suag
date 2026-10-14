@@ -148,6 +148,14 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 			return r.finishRun(ctx, input, state, result, err)
 		}
 
+		// Tell the context builder whether this step asks for a final answer
+		// (design D5): a host must not insert new user messages into a wrap-up
+		// step. The field is transient, set anew for every step.
+		state.WrappingUp = ""
+		if wrappingUp {
+			state.WrappingUp = wrapUp
+		}
+
 		messages, err := r.buildContext(ctx, state, ctrl)
 		if err != nil {
 			return r.returnWithHandledError(ctx, input, state, "context", err, ctrl)
