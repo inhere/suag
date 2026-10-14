@@ -57,7 +57,11 @@ func (m *OutputMinimizer) Minimize(call api.ToolCall, content string) (string, b
 		return "", false
 	}
 	command, _ := call.Arguments["command"].(string)
-	matched := m.matchingRules(command, content)
+	// The rules see the cleaned output (colour codes off, progress lines
+	// collapsed): a rule asking for a shape with match_output still finds it
+	// when the command was run with colours on.
+	clean := cleanTerminal(content)
+	matched := m.matchingRules(command, clean)
 	// The gates are global unless a rule covering this command asks for a
 	// tighter one (a git diff or a grep hit is worth tidying earlier than an
 	// unnamed command).
@@ -65,7 +69,7 @@ func (m *OutputMinimizer) Minimize(call api.ToolCall, content string) (string, b
 	if len(content) < minBytes {
 		return "", false
 	}
-	lines := strings.Split(cleanTerminal(content), "\n")
+	lines := strings.Split(clean, "\n")
 	for _, r := range matched {
 		lines = r.compiled.apply(lines, r.Summary)
 	}

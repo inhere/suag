@@ -132,6 +132,14 @@ func TestBuiltinGitRules(t *testing.T) {
 				"[exit code: 0]",
 		},
 		{
+			name:    "git diff with colours on still folds",
+			command: "git diff",
+			output: strings.ReplaceAll(strings.ReplaceAll(gitDiffMixed,
+				"diff --git", "\x1b[1mdiff --git"),
+				"+++ b/", "\x1b[32m+++ b/") + "\x1b[0m",
+			want: []string{"已折叠 go.sum 的 10 行改动", "已折叠 vendor/github.com/x/x.go 的 7 行改动"},
+		},
+		{
 			name:    "git status: hints go, the file list stays",
 			command: "git status",
 			output:  gitStatusLong,
