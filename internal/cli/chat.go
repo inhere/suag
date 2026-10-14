@@ -35,6 +35,9 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 		IdleAfter:      idle.After, IdleMinRatio: idle.MinRatio,
 		Tasks: taskManager, TaskWake: taskWake, StopBackground: sugahooks.StopBackground(),
 		SetupSession: opts.setupSession,
+		// The session's added directories (:add-dir/:dirs/:rm-dir): the handle
+		// shares the metadata and the set the tools read with ApplyAddDirs.
+		Dirs: runtime.SessionAddDirs(),
 	}, stdin, stdout, stderr, hooks)
 }
 

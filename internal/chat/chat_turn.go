@@ -52,6 +52,9 @@ type chatState struct {
 	// createdAtStartup is true while the session has no title yet: the next
 	// message names it.
 	createdAtStartup bool
+	// dirs is the session's added-directory handle (Options.Dirs): the :add-dir,
+	// :dirs and :rm-dir commands work through it; nil leaves them out.
+	dirs SessionDirs
 }
 
 // runTurn executes one turn of the chat: from pausing the idle consolidation to

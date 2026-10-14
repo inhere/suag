@@ -86,6 +86,11 @@ type Options struct {
 	// turn (the CLI publishes the session's added directories there); a failure
 	// stops the chat.
 	SetupSession func(ctx context.Context, sessionID string) error
+	// Dirs is the session's added-directory handle (--add-dir): the :add-dir,
+	// :dirs and :rm-dir commands work through it and nil leaves them out. The
+	// session it belongs to is opened by SetupSession, so it is only used from
+	// the loop on.
+	Dirs SessionDirs
 }
 
 // Run drives the interactive chat REPL on top of runner; hooks may be nil.
@@ -248,7 +253,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		ctx: ctx, runner: runner, hooks: hooks, source: inputSource, render: render,
 		stderr: stderr, baseEvent: baseEvent, title: title, idle: idle,
 		server: processServer, stats: &stats, sessionID: sessionID, sessionName: sessionName,
-		createdAtStartup: createdAtStartup,
+		createdAtStartup: createdAtStartup, dirs: opts.Dirs,
 	}
 	if hooks != nil && sessionID != "" {
 		ensureTranscriptFile(transcriptPath(sessionID), sessionID)
@@ -330,16 +335,20 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		// clock starts over. A running consolidation is preempted by the
 		// Run/Compact below through the session gate.
 		idle.Touch()
-		switch line {
-		case "":
+		switch {
+		case line == "":
 			continue
-		case ":quit", ":exit":
+		case injected:
+			// Text from elsewhere (a `suga send` delivery, a Stop hook reply, a task
+			// notice) is never a command: it is always an ordinary message, so
+			// delivered text can neither change the session's permissions nor end it.
+		case line == ":quit", line == ":exit":
 			// Both spellings leave chat; :exit is the familiar one from other REPLs.
 			return nil
-		case ":session":
+		case line == ":session":
 			fmt.Fprintln(inputSource, sessionLine(sessionID, sessionName))
 			continue
-		case ":compact":
+		case line == ":compact":
 			// Compress the session context now; token figures are estimates.
 			idle.Pause()
 			if out, err := runner.Compact(ctx, sessionID); err != nil {
@@ -349,6 +358,10 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 				fmt.Fprintf(inputSource, "Compacted context: ~%d -> ~%d tokens (estimate)\n", out.TokensBefore, out.TokensAfter)
 			}
 			idle.Resume()
+			continue
+		case state.dirs != nil && isDirCommand(line):
+			// The session's added directories (:add-dir/:dirs/:rm-dir).
+			state.runDirCommand(line)
 			continue
 		}
 		// The turn itself, from the idle pause to its Stop hook (chat_turn.go).
