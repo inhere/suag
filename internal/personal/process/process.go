@@ -18,8 +18,8 @@ import (
 const MaxQueue = 8
 
 type Record struct {
-	PID       int       `json:"pid"`
-	SessionID string    `json:"session_id"`
+	PID       int    `json:"pid"`
+	SessionID string `json:"session_id"`
 	// Name is the session's short name ("<workspace directory>-k7"), the address
 	// `suga send --session <name>` accepts; empty in records of older versions,
 	// which stored the first message as the name.
@@ -150,13 +150,6 @@ func (s *Server) SetBusy(busy bool) error {
 	} else {
 		s.record.State = "idle"
 	}
-	s.mu.Unlock()
-	return s.persistRecord()
-}
-
-func (s *Server) SetName(name string) error {
-	s.mu.Lock()
-	s.record.Name = name
 	s.mu.Unlock()
 	return s.persistRecord()
 }

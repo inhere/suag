@@ -54,6 +54,11 @@ type rendererOptions struct {
 	// Thinking and ContextWindow follow the model in the banner when set.
 	Thinking      string
 	ContextWindow int
+	// SessionName is the session's short name ("<workspace directory>-k7"); the
+	// banner shows it and it is the address `suga send --session <name>` accepts.
+	// It is set after the local session socket is registered, so it stays empty
+	// when registration failed.
+	SessionName string
 	// WriteTools selects the banner's tool line (write and shell on or off).
 	WriteTools bool
 	// Markdown renders the model's text as terminal markdown (config
@@ -426,6 +431,10 @@ func (r *Renderer) LastReply(text, sessionID string, incomplete bool) {
 	r.Answer(strings.Join(lines, "\n"))
 }
 
+// SetSessionName records the session's short name for the banner; chat calls it
+// once the local session socket is registered (before Banner).
+func (r *Renderer) SetSessionName(name string) { r.opts.SessionName = name }
+
 // Banner prints the chat header: the model in use and the commands.
 func (r *Renderer) Banner() {
 	r.stopThinking()
@@ -438,6 +447,9 @@ func (r *Renderer) Banner() {
 	}
 	if r.opts.ContextWindow > 0 {
 		head += " · ctx " + formatTokens(r.opts.ContextWindow)
+	}
+	if r.opts.SessionName != "" {
+		head += " · 会话 " + r.opts.SessionName
 	}
 	fmt.Fprintln(r.opts.Out, r.paint(color.Cyan, head))
 	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "输入任务开始对话；:session 显示会话，:compact 压缩上下文，:quit/:exit 退出。"))

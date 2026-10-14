@@ -305,7 +305,7 @@ func TestChatDeliveryQueueIsBoundedAndInjectsOnlyOnce(t *testing.T) {
 	}
 }
 
-func TestEmptyChatRegistersRealSessionThenUpdatesTitleOnFirstPrompt(t *testing.T) {
+func TestEmptyChatRegistersShortNameAndUpdatesTitleOnFirstPrompt(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
 	processRoot := shortTestHome(t)
@@ -356,12 +356,18 @@ func TestEmptyChatRegistersRealSessionThenUpdatesTitleOnFirstPrompt(t *testing.T
 		t.Fatal("provider did not receive first prompt")
 	}
 	updated, err := personalprocess.List(processRoot)
-	if err != nil || len(updated) != 1 || updated[0].Name != "first meaningful prompt" {
-		t.Fatalf("ps registration did not receive first prompt title: %#v err=%v", updated, err)
+	if err != nil || len(updated) != 1 || updated[0].Name != record.Name || !strings.HasPrefix(record.Name, "chat-") {
+		t.Fatalf("the process should keep its generated short name: %#v err=%v", updated, err)
 	}
 	stored, err := runner.LoadSession(context.Background(), record.SessionID)
 	if err != nil || stored.Title != "first meaningful prompt" {
 		t.Fatalf("session title was not updated: %#v err=%v", stored, err)
+	}
+	// The short name is stored on the session when it first registers, so a
+	// resumed chat goes on under the same address.
+	saved, err := runner.SessionShortName(context.Background(), record.SessionID)
+	if err != nil || saved != record.Name {
+		t.Fatalf("short name was not stored on the session: %q err=%v", saved, err)
 	}
 	close(provider.release)
 	if _, err := io.WriteString(writer, ":quit\n"); err != nil {

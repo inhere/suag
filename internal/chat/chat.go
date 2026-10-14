@@ -122,7 +122,10 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	// continue this session and what this chat process used.
 	chatStart := time.Now()
 	var stats chatStats
-	defer func() { stats.print(stderr, sessionID, time.Since(chatStart)) }()
+	// sessionName is the short name the session registers under; it is known once
+	// the local session socket is registered, below.
+	var sessionName string
+	defer func() { stats.print(stderr, sessionID, sessionName, time.Since(chatStart)) }()
 	var releaseSessionLock func() error
 	var processServer *personalprocess.Server
 	defer func() {
@@ -199,15 +202,17 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		defer opts.Asker.Bind(nil)
 	}
 	if runner.ProcessRoot() != "" {
-		processServer, err = startChatProcessRegistration(sessionID, runner.ProcessRoot(), runner, inputSource)
+		processServer, sessionName, err = registerChatProcess(sessionID, runner, inputSource, stderr)
 		if err != nil {
 			// Registration only adds the local session socket (`suga send`, gofer delivery);
 			// losing it must not end the chat. The common cause is a SUGA_HOME deep enough
 			// that <root>/<pid>.sock exceeds the platform's socket path limit.
-			processServer = nil
+			processServer, sessionName = nil, ""
 			fmt.Fprintf(stderr, "提示：本会话未注册本地会话 socket（%v），因此收不到 suga send 与 gofer 投递；建议缩短 SUGA_HOME 路径。聊天继续运行。\n", err)
 		}
 	}
+	// The banner names the session; the short name is only known after registration.
+	render.SetSessionName(sessionName)
 	var pendingContext string
 	if hooks != nil && sessionID != "" {
 		ensureTranscriptFile(transcriptPath(sessionID), sessionID)
@@ -302,7 +307,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			// Both spellings leave chat; :exit is the familiar one from other REPLs.
 			return nil
 		case ":session":
-			fmt.Fprintln(inputSource, "session id:", sessionID)
+			fmt.Fprintln(inputSource, sessionLine(sessionID, sessionName))
 			continue
 		case ":compact":
 			// Compress the session context now; token figures are estimates.
@@ -321,11 +326,6 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		if createdAtStartup {
 			if err := runner.SetSessionTitle(ctx, sessionID, line); err != nil {
 				return err
-			}
-			if processServer != nil {
-				if err := processServer.SetName(line); err != nil {
-					return err
-				}
 			}
 			createdAtStartup = false
 		}
@@ -458,15 +458,6 @@ func showLastReply(ctx context.Context, runner *personal.Runner, render *Rendere
 		return
 	}
 	render.LastReply(text, sessionID, incomplete)
-}
-
-func startChatProcessRegistration(sessionID, processRoot string, runner *personal.Runner, input *chatInputSource) (*personalprocess.Server, error) {
-	model, err := runner.LoadSession(context.Background(), sessionID)
-	if err != nil {
-		return nil, err
-	}
-	cwd, _ := os.Getwd()
-	return personalprocess.StartWait(processRoot, sessionID, model.Title, cwd, input.DeliverWait)
 }
 
 func ensureTranscriptFile(path, sessionID string) {
@@ -645,9 +636,10 @@ func (s *chatStats) add(result personal.RunResult) {
 	}
 }
 
-// print writes the exit summary: the resume command, this process's turns and
-// tokens (plus the session total when known) and how long chat ran.
-func (s chatStats) print(w io.Writer, sessionID string, elapsed time.Duration) {
+// print writes the exit summary: the resume command (with the session's short
+// name, the address `suga send --session <name>` accepts), this process's turns
+// and tokens (plus the session total when known) and how long chat ran.
+func (s chatStats) print(w io.Writer, sessionID, shortName string, elapsed time.Duration) {
 	if sessionID == "" {
 		return
 	}
@@ -655,6 +647,10 @@ func (s chatStats) print(w io.Writer, sessionID string, elapsed time.Duration) {
 	if s.session.InputTokens > 0 || s.session.OutputTokens > 0 {
 		line += fmt.Sprintf("（会话累计 in %d / out %d）", s.session.InputTokens, s.session.OutputTokens)
 	}
+	name := ""
+	if shortName != "" {
+		name = "（会话 " + shortName + "）"
+	}
 	// Leading newline: Ctrl-C/Ctrl-D at the prompt leaves the cursor after "❯ ".
-	fmt.Fprintf(w, "\n%s · 运行 %s\n续接：suga chat --resume %s\n", line, formatElapsed(elapsed), sessionID)
+	fmt.Fprintf(w, "\n%s · 运行 %s\n续接：suga chat --resume %s%s\n", line, formatElapsed(elapsed), sessionID, name)
 }

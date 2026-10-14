@@ -293,6 +293,13 @@ func TestBannerAndExitSummary(t *testing.T) {
 		newRenderer(rendererOptions{Out: &out}).Banner()
 		assert.StrContains(t, out.String(), ":quit/:exit 退出")
 	})
+	t.Run("banner names the session", func(t *testing.T) {
+		var out bytes.Buffer
+		r := newRenderer(rendererOptions{Out: &out, Provider: "fake", Model: "m1"})
+		r.SetSessionName("ws-k7")
+		r.Banner()
+		assert.StrContains(t, out.String(), "Suga chat · fake/m1 · 会话 ws-k7\n")
+	})
 	t.Run("token counts", func(t *testing.T) {
 		for n, want := range map[int]string{512: "512", 128000: "128k", 950000: "950k", 1000000: "1M", 1048576: "1.05M", 200500: "200.5k"} {
 			assert.Eq(t, want, formatTokens(n), n)
@@ -304,12 +311,19 @@ func TestBannerAndExitSummary(t *testing.T) {
 		s.add(personal.RunResult{Usage: agentcore.Usage{InputTokens: 50, OutputTokens: 5},
 			SessionUsage: agentcore.Usage{InputTokens: 900, OutputTokens: 80, TotalTokens: 980}})
 		var out bytes.Buffer
-		s.print(&out, "sess_x", 125*time.Second)
+		s.print(&out, "sess_x", "", 125*time.Second)
 		assert.Eq(t, "\n本次 2 轮 · in 150 / out 25 tokens（会话累计 in 900 / out 80） · 运行 2m5s\n续接：suga chat --resume sess_x\n", out.String())
+	})
+	t.Run("exit summary names the short name", func(t *testing.T) {
+		var s chatStats
+		s.add(personal.RunResult{Usage: agentcore.Usage{InputTokens: 100, OutputTokens: 20}})
+		var out bytes.Buffer
+		s.print(&out, "sess_x", "ws-k7", time.Second)
+		assert.StrContains(t, out.String(), "\n续接：suga chat --resume sess_x（会话 ws-k7）\n")
 	})
 	t.Run("no session no summary", func(t *testing.T) {
 		var out bytes.Buffer
-		chatStats{}.print(&out, "", time.Second)
+		chatStats{}.print(&out, "", "ws-k7", time.Second)
 		assert.Eq(t, "", out.String())
 	})
 	t.Run("elapsed formats", func(t *testing.T) {
