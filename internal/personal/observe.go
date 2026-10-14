@@ -168,6 +168,13 @@ type observedProvider struct {
 
 func (p *observedProvider) Name() string { return p.inner.Name() }
 
+// SupportsToolChoice reports the wrapped provider's capability: the runtime
+// must get the same answer with and without observation.
+func (p *observedProvider) SupportsToolChoice() bool {
+	chooser, ok := p.inner.(agentcore.ToolChooser)
+	return ok && chooser.SupportsToolChoice()
+}
+
 func (p *observedProvider) Generate(ctx context.Context, req *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
 	return llm.GenerateObserved(ctx, p.inner, req, 1, p.obs)
 }

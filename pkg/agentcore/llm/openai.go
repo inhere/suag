@@ -74,6 +74,10 @@ func NewOpenAIProvider(cfg OpenAIConfig) *OpenAIProvider {
 // Name implements Provider.
 func (p *OpenAIProvider) Name() string { return p.name }
 
+// SupportsToolChoice implements api.ToolChooser: chat/completions takes the
+// tool_choice field ("none" included).
+func (p *OpenAIProvider) SupportsToolChoice() bool { return true }
+
 // Generate implements the public agentcore provider contract.
 func (p *OpenAIProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
 	model := req.Model
@@ -184,6 +188,11 @@ func (p *OpenAIProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 			}
 		}
 		body["tools"] = tools
+	}
+	// Only meaningful with declared tools; sent when the caller asked for it
+	// (the runtime's tool-less wrap-up retry).
+	if req.ToolChoice != "" && len(req.Tools) > 0 {
+		body["tool_choice"] = req.ToolChoice
 	}
 	return body
 }

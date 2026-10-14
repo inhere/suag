@@ -67,9 +67,14 @@ const (
 type StreamEvent = api.StreamEvent
 type StreamFunc = api.StreamFunc
 type StreamingProvider = api.StreamingProvider
+type ToolChooser = api.ToolChooser
 type GenerateRequest = api.GenerateRequest
 type GenerateResult = api.GenerateResult
 type FinishReason = api.FinishReason
+
+// ToolChoiceNone forbids tool calls (GenerateRequest.ToolChoice), see
+// api.ToolChoiceNone.
+const ToolChoiceNone = api.ToolChoiceNone
 
 const (
 	FinishFinal     = api.FinishFinal

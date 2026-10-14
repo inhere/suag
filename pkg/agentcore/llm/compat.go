@@ -23,7 +23,9 @@ type Compat struct {
 	// reasoning item with its text when replayed (DeepSeek rejects a turn
 	// without it); a missing one is filled in.
 	ReasoningEveryTurn bool
-	// NoToolChoice leaves tool_choice out of the request.
+	// NoToolChoice leaves tool_choice out of the request and makes the
+	// provider report no ToolChooser support (the runtime skips its tool-less
+	// wrap-up retry then).
 	NoToolChoice bool
 	// MaxOutputTokens caps the output when the request sets no limit; 0
 	// sends none.

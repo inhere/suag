@@ -34,6 +34,25 @@ func (p *Pool) SetObserver(obs AttemptObserver) {
 // Name implements Provider.
 func (p *Pool) Name() string { return "pool" }
 
+// SupportsToolChoice implements api.ToolChooser: it reports true only when
+// every provider honours tool_choice, since one fallback rejecting the field
+// would fail the request the runtime sends it for.
+func (p *Pool) SupportsToolChoice() bool {
+	p.mu.RLock()
+	providers := p.providers
+	p.mu.RUnlock()
+	if len(providers) == 0 {
+		return false
+	}
+	for _, prov := range providers {
+		chooser, ok := prov.(agentcoreapi.ToolChooser)
+		if !ok || !chooser.SupportsToolChoice() {
+			return false
+		}
+	}
+	return true
+}
+
 // Generate tries each provider in turn and returns the first success.
 func (p *Pool) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
 	p.mu.RLock()

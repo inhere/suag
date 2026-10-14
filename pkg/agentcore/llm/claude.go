@@ -114,6 +114,11 @@ func claudeMessagesURL(base string) string {
 // Name implements Provider.
 func (p *ClaudeProvider) Name() string { return p.name }
 
+// SupportsToolChoice implements api.ToolChooser: /v1/messages takes
+// tool_choice as an object ({"type": "none"}), which is also allowed with
+// extended thinking.
+func (p *ClaudeProvider) SupportsToolChoice() bool { return true }
+
 // Generate implements the public agentcore provider contract.
 func (p *ClaudeProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
 	model := req.Model
@@ -230,6 +235,11 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 			}
 		}
 		body["tools"] = tools
+	}
+	// Anthropic takes tool_choice as an object; only sent with declared tools
+	// and when the caller asked for it (the runtime's tool-less wrap-up retry).
+	if req.ToolChoice != "" && len(req.Tools) > 0 {
+		body["tool_choice"] = map[string]any{"type": req.ToolChoice}
 	}
 
 	return body

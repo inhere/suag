@@ -46,6 +46,11 @@ func NewResponsesProvider(cfg ResponsesConfig) *ResponsesProvider {
 // Compat returns the adapters this provider applies.
 func (p *ResponsesProvider) Compat() Compat { return p.compat }
 
+// SupportsToolChoice implements api.ToolChooser; a gateway whose compat says
+// it has no usable tool_choice (Compat.NoToolChoice) never gets one, and the
+// runtime skips its tool-less wrap-up retry then.
+func (p *ResponsesProvider) SupportsToolChoice() bool { return !p.compat.NoToolChoice }
+
 const responsesPath = "/responses"
 
 // Generate implements Provider.
@@ -91,6 +96,11 @@ func (p *ResponsesProvider) buildResponsesBody(ctx context.Context, req *agentco
 			tools[i] = map[string]any{"type": "function", "name": t.Name, "description": t.Description, "parameters": t.InputSchema}
 		}
 		body["tools"] = tools
+	}
+	// Only meaningful with declared tools; sent when the caller asked for it
+	// (the runtime's tool-less wrap-up retry) and the gateway takes the field.
+	if req.ToolChoice != "" && len(req.Tools) > 0 && !p.compat.NoToolChoice {
+		body["tool_choice"] = req.ToolChoice
 	}
 	if effort != "" {
 		reasoning := map[string]any{"effort": effort}

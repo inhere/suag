@@ -46,6 +46,24 @@ type GenerateRequest struct {
 	MaxTokens   int
 	Temperature float32
 	Metadata    map[string]any
+	// ToolChoice asks the provider how freely the model may use the declared
+	// tools; empty leaves the provider's default. ToolChoiceNone forbids tool
+	// calls, which the runtime uses when a wrap-up step keeps asking for tools.
+	// Only providers implementing ToolChooser honour it.
+	ToolChoice string
+}
+
+// ToolChoiceNone is the ToolChoice value that forbids tool calls (OpenAI
+// "none", Anthropic/Responses {"type": "none"}).
+const ToolChoiceNone = "none"
+
+// ToolChooser is an optional provider capability: the provider honours
+// GenerateRequest.ToolChoice. A provider without it is never asked for a reply
+// with tool_choice (the runtime skips the tool-less wrap-up retry instead of
+// risking a request the API rejects).
+type ToolChooser interface {
+	// SupportsToolChoice reports whether requests may carry a tool_choice.
+	SupportsToolChoice() bool
 }
 
 // GenerateResult is the portable model response contract for agentcore runtimes.
