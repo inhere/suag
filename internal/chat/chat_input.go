@@ -192,7 +192,8 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 		source.sizeFD = terminalSizeFD(input, output)
 		source.applyTerminalSize()
 		// A window resized while chat runs: follow it, so the editor keeps wrapping
-		// at the current width (SIGWINCH on Unix, a poll where there is no signal).
+		// at the current width (SIGWINCH on Unix, a poll where there is no signal;
+		// resize_unix.go / resize_poll.go).
 		go source.watchScreenSize()
 	}
 	go source.run()

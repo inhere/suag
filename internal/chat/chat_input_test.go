@@ -76,6 +76,19 @@ func newFakeTTYSource(t *testing.T) (*chatInputSource, *fakeTTY, *io.PipeWriter)
 	return source, tty, pw
 }
 
+// TestInputSourceHighlightWidth: the highlighted fill uses the terminal's real
+// width, and falls back to the editor's default when no width is known. The width
+// itself is read from the terminal descriptor (applyTerminalSize) and followed
+// while the window is resized; the pty smoke (chat_approval.py) covers that, since
+// a unit test has no terminal to ask.
+func TestInputSourceHighlightWidth(t *testing.T) {
+	source, _, _ := newFakeTTYSource(t)
+	assert.Eq(t, lineedit.DefaultWidth, source.highlightWidth())
+
+	source.screenWidth = 120
+	assert.Eq(t, 120, source.highlightWidth()) // the highlighted line fills the row
+}
+
 func TestChatInputSource_RawModeFollowsTurns(t *testing.T) {
 	t.Run("turn started by delivery while prompt waits restores cooked", func(t *testing.T) {
 		source, tty, _ := newFakeTTYSource(t)
