@@ -16,7 +16,6 @@ import (
 	"github.com/inhere/suga/internal/personal"
 	personalprocess "github.com/inhere/suga/internal/personal/process"
 	"github.com/inhere/suga/pkg/agentcore"
-	"github.com/inhere/suga/pkg/agentcore/redact"
 	"github.com/inhere/suga/pkg/agentcore/schedule"
 	"github.com/inhere/suga/pkg/agentcore/tasks"
 	"github.com/inhere/suga/pkg/agentcore/tools"
@@ -242,34 +241,37 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	// The same two names label the terminal: a resumed session starts with its
 	// stored title, a new one gets the first message's title below.
 	title.Set(sessionName, startupTitle)
-	var pendingContext string
+	// state carries the wiring a turn needs and the state that outlives a turn;
+	// a turn runs as state.runTurn (chat_turn.go), so Run itself keeps the session
+	// setup, the main loop and the exit handling only.
+	state := &chatState{
+		ctx: ctx, runner: runner, hooks: hooks, source: inputSource, render: render,
+		stderr: stderr, baseEvent: baseEvent, title: title, idle: idle,
+		server: processServer, stats: &stats, sessionID: sessionID, sessionName: sessionName,
+		createdAtStartup: createdAtStartup,
+	}
 	if hooks != nil && sessionID != "" {
 		ensureTranscriptFile(transcriptPath(sessionID), sessionID)
 		start := baseEvent("SessionStart")
 		start.Source = source
 		startResp := hooks.Call(ctx, start)
 		showHookNotice(stderr, startResp)
-		pendingContext = sugahooks.AdditionalContext(startResp)
+		state.pendingContext = sugahooks.AdditionalContext(startResp)
 	}
-	var waiting sugahooks.Wait
-	var bgStop *backgroundStop
 	if hooks != nil && opts.StopBackground && opts.Tasks != nil && sessionID != "" {
-		bgStop = &backgroundStop{hooks: hooks, tasks: opts.Tasks, sessionID: sessionID}
+		state.bgStop = &backgroundStop{hooks: hooks, tasks: opts.Tasks, sessionID: sessionID}
 	}
-	// lostReply holds a web reply that arrived while the user interrupted the Stop wait.
-	// It is folded into the next turn's context; if the chat ends first, warn on stderr.
-	var lostReply string
 	defer func() {
 		// Messages queued by `suga send` that never became a turn: fail their senders
 		// (exit 3 for `send --wait` style callers) and tell the person how many were dropped.
 		if n := inputSource.DiscardQueued(); n > 0 {
 			fmt.Fprintf(stderr, "Warning: %d queued message(s) were discarded on exit and not run.\n", n)
 		}
-		if waiting != nil {
-			lostReply = appendContext(lostReply, waiting.Interrupt(context.Background()))
+		if state.waiting != nil {
+			state.lostReply = appendContext(state.lostReply, state.waiting.Interrupt(context.Background()))
 		}
-		if lostReply != "" {
-			fmt.Fprintln(stderr, "Warning: hook reply was not delivered:", sugahooks.TruncateOutput(lostReply, 200))
+		if state.lostReply != "" {
+			fmt.Fprintln(stderr, "Warning: hook reply was not delivered:", sugahooks.TruncateOutput(state.lostReply, 200))
 		}
 		if hooks != nil && sessionID != "" {
 			hooks.Call(context.Background(), baseEvent("SessionEnd"))
@@ -287,17 +289,16 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	// waiting line is down before the exit warnings, the SessionEnd hook and the
 	// usage summary print, and no frame goroutine is left behind.
 	defer render.stopThinking()
-	stopHookActive := false
 	var lastInterrupt time.Time
 	for {
-		in, err := nextChatInput(ctx, inputSource, render, waiting, &lostReply)
+		in, err := nextChatInput(ctx, inputSource, render, state.waiting, &state.lostReply)
 		line, hasLine, stopDone, injected, interrupted := in.line, in.hasLine, in.stopDone, in.injected, in.interrupted
 		if interrupted {
-			waiting = nil
-		} else if waiting != nil && stopDone {
-			waiting = nil
+			state.waiting = nil
+		} else if state.waiting != nil && stopDone {
+			state.waiting = nil
 			if injected {
-				stopHookActive = true
+				state.stopHookActive = true
 			}
 		}
 		if stopDone && !injected {
@@ -350,129 +351,10 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			idle.Resume()
 			continue
 		}
-		// A turn starts: no idle consolidation until it has ended (EndTurn).
-		idle.Pause()
-		if createdAtStartup {
-			if err := runner.SetSessionTitle(ctx, sessionID, line); err != nil {
-				return err
-			}
-			// The first message names the session: the terminal title follows the
-			// stored title (same derivation, so both read the same).
-			title.Set(sessionName, personal.SessionTitle(line))
-			createdAtStartup = false
+		// The turn itself, from the idle pause to its Stop hook (chat_turn.go).
+		if err := state.runTurn(line, injected); err != nil {
+			return err
 		}
-		if hooks != nil {
-			submit := baseEvent("UserPromptSubmit")
-			submit.Prompt = redact.Secrets(line)
-			// injected covers every non-keyboard source (Stop block reasons and socket
-			// deliveries both flow through nextChatInput), same flag the transcript records.
-			submit.Injected = injected
-			submitResp := hooks.Call(ctx, submit)
-			showHookNotice(stderr, submitResp)
-			pendingContext = appendContext(pendingContext, sugahooks.AdditionalContext(submitResp))
-		}
-		if lostReply != "" {
-			// A reply received during an interrupt race still reaches the model as next-turn context.
-			fmt.Fprintln(stderr, "Note: delivering hook reply received while interrupting:", sugahooks.TruncateOutput(lostReply, 200))
-			pendingContext = appendContext(pendingContext, lostReply)
-			lostReply = ""
-		}
-		// A background Stop that asked to continue makes this turn its follow-up.
-		turnStopActive := stopHookActive || bgStop.takeBlocked()
-		stopHookActive = false
-		inputSource.SetBusy(true)
-		if processServer != nil {
-			_ = processServer.SetBusy(true)
-		}
-		render.BeginTurn()
-		turnStart := time.Now()
-		result, runErr := runner.Run(ctx, personal.RunRequest{
-			SessionID:     sessionID,
-			Prompt:        line,
-			SystemContext: pendingContext,
-			Injected:      injected,
-			Emit: func(eventCtx context.Context, event personal.Event) error {
-				render.Handle(event)
-				if hooks == nil || event.Kind != "tool_result" {
-					return nil
-				}
-				// hooks.post_tool_use decides which tools send PostToolUse and under which name.
-				toolName, send := hooks.PostToolName(event.ToolName)
-				if !send {
-					return nil
-				}
-				postTool := baseEvent("PostToolUse")
-				postTool.ToolName = toolName
-				postTool.ToolOutput = sugahooks.TruncateOutput(redact.Secrets(event.Text), toolHookLimit)
-				// The notice goes to stderr while the waiting line sits on stdout: take
-				// that line down (the tool result above started a new one) so the two
-				// never end up on the same screen line, and put it back afterwards.
-				render.stopThinking()
-				showHookNotice(stderr, hooks.Call(eventCtx, postTool))
-				render.startThinking()
-				return nil
-			},
-		})
-		inputSource.SetBusy(false)
-		if processServer != nil {
-			_ = processServer.SetBusy(false)
-		}
-		stats.add(result)
-		pendingContext = ""
-		// Every turn end (success, error or yield) must send Stop: the hook contract defines it as
-		// "turn finished, back to waiting for input", otherwise a hook-side session stays "running" forever.
-		stopMessage := ""
-		if runErr != nil {
-			render.Finish()
-			switch {
-			case ctx.Err() != nil:
-				// Ctrl-C (SIGINT) cut this turn short: chat ends here as before
-				// (cmd/suga reports 已中断 with exit 130), and the turn itself is
-				// reported as interrupted rather than with the runner's raw
-				// "context canceled".
-				render.Interrupt()
-				return ctx.Err()
-			case errors.Is(runErr, tools.ErrAborted):
-				// Ctrl-C/Ctrl-D at an approval question: only this turn ends.
-				render.Notice("已取消")
-			case errors.Is(runErr, context.Canceled):
-				// A cancelled turn that did not cancel this chat itself (a
-				// cancelled model call): the raw error would read
-				// "context canceled".
-				render.Interrupt()
-			default:
-				render.Error(runErr)
-			}
-			stopMessage = "Error: " + runErr.Error()
-		} else if result.Status == agentcore.RunYielded {
-			render.Finish()
-			render.Notice("Waiting for more input.")
-			render.Status(result, time.Since(turnStart))
-		} else {
-			// Streamed text is already on screen; otherwise print the answer now.
-			if !render.Finish() {
-				render.Answer(result.Output)
-			}
-			if len(result.DeniedTools) > 0 {
-				render.Notice("本轮被拒绝的工具：" + strings.Join(result.DeniedTools, ", "))
-			}
-			render.Status(result, time.Since(turnStart))
-			stopMessage = result.Output
-		}
-		if hooks != nil {
-			stop := baseEvent("Stop")
-			stop.LastAssistant = sugahooks.TruncateOutput(redact.Secrets(stopMessage), stopHookLimit)
-			stop.StopHookActive = turnStopActive
-			if bgStop == nil {
-				waiting = hooks.StartStop(ctx, stop)
-			} else if err := bgStop.start(ctx, stop); err != nil {
-				// No task slot (tasks.max_running): wait at the prompt as before.
-				render.Notice("Stop hook 未能在后台运行，改为等待：" + err.Error())
-				waiting = hooks.StartStop(ctx, stop)
-			}
-		}
-		// The turn is over (Stop sent): the idle clock runs from now.
-		idle.EndTurn(result)
 	}
 }
 
