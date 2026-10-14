@@ -96,10 +96,17 @@ func DeniedLine(sessionID string, result personal.RunResult) map[string]any {
 	return WithUsage(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID, "denied_tools": result.DeniedTools}, result)
 }
 
-// ResultLine is the final stream-json line of a successful run.
+// ResultLine is the final stream-json line of a successful run. A wrap-up
+// answer (result.WrapUp, e.g. "max_steps") carries its reason as "wrap_up", so
+// a caller can tell an answer cut short by a limit from a finished one; a
+// normal answer leaves the field out.
 func ResultLine(sessionID string, result personal.RunResult) map[string]any {
-	return WithUsage(map[string]any{
+	line := map[string]any{
 		"type": "result", "session_id": sessionID, "run_id": result.RunID,
 		"result": result.Output, "status": result.State,
-	}, result)
+	}
+	if result.WrapUp != "" {
+		line["wrap_up"] = result.WrapUp
+	}
+	return WithUsage(line, result)
 }

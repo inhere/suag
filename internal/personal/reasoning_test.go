@@ -3,7 +3,6 @@ package personal
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
@@ -67,5 +66,23 @@ func TestRunnerWrapsUpAtMaxSteps(t *testing.T) {
 	assert.Eq(t, "max_steps", res.WrapUp)
 	assert.Eq(t, 3, len(prov.reqs))
 	last := prov.reqs[2].Messages[len(prov.reqs[2].Messages)-1]
-	assert.Eq(t, true, strings.Contains(last.Content, "步数上限（2 步）"))
+	assert.StrContains(t, last.Content, "步数上限（2 步）")
+	// The report must name that reason instead of guessing another one.
+	assert.StrContains(t, last.Content, "如实写明")
+	assert.StrContains(t, last.Content, "不得写成超时")
+}
+
+// The step-limit instruction carries the limit and asks for the real reason; it
+// is not sent at all when the step limit is off.
+func TestMaxStepsWrapUpInstruction(t *testing.T) {
+	t.Run("no instruction without a step limit", func(t *testing.T) {
+		assert.Eq(t, "", maxStepsWrapUp(0))
+		assert.Eq(t, "", maxStepsWrapUp(-1))
+	})
+	t.Run("the instruction names the limit and the real reason", func(t *testing.T) {
+		got := maxStepsWrapUp(30)
+		assert.StrContains(t, got, "步数上限（30 步）")
+		assert.StrContains(t, got, "如实写明")
+		assert.StrContains(t, got, "不得写成超时")
+	})
 }

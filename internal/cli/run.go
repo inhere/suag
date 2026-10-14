@@ -41,7 +41,10 @@ type personalOptions struct {
 	NoProjectRules          bool
 	// Injected (run only) marks this turn's prompt as not typed by a person;
 	// the transcript records it as injected.
-	Injected   bool
+	Injected bool
+	// MaxSteps (run only) overrides the config's max_steps for this turn
+	// (--max-steps); 0 uses SUGA_MAX_STEPS, then the config.
+	MaxSteps   int
 	MCPConfigs []string
 	CLIMode    bool
 	// tasks is the run's background task manager (set by RunPersonalCLI, not
@@ -124,6 +127,7 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.Var((*cflag.Strings)(&opts.MCPConfigs), "mcp-config", "Claude-style JSON MCP server config")
 	if mode == "run" {
 		cmd.BoolVar(&opts.Injected, "injected", false, "mark this turn's prompt as not typed by a person")
+		cmd.IntVar(&opts.MaxSteps, "max-steps", 0, "max tool steps in this turn, >= 1 (overrides SUGA_MAX_STEPS and max_steps); sub-agent agents.max_steps is unaffected")
 	}
 	return cmd
 }
@@ -141,6 +145,7 @@ func (o personalOptions) wiringOptions(mode string) wiring.Options {
 		MCPConfigs:         o.MCPConfigs,
 		AppendSystemPrompt: o.AppendSystemPrompt, ClearAppendSystemPrompt: o.ClearAppendSystemPrompt,
 		NoProjectRules: o.NoProjectRules,
+		MaxSteps:       o.MaxSteps,
 	}
 }
 
@@ -162,6 +167,9 @@ func validatePersonalOptions(mode string, opts personalOptions) error {
 	}
 	if mode == "chat" && opts.OutputFormat != "text" {
 		return fmt.Errorf("chat mode requires text output")
+	}
+	if opts.MaxSteps < 0 {
+		return fmt.Errorf("--max-steps must be a whole number >= 1, got %d", opts.MaxSteps)
 	}
 	return nil
 }
@@ -203,6 +211,11 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 	}
 	streamed := live.Finish() // end the streamed line before any error or status output
 	if encoder == nil {
+		// Text mode: a wrap-up names its reason on stderr, so a short answer is
+		// not read as a finished one; stdout stays the answer only.
+		if notice := output.WrapUpNotice(result.WrapUp, runner.MaxSteps()); notice != "" {
+			fmt.Fprintln(stderr, notice)
+		}
 		// Text mode: a usage summary on stderr (stdout stays the answer only).
 		fmt.Fprintln(stderr, runSummary(runner, result, time.Since(runStart)))
 	}

@@ -279,6 +279,10 @@ func (r *Runner) ProcessRoot() string { return r.cfg.ProcessRoot }
 func (r *Runner) ProviderName() string { return r.cfg.ProviderName }
 func (r *Runner) Model() string        { return r.cfg.Model }
 
+// MaxSteps is this runner's per-turn step limit (0 = no limit); the CLI names
+// it in the text-mode wrap-up notice.
+func (r *Runner) MaxSteps() int { return r.cfg.MaxSteps }
+
 // Fold returns the history folding settings (every, keep); every 0 = off.
 func (r *Runner) Fold() (every, keep int) { return r.cfg.FoldEvery, r.cfg.FoldKeep }
 
@@ -831,12 +835,14 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 
 // maxStepsWrapUp is the request-only instruction used when a turn reaches its
 // step limit: the model answers from what it has instead of the turn failing
-// and losing the work done so far.
+// and losing the work done so far. It must name the real reason (the step
+// limit, not a timeout or an interruption) and make the model state it in the
+// report: the reason is what a reader of a short answer needs.
 func maxStepsWrapUp(maxSteps int) string {
 	if maxSteps <= 0 {
 		return ""
 	}
-	return fmt.Sprintf("已达到本轮的步数上限（%d 步）。不要再调用任何工具，直接根据目前已获得的信息回答：说明已完成的部分、尚未完成的部分，以及继续时建议的下一步。", maxSteps)
+	return fmt.Sprintf("已达到本轮的步数上限（%d 步）。不要再调用任何工具，直接根据目前已获得的信息回答。回答开头必须如实写明：本次是本轮步数上限（%d 步）收尾，不得写成超时、被中断或其它原因；然后说明已完成的部分、尚未完成的部分，以及继续时建议的下一步。", maxSteps, maxSteps)
 }
 
 func validateSessionID(id string) error {

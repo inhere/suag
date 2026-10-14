@@ -18,6 +18,7 @@ func TestMain(m *testing.M) {
 	// what the CLI tests resolve.
 	_ = os.Unsetenv("SUGA_CONFIG")
 	_ = os.Unsetenv("SUGA_MODEL")
+	_ = os.Unsetenv("SUGA_MAX_STEPS")
 	_ = os.Setenv("SUGA_HOOKS", "off")
 	code := m.Run()
 	_ = os.RemoveAll(home)

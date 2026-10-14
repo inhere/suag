@@ -178,7 +178,9 @@ func CurrentTurn(ctx context.Context) (sessionID, turnID string) {
 // limitHook asks a run to wrap up past its token budget (uncached input plus
 // output of its model calls, so a long cached context does not eat it) or its
 // time (Config.MaxRunTokens, Config.RunTimeout). It checks after each model
-// call; the next request is the wrap-up.
+// call; the next request is the wrap-up. Each instruction names its own reason
+// and makes the model state it in the report, so a short report is not read as
+// a timeout (or the other way round).
 type limitHook struct {
 	agentcore.NopHook
 	maxTokens int
@@ -207,12 +209,12 @@ func (h limitHook) AfterModel(ctx context.Context, _ *agentcore.ModelEvent, ctrl
 	if h.maxTokens > 0 {
 		u := runUsageFrom(ctx).snapshot().Usage
 		if spent := max(u.InputTokens-u.CacheReadTokens, 0) + u.OutputTokens; spent >= h.maxTokens {
-			ctrl.RequestWrapUp(StopMaxTokens, fmt.Sprintf("已用掉本次任务的 token 预算（%d）。不要再调用任何工具，直接根据目前已获得的信息给出报告：结论、证据（文件:行号）、尚未查清的部分。", h.maxTokens))
+			ctrl.RequestWrapUp(StopMaxTokens, fmt.Sprintf("已用掉本次任务的 token 预算（%d）。不要再调用任何工具，直接根据目前已获得的信息给出报告。报告开头必须如实写明：本次是因 token 预算用尽（%d）而收尾，不得写成超时或其它原因；然后给出结论、证据（文件:行号）、尚未查清的部分。", h.maxTokens, h.maxTokens))
 			return nil
 		}
 	}
 	if h.past() {
-		ctrl.RequestWrapUp(StopTimeout, "已到本次任务的时间上限。不要再调用任何工具，直接根据目前已获得的信息给出报告：结论、证据（文件:行号）、尚未查清的部分。")
+		ctrl.RequestWrapUp(StopTimeout, "已到本次任务的时间上限。不要再调用任何工具，直接根据目前已获得的信息给出报告。报告开头必须如实写明：本次是因时间上限而收尾，不得写成步数上限或 token 预算用尽；然后给出结论、证据（文件:行号）、尚未查清的部分。")
 	}
 	return nil
 }

@@ -64,6 +64,9 @@ type Options struct {
 	// (write modes only); nil leaves background tasks off. The host owns it
 	// and closes it (killing its tasks) when the session or process ends.
 	Tasks *tasks.Manager
+	// MaxSteps overrides the config's max_steps for the main agent's turns
+	// (--max-steps, run only); 0 uses SUGA_MAX_STEPS, then max_steps.
+	MaxSteps int
 	// MemoryConfirm confirms memory writes of tainted sessions (ACP: the turn
 	// gate's permission request; chat: set by OpenCLI to ask at the terminal).
 	// nil (run) refuses them.
@@ -180,6 +183,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// Project rules are one file per level, named by rules.file; a bad name is a
 	// startup error rather than a silently skipped rule file.
 	ruleFile, err := appconfig.ReadRuleFileName()
+	if err != nil {
+		return nil, err
+	}
+	// Step limit of one main-agent turn: --max-steps > SUGA_MAX_STEPS > max_steps.
+	maxSteps, err := appconfig.ReadMaxSteps(opts.MaxSteps)
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +368,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 			return stats
 		},
 		Hooks:    opts.Hooks,
-		MaxSteps: gkconfig.Int("max_steps", 100),
+		MaxSteps: maxSteps,
 		RuleSource: func() (string, string, error) {
 			home, err := appconfig.ResolveSugaHome()
 			if err != nil {

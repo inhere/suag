@@ -10,7 +10,7 @@ import (
 // agent's shell) would otherwise decide what Load and ReadModelSettings see.
 // Tests that need them set them with t.Setenv.
 func TestMain(m *testing.M) {
-	for _, key := range []string{"SUGA_HOME", "SUGA_CONFIG", "SUGA_MODEL"} {
+	for _, key := range []string{"SUGA_HOME", "SUGA_CONFIG", "SUGA_MODEL", "SUGA_MAX_STEPS"} {
 		_ = os.Unsetenv(key)
 	}
 	os.Exit(m.Run())

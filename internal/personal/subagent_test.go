@@ -113,7 +113,10 @@ func TestRunChild(t *testing.T) {
 		assert.Eq(t, StopMaxTokens, res.Stop)
 		assert.Eq(t, "what I have", res.Report)
 		last := prov.reqs[1].Messages[len(prov.reqs[1].Messages)-1]
+		// The report must name that reason instead of guessing another one.
 		assert.StrContains(t, last.Content, "token 预算（500）")
+		assert.StrContains(t, last.Content, "如实写明")
+		assert.StrContains(t, last.Content, "token 预算用尽")
 	})
 	t.Run("a wrap-up it ignores leaves its last text as the report", func(t *testing.T) {
 		withParentMeter(t)
@@ -159,4 +162,16 @@ func TestRunChild(t *testing.T) {
 		assert.Err(t, err)
 		assert.Eq(t, "cancelled", res.Stop)
 	})
+}
+
+// The time-limit instruction names its own reason and asks for the real one.
+// The deadline is already past, so this does not depend on the clock's
+// granularity (the end-to-end timeout case above is timing-sensitive).
+func TestLimitHookTimeoutInstruction(t *testing.T) {
+	hook := limitHook{deadline: time.Now().Add(-time.Second)}
+	ctrl := &agentcore.Control{}
+	assert.NoErr(t, hook.AfterModel(context.Background(), nil, ctrl))
+	assert.Eq(t, StopTimeout, ctrl.WrapUpReason)
+	assert.StrContains(t, ctrl.WrapUpInstruction, "如实写明")
+	assert.StrContains(t, ctrl.WrapUpInstruction, "时间上限")
 }
