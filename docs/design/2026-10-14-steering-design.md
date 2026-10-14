@@ -1,40 +1,41 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 运行中插入消息（steering）与只中止当前回合 设计
 
-> 状态：Draft 0.3 / 待人工计划批准
+> 状态：Draft 0.4 / 待人工计划批准
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-14 | Claude（监督会话） | 初稿 |
-| 0.2 | 2026-10-14 | Claude（监督会话） | 按独立评审（codex job 20261014-114209-25b62278，结论 BLOCKED）修订：取消时交还本回合全部插话（发现 1）；续跑点的精确条件（发现 2）；chat 输入层按模式分流与回合期间消费者（发现 3）；插话在段交接/压缩中的语义（发现 4）；收件箱容量、`--steer` 回退与 `--wait` 完成点、验收口径（发现 5） |
+| 0.2 | 2026-10-14 | Claude（监督会话） | 按独立评审 r1（codex job 20261014-114209-25b62278，结论 BLOCKED）修订：取消时交还本回合全部插话；续跑点的精确条件；chat 输入层按模式分流与回合期间消费者；插话在段交接/压缩中的语义；收件箱容量、`--steer` 回退与 `--wait` 完成点、验收口径 |
 | 0.3 | 2026-10-14 | Claude（监督会话） | 记录用户对 Q1–Q4 的答复（均按建议）：提示符 `↳ `、不做 follow-up 键（suga-8pug）、Esc 中止不确认、按 S1/S2/S3 分阶段；ACP steering 登记为 suga-lkf7；会话间互发登记为 suga-hko7 |
+| 0.4 | 2026-10-14 | Claude（监督会话） | 按子 agent 复评 r2（结论 BLOCKED）修订：用户选 N1 方案 B——放弃“同一回合续跑”，模型给出最终回复即正常结束，未送达插话作为下一回合（D3）；S1 先修 suga-0lxy（回合中途压缩条数不一致）（N2）；中止时退回的插话一律回到输入行、不自动开回合，`--wait` 与 trace 语义重定（N3）；回合中 raw 模式保留输出换行处理、回合中所有输出经输入源（N4）；输入层的 Ask 分流、Esc 超时、半行交接（N5）；收尾时由 agentcore 告知不取插话（N6）；yield、提前返回、stream-json、UserPromptSubmit、开关归属等（N7） |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
-关联：issue suag-mbwu，plan-20261014-102002-6f9b4d19（D 项）。相关：suga-nkye（崩溃后会话停在 running）、suga-wy40（会话短名称）、suga-az4l（步数上限收尾）。参考：pi coding-agent 的 steering / follow-up / abort（`tmp/refer-src/pi-mono/packages/coding-agent/docs/`：`how-pi-works.md`、`usage.md`、`rpc-commands.md`、`settings.md`）。
+关联：issue suag-mbwu；plan-20261014-102002-6f9b4d19（D 项）、plan-20261014-124412-a00ce9ff（D 项）。相关：suga-0lxy（回合中途压缩条数不一致，S1 前置）、suga-nrf2（Windows 回合中 Ctrl+C 无反应，S2 前置）、suga-wy40（会话短名称）。评审记录：`local/reviews/2026-10-14-steering-design-review-r1.md`、`-r2.md`（未入库）。参考：pi coding-agent 的 steering / follow-up / abort（`tmp/refer-src/pi-mono/packages/coding-agent/docs/`）。
 
 ### 思考模式与范围冻结
 
 - thinking_mode：RIGOROUS。
 - core_objective：用户在模型干活时能（1）插一句话纠偏，模型在下一次请求前看到；（2）只停掉这一轮，chat 不退出。
-- allowed_scope：`pkg/agentcore`（回合循环的续跑点）、`internal/personal`（会话收件箱、持久化、事件）、`internal/chat`（回合中的输入行、按键）、`internal/personal/process` 与 `internal/cli/send.go`（`--steer`）、`internal/output/streamjson.go`、trace。
-- non_goals：ACP 的 steering（见 D8，延后）；会话短名称与会话间互发（suga-wy40）；排队消息的跨进程持久化；gofer 侧改动。
+- allowed_scope：`pkg/agentcore`（向上下文构建暴露收尾状态）、`internal/personal`（会话收件箱、持久化、事件、压缩修复）、`internal/chat`（输入层、回合中的输入行、按键）、`internal/personal/process` 与 `internal/cli/send.go`（`--steer`）、trace。
+- non_goals：ACP 的 steering（suga-lkf7）；会话间互发（suga-hko7）；follow-up 键（suga-8pug）；排队消息的跨进程持久化；gofer 侧改动。
 - expansion_policy：DEFER_OR_REQUEST。
-- review budget：一轮合并轴独立评审（低暴露度：个人工具、未投产、可回滚；SR1409）。
-- 停止条件：评审无 CORE_BLOCKING 且待确认事项经用户答复后，进入计划。
+- review budget：低暴露度（个人工具、未投产、可回滚；SR1409）。已做 r1（codex）与用户要求的 r2（子 agent）；0.4 只对改动部分做一次确认。
+- 停止条件：确认无 CORE_BLOCKING 后请用户批准，进入计划。
 
 ## 背景与目标
 
-用户 2026-10-13 提出“运行中插入信息怎么做”。现状是：模型一轮可以连续调用几十次工具，期间用户发现方向不对，只能等它跑完，或者按 Ctrl-C 把整个 chat 杀掉再续接。
+用户 2026-10-13 提出“运行中插入信息怎么做”。现状：模型一轮可以连续调用几十次工具，期间用户发现方向不对，只能等它跑完，或者按 Ctrl-C 把整个 chat 杀掉再续接。
 
 用户可见目标：
 
-1. **插话（steer）**：回合进行中，输入行保持可用。键入一句话回车，模型在“当前这次回复及其工具调用完成后、下一次模型请求前”看到它，并据此调整，本轮不中断。
-2. **只中止本轮**：回合进行中按 Esc 或一次 Ctrl-C，只取消当前回合（会话保留、chat 不退出），回到提示符；连按两次 Ctrl-C 才退出 chat，与提示符处现有行为一致。
+1. **插话（steer）**：回合进行中输入行保持可用。键入一句话回车，模型在“当前这次回复及其工具调用完成后、下一次模型请求前”看到它并据此调整，本轮不中断。若模型此时已经给出最终回复，插话作为紧接着的下一回合运行。
+2. **只中止本轮**：回合进行中按 Esc 或一次 Ctrl-C，只取消当前回合（会话保留、chat 不退出），回到提示符；3 秒内连按两次 Ctrl-C 才退出 chat，与提示符处一致。
 3. **send 也能插话**：`suga send --steer` 把消息插进正在进行的回合；默认行为（回合结束后作为新回合）不变。
-4. 插话可观测：chat 显示、trace 记录、stream-json 有对应的行；续接、`suga trace` 都能看出这句话是在回合中插入的。
+4. 插话可观测：chat 显示、trace 记录；续接、`suga trace` 都能看出这句话是在回合中插入的。
 
 ## 名词
 
@@ -42,131 +43,141 @@
 - **步（step）**：回合内的一次模型请求（及其工具调用），受 `max_steps` 约束。
 - **插话（steer）**：回合进行中提交、在下一次模型请求前进入上下文的用户消息。
 - **追加（follow-up）**：回合进行中提交、等本轮结束后作为下一回合的消息（现有 `suga send` 默认行为）。
-- **会话收件箱（inbox）**：本设计新增，Runner 内按会话保存待插入的插话。
+- **会话收件箱（inbox）**：Runner 内按会话保存的待插入插话；**已取出（taken）**：本回合已进入某次模型请求上下文的插话。
+- **退回（returned）**：回合结束时未送达或随回合作废的插话交还调用方。
 
 ## 范围与非目标
 
 范围：
 
-- agentcore：回合在模型给出最终回复时，若收件箱非空，则续跑一步而不是结束。
-- personal：会话收件箱、插话的持久化与事件、回合关闭时的竞争处理。
-- chat：回合进行中保持行编辑；Enter 插话；Esc / 单次 Ctrl-C 中止本轮；排队插话的显示与撤回。
+- agentcore：在调用 `ContextBuilder.BuildMessages` 前让它知道本步是否处于收尾（N6）。不改变回合结束条件。
+- personal：会话收件箱、取出登记与退回、插话的持久化与事件；修复回合中途压缩条数不一致（suga-0lxy）；插话在段交接/压缩中的语义。
+- chat：输入层按模式分流；回合中保持行编辑；Enter 插话；Esc / 单次 Ctrl-C 中止本轮；退回插话的处理。
 - send：`--steer`；协议加字段，旧客户端保持原行为。
-- 观测：trace 事件、stream-json 行、chat 渲染。
+- 观测：trace 事件、chat 渲染。
 
 非目标：
 
-- ACP 的 steering（D8 延后）。`session/cancel` 已能只中止当前 prompt，ACP 现有行为不变。
-- 会话短名称、会话间互发（suga-wy40 单独做；本设计只保证 send 协议的新字段能被它复用）。
-- 进程退出后保留排队消息；插话的编辑历史；多行插话的特殊编辑器。
-- 子 agent 的插话（插话只进入父回合；子 agent 的结果照常回到父回合）。
+- ACP 的 steering（D8，suga-lkf7）。`session/cancel` 已能只中止当前 prompt，ACP 行为不变。
+- `suga run` 的插话：run 不注册会话 socket，无插话入口；stream-json 不新增行类型（N7）。
+- 会话间互发（suga-hko7）、follow-up 键（suga-8pug）。
+- 进程退出后保留排队消息；多行插话的特殊编辑器。
+- 子 agent 的插话（插话只进入父回合）。
 
 ## 已确认事实与规范
 
-以下均已在代码中核对（main，v0.20.0）。
+以下在 v0.20.0 代码中核对，v0.21.0 未改动这些路径的语义；行号可能有偏移。
 
 **chat 输入**
 
-- 只有在读一行时才进入 raw 模式；回合进行中 `SetBusy(true)` 置 `turnActive` 并强制回到 cooked 模式（`internal/chat/chat_input.go:212-220、292-294`）。回合中没有协程读 stdin，键入内容由终端缓冲，回合结束后才出现在下一次提示符里。
-- 回合中的 Ctrl-C 是 SIGINT：`cmd/suga/main.go:36` 的 `signal.NotifyContext` 取消进程级 ctx；chat 在回合返回后 `if ctx.Err() != nil { return ctx.Err() }` 直接退出（`internal/chat/chat.go:379-381`），退出码 130。chat 没有回合级 ctx。
-- 提示符处的 Ctrl-C 由 lineedit 读到 0x03 返回 `ErrInterrupt`；3 秒内第二次才退出（`chat.go:261-270`，`exitConfirmWindow`）。
-- 已有一条“只结束本轮”的路径：审批提问时 Ctrl-C/Ctrl-D 返回 `errAskCancelled`（包装 `context.Canceled`），经 `abortingToolPolicy` 让回合失败，chat 显示“已取消”并继续（`internal/chat/ask.go:14`、`internal/personal/denial.go:116-125`、`chat.go:382-384`）。
-- 渲染器的所有输出都经过 input source；有终端时写到 `lineedit.Terminal.Write`，它负责在输入行上方输出并重绘输入行（`chat_input.go:266-271`）。
+- 只有在读一行时才进入 raw 模式；回合进行中 `SetBusy(true)` 置 `turnActive` 并强制回到 cooked 模式（`internal/chat/chat_input.go:212-220、292-294`）。注释写明原因：回合中要让 Ctrl-C 产生 SIGINT、stderr 保留换行转换（`chat_input.go:105-108`）。x/term 的 MakeRaw 在 Unix 上清除 OPOST（r2 核对 `term_unix.go:33`）。
+- 输入源是“一次 `Request` 读一行”，`events` 缓冲 1，读到首字节先发 activity 并等 `AckActivity`；回合进行中主循环阻塞在 `runner.Run`，没有消费者（`chat_input.go:47-103、350-411`）。
+- raw 模式下 Ctrl-C 被 lineedit 读成 0x03 并返回 `io.EOF`（`chat_input.go:372-394`）；lineedit 把单独的 ESC 当作未完成序列（`lineedit/terminal.go:247-261`）。
+- 回合中的 Ctrl-C 是 SIGINT：`cmd/suga/main.go:36` 取消进程级 ctx，chat 回合返回后 `return ctx.Err()` 退出（`internal/chat/chat.go` 回合错误分支）。chat 没有回合级 ctx。
+- 已有“只结束本轮”的路径：审批提问时 Ctrl-C/Ctrl-D 返回 `errAskCancelled`，经 `abortingToolPolicy` 让回合失败，chat 显示“已取消”并继续（`internal/chat/ask.go:14`、`internal/personal/denial.go:116-125`）。Ask 通过 `events` 读答案、`flushInput`/`inputEpoch` 接管读取（`ask.go:48-190`）。
+- chat 在回合中有直接写 stderr 的位置（如 hook 提示、错误输出，`chat.go` 约 185、379 行）。
 
 **send 投递**
 
-- `suga send` 经会话 socket 投递；chat 侧 `DeliverWait` 在忙时返回 `queued=true`，队列上限 8（`chat_input.go:129-148`，`internal/personal/process/process.go:18`）。投递只在两回合之间被 `nextChatInput` 消费（`chat.go:499-506`），作为新的注入回合运行。`--wait` 等到消息开始成为回合；退出时未消费的消息被丢弃，`--wait` 的发送方得到退出码 3。
+- `suga send` 经会话 socket 投递；chat 侧 `DeliverWait` 在忙时返回 `queued=true`，队列上限 8（`chat_input.go:129-148`，`internal/personal/process/process.go:18`）。投递只在两回合之间被 `nextChatInput` 消费，作为新的注入回合运行；`--wait` 在消息开始成为回合时收到第二个响应（`process.go:241-257`）；退出时未消费的消息被丢弃，`--wait` 退出码 3。
 
 **回合中注入消息的现成机制（后台任务通知）**
 
-- agentcore 每次模型请求前都调用 `ContextBuilder.BuildMessages`（`pkg/agentcore/runtime.go:150`）。personal 的实现先 `takeTaskNotices`，把通知作为 `role=user` 消息（metadata `suga.task_notice`）插到当前位置，并以 `EntryUser` 落库到当前 turn（`internal/personal/context.go:225-229`，`internal/personal/tasks.go:54-87`），`compose` 原位回放（`context.go:279-290`）。
-- 已完成回合的条目在后续回合按顺序回放；被取消回合的条目不回放（`context.go:73-90`）。
-- agentcore 的 `Control.RequestWrapUp` 在下一轮循环开头生效（`runtime.go:136-139`）；模型给出无工具调用的回复即结束回合，目前没有“还有待处理输入就继续”的机制。
+- agentcore 每次模型请求前调用 `ContextBuilder.BuildMessages`（`pkg/agentcore/runtime.go:150`）。personal 的实现先 `takeTaskNotices`，把通知作为 `role=user` 消息插到当前位置，以 `EntryUser` 落库到当前 turn，但不加入 `state.Messages`（`internal/personal/context.go:225-229`，`internal/personal/tasks.go:54-87`）。
+- 回合中途压缩的 `items()` 要求落库条数与内存条数相等，有通知时报 `turn … has N stored messages but N-1 in memory`（`internal/personal/compact.go:141-165`；r2 以测试复现）→ suga-0lxy。
+- 已完成回合（含 yielded，按 completed 存储）的条目在后续回合回放；被取消/失败回合的条目不回放（`context.go:73-90`）。
+- 收尾状态 `wrappingUp` 只在 agentcore 回合循环内（`runtime.go:124-140`），`BuildMessages` 看不到。
 
-**取消的记录**
+**取消的记录**：`Runner.finish` 以 `ctx.Err() != nil || errors.Is(runErr, context.Canceled)` 判定取消，turn 记 `cancelled`，会话写回 `open`（`internal/personal/runner.go` finish）。`Run` 在进入 agentcore 前有几处直接返回（r2 指出约 452/461/470 行）。
 
-- `Runner.finish` 以 `ctx.Err() != nil || errors.Is(runErr, context.Canceled)` 判定取消，turn 记为 `cancelled`，会话写回 `open`（`internal/personal/runner.go:746-808`）。
+**ACP**：同一会话 prompt 进行中再发 `session/prompt` 返回 InvalidParams（`internal/acpserver/server.go:197-202`）。
 
-**ACP**
-
-- 同一会话 prompt 进行中再发 `session/prompt` 返回 InvalidParams；`session/cancel` 只取消当前 prompt，返回 `StopReasonCancelled`（`internal/acpserver/server.go:197-251、318-330`）。
-
-**观测**
-
-- stream-json 由 `internal/output/streamjson.go` 把 Runner 事件映射为行，未知种类丢弃；trace 事件种类见 `internal/personal/store/types.go:45-73`。
-
-**适用规范**：SR1207（大型功能流程）、SR1204（范围确认）、SR1402.1（真实终端验证与披露）、SR1433（委派实施的反向验证）、GR104（单文件 ≤1000 行，`chat_input.go` 445 行、`lineedit/terminal.go` 967 行，新增逻辑需另起文件）。
+**适用规范**：SR1207、SR1204、SR1402.1、SR1433、GR104（`chat_input.go` 约 450 行、`lineedit/terminal.go` 约 1000 行，新增逻辑另起文件）。
 
 ## 总体方案
 
-一条主线：**插话进入 Runner 的会话收件箱 → 下一次 `BuildMessages` 时取出、落库、插入上下文 → 若模型本来要结束，则因收件箱非空续跑一步**。chat 键盘、`suga send --steer` 都只是往收件箱里放消息的入口；中止本轮则是给 chat 加一个回合级 ctx，并让回合中的 Ctrl-C/Esc 成为按键而不是 SIGINT。
+主线：**插话进入 Runner 的会话收件箱 → 下一次 `BuildMessages` 时取出、落库、插入上下文 → 回合按原有条件结束；结束时未送达的插话退回调用方，正常结束时 chat 立即把它们作为下一回合运行**。chat 键盘、`suga send --steer` 只是往收件箱放消息的入口；中止本轮是给 chat 加回合级 ctx，并让回合中的 Ctrl-C/Esc 成为按键事件。
 
-这样复用了后台任务通知已经验证过的注入路径（落库、原位回放、续接一致），新增的核心只有两处：收件箱（含关闭竞争）和 agentcore 的续跑点。
+不改变 agentcore 的回合结束条件（方案 B）：回合状态始终单一（completed / cancelled / failed），用户已看到的最终回复不会因后续插话被作废。
 
 ## 架构
 
 ```text
- 键盘 Enter ─┐                         ┌─ Runner.inbox[session] ─┐
-             ├─> Runner.Steer(sid,msg) ┤  (互斥 + closing 标志)  │
- send --steer┘   accepted? ──否──> 退回调用方作为 follow-up      │
-                                                                   ▼
- agentcore 回合循环: buildPrompt → BuildMessages(取出插话、落库、发事件) → 模型
-                         ▲                                           │
-                         └── 最终回复且 PendingInput()==true 时续跑 ──┘
+ 键盘 Enter ─┐                          ┌─ Runner.inbox[session]（容量 8）─┐
+             ├─> Runner.Steer(sid,msg) ─┤  互斥 + closing 标志              │
+ send --steer┘   accepted=false ──> 调用方按 follow-up 处理               │
+                                                                           ▼
+ agentcore 回合循环: buildPrompt → BuildMessages(非收尾步：取出插话、落库、发事件) → 模型
+                                                                           │
+ 回合结束（finish 置 closing）→ RunResult.ReturnedSteers ──> chat：
+     completed：作为下一回合输入立即运行（经现有投递优先路径）
+     cancelled/failed：放回输入行，不自动运行
 ```
 
-### agentcore：续跑点（0.2 补全状态机，评审发现 2）
+### agentcore：向上下文构建暴露收尾状态（N6）
 
-- `agentcore.Config` 新增可选 `PendingInput func(ctx) bool`（不依赖 internal）。
-- 检查点只有一个：模型给出无工具调用的最终回复、`persistFinalAnswer` 成功落库之后。续跑条件必须同时满足：
-  `!wrappingUp && ctrl.WrapUpReason == "" && (maxSteps == 0 || state.Step < maxSteps) && PendingInput(ctx)`。
-  满足时把这次回复保留为普通 assistant 消息、进入下一步（下一步的 `BuildMessages` 取出插话）；不满足时立即返回已落库的最终回复，收件箱里的插话按 D4 退回。
-- 因此：最后一步（`state.Step == maxSteps`）、已处于收尾、或本次模型/Hook 刚请求了收尾时，都不续跑，不会多发模型请求，也不会让插话进入 `ErrWrapUpIgnored` 路径。续跑的一步照常计入 `max_steps`。
-- 测试必须覆盖：最后一步有插话；Hook 在本次请求设置 `RequestWrapUp`；`MaxStepsWrapUp` 已启用；以及正常续跑。
+- 回合循环在调用 `BuildMessages` 前把本步是否收尾写入 `RunState`（如 `RunState.WrapUp string`，空表示非收尾）。不新增续跑点，不改变结束条件。
+- personal 的 `takeSteers` 在收尾步不取插话：收尾请求只要求作答，插话留在收件箱，回合结束时退回。
 
-### personal：会话收件箱（0.2 改为“取出即登记、取消即退回”，评审发现 1、5）
+### personal：会话收件箱（取出登记、结束退回）
 
-- `Runner.Steer(sessionID, Steer{Text, Source}) (accepted bool, err error)`：仅当本进程正在为该会话运行回合、回合未进入关闭阶段、且收件箱未满时接受。容量与 send 队列一致（8 条）；满了返回 `ErrSteerQueueFull`，键盘入口提示“插话过多，请等本步结束”，send 入口沿用现有的 `queue_full` 响应（`internal/personal/process/process.go:232`）。其余情况返回 false，由调用方退回（键盘：作为下一回合；send：转 follow-up 排队）。
-- 每个回合维护两张表：`inbox`（已接受、未取出）和 `taken`（本回合已取出并落库）。`BuildMessages` 中 `takeSteers` 把 inbox 中的全部插话移入 `taken`，作为 `role=user` 消息（metadata `suga.steer: true`、`suga.source: <keyboard|send:<from>>`）以 `EntryUser` 落库到当前 turn，并发 `steer` 事件、记 trace。
-- `Runner.finish` 在锁内先置 `closing`，再决定交还什么（`RunResult.UnconsumedSteers`）：
-  - 回合正常结束（completed / wrap-up）：只交还 `inbox` 中未取出的插话；`taken` 已经进入了该回合，随回合历史回放。
-  - 回合被取消或失败：交还 `taken + inbox` 全部插话。理由：被取消/失败回合的条目在后续回合不回放（`context.go:73-90`），即使模型在本回合里看到过，它们对之后的对话也等于不存在；全部交还才满足“已接受的插话要么进入（被保留的）上下文、要么明确退回”。这也覆盖了评审指出的竞态——取消发生在 `BuildMessages` 之后、模型请求之前。
-- 调用方处理交还的插话：chat 把键盘插话放回输入行（多条用换行连接），send 来的转为 follow-up 排队；trace 记 `steer` 事件的 `returned` 状态。
-- 测试必须覆盖：取消发生在 `BuildMessages` 与模型请求之间（可注入的 provider 阻塞点）；`closing` 之后到达的 `Steer`；收件箱已满。
-- 文本格式：键盘插话原样；send 插话沿用现有“[来自 <from>] ”标注规则。
+- 生命周期：收件箱在 `Run` 即将调用 agentcore 运行时打开，由 `Run` 内的 `defer` 关闭；`Run` 在此之前的提前返回不打开收件箱，此期间 `Steer` 返回 false（N7）。
+- `Runner.Steer(sessionID, Steer{ID, Text, Source}) (accepted bool, err error)`：仅当本进程正在为该会话运行回合、收件箱已打开且未 `closing`、未满（容量 8，D11）时接受。满了返回 `ErrSteerQueueFull`：键盘提示“插话过多，请等本步结束”，send 返回现有的 `queue_full` 响应（`process.go:232`）。其余情况返回 false。
+- `BuildMessages` 中 `takeSteers`（与 `takeTaskNotices` 并列，非收尾步）把收件箱全部插话移入 `taken`：作为 `role=user` 消息（metadata `suga.steer: true`、`suga.source: keyboard|send:<from>`、`suga.steer_id`）以 `EntryUser` 落库到当前 turn，并通过 turn 的 Emit 发 `steer_delivered` 事件、记 trace。
+- 关闭时（`finish` 开始，锁内置 `closing`）计算 `RunResult.ReturnedSteers`：
+  - 回合以 completed 存储（含 yielded、wrap-up 收尾）：退回收件箱中未取出的插话；`taken` 已进入回合历史，随回合回放。
+  - 回合 cancelled / failed：退回 `taken + inbox` 全部插话（被取消/失败回合的条目不回放，r1 发现 1）。
+  - 每条退回的插话发 `steer_returned` 事件、记 trace。
+- 测试：取消发生在 `BuildMessages` 与模型请求之间；收尾步不取插话；`closing` 之后到达的 `Steer`；收件箱已满；提前返回路径。
 
-### personal：插话在段交接、压缩与记忆中的语义（0.2 新增，评审发现 4）
+### personal：回合中途压缩与插话语义（N2，含 suga-0lxy）
 
-- 插话不是回合的原始请求。`recentRequests`（`internal/personal/segment_handoff.go:86-145`）只把回合的原始 prompt 计入“最近的用户请求（原文）”，与现有排除 `suga.injected` 的做法一致；同时在交接包中新增“本回合插话”小节，按时间列出带 `suga.steer` 的消息（标注来源），保证纠偏信息不丢、也不冒充原始任务。
-- 压缩/段交接摘要的输入中，插话消息前加固定标签 `[插话]`，让摘要模型能区分。
-- 记忆提炼（若读取 user 消息）同样按来源标注；不额外改变记忆审批流程。
-- 测试：压缩发生在插话前、插话后两种顺序时，交接包中原始请求与插话各在其位。
+- S1 先修 suga-0lxy：`items()` 与 `compose` 统一按“落库条目 = 内存消息 + 本回合注入条目（任务通知、插话）”对齐，注入条目按其插入位置参与切分；切点前的注入条目不再被丢弃。补“通知/插话之后触发压缩”的测试（压缩成功、注入条目位置正确）。
+- 插话不是回合的原始请求：`recentRequests`（`segment_handoff.go:86-145`）只计回合原始 prompt（并顺带排除任务通知，修正其被当作用户请求的问题）；交接包新增“本回合插话”小节，按时间列出带 `suga.steer` 的消息及来源。压缩/交接摘要输入中插话前加 `[插话]` 标签。
+- 测试：压缩发生在插话前、后两种顺序时，交接包中原始请求与插话各在其位。
 
-### chat：回合中的输入与中止（0.2 重写，评审发现 3）
+### chat：输入层按模式分流（N4、N5）
 
-现有输入源是“一次 `Request` 读一行”，回合进行中主循环同步阻塞在 `runner.Run`，`events`（缓冲 1）没有消费者，首字节 activity 握手会卡住；raw 模式下 Ctrl-C 被 lineedit 转成 `io.EOF`，会被当作退出。因此 S2 先重构输入层，再加插话：
+S2 先重构输入层，再接入插话与中止。
 
-1. **按模式分流的输入事件**。输入源有三种读取模式，同一时刻只有一个活动读取：
-   - `prompt`：回合之间读一行（现状）；Enter 产生 `line` 事件，Ctrl-C/Ctrl-D 按现有规则处理。
-   - `steer`：回合进行中读一行；Enter 产生 `steer` 事件；Ctrl-C 产生 `abort` 事件（不再是 `io.EOF`），Esc 产生 `abort` 事件，3 秒内第二次 Ctrl-C 产生 `exit` 事件；Ctrl-D 忽略。lineedit 为此新增按键回调（区分 0x03、Esc 单键与 Esc 开头的转义序列，Esc 单键需短超时判定）。
-   - `ask`：审批提问（现状）。进入 `ask` 时暂停 `steer` 读取：把已键入未提交的半行存入 `savedLine`（复用现有机制），回答后恢复 `steer` 读取并回填半行。
-2. **回合期间的消费者**。chat 在回合开始时启动一个回合输入协程（与 `runner.Run` 并行），它是 `steer`/`abort`/`exit` 事件的唯一消费者：`steer` → `Runner.Steer`；`abort` → 取消回合级 ctx；`exit` → 取消回合并标记退出。回合结束时停止该协程并切回 `prompt` 模式。`steer` 模式下不发 activity 事件（activity 握手只服务于 Stop hook 等待，保持原状）。
-3. **`SetBusy/Request/Ask` 的状态转移**：`SetBusy(true)` 由“强制 cooked”改为“切到 `steer` 模式（保持 raw）”；`Request` 切回 `prompt`；`Ask` 在 `steer` 模式下按上面第 1 点暂停与恢复。`chat.steering: false` 时 `SetBusy(true)` 保持现有行为（cooked，Ctrl-C 为 SIGINT），作为回退。
-4. **回合级 ctx**：`runner.Run` 改用 `context.WithCancel(ctx)` 派生的回合 ctx；`abort` 只取消它，显示“已中断本轮”，回合记为 cancelled，交还的插话放回输入行。raw 模式下 Ctrl-C 不再产生 SIGINT，所以终端不再把 SIGINT 发给工具子进程；子进程随回合 ctx 取消被进程树清理（与现有超时路径相同）。SIGTERM 仍终止整个 chat。
-5. **显示**：`steer` 模式提示符 `↳ `（Q1）；Enter 提交后在输出区显示淡色“[插话] <文本>（等待送达）”，收到 `steer` 事件后改为正常插话样式（与 suga-lebs 的输入行背景一致）；不接受时直接作为下一回合运行。模型输出照常经 `Terminal.Write` 写在输入行上方。
-6. **Windows**：suga-nrf2（Windows 上回合中 Ctrl+C 无反应）的根因须在 S2 前定位；S2 在 Windows 上同样走按键路径（控制台 raw 模式下 Ctrl+C 作为输入字符读取），需真机确认，无法自动化部分记为 UNVERIFIED_REAL_ENV。
-7. chat 的非终端模式（stdin 不是 tty）不变：不支持插话，Ctrl-C 仍为 SIGINT。
+1. **单一读取协程 + 模式**。保留一个读取协程，按模式（`prompt` / `steer` / `ask`）解释输入，同一时刻只有一个模式：
+   - `prompt`（回合之间）：现状不变（activity 握手、Ctrl-C/Ctrl-D 规则）。
+   - `steer`（回合进行中）：Enter → `steer` 事件；Ctrl-C → `abort` 事件（3 秒内第二次 → `exit` 事件）；单独的 Esc → `abort` 事件；Ctrl-D 忽略。不发 activity 事件。
+   - `ask`（审批提问）：进入时把 `steer` 模式已键入的半行存入 `savedLine`，答案只经 Ask 自己的应答通道返回，回合消费者看不到；回答后恢复 `steer` 模式并回填半行。
+   事件经按模式区分的通道分发：回合消费者只接收 `steer/abort/exit`，Ask 只接收自己的答案，避免审批答案被当成插话（N5）。
+2. **Esc 判定**：读取协程读到 0x1b 后，若 50ms 内没有后续字节，向 lineedit 送出“单独 Esc”键；有后续字节则按转义序列处理。lineedit 相应修改：单独 Esc 不再挂起等待序列（`terminal.go:247-261`）。
+3. **回合期间的消费者**：chat 在回合开始时启动回合输入协程（与 `runner.Run` 并行），`steer` → `Runner.Steer`（不接受时暂存为“待退回”）；`abort` → 取消回合级 ctx；`exit` → 取消回合并标记退出。回合结束时停止消费者并切回 `prompt`。
+4. **终端模式（N4）**：回合中使用“输入 raw、输出保留换行处理”的模式——Unix 上在 MakeRaw 之后恢复 `OPOST|ONLCR`；Windows 上 MakeRaw 只改输入句柄，输出处理不受影响（实施时核实）。回合中 chat 的所有输出（含 hook 提示、错误）都经输入源写出（`Terminal.Write` 在输入行上方输出并重绘输入行），不再直接写 stderr。
+5. **半行交接（N5）**：回合结束切回 `prompt` 时，`steer` 模式的半行经 `savedLine` 带入提示符读取；Ctrl-C 中止本轮不清除半行。
+6. **回合级 ctx**：`runner.Run` 使用 `context.WithCancel(ctx)` 派生的回合 ctx；`abort` 只取消它，显示“已中断本轮”，回合记 cancelled。raw 模式下 Ctrl-C 不产生 SIGINT，工具子进程随回合 ctx 取消被进程树清理（与现有超时路径相同）。SIGTERM 仍终止整个 chat。
+7. **显示**：`steer` 模式提示符 `↳ `；Enter 提交后在输出区显示淡色“[插话] <文本>（等待送达）”，收到 `steer_delivered` 后以输入行背景样式（suga-lebs）显示为已送达。
+8. **开关**：`chat.steering`（默认开）在 S2 引入；关闭时 `SetBusy(true)` 保持现行为（cooked，Ctrl-C 为 SIGINT）。
+9. **Windows**：S2 前置定位 suga-nrf2；Windows 控制台 raw 模式下 Ctrl+C 作为 0x03 读取在技术上可行（r2 核对 x/term），真机行为需确认，无法自动化部分记 UNVERIFIED_REAL_ENV。
+10. 非终端模式（stdin 不是 tty）不变：不支持插话，Ctrl-C 仍为 SIGINT。
+
+### chat：退回插话的处理（D3、D4、N3）
+
+- **回合 completed**：退回的插话（键盘与 send 来的，按到达顺序）作为下一回合输入立即运行，走现有投递优先路径：若此时有 Stop hook 等待，按现有规则中断等待（其回复并入下一回合上下文）。多条插话合并为一个 prompt，每条带来源标注。
+- **回合 cancelled / failed（含 Esc 中止）**：退回的插话全部放回输入行（键盘与 send 来的都放，send 来的带“[来自 x]”标注，多条用换行连接，置于半行之前），**不自动运行**——中止就是让 agent 停下。chat 显示“已中断本轮，N 条插话已放回输入行”。
+- 已排队的普通 follow-up（非插话）保持现有行为：在下一次提示符时自动运行。（如需中止后也暂停 follow-up，另行提出。）
+- 退回的插话不进入投递队列，因此不会与队列容量 8 叠加溢出。
 
 ### send：`--steer`
 
 - `process.Request` 加字段 `Mode`（`"follow_up"` 默认 / `"steer"`）；旧客户端不带该字段即为 follow-up，行为不变。
-- `--steer` 时 chat 侧先尝试 `Runner.Steer`：接受则响应 `steered`；会话空闲、回合正在结束、或 chat 关闭了 `chat.steering`，则按 follow-up 排队并响应 `queued`（客户端打印“未插入当前回合，已排队”），退出码不变；收件箱已满按现有队列已满处理。
-- `--wait` 的完成点（0.2 明确）：`steered` 的消息以 `steer` 事件（已落库并进入模型请求的上下文）为完成点；若之后回合被取消导致该插话被交还并转为 follow-up，则继续等它作为下一回合开始；chat 退出时被丢弃则按现有规则退出码 3。
+- `--steer` 时 chat 先尝试 `Runner.Steer`：接受则第一响应为 `steered`；会话空闲、回合正在结束、或关闭了 `chat.steering`，则按 follow-up 排队并响应 `queued`（客户端打印“未插入当前回合，已排队”）；收件箱已满返回 `queue_full`。
+- `--wait` 的完成点（N3 重定）：
+  - 插话被取出送达模型（`steer_delivered`）→ 第二响应 OK；
+  - 未取出就在 completed 回合结束时退回、并作为下一回合运行 → 在该回合开始时 OK；
+  - 未取出就在 cancelled/failed 回合退回（放回输入行、不运行）→ 第二响应 `discarded`，退出码 3；
+  - 已送达后回合才被取消：`--wait` 已经返回成功，之后的退回只记 trace（`steer_returned`），这是已知限制，写入文档。
+- S3 在 S2 之后实施（依赖 `chat.steering` 与退回处理）。
 
 ### 观测
 
-- trace：新增事件种类 `steer`（attrs：source、chars、step、status=`delivered|returned`），`suga trace` 把带 `suga.steer` 的 user 条目标为“插话”。
-- stream-json：新增 `{"type":"steer","session_id","run_id","text","source"}` 行（送达时）；取消时现有的 `turn_end`/`result` 状态不变。
+- trace：每条插话一条 `steer_delivered` 事件（attrs：steer_id、source、chars、step）；被退回时另记一条 `steer_returned`（attrs：steer_id、reason=completed_untaken|cancelled|failed、disposition=next_turn|input_line）。`suga trace` 把带 `suga.steer` 的 user 条目标为“插话”。
+- stream-json：不新增行类型（run 无插话入口）。
+- hook：插话不触发 `UserPromptSubmit`（不是新回合的 prompt）；退回后作为下一回合运行时，该回合照常触发。hook 可从 transcript 看到插话条目。
 - chat 回合结束的状态行显示本轮插话次数（有时）。
 
 ## 关键流程
@@ -175,70 +186,73 @@
 
 ```text
 用户 Enter "别改 config，只改 README"
-  chat → Runner.Steer(sid) → inbox=[msg], accepted
+  chat 回合消费者 → Runner.Steer(sid) → inbox=[s1], accepted
   ...当前工具调用完成...
-  agentcore → BuildMessages → takeSteers: 落库 EntryUser{suga.steer}，事件 steer
-  模型请求含该消息 → 模型调整方向
-  chat 收到 steer 事件 → 显示“[插话] 别改 config，只改 README”
+  agentcore（非收尾步）→ BuildMessages → takeSteers：落库 EntryUser{suga.steer}，事件 steer_delivered
+  模型请求含该消息 → 模型调整方向；chat 显示“[插话] 别改 config，只改 README”
 ```
 
 ### 模型正好给出最终回复
 
 ```text
-模型返回无工具调用的回复 → agentcore 问 PendingInput() → true
-  → 保留该回复，进入下一步 → BuildMessages 取出插话 → 模型针对插话再回复
-若 PendingInput()==false 或已到最后一步/处于收尾 → 回合结束 → finish 置 closing，未取出的插话交还调用方
-若插话在 closing 之后到达 → Steer 返回 accepted=false → chat 将其作为下一回合运行
+模型返回无工具调用的回复 → 回合 completed（不续跑）
+  finish 置 closing → ReturnedSteers = inbox 中未取出的 [s2]
+  chat → s2 作为下一回合输入立即运行（Stop hook 等待按现有规则被中断）
+插话在 closing 之后到达 → Steer 返回 false → chat 回合消费者把它作为下一回合输入
 ```
 
 ### 只中止本轮
 
 ```text
-回合中按 Esc → 取消回合 ctx → 正在进行的模型请求/工具调用随 ctx 结束
-  → finish: turn=cancelled，会话 open，UnconsumedSteers = 本回合已取出 + 未取出的全部插话
-  → chat 显示“已中断本轮”，把键盘插话放回输入行、send 插话转 follow-up → 回到提示符
+回合中按 Esc → abort → 取消回合 ctx → 进行中的模型请求/工具调用随 ctx 结束
+  → finish：turn=cancelled，会话 open，ReturnedSteers = taken + inbox
+  → chat 显示“已中断本轮，N 条插话已放回输入行”，插话（含 send 来的）放回输入行，回到提示符，不自动运行
 ```
 
 ## 安全、数据、运维与回滚
 
 - 安全：插话与普通用户输入同权，不绕过审批与只读模式；`--steer` 只能投递到同用户可访问的会话 socket，权限边界与现有 send 相同（socket 目录 0700 / Windows ACL）。
-- 数据：插话以 `EntryUser` 落库，新增 metadata 键，不改 schema；被取消回合的插话随该回合不回放（与现有一致）。
-- 兼容：send 协议新字段可缺省；stream-json 新增行类型；suga 自身对未知种类是丢弃的，gofer 对未知行的处理未核实，实施前确认（必要时同步 gofer 会话）。
-- 运维：新增配置 `chat.steering`（默认开，关掉时回合中恢复现行 cooked 行为，作为回退开关；此时 `send --steer` 退化为 follow-up 并响应 `queued`）。
-- 回滚：各阶段独立提交；关闭 `chat.steering` 即回到现行 chat 行为，send 不带 `--steer` 时行为不变。
-- 平台风险：Windows 控制台在 raw 模式下 Ctrl-C 的读取方式需在真机确认；suga-nrf2（Windows 上回合中 Ctrl+C 无反应）须在 S2 前定位根因。无法自动化的部分按 SR1402.1 记为 UNVERIFIED_REAL_ENV。
+- 数据：插话以 `EntryUser` 落库，新增 metadata 键，不改 schema；被取消回合的插话随该回合不回放（与现有一致）。suga-0lxy 的修复改变中途压缩的切分，需回归现有压缩测试。
+- 兼容：send 协议新字段可缺省；stream-json 不变。
+- 运维：`chat.steering`（默认开）为回退开关；关闭时回合中恢复现行 cooked 行为，`send --steer` 退化为 follow-up。
+- 回滚：各阶段独立提交；关闭 `chat.steering` 即回到现行 chat 行为。
+- 平台风险：Windows 控制台 raw 输入下 Ctrl+C/Esc 的读取与输出处理需真机确认；suga-nrf2 须在 S2 前定位。无法自动化部分按 SR1402.1 记 UNVERIFIED_REAL_ENV。
 
 ## 决策
 
-- **D1 注入路径**：复用后台任务通知的路径（`BuildMessages` 中取出、`EntryUser` 落库、原位回放），不新建消息通道。理由：续接、回放、trace web 已有支持。
-- **D2 键位**：回合中 Enter = 插话；Esc 或单次 Ctrl-C = 中止本轮，不需确认；3 秒内两次 Ctrl-C = 退出 chat；Ctrl-D 在回合中无效（避免误退）。回合中的提示符用 `↳ `。（Q1、Q3 已由用户确认）
-- **D3 模型已给出最终回复时**：同一回合续跑一步处理插话（与 pi 一致），而不是结束后另起回合。理由：避免中间触发 Stop hook 与回合结束通知，`send --steer --wait` 的语义也更简单。
-- **D4 插话不丢**：回合关闭阶段到达的插话退回调用方（键盘：作为下一回合；send：按 follow-up 排队）；回合被取消或失败时，本回合已取出与未取出的全部插话都交还（被取消回合的条目不回放），键盘插话放回输入行，send 来的插话转为 follow-up。
-- **D5 收尾优先**：处于 wrap-up（步数/token/时长上限）时不续跑，不取插话；剩余插话按 D4 退回。
-- **D6 每步全部送达**：一次 `BuildMessages` 取出收件箱中全部插话，各自一条 user 消息（pi 的 `steeringMode=all`）；不提供 one-at-a-time 配置（无已验证需求，SR1405）。
-- **D7 follow-up 键**：chat 回合中不另设 follow-up 键；需要“等本轮结束再说”的用户等回合结束后输入即可。send 的默认行为就是 follow-up。（Q2 已由用户确认先不做，登记为 suga-8pug）
-- **D9 输入层先重构**：chat 输入源改为按模式（prompt / steer / ask）分流、回合期间由独立协程消费；raw 模式下 Ctrl-C/Esc 在 steer 模式产生 abort 事件而不是 `io.EOF`。理由：现有“一次请求读一行 + activity 握手”的管线无法在回合执行期间产生事件（评审发现 3）。
-- **D10 插话不计入原始请求**：段交接的“最近用户请求”只含回合原始 prompt，插话单列为“本回合插话”，压缩输入中带 `[插话]` 标签。
-- **D11 收件箱容量 8**：与 send 队列一致，满了明确拒绝而不是静默丢弃。
-- **D8 ACP 延后**：目前没有已知的 ACP 客户端需要在 prompt 进行中再发消息（未逐一核实 Zed 与 gofer 的 suga-acp 行为）；在出现明确需要前不实现 ACP steering。ACP 的 InvalidParams 行为不变。（登记为 suga-lkf7）
-- **D12 分阶段实施**：S1 内核（续跑点、收件箱、取出登记与交还、段交接语义、事件）；S2 chat 输入层按模式分流 + 回合期间消费者 + 插话与中止（前置：定位 suga-nrf2）；S3 `send --steer`、协议字段与 `--wait`。各阶段独立验收：S1 单测与 stream-json（含取消竞态测试）；S2 Linux pty 冒烟 + 反向验证为必选，Windows 控制台真机确认，做不到记 UNVERIFIED_REAL_ENV；S3 单测 + 冒烟。（Q4 已由用户确认）
-- **D13 不在本设计内**：会话之间互发消息的模型工具（suga-hko7），依赖 suga-wy40 短名称与本设计的 send 语义。
+- **D1 注入路径**：复用后台任务通知的路径（`BuildMessages` 中取出、`EntryUser` 落库、原位回放），并在 S1 修复其中途压缩缺陷（suga-0lxy）。
+- **D2 键位**：回合中 Enter = 插话；Esc 或单次 Ctrl-C = 中止本轮，不需确认；3 秒内两次 Ctrl-C = 退出 chat；Ctrl-D 在回合中无效。回合中的提示符 `↳ `。（Q1、Q3 用户已确认）
+- **D3 模型已给出最终回复时（用户 2026-10-14 选 r2 N1 方案 B）**：回合正常结束，不在同一回合续跑；未送达的插话作为紧接着的下一回合运行。理由：回合状态单一，最终回复与本轮工作不会因后续插话被作废；无需 agentcore 续跑点。代价：两回合之间照常有回合结束与 Stop hook（等待会被插话中断）。
+- **D4 插话不丢、中止即停**：completed 回合退回未取出的插话并作为下一回合运行；cancelled/failed 回合退回全部插话并放回输入行，不自动运行。
+- **D5 收尾优先**：收尾步不取插话（agentcore 经 `RunState` 告知），剩余插话按 D4 退回。
+- **D6 每步全部送达**：一次 `BuildMessages` 取出收件箱中全部插话，各自一条 user 消息；不提供 one-at-a-time 配置（SR1405）。
+- **D7 follow-up 键**：不做（Q2，suga-8pug）。
+- **D8 ACP 延后**：ACP InvalidParams 行为不变（suga-lkf7）。
+- **D9 输入层先重构**：单一读取协程按模式分流事件，回合期间由独立消费者处理 `steer/abort/exit`，Ask 答案走独立通道；Esc 50ms 判定；回合中输入 raw、输出保留换行处理，所有输出经输入源。
+- **D10 插话不计入原始请求**：段交接的“最近用户请求”只含回合原始 prompt，插话单列，压缩输入中带 `[插话]` 标签。
+- **D11 收件箱容量 8**：满了明确拒绝；退回的插话不进投递队列。
+- **D12 分阶段实施（Q4 用户已确认）**：
+  - S1 内核：修 suga-0lxy；`RunState` 收尾状态；收件箱、取出登记与退回、`ReturnedSteers`；段交接语义；trace 事件。验收：单测（含取消竞态、收尾步、提前返回、插话后压缩）。
+  - S2 chat：前置定位 suga-nrf2；输入层按模式分流、Esc 判定、终端模式、回合消费者、插话与中止、退回处理、`chat.steering`。验收：Linux pty 冒烟 + 反向验证为必选；Windows 控制台真机确认，做不到记 UNVERIFIED_REAL_ENV。
+  - S3 send：`Mode` 字段、`--steer`、`--wait` 语义。依赖 S1、S2。验收：单测 + 冒烟。
+- **D13 不在本设计内**：会话间互发（suga-hko7）；`suga run` 与 ACP 的插话入口。
 
 ## 待确认事项
 
-Q1–Q4 已于 2026-10-14 由用户答复（均按建议），见 D2、D7、D12；当前无待确认事项。
+Q1–Q4（2026-10-14，均按建议）与 r2 N1（方案 B）均已由用户答复；当前无待确认事项。
 
 <details><summary>原问题（存档）</summary>
 
-- **Q1** 回合中的输入提示符样式：`↳ `、`❯ (插话) ` 还是保持 `❯ ` 只换颜色？建议 `↳ `，一眼区分“现在输入的是插话”。
-- **Q2** 是否需要 chat 回合中的 follow-up 键（如 Alt+Enter）？建议先不做（D7），有需要再加；lineedit 目前不识别 Alt+Enter。
-- **Q3** Esc 中止是否需要确认？建议不需要：中止只影响本轮，已完成的工具效果不回滚，会话可继续；误按的代价低。
-- **Q4** 实施分阶段：建议 S1 agentcore 续跑点 + personal 收件箱/取出登记/交还/段交接语义/事件（无 UI，单测与 stream-json 验收，含取消竞态测试）；S2 chat 输入层按模式分流 + 回合期间消费者 + 插话与中止（Linux pty 冒烟 + 反向验证为必选；Windows 控制台另行真机确认，记 UNVERIFIED_REAL_ENV；前置：定位 suga-nrf2）；S3 `send --steer`、协议字段与 `--wait` 语义。是否同意按此拆分并在计划中各自验收？
+- **Q1** 回合中的输入提示符样式：建议 `↳ `。
+- **Q2** 是否需要 chat 回合中的 follow-up 键：建议先不做。
+- **Q3** Esc 中止是否需要确认：建议不需要。
+- **Q4** 实施分阶段 S1/S2/S3 并各自验收。
+- **r2 N1** 最终回复后因插话续跑若被中止/出错会作废整回合：方案 A 续跑失败仍按最后最终回复完成；方案 B 放弃同回合续跑，插话作为下一回合。
 
 </details>
 
 ## 结论与人工计划 Gate
 
-方案以“会话收件箱（取出登记、取消交还）+ agentcore 续跑点”为核心，chat 键盘（先重构输入层）与 `send --steer` 作为入口，ACP 延后；主要风险在 chat 回合中改为 raw 模式后的终端行为（含 Windows），通过 `chat.steering` 开关回退。
+方案以“会话收件箱（取出登记、结束退回）”为核心，回合结束条件不变（方案 B），chat 键盘（先重构输入层）与 `send --steer` 作为入口，ACP 与 run 不提供插话入口；主要风险在回合中 raw 输入后的终端行为（含 Windows），通过 `chat.steering` 开关回退。
 
-Draft 0.1 已经过一轮独立评审（结论 BLOCKED，5 项发现），本稿 Draft 0.2 已逐项修订（见修订记录）。按低暴露度只做一轮合并轴评审（SR1409），修订后不再开新的评审轮次。Q1–Q4 已答复（Draft 0.3）。用户要求再由子 agent 复评一次；复评无 CORE_BLOCKING 后，请用户批准本设计 → 起草实施计划。批准设计不授权实施。
+评审经过：Draft 0.1 → r1（codex）BLOCKED → 0.2；0.3 记录 Q1–Q4；r2（子 agent）BLOCKED → 0.4（N1 方案 B 由用户选定）。下一步：对 0.4 的改动部分做一次确认；无 CORE_BLOCKING 后请用户批准本设计 → 起草实施计划。批准设计不授权实施。
