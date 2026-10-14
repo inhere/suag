@@ -115,12 +115,25 @@ func TestReadRootTools(t *testing.T) {
 	})
 }
 
+// setHome points the user home at a fresh temp directory (Maven, Gradle,
+// cargo and the go env file all look under it) so the test never reads the
+// real ~/.m2 or ~/.gradle; it returns the directory.
+func setHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("GRADLE_USER_HOME", "")
+	return home
+}
+
 func TestDependencyRoots(t *testing.T) {
 	modCache, goRoot, cargo := t.TempDir(), t.TempDir(), t.TempDir()
 	assert.NoErr(t, os.MkdirAll(filepath.Join(goRoot, "src"), 0o755))
 	assert.NoErr(t, os.MkdirAll(filepath.Join(cargo, "registry", "src"), 0o755))
 
 	t.Run("from environment variables", func(t *testing.T) {
+		setHome(t) // no Maven or Gradle cache here
 		t.Setenv("GOENV", "off")
 		t.Setenv("GOMODCACHE", modCache)
 		t.Setenv("GOROOT", goRoot)
@@ -132,6 +145,7 @@ func TestDependencyRoots(t *testing.T) {
 		}, DependencyRoots())
 	})
 	t.Run("from the go env file, GOPATH form", func(t *testing.T) {
+		setHome(t)
 		gopath := t.TempDir()
 		assert.NoErr(t, os.MkdirAll(filepath.Join(gopath, "pkg", "mod"), 0o755))
 		envFile := filepath.Join(t.TempDir(), "env")
@@ -147,11 +161,78 @@ func TestDependencyRoots(t *testing.T) {
 		}, DependencyRoots())
 	})
 	t.Run("missing directories are left out", func(t *testing.T) {
+		setHome(t)
 		t.Setenv("GOENV", "off")
 		t.Setenv("GOMODCACHE", filepath.Join(modCache, "missing"))
 		t.Setenv("GOROOT", filepath.Join(goRoot, "missing"))
 		t.Setenv("CARGO_HOME", filepath.Join(cargo, "missing"))
 		assert.Empty(t, DependencyRoots())
+	})
+}
+
+// TestDependencyRootsJava covers the Java dependency roots: the Maven local
+// repository (settings.xml or the default) and the Gradle module cache.
+func TestDependencyRootsJava(t *testing.T) {
+	// noGo hides the Go and Rust roots so only the Java ones are left.
+	setup := func(t *testing.T, home string) {
+		t.Setenv("GOENV", "off")
+		t.Setenv("GOMODCACHE", filepath.Join(home, "no-mod-cache"))
+		t.Setenv("GOROOT", filepath.Join(home, "no-goroot"))
+		t.Setenv("CARGO_HOME", filepath.Join(home, "no-cargo"))
+	}
+
+	t.Run("the default repository and the gradle cache", func(t *testing.T) {
+		home := setHome(t)
+		setup(t, home)
+		repo := filepath.Join(home, ".m2", "repository")
+		gradle := filepath.Join(home, ".gradle", "caches", "modules-2", "files-2.1")
+		assert.NoErr(t, os.MkdirAll(repo, 0o755))
+		assert.NoErr(t, os.MkdirAll(gradle, 0o755))
+		assert.Eq(t, []ReadRoot{
+			{Label: "Maven local repository", Path: repo},
+			{Label: "Gradle module cache", Path: gradle},
+		}, DependencyRoots())
+	})
+
+	t.Run("settings.xml moves the maven repository", func(t *testing.T) {
+		home := setHome(t)
+		setup(t, home)
+		repo := t.TempDir()
+		assert.NoErr(t, os.MkdirAll(filepath.Join(home, ".m2"), 0o755))
+		assert.NoErr(t, os.WriteFile(filepath.Join(home, ".m2", "settings.xml"), []byte(
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<settings>\n  <!-- <localRepository>"+filepath.Join(home, "commented")+"</localRepository> -->\n"+
+				"  <localRepository>"+repo+"</localRepository>\n</settings>\n"), 0o644))
+		assert.Eq(t, []ReadRoot{{Label: "Maven local repository", Path: repo}}, DependencyRoots())
+	})
+
+	t.Run("${user.home} in settings.xml is resolved", func(t *testing.T) {
+		home := setHome(t)
+		setup(t, home)
+		repo := filepath.Join(home, "m2", "repository")
+		assert.NoErr(t, os.MkdirAll(repo, 0o755))
+		assert.NoErr(t, os.MkdirAll(filepath.Join(home, ".m2"), 0o755))
+		assert.NoErr(t, os.WriteFile(filepath.Join(home, ".m2", "settings.xml"), []byte(
+			"<settings><localRepository>${user.home}/m2/repository</localRepository></settings>\n"), 0o644))
+		assert.Eq(t, []ReadRoot{{Label: "Maven local repository", Path: repo}}, DependencyRoots())
+	})
+
+	t.Run("a settings.xml without a value falls back to the default", func(t *testing.T) {
+		home := setHome(t)
+		setup(t, home)
+		repo := filepath.Join(home, ".m2", "repository")
+		assert.NoErr(t, os.MkdirAll(repo, 0o755))
+		assert.NoErr(t, os.WriteFile(filepath.Join(home, ".m2", "settings.xml"), []byte("<settings><offline>true</offline></settings>\n"), 0o644))
+		assert.Eq(t, []ReadRoot{{Label: "Maven local repository", Path: repo}}, DependencyRoots())
+	})
+
+	t.Run("GRADLE_USER_HOME wins over the home directory", func(t *testing.T) {
+		home := setHome(t)
+		setup(t, home)
+		gradleHome := t.TempDir()
+		t.Setenv("GRADLE_USER_HOME", gradleHome)
+		gradle := filepath.Join(gradleHome, "caches", "modules-2", "files-2.1")
+		assert.NoErr(t, os.MkdirAll(gradle, 0o755))
+		assert.Eq(t, []ReadRoot{{Label: "Gradle module cache", Path: gradle}}, DependencyRoots())
 	})
 }
 

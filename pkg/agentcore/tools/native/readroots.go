@@ -17,12 +17,17 @@ type ReadRoot struct {
 	Path  string // absolute and cleaned
 }
 
-// DependencyRoots detects the local dependency source caches: the Go module
-// cache, the Go standard library sources and the Rust crate sources. Only
-// source directories are returned, never a whole tool home (~/.cargo holds
-// credentials). Directories that do not exist are left out. It runs no
-// external command: the go env file, environment variables and the go binary
-// location in PATH are enough.
+// DependencyRoots detects the local dependency caches and repositories: the Go
+// module cache, the Go standard library sources, the Rust crate sources, the
+// Maven local repository and the Gradle module cache. Only directories holding
+// dependency files are returned, never a whole tool home (~/.cargo, ~/.gradle
+// and ~/.m2 hold credentials or build state too). Directories that do not
+// exist are left out. It runs no external command: the go env file,
+// environment variables and the go binary location in PATH are enough.
+//
+// A pathless file_grep / file_find only searches the workspace, so these large
+// roots are walked only when the model passes one of them as the search path
+// (such a walk stops at searchTimeout and at the tool's result limit).
 func DependencyRoots() []ReadRoot {
 	home, _ := os.UserHomeDir()
 	goEnv := readGoEnvFile()
@@ -63,7 +68,67 @@ func DependencyRoots() []ReadRoot {
 	if cargoHome != "" {
 		add("Rust crates", filepath.Join(cargoHome, "registry", "src"))
 	}
+
+	// Java: the local Maven repository (a settings.xml may move it elsewhere)
+	// and the Gradle module cache hold the jars and poms, addressed by
+	// groupId path - javap and the file tools work straight off these paths.
+	if home != "" {
+		repo := readMavenLocalRepository(filepath.Join(home, ".m2", "settings.xml"), home)
+		if repo == "" {
+			repo = filepath.Join(home, ".m2", "repository")
+		}
+		add("Maven local repository", repo)
+	}
+	gradleHome := os.Getenv("GRADLE_USER_HOME")
+	if gradleHome == "" && home != "" {
+		gradleHome = filepath.Join(home, ".gradle")
+	}
+	if gradleHome != "" {
+		add("Gradle module cache", filepath.Join(gradleHome, "caches", "modules-2", "files-2.1"))
+	}
 	return out
+}
+
+// readMavenLocalRepository returns the <localRepository> of a Maven
+// settings.xml (the one place the local repository is configured), with
+// ${user.home} resolved; a commented-out element does not count. "" when the
+// file is missing or holds no usable value.
+func readMavenLocalRepository(path, home string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	text := stripXMLComments(string(data))
+	start := strings.Index(text, "<localRepository>")
+	if start < 0 {
+		return ""
+	}
+	rest := text[start+len("<localRepository>"):]
+	end := strings.Index(rest, "</localRepository>")
+	if end < 0 {
+		return ""
+	}
+	value := strings.TrimSpace(rest[:end])
+	if home != "" {
+		value = strings.ReplaceAll(value, "${user.home}", home)
+	}
+	return value
+}
+
+// stripXMLComments removes every <!-- ... --> section; an unclosed comment
+// swallows the rest of the text.
+func stripXMLComments(s string) string {
+	for {
+		start := strings.Index(s, "<!--")
+		if start < 0 {
+			return s
+		}
+		end := strings.Index(s[start+len("<!--"):], "-->")
+		if end < 0 {
+			return s[:start]
+		}
+		s = s[:start] + s[start+len("<!--")+end+len("-->"):]
+	}
 }
 
 // readGoEnvFile parses the file `go env -w` writes (GOENV, default
