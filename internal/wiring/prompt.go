@@ -55,6 +55,11 @@ func basePrompt() string {
 	b.WriteString("- Read a file before changing it; prefer small exact edits over rewriting whole files. A successful edit or write needs no re-read: the tool result is the verification.\n")
 	b.WriteString("- Verify from narrow to broad: run the test closest to your change, then the package or suite once. When the checks pass, stop verifying: do not re-run them (-count, -v, coverage) or re-read your files to double-check; check again only after something failed or changed.\n")
 	b.WriteString("- Shell commands cannot be interactive and have a timeout; pass a larger timeout for long builds or tests.\n")
+	// Java-session review (local/analysis/2026-10-14-java-sessions.md, suga-5e99):
+	// 8 of 9 mvn calls piped the output through Select-Object/Select-String or
+	// used -q, so the model filtered out the very lines the minimizer keeps and
+	// had to re-run the build to see them.
+	b.WriteString("- Build and test output (go test, mvn, gradle, npm test, pytest, ...) is minimized into a summary plus the failure details; the untidied output stays under the call's ref. Do not filter it yourself (no `| tail`, `| Select-String`, `| Select-Object -Last`) and do not pass `-q` to mvn or gradle: both hide the summary and the failures you need.\n")
 	b.WriteString("- Delete files and directories with file_remove (it keeps them in a trash), not with shell rm/del/Remove-Item.\n")
 	b.WriteString("- When a tool is refused or not enabled, do not retry it; explain what is needed instead.\n")
 	// Kept from the step-count experiment: a mid-task memory write disappeared

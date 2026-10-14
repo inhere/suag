@@ -42,6 +42,12 @@ func TestBasePrompt(t *testing.T) {
 		assert.NotContains(t, p, "Workspace")
 		assert.NotContains(t, p, "# Skills")
 	})
+	t.Run("build and test output is left to the minimizer", func(t *testing.T) {
+		p := basePrompt()
+		assert.StrContains(t, p, "is minimized into a summary plus the failure details")
+		assert.StrContains(t, p, "`| Select-Object -Last`")
+		assert.StrContains(t, p, "do not pass `-q` to mvn or gradle")
+	})
 	t.Run("no date or time", func(t *testing.T) {
 		re := regexp.MustCompile(`\d{4}-\d{2}-\d{2}|\d{2}:\d{2}`)
 		assert.False(t, re.MatchString(basePrompt()))
