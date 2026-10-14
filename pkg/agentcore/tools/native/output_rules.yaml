@@ -13,6 +13,12 @@
 #            `fail` line keeps them
 #   failure  lines that mean something failed (kept; no summary then)
 #   count    name -> regex; matching lines are counted for the summary
+#   sum      name -> regex with a capture group; the numbers of the matching
+#            lines are added up (a real total, e.g. maven's "Tests run")
+#   fold     runs of repeated noise collapsed into one line: start matches the
+#            first line of the run, body each further line, text is the line
+#            printed instead with {lines} = how many lines went (empty text
+#            drops the whole run)
 #   summary  printed when nothing failed and a count is > 0; {name} = count,
 #            a [part] whose counts are all 0 is left out
 
@@ -83,28 +89,62 @@ rules:
       passed: ' PASSED( |$)'
     summary: 'pytest: {passed} test(s) passed'
 
+  # Maven: keep the failure details (test failures, compile errors) and a one
+  # line summary; drop the build progress noise. The effective-model POM
+  # warnings repeat once per build, so they fold into a single line.
   - name: maven
     match: '\bmvnw?\b'
     drop:
-      - '^\[INFO\] (Download(ing|ed) from|Progress)'
+      - '^\[INFO\] (Scanning for projects|Building |Download(ing|ed) from|Progress|Results:)'
+      - '^\[INFO\] ---'                                       # --- plugin:version:goal --- and ----< group:artifact >---- separators
+      - '^\[INFO\]\s+T E S T S\s*$'
+      - '^\[INFO\]\s*$'                                       # a bare "[INFO]"
+      - '^\[INFO\] (Total time|Finished at):'
       - '^\[INFO\] Running \S'
-      - '^\[INFO\] Tests run: \d+, Failures: 0, Errors: 0, Skipped: \d+, Time elapsed'
+      - '^\[INFO\] Tests run: .*Time elapsed'
+      - '^\[INFO\] Tests run: \d+, Failures: \d+, Errors: \d+, Skipped: \d+\s*$' # the per-run total, reprinted in the summary
+      - '^\[INFO\] BUILD SUCCESS$'
+      - 'Sharing is only supported for boot loader classes'
+    fold:
+      - start: '^\s*\[WARNING\] Some problems were encountered while building the effective model'
+        body: '^\s*\[WARNING\]'
+        text: 'maven: {lines} POM warning line(s) folded'
     failure:
       - '^\[ERROR\]'
       - 'BUILD FAILURE'
+      - '<<< (FAILURE|ERROR)!'
       - 'Tests run: \d+, Failures: [1-9]'
       - 'Tests run: \d+, Failures: \d+, Errors: [1-9]'
+      - 'COMPILATION ERROR'
+      - '\.java:\[\d+,\d+\]'
+    count:
+      success: '^\[INFO\] BUILD SUCCESS$'
+    sum:
+      tests: '^\[INFO\] Tests run: (\d+), Failures: \d+, Errors: \d+, Skipped: \d+\s*$'
+      failures: '^\[INFO\] Tests run: \d+, Failures: (\d+), Errors: \d+, Skipped: \d+\s*$'
+      errors: '^\[INFO\] Tests run: \d+, Failures: \d+, Errors: (\d+), Skipped: \d+\s*$'
+      skipped: '^\[INFO\] Tests run: \d+, Failures: \d+, Errors: \d+, Skipped: (\d+)\s*$'
+    summary: 'maven: [Tests run {tests}, Failures: {failures}, Errors: {errors}, Skipped: {skipped}; ]BUILD SUCCESS'
 
+  # Gradle: same idea; a plain "> Task :x" line means the task succeeded.
   - name: gradle
     match: '\bgradlew?\b'
     drop:
       - '^> Task \S+ (UP-TO-DATE|NO-SOURCE|FROM-CACHE|SKIPPED)$'
+      - '^> Task \S+$'
+      - '^> Configure project '
+      - '^Download https?://'
+      - '^Starting a Gradle Daemon'
+      - '^\d+ actionable tasks?:'
       - ' PASSED$'
     failure:
       - ' FAILED$'
       - 'BUILD FAILED'
       - '^e: '
       - 'error:'
+      - '^\* What went wrong:'
+      - '^\d+ tests? completed, \d+ failed'
+      - '^> There were failing tests'
     count:
       passed: ' PASSED$'
     summary: 'gradle: {passed} test(s) passed'

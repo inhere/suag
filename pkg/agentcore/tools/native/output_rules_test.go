@@ -19,6 +19,16 @@ func repeatLines(n int, format string) string {
 	return b.String()
 }
 
+// mavenPOMWarnings is the effective-model warning block Maven prints for a POM
+// with a missing plugin version (7 lines, all starting with [WARNING]).
+const mavenPOMWarnings = "[WARNING] Some problems were encountered while building the effective model for com.example:demo:jar:1.0-SNAPSHOT\n" +
+	"[WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-compiler-plugin is missing. @ line 25, column 15\n" +
+	"[WARNING] \n" +
+	"[WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.\n" +
+	"[WARNING] \n" +
+	"[WARNING] For this reason, future Maven versions might no longer support building such malformed projects.\n" +
+	"[WARNING] \n"
+
 func TestOutputRulesBuiltin(t *testing.T) {
 	cases := []struct {
 		name, command, output string
@@ -92,32 +102,131 @@ func TestOutputRulesBuiltin(t *testing.T) {
 			notWant: []string{"::test_0 PASSED", "test(s) passed"},
 		},
 		{
-			name:    "maven passed",
-			command: "./mvnw -B test",
-			output: "[INFO] Scanning for projects...\n" + repeatLines(30, "[INFO] Downloading from central: https://repo.maven.apache.org/maven2/org/x/lib%d.pom") +
-				repeatLines(20, "[INFO] Running com.x.Test%d") +
-				repeatLines(20, "[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.05 s - in com.x.Test%d") +
-				"[INFO] Results:\n[INFO] Tests run: 60, Failures: 0, Errors: 0, Skipped: 0\n[INFO] BUILD SUCCESS\n[exit code: 0]",
-			want:    []string{"[INFO] Tests run: 60, Failures: 0, Errors: 0, Skipped: 0\n", "BUILD SUCCESS"},
-			notWant: []string{"Downloading from", "Running com.x", "Time elapsed"},
+			name:    "maven passed with effective-model POM warnings",
+			command: "mvn test",
+			output: "[INFO] Scanning for projects...\n[INFO] \n" +
+				"[INFO] -------------------< com.example:demo >--------------------\n" +
+				"[INFO] Building demo 1.0-SNAPSHOT\n[INFO]   from pom.xml\n" +
+				"[INFO] --------------------------------[ jar ]---------------------------------\n" +
+				mavenPOMWarnings +
+				repeatLines(6, "[INFO] Downloading from central: https://repo.maven.apache.org/maven2/org/x/lib%d.pom") +
+				"[INFO] --- resources:3.3.1:resources (default-resources) @ demo ---\n" +
+				"[INFO] Copying 1 resource from src/main/resources to target/classes\n" +
+				"[INFO] --- compiler:3.11.0:compile (default-compile) @ demo ---\n" +
+				"[INFO] Nothing to compile - all classes are up to date\n" +
+				"[INFO] --- surefire:3.2.5:test (default-test) @ demo ---\n[INFO] \n" +
+				"[INFO] -------------------------------------------------------\n[INFO]  T E S T S\n[INFO] -------------------------------------------------------\n" +
+				"[INFO] Running com.example.demo.AppTest\n" +
+				"OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended\n" +
+				repeatLines(20, "[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.02 s -- in com.example.demo.Test%d") +
+				"[INFO] Tests run: 60, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.30 s -- in com.example.demo.AppTest\n" +
+				"[INFO] \n[INFO] Results:\n[INFO] \n[INFO] Tests run: 60, Failures: 0, Errors: 0, Skipped: 0\n[INFO] \n" +
+				"[INFO] ------------------------------------------------------------------------\n[INFO] BUILD SUCCESS\n" +
+				"[INFO] ------------------------------------------------------------------------\n" +
+				"[INFO] Total time:  2.041 s\n[INFO] Finished at: 2026-10-14T09:15:22+08:00\n[exit code: 0]",
+			want: []string{
+				"maven: 7 POM warning line(s) folded",
+				"maven: Tests run 60, Failures: 0, Errors: 0, Skipped: 0; BUILD SUCCESS",
+				"Copying 1 resource from src/main/resources to target/classes", // real build output stays
+			},
+			notWant: []string{
+				"Scanning for projects", "Downloading from", "Running com.example", "T E S T S", "Sharing is only supported",
+				"Time elapsed", "Total time", "plugin:version", "[INFO] BUILD SUCCESS", "build.plugins.plugin.version",
+			},
 		},
 		{
-			name:    "maven failed",
-			command: "mvn test",
-			output: repeatLines(30, "[INFO] Downloading from central: https://repo.maven.apache.org/maven2/org/x/lib%d.pom") +
-				"[ERROR] Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.05 s <<< FAILURE! - in com.x.BTest\n" +
-				"[ERROR] testAdd(com.x.BTest)  Time elapsed: 0.01 s  <<< FAILURE!\njava.lang.AssertionError: expected:<1> but was:<2>\n" +
-				"[INFO] BUILD FAILURE\n[exit code: 1]",
-			want:    []string{"<<< FAILURE! - in com.x.BTest", "java.lang.AssertionError: expected:<1> but was:<2>", "BUILD FAILURE"},
-			notWant: []string{"Downloading from"},
+			// Every module of a reactor prints its own total: the summary adds them up.
+			name:    "maven multi-module sums the test totals",
+			command: "mvn -B verify",
+			output: "[INFO] Scanning for projects...\n" +
+				repeatLines(10, "[INFO] Downloading from central: https://repo.maven.apache.org/maven2/org/x/dep%d.jar") +
+				repeatLines(4, "[INFO] ------------------< com.example:mod%d >------------------") +
+				repeatLines(4, "[INFO] Building mod%d 1.0") +
+				strings.Repeat("[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 1\n", 2) +
+				"[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0\n" +
+				"[INFO] Reactor Summary for demo 1.0:\n[INFO] \n[INFO] demo .............. SUCCESS [  2.0 s]\n[INFO] BUILD SUCCESS\n[exit code: 0]",
+			want:    []string{"maven: Tests run 14, Failures: 0, Errors: 0, Skipped: 2; BUILD SUCCESS"},
+			notWant: []string{"Downloading from", "Building mod", "[INFO] Tests run:", "Scanning for projects"},
+		},
+		{
+			name:    "maven build without tests still says it succeeded",
+			command: "mvn -B package -DskipTests",
+			output: "[INFO] Scanning for projects...\n" +
+				repeatLines(30, "[INFO] --- maven-jar-plugin:3.3.0:jar (default-jar) @ demo%d ---") +
+				"[INFO] BUILD SUCCESS\n" +
+				"[INFO] ------------------------------------------------------------------------\n" +
+				"[INFO] Total time:  1.704 s\n[exit code: 0]",
+			want:    []string{"maven: BUILD SUCCESS"},
+			notWant: []string{"Scanning for projects", "Tests run", "maven-jar-plugin"},
+		},
+		{
+			name:    "maven test failure keeps the details and drops the summary",
+			command: "./mvnw test",
+			output: "[INFO] Scanning for projects...\n[INFO] Building demo 1.0\n" +
+				repeatLines(20, "[INFO] Downloading from central: https://repo.maven.apache.org/maven2/org/x/lib%d.pom") +
+				"[INFO] -------------------------------------------------------\n[INFO]  T E S T S\n[INFO] -------------------------------------------------------\n" +
+				"[INFO] Running com.example.demo.AppTest\n" +
+				"[ERROR] Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.11 s <<< FAILURE! -- in com.example.demo.AppTest\n" +
+				"[ERROR] com.example.demo.AppTest.testAdd -- Time elapsed: 0.01 s <<< FAILURE!\n" +
+				"org.opentest4j.AssertionFailedError: expected: <3> but was: <4>\n" +
+				"\tat com.example.demo.AppTest.testAdd(AppTest.java:11)\n[INFO] \n[INFO] Results:\n[INFO] \n" +
+				"[ERROR] Failures: \n[ERROR]   AppTest.testAdd:11 expected: <3> but was: <4>\n" +
+				"[ERROR] Tests run: 3, Failures: 1, Errors: 0, Skipped: 0\n" +
+				"[INFO] BUILD FAILURE\n[INFO] Total time:  2.5 s\n[exit code: 1]",
+			want: []string{
+				"<<< FAILURE!",
+				"org.opentest4j.AssertionFailedError: expected: <3> but was: <4>",
+				"AppTest.testAdd:11 expected: <3> but was: <4>", // the per-test failure list stays
+				"BUILD FAILURE",
+			},
+			notWant: []string{"Scanning for projects", "Downloading from", "T E S T S", "maven: "},
+		},
+		{
+			name:    "maven compilation error keeps the java locations",
+			command: "mvn compile",
+			output: "[INFO] Scanning for projects...\n[INFO] Building demo 1.0\n" +
+				repeatLines(12, "[INFO] --- maven-resources-plugin:3.3.1:resources (default-resources) @ demo%d ---") +
+				"[INFO] -------------------------------------------------------------\n" +
+				"[ERROR] COMPILATION ERROR : \n" +
+				"[ERROR] /D:/work/demo/src/main/java/com/example/demo/App.java:[12,20] cannot find symbol\n" +
+				"  symbol:   variable greeter\n  location: class com.example.demo.App\n" +
+				"[INFO] 1 error\n[INFO] BUILD FAILURE\n[exit code: 1]",
+			want: []string{
+				"COMPILATION ERROR",
+				"App.java:[12,20] cannot find symbol",
+				"symbol:   variable greeter",
+				"BUILD FAILURE",
+			},
+			notWant: []string{"Scanning for projects", "maven-resources-plugin", "maven: "},
 		},
 		{
 			name:    "gradle passed",
 			command: "./gradlew test",
-			output: repeatLines(10, "> Task :sub%d:compileJava UP-TO-DATE") + "> Task :test\n\n" +
-				repeatLines(30, "ATest > case%d() PASSED") + "\nBUILD SUCCESSFUL in 2s\n[exit code: 0]",
-			want:    []string{"> Task :test", "BUILD SUCCESSFUL", "gradle: 30 test(s) passed"},
-			notWant: []string{"UP-TO-DATE", "case0() PASSED"},
+			output: "Starting a Gradle Daemon, 1 busy Daemon could not be reused, use --status for details\n\n" +
+				"> Configure project :\n" + repeatLines(10, "> Task :sub%d:compileJava UP-TO-DATE") +
+				"> Task :compileJava\n> Task :processResources NO-SOURCE\n> Task :classes\n" +
+				"> Task :compileTestJava\n> Task :testClasses\n> Task :test\n\n" +
+				repeatLines(30, "AppTest > case%d() PASSED") +
+				"\nBUILD SUCCESSFUL in 2s\n3 actionable tasks: 3 executed\n[exit code: 0]",
+			want:    []string{"BUILD SUCCESSFUL in 2s", "gradle: 30 test(s) passed"},
+			notWant: []string{"Starting a Gradle Daemon", "> Configure project", "> Task :compileJava", "UP-TO-DATE", "actionable tasks", "case0() PASSED"},
+		},
+		{
+			name:    "gradle test failure keeps the details",
+			command: "gradle --no-daemon test",
+			output: repeatLines(10, "> Task :sub%d:compileJava UP-TO-DATE") +
+				"> Task :compileJava\n> Task :test FAILED\n\n" +
+				repeatLines(28, "AppTest > case%d() PASSED") +
+				"AppTest > testAdd() FAILED\n    org.opentest4j.AssertionFailedError at AppTest.java:11\n\n" +
+				"28 tests completed, 1 failed\n\n> Task :test FAILED\n\nBUILD FAILED in 2s\n" +
+				"3 actionable tasks: 2 executed, 1 failed\n[exit code: 1]",
+			want: []string{
+				"AppTest > testAdd() FAILED",
+				"org.opentest4j.AssertionFailedError at AppTest.java:11",
+				"28 tests completed, 1 failed",
+				"BUILD FAILED in 2s",
+			},
+			notWant: []string{"PASSED", "> Task :compileJava", "UP-TO-DATE", "actionable tasks", "gradle: "},
 		},
 		{
 			name:    "rules only act on matching commands",
@@ -142,6 +251,40 @@ func TestOutputRulesBuiltin(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestOutputRuleFoldAndSum checks the two rule features the maven rule uses,
+// with exact output: a fold block collapses a run of warnings into one line and
+// the sum of a capture group goes into the summary.
+func TestOutputRuleFoldAndSum(t *testing.T) {
+	rules, errs := parseOutputRules([]byte(`
+rules:
+  - name: fake-maven
+    match: '\bfake-mvn\b'
+    drop: ['^\[INFO\] noise']
+    fold:
+      - start: '^\[WARNING\] some problems'
+        body: '^\[WARNING\]'
+        text: 'warnings: {lines} line(s)'
+    sum:
+      tests: '^\[INFO\] total (\d+) tests$'
+    summary: 'fake: {tests} test(s)'
+`))
+	assert.Empty(t, errs)
+	m := NewOutputMinimizer(rules)
+
+	out := repeatLines(40, "[INFO] noise %d") +
+		"[WARNING] some problems were encountered\n[WARNING] fix them\n[WARNING] \n" +
+		"[INFO] total 12 tests\n[INFO] total 3 tests\n[exit code: 0]"
+	tidy, ok := m.Minimize(shellCall("fake-mvn test"), out)
+	assert.Require(t, assert.True(t, ok))
+	assert.Eq(t, "warnings: 3 line(s)\n[INFO] total 12 tests\n[INFO] total 3 tests\n[exit code: 0]\nfake: 15 test(s)", tidy)
+
+	t.Run("a fold block needs its start line", func(t *testing.T) {
+		tidy, ok := m.Minimize(shellCall("fake-mvn test"), repeatLines(40, "[INFO] noise %d")+"[WARNING] fix them\n[exit code: 0]")
+		assert.Require(t, assert.True(t, ok))
+		assert.Eq(t, "[WARNING] fix them\n[exit code: 0]", tidy)
+	})
 }
 
 func TestLoadOutputRules(t *testing.T) {

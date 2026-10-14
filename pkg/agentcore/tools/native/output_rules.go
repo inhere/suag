@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -31,9 +32,22 @@ type OutputRule struct {
 	} `yaml:"block"`
 	Failure []string          `yaml:"failure"`
 	Count   map[string]string `yaml:"count"`
+	Sum     map[string]string `yaml:"sum"`
+	Fold    []FoldBlock       `yaml:"fold"`
 	Summary string            `yaml:"summary"`
 
 	compiled *compiledRule
+}
+
+// FoldBlock collapses a run of lines repeating the same noise into one line:
+// start matches its first line, body every following line of the run, and text
+// is what replaces the run ({lines} = the number of lines folded; empty text
+// drops the whole run). Maven's effective-model warnings are the case it was
+// added for.
+type FoldBlock struct {
+	Start string `yaml:"start"`
+	Body  string `yaml:"body"`
+	Text  string `yaml:"text"`
 }
 
 type compiledRule struct {
@@ -42,6 +56,14 @@ type compiledRule struct {
 	start, body, pass, fail *regexp.Regexp
 	countNames              []string
 	counts                  map[string]*regexp.Regexp
+	sums                    map[string]*regexp.Regexp
+	folds                   []compiledFold
+}
+
+// compiledFold is a compiled FoldBlock.
+type compiledFold struct {
+	start, body *regexp.Regexp
+	text        string
 }
 
 type outputRuleFile struct {
@@ -135,7 +157,7 @@ func compileRule(r *OutputRule) (*compiledRule, error) {
 	if r.Match == "" {
 		return nil, errors.New("match is required")
 	}
-	c := &compiledRule{counts: map[string]*regexp.Regexp{}}
+	c := &compiledRule{counts: map[string]*regexp.Regexp{}, sums: map[string]*regexp.Regexp{}}
 	var err error
 	one := func(expr string) *regexp.Regexp {
 		if expr == "" || err != nil {
@@ -163,13 +185,41 @@ func compileRule(r *OutputRule) (*compiledRule, error) {
 		c.counts[name] = one(expr)
 		c.countNames = append(c.countNames, name)
 	}
+	// A summed value is rendered like a count: one name, one number.
+	for name, expr := range r.Sum {
+		c.sums[name] = one(expr)
+		if _, counted := c.counts[name]; !counted {
+			c.countNames = append(c.countNames, name)
+		}
+	}
+	for _, f := range r.Fold {
+		fold := compiledFold{start: one(f.Start), body: one(f.Body), text: f.Text}
+		if fold.start != nil {
+			c.folds = append(c.folds, fold)
+		}
+	}
 	return c, err
+}
+
+// sumValue returns the number in the first capture group of re when the line
+// matches and holds one; ok is false otherwise.
+func sumValue(re *regexp.Regexp, line string) (int, bool) {
+	m := re.FindStringSubmatch(line)
+	if m == nil || len(m) < 2 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(m[1]))
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 // apply runs the rule over lines: per-test blocks of passed tests and the
 // drop lines go, everything else stays; when nothing failed and a count is
 // positive, the summary line is appended.
 func (c *compiledRule) apply(lines []string, summary string) []string {
+	lines = c.foldNoise(lines)
 	var out, pending []string
 	counts := map[string]int{}
 	failed, inPassed := false, false
@@ -189,6 +239,14 @@ func (c *compiledRule) apply(lines []string, summary string) []string {
 		for name, re := range c.counts {
 			if re != nil && re.MatchString(l) {
 				counts[name]++
+			}
+		}
+		for name, re := range c.sums {
+			if re == nil {
+				continue
+			}
+			if n, ok := sumValue(re, l); ok {
+				counts[name] += n
 			}
 		}
 		isFail := matchAny(c.failure, l)
@@ -233,6 +291,46 @@ func (c *compiledRule) apply(lines []string, summary string) []string {
 		out = append(out, text)
 	}
 	return out
+}
+
+// foldNoise replaces every fold block - its start line and the following lines
+// matching its body - with the block's text line. Rules without fold blocks
+// return the lines unchanged.
+func (c *compiledRule) foldNoise(lines []string) []string {
+	if len(c.folds) == 0 {
+		return lines
+	}
+	out := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); {
+		found, n := c.foldAt(lines, i)
+		if n == 0 {
+			out = append(out, lines[i])
+			i++
+			continue
+		}
+		if found.text != "" {
+			out = append(out, strings.ReplaceAll(found.text, "{lines}", strconv.Itoa(n)))
+		}
+		i += n
+	}
+	return out
+}
+
+// foldAt returns the first fold block whose start matches lines[i] and how many
+// lines it swallows (0 when no block starts there). A following line joins the
+// run while it matches the block's body.
+func (c *compiledRule) foldAt(lines []string, i int) (compiledFold, int) {
+	for _, fold := range c.folds {
+		if !fold.start.MatchString(lines[i]) {
+			continue
+		}
+		n := 1
+		for fold.body != nil && i+n < len(lines) && fold.body.MatchString(lines[i+n]) {
+			n++
+		}
+		return fold, n
+	}
+	return compiledFold{}, 0
 }
 
 var optionalPart = regexp.MustCompile(`\[([^\[\]]*)\]`)
