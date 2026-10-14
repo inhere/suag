@@ -142,6 +142,7 @@ smoke-chat:
 	python3 -I scripts/ptysmoke/chat_watch.py --bin tmp/smoke/suga --work tmp/smoke-watch
 	python3 -I scripts/ptysmoke/chat_agent.py --bin tmp/smoke/suga --work tmp/smoke-agent
 	python3 -I scripts/ptysmoke/chat_spinner.py --bin tmp/smoke/suga --work tmp/smoke-spinner
+	python3 -I scripts/ptysmoke/chat_resume.py --bin tmp/smoke/suga --work tmp/smoke-resume
 
 ## clean: remove build artifacts
 clean:
