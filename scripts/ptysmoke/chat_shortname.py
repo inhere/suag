@@ -115,6 +115,10 @@ def resume(binary, env, ws, sid, name):
             return s
         m = s.mark()
         s.check("resume shows the same short name", s.until(r"Suga chat · fake/m1[^\n]*会话 " + re.escape(name), m))
+        # Wait for the prompt (after the resumed reply preview): text typed ahead
+        # of the line editor's raw mode keeps its characters but loses the Enter.
+        s.check("resume: ❯ prompt", s.until(r"❯ ", m))
+        m = s.mark()
         s.line(":quit")
         s.check("resume exit summary keeps the name",
                 s.until(r"续接：suga chat --resume " + re.escape(sid) + r"（会话 " + re.escape(name) + r"）", m))
