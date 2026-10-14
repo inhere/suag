@@ -38,7 +38,7 @@ go run ./scripts/wincons --bin tmp/wincons/suga.exe --work tmp/wincons --console
 
 ## 2026-10-14 实测结果（本机 Windows 10 IoT LTSC 2024，Go 1.25.10）
 
-classic 控制台、三条路径都通过（`--console classic`，另两次加 `--deliver` / `--console-output`）：
+classic 控制台三路径都通过（`--console classic`；另两次加 `--deliver` 与 `--console-output`）。下面这一轮是 `--console-output`（彩色/高亮全开，最接近真人终端），所以能采到提示符期的 raw：
 
 ```
 tool started at 13:37:34.076

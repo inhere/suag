@@ -18,14 +18,14 @@
 
 | 场景 | 结果 |
 |---|---|
-| classic 控制台，键入消息 → 工具跑 `sleep 60` → Ctrl-C | 控制台模式：提示符期 raw（`0x3f0`）、回合中 cooked（`0x1f7`）；Ctrl-C 后 21ms 退出，exit 130，`tool-finished.txt` 未出现 |
+| classic 控制台，键入消息 → 工具跑 `sleep 60` → Ctrl-C | 回合中控制台是 cooked（`0x1f7`）；Ctrl-C 后 21ms 退出，exit 130，`tool-finished.txt` 未出现 |
+| 同上但 `--console-output`（彩色、spinner、输入高亮全开，最接近真人终端；这一轮采样到了提示符期的 raw） | 模式时间线：`0ms 0x1f7`（启动）→ `100ms 0x3f0`（提示符读行 raw，设计如此）→ `3100ms 0x1f7`（回合开始 `SetBusy(true)` 恢复 cooked）；Ctrl-C 后 21ms 退出 |
 | 同上但用 `suga send` 投递开始回合（提示符读仍挂着，suag-jsha 场景） | 同上，30ms 退出 |
-| 同上但 `--console-output`（彩色、spinner、输入高亮全开，最接近真人终端） | 同上，21ms 退出 |
 | 对照（不发 Ctrl-C） | 工具照常跑到结束，chat 不退出 |
 
 被这两组事实排除掉的怀疑：
 
-- **回合中没恢复 cooked**：模式采样时间线只有「raw（提示符）→ cooked（回合）」，回合中没有 raw 窗口。
+- **回合中没恢复 cooked**：模式采样时间线只有「提示符 raw → 回合 cooked」一次切换（`--console-output` 那轮能看到三次采样；普通运行里在提示符出现后立即键入，raw 窗口只有几毫秒，采样器（100ms）会跳过它），回合中没有 raw 窗口。
 - **子 shell 改了控制台模式**：`pwsh -NoLogo -NoProfile -NonInteractive -Command ...`（就是 `shell_exec` 的形态，stdin 为空设备）、`powershell.exe`、`cmd /c` 前后控制台模式都是 `0x1f7`，全程无变化。
 - **工具不响应 ctx**：`shell_exec` 在 ctx 取消后 20ms 级返回，工具的第二标记文件始终没出现。
 - **颜色 / spinner / 输入高亮的代码改了控制台模式**：`--console-output` 与 piped+`NO_COLOR` 结果一致；`gookit/cliui`（spinner 用 `progress`）只在 `interact/backend/readline` 里 `term.MakeRaw`，chat 不用那条路；`gookit/color` 的 `EnableVirtualTerminalProcessing` 只写 `CONOUT$`/stdout。
