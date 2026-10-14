@@ -290,8 +290,8 @@ func steerEvent(sessionID, turnID, name string, s Steer, extra map[string]any) s
 		Status: eventOK, Attrs: attrs}
 }
 
-// returnSteers closes the turn's inbox and hands back the steers the caller has
-// to take care of (design D4), recording each in the trace and telling the
+// returnSteers empties the turn's inbox and hands back the steers the caller
+// has to take care of (design D4), recording each in the trace and telling the
 // caller through a "steer_returned" event. turnStatus decides what comes back:
 // a completed turn (its messages are stored and replay) keeps its delivered
 // steers and returns only the untaken ones, a cancelled or failed turn returns

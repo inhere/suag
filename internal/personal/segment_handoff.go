@@ -194,7 +194,13 @@ func refCandidates(sessionID string, items []ctxItem, cut int) []refCandidate {
 		}
 		if m.Role == "user" || (m.Role == "assistant" && m.ToolCall == nil && strings.TrimSpace(m.Content) != "") {
 			preview := truncateRunes(strings.Join(strings.Fields(m.Content), " "), candidateNoteRunes)
-			msgs = append(msgs, refCandidate{ref: messageRef(sessionID, items[i].seq), note: "[" + m.Role + "] " + preview})
+			// A steering message is not the person's request of the turn: it is
+			// labeled as what it is (design D10).
+			label := "[" + m.Role + "] "
+			if isSteerItem(m) {
+				label = steerLabel(m) + " "
+			}
+			msgs = append(msgs, refCandidate{ref: messageRef(sessionID, items[i].seq), note: label + preview})
 		}
 	}
 	return append(outs, msgs...)

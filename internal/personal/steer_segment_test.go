@@ -70,8 +70,11 @@ func TestSteerBeforeTheCutGoesIntoTheSummary(t *testing.T) {
 	assert.Eq(t, 0, occurrences(view[1:], steer.Text))
 	assert.Eq(t, 1, occurrences(view, steer.Text))
 	assertWellFormed(t, view)
-	// The summarizer reads it as a steering message, not as a user request.
-	assert.StrContains(t, prov.sumReqs[0].Messages[0].Content, "[插话 keyboard] "+steer.Text)
+	// The summarizer reads it as a steering message, not as a user request: the
+	// dropped items it gets as a transcript and as ref candidates both say so.
+	sum := prov.sumReqs[0].Messages[0].Content
+	assert.StrContains(t, sum, "[插话 keyboard] "+steer.Text)
+	assert.StrNotContains(t, sum, "[user] "+steer.Text)
 
 	records := compactionEntries(t, repo, res.SessionID)
 	assert.Require(t, assert.Len(t, records, 1))
