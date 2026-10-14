@@ -86,6 +86,18 @@ func steerIDs(steers []Steer) []string {
 	return out
 }
 
+// turnCounter counts the turn-level hook runs of a runner: a steer is not a
+// turn of its own, so it must not produce another run.
+type turnCounter struct {
+	agentcore.NopHook
+	runs int
+}
+
+func (c *turnCounter) BeforeRun(context.Context, *agentcore.RunEvent, *agentcore.Control) error {
+	c.runs++
+	return nil
+}
+
 // The inbox itself: what it accepts, what it takes and what it hands back.
 func TestSteerInboxRules(t *testing.T) {
 	t.Run("an empty steer is refused", func(t *testing.T) {
@@ -146,6 +158,7 @@ func TestSteerIsDeliveredToTheRunningTurn(t *testing.T) {
 		{ID: "s2", Text: "and run the tests", Source: "send:alice"},
 	}
 	var runner *Runner
+	hooks := &turnCounter{}
 	provider := &scriptProv{name: "main", normal: func(n int, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
 		if n == 1 {
 			return workCall("c1")
@@ -159,7 +172,7 @@ func TestSteerIsDeliveredToTheRunningTurn(t *testing.T) {
 			assert.NoErr(t, err)
 			assert.Eq(t, true, accepted)
 		}
-	}), nil)
+	}), func(c *Config) { c.Hooks = []agentcore.Hook{hooks} })
 	_, err := runner.NewSession(context.Background(), sid, "steer test")
 	assert.Require(t, assert.NoErr(t, err))
 	rec := &eventRecorder{}
@@ -215,6 +228,12 @@ func TestSteerIsDeliveredToTheRunningTurn(t *testing.T) {
 		assert.Eq(t, "send:alice", emitted[1].SteerSource)
 		assert.Eq(t, steers[1].Text, emitted[1].Text)
 		assert.Empty(t, rec.kinds("steer_returned"))
+	})
+
+	t.Run("a steer is no turn of its own", func(t *testing.T) {
+		// The turn's hooks ran once: the steers did not start anything, and no
+		// UserPromptSubmit of a new turn could have seen them.
+		assert.Eq(t, 1, hooks.runs)
 	})
 }
 
