@@ -80,6 +80,7 @@ def scenario(s):
     s.check("n: denied", s.until(r"用户拒绝执行 shell_exec", m))
     s.check("n: denied tools listed", s.until(r"本轮被拒绝的工具：shell_exec", m))
     s.check("n: turn ends", turn_end(m))
+    s.check("turn end shows the local time", s.until(r"tokens · [\d.]+m?s · \d{2}:\d{2}", m))
     time.sleep(0.3); s.send(CTRL_U)  # drop the prefilled leftover "y"
 
     m = s.mark(); s.line("跑一下")

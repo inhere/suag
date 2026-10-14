@@ -127,7 +127,8 @@ def preview_checks(s, sid, name):
 
 def quit_chat(s, name):
     m = s.mark()
-    s.line(":quit")
+    # :exit is the same command as :quit; leaving here proves the alias works.
+    s.line(":exit")
     s.check(name + ": exit summary", s.until(r"续接：suga chat --resume ", m))
 
 

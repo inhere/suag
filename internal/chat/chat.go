@@ -283,7 +283,8 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		switch line {
 		case "":
 			continue
-		case ":quit":
+		case ":quit", ":exit":
+			// Both spellings leave chat; :exit is the familiar one from other REPLs.
 			return nil
 		case ":session":
 			fmt.Fprintln(inputSource, "session id:", sessionID)

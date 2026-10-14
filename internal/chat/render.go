@@ -62,6 +62,9 @@ type rendererOptions struct {
 	// next message (config chat.spinner, on by default). Like Markdown it needs
 	// a colored terminal: a pipe, a redirected output or NO_COLOR keeps it off.
 	Spinner bool
+	// now supplies the local wall clock of the end-of-turn time on the status
+	// line (nil: time.Now). Tests inject a fixed clock.
+	now func() time.Time
 	// spinnerNow and spinnerTicks drive that waiting line in tests (nil: the
 	// real clock and a time.Ticker).
 	spinnerNow   func() time.Time
@@ -94,6 +97,15 @@ func newRenderer(opts rendererOptions) *Renderer {
 	})
 	r.resetLive()
 	return r
+}
+
+// localNow is the wall clock of the renderer: the injected one in tests, the
+// real local time otherwise.
+func (r *Renderer) localNow() time.Time {
+	if r.opts.now != nil {
+		return r.opts.now()
+	}
+	return time.Now()
 }
 
 // paintDim dims a line (gray, like the tool lines) on a colored terminal.
@@ -352,8 +364,9 @@ func (r *Renderer) noteMemory(event personal.Event) {
 	r.memory = append(r.memory, fmt.Sprintf("%s：%s（%s）", memoryVerbs[change.Action], title, change.Scope))
 }
 
-// Status prints the grey end-of-turn line: model, token usage and elapsed
-// time, preceded by one line per memory write of the turn.
+// Status prints the grey end-of-turn line: model, token usage, elapsed time and
+// the local time the turn ended at, preceded by one line per memory write of
+// the turn.
 func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration) {
 	r.stopThinking()
 	for _, line := range r.memory {
@@ -366,7 +379,9 @@ func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration) {
 	}
 	parts = append(parts,
 		fmt.Sprintf("in %d / out %d tokens", result.Usage.InputTokens, result.Usage.OutputTokens),
-		formatElapsed(elapsed))
+		formatElapsed(elapsed),
+		// When the turn ended, so the person can tell long sessions apart (:03).
+		clockTime(r.localNow()))
 	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, strings.Join(parts, " · ")))
 }
 
@@ -404,7 +419,7 @@ func (r *Renderer) Banner() {
 		head += " · ctx " + formatTokens(r.opts.ContextWindow)
 	}
 	fmt.Fprintln(r.opts.Out, r.paint(color.Cyan, head))
-	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "输入任务开始对话；:session 显示会话，:compact 压缩上下文，:quit 退出。"))
+	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "输入任务开始对话；:session 显示会话，:compact 压缩上下文，:quit/:exit 退出。"))
 	if r.opts.WriteTools {
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "工具：可读写文件、执行 shell（tools.approval 决定是否先确认）。"))
 	} else {
@@ -413,6 +428,9 @@ func (r *Renderer) Banner() {
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "工具：只读。要写文件、执行 shell，在 SUGA_HOME/config.yaml 设 tools.allow_write: true。"))
 	}
 }
+
+// clockTime renders the end-of-turn time as a 24 hour local HH:MM.
+func clockTime(t time.Time) string { return t.Format("15:04") }
 
 // formatTokens renders a token count compactly: 950000 -> "950k",
 // 1000000 -> "1M", 1500000 -> "1.5M", 512 -> "512".

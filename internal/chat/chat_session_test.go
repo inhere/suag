@@ -81,6 +81,25 @@ func TestPersonalChatReusesOneSession(t *testing.T) {
 	assert.Eq(t, 2, len(turns))
 }
 
+// TestPersonalChatExitCommand: :exit leaves chat exactly like :quit, at that
+// very line. The :session line behind it is never read as a prompt (that would
+// start a second turn).
+func TestPersonalChatExitCommand(t *testing.T) {
+	runner, repo := newCLITestRunner(t, mock.NewProvider(mock.Final("first"), mock.Final("second")))
+	var stdout, stderr bytes.Buffer
+	assert.NoErr(t, Run(context.Background(), runner, Options{},
+		strings.NewReader("Hello\n:exit\n:session\n"), &stdout, &stderr, nil))
+
+	sessions, err := repo.ListSessions(context.Background())
+	assert.NoErr(t, err)
+	assert.Require(t, assert.Eq(t, 1, len(sessions)))
+	turns, err := repo.ListTurns(context.Background(), sessions[0].ID, store.TurnCompleted)
+	assert.NoErr(t, err)
+	assert.Eq(t, 1, len(turns))
+	assert.StrContains(t, stdout.String(), "first")
+	assert.StrNotContains(t, stdout.String(), "session id:")
+}
+
 // TestPersonalChatResumeShowsLastReply: continuing an existing session prints
 // the model's last reply above the first prompt, so the person can go on from
 // it; a new session prints nothing of the kind.

@@ -41,6 +41,10 @@ func runTurn(r *Renderer, elapsed time.Duration) {
 	r.Status(personal.RunResult{Usage: agentcore.Usage{InputTokens: 1200, OutputTokens: 34}}, elapsed)
 }
 
+// testClock is the local clock chat tests inject into the status line, so the
+// end-of-turn time is deterministic: 12:34.
+func testClock() time.Time { return time.Date(2026, 10, 13, 12, 34, 0, 0, time.Local) }
+
 // TestRendererLastReply: a continued session shows the model's last reply
 // above the first prompt, with a dim label, the usual ▣ marker and the same
 // markdown rendering as an answer; long replies are cut to their tail with a
@@ -99,7 +103,7 @@ func TestRendererLastReply(t *testing.T) {
 
 func TestRendererPlainTurn(t *testing.T) {
 	var out, errOut bytes.Buffer
-	r := newRenderer(rendererOptions{Out: &out, Err: &errOut, Provider: "opencode", Model: "glm-5"})
+	r := newRenderer(rendererOptions{Out: &out, Err: &errOut, Provider: "opencode", Model: "glm-5", now: testClock})
 	runTurn(r, 2340*time.Millisecond)
 
 	// Each model message starts with the ▣ marker; tool and plan lines do not.
@@ -114,7 +118,7 @@ func TestRendererPlainTurn(t *testing.T) {
 		"  ▶ edit",
 		"  ○ test",
 		"▣ done",
-		"opencode/glm-5 · in 1200 / out 34 tokens · 2.3s",
+		"opencode/glm-5 · in 1200 / out 34 tokens · 2.3s · 12:34",
 		"",
 	}, "\n")
 	assert.Eq(t, want, out.String())
@@ -128,8 +132,15 @@ func TestRendererPlainTurn(t *testing.T) {
 	})
 	t.Run("status without model", func(t *testing.T) {
 		var b bytes.Buffer
-		newRenderer(rendererOptions{Out: &b}).Status(personal.RunResult{}, 40*time.Millisecond)
-		assert.Eq(t, "in 0 / out 0 tokens · 40ms\n", b.String())
+		newRenderer(rendererOptions{Out: &b, now: testClock}).Status(personal.RunResult{}, 40*time.Millisecond)
+		assert.Eq(t, "in 0 / out 0 tokens · 40ms · 12:34\n", b.String())
+	})
+	t.Run("status ends with the end-of-turn local time", func(t *testing.T) {
+		var b bytes.Buffer
+		newRenderer(rendererOptions{Out: &b, Model: "m", now: func() time.Time {
+			return time.Date(2026, 10, 13, 0, 3, 59, 0, time.Local)
+		}}).Status(personal.RunResult{}, time.Second)
+		assert.Eq(t, "m · in 0 / out 0 tokens · 1.0s · 00:03\n", b.String())
 	})
 }
 
@@ -150,7 +161,7 @@ func TestRendererColoredTurn(t *testing.T) {
 	t.Cleanup(func() { color.RevertColorLevel() })
 
 	var out, errOut bytes.Buffer
-	r := newRenderer(rendererOptions{Out: &out, Err: &errOut, Color: true, ErrColor: true, Provider: "p", Model: "m"})
+	r := newRenderer(rendererOptions{Out: &out, Err: &errOut, Color: true, ErrColor: true, Provider: "p", Model: "m", now: testClock})
 	runTurn(r, time.Second)
 	got := out.String()
 
@@ -158,7 +169,7 @@ func TestRendererColoredTurn(t *testing.T) {
 	// Tool line and status line are grey (90), failed results red (31).
 	assert.StrContains(t, got, "\x1b[90m⏺ file_read {\"path\":\"a.go\"}\x1b[0m")
 	assert.StrContains(t, got, "\x1b[31m  ⎿ error: exit status 1\x1b[0m")
-	assert.StrContains(t, got, "\x1b[90mp/m · in 1200 / out 34 tokens · 1.0s\x1b[0m")
+	assert.StrContains(t, got, "\x1b[90mp/m · in 1200 / out 34 tokens · 1.0s · 12:34\x1b[0m")
 	assert.StrContains(t, got, "\x1b[32m  ✔ read\x1b[0m")
 	assert.Eq(t, "\x1b[36m❯ \x1b[0m", r.Prompt(false))
 
@@ -255,6 +266,11 @@ func TestBannerAndExitSummary(t *testing.T) {
 		newRenderer(rendererOptions{Out: &out, Provider: "command-code", Model: "deepseek-v4.1-flash",
 			Thinking: "high", ContextWindow: 950000}).Banner()
 		assert.StrContains(t, out.String(), "Suga chat · command-code/deepseek-v4.1-flash · thinking high · ctx 950k\n")
+	})
+	t.Run("banner names both exit commands", func(t *testing.T) {
+		var out bytes.Buffer
+		newRenderer(rendererOptions{Out: &out}).Banner()
+		assert.StrContains(t, out.String(), ":quit/:exit 退出")
 	})
 	t.Run("token counts", func(t *testing.T) {
 		for n, want := range map[int]string{512: "512", 128000: "128k", 950000: "950k", 1000000: "1M", 1048576: "1.05M", 200500: "200.5k"} {

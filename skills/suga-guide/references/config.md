@@ -204,4 +204,4 @@ suga manifest [--json] [--model <p/m>] [--thinking <level>]
 suga version
 ```
 
-chat 里的命令：`:session`（会话 ID）、`:compact`（开启新段）、`:quit`（退出）。退出码：会话不存在 `4`、被中断 `130`、其它 `1`。
+chat 里的命令：`:session`（会话 ID）、`:compact`（开启新段）、`:quit` / `:exit`（退出）。退出码：会话不存在 `4`、被中断 `130`、其它 `1`。
