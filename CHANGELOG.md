@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.23.1] - 2026-10-14
+
+Windows 修复：8.3 短文件名路径下越界授权后仍被拒；多个 suga 同时首次启动时内置 skill 释放偶发失败。
+
 ### 修复
 
 - Windows 上路径里带 8.3 短名（如 `C:\Users\RUNNER~1\AppData\Local\Temp`）时，已授权的越界目录仍被拒：授权记录的是解析后的真实目录，文件工具却按传入的短名去比对，于是报 `outside the workspace ...`，回答了 `r` 也读不到。现在两侧用同一套规范化（Windows 上短名展开成长名），工作区、`--add-dir`、`tools.read_roots` 的读写与越界判定都一致；同一目录的两种写法也合并成一条。
@@ -504,7 +508,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.23.0...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.23.1...HEAD
+[0.23.1]: https://github.com/inhere/suga/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/inhere/suga/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/inhere/suga/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/inhere/suga/compare/v0.20.0...v0.21.0
