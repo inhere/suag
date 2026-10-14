@@ -197,8 +197,10 @@ def ask_scenario(s, outside_real, shared, write_path):
 
 
 def unwrap(text):
-    """The output with the terminal's line wraps (CR LF) removed."""
-    return text.replace("\r\n", "")
+    """The output with the terminal's line wraps removed: CR LF, or CR CR LF once
+    raw input keeps output processing on (OPOST turns the editor's CR LF into
+    CR CR LF)."""
+    return re.sub(r"\r*\n", "", text)
 
 
 def check_trace(s, events, outside_real, shared):
