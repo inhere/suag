@@ -20,6 +20,9 @@ const MaxQueue = 8
 type Record struct {
 	PID       int       `json:"pid"`
 	SessionID string    `json:"session_id"`
+	// Name is the session's short name ("<workspace directory>-k7"), the address
+	// `suga send --session <name>` accepts; empty in records of older versions,
+	// which stored the first message as the name.
 	Name      string    `json:"name"`
 	CWD       string    `json:"cwd"`
 	Kind      string    `json:"kind"`
@@ -360,32 +363,37 @@ func processAlive(pid int, procStart string) bool {
 	return current == "" || current == procStart
 }
 
+// Resolve picks the live process a selector names. Three stages, each only
+// ambiguous within itself: an exact session ID, then an exact short name
+// (ignoring case), then a session ID prefix. The order matters, a full ID that
+// is also another session's prefix or short name never turns ambiguous, and a
+// short name that is also a prefix of several IDs still addresses one process.
 func Resolve(records []Record, selector string) (Record, error) {
 	selector = strings.TrimSpace(selector)
-	// An exact session ID always wins over prefix/name matches, so a full ID that is
-	// also a prefix of another session never turns ambiguous or picks the wrong one.
-	var exact []Record
-	for _, record := range records {
-		if record.SessionID == selector {
-			exact = append(exact, record)
-		}
-	}
-	if len(exact) == 1 {
-		return exact[0], nil
-	}
-	var matches []Record
-	for _, record := range records {
-		if record.SessionID == selector || strings.HasPrefix(record.SessionID, selector) || strings.EqualFold(record.Name, selector) {
-			matches = append(matches, record)
-		}
-	}
-	if len(matches) == 0 {
+	// An empty selector would match every record without a short name below.
+	if selector == "" {
 		return Record{}, ErrNotOnline
 	}
-	if len(matches) > 1 {
-		return Record{}, ErrAmbiguous
+	stages := []func(Record) bool{
+		func(record Record) bool { return record.SessionID == selector },
+		func(record Record) bool { return strings.EqualFold(record.Name, selector) },
+		func(record Record) bool { return strings.HasPrefix(record.SessionID, selector) },
 	}
-	return matches[0], nil
+	for _, matches := range stages {
+		var picked []Record
+		for _, record := range records {
+			if matches(record) {
+				picked = append(picked, record)
+			}
+		}
+		if len(picked) > 1 {
+			return Record{}, ErrAmbiguous
+		}
+		if len(picked) == 1 {
+			return picked[0], nil
+		}
+	}
+	return Record{}, ErrNotOnline
 }
 
 var ErrAmbiguous = errors.New("session selector matches multiple processes")
