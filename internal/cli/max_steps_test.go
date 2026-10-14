@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	gkconfig "github.com/gookit/config/v2"
@@ -37,8 +38,32 @@ func maxStepsServer(t *testing.T) *httptest.Server {
 	return server
 }
 
-// setupMaxStepsRun isolates the config and points the run at the fake provider.
-func setupMaxStepsRun(t *testing.T) {
+// ignoredWrapUpServer keeps asking for tools — the model ignoring the wrap-up
+// instruction — and answers only the tool-less retry (tool_choice none), which
+// is what the runtime sends then. answered reports whether it was reached.
+func ignoredWrapUpServer(t *testing.T, answered *atomic.Bool) *httptest.Server {
+	t.Helper()
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		const usage = `"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}`
+		if !strings.Contains(string(body), `"tool_choice":"none"`) {
+			_, _ = io.WriteString(w, fmt.Sprintf(
+				`{"choices":[{"message":{"tool_calls":[{"id":"call-%d","function":{"name":"suga_manifest","arguments":"{}"}}]},"finish_reason":"tool_calls"}],%s}`,
+				calls, usage))
+			return
+		}
+		answered.Store(true)
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"partial findings"},"finish_reason":"stop"}],`+usage+`}`)
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// setupMaxStepsConfig isolates the config and workspace of a max-steps run.
+func setupMaxStepsConfig(t *testing.T) {
 	t.Helper()
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
@@ -47,6 +72,12 @@ func setupMaxStepsRun(t *testing.T) {
 	t.Chdir(workspace)
 	assert.NoErr(t, gkconfig.Set("workspace", workspace))
 	assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
+}
+
+// setupMaxStepsRun isolates the config and points the run at the fake provider.
+func setupMaxStepsRun(t *testing.T) {
+	t.Helper()
+	setupMaxStepsConfig(t)
 	setTestProvider(t, maxStepsServer(t).URL)
 }
 
@@ -126,6 +157,48 @@ func TestRunMaxStepsFlag(t *testing.T) {
 			[]string{"--prompt", "explore", "--output-format", "stream-json"}, strings.NewReader(""), &out, &diag)
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, "max_steps", lastStreamLine(t, out.Bytes())["wrap_up"])
+	})
+}
+
+// TestRunMaxStepsIgnoredWrapUp covers a turn whose model ignores the wrap-up
+// instruction (suga-p5mt): the stream still closes with a result line carrying
+// the wrap-up reason instead of an error line, and the tool-less retry is what
+// ends it.
+func TestRunMaxStepsIgnoredWrapUp(t *testing.T) {
+	t.Run("stream-json ends with a result, not an error", func(t *testing.T) {
+		setupMaxStepsConfig(t)
+		var answered atomic.Bool
+		setTestProvider(t, ignoredWrapUpServer(t, &answered).URL)
+
+		var out, diag bytes.Buffer
+		err := RunPersonalCLI(context.Background(), "run",
+			[]string{"--prompt", "explore", "--output-format", "stream-json", "--max-steps", "2"}, strings.NewReader(""), &out, &diag)
+		assert.Require(t, assert.NoErr(t, err))
+
+		lines := streamLines(t, out.Bytes())
+		for _, line := range lines {
+			assert.NotEq(t, "error", line["type"])
+		}
+		last := lines[len(lines)-1]
+		assert.Eq(t, "result", last["type"])
+		assert.Eq(t, "max_steps", last["wrap_up"])
+		assert.Eq(t, "COMPLETED", last["status"])
+		assert.Eq(t, "partial findings", last["result"])
+		// The answer came from the retry that forbids tools, not from the model
+		// giving in on its own.
+		assert.True(t, answered.Load())
+	})
+	t.Run("text mode names the step limit on stderr only", func(t *testing.T) {
+		setupMaxStepsConfig(t)
+		var answered atomic.Bool
+		setTestProvider(t, ignoredWrapUpServer(t, &answered).URL)
+
+		var out, diag bytes.Buffer
+		err := RunPersonalCLI(context.Background(), "run",
+			[]string{"--prompt", "explore", "--max-steps", "2"}, strings.NewReader(""), &out, &diag)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.StrContains(t, out.String(), "partial findings")
+		assert.StrContains(t, diag.String(), "步数上限（2 步）收尾")
 	})
 }
 
