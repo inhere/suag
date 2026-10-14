@@ -48,6 +48,12 @@ func TestBasePrompt(t *testing.T) {
 		assert.StrContains(t, p, "`| Select-Object -Last`")
 		assert.StrContains(t, p, "do not pass `-q` to mvn or gradle")
 	})
+	t.Run("dependency APIs are named per language", func(t *testing.T) {
+		p := basePrompt()
+		assert.StrContains(t, p, "`go doc <package>`")
+		assert.StrContains(t, p, "`javap -public -cp <jar> <fully.qualified.Class>`")
+		assert.StrContains(t, p, "~/.m2/repository")
+	})
 	t.Run("no date or time", func(t *testing.T) {
 		re := regexp.MustCompile(`\d{4}-\d{2}-\d{2}|\d{2}:\d{2}`)
 		assert.False(t, re.MatchString(basePrompt()))
