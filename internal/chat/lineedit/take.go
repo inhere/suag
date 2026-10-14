@@ -38,6 +38,34 @@ func (t *Terminal) SetPendingLine(line string) {
 	t.pendingLine = line
 }
 
+// PrependLine puts text in front of the line being edited (or of the pending
+// line when no ReadLine runs) and shows it at once; the existing line follows on
+// a line of its own, so nothing typed is lost. The cursor goes to the end. It is
+// how chat writes a message that could not be inserted into a running turn back
+// into the input line, for the person to review and submit; nothing is submitted
+// here.
+func (t *Terminal) PrependLine(text string) {
+	if text == "" {
+		return
+	}
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	if !t.reading {
+		// No read yet: the line is the one the coming ReadLine applies.
+		if t.pendingLine != "" {
+			text += "\n" + t.pendingLine
+		}
+		t.pendingLine = text
+		return
+	}
+	if len(t.line) > 0 {
+		text += "\n" + string(t.line)
+	}
+	t.line, t.pos = []rune(text), len([]rune(text))
+	_ = t.repaintLocked()
+}
+
 // ReadLineNoHistory is ReadLine without adding the line to the history.
 func (t *Terminal) ReadLineNoHistory() (line string, err error) {
 	t.lock.Lock()

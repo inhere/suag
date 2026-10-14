@@ -114,6 +114,43 @@ func TestTerminal_SetPendingLine(t *testing.T) {
 	})
 }
 
+func TestTerminal_PrependLine(t *testing.T) {
+	t.Run("without a read the coming one starts with it", func(t *testing.T) {
+		tm, mem := newMem("> ", 0)
+		tm.PrependLine("插话一\n插话二")
+		// What is typed after it follows on the same line (the cursor is at the end).
+		assert.Eq(t, []string{"插话一\n插话二尾"}, readAll(t, tm, mem, "尾\r"))
+	})
+
+	t.Run("a read in progress gets it in front of the half line", func(t *testing.T) {
+		pr, pw := io.Pipe()
+		out := &syncBuffer{}
+		tm := NewTerminal(struct {
+			io.Reader
+			io.Writer
+		}{pr, out}, "> ")
+		lines := make(chan string, 1)
+		go func() {
+			line, _ := tm.ReadLine()
+			lines <- line
+		}()
+		_, _ = pw.Write([]byte("半行"))
+		waitOutput(t, out, "> 半行")
+
+		tm.PrependLine("插话") // the reader is blocked in Read: no deadlock
+		waitOutput(t, out, "> 插话")
+		_, _ = pw.Write([]byte("\r"))
+		assert.Eq(t, "插话\n半行", <-lines)
+		_ = pw.Close()
+	})
+
+	t.Run("an empty text changes nothing", func(t *testing.T) {
+		tm, mem := newMem("> ", 0)
+		tm.PrependLine("")
+		assert.Eq(t, []string{"ab"}, readAll(t, tm, mem, "ab\r"))
+	})
+}
+
 func TestTerminal_ReadLineNoHistory(t *testing.T) {
 	tm, mem := newMem("> ", 0)
 	mem.in = append(mem.in, "y\r")
