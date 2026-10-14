@@ -33,7 +33,11 @@ func NewFileTools(workspace string) []api.Tool {
 
 func (t *FileWriteTool) Name() string { return "file_write" }
 func (t *FileWriteTool) Description() string {
-	return "Write content to a file in the workspace. Creates parent directories as needed."
+	// The wording is exact: writeFileInRoot writes the decoded content's bytes
+	// through os.Root.OpenFile with O_TRUNC (binary, no BOM, no newline
+	// translation), so a caller can rely on byte-identical content.
+	return "Write content to a file in the workspace. Creates parent directories as needed. " +
+		"The file is written as UTF-8 without a BOM, with the line endings and bytes of content unchanged."
 }
 
 // ToolMeta marks the tool as an edit: it changes workspace files.

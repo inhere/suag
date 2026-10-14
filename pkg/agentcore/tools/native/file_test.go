@@ -1,13 +1,43 @@
 package native
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/gookit/goutil/x/assert"
 
 	"github.com/inhere/suga/pkg/agentcore/api"
 )
+
+func TestFileWriteEncodingAndLineEndings(t *testing.T) {
+	workspace := t.TempDir()
+	tool := &FileWriteTool{workspace: workspace}
+	// Mixed line endings, non-ASCII text and a shebang: everything must land on
+	// disk byte for byte.
+	content := "#!/usr/bin/env python3\nprint('中文')\r\nprint(1)\n"
+	_, err := tool.Execute(context.Background(), api.ToolCall{
+		CallID: "call-write", Name: "file_write",
+		Arguments: map[string]any{"path": "tmp/script.py", "content": content},
+	})
+	assert.Require(t, assert.NoErr(t, err))
+
+	raw, err := os.ReadFile(filepath.Join(workspace, "tmp", "script.py"))
+	assert.Require(t, assert.NoErr(t, err))
+	// UTF-8 without a BOM (the tool adds no byte of its own).
+	assert.False(t, bytes.HasPrefix(raw, []byte{0xEF, 0xBB, 0xBF}))
+	// LF and CRLF stay as given: no newline translation on any OS.
+	assert.Eq(t, content, string(raw))
+	assert.Eq(t, 3, strings.Count(string(raw), "\n"))
+
+	// The description states what the test proves.
+	desc := tool.Description()
+	assert.StrContains(t, desc, "UTF-8 without a BOM")
+	assert.StrContains(t, desc, "line endings")
+}
 
 func TestFileTools_ReturnToolResultsWithStableMetadata(t *testing.T) {
 	workspace := t.TempDir()
