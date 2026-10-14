@@ -130,6 +130,22 @@ func TestRunChild(t *testing.T) {
 		assert.Eq(t, StopMaxTokens, res.Stop)
 		assert.Eq(t, "so far: Bar calls Foo", res.Report)
 	})
+	t.Run("a text-less wrap-up it ignores reports the runtime notice", func(t *testing.T) {
+		withParentMeter(t)
+		// The same reply every time: tool calls, never any text.
+		runner, prov := child(t, func(c *Config) { c.MaxRunTokens = 500 }, func(n int, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+			return toolUsing("c"+strings.Repeat("x", n), 600, 10)
+		})
+		res, err := RunChild(ctx, runner, req)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, StopMaxTokens, res.Stop)
+		// The runtime's wrap-up fallback answers (the test provider takes no
+		// tool_choice, so it goes straight to the notice) instead of the run
+		// failing and the report being empty.
+		assert.StrContains(t, res.Report, "本轮因 max_tokens 收尾")
+		assert.StrContains(t, res.Report, "模型未给出汇报")
+		assert.Eq(t, 2, len(prov.reqs)) // the wrap-up request, no tool-less retry
+	})
 	// The clock is injected: the limit check must not depend on the real clock
 	// moving on between the two reads (a coarse clock can report the same
 	// instant twice, which made this case flaky).
