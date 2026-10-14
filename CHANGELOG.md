@@ -4,7 +4,9 @@
 
 ## [未发布]
 
-会话中途可追加或撤销授权目录（chat 的 `:add-dir`/`:dirs`/`:rm-dir`），文件工具越界时可询问一次授权（`chat.ask_outside_dirs`，默认开）；启动时探测 PATH 上的脚本解释器，环境段与 `shell_exec` 描述提示优先写脚本；chat 的本地命令只在键盘输入时生效，投递文本一律是普通消息；shell 输出规则可改写与分组，并新增 git（log/diff/status）与 grep（rg/grep）内置规则；多行粘贴整体进入输入行，工具调用行的参数 JSON 不再被 HTML 转义。
+## [0.23.0] - 2026-10-14
+
+会话中途追加/撤销授权目录与越界询问；多行粘贴整体进入输入行；启动时探测 python/node 并提示复杂处理写脚本执行；git/grep 输出精简与规则引擎扩展；trace 识别 Java/Gradle 测试命令；提示符前预输入不再丢回车；工具参数显示不再转义 < > &。
 
 ### 新增
 
@@ -497,7 +499,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.22.0...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/inhere/suga/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/inhere/suga/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/inhere/suga/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/inhere/suga/compare/v0.19.0...v0.20.0
