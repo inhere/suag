@@ -139,7 +139,7 @@ Suga 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`
 - **空闲整理（chat）**：超过 `context.idle_after`（默认 15m）没有输入，且上下文已达阈值的 `context.idle_min_ratio`（默认 0.5）时，chat 在后台开启新段。回合进行中不会触发，开始输入即取消。
 - **计划**：`update_plan` 工具记录模型的计划。stream-json 中输出为 `plan` 事件，ACP 中转为计划更新。
 - **系统提示词与段上下文**：系统提示词只含稳定内容（身份与工作约定），同一模式下跨会话、跨工作区字节相同。环境（系统、shell、工作区）、项目规则（每级一个文件，`rules.file`，默认 `AGENTS.md`，另有 `~/.suga/AGENTS.md`）、`--append-system-prompt`、记忆索引、skills 列表和延迟工具列表放在每段开头的上下文消息里。段内发生变化（如规则文件被改）时，追加一条“上下文更新”消息，不改写已有内容。`--no-project-rules` 跳过项目规则。
-- **投递与 hooks**：`suga send --session <s> <文本>`（或 `--text <文本>`，二选一）把文本送进正在运行的 chat；`hooks.command` 以 stdin 上的 JSON 接收 chat 的生命周期事件。
+- **投递与 hooks**：`suga send --session <s> <文本>`（或 `--text <文本>`，二选一）把文本送进正在运行的 chat。`<s>` 可用会话 ID、ID 前缀或短名称：每个 chat 注册时会取一个 `<工作目录名>-<两位随机后缀>` 的名字（目录名转小写、只留 `[a-z0-9-]`，如 `suga-k7`），横幅与 `suga ps` 都显示它；名字存在会话元数据里，续接沿用（被另一个活进程占用时临时换一个并在终端说明）。完整 ID 优先于短名称，短名称优先于 ID 前缀；匹配到多个进程时退出码 2。`hooks.command` 以 stdin 上的 JSON 接收 chat 的生命周期事件。
 
 ## 配合 Gofer 使用
 
@@ -155,7 +155,7 @@ suga trace <session> --web [--addr 127.0.0.1:0]  # 本机网页：时间线（�
 suga stats [--session <id>] [--since 7d] [--json] # 调用次数、耗时、token、缓存命中
 suga export <session> [--redact] [-o <file>]      # 以 jsonl 导出会话内容与事件
 suga gc --older-than 30d [--apply]                # 列出（默认）或删除长期未活动的会话
-suga ps                                           # 正在运行的 chat 进程
+suga ps                                           # 正在运行的 chat 进程（含短名称）
 suga manifest [--json] [--model <p/m>]            # 模型、工具、MCP、skills、记忆后端、输出上限
 ```
 

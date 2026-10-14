@@ -49,7 +49,7 @@ Suga 创建会话时从外层到内层读取项目规则，每一级只读一个
 
 ## 本机 chat 会话送话
 
-`suga chat` 会在 `SUGA_HOME/run` 登记当前进程并监听仅本机用户可访问的 socket。可用 `suga ps --json` 查看活跃会话，用 `suga send --session <session-id|前缀|名称> <文本>` 或 `suga send --session <session-id|前缀|名称> --text <文本>` 送话：多个位置参数用单个空格拼接，两种写法不能同时给出（同时给出时报错并以退出码 1 结束，不发送）；都不给时从 stdin 读取（上限 1 MiB）。文本以 `-` 开头时用 `--` 分隔，例如 `suga send --session <session-id|前缀|名称> -- -hello`。没有匹配进程时退出码为 3，多个匹配项为 2，stdin 超限为 4，成功送达或排队为 0，其他错误为 1。加 `--wait` 时，排队的消息要等到真正开始一轮才返回 0；若 chat 在此之前退出，消息被丢弃并返回 3。不加时排队即返回，chat 退出时会在其终端提示丢弃的条数。
+`suga chat` 会在 `SUGA_HOME/run` 登记当前进程并监听仅本机用户可访问的 socket，同时给会话取一个短名称 `<工作目录名>-<两位随机后缀>`（目录名转小写、只留 `[a-z0-9-]`、截到 20 字符，如 `suga-k7`）：横幅、`:session`、退出摘要在续接命令后、`suga ps`（含 `--json` 的 `name` 字段）都会显示。名称在首次登记时写入会话元数据（`short_name`），`--resume` / `--session-id` 续接沿用；若该名称当前被另一个活着的会话进程占用，本进程临时另取一个并在终端说明，存储的名称不变。可用 `suga ps --json` 查看活跃会话，用 `suga send --session <会话 ID|ID 前缀|短名称> <文本>` 或 `suga send --session <会话 ID|ID 前缀|短名称> --text <文本>` 送话：匹配顺序是完整 ID > 短名称（忽略大小写）> ID 前缀，多个位置参数用单个空格拼接，两种文本写法不能同时给出（同时给出时报错并以退出码 1 结束，不发送）；都不给时从 stdin 读取（上限 1 MiB）。文本以 `-` 开头时用 `--` 分隔，例如 `suga send --session suga-k7 -- -hello`。没有匹配进程时退出码为 3，多个匹配项为 2，stdin 超限为 4，成功送达或排队为 0，其他错误为 1。加 `--wait` 时，排队的消息要等到真正开始一轮才返回 0；若 chat 在此之前退出，消息被丢弃并返回 3。不加时排队即返回，chat 退出时会在其终端提示丢弃的条数。`run` 与 ACP 不登记会话 socket，因此不会生成短名称。
 
 Gofer agent 可配置 `deliver_command: [send, --session, "{{session_id}}"]` 和 `deliver_stdin: true`，由 Gofer 在会话所在 worker 上调用 Suga。Suga chat 忙时最多排队 8 条；空闲时送入下一轮。`send` 的 `--source <label>`（默认 `cli`）决定 chat 中的显示前缀 `[来自 <label>] `；文本首行已带 `[...] ` 标签时原样保留。送话作为注入输入记录。`UserPromptSubmit` 事件对这类输入（含 Stop block 注入的回复和 `[gofer job 完成]` 通知）带 `"injected": true`；终端手敲的输入不带该字段，其它事件也不带。`run` 和 ACP 续接同一会话时使用会话锁，避免与仍运行的 chat 同时写入；chat 退出后进程登记、socket 和锁会清理。
 

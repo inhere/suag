@@ -139,7 +139,7 @@ Long-term memory shared across sessions, written by the model through the `memor
 - **Idle consolidation (chat).** After `context.idle_after` (default 15m) without input, if the context has reached `context.idle_min_ratio` (default 0.5) of the threshold, chat starts a new segment in the background. It never fires during a turn, and typing cancels it.
 - **Plans.** The `update_plan` tool records the model's plan. stream-json emits it as `plan` events, and ACP sends it as plan updates.
 - **System prompt and segment context.** The system prompt holds only stable content (identity and working conventions), so it stays byte-identical across sessions and workspaces of one mode. Environment (OS, shell, workspace), project rules (one file per level, `rules.file`, default `AGENTS.md`, plus `~/.suga/AGENTS.md`), `--append-system-prompt`, the memory index, the skills list and deferred tools go into a context message at the start of each segment. A change inside a segment (for example edited rules) is appended as a "context update" message instead of rewriting earlier text. `--no-project-rules` skips project rules.
-- **Delivery and hooks.** `suga send --session <s> <text>` (or `--text <text>`, not both) hands text to a running chat. `hooks.command` receives chat lifecycle events as JSON on stdin.
+- **Delivery and hooks.** `suga send --session <s> <text>` (or `--text <text>`, not both) hands text to a running chat. `<s>` is a session ID, an ID prefix, or the short name every chat registers under — `<workspace directory>-<xy>`, like `suga-k7`, shown in its banner and by `suga ps`. The name is stored in the session and kept across resumes, so a resumed chat answers to the same one. `hooks.command` receives chat lifecycle events as JSON on stdin.
 
 ## Using with Gofer
 
@@ -155,7 +155,7 @@ suga trace <session> --web [--addr 127.0.0.1:0]  # local web page: timeline (tas
 suga stats [--session <id>] [--since 7d] [--json] # calls, latency, tokens, cache hits
 suga export <session> [--redact] [-o <file>]      # entries and events as jsonl
 suga gc --older-than 30d [--apply]                # list (default) or delete idle sessions
-suga ps                                           # running chat processes
+suga ps                                           # running chat processes, with their short names
 suga manifest [--json] [--model <p/m>]            # models, tools, MCP, skills, memory backends, output limits
 ```
 

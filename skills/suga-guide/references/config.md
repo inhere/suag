@@ -186,7 +186,7 @@
 | `memory/user/` | 用户级记忆（files 后端） |
 | `projects/<key>/memory/` | 项目记忆（files 后端，非仓库模式） |
 | `trash/` | `file_remove` 的回收区（保留 7 天，`origin.json` 记录来源） |
-| `run/` | chat 进程登记与锁（`suga ps`、`suga send` 用） |
+| `run/` | chat 进程登记与锁（`suga ps`、`suga send` 用；进程记录里的 `name` 是会话短名称 `<目录名>-xy`，如 `suga-k7`） |
 | `skills/` | 释放的内置 skill 与用户自己的 skill |
 | `transcripts/` | chat 会话记录（`transcripts: false` 关闭） |
 | `AGENTS.md` | 用户级项目规则（每级规则文件之外额外读取） |
@@ -203,8 +203,8 @@ suga run --prompt "..."   # 单轮；[--allow-write] [--read-only] [--model] [--
                           # [--append-system-prompt <text>] [--clear-append-system-prompt]
                           # [--no-project-rules] [--injected] [--max-steps <N>]
 suga acp                  # 以 ACP stdio 服务（供 gofer 等客户端接入）
-suga send --session <id|前缀> --text <文本>   # 给正在运行的 chat 送话（--wait 等真正开始）
-suga ps                   # 正在运行的 chat 进程
+suga send --session <id|短名称|前缀> --text <文本>   # 给正在运行的 chat 送话（--wait 等真正开始）
+suga ps                   # 正在运行的 chat 进程（第二列是短名称）
 suga sessions [关键词] [-n 10] [--since 7d] [--cwd .] [--agents] [--json]
 suga trace <session> [--turn <id>] [--json] [--analyze] [--web]
 suga stats [--session <id>] [--since 7d] [--json]
