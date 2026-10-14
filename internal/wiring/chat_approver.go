@@ -153,6 +153,12 @@ func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool
 // a reachable path, the question turned off, no session handle, or no terminal
 // to ask on - a piped chat refuses as ever) and when a question was answered
 // with a grant.
+//
+// Nothing ran before the question, so the call itself reaches the directory in
+// this step. The one exception is a read that the runtime had already run ahead
+// of the turn (tools.parallel_reads, two or more prefetchable calls in one
+// reply): its result stays the pre-grant refusal, and the model simply calls it
+// again with the directory now in place.
 func (a *chatApprover) askOutsideDir(ctx context.Context, call agentcore.ToolCall) (err error, stop bool) {
 	if !a.askOutside || a.addDirs == nil {
 		return nil, false

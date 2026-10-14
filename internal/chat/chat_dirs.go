@@ -117,22 +117,20 @@ func (s *chatState) printDirs() {
 		fmt.Fprintln(s.stderr, formatCommandError(dirsCmd, err))
 		return
 	}
-	for i, dir := range dirs {
-		name := "工作区："
-		if i > 0 {
-			name = "  "
+	workspace, added := s.dirs.Workspace(), 0
+	for _, dir := range dirs {
+		if dir.Path == workspace {
+			fmt.Fprintf(s.source, "工作区：%s（%s）\n", dir.Path, modeLabel(dir.Writable))
+			continue
 		}
-		label := modeLabel(dir.Writable)
-		if i > 0 {
-			label += " · " + sourceLabel(dir.Source)
-		}
-		fmt.Fprintf(s.source, "%s%s（%s）\n", name, dir.Path, label)
+		added++
+		fmt.Fprintf(s.source, "  %s（%s · %s）\n", dir.Path, modeLabel(dir.Writable), sourceLabel(dir.Source))
 	}
-	if len(dirs) <= 1 {
+	if added == 0 {
 		fmt.Fprintf(s.source, "附加目录：无（%s）\n", dirCommandHelp)
 		return
 	}
-	fmt.Fprintf(s.source, "共 %d 个目录（%s）\n", len(dirs), dirCommandHelp)
+	fmt.Fprintf(s.source, "共 %d 个附加目录（%s）\n", added, dirCommandHelp)
 }
 
 // modeLabel names a directory mode as :dirs reads it.
