@@ -321,9 +321,14 @@ const WriteScriptAdvice = "多行文本处理、复杂引号、JSON/正则处理
 const PowerShellQuoteAdvice = "参数含 , = . @ 时整体加引号，例如 \"-Dtest=A,B\"、\"-Dincludes=g:a\"。"
 
 // interpreterFileName is the file name of a resolved interpreter path without
-// its .exe suffix, for display.
+// its .exe suffix, for display. Both separators count: a configured Windows
+// path keeps its backslashes, which filepath.Base on other systems would not
+// split.
 func interpreterFileName(path string) string {
-	base := filepath.Base(path)
+	base := path
+	if i := strings.LastIndexAny(base, `/\`); i >= 0 {
+		base = base[i+1:]
+	}
 	if strings.EqualFold(filepath.Ext(base), ".exe") {
 		base = base[:len(base)-len(".exe")]
 	}
