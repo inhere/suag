@@ -392,6 +392,50 @@ func TestAnalyzeTraceTestOutcome(t *testing.T) {
 	assert.Eq(t, -1, none.AfterGreenSteps)
 }
 
+// TestAnalyzeTraceJavaCommands: the Java build tools count as test runs and
+// their wrappers, subproject tasks and `mvn verify` are recognised (suga-iizi).
+// A run limited to some classes (-Dtest, --tests) is a focused run: it is no
+// proof that the suite passes, so it does not close the write-to-green phase.
+func TestAnalyzeTraceJavaCommands(t *testing.T) {
+	model := store.Event{Kind: store.EventModel, Status: eventOK, Attrs: map[string]any{}}
+	edit := store.Event{Kind: store.EventTool, Name: "file_edit", Status: eventOK,
+		Attrs: map[string]any{"target": []any{"App.java"}, "changes": float64(1)}}
+	shell := func(command string, code int, failed bool) store.Event {
+		return store.Event{Kind: store.EventTool, Name: "shell_exec", Status: eventOK,
+			Attrs: map[string]any{"arg": "command=" + command, "exit_code": float64(code), "test_failed": failed}}
+	}
+
+	t.Run("maven: wrappers, -Dtest and verify", func(t *testing.T) {
+		a := AnalyzeTrace([]store.Event{
+			model, edit,
+			model, shell("./mvnw -Dtest=AppTest test", 0, false), // focused: no first pass
+			model, shell("./mvnw test", 1, true),
+			model, shell("mvn verify", 0, false), // the whole suite passes here
+			model, shell("mvnw.cmd -B test", 0, false),
+			model,
+		})
+		assert.Eq(t, 4, a.TestRuns)
+		assert.Eq(t, 1, a.TestRunsAfterPass)
+		assert.Eq(t, 0, a.ExploreSteps)
+		assert.Eq(t, 4, a.WriteToGreenSteps) // the focused run at step 2 did not count
+		assert.Eq(t, 2, a.AfterGreenSteps)
+	})
+
+	t.Run("gradle: subproject tasks and --tests", func(t *testing.T) {
+		a := AnalyzeTrace([]store.Event{
+			model, edit,
+			model, shell("./gradlew :app:test", 1, true),
+			model, shell("./gradlew test --tests 'com.example.*'", 0, false), // focused
+			model, shell("gradlew.bat :app:test", 0, false),
+			model,
+		})
+		assert.Eq(t, 3, a.TestRuns)
+		assert.Eq(t, 0, a.TestRunsAfterPass) // nothing passed before the last run
+		assert.Eq(t, 4, a.WriteToGreenSteps)
+		assert.Eq(t, 1, a.AfterGreenSteps)
+	})
+}
+
 func TestCallAttrsShellAndEdit(t *testing.T) {
 	ws := `D:\work\x\ws`
 	attrs := map[string]any{}

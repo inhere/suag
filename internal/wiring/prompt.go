@@ -59,8 +59,11 @@ func basePrompt() string {
 	// all fixes for a test run at once; file_edit's edits went unused.
 	b.WriteString("- Make independent changes together: several replacements in one file in one file_edit call (edits), and edits to different files in the same response, e.g. every fix a failed test run calls for.\n")
 	// Dependency APIs per language (suga-ej2w): the Go line alone sent the Java
-	// session to the shell to find jars and run javap by hand.
-	b.WriteString("- To learn a dependency's API, use one command instead of reading its files one by one: `go doc <package>` (or a grep for the exported names) for Go; for Java, `javap -public -cp <jar> <fully.qualified.Class>` with the jar under ~/.m2/repository/<group path>/<artifact>/<version>/ (`mvn -o dependency:sources` fetches the sources).\n")
+	// session to the shell to find jars and run javap by hand. The clauses come
+	// from the language registry (suga-xt0o), one file per language;
+	// dependencyAPILine keeps the sentence's wording fixed, because it is part
+	// of the provider's cached prompt prefix.
+	b.WriteString(dependencyAPILine())
 	b.WriteString("- Read a file whole when it fits in one file_read; use offset/limit for a part you need, such as the lines a failure points to.\n")
 	b.WriteString("- Read a file before changing it; prefer small exact edits over rewriting whole files. A successful edit or write needs no re-read: the tool result is the verification.\n")
 	b.WriteString("- Verify from narrow to broad: run the test closest to your change, then the package or suite once. When the checks pass, stop verifying: do not re-run them (-count, -v, coverage) or re-read your files to double-check; check again only after something failed or changed.\n")
@@ -80,6 +83,24 @@ func basePrompt() string {
 	b.WriteString("- If injected rules, memory or docs contradict the actual code or environment, say so in your report (what, where, why it looks stale) instead of silently working around it.\n")
 	b.WriteString("- Answer in the user's language.\n")
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// dependencyAPILine is the base prompt's dependency-API line: one command to
+// read a dependency's API instead of reading its files one by one, named per
+// language. The clauses are the ones the language registry declares (suga-xt0o,
+// native.Languages); they are joined in registry order and the sentence around
+// them is fixed, so the line reads as it did before the split and the prompt
+// prefix cache keeps hitting. A language without a clause of its own is left
+// out.
+func dependencyAPILine() string {
+	var clauses []string
+	for _, lang := range native.Languages() {
+		if lang.DependencyAPI != "" {
+			clauses = append(clauses, lang.DependencyAPI)
+		}
+	}
+	return "- To learn a dependency's API, use one command instead of reading its files one by one: " +
+		strings.Join(clauses, "; ") + ".\n"
 }
 
 // environmentPrompt is the environment section of the segment context: OS,

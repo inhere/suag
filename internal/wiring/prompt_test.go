@@ -54,12 +54,31 @@ func TestBasePrompt(t *testing.T) {
 		assert.StrContains(t, p, "`go doc <package>`")
 		assert.StrContains(t, p, "`javap -public -cp <jar> <fully.qualified.Class>`")
 		assert.StrContains(t, p, "~/.m2/repository")
+		// The line is assembled from the language registry (suga-xt0o), so its
+		// wording is locked here: it is part of the cached prompt prefix, and a
+		// new clause must not change the existing one.
+		want := "- To learn a dependency's API, use one command instead of reading its files one by one: " +
+			"`go doc <package>` (or a grep for the exported names) for Go; " +
+			"for Java, `javap -public -cp <jar> <fully.qualified.Class>` with the jar under " +
+			"~/.m2/repository/<group path>/<artifact>/<version>/ (`mvn -o dependency:sources` fetches the sources)."
+		assert.Eq(t, want, promptLine(p, "- To learn a dependency's API"))
 	})
 	t.Run("no date or time", func(t *testing.T) {
 		re := regexp.MustCompile(`\d{4}-\d{2}-\d{2}|\d{2}:\d{2}`)
 		assert.False(t, re.MatchString(basePrompt()))
 		assert.False(t, re.MatchString(environmentPrompt(Options{Workspace: "/w"})))
 	})
+}
+
+// promptLine returns the line of p that starts with prefix, or the empty string
+// when p holds none.
+func promptLine(p, prefix string) string {
+	for _, line := range strings.Split(p, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return line
+		}
+	}
+	return ""
 }
 
 func TestEnvironmentPrompt(t *testing.T) {

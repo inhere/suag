@@ -4,19 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
-
-// testCommandPattern recognises shell commands that run tests.
-var testCommandPattern = regexp.MustCompile(`\b(go test|pytest|cargo test|npm (run )?test|pnpm (run )?test|yarn test|jest|vitest|mvn( \S+)* test|gradle( \S+)* test|make test|phpunit|rspec|ctest|dotnet test)\b`)
-
-// focusedTestPattern recognises test runs limited to some tests.
-var focusedTestPattern = regexp.MustCompile(`(^|\s)(-run|-k|--test|-t)(\s|=)`)
 
 // TraceAnalysis summarizes a session's events for loop analysis (suga trace
 // --analyze): how many steps, which tools, repeated reads and commands, and
@@ -309,10 +303,12 @@ func AnalyzeTrace(events []store.Event) TraceAnalysis {
 					a.ShellStderrOK++
 				}
 				testFailed, reported := e.Attrs["test_failed"].(bool)
-				// A focused run (go test -run X, pytest -k X) checks one test,
-				// often a scratch one written to probe a bug: it is no "green".
-				focused := focusedTestPattern.MatchString(arg)
-				if reported || testCommandPattern.MatchString(arg) {
+				// A focused run (go test -run X, pytest -k X, maven -Dtest=X)
+				// checks one test, often a scratch one written to probe a bug: it
+				// is no "green". The patterns come from the language registry
+				// (native, one file per language).
+				focused := native.FocusedTestPattern().MatchString(arg)
+				if reported || native.TestCommandPattern().MatchString(arg) {
 					a.TestRuns++
 					// After the first pass that followed a change: a test run
 					// before any write (a baseline check) does not count.

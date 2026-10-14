@@ -1,10 +1,8 @@
 package native
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -17,169 +15,9 @@ type ReadRoot struct {
 	Path  string // absolute and cleaned
 }
 
-// DependencyRoots detects the local dependency caches and repositories: the Go
-// module cache, the Go standard library sources, the Rust crate sources, the
-// Maven local repository and the Gradle module cache. Only directories holding
-// dependency files are returned, never a whole tool home (~/.cargo, ~/.gradle
-// and ~/.m2 hold credentials or build state too). Directories that do not
-// exist are left out. It runs no external command: the go env file,
-// environment variables and the go binary location in PATH are enough.
-//
-// A pathless file_grep / file_find only searches the workspace, so these large
-// roots are walked only when the model passes one of them as the search path
-// (such a walk stops at searchTimeout and at the tool's result limit).
-func DependencyRoots() []ReadRoot {
-	home, _ := os.UserHomeDir()
-	goEnv := readGoEnvFile()
-	goVar := func(key string) string {
-		if v := os.Getenv(key); v != "" {
-			return v
-		}
-		return goEnv[key]
-	}
-
-	var out []ReadRoot
-	add := func(label, dir string) {
-		if dir == "" || !filepath.IsAbs(dir) {
-			return
-		}
-		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			out = append(out, ReadRoot{Label: label, Path: filepath.Clean(dir)})
-		}
-	}
-
-	modCache := goVar("GOMODCACHE")
-	if modCache == "" {
-		if paths := filepath.SplitList(goVar("GOPATH")); len(paths) > 0 && paths[0] != "" {
-			modCache = filepath.Join(paths[0], "pkg", "mod")
-		} else if home != "" {
-			modCache = filepath.Join(home, "go", "pkg", "mod")
-		}
-	}
-	add("Go modules", modCache)
-	if goRoot := goRootDir(goVar("GOROOT")); goRoot != "" {
-		add("Go standard library", filepath.Join(goRoot, "src"))
-	}
-
-	cargoHome := os.Getenv("CARGO_HOME")
-	if cargoHome == "" && home != "" {
-		cargoHome = filepath.Join(home, ".cargo")
-	}
-	if cargoHome != "" {
-		add("Rust crates", filepath.Join(cargoHome, "registry", "src"))
-	}
-
-	// Java: the local Maven repository (a settings.xml may move it elsewhere)
-	// and the Gradle module cache hold the jars and poms, addressed by
-	// groupId path - javap and the file tools work straight off these paths.
-	if home != "" {
-		repo := readMavenLocalRepository(filepath.Join(home, ".m2", "settings.xml"), home)
-		if repo == "" {
-			repo = filepath.Join(home, ".m2", "repository")
-		}
-		add("Maven local repository", repo)
-	}
-	gradleHome := os.Getenv("GRADLE_USER_HOME")
-	if gradleHome == "" && home != "" {
-		gradleHome = filepath.Join(home, ".gradle")
-	}
-	if gradleHome != "" {
-		add("Gradle module cache", filepath.Join(gradleHome, "caches", "modules-2", "files-2.1"))
-	}
-	return out
-}
-
-// readMavenLocalRepository returns the <localRepository> of a Maven
-// settings.xml (the one place the local repository is configured), with
-// ${user.home} resolved; a commented-out element does not count. "" when the
-// file is missing or holds no usable value.
-func readMavenLocalRepository(path, home string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	text := stripXMLComments(string(data))
-	start := strings.Index(text, "<localRepository>")
-	if start < 0 {
-		return ""
-	}
-	rest := text[start+len("<localRepository>"):]
-	end := strings.Index(rest, "</localRepository>")
-	if end < 0 {
-		return ""
-	}
-	value := strings.TrimSpace(rest[:end])
-	if home != "" {
-		value = strings.ReplaceAll(value, "${user.home}", home)
-	}
-	return value
-}
-
-// stripXMLComments removes every <!-- ... --> section; an unclosed comment
-// swallows the rest of the text.
-func stripXMLComments(s string) string {
-	for {
-		start := strings.Index(s, "<!--")
-		if start < 0 {
-			return s
-		}
-		end := strings.Index(s[start+len("<!--"):], "-->")
-		if end < 0 {
-			return s[:start]
-		}
-		s = s[:start] + s[start+len("<!--")+end+len("-->"):]
-	}
-}
-
-// readGoEnvFile parses the file `go env -w` writes (GOENV, default
-// <UserConfigDir>/go/env): KEY=VALUE lines. Missing or unreadable is empty.
-func readGoEnvFile() map[string]string {
-	path := os.Getenv("GOENV")
-	if path == "off" {
-		return nil
-	}
-	if path == "" {
-		dir, err := os.UserConfigDir()
-		if err != nil {
-			return nil
-		}
-		path = filepath.Join(dir, "go", "env")
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	vars := map[string]string{}
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		key, value, ok := strings.Cut(strings.TrimSpace(sc.Text()), "=")
-		if ok && key != "" && !strings.HasPrefix(key, "#") {
-			vars[key] = value
-		}
-	}
-	return vars
-}
-
-// goRootDir returns GOROOT: the explicit value, or the directory two levels
-// above the go binary found in PATH (<goroot>/bin/go).
-func goRootDir(explicit string) string {
-	if explicit != "" {
-		return explicit
-	}
-	bin, err := exec.LookPath("go")
-	if err != nil {
-		return ""
-	}
-	if real, err := filepath.EvalSymlinks(bin); err == nil {
-		bin = real
-	}
-	bin, err = filepath.Abs(bin)
-	if err != nil {
-		return ""
-	}
-	return filepath.Dir(filepath.Dir(bin))
-}
+// The language-specific read roots (the Go module cache, the Rust crates, the
+// Maven repository, ...) are declared one language per file: see lang.go and
+// DependencyRoots there.
 
 // ConfiguredReadRoots turns tools.read_roots entries into read roots: "~" is
 // expanded, the path must be absolute and an existing directory. Rejected
