@@ -31,7 +31,7 @@ from chat_approval import isolate_ws, wait_port, write_home  # noqa: E402
 # "Smoke_WS" is cleaned to "smokews", so the banner proves the directory is the
 # source of the name; the suffix is two characters of [a-z0-9].
 NAME_PATTERN = r"smokews-[a-z0-9]{2}"
-BANNER = r"Suga chat · fake/m1 · 会话 " + NAME_PATTERN
+BANNER = r"Suga chat · fake/m1[^\n]*会话 " + NAME_PATTERN
 REPLY = "收到啦"
 
 
@@ -114,7 +114,7 @@ def resume(binary, env, ws, sid, name):
             s.check("resume has a short name to look for", False)
             return s
         m = s.mark()
-        s.check("resume shows the same short name", s.until(r"Suga chat · fake/m1 · 会话 " + re.escape(name), m))
+        s.check("resume shows the same short name", s.until(r"Suga chat · fake/m1[^\n]*会话 " + re.escape(name), m))
         s.line(":quit")
         s.check("resume exit summary keeps the name",
                 s.until(r"续接：suga chat --resume " + re.escape(sid) + r"（会话 " + re.escape(name) + r"）", m))
