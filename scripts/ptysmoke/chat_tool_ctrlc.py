@@ -13,12 +13,15 @@ be driven from Python); this one is Linux/macOS only.
 
   python3 -I scripts/ptysmoke/chat_tool_ctrlc.py --bin tmp/smoke/suga
 
-Reverse verification (make the check fail on purpose): in internal/chat/chat.go
-drop the `case ctx.Err() != nil:` branch of the turn error handling (so a
-cancelled turn is only reported, chat does not exit); "ctrl-c: chat exits with
-the summary" then fails. Or in cmd/suga/main.go drop syscall.SIGINT from
-signal.NotifyContext: the turn keeps running and "ctrl-c: turn interrupted"
-fails.
+Reverse verification (make the check fail on purpose): in cmd/suga/main.go drop
+syscall.SIGINT from signal.NotifyContext; Ctrl-C then kills suga without its
+interrupt path and "ctrl-c: turn interrupted" and "ctrl-c: chat exits with the
+summary" fail (checked 2026-10-14). Dropping the `case ctx.Err() != nil:` branch
+of chat.go does not make it fail (the context.Canceled branch reports the same),
+and neither does disabling shell_exec's cmd.Cancel: in a PTY, Ctrl-C sends SIGINT
+to the whole foreground process group, so the tool's shell dies with it either
+way. The marker check therefore guards the process-group behaviour, not suga's
+own cancellation.
 """
 import argparse
 import os
