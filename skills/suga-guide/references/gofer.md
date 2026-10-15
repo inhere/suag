@@ -96,7 +96,7 @@ gofer job answer <job-id> <interaction-id> reject|allow
 ```
 
 - CLI job 的 `stdout` 是 Gofer 提取的最终答复；`stderr` 保留原始 NDJSON 便于排查。
-- `suga send`（agent 配置里的 `deliver_command` + `deliver_stdin: true`）把文本送进正在运行的 chat：忙时最多排队 8 条，空闲时进入下一轮；chat 退出时终端会提示丢弃条数。
+- `suga send`（agent 配置里的 `deliver_command` + `deliver_stdin: true`）把文本送进正在运行的 chat：忙时最多排队 8 条，空闲时进入下一轮；chat 退出时终端会提示丢弃条数。加 `--steer` 则插进正在进行的回合（默认开着 `chat.steering` 时模型在下一次请求前看到；空闲/回合收尾/关了开关时仍排队，收件箱满（8 条）返回 `queue_full`），再加 `--wait` 就等插话送达或作为自己的回合开始（0），被退回（回合被取消/失败、chat 先退出）时退出码 3。
 
 ## 审批与拒绝语义
 
