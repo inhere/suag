@@ -4,7 +4,8 @@
 
 [English](README.md) | 简体中文
 
-Suga 是用 Go 写的个人编码 Agent。同一个持久会话引擎提供两种入口：终端 CLI（交互式 `chat` 和单轮 `run`）和 ACP stdio 服务（`acp`）。[Gofer](https://github.com/inhere/gofer) 可以拉起这两种入口，并在其上提供作业、worker、日志和交互式审批。
+Suga 是用 Go 写的个人编码 Agent。同一个持久会话引擎提供两种入口：终端 CLI（交互式 `chat` 和单轮 `run`）和 ACP stdio 服务（`acp`）。
+[Gofer](https://github.com/inhere/gofer) 可以拉起这两种入口，并在其上提供作业、worker、日志和交互式审批。
 
 - **开发工具**：按行分段读文件、列目录、搜索内容与文件名、按字符串精确修改、执行 shell 命令（Windows 上用 PowerShell）、抓取网页、网页搜索。
 - **默认安全**：不开启就是只读；chat 写文件、执行命令前会先询问；文件工具限制在工作区内；网页抓取拒绝内网地址。
@@ -17,7 +18,15 @@ Suga 是用 Go 写的个人编码 Agent。同一个持久会话引擎提供两�
 
 ## 安装
 
-需要 Go 1.26 及以上。仓库是私有的，请从源码构建：
+### 下载 Release
+
+1. **Recommended** 通过 [eget](https://github.com/inherelab/eget) 下载安装: `eget install inhere/suga`
+2. 通过 Golang 安装: `go install github.com/inhere/suga/cmd/suga@latest`
+3. 从 [GitHub Releases](https://github.com/inhere/suga/releases) 下载对应平台的归档文件，解压后将 `suga` 二进制放到 `PATH` 中。
+
+### 从源码构建
+
+需要 Go 1.26 及以上，从源码构建：
 
 ```bash
 git clone https://github.com/inhere/suga.git && cd suga

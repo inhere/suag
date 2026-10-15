@@ -17,7 +17,15 @@ Suga is a personal coding agent written in Go. One persistent conversation engin
 
 ## Install
 
-Requires Go 1.26+. The repository is private, so build from a checkout:
+### Download a release
+
+1. **Recommended** Install by [eget](https://github.com/inherelab/eget): `eget install inhere/suga`
+2. Install by Golang: `go install github.com/inhere/suga/cmd/suga@latest`
+3. Download the archive for your platform from [GitHub Releases](https://github.com/inhere/suga/releases), extract it, and put the `suga` binary on your `PATH`.
+
+### Build from source
+
+Requires Go 1.26+. Build from a checkout:
 
 ```bash
 git clone https://github.com/inhere/suga.git && cd suga
