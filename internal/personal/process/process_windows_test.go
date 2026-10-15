@@ -90,7 +90,7 @@ func TestWindowsSecureDirTightensExistingOpenDirectory(t *testing.T) {
 
 func TestWindowsStartSecuresRunDirectoryAndSocketWorks(t *testing.T) {
 	root := filepath.Join(shortWindowsTemp(t), "r")
-	server, err := Start(root, "sess-acl", "acl", t.TempDir(), func(text, from string) (bool, error) { return false, nil })
+	server, err := Start(root, "sess-acl", "acl", t.TempDir(), func(mode, text, from string) (Delivery, error) { return Delivery{}, nil })
 	assert.Require(t, assert.NoErr(t, err))
 	defer server.Close()
 	assertOnlyOwnerAndSystem(t, root)

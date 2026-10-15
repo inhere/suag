@@ -34,29 +34,59 @@ type Record struct {
 	State     string `json:"state"`
 }
 
+// Delivery modes of a Request (Request.Mode).
+const (
+	// ModeFollowUp queues the message for the turn after the one running right
+	// now; a client that sends no mode at all asks for this.
+	ModeFollowUp = "follow_up"
+	// ModeSteer asks the server to insert the message into the turn running right
+	// now, and to queue it for the next turn when there is none (design
+	// "send：--steer").
+	ModeSteer = "steer"
+)
+
 type Request struct {
 	Type      string `json:"type"`
 	SessionID string `json:"session_id,omitempty"`
 	Text      string `json:"text,omitempty"`
 	From      string `json:"from,omitempty"`
-	// Wait asks the server to keep the connection open after a "queued" acknowledgement and send
-	// a second Response once the message starts a turn (OK) or is discarded at exit (Error).
+	// Wait asks the server to keep the connection open after a "queued"/"steered" acknowledgement and
+	// send a second Response once the message is delivered or starts a turn (OK) or is discarded (Error).
 	Wait bool `json:"wait,omitempty"`
+	// Mode is how the message is delivered: ModeSteer inserts it into the turn running
+	// right now, anything else (an absent field included, the shape every older
+	// client sends) queues it for the next turn.
+	Mode string `json:"mode,omitempty"`
 }
 
 type Response struct {
-	OK     bool   `json:"ok"`
-	Queued bool   `json:"queued,omitempty"`
-	Error  string `json:"error,omitempty"`
+	OK bool `json:"ok"`
+	// Queued and Steered are the acknowledgement of an accepted message: it waits
+	// for the next turn, or it went into the turn running right now (an older
+	// server never sets Steered).
+	Queued  bool   `json:"queued,omitempty"`
+	Steered bool   `json:"steered,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
-type DeliverFunc func(text, from string) (queued bool, err error)
+// Delivery is the acknowledgement of one accepted message: exactly one of Queued
+// (it waits for its own turn, the default) and Steered (it went into the turn
+// running right now) is set. A sender may wait on both.
+type Delivery struct {
+	Queued  bool
+	Steered bool
+}
 
-// DeliverWaitFunc is a DeliverFunc that can also report the final fate of a queued message:
-// settled (may be nil) yields nil once the message starts a turn, or an error if it is discarded.
-type DeliverWaitFunc func(text, from string) (queued bool, settled <-chan error, err error)
+// DeliverFunc hands one message to the process the server belongs to. mode is the
+// Request.Mode of the sender (ModeFollowUp when it sent none).
+type DeliverFunc func(mode, text, from string) (Delivery, error)
 
-// Error codes of the final Response sent to a waiting sender whose queued message was not run.
+// DeliverWaitFunc is a DeliverFunc that can also report the final fate of an accepted message:
+// settled (may be nil) yields nil once the message is delivered or starts a turn (OK), or an
+// error if it is discarded before it ran.
+type DeliverWaitFunc func(mode, text, from string) (Delivery, <-chan error, error)
+
+// Error codes of the final Response sent to a waiting sender whose message was not run.
 const (
 	codeDiscarded     = "discarded"
 	codeSessionClosed = "session_closed"
@@ -65,8 +95,8 @@ const (
 // ErrSessionClosed is returned by a deliver func that no longer accepts messages (chat is exiting).
 var ErrSessionClosed = errors.New("session is closing")
 
-// ErrDiscarded is the error a deliver func reports on a settled channel for a queued message dropped at exit.
-var ErrDiscarded = errors.New("queued message discarded at exit")
+// ErrDiscarded is the error a deliver func reports on a settled channel for a message dropped at exit.
+var ErrDiscarded = errors.New("message discarded before it ran")
 
 type Server struct {
 	root     string
@@ -79,9 +109,9 @@ type Server struct {
 }
 
 func Start(root, sessionID, name, cwd string, deliver DeliverFunc) (*Server, error) {
-	return StartWait(root, sessionID, name, cwd, func(text, from string) (bool, <-chan error, error) {
-		queued, err := deliver(text, from)
-		return queued, nil, err
+	return StartWait(root, sessionID, name, cwd, func(mode, text, from string) (Delivery, <-chan error, error) {
+		delivery, err := deliver(mode, text, from)
+		return delivery, nil, err
 	})
 }
 
@@ -222,7 +252,13 @@ func (s *Server) handle(conn net.Conn, deliver DeliverWaitFunc) {
 		_ = json.NewEncoder(conn).Encode(Response{Error: "delivery_unavailable"})
 		return
 	}
-	queued, settled, err := deliver(request.Text, request.From)
+	// An absent mode is the follow-up behaviour every client that predates the
+	// field asks for.
+	mode := request.Mode
+	if mode == "" {
+		mode = ModeFollowUp
+	}
+	delivery, settled, err := deliver(mode, request.Text, request.From)
 	if err != nil {
 		code := "delivery_failed"
 		if errors.Is(err, ErrQueueFull) {
@@ -234,25 +270,28 @@ func (s *Server) handle(conn net.Conn, deliver DeliverWaitFunc) {
 		return
 	}
 	encoder := json.NewEncoder(conn)
-	_ = encoder.Encode(Response{OK: true, Queued: queued})
-	if !request.Wait || !queued || settled == nil {
+	_ = encoder.Encode(Response{OK: true, Queued: delivery.Queued, Steered: delivery.Steered})
+	if !request.Wait || settled == nil || (!delivery.Queued && !delivery.Steered) {
 		return
 	}
-	// Two-phase reply: the sender already has the "queued" ack; keep the connection open (no
-	// deadline, the wait is as long as the current turn) and report whether the message ran.
+	// Two-phase reply: the sender already has the "queued"/"steered" ack; keep the connection open (no
+	// deadline, the wait is as long as the current turn) and report the message's fate.
 	_ = conn.SetDeadline(time.Time{})
 	select {
 	case err := <-settled:
 		if err == nil {
-			_ = encoder.Encode(Response{OK: true, Queued: true})
+			_ = encoder.Encode(Response{OK: true, Queued: delivery.Queued, Steered: delivery.Steered})
 		} else {
-			_ = encoder.Encode(Response{Queued: true, Error: codeDiscarded})
+			_ = encoder.Encode(Response{Queued: delivery.Queued, Steered: delivery.Steered, Error: codeDiscarded})
 		}
 	case <-s.closing:
-		_ = encoder.Encode(Response{Queued: true, Error: codeSessionClosed})
+		_ = encoder.Encode(Response{Queued: delivery.Queued, Steered: delivery.Steered, Error: codeSessionClosed})
 	}
 }
 
+// ErrQueueFull reports a full delivery queue (of the running turn's steers, or of
+// the messages waiting for the next turn): the sender is told to try again later
+// instead of queueing without bound.
 var ErrQueueFull = errors.New("delivery queue is full")
 
 func List(root string) ([]Record, error) {
@@ -323,17 +362,20 @@ func Send(record Record, request Request) (Response, error) {
 	if !response.OK {
 		return response, fmt.Errorf("delivery failed: %s", response.Error)
 	}
-	if !request.Wait || !response.Queued {
+	// Only a message the server took into its queue or into the running turn is
+	// waited for: one that goes straight into a turn (an idle chat) has nothing to
+	// report later, which is the behaviour --wait always had.
+	if !request.Wait || (!response.Queued && !response.Steered) {
 		return response, nil
 	}
-	// Wait for the final fate of the queued message. A dropped connection means the chat died.
+	// Wait for the message's fate. A dropped connection means the chat died.
 	_ = conn.SetDeadline(time.Time{})
 	var final Response
 	if err := decoder.Decode(&final); err != nil {
-		return response, fmt.Errorf("%w: connection closed before the queued message ran", ErrNotOnline)
+		return response, fmt.Errorf("%w: connection closed before the message ran", ErrNotOnline)
 	}
 	if final.Error == codeDiscarded || final.Error == codeSessionClosed {
-		return final, fmt.Errorf("%w: queued message was discarded when the chat exited", ErrNotOnline)
+		return final, fmt.Errorf("%w: the message was discarded before it ran", ErrNotOnline)
 	}
 	if !final.OK {
 		return final, fmt.Errorf("delivery failed: %s", final.Error)

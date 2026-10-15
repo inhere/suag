@@ -31,9 +31,9 @@ func shortProcessRoot(t *testing.T) string {
 func TestServerPingDeliverListAndCleanup(t *testing.T) {
 	root := shortProcessRoot(t)
 	delivered := make(chan string, 2)
-	server, err := Start(root, "session-a1", "chat title", t.TempDir(), func(text, from string) (bool, error) {
+	server, err := Start(root, "session-a1", "chat title", t.TempDir(), func(mode, text, from string) (Delivery, error) {
 		delivered <- from + ":" + text
-		return true, nil
+		return Delivery{Queued: true}, nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -197,8 +197,8 @@ func TestProcessChildFixture(t *testing.T) {
 		return
 	}
 	root, sessionID := os.Getenv("SUGA_PROCESS_ROOT"), os.Getenv("SUGA_PROCESS_SESSION")
-	server, err := Start(root, sessionID, sessionID, root, func(text, from string) (bool, error) {
-		return false, os.WriteFile(filepath.Join(root, sessionID+".delivered"), []byte(from+":"+text), 0o600)
+	server, err := Start(root, sessionID, sessionID, root, func(mode, text, from string) (Delivery, error) {
+		return Delivery{}, os.WriteFile(filepath.Join(root, sessionID+".delivered"), []byte(from+":"+text), 0o600)
 	})
 	if err != nil {
 		os.Exit(10)

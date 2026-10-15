@@ -34,9 +34,9 @@ func TestCLIRegistersProcessCommandsAndSendExitCodes(t *testing.T) {
 	t.Setenv("SUGA_HOME", home)
 	root := filepath.Join(home, "run")
 	delivered := make(chan string, 1)
-	server, err := process.Start(root, "session-cli-123", "suga-k7", t.TempDir(), func(text, from string) (bool, error) {
+	server, err := process.Start(root, "session-cli-123", "suga-k7", t.TempDir(), func(mode, text, from string) (process.Delivery, error) {
 		delivered <- from + ":" + text
-		return false, nil
+		return process.Delivery{}, nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -149,8 +149,8 @@ func TestSendWaitReportsQueuedFate(t *testing.T) {
 		t.Helper()
 		home := shortCLIHome(t)
 		t.Setenv("SUGA_HOME", home)
-		server, err := process.StartWait(filepath.Join(home, "run"), sessionID, "wait", t.TempDir(), func(text, from string) (bool, <-chan error, error) {
-			return true, settled, nil
+		server, err := process.StartWait(filepath.Join(home, "run"), sessionID, "wait", t.TempDir(), func(mode, text, from string) (process.Delivery, <-chan error, error) {
+			return process.Delivery{Queued: true}, settled, nil
 		})
 		assert.Require(t, assert.NoErr(t, err))
 		t.Cleanup(func() { _ = server.Close() })

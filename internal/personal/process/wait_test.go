@@ -12,8 +12,8 @@ func TestSendWait_QueuedFate(t *testing.T) {
 	newServer := func(t *testing.T, settled chan error) Record {
 		t.Helper()
 		root := shortProcessRoot(t)
-		server, err := StartWait(root, "session-w1", "wait", t.TempDir(), func(text, from string) (bool, <-chan error, error) {
-			return true, settled, nil
+		server, err := StartWait(root, "session-w1", "wait", t.TempDir(), func(mode, text, from string) (Delivery, <-chan error, error) {
+			return Delivery{Queued: true}, settled, nil
 		})
 		assert.Require(t, assert.NoErr(t, err))
 		t.Cleanup(func() { _ = server.Close() })
@@ -56,8 +56,8 @@ func TestSendWait_QueuedFate(t *testing.T) {
 	t.Run("server close fails a waiting sender", func(t *testing.T) {
 		settled := make(chan error, 1)
 		root := shortProcessRoot(t)
-		server, err := StartWait(root, "session-w2", "wait", t.TempDir(), func(text, from string) (bool, <-chan error, error) {
-			return true, settled, nil
+		server, err := StartWait(root, "session-w2", "wait", t.TempDir(), func(mode, text, from string) (Delivery, <-chan error, error) {
+			return Delivery{Queued: true}, settled, nil
 		})
 		assert.Require(t, assert.NoErr(t, err))
 		ch := send(server.Record(), true)
@@ -75,8 +75,8 @@ func TestSendWait_QueuedFate(t *testing.T) {
 
 	t.Run("closed session refuses delivery as not online", func(t *testing.T) {
 		root := shortProcessRoot(t)
-		server, err := StartWait(root, "session-w3", "wait", t.TempDir(), func(text, from string) (bool, <-chan error, error) {
-			return false, nil, ErrSessionClosed
+		server, err := StartWait(root, "session-w3", "wait", t.TempDir(), func(mode, text, from string) (Delivery, <-chan error, error) {
+			return Delivery{}, nil, ErrSessionClosed
 		})
 		assert.Require(t, assert.NoErr(t, err))
 		t.Cleanup(func() { _ = server.Close() })

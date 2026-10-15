@@ -31,9 +31,9 @@ func newNamedSendHarness(t *testing.T, sessionID, name string) *sendHarness {
 	home := shortCLIHome(t)
 	t.Setenv("SUGA_HOME", home)
 	delivered := make(chan string, 8)
-	server, err := process.Start(filepath.Join(home, "run"), sessionID, name, t.TempDir(), func(text, from string) (bool, error) {
+	server, err := process.Start(filepath.Join(home, "run"), sessionID, name, t.TempDir(), func(mode, text, from string) (process.Delivery, error) {
 		delivered <- from + ":" + text
-		return false, nil
+		return process.Delivery{}, nil
 	})
 	assert.Require(t, assert.NoErr(t, err))
 	t.Cleanup(func() { _ = server.Close() })
