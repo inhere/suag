@@ -6,7 +6,7 @@ require (
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gookit/cliui v0.5.3
-	github.com/gookit/color v1.6.2
+	github.com/gookit/color v1.6.3
 	github.com/gookit/config/v2 v2.2.9
 	github.com/gookit/goutil v0.8.2
 	github.com/gookit/ini/v2 v2.3.2
