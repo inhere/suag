@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -152,6 +153,23 @@ func settledOrFail(t *testing.T, settled <-chan error, what string) error {
 	case <-time.After(3 * time.Second):
 		t.Fatalf("the waiting sender was not told %s", what)
 		return nil
+	}
+}
+
+// TestDeliverMessageKeepsTheFollowUpDefault: a request that does not ask for the
+// steer mode - the field missing entirely, the follow-up mode, or a value from a
+// newer client - is delivered the way it always was: the message waits for its own
+// turn, and the ack of an idle chat says it starts it at once.
+func TestDeliverMessageKeepsTheFollowUpDefault(t *testing.T) {
+	for _, mode := range []string{"", personalprocess.ModeFollowUp, "something_else"} {
+		t.Run("mode "+strconv.Quote(mode), func(t *testing.T) {
+			h := newSendSteerHarness(t, newToolGateProv())
+			delivery, _, err := h.state.deliverMessage(mode, "你好", "cli")
+			assert.NoErr(t, err)
+			assert.False(t, delivery.Steered)
+			assert.False(t, delivery.Queued)
+			assert.Eq(t, 1, len(h.source.deliveries))
+		})
 	}
 }
 
