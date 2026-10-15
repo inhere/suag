@@ -482,7 +482,7 @@ func (r *Renderer) Banner() {
 		head += " · 会话 " + r.opts.SessionName
 	}
 	fmt.Fprintln(r.opts.Out, r.paint(color.Cyan, head))
-	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "输入任务开始对话；:session 显示会话，:add-dir/:dirs/:rm-dir 管理附加目录，:compact 压缩上下文，:quit/:exit 退出；Alt+Enter（Windows 上 Ctrl+J）在输入里换行，多行时上下键移动光标。"))
+	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "输入任务开始对话；:session 显示会话，:add-dir/:dirs/:rm-dir 管理附加目录，:compact 压缩上下文，:quit/:exit 退出；Alt+Enter（Windows 上 Ctrl+Enter / Ctrl+J）在输入里换行，多行时上下键移动光标。"))
 	if r.opts.WriteTools {
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "工具：可读写文件、执行 shell（tools.approval 决定是否先确认）。"))
 	} else {
