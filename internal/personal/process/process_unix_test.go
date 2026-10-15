@@ -60,7 +60,7 @@ func TestValidateSocketPathUnix(t *testing.T) {
 // an overlong root must fail with the length error and leave no record or socket behind.
 func TestStartRejectsOverlongSocketPathUnix(t *testing.T) {
 	root := filepath.Join(t.TempDir(), strings.Repeat("d", 120))
-	_, err := Start(root, "sess-long-path", "long", t.TempDir(), func(string, string) (bool, error) { return false, nil })
+	_, err := Start(root, "sess-long-path", "long", t.TempDir(), func(string, string, string) (Delivery, error) { return Delivery{}, nil })
 	assert.ErrSubMsg(t, err, "too long")
 	entries, dirErr := os.ReadDir(root)
 	assert.Require(t, assert.NoErr(t, dirErr))
