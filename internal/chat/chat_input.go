@@ -62,6 +62,12 @@ type chatInputSource struct {
 	// need no real tty. nil when input is not a terminal.
 	makeRaw    func() (restore func() error, err error)
 	restoreRaw func() error // non-nil only while the tty is raw (guarded by mu)
+	// restoreOutput and clearOutput set the terminal's output flags for the raw
+	// input currently held (outputProcessingForRawLocked); injectable like makeRaw
+	// and nil without a terminal. newChatInputSource wires them to
+	// restoreOutputProcessing / clearOutputProcessing, which work on the input's fd.
+	restoreOutput func() error
+	clearOutput   func() error
 	// turnActive is true from SetBusy(true) until the next Request: while set the tty must stay
 	// cooked so Ctrl-C raises SIGINT, even if a line read started earlier is still blocked.
 	turnActive bool
@@ -164,20 +170,17 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 		// Raw mode is entered per line in readLine, not here: with chat.steering off
 		// the terminal must stay cooked while model and tools run (Ctrl-C raises SIGINT,
 		// stderr keeps CR translation), and with it on the turn's own read enters raw
-		// through readLine just the same.
+		// through readLine just the same. The output flags raw input clears are put
+		// back per read, not per raw mode (outputProcessingForRawLocked).
 		source.makeRaw = func() (func() error, error) {
 			state, err := term.MakeRaw(fd)
 			if err != nil {
 				return nil, err
 			}
-			// Raw input, output processing kept: with OPOST off a bare "\n"
-			// written to the terminal straight (the process log, a hook or tool
-			// holding the tty) would keep its column and drift next to the input
-			// line. Best effort: a terminal that cannot be adjusted still edits
-			// fine (design N4, termios_*.go).
-			_ = restoreOutputProcessing(fd)
 			return func() error { return term.Restore(fd, state) }, nil
 		}
+		source.restoreOutput = func() error { return restoreOutputProcessing(fd) }
+		source.clearOutput = func() error { return clearOutputProcessing(fd) }
 		source.flushInput = func() error { return flushTerminalInput(fd) }
 		// The wait behind the lone-Esc and pasted-newline decisions: "is a byte
 		// ready?", asked without reading it (inputwait_*.go).
@@ -308,20 +311,32 @@ func (s *chatInputSource) SetSteering(on bool) {
 // RequestSteer asks for), so the tty stays raw and Ctrl-C/Esc arrive as bytes.
 func (s *chatInputSource) SetBusy(busy bool) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.busy = busy
-	if busy {
-		if s.steering {
-			// turnActive would keep the coming steer read cooked (enterRawLocked) and
-			// with it turn a Ctrl-C into SIGINT; leave it clear and go raw at once, so
-			// the key is a byte from the turn's first moment on.
-			s.turnActive = false
-			_ = s.enterRawLocked()
-		} else {
+	if !s.steering {
+		if busy {
 			s.turnActive = true
 			_ = s.leaveRawLocked()
 		}
+		return
 	}
-	s.mu.Unlock()
+	if busy {
+		// turnActive would keep the coming steer read cooked (enterRawLocked) and
+		// with it turn a Ctrl-C into SIGINT; leave it clear and go raw at once, so
+		// the key is a byte from the turn's first moment on.
+		s.turnActive = false
+		// A read from before the turn (a delivery started it while the prompt was
+		// waiting) is already raw and goes on as the turn's own read: its output
+		// flags change here. A fresh raw mode sets them itself (enterRawLocked).
+		held := s.restoreRaw != nil
+		_ = s.enterRawLocked()
+		if held {
+			s.outputProcessingForRawLocked()
+		}
+	}
+	// The end of a turn changes nothing here: the turn's read goes on as the next
+	// prompt's, and that read sets its own output flags when it is asked for
+	// (request, which the chat does before it reads the next line).
 }
 
 // SetInputHighlight paints the line the person submits at the prompt
@@ -449,6 +464,11 @@ func (s *chatInputSource) request(prompt string, mode inputMode) bool {
 	s.turnActive = false
 	if s.pending {
 		err := s.enterRawLocked()
+		// The pending read goes on as a read of this mode now, and its output flags
+		// change with it: the turn's read looks the same (OPOST|ONLCR back on), a
+		// prompt read keeps them as raw input left them - the way v0.24.0 read a
+		// prompt - and the repaint of its prompt below already writes that way.
+		s.outputProcessingForRawLocked()
 		s.mu.Unlock()
 		_ = err // best effort: the pending read still works in cooked mode
 		// The read keeps its line; only the prompt changes (e.g. a Stop hook that
@@ -541,6 +561,10 @@ func (s *chatInputSource) enterRawLocked() error {
 		return fmt.Errorf("enable terminal input editing: %w", err)
 	}
 	s.restoreRaw = restore
+	// A fresh raw mode: give the terminal the output flags the read this raw mode
+	// is entered for needs (the reads of a turn are entered one by one, and each
+	// of them sets its own state).
+	s.outputProcessingForRawLocked()
 	// Ask the terminal to bracket pastes for as long as a line is being edited
 	// (SetBracketedPasteMode), so a pasted multi-line text reaches the editor as
 	// one chunk with its newlines and does not submit at the first of them. A
@@ -548,6 +572,35 @@ func (s *chatInputSource) enterRawLocked() error {
 	// such a paste by the bytes that follow (input_pump.go).
 	s.setBracketedPasteLocked(true)
 	return nil
+}
+
+// outputProcessingForRawLocked sets the terminal's output flags for the raw input
+// being held; it does nothing while the terminal is cooked, whose flags are the
+// ones it started with. Only the read of a running turn (chat.steering) puts
+// OPOST|ONLCR back: what is written to the terminal straight while that read holds
+// raw mode - a hook or a tool holding the tty, the process log - is a "\n" line
+// that has to start a line, and raw input cleared the flags (design N4). A read
+// between turns (a prompt, the answer of a question) keeps them as raw input set
+// them, the way v0.24.0 read a prompt: the line editor writes "\r\n" itself, and
+// output processing would add another CR to it. Best effort - a terminal that
+// cannot be adjusted still edits fine (termios_*.go).
+//
+// It is called wherever the raw mode or the read holding it changes: entering raw
+// (enterRawLocked), a read being handed to another mode (request) and a turn
+// starting on a read that is already raw (SetBusy).
+func (s *chatInputSource) outputProcessingForRawLocked() {
+	if s.restoreRaw == nil {
+		return
+	}
+	if s.steering && s.busy {
+		if s.restoreOutput != nil {
+			_ = s.restoreOutput()
+		}
+		return
+	}
+	if s.clearOutput != nil {
+		_ = s.clearOutput()
+	}
 }
 
 // leaveRaw restores the original (cooked) tty state; idempotent and safe from any goroutine.

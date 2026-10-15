@@ -33,6 +33,8 @@ func TestTerminalSizeFD(t *testing.T) {
 // runs) clears OPOST|ONLCR along with the input flags, and chat puts the output
 // flags back - otherwise anything written straight to stderr during the turn (a
 // hook notice, a warning) would walk down the screen instead of starting a line.
+// clearOutputProcessing is the counterpart for a read between turns: the flags go
+// back to what raw input left, so the line editor's own CR LF is not doubled.
 func TestRestoreOutputProcessing(t *testing.T) {
 	slave := openTestPTY(t)
 
@@ -47,6 +49,11 @@ func TestRestoreOutputProcessing(t *testing.T) {
 	assert.NoErr(t, err)
 	assert.True(t, got.Oflag&unix.OPOST != 0)
 	assert.True(t, got.Oflag&unix.ONLCR != 0)
+
+	assert.NoErr(t, clearOutputProcessing(slave))
+	got, err = unix.IoctlGetTermios(slave, getTermiosRequest)
+	assert.NoErr(t, err)
+	assert.True(t, got.Oflag&unix.OPOST == 0)
 }
 
 // openTestPTY opens a pty (/dev/ptmx plus its /dev/pts/N slave) and returns the
