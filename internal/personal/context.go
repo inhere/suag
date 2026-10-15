@@ -29,12 +29,13 @@ type ctxItem struct {
 
 // injectedItemKeys are the Message.Metadata keys marking a user entry the
 // runtime injected into a running turn instead of a person writing it:
-// background task notices (metaTaskNotice) and steering messages (metaSteer).
-// Such an entry is stored with the turn's EntryUser type and replayed in place,
-// so the turn view (items), the notices compose renders and the user requests
+// background task notices (metaTaskNotice), steering messages (metaSteer) and
+// the note an interrupted turn leaves behind (metaTurnInterrupted). Such an
+// entry is stored with the turn's EntryUser type and replayed in place, so the
+// turn view (items), the notices compose renders and the user requests
 // (recentRequests) all have to tell it apart from the turn's own messages and
 // requests.
-var injectedItemKeys = []string{metaTaskNotice, metaSteer}
+var injectedItemKeys = []string{metaTaskNotice, metaSteer, metaTurnInterrupted}
 
 // isInjectedItem reports whether m is an entry injected into a running turn
 // (one of injectedItemKeys set true in its metadata).
@@ -93,28 +94,58 @@ type compactionRecord struct {
 	Refs           []string        `json:"refs,omitempty"`
 }
 
-// loadHistory rebuilds the persisted context of a session. Only entries of
-// completed turns count; a compaction is adopted only when it was written by a
-// completed turn (or outside any turn, i.e. a manual :compact), so a failed or
-// cancelled turn's compaction never leaks into later turns - exactly like its
-// messages. The same holds for context_update entries (design D3): adopted
-// with their turn, replayed as user messages at their seq. An update written
-// before the latest adopted segment record is superseded by that record's
-// snapshot (it re-read every source) and is neither replayed nor applied.
+// loadHistory rebuilds the persisted context of a session. Entries of completed
+// turns count in full. A failed or cancelled turn contributes the prefix it
+// managed to finish plus the note its finish left behind (design D1-D4 of
+// docs/design/2026-10-15-interrupted-turn-replay-design.md): its side effects
+// are in the workspace, so hiding its record made the next turn repeat or undo
+// work it had already done (suga-y0sk). A compaction is adopted only when it was
+// written by a completed turn (or outside any turn, i.e. a manual :compact), so
+// a failed or cancelled turn's compaction never leaks into later turns. The same
+// holds for context_update entries (design D3): adopted with their turn,
+// replayed as user messages at their seq - a failed turn's update is recomputed
+// by the next turn instead (see segment.go). An update written before the latest
+// adopted segment record is superseded by that record's snapshot (it re-read
+// every source) and is neither replayed nor applied.
 func (r *Runner) loadHistory(ctx context.Context, sessionID string) (historyView, error) {
-	turns, err := r.cfg.Repository.ListTurns(ctx, sessionID, store.TurnCompleted)
+	turns, err := r.cfg.Repository.ListTurns(ctx, sessionID)
 	if err != nil {
-		return historyView{}, fmt.Errorf("list completed turns: %w", err)
+		return historyView{}, fmt.Errorf("list turns: %w", err)
 	}
 	done := make(map[string]bool, len(turns))
+	// interrupted are the failed/cancelled turns whose replayable prefix has to be
+	// computed below; a turn with no entries of its own simply contributes none.
+	interrupted := make(map[string][]store.Entry)
 	for _, t := range turns {
-		done[t.ID] = true
+		switch t.Status {
+		case store.TurnCompleted:
+			done[t.ID] = true
+		case store.TurnFailed, store.TurnCancelled:
+			interrupted[t.ID] = nil
+		}
 	}
 	entries, err := r.cfg.Repository.ListEntries(ctx, sessionID, store.EntryFilter{
 		Types: []string{store.EntryUser, store.EntryAssistant, store.EntryTool, store.EntryCompaction, store.EntryHandoff, store.EntryContextUpdate},
 	})
 	if err != nil {
 		return historyView{}, fmt.Errorf("load session history: %w", err)
+	}
+	replay := make(map[int64]bool)
+	if len(interrupted) > 0 {
+		for _, e := range entries {
+			if _, ok := interrupted[e.TurnID]; ok {
+				interrupted[e.TurnID] = append(interrupted[e.TurnID], e)
+			}
+		}
+		for turnID, es := range interrupted {
+			kept, _, _, rerr := replayablePrefix(es)
+			if rerr != nil {
+				return historyView{}, fmt.Errorf("replay interrupted turn %s: %w", turnID, rerr)
+			}
+			for _, e := range kept {
+				replay[e.Seq] = true
+			}
+		}
 	}
 	var view historyView
 	var firstKept, segmentSeq int64
@@ -154,16 +185,18 @@ func (r *Runner) loadHistory(ctx context.Context, sessionID string) (historyView
 		if e.Type == store.EntryCompaction || e.Type == store.EntryHandoff || e.Seq < firstKept {
 			continue
 		}
-		var m agentcore.Message
-		if !done[e.TurnID] {
-			continue
-		}
 		if e.Type == store.EntryContextUpdate {
-			if e.Seq > segmentSeq {
+			// Adopted updates only (see the comment above): a failed turn's update is
+			// recomputed by the next turn, so replaying its entry would duplicate it.
+			if done[e.TurnID] && e.Seq > segmentSeq {
 				view.items = append(view.items, ctxItem{msg: updates[e.Seq].message(), seq: e.Seq})
 			}
 			continue
 		}
+		if !done[e.TurnID] && !replay[e.Seq] {
+			continue
+		}
+		var m agentcore.Message
 		if err := json.Unmarshal(e.JSON, &m); err != nil {
 			return historyView{}, fmt.Errorf("decode history entry %d: %w", e.Seq, err)
 		}

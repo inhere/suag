@@ -167,9 +167,15 @@ func TestSegmentRecordAdoptedWithTurn(t *testing.T) {
 	mode = "ok"
 	good, err := runner.Run(ctx, RunRequest{SessionID: sid, Prompt: "long job"})
 	assert.NoErr(t, err)
-	// ...but the next turn renders the adopted (start) record, not meta.
-	assert.StrContains(t, segmentText(prov.reqs[nextReq]), "mem-one")
-	assert.NotContains(t, segmentText(prov.reqs[nextReq]), "mem-two")
+	// ...and this turn renders a record of its own, not the failed turn's: the
+	// replayed interrupted turn (suga-y0sk) brings back the very content that made
+	// the failed turn compact, so this turn compacts again as it starts (testWindow
+	// is small) and its package names its own prompt, where the failed record's
+	// would name the doomed one.
+	seg := segmentText(prov.reqs[nextReq])
+	assert.StrContains(t, seg, "long job")
+	assert.StrContains(t, seg, "mem-two") // the fresh snapshot re-read the sources
+	assert.NotContains(t, seg, "doomed question")
 	es, err = repo.ListEntries(ctx, sid, store.EntryFilter{TurnID: good.TurnID, Types: []string{store.EntryCompaction}})
 	assert.NoErr(t, err)
 	assert.Require(t, assert.True(t, len(es) >= 1))

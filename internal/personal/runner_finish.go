@@ -113,13 +113,29 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	defer cancel()
 	// The steers this turn did not deliver go back to the caller (design D4): a
 	// completed turn only its untaken ones - the delivered ones entered the turn's
-	// history and replay with it -, a cancelled or failed turn all of them (its
-	// entries do not replay).
+	// history and replay with it -, a cancelled or failed turn all of them: the
+	// replay keeps that turn's prefix but skips steering entries, so a delivered
+	// steer would otherwise be dropped (design D5 of the interrupted-turn replay
+	// design).
 	result.ReturnedSteers = r.returnSteers(finishCtx, inbox, result, turnStatus, sink)
 	now := time.Now().UTC()
 	var persistErr error
 	if err := r.cfg.Repository.UpdateTurn(finishCtx, store.Turn{ID: result.TurnID, Status: turnStatus, StopReason: stopReason, EndedAt: now}); err != nil {
 		persistErr = errors.Join(persistErr, err)
+	}
+	// An interrupted turn's entries replay only up to its last complete tool
+	// exchange, so finish leaves one note that tells the next turn what it ran and
+	// why it stopped (design D3 of
+	// docs/design/2026-10-15-interrupted-turn-replay-design.md, issue suga-y0sk).
+	// The note is best-effort: the turn's own outcome is what the caller reports.
+	if turnStatus != store.TurnCompleted {
+		reason := ""
+		if runErr != nil && !canceled {
+			reason = runErr.Error()
+		}
+		if err := r.writeInterruptionNote(finishCtx, model.ID, result.TurnID, turnStatus, reason); err != nil {
+			slog.Warn("write the interruption note", "session_id", model.ID, "turn_id", result.TurnID, "err", err)
+		}
 	}
 	// The turn event is written outside the entry transactions and is
 	// best-effort; it is also what the trace timeline anchors on.

@@ -353,9 +353,15 @@ func TestCompactedTurnCancelledIsNotAdopted(t *testing.T) {
 				texts = append(texts, m.Role+":"+m.Content)
 			}
 			joined := strings.Join(texts, "\n")
-			assert.Eq(t, false, strings.Contains(joined, "SUMMARY-"))
+			// The rendered package is this turn's own, never the doomed turn's: the
+			// interrupted turn replays (suga-y0sk) and brings back the content that
+			// made the doomed turn compact, so this turn compacts again as it starts
+			// and folds that content into a summary of its own.
+			var doomed compactionRecord
+			assert.Require(t, assert.NoErr(t, json.Unmarshal(es[0].JSON, &doomed)))
+			assert.Eq(t, false, strings.Contains(joined, doomed.Summary))
 			assert.Eq(t, false, strings.Contains(joined, "doomed question"))
-			assert.Eq(t, true, strings.Contains(joined, "first question") && strings.Contains(joined, "first answer"))
+			assert.Eq(t, true, strings.Contains(joined, "first question"))
 			assertWellFormed(t, req.Messages)
 		})
 	}

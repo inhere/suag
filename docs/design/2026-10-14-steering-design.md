@@ -12,6 +12,7 @@
 | 0.3 | 2026-10-14 | Claude（监督会话） | 记录用户对 Q1–Q4 的答复（均按建议）：提示符 `↳ `、不做 follow-up 键（suga-8pug）、Esc 中止不确认、按 S1/S2/S3 分阶段；ACP steering 登记为 suga-lkf7；会话间互发登记为 suga-hko7 |
 | 0.4 | 2026-10-14 | Claude（监督会话） | 按子 agent 复评 r2（结论 BLOCKED）修订：用户选 N1 方案 B——放弃“同一回合续跑”，模型给出最终回复即正常结束，未送达插话作为下一回合（D3）；S1 先修 suga-0lxy（回合中途压缩条数不一致）（N2）；中止时退回的插话一律回到输入行、不自动开回合，`--wait` 与 trace 语义重定（N3）；回合中 raw 模式保留输出换行处理、回合中所有输出经输入源（N4）；输入层的 Ask 分流、Esc 超时、半行交接（N5）；收尾时由 agentcore 告知不取插话（N6）；yield、提前返回、stream-json、UserPromptSubmit、开关归属等（N7） |
 | 0.5 | 2026-10-14 | Claude（监督会话） | 按改动确认 r3（结论 PASS_WITH_ISSUES）补 M1：输入行常驻期间的输出方式（只把完整行交给 `Terminal.Write`、未结束尾部缓冲、steer 模式下 spinner 并入状态行）与对应冒烟；r3 的 8 项 MINOR（m1–m8）列为计划阶段事项 |
+| 0.6 | 2026-10-15 | suga（会话 sess_2610141itpnahmur8001o） | 注记：取消/失败回合由“整段不回放”改为前缀回放（docs/design/2026-10-15-interrupted-turn-replay-design.md），“交还全部插话”的理由随之变为“回放跳过插话条目”；本设计的退回规则与代码不变 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -86,7 +87,7 @@
 
 - agentcore 每次模型请求前调用 `ContextBuilder.BuildMessages`（`pkg/agentcore/runtime.go:150`）。personal 的实现先 `takeTaskNotices`，把通知作为 `role=user` 消息插到当前位置，以 `EntryUser` 落库到当前 turn，但不加入 `state.Messages`（`internal/personal/context.go:225-229`，`internal/personal/tasks.go:54-87`）。
 - 回合中途压缩的 `items()` 要求落库条数与内存条数相等，有通知时报 `turn … has N stored messages but N-1 in memory`（`internal/personal/compact.go:141-165`；r2 以测试复现）→ suga-0lxy。
-- 已完成回合（含 yielded，按 completed 存储）的条目在后续回合回放；被取消/失败回合的条目不回放（`context.go:73-90`）。
+- 已完成回合（含 yielded，按 completed 存储）的条目在后续回合回放；被取消/失败回合的条目不回放（`context.go:73-90`）。（2026-10-15 更新：取消/失败回合改为前缀回放，见 docs/design/2026-10-15-interrupted-turn-replay-design.md；插话条目仍不回放）
 - 收尾状态 `wrappingUp` 只在 agentcore 回合循环内（`runtime.go:124-140`），`BuildMessages` 看不到。
 
 **取消的记录**：`Runner.finish` 以 `ctx.Err() != nil || errors.Is(runErr, context.Canceled)` 判定取消，turn 记 `cancelled`，会话写回 `open`（`internal/personal/runner.go` finish）。`Run` 在进入 agentcore 前有几处直接返回（r2 指出约 452/461/470 行）。
@@ -127,7 +128,7 @@
 - `BuildMessages` 中 `takeSteers`（与 `takeTaskNotices` 并列，非收尾步）把收件箱全部插话移入 `taken`：作为 `role=user` 消息（metadata `suga.steer: true`、`suga.source: keyboard|send:<from>`、`suga.steer_id`）以 `EntryUser` 落库到当前 turn，并通过 turn 的 Emit 发 `steer_delivered` 事件、记 trace。
 - 关闭时（`finish` 开始，锁内置 `closing`）计算 `RunResult.ReturnedSteers`：
   - 回合以 completed 存储（含 yielded、wrap-up 收尾）：退回收件箱中未取出的插话；`taken` 已进入回合历史，随回合回放。
-  - 回合 cancelled / failed：退回 `taken + inbox` 全部插话（被取消/失败回合的条目不回放，r1 发现 1）。
+  - 回合 cancelled / failed：退回 `taken + inbox` 全部插话（被取消/失败回合的条目曾整段不回放，r1 发现 1；2026-10-15 起改为前缀回放但跳过插话条目，退回规则不变）。
   - 每条退回的插话发 `steer_returned` 事件、记 trace。
 - 测试：取消发生在 `BuildMessages` 与模型请求之间；收尾步不取插话；`closing` 之后到达的 `Steer`；收件箱已满；提前返回路径。
 
@@ -218,7 +219,7 @@ S2 先重构输入层，再接入插话与中止。
 ## 安全、数据、运维与回滚
 
 - 安全：插话与普通用户输入同权，不绕过审批与只读模式；`--steer` 只能投递到同用户可访问的会话 socket，权限边界与现有 send 相同（socket 目录 0700 / Windows ACL）。
-- 数据：插话以 `EntryUser` 落库，新增 metadata 键，不改 schema；被取消回合的插话随该回合不回放（与现有一致）。suga-0lxy 的修复改变中途压缩的切分，需回归现有压缩测试。
+- 数据：插话以 `EntryUser` 落库，新增 metadata 键，不改 schema；被取消回合的插话不随该回合回放（与现有一致；2026-10-15 起该回合按前缀回放，但回放跳过插话条目，与退回规则互补）。suga-0lxy 的修复改变中途压缩的切分，需回归现有压缩测试。
 - 兼容：send 协议新字段可缺省；stream-json 不变。
 - 运维：`chat.steering`（默认开）为回退开关；关闭时回合中恢复现行 cooked 行为，`send --steer` 退化为 follow-up。
 - 回滚：各阶段独立提交；关闭 `chat.steering` 即回到现行 chat 行为。

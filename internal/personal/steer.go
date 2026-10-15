@@ -122,7 +122,9 @@ func (in *steerInbox) close() {
 // returned hands back the steers the caller has to take care of and empties the
 // inbox. A completed turn (its messages are stored and replay) returns only the
 // steers no request took; a cancelled or failed turn returns all of them, the
-// taken ones first, because nothing of that turn replays (design D4).
+// taken ones first, because the replay of such a turn skips steering entries
+// (design D4; see replay.go and design D5 of
+// docs/design/2026-10-15-interrupted-turn-replay-design.md).
 func (in *steerInbox) returned(completed bool) []Steer {
 	if in == nil {
 		return nil
@@ -295,7 +297,7 @@ func steerEvent(sessionID, turnID, name string, s Steer, extra map[string]any) s
 // caller through a "steer_returned" event. turnStatus decides what comes back:
 // a completed turn (its messages are stored and replay) keeps its delivered
 // steers and returns only the untaken ones, a cancelled or failed turn returns
-// all of them (nothing of it replays).
+// all of them (its replay skips steering entries, see replayablePrefix).
 func (r *Runner) returnSteers(ctx context.Context, inbox *steerInbox, result RunResult, turnStatus string, sink EmitFunc) []Steer {
 	steers := inbox.returned(turnStatus == store.TurnCompleted)
 	if len(steers) == 0 {
