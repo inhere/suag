@@ -46,6 +46,15 @@ func ChatAskOutsideDirs() bool {
 	return chatSwitch("chat.ask_outside_dirs")
 }
 
+// ChatSteeringEnabled reports whether chat keeps reading the keyboard while a
+// turn runs (chat.steering, on by default): Esc or a single Ctrl-C ends the turn
+// (chat stays), a second Ctrl-C within a few seconds leaves chat. With it off a
+// turn keeps the terminal cooked and Ctrl-C has to reach chat as SIGINT. It takes
+// the same values as chat.markdown; without a terminal there is nothing to read.
+func ChatSteeringEnabled() bool {
+	return chatSwitch("chat.steering")
+}
+
 // chatSwitch reads a chat.* switch: a missing key is on, a bool is used as is,
 // and a string is off for "off"/"false" (any case, surrounding spaces ignored).
 func chatSwitch(key string) bool {

@@ -77,6 +77,7 @@
 |---|---|---|
 | `chat.markdown` | `true` | 在终端渲染模型输出的 markdown（标题、粗体、行内代码、代码块、列表、引用、链接） |
 | `chat.spinner` | `true` | 等待模型输出时显示“思考中… Ns”，正文/工具调用/审批问题之前清除 |
+| `chat.steering` | `true` | 回合进行中继续读取键盘：`Esc` 或单次 `Ctrl-C` 中断本轮（chat 留在提示符），3 秒内两次 `Ctrl-C` 退出。按键以字节到达，不依赖控制台的 Ctrl-C 事件，因此在 ConPTY（Zed、Windows Terminal）里同样有效；关掉则回合保持 cooked，`Ctrl-C` 走 SIGINT、一次即退出（旧行为） |
 | `chat.highlight_input` | `true` | 提示符提交的那行（含粘贴的多行）与外部投递的消息（`suga send`、Stop hook 回复、任务通知）整行加低饱和背景，与模型回答区分；两者背景色不同 |
 | `chat.terminal_title` | `true` | 把终端窗口/标签页标题设为 `suga · <短名称> · <会话标题>`（会话标题即续接时已有的那条，新会话取第一条消息，截到 30 字）：启动时先保存终端原有标题（`ESC[22;0t`），退出时置空并恢复（`ESC[23;0t`，置空是不支持标题栈的终端的兜底）。标题里的控制字符（含 ESC/BEL/C1）会被剔除，避免注入转义序列 |
 

@@ -10,6 +10,7 @@
 
 - 模型请求超时可配置：`timeouts.request`（非流式请求整体，默认 120s）与 `timeouts.response_header`（流式等响应头，默认 120s），写 `off`/`0` 表示不限制；`providers.<id>.timeouts.request` / `.response_header` 可按 provider 覆盖。此前两者都写死 120s。
 - chat 回合结束的状态行加 `ctx x%`：最后一次模型请求的输入 token 占上下文窗口的比例，与空闲整理 `context.idle_min_ratio` 的判据同源，便于判断何时会触发整理，如 `… · in 522760 / out 836 tokens · ctx 55% · 2.1s · 14:03`。窗口未知或本回合没有模型调用时不显示；超过窗口时按实际值显示（如 `ctx 105%`），不截断。
+- chat 回合中可直接中断：`chat.steering`（默认开）让进行中的回合继续读取键盘——`Esc` 或单次 `Ctrl-C` 中断本轮（chat 留在提示符），3 秒内两次 `Ctrl-C` 退出；按键以字节到达，不依赖控制台把 Ctrl-C 变成 `CTRL_C_EVENT`，因此在 ConPTY（Zed、Windows Terminal）下也能用（suga-nrf2）。回合中键入的其他内容被忽略（与旧行为一致），本轮暂不插入消息（见 suag-mbwu）；`chat.steering: false` 回到旧行为（回合保持 cooked，`Ctrl-C` 走 SIGINT 一次即退出）。
 
 ### 修复
 

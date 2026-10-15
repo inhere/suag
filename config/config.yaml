@@ -129,6 +129,12 @@ providers:
 #                       # message (every turn start and after every tool result),
 #                       # erased as soon as it answers; false turns the line off.
 #                       # Needs a terminal with colors, like markdown.
+#   steering: true      # keep reading the keyboard while a turn runs: Esc or a
+#                       # single Ctrl-C ends the turn (chat stays at the prompt),
+#                       # two Ctrl-C within 3s leave chat. The keys arrive as bytes,
+#                       # so this works where the console's Ctrl-C event does not (a
+#                       # ConPTY: Zed, Windows Terminal); false keeps the turn cooked
+#                       # and takes Ctrl-C as SIGINT (one press ends chat).
 #   highlight_input: true # paint the line you submitted at the prompt (and the
 #                       # messages delivered from elsewhere: suga send, a Stop hook
 #                       # reply, a task notice) on a low-saturation background, so

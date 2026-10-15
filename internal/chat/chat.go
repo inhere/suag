@@ -57,6 +57,11 @@ type Options struct {
 	// default). Like Markdown it needs a colored terminal: a pipe, a redirected
 	// output or NO_COLOR leaves the title alone.
 	TerminalTitle bool
+	// Steering keeps the keyboard readable while a turn runs (config
+	// chat.steering, on by default): Esc or a single Ctrl-C ends the turn and
+	// chat stays, a second Ctrl-C within a few seconds leaves chat. With it off
+	// the turn keeps the terminal cooked and Ctrl-C has to arrive as SIGINT.
+	Steering bool
 	// terminalTitleOut is where the title sequences go (nil: the chat output);
 	// tests point it at a buffer to check when the title changes without a
 	// terminal.
@@ -199,6 +204,9 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		return err
 	}
 	defer inputSource.Close()
+	// chat.steering: a running turn keeps reading the keyboard (Esc / Ctrl-C end
+	// it). Without a terminal (piped input) there is no keyboard to read.
+	inputSource.steering = opts.Steering && inputSource.terminal != nil
 	// All conversation output goes through the renderer (and the input source,
 	// which keeps the line editor's screen state consistent).
 	color := colorEnabledFor(stdout)

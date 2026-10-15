@@ -173,6 +173,36 @@ func (t *Terminal) ReadLine() (line string, err error) {
 	return t.readLine()
 }
 
+// ReadLineNoEcho reads a line without drawing a prompt or echoing what is typed:
+// the caller wants the keys (a lone Esc, a Ctrl-C, a submitted line) without an
+// input line sitting on the screen, so its own output never has to be written
+// around one. The line and the key handling are the same as ReadLine's.
+func (t *Terminal) ReadLineNoEcho() (line string, err error) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	t.echo = false
+	line, err = t.readLine()
+	t.echo = true
+	return
+}
+
+// SetEcho turns echoing on or off for the read in progress and records the mode: a
+// turn's read runs with echoing off (no input line next to the model's output), the
+// prompt read and an approval question that borrow the same read need it on. Turning
+// it off forgets the input line without writing anything (the turn's output owns the
+// screen again); turning it on draws nothing by itself - the caller sets the prompt
+// (UpdatePrompt) or lets the read do it.
+func (t *Terminal) SetEcho(on bool) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	t.echo = on
+	if !on {
+		t.line, t.pos, t.cursorX, t.cursorY = nil, 0, 0, 0
+	}
+}
+
 func (t *Terminal) readLine() (line string, err error) {
 	// t.lock must be held at this point
 
@@ -283,9 +313,9 @@ func (t *Terminal) UpdatePrompt(prompt string) error {
 		return nil
 	}
 	t.prompt = []rune(prompt)
-	if t.cursorX == 0 && t.cursorY == 0 {
-		return nil // nothing on screen yet; the next ReadLine draws it
-	}
+	// A read in progress may have no line on the screen (a turn's read runs with
+	// echoing off): drawing the prompt is then exactly what the caller wants - the
+	// next prompt after a turn, or an approval question borrowing the read.
 	return t.repaintLocked()
 }
 

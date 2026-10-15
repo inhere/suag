@@ -11,7 +11,8 @@ import (
 	"github.com/gookit/goutil/x/assert"
 )
 
-// steerPrompt is the prompt a steer read shows; S2b draws "↳ " there.
+// steerPrompt is the prompt a steer read shows (RequestSteer, S2b): chat itself
+// does not start one yet - a turn reads its keys without an input line.
 const steerPrompt = "↳ "
 
 // kbWaiter stands in for the platform wait behind the decisions of the byte pump

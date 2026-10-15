@@ -114,6 +114,9 @@ func (s *chatInputSource) Ask(ctx context.Context, detail, prompt string) (strin
 	}
 	answerRead = true
 	if reuse {
+		// The read a turn started is borrowed (design N5): it runs without echo, so
+		// the question has to draw its prompt and let the answer show (UpdatePrompt
+		// repaints even when no line is on the screen).
 		if err := s.terminal.UpdatePrompt(prompt); err != nil {
 			return "", err
 		}
@@ -220,7 +223,18 @@ func (s *chatInputSource) endAsk(held *chatInputEvent, answerRead bool, mode inp
 	defer s.mu.Unlock()
 	s.turnActive = true
 	s.readMode = mode
-	_ = s.leaveRawLocked()
+	if s.steering {
+		// The turn keeps reading the keyboard after the question (chat.steering):
+		// back to raw input, not cooked.
+		_ = s.enterRawLocked()
+	} else {
+		_ = s.leaveRawLocked()
+	}
+	if mode == modeSteer && s.terminal != nil {
+		// Back to the turn's silent key read: echoing off, and no line on the screen
+		// (the question's line stays there as plain output of the turn).
+		s.terminal.SetEcho(false)
+	}
 	if held != nil && !answerRead {
 		s.pending = true
 		select {

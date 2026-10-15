@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/inhere/suga/internal/chat/lineedit"
 	sugahooks "github.com/inhere/suga/internal/hooks"
 	"github.com/inhere/suga/internal/personal"
 	personalprocess "github.com/inhere/suga/internal/personal/process"
@@ -55,6 +57,9 @@ type chatState struct {
 	// dirs is the session's added-directory handle (Options.Dirs): the :add-dir,
 	// :dirs and :rm-dir commands work through it; nil leaves them out.
 	dirs SessionDirs
+	// turnExit records the second Ctrl-C of a steer read: the turn ends and chat
+	// closes (written by watchTurnKeys, read by runTurn).
+	turnExit atomic.Bool
 }
 
 // runTurn executes one turn of the chat: from pausing the idle consolidation to
@@ -99,7 +104,19 @@ func (s *chatState) runTurn(line string, injected bool) error {
 	}
 	s.render.BeginTurn()
 	turnStart := time.Now()
-	result, runErr := s.runner.Run(s.ctx, personal.RunRequest{
+	// chat.steering: the turn keeps reading the keyboard, so Esc and a single Ctrl-C
+	// can end it (chat stays). The turn runs on a context of its own, so a key can
+	// cancel it without touching the chat's own context.
+	turnCtx, cancelTurn := context.WithCancel(s.ctx)
+	defer cancelTurn()
+	if s.source.steering {
+		// The read draws nothing (chat_input.go ReadLineNoEcho): a turn has no input
+		// line on the screen, so the model's output is never written around one.
+		s.source.RequestSteer("")
+		stopKeys := s.watchTurnKeys(cancelTurn)
+		defer stopKeys()
+	}
+	result, runErr := s.runner.Run(turnCtx, personal.RunRequest{
 		SessionID:     s.sessionID,
 		Prompt:        line,
 		SystemContext: s.pendingContext,
@@ -186,5 +203,57 @@ func (s *chatState) runTurn(line string, injected bool) error {
 	}
 	// The turn is over (Stop sent): the idle clock runs from now.
 	s.idle.EndTurn(result)
+	// A second Ctrl-C during the turn leaves chat, like two at the prompt: the
+	// error is the one the prompt path reports for it.
+	if s.turnExit.Load() {
+		return lineedit.ErrInterrupt
+	}
 	return nil
+}
+
+// watchTurnKeys follows what the person presses while a turn runs (chat.steering):
+// Esc and the first Ctrl-C end this turn, a second Ctrl-C within exitConfirmWindow
+// leaves chat, and a line submitted with Enter goes back to the input line for the
+// next prompt (suga does not insert messages into a running turn yet, suag-mbwu).
+// The watcher only cancels the turn and sets the exit flag (the turn goroutine keeps
+// rendering, so a second writer of the renderer would race with it). The returned
+// func stops the watcher.
+func (s *chatState) watchTurnKeys(cancelTurn context.CancelFunc) func() {
+	done := make(chan struct{})
+	go func() {
+		// Keys left over from the previous turn (its watcher may have stopped before
+		// they arrived) must not act on this one.
+	drain:
+		for {
+			select {
+			case <-s.source.TurnEvents():
+			default:
+				break drain
+			}
+		}
+		for {
+			select {
+			case <-done:
+				return
+			case <-s.ctx.Done():
+				return
+			case ev := <-s.source.TurnEvents():
+				switch {
+				case ev.key == keyExit:
+					s.turnExit.Store(true)
+					cancelTurn()
+					return
+				case ev.key == keyAbort:
+					// Keep watching: a second Ctrl-C in the window leaves chat
+					// (measured from this first one, takeInterrupt).
+					cancelTurn()
+				case ev.line != "":
+					// Enter during a turn: keep the text for the next prompt instead of
+					// dropping it (the input line is free again once the turn ended).
+					s.source.addSavedLine(ev.line)
+				}
+			}
+		}
+	}()
+	return func() { close(done) }
 }

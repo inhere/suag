@@ -13,6 +13,7 @@
 | 0.4 | 2026-10-14 | Claude（监督会话） | 按子 agent 复评 r2（结论 BLOCKED）修订：用户选 N1 方案 B——放弃“同一回合续跑”，模型给出最终回复即正常结束，未送达插话作为下一回合（D3）；S1 先修 suga-0lxy（回合中途压缩条数不一致）（N2）；中止时退回的插话一律回到输入行、不自动开回合，`--wait` 与 trace 语义重定（N3）；回合中 raw 模式保留输出换行处理、回合中所有输出经输入源（N4）；输入层的 Ask 分流、Esc 超时、半行交接（N5）；收尾时由 agentcore 告知不取插话（N6）；yield、提前返回、stream-json、UserPromptSubmit、开关归属等（N7） |
 | 0.5 | 2026-10-14 | Claude（监督会话） | 按改动确认 r3（结论 PASS_WITH_ISSUES）补 M1：输入行常驻期间的输出方式（只把完整行交给 `Terminal.Write`、未结束尾部缓冲、steer 模式下 spinner 并入状态行）与对应冒烟；r3 的 8 项 MINOR（m1–m8）列为计划阶段事项 |
 | 0.6 | 2026-10-15 | suga（会话 sess_2610141itpnahmur8001o） | 注记：取消/失败回合由“整段不回放”改为前缀回放（docs/design/2026-10-15-interrupted-turn-replay-design.md），“交还全部插话”的理由随之变为“回放跳过插话条目”；本设计的退回规则与代码不变 |
+| 0.7 | 2026-10-15 | suga（会话 sess_2610141itpnahmur8001o） | 部分实施 S2b（中止先行，回应 suga-nrf2）：回合中继续读键盘（不经行编辑器，避免输入行与模型输出互相打断——M1 由后续阶段负责），`chat.steering`（默认开）下 Esc / 单次 Ctrl-C 中止本轮、3 秒内两次 Ctrl-C 退出；raw 期间恢复 `OPOST|ONLCR`；审批提问期间让出键盘。插话送达收件箱、退回处理、`--steer`、屏幕模型与 wincons 场景仍待做（suag-mbwu） |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 

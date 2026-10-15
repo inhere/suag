@@ -89,6 +89,10 @@ def cancel_scenario(s, binary, env):
     # The interrupted turn is reported as 已中断本轮: the runner's raw
     # "context canceled" must not reach the terminal.
     s.check("cancel: interrupted turn reads 已中断本轮", s.until(r"已中断本轮", m, timeout=15))
+    # chat.steering (on by default): the first Ctrl-C ends this turn only - chat stays
+    # at the prompt, and a second Ctrl-C within the confirmation window leaves chat.
+    s.check("cancel: the first Ctrl-C keeps chat", s.until(r"(?s)已中断本轮.*?❯ ", m, timeout=15))
+    m = s.mark(); s.send(CTRL_C)
     s.check("cancel: chat ends with the resume line", s.until(r"续接：suga chat --resume sess_", m, timeout=15))
     s.check("cancel: never shows the raw context canceled", not s.contains(r"context canceled", m))
     s.pump(0.5)

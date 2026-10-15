@@ -1,27 +1,29 @@
 #!/usr/bin/env python3
-"""Ctrl-C while a foreground tool call is running: the turn ends and chat exits.
+"""Ctrl-C / Esc while a foreground tool call is running.
 
-Covers the suga-nrf2 expectation on the platform where it can be automated: the
-chat runs in a PTY, the fake model (tool mode) calls shell_exec with a command
-that writes a marker, sleeps and writes a second marker; once the tool is
-running the script sends Ctrl-C and checks the shell tool was cut short, the
-turn is reported as interrupted and chat exits with its summary (the tool's
-second marker never appears, so the whole process tree died with the turn).
+One script, two behaviours of suga, selected by --steering:
 
-The Windows twin of this scenario is scripts/wincons (a Windows console cannot
-be driven from Python); this one is Linux/macOS only.
+  (default) chat.steering off: a turn keeps the console cooked, so Ctrl-C has to
+  reach chat as SIGINT. The turn ends and chat itself exits with its summary; the
+  tool process tree dies with it. This is the suga-nrf2 expectation on the platform
+  where it can be automated at all.
 
-  python3 -I scripts/ptysmoke/chat_tool_ctrlc.py --bin tmp/smoke/suga
+  --steering: chat.steering on (the default of suga): the turn keeps reading the
+  keyboard, so Esc and a single Ctrl-C end the turn while chat stays at the prompt
+  (no console Ctrl-C event involved - the path suga-nrf2 fails on under ConPTY), a
+  second Ctrl-C within three seconds leaves chat, and the tool is cut short both
+  ways. The last check also covers the terminal's output flags: raw input clears
+  OPOST, so the turn's own output must still end its lines with CRLF (the marker
+  line below), which is what restoreOutputProcessing puts back.
 
-Reverse verification (make the check fail on purpose): in cmd/suga/main.go drop
-syscall.SIGINT from signal.NotifyContext; Ctrl-C then kills suga without its
-interrupt path and "ctrl-c: turn interrupted" and "ctrl-c: chat exits with the
-summary" fail (checked 2026-10-14). Dropping the `case ctx.Err() != nil:` branch
-of chat.go does not make it fail (the context.Canceled branch reports the same),
-and neither does disabling shell_exec's cmd.Cancel: in a PTY, Ctrl-C sends SIGINT
-to the whole foreground process group, so the tool's shell dies with it either
-way. The marker check therefore guards the process-group behaviour, not suga's
-own cancellation.
+  python3 -I scripts/ptysmoke/chat_tool_ctrlc.py --bin tmp/smoke/suga [--steering]
+
+Reverse verification (make a check fail on purpose): drop syscall.SIGINT from
+signal.NotifyContext in cmd/suga/main.go and the steering-off checks fail
+("ctrl-c: turn interrupted", "ctrl-c: chat exits with the summary"); remove the
+cancelTurn() of watchTurnKeys (chat_turn.go) and the --steering checks
+("ctrl-c: turn interrupted", "esc: turn interrupted") fail; drop the
+restoreOutputProcessing call of SetBusy and "steering: output keeps CRLF" fails.
 """
 import argparse
 import os
@@ -40,7 +42,7 @@ STARTED = "tool-started"
 FINISHED = "tool-finished"
 
 
-def scenario(s, ws):
+def scenario_off(s, ws):
     started = os.path.join(ws, STARTED)
     finished = os.path.join(ws, FINISHED)
 
@@ -69,6 +71,60 @@ def scenario(s, ws):
     s.check("ctrl-c: the tool's command was cut short", not os.path.exists(finished))
 
 
+def scenario_on(s, ws):
+    """chat.steering: the turn reads the keyboard, so Esc / a single Ctrl-C end the
+    turn and chat stays; two Ctrl-C in the confirmation window leave chat."""
+    started = os.path.join(ws, STARTED)
+    finished = os.path.join(ws, FINISHED)
+
+    m = s.mark()
+    s.check("banner shows model", s.until(r"Suga chat · fake/m1", m))
+    s.check("❯ prompt", s.until(r"❯ ", m))
+
+    # 1) A single Ctrl-C ends this turn; chat keeps running.
+    m = s.mark()
+    s.line("跑一个长命令")
+    s.check("tool call shown", s.until(r"shell_exec", m))
+    if not wait_file(started, 30):
+        s.check("tool started (marker file)", False)
+        return
+    s.check("tool started (marker file)", True)
+    time.sleep(0.5)
+    s.send(CTRL_C)
+    s.check("ctrl-c: turn interrupted", s.until(r"已中断本轮", m, timeout=15))
+    # The prompt after the interrupt (the mark is the one before it: a search from a
+    # fresh mark could miss a prompt that already arrived while waiting above).
+    s.check("ctrl-c: chat stays at the prompt",
+            s.until(r"(?s)已中断本轮.*?❯ ", m, timeout=15))
+    time.sleep(0.5)
+    s.check("ctrl-c: the tool's command was cut short", not os.path.exists(finished))
+
+    # 2) Esc ends the next turn the same way (no Ctrl-C event involved at all).
+    m = s.mark()
+    s.line("再来一个长命令")
+    s.check("esc: tool call shown", s.until(r"shell_exec", m))
+    time.sleep(1.0)
+    s.send("\x1b")
+    s.check("esc: turn interrupted", s.until(r"已中断本轮", m, timeout=15))
+    s.check("esc: chat stays at the prompt",
+            s.until(r"(?s)已中断本轮.*?❯ ", m, timeout=15))
+    s.check("esc: the tool's command was cut short", not os.path.exists(finished))
+
+    # 3) Two Ctrl-C within the confirmation window leave chat (the first one ended
+    # the turn, the second lands at the prompt).
+    m = s.mark()
+    s.line("第三次")
+    s.check("exit: tool call shown", s.until(r"shell_exec", m))
+    time.sleep(0.5)
+    s.send(CTRL_C)
+    time.sleep(0.3)
+    s.send(CTRL_C)
+    s.check("exit: chat ends", s.until(r"续接：suga chat --resume sess_", m, timeout=20))
+    s.check("exit: chat process ended", not s.pump(5.0))
+    time.sleep(1.0)
+    s.check("exit: the tool's command was cut short", not os.path.exists(finished))
+
+
 def wait_file(path, seconds):
     end = time.time() + seconds
     while time.time() < end:
@@ -83,6 +139,7 @@ def main():
     p.add_argument("--bin", default="tmp/smoke/suga", help="suga binary to test")
     p.add_argument("--work", default="tmp/smoke-tool-ctrlc", help="scratch dir (SUGA_HOME and workspace)")
     p.add_argument("--port", type=int, default=18796)
+    p.add_argument("--steering", action="store_true", help="run the chat.steering on scenario")
     p.add_argument("--keep", action="store_true", help="keep the scratch home after the run")
     args = p.parse_args()
 
@@ -94,7 +151,8 @@ def main():
     isolate_ws(ws)
     # No approval question: the tool must start on its own, the subject here is
     # the interrupt, not the approval.
-    write_home(home, args.port, tools_extra="  approval: auto\n")
+    steering = "  steering: true\n" if args.steering else "  steering: false\n"
+    write_home(home, args.port, tools_extra="  approval: auto\n", extra="chat:\n" + steering)
     env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
     env.pop("SUGA_CONFIG", None)
 
@@ -108,7 +166,7 @@ def main():
     try:
         wait_port(fake)
         s = PtySession([binary, "chat"], env=env, cwd=ws)
-        scenario(s, ws)
+        (scenario_on if args.steering else scenario_off)(s, ws)
         s.close()
     finally:
         if s is not None:

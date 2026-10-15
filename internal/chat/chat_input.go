@@ -62,9 +62,15 @@ type chatInputSource struct {
 	turnActive bool
 	// screenWidth is the terminal's column count when it could be read (0: unknown).
 	screenWidth int
-	closed      bool // set by DiscardQueued/Close: deliveries are refused afterwards (guarded by mu)
-	terminal    *lineedit.Terminal
-	requests    chan chatInputRequest
+	// inputFD is the terminal's file descriptor, set with screenWidth: the platform
+	// helpers (flushInput, inputWait, restoreOutputProcessing) work on it.
+	inputFD int
+	// steering keeps the keyboard readable while a turn runs (chat.steering):
+	// SetBusy(true) then keeps raw input and readTurnKeys reads the keys.
+	steering bool
+	closed   bool // set by DiscardQueued/Close: deliveries are refused afterwards (guarded by mu)
+	terminal *lineedit.Terminal
+	requests chan chatInputRequest
 	// events carries the result of a prompt read (Next); answers the answer of a
 	// question (Ask) and turnEvents what a steer read reports (S2b). Each mode has
 	// its own channel, so an answer can never be taken as a prompt line or as an
@@ -158,6 +164,7 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 			// nothing); a write failure is cosmetic and must not stop the chat.
 			_ = source.terminal.SetSize(width, height)
 		}
+		source.inputFD = fd
 		// A window resized while chat runs: follow it, so the editor keeps wrapping
 		// at the current width (SIGWINCH on Unix, a poll where there is no signal).
 		go source.watchScreenSize(fd)
@@ -253,17 +260,36 @@ func safeSender(from string) string {
 	return clean
 }
 
-// SetBusy marks a turn start/end. Starting a turn forces the tty back to cooked mode even when a
-// line read begun earlier is still blocked (a `suga send` delivery can start a turn while the
-// prompt is waiting); otherwise Ctrl-C would arrive as byte 0x03 and never interrupt the turn.
-// (S2b turns this into the steer read when chat.steering is on; until then the turn keeps the
-// cooked behaviour.)
+// SetBusy marks a turn start/end. Starting a turn without chat.steering forces the tty back to
+// cooked mode even when a line read begun earlier is still blocked (a `suga send` delivery can
+// start a turn while the prompt is waiting); otherwise Ctrl-C would arrive as byte 0x03 and never
+// interrupt the turn. With chat.steering (on by default) the turn keeps raw input and reads the
+// keys instead: Esc and Ctrl-C then end the turn as bytes, without depending on the console
+// turning Ctrl-C into a CTRL_C_EVENT - the path that fails inside a ConPTY (suga-nrf2).
 func (s *chatInputSource) SetBusy(busy bool) {
 	s.mu.Lock()
 	s.busy = busy
-	if busy {
+	switch {
+	case busy:
 		s.turnActive = true
+		if s.steering {
+			// Raw input clears the output flags chat's own output needs (the line
+			// editor writes its own CRLF, tool results and notices do not), so put
+			// them back right away.
+			_ = s.enterRawLocked()
+			_ = restoreOutputProcessing(s.inputFD)
+		} else {
+			_ = s.leaveRawLocked()
+		}
+	case s.steering:
+		// Between turns: cooked again until the next prompt read asks for raw mode
+		// (request), and the read a turn borrowed echoes again - request draws its
+		// prompt. A read still blocked from the turn goes on, cooked, like any read
+		// that a delivery started.
 		_ = s.leaveRawLocked()
+		if s.terminal != nil {
+			s.terminal.SetEcho(true)
+		}
 	}
 	s.mu.Unlock()
 }
@@ -340,9 +366,11 @@ func (s *chatInputSource) applyScreenSize(fd int) {
 // from Next.
 func (s *chatInputSource) Request(prompt string) bool { return s.request(prompt, modePrompt) }
 
-// RequestSteer asks for a read during a turn (S2b): the input line stays available
-// while the model works, Enter submits an inserted message and Ctrl-C/Esc ask to end
-// the turn. Results arrive on TurnEvents. No chat path uses it yet.
+// RequestSteer asks for a read during a turn (S2b): the input stays available while
+// the model works, Esc / Ctrl-C ask to end the turn and Enter submits a line (which
+// runTurn keeps for the next prompt). Results arrive on TurnEvents; runTurn starts it
+// at the beginning of a turn when chat.steering is on and reacts to what it reports.
+// The read draws nothing (ReadLineNoEcho): a turn has no input line on the screen.
 func (s *chatInputSource) RequestSteer(prompt string) bool {
 	return s.request(prompt, modeSteer)
 }
@@ -428,7 +456,12 @@ func (s *chatInputSource) enterRaw() error {
 }
 
 func (s *chatInputSource) enterRawLocked() error {
-	if s.restoreRaw != nil || s.turnActive || s.makeRaw == nil {
+	if s.restoreRaw != nil || s.makeRaw == nil {
+		return nil
+	}
+	if s.turnActive && !s.steering {
+		// A turn without chat.steering must stay cooked so Ctrl-C becomes SIGINT;
+		// with steering the turn reads raw input on purpose (SetBusy).
 		return nil
 	}
 	restore, err := s.makeRaw()
@@ -533,10 +566,15 @@ func (s *chatInputSource) readLine(request chatInputRequest) (string, error) {
 		s.reader.activitySent = false
 		var line string
 		var err error
-		if s.currentReadMode() == modeAsk {
+		switch s.currentReadMode() {
+		case modeAsk:
 			// The answer of a question stays out of history.
 			line, err = s.terminal.ReadLineNoHistory()
-		} else {
+		case modeSteer:
+			// A turn reads its keys without an input line on the screen: the model's
+			// own output must not be written around one (design M1).
+			line, err = s.terminal.ReadLineNoEcho()
+		default:
 			// Give back a half-typed line that a question took out of an earlier read.
 			if saved := s.takeSavedLine(); saved != "" {
 				s.terminal.SetPendingLine(saved)
