@@ -125,7 +125,7 @@ internal/personal、platform、acpserver、capability   保持
 
 ### 4. chat 显示与 Claude 流式
 
-- 渲染器（`internal/chat/render.go`）基于 gookit/cliui 与 gookit/color：用户提示符着色；模型文本实时打印；工具调用显示为一行 `⏺ file_read path=...`，结果摘要一行（超长截断）；`update_plan` 显示勾选列表；错误红色；每轮结束一行灰色状态 `model · in/out tokens · 耗时`。非 TTY 或 `NO_COLOR` 时退化为纯文本。
+- 渲染器（`internal/chat/render.go`）基于 gookit/cliui 与 gookit/color：用户提示符着色；模型文本实时打印；工具调用显示为一行 `⏺ file_read path=...`，结果摘要一行（超长截断）；`update_plan` 显示勾选列表；错误红色；每轮结束一行灰色状态 `model · in/out tokens · ctx 比例 · 耗时`（比例是最后一次请求的输入 token 占窗口的百分比，见 `Renderer.contextShare`）。非 TTY 或 `NO_COLOR` 时退化为纯文本。
 - 需要的事件：runner 现有 `tool_result`（仅 hooks 开启时发）改为 chat 始终订阅，并新增 `tool_call` 开始事件；stream-json 不输出这两类事件（契约不变）。
 - Claude provider：读取 `base_url`（拼接规则见第 1 节）；`Stream` 用 Messages API `stream: true`，处理 `message_start`（输入与缓存 token）、`content_block_start`（tool_use 的 id/name）、`content_block_delta`（`text_delta` 实时输出、`input_json_delta` 累积参数）、`content_block_stop`（解析该块参数）、`message_delta`（stop_reason、输出 token）、`message_stop`、`ping`（忽略）与流中 `error`；只重试建连；Pool 已有"已输出则不切换备用"。
 

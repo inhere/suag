@@ -183,6 +183,35 @@ func TestRendererPlainTurn(t *testing.T) {
 		}}).Status(personal.RunResult{}, time.Second)
 		assert.Eq(t, "m · in 0 / out 0 tokens · 1.0s · 00:03\n", b.String())
 	})
+	t.Run("status shows how full the context is", func(t *testing.T) {
+		for _, tc := range []struct {
+			name           string
+			window, lastIn int
+			want           string
+		}{
+			{"share of the last request", 1000, 550, "ctx 55%"},
+			{"rounds down", 1000, 9, "ctx 0%"},
+			{"above the window stays honest", 1000, 1050, "ctx 105%"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var b bytes.Buffer
+				newRenderer(rendererOptions{Out: &b, Model: "m", ContextWindow: tc.window, now: testClock}).
+					Status(personal.RunResult{Usage: agentcore.Usage{InputTokens: 12, OutputTokens: 3}, LastInputTokens: tc.lastIn}, time.Second)
+				assert.Eq(t, "m · in 12 / out 3 tokens · "+tc.want+" · 1.0s · 12:34\n", b.String())
+			})
+		}
+	})
+	t.Run("status without a window or a model call omits the share", func(t *testing.T) {
+		for _, o := range []rendererOptions{
+			{Model: "m", now: testClock},                      // window unknown
+			{Model: "m", ContextWindow: 1000, now: testClock}, // no call reported tokens
+		} {
+			var b bytes.Buffer
+			o.Out = &b
+			newRenderer(o).Status(personal.RunResult{Usage: agentcore.Usage{InputTokens: 12}}, time.Second)
+			assert.Eq(t, "m · in 12 / out 0 tokens · 1.0s · 12:34\n", b.String())
+		}
+	})
 }
 
 // TestRendererInterrupt: an interrupted turn reads 已中断本轮 on the chat output

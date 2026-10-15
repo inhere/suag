@@ -392,9 +392,9 @@ func (r *Renderer) noteMemory(event personal.Event) {
 	r.memory = append(r.memory, fmt.Sprintf("%s：%s（%s）", memoryVerbs[change.Action], title, change.Scope))
 }
 
-// Status prints the grey end-of-turn line: model, token usage, elapsed time and
-// the local time the turn ended at, preceded by one line per memory write of
-// the turn.
+// Status prints the grey end-of-turn line: model, token usage, the share of the
+// context window the last request used, elapsed time and the local time the turn
+// ended at, preceded by one line per memory write of the turn.
 func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration) {
 	r.stopThinking()
 	for _, line := range r.memory {
@@ -407,10 +407,28 @@ func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration) {
 	}
 	parts = append(parts,
 		fmt.Sprintf("in %d / out %d tokens", result.Usage.InputTokens, result.Usage.OutputTokens),
+	)
+	// How full the context is: the same number the idle consolidation compares
+	// with context.idle_min_ratio, so the person can tell when it will fire.
+	if share := r.contextShare(result); share != "" {
+		parts = append(parts, share)
+	}
+	parts = append(parts,
 		formatElapsed(elapsed),
 		// When the turn ended, so the person can tell long sessions apart (:03).
 		clockTime(r.localNow()))
 	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, strings.Join(parts, " · ")))
+}
+
+// contextShare renders the context usage of the turn's last model request as
+// "ctx 55%": its input tokens (cache included) over the model window. Empty
+// when the window is unknown or no model call of the turn reported tokens. A
+// request above the window stays honest (>100%) instead of being clamped.
+func (r *Renderer) contextShare(result personal.RunResult) string {
+	if r.opts.ContextWindow <= 0 || result.LastInputTokens <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("ctx %d%%", result.LastInputTokens*100/r.opts.ContextWindow)
 }
 
 // LastReply prints the last reply of a session chat continues, above the first

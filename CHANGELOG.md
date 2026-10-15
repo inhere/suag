@@ -9,6 +9,7 @@
 ### 新增
 
 - 模型请求超时可配置：`timeouts.request`（非流式请求整体，默认 120s）与 `timeouts.response_header`（流式等响应头，默认 120s），写 `off`/`0` 表示不限制；`providers.<id>.timeouts.request` / `.response_header` 可按 provider 覆盖。此前两者都写死 120s。
+- chat 回合结束的状态行加 `ctx x%`：最后一次模型请求的输入 token 占上下文窗口的比例，与空闲整理 `context.idle_min_ratio` 的判据同源，便于判断何时会触发整理，如 `… · in 522760 / out 836 tokens · ctx 55% · 2.1s · 14:03`。窗口未知或本回合没有模型调用时不显示；超过窗口时按实际值显示（如 `ctx 105%`），不截断。
 
 ### 修复
 
