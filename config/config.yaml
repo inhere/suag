@@ -97,18 +97,18 @@ providers:
 #   max_attempts: 6   # attempts per request, the first included; 1 = no retries
 #   base_delay: 1s
 #   max_delay: 60s
-#   reset_after: 2m
+#   reset_after: 10m
 
 # Timeouts of one model request. request bounds a non-streamed request as a
 # whole (dial, TLS, headers, body); response_header bounds the wait for a
 # streamed request's response headers - the streamed body itself has no timeout.
 # Durations: 90s / 2m, or seconds; "off" (or 0) removes a bound. A provider may
-# override both (providers.<id>.timeouts). Note that a per-attempt timeout that
-# outlasts retry.reset_after makes every retry wait base_delay again instead of
-# backing off further.
+# override both (providers.<id>.timeouts). Keep a per-attempt timeout well under
+# retry.reset_after, or every retry starts over at base_delay instead of backing
+# off further (the defaults: response_header 60s, reset_after 10m).
 # timeouts:
 #   request: 120s
-#   response_header: 120s
+#   response_header: 60s
 
 # Context segments. Chat only: after idle_after without input, if the context
 # has reached idle_min_ratio of the segment threshold, a new segment is started

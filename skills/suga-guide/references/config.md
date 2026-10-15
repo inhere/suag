@@ -41,7 +41,7 @@
 | `retry.max_attempts` | `6` | 一次模型请求的总尝试次数（含首次）；`1` 关闭重试 |
 | `retry.base_delay` | `1s` | 退避起始等待（每次翻倍，±20% 抖动） |
 | `retry.max_delay` | `60s` | 退避等待上限（服务端 `Retry-After` 同样受此限制） |
-| `retry.reset_after` | `2m` | 连续这么久没有失败就把等待档位回到 `base_delay` |
+| `retry.reset_after` | `10m` | 连续这么久没有失败就把等待档位回到 `base_delay` |
 | `context.fold_every` | `0`（关） | 每 N 步前移一次历史折叠点（如 `10` 开启） |
 | `context.fold_keep` | `5`（≥1） | 最近多少步保持完整 |
 | `context.idle_after` | `15m`（`0` 关） | 仅 chat：空闲这么久且上下文达到阈值比例时在后台开启新段 |
@@ -55,11 +55,11 @@
 | 键 | 默认 | 含义 |
 |---|---|---|
 | `timeouts.request` | `120s` | 单次**非流式**模型请求的总超时（连接、TLS、响应头与读正文）；`off`/`0` 不限制 |
-| `timeouts.response_header` | `120s` | **流式**请求等待响应头的时间；正文不设超时（长回答可以流很久）；`off`/`0` 不限制 |
+| `timeouts.response_header` | `60s` | **流式**请求等待响应头的时间；正文不设超时（长回答可以流很久）；`off`/`0` 不限制 |
 | `providers.<id>.timeouts.request` | 继承 `timeouts.request` | 该 provider 的请求总超时，覆盖全局 |
 | `providers.<id>.timeouts.response_header` | 继承 `timeouts.response_header` | 该 provider 的响应头等待，覆盖全局 |
 
-超时后由 `retry` 决定是否重试：一次请求最多 `retry.max_attempts` 次尝试，每次都可能等满上面的超时，所以一次卡住的时长约为“超时 × 尝试次数 + 退避”。注意 `retry.reset_after`（默认 `2m`）与 120s 超时同量级：每次尝试都超时时退避档位会被重置回 `base_delay`（表现为每次重试只等约 1s）；要真正退避就把 `reset_after` 调大（如 `15m`）。
+超时后由 `retry` 决定是否重试：一次请求最多 `retry.max_attempts` 次尝试，每次都可能等满上面的超时，所以一次卡住的时长约为“超时 × 尝试次数 + 退避”。默认值下（响应头 60s、`reset_after` 10m）连续超时会正常退避（1s→2s→4s→8s→16s），最坏约 6×60s + 31s ≈ 6.5 分钟。注意两个值的相对大小：如果某个超时大于 `retry.reset_after`，退避档位会在每次尝试前被重置（表现为每次重试只等约 `base_delay`）。
 
 ## 其它顶层键
 

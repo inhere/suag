@@ -14,8 +14,11 @@ import "time"
 // The zero value of OpenAIConfig/ClaudeConfig takes the default below; NoTimeout
 // switches the bound off (the config's `off`).
 const (
-	DefaultRequestTimeout        = 120 * time.Second
-	DefaultResponseHeaderTimeout = 120 * time.Second
+	DefaultRequestTimeout = 120 * time.Second
+	// DefaultResponseHeaderTimeout is deliberately shorter than the request
+	// timeout: a gateway that never sends response headers is usually a hang, and
+	// a streamed request cannot be bounded once the headers are in.
+	DefaultResponseHeaderTimeout = 60 * time.Second
 )
 
 // NoTimeout disables a request timeout (OpenAIConfig/ClaudeConfig

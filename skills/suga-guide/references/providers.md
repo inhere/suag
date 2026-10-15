@@ -125,7 +125,7 @@ providers:
 
 ## 超时、重试与常见排查
 
-- 重试（所有 provider）：`retry.max_attempts`（默认 6，含首次；`1` 关闭）、`retry.base_delay`（`1s`）、`retry.max_delay`（`60s`）、`retry.reset_after`（`2m`）。触发条件：网络错误、HTTP 408/429/5xx、响应流断开。流式输出中途断开时整条消息重新请求（chat 显示 `↻` 提示行，stream-json 输出 `retry` 行）。
+- 重试（所有 provider）：`retry.max_attempts`（默认 6，含首次；`1` 关闭）、`retry.base_delay`（`1s`）、`retry.max_delay`（`60s`）、`retry.reset_after`（`10m`）。触发条件：网络错误、HTTP 408/429/5xx、响应流断开。流式输出中途断开时整条消息重新请求（chat 显示 `↻` 提示行，stream-json 输出 `retry` 行）。
 - 4xx（除 408/429）与流内 API 错误不重试；重试用尽后才按 `fallback_models` 换模型。
 - 排查顺序建议：`.env` 里的变量名是否与配置里的 `${VAR}` 完全一致 → `base_url` 的路径段（是否多写/漏写 `/v1`）→ 模型 id（上游名字不同就用 `model_id`）→ 代理/网络是否可达 → 上下文窗口是否写对。
 - `suga manifest`（或 `--json`）能看到生效的 provider、模型、实际发送的 id、上下文窗口、思考档位；`suga stats` 看用量与成本；`suga trace <session>` 看每次模型调用的缓存、重试与失败原因。

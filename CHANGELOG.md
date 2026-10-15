@@ -16,6 +16,7 @@
 
 ### 变更
 
+- 默认值调整：流式请求等响应头的超时 120s → **60s**，`retry.reset_after` 2m → **10m**。前者让“一直不发响应头”的网关更快暴露；后者大于单次超时，避免“每次尝试都超时 → 退避档位每次被重置回 `base_delay`”，连续超时时退避恢复正常翻倍（最坏约 6.5 分钟，而不是约 12 分钟）。
 - 进程日志（slog 的诊断）只写 `$SUGA_HOME/logs/suga.log`（0600、追加、不轮转），不再出现在终端：`chat` 的 stderr 就是渲染答复的终端（Gofer 也用 pty 起 chat），`run`/ACP 的 stderr 留给面向人的提示（会话 id、模型、重试、收尾原因）与 Gofer 自己的事件行。日志文件打不开时回退到 stderr 并提示一行。
 - `SUGA_DEBUG=1` 才会同时打开 debug 记录并往 stderr 再写一份（在 Gofer 的 agent 配置里是 `env: {SUGA_DEBUG: "1"}`），`DEBUG MODE ENABLED` 行带 `log_file=<路径>`；轮转与日志配置项（级别/路径/是否写 stderr）待后续补齐。
 

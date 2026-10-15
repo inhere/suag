@@ -16,8 +16,8 @@ func TestReadRequestTimeouts(t *testing.T) {
 		loadYAML(t, "")
 		got, err := ReadRequestTimeouts()
 		assert.Require(t, assert.NoErr(t, err))
-		assert.Eq(t, 120*time.Second, got.Request)
-		assert.Eq(t, 120*time.Second, got.ResponseHeader)
+		assert.Eq(t, DefaultRequestTimeout, got.Request)
+		assert.Eq(t, DefaultResponseHeaderTimeout, got.ResponseHeader)
 	})
 
 	t.Run("global section, durations and bare seconds", func(t *testing.T) {
@@ -69,7 +69,7 @@ providers:
 	assert.Eq(t, 90*time.Second, gw.RequestTimeout)           // from the global section
 	assert.Eq(t, 15*time.Second, gw.ResponseHeaderTimeout)    // overridden here
 	assert.Eq(t, 90*time.Second, ps["openai"].RequestTimeout) // an untouched preset keeps the global value
-	assert.Eq(t, 120*time.Second, ps["openai"].ResponseHeaderTimeout)
+	assert.Eq(t, DefaultResponseHeaderTimeout, ps["openai"].ResponseHeaderTimeout)
 }
 
 // A bad provider-level value names the provider's key.

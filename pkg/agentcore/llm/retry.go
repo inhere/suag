@@ -29,8 +29,10 @@ type RetryPolicy struct {
 }
 
 // DefaultRetryPolicy: up to 6 attempts, 1s doubling to 60s (about two
-// minutes of waiting in all), reset after 2 minutes without failures.
-var DefaultRetryPolicy = RetryPolicy{MaxAttempts: 6, BaseDelay: time.Second, MaxDelay: 60 * time.Second, ResetAfter: 2 * time.Minute}
+// minutes of waiting in all), reset after 10 minutes without failures - longer
+// than the default 60s response header timeout, so a stretch of timeouts keeps
+// backing off instead of starting over at BaseDelay every attempt.
+var DefaultRetryPolicy = RetryPolicy{MaxAttempts: 6, BaseDelay: time.Second, MaxDelay: 60 * time.Second, ResetAfter: 10 * time.Minute}
 
 // withDefaults fills the zero fields from DefaultRetryPolicy.
 func (p RetryPolicy) withDefaults() RetryPolicy {
