@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/envutil"
@@ -77,6 +78,12 @@ type ProviderConfig struct {
 	// Retry is the global retry: policy (ReadRetryPolicy), the same for
 	// every provider.
 	Retry llm.RetryPolicy
+	// RequestTimeout and ResponseHeaderTimeout bound one model request: they
+	// come from `timeouts:` (ReadRequestTimeouts), overridden by
+	// providers.<id>.timeouts. A zero value means no limit; unset keys keep the
+	// default (see config/timeouts.go).
+	RequestTimeout        time.Duration
+	ResponseHeaderTimeout time.Duration
 }
 
 // ModelSpec is a model bound to the provider that serves it.
@@ -131,6 +138,16 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 			APIKey:  strings.TrimSpace(os.Getenv(p.KeyEnv)),
 		}
 	}
+	// Request timeouts are `timeouts:` for every provider, overridden per
+	// provider below (`providers.<id>.timeouts`).
+	timeouts, err := ReadRequestTimeouts()
+	if err != nil {
+		return nil, err
+	}
+	for id, p := range providers {
+		p.RequestTimeout, p.ResponseHeaderTimeout = timeouts.Request, timeouts.ResponseHeader
+		providers[id] = p
+	}
 
 	raw, _ := gkconfig.Get("providers").(map[string]any)
 	for id, item := range raw {
@@ -176,6 +193,11 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 		if len(user.Compat) > 0 {
 			merged.Compat = user.Compat
 		}
+		mergedTimeouts, err := applyTimeouts(timeouts, mapValue(entry["timeouts"]), "providers."+id+".timeouts")
+		if err != nil {
+			return nil, err
+		}
+		merged.RequestTimeout, merged.ResponseHeaderTimeout = mergedTimeouts.Request, mergedTimeouts.ResponseHeader
 		if merged.Type == "" {
 			return nil, fmt.Errorf("providers.%s: type is required for a non-preset provider (openai|openai-responses|anthropic)", id)
 		}

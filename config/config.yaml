@@ -33,6 +33,10 @@ providers:
     # session id (skipped when there is none); User-Agent defaults to "suga".
     # headers:
     #   x-extra: "value"
+    # Optional request timeouts for this provider (override timeouts.*):
+    # timeouts:
+    #   request: 60s
+    #   response_header: 45s
 
   # OpenCode Go, OpenAI-compatible endpoint (needs the session header):
   # opencode-go:
@@ -94,6 +98,17 @@ providers:
 #   base_delay: 1s
 #   max_delay: 60s
 #   reset_after: 2m
+
+# Timeouts of one model request. request bounds a non-streamed request as a
+# whole (dial, TLS, headers, body); response_header bounds the wait for a
+# streamed request's response headers - the streamed body itself has no timeout.
+# Durations: 90s / 2m, or seconds; "off" (or 0) removes a bound. A provider may
+# override both (providers.<id>.timeouts). Note that a per-attempt timeout that
+# outlasts retry.reset_after makes every retry wait base_delay again instead of
+# backing off further.
+# timeouts:
+#   request: 120s
+#   response_header: 120s
 
 # Context segments. Chat only: after idle_after without input, if the context
 # has reached idle_min_ratio of the segment threshold, a new segment is started

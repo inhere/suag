@@ -45,6 +45,9 @@ fallback_models:
   - 流式输出中途断开时整条消息重新请求。如果断开前已输出部分文本，前端会先收到一个 `retry` 事件（`restart: true`）：chat 显示提示行，stream-json 输出 `retry` 行，ACP 发一段 thought，然后从头重新输出这条消息。其它 4xx 与流内的 API 错误不重试，重试用尽后才按 `fallback_models` 换模型。
   - 每次模型调用的重试次数、等待时长与最后原因记在 trace 的 model 事件上（`retries`、`retry_wait_ms`、`retry_reason`），`suga trace --analyze` 汇总。
 
+- `timeouts`：一次模型请求的超时，对所有 provider 生效。`request`（默认 `120s`）限制**非流式**请求的整体耗时（连接、TLS、响应头与读正文）；`response_header`（默认 `120s`）限制**流式**请求等待响应头的时间，流式正文本身不设超时（长回答可以流很久，中止仍可用 Esc/Ctrl-C）。两者都可写 `off` 或 `0` 表示不限制；`providers.<id>.timeouts.request` / `.response_header` 覆盖该 provider 的对应值。时长写成 `90s`、`2m`，或直接写秒数。
+  - 超时后按上面的 `retry` 重试：一次请求最多 `max_attempts` 次尝试，每次都可能等满超时，所以一次卡住的时长约为“超时 × 尝试次数 + 退避”。注意 `retry.reset_after`（默认 2m）与 120s 超时同量级：每次尝试都超时时，退避档位会被重置回 `base_delay`（表现为每次重试只等约 1s，而不是翻倍）；想让退避真正增长，把 `reset_after` 调大（如 `15m`）。
+
 ### 内置预设
 
 | id | type | 默认 base_url | 密钥环境变量 |

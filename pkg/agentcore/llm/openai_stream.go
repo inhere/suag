@@ -15,14 +15,12 @@ import (
 	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
 )
 
-// streamResponseHeaderTimeout bounds the wait for the response headers of a
-// streamed request. The body itself has no deadline (a long answer may stream
-// for minutes); ctx cancellation still stops it.
-const streamResponseHeaderTimeout = 120 * time.Second
-
-func newStreamClient() *http.Client {
+// newStreamClient returns the client of streamed requests: the wait for the
+// response headers is bounded by responseHeader, the body is not (see
+// DefaultResponseHeaderTimeout and ResponseHeaderTimeout).
+func newStreamClient(responseHeader time.Duration) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.ResponseHeaderTimeout = streamResponseHeaderTimeout
+	transport.ResponseHeaderTimeout = responseHeader
 	return &http.Client{Transport: transport}
 }
 

@@ -2,6 +2,7 @@ package axconfig
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/inhere/suga/pkg/agentcore/llm"
 )
@@ -24,6 +25,9 @@ func BuildProvider(spec ModelSpec) (llm.Provider, error) {
 			// older models (see llm.applyClaudeThinking).
 			Thinking: spec.ThinkingLevel(),
 			Retry:    p.Retry,
+			// Request bounds: timeouts.*, providers.<id>.timeouts.
+			RequestTimeout:        llmRequestTimeout(p.RequestTimeout),
+			ResponseHeaderTimeout: llmRequestTimeout(p.ResponseHeaderTimeout),
 		}), nil
 	case ProviderTypeOpenAIResponses:
 		return llm.NewResponsesProvider(llm.ResponsesConfig{
@@ -36,6 +40,9 @@ func BuildProvider(spec ModelSpec) (llm.Provider, error) {
 				// Thinking level as reasoning.effort ("off" is "none").
 				ReasoningEffort: reasoningEffort(spec.ThinkingLevel()),
 				Retry:           p.Retry,
+				// Request bounds: timeouts.*, providers.<id>.timeouts.
+				RequestTimeout:        llmRequestTimeout(p.RequestTimeout),
+				ResponseHeaderTimeout: llmRequestTimeout(p.ResponseHeaderTimeout),
 			},
 			Compat: p.Compat,
 		}), nil
@@ -49,8 +56,21 @@ func BuildProvider(spec ModelSpec) (llm.Provider, error) {
 			// Thinking level as reasoning_effort, see reasoningEffort.
 			ReasoningEffort: reasoningEffort(spec.ThinkingLevel()),
 			Retry:           p.Retry,
+			// Request bounds: timeouts.*, providers.<id>.timeouts.
+			RequestTimeout:        llmRequestTimeout(p.RequestTimeout),
+			ResponseHeaderTimeout: llmRequestTimeout(p.ResponseHeaderTimeout),
 		}), nil
 	default:
 		return nil, fmt.Errorf("providers.%s: unsupported type %q (want openai|openai-responses|anthropic)", p.ID, p.Type)
 	}
+}
+
+// llmRequestTimeout maps a resolved config timeout onto the llm package's
+// convention: a non-positive config value means "no limit" and becomes
+// llm.NoTimeout there, while 0 in the llm config asks for the package default.
+func llmRequestTimeout(d time.Duration) time.Duration {
+	if d <= 0 {
+		return llm.NoTimeout
+	}
+	return d
 }

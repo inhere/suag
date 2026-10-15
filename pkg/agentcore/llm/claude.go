@@ -75,6 +75,14 @@ type ClaudeConfig struct {
 	Thinking string
 	// Retry is the retry policy; zero fields take DefaultRetryPolicy's.
 	Retry RetryPolicy
+	// RequestTimeout bounds one non-streamed request as a whole
+	// (http.Client.Timeout); zero takes DefaultRequestTimeout and NoTimeout
+	// disables the bound. See timeouts.go.
+	RequestTimeout time.Duration
+	// ResponseHeaderTimeout bounds the wait for a streamed request's response
+	// headers; zero takes DefaultResponseHeaderTimeout and NoTimeout disables
+	// the bound.
+	ResponseHeaderTimeout time.Duration
 }
 
 // NewClaudeProvider creates a ClaudeProvider.
@@ -90,8 +98,8 @@ func NewClaudeProvider(cfg ClaudeConfig) *ClaudeProvider {
 		apiKey:       cfg.APIKey,
 		model:        cfg.Model,
 		messagesURL:  claudeMessagesURL(cfg.BaseURL),
-		client:       &http.Client{Timeout: 120 * time.Second},
-		streamClient: newStreamClient(),
+		client:       &http.Client{Timeout: requestTimeout(cfg.RequestTimeout)},
+		streamClient: newStreamClient(responseHeaderTimeout(cfg.ResponseHeaderTimeout)),
 		headers:      cfg.Headers,
 		promptCache:  cfg.PromptCache,
 		thinking:     cfg.Thinking,

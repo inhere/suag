@@ -50,6 +50,17 @@
 - 重试覆盖所有 provider，触发条件：网络错误、HTTP 408/429/5xx、响应流中断。
 - 历史折叠只改发给模型的请求（去掉较早步骤的思考内容、把超过 1000 字符的字符串参数换成说明），存储的历史完整；主模型为 `anthropic` 类型时不生效（签名绑定请求前缀）。
 
+## 请求超时
+
+| 键 | 默认 | 含义 |
+|---|---|---|
+| `timeouts.request` | `120s` | 单次**非流式**模型请求的总超时（连接、TLS、响应头与读正文）；`off`/`0` 不限制 |
+| `timeouts.response_header` | `120s` | **流式**请求等待响应头的时间；正文不设超时（长回答可以流很久）；`off`/`0` 不限制 |
+| `providers.<id>.timeouts.request` | 继承 `timeouts.request` | 该 provider 的请求总超时，覆盖全局 |
+| `providers.<id>.timeouts.response_header` | 继承 `timeouts.response_header` | 该 provider 的响应头等待，覆盖全局 |
+
+超时后由 `retry` 决定是否重试：一次请求最多 `retry.max_attempts` 次尝试，每次都可能等满上面的超时，所以一次卡住的时长约为“超时 × 尝试次数 + 退避”。注意 `retry.reset_after`（默认 `2m`）与 120s 超时同量级：每次尝试都超时时退避档位会被重置回 `base_delay`（表现为每次重试只等约 1s）；要真正退避就把 `reset_after` 调大（如 `15m`）。
+
 ## 其它顶层键
 
 | 键 | 默认 | 含义 |

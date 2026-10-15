@@ -4,7 +4,11 @@
 
 ## [未发布]
 
-进程日志落盘：内部日志只写文件，终端不再出现；回合中断后不再“失忆”。
+进程日志落盘：内部日志只写文件，终端不再出现；回合中断后不再“失忆”；模型请求超时可配。
+
+### 新增
+
+- 模型请求超时可配置：`timeouts.request`（非流式请求整体，默认 120s）与 `timeouts.response_header`（流式等响应头，默认 120s），写 `off`/`0` 表示不限制；`providers.<id>.timeouts.request` / `.response_header` 可按 provider 覆盖。此前两者都写死 120s。
 
 ### 修复
 

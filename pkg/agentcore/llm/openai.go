@@ -21,7 +21,8 @@ type OpenAIProvider struct {
 	baseURL string
 	model   string
 	client  *http.Client
-	// streamClient has no overall timeout: a streamed body may last minutes.
+	// streamClient has no overall timeout: a streamed body may last minutes. Its
+	// response header wait is bounded (ResponseHeaderTimeout though).
 	streamClient *http.Client
 	name         string
 	headers      map[string]string
@@ -44,6 +45,14 @@ type OpenAIConfig struct {
 	ReasoningEffort string
 	// Retry is the retry policy; zero fields take DefaultRetryPolicy's.
 	Retry RetryPolicy
+	// RequestTimeout bounds one non-streamed request as a whole
+	// (http.Client.Timeout); zero takes DefaultRequestTimeout and NoTimeout
+	// disables the bound. See timeouts.go.
+	RequestTimeout time.Duration
+	// ResponseHeaderTimeout bounds the wait for a streamed request's response
+	// headers; zero takes DefaultResponseHeaderTimeout and NoTimeout disables
+	// the bound.
+	ResponseHeaderTimeout time.Duration
 }
 
 // NewOpenAIProvider creates an OpenAIProvider from cfg.
@@ -61,8 +70,8 @@ func NewOpenAIProvider(cfg OpenAIConfig) *OpenAIProvider {
 		apiKey:       cfg.APIKey,
 		baseURL:      cfg.BaseURL,
 		model:        cfg.Model,
-		client:       &http.Client{Timeout: 120 * time.Second},
-		streamClient: newStreamClient(),
+		client:       &http.Client{Timeout: requestTimeout(cfg.RequestTimeout)},
+		streamClient: newStreamClient(responseHeaderTimeout(cfg.ResponseHeaderTimeout)),
 		name:         cfg.Name,
 		headers:      cfg.Headers,
 
