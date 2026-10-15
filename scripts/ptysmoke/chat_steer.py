@@ -483,10 +483,17 @@ def hook_scenario(c):
     c.check("the half line is echoed", s.until(re.escape(typed), m))
     c.check("no waiting line while the input line is up", not s.contains(r"思考中", m))
 
-    screen = Screen(width=c.cols)
-    screen.feed(s.text_raw(0))
-    lines = screen.screen_lines()
-    typed_rows = [i for i, row in enumerate(lines) if typed in row]
+    # The hook writes to the terminal itself and chat repaints its input line
+    # afterwards, asynchronously: read the screen until the repaint has landed
+    # (up to ~3s), so a busy machine does not catch it half way.
+    for _ in range(15):
+        screen = Screen(width=c.cols)
+        screen.feed(s.text_raw(0))
+        lines = screen.screen_lines()
+        typed_rows = [i for i, row in enumerate(lines) if typed in row]
+        if typed_rows and typed_rows[-1] == len(lines) - 1:
+            break
+        s.until(r"\A\Z never", m, timeout=0.2)  # keep reading output meanwhile
     # A process writing to the terminal itself (the hook) moves the cursor without
     # the line editor knowing, so the input line can be repainted a row lower: what
     # must hold is that it is there, whole, as the last row - and that the hook's own
