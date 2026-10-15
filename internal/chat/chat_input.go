@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -65,6 +66,10 @@ type chatInputSource struct {
 	// inputFD is the terminal's file descriptor, set with screenWidth: the platform
 	// helpers (flushInput, inputWait, restoreOutputProcessing) work on it.
 	inputFD int
+	// sizeFD is the descriptor the terminal size is read from (-1 without a
+	// terminal): the output when it is a terminal, else the input. Windows needs a
+	// screen-buffer handle for it and the input handle fails inside a ConPTY.
+	sizeFD int
 	// steering keeps the keyboard readable while a turn runs (chat.steering):
 	// SetBusy(true) then keeps raw input and readTurnKeys reads the keys.
 	steering bool
@@ -123,6 +128,22 @@ type chatInputSource struct {
 	savedLine string
 }
 
+// terminalSizeFD picks the descriptor the terminal size is read from: the output
+// when it is a terminal, else the input, else -1. Windows answers
+// GetConsoleScreenBufferInfo only for a screen-buffer (output) handle: asking the
+// input handle fails inside a ConPTY (Zed, Windows Terminal) and the line editor
+// then keeps its 80-column default - a wide window wrapped a line at 80. Unix
+// answers TIOCGWINSZ for either end of the terminal.
+func terminalSizeFD(input io.Reader, output io.Writer) int {
+	if f, ok := output.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		return int(f.Fd())
+	}
+	if f, ok := input.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		return int(f.Fd())
+	}
+	return -1
+}
+
 func newChatInputSource(parent context.Context, input io.Reader, output io.Writer) (*chatInputSource, error) {
 	ctx, cancel := context.WithCancel(parent)
 	source := &chatInputSource{
@@ -153,21 +174,17 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 		// A lone Esc during a turn is the Esc key (end this turn). The pump declares
 		// it before handing the byte over; prompt and ask reads never declare one.
 		source.terminal.EscCallback = source.escKeyPressed
+		source.inputFD = fd
 		// The terminal's real size drives the line editor's layout: it wraps a line
 		// at termWidth and the highlighted rows are filled to the same width. Without
 		// this the editor keeps wrapping at lineedit.DefaultWidth (80) however wide
 		// the window is, so a window wider than 80 columns wrapped a line early and
 		// the fill width (screenWidth) disagreed with the layout.
-		if width, height, err := term.GetSize(fd); err == nil && width > 0 {
-			source.screenWidth = width
-			// The editor is empty here, so SetSize only records the size (it repaints
-			// nothing); a write failure is cosmetic and must not stop the chat.
-			_ = source.terminal.SetSize(width, height)
-		}
-		source.inputFD = fd
+		source.sizeFD = terminalSizeFD(input, output)
+		source.applyTerminalSize()
 		// A window resized while chat runs: follow it, so the editor keeps wrapping
 		// at the current width (SIGWINCH on Unix, a poll where there is no signal).
-		go source.watchScreenSize(fd)
+		go source.watchScreenSize()
 	}
 	go source.run()
 	return source, nil
@@ -325,11 +342,12 @@ func (s *chatInputSource) currentScreenWidth() int {
 	return s.screenWidth
 }
 
-// watchScreenSize applies window size changes for as long as chat runs. The line
-// editor wraps at the size it was last given, so a resized window has to reach it
-// (SetSize also repaints the line being edited; a blocked read releases the
-// editor's lock, so that normally applies at once).
-func (s *chatInputSource) watchScreenSize(fd int) {
+// watchScreenSize applies window size changes for as long as chat runs (SIGWINCH on
+// Unix, a poll where there is no signal). The line editor wraps at the size it was
+// last given, so a resized window has to reach it (SetSize also repaints the line
+// being edited; a blocked read releases the editor's lock, so that normally applies
+// at once).
+func (s *chatInputSource) watchScreenSize() {
 	events, stop := resizeNotify()
 	defer stop()
 	for {
@@ -337,19 +355,23 @@ func (s *chatInputSource) watchScreenSize(fd int) {
 		case <-s.ctx.Done():
 			return
 		case <-events:
-			s.applyScreenSize(fd)
+			s.applyTerminalSize()
 		}
 	}
 }
 
-// applyScreenSize re-reads the terminal size and hands a changed one to the line
-// editor. A window that did not change costs one ioctl and nothing else.
-func (s *chatInputSource) applyScreenSize(fd int) {
-	if s.terminal == nil {
+// applyTerminalSize reads the terminal size (sizeFD) and hands a changed one to the
+// line editor. A window that did not change costs one ioctl and nothing else; a
+// size that cannot be read leaves the editor with its default width, which decides
+// how every line of the chat is laid out, so it is worth a log line.
+func (s *chatInputSource) applyTerminalSize() {
+	if s.terminal == nil || s.sizeFD < 0 {
 		return
 	}
-	width, height, err := term.GetSize(fd)
+	width, height, err := term.GetSize(s.sizeFD)
 	if err != nil || width <= 0 {
+		slog.Warn("read the terminal size; the chat keeps its default line width",
+			"fd", s.sizeFD, "err", err)
 		return
 	}
 	s.mu.Lock()
@@ -359,6 +381,7 @@ func (s *chatInputSource) applyScreenSize(fd int) {
 	if !changed {
 		return
 	}
+	slog.Info("terminal size", "fd", s.sizeFD, "width", width, "height", height)
 	_ = s.terminal.SetSize(width, height)
 }
 
