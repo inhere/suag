@@ -43,9 +43,10 @@
 
 ## 下次在现场怎么判定
 
-1. `suga trace <session-id> --json`：看这一回合的 turn 事件状态。`cancelled` → SIGINT 到了、ctx 被取消；`completed`/还在跑 → SIGINT 根本没到（问题在终端/控制台侧，即上面 1–3 之一）。
-2. 若 turn 为 `cancelled` 而工具子进程仍在跑，则是工具侧的 ctx 传播问题（当前实测 `shell_exec` 20ms 级返回，未复现）。
-3. 若怀疑控制台模式被别的进程改掉，可在出问题的终端里用 `scripts/wincons --console-output` 跑一轮，看「console input mode while the tool runs」是否仍是 `PROCESSED_INPUT`。
+1. 按键字节先实测：`go run ./scripts/keyprobe`（在出问题的终端里运行，直接看到每个键发来的字节；例如 Windows Terminal 1.24 上 Ctrl+Enter 就是裸 `0a`，与 Ctrl+J 同码，Shift+Enter 是 `0d` 与 Enter 同码、Alt+Enter 根本不到程序）。
+2. `suga trace <session-id> --json`：看这一回合的 turn 事件状态。`cancelled` → SIGINT 到了、ctx 被取消；`completed`/还在跑 → SIGINT 根本没到（问题在终端/控制台侧，即上面 1–3 之一）。
+3. 若 turn 为 `cancelled` 而工具子进程仍在跑，则是工具侧的 ctx 传播问题（当前实测 `shell_exec` 20ms 级返回，未复现）。
+4. 若怀疑控制台模式被别的进程改掉，可在出问题的终端里用 `scripts/wincons --console-output` 跑一轮，看「console input mode while the tool runs」是否仍是 `PROCESSED_INPUT`。
 
 ## 与 steering 设计（S2）的关系
 
