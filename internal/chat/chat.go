@@ -250,8 +250,22 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		opts.Asker.Bind(chatAsker{source: inputSource, render: render})
 		defer opts.Asker.Bind(nil)
 	}
+	// state carries the wiring a turn needs and the state that outlives a turn; a
+	// turn runs as state.runTurn (chat_turn.go), so Run itself keeps the session
+	// setup, the main loop and the exit handling only. It is built before the
+	// session socket is registered, because the socket's delivery endpoint
+	// (`suga send`, `--steer`) is a method of it.
+	state := &chatState{
+		ctx: ctx, runner: runner, hooks: hooks, source: inputSource, render: render,
+		stderr: stderr, errOut: errOut, baseEvent: baseEvent, title: title, idle: idle,
+		stats: &stats, sessionID: sessionID,
+		createdAtStartup: createdAtStartup, dirs: opts.Dirs,
+		steering: steering,
+	}
 	if runner.ProcessRoot() != "" {
-		processServer, sessionName, err = registerChatProcess(sessionID, runner, inputSource, stderr)
+		// The delivery endpoint is the chat state's own method: `suga send --steer`
+		// inserts its message into the turn running right now (steer_send.go).
+		processServer, sessionName, err = registerChatProcess(sessionID, runner, state.deliverMessage, stderr)
 		if err != nil {
 			// Registration only adds the local session socket (`suga send`, gofer delivery);
 			// losing it must not end the chat. The common cause is a SUGA_HOME deep enough
@@ -259,22 +273,13 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			processServer, sessionName = nil, ""
 			fmt.Fprintf(stderr, "提示：本会话未注册本地会话 socket（%v），因此收不到 suga send 与 gofer 投递；建议缩短 SUGA_HOME 路径。聊天继续运行。\n", err)
 		}
+		state.server, state.sessionName = processServer, sessionName
 	}
 	// The banner names the session; the short name is only known after registration.
 	render.SetSessionName(sessionName)
 	// The same two names label the terminal: a resumed session starts with its
 	// stored title, a new one gets the first message's title below.
 	title.Set(sessionName, startupTitle)
-	// state carries the wiring a turn needs and the state that outlives a turn;
-	// a turn runs as state.runTurn (chat_turn.go), so Run itself keeps the session
-	// setup, the main loop and the exit handling only.
-	state := &chatState{
-		ctx: ctx, runner: runner, hooks: hooks, source: inputSource, render: render,
-		stderr: stderr, errOut: errOut, baseEvent: baseEvent, title: title, idle: idle,
-		server: processServer, stats: &stats, sessionID: sessionID, sessionName: sessionName,
-		createdAtStartup: createdAtStartup, dirs: opts.Dirs,
-		steering: steering,
-	}
 	if hooks != nil && sessionID != "" {
 		ensureTranscriptFile(transcriptPath(sessionID), sessionID)
 		start := baseEvent("SessionStart")
@@ -292,6 +297,10 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		if n := inputSource.DiscardQueued(); n > 0 {
 			fmt.Fprintf(stderr, "Warning: %d queued message(s) were discarded on exit and not run.\n", n)
 		}
+		// Messages `suga send --steer` inserted into the last turn: they will not run
+		// either, and their senders are told here (steer_send.go) rather than by a
+		// dropped connection.
+		state.discardPendingSendSteers()
 		if n := state.steersDropped; n > 0 {
 			// Messages inserted into the last turn that chat did not run (it was
 			// leaving, or the turn was): the person sees how many are gone.

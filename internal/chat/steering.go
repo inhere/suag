@@ -25,6 +25,10 @@ import (
 // D2/Q1).
 const steerPrompt = "↳ "
 
+// steerFullHint is what chat says when the running turn's inbox is full (design
+// D11): the keyboard read and the session socket both report it here.
+const steerFullHint = "插话过多，请等本步结束"
+
 // errExitChat ends the chat REPL: a second Ctrl-C during a turn asked to leave.
 // Run's loop turns it into the same clean exit as the second Ctrl-C at the
 // prompt.
@@ -100,6 +104,9 @@ func (s *chatState) startTurnInput(cancel context.CancelFunc) *turnInput {
 		return nil
 	}
 	turn := &turnInput{state: s, gen: gen, cancel: cancel, stop: make(chan struct{}), done: make(chan struct{})}
+	// The turn whose read is open: the session socket inserts `suga send --steer`
+	// messages into it while it runs (steer_send.go).
+	s.setCurrentTurn(turn)
 	go turn.consume()
 	return turn
 }
@@ -149,9 +156,7 @@ func (t *turnInput) endTurn(exit bool) {
 	t.cancel()
 }
 
-// insert hands one message to the running turn (Runner.Steer). The turn may not
-// take it - it is already ending, or its inbox is full - and the message then
-// waits for the person's next input instead of being dropped.
+// insert hands one message a person typed at the keyboard to the running turn.
 func (t *turnInput) insert(line string) {
 	text := strings.TrimSpace(line)
 	if text == "" {
@@ -160,19 +165,42 @@ func (t *turnInput) insert(line string) {
 	state := t.state
 	msg := personal.Steer{ID: state.nextSteerID(), Text: text, Source: personal.SteerSourceKeyboard}
 	accepted, err := state.runner.Steer(state.sessionID, msg)
+	t.record(msg, accepted)
 	if err != nil {
 		// The inbox holds steerCapacity messages already (design D11): say so, the
 		// message becomes the next input rather than growing the queue further.
-		state.render.Hint("插话过多，请等本步结束")
+		state.render.Hint(steerFullHint)
+		return
 	}
-	t.mu.Lock()
-	t.steers = append(t.steers, turnSteer{msg: msg, accepted: accepted})
-	t.mu.Unlock()
 	if accepted {
 		state.render.SteerWaiting(text)
 		return
 	}
 	state.render.SteerLate(text)
+}
+
+// insertFromElsewhere hands a message that arrived through the session socket
+// (`suga send --steer`) to the running turn. Unlike a typed one it is not kept when
+// the turn refuses it: there is no read of this chat it belongs to, and the caller
+// queues it for the next turn instead (design "send：--steer"), so the turn must
+// not run it as well. ErrSteerQueueFull is the full inbox.
+func (t *turnInput) insertFromElsewhere(msg personal.Steer) (bool, error) {
+	accepted, err := t.state.runner.Steer(t.state.sessionID, msg)
+	if err != nil || !accepted {
+		return false, err
+	}
+	t.record(msg, true)
+	t.state.render.SteerWaiting(msg.Text)
+	return true, nil
+}
+
+// record notes what the running turn did with one inserted message: its keyboard
+// consumer and the session socket both report here, so the turn's end (unaccepted
+// messages, the count in the status line) sees every one of them.
+func (t *turnInput) record(msg personal.Steer, accepted bool) {
+	t.mu.Lock()
+	t.steers = append(t.steers, turnSteer{msg: msg, accepted: accepted})
+	t.mu.Unlock()
 }
 
 // deliver marks the message a "steer_delivered" event names as carried by a model
@@ -203,6 +231,8 @@ func (t *turnInput) end() turnEnd {
 	if t == nil {
 		return turnEnd{}
 	}
+	// The read is over: nothing can be inserted into this turn any more.
+	t.state.dropCurrentTurn(t)
 	close(t.stop)
 	<-t.done
 	t.drain()
@@ -247,6 +277,9 @@ func (w steerOut) Write(p []byte) (int, error) {
 // steerReturn is one message inserted into a finished turn that no model request
 // carried, as chat has to handle it.
 type steerReturn struct {
+	// id is the steer's own id: it names the message for a sender waiting on it
+	// (steer_send.go) and is ignored for the messages a person typed here.
+	id   string
 	text string
 	// sender is who sent it: "" for the person at this keyboard, otherwise the
 	// sender of a message that came from elsewhere (SteerSender).
@@ -263,7 +296,17 @@ func steerReturns(returned, unaccepted []personal.Steer) []steerReturn {
 	}
 	out := make([]steerReturn, 0, len(returned)+len(unaccepted))
 	for _, s := range append(append([]personal.Steer(nil), returned...), unaccepted...) {
-		out = append(out, steerReturn{text: s.Text, sender: personal.SteerSender(s.Source)})
+		out = append(out, steerReturn{id: s.ID, text: s.Text, sender: personal.SteerSender(s.Source)})
+	}
+	return out
+}
+
+// steerIDs lists the ids of the messages of a finished turn, so a waiting sender
+// can be told what became of the one it sent.
+func steerIDs(backs []steerReturn) []string {
+	out := make([]string, 0, len(backs))
+	for _, b := range backs {
+		out = append(out, b.id)
 	}
 	return out
 }

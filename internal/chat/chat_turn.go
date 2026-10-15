@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	sugahooks "github.com/inhere/suga/internal/hooks"
@@ -66,6 +67,15 @@ type chatState struct {
 	// steerSeq names the messages inserted into a turn of this chat process
 	// (nextSteerID).
 	steerSeq int
+	// turnMu guards sendTurn, the turn whose input read is open right now: the
+	// session socket inserts `suga send --steer` messages into it (steer_send.go).
+	turnMu   sync.Mutex
+	sendTurn *turnInput
+	// sendMu guards sendSeq and sendSettled: the ids of the messages the session
+	// socket inserted, and the senders waiting for their fate (steer_send.go).
+	sendMu      sync.Mutex
+	sendSeq     int
+	sendSettled map[string]chan error
 	// steersDropped counts the inserted messages chat did not run because it is
 	// exiting; the exit summary warns about them, like queued deliveries.
 	steersDropped int
@@ -90,6 +100,10 @@ func (s *chatState) runTurn(line string, injected bool) error {
 		if err != nil || next == nil {
 			return err
 		}
+		// The messages the finished turn handed back now run as a turn of their
+		// own: a `suga send --steer --wait` sender learns its message is running
+		// (design "--wait" 完成点 "作为下一回合运行").
+		s.settleSendSteers(next.ids, nil)
 		line, injected = next.line, next.injected
 	}
 }
@@ -102,6 +116,9 @@ type steerTurn struct {
 	// turn then runs as the person's own input, and the transcript and the
 	// UserPromptSubmit hook record the same flag (design m1).
 	injected bool
+	// ids are the messages that became this turn, by id: a sender waiting for one
+	// of them is told it is running now (steer_send.go).
+	ids []string
 }
 
 // runOneTurn executes one turn of the chat: from pausing the idle consolidation
@@ -159,8 +176,10 @@ func (s *chatState) runOneTurn(line string, injected bool) (*steerTurn, error) {
 		Emit: func(eventCtx context.Context, event personal.Event) error {
 			if event.Kind == "steer_delivered" {
 				// A model request of this turn carried an inserted message: show it as
-				// delivered (the waiting line was printed when it was typed).
+				// delivered (the waiting line was printed when it was typed) and tell a
+				// `send --steer --wait` sender waiting for it (steer_send.go).
 				turn.deliver(event)
+				s.deliverSendSteer(event)
 			}
 			s.render.Handle(event)
 			if s.hooks == nil || event.Kind != "tool_result" {
@@ -277,7 +296,9 @@ func (s *chatState) runOneTurn(line string, injected bool) (*steerTurn, error) {
 	if !completed {
 		// A cancelled or failed turn takes every inserted message back to the
 		// input line and does not run it (design D4): ending the turn is meant to
-		// stop the agent, and the person decides what happens next.
+		// stop the agent, and the person decides what happens next. A `send --steer
+		// --wait` sender learns its message is discarded (design "--wait" 完成点).
+		s.settleSendSteers(steerIDs(backs), personalprocess.ErrDiscarded)
 		s.putSteersBack(backs)
 		return nil, nil
 	}
@@ -288,5 +309,6 @@ func (s *chatState) runOneTurn(line string, injected bool) (*steerTurn, error) {
 		s.lostReply = appendContext(s.lostReply, s.waiting.Interrupt(context.Background()))
 		s.waiting = nil
 	}
-	return &steerTurn{line: strings.Join(steerLines(backs), "\n"), injected: !typedHere(backs)}, nil
+	return &steerTurn{line: strings.Join(steerLines(backs), "\n"), injected: !typedHere(backs),
+		ids: steerIDs(backs)}, nil
 }
