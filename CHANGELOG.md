@@ -4,12 +4,12 @@
 
 ## [未发布]
 
-进程日志落盘：交互式 chat 不再把日志打到终端。
+进程日志落盘：内部日志只写文件，终端不再出现。
 
 ### 变更
 
-- 进程日志（slog 的诊断）写入 `$SUGA_HOME/logs/suga.log`（0600、追加、不轮转）。交互式 `chat` 只写文件：它的 stderr 就是渲染答复的终端（Gofer 也用 pty 起 chat），日志行直写会打断实时输出；`suga run` 与被 Gofer 拉起的 `suga acp` 是管道，仍在 stderr 保留一份，`job logs --stderr` 与 Gofer 对 `session id:` 行的提取都不受影响。日志文件打不开时回退到 stderr 并提示一行。
-- `SUGA_DEBUG=1` 时 `DEBUG MODE ENABLED` 行写在日志文件里（并带 `log_file=<路径>`），不再出现在终端；轮转与日志配置项（级别/路径/是否写 stderr）待后续补齐。
+- 进程日志（slog 的诊断）只写 `$SUGA_HOME/logs/suga.log`（0600、追加、不轮转），不再出现在终端：`chat` 的 stderr 就是渲染答复的终端（Gofer 也用 pty 起 chat），`run`/ACP 的 stderr 留给面向人的提示（会话 id、模型、重试、收尾原因）与 Gofer 自己的事件行。日志文件打不开时回退到 stderr 并提示一行。
+- `SUGA_DEBUG=1` 才会同时打开 debug 记录并往 stderr 再写一份（在 Gofer 的 agent 配置里是 `env: {SUGA_DEBUG: "1"}`），`DEBUG MODE ENABLED` 行带 `log_file=<路径>`；轮转与日志配置项（级别/路径/是否写 stderr）待后续补齐。
 
 ## [0.23.1] - 2026-10-14
 

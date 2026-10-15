@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"golang.org/x/term"
-
 	appconfig "github.com/inhere/suga/internal/config"
 )
 
@@ -17,22 +15,23 @@ import (
 // later (issue suga-5dyx).
 const logFileName = "suga.log"
 
-// SetupLogging installs the process logger. Every record goes to
-// <SUGA_HOME>/logs/suga.log; stderr gets a copy only when it is not a terminal,
-// because an interactive chat renders its live output on that terminal (gofer
-// runs chat in a pty, the same thing) and a log line written straight to the tty
-// breaks that layout.
+// SetupLogging installs the process logger. Records go to
+// <SUGA_HOME>/logs/suga.log and nowhere else in a regular run: what a person
+// needs is printed by the run itself (the session id, the model, a retry, a
+// wrap-up reason are plain notices on stderr) and Gofer reads stdout as
+// protocol, so free-form log lines would only clutter the terminal or the job
+// log. SUGA_DEBUG adds debug records and a copy on stderr — the mode to reach
+// for when diagnosing a problem.
 func SetupLogging() {
-	_ = setupLogging(os.Stderr, term.IsTerminal(int(os.Stderr.Fd())))
+	_ = setupLogging(os.Stderr, os.Getenv("SUGA_DEBUG") != "")
 }
 
-// setupLogging is SetupLogging with its inputs injected, so tests need neither a
-// real terminal nor the process stderr. It returns the open log file (nil when it
-// could not be opened): the process keeps it open for its lifetime, a test closes
-// it before its temporary home goes away.
-func setupLogging(stderr io.Writer, stderrIsTerminal bool) *os.File {
+// setupLogging is SetupLogging with the debug flag injected, so tests need
+// neither the environment nor the process stderr. It returns the open log file
+// (nil when it could not be opened): the process keeps it open for its lifetime,
+// a test closes it before its temporary home goes away.
+func setupLogging(stderr io.Writer, debugMode bool) *os.File {
 	level := slog.LevelInfo
-	debugMode := os.Getenv("SUGA_DEBUG") != ""
 	if debugMode {
 		level = slog.LevelDebug
 	}
@@ -41,14 +40,14 @@ func setupLogging(stderr io.Writer, stderrIsTerminal bool) *os.File {
 	logFile, logErr := openLogFile()
 	if logErr != nil {
 		// Nothing to write to but stderr: a log file that cannot be opened must
-		// not turn into silence, so stderr keeps the records even when it is a
-		// terminal.
+		// not turn into silence, so stderr keeps the records even though it is
+		// otherwise quiet.
 		writers = append(writers, stderr)
 	} else {
 		// The handler writes each record synchronously, so the open file needs
 		// no flush at exit; it stays open for the process lifetime.
 		writers = append(writers, logFile)
-		if !stderrIsTerminal {
+		if debugMode {
 			writers = append(writers, stderr)
 		}
 	}

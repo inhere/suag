@@ -171,7 +171,7 @@
 | `SUGA_MODEL` | 主模型，`<provider>/<model>`；被 `--model` 覆盖，覆盖配置 `model` |
 | `SUGA_HOOKS` | `off` 时整体关闭 chat hooks |
 | `SUGA_APPEND_SYSTEM_PROMPT` | 默认的追加系统提示（命令行的 `--append-system-prompt` 优先；非空时也覆盖会话已保存的那份） |
-| `SUGA_DEBUG` | 非空时打开 debug 日志（含 `DEBUG MODE ENABLED` 行与 `log_file` 路径）；进程日志写在 `$SUGA_HOME/logs/suga.log` |
+| `SUGA_DEBUG` | 非空时打开 debug 日志并**同时写 stderr**（含 `DEBUG MODE ENABLED` 行与 `log_file` 路径）；默认只写 `$SUGA_HOME/logs/suga.log`，终端保持干净 |
 | `SUGA_PROVIDER` | **已移除**：仍有值时启动报错，改用 `SUGA_MODEL=<provider>/<model>` |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` | 三个内置预设的默认密钥变量 |
 | `{VAR}` | 配置里 `api_key`、`base_url`、`headers` 的值支持 `${VAR}`，来自进程环境或 `$SUGA_HOME/.env` |
@@ -191,7 +191,7 @@
 | `run/` | chat 进程登记与锁（`suga ps`、`suga send` 用；进程记录里的 `name` 是会话短名称 `<目录名>-xy`，如 `suga-k7`） |
 | `skills/` | 释放的内置 skill 与用户自己的 skill |
 | `transcripts/` | chat 会话记录（`transcripts: false` 关闭） |
-| `logs/suga.log` | 进程日志（0600、追加、不轮转）；交互式 chat 只写文件，非交互运行同时写 stderr |
+| `logs/suga.log` | 进程日志（0600、追加、不轮转）；默认只写文件，`SUGA_DEBUG` 时同时写 stderr |
 | `AGENTS.md` | 用户级项目规则（每级规则文件之外额外读取） |
 | `output-rules.yaml` | 用户级输出整理规则 |
 
