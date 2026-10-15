@@ -223,10 +223,10 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 		t.pos = len(t.line)
 		t.moveCursorToPos(t.pos)
 	case keyUp:
-		if t.multiLineInput() {
-			// A line holding newlines (a paste, or Ctrl+J): Up stays inside the input
-			// and walks the history only from the first row.
-			t.moveCursorVertically(-1)
+		if t.multiLineInput() && t.moveCursorVertically(-1) {
+			// Inside a multi-line input Up moves the cursor up; on its first row it falls
+			// through to the history, like a single-line input (the history keeps the
+			// line as it was, so Down brings the whole input back).
 			return
 		}
 		entry, ok := t.history.NthPreviousEntry(t.historyIndex + 1)
@@ -240,8 +240,8 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 		runes := []rune(entry)
 		t.setLine(runes, len(runes))
 	case keyDown:
-		if t.multiLineInput() {
-			t.moveCursorVertically(1)
+		if t.multiLineInput() && t.moveCursorVertically(1) {
+			// Symmetrical to Up: from the last row Down falls through to the history.
 			return
 		}
 		switch t.historyIndex {

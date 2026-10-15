@@ -58,6 +58,25 @@ func TestMultiLineArrowKeys(t *testing.T) {
 		tm.handleKey(keyUp)
 		assert.Eq(t, "old", string(tm.line))
 	})
+
+	t.Run("up walks the history from the first row", func(t *testing.T) {
+		tm := newMultiLineTerminal("abcd\nefgh")
+		tm.history.Add("old")
+		tm.handleKey(keyUp) // inside the input: to the end of the first row
+		assert.Eq(t, 4, tm.pos)
+		tm.handleKey(keyUp) // already on the first row: the history
+		assert.Eq(t, "old", string(tm.line))
+	})
+
+	t.Run("down brings the whole input back from the history", func(t *testing.T) {
+		tm := newMultiLineTerminal("abcd\nefgh")
+		tm.history.Add("old")
+		tm.handleKey(keyUp)
+		tm.handleKey(keyUp)
+		assert.Eq(t, "old", string(tm.line))
+		tm.handleKey(keyDown) // back to the input as it was
+		assert.Eq(t, "abcd\nefgh", string(tm.line))
+	})
 }
 
 // TestDeclaredNewlineInsertsNewline: the pump declares a newline as text (Alt+Enter,
