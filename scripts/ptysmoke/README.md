@@ -6,7 +6,7 @@
 |---|---|
 | `fakellm.py` | OpenAI 兼容的 SSE 假模型：`--mode tool` 先返回 `shell_exec` 调用、工具结果后回复文本；`--mode text` 只回复文本；`--mode edit` 依次返回 `file_grep`、`file_edit` 调用再回复；`--mode memory` 先 `shell_exec` 再 `memory` add（用户消息含“直接”时跳过 shell）；`--mode adddir` 依次返回 `file_read`（`--read-path`）、`file_write`（`--write-path`、`--write-body`）调用再回复；`--delay` 控制每次响应前的等待；`--prompt-tokens` 设定上报的输入用量；`"stream": false` 的请求（如 compaction 摘要）回一个 JSON 响应；多线程服务（流式与非流式请求走不同连接）；`--background` 让 tool 模式的 shell_exec 带 `background: true`（收到 `[background task` 开头的通知或提醒只回文本）；`--lines N`/`--wide M`（text 模式）把回复换成 N 行、每行补齐到 M 列的长回复（超宽行用），`--chunk N` + `--chunk-delay S` 把流式文本切成 N 字符一块、每块之间等 S 秒（供“回复还在流式时正在输入插话”的屏幕断言）；`--fail-first N` 前 N 个请求回 HTTP 503，`--break-first M` 随后 M 个流只发一半回复就断开连接（重试冒烟用）；`--fail-from N [--fail-count M]` 从第 N 个请求起失败 M 次（M<=0 表示此后一直失败，中断回合冒烟用）。每个请求在 stdout 打一行 JSON：`user` 是最后一条 user 消息，`seen` 是请求里每条消息的简短标记（`user:<前 40 字符>`、`a:file_write`、`tool:edited …`），`tail` 是最后几条消息的 `{"role", "text"}`（回合中插话能在这里看出来） |
 | `ptydrive.py` | PTY 驱动库：`mark()` 后只检查新输出、`until()` 等待模式出现再输入、`drain()` 把新输出读进缓冲供 `contains()` 判断、`check()` 记录结果、`resize(cols, rows)` 改窗口大小（发 SIGWINCH）；还带一个最小 VT 屏幕模型 `Screen`（处理 CR、LF、退格、`ESC[K`、`ESC[2K`、`ESC[nA/B/C/D`、`ESC[nG`，按窗口宽度折行、宽字符算两列，其余转义跳过），`feed(raw)` 后 `screen_lines()` 得到各行（去掉结尾空格）——用于断言“这段话到底落在哪一行、有没有残行”，而不只是 grep 字节流；自带 `python3 -c "import ptydrive; ptydrive._self_test()"` |
-| `chat_approval.py` | 现成场景：开场模型、❯ 提示符、写工具确认（y/n/a/Ctrl-C、回合中提前输入不放行）、提示符处单次 Ctrl-C 只提示、连按两次退出（汇总与续接命令）、非 TTY 拒绝；窗口设为 100 列，并检查输入行按终端宽度折行（90 个字符仍在同一行；去掉 `SetSize` 调用时该检查会失败），以及运行中把窗口改到 60 列后编辑器按新宽度排版（用宽字符在行尾的填充空格判断；去掉 resize 监听时该检查会失败）|
+| `chat_approval.py` | 现成场景：开场模型、❯ 提示符、写工具确认（y/n/a/Ctrl-C）、提示符处单次 Ctrl-C 只提示、连按两次退出（汇总与续接命令）、非 TTY 拒绝；窗口设为 100 列，并检查输入行按终端宽度折行（90 个字符仍在同一行；去掉 `SetSize` 调用时该检查会失败），以及运行中把窗口改到 60 列后编辑器按新宽度排版（用宽字符在行尾的填充空格判断；去掉 resize 监听时该检查会失败）；回合中提前输入不放行分 `chat.steering` 开/关两组跑：开着时该行算插话（显示 `[插话] y`，随后的问题仍要下一行作答）、关着时该行被问句的读取丢弃且不算插话 |
 | `chat_edit.py` | `file_grep` 免确认、`file_edit` 确认显示原文/改为、确认后文件被修改、两次 Ctrl-C 退出 |
 | `chat_idle.py` | 空闲整理：`context.idle_after: 2s` + 小 `context_window`，回合时长超过 idle_after 时回合中不触发；回合结束后出现“✦ 空闲整理中…”与“✦ 已整理上下文：X → Y token”；之后输入正常；整理进行中输入会抢占它（无成功提示、回合照常回答）；`suga trace` 可见 schedule 事件与 reason=idle 的分段 |
 | `chat_observe.py` | 观测进入 trace：配置一个 hook 命令（UserPromptSubmit 注入上下文），在审批提示处停 1.2s 再答 y，退出后检查 `suga trace --json`：SessionStart / UserPromptSubmit（注入字符数）/ Stop 三个 hook 事件，shell_exec 的 `approval=user` 与等待时间，回合 context 事件计入 hook 注入 |
@@ -24,7 +24,7 @@
 | `chat_shortname.py` | 会话短名称：工作目录名 `Smoke_WS` → 横幅显示 `smokews-xy`（小写、清洗过），`suga ps` 与 `--json` 都列出该名称，`suga send --session <短名称>` 投递成功并开启一轮，`:session` 同时显示 id 与名称，退出摘要的续接命令后带名称；首条消息正文不再作为名字（`--session 第一句话` 退出码 3，且进程记录仍是短名称）；`--resume` 续接沿用同一名称，chat 退出后该地址不再可达（退出码 3） |
 | `chat_adddir.py` | 会话级附加目录（`--add-dir`）：启动 `suga chat --add-dir <工作区外目录> --add-dir <共享目录>:rw`，假模型先 `file_read` 工作区外文件（只读目录生效）、再 `file_write` 写进 `:rw` 目录（`tools.approval: auto`，不询问），检查工具结果、磁盘上的文件，以及 `suga trace --json` 的 `turn_context` 事件 `add_dirs` 为 `["<目录>:ro", "<目录>:rw"]`；`--keep` 保留工作目录便于反向验证（去掉附加目录注入后读/写在 chat 里应失败） |
 | `chat_adddir_cmds.py` | 会话中途改授权目录：不带 `--add-dir` 起 chat，模型读工作区外文件时出现 `授权访问 <目录>？[r] 只读 [w] 读写 [n] 拒绝`（答 `r` 后同一步就读到内容），`:dirs` 标出 `越界授权`，`:add-dir <目录>:rw` 后下一次 `file_write` 成功，`:rm-dir` 后同一写入又被拒（磁盘上无文件），`:add-dir docs` 只报错+用法；`suga trace --json` 有 3 条 `add_dir` 事件（路径/权限/来源：ask 与 keyboard），`turn_context.add_dirs` 逐回合跟上授权变化。第二个 chat（text 模式）里 `suga send` 投递 `:add-dir <目录>` 只当普通消息（显示 `[来自 cli] …`、模型作答、`:dirs` 里没有它），证明投递文本改不了授权；反向验证见脚本 docstring |
-| `chat_paste.py` | 多行粘贴（suga-b1md）：`text` 模式的假模型；检查行编辑期间终端收到 `ESC[?2004h`；`ESC[200~第一行\n第二行ESC[201~` 后两行都出现在输入行且**不**开始回合（假模型没被调用），回车后模型收到的**一条** user 消息正是 `第一行\n第二行`（`fakellm.py` 每个请求的 stdout JSON 带上 `user`）；CR 换行的粘贴同样；随后手打回车仍照常提交一行。两行在原始输出里用 `two_rows()` 按 `\r*\n` 匹配（raw 输入保留 OPOST 后行断是 CR CR LF）。反向验证：去掉粘贴处理（lineedit 里粘贴内换行又变成提交）后三条检查都失败 |
+| `chat_paste.py` | 多行粘贴（suga-b1md）：`text` 模式的假模型；检查行编辑期间终端收到 `ESC[?2004h`；`ESC[200~第一行\n第二行ESC[201~` 后两行都出现在输入行且**不**开始回合（假模型没被调用），回车后模型收到的**一条** user 消息正是 `第一行\n第二行`（`fakellm.py` 每个请求的 stdout JSON 带上 `user`）；CR 换行的粘贴同样；随后手打回车仍照常提交一行。两行在原始输出里按 `\r\n` 匹配（提示符读取不恢复 OPOST，行编辑器自己写的 CR LF 原样到达；回合中粘贴的行断才是 CR CR LF，见 `chat_steer.py`）。反向验证：去掉粘贴处理（lineedit 里粘贴内换行又变成提交）后三条检查都失败 |
 
 运行：
 
@@ -37,7 +37,7 @@ python3 -I scripts/ptysmoke/chat_approval.py --bin tmp/smoke/suga --work tmp/smo
 编写新场景的要点：
 
 - 断言只看 `s.mark()` 之后的输出（`s.until(pattern, m)`、`s.contains(pattern, m)`），不要在整个缓冲里找——前面轮次的输出会让检查误判。
-- 等待预期提示出现后再输入：chat 在确认询问前会清除未读输入，提前写入的回答会被丢弃。
+- 等待预期提示出现后再输入：chat 在确认询问前会清除未读输入，提前写入的回答会被丢弃（`chat.steering` 开着时提前写的那行先算回合中的插话，因为回合一直在读输入行）。
 - raw 模式下回车是 `\r`，Ctrl-C 是 `\x03`，Ctrl-U 是 `\x15`。
 - 以结果行（如 `⎿ ok: ...`）判断工具是否执行，确认提示本身也会回显命令。
 - 每轮结束以状态行（`tokens · `）为准再进入下一步；场景自己负责启动和停止假服务，不要依赖外部后台进程。

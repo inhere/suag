@@ -197,9 +197,9 @@ def ask_scenario(s, outside_real, shared, write_path):
 
 
 def unwrap(text):
-    """The output with the terminal's line wraps removed: CR LF, or CR CR LF once
-    raw input keeps output processing on (OPOST turns the editor's CR LF into
-    CR CR LF)."""
+    """The output with the terminal's line wraps removed: CR LF, or CR CR LF while a
+    read keeps output processing on - a running turn's read (chat.steering), whose
+    line editor's own CR LF the terminal turns into CR CR LF."""
     return re.sub(r"\r*\n", "", text)
 
 

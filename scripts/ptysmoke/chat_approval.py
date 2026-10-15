@@ -4,11 +4,23 @@
 Starts scripts/ptysmoke/fakellm.py (tool mode), writes a temporary SUGA_HOME
 with tools.allow_write: true, runs `suga chat` in a PTY and checks:
 banner with model, ❯ prompt, approval question with the full command,
-pre-typed "y⏎" during a turn does not approve, n denies and the turn goes on,
-y runs the tool, Ctrl-C at the question only cancels the turn, a stops further
-questions, one Ctrl-C at the prompt only hints, two in a row print the resume
-command and usage summary,
+n denies and the turn goes on, y runs the tool, Ctrl-C at the question only
+cancels the turn, a stops further questions, one Ctrl-C at the prompt only hints,
+two in a row print the resume command and usage summary,
 and piped (non-TTY) input denies write tools.
+
+The pre-typed "y" of an approval question runs in two groups of its own (the way
+chat_tool_ctrlc.py does it), because chat.steering decides what a line typed
+during a turn is: with it on (the default) the line is a message inserted into
+the running turn, with it off the console stays cooked and the question's own
+read must not take the line as its answer.
+
+Reverse verification (drop the behaviour and the check fails):
+- restore OPOST|ONLCR for a prompt read too (restoreOutputProcessing in makeRaw):
+  the two "CR LF" checks fail - the editor's CR LF reaches the pty as CR CR LF.
+- let a cooked turn read the keyboard (a steer read with chat.steering: false):
+  "pre-typed y: no insert at all" fails; without the flush and the epoch bump
+  of Ask (ask.go) the pre-typed y answers the question and "n: denied" fails.
 
   make smoke-chat                        # builds tmp/smoke/suga and runs this
   python3 -I scripts/ptysmoke/chat_approval.py --bin tmp/smoke/suga
@@ -27,6 +39,8 @@ from ptydrive import CTRL_C, CTRL_U, PtySession  # noqa: E402
 
 OK = r"⎿ ok: SMOKE_OK"
 QUESTION = r"允许执行 shell_exec"
+# The status line every turn ends with: the context share and the local time.
+TURN_STATE = r"tokens · ctx \d+% · [\d.]+m?s · \d{2}:\d{2}"
 
 
 def isolate_ws(ws):
@@ -63,10 +77,69 @@ def wait_port(proc):
         raise SystemExit("fake model did not start: " + line)
 
 
-def scenario(s):
-    def turn_end(start):
-        return s.until(r"tokens · ", start)
+def turn_end(s, start):
+    """Waits for the end-of-turn status line, which every turn prints."""
+    return s.until(r"tokens · ", start)
 
+
+# The pre-typed "y" of an approval question: what such a line is depends on
+# chat.steering, so it runs as a scenario of its own, once per setting (the way
+# chat_tool_ctrlc.py runs both groups).
+def pretyped_scenario(s, steering):
+    """The pre-typed y of an approval question, per chat.steering setting.
+
+    steering on (the default): the turn keeps reading the input line, so the y is
+    a message inserted into the running turn - shown as such before the model's
+    answer, which is what makes the run deterministic - and the question that
+    follows is answered by the next line. The insert reached the turn, so the
+    request after the denied tool result carries it and the turn answers with the
+    model's reply (fakellm's tool mode).
+    steering off: the console stays cooked and nothing reads during the turn, so
+    the y waits in the tty and the question's own read must not take it for an
+    answer (unread input is flushed, ask.go). It is no inserted message either.
+    """
+    m = s.mark()
+    s.check("banner shows model", s.until(r"Suga chat · fake/m1", m))
+    s.check("❯ prompt", s.until(r"❯ ", m))
+
+    m = s.mark()
+    s.line("跑一下")
+    if steering:
+        # The turn's own read (the ↳ prompt) is up right after the turn starts.
+        # Type the y a moment later - its steer inbox is open by then (design m8)
+        # - and well before the model's answer (the fake's delay), so it can
+        # never land at the question that follows.
+        s.check("the prompt becomes ↳ while the turn runs", s.until(r"↳ ", m))
+        time.sleep(0.5)
+    else:
+        time.sleep(0.3)
+    m = s.mark()
+    s.line("y")
+    if steering:
+        # The insert is on screen before the model's answer arrived: the y went
+        # to the turn and not to the question (a lost byte would fail here
+        # instead of changing what the checks below see).
+        s.check("pre-typed y: inserted into the turn", s.until(r"\[插话\] y（等待送达）", m))
+    s.check("pre-typed y: question still asked", s.until(QUESTION, m))
+    s.check("pre-typed y: not executed", not s.contains(OK, m))
+    s.line("n")
+    s.check("n: denied", s.until(r"用户拒绝执行 shell_exec", m))
+    if steering:
+        # The request after the denied tool result carried the insert (steering
+        # hands it to the turn's next request): the model answers with its text.
+        s.check("the insert reached the turn", s.until(r"\[插话\] y（已送达）", m))
+        s.check("the turn answers", s.until(r"完成", m))
+    s.check("n: denied tools listed", s.until(r"本轮被拒绝的工具：shell_exec", m))
+    s.check("n: turn ends", turn_end(s, m))
+    if not steering:
+        # Nothing reads the keyboard during a cooked turn, so the y became no
+        # inserted message at all - checked once the whole turn is over, which is
+        # what makes it cover the turn rather than the instant of the check.
+        s.check("pre-typed y: no insert at all", not s.contains(r"\[插话\]", m))
+    s.check("turn end shows the context share and the local time", s.until(TURN_STATE, m))
+
+
+def scenario(s):
     m = s.mark()
     s.check("banner shows model", s.until(r"Suga chat · fake/m1", m))
     s.check("banner shows write tools on", s.until(r"工具：可读写文件、执行 shell", m))
@@ -96,25 +169,18 @@ def scenario(s):
     s.send(CTRL_U); time.sleep(0.2)
     s.resize(100, 30); time.sleep(0.5)
 
-    # Pre-typed y + Enter while the turn runs must not approve.
-    m = s.mark(); s.line("跑一下"); time.sleep(0.3); s.line("y")
-    s.check("pre-typed y: question still asked", s.until(QUESTION, m))
-    s.check("pre-typed y: not executed", not s.contains(OK, m))
-    s.line("n")
-    s.check("n: denied", s.until(r"用户拒绝执行 shell_exec", m))
-    s.check("n: denied tools listed", s.until(r"本轮被拒绝的工具：shell_exec", m))
-    s.check("n: turn ends", turn_end(m))
-    s.check("turn end shows the context share and the local time", s.until(r"tokens · ctx \d+% · [\d.]+m?s · \d{2}:\d{2}", m))
-    # NO_COLOR in this scenario (see main): the input line gets no background.
-    s.check("no highlight without colors", not s.contains_raw(r"\x1b\[48;", m))
-    time.sleep(0.3); s.send(CTRL_U)  # drop the prefilled leftover "y"
+    # Pre-typed y + Enter while the turn runs must not approve: that section runs
+    # in its own groups (pretyped_scenario), because chat.steering decides what
+    # such a line is.
 
     m = s.mark(); s.line("跑一下")
     s.check("y: full command shown", s.until(r"命令：echo SMOKE_OK", m) and s.until(QUESTION, m))
     s.line("y")
     s.check("y: executed", s.until(OK, m) and s.until(r"完成", m))
     s.check("y: answer marked ▣", s.contains(r"▣ 完成", m))
-    s.check("y: turn ends", turn_end(m))
+    s.check("y: turn ends", turn_end(s, m))
+    # NO_COLOR in this scenario (see main): the input line gets no background.
+    s.check("no highlight without colors", not s.contains_raw(r"\x1b\[48;", m))
 
     m = s.mark(); s.line("第三次")
     s.check("ctrl-c: question", s.until(QUESTION, m))
@@ -126,9 +192,9 @@ def scenario(s):
     m = s.mark(); s.line("继续")
     s.check("a: chat alive, question", s.until(QUESTION, m))
     s.line("a")
-    s.check("a: executed", s.until(OK, m) and turn_end(m))
+    s.check("a: executed", s.until(OK, m) and turn_end(s, m))
     m = s.mark(); s.line("又一次")
-    s.check("a: executed again", s.until(OK, m) and turn_end(m))
+    s.check("a: executed again", s.until(OK, m) and turn_end(s, m))
     s.check("a: no question again", not s.contains(QUESTION, m))
 
     # One Ctrl-C at the prompt only drops the typed text and asks for another.
@@ -152,15 +218,8 @@ def non_tty(binary, env, cwd):
     return "标准输入不是终端" in text and "tools.approval: auto" in text
 
 
-def main():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--bin", default="tmp/smoke/suga", help="suga binary to test")
-    p.add_argument("--work", default="tmp/smoke", help="scratch dir (SUGA_HOME and workspace)")
-    p.add_argument("--port", type=int, default=18795)
-    p.add_argument("--keep", action="store_true", help="keep the scratch home after the run")
-    args = p.parse_args()
-
-    binary = os.path.abspath(args.bin)
+def run_main(binary, args):
+    """The main scenario once, with the default chat.steering."""
     home = os.path.abspath(os.path.join(args.work, "home"))
     ws = os.path.abspath(os.path.join(args.work, "ws"))
     shutil.rmtree(home, ignore_errors=True)
@@ -188,8 +247,60 @@ def main():
         fake.wait(timeout=5)
         if not args.keep:
             shutil.rmtree(home, ignore_errors=True)
-    failed = s.failed() if s else ["setup"]
-    print(f"\n{len(s.results) - len(failed) if s else 0}/{len(s.results) if s else 0} passed")
+    return s.results if s else []
+
+
+def run_group(binary, work, port, steering, keep):
+    """Runs the pre-typed y scenario once: steering on (chat.steering default) or
+    off. The model answers slowly (--delay 2), so the y is typed into the turn well
+    before the question it must not answer can appear."""
+    home = os.path.abspath(os.path.join(work, "home"))
+    ws = os.path.abspath(os.path.join(work, "ws"))
+    shutil.rmtree(home, ignore_errors=True)
+    os.makedirs(ws, exist_ok=True)
+    isolate_ws(ws)
+    write_home(home, port, extra="" if steering else "chat:\n  steering: false\n")
+    env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
+    env.pop("SUGA_CONFIG", None)
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    fake = subprocess.Popen([sys.executable, "-I", os.path.join(here, "fakellm.py"),
+                             "--port", str(port), "--mode", "tool", "--delay", "2"],
+                            stdout=subprocess.PIPE, text=True)
+    s = None
+    try:
+        wait_port(fake)
+        s = PtySession([binary, "chat"], env=env, cwd=ws, size=(100, 30))
+        pretyped_scenario(s, steering)
+        s.close()
+    finally:
+        if s is not None:
+            s.close(grace=0)
+        fake.terminate()
+        fake.wait(timeout=5)
+        if not keep:
+            shutil.rmtree(home, ignore_errors=True)
+    return s.results if s else []
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--bin", default="tmp/smoke/suga", help="suga binary to test")
+    p.add_argument("--work", default="tmp/smoke", help="scratch dir (SUGA_HOME and workspace)")
+    p.add_argument("--port", type=int, default=18795)
+    p.add_argument("--keep", action="store_true", help="keep the scratch home after the run")
+    args = p.parse_args()
+
+    binary = os.path.abspath(args.bin)
+    results = run_main(binary, args)
+    # The pre-typed y of an approval question, once per chat.steering setting.
+    for i, (name, steering) in enumerate([("steering on", True), ("steering off", False)]):
+        print(f"\n== pre-typed y: {name} ==")
+        group = run_group(binary, os.path.abspath(f"{args.work}-pretyped-{'on' if steering else 'off'}"),
+                          args.port + 1 + i, steering, args.keep)
+        results += [(f"pre-typed y ({name}): {check}", ok) for check, ok in group]
+    failed = [name for name, ok in results if not ok]
+    print(f"\n{len(results) - len(failed)}/{len(results)} passed")
     if failed:
         print("failed: " + ", ".join(failed))
         sys.exit(1)
