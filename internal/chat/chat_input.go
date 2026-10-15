@@ -137,11 +137,6 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 			}
 			return func() error { return term.Restore(fd, state) }, nil
 		}
-		// The real width is used to fill the background of highlighted lines; the
-		// line editor keeps laying lines out with its own default.
-		if width, _, err := term.GetSize(fd); err == nil && width > 0 {
-			source.screenWidth = width
-		}
 		source.flushInput = func() error { return flushTerminalInput(fd) }
 		// The wait behind the lone-Esc and pasted-newline decisions: "is a byte
 		// ready?", asked without reading it (inputwait_*.go).
@@ -152,6 +147,17 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 		// A lone Esc during a turn is the Esc key (end this turn). The pump declares
 		// it before handing the byte over; prompt and ask reads never declare one.
 		source.terminal.EscCallback = source.escKeyPressed
+		// The terminal's real size drives the line editor's layout: it wraps a line
+		// at termWidth and the highlighted rows are filled to the same width. Without
+		// this the editor keeps wrapping at lineedit.DefaultWidth (80) however wide
+		// the window is, so a window wider than 80 columns wrapped a line early and
+		// the fill width (screenWidth) disagreed with the layout.
+		if width, height, err := term.GetSize(fd); err == nil && width > 0 {
+			source.screenWidth = width
+			// The editor is empty here, so SetSize only records the size (it repaints
+			// nothing); a write failure is cosmetic and must not stop the chat.
+			_ = source.terminal.SetSize(width, height)
+		}
 	}
 	go source.run()
 	return source, nil

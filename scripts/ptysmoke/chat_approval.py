@@ -72,6 +72,14 @@ def scenario(s):
     s.check("banner shows write tools on", s.until(r"工具：可读写文件、执行 shell", m))
     s.check("❯ prompt", s.until(r"❯ ", m))
 
+    # A wide window (100 columns): the line editor wraps at the terminal's width,
+    # not at a fixed 80, so a 90-column line stays on one row. The check is
+    # falsifiable: with the fixed 80 (no SetSize) the row wraps and the text is
+    # never 90 consecutive "x" (verified by removing the SetSize call).
+    m = s.mark(); s.send("x" * 90)
+    s.check("wide window: 90 columns stay on one row", s.until(r"x{90}", m))
+    s.send(CTRL_U); time.sleep(0.2)
+
     # Pre-typed y + Enter while the turn runs must not approve.
     m = s.mark(); s.line("跑一下"); time.sleep(0.3); s.line("y")
     s.check("pre-typed y: question still asked", s.until(QUESTION, m))
@@ -153,7 +161,7 @@ def main():
     s = None
     try:
         wait_port(fake)
-        s = PtySession([binary, "chat"], env=env, cwd=ws)
+        s = PtySession([binary, "chat"], env=env, cwd=ws, size=(100, 30))
         scenario(s)
         s.close()
         s.check("non-tty: write tool denied with hint", non_tty(binary, env, ws))

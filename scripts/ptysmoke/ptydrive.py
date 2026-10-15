@@ -13,6 +13,10 @@ import re
 import select
 import time
 
+import fcntl
+import struct
+import termios
+
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 ENTER = "\r"
 CTRL_C = "\x03"
@@ -21,7 +25,9 @@ CTRL_U = "\x15"
 
 
 class PtySession:
-    def __init__(self, argv, env=None, cwd=None):
+    def __init__(self, argv, env=None, cwd=None, size=None):
+        """size is the pty's initial (cols, rows); None leaves it unset, so the
+        child sees a 0x0 window (suga then falls back to its own 80 columns)."""
         self.buf = b""
         self.results = []
         self.pid, self.fd = pty.fork()
@@ -29,6 +35,9 @@ class PtySession:
             if cwd:
                 os.chdir(cwd)
             os.execve(argv[0], argv, env or dict(os.environ))
+        if size:
+            cols, rows = size
+            fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
     # --- output ---------------------------------------------------------
     def pump(self, seconds):
