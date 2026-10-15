@@ -124,6 +124,29 @@ func (r *chatActivityReader) Read(p []byte) (int, error) {
 				return 0, err
 			}
 		}
+		if b == escByte && r.source.altEnterWanted() && r.source.waitInput(escWaitTimeout) {
+			// A byte follows the ESC within the Esc window: Alt+Enter (ESC CR, or ESC LF
+			// where the terminal turns Alt+Enter into that) asks for a newline inside the
+			// input, not a submit. The ESC is dropped and the newline is declared as
+			// text; anything else is an escape sequence, and the byte read ahead waits
+			// for the next Read. Ctrl+J cannot be used for this: on Unix a pre-typed
+			// line ends in a bare LF too (ICRNL), so it is ambiguous.
+			next, nepoch, ok, err := r.nextByte()
+			if err != nil {
+				return 0, err
+			}
+			if ok && (next == crByte || next == lfByte) {
+				r.source.declareNewlineAsText()
+				if !r.source.handOver(nepoch) {
+					continue
+				}
+				p[0] = next
+				return 1, nil
+			}
+			if ok {
+				r.held = &heldByte{b: next, epoch: nepoch}
+			}
+		}
 		if b == crByte || b == lfByte {
 			// The newline may be text of a paste instead of a submit, which a
 			// terminal without bracketed paste gives no other sign of. Decide it
@@ -218,6 +241,15 @@ func (s *chatInputSource) pasteNewlineWanted() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.terminal != nil && s.inputWait != nil && waitInputSupported
+}
+
+// altEnterWanted reports whether the read in progress takes ESC followed by Enter as
+// "insert a newline in the input" and has the wait for the byte after the ESC. The
+// prompt and question reads do; a steer read owns the lone Esc as "end this turn".
+func (s *chatInputSource) altEnterWanted() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.readMode != modeSteer && s.terminal != nil && s.inputWait != nil && waitInputSupported
 }
 
 // declareNewlineAsText marks the newline byte the pump is about to hand over as
