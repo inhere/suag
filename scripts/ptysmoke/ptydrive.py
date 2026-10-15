@@ -36,8 +36,12 @@ class PtySession:
                 os.chdir(cwd)
             os.execve(argv[0], argv, env or dict(os.environ))
         if size:
-            cols, rows = size
-            fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+            self.resize(size[0], size[1])
+
+    def resize(self, cols, rows):
+        """Resize the pty's window, the way a person resizes the terminal: chat
+        gets SIGWINCH (or notices on its next poll where there is no signal)."""
+        fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
     # --- output ---------------------------------------------------------
     def pump(self, seconds):
@@ -67,6 +71,14 @@ class PtySession:
                 return False
             self.buf += data
         return True
+
+    def drain(self, seconds=0.3):
+        """Read pending output INTO the buffer (pump reads and drops it), so a
+        contains() check sees what the child printed meanwhile."""
+        end = time.time() + seconds
+        while time.time() < end:
+            if not self._read_once(0.15):
+                return
 
     def mark(self):
         """Position to search from; use it right before sending input."""

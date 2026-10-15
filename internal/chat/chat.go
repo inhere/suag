@@ -204,11 +204,9 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	color := colorEnabledFor(stdout)
 	if opts.HighlightInput && color {
 		// The line just submitted is repainted where it is, its background reaching
-		// the end of every row it occupies; the width is the terminal's when known.
-		inputSource.SetInputHighlight(lineedit.InputStyle{
-			Prefix: inputHighlightPrefix, Suffix: highlightSuffix,
-			FillWidth: inputSource.highlightWidth(),
-		})
+		// the end of every row it occupies: the editor fills to its own layout width,
+		// which is the terminal's and follows a resized window.
+		inputSource.SetInputHighlight(lineedit.InputStyle{Prefix: inputHighlightPrefix, Suffix: highlightSuffix})
 	}
 	render := newRenderer(rendererOptions{
 		Out: inputSource, Err: stderr,
@@ -216,7 +214,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		Provider: runner.ProviderName(), Model: runner.Model(),
 		Thinking: opts.Thinking, ContextWindow: opts.ContextWindow,
 		WriteTools: opts.WriteTools, Markdown: opts.Markdown, Spinner: opts.Spinner,
-		HighlightInput: opts.HighlightInput, HighlightWidth: inputSource.highlightWidth(),
+		HighlightInput: opts.HighlightInput, HighlightWidth: inputSource.highlightWidth,
 	})
 	// The terminal's window/tab title (chat.terminal_title): set below, once the
 	// session's short name and title are known, and given back on the way out.

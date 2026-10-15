@@ -78,9 +78,11 @@ type rendererOptions struct {
 	// paints the line the person submitted with the same switch. Like Markdown it
 	// needs a colored terminal.
 	HighlightInput bool
-	// HighlightWidth is the column count a highlighted line is filled to, so its
-	// background reaches the end of the terminal row (0: the line's own text only).
-	HighlightWidth int
+	// HighlightWidth returns the column count a highlighted line is filled to, so
+	// its background reaches the end of the terminal row (nil, 0 or no terminal:
+	// the line's own text only). A func, not a number: the window may be resized
+	// while chat runs.
+	HighlightWidth func() int
 	// spinnerNow and spinnerTicks drive that waiting line in tests (nil: the
 	// real clock and a time.Ticker).
 	spinnerNow   func() time.Time
@@ -307,7 +309,7 @@ func (r *Renderer) External(text string) {
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
 		if r.highlightInput() {
-			lines[i] = externalHighlightPrefix + lineedit.PadLine(line, r.opts.HighlightWidth) + highlightSuffix
+			lines[i] = externalHighlightPrefix + lineedit.PadLine(line, r.highlightWidth()) + highlightSuffix
 			continue
 		}
 		lines[i] = r.paint(color.Magenta, line)
@@ -319,6 +321,14 @@ func (r *Renderer) External(text string) {
 // chat.highlight_input with a colored terminal (a pipe, a redirected output or
 // NO_COLOR keeps the plain colors).
 func (r *Renderer) highlightInput() bool { return r.opts.Color && r.opts.HighlightInput }
+
+// highlightWidth is the fill width of a highlighted line (0: fill nothing).
+func (r *Renderer) highlightWidth() int {
+	if r.opts.HighlightWidth == nil {
+		return 0
+	}
+	return r.opts.HighlightWidth()
+}
 
 // ApprovalDetails formats the full key arguments of an approval question, one
 // indented item per detail (continuation lines indented further). Nothing is

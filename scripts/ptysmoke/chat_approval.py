@@ -80,6 +80,22 @@ def scenario(s):
     s.check("wide window: 90 columns stay on one row", s.until(r"x{90}", m))
     s.send(CTRL_U); time.sleep(0.2)
 
+    # A wide rune never straddles two rows: at the last column the editor writes a
+    # filler space first. "a" + 29 wide runes reach column 59, so the filler shows
+    # only when the editor lays the line out 60 columns wide - which is what this
+    # control run (100 columns) must not do.
+    m = s.mark(); s.send("a" + "好" * 29); s.drain(0.8)
+    s.check("wide window: no wide-rune filler at column 99", not s.contains(r"好 \r\n", m))
+    s.send(CTRL_U); time.sleep(0.2)
+
+    # A window resized while chat runs reaches the editor: at 60 columns the same
+    # line hits the last column and the filler appears (SIGWINCH; Windows polls).
+    s.resize(60, 30); time.sleep(0.5)
+    m = s.mark(); s.send("a" + "好" * 29)
+    s.check("resize: the editor lays out at the narrower width", s.until(r"好 \r\n", m, timeout=2))
+    s.send(CTRL_U); time.sleep(0.2)
+    s.resize(100, 30); time.sleep(0.5)
+
     # Pre-typed y + Enter while the turn runs must not approve.
     m = s.mark(); s.line("跑一下"); time.sleep(0.3); s.line("y")
     s.check("pre-typed y: question still asked", s.until(QUESTION, m))

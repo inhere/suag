@@ -158,6 +158,9 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 			// nothing); a write failure is cosmetic and must not stop the chat.
 			_ = source.terminal.SetSize(width, height)
 		}
+		// A window resized while chat runs: follow it, so the editor keeps wrapping
+		// at the current width (SIGWINCH on Unix, a poll where there is no signal).
+		go source.watchScreenSize(fd)
 	}
 	go source.run()
 	return source, nil
@@ -278,14 +281,59 @@ func (s *chatInputSource) SetInputHighlight(style lineedit.InputStyle) {
 // highlightWidth is the number of columns chat fills a highlighted line to: the
 // terminal's width when it reports one, else the width the line editor lays
 // lines out with. 0 when input is not a terminal (no line editing, no filling).
+// It is re-read per call, so a resized window is taken into account.
 func (s *chatInputSource) highlightWidth() int {
 	if s.terminal == nil {
 		return 0
 	}
-	if s.screenWidth > 0 {
-		return s.screenWidth
+	if width := s.currentScreenWidth(); width > 0 {
+		return width
 	}
 	return lineedit.DefaultWidth
+}
+
+// currentScreenWidth is the last terminal width chat read (0: unknown).
+func (s *chatInputSource) currentScreenWidth() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.screenWidth
+}
+
+// watchScreenSize applies window size changes for as long as chat runs. The line
+// editor wraps at the size it was last given, so a resized window has to reach it
+// (SetSize also repaints the line being edited; a blocked read releases the
+// editor's lock, so that normally applies at once).
+func (s *chatInputSource) watchScreenSize(fd int) {
+	events, stop := resizeNotify()
+	defer stop()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-events:
+			s.applyScreenSize(fd)
+		}
+	}
+}
+
+// applyScreenSize re-reads the terminal size and hands a changed one to the line
+// editor. A window that did not change costs one ioctl and nothing else.
+func (s *chatInputSource) applyScreenSize(fd int) {
+	if s.terminal == nil {
+		return
+	}
+	width, height, err := term.GetSize(fd)
+	if err != nil || width <= 0 {
+		return
+	}
+	s.mu.Lock()
+	changed := width != s.screenWidth
+	s.screenWidth = width
+	s.mu.Unlock()
+	if !changed {
+		return
+	}
+	_ = s.terminal.SetSize(width, height)
 }
 
 // Request asks for one prompt line (between turns): the chat loop takes the result

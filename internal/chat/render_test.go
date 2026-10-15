@@ -327,7 +327,7 @@ func TestRendererExternalInput(t *testing.T) {
 		color.ForceColor()
 		t.Cleanup(func() { color.RevertColorLevel() })
 		var out bytes.Buffer
-		newRenderer(rendererOptions{Out: &out, Color: true, HighlightInput: true, HighlightWidth: 20}).
+		newRenderer(rendererOptions{Out: &out, Color: true, HighlightInput: true, HighlightWidth: func() int { return 20 }}).
 			External("[来自 cli] a\nb")
 		// "[来自 cli] a" is 12 columns wide: both lines are filled to 20.
 		want := externalHighlightPrefix + "[来自 cli] a" + "        " + highlightSuffix + "\n" +
@@ -336,12 +336,12 @@ func TestRendererExternalInput(t *testing.T) {
 	})
 	t.Run("highlight needs colors and the switch", func(t *testing.T) {
 		var out bytes.Buffer
-		newRenderer(rendererOptions{Out: &out, HighlightInput: true, HighlightWidth: 20}).External("[来自 cli] a")
+		newRenderer(rendererOptions{Out: &out, HighlightInput: true, HighlightWidth: func() int { return 20 }}).External("[来自 cli] a")
 		assert.Eq(t, "[来自 cli] a\n", out.String())
 		color.ForceColor()
 		t.Cleanup(func() { color.RevertColorLevel() })
 		out.Reset()
-		newRenderer(rendererOptions{Out: &out, Color: true, HighlightWidth: 20}).External("[来自 cli] a")
+		newRenderer(rendererOptions{Out: &out, Color: true, HighlightWidth: func() int { return 20 }}).External("[来自 cli] a")
 		assert.Eq(t, "\x1b[35m[来自 cli] a\x1b[0m\n", out.String())
 	})
 }

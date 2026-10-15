@@ -5,8 +5,8 @@
 | 文件 | 作用 |
 |---|---|
 | `fakellm.py` | OpenAI 兼容的 SSE 假模型：`--mode tool` 先返回 `shell_exec` 调用、工具结果后回复文本；`--mode text` 只回复文本；`--mode edit` 依次返回 `file_grep`、`file_edit` 调用再回复；`--mode memory` 先 `shell_exec` 再 `memory` add（用户消息含“直接”时跳过 shell）；`--mode adddir` 依次返回 `file_read`（`--read-path`）、`file_write`（`--write-path`、`--write-body`）调用再回复；`--delay` 控制每次响应前的等待；`--prompt-tokens` 设定上报的输入用量；`"stream": false` 的请求（如 compaction 摘要）回一个 JSON 响应；多线程服务（流式与非流式请求走不同连接）；`--background` 让 tool 模式的 shell_exec 带 `background: true`（收到 `[background task` 开头的通知或提醒只回文本）；`--fail-first N` 前 N 个请求回 HTTP 503，`--break-first M` 随后 M 个流只发一半回复就断开连接（重试冒烟用）；`--fail-from N [--fail-count M]` 从第 N 个请求起失败 M 次（M<=0 表示此后一直失败，中断回合冒烟用）。每个请求在 stdout 打一行 JSON：`user` 是最后一条 user 消息，`seen` 是请求里每条消息的简短标记（`user:<前 40 字符>`、`a:file_write`、`tool:edited …`），让场景能断言模型实际收到的消息与顺序 |
-| `ptydrive.py` | PTY 驱动库：`mark()` 后只检查新输出、`until()` 等待模式出现再输入、`check()` 记录结果 |
-| `chat_approval.py` | 现成场景：开场模型、❯ 提示符、写工具确认（y/n/a/Ctrl-C、回合中提前输入不放行）、提示符处单次 Ctrl-C 只提示、连按两次退出（汇总与续接命令）、非 TTY 拒绝；窗口设为 100 列，并检查输入行按终端宽度折行（90 个字符仍在同一行；去掉 `SetSize` 调用时该检查会失败）|
+| `ptydrive.py` | PTY 驱动库：`mark()` 后只检查新输出、`until()` 等待模式出现再输入、`drain()` 把新输出读进缓冲供 `contains()` 判断、`check()` 记录结果、`resize(cols, rows)` 改窗口大小（发 SIGWINCH）|
+| `chat_approval.py` | 现成场景：开场模型、❯ 提示符、写工具确认（y/n/a/Ctrl-C、回合中提前输入不放行）、提示符处单次 Ctrl-C 只提示、连按两次退出（汇总与续接命令）、非 TTY 拒绝；窗口设为 100 列，并检查输入行按终端宽度折行（90 个字符仍在同一行；去掉 `SetSize` 调用时该检查会失败），以及运行中把窗口改到 60 列后编辑器按新宽度排版（用宽字符在行尾的填充空格判断；去掉 resize 监听时该检查会失败）|
 | `chat_edit.py` | `file_grep` 免确认、`file_edit` 确认显示原文/改为、确认后文件被修改、两次 Ctrl-C 退出 |
 | `chat_idle.py` | 空闲整理：`context.idle_after: 2s` + 小 `context_window`，回合时长超过 idle_after 时回合中不触发；回合结束后出现“✦ 空闲整理中…”与“✦ 已整理上下文：X → Y token”；之后输入正常；整理进行中输入会抢占它（无成功提示、回合照常回答）；`suga trace` 可见 schedule 事件与 reason=idle 的分段 |
 | `chat_observe.py` | 观测进入 trace：配置一个 hook 命令（UserPromptSubmit 注入上下文），在审批提示处停 1.2s 再答 y，退出后检查 `suga trace --json`：SessionStart / UserPromptSubmit（注入字符数）/ Stop 三个 hook 事件，shell_exec 的 `approval=user` 与等待时间，回合 context 事件计入 hook 注入 |
