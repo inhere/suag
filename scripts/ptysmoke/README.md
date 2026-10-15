@@ -8,7 +8,7 @@
 | `ptydrive.py` | PTY 驱动库：`mark()` 后只检查新输出、`until()` 等待模式出现再输入、`check()` 记录结果 |
 | `chat_approval.py` | 现成场景：开场模型、❯ 提示符、写工具确认（y/n/a/Ctrl-C、回合中提前输入不放行）、提示符处单次 Ctrl-C 只提示、连按两次退出（汇总与续接命令）、非 TTY 拒绝 |
 | `chat_edit.py` | `file_grep` 免确认、`file_edit` 确认显示原文/改为、确认后文件被修改、两次 Ctrl-C 退出 |
-| `chat_idle.py` | 空闲整理：`context.idle_after: 2s` + 小 `context_window`，回合时长超过 idle_after 时回合中不触发；回合结束后出现“空闲整理中…”与“已整理上下文：X → Y token”；之后输入正常；整理进行中输入会抢占它（无成功提示、回合照常回答）；`suga trace` 可见 schedule 事件与 reason=idle 的分段 |
+| `chat_idle.py` | 空闲整理：`context.idle_after: 2s` + 小 `context_window`，回合时长超过 idle_after 时回合中不触发；回合结束后出现“✦ 空闲整理中…”与“✦ 已整理上下文：X → Y token”；之后输入正常；整理进行中输入会抢占它（无成功提示、回合照常回答）；`suga trace` 可见 schedule 事件与 reason=idle 的分段 |
 | `chat_observe.py` | 观测进入 trace：配置一个 hook 命令（UserPromptSubmit 注入上下文），在审批提示处停 1.2s 再答 y，退出后检查 `suga trace --json`：SessionStart / UserPromptSubmit（注入字符数）/ Stop 三个 hook 事件，shell_exec 的 `approval=user` 与等待时间，回合 context 事件计入 hook 注入 |
 | `chat_retry.py` | 模型重试：`retry` 配成 200ms 级等待，假模型先回 503、再断一次流、再完整回复；检查 chat 显示 503 重试提示与“将重新输出”的断流提示、之后完整回复，`suga trace --json` 的 model 事件 `retries=2`、`retry_reason=stream broken` 与等待时间 |
 | `chat_interrupt.py` | 中断回合的回放（suga-y0sk）：假模型 `--fail-from 3 --fail-count 3`＋`retry.max_attempts: 3`，回合先跑 `file_grep`、再 `file_edit`（target.txt 已改动），随后应答请求连续 503 到回合 failed；检查 chat 显示重试与 `Error: … request failed after 3 attempts`、磁盘上的改动确实在；再发一句后，模型请求（fakellm 的 `seen` 摘要）里重新带有那次 `file_grep`/`file_edit` 调用与结果、顺序正确、并带中断小结，`suga trace` 有 failed/后续 completed 两个回合、`suga export` 里有 `suga.turn_interrupted` 条目。反向验证见脚本 docstring |

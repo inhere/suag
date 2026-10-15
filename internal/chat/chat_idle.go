@@ -16,6 +16,11 @@ import (
 // idleTaskName names the idle consolidation task (scheduler events, trace).
 const idleTaskName = "idle-consolidate"
 
+// idleMark prefixes every idle consolidation line, so they stand out from the
+// other chat hints (the Ctrl-C hint, the config notes). A single-width rune,
+// like the ❯ prompt and the ▣ answer prefix.
+const idleMark = "✦ "
+
 // idleConsolidation is the chat idle consolidation (design "空闲整理（chat）",
 // D5/D6): an Idle task fires idle_after after the last activity and, when the
 // last request's context reached idle_min_ratio of the segment threshold,
@@ -137,17 +142,17 @@ func (c *idleConsolidation) run(ctx context.Context) error {
 	if threshold <= 0 || float64(c.lastInput.Load()) < c.minRatio*float64(threshold) {
 		return nil
 	}
-	c.render.Hint("空闲整理中…")
+	c.render.Hint(idleMark + "空闲整理中…")
 	out, err := c.runner.ConsolidateIdle(ctx, c.sid)
 	switch {
 	case err == nil:
 		c.lastInput.Store(0)
-		c.render.Hint(fmt.Sprintf("已整理上下文：%d → %d token", out.TokensBefore, out.TokensAfter))
+		c.render.Hint(fmt.Sprintf(idleMark+"已整理上下文：%d → %d token", out.TokensBefore, out.TokensAfter))
 	case idleQuiet(err):
 		// A turn, :compact or exit took over, or there was nothing to do:
 		// stay quiet, the scheduler event records it.
 	default:
-		c.render.Hint("空闲整理失败：" + truncateLine(err.Error(), resultSummaryLimit))
+		c.render.Hint(idleMark + "空闲整理失败：" + truncateLine(err.Error(), resultSummaryLimit))
 	}
 	return err
 }

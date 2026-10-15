@@ -250,8 +250,8 @@ func TestChatIdleConsolidation(t *testing.T) {
 		h.clock.Advance(idleTestAfter - time.Second)
 		assert.Eq(t, 0, h.seen.count(schedule.Fired))
 		h.clock.Advance(time.Second)
-		h.waitOutput("已整理上下文：")
-		assert.StrContains(t, h.out.String(), "空闲整理中…")
+		h.waitOutput("✦ 已整理上下文：")
+		assert.StrContains(t, h.out.String(), "✦ 空闲整理中…")
 		h.waitEvents(schedule.Done, 1)
 		assert.Eq(t, []string{"idle"}, h.segmentReasons())
 		// Input still works afterwards.

@@ -138,10 +138,10 @@ agentcore 内核不变：段上下文消息、上下文更新都是宿主 `Conte
 
 ```text
 回合结束 → 等待输入，启动计时器（context.idle_after，默认 15m，0 关闭）
-到点 且 上下文估计 ≥ context.idle_min_ratio × 阈值（默认 0.5）
-  → 获取会话单飞（取不到则放弃本次）→ 状态行“空闲整理中…” → 分段入口（compact_model）
+到点 且 上下文估计 ≥ context.idle_min_ratio × 阈值（默认 0.65）
+  → 获取会话单飞（取不到则放弃本次）→ 状态行“✦ 空闲整理中…” → 分段入口（compact_model）
   → 提交（写段起始记录）前被取消：记 compaction 事件 status=cancelled，不写记录与 meta
-  → 提交后：视为成功，状态行“已整理上下文：X → Y token”
+  → 提交后：视为成功，状态行“✦ 已整理上下文：X → Y token”
 键盘输入、投递、Stop hook 产生回合、`:compact`：先取消再等待单飞释放，然后照常执行
 ```
 
@@ -162,7 +162,7 @@ type Handle interface{ Cancel(); Reset() }
 - 同名任务重复注册时替换旧任务；同一任务不会并发执行（上一次没结束则跳过本次并记事件）。
 - 选项：注入时钟（测试用假时钟，不睡眠）、`Observe` 事件回调（scheduled / fired / skipped / cancelled / done / failed，带任务名与耗时），宿主把事件写进 events 表，trace 可见。
 - 只在进程内，不持久化；需要跨进程或持久的计划（如 people 的长期提醒）时再加可选的持久层，不在本期。
-- chat 的空闲整理：`Idle("idle-consolidate", context.idle_after, fn)`，每次输入、回合开始、`:compact` 调用 `Touch()`；fn 内先检查上下文比例（≥ `context.idle_min_ratio`，默认 0.5）再进入分段入口。
+- chat 的空闲整理：`Idle("idle-consolidate", context.idle_after, fn)`，每次输入、回合开始、`:compact` 调用 `Touch()`；fn 内先检查上下文比例（≥ `context.idle_min_ratio`，默认 0.65）再进入分段入口。
 
 **用量（W0）**：每次模型调用结束（AfterModel）输出一行累计用量（本次 run 至此，含缓存与 `tool_calls`）；`turn_end` 与 `result` 带同名字段，`result` 最后覆盖。ACP 在同一时机发 `usage_update`，`_meta` 中给出 `run` 与 `session` 两组累计，并与 gofer 约定预算取 `run`。
 
@@ -192,7 +192,7 @@ type Handle interface{ Cancel(); Reset() }
 
 | ID | 问题 | 结论 |
 |---|---|---|
-| Q1 | 空闲阈值默认值 | 已决：15 分钟（`context.idle_after`，`0` 关闭），且上下文达阈值 50% 以上（`context.idle_min_ratio`）才触发；定时能力封装为通用组件（D9） |
+| Q1 | 空闲阈值默认值 | 已决：15 分钟（`context.idle_after`，`0` 关闭），且上下文达阈值 65% 以上（`context.idle_min_ratio`；2026-10-15 由 0.5 调整为 0.65）才触发；定时能力封装为通用组件（D9） |
 | Q2 | 新段保留多少原始内容 | 已决（按推荐）：只保留最后一组完整的工具调用/结果；其余靠交接包与 ref |
 | Q3 | 段内规则变化时追加全文还是提示 | 已决（按推荐）：追加全文，下一段并入段上下文 |
 | Q4 | `:compact` 的名字 | 已决（按推荐）：保留 `:compact`，行为改为开启新段 |

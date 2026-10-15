@@ -5,8 +5,8 @@ Starts fakellm.py in text mode (each response delayed longer than the idle
 time, reporting a prompt size above half the context threshold), writes a
 temporary SUGA_HOME with context.idle_after: 2s and a small context_window,
 runs `suga chat` in a PTY and checks: a turn longer than idle_after does not
-trigger it; a few seconds after the turn "空闲整理中…" then "已整理上下文：X → Y
-token" appear; input afterwards works; typing while a consolidation runs
+trigger it; a few seconds after the turn "✦ 空闲整理中…" then "✦ 已整理上下文：X
+→ Y token" appear; input afterwards works; typing while a consolidation runs
 preempts it (no success line, the turn answers); `suga trace` shows the
 schedule events and the idle segment.
 
@@ -25,8 +25,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ptydrive import PtySession  # noqa: E402
 from chat_approval import isolate_ws, wait_port, write_home  # noqa: E402
 
-RUNNING = r"空闲整理中…"
-DONE = r"已整理上下文：\d+ → \d+ token"
+RUNNING = r"✦ 空闲整理中…"
+DONE = r"✦ 已整理上下文：\d+ → \d+ token"
 
 
 def scenario(s):

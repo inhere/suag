@@ -12,7 +12,7 @@ import (
 // Chat idle consolidation defaults (design D6/Q1).
 const (
 	DefaultIdleAfter    = 15 * time.Minute
-	DefaultIdleMinRatio = 0.5
+	DefaultIdleMinRatio = 0.65
 )
 
 // IdleSettings configures the chat idle consolidation.

@@ -27,7 +27,7 @@ func TestReadIdleSettings(t *testing.T) {
 		got, err := ReadIdleSettings()
 		assert.NoErr(t, err)
 		assert.Eq(t, 15*time.Minute, got.After)
-		assert.Eq(t, 0.5, got.MinRatio)
+		assert.Eq(t, DefaultIdleMinRatio, got.MinRatio)
 	})
 	for _, tc := range []struct {
 		name, value string
