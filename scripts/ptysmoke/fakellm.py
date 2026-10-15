@@ -20,7 +20,10 @@ Modes (--mode):
 --delay seconds are slept before each response, so a test can type while a
 turn is running. --fail-first N answers the first N requests with HTTP 503;
 --break-first M then streams half of the next M responses' text and drops
-the connection (a broken stream), for the retry smoke. --background makes
+the connection (a broken stream), for the retry smoke. --fail-from N
+[--fail-count M] fails from the Nth request on, M times (M <= 0: every later
+request), which lets the first steps of a turn run and then ends it with a
+failure (the interrupted-turn replay smoke). --background makes
 the tool-mode shell_exec call a background task; a user message that is a
 background task notice or reminder ("[background task") gets the text reply;
 --watch-paths a,b adds watch_paths (a watch task). --agent makes the
@@ -30,7 +33,10 @@ sub-agent") greps SMOKE once, then reports "SUBREPORT: ..." after
 --child-delay seconds more. A request with "stream": false gets one JSON completion
 instead of SSE (the compaction summary). --prompt-tokens sets the reported prompt usage (the idle
 consolidation compares it with the context threshold). Each request is
-logged as one JSON line on stdout.
+logged as one JSON line on stdout: "user" is the last user message and "seen"
+is one token per message in order, which is what a smoke checks when it has to
+see more than the last message ("user:<head>" of the text, "a" or "a:file_write"
+for an assistant message and its tool calls, "tool:<head>" for a tool result).
 
   python3 -I fakellm.py --port 18795 --mode tool --delay 1
 """
@@ -40,6 +46,20 @@ import json
 import sys
 import threading
 import time
+
+
+def message_token(m):
+    """One short token for one request message, so a smoke can see what the
+    model received and in what order: "user:<head>", "a:file_write",
+    "tool:edited ...". The provider sends role=tool messages without a name, so
+    the head of their content is what identifies them (openai.go builds "role",
+    "content", "tool_call_id" only)."""
+    role = str(m.get("role") or "?")
+    if role == "assistant":
+        names = [c.get("function", {}).get("name", "?") for c in (m.get("tool_calls") or [])]
+        return "a:" + ",".join(names) if names else "a"
+    head = " ".join(str(m.get("content") or "").split())[:40]
+    return "%s:%s" % (role, head)
 
 
 def make_handler(args):
@@ -57,7 +77,9 @@ def make_handler(args):
             # actually received (e.g. a pasted multi-line text as one message).
             print(json.dumps({"path": self.path, "stream": body.get("stream"),
                               "last_role": body["messages"][-1].get("role"),
-                              "user": user_text}), flush=True)
+                              "user": user_text,
+                              "seen": [message_token(m) for m in body["messages"]]}),
+                  flush=True)
             system = " ".join(str(m.get("content")) for m in body["messages"] if m.get("role") == "system")
             child = "suga sub-agent" in system
             # --child-delay slows the sub-agent's report (after its grep).
@@ -67,12 +89,14 @@ def make_handler(args):
                 served[0] += 1
                 n = served[0]
             if n <= args.fail_first:
-                raw = b'{"error":{"message":"overloaded"}}'
-                self.send_response(503)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(raw)))
-                self.end_headers()
-                self.wfile.write(raw)
+                self.refuse()
+                return
+            # --fail-from N [--fail-count M]: fail from the Nth request on, M
+            # times (M <= 0: every later request), so the first steps of a turn
+            # can run and the turn then ends with a failure.
+            if (args.fail_from and n >= args.fail_from
+                    and (args.fail_count <= 0 or n < args.fail_from + args.fail_count)):
+                self.refuse()
                 return
             broken = n <= args.fail_first + args.break_first
             last = body["messages"][-1]
@@ -175,6 +199,15 @@ def make_handler(args):
             if not broken:
                 self.wfile.write(b"0\r\n\r\n")
 
+        def refuse(self):
+            """Answer 503: the shape the retry policy treats as transient."""
+            raw = b'{"error":{"message":"overloaded"}}'
+            self.send_response(503)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
         def log_message(self, *a):
             pass
 
@@ -210,6 +243,8 @@ def main():
     p.add_argument("--child-delay", type=float, default=0, help="extra seconds before each sub-agent response")
     p.add_argument("--fail-first", type=int, default=0, help="answer the first N requests with HTTP 503")
     p.add_argument("--break-first", type=int, default=0, help="then break the next M streams after half the text")
+    p.add_argument("--fail-from", type=int, default=0, help="answer requests N and later with HTTP 503 (0 = off)")
+    p.add_argument("--fail-count", type=int, default=0, help="--fail-from: how many requests fail (0 = all of them)")
     args = p.parse_args()
     server = QuietServer(("127.0.0.1", args.port), make_handler(args))
     print(json.dumps({"listening": args.port}), flush=True)

@@ -139,6 +139,7 @@ smoke-chat:
 	python3 -I scripts/ptysmoke/chat_idle.py --bin tmp/smoke/suga --work tmp/smoke-idle
 	python3 -I scripts/ptysmoke/chat_observe.py --bin tmp/smoke/suga --work tmp/smoke-observe
 	python3 -I scripts/ptysmoke/chat_retry.py --bin tmp/smoke/suga --work tmp/smoke-retry
+	python3 -I scripts/ptysmoke/chat_interrupt.py --bin tmp/smoke/suga --work tmp/smoke-interrupt
 	python3 -I scripts/ptysmoke/chat_danger.py --bin tmp/smoke/suga --work tmp/smoke-danger
 	python3 -I scripts/ptysmoke/chat_tasks.py --bin tmp/smoke/suga --work tmp/smoke-tasks
 	python3 -I scripts/ptysmoke/chat_watch.py --bin tmp/smoke/suga --work tmp/smoke-watch
