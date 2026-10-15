@@ -170,9 +170,9 @@ def scenario(s, log):
 
     # A typed Enter with text after it still submits (the newline is only taken
     # for a paste when a byte follows it right away).
-    # Multi-line input: Alt+Enter inserts a newline instead of submitting. The
-    # cursor movement inside a multi-line input (Up/Down) is covered by
-    # lineedit's unit tests; the end-to-end path does not move yet (suga-xxxx).
+    # Multi-line input: Alt+Enter inserts a newline instead of submitting. Cursor
+    # movement inside a multi-line input (Up/Down) is covered by lineedit's unit
+    # tests; the PTY path here does not move yet (suga-ixb8 - the real terminal does).
     m = s.mark(); s.send("第一行"); s.send("\x1b\r"); s.send("第二行"); s.drain(0.5)
     s.check("alt+Enter: the input holds two lines", s.contains(r"第一行\r\n第二行", m))
     s.send("\x15"); time.sleep(0.2)  # Ctrl+U: clear the line again
