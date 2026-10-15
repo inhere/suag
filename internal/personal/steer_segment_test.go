@@ -51,8 +51,12 @@ func compactWithSteerRunner(t *testing.T, steerAt int, steer Steer) (*scriptProv
 	res, err := runner.Run(context.Background(), RunRequest{SessionID: sid, Prompt: longJobPrompt})
 	assert.Require(t, assert.NoErr(t, err))
 	assert.Eq(t, "done", res.Output)
-	assert.Require(t, assert.Eq(t, 1, len(prov.sumReqs))) // the break summarized, no truncation fallback
-	assert.Empty(t, res.ReturnedSteers)                   // the steer was delivered
+	// At least one break summarized (rather than falling back to truncation). The
+	// token-weighted estimate can take a second break in these small test windows
+	// (the segment context message is CJK text the old byte-based estimate read as
+	// a quarter of its bytes); how many is each test's own business.
+	assert.Require(t, assert.Eq(t, true, len(prov.sumReqs) >= 1))
+	assert.Empty(t, res.ReturnedSteers) // the steer was delivered
 	return prov, repo, res
 }
 
@@ -77,7 +81,9 @@ func TestSteerBeforeTheCutGoesIntoTheSummary(t *testing.T) {
 	assert.StrNotContains(t, sum, "[user] "+steer.Text)
 
 	records := compactionEntries(t, repo, res.SessionID)
-	assert.Require(t, assert.Len(t, records, 1))
+	// records are in write order: records[0] is the break this test is about (the
+	// token-weighted estimate may take a second break in this small window).
+	assert.Require(t, assert.Eq(t, true, len(records) >= 1))
 	assert.Eq(t, "SUMMARY-main-1\n\n## 最近的用户请求（原文）\n1. "+longJobPrompt+
 		"\n\n## 本回合插话（原文）\n1. "+steer.Text+"（来源：keyboard）", records[0].Summary)
 	assert.Eq(t, []string{longJobPrompt}, records[0].RecentRequests)
@@ -107,7 +113,9 @@ func TestSteerAtTheCutIsKeptVerbatim(t *testing.T) {
 	assert.StrContains(t, sum, longJobPrompt)
 
 	records := compactionEntries(t, repo, res.SessionID)
-	assert.Require(t, assert.Len(t, records, 1))
+	// records are in write order: records[0] is the break this test is about (the
+	// token-weighted estimate may take a second break in this small window).
+	assert.Require(t, assert.Eq(t, true, len(records) >= 1))
 	assert.StrContains(t, records[0].Summary, "## 本回合插话（原文）\n1. "+steer.Text+"（来源：send:alice）")
 	assert.Eq(t, []string{longJobPrompt}, records[0].RecentRequests)
 }

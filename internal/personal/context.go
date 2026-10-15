@@ -254,10 +254,10 @@ type contextBuilder struct {
 	window, reserve int
 	truncLimit      int // tool-result truncation limit in chars; 0 = off
 
-	fixedChars    int // system prompt + tool schemas, computed once
-	haveFixed     bool
-	lastViewChars int // chars of the view sent in the latest model call
-	haveView      bool
+	fixedTokens    int // system prompt + tool schemas, computed once
+	haveFixed      bool
+	lastViewTokens int // tokens of the view sent in the latest model call
+	haveView       bool
 
 	// foldBase is the fold boundary already recorded in this segment (session
 	// meta fold_boundary); foldPending is a larger boundary seen by the latest
@@ -323,7 +323,7 @@ func (b *contextBuilder) BuildMessages(ctx context.Context, state *agentcore.Run
 			return nil, err
 		}
 	}
-	b.lastViewChars, b.haveView = charsOfMessages(view), true
+	b.lastViewTokens, b.haveView = tokensOfMessages(view), true
 	b.recordFold(ctx)
 	b.recordContext(ctx, state, est)
 	return view, nil
@@ -393,37 +393,40 @@ func (b *contextBuilder) limited(m agentcore.Message) agentcore.Message {
 	return m
 }
 
-// estimate approximates the tokens of the next model request: the previous
-// call's reported input_tokens plus the chars added since that call's view
-// (/4), or - before any call - system prompt + tool schemas + view (/4).
+// estimate approximates the tokens of the next model request: the previous call's
+// reported input_tokens plus the tokens added since that call's view, or - before
+// any call - system prompt + tool schemas + view. Both parts count tokens, not
+// bytes (tokensOfMessages): four ASCII bytes are a token, a CJK character is one.
 func (b *contextBuilder) estimate(ctx context.Context, state *agentcore.RunState, view []agentcore.Message) int {
-	chars := charsOfMessages(view)
+	tokens := tokensOfMessages(view)
 	if b.usage != nil && b.haveView {
 		if last, ok := b.usage.lastInputTokens(); ok {
-			return max(last+(chars-b.lastViewChars)/4, 0)
+			return max(last+(tokens-b.lastViewTokens), 0)
 		}
 	}
-	return (b.fixed(ctx, state) + chars) / 4
+	return b.fixed(ctx, state) + tokens
 }
 
+// fixed estimates the tokens the request carries besides the messages: the system
+// prompt and the tool schemas, computed once per segment.
 func (b *contextBuilder) fixed(ctx context.Context, state *agentcore.RunState) int {
 	if b.haveFixed {
-		return b.fixedChars
+		return b.fixedTokens
 	}
 	b.haveFixed = true
 	if b.prompt != nil && state != nil {
 		if s, err := b.prompt.BuildSystemPrompt(ctx, state); err == nil {
-			b.fixedChars += len(s)
+			b.fixedTokens += tokensOfText(s)
 		}
 	}
 	if b.r.cfg.Tools != nil {
 		if schemas, err := b.r.cfg.Tools.ListTools(ctx); err == nil {
 			if raw, err := json.Marshal(schemas); err == nil {
-				b.fixedChars += len(raw)
+				b.fixedTokens += tokensOfText(string(raw))
 			}
 		}
 	}
-	return b.fixedChars
+	return b.fixedTokens
 }
 
 // truncation ladder for tool results: 16000 chars, halved down to 2000.

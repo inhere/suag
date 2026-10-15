@@ -121,7 +121,7 @@
 **回合与压缩（B）**
 
 1. 回合开始时，取会话最新的 compaction entry，以及它之后属于已完成回合的 entry。失败或取消回合的 entry 不进上下文，与现状一致。
-2. 估算上下文 token：字符数/4 近似，并用上一次模型调用报告的 input_tokens 校正。超过 `window − reserve`（默认 reserve 16k）时触发压缩：
+2. 估算上下文 token：字符数/4 近似，并用上一次模型调用报告的 input_tokens 校正。超过 `window − reserve`（默认 reserve 16k）时触发压缩：（2026-10-15 起改为按字符类型加权——ASCII 约 4 字节/token、CJK 一个字一个 token，见 CHANGELOG。）
    - 切点从尾部往前数约 20k token 的位置开始，**向后**对齐到最近的可切位置，也就是宁可少留。可切位置按优先顺序为：user entry 之前；或者一个完整的调用/结果对之后。切点不会落在调用和结果之间。
    - 摘要用当前模型按固定模板生成：目标、约束、进展（完成/进行中/阻塞）、当前计划、关键决策、涉及文件、下一步。
    - 写一条 compaction entry，内容为 `{summary, first_kept_seq, tokens_before, tokens_after}`，并记一条 compaction event。

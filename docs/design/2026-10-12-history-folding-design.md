@@ -55,7 +55,7 @@
 - 实验实现：`internal/personal/fold.go`（`foldHistory`/`foldValue`），在 `contextBuilder.compose` 末尾作用于请求视图；`personal.Config.FoldEvery/FoldKeep` 由 wiring 读取配置（cb35c89，测试 `fold_test.go`）。
 - `openai.go` 只要请求中有一条非空 `Reasoning` 就判定为思考模式，并为每条助手消息发送 `reasoning_content`（清空的步发送空字段），DeepSeek 要求这一点；X2 验证网关接受清空的旧字段。并行调用时思考内容只在第一条助手消息上（`runtime.go` executeToolCalls），所以保留窗口可能不含任何非空思考内容，折叠后判定会失效——由范围 1/1a 的标记解决（评审 CB1）。
 - 每个回合新建一个 contextBuilder（`runner.go`）；回合的最终回答在最后一次组装之后才写入，所以边界可能在新回合第一次组装时才前移（评审 CB2）。
-- 上下文估算 `estimate` 使用上一次调用的 `input_tokens` 加视图字符变化，折叠后估算随之变小，分段阈值按真实请求大小判断。
+- 上下文估算 `estimate` 使用上一次调用的 `input_tokens` 加视图 token 变化（按字符类型加权：ASCII 约 4 字节/token、CJK 一个字一个 token），折叠后估算随之变小，分段阈值按真实请求大小判断。
 - 观测事件写入 `store.Event`（见 `compact.go` 的 compaction 事件），`trace.go` 渲染。
 - 规则：SR1403（最小充分）、SR1409（低暴露度评审封顶）、SR1107（设计 → 计划 → 实施）。
 

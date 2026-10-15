@@ -348,7 +348,7 @@ func (b *contextBuilder) startSegment(ctx context.Context, state *agentcore.RunS
 	// record the same way).
 	oldSummary, oldHandoff, oldPrev, oldFrom, oldStart, oldSeg, oldEff := b.summary, b.fromHandoff, b.prev, b.turnFrom, b.turnStart, b.seg, b.eff
 	oldInjected := b.injected
-	charsBefore := charsOfMessages(b.compose(state))
+	tokensBefore := tokensOfMessages(b.compose(state))
 	b.summary, b.fromHandoff = pkg.rendered, false
 	if cut <= len(oldPrev) {
 		b.prev = withoutContextUpdates(oldPrev[cut:])
@@ -362,7 +362,7 @@ func (b *contextBuilder) startSegment(ctx context.Context, state *agentcore.RunS
 	}
 	eff := *seg
 	b.seg, b.eff = seg, &eff
-	after := max(before-(charsBefore-charsOfMessages(b.compose(state)))/4, 0)
+	after := max(before-(tokensBefore-tokensOfMessages(b.compose(state))), 0)
 
 	// Summary holds the full rendered package, so an older binary decoding
 	// only the original fields still sees everything this one renders.
@@ -635,7 +635,10 @@ func (r *Runner) breakSegment(ctx context.Context, sessionID, reason string) (Co
 	}
 	r.resolveSegment(&hist, model.Meta)
 	b := r.newContextBuilder(model.ID, "", hist, nil, nil, "")
-	before := charsOfMessages(b.compose(nil)) / 4
+	// Between turns there is no RunState, so the system prompt cannot be counted
+	// here (the tool schemas still are); estimate keeps the same unit as the
+	// mid-turn threshold check, which is what the figures are compared with.
+	before := b.estimate(ctx, nil, b.compose(nil))
 	out, err := b.startSegment(ctx, nil, reason, before)
 	if err != nil {
 		return CompactResult{}, err

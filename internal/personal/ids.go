@@ -18,10 +18,10 @@ func newID(prefix string) string {
 	return prefix + ts + seq + randomBase32(1)
 }
 
-// NewSessionID returns a fresh session id: "sess_" + local yymmdd + the
-// time-ordered suffix, e.g. sess_2610091itbudb7rum0012, so the creation day is
-// readable at a glance.
-func NewSessionID() string { return newID("sess_" + time.Now().Format("060102")) }
+// NewSessionID returns a fresh session id: "sess_" + local yymmdd + "_" + the
+// time-ordered suffix, e.g. sess_261014_1itbudb7rum0012, so the creation day is
+// readable at a glance and the id stays sortable by creation time.
+func NewSessionID() string { return newID("sess_" + time.Now().Format("060102") + "_") }
 
 // NewTurnID returns a fresh turn id ("turn_..."); it doubles as the run id.
 func NewTurnID() string { return newID("turn_") }
