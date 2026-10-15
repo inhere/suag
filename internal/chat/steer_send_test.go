@@ -273,6 +273,8 @@ func TestSendSteerFullInboxIsRefused(t *testing.T) {
 	_, settled, err := h.state.deliverMessage(personalprocess.ModeSteer, "太多了", "gofer")
 	assert.True(t, err != nil && settled == nil)
 	assert.ErrIs(t, err, personal.ErrSteerQueueFull)
+	// The session socket maps only its own ErrQueueFull to the queue_full answer.
+	assert.ErrIs(t, err, personalprocess.ErrQueueFull)
 	// Refused, not queued: the message is nowhere to be found afterwards.
 	assert.Eq(t, 0, len(h.source.deliveries))
 	assert.Eq(t, sendSteerCapacity, len(h.state.sendSettled))

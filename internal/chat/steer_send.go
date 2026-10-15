@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/inhere/suga/internal/personal"
@@ -29,6 +30,11 @@ func (s *chatState) deliverMessage(mode, text, from string) (personalprocess.Del
 	if mode == personalprocess.ModeSteer {
 		settled := make(chan error, 1)
 		accepted, err := s.insertSendSteer(text, from, settled)
+		if errors.Is(err, personal.ErrSteerQueueFull) {
+			// The session socket answers queue_full only for its own ErrQueueFull:
+			// a full steering inbox is the same refusal to the sender.
+			return personalprocess.Delivery{}, nil, fmt.Errorf("%w: %w", personalprocess.ErrQueueFull, err)
+		}
 		if err != nil {
 			return personalprocess.Delivery{}, nil, err
 		}
