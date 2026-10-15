@@ -147,7 +147,13 @@ func (r *chatActivityReader) Read(p []byte) (int, error) {
 				r.held = &heldByte{b: next, epoch: nepoch}
 			}
 		}
-		if b == crByte || b == lfByte {
+		if b == lfByte && ctrlJIsInputNewline {
+			// A bare LF is Ctrl+J on Windows (a console hands a cooked line over as
+			// CRLF, whose LF the pump drops): a newline inside the input. On Unix ICRNL
+			// turns Enter itself into a bare LF, so there it has to submit
+			// (ctrlj_windows.go / ctrlj_other.go).
+			r.source.declareNewlineAsText()
+		} else if b == crByte || b == lfByte {
 			// The newline may be text of a paste instead of a submit, which a
 			// terminal without bracketed paste gives no other sign of. Decide it
 			// before handing the byte over, so the editor inserts the newline

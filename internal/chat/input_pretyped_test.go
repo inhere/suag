@@ -76,7 +76,9 @@ func assertNoLine(t *testing.T, source *chatInputSource) {
 
 func TestChatInputSource_PretypedLine(t *testing.T) {
 	t.Run("the newline of a pre-typed line submits it", func(t *testing.T) {
-		source := newPretypedSource(t, "把 old 改成 new\n")
+		// The line break the terminal hands over for Enter: LF on Unix (ICRNL), CRLF
+		// on Windows - a bare LF is Ctrl+J there, so the test uses the platform's own.
+		source := newPretypedSource(t, "把 old 改成 new"+testNewline)
 		assert.True(t, source.Request("> "))
 		event := nextLine(t, source)
 		assert.NoErr(t, event.err)

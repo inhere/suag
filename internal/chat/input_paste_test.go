@@ -46,7 +46,7 @@ func TestChatInputSource_PastedNewlines(t *testing.T) {
 
 	t.Run("without markers the newline of a paste is told by the byte after it", func(t *testing.T) {
 		h := newSource(t)
-		h.kb.Type("第一行\n第二行\n") // the paste arrives as one chunk
+		h.kb.Type("第一行" + testNewline + "第二行" + testNewline) // the paste arrives as one chunk
 		event := h.nextLine(t)
 		assert.NoErr(t, event.err)
 		assert.Eq(t, "第一行\n第二行", event.line)
