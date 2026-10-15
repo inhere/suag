@@ -22,6 +22,13 @@ turn only. The scenarios (each on its own scratch home and fake model):
   abort      Esc ends the turn only: chat goes on, the message waits in the input
              line and runs only when the person submits it (Enter); a single
              Ctrl-C ends a turn the same way, two of them leave chat.
+  send       `suga send --steer` from outside (the way gofer delivers): while a
+             tool runs the first response is `steered` and the message reaches
+             the *same* turn's next request; `--steer --wait` returns 0 before
+             that turn ended (the model is still waiting to answer); an idle chat
+             answers `queued` (the person sees 未插入当前回合，已排队); a turn ended
+             with Esc discards the message (`--wait` exits 3, the message is back
+             in the input line); a ninth message is refused with queue_full.
   approval   typing at an approval question is the answer, never an inserted
              message: no 插话 line, no request carrying that text, no steer event.
   screen     a long, overwide reply streams in slowly while a message is typed:
@@ -61,6 +68,17 @@ Linux container:
 - no restoreOutputProcessing (OPOST|ONLCR left off in raw mode): hook fails, the
   line the hook wrote straight to the terminal keeps its column and the input line
   is repainted into it.
+
+Reverse verification of the send scenario (removing the steer path makes it fail):
+- drop the ModeSteer branch of chatState.deliverMessage (`suga send --steer`
+  always queues): send fails - the first response is `queued` instead of
+  `steered`, the `--wait` sender returns only after the turn ended (its own turn
+  starts then), and the trace shows a `completed_untaken` return instead of a
+  delivery.
+- drop the ErrDiscarded settling of a cancelled turn's returned messages: send
+  fails, the `--wait` sender is never answered (the check times out).
+- drop the ErrSteerQueueFull branch (queue the message instead): send fails, the
+  ninth message is answered `queued` and queue_full never appears.
 """
 import argparse
 import json
@@ -90,6 +108,16 @@ SLOW_TOOL = "touch {marker}; sleep 60; echo TOOL_DONE"
 # The tool of the paste scenario: long enough for the paste and its checks to
 # happen while it runs (the model is asked again once it ends).
 PASTE_TOOL = "touch {marker}; sleep 10; echo TOOL_DONE"
+# The tool of the send scenario: long enough for the CLI and its checks to run
+# while it works, so a `send --steer` arrives well inside the turn.
+SEND_TOOL = "touch {marker}; sleep 6; echo TOOL_DONE"
+# The texts `suga send --steer` carries in the send scenario. chat labels every
+# message from elsewhere with its source (deliveryLine, --source defaults to cli).
+SEND_TEXT = "只改 README"
+SEND_TEXT2 = "再改一处"
+SEND_TEXT3 = "别改了"
+SEND_TEXT4 = "空闲时的话"
+SEND_PREFIX = "[来自 cli] "
 # The terminal bracketing chat asks for while a line is editable
 # (lineedit.SetBracketedPasteMode): its marker ESC[?2004h, and the two lines the
 # paste scenario types into the running turn.
@@ -140,6 +168,44 @@ def paste(s, text):
     """Sends a bracketed paste of text, the way a terminal does: the markers
     around the text and its line break passed through as it is (chat_paste.py)."""
     s.send("\x1b[200~" + text + "\x1b[201~")
+
+
+# What chat says about a message inserted into the running turn (steering.go).
+STEER_WAITING = "（等待送达）"
+STEER_TAKEN = "（已送达）"
+
+
+def steer_notice(text, suffix=STEER_WAITING):
+    """The regex of the line chat shows for an inserted message."""
+    return re.escape("[插话] " + text + suffix)
+
+
+def session_id_of(s):
+    """The session id chat printed at startup: the address `suga send --session`
+    takes."""
+    found = re.search(r"session id: (sess_\S+)", s.text())
+    return found.group(1) if found else ""
+
+
+def send(binary, env, ws, *args, timeout=60):
+    """Runs `suga send` as its own process, the way a Gofer-style caller does
+    (deliver_command): returns (exit code, stderr)."""
+    proc = subprocess.run([binary, "send", *args], env=env, cwd=ws,
+                          capture_output=True, text=True, timeout=timeout)
+    return proc.returncode, proc.stderr.strip()
+
+
+def send_async(binary, env, ws, *args):
+    """Starts `suga send` in the background: a scenario can check when it returns
+    relative to the turn its message went into."""
+    return subprocess.Popen([binary, "send", *args], env=env, cwd=ws,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+
+def send_result(proc, timeout=60):
+    """Waits for a send started with send_async: (exit code, stderr)."""
+    _, err = proc.communicate(timeout=timeout)
+    return proc.returncode, (err or "").strip()
 
 
 class FakeLog:
@@ -404,6 +470,138 @@ def abort_scenario(c):
     c.exit_chat()
 
 
+def send_scenario(c):
+    """`suga send --steer`: the message goes into the turn running right now, the
+    sender is answered `steered`, and what became of it decides its exit code."""
+    s = c.session
+    m = s.mark()
+    c.check("❯ prompt", s.until(r"❯ ", m))
+    sid = session_id_of(s)
+    c.check("session id", bool(sid))
+    if not sid:
+        return
+    marker = os.path.join(c.ws, STARTED)
+
+    # --- steered into the turn running right now ---------------------------
+    m = s.mark()
+    s.line("跑一个长命令")
+    c.check("tool call shown", s.until(r"⏺ shell_exec", m))
+    c.check("the prompt becomes ↳ while the turn runs", s.until(STEER_PROMPT, m))
+    if not c.wait_file(STARTED, 30):
+        c.check("tool started (marker file)", False)
+        return
+    c.check("tool started (marker file)", True)
+
+    # The notice of the inserted message is written before the response leaves, so
+    # the mark goes up before the send runs.
+    m = s.mark()
+    code, err = send(c.binary, c.env, c.ws, "--session", sid, "--steer", SEND_TEXT)
+    c.check("the first response is steered (no --wait)", code == 0 and err == "steered")
+    c.check("the message is shown as waiting", s.until(steer_notice(SEND_PREFIX + SEND_TEXT), m))
+    c.check("tool result shown", s.until(r"⎿ ok: TOOL_DONE", m))
+    c.check("shown as delivered", s.until(steer_notice(SEND_PREFIX + SEND_TEXT, STEER_TAKEN), m))
+    c.check("the turn answers", s.until(c.reply, m))
+    c.check("the end-of-turn line counts it", s.until(r"插话 1", m))
+
+    requests = c.log.wait(2)
+    c.check("two requests", len(requests) >= 2)
+    if len(requests) >= 2:
+        c.check("the first request has no inserted message",
+                SEND_TEXT not in " ".join(user_texts(requests[0])))
+        tail = requests[1].get("tail", [])
+        roles = [msg.get("role") for msg in tail]
+        c.check("the turn's next request carries it after the tool result",
+                last_user(requests[1]) == SEND_PREFIX + SEND_TEXT and "tool" in roles and roles[-1] == "user")
+
+    # --- --wait returns before that turn ends ------------------------------
+    if os.path.exists(marker):
+        os.remove(marker)
+    m = s.mark()
+    s.line("再跑一个长命令")
+    c.check("tool call shown again", s.until(r"⏺ shell_exec", m))
+    if not c.wait_file(STARTED, 30):
+        c.check("the second tool started", False)
+        return
+    c.check("the second tool started", True)
+
+    proc = send_async(c.binary, c.env, c.ws, "--session", sid, "--steer", "--wait", SEND_TEXT2)
+    code, err = send_result(proc)
+    # The message was taken by this turn's next request, so the sender is answered
+    # while the model is still working on it: neither the answer nor the end-of-turn
+    # line is there yet. (A queued message would answer only once this turn had
+    # ended and the message's own turn had started - which is the reverse check.)
+    s.drain(0.3)
+    c.check("--wait exits 0", code == 0)
+    c.check("--wait returned before the turn ended",
+            not s.contains(r"tokens · ", m) and not s.contains(c.reply, m))
+    c.check("shown as delivered in the running turn",
+            s.contains(steer_notice(SEND_PREFIX + SEND_TEXT2, STEER_TAKEN), m))
+    c.check("the turn answers", s.until(c.reply, m))
+    requests = c.log.wait(4)
+    c.check("four requests", len(requests) >= 4)
+    if len(requests) >= 4:
+        c.check("the message reached the second turn's next request",
+                last_user(requests[3]) == SEND_PREFIX + SEND_TEXT2)
+
+    # --- an aborted turn discards the message (exit 3) ----------------------
+    if os.path.exists(marker):
+        os.remove(marker)
+    m = s.mark()
+    s.line("再跑一个长命令")
+    c.check("tool call shown (third turn)", s.until(r"⏺ shell_exec", m))
+    if not c.wait_file(STARTED, 30):
+        c.check("the third tool started", False)
+        return
+    c.check("the third tool started", True)
+
+    proc = send_async(c.binary, c.env, c.ws, "--session", sid, "--steer", "--wait", SEND_TEXT3)
+    c.check("the message is shown as waiting", s.until(steer_notice(SEND_PREFIX + SEND_TEXT3), m))
+    s.send("\x1b")  # Esc: the lone-Esc decision waits 50ms, so send nothing right after
+    time.sleep(0.3)
+    code, err = send_result(proc)
+    c.check("a message of an aborted turn exits 3", code == 3)
+    c.check("esc ends this turn only", s.until(r"已中断本轮", m, timeout=15))
+    c.check("chat stays after esc", not s.contains(r"续接：", m))
+    c.check("the message is back in the input line", s.until(r"\[来自 cli\] " + SEND_TEXT3, m))
+
+    # --- a full inbox is refused with queue_full ---------------------------
+    if os.path.exists(marker):
+        os.remove(marker)
+    m = s.mark()
+    s.line("再跑一个长命令")
+    c.check("tool call shown (fourth turn)", s.until(r"⏺ shell_exec", m))
+    if not c.wait_file(STARTED, 30):
+        c.check("the fourth tool started", False)
+        return
+    c.check("the fourth tool started", True)
+
+    filled = [send(c.binary, c.env, c.ws, "--session", sid, "--steer", "插话 %d" % i)
+              for i in range(8)]
+    c.check("eight messages fit the inbox",
+            all(code == 0 and err == "steered" for code, err in filled))
+    code, err = send(c.binary, c.env, c.ws, "--session", sid, "--steer", "第九条")
+    c.check("the ninth is refused with queue_full", code == 1 and "queue_full" in err)
+    s.send("\x1b")
+    c.check("esc ends this turn only", s.until(r"已中断本轮", m, timeout=15))
+
+    # --- an idle chat queues it --------------------------------------------
+    c.check("chat is back at the prompt", s.until(r"❯ ", m, timeout=15))
+    code, err = send(c.binary, c.env, c.ws, "--session", sid, "--steer", SEND_TEXT4)
+    c.check("an idle chat queues the message instead",
+            code == 0 and err == "未插入当前回合，已排队")
+    c.check("the queued message runs as the next turn",
+            s.until(re.escape(SEND_PREFIX + SEND_TEXT4), m, timeout=15))
+
+    events = c.trace()
+    delivered = [e for e in events if e.get("kind") == "steer" and e.get("name") == "delivered"]
+    c.check("the trace records both deliveries", len(delivered) == 2)
+    c.check("they name the send source",
+            all((e.get("attrs") or {}).get("source") == "send:cli" for e in delivered))
+    returned = [e for e in events if e.get("kind") == "steer" and e.get("name") == "returned"]
+    c.check("the aborted turn's messages are traced back to the input line",
+            any((e.get("attrs") or {}).get("disposition") == "input_line" for e in returned))
+
+
 def screen_scenario(c):
     """A long, overwide reply streams slowly while a message is typed: the reply
     keeps its rows, whole, and the input line stays one line of its own (r3 M1)."""
@@ -642,6 +840,10 @@ def main():
          next_turn_scenario, {}),
         ("abort", ["--mode", "tool", "--delay", "0.2", "--reply", reply], SLOW_TOOL, auto, "",
          abort_scenario, {}),
+        # `suga send --steer` from outside: the model's own delay keeps the turn
+        # running after the tool result, which is what the --wait timing check needs.
+        ("send", ["--mode", "tool", "--delay", "3", "--reply", reply], SEND_TOOL, auto, "",
+         send_scenario, {}),
         # A long, overwide reply in small chunks: the screen model checks where its
         # lines and the input line ended up. The pty is 60 columns wide, so every
         # reply line is wrapped by the terminal.
