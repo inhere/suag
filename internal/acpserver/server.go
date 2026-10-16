@@ -154,13 +154,22 @@ func (a *Agent) LoadSession(ctx context.Context, req acp.LoadSessionRequest) (ac
 	if err != nil {
 		return acp.LoadSessionResponse{}, err
 	}
-	_, loadErr := runtime.Runner.LoadSession(ctx, string(req.SessionId))
+	model, loadErr := runtime.Runner.LoadSession(ctx, string(req.SessionId))
 	closeErr := runtime.close()
 	if loadErr != nil {
 		return acp.LoadSessionResponse{}, acp.NewInvalidParams(map[string]any{"sessionId": req.SessionId})
 	}
 	if closeErr != nil {
 		return acp.LoadSessionResponse{}, closeErr
+	}
+	// The session was created in the directory the client passed to session/new,
+	// and its tools are confined to that one. Loading it from another directory
+	// would run its next turns against a different workspace than the history
+	// they continue, so the request is refused (a client that really moved can
+	// start a new session with session/new). A session created before cwd was
+	// recorded has none and is accepted; the runner fills it in on the next turn.
+	if recorded := strings.TrimSpace(model.Cwd); recorded != "" && !personal.SameDir(recorded, cwd) {
+		return acp.LoadSessionResponse{}, cwdMismatchError(req.SessionId, recorded, cwd)
 	}
 	a.mu.Lock()
 	if current := a.sessions[req.SessionId]; current != nil && current.cancel != nil {
@@ -333,6 +342,22 @@ func sessionModes(current acp.SessionModeId) *acp.SessionModeState {
 	return &acp.SessionModeState{CurrentModeId: current, AvailableModes: []acp.SessionMode{
 		{Id: "default", Name: "Default"}, {Id: "read_only", Name: "Read only"},
 	}}
+}
+
+// invalidParamsCode is the JSON-RPC error code of an invalid parameter
+// (-32602), the class a session/load with a foreign cwd is refused with.
+const invalidParamsCode = -32602
+
+// cwdMismatchError is that refusal: the message names the directory the
+// session belongs to and the one the client asked for, the data carries both
+// for a client that maps the error itself.
+func cwdMismatchError(sessionID acp.SessionId, sessionCwd, cwd string) *acp.RequestError {
+	return &acp.RequestError{
+		Code: invalidParamsCode,
+		Message: fmt.Sprintf("invalid params: session %s was created in %s, not in %s; "+
+			"start a new session (session/new) to work in %s", sessionID, sessionCwd, cwd, cwd),
+		Data: map[string]any{"sessionId": sessionID, "sessionCwd": sessionCwd, "cwd": cwd},
+	}
 }
 
 func sessionInputs(cwd string, roots []string, mcpServers []acp.McpServer) (string, []mcp.ServerSettings, error) {
