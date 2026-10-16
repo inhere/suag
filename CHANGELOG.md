@@ -12,6 +12,7 @@
 - LLM 重试识别 `X-Should-Retry`、`Retry-After-Ms` 与 provider 的 `try again in ...` 提示；上下文超长错误归为 `provider_rejected` 并提示压缩或新会话，模型 trace 记录 provider request id。
 - session_search 存储检索按词分流，支持 kind 与半开时间过滤，并排除自身检索工具结果。
 - session_search 的 workspace/current scope 改为 SQL 下推，按路径边界过滤 cwd 并保留无 cwd 的当前会话。
+- session_search 增加 v1 游标编解码与查询指纹基础，非法游标可安全回到首查。
 
 ### 修复
 
