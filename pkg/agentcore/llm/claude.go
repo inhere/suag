@@ -144,6 +144,7 @@ func (p *ClaudeProvider) SupportsToolChoice() bool { return true }
 
 // Generate implements the public agentcore provider contract.
 func (p *ClaudeProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
+	ctx = ensureRetryReport(ctx)
 	model := req.Model
 	if model == "" {
 		model = p.model
@@ -159,7 +160,7 @@ func (p *ClaudeProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 	if err != nil {
 		// A rejected request (4xx) keeps the API's own message but is classified by
 		// its status (ErrorKind, ShouldFallback).
-		return nil, statusErr(status, err)
+		return nil, statusErr(status, withRequestID(ctx, err))
 	}
 	res.OutputLimit = claudeMaxTokens(req)
 	return res, nil
@@ -402,7 +403,7 @@ func (p *ClaudeProvider) doRequest(ctx context.Context, body map[string]any) ([]
 	respData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		// The body broke while being read: the connection failed, not the request.
-		return nil, 0, &transientRequestError{fmt.Errorf("read claude response: %w", err)}
+		return nil, 0, withRequestID(ctx, &transientRequestError{fmt.Errorf("read claude response: %w", err)})
 	}
 	logProviderResponse(p.Name(), "/messages", resp.StatusCode, respData)
 	return respData, resp.StatusCode, nil

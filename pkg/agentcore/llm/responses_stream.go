@@ -21,6 +21,7 @@ import (
 // the items of response.output_item.done). A stream that ends without a
 // terminal event is a broken stream, requested again by retryStream.
 func (p *ResponsesProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	ctx = ensureRetryReport(ctx)
 	body := p.buildResponsesBody(ctx, req, true)
 	logProviderRequest(p.Name(), responsesPath, body)
 	res, err := retryStream(ctx, p.retry, p.Name(), emit, func(ctx context.Context, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {

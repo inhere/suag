@@ -30,6 +30,7 @@ func newStreamClient(responseHeader time.Duration) *http.Client {
 // by openStream; a stream that breaks while being read is requested again by
 // retryStream (after a StreamEventRetry when text was already emitted).
 func (p *OpenAIProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	ctx = ensureRetryReport(ctx)
 	model := req.Model
 	if model == "" {
 		model = p.model
@@ -107,9 +108,9 @@ func (p *OpenAIProvider) openStream(ctx context.Context, path string, body map[s
 		Error *apiError `json:"error"`
 	}
 	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
-		return nil, statusErr(resp.StatusCode, apiErrorf("openai api error", apiErr.Error))
+		return nil, statusErr(resp.StatusCode, withRequestID(ctx, apiErrorf("openai api error", apiErr.Error)))
 	}
-	return nil, statusErr(resp.StatusCode, apiMessageErrorf(fmt.Sprintf("openai api error %d", resp.StatusCode), strings.TrimSpace(string(respData))))
+	return nil, statusErr(resp.StatusCode, withRequestID(ctx, apiMessageErrorf(fmt.Sprintf("openai api error %d", resp.StatusCode), strings.TrimSpace(string(respData)))))
 }
 
 // streamChunk is one chat.completion.chunk event.

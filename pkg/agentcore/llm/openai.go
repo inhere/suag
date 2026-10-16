@@ -89,6 +89,7 @@ func (p *OpenAIProvider) SupportsToolChoice() bool { return true }
 
 // Generate implements the public agentcore provider contract.
 func (p *OpenAIProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
+	ctx = ensureRetryReport(ctx)
 	model := req.Model
 	if model == "" {
 		model = p.model
@@ -105,7 +106,7 @@ func (p *OpenAIProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 	if err != nil {
 		// A rejected request (4xx) keeps the API's own message but is classified by
 		// its status (ErrorKind, ShouldFallback).
-		return nil, statusErr(status, err)
+		return nil, statusErr(status, withRequestID(ctx, err))
 	}
 	// The limit this request asked for; 0 = the API's own default.
 	res.OutputLimit = req.MaxTokens
@@ -321,7 +322,7 @@ func (p *OpenAIProvider) doRequest(ctx context.Context, path string, body map[st
 	respData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		// The body broke while being read: the connection failed, not the request.
-		return nil, 0, &transientRequestError{fmt.Errorf("read %s response: %w", p.Name(), err)}
+		return nil, 0, withRequestID(ctx, &transientRequestError{fmt.Errorf("read %s response: %w", p.Name(), err)})
 	}
 	logProviderResponse(p.Name(), path, resp.StatusCode, respData)
 	return respData, resp.StatusCode, nil

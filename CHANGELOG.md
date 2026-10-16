@@ -8,6 +8,7 @@
 
 - 自动识别 idev-std 发行目录与工作空间的 `tmp/idev-std` 加载产物目录为只读根，可通过 `tools.standards_roots` 关闭；支持 `IDEV_STD_RELEASES_ROOT` 与兼容的 `INHERE_DEV_STANDARDS_ROOT`。
 - chat 增加可脱敏持久化的本地输入历史（Up/Down、Ctrl+R 反查）与 `:` 命令/目录 Tab 补全，可通过 `chat.history` 和 `chat.history_size` 配置。
+- LLM 重试识别 `X-Should-Retry`、`Retry-After-Ms` 与 provider 的 `try again in ...` 提示；上下文超长错误归为 `provider_rejected` 并提示压缩或新会话，模型 trace 记录 provider request id。
 
 ### 修复
 
