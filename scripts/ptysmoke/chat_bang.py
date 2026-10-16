@@ -70,8 +70,9 @@ def chat_env(home):
 def output_line(s, pattern, start):
     """Waits until pattern matches a whole line of the chat output: the command's
     own output, not the echo of the line that was typed (the line editor echoes
-    that above the prompt)."""
-    return s.until(r"(?m)^" + pattern + r"\r?$", start)
+    that above the prompt). The line ending is allowed to carry the extra CR a
+    read with output processing back on adds (the editor writes CR LF itself)."""
+    return s.until(r"(?m)^" + pattern + r"\r*$", start)
 
 
 def send_text(binary, env, session, text):
@@ -234,6 +235,7 @@ def main():
     write_home(home, args.port, tools_extra="  approval: auto\n")
     env = chat_env(home)
 
+    here = os.path.dirname(os.path.abspath(__file__))
     fake = subprocess.Popen([sys.executable, "-I", os.path.join(here, "fakellm.py"),
                              "--port", str(args.port), "--mode", "text", "--delay", "0.3", "--reply", REPLY],
                             stdout=subprocess.PIPE, text=True)
