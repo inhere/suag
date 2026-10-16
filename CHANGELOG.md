@@ -14,6 +14,8 @@
 
 ### 修复
 
+- provider HTTP 客户端拒绝跟随重定向，并将其归类为 `provider_rejected`，防止 API 密钥和请求体被转发到其他主机。
+
 - 模型在流内（或 200 响应体里）报出的服务端过载 / 限流不再直接结束回合：`responses` 的 `error` 事件与 `response.failed`、`openai` 的 chunk `error`、`claude` 的 `error` 事件，以及三个协议的响应体错误，现在都解析错误的 `code`/`type` 再判定——`server_is_overloaded`、`server_error`、`rate_limit_exceeded`、`slow_down`（OpenAI）与 `overloaded_error`、`api_error`、`rate_limit_error`（Anthropic）算暂时性错误；没有 code/type 时消息里含 “overloaded” 或 “try again later”（不区分大小写）同样算（这条覆盖了用户遇到的只带一句话的过载响应）。这类错误走与“流中断”同一套重试与退避（重试提示行与 stream-json 的 retry 行写“服务端过载/限流”，重试用尽后的错误写明“服务端过载，已重试 N 次”），`error_kind` 为 `provider_transient`，已输出的文本按 retry 的 `restart` 语义重新输出；`invalid_request_error` 等永久错误仍旧不重试、`error_kind` 为 `provider_bad_response`。此前 `Error: provider error: responses api error: Our servers are currently overloaded. Please try again later.` 会直接断掉回合（issue suga-h2c8）。
 - 输出达到模型上限时，chat、run、stream-json 与 trace 明确标记回答可能被截断，并给出可调整输出上限的提示。
 

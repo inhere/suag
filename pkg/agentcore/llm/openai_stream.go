@@ -21,7 +21,7 @@ import (
 func newStreamClient(responseHeader time.Duration) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = responseHeader
-	return &http.Client{Transport: transport}
+	return newProviderClient(0, transport)
 }
 
 // Stream implements the public streaming contract with Server-Sent Events:

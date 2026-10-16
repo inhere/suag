@@ -16,9 +16,17 @@ import (
 // timeout lives there, the client itself has no deadline.
 func transportOf(t *testing.T, c *http.Client) *http.Transport {
 	t.Helper()
-	tr, ok := c.Transport.(*http.Transport)
-	assert.Require(t, assert.True(t, ok))
-	return tr
+	switch tr := c.Transport.(type) {
+	case *http.Transport:
+		return tr
+	case redirectRejectingTransport:
+		base, ok := tr.base.(*http.Transport)
+		assert.Require(t, assert.True(t, ok))
+		return base
+	default:
+		assert.Require(t, assert.True(t, false))
+		return nil
+	}
 }
 
 // The two knobs reach both clients of both provider types: RequestTimeout bounds

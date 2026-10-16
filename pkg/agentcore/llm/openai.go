@@ -70,7 +70,7 @@ func NewOpenAIProvider(cfg OpenAIConfig) *OpenAIProvider {
 		apiKey:       cfg.APIKey,
 		baseURL:      cfg.BaseURL,
 		model:        cfg.Model,
-		client:       &http.Client{Timeout: requestTimeout(cfg.RequestTimeout)},
+		client:       newProviderClient(requestTimeout(cfg.RequestTimeout), nil),
 		streamClient: newStreamClient(responseHeaderTimeout(cfg.ResponseHeaderTimeout)),
 		name:         cfg.Name,
 		headers:      cfg.Headers,

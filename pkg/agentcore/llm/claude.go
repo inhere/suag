@@ -113,7 +113,7 @@ func NewClaudeProvider(cfg ClaudeConfig) *ClaudeProvider {
 		apiKey:       cfg.APIKey,
 		model:        cfg.Model,
 		messagesURL:  claudeMessagesURL(cfg.BaseURL),
-		client:       &http.Client{Timeout: requestTimeout(cfg.RequestTimeout)},
+		client:       newProviderClient(requestTimeout(cfg.RequestTimeout), nil),
 		streamClient: newStreamClient(responseHeaderTimeout(cfg.ResponseHeaderTimeout)),
 		headers:      cfg.Headers,
 		promptCache:  cfg.PromptCache,

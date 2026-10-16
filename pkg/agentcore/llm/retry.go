@@ -174,6 +174,10 @@ func postWithRetry(ctx context.Context, client *http.Client, b *backoff, provide
 		var reason string
 		switch {
 		case err != nil:
+			if ErrorKind(err) == ErrorKindRejected {
+				// Redirect rejection is a policy failure, not a transient network error.
+				return nil, err
+			}
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
