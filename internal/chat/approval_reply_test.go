@@ -42,6 +42,6 @@ func TestApprovalPrompts(t *testing.T) {
 		ApprovalPrompt("shell_exec", "“echo”开头的命令", true))
 	assert.Eq(t, "允许执行 shell_exec？[y]是 [N]否 [d]本会话总是拒绝：",
 		ApprovalPrompt("shell_exec", "", false))
-	assert.StrContains(t, PersistPrompt("allow"), "写回尚未启用")
+	assert.NotContains(t, PersistPrompt("allow"), "写回尚未启用")
 	assert.StrContains(t, PersistPrompt("deny"), "[p]")
 }

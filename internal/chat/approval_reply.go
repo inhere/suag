@@ -28,9 +28,8 @@ func ParseApprovalReply(answer string) ApprovalReply {
 	}
 }
 
-// PersistReply identifies the requested persistence destination. The current
-// T7a caller deliberately treats both destinations as session-only until T7b
-// wires the file writer into this interaction.
+// PersistReply identifies the requested persistence destination. The wiring layer
+// performs the writeback after the session rule has been installed in memory.
 type PersistReply uint8
 
 const (
@@ -64,12 +63,11 @@ func ApprovalPrompt(tool, scopeDescription string, allowAlways bool) string {
 	return prompt
 }
 
-// PersistPrompt is intentionally explicit that T7a does not write rule files.
-// The wording gives u/p a deterministic, testable transition for T7b without
-// silently changing user or project configuration in this task.
+// PersistPrompt is explicit about the safe default: an empty answer keeps the
+// rule in the current session, while only u/p request a file writeback.
 func PersistPrompt(action string) string {
 	if action == "deny" {
-		return "写回尚未启用；把这条规则写进规则文件？[u] 用户级 ~/.suga/approval-rules.yaml [p] 项目级 .suga/approval-rules.yaml [N] 只本会话："
+		return "把这条规则写进规则文件？[u] 用户级 ~/.suga/approval-rules.yaml [p] 项目级 .suga/approval-rules.yaml [N] 只本会话："
 	}
-	return "写回尚未启用；把这条规则写进规则文件？[u] 用户级 ~/.suga/approval-rules.yaml [N] 只本会话："
+	return "把这条规则写进规则文件？[u] 用户级 ~/.suga/approval-rules.yaml [N] 只本会话："
 }

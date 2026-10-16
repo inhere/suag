@@ -2,9 +2,9 @@
 """PTY smoke tests for scoped chat approval rules (Linux/macOS).
 
 The scenarios cover a file rule that allows without asking, a matching deny,
-scoped ``a`` followed by the T7a persistence transition, and command/path
-arguments containing terminal control sequences.  The persistence choices are
-intentionally asserted as session-only: T7b owns file writing.
+scoped ``a`` followed by the persistence transition, and command/path
+arguments containing terminal control sequences.  The persistence choice is
+left at Enter here; T11 adds the cross-process file-write scenario.
 
 Reverse verification: temporarily restore the old tool-name ``always`` key and
 this script's second command must not ask; bypassing ``termtext.Clean`` makes
@@ -86,7 +86,7 @@ def session_scope(binary, work, port):
         s.line("first")
         s.check("scoped command prompt", s.until(r"\[a\]本会话总是允许“echo SCOPED”开头的命令", mark))
         s.line("a")
-        s.check("T7a persistence transition", s.until(r"写回尚未启用", mark))
+        s.check("persistence prompt", s.until(r"把这条规则写进规则文件", mark))
         s.line("")
         s.check("first call runs", s.until(r"SMOKE_OK|完成", mark))
         mark = s.mark()

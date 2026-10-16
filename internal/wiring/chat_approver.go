@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -13,7 +14,9 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/inhere/suga/internal/adddir"
 	chatreply "github.com/inhere/suga/internal/chat"
+	appconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/internal/output/termtext"
+	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/redact"
 	"github.com/inhere/suga/pkg/agentcore/tools"
@@ -47,6 +50,9 @@ type chatApprover struct {
 	askOutside bool
 	addDirs    *SessionAddDirs
 
+	// persistReporter records a best-effort writeback event with the turn context.
+	persistReporter func(context.Context, ApprovalRulePersistEvent)
+
 	// mu serializes questions and guards the in-memory session rules.
 	mu     sync.Mutex
 	always map[string]bool // compatibility for callers without the shared policy
@@ -63,12 +69,21 @@ type chatApproverOptions struct {
 	readRoots  []string
 	readOnly   bool
 	askOutside bool
+	// persistReporter is called after an attempted file writeback, including a
+	// failed attempt, so trace can explain why a session rule was not persisted.
+	persistReporter func(context.Context, ApprovalRulePersistEvent)
 }
 
 func newChatApprover(opts chatApproverOptions) *chatApprover {
+	reporter := opts.persistReporter
+	if reporter == nil {
+		reporter = func(ctx context.Context, event ApprovalRulePersistEvent) {
+			personal.RecordApprovalRulePersist(ctx, event.File, string(event.Action), event.Result)
+		}
+	}
 	a := &chatApprover{gate: opts.gate, auto: opts.auto, asker: opts.asker, workspace: opts.workspace,
 		liveDirs: opts.dirs, readRoots: opts.readRoots, readOnly: opts.readOnly, askOutside: opts.askOutside,
-		always: map[string]bool{}}
+		persistReporter: reporter, always: map[string]bool{}}
 	if opts.gate != nil {
 		a.policy = opts.gate.policy
 		// Tests and direct callers can provide a run-mode gate; chat owns the
@@ -213,13 +228,19 @@ func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool
 		tools.ReportRule(ctx, scope.rule.Summary(), scope.key)
 		tools.ReportApproval(ctx, tools.ApprovedByUser, wait)
 		if a.policy.PersistAsk {
-			// T7a deliberately does not call the file writer. T7b will connect the
-			// explicit u/p choice; Enter and failed follow-up retain this rule here.
 			persistAnswer, persistErr := a.asker.Ask(ctx, tools.Question{Tool: "approval_rule", Prompt: chatreply.PersistPrompt(string(decision))})
-			if persistErr == nil {
-				// T7a keeps u/p in memory; parsing here fixes the transition
-				// vocabulary without activating file writeback before T7b.
-				_ = chatreply.ParsePersistReply(persistAnswer)
+			if persistErr != nil {
+				// The session rule is already active. A failed follow-up must not
+				// turn a successful approval into a failed tool call.
+				slog.Warn("approval rule persistence prompt failed", "action", decision, "err", persistErr)
+			} else {
+				switch destination := chatreply.ParsePersistReply(persistAnswer); destination {
+				case chatreply.PersistUser, chatreply.PersistProject:
+					if persistErr := a.persistRule(ctx, destination, scope.rule); persistErr != nil {
+						// Writeback is best effort: this call keeps using the session rule.
+						slog.Warn("persist approval rule", "action", decision, "err", persistErr)
+					}
+				}
 			}
 		}
 		if decision == approvalrules.Deny {
@@ -230,6 +251,34 @@ func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool
 		tools.ReportApproval(ctx, tools.AskedAndDenied, wait)
 		return tools.Denied("用户拒绝执行 " + name)
 	}
+}
+
+// persistRule resolves the explicit user choice to one of the two rule files.
+// The session rule remains in memory regardless of the write result.
+func (a *chatApprover) persistRule(ctx context.Context, destination chatreply.PersistReply, rule approvalrules.Rule) error {
+	var (
+		path       string
+		source     approvalrules.Source
+		resolveErr error
+	)
+	switch destination {
+	case chatreply.PersistUser:
+		source = approvalrules.SourceUser
+		path, resolveErr = appconfig.ResolveUserApprovalRulesPath()
+	case chatreply.PersistProject:
+		source = approvalrules.SourceProject
+		path, resolveErr = appconfig.ResolveProjectApprovalRulesPath(a.workspace)
+	default:
+		return nil
+	}
+	if resolveErr != nil {
+		event := ApprovalRulePersistEvent{File: path, Action: rule.Action, Result: "error"}
+		a.persistReporter(ctx, event)
+		return fmt.Errorf("resolve approval rule writeback path: %w", resolveErr)
+	}
+	return PersistApprovalRule(path, source, rule, func(event ApprovalRulePersistEvent) {
+		a.persistReporter(ctx, event)
+	})
 }
 
 func (a *chatApprover) nextSessionRuleIndex() int {
