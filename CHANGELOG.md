@@ -14,15 +14,9 @@
 
 ### 修复
 
-- 流式回复中途被切断不再让回合直接投资失败：最后一行没有换行就 EOF（代理/网关切断连接），或流在没有 `[DONE]`、也没有 `finish_reason`（openai）/ 没有 `message_stop`（claude）的情况下结束，都按“流中断”处理，走现有的重试—重启逻辑（已输出但作废的文本以 `restart:true` 重新输出一遍），日志与错误文本里写明 `stream truncated`。此前那半行 JSON 直接进了 `json.Unmarshal`，报 `parse openai stream chunk: unexpected end of JSON input` 且不重试，长会话（gofer 派活）中途碰到就直接结束回合（issue suga-zq46）。完整一行但 JSON 非法、流内 API 错误仍不重试；responses 的“已开始的输出项都已结束就用已结束项作答”的兜底不变。
-
-### 修复
-
+- 流式回复中途被切断不再让回合直接失败：最后一行没有换行就 EOF（代理/网关切断连接），或流在没有 `[DONE]`、也没有 `finish_reason`（openai）/ 没有 `message_stop`（claude）的情况下结束，都按“流中断”处理，走现有的重试—重启逻辑（已输出但作废的文本以 `restart:true` 重新输出一遍），日志与错误文本里写明 `stream truncated`。此前那半行 JSON 直接进了 `json.Unmarshal`，报 `parse openai stream chunk: unexpected end of JSON input` 且不重试，长会话（gofer 派活）中途碰到就直接结束回合（issue suga-zq46）。完整一行但 JSON 非法、流内 API 错误仍不重试；responses 的“已开始的输出项都已结束就用已结束项作答”的兜底不变。
 - 回合被取消或失败时，已经取出的后台任务通知不再丢掉：这类回合只回放到最后一个完整工具调用，通知条目不再随回放出现，改为退回任务管理器的待取队列（保持原顺序、排在新到通知之前），下一回合重新取出并告诉模型任务结束（或仍在运行的任务的报告）。完成了的回合不变：通知条目照旧随回放出现，且只出现一次（issue suga-o26e）。
 - `go test ./...` 不再在仓库 `tmp/` 下建临时目录：改为系统临时目录（`/tmp`、`%TEMP%`）下的短路径，由共用测试助手建目录并校验 session socket 路径不超内核上限（104 字节）。此前主机与容器同时跑测试时，`go list` 会扫到被另一进程删掉的目录而报 `pattern ./...: open tmp/...: no such file or directory`（issue suga-wab3）。
-
-### 修复
-
 - 续接会话时不再在别的工作目录静默开工（issue suga-e69s）：`chat --resume`（以及 `--session-id` 打开已有会话）在动手之前把会话记录的工作目录（`sessions.cwd`）与本次工作目录比较，不一致时先打印两个目录并给出三选一——1 切到会话原目录续接（进程切过去，工作区、shell 与会话短名随之；原目录已删除时不提供这一项）、2 在当前目录继续、3 取消且不改动任何数据；`run --resume`（含 Gofer job 的 `session_resume`）与 stdin 不是终端的 chat 默认失败退出（退出码 1，错误里给出原目录、当前目录与“先 `cd <原目录>`”或“加 `--allow-cwd-change`”两种做法）。`--allow-cwd-change` 与选 2 会把 `sessions.cwd` 改到当前目录并在 trace 写一条 `session_cwd_changed from=… to=…`（`suga trace` 文本可见）；ACP `session/load` 客户端传的 cwd 与会话 cwd 不一致时返回 JSON-RPC `-32602`（invalid params，message 写明两个目录）且不加载会话。比较时两边都做符号链接解析，Windows 下不区分大小写；没有记录目录的旧会话不拦截，下一回合补写为当前目录。
 
 ### 变更
