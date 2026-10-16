@@ -12,6 +12,7 @@ the raw control-sequence checks fail.
 """
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -111,7 +112,7 @@ def control_text(binary, work, port):
         s = PtySession([binary, "chat"], env=env, cwd=ws, size=(100, 30))
         mark = s.mark(); s.until(r"❯ ", mark); s.line("control")
         s.check("command control bytes are cleaned", s.until(r"命令：echoCONTROL", mark))
-        s.check("command escape is not written", not s.contains_raw("命令：echo\x1b[2K", mark))
+        s.check("command escape is not written", not s.contains_raw(re.escape("命令：echo\x1b[2K"), mark))
         s.line("n"); s.until(r"完成", mark)
         s.close(); results = s.results
     finally:
@@ -127,7 +128,7 @@ def control_text(binary, work, port):
         s = PtySession([binary, "chat"], env=env, cwd=ws, size=(100, 30))
         mark = s.mark(); s.until(r"❯ ", mark); s.line("只写")
         s.check("path control bytes are cleaned", s.until(r"路径：.*dir/file.txt", mark))
-        s.check("path escape is not written", not s.contains_raw("dir\x1b[2K", mark))
+        s.check("path escape is not written", not s.contains_raw(re.escape("dir\x1b[2K"), mark))
         s.line("n"); s.until(r"完成", mark); s.close(); results += s.results
     finally:
         if s is not None:
