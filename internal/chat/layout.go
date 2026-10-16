@@ -171,6 +171,11 @@ type TurnStatus struct {
 	// (the delivered ones; a message taken back with Up, or one the turn never
 	// took, is not counted); 0 keeps that part out of the line.
 	Steers int
+	// Truncated marks an answer the model cut off at the output token limit
+	// (personal.RunResult.Truncated); OutputLimit is that limit in tokens
+	// (0 = neither the configuration nor the provider named one).
+	Truncated   bool
+	OutputLimit int
 }
 
 // BuildTurnStatus builds the end of a turn: one green line per memory write of
@@ -201,6 +206,15 @@ func BuildTurnStatus(s TurnStatus) []LayoutLine {
 	// nobody typed into.
 	if s.Steers > 0 {
 		parts = append(parts, fmt.Sprintf("插话 %d", s.Steers))
+	}
+	// An answer cut off at the output token limit: the person must not read it as
+	// a finished one, and the limit names the setting that can raise it.
+	if s.Truncated {
+		if s.OutputLimit > 0 {
+			parts = append(parts, fmt.Sprintf("输出达到上限（%d tokens），回答被截断", s.OutputLimit))
+		} else {
+			parts = append(parts, "输出达到上限，回答被截断")
+		}
 	}
 	return append(lines, LayoutLine{Text: strings.Join(parts, " · "), Color: color.Gray})
 }

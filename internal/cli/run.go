@@ -297,6 +297,11 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 		if notice := output.WrapUpNotice(result.WrapUp, runner.MaxSteps()); notice != "" {
 			fmt.Fprintln(stderr, notice)
 		}
+		// Text mode: an answer cut off at the output limit names that limit too
+		// (the answer itself just stops mid-sentence).
+		if result.Truncated {
+			fmt.Fprintln(stderr, output.OutputLimitNotice(result.OutputLimit))
+		}
 		// Text mode: a usage summary on stderr (stdout stays the answer only).
 		fmt.Fprintln(stderr, runSummary(runner, result, time.Since(runStart)))
 	}

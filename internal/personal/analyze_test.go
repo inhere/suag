@@ -489,5 +489,9 @@ func TestContextAndFinishTraceLines(t *testing.T) {
 	assert.NotContains(t, traceLine(store.Event{Kind: store.EventTool, Name: "file_read", Status: eventOK, Attrs: map[string]any{"approval": "rule"}}), "approval")
 	model := traceLine(store.Event{Kind: store.EventModel, Name: "m", Status: eventOK, Attrs: map[string]any{"finish": "truncated"}})
 	assert.StrContains(t, model, " truncated")
+	// A cut-off reply names the output limit that applied.
+	limited := traceLine(store.Event{Kind: store.EventModel, Name: "m", Status: eventOK,
+		Attrs: map[string]any{"finish": "truncated", "output_limit": float64(32000)}})
+	assert.StrContains(t, limited, "truncated limit=32000")
 	assert.NotContains(t, traceLine(store.Event{Kind: store.EventModel, Name: "m", Status: eventOK, Attrs: map[string]any{"finish": "final"}}), "final")
 }

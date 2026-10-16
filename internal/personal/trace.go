@@ -172,6 +172,10 @@ func traceLine(e store.Event) string {
 	}
 	if f, _ := e.Attrs["finish"].(string); f == "truncated" {
 		parts = append(parts, "truncated")
+		// The output limit that cut the reply off, when a request set one.
+		if n := attrInt(e.Attrs["output_limit"]); n > 0 {
+			parts = append(parts, fmt.Sprintf("limit=%d", n))
+		}
 	}
 	if n := attrInt(e.Attrs["retries"]); n > 0 {
 		parts = append(parts, fmt.Sprintf("retries=%d(%s, waited %.1fs)", n, e.Attrs["retry_reason"], float64(attrInt(e.Attrs["retry_wait_ms"]))/1000))

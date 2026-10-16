@@ -509,6 +509,8 @@ func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration, stee
 		Usage:           result.Usage,
 		LastInputTokens: result.LastInputTokens, ContextWindow: r.opts.ContextWindow,
 		Elapsed: elapsed, EndTime: r.localNow(), Steers: steers,
+		// An answer cut off at the output limit is named in the status line.
+		Truncated: result.Truncated, OutputLimit: result.OutputLimit,
 	}))
 	r.memory = nil
 }
