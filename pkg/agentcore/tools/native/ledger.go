@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,9 +97,12 @@ func (t *SessionSearchTool) Name() string { return "session_search" }
 func (t *SessionSearchTool) Description() string {
 	return "Full-text search of earlier conversation history (messages, tool results and compaction summaries). " +
 		"Every whitespace-separated word must occur; words are matched literally. scope: workspace (default, " +
-		"sessions of this workspace), current (this session) or all. Each hit is `<ref>  <role>  <snippet>`; " +
-		"read around a hit with recall(ref). With ref=out:<session>:<hex> it instead searches that saved tool " +
-		"output line by line (case-insensitive) and returns `<ref>  L<line>  <text>`."
+		"sessions of this workspace), current (this session) or all. kind accepts comma-separated user, assistant, " +
+		"tool or compaction. since is inclusive and until exclusive; each accepts 7d/36h or a date/RFC3339 time. " +
+		"When results include next_cursor, pass that value back verbatim as cursor; a stale or mismatched cursor " +
+		"restarts from the beginning. For Chinese, prefer search terms of two or more characters; one-character " +
+		"searches are slower. With ref=out:<session>:<hex> it instead searches that saved tool output line by line " +
+		"(case-insensitive) and returns `<ref>  L<line>  <text>`; ref cannot be combined with cursor, kind or time filters."
 }
 
 // ToolMeta: read-only search; results are external content (taint).
@@ -116,8 +120,12 @@ func (t *SessionSearchTool) Schema() api.ToolSchema {
 				"query": map[string]any{"type": "string", "description": "Words to find (all must occur)"},
 				"scope": map[string]any{"type": "string", "enum": []any{LedgerScopeWorkspace, LedgerScopeCurrent, LedgerScopeAll},
 					"description": "Sessions to search (default workspace); ignored with ref"},
-				"ref":   map[string]any{"type": "string", "description": "Optional out:<session>:<hex> ref: search inside that saved output"},
-				"limit": map[string]any{"type": "integer", "description": "Max hits (default 20, at most 100)"},
+				"ref":    map[string]any{"type": "string", "description": "Optional out:<session>:<hex> ref: search inside that saved output"},
+				"limit":  map[string]any{"type": "integer", "description": "Max hits (default 20, at most 100)"},
+				"cursor": map[string]any{"type": "string", "description": "Value from a previous next_cursor; pass it back verbatim"},
+				"kind":   map[string]any{"type": "string", "description": "Comma-separated entry kinds: user, assistant, tool, compaction"},
+				"since":  map[string]any{"type": "string", "description": "Inclusive lower time bound: 7d, 36h, date or RFC3339"},
+				"until":  map[string]any{"type": "string", "description": "Exclusive upper time bound: 7d, 36h, date or RFC3339"},
 			},
 			"required": []any{"query"},
 		},
@@ -136,10 +144,10 @@ func (t *SessionSearchTool) Execute(ctx context.Context, call api.ToolCall) (*ap
 	if err != nil {
 		return nil, fmt.Errorf("session_search: %w", err)
 	}
-	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: redact.Clean(renderLedgerHits(q, result.Hits))}, nil
+	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: redact.Clean(renderLedgerHits(q, result))}, nil
 }
 
-// parseLedgerQuery validates the session_search arguments.
+// parseLedgerQuery validates and normalizes the session_search arguments.
 func parseLedgerQuery(args map[string]any) (LedgerQuery, error) {
 	var q LedgerQuery
 	q.Query, _ = args["query"].(string)
@@ -160,34 +168,151 @@ func parseLedgerQuery(args map[string]any) (LedgerQuery, error) {
 	if q.Ref = strings.TrimSpace(ref); q.Ref != "" && !strings.HasPrefix(q.Ref, OutputRefPrefix) {
 		return q, fmt.Errorf("ref %q: only out:<session>:<hex> refs can be searched; read a message ref with recall", q.Ref)
 	}
+	cursor, cursorSet, err := ledgerOptionalString(args, "cursor")
+	if err != nil {
+		return q, err
+	}
+	kindText, kindSet, err := ledgerOptionalString(args, "kind")
+	if err != nil {
+		return q, err
+	}
+	sinceText, sinceSet, err := ledgerOptionalString(args, "since")
+	if err != nil {
+		return q, err
+	}
+	untilText, untilSet, err := ledgerOptionalString(args, "until")
+	if err != nil {
+		return q, err
+	}
+	if q.Ref != "" && (cursorSet || kindSet || sinceSet || untilSet) {
+		return q, errors.New("ref cannot be combined with cursor, kind, since or until")
+	}
+	if cursorSet {
+		q.Cursor = cursor
+	}
+	if kindSet {
+		q.Kinds, err = parseLedgerKinds(kindText)
+		if err != nil {
+			return q, err
+		}
+	}
+	now := time.Now()
+	if sinceSet {
+		q.Since, err = parseLedgerTime(sinceText, "since", now)
+		if err != nil {
+			return q, err
+		}
+	}
+	if untilSet {
+		q.Until, err = parseLedgerTime(untilText, "until", now)
+		if err != nil {
+			return q, err
+		}
+	}
+	if !q.Since.IsZero() && !q.Until.IsZero() && !q.Since.Before(q.Until) {
+		return q, errors.New("since must be before until")
+	}
 	if n, ok := numberArg(args["limit"]); ok && n >= 1 {
 		q.Limit = int(n)
 	}
 	return q, nil
 }
 
+func ledgerOptionalString(args map[string]any, name string) (string, bool, error) {
+	raw, present := args[name]
+	if !present {
+		return "", false, nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", true, fmt.Errorf("%s must be a string", name)
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", true, fmt.Errorf("%s must not be empty", name)
+	}
+	return value, true, nil
+}
+
+func parseLedgerKinds(raw string) ([]string, error) {
+	allowed := map[string]bool{
+		"user": true, "assistant": true, "tool": true, "compaction": true,
+	}
+	seen := make(map[string]bool)
+	kinds := make([]string, 0, 4)
+	for _, part := range strings.Split(raw, ",") {
+		kind := strings.TrimSpace(part)
+		if kind == "" || !allowed[kind] {
+			return nil, fmt.Errorf("invalid kind %q; use user, assistant, tool or compaction", kind)
+		}
+		if !seen[kind] {
+			seen[kind] = true
+			kinds = append(kinds, kind)
+		}
+	}
+	return kinds, nil
+}
+
+// parseLedgerTime accepts the same relative and absolute forms as the sessions
+// command, but keeps the parser in the native tool layer to avoid an internal
+// package dependency.
+func parseLedgerTime(raw, name string, now time.Time) (time.Time, error) {
+	if len(raw) > 1 {
+		switch raw[len(raw)-1] {
+		case 'h', 'd':
+			n, err := strconv.ParseInt(raw[:len(raw)-1], 10, 64)
+			if err == nil && n > 0 {
+				unit := time.Hour
+				if raw[len(raw)-1] == 'd' {
+					unit = 24 * time.Hour
+				}
+				if n <= int64(time.Duration(1<<63-1)/unit) {
+					return now.Add(-time.Duration(n) * unit), nil
+				}
+			}
+			return time.Time{}, fmt.Errorf("%s %q is invalid; use 7d, 36h, a date or RFC3339", name, raw)
+		}
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04", "2006-01-02T15:04", "2006-01-02"} {
+		if value, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
+			return value, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("%s %q is invalid; use 7d, 36h, a date or RFC3339", name, raw)
+}
+
 // renderLedgerHits formats hits one per line; snippets are flattened to a
-// single line so a hit can never look like several.
-func renderLedgerHits(q LedgerQuery, hits []LedgerHit) string {
-	if len(hits) == 0 {
-		if q.Ref != "" {
-			return fmt.Sprintf("No line of %s matched %q.", q.Ref, q.Query)
-		}
-		return fmt.Sprintf("No message matched %q in scope %s.", q.Query, q.Scope)
-	}
+// single line so a hit can never look like several. Notices explain a stale
+// cursor or bounded snapshot without changing the otherwise valid result.
+func renderLedgerHits(q LedgerQuery, result LedgerSearchResult) string {
 	var b strings.Builder
-	if q.Ref != "" {
-		fmt.Fprintf(&b, "%d matching line(s) in %s; read around one with recall(ref, offset=<line>):\n", len(hits), q.Ref)
-	} else {
-		fmt.Fprintf(&b, "%d hit(s) in scope %s; read one with recall(ref):\n", len(hits), q.Scope)
+	if result.Notice != "" {
+		b.WriteString(result.Notice)
+		b.WriteByte('\n')
 	}
-	for _, h := range hits {
-		snippet := strings.Join(strings.Fields(h.Snippet), " ")
-		if h.Line > 0 {
-			fmt.Fprintf(&b, "%s  L%d  %s\n", h.Ref, h.Line, snippet)
+	if len(result.Hits) == 0 {
+		if q.Ref != "" {
+			fmt.Fprintf(&b, "No line of %s matched %q.", q.Ref, q.Query)
 		} else {
-			fmt.Fprintf(&b, "%s  %s  %s\n", h.Ref, h.Role, snippet)
+			fmt.Fprintf(&b, "No message matched %q in scope %s.", q.Query, q.Scope)
 		}
+	} else {
+		if q.Ref != "" {
+			fmt.Fprintf(&b, "%d matching line(s) in %s; read around one with recall(ref, offset=<line>):\n", len(result.Hits), q.Ref)
+		} else {
+			fmt.Fprintf(&b, "%d hit(s) in scope %s; read one with recall(ref):\n", len(result.Hits), q.Scope)
+		}
+		for _, h := range result.Hits {
+			snippet := strings.Join(strings.Fields(h.Snippet), " ")
+			if h.Line > 0 {
+				fmt.Fprintf(&b, "%s  L%d  %s\n", h.Ref, h.Line, snippet)
+			} else {
+				fmt.Fprintf(&b, "%s  %s  %s\n", h.Ref, h.Role, snippet)
+			}
+		}
+	}
+	if result.NextCursor != "" {
+		fmt.Fprintf(&b, "\nnext_cursor: %s", result.NextCursor)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
