@@ -176,6 +176,11 @@ func traceLine(e store.Event) string {
 	if n := attrInt(e.Attrs["retries"]); n > 0 {
 		parts = append(parts, fmt.Sprintf("retries=%d(%s, waited %.1fs)", n, e.Attrs["retry_reason"], float64(attrInt(e.Attrs["retry_wait_ms"]))/1000))
 	}
+	// What the pool did with this provider's failure: ask another model, or
+	// return the error (llm.Attempt.Fallback).
+	if decision, _ := e.Attrs["fallback"].(string); decision != "" {
+		parts = append(parts, "fallback="+decision)
+	}
 	if e.Kind == store.EventTool {
 		parts = append(parts, toolTraceParts(e)...)
 	}

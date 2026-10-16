@@ -34,6 +34,12 @@ type Attempt struct {
 	Retries     int
 	RetryWait   time.Duration
 	RetryReason string
+	// Fallback is what the pool that owns the attempt did with its failure:
+	// "next, <reason>" when another provider is asked, "stop, <reason>" when
+	// the error goes back to the caller, "" for a successful attempt and for a
+	// provider used directly (not in a pool). The reason is the error kind and,
+	// for a rejection, the HTTP status (see ErrorKind, ShouldFallback).
+	Fallback string
 }
 
 // AttemptObserver receives every provider attempt. It must not block.

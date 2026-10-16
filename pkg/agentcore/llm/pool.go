@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -10,7 +11,8 @@ import (
 )
 
 // Pool manages multiple LLM providers with automatic failover.
-// It tries each provider in order until one succeeds.
+// It tries each provider in order until one succeeds, and only while another
+// model still has a chance (see ShouldFallback).
 type Pool struct {
 	mu        sync.RWMutex
 	providers []Provider
@@ -53,21 +55,49 @@ func (p *Pool) SupportsToolChoice() bool {
 	return true
 }
 
-// Generate tries each provider in turn and returns the first success.
+// Generate tries each provider in turn and returns the first success. It moves
+// on only when another model has a chance (ShouldFallback): a transient failure
+// (broken stream, network error, 408/429/5xx) or a rejection that names this
+// provider (401/403/404 - its credentials or its models). A request the provider
+// refused on the request's own account (400/422), a bad response or an
+// unclassified failure is returned as it is, so the remaining models - and the
+// timeouts and tokens they would spend - are not wasted on an error they would
+// hit just the same.
 func (p *Pool) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
 	p.mu.RLock()
 	providers, obs := p.providers, p.observer
 	p.mu.RUnlock()
+	if len(providers) == 0 {
+		return nil, errors.New("no llm provider is configured")
+	}
 
 	var lastErr error
-	for i, prov := range providers {
-		resp, err := GenerateObserved(ctx, prov, req, i+1, obs)
+	for i := 0; i < len(providers); i++ {
+		prov := providers[i]
+		// The attempt is reported after the decision below, so its model event
+		// can say what the pool did with the failure (Attempt.Fallback).
+		attempt := &attemptCollector{obs: obs}
+		res, err := GenerateObserved(ctx, prov, req, i+1, attempt.observer())
 		if err == nil {
-			return resp, nil
+			attempt.deliver(ctx, "")
+			return res, nil
 		}
-		slog.Warn("llm provider failed, trying next", "provider", prov.Name(), "err", err)
+		next := nextProviderIndex(providers, i, err)
+		decision := decideFallback(err, next < 0)
+		attempt.deliver(ctx, decision.Reason)
+		if !decision.Next {
+			slog.Warn("llm provider failed, not trying another", "provider", prov.Name(), "reason", decision.Reason, "err", err)
+			if i == 0 {
+				return nil, err // the first provider failed on the request itself
+			}
+			return nil, fmt.Errorf("all providers failed: %w", err)
+		}
+		slog.Warn("llm provider failed, trying next", "provider", prov.Name(), "reason", decision.Reason, "err", err)
 		lastErr = err
+		i = next - 1 // the loop's i++ lands on next
 	}
+	// Unreachable: decideFallback never asks for the next provider after the
+	// last one, which returns above.
 	return nil, fmt.Errorf("all providers failed: %w", lastErr)
 }
 
@@ -76,6 +106,9 @@ func (p *Pool) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, em
 	p.mu.RLock()
 	providers, obs := p.providers, p.observer
 	p.mu.RUnlock()
+	if len(providers) == 0 {
+		return nil, errors.New("no llm provider is configured")
+	}
 
 	// Once a provider has emitted text the caller has shown it, so a later
 	// failure is returned as is: falling back would repeat or mix the answer.
@@ -90,23 +123,63 @@ func (p *Pool) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, em
 		return emit(ctx, ev)
 	}
 	var lastErr error
-	for i, prov := range providers {
+	for i := 0; i < len(providers); i++ {
+		prov := providers[i]
 		streaming, ok := prov.(agentcoreapi.StreamingProvider)
 		if !ok {
+			// A provider without streaming says nothing about the request, and
+			// the next one may well support it.
 			lastErr = fmt.Errorf("provider %s does not support streaming", prov.Name())
+			slog.Warn("llm provider cannot stream, trying next", "provider", prov.Name())
 			continue
 		}
-		resp, err := StreamObserved(ctx, streaming, req, tracked, i+1, obs)
+		attempt := &attemptCollector{obs: obs}
+		res, err := StreamObserved(ctx, streaming, req, tracked, i+1, attempt.observer())
 		if err == nil {
-			return resp, nil
+			attempt.deliver(ctx, "")
+			return res, nil
 		}
-		if emitted || ctx.Err() != nil {
+		switch {
+		case emitted:
+			attempt.deliver(ctx, "stop, the answer was already shown")
+			return nil, err
+		case ctx.Err() != nil:
+			attempt.deliver(ctx, "stop, the turn was cancelled")
 			return nil, err
 		}
-		slog.Warn("llm provider stream failed, trying next", "provider", prov.Name(), "err", err)
+		next := nextProviderIndex(providers, i, err)
+		decision := decideFallback(err, next < 0)
+		attempt.deliver(ctx, decision.Reason)
+		if !decision.Next {
+			slog.Warn("llm provider stream failed, not trying another", "provider", prov.Name(), "reason", decision.Reason, "err", err)
+			if i == 0 {
+				return nil, err // the first provider failed on the request itself
+			}
+			return nil, fmt.Errorf("all providers failed for stream: %w", err)
+		}
+		slog.Warn("llm provider stream failed, trying next", "provider", prov.Name(), "reason", decision.Reason, "err", err)
 		lastErr = err
+		i = next - 1 // the loop's i++ lands on next
 	}
+	// Unreachable: decideFallback never asks for the next provider after the
+	// last one, which returns above.
 	return nil, fmt.Errorf("all providers failed for stream: %w", lastErr)
+}
+
+// nextProviderIndex is the index of the provider the pool would ask after
+// providers[i] failed with err, or -1 when none is left. An exhausted allowance
+// (ErrorKindQuota) belongs to the provider's account, not to one model: the
+// other models of the same provider (same Name) would hit it too, so they are
+// skipped and only a different provider is asked (issue suga-ok1r).
+func nextProviderIndex(providers []Provider, i int, err error) int {
+	quota := ErrorKind(err) == ErrorKindQuota
+	for j := i + 1; j < len(providers); j++ {
+		if quota && providers[j].Name() == providers[i].Name() {
+			continue
+		}
+		return j
+	}
+	return -1
 }
 
 // AddProvider appends a provider to the pool (thread-safe).
@@ -114,4 +187,56 @@ func (p *Pool) AddProvider(prov Provider) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.providers = append(p.providers, prov)
+}
+
+// fallbackDecision is what the pool does with a failed attempt: whether the
+// next provider is asked, and the reason - the log line's "reason" and the
+// model event's fallback attr (Attempt.Fallback).
+type fallbackDecision struct {
+	Next   bool
+	Reason string
+}
+
+// decideFallback is the pool's rule for a failed attempt (ShouldFallback); last
+// tells whether the failing provider was the pool's last one.
+func decideFallback(err error, last bool) fallbackDecision {
+	reason := fallbackReason(err)
+	switch {
+	case !ShouldFallback(err):
+		return fallbackDecision{Reason: "stop, " + reason + " would repeat on the next model"}
+	case last:
+		return fallbackDecision{Reason: "stop, no provider left after " + reason}
+	default:
+		return fallbackDecision{Next: true, Reason: "next, " + reason}
+	}
+}
+
+// attemptCollector defers one pool attempt's report to the observer until the
+// pool knows what it does with the failure, so the failed attempt's model event
+// carries the decision (Attempt.Fallback). The report itself is otherwise the
+// observer's ordinary one. With no observer installed both halves are no-ops.
+type attemptCollector struct {
+	obs      AttemptObserver
+	attempt  Attempt
+	reported bool
+}
+
+// observer is what the pool hands to GenerateObserved/StreamObserved.
+func (c *attemptCollector) observer() AttemptObserver {
+	if c.obs == nil {
+		return nil
+	}
+	return func(_ context.Context, a Attempt) {
+		c.attempt, c.reported = a, true
+	}
+}
+
+// deliver reports the collected attempt with the decision the pool made
+// ("" for an attempt that succeeded).
+func (c *attemptCollector) deliver(ctx context.Context, decision string) {
+	if !c.reported {
+		return
+	}
+	c.attempt.Fallback = decision
+	c.obs(ctx, c.attempt)
 }

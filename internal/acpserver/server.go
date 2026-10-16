@@ -15,6 +15,7 @@ import (
 	"github.com/inhere/suga/internal/output"
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 	"github.com/inhere/suga/pkg/agentcore/memory"
 	"github.com/inhere/suga/pkg/agentcore/tools"
 	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
@@ -268,7 +269,7 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		return acp.PromptResponse{StopReason: acp.StopReasonRefusal}, closeErr
 	}
 	if err := errors.Join(runErr, closeErr); err != nil {
-		return acp.PromptResponse{}, err
+		return acp.PromptResponse{}, promptError(err)
 	}
 	if !textSent && result.Output != "" {
 		if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: acp.UpdateAgentMessageText(result.Output)}); err != nil {
@@ -283,6 +284,21 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		return acp.PromptResponse{StopReason: acp.StopReasonMaxTurnRequests}, nil
 	}
 	return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
+}
+
+// promptError turns a failed prompt into the JSON-RPC error the client sees.
+// The SDK's own shape (Internal error, data.error with the text) is kept; when
+// the turn died on a model request, the provider failure's class is added to
+// the data as error_kind (llm.ErrorKind), so a client such as gofer can tell a
+// cut stream from a request the provider refused - the same value the CLI
+// writes on its stream-json error line. A failure without a model error (a
+// storage or hook error, a cancelled turn) carries no error_kind and is
+// reported as before.
+func promptError(err error) error {
+	if kind := llm.ErrorKind(err); kind != "" {
+		return acp.NewInternalError(map[string]any{"error": err.Error(), "error_kind": kind})
+	}
+	return err
 }
 
 // sendUsage reports the final usage of a turn (completed or cancelled): the

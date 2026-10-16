@@ -28,6 +28,8 @@ func TestErrorKind(t *testing.T) {
 		{"a body that ended early", streamBodyError("openai", errors.New("unexpected EOF")), ErrorKindTransient},
 		{"a dropped connection", streamBodyError("openai", errors.New("connection reset by peer")), ErrorKindTransient},
 		{"a stream event that is not JSON", badResponsef("parse openai stream chunk: %w", errors.New("invalid character 'n'")), ErrorKindBadResponse},
+		{"an http request whose retries ran out", &transientRequestError{errors.New("openai request failed after 3 attempts: server error 503")}, ErrorKindTransient},
+		{"a rejected request", &statusError{status: http.StatusNotFound, err: badResponsef("openai api error: %s", "bad model")}, ErrorKindRejected},
 		{"a whole response that is not JSON", badResponsef("parse claude response: %w", errors.New("unexpected end of JSON input")), ErrorKindBadResponse},
 		{"an api error", badResponsef("openai api error: %s", "bad model"), ErrorKindBadResponse},
 		{"an api error over the pool", fmt.Errorf("all providers failed: %w", badResponsef("openai api error: %s", "bad model")), ErrorKindBadResponse},
@@ -66,10 +68,14 @@ func TestErrorKindOnProviderStreams(t *testing.T) {
 		assert.Require(t, assert.True(t, err != nil))
 		assert.Eq(t, ErrorKindBadResponse, ErrorKind(&agentcoreapi.ProviderError{Err: err}))
 	})
-	t.Run("an api error of a non-streamed request is a bad response", func(t *testing.T) {
+	t.Run("a 4xx of a non-streamed request is a rejection", func(t *testing.T) {
+		// The status is what the classification hangs on: a 400 describes the
+		// request, so another model has nothing to fix (ShouldFallback).
 		server := sseServer(t, http.StatusBadRequest, `{"error":{"message":"bad model"}}`, nil)
 		_, err := provider(server.URL).Generate(context.Background(), req)
 		assert.Require(t, assert.True(t, err != nil))
-		assert.Eq(t, ErrorKindBadResponse, ErrorKind(&agentcoreapi.ProviderError{Err: err}))
+		assert.Eq(t, "openai api error: bad model", err.Error())
+		assert.Eq(t, ErrorKindRejected, ErrorKind(&agentcoreapi.ProviderError{Err: err}))
+		assert.Eq(t, false, ShouldFallback(&agentcoreapi.ProviderError{Err: err}))
 	})
 }

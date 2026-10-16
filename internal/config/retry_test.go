@@ -46,6 +46,21 @@ func TestReadRetryPolicy(t *testing.T) {
 		assert.Eq(t, 1, ps["gw"].Retry.MaxAttempts)
 		assert.Eq(t, 1, ps["openai"].Retry.MaxAttempts)
 	})
+	t.Run("a provider overrides the fields it names", func(t *testing.T) {
+		load(t, "model: openai/m\nretry:\n  max_attempts: 5\n  base_delay: 2s\n"+
+			"providers:\n  gw:\n    type: anthropic\n    base_url: http://x\n    retry:\n      max_attempts: 2\n      base_delay: 500ms\n      max_delay: 30\n")
+		ps, err := ReadProviders()
+		assert.NoErr(t, err)
+		assert.Eq(t, 2, ps["gw"].Retry.MaxAttempts)
+		assert.Eq(t, 500*time.Millisecond, ps["gw"].Retry.BaseDelay)
+		assert.Eq(t, 30*time.Second, ps["gw"].Retry.MaxDelay)
+		assert.Eq(t, llm.DefaultRetryPolicy.ResetAfter, ps["gw"].Retry.ResetAfter) // untouched
+		// Everything else keeps the global policy, presets included.
+		assert.Eq(t, 5, ps["openai"].Retry.MaxAttempts)
+		assert.Eq(t, 2*time.Second, ps["openai"].Retry.BaseDelay)
+		assert.Eq(t, 5, ps["deepseek"].Retry.MaxAttempts)
+		assert.Eq(t, 2*time.Second, ps["deepseek"].Retry.BaseDelay)
+	})
 	for _, tc := range []struct{ name, body, want string }{
 		{"zero attempts", "retry:\n  max_attempts: 0\n", "retry.max_attempts must be a whole number >= 1"},
 		{"bad duration", "retry:\n  base_delay: soon\n", "retry.base_delay"},
@@ -57,6 +72,21 @@ func TestReadRetryPolicy(t *testing.T) {
 			_, err := ReadRetryPolicy()
 			assert.ErrMsgContains(t, err, tc.want)
 			_, err = ReadProviders()
+			assert.ErrMsgContains(t, err, tc.want)
+		})
+	}
+	// The same fields are checked on a provider section, which names itself in
+	// the error so a long config is easy to fix.
+	for _, tc := range []struct {
+		name, retry, want string
+	}{
+		{"zero attempts", "max_attempts: 0", "providers.gw.retry.max_attempts must be a whole number >= 1"},
+		{"bad duration", "base_delay: soon", "providers.gw.retry.base_delay"},
+		{"max below base", "base_delay: 10s\n      max_delay: 5s", "below providers.gw.retry.base_delay"},
+	} {
+		t.Run("provider section: "+tc.name, func(t *testing.T) {
+			load(t, "model: openai/m\nproviders:\n  gw:\n    type: openai\n    base_url: http://x\n    retry:\n      "+tc.retry+"\n")
+			_, err := ReadProviders()
 			assert.ErrMsgContains(t, err, tc.want)
 		})
 	}

@@ -2,6 +2,7 @@ package personal
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,20 @@ func sseTestServer(t *testing.T, body string) *httptest.Server {
 		_, _ = io.Copy(io.Discard, r.Body)
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// statusTestServer answers every request with status and an API error body, so
+// a test can drive a real provider into a rejection or a transient failure.
+func statusTestServer(t *testing.T, status int) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = fmt.Fprintf(w, `{"error":{"message":"status %d"}}`, status)
 	}))
 	t.Cleanup(server.Close)
 	return server

@@ -88,13 +88,15 @@ func (p *ClaudeProvider) openStream(ctx context.Context, body map[string]any) (*
 	respData, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	logProviderResponse(p.Name(), "/messages", resp.StatusCode, respData)
+	// The status with the API's own message, so the failure is classified as a
+	// rejection (ErrorKind).
 	var apiErr struct {
 		Error *apiError `json:"error"`
 	}
 	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
-		return nil, apiErrorf("claude api error", apiErr.Error)
+		return nil, statusErr(resp.StatusCode, apiErrorf("claude api error", apiErr.Error))
 	}
-	return nil, apiMessageErrorf(fmt.Sprintf("claude api error %d", resp.StatusCode), strings.TrimSpace(string(respData)))
+	return nil, statusErr(resp.StatusCode, apiMessageErrorf(fmt.Sprintf("claude api error %d", resp.StatusCode), strings.TrimSpace(string(respData))))
 }
 
 // claudeUsage is the usage object shared by message_start and message_delta.

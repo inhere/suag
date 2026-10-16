@@ -4,12 +4,19 @@
 
 ## [未发布]
 
+### 新增
+
+- 额度/用量上限耗尽归类为 `provider_quota`：不重试，跨 provider 才 fallback；可解析的重置时间写入错误文本和 trace 的 `reset_at`。
+- 重试策略可以按 provider 配置：`providers.<id>.retry`（字段与全局 `retry` 相同：`max_attempts`、`base_delay`、`max_delay`、`reset_after`）覆盖该 provider 的全局值，只写要改的字段，其余字段沿用全局；配置写错时报错带 `providers.<id>.retry.<字段>`。
+- 回合因 provider 错误失败时的 `error_kind` 覆盖更多情况并新增一类取值（issue suga-e1u2）：HTTP 408/429/5xx、连接错误（含响应头超时）在重试用尽后归为 `provider_transient`（此前这类失败不带 `error_kind`），HTTP 4xx（400/401/403/404/422）归为新的 `provider_rejected`。ACP 的 prompt 失败同样带上：JSON-RPC 错误（`-32603`）的 `data` 里除已有的 `error` 文本外加 `error_kind`，与 `run --output-format stream-json` 的 `error` 行同值；不是模型失败的失败（存储、hook、取消、审批）形状不变、不带该字段。
+
 ### 修复
 
 - 模型在流内（或 200 响应体里）报出的服务端过载 / 限流不再直接结束回合：`responses` 的 `error` 事件与 `response.failed`、`openai` 的 chunk `error`、`claude` 的 `error` 事件，以及三个协议的响应体错误，现在都解析错误的 `code`/`type` 再判定——`server_is_overloaded`、`server_error`、`rate_limit_exceeded`、`slow_down`（OpenAI）与 `overloaded_error`、`api_error`、`rate_limit_error`（Anthropic）算暂时性错误；没有 code/type 时消息里含 “overloaded” 或 “try again later”（不区分大小写）同样算（这条覆盖了用户遇到的只带一句话的过载响应）。这类错误走与“流中断”同一套重试与退避（重试提示行与 stream-json 的 retry 行写“服务端过载/限流”，重试用尽后的错误写明“服务端过载，已重试 N 次”），`error_kind` 为 `provider_transient`，已输出的文本按 retry 的 `restart` 语义重新输出；`invalid_request_error` 等永久错误仍旧不重试、`error_kind` 为 `provider_bad_response`。此前 `Error: provider error: responses api error: Our servers are currently overloaded. Please try again later.` 会直接断掉回合（issue suga-h2c8）。
 
 ### 变更
 
+- `fallback_models` 不再对任何错误都换下一个模型（issue suga-8vzk）：只在**另一个模型还有机会**时换——瞬时故障（网络错误、408/429/5xx、响应头超时、流被切断/截断）或点名本 provider 的拒绝（401/403 凭据不对或无权用该模型、404 模型不存在）；400/422（请求格式或参数问题，换模型也一样）与无法使用的响应（不是合法 JSON、答复缺内容、API 在 200 里报自己的错）直接返回主模型的错误，不再把后备模型和它们的时间、token 白跑一遍。流式仍是只要已输出过文本就不换（避免答案重复或拼接）。每次尝试换/不换的原因写进日志与 trace 的 model 事件（`fallback` attr，如 `next, provider_transient`、`stop, provider_rejected (HTTP 400) would repeat on the next model`）。
 - agentcore：会话 id 的读写（`WithSessionID` / `SessionIDFrom`）从 `llm` 下沉到 `api`——它属于运行时会话概念，不是 provider 概念。`llm.WithSessionID` / `llm.SessionIDFrom` 保留为转发并标记 Deprecated；`tasks` 不再依赖 `llm`，后台任务层的依赖闭包不再拖进整个 provider 层（`llm.SessionIDPlaceholder` 与 `{{session_id}}` 请求头行为不变）。
 - agentcore：分层守卫（`pkg/agentcore/layering_test.go`）从“只挡 agentcore 之外的 suga 包”改为按包白名单：“每个包允许依赖哪些 agentcore 包”在测试里显式登记（以当前实际依赖为基线），表外依赖（能力层横向依赖、反向依赖内核）与未登记的新包都会失败；保留“不得依赖 agentcore 之外的 suga 包”的检查，修掉 `allowed` 前缀缺尾 `/` 的漏洞，缺 `go` 可执行文件时改为跳过。
 - agentcore：分层文档与实现对齐（`pkg/agentcore/README.md`、`pkg/agentcore/docs/architecture.md`、`docs/design/2026-10-10-agentcore-layering-design.md`）：分层图补 `tasks`、`testutil` 与共享底座 `internal/*`，`mock`/`testing` 从能力层改为内核之上的宿主侧测试套件，能力层列举与依赖边同步实测（`tools/native` 实际依赖 6 个兄弟包）。

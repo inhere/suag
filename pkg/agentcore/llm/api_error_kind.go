@@ -54,6 +54,11 @@ var transientAPIErrorPhrases = []string{"overloaded", "try again later"}
 // type - its message asks the caller to come back later. Everything else is
 // permanent: requesting it again would only get the same error.
 func isTransientAPIError(code, typ, msg string) bool {
+	if hasQuotaMarker(code) || hasQuotaMarker(typ) || hasQuotaMarker(msg) {
+		// An exhausted allowance is not temporary in any useful sense - it
+		// resets in hours or days - so it is not retried (ErrorKindQuota).
+		return false
+	}
 	if transientAPIErrorCodes[strings.ToLower(code)] || transientAPIErrorCodes[strings.ToLower(typ)] {
 		return true
 	}
@@ -117,7 +122,13 @@ func newAPIError(prefix, msg string, transient bool) error {
 // or a response body. prefix is the provider's wording for its API errors, e.g.
 // "openai api error" or "responses api error".
 func apiErrorf(prefix string, e *apiError) error {
-	return newAPIError(prefix, e.Message, isTransientAPIError(e.Code, e.Type, e.Message))
+	err := newAPIError(prefix, e.Message, isTransientAPIError(e.Code, e.Type, e.Message))
+	if hasQuotaMarker(e.Code) || hasQuotaMarker(e.Type) {
+		// insufficient_quota and the like name the exhausted allowance only in the
+		// code: keep it on the error so ErrorKind reports ErrorKindQuota.
+		return &quotaError{err: err}
+	}
+	return err
 }
 
 // apiMessageErrorf is apiErrorf for an API error the provider reported as plain

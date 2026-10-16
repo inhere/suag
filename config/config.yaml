@@ -37,6 +37,11 @@ providers:
     # timeouts:
     #   request: 60s
     #   response_header: 45s
+    # Optional retry policy for this provider (overrides retry.*, same keys; the
+    # fields left out keep the global value), e.g. give up sooner on a free
+    # gateway:
+    # retry:
+    #   max_attempts: 2
 
   # OpenCode Go, OpenAI-compatible endpoint (needs the session header):
   # opencode-go:
@@ -98,6 +103,11 @@ providers:
 #   base_delay: 1s
 #   max_delay: 60s
 #   reset_after: 10m
+# A provider may override the fields it needs (providers.<id>.retry, same keys);
+# the others keep the global policy. A provider that rejects the request itself
+# (HTTP 400/422) is not retried and no fallback model is tried for it: only
+# retryable failures (network, 408/429/5xx, a broken stream) and rejections that
+# name that provider (401/403/404) move on to fallback_models.
 
 # Timeouts of one model request. request bounds a non-streamed request as a
 # whole (dial, TLS, headers, body); response_header bounds the wait for a
