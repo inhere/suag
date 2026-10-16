@@ -14,8 +14,8 @@ import (
 )
 
 // approvalDefaults holds the fallback action for each kind of tool. Rules are
-// evaluated before these defaults; keeping the categories here prevents a
-// native read-only or agent-state tool from being confused with an MCP tool.
+// evaluated before these defaults; keeping the categories here prevents a native
+// read-only or agent-state tool from being confused with an MCP tool.
 type approvalDefaults struct {
 	Native     approvalrules.Action
 	MCP        approvalrules.Action
@@ -36,6 +36,15 @@ type approvalPolicy struct {
 	Workspace string
 	SugaHome  string
 	RuleFiles []string
+
+	// Chat-only session rule settings are copied from tools.approval_rules so the
+	// approver can build a scoped rule without reading configuration per call.
+	AlwaysPrefixTokens int
+	PersistAsk         bool
+	// compiled marks a policy loaded by wiring, distinguishing it from the
+	// small hand-built policies used by package tests.
+	compiled     bool
+	rulesEnabled bool
 }
 
 // defaultApprovalDefaults returns the defaults fixed by the approval design.
@@ -68,7 +77,12 @@ func defaultApprovalDefaults(mode approvalrules.Mode, chatAuto bool) approvalDef
 // The caller supplies legacy rules only for chat/run; this deliberate seam is
 // what keeps tools.auto_allow and tools.read_only_allow out of ACP.
 func compileApprovalPolicy(mode approvalrules.Mode, chatAuto, readOnly bool, loaded ApprovalRules, legacy []approvalrules.Rule) approvalPolicy {
-	compiled := approvalPolicy{Mode: mode, ReadOnly: readOnly, Defaults: defaultApprovalDefaults(mode, chatAuto), Workspace: loaded.Workspace}
+	compiled := approvalPolicy{
+		Mode: mode, ReadOnly: readOnly, Defaults: defaultApprovalDefaults(mode, chatAuto),
+		Workspace: loaded.Workspace, AlwaysPrefixTokens: loaded.Settings.AlwaysPrefixTokens,
+		PersistAsk: loaded.Settings.PersistAsk, compiled: true,
+		rulesEnabled: loaded.Settings.Enabled,
+	}
 	if loaded.User.Path != "" {
 		compiled.SugaHome = filepath.Dir(loaded.User.Path)
 		compiled.RuleFiles = append(compiled.RuleFiles, loaded.User.Path)

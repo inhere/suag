@@ -9,10 +9,11 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/inhere/suga/internal/adddir"
+	chatreply "github.com/inhere/suga/internal/chat"
+	"github.com/inhere/suga/internal/output/termtext"
 	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/redact"
 	"github.com/inhere/suga/pkg/agentcore/tools"
@@ -46,10 +47,9 @@ type chatApprover struct {
 	askOutside bool
 	addDirs    *SessionAddDirs
 
-	// mu serializes questions and guards always: the tools answered "a"
-	// (always) run without asking for the rest of this process.
+	// mu serializes questions and guards the in-memory session rules.
 	mu     sync.Mutex
-	always map[string]bool
+	always map[string]bool // compatibility for callers without the shared policy
 }
 
 // chatApproverOptions are the inputs of the chat approver, read when the runtime
@@ -75,7 +75,7 @@ func newChatApprover(opts chatApproverOptions) *chatApprover {
 		// interactive default even when the gate was built before chat wiring.
 		a.policy.Mode = approvalrules.ModeChat
 		a.policy.Defaults = defaultApprovalDefaults(approvalrules.ModeChat, opts.auto)
-		a.usePolicy = true
+		a.usePolicy = !a.policy.compiled || a.policy.rulesEnabled
 	}
 	return a
 }
@@ -102,23 +102,37 @@ func toolsApprovalAuto() (bool, error) {
 	return false, fmt.Errorf("tools.approval must be \"ask\" or \"auto\", got %v", gkconfig.Get("tools.approval"))
 }
 
+// Decide applies explicit policy rules before the interactive default. Session
+// rules are kept in the same Policy slice, so their deny/allow strength is
+// identical to user and project rules and their scope remains observable.
 func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool agentcore.Tool) error {
-	// A file call that reaches outside the workspace and the session's
-	// directories is asked about first: what such a call needs is a new
-	// directory, not the permission for one call.
+	// A file call that reaches outside the workspace and the session's directories
+	// is asked about first: what such a call needs is a new directory, not the
+	// permission for one call.
 	if err, stop := a.askOutsideDir(ctx, call); stop {
 		return err
 	}
 	name := call.Name
 	var action approvalrules.Action
 	var hit *approvalrules.Rule
+	var scope approvalScope
 	if a.usePolicy {
+		scope = a.scopeFor(call, tool)
+		a.mu.Lock()
 		action, hit = a.policy.Decide(a.policy.targetFor(call, tool), tools.MetaOf(tool))
+		a.mu.Unlock()
 		if hit != nil {
-			tools.ReportRule(ctx, hit.Summary(), "")
+			reportScope := ""
+			if hit.Source == approvalrules.SourceSession {
+				reportScope = scope.key
+			}
+			tools.ReportRule(ctx, hit.Summary(), reportScope)
 		}
 		switch action {
 		case approvalrules.Allow:
+			if hit != nil && hit.Source == approvalrules.SourceSession {
+				tools.ReportApproval(ctx, tools.ApprovedAlways, 0)
+			}
 			return nil
 		case approvalrules.Deny:
 			if hit != nil {
@@ -126,17 +140,8 @@ func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool
 			}
 			return tools.Denied("需要许可：" + name + "，本次运行未授权")
 		}
-		// Ask continues through the interactive path below. Session-level
-		// always only bypasses an entry-point default; an explicit ask wins.
-		if hit == nil {
-			a.mu.Lock()
-			if a.always[name] {
-				a.mu.Unlock()
-				tools.ReportApproval(ctx, tools.ApprovedAlways, 0)
-				return nil
-			}
-			a.mu.Unlock()
-		}
+		// Ask continues through the interactive path below. Session-level rules
+		// already returned above; this fallback is only for an ordinary ask.
 	} else {
 		// Compatibility for small unit callers that construct the old approver
 		// without a compiled policy. Production chat always uses the shared path.
@@ -158,7 +163,11 @@ func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	asked := time.Now()
-	answer, err := a.asker.Ask(ctx, a.question(call))
+	question := a.question(call)
+	if a.usePolicy {
+		question = a.questionFor(call, tool, scope)
+	}
+	answer, err := a.asker.Ask(ctx, question)
 	if errors.Is(err, tools.ErrCannotAsk) {
 		return tools.Denied(fmt.Sprintf("无法确认执行 %s（标准输入不是终端），已拒绝；如需在 chat 中自动放行，请设置 tools.approval: auto", name))
 	}
@@ -166,25 +175,211 @@ func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool
 		return err // not a refusal: the approval layer aborts the turn
 	}
 	wait := time.Since(asked)
-	switch strings.ToLower(strings.TrimSpace(answer)) {
-	case "y", "yes":
-		tools.ReportApproval(ctx, tools.ApprovedByUser, wait)
-		return nil
-	case "a", "always":
-		a.always[name] = true
-		tools.ReportApproval(ctx, tools.ApprovedByUser, wait)
-		return nil
+	if !a.usePolicy {
+		switch chatreply.ParseApprovalReply(answer) {
+		case chatreply.ReplyAllow:
+			tools.ReportApproval(ctx, tools.ApprovedByUser, wait)
+			return nil
+		case chatreply.ReplyAllowAlways:
+			a.always[name] = true
+			tools.ReportApproval(ctx, tools.ApprovedByUser, wait)
+			return nil
+		}
+		tools.ReportApproval(ctx, tools.AskedAndDenied, wait)
+		return tools.Denied("用户拒绝执行 " + name)
 	}
-	tools.ReportApproval(ctx, tools.AskedAndDenied, wait)
-	return tools.Denied("用户拒绝执行 " + name)
+
+	reply := chatreply.ParseApprovalReply(answer)
+	switch reply {
+	case chatreply.ReplyAllow:
+		tools.ReportApproval(ctx, tools.ApprovedByUser, wait)
+		return nil
+	case chatreply.ReplyAllowAlways, chatreply.ReplyDenyAlways:
+		if reply == chatreply.ReplyAllowAlways && !scope.allowAlways {
+			tools.ReportApproval(ctx, tools.AskedAndDenied, wait)
+			return tools.Denied("用户拒绝执行 " + name)
+		}
+		decision := approvalrules.Allow
+		if reply == chatreply.ReplyDenyAlways {
+			decision = approvalrules.Deny
+		}
+		if scope.rule.Tool == "" {
+			scope.rule.Tool = name
+		}
+		scope.rule.Source = approvalrules.SourceSession
+		scope.rule.Index = a.nextSessionRuleIndex()
+		scope.rule.Action = decision
+		a.policy.Rules = append(a.policy.Rules, scope.rule)
+		tools.ReportRule(ctx, scope.rule.Summary(), scope.key)
+		tools.ReportApproval(ctx, tools.ApprovedByUser, wait)
+		if a.policy.PersistAsk {
+			// T7a deliberately does not call the file writer. T7b will connect the
+			// explicit u/p choice; Enter and failed follow-up retain this rule here.
+			persistAnswer, persistErr := a.asker.Ask(ctx, tools.Question{Tool: "approval_rule", Prompt: chatreply.PersistPrompt(string(decision))})
+			if persistErr == nil {
+				// T7a keeps u/p in memory; parsing here fixes the transition
+				// vocabulary without activating file writeback before T7b.
+				_ = chatreply.ParsePersistReply(persistAnswer)
+			}
+		}
+		if decision == approvalrules.Deny {
+			return tools.Denied(fmt.Sprintf("规则 %s 拒绝执行 %s", scope.rule.Summary(), name))
+		}
+		return nil
+	default:
+		tools.ReportApproval(ctx, tools.AskedAndDenied, wait)
+		return tools.Denied("用户拒绝执行 " + name)
+	}
+}
+
+func (a *chatApprover) nextSessionRuleIndex() int {
+	index := 1
+	for _, rule := range a.policy.Rules {
+		if rule.Source == approvalrules.SourceSession && rule.Index >= index {
+			index = rule.Index + 1
+		}
+	}
+	return index
+}
+
+// approvalScope is the session-rule form and the human wording for one call.
+type approvalScope struct {
+	rule        approvalrules.Rule
+	key         string
+	description string
+	allowAlways bool
+}
+
+func (a *chatApprover) scopeFor(call agentcore.ToolCall, tool agentcore.Tool) approvalScope {
+	target := a.policy.targetFor(call, tool)
+	scope := approvalScope{rule: approvalrules.Rule{Tool: call.Name, Modes: []approvalrules.Mode{approvalrules.ModeChat}}, description: "该工具", allowAlways: true}
+	if target.MCP {
+		scope.rule.Tool = target.MCPServer + "/" + call.Name
+		if target.MCPServer == "" {
+			scope.rule.Tool = call.Name
+		}
+		return scope
+	}
+	if call.Name == "shell_exec" {
+		command, _ := call.Arguments["command"].(string)
+		tokens, ok := scopeCommandTokens(command)
+		if !ok || len(tokens) == 0 {
+			scope.allowAlways = false
+			return scope
+		}
+		count := a.policy.AlwaysPrefixTokens
+		if count < 1 {
+			count = 2
+		}
+		if count > len(tokens) {
+			count = len(tokens)
+		}
+		prefix := scopeTokensText(tokens[:count])
+		pattern := prefix
+		if count < len(tokens) {
+			pattern += " *"
+		}
+		scope.key, scope.description = prefix, "“"+displaySafe(redact.Secrets(prefix))+"”开头的命令"
+		scope.rule.Command = []string{pattern}
+		candidate := scope.rule
+		candidate.Action = approvalrules.Allow
+		scope.allowAlways = candidate.MatchesCommand(target)
+		return scope
+	}
+	if call.Name == "file_write" || call.Name == "file_edit" || call.Name == "file_remove" {
+		pathValue, _ := call.Arguments["path"].(string)
+		relative, ok := a.relativeScopePath(pathValue)
+		if !ok {
+			return scope
+		}
+		scope.key = relative
+		scope.rule.Root = a.policy.Workspace
+		if call.Name == "file_remove" {
+			scope.rule.Path = []string{relative}
+			scope.description = "该目标"
+		} else {
+			if relative == "." {
+				scope.key = ""
+				scope.rule.Path = []string{"**"}
+			} else {
+				scope.rule.Path = []string{relative + "/**"}
+			}
+			scope.description = "写入 " + displaySafe(redact.Secrets(scope.key)) + "/ 目录"
+		}
+	}
+	return scope
+}
+
+func (a *chatApprover) relativeScopePath(value string) (string, bool) {
+	if value == "" || a.policy.Workspace == "" {
+		return "", false
+	}
+	absolute := value
+	if !filepath.IsAbs(absolute) {
+		absolute = filepath.Join(a.policy.Workspace, absolute)
+	}
+	relative, err := filepath.Rel(a.policy.Workspace, filepath.Clean(absolute))
+	if err != nil || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return filepath.ToSlash(relative), true
+}
+
+func scopeCommandTokens(command string) ([]string, bool) {
+	var tokens []string
+	var token strings.Builder
+	var quote byte
+	inToken := false
+	flush := func() {
+		if inToken {
+			tokens = append(tokens, token.String())
+			token.Reset()
+			inToken = false
+		}
+	}
+	for i := 0; i < len(command); i++ {
+		c := command[i]
+		switch {
+		case c == '\'' || c == '"':
+			if quote == 0 {
+				quote = c
+				inToken = true
+			} else if quote == c {
+				quote = 0
+			} else {
+				return nil, false
+			}
+		case c == ' ' && quote == 0:
+			flush()
+		default:
+			token.WriteByte(c)
+			inToken = true
+		}
+	}
+	if quote != 0 {
+		return nil, false
+	}
+	flush()
+	return tokens, true
+}
+
+func scopeTokensText(tokens []string) string {
+	out := make([]string, len(tokens))
+	for i, token := range tokens {
+		if strings.Contains(token, " ") {
+			out[i] = `"` + token + `"`
+		} else {
+			out[i] = token
+		}
+	}
+	return strings.Join(out, " ")
 }
 
 // askOutsideDir asks the person to authorize the directory a file tool call
 // wants to reach outside the workspace and the session's added directories
 // (chat.ask_outside_dirs), before the call runs. The question's subject is the
 // directory the tool would really resolve (native.OutsideOf), never a path the
-// model described in words, so a call cannot talk its way into another
-// directory.
+// model described in words, so a call cannot talk its way into another directory.
 //
 // A granted directory is recorded and published at once (source ask), so this
 // call and the ones after it reach the directory; the call then goes on through
@@ -250,11 +445,15 @@ func (a *chatApprover) outsideQuestion(call agentcore.ToolCall, pending native.O
 	for i, detail := range details {
 		details[i] = displaySafe(redact.Secrets(detail))
 	}
-	return tools.Question{Tool: call.Name, Details: details, Prompt: prompt}
+	return tools.Question{Tool: call.Name, Details: details, Prompt: displaySafe(redact.Secrets(prompt))}
 }
 
 // question shows the full key arguments of the call: redacted, never truncated.
 func (a *chatApprover) question(call agentcore.ToolCall) tools.Question {
+	return a.questionFor(call, nil, approvalScope{})
+}
+
+func (a *chatApprover) questionFor(call agentcore.ToolCall, _ agentcore.Tool, scope approvalScope) tools.Question {
 	args := call.Arguments
 	var details []string
 	switch call.Name {
@@ -309,11 +508,11 @@ func (a *chatApprover) question(call agentcore.ToolCall) tools.Question {
 	for i, detail := range details {
 		details[i] = displaySafe(redact.Secrets(detail))
 	}
-	return tools.Question{
-		Tool:    call.Name,
-		Details: details,
-		Prompt:  fmt.Sprintf("允许执行 %s？[y]是 [N]否 [a]本会话总是允许该工具：", call.Name),
+	prompt := fmt.Sprintf("允许执行 %s？[y]是 [N]否 [a]本会话总是允许该工具：", call.Name)
+	if scope.rule.Tool != "" || scope.key != "" {
+		prompt = chatreply.ApprovalPrompt(call.Name, scope.description, scope.allowAlways)
 	}
+	return tools.Question{Tool: call.Name, Details: details, Prompt: displaySafe(prompt)}
 }
 
 // editPreviewLines bounds each side of a file_edit preview.
@@ -350,20 +549,6 @@ func argText(value any) string {
 	return string(raw)
 }
 
-// displaySafe escapes control and bidi characters (except newline and tab) so
-// the model cannot hide part of a command from the person reading it, e.g.
-// with "\r" or an ANSI erase sequence.
-func displaySafe(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		switch {
-		case r == '\n' || r == '\t':
-			b.WriteRune(r)
-		case unicode.IsControl(r), r >= 0x202a && r <= 0x202e, r >= 0x2066 && r <= 0x2069:
-			fmt.Fprintf(&b, "\\u%04x", r)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
+// displaySafe removes terminal control sequences (including OSC/CSI) before
+// details or prompts are written. Newlines and tabs remain useful formatting.
+func displaySafe(s string) string { return termtext.Clean(s) }

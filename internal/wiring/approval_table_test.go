@@ -66,7 +66,12 @@ func approvalRows() []approvalRow {
 			cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "yes"}
 	}
 	write := func(name string) approvalRow {
-		return approvalRow{name: name, tool: catalogTool(name), chatAsk: "ask", chatAuto: "run", chatAlwaysAsks: 1,
+		chatAlwaysAsks := 1
+		if name == "shell_exec" {
+			// The matrix passes no command argument; T7a cannot safely create a command scope.
+			chatAlwaysAsks = 2
+		}
+		return approvalRow{name: name, tool: catalogTool(name), chatAsk: "ask", chatAuto: "run", chatAlwaysAsks: chatAlwaysAsks,
 			cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "no"}
 	}
 	wired := func(name string, tool func(t *testing.T) agentcore.Tool) approvalRow {
@@ -135,6 +140,10 @@ func TestApprovalTable(t *testing.T) {
 	assert.Require(t, assert.NoErr(t, err))
 	readOnlyGate, err := newCLIMCPGate(true)
 	assert.Require(t, assert.NoErr(t, err))
+	// This table covers the old approval matrix; the scoped persistence path has
+	// dedicated coverage and is intentionally disabled for the matrix answers.
+	runGate.policy.PersistAsk = false
+	readOnlyGate.policy.PersistAsk = false
 
 	var readOnlySet []string
 	for _, tool := range native.BuildTools(native.Env{Workspace: t.TempDir(), SerpAPIKey: "test-key"}, false) {

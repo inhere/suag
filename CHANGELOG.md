@@ -7,6 +7,7 @@
 ### 新增
 
 - 审批规则将 MCP legacy 白名单编译为统一规则，并固定 chat、run、ACP 与只读入口的默认动作。
+- chat 审批支持按命令前缀、写编辑目录和删除精确路径生成会话级 allow/deny 规则，并在写回功能启用前明确提示仅本会话生效。
 - 自动识别 idev-std 发行目录与工作空间的 `tmp/idev-std` 加载产物目录为只读根，可通过 `tools.standards_roots` 关闭；支持 `IDEV_STD_RELEASES_ROOT` 与兼容的 `INHERE_DEV_STANDARDS_ROOT`。
 - chat 增加可脱敏持久化的本地输入历史（Up/Down、Ctrl+R 反查）与 `:` 命令/目录 Tab 补全，可通过 `chat.history` 和 `chat.history_size` 配置。
 - chat 新增 `:model` 查看并从下一回合切换已配置模型，显示 thinking、上下文窗口与输出上限；切换保留 fallback、持久化到会话并写入 `model_switch` trace 事件，续接时沿用（显式 `--model` 优先）。
