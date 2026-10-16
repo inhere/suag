@@ -35,12 +35,14 @@ const steerFullHint = "插话过多，请等本步结束"
 var errExitChat = errors.New("leave chat")
 
 // What chat says about a message inserted into the running turn: it waits for
-// the turn's next model request, a request carried it, or the turn did not take
-// it (it was already ending, or its inbox was full).
+// the turn's next model request, a request carried it, the person took it back
+// for editing, or the turn did not take it (it was already ending, or its inbox
+// was full).
 const (
-	steerWaitingSuffix = "（等待送达）"
-	steerTakenSuffix   = "（已送达）"
-	steerLateSuffix    = "（本轮未接收，稍后处理）"
+	steerWaitingSuffix   = "（等待送达）"
+	steerTakenSuffix     = "（已送达）"
+	steerWithdrawnSuffix = "（已撤回）"
+	steerLateSuffix      = "（本轮未接收，稍后处理）"
 )
 
 // turnInput is the input of one running turn: the steer read the source serves
@@ -90,6 +92,21 @@ func (e turnEnd) unaccepted() []personal.Steer {
 	return out
 }
 
+// deliveredCount is how many messages a model request of the turn carried: what
+// the end-of-turn status line counts ("插话 N"). A message the person took back
+// with Up never reached a request, and one the turn never took runs as a later
+// turn, so neither is counted - the lines in the output area are what says what
+// became of them.
+func (e turnEnd) deliveredCount() int {
+	n := 0
+	for _, s := range e.steers {
+		if s.delivered {
+			n++
+		}
+	}
+	return n
+}
+
 // startTurnInput opens the turn's input line: the source reads in steer mode and
 // the returned consumer turns what it reads into an inserted message, "end this
 // turn only" or "leave chat". It returns nil when steering is off (chat.steering
@@ -105,10 +122,33 @@ func (s *chatState) startTurnInput(cancel context.CancelFunc) *turnInput {
 	}
 	turn := &turnInput{state: s, gen: gen, cancel: cancel, stop: make(chan struct{}), done: make(chan struct{})}
 	// The turn whose read is open: the session socket inserts `suga send --steer`
-	// messages into it while it runs (steer_send.go).
+	// messages into it while it runs (steer_send.go), and Up on the empty input
+	// line asks it for the messages it is still waiting to deliver.
 	s.setCurrentTurn(turn)
+	s.source.setWithdraw(turn.withdraw)
 	go turn.consume()
 	return turn
+}
+
+// setWithdraw installs (or clears, with nil) what Up on an empty input line asks
+// for a line while a read is in progress: the turn whose read is open.
+func (s *chatInputSource) setWithdraw(withdraw func() (string, bool)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.withdraw = withdraw
+}
+
+// withdrawSteers serves the line editor's Up key (lineedit.WithdrawCallback): only
+// the read of a running turn has something to take back, so every other read (the
+// prompt between turns, an approval question) leaves Up to the editor (history).
+func (s *chatInputSource) withdrawSteers() (string, bool) {
+	s.mu.Lock()
+	mode, withdraw := s.readMode, s.withdraw
+	s.mu.Unlock()
+	if mode != modeSteer || withdraw == nil {
+		return "", false
+	}
+	return withdraw()
 }
 
 // consume acts on the events of the turn's read until the turn is over.
@@ -187,6 +227,32 @@ func (t *turnInput) insert(line string) {
 	state.render.SteerLate(text)
 }
 
+// withdraw takes the messages still waiting in the running turn's inbox back out of
+// it and reports their text, so the input line can carry it for editing (Up on an
+// empty line, the counter-key of the Enter that inserted them). Only the messages
+// typed at this keyboard come back: a `suga send --steer` message has a sender
+// waiting for its own fate (Runner.WithdrawSteers). Each one is shown where it was
+// shown as waiting, as withdrawn. The second return value is false when nothing was
+// waiting, in which case Up keeps its usual meaning (history).
+func (t *turnInput) withdraw() (string, bool) {
+	if t == nil || t.state == nil {
+		return "", false
+	}
+	steers := t.state.runner.WithdrawSteers(t.state.sessionID, nil)
+	if len(steers) == 0 {
+		return "", false
+	}
+	texts := make([]string, 0, len(steers))
+	for _, s := range steers {
+		texts = append(texts, s.Text)
+		t.state.render.SteerWithdrawn(s.Text)
+	}
+	// One line per message, in the order they were typed: the joined text is put
+	// back on the input line and submitted again as one message (steering.go puts
+	// the messages of a finished turn back the same way).
+	return strings.Join(texts, "\n"), true
+}
+
 // insertFromElsewhere hands a message that arrived through the session socket
 // (`suga send --steer`) to the running turn. Unlike a typed one it is not kept when
 // the turn refuses it: there is no read of this chat it belongs to, and the caller
@@ -239,8 +305,10 @@ func (t *turnInput) end() turnEnd {
 	if t == nil {
 		return turnEnd{}
 	}
-	// The read is over: nothing can be inserted into this turn any more.
+	// The read is over: nothing can be inserted into this turn any more, and Up no
+	// longer has a waiting message to take back.
 	t.state.dropCurrentTurn(t)
+	t.state.source.setWithdraw(nil)
 	close(t.stop)
 	<-t.done
 	t.drain()

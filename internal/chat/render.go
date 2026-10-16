@@ -339,6 +339,15 @@ func (r *Renderer) SteerDelivered(text string) {
 	fmt.Fprintln(r.opts.Out, line)
 }
 
+// SteerWithdrawn prints the message once the person took it back out of the
+// running turn's inbox with Up on an empty input line: the waiting line becomes
+// the withdrawn one, the same in-place update a delivered message gets
+// (SteerDelivered), and the text is on the input line for editing again.
+func (r *Renderer) SteerWithdrawn(text string) {
+	r.stopThinking()
+	fmt.Fprintln(r.opts.Out, r.paintDim(steerNotice(text, steerWithdrawnSuffix)))
+}
+
 // steerNotice is the one-line display of an inserted message: the marker, the
 // message collapsed like a tool line, and its state.
 func steerNotice(text, suffix string) string {

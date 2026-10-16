@@ -332,6 +332,138 @@ func TestSteerReturns(t *testing.T) {
 	})
 }
 
+// TestRunTurnUpTakesWaitingMessagesBack: Up on the empty input line of a running
+// turn takes the messages still waiting to be delivered back, in order, onto the
+// input line for editing; a line that already holds text keeps Up's usual meaning
+// (history), and nothing waiting means Up does nothing.
+func TestRunTurnUpTakesWaitingMessagesBack(t *testing.T) {
+	// What a terminal sends for the Up key (lineedit.keyUp).
+	const up = "\x1b[A"
+
+	t.Run("an empty line takes them all back, in order", func(t *testing.T) {
+		h := newSteerHarness(t, newGateProv())
+		done := h.startTurn()
+		<-h.cast.started()
+
+		h.kb.Type("只改 README\r")
+		waitUntil(t, "the first message is shown as waiting", func() bool {
+			return strings.Contains(h.out.String(), "[插话] 只改 README（等待送达）")
+		})
+		h.kb.Type("再加一句\r")
+		waitUntil(t, "the second message is shown as waiting", func() bool {
+			return strings.Contains(h.out.String(), "[插话] 再加一句（等待送达）")
+		})
+
+		h.kb.Type(up)
+		waitUntil(t, "both are shown as withdrawn", func() bool {
+			got := h.out.String()
+			return strings.Contains(got, "[插话] 只改 README（已撤回）") &&
+				strings.Contains(got, "[插话] 再加一句（已撤回）")
+		})
+		// The lines say so in the order the messages were typed.
+		got := h.out.String()
+		assert.True(t, strings.Index(got, "[插话] 只改 README（已撤回）") <
+			strings.Index(got, "[插话] 再加一句（已撤回）"))
+		// Both texts go back onto the input line, one per line, in the same order (a
+		// line break of the editor is a CR LF: nothing else writes one here).
+		waitUntil(t, "both texts are on the input line", func() bool {
+			return strings.Contains(h.out.String(), "\r\n再加一句")
+		})
+		assert.Eq(t, "只改 README\n再加一句", h.turnInputLine(t))
+		// Nothing is left waiting: a request of this turn cannot carry them any more.
+		assert.Empty(t, h.state.runner.WithdrawSteers(h.sessID, nil))
+
+		h.cast.letGo()
+		assert.NoErr(t, <-done)
+		// The turn runs on its own prompt only: the messages were taken back, so
+		// they are neither a turn's request nor a turn of their own.
+		assert.Eq(t, []string{"干活"}, h.cast.prompts())
+		// The status line counts delivered messages only.
+		assert.StrNotContains(t, h.out.String(), "插话 1")
+	})
+
+	t.Run("the withdrawn text can be edited and submitted again", func(t *testing.T) {
+		h := newSteerHarness(t, newGateProv())
+		done := h.startTurn()
+		<-h.cast.started()
+
+		h.kb.Type("只改 README\r再加一句\r")
+		waitUntil(t, "both messages are shown as waiting", func() bool {
+			return strings.Contains(h.out.String(), "[插话] 再加一句（等待送达）")
+		})
+		h.kb.Type(up)
+		waitUntil(t, "both are taken back", func() bool {
+			return strings.Contains(h.out.String(), "[插话] 只改 README（已撤回）")
+		})
+
+		// The cursor is at the end of the line: typing goes on, and Enter submits
+		// the whole (edited) text as one message again.
+		h.kb.Type("补充\r")
+		waitUntil(t, "the edited text is inserted again", func() bool {
+			return strings.Contains(h.out.String(), "[插话] 只改 README 再加一句补充（等待送达）")
+		})
+
+		h.cast.letGo()
+		assert.NoErr(t, <-done)
+		// This turn never carried it, so it runs as the next turn (the person typed
+		// it, design D3) - with the edit in place.
+		assert.Eq(t, []string{"干活", "只改 README\n再加一句补充"}, h.cast.prompts())
+	})
+
+	t.Run("a non-empty line keeps Up's history behaviour", func(t *testing.T) {
+		h := newSteerHarness(t, newGateProv())
+		// One line of history, typed at the prompt before the turn.
+		assert.True(t, h.source.Request("> "))
+		h.kb.Type("历史行\r")
+		h.nextLine(t)
+
+		done := h.startTurn()
+		<-h.cast.started()
+		h.kb.Type("插话一句\r")
+		waitUntil(t, "the message is shown as waiting", func() bool {
+			return strings.Contains(h.out.String(), "[插话] 插话一句（等待送达）")
+		})
+		h.kb.Type("半行")
+		waitUntil(t, "the half line is echoed", func() bool {
+			return strings.Contains(h.out.String(), "半行")
+		})
+
+		// The line holds text, so Up walks the history: the line it submitted into
+		// the turn is the most recent entry, the one before it is the prompt line.
+		h.kb.Type(up)
+		h.kb.Type(up)
+		waitUntil(t, "Up walks the history instead of filling the line", func() bool {
+			got := h.out.String()
+			return strings.LastIndex(got, "历史行") > strings.LastIndex(got, "半行")
+		})
+		assert.StrNotContains(t, h.out.String(), "已撤回")
+		assert.Eq(t, "历史行", h.turnInputLine(t))
+
+		h.cast.letGo()
+		assert.NoErr(t, <-done)
+		// Nothing was taken back: the completed turn hands the message to the next
+		// turn, which is what a message it did not carry does.
+		assert.Eq(t, []string{"干活", "插话一句"}, h.cast.prompts())
+	})
+
+	t.Run("nothing waiting: Up does nothing", func(t *testing.T) {
+		h := newSteerHarness(t, newGateProv())
+		done := h.startTurn()
+		<-h.cast.started()
+
+		h.kb.Type(up)
+		time.Sleep(100 * time.Millisecond)
+		assert.StrNotContains(t, h.out.String(), "已撤回")
+		// Nothing was filled in either: the line is still empty (with no history to
+		// walk, Up leaves it as it is).
+		assert.Eq(t, "", h.turnInputLine(t))
+
+		h.cast.letGo()
+		assert.NoErr(t, <-done)
+		assert.Eq(t, []string{"干活"}, h.cast.prompts())
+	})
+}
+
 // TestPutSteersBackKeepsTheHalfLine: messages that could not be delivered go back
 // into the input line, one per line and in front of what is half typed; nothing is
 // submitted.
@@ -359,13 +491,15 @@ func TestRendererSteerNotices(t *testing.T) {
 			HighlightWidth: func() int { return lineedit.DefaultWidth }}), out
 	}
 
-	t.Run("waiting, late and delivered", func(t *testing.T) {
+	t.Run("waiting, late, withdrawn and delivered", func(t *testing.T) {
 		r, out := newR(false)
 		r.SteerWaiting("只改 README")
 		r.SteerLate("不算了")
+		r.SteerWithdrawn("只改 README")
 		r.SteerDelivered("只改 README")
 		assert.Eq(t, "[插话] 只改 README（等待送达）\n"+
 			"[插话] 不算了（本轮未接收，稍后处理）\n"+
+			"[插话] 只改 README（已撤回）\n"+
 			"[插话] 只改 README（已送达）\n", out.String())
 	})
 

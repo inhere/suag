@@ -278,7 +278,7 @@ func (s *chatState) runOneTurn(line string, injected bool) (*steerTurn, error) {
 	} else if result.Status == agentcore.RunYielded {
 		s.render.Finish()
 		s.render.Notice("Waiting for more input.")
-		s.render.Status(result, time.Since(turnStart), len(turnEnd.steers))
+		s.render.Status(result, time.Since(turnStart), turnEnd.deliveredCount())
 	} else {
 		// Streamed text is already on screen; otherwise print the answer now.
 		if !s.render.Finish() {
@@ -287,7 +287,7 @@ func (s *chatState) runOneTurn(line string, injected bool) (*steerTurn, error) {
 		if len(result.DeniedTools) > 0 {
 			s.render.Notice("本轮被拒绝的工具：" + strings.Join(result.DeniedTools, ", "))
 		}
-		s.render.Status(result, time.Since(turnStart), len(turnEnd.steers))
+		s.render.Status(result, time.Since(turnStart), turnEnd.deliveredCount())
 		stopMessage = result.Output
 	}
 	if s.hooks != nil {

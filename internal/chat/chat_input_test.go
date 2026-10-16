@@ -56,10 +56,12 @@ func waitTTY(t *testing.T, f *fakeTTY, raw bool) {
 }
 
 // newTestTerminal wires a line editor onto the source's byte pump exactly as
-// newChatInputSource does for a real terminal, the lone-Esc callback included.
+// newChatInputSource does for a real terminal, the lone-Esc and withdraw
+// callbacks included.
 func newTestTerminal(source *chatInputSource) {
 	source.terminal = lineedit.NewTerminal(&chatTerminalIO{reader: source.reader, output: source.output}, "")
 	source.terminal.EscCallback = source.escKeyPressed
+	source.terminal.WithdrawCallback = source.withdrawSteers
 }
 
 // newFakeTTYSource builds a terminal-mode input source whose "keyboard" is the returned pipe.

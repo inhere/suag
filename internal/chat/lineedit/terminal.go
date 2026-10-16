@@ -25,6 +25,10 @@
 // Addition for a lone Esc the caller already decided on (esc.go): SetEscAlone
 // and EscCallback.
 //
+// Addition for taking a line back into the editor: WithdrawCallback, called when
+// Up is pressed on an empty input line, so a caller can fill the line in (chat
+// taking a message still waiting in the running turn back for editing).
+//
 // Change to bracketed pastes (paste.go): a newline inside a paste is inserted
 // into the line instead of ending the read, so a pasted multi-line text lands on
 // the input line as one piece; SetNewlineAsText lets a caller declare the same
@@ -123,6 +127,14 @@ type Terminal struct {
 	// declared Esc without a callback is dropped like any other key the editor has no
 	// use for.
 	EscCallback func()
+	// WithdrawCallback, when non-nil, is called from inside ReadLine when Up is
+	// pressed on an empty input line. ok=true means the caller filled a line in -
+	// text it took back from somewhere, which the editor then shows with the cursor
+	// at its end - so the key is consumed; ok=false keeps Up's usual meaning
+	// (history). It is called with the terminal lock released (like EscCallback and
+	// AutoCompleteCallback), so it may write to the terminal; an empty line always
+	// keeps Up's usual meaning.
+	WithdrawCallback func() (string, bool)
 	// inputStyle paints a submitted line (highlight.go); zero by default.
 	inputStyle InputStyle
 }

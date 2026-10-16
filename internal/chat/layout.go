@@ -167,8 +167,9 @@ type TurnStatus struct {
 	Elapsed time.Duration
 	// EndTime is the local time the turn ended at, shown as HH:MM.
 	EndTime time.Time
-	// Steers is how many messages the person inserted while the turn ran; 0
-	// keeps that part out of the line.
+	// Steers is how many inserted messages a model request of the turn carried
+	// (the delivered ones; a message taken back with Up, or one the turn never
+	// took, is not counted); 0 keeps that part out of the line.
 	Steers int
 }
 

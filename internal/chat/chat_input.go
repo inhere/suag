@@ -79,6 +79,10 @@ type chatInputSource struct {
 	// generation they were produced in, so a key the pump decided just as a turn
 	// ended cannot end the next one.
 	steerGen uint64
+	// withdraw is what Up on an empty input line asks for a line to fill in while a
+	// turn runs (steering.go): startTurnInput installs the running turn's own and
+	// turnInput.end clears it. nil keeps Up's usual meaning (history).
+	withdraw func() (string, bool)
 	// screenWidth is the terminal's column count when it could be read (0: unknown).
 	screenWidth int
 	// sizeFD is the descriptor the terminal size is read from (-1 without a
@@ -191,6 +195,9 @@ func newChatInputSource(parent context.Context, input io.Reader, output io.Write
 		// A lone Esc during a turn is the Esc key (end this turn). The pump declares
 		// it before handing the byte over; prompt and ask reads never declare one.
 		source.terminal.EscCallback = source.escKeyPressed
+		// Up on an empty input line asks the running turn whether a message it is
+		// still waiting to deliver can come back for editing (steering.go).
+		source.terminal.WithdrawCallback = source.withdrawSteers
 		// The terminal's real size drives the line editor's layout: it wraps a line
 		// at termWidth and the highlighted rows are filled to the same width. Without
 		// this the editor keeps wrapping at lineedit.DefaultWidth (80) however wide

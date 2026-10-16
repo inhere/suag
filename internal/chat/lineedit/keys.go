@@ -223,6 +223,20 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 		t.pos = len(t.line)
 		t.moveCursorToPos(t.pos)
 	case keyUp:
+		// An empty line lets the caller fill one in (WithdrawCallback): chat takes a
+		// message still waiting in the running turn back into it. The callback runs
+		// with the lock released, like AutoCompleteCallback, since it writes to the
+		// terminal itself (the withdrawn message is shown above the line).
+		if len(t.line) == 0 && t.WithdrawCallback != nil {
+			t.lock.Unlock()
+			text, filled := t.WithdrawCallback()
+			t.lock.Lock()
+			if filled && text != "" {
+				runes := []rune(text)
+				t.setLine(runes, len(runes))
+				return
+			}
+		}
 		if t.multiLineInput() && t.moveCursorVertically(-1) {
 			// Inside a multi-line input Up moves the cursor up; on its first row it falls
 			// through to the history, like a single-line input (the history keeps the
