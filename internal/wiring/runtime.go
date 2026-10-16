@@ -69,6 +69,9 @@ type Options struct {
 	// MaxSteps overrides the config's max_steps for the main agent's turns
 	// (--max-steps, run only); 0 uses SUGA_MAX_STEPS, then max_steps.
 	MaxSteps int
+	// Budget carries raw run/chat flag overrides. Zero values defer to
+	// SUGA_BUDGET_* and budget.* settings.
+	Budget appconfig.BudgetFlags
 	// MaxOutputTokens overrides the configured output token limit for this
 	// invocation (--max-output-tokens); 0 uses SUGA_MAX_OUTPUT_TOKENS, then
 	// providers.<id>.models.<m>.max_output_tokens /
@@ -107,6 +110,9 @@ type Runtime struct {
 	Registry *tools.Registry
 	// ContextWindow is the window of the model actually used by the provider.
 	ContextWindow int
+	// Budget is the resolved budget input retained for later runner/provider
+	// assembly. Its zero value means that budgeting is disabled.
+	Budget appconfig.BudgetSettings
 	// Thinking is the main model's effective thinking level ("" = the
 	// provider's default).
 	Thinking string
@@ -365,6 +371,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	budget, err := appconfig.ReadBudgetSettings(opts.Budget)
+	if err != nil {
+		return nil, err
+	}
+
 	settings, taintTools, taintOnSpill := rs.models, rs.taintTools, rs.taintOnSpill
 	memSetup, memPolicy, sessionsDir := rs.memSetup, rs.memPolicy, rs.sessionsDir
 	provider, err := buildMainProvider(settings)
@@ -572,7 +583,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	memHost.bind(runner, repo)
 	rt := &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
-		ContextWindow: contextWindow, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry,
+		ContextWindow: contextWindow, Budget: budget, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry,
 		AddDirs: dirs, modelOptions: modelOptions, modelSpecs: modelSpecs,
 		fallbacks:        append([]appconfig.ModelSpec(nil), settings.Fallbacks...),
 		thinkingOverride: opts.Thinking, maxOutputOverride: opts.MaxOutputTokens}

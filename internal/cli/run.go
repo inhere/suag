@@ -14,6 +14,7 @@ import (
 	"github.com/gookit/goutil/cflag/capp"
 	"github.com/inhere/suga/internal/adddir"
 	"github.com/inhere/suga/internal/chat"
+	appconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/internal/output"
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/internal/wiring"
@@ -51,8 +52,11 @@ type personalOptions struct {
 	// invocation (--max-output-tokens); 0 uses SUGA_MAX_OUTPUT_TOKENS, then
 	// models.<m>.max_output_tokens, then providers.<id>.max_output_tokens.
 	MaxOutputTokens int
-	MCPConfigs      []string
-	CLIMode         bool
+	// Budget contains the run/chat budget flag overrides. Zero values defer to
+	// SUGA_BUDGET_* and budget.* settings.
+	Budget     appconfig.BudgetFlags
+	MCPConfigs []string
+	CLIMode    bool
 	// AddDirs are this invocation's --add-dir values ("<absolute
 	// directory>[:ro|:rw]", default :ro); SUGA_ADD_DIRS is read alongside them.
 	AddDirs []string
@@ -192,6 +196,9 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.StringVar(&opts.Model, "model", "", "model, <provider>/<model> or a bare model id (overrides SUGA_MODEL)")
 	cmd.StringVar(&opts.Thinking, "thinking", "", "thinking level of the main model: off, minimal, low, medium, high, xhigh, max, auto (overrides the config)")
 	cmd.IntVar(&opts.MaxOutputTokens, "max-output-tokens", 0, "max output tokens per model request, >= 1 (overrides SUGA_MAX_OUTPUT_TOKENS, models.<m>.max_output_tokens and providers.<id>.max_output_tokens)")
+	cmd.IntVar(&opts.Budget.Tokens, "budget-tokens", 0, "token budget for this turn or session, >= 0 (overrides SUGA_BUDGET_TOKENS and budget.tokens)")
+	cmd.Float64Var(&opts.Budget.CostUSD, "budget-cost-usd", 0, "cost budget in USD, >= 0 (overrides SUGA_BUDGET_COST_USD and budget.cost_usd)")
+	cmd.StringVar(&opts.Budget.Scope, "budget-scope", "", "budget scope: turn or session (overrides SUGA_BUDGET_SCOPE and budget.scope)")
 	cmd.StringVar(&opts.SessionID, "session-id", "", "create or use this session ID;;sid")
 	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID;;r")
 	cmd.StringVar(&opts.FromID, "from", "", "start a new session that inherits the summary, plan and loaded tools of this session")
@@ -226,6 +233,7 @@ func (o personalOptions) wiringOptions(mode string) wiring.Options {
 		NoProjectRules:  o.NoProjectRules,
 		MaxSteps:        o.MaxSteps,
 		MaxOutputTokens: o.MaxOutputTokens,
+		Budget:          o.Budget,
 	}
 }
 
@@ -253,6 +261,12 @@ func validatePersonalOptions(mode string, opts personalOptions) error {
 	}
 	if opts.MaxOutputTokens < 0 {
 		return fmt.Errorf("--max-output-tokens must be a whole number >= 1, got %d", opts.MaxOutputTokens)
+	}
+	if opts.Budget.Tokens < 0 {
+		return fmt.Errorf("--budget-tokens must be a whole number >= 0, got %d", opts.Budget.Tokens)
+	}
+	if opts.Budget.CostUSD < 0 {
+		return fmt.Errorf("--budget-cost-usd must be a number >= 0, got %v", opts.Budget.CostUSD)
 	}
 	return nil
 }
