@@ -406,11 +406,7 @@ func ReloadApprovalRules(previous ApprovalRules, workspace string) (ApprovalRule
 	}
 	current, err := LoadApprovalRules(workspace)
 	if err != nil {
-		path := workspace
-		if previous.Project.Path != "" {
-			path = previous.Project.Path
-		}
-		return retainApprovalRulesAfterReloadFailure(previous, path, err)
+		return retainApprovalRulesAfterReloadFailure(previous, approvalRuleFailurePath(err, previous, workspace), err)
 	}
 	if ApprovalRuleSourceChanged(previous.Project, current.Project) && !current.ProjectAllowTrusted() {
 		// A changed project file may tighten policy immediately, but an old deny
@@ -418,6 +414,33 @@ func ReloadApprovalRules(previous ApprovalRules, workspace string) (ApprovalRule
 		current.Project.Rules = appendProjectDenies(previous.Project.Rules, current.Project.Rules)
 	}
 	return current, nil
+}
+
+func approvalRuleFailurePath(err error, previous ApprovalRules, workspace string) string {
+	message := err.Error()
+	sources := []ApprovalRuleSource{previous.User, previous.Project}
+	for _, source := range sources {
+		if source.Path != "" && strings.Contains(message, source.Path) {
+			return source.Path
+		}
+	}
+	// Parser errors can omit the filename on some goccy versions. Compare the
+	// file metadata/content with the last good snapshot before falling back to
+	// the workspace, so warnings still identify the changed source.
+	for _, source := range sources {
+		if source.Path == "" {
+			continue
+		}
+		content, readErr := os.ReadFile(source.Path)
+		if readErr != nil {
+			return source.Path
+		}
+		info, statErr := os.Stat(source.Path)
+		if statErr != nil || fingerprint(info, content) != source.Fingerprint {
+			return source.Path
+		}
+	}
+	return workspace
 }
 
 func appendProjectDenies(previous, current []rules.Rule) []rules.Rule {

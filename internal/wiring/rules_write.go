@@ -33,10 +33,14 @@ type persistedApprovalRule struct {
 	Modes   []string `yaml:"modes,omitempty"`
 }
 
-// WriteApprovalRule appends a validated rule to a rule file. The operation is
-// serialized with a sidecar lock, writes a same-directory temporary file, and
-// replaces the destination atomically before validating the bytes read back.
+// WriteApprovalRule appends a restrictive rule to a rule file. An allow needs
+// an explicit destination through PersistApprovalRule; inferring that
+// destination from rule.Source would let a session rule accidentally grant a
+// project file's allow permission.
 func WriteApprovalRule(path string, rule rules.Rule) error {
+	if rule.Action == rules.Allow {
+		return fmt.Errorf("allow rules require an explicit persistence destination")
+	}
 	return PersistApprovalRule(path, rule.Source, rule, nil)
 }
 

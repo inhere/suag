@@ -68,6 +68,11 @@ type Target struct {
 	Command string
 	Path    string
 	Root    string
+	// Protected roots are supplied by wiring; keeping them on the target lets
+	// Policy.Decide apply the same allow clamp for every entry point.
+	Workspace string
+	SugaHome  string
+	RuleFiles []string
 }
 
 // Rule is one declarative approval rule. Command and Path are slices because
@@ -155,7 +160,8 @@ func (p Policy) Decide(target Target) (Action, *Rule) {
 		}
 	}
 	if winner != nil {
-		return winner.Action, winner
+		action := ClampAllow(winner.Action, target, target.Workspace, target.SugaHome, target.RuleFiles...)
+		return action, winner
 	}
 	if validAction(p.Default) {
 		return p.Default, nil

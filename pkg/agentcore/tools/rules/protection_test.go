@@ -36,8 +36,27 @@ func TestProtectedPathAndClampAllow(t *testing.T) {
 
 func TestProtectedPathDoesNotApplyToReadToolsOrMCP(t *testing.T) {
 	workspace := t.TempDir()
-	target := Target{Tool: "file_read", Root: workspace, Path: ".git/config"}
-	assert.False(t, IsProtectedPath(target, workspace, t.TempDir()))
-	target = Target{Tool: "file_write", MCP: true, Root: workspace, Path: ".git/config"}
-	assert.False(t, IsProtectedPath(target, workspace, t.TempDir()))
+	t.Run("read tool", func(t *testing.T) {
+		target := Target{Tool: "file_read", Root: workspace, Path: ".git/config"}
+		assert.False(t, IsProtectedPath(target, workspace, t.TempDir()))
+	})
+	t.Run("MCP tool", func(t *testing.T) {
+		target := Target{Tool: "file_write", MCP: true, Root: workspace, Path: ".git/config"}
+		assert.False(t, IsProtectedPath(target, workspace, t.TempDir()))
+	})
+}
+
+func TestPolicyDecideClampsProtectedAllow(t *testing.T) {
+	workspace := t.TempDir()
+	policy := Policy{Rules: []Rule{{Tool: "file_write", Path: []string{"**"}, Root: workspace, Action: Allow}}}
+	target := Target{
+		Tool:      "file_write",
+		Root:      workspace,
+		Path:      ".git/config",
+		Mode:      ModeRun,
+		Workspace: workspace,
+	}
+	action, hit := policy.Decide(target)
+	assert.Require(t, assert.NotNil(t, hit))
+	assert.Eq(t, Deny, action)
 }
