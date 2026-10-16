@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -49,7 +50,12 @@ func (t fnTool) Execute(context.Context, agentcore.ToolCall) (*agentcore.ToolRes
 
 func TestPoolFallbackRecordsOneModelEventPerAttempt(t *testing.T) {
 	repo := openObserveRepo(t)
-	first := mock.NewProvider(mock.Error(errors.New("boom"))).WithName("primary")
+	// The primary fails transiently (an HTTP 503 with retries off), which is what
+	// lets the pool ask the backup: a request-level refusal (400/422) or a bad
+	// response would come back instead (llm.ShouldFallback).
+	server := statusTestServer(t, http.StatusServiceUnavailable)
+	first := llm.NewOpenAIProvider(llm.OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "m",
+		Name: "primary", Retry: llm.RetryPolicy{MaxAttempts: 1}})
 	second := mock.NewProvider(mock.Final("fallback answer")).WithName("backup")
 	runner, err := New(Config{Repository: repo, Provider: llm.NewPool([]llm.Provider{first, second}), Model: "m-1", ProviderName: "pool-cfg"})
 	assert.NoErr(t, err)
@@ -62,8 +68,10 @@ func TestPoolFallbackRecordsOneModelEventPerAttempt(t *testing.T) {
 	t.Run("failed attempt", func(t *testing.T) {
 		assert.Eq(t, "primary", events[0].Name)
 		assert.Eq(t, eventError, events[0].Status)
-		assert.Eq(t, true, strings.Contains(events[0].Error, "boom"))
+		assert.StrContains(t, events[0].Error, "503")
 		assert.Eq(t, float64(1), events[0].Attrs["attempt"])
+		// Why the pool moved on, for the trace (llm.Attempt.Fallback).
+		assert.Eq(t, "next, provider_transient", events[0].Attrs["fallback"])
 	})
 	t.Run("successful attempt", func(t *testing.T) {
 		assert.Eq(t, "backup", events[1].Name)
@@ -71,6 +79,9 @@ func TestPoolFallbackRecordsOneModelEventPerAttempt(t *testing.T) {
 		assert.Eq(t, float64(2), events[1].Attrs["attempt"])
 		assert.Eq(t, "m-1", events[1].Attrs["model"]) // filled from the runner config
 		assert.Eq(t, res.TurnID, events[1].TurnID)
+		if _, ok := events[1].Attrs["fallback"]; ok {
+			t.Fatal("a successful attempt carries no fallback decision")
+		}
 	})
 }
 
