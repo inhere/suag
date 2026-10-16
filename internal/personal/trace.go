@@ -185,6 +185,9 @@ func traceLine(e store.Event) string {
 	if decision, _ := e.Attrs["fallback"].(string); decision != "" {
 		parts = append(parts, "fallback="+decision)
 	}
+	if e.Kind == store.EventBudget {
+		parts = append(parts, budgetTraceParts(e)...)
+	}
 	if e.Kind == store.EventTool {
 		parts = append(parts, toolTraceParts(e)...)
 	}
