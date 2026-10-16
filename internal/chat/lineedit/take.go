@@ -87,22 +87,12 @@ func (t *Terminal) applyPendingLine() bool {
 	return true
 }
 
-// repaintLocked redraws the prompt and the line in place, clearing every row
-// they used first (the same clearing as Write). t.lock must be held.
+// repaintLocked redraws the block - the status line (chat.steering), the prompt
+// and the line being edited - in place, clearing every row it uses first (the same
+// clearing as Write). t.lock must be held.
 func (t *Terminal) repaintLocked() error {
-	t.move(0, 0, t.cursorX, 0)
-	t.cursorX = 0
-	t.clearLineToRight()
-	for t.cursorY > 0 {
-		t.move(1, 0, 0, 0)
-		t.cursorY--
-		t.clearLineToRight()
-	}
-	t.writeLine(t.prompt)
-	if t.echo {
-		t.writeLine(t.line)
-	}
-	t.moveCursorToPos(t.pos)
+	t.clearBlock()
+	t.paintBlock()
 	_, err := t.c.Write(t.outBuf)
 	t.outBuf = t.outBuf[:0]
 	return err
@@ -110,14 +100,28 @@ func (t *Terminal) repaintLocked() error {
 
 // AbortLine ends the screen state of a read that returned io.EOF (Ctrl-C, or
 // Ctrl-D on an empty line): the cursor moves past the typed text to a new row
-// and the text is dropped, so the next ReadLine starts on a clean line.
+// and the text is dropped, so the next ReadLine starts on a clean line. A status
+// line above the input line (chat.steering) goes with it: the read it belonged to
+// is over.
 func (t *Terminal) AbortLine() {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
+	if t.statusOn {
+		// A status line above the input line (chat.steering) goes with the read it
+		// belonged to: its row is cleared where it is, leaving the line and the cursor
+		// where the caller left them.
+		t.move(t.cursorY+1, 0, 0, 0)
+		t.outBuf = append(t.outBuf, '\r')
+		t.clearLineToRight()
+		t.move(0, t.cursorY+1, 0, t.cursorX)
+		t.statusOn = false
+	}
 	if t.cursorX != 0 || t.cursorY != 0 || len(t.line) > 0 {
 		t.moveCursorToPos(len(t.line))
 		t.queue([]rune("\r\n"))
+	}
+	if len(t.outBuf) > 0 {
 		t.c.Write(t.outBuf)
 		t.outBuf = t.outBuf[:0]
 	}

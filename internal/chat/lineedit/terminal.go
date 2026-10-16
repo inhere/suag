@@ -29,6 +29,11 @@
 // Up is pressed on an empty input line, so a caller can fill the line in (chat
 // taking a message still waiting in the running turn back for editing).
 //
+// Addition for the status line chat shows above the input line while a turn runs
+// (status.go): SetStatus. The status line's row belongs to the block the editor
+// keeps on screen - the prompt and the line being edited - so every repaint
+// (Write) clears it with them and draws it again from the top of the block.
+//
 // Change to bracketed pastes (paste.go): a newline inside a paste is inserted
 // into the line instead of ending the read, so a pasted multi-line text lands on
 // the input line as one piece; SetNewlineAsText lets a caller declare the same
@@ -137,6 +142,13 @@ type Terminal struct {
 	WithdrawCallback func() (string, bool)
 	// inputStyle paints a submitted line (highlight.go); zero by default.
 	inputStyle InputStyle
+	// statusText is the text SetStatus was given and status the runes actually on
+	// screen (cut to the terminal width, so the two differ); statusOn says the
+	// status line's row is on screen, i.e. that the block the cursor belongs to
+	// starts one row above the prompt row (status.go).
+	statusText string
+	status     []rune
+	statusOn   bool
 }
 
 // DefaultWidth is the terminal width the editor lays lines out with until it is
@@ -207,11 +219,11 @@ func (t *Terminal) readLine() (line string, err error) {
 	defer func() { t.reading, t.noHistory = false, false }()
 	prefilled := t.applyPendingLine()
 	if t.cursorX == 0 && t.cursorY == 0 {
-		t.writeLine(t.prompt)
-		if t.echo && len(t.line) > 0 { // a prefilled line (SetPendingLine)
-			t.writeLine(t.line)
-			t.moveCursorToPos(t.pos)
-		}
+		// Nothing of the block is on screen yet: draw it - the status line, while
+		// one is set (chat may set it before this read draws anything), above the
+		// prompt - the way every repaint draws it (paintBlock).
+		t.statusOn = len(t.status) > 0
+		t.paintBlock()
 		t.c.Write(t.outBuf)
 		t.outBuf = t.outBuf[:0]
 	} else if prefilled {

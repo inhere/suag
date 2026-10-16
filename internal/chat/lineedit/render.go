@@ -284,23 +284,16 @@ func (t *Terminal) Write(buf []byte) (n int, err error) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	if t.cursorX == 0 && t.cursorY == 0 {
+	if t.cursorX == 0 && t.cursorY == 0 && !t.statusOn {
 		// This is the easy case: there's nothing on the screen that we
 		// have to move out of the way.
 		return writeWithCRLF(t.c, buf)
 	}
 
 	// We have a prompt and possibly user input on the screen. We
-	// have to clear it first.
-	t.move(0 /* up */, 0 /* down */, t.cursorX /* left */, 0 /* right */)
-	t.cursorX = 0
-	t.clearLineToRight()
-
-	for t.cursorY > 0 {
-		t.move(1 /* up */, 0, 0, 0)
-		t.cursorY--
-		t.clearLineToRight()
-	}
+	// have to clear it first - the status line's row (chat.steering) included,
+	// when there is one, since the block starts there.
+	t.clearBlock()
 
 	if _, err = t.c.Write(t.outBuf); err != nil {
 		return
@@ -311,12 +304,16 @@ func (t *Terminal) Write(buf []byte) (n int, err error) {
 		return
 	}
 
-	t.writeLine(t.prompt)
-	if t.echo {
-		t.writeLine(t.line)
+	if t.statusOn && !endsLine(buf) {
+		// The output did not end a line: the status line and the prompt go on rows
+		// of their own anyway, so the block keeps the layout it is tracked with
+		// (chat writes complete lines while the input line is up: whole-line mode).
+		if _, err = t.c.Write([]byte("\r\n")); err != nil {
+			return
+		}
 	}
 
-	t.moveCursorToPos(t.pos)
+	t.paintBlock()
 
 	if _, err = t.c.Write(t.outBuf); err != nil {
 		return
@@ -325,10 +322,63 @@ func (t *Terminal) Write(buf []byte) (n int, err error) {
 	return
 }
 
+// endsLine reports whether the output ends at column 0 of a fresh row.
+func endsLine(buf []byte) bool {
+	return len(buf) == 0 || buf[len(buf)-1] == '\n'
+}
+
+// clearBlock erases the input block - the status line, while one is up, above the
+// prompt with the line being edited - and leaves the cursor at the block's first
+// row, column 0. cursorY counts rows from the prompt row, so it is -1 while the
+// cursor is on the status line's row. Every repaint starts from there (paintBlock).
+func (t *Terminal) clearBlock() {
+	t.move(0, 0, t.cursorX, 0)
+	t.cursorX = 0
+	t.clearLineToRight()
+	for t.cursorY > 0 {
+		t.move(1, 0, 0, 0)
+		t.cursorY--
+		t.clearLineToRight()
+	}
+	if t.statusOn {
+		t.move(1, 0, 0, 0)
+		t.cursorY = -1
+		t.clearLineToRight()
+	}
+}
+
+// paintBlock draws the block at the cursor - which must be at the block's first
+// row, column 0, with cursorY -1 while the status line is up - and leaves the
+// cursor where the line's own cursor sits. The status line takes the first row and
+// the prompt follows on the next one; cursorY counts from the prompt row, which is
+// why it is reset between the two.
+func (t *Terminal) paintBlock() {
+	pos := t.pos
+	if t.statusOn {
+		t.cursorX, t.cursorY = 0, 0
+		t.writeLine(t.status)
+		// writeLine is not used for the row break: it would count the row in maxLine,
+		// which is measured from the prompt row.
+		t.outBuf = append(t.outBuf, '\r', '\n')
+	}
+	t.cursorX, t.cursorY = 0, 0
+	t.writeLine(t.prompt)
+	if t.echo {
+		t.writeLine(t.line)
+	}
+	t.moveCursorToPos(pos)
+}
+
 func (t *Terminal) clearAndRepaintLinePlusNPrevious(numPrevLines int) {
 	// Move cursor to column zero at the start of the line.
 	t.move(t.cursorY, 0, t.cursorX, 0)
 	t.cursorX, t.cursorY = 0, 0
+	if t.statusOn {
+		// The status line's row is the first row of the block: clear it with the rest
+		// and draw it again before the prompt.
+		t.move(1, 0, 0, 0)
+		t.cursorY = -1
+	}
 	t.clearLineToRight()
 	for t.cursorY < numPrevLines {
 		// Move down a line
@@ -336,14 +386,17 @@ func (t *Terminal) clearAndRepaintLinePlusNPrevious(numPrevLines int) {
 		t.cursorY++
 		t.clearLineToRight()
 	}
-	// Move back to beginning.
-	t.move(t.cursorY, 0, 0, 0)
+	// Move back to the beginning.
+	up := t.cursorY
+	if t.statusOn {
+		up++ // the status line's row above the first row of the prompt
+	}
+	t.move(up, 0, 0, 0)
 	t.cursorX, t.cursorY = 0, 0
-
-	t.queue(t.prompt)
-	t.advanceCursor(visualLength(t.prompt))
-	t.writeLine(t.line)
-	t.moveCursorToPos(t.pos)
+	if t.statusOn {
+		t.cursorY = -1
+	}
+	t.paintBlock()
 }
 
 func (t *Terminal) SetSize(width, height int) error {
@@ -362,7 +415,7 @@ func (t *Terminal) SetSize(width, height int) error {
 		// If the width didn't change then nothing else needs to be
 		// done.
 		return nil
-	case len(t.line) == 0 && t.cursorX == 0 && t.cursorY == 0:
+	case len(t.line) == 0 && t.cursorX == 0 && t.cursorY == 0 && !t.statusOn:
 		// If there is nothing on current line and no prompt printed,
 		// just do nothing
 		return nil
