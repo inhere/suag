@@ -1,12 +1,13 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # 中文 session_search S1（混合匹配、cursor 分页与过滤）实施计划
 
-> 状态：Draft 0.1（待用户审阅）
+> 状态：Draft 0.2（按评审 r1 修订，待用户审阅）
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
+| 0.2 | 2026-10-17 | suga（gofer job） | 按预算 / 中文检索计划评审 r1 关闭 S-M1–S-M2；补齐检索工具结果排除、快照 snippet/锁/LRU、接口顺序与基线范围。 |
 | 0.1 | 2026-10-17 | suga（gofer job） | 依据已批准设计 Draft 0.3 起草 S1 实施计划；明确零迁移、按词分流、进程内快照分页、过滤与 cwd 下推的任务边界。 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
@@ -18,7 +19,7 @@
 完成定义（全部满足）：
 
 1. `>=3` rune 的词进入现有 trigram `MATCH`，1–2 rune 的词只作为同一条 SQL 的 `LIKE` 过滤条件；短词绝不进入 MATCH，混合查询不会静默放宽 AND 约束；纯短词继续按既有时间序。
-2. `EntrySearch`/等效结果结构支持 `Kinds`、`Since`/`Until`、workspace/current 条件与 cursor；cursor 为 `v1.<snapshot_id>.<offset>`，使用进程内最多 500 条、10 分钟 TTL 的稳定快照，单页上限与总快照上限分离，失效时从头查询并说明。
+2. `EntrySearch`/等效结果结构支持 `Kinds`、`Since`/`Until`、workspace/current 条件与 cursor；cursor 为 `v1.<snapshot_id>.<offset>`，使用进程内最多 500 条、10 分钟 TTL、最多 64 个快照的加锁 LRU 稳定快照；首查快照保存 `(session_id, seq, role, snippet, created_at)`，翻页按偏移切片，不重新查询；单页上限与总快照上限分离，失效时从头查询并说明。
 3. `kind`、半开时间窗、`current`/`workspace`/`all` scope 和 `IncludeAgents` 组合正确；workspace 条件在 SQL 下推，当前会话始终包含，空 cwd 排除，路径按分隔符边界匹配；Windows 使用设计批准的 `lower()` ASCII 折叠并固定已知非 ASCII 差异。
 4. `session_search` 新增可选 `cursor`、逗号分隔多值 `kind`、`since`、`until`，结果只有在有下一页时追加 `next_cursor`；`recall`、`ref=out:` 行扫描、redact 和既有调用保持兼容；按设计不扩展 CLI 的 cursor/kind 分页语义。
 5. S1 不新增表、列、索引、迁移或持久化快照；旧调用的零值字段和旧输出断言继续通过，游标不进入 SQL，不可信/不匹配游标安全地从头开始。
@@ -31,7 +32,7 @@
 - 排除：S2 bigram/第二张索引、unicode61 tokenizer 替换、迁移/回填实现、长期记忆、向量/语义检索、跨 `SUGA_HOME`、trace/stats 分页与 kind 过滤、redact 规则修改、自动检索质量评测体系、CLI cursor/kind 分页产品面。
 - `recall` 的 offset/limit 和 `ref=out:` 语义不改；`CWDPrefix` 保留原有裸前缀/大小写敏感语义，新 workspace 结构与它并存。
 - 本计划只授权本地实施与按功能点本地提交；不 push、不 tag、不发版，不改 `.gofer/tracker`。
-- `host_or_non_offline_action=NOT_APPLICABLE`（本计划只做本地代码与测试；push/发版在人工 Gate 中另行请求。）
+- `host_or_non_offline_action=REQUIRED`（T7/T8 含主机全量测试、staticcheck、真实 `sessions.db` 副本基线与真实 provider；计划批准不自动授权这些出机器动作，需在人工 Gate 另行确认。）
 
 ## 输入与批准证据
 
@@ -74,7 +75,7 @@
 3. 核对 `entries_fts` migration、`TestFTSExpressionsMatchMigration`、`AppendEntries` 同事务写索引的事实；确认实施不添加 migration、不触碰 rowid 对齐和 GC 语义。
 4. 用真实驱动确认本计划依赖的 SQL 形态：`MATCH` 只接收 >=3 rune 的引号化词，LIKE 全部参数化，时间使用 store 的 `timeLayout`，cwd 边界使用绑定参数；不要用 mock 推断查询计划。
 5. 盘点 `LedgerSearcher`、`SearchEntries`、`workspaceSessions`、`SessionCwds` 的所有调用者；任何未发现调用者的 API 删除都必须记录，不能因“当前唯一调用点”而顺手清理。
-6. **阻塞性设计缺口预检**：设计要求排除“检索工具自身结果”，但当前 `entries`/`sessions` 字段与 Draft 未给出唯一 SQL 谓词。进入 native/store 实施前必须由用户/设计 owner 定稿该排除规则；不得自行猜测文本、role 或 session 条件。若本期确认不做，则需把范围/追溯性改回设计 Gate 后再实施。
+6. **待用户确认的结果排除规则**：按现有 `api.Message` 的 `role` 与 `ToolCall.Name`，候选谓词为 `NOT (f.role = 'tool' AND json_extract(e.json, '$.ToolCall.Name') IN ('session_search', 'recall'))`；建议同时排除 `session_search` 与 `recall`，不额外猜测 `IsError` 条件。批准本计划时一并确认该谓词；确认后由 T1 加入参数化 SQL 与守卫测试，T5 验证工具层结果，未确认不得实施该条件。
 7. 运行基线：`go test -race ./internal/personal/store/... ./internal/personal/... ./pkg/agentcore/tools/native/...`；失败先归因，不把基线失败算作本计划完成。
 
 ## 波次与依赖
@@ -83,9 +84,9 @@
 |---|---|---|---|
 | W0 | 预检、调用者盘点与“自身结果”规则 Gate | 无 | 监督会话；不改代码 |
 | W1 | store 按词分流、过滤与 cwd SQL 条件 | W0 | T1 后 T2；同一 fts owner 文件串行 |
-| W2 | 进程内快照 cursor | T1、W1 API 稳定 | 1 个 store job，避免与 T1/T2 并发改 fts.go |
-| W3 | Ledger scope 适配与参数传递 | T2 | T4；可在 T3 完成后继续 |
-| W4 | native tool schema/解析/渲染与旧调用兼容 | T3、T4、W0 Gate | T5；必要时 T6 串行修复接口 |
+| W2 | cursor 编解码、进程内快照与分页 | T1、W1 API 稳定 | T3a → T3b；同一 store owner 串行，避免与 T1/T2 并发改 fts.go |
+| W3 | Ledger scope 适配与参数传递 | T2、T3b | T4 |
+| W4 | native tool schema/解析/渲染与旧调用兼容 | T3b、T4、W0 Gate | T5；必要时 T6 串行修复接口 |
 | W5 | 测试、benchmark、真实库基线与收尾 | T1–T5 | T6、T7 可并行；T8 最终回归 |
 
 ## 任务
@@ -93,46 +94,55 @@
 ### T1 按词分流与过滤 SQL（W1）
 
 - 文件：`internal/personal/store/fts.go`、`internal/personal/store/fts_test.go`。
-- 动作：保留 `strings.Fields`/字面量转义；将 >=3 rune 词放入引号化 `MATCH`，1–2 rune 词生成参数化 LIKE 条件，同一 WHERE 用 AND；保留有 MATCH 的 bm25 排序、纯短词的 created_at DESC 与 snippet 行为；增加 `Kinds`、`Since`、`Until` 等过滤字段，时间使用半开区间和 store 时间格式；保留 `CWDPrefix` 原语义。
-- 验证命令：`go test -race ./internal/personal/store/...`；覆盖 1/2/3+ rune、中文+英文混合、AND、语法字符、kind 四值/非法、since/until 边界、旧短词结果等价。
-- 完成标准：任何进入 MATCH 的 term 都 >=3 rune；混合查询不会返回只有长词的 entry；纯短词与现状召回/排序保持一致；所有新增 SQL 参数化。
-- 反向验证方法：临时把短词加入 MATCH，带“只有 token、没有中文”的反例必须使守卫测试失败；临时强制全 LIKE，混合查询的索引/分流守卫必须失败；恢复后重跑。
-- 预计改动规模：中（1 个 Go 文件及测试，180–320 行）。
+- 动作：保留 `strings.Fields`/字面量转义；将 >=3 rune 词放入引号化 `MATCH`，1–2 rune 词生成参数化 LIKE 条件，同一 WHERE 用 AND；保留有 MATCH 的 bm25 排序、纯短词的 created_at DESC 与 snippet 行为；增加 `Kinds`、`Since`、`Until` 等过滤字段，时间使用半开区间和 store 时间格式；保留 `CWDPrefix` 原语义。经 W0 确认后加入参数化自身结果排除：`AND NOT (f.role = 'tool' AND json_extract(e.json, '$.ToolCall.Name') IN ('session_search','recall'))`，两个名称都作为绑定参数，不迁移 schema。
+- 验证命令：`go test -race ./internal/personal/store/...`；覆盖 1/2/3+ rune、中文+英文混合、AND、语法字符、kind 四值/非法、since/until 边界、旧短词结果等价、`session_search`/`recall` tool 结果排除。
+- 完成标准：任何进入 MATCH 的 term 都 >=3 rune；混合查询不会返回只有长词的 entry；纯短词与现状召回/排序保持一致；所有新增 SQL 参数化；已确认的自身结果谓词只排除 `role=tool` 且 ToolCall.Name 命中的两类结果。
+- 反向验证方法：临时把短词加入 MATCH，带“只有 token、没有中文”的反例必须使守卫测试失败；临时强制全 LIKE，混合查询的索引/分流守卫必须失败；临时删除自身结果谓词，工具结果排除测试必须失败；恢复后重跑。
+- 预计改动规模：中（1 个 Go 文件及测试，200–350 行）。
 
 ### T2 workspace/current 条件 SQL 下推（W1，依赖 T1）
 
 - 文件：`internal/personal/store/fts.go`、`internal/personal/ledger.go`、`internal/personal/store/fts_test.go`、`internal/personal/ledger_test.go`；仅在调用者盘点后决定是否触及 `sessions.go`。
 - 动作：新增 `WorkspaceDir`、`CurrentSessionID`、`FoldCase`（或设计允许的等效结构）；将 current/workspace 条件下推到既有 entries_fts→entries→sessions 查询：当前会话始终包含、非空 cwd 按分隔符边界包含、空 cwd 排除；Windows 按设计使用 lower() ASCII 折叠；Ledger 不再在生产检索路径调用 `SessionCwds`/`pathWithin` 拼 IN；all scope 不加限制。
-- 验证命令：`go test -race ./internal/personal/store/... ./internal/personal/...`；使用真实文件库覆盖 `/repo`、`/repo2`、`/repo/sub`、`/repo-旧`、空 cwd、当前会话无 cwd、大小写和 IncludeAgents。
+- 验证命令：`go test -race ./internal/personal/store/... ./internal/personal/...`；使用真实文件库覆盖 `/repo`、`/repo2`、`/repo/sub`、`/repo-旧`、空 cwd、当前会话无 cwd、大小写和 IncludeAgents；cwd fixture 还要覆盖存量非规范化值 `/repo/`、`C:/Repo`、`C:\Repo`，并记录与 Go `filepath.Clean` 参照的任何已知差异。
 - 完成标准：新 SQL 命中集合与测试内旧 `pathWithin` 参照实现逐例一致（明确接受非 ASCII lower 差异）；空 SessionIDs 不扩大为 all；EXPLAIN/代码检查确认没有先读全部 cwd 拼大 IN。
 - 反向验证方法：临时删除 current-session OR 分支，当前会话无 cwd 用例必须失败；临时恢复旧的 `SessionCwds + pathWithin`，下推路径/SQL 形态守卫必须失败；恢复后重跑。
 - 预计改动规模：中至大（2–4 个 Go 文件及测试，220–400 行）。
 
-### T3 进程内快照、cursor 编解码与分页（W2，依赖 T1/T2）
+### T3a cursor 编解码与指纹（W2，依赖 T1/T2）
 
-- 文件：`internal/personal/store/fts.go`（必要时同包新文件 `fts_cursor.go`）、store 测试。
-- 动作：实现 `SearchResult` 或设计允许的等效结果结构，首次查询建立完整有序 `(session_id, seq)` 快照，最多保留 500 条；以 `v1.<snapshot_id>.<offset>` 编码，按单页 limit 多取一条判断 next cursor；指纹包含规范化 query、绝对 since/until、scope/current、workspace、kind、IncludeAgents；TTL 10 分钟、缓存缺失/重启/指纹不匹配/非法 cursor 时从头查询并给说明；区分单页上限 100 与快照总量 500，不静默假装结果完整。
-- 验证命令：`go test -race ./internal/personal/store/...`；45 条命中连续 `20+20+20` 无重复/遗漏；超过 500 明确提示并只保留前 500；插入/删除后第二页仍按旧快照；坏字段/坏字符/TTL/缓存缺失/不同 query/scope/kind 从头；末页没有 next cursor。
-- 完成标准：cursor 不参与 SQL 拼接；有效 cursor 只取既有 snapshot offset；失效 cursor 不报错且结果说明从头；单页与快照上限语义清晰；无持久化状态。
-- 反向验证方法：临时让第二页重新执行 SQL，首页后插入一条会改变排序的命中，快照稳定性测试必须失败；临时取消固定指纹校验，跨 query cursor 测试必须失败；恢复后重跑。
-- 预计改动规模：大（1–2 个 Go 文件及测试，280–500 行）。
+- 文件：`internal/personal/store/fts_cursor.go`（必要时新增）、store 测试。
+- 动作：实现 `v1.<snapshot_id>.<offset>` 的编解码、边界校验与指纹；指纹包含规范化 query、绝对 since/until、scope/current、workspace、kind、IncludeAgents；非法 cursor、坏字段、不同查询条件和未知版本都安全地转为从头查询说明，不进入 SQL。
+- 验证命令：`go test -race ./internal/personal/store/...`；覆盖合法/非法/坏字符/未知版本、offset 边界、指纹不匹配与失效说明。
+- 完成标准：cursor 只表达 snapshot id + offset，所有不可信输入不影响 SQL；codec 和指纹 owner 单一且无持久化状态。
+- 反向验证方法：临时取消固定指纹校验，跨 query/scope/kind cursor 测试必须失败；临时将 cursor 拼入 SQL，参数化/安全守卫必须失败；恢复后重跑。
+- 预计改动规模：中（1–2 个 Go 文件及测试，120–220 行）。
 
-### T4 Ledger scope 与 query 参数传递（W3，依赖 T2/T3）
+### T3b 进程内快照、缓存与分页（W2，依赖 T3a）
+
+- 文件：`internal/personal/store/fts.go`（必要时同包新文件 `fts_snapshot.go`）、store 测试。
+- 动作：实现 `SearchResult` 或设计允许的等效结果结构；首次查询建立完整有序 `(session_id, seq, role, snippet, created_at)` 快照，最多保留 500 条；缓存由 `Store` 级互斥锁保护，TTL 10 分钟并以最多 64 个快照的 LRU 做容量上限；按单页 limit 多取一条判断 next cursor，翻页只按有效 snapshot 的 offset 切片，不重新执行 MATCH/bm25/snippet 查询；缓存缺失/重启/TTL/指纹不匹配时从头查询并说明；区分单页上限 100 与快照总量 500，不静默假装结果完整。条目在快照后被删除时，分页仍返回快照命中，后续 recall 自然报告不存在。
+- 验证命令：`go test -race ./internal/personal/store/...`；45 条命中连续 `20+20+20` 无重复/遗漏；超过 500 明确提示并只保留前 500；插入/删除后第二页仍按旧快照和首查 snippet；坏 cursor/TTL/缓存缺失/不同 query/scope/kind 从头；并发多个 goroutine 创建、读取、翻页和淘汰快照无 race，超过 64 个快照按 LRU 淘汰。
+- 完成标准：有效 cursor 只取既有 snapshot offset；首查结果的 snippet 不因翻页重算而变化；缓存并发安全且有 64 个快照上限；失效 cursor 不报错且结果说明从头；单页与快照上限语义清晰；无持久化状态。
+- 反向验证方法：临时让第二页重新执行 SQL，首页后插入一条会改变排序的命中，快照稳定性测试必须失败；临时移除锁或 LRU 上限，并发/race 或容量测试必须失败；恢复后重跑。
+- 预计改动规模：中（1–2 个 Go 文件及测试，180–320 行）。
+
+### T4 Ledger scope 与 query 参数传递（W3，依赖 T2/T3b）
 
 - 文件：`internal/personal/ledger.go`、`internal/personal/ledger_test.go`、相关 store 接口调用处。
-- 动作：将 `current` 映射为 `CurrentSessionID`，workspace 映射为规范化 cwd + current session + FoldCase，all 保持无限制；把 cursor/kind/time 解析后的结构传到 store；保持 scope 缺省语义、空列表绝不当 all、`ref=out:` 逐行扫描与 recall offset/limit 不变。若 `SessionCwds` 无其他调用者，只停用检索路径，不做范围外清理。
+- 动作：先把 `LedgerSearcher.Search` 的结果接口扩展为可携带 hits、`next_cursor` 和说明行的 `SearchResult`（或等效兼容结构），再将 `current` 映射为 `CurrentSessionID`，workspace 映射为规范化 cwd + current session + FoldCase，all 保持无限制；把 cursor/kind/time 解析后的结构传到 store；保持 scope 缺省语义、空列表绝不当 all、`ref=out:` 逐行扫描与 recall offset/limit 不变。若 `SessionCwds` 无其他调用者，只停用检索路径，不做范围外清理。
 - 验证命令：`go test -race ./internal/personal/... ./internal/personal/store/...`；保留 `TestLedgerSearchScopes`、current 无 cwd 回归，并增加 kind/time/cursor 组合和无模型结果链路。
-- 完成标准：Ledger 不再把 workspace 全部 session cwd 读入 Go；旧 `scope`、`redact`、`ref=out:` 和 recall 断言继续通过；store 返回的 next cursor/notice 能向工具层传递。
+- 完成标准：Ledger 不再把 workspace 全部 session cwd 读入 Go；旧 `scope`、`redact`、`ref=out:` 和 recall 断言继续通过；store 返回的 next cursor/notice 能向工具层传递；接口变更在 T4 完成，T5 只消费稳定结构。
 - 反向验证方法：临时把 workspace 传回旧 SessionIDs 路径，SQL 下推/大 IN 守卫必须失败；临时把空 SessionIDs 当 all，空 scope 用例必须失败；恢复后重跑。
 - 预计改动规模：中（1–2 个 Go 文件及测试，150–280 行）。
 
-### T5 native session_search schema、解析与结果渲染（W4，依赖 T3/T4 且受 W0 自身结果规则 Gate 约束）
+### T5 native session_search schema、解析与结果渲染（W4，依赖 T3b/T4 且受 W0 自身结果规则 Gate 约束）
 
 - 文件：`pkg/agentcore/tools/native/ledger.go`、`pkg/agentcore/tools/native/ledger_test.go`、必要的 native fake/接口测试。
-- 动作：`LedgerQuery` 增 `Cursor`、kind 多值、since/until（工具边界解析为规范化值）；schema/description 增可选 `cursor`、`kind`、`since`、`until`，说明 cursor 来自 `next_cursor` 且原样回传；支持逗号分隔 `user|assistant|tool|compaction`，相对 `7d/36h` 与日期/RFC3339，since 含/until 不含；`renderLedgerHits` 仅在有下一页追加 `next_cursor`，整体继续 `redact.Clean`；不改 recall；按 W0 定稿的唯一规则排除工具自身结果，不自行发明谓词。
+- 动作：`LedgerQuery` 增 `Cursor`、kind 多值、since/until（工具边界解析为规范化值）；schema/description 增可选 `cursor`、`kind`、`since`、`until`，说明 cursor 来自 `next_cursor` 且原样回传，并提示模型优先使用 2 字以上检索词；支持逗号分隔 `user|assistant|tool|compaction`（多值以设计 D10/Q6 为准），相对 `7d/36h` 与日期/RFC3339，since 含/until 不含；带 `ref=out:` 时拒绝 cursor/kind/since/until 组合，避免与逐行扫描语义混合；`renderLedgerHits` 仅在有下一页追加 `next_cursor`，整体继续 `redact.Clean`；不改 recall；按 W0 已确认的唯一规则排除工具自身结果。
 - 验证命令：`go test -race ./pkg/agentcore/tools/native/... ./internal/personal/...`；fake searcher 逐项检查参数透传，非法 kind/time 不调用 searcher；首页/末页 next_cursor、cursor 经 redact 不变、旧输出断言和 `ref=out:` 回归通过。
-- 完成标准：模型能从结果行取得并原样回传 cursor；新参数都是可选且旧调用不变；非法值 fail-closed；结果文本不泄露游标之外的新敏感字段；自身结果排除规则有明确测试证据。
-- 反向验证方法：临时删除 next_cursor 行或跳过 redact，端到端渲染测试必须失败；临时放宽 kind/time 校验，非法参数测试必须失败；若自身结果规则未定稿，任务保持 blocked，不以猜测完成。
+- 完成标准：模型能从结果行取得并原样回传 cursor；新参数都是可选且旧调用不变；非法值和 `ref` 参数冲突 fail-closed；结果文本不泄露游标之外的新敏感字段；已确认的自身结果排除规则有明确测试证据。
+- 反向验证方法：临时删除 next_cursor 行或跳过 redact，端到端渲染测试必须失败；临时放宽 kind/time 校验或允许 `ref` 混用，非法参数测试必须失败；临时删除 `session_search`/`recall` 排除断言必须失败；恢复后重跑。
 - 预计改动规模：中（1 个 Go 文件及测试，180–320 行）。
 
 ### T6 CLI 与存储接口兼容回归（W5，依赖 T4/T5）
@@ -147,9 +157,9 @@
 ### T7 测试、benchmark 与真实 sessions.db 基线测量（W5，T1–T6 可分工并行）
 
 - 文件：`internal/personal/store/fts_bench_test.go`（新）、store/ledger/native 测试；测试临时脚本和不提交的真实 DB 副本/测量记录。
-- 动作：新增固定种子中英混合语料 benchmark，覆盖 3-rune 选择性/高频、S1 2-rune LIKE、分页第二页；不实现或测量 S2 bigram 作为本期功能。按设计要求在真实 `sessions.db` 副本上只做基线/查询计划与耗时记录，确认不会改原库、不会生成迁移；记录现有库体积与本期无 schema 变化的事实，供未来 S2 另案使用。
-- 验证命令：`go test -race ./internal/personal/store/...`；`go test ./internal/personal/store -run '^$' -bench . -benchmem`；用真实驱动执行典型 1/2/3-rune、混合、英文查询的 `EXPLAIN QUERY PLAN` 与实际耗时。
-- 完成标准：benchmark 可重复且不把 S2 作为实现承诺；真实 DB 副本测量不污染工作区/生产库；报告包含执行命令、exit code、原始关键输出与已知平台差异。
+- 动作：新增固定种子中英混合语料 benchmark，覆盖 3-rune 选择性/高频、S1 2-rune LIKE、分页第二页；不实现或测量 S2 bigram 作为本期功能。按设计要求在真实 `sessions.db` 副本上只做基线/查询计划与耗时记录，确认不会改原库、不会生成迁移；记录现有库体积与本期无 schema 变化的事实，供未来 S2 另案使用。设计基准第 4 项及验收 (a) 回填耗时、(b) 体积增长属于 S2，不适用于 S1；仍在 1 万/10 万条语料两档记录本期查询基线，不实现 bigram。
+- 验证命令：`go test -race ./internal/personal/store/...`；`go test ./internal/personal/store -run '^$' -bench . -benchmem`；用真实驱动执行典型 1/2/3-rune、混合、英文查询的 `EXPLAIN QUERY PLAN` 与实际耗时，并在 1 万/10 万条语料两档运行。
+- 完成标准：benchmark 可重复且不把 S2 作为实现承诺；真实 DB 副本测量不污染工作区/生产库；报告包含执行命令、exit code、原始关键输出与已知平台差异；明确标注 S2 的基准第 4 项和验收 (a)(b) 为 S1 不适用。
 - 反向验证方法：临时使用随机种子或把真实 DB 路径指向原库，固定种子/安全副本检查必须失败；临时把 2-rune 词放进 MATCH，D3 守卫测试必须失败；恢复后重跑。
 - 预计改动规模：中（1 个 benchmark 文件及测试辅助，120–250 行；测量记录不进入生产代码）。
 
@@ -166,13 +176,13 @@
 
 - S1 无迁移、无新表/列/索引、无持久化快照；回滚为按功能点 `git revert`，不需要数据库 DOWN。
 - 进程内 snapshot 在进程退出时自然消失；恢复旧代码不会留下需要清理的数据。失效 cursor 本来就从头查询，不依赖旧版本理解新 cursor。
-- 若 T3/T5 未通过，停止后续波次，不合入半成品；保留独立 worktree 供修复。不得用 reset/stash/checkout 覆盖他人路径。
+- 若 T3a/T3b/T5 未通过，停止后续波次，不合入半成品；保留独立 worktree 供修复。不得用 reset/stash/checkout 覆盖他人路径。
 - 运行时可立即回到旧检索路径的唯一安全方式是回滚代码；不通过新增配置开关扩大本期范围。CLI 旧参数、recall、ref=out 保持兼容。
 
 ## 人工 Gate
 
 1. 用户审阅并批准本计划后才开始实施；批准不等于授权 push/发版。
-2. W0 必须确认“排除检索工具自身结果”的准确 predicate；设计当前未给出可执行字段/条件，未定稿则 T5 blocked，不得自作主张。
+2. W0 记录用户对“排除检索工具自身结果”候选 predicate 的确认；默认建议同时排除 `session_search` 与 `recall`，未确认前不实施该 SQL 条件。
 3. T1–T5 合入前由监督会话审核 SQL 全部参数化、MATCH 词长度守卫、cursor 不进 SQL、零迁移事实及 owner diff。
 4. T7 的真实 `sessions.db` 只能使用副本；原库不可修改。T8 的真实 provider 核对能做则执行，不能做则由监督方确认未验证记录。
 5. 本期不做 S2 bigram；任何要增加 tokenizer、索引、迁移、回填或 CLI 分页的请求都另起设计/计划 Gate。
@@ -182,19 +192,19 @@
 | 设计条目 / 决策 / 待确认定稿 | 任务 | 验证 |
 |---|---|---|
 | 用户目标 1、D1 不换 tokenizer、D8 不新增索引 | T1、T7 | 1/2/3-rune 与 schema/迁移检查 |
-| 用户目标 2、D2 按词分流、D3 短词绝不进 MATCH | T1、T7 | 混合反例、MATCH term 长度守卫、旧 LIKE 等价 |
-| 用户目标 3、D5 cursor 格式、D6 进程内快照、Q4 多取一条 | T3、T5 | 45 条分页、末页无 cursor、格式/坏 cursor |
+| 用户目标 2、D2 按词分流、D3 短词绝不进 MATCH | T1、T7 | 混合反例、MATCH term 长度守卫、旧 LIKE 等价、自身结果排除 |
+| 用户目标 3、D5 cursor 格式、D6 进程内快照、Q4 多取一条 | T3a、T3b、T5 | 45 条分页、snippet 稳定、并发/64 LRU、末页无 cursor、格式/坏 cursor |
 | D7 cwd 下推与 lower ASCII 折叠；Q3 接受非 ASCII 差异 | T2、T4 | SQL/参照 pathWithin 等价性与边界 fixture |
 | 用户目标 4、kind/时间过滤、D10 多值 kind、D11 时间写法 | T1、T4、T5 | 四 role、逗号值、7d/36h/日期/RFC3339、半开边界 |
 | 用户目标 5、D9 recall 不引入 cursor、D13 保留 CWDPrefix | T1、T4、T5、T6 | recall/ref=out/CWDPrefix 旧回归 |
 | workspace/current/all scope、IncludeAgents、空 SessionIDs 不能当 all | T2、T4 | scope 组合与 current 无 cwd 测试 |
-| native schema/描述、游标原样回传、结果 next_cursor | T5 | native fake 与工具端到端两次调用 |
+| native schema/描述、游标原样回传、结果 next_cursor | T4、T5 | SearchResult 接口、native fake 与工具端到端两次调用 |
 | redact 保持、游标为纯 token；S1 无迁移 | T5、T7、T8 | redact 等价、migration/schema/diff 检查 |
 | Q1 S2 bigram 另案；Q2 2 字英文仍 LIKE；Q8 不增 search 配置 | T1、T7、T8 | diff scope review、2-rune 查询与无新配置检查 |
-| Q5 游标过期忽略并说明从头 | T3、T5 | TTL/缺失/指纹不匹配测试 |
+| Q5 游标过期忽略并说明从头 | T3a、T3b、T5 | TTL/缺失/指纹不匹配测试 |
 | Q6 kind 逗号多值；Q7 CLI 不跟进 | T5、T6 | schema/CLI 参数清单与旧 CLI 回归 |
-| Q3 lower() ASCII；Q4 只在有下一页返回 cursor | T2、T3、T5 | Windows 参数化 fixture、末页断言 |
-| “排除检索工具自身结果”范围条目 | W0、T5 | 设计 owner 定稿后的唯一谓词测试；未定稿则 blocked |
+| Q3 lower() ASCII；Q4 只在有下一页返回 cursor | T2、T3a、T3b、T5 | Windows 参数化 fixture、末页断言 |
+| “排除检索工具自身结果”范围条目 | W0、T1、T5 | 用户确认 `role=tool` 且 ToolCall.Name 为 `session_search`/`recall` 的谓词；参数化 SQL 与工具层守卫测试 |
 | S2 后续前提：真实库体积/性能与迁移边界 | T7（仅基线记录） | 副本上的 EXPLAIN/耗时/体积原始记录，不产生 S2 代码 |
 | 非目标：trace/stats、长期记忆、向量、跨库、redact 规则、自动评测 | 全任务 | diff scope review |
 
@@ -211,7 +221,7 @@
 
 ## 待确认 / 风险
 
-- **阻塞性设计缺口**：Draft 0.3 的范围写了“排除检索工具自身结果”，但未定义可执行的唯一字段/谓词；现有代码事实也未发现明确标志。用户/设计 owner 必须在 T5 前确认是某个已有 session/meta/role 条件，还是将该范围从本期撤回并修订设计。计划不擅自猜测。
+- **待用户确认**：批准本计划时请确认候选谓词 `role=tool` 且 `ToolCall.Name IN (session_search, recall)`，建议两者都排除；确认后 T1 使用参数化 SQL，T5 固定工具层守卫测试。若用户不批准该候选，需要回到设计 Gate 修订范围，不在实施中另猜条件。
 - `lower()` 在 Windows 非 ASCII 路径上不完全等价于 Go `strings.ToLower`；按 Q3 接受并固定测试，不扩大为精判方案。
 - 快照最多 500 条意味着超过上限的结果不是完整集合；结果必须明确提示，不能把截断称为完整。
 - 进程重启/TTL/内存淘汰会使 cursor 从头开始；模型必须依据说明重新翻页。
@@ -222,7 +232,7 @@
 ## 完成 Gate
 
 - T1–T8 的完成标准全部满足，W0 的自身结果规则 Gate 已解决或设计明确撤回该条范围。
-- 每个任务均完成反向验证，且临时破坏已恢复；S2 未混入代码、迁移、索引、配置、benchmark 承诺。
+- 每个任务均完成反向验证，且临时破坏已恢复；S2 未混入代码、迁移、索引、配置、benchmark 承诺；S1 的 T7 明确记录 1 万/10 万条基线，且 S2 基准第 4 项与验收 (a)(b) 标为不适用。
 - 容器 `gofmt`/`go vet`/`go test -race ./...` 与主机 `go test -count=1 ./...`/`staticcheck ./...` 的结果均按 exit code 和原始输出记录；真实 provider/Windows 未验证项单独列出。
 - `git status --short` 确认无夹带；每个功能点单独 conventional commit，仅 `git add` 对应计划/实施 owner 文件，不提交 `.gofer/tracker`。
 - 任何需要改变已批准协议语义、增加迁移或扩大 S2 范围的发现，停止实施并回到设计/计划 Gate。
