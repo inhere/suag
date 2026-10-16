@@ -4,7 +4,13 @@
 
 ## [未发布]
 
-模型干活时可以直接插话，也可以只中止本轮（`chat.steering`，默认开）；回合中的输入行常驻（提示符 `↳ `），取代 0.24.0 里“回合中静默读键盘”的实现，按键行为不变（`Esc` / 单次 `Ctrl-C` 只中止本轮，3 秒内两次 `Ctrl-C` 退出）。
+## [0.25.0] - 2026-10-16
+
+回合中插话（常驻输入行、状态行、Up 撤回、`suga send --steer`）；chat 支持 `!` 本地命令；续接时校验工作目录；流式回复被截断时自动重试；回合取消不再丢后台任务通知。
+
+### 不兼容
+
+- `suga run --resume`（含 Gofer job 的 `session_resume`）不在会话原工作目录执行时默认失败退出（退出码 1），需要先 `cd` 回原目录或加 `--allow-cwd-change`；ACP `session/load` 传入的 cwd 与会话不一致时返回 `-32602`。详见下方“修复”中 suga-e69s 一条。
 
 ### 新增
 
@@ -562,7 +568,9 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.23.1...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/inhere/suga/compare/v0.24.0...v0.25.0
+[0.24.0]: https://github.com/inhere/suga/compare/v0.23.1...v0.24.0
 [0.23.1]: https://github.com/inhere/suga/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/inhere/suga/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/inhere/suga/compare/v0.21.0...v0.22.0
