@@ -11,6 +11,7 @@
 - chat 新增 `:model` 查看并从下一回合切换已配置模型，显示 thinking、上下文窗口与输出上限；切换保留 fallback、持久化到会话并写入 `model_switch` trace 事件，续接时沿用（显式 `--model` 优先）。
 - 路径审批规则现在会校验 root 锚定、词法与真实目标路径，并拒绝符号链接、硬链接和特殊文件的 allow。
 - LLM 重试识别 `X-Should-Retry`、`Retry-After-Ms` 与 provider 的 `try again in ...` 提示；上下文超长错误归为 `provider_rejected` 并提示压缩或新会话，模型 trace 记录 provider request id。
+- 写工具在实际写盘前可记录文件快照并在完成后补写状态，默认保持原有工具行为，支持后续会话回滚能力。
 
 ### 修复
 

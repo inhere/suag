@@ -22,6 +22,9 @@ type Env struct {
 	// (--add-dir): the tools read the set at every call, because the runtime is
 	// assembled before the session is opened. nil = no additional directory.
 	AddDirs *AddDirs
+	// Snapshots receives before/after notifications for file-writing tools.
+	// nil disables snapshotting.
+	Snapshots Snapshotter
 	// InlineBytes is the inline threshold (tools.max_output_bytes). Tools
 	// leave the inline cut to the output layer (tools.NewOutput); file_read
 	// pages by itself with ReadPageBytes instead.
@@ -84,7 +87,7 @@ func Catalog() []Spec {
 			return t
 		}},
 		{Name: "file_write", New: func(env Env) api.Tool {
-			return &FileWriteTool{workspace: env.Workspace, addDirs: env.AddDirs}
+			return &FileWriteTool{workspace: env.Workspace, addDirs: env.AddDirs, snapshots: env.Snapshots}
 		}},
 		{Name: "file_edit", New: func(env Env) api.Tool {
 			return &FileEditTool{workspace: env.Workspace, addDirs: env.AddDirs}
