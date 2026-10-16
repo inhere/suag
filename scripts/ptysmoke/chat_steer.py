@@ -29,6 +29,13 @@ turn only. The scenarios (each on its own scratch home and fake model):
              answers `queued` (the person sees 未插入当前回合，已排队); a turn ended
              with Esc discards the message (`--wait` exits 3, the message is back
              in the input line); a ninth message is refused with queue_full.
+  withdraw   Up on the empty input line of a running turn takes the messages
+             still waiting to be delivered back: they are shown as withdrawn, sit
+             on the input line as one line each, in order, and the request after
+             the tool result carries neither of them; a `suga send --steer`
+             message is left alone (its sender waits) and the text edited out of
+             what came back can be submitted again into the same turn (shown as
+             waiting, then delivered, and counted on the end-of-turn line).
   approval   typing at an approval question is the answer, never an inserted
              message: no 插话 line, no request carrying that text, no steer event.
   screen     a long, overwide reply streams in slowly while a message is typed:
@@ -79,6 +86,18 @@ Reverse verification of the send scenario (removing the steer path makes it fail
   fails, the `--wait` sender is never answered (the check times out).
 - drop the ErrSteerQueueFull branch (queue the message instead): send fails, the
   ninth message is answered `queued` and queue_full never appears.
+
+Reverse verification of the withdraw scenario (to run in the Linux container; the
+machine this was written on has no pty, so it is UNVERIFIED here):
+- Runner.WithdrawSteers returning nil (or dropping lineedit's WithdrawCallback
+  call in the keyUp case): withdraw fails - nothing is shown as 已撤回, the input
+  line stays empty, and the request after the tool result carries both messages.
+- letting the withdrawal take every source (WithdrawSteers not narrowing to
+  SteerSourceKeyboard): withdraw fails, the `suga send --steer` message comes
+  back onto the input line too instead of being delivered.
+- dropping the len(t.line) == 0 guard in the keyUp case: withdraw fails, Up on
+  the line holding both texts walks the history instead of taking the messages
+  back (and a second Up fills a different line).
 """
 import argparse
 import json
@@ -111,6 +130,17 @@ PASTE_TOOL = "touch {marker}; sleep 10; echo TOOL_DONE"
 # The tool of the send scenario: long enough for the CLI and its checks to run
 # while it works, so a `send --steer` arrives well inside the turn.
 SEND_TOOL = "touch {marker}; sleep 6; echo TOOL_DONE"
+# The tool of the withdraw scenario: long enough for typing two messages, a
+# `send --steer`, the Up key and an edit to happen while it runs.
+WITHDRAW_TOOL = "touch {marker}; sleep 25; echo TOOL_DONE"
+# The two messages typed into the running turn that the scenario takes back with
+# Up, and the word added to them before submitting the edited text again.
+WITHDRAW_TEXT = "撤回这一句"
+WITHDRAW_TEXT2 = "还有这一句"
+WITHDRAW_EDIT = "补充说明"
+# The edited text as chat shows it (the editor's line break collapsed, like every
+# inserted message on its own line).
+WITHDRAW_EDITED = WITHDRAW_TEXT + " " + WITHDRAW_TEXT2 + WITHDRAW_EDIT
 # The texts `suga send --steer` carries in the send scenario. chat labels every
 # message from elsewhere with its source (deliveryLine, --source defaults to cli).
 SEND_TEXT = "只改 README"
@@ -173,6 +203,7 @@ def paste(s, text):
 # What chat says about a message inserted into the running turn (steering.go).
 STEER_WAITING = "（等待送达）"
 STEER_TAKEN = "（已送达）"
+STEER_WITHDRAWN = "（已撤回）"
 
 
 def steer_notice(text, suffix=STEER_WAITING):
@@ -602,6 +633,100 @@ def send_scenario(c):
             any((e.get("attrs") or {}).get("disposition") == "input_line" for e in returned))
 
 
+def withdraw_scenario(c):
+    """Up on the empty input line takes the messages still waiting back."""
+    s = c.session
+    m = s.mark()
+    c.check("❯ prompt", s.until(r"❯ ", m))
+    sid = session_id_of(s)
+    c.check("session id", bool(sid))
+    if not sid:
+        return
+
+    m = s.mark()
+    s.line("跑一个长命令")
+    c.check("tool call shown", s.until(r"⏺ shell_exec", m))
+    c.check("the prompt becomes ↳ while the turn runs", s.until(STEER_PROMPT, m))
+    if not c.wait_file(STARTED, 30):
+        c.check("tool started (marker file)", False)
+        return
+    c.check("tool started (marker file)", True)
+
+    # Two messages typed into the running turn: both wait for a model request.
+    m = s.mark()
+    s.line(WITHDRAW_TEXT)
+    c.check("the first message is shown as waiting", s.until(steer_notice(WITHDRAW_TEXT), m))
+    s.line(WITHDRAW_TEXT2)
+    c.check("the second message is shown as waiting", s.until(steer_notice(WITHDRAW_TEXT2), m))
+    # And one sent from elsewhere: it waits in the same inbox.
+    code, err = send(c.binary, c.env, c.ws, "--session", sid, "--steer", SEND_TEXT)
+    c.check("the sent message is steered into the turn", code == 0 and err == "steered")
+    c.check("the sent message is shown as waiting", s.until(steer_notice(SEND_PREFIX + SEND_TEXT), m))
+    time.sleep(0.3)
+    c.check("no request carried them while they waited", len(c.log.requests()) == 1)
+
+    # Up on the empty input line: the typed ones come back, the sent one stays (its
+    # sender is waiting for it).
+    m = s.mark()
+    s.send("\x1b[A")
+    c.check("the first is shown as withdrawn", s.until(steer_notice(WITHDRAW_TEXT, STEER_WITHDRAWN), m))
+    c.check("the second is shown as withdrawn", s.until(steer_notice(WITHDRAW_TEXT2, STEER_WITHDRAWN), m))
+    c.check("the sent one is not withdrawn",
+            not s.contains(steer_notice(SEND_PREFIX + SEND_TEXT, STEER_WITHDRAWN), m))
+    # Both texts are on the input line, one line each, in the order they were typed
+    # (the editor's own line break; the pty adds a CR of its own, like the paste
+    # scenario's rows).
+    c.check("both are back on the input line, in order",
+            s.until_raw(re.escape(WITHDRAW_TEXT) + r"\r*\n" + re.escape(WITHDRAW_TEXT2), m))
+    c.check("nothing was submitted by the Up key",
+            not s.contains(steer_notice(WITHDRAW_EDITED, STEER_WAITING), m))
+
+    # Edited at the end of the line and submitted again: one new message of the
+    # same turn.
+    m = s.mark()
+    s.line(WITHDRAW_EDIT)
+    c.check("the edited text is shown as waiting", s.until(steer_notice(WITHDRAW_EDITED), m))
+
+    # The tool ends and the model is asked again: it carries the sent message and
+    # the edited one, not the withdrawn pair. (The tool slept 25s; the steps above
+    # are what is left of it, hence the longer wait.)
+    c.check("tool result shown", s.until(r"⎿ ok: TOOL_DONE", m, timeout=40))
+    c.check("the sent one is delivered", s.until(steer_notice(SEND_PREFIX + SEND_TEXT, STEER_TAKEN), m))
+    c.check("the edited one is delivered", s.until(steer_notice(WITHDRAW_EDITED, STEER_TAKEN), m))
+    c.check("the turn answers", s.until(c.reply, m))
+    c.check("the end-of-turn line counts the delivered two", s.until(r"插话 2", m))
+    c.check("the withdrawn ones are not counted", not s.contains(r"插话 4", m))
+
+    requests = c.log.wait(2)
+    c.check("two requests", len(requests) >= 2)
+    if len(requests) >= 2:
+        second = requests[1]
+        c.check("the first request has no inserted message",
+                all(t not in " ".join(user_texts(requests[0]))
+                    for t in (WITHDRAW_TEXT, WITHDRAW_TEXT2, SEND_PREFIX + SEND_TEXT)))
+        # Neither of the withdrawn texts is a message of the next request (exact
+        # match: the edited one starts with the first of them), while the sent one
+        # and the edited one are.
+        carried = user_texts(second)
+        seen = second.get("seen", [])
+        c.check("the withdrawn ones are not in the next request",
+                WITHDRAW_TEXT not in carried and WITHDRAW_TEXT2 not in carried
+                and "user:" + WITHDRAW_TEXT not in seen and "user:" + WITHDRAW_TEXT2 not in seen)
+        c.check("the sent one is in the next request", SEND_PREFIX + SEND_TEXT in carried)
+        c.check("the edited one is what the next request carries last",
+                last_user(second) == WITHDRAW_EDITED)
+
+    events = c.trace()
+    withdrawn = [e for e in events if e.get("kind") == "steer" and e.get("name") == "withdrawn"]
+    c.check("the trace records both withdrawals", len(withdrawn) == 2)
+    c.check("each names the keyboard source and the batch size",
+            all((e.get("attrs") or {}).get("source") == "keyboard"
+                and (e.get("attrs") or {}).get("count") == 2 for e in withdrawn))
+    delivered = [e for e in events if e.get("kind") == "steer" and e.get("name") == "delivered"]
+    c.check("the delivered ones are the edited and the sent one",
+            sorted((e.get("attrs") or {}).get("source", "") for e in delivered) == ["keyboard", "send:cli"])
+
+
 def screen_scenario(c):
     """A long, overwide reply streams slowly while a message is typed: the reply
     keeps its rows, whole, and the input line stays one line of its own (r3 M1)."""
@@ -844,6 +969,10 @@ def main():
         # running after the tool result, which is what the --wait timing check needs.
         ("send", ["--mode", "tool", "--delay", "3", "--reply", reply], SEND_TOOL, auto, "",
          send_scenario, {}),
+        # Up on the empty input line of a running turn takes the messages that are
+        # still waiting back, while a `suga send --steer` message stays.
+        ("withdraw", ["--mode", "tool", "--delay", "0.2", "--reply", reply], WITHDRAW_TOOL, auto, "",
+         withdraw_scenario, {}),
         # A long, overwide reply in small chunks: the screen model checks where its
         # lines and the input line ended up. The pty is 60 columns wide, so every
         # reply line is wrapped by the terminal.
