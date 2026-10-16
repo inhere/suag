@@ -15,6 +15,8 @@ Suga 当前是个人 Agent，通过 CLI 或 ACP 运行；Gofer 负责作业、�
 - [测试用假模型与假工具](usage/llm-mock-usage.md)：`pkg/agentcore/mock` 与端到端 fakellm。
 - [ACP 调研](research/acp-protocoal-research.md)：协议参考；实现合同以源码和依赖版本为准。
 - [终端与 Web 同会话调研](research/2026-10-14-web-same-session-research.md)：suga web 与终端同会话的可行性、单写者三层锁、读取最新与审批归属的现状与缺口；调研记录，实施前另出设计文档。
+- [功能现状分析与可加强点](research/2026-10-16-feature-strengthening-analysis.md)：分层功能盘点与 P0–P3 可加强点（输出/成本上限、中文检索、审批一致性、chat 交互、协议与工具集缺口），逐条附代码位置；分析记录，落地前另出设计文档。
+- [agentcore 分层审查](research/2026-10-16-agentcore-layering-analysis.md)：实测依赖图与分层声明的对照、守卫测试的覆盖缺口、`tasks→llm` 层次错位、文档与实现不一致与 `tools/native` 体量问题，附最小整改建议；分析记录，落地前另出设计文档。
 - [agentcore](../pkg/agentcore/README.md)：应用层之下的内核与能力层（llm、tools、native、mcp、skills），分层与组装方式；接口文档见其 [docs](../pkg/agentcore/docs/README.md)。
 
 ## 历史资料
