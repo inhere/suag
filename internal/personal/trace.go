@@ -356,7 +356,7 @@ func agentEvent(e store.Event) bool {
 // sessionTraceParts renders a session lifecycle event outside a turn: a move
 // to another working directory shows from/to.
 func sessionTraceParts(e store.Event) []string {
-	if e.Name != sessionCwdChangedEvent {
+	if e.Name != sessionCwdChangedEvent && e.Name != "model_switch" {
 		return nil
 	}
 	from, to := "-", "-"

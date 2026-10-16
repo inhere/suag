@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
@@ -88,6 +89,18 @@ type Options struct {
 }
 
 // Runtime is one assembled personal runner and the resources it owns.
+// ModelOption is one configured model that chat can select with :model.
+type ModelOption struct {
+	Provider        string
+	Model           string
+	Thinking        string
+	ContextWindow   int
+	MaxOutputTokens int
+}
+
+// Ref returns the canonical provider/model spelling used by :model.
+func (m ModelOption) Ref() string { return m.Provider + "/" + m.Model }
+
 type Runtime struct {
 	Runner *personal.Runner
 	// Registry is the base tool registry (lets ACP tell MCP tools apart).
@@ -118,10 +131,59 @@ type Runtime struct {
 	// local is the runner of chat's local commands ("!cmd"/"!!cmd"): the shell,
 	// workspace and output limits are the ones the shell tools use, so a command
 	// a person types there behaves like one the model runs.
-	local *native.LocalCommand
+	local        *native.LocalCommand
+	modelOptions []ModelOption
+	modelSpecs   map[string]appconfig.ModelSpec
+	fallbacks    []appconfig.ModelSpec
+	// These retain invocation-level overrides when :model selects another model.
+	thinkingOverride  string
+	maxOutputOverride int
 	// tools is the registry stack the runner calls (visibility -> approval
 	// -> base); kept for tests.
 	tools agentcore.ToolRegistry
+}
+
+// ModelOptions returns the configured models in deterministic order.
+func (rt *Runtime) ModelOptions() []ModelOption {
+	if rt == nil {
+		return nil
+	}
+	return append([]ModelOption(nil), rt.modelOptions...)
+}
+
+// SwitchModel builds the selected main provider, retaining the runtime's
+// fallback pool, then asks the runner to persist and activate it for the next turn.
+func (rt *Runtime) SwitchModel(ctx context.Context, sessionID, ref string) (ModelOption, error) {
+	if rt == nil || rt.Runner == nil {
+		return ModelOption{}, errors.New("personal runtime is nil")
+	}
+	ref = strings.TrimSpace(ref)
+	spec, ok := rt.modelSpecs[ref]
+	if !ok {
+		refs := make([]string, 0, len(rt.modelOptions))
+		for _, option := range rt.modelOptions {
+			refs = append(refs, option.Ref())
+		}
+		return ModelOption{}, fmt.Errorf("model %q is not configured; choose one of: %s", ref, strings.Join(refs, ", "))
+	}
+	if rt.thinkingOverride != "" {
+		spec.Thinking = rt.thinkingOverride
+	}
+	provider, err := buildMainProviderSpecs(spec, rt.fallbacks)
+	if err != nil {
+		return ModelOption{}, err
+	}
+	maxOutputTokens, err := appconfig.ResolveMaxOutputTokens(rt.maxOutputOverride, spec)
+	if err != nil {
+		return ModelOption{}, err
+	}
+	option := ModelOption{Provider: spec.Provider.ID, Model: spec.Model, Thinking: spec.ThinkingLevel(),
+		ContextWindow: appconfig.ContextWindowFor(spec), MaxOutputTokens: maxOutputTokens}
+	if err := rt.Runner.SwitchModel(ctx, sessionID, provider, option.Provider, option.Model, option.ContextWindow, maxOutputTokens); err != nil {
+		return ModelOption{}, err
+	}
+	rt.ContextWindow, rt.Thinking = option.ContextWindow, option.Thinking
+	return option, nil
 }
 
 // LocalCommands is the runner of chat's local commands ("!cmd"/"!!cmd"): chat
@@ -149,6 +211,31 @@ func (p *Runtime) Close() error {
 		return nil
 	}
 	return errors.Join(p.repo.Close(), p.capabilities.Close())
+}
+
+// SessionModelReference reads the last main model of a persisted session before
+// runtime assembly. Chat uses it so --resume follows :model unless --model was
+// explicitly supplied on the command line.
+func SessionModelReference(ctx context.Context, sessionID string) (string, error) {
+	dbPath, err := appconfig.ResolveCoreStorePath()
+	if err != nil {
+		return "", err
+	}
+	repo, err := store.Open(dbPath)
+	if err != nil {
+		return "", err
+	}
+	defer repo.Close()
+	session, err := repo.GetSession(ctx, sessionID)
+	if err != nil {
+		return "", err
+	}
+	provider, _ := session.Meta["provider"].(string)
+	model, _ := session.Meta["model"].(string)
+	if provider == "" || model == "" {
+		return "", nil
+	}
+	return provider + "/" + model, nil
 }
 
 // OpenCLI resolves the workspace, cwd, MCP configs and the CLI MCP gate from
@@ -253,6 +340,10 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	dirs.Set(nativeAddDirs(adddir.Effective(opts.AddDirs, opts.ReadOnly)))
 	opts.sessionDirs = dirs
 	rs, err := loadRuntimeSettings(workspace, opts.Model, opts.Thinking)
+	if err != nil {
+		return nil, err
+	}
+	modelOptions, modelSpecs, err := configuredModelOptions()
 	if err != nil {
 		return nil, err
 	}
@@ -482,7 +573,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	memHost.bind(runner, repo)
 	rt := &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
 		ContextWindow: contextWindow, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry,
-		AddDirs: dirs}
+		AddDirs: dirs, modelOptions: modelOptions, modelSpecs: modelSpecs,
+		fallbacks:        append([]appconfig.ModelSpec(nil), settings.Fallbacks...),
+		thinkingOverride: opts.Thinking, maxOutputOverride: opts.MaxOutputTokens}
 	// The runner of chat's local commands ("!cmd"/"!!cmd"): they run like
 	// shell_exec ones (same shell, workspace, environment and output rules) but
 	// outside the tools and every turn - chat never asks for them (用户 2026-10-14).
@@ -502,15 +595,19 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 // is a Pool that tries main first, then each fallback in order (a Pool never
 // switches once a stream has produced output).
 func buildMainProvider(settings appconfig.ModelSettings) (agentcore.Provider, error) {
-	main, err := appconfig.BuildProvider(settings.Main)
+	return buildMainProviderSpecs(settings.Main, settings.Fallbacks)
+}
+
+func buildMainProviderSpecs(mainSpec appconfig.ModelSpec, fallbacks []appconfig.ModelSpec) (agentcore.Provider, error) {
+	main, err := appconfig.BuildProvider(mainSpec)
 	if err != nil {
 		return nil, err
 	}
-	if len(settings.Fallbacks) == 0 {
+	if len(fallbacks) == 0 {
 		return main, nil
 	}
 	providers := []llm.Provider{main}
-	for i, spec := range settings.Fallbacks {
+	for i, spec := range fallbacks {
 		fb, err := appconfig.BuildProvider(spec)
 		if err != nil {
 			return nil, fmt.Errorf("fallback_models[%d]: %w", i, err)
@@ -518,6 +615,40 @@ func buildMainProvider(settings appconfig.ModelSettings) (agentcore.Provider, er
 		providers = append(providers, fb)
 	}
 	return llm.NewPool(providers), nil
+}
+
+// configuredModelOptions lists only providers.<id>.models keys: :model is
+// intentionally strict, so a typo is caught before the next model request.
+func configuredModelOptions() ([]ModelOption, map[string]appconfig.ModelSpec, error) {
+	providers, err := appconfig.ReadProviders()
+	if err != nil {
+		return nil, nil, err
+	}
+	ids := make([]string, 0, len(providers))
+	for id := range providers {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	var options []ModelOption
+	specs := make(map[string]appconfig.ModelSpec)
+	for _, id := range ids {
+		keys := make([]string, 0, len(providers[id].Models))
+		for key := range providers[id].Models {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			ref := id + "/" + key
+			spec, err := appconfig.ResolveModel(ref, providers, "")
+			if err != nil {
+				return nil, nil, err
+			}
+			specs[ref] = spec
+			options = append(options, ModelOption{Provider: id, Model: key, Thinking: spec.ThinkingLevel(),
+				ContextWindow: appconfig.ContextWindowFor(spec), MaxOutputTokens: appconfig.MaxOutputTokensFor(spec)})
+		}
+	}
+	return options, specs, nil
 }
 
 func appendSystemPrompt(flagValue string) string {

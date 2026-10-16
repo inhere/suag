@@ -53,11 +53,69 @@ func BuildChatTasks(items []tasks.Info, now time.Time) string {
 
 func formatElapsedAt(d time.Duration, _ time.Time) string { return formatElapsed(d) }
 
+// isModelCommand recognizes only the exact command or its argument form.
+func isModelCommand(line string) bool {
+	return line == ":model" || strings.HasPrefix(line, ":model ")
+}
+
+func modelRefs(options []ModelOption) []string {
+	refs := make([]string, 0, len(options))
+	for _, option := range options {
+		refs = append(refs, option.Ref())
+	}
+	return refs
+}
+
+// BuildChatModel renders the current effective model and the configured choices.
+func BuildChatModel(current ModelOption, options []ModelOption) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "当前模型：%s\n思考级别：%s\n上下文窗口：%d\n输出上限 max_output_tokens：%d\n可选模型：",
+		current.Ref(), displayThinking(current.Thinking), current.ContextWindow, current.MaxOutputTokens)
+	if len(options) == 0 {
+		b.WriteString("无")
+		return b.String()
+	}
+	for _, option := range options {
+		b.WriteByte('\n')
+		marker := "  "
+		if option.Ref() == current.Ref() {
+			marker = "* "
+		}
+		b.WriteString(marker + option.Ref())
+	}
+	return b.String()
+}
+
+func displayThinking(level string) string {
+	if level == "" {
+		return "默认"
+	}
+	return level
+}
+
 // runChatCommand handles commands typed at this terminal. The caller checks injected first.
 func (s *chatState) runChatCommand(line string) bool {
 	switch {
 	case line == ":help":
 		fmt.Fprintln(s.source, BuildChatHelp())
+	case isModelCommand(line):
+		arg := strings.TrimSpace(strings.TrimPrefix(line, ":model"))
+		if arg == "" {
+			fmt.Fprintln(s.source, BuildChatModel(s.modelInfo, s.modelOptions))
+			return true
+		}
+		if s.modelSwitch == nil {
+			fmt.Fprintln(s.source, "模型切换不可用")
+			return true
+		}
+		info, err := s.modelSwitch(s.ctx, s.sessionID, arg)
+		if err != nil {
+			fmt.Fprintln(s.source, "模型切换失败："+err.Error())
+			return true
+		}
+		s.modelInfo = info
+		s.render.SetModel(info.Provider, info.Model, info.Thinking, info.ContextWindow)
+		fmt.Fprintf(s.source, "已切换模型：%s（下一回合生效）\n", info.Ref())
 	case line == ":usage":
 		fmt.Fprintln(s.source, BuildChatUsage(*s.stats))
 	case line == ":tasks":

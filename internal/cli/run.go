@@ -87,6 +87,22 @@ func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptio
 	for _, warning := range warnings {
 		fmt.Fprintln(stderr, "warning: "+warning)
 	}
+	// A resumed chat follows the session's selected model unless --model was
+	// explicitly supplied. Read it before assembling the provider runtime.
+	if mode == "chat" && opts.Model == "" && opts.FromID == "" {
+		resumeID := opts.ResumeID
+		if resumeID == "" {
+			resumeID = opts.SessionID
+		}
+		if resumeID != "" {
+			ref, readErr := wiring.SessionModelReference(ctx, resumeID)
+			if readErr == nil {
+				opts.Model = ref
+			} else if !errors.Is(readErr, personal.ErrSessionNotFound) {
+				return readErr
+			}
+		}
+	}
 	// A session continued in another directory is asked about (chat at a
 	// terminal) or refused (run, and chat reading a pipe) before the runtime is
 	// assembled: the workspace is fixed from here on, and no tool may run against

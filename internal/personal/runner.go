@@ -275,7 +275,11 @@ type RunResult struct {
 
 // Runner owns one synchronous turn at a time for a persisted personal session.
 type Runner struct {
-	cfg       Config
+	cfg Config
+	// modelMu guards the provider/model settings while a turn or compaction is
+	// using them. A chat model switch waits for the session gate first, then
+	// changes the settings for the next turn.
+	modelMu   sync.RWMutex
 	locksMu   sync.Mutex
 	heldLocks map[string]*process.SessionLock
 	// steerMu guards steers, the open per-session steering inboxes (one while a
@@ -327,8 +331,71 @@ func (r *Runner) ProcessRoot() string { return r.cfg.ProcessRoot }
 
 // ProviderName and Model identify the provider config id and model this runner
 // calls; chat shows them in its per-turn status line.
-func (r *Runner) ProviderName() string { return r.cfg.ProviderName }
-func (r *Runner) Model() string        { return r.cfg.Model }
+func (r *Runner) ProviderName() string {
+	if r == nil {
+		return ""
+	}
+	r.modelMu.RLock()
+	defer r.modelMu.RUnlock()
+	return r.cfg.ProviderName
+}
+
+func (r *Runner) Model() string {
+	if r == nil {
+		return ""
+	}
+	r.modelMu.RLock()
+	defer r.modelMu.RUnlock()
+	return r.cfg.Model
+}
+
+// SwitchModel changes the main model used by the next turn and records the
+// change outside a turn, so it remains visible in the session metadata and trace.
+// provider must already include any fallback pool the caller wants to retain.
+func (r *Runner) SwitchModel(ctx context.Context, sessionID string, provider agentcore.Provider, providerName, model string, contextWindow, maxOutputTokens int) error {
+	if r == nil || provider == nil {
+		return fmt.Errorf("personal runner and provider are required")
+	}
+	if sessionID == "" || providerName == "" || model == "" {
+		return fmt.Errorf("session, provider and model are required")
+	}
+	release, err := r.gate(sessionID).Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	r.modelMu.Lock()
+	defer r.modelMu.Unlock()
+	from := r.cfg.ProviderName + "/" + r.cfg.Model
+	to := providerName + "/" + model
+	if from == to {
+		return nil
+	}
+	if err := r.cfg.Repository.PatchSessionMeta(ctx, sessionID, map[string]any{"provider": providerName, "model": model}); err != nil {
+		return fmt.Errorf("persist model switch: %w", err)
+	}
+	r.cfg.Provider = r.rec.observeProvider(provider, providerName, model)
+	r.cfg.ProviderName, r.cfg.Model = providerName, model
+	r.cfg.ContextWindow, r.cfg.MaxOutputTokens = contextWindow, maxOutputTokens
+	if _, err := r.cfg.Repository.AppendEvent(ctx, store.Event{
+		SessionID: sessionID, Kind: store.EventSession, Name: "model_switch", Status: eventOK,
+		StartedAt: time.Now(), Attrs: map[string]any{"from": from, "to": to},
+	}); err != nil {
+		return fmt.Errorf("record model switch: %w", err)
+	}
+	return nil
+}
+
+// ModelSettings returns the effective main model settings used by the runner.
+func (r *Runner) ModelSettings() (provider, model string, contextWindow, maxOutputTokens int) {
+	if r == nil {
+		return "", "", 0, 0
+	}
+	r.modelMu.RLock()
+	defer r.modelMu.RUnlock()
+	return r.cfg.ProviderName, r.cfg.Model, r.cfg.ContextWindow, r.cfg.MaxOutputTokens
+}
 
 // MaxSteps is this runner's per-turn step limit (0 = no limit); the CLI names
 // it in the text-mode wrap-up notice.

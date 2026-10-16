@@ -21,6 +21,10 @@ func TestChatCompletion(t *testing.T) {
 		assert.True(t, ok)
 		assert.Eq(t, ":", line)
 		assert.Eq(t, 1, pos)
+		line, pos, ok = completeCandidates(source, ":model f", []string{":model fake/m1", ":model fake/m2"})
+		assert.True(t, ok)
+		assert.Eq(t, ":model f", line)
+		assert.Eq(t, len(line), pos)
 	})
 	t.Run("directory with spaces", func(t *testing.T) {
 		dir := t.TempDir()
@@ -46,9 +50,13 @@ func TestChatCompletion(t *testing.T) {
 func TestChatCompletionIsInstalledOnTerminalSource(t *testing.T) {
 	source := &chatInputSource{output: &bytes.Buffer{}}
 	source.terminal = lineedit.NewTerminal(&bytes.Buffer{}, "❯ ")
-	installCompletion(source, nil)
+	installCompletion(source, nil, []string{"fake/m1", "fake/m2"})
 	line, pos, ok := source.terminal.AutoCompleteCallback(":se", len(":se"), '\t')
 	assert.True(t, ok)
 	assert.Eq(t, ":session", line)
+	assert.Eq(t, len(line), pos)
+	line, pos, ok = source.terminal.AutoCompleteCallback(":model f", len(":model f"), '\t')
+	assert.True(t, ok)
+	assert.Eq(t, ":model f", line)
 	assert.Eq(t, len(line), pos)
 }

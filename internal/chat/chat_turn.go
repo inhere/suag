@@ -61,7 +61,10 @@ type chatState struct {
 	createdAtStartup bool
 	// dirs is the session's added-directory handle (Options.Dirs): the :add-dir,
 	// :dirs and :rm-dir commands work through it; nil leaves them out.
-	dirs SessionDirs
+	dirs         SessionDirs
+	modelOptions []ModelOption
+	modelSwitch  ModelSwitch
+	modelInfo    ModelOption
 	// local is the runner of the local commands (Options.Local): a "!cmd" line
 	// typed at the prompt runs through it; nil leaves them ordinary messages.
 	local    *native.LocalCommand
