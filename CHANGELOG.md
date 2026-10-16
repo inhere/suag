@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 新增
+
+- chat 在 file_edit/file_write/file_remove 工具结果与审批前显示可展开的文件 diff；`:diff` 可查看本会话最近或指定次数的完整改动，支持 `chat.diff` 与 `chat.diff_lines`。
+
 ## [0.25.0] - 2026-10-16
 
 回合中插话（常驻输入行、状态行、Up 撤回、`suga send --steer`）；chat 支持 `!` 本地命令；续接时校验工作目录；流式回复被截断时自动重试；回合取消不再丢后台任务通知。
