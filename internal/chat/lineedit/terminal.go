@@ -173,20 +173,19 @@ func (t *Terminal) ReadLine() (line string, err error) {
 	return t.readLine()
 }
 
-// SetEcho turns echoing on or off for the read in progress and records the mode.
-// The turn's steer read echoes like the prompt read (chat.steering keeps the person's
-// input line on screen for the whole turn), so the switch is only needed where a read
-// changes hands - an approval question borrowing the turn's read, or giving it back.
-// Turning it off forgets the input line without writing anything; turning it on draws
-// nothing by itself - the caller sets the prompt (UpdatePrompt) or lets the read do it.
-func (t *Terminal) SetEcho(on bool) {
+// RestoreEcho gives the read in progress its echo back and records it. The turn's
+// steer read echoes like the prompt read (chat.steering keeps the person's input
+// line on screen for the whole turn), so nothing turns echoing off while a turn
+// runs; the method is the counterpart of a read that changes hands - an approval
+// question asking on the turn's own read gives it back with RestoreEcho - and a
+// caller that wants a silent read reads a password (ReadPassword) instead. It
+// draws nothing by itself: the caller sets and redraws the prompt (UpdatePrompt)
+// or lets the next read do it.
+func (t *Terminal) RestoreEcho() {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	t.echo = on
-	if !on {
-		t.line, t.pos, t.cursorX, t.cursorY = nil, 0, 0, 0
-	}
+	t.echo = true
 }
 
 func (t *Terminal) readLine() (line string, err error) {

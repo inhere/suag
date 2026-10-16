@@ -114,9 +114,9 @@ func (s *chatInputSource) Ask(ctx context.Context, detail, prompt string) (strin
 	}
 	answerRead = true
 	if reuse {
-		// The read a turn started is borrowed (design N5): it runs without echo, so
-		// the question has to draw its prompt and let the answer show (UpdatePrompt
-		// repaints even when no line is on the screen).
+		// The read a turn started is borrowed (design N5): the question draws its own
+		// prompt on it and the answer shows as it is typed (UpdatePrompt repaints
+		// even when no line is on the screen).
 		if err := s.terminal.UpdatePrompt(prompt); err != nil {
 			return "", err
 		}
@@ -231,10 +231,10 @@ func (s *chatInputSource) endAsk(held *chatInputEvent, answerRead bool, mode inp
 		_ = s.leaveRawLocked()
 	}
 	if mode == modeSteer && s.terminal != nil {
-		// Back at the turn's own input line: it echoes again (the question borrowed
-		// the same read) and shows the turn's prompt instead of the question's, so
-		// the person can go on typing.
-		s.terminal.SetEcho(true)
+		// Back at the turn's own input line: the shared read echoes again (a question
+		// that hid it gives it back) and shows the turn's prompt instead of the
+		// question's, so the person can go on typing.
+		s.terminal.RestoreEcho()
 		_ = s.terminal.UpdatePrompt(steerPrompt)
 	}
 	if held != nil && !answerRead {
