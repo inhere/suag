@@ -97,12 +97,13 @@ func (t *SessionSearchTool) Name() string { return "session_search" }
 func (t *SessionSearchTool) Description() string {
 	return "Full-text search of earlier conversation history (messages, tool results and compaction summaries). " +
 		"Every whitespace-separated word must occur; words are matched literally. scope: workspace (default, " +
-		"sessions of this workspace), current (this session) or all. kind accepts comma-separated user, assistant, " +
-		"tool or compaction. since is inclusive and until exclusive; each accepts 7d/36h or a date/RFC3339 time. " +
-		"When results include next_cursor, pass that value back verbatim as cursor; a stale or mismatched cursor " +
-		"restarts from the beginning. For Chinese, prefer search terms of two or more characters; one-character " +
-		"searches are slower. With ref=out:<session>:<hex> it instead searches that saved tool output line by line " +
-		"(case-insensitive) and returns `<ref>  L<line>  <text>`; ref cannot be combined with cursor, kind or time filters."
+		"sessions of this workspace), current (this session) or all. Each hit is `<ref>  <role>  <snippet>`; " +
+		"read around a hit with recall(ref). kind accepts comma-separated user, assistant, tool or compaction. " +
+		"since is inclusive and until exclusive; each accepts 7d/36h or a date/RFC3339 time. When results include " +
+		"next_cursor, pass that value back verbatim as cursor; a stale or mismatched cursor restarts from the " +
+		"beginning. For Chinese, prefer search terms of two or more characters; one-character searches are slower. " +
+		"With ref=out:<session>:<hex> it instead searches that saved tool output line by line (case-insensitive) and " +
+		"returns `<ref>  L<line>  <text>`; ref cannot be combined with cursor, kind or time filters."
 }
 
 // ToolMeta: read-only search; results are external content (taint).
