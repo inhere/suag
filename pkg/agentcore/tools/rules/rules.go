@@ -1,8 +1,7 @@
-// Package rules contains the pure approval-rule model and matcher.
+// Package rules contains the approval-rule model and matcher.
 //
-// It deliberately does not read configuration or touch the filesystem. Host
-// packages load and validate rules, then pass a Policy and a Target to this
-// package for a deterministic decision.
+// Rule decisions are deterministic; path matching only examines the target's
+// filesystem metadata and never reads configuration.
 package rules
 
 import (
@@ -188,10 +187,10 @@ func (r Rule) matches(target Target) bool {
 	if len(r.Command) > 0 {
 		return r.MatchesCommand(target)
 	}
-	// Path conditions are deliberately fail-closed until the dedicated matcher
-	// is installed. Treating them as tool-only rules would turn a narrowly
-	// written allow into an unsafe broad allow.
-	return len(r.Path) == 0
+	if len(r.Path) > 0 {
+		return r.MatchesPath(target)
+	}
+	return true
 }
 
 func (t Target) toolIdentity() (string, bool) {
