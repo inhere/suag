@@ -111,6 +111,7 @@ def main():
         second.line(":quit")
     finally:
         second.close()
+    first.results.extend(second.results)
     trace = subprocess.run([os.path.abspath(a.bin), "trace", sid, "--json"], capture_output=True, text=True, env=env, timeout=60)
     first.check("trace command succeeds", trace.returncode == 0)
     events = [json.loads(line) for line in trace.stdout.splitlines() if line.strip()]

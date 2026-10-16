@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -188,4 +189,45 @@ func TestOpenRejectsLegacyConfig(t *testing.T) {
 	_, err := Open(context.Background(), Options{Workspace: t.TempDir(), RuleCWD: t.TempDir()})
 	assert.Err(t, err)
 	assert.StrContains(t, err.Error(), "no longer supported")
+}
+
+func TestRuntimeSwitchPreservesFallbackModels(t *testing.T) {
+	resetConfig(t)
+	var seen []string
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		model := "unknown"
+		for _, candidate := range []string{"m2", "fallback"} {
+			if strings.Contains(string(body), `"model":"`+candidate+`"`) {
+				model = candidate
+				break
+			}
+		}
+		mu.Lock()
+		seen = append(seen, model)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if model == "m2" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = io.WriteString(w, `{"error":{"message":"m2 unavailable"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, okBody)
+	}))
+	t.Cleanup(server.Close)
+	assert.NoErr(t, gkconfig.Set("model", "fake/m1"))
+	assert.NoErr(t, gkconfig.Set("fallback_models", []string{"fake/fallback"}))
+	setProviders(t, map[string]any{"fake": map[string]any{"type": "openai", "api_key": "k", "base_url": server.URL,
+		"models": map[string]any{"m1": map[string]any{}, "m2": map[string]any{}, "fallback": map[string]any{}}}})
+	rt := openTestRuntime(t, "")
+	session, err := rt.Runner.NewSession(context.Background(), "switch-fallback", "test")
+	assert.Require(t, assert.NoErr(t, err))
+	_, err = rt.SwitchModel(context.Background(), session.ID, "fake/m2")
+	assert.Require(t, assert.NoErr(t, err))
+	_, err = rt.Runner.Run(context.Background(), personal.RunRequest{SessionID: session.ID, Prompt: "hi"})
+	assert.NoErr(t, err)
+	mu.Lock()
+	assert.Eq(t, []string{"m2", "fallback"}, seen)
+	mu.Unlock()
 }
