@@ -69,6 +69,9 @@ type Options struct {
 	// MaxSteps overrides the config's max_steps for the main agent's turns
 	// (--max-steps, run only); 0 uses SUGA_MAX_STEPS, then max_steps.
 	MaxSteps int
+	// Budget carries raw run/chat flag overrides. Zero values defer to
+	// SUGA_BUDGET_* and budget.* settings.
+	Budget appconfig.BudgetFlags
 	// MaxOutputTokens overrides the configured output token limit for this
 	// invocation (--max-output-tokens); 0 uses SUGA_MAX_OUTPUT_TOKENS, then
 	// providers.<id>.models.<m>.max_output_tokens /
@@ -107,6 +110,9 @@ type Runtime struct {
 	Registry *tools.Registry
 	// ContextWindow is the window of the model actually used by the provider.
 	ContextWindow int
+	// Budget is the resolved budget input retained for later runner/provider
+	// assembly. Its zero value means that budgeting is disabled.
+	Budget appconfig.BudgetSettings
 	// Thinking is the main model's effective thinking level ("" = the
 	// provider's default).
 	Thinking string
@@ -169,7 +175,7 @@ func (rt *Runtime) SwitchModel(ctx context.Context, sessionID, ref string) (Mode
 	if rt.thinkingOverride != "" {
 		spec.Thinking = rt.thinkingOverride
 	}
-	provider, err := buildMainProviderSpecs(spec, rt.fallbacks)
+	provider, err := buildMainProviderSpecsWithEstimate(spec, rt.fallbacks, estimateOptionsForBudget(rt.Budget.Tokens, rt.Budget.CostUSD, rt.Budget.Estimate, rt.Budget.EstimateFactor))
 	if err != nil {
 		return ModelOption{}, err
 	}
@@ -365,9 +371,14 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	budget, err := appconfig.ReadBudgetSettings(opts.Budget)
+	if err != nil {
+		return nil, err
+	}
+
 	settings, taintTools, taintOnSpill := rs.models, rs.taintTools, rs.taintOnSpill
 	memSetup, memPolicy, sessionsDir := rs.memSetup, rs.memPolicy, rs.sessionsDir
-	provider, err := buildMainProvider(settings)
+	provider, err := buildMainProviderWithEstimate(settings, estimateOptionsForBudget(budget.Tokens, budget.CostUSD, budget.Estimate, budget.EstimateFactor))
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +415,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	if agentSettings.Enabled {
 		agentTool := native.NewAgentTool(&subAgents{workspace: workspace, ruleCWD: ruleCWD, mainModel: opts.Model,
-			noProjectRules: opts.NoProjectRules, ruleFile: ruleFile, settings: agentSettings, addDirs: dirs})
+			noProjectRules: opts.NoProjectRules, ruleFile: ruleFile, settings: agentSettings, addDirs: dirs,
+			budget: personal.BudgetSettings{Tokens: budget.Tokens, CostUSD: budget.CostUSD, Scope: budget.Scope,
+				Estimate: budget.Estimate, EstimateFactor: budget.EstimateFactor, NoticeRatio: budget.NoticeRatio}})
 		if opts.Tasks != nil {
 			agentTool.SetTasks(opts.Tasks)
 		}
@@ -488,7 +501,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	var compactProvider agentcore.Provider
 	compactModel := ""
 	if settings.Compact != nil {
-		built, err := appconfig.BuildProvider(*settings.Compact)
+		built, err := buildProviderWithEstimate(*settings.Compact, estimateOptionsForBudget(budget.Tokens, budget.CostUSD, budget.Estimate, budget.EstimateFactor))
 		if err != nil {
 			_ = repo.Close()
 			_ = capabilities.Close()
@@ -523,6 +536,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		TaintOnSpill: taintOnSpill,
 		Visibility:   vis,
 		Price:        priceLookup(settings),
+		Budget:       personal.BudgetSettings{Tokens: budget.Tokens, CostUSD: budget.CostUSD, Scope: budget.Scope, Estimate: budget.Estimate, EstimateFactor: budget.EstimateFactor, NoticeRatio: budget.NoticeRatio},
 		// Tool outputs above tools.max_output_bytes go to
 		// <SUGA_HOME>/sessions/<id>/outputs/ and the session keeps a ref.
 		InlineOutputBytes: inlineOutputBytes(),
@@ -572,7 +586,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	memHost.bind(runner, repo)
 	rt := &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
-		ContextWindow: contextWindow, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry,
+		ContextWindow: contextWindow, Budget: budget, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry,
 		AddDirs: dirs, modelOptions: modelOptions, modelSpecs: modelSpecs,
 		fallbacks:        append([]appconfig.ModelSpec(nil), settings.Fallbacks...),
 		thinkingOverride: opts.Thinking, maxOutputOverride: opts.MaxOutputTokens}
@@ -591,15 +605,26 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	return rt, nil
 }
 
-// buildMainProvider builds the main provider; with fallback_models the result
-// is a Pool that tries main first, then each fallback in order (a Pool never
-// switches once a stream has produced output).
+// buildMainProvider builds the main provider without budget estimation. It is
+// kept as the default helper for tests and callers that intentionally assemble
+// an unbudgeted provider.
 func buildMainProvider(settings appconfig.ModelSettings) (agentcore.Provider, error) {
 	return buildMainProviderSpecs(settings.Main, settings.Fallbacks)
 }
 
+// buildMainProviderWithEstimate wraps every real provider before it enters the
+// fallback pool. This preserves member capabilities and lets pool attempts carry
+// their own model's estimated usage into the observer.
+func buildMainProviderWithEstimate(settings appconfig.ModelSettings, options personal.EstimateOptions) (agentcore.Provider, error) {
+	return buildMainProviderSpecsWithEstimate(settings.Main, settings.Fallbacks, options)
+}
+
 func buildMainProviderSpecs(mainSpec appconfig.ModelSpec, fallbacks []appconfig.ModelSpec) (agentcore.Provider, error) {
-	main, err := appconfig.BuildProvider(mainSpec)
+	return buildMainProviderSpecsWithEstimate(mainSpec, fallbacks, personal.EstimateOptions{Mode: personal.EstimateOff})
+}
+
+func buildMainProviderSpecsWithEstimate(mainSpec appconfig.ModelSpec, fallbacks []appconfig.ModelSpec, options personal.EstimateOptions) (agentcore.Provider, error) {
+	main, err := buildProviderWithEstimate(mainSpec, options)
 	if err != nil {
 		return nil, err
 	}
@@ -608,13 +633,36 @@ func buildMainProviderSpecs(mainSpec appconfig.ModelSpec, fallbacks []appconfig.
 	}
 	providers := []llm.Provider{main}
 	for i, spec := range fallbacks {
-		fb, err := appconfig.BuildProvider(spec)
+		fb, err := buildProviderWithEstimate(spec, options)
 		if err != nil {
 			return nil, fmt.Errorf("fallback_models[%d]: %w", i, err)
 		}
 		providers = append(providers, fb)
 	}
 	return llm.NewPool(providers), nil
+}
+
+func buildProviderWithEstimate(spec appconfig.ModelSpec, options personal.EstimateOptions) (agentcore.Provider, error) {
+	provider, err := appconfig.BuildProvider(spec)
+	if err != nil {
+		return nil, err
+	}
+	return personal.NewEstimatingProvider(provider, options), nil
+}
+
+// estimateOptionsForBudget disables the estimator when no budget is configured;
+// otherwise it applies the resolved budget policy to every provider path.
+func estimateOptionsForBudget(tokens int, costUSD float64, mode string, factor float64) personal.EstimateOptions {
+	if tokens <= 0 && costUSD <= 0 {
+		return personal.EstimateOptions{Mode: personal.EstimateOff}
+	}
+	if mode == "" {
+		mode = personal.EstimateAuto
+	}
+	if factor <= 0 {
+		factor = 1
+	}
+	return personal.EstimateOptions{Mode: mode, Factor: factor}
 }
 
 // configuredModelOptions lists only providers.<id>.models keys: :model is

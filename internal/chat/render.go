@@ -125,6 +125,10 @@ type Renderer struct {
 	// arrived, its result not yet): the approval question shows it and the result
 	// prints it.
 	pending *diffview.Change
+	// budget is the latest budget snapshot received during this turn.
+	budget *personal.BudgetSnapshot
+	// budgetNoticed prevents repeated threshold reminders within one turn.
+	budgetNoticed bool
 }
 
 // newRenderer returns a renderer that shows no waiting line yet: the first turn
@@ -192,6 +196,8 @@ func (r *Renderer) Prompt(waiting bool) string {
 func (r *Renderer) BeginTurn() {
 	r.stopThinking() // nothing of the previous turn may linger on the line
 	r.resetLive()
+	r.budget = nil
+	r.budgetNoticed = false
 	r.startThinking()
 }
 
@@ -222,8 +228,8 @@ func (r *Renderer) startThinking() {
 }
 
 // toolRunning switches the status line to the tool that runs now ("执行
-// shell_exec…"). Without a status line it takes the waiting line of its own down
-// instead: the model is not the one being waited for any more.
+// shell_exec…"). Without a status line it takes the waiting line of its own
+// down instead: the model is not the one being waited for any more.
 func (r *Renderer) toolRunning(name string) {
 	if !r.statusLine() {
 		r.spin.Stop()
@@ -233,10 +239,10 @@ func (r *Renderer) toolRunning(name string) {
 }
 
 // stopThinking clears the renderer's own waiting line before a write of this
-// renderer, so a frame can never mix into a tool line, a line of the turn's status,
-// an answer or a prompt. With the status line above the input line there is nothing
-// to do: the line editor keeps that row clear of every write by itself, so it stays
-// up for the whole turn (its end takes it down: endThinking).
+// renderer, so a frame can never mix into a tool line, a line of the turn's
+// status, an answer or a prompt. With the status line above the input line there
+// is nothing to do: the line editor keeps that row clear of every write by
+// itself, so it stays up for the whole turn (its end takes it down: endThinking).
 func (r *Renderer) stopThinking() {
 	if r.statusLine() {
 		return
@@ -249,8 +255,8 @@ func (r *Renderer) stopThinking() {
 func (r *Renderer) endThinking() { r.spin.Stop() }
 
 // suspendStatus takes the status line off screen while another part of chat owns
-// the input line (an approval question asks on it) and resumeStatus brings it back
-// with what the turn is waiting for. Both are no-ops without a status line.
+// the input line (an approval question asks on it) and resumeStatus brings it
+// back with what the turn is waiting for. Both are no-ops without a status line.
 func (r *Renderer) suspendStatus() { r.spin.Suspend() }
 func (r *Renderer) resumeStatus()  { r.spin.Resume() }
 
@@ -258,10 +264,14 @@ func (r *Renderer) resumeStatus()  { r.spin.Resume() }
 // tool lines and the user's input.
 func (r *Renderer) answerPrefix() string { return r.paint(color.Green, "▣") + " " }
 
-// Handle renders one runner event: text deltas, tool calls/results and plans.
-// Events the chat does not render (run_started, usage, ...) leave the waiting
-// line alone; the model may still be answering through them.
+// Handle renders one runner event: text deltas, tool calls/results, plans and
+// budget observations. Events the chat does not render (run_started, usage,
+// ...) leave the waiting line alone; budget observations update the final line
+// and may emit one threshold reminder per turn.
 func (r *Renderer) Handle(event personal.Event) {
+	if budget := eventBudget(event); budget != nil {
+		r.noteBudget(budget)
+	}
 	if !r.statusLine() && stopsWaiting(event) {
 		r.stopThinking()
 	}
@@ -278,7 +288,7 @@ func (r *Renderer) Handle(event personal.Event) {
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, line))
 		r.toolRunning(event.ToolName) // the tool runs now, the model does not
 		// A file change was read before the tool ran (personal.Config.DiffPreview);
-		// the approval question and the result below show it.
+		// the approval question and result below show it.
 		r.noteToolCall(event.Change)
 	case "tool_result":
 		r.live.Finish()
@@ -321,11 +331,36 @@ func (r *Renderer) Handle(event personal.Event) {
 	}
 }
 
+// eventBudget reads both locations used by the personal event stream: budget
+// events carry it at the top level, while run_finished carries it in Usage.
+func eventBudget(event personal.Event) *personal.BudgetSnapshot {
+	if event.Budget != nil {
+		return event.Budget
+	}
+	if event.Usage != nil {
+		return event.Usage.Budget
+	}
+	return nil
+}
+
+func (r *Renderer) noteBudget(snapshot *personal.BudgetSnapshot) {
+	r.budget = snapshot
+	share, _, ok := budgetShare(snapshot)
+	if !ok || r.budgetNoticed || snapshot.NoticeRatio < 0 || float64(share)/100 < snapshot.NoticeRatio {
+		return
+	}
+	r.budgetNoticed = true
+	if text := budgetNoticeText(snapshot); text != "" {
+		r.Notice(text)
+		r.startThinking()
+	}
+}
+
 // statusLine reports whether what the turn waits for shows on a row above the
-// input line (chat.steering keeps that line on screen for the whole turn) instead
-// of on a line of its own. The status text only changes there, since the line
-// editor clears that row around every write anyway; a line of its own has to be
-// taken down before each one.
+// input line (chat.steering keeps that line on screen for the whole turn)
+// instead of on a line of its own. The status text only changes there, since
+// the line editor clears that row around every write anyway; a line of its own
+// has to be taken down before each one.
 func (r *Renderer) statusLine() bool { return r.spin.statusRow() }
 
 // stopsWaiting reports whether event ends the "the model is answering" state:
@@ -368,7 +403,7 @@ func (r *Renderer) Finish() bool {
 
 // Answer prints a final answer that was not streamed: the streamed text's own
 // renderer does it, so the message prefix, markdown and whole-line handling stay
-// exactly the ones the streamed case uses (r3 M1).
+// exactly the ones used by the streamed case.
 func (r *Renderer) Answer(text string) {
 	r.endThinking()
 	r.live.Answer(text)
@@ -404,8 +439,8 @@ func (r *Renderer) SteerDelivered(text string) {
 
 // SteerWithdrawn prints the message once the person took it back out of the
 // running turn's inbox with Up on an empty input line: the waiting line becomes
-// the withdrawn one, the same in-place update a delivered message gets
-// (SteerDelivered), and the text is on the input line for editing again.
+// the withdrawn one, the same in-place update a delivered message gets (SteerDelivered),
+// and the text is on the input line for editing again.
 func (r *Renderer) SteerWithdrawn(text string) {
 	r.stopThinking()
 	fmt.Fprintln(r.opts.Out, r.paintDim(steerNotice(text, steerWithdrawnSuffix)))
@@ -531,7 +566,7 @@ func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration, stee
 	printLayout(r.opts.Out, r.opts.Color, BuildTurnStatus(TurnStatus{
 		Memory:   r.memory,
 		Provider: r.opts.Provider, Model: r.opts.Model,
-		Usage:           result.Usage,
+		Usage: result.Usage, Budget: r.budget,
 		LastInputTokens: result.LastInputTokens, ContextWindow: r.opts.ContextWindow,
 		Elapsed: elapsed, EndTime: r.localNow(), Steers: steers,
 		// An answer cut off at the output limit is named in the status line.

@@ -232,9 +232,24 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		window = appconfig.DefaultContextWindow
 	}
 	textSent := false
+	// Budget metadata is carried by the final run_finished event. Keep it
+	// separate from RunResult: ACP must not expand the personal run contract.
+	var finalBudget *personal.BudgetSnapshot
+	captureBudget := func(event personal.Event) {
+		if event.Budget != nil {
+			finalBudget = event.Budget
+		}
+		if event.Usage != nil && event.Usage.Budget != nil {
+			finalBudget = event.Usage.Budget
+		}
+	}
 	emit := func(ctx context.Context, event personal.Event) error {
+		captureBudget(event)
 		if event.Kind == "usage" && event.Usage != nil {
 			return a.sendRunningUsage(ctx, req.SessionId, state, window, *event.Usage)
+		}
+		if event.Kind == "run_finished" && event.Usage != nil {
+			return nil
 		}
 		if event.Kind == "plan" && event.Plan != nil {
 			return a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: req.SessionId, Update: planUpdate(event.Plan)})
@@ -256,11 +271,11 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		// The SDK cancels the request ctx on session/cancel, so detach from it
 		// (bounded) or the notification could never be written.
 		usageCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		usageErr := a.sendUsage(usageCtx, req.SessionId, state, window, result)
+		usageErr := a.sendUsage(usageCtx, req.SessionId, state, window, result, finalBudget)
 		stop()
 		return acp.PromptResponse{StopReason: acp.StopReasonCancelled}, errors.Join(closeErr, usageErr)
 	}
-	if err := a.sendUsage(ctx, req.SessionId, state, window, result); err != nil {
+	if err := a.sendUsage(ctx, req.SessionId, state, window, result, finalBudget); err != nil {
 		return acp.PromptResponse{}, errors.Join(runErr, closeErr, err)
 	}
 	// Refused tool calls are tool errors and the turn continues (end_turn); only
@@ -303,9 +318,9 @@ func promptError(err error) error {
 
 // sendUsage reports the final usage of a turn (completed or cancelled): the
 // run total plus the session-cumulative total.
-func (a *Agent) sendUsage(ctx context.Context, id acp.SessionId, state *sessionState, window int, result personal.RunResult) error {
+func (a *Agent) sendUsage(ctx context.Context, id acp.SessionId, state *sessionState, window int, result personal.RunResult, budget ...*personal.BudgetSnapshot) error {
 	total, used := state.recordUsage(a, result)
-	if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: usageUpdate(result.RunUsage, total, used, window)}); err != nil {
+	if err := a.connection().SessionUpdate(ctx, acp.SessionNotification{SessionId: id, Update: usageUpdate(result.RunUsage, total, used, window, budget...)}); err != nil {
 		return fmt.Errorf("send usage update: %w", err)
 	}
 	return nil

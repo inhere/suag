@@ -1,11 +1,13 @@
 package wiring
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
 
 	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal"
 )
 
 // TestSubAgentModel: a sub-agent runs on agents.model when set, else on the
@@ -31,4 +33,18 @@ func TestSubAgentModel(t *testing.T) {
 	t.Run("agents.model wins; a bare id uses the main model's provider", func(t *testing.T) {
 		assert.Eq(t, "openai/gpt-4o-mini", build(t, "gpt-4o-mini", "openai/gpt-4.1"))
 	})
+}
+
+func TestSubAgentBudgetProviderEstimatesUsage(t *testing.T) {
+	workspace := manifestConfig(t)
+	server := noUsageServer(t, 200, "child", nil)
+	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k", "base_url": server.URL}})
+	s := &subAgents{workspace: workspace, ruleCWD: workspace, settings: appconfig.AgentSettings{MaxSteps: 1}, budget: personal.BudgetSettings{Tokens: 100, Estimate: personal.EstimateAuto}}
+	runner, closeIt, err := s.build("explore")
+	assert.Require(t, assert.NoErr(t, err))
+	t.Cleanup(closeIt)
+	res, err := runner.Run(context.Background(), personal.RunRequest{Prompt: "child"})
+	assert.NoErr(t, err)
+	assert.True(t, res.Usage.InputTokens > 0)
+	assert.True(t, res.Usage.OutputTokens > 0)
 }

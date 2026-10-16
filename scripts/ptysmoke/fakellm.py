@@ -38,13 +38,15 @@ when --background); a sub-agent's request (its system prompt names a "suga
 sub-agent") greps SMOKE once, then reports "SUBREPORT: ..." after
 --child-delay seconds more. A request with "stream": false gets one JSON completion
 instead of SSE (the compaction summary). --prompt-tokens sets the reported prompt usage (the idle
-consolidation compares it with the context threshold). Each request is
-logged as one JSON line on stdout: "user" is the last user message, "seen" is one
-token per message in order, which is what a smoke checks when it has to see more
-than the last message ("user:<head>" of the text, "a" or "a:file_write" for an
-assistant message and its tool calls, "tool:<head>" for a tool result), and "tail"
-the last few messages as {"role", "text"} (a steer a person inserted into the
-running turn shows up there, after the tool result).
+consolidation compares it with the context threshold). --no-usage leaves usage
+out of every completion, for estimation and missing-usage smoke scenarios.
+Each request is logged as one JSON line on stdout: "user" is the last user
+message, "seen" is one token per message in order, which is what a smoke checks
+when it has to see more than the last message ("user:<head>" of the text, "a"
+or "a:file_write" for an assistant message and its tool calls, "tool:<head>"
+for a tool result), and "tail" the last few messages as {"role", "text"} (a
+steer a person inserted into the running turn shows up there, after the tool
+result).
 
   python3 -I fakellm.py --port 18795 --mode tool --delay 1
 """
@@ -59,9 +61,9 @@ import time
 def message_token(m):
     """One short token for one request message, so a smoke can see what the
     model received and in what order: "user:<head>", "a:file_write",
-    "tool:edited ...". The provider sends role=tool messages without a name, so
-    the head of their content is what identifies them (openai.go builds "role",
-    "content", "tool_call_id" only)."""
+    "tool:edited ...". The provider sends role=tool messages without a name,
+    so the head of their content is what identifies them (openai.go builds
+    "role", "content", "tool_call_id" only)."""
     role = str(m.get("role") or "?")
     if role == "assistant":
         names = [c.get("function", {}).get("name", "?") for c in (m.get("tool_calls") or [])]
@@ -242,8 +244,8 @@ def make_handler(args):
                 chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
             else:
                 chunks = [{"choices": [{"delta": {"content": build_reply(args)}}]}]
-            usage = {"prompt_tokens": args.prompt_tokens, "completion_tokens": 2,
-                     "total_tokens": args.prompt_tokens + 2}
+            usage = None if args.no_usage else {"prompt_tokens": args.prompt_tokens, "completion_tokens": 2,
+                                                "total_tokens": args.prompt_tokens + 2}
             chunks = chunked(chunks, args.chunk) if args.chunk > 0 else chunks
             if not body.get("stream"):
                 # Non-streaming calls (e.g. the compaction summary) get one JSON body.
@@ -252,15 +254,18 @@ def make_handler(args):
                 if "tool_calls" in delta:
                     message["tool_calls"] = [dict(c, type="function") for c in delta["tool_calls"]]
                 finish = "tool_calls" if "tool_calls" in delta else "stop"
-                raw = json.dumps({"id": "fake", "object": "chat.completion", "usage": usage,
-                                  "choices": [{"index": 0, "message": message, "finish_reason": finish}]}).encode()
+                response = {"id": "fake", "object": "chat.completion", "choices": [{"index": 0, "message": message, "finish_reason": finish}]}
+                if usage is not None:
+                    response["usage"] = usage
+                raw = json.dumps(response).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
                 return
-            chunks.append({"choices": [], "usage": usage})
+            if usage is not None:
+                chunks.append({"choices": [], "usage": usage})
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Transfer-Encoding", "chunked")
@@ -335,8 +340,9 @@ def main():
     p.add_argument("--lines", type=int, default=0, help="text mode: answer with this many lines")
     p.add_argument("--wide", type=int, default=0, help="text mode with --lines: pad every line to this many columns")
     p.add_argument("--chunk", type=int, default=0, help="split a streamed text reply into pieces of this many characters")
-    p.add_argument("--chunk-delay", type=float, default=0.05, help="seconds between two chunks of a streamed reply")
+    p.add_argument("--chunk-delay", type=float, default=0.05, help="seconds between two chunks of a streamed text reply")
     p.add_argument("--prompt-tokens", type=int, default=10)
+    p.add_argument("--no-usage", action="store_true", help="omit usage from completion responses")
     p.add_argument("--background", action="store_true", help="tool mode: shell_exec with background: true")
     p.add_argument("--watch-paths", default="", help="tool mode with --background: comma-separated watch_paths")
     p.add_argument("--read-path", default="", help="adddir mode: file to read (outside the workspace)")

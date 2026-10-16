@@ -28,6 +28,10 @@ type subAgents struct {
 	noProjectRules bool
 	ruleFile       string
 	settings       appconfig.AgentSettings
+	// budget is the parent's resolved budget. Child runners inspect it only
+	// for foreground parent-budget enforcement; agents.max_tokens remains
+	// the child's own limit.
+	budget personal.BudgetSettings
 	// addDirs is the parent session's additional-directory set (--add-dir): a
 	// sub-agent works on the same task, so it reads the same directories.
 	addDirs *native.AddDirs
@@ -57,7 +61,7 @@ func (s *subAgents) RunAgent(ctx context.Context, req native.AgentRequest) (nati
 	}
 	res, runErr := personal.RunChild(ctx, child, personal.ChildRequest{
 		ParentSession: req.ParentSession, ParentTurn: req.ParentTurn, ParentCall: req.CallID,
-		Type: req.Type, Description: req.Description, Prompt: req.Prompt,
+		Type: req.Type, Description: req.Description, Prompt: req.Prompt, Background: req.Background,
 		Timeout: s.settings.Timeout, Emit: progress,
 	})
 	rep := native.AgentReport{SessionID: res.SessionID, Report: res.Report, Stop: res.Stop, Steps: res.Steps,
@@ -100,7 +104,7 @@ func (s *subAgents) build(kind string) (*personal.Runner, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("agents.model: %w", err)
 	}
-	provider, err := buildMainProvider(rs.models)
+	provider, err := buildMainProviderWithEstimate(rs.models, estimateOptionsForBudget(s.budget.Tokens, s.budget.CostUSD, s.budget.Estimate, s.budget.EstimateFactor))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -142,6 +146,7 @@ func (s *subAgents) build(kind string) (*personal.Runner, func(), error) {
 			return personal.LoadRules(s.ruleCWD, home, s.noProjectRules, s.ruleFile)
 		},
 		MaxSteps: s.settings.MaxSteps, MaxRunTokens: s.settings.MaxTokens, RunTimeout: s.settings.Timeout,
+		Budget: s.budget,
 		// The sub-agent model's own output limit (agents.model); 0 leaves it to
 		// the provider's default.
 		MaxOutputTokens: appconfig.MaxOutputTokensFor(rs.models.Main),

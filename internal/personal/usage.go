@@ -121,6 +121,11 @@ type UsageUpdate struct {
 	// LastInputTokens is the input (cache included) of the model call behind a
 	// "usage" event, i.e. that request's context size; 0 on run_finished.
 	LastInputTokens int
+	// Estimated is true when one or more counted model calls used estimated
+	// provider usage.
+	Estimated bool
+	// Budget is the optional budget snapshot at this usage point.
+	Budget *BudgetSnapshot
 }
 
 // ReportedRunUsage is the reported shape of RunUsage on the stream-json
@@ -166,9 +171,20 @@ type runUsageMeter struct {
 	// every model call counted here counts in that session's run as well
 	// (forwardChildUsage).
 	parentSession string
+	// parentBackground marks a background child. Background children still
+	// forward usage, but they must not use the parent's budget to stop early.
+	parentBackground bool
+	// held is pending child usage moved into this run for stream/ACP accounting;
+	// turn budgets subtract it until the pending-aware session policy is applied.
+	held                  agentcore.Usage
+	budget                BudgetSettings
+	estimated             bool
+	estimatedInputTokens  int
+	estimatedOutputTokens int
 }
 
 type childRunKey struct{}
+type childBackgroundKey struct{}
 
 // withChildOf marks ctx as the start of a sub-agent run of parentSession: its
 // meter forwards its model usage to that session (forwardChildUsage).
@@ -176,9 +192,21 @@ func withChildOf(ctx context.Context, parentSession string) context.Context {
 	return context.WithValue(ctx, childRunKey{}, parentSession)
 }
 
+// withChildBackground marks whether a child is running as an asynchronous
+// background task. The usage still belongs to the parent session, but the
+// parent's soft budget only governs foreground children.
+func withChildBackground(ctx context.Context, background bool) context.Context {
+	return context.WithValue(ctx, childBackgroundKey{}, background)
+}
+
 func childOf(ctx context.Context) string {
 	parent, _ := ctx.Value(childRunKey{}).(string)
 	return parent
+}
+
+func childIsBackground(ctx context.Context) bool {
+	background, _ := ctx.Value(childBackgroundKey{}).(bool)
+	return background
 }
 
 // Sub-agent usage reaches the session that started it through the run in
@@ -206,6 +234,7 @@ func activateMeter(sessionID string, m *runUsageMeter) func() {
 		m.mu.Lock()
 		m.run.Usage = m.run.Usage.Add(held)
 		m.base = subUsage(m.base, held)
+		m.held = held
 		m.mu.Unlock()
 	}
 	return func() {
@@ -219,7 +248,7 @@ func activateMeter(sessionID string, m *runUsageMeter) func() {
 
 // forwardChildUsage counts a sub-agent's model call in parentSession's run in
 // progress, or holds it for the session's next run.
-func forwardChildUsage(ctx context.Context, parentSession string, priced agentcore.Usage) {
+func forwardChildUsage(ctx context.Context, parentSession string, priced agentcore.Usage, estimated ...bool) {
 	if parentSession == "" {
 		return
 	}
@@ -229,7 +258,16 @@ func forwardChildUsage(ctx context.Context, parentSession string, priced agentco
 		pendingUsages[parentSession] = pendingUsages[parentSession].Add(priced)
 	}
 	childUsageMu.Unlock()
-	m.addChild(ctx, priced)
+	m.addChild(ctx, priced, estimated...)
+}
+
+// activeMeterFor returns the run currently active for a session. A foreground
+// child uses this meter for its parent-budget check; a missing meter means the
+// child is detached from an in-progress parent run and must not guess.
+func activeMeterFor(sessionID string) *runUsageMeter {
+	childUsageMu.Lock()
+	defer childUsageMu.Unlock()
+	return activeMeters[sessionID]
 }
 
 // subUsage is a minus b, field by field (never below zero).
@@ -250,39 +288,79 @@ func runUsageFrom(ctx context.Context) *runUsageMeter {
 	return m
 }
 
+// usageUpdateLocked builds one transport update while m.mu is held.
+func (m *runUsageMeter) usageUpdateLocked(lastInput int) UsageUpdate {
+	update := UsageUpdate{Run: m.run, Session: m.base.Add(m.run.Usage), LastInputTokens: lastInput, Estimated: m.estimated}
+	if m.budget.enabled() {
+		snapshot := m.budgetSnapshotLocked()
+		snapshot.EstimatedInputTokens = m.estimatedInputTokens
+		snapshot.EstimatedOutputTokens = m.estimatedOutputTokens
+		update.Budget = &snapshot
+	}
+	return update
+}
+
+func (m *runUsageMeter) usageUpdate() UsageUpdate {
+	if m == nil {
+		return UsageUpdate{}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.usageUpdateLocked(0)
+}
+
 // addModel counts one model attempt. raw is the usage the provider reported
 // (used to skip failed attempts without usage); priced is raw with the cost
 // recorded on the model event.
-func (m *runUsageMeter) addModel(ctx context.Context, raw, priced agentcore.Usage, failed bool) {
+func (m *runUsageMeter) addModel(ctx context.Context, raw, priced agentcore.Usage, failed bool, estimated ...bool) {
+	est := len(estimated) > 0 && estimated[0]
+	m.addModelWithEstimates(ctx, raw, priced, failed, est, 0, 0)
+}
+
+// addModelWithEstimates records the provider estimate details before publishing
+// the usage update, so the model and budget events share one observation.
+func (m *runUsageMeter) addModelWithEstimates(ctx context.Context, raw, priced agentcore.Usage, failed, estimated bool, estimatedInput, estimatedOutput int) {
 	if m == nil || (failed && raw == (agentcore.Usage{})) {
 		return
 	}
 	m.notifyMu.Lock()
 	defer m.notifyMu.Unlock()
 	m.mu.Lock()
+	if estimated {
+		m.estimated = true
+		if estimatedInput > 0 {
+			m.estimatedInputTokens = estimatedInput
+		}
+		if estimatedOutput > 0 {
+			m.estimatedOutputTokens = estimatedOutput
+		}
+	}
 	m.run.Usage = m.run.Usage.Add(priced)
-	update := UsageUpdate{Run: m.run, Session: m.base.Add(m.run.Usage), LastInputTokens: raw.InputTokens}
+	update := m.usageUpdateLocked(raw.InputTokens)
 	notify := m.onModel
 	m.mu.Unlock()
 	if notify != nil {
 		notify(ctx, update)
 	}
-	forwardChildUsage(ctx, m.parentSession, priced)
+	forwardChildUsage(ctx, m.parentSession, priced, estimated)
 }
 
 // addChild counts a sub-agent's model call in this run (the session total
 // includes the sub-agent sessions, see Store.SumUsageTree). The update
 // carries no LastInputTokens: the sub-agent's request size is not this
 // session's context size.
-func (m *runUsageMeter) addChild(ctx context.Context, priced agentcore.Usage) {
+func (m *runUsageMeter) addChild(ctx context.Context, priced agentcore.Usage, estimated ...bool) {
 	if m == nil {
 		return
 	}
 	m.notifyMu.Lock()
 	defer m.notifyMu.Unlock()
 	m.mu.Lock()
+	if len(estimated) > 0 && estimated[0] {
+		m.estimated = true
+	}
 	m.run.Usage = m.run.Usage.Add(priced)
-	update := UsageUpdate{Run: m.run, Session: m.base.Add(m.run.Usage)}
+	update := m.usageUpdateLocked(0)
 	notify := m.onModel
 	m.mu.Unlock()
 	if notify != nil {
@@ -314,11 +392,12 @@ func (m *runUsageMeter) snapshot() RunUsage {
 // session total before the turn, and every counted model call is published
 // as a "usage" event. Emit failures are only logged, like tool events.
 func (r *Runner) newRunUsageMeter(ctx context.Context, sessionID, turnID string, sink EmitFunc) *runUsageMeter {
-	m := &runUsageMeter{base: r.withSessionUsage(ctx, sessionID, RunResult{}).SessionUsage}
+	m := &runUsageMeter{base: r.withSessionUsage(ctx, sessionID, RunResult{}).SessionUsage, budget: r.cfg.Budget.normalized()}
 	m.parentSession = childOf(ctx) // the session that started this sub-agent
+	m.parentBackground = childIsBackground(ctx)
 	if sink != nil {
 		m.onModel = func(ctx context.Context, u UsageUpdate) {
-			event := Event{Kind: "usage", SessionID: sessionID, TurnID: turnID, RunID: turnID, Usage: &u}
+			event := Event{Kind: "usage", SessionID: sessionID, TurnID: turnID, RunID: turnID, Usage: &u, Budget: u.Budget}
 			if err := emit(ctx, sink, event); err != nil {
 				slog.Warn("emit usage event", "session_id", sessionID, "err", err)
 			}

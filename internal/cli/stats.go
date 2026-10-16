@@ -11,6 +11,7 @@ import (
 
 	"github.com/gookit/goutil/cflag/capp"
 	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/output/termtext"
 	"github.com/inhere/suga/internal/personal/store"
 )
 
@@ -89,15 +90,33 @@ func runStats(ctx context.Context, out io.Writer, since, session string, asJSON 
 
 func writeStatsText(out io.Writer, rep store.Report) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "MODEL\tCALLS\tERR%\tP50\tP95\tTTFT-P50\tIN\tOUT\tCACHE-R\tCACHE-W\tHIT%\tCOST")
+	hasEstimated := false
+	for _, m := range rep.Models {
+		if m.EstimatedCalls > 0 {
+			hasEstimated = true
+			break
+		}
+	}
+	if hasEstimated {
+		fmt.Fprintln(tw, "MODEL\tCALLS\tERR%\tP50\tP95\tTTFT-P50\tIN\tOUT\tCACHE-R\tCACHE-W\tHIT%\tCOST\tEST")
+	} else {
+		fmt.Fprintln(tw, "MODEL\tCALLS\tERR%\tP50\tP95\tTTFT-P50\tIN\tOUT\tCACHE-R\tCACHE-W\tHIT%\tCOST")
+	}
 	for _, m := range rep.Models {
 		ttft := "-"
 		if m.P50TTFTMs > 0 {
 			ttft = fmt.Sprintf("%dms", m.P50TTFTMs)
 		}
-		fmt.Fprintf(tw, "%s/%s\t%d\t%.1f\t%dms\t%dms\t%s\t%d\t%d\t%d\t%d\t%.1f\t$%.4f\n",
-			m.Provider, m.Model, m.Calls, m.ErrorRate*100, m.P50Ms, m.P95Ms, ttft,
-			m.InputTokens, m.OutputTokens, m.CacheRead, m.CacheWrite, m.CacheHitRate*100, m.CostUSD)
+		model := termtext.Clean(m.Provider + "/" + m.Model)
+		if hasEstimated {
+			fmt.Fprintf(tw, "%s\t%d\t%.1f\t%dms\t%dms\t%s\t%d\t%d\t%d\t%d\t%.1f\t$%.4f\t%d 次估算\n",
+				model, m.Calls, m.ErrorRate*100, m.P50Ms, m.P95Ms, ttft,
+				m.InputTokens, m.OutputTokens, m.CacheRead, m.CacheWrite, m.CacheHitRate*100, m.CostUSD, m.EstimatedCalls)
+		} else {
+			fmt.Fprintf(tw, "%s\t%d\t%.1f\t%dms\t%dms\t%s\t%d\t%d\t%d\t%d\t%.1f\t$%.4f\n",
+				model, m.Calls, m.ErrorRate*100, m.P50Ms, m.P95Ms, ttft,
+				m.InputTokens, m.OutputTokens, m.CacheRead, m.CacheWrite, m.CacheHitRate*100, m.CostUSD)
+		}
 	}
 	fmt.Fprintln(tw, "\t\t\t\t\t\t\t\t\t\t\t")
 	fmt.Fprintln(tw, "TOOL\tCALLS\tERR%\tDENIED\tP50\tP95\t\t\t\t\t\t")

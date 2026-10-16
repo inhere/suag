@@ -21,8 +21,14 @@ type Attempt struct {
 	TTFT  time.Duration
 	Usage agentcoreapi.Usage
 	Err   error
-	// ToolCalls, ReasoningChars and TextChars describe the response: how
-	// many tool calls it issued (more than one = a parallel step) and how long
+	// Estimated is true when Usage was filled by a provider-side estimator.
+	Estimated bool
+	// EstimatedInputTokens and EstimatedOutputTokens are the estimator values
+	// carried in result metadata; zero means that side had no estimate metadata.
+	EstimatedInputTokens  int
+	EstimatedOutputTokens int
+	// ToolCalls, ReasoningChars and TextChars describe the response: how many
+	// tool calls it issued (more than one = a parallel step) and how long
 	// its reasoning and text were. Zero when the attempt failed.
 	ToolCalls, ReasoningChars, TextChars int
 	// Finish is how the response ended: "tool_calls", "final", or
@@ -102,6 +108,11 @@ func report(ctx context.Context, obs AttemptObserver, prov agentcoreapi.Provider
 		StartedAt: start, Duration: time.Since(start), TTFT: ttft, Err: err,
 		Retries: retries.Retries, RetryWait: retries.Wait, RetryReason: retries.Last, RequestID: retries.RequestID}
 	if res != nil {
+		if estimated, ok := res.Metadata[agentcoreapi.UsageEstimatedMetaKey].(bool); ok {
+			a.Estimated = estimated
+		}
+		a.EstimatedInputTokens = metadataInt(res.Metadata, agentcoreapi.EstimatedInputTokensMetaKey)
+		a.EstimatedOutputTokens = metadataInt(res.Metadata, agentcoreapi.EstimatedOutputTokensMetaKey)
 		a.Usage = res.Usage
 		a.ToolCalls, a.ReasoningChars, a.TextChars = len(res.ToolCalls), len(res.Reasoning), len(res.Content)
 		a.Finish = finishOf(res)
@@ -110,6 +121,23 @@ func report(ctx context.Context, obs AttemptObserver, prov agentcoreapi.Provider
 		}
 	}
 	obs(ctx, a)
+}
+
+func metadataInt(metadata map[string]any, key string) int {
+	value, ok := metadata[key]
+	if !ok {
+		return 0
+	}
+	switch n := value.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	default:
+		return 0
+	}
 }
 
 // finishTruncated names a reply the output token limit cut off.

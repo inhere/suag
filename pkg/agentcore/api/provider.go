@@ -16,8 +16,8 @@ const (
 	StreamEventMessageStop StreamEventKind = "message_stop"
 	// StreamEventRetry announces that the request failed for a transient
 	// reason and is retried after a wait: Delta is the reason, Metadata has
-	// "attempt", "wait_ms" and "restart" (true when text of the failed attempt
-	// was already emitted; the message streams again from its start).
+	// "attempt", "wait_ms" and "restart" (true when text of the failed
+	// attempt was already emitted; the message streams again from its start).
 	StreamEventRetry StreamEventKind = "retry"
 )
 
@@ -56,6 +56,19 @@ type GenerateRequest struct {
 // ToolChoiceNone is the ToolChoice value that forbids tool calls (OpenAI
 // "none", Anthropic/Responses {"type": "none"}).
 const ToolChoiceNone = "none"
+
+// UsageEstimatedMetaKey marks GenerateResult usage that was filled or replaced
+// by the personal-layer estimator. The metadata travels with the result so the
+// runtime and observation layers keep the same estimated/real distinction.
+const UsageEstimatedMetaKey = "usage_estimated"
+
+// EstimatedInputTokensMetaKey and EstimatedOutputTokensMetaKey retain the
+// estimator's two values for observers that need to show the estimate beside
+// the normalized Usage fields.
+const (
+	EstimatedInputTokensMetaKey  = "est_input_tokens"
+	EstimatedOutputTokensMetaKey = "est_output_tokens"
+)
 
 // ToolChooser is an optional provider capability: the provider honours
 // GenerateRequest.ToolChoice. A provider without it is never asked for a reply

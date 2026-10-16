@@ -366,3 +366,33 @@ func TestUsageUpdateGoferReadsRunTotal(t *testing.T) {
 	assert.Require(t, assert.NotNil(t, got))
 	assert.Eq(t, goferUsage{Input: 10, Output: 5, CacheRead: 60, CacheWrite: 30, Total: 105, Cost: 0.25}, *got)
 }
+
+func TestUsageUpdateBudgetMetadataIsOptionalAndComplete(t *testing.T) {
+	run := personal.RunUsage{Usage: agentcore.Usage{InputTokens: 10, OutputTokens: 2}}
+	session := agentcore.Usage{InputTokens: 20, OutputTokens: 4}
+	t.Run("no budget keeps metadata unchanged", func(t *testing.T) {
+		meta := usageUpdate(run, session, 10, 200000).UsageUpdate.Meta
+		_, hasLimit := meta["budget_limit"]
+		_, hasEstimated := meta["estimated"]
+		assert.False(t, hasLimit)
+		assert.False(t, hasEstimated)
+	})
+	t.Run("configured budget exposes both dimensions and estimate", func(t *testing.T) {
+		budget := &personal.BudgetSnapshot{
+			Scope: "session", Tokens: personal.BudgetMetric{Limit: 100, Used: 120, Remaining: 0},
+			CostUSD:  personal.BudgetMetric{Limit: 2, Used: 1.25, Remaining: 0.75},
+			Exceeded: true, Reason: "max_tokens", Estimated: true,
+		}
+		meta := usageUpdate(run, session, 10, 200000, budget).UsageUpdate.Meta
+		assert.Eq(t, "session", meta["budget_scope"])
+		assert.Eq(t, true, meta["budget_exceeded"])
+		assert.Eq(t, "max_tokens", meta["budget_reason"])
+		assert.Eq(t, true, meta["estimated"])
+		limits := meta["budget_limit"].(map[string]any)
+		used := meta["budget_used"].(map[string]any)
+		remaining := meta["budget_remaining"].(map[string]any)
+		assert.Eq(t, float64(100), limits["tokens"])
+		assert.Eq(t, float64(1.25), used["cost_usd"])
+		assert.Eq(t, float64(0.75), remaining["cost_usd"])
+	})
+}

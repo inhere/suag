@@ -24,6 +24,10 @@ func EventLine(event personal.Event) (line map[string]any, ok bool) {
 		data["type"], data["status"] = "turn_end", event.State
 		if event.Usage != nil {
 			data["usage"] = personal.ReportRunUsage(event.Usage.Run)
+			if event.Usage.Estimated {
+				data["estimated"] = true
+			}
+			addBudget(data, event.Usage.Budget)
 		}
 	case "usage":
 		// Run-cumulative usage after each model call; the last one equals the
@@ -32,6 +36,16 @@ func EventLine(event personal.Event) (line map[string]any, ok bool) {
 			return nil, false
 		}
 		data["type"], data["usage"] = "usage", personal.ReportRunUsage(event.Usage.Run)
+		if event.Usage.Estimated {
+			data["estimated"] = true
+		}
+		addBudget(data, event.Usage.Budget)
+	case "budget":
+		data["type"] = "budget"
+		if event.Text != "" {
+			data["message"] = event.Text
+		}
+		addBudget(data, event.Budget)
 	case string(agentcore.StreamEventTextDelta):
 		data["type"], data["text"] = "message_delta", event.Text
 	case string(agentcore.StreamEventRetry):
@@ -81,34 +95,34 @@ func ToolResultSummary(content string) string {
 // failure was a provider error, see personal.RunResult.ErrorKind) tells a
 // transient one - a cut stream whose retries ran out - from an unusable
 // provider answer, so the caller can decide whether continuing makes sense.
-func ErrorLine(sessionID string, runErr error, result personal.RunResult) map[string]any {
+func ErrorLine(sessionID string, runErr error, result personal.RunResult, budget ...*personal.BudgetSnapshot) map[string]any {
 	line := map[string]any{"type": "error", "session_id": sessionID, "error": runErr.Error()}
 	if result.ErrorKind != "" {
 		line["error_kind"] = result.ErrorKind
 	}
-	return WithUsage(line, result)
+	return WithUsage(line, result, budget...)
 }
 
 // YieldedLine is the input_required line of a run that stopped for more input.
-func YieldedLine(sessionID string, result personal.RunResult) map[string]any {
+func YieldedLine(sessionID string, result personal.RunResult, budget ...*personal.BudgetSnapshot) map[string]any {
 	line := map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID}
 	if len(result.DeniedTools) > 0 {
 		line["denied_tools"] = result.DeniedTools
 	}
-	return WithUsage(line, result)
+	return WithUsage(line, result, budget...)
 }
 
 // DeniedLine is the input_required line of a finished turn that had refused tool calls.
-func DeniedLine(sessionID string, result personal.RunResult) map[string]any {
-	return WithUsage(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID, "denied_tools": result.DeniedTools}, result)
+func DeniedLine(sessionID string, result personal.RunResult, budget ...*personal.BudgetSnapshot) map[string]any {
+	return WithUsage(map[string]any{"type": "input_required", "session_id": sessionID, "run_id": result.RunID, "denied_tools": result.DeniedTools}, result, budget...)
 }
 
 // ResultLine is the final stream-json line of a successful run. A wrap-up
-// answer (result.WrapUp, e.g. "max_steps") carries its reason as "wrap_up", so
-// a caller can tell an answer cut short by a limit from a finished one; a
+// answer (result.WrapUp, e.g. "max_steps") carries its reason as "wrap_up",
+// so a caller can tell an answer cut short by a limit from a finished one; a
 // normal answer leaves the field out. An answer cut off at the output token
 // limit is marked the same way, with the limit as "output_limit".
-func ResultLine(sessionID string, result personal.RunResult) map[string]any {
+func ResultLine(sessionID string, result personal.RunResult, budget ...*personal.BudgetSnapshot) map[string]any {
 	line := map[string]any{
 		"type": "result", "session_id": sessionID, "run_id": result.RunID,
 		"result": result.Output, "status": result.State,
@@ -122,5 +136,5 @@ func ResultLine(sessionID string, result personal.RunResult) map[string]any {
 			line["output_limit"] = result.OutputLimit
 		}
 	}
-	return WithUsage(line, result)
+	return WithUsage(line, result, budget...)
 }

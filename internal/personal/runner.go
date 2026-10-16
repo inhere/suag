@@ -88,7 +88,10 @@ type Config struct {
 	// has) past that many tokens (uncached input plus output) or that long;
 	// 0 = no limit. Sub-agent runners set them.
 	MaxRunTokens int
-	RunTimeout   time.Duration
+	// Budget is the optional turn/session token and cost budget. A zero value
+	// keeps the historical unbounded behavior.
+	Budget     BudgetSettings
+	RunTimeout time.Duration
 	// Now is the clock of the run time limit (RunTimeout): a turn's deadline is
 	// Now()+RunTimeout and the limit hook checks Now() against it after every
 	// model call. nil means time.Now. A test injects a clock because the check
@@ -184,6 +187,9 @@ type Event struct {
 	// Usage is set on "usage" events (after each counted model call) and on
 	// "run_finished" (the final run total).
 	Usage *UsageUpdate
+	// Budget is set on budget events and on usage updates when a budget is
+	// configured. It is nil for the historical no-budget path.
+	Budget *BudgetSnapshot
 	// Retry is set on "retry" events: a model request failed for a transient
 	// reason and is retried after Wait; Text is the reason.
 	Retry *RetryInfo
@@ -319,7 +325,7 @@ func New(cfg Config) (*Runner, error) {
 		}))
 	}
 	if cfg.CompactProvider != nil {
-		cfg.CompactProvider = rec.observeProvider(cfg.CompactProvider, cfg.ProviderName, cfg.CompactModel)
+		cfg.CompactProvider = rec.observeProvider(cfg.CompactProvider, cfg.CompactProvider.Name(), cfg.CompactModel)
 	}
 	runner := &Runner{cfg: cfg, heldLocks: make(map[string]*process.SessionLock),
 		steers: make(map[string]*steerInbox), rec: rec}
@@ -678,7 +684,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	notices := &turnNotices{}
 	contextBuilder.notices = notices
 	ctx = withTurnNotices(ctx, notices)
-	runtimeHooks := r.turnHooks(usage, denials, req.Emit, result)
+	runtimeHooks := r.turnHooks(usage, meter, denials, req.Emit, result)
 	runtime := agentcore.New(agentcore.Config{
 		Provider:        r.cfg.Provider,
 		Storage:         storage,
@@ -725,9 +731,34 @@ func appendTurnInput(transcript *Transcript, sessionID string, req RunRequest) {
 // so a later hook short-circuiting the chain cannot hide a model call from the
 // usage total. The denial limit hook ends the turn before the next model call
 // once DenialLimit refusals accumulated.
-func (r *Runner) turnHooks(usage *usageCollector, denials *turnDenials, sink EmitFunc, result RunResult) []agentcore.Hook {
-	hooks := append([]agentcore.Hook{usage, denialLimitHook{denials: denials, usage: usage},
-		prefixHook{tracker: r.rec.prefix}}, r.cfg.Hooks...)
+func (r *Runner) turnHooks(usage *usageCollector, meter *runUsageMeter, denials *turnDenials, sink EmitFunc, result RunResult) []agentcore.Hook {
+	hooks := []agentcore.Hook{usage}
+	if r.cfg.Budget.enabled() {
+		settings := r.cfg.Budget.normalized()
+		var priceAvailable bool
+		if r.cfg.Price != nil {
+			_, priceAvailable = r.cfg.Price(r.cfg.ProviderName, r.cfg.Model)
+		}
+		budget := &budgetHook{settings: settings, meter: meter, usage: usage, priceAvailable: priceAvailable,
+			sessionID: result.SessionID, turnID: result.TurnID}
+		budget.onBudget = func(ctx context.Context, snapshot BudgetSnapshot, reason string) {
+			r.rec.record(ctx, budgetEvent(result.SessionID, result.TurnID, "exceeded", snapshot, reason))
+			if err := emit(ctx, sink, Event{Kind: "budget", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Budget: &snapshot}); err != nil {
+				slog.Warn("emit budget event", "session_id", result.SessionID, "err", err)
+			}
+		}
+		budget.onWarning = func(ctx context.Context, message string) {
+			snapshot := meter.budgetSnapshot()
+			r.rec.record(ctx, budgetWarningEvent(result.SessionID, result.TurnID, snapshot, message))
+			if err := emit(ctx, sink, Event{Kind: "budget", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Text: message, Budget: &snapshot}); err != nil {
+				slog.Warn("emit budget warning", "session_id", result.SessionID, "err", err)
+			}
+		}
+		hooks = append(hooks, budget)
+	}
+	hooks = append(hooks, denialLimitHook{denials: denials, usage: usage},
+		prefixHook{tracker: r.rec.prefix})
+	hooks = append(hooks, r.cfg.Hooks...)
 	if r.cfg.MaxRunTokens > 0 || r.cfg.RunTimeout > 0 {
 		limits := limitHook{maxTokens: r.cfg.MaxRunTokens, now: r.clock()}
 		if r.cfg.RunTimeout > 0 {

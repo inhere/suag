@@ -45,10 +45,13 @@ func (s *sessionState) lastContextSize(a *Agent) int {
 //
 // used is the context size of the latest request; size is the model context
 // window; cost (the ACP field) stays session-cumulative.
-func usageUpdate(run personal.RunUsage, session agentcore.Usage, used, size int) acp.SessionUpdate {
+func usageUpdate(run personal.RunUsage, session agentcore.Usage, used, size int, budget ...*personal.BudgetSnapshot) acp.SessionUpdate {
 	meta := runUsageMeta(run)
 	meta["run"] = runUsageMeta(run)
 	meta["session"] = sessionUsageMeta(session)
+	if len(budget) > 0 {
+		addBudgetMeta(meta, budget[0])
+	}
 	update := &acp.SessionUsageUpdate{Used: used, Size: size, Meta: meta}
 	if cost := personal.ReportUsage(session).CostUSD; cost != 0 {
 		update.Cost = &acp.Cost{Amount: cost, Currency: "USD"}
@@ -71,5 +74,38 @@ func sessionUsageMeta(session agentcore.Usage) map[string]any {
 		"input_tokens": rep.InputTokens, "output_tokens": rep.OutputTokens,
 		"cache_read_tokens": rep.CacheReadTokens, "cache_write_tokens": rep.CacheWriteTokens,
 		"total_tokens": rep.TotalTokens, "cost_usd": rep.CostUSD,
+	}
+}
+
+// addBudgetMeta exposes the optional budget view through ACP's reserved _meta
+// object. Maps keep token and cost limits independent when both are configured,
+// while the flat names remain easy for clients to consume.
+func addBudgetMeta(meta map[string]any, snapshot *personal.BudgetSnapshot) {
+	if snapshot == nil || snapshot.Scope == "" {
+		return
+	}
+	limits := make(map[string]any)
+	used := make(map[string]any)
+	remaining := make(map[string]any)
+	if snapshot.Tokens.Limit > 0 {
+		limits["tokens"] = snapshot.Tokens.Limit
+		used["tokens"] = snapshot.Tokens.Used
+		remaining["tokens"] = snapshot.Tokens.Remaining
+	}
+	if snapshot.CostUSD.Limit > 0 {
+		limits["cost_usd"] = snapshot.CostUSD.Limit
+		used["cost_usd"] = snapshot.CostUSD.Used
+		remaining["cost_usd"] = snapshot.CostUSD.Remaining
+	}
+	meta["budget_scope"] = snapshot.Scope
+	meta["budget_limit"] = limits
+	meta["budget_used"] = used
+	meta["budget_remaining"] = remaining
+	meta["budget_exceeded"] = snapshot.Exceeded
+	if snapshot.Reason != "" {
+		meta["budget_reason"] = snapshot.Reason
+	}
+	if snapshot.Estimated {
+		meta["estimated"] = true
 	}
 }

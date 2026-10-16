@@ -20,6 +20,12 @@ func TestMain(m *testing.M) {
 	_ = os.Unsetenv("SUGA_MODEL")
 	_ = os.Unsetenv("SUGA_MAX_STEPS")
 	_ = os.Unsetenv("SUGA_MAX_OUTPUT_TOKENS")
+	for _, key := range []string{
+		"SUGA_BUDGET_TOKENS", "SUGA_BUDGET_COST_USD", "SUGA_BUDGET_SCOPE",
+		"SUGA_BUDGET_ESTIMATE", "SUGA_BUDGET_ESTIMATE_FACTOR", "SUGA_BUDGET_NOTICE_RATIO",
+	} {
+		_ = os.Unsetenv(key)
+	}
 	_ = os.Setenv("SUGA_HOOKS", "off")
 	code := m.Run()
 	_ = os.RemoveAll(home)

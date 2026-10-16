@@ -187,6 +187,80 @@ gofer job resume <job-id> --prompt "继续上个问题"
 - `suga run --injected` 把本轮输入标记为非人工输入，transcript 和 hook 事件中都会体现。
 - `suga run --max-steps N`（N 至少 1）覆盖本轮的步数上限，优先于环境变量 `SUGA_MAX_STEPS`，再优先于配置 `max_steps`（默认 240）；子 agent 的 `agents.max_steps` 不受影响。要在 Gofer 里限制 CLI job 的单轮步数，在该 agent 的 args 中加 `--max-steps`，或给 worker 进程设 `SUGA_MAX_STEPS`。
 
+### Gofer job 的回合/会话预算
+
+预算默认关闭；只有 `budget.tokens` 或 `budget.cost_usd` 配置为非零值时才启用。run 和 chat 共用下面三个 flag，优先级都是 **flag > 环境变量 > Suga 配置**：
+
+| 目的 | flag | 环境变量 | 取值 |
+|---|---|---|---|
+| token 上限 | `--budget-tokens N` | `SUGA_BUDGET_TOKENS` | 大于等于 0 的整数 |
+| 成本上限 | `--budget-cost-usd USD` | `SUGA_BUDGET_COST_USD` | 大于等于 0 的数字，单位美元 |
+| 计量范围 | `--budget-scope turn\|session` | `SUGA_BUDGET_SCOPE` | `turn` 或 `session`，不区分大小写 |
+
+`scope` 默认是 `turn`。`turn` 只限制一次 `suga run` 回合（chat 中则是当前回合）；`session` 还会把该会话历史回合及子 agent 的用量累计进去。预算不是进程级或跨会话配额，也不改变 `agents.max_tokens`。只设置其中一个上限也可以；两个上限同时设置时任一超限都会触发收尾。flag 也可直接放进 Gofer agent 的 `args`，例如 `args: [run, --budget-tokens, "200000", --prompt, "{{prompt}}"]`。
+
+需要持久配置时，在 Suga 的 `SUGA_HOME/config.yaml`（通常是 `~/.suga/config.yaml`）中写：
+
+```yaml
+budget:
+  tokens: 200000
+  cost_usd: 2.00
+  scope: turn
+  # estimate: auto       # auto（默认）、on 或 off；没有对应 CLI flag
+  # estimate_factor: 1.0 # 大于 1 可显式取更保守的估算
+  # notice_ratio: 0.8    # chat 达到该比例时每回合提醒一次
+```
+
+#### 在 Gofer job 中注入
+
+Gofer 不需要为预算增加协议字段；将环境变量注入 `suga` agent，worker 启动的 `suga run` 或 `suga chat` 会自动读取。例如 Gofer 配置可以写成：
+
+```yaml
+agents:
+  suga:
+    type: cli-agent
+    command: suga
+    env:
+      SUGA_BUDGET_TOKENS: "200000"
+      SUGA_BUDGET_COST_USD: "2.00"
+      SUGA_BUDGET_SCOPE: turn
+    args: [run, --output-format, stream-json, --prompt, "{{prompt}}"]
+```
+
+也可以只给特定 job 的进程环境设置同名变量；不要把它们误写成 `SUGA_MAX_TOKENS`，后者不是 Suga 的预算变量。使用 `--budget-*` 时，flag 只覆盖对应的环境变量和配置项；没有设置 flag 的其它预算字段仍按各自的环境变量/配置解析。
+
+#### 用量口径、估算与成本告警
+
+预算 token 的消耗是：
+
+```text
+max(input_tokens - cache_read_tokens, 0) + output_tokens
+```
+
+缓存读不计入消耗；缓存写仍包含在 provider 的 `input_tokens` 中，因此按该口径计入。压缩、交接等内部模型请求以及子 agent 默认也计入。provider 返回的 `cost_usd` 优先；否则按 `providers.<id>.models.<model>.price.*` 价格表计算，价格单位是美元/百万 token：
+
+```yaml
+providers:
+  bailian:
+    models:
+      glm-5:
+        price:
+          input: 1.0
+          output: 3.0
+          cache_read: 0.2
+          cache_write: 1.0
+```
+
+provider 既不返回成本、价格表也没有对应模型时，Suga 会告警，**成本预算不会生效**，不会猜价格。provider 缺少 token 用量时，默认 `budget.estimate: auto` 会使用本地字符/rune 估算，并在 usage、trace 和输出中标记 `estimated`；设为 `off` 时会告警且该次预算用量按 0 计。估算是预算用的近似值，不是未标记的计费真值。
+
+#### Suga 软收尾与 Gofer 硬熔断
+
+Suga 的预算是软阈值：普通回合在一次模型请求完成、观察到用量超限后，通过已有 wrap-up 机制请求模型最后汇报，回合以 `completed` 和预算原因结束；不会在模型请求中途硬杀进程。`session` 已经用尽时，下一回合在首个模型请求前短路，不调用模型，但用户消息仍保留在会话中。文本模式会在 stderr 说明原因，stream-json/trace 也会带 `wrap_up` 和预算快照；stdout 的答复正文不变。
+
+一次普通回合的超出量不能保证只多一次模型请求。运维核对最坏上界时，还要考虑触发超限的请求、收尾请求、收尾前的 compact/segment handoff、空回复重试（最多 2 次）、忽略收尾时的无工具重试、已报告用量的 provider 重试，以及同时运行的子 agent 自身限制；后台子 agent 不会因父回合收尾被取消。预算因此不是硬上限。
+
+Gofer 的 `--max-tokens`/`--max-cost` 是进程外的硬熔断，可能在 Suga 软收尾前直接终止 job，终止时不保证有完整答复或 trace 收尾事件。运维应根据历史缓存命中比例，把 `SUGA_BUDGET_TOKENS`/`SUGA_BUDGET_COST_USD`（或对应 flag）设在 Gofer 硬上限之前，并持续复测；Gofer 的硬上限优先于 Suga 的软收尾。默认给 Gofer job 使用 `scope: turn`，需要限制整个会话生命周期时才选择 `session`。
+
 ## ACP 常驻与审批
 
 ```powershell

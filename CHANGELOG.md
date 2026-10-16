@@ -6,6 +6,17 @@
 
 ### 新增
 
+- run/chat 新增回合或会话级 token、成本预算的配置读取与 `--budget-tokens`、`--budget-cost-usd`、`--budget-scope` flags，支持环境变量覆盖。
+- Gofer 用法文档补充预算环境变量注入、turn/session 选择、缓存扣除口径，以及 Suga 软收尾和 Gofer 硬熔断的边界。
+
+- 预算回合在达到 token 或成本上限后通过现有 wrap-up 机制收尾，并记录可辨识的 budget 事件、用量快照与无价表/关闭估算警告。
+- 会话预算耗尽时在用户消息落库后于首个模型请求前短路收尾；后台子 agent 的挂起用量计入会话但不挤占下一回合的 turn 预算。
+- 前台子 agent 在父回合预算耗尽时协同收尾，后台子 agent 不受父回合预算收尾影响并继续使用自身限制。
+- 预算启用时主 provider、fallback、compact 与子 agent provider 统一补齐缺失用量估算，并保留各 provider 的模型与流式/tool-choice 能力。
+- chat 状态行显示回合/会话预算占用、估算标记与一次性提醒；预算收尾、会话短路、插话后的新回合及未配置回归加入伪终端冒烟。
+- chat 预算回合的最终用量快照与 wrap-up 原因保持一致；会话预算短路不再打印空答复前缀。
+- ACP 预算收尾继续返回 `end_turn`，`usage_update` 的 `_meta` 在启用预算时可选暴露 scope、limit、used、remaining、exceeded、reason 与 `estimated`；未配置预算时保持兼容。
+
 - 自动识别 idev-std 发行目录与工作空间的 `tmp/idev-std` 加载产物目录为只读根，可通过 `tools.standards_roots` 关闭；支持 `IDEV_STD_RELEASES_ROOT` 与兼容的 `INHERE_DEV_STANDARDS_ROOT`。
 - chat 增加可脱敏持久化的本地输入历史（Up/Down、Ctrl+R 反查）与 `:` 命令/目录 Tab 补全，可通过 `chat.history` 和 `chat.history_size` 配置。
 - chat 新增 `:model` 查看并从下一回合切换已配置模型，显示 thinking、上下文窗口与输出上限；切换保留 fallback、持久化到会话并写入 `model_switch` trace 事件，续接时沿用（显式 `--model` 优先）。

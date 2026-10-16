@@ -101,6 +101,17 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	denials := turnDenialsFrom(ctx)
 	result.DeniedTools, result.DenialLimitReached = denials.tools(), denials.limitReached()
 
+	// A final answer can itself cross the budget: there is no following model
+	// request to carry the wrap-up instruction, but the completed turn still
+	// needs the same budget reason as a normal soft wrap-up. Background children
+	// deliberately remain governed by their own limits, not the parent budget.
+	meter := runUsageFrom(ctx)
+	if result.Status == agentcore.RunCompleted && result.WrapUp == "" && r.cfg.Budget.enabled() && !meter.parentBackground {
+		snapshot := meter.budgetSnapshot()
+		if snapshot.Exceeded {
+			result.WrapUp = budgetReason(r.cfg.Budget.normalized(), snapshot)
+		}
+	}
 	// A yielded turn is stored as completed (its messages become history for the
 	// next turn) but reported to callers as INPUT_REQUIRED.
 	runState, turnStatus, stopReason := RunCompleted, store.TurnCompleted, ""
@@ -177,7 +188,7 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	// Session-cumulative usage is derived from the model events of the session,
 	// which already include this turn's calls (written synchronously above).
 	result = r.withSessionUsage(finishCtx, model.ID, result)
-	result.RunUsage = runUsageFrom(ctx).snapshot()
+	result.RunUsage = meter.snapshot()
 	// Back to open with the current metadata (status columns only).
 	if fresh, err := r.cfg.Repository.GetSession(finishCtx, model.ID); err != nil {
 		persistErr = errors.Join(persistErr, err)
@@ -187,7 +198,15 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 			persistErr = errors.Join(persistErr, err)
 		}
 	}
-	final := &UsageUpdate{Run: result.RunUsage, Session: result.SessionUsage}
+	// The final budget snapshot is the transport source for chat and stream-json;
+	// carry the completed result's wrap-up reason into it instead of replacing it
+	// with the reason-less snapshot from the last model usage update.
+	finalUpdate := meter.usageUpdate()
+	if finalUpdate.Budget != nil && finalUpdate.Budget.Exceeded && result.WrapUp != "" {
+		finalUpdate.Budget.Reason = result.WrapUp
+	}
+	finalUpdate.Run, finalUpdate.Session = result.RunUsage, result.SessionUsage
+	final := &finalUpdate
 	if err := emit(finishCtx, sink, Event{Kind: "run_finished", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Status: result.Status, State: result.State, Text: result.Output, Usage: final}); err != nil {
 		persistErr = errors.Join(persistErr, err)
 	}

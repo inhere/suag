@@ -47,6 +47,9 @@ type ChildRequest struct {
 	// up (Config.RunTimeout of the child runner does that); a minute later the
 	// run is cancelled and the last answer text is the report.
 	Timeout time.Duration
+	// Background children keep running under their own limits and do not use the
+	// parent's budget to request a wrap-up.
+	Background bool
 	// Emit receives the sub-agent's progress ("agent_progress" events: its
 	// tool calls); nil drops them.
 	Emit EmitFunc
@@ -82,6 +85,7 @@ func RunChild(ctx context.Context, child *Runner, req ChildRequest) (ChildResult
 	}
 	out := ChildResult{SessionID: sess.ID}
 	runCtx := withChildOf(ctx, req.ParentSession)
+	runCtx = withChildBackground(runCtx, req.Background)
 	if req.Timeout > 0 {
 		var cancel context.CancelFunc
 		runCtx, cancel = context.WithTimeout(runCtx, req.Timeout+childHardGrace)

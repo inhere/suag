@@ -15,16 +15,18 @@ import (
 	appconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore"
 )
 
 const okBody = `{"choices":[{"message":{"content":"ok-from-%s"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`
+const noUsageBody = `{"choices":[{"message":{"content":"ok-from-%s"},"finish_reason":"stop"}]}`
 
 // resetConfig isolates the global config and the provider-related environment.
 func resetConfig(t *testing.T) {
 	t.Helper()
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)
-	for _, k := range []string{"SUGA_MODEL", "SUGA_PROVIDER", "SUGA_MAX_STEPS", "SUGA_MAX_OUTPUT_TOKENS", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "IDEV_STD_RELEASES_ROOT", "INHERE_DEV_STANDARDS_ROOT"} {
+	for _, k := range []string{"SUGA_MODEL", "SUGA_PROVIDER", "SUGA_MAX_STEPS", "SUGA_MAX_OUTPUT_TOKENS", "SUGA_BUDGET_TOKENS", "SUGA_BUDGET_COST_USD", "SUGA_BUDGET_SCOPE", "SUGA_BUDGET_ESTIMATE", "SUGA_BUDGET_ESTIMATE_FACTOR", "SUGA_BUDGET_NOTICE_RATIO", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "IDEV_STD_RELEASES_ROOT", "INHERE_DEV_STANDARDS_ROOT"} {
 		t.Setenv(k, "")
 	}
 }
@@ -32,6 +34,25 @@ func resetConfig(t *testing.T) {
 func setProviders(t *testing.T, providers map[string]any) {
 	t.Helper()
 	assert.NoErr(t, gkconfig.Set("providers", providers))
+}
+
+// noUsageServer answers without a provider usage object.
+func noUsageServer(t *testing.T, status int, name string, hits *atomic.Int32) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits != nil {
+			hits.Add(1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if status == http.StatusOK {
+			_, _ = w.Write([]byte(strings.Replace(noUsageBody, "%s", name, 1)))
+			return
+		}
+		_, _ = w.Write([]byte(`{"error":{"message":"nope"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
 }
 
 // fakeServer answers every request with the given status and a fixed reply.
@@ -230,4 +251,57 @@ func TestRuntimeSwitchPreservesFallbackModels(t *testing.T) {
 	mu.Lock()
 	assert.Eq(t, []string{"m2", "fallback"}, seen)
 	mu.Unlock()
+}
+
+func TestBudgetWrapsEveryPoolMemberBeforeObservation(t *testing.T) {
+	resetConfig(t)
+	var mainHits, backupHits atomic.Int32
+	bad := noUsageServer(t, http.StatusUnauthorized, "main", &mainHits)
+	good := noUsageServer(t, http.StatusOK, "backup", &backupHits)
+	assert.NoErr(t, gkconfig.Set("model", "primary/m1"))
+	assert.NoErr(t, gkconfig.Set("fallback_models", []string{"backup/m2"}))
+	setProviders(t, map[string]any{
+		"primary": map[string]any{"type": "openai", "api_key": "k", "base_url": bad.URL},
+		"backup":  map[string]any{"type": "openai", "api_key": "k", "base_url": good.URL},
+	})
+	t.Setenv("SUGA_BUDGET_TOKENS", "100")
+	rt := openTestRuntime(t, "")
+	res, err := rt.Runner.Run(context.Background(), personal.RunRequest{Prompt: "hi"})
+	assert.NoErr(t, err)
+	assert.Eq(t, int32(1), mainHits.Load())
+	assert.Eq(t, int32(1), backupHits.Load())
+
+	events := modelEvents(t, rt, res.SessionID)
+	assert.Require(t, assert.Eq(t, 2, len(events)))
+	assert.Eq(t, "backup", events[1].Name)
+	assert.Eq(t, "m2", events[1].Attrs["model"])
+	assert.Eq(t, true, events[1].Attrs["estimated"])
+	assert.True(t, events[1].InputTokens > 0)
+	assert.True(t, events[1].OutputTokens > 0)
+
+	settings, err := appconfig.ReadModelSettings("")
+	assert.NoErr(t, err)
+	provider, err := buildMainProviderWithEstimate(settings, estimateOptionsForBudget(100, 0, "auto", 1))
+	assert.NoErr(t, err)
+	_, streaming := provider.(agentcore.StreamingProvider)
+	assert.True(t, streaming)
+	chooser, hasChooser := provider.(agentcore.ToolChooser)
+	assert.Require(t, assert.True(t, hasChooser))
+	assert.True(t, chooser.SupportsToolChoice())
+}
+
+func TestBudgetEstimatorRemainsOffWithoutLimits(t *testing.T) {
+	resetConfig(t)
+	server := noUsageServer(t, http.StatusOK, "plain", nil)
+	assert.NoErr(t, gkconfig.Set("model", "fake/m1"))
+	setProviders(t, map[string]any{"fake": map[string]any{"type": "openai", "api_key": "k", "base_url": server.URL}})
+	rt := openTestRuntime(t, "")
+	res, err := rt.Runner.Run(context.Background(), personal.RunRequest{Prompt: "hi"})
+	assert.NoErr(t, err)
+	events := modelEvents(t, rt, res.SessionID)
+	assert.Require(t, assert.Eq(t, 1, len(events)))
+	_, estimated := events[0].Attrs["estimated"]
+	assert.False(t, estimated)
+	assert.Eq(t, int64(0), events[0].InputTokens)
+	assert.Eq(t, int64(0), events[0].OutputTokens)
 }

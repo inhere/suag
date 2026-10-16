@@ -85,6 +85,7 @@ type acpTestOptions struct {
 	// failRules, when set to true, makes the rule source fail so a turn dies
 	// before the runner finishes it.
 	failRules *atomic.Bool
+	budget    personal.BudgetSettings
 }
 
 func testACPRuntimeWith(t *testing.T, provider agentcore.Provider, tool *countingTool, opts acpTestOptions) OpenRuntime {
@@ -110,7 +111,7 @@ func testACPRuntimeWith(t *testing.T, provider agentcore.Provider, tool *countin
 		}
 		plans := personal.NewPlanRecorder()
 		registry.Register(native.NewUpdatePlanTool(plans))
-		cfg := personal.Config{Repository: repo, Provider: provider, Tools: tools.NewApproval(registry, approver), Hooks: hooks, Plans: plans}
+		cfg := personal.Config{Repository: repo, Provider: provider, Tools: tools.NewApproval(registry, approver), Hooks: hooks, Plans: plans, Budget: opts.budget}
 		if opts.failRules != nil {
 			cfg.RuleSource = func() (string, string, error) {
 				if opts.failRules.Load() {
@@ -152,6 +153,28 @@ type countingTool struct {
 }
 
 type countedUsageProvider struct{ *mock.Provider }
+
+type truncatedACPProvider struct {
+	*mock.Provider
+	calls      atomic.Int32
+	truncateOn int32
+	withUsage  bool
+}
+
+func (p *truncatedACPProvider) Stream(ctx context.Context, req *agentcore.GenerateRequest, emit agentcore.StreamFunc) (*agentcore.GenerateResult, error) {
+	result, err := p.Provider.Stream(ctx, req, emit)
+	call := p.calls.Add(1)
+	if result != nil {
+		if p.withUsage {
+			result.Usage = agentcore.Usage{InputTokens: 7, OutputTokens: 3, TotalTokens: 10, CacheReadTokens: 2, CostUSD: 0.25}
+		}
+		if call == p.truncateOn {
+			result.Truncated = true
+			result.OutputLimit = 32
+		}
+	}
+	return result, err
+}
 
 func (p countedUsageProvider) Stream(ctx context.Context, req *agentcore.GenerateRequest, emit agentcore.StreamFunc) (*agentcore.GenerateResult, error) {
 	result, err := p.Provider.Stream(ctx, req, emit)
@@ -605,4 +628,56 @@ func TestPersonalACPMCPToolNamedLikeReadToolStillAsks(t *testing.T) {
 			assert.Eq(t, int32(1), tool.calls.Load())
 		})
 	}
+}
+
+func TestPersonalACPBudgetWrapUpUsesEndTurnAndMetadata(t *testing.T) {
+	provider := countedUsageProvider{mock.NewProvider(mock.Final("first"), mock.Final("wrap-up"))}
+	client := &testACPClient{}
+	open := testACPRuntimeWith(t, provider, nil, acpTestOptions{budget: personal.BudgetSettings{Tokens: 5, Scope: "turn"}})
+	conn := connectPersonalACP(t, open, client)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+	assert.Require(t, assert.NoErr(t, err))
+	response, err := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("budget")}})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, acp.StopReasonEndTurn, response.StopReason)
+	updates := usageUpdates(client)
+	assert.Gt(t, len(updates), 1)
+	meta := updates[len(updates)-1].Meta
+	assert.Eq(t, "turn", meta["budget_scope"])
+	assert.Eq(t, true, meta["budget_exceeded"])
+	assert.Eq(t, "max_tokens", meta["budget_reason"])
+	assert.False(t, meta["estimated"] == true)
+	limits := meta["budget_limit"].(map[string]any)
+	used := meta["budget_used"].(map[string]any)
+	assert.Eq(t, float64(5), limits["tokens"])
+	assert.Gt(t, used["tokens"].(float64), float64(4))
+}
+
+func TestPersonalACPProviderTruncationKeepsEndTurn(t *testing.T) {
+	provider := &truncatedACPProvider{Provider: mock.NewProvider(mock.Final("cut")), truncateOn: 1}
+	client := &testACPClient{}
+	conn := connectPersonalACP(t, testACPRuntime(t, provider, nil), client)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+	assert.Require(t, assert.NoErr(t, err))
+	response, err := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("truncate")}})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, acp.StopReasonEndTurn, response.StopReason)
+}
+
+func TestPersonalACPBudgetWrapUpAndTruncationKeepEndTurn(t *testing.T) {
+	provider := &truncatedACPProvider{Provider: mock.NewProvider(mock.Final("first"), mock.Final("cut wrap-up")), truncateOn: 2, withUsage: true}
+	client := &testACPClient{}
+	open := testACPRuntimeWith(t, provider, nil, acpTestOptions{budget: personal.BudgetSettings{Tokens: 5, Scope: "turn"}})
+	conn := connectPersonalACP(t, open, client)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+	assert.Require(t, assert.NoErr(t, err))
+	response, err := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("truncate wrap-up")}})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, acp.StopReasonEndTurn, response.StopReason)
 }

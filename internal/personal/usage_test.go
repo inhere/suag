@@ -288,3 +288,27 @@ func TestChildRunUsage(t *testing.T) {
 		assert.Eq(t, 0, again.snapshot().Usage.InputTokens) // taken once
 	})
 }
+
+func TestPendingChildUsageIsHeldOutOfNextTurnBudget(t *testing.T) {
+	ctx := context.Background()
+	used := agentcore.Usage{InputTokens: 8, OutputTokens: 2, TotalTokens: 10, CostUSD: 0.25}
+	child := &runUsageMeter{parentSession: childOf(withChildOf(ctx, "pending-budget"))}
+	child.addModel(ctx, used, used, false)
+
+	next := &runUsageMeter{
+		base:   used,
+		budget: BudgetSettings{Tokens: 5, Scope: "session"},
+	}
+	end := activateMeter("pending-budget", next)
+	defer end()
+
+	session := next.budgetSnapshot()
+	assert.True(t, session.Exceeded)
+	assert.Eq(t, float64(10), session.Tokens.Used)
+
+	next.budget.Scope = "turn"
+	turn := next.budgetSnapshot()
+	assert.False(t, turn.Exceeded)
+	assert.Eq(t, float64(0), turn.Tokens.Used)
+	assert.Eq(t, used, next.base.Add(next.run.Usage))
+}
