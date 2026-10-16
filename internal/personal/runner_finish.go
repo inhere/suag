@@ -103,9 +103,11 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 
 	// A final answer can itself cross the budget: there is no following model
 	// request to carry the wrap-up instruction, but the completed turn still
-	// needs the same budget reason as a normal soft wrap-up.
-	if result.Status == agentcore.RunCompleted && result.WrapUp == "" && r.cfg.Budget.enabled() {
-		snapshot := runUsageFrom(ctx).budgetSnapshot()
+	// needs the same budget reason as a normal soft wrap-up. Background children
+	// deliberately remain governed by their own limits, not the parent budget.
+	meter := runUsageFrom(ctx)
+	if result.Status == agentcore.RunCompleted && result.WrapUp == "" && r.cfg.Budget.enabled() && !meter.parentBackground {
+		snapshot := meter.budgetSnapshot()
 		if snapshot.Exceeded {
 			result.WrapUp = budgetReason(r.cfg.Budget.normalized(), snapshot)
 		}
@@ -186,7 +188,7 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	// Session-cumulative usage is derived from the model events of the session,
 	// which already include this turn's calls (written synchronously above).
 	result = r.withSessionUsage(finishCtx, model.ID, result)
-	result.RunUsage = runUsageFrom(ctx).snapshot()
+	result.RunUsage = meter.snapshot()
 	// Back to open with the current metadata (status columns only).
 	if fresh, err := r.cfg.Repository.GetSession(finishCtx, model.ID); err != nil {
 		persistErr = errors.Join(persistErr, err)
@@ -199,7 +201,7 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	// The final budget snapshot is the transport source for chat and stream-json;
 	// carry the completed result's wrap-up reason into it instead of replacing it
 	// with the reason-less snapshot from the last model usage update.
-	finalUpdate := runUsageFrom(ctx).usageUpdate()
+	finalUpdate := meter.usageUpdate()
 	if finalUpdate.Budget != nil && finalUpdate.Budget.Exceeded && result.WrapUp != "" {
 		finalUpdate.Budget.Reason = result.WrapUp
 	}
