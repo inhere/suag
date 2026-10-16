@@ -579,7 +579,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	// arriving earlier is not accepted and becomes the caller's next turn. finish
 	// closes it (the defer is only the safety net for a panic). The builder takes
 	// the pending steers before every non-wrap-up request and reports them.
-	inbox := r.openSteerInbox(model.ID)
+	inbox := r.openSteerInbox(model.ID, turnID)
 	defer r.dropSteerInbox(model.ID, inbox)
 	contextBuilder.steers, contextBuilder.emit = inbox, req.Emit
 	ctx = withSteerInbox(ctx, inbox)

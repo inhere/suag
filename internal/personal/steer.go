@@ -17,7 +17,9 @@ import (
 // "personal：会话收件箱"). A steer enters the session's inbox, the turn's next
 // model request takes it before the request goes out (takeSteers), and whatever
 // the turn did not deliver is handed back to the caller when it ends (finish).
-// Nothing a person typed is dropped.
+// Nothing a person typed is dropped; a steer no request has taken yet can also be
+// taken back before that (WithdrawSteers), so chat can hand it to the person for
+// editing again.
 
 // steerCapacity is how many steers one session's inbox holds (design D11).
 const steerCapacity = 8
@@ -73,6 +75,11 @@ type Steer struct {
 type steerInbox struct {
 	mu     sync.Mutex
 	closed bool
+	// turnID is the turn the inbox was opened for: a withdrawal is recorded in
+	// the trace as an event of it, next to the deliveries and returns (turnID is
+	// written by openSteerInbox before the inbox is published, so it is never
+	// read while it changes).
+	turnID string
 	// pending are the steers no model request has taken yet, taken the ones a
 	// request of this turn already carried in its context.
 	pending []Steer
@@ -120,6 +127,38 @@ func (in *steerInbox) take() []Steer {
 	return out
 }
 
+// withdraw takes every pending steer accept matches out of the inbox and returns
+// them in the order they arrived, leaving the others waiting. It is the
+// counterpart of take, and the inbox lock is what makes the two mutually
+// exclusive: a steer a model request already took is in taken and can no longer
+// be withdrawn, and a withdrawn steer is gone before any later request could take
+// it. Nothing is withdrawn once the inbox is closed (the turn's outcome is being
+// decided and returned hands the pending steers to the caller itself), and a nil
+// accept matches every pending steer.
+func (in *steerInbox) withdraw(accept func(Steer) bool) []Steer {
+	if in == nil {
+		return nil
+	}
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.closed || len(in.pending) == 0 {
+		return nil
+	}
+	var out, waiting []Steer
+	for _, s := range in.pending {
+		if accept == nil || accept(s) {
+			out = append(out, s)
+			continue
+		}
+		waiting = append(waiting, s)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	in.pending = waiting
+	return out
+}
+
 // close stops accepting steers (the turn is ending).
 func (in *steerInbox) close() {
 	if in == nil {
@@ -155,9 +194,10 @@ func (in *steerInbox) returned(completed bool) []Steer {
 // openSteerInbox opens the session's inbox for the turn about to run, replacing
 // any left over from an earlier turn. Run calls it after every early return,
 // right before calling the runtime: a Steer arriving earlier is not accepted
-// (design N7) and becomes the caller's next turn.
-func (r *Runner) openSteerInbox(sessionID string) *steerInbox {
-	in := &steerInbox{}
+// (design N7) and becomes the caller's next turn. turnID is the turn the inbox
+// belongs to; a withdrawal is recorded as an event of it.
+func (r *Runner) openSteerInbox(sessionID, turnID string) *steerInbox {
+	in := &steerInbox{turnID: turnID}
 	r.steerMu.Lock()
 	defer r.steerMu.Unlock()
 	if r.steers == nil {
@@ -190,6 +230,43 @@ func (r *Runner) Steer(sessionID string, msg Steer) (bool, error) {
 	in := r.steers[sessionID]
 	r.steerMu.Unlock()
 	return in.push(msg)
+}
+
+// isKeyboardSteer reports whether a steer was typed at this keyboard rather than
+// sent from elsewhere (`suga send --steer`): the ones a withdrawal takes back
+// (WithdrawSteers, chat's Up key on an empty input line).
+func isKeyboardSteer(s Steer) bool { return s.Source == SteerSourceKeyboard }
+
+// WithdrawSteers takes the session's pending steers accept matches back out of the
+// running turn's inbox and returns them in the order they were typed; the ones a
+// model request of that turn already took stay in the turn's history and are not
+// withdrawn. accept=nil takes back the ones the person typed at this keyboard
+// (SteerSourceKeyboard): a message a `suga send --steer` caller sent is not
+// withdrawn, its sender is waiting for its own fate. Nothing is withdrawn when no
+// turn of the session runs in this process, when nothing matches, or when the turn
+// is already closing (its outcome is being decided and it hands the pending steers
+// back itself).
+//
+// Each withdrawn steer is recorded in the trace as a "withdrawn" steer event of
+// the turn, so `suga trace` shows what a turn did not receive after all. Chat puts
+// the returned text back on the input line for editing (design "chat：退回插话的
+// 处理").
+func (r *Runner) WithdrawSteers(sessionID string, accept func(Steer) bool) []Steer {
+	if accept == nil {
+		accept = isKeyboardSteer
+	}
+	r.steerMu.Lock()
+	in := r.steers[sessionID]
+	r.steerMu.Unlock()
+	steers := in.withdraw(accept)
+	// The record is written outside any turn context; the inbox carries the turn
+	// it belongs to, so the event lands in that turn's timeline like a delivery or
+	// a return does.
+	for _, s := range steers {
+		r.rec.record(context.Background(), steerEvent(sessionID, in.turnID, "withdrawn", s,
+			map[string]any{"count": len(steers)}))
+	}
+	return steers
 }
 
 // steerInboxKey carries the turn's open inbox to finish (which closes it and
@@ -293,7 +370,8 @@ func steerReturnReasons(turnStatus string) (reason, disposition string) {
 }
 
 // steerEvent is one trace record of a steering message: kind steer, name is
-// "delivered" or "returned" (which adds reason and disposition).
+// "delivered", "returned" (which adds reason and disposition) or "withdrawn"
+// (which adds count, the size of the withdrawal it belongs to).
 func steerEvent(sessionID, turnID, name string, s Steer, extra map[string]any) store.Event {
 	attrs := map[string]any{"steer_id": s.ID, "source": s.Source, "chars": len(s.Text)}
 	for k, v := range extra {

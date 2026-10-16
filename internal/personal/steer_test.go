@@ -98,7 +98,8 @@ func (c *turnCounter) BeforeRun(context.Context, *agentcore.RunEvent, *agentcore
 	return nil
 }
 
-// The inbox itself: what it accepts, what it takes and what it hands back.
+// The inbox itself: what it accepts, what it takes, what it hands back and what a
+// withdrawal takes out of it.
 func TestSteerInboxRules(t *testing.T) {
 	t.Run("an empty steer is refused", func(t *testing.T) {
 		in := &steerInbox{}
@@ -148,6 +149,96 @@ func TestSteerInboxRules(t *testing.T) {
 		_, _ = in.push(Steer{ID: "s3", Text: "third"})
 		assert.Eq(t, []string{"s1", "s2", "s3"}, steerIDs(in.returned(false)))
 	})
+}
+
+func TestSteerInboxWithdraw(t *testing.T) {
+	t.Run("the accepted ones come back, the others keep waiting", func(t *testing.T) {
+		in := &steerInbox{}
+		_, _ = in.push(Steer{ID: "k1", Text: "first", Source: SteerSourceKeyboard})
+		_, _ = in.push(Steer{ID: "s1", Text: "sent", Source: "send:alice"})
+		_, _ = in.push(Steer{ID: "k2", Text: "second", Source: SteerSourceKeyboard})
+		assert.Eq(t, []string{"k1", "k2"}, steerIDs(in.withdraw(isKeyboardSteer)))
+		// Only what the filter refused is left: the sent one still waits.
+		assert.Eq(t, []string{"s1"}, steerIDs(in.take()))
+		// Nothing matches any more.
+		assert.Empty(t, in.withdraw(isKeyboardSteer))
+		assert.Empty(t, in.withdraw(nil))
+	})
+
+	t.Run("a taken steer cannot be withdrawn", func(t *testing.T) {
+		in := &steerInbox{}
+		_, _ = in.push(Steer{ID: "k1", Text: "first", Source: SteerSourceKeyboard})
+		_, _ = in.push(Steer{ID: "k2", Text: "second", Source: SteerSourceKeyboard})
+		// The turn's request carries both before the person takes anything back:
+		// they are in the turn now and stay there.
+		assert.Eq(t, []string{"k1", "k2"}, steerIDs(in.take()))
+		assert.Empty(t, in.withdraw(nil))
+		assert.Eq(t, []string{"k1", "k2"}, steerIDs(in.returned(false)))
+	})
+
+	t.Run("a closing inbox withdraws nothing", func(t *testing.T) {
+		in := &steerInbox{}
+		_, _ = in.push(Steer{ID: "k1", Text: "first", Source: SteerSourceKeyboard})
+		// The turn's outcome is being decided: returned hands the pending ones to
+		// the caller, so a withdrawal must not take them away first.
+		in.close()
+		assert.Empty(t, in.withdraw(nil))
+		assert.Eq(t, []string{"k1"}, steerIDs(in.returned(true)))
+	})
+
+	t.Run("an empty inbox withdraws nothing", func(t *testing.T) {
+		in := &steerInbox{}
+		assert.Empty(t, in.withdraw(nil))
+		var nilInbox *steerInbox
+		assert.Empty(t, nilInbox.withdraw(nil))
+	})
+}
+
+// A withdrawal and a model request taking the steers are mutually exclusive: every
+// steer is either taken or withdrawn, exactly once, whatever the interleaving
+// (run this package with -race).
+func TestSteerInboxWithdrawAndTakeRace(t *testing.T) {
+	const count = steerCapacity
+	for round := 0; round < 50; round++ {
+		in := &steerInbox{}
+		for i := 0; i < count; i++ {
+			accepted, err := in.push(Steer{ID: fmt.Sprintf("s%d", i), Text: fmt.Sprintf("steer %d", i)})
+			assert.Require(t, assert.NoErr(t, err))
+			assert.Require(t, assert.Eq(t, true, accepted))
+		}
+		// Two requests take and two people withdraw at the same time (the second
+		// one of each finds nothing): the sets must stay disjoint and cover every
+		// steer.
+		var mu sync.Mutex
+		var taken, withdrawn []Steer
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		run := func(f func() []Steer, into *[]Steer) {
+			defer wg.Done()
+			<-start
+			got := f()
+			mu.Lock()
+			*into = append(*into, got...)
+			mu.Unlock()
+		}
+		wg.Add(4)
+		go run(in.take, &taken)
+		go run(in.take, &taken)
+		go run(func() []Steer { return in.withdraw(nil) }, &withdrawn)
+		go run(func() []Steer { return in.withdraw(nil) }, &withdrawn)
+		close(start)
+		wg.Wait()
+
+		seen := map[string]int{}
+		for _, s := range append(append([]Steer(nil), taken...), withdrawn...) {
+			seen[s.ID]++
+		}
+		assert.Eq(t, count, len(taken)+len(withdrawn), "round %d", round)
+		assert.Eq(t, count, len(seen), "round %d", round)
+		for id, n := range seen {
+			assert.Eq(t, 1, n, "round %d: steer %s came back %d times", round, id, n)
+		}
+	}
 }
 
 func TestSteerIsDeliveredToTheRunningTurn(t *testing.T) {
@@ -570,4 +661,143 @@ func TestSteerBeforeTheTurnRuns(t *testing.T) {
 		assert.Eq(t, false, accepted)
 		assert.Len(t, runner.steers, 0) // no inbox was left open
 	})
+}
+
+// Runner.WithdrawSteers: the person takes the messages a model request has not
+// carried yet back out of the running turn, so they can be edited and submitted
+// again. What comes back is gone for the turn's requests and is recorded in the
+// trace; a message sent from elsewhere is left alone (its sender waits for it).
+func TestWithdrawSteersTakesBackTheWaitingOnes(t *testing.T) {
+	repo := openObserveRepo(t)
+	const sid = "s-steer-withdraw"
+	first := Steer{ID: "k1", Text: "只改 README", Source: SteerSourceKeyboard}
+	second := Steer{ID: "k2", Text: "再加一句", Source: SteerSourceKeyboard}
+	sent := Steer{ID: "s1", Text: "还有一句", Source: "send:alice"}
+	var runner *Runner
+	var picked, keyboard, nothing []Steer
+	provider := &scriptProv{name: "main", normal: func(n int, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+		if n == 1 {
+			return workCall("c1")
+		}
+		return finalText("done")
+	}}
+	runner = compactRunner(t, repo, provider, workRegistry(func() {
+		// All three wait in the inbox while the tool runs: no request has taken
+		// them yet.
+		for _, s := range []Steer{first, second, sent} {
+			accepted, err := runner.Steer(sid, s)
+			assert.NoErr(t, err)
+			assert.Eq(t, true, accepted)
+		}
+		// A filter picks one of them; nil (the keyboard default) takes the rest of
+		// the typed ones back. The third call has nothing left to take.
+		picked = runner.WithdrawSteers(sid, func(s Steer) bool { return s.ID == first.ID })
+		keyboard = runner.WithdrawSteers(sid, nil)
+		nothing = runner.WithdrawSteers(sid, nil)
+	}), nil)
+	_, err := runner.NewSession(context.Background(), sid, "steer withdraw")
+	assert.Require(t, assert.NoErr(t, err))
+	rec := &eventRecorder{}
+
+	res, err := runner.Run(context.Background(), RunRequest{SessionID: sid, Prompt: "run the job", Emit: rec.emit})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, "done", res.Output)
+	// The sent one was carried by the request after the tool result: the turn keeps
+	// it, nothing is left for the caller.
+	assert.Empty(t, res.ReturnedSteers)
+
+	t.Run("the filter picks what comes back", func(t *testing.T) {
+		assert.Eq(t, []Steer{first}, picked)
+		assert.Eq(t, []Steer{second}, keyboard)
+		assert.Empty(t, nothing)
+	})
+
+	t.Run("the turn's next request carries none of them", func(t *testing.T) {
+		assert.Require(t, assert.Eq(t, 2, len(provider.reqs)))
+		next := provider.reqs[1].Messages
+		assert.Eq(t, -1, indexOf(next, first.Text))
+		assert.Eq(t, -1, indexOf(next, second.Text))
+		assert.Eq(t, 1, occurrences(next, sent.Text))
+		assert.Empty(t, rec.kinds("steer_returned"))
+	})
+
+	t.Run("the trace records one withdrawn event per message", func(t *testing.T) {
+		withdrawn := steerEventsOf(t, repo, sid, "withdrawn")
+		assert.Require(t, assert.Len(t, withdrawn, 2))
+		assert.Eq(t, "k1", withdrawn[0].Attrs["steer_id"])
+		assert.Eq(t, "k2", withdrawn[1].Attrs["steer_id"])
+		assert.Eq(t, SteerSourceKeyboard, withdrawn[0].Attrs["source"])
+		assert.Eq(t, float64(len(first.Text)), withdrawn[0].Attrs["chars"])
+		assert.Eq(t, float64(1), withdrawn[0].Attrs["count"])
+		// The event belongs to the running turn, like a delivery or a return.
+		assert.Eq(t, res.TurnID, withdrawn[0].TurnID)
+	})
+
+	t.Run("only the sent one is delivered", func(t *testing.T) {
+		delivered := steerEventsOf(t, repo, sid, "delivered")
+		assert.Require(t, assert.Len(t, delivered, 1))
+		assert.Eq(t, "s1", delivered[0].Attrs["steer_id"])
+	})
+}
+
+// A message a model request already carried is in the turn, not in the inbox: a
+// withdrawal cannot take it back.
+func TestWithdrawSteersLeavesDeliveredOnes(t *testing.T) {
+	repo := openObserveRepo(t)
+	const sid = "s-steer-withdraw-delivered"
+	steer := Steer{ID: "k1", Text: "只改 README", Source: SteerSourceKeyboard}
+	var runner *Runner
+	var back []Steer
+	calls := 0
+	provider := &scriptProv{name: "main", normal: func(n int, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+		switch n {
+		case 1:
+			return workCall("c1")
+		case 2:
+			return workCall("c2")
+		}
+		return finalText("done")
+	}}
+	runner = compactRunner(t, repo, provider, workRegistry(func() {
+		calls++
+		if calls > 1 {
+			// This call runs after the request that carried the message: it is in
+			// the turn now, so taking it back is not possible any more.
+			back = runner.WithdrawSteers(sid, nil)
+			return
+		}
+		accepted, err := runner.Steer(sid, steer)
+		assert.NoErr(t, err)
+		assert.Eq(t, true, accepted)
+	}), nil)
+	_, err := runner.NewSession(context.Background(), sid, "steer withdraw delivered")
+	assert.Require(t, assert.NoErr(t, err))
+
+	res, err := runner.Run(context.Background(), RunRequest{SessionID: sid, Prompt: "run the job"})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Empty(t, back)
+	assert.Empty(t, res.ReturnedSteers)
+
+	t.Run("the request after the tool call carried it", func(t *testing.T) {
+		assert.Require(t, assert.Eq(t, 3, len(provider.reqs)))
+		assert.Eq(t, 1, occurrences(provider.reqs[1].Messages, steer.Text))
+	})
+	t.Run("no withdrawal is recorded", func(t *testing.T) {
+		assert.Empty(t, steerEventsOf(t, repo, sid, "withdrawn"))
+	})
+	t.Run("its delivery is recorded", func(t *testing.T) {
+		assert.Len(t, steerEventsOf(t, repo, sid, "delivered"), 1)
+	})
+}
+
+// Without a turn of the session the inbox is gone: there is nothing to take back.
+func TestWithdrawSteersWithoutARunningTurn(t *testing.T) {
+	repo := openObserveRepo(t)
+	runner := compactRunner(t, repo, &scriptProv{name: "main", normal: func(_ int, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+		return finalText("done")
+	}}, nil, nil)
+	_, err := runner.NewSession(context.Background(), "s-steer-withdraw-idle", "steer withdraw idle")
+	assert.Require(t, assert.NoErr(t, err))
+
+	assert.Empty(t, runner.WithdrawSteers("s-steer-withdraw-idle", nil))
 }

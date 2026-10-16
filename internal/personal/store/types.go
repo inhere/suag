@@ -79,7 +79,9 @@ const (
 	// EventSteer records one message a person typed into a running turn
 	// (steering): name "delivered" is a steer a model request carried (attrs
 	// steer_id, source, chars, step), "returned" one the turn handed back
-	// (attrs steer_id, source, chars, reason, disposition).
+	// (attrs steer_id, source, chars, reason, disposition), "withdrawn" one the
+	// person took back before a request carried it (attrs steer_id, source,
+	// chars, count).
 	EventSteer = "steer"
 	// EventAddDir records a change of the session's added directories
 	// (--add-dir) outside any turn: name "add" or "remove", attrs path, mode
