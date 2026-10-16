@@ -59,9 +59,15 @@ type Target struct {
 	MCP       bool
 	MCPServer string
 	Mode      Mode
-	Command   string
-	Path      string
-	Root      string
+	// Shell is the resolved shell name used by shell_exec (for example sh,
+	// bash, pwsh, powershell, or cmd). An unknown name is fail-closed for
+	// command allows. Windows controls case and .exe normalization explicitly
+	// because the rules package is also used by non-Windows hosts.
+	Shell   string
+	Windows bool
+	Command string
+	Path    string
+	Root    string
 }
 
 // Rule is one declarative approval rule. Command and Path are slices because
@@ -179,10 +185,13 @@ func (r Rule) matches(target Target) bool {
 	if !r.MatchesTool(target) || !modeMatches(r.Modes, target.Mode) {
 		return false
 	}
-	// Command and path conditions are deliberately fail-closed until their
-	// dedicated matchers are installed. Treating them as tool-only rules would
-	// turn a narrowly written allow into an unsafe broad allow.
-	return len(r.Command) == 0 && len(r.Path) == 0
+	if len(r.Command) > 0 {
+		return r.MatchesCommand(target)
+	}
+	// Path conditions are deliberately fail-closed until the dedicated matcher
+	// is installed. Treating them as tool-only rules would turn a narrowly
+	// written allow into an unsafe broad allow.
+	return len(r.Path) == 0
 }
 
 func (t Target) toolIdentity() (string, bool) {
