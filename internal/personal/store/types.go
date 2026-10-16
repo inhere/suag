@@ -72,7 +72,9 @@ const (
 	EventTask = "task"
 	// EventSession records a change of the session's own lifecycle, outside any
 	// turn: name "recovered" is a session left running by a process that died
-	// mid-turn taken back to open (attrs previous_status, stale_ms, turn_status).
+	// mid-turn taken back to open (attrs previous_status, stale_ms, turn_status),
+	// name "session_cwd_changed" a session continued in another working directory
+	// than the one it was created in (attrs from, to).
 	EventSession = "session"
 	// EventSteer records one message a person typed into a running turn
 	// (steering): name "delivered" is a steer a model request carried (attrs

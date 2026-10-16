@@ -182,6 +182,9 @@ func traceLine(e store.Event) string {
 	if e.Kind == store.EventTask {
 		parts = append(parts, taskTraceParts(e)...)
 	}
+	if e.Kind == store.EventSession {
+		parts = append(parts, sessionTraceParts(e)...)
+	}
 	if e.Kind == store.EventContext {
 		parts = append(parts, contextTraceParts(e))
 	}
@@ -336,6 +339,22 @@ func agentEvent(e store.Event) bool {
 		return kind == taskKindAgent
 	}
 	return false
+}
+
+// sessionTraceParts renders a session lifecycle event outside a turn: a move
+// to another working directory shows from/to.
+func sessionTraceParts(e store.Event) []string {
+	if e.Name != sessionCwdChangedEvent {
+		return nil
+	}
+	from, to := "-", "-"
+	if v, ok := e.Attrs["from"].(string); ok && v != "" {
+		from = v
+	}
+	if v, ok := e.Attrs["to"].(string); ok && v != "" {
+		to = v
+	}
+	return []string{"from=" + from, "to=" + to}
 }
 
 // taskTraceParts renders what a background task ran (a task event spans the
