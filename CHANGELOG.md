@@ -15,6 +15,7 @@
 - session_search 增加 v1 游标编解码与查询指纹基础，非法游标可安全回到首查。
 - session_search 增加进程内稳定快照分页，限制 500 条结果并提供 10 分钟 TTL / 64 个快照的 v1 游标续接。
 - session_search 的 Ledger 查询接口透传 workspace/current scope、kind、时间窗与 v1 游标，并向上层返回续接游标和说明。
+- 为 session_search 增加固定种子中英混合语料 benchmark，记录 1 万/10 万条查询基线并明确 S2 bigram 不纳入本期。
 
 ### 修复
 
