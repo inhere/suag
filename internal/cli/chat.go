@@ -28,6 +28,14 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 	if err != nil {
 		return err
 	}
+	notify, err := appconfig.ChatNotifyMode()
+	if err != nil {
+		return err
+	}
+	notifyAfter, err := appconfig.ChatNotifyAfter()
+	if err != nil {
+		return err
+	}
 	return chat.Run(ctx, runtime.Runner, chat.Options{
 		SessionID: opts.SessionID, ResumeID: opts.ResumeID, FromID: opts.FromID,
 		Asker: runtime.Asker, WriteTools: runtime.WriteTools,
@@ -43,7 +51,7 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 		Diff:      appconfig.ChatDiffEnabled(),
 		DiffLines: diffLines,
 		IdleAfter: idle.After, IdleMinRatio: idle.MinRatio,
-		Tasks: taskManager, TaskWake: taskWake, StopBackground: sugahooks.StopBackground(),
+		Tasks: taskManager, TaskWake: taskWake, StopBackground: sugahooks.StopBackground(), Notify: notify, NotifyAfter: notifyAfter,
 		SetupSession: opts.setupSession,
 		// The session's added directories (:add-dir/:dirs/:rm-dir): the handle
 		// shares the metadata and the set the tools read with ApplyAddDirs.

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	gkconfig "github.com/gookit/config/v2"
 )
@@ -98,4 +99,30 @@ func chatSwitch(key string) bool {
 	default:
 		return true
 	}
+}
+
+// ChatNotifyMode selects terminal notifications: auto, bell, osc9 or off.
+func ChatNotifyMode() (string, error) {
+	value := strings.ToLower(strings.TrimSpace(gkconfig.String("chat.notify")))
+	if value == "" {
+		value = "auto"
+	}
+	switch value {
+	case "auto", "bell", "osc9", "off":
+		return value, nil
+	}
+	return "", fmt.Errorf("chat.notify must be auto, bell, osc9 or off, got %q", value)
+}
+
+// ChatNotifyAfter reads the minimum turn duration before a completion notice.
+func ChatNotifyAfter() (time.Duration, error) {
+	if gkconfig.Get("chat.notify_after") == nil {
+		return time.Minute, nil
+	}
+	raw := strings.TrimSpace(gkconfig.String("chat.notify_after"))
+	d, err := time.ParseDuration(raw)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("chat.notify_after must be a non-negative duration, got %q", raw)
+	}
+	return d, nil
 }

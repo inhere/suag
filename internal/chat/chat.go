@@ -89,6 +89,9 @@ type Options struct {
 	// (tasks.wake_on_exit; nil: never).
 	Tasks    *tasks.Manager
 	TaskWake <-chan struct{}
+	// Notify controls terminal completion/question notifications.
+	Notify      string
+	NotifyAfter time.Duration
 	// StopBackground runs each Stop hook as a background task of Tasks
 	// (hooks.stop_background): typing does not interrupt it and a block
 	// reply arrives as a task notice. Needs Tasks.
@@ -271,7 +274,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		opts.scheduleObserver)
 	defer idle.Close()
 	if opts.Asker != nil && inputSource.terminal != nil {
-		opts.Asker.Bind(chatAsker{source: inputSource, render: render})
+		opts.Asker.Bind(chatAsker{source: inputSource, render: render, notifier: newChatNotifier(opts.Notify, opts.NotifyAfter, stdout, inputSource.terminal != nil)})
 		defer opts.Asker.Bind(nil)
 	}
 	// state carries the wiring a turn needs and the state that outlives a turn; a
@@ -284,7 +287,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		stderr: stderr, errOut: errOut, baseEvent: baseEvent, title: title, idle: idle,
 		stats: &stats, sessionID: sessionID,
 		createdAtStartup: createdAtStartup, dirs: opts.Dirs,
-		steering: steering, local: opts.Local,
+		steering: steering, local: opts.Local, tasks: opts.Tasks, notifier: newChatNotifier(opts.Notify, opts.NotifyAfter, stdout, inputSource.terminal != nil),
 	}
 	if runner.ProcessRoot() != "" {
 		// The delivery endpoint is the chat state's own method: `suga send --steer`

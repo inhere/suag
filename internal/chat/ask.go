@@ -19,8 +19,9 @@ const askPollInterval = 2 * time.Millisecond
 
 // chatAsker binds the chat terminal to the approval layer (tools.Asker).
 type chatAsker struct {
-	source *chatInputSource
-	render *Renderer
+	source   *chatInputSource
+	render   *Renderer
+	notifier chatNotifier
 }
 
 func (a chatAsker) Ask(ctx context.Context, q tools.Question) (string, error) {
@@ -29,6 +30,7 @@ func (a chatAsker) Ask(ctx context.Context, q tools.Question) (string, error) {
 	// still working away on its own) and comes back after the answer.
 	a.render.suspendStatus()
 	defer a.render.resumeStatus()
+	a.notifier.notify("suga：等待确认 " + q.Tool)
 	// A file_edit/file_write is shown as the diff it would make first, so the
 	// person answers having seen what the call changes (same cut as any preview).
 	return a.source.Ask(ctx, a.render.ApprovalDiff(q.Tool)+a.render.ApprovalDetails(q), a.render.ApprovalPrompt(q))
