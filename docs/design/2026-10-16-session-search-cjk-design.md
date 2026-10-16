@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 中文可用的 session_search（混合匹配、cursor 分页、kind/时间过滤与 cwd 下推）设计
 
-> 状态：Draft 0.3（按确认评审 r2 修订，待用户审阅）
+> 状态：Draft 0.3 / 已批准（2026-10-16 用户：“全部按建议批准”；待确认事项均按文中建议选项定稿）
 
 ## 修订记录
 
