@@ -100,6 +100,13 @@ suga manifest                            # 生效的模型、工具、skills、�
 - `--read-only` 永远优先。想收紧：给用户建议只读模式，而不是关掉审批。
 - 危险递归删除（`rm -r`、`Remove-Item -Recurse` 等指向 `/`、`~`、盘根或工作区及其父目录）在任何模式下都会被拦下，chat 只有手敲 `yes` 才执行。
 
+### chat 里直接执行本地命令（`!` / `!!`）
+
+- 在提示符处输入 `!<命令>`：chat 直接在本地 shell 里执行（与模型的 `shell_exec` 同一个 shell、工作目录与环境），输出实时打印在终端，不调用模型、不开始回合、不进会话上下文；非零退出码、超时（`tools.shell_timeout_max`）或被你终止会各提示一行。
+- `!!<命令>`：同样执行，并把“命令 + 退出码 + 输出（按工具输出那套规则精简、截断）”附在下一条消息之前发给模型；多个 `!!` 按顺序累积，chat 退出时未发送的丢弃。
+- 执行中 `Ctrl-C` / `Esc` 只终止该命令（连同进程树），chat 留在提示符；回合进行中在 `↳ ` 输入行输入的 `!…` 不执行，该行退回输入行。
+- 只认本地键盘：`suga send`/gofer 投递、`--steer`、Stop hook 回复里以 `!` 开头的文本一律按普通消息。由本人键入，因此不走审批、不做危险命令拦截，`--read-only` 会话同样可用（该模式只限制模型的工具）。每次执行在 trace 里记一条 `local_command`。
+
 ### 长期记忆（memory）
 
 - 范围与后端：`memory.user.backend`（`files` / `exec`）、`memory.project.backend`（`files` / `gofer` / `exec`）。`exec` 必须同时配 `memory.<scope>.command`（可选 `.args`、`.timeout_sec`）。
