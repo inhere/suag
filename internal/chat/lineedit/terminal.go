@@ -218,7 +218,7 @@ func (t *Terminal) readLine() (line string, err error) {
 	t.reading = true
 	defer func() { t.reading, t.noHistory = false, false }()
 	prefilled := t.applyPendingLine()
-	if t.cursorX == 0 && t.cursorY == 0 {
+	if !t.lineShown() {
 		// Nothing of the block is on screen yet: draw it - the status line, while
 		// one is set (chat may set it before this read draws anything), above the
 		// prompt - the way every repaint draws it (paintBlock).
