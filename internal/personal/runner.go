@@ -739,7 +739,7 @@ func (r *Runner) turnHooks(usage *usageCollector, meter *runUsageMeter, denials 
 		if r.cfg.Price != nil {
 			_, priceAvailable = r.cfg.Price(r.cfg.ProviderName, r.cfg.Model)
 		}
-		budget := &budgetHook{settings: settings, meter: meter, priceAvailable: priceAvailable,
+		budget := &budgetHook{settings: settings, meter: meter, usage: usage, priceAvailable: priceAvailable,
 			sessionID: result.SessionID, turnID: result.TurnID}
 		budget.onBudget = func(ctx context.Context, snapshot BudgetSnapshot, reason string) {
 			r.rec.record(ctx, budgetEvent(result.SessionID, result.TurnID, "exceeded", snapshot, reason))

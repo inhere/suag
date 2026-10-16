@@ -71,6 +71,7 @@ type budgetHook struct {
 	agentcore.NopHook
 	settings       BudgetSettings
 	meter          *runUsageMeter
+	usage          *usageCollector
 	priceAvailable bool
 	sessionID      string
 	turnID         string
@@ -79,6 +80,34 @@ type budgetHook struct {
 	warnedEstimate bool
 	onBudget       func(context.Context, BudgetSnapshot, string)
 	onWarning      func(context.Context, string)
+}
+
+// BeforeModel short-circuits only the first model request of a session turn.
+// A turn that crossed the limit in AfterModel still gets its normal wrap-up
+// request; the usage collector distinguishes that case from an already-spent
+// session entering a new turn.
+func (h *budgetHook) BeforeModel(ctx context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
+	if h == nil || !h.settings.enabled() || h.settings.Scope != "session" || h.meter == nil || h.usage == nil {
+		return nil
+	}
+	if _, calls, _ := h.usage.snapshot(); calls > 0 {
+		return nil
+	}
+	snapshot := h.meter.budgetSnapshot()
+	if !snapshot.Exceeded || h.reported {
+		return nil
+	}
+	h.reported = true
+	reason := budgetReason(h.settings, snapshot)
+	snapshot.Reason = reason
+	if h.onBudget != nil {
+		h.onBudget(ctx, snapshot, reason)
+	}
+	// Keep the user's input in state.Messages, but do not synthesize an
+	// assistant message: the caller gets the ordinary wrap-up notice from the
+	// result while the next turn sees a valid user-to-user continuation.
+	ctrl.ShortCircuit(&agentcore.RunResult{Status: agentcore.RunCompleted, WrapUp: reason})
+	return nil
 }
 
 func (h *budgetHook) AfterModel(ctx context.Context, event *agentcore.ModelEvent, ctrl *agentcore.Control) error {
@@ -93,19 +122,24 @@ func (h *budgetHook) AfterModel(ctx context.Context, event *agentcore.ModelEvent
 		return nil
 	}
 	h.reported = true
-	reason := ""
-	switch {
-	case h.settings.Tokens > 0 && snapshot.Tokens.Used >= snapshot.Tokens.Limit:
-		reason = "max_tokens"
-	case h.settings.CostUSD > 0 && snapshot.CostUSD.Used >= snapshot.CostUSD.Limit:
-		reason = "max_cost_usd"
-	}
+	reason := budgetReason(h.settings, snapshot)
 	snapshot.Reason = reason
 	if h.onBudget != nil {
 		h.onBudget(ctx, snapshot, reason)
 	}
 	ctrl.RequestWrapUp(reason, budgetWrapUpInstruction(snapshot, reason))
 	return nil
+}
+
+func budgetReason(settings BudgetSettings, snapshot BudgetSnapshot) string {
+	switch {
+	case settings.Tokens > 0 && snapshot.Tokens.Used >= snapshot.Tokens.Limit:
+		return "max_tokens"
+	case settings.CostUSD > 0 && snapshot.CostUSD.Used >= snapshot.CostUSD.Limit:
+		return "max_cost_usd"
+	default:
+		return ""
+	}
 }
 
 func (h *budgetHook) warnIfNeeded(ctx context.Context, usage agentcore.Usage) {

@@ -64,6 +64,61 @@ func TestBudgetHookRequestsWrapUpOnceAndRecordsEvent(t *testing.T) {
 	assert.Eq(t, "max_tokens", events[0].Attrs["reason"])
 }
 
+func TestSessionBudgetShortCircuitsBeforeModelWithoutAssistant(t *testing.T) {
+	ctx := context.Background()
+	repo := openObserveRepo(t)
+	provider := &usageSteps{steps: []func() (*agentcore.GenerateResult, error){
+		withUsage(&agentcore.GenerateResult{Content: "first answer", FinishReason: agentcore.FinishFinal}, 10, 1),
+	}}
+	runner, err := New(Config{Repository: repo, Provider: provider,
+		Budget: BudgetSettings{Tokens: 5, Scope: "session"}})
+	assert.Require(t, assert.NoErr(t, err))
+
+	first, err := runner.Run(ctx, RunRequest{Prompt: "first"})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, 1, provider.n)
+	assert.Eq(t, 11, first.SessionUsage.InputTokens+first.SessionUsage.OutputTokens)
+
+	second, err := runner.Run(ctx, RunRequest{SessionID: first.SessionID, Prompt: "second"})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, 1, provider.n)
+	assert.Eq(t, RunCompleted, second.State)
+	assert.Eq(t, "max_tokens", second.WrapUp)
+	assert.Eq(t, "", second.Output)
+
+	messages, err := repo.AgentStorage().LoadMessages(ctx, second.TurnID)
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Require(t, assert.Len(t, messages, 1))
+	assert.Eq(t, "user", messages[0].Role)
+	assert.Eq(t, "second", messages[0].Content)
+
+	budgetEvents := eventsOf(t, repo, first.SessionID, store.EventBudget)
+	assert.Require(t, assert.Len(t, budgetEvents, 2))
+	assert.Eq(t, "max_tokens", budgetEvents[1].Attrs["reason"])
+	assert.Eq(t, float64(11), budgetEvents[1].Attrs["used_tokens"])
+
+	// Reopening without the budget proves the short-circuited turn left a legal
+	// history: the next request has no adjacent assistant messages.
+	var next nextProvider
+	runAgain, err := New(Config{Repository: repo, Provider: &next})
+	assert.Require(t, assert.NoErr(t, err))
+	_, err = runAgain.Run(ctx, RunRequest{SessionID: first.SessionID, Prompt: "third"})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Require(t, assert.Len(t, next.requests, 1))
+	for i := 1; i < len(next.requests[0].Messages); i++ {
+		assert.False(t, next.requests[0].Messages[i-1].Role == "assistant" && next.requests[0].Messages[i].Role == "assistant")
+	}
+}
+
+type nextProvider struct{ requests []*agentcore.GenerateRequest }
+
+func (*nextProvider) Name() string { return "next-test" }
+
+func (p *nextProvider) Generate(_ context.Context, req *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	p.requests = append(p.requests, req)
+	return &agentcore.GenerateResult{Content: "third answer", FinishReason: agentcore.FinishFinal}, nil
+}
+
 func TestBudgetCostUsesProviderOrConfiguredPrice(t *testing.T) {
 	t.Run("provider cost takes precedence", func(t *testing.T) {
 		meter := &runUsageMeter{budget: BudgetSettings{CostUSD: 1, Scope: "turn"}, run: RunUsage{Usage: agentcore.Usage{CostUSD: 1.2}}}
