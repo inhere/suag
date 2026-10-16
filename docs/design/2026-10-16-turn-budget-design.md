@@ -1,17 +1,18 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 回合级 token / 成本预算（budget）设计
 
-> 状态：Draft 0.1（待用户审阅）
+> 状态：Draft 0.2（按独立评审 r1 修订，待用户审阅）
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-16 | suga（gofer job） | 初稿 |
+| 0.2 | 2026-10-16 | suga（gofer job） | 按评审 r1 关闭 B-C1/B-C2、B-M1–B-M8；明确后台子 agent、gofer 熔断、命名、插话与估算副作用 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
-来源：issue suga-zinq；调研 `docs/research/2026-10-16-feature-strengthening-analysis.md` §3 #2（主循环没有 token/成本硬预算）、§3 #3（用量完全依赖 provider 返回）。相关：suga-lznj（`max_output_tokens`，本文 §与 suga-lznj 的关系 说明分界）。对照产品：Claude Code 的 `/cost` 与 `--max-turns`、Codex CLI 的用量显示——**仅作参考，不照搬**（两者的额度都由远端账号侧强制，suga 是本地单机工具，预算只能在本地按用量判定）。
+来源：issue suga-zinq；调研 `docs/research/2026-10-16-feature-strengthening-analysis.md` §3 #2、§3 #3；相关：suga-lznj（`max_output_tokens`）。独立评审：`local/reviews/2026-10-16-budget-search-design-review-r1.md`（不入库）。
 
 ### 思考模式与范围冻结
 
@@ -46,7 +47,7 @@
 - **口径（spend）**：token 口径 = `max(输入 token − 缓存读, 0) + 输出 token`；成本口径 = provider 报的 `CostUSD` 优先，否则按价格表算。
 - **估算（estimate）**：provider 未报用量时按字符/rune 本地推算的用量，标记 `estimated`。
 - **wrap-up 收尾**：`Control.RequestWrapUp(reason, instruction)` 让下一次请求变成"最后一次作答"，回复结束整个回合（`pkg/agentcore/api/hooks.go:48-59`、`pkg/agentcore/runtime.go:139-141、202-206`）。
-- **gofer job**：`gofer exec job` 起的一次 `suga run/chat` 进程；本文只用环境变量向它注入预算。
+- **gofer job**：`gofer job run` 起的一次 `suga run/chat` 进程；本文只用环境变量向它注入预算。
 
 ## 范围与非目标
 
@@ -54,7 +55,7 @@
 
 - `config`：`budget.*` 键、默认、校验、优先级（flag > 环境变量 > config）。
 - `cli`：`--budget-tokens` / `--budget-cost-usd` / `--budget-scope`（run 与 chat 共用，超过 0 才生效）；文本模式的收尾提示与一次性警告。
-- `personal`：预算钩子（`AfterModel` + `AfterTool` + `BeforeRun`）、用量估算器、`budget` 事件、`RunResult` 上不需要新字段（沿用 `WrapUp` 与 `RunUsage`）。
+- `personal`：预算钩子（`AfterModel` + `BeforeRun`；AfterTool 不用于预算）、用量估算器、`budget` 事件、`RunResult` 上不需要新字段（沿用 `WrapUp` 与 `RunUsage`）。
 - `output`：stream-json 的 `budget` 对象与 `wrap_up` 取值；`WrapUpNotice` 增加成本预算文案。
 - `chat`：状态行 `budget NN%`、接近上限的一次性提醒、超限时的回合末提示。
 - `acpserver`：预算收尾的 `stopReason`。
@@ -131,7 +132,7 @@
 三个要点：
 
 1. **计量口径与统计口径一致**：预算读的就是 `runUsageMeter`（回合）与 `SumUsageTree`（会话）那两个数，不另造一套。token 口径 `max(输入−缓存读,0)+输出` 与 `agents.max_tokens` 一致；成本口径用 `costOf` 的结果（provider 报的 `CostUSD` 优先，否则 `price` 表）。
-2. **检查点与 `max_steps` 同构**：`AfterModel` 每次都查（看在跑的工具调用之前）；本轮工具调用结束后 `AfterTool` 再查一次（子 agent 等长工具的消耗只有这样才及时）。超限即请求收尾 → 下一次请求就是收尾请求；收尾本身的花费不再复查（最坏超出量 = 触发点那次调用 + 一次收尾请求）。
+2. **检查点受内核约束**：主回合仅在 `AfterModel` 检查。AfterTool 的 control 是工具级且会被 runtime 拒绝，不能作为预算检查点；子 agent hook 每次 AfterModel 读取父 meter，父预算超限时子 agent 先收尾，父回合随后在 AfterModel 收尾。
 3. **估算只在缺失处补，且全程可辨**：provider报了就不估；估算值进 model 事件列、`usage` 事件与 stream-json（`estimated: true`），chat 状态行在估算时用 `~` 前缀。
 
 ## 架构
@@ -142,7 +143,7 @@
             ▼
    internal/config.ReadBudgetSettings()  ──► personal.Config.Budget{Budget{Tokens,CostUSD,Scope,…}}
             │
-   wiring: personal.New(… Budget …)              （可选）provider = estimating(observed(real))
+   wiring: personal.New(… Budget …)              （可选）provider = observed(estimating(real)); Pool 的每个 provider 成员、compact provider、子 agent provider 均包裹
             │                                                  │
             ▼                                                  ▼
    Runner.Run ─► turnHooks: [usageCollector, estimate?, budgetHook, …]
@@ -150,8 +151,8 @@
       agentcore 回合循环                │ addModel/addChild 累计
       ┌───────────────────────────────┴───────────────────────────────┐
       │ 每次模型调用后 budgetHook.AfterModel → spent = turn|session 口径│
-      │ 本轮工具调用后 budgetHook.AfterTool → 同上                     │
-      │ 超限 → ctrl.RequestWrapUp("max_tokens"|"budget_cost_usd", 指令) │
+      │ 子 agent 每次 AfterModel 读取父 meter；父回合 AfterModel → 同上    │
+      │ 超限 → ctrl.RequestWrapUp("max_tokens"|"max_cost_usd", 指令) │
       └───────────────────────────────┬───────────────────────────────┘
                                       ▼
    下一次请求 = 收尾请求（runtime.go:139-141、172-176）→ 回复结束回合
@@ -176,15 +177,12 @@ budget:
   estimate: auto
   # 估算系数，> 0，默认 1.0；> 1 让预算更保守（估算值乘该系数）
   estimate_factor: 1.0
-  # 子 agent 的用量是否计入（默认 true）
-  include_subagents: true
-  # 压缩、交接、标题等内部模型请求是否计入（默认 true，与 stats/stream-json 口径一致）
-  include_internal: true
+  # 子 agent 与内部请求固定计入 v1
   # 占用达到该比例时 chat 提醒一次（0 关闭，默认 0.8）
   notice_ratio: 0.8
 ```
 
-- 结构体与读取：`internal/config/budget.go`，`type BudgetSettings struct { Tokens int; CostUSD float64; Scope string; Estimate string; EstimateFactor float64; IncludeSubagents, IncludeInternal bool; NoticeRatio float64 }`，`ReadBudgetSettings(flagFlag BudgetFlags) (BudgetSettings, error)`；非法值（负数、`scope` 不是 turn/session、`estimate` 不是 auto/on/off、`estimate_factor <= 0`、`notice_ratio < 0`）**启动即报错**，与 `ReadMaxSteps` 的"不静默"风格一致。
+- 结构体与读取：`internal/config/budget.go`，`type BudgetSettings struct { Tokens int; CostUSD float64; Scope string; Estimate string; EstimateFactor float64; NoticeRatio float64 }`，`ReadBudgetSettings(flagFlag BudgetFlags) (BudgetSettings, error)`；非法值（负数、`scope` 不是 turn/session、`estimate` 不是 auto/on/off、`estimate_factor <= 0`、`notice_ratio < 0`）**启动即报错**，与 `ReadMaxSteps` 的"不静默"风格一致。
 - token 上限是整数；`cost_usd` 允许小数（`floatValue` 已有）。
 
 ### 覆盖优先级（与 `max_steps` 完全一致）
@@ -204,7 +202,7 @@ budget:
 不改 gofer 协议：job 里通过环境变量注入即可（`SUGA_BUDGET_TOKENS` / `SUGA_BUDGET_COST_USD` / `SUGA_BUDGET_SCOPE`），或直接在命令行加 `--budget-tokens`。`docs/usage/gofer-personal-agent.md` 增加一段说明与示例：
 
 ```text
-gofer exec job --cwd … --env SUGA_BUDGET_TOKENS=1500000 -- suga run --prompt … --injected
+gofer job run --cwd … --env SUGA_BUDGET_TOKENS=1500000 -- suga run --prompt … --injected
 ```
 
 语义说明（写进文档）：job 的预算默认按**回合**计（`scope: turn`），因为 job 常续用既有会话，会话级累计会把历史花费算进来、一进门就超限；要按整个 job（含多回合）计，用 `SUGA_BUDGET_SCOPE=session` 并注意上面这条。
@@ -219,8 +217,8 @@ spent_tokens = max(InputTokens - CacheReadTokens, 0) + OutputTokens
 
 - 缓存读不计数：缓存读的单价通常低一个量级，长会话里同一个大上下文反复命中缓存（`ReportUsage` 的 `cache_read_tokens`）不该被当成新花费，否则会话级预算会在命中缓存时突然爆掉。
 - `CacheWriteTokens` 仍在 `InputTokens` 里（Claude 的 `input_tokens` 含 `cache_creation`），会被计入——这是已知的口径差异，写进文档；如需要可另加开关（见待确认 Q4）。
-- 子 agent 的用量默认计入（`forwardChildUsage` 已经进父回合 meter，`SumUsageTree` 已经进会话累计）；`budget.include_subagents: false` 时从计数里减去 `runUsageMeter` 单独维护的子 agent 小计。
-- 压缩 / 交接 / 标题等内部请求默认计入（`runUsageMeter` 现在就是这么记的，stream-json 的 `usage` 与 `suga stats` 同口径）；`budget.include_internal: false` 时按 model 事件 attrs 的 `purpose` 剔除。
+- 子 agent 的用量默认计入（`forwardChildUsage` 已经进父回合 meter，`SumUsageTree` 已经进会话累计）；v1 固定计入子 agent；meter 当前没有独立子 agent 小计，因此不提供排除开关。
+- 压缩 / 交接 / 标题等内部请求默认计入（`runUsageMeter` 现在就是这么记的，stream-json 的 `usage` 与 `suga stats` 同口径）；v1 固定计入内部请求；现有 purpose 是 `compact`（不是 `compaction`），标题不是模型调用，不提供排除开关。
 
 **成本**：
 
@@ -237,13 +235,13 @@ spent_cost = Σ（每次模型调用）provider 报的 CostUSD，没有则 Price
 - 触发条件：`budget.estimate` 为 `auto`（默认）时，仅当 `res.Usage` 的 `InputTokens`/`OutputTokens` 为 0 才补；`on` 时总是算一份并记录（用于对照真实值，不覆盖真实值）；`off` 时不估算，此时启动/回合开始警告「provider 不报用量且已关闭估算，预算按 0 计」。
 - 输入侧：`tokensOfText(system) + tokensOfText(序列化后的 tools schema) + tokensOfMessages(messages)`（复用 `internal/personal/tokens.go:32-83`，含工具调用参数与 tool result）。
 - 输出侧：`tokensOfText(content) + tokensOfText(reasoning) + Σ tokensOfToolCall(名称 + 参数 JSON)`（口径同 `tokensOfMessage`）。
-- 系数：`tokensOfText` 已经按"窄字符 1/4 token、宽字符（CJK/全角）1 token"估算，再乘 `estimate_factor`（默认 1.0）。方向取**偏高**（宁可早收尾不少算），因为预算的用途是止损。
-- 误差与定位：`tokens.go:11-19` 记录了实测——朴素 bytes/4 对中文会话低读 15–20%，现行宽字符规则已修正这一偏差；真实 tokenizer 与字符规则的残差仍存在（英文长词、代码、emoji、工具 JSON），**估算只用于预算与窗口判断，不用于计费、不写进会话累计作为"真实花费"**；因此：
+- 系数：`tokensOfText` 已经按"窄字符 1/4 token、宽字符（CJK/全角）1 token"估算，再乘 `estimate_factor`（默认 1.0）。不宣称估算天然偏高：现行规则是可解释的近似，误差可能高也可能低；`estimate_factor > 1` 才是显式保守旋钮。
+- 误差与定位：`tokens.go:11-19` 记录了实测——朴素 bytes/4 对中文会话低读 15–20%，现行宽字符规则已修正这一偏差；真实 tokenizer 与字符规则的残差仍存在（英文长词、代码、emoji、工具 JSON），**估算会用于预算、窗口判断与 `lastInput`（因此可能提前压缩），但不是未标记的真实计费**；因此：
   - model 事件的 `input_tokens/output_tokens` 记估算值（保持"回合用量"这个数的一致性），事件 attrs 加 `estimated: true` 与 `est_input_tokens/est_output_tokens`（`estimate: on` 时两者都有，可对照）；
   - `usage` 事件与 stream-json 的 `usage`/`result` 行加 `"estimated": true`（缺省 false 时不出现在 JSON 里，旧消费端不受影响）；
   - chat 状态行的估算数字加 `~` 前缀（`in ~12.3k / out ~1.2k tokens`）；
   - `suga stats` 的聚合沿用事件里的数，同样带 estimated 属性，报告里标注"N 次调用为估算"。
-- 实现在 **provider 包装器**（`internal/personal/estimate.go` 的 `estimatingProvider`），放在 `observedProvider` **外层**：这样估算值同时进入 `state.Usage`、`usageCollector`、model 事件、`runUsageMeter` 与会话累计，只在一处补齐；估算标记通过 `GenerateResult.Metadata[agentcore.UsageEstimatedMetaKey]` 向外传，`llm.Attempt` 增一个 `Estimated bool` 字段（`pkg/agentcore/llm/observe.go:12-37`），`internal/personal/observe.go:123-131` 把它写成事件 attrs。
+- 实现在 **provider 包装器**（`internal/personal/estimate.go` 的 `estimatingProvider`），放在观察层**内侧**、紧贴具体 provider：`observed(estimating(real))`，这样估算值同时进入 `state.Usage`、`usageCollector`、model 事件、`runUsageMeter` 与会话累计，只在一处补齐；估算标记通过 `GenerateResult.Metadata[agentcore.UsageEstimatedMetaKey]` 向外传，`llm.Attempt` 增一个 `Estimated bool` 字段（`pkg/agentcore/llm/observe.go:12-37`），`internal/personal/observe.go:123-131` 把它写成事件 attrs。
 
 ## 关键流程
 
@@ -270,10 +268,10 @@ spent_cost = Σ（每次模型调用）provider 报的 CostUSD，没有则 Price
 
 ```text
 父回合步 k 调用 agent 工具（子 agent 最多 agents.max_tokens=400k、10m）
-  子 agent 每次模型调用 → forwardChildUsage → 父回合 meter 的 run/session 就地增加
-  子 agent 返回后，父回合执行 AfterTool → budgetHook 立刻看到增量
-  → 若已超预算：不再发起"再干一轮"的请求，直接进入收尾请求
-（若不检查 AfterTool：父回合要等到自己的下一次模型调用后才察觉，会白烧一整个子 agent 的钱）
+  子 agent 每次模型调用 → forwardChildUsage → 父回合 meter 增加
+  子 agent 的 budget hook 每次 AfterModel 读取父 meter；超限则子 agent 收尾
+  子 agent 返回后，父回合下一次 AfterModel 看到累计并收尾
+（这是不改 agentcore 的可实现边界；后台子 agent 不受父回合收尾控制）
 ```
 
 ### 3. 会话级预算已用尽时开新回合
@@ -327,25 +325,25 @@ stream-json 新增字段（都向后兼容，只在配置了预算时出现）�
 
 ## 安全、数据、运维与回滚
 
-- 安全：预算不放宽任何权限；它只影响"模型还能不能继续跑"。估算值不写进任何计费口径。
+- 安全：预算不放宽任何权限；它只影响"模型还能不能继续跑"。估算值写入统一累计但始终带 `estimated` 标记，不得被当作未标记的真实计费。
 - 数据：**无 schema 迁移**。新增的事件 kind（`budget`）只是 `events.kind` 的新取值（该列是自由文本，`internal/personal/store/types.go:46-100`）；`RunResult` 不加字段（沿用 `WrapUp`、`RunUsage`）。stream-json 新字段是可选键。旧事件与旧库可读。
 - 运维：
   - 默认**不启用**（`budget.tokens`/`cost_usd` 都未设置时行为与今天完全一致），因此回滚只需删配置/去掉环境变量；
   - `budget.estimate: off` 可在估算带来困扰时关掉；`scope` 可随时在 turn/session 之间切换（即时生效，不依赖历史数据）；
-  - 会话级预算的一个已知副作用：预算用尽后同一会话的后续回合仍会跑一次收尾请求（每次都花钱，虽然很少），文档写明"想彻底停就用 chat 退出或不要续用该会话"。
+  - 会话预算已用尽时 `BeforeRun` 直接 short-circuit 为 completed + budget wrap-up，不发模型请求；这也避免 steering 自动续轮反复付费。预算收尾不消费插话；chat 退回的插话若用户继续，作为新回合重新获得 turn 预算。后台子 agent 不受父回合收尾控制，只受自己的 `agents.max_tokens`/超时约束；挂起用量不挪入下一回合的 turn 预算，单独作为 pending 观测并在 session scope 结算。
 - 平台/兼容：无新依赖；`estimated` 与 `budget` 字段对旧消费端是未知键（stream-json 消费端按类型分派）。
 - 可观测性：`budget` 事件在 `suga trace` 文本行渲染为 `budget exceeded scope=turn tokens=200000/205000 cost=$… estimated=false`，JSON 里是完整 attrs，`suga trace --json` 可断言（冒烟用）。
 
 ## 决策
 
-- **D1 复用 wrap-up，不做硬中断**：超限即 `RequestWrapUp`，走 `finishIgnoredWrapUp` 与现有文案链。备选：直接让回合失败（`RunFailed`）——会丢掉已做的工作且与 `max_steps` 语义分裂，弃。最坏超出量（一次收尾请求）写进文档。
+- **D1 复用 wrap-up，不做硬中断**：普通回合超限即 `RequestWrapUp`；session 已用尽则 BeforeRun short-circuit，不发模型请求。上界按 B-M1 的完整式子表达，不简化成一次收尾请求。
 - **D2 口径照抄子 agent**：`max(输入−缓存读,0)+输出`；理由：一个口径全项目一致、缓存读不该算花费。
-- **D3 检查点在 `AfterModel` + `AfterTool`**：前者与 `max_steps`/`limitHook` 同构，后者让子 agent 等长工具的消耗及时可见。备选：只在 `AfterModel` 检查（会白烧一整个子 agent 的预算），弃。
+- **D3 只在 `AfterModel` 检查**：AfterTool control 在当前内核会被丢弃；父预算下沉到子 agent hook 是不改内核下最及时且可实现的方案。
 - **D4 预算是"这一回合/这一会话"，不是进程**：只做 `turn` 与 `session` 两个 scope。备选：再加 `process`（chat 一次进程）——与 session 在实践中近似（chat 一次进程通常就是一个会话），多一个语义只会让 gofer 注入更容易搞错，弃；gofer job 用 `scope: turn`。`RunInput.MaxSteps` 有同名 per-run 覆盖机制（`runtime.go:429-434`），本设计不新增 per-run 输入字段，靠 flag/env 即可（备选：加到 `RunInput`，弃，避免动内核契约）。
-- **D5 估算做成 provider 包装器**：只在一处补齐，估算值同时进 `state.Usage`、hook 收集器、model 事件、run/session 累计；标记经 `GenerateResult.Metadata` + `llm.Attempt.Estimated` 外传。备选：在 `usageCollector.AfterModel` 里估——只有 hook 收集器能看到，model 事件与 stream-json 仍是 0，口径分裂，弃。备选：在 `attemptObserver` 里估——`llm.Attempt` 不带请求与响应正文（只有 `TextChars/ReasoningChars`），估不准，弃。
+- **D5 估算做成 provider 包装器且位于 observer 内侧**：具体 provider 先 estimating、再 observed；Pool 每个成员分别包裹。估算值同时进 `state.Usage`、hook 收集器、model 事件、run/session 累计；标记经 `GenerateResult.Metadata` + `llm.Attempt.Estimated` 外传。备选：在 `usageCollector.AfterModel` 里估——只有 hook 收集器能看到，model 事件与 stream-json 仍是 0，口径分裂，弃。备选：在 `attemptObserver` 里估——`llm.Attempt` 不带请求与响应正文（只有 `TextChars/ReasoningChars`），估不准，弃。
 - **D6 `estimate: auto` 默认只补缺失项**：provider 报了什么就信什么；`on` 供对照与调参。备选：不报就按估算**覆盖**——会把网关的部分上报当成没有，弃。
-- **D7 内部请求默认计入**：压缩/交接的调用是真金白银，且与 `suga stats`、stream-json 口径一致；给 `budget.include_internal` 开关（默认 true）。
-- **D8 子 agent 默认计入，但子 agent 自己仍有 `agents.max_tokens`**：双层预算。备选：父预算只看父自己的调用——会让"父开 10 个子 agent"绕过预算，弃。
+- **D7 内部请求默认计入且不提供 v1 排除开关**：压缩/交接的调用是真金白银，且与 stats、stream-json 口径一致。
+- **D8 子 agent 默认计入，但子 agent 自己仍有 `agents.max_tokens`**：双层预算；后台子 agent 不受父回合收尾控制。
 - **D9 成本上限用现有 price 表**：`providers.<id>.models.<m>.price.*`；provider 报的 `CostUSD` 优先。没有价表也没上报时打警告（宁可明说预算失效，也不假装在管）。
 - **D10 flag 在 chat 与 run 都注册**：`--max-steps` 目前只在 run；预算在 chat 里同样有用（长会话止损），且实现是同一个 `personalOptions` 字段。备选：只给 run —— 会把最需要预算的交互场景漏掉，弃。
 - **D11 不新增 `RunInput`/`RunResult` 字段**：预算信息经配置 + 事件 + stream-json 暴露，`RunResult.WrapUp` 已有原因位。保持内核契约稳定。
@@ -358,11 +356,10 @@ stream-json 新增字段（都向后兼容，只在配置了预算时出现）�
 1. `internal/config`：`ReadBudgetSettings` 的 flag > env > config 优先级；`scope`/`estimate` 非法值报错；`cost_usd` 小数；未配置时 `BudgetSettings{}`（不启用）。
 2. `internal/personal`（预算钩子）：
    - `AfterModel` 用 `max(in-cache_read,0)+out` 判定：缓存读大而输出小不触发（构造 usage 用例）；
-   - `AfterTool` 触发：工具内把累计推到超限（模拟子 agent）；
+   - 子 agent AfterModel 读取父 meter 并触发收尾；父回合下一次 AfterModel 再收尾；
    - 同一回合只请求一次收尾（`Control.RequestWrapUp` 的 first-wins 已有实现，断言不重复发 `budget` 事件）；
    - `scope=session` 用 base+run 判定，且 `BeforeRun` 时已超限直接进入收尾；
-   - `include_subagents: false` 时子 agent 用量被剔除；
-   - `include_internal: false` 时 `purpose=compaction` 的调用被剔除；
+   - 子 agent 与内部请求固定计入，且内部 purpose 使用 `compact`；不测试不存在的排除开关；
    - 成本口径：provider 报 `CostUSD` 优先；无上报时按 price 表算；都没有 → 不触发 + 打一次警告。
 3. 估算器：中文/英文/混合文本的 `tokensOfText` 回归（含 emoji、全角标点）；只补缺失字段（provider 报一半时的行为）；`estimate: off` 不补；`estimate: on` 时真实值不被覆盖；`estimated` 标记传到了 model 事件 attrs 与 `GenerateResult.Metadata`。
 4. `internal/output`：stream-json 的 `budget` 对象与 `estimated` 字段（配置预算时才出现；`wrap_up` 取值）；`WrapUpNotice` 的成本文案。
@@ -374,14 +371,38 @@ stream-json 新增字段（都向后兼容，只在配置了预算时出现）�
 
 ## 待确认事项
 
-- **Q1 默认是否启用**：建议**默认不启用**（不设 `budget.tokens`/`cost_usd` 即无行为变化），只在 config 里显式开启；备选：给一个温和的默认（如 `budget.tokens: 5000000`，防止"忘了配"）——但那会悄悄改变现有用户的行为，需要明确同意。
-- **Q2 内部请求是否计入**：建议 `include_internal: true`（与 stats 口径一致、成本真实）；备选：默认 `false`（压缩触发收尾对用户是意外）。
-- **Q3 收尾本身也花钱**：建议接受"最坏超出 = 触发点那次 + 一次收尾请求"，不做二次硬中断；备选：收尾请求也超预算时直接以失败结束（`RunFailed`，run 退出码非 0）。
+- **Q1 默认是否启用**：采纳**默认不启用**（不设 `budget.tokens`/`cost_usd` 即无行为变化），只在 config 里显式开启；备选：给一个温和的默认（如 `budget.tokens: 5000000`，防止"忘了配"）——但那会悄悄改变现有用户的行为，需要明确同意。
+- **Q2 内部请求是否计入**：已采纳计入；v1 不提供 `include_internal` 开关（meter 尚无可靠 purpose/source 小计）。
+- **Q3 收尾本身也花钱**：接受收尾请求可能继续产生费用，不做二次硬中断；最坏上界按 B-M1 的完整式子记录。
 - **Q4 缓存写是否计入**：建议计入（`CacheWriteTokens` 落在 `InputTokens` 里，与子 agent 口径一致）；备选：单独减去（更精确的"新 token"口径，但与 `agents.max_tokens` 不一致）。
-- **Q5 会话预算已用尽时**：建议**仍跑一次收尾请求**（模型能解释现状、给建议），并在 chat 里提示；备选：直接拒绝该回合、不发起任何请求（更快省钱，但用户看到的是一个空回合）。
+- **Q5 会话预算已用尽时**：采纳直接 BeforeRun short-circuit，不发起模型请求，返回固定 completed + budget wrap-up；理由是避免每次续用会话和 steering 插话重复付费。
 - **Q6 估算方向与系数**：建议默认 `estimate_factor: 1.0`（口径与 `tokensOfText` 一致，含义可解释），把 `>1 更保守`留给需要的人；备选：默认 1.1（保守）。
 - **Q7 预算占用提醒的呈现**：建议 chat 状态行常显 `budget NN%` + 到 `notice_ratio` 打一次提醒行；备选：只在超限时提示（更安静，但用户无法预期"还有多久"）。
 - **Q8 成本没有价表时**：建议打警告并让成本预算失效；备选：把内置的常见模型价格表补进来（需要维护价格数据，属另一个话题）。
+
+## Draft 0.2：独立评审 r1 的闭合说明
+
+本节是本版本的规范性补充；与 0.1 中冲突的描述以本节为准。
+
+### CORE_BLOCKING
+
+- **B-C1（关闭）**：不修改 agentcore。AfterTool 不再作为预算检查点；子 agent hook 在每次 AfterModel 检查父 meter，父预算超限就让子 agent 收尾，父回合下一次 AfterModel 再收尾。新增测试覆盖子 agent 中途停止、父回合不再额外发起普通请求；确认现有 AfterTool control 的限制，不把不可实现的行为留在计划中。
+- **B-C2（关闭）**：估算严格为 `observed(estimating(concreteProvider))`。Pool 每个成员、compact provider、子 agent provider 都在 observer 之前估算，且透传 StreamingProvider/ToolChooser/SetObserver/Model；因此 attempt observer、model 事件、run meter、session 累计使用同一估算值。
+
+### MAJOR
+
+- **B-M1（关闭）**：预算超出上界写成：`触发模型尝试 + 收尾模型尝试 + 收尾前可能的 compact/segment handoff + 空回复重试（最多 2 次）+ finishIgnoredWrapUp 的 ToolChoiceNone 重试 + provider 已报告用量的失败重试 + 同批子 agent 各自的 max_tokens`。这些项不是预算 hook 可消除的保证；后台子 agent 另计，见 B-M2。测试用最坏路径分别断言不会把上界写成仅两次请求。
+- **B-M2（关闭）**：turn scope 不吸收上一回合后台子 agent 的 pending 用量；session scope 在子 agent 完成/结算时计入。父回合 wrap-up 不取消后台子 agent，它们只受自身 `agents.max_tokens` 与 timeout 约束，文档与 trace 明示这一点。
+- **B-M3（关闭）**：删除 `include_subagents`/`include_internal`。v1 固定与 stats/stream-json 同口径，内部 purpose 使用 `compact`；未来要排除必须先增加 meter 的来源维度。
+- **B-M4（关闭）**：suga 是软收尾，gofer GATE-02 是硬终止；gofer 应在 `SUGA_BUDGET_*` 中注入比 job 的硬上限更早的软阈值。suga token 是非缓存 input+output，gofer token 是 input+output+cache，不能直接等数；成本统一美元但估算值会进入 ACP 平铺 usage，gofer 不读取 estimated，故 gofer 熔断也会消费估算值。gofer 超限失败优先于 suga 收尾是已知边界。
+- **B-M5（关闭）**：成本原因统一为 `max_cost_usd`；token 预算沿用 `max_tokens`（与子 agent 停止原因及既有客户端兼容）。ACP 对 `max_tokens`/`max_cost_usd` 均映射为 `end_turn`，只有单次 provider 截断才用 SDK 的 `max_tokens`；未知原因文案覆盖 `max_cost_usd`。
+- **B-M6（关闭）**：收尾不取 steering；退回插话由 chat 自动启动新 turn，因此 turn 预算会重新开始，这是有意的交互语义；session 已耗尽在 BeforeRun short-circuit，不为每条插话付收尾请求。Q5 相应改为“不发模型请求”。
+- **B-M7（关闭）**：估算影响 `lastInput`/ctx 百分比并可能提前压缩，测试固定；不再称其天然偏高，factor 默认 1.0 只是中性近似，缓存折扣缺失及可能过早收尾写入用户文档。
+- **B-M8（关闭）**：采用“事件记估算值并标 `estimated`”方案；stats、ACP、stream-json 均显式标注含估算，不再声称估算不写累计。
+
+### MINOR 与待确认项
+
+`ParseEnv` 仅展开 `${VAR}`，预算环境变量仍由显式读取实现；测试中的 purpose 为 `compact`；跨线最终答复记录 `budget.exceeded=true` 但无 wrap_up；无价表警告每进程一次并进入 stream-json；ACP 只从 config/env 取预算；预算事件去重状态跨 finishIgnoredWrapUp 重试保留。Q1/Q2/Q3/Q4/Q6/Q7/Q8 采纳评审建议；Q5 采纳“不发请求”；Q6 保留 factor 1.0 但删除“偏高”措辞。仍需用户决定的是是否接受“后台子 agent 不受父收尾控制”和 gofer/suga 双阈值的运维约定。
 
 ## 结论与人工计划 Gate
 
