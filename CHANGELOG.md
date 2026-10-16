@@ -7,6 +7,7 @@
 ### 新增
 
 - run/chat 新增回合或会话级 token、成本预算的配置读取与 `--budget-tokens`、`--budget-cost-usd`、`--budget-scope` flags，支持环境变量覆盖。
+- Gofer 用法文档补充预算环境变量注入、turn/session 选择、缓存扣除口径，以及 Suga 软收尾和 Gofer 硬熔断的边界。
 
 - 预算回合在达到 token 或成本上限后通过现有 wrap-up 机制收尾，并记录可辨识的 budget 事件、用量快照与无价表/关闭估算警告。
 - 会话预算耗尽时在用户消息落库后于首个模型请求前短路收尾；后台子 agent 的挂起用量计入会话但不挤占下一回合的 turn 预算。
