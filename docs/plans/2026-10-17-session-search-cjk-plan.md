@@ -31,6 +31,7 @@
 - 排除：S2 bigram/第二张索引、unicode61 tokenizer 替换、迁移/回填实现、长期记忆、向量/语义检索、跨 `SUGA_HOME`、trace/stats 分页与 kind 过滤、redact 规则修改、自动检索质量评测体系、CLI cursor/kind 分页产品面。
 - `recall` 的 offset/limit 和 `ref=out:` 语义不改；`CWDPrefix` 保留原有裸前缀/大小写敏感语义，新 workspace 结构与它并存。
 - 本计划只授权本地实施与按功能点本地提交；不 push、不 tag、不发版，不改 `.gofer/tracker`。
+- `host_or_non_offline_action=NOT_APPLICABLE`（本计划只做本地代码与测试；push/发版在人工 Gate 中另行请求。）
 
 ## 输入与批准证据
 
@@ -45,28 +46,28 @@
 
 | capability_id | required_capability | searched_candidates | direct_reuse | thin_adapter_or_owner_extension | decision | proven_gap | duplication_and_lifecycle_risk |
 |---|---|---|---|---|---|---|---|
-| CAP-S01 | trigram/LIKE 按词分流 | `SearchEntries`、`ftsMatchExpr`、`escapeLike`、`likeSnippet` | 是 | 在 `store/fts.go` 原位扩展 where/order 构造 | OWNER_EXTENSION | 现状任一短词让整条查询退化 LIKE | 保留一处 term 分流，禁止另建搜索实现 |
-| CAP-S02 | 结果过滤与 SQL scope | `EntrySearch`、现有 sessions join、`pathWithin`、`SessionCwds` | 部分 | store 参数扩展 + Ledger scope 适配 | OWNER_EXTENSION | 现状 workspace 先读全部 cwd 再拼 IN | SQL 是检索 owner；Go 参照逻辑只留测试 |
-| CAP-S03 | 稳定分页 | `recall` offset/limit（不可直接复用）、现有 limit 常量 | 部分 | `fts.go` 新增进程内 snapshot/cache/cursor | NEW_MODULE | 没有 session_search cursor 与稳定快照 | 快照只在进程内，TTL/上限固定，不能落库 |
-| CAP-S04 | native 工具参数与渲染 | `LedgerQuery`、`LedgerSearcher`、`renderLedgerHits`、`redact.Clean` | 是 | 原位扩展可选参数与 `SearchResult` 传递 | OWNER_EXTENSION | 当前 schema 无 kind/time/cursor，结果无 next_cursor | `recall` 维持独立协议；工具层只做校验/渲染 |
-| CAP-S05 | 测试/性能基线 | `fts_test.go`、`ledger_test.go`、native tests、真实 temp store | 是 | 新等价性测试、benchmark 与 DB 副本测量 | OWNER_EXTENSION | 仓库当前没有 benchmark，缺少下推等价守卫 | 固定种子和参照实现只用于测试，不进入生产 |
+| CAP-01 | trigram/LIKE 按词分流 | `internal/personal/store/fts.go:73-140,189-203` 的 `EntrySearch`、`SearchEntries`、`ftsMatchExpr`、`escapeLike`、`likeSnippet` | 部分：既有 MATCH/LIKE 分支与排序可复用 | 在 `internal/personal/store/fts.go:103-162` 原位扩展 where/order 构造 | OWNER_EXTENSION | 现状按“任一短词”整体退化 LIKE，混合查询无法保持长词索引与短词过滤 | 保留一处 term 分流，禁止另建搜索实现 |
+| CAP-02 | 结果过滤与 SQL scope | `internal/personal/store/fts.go:142-162` 的 sessions join、`internal/personal/ledger.go:91-179` 的 `pathWithin`/workspace 逻辑、`internal/personal/store/sessions.go:99-110` 的 `SessionCwds` | 部分：既有 scope 语义与边界参照可复用 | store 参数扩展 + `internal/personal/ledger.go:101-124` Ledger scope 适配 | OWNER_EXTENSION | 现状 workspace 先读全部 cwd 再拼 session ID，不能 SQL 下推 | SQL 是检索 owner；Go 参照逻辑只留测试 |
+| CAP-03 | 稳定分页 | `pkg/agentcore/tools/native/ledger.go:26-38` 的查询边界、`internal/personal/store/fts.go:64-71` 的检索上限 | 部分：现有 limit 约定可复用，但无稳定快照 cursor | `internal/personal/store/fts.go` 原位或同包新文件增加 snapshot/cache/cursor | MINIMAL_NEW_MODULE | 现有能力没有 `session_search` cursor 与稳定快照，重跑 SQL 会因新增 entry/排序漂移 | 快照 owner 只在 store 内部，TTL/容量固定且不能落库；不得与 recall 分叉 |
+| CAP-04 | native 工具参数与渲染 | `pkg/agentcore/tools/native/ledger.go:26-38,55-122,152-` 的 `LedgerQuery`、`LedgerSearcher`、`renderLedgerHits`、`redact.Clean` | 是：工具协议、searcher 接口和 redact 路径直接复用 | 在 `pkg/agentcore/tools/native/ledger.go:26-122` 原位扩展可选参数与 `SearchResult` 传递 | OWNER_EXTENSION | 当前 schema 无 kind/time/cursor，结果无 `next_cursor` | `recall` 维持独立协议；工具层只做校验/渲染 |
+| CAP-05 | 测试/性能基线 | `internal/personal/store/fts_test.go:1-`、`internal/personal/ledger_test.go:1-`、`pkg/agentcore/tools/native/ledger_test.go:1-` | 是：现有 store/Ledger/native 测试夹具与 temp store 可复用 | 在上述测试 owner 中增加等价性测试、benchmark 与 DB 副本测量 | OWNER_EXTENSION | 仓库当前没有本期 benchmark 与 SQL 下推等价守卫 | 固定种子和参照实现只用于测试，不进入生产 |
 
 ### New module candidates
 
 | candidate_id | capability_id | proposed_module | searched_candidates | direct_reuse_gap | thin_adapter_or_owner_extension_gap | proven_gap | unique_owner_and_lifecycle | deletion_or_merge_handling |
 |---|---|---|---|---|---|---|---|---|
-| NEW-S01 | CAP-S03 | `store` 内部 snapshot cache + `v1` cursor codec | `recall` offset、store limit 常量 | recall 只读 entry/output 窗口，不提供稳定检索结果集 | 需要进程内状态，但对外仍由 SearchResult 暴露 | 重跑 SQL 会因新增 entry/排序漂移 | `fts.go` 统一持有 TTL、容量、指纹和 codec | 删除 cursor 功能时恢复 `[]EntryHit` 兼容适配，不迁移数据库 |
+| NEW-01 | CAP-03 | `internal/personal/store/fts_cursor.go`（或 `fts.go` 内部 snapshot cache + `v1` cursor codec） | `internal/personal/store/fts.go:64-71`、`pkg/agentcore/tools/native/ledger.go:26-38` | recall 只有 offset/limit，不提供稳定检索结果集 | 原位扩展仍需进程内状态、TTL、容量、指纹和 codec 的单一 owner | 重跑 SQL 会因新增 entry/排序漂移，无法保证第二页稳定 | store 内部统一持有 TTL、容量、指纹和 codec；对外仍由 `SearchResult` 暴露 | 删除 cursor 功能时恢复 `[]EntryHit` 兼容适配，不迁移数据库 |
 
 ### Rejected new tools
 
 | rejected_candidate | capability_id | deletion_test_and_reason |
 |---|---|---|
-| 用 bm25/时间作为跨页 keyset cursor | CAP-S03 | 删除该方案不损失稳定性；设计已明确排序键会漂移，cursor 只保存 snapshot id + offset。 |
-| 用 unicode61 替换 trigram 或新增 bigram 表 | CAP-S01/S03 | unicode61 连续 CJK 召回不成立，bigram 属 S2；删除不会影响 S1 零迁移目标。 |
-| 在 Ledger 中继续 `SessionCwds + pathWithin` 后拼大 IN | CAP-S02 | 删除该路径正是 S1 的性能目标；旧实现只作为测试参照，不作为生产适配。 |
-| 给 recall 增加 cursor | CAP-S04 | recall 已有 offset/limit，删除该扩展保持既有工具面和语义。 |
+| 用 bm25/时间作为跨页 keyset cursor | CAP-03 | 删除该方案不损失稳定性；设计已明确排序键会漂移，cursor 只保存 snapshot id + offset。 |
+| 用 unicode61 替换 trigram 或新增 bigram 表 | CAP-01 | unicode61 连续 CJK 召回不成立，bigram 属 S2；删除不会影响 S1 零迁移目标。 |
+| 在 Ledger 中继续 `SessionCwds + pathWithin` 后拼大 IN | CAP-02 | 删除该路径正是 S1 的性能目标；旧实现只作为测试参照，不作为生产适配。 |
+| 给 recall 增加 cursor | CAP-04 | recall 已有 offset/limit，删除该扩展保持既有工具面和语义。 |
 
-## 预检（preflight）
+## 前置检查（preflight）
 
 1. 读取设计 Draft 0.3 的状态行与 Q1–Q8；只有“全部按建议批准”仍成立才开始实施。任何要求做 S2、改变 cursor 失效策略或扩展 CLI 的请求，先回到设计/计划 Gate。
 2. 记录 Git root、branch、HEAD、`git status --short` 与目标 worktree；检查 `fts.go`、`ledger.go`、native ledger 文件和 migration 目录无他人改动。发现 owner 冲突即停止。
