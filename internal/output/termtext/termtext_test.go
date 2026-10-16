@@ -35,6 +35,7 @@ func TestCleanKeepsTextAndSafeWhitespace(t *testing.T) {
 	})
 	t.Run("keeps unicode", func(t *testing.T) {
 		assert.Eq(t, "界 👩‍💻", Clean("界 👩‍💻"))
+		assert.Eq(t, "", Clean("\x1b"))
 	})
 }
 
