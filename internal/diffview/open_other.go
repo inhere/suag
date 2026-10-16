@@ -1,6 +1,6 @@
 //go:build !unix
 
-package acpserver
+package diffview
 
 import "os"
 
