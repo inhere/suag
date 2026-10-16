@@ -37,6 +37,10 @@ func statusACPServer(t *testing.T, status int) *httptest.Server {
 // can then tell a cut stream (worth continuing the session) from a request the
 // provider refused. A failure that is not a model failure keeps the SDK's own
 // shape, without error_kind.
+//
+// Reverse verification: dropping promptError (returning the run error as the
+// prompt's failure, as before) leaves error_kind out of the data, so the two
+// error_kind assertions fail.
 func TestACPPromptErrorCarriesErrorKind(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

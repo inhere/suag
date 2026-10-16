@@ -4,6 +4,15 @@
 
 ## [未发布]
 
+### 新增
+
+- 重试策略可以按 provider 配置：`providers.<id>.retry`（字段与全局 `retry` 相同：`max_attempts`、`base_delay`、`max_delay`、`reset_after`）覆盖该 provider 的全局值，只写要改的字段，其余字段沿用全局；配置写错时报错带 `providers.<id>.retry.<字段>`。
+- 回合因 provider 错误失败时的 `error_kind` 覆盖更多情况并新增一类取值（issue suga-e1u2）：HTTP 408/429/5xx、连接错误（含响应头超时）在重试用尽后归为 `provider_transient`（此前这类失败不带 `error_kind`），HTTP 4xx（400/401/403/404/422）归为新的 `provider_rejected`。ACP 的 prompt 失败同样带上：JSON-RPC 错误（`-32603`）的 `data` 里除已有的 `error` 文本外加 `error_kind`，与 `run --output-format stream-json` 的 `error` 行同值；不是模型失败的失败（存储、hook、取消、审批）形状不变、不带该字段。
+
+### 变更
+
+- `fallback_models` 不再对任何错误都换下一个模型（issue suga-8vzk）：只在**另一个模型还有机会**时换——瞬时故障（网络错误、408/429/5xx、响应头超时、流被切断/截断）或点名本 provider 的拒绝（401/403 凭据不对或无权用该模型、404 模型不存在）；400/422（请求格式或参数问题，换模型也一样）与无法使用的响应（不是合法 JSON、答复缺内容、API 在 200 里报自己的错）直接返回主模型的错误，不再把后备模型和它们的时间、token 白跑一遍。流式仍是只要已输出过文本就不换（避免答案重复或拼接）。每次尝试换/不换的原因写进日志与 trace 的 model 事件（`fallback` attr，如 `next, provider_transient`、`stop, provider_rejected (HTTP 400) would repeat on the next model`）。
+
 ## [0.25.0] - 2026-10-16
 
 回合中插话（常驻输入行、状态行、Up 撤回、`suga send --steer`）；chat 支持 `!` 本地命令；续接时校验工作目录；流式回复被截断时自动重试；回合取消不再丢后台任务通知。
