@@ -11,6 +11,8 @@ import (
 )
 
 func TestReadApprovalRulesSettings(t *testing.T) {
+	// An absolute workspace on this OS (C:\repo is not absolute on Unix).
+	absRepo := filepath.Join(os.TempDir(), "repo")
 	for _, tc := range []struct {
 		name    string
 		value   any
@@ -24,18 +26,18 @@ func TestReadApprovalRulesSettings(t *testing.T) {
 				"enabled":              false,
 				"always_prefix_tokens": 4,
 				"persist_ask":          false,
-				"project_trust":        map[string]any{"C:\\repo": strings.Repeat("a", 64)},
+				"project_trust":        map[string]any{absRepo: strings.Repeat("a", 64)},
 			},
 			want: ApprovalRulesSettings{
 				Enabled:            false,
 				AlwaysPrefixTokens: 4,
 				PersistAsk:         false,
-				ProjectTrust:       map[string]string{filepath.Clean(`C:\repo`): strings.Repeat("a", 64)},
+				ProjectTrust:       map[string]string{filepath.Clean(absRepo): strings.Repeat("a", 64)},
 			},
 		},
 		{name: "unknown field", value: map[string]any{"rules": []any{}}, wantErr: "not a recognized"},
 		{name: "prefix must be positive", value: map[string]any{"always_prefix_tokens": 0}, wantErr: ">= 1"},
-		{name: "project trust requires a hash", value: map[string]any{"project_trust": map[string]any{"C:\\repo": "short"}}, wantErr: "SHA-256"},
+		{name: "project trust requires a hash", value: map[string]any{"project_trust": map[string]any{absRepo: "short"}}, wantErr: "SHA-256"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gkconfig.Reset()
