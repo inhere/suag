@@ -106,20 +106,19 @@ func (l *Ledger) Search(ctx context.Context, q native.LedgerQuery) ([]native.Led
 		if current == "" {
 			return nil, fmt.Errorf("scope %s needs a current session; use scope all", scopeName(q.Scope))
 		}
-		search.SessionIDs = []string{current}
+		search.CurrentSessionID = current
 		if q.Scope != native.LedgerScopeCurrent {
-			if search.SessionIDs, err = l.workspaceSessions(ctx, repo, current); err != nil {
-				return nil, err
+			sess, err := repo.GetSession(ctx, current)
+			if err != nil {
+				return nil, fmt.Errorf("load current session: %w", err)
+			}
+			if strings.TrimSpace(sess.Cwd) != "" {
+				search.WorkspaceDir = filepath.Clean(sess.Cwd)
+				search.FoldCase = l.foldCase
 			}
 		}
 	default:
 		return nil, fmt.Errorf("scope %q must be current, workspace or all", q.Scope)
-	}
-	// An empty SessionIDs list means "all sessions" to the store; a scoped
-	// search always includes at least the current session, but never let an
-	// empty list widen the search.
-	if q.Scope != native.LedgerScopeAll && len(search.SessionIDs) == 0 {
-		return []native.LedgerHit{}, nil
 	}
 	hits, err := repo.SearchEntries(ctx, search)
 	if err != nil {
@@ -139,31 +138,6 @@ func scopeName(scope string) string {
 		return native.LedgerScopeWorkspace
 	}
 	return scope
-}
-
-// workspaceSessions returns the current session plus every session whose cwd
-// equals the current session's cwd or lies below it. Matching respects path
-// separators (/repo never matches /repo2), which the store's plain string
-// prefix cannot. Without a recorded cwd the scope is the current session.
-func (l *Ledger) workspaceSessions(ctx context.Context, repo *store.Store, current string) ([]string, error) {
-	sess, err := repo.GetSession(ctx, current)
-	if err != nil {
-		return nil, fmt.Errorf("load current session: %w", err)
-	}
-	ids := []string{current}
-	if strings.TrimSpace(sess.Cwd) == "" {
-		return ids, nil
-	}
-	cwds, err := repo.SessionCwds(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for id, cwd := range cwds {
-		if id != current && pathWithin(sess.Cwd, cwd, l.foldCase) {
-			ids = append(ids, id)
-		}
-	}
-	return ids, nil
 }
 
 // pathWithin reports whether p is dir or lies below it, comparing cleaned

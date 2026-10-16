@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -80,6 +81,15 @@ type EntrySearch struct {
 	// CWDPrefix keeps only sessions whose cwd starts with it (plain string
 	// prefix, case-sensitive); empty means no restriction.
 	CWDPrefix string
+	// WorkspaceDir restricts sessions to this directory and its descendants.
+	// The comparison is on path-separator boundaries; an empty cwd is excluded.
+	WorkspaceDir string
+	// CurrentSessionID is always included with WorkspaceDir, even when that
+	// session has no cwd. With no WorkspaceDir it restricts results to this ID.
+	CurrentSessionID string
+	// FoldCase applies SQLite's ASCII-only lower() folding to the workspace
+	// comparison. Ledger enables it on Windows to match the approved semantics.
+	FoldCase bool
 	// Limit caps the hits: <=0 means 20, at most 100.
 	Limit int
 	// IncludeAgents searches sub-agent sessions too (they belong to their
@@ -169,6 +179,11 @@ func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, e
 		where = joinWhere(where, `substr(ss.cwd, 1, length(?)) = ?`)
 		args = append(args, q.CWDPrefix, q.CWDPrefix)
 	}
+	if q.CurrentSessionID != "" || q.WorkspaceDir != "" {
+		condition, scopeArgs := workspaceScopeCondition(q)
+		where = joinWhere(where, condition)
+		args = append(args, scopeArgs...)
+	}
 	if len(q.Kinds) > 0 {
 		where = joinWhere(where, `f.role IN (`+placeholders(len(q.Kinds))+`)`)
 		for _, kind := range q.Kinds {
@@ -218,6 +233,43 @@ func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, e
 		out = append(out, h)
 	}
 	return out, rows.Err()
+}
+
+// workspaceScopeCondition builds the SQL scope without materializing session
+// cwd values in Go. The prefix includes one separator, so /repo does not match
+// /repo2; the current session branch intentionally bypasses cwd checks.
+func workspaceScopeCondition(q EntrySearch) (string, []any) {
+	parts := []string{}
+	args := []any{}
+	if q.CurrentSessionID != "" {
+		parts = append(parts, `f.session_id = ?`)
+		args = append(args, q.CurrentSessionID)
+	}
+	if q.WorkspaceDir != "" {
+		dir := filepath.Clean(q.WorkspaceDir)
+		separator := string(filepath.Separator)
+		prefix := dir
+		if !strings.HasSuffix(prefix, separator) {
+			prefix += separator
+		}
+		cwdExpr := "ss.cwd"
+		valueExpr := "?"
+		if q.FoldCase {
+			// SQLite lower() intentionally provides the design's ASCII-only
+			// folding; non-ASCII case differences are a documented limitation.
+			cwdExpr = "lower(ss.cwd)"
+			if strings.Contains(dir, `\`) {
+				// Windows accepts slash spellings in persisted legacy cwds;
+				// normalize those before applying the case fold.
+				cwdExpr = `lower(replace(ss.cwd, '/', char(92)))`
+			}
+			valueExpr = "lower(?)"
+		}
+		parts = append(parts, `(`+cwdExpr+` <> '' AND (`+
+			valueExpr+` = `+cwdExpr+` OR substr(`+cwdExpr+`, 1, length(`+valueExpr+`)) = `+valueExpr+`))`)
+		args = append(args, dir, prefix, prefix)
+	}
+	return `(` + strings.Join(parts, ` OR `) + `)`, args
 }
 
 // validateSearchKinds rejects values that cannot occur in entries_fts. Keeping
