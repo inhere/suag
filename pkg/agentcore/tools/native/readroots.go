@@ -93,7 +93,7 @@ func (r readTarget) matchUnder(glob, rel string) bool {
 // resolveRead resolves a read-only tool's path argument: inside the workspace
 // as ResolveSandboxedPath does, otherwise an absolute path under one of roots.
 func resolveRead(workspace string, roots []string, arg string) (readTarget, error) {
-	return resolveRooted(workspace, roots, arg, "the read-only dependency roots")
+	return resolveRooted(workspace, roots, arg, "the read-only roots")
 }
 
 // resolveWrite resolves a write tool's path argument the same way against the

@@ -106,14 +106,24 @@ var warnReadRootsOnce sync.Once
 
 // readRoots returns the directories outside the workspace the read-only file
 // tools may read: the detected dependency sources (tools.dependency_roots,
-// default true) followed by tools.read_roots.
-func readRoots() ([]native.ReadRoot, []error) {
+// default true), idev-std sources (tools.standards_roots, default true), and
+// tools.read_roots. The optional workspace is used for workspace-bound roots.
+func readRoots(workspaces ...string) ([]native.ReadRoot, []error) {
+	workspace := ""
+	if len(workspaces) > 0 {
+		workspace = workspaces[0]
+	} else {
+		workspace = axconfig.ResolveWorkspacePath()
+	}
 	var roots []native.ReadRoot
 	if gkconfig.Bool("tools.dependency_roots", true) {
-		roots = native.DependencyRoots()
+		roots = append(roots, native.DependencyRoots()...)
+	}
+	if gkconfig.Bool("tools.standards_roots", true) {
+		roots = append(roots, native.StandardsRoots(workspace)...)
 	}
 	extra, errs := native.ConfiguredReadRoots(gkconfig.Strings("tools.read_roots"))
-	return append(roots, extra...), errs
+	return native.DeduplicateReadRoots(append(roots, extra...)), errs
 }
 
 // minimizeOutput is the tool result tidier (tools.minimize_output, default
@@ -165,7 +175,7 @@ func trashDir() string {
 // the session's additional-directory set (--add-dir), which the tools read at
 // every call, so it may still be empty here (nil = none).
 func nativeEnv(workspace string, dirs *native.AddDirs) native.Env {
-	roots, errs := readRoots()
+	roots, errs := readRoots(workspace)
 	warnReadRootsOnce.Do(func() {
 		for _, err := range errs {
 			slog.Warn("skip read root", "err", err)

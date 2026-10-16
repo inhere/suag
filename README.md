@@ -80,6 +80,12 @@ Suga reads only `$SUGA_HOME/config.yaml` and `$SUGA_HOME/.env` (default `~/.suga
 | `skills.list_max`, `skills.always_load` | How many skills are listed with their description; skills whose body goes into every prompt |
 | `workspace` | Workspace root of the file and shell tools (default: the directory suga was started in) |
 
+### Read-only roots
+
+The read-only file tools (`file_read`, `file_list`, `file_grep` and `file_find`) can read selected directories outside the workspace without changing where writes or `shell_exec` run. `tools.dependency_roots` (default `true`) detects dependency source caches. `tools.standards_roots` (default `true`) detects idev-std's release directory from `IDEV_STD_RELEASES_ROOT` (or the compatible `INHERE_DEV_STANDARDS_ROOT`) and, by walking upward from the workspace, the `<workspace root>/tmp/idev-std` loading-artifact directory. The workspace root is identified by `standards.json`; the artifact directory is added only when it exists.
+
+Set `tools.standards_roots: false` to disable the automatic idev-std roots. `tools.read_roots` remains available for explicit directories, and duplicate paths are merged. The detected roots are listed in the prompt's environment section; they are read-only, so write tools and the shell cwd are unaffected.
+
 Everything else — every setting with its default, the provider and model details, and a step-by-step setup guide (choosing a provider, writing `config.yaml`, putting the key in `.env`, checking the first run, reading the errors) — is in the built-in **suga-guide** skill, released on the first run to `~/.suga/skills/suga-guide/`. In chat you can simply ask how to configure suga; the model loads that skill and answers from it.
 
 All data lives in `$SUGA_HOME/db/sessions.db`.

@@ -186,7 +186,7 @@ func subAgentEnvironment(workspace, kind string) string {
 	b.WriteString("# Environment\n")
 	fmt.Fprintf(&b, "- OS: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 	fmt.Fprintf(&b, "- Workspace (file tools are confined to it): %s\n", workspace)
-	if roots, _ := readRoots(); len(roots) > 0 {
+	if roots, _ := readRoots(workspace); len(roots) > 0 {
 		b.WriteString("- Read-only roots outside the workspace (the file tools accept absolute paths under them):\n")
 		for _, r := range roots {
 			fmt.Fprintf(&b, "  - %s: %s\n", r.Label, r.Path)

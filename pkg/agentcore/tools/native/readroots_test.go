@@ -44,7 +44,7 @@ func TestResolveRead(t *testing.T) {
 	})
 	t.Run("outside both is refused", func(t *testing.T) {
 		_, err := resolveRead(ws, roots, filepath.Join(filepath.Dir(dep), "elsewhere.txt"))
-		assert.ErrMsgContains(t, err, "outside the workspace and the read-only dependency roots")
+		assert.ErrMsgContains(t, err, "outside the workspace and the read-only roots")
 	})
 	t.Run("relative escape is refused even with roots", func(t *testing.T) {
 		rel, err := filepath.Rel(ws, filepath.Join(dep, "mod", "lib.go"))

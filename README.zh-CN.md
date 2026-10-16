@@ -80,6 +80,12 @@ Suga 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`
 | `skills.list_max`、`skills.always_load` | 带说明列出的 skills 数量；正文每次进提示词的 skills |
 | `workspace` | 文件与 shell 工具的工作区根（默认：启动 suga 时所在的目录） |
 
+### 只读根
+
+只读文件工具（`file_read`、`file_list`、`file_grep`、`file_find`）可以读取工作区外指定的目录，但不会改变写工具或 `shell_exec` 的工作区。`tools.dependency_roots`（默认 `true`）自动识别依赖源码缓存。`tools.standards_roots`（默认 `true`）会从 `IDEV_STD_RELEASES_ROOT`（或兼容的 `INHERE_DEV_STANDARDS_ROOT`）识别 idev-std 发行目录，并从工作区向上查找工作空间根，把其 `<工作空间根>/tmp/idev-std` 加为加载产物目录。工作空间根通过 `standards.json` 判断；产物目录只有存在时才加入。
+
+设置 `tools.standards_roots: false` 可关闭 idev-std 自动只读根。仍可用 `tools.read_roots` 显式配置目录，重复路径会合并。识别结果会列在提示词环境段；这些目录只读，写工具与 shell cwd 不受影响。
+
 其余配置（每一项的默认值）、provider 与模型的细节，以及分步配置向导（选 provider、写 `config.yaml`、把密钥放进 `.env`、验证第一次运行、看懂报错）都在内置 skill **suga-guide** 里：suga 首次运行会释放到 `~/.suga/skills/suga-guide/`。在 chat 里直接问怎么配置 suga 即可，模型会加载该 skill 并照着回答。
 
 所有数据都在 `$SUGA_HOME/db/sessions.db`。
