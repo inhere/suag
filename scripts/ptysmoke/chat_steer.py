@@ -38,6 +38,15 @@ turn only. The scenarios (each on its own scratch home and fake model):
              waiting, then delivered, and counted on the end-of-turn line).
   approval   typing at an approval question is the answer, never an inserted
              message: no 插话 line, no request carrying that text, no steer event.
+  status     what the turn does right now is on the row right above the input line
+             (spinner + 思考中… / 执行 shell_exec… + elapsed seconds, refreshed in
+             place while a message is typed), the whole turn through: it appears
+             while the model is asked, names the tool that runs, goes back to the
+             model's wording once the result is in, keeps its row while the answer
+             streams and is gone when the turn ends (the ↳ line hands the half-typed
+             text to the ❯ prompt). A colored terminal is what turns it on, so this
+             and the next scenario drop NO_COLOR.
+  status-off chat.spinner: false shows no status line either, in a colored terminal.
   screen     a long, overwide reply streams in slowly while a message is typed:
              the minimal VT screen model (ptydrive.Screen) says the reply keeps
              its rows, whole, and the input line stays one line of its own - the
@@ -75,6 +84,17 @@ Linux container:
 - no restoreOutputProcessing (OPOST|ONLCR left off in raw mode): hook fails, the
   line the hook wrote straight to the terminal keeps its column and the input line
   is repainted into it.
+
+Reverse verification of the status line (each check must fail on purpose):
+- give Renderer.startThinking its early return back (or drop the SetLabel calls):
+  status fails - the row above the input line never appears (no frame anywhere on
+  screen), while the input line checks still pass.
+- drop lineedit's status row from Write (the output repaints the prompt without
+  clearing the status row): status fails, the status row is left in the output area.
+- drop the SetStatus on the tool call (the label stays 思考中…): status fails, the
+  row never names shell_exec while the tool runs.
+- drop the SetStatus("") of Stop (the end of a turn): status fails, the row is still
+  there when the turn is over and above the ❯ prompt.
 
 Reverse verification of the send scenario (removing the steer path makes it fail):
 - drop the ModeSteer branch of chatState.deliverMessage (`suga send --steer`
@@ -141,6 +161,9 @@ WITHDRAW_EDIT = "补充说明"
 # The edited text as chat shows it (the editor's line break collapsed, like every
 # inserted message on its own line).
 WITHDRAW_EDITED = WITHDRAW_TEXT + " " + WITHDRAW_TEXT2 + WITHDRAW_EDIT
+# The tool of the status scenario: long enough for the frame, screen and typing
+# checks of that scenario to happen while it runs.
+STATUS_TOOL = "touch {marker}; sleep 8; echo TOOL_DONE"
 # The texts `suga send --steer` carries in the send scenario. chat labels every
 # message from elsewhere with its source (deliveryLine, --source defaults to cli).
 SEND_TEXT = "只改 README"
@@ -156,6 +179,19 @@ PASTE_TEXT = "第一行\n第二行"
 # The pty window the screen scenario runs in: each reply line is wider than it, so
 # the terminal wraps the line and the chat has to know that width (SetSize).
 PTY_COLS = 60
+# The status scenario's answer: several lines, streamed in small chunks (--chunk),
+# so the status line's row can be looked at while the answer arrives.
+STATUS_REPLY = "STEER_OK\n第二行\n第三行"
+# The rows of the screen model have their trailing spaces removed: the input line of
+# an empty one is the prompt alone.
+STEER_EMPTY = STEER.rstrip()
+# One frame of the status line (spinner.go): the animation character, what the turn
+# waits for and the elapsed seconds. The character of a given frame is not
+# predictable (the animation advances per frame), so any of them is accepted.
+FRAME = r"[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]"
+# A status row of any kind: the whole line, as the screen model shows it (the color
+# codes are stripped).
+STATUS_FRAME = FRAME + r" (?:思考中|执行 [a-z_]+)… \d+s"
 LONG = "STEER_LONG"
 LONG_LINES = 3
 # Not a multiple of PTY_COLS, and neither is a line with the ▣ prefix: a line that
@@ -198,6 +234,31 @@ def paste(s, text):
     """Sends a bracketed paste of text, the way a terminal does: the markers
     around the text and its line break passed through as it is (chat_paste.py)."""
     s.send("\x1b[200~" + text + "\x1b[201~")
+
+
+def frame(label):
+    """The regex of one status-line frame saying label (思考中…, 执行 shell_exec…)."""
+    return FRAME + r" " + re.escape(label) + r" \d+s"
+
+
+def screen_lines(s, cols):
+    """The rows a terminal would show for everything the chat wrote so far."""
+    screen = Screen(width=cols)
+    screen.feed(s.text_raw(0))
+    return screen.screen_lines()
+
+
+def wait_screen(s, m, cols, ok, tries=15):
+    """Reads the screen until ok(lines) holds: the repaint of a write lands
+    asynchronously, so a busy machine must not catch it half way. Returns the last
+    screen read."""
+    lines = []
+    for _ in range(tries):
+        lines = screen_lines(s, cols)
+        if ok(lines):
+            return lines
+        s.until(r"\A\Z never", m, timeout=0.2)  # keep reading output meanwhile
+    return lines
 
 
 # What chat says about a message inserted into the running turn (steering.go).
@@ -736,9 +797,10 @@ def screen_scenario(c):
     m = s.mark()
     s.line("长回答")
     c.check("the prompt becomes ↳ while the model answers", s.until(STEER_PROMPT, m))
-    # The waiting line is off while the input line is up (a frame would fight it
-    # for the row).
-    c.check("no waiting line while the input line is up", not s.contains(r"思考中", m))
+    # The status line of the turn needs a colored terminal, and these scenarios run
+    # with NO_COLOR set: nothing of it is drawn (the status scenario checks it with
+    # the colors on).
+    c.check("no status line without colors", not s.contains(r"思考中", m))
 
     # Type while the reply streams: the chunks arrive slowly (--chunk-delay).
     time.sleep(0.8)
@@ -787,6 +849,103 @@ def screen_scenario(c):
     c.exit_chat()
 
 
+def status_scenario(c):
+    """The turn's own status line above the input line: what the turn waits for,
+    refreshed in place while a message is typed, the whole turn through."""
+    s = c.session
+    m = s.mark()
+    c.check("❯ prompt", s.until(r"❯ ", m))
+    m = s.mark()
+    s.line("跑一个长命令")
+    # The model is asked for its first message (--delay 3): the status line says so,
+    # on the row above the input line, while nothing of the turn is on screen yet.
+    c.check("the status line says the model is asked", s.until(frame("思考中…"), m))
+    c.check("the input line stays the ↳ prompt", s.until(STEER_PROMPT, m))
+    c.check("tool call shown", s.until(r"⏺ shell_exec", m))
+    if not c.wait_file(STARTED, 30):
+        c.check("tool started (marker file)", False)
+        return
+    c.check("tool started (marker file)", True)
+    c.check("the status line names the running tool", s.until(frame("执行 shell_exec…"), m))
+
+    # The rows of the screen, as a terminal would show them: the status line is the
+    # row right above the input line.
+    lines = wait_screen(s, m, c.cols, lambda ls: len(ls) >= 2 and re.fullmatch(STATUS_FRAME, ls[-2]) is not None)
+    c.check("the status line is the row above the input line",
+            len(lines) >= 2 and re.fullmatch(STATUS_FRAME, lines[-2]) is not None)
+    c.check("the input line is the last row", bool(lines) and lines[-1] == STEER_EMPTY)
+
+    # Type while the tool runs: the frames keep rewriting that row (its seconds
+    # change), and what is typed into the input line stays where it is.
+    s.send("插话")
+    typed = "插话"
+    c.check("the half line is echoed", s.until(re.escape(typed), m))
+    m2 = s.mark()
+    c.check("the status line keeps refreshing", s.until(frame("执行 shell_exec…"), m2))
+    lines = wait_screen(s, m2, c.cols, lambda ls: bool(ls) and ls[-1] == STEER + typed)
+    c.check("the input line keeps what was typed, as the last row",
+            bool(lines) and lines[-1] == STEER + typed)
+    c.check("exactly one status row, right above it",
+            [i for i, row in enumerate(lines) if re.search(STATUS_FRAME, row)] == [len(lines) - 2])
+
+    # The result is in: the model is asked again (--delay 3) and the status line goes
+    # back to the model's own wording.
+    m2 = s.mark()
+    c.check("tool result shown", s.until(r"⎿ ok: TOOL_DONE", m2))
+    c.check("the status line goes back to the model", s.until(frame("思考中…"), m2))
+
+    # The answer streams in small chunks (--chunk): the status line keeps the row
+    # right above the input line, and none of it is left in the output area above.
+    c.check("the answer starts streaming", s.until(re.escape("STEER_OK"), m2))
+    lines = wait_screen(s, m2, c.cols, lambda ls: len(ls) >= 3 and "STEER_OK" in " ".join(ls[:-2])
+                        and re.fullmatch(STATUS_FRAME, ls[-2]) is not None)
+    c.check("while streaming: one status row, right above the input line",
+            [i for i, row in enumerate(lines) if re.search(STATUS_FRAME, row)] == [len(lines) - 2])
+    c.check("while streaming: the ↳ input line is the last row",
+            bool(lines) and lines[-1] == STEER + typed)
+    c.check("the answer's last line arrived", s.until(re.escape("第三行"), m2))
+    c.check("the turn ends", s.until(r"tokens · ", m2))
+
+    # The end of the turn: the status line is gone, and the half line comes back at
+    # the ❯ prompt of the next read (design N5).
+    c.check("the half line comes back at the prompt",
+            s.until(r"❯ " + re.escape(typed), m2, timeout=10))
+    lines = wait_screen(s, m2, c.cols, lambda ls: bool(ls) and ls[-1] == PROMPT + typed)
+    c.check("no status row is left on screen",
+            not [row for row in lines if re.search(STATUS_FRAME, row)])
+    c.check("the input line is the last row, at the ❯ prompt",
+            bool(lines) and lines[-1] == PROMPT + typed)
+    c.exit_chat()
+
+
+def status_off_scenario(c):
+    """chat.spinner: false turns the status line off, in a colored terminal too."""
+    s = c.session
+    m = s.mark()
+    c.check("❯ prompt", s.until(r"❯ ", m))
+    m = s.mark()
+    s.line("跑一个长命令")
+    c.check("tool call shown", s.until(r"⏺ shell_exec", m))
+    if not c.wait_file(STARTED, 30):
+        c.check("tool started (marker file)", False)
+        return
+    c.check("tool started (marker file)", True)
+    s.send("插话")
+    typed = "插话"
+    c.check("the half line is echoed", s.until(re.escape(typed), m))
+    lines = wait_screen(s, m, c.cols, lambda ls: bool(ls) and ls[-1] == STEER + typed)
+    c.check("no status row above the input line",
+            not [row for row in lines if re.search(STATUS_FRAME, row)])
+    c.check("the ↳ input line is the last row", bool(lines) and lines[-1] == STEER + typed)
+    c.check("no status line anywhere", not s.contains(r"思考中", m))
+
+    m2 = s.mark()
+    c.check("tool result shown", s.until(r"⎿ ok: TOOL_DONE", m2))
+    c.check("the turn answers", s.until(c.reply, m2))
+    c.check("the turn ends", s.until(r"tokens · ", m2))
+    c.exit_chat()
+
+
 def hook_scenario(c):
     """A hook's notice and the line it writes straight to the terminal arrive
     while a message is typed: the input line keeps its place (N4, r3 M1)."""
@@ -804,7 +963,7 @@ def hook_scenario(c):
     c.check("the hook wrote to the terminal itself", s.until(HOOK_TTY, m, timeout=30))
     c.check("the hook's notice reached chat", s.until(HOOK_NOTICE, m, timeout=30))
     c.check("the half line is echoed", s.until(re.escape(typed), m))
-    c.check("no waiting line while the input line is up", not s.contains(r"思考中", m))
+    c.check("no status line without colors", not s.contains(r"思考中", m))
 
     # The hook writes to the terminal itself and chat repaints its input line
     # afterwards, asynchronously: read the screen until the repaint has landed
@@ -886,7 +1045,7 @@ def off_scenario(c):
 
 
 def run(name, binary, work, port, fake_args, tool, tools_extra, extra, scenario, keep, reply,
-        dump=False, cols=None, hooks=False):
+        dump=False, cols=None, hooks=False, color=False):
     home = os.path.abspath(os.path.join(work, "home"))
     ws = os.path.abspath(os.path.join(work, "ws"))
     shutil.rmtree(home, ignore_errors=True)
@@ -904,6 +1063,10 @@ def run(name, binary, work, port, fake_args, tool, tools_extra, extra, scenario,
                   % (json.dumps(sys.executable), json.dumps(hook)))
     write_home(home, port, tools_extra=tools_extra, extra=extra)
     env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="on" if hooks else "off", TERM="xterm", NO_COLOR="1")
+    if color:
+        # The status line of a running turn, like the waiting line before it, needs a
+        # colored terminal: NO_COLOR (what the other scenarios set) keeps it off.
+        env.pop("NO_COLOR", None)
     env.pop("SUGA_CONFIG", None)
 
     here = os.path.dirname(os.path.abspath(__file__))
@@ -984,6 +1147,15 @@ def main():
          hook_scenario, {"cols": PTY_COLS, "hooks": True}),
         ("approval", ["--mode", "tool", "--delay", "0.2", "--reply", reply], QUICK_TOOL, "", "",
          approval_scenario, {}),
+        # The status line above the input line while a turn runs: it needs a colored
+        # terminal (the scenarios above run with NO_COLOR), and the answer streams in
+        # small chunks so its row can be looked at mid-stream.
+        ("status", ["--mode", "tool", "--delay", "3", "--reply", STATUS_REPLY,
+                    "--chunk", "6", "--chunk-delay", "0.3"], STATUS_TOOL, auto, "",
+         status_scenario, {"color": True}),
+        # chat.spinner: false turns the status line off (the colored terminal stays).
+        ("status-off", ["--mode", "tool", "--delay", "0.5", "--reply", reply], QUICK_TOOL, auto,
+         "chat:\n  spinner: false\n", status_off_scenario, {"color": True}),
         ("off", ["--mode", "tool", "--delay", "0.2", "--reply", reply], SLOW_TOOL, auto,
          "chat:\n  steering: false\n", off_scenario, {}),
     ]
