@@ -213,7 +213,7 @@ gofer job resume <job-id> --prompt "从上次会话继续"
 - stream-json：本回合只要发生过拒绝，回合结束时都会在 `result` 之前发出一行 `input_required`，并带 `denied_tools`（去重后的被拒工具名数组）；`result` 的 `status` 仍为 `COMPLETED`，进程正常退出。旧版仅在首次拒绝时发出且不带 `denied_tools`，并会在模型重复请求被拒工具时直接结束回合；该短路已移除，改为上面的 3 次上限。
 - ACP（语义变化）：拒绝后模型若正常完成，`stopReason` 由原来的 `refusal` 改为 `end_turn`；只有累计 3 次拒绝时返回 `refusal`（结束前发送说明文本）；审批取消返回 `cancelled`。被拒工具的 `tool_call` 状态为 `failed`（不再跟 `completed`）；允许路径的状态序列不变（`pending` → `in_progress` → `completed`）；未经审批就失败的调用（如未加载的 deferred 工具）以 `failed` 结束。Gofer 的 ACP 客户端两种 stopReason 都能处理。
 - ACP `session/load` 的 `cwd` 必须与会话创建时的目录一致（两边都做符号链接解析，Windows 下不区分大小写）：不一致时返回 JSON-RPC `-32602`（invalid params），**message 里写明两个目录**，会话不加载、也不注册到本次连接（不会被后续 prompt 用到）。`session/new` 不变；旧会话没有记录目录时不拦截。`load_session: true` 的客户端（Gofer）若确实换了工作目录，应新建会话而不是 load 旧会话。
-- ACP 的 prompt 因模型请求失败结束时，返回的 JSON-RPC 错误（`-32603`）`data` 为 `{"error": <文本>, "error_kind": <取值>}`，取值与 CLI 的 `error_kind` 相同（`provider_transient` / `provider_rejected` / `provider_bad_response`）；不是模型失败的失败（存储、hook、取消、审批）仍是 `{"error": <文本>}`，形状不变、不带该字段。Gofer 可据此决定续跑还是报错（当前 Gofer 侧未改）。
+- ACP 的 prompt 因模型请求失败结束时，返回的 JSON-RPC 错误（`-32603`）`data` 为 `{"error": <文本>, "error_kind": <取值>}`，取值与 CLI 的 `error_kind` 相同（`provider_transient` / `provider_rejected` / `provider_bad_response` / `provider_quota`）；不是模型失败的失败（存储、hook、取消、审批）仍是 `{"error": <文本>}`，形状不变、不带该字段。Gofer 可据此决定续跑还是报错（当前 Gofer 侧未改）。
 
 2026-10-07 的 Gofer 实际作业已验证 CLI/ACP 续聊、ACP `job say/end/resume`、只读无写入及审批允许/拒绝；0.118.0 另以当前 `suga` agent 验证了 CLI 续接的环境继承与输出投影。模型响应由本机回环模拟服务提供；最终配置不含测试模型地址或测试 HOME，真实模型凭据路径须在运行环境中单独准备和验证。
 

@@ -153,6 +153,9 @@ func (r *recorder) attemptObserver(defName, defModel string) llm.AttemptObserver
 		}
 		if a.Err != nil {
 			e.Status, e.Error = eventError, a.Err.Error()
+			if reset := llm.ResetAt(a.Err); reset != "" {
+				e.Attrs["reset_at"] = reset
+			}
 		}
 		r.record(ctx, e)
 		// The run-scoped total (stream-json "usage" lines, ACP usage_update)

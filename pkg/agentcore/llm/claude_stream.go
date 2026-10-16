@@ -93,6 +93,7 @@ func (p *ClaudeProvider) openStream(ctx context.Context, body map[string]any) (*
 	var apiErr struct {
 		Error *struct {
 			Message string `json:"message"`
+			Code    string `json:"code"`
 		} `json:"error"`
 	}
 	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
@@ -133,6 +134,7 @@ type claudeStreamEvent struct {
 	Usage *claudeUsage `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
+		Code    string `json:"code"`
 	} `json:"error"`
 }
 

@@ -67,6 +67,7 @@ type responsesEvent struct {
 	Message     string                     `json:"message"`
 	Error       *struct {
 		Message string `json:"message"`
+		Code    string `json:"code"`
 	} `json:"error"`
 }
 

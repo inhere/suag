@@ -310,6 +310,7 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		} `json:"usage"`
 		Error *struct {
 			Message string `json:"message"`
+			Code    string `json:"code"`
 		} `json:"error"`
 	}
 
@@ -317,7 +318,7 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		return nil, badResponsef("parse claude response: %w", err)
 	}
 	if raw.Error != nil {
-		return nil, badResponsef("claude api error: %s", raw.Error.Message)
+		return nil, badResponsef("claude api error: %s", apiErrorMessage(raw.Error.Code, raw.Error.Message))
 	}
 
 	resp := &agentcoreapi.GenerateResult{

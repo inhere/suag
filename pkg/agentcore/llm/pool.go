@@ -72,7 +72,8 @@ func (p *Pool) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) 
 	}
 
 	var lastErr error
-	for i, prov := range providers {
+	for i := 0; i < len(providers); i++ {
+		prov := providers[i]
 		// The attempt is reported after the decision below, so its model event
 		// can say what the pool did with the failure (Attempt.Fallback).
 		attempt := &attemptCollector{obs: obs}
@@ -120,7 +121,8 @@ func (p *Pool) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, em
 		return emit(ctx, ev)
 	}
 	var lastErr error
-	for i, prov := range providers {
+	for i := 0; i < len(providers); i++ {
+		prov := providers[i]
 		streaming, ok := prov.(agentcoreapi.StreamingProvider)
 		if !ok {
 			// A provider without streaming says nothing about the request, and

@@ -304,6 +304,7 @@ type responsesBody struct {
 	} `json:"incomplete_details"`
 	Error *struct {
 		Message string `json:"message"`
+		Code    string `json:"code"`
 	} `json:"error"`
 	Usage map[string]any `json:"usage"`
 }
@@ -321,7 +322,7 @@ func (p *ResponsesProvider) parseResponsesBody(data []byte) (*agentcoreapi.Gener
 // stream event carries) into a GenerateResult.
 func (p *ResponsesProvider) resultOf(body responsesBody) (*agentcoreapi.GenerateResult, error) {
 	if body.Error != nil && body.Error.Message != "" {
-		return nil, badResponsef("responses api error: %s", body.Error.Message)
+		return nil, badResponsef("responses api error: %s", apiErrorMessage(body.Error.Code, body.Error.Message))
 	}
 	if body.Status == "failed" {
 		return nil, badResponsef("responses api error: response failed")

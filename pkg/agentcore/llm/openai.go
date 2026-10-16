@@ -249,6 +249,7 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		} `json:"usage"`
 		Error *struct {
 			Message string `json:"message"`
+			Code    string `json:"code"`
 		} `json:"error"`
 	}
 
@@ -256,7 +257,7 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		return nil, badResponsef("parse openai response: %w", err)
 	}
 	if raw.Error != nil {
-		return nil, badResponsef("openai api error: %s", raw.Error.Message)
+		return nil, badResponsef("openai api error: %s", apiErrorMessage(raw.Error.Code, raw.Error.Message))
 	}
 	if len(raw.Choices) == 0 {
 		return nil, badResponsef("openai: empty choices")

@@ -101,6 +101,7 @@ func (p *OpenAIProvider) openStream(ctx context.Context, path string, body map[s
 	var apiErr struct {
 		Error *struct {
 			Message string `json:"message"`
+			Code    string `json:"code"`
 		} `json:"error"`
 	}
 	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
@@ -138,6 +139,7 @@ type streamChunk struct {
 	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
+		Code    string `json:"code"`
 	} `json:"error"`
 }
 
@@ -179,7 +181,7 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 			return nil, badResponsef("parse openai stream chunk: %w", err)
 		}
 		if chunk.Error != nil {
-			return nil, badResponsef("openai api error: %s", chunk.Error.Message)
+			return nil, badResponsef("openai api error: %s", apiErrorMessage(chunk.Error.Code, chunk.Error.Message))
 		}
 		if u := chunk.Usage; u != nil {
 			res.Usage = agentcoreapi.Usage{

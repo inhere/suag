@@ -6,6 +6,7 @@
 
 ### 新增
 
+- 额度/用量上限耗尽归类为 `provider_quota`：不重试，跨 provider 才 fallback；可解析的重置时间写入错误文本和 trace 的 `reset_at`。
 - 重试策略可以按 provider 配置：`providers.<id>.retry`（字段与全局 `retry` 相同：`max_attempts`、`base_delay`、`max_delay`、`reset_after`）覆盖该 provider 的全局值，只写要改的字段，其余字段沿用全局；配置写错时报错带 `providers.<id>.retry.<字段>`。
 - 回合因 provider 错误失败时的 `error_kind` 覆盖更多情况并新增一类取值（issue suga-e1u2）：HTTP 408/429/5xx、连接错误（含响应头超时）在重试用尽后归为 `provider_transient`（此前这类失败不带 `error_kind`），HTTP 4xx（400/401/403/404/422）归为新的 `provider_rejected`。ACP 的 prompt 失败同样带上：JSON-RPC 错误（`-32603`）的 `data` 里除已有的 `error` 文本外加 `error_kind`，与 `run --output-format stream-json` 的 `error` 行同值；不是模型失败的失败（存储、hook、取消、审批）形状不变、不带该字段。
 
