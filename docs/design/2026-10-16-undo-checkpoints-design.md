@@ -1,17 +1,18 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 写操作快照与 `:undo`（回滚上一回合的文件改动）设计
 
-> 状态：Draft 0.1（待用户审阅）
+> 状态：Draft 0.2（按独立评审 r1 修订，待用户审阅）
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-16 | suga（gofer job） | 初稿：写工具调用前快照（存放、粒度、上限、保留）、`:undo` / `:undo N` / `:checkpoints`、冲突检测、回滚后告知模型、`suga undo` CLI、shell_exec 边界与 git 备选比较、与 gc/suga-zy9f 的关系 |
+| 0.2 | 2026-10-16 | suga（gofer job） | 关闭 U-C1–U-C3、U-M1–U-M7：改用待投递通知，补齐删除时机/混合删除、幂等状态、失败写入、全局清理、并发锁、root 与目标身份校验、DB 回合排序 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
-关联：issue suga-wl0l（本设计来源）、suga-zy9f（数据治理：spill 配额与压缩、backup/restore，与本设计的保留/清理边界见 3.9）、suga-oyby（`:add-dir`，快照需要覆盖附加目录）。调研依据：`docs/research/2026-10-16-feature-strengthening-analysis.md` §3 #11（写文件与 `shell_exec` 的改动不可撤销，只有 `file_remove` 有 7 天 trash；全仓无 undo/checkpoint）。相关设计：`docs/design/2026-10-13-background-tasks-design.md`（会话目录 `outputs/` 的同族约定）、`docs/design/2026-10-15-interrupted-turn-replay-design.md`（中断回合的条目回放，本设计不改变它）。
+关联：issue suga-wl0l（本设计来源）、suga-zy9f（数据治理）、suga-oyby（`:add-dir`，快照需要覆盖附加目录）。调研依据：`docs/research/2026-10-16-feature-strengthening-analysis.md` §3 #11。独立评审：`local/reviews/2026-10-16-approval-undo-design-review-r1.md`（不入库）。
 
 ### 思考模式与范围冻结
 
@@ -422,3 +423,36 @@ G1 的具体补偿：`:checkpoints` 与 `:undo` 都会列出该回合运行的 s
 5. 验收：`make smoke-chat` 新增 `scripts/ptysmoke/chat_undo.py`（fakellm edit 模式写文件 → `:checkpoints` → `:undo` 确认 → 断言文件内容恢复、trace 有 `snapshot`/`undo` 事件、下一回合请求体里出现 `suga.undo` 条目），并做一次反向验证（临时关掉快照写入，`chat_undo.py` 的恢复断言必须失败）；`chat_edit.py` 与 `chat_approval.py` 全量回归（会话目录里多了 `snapshots/`）；Windows 路径/权限行为经 gofer exec job 在主机跑 `go test ./...`。
 
 同类产品对照（参考，不照搬）：Claude Code 等同类工具也提供“编辑前后记录快照 + 会话内回退（rewind）”，并把回退做在编辑器/工具层而不是靠版本控制；本设计与之共享“写前快照 + 会话内回滚”的形态，差异在：`file_remove` 复用已有回收区而不复制第二份、冲突默认跳过而不是覆盖、`shell_exec` 明确排除在外（只提示 + git 备选）、回滚后以注入条目告知模型。这些对照只作形态参考，具体行为一律以本仓代码与本设计为准。
+
+
+## Draft 0.2 修订条款（取代前文冲突表述）
+
+本节是对独立评审 r1 的规范性回应；与前文冲突处以本节为准。代码核对依据包括 `internal/personal/context.go:184-204`、`internal/personal/tasks.go:106-140`、`internal/chat/steering.go:199-212`、`pkg/agentcore/tools/native/remove.go:222-265`、`internal/personal/store/turns.go:61-70` 与 `internal/wiring/sessionadddirs.go:15-28`。
+
+### 4.1 通知、回合状态与交互（U-C1、U-C3、U-M1、U-M7）
+
+- undo 不在回合外直接写一个裸 `EntryUser`。它把摘要写入会话 meta 的待投递队列；下一回合的 `contextBuilder` 像 `takeTaskNotices` 一样取出，创建带 `suga.undo` metadata 的注入条目并加入 `injectedItemKeys`。因此 chat 下一回合、`--resume`、ACP 下一 prompt 都能看到；中断回合的工具回放完成后再注入，并明确“上面那些写操作已经被撤销”。CLI 也只写该队列，不伪造旧回合的 TurnID。
+- 每个 checkpoint 有 `state.json`，状态为 `open`/`undone`/`partial`；普通 undo 永远排除 `source: pre-undo` 的独立 `pre-undo/` 子目录。已 `undone` 的回合不计入“最近 N 个有改动回合”，`:undo N` 继续向 DB 中更早的回合查找；shell-only 回合不静默跳过，清单先显示其位置与未覆盖原因。
+- `:undo` 与 `:checkpoints` 在回合进行中由 `turnInput.insert` 识别，原样退回输入行并提示“回合进行中”；它们不会成为 steering 消息。帮助 banner 同时列出 `:undo force`。新行为需加入 `chat_steering` 冒烟。
+- 回合顺序以 store 的 `started_at, id` 顺序为准，不以快照目录 mtime 为准。若目标回合不是最后一个回合，清单显著列出其间回合及 shell/写操作摘要。
+
+### 4.2 写工具快照与删除（U-C2、U-M2、U-M6）
+
+- `file_write` 在截断前先 Lstat：仅普通文件或不存在目标可快照；FIFO、设备、目录、符号链接目标等为 `special`，不执行可恢复 allow（默认 `on_error: deny`）。`file_edit` 在 `applyEditSpans` 成功、`writeFileInRoot` 之前保存原文，匹配失败不产生快照。快照接口可携带原文 `[]byte`。
+- 写入未成功完成是独立状态 `incomplete`。当前内容仍等于 before 时可标记幂等跳过；否则默认允许从 before 恢复并在清单显示“写入失败/部分写入”，不得把它误报为普通冲突。oversize 是明确例外：工具结果和模型消息都说明“本次写入不可撤销”。
+- `file_remove` 的快照采用两阶段：审批后先记录目标身份与 `pending-remove`；工具成功后从结果 metadata 回传实际 trash entry 路径，再补全快照。`PurgeDirs` 先永久删除的子目录写入 `purged_dirs` 清单，因此一个调用可以是 `trash + purged`，回滚只恢复 trash 部分并显示“部分恢复/永久删除不可恢复”。trash 条目过期仍不可恢复，`keep_days` 不改变固定的 `TrashRetention=7` 天。
+- 恢复 trash 前校验 `origin.json` 的 path 与 `(root, rel)`；原位置已存在即冲突。移回时保留符号链接本身（不跟随），并按 Lstat/链接目标重建；恢复结果报告每个删除条目剩余保留天数。目录恢复不假装恢复被永久清除的子树。
+
+### 4.3 冲突、沙箱与并发（U-M4、U-M5、U-M6）
+
+- undo 必须取得 session gate；chat 像 `Compact` 一样先拿锁，CLI 在 chat/run 忙时返回“会话忙”，不与正在进行的写回或条目写入交错。后台 watch/background 任务可能随后改回文件，结果行列出仍运行的任务并给出 task id。
+- `meta.json` 的 root 不可信。undo 只接受当前 cwd 或会话 meta 中持久化的 `:rw` 附加目录；`rel` 必须是规范的相对路径，不含 `..`、盘符或绝对路径。before 内容哈希必须等于 `sha256_before`，否则标为损坏不可恢复。恢复前再次核对真实路径、文件类型、符号链接目标和必要的硬链接身份，不能把链接改指后的目标当作原文件写入。
+- `--force` 只覆盖内容冲突，不绕过 root/类型/hash/受保护路径校验，也不恢复 `purged`/`special`/损坏快照。每个文件单独失败，其他安全项仍可恢复。
+
+### 4.4 全局保留、清理与验收（U-M3）
+
+- `keep_days` 与会话/文件上限由全局清理器执行，不依赖下一次写调用：启动和 `suga gc` 前扫描所有 `sessions/*/snapshots`，按过期日删除；新增 `tools.snapshots.max_global_bytes`，超限按最旧已完成回合清理。清理事件只写摘要，不为每个正常快照制造重复 trace 工具事件；快照信息作为现有 tool event attr，失败/清理才单独记 event。
+- run 默认仍 fail-closed；快照全局目录不可写、锁失败或清理状态不确定时拒绝写入。`suga gc` 的报告计入 snapshots 字节。后台任务、Windows 锁文件和大小写变体在清单中分别报告/合并。
+- 逐条关闭 U-C1–U-C3、U-M1–U-M7；U-m1–U-m10 同步采用数字序号排序、oversize 明示、tool event attr、真实退出码说明、带内容的快照接口、trash 固定 7 天、Windows 逐文件错误、git stash 不含未跟踪文件、取消回合通知顺序及经核实的 session ID 解析策略。
+
+仍待用户选择：Q1 命令名与开关；Q2 单文件/会话/全局上限与保留期；Q3 只读会话是否允许回滚；Q4 是否维持 G1 只提示 shell 改动；Q5 删除恢复是复用 7 天 trash 还是另存快照；Q6 CLI 的 `--force` 是否强制要求 `--yes`。评审同意 Q1、Q3、Q4、Q6 的保守方向；Q2 必须含全局上限，Q5 必须先接受混合删除的“部分恢复”语义。
