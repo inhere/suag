@@ -277,9 +277,11 @@ func toolTraceParts(e store.Event) []string {
 		return append(agentTraceParts(e), toolArgPart(e)...)
 	}
 	var parts []string
-	if src, _ := e.Attrs["approval"].(string); src != "" {
+	src, _ := e.Attrs["approval"].(string)
+	rule, _ := e.Attrs["approval_rule"].(string)
+	if src != "" || rule != "" {
 		item := ""
-		if rule, _ := e.Attrs["approval_rule"].(string); rule != "" {
+		if rule != "" {
 			if src == "always" {
 				if scope, _ := e.Attrs["approval_scope"].(string); scope != "" {
 					item = "approval=always(" + approvalScopeText(scope) + ")"
