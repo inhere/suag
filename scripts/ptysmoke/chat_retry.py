@@ -2,12 +2,13 @@
 """End-to-end smoke test: chat shows model retries and the trace counts them
 (Linux/macOS).
 
-Starts scripts/ptysmoke/fakellm.py (text mode, --fail-first 1 --break-first 1:
-an HTTP 503, then a stream that breaks after half the reply, then the whole
-reply) and `suga chat` in a PTY with short retry waits, sends one prompt and
-checks: a retry notice for the 503, a restart notice for the broken stream,
-the whole reply after them, and the session's model event in
-`suga trace --json` with retries=2.
+Starts scripts/ptysmoke/fakellm.py (text mode, --fail-first 1 --overload-first 1
+--break-first 1: an HTTP 503, then a stream that carries only an overload error,
+then a stream that breaks after half the reply, then the whole reply) and
+`suga chat` in a PTY with short retry waits, sends one prompt and checks: a
+retry notice for the 503, a retry notice for the overload ("服务端过载/限流"),
+a restart notice for the broken stream, the whole reply after them, and the
+session's model event in `suga trace --json` with retries=3.
 
   python3 -I scripts/ptysmoke/chat_retry.py --bin tmp/smoke/suga
 
@@ -35,6 +36,10 @@ def scenario(s):
     s.check("❯ prompt", s.until(r"❯ ", m))
     m = s.mark(); s.line("你好")
     s.check("notice: HTTP 503 retry", s.until(r"↻ 模型请求失败（HTTP 503）.*第 1 次", m))
+    # The overload arrived as an error event inside the stream: the turn is
+    # requested again instead of failing, and nothing was streamed yet, so the
+    # notice carries no "将重新输出".
+    s.check("notice: stream overload retry", s.until(r"↻ 模型请求失败（服务端过载/限流）.*第 1 次", m))
     s.check("notice: broken stream restarts", s.until(r"↻ 模型请求失败（stream broken）.*将重新输出", m))
     s.check("whole reply after the restart", s.until(r"▣ " + REPLY, m) and s.until(r"tokens · ", m))
     m = s.mark(); time.sleep(0.3); s.send(CTRL_C); time.sleep(0.3); s.send(CTRL_C)
@@ -46,7 +51,7 @@ def scenario(s):
 def check_trace(s, events):
     model = next((e for e in events if e.get("kind") == "model"), {})
     attrs = model.get("attrs") or {}
-    s.check("trace: model event counts 2 retries", attrs.get("retries") == 2)
+    s.check("trace: model event counts 3 retries", attrs.get("retries") == 3)
     s.check("trace: last retry reason", attrs.get("retry_reason") == "stream broken")
     s.check("trace: retry wait recorded", attrs.get("retry_wait_ms", 0) > 0)
 
@@ -72,7 +77,7 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     fake = subprocess.Popen([sys.executable, "-I", os.path.join(here, "fakellm.py"),
                              "--port", str(args.port), "--mode", "text", "--delay", "0.2",
-                             "--reply", REPLY, "--fail-first", "1", "--break-first", "1"],
+                             "--reply", REPLY, "--fail-first", "1", "--overload-first", "1", "--break-first", "1"],
                             stdout=subprocess.PIPE, text=True)
     s = None
     try:

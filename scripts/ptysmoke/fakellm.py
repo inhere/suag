@@ -23,8 +23,10 @@ characters with --chunk-delay seconds between them (a reply that arrives slowly,
 one line at a time), and --lines/--wide turn the text reply into a long answer of
 that many lines, each padded to that many columns (a line wider than the
 terminal window). --fail-first N answers the first N requests with HTTP 503;
---break-first M then streams half of the next M responses' text and drops
-the connection (a broken stream), for the retry smoke. --fail-from N
+--overload-first M then answers the next M with a 200 carrying only a temporary
+API error (server_is_overloaded: an SSE error event, or a JSON error body for a
+non-streamed call); --break-first M then streams half of the next M responses'
+text and drops the connection (a broken stream), for the retry smoke. --fail-from N
 [--fail-count M] fails from the Nth request on, M times (M <= 0: every later
 request), which lets the first steps of a turn run and then ends it with a
 failure (the interrupted-turn replay smoke). --background makes
@@ -161,7 +163,14 @@ def make_handler(args):
                     and (args.fail_count <= 0 or n < args.fail_from + args.fail_count)):
                 self.refuse()
                 return
-            broken = n <= args.fail_first + args.break_first
+            # --overload-first M: the next M requests answer with a temporary API
+            # error only (an overload), the shape responses/openai report inside
+            # the stream (or in a 200 body without a stream).
+            after_failures = n - args.fail_first
+            if after_failures <= args.overload_first:
+                self.overload(body.get("stream"))
+                return
+            broken = after_failures <= args.overload_first + args.break_first
             last = body["messages"][-1]
             # The step's tool result is already in this request: the model answers
             # instead of calling the tool again. Reading only the last message
@@ -270,6 +279,25 @@ def make_handler(args):
             if not broken:
                 self.wfile.write(b"0\r\n\r\n")
 
+        def overload(self, stream):
+            """Answer 200 with only a temporary API error (an overload): as an SSE
+            error event when streamed, as a JSON error body otherwise. Both are
+            the shapes the providers report an overload in, and both must be
+            retried instead of failing the turn."""
+            message = "Our servers are currently overloaded. Please try again later."
+            if stream:
+                raw = ('data: %s\n\n' % json.dumps({"error": {"code": "server_is_overloaded",
+                                                         "message": message}})).encode()
+                ctype = "text/event-stream"
+            else:
+                raw = json.dumps({"error": {"code": "server_is_overloaded", "message": message}}).encode()
+                ctype = "application/json"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
         def refuse(self):
             """Answer 503: the shape the retry policy treats as transient."""
             raw = b'{"error":{"message":"overloaded"}}'
@@ -318,6 +346,7 @@ def main():
     p.add_argument("--child-delay", type=float, default=0, help="extra seconds before each sub-agent response")
     p.add_argument("--fail-first", type=int, default=0, help="answer the first N requests with HTTP 503")
     p.add_argument("--break-first", type=int, default=0, help="then break the next M streams after half the text")
+    p.add_argument("--overload-first", type=int, default=0, help="after --fail-first: answer the next M requests with a temporary API error only")
     p.add_argument("--fail-from", type=int, default=0, help="answer requests N and later with HTTP 503 (0 = off)")
     p.add_argument("--fail-count", type=int, default=0, help="--fail-from: how many requests fail (0 = all of them)")
     args = p.parse_args()
