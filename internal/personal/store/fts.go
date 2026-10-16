@@ -76,7 +76,7 @@ type EntrySearch struct {
 	// Query is split on whitespace; every term must occur (AND). Terms are
 	// literal text: FTS5 syntax characters have no special meaning.
 	Query string
-	// SessionIDs restricts the search to these sessions; empty means all.
+	// SessionIDs restrict the search to these sessions; empty means all.
 	SessionIDs []string
 	// CWDPrefix keeps only sessions whose cwd starts with it (plain string
 	// prefix, case-sensitive); empty means no restriction.
@@ -104,6 +104,9 @@ type EntrySearch struct {
 	// Until is an exclusive upper bound on entry creation time. Zero means no
 	// upper bound.
 	Until time.Time
+	// Cursor is a process-local snapshot position. Invalid or expired cursors
+	// are ignored by SearchEntriesPage, which starts a fresh query.
+	Cursor string
 }
 
 // EntryHit is one matching entry, located by SessionID/Seq.
@@ -115,11 +118,27 @@ type EntryHit struct {
 	CreatedAt time.Time
 }
 
-// SearchEntries searches the ledger index. Terms with at least three runes use
-// the trigram index (FTS5 MATCH, bm25 ranking); shorter terms stay as LIKE
-// filters in the same WHERE clause. Results are not redacted here; callers do
-// that.
+// SearchResult contains one page and the optional continuation metadata. Notice
+// is informational: a stale cursor or a snapshot truncated at 500 hits never
+// turns a valid search into an error.
+type SearchResult struct {
+	Hits       []EntryHit
+	NextCursor string
+	Notice     string
+}
+
+// SearchEntries preserves the pre-cursor API for callers that only need hits.
+// The page-aware API is SearchEntriesPage; it owns snapshot creation and
+// continuation metadata.
 func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, error) {
+	result, err := s.SearchEntriesPage(ctx, q)
+	return result.Hits, err
+}
+
+// searchEntries executes one bounded SQL search. Snapshot pagination asks for
+// one more than the snapshot cap so the caller can distinguish truncation from
+// an exactly-full result without changing the normal page limit.
+func (s *Store) searchEntries(ctx context.Context, q EntrySearch, requestedLimit int) ([]EntryHit, error) {
 	terms := strings.Fields(q.Query)
 	if len(terms) == 0 {
 		return nil, errors.New("search query is required")
@@ -127,11 +146,14 @@ func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, e
 	if err := validateSearchKinds(q.Kinds); err != nil {
 		return nil, err
 	}
-	limit := q.Limit
+	limit := requestedLimit
 	if limit <= 0 {
-		limit = defaultSearchLimit
+		limit = q.Limit
+		if limit <= 0 {
+			limit = defaultSearchLimit
+		}
+		limit = min(limit, maxSearchLimit)
 	}
-	limit = min(limit, maxSearchLimit)
 
 	matchTerms := make([]string, 0, len(terms))
 	likeTerms := make([]string, 0, len(terms))

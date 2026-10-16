@@ -13,6 +13,7 @@
 - session_search 存储检索按词分流，支持 kind 与半开时间过滤，并排除自身检索工具结果。
 - session_search 的 workspace/current scope 改为 SQL 下推，按路径边界过滤 cwd 并保留无 cwd 的当前会话。
 - session_search 增加 v1 游标编解码与查询指纹基础，非法游标可安全回到首查。
+- session_search 增加进程内稳定快照分页，限制 500 条结果并提供 10 分钟 TTL / 64 个快照的 v1 游标续接。
 
 ### 修复
 
