@@ -191,7 +191,7 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 		// The outside-directory question needs the tool's static read roots (a
 		// path under one needs no authorization) and the session's added-directory
 		// set, both read once here.
-		roots, _ := readRoots()
+		roots, _ := readRoots(workspace)
 		chatGate = newChatApprover(chatApproverOptions{
 			gate: gate, auto: auto, asker: asker, workspace: workspace, dirs: dirs,
 			readRoots: native.RootPaths(roots), readOnly: opts.ReadOnly,
