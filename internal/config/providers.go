@@ -36,6 +36,10 @@ type ModelConfig struct {
 	// base URL. "" keeps the provider's.
 	Type, BaseURL string
 	ContextWindow int
+	// MaxOutputTokens (models.<key>.max_output_tokens) caps how many tokens
+	// this model may answer with; 0 falls back to the provider's value, see
+	// ProviderConfig.MaxOutputTokens.
+	MaxOutputTokens int
 	// Thinking (models.<key>.thinking) is the model's thinking level, see
 	// ThinkingLevels; "" falls back to the provider's.
 	Thinking string
@@ -66,6 +70,10 @@ type ProviderConfig struct {
 	// model of this provider without its own models.<model>.context_window;
 	// 0 = infer from the model name.
 	ContextWindow int
+	// MaxOutputTokens (providers.<id>.max_output_tokens) is the output limit of
+	// every model of this provider without its own models.<model> value; 0
+	// leaves the limit to the protocol (see MaxOutputTokensFor).
+	MaxOutputTokens int
 	// Thinking (providers.<id>.thinking) is the default thinking level of the
 	// provider's models; "" leaves the provider's own default.
 	Thinking string
@@ -161,8 +169,9 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 			Headers: expandEnvMap(normalizeStringMap(entry["headers"])),
 			Models:  readModelConfigs(entry["models"]),
 			// Negative or non-numeric counts as unset, like the per-model value.
-			ContextWindow: intValue(entry["context_window"]),
-			Thinking:      stringValue(entry["thinking"]),
+			ContextWindow:   intValue(entry["context_window"]),
+			MaxOutputTokens: intValue(entry["max_output_tokens"]),
+			Thinking:        stringValue(entry["thinking"]),
 		}
 		promptCache, promptCacheSet := entry["prompt_cache"].(bool)
 		user.Compat = normalizeStringList(entry["compat"])
@@ -185,6 +194,9 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 		}
 		if user.ContextWindow > 0 {
 			merged.ContextWindow = user.ContextWindow
+		}
+		if user.MaxOutputTokens > 0 {
+			merged.MaxOutputTokens = user.MaxOutputTokens
 		}
 		merged.Thinking = firstNonEmpty(user.Thinking, merged.Thinking)
 		if promptCacheSet {
@@ -270,6 +282,7 @@ func readModelConfigs(raw any) map[string]ModelConfig {
 			cfg.Type = normalizeConfigToken(stringValue(entry["type"]))
 			cfg.BaseURL = expandEnv(stringValue(entry["base_url"]))
 			cfg.ContextWindow = intValue(entry["context_window"])
+			cfg.MaxOutputTokens = intValue(entry["max_output_tokens"])
 			cfg.Thinking = stringValue(entry["thinking"])
 			cfg.Price = readPrice(entry["price"])
 		}
@@ -554,6 +567,17 @@ func ContextWindowFor(spec ModelSpec) int {
 		return spec.Provider.ContextWindow
 	}
 	return ContextWindowForModel(spec.APIModel())
+}
+
+// MaxOutputTokensFor returns the configured output token limit of spec's
+// model: providers.<id>.models.<model>.max_output_tokens, else
+// providers.<id>.max_output_tokens, else 0 for "no limit configured", which
+// leaves the limit to the provider protocol (see ResolveMaxOutputTokens).
+func MaxOutputTokensFor(spec ModelSpec) int {
+	if cfg, ok := spec.Provider.Models[spec.Model]; ok && cfg.MaxOutputTokens > 0 {
+		return cfg.MaxOutputTokens
+	}
+	return spec.Provider.MaxOutputTokens
 }
 
 // PriceFor returns the configured price of spec's model.
