@@ -43,10 +43,12 @@ type BudgetSnapshot struct {
 	Reason   string       `json:"reason,omitempty"`
 	// Parent identifies a child event caused by the foreground parent's budget,
 	// rather than by the child's own agents.max_tokens limit.
-	Parent                bool `json:"parent,omitempty"`
-	Estimated             bool `json:"estimated,omitempty"`
-	EstimatedInputTokens  int  `json:"est_input_tokens,omitempty"`
-	EstimatedOutputTokens int  `json:"est_output_tokens,omitempty"`
+	Parent bool `json:"parent,omitempty"`
+	// NoticeRatio is the configured fraction at which chat should remind the user.
+	NoticeRatio           float64 `json:"-"`
+	Estimated             bool    `json:"estimated,omitempty"`
+	EstimatedInputTokens  int     `json:"est_input_tokens,omitempty"`
+	EstimatedOutputTokens int     `json:"est_output_tokens,omitempty"`
 }
 
 func (b BudgetSettings) enabled() bool { return b.Tokens > 0 || b.CostUSD > 0 }
@@ -231,7 +233,7 @@ func (m *runUsageMeter) budgetSnapshotLocked() BudgetSnapshot {
 	} else {
 		used = m.base.Add(m.run.Usage)
 	}
-	snapshot := BudgetSnapshot{Scope: settings.Scope, Estimated: m.estimated}
+	snapshot := BudgetSnapshot{Scope: settings.Scope, NoticeRatio: settings.NoticeRatio, Estimated: m.estimated}
 	if settings.Tokens > 0 {
 		spent := tokenSpend(used)
 		snapshot.Tokens = BudgetMetric{Limit: float64(settings.Tokens), Used: float64(spent), Remaining: float64(max(settings.Tokens-spent, 0))}

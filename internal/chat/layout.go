@@ -34,10 +34,12 @@ package chat
 import (
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/gookit/color"
+	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/pkg/agentcore"
 )
 
@@ -159,6 +161,9 @@ type TurnStatus struct {
 	Provider, Model string
 	// Usage is what this turn's model calls used.
 	Usage agentcore.Usage
+	// Budget is the latest budget observation of this turn. It is nil when no
+	// budget is configured, preserving the historical status line byte-for-byte.
+	Budget *personal.BudgetSnapshot
 	// LastInputTokens is the input token count (cache included) of the turn's
 	// last model request and ContextWindow is the model's window: together they
 	// give the "ctx 55%" part (either unknown keeps it out).
@@ -207,6 +212,14 @@ func BuildTurnStatus(s TurnStatus) []LayoutLine {
 	if s.Steers > 0 {
 		parts = append(parts, fmt.Sprintf("插话 %d", s.Steers))
 	}
+	// Keep budget at the end of the ordinary status fields, as a persistent
+	// meter; a wrap-up reason or truncation note follows it when present.
+	if budget := budgetStatus(s.Budget); budget != "" {
+		parts = append(parts, budget)
+	}
+	if wrapUp := budgetWrapUpStatus(s.Budget); wrapUp != "" {
+		parts = append(parts, wrapUp)
+	}
 	// An answer cut off at the output token limit: the person must not read it as
 	// a finished one, and the limit names the setting that can raise it.
 	if s.Truncated {
@@ -217,6 +230,81 @@ func BuildTurnStatus(s TurnStatus) []LayoutLine {
 		}
 	}
 	return append(lines, LayoutLine{Text: strings.Join(parts, " · "), Color: color.Gray})
+}
+
+// budgetShare returns the largest configured dimension's percentage. Showing
+// the largest ratio keeps the line useful when both token and cost limits exist.
+func budgetShare(b *personal.BudgetSnapshot) (int, bool, bool) {
+	if b == nil {
+		return 0, false, false
+	}
+	ratio := -1.0
+	for _, metric := range []personal.BudgetMetric{b.Tokens, b.CostUSD} {
+		if metric.Limit <= 0 {
+			continue
+		}
+		r := metric.Used / metric.Limit
+		if r > ratio {
+			ratio = r
+		}
+	}
+	if ratio < 0 {
+		return 0, false, false
+	}
+	ratio = math.Min(math.Max(ratio, 0), 1)
+	return int(ratio * 100), b.Estimated, true
+}
+
+func budgetStatus(b *personal.BudgetSnapshot) string {
+	share, estimated, ok := budgetShare(b)
+	if !ok {
+		return ""
+	}
+	prefix := ""
+	if estimated {
+		prefix = "~"
+	}
+	name := "budget"
+	if b.Scope == "session" {
+		name = "session budget"
+	}
+	return fmt.Sprintf("%s %s%d%%", name, prefix, share)
+}
+
+func budgetWrapUpStatus(b *personal.BudgetSnapshot) string {
+	if b == nil || !b.Exceeded {
+		return ""
+	}
+	prefix := ""
+	if b.Estimated {
+		prefix = "~"
+	}
+	switch b.Reason {
+	case "max_cost_usd":
+		return fmt.Sprintf("本轮因成本预算用尽收尾（%s$%.4f/$%.4f）", prefix, b.CostUSD.Limit, b.CostUSD.Used)
+	case "max_tokens":
+		return fmt.Sprintf("本轮因 token 预算用尽收尾（%s%.0f/%s%.0f）", prefix, b.Tokens.Limit, prefix, b.Tokens.Used)
+	default:
+		return "本轮因预算用尽收尾"
+	}
+}
+
+// budgetNoticeText is deliberately short: it may be printed while the model
+// is streaming, while the detailed limit and usage remain on the final status.
+func budgetNoticeText(b *personal.BudgetSnapshot) string {
+	share, estimated, ok := budgetShare(b)
+	if !ok {
+		return ""
+	}
+	prefix := ""
+	if estimated {
+		prefix = "~"
+	}
+	name := "预算"
+	if b.Scope == "session" {
+		name = "会话预算"
+	}
+	return fmt.Sprintf("预算提醒：%s已使用 %s%d%%", name, prefix, share)
 }
 
 // contextShare renders the context usage of a turn's last model request as
