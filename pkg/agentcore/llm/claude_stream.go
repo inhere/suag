@@ -94,9 +94,9 @@ func (p *ClaudeProvider) openStream(ctx context.Context, body map[string]any) (*
 		} `json:"error"`
 	}
 	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
-		return nil, fmt.Errorf("claude api error: %s", apiErr.Error.Message)
+		return nil, badResponsef("claude api error: %s", apiErr.Error.Message)
 	}
-	return nil, fmt.Errorf("claude api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData)))
+	return nil, badResponsef("claude api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData)))
 }
 
 // claudeUsage is the usage object shared by message_start and message_delta.
@@ -171,7 +171,7 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 			if lines.truncated() {
 				return nil, streamTruncatedError(p.Name(), cutLine)
 			}
-			return nil, fmt.Errorf("parse claude stream event: %w", err)
+			return nil, badResponsef("parse claude stream event: %w", err)
 		}
 		if ev.Type == "" {
 			ev.Type = eventName
@@ -184,7 +184,7 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 			if ev.Error != nil {
 				msg = ev.Error.Message
 			}
-			return nil, fmt.Errorf("claude api error: %s", msg)
+			return nil, badResponsef("claude api error: %s", msg)
 		case "message_start":
 			usage = ev.Message.Usage
 		case "content_block_start":

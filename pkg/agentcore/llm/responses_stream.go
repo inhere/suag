@@ -96,7 +96,7 @@ func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader
 				cut = streamTruncatedError(p.Name(), cutLine)
 				break
 			}
-			return nil, fmt.Errorf("parse responses stream event: %w", err)
+			return nil, badResponsef("parse responses stream event: %w", err)
 		}
 		switch ev.Type {
 		case "response.output_text.delta":
@@ -122,7 +122,7 @@ func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader
 				body.Output = orderedItems(done)
 			}
 			if ev.Type == "response.failed" && (body.Error == nil || body.Error.Message == "") {
-				return nil, fmt.Errorf("responses api error: response failed")
+				return nil, badResponsef("responses api error: response failed")
 			}
 			res, err := p.resultOf(body)
 			if err != nil {
@@ -139,7 +139,7 @@ func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader
 			if ev.Error != nil && ev.Error.Message != "" {
 				msg = ev.Error.Message
 			}
-			return nil, fmt.Errorf("responses api error: %s", msg)
+			return nil, badResponsef("responses api error: %s", msg)
 		}
 	}
 	if err := sc.Err(); err != nil {

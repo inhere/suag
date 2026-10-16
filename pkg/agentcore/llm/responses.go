@@ -3,7 +3,6 @@ package llm
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
@@ -310,7 +309,7 @@ type responsesBody struct {
 func (p *ResponsesProvider) parseResponsesBody(data []byte) (*agentcoreapi.GenerateResult, error) {
 	var body responsesBody
 	if err := json.Unmarshal(data, &body); err != nil {
-		return nil, fmt.Errorf("parse responses result: %w", err)
+		return nil, badResponsef("parse responses result: %w", err)
 	}
 	return p.resultOf(body)
 }
@@ -319,10 +318,10 @@ func (p *ResponsesProvider) parseResponsesBody(data []byte) (*agentcoreapi.Gener
 // stream event carries) into a GenerateResult.
 func (p *ResponsesProvider) resultOf(body responsesBody) (*agentcoreapi.GenerateResult, error) {
 	if body.Error != nil && body.Error.Message != "" {
-		return nil, fmt.Errorf("responses api error: %s", body.Error.Message)
+		return nil, badResponsef("responses api error: %s", body.Error.Message)
 	}
 	if body.Status == "failed" {
-		return nil, fmt.Errorf("responses api error: response failed")
+		return nil, badResponsef("responses api error: response failed")
 	}
 	res := &agentcoreapi.GenerateResult{}
 	var reasoning []any
@@ -371,7 +370,7 @@ func (p *ResponsesProvider) resultOf(body responsesBody) (*agentcoreapi.Generate
 	if body.Status == "incomplete" && body.IncompleteDetails != nil {
 		switch body.IncompleteDetails.Reason {
 		case "content_filter":
-			return nil, fmt.Errorf("responses api: the reply was blocked by the content filter")
+			return nil, badResponsef("responses api: the reply was blocked by the content filter")
 		case "max_output_tokens":
 			markTruncated(res.ToolCalls)
 		}

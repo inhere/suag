@@ -103,9 +103,9 @@ func (p *OpenAIProvider) openStream(ctx context.Context, path string, body map[s
 		} `json:"error"`
 	}
 	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
-		return nil, fmt.Errorf("openai api error: %s", apiErr.Error.Message)
+		return nil, badResponsef("openai api error: %s", apiErr.Error.Message)
 	}
-	return nil, fmt.Errorf("openai api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData)))
+	return nil, badResponsef("openai api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData)))
 }
 
 // streamChunk is one chat.completion.chunk event.
@@ -175,10 +175,10 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 			if lines.truncated() {
 				return nil, streamTruncatedError(p.Name(), cutLine)
 			}
-			return nil, fmt.Errorf("parse openai stream chunk: %w", err)
+			return nil, badResponsef("parse openai stream chunk: %w", err)
 		}
 		if chunk.Error != nil {
-			return nil, fmt.Errorf("openai api error: %s", chunk.Error.Message)
+			return nil, badResponsef("openai api error: %s", chunk.Error.Message)
 		}
 		if u := chunk.Usage; u != nil {
 			res.Usage = agentcoreapi.Usage{

@@ -250,13 +250,13 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 	}
 
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("parse openai response: %w", err)
+		return nil, badResponsef("parse openai response: %w", err)
 	}
 	if raw.Error != nil {
-		return nil, fmt.Errorf("openai api error: %s", raw.Error.Message)
+		return nil, badResponsef("openai api error: %s", raw.Error.Message)
 	}
 	if len(raw.Choices) == 0 {
-		return nil, fmt.Errorf("openai: empty choices")
+		return nil, badResponsef("openai: empty choices")
 	}
 
 	choice := raw.Choices[0]

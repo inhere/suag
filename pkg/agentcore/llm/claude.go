@@ -311,10 +311,10 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 	}
 
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("parse claude response: %w", err)
+		return nil, badResponsef("parse claude response: %w", err)
 	}
 	if raw.Error != nil {
-		return nil, fmt.Errorf("claude api error: %s", raw.Error.Message)
+		return nil, badResponsef("claude api error: %s", raw.Error.Message)
 	}
 
 	resp := &agentcoreapi.GenerateResult{
