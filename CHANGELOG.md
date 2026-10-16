@@ -14,6 +14,7 @@
 - 预算启用时主 provider、fallback、compact 与子 agent provider 统一补齐缺失用量估算，并保留各 provider 的模型与流式/tool-choice 能力。
 - chat 状态行显示回合/会话预算占用、估算标记与一次性提醒；预算收尾、会话短路、插话后的新回合及未配置回归加入伪终端冒烟。
 - chat 预算回合的最终用量快照与 wrap-up 原因保持一致；会话预算短路不再打印空答复前缀。
+- ACP 预算收尾继续返回 `end_turn`，`usage_update` 的 `_meta` 在启用预算时可选暴露 scope、limit、used、remaining、exceeded、reason 与 `estimated`；未配置预算时保持兼容。
 
 - 自动识别 idev-std 发行目录与工作空间的 `tmp/idev-std` 加载产物目录为只读根，可通过 `tools.standards_roots` 关闭；支持 `IDEV_STD_RELEASES_ROOT` 与兼容的 `INHERE_DEV_STANDARDS_ROOT`。
 - chat 增加可脱敏持久化的本地输入历史（Up/Down、Ctrl+R 反查）与 `:` 命令/目录 Tab 补全，可通过 `chat.history` 和 `chat.history_size` 配置。
