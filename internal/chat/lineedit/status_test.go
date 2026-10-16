@@ -119,6 +119,52 @@ func TestTerminal_WriteWithStatusLine(t *testing.T) {
 	finishRead(t, feed, lines)
 }
 
+// TestTerminal_StatusLineAroundRowChanges: the status line keeps its place when the
+// block spans several rows (a pasted multi-line input) or when the window changes.
+func TestTerminal_StatusLineAroundRowChanges(t *testing.T) {
+	t.Run("a frame finds its row with the cursor on a later row of the line", func(t *testing.T) {
+		tm, feed, lines := startStatusRead(t, "↳ ")
+		tm.SetStatus("⠋ 思考中… 1s")
+		// A pasted two-line text: the line takes two rows and the cursor sits on the
+		// second one.
+		feed.in <- "\x1b[200~a\nb\x1b[201~"
+		waitRead(t, feed.waiting)
+		assert.Eq(t, 3, tm.pos)
+		cursorX, cursorY := tm.cursorX, tm.cursorY
+		assert.Eq(t, 1, cursorY)
+
+		before := len(feed.out.String())
+		tm.SetStatus("⠙ 思考中… 2s")
+		// Up one row past the prompt row (the status line is above it), erase it, and
+		// back down to where the cursor is (row 1, column 1).
+		assert.Eq(t, "\x1b[2A\r\x1b[K⠙ 思考中… 2s\r\x1b[2B\x1b[C", feed.out.String()[before:])
+		assert.Eq(t, cursorX, tm.cursorX)
+		assert.Eq(t, cursorY, tm.cursorY)
+
+		feed.in <- "\r"
+		assert.Eq(t, "a\nb", <-lines)
+	})
+
+	t.Run("a window change repaints the status line above the prompt", func(t *testing.T) {
+		tm, feed, lines := startStatusRead(t, "↳ ")
+		tm.SetStatus("⠋ 思考中… 1s")
+		feed.in <- "ab"
+		waitRead(t, feed.waiting)
+
+		before := len(feed.out.String())
+		assert.NoErr(t, tm.SetSize(100, 24))
+		// The block is cleared - the status line's row first - and drawn again from the
+		// top of the block: the status line, then the prompt with the typed line.
+		assert.Eq(t, "\x1b[4D\x1b[A\x1b[K\x1b[B\x1b[K\x1b[A"+
+			"⠋ 思考中… 1s\r\n↳ ab", feed.out.String()[before:])
+		assert.True(t, tm.statusOn)
+		assert.Eq(t, 4, tm.cursorX)
+		assert.Eq(t, 0, tm.cursorY)
+
+		finishRead(t, feed, lines)
+	})
+}
+
 // TestTerminal_StatusLineBeforeThePromptIsDrawn: chat may set the status line
 // while nothing of the block is on screen (a turn starts before its read is asked
 // for): nothing is drawn then, and the read that follows draws the status line
