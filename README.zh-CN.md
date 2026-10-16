@@ -76,6 +76,7 @@ Suga 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`
 | `mcp.servers`、`tools.auto_allow`、`tools.read_only_allow` | MCP 服务，以及 MCP 放行名单（条目形如 `server/工具glob`）；两者都为空时所有 MCP 调用被拒绝 |
 | `memory.user.backend`、`memory.project.backend`、`memory.write_tainted` | 各范围的记忆后端（`files`、项目可用 `gofer`、`exec`），以及读过外部内容的会话写记忆时的处理（`ask`、`deny`、`allow`） |
 | `hooks.command`、`hooks.post_tool_use` | chat 的 hook 命令（argv 列表）与哪些工具调用发 PostToolUse；不设 `hooks.command` 即不启用 hooks |
+| `chat.history`、`chat.history_size` | 本地 chat 输入历史（默认开启、最多 1000 条）保存在 `$SUGA_HOME/history.jsonl`；只记录键盘输入并先脱敏 |
 | `skills.list_max`、`skills.always_load` | 带说明列出的 skills 数量；正文每次进提示词的 skills |
 | `workspace` | 文件与 shell 工具的工作区根（默认：启动 suga 时所在的目录） |
 
