@@ -233,6 +233,13 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		// which is the terminal's and follows a resized window.
 		inputSource.SetInputHighlight(lineedit.InputStyle{Prefix: inputHighlightPrefix, Suffix: highlightSuffix})
 	}
+	// The status line above the input line exists only while that line stays up
+	// for the whole turn (chat.steering); without it the waiting line keeps a row of
+	// its own (a typed nil would count as a status line, so it stays unset).
+	var status statusSetter
+	if steering {
+		status = inputSource
+	}
 	render := newRenderer(rendererOptions{
 		Out: inputSource, Err: errOut,
 		Color: color, ErrColor: colorEnabledFor(stderr),
@@ -243,7 +250,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		// The input line stays on screen while a turn runs: the streamed text then
 		// leaves only complete lines, and the waiting line becomes a status line above
 		// that input line (r3 M1, design suga-54cl).
-		InputLineUp: steering, Status: inputSource,
+		InputLineUp: steering, Status: status,
 	})
 	// The terminal's window/tab title (chat.terminal_title): set below, once the
 	// session's short name and title are known, and given back on the way out.
