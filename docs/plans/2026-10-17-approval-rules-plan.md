@@ -1,13 +1,14 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # 审批规则（命令/路径 glob → allow|ask|deny）实施计划
 
-> 状态：Draft 0.1（待用户审阅）
+> 状态：Draft 0.2（按评审 r1 修订，待用户审阅）
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-17 | suga（gofer job） | 依据已批准的审批规则设计 Draft 0.3 起草实施计划；拆分规则引擎、加载合并、入口接入、交互写回、ACP、观测与验收波次。 |
+| 0.2 | 2026-10-17 | suga（gofer job） | 按独立评审 r1 修订：拆分超大任务；确定 goccy AST、文件锁/原子写回、run 保护路径变化、ACP probe 选项、Windows 早验、跨计划 owner 与共享文件合并顺序。 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -15,7 +16,7 @@
 
 - thinking_mode：RIGOROUS。
 - core_objective：将一次工具调用的审批收敛为可写、可审查、可复现的 `Decide(call) → allow|ask|deny + 命中规则`，并把 chat 的“本会话总是允许/拒绝”细化为命令前缀或路径范围。
-- allowed_scope：`pkg/agentcore/tools/rules`、`pkg/agentcore/tools` 审批报告、`internal/wiring` 规则加载/合并/装配/写回、`internal/config` 配置与项目规则路径、`internal/chat` 审批交互、`internal/acpserver` 权限选项与判定、`internal/personal` trace、manifest、`config/config.yaml`、README 中英、skills 参考、CHANGELOG、`scripts/ptysmoke` 与其 Makefile 接入。
+- allowed_scope：`pkg/agentcore/tools/rules`、`pkg/agentcore/tools` 审批报告、`internal/wiring` 规则加载/合并/装配/写回、`internal/config` 配置与项目规则路径、`internal/chat` 审批交互、`internal/acpserver` 权限选项与判定、`internal/personal` trace、manifest、`internal/cli` manifest/trace 适配、`config/config.yaml`、README 中英、skills 参考、CHANGELOG、`scripts/ptysmoke` 与其 Makefile 接入、`scripts/acpprobe/acp_probe.py` 的权限选择参数。
 - non_goals：ACP `session/list|resume|close` 与 `fs/*` 客户端能力；`set_config_option`/`authenticate`；MCP HTTP/SSE transport；shell 进程级隔离；web_fetch 代理下的 SSRF 加强；危险删除守卫本身；只读模式工具集合；Gofer 侧改动；规则热加载以外的重载机制。
 - expansion_policy：DEFER_OR_REQUEST。实现中若只增加路径/符号且不改变语义，记录操作性发现后继续；若改变默认动作、协议、状态机、范围或验收，停止并回到设计/计划 Gate。
 - review budget：低暴露度；按设计的一次实现、单测、伪终端冒烟、一次反向验证。`tools.approval_rules.enabled: false` 是运行时回退开关，不代替验收。
@@ -43,6 +44,12 @@
 - 授权：本计划批准后，按任务在本地 worktree 实施并提交；真实 provider/ACP 与主机验证只在已有配置和授权环境中执行。push、tag、release、Gofer 配置改动另行授权。
 - `host_or_non_offline_action=REQUIRED`：真实 provider、ACP probe、Windows job 是完成 Gate 的验证动作，不在本地计划稿阶段执行。
 
+## 跨计划依赖、owner 与合并顺序
+
+- 受保护路径清单（规则文件、`.suga/**`、`.git/**`、`$SUGA_HOME/**`）及其 allow 钳制只由本计划的规则 owner（`pkg/agentcore/tools/rules`，必要的 wiring 适配由本计划维护）定义；快照与 `:undo` 计划只调用该 owner 的导出判定，不复制清单或匹配逻辑。
+- 合并顺序固定为本计划先合（至少完成 T4b 的受保护路径导出契约），undo 计划再合；共享文件按顺序串行合入：`internal/config`、`config/config.yaml`、`internal/wiring/capabilities.go` 的 `nativeEnv`、`internal/personal/observe.go`、`internal/chat` 帮助/命令、`internal/chat/autocomplete.go`、README 中英、CHANGELOG。后合计划必须基于前一计划的 HEAD 重新解决冲突，不用覆盖式合并。
+- 两计划都改 `observe.go` 时，审批字段由本计划 T10 owner，快照字段由 undo 计划 T6b owner；最终由后合计划在同一文件保留两组 attrs 与各自测试。
+
 ## 输入与批准证据
 
 - 设计：`docs/design/2026-10-16-approval-rules-design.md`，Draft 0.3 / 已批准（2026-10-16 用户：“全部按建议批准”；待确认事项均按文中建议选项定稿）。
@@ -57,10 +64,10 @@
 | capability_id | required_capability | searched_candidates | direct_reuse | thin_adapter_or_owner_extension | decision | proven_gap | duplication_and_lifecycle_risk |
 |---|---|---|---|---|---|---|---|
 | CAP-01 | 纯规则模型、命令/路径/MCP 匹配与动作归并 | `pkg/agentcore/tools/approval.go:32-170`、`pkg/agentcore/tools/meta.go:53-68`、`internal/wiring/cli_mcp.go:14-107`、native `code_exec.go:85-108` | 审批层、工具元数据、MCP glob 校验与默认拒绝可复用 | 新增 `pkg/agentcore/tools/rules` 纯逻辑 owner；wiring 只负责来源与装配 | MINIMAL_NEW_MODULE | 现有代码没有声明式原生规则、shell 安全白名单或项目信任 | 规则匹配只能有一个能力层 owner；禁止在 chat/run/ACP 各写一份 matcher |
-| CAP-02 | 用户/项目/会话规则加载、信任、重载与写回 | `internal/wiring/capabilities.go:48-77,110-132` 的分层文件加载、`internal/config/load.go`、YAML v3、output-rules 先例 | 项目文件路径约定、配置解析、锁/原子写回工具可复用 | `internal/wiring/rules.go`、`rules_write.go` 作为 wiring owner | OWNER_EXTENSION | 无 approval-rules 文件、hash trust 或每回合保留上一份策略 | 规则解析不下沉到能力层；写回与读取必须共用 schema 校验 |
+| CAP-02 | 用户/项目/会话规则加载、信任、重载与写回 | `internal/wiring/capabilities.go:48-77,122-152` 的分层文件加载、`internal/config/load.go`、`goccy/go-yaml` `ast`/`parser`、`internal/personal/process/lock.go`、`internal/wiring/rename_windows.go` | 项目文件路径约定、goccy AST、配置解析可复用；现有锁仅有会话锁，现有原子写入实现均为私有 | `internal/wiring/rules.go`、`rules_write.go` 作为 wiring owner；若没有可导出的文件锁/原子写接口，在规则 owner 包内做最小私有文件锁与原子写入实现 | OWNER_EXTENSION | 无 approval-rules 文件、hash trust 或每回合保留上一份策略；现有依赖没有 yaml.v3 | 规则解析不下沉到能力层；写回与读取必须共用 schema 校验；禁止新增 yaml.v3 依赖 |
 | CAP-03 | chat 的范围化 always/deny 与交互 | `internal/wiring/chat_approver.go:22-125`、`tools.Asker`、`chat_approval.py` | 询问/非 TTY/`tools.approval` 与 askOutside 流程可复用 | 会话 Policy 快照、scope key、文案和持久化回答原位扩展 | OWNER_EXTENSION | 现有 `map[string]bool` 只有工具名，不能表达命令/目录 | 不新建第二套 chat 审批器；保持外层危险守卫与越界授权顺序 |
-| CAP-04 | run/ACP/子 agent 同模判定 | `internal/acpserver/policy.go:49-170`、`internal/wiring/subagent.go:107-117`、runtime 装配 | 入口 approver、ACP BeforeTool 通知、子 agent 创建参数可复用 | 各入口只做策略结果翻译；Policy 在创建时快照给子 agent | OWNER_EXTENSION | ACP 目前只有 allow-once/reject-once，子 agent 为显式 allow-all | 同一规则语义不复制；入口默认动作仍由各入口保有 |
-| CAP-05 | 审批原因观测与清单 | `pkg/agentcore/tools/approval.go:134-170`、`internal/personal/observe.go`、`internal/personal/trace.go`、`internal/wiring/manifest.go:27-39,115-190,219-278` | 现有 attrs、trace JSON、manifest 双路径可复用 | 追加 `Rule`/`Scope` 与 approval_rules 清单 | OWNER_EXTENSION | 现有报告只有 Source/Wait/Danger，无法解释具体命中 | manifest 运行时和静态路径需共用摘要构造，防止漂移 |
+| CAP-04 | run/ACP/子 agent 同模判定 | `internal/acpserver/policy.go:49-170`、`internal/wiring/subagent.go:114-115`、`internal/cli/acp.go:42-73`、runtime 装配 | 入口 approver、ACP BeforeTool 通知、子 agent 创建参数可复用 | 各入口只做策略结果翻译；Policy 在创建时快照给子 agent | OWNER_EXTENSION | ACP 目前只有 allow-once/reject-once，子 agent 为显式 allow-all | 同一规则语义不复制；入口默认动作仍由各入口保有 |
+| CAP-05 | 审批原因观测与清单 | `pkg/agentcore/tools/approval.go:134-170`、`internal/personal/observe.go`、`internal/personal/trace.go`、`internal/wiring/manifest.go:27-39,115-190,219-278` | 现有 attrs、trace JSON、manifest 双路径可复用 | 追加 `Rule`/`Scope`、`approval_rule_persist` 与 approval_rules 清单 | OWNER_EXTENSION | 现有报告只有 Source/Wait/Danger，无法解释具体命中 | manifest 运行时和静态路径需共用摘要构造，防止漂移 |
 
 ### New module candidates
 
@@ -81,22 +88,22 @@
 - P1：确认基线设计仍为 Draft 0.3 / 已批准，且 `pkg/agentcore/layering_test.go` 不允许 `pkg/agentcore` 依赖 `internal/*`；规则 matcher 不得读配置或文件系统。
 - P2：跑一次 `go test -race ./pkg/agentcore/tools/... ./internal/wiring/... ./internal/acpserver/...` 与现有 `make smoke-chat`，记录原始 exit code 与输出；基线失败不进入实现波次。
 - P3：所有测试的 `SUGA_HOME` 指向临时目录；规则写回测试必须使用临时用户级/项目级文件，不能修改真实配置或仓库规则。
-- P4：每个 shell allow 测试明确实际 shell（sh/bash、PowerShell、cmd），不得用平台别名替代；路径测试覆盖 Windows 语义、符号链接、硬链接、特殊文件、不存在目标和 ADS/尾部点空格。
+- P4：每个 shell allow 测试明确实际 shell（sh/bash、PowerShell、cmd），不得用平台别名替代；wiring 根据 `tools.shell` 与 native 的 `ShellName` 判定实际类别并填入 `Target`；若声明的 `cmd` 与实际执行器类别不一致，allow 一律 fail-closed。路径测试覆盖 Windows 语义、符号链接、硬链接、特殊文件、不存在目标和 ADS/尾部点空格。
 - P5：任何配置错误启动失败；项目 allow 未被 workspace 绝对路径+规则文件 hash 信任时必须忽略；规则解析/删除/hash 变化重载失败保留上一次有效策略并产生 warning/trace。
 - P6：每个交互任务必须扩展 ptysmoke，并进行反向验证；临时删除/反转被测分支后，对应断言必须失败，不得以“人工可验证”替代。
-- P7：单个 Go 文件不得超过 1000 行；新增 schema 必须保持所有工具 schema 的 `properties` 非空约束。
+- P7：单个 Go 文件不得超过 1000 行；新增 schema 必须保持所有工具 schema 的 `properties` 非空约束；规则包必须在 `pkg/agentcore/layering_test.go` 登记并只依赖允许的能力层包。
 
 ## 波次与依赖
 
 | 波次 | 任务 | 依赖 | 执行方式 |
 |---|---|---|---|
 | W0 | T0 基线与安全契约 | 无 | 1 个 gofer job；只记录，不改产品代码 |
-| W1 | T1 规则值对象/工具 glob/动作归并；T2 shell matcher；T3 path matcher | T0；T2/T3 可与彼此并行，均依赖 T1 | 最多 3 个并行 job；每个单独提交 |
-| W2 | T4 配置解析、来源合并、项目信任与重载；T5 MCP legacy 编译与入口默认动作 | T1–T3；T5 依赖 T4 的 Policy 装配约定 | T4→T5 |
-| W3 | T6 ApprovalReport/审批层装配；T7 chat 范围规则、文案与写回 | T4/T5；T7 依赖 T6 | T6→T7 |
-| W4 | T8 run/子 agent；T9 ACP allow_always/reject_always | T6；T8/T9 可并行 | 2 个并行 job |
-| W5 | T10 trace/manifest/config 输出；T11 chat 规则 ptysmoke 与反向验证 | T6–T9；T11 依赖 T7 | T10 与 T11 可并行 |
-| W6 | T12 文档、全量回归、真实 provider/ACP/Windows 验证 | W5 | 监督会话 + 主机/真实环境 job |
+| W1 | T1 规则值对象/工具 glob/动作归并；T2 shell matcher；T3 path matcher | T0；T2/T3 均依赖 T1 | T1 先合入；随后 T2∥T3，最多 2 个并行 job；每个单独提交 |
+| W2 | T4a 配置键/文件加载校验；T4b 信任 hash/保护路径/重载与写回契约；T5 MCP legacy 编译与入口默认动作 | T1–T3；T4a→T4b→T5 | 串行；每个任务不超过 1 个 job |
+| W3 | T6a ApprovalReport 扩展；T6b 审批层装配；T7a chat scope/交互；T7b YAML 写回/持久化追问 | T4b/T5；T6a→T6b→T7a→T7b | 串行；每个任务不超过 1 个 job |
+| W4 | T8 run/子 agent；T9 ACP allow_always/reject_always 与 probe 参数 | T6b；T8∥T9 | 2 个并行 job |
+| W5 | T10 trace/manifest/config 输出；T11 chat 规则综合 ptysmoke 与反向验证 | T6b、T7b、T8、T9；T10→T11 | T10 先合，T11 后合 |
+| W6 | T12 文档、全量回归、真实 provider/ACP/Windows 验证 | W5 | 监督会话 + 主机/真实环境 job；T2/T3/T7b 的 Windows 专项不后置到本波 |
 
 ## 任务
 
@@ -112,7 +119,7 @@
 
 ### T1 规则值对象、工具 glob 与动作归并
 
-- 文件：`pkg/agentcore/tools/rules/`（新模块及测试）；必要时 `pkg/agentcore/tools/meta.go` 仅增加安全身份辅助。
+- 文件：`pkg/agentcore/tools/rules/`（新模块及测试）、`pkg/agentcore/layering_test.go`（登记新包及允许依赖）；必要时 `pkg/agentcore/tools/meta.go` 仅增加安全身份辅助。
 - 动作：实现 `Rule`、`Target`、`Policy`、`Action`、来源/序号/模式；工具名 glob（原生工具无 `/`，MCP 必须 `server/toolglob`）；`deny > ask > allow` 的 `Decide` 与代表性命中；保持纯逻辑、无配置/文件系统依赖。
 - 验证命令：`go test -race ./pkg/agentcore/tools/rules/... ./pkg/agentcore/...`。
 - 完成标准：表驱动测试覆盖来源合并、模式过滤、默认动作、同强度多命中代表性规则稳定、MCP 身份；layering test 通过；schema/错误消息可供 wiring 使用。
@@ -124,7 +131,7 @@
 
 - 文件：`pkg/agentcore/tools/rules/command.go`（新）及测试；复用/对齐 `pkg/agentcore/tools/native/code_exec.go:85-108` 的 `resolveShell` 语义，不改 shell 执行器。
 - 动作：按 sh/bash、PowerShell、cmd 的精确 ASCII 白名单、配对非嵌套引号、空格/token 规则实现 allow 匹配；仅末尾独立 `*`/`**` 扩展 token；Windows 忽略大小写及 `.exe`；控制符、替换/展开、未知 shell 不产生 allow；deny 仍可整串匹配；不提供包装器/解释器前缀放行。
-- 验证命令：`go test -race ./pkg/agentcore/tools/rules/...`。
+- 验证命令：`go test -race ./pkg/agentcore/tools/rules/...`；主机 gofer exec job：`go test -count=1 ./pkg/agentcore/tools/rules/... ./pkg/agentcore/tools/native/...`（必须包含 `*_windows_test.go`）。
 - 完成标准：覆盖合法/非法字符、换行/tab、引号、token 数、shell 差异、Windows 比较、别名/包装器拒绝；allow 与 deny 的安全差异固定。
 - 反向验证方法：临时删除控制字符检查或把 token 比较改成 `strings.HasPrefix`，相应用例必须失败。
 - 预计改动规模：M（2–4 个 Go 文件、250–400 行含测试）。
@@ -134,21 +141,32 @@
 
 - 文件：`pkg/agentcore/tools/rules/path.go`（新）及测试；与 `pkg/agentcore/tools/native/pathresolve.go:102-115`、`file.go:87-92` 对齐；必要时只增加导出适配，不改沙箱边界。
 - 动作：实现文件工具限定身份（仅明确 `file_write`/`file_edit`/`file_remove`）、锚定 root 的 glob、词法路径与 `EvalSymlinks` 真实路径双检；硬链接、符号链接、特殊文件、解析失败、Windows 短名/ADS/尾部点空格不产生 allow；deny 解析失败按命中；`file_remove` 精确路径，写/编辑按目录范围。
-- 验证命令：`go test -race ./pkg/agentcore/tools/rules/... ./pkg/agentcore/tools/native/...`。
+- 验证命令：`go test -race ./pkg/agentcore/tools/rules/... ./pkg/agentcore/tools/native/...`；主机 gofer exec job：`go test -count=1 ./pkg/agentcore/tools/rules/... ./pkg/agentcore/tools/native/...`（必须包含 Windows 短名、ADS、尾部点空格、大小写与 `.exe` 用例）。
 - 完成标准：覆盖 workspace/附加 `:rw` root、目标不存在时最深已存在祖先、目录 glob 的 `*` 深度、root 越界和 file tool 身份，且不改变现有 os.Root 沙箱测试。
 - 反向验证方法：临时只检查词法路径而跳过真实路径，symlink/hardlink allow 用例必须失败；临时把 `file_remove` 目录范围放宽，精确路径用例必须失败。
 - 预计改动规模：L（3–5 个 Go 文件、350–600 行含测试）。
 - 依赖/并行：T1 后，可与 T2 并行。
 
-### T4 规则文件加载、校验、合并、项目信任与每回合重载
+### T4a 配置键、文件加载、AST 校验与限制
 
-- 文件：`internal/wiring/rules.go`（新）、`internal/config/` 规则路径/配置解析、`$SUGA_HOME/approval-rules.yaml` 与 `<workspace>/.suga/approval-rules.yaml` 的测试夹具、对应表驱动测试。
-- 动作：读取 `tools.approval_rules`（enabled、always_prefix_tokens、persist_ask、project_trust）；加载用户/项目文件，限制 64 KiB/规则条数并禁用 YAML alias/anchor；校验字段互斥、tool/path/command/action/modes；合并 legacy 以外的来源；按 workspace 绝对路径+内容 hash过滤项目 allow；保护路径 allow 钳制；启动失败、每回合 size/mtime/hash 变化失败保留旧策略并 warning/trace；为写回提供共享 schema/锁/原子 rename 接口。
+- 文件：`internal/wiring/rules.go`（新）、`internal/config/` 规则路径/配置解析、用户/项目规则测试夹具、对应表驱动测试。
+- 动作：读取 `tools.approval_rules`（enabled、always_prefix_tokens、persist_ask、project_trust），加载用户/项目文件，限制 64 KiB/规则条数；使用现有 `github.com/goccy/go-yaml` 的 `ast`/`parser` 保留注释，不新增 yaml.v3；遍历 AST 检测 anchor/alias 节点，发现即拒绝，不展开或执行别名。校验字段互斥、tool/path/command/action/modes 与 schema，坏配置启动失败。
 - 验证命令：`go test -race ./internal/wiring/... ./internal/config/... ./pkg/agentcore/tools/rules/...`。
-- 完成标准：设计 3.1、3.3、3.10 的所有字段/限制均有单测；旧配置键仍被接受；`enabled:false` 完全走旧路径；项目 deny/ask/allow 信任矩阵与文件删除/hash 变化行为正确。
-- 反向验证方法：临时将项目 allow 默认纳入或在 hash 变化时继续使用，信任矩阵用例必须失败；临时把坏文件替换成空策略，保留旧策略用例必须失败。
-- 预计改动规模：L（4–7 个 Go 文件、500–800 行含测试）。
-- 依赖/并行：T1–T3 后；T5 依赖 T4。
+- 完成标准：设计 3.1 的字段/限制、alias/anchor 拒绝、旧配置键兼容、`enabled:false` 旧路径均有单测；加载器不改变文件内容。
+- 反向验证方法：临时允许 alias/anchor 或把坏文件替换成空策略，拒绝/启动失败用例必须失败。
+- 预计改动规模：M（3–5 个 Go 文件、250–450 行含测试）。
+- 依赖/并行：T1–T3 后；T4b 依赖本任务。
+
+### T4b 信任 hash、保护路径、重载与写回契约
+
+- 文件：`internal/wiring/rules.go`、`internal/wiring/rules_write.go`（新）、`internal/config/`、规则测试；必要时规则 owner 的导出保护路径判定。
+- 动作：按 workspace 绝对路径+内容 hash 过滤项目 allow；文件删除、size/mtime/hash 变化重载失败保留上一份有效策略并产生 warning/trace；既有项目 deny 在新内容有效且用户确认前继续有效，文件恢复为可解析且 hash 已由用户信任入口确认时才视为确认，否则只保留 deny/旧策略。内置保护路径清单与 allow 钳制由本计划唯一 owner 导出。
+- 写回契约固定使用 goccy AST 的读-改-写；文件锁/原子写入没有可复用导出实现时，在规则包内做最小私有实现。临时文件须同目录创建，Windows `ERROR_ACCESS_DENIED`/`ERROR_SHARING_VIOLATION` 复用 `internal/wiring/rename_windows.go` 的 `renameConflict` 重试语义；回读再校验 schema。写回不得接受项目 allow。
+- 验证命令：`go test -race ./internal/wiring/... ./pkg/agentcore/tools/rules/...`；主机 gofer exec job：`go test -count=1 ./internal/wiring/... ./pkg/agentcore/tools/rules/...`（覆盖 rename/锁冲突）。
+- 完成标准：信任矩阵、保护路径、重载保留旧策略、锁/原子写入/回读校验、用户确认入口与写失败不丢会话规则均有测试；写回事件接口供 T7b 调用。
+- 反向验证方法：临时将项目 allow 默认纳入或 hash 变化继续使用、临时把原子 rename 改为直接覆盖，安全/并发测试必须失败。
+- 预计改动规模：M（4–6 个 Go 文件、350–550 行含测试）。
+- 依赖/并行：T4a 后；T5 依赖本任务。
 
 ### T5 MCP legacy 编译与入口默认动作
 
@@ -158,57 +176,78 @@
 - 完成标准：MCP 默认和白名单、显式 deny 覆盖 legacy、ACP 隔离、无终端 ask→deny 及旧配置兼容测试通过。
 - 反向验证方法：临时让 ACP 读取 legacy 或让 project ask 放宽 default deny，隔离/钳制用例必须失败；临时移除 dangerous guard 外层，危险删除用例必须失败。
 - 预计改动规模：M（3–5 个 Go 文件、300–550 行含测试）。
-- 依赖/并行：T4 后。
+- 依赖/并行：T4b 后。
 
-### T6 ApprovalReport 与 chat/run/审批层装配
+### T6a ApprovalReport 扩展
 
-- 文件：`pkg/agentcore/tools/approval.go`；`internal/wiring/approval_policy.go`、`chat_approver.go`、`runtime.go`；对应 approval/danger/chat 测试。
-- 动作：`ApprovalReport` 增加 `Rule`、`Scope`；将 Policy.Decide 翻译为 allow/ask/`tools.Denied`；显式规则先于只读/agent-state快捷放行，保留外层 `guardDangerous`、越界目录授权和 3 次拒绝上限；chat/run 共享规则判定，run 无终端 ask 按 deny；会话规则以正确生命周期挂在运行时。
-- 验证命令：`go test -race ./pkg/agentcore/tools/... ./internal/wiring/... ./internal/personal/...`。
-- 完成标准：allow 不询问、ask 只询问一次、deny 回合继续、report 记录命中与 scope；危险删除、越界目录、工具未注册、禁用写工具回归通过；`pkg/agentcore/layering_test.go` 通过。
+- 文件：`pkg/agentcore/tools/approval.go` 及其单测；必要时 `pkg/agentcore/layering_test.go` 白名单登记。
+- 动作：`ApprovalReport` 增加 `Rule`、`Scope`；定义稳定的空值/摘要格式，使 wiring、observe 和 manifest 能消费命中来源、序号、规则摘要与 scope。
+- 验证命令：`go test -race ./pkg/agentcore/tools/... ./pkg/agentcore/...`。
+- 完成标准：报告序列化/ctx 传递、旧字段兼容、tool schema `properties` 非空约束与 layering test 通过。
+- 反向验证方法：临时丢弃 Rule/Scope，报告断言必须失败。
+- 预计改动规模：S（1–3 个 Go 文件、100–180 行含测试）。
+- 依赖/并行：T5 后；T6b 依赖本任务。
+
+### T6b chat/run 审批层装配
+
+- 文件：`internal/wiring/approval_policy.go`、`chat_approver.go`、`runtime.go`；对应 approval/danger/chat 测试。
+- 动作：将 Policy.Decide 翻译为 allow/ask/`tools.Denied`；显式规则先于只读/agent-state 快捷放行，保留外层 `guardDangerous`、越界目录授权和 3 次拒绝上限；chat/run 共享规则判定，run 无终端 ask 按 deny；会话规则以正确生命周期挂在运行时。
+- 验证命令：`go test -race ./internal/wiring/... ./pkg/agentcore/tools/... ./internal/personal/...`。
+- 完成标准：allow 不询问、ask 只询问一次、deny 回合继续、report 记录命中与 scope；危险删除、越界目录、工具未注册、禁用写工具回归通过。
 - 反向验证方法：临时在内置 read-only 快捷路径前返回 allow，显式 deny/ask 用例必须失败；临时把 `ErrDenied` 当 abort，拒绝后回合继续用例必须失败。
-- 预计改动规模：L（5–8 个 Go 文件、500–850 行含测试）。
-- 依赖/并行：T4、T5 后；T7 依赖 T6。
+- 预计改动规模：M（4–6 个 Go 文件、300–500 行含测试）。
+- 依赖/并行：T4b、T5、T6a 后；T7a 依赖本任务。
 
-### T7 chat 范围化 `a/d`、询问文案与规则写回
+### T7a chat scope、`a/d` 交互与文案
 
-- 文件：`internal/wiring/chat_approver.go`；`internal/chat/approval_reply.go`（新）；`internal/wiring/rules_write.go`（新）；`internal/config` 配置读取；`internal/wiring/chat_approver_test.go`、写回测试；`scripts/ptysmoke/chat_rules.py`（初稿可在 T11 完善）。
-- 动作：按工具类型生成 shell 前缀/写编辑目录/删除精确路径/其他工具名 scope；仅安全 shell 命令显示 `[a]`；增加 `[d]`；回答后按 `persist_ask` 询问 `u/p/N`，回车仅会话；项目仅允许 deny 写回；YAML v3 Node 保留注释，文件锁、临时文件原子 rename、回读校验；写失败只警告但会话规则继续生效；同一运行时/会话并发串行化。
-- 验证命令：`go test -race ./internal/wiring/... ./internal/chat/...`。
-- 完成标准：文案、答案别名、默认拒绝、非 TTY、范围 key、写回后新进程生效、项目 allow 禁止写回、坏写回不丢会话规则均通过；旧审批关闭开关回归通过。
-- 反向验证方法：临时把范围 key 恢复成工具名，连续两个不同命令/目录的隔离用例必须失败；临时将默认写回改为允许项目 allow，安全用例必须失败；pty 反向在 T11 完成。
-- 预计改动规模：L（5–8 个 Go/Python 文件、500–850 行含测试）。
-- 依赖/并行：T6 后；与 T8/T9 不并行。
+- 文件：`internal/wiring/chat_approver.go`；`internal/chat/approval_reply.go`（新）；`internal/wiring/chat_approver_test.go`、交互测试；`scripts/ptysmoke/chat_approval.py`。
+- 动作：按工具类型生成 shell 前缀/写编辑目录/删除精确路径/其他工具名 scope；仅安全 shell 命令显示 `[a]`，增加 `[d]`；回答后按 `persist_ask` 进入 `u/p/N` 追问，其中回车只保留本会话；项目只允许 deny 写回。同步更新 `chat_approval.py`：对 `a` 后追问输入回车，再断言原有“直接执行（OK）”行为。
+- 验证命令：`go test -race ./internal/wiring/... ./internal/chat/...`；`make smoke-chat`。
+- 完成标准：文案、答案别名、默认拒绝、非 TTY、范围 key、追问回车、旧审批关闭开关回归通过；该任务合入后现有审批冒烟不失败。
+- 反向验证方法：临时把范围 key 恢复成工具名，连续两个不同命令/目录的隔离用例必须失败；临时移除追问适配，`chat_approval.py` 必须超时或断言失败。
+- 预计改动规模：M（4–6 个 Go/Python 文件、300–500 行含测试）。
+- 依赖/并行：T6b 后；T7b 依赖本任务。
+
+### T7b YAML 写回、持久化追问与并发
+
+- 文件：`internal/wiring/rules_write.go`、`internal/config` 配置读取、写回测试、`internal/personal/observe.go`（事件适配）；必要时 `internal/wiring/rename_windows.go`。
+- 动作：用 goccy AST 向用户级/项目级文件追加 `rules:` 列表，保留其余文本与注释；再次拒绝 anchor/alias；使用 T4b 的锁、同目录临时文件、原子 rename、回读校验；写失败只警告但会话规则继续生效。记录 `approval_rule_persist` trace 事件，attrs 固定为 `file`、`action`、`result`。同一运行时/会话并发串行化。
+- 验证命令：`go test -race ./internal/wiring/... ./internal/personal/...`；主机 gofer exec job：`go test -count=1 ./internal/wiring/...`（Windows rename/锁冲突与大小写路径）；`make smoke-chat`。
+- 完成标准：用户写回、新进程生效、项目 allow 禁止写回、坏写回不丢会话规则、`approval_rule_persist` trace 事件、AST 注释保留均通过；Windows 主机输出留痕。
+- 反向验证方法：临时去掉写回事件或把临时文件改为目标文件直接覆盖，trace/并发/崩溃恢复断言必须失败。
+- 预计改动规模：M（4–6 个 Go/Python/Make 测试文件、350–550 行含测试）。
+- 依赖/并行：T7a 后；T8/T9 不与本任务并行合入。
 
 ### T8 run 与子 agent 的 Policy 快照
 
 - 文件：`internal/wiring/runtime.go`、`internal/wiring/subagent.go`、子 agent 相关测试。
 - 动作：run 使用设计 default allow 与显式 deny/ask（无终端 ask→deny）；创建子 agent 时传递父 Policy 与会话规则快照，子 agent 的 ask 按 deny；修正当前显式 allow-all approver 事实，不误以为 nil；规则变化不实时污染已创建子 agent。
 - 验证命令：`go test -race ./internal/wiring/... ./internal/personal/...`。
-- 完成标准：run、子 agent 的 allow/deny、快照传播、无写工具集合与现有 task/agent 行为通过；旧 run 不带规则时保持现状。
+- 完成标准：run、子 agent 的 allow/deny、快照传播、无写工具集合与现有 task/agent 行为通过；无规则文件时 run 仅有一处有意变化：对 `.suga/**`、`.git/**`、`$SUGA_HOME/**`、规则文件的写入从放行变为拒绝，其余工具/路径行为与 2026-10-16 一致；表驱动用例覆盖保护路径与普通路径。
+- 风险与文档承接：gofer 派发的 `suga run` 也受此 fail-closed 保护（例如写 `.suga/output-rules.yaml`、规则文件或 `.git` 内容会被拒绝）；T12 的 README/CHANGELOG 必须写明影响与 `tools.approval_rules.enabled:false` 回退。
 - 反向验证方法：临时让子 agent 每次读取父实时 Policy，快照一致性测试必须失败；临时把 ask 视为 allow，非终端收紧测试必须失败。
 - 预计改动规模：M（3–5 个 Go 文件、300–550 行含测试）。
-- 依赖/并行：T6 后，可与 T9 并行。
+- 依赖/并行：T6b 后，可与 T9 并行。
 
 ### T9 ACP Policy 与 `allow_always/reject_always`
 
-- 文件：`internal/acpserver/policy.go`、`server.go`（仅 session state 生命周期接入）、`policy_table_test.go`；必要时 ACP 适配类型文件。
+- 文件：`internal/acpserver/policy.go`、`server.go`（整体替换 `sessionState` 与 `session/load` 生命周期接入）、`internal/cli/acp.go`、wiring Policy 传递接口、`policy_table_test.go`、`scripts/acpprobe/acp_probe.py`；必要时 ACP 适配类型文件。
 - 动作：保留 `allow`/`reject` OptionId，增加 `allow_always`/`reject_always`；permissionHook 先判 Policy，allow 不发 permission 但照发 `tool_call`，deny 返回 tool error；always 规则放入同进程 session state，`session/load` 同进程保留快照，跨进程不恢复，不写规则文件；read_only 与 ACP 默认动作保持设计语义。
-- 验证命令：`go test -race ./internal/acpserver/... ./internal/wiring/...`；`python scripts/acpprobe/acp_probe.py --help`（再按环境运行真实 probe）。
-- 完成标准：协议选项序列化、allow/deny/ask、session/load、MCP legacy 隔离、通知顺序与取消行为有单测；若 SDK 不接受新增 option kind，先停在协议 Gate，不私自改协议。
+- 验证命令：`go test -race ./internal/acpserver/... ./internal/wiring/...`；`python scripts/acpprobe/acp_probe.py --help`；真实 probe 分别使用 `--permission allow_once`、`--permission allow_always`、`--permission reject`、`--permission reject_always`。
+- 完成标准：协议选项序列化、allow/deny/ask、session/load、MCP legacy 隔离、通知顺序与取消行为有单测；`acp_probe.py` 支持上述选择参数，并真实验证 always 后同类调用不再发权限请求、reject_always 后直接 tool error；若 SDK 不接受新增 option kind，先停在协议 Gate，不私自改协议。
 - 反向验证方法：临时删除 `allow_always` 的 session 规则保存，同类第二次调用必须重新询问；临时把 allow 路径也发 permission，no-prompt 断言必须失败。
 - 预计改动规模：M/L（4–6 个 Go 文件、400–700 行含测试）。
-- 依赖/并行：T6 后，可与 T8 并行；真实 ACP 在 T12。
+- 依赖/并行：T6b 后，可与 T8 并行；真实 ACP 在 T12。
 
 ### T10 trace、manifest 与配置可诊断性
 
-- 文件：`internal/personal/observe.go`、`internal/personal/trace.go`、`internal/cli/trace.go`、`internal/wiring/manifest.go`、`internal/cli/manifest.go`、对应 JSON/文本测试。
-- 动作：工具/denial attrs 增加 `approval_rule`、`approval_scope`；保留 Source 旧值（会话规则仍显示 `always`）；trace 文本按设计渲染；manifest JSON 增加各来源路径、有效条数、忽略原因和 `tools.approval` 默认动作；静态/运行时构造共用摘要，敏感内容按既有输出策略处理。
+- 文件：`internal/personal/observe.go`、`internal/personal/trace.go`、`internal/cli/trace.go`、`internal/wiring/manifest.go`、`internal/cli/manifest.go`、对应 JSON/文本测试、README 中英。
+- 动作：工具/denial attrs 增加 `approval_rule`、`approval_scope`；保留 Source 旧值（会话规则仍显示 `always`）；trace 文本按设计渲染；manifest JSON 增加各来源路径、有效条数、忽略原因、`tools.approval` 默认动作，以及每个项目规则文件当前内容 hash 和未信任/hash 变化原因；README 给出从 `suga manifest --json` 获取并复制 project_trust hash 的入口。静态/运行时构造共用摘要，敏感内容按既有输出策略处理。
 - 验证命令：`go test -race ./internal/personal/... ./internal/wiring/... ./internal/cli/...`；`go run ./cmd/suga trace --help`、`go run ./cmd/suga manifest --help`。
-- 完成标准：规则命中、项目 allow 被忽略、session scope、旧 trace 字段兼容和 manifest 两路径一致测试通过。
+- 完成标准：规则命中、项目 allow 被忽略、session scope、`approval_rule_persist` 事件、项目 hash 获取入口、旧 trace 字段兼容和 manifest 两路径一致测试通过。
 - 反向验证方法：临时不写 `approval_rule` attr，trace 解释性断言必须失败；临时只改运行时 manifest，静态/运行时一致性测试必须失败。
 - 预计改动规模：M（5–8 个 Go 文件、350–650 行含测试）。
-- 依赖/并行：T6 后，可与 T11 并行。
+- 依赖/并行：T6b、T7b、T8、T9 后；T11 依赖本任务。
 
 ### T11 chat 规则伪终端冒烟与反向验证
 
@@ -218,12 +257,12 @@
 - 完成标准：所有断言、trace attrs、规则文件内容及新进程加载通过；现有 `chat_approval.py` 无回归；PTY 仅 Linux/macOS，Windows 行为另由 T12 主机测试记录。
 - 反向验证方法：临时把 matcher 改为首次命中，deny 覆盖 allow 场景必须失败；临时跳过 chat approver 的 Policy.Decide，allow“不提问”或 deny 断言必须失败；临时去掉写回，跨进程生效断言必须失败。
 - 预计改动规模：M（3–6 个 Python/Make/Go 测试文件、250–500 行）。
-- 依赖/并行：T7、T10 后；与 T10 可并行但合入前需同步。
+- 依赖/并行：T7b、T10 后；必须在 T10 后合入。
 
 ### T12 文档、全量回归与真实环境 Gate
 
 - 文件：`config/config.yaml`、`README.md`、`README.zh-CN.md`、`skills/suga-guide/references/config.md`、`CHANGELOG.md`；不改设计正文。
-- 动作：说明规则文件格式、动作优先级、shell/path 安全限制、项目 trust/hash、chat `a/d/u/p/N`、ACP always、入口默认动作、manifest/trace、`enabled:false` 回退与已知限制；运行容器/主机/真实 provider/ACP 验证，汇总 `UNVERIFIED_REAL_ENV`。
+- 动作：说明规则文件格式、goccy AST 与 anchor/alias 拒绝、动作优先级、shell/path 安全限制、项目 trust/hash 获取、chat `a/d/u/p/N`、ACP always、入口默认动作、manifest/trace、run 对内置保护路径的有意拒绝、`enabled:false` 回退与已知限制；运行容器/主机/真实 provider/ACP 验证，汇总 `UNVERIFIED_REAL_ENV`。
 - 验证命令：容器 `gofmt -l $(git ls-files "*.go")`、`go vet ./...`、`go test -race ./...`、`make smoke-chat`；主机 `go test -count=1 ./...`、`staticcheck ./...`；真实 provider 一轮带工具调用；`scripts/acpprobe/acp_probe.py` 一轮 always/deny；Windows 由 gofer exec job 跑主机测试。
 - 完成标准：命令 exit code 和原始输出均为成功；文档与默认配置一致；真实验证有 trace/日志证据，不能执行的项目明确列出而不伪造通过。
 - 反向验证方法：本任务不新增产品分支；以 T11 反向验证记录、关闭 `enabled` 的兼容回归和全量测试作为反向证据，若任一反向检查不失败则 Gate 不通过。
@@ -240,8 +279,8 @@
 
 ## 人工 Gate
 
-1. 用户审阅并批准本 Draft 0.1；批准计划不等于批准扩大设计范围。
-2. T4/T5 完成后进行一次安全语义 Gate：确认项目 trust、shell/path fail-closed、危险删除守卫和 MCP/ACP 隔离仍与设计一致。
+1. 用户审阅并批准本 Draft 0.2；批准计划不等于批准扩大设计范围。
+2. T4a–T5 完成后进行一次安全语义 Gate：确认项目 trust、shell/path fail-closed、危险删除守卫和 MCP/ACP 隔离仍与设计一致。
 3. T11 完成后由监督方审阅 ptysmoke 断言及反向验证结果；不得以人工 chat 操作为替代。
 4. T12 的真实 provider、ACP probe、Windows 主机 job 是外部环境 Gate；不能执行时必须在交付说明写 `UNVERIFIED_REAL_ENV`。
 5. push、发版、Gofer 配置变更不在本计划内，另行授权。
@@ -250,31 +289,31 @@
 
 | 设计条目 / 定稿选项 | 任务 | 验证 |
 |---|---|---|
-| D1 独立用户/项目规则文件、Q1 `tools.approval_rules` 对象 | T4、T7、T12 | 配置/路径/写回测试；新进程读取；文档 |
-| D2 `deny > ask > allow` | T1、T4、T6、T11 | 表驱动归并；PTY deny 覆盖 allow；反向首次命中失败 |
-| D3 shell token + shell 正向白名单、Q3 严格匹配 | T2、T7、T11 | shell matcher 矩阵；不安全命令无 `[a]`；反向控制符/前缀失败 |
-| D4 项目 allow 默认忽略，Q2 workspace+hash trust | T4、T11 | trust/hash 矩阵；hash 变化保留旧策略；跨进程场景 |
-| D5 工具类型 scope、Q6 file_remove 精确路径 | T3、T7、T11 | path/scope 单测；不同目录/路径隔离冒烟 |
-| D6 `a/d` 后追问，Q4 保留 `[d]`，Q5 默认会话/用户可写/项目只 deny | T7、T11 | 答案解析/写回矩阵；PTY `u/p/N` 与文件检查 |
+| D1 独立用户/项目规则文件、Q1 `tools.approval_rules` 对象 | T4a、T4b、T7b、T12 | 配置/路径/写回测试；新进程读取；文档 |
+| D2 `deny > ask > allow` | T1、T4a、T4b、T6a、T6b、T11 | 表驱动归并；PTY deny 覆盖 allow；反向首次命中失败 |
+| D3 shell token + shell 正向白名单、Q3 严格匹配 | T2、T7a、T11 | shell matcher 矩阵；不安全命令无 `[a]`；反向控制符/前缀失败 |
+| D4 项目 allow 默认忽略，Q2 workspace+hash trust | T4b、T10、T11 | trust/hash 矩阵；hash 变化保留旧策略；跨进程场景 |
+| D5 工具类型 scope、Q6 file_remove 精确路径 | T3、T7a、T11 | path/scope 单测；不同目录/路径隔离冒烟 |
+| D6 `a/d` 后追问，Q4 保留 `[d]`，Q5 默认会话/用户可写/项目只 deny | T7a、T7b、T11 | 答案解析/写回矩阵；PTY `u/p/N` 与文件检查 |
 | D7 MCP legacy 合并、chat/run 使用、ACP 隔离 | T5、T9 | MCP 表驱动；ACP 不读 legacy；显式 deny 覆盖白名单 |
-| D8 规则不能放行危险删除/沙箱/工具存在性 | T3、T5、T6 | danger/path/disabled 回归；反向移除外层守卫失败 |
+| D8 规则不能放行危险删除/沙箱/工具存在性 | T3、T5、T6b | danger/path/disabled 回归；反向移除外层守卫失败 |
 | D9 ACP always 会话级、不写规则文件，Q7 同进程 load | T9、T12 | ACP policy 表；acp_probe；session/load 与跨进程重新询问 |
-| D10 每回合重载、失败保留上一份有效策略 | T4、T10 | size/mtime/hash/delete 失败测试；warning/trace/manifest |
-| D11 显式规则可改写只读/agent-state 默认 | T5、T6、T8 | read-only/agent-state ask/deny 测试；入口默认矩阵 |
+| D10 每回合重载、失败保留上一份有效策略 | T4a、T4b、T10 | size/mtime/hash/delete 失败测试；warning/trace/manifest |
+| D11 显式规则可改写只读/agent-state 默认 | T5、T6b、T8 | read-only/agent-state ask/deny 测试；入口默认矩阵 |
 | 入口默认动作与子 agent Q8 创建时 Policy 快照 | T5、T8、T9 | run/ACP/subagent 测试；快照传播反向验证 |
-| `ApprovalReport.Rule/Scope`、trace、manifest | T6、T10、T11 | trace JSON/文本、manifest JSON 一致性；PTY 断言 |
-| 设计 non_goals 与兼容/无迁移 | T4、T9、T12 | layering、旧配置回归、全量测试、范围审阅 |
+| `ApprovalReport.Rule/Scope`、`approval_rule_persist` trace、manifest | T6a、T6b、T7b、T10、T11 | trace JSON/文本、manifest JSON 一致性；PTY 断言 |
+| 设计 non_goals 与兼容/无迁移 | T4a、T4b、T9、T12 | layering、旧配置回归、全量测试、范围审阅 |
 
 ## 待确认/风险（设计已批准的选项，不在实施中重新改语义）
 
-- ACP SDK 是否接受 `allow_always/reject_always` 对应的 option kind/OptionId：T9 先做协议单测；若 SDK/协议事实冲突，停止并返回用户 Gate，不自创兼容语义。
+- ACP SDK 已确认存在 `PermissionOptionKindAllowAlways/RejectAlways`；T9 仍以协议单测和 `acp_probe.py` 参数验证序列化/运行时行为，若实际 SDK/协议事实冲突，停止并返回用户 Gate，不自创兼容语义。
 - 设计称子 agent approver “恒 nil”，当前代码事实是显式 allow-all `ApproverFunc`（`internal/wiring/subagent.go:107-117`）；实施按“创建时 Policy 快照、ask→deny”设计定稿，不能照搬过时事实。
 - manifest 既有静态与运行时构造路径（`internal/wiring/manifest.go:27-39,115-190,219-278`），必须共用摘要生成；若不能统一，列为阻断而非只更新一条路径。
 - PTY smoke 仅 Linux/macOS；Windows 控制台差异、真实 provider 与真实 ACP 结果可能为 `UNVERIFIED_REAL_ENV`，但不把未执行写成通过。
 
 ## 完成 Gate
 
-- T0–T12 的依赖任务全部完成并按功能点提交；`git status --short` 仅允许无关为空，最终 `git diff --check` 无输出。
+- T0–T12（含 T4a/T4b、T6a/T6b、T7a/T7b）的依赖任务全部完成并按功能点提交；`git status --short` 仅允许无关为空，最终 `git diff --check` 无输出。
 - 规则、入口、交互、观测、文档均有表驱动/集成/ptysmoke 证据，且每个新增反向验证曾确认“去掉被测逻辑后检查失败”。
 - 容器 `gofmt -l`、`go vet`、`go test -race ./...`、`make smoke-chat`；主机 `go test -count=1 ./...`、`staticcheck ./...`；provider/ACP 真实验证或明确 `UNVERIFIED_REAL_ENV` 全部留痕。
 - 设计每个 D/Q、兼容项、非目标和安全不变量都能在本计划任务或 Gate 中定位；未解决的语义变化不合入。
