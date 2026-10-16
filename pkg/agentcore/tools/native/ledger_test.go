@@ -66,6 +66,19 @@ func TestSessionSearchTool(t *testing.T) {
 		return NewSessionSearchTool(f).Execute(context.Background(), api.ToolCall{CallID: "c", Arguments: args})
 	}
 
+	t.Run("empty optional values count as unset", func(t *testing.T) {
+		// A real provider filled every optional parameter with "" and got three
+		// "must not be empty" errors in a row; they now mean "not given".
+		f := &fakeLedger{}
+		_, err := run(f, map[string]any{"query": "插话", "cursor": "", "kind": " ", "since": "", "until": ""})
+		assert.NoErr(t, err)
+		assert.Eq(t, 1, f.searched)
+		assert.Eq(t, "", f.q.Cursor)
+		assert.Empty(t, f.q.Kinds)
+		assert.True(t, f.q.Since.IsZero())
+		assert.True(t, f.q.Until.IsZero())
+	})
+
 	t.Run("argument validation", func(t *testing.T) {
 		for _, tc := range []struct {
 			args map[string]any

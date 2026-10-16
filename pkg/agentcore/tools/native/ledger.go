@@ -229,7 +229,11 @@ func ledgerOptionalString(args map[string]any, name string) (string, bool, error
 	}
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return "", true, fmt.Errorf("%s must not be empty", name)
+		// Models often fill every optional parameter, sending "" for the ones
+		// they do not mean to use (seen with a real provider: three wasted calls
+		// on "cursor/kind/since must not be empty"). An empty optional value is
+		// therefore the same as leaving it out.
+		return "", false, nil
 	}
 	return value, true, nil
 }
