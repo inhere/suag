@@ -135,6 +135,12 @@ func (s *chatInputSource) Ask(ctx context.Context, detail, prompt string) (strin
 		// Ctrl-C behaviour back (the read is the person's own input line again).
 		s.terminal.SetCtrlCClearsLine(false)
 	} else {
+		// A previous question can have just restored the turn prompt while its read
+		// ended. Repaint the new question before asking the reader for a fresh read;
+		// readLine's SetPrompt only affects a block that is not already on screen.
+		if err := s.terminal.UpdatePrompt(prompt); err != nil {
+			return "", err
+		}
 		s.mu.Lock()
 		s.pending = true
 		s.mu.Unlock()
