@@ -131,6 +131,14 @@ func TestStreamTruncationRetries(t *testing.T) {
 		assert.Eq(t, int32(2), hits.Load())
 		assert.Eq(t, "Hello", res.Content)
 	})
+	t.Run("claude: cut every time, the failure names the truncation", func(t *testing.T) {
+		var hits atomic.Int32
+		server := cutStreamServer(t, `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"x`, 100, "", &hits)
+		_, err := claude(server.URL).Stream(context.Background(), req, nil)
+		assert.ErrMsgContains(t, err, "stream truncated")
+		assert.ErrMsgContains(t, err, "stream broke 3 times")
+		assert.Eq(t, int32(fastRetry.MaxAttempts), hits.Load())
+	})
 	t.Run("claude: a bad event line is not retried", func(t *testing.T) {
 		var hits atomic.Int32
 		// A message_stop that closes the stream properly, after a broken line.
@@ -162,6 +170,19 @@ func TestStreamTruncationRetries(t *testing.T) {
 		assert.Eq(t, "done", res.Content)
 		assert.Eq(t, agentcoreapi.StreamEventRetry, events[1].Kind) // after the cut attempt's "ok"
 		assert.Eq(t, true, events[1].Metadata["restart"])
+	})
+	t.Run("responses: cut every time, the failure names the truncation", func(t *testing.T) {
+		var hits atomic.Int32
+		cut := strings.Join([]string{
+			`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}`,
+			`data: {"type":"response.output_text.delta","output_index":0,"delta":"ok"}`,
+			`data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function`,
+		}, "\n")
+		server := cutStreamServer(t, cut, 100, "", &hits)
+		_, err := responses(server.URL).Stream(context.Background(), req, nil)
+		assert.ErrMsgContains(t, err, "stream truncated")
+		assert.ErrMsgContains(t, err, "stream broke 3 times")
+		assert.Eq(t, int32(fastRetry.MaxAttempts), hits.Load())
 	})
 	t.Run("responses: a cut stream whose items are all finished is not retried", func(t *testing.T) {
 		var hits atomic.Int32
