@@ -153,9 +153,12 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 	res := &agentcoreapi.GenerateResult{}
 	emitted := false
 	finishReason := "" // the last non-empty finish_reason ("length" = cut off)
+	done := false      // the provider sent "data: [DONE]"
 
+	lines := newStreamLines()
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+	scanner.Split(lines.split)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if !strings.HasPrefix(line, "data:") {
@@ -164,10 +167,14 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		logStreamChunk(p.Name(), payload)
 		if payload == "[DONE]" {
+			done = true
 			break
 		}
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			if lines.truncated() {
+				return nil, streamTruncatedError(p.Name(), cutLine)
+			}
 			return nil, fmt.Errorf("parse openai stream chunk: %w", err)
 		}
 		if chunk.Error != nil {
@@ -214,7 +221,14 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, &streamReadError{fmt.Errorf("read openai stream: %w", err)}
+		return nil, streamBodyError(p.Name(), err)
+	}
+	// A stream that ends at a line boundary without [DONE] and without a
+	// finish_reason is an answer that was cut off: a gateway that simply omits
+	// the marker always sends the finish_reason, so a missing pair means the
+	// connection died (the half-line case above is reported earlier).
+	if !done && finishReason == "" {
+		return nil, streamTruncatedError(p.Name(), "the stream ended without [DONE] and without a finish_reason")
 	}
 
 	res.Content, res.Reasoning = content.String(), reasoning.String()

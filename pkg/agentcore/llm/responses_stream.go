@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -73,8 +74,13 @@ func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader
 	done := map[int]map[string]json.RawMessage{} // output items by index
 	added := map[int]bool{}                      // items started (output_item.added)
 	emitted := false
+	// cut is set when the stream was cut off (a half line, or a body that ended
+	// early); see the tail of this function for who may still rescue it.
+	var cut error
+	lines := newStreamLines()
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	sc.Split(lines.split)
 	for sc.Scan() {
 		payload, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "data:")
 		if !ok {
@@ -86,6 +92,10 @@ func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader
 		}
 		var ev responsesEvent
 		if err := json.Unmarshal([]byte(payload), &ev); err != nil {
+			if lines.truncated() {
+				cut = streamTruncatedError(p.Name(), cutLine)
+				break
+			}
 			return nil, fmt.Errorf("parse responses stream event: %w", err)
 		}
 		switch ev.Type {
@@ -136,12 +146,20 @@ func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, &streamReadError{fmt.Errorf("read responses stream: %w", err)}
+		readErr := streamBodyError(p.Name(), err)
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, readErr // a transport failure other than a cut stream
+		}
+		if cut == nil {
+			cut = readErr
+		}
 	}
-	// The gateway closed the stream before the terminal event. When every
-	// item it started was also finished, the reply is complete but for the
-	// summary event (and its usage): use the finished items rather than fail
-	// a turn whose text was already shown and cannot be requested again.
+	// The stream ended before its terminal event: it was cut off (the half line
+	// above included), or a gateway simply left the event out. When every item it
+	// started was also finished, the reply is complete but for the summary event
+	// (and its usage): use the finished items rather than fail a turn whose text
+	// was already shown and cannot be requested again. Otherwise the cut stream is
+	// reported to retryStream, which requests the whole answer again.
 	if len(done) > 0 && allDone(added, done) {
 		slog.Warn("responses stream ended without a terminal event; using the finished output items", "provider", p.Name(), "items", len(done))
 		res, err := p.resultOf(responsesBody{Status: "completed", Output: orderedItems(done)})
@@ -149,6 +167,9 @@ func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader
 			err = emit(ctx, agentcoreapi.StreamEvent{Kind: agentcoreapi.StreamEventMessageStop})
 		}
 		return res, err
+	}
+	if cut != nil {
+		return nil, cut
 	}
 	return nil, &streamReadError{fmt.Errorf("responses stream ended without a terminal event")}
 }

@@ -150,9 +150,12 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 	res := &agentcoreapi.GenerateResult{}
 	var usage claudeUsage
 	stopReason, eventName, emitted := "", "", false
+	stopped := false // the provider sent message_stop
 
+	lines := newStreamLines()
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+	scanner.Split(lines.split)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if name, ok := strings.CutPrefix(line, "event:"); ok {
@@ -165,6 +168,9 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		}
 		var ev claudeStreamEvent
 		if err := json.Unmarshal([]byte(strings.TrimSpace(payload)), &ev); err != nil {
+			if lines.truncated() {
+				return nil, streamTruncatedError(p.Name(), cutLine)
+			}
 			return nil, fmt.Errorf("parse claude stream event: %w", err)
 		}
 		if ev.Type == "" {
@@ -226,6 +232,7 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 			}
 		}
 		if ev.Type == "message_stop" {
+			stopped = true
 			break
 		}
 	}
@@ -233,7 +240,13 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, &streamReadError{fmt.Errorf("read claude stream: %w", err)}
+		return nil, streamBodyError(p.Name(), err)
+	}
+	// Claude ends a message with message_stop, after a message_delta that
+	// carries the stop_reason. A stream that ends without either was cut off at
+	// a line boundary and must not pass as a complete answer.
+	if !stopped && stopReason == "" {
+		return nil, streamTruncatedError(p.Name(), "the stream ended without message_stop")
 	}
 
 	in := usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens
