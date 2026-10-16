@@ -22,6 +22,11 @@ turn only. The scenarios (each on its own scratch home and fake model):
   abort      Esc ends the turn only: chat goes on, the message waits in the input
              line and runs only when the person submits it (Enter); a single
              Ctrl-C ends a turn the same way, two of them leave chat.
+  clear      Ctrl-C on a non-empty input line drops the line and nothing else
+             (wll1): the running turn is not ended, nothing is inserted, and the
+             message typed after the press goes into the same turn - the text the
+             press dropped is not part of it. An empty line keeps the old
+             meaning: Ctrl-C then ends this turn only.
   send       `suga send --steer` from outside (the way gofer delivers): while a
              tool runs the first response is `steered` and the message reaches
              the *same* turn's next request; `--steer --wait` returns 0 before
@@ -118,6 +123,17 @@ machine this was written on has no pty, so it is UNVERIFIED here):
 - dropping the len(t.line) == 0 guard in the keyUp case: withdraw fails, Up on
   the line holding both texts walks the history instead of taking the messages
   back (and a second Up fills a different line).
+
+Reverse verification of the clear scenario (also to run in the Linux container;
+UNVERIFIED here):
+- dropping the non-empty branch of the Ctrl-C case in lineedit's readLine (the
+  t.ctrlCClearsLine one): clear fails - the press ends the turn (已中断本轮), the
+  input line keeps the dropped text, and the row check right after the press says
+  the line is not empty.
+- handing the editor a plain Ctrl-C (SetCtrlCClearsLine(true) for every read):
+  the clear scenario still passes, but chat_tool_ctrlc.py's single Ctrl-C and
+  chat_approval.py's question checks are what catch that - a question would let
+  the press drop the typed answer instead of cancelling itself.
 """
 import argparse
 import json
@@ -131,7 +147,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fakellm  # noqa: E402
-from ptydrive import CTRL_C, PtySession, Screen  # noqa: E402
+from ptydrive import CTRL_C, PtySession, Screen, input_row  # noqa: E402
 from chat_approval import isolate_ws, wait_port, write_home  # noqa: E402
 from chat_observe import trace_events  # noqa: E402
 
@@ -153,6 +169,15 @@ SEND_TOOL = "touch {marker}; sleep 6; echo TOOL_DONE"
 # The tool of the withdraw scenario: long enough for typing two messages, a
 # `send --steer`, the Up key and an edit to happen while it runs.
 WITHDRAW_TOOL = "touch {marker}; sleep 25; echo TOOL_DONE"
+# The tool of the clear scenario: long enough for a message to be typed, dropped
+# with Ctrl-C and typed again while it runs.
+CLEAR_TOOL = "touch {marker}; sleep 20; echo TOOL_DONE"
+# The text the press drops, and the message typed in its place.
+CLEAR_DROPPED = "这行要被清掉"
+CLEAR_TEXT = "只改 README"
+# The clear scenario's pty width: the screen model lays the rows out with it (the
+# input row is read off the screen to tell a cleared line from one with text).
+CLEAR_COLS = 100
 # The two messages typed into the running turn that the scenario takes back with
 # Up, and the word added to them before submitting the edited text again.
 WITHDRAW_TEXT = "撤回这一句"
@@ -694,6 +719,72 @@ def send_scenario(c):
             any((e.get("attrs") or {}).get("disposition") == "input_line" for e in returned))
 
 
+def clear_scenario(c):
+    """Ctrl-C on a non-empty input line drops that line and nothing else (wll1)."""
+    s = c.session
+    m = s.mark()
+    c.check("❯ prompt", s.until(r"❯ ", m))
+    m = s.mark()
+    s.line("跑一个长命令")
+    c.check("tool call shown", s.until(r"⏺ shell_exec", m))
+    c.check("the prompt becomes ↳ while the turn runs", s.until(STEER_PROMPT, m))
+    if not c.wait_file(STARTED, 30):
+        c.check("tool started (marker file)", False)
+        return
+    c.check("tool started (marker file)", True)
+
+    # A half-typed message, then Ctrl-C: the line goes away, the turn runs on.
+    m = s.mark()
+    s.send(CLEAR_DROPPED)
+    c.check("the text is on the input line", s.until(re.escape(CLEAR_DROPPED), m))
+    s.send(CTRL_C)
+    s.drain(0.8)
+    c.check("ctrl-c with text: the turn is not ended", not s.contains(r"已中断本轮", m))
+    c.check("ctrl-c with text: nothing was inserted", not s.contains(r"\[插话\]", m))
+    time.sleep(0.3)
+    c.check("ctrl-c with text: no request carried it", len(c.log.requests()) == 1)
+    # The input line is empty again: the row holds the prompt and nothing else (a
+    # dropped line left on the screen would still be there).
+    c.check("ctrl-c with text: the input line is empty", input_row(s, CLEAR_COLS) == STEER.strip())
+
+    # What is typed next is a line of its own: the dropped text did not come along.
+    m = s.mark()
+    s.line(CLEAR_TEXT)
+    c.check("the new message is shown as waiting", s.until(steer_notice(CLEAR_TEXT), m))
+    c.check("the dropped text did not come along",
+            not s.contains(steer_notice(CLEAR_DROPPED + CLEAR_TEXT), m))
+    # The tool ends and the model is asked again: the message reached this turn, so
+    # the press dropped a line and did not end anything.
+    c.check("tool result shown", s.until(r"⎿ ok: TOOL_DONE", m, timeout=40))
+    c.check("shown as delivered", s.until(steer_notice(CLEAR_TEXT, STEER_TAKEN), m))
+    c.check("the turn answers", s.until(c.reply, m))
+    c.check("the end-of-turn line counts one message", s.until(r"插话 1", m))
+
+    requests = c.log.wait(2)
+    c.check("two requests", len(requests) >= 2)
+    if len(requests) >= 2:
+        carried = user_texts(requests[1])
+        c.check("the next request carries only the message typed after the ctrl-c",
+                last_user(requests[1]) == CLEAR_TEXT
+                and all(CLEAR_DROPPED not in text for text in carried))
+
+    # An empty line keeps the old meaning during a turn: Ctrl-C ends this turn.
+    marker = os.path.join(c.ws, STARTED)
+    if os.path.exists(marker):
+        os.remove(marker)
+    m = s.mark()
+    s.line("再跑一个长命令")
+    c.check("tool call shown again", s.until(r"⏺ shell_exec", m))
+    if not c.wait_file(STARTED, 30):
+        c.check("the second tool started", False)
+        return
+    c.check("the second tool started", True)
+    s.send(CTRL_C)
+    c.check("ctrl-c on an empty line still ends this turn", s.until(r"已中断本轮", m, timeout=15))
+    c.check("chat stays after it", not s.contains(r"续接：", m))
+    c.exit_chat()
+
+
 def withdraw_scenario(c):
     """Up on the empty input line takes the messages still waiting back."""
     s = c.session
@@ -1136,6 +1227,10 @@ def main():
         # still waiting back, while a `suga send --steer` message stays.
         ("withdraw", ["--mode", "tool", "--delay", "0.2", "--reply", reply], WITHDRAW_TOOL, auto, "",
          withdraw_scenario, {}),
+        # Ctrl-C on a non-empty input line of a running turn: the line is dropped and
+        # the turn goes on, while an empty line still ends this turn only (wll1).
+        ("clear", ["--mode", "tool", "--delay", "0.2", "--reply", reply], CLEAR_TOOL, auto, "",
+         clear_scenario, {"cols": CLEAR_COLS}),
         # A long, overwide reply in small chunks: the screen model checks where its
         # lines and the input line ended up. The pty is 60 columns wide, so every
         # reply line is wrapped by the terminal.

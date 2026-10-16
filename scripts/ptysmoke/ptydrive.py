@@ -173,6 +173,21 @@ class Screen:
         return lines[index] if -len(lines) <= index < len(lines) else ""
 
 
+def input_row(session, cols, prompts=("❯ ", "↳ ")):
+    """The row the input line occupies, as the terminal would show it: the last row
+    of the screen model that starts with one of the prompts, trailing spaces
+    removed (so a cleared line reads as the prompt alone, and a line holding text
+    reads as prompt + text).
+
+    cols must be the pty's real width: the screen model lays the rows out with it
+    (PtySession.resize, or the size the session was started with)."""
+    screen = Screen(width=cols)
+    screen.feed(session.text_raw(0))
+    rows = screen.screen_lines()
+    return next((row for row in reversed(rows)
+                 if any(row.startswith(p.strip()) for p in prompts)), "")
+
+
 def _self_test():
     """Checks the screen model itself:
     python3 -c "import ptydrive; ptydrive._self_test()" ."""

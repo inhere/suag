@@ -5,7 +5,8 @@ Starts scripts/ptysmoke/fakellm.py (tool mode), writes a temporary SUGA_HOME
 with tools.allow_write: true, runs `suga chat` in a PTY and checks:
 banner with model, ❯ prompt, approval question with the full command,
 n denies and the turn goes on, y runs the tool, Ctrl-C at the question only
-cancels the turn, a stops further questions, one Ctrl-C at the prompt only hints,
+cancels the turn (with text typed on the line too), one Ctrl-C at the prompt only
+hints (with text on the line it clears the line instead),
 two in a row print the resume command and usage summary,
 and piped (non-TTY) input denies write tools.
 
@@ -21,6 +22,12 @@ Reverse verification (drop the behaviour and the check fails):
 - let a cooked turn read the keyboard (a steer read with chat.steering: false):
   "pre-typed y: no insert at all" fails; without the flush and the epoch bump
   of Ask (ask.go) the pre-typed y answers the question and "n: denied" fails.
+- drop the non-empty branch of the Ctrl-C case in lineedit's readLine (the
+  t.ctrlCClearsLine one): "ctrl-c non-empty: no exit hint" fails - the press
+  starts the exit confirmation (再按一次 Ctrl+C 退出) while "abc" is on the line.
+- give the answer read a clearing Ctrl-C as well (SetCtrlCClearsLine(true) for
+  every read, ask.go included): "ctrl-c with text: cancelled" fails - the press
+  drops the typed answer and the question waits on instead of cancelling.
 
   make smoke-chat                        # builds tmp/smoke/suga and runs this
   python3 -I scripts/ptysmoke/chat_approval.py --bin tmp/smoke/suga
@@ -35,10 +42,13 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ptydrive import CTRL_C, CTRL_U, PtySession  # noqa: E402
+from ptydrive import CTRL_C, CTRL_U, PtySession, input_row  # noqa: E402
 
 OK = r"⎿ ok: SMOKE_OK"
 QUESTION = r"允许执行 shell_exec"
+# The pty width every scenario here runs with (PtySession size): the screen model
+# reads the input row off the screen and lays its rows out with it.
+COLS = 100
 # The status line every turn ends with: the context share and the local time.
 TURN_STATE = r"tokens · ctx \d+% · [\d.]+m?s · \d{2}:\d{2}"
 
@@ -189,6 +199,16 @@ def scenario(s):
     s.check("ctrl-c: not executed", not s.contains(OK, m))
     time.sleep(0.5)
 
+    # Text on the line does not change that: the answer read is the one read whose
+    # Ctrl-C stays "cancel" (the prompt and a turn's read drop such a line instead,
+    # wll1). The question is asked again for this.
+    m = s.mark(); s.line("第四次")
+    s.check("ctrl-c with text: question", s.until(QUESTION, m))
+    s.send("abc"); s.drain(0.4); s.send(CTRL_C)
+    s.check("ctrl-c with text: cancelled", s.until(r"已取消", m))
+    s.check("ctrl-c with text: not executed", not s.contains(OK, m))
+    time.sleep(0.5)
+
     m = s.mark(); s.line("继续")
     s.check("a: chat alive, question", s.until(QUESTION, m))
     s.line("a")
@@ -197,8 +217,21 @@ def scenario(s):
     s.check("a: executed again", s.until(OK, m) and turn_end(s, m))
     s.check("a: no question again", not s.contains(QUESTION, m))
 
-    # One Ctrl-C at the prompt only drops the typed text and asks for another.
+    # Ctrl-C on a non-empty input line only clears the line (wll1, the way Claude
+    # Code does it): no exit confirmation, chat stays, and the row is left at the
+    # prompt alone. An empty line keeps the old meaning, checked right after.
     m = s.mark(); time.sleep(0.3); s.send("abc"); time.sleep(0.2); s.send(CTRL_C)
+    s.drain(0.6)
+    s.check("ctrl-c non-empty: no exit hint", not s.contains(r"再按一次 Ctrl\+C 退出", m))
+    s.check("ctrl-c non-empty: chat alive", not s.contains(r"续接：", m))
+    s.check("ctrl-c non-empty: the input line is empty", input_row(s, COLS) == "❯")
+    # The cleared text is really gone: what is typed next is a line of its own.
+    s.send("def"); s.drain(0.6)
+    s.check("ctrl-c non-empty: the next text is a line of its own", input_row(s, COLS) == "❯ def")
+    s.send(CTRL_U); s.drain(0.3)
+
+    # An empty line: one Ctrl-C only asks for another (the old meaning).
+    m = s.mark(); s.send(CTRL_C)
     s.check("ctrl-c once: hint", s.until(r"再按一次 Ctrl\+C 退出", m))
     s.check("ctrl-c once: chat alive", not s.contains(r"续接：", m))
     # A second Ctrl-C after the window is again only a hint.
