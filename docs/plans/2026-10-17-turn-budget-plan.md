@@ -1,12 +1,13 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # 回合级 token / 成本预算（budget）实施计划
 
-> 状态：Draft 0.1（待用户审阅）
+> 状态：Draft 0.2（按评审 r1 修订，待用户审阅）
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
+| 0.2 | 2026-10-17 | suga（gofer job） | 按预算 / 中文检索计划评审 r1 关闭 B-M1–B-M5；补齐估算包装器接口、子 agent 与 pending 口径、ACP 现状、stats/notice/终端清洗及交互验收。 |
 | 0.1 | 2026-10-17 | suga（gofer job） | 依据已批准设计 Draft 0.3 起草实施计划；拆分配置、计量、估算、呈现与验证波次。 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
@@ -18,10 +19,10 @@
 完成定义（全部满足）：
 
 1. `budget.tokens`、`budget.cost_usd`、`budget.scope`、`budget.estimate`、`budget.estimate_factor`、`budget.notice_ratio` 已按设计实现，优先级为 flag > 环境变量 > config；未配置预算时旧行为和旧输出保持不变。
-2. 普通回合只在 `AfterModel` 检查预算，超限通过 `Control.RequestWrapUp` 收尾；会话累计已超限时 `BeforeRun` short-circuit 为 completed + `WrapUp`，不发模型请求；不新增 `RunInput` / `RunResult` 字段。
-3. token 口径为 `max(input-cache_read, 0)+output`，成本沿用 `costOf`；子 agent、compact/交接等内部请求按设计计入，后台子 agent 不被父回合硬取消。
-4. provider 估算采用 `observed(estimating(real))`，覆盖主 provider、fallback Pool 成员、compact provider 与子 agent provider；估算值和 `estimated` 标记同步到 state/meter、model 事件、trace、stream-json、chat 状态与 stats 口径。
-5. run、chat、stream-json、trace、ACP 均能表达预算 scope、limit、used、remaining、exceeded 与真实收尾原因；ACP 的预算收尾仍为 `end_turn`，不误报为单次输出截断的 `max_tokens`。
+2. 普通回合只在 `AfterModel` 检查预算，超限通过 `Control.RequestWrapUp` 收尾；会话累计已超限时，在第一步的 `BeforeModel`（用户消息已经落库后）short-circuit 为 completed + `WrapUp`，不发模型请求；用户消息仍保留在历史中，下一轮请求消息序列合法且不会追加连续两条 assistant；不新增 `RunInput` / `RunResult` 字段。
+3. token 口径为 `max(input-cache_read, 0)+output`，成本沿用 `costOf`；turn 预算使用 `run - held`，上一回合后台子 agent 的挂起用量不挪入本回合 turn 预算，但仍按现有 `run` 口径提供给 stream-json/ACP，并按 `base + run` 计入 session；前台子 agent 读取父 meter 并在父预算超限时收尾，后台子 agent 豁免父预算控制；compact/交接等内部请求按设计计入。
+4. provider 估算采用 `observed(estimating(real))`，覆盖主 provider、fallback Pool 成员、compact provider 与子 agent provider；估算器透传可选 provider 能力和错误身份，估算值和 `estimated` 标记同步到 state/meter、model 事件、trace、stream-json、chat 状态与 stats 口径；估算 metadata 落库的接受范围在任务中固定。
+5. run、chat、stream-json、trace、ACP 均能表达预算 scope、limit、used、remaining、exceeded 与真实收尾原因；ACP 的预算收尾和现有单次输出截断均保持 `end_turn` / 当前 stopReason，不新增或返回 `max_tokens`。
 6. 新增单测、`scripts/ptysmoke/chat_budget.py` 冒烟及反向验证全部成立；`make smoke-chat`、容器 `go test -race ./...`、主机 `go test -count=1 ./...` 和 `staticcheck ./...` 按项目规则完成。能使用真实 provider 时完成一轮带工具调用的核对，否则明确记录 `UNVERIFIED_REAL_PROVIDER`。
 7. 无 schema 迁移；文档说明 gofer 的环境变量注入、软收尾与硬熔断关系，且不修改 gofer 代码。
 
@@ -48,7 +49,7 @@
 |---|---|---|---|---|---|---|---|
 | CAP-01 | 预算配置与三级优先级 | `internal/config/maxsteps.go:16-36` 的 `ReadMaxSteps`、`maxsteps_test.go:9-`、配置加载约定 | 是：复用 flag > env > config 的现有解析优先级 | 在 `internal/config` 原位新增 `ReadBudgetSettings` | DIRECT_REUSE | budget 多字段与 env 显式读取尚不存在 | 不复制 max-steps 解析约定；统一在 budget owner 中维护校验 |
 | CAP-02 | 回合/会话用量计量 | `internal/personal/usage.go:253-327` 的 `runUsageMeter`、`withSessionUsage`、usage 事件写入 | 是：现有 run/session meter 与子 agent forwarding 可复用 | `internal/personal` 增加 budget hook/快照 | OWNER_EXTENSION | 当前无主 agent 预算判定 | 继续使用现有 meter 与 `SumUsageTree`，不另造累计账本 |
-| CAP-03 | 超限收尾 | `pkg/agentcore/api/hooks.go:36-59` 的 `Control.RequestWrapUp`、`pkg/agentcore/runtime_wrapup.go:13-`、子 agent `limitHook` | 是：first-wins wrap-up control seam 直接复用 | budget hook 按同一 control seam 扩展 | DIRECT_REUSE | 需要 token/cost 双阈值与 BeforeRun short-circuit | first-wins 保证同一回合只请求一次收尾 |
+| CAP-03 | 超限收尾 | `pkg/agentcore/api/hooks.go:36-59` 的 `Control.RequestWrapUp`、`pkg/agentcore/runtime_wrapup.go:13-`、子 agent `limitHook` | 是：first-wins wrap-up control seam 直接复用 | budget hook 按同一 control seam 扩展 | DIRECT_REUSE | 需要 token/cost 双阈值与 BeforeModel short-circuit | first-wins 保证同一回合只请求一次收尾 |
 | CAP-04 | provider 缺失用量估算 | `internal/personal/tokens.go:10-83`、provider Pool/compact 装配、`pkg/agentcore/llm/observe.go:62-` | 部分：已有 rune/token 估算可复用，但没有 provider 返回值封装 | 新增 `estimatingProvider`，放在 observer 内侧 | MINIMAL_NEW_MODULE | 现有估算只供窗口判断，未回填 GenerateResult，Usage=0 无法进入 state/meter | 所有 provider 构造路径统一包裹，估算器只在 personal owner 生命周期内存在 |
 | CAP-05 | 估算可观测性 | `pkg/agentcore/api/provider.go:69-` 的 `GenerateResult`、`pkg/agentcore/llm/observe.go:10-50` 的 `Attempt`、model/usage/trace 事件 | 部分：GenerateResult metadata 与 Attempt observer 可复用 | API metadata 常量与 `Attempt.Estimated` 字段 | OWNER_EXTENSION | 当前 Attempt 无 estimated 字段 | 只增加可选字段，旧消费端保持兼容 |
 | CAP-06 | 文本/JSON/chat/ACP 呈现 | `internal/output/wrapup.go:9-29` 的 `WrapUpNotice`、`internal/chat/layout.go:181-219` 的 `BuildTurnStatus`、stream-json/trace/ACP owners | 是：现有 wrap-up、usage 与状态呈现 owner 直接复用 | 各 owner 增可选 budget 视图 | OWNER_EXTENSION | 当前无 budget 对象、提醒与成本原因 | 不改旧未配置输出；呈现由现有层负责，不新增跨层协议 |
@@ -84,8 +85,8 @@
 |---|---|---|---|
 | W0 | 预检与 owner 冻结 | 无 | 监督会话；不改代码 |
 | W1 | 配置、协议元数据与估算器 | W0；T2 可与 T1 并行但不共享 owner 文件 | T1、T2 分离 job |
-| W2 | personal 预算计量、hook 与装配 | T1、T2 | T3 后 T4；同一 owner 依赖链 |
-| W3 | 输出与交互呈现 | T3、T4 | T5、T6 可并行；T6 含 ptysmoke |
+| W2 | personal 预算计量、hook 与装配 | T1、T2 | T3a → T3b → T3c → T4；同一 owner 依赖链 |
+| W3 | 输出与交互呈现 | T3a–T3c、T4 | T5、T6 可并行；T6 含 ptysmoke |
 | W4 | ACP、gofer 文档与跨层回归 | T5、T6 | T7、T8 可并行 |
 | W5 | 完整验收与真实 provider | T1–T8 | 监督会话 + gofer host job |
 
@@ -93,65 +94,83 @@
 
 ### T1 配置读取与 run/chat 预算 flags（W1，T1/T2 可并行）
 
-- 文件：`internal/config/budget.go`、`internal/config/budget_test.go`、`internal/config/maxsteps.go`（仅复用约定时不改）、`internal/cli/run.go` 及其相关命令注册/测试文件。
-- 动作：新增 `BudgetSettings`/`BudgetFlags`/`ReadBudgetSettings`；实现 `budget.*`、`SUGA_BUDGET_*`、flag 的优先级与非法值 fail-closed；注册 `--budget-tokens`、`--budget-cost-usd`、`--budget-scope` 到 run 与 chat 共用入口，0 表示未给；不新增 `estimate` 等未批准 CLI flag。
+- 文件：`internal/config/budget.go`、`internal/config/budget_test.go`、`internal/config/maxsteps.go`（仅复用约定时不改）、`internal/cli/run.go` 及其相关命令注册/测试文件、`internal/wiring/runtime.go` 的 options 类型定义。
+- 动作：新增 `BudgetSettings`/`BudgetFlags`/`ReadBudgetSettings`；实现 `budget.*`、`SUGA_BUDGET_*`、flag 的优先级与非法值 fail-closed；注册 `--budget-tokens`、`--budget-cost-usd`、`--budget-scope` 到 run 与 chat 共用入口，0 表示未给；不新增 `estimate` 等未批准 CLI flag；把预算字段先贯通 `wiring.Options` / `personalOptions.wiringOptions`，供后续 provider 装配消费。
 - 验证命令：`go test -race ./internal/config/... ./internal/cli/...`；针对 flag/env/config 的优先级、负数、非法 scope/estimate、cost 小数、默认零值运行新增用例。
-- 完成标准：配置未启用返回零值且无行为变化；所有合法字段解析正确，非法输入启动报错；run/chat 都能把预算选项传到 wiring。
+- 完成标准：配置未启用返回零值且无行为变化；所有合法字段解析正确，非法输入启动报错；run/chat 都能把预算选项传到 wiring，且 `wiring.Options` 字段已形成 T4 可消费的稳定输入。
 - 反向验证方法：临时交换 env/config 优先级或移除 chat flag 注册，新增优先级/`chat --budget-tokens 1` 用例必须失败；验证后恢复。
-- 预计改动规模：中（约 2–4 个 Go 文件，150–250 行含测试）。
+- 预计改动规模：中（约 3–5 个 Go 文件，180–280 行含测试）。
 
 ### T2 估算器与可观测 metadata（W1，T1/T2 可并行）
 
 - 文件：`internal/personal/estimate.go`（新）、`internal/personal/tokens.go`、`pkg/agentcore/api/provider.go` 或 API 常量所在文件、`pkg/agentcore/llm/observe.go`、对应测试。
-- 动作：实现 `estimatingProvider`，按设计的 `auto/on/off`、输入/输出正文与工具 JSON、`estimate_factor` 补齐缺失 Usage；provider 有真实值时不覆盖；把估算标志经 `GenerateResult.Metadata[UsageEstimatedMetaKey]` 传出，`llm.Attempt` 增 `Estimated bool`；复用现有 CJK/rune 规则，不改 provider 协议。
-- 验证命令：`go test -race ./internal/personal/... ./pkg/agentcore/llm/... ./pkg/agentcore/...`；覆盖中文/英文/混合、emoji/全角、部分真实 Usage、off/on 与 metadata/Attempt 标志。
-- 完成标准：估算只在设计条件下补值；真实值不被估算覆盖；标志可被 observer 读取；agentcore layering 与既有 provider 测试通过。
+- 动作：实现 `estimatingProvider`，按设计的 `auto/on/off`、输入/输出正文与工具 JSON、`estimate_factor` 补齐缺失 Usage；provider 有真实值时不覆盖；把估算标志经 `GenerateResult.Metadata[UsageEstimatedMetaKey]` 传出，并明确 `est_input_tokens` / `est_output_tokens` metadata 键及其 observer 映射，`llm.Attempt` 增 `Estimated bool`。包装器按内层能力透传 `Name()`、`Model()`、`SupportsToolChoice`、`Stream()` 等可选接口；所有 provider 调用原样透传 `ctx`，错误原样返回，不把估算错误包装成另一种身份。接受估算标记随 `GenerateResult.Metadata` 被 runtime 复制并落库到 assistant/tool-call 步骤 metadata，不在本期剥离；复用现有 CJK/rune 规则，不改 provider 协议。
+- 验证命令：`go test -race ./internal/personal/... ./pkg/agentcore/llm/... ./pkg/agentcore/...`；覆盖中文/英文/混合、emoji/全角、部分真实 Usage、off/on 与 metadata/Attempt 标志、可选接口/错误/ctx 透传。
+- 完成标准：估算只在设计条件下补值；真实值不被估算覆盖；标志可被 observer 读取；估算包装器不会改变 provider 的名称、model、流式、tool choice 能力或错误身份；agentcore layering 与既有 provider 测试通过。
 - 反向验证方法：临时让 observer 之外的包装器不返回估算值，或清掉 metadata 转换，要求 estimated/model-event 回归测试失败；恢复后再测。
-- 预计改动规模：中（约 3–5 个 Go 文件，180–300 行含测试）。
+- 预计改动规模：中（约 3–5 个 Go 文件，220–360 行含测试）。
 
-### T3 回合预算 hook、事件与 session short-circuit（W2）
+### T3a turn 预算、事件与无价表警告（W2，依赖 T1/T2）
 
 - 文件：`internal/personal/budget.go`（新或同 owner 文件）、`internal/personal/runner.go`、`internal/personal/usage.go`、`internal/personal/store/types.go`/事件写入处、相关测试。
-- 动作：在 `turnHooks` 中保持 usage collector 最前，增加 budget hook；只在 `AfterModel` 按 token/cost 口径检查，复用 `RequestWrapUp` first-wins；实现 turn/session scope、`BeforeRun` 已超限的 completed short-circuit、一次性 notice/预算事件；子 agent 与内部请求沿用 meter forwarding/`purpose=compact` 口径；不添加 RunResult 字段，不取消后台子 agent。
-- 验证命令：`go test -race ./internal/personal/...`；覆盖缓存扣除、cost provider 优先/price fallback/无 price 警告、父子 agent、compact、session base+run、首次收尾、收尾请求仍计费、无模型请求 short-circuit。
-- 完成标准：超限普通回合进入 wrap-up；session 已用尽不发模型请求；预算事件包含 scope/limit/used/reason/estimated 所需 attrs；未配置预算不安装有效 hook且行为不变。
-- 反向验证方法：临时删除 `AfterModel` 判定、取消 `BeforeRun` short-circuit 或让成本无价表静默计入，针对对应测试必须失败；恢复所有临时改动。
-- 预计改动规模：大（约 4–7 个 Go 文件，300–500 行含测试）。
+- 动作：在 `turnHooks` 中保持 usage collector 最前，增加 budget hook；只在 `AfterModel` 按 `run - held` 的 token/cost 口径检查，复用 `RequestWrapUp` first-wins；在 `UsageUpdate` / personal Event 中增加可选 budget snapshot，供 chat 和其他呈现层消费；实现无 provider cost 且无 price 时的启动/回合开始警告，`estimate: off` 时明确预算按 0 计；写入一次性 budget 事件及 `est_input_tokens` / `est_output_tokens` attrs；不添加 RunResult 字段，不取消后台子 agent。
+- 验证命令：`go test -race ./internal/personal/...`；覆盖缓存扣除、cost provider 优先/price fallback/无 price 警告、estimate off/on、`run - held`、预算事件 attrs、首次收尾和收尾请求仍计费。
+- 完成标准：普通回合只在 AfterModel 触发超限 wrap-up；turn 预算不把上一回合 held 用量算入；预算 snapshot 能经 UsageUpdate/Event 传给消费层；无价表或关闭估算时按设计警告且不静默伪造成本/用量。
+- 反向验证方法：临时删除 `AfterModel` 判定、取消 budget snapshot 或让成本无价表静默计入，针对对应测试必须失败；恢复所有临时改动。
+- 预计改动规模：中（约 3–5 个 Go 文件，180–300 行含测试）。
 
-### T4 wiring 装配所有 provider 路径（W2，依赖 T2/T3）
+### T3b session 预算、pending 结算与 BeforeModel short-circuit（W2，依赖 T3a）
+
+- 文件：`internal/personal/budget.go`、`internal/personal/usage.go`、`internal/personal/runner.go`、相关状态/历史测试。
+- 动作：实现 session scope 的 `base + run` 结算，并在回合激活时记录 `held`：上一回合后台子 agent 的 pending 用量仍进入既有 `run`/session 观测，但从本回合 turn 预算中减去。会话预算已用尽时，在第一步 `BeforeModel` short-circuit 为 completed + `WrapUp`；确保用户消息已先落库、该路径不追加 assistant 输出、不发模型请求，且下一轮消息序列没有连续 assistant；补回合末 wrap-up 与截断同时发生时的额外提示。
+- 验证命令：`go test -race ./internal/personal/...`；覆盖 base+run、pending N token 在下一回合 turn 不计入但在 session 计入、用户消息落库、无模型请求、无连续 assistant、下一轮合法序列及 wrap-up/truncated 组合。
+- 完成标准：session 已用尽的第一步 BeforeModel 行为与 denial hook 先例一致；用户输入可检索、状态/事件仍可观察；既有 stream-json/ACP run usage 口径不变。
+- 反向验证方法：临时把 short-circuit 放回 BeforeRun、在 `Output` 写 assistant，或让 pending 直接进入 turn 判定；对应消息序列/held 测试必须失败；恢复后重跑。
+- 预计改动规模：中（约 3–5 个 Go 文件，180–300 行含测试）。
+
+### T3c 前台/后台子 agent 父预算（W2，依赖 T3b）
+
+- 文件：`internal/personal/subagent.go`、`internal/personal/runner.go`、`internal/wiring/subagent.go`、父子 agent 测试。
+- 动作：沿 `childOf(ctx)` 找到父 run，并通过 `activeMeters[parent]` 读取父 meter；前台子 agent 的 budget hook 每次 AfterModel 检查父预算，超限请求子 agent 收尾并记录父预算 reason；后台子 agent 明确跳过父预算读取，只受自身限制；父回合在下一次 AfterModel 继续收尾判定。父预算配置传入子 runner，但不改变 `agents.max_tokens`。
+- 验证命令：`go test -race ./internal/personal/... ./internal/wiring/...`；覆盖前台子 agent 阻止父回合推过预算、后台子 agent 不读父 meter、父回合下一次 AfterModel 收尾及父/子 meter 生命周期。
+- 完成标准：父 meter 是前台子 agent 的唯一父预算来源，后台路径无父预算硬取消；父预算 reason 可在事件/收尾中辨识，既有子 agent 自身限制和内部请求计量不变。
+- 反向验证方法：临时删除子侧父 meter 检查或把后台标记当作前台，前台超预算/后台豁免用例必须失败；恢复后重跑。
+- 预计改动规模：中（约 3–5 个 Go 文件，180–320 行含测试）。
+
+### T4 wiring 装配所有 provider 路径（W2，依赖 T2/T3c）
 
 - 文件：`internal/wiring/runtime.go`、`internal/wiring/subagent.go`、`internal/personal/runner.go` 的配置注入与装配测试。
-- 动作：读取并传递 Budget 配置、price lookup 与 notice 配置；确保主 provider、fallback Pool 每个成员、compact provider、子 agent provider 均按 `observed(estimating(real))` 顺序装配；保持子 agent `agents.max_tokens` 不变；不改 gofer。
-- 验证命令：`go test -race ./internal/wiring/... ./internal/personal/...`；以 fake provider 记录每个装配路径的 Usage/Estimated 进入同一 meter 的测试。
-- 完成标准：所有设计列出的 provider 路径均被覆盖，预算 hook 只装一次且顺序正确；配置/价格缺失的警告行为稳定。
-- 反向验证方法：临时跳过 fallback 或 compact 的包装，针对各路径的 estimated/预算累计断言必须失败；恢复后验证全路径。
-- 预计改动规模：中（约 2–4 个 Go 文件，150–280 行含测试）。
+- 动作：读取并传递 Budget 配置、price lookup 与 notice 配置；在 `buildMainProvider` 中对每个真实成员先包 `estimatingProvider`、再交给 `NewPool`，确保 Pool 仍识别每个成员的 `Stream`、`SupportsToolChoice`、`Name`、`Model` 及错误身份；compact provider 和子 agent 的 `buildMainProvider` 也采用同一顺序；确保主 provider、fallback Pool 每个成员、compact provider、子 agent provider 均按 `observed(estimating(real))` 装配；保持子 agent `agents.max_tokens` 不变；不改 gofer。
+- 验证命令：`go test -race ./internal/wiring/... ./internal/personal/...`；以 fake provider 记录每个装配路径的 Usage/Estimated 进入同一 meter 的测试，并验证 Pool 流式/tool-choice 能力、context-length/配额错误仍跳过同名成员、fallback 成员按自身 Model 计价。
+- 完成标准：所有设计列出的 provider 路径均被覆盖，包装器在每个 Pool 成员进入 `NewPool` 前安装且只装一次；价格、配置缺失和错误身份的行为稳定。
+- 反向验证方法：临时跳过 fallback 或 compact 的包装，或在 `NewPool` 后才包装，针对各路径的 estimated、Pool 能力、同名跳过和成本累计断言必须失败；恢复后验证全路径。
+- 预计改动规模：中（约 2–4 个 Go 文件，180–320 行含测试）。
 
-### T5 stream-json、文本提示、trace 与 stats 口径（W3，依赖 T3/T4）
+### T5 stream-json、文本提示、trace 与 stats 口径（W3，依赖 T3a–T3c/T4）
 
 - 文件：`internal/output/streamjson.go`、`internal/output/usage.go`、`internal/output/wrapup.go`、`internal/cli/run.go`、`internal/personal/trace.go`、`internal/personal/store/types.go`/事件渲染与相关测试。
-- 动作：增加可选 `budget` 对象、`estimated` 字段和 `max_cost_usd` 文案；未配置预算时不输出新键；trace 文本/JSON 展示 budget 事件的 scope/limit/used/exceeded 与 estimated；保持 stdout 只输出答案、旧事件和旧库可读。
-- 验证命令：`go test -race ./internal/output/... ./internal/cli/... ./internal/personal/...`；断言 usage/result/turn_end、wrap-up、trace JSON 与文本、stats 聚合口径。
-- 完成标准：输出能区分 token/cost、turn/session、estimated/真实；预算收尾原因不被改写；旧无预算黄金断言逐字节通过。
-- 反向验证方法：临时去掉 result 的 budget 对象或把 `estimated` 默认为无标记，新增 stream-json/trace 断言必须失败；恢复后验证。
+- 动作：增加可选 `budget` 对象、`estimated` 字段和 `max_cost_usd` 文案；未配置预算时不输出新键；trace 文本/JSON 展示 budget 事件的 scope/limit/used/exceeded 与 estimated；保持 stdout 只输出答案、旧事件和旧库可读。stats 只增加“其中 N 次调用为估算”的可辨标记，不重做报表结构，并增加 `scope=session` 时 stats 会话合计与预算判定同源的对照用例；预算收尾答复若同时被截断，按设计追加提示；新增 provider/model 文案均经 `internal/output/termtext` 清洗。
+- 验证命令：`go test -race ./internal/output/... ./internal/cli/... ./internal/personal/...`；断言 usage/result/turn_end、wrap-up、trace JSON 与文本、stats 聚合口径、session 合计对照、截断提示。
+- 完成标准：输出能区分 token/cost、turn/session、estimated/真实；预算收尾原因不被改写；stats 只加估算标记、不改变结构；旧无预算黄金断言逐字节通过。
+- 反向验证方法：临时去掉 result 的 budget 对象或把 `estimated` 默认为无标记，新增 stream-json/trace/stats 断言必须失败；恢复后验证。
 - 预计改动规模：中（约 4–6 个 Go 文件，220–360 行含测试）。
 
-### T6 chat 状态、提醒、回合末提示与伪终端冒烟（W3，依赖 T3/T4）
+### T6 chat 状态、提醒、回合末提示与伪终端冒烟（W3，依赖 T3a–T3c/T4）
 
-- 文件：`internal/chat/layout.go`、`internal/chat/layout_status_test.go`、`internal/chat` 回合状态构造处、`scripts/ptysmoke/fakellm.py`（仅增加可控 usage/延时所需能力）、新 `scripts/ptysmoke/chat_budget.py`、`Makefile`、冒烟 README/场景注册处。
-- 动作：配置预算时在状态行显示 `budget NN%` 或 `session budget NN%`，估算数字加 `~`，达到 `notice_ratio` 每回合提醒一次，超限显示 token/cost 收尾文案；未配置预算逐字节不变。用 PtySession 驱动真实二进制 + fakellm，结束后用 `suga trace --json` 断言预算事件与 estimated；加入 `make smoke-chat`。本任务不留人工 chat 验证。
-- 验证命令：`make smoke-chat`；`go test -race ./internal/chat/...`。场景至少覆盖小 token 预算触发收尾、session 已用尽不调用模型、estimate 标记、未配置回归。
-- 完成标准：新增场景稳定通过，trace 可证实 limit/used/scope/reason，旧 steering/tool/agent 场景不回归；反向验证能证明检查点有效。
-- 反向验证方法：临时移除 budget hook 的 `AfterModel` 检查，或让 chat 不传 budget snapshot，`chat_budget.py` 必须失败；恢复后重新跑完整 `make smoke-chat`。
+- 文件：`internal/chat/layout.go`、`internal/chat/layout_status_test.go`、`internal/chat` 回合状态构造处、`scripts/ptysmoke/fakellm.py`（增加可控 usage/不返回 usage/延时所需能力）、新 `scripts/ptysmoke/chat_budget.py`、`Makefile`、冒烟 README/场景注册处。
+- 动作：配置预算时在状态行显示 `budget NN%` 或 `session budget NN%`，估算数字加 `~`，达到 `notice_ratio` 每回合提醒一次，超限显示 token/cost 收尾文案；预算 snapshot 由 T3a 的 `UsageUpdate`/personal Event 传入，本任务只消费；已有 `:usage` 本期不扩展预算字段。未配置预算逐字节不变。用 PtySession 驱动真实二进制 + fakellm，结束后用 `suga trace --json` 断言预算事件与 estimated；新增插话在预算收尾后作为新回合重新获得 turn 预算的组合场景；所有新增 provider/model/用户可见文本经 `internal/output/termtext` 清洗；加入 `make smoke-chat`。本任务不留人工 chat 验证。
+- 验证命令：`make smoke-chat`；`go test -race ./internal/chat/...`。场景至少覆盖小 token 预算触发收尾、session 已用尽不调用模型、estimate 标记、estimate off、插话后新回合、未配置回归。
+- 完成标准：新增场景稳定通过，trace 可证实 limit/used/scope/reason，旧 steering/tool/agent 场景不回归；`:usage` 行为保持现状；反向验证能证明检查点有效。
+- 反向验证方法：临时移除 budget hook 的 `AfterModel` 检查，或让 chat 不传 budget snapshot，或去掉插话新回合的预算重置，`chat_budget.py` 必须失败；恢复后重新跑完整 `make smoke-chat`。
 - 预计改动规模：中（约 3–6 个 Go/Python/Makefile 文件，250–450 行）。
 
 ### T7 ACP 预算收尾与 usage 元数据（W4，依赖 T5；可与 T8 并行）
 
 - 文件：`internal/acpserver/server.go`、`internal/acpserver/usage.go`、ACP 测试文件。
-- 动作：预算 `max_tokens`/`max_cost_usd` 收尾统一返回 `stopReason=end_turn`；仅 provider 单次输出截断保留 SDK `max_tokens`；usage_update/_meta 增加设计规定的可选 budget_limit、budget_used、estimated 信息；不新增 ACP 协议字段。
-- 验证命令：`go test -race ./internal/acpserver/...`；覆盖预算收尾、yield/refusal、单次输出截断与旧 usage。
-- 完成标准：ACP 能如实区分累计预算收尾和单次输出截断，旧客户端兼容。
-- 反向验证方法：临时把 budget wrap-up 映射为 `max_tokens`，预算 ACP 测试必须失败；恢复后验证。
+- 动作：预算 `max_tokens`/`max_cost_usd` 收尾统一返回现有 `stopReason=end_turn`；单次 provider 输出截断维持当前行为和 stopReason（当前不返回 `max_tokens`，本期不新增行为）；usage_update/_meta 增加设计规定的可选 budget_limit、budget_used、estimated 信息；不新增 ACP 协议字段。
+- 验证命令：`go test -race ./internal/acpserver/...`；覆盖预算收尾、yield/refusal、现有单次输出截断、wrap-up/truncated 同时出现的提示与旧 usage。
+- 完成标准：ACP 预算收尾返回 `end_turn`，单次输出截断行为不变，预算/估算元数据可选且旧客户端兼容。
+- 反向验证方法：临时把 budget wrap-up 映射为 `max_tokens`，或把现有截断改成 `max_tokens`，ACP 测试必须失败；恢复后验证。
 - 预计改动规模：小至中（约 2–3 个 Go 文件，100–180 行含测试）。
 
 ### T8 gofer 用法文档与跨层命令示例（W4，依赖 T1/T5；可与 T7 并行）
@@ -183,7 +202,7 @@
 ## 人工 Gate
 
 1. 用户审阅并批准本计划后，才允许开始实施；批准不等于授权 push/发版。
-2. T1–T4 合入前确认 provider 装配清单完整，尤其 fallback、compact 与子 agent 路径。
+2. T3a–T3c、T4 合入前确认 provider 装配清单完整，尤其 fallback、compact 与子 agent 路径，以及前台/后台子 agent 的父 meter 语义。
 3. T6 的 ptysmoke 必须自动运行并完成一次反向验证；不能以人工打开 chat 代替。
 4. T9 的真实 provider 工具调用是交付 Gate；做不到时由监督方确认 `UNVERIFIED_REAL_PROVIDER` 是否可接受。
 5. gofer job 软预算与硬熔断的实际阈值由运维另行配置；本计划不改 gofer、不 push、不发版。
@@ -193,22 +212,22 @@
 | 设计条目 / 决策 / 待确认定稿 | 任务 | 验证 |
 |---|---|---|
 | 用户目标 1、配置三级优先级；D10 flag 同时给 run/chat | T1 | config/CLI 优先级与两命令测试 |
-| 用户目标 2、D1 wrap-up；D3 只在 AfterModel；D11 不加 RunInput/RunResult | T3、T5、T7 | hook、short-circuit、stream/ACP 测试 |
-| D2 `max(input-cache_read,0)+output` | T3 | 缓存读与输出用量用例 |
-| D4 turn/session，不新增 process/per-run；Q5 会话已用尽 short-circuit | T1、T3 | scope 配置与 BeforeRun 无模型请求测试 |
+| 用户目标 2、D1 wrap-up；D3 只在 AfterModel；D11 不加 RunInput/RunResult | T3a、T3b、T5、T7 | hook、short-circuit、stream/ACP 测试 |
+| D2 `max(input-cache_read,0)+output` | T3a、T3b | 缓存读、held 与输出用量用例 |
+| D4 turn/session，不新增 process/per-run；Q5 会话已用尽在第一步 BeforeModel short-circuit | T1、T3b | scope 配置、用户消息落库、无模型请求且无连续 assistant 测试 |
 | 用户目标 3、D7 价格表；Q10 gofer 双阈值换算 | T4、T8 | provider cost/price fallback；文档示例检查 |
 | 用户目标 4、D5 provider 包装器；D6 auto/on/off；Q6 factor=1.0 | T2、T4、T5 | estimate provider、metadata、事件/stream-json 标记 |
-| D8 子 agent 计入、保留 agents.max_tokens；Q9 后台不受父收尾控制 | T3、T4 | 父子 meter、后台生命周期测试 |
-| D9 内部请求计入、无排除开关；Q2/Q4 | T3 | compact/内部 purpose 计量测试 |
-| 用户目标 5、Q7 chat 常显占用 + 一次提醒 | T6 | chat 单测与 ptysmoke |
+| D8 子 agent 计入、保留 agents.max_tokens；Q9 后台不受父收尾控制 | T3c、T4 | 父 meter、前台/后台分流、父回合下一次 AfterModel 与后台生命周期测试 |
+| D9 内部请求计入、无排除开关；Q2/Q4 | T3a、T3b | compact/内部 purpose 计量、held 与 session 结算测试 |
+| 用户目标 5、Q7 chat 常显占用 + 一次提醒 | T3a、T6 | UsageUpdate/Event snapshot、chat 单测与 ptysmoke |
 | D12 scope 大小写不敏感且非法报错 | T1 | config 解析测试 |
 | `estimated` 在 model event/usage/stream/chat/stats 可辨 | T2、T5、T6、T9 | 事件 attrs、JSON、状态行、真实 provider 核对 |
-| 成本无 provider/price 警告且预算失效；Q8 | T3、T5 | warning 与不触发测试 |
-| 收尾本身计费、最坏尝试集合 | T3、T8 | 收尾 usage 测试；文档上界说明 |
-| ACP 映射为 `end_turn`，单次截断才是 `max_tokens` | T7 | ACP server 测试 |
+| 成本无 provider/price 警告且预算失效；Q8 | T3a、T5 | warning 与不触发测试 |
+| 收尾本身计费、最坏尝试集合 | T3a、T3b、T5、T7 | 收尾 usage、wrap-up/truncated 提示与文档上界说明 |
+| ACP 映射为 `end_turn`，单次截断保持当前行为 | T7 | ACP server 测试 |
 | 默认不启用；Q1 | T1、T5、T6 | 默认零值、旧输出逐字节回归 |
-| 无迁移、旧库兼容、trace 可断言 | T3、T5、T9 | schema 检查、trace JSON、全量回归 |
-| Q3 缓存写计入、Q10 gofer 硬熔断优先 | T3、T8 | 计量单测与运维文档 |
+| 无迁移、旧库兼容、trace 可断言 | T3a、T3b、T5、T9 | schema 检查、trace JSON、全量回归 |
+| Q3 缓存写计入、Q10 gofer 硬熔断优先 | T3a、T3b、T8 | 计量单测与运维文档 |
 | 非目标：`max_output_tokens`、stats 重做、模型路由、gofer 改动 | 全任务 | diff scope review |
 
 ### 已定稿的 Q1–Q10
@@ -217,7 +236,7 @@
 - Q2：内部请求计入，不提供 `include_internal` 开关。
 - Q3：收尾本身可能继续产生费用，按完整最坏路径记录，不做二次硬中断。
 - Q4：缓存写按现有 `InputTokens` 口径计入。
-- Q5：session 已用尽时 `BeforeRun` short-circuit，completed + budget wrap-up，不发模型请求。
+- Q5：session 已用尽时，在第一步 `BeforeModel` short-circuit，用户消息已落库，completed + budget wrap-up，不发模型请求且不产生连续 assistant。
 - Q6：估算默认系数 1.0；大于 1 才显式更保守。
 - Q7：chat 常显预算比例，达到 notice ratio 每回合提醒一次。
 - Q8：无 provider cost 且无 price 时警告，成本预算不生效。
@@ -228,7 +247,8 @@
 
 - 设计已批准且 Q1–Q10 已按建议定稿；若用户在实施前改变其中任一项，必须回到设计 Gate，不在 job 中自行调整。
 - 估算会影响窗口判断与 `lastInput`，即使标记为 estimated 也可能提前压缩；这是设计接受的可解释近似，不得在计划外引入 tokenizer。
-- AfterModel 检查有一次模型尝试和收尾尝试的超出量；后台子 agent 不受父收尾控制，必须在文档与测试中保留完整最坏路径，不许承诺硬上限。
+- AfterModel 检查有一次模型尝试和收尾尝试的超出量；后台子 agent 不受父收尾控制，前台子 agent 读取父 meter；必须在文档与测试中保留完整最坏路径，不许承诺硬上限。
+- turn 预算从现有 `run` 中扣除 `held`，但 stream-json/ACP 保持现有 run usage；session 按 `base + run` 计入。
 - provider 不报 cost 且无 price 时成本预算失效；只能警告，不能猜价格。
 - Windows 控制台不提供 pty 等价证明；主机全量测试和真实 provider 若不可用必须原样记录。
 
