@@ -36,6 +36,19 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 	if err != nil {
 		return err
 	}
+	modelOptions := make([]chat.ModelOption, 0, len(runtime.ModelOptions()))
+	for _, option := range runtime.ModelOptions() {
+		modelOptions = append(modelOptions, chat.ModelOption{Provider: option.Provider, Model: option.Model,
+			Thinking: option.Thinking, ContextWindow: option.ContextWindow, MaxOutputTokens: option.MaxOutputTokens})
+	}
+	modelSwitch := func(ctx context.Context, sessionID, ref string) (chat.ModelOption, error) {
+		option, err := runtime.SwitchModel(ctx, sessionID, ref)
+		if err != nil {
+			return chat.ModelOption{}, err
+		}
+		return chat.ModelOption{Provider: option.Provider, Model: option.Model, Thinking: option.Thinking,
+			ContextWindow: option.ContextWindow, MaxOutputTokens: option.MaxOutputTokens}, nil
+	}
 	return chat.Run(ctx, runtime.Runner, chat.Options{
 		SessionID: opts.SessionID, ResumeID: opts.ResumeID, FromID: opts.FromID,
 		Asker: runtime.Asker, WriteTools: runtime.WriteTools,
@@ -52,6 +65,7 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 		DiffLines: diffLines,
 		IdleAfter: idle.After, IdleMinRatio: idle.MinRatio,
 		Tasks: taskManager, TaskWake: taskWake, StopBackground: sugahooks.StopBackground(), Notify: notify, NotifyAfter: notifyAfter,
+		ModelOptions: modelOptions, ModelSwitch: modelSwitch,
 		SetupSession: opts.setupSession,
 		// The session's added directories (:add-dir/:dirs/:rm-dir): the handle
 		// shares the metadata and the set the tools read with ApplyAddDirs.

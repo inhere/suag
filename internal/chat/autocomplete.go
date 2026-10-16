@@ -8,12 +8,12 @@ import (
 	"strings"
 )
 
-var chatCommands = []string{":session", ":compact", ":add-dir", ":dirs", ":rm-dir", ":diff", ":quit", ":exit"}
+var chatCommands = []string{":session", ":compact", ":add-dir", ":dirs", ":rm-dir", ":diff", ":help", ":model", ":usage", ":tasks", ":quit", ":exit"}
 
 // installCompletion wires the line editor's callback to local chat commands and
 // directory arguments. Completion only acts at the command line and never on a
 // delivered message or an approval answer.
-func installCompletion(source *chatInputSource, dirs SessionDirs) {
+func installCompletion(source *chatInputSource, dirs SessionDirs, modelRefs ...[]string) {
 	if source.terminal == nil {
 		return
 	}
@@ -30,6 +30,20 @@ func installCompletion(source *chatInputSource, dirs SessionDirs) {
 			for _, command := range chatCommands {
 				if strings.HasPrefix(command, line) {
 					matches = append(matches, command)
+				}
+			}
+			return completeCandidates(source, line, matches)
+		}
+		if name == ":model" {
+			var refs []string
+			if len(modelRefs) > 0 {
+				refs = modelRefs[0]
+			}
+			matches := make([]string, 0, len(refs))
+			for _, ref := range refs {
+				candidate := name + " " + ref
+				if strings.HasPrefix(candidate, line) {
+					matches = append(matches, candidate)
 				}
 			}
 			return completeCandidates(source, line, matches)

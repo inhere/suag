@@ -30,6 +30,20 @@ const (
 
 // Options selects which session a chat opens: a new one, an existing one, or a
 // handoff child of another session.
+// ModelOption is one configured model shown by :model and offered to completion.
+type ModelOption struct {
+	Provider        string
+	Model           string
+	Thinking        string
+	ContextWindow   int
+	MaxOutputTokens int
+}
+
+func (m ModelOption) Ref() string { return m.Provider + "/" + m.Model }
+
+// ModelSwitch activates a model for the next turn and returns its effective settings.
+type ModelSwitch func(ctx context.Context, sessionID, ref string) (ModelOption, error)
+
 type Options struct {
 	SessionID string
 	ResumeID  string
@@ -110,6 +124,11 @@ type Options struct {
 	// session it belongs to is opened by SetupSession, so it is only used from
 	// the loop on.
 	Dirs SessionDirs
+	// ModelOptions and ModelSwitch back the local :model command. Keeping the
+	// callback here avoids making chat depend on runtime wiring.
+	ModelOptions []ModelOption
+	ModelSwitch  ModelSwitch
+
 	// Local runs a line the person typed at the prompt with a leading "!"
 	// ("!cmd": run it in the local shell; "!!cmd": run it and hand its result to
 	// the model with the next message). The CLI builds it with the same shell,
@@ -221,7 +240,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		}
 		if inputSource.terminal != nil {
 			inputSource.terminal.SetHistory(inputHistory.lines())
-			installCompletion(inputSource, opts.Dirs)
+			installCompletion(inputSource, opts.Dirs, modelRefs(opts.ModelOptions))
 		}
 		// Only lines received from the local keyboard are recorded; deliveries and
 		// hook/task messages must never become personal input history.
@@ -300,12 +319,15 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	// setup, the main loop and the exit handling only. It is built before the
 	// session socket is registered, because the socket's delivery endpoint
 	// (`suga send`, `--steer`) is a method of it.
+	provider, model, contextWindow, maxOutputTokens := runner.ModelSettings()
 	state := &chatState{
 		ctx: ctx, runner: runner, hooks: hooks, source: inputSource, render: render,
 		stderr: stderr, errOut: errOut, baseEvent: baseEvent, title: title, idle: idle,
 		stats: &stats, sessionID: sessionID,
 		createdAtStartup: createdAtStartup, dirs: opts.Dirs,
-		steering: steering, local: opts.Local, tasks: opts.Tasks, notifier: newChatNotifier(opts.Notify, opts.NotifyAfter, stdout, inputSource.terminal != nil),
+		modelOptions: opts.ModelOptions, modelSwitch: opts.ModelSwitch,
+		modelInfo: ModelOption{Provider: provider, Model: model, Thinking: opts.Thinking, ContextWindow: contextWindow, MaxOutputTokens: maxOutputTokens},
+		steering:  steering, local: opts.Local, tasks: opts.Tasks, notifier: newChatNotifier(opts.Notify, opts.NotifyAfter, stdout, inputSource.terminal != nil),
 	}
 	if runner.ProcessRoot() != "" {
 		// The delivery endpoint is the chat state's own method: `suga send --steer`
@@ -457,7 +479,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			// Show a file change of this session again, in full (:diff [N]).
 			render.ShowDiff(strings.TrimPrefix(line, diffCmd))
 			continue
-		case line == ":help", line == ":usage", line == ":tasks":
+		case isModelCommand(line), line == ":help", line == ":usage", line == ":tasks":
 			// The reference, this session's usage and its background tasks
 			// (chat_commands.go); like every : command, keyboard only.
 			state.runChatCommand(line)

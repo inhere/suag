@@ -561,6 +561,12 @@ func (r *Renderer) LastReply(text, sessionID string, incomplete bool) {
 	r.Answer(strings.Join(body, "\n"))
 }
 
+// SetModel updates the model label used by the banner and every later status line.
+func (r *Renderer) SetModel(provider, model, thinking string, contextWindow int) {
+	r.opts.Provider, r.opts.Model = provider, model
+	r.opts.Thinking, r.opts.ContextWindow = thinking, contextWindow
+}
+
 // SetSessionName records the session's short name for the banner; chat calls it
 // once the local session socket is registered (before Banner).
 func (r *Renderer) SetSessionName(name string) { r.opts.SessionName = name }
