@@ -79,6 +79,16 @@ func TestRuleMatchesCommand(t *testing.T) {
 			target: Target{Tool: "shell_exec", Shell: "zsh", Command: "go test ./..."}, want: false,
 		},
 		{
+			name:   "similar shell name cannot allow",
+			rule:   Rule{Tool: "shell_exec", Command: []string{"echo *"}, Action: Allow},
+			target: Target{Tool: "shell_exec", Shell: "notpowershell", Command: `echo C:\tmp`}, want: false,
+		},
+		{
+			name:   "unknown shell deny still matches complete command",
+			rule:   Rule{Tool: "shell_exec", Command: []string{"rm -rf /"}, Action: Deny},
+			target: Target{Tool: "shell_exec", Shell: "unknown", Command: "rm -rf /"}, want: true,
+		},
+		{
 			name:   "command rule cannot impersonate another tool",
 			rule:   Rule{Tool: "*", Command: []string{"go test *"}, Action: Allow},
 			target: Target{Tool: "other_tool", Shell: ShellSh, Command: "go test ./..."}, want: false,

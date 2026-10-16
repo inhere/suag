@@ -85,12 +85,7 @@ func classifyShell(name string) shellSyntax {
 		return syntaxSh
 	case ShellCmd:
 		return syntaxCmd
-	case ShellPowerShell, "pwsh":
-		return syntaxPowerShell
-	}
-	// ShellName returns a descriptive value for PowerShell rather than the
-	// executable basename, so accept both of its stable display forms.
-	if strings.Contains(name, "powershell") || strings.Contains(name, "(pwsh)") {
+	case ShellPowerShell, "pwsh", "windows powershell", "powershell 7 (pwsh)":
 		return syntaxPowerShell
 	}
 	return syntaxUnknown
