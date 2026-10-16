@@ -21,6 +21,12 @@ func (r *Runner) Checkpoints(ctx context.Context, snapshots *SessionSnapshots, s
 	return r.UndoCore(snapshots, sessionsRoot).Checkpoints(ctx, sessionQuery, limit)
 }
 
+// Undo executes the same provider-independent file restoration used by chat and
+// CLI. It is a thin adapter; lock ordering and conflict handling stay in core.
+func (r *Runner) Undo(ctx context.Context, snapshots *SessionSnapshots, sessionsRoot, sessionQuery string, n int, force bool) (UndoResult, error) {
+	return r.UndoCore(snapshots, sessionsRoot).Undo(ctx, sessionQuery, n, force)
+}
+
 // SelectUndoCheckpoints is the corresponding locked Runner adapter for undo
 // selection. It does not perform file restoration; later undo stages consume
 // this stable, root-validated plan.
