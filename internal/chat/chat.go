@@ -360,7 +360,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			state.lostReply = appendContext(state.lostReply, state.waiting.Interrupt(context.Background()))
 		}
 		if state.lostReply != "" {
-			fmt.Fprintln(stderr, "Warning: hook reply was not delivered:", sugahooks.TruncateOutput(state.lostReply, 200))
+			fmt.Fprintln(stderr, "Warning: hook reply was not delivered:", termtext.Clean(sugahooks.TruncateOutput(state.lostReply, 200)))
 		}
 		if hooks != nil && sessionID != "" {
 			hooks.Call(context.Background(), baseEvent("SessionEnd"))

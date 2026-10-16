@@ -30,8 +30,12 @@ func TestCleanRemovesTerminalControls(t *testing.T) {
 }
 
 func TestCleanKeepsTextAndSafeWhitespace(t *testing.T) {
-	assert.Eq(t, "a\nb\tcde", Clean("a\r\nb\t\x00c\x7fde"))
-	assert.Eq(t, "界 👩‍💻", Clean("界 👩‍💻"))
+	t.Run("keeps newline and tab", func(t *testing.T) {
+		assert.Eq(t, "a\nb\tcde", Clean("a\r\nb\t\x00c\x7fde"))
+	})
+	t.Run("keeps unicode", func(t *testing.T) {
+		assert.Eq(t, "界 👩‍💻", Clean("界 👩‍💻"))
+	})
 }
 
 func TestCleanerHandlesSplitEscapeSequences(t *testing.T) {
