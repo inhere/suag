@@ -8,7 +8,7 @@
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-17 | suga（gofer job） | 依据已批准的审批规则设计 Draft 0.3 起草实施计划；拆分规则引擎、加载合并、入口接入、交互写回、ACP、观测与验收波次。 |
-| 0.2 | 2026-10-17 | suga（gofer job） | 按独立评审 r1 修订：拆分超大任务；确定 goccy AST、文件锁/原子写回、run 保护路径变化、ACP probe 选项、Windows 早验、跨计划 owner 与共享文件合并顺序。 |
+| 0.2 | 2026-10-17 | suga（gofer job） | 按独立评审 r1 修订：拆分超大任务；确定 goccy AST、文件锁/原子写回、run 保护路径变化、ACP probe 选项、Windows 早验、跨计划 owner 与共享文件合并顺序；补齐 T4b 的 wiring owner、T7a 的终端文本清洗与 u/p 过渡、规模风险行号。 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -16,7 +16,7 @@
 
 - thinking_mode：RIGOROUS。
 - core_objective：将一次工具调用的审批收敛为可写、可审查、可复现的 `Decide(call) → allow|ask|deny + 命中规则`，并把 chat 的“本会话总是允许/拒绝”细化为命令前缀或路径范围。
-- allowed_scope：`pkg/agentcore/tools/rules`、`pkg/agentcore/tools` 审批报告、`internal/wiring` 规则加载/合并/装配/写回、`internal/config` 配置与项目规则路径、`internal/chat` 审批交互、`internal/acpserver` 权限选项与判定、`internal/personal` trace、manifest、`internal/cli` manifest/trace 适配、`config/config.yaml`、README 中英、skills 参考、CHANGELOG、`scripts/ptysmoke` 与其 Makefile 接入、`scripts/acpprobe/acp_probe.py` 的权限选择参数。
+- allowed_scope：`pkg/agentcore/tools/rules`、`pkg/agentcore/tools` 审批报告、`internal/wiring` 规则加载/合并/装配/写回、`internal/config` 配置与项目规则路径、`internal/chat` 审批交互、`internal/output/termtext` 终端文本清洗、`internal/acpserver` 权限选项与判定、`internal/personal` trace、manifest、`internal/cli` manifest/trace 适配、`config/config.yaml`、README 中英、skills 参考、CHANGELOG、`scripts/ptysmoke` 与其 Makefile 接入、`scripts/acpprobe/acp_probe.py` 的权限选择参数。
 - non_goals：ACP `session/list|resume|close` 与 `fs/*` 客户端能力；`set_config_option`/`authenticate`；MCP HTTP/SSE transport；shell 进程级隔离；web_fetch 代理下的 SSRF 加强；危险删除守卫本身；只读模式工具集合；Gofer 侧改动；规则热加载以外的重载机制。
 - expansion_policy：DEFER_OR_REQUEST。实现中若只增加路径/符号且不改变语义，记录操作性发现后继续；若改变默认动作、协议、状态机、范围或验收，停止并回到设计/计划 Gate。
 - review budget：低暴露度；按设计的一次实现、单测、伪终端冒烟、一次反向验证。`tools.approval_rules.enabled: false` 是运行时回退开关，不代替验收。
@@ -64,7 +64,7 @@
 | capability_id | required_capability | searched_candidates | direct_reuse | thin_adapter_or_owner_extension | decision | proven_gap | duplication_and_lifecycle_risk |
 |---|---|---|---|---|---|---|---|
 | CAP-01 | 纯规则模型、命令/路径/MCP 匹配与动作归并 | `pkg/agentcore/tools/approval.go:32-170`、`pkg/agentcore/tools/meta.go:53-68`、`internal/wiring/cli_mcp.go:14-107`、native `code_exec.go:85-108` | 审批层、工具元数据、MCP glob 校验与默认拒绝可复用 | 新增 `pkg/agentcore/tools/rules` 纯逻辑 owner；wiring 只负责来源与装配 | MINIMAL_NEW_MODULE | 现有代码没有声明式原生规则、shell 安全白名单或项目信任 | 规则匹配只能有一个能力层 owner；禁止在 chat/run/ACP 各写一份 matcher |
-| CAP-02 | 用户/项目/会话规则加载、信任、重载与写回 | `internal/wiring/capabilities.go:48-77,122-152` 的分层文件加载、`internal/config/load.go`、`goccy/go-yaml` `ast`/`parser`、`internal/personal/process/lock.go`、`internal/wiring/rename_windows.go` | 项目文件路径约定、goccy AST、配置解析可复用；现有锁仅有会话锁，现有原子写入实现均为私有 | `internal/wiring/rules.go`、`rules_write.go` 作为 wiring owner；若没有可导出的文件锁/原子写接口，在规则 owner 包内做最小私有文件锁与原子写入实现 | OWNER_EXTENSION | 无 approval-rules 文件、hash trust 或每回合保留上一份策略；现有依赖没有 yaml.v3 | 规则解析不下沉到能力层；写回与读取必须共用 schema 校验；禁止新增 yaml.v3 依赖 |
+| CAP-02 | 用户/项目/会话规则加载、信任、重载与写回 | `internal/wiring/capabilities.go:48-77,122-152` 的分层文件加载、`internal/config/load.go`、`goccy/go-yaml` `ast`/`parser`、`internal/personal/process/lock.go`、`internal/wiring/rename_windows.go` | 项目文件路径约定、goccy AST、配置解析可复用；现有锁仅有会话锁，现有原子写入实现均为私有 | `internal/wiring/rules.go`、`rules_write.go` 作为 wiring owner；文件锁/原子写入统一在 `internal/wiring` 做最小私有实现 | OWNER_EXTENSION | 无 approval-rules 文件、hash trust 或每回合保留上一份策略；现有依赖没有 yaml.v3 | 规则解析不下沉到能力层；写回与读取必须共用 schema 校验；禁止新增 yaml.v3 依赖 |
 | CAP-03 | chat 的范围化 always/deny 与交互 | `internal/wiring/chat_approver.go:22-125`、`tools.Asker`、`chat_approval.py` | 询问/非 TTY/`tools.approval` 与 askOutside 流程可复用 | 会话 Policy 快照、scope key、文案和持久化回答原位扩展 | OWNER_EXTENSION | 现有 `map[string]bool` 只有工具名，不能表达命令/目录 | 不新建第二套 chat 审批器；保持外层危险守卫与越界授权顺序 |
 | CAP-04 | run/ACP/子 agent 同模判定 | `internal/acpserver/policy.go:49-170`、`internal/wiring/subagent.go:114-115`、`internal/cli/acp.go:42-73`、runtime 装配 | 入口 approver、ACP BeforeTool 通知、子 agent 创建参数可复用 | 各入口只做策略结果翻译；Policy 在创建时快照给子 agent | OWNER_EXTENSION | ACP 目前只有 allow-once/reject-once，子 agent 为显式 allow-all | 同一规则语义不复制；入口默认动作仍由各入口保有 |
 | CAP-05 | 审批原因观测与清单 | `pkg/agentcore/tools/approval.go:134-170`、`internal/personal/observe.go`、`internal/personal/trace.go`、`internal/wiring/manifest.go:27-39,115-190,219-278` | 现有 attrs、trace JSON、manifest 双路径可复用 | 追加 `Rule`/`Scope`、`approval_rule_persist` 与 approval_rules 清单 | OWNER_EXTENSION | 现有报告只有 Source/Wait/Danger，无法解释具体命中 | manifest 运行时和静态路径需共用摘要构造，防止漂移 |
@@ -161,7 +161,7 @@
 
 - 文件：`internal/wiring/rules.go`、`internal/wiring/rules_write.go`（新）、`internal/config/`、规则测试；必要时规则 owner 的导出保护路径判定。
 - 动作：按 workspace 绝对路径+内容 hash 过滤项目 allow；文件删除、size/mtime/hash 变化重载失败保留上一份有效策略并产生 warning/trace；既有项目 deny 在新内容有效且用户确认前继续有效，文件恢复为可解析且 hash 已由用户信任入口确认时才视为确认，否则只保留 deny/旧策略。内置保护路径清单与 allow 钳制由本计划唯一 owner 导出。
-- 写回契约固定使用 goccy AST 的读-改-写；文件锁/原子写入没有可复用导出实现时，在规则包内做最小私有实现。临时文件须同目录创建，Windows `ERROR_ACCESS_DENIED`/`ERROR_SHARING_VIOLATION` 复用 `internal/wiring/rename_windows.go` 的 `renameConflict` 重试语义；回读再校验 schema。写回不得接受项目 allow。
+- 写回契约固定使用 goccy AST 的读-改-写；文件锁/原子写入统一在 `internal/wiring` 的私有实现中完成，不放入 `pkg/agentcore/tools/rules`。临时文件须同目录创建，Windows `ERROR_ACCESS_DENIED`/`ERROR_SHARING_VIOLATION` 复用 `internal/wiring/rename_windows.go` 的 `renameConflict` 重试语义；回读再校验 schema。写回不得接受项目 allow。
 - 验证命令：`go test -race ./internal/wiring/... ./pkg/agentcore/tools/rules/...`；主机 gofer exec job：`go test -count=1 ./internal/wiring/... ./pkg/agentcore/tools/rules/...`（覆盖 rename/锁冲突）。
 - 完成标准：信任矩阵、保护路径、重载保留旧策略、锁/原子写入/回读校验、用户确认入口与写失败不丢会话规则均有测试；写回事件接口供 T7b 调用。
 - 反向验证方法：临时将项目 allow 默认纳入或 hash 变化继续使用、临时把原子 rename 改为直接覆盖，安全/并发测试必须失败。
@@ -200,10 +200,10 @@
 
 ### T7a chat scope、`a/d` 交互与文案
 
-- 文件：`internal/wiring/chat_approver.go`；`internal/chat/approval_reply.go`（新）；`internal/wiring/chat_approver_test.go`、交互测试；`scripts/ptysmoke/chat_approval.py`。
-- 动作：按工具类型生成 shell 前缀/写编辑目录/删除精确路径/其他工具名 scope；仅安全 shell 命令显示 `[a]`，增加 `[d]`；回答后按 `persist_ask` 进入 `u/p/N` 追问，其中回车只保留本会话；项目只允许 deny 写回。同步更新 `chat_approval.py`：对 `a` 后追问输入回车，再断言原有“直接执行（OK）”行为。
+- 文件：`internal/wiring/chat_approver.go`；`internal/chat/approval_reply.go`（新）；`internal/wiring/chat_approver_test.go`、交互测试；`scripts/ptysmoke/chat_approval.py`、`scripts/ptysmoke/chat_rules.py`。
+- 动作：按工具类型生成 shell 前缀/写编辑目录/删除精确路径/其他工具名 scope；审批提示中显示的命令前缀、目录和路径先经 `internal/output/termtext` 清洗后输出，避免控制字符改变终端显示；仅安全 shell 命令显示 `[a]`，增加 `[d]`；回答后按 `persist_ask` 进入 `u/p/N` 追问。T7b 尚未合入时，`u`/`p` 选择只在当前会话生效并提示“写回尚未启用”，不得写用户级/项目级文件；T7b 合入后再分别执行用户级写回与仅 deny 的项目级写回，其中回车只保留本会话。项目只允许 deny 写回。同步更新 `chat_approval.py`：对 `a` 后追问输入回车，再断言原有“直接执行（OK）”行为；`chat_rules.py` 增加带控制字符的命令/目录断言。
 - 验证命令：`go test -race ./internal/wiring/... ./internal/chat/...`；`make smoke-chat`。
-- 完成标准：文案、答案别名、默认拒绝、非 TTY、范围 key、追问回车、旧审批关闭开关回归通过；该任务合入后现有审批冒烟不失败。
+- 完成标准：文案、答案别名、默认拒绝、非 TTY、范围 key、追问回车、旧审批关闭开关回归通过；命令前缀、目录和路径的审批提示均经 `termtext` 清洗，控制字符断言通过；在 T7b 合入前，`u`/`p` 只改变当前会话并明确提示“写回尚未启用”，不产生规则文件写入；T7b 合入后由 T7b 验证实际写回；该任务合入后现有审批冒烟不失败。
 - 反向验证方法：临时把范围 key 恢复成工具名，连续两个不同命令/目录的隔离用例必须失败；临时移除追问适配，`chat_approval.py` 必须超时或断言失败。
 - 预计改动规模：M（4–6 个 Go/Python 文件、300–500 行含测试）。
 - 依赖/并行：T6b 后；T7b 依赖本任务。
@@ -307,7 +307,7 @@
 ## 待确认/风险（设计已批准的选项，不在实施中重新改语义）
 
 - ACP SDK 已确认存在 `PermissionOptionKindAllowAlways/RejectAlways`；T9 仍以协议单测和 `acp_probe.py` 参数验证序列化/运行时行为，若实际 SDK/协议事实冲突，停止并返回用户 Gate，不自创兼容语义。
-- 设计称子 agent approver “恒 nil”，当前代码事实是显式 allow-all `ApproverFunc`（`internal/wiring/subagent.go:107-117`）；实施按“创建时 Policy 快照、ask→deny”设计定稿，不能照搬过时事实。
+- 设计称子 agent approver “恒 nil”，当前代码事实是显式 allow-all `ApproverFunc`（`internal/wiring/subagent.go:114-115`）；实施按“创建时 Policy 快照、ask→deny”设计定稿，不能照搬过时事实。
 - manifest 既有静态与运行时构造路径（`internal/wiring/manifest.go:27-39,115-190,219-278`），必须共用摘要生成；若不能统一，列为阻断而非只更新一条路径。
 - PTY smoke 仅 Linux/macOS；Windows 控制台差异、真实 provider 与真实 ACP 结果可能为 `UNVERIFIED_REAL_ENV`，但不把未执行写成通过。
 
