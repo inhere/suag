@@ -1,6 +1,7 @@
 package wiring
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,6 +10,9 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
+
+	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 func resetStandardsConfig(t *testing.T) {
@@ -49,6 +53,19 @@ func TestStandardsRootsThroughNativeEnv(t *testing.T) {
 		assert.Eq(t, []string{artifacts}, nativeEnv(workspace, nil).ReadRoots)
 	})
 
+	t.Run("pinned root wins over a nearer fallback marker", func(t *testing.T) {
+		resetStandardsConfig(t)
+		root := t.TempDir()
+		workspace := filepath.Join(root, "repo", "subdir")
+		near := filepath.Join(root, "repo", "tmp", "idev-std")
+		far := filepath.Join(root, "tmp", "idev-std")
+		assert.NoErr(t, os.MkdirAll(workspace, 0o755))
+		assert.NoErr(t, os.MkdirAll(near, 0o755))
+		assert.NoErr(t, os.MkdirAll(far, 0o755))
+		assert.NoErr(t, os.WriteFile(filepath.Join(root, "standards.json"), []byte("{}\n"), 0o644))
+		assert.Eq(t, []string{far}, nativeEnv(workspace, nil).ReadRoots)
+	})
+
 	t.Run("tmp artifacts also identify a workspace root", func(t *testing.T) {
 		resetStandardsConfig(t)
 		root := t.TempDir()
@@ -62,6 +79,23 @@ func TestStandardsRootsThroughNativeEnv(t *testing.T) {
 		resetStandardsConfig(t)
 		workspace := t.TempDir()
 		assert.Empty(t, nativeEnv(workspace, nil).ReadRoots)
+	})
+
+	t.Run("the detected root is readable by the file tool", func(t *testing.T) {
+		resetStandardsConfig(t)
+		releases := t.TempDir()
+		path := filepath.Join(releases, "loader.txt")
+		assert.NoErr(t, os.WriteFile(path, []byte("release payload\n"), 0o644))
+		t.Setenv("IDEV_STD_RELEASES_ROOT", releases)
+		byName := map[string]api.Tool{}
+		for _, tool := range native.BuildTools(nativeEnv(t.TempDir(), nil), false) {
+			byName[tool.Name()] = tool
+		}
+		result, err := byName["file_read"].Execute(context.Background(), api.ToolCall{
+			CallID: "read-standards", Arguments: map[string]any{"path": path},
+		})
+		assert.NoErr(t, err)
+		assert.StrContains(t, result.Content, "release payload")
 	})
 
 	t.Run("the switch disables both automatic roots", func(t *testing.T) {

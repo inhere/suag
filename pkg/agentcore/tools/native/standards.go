@@ -46,9 +46,9 @@ func existingReadRoot(label, dir string) (ReadRoot, bool) {
 	return ReadRoot{Label: label, Path: filepath.Clean(dir)}, true
 }
 
-// standardsWorkspaceRoot walks upward from the tool workspace. idev-std binds a
-// workspace with standards.json; the tmp/idev-std check is retained as a
-// fallback for workspaces created by older tooling without that pin file.
+// standardsWorkspaceRoot walks upward from the tool workspace. A pinned
+// standards.json wins over the fallback artifact marker at any level; the
+// fallback is used only when no pin exists anywhere above the workspace.
 func standardsWorkspaceRoot(workspace string) string {
 	if workspace == "" {
 		return ""
@@ -58,22 +58,30 @@ func standardsWorkspaceRoot(workspace string) string {
 		return ""
 	}
 	root = filepath.Clean(root)
+	fallback := ""
 	for {
-		if isStandardsWorkspace(root) {
+		if hasStandardsPin(root) {
 			return root
+		}
+		if fallback == "" && hasLoadingArtifacts(root) {
+			fallback = root
 		}
 		parent := filepath.Dir(root)
 		if sameReadRootPath(parent, root) {
-			return ""
+			return fallback
 		}
 		root = parent
 	}
 }
 
-func isStandardsWorkspace(root string) bool {
-	if info, err := os.Stat(filepath.Join(root, standardsWorkspacePin)); err == nil && !info.IsDir() {
-		return true
-	}
+// hasStandardsPin reports whether root is bound to an idev-std workspace.
+func hasStandardsPin(root string) bool {
+	info, err := os.Stat(filepath.Join(root, standardsWorkspacePin))
+	return err == nil && !info.IsDir()
+}
+
+// hasLoadingArtifacts reports the fallback marker used by older workspaces.
+func hasLoadingArtifacts(root string) bool {
 	info, err := os.Stat(filepath.Join(root, "tmp", "idev-std"))
 	return err == nil && info.IsDir()
 }
@@ -98,6 +106,7 @@ func DeduplicateReadRoots(roots []ReadRoot) []ReadRoot {
 	return out
 }
 
+// sameReadRootPath compares root paths using the platform's file access rule.
 func sameReadRootPath(a, b string) bool {
 	a, b = filepath.Clean(a), filepath.Clean(b)
 	if runtime.GOOS == "windows" {
