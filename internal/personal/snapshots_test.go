@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suga/pkg/agentcore/api"
@@ -30,10 +31,7 @@ func TestSessionSnapshots(t *testing.T) {
 		assert.Empty(t, result.Unrecoverable)
 
 		turnDir := filepath.Join(sessions, "sess_1", "snapshots", "turn_1")
-		entries, err := os.ReadDir(turnDir)
-		assert.Require(t, assert.NoErr(t, err))
-		assert.Eq(t, 1, len(entries))
-		callDir := filepath.Join(turnDir, entries[0].Name())
+		callDir := snapshotCallDir(t, turnDir)
 		got, err := os.ReadFile(filepath.Join(callDir, "before"))
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, before, got)
@@ -97,10 +95,8 @@ func TestSessionSnapshots(t *testing.T) {
 		ctx := withObserveScope(context.Background(), "sess_3", "turn_3")
 		_, err := store.BeforeCall(ctx, native.SnapshotRequest{CallID: "../../escape:/absolute", Tool: "file_write", Root: t.TempDir(), Rel: "a", RealRel: "a", Kind: native.SnapshotKindAbsent})
 		assert.Require(t, assert.NoErr(t, err))
-		entries, err := os.ReadDir(filepath.Join(sessions, "sess_3", "snapshots", "turn_3"))
-		assert.Require(t, assert.NoErr(t, err))
-		assert.Require(t, assert.Len(t, entries, 1))
-		assert.Eq(t, "001-"+snapshotCallHash("../../escape:/absolute"), entries[0].Name())
+		callDir := snapshotCallDir(t, filepath.Join(sessions, "sess_3", "snapshots", "turn_3"))
+		assert.Eq(t, "001-"+snapshotCallHash("../../escape:/absolute"), filepath.Base(callDir))
 		assert.NoErr(t, store.AfterCall(ctx, native.SnapshotResult{CallID: "../../escape:/absolute", Status: native.SnapshotStatusIncomplete}))
 	})
 
@@ -198,4 +194,151 @@ func TestSnapshotMetaJSONIsSelfDescribing(t *testing.T) {
 	assert.Eq(t, "sess_json", raw["session_id"])
 	assert.Eq(t, "absent", raw["kind"])
 	assert.Eq(t, "pending", raw["status"])
+}
+
+func snapshotCallDir(t *testing.T, turnDir string) string {
+	t.Helper()
+	entries, err := os.ReadDir(turnDir)
+	assert.Require(t, assert.NoErr(t, err))
+	for _, entry := range entries {
+		if entry.IsDir() && entry.Name() != snapshotPreUndoDir {
+			return filepath.Join(turnDir, entry.Name())
+		}
+	}
+	t.Fatal("snapshot call directory not found")
+	return ""
+}
+
+func createCompletedSnapshot(t *testing.T, store *SessionSnapshots, sessionID, turnID, callID string) {
+	t.Helper()
+	ctx := withObserveScope(context.Background(), sessionID, turnID)
+	_, err := store.BeforeCall(ctx, native.SnapshotRequest{
+		CallID: callID, Tool: "file_write", Root: t.TempDir(), Rel: callID, RealRel: callID,
+		Kind: native.SnapshotKindFile, Before: []byte(callID),
+	})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.NoErr(t, store.AfterCall(ctx, native.SnapshotResult{
+		CallID: callID, Status: native.SnapshotStatusComplete, Size: int64(len(callID)),
+	}))
+}
+
+func setSnapshotCreatedAt(t *testing.T, store *SessionSnapshots, sessionID, turnID string, at time.Time) {
+	t.Helper()
+	path := filepath.Join(store.dir, sessionID, "snapshots", turnID)
+	callDir := snapshotCallDir(t, path)
+	metaPath := filepath.Join(callDir, "meta.json")
+	data, err := os.ReadFile(metaPath)
+	assert.Require(t, assert.NoErr(t, err))
+	var meta SnapshotMeta
+	assert.Require(t, assert.NoErr(t, json.Unmarshal(data, &meta)))
+	meta.CreatedAt = at
+	data, err = json.MarshalIndent(meta, "", "  ")
+	assert.Require(t, assert.NoErr(t, err))
+	assert.NoErr(t, os.WriteFile(metaPath, append(data, '\n'), 0o600))
+}
+
+func TestSessionSnapshotsRetentionStateAndPreUndo(t *testing.T) {
+	t.Run("retains only the newest completed turns", func(t *testing.T) {
+		store := NewSessionSnapshotsWithLimits(t.TempDir(), SnapshotLimits{KeepTurns: 2, KeepDays: 365})
+		createCompletedSnapshot(t, store, "keep", "turn_1", "one")
+		setSnapshotCreatedAt(t, store, "keep", "turn_1", time.Now().Add(-3*time.Hour))
+		createCompletedSnapshot(t, store, "keep", "turn_2", "two")
+		setSnapshotCreatedAt(t, store, "keep", "turn_2", time.Now().Add(-2*time.Hour))
+		createCompletedSnapshot(t, store, "keep", "turn_3", "three")
+		metas, err := store.LoadTurn("keep", "turn_1")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Empty(t, metas)
+		metas, err = store.LoadTurn("keep", "turn_2")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Require(t, assert.Len(t, metas, 1))
+		assert.Eq(t, 2, store.Limits().KeepTurns)
+	})
+
+	t.Run("age cleanup keeps pending and incomplete turns", func(t *testing.T) {
+		store := NewSessionSnapshotsWithLimits(t.TempDir(), SnapshotLimits{KeepTurns: 20, KeepDays: 1})
+		createCompletedSnapshot(t, store, "states", "old", "old")
+		setSnapshotCreatedAt(t, store, "states", "old", time.Now().Add(-48*time.Hour))
+		report, err := store.CleanupSession("states")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, 1, report.RemovedTurns)
+		ctx := withObserveScope(context.Background(), "states", "pending")
+		_, err = store.BeforeCall(ctx, native.SnapshotRequest{CallID: "pending", Tool: "file_write", Root: t.TempDir(), Rel: "p", RealRel: "p", Kind: native.SnapshotKindFile, Before: []byte("p")})
+		assert.Require(t, assert.NoErr(t, err))
+		ctx = withObserveScope(context.Background(), "states", "incomplete")
+		_, err = store.BeforeCall(ctx, native.SnapshotRequest{CallID: "incomplete", Tool: "file_write", Root: t.TempDir(), Rel: "i", RealRel: "i", Kind: native.SnapshotKindFile, Before: []byte("i")})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.NoErr(t, store.AfterCall(ctx, native.SnapshotResult{CallID: "incomplete", Status: native.SnapshotStatusIncomplete}))
+		old, err := store.LoadTurn("states", "old")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Empty(t, old)
+		pending, err := store.LoadTurn("states", "pending")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Require(t, assert.Len(t, pending, 1))
+		state, err := store.LoadCheckpointState("states", "incomplete")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, SnapshotStatePartial, state.State)
+	})
+
+	t.Run("size cleanup removes oldest completed checkpoints", func(t *testing.T) {
+		store := NewSessionSnapshotsWithLimits(t.TempDir(), SnapshotLimits{MaxFileBytes: 10, MaxSessionBytes: 4, MaxGlobalBytes: 100, KeepDays: 365})
+		createCompletedSnapshot(t, store, "size", "turn_1", "abc")
+		createCompletedSnapshot(t, store, "size", "turn_2", "de")
+		old, err := store.LoadTurn("size", "turn_1")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Empty(t, old)
+
+		global := NewSessionSnapshotsWithLimits(t.TempDir(), SnapshotLimits{MaxFileBytes: 10, MaxSessionBytes: 100, MaxGlobalBytes: 100, KeepDays: 365})
+		createCompletedSnapshot(t, global, "global_a", "turn_1", "abc")
+		createCompletedSnapshot(t, global, "global_b", "turn_1", "def")
+		global.limits.MaxGlobalBytes = 4
+		report, err := global.CleanupAll()
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, 1, report.RemovedTurns)
+		remainingA, err := global.LoadTurn("global_a", "turn_1")
+		assert.Require(t, assert.NoErr(t, err))
+		remainingB, err := global.LoadTurn("global_b", "turn_1")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, 1, len(remainingA)+len(remainingB))
+	})
+
+	t.Run("state transitions and pre-undo records are separate", func(t *testing.T) {
+		store := NewSessionSnapshots(t.TempDir())
+		createCompletedSnapshot(t, store, "undo", "turn_1", "call")
+		state, err := store.LoadCheckpointState("undo", "turn_1")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, SnapshotStateOpen, state.State)
+		assert.NoErr(t, store.SetCheckpointState("undo", "turn_1", SnapshotStateUndone))
+		state, err = store.LoadCheckpointState("undo", "turn_1")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, SnapshotStateUndone, state.State)
+
+		ctx := withObserveScope(context.Background(), "undo", "turn_1")
+		_, err = store.BeforeUndo(ctx, native.SnapshotRequest{CallID: "restore", Tool: "undo", Root: t.TempDir(), Rel: "a", RealRel: "a", Kind: native.SnapshotKindFile, Before: []byte("after")})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.NoErr(t, store.AfterUndo(ctx, native.SnapshotResult{CallID: "restore", Status: native.SnapshotStatusComplete}))
+		metas, err := store.LoadTurn("undo", "turn_1")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Require(t, assert.Len(t, metas, 1))
+		pre, err := loadTurn(filepath.Join(store.dir, "undo", "snapshots", "turn_1", snapshotPreUndoDir))
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Require(t, assert.Len(t, pre, 1))
+		assert.Eq(t, snapshotSourcePreUndo, pre[0].Source)
+		assert.Eq(t, native.SnapshotStatusComplete, pre[0].Status)
+	})
+
+	t.Run("empty sessions root fails closed", func(t *testing.T) {
+		store := NewSessionSnapshots("")
+		_, err := store.BeforeCall(withObserveScope(context.Background(), "empty", "turn_1"), native.SnapshotRequest{CallID: "call", Kind: native.SnapshotKindAbsent})
+		assert.ErrMsgContains(t, err, "sessions directory is empty")
+	})
+
+	t.Run("old sessions without a snapshot directory are empty", func(t *testing.T) {
+		store := NewSessionSnapshots(t.TempDir())
+		metas, err := store.LoadTurn("legacy", "turn_1")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Empty(t, metas)
+		report, err := store.CleanupSession("legacy")
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, 0, report.RemovedTurns)
+	})
 }

@@ -37,6 +37,8 @@ type SnapshotLimits struct {
 	MaxFileBytes    int64
 	MaxSessionBytes int64
 	MaxGlobalBytes  int64
+	KeepTurns       int
+	KeepDays        int
 }
 
 func defaultSnapshotLimits() SnapshotLimits {
@@ -44,6 +46,8 @@ func defaultSnapshotLimits() SnapshotLimits {
 		MaxFileBytes:    DefaultSnapshotMaxFileBytes,
 		MaxSessionBytes: DefaultSnapshotMaxSessionBytes,
 		MaxGlobalBytes:  DefaultSnapshotMaxGlobalBytes,
+		KeepTurns:       DefaultSnapshotKeepTurns,
+		KeepDays:        DefaultSnapshotKeepDays,
 	}
 }
 
@@ -57,6 +61,12 @@ func (l SnapshotLimits) withDefaults() SnapshotLimits {
 	}
 	if l.MaxGlobalBytes <= 0 {
 		l.MaxGlobalBytes = defaults.MaxGlobalBytes
+	}
+	if l.KeepTurns <= 0 {
+		l.KeepTurns = DefaultSnapshotKeepTurns
+	}
+	if l.KeepDays <= 0 {
+		l.KeepDays = DefaultSnapshotKeepDays
 	}
 	return l
 }
@@ -93,6 +103,7 @@ type SessionSnapshots struct {
 	dir    string
 	limits SnapshotLimits
 	mu     sync.Mutex
+	now    func() time.Time
 }
 
 var _ native.Snapshotter = (*SessionSnapshots)(nil)
@@ -104,7 +115,11 @@ func NewSessionSnapshots(sessionsDir string) *SessionSnapshots {
 
 // NewSessionSnapshotsWithLimits creates a snapshot store with explicit limits.
 func NewSessionSnapshotsWithLimits(sessionsDir string, limits SnapshotLimits) *SessionSnapshots {
-	return &SessionSnapshots{dir: filepath.Clean(sessionsDir), limits: limits.withDefaults()}
+	dir := strings.TrimSpace(sessionsDir)
+	if dir != "" {
+		dir = filepath.Clean(dir)
+	}
+	return &SessionSnapshots{dir: dir, limits: limits.withDefaults(), now: time.Now}
 }
 
 // SessionSnapshotsDir returns the snapshot directory of a session. It performs
@@ -145,6 +160,10 @@ func (s *SessionSnapshots) BeforeCall(ctx context.Context, req native.SnapshotRe
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if _, err := s.cleanupSessionLocked(sid, tid, int64(len(req.Before))); err != nil {
+		return native.SnapshotBefore{}, fmt.Errorf("snapshots: cleanup before call: %w", err)
+	}
+
 	root, turnRel, turnDir, err := s.openTurnRoot(sid, tid)
 	if err != nil {
 		return native.SnapshotBefore{}, err
@@ -166,7 +185,7 @@ func (s *SessionSnapshots) BeforeCall(ctx context.Context, req native.SnapshotRe
 		SessionID: sid, TurnID: tid, CallID: req.CallID, Seq: seq, Tool: req.Tool,
 		Root: req.Root, Rel: filepath.ToSlash(req.Rel), RealRel: filepath.ToSlash(req.RealRel),
 		Kind: req.Kind, Size: int64(len(req.Before)), Status: snapshotStatusPending,
-		Mode: snapshotMode(req), CreatedAt: time.Now().UTC(), Source: snapshotSourceCall,
+		Mode: snapshotMode(req), CreatedAt: s.nowTime().UTC(), Source: snapshotSourceCall,
 	}
 	if req.Kind == native.SnapshotKindFile {
 		meta.SHA256Before = nativeSHA256(req.Before)
@@ -262,6 +281,17 @@ func (s *SessionSnapshots) AfterCall(ctx context.Context, result native.Snapshot
 	if err := writeSnapshotMeta(root, metaRel, meta); err != nil {
 		return fmt.Errorf("snapshots: update metadata: %w", err)
 	}
+	if result.Status == native.SnapshotStatusIncomplete {
+		state, stateErr := s.LoadCheckpointState(sid, tid)
+		if stateErr != nil {
+			return fmt.Errorf("snapshots: load checkpoint state: %w", stateErr)
+		}
+		state.State = SnapshotStatePartial
+		state.UpdatedAt = s.nowTime().UTC()
+		if stateErr := writeCheckpointState(filepath.Join(s.dir, sid, "snapshots", tid), state); stateErr != nil {
+			return fmt.Errorf("snapshots: update checkpoint state: %w", stateErr)
+		}
+	}
 	return nil
 }
 
@@ -313,6 +343,19 @@ func (s *SessionSnapshots) openTurnRoot(sessionID, turnID string) (*os.Root, str
 	if err := root.MkdirAll(turnRel, 0o700); err != nil {
 		_ = root.Close()
 		return nil, "", "", fmt.Errorf("snapshots: create turn directory: %w", err)
+	}
+	statePath := filepath.Join(s.dir, turnRel, snapshotStateFile)
+	if info, err := os.Lstat(statePath); errors.Is(err, os.ErrNotExist) {
+		if err := writeCheckpointState(filepath.Dir(statePath), SnapshotCheckpointState{State: SnapshotStateOpen, UpdatedAt: s.nowTime().UTC()}); err != nil {
+			_ = root.Close()
+			return nil, "", "", fmt.Errorf("snapshots: create checkpoint state: %w", err)
+		}
+	} else if err != nil {
+		_ = root.Close()
+		return nil, "", "", fmt.Errorf("snapshots: inspect checkpoint state: %w", err)
+	} else if info.Mode()&os.ModeSymlink != 0 {
+		_ = root.Close()
+		return nil, "", "", errors.New("snapshots: checkpoint state is a symlink")
 	}
 	return root, turnRel, filepath.Join(s.dir, turnRel), nil
 }
@@ -374,7 +417,7 @@ func nextSnapshotSeq(turnDir string) (int, error) {
 	}
 	maxSeq := 0
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() || entry.Name() == snapshotPreUndoDir {
 			continue
 		}
 		prefix, _, ok := strings.Cut(entry.Name(), "-")
@@ -455,7 +498,7 @@ func loadTurn(turnDir string) ([]SnapshotMeta, error) {
 	}
 	var metas []SnapshotMeta
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() || entry.Name() == snapshotPreUndoDir {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(turnDir, entry.Name(), "meta.json"))
