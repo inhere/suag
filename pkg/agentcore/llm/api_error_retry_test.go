@@ -120,6 +120,23 @@ func TestStreamRetriesTransientAPIErrors(t *testing.T) {
 		assert.Eq(t, int32(2), hits.Load())
 		assert.Eq(t, "ok", res.Content)
 	})
+	t.Run("openai: an overload after some text restarts the reply", func(t *testing.T) {
+		// The refused attempt already streamed text: it is void, so the retry is
+		// announced with restart=true and the message is streamed again.
+		body := "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n" + openaiOverload
+		server, hits := scriptedServer(t, "text/event-stream", body, openaiWhole)
+		var events []agentcoreapi.StreamEvent
+		res, err := openai(server.URL).Stream(context.Background(), req, collect(&events))
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, int32(2), hits.Load())
+		assert.Eq(t, "ok", res.Content) // nothing of the refused attempt is kept
+		assert.Require(t, assert.True(t, len(events) >= 3))
+		assert.Eq(t, "Hel", events[0].Delta)
+		assert.Eq(t, agentcoreapi.StreamEventRetry, events[1].Kind)
+		assert.Eq(t, apiTransientReason, events[1].Delta)
+		assert.Eq(t, true, events[1].Metadata["restart"])
+		assert.Eq(t, "ok", events[2].Delta)
+	})
 	t.Run("openai: giving up names the overload and reports provider_transient", func(t *testing.T) {
 		server, hits := scriptedServer(t, "text/event-stream", openaiOverload)
 		_, err := openai(server.URL).Stream(context.Background(), req, nil)
