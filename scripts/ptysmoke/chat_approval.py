@@ -212,7 +212,7 @@ def scenario(s):
     m = s.mark(); s.line("继续")
     s.check("a: chat alive, question", s.until(QUESTION, m))
     s.line("a")
-    s.check("a: persistence question", s.until(r"写回尚未启用", m))
+    s.check("a: persistence question", s.until(r"把这条规则写进规则文件", m))
     s.line("")
     s.check("a: executed", s.until(OK, m) and turn_end(s, m))
     m = s.mark(); s.line("又一次")
