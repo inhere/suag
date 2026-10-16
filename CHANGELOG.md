@@ -10,6 +10,11 @@
 
 - 回合中插话：模型干活时输入行保持可用，提示符变成 `↳ `，回车把这句话插进**当前**回合——模型在下一次请求之前看到它（通常紧跟在你看到的那次工具调用结果之后），本轮不中断；插话在输出区先显示“[插话] …（等待送达）”，被某次请求带上后改显示“（已送达）”，回合结束的状态行也计入“插话 N”。模型此时若已给出最终回复，插话作为紧接着的下一回合运行（已经看到的回答不会作废）。插话以普通用户消息落库并记 trace（`steer_delivered`/`steer_returned`），所以续接上下文与 `suga trace` 都能看出哪句是在回合中插入的。
 - `suga send --steer`：把消息插进正在进行的回合（`chat.steering` 开着时模型在下一次请求前看到它，与在 `↳ ` 提示符处键入的插话同一条路，来源记为 `send:<来源>`）；会话空闲、回合正在结束或关了 `chat.steering` 时按普通投递排队，终端打印“未插入当前回合，已排队”；该回合的插话收件箱满（8 条）时返回 `queue_full`（退出码 1，既不插入也不排队）。`--steer --wait` 在插话被模型请求带上、或作为紧接着的下一回合开始运行时返回 0，插话被退回（回合被取消/失败，或 chat 先退出）时退出码 3。不带 `--steer` 的行为不变，旧客户端（请求不带 `mode` 字段）同样不变。
+- 回合因 provider 错误失败时给出原因类别：`run --output-format stream-json` 的 `error` 行与 `suga trace` 的 turn 事件（attrs）都带 `error_kind`——`provider_transient`（流中断/截断，重试用尽）或 `provider_bad_response`（响应体或流事件不是合法 JSON、答复内容缺失、API 自身报错）。其他失败（取消、工具/存储错误）不带该字段，两类失败之外的语义不变；Gofer 可据此决定是否让同一会话续跑（Gofer 侧未改）。
+
+### 修复
+
+- 流式回复中途被切断不再让回合直接投资失败：最后一行没有换行就 EOF（代理/网关切断连接），或流在没有 `[DONE]`、也没有 `finish_reason`（openai）/ 没有 `message_stop`（claude）的情况下结束，都按“流中断”处理，走现有的重试—重启逻辑（已输出但作废的文本以 `restart:true` 重新输出一遍），日志与错误文本里写明 `stream truncated`。此前那半行 JSON 直接进了 `json.Unmarshal`，报 `parse openai stream chunk: unexpected end of JSON input` 且不重试，长会话（gofer 派活）中途碰到就直接结束回合（issue suga-zq46）。完整一行但 JSON 非法、流内 API 错误仍不重试；responses 的“已开始的输出项都已结束就用已结束项作答”的兜底不变。
 
 ### 变更
 
