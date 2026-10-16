@@ -1,13 +1,14 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # 写操作快照与 `:undo` 实施计划
 
-> 状态：Draft 0.1（待用户审阅）
+> 状态：Draft 0.2（按评审 r1 修订，待用户审阅）
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-17 | suga（gofer job） | 依据已批准的写操作快照与 `:undo` 设计 Draft 0.3 起草实施计划；拆分 native 快照钩子、会话存储、回滚安全检查、通知观测、chat/CLI、清理与验收波次。 |
+| 0.2 | 2026-10-17 | suga（gofer job） | 按独立评审 r1 修订：复用 `run/locks` 与 `heldLocks`；拆分 undo 任务；核心脱离 Provider；补齐 tool 快照 attrs、Windows 早验、上限默认值、cwd 变化提示及跨计划 owner/合并顺序。 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -43,6 +44,12 @@
 - 授权：本计划批准后可按任务在本地 worktree 实施、运行容器与主机验证并本地提交；真实 provider 验证只使用已有配置。push、tag、release、Gofer 改动另行授权。
 - `host_or_non_offline_action=REQUIRED`：真实 provider 与 Windows 主机 job 是完成 Gate 的验证动作，计划稿阶段不执行。
 
+## 跨计划依赖、owner 与合并顺序
+
+- 受保护路径清单（规则文件、`.suga/**`、`.git/**`、`$SUGA_HOME/**`）由审批规则计划唯一拥有；本计划 T5c 只调用审批规则 owner 的导出判定，不新增或复制清单。
+- 合并顺序固定为审批规则计划先合（至少完成其 T4b 的保护路径导出契约），本计划再合。共享文件 `internal/config`、`config/config.yaml`、`internal/wiring/capabilities.go` 的 `nativeEnv`、`internal/personal/observe.go`、`internal/chat` 帮助/命令、`internal/chat/autocomplete.go`、README 中英、CHANGELOG 串行合入；后合本计划必须基于前一计划 HEAD 解决冲突。
+- `internal/personal/observe.go` 的 approval attrs 属审批计划 T10 owner，snapshot attrs 属本计划 T6b owner；后合时保留两组 attrs 与各自测试，不以整文件覆盖解决冲突。
+
 ## 输入与批准证据
 
 - 设计：`docs/design/2026-10-16-undo-checkpoints-design.md`，Draft 0.3 / 已批准（2026-10-16 用户：“全部按建议批准”；待确认事项均按文中建议选项定稿）。
@@ -56,18 +63,18 @@
 
 | capability_id | required_capability | searched_candidates | direct_reuse | thin_adapter_or_owner_extension | decision | proven_gap | duplication_and_lifecycle_risk |
 |---|---|---|---|---|---|---|---|
-| CAP-01 | 写工具执行前后传递快照信息 | `pkg/agentcore/tools/native/catalog.go:12-16,61-64`、`file.go`、`edit.go`、`remove.go:111-259`、`native.Catalog` | Env/工具 catalog、`ApplyEdit`、现有 trash/origin metadata 可复用 | Env 只持有导出的 Snapshotter 接口；三个工具各在既有 owner 内调用 | OWNER_EXTENSION | 当前工具无快照钩子，native 不能依赖 `internal/personal` | 不能在 wiring 与 native 各存一份快照；I/O 前后状态必须由同一调用记录更新 |
+| CAP-01 | 写工具执行前后传递快照信息 | `pkg/agentcore/tools/native/catalog.go:12-50,61-135`、`file.go`、`edit.go`、`remove.go:111-259`、`native.Catalog` | Env/工具 catalog、`ApplyEdit`、现有 trash/origin metadata 可复用 | Env 只持有导出的 Snapshotter 接口；三个工具各在既有 owner 内调用 | OWNER_EXTENSION | 当前工具无快照钩子，native 不能依赖 `internal/personal` | 不能在 wiring 与 native 各存一份快照；I/O 前后状态必须由同一调用记录更新 |
 | CAP-02 | 会话/回合/调用级安全落盘与清理 | `internal/personal/spill.go:23-116`、`process.SecureDir`、`validateSessionID`、sessions 路径 | 目录安全、hash 文件名、OpenRoot、权限、session scope 可复用 | 新 `SessionSnapshots` 作为与 `SessionSpiller` 同族的唯一存储 owner | MINIMAL_NEW_MODULE | 没有快照目录、meta 状态、大小/保留/全局清理 | 不建 DB BLOB；避免与 spill、suga-zy9f 建第二套全局配额语义 |
-| CAP-03 | 回合选择、冲突检测、逆序恢复和锁 | `internal/personal/gate.go:17-191`、`internal/chat/chat.go:441-447`、`process` 跨进程锁、store turns | Runner API、回合排序、锁顺序、session cwd/meta 可复用 | 新 `internal/personal/undo.go` 编排，快照模块只负责存取 | MINIMAL_NEW_MODULE | 无 undo、pre-undo、root/real path/hash 校验 | chat 与 CLI 必须调用同一 Runner/Undo 核心，不能各自恢复 |
+| CAP-03 | 回合选择、冲突检测、逆序恢复和锁 | `internal/personal/gate.go:17-191`、`internal/chat/chat.go:446-455`、`internal/personal/process/lock.go`、store turns | Runner API、回合排序、锁顺序、session cwd/meta 可复用 | 新 `internal/personal/undo.go` 编排；核心接受 store、sessions 根、lockRoot 与可选 gate，Runner 只做薄包装 | MINIMAL_NEW_MODULE | 无 undo、pre-undo、root/real path/hash 校验 | chat 与 CLI 必须调用同一不依赖 Provider 的 undo 核心，不能各自恢复 |
 | CAP-04 | 回滚后模型通知与观测 | `internal/personal/context.go:30-42,300-367`、`internal/personal/store/types.go:48-167`、task/steer 待投递、events/trace | 条目投递、上下文回放、event attrs、trace JSON 原样输出可复用 | 添加 `suga.undo` metadata 和 `EventUndo` | OWNER_EXTENSION | 现有通知没有 undo 事实和恢复统计 | 不把 undo 误做 `context_update` 或真实用户请求；不进 export/transcript |
-| CAP-05 | chat/CLI 交互 | `internal/chat/chat.go:415-447`、帮助常量、`openCoreStore`、CLI root 注册 | `:compact`/目录命令、确认器、CLI session 前缀解析、store 句柄可复用 | 新 `internal/cli/undo.go`，chat 只做解析和渲染 | OWNER_EXTENSION | 无 checkpoint 清单/确认/退出码 | chat/CLI 共享 undo 核心与锁；不能复制恢复算法 |
+| CAP-05 | chat/CLI 交互 | `internal/chat/chat.go:415-455`、`internal/chat/autocomplete.go:11`、帮助常量、`openCoreStore`、CLI root 注册 | `:compact`/目录命令、命令补全、确认器、CLI session 前缀解析、store 句柄可复用 | 新 `internal/cli/undo.go`，chat 只做解析和渲染 | OWNER_EXTENSION | 无 checkpoint 清单/确认/退出码 | chat/CLI 共享不依赖 Provider 的 undo 核心与锁；不能复制恢复算法 |
 
 ### New module candidates
 
 | candidate_id | capability_id | proposed_module | searched_candidates | direct_reuse_gap | thin_adapter_or_owner_extension_gap | proven_gap | unique_owner_and_lifecycle | deletion_or_merge_handling |
 |---|---|---|---|---|---|---|---|---|
 | MOD-UN-01 | CAP-02 | `internal/personal/snapshots.go` | `internal/personal/spill.go:23-116` | 需要二进制 before、meta/state、容量与清理 | 复用 spill 安全写入约定，但不复用其脱敏/输出接口 | 设计确认当前没有 snapshot 实现 | 与 sessions 目录同生命周期，受 gc 覆盖 | 若存储能完全合入 spill 会损失语义；保留独立 owner，gc 只按目录涵盖 |
-| MOD-UN-02 | CAP-03 | `internal/personal/undo.go` | `internal/personal/runner.go:500-600`、`internal/personal/gate.go:17-191`、store turns | 需要逆序恢复和冲突矩阵 | Runner 上挂 `Undo`/`Checkpoints`，底层 root 校验共用 native helpers | 设计确认没有回滚入口 | chat/CLI 唯一执行 owner | 删除 chat/CLI 层恢复代码后核心仍可测试 |
+| MOD-UN-02 | CAP-03 | `internal/personal/undo.go` | `internal/personal/runner.go:500-600`、`internal/personal/gate.go:17-191`、store turns | 需要逆序恢复和冲突矩阵 | 不依赖 Provider 的 undo 核心由 Runner 薄包装，底层 root 校验共用 native helpers | 设计确认没有回滚入口 | chat/CLI 唯一执行 owner | 删除 chat/CLI 层恢复代码后核心仍可测试 |
 
 ### Rejected new tools
 
@@ -84,22 +91,22 @@
 - P2：确认 `pkg/agentcore` 分层约束：native 只能依赖导出的接口，不能导入 `internal/personal`；快照器经 `native.Env` 注入。
 - P3：所有快照测试使用临时 `SUGA_HOME` 和临时 workspace/`:rw` 目录；测试必须覆盖文件不存在、二进制、symlink/hardlink/special、Windows 大小写/锁语义，并清理敏感副本。
 - P4：默认 `tools.snapshots.on_error=deny` 的快照不可写、清理不确定、锁失败、root 不可信、before 校验失败均必须发生在写工具 I/O 前；`continue` 只能是显式配置并向模型说明不可撤销。
-- P5：锁顺序固定为进程内 session gate → 会话目录跨进程文件锁；CLI、chat、gc 不得各自采用不同顺序；锁拿不到立即返回会话忙。
+- P5：复用现有 `run/locks` 会话锁和 chat 的 `heldLocks`；锁顺序固定为进程内 session gate → 既有跨进程会话文件锁。chat 内 `:undo` 在 `heldLocks` 已持有时直接复用，不再次打开同一锁；CLI 使用零等待获取，拿不到立即返回会话忙（退出码 5）；不另建快照锁。
 - P6：快照元数据不能进入模型上下文、transcript、export；`suga.undo` 只能是待投递注入条目且不自动开回合；shell 命令只出现在清单/结果提示。
 - P7：每个交互任务必须有 ptysmoke 场景与反向验证；临时关掉快照写入后，恢复断言必须失败；不能以人工 chat 代替。
-- P8：单个 Go 文件不得超过 1000 行；新增 tool schema 若有零参数工具也须有非空 `properties`，不引入空 schema。
+- P8：单个 Go 文件不得超过 1000 行；新增 tool schema 若有零参数工具也须有非空 `properties`，不引入空 schema；layering test 若新增包必须登记允许依赖。
 
 ## 波次与依赖
 
 | 波次 | 任务 | 依赖 | 执行方式 |
 |---|---|---|---|
 | W0 | T0 基线与存储安全契约 | 无 | 1 个 gofer job；只记录 |
-| W1 | T1 快照接口与 file_write/edit；T2 file_remove 两阶段钩子 | T0；T1/T2 可并行但 T2 依赖快照接口约定 | T1→T2 接口确认 |
+| W1 | T1 快照接口与 file_write/edit；T2 file_remove 两阶段钩子 | T0；T1 先合入接口，T2 再实现 | T1→T2；每个任务单独提交 |
 | W2 | T3 SessionSnapshots 落盘、元数据、上限与清理 | T1/T2 | 1 个 gofer job |
-| W3 | T4 checkpoint 选择/锁/清单；T5 冲突校验与逆序恢复 | T3；T4→T5 | 顺序执行 |
-| W4 | T6 undo 通知、事件、trace；T7 wiring/config/gc | T5；T6/T7 可并行 | 2 个并行 job |
-| W5 | T8 chat 命令/确认/ptysmoke；T9 CLI | T4–T7；T8/T9 可并行，均调用同一 undo 核心 | 2 个并行 job |
-| W6 | T10 文档、真实验证与全量回归 | T8/T9 | 监督会话 + 主机/真实环境 job |
+| W3 | T4a checkpoint 选择/清单与 shell 来源；T4b gate/root/锁与不依赖 Provider 的核心；T5a 内容恢复；T5b 删除类恢复；T5c 身份/保护校验 | T3；T4a→T4b→T5a→T5b→T5c | 串行；每个任务不超过 1 个 job |
+| W4 | T6a undo 通知/EventUndo；T6b tool 事件 snapshot attrs；T7 wiring/config/gc | T5c；T6a→T6b；T6b∥T7 | 2 个并行 job |
+| W5 | T8 chat 命令/确认/ptysmoke；T9 CLI | T4a–T7；T8/T9 可并行，均调用同一 undo 核心 | 2 个并行 job；T8/T9 共享文件串行合入 |
+| W6 | T10 文档、真实验证与全量回归 | T8/T9 | 监督会话 + 主机/真实环境 job；T1/T2/T5b/T5c 的 Windows 专项不后置到本波 |
 
 ## 任务
 
@@ -116,9 +123,9 @@
 ### T1 native 快照接口与 `file_write`/`file_edit` 钩子
 
 - 文件：`pkg/agentcore/tools/native/catalog.go:10-50,61-135`、`file.go`、`edit.go`、native 新测试/接口文件；必要时 `readroots.go` 只增加稳定的 `(root, rel, real_rel)` 适配。
-- 动作：在 `Env` 增加导出的 `Snapshotter`/request-result 接口（nil 表示关闭）；在审批通过后、实际写盘前调用 `BeforeCall`。`file_write` 记录原内容或 `kind=absent`；`file_edit` 在 `ApplyEdit` 成功后复用已读原文，不能再次读盘；成功后 `AfterCall` 写 `sha256_after`/status；快照失败按配置阻止写入并把原因返回模型；不改变 os.Root 沙箱和工具 schema。
-- 验证命令：`go test -race ./pkg/agentcore/tools/native/... ./pkg/agentcore/...`。
-- 完成标准：fake Snapshotter 测试覆盖 before/after 顺序、二进制、不存在、同路径多调用、编辑唯一匹配失败不落错误快照、fail-closed 在写盘前返回；layering test 通过。
+- 动作：在 `Env` 增加导出的 `Snapshotter`/request-result 接口（nil 表示关闭）；在审批通过后、实际写盘前调用 `BeforeCall`。`file_write` 记录原内容或 `kind=absent`；`file_edit` 在 `ApplyEdit` 成功后复用已读原文，不能再次读盘；成功后 `AfterCall` 写 `sha256_after`/status。单文件超过 16 MiB 时照常写入，但结果和模型消息明确“本次写入不可撤销”，不得伪装成完整快照；其它快照失败按配置阻止写入并把原因返回模型；不改变 os.Root 沙箱和工具 schema。
+- 验证命令：`go test -race ./pkg/agentcore/tools/native/... ./pkg/agentcore/...`；主机 gofer exec job：`go test -count=1 ./pkg/agentcore/tools/native/...`（Windows 钩子、oversize 与路径语义）。
+- 完成标准：fake Snapshotter 测试覆盖 before/after 顺序、二进制、不存在、同路径多调用、编辑唯一匹配失败不落错误快照、oversize 继续写入且明确不可撤销、fail-closed 在写盘前返回；layering test 通过；主机 Windows job 输出可追溯。
 - 反向验证方法：临时把 `BeforeCall` 放到写盘后，注入失败测试必须发现目标已经被改动并失败；临时让 file_edit 重新读盘，读取计数测试必须失败。
 - 预计改动规模：L（4–7 个 Go 文件、450–750 行含测试）。
 - 依赖/并行：T0 后；T2 依赖接口约定，可先并行设计但不得先合并不兼容接口。
@@ -127,68 +134,109 @@
 
 - 文件：`pkg/agentcore/tools/native/remove.go`、`catalog.go`、remove 测试；与 `internal/wiring/capabilities.go:154-162` 的 TrashDir 装配保持兼容。
 - 动作：删除前建立 `pending-remove` 元数据；成功后补回实际 trash entry/origin；忽略目录永久删除记 `kind=purged` 与计数；混合目录同时保留 trash/purged 信息；失败写入 `incomplete`；不改 7 天 trash、忽略目录永久删除、根/.git/home/通配符/目录递归守卫。
-- 验证命令：`go test -race ./pkg/agentcore/tools/native/...`。
-- 完成标准：普通文件、目录、混合删除、忽略目录、删除失败、trash 清理和 origin 校验测试通过；快照状态与工具结果一致。
+- 验证命令：`go test -race ./pkg/agentcore/tools/native/...`；主机 gofer exec job：`go test -count=1 ./pkg/agentcore/tools/native/...`（跨卷恢复、共享冲突、大小写变体相关测试）。
+- 完成标准：普通文件、目录、混合删除、忽略目录、删除失败、trash 清理和 origin 校验测试通过；快照状态与工具结果一致；trash 恢复复用 `remove` 的 rename→copy 跨卷回退 helper，共享冲突按逐文件失败计入 partial，Windows 大小写变体合并为同一目标并分别报告。
 - 反向验证方法：临时在删除成功后不补 trash entry，删除恢复元数据一致性用例必须失败；临时把 purged 标成可恢复，混合删除“部分恢复”用例必须失败。
 - 预计改动规模：M/L（3–5 个 Go 文件、350–650 行含测试）。
-- 依赖/并行：T1 的接口约定；可与 T1 实施并行，接口确认后合并。
+- 依赖/并行：T1 的接口约定；T1 先合入后实施，不与 T1 并行合入。
 
 ### T3 `SessionSnapshots` 落盘、元数据、上限与清理
 
 - 文件：`internal/personal/snapshots.go`（新）、测试；`internal/config/paths.go`（若需路径 helper）、`internal/personal/spill.go`（仅复用安全约定，不改变输出）；配置解析接口留给 T7。
-- 动作：实现 `<sessions>/<sid>/snapshots/<turn_id>/<NN>-<sha256(call_id)[:16]>/meta.json` 与二进制 `before`；目录 0700、文件 0600、session id 校验、OpenRoot/SecureDir；meta 的 root/rel/real_rel/kind/hash/status/trash/purged/source 等字段；按调用序号保存多条记录；单文件 16 MiB、会话 256 MiB、全局上限接口、keep_turns 20/keep_days 7；写前本会话清理，启动/GC 全局清理；状态 open/undone/partial 与 pre-undo 目录；只清理已完成最旧 checkpoint。
+- 动作：实现 `<sessions>/<sid>/snapshots/<turn_id>/<NN>-<sha256(call_id)[:16]>/meta.json` 与二进制 `before`；目录 0700、文件 0600、session id 校验、OpenRoot/SecureDir；meta 的 root/rel/real_rel/kind/hash/status/trash/purged/source 等字段；按调用序号保存多条记录；单文件 16 MiB、会话 256 MiB、全局上限默认 1 GiB（可配置）、keep_turns 20/keep_days 7；oversize 记录 `unrecoverable=oversize` 元数据并让调用结果可见；写前本会话清理，启动/GC 全局清理；状态 open/undone/partial 与 pre-undo 目录；只清理已完成最旧 checkpoint。
 - 验证命令：`go test -race ./internal/personal/...`。
-- 完成标准：目录布局、权限、哈希文件名、二进制原样、大小/回合/日期清理、损坏/缺失目录、老 session 无目录、pre-undo 生成均有测试；不建表、不修改 migration。
+- 完成标准：目录布局、权限、哈希文件名、二进制原样、大小/回合/日期清理、单文件/会话/默认 1 GiB 全局上限、oversize 不可撤销提示、损坏/缺失目录、老 session 无目录、pre-undo 生成均有测试；不建表、不修改 migration；主机 Windows job 输出可追溯。
 - 反向验证方法：临时把 call_id 直接拼入路径，恶意 `../`/绝对 call_id 测试必须失败；临时清理 open/incomplete 回合，保留策略测试必须失败；临时把原始 bytes 当文本处理，二进制 round-trip 必须失败。
 - 预计改动规模：L（2–5 个 Go 文件、550–850 行含测试）。
 - 依赖/并行：T1/T2；不涉及数据库迁移，旧会话兼容必须先锁定。
 
-### T4 checkpoint 选择、会话锁与回滚清单
+### T4a checkpoint 选择、清单与 shell 来源
 
-- 文件：`internal/personal/undo.go`（新）、`runner.go`、`gate.go`、`process/lock.go`、store turns/session 读取及测试。
-- 动作：按 DB `started_at,id` 选最近 N 个未 undone 且有快照的回合；shell-only 回合不静默跳过，在清单展示未恢复原因；普通 undo 排除 pre-undo；获取进程内 session gate 后立即获取跨进程会话文件锁；root 只接受 `sessions.cwd` 与持久化 `:rw` 目录等值，不能用当前 cwd/祖先包含关系；生成恢复/删除/冲突/不可恢复、shell 命令与后台 task 提示的清单；已 undone/partial 幂等状态明确。
+- 文件：`internal/personal/undo.go`（新）、store turns/session 读取及测试；必要时 `internal/personal/redact` 的既有脱敏入口。
+- 动作：按 DB `started_at,id` 选最近 N 个未 undone 且有快照的回合；shell-only 回合不静默跳过，在清单展示未恢复原因。shell 来源固定为 store 中 `kind=tool`、`name=shell_exec` 的事件 attrs，最多 5 条并经 `redact.Secrets` 脱敏；清单展示恢复/删除/冲突/不可恢复、shell 命令和后台 task 提示。普通 undo 排除 pre-undo，已 undone/partial 幂等状态明确。
 - 验证命令：`go test -race ./internal/personal/...`。
-- 完成标准：最近 N 语义、turn 排序、前缀 session、锁忙、只读会话允许回滚、shell-only 展示、root 可信矩阵和清单统计通过。
-- 反向验证方法：临时按当前 CLI cwd 或祖先包含判断 root，篡改 session cwd 测试必须失败；临时跳过 shell-only 回合，清单连续回合语义测试必须失败；临时允许锁等待，锁立即失败测试必须失败。
-- 预计改动规模：L（3–6 个 Go 文件、500–800 行含测试）。
-- 依赖/并行：T3 后；T5 依赖清单模型。
+- 完成标准：最近 N 语义、turn 排序、前缀 session、shell-only 连续回合、5 条截断/脱敏、清单统计通过。
+- 反向验证方法：临时跳过 shell-only 回合或移除脱敏，连续回合/敏感命令断言必须失败。
+- 预计改动规模：M（3–5 个 Go 文件、300–500 行含测试）。
+- 依赖/并行：T3 后；T4b 依赖清单模型。
 
-### T5 冲突检测、pre-undo 与逆序恢复
+### T4b session gate、既有会话锁与不依赖 Provider 的 undo 核心
 
-- 文件：`internal/personal/undo.go`、native 路径/恢复辅助、测试；必要时仅增加可复用的导出 root 适配。
-- 动作：按调用逆序恢复；当前内容等于 before 时幂等跳过，等于 after 时可恢复，否则默认 conflict 跳过；`--force` 只覆盖内容冲突，不绕过 root、rel、真实路径、文件类型、symlink/hardlink、protected path、before hash；恢复 absent 删除新文件；trash 恢复核对 origin、原位置存在即冲突；purged/过期 trash 列 unrecoverable；回滚写盘前建立独立 pre-undo 快照；符号链接按链接本身安全重建；逐文件失败保持 partial 并继续安全项。
-- 验证命令：`go test -race ./internal/personal/... ./pkg/agentcore/tools/native/...`。
-- 完成标准：同路径多写逆序、before/after/第三种内容三态、force、幂等、删除/恢复、symlink/hardlink/special、受保护路径、过期 trash、逐文件失败和 partial 状态全部通过；不会恢复到错误 root。
-- 反向验证方法：临时默认 force，人工修改文件后默认 undo 用例必须失败；临时让 force 跳过 root/type 校验，越界/symlink 用例必须失败；临时正序恢复同路径多写，最终内容断言必须失败。
-- 预计改动规模：XL（4–7 个 Go 文件、700–1000 行含测试；若接近 1000 行先拆分）。
-- 依赖/并行：T4 后。
+- 文件：`internal/personal/undo.go`、`runner.go`、`gate.go`、`internal/personal/process/lock.go`、`internal/cli/gc.go` 可复用的 store 打开方式及测试。
+- 动作：核心函数只依赖 store、sessions 根、现有 `run/locks` lockRoot 与可选 gate，不创建新锁，也不构造 Provider；Runner 的 `Undo`/`Checkpoints` 只做薄包装供 chat 使用，CLI 直接 `openCoreStore()` 调核心。先获取进程内 session gate 以抢占空闲整理；chat 已在 `heldLocks` 持有该 session 的锁时直接复用，不能再次获取同一锁；否则用现有 `process.AcquireSessionLock(lockRoot, sid, 0)` 零等待。CLI/run/ACP 回合持锁时立即返回会话忙，退出码 5。
+- 动作（续）：root 只接受 `sessions.cwd` 与持久化 `:rw` 目录等值，不能用当前 cwd/祖先包含关系；cwd 变更或 `:rm-dir` 移除附加目录后，旧 checkpoint 必须在清单中显示“会话目录已变更/附加目录已移除，无法恢复”，而不是笼统冲突。复用审批规则计划 owner 的受保护路径判定。
+- 验证命令：`go test -race ./internal/personal/... ./internal/cli/...`；主机 gofer exec job：`go test -count=1 ./internal/personal/...`（锁/Windows 文件锁专项）。
+- 完成标准：chat 持锁时 `:undo` 可执行；chat/run 回合进行中 CLI undo 返回 5；未配置 Provider 时 `suga undo --list` 的核心单测/命令可用；只读会话、root 可信矩阵、cwd/:rm-dir 明确提示和锁顺序通过。
+- 反向验证方法：临时再次打开 held lock、允许 CLI 等待、按当前 CLI cwd 或祖先判断 root，锁忙/持锁 chat/cwd 变化用例必须失败。
+- 预计改动规模：M（4–6 个 Go 文件、350–550 行含测试）。
+- 依赖/并行：T4a 后；T5a 依赖核心接口。
 
-### T6 回滚通知、`EventUndo` 与 trace attrs
+### T5a 内容恢复、逆序与幂等
 
-- 文件：`internal/personal/context.go`、`tasks.go`/`steer.go` 可复用的待投递队列、`store/types.go`、entries/events、`observe.go`、`trace.go` 及测试。
-- 动作：回滚成功后写入会话待投递事实通知；下一回合创建 `suga.undo` metadata 的 injected entry 并加入 `injectedItemKeys`，按 seq 回放但不自动开回合；中断回合的工具回放完成后再注入；新增 `EventUndo` 及 attrs `turns/restored/deleted/skipped/unrecoverable/files/forced/entry_seq`；快照失败/清理单独事件按设计，不新增逐调用 snapshot event；通知中明确 shell 未涵盖、不要重做、需先重读。
+- 文件：`internal/personal/undo.go`、测试；必要时 native 恢复辅助。
+- 动作：按调用逆序恢复；当前内容等于 before 时幂等跳过，等于 after 时可恢复，否则默认 conflict 跳过；`--force` 只覆盖内容冲突，不绕过 before hash；恢复 absent 删除新文件；回滚写盘前建立独立 pre-undo 快照。
+- 验证命令：`go test -race ./internal/personal/...`。
+- 完成标准：同路径多写逆序、before/after/第三种内容三态、force、幂等、pre-undo 全部通过。
+- 反向验证方法：临时默认 force 或正序恢复，同路径/手工修改断言必须失败。
+- 预计改动规模：M（3–5 个 Go 文件、350–550 行含测试）。
+- 依赖/并行：T4b 后；T5b 依赖本任务。
+
+### T5b 删除类恢复与跨卷 trash
+
+- 文件：`internal/personal/undo.go`、`pkg/agentcore/tools/native/remove.go` 的最小共享 helper、测试。
+- 动作：trash 恢复核对 origin、原位置存在即冲突；purged/过期 trash 列 unrecoverable；absent 删除新文件；混合/过期状态保持 partial。trash 恢复复用 `remove` 的 rename→copy 跨卷回退；Windows 共享冲突重试按逐文件失败计入 partial，大小写变体合并为同一目标并单独报告。
+- 验证命令：`go test -race ./internal/personal/... ./pkg/agentcore/tools/native/...`；主机 gofer exec job：`go test -count=1 ./internal/personal/... ./pkg/agentcore/tools/native/...`。
+- 完成标准：删除/恢复、origin、absent、purged/混合/过期、跨卷、共享冲突和大小写变体用例通过；不改变 trash 7 天语义。
+- 反向验证方法：临时复制第二份 trash、跳过 origin 校验或把 purged 标成可恢复，安全/部分恢复用例必须失败。
+- 预计改动规模：M（3–5 个 Go 文件、350–550 行含测试）。
+- 依赖/并行：T5a 后；T5c 依赖本任务。
+
+### T5c 身份、链接、特殊文件与保护路径
+
+- 文件：`internal/personal/undo.go`、native 路径/恢复辅助、测试；调用审批规则计划导出的 protected-path 判定。
+- 动作：恢复前校验 root/rel/real_rel、文件类型、symlink/hardlink/special、before hash；符号链接按链接本身安全重建；`--force` 不绕过 root、类型、链接、受保护路径校验；受保护路径由审批规则 owner 统一判定。逐文件失败保持 partial 并继续安全项。
+- 验证命令：`go test -race ./internal/personal/... ./pkg/agentcore/tools/native/...`；主机 gofer exec job：`go test -count=1 ./internal/personal/... ./pkg/agentcore/tools/native/...`（Windows root/链接/大小写与共享冲突）。
+- 完成标准：symlink/hardlink/special、受保护路径、越界 root、大小写变体与逐文件失败全部通过，不会恢复到错误 root；主机输出可追溯。
+- 反向验证方法：临时让 force 跳过 root/type/protected 校验，越界/链接/保护路径用例必须失败。
+- 预计改动规模：M（3–5 个 Go 文件、350–550 行含测试）。
+- 依赖/并行：T5b 后。
+
+### T6a 回滚通知与 `EventUndo`
+
+- 文件：`internal/personal/context.go`、`tasks.go`/`steer.go` 可复用的待投递队列、`internal/personal/store/types.go`、entries/events、`trace.go` 及测试。
+- 动作：回滚成功后写入会话待投递事实通知；下一回合创建 `suga.undo` metadata 的 injected entry 并加入 `injectedItemKeys`，按 seq 回放但不自动开回合；中断回合的工具回放完成后再注入；新增 `EventUndo` 及 turns/restored/deleted/skipped/unrecoverable/files/forced/entry_seq attrs；通知明确 shell 未涵盖、不要重做、需先重读。
 - 验证命令：`go test -race ./internal/personal/...`；必要时 `go test -race ./internal/cli/...`。
 - 完成标准：条目不被当作真实 user request、段交接/压缩保留注入属性、下一回合可见且不自动运行、事件 attrs 可由 `suga trace --json` 读取；无数据库迁移。
-- 反向验证方法：临时把 undo 条目当真实 user message，recentRequests/injectedItemKeys 测试必须失败；临时自动启动回合，待投递不自动运行测试必须失败；临时不写 EventUndo，trace 断言必须失败。
-- 预计改动规模：M/L（5–8 个 Go 文件、450–800 行含测试）。
-- 依赖/并行：T5 后；T7 可并行。
+- 反向验证方法：临时把 undo 条目当真实 user message 或自动启动回合，回放/待投递测试必须失败。
+- 预计改动规模：M（4–6 个 Go 文件、350–550 行含测试）。
+- 依赖/并行：T5c 后；T6b 依赖本任务。
+
+### T6b tool 事件快照 attrs 与观测
+
+- 文件：`internal/personal/observe.go`、`trace.go` 及测试；必要时 `pkg/agentcore/tools/native` 的 ctx 上报适配。
+- 动作：建立与 `tools.WithApprovalReport` 同构的 ctx 上报通道，把 native 快照结果投影到现有 tool event attrs，不新增逐调用 snapshot event。attrs 固定包含 `snapshot`（kind、状态、字节数、不可撤销原因）；快照失败/清理仍按设计写独立事件；不得把快照内容写入模型上下文/transcript/export。
+- 验证命令：`go test -race ./internal/personal/... ./pkg/agentcore/tools/native/...`。
+- 完成标准：tool 事件能看到 complete/oversize/incomplete 等快照属性、字节数和不可撤销原因；`suga trace --json` 与 smoke 断言通过；反向去掉 attr 后断言失败。
+- 反向验证方法：临时不把 ctx report 投影到 tool event 或只记录 EventUndo，tool 事件快照属性断言必须失败。
+- 预计改动规模：M（3–5 个 Go 文件、300–500 行含测试）。
+- 依赖/并行：T6a 后；T7 可并行。
 
 ### T7 wiring 配置、快照装配与 gc 统计
 
 - 文件：`internal/wiring/capabilities.go`、`runtime.go`、`internal/config/`、`config/config.yaml`、`internal/personal/store/gc.go`、`internal/cli/gc.go`、配置测试。
-- 动作：新增 `tools.snapshots.enabled`、`max_file_bytes`、`max_session_bytes`、`max_global_bytes`、`keep_turns`、`keep_days`、`on_error`（deny/continue）与 `chat.undo_confirm` 默认值；读取并校验上限/枚举；将 `SessionSnapshots` 注入 native.Env，run/chat/ACP 共享写工具快照，子 agent 无写工具无快照；启动和 `suga gc` 触发全局清理；gc 报告包含 snapshots 字节；关闭开关不写快照但命令仍存在。
+- 动作：新增 `tools.snapshots.enabled`、`max_file_bytes`、`max_session_bytes`、`max_global_bytes`、`keep_turns`、`keep_days`、`on_error`（deny/continue）与 `chat.undo_confirm` 默认值；明确 `max_global_bytes` 默认 1 GiB；读取并校验上限/枚举；将 `SessionSnapshots` 注入 native.Env，run/chat/ACP 共享写工具快照，子 agent 无写工具无快照；启动和 `suga gc` 触发全局清理；gc 报告包含 snapshots 字节；关闭开关不写快照但命令仍存在。run 发生快照目录不可写、清理不确定或锁失败时默认 fail-closed，gofer 派发的 `suga run` 也适用。
 - 验证命令：`go test -race ./internal/wiring/... ./internal/config/... ./internal/personal/... ./internal/cli/... ./pkg/agentcore/tools/native/...`。
 - 完成标准：默认值与设计一致、坏配置启动失败、enabled false 旧行为、on_error continue 明确不可撤销、gc 删除 session 时涵盖 snapshots、run/ACP/chat 装配一致；无 migration 文件改动。
 - 反向验证方法：临时将默认 on_error 改 continue，快照目录不可写测试必须失败；临时只给 chat 注入快照器，run/ACP 共享装配测试必须失败；临时把 keep_days 延长 trash 保留，删除恢复窗口测试必须失败。
 - 预计改动规模：M/L（5–8 个 Go/config 文件、450–750 行含测试）。
-- 依赖/并行：T3/T5 后；可与 T6 并行。
+- 依赖/并行：T3、T5c 后；可与 T6a/T6b 并行。
 
 ### T8 chat `:checkpoints`/`:undo`、确认交互与 ptysmoke
 
-- 文件：`internal/chat/chat.go` 命令分发、`chat_commands.go`/`layout.go` 帮助、chat undo 渲染/确认测试、`scripts/ptysmoke/chat_undo.py`（新）、`scripts/ptysmoke/fakellm.py`（仅必要 edit 模式扩展）、`scripts/ptysmoke/chat_edit.py`、`Makefile`、ptysmoke README。
-- 动作：只在提示符处识别 `:checkpoints`、`:undo`、`:undo N`、`force`；回合进行中以 `:` 开头的整行退回输入框并提示等待，绝不 steering；外部 send/hook/task 文本永不当命令；清单展示恢复/删除/冲突/不可恢复/shell/git；确认默认取消，`chat.undo_confirm` 默认开；调用 Runner 核心并打印结果。`chat_undo.py` 用 `PtySession` 驱动真实二进制/fakellm edit：写文件→checkpoints→undo 清单→确认→磁盘恢复→下一回合收到 `suga.undo`→`suga trace --json` 断言 EventUndo/attrs；覆盖新建、编辑、删除、冲突、force、shell 提示、无快照与回合中命令。
+- 文件：`internal/chat/chat.go` 命令分发、`chat_commands.go`、`layout.go`、`autocomplete.go`（命令补全）、chat undo 渲染/确认测试、`scripts/ptysmoke/chat_undo.py`（新）、`scripts/ptysmoke/fakellm.py`（仅必要 edit 模式扩展）、`scripts/ptysmoke/chat_edit.py`、`Makefile`、ptysmoke README。
+- 动作：只在提示符处识别 `:checkpoints`、`:undo`、`:undo N`、`force`；回合进行中以 `:` 开头的整行退回输入框并提示等待，绝不 steering；外部 send/hook/task 文本永不当命令；清单展示恢复/删除/冲突/不可恢复/shell/git；确认默认取消，`chat.undo_confirm` 默认开；调用不依赖 Provider 的 undo 核心并打印结果。`chat_undo.py` 用 `PtySession` 驱动真实二进制/fakellm edit：写文件→checkpoints→undo 清单→确认→磁盘恢复→下一回合收到 `suga.undo`→`suga trace --json` 断言 EventUndo、tool event 的 snapshot attrs 与结果 attrs；覆盖新建、编辑、删除、冲突、force、shell 提示、无快照、cwd/:rm-dir 旧快照提示与回合中命令。
 - 验证命令：`python scripts/ptysmoke/chat_undo.py`；`make smoke-chat`。
-- 完成标准：新场景与 `chat_edit.py`、`chat_approval.py` 全通过；文件内容、命令语义、提示符、trace、通知和返回状态可证伪；Windows 不以 Linux PTY 结果冒充，另记主机验证。
+- 完成标准：新场景与 `chat_edit.py`、`chat_approval.py` 全通过；文件内容、命令语义、补全、提示符、trace（含 snapshot attrs）、通知和返回状态可证伪；Windows 不以 Linux PTY 结果冒充，另记主机验证。
 - 反向验证方法：临时关闭/跳过快照 `BeforeCall`，`chat_undo.py` 的恢复断言必须失败；临时让回合中 `:undo` 进入 steering，场景必须发现模型收到该文本；临时把确认默认改为执行，回车取消断言必须失败；新场景正式纳入 Makefile 前先去掉被测逻辑做一次反向运行。
 - 预计改动规模：L（5–9 个 Go/Python/Make 文件、550–900 行）。
 - 依赖/并行：T4–T7；可与 T9 并行实施，但合入前共享 Runner API。
@@ -196,9 +244,9 @@
 ### T9 `suga undo` CLI
 
 - 文件：`internal/cli/undo.go`（新）、`internal/cli/root.go`、CLI session 解析/`stats.go` 可复用、CLI 测试、必要的 trace/help 文案。
-- 动作：注册 `suga undo <session>`，支持 `--list`/`--turn <id>`/`-n`/`--force`/`--yes`/`--json`；session 完整 id/前缀；破坏性操作无 `--yes` 时非终端拒绝；`--force` 必须与 `--yes` 或二次确认绑定；复用 store/Runner undo，不调用模型但写 `suga.undo` 待投递通知；退出码 0/3/4/5 按设计；会话忙立即返回。
+- 动作：注册 `suga undo <session>`，支持 `--list`/`--turn <id>`/`-n`/`--force`/`--yes`/`--json`；session 完整 id/前缀；破坏性操作无 `--yes` 时非终端拒绝；`--force` 必须与 `--yes` 或二次确认绑定；参照 `suga gc` 直接 `openCoreStore()`，调用不依赖 Provider 的 undo 核心，不构造 `personal.New`/Runner provider；写 `suga.undo` 待投递通知；退出码 0/3/4/5 按设计；会话忙立即返回。
 - 验证命令：`go test -race ./internal/cli/... ./internal/personal/...`；临时 SUGA_HOME 下运行 `go run ./cmd/suga undo <sid> --list --json` 与 `--yes`。
-- 完成标准：list/json、指定回合、N、force/yes、前缀、无快照、会话不存在、忙锁退出码及通知均通过；CLI 与 chat 结果一致。
+- 完成标准：list/json、指定回合、N、force/yes、前缀、无快照、会话不存在、忙锁退出码及通知均通过；未配置 Provider 时 `suga undo --list` 可用；CLI 与 chat 结果一致。
 - 反向验证方法：临时允许无 `--yes` 的破坏性调用，安全测试必须失败；临时让 CLI 绕过 session lock，忙锁测试必须失败；临时不写通知，CLI 后续回合注入测试必须失败。
 - 预计改动规模：M（3–5 个 Go 文件、300–550 行含测试）。
 - 依赖/并行：T4–T7；可与 T8 并行。
@@ -206,9 +254,9 @@
 ### T10 文档、真实验证与全量回归
 
 - 文件：`README.md`、`README.zh-CN.md`、`config/config.yaml`（若 T7 未完成注释）、`CHANGELOG.md`、相关 usage/skills 参考；不修改设计正文。
-- 动作：说明快照目录/敏感性、支持的写工具、上限/保留、冲突/force、删除/trash、shell 边界/git 提示、chat 命令与确认、CLI 参数/退出码、只读会话、ACP/run 共享快照、关闭开关和无迁移兼容；以真实 provider 跑一轮带 file_write/file_edit/file_remove 的对话并检查 trace/磁盘；执行容器、主机和 pty 全量验证，汇总未执行环境。
+- 动作：说明快照目录/敏感性、支持的写工具、上限/保留（`max_global_bytes` 默认 1 GiB）、oversize 不可撤销提示、冲突/force、删除/trash、shell 边界/git 提示、chat 命令/补全与确认、CLI 参数/退出码、只读会话、ACP/run 共享快照、run fail-closed、cwd/:rm-dir 后旧快照提示、关闭开关和无迁移兼容；CHANGELOG 预告 gofer `suga run` 在快照不可写/状态不确定时拒绝写入；以真实 provider 跑一轮带 file_write/file_edit/file_remove 的对话并检查 trace/磁盘；执行容器、主机和 pty 全量验证，汇总未执行环境。
 - 验证命令：容器 `gofmt -l $(git ls-files "*.go")`、`go vet ./...`、`go test -race ./...`、`make smoke-chat`；主机 `go test -count=1 ./...`、`staticcheck ./...`；真实 provider 带工具调用；`suga trace <sid> --json` 检查 undo；Windows 通过 gofer exec job。
-- 完成标准：所有命令 exit code 与原始输出为成功；文档不承诺 shell 自动回滚或延长 trash；真实验证有会话/trace 证据，无法执行则明确 `UNVERIFIED_REAL_ENV`。
+- 完成标准：所有命令 exit code 与原始输出为成功；文档不承诺 shell 自动回滚或延长 trash；默认值、单文件超限提示和 gofer run 影响与配置一致；真实验证有会话/trace 证据，无法执行则明确 `UNVERIFIED_REAL_ENV`。
 - 反向验证方法：不新增业务逻辑；以 T8 的快照关闭反向运行、T9 的安全参数反向运行和全量兼容测试作为 Gate，任何反向检查不失败都阻止完成。
 - 预计改动规模：M（5–8 个文档/配置文件；无新业务代码）。
 - 依赖/并行：T8、T9、T7 全部完成。
@@ -224,7 +272,7 @@
 
 ## 人工 Gate
 
-1. 用户审阅并批准本 Draft 0.1；批准计划不授权扩展到 shell 自动回滚、ACP 内 undo 或备份恢复。
+1. 用户审阅并批准本 Draft 0.2；批准计划不授权扩展到 shell 自动回滚、ACP 内 undo 或备份恢复。
 2. T3–T5 完成后进行安全存储 Gate：核对权限、root 可信来源、锁顺序、冲突默认跳过、force 不越界、trash 7 天不变。
 3. T8 完成后审阅 ptysmoke 场景和反向验证；交互行为不留给人工 chat 验证。
 4. T10 的真实 provider、Windows 主机 job 是外部环境 Gate；无法执行时交付说明必须列出 `UNVERIFIED_REAL_ENV`。
@@ -235,33 +283,33 @@
 | 设计条目 / 定稿选项 | 任务 | 验证 |
 |---|---|---|
 | D1 会话目录存储、Q1 `:undo`/`:checkpoints`/开关 | T3、T7、T8、T9 | 布局/权限测试；chat/CLI；旧 session 兼容 |
-| D2 每次写调用前快照、同路径逆序、file_edit 复用原文 | T1、T2、T3、T5 | fake hook、重复写/逆序/读取计数测试 |
-| D3 shell 改动只提示、Q4 G1 | T4、T8、T10 | 清单/结果行 shell 与 trace/git 提示；真实写命令回归不误报 |
-| D4 file_remove 复用 trash、Q5 部分恢复/固定 7 天 | T2、T5、T7、T10 | trash/origin、purged/混合/过期测试；文档 |
-| D5 冲突默认跳过、`--force` 仅内容冲突 | T5、T8、T9 | before/after/第三内容矩阵；force 不越界反向 |
+| D2 每次写调用前快照、同路径逆序、file_edit 复用原文 | T1、T2、T3、T5a | fake hook、重复写/逆序/读取计数测试 |
+| D3 shell 改动只提示、Q4 G1 | T4a、T8、T10 | 清单/结果行 shell 与 trace/git 提示；真实写命令回归不误报 |
+| D4 file_remove 复用 trash、Q5 部分恢复/固定 7 天 | T2、T5b、T7、T10 | trash/origin、purged/混合/过期测试；文档 |
+| D5 冲突默认跳过、`--force` 仅内容冲突 | T5a、T5c、T8、T9 | before/after/第三内容矩阵；force 不越界反向 |
 | D6 chat `:` 与 CLI，ACP 不做，Q6 CLI 完整参数/退出码 | T8、T9 | ptysmoke、CLI 表驱动与退出码 |
 | D7 快照失败默认 deny、`on_error: continue` 例外 | T1、T2、T7 | 不可写/清理/锁失败在 I/O 前拒绝；continue 明示不可撤销 |
-| D8 `suga.undo` 通知 + EventUndo、不自动开回合 | T6、T8、T9 | context 回放/injectedItemKeys、trace JSON、下一回合模型消息 |
+| D8 `suga.undo` 通知 + EventUndo、不自动开回合 | T6a、T8、T9 | context 回放/injectedItemKeys、trace JSON、下一回合模型消息 |
 | D9 20 回合/7 天/会话与全局上限，Q2 16/256 MiB | T3、T7 | 清理/上限/GC 统计测试；文档 |
-| D10 pre-undo、不做 redo | T3、T5、T8 | pre-undo 目录与状态测试；无 redo 命令断言 |
-| root/安全校验、Q8 可信 cwd 与 `:rw` 等值 | T4、T5、T7 | 篡改 cwd、symlink/hardlink、protected path、附加目录矩阵 |
-| Q3 只读会话允许 undo | T4、T7、T8 | 只读运行仍可恢复自身快照，非自身路径拒绝 |
-| 存储/兼容：无 DB 迁移、不进上下文/export/transcript | T3、T6、T7、T10 | migration 未改；导出/trace/transcript 检查；老 session 测试 |
+| D10 pre-undo、不做 redo | T3、T5a、T8 | pre-undo 目录与状态测试；无 redo 命令断言 |
+| root/安全校验、Q8 可信 cwd 与 `:rw` 等值 | T4b、T5c、T7 | 篡改 cwd、symlink/hardlink、protected path、附加目录矩阵 |
+| Q3 只读会话允许 undo | T4b、T7、T8 | 只读运行仍可恢复自身快照，非自身路径拒绝 |
+| 存储/兼容：无 DB 迁移、不进上下文/export/transcript | T3、T6a、T6b、T7、T10 | migration 未改；导出/trace/transcript 检查；老 session 测试 |
 | 运行时范围：run/ACP 写照常快照，ACP 无内置 undo，子 agent 只读 | T7、T9、T10 | wiring 模式矩阵；文档；CLI 回滚会话 |
 | 设计 non_goals 与 suga-zy9f 边界 | 全部任务、T10 | 范围审阅；无 shell git 回滚/backup/spill 压缩改动 |
 
 ## 待确认/风险（设计已批准的选项，不在实施中重新改语义）
 
-- 当前 native 路径解析 helper 未提供完整稳定的 `(root, rel, real_rel)` 外部契约；T1/T5 必须先建立最小导出适配。若会导致改变沙箱语义，停止返回设计 Gate。
-- `file_remove` 的 trash entry 只有成功后才知道，且忽略目录可能永久删除；T2/T5 必须保持 pending/incomplete 与混合部分恢复的一致性，不能用“复制第二份快照”绕开设计。
-- 设计要求 Runner gate→跨进程锁，但当前实现/锁文件细节若与此不一致，先核对 `runner.go`/`process/lock.go`，不自行改成等待或反序。
-- `suga gc` 当前删除整个 sessions 目录但不统计 snapshots 字节；T7 只增加统计，不能顺手引入 suga-zy9f 的压缩、backup/restore 或新的 GC 参数。
+- 当前 native 路径解析 helper 未提供完整稳定的 `(root, rel, real_rel)` 外部契约；T1/T5c 必须先建立最小导出适配。若会导致改变沙箱语义，停止返回设计 Gate。
+- `file_remove` 的 trash entry 只有成功后才知道，且忽略目录可能永久删除；T2/T5b 必须保持 pending/incomplete 与混合部分恢复的一致性，不能用“复制第二份快照”绕开设计。
+- 现有会话锁位于 `$SUGA_HOME/run/locks`，chat 由 `heldLocks` 记录；T4b 必须复用它，不能另建会话目录锁或二次打开同一进程锁。CLI 零等待，拿不到为退出码 5；若事实不符，停止返回计划 Gate。
+- `suga gc` 当前删除整个 sessions 目录但不统计 snapshots 字节；T7 只增加统计，不能顺手引入 suga-zy9f 的压缩、backup/restore 或新的 GC 参数。`max_global_bytes` 默认 1 GiB 的配置与清理行为必须在 T3/T7/T10 一致。
 - 后台 task 可能在 undo 后继续改文件；清单/结果必须列 task id 或风险，不能声称 undo 覆盖 shell/background 改动。
 - Windows 的文件锁、权限、大小写和 symlink 能力可能与 Linux 不同；主机 job 失败需记录具体输出并标 `UNVERIFIED_REAL_ENV` 或返回修复 Gate，不删掉安全校验。
 
 ## 完成 Gate
 
-- T0–T10 的依赖任务全部完成并按功能点提交；最终 `git status --short` 无夹带，`git diff --check` 无输出。
+- T0–T10（含 T4a/T4b、T5a/T5b/T5c、T6a/T6b）的依赖任务全部完成并按功能点提交；最终 `git status --short` 无夹带，`git diff --check` 无输出。
 - 三个写工具、SessionSnapshots、Runner undo、通知/trace、chat/CLI、配置/gc 均有直接测试；每个反向验证都确认移除被测逻辑后会失败。
 - 容器 `gofmt -l`、`go vet`、`go test -race ./...`、`make smoke-chat`；主机 `go test -count=1 ./...`、`staticcheck ./...`；真实 provider 带工具调用或明确 `UNVERIFIED_REAL_ENV`，所有原始输出可追溯。
 - 设计每个 D/Q、兼容规则、存储边界、非目标和安全不变量均能定位到任务与验证；不存在数据库迁移或未批准的协议/产品语义。
