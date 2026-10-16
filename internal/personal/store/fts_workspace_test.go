@@ -18,7 +18,7 @@ func TestFTSWorkspaceAndCurrentScope(t *testing.T) {
 		cwd   string
 		agent bool
 	}{
-		{"current", "", false},
+		{"current", filepath.Join(string(filepath.Separator), "outside"), false},
 		{"exact", root, false},
 		{"trailing", root + string(filepath.Separator), false},
 		{"sub", filepath.Join(root, "sub"), false},
@@ -36,7 +36,7 @@ func TestFTSWorkspaceAndCurrentScope(t *testing.T) {
 		appendAll(t, s, tc.id, user(t, "workspace token in "+tc.id))
 	}
 
-	t.Run("workspace uses SQL path boundaries and keeps current without cwd", func(t *testing.T) {
+	t.Run("workspace uses SQL path boundaries and keeps current outside cwd", func(t *testing.T) {
 		got := hitKeys(search(t, s, EntrySearch{Query: "workspace token", WorkspaceDir: root, CurrentSessionID: "current"}))
 		assert.Eq(t, []string{"current/1", "exact/1", "sub/1", "trailing/1"}, got)
 	})
