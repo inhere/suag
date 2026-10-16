@@ -75,7 +75,7 @@
 3. 核对 `entries_fts` migration、`TestFTSExpressionsMatchMigration`、`AppendEntries` 同事务写索引的事实；确认实施不添加 migration、不触碰 rowid 对齐和 GC 语义。
 4. 用真实驱动确认本计划依赖的 SQL 形态：`MATCH` 只接收 >=3 rune 的引号化词，LIKE 全部参数化，时间使用 store 的 `timeLayout`，cwd 边界使用绑定参数；不要用 mock 推断查询计划。
 5. 盘点 `LedgerSearcher`、`SearchEntries`、`workspaceSessions`、`SessionCwds` 的所有调用者；任何未发现调用者的 API 删除都必须记录，不能因“当前唯一调用点”而顺手清理。
-6. **待用户确认的结果排除规则**：按现有 `api.Message` 的 `role` 与 `ToolCall.Name`，候选谓词为 `NOT (f.role = 'tool' AND json_extract(e.json, '$.ToolCall.Name') IN ('session_search', 'recall'))`；建议同时排除 `session_search` 与 `recall`，不额外猜测 `IsError` 条件。批准本计划时一并确认该谓词；确认后由 T1 加入参数化 SQL 与守卫测试，T5 验证工具层结果，未确认不得实施该条件。
+6. **结果排除规则（用户 2026-10-16 已定：两者都排除）**：按现有 `api.Message` 的 `role` 与 `ToolCall.Name`，候选谓词为 `NOT (f.role = 'tool' AND json_extract(e.json, '$.ToolCall.Name') IN ('session_search', 'recall'))`；同时排除 `session_search` 与 `recall`，不额外猜测 `IsError` 条件；由 T1 加入参数化 SQL 与守卫测试，T5 验证工具层结果，未确认不得实施该条件。
 7. 运行基线：`go test -race ./internal/personal/store/... ./internal/personal/... ./pkg/agentcore/tools/native/...`；失败先归因，不把基线失败算作本计划完成。
 
 ## 波次与依赖
@@ -221,7 +221,7 @@
 
 ## 待确认 / 风险
 
-- **待用户确认**：批准本计划时请确认候选谓词 `role=tool` 且 `ToolCall.Name IN (session_search, recall)`，建议两者都排除；确认后 T1 使用参数化 SQL，T5 固定工具层守卫测试。若用户不批准该候选，需要回到设计 Gate 修订范围，不在实施中另猜条件。
+- **已定（用户 2026-10-16）**：排除谓词 `role=tool` 且 `ToolCall.Name IN (session_search, recall)`，两者都排除。
 - `lower()` 在 Windows 非 ASCII 路径上不完全等价于 Go `strings.ToLower`；按 Q3 接受并固定测试，不扩大为精判方案。
 - 快照最多 500 条意味着超过上限的结果不是完整集合；结果必须明确提示，不能把截断称为完整。
 - 进程重启/TTL/内存淘汰会使 cursor 从头开始；模型必须依据说明重新翻页。
