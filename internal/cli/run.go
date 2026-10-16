@@ -52,6 +52,10 @@ type personalOptions struct {
 	// AddDirs are this invocation's --add-dir values ("<absolute
 	// directory>[:ro|:rw]", default :ro); SUGA_ADD_DIRS is read alongside them.
 	AddDirs []string
+	// AllowCwdChange continues a resumed session in the current directory even
+	// when it was created in another one (--allow-cwd-change). Without it, a
+	// resume elsewhere is refused (chat asks first when it has a terminal).
+	AllowCwdChange bool
 	// setupSession runs once the session is open and before the first turn: the
 	// CLI publishes the session's added directories there.
 	setupSession func(ctx context.Context, sessionID string) error
@@ -78,6 +82,23 @@ func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptio
 	}
 	for _, warning := range warnings {
 		fmt.Fprintln(stderr, "warning: "+warning)
+	}
+	// A session continued in another directory is asked about (chat at a
+	// terminal) or refused (run, and chat reading a pipe) before the runtime is
+	// assembled: the workspace is fixed from here on, and no tool may run against
+	// the wrong directory. The check may move this process into the session's
+	// directory (chat's first choice), which everything below then follows.
+	current, err := effectiveWorkspace()
+	if err != nil {
+		return err
+	}
+	cwdAction, err := guardResumeCwd(ctx, opts, current, mode == "chat" && isTerminalInput(stdin), stdin, stderr)
+	if err != nil {
+		return err
+	}
+	if cwdAction == cwdCancelled {
+		fmt.Fprintln(stderr, "已取消，未改动任何数据。")
+		return nil
 	}
 	// Background tasks (write modes): chat wakes on a task end while it
 	// waits for input; the manager is closed (its tasks killed) before the
@@ -106,7 +127,17 @@ func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptio
 	// additional directories (the metadata of a resumed session) are published
 	// once it is known, before the first turn.
 	opts.setupSession = func(ctx context.Context, sessionID string) error {
-		return runtime.ApplyAddDirs(ctx, sessionID)
+		if err := runtime.ApplyAddDirs(ctx, sessionID); err != nil {
+			return err
+		}
+		if cwdAction != cwdUseCurrent {
+			return nil
+		}
+		// Continued here on purpose (chat's second choice, --allow-cwd-change):
+		// move the session's recorded directory with the process, so the listing
+		// and a later resume agree (and the trace shows the move).
+		_, err := runtime.Runner.AdoptSessionCwd(ctx, sessionID, current)
+		return err
 	}
 	if mode == "chat" {
 		var taskWake <-chan struct{}
@@ -151,6 +182,7 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.BoolVar(&opts.NoProjectRules, "no-project-rules", false, "skip project rule files for debugging")
 	cmd.Var((*cflag.Strings)(&opts.MCPConfigs), "mcp-config", "Claude-style JSON MCP server config")
 	cmd.Var((*cflag.Strings)(&opts.AddDirs), "add-dir", "extra absolute directory for this session as \"<directory>[:ro|:rw]\" (default :ro), repeatable; SUGA_ADD_DIRS adds more")
+	cmd.BoolVar(&opts.AllowCwdChange, "allow-cwd-change", false, "continue a resumed session in the current directory even if it was created in another one")
 	if mode == "run" {
 		cmd.BoolVar(&opts.Injected, "injected", false, "mark this turn's prompt as not typed by a person")
 		cmd.IntVar(&opts.MaxSteps, "max-steps", 0, "max tool steps in this turn, >= 1 (overrides SUGA_MAX_STEPS and max_steps); sub-agent agents.max_steps is unaffected")
