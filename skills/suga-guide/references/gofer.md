@@ -126,6 +126,7 @@ suga manifest --json                                       # 能力清单
 
 - `suga run --from <旧会话> --prompt ...`：新建会话并继承来源的摘要、计划与已加载工具（来源只读）。Gofer 侧目前没有对应模板变量，需要在 job 的 agent args 里手工写 `--from <session-id>`。
 - 会话不存在（`--resume` 目标或 `--from` 来源）：退出码 4，stderr `session not found: <id>`；被 Ctrl-C/SIGTERM 中断：退出码 130。
+- 换目录续接：会话原目录与当前工作目录不一致时，`run --resume`（含 Gofer job 的 `session_resume`）退出码 1，stderr 给出两个目录与两种做法：先 `cd <会话原目录>`，或给 args 加 `--allow-cwd-change` 在当前目录继续（同时把会话的 `sessions.cwd` 改到当前目录，并在 trace 写一条 `session_cwd_changed`）；`chat --resume`（`session_resume_interactive`）有终端时改为三选一询问，自动流程建议用 `--allow-cwd-change`。旧会话没有记录目录时不拦。
 - 旧版本的库（`suag.db`、`agentcore/` 目录）不读取、不迁移、不删除：旧会话 ID 无法 `--resume`，Gofer 里登记的旧 `session_family: suag` 会话也不能再被唤醒，需要新建会话。
 - 历史作业若用已移除的 `suag-cli` agent 键，不能直接用当前的 `suga` 键续接。
 

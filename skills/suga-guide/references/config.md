@@ -212,12 +212,15 @@
 ```text
 suga                      # 等价 suga chat（交互式对话）
 suga chat [--resume <id>|--session-id <id>] [--model <p/m>] [--thinking <level>] [--add-dir <目录>[:ro|:rw]]
+                          # 换目录续接时：有终端就问三选一（切到原目录 / 当前目录 / 取消）；
+                          # 非终端默认失败，--allow-cwd-change 直接在当前目录继续
 suga run --prompt "..."   # 单轮；[--allow-write] [--read-only] [--model] [--thinking]
                           # [--session-id <id>] [--resume <id>] [--from <id>]
                           # [--output-format text|stream-json] [--mcp-config <file>]
                           # [--append-system-prompt <text>] [--clear-append-system-prompt]
                           # [--no-project-rules] [--injected] [--max-steps <N>]
                           # [--add-dir <绝对目录>[:ro|:rw]]（可重复；也可用 SUGA_ADD_DIRS）
+                          # [--allow-cwd-change]（会话原目录与当前目录不一致时在当前目录继续）
 suga acp                  # 以 ACP stdio 服务（供 gofer 等客户端接入）
 suga send --session <id|短名称|前缀> --text <文本>   # 给正在运行的 chat 送话（--wait 等真正开始）
 suga ps                   # 正在运行的 chat 进程（第二列是短名称）
