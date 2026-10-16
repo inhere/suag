@@ -31,6 +31,7 @@
 - 排除：`max_output_tokens`、持久化配额账本、跨进程/跨会话共享池、按工具/skill/目录分组预算、自动模型降级、gofer 侧改动、`suga stats` 报表重做、ACP 新协议字段、`RunInput`/`RunResult` 新字段。
 - 估算只按设计复用现有字符/rune 估算器，不引入真实 tokenizer，不把估算宣称为计费真值。
 - 本计划只授权本地实施与按功能点本地提交；不 push、不 tag、不发版，不改 `.gofer/tracker`。
+- `host_or_non_offline_action=REQUIRED`（T9 含主机全量测试与真实 provider 核对；计划批准不自动授权这些出机器动作，需在人工 Gate 另行确认。）
 
 ## 输入与批准证据
 
@@ -45,29 +46,29 @@
 
 | capability_id | required_capability | searched_candidates | direct_reuse | thin_adapter_or_owner_extension | decision | proven_gap | duplication_and_lifecycle_risk |
 |---|---|---|---|---|---|---|---|
-| CAP-B01 | 预算配置与三级优先级 | `ReadMaxSteps`、`maxsteps_test`、`load.go` | 是 | 在 `internal/config` 原位新增 `ReadBudgetSettings` | DIRECT_REUSE | budget 多字段与 env 显式读取尚不存在 | 不复制 max-steps 解析约定；统一在 budget owner 中维护校验 |
-| CAP-B02 | 回合/会话用量计量 | `runUsageMeter`、`withSessionUsage`、`usageCollector` | 是 | `internal/personal` 增加 budget hook/快照 | OWNER_EXTENSION | 当前无主 agent 预算判定 | 继续使用现有 meter 与 `SumUsageTree`，不另造累计账本 |
-| CAP-B03 | 超限收尾 | `Control.RequestWrapUp`、runtime wrap-up、子 agent `limitHook` | 是 | budget hook 按同一 control seam 扩展 | DIRECT_REUSE | 需要 token/cost 双阈值与 BeforeRun short-circuit | first-wins 保证同一回合只请求一次收尾 |
-| CAP-B04 | provider 缺失用量估算 | `tokens.go`、provider Pool/compact 装配、observer | 部分 | 新增 `estimatingProvider`，放在 observer 内侧 | OWNER_EXTENSION | 现有估算只供窗口判断，未回填 GenerateResult | 所有 provider 构造路径统一包裹，避免口径分裂 |
-| CAP-B05 | 估算可观测性 | `GenerateResult.Metadata`、`llm.Attempt`、model/usage/trace 事件 | 部分 | API metadata 常量与 `Attempt.Estimated` 字段 | OWNER_EXTENSION | 当前 Attempt 无 estimated 字段 | 只增加可选字段，旧消费端保持兼容 |
-| CAP-B06 | 文本/JSON/chat/ACP 呈现 | `WrapUpNotice`、stream-json usage、trace attrs、`BuildTurnStatus`、ACP stop reason | 是 | 各 owner 增可选 budget 视图 | OWNER_EXTENSION | 当前无 budget 对象、提醒与成本原因 | 不改旧未配置输出；呈现由现有层负责，不新增跨层协议 |
-| CAP-B07 | 交互式预算验收 | `scripts/ptysmoke/fakellm.py`、`chat_observe.py`、`Makefile smoke-chat` | 部分 | 新增 `chat_budget.py` 与 fake usage 选项 | OWNER_EXTENSION | 当前无预算冒烟 | 与现有 PtySession/trace JSON 断言共用，不留人工验证 |
+| CAP-01 | 预算配置与三级优先级 | `internal/config/maxsteps.go:16-36` 的 `ReadMaxSteps`、`maxsteps_test.go:9-`、配置加载约定 | 是：复用 flag > env > config 的现有解析优先级 | 在 `internal/config` 原位新增 `ReadBudgetSettings` | DIRECT_REUSE | budget 多字段与 env 显式读取尚不存在 | 不复制 max-steps 解析约定；统一在 budget owner 中维护校验 |
+| CAP-02 | 回合/会话用量计量 | `internal/personal/usage.go:253-327` 的 `runUsageMeter`、`withSessionUsage`、usage 事件写入 | 是：现有 run/session meter 与子 agent forwarding 可复用 | `internal/personal` 增加 budget hook/快照 | OWNER_EXTENSION | 当前无主 agent 预算判定 | 继续使用现有 meter 与 `SumUsageTree`，不另造累计账本 |
+| CAP-03 | 超限收尾 | `pkg/agentcore/api/hooks.go:36-59` 的 `Control.RequestWrapUp`、`pkg/agentcore/runtime_wrapup.go:13-`、子 agent `limitHook` | 是：first-wins wrap-up control seam 直接复用 | budget hook 按同一 control seam 扩展 | DIRECT_REUSE | 需要 token/cost 双阈值与 BeforeRun short-circuit | first-wins 保证同一回合只请求一次收尾 |
+| CAP-04 | provider 缺失用量估算 | `internal/personal/tokens.go:10-83`、provider Pool/compact 装配、`pkg/agentcore/llm/observe.go:62-` | 部分：已有 rune/token 估算可复用，但没有 provider 返回值封装 | 新增 `estimatingProvider`，放在 observer 内侧 | MINIMAL_NEW_MODULE | 现有估算只供窗口判断，未回填 GenerateResult，Usage=0 无法进入 state/meter | 所有 provider 构造路径统一包裹，估算器只在 personal owner 生命周期内存在 |
+| CAP-05 | 估算可观测性 | `pkg/agentcore/api/provider.go:69-` 的 `GenerateResult`、`pkg/agentcore/llm/observe.go:10-50` 的 `Attempt`、model/usage/trace 事件 | 部分：GenerateResult metadata 与 Attempt observer 可复用 | API metadata 常量与 `Attempt.Estimated` 字段 | OWNER_EXTENSION | 当前 Attempt 无 estimated 字段 | 只增加可选字段，旧消费端保持兼容 |
+| CAP-06 | 文本/JSON/chat/ACP 呈现 | `internal/output/wrapup.go:9-29` 的 `WrapUpNotice`、`internal/chat/layout.go:181-219` 的 `BuildTurnStatus`、stream-json/trace/ACP owners | 是：现有 wrap-up、usage 与状态呈现 owner 直接复用 | 各 owner 增可选 budget 视图 | OWNER_EXTENSION | 当前无 budget 对象、提醒与成本原因 | 不改旧未配置输出；呈现由现有层负责，不新增跨层协议 |
+| CAP-07 | 交互式预算验收 | `scripts/ptysmoke/fakellm.py:1-49`、`scripts/ptysmoke/chat_observe.py:1-50`、`Makefile` smoke-chat | 部分：既有 PtySession/fakellm/trace 检查可复用 | 新增 `chat_budget.py` 与 fake usage 选项 | OWNER_EXTENSION | 当前无预算冒烟 | 与现有 PtySession/trace JSON 断言共用，不留人工验证 |
 
 ### New module candidates
 
 | candidate_id | capability_id | proposed_module | searched_candidates | direct_reuse_gap | thin_adapter_or_owner_extension_gap | proven_gap | unique_owner_and_lifecycle | deletion_or_merge_handling |
 |---|---|---|---|---|---|---|---|---|
-| NEW-B01 | CAP-B04 | `internal/personal/estimate.go: estimatingProvider` | `tokens.go`、provider 构造点 | 现有估算没有 provider 返回值封装 | 需要单一包装 seam | provider Usage=0 时无法进入 state/meter | provider 包装器唯一拥有补估算生命周期 | 若 provider 全部始终上报用量，仍保留可关闭实现；不复制到 observer |
+| NEW-01 | CAP-04 | `internal/personal/estimate.go`（`estimatingProvider`） | `internal/personal/tokens.go:10-83`、`pkg/agentcore/llm/observe.go:62-`、provider 构造点 | 现有估算没有 provider 返回值封装 | 需要单一包装 seam，并覆盖主、fallback、compact、子 agent provider | provider Usage=0 时无法进入 state/meter，且估算标记不能贯穿 metadata | provider 包装器唯一拥有补估算生命周期；estimate policy 由 budget 配置 owner 控制 | 若 provider 全部始终上报用量，仍保留可关闭实现；不复制到 observer |
 
 ### Rejected new tools
 
 | rejected_candidate | capability_id | deletion_test_and_reason |
 |---|---|---|
-| 在 `AfterTool` 中执行预算硬中断 | CAP-B03 | 当前内核会丢弃工具级 control；删除该方案不损失已批准行为，预算只在 `AfterModel` 检查。 |
-| 在 `usageCollector` 内直接估算 | CAP-B04/B05 | model 事件与 stream-json 会继续看到 0，口径分裂；删除该方案保持 D5 的单一 provider 包装器。 |
-| 新增 `RunInput`/`RunResult` 预算字段 | CAP-B03/B06 | `WrapUp`、事件与输出已能表达原因；删除字段避免内核契约扩张。 |
+| 在 `AfterTool` 中执行预算硬中断 | CAP-03 | 当前内核会丢弃工具级 control；删除该方案不损失已批准行为，预算只在 `AfterModel` 检查。 |
+| 在 `usageCollector` 内直接估算 | CAP-04 | model 事件与 stream-json 会继续看到 0，口径分裂；删除该方案保持 D5 的单一 provider 包装器。 |
+| 新增 `RunInput`/`RunResult` 预算字段 | CAP-03 | `WrapUp`、事件与输出已能表达原因；删除字段避免内核契约扩张。 |
 
-## 预检（preflight）
+## 前置检查（preflight）
 
 1. 读取设计 Draft 0.3 的状态行与 Q1–Q10；只有“全部按建议批准”仍成立才开始实施。若用户改变任何定稿选项，回到设计/计划 Gate，不在实施中自行改语义。
 2. 记录基线：Git root、当前分支与 HEAD、`git status --short`、目标 worktree/分支；确认本计划 owner 路径没有他人改动。发现冲突即停止。
