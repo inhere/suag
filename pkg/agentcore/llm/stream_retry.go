@@ -13,13 +13,28 @@ import (
 
 // streamReadError marks a stream that broke while being read: the connection
 // dropped mid-stream, or the body ended in the middle of a line (see
-// streamTruncatedError). It is the only failure retryStream retries: a parse
-// error or an API error inside the stream is not transient - the next request
-// would only get it again.
+// streamTruncatedError). It is a retryableStreamError, so retryStream requests
+// the whole answer again and the text of the broken attempt is void. A parse
+// error or a permanent API error inside the stream is not retried - the next
+// request would only get it again.
 type streamReadError struct{ err error }
 
 func (e *streamReadError) Error() string { return e.err.Error() }
 func (e *streamReadError) Unwrap() error { return e.err }
+
+// streamBrokenReason is the retry cause of a broken or cut stream; its text is
+// part of what chat and stream-json show, and a smoke check asserts on it
+// (scripts/ptysmoke/chat_retry.py).
+const streamBrokenReason = "stream broken"
+
+// retryReason implements retryableStreamError.
+func (e *streamReadError) retryReason() string { return streamBrokenReason }
+
+// giveUp implements retryableStreamError: the failure of a stream that broke on
+// every attempt of the request.
+func (e *streamReadError) giveUp(provider string, attempts int) error {
+	return fmt.Errorf("%s stream broke %d times: %w", provider, attempts, e)
+}
 
 // streamTruncatedError names a stream the provider did not finish: the
 // connection (a proxy, gateway or load balancer in between included) closed
@@ -41,8 +56,21 @@ func streamBodyError(provider string, err error) error {
 	return &streamReadError{fmt.Errorf("read %s stream: %w", provider, err)}
 }
 
+// retryableStreamError is a stream failure retryStream requests again from the
+// start of the answer: a stream that broke while being read (streamReadError),
+// or an API error the server itself reported as temporary (apiTransientError:
+// overloaded, rate limited, a server error). retryReason is the cause a
+// frontend shows before the wait; giveUp builds the error reported once the
+// attempts run out.
+type retryableStreamError interface {
+	error
+	retryReason() string
+	giveUp(provider string, attempts int) error
+}
+
 // retryStream runs one streamed request (attempt) and repeats it from the
-// start when it fails with a streamReadError, up to the policy's attempts
+// start when it fails with a retryableStreamError (a broken or cut stream, or a
+// temporary API error such as an overload), up to the policy's attempts
 // with b's waits. Each retry, including the HTTP retries inside attempt
 // (postWithRetry), is announced to emit as a StreamEventRetry before the
 // wait, so a frontend can tell the user why nothing happens. When the broken
@@ -69,16 +97,20 @@ func retryStream(ctx context.Context, b *backoff, provider string, emit agentcor
 	for n := 1; ; n++ {
 		sent = false
 		res, err := attempt(ctx, tracked)
-		var readErr *streamReadError
-		if err == nil || !errors.As(err, &readErr) || ctx.Err() != nil {
+		var retryErr retryableStreamError
+		if err == nil || !errors.As(err, &retryErr) || ctx.Err() != nil {
 			return res, err
 		}
 		if n >= b.attempts() {
-			return nil, fmt.Errorf("%s stream broke %d times: %w", provider, n, err)
+			return nil, retryErr.giveUp(provider, n)
 		}
+		// Both kinds of failure wait the same backoff: a Retry-After the server
+		// sent was already honoured by postWithRetry (which retries 408/429/5xx
+		// before the body is read).
 		wait := b.next(0)
-		slog.Warn("llm stream broke, requesting again", "provider", provider, "attempt", n, "text_shown", sent, "wait", wait.Round(time.Millisecond), "err", err)
-		if err := noteRetry(ctx, n, wait, "stream broken"); err != nil {
+		reason := retryErr.retryReason()
+		slog.Warn("llm stream failed, requesting again", "provider", provider, "attempt", n, "reason", reason, "text_shown", sent, "wait", wait.Round(time.Millisecond), "err", err)
+		if err := noteRetry(ctx, n, wait, reason); err != nil {
 			return nil, err
 		}
 		if err := sleepRetry(ctx, wait); err != nil {

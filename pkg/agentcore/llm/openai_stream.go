@@ -98,14 +98,12 @@ func (p *OpenAIProvider) openStream(ctx context.Context, path string, body map[s
 	logProviderResponse(p.Name(), path, resp.StatusCode, respData)
 	// 4xx: report the API's own message, as parseResponse does.
 	var apiErr struct {
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
+		Error *apiError `json:"error"`
 	}
 	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
-		return nil, badResponsef("openai api error: %s", apiErr.Error.Message)
+		return nil, apiErrorf("openai api error", apiErr.Error)
 	}
-	return nil, badResponsef("openai api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData)))
+	return nil, apiMessageErrorf(fmt.Sprintf("openai api error %d", resp.StatusCode), strings.TrimSpace(string(respData)))
 }
 
 // streamChunk is one chat.completion.chunk event.
@@ -135,9 +133,7 @@ type streamChunk struct {
 		PromptCacheHitTokens int     `json:"prompt_cache_hit_tokens"` // DeepSeek native
 		CostUSD              float64 `json:"cost_usd"`
 	} `json:"usage"`
-	Error *struct {
-		Message string `json:"message"`
-	} `json:"error"`
+	Error *apiError `json:"error"`
 }
 
 // streamToolCall accumulates one tool call's fragments by its stream index.
@@ -178,7 +174,7 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 			return nil, badResponsef("parse openai stream chunk: %w", err)
 		}
 		if chunk.Error != nil {
-			return nil, badResponsef("openai api error: %s", chunk.Error.Message)
+			return nil, apiErrorf("openai api error", chunk.Error)
 		}
 		if u := chunk.Usage; u != nil {
 			res.Usage = agentcoreapi.Usage{

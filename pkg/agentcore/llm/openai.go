@@ -244,16 +244,14 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 			PromptCacheHitTokens int     `json:"prompt_cache_hit_tokens"`
 			CostUSD              float64 `json:"cost_usd"`
 		} `json:"usage"`
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
+		Error *apiError `json:"error"`
 	}
 
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, badResponsef("parse openai response: %w", err)
 	}
 	if raw.Error != nil {
-		return nil, badResponsef("openai api error: %s", raw.Error.Message)
+		return nil, apiErrorf("openai api error", raw.Error)
 	}
 	if len(raw.Choices) == 0 {
 		return nil, badResponsef("openai: empty choices")

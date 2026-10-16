@@ -299,9 +299,7 @@ type responsesBody struct {
 	IncompleteDetails *struct {
 		Reason string `json:"reason"`
 	} `json:"incomplete_details"`
-	Error *struct {
-		Message string `json:"message"`
-	} `json:"error"`
+	Error *apiError      `json:"error"`
 	Usage map[string]any `json:"usage"`
 }
 
@@ -317,8 +315,10 @@ func (p *ResponsesProvider) parseResponsesBody(data []byte) (*agentcoreapi.Gener
 // resultOf turns a response object (non-streamed, or the one a terminal
 // stream event carries) into a GenerateResult.
 func (p *ResponsesProvider) resultOf(body responsesBody) (*agentcoreapi.GenerateResult, error) {
-	if body.Error != nil && body.Error.Message != "" {
-		return nil, badResponsef("responses api error: %s", body.Error.Message)
+	// An error object is reported as it stands, even without a message (its code
+	// or type still names the failure); a temporary one is retried by retryStream.
+	if !body.Error.empty() {
+		return nil, apiErrorf("responses api error", body.Error)
 	}
 	if body.Status == "failed" {
 		return nil, badResponsef("responses api error: response failed")

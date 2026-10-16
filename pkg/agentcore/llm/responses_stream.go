@@ -65,9 +65,7 @@ type responsesEvent struct {
 	Item        map[string]json.RawMessage `json:"item"`
 	Response    *responsesBody             `json:"response"`
 	Message     string                     `json:"message"`
-	Error       *struct {
-		Message string `json:"message"`
-	} `json:"error"`
+	Error       *apiError                  `json:"error"`
 }
 
 func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
@@ -121,7 +119,7 @@ func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader
 			if len(body.Output) == 0 {
 				body.Output = orderedItems(done)
 			}
-			if ev.Type == "response.failed" && (body.Error == nil || body.Error.Message == "") {
+			if ev.Type == "response.failed" && body.Error.empty() {
 				return nil, badResponsef("responses api error: response failed")
 			}
 			res, err := p.resultOf(body)
@@ -135,11 +133,12 @@ func (p *ResponsesProvider) readResponsesStream(ctx context.Context, r io.Reader
 			}
 			return res, nil
 		case "error":
-			msg := ev.Message
-			if ev.Error != nil && ev.Error.Message != "" {
-				msg = ev.Error.Message
+			// The error object carries the code/type; an event with only a
+			// top-level message has just that text to classify.
+			if ev.Error != nil {
+				return nil, apiErrorf("responses api error", ev.Error)
 			}
-			return nil, badResponsef("responses api error: %s", msg)
+			return nil, apiMessageErrorf("responses api error", ev.Message)
 		}
 	}
 	if err := sc.Err(); err != nil {

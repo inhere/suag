@@ -11,11 +11,12 @@ import (
 // answer apart from an unusable one when it decides whether to continue the
 // session.
 const (
-	// ErrorKindTransient: the stream broke or was cut off and its retries ran
-	// out (streamReadError). The request itself was fine, so a later attempt or
-	// a continued session is likely to work; the text of the cut answer was
-	// already shown and is void (retryStream restarted the message, see the
-	// stream-json "retry" lines with restart=true).
+	// ErrorKindTransient: the stream broke or was cut off, or the API reported a
+	// temporary failure (overloaded, rate limited, a server error), and the
+	// retries ran out (streamReadError, apiTransientError). The request itself
+	// was fine, so a later attempt or a continued session is likely to work; the
+	// text of a cut answer was already shown and is void (retryStream restarted
+	// the message, see the stream-json "retry" lines with restart=true).
 	ErrorKindTransient = "provider_transient"
 	// ErrorKindBadResponse: the provider answered, but with something unusable -
 	// a body or stream event that is not valid JSON, an answer that is missing
@@ -39,14 +40,18 @@ func badResponsef(format string, args ...any) error {
 }
 
 // ErrorKind classifies a failed model request for the hosts: ErrorKindTransient
-// (a broken or cut stream whose retries ran out), ErrorKindBadResponse (a
-// provider answer that cannot be used, or an API error of its own) or "" for
-// everything else - a cancelled turn, a storage, tool or hook failure, or an
-// error that did not come from a provider. The value goes on the turn event's
-// attrs and on the stream-json error line.
+// (a broken or cut stream, or a temporary API error, whose retries ran out),
+// ErrorKindBadResponse (a provider answer that cannot be used, or a permanent
+// error the API reported itself) or "" for everything else - a cancelled turn,
+// a storage, tool or hook failure, or an error that did not come from a
+// provider. The value goes on the turn event's attrs and on the stream-json
+// error line.
 func ErrorKind(err error) string {
 	var readErr *streamReadError
 	if errors.As(err, &readErr) {
+		return ErrorKindTransient
+	}
+	if isAPITransientError(err) {
 		return ErrorKindTransient
 	}
 	var bad *badResponseError

@@ -305,16 +305,14 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
+		Error *apiError `json:"error"`
 	}
 
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, badResponsef("parse claude response: %w", err)
 	}
 	if raw.Error != nil {
-		return nil, badResponsef("claude api error: %s", raw.Error.Message)
+		return nil, apiErrorf("claude api error", raw.Error)
 	}
 
 	resp := &agentcoreapi.GenerateResult{

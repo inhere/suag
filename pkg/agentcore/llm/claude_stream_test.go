@@ -108,14 +108,17 @@ func TestClaudeProviderStreamSSE(t *testing.T) {
 	})
 
 	t.Run("error event in stream", func(t *testing.T) {
+		// A permanent API error (invalid_request_error, no overload wording): the
+		// turn fails at once instead of being requested again.
 		server := claudeServer(t, 200, "text/event-stream", sseLines(
 			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"x"}}`,
 			`event: error`,
-			`data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`,
+			`data: {"type":"error","error":{"type":"invalid_request_error","message":"bad model"}}`,
 		), nil, nil, nil)
 		_, err := NewClaudeProvider(ClaudeConfig{BaseURL: server.URL}).Stream(context.Background(), req, collect(&[]agentcoreapi.StreamEvent{}))
 		assert.Err(t, err)
-		assert.StrContains(t, err.Error(), "claude api error: Overloaded")
+		assert.StrContains(t, err.Error(), "claude api error: bad model")
+		assert.Eq(t, ErrorKindBadResponse, ErrorKind(err))
 	})
 
 	t.Run("4xx is not retried", func(t *testing.T) {

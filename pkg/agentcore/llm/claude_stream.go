@@ -89,14 +89,12 @@ func (p *ClaudeProvider) openStream(ctx context.Context, body map[string]any) (*
 	resp.Body.Close()
 	logProviderResponse(p.Name(), "/messages", resp.StatusCode, respData)
 	var apiErr struct {
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
+		Error *apiError `json:"error"`
 	}
 	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
-		return nil, badResponsef("claude api error: %s", apiErr.Error.Message)
+		return nil, apiErrorf("claude api error", apiErr.Error)
 	}
-	return nil, badResponsef("claude api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData)))
+	return nil, apiMessageErrorf(fmt.Sprintf("claude api error %d", resp.StatusCode), strings.TrimSpace(string(respData)))
 }
 
 // claudeUsage is the usage object shared by message_start and message_delta.
@@ -129,9 +127,7 @@ type claudeStreamEvent struct {
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
 	Usage *claudeUsage `json:"usage"`
-	Error *struct {
-		Message string `json:"message"`
-	} `json:"error"`
+	Error *apiError    `json:"error"`
 }
 
 // claudeStreamTool accumulates one tool_use block by its content index.
@@ -180,11 +176,10 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 
 		switch ev.Type {
 		case "error":
-			msg := "unknown error"
 			if ev.Error != nil {
-				msg = ev.Error.Message
+				return nil, apiErrorf("claude api error", ev.Error)
 			}
-			return nil, badResponsef("claude api error: %s", msg)
+			return nil, apiMessageErrorf("claude api error", "unknown error")
 		case "message_start":
 			usage = ev.Message.Usage
 		case "content_block_start":

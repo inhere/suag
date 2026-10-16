@@ -94,9 +94,12 @@ func TestOpenAIProviderStreamSSE(t *testing.T) {
 		assert.Eq(t, "openai api error: bad model", fmt.Sprint(err))
 	})
 	t.Run("error event mid-stream", func(t *testing.T) {
-		server := sseServer(t, http.StatusOK, "data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\ndata: {\"error\":{\"message\":\"overloaded\"}}\n", nil)
+		// A permanent API error (no overload or rate limit wording anywhere): the
+		// turn fails at once instead of being requested again.
+		server := sseServer(t, http.StatusOK, "data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\ndata: {\"error\":{\"code\":\"invalid_request_error\",\"message\":\"bad model\"}}\n", nil)
 		_, err := NewOpenAIProvider(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "m"}).Stream(context.Background(), req, nil)
-		assert.Eq(t, "openai api error: overloaded", fmt.Sprint(err))
+		assert.Eq(t, "openai api error: bad model", fmt.Sprint(err))
+		assert.Eq(t, ErrorKindBadResponse, ErrorKind(err))
 	})
 }
 
