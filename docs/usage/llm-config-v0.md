@@ -19,6 +19,7 @@ providers:
     models:
       glm-5:
         context_window: 128000
+        max_output_tokens: 64000
 
 compact_model: bailian/glm-4-flash
 fallback_models:
@@ -35,6 +36,7 @@ fallback_models:
 - `providers.<id>.headers`：附加的 HTTP 请求头，值支持 `${VAR}`。
 - `providers.<id>.context_window`：该 provider 下所有模型的默认上下文窗口（如网关统一为 1M 时写一次即可）。
 - `providers.<id>.models.<model>.context_window`：该模型的上下文窗口。取值顺序：模型级 > provider 级 > 按模型名推断（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k，未知为 128k）。
+- `providers.<id>.max_output_tokens` 与 `providers.<id>.models.<model>.max_output_tokens`：模型回答的输出 token 上限，取值顺序为模型级 > provider 级；未配置时由协议决定。Anthropic/Claude 默认发送 32000，OpenAI chat/completions 与 Responses 不发送该字段而使用服务端默认。`--max-output-tokens` > `SUGA_MAX_OUTPUT_TOKENS` > 模型级 > provider 级，可覆盖本次运行。
 - `providers.<id>.models.<model>.model_id`：实际发给 provider 的模型 id；不设时发送 `<model>` 本身。用它给很长的上游 id 起一个短名：引用、trace、统计、价格与上下文窗口都按短名，只有请求里用 `model_id`。用完整的上游 id 引用也会对应到这个短名。
 - `providers.<id>.models.<model>.type`、`base_url`：该模型自己的协议与地址，覆盖 provider 的。同一个网关（command-code、opencode 等）常把 Claude 模型放在 Anthropic 协议的端点、其余模型放在 OpenAI 兼容端点，这时在 Claude 模型上写 `type: anthropic` 和对应的 `base_url` 即可，不必再拆一个 provider；`api_key`、`headers` 等仍沿用 provider 的。
 - `providers.<id>.thinking` 与 `providers.<id>.models.<model>.thinking`：思考档位，取值 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`、`auto`（与 omp 相同）。优先级：命令行 `--thinking`（只作用于主模型）> 模型级 > provider 级；都不设或 `auto` 时不发送，用 provider 的默认。`openai` 类型作为请求字段 `reasoning_effort` 原样发送，各 provider 支持的取值不同（如 command-code 为 `off|low|medium|high|xhigh|max`，OpenAI 为 `none|minimal|low|medium|high`），不支持的取值由 provider 报错。`anthropic` 类型走 extended thinking：Claude 4.6 及以后的模型发送 `thinking: {type: adaptive, display: summarized}` 与 `output_config.effort`（`minimal` 按 `low`），4.5 及更早的模型发送 `thinking: {type: enabled, budget_tokens}`（minimal 1024 … max 31000）并带 interleaved-thinking beta 头；设置档位且请求未指定时 `max_tokens` 为 32000；`off`、`auto` 与不设都不发送思考参数（部分新模型默认就会思考，也不接受关闭）。带签名的 thinking 块随工具调用保存，并在之后的请求里原样回传。签名绑定请求前缀，所以主模型为 `anthropic` 类型时不做历史折叠（`context.fold_every` 不生效）。`suga manifest` 显示主模型生效的档位。
@@ -165,6 +167,7 @@ providers:
     models:
       glm-5:
         context_window: 128000
+        max_output_tokens: 64000
 ```
 
 对照：

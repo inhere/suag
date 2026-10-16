@@ -34,6 +34,7 @@ fallback_models:
 - `providers.<id>.headers`：附加 HTTP 头，值支持 `${VAR}`；`{{session_id}}` 替换为当前 suga 会话 ID（没有会话 ID 时不发送这类头）；默认带 `User-Agent: suga`，可在 `headers` 里覆盖。
 - `providers.<id>.context_window`：该 provider 下所有模型的默认上下文窗口（网关统一为 1M 时写一次即可）。
 - `providers.<id>.models.<model>.context_window`：该模型的窗口。取值顺序：模型级 > provider 级 > 按模型名推断（claude 200k、gpt-4.1 1M、gpt-5 400k、gpt-4o/deepseek 128k，未知 128k）。
+- `providers.<id>.max_output_tokens` 与 `providers.<id>.models.<model>.max_output_tokens`：模型回答的输出 token 上限，模型级覆盖 provider 级。命令行 `--max-output-tokens` > 环境变量 `SUGA_MAX_OUTPUT_TOKENS` > 模型级 > provider 级；未配置时 Anthropic 默认 32000，OpenAI chat/completions 与 Responses 不发送上限字段。
 - `providers.<id>.models.<model>.model_id`：实际发给 provider 的模型 id；不设时发送键名本身。用它给很长的上游 id 起短名：引用、trace、统计、价格与窗口都按短名，只有请求里用 `model_id`。用完整上游 id 引用也会对应到这个短名。
 - `providers.<id>.models.<model>.type` / `base_url`：该模型自己的协议与地址，覆盖 provider 的；`api_key`、`headers` 仍沿用 provider 的。同一网关常把 Claude 模型放在 Anthropic 端点、其余模型放在 OpenAI 兼容端点，这时只在 Claude 模型上写 `type: anthropic` 和对应 `base_url`，不必拆第二个 provider。
 - `providers.<id>.models.<model>.price`：`{input, output, cache_read, cache_write}`，每百万 token 的美元价格；provider 不返回成本时 `suga stats` 与 `usage_update` 用它算成本。

@@ -4,6 +4,14 @@
 
 ## [未发布]
 
+### 新增
+
+- 每个 provider/model 可配置 `max_output_tokens`；`--max-output-tokens` 与 `SUGA_MAX_OUTPUT_TOKENS` 可按优先级覆盖，Claude 未配置时默认输出上限提高到 32000。
+
+### 修复
+
+- 输出达到模型上限时，chat、run、stream-json 与 trace 明确标记回答可能被截断，并给出可调整输出上限的提示。
+
 ## [0.25.0] - 2026-10-16
 
 回合中插话（常驻输入行、状态行、Up 撤回、`suga send --steer`）；chat 支持 `!` 本地命令；续接时校验工作目录；流式回复被截断时自动重试；回合取消不再丢后台任务通知。

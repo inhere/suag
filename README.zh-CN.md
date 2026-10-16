@@ -67,7 +67,8 @@ Suga 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`
 |---|---|
 | `model` | 主模型，`<provider>/<model>`；可被 `SUGA_MODEL` 覆盖，再被 `--model` 覆盖 |
 | `providers.<id>` | `type`（`openai` 即 chat/completions、`openai-responses` 即 Responses API、`anthropic`）、`base_url`、`api_key`、`headers`；`openai`、`anthropic`、`deepseek` 是内置预设，分别读取 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` |
-| `providers.<id>.models.<model>` | `context_window`、`model_id`（与键不同时请求里发送的模型 id）、`type`/`base_url`（该模型可用自己的协议与地址）、`price`、`thinking` |
+| `providers.<id>.max_output_tokens` | provider 默认输出 token 上限；模型级和命令行可覆盖。优先级：`--max-output-tokens` > `SUGA_MAX_OUTPUT_TOKENS` > 模型级 > provider 级。未配置时 Claude 默认 32000，OpenAI 协议不发送该字段。 |
+| `providers.<id>.models.<model>` | `context_window`、`max_output_tokens`、`model_id`（与键不同时请求里发送的模型 id）、`type`/`base_url`（该模型可用自己的协议与地址）、`price`、`thinking` |
 | `compact_model`、`fallback_models` | 生成摘要用的便宜模型；主模型失败时依次尝试的备用模型 |
 | `tools.allow_write`、`tools.approval` | 仅 chat：启用写文件与 shell 工具（默认 false）；`ask`（默认）每次写/shell 调用前询问，`auto` 不询问 |
 | `mcp.servers`、`tools.auto_allow`、`tools.read_only_allow` | MCP 服务，以及 MCP 放行名单（条目形如 `server/工具glob`）；两者都为空时所有 MCP 调用被拒绝 |
