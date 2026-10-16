@@ -4,6 +4,12 @@
 
 ## [未发布]
 
+## [0.26.0] - 2026-10-16
+
+模型请求更稳：服务端过载/限流在流内也会重试，额度耗尽单独归类不再白重试，换模型按错误类型决定；provider 请求不再跟随重定向（防 API 密钥泄露）；每个模型可配输出上限（claude 默认 32000）；chat 显示文件改动 diff，新增 `:help`/`:usage`/`:tasks` 与长回合结束通知。
+
+`error_kind` 新增取值 `provider_rejected`（请求被拒，如 HTTP 400/401/403/404/422 与拒绝跟随的重定向）与 `provider_quota`（额度/用量上限耗尽）；调用方只应把 `provider_transient` 当作可自动续接。
+
 ### 新增
 
 - chat 新增 `:help`、`:usage`、`:tasks`，并支持长回合与审批等待的终端通知（`chat.notify`、`chat.notify_after`）。
@@ -591,7 +597,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.25.0...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/inhere/suga/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/inhere/suga/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/inhere/suga/compare/v0.23.1...v0.24.0
 [0.23.1]: https://github.com/inhere/suga/compare/v0.23.0...v0.23.1
