@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
@@ -115,11 +116,27 @@ func TestFileWriteSnapshotHook(t *testing.T) {
 
 	t.Run("records incomplete when the write fails", func(t *testing.T) {
 		workspace := t.TempDir()
-		assert.NoErr(t, os.WriteFile(filepath.Join(workspace, "parent"), []byte("file"), 0o644))
+		// The write must fail after the snapshot was taken. On Windows a file in
+		// place of the parent directory does that; on Unix the path lookup
+		// already reports ENOTDIR there, so a read-only directory makes the
+		// write itself fail instead.
+		target := filepath.Join("parent", "child.txt")
+		if runtime.GOOS == "windows" {
+			assert.NoErr(t, os.WriteFile(filepath.Join(workspace, "parent"), []byte("file"), 0o644))
+		} else {
+			if os.Geteuid() == 0 {
+				t.Skip("root ignores directory permissions")
+			}
+			dir := filepath.Join(workspace, "parent")
+			assert.NoErr(t, os.Mkdir(dir, 0o755))
+			assert.NoErr(t, os.Chmod(dir, 0o555))
+			t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+		}
 		snapshots := &recordingSnapshotter{}
 		tool := &FileWriteTool{workspace: workspace, snapshots: snapshots}
-		_, err := tool.Execute(context.Background(), writeCall(filepath.Join("parent", "child.txt"), "nope", "write-error"))
+		_, err := tool.Execute(context.Background(), writeCall(target, "nope", "write-error"))
 		assert.Err(t, err)
+		assert.Require(t, assert.Len(t, snapshots.after, 1))
 		assert.Eq(t, SnapshotStatusIncomplete, snapshots.after[0].Status)
 		assert.Empty(t, snapshots.after[0].AfterSHA256)
 	})
