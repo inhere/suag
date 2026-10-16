@@ -79,6 +79,10 @@ type Config struct {
 	LockRoot              string
 	ProcessRoot           string
 	MaxSteps              int
+	// MaxOutputTokens is the output token limit of the model's requests
+	// (appconfig.ResolveMaxOutputTokens); 0 leaves it to the provider, which
+	// applies its own default then.
+	MaxOutputTokens int
 	// MaxRunTokens and RunTimeout ask a run to wrap up (answer from what it
 	// has) past that many tokens (uncached input plus output) or that long;
 	// 0 = no limit. Sub-agent runners set them.
@@ -234,6 +238,11 @@ type RunResult struct {
 	// hook asked for one, e.g. a sub-agent's "max_tokens"); empty for a
 	// normal answer.
 	WrapUp string
+	// Truncated is true when this turn's answer was cut off at the output token
+	// limit and may be incomplete; OutputLimit names that limit (0 = the
+	// provider's or server's own default).
+	Truncated   bool
+	OutputLimit int
 	// ErrorKind says why a failed turn failed (llm.ErrorKind):
 	// "provider_transient" for a cut or broken stream whose retries ran out,
 	// "provider_bad_response" for a provider answer that could not be used;
@@ -590,14 +599,15 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	ctx = withTurnNotices(ctx, notices)
 	runtimeHooks := r.turnHooks(usage, denials, req.Emit, result)
 	runtime := agentcore.New(agentcore.Config{
-		Provider:       r.cfg.Provider,
-		Storage:        storage,
-		Tools:          r.cfg.Tools,
-		PromptBuilder:  promptBuilder,
-		ContextBuilder: contextBuilder,
-		Hooks:          runtimeHooks,
-		MaxSteps:       r.cfg.MaxSteps,
-		MaxStepsWrapUp: maxStepsWrapUp(r.cfg.MaxSteps),
+		Provider:        r.cfg.Provider,
+		Storage:         storage,
+		Tools:           r.cfg.Tools,
+		PromptBuilder:   promptBuilder,
+		ContextBuilder:  contextBuilder,
+		Hooks:           runtimeHooks,
+		MaxSteps:        r.cfg.MaxSteps,
+		MaxOutputTokens: r.cfg.MaxOutputTokens,
+		MaxStepsWrapUp:  maxStepsWrapUp(r.cfg.MaxSteps),
 		// Refused calls become tool results; aborted approvals end the turn.
 		ToolExecutionPolicy: abortingToolPolicy{},
 		PrefetchTools:       r.cfg.PrefetchTools,

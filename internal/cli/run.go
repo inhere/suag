@@ -46,9 +46,13 @@ type personalOptions struct {
 	Injected bool
 	// MaxSteps (run only) overrides the config's max_steps for this turn
 	// (--max-steps); 0 uses SUGA_MAX_STEPS, then the config.
-	MaxSteps   int
-	MCPConfigs []string
-	CLIMode    bool
+	MaxSteps int
+	// MaxOutputTokens overrides the config's max_output_tokens for this
+	// invocation (--max-output-tokens); 0 uses SUGA_MAX_OUTPUT_TOKENS, then
+	// models.<m>.max_output_tokens, then providers.<id>.max_output_tokens.
+	MaxOutputTokens int
+	MCPConfigs      []string
+	CLIMode         bool
 	// AddDirs are this invocation's --add-dir values ("<absolute
 	// directory>[:ro|:rw]", default :ro); SUGA_ADD_DIRS is read alongside them.
 	AddDirs []string
@@ -171,6 +175,7 @@ func NewPersonalCommand(ctx context.Context, mode string, stdin io.Reader, stdou
 	cmd.StringVar(&opts.Prompt, "prompt", "", "task prompt for run mode;;p")
 	cmd.StringVar(&opts.Model, "model", "", "model, <provider>/<model> or a bare model id (overrides SUGA_MODEL)")
 	cmd.StringVar(&opts.Thinking, "thinking", "", "thinking level of the main model: off, minimal, low, medium, high, xhigh, max, auto (overrides the config)")
+	cmd.IntVar(&opts.MaxOutputTokens, "max-output-tokens", 0, "max output tokens per model request, >= 1 (overrides SUGA_MAX_OUTPUT_TOKENS, models.<m>.max_output_tokens and providers.<id>.max_output_tokens)")
 	cmd.StringVar(&opts.SessionID, "session-id", "", "create or use this session ID;;sid")
 	cmd.StringVar(&opts.ResumeID, "resume", "", "resume an existing session ID;;r")
 	cmd.StringVar(&opts.FromID, "from", "", "start a new session that inherits the summary, plan and loaded tools of this session")
@@ -202,8 +207,9 @@ func (o personalOptions) wiringOptions(mode string) wiring.Options {
 		MemoryReadOnly:     o.ReadOnly,
 		MCPConfigs:         o.MCPConfigs,
 		AppendSystemPrompt: o.AppendSystemPrompt, ClearAppendSystemPrompt: o.ClearAppendSystemPrompt,
-		NoProjectRules: o.NoProjectRules,
-		MaxSteps:       o.MaxSteps,
+		NoProjectRules:  o.NoProjectRules,
+		MaxSteps:        o.MaxSteps,
+		MaxOutputTokens: o.MaxOutputTokens,
 	}
 }
 
@@ -228,6 +234,9 @@ func validatePersonalOptions(mode string, opts personalOptions) error {
 	}
 	if opts.MaxSteps < 0 {
 		return fmt.Errorf("--max-steps must be a whole number >= 1, got %d", opts.MaxSteps)
+	}
+	if opts.MaxOutputTokens < 0 {
+		return fmt.Errorf("--max-output-tokens must be a whole number >= 1, got %d", opts.MaxOutputTokens)
 	}
 	return nil
 }

@@ -120,4 +120,10 @@ type RunResult struct {
 	// WrapUp is why the run ended with a wrap-up answer ("max_steps", or the
 	// reason a hook gave Control.RequestWrapUp); empty for a normal answer.
 	WrapUp string
+	// Truncated is true when the answer was cut off at the output token limit
+	// (the model's stop reason), so it may be incomplete; OutputLimit names how
+	// many tokens that limit allowed (0 = the provider's or server's own
+	// default, i.e. no limit was configured).
+	Truncated   bool
+	OutputLimit int
 }

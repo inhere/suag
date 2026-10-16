@@ -142,6 +142,9 @@ func (s *subAgents) build(kind string) (*personal.Runner, func(), error) {
 			return personal.LoadRules(s.ruleCWD, home, s.noProjectRules, s.ruleFile)
 		},
 		MaxSteps: s.settings.MaxSteps, MaxRunTokens: s.settings.MaxTokens, RunTimeout: s.settings.Timeout,
+		// The sub-agent model's own output limit (agents.model); 0 leaves it to
+		// the provider's default.
+		MaxOutputTokens: appconfig.MaxOutputTokensFor(rs.models.Main),
 	})
 	if err != nil {
 		_ = repo.Close()
