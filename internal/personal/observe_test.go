@@ -70,8 +70,12 @@ func TestPoolFallbackRecordsOneModelEventPerAttempt(t *testing.T) {
 		assert.Eq(t, eventError, events[0].Status)
 		assert.StrContains(t, events[0].Error, "503")
 		assert.Eq(t, float64(1), events[0].Attrs["attempt"])
-		// Why the pool moved on, for the trace (llm.Attempt.Fallback).
+		// Why the pool moved on, for the trace (llm.Attempt.Fallback), both in
+		// the event attrs and in the rendered line.
 		assert.Eq(t, "next, provider_transient", events[0].Attrs["fallback"])
+		var text bytes.Buffer
+		assert.NoErr(t, WriteTrace(&text, events, nil, false))
+		assert.StrContains(t, text.String(), "fallback=next, provider_transient")
 	})
 	t.Run("successful attempt", func(t *testing.T) {
 		assert.Eq(t, "backup", events[1].Name)
