@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/inhere/suga/internal/adddir"
+	"github.com/inhere/suga/internal/personal/process"
 	"github.com/inhere/suga/internal/personal/store"
 	"github.com/inhere/suga/pkg/agentcore/redact"
 	"github.com/inhere/suga/pkg/agentcore/tools/native"
@@ -27,9 +30,10 @@ const (
 
 // CheckpointItem is the user-visible classification of one write-tool call.
 type CheckpointItem struct {
-	Meta   SnapshotMeta     `json:"meta"`
-	Action CheckpointAction `json:"action"`
-	Reason string           `json:"reason,omitempty"`
+	Meta       SnapshotMeta       `json:"meta"`
+	Action     CheckpointAction   `json:"action"`
+	RootStatus SnapshotRootStatus `json:"root_status,omitempty"`
+	Reason     string             `json:"reason,omitempty"`
 }
 
 // ShellCommand is a redacted shell_exec event associated with a checkpoint.
@@ -73,6 +77,216 @@ func (c Checkpoint) IsShellOnly() bool { return c.ShellOnly }
 // ErrSessionPrefixAmbiguous means a session query matched more than one
 // persisted session. The caller must use a longer prefix or the full ID.
 var ErrSessionPrefixAmbiguous = errors.New("session prefix is ambiguous")
+
+// ErrSessionBusy is returned when an undo/checkpoint operation cannot obtain
+// the existing cross-process session lock without waiting.
+var ErrSessionBusy = process.ErrSessionLocked
+
+// SnapshotRootStatus describes whether a snapshot root is still an allowed,
+// exact session root. Undo must not treat an ancestor as an allowed root.
+type SnapshotRootStatus string
+
+const (
+	SnapshotRootTrusted         SnapshotRootStatus = "trusted"
+	SnapshotRootCwdChanged      SnapshotRootStatus = "cwd_changed"
+	SnapshotRootAddedDirRemoved SnapshotRootStatus = "added_dir_removed"
+	SnapshotRootUntrusted       SnapshotRootStatus = "untrusted"
+)
+
+// UndoGate is the in-process session gate owned by a Runner. The selected
+// session ID is carried in the context because the existing gate is per-session.
+type UndoGate interface {
+	Acquire(context.Context) (func(), error)
+}
+
+// UndoCore owns the provider-independent checkpoint boundary. It only reads
+// the store/snapshot directories and serializes access with the existing gate
+// and run/locks session lock; file restoration is added by later undo tasks.
+type UndoCore struct {
+	Repository   *store.Store
+	Snapshots    *SessionSnapshots
+	SessionsRoot string
+	LockRoot     string
+	Gate         UndoGate
+	HeldLock     func(sessionID string) bool
+}
+
+// NewUndoCore constructs the provider-independent checkpoint core.
+func NewUndoCore(repo *store.Store, snapshots *SessionSnapshots, sessionsRoot, lockRoot string) *UndoCore {
+	return &UndoCore{Repository: repo, Snapshots: snapshots, SessionsRoot: sessionsRoot, LockRoot: lockRoot}
+}
+
+func (u *UndoCore) validate() error {
+	if u == nil || u.Repository == nil || u.Snapshots == nil {
+		return errors.New("undo core is not configured")
+	}
+	return nil
+}
+
+// Checkpoints lists checkpoints while holding the session gate first and the
+// existing cross-process lock second. A held chat lock is reused rather than
+// acquired a second time, which is important on Windows as well as Unix.
+func (u *UndoCore) Checkpoints(ctx context.Context, sessionQuery string, limit int) ([]Checkpoint, error) {
+	if err := u.validate(); err != nil {
+		return nil, err
+	}
+	sessionID, err := ResolveSessionID(ctx, u.Repository, sessionQuery)
+	if err != nil {
+		return nil, err
+	}
+	var out []Checkpoint
+	err = u.withSession(ctx, sessionID, func() error {
+		out, err = u.checkpointsLocked(ctx, sessionID, limit)
+		return err
+	})
+	return out, err
+}
+
+// Select returns the latest n undo candidates with shell-only turns retained.
+func (u *UndoCore) Select(ctx context.Context, sessionQuery string, n int) ([]Checkpoint, error) {
+	if err := u.validate(); err != nil {
+		return nil, err
+	}
+	sessionID, err := ResolveSessionID(ctx, u.Repository, sessionQuery)
+	if err != nil {
+		return nil, err
+	}
+	var out []Checkpoint
+	err = u.withSession(ctx, sessionID, func() error {
+		all, listErr := u.checkpointsLocked(ctx, sessionID, 0)
+		if listErr != nil {
+			return listErr
+		}
+		if n <= 0 {
+			n = 1
+		}
+		selected := 0
+		for _, row := range all {
+			if row.IsShellOnly() {
+				out = append(out, row)
+				continue
+			}
+			if row.State == SnapshotStateUndone {
+				continue
+			}
+			out = append(out, row)
+			selected++
+			if selected == n {
+				break
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (u *UndoCore) checkpointsLocked(ctx context.Context, sessionID string, limit int) ([]Checkpoint, error) {
+	rows, err := ListCheckpoints(ctx, u.Repository, u.Snapshots, sessionID, limit)
+	if err != nil {
+		return nil, err
+	}
+	session, err := u.Repository.GetSession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		if err := u.annotateRoots(ctx, session, &rows[i]); err != nil {
+			return nil, err
+		}
+	}
+	return rows, nil
+}
+
+func (u *UndoCore) withSession(ctx context.Context, sessionID string, fn func() error) error {
+	if u.Gate != nil {
+		gateCtx := context.WithValue(ctx, undoSessionIDKey{}, sessionID)
+		release, err := u.Gate.Acquire(gateCtx)
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
+	if u.LockRoot != "" && (u.HeldLock == nil || !u.HeldLock(sessionID)) {
+		lock, err := process.AcquireSessionLockContext(ctx, u.LockRoot, sessionID, 0)
+		if err != nil {
+			if errors.Is(err, process.ErrSessionLocked) {
+				return fmt.Errorf("%w: %s", ErrSessionBusy, sessionID)
+			}
+			return err
+		}
+		defer lock.Close()
+	}
+	return fn()
+}
+
+func (u *UndoCore) annotateRoots(ctx context.Context, session store.Session, row *Checkpoint) error {
+	events, err := u.Repository.ListEvents(ctx, store.EventFilter{SessionID: session.ID})
+	if err != nil {
+		return fmt.Errorf("list root history: %w", err)
+	}
+	for i := range row.Items {
+		status := snapshotRootStatus(session, row.Items[i].Meta, events)
+		row.Items[i].RootStatus = status
+		if status == SnapshotRootTrusted || row.Items[i].Action == CheckpointActionUnrecoverable {
+			continue
+		}
+		previous := row.Items[i].Action
+		row.Items[i].Action = CheckpointActionSkip
+		row.Items[i].Reason = snapshotRootReason(status)
+		if previous == CheckpointActionRestore || previous == CheckpointActionDelete {
+			row.Skipped++
+			if previous == CheckpointActionDelete {
+				row.Deletable--
+			} else {
+				row.Restorable--
+			}
+		}
+	}
+	return nil
+}
+
+// snapshotRootStatus accepts only exact roots currently recorded as the session
+// cwd or as a persistent writable additional directory. A current process cwd
+// or a lexical ancestor is never sufficient.
+func snapshotRootStatus(session store.Session, meta SnapshotMeta, events []store.Event) SnapshotRootStatus {
+	root := strings.TrimSpace(meta.Root)
+	if root == "" || !filepath.IsAbs(root) {
+		return SnapshotRootUntrusted
+	}
+	if SameDir(root, session.Cwd) && session.Cwd != "" {
+		return SnapshotRootTrusted
+	}
+	if dirs, err := adddir.FromMeta(session.Meta[adddir.MetaKey]); err == nil {
+		for _, dir := range dirs {
+			if dir.Writable && SameDir(root, dir.Path) {
+				return SnapshotRootTrusted
+			}
+		}
+	}
+	for _, event := range events {
+		if event.Kind != store.EventAddDir || event.Name != "remove" {
+			continue
+		}
+		if path, _ := event.Attrs["path"].(string); path != "" && SameDir(root, path) {
+			return SnapshotRootAddedDirRemoved
+		}
+	}
+	if session.Cwd == "" {
+		return SnapshotRootUntrusted
+	}
+	return SnapshotRootCwdChanged
+}
+
+func snapshotRootReason(status SnapshotRootStatus) string {
+	switch status {
+	case SnapshotRootCwdChanged:
+		return "会话目录已变更，无法恢复"
+	case SnapshotRootAddedDirRemoved:
+		return "附加目录已移除，无法恢复"
+	default:
+		return "快照根目录不可信，无法恢复"
+	}
+}
 
 // ResolveSessionID accepts a complete ID or a unique prefix. Exact matches win
 // so a full ID remains usable even if another session starts with the same text.
