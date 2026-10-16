@@ -146,6 +146,7 @@ smoke-chat:
 	python3 -I scripts/ptysmoke/chat_agent.py --bin tmp/smoke/suga --work tmp/smoke-agent
 	python3 -I scripts/ptysmoke/chat_spinner.py --bin tmp/smoke/suga --work tmp/smoke-spinner
 	python3 -I scripts/ptysmoke/chat_resume.py --bin tmp/smoke/suga --work tmp/smoke-resume
+	python3 -I scripts/ptysmoke/chat_resume_cwd.py --bin tmp/smoke/suga --work tmp/smoke-resume-cwd
 	python3 -I scripts/ptysmoke/chat_tool_ctrlc.py --bin tmp/smoke/suga --work tmp/smoke-tool-ctrlc
 	python3 -I scripts/ptysmoke/chat_steer.py --bin tmp/smoke/suga --work tmp/smoke-steer
 	python3 -I scripts/ptysmoke/chat_shortname.py --bin tmp/smoke/suga --work tmp/smoke-shortname
