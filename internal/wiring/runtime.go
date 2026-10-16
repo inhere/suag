@@ -476,7 +476,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 			MCPServers: append(appconfig.ReadMCPServerSettings(), servers...),
 			SkillRoots: skillRoots(workspace), Skills: skillReg,
 			Memory: memSetup, Policy: memPolicy, Approval: approval.RuleSource,
-			ToolsApproval: string(approval.Defaults.Native),
+			ToolsApproval: manifestToolsApprovalAction(),
 			InlineBytes:   rs.inlineBytes, SpillBytes: rs.spillBytes, SessionsDir: sessionsDir,
 			TaintTools: taintTools, TaintOnSpill: taintOnSpill,
 		}), nil

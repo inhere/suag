@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	gkconfig "github.com/gookit/config/v2"
 	appconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/internal/personal"
 	capskills "github.com/inhere/suga/pkg/agentcore/skills"
@@ -231,6 +232,16 @@ func BuildManifest(in ManifestInput) Manifest {
 	return m
 }
 
+// manifestToolsApprovalAction reports the legacy chat setting in action terms.
+// It is shared by the static command and live runtime manifest; run/ACP keep
+// their own policy defaults but still expose the configured chat default.
+func manifestToolsApprovalAction() string {
+	if gkconfig.String("tools.approval") == "auto" {
+		return string(approvalrules.Allow)
+	}
+	return string(approvalrules.Ask)
+}
+
 // manifestApprovalRules is shared by static and runtime manifests. Project
 // deny/ask rules are effective without trust; only project allows are filtered.
 func manifestApprovalRules(loaded ApprovalRules, toolsApproval string) ManifestApprovalRules {
@@ -337,8 +348,7 @@ func loadManifest(opts ManifestOptions) (Manifest, manifestParts, error) {
 	if err != nil {
 		return Manifest{}, manifestParts{}, err
 	}
-	chatAuto, err := toolsApprovalAuto()
-	if err != nil {
+	if _, err := toolsApprovalAuto(); err != nil {
 		return Manifest{}, manifestParts{}, err
 	}
 	reg := tools.NewRegistry()
@@ -367,7 +377,7 @@ func loadManifest(opts ManifestOptions) (Manifest, manifestParts, error) {
 		MCPServers: appconfig.ReadMCPServerSettings(),
 		SkillRoots: skillRoots(workspace), Skills: skillReg,
 		Memory: st.memSetup, Policy: st.memPolicy, Approval: approval,
-		ToolsApproval: map[bool]string{true: string(approvalrules.Allow), false: string(approvalrules.Ask)}[chatAuto],
+		ToolsApproval: manifestToolsApprovalAction(),
 		InlineBytes:   st.inlineBytes, SpillBytes: st.spillBytes, SessionsDir: st.sessionsDir,
 		TaintTools: st.taintTools, TaintOnSpill: st.taintOnSpill,
 	})
