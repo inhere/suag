@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
@@ -71,6 +70,3 @@ func (s *chatState) runChatCommand(line string) bool {
 	}
 	return true
 }
-
-// usageValue is kept here so command tests can pin the token and cost source.
-func usageValue(u agentcore.Usage) agentcore.Usage { return u }
