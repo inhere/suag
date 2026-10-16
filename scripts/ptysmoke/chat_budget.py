@@ -48,9 +48,13 @@ def session_from(text):
 
 
 def exit_chat(s, mark):
-    s.send(CTRL_C)
-    time.sleep(0.25)
-    s.send(CTRL_C)
+    # Ctrl-C on a non-empty input line only clears it, so press up to three
+    # times and stop once chat has left (as chat_steer.py does).
+    for _ in range(3):
+        time.sleep(0.25)
+        s.send(CTRL_C)
+        if s.until(r"续接：suga chat --resume sess_", mark, timeout=1):
+            break
     s.check("exit: resume command", s.until(r"续接：suga chat --resume sess_", mark))
 
 
@@ -92,11 +96,17 @@ def budget_turn(binary, work, port, keep):
         s.line("插话")
         s.check("steer starts a new budget turn", s.until(r"budget 100%", m))
         s.check("second turn ends", s.until(STATUS, m))
+        # The steer the wrapped-up turn handed back runs as a third turn: wait
+        # for it before leaving, or chat exits before it reaches the model.
+        m = s.mark()
+        s.check("returned steer runs as the next turn", s.until(STATUS, m))
         session = session_from(s.text())
         exit_chat(s, s.mark())
         session = session or session_from(s.text())
         lines = stop_fake(fake)
-        s.check("steer was sent to fake model", any("插话" in line for line in lines))
+        # fakellm logs json.dumps lines (non-ASCII escaped): decode before matching.
+        s.check("steer was sent to fake model", any("插话" in json.dumps(json.loads(line), ensure_ascii=False)
+                                                    for line in lines if line.strip().startswith("{")))
         if session:
             events = trace_events(binary, env, session)
             budget = [e for e in events if e.get("kind") == "budget"]
@@ -130,7 +140,8 @@ def session_short_circuit(binary, work, port, keep):
         s.check("spent session still returns to prompt", s.until(r"❯ ", before))
         s.check("short-circuit has no second wrap-up request", not s.contains(r"▣", before))
         session = session_from(s.text())
-        exit_chat(s, s.mark())
+        mx = s.mark()
+        exit_chat(s, mx)
         session = session or session_from(s.text())
         lines = stop_fake(fake)
         s.check("session short-circuit made no extra model request", request_count(lines) <= 2)
