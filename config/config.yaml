@@ -240,6 +240,7 @@ tools:
   # Read-only directories outside the workspace (file_read/file_list/file_grep/file_find,
   # absolute paths). Writes stay in the workspace.
   # dependency_roots: true   # detect Go module cache, GOROOT/src, ~/.cargo/registry/src
+  # standards_roots: true    # detect idev-std releases and workspace tmp/idev-std
   # read_roots: []           # extra directories, e.g. ["~/src/sdk"]
   # web_fetch:
   #   allow_private: false   # true lets web_fetch reach private/local addresses

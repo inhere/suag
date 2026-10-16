@@ -101,6 +101,7 @@
 | `tools.interpreters` | 自动探测 | 启动时探测 PATH 上的脚本解释器（默认候选 `python3`、`python`、`node`）：每进程探测一次并缓存（`--version`，2 秒超时），命中的写进环境段（可写模式）并提示优先写脚本执行。`false`（或 `off`）关闭；也可给名称或绝对路径列表，如 `[python, C:\Python312\python.exe]`（绝对路径按你的选择只校验 `--version`）。Windows 上自动探测会跳过 `%LOCALAPPDATA%\Microsoft\WindowsApps` 下的应用商店别名（运行只会跳商店或不出输出版本），商店包自身的安装目录（`C:\Program Files\WindowsApps\...`）不受影响 |
 | `tools.shell_timeout_max` | `600` | `shell_exec` 单次 `timeout` 的上限秒数（单次默认 120） |
 | `tools.dependency_roots` | `true` | 自动识别工作区外的只读目录（Go 模块缓存、`GOROOT/src`、Rust crate 源码） |
+| `tools.standards_roots` | `true` | 自动识别 idev-std 发行目录（`IDEV_STD_RELEASES_ROOT` / `INHERE_DEV_STANDARDS_ROOT`）与绑定工作空间的 `tmp/idev-std` 加载产物目录；`false` 关闭 |
 | `tools.read_roots` | `[]` | 额外只读目录列表（绝对路径，支持 `~`）。只影响 file_read/list/grep/find。只想对某个会话生效时用 `--add-dir <目录>` 或 `SUGA_ADD_DIRS`（`:rw` 可写） |
 | `tools.web_fetch.allow_private` | `false` | 允许 `web_fetch` 访问私网/本机地址 |
 | `tools.web_fetch.proxy` | `""` | `web_fetch` 的代理（`http://`、`https://`、`socks5://`）；只影响 web_fetch，不影响模型请求 |
@@ -181,6 +182,8 @@
 | 变量 | 含义 |
 |---|---|
 | `SUGA_HOME` | 数据与配置根，默认 `~/.suga`（会话库 `$SUGA_HOME/db/sessions.db` 等都在其下） |
+| `IDEV_STD_RELEASES_ROOT` | idev-std 的发行目录；指向已存在目录时，在 `tools.standards_roots` 开启时作为只读根 |
+| `INHERE_DEV_STANDARDS_ROOT` | `IDEV_STD_RELEASES_ROOT` 的兼容环境变量，作用相同 |
 | `SUGA_CONFIG` | 指定唯一的配置文件路径（替代 `$SUGA_HOME/config.yaml`） |
 | `SUGA_MODEL` | 主模型，`<provider>/<model>`；被 `--model` 覆盖，覆盖配置 `model` |
 | `SUGA_HOOKS` | `off` 时整体关闭 chat hooks |

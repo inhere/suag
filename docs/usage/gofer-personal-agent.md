@@ -107,7 +107,7 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 - `tools.max_spill_bytes`（缺省 1048576）：单次工具（含 MCP）原始输出上限，超出部分按 UTF-8 边界保留头尾截断。
 - `tools.shell`：显式指定 shell（命令名或路径，如 `bash`）；不自动探测。
 - `tools.shell_timeout_max`（缺省 600）：`shell_exec` 的 `timeout` 上限（秒）。
-- `tools.dependency_roots`（缺省 `true`）与 `tools.read_roots`（目录列表，支持 `~`，须为已存在的绝对路径）：工作区外的只读目录。`file_read`、`file_list`、`file_grep`、`file_find` 可用绝对路径读取其中文件，写工具与 `shell_exec` 的工作目录不受影响。自动识别只取源码目录：Go 模块缓存（`GOMODCACHE`，或 `go env -w` 写的值，或 `GOPATH/pkg/mod`）、Go 标准库（`GOROOT/src`，未设置时按 PATH 中 `go` 的位置推断）、Rust crate 源码（`CARGO_HOME/registry/src`），不会放开整个 `~/.cargo`、`~/.m2` 这类含凭据的目录；Java 依赖多为 jar，需要时把解压后的源码目录写进 `tools.read_roots`。识别结果列在提示词的环境一节，grep/find 在这些目录里输出绝对路径。
+- `tools.dependency_roots`（缺省 `true`）、`tools.standards_roots`（缺省 `true`）与 `tools.read_roots`（目录列表，支持 `~`，须为已存在的绝对路径）：工作区外的只读目录。`file_read`、`file_list`、`file_grep`、`file_find` 可用绝对路径读取其中文件，写工具与 `shell_exec` 的工作目录不受影响。自动识别的依赖根只取源码目录：Go 模块缓存（`GOMODCACHE`，或 `go env -w` 写的值，或 `GOPATH/pkg/mod`）、Go 标准库（`GOROOT/src`，未设置时按 PATH 中 `go` 的位置推断）、Rust crate 源码（`CARGO_HOME/registry/src`），不会放开整个 `~/.cargo`、`~/.m2` 这类含凭据的目录；Java 依赖多为 jar，需要时把解压后的源码目录写进 `tools.read_roots`。开启 `tools.standards_roots` 后，`IDEV_STD_RELEASES_ROOT` 或兼容的 `INHERE_DEV_STANDARDS_ROOT` 若指向已存在目录就加入 idev-std 发行根；再从工作区向上查找带 `standards.json` 的工作空间根，把存在的 `<工作空间根>/tmp/idev-std` 加入加载产物根。识别结果列在提示词的环境一节，grep/find 在这些目录里输出绝对路径；重复路径会合并。
 - `mcp.call_timeout_sec`（缺省 120）：单次 MCP 工具调用的超时。
 
 另有三组工具，run、chat、ACP 均有：
