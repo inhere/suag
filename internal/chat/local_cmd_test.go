@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,8 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
 
+	"github.com/inhere/suga/internal/personal"
+	personalprocess "github.com/inhere/suga/internal/personal/process"
 	"github.com/inhere/suga/internal/personal/store"
 	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
@@ -234,6 +237,64 @@ func TestChatLocalCommandInjectedLine(t *testing.T) {
 		store.EventFilter{SessionID: sessions[0].ID, Kinds: []string{store.EventLocalCommand}})
 	assert.NoErr(t, err)
 	assert.Eq(t, 0, len(events), "an injected line runs nothing")
+}
+
+// TestChatLocalCommandDeliveredIsNotACommand: a message delivered by `suga send`
+// (here through the session socket) is an ordinary message even when it starts
+// with "!": the model receives it as text and no command runs.
+func TestChatLocalCommandDeliveredIsNotACommand(t *testing.T) {
+	gkconfig.Reset()
+	t.Cleanup(gkconfig.Reset)
+	sugaHome := shortTestHome(t)
+	t.Setenv("SUGA_HOME", sugaHome)
+	repo, err := store.Open(newTestStorePath(t))
+	assert.Require(t, assert.NoErr(t, err))
+	t.Cleanup(func() { _ = repo.Close() })
+	processRoot := filepath.Join(sugaHome, "run")
+	provider := &hookTestProvider{}
+	runner, err := personal.New(personal.Config{
+		Repository: repo, Provider: provider,
+		LockRoot: filepath.Join(processRoot, "locks"), ProcessRoot: processRoot,
+	})
+	assert.Require(t, assert.NoErr(t, err))
+
+	reader, writer := io.Pipe()
+	var stdout, stderr strings.Builder
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(context.Background(), runner, Options{Local: localRunner(t)}, reader, &stdout, &stderr, nil)
+	}()
+
+	record := waitForProcessRecord(t, processRoot)
+	if _, err := personalprocess.Send(record, personalprocess.Request{Text: "!echo delivered-mark", From: "cli"}); err != nil {
+		t.Fatalf("deliver the text: %v", err)
+	}
+	waitProviderCalls(t, provider, 1) // the delivered line ran as a turn
+	if _, err := io.WriteString(writer, ":quit\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = writer.Close()
+	assert.NoErr(t, <-done)
+
+	assert.False(t, outHasLine(stdout.String(), "delivered-mark"), "the delivered text must not run")
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	assert.Require(t, assert.Eq(t, 1, len(provider.calls)))
+	var found bool
+	for _, message := range provider.calls[0] {
+		if strings.Contains(message.Content, "!echo delivered-mark") {
+			found = true
+		}
+	}
+	assert.True(t, found, "the delivered text should reach the model as a message")
+
+	sessions, err := repo.ListSessions(context.Background())
+	assert.NoErr(t, err)
+	assert.Require(t, assert.Eq(t, 1, len(sessions)))
+	events, err := repo.ListEvents(context.Background(),
+		store.EventFilter{SessionID: sessions[0].ID, Kinds: []string{store.EventLocalCommand}})
+	assert.NoErr(t, err)
+	assert.Eq(t, 0, len(events), "a delivered line runs nothing")
 }
 
 // TestRunTurnRefusesLocalCommand: a "!cmd" line typed at the ↳ input line while a
