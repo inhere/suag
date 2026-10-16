@@ -9,7 +9,7 @@
 - 为什么这些能力要拆成现在这几个 contract
 - 一个 run 在 kernel 内部如何流动
 
-本文描述内核（根包 + `api`）。内核之上的能力层（`llm`、`tools`、`tools/native`、`tools/mcp`、`skills`、`storage/files`）与 suga 应用层的划分见 [README 的分层图](../README.md#分层)；工具审批、只读判定与延迟加载属于能力层 `agentcore/tools`，不在内核里。
+本文描述内核（根包 + `api`）。内核之上的能力层（`llm`、`schedule`、`tasks`、`tools`、`tools/native`、`tools/mcp`、`skills`、`memory`、`redact`、`extproc`、`storage/files`）与 suga 应用层的划分见 [README 的分层图](../README.md#分层)；工具审批、只读判定与延迟加载属于能力层 `agentcore/tools`，不在内核里。
 
 ---
 
@@ -309,12 +309,12 @@ hooks 可以观察、注入、拦截，但不应该长期承载核心业务主�
 
 ### 6.2 First-Party Companion Packages
 
-- `files`
-- `memory`
-- `context`
-- `prompt`
-- `hooks`
-- `mock`
+- `llm`（OpenAI 兼容 / Claude / Responses provider 与 fallback 池）
+- `schedule`、`tasks`（进程内定时、后台任务）
+- `tools`（注册表、审批、输出治理）、`tools/native`（内置工具）、`tools/mcp`（stdio MCP 客户端）
+- `skills`、`memory`（含 `memory/files`、`memory/execstore`）、`redact`、`extproc`
+- `storage/files`（文件存储）
+- `mock`、`testing`、`testutil`（内核之上的宿主侧测试套件）
 
 它们的目标不是做成大而全 framework，而是提供：
 

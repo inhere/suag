@@ -14,23 +14,31 @@
 ## 分层
 
 ```text
-应用层   suga internal/*: config, wiring, personal(+store), chat, acpserver, cli, hooks, output
-            │ 只向下依赖
-能力层   agentcore/llm          OpenAI 兼容与 Claude provider、fallback 池
-         agentcore/schedule     进程内定时：After/Every/Idle，只依赖标准库
-         agentcore/tools        注册表、审批层、延迟加载（visibility）、输出治理（Output/Spiller）、工具元数据
-         agentcore/tools/native 内置工具：文件读写/搜索、shell、web、update_plan、tool_search、skill、memory、session_search、recall、suga_manifest
-         agentcore/tools/mcp    stdio MCP 客户端，工具以 MCP kind 注册
-         agentcore/skills       SKILL.md 解析、多根目录加载与检索
-         agentcore/memory       长期记忆：Store 接口、Governed 治理层、Router 范围路由；memory/files、memory/execstore 两个内置后端
-         agentcore/redact       密钥脱敏（Secrets）与不可信文本清理（Clean）
-         agentcore/extproc      外部进程 exec 协议 v1 与去凭据环境（exec 记忆后端、MCP 子进程共用）
-         agentcore/storage/files 文件存储；mock、testing 用于测试与一致性检查
-            │
-内核     agentcore (根包) + agentcore/api：Runtime、契约类型（含 api.History）、hooks、policies、内存默认存储
+应用层     suga internal/*: config, wiring, personal(+store), chat, acpserver, cli, hooks, output
+              │ 只向下依赖
+宿主侧测试 agentcore/testing（内核一致性检查）、agentcore/mock（假 provider 与假工具）、agentcore/testutil
+           （内核之上的宿主侧测试套件：testing 依赖根包，mock 依赖根包与 api）
+              │ 依赖内核与能力层
+能力层     agentcore/llm          OpenAI 兼容与 Claude provider、fallback 池
+           agentcore/schedule     进程内定时：After/Every/Idle，只依赖标准库
+           agentcore/tasks        后台任务：起命令或函数、读输出、等待、结束（按会话限额，结束通知交宿主）
+           agentcore/tools        注册表、审批层、延迟加载（visibility）、输出治理（Output/Spiller）、工具元数据
+           agentcore/tools/native 内置工具：文件读写/搜索、shell、web、update_plan、tool_search、skill、memory、session_search、recall、suga_manifest
+           agentcore/tools/mcp    stdio MCP 客户端，工具以 MCP kind 注册
+           agentcore/skills       SKILL.md 解析、多根目录加载与检索
+           agentcore/memory       长期记忆：Store 接口、Governed 治理层、Router 范围路由；memory/files、memory/execstore 两个内置后端
+           agentcore/redact       密钥脱敏（Secrets）与不可信文本清理（Clean）
+           agentcore/extproc      外部进程 exec 协议 v1 与去凭据环境（exec 记忆后端、MCP 子进程共用）
+           agentcore/storage/files 文件存储
+              │
+内核       agentcore (根包) + agentcore/api：Runtime、契约类型（含 api.History）、hooks、policies、内存默认存储
+              │
+共享底座   agentcore/internal/*：runid（run id 生成）、utils（元数据克隆）、proctree（进程树回收）；只能被 agentcore 内部引用
+              │
+示例       agentcore/examples/*：可运行的嵌入示例（见「示例与文档」），与其它包一样受 layering_test 白名单约束
 ```
 
-依赖只能自上而下。`layering_test.go` 守住边界：`pkg/agentcore` 下任何包（含测试）依赖了 `pkg/agentcore` 之外的 `github.com/inhere/suga/...` 即失败。根包不依赖能力层：不传 `Config.Tools` 时用私有空注册表，不传 `Config.Storage` 时用内存存储。
+依赖只能自上而下。`layering_test.go` 守住边界：每个包允许依赖哪些 agentcore 包在测试里有一张白名单表（表外依赖、未登记的新包都失败，改表前先想清楚方向）；并且 `pkg/agentcore` 下任何包（含测试）都不依赖 `pkg/agentcore` 之外的 `github.com/inhere/suga/...` 包。根包不依赖能力层：不传 `Config.Tools` 时用私有空注册表，不传 `Config.Storage` 时用内存存储。
 
 ## Quick Start
 

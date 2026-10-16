@@ -126,18 +126,27 @@ flowchart TD
     native[tools/native]
     mcp[tools/mcp]
     skills[skills]
+    tasks[tasks 后台任务]
+    memory[memory + files + execstore]
+    redact[redact]
+    extproc[extproc]
     files[storage/files]
   end
   subgraph core[agentcore 内核]
     rt[Runtime 循环/钩子/策略]
     api[api 契约]
   end
+  subgraph base[agentcore 共享底座 internal/*]
+    internal[runid / utils / proctree]
+  end
   cli --> wiring --> personal --> rt
-  wiring --> llm & tools & native & mcp & skills
+  wiring --> llm & tools & native & mcp & skills & tasks
   config --> wiring
-  native --> tools & skills
-  mcp --> tools
-  llm & tools & skills & files & rt --> api
+  native --> tools & skills & tasks & memory & redact & api
+  mcp --> tools & extproc & api
+  memory --> redact
+  llm & tools & files & rt --> api
+  api & rt & files & native & tasks --> internal
 ```
 
 ## 关键流程
@@ -168,6 +177,14 @@ flowchart TD
 - Q1 `context`、`memory`、`prompt` 三个无使用者子包：推荐删除并记入删除记录（约 575 行代码、800 行测试，相关设计文档归档）；备选：保留并标 experimental，让其示例参与编译。
 - Q2 内置工具（`tools/native`）是否下沉：推荐下沉（独立 Agent 需要开箱即用的开发工具，且它只依赖 tools/skills）；备选：留在 suag，agentcore 只提供工具框架。
 - Q3 独立 Go module：推荐本次不拆（守卫测试已保证可拆），待有第二个使用者时再拆为 `github.com/inhere/agentcore`；备选：本次即拆。
+
+## 实施注记
+
+以下为批准后的实施进度与相关事实，不改变已批准设计（W1–W5、D1–D7）的语义与结论。
+
+| 日期 | 作者 | 注记 |
+|---|---|---|
+| 2026-10-16 | suga（会话 b8f） | 注记：§架构 的 mermaid 依赖边按实测修正（依据 `docs/research/2026-10-16-agentcore-layering-analysis.md` §2 的 `go list` 依赖图，issue suga-8nbt）：`native` 的边从 `tools & skills` 改为 `tools & skills & tasks & memory & redact & api`，`mcp` 补 `extproc & api`，删掉并不存在的 `skills --> api`，并画出内核与 `api` 之下的共享底座 `internal/*`（`runid`/`utils`/`proctree`）。同批把 W5 的守卫由 `-deps -test` 前缀检查换成“每包允许依赖的 agentcore 包白名单”（`pkg/agentcore/layering_test.go`，表外依赖即失败），并把会话 id 的读写下沉到 `api` 以消除 `tasks → llm`；W1–W5 与 D1–D7 的结论不变。 |
 
 ## 结论与人工计划 Gate
 

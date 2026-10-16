@@ -8,6 +8,7 @@
 
 - agentcore：会话 id 的读写（`WithSessionID` / `SessionIDFrom`）从 `llm` 下沉到 `api`——它属于运行时会话概念，不是 provider 概念。`llm.WithSessionID` / `llm.SessionIDFrom` 保留为转发并标记 Deprecated；`tasks` 不再依赖 `llm`，后台任务层的依赖闭包不再拖进整个 provider 层（`llm.SessionIDPlaceholder` 与 `{{session_id}}` 请求头行为不变）。
 - agentcore：分层守卫（`pkg/agentcore/layering_test.go`）从“只挡 agentcore 之外的 suga 包”改为按包白名单：“每个包允许依赖哪些 agentcore 包”在测试里显式登记（以当前实际依赖为基线），表外依赖（能力层横向依赖、反向依赖内核）与未登记的新包都会失败；保留“不得依赖 agentcore 之外的 suga 包”的检查，修掉 `allowed` 前缀缺尾 `/` 的漏洞，缺 `go` 可执行文件时改为跳过。
+- agentcore：分层文档与实现对齐（`pkg/agentcore/README.md`、`pkg/agentcore/docs/architecture.md`、`docs/design/2026-10-10-agentcore-layering-design.md`）：分层图补 `tasks`、`testutil` 与共享底座 `internal/*`，`mock`/`testing` 从能力层改为内核之上的宿主侧测试套件，能力层列举与依赖边同步实测（`tools/native` 实际依赖 6 个兄弟包）。
 
 ## [0.25.0] - 2026-10-16
 
