@@ -50,32 +50,32 @@
 - 设计关联：`suga-ob4a`；`suga-1ojw` 的 ACP 权限选项部分纳入本计划，ACP 其余非目标保持不动；`suga-oyby` 的 `:add-dir`/越界授权语义保持不变。
 - 事实基线：设计 §“已确认事实与规范”及本计划“能力发现”；实施前重新记录 HEAD、分支和 dirty 状态，若事实与设计冲突，按“待确认/风险”停止。
 
-## 能力发现
+## Capability Discovery
 
 ### Capability decisions
 
 | capability_id | required_capability | searched_candidates | direct_reuse | thin_adapter_or_owner_extension | decision | proven_gap | duplication_and_lifecycle_risk |
 |---|---|---|---|---|---|---|---|
-| CAP-AR-01 | 纯规则模型、命令/路径/MCP 匹配与动作归并 | `pkg/agentcore/tools/approval.go`、`tools.MetaOf`、`internal/wiring/cli_mcp.go`、native `resolveShell`/路径解析 | 审批层、工具元数据、MCP glob 校验与默认拒绝可复用 | 新增 `pkg/agentcore/tools/rules` 纯逻辑 owner；wiring 只负责来源与装配 | OWNER_EXTENSION | 现有代码没有声明式原生规则、shell 安全白名单或项目信任 | 规则匹配只能有一个能力层 owner；禁止在 chat/run/ACP 各写一份 matcher |
-| CAP-AR-02 | 用户/项目/会话规则加载、信任、重载与写回 | `internal/wiring/capabilities.go` 的分层文件加载、`internal/config/load.go`、YAML v3、output-rules 先例 | 项目文件路径约定、配置解析、锁/原子写回工具可复用 | `internal/wiring/rules.go`、`rules_write.go` 作为 wiring owner | OWNER_EXTENSION | 无 approval-rules 文件、hash trust 或每回合保留上一份策略 | 规则解析不下沉到能力层；写回与读取必须共用 schema 校验 |
-| CAP-AR-03 | chat 的范围化 always/deny 与交互 | `internal/wiring/chat_approver.go`、`tools.Asker`、`chat_approval.py` | 询问/非 TTY/`tools.approval` 与 askOutside 流程可复用 | 会话 Policy 快照、scope key、文案和持久化回答原位扩展 | OWNER_EXTENSION | 现有 `map[string]bool` 只有工具名，不能表达命令/目录 | 不新建第二套 chat 审批器；保持外层危险守卫与越界授权顺序 |
-| CAP-AR-04 | run/ACP/子 agent 同模判定 | `runtime.go` 装配、`acpserver/policy.go`、`subagent.go` | 入口 approver、ACP BeforeTool 通知、子 agent 创建参数可复用 | 各入口只做策略结果翻译；Policy 在创建时快照给子 agent | OWNER_EXTENSION | ACP 目前只有 allow-once/reject-once，子 agent 为显式 allow-all | 同一规则语义不复制；入口默认动作仍由各入口保有 |
-| CAP-AR-05 | 审批原因观测与清单 | `ApprovalReport`、`observe.go`、`trace.go`、`manifest.go` | 现有 attrs、trace JSON、manifest 双路径可复用 | 追加 `Rule`/`Scope` 与 approval_rules 清单 | DIRECT_REUSE + OWNER_EXTENSION | 现有报告只有 Source/Wait/Danger，无法解释具体命中 | manifest 运行时和静态路径需共用摘要构造，防止漂移 |
+| CAP-01 | 纯规则模型、命令/路径/MCP 匹配与动作归并 | `pkg/agentcore/tools/approval.go:32-170`、`pkg/agentcore/tools/meta.go:53-68`、`internal/wiring/cli_mcp.go:14-107`、native `code_exec.go:85-108` | 审批层、工具元数据、MCP glob 校验与默认拒绝可复用 | 新增 `pkg/agentcore/tools/rules` 纯逻辑 owner；wiring 只负责来源与装配 | MINIMAL_NEW_MODULE | 现有代码没有声明式原生规则、shell 安全白名单或项目信任 | 规则匹配只能有一个能力层 owner；禁止在 chat/run/ACP 各写一份 matcher |
+| CAP-02 | 用户/项目/会话规则加载、信任、重载与写回 | `internal/wiring/capabilities.go:48-77,110-132` 的分层文件加载、`internal/config/load.go`、YAML v3、output-rules 先例 | 项目文件路径约定、配置解析、锁/原子写回工具可复用 | `internal/wiring/rules.go`、`rules_write.go` 作为 wiring owner | OWNER_EXTENSION | 无 approval-rules 文件、hash trust 或每回合保留上一份策略 | 规则解析不下沉到能力层；写回与读取必须共用 schema 校验 |
+| CAP-03 | chat 的范围化 always/deny 与交互 | `internal/wiring/chat_approver.go:22-125`、`tools.Asker`、`chat_approval.py` | 询问/非 TTY/`tools.approval` 与 askOutside 流程可复用 | 会话 Policy 快照、scope key、文案和持久化回答原位扩展 | OWNER_EXTENSION | 现有 `map[string]bool` 只有工具名，不能表达命令/目录 | 不新建第二套 chat 审批器；保持外层危险守卫与越界授权顺序 |
+| CAP-04 | run/ACP/子 agent 同模判定 | `internal/acpserver/policy.go:49-170`、`internal/wiring/subagent.go:107-117`、runtime 装配 | 入口 approver、ACP BeforeTool 通知、子 agent 创建参数可复用 | 各入口只做策略结果翻译；Policy 在创建时快照给子 agent | OWNER_EXTENSION | ACP 目前只有 allow-once/reject-once，子 agent 为显式 allow-all | 同一规则语义不复制；入口默认动作仍由各入口保有 |
+| CAP-05 | 审批原因观测与清单 | `pkg/agentcore/tools/approval.go:134-170`、`internal/personal/observe.go`、`internal/personal/trace.go`、`internal/wiring/manifest.go:27-39,115-190,219-278` | 现有 attrs、trace JSON、manifest 双路径可复用 | 追加 `Rule`/`Scope` 与 approval_rules 清单 | OWNER_EXTENSION | 现有报告只有 Source/Wait/Danger，无法解释具体命中 | manifest 运行时和静态路径需共用摘要构造，防止漂移 |
 
 ### New module candidates
 
 | candidate_id | capability_id | proposed_module | searched_candidates | direct_reuse_gap | thin_adapter_or_owner_extension_gap | proven_gap | unique_owner_and_lifecycle | deletion_or_merge_handling |
 |---|---|---|---|---|---|---|---|---|
-| MOD-AR-01 | CAP-AR-01 | `pkg/agentcore/tools/rules` | `pkg/agentcore/tools/approval.go`、`internal/wiring/cli_mcp.go` | 需要无 `internal/*` 依赖的纯 matcher 与 `Policy.Decide` | wiring 只构造 Policy，不复制匹配逻辑 | 已由设计确认：原生/项目/会话规则没有现成实现 | 随 agentcore/tools 能力层生命周期 | 若实现证明与既有 approval 可合并，保留深接口但不再造平行 matcher；否则该模块是唯一 owner |
+| MOD-AR-01 | CAP-01 | `pkg/agentcore/tools/rules` | `pkg/agentcore/tools/approval.go:32-170`、`internal/wiring/cli_mcp.go:14-107` | 需要无 `internal/*` 依赖的纯 matcher 与 `Policy.Decide` | wiring 只构造 Policy，不复制匹配逻辑 | 已由设计确认：原生/项目/会话规则没有现成实现 | 随 agentcore/tools 能力层生命周期 | 若实现证明与既有 approval 可合并，保留深接口但不再造平行 matcher；否则该模块是唯一 owner |
 
 ### Rejected new tools
 
 | rejected_candidate | capability_id | deletion_test_and_reason |
 |---|---|---|
-| ACP 独立第二套规则引擎 | CAP-AR-04 | 删除后 Policy 仍应覆盖 ACP；两套语义会使 deny/always 与 chat 分叉 |
-| 项目级 `config.yaml` 内联规则 | CAP-AR-02 | 设计选择独立 `approval-rules.yaml`；删除该入口可避免程序追加打乱用户配置与提权通道 |
+| ACP 独立第二套规则引擎 | CAP-04 | 删除后 Policy 仍应覆盖 ACP；两套语义会使 deny/always 与 chat 分叉 |
+| 项目级 `config.yaml` 内联规则 | CAP-02 | 设计选择独立 `approval-rules.yaml`；删除该入口可避免程序追加打乱用户配置与提权通道 |
 
-## 预检（preflight）与 fail-closed 条件
+## Preflight
 
 - P0：确认 worktree 根为 `inhere-tools/suga`、分支为当前计划分支；记录 HEAD、`git status --short`；owner 路径无未归属改动，发现冲突即停止。
 - P1：确认基线设计仍为 Draft 0.3 / 已批准，且 `pkg/agentcore/layering_test.go` 不允许 `pkg/agentcore` 依赖 `internal/*`；规则 matcher 不得读配置或文件系统。
