@@ -15,6 +15,7 @@ import (
 	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/redact"
 	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 // chatState is what one chat process carries besides the session setup Run
@@ -60,6 +61,13 @@ type chatState struct {
 	// dirs is the session's added-directory handle (Options.Dirs): the :add-dir,
 	// :dirs and :rm-dir commands work through it; nil leaves them out.
 	dirs SessionDirs
+	// local is the runner of the local commands (Options.Local): a "!cmd" line
+	// typed at the prompt runs through it; nil leaves them ordinary messages.
+	local *native.LocalCommand
+	// localContext holds what the "!!" commands of this chat collected for the
+	// model (local_cmd.go): it is handed over with the next turn's context and
+	// dropped when chat ends without a message.
+	localContext string
 	// steering is true while the input line stays available during a turn
 	// (Options.Steering with a terminal): runTurn then reads the turn's input
 	// through a turnInput consumer (steering.go).
@@ -88,6 +96,13 @@ func (s *chatState) errWriter() io.Writer {
 		return s.errOut
 	}
 	return s.stderr
+}
+
+// localSystemContext is the extra context of one turn: what the person's local
+// commands ("!!") produced, then the hook context. Both go to the model as a
+// user message right before the turn's own input (personal.RunRequest.SystemContext).
+func localSystemContext(local, hook string) string {
+	return appendContext(local, hook)
 }
 
 // runTurn executes one turn of the chat, and the turns the messages inserted
@@ -169,9 +184,11 @@ func (s *chatState) runOneTurn(line string, injected bool) (*steerTurn, error) {
 	turnCtx, cancelTurn := context.WithCancel(s.ctx)
 	turn := s.startTurnInput(cancelTurn)
 	result, runErr := s.runner.Run(turnCtx, personal.RunRequest{
-		SessionID:     s.sessionID,
-		Prompt:        line,
-		SystemContext: s.pendingContext,
+		SessionID: s.sessionID,
+		Prompt:    line,
+		// What the person's own local commands ("!!") produced comes first, so the
+		// model reads it as context of this message; the hook context follows.
+		SystemContext: localSystemContext(s.localContext, s.pendingContext),
 		Injected:      injected,
 		Emit: func(eventCtx context.Context, event personal.Event) error {
 			if event.Kind == "steer_delivered" {
@@ -215,6 +232,9 @@ func (s *chatState) runOneTurn(line string, injected bool) (*steerTurn, error) {
 	}
 	s.stats.add(result)
 	s.pendingContext = ""
+	// The "!!" results went to the model with this turn; the next ones start a
+	// new block.
+	s.localContext = ""
 	// What became of the messages inserted while the turn ran (design D4): a
 	// completed turn hands back the ones it never delivered, a cancelled or failed
 	// one all of them.

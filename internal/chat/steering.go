@@ -162,6 +162,14 @@ func (t *turnInput) insert(line string) {
 	if text == "" {
 		return
 	}
+	// A local command cannot run while the turn does (the prompt belongs to the
+	// turn): the line is not inserted as a message either, it goes back to the
+	// input line for the next prompt (the way a message the turn refused does).
+	if _, isLocal := parseLocalCommand(line); isLocal {
+		t.state.render.Hint(localCommandBusyHint)
+		t.state.source.putBackLine(line)
+		return
+	}
 	state := t.state
 	msg := personal.Steer{ID: state.nextSteerID(), Text: text, Source: personal.SteerSourceKeyboard}
 	accepted, err := state.runner.Steer(state.sessionID, msg)

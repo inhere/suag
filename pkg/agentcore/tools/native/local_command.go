@@ -127,31 +127,43 @@ func (c *LocalCommand) Run(ctx context.Context, command string, stream io.Writer
 	cmd.WaitDelay = shellWaitDelay
 
 	started := time.Now()
+	status := ""
 	if err := cmd.Start(); err != nil {
-		return res, fmt.Errorf("start %s: %w", c.shell.name(), err)
+		// The shell could not start. A run the person (or chat) ended before it
+		// was up - a Ctrl-C pressed in the moment the command starts - is a
+		// cancellation, not a failure.
+		if runCtx.Err() == nil {
+			return res, fmt.Errorf("start %s: %w", c.shell.name(), err)
+		}
+		res.ExitCode = -1
+	} else {
+		tree.Started()
+		waitErr := cmd.Wait()
+		tree.Close() // also ends background children left behind by the command
+		res.ExitCode = cmd.ProcessState.ExitCode()
+		switch {
+		case errors.Is(waitErr, exec.ErrWaitDelay):
+			status = fmt.Sprintf("[exit code: %d; a background process kept the output open and was killed]", res.ExitCode)
+		case waitErr != nil && res.ExitCode < 0:
+			return res, fmt.Errorf("run %s: %w", c.shell.name(), waitErr)
+		}
 	}
-	tree.Started()
-	err := cmd.Wait()
 	res.Duration = time.Since(started)
-	tree.Close() // also ends background children left behind by the command
-
-	res.ExitCode = cmd.ProcessState.ExitCode()
 	res.Bytes = out.bytes
+	// The deadline is the run's own; a cancellation is chat's context (the
+	// person's Ctrl-C, or chat leaving).
 	res.TimedOut = runCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil
 	res.Cancelled = !res.TimedOut && ctx.Err() != nil
 	switch {
 	case res.TimedOut:
-		res.ModelText = c.modelText(command, res, out.text(), fmt.Sprintf("[timeout after %s: process tree killed; output above is partial]", c.timeout))
-	case res.Cancelled:
-		res.ModelText = c.modelText(command, res, out.text(), "[cancelled: process tree killed; output above is partial]")
-	case errors.Is(err, exec.ErrWaitDelay):
-		res.ModelText = c.modelText(command, res, out.text(),
-			fmt.Sprintf("[exit code: %d; a background process kept the output open and was killed]", res.ExitCode))
-	case err != nil && res.ExitCode < 0:
-		return res, fmt.Errorf("run %s: %w", c.shell.name(), err)
-	default:
-		res.ModelText = c.modelText(command, res, out.text(), fmt.Sprintf("[exit code: %d]", res.ExitCode))
+		status = fmt.Sprintf("[timeout after %s: process tree killed; output above is partial]", c.timeout)
+	case res.Cancelled && status == "":
+		status = "[cancelled: process tree killed; output above is partial]"
 	}
+	if status == "" {
+		status = fmt.Sprintf("[exit code: %d]", res.ExitCode)
+	}
+	res.ModelText = c.modelText(command, res, out.text(), status)
 	return res, nil
 }
 

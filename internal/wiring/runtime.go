@@ -110,9 +110,22 @@ type Runtime struct {
 	// outside-directory question change them through it too, so the metadata and
 	// the live set stay in step.
 	sessionDirs *SessionAddDirs
+	// local is the runner of chat's local commands ("!cmd"/"!!cmd"): the shell,
+	// workspace and output limits are the ones the shell tools use, so a command
+	// a person types there behaves like one the model runs.
+	local *native.LocalCommand
 	// tools is the registry stack the runner calls (visibility -> approval
 	// -> base); kept for tests.
 	tools agentcore.ToolRegistry
+}
+
+// LocalCommands is the runner of chat's local commands ("!cmd"/"!!cmd"): chat
+// runs a line typed at the prompt through it. It is nil for a nil runtime.
+func (rt *Runtime) LocalCommands() *native.LocalCommand {
+	if rt == nil {
+		return nil
+	}
+	return rt.local
 }
 
 // SessionAddDirs is the runtime's handle on the session's added directories
@@ -451,6 +464,14 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	rt := &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
 		ContextWindow: contextWindow, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry,
 		AddDirs: dirs}
+	// The runner of chat's local commands ("!cmd"/"!!cmd"): they run like
+	// shell_exec ones (same shell, workspace, environment and output rules) but
+	// outside the tools and every turn - chat never asks for them (用户 2026-10-14).
+	env := nativeEnv(workspace, dirs)
+	rt.local = native.NewLocalCommand(native.LocalCommandOptions{
+		Workspace: workspace, Shell: env.Shell, Timeout: env.ShellTimeoutMax,
+		RawBytes: env.RawBytes, InlineBytes: env.InlineBytes, Minimize: minimizeOutput(workspace),
+	})
 	// The added directories of the session being served (--add-dir): the front
 	// end fills the set once the session is open (ApplyAddDirs) through this
 	// handle, which chat's commands and the outside-directory question share.

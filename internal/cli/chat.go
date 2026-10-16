@@ -39,6 +39,9 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 		// The session's added directories (:add-dir/:dirs/:rm-dir): the handle
 		// shares the metadata and the set the tools read with ApplyAddDirs.
 		Dirs: runtime.SessionAddDirs(),
+		// The local commands of the prompt (!cmd / !!cmd): the same shell and
+		// workspace the shell tools use, and no turn of their own.
+		Local: runtime.LocalCommands(),
 	}, stdin, stdout, stderr, hooks)
 }
 

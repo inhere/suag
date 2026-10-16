@@ -19,6 +19,7 @@ import (
 	"github.com/inhere/suga/pkg/agentcore/schedule"
 	"github.com/inhere/suga/pkg/agentcore/tasks"
 	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 const (
@@ -97,6 +98,12 @@ type Options struct {
 	// session it belongs to is opened by SetupSession, so it is only used from
 	// the loop on.
 	Dirs SessionDirs
+	// Local runs a line the person typed at the prompt with a leading "!"
+	// ("!cmd": run it in the local shell; "!!cmd": run it and hand its result to
+	// the model with the next message). The CLI builds it with the same shell,
+	// workspace and output limits shell_exec uses; nil leaves the prefix an
+	// ordinary message (run, ACP, a chat without one).
+	Local *native.LocalCommand
 }
 
 // Run drives the interactive chat REPL on top of runner; hooks may be nil.
@@ -260,7 +267,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		stderr: stderr, errOut: errOut, baseEvent: baseEvent, title: title, idle: idle,
 		stats: &stats, sessionID: sessionID,
 		createdAtStartup: createdAtStartup, dirs: opts.Dirs,
-		steering: steering,
+		steering: steering, local: opts.Local,
 	}
 	if runner.ProcessRoot() != "" {
 		// The delivery endpoint is the chat state's own method: `suga send --steer`
@@ -305,6 +312,11 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			// Messages inserted into the last turn that chat did not run (it was
 			// leaving, or the turn was): the person sees how many are gone.
 			fmt.Fprintf(stderr, "Warning: %d inserted message(s) were not run on exit.\n", n)
+		}
+		if state.localContext != "" {
+			// "!!" results collected for the next message that chat never sent:
+			// they are dropped with the session (the commands themselves ran).
+			fmt.Fprintln(stderr, "Warning: local command results (!!) were not sent to the model and were discarded.")
 		}
 		if state.waiting != nil {
 			state.lostReply = appendContext(state.lostReply, state.waiting.Interrupt(context.Background()))
@@ -363,6 +375,11 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		if !hasLine {
 			return nil
 		}
+		// The local commands ("!cmd"/"!!cmd") are read from the line as it was
+		// typed: a leading space before the "!" makes it an ordinary message (the
+		// trim below), and only a line typed here is ever one (see the injected
+		// case below).
+		local, isLocal := parseLocalCommand(line)
 		line = strings.TrimSpace(line)
 		// Any input (keyboard, delivery, Stop hook reply) is activity: the idle
 		// clock starts over. A running consolidation is preempted by the
@@ -374,7 +391,13 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		case injected:
 			// Text from elsewhere (a `suga send` delivery, a Stop hook reply, a task
 			// notice) is never a command: it is always an ordinary message, so
-			// delivered text can neither change the session's permissions nor end it.
+			// delivered text can neither change the session's permissions nor end it,
+			// nor run a local command.
+		case isLocal && state.local != nil:
+			// A command typed at this keyboard: it runs in the local shell and
+			// starts no turn (local_cmd.go).
+			state.runLocalCommand(local)
+			continue
 		case line == ":quit", line == ":exit":
 			// Both spellings leave chat; :exit is the familiar one from other REPLs.
 			return nil
