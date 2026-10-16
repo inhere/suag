@@ -290,12 +290,18 @@ func (t *FileRemoveTool) Execute(ctx context.Context, call api.ToolCall) (*api.T
 	if err != nil {
 		return incomplete(fmt.Errorf("trash: %w", err), nil, purgedDirs)
 	}
-	if err := moveToTrash(plan.Abs, filepath.Join(entry, filepath.Base(plan.Abs))); err != nil {
+	trashName := filepath.Base(plan.Abs)
+	// origin.json is reserved for provenance. Keep a removed file with that
+	// basename under a separate payload name so its bytes are not overwritten.
+	if strings.EqualFold(trashName, "origin.json") {
+		trashName = ".suga-content"
+	}
+	if err := moveToTrash(plan.Abs, filepath.Join(entry, trashName)); err != nil {
 		_ = os.RemoveAll(entry)
 		return incomplete(err, nil, purgedDirs)
 	}
 	origin, _ := json.Marshal(map[string]any{
-		"path": plan.Abs, "removed_at": t.now().UTC().Format(time.RFC3339), "files": plan.Files, "bytes": plan.Bytes,
+		"path": plan.Abs, "name": trashName, "removed_at": t.now().UTC().Format(time.RFC3339), "files": plan.Files, "bytes": plan.Bytes,
 		"purged_dirs": plan.PurgeDirs,
 	})
 	if err := os.WriteFile(filepath.Join(entry, "origin.json"), origin, 0o644); err != nil {

@@ -9,12 +9,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 type trashOrigin struct {
-	Path string `json:"path"`
+	Path      string `json:"path"`
+	Name      string `json:"name"`
+	RemovedAt string `json:"removed_at"`
 }
 
 // restoreTrash puts back the one trash entry created by file_remove. The
@@ -64,13 +67,30 @@ func (u *UndoCore) restoreTrash(ctx context.Context, _ string, _ string, meta Sn
 		out.unresolved = true
 		return out, err
 	}
+	if origin.RemovedAt != "" {
+		removedAt, err := time.Parse(time.RFC3339, origin.RemovedAt)
+		if err != nil {
+			out.reason = "回收区来源时间损坏"
+			out.unresolved = true
+			return out, err
+		}
+		if time.Now().UTC().After(removedAt.Add(native.TrashRetention)) {
+			out.action = CheckpointActionUnrecoverable
+			out.reason = "回收区条目已超过 7 天保留期"
+			out.unresolved = true
+			return out, nil
+		}
+	}
 	if !sameUndoPath(origin.Path, path) {
 		out.reason = "回收区来源与快照目标不一致"
 		out.unresolved = true
 		return out, nil
 	}
-
-	source := filepath.Join(entry, filepath.Base(origin.Path))
+	sourceName := origin.Name
+	if sourceName == "" {
+		sourceName = filepath.Base(origin.Path)
+	}
+	source := filepath.Join(entry, sourceName)
 	sourceInfo, err := os.Lstat(source)
 	if errors.Is(err, os.ErrNotExist) {
 		out.action = CheckpointActionUnrecoverable
@@ -190,6 +210,13 @@ func restoreTrashTree(source, destination string) (bool, []string, error) {
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", path, err))
+			return nil
+		}
+		if _, err := os.Lstat(target); err == nil {
+			failures = append(failures, fmt.Sprintf("%s: destination already exists", target))
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			failures = append(failures, fmt.Sprintf("%s: cannot inspect destination: %v", target, err))
 			return nil
 		}
 		if err := native.MovePath(path, target); err != nil {
