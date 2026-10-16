@@ -258,7 +258,8 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	opts.CLIMode = true
-	// The run approver is the MCP allowlist (cliMCPGate); it never prompts.
+	// The run approver is the compiled policy; it has no terminal, so ask
+	// decisions fail closed as tool denials while the turn can continue.
 	gate, err := newCLIMCPGate(opts.ReadOnly)
 	if err != nil {
 		return nil, err
@@ -269,7 +270,7 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 	// the session opened later can still fill it (ApplyAddDirs).
 	dirs := native.NewAddDirs()
 	opts.sessionDirs = dirs
-	var approver tools.Approver = gate
+	var approver tools.Approver = newPolicyApprover(gate.policy)
 	var asker *tools.BindableAsker
 	var chatGate *chatApprover
 	if opts.ChatMode {

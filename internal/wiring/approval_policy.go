@@ -1,7 +1,15 @@
 package wiring
 
 import (
+	"context"
+	"fmt"
+	"path/filepath"
+	"runtime"
+
+	gkconfig "github.com/gookit/config/v2"
+	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/tools"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 	approvalrules "github.com/inhere/suga/pkg/agentcore/tools/rules"
 )
 
@@ -22,6 +30,12 @@ type approvalPolicy struct {
 	ReadOnly bool
 	Rules    []approvalrules.Rule
 	Defaults approvalDefaults
+
+	// These paths are copied into every target so allow rules cannot grant access
+	// to the agent's control-plane files through one entry point only.
+	Workspace string
+	SugaHome  string
+	RuleFiles []string
 }
 
 // defaultApprovalDefaults returns the defaults fixed by the approval design.
@@ -54,7 +68,14 @@ func defaultApprovalDefaults(mode approvalrules.Mode, chatAuto bool) approvalDef
 // The caller supplies legacy rules only for chat/run; this deliberate seam is
 // what keeps tools.auto_allow and tools.read_only_allow out of ACP.
 func compileApprovalPolicy(mode approvalrules.Mode, chatAuto, readOnly bool, loaded ApprovalRules, legacy []approvalrules.Rule) approvalPolicy {
-	compiled := approvalPolicy{Mode: mode, ReadOnly: readOnly, Defaults: defaultApprovalDefaults(mode, chatAuto)}
+	compiled := approvalPolicy{Mode: mode, ReadOnly: readOnly, Defaults: defaultApprovalDefaults(mode, chatAuto), Workspace: loaded.Workspace}
+	if loaded.User.Path != "" {
+		compiled.SugaHome = filepath.Dir(loaded.User.Path)
+		compiled.RuleFiles = append(compiled.RuleFiles, loaded.User.Path)
+	}
+	if loaded.Project.Path != "" {
+		compiled.RuleFiles = append(compiled.RuleFiles, loaded.Project.Path)
+	}
 	if loaded.Settings.Enabled {
 		compiled.Rules = append(compiled.Rules, loaded.EffectiveRules()...)
 	}
@@ -85,6 +106,47 @@ func compileACPApprovalPolicy(workspace string, readOnly bool) (approvalPolicy, 
 		return approvalPolicy{}, err
 	}
 	return compileApprovalPolicy(approvalrules.ModeACP, false, readOnly, loaded, nil), nil
+}
+
+// targetFor turns the tool call into the protocol-neutral identity consumed by
+// the shared matcher. Shell and path data are filled here, rather than in each
+// entry point, so an allow rule cannot accidentally match a different target.
+func (p approvalPolicy) targetFor(call agentcore.ToolCall, tool agentcore.Tool) approvalrules.Target {
+	target := approvalrules.Target{
+		Tool: call.Name, MCP: tools.IsMCP(tool), MCPServer: tools.MCPServerOf(tool),
+		Mode: p.Mode, Root: p.Workspace, Workspace: p.Workspace, SugaHome: p.SugaHome,
+		RuleFiles: append([]string(nil), p.RuleFiles...),
+	}
+	if call.Name == "shell_exec" {
+		target.Shell = native.ShellName(gkconfig.String("tools.shell"))
+		target.Windows = runtime.GOOS == "windows"
+		target.Command, _ = call.Arguments["command"].(string)
+	}
+	if call.Name == "file_write" || call.Name == "file_edit" || call.Name == "file_remove" {
+		target.Path, _ = call.Arguments["path"].(string)
+	}
+	return target
+}
+
+// policyApprover is the non-interactive translation of Policy.Decide. An ask
+// has no terminal in run, so it is deliberately converted to ErrDenied rather
+// than treated as an allow or abort; the runner can then continue the turn.
+type policyApprover struct{ policy approvalPolicy }
+
+func newPolicyApprover(policy approvalPolicy) tools.Approver { return &policyApprover{policy: policy} }
+
+func (a *policyApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool agentcore.Tool) error {
+	action, hit := a.policy.Decide(a.policy.targetFor(call, tool), tools.MetaOf(tool))
+	if hit != nil {
+		tools.ReportRule(ctx, hit.Summary(), "")
+	}
+	if action == approvalrules.Allow {
+		return nil
+	}
+	if hit != nil {
+		return tools.Denied(fmt.Sprintf("规则 %s 拒绝执行 %s", hit.Summary(), call.Name))
+	}
+	return tools.Denied(fmt.Sprintf("需要许可：%s，本次运行未授权", call.Name))
 }
 
 // Decide applies explicit rules first and then the category-specific default.
