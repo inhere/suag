@@ -90,7 +90,7 @@ func Catalog() []Spec {
 			return &FileWriteTool{workspace: env.Workspace, addDirs: env.AddDirs, snapshots: env.Snapshots}
 		}},
 		{Name: "file_edit", New: func(env Env) api.Tool {
-			return &FileEditTool{workspace: env.Workspace, addDirs: env.AddDirs}
+			return &FileEditTool{workspace: env.Workspace, addDirs: env.AddDirs, snapshots: env.Snapshots}
 		}},
 		{Name: "file_remove", New: func(env Env) api.Tool {
 			if env.TrashDir == "" {
