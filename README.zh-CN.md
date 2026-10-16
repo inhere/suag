@@ -75,6 +75,21 @@ Suga 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`
 | `providers.<id>.models.<model>` | `context_window`、`max_output_tokens`、`model_id`（与键不同时请求里发送的模型 id）、`type`/`base_url`（该模型可用自己的协议与地址）、`price`、`thinking` |
 | `compact_model`、`fallback_models` | 生成摘要用的便宜模型；主模型失败时依次尝试的备用模型 |
 | `tools.allow_write`、`tools.approval` | 仅 chat：启用写文件与 shell 工具（默认 false）；`ask`（默认）每次写/shell 调用前询问，`auto` 不询问 |
+
+### 审批规则
+
+用 `tools.approval_rules` 控制规则文件；规则正文不放进 `config.yaml`：
+
+```yaml
+tools:
+  approval_rules:
+    enabled: true
+    always_prefix_tokens: 2
+    project_trust:
+      /绝对路径/到/项目: <从 manifest 获取的 sha256>
+```
+
+规则从 `$SUGA_HOME/approval-rules.yaml` 和 `<workspace>/.suga/approval-rules.yaml` 加载，动作优先级为 `deny > ask > allow`。项目级 `allow` 必须先信任准确的工作区路径和当前文件 hash，否则会被忽略；YAML anchor/alias 会被拒绝。运行 `suga manifest --json` 可查看两个文件的路径、生效条数、项目文件当前 hash，以及 allow 被忽略的原因；把 `approval_rules.project.hash` 复制到 `tools.approval_rules.project_trust` 后再显式信任。`suga trace <session> --json` 会在工具和拒绝事件中记录 `approval_rule`、`approval_scope`。设置 `tools.approval_rules.enabled: false` 可回退到旧审批路径。
 | `mcp.servers`、`tools.auto_allow`、`tools.read_only_allow` | MCP 服务，以及 MCP 放行名单（条目形如 `server/工具glob`）；两者都为空时所有 MCP 调用被拒绝 |
 | `memory.user.backend`、`memory.project.backend`、`memory.write_tainted` | 各范围的记忆后端（`files`、项目可用 `gofer`、`exec`），以及读过外部内容的会话写记忆时的处理（`ask`、`deny`、`allow`） |
 | `hooks.command`、`hooks.post_tool_use` | chat 的 hook 命令（argv 列表）与哪些工具调用发 PostToolUse；不设 `hooks.command` 即不启用 hooks |

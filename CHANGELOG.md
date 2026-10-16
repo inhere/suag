@@ -6,6 +6,8 @@
 
 ### 新增
 
+- `suga manifest --json` 与 `suga trace` 增加审批规则来源、项目 hash/信任诊断及命中规则与范围，便于解释工具为何放行或拒绝。
+
 - 审批规则将 MCP legacy 白名单编译为统一规则，并固定 chat、run、ACP 与只读入口的默认动作。
 - chat 审批支持按命令前缀、写编辑目录和删除精确路径生成会话级 allow/deny 规则，并在写回功能启用前明确提示仅本会话生效。
 - 自动识别 idev-std 发行目录与工作空间的 `tmp/idev-std` 加载产物目录为只读根，可通过 `tools.standards_roots` 关闭；支持 `IDEV_STD_RELEASES_ROOT` 与兼容的 `INHERE_DEV_STANDARDS_ROOT`。

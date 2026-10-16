@@ -100,6 +100,23 @@ func writeManifestText(out io.Writer, m wiring.Manifest) error {
 	}
 	fmt.Fprintf(&b, "  write=%s write_tainted=%s\n", m.WritePolicy.MemoryWrite, m.WritePolicy.MemoryWriteTainted)
 
+	fmt.Fprintf(&b, "\nApproval rules\n  enabled=%t tools.approval=%s\n", m.ApprovalRules.Enabled, m.ApprovalRules.Defaults.ToolsApproval)
+	for _, source := range []struct {
+		name  string
+		value wiring.ManifestApprovalSource
+	}{{"user", m.ApprovalRules.User}, {"project", m.ApprovalRules.Project}} {
+		fmt.Fprintf(&b, "  %s path=%s effective=%d", source.name, source.value.Path, source.value.EffectiveRules)
+		if source.value.Hash != "" {
+			fmt.Fprintf(&b, " hash=%s", source.value.Hash)
+		}
+		if source.value.TrustReason != "" {
+			fmt.Fprintf(&b, " trust=%s", source.value.TrustReason)
+		}
+		b.WriteByte('\n')
+		for _, ignored := range source.value.Ignored {
+			fmt.Fprintf(&b, "    ignored #%d: %s (%s)\n", ignored.Index, ignored.Summary, ignored.Reason)
+		}
+	}
 	fmt.Fprintf(&b, "\nOutput\n  inline_bytes=%d spill_bytes=%d\n  sessions_dir=%s\n", m.Output.InlineBytes, m.Output.SpillBytes, m.Output.SessionsDir)
 	fmt.Fprintf(&b, "\nTaint\n  taint_tools=%s\n  taint_on_spill=%s\n", strings.Join(m.Taint.TaintTools, ","), strings.Join(m.Taint.TaintOnSpill, ","))
 

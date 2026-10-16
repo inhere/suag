@@ -32,6 +32,11 @@ type approvalPolicy struct {
 	Rules    []approvalrules.Rule
 	Defaults approvalDefaults
 
+	// RuleSource retains the loaded files for diagnostics exposed by the
+	// manifest. It is the same snapshot used to compile Rules, so static and
+	// runtime manifests cannot drift in their trust/hash explanation.
+	RuleSource ApprovalRules
+
 	// These paths are copied into every target so allow rules cannot grant access
 	// to the agent's control-plane files through one entry point only.
 	Workspace string
@@ -80,7 +85,7 @@ func defaultApprovalDefaults(mode approvalrules.Mode, chatAuto bool) approvalDef
 func compileApprovalPolicy(mode approvalrules.Mode, chatAuto, readOnly bool, loaded ApprovalRules, legacy []approvalrules.Rule) approvalPolicy {
 	compiled := approvalPolicy{
 		Mode: mode, ReadOnly: readOnly, Defaults: defaultApprovalDefaults(mode, chatAuto),
-		Workspace: loaded.Workspace, AlwaysPrefixTokens: loaded.Settings.AlwaysPrefixTokens,
+		RuleSource: loaded, Workspace: loaded.Workspace, AlwaysPrefixTokens: loaded.Settings.AlwaysPrefixTokens,
 		PersistAsk: loaded.Settings.PersistAsk, compiled: true,
 		rulesEnabled: loaded.Settings.Enabled,
 	}

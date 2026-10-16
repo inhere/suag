@@ -75,6 +75,21 @@ Suga reads only `$SUGA_HOME/config.yaml` and `$SUGA_HOME/.env` (default `~/.suga
 | `providers.<id>.models.<model>` | `context_window`, `max_output_tokens`, `model_id` (the id sent to the provider when it differs from the key), `type`/`base_url` (a model may use its own protocol), `price`, `thinking` |
 | `compact_model`, `fallback_models` | Cheaper model for summaries; models tried in order when the main one fails |
 | `tools.allow_write`, `tools.approval` | Chat only: enable write and shell tools (default false); `ask` (default) confirms every write and shell call, `auto` does not |
+
+### Approval rules
+
+Set `tools.approval_rules` to control the rules files without putting rule bodies in `config.yaml`:
+
+```yaml
+tools:
+  approval_rules:
+    enabled: true
+    always_prefix_tokens: 2
+    project_trust:
+      /absolute/path/to/project: <sha256-from-suga-manifest>
+```
+
+Rules are loaded from `$SUGA_HOME/approval-rules.yaml` and `<workspace>/.suga/approval-rules.yaml`. Actions use `deny > ask > allow`; project `allow` rules are ignored until the exact workspace and current file hash are trusted. YAML anchors and aliases are rejected. Use `suga manifest --json` to see both paths, effective counts, the current project hash and the reason an allow was ignored; copy `approval_rules.project.hash` into `tools.approval_rules.project_trust` for an explicit trust decision. `suga trace <session> --json` records `approval_rule` and `approval_scope` on tool and denial events. Set `tools.approval_rules.enabled: false` to use the legacy approval path.
 | `mcp.servers`, `tools.auto_allow`, `tools.read_only_allow` | MCP servers, and the MCP allowlists (`server/toolglob`); every MCP call is refused while both are empty |
 | `memory.user.backend`, `memory.project.backend`, `memory.write_tainted` | Memory backend per scope (`files`, `gofer` for the project, `exec`) and what a session that read external content does on a write (`ask`, `deny`, `allow`) |
 | `hooks.command`, `hooks.post_tool_use` | Chat hook command (an argv list) and which tool calls get a PostToolUse event; no `hooks.command`, no hooks |
