@@ -56,6 +56,7 @@ var layerAllowed = map[string][]string{
 	"storage/files":    {".", "api", "internal/runid", "internal/utils"},
 	"tasks":            {"api", "internal/proctree"},
 	"tools":            {"api", "testing"},
+	"tools/rules":      {},
 	"tools/mcp":        {"api", "extproc", "tools"},
 	"tools/native":     {"api", "internal/proctree", "memory", "memory/files", "redact", "skills", "tasks", "testutil", "tools"},
 	// host-side test suites above the kernel
