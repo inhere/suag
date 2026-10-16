@@ -64,6 +64,14 @@ type Options struct {
 	// default). Like Markdown it needs a colored terminal: a pipe, a redirected
 	// output or NO_COLOR leaves the title alone.
 	TerminalTitle bool
+	// Diff shows what a file tool call changed (config chat.diff, on by default):
+	// the unified diff under the tool result, the pending one before an approval
+	// question, and the :diff command. DiffLines caps how many lines one preview
+	// shows (chat.diff_lines, default 20); :diff shows the whole change. The change
+	// itself arrives on the runner's tool_call events, which the CLI turns on for
+	// chat (personal.Config.DiffPreview).
+	Diff      bool
+	DiffLines int
 	// terminalTitleOut is where the title sequences go (nil: the chat output);
 	// tests point it at a buffer to check when the title changes without a
 	// terminal.
@@ -246,6 +254,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		Provider: runner.ProviderName(), Model: runner.Model(),
 		Thinking: opts.Thinking, ContextWindow: opts.ContextWindow,
 		WriteTools: opts.WriteTools, Markdown: opts.Markdown, Spinner: opts.Spinner,
+		Diff: opts.Diff, DiffLines: opts.DiffLines,
 		HighlightInput: opts.HighlightInput, HighlightWidth: inputSource.highlightWidth,
 		// The input line stays on screen while a turn runs: the streamed text then
 		// leaves only complete lines, and the waiting line becomes a status line above
@@ -422,6 +431,10 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 				fmt.Fprintf(inputSource, "Compacted context: ~%d -> ~%d tokens (estimate)\n", out.TokensBefore, out.TokensAfter)
 			}
 			idle.Resume()
+			continue
+		case isDiffCommand(line):
+			// Show a file change of this session again, in full (:diff [N]).
+			render.ShowDiff(strings.TrimPrefix(line, diffCmd))
 			continue
 		case state.dirs != nil && isDirCommand(line):
 			// The session's added directories (:add-dir/:dirs/:rm-dir).

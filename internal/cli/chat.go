@@ -24,6 +24,10 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 	if err != nil {
 		return err
 	}
+	diffLines, err := appconfig.ChatDiffLines()
+	if err != nil {
+		return err
+	}
 	return chat.Run(ctx, runtime.Runner, chat.Options{
 		SessionID: opts.SessionID, ResumeID: opts.ResumeID, FromID: opts.FromID,
 		Asker: runtime.Asker, WriteTools: runtime.WriteTools,
@@ -33,7 +37,12 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 		HighlightInput: appconfig.ChatHighlightInputEnabled(),
 		Steering:       appconfig.ChatSteeringEnabled(),
 		TerminalTitle:  appconfig.ChatTerminalTitleEnabled(),
-		IdleAfter:      idle.After, IdleMinRatio: idle.MinRatio,
+		// What a file tool changed (chat.diff / chat.diff_lines): the diff under the
+		// tool result, before an approval question and with :diff. The change itself
+		// comes from the runner's tool_call events, which wiring turns on for chat.
+		Diff:      appconfig.ChatDiffEnabled(),
+		DiffLines: diffLines,
+		IdleAfter: idle.After, IdleMinRatio: idle.MinRatio,
 		Tasks: taskManager, TaskWake: taskWake, StopBackground: sugahooks.StopBackground(),
 		SetupSession: opts.setupSession,
 		// The session's added directories (:add-dir/:dirs/:rm-dir): the handle

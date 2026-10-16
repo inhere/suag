@@ -412,10 +412,14 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		Workspace:       workspace,
 		Version:         buildVersion,
 		Mode:            runMode(allowWrite),
-		TaintTools:      taintTools,
-		TaintOnSpill:    taintOnSpill,
-		Visibility:      vis,
-		Price:           priceLookup(settings),
+		// chat shows what a file tool changed (chat.diff): its tool_call events then
+		// carry the change on disk (internal/diffview). run, ACP and stream-json keep
+		// file text out of their events; ACP builds its own diff for its client.
+		DiffPreview:  opts.ChatMode && appconfig.ChatDiffEnabled(),
+		TaintTools:   taintTools,
+		TaintOnSpill: taintOnSpill,
+		Visibility:   vis,
+		Price:        priceLookup(settings),
 		// Tool outputs above tools.max_output_bytes go to
 		// <SUGA_HOME>/sessions/<id>/outputs/ and the session keeps a ref.
 		InlineOutputBytes: inlineOutputBytes(),
