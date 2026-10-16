@@ -22,9 +22,9 @@ type historyEntry struct {
 	Text      string    `json:"text"`
 }
 
-// inputHistory is a process-local snapshot plus append-only persistence. The
-// append file is deliberately opened with O_APPEND so concurrent chats cannot
-// overwrite one another's entries.
+// inputHistory keeps a local view for the editor and appends each submitted line.
+// The file is only compacted after a margin, so reaching maxEntries does not
+// rewrite the whole history for every new line.
 type inputHistory struct {
 	mu         sync.Mutex
 	path       string
@@ -55,18 +55,23 @@ func newInputHistory(workspace string, enabled bool, maxEntries int) (*inputHist
 		return nil, err
 	}
 	defer f.Close()
-	s := bufio.NewScanner(f)
+	entries, err := scanHistory(bufio.NewScanner(f))
+	if err != nil {
+		return nil, err
+	}
+	h.entries = trimHistory(entries, maxEntries)
+	return h, nil
+}
+
+func scanHistory(s *bufio.Scanner) ([]historyEntry, error) {
+	var entries []historyEntry
 	for s.Scan() {
 		var e historyEntry
 		if json.Unmarshal(s.Bytes(), &e) == nil && e.Text != "" {
-			h.entries = append(h.entries, e)
+			entries = append(entries, e)
 		}
 	}
-	if err := s.Err(); err != nil {
-		return nil, err
-	}
-	h.entries = trimHistory(h.entries, maxEntries)
-	return h, nil
+	return entries, s.Err()
 }
 
 func trimHistory(entries []historyEntry, max int) []historyEntry {
@@ -102,31 +107,88 @@ func (h *inputHistory) add(text string) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	needsTrim := len(h.entries)+1 > h.maxEntries
-	h.entries = trimHistory(append(h.entries, e), h.maxEntries)
-	if needsTrim {
-		if err := h.rewriteLocked(); err != nil {
-			return err
+	h.entries = append(h.entries, e)
+	// Leave room for other chat processes and avoid a rewrite on every add.
+	if count, err := historyFileLen(h.path); err == nil && count > historyTrimLimit(h.maxEntries) {
+		if entries, err := h.trimLatest(); err == nil {
+			h.entries = entries
 		}
 	}
 	return nil
 }
 
-func (h *inputHistory) rewriteLocked() error {
-	data := make([]byte, 0, len(h.entries)*64)
-	for _, entry := range h.entries {
+func historyTrimLimit(max int) int {
+	margin := max / 10
+	if margin < 1 {
+		margin = 1
+	}
+	return max + margin
+}
+
+func historyFileLen(path string) (int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	entries, err := scanHistory(bufio.NewScanner(f))
+	return len(entries), err
+}
+
+// trimLatest reads again after the append, then replaces the file from that
+// latest view. A failed cleanup or rename is deliberately ignored by add: the
+// submitted line is already safely appended and can be compacted next time.
+func (h *inputHistory) trimLatest() ([]historyEntry, error) {
+	f, err := os.Open(h.path)
+	if err != nil {
+		return nil, err
+	}
+	entries, readErr := scanHistory(bufio.NewScanner(f))
+	closeErr := f.Close()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	entries = trimHistory(entries, h.maxEntries)
+	data := make([]byte, 0, len(entries)*64)
+	for _, entry := range entries {
 		line, err := json.Marshal(entry)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		data = append(data, line...)
 		data = append(data, '\n')
 	}
-	tmp := h.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
+	tmp, err := os.CreateTemp(filepath.Dir(h.path), ".history-*")
+	if err != nil {
+		return nil, err
 	}
-	return os.Rename(tmp, h.path)
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(tmpName, h.path); err != nil {
+		// Windows cannot rename over an existing file. Removing the old name is
+		// the only portable fallback; a failure still leaves the append intact.
+		if removeErr := os.Remove(h.path); removeErr != nil {
+			return nil, err
+		}
+		if err := os.Rename(tmpName, h.path); err != nil {
+			return nil, err
+		}
+	}
+	return entries, nil
 }
 
 func (h *inputHistory) lines() []string {
