@@ -98,6 +98,7 @@ func Catalog() []Spec {
 			}
 			t := NewFileRemoveTool(env.Workspace, env.TrashDir)
 			t.addDirs = env.AddDirs
+			t.snapshots = env.Snapshots
 			return t
 		}},
 		{Name: "shell_exec", New: func(env Env) api.Tool {

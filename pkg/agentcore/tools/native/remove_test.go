@@ -197,7 +197,7 @@ func TestTrashPurge(t *testing.T) {
 		assert.NoErr(t, os.MkdirAll(d, 0o755))
 	}
 	_, err := runRemove(t, tool, map[string]any{"path": "a.txt"})
-	assert.NoErr(t, err)
+	assert.NoError(t, err)
 	_, err = os.Stat(old)
 	assert.True(t, os.IsNotExist(err), "older than 7 days is purged")
 	for _, d := range []string{recent, other} {
@@ -206,4 +206,78 @@ func TestTrashPurge(t *testing.T) {
 	}
 	_ = ws
 	assert.True(t, strings.HasPrefix(filepath.Base(old), "20261012-"))
+}
+
+func TestFileRemoveSnapshotHook(t *testing.T) {
+	t.Run("catalog injects the snapshotter", func(t *testing.T) {
+		snapshots := &recordingSnapshotter{}
+		tools := BuildTools(Env{Workspace: t.TempDir(), TrashDir: filepath.Join(t.TempDir(), "trash"), Snapshots: snapshots}, true)
+		var remove *FileRemoveTool
+		for _, tool := range tools {
+			if candidate, ok := tool.(*FileRemoveTool); ok {
+				remove = candidate
+			}
+		}
+		assert.Require(t, assert.NotNil(t, remove))
+		assert.Eq(t, snapshots, remove.snapshots)
+	})
+
+	t.Run("records the actual trash entry and origin after a file removal", func(t *testing.T) {
+		ws, tool := removeFixture(t)
+		snapshots := &recordingSnapshotter{}
+		tool.snapshots = snapshots
+		_, err := tool.Execute(t.Context(), api.ToolCall{CallID: "remove/file", Arguments: map[string]any{"path": "a.txt"}})
+		assert.Require(t, assert.NoError(t, err))
+		assert.Require(t, assert.Len(t, snapshots.before, 1))
+		assert.Eq(t, SnapshotKindTrash, snapshots.before[0].Kind)
+		assert.Eq(t, "a.txt", snapshots.before[0].Rel)
+		assert.Empty(t, snapshots.before[0].Before)
+		assert.Require(t, assert.Len(t, snapshots.after, 1))
+		assert.Eq(t, SnapshotStatusComplete, snapshots.after[0].Status)
+		assert.Eq(t, SnapshotKindTrash, snapshots.after[0].Kind)
+		assert.Eq(t, int64(1), snapshots.after[0].Size)
+		assert.Require(t, assert.Len(t, snapshots.after[0].TrashEntries, 1))
+		entry := snapshots.after[0].TrashEntries[0]
+		_, err = os.Stat(filepath.Join(entry, "origin.json"))
+		assert.NoErr(t, err)
+		_, err = os.Stat(filepath.Join(ws, "a.txt"))
+		assert.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("records purged and mixed deletion separately", func(t *testing.T) {
+		ws, tool := removeFixture(t)
+		purgedSnapshots := &recordingSnapshotter{}
+		tool.snapshots = purgedSnapshots
+		_, err := tool.Execute(t.Context(), api.ToolCall{CallID: "purged", Arguments: map[string]any{"path": "tmp/proj", "recursive": true}})
+		assert.Require(t, assert.NoError(t, err))
+		assert.Eq(t, SnapshotKindPurged, purgedSnapshots.before[0].Kind)
+		assert.Eq(t, []string{"tmp/proj"}, purgedSnapshots.after[0].PurgedDirs)
+		assert.Empty(t, purgedSnapshots.after[0].TrashEntries)
+
+		assert.NoErr(t, os.MkdirAll(filepath.Join(ws, "app", "node_modules"), 0o755))
+		assert.NoErr(t, os.WriteFile(filepath.Join(ws, "app", "node_modules", "cache"), []byte("x"), 0o644))
+		assert.NoErr(t, os.WriteFile(filepath.Join(ws, "app", "main.go"), []byte("main"), 0o644))
+		mixedSnapshots := &recordingSnapshotter{}
+		tool.snapshots = mixedSnapshots
+		_, err = tool.Execute(t.Context(), api.ToolCall{CallID: "mixed", Arguments: map[string]any{"path": "app", "recursive": true}})
+		assert.Require(t, assert.NoError(t, err))
+		assert.Eq(t, SnapshotKindTrash, mixedSnapshots.before[0].Kind)
+		assert.Eq(t, []string{"app/node_modules"}, mixedSnapshots.after[0].PurgedDirs)
+		assert.Require(t, assert.Len(t, mixedSnapshots.after[0].TrashEntries, 1))
+	})
+
+	t.Run("marks the snapshot incomplete when trash setup fails", func(t *testing.T) {
+		ws, tool := removeFixture(t)
+		trashFile := filepath.Join(t.TempDir(), "trash")
+		assert.NoErr(t, os.WriteFile(trashFile, []byte("not a directory"), 0o644))
+		tool.trashDir = trashFile
+		snapshots := &recordingSnapshotter{}
+		tool.snapshots = snapshots
+		_, err := tool.Execute(t.Context(), api.ToolCall{CallID: "failed", Arguments: map[string]any{"path": "a.txt"}})
+		assert.Err(t, err)
+		assert.Require(t, assert.Len(t, snapshots.after, 1))
+		assert.Eq(t, SnapshotStatusIncomplete, snapshots.after[0].Status)
+		_, err = os.Stat(filepath.Join(ws, "a.txt"))
+		assert.NoError(t, err)
+	})
 }

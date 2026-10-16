@@ -10,6 +10,8 @@ type SnapshotKind = string
 const (
 	SnapshotKindFile   SnapshotKind = "file"
 	SnapshotKindAbsent SnapshotKind = "absent"
+	SnapshotKindTrash  SnapshotKind = "trash"
+	SnapshotKindPurged SnapshotKind = "purged"
 
 	SnapshotStatusComplete        = "complete"
 	SnapshotStatusIncomplete      = "incomplete"
