@@ -82,8 +82,11 @@ def cwd_moves(binary, env, cwd, sid):
 
 def run_resume(binary, env, cwd, sid, extra=()):
     """One `suga run --resume` from cwd; the prompt makes the model read the
-    relative path, so a turn that ran in A prints the file's content."""
-    return subprocess.run([binary, "run", "--read-only", "--resume", sid, "--prompt", PROMPT, *extra],
+    relative path, so a turn that ran in A carries the file's content in the
+    tool result of its stream-json output (the text output shows only the
+    model's reply)."""
+    return subprocess.run([binary, "run", "--read-only", "--output-format", "stream-json",
+                           "--resume", sid, "--prompt", PROMPT, *extra],
                           capture_output=True, encoding="utf-8", errors="replace", env=env, cwd=cwd, timeout=120)
 
 
