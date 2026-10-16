@@ -27,6 +27,11 @@ type Config struct {
 	Hooks               []Hook
 	MaxSteps            int
 	MaxToolCallsPerStep int
+	// MaxOutputTokens is the output token limit of every request this runtime
+	// makes (GenerateRequest.MaxTokens); 0 leaves the limit to the provider,
+	// which applies its own default then (e.g. Claude's 32000). The
+	// application resolves it from its configuration.
+	MaxOutputTokens int
 	// MaxStepsWrapUp, when set, makes reaching MaxSteps ask the model for one
 	// more answer instead of failing at once: the text is appended to that
 	// request only (not persisted) as a user message. A model that keeps
@@ -54,6 +59,7 @@ type DefaultRuntime struct {
 	hooks               runtimeHookChain
 	maxSteps            int
 	maxToolCallsPerStep int
+	maxOutputTokens     int
 	maxStepsWrapUp      string
 	prefetchTools       func(ctx context.Context, calls []ToolCall)
 }
@@ -73,6 +79,7 @@ func New(cfg Config) *DefaultRuntime {
 		hooks:               newRuntimeHookChain(cfg.Hooks...),
 		maxSteps:            cfg.MaxSteps,
 		maxToolCallsPerStep: cfg.MaxToolCallsPerStep,
+		maxOutputTokens:     cfg.MaxOutputTokens,
 		maxStepsWrapUp:      cfg.MaxStepsWrapUp,
 		prefetchTools:       cfg.PrefetchTools,
 	}
@@ -175,10 +182,11 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 			messages = append(messages, Message{Role: "user", Content: wrapUpText})
 		}
 		req := &GenerateRequest{
-			System:   systemPrompt,
-			Messages: messages,
-			Tools:    tools,
-			Metadata: cloneMetadata(state.Metadata),
+			System:    systemPrompt,
+			Messages:  messages,
+			Tools:     tools,
+			MaxTokens: r.maxOutputTokens,
+			Metadata:  cloneMetadata(state.Metadata),
 		}
 
 		res, err := r.callModel(ctx, state, req, ctrl, input.Stream)
@@ -218,6 +226,16 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 			}
 			if wrappingUp && result != nil {
 				result.WrapUp = wrapUp
+			}
+			if result != nil && res.Truncated {
+				// The answer itself was cut off at the output limit (a cut-off
+				// tool call instead is answered with an error and retried): report
+				// it, with the limit that applied, so the caller can name it.
+				result.Truncated = true
+				result.OutputLimit = res.OutputLimit
+				if result.OutputLimit <= 0 {
+					result.OutputLimit = r.maxOutputTokens
+				}
 			}
 			return r.finishRun(ctx, input, state, result, nil)
 		default:

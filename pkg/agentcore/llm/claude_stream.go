@@ -28,7 +28,7 @@ func (p *ClaudeProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateR
 	body["stream"] = true
 	logProviderRequest(p.Name(), "/messages", body)
 
-	return retryStream(ctx, p.retry, p.Name(), emit, func(ctx context.Context, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	res, err := retryStream(ctx, p.retry, p.Name(), emit, func(ctx context.Context, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 		resp, err := p.openStream(ctx, body)
 		if err != nil {
 			return nil, err
@@ -40,6 +40,11 @@ func (p *ClaudeProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateR
 		}
 		return p.readStream(ctx, resp.Body, emit)
 	})
+	if res != nil {
+		// The limit this request asked for, reported with a cut-off reply.
+		res.OutputLimit = claudeMaxTokens(req)
+	}
+	return res, err
 }
 
 // readWhole parses a non-streamed message and emits its text in one delta.
@@ -282,6 +287,7 @@ func (p *ClaudeProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		res.ToolCalls = append(res.ToolCalls, newToolCall(call.id, call.name, json.RawMessage(raw)))
 	}
 	if stopReason == "max_tokens" {
+		res.Truncated = true
 		markTruncated(res.ToolCalls)
 	}
 	if len(res.ToolCalls) > 0 || stopReason == "tool_use" {

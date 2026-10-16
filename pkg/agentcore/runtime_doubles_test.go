@@ -425,6 +425,9 @@ func cloneGenerateResult(result *GenerateResult) *GenerateResult {
 		Usage:        result.Usage,
 		Artifacts:    append([]Artifact(nil), result.Artifacts...),
 		Metadata:     cloneMetadata(result.Metadata),
+		Reasoning:    result.Reasoning,
+		Truncated:    result.Truncated,
+		OutputLimit:  result.OutputLimit,
 	}
 	if len(result.ToolCalls) > 0 {
 		cloned.ToolCalls = make([]ToolCall, len(result.ToolCalls))

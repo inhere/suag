@@ -25,7 +25,7 @@ func TestClaudeThinkingRequest(t *testing.T) {
 		b := body("claude-opus-5-5", "high", 0)
 		assert.Eq(t, map[string]any{"type": "adaptive", "display": "summarized"}, b["thinking"])
 		assert.Eq(t, map[string]any{"effort": "high"}, b["output_config"])
-		assert.Eq(t, float64(claudeThinkingMaxTokens), b["max_tokens"])
+		assert.Eq(t, float64(claudeDefaultMaxOutputTokens), b["max_tokens"])
 		assert.Eq(t, map[string]any{"effort": "low"}, body("claude-sonnet-4-6", "minimal", 0)["output_config"])
 	})
 	t.Run("budget on models before adaptive thinking", func(t *testing.T) {
@@ -47,8 +47,17 @@ func TestClaudeThinkingRequest(t *testing.T) {
 			b := body("claude-opus-5-5", level, 0)
 			assert.Nil(t, b["thinking"])
 			assert.Nil(t, b["output_config"])
-			assert.Eq(t, float64(4096), b["max_tokens"])
+			assert.Eq(t, float64(claudeDefaultMaxOutputTokens), b["max_tokens"])
 		}
+	})
+	t.Run("a limit too small for a budget drops thinking", func(t *testing.T) {
+		// Anthropic needs 1024 <= budget_tokens < max_tokens: a 1024-token
+		// request has no room, so no thinking parameters are sent.
+		b := body("claude-sonnet-4-5-20250929", "max", 1024)
+		assert.Nil(t, b["thinking"])
+		assert.Eq(t, float64(1024), b["max_tokens"])
+		// One token more makes the smallest budget fit below the limit.
+		assert.Eq(t, float64(1024), body("claude-sonnet-4-5-20250929", "max", 1025)["thinking"].(map[string]any)["budget_tokens"])
 	})
 }
 

@@ -27,7 +27,7 @@ func loadYAML(t *testing.T, doc string) {
 	if doc != "" {
 		assert.NoErr(t, gkconfig.LoadSources(gkconfig.Yaml, []byte(doc)))
 	}
-	for _, k := range []string{"SUGA_MODEL", "SUGA_PROVIDER", "SUGA_MAX_STEPS", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY"} {
+	for _, k := range []string{"SUGA_MODEL", "SUGA_PROVIDER", "SUGA_MAX_STEPS", "SUGA_MAX_OUTPUT_TOKENS", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY"} {
 		t.Setenv(k, "")
 	}
 }

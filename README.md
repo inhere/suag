@@ -66,7 +66,8 @@ Suga reads only `$SUGA_HOME/config.yaml` and `$SUGA_HOME/.env` (default `~/.suga
 |---|---|
 | `model` | Main model, `<provider>/<model>`; overridden by `SUGA_MODEL`, then `--model` |
 | `providers.<id>` | `type` (`openai` = chat/completions, `openai-responses` = Responses API, `anthropic`), `base_url`, `api_key`, `headers`; the presets `openai`, `anthropic` and `deepseek` are built in and read `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` |
-| `providers.<id>.models.<model>` | `context_window`, `model_id` (the id sent to the provider when it differs from the key), `type`/`base_url` (a model may use its own protocol), `price`, `thinking` |
+| `providers.<id>.max_output_tokens` | Default output token limit for the provider; model-level and command-line settings can override it. `--max-output-tokens` > `SUGA_MAX_OUTPUT_TOKENS` > model > provider. Claude defaults to 32000 when unset; OpenAI protocols leave the field out. |
+| `providers.<id>.models.<model>` | `context_window`, `max_output_tokens`, `model_id` (the id sent to the provider when it differs from the key), `type`/`base_url` (a model may use its own protocol), `price`, `thinking` |
 | `compact_model`, `fallback_models` | Cheaper model for summaries; models tried in order when the main one fails |
 | `tools.allow_write`, `tools.approval` | Chat only: enable write and shell tools (default false); `ask` (default) confirms every write and shell call, `auto` does not |
 | `mcp.servers`, `tools.auto_allow`, `tools.read_only_allow` | MCP servers, and the MCP allowlists (`server/toolglob`); every MCP call is refused while both are empty |

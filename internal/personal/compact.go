@@ -468,6 +468,9 @@ func (r *Runner) summarize(ctx context.Context, in packageInput, threshold int) 
 	sb.WriteString("\n\n# 待压缩的对话\n")
 	sb.WriteString(renderTranscript(dropped, max(threshold*3, 8000)))
 
+	// No MaxTokens on purpose: a summary is short by nature, so the protocol's
+	// own default is enough here; the output limit setting target the main
+	// loop's answers (Config.MaxOutputTokens).
 	res, err := r.compactProvider().Generate(withPurpose(ctx, purposeCompact), &agentcore.GenerateRequest{
 		System:   compactSystemPrompt,
 		Messages: []agentcore.Message{{Role: "user", Content: sb.String()}},

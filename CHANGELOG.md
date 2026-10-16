@@ -9,10 +9,12 @@
 - 额度/用量上限耗尽归类为 `provider_quota`：不重试，跨 provider 才 fallback；可解析的重置时间写入错误文本和 trace 的 `reset_at`。
 - 重试策略可以按 provider 配置：`providers.<id>.retry`（字段与全局 `retry` 相同：`max_attempts`、`base_delay`、`max_delay`、`reset_after`）覆盖该 provider 的全局值，只写要改的字段，其余字段沿用全局；配置写错时报错带 `providers.<id>.retry.<字段>`。
 - 回合因 provider 错误失败时的 `error_kind` 覆盖更多情况并新增一类取值（issue suga-e1u2）：HTTP 408/429/5xx、连接错误（含响应头超时）在重试用尽后归为 `provider_transient`（此前这类失败不带 `error_kind`），HTTP 4xx（400/401/403/404/422）归为新的 `provider_rejected`。ACP 的 prompt 失败同样带上：JSON-RPC 错误（`-32603`）的 `data` 里除已有的 `error` 文本外加 `error_kind`，与 `run --output-format stream-json` 的 `error` 行同值；不是模型失败的失败（存储、hook、取消、审批）形状不变、不带该字段。
+- 每个 provider/model 可配置 `max_output_tokens`；`--max-output-tokens` 与 `SUGA_MAX_OUTPUT_TOKENS` 可按优先级覆盖，Claude 未配置时默认输出上限提高到 32000。
 
 ### 修复
 
 - 模型在流内（或 200 响应体里）报出的服务端过载 / 限流不再直接结束回合：`responses` 的 `error` 事件与 `response.failed`、`openai` 的 chunk `error`、`claude` 的 `error` 事件，以及三个协议的响应体错误，现在都解析错误的 `code`/`type` 再判定——`server_is_overloaded`、`server_error`、`rate_limit_exceeded`、`slow_down`（OpenAI）与 `overloaded_error`、`api_error`、`rate_limit_error`（Anthropic）算暂时性错误；没有 code/type 时消息里含 “overloaded” 或 “try again later”（不区分大小写）同样算（这条覆盖了用户遇到的只带一句话的过载响应）。这类错误走与“流中断”同一套重试与退避（重试提示行与 stream-json 的 retry 行写“服务端过载/限流”，重试用尽后的错误写明“服务端过载，已重试 N 次”），`error_kind` 为 `provider_transient`，已输出的文本按 retry 的 `restart` 语义重新输出；`invalid_request_error` 等永久错误仍旧不重试、`error_kind` 为 `provider_bad_response`。此前 `Error: provider error: responses api error: Our servers are currently overloaded. Please try again later.` 会直接断掉回合（issue suga-h2c8）。
+- 输出达到模型上限时，chat、run、stream-json 与 trace 明确标记回答可能被截断，并给出可调整输出上限的提示。
 
 ### 变更
 

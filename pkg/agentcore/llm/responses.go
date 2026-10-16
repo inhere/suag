@@ -61,9 +61,13 @@ func (p *ResponsesProvider) Generate(ctx context.Context, req *agentcoreapi.Gene
 		return nil, err
 	}
 	res, err := p.parseResponsesBody(data)
-	// A rejected request (4xx) keeps the API's own message but is classified by
-	// its status (ErrorKind, ShouldFallback).
-	return res, statusErr(status, err)
+	if err != nil {
+		// A rejected request (4xx) keeps the API's own message but is classified by
+		// its status (ErrorKind, ShouldFallback).
+		return nil, statusErr(status, err)
+	}
+	res.OutputLimit = p.responsesMaxTokens(req)
+	return res, nil
 }
 
 // effort maps the configured thinking level to reasoning.effort: "off" is
@@ -114,11 +118,10 @@ func (p *ResponsesProvider) buildResponsesBody(ctx context.Context, req *agentco
 	if p.compat.EncryptedReasoning && thinking && effort != "none" {
 		body["include"] = []string{"reasoning.encrypted_content"}
 	}
-	switch {
-	case req.MaxTokens > 0:
-		body["max_output_tokens"] = req.MaxTokens
-	case p.compat.MaxOutputTokens > 0:
-		body["max_output_tokens"] = p.compat.MaxOutputTokens
+	// No max_output_tokens when nothing is configured: the API's own default
+	// applies then (p.responsesMaxTokens).
+	if limit := p.responsesMaxTokens(req); limit > 0 {
+		body["max_output_tokens"] = limit
 	}
 	if req.Temperature > 0 {
 		body["temperature"] = req.Temperature
@@ -129,6 +132,16 @@ func (p *ResponsesProvider) buildResponsesBody(ctx context.Context, req *agentco
 		body["prompt_cache_key"] = key
 	}
 	return body
+}
+
+// responsesMaxTokens returns the max_output_tokens of one request: the limit
+// the caller resolved, else the compat adapter's own default (0 = the API's,
+// as when nothing is configured).
+func (p *ResponsesProvider) responsesMaxTokens(req *agentcoreapi.GenerateRequest) int {
+	if req != nil && req.MaxTokens > 0 {
+		return req.MaxTokens
+	}
+	return p.compat.MaxOutputTokens
 }
 
 // hasReasoning reports whether an earlier assistant message carries
@@ -375,6 +388,7 @@ func (p *ResponsesProvider) resultOf(body responsesBody) (*agentcoreapi.Generate
 		case "content_filter":
 			return nil, badResponsef("responses api: the reply was blocked by the content filter")
 		case "max_output_tokens":
+			res.Truncated = true
 			markTruncated(res.ToolCalls)
 		}
 	}

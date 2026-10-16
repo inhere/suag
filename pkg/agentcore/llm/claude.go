@@ -16,7 +16,22 @@ import (
 const (
 	claudeDefaultBaseURL = "https://api.anthropic.com"
 	claudeAPIVersion     = "2023-06-01"
+	// claudeDefaultMaxOutputTokens is max_tokens when neither the request nor
+	// the configuration sets a limit. /v1/messages requires the field, and the
+	// old 4096 default cut long answers and the arguments of large tool calls
+	// (file_write/file_edit) off.
+	claudeDefaultMaxOutputTokens = 32000
 )
+
+// claudeMaxTokens returns the max_tokens of one request: the limit the
+// caller resolved (providers.<id>.models.<m>.max_output_tokens,
+// --max-output-tokens, SUGA_MAX_OUTPUT_TOKENS, ...), or the protocol default.
+func claudeMaxTokens(req *agentcoreapi.GenerateRequest) int {
+	if req != nil && req.MaxTokens > 0 {
+		return req.MaxTokens
+	}
+	return claudeDefaultMaxOutputTokens
+}
 
 // ClaudeProvider implements Provider for Anthropic Claude.
 type ClaudeProvider struct {
@@ -141,9 +156,13 @@ func (p *ClaudeProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 		return nil, err
 	}
 	res, err := p.parseResponse(respData)
-	// A rejected request (4xx) keeps the API's own message but is classified by
-	// its status (ErrorKind, ShouldFallback).
-	return res, statusErr(status, err)
+	if err != nil {
+		// A rejected request (4xx) keeps the API's own message but is classified by
+		// its status (ErrorKind, ShouldFallback).
+		return nil, statusErr(status, err)
+	}
+	res.OutputLimit = claudeMaxTokens(req)
+	return res, nil
 }
 
 // appendClaudeBlock adds a content block as a message of the given role. When
@@ -217,12 +236,9 @@ func (p *ClaudeProvider) buildRequestBody(req *agentcoreapi.GenerateRequest, mod
 	body := map[string]any{
 		"model":      model,
 		"messages":   msgs,
-		"max_tokens": 4096,
+		"max_tokens": claudeMaxTokens(req),
 	}
-	if req.MaxTokens > 0 {
-		body["max_tokens"] = req.MaxTokens
-	}
-	applyClaudeThinking(body, model, p.thinking, req.MaxTokens > 0)
+	applyClaudeThinking(body, model, p.thinking)
 	if system != "" {
 		// A block array only when prompt caching is on: Anthropic accepts both
 		// shapes, but some /v1/messages-compatible gateways only take a string.
@@ -346,6 +362,7 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		resp.Metadata = map[string]any{ClaudeThinkingMetaKey: thinking}
 	}
 	if raw.StopReason == "max_tokens" {
+		resp.Truncated = true
 		markTruncated(resp.ToolCalls)
 	}
 	if len(resp.ToolCalls) > 0 {

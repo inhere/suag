@@ -23,7 +23,7 @@ import (
 func (p *ResponsesProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 	body := p.buildResponsesBody(ctx, req, true)
 	logProviderRequest(p.Name(), responsesPath, body)
-	return retryStream(ctx, p.retry, p.Name(), emit, func(ctx context.Context, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	res, err := retryStream(ctx, p.retry, p.Name(), emit, func(ctx context.Context, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 		resp, err := p.openStream(ctx, responsesPath, body)
 		if err != nil {
 			return nil, err
@@ -44,6 +44,11 @@ func (p *ResponsesProvider) Stream(ctx context.Context, req *agentcoreapi.Genera
 		}
 		return p.readResponsesStream(ctx, resp.Body, emit)
 	})
+	if res != nil {
+		// The limit this request asked for; 0 = the API's own default.
+		res.OutputLimit = p.responsesMaxTokens(req)
+	}
+	return res, err
 }
 
 // emitWhole emits a whole text as one delta and a stop.

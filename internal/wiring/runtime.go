@@ -68,6 +68,11 @@ type Options struct {
 	// MaxSteps overrides the config's max_steps for the main agent's turns
 	// (--max-steps, run only); 0 uses SUGA_MAX_STEPS, then max_steps.
 	MaxSteps int
+	// MaxOutputTokens overrides the configured output token limit for this
+	// invocation (--max-output-tokens); 0 uses SUGA_MAX_OUTPUT_TOKENS, then
+	// providers.<id>.models.<m>.max_output_tokens /
+	// providers.<id>.max_output_tokens (see appconfig.ResolveMaxOutputTokens).
+	MaxOutputTokens int
 	// MemoryConfirm confirms memory writes of tainted sessions (ACP: the turn
 	// gate's permission request; chat: set by OpenCLI to ask at the terminal).
 	// nil (run) refuses them.
@@ -262,6 +267,13 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Output token limit of the main model's requests: --max-output-tokens >
+	// SUGA_MAX_OUTPUT_TOKENS > models.<m>.max_output_tokens >
+	// providers.<id>.max_output_tokens (0 = the provider's own default).
+	maxOutputTokens, err := appconfig.ResolveMaxOutputTokens(opts.MaxOutputTokens, rs.models.Main)
+	if err != nil {
+		return nil, err
+	}
 	settings, taintTools, taintOnSpill := rs.models, rs.taintTools, rs.taintOnSpill
 	memSetup, memPolicy, sessionsDir := rs.memSetup, rs.memPolicy, rs.sessionsDir
 	provider, err := buildMainProvider(settings)
@@ -442,6 +454,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		},
 		Hooks:    opts.Hooks,
 		MaxSteps: maxSteps,
+		// The output limit of the main model's requests: the CLI flag and the
+		// environment override the configured value.
+		MaxOutputTokens: maxOutputTokens,
 		RuleSource: func() (string, string, error) {
 			home, err := appconfig.ResolveSugaHome()
 			if err != nil {
