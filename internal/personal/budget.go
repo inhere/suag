@@ -36,12 +36,14 @@ type BudgetMetric struct {
 // BudgetSnapshot is attached to usage updates and budget events. It is an
 // optional observation object: old callers receive nil when no budget exists.
 type BudgetSnapshot struct {
-	Scope     string       `json:"scope"`
-	Tokens    BudgetMetric `json:"tokens,omitempty"`
-	CostUSD   BudgetMetric `json:"cost_usd,omitempty"`
-	Exceeded  bool         `json:"exceeded"`
-	Reason    string       `json:"reason,omitempty"`
-	Estimated bool         `json:"estimated,omitempty"`
+	Scope                 string       `json:"scope"`
+	Tokens                BudgetMetric `json:"tokens,omitempty"`
+	CostUSD               BudgetMetric `json:"cost_usd,omitempty"`
+	Exceeded              bool         `json:"exceeded"`
+	Reason                string       `json:"reason,omitempty"`
+	Estimated             bool         `json:"estimated,omitempty"`
+	EstimatedInputTokens  int          `json:"est_input_tokens,omitempty"`
+	EstimatedOutputTokens int          `json:"est_output_tokens,omitempty"`
 }
 
 func (b BudgetSettings) enabled() bool { return b.Tokens > 0 || b.CostUSD > 0 }
@@ -186,6 +188,12 @@ func budgetAttrs(snapshot BudgetSnapshot, reason string) map[string]any {
 		attrs["limit_cost_usd"] = snapshot.CostUSD.Limit
 		attrs["used_cost_usd"] = snapshot.CostUSD.Used
 		attrs["remaining_cost_usd"] = snapshot.CostUSD.Remaining
+	}
+	if snapshot.EstimatedInputTokens > 0 {
+		attrs["est_input_tokens"] = snapshot.EstimatedInputTokens
+	}
+	if snapshot.EstimatedOutputTokens > 0 {
+		attrs["est_output_tokens"] = snapshot.EstimatedOutputTokens
 	}
 	return attrs
 }

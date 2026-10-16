@@ -144,6 +144,15 @@ func (r *recorder) attemptObserver(defName, defModel string) llm.AttemptObserver
 		if a.RequestID != "" {
 			e.Attrs["request_id"] = a.RequestID
 		}
+		if a.Estimated {
+			e.Attrs["estimated"] = true
+			if a.EstimatedInputTokens > 0 {
+				e.Attrs["est_input_tokens"] = a.EstimatedInputTokens
+			}
+			if a.EstimatedOutputTokens > 0 {
+				e.Attrs["est_output_tokens"] = a.EstimatedOutputTokens
+			}
+		}
 		if a.Fallback != "" { // what the pool did with this attempt's failure
 			e.Attrs["fallback"] = a.Fallback
 		}
@@ -172,7 +181,7 @@ func (r *recorder) attemptObserver(defName, defModel string) llm.AttemptObserver
 		// compaction calls and failed attempts that reported usage.
 		priced := a.Usage
 		priced.CostUSD = cost
-		runUsageFrom(ctx).addModel(ctx, a.Usage, priced, a.Err != nil, a.Estimated)
+		runUsageFrom(ctx).addModelWithEstimates(ctx, a.Usage, priced, a.Err != nil, a.Estimated, a.EstimatedInputTokens, a.EstimatedOutputTokens)
 	}
 }
 

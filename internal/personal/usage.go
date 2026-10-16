@@ -173,9 +173,11 @@ type runUsageMeter struct {
 	parentSession string
 	// held is pending child usage moved into this run for stream/ACP accounting;
 	// turn budgets subtract it until the pending-aware session policy is applied.
-	held      agentcore.Usage
-	budget    BudgetSettings
-	estimated bool
+	held                  agentcore.Usage
+	budget                BudgetSettings
+	estimated             bool
+	estimatedInputTokens  int
+	estimatedOutputTokens int
 }
 
 type childRunKey struct{}
@@ -266,6 +268,8 @@ func (m *runUsageMeter) usageUpdateLocked(lastInput int) UsageUpdate {
 	update := UsageUpdate{Run: m.run, Session: m.base.Add(m.run.Usage), LastInputTokens: lastInput, Estimated: m.estimated}
 	if m.budget.enabled() {
 		snapshot := m.budgetSnapshotLocked()
+		snapshot.EstimatedInputTokens = m.estimatedInputTokens
+		snapshot.EstimatedOutputTokens = m.estimatedOutputTokens
 		update.Budget = &snapshot
 	}
 	return update
@@ -284,14 +288,27 @@ func (m *runUsageMeter) usageUpdate() UsageUpdate {
 // (used to skip failed attempts without usage); priced is raw with the cost
 // recorded on the model event.
 func (m *runUsageMeter) addModel(ctx context.Context, raw, priced agentcore.Usage, failed bool, estimated ...bool) {
+	est := len(estimated) > 0 && estimated[0]
+	m.addModelWithEstimates(ctx, raw, priced, failed, est, 0, 0)
+}
+
+// addModelWithEstimates records the provider estimate details before publishing
+// the usage update, so the model and budget events share one observation.
+func (m *runUsageMeter) addModelWithEstimates(ctx context.Context, raw, priced agentcore.Usage, failed, estimated bool, estimatedInput, estimatedOutput int) {
 	if m == nil || (failed && raw == (agentcore.Usage{})) {
 		return
 	}
 	m.notifyMu.Lock()
 	defer m.notifyMu.Unlock()
 	m.mu.Lock()
-	if len(estimated) > 0 && estimated[0] {
+	if estimated {
 		m.estimated = true
+		if estimatedInput > 0 {
+			m.estimatedInputTokens = estimatedInput
+		}
+		if estimatedOutput > 0 {
+			m.estimatedOutputTokens = estimatedOutput
+		}
 	}
 	m.run.Usage = m.run.Usage.Add(priced)
 	update := m.usageUpdateLocked(raw.InputTokens)
@@ -300,7 +317,7 @@ func (m *runUsageMeter) addModel(ctx context.Context, raw, priced agentcore.Usag
 	if notify != nil {
 		notify(ctx, update)
 	}
-	forwardChildUsage(ctx, m.parentSession, priced, estimated...)
+	forwardChildUsage(ctx, m.parentSession, priced, estimated)
 }
 
 // addChild counts a sub-agent's model call in this run (the session total
