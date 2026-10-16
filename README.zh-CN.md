@@ -55,6 +55,8 @@ suga run --resume <session-id> --prompt "继续"
 suga run --max-steps 30 --prompt "长任务"         # 本轮步数上限
 ```
 
+chat 输入支持 Up/Down 历史、Ctrl+R 增量反查（Enter 采用、Ctrl+G/Esc 取消）以及行首 `:` 命令和 `:add-dir`/`:rm-dir` 目录的 Tab 补全。`!` 本地命令也会记录到同一历史文件；投递消息不会记录。
+
 一轮最多用 `max_steps` 步（默认 240，按轮计，不是整个会话），到顶时模型被要求直接基于已获得的信息作答。`run --max-steps N`（N 至少 1）为本次调用覆盖该设置；环境变量 `SUGA_MAX_STEPS` 在两者之间生效；子 agent 用它们自己的 `agents.max_steps`。
 
 chat 中：`:session` 显示会话 ID，`:compact` 开启新段（见[会话](#会话)），`:quit`（或 `:exit`）退出；`:diff` 查看最近一次完整文件改动，`:diff N` 查看第 N 次；可用 `chat.diff: false` 关闭预览，用 `chat.diff_lines` 调整预览行数；`:add-dir <绝对目录>[:ro|:rw]` 为本会话追加授权目录，`:dirs` 列出工作区与全部附加目录（权限，以及来源：启动参数、环境变量、会话中追加、越界授权、早先会话沿用），`:rm-dir <路径>` 撤销其中一个；改动写入会话，因此本会话后续回合与续接都生效。这些命令只在本地键盘输入时生效：`suga send` 或 job runner 投递的文本一律是普通消息，投递的 `:add-dir`（或 `:quit`）不会作用于会话。以 `!` 开头的一行则改走本地 shell：`!git status` 直接执行（与模型的 `shell_exec` 同一个 shell、工作目录与环境，不询问）并实时显示输出，完全不叫模型；`!!<命令>` 同样执行，并把结果（命令、退出码、输出，输出按工具结果那套规则精简并截断）附在下一条消息的上下文里给模型（多个 `!!` 按顺序累积；chat 退出时未发送的丢弃）。非零退出码、超时（`tools.shell_timeout_max`）和被你终止会在单独一行上提示。执行中按 Ctrl-C 或 Esc 只终止该命令（连同进程树），chat 留在提示符；在运行中回合的 `↳ ` 输入行里输入 `!` 命令不会执行，那行退回输入行。`--read-only` 会话同样可以执行：该模式只限制模型的工具，不限制你自己的 shell。每次执行在 trace 里记一条 `local_command`。在提示符处：输入行上有文字时 Ctrl+C 只清空这一行（不提示、也不计数）；行空时按一次要求再按一次确认，3 秒内再按一次才退出。Ctrl+D 直接退出。模型干活时输入行仍然可用（`chat.steering`，默认开）：提示符变成 `↳ `，回车把这句插进**正在运行**的当前回合，模型在下一次请求前看到它（若模型已经答完，这句成为下一回合）；按 Esc（或输入行为空时的一次 Ctrl-C）只中止本轮——chat 继续运行，本轮没能送达的插话回到输入行等你回车，3 秒内连按两次 Ctrl-C 才退出 chat；行上有文字时 Ctrl-C 只清空该行。`chat.steering: false` 时回合中保持原行为（输入回到 cooked 模式，Ctrl-C 是 SIGINT，中断即退出 chat）。退出时会显示 token 用量和续接本会话的命令。续接已有会话（`--resume <id>`，或 `--session-id <id>` 指向已存在的会话）时，第一个提示符之前会先显示该会话最后一次有正文的模型回复，方便接着往下说：淡色“上一次回复：”作区分，过长只显示末尾 40 行并给出 `suga trace` 命令，上一回合被中断或失败时加一句“上一回合未正常结束”；只看不写，不调用模型、不产生会话条目。进程被强杀（kill -9、崩溃）后会话会停在 `running`，续接后的第一个提示符输入时先把它恢复为 `open`（显示“上一回合异常中断，已恢复会话”，被中断的回合记为 `cancelled`）再正常开始新回合；有活进程在跑该会话时行为不变，仍然拒绝。 `:help` 列出本地命令和按键；`:usage` 显示本进程与会话的 token、缓存和成本累计；`:tasks` 列出后台任务。
@@ -74,6 +76,7 @@ Suga 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`
 | `mcp.servers`、`tools.auto_allow`、`tools.read_only_allow` | MCP 服务，以及 MCP 放行名单（条目形如 `server/工具glob`）；两者都为空时所有 MCP 调用被拒绝 |
 | `memory.user.backend`、`memory.project.backend`、`memory.write_tainted` | 各范围的记忆后端（`files`、项目可用 `gofer`、`exec`），以及读过外部内容的会话写记忆时的处理（`ask`、`deny`、`allow`） |
 | `hooks.command`、`hooks.post_tool_use` | chat 的 hook 命令（argv 列表）与哪些工具调用发 PostToolUse；不设 `hooks.command` 即不启用 hooks |
+| `chat.history`、`chat.history_size` | 本地 chat 输入历史（默认开启、最多 1000 条）保存在 `$SUGA_HOME/history.jsonl`；只记录键盘输入并先脱敏 |
 | `skills.list_max`、`skills.always_load` | 带说明列出的 skills 数量；正文每次进提示词的 skills |
 | `workspace` | 文件与 shell 工具的工作区根（默认：启动 suga 时所在的目录） |
 

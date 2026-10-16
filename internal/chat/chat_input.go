@@ -91,6 +91,7 @@ type chatInputSource struct {
 	sizeFD   int
 	closed   bool // set by DiscardQueued/Close: deliveries are refused afterwards (guarded by mu)
 	terminal *lineedit.Terminal
+	history  *inputHistory
 	requests chan chatInputRequest
 	// events carries the result of a prompt read (Next); answers the answer of a
 	// question (Ask) and turnEvents what a steer read reports (S2b). Each mode has
@@ -759,6 +760,16 @@ func (s *chatInputSource) readLine(request chatInputRequest) (string, error) {
 				s.terminal.SetPendingLine(saved)
 			}
 			line, err = s.terminal.ReadLine()
+			if err == nil && strings.TrimSpace(line) != "" {
+				// Persist what the person typed here (a prompt line, a message
+				// inserted into a running turn, a "!" command) for the next chat
+				// (chat.history). Only this keyboard read reaches here: delivered
+				// messages and answers to questions never do. A write failure
+				// must not lose the line, so it only shows up in the log.
+				if herr := s.history.add(line); herr != nil {
+					slog.Warn("chat history: append failed", "err", herr)
+				}
+			}
 		}
 		return line, err
 	}

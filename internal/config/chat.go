@@ -9,6 +9,24 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 )
 
+// ChatHistoryEnabled reports whether locally typed chat lines are persisted.
+func ChatHistoryEnabled() bool {
+	return chatSwitch("chat.history")
+}
+
+// ChatHistorySize returns the maximum number of persisted chat lines.
+func ChatHistorySize() (int, error) {
+	if gkconfig.Get("chat.history_size") == nil {
+		return 1000, nil
+	}
+	raw := strings.TrimSpace(gkconfig.String("chat.history_size"))
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("chat.history_size must be a whole number >= 1, got %q", raw)
+	}
+	return n, nil
+}
+
 // ChatMarkdownEnabled reports whether chat renders the model's markdown in the
 // terminal (chat.markdown, on by default). The key accepts a bool or a string;
 // "off"/"false" turn the rendering off and show the exact model text instead.

@@ -209,6 +209,23 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		return sugahooks.Event{Name: name, SessionID: sessionID, CWD: cwd, TranscriptPath: transcriptPath(sessionID)}
 	}
 	inputSource, err := newChatInputSource(ctx, stdin, stdout)
+	if err == nil {
+		size, sizeErr := appconfig.ChatHistorySize()
+		if sizeErr != nil {
+			return sizeErr
+		}
+		inputHistory, historyErr := newInputHistory(cwd, appconfig.ChatHistoryEnabled(), size)
+		if historyErr != nil {
+			return historyErr
+		}
+		if inputSource.terminal != nil {
+			inputSource.terminal.SetHistory(inputHistory.lines())
+			installCompletion(inputSource, opts.Dirs)
+		}
+		// Only lines received from the local keyboard are recorded; deliveries and
+		// hook/task messages must never become personal input history.
+		inputSource.history = inputHistory
+	}
 	if err == nil && opts.Tasks != nil {
 		inputSource.taskWake = opts.TaskWake
 		inputSource.taskNotice = func() string {

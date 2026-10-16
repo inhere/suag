@@ -40,6 +40,8 @@ const (
 	keyCtrlC = 3
 	keyCtrlD = 4
 	keyCtrlU = 21
+	keyCtrlR = 18
+	keyCtrlG = 7
 	keyEnter = '\r'
 	// keyLF is Enter as well: a terminal hands Enter over as LF when the line was
 	// typed in cooked mode (a line buffered before the prompt: ICRNL on Unix, or
@@ -186,6 +188,10 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 
 	switch key {
 	case keyBackspace:
+		if t.reverseActive {
+			t.reverseSearchBackspace()
+			return
+		}
 		if t.pos == 0 {
 			return
 		}
@@ -273,7 +279,12 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 				t.setLine(runes, len(runes))
 			}
 		}
+	case keyCtrlR:
+		t.reverseSearch()
+	case keyCtrlG:
+		t.cancelReverseSearch()
 	case keyEnter, keyLF:
+		t.endReverseSearch()
 		// A submitted line stays on screen, repainted on the input style's
 		// background when one is set (highlight.go).
 		if !t.repaintSubmittedLine() {
@@ -309,6 +320,13 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 			t.eraseNPreviousChars(n)
 		}
 	case keyCtrlU:
+		if t.reverseActive {
+			t.reverseQuery = ""
+			t.reverseIndex = 0
+			t.reversePromptForState()
+			t.findReverseMatch()
+			return
+		}
 		t.eraseNPreviousChars(t.pos)
 	case keyClearScreen:
 		// Erases the screen and moves the cursor to the home position.
@@ -318,6 +336,13 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 		t.advanceCursor(visualLength(t.prompt))
 		t.setLine(t.line, t.pos)
 	default:
+		if t.reverseActive && isPrintable(key) {
+			t.reverseQuery += string(key)
+			t.reverseIndex = 0
+			t.reversePromptForState()
+			t.findReverseMatch()
+			return
+		}
 		if t.AutoCompleteCallback != nil {
 			prefix := string(t.line[:t.pos])
 			suffix := string(t.line[t.pos:])

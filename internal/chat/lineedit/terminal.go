@@ -54,6 +54,7 @@ package lineedit
 
 import (
 	"io"
+	"strings"
 	"sync"
 	"unicode/utf8"
 )
@@ -121,7 +122,12 @@ type Terminal struct {
 	// When navigating up and down the history it's possible to return to
 	// the incomplete, initial line. That value is stored in
 	// historyPending.
-	historyPending string
+	historyPending  string
+	reverseActive   bool
+	reverseQuery    string
+	reverseIndex    int
+	reverseOriginal string
+	reversePrompt   string
 
 	// Local additions (see take.go): reading is set while ReadLine runs,
 	// noHistory keeps the current read out of history and pendingLine
@@ -248,6 +254,11 @@ func (t *Terminal) readLine() (line string, err error) {
 			var key rune
 			key, rest = bytesToKey(rest, t.pasteActive)
 			if key == utf8.RuneError {
+				if t.reverseActive && len(rest) > 0 && rest[len(rest)-1] == keyEscape {
+					rest = rest[:len(rest)-1]
+					t.cancelReverseSearch()
+					continue
+				}
 				if !t.takeEscAlone(&rest) {
 					break
 				}
@@ -319,6 +330,88 @@ func (t *Terminal) readLine() (line string, err error) {
 
 		t.remainder = t.inBuf[:n+len(t.remainder)]
 	}
+}
+
+// SetHistory replaces the editor history with entries ordered oldest to newest.
+func (t *Terminal) SetHistory(entries []string) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.history = stRingBuffer{}
+	for _, entry := range entries {
+		t.history.Add(entry)
+	}
+	t.historyIndex = -1
+}
+
+// reverseSearch implements bash-like incremental search over the loaded history.
+func (t *Terminal) reverseSearch() {
+	if !t.reverseActive {
+		t.reverseActive = true
+		t.reverseQuery = string(t.line)
+		t.reverseOriginal = string(t.line)
+		t.reverseIndex = 0
+		t.reversePrompt = string(t.prompt)
+	} else {
+		t.reverseIndex++
+	}
+	t.reversePromptForState()
+	t.findReverseMatch()
+}
+
+func (t *Terminal) reversePromptForState() {
+	if t.reverseQuery == "" {
+		t.prompt = []rune("(reverse-i-search)`': ")
+	} else {
+		t.prompt = []rune("(reverse-i-search)`" + t.reverseQuery + "': ")
+	}
+}
+
+// findReverseMatch redraws the complete input block so the search prompt and the
+// matched line stay in sync, including when a status line is present.
+func (t *Terminal) findReverseMatch() {
+	for i := t.reverseIndex; ; i++ {
+		entry, ok := t.history.NthPreviousEntry(i)
+		if !ok {
+			break
+		}
+		if strings.Contains(entry, t.reverseQuery) {
+			runes := []rune(entry)
+			t.setLine(runes, len(runes))
+			t.reverseIndex = i
+			_ = t.repaintLocked()
+			return
+		}
+	}
+	t.prompt = []rune("(failed reverse-i-search)`" + t.reverseQuery + "': ")
+	_ = t.repaintLocked()
+}
+
+func (t *Terminal) reverseSearchBackspace() {
+	if len(t.reverseQuery) == 0 {
+		return
+	}
+	runes := []rune(t.reverseQuery)
+	t.reverseQuery = string(runes[:len(runes)-1])
+	t.reverseIndex = 0
+	t.reversePromptForState()
+	t.findReverseMatch()
+}
+
+func (t *Terminal) cancelReverseSearch() {
+	if !t.reverseActive {
+		return
+	}
+	t.setLine([]rune(t.reverseOriginal), len([]rune(t.reverseOriginal)))
+	t.endReverseSearch()
+	_ = t.repaintLocked()
+}
+
+func (t *Terminal) endReverseSearch() {
+	if !t.reverseActive {
+		return
+	}
+	t.reverseActive = false
+	t.prompt = []rune(t.reversePrompt)
 }
 
 // SetPrompt sets the prompt to be used when reading subsequent lines.
