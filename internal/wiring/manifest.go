@@ -232,6 +232,19 @@ func BuildManifest(in ManifestInput) Manifest {
 	return m
 }
 
+// refreshManifestApprovalRules rereads a valid rule snapshot for the live
+// manifest. The approval layer keeps its creation-time Policy snapshot, while
+// diagnostics should still show a valid file hash changed during that runtime.
+// A malformed or unreadable edit is left at the last valid snapshot, matching
+// the fail-closed reload contract.
+func refreshManifestApprovalRules(previous ApprovalRules) ApprovalRules {
+	current, err := LoadApprovalRules(previous.Workspace)
+	if err != nil {
+		return previous
+	}
+	return current
+}
+
 // manifestToolsApprovalAction reports the legacy chat setting in action terms.
 // It is shared by the static command and live runtime manifest; run/ACP keep
 // their own policy defaults but still expose the configured chat default.
