@@ -394,12 +394,16 @@ class Scenario:
         return trace_events(self.binary, self.env, session_id) if session_id else []
 
     def exit_chat(self):
-        """Two Ctrl-C in a row leave chat; returns the session id."""
+        """Two Ctrl-C in a row leave chat; returns the session id. A Ctrl-C on a
+        non-empty input line only clears it (wll1) - a scenario can end with text
+        on that line (messages an aborted turn put back) - so up to three presses
+        are sent, stopping as soon as chat has left."""
         m = self.session.mark()
-        time.sleep(0.3)
-        self.session.send(CTRL_C)
-        time.sleep(0.3)
-        self.session.send(CTRL_C)
+        for _ in range(3):
+            time.sleep(0.3)
+            self.session.send(CTRL_C)
+            if self.session.until(r"续接：suga chat --resume sess_", m, timeout=1):
+                break
         self.session.until(r"续接：suga chat --resume sess_", m)
         found = re.search(r"--resume (sess_\S+)", self.session.text(m))
         return found.group(1) if found else ""
