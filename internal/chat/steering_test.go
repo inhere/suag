@@ -163,40 +163,72 @@ func TestRunTurnSteerBecomesTheNextTurn(t *testing.T) {
 	assert.False(t, h.turnInjected(t, 1))
 }
 
-// TestRunTurnAbortEndsThisTurnOnly: a single Ctrl-C (or Esc) during a turn cancels
-// that turn's context; chat goes on, the turn reads 已中断本轮 and every message
-// inserted into it goes back to the input line instead of running (design D4).
+// TestRunTurnAbortEndsThisTurnOnly: a single Ctrl-C (or Esc) at a turn whose input
+// line is empty cancels that turn's context; chat goes on, the turn reads 已中断本轮
+// and every message inserted into it goes back to the input line instead of running
+// (design D4). A Ctrl-C with text on the line is not an abort any more - it drops
+// that line and the turn goes on (wll1, TestChatInputSource_CtrlCClearsTurnLine) -
+// so the ctrl-c case presses it a second time on the empty line the first left.
 func TestRunTurnAbortEndsThisTurnOnly(t *testing.T) {
-	for _, tc := range []struct{ name, key string }{{"ctrl-c", "\x03"}, {"esc", "\x1b"}} {
-		t.Run(tc.name, func(t *testing.T) {
-			h := newSteerHarness(t, newGateProv())
-			// A lone Esc needs the platform wait to answer "nothing followed it";
-			// the harness has no terminal behind it, so the test supplies it (input_pump.go).
-			h.source.inputWait = func(time.Duration) bool { return false }
-			done := h.startTurn()
-			<-h.cast.started()
+	// start runs one turn with a message inserted into it and returns the harness.
+	start := func(t *testing.T) (*steerHarness, <-chan error) {
+		t.Helper()
+		h := newSteerHarness(t, newGateProv())
+		// A lone Esc needs the platform wait to answer "nothing followed it";
+		// the harness has no terminal behind it, so the test supplies it (input_pump.go).
+		h.source.inputWait = func(time.Duration) bool { return false }
+		done := h.startTurn()
+		<-h.cast.started()
 
-			h.kb.Type("先改 README\r")
-			waitUntil(t, "the inserted message is shown", func() bool {
-				return strings.Contains(h.out.String(), "[插话] 先改 README（等待送达）")
-			})
-			h.kb.Type("半行") // half typed when the turn ends: it stays in the line
-			waitUntil(t, "the half line is echoed", func() bool {
-				return strings.Contains(h.out.String(), "半行")
-			})
-			h.kb.Type(tc.key)
-
-			// The abort ends this turn, not the chat: runTurn reports no error.
-			assert.NoErr(t, <-done)
-			got := h.out.String()
-			assert.StrContains(t, got, "已中断本轮，1 条插话已放回输入行")
-			assert.StrNotContains(t, got, "context canceled")
-			// The message waits in the input line, in front of the half-typed one.
-			assert.Eq(t, "先改 README\n半行", h.turnInputLine(t))
-			// Nothing was run: the turn never reached a second model request.
-			assert.Eq(t, []string{"干活"}, h.cast.prompts())
+		h.kb.Type("先改 README\r")
+		waitUntil(t, "the inserted message is shown", func() bool {
+			return strings.Contains(h.out.String(), "[插话] 先改 README（等待送达）")
 		})
+		return h, done
 	}
+
+	t.Run("esc ends this turn only and the half line stays", func(t *testing.T) {
+		h, done := start(t)
+		h.kb.Type("半行") // half typed when the turn ends: it stays in the line
+		waitUntil(t, "the half line is echoed", func() bool {
+			return strings.Contains(h.out.String(), "半行")
+		})
+		h.kb.Type("\x1b")
+
+		// The abort ends this turn, not the chat: runTurn reports no error.
+		assert.NoErr(t, <-done)
+		got := h.out.String()
+		assert.StrContains(t, got, "已中断本轮，1 条插话已放回输入行")
+		assert.StrNotContains(t, got, "context canceled")
+		// The message waits in the input line, in front of the half-typed one.
+		assert.Eq(t, "先改 README\n半行", h.turnInputLine(t))
+		// Nothing was run: the turn never reached a second model request.
+		assert.Eq(t, []string{"干活"}, h.cast.prompts())
+	})
+
+	t.Run("ctrl-c ends this turn once the line is empty", func(t *testing.T) {
+		h, done := start(t)
+		h.kb.Type("半行")
+		waitUntil(t, "the half line is echoed", func() bool {
+			return strings.Contains(h.out.String(), "半行")
+		})
+		// A non-empty line is what Ctrl-C drops: it goes away, the turn goes on, and
+		// the press is not the first of the two that leave chat (wll1): the second
+		// press below has to end this turn only, not the chat.
+		h.kb.Type("\x03")
+		waitKbIdle(t, h.kb)
+		assert.Eq(t, "", h.turnInputLine(t))
+		h.kb.Type("\x03")
+
+		assert.NoErr(t, <-done)
+		got := h.out.String()
+		assert.StrContains(t, got, "已中断本轮，1 条插话已放回输入行")
+		assert.StrNotContains(t, got, "context canceled")
+		// The half-typed line was dropped by the first press; the inserted message
+		// still came back.
+		assert.Eq(t, "先改 README", h.turnInputLine(t))
+		assert.Eq(t, []string{"干活"}, h.cast.prompts())
+	})
 }
 
 // TestRunTurnSecondCtrlCLeavesChat: a second Ctrl-C during the turn (the same read

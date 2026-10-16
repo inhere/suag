@@ -73,11 +73,13 @@ func (s *chatInputSource) Ask(ctx context.Context, detail, prompt string) (strin
 	}
 	s.turnActive = false
 	// The read in progress is the answer read now: its result goes to answers, so no
-	// other consumer can take it as input of its own.
-	prevMode := s.readMode
-	s.readMode = modeAsk
+	// other consumer can take it as input of its own, and Ctrl-C cancels the question
+	// even with text typed (the read of a prompt or of a turn drops such a line and
+	// goes on instead). Both are given back by endAsk.
+	prevMode, prevClears := s.readMode, s.ctrlCClears
+	s.readMode, s.ctrlCClears = modeAsk, false
 	if err := s.enterRawLocked(); err != nil {
-		s.readMode = prevMode
+		s.readMode, s.ctrlCClears = prevMode, prevClears
 		s.turnActive = true
 		s.mu.Unlock()
 		return "", err
@@ -104,7 +106,7 @@ func (s *chatInputSource) Ask(ctx context.Context, detail, prompt string) (strin
 
 	var held *chatInputEvent
 	answerRead := false // an answer read is outstanding (its event not consumed)
-	defer func() { s.endAsk(held, answerRead, prevMode) }()
+	defer func() { s.endAsk(held, answerRead, prevMode, prevClears) }()
 
 	reuse := false
 	if pending {
@@ -125,6 +127,9 @@ func (s *chatInputSource) Ask(ctx context.Context, detail, prompt string) (strin
 		if err := s.terminal.UpdatePrompt(prompt); err != nil {
 			return "", err
 		}
+		// The borrowed read is answering the question now: endAsk gives it its mode's
+		// Ctrl-C behaviour back (the read is the person's own input line again).
+		s.terminal.SetCtrlCClearsLine(false)
 	} else {
 		s.mu.Lock()
 		s.pending = true
@@ -219,15 +224,18 @@ func (s *chatInputSource) settlePendingRead(ctx context.Context) (held *chatInpu
 	}
 }
 
-// endAsk restores the turn state: cooked mode and turnActive, the mode the question
-// replaced (a steer read goes on as one), and a line that finished before the
+// endAsk restores the turn state: cooked mode and turnActive, the mode and the
+// Ctrl-C behaviour the question replaced, and a line that finished before the
 // question goes back to events as the next input (unless an answer read is still
 // outstanding, which only happens when the turn is being cancelled).
-func (s *chatInputSource) endAsk(held *chatInputEvent, answerRead bool, mode inputMode) {
+func (s *chatInputSource) endAsk(held *chatInputEvent, answerRead bool, mode inputMode, ctrlCClears bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.turnActive = true
-	s.readMode = mode
+	s.readMode, s.ctrlCClears = mode, ctrlCClears
+	if s.terminal != nil {
+		s.terminal.SetCtrlCClearsLine(ctrlCClears)
+	}
 	if s.steering {
 		// The turn keeps reading the keyboard after the question (chat.steering):
 		// back to raw input, not cooked.

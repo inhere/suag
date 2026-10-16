@@ -344,3 +344,27 @@ func TestRunLocalCommandStopsOnCtrlC(t *testing.T) {
 	// Chat is still there: the next prompt read is served.
 	assert.True(t, h.source.Request("❯ "))
 }
+
+// TestRunLocalCommandCtrlCWithTextOnTheLine: the line typed while a local command
+// runs belongs to that command (it goes back to the input when the command is
+// over), so Ctrl-C ends the command even with text on it - unlike the prompt and
+// the reads of a turn, where a non-empty line is what Ctrl-C drops (wll1).
+func TestRunLocalCommandCtrlCWithTextOnTheLine(t *testing.T) {
+	h := newSteerHarness(t, newGateProv())
+	h.state.local = localRunner(t)
+	done := make(chan struct{})
+	go func() {
+		h.state.runLocalCommand(localCommand{kind: localRun, text: "sleep 30"})
+		close(done)
+	}()
+	time.Sleep(300 * time.Millisecond)
+	h.kb.Type("半行\x03") // typed, then the press that stops the command
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("Ctrl-C with text on the line did not end the local command")
+	}
+	assert.StrContains(t, h.out.String(), localStoppedNotice)
+	// What was typed is not lost: the next prompt read carries it.
+	assert.Eq(t, "半行", h.turnInputLine(t))
+}

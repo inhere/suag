@@ -143,13 +143,16 @@ type localKeyWatch struct {
 // watchLocalCommand opens the read a running local command owns and acts on
 // what the person presses while it runs: Ctrl-C and Esc cancel the run, a line
 // typed meanwhile goes back to the input line (the command is not a message, so
-// the next prompt carries it). It reports nil when the input is not a terminal
-// (a chat fed by a pipe has no keys to watch; the command runs to its end).
+// the next prompt carries it). The read is a steer read, but Ctrl-C keeps its
+// usual meaning in it (RequestCommandKeys): the line belongs to the command, so
+// clearing it instead of ending the command would leave no way to stop it.
+// It reports nil when the input is not a terminal (a chat fed by a pipe has no
+// keys to watch; the command runs to its end).
 func (s *chatState) watchLocalCommand(cancel context.CancelFunc) *localKeyWatch {
 	if s.source.terminal == nil {
 		return nil
 	}
-	gen, ok := s.source.RequestSteer("")
+	gen, ok := s.source.RequestCommandKeys()
 	if !ok {
 		return nil
 	}

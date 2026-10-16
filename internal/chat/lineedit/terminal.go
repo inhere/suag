@@ -34,6 +34,12 @@
 // keeps on screen - the prompt and the line being edited - so every repaint
 // (Write) clears it with them and draws it again from the top of the block.
 //
+// Addition for Ctrl-C on a non-empty line (SetCtrlCClearsLine): it drops the line
+// and goes on reading instead of ending the read, so a stray key press does not
+// throw a half-typed message away; chat turns it on for the person's own input
+// line (the prompt, and the read a running turn keeps) and leaves it off where
+// Ctrl-C means "cancel" (the answer of an approval question).
+//
 // Change to bracketed pastes (paste.go): a newline inside a paste is inserted
 // into the line instead of ending the read, so a pasted multi-line text lands on
 // the input line as one piece; SetNewlineAsText lets a caller declare the same
@@ -140,6 +146,10 @@ type Terminal struct {
 	// AutoCompleteCallback), so it may write to the terminal; an empty line always
 	// keeps Up's usual meaning.
 	WithdrawCallback func() (string, bool)
+	// ctrlCClearsLine is set by SetCtrlCClearsLine: a Ctrl-C on a non-empty line
+	// drops what was typed and the read goes on, instead of ending it with
+	// ErrInterrupt. An empty line always ends the read.
+	ctrlCClearsLine bool
 	// inputStyle paints a submitted line (highlight.go); zero by default.
 	inputStyle InputStyle
 	// statusText is the text SetStatus was given and status the runes actually on
@@ -260,6 +270,14 @@ func (t *Terminal) readLine() (line string, err error) {
 					}
 				}
 				if key == keyCtrlC {
+					if t.ctrlCClearsLine && len(t.line) > 0 {
+						// Local change: a non-empty line is what Ctrl-C drops at an input
+						// line the caller edits this way (chat: the prompt, and the input
+						// line of a running turn). The text goes away, the read goes on and
+						// the caller sees none of it.
+						t.clearInputLine()
+						continue
+					}
 					t.keepRemainder(rest)
 					return "", ErrInterrupt
 				}
@@ -337,6 +355,19 @@ type interruptError struct{}
 
 func (interruptError) Error() string        { return "interrupted (Ctrl-C)" }
 func (interruptError) Is(target error) bool { return target == io.EOF }
+
+// SetCtrlCClearsLine makes Ctrl-C on a non-empty line drop that line and go on
+// reading instead of ending the read with ErrInterrupt; an empty line always ends
+// it. It is off by default: a reader that wants Ctrl-C as "cancel what I am asking"
+// (chat's approval question, ask.go) leaves it off, while the reader of the
+// person's own input line turns it on (chat's prompt and its read during a turn),
+// so a stray key press does not throw a half-typed message away.
+func (t *Terminal) SetCtrlCClearsLine(on bool) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	t.ctrlCClearsLine = on
+}
 
 // SetBracketedPasteMode requests that the terminal bracket paste operations
 // with markers. Not all terminals support this; where it is supported a paste

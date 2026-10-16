@@ -103,6 +103,14 @@ type chatInputSource struct {
 	// decides the activity handshake, the lone-Esc decision and the channel a result
 	// is delivered to. request sets it, Ask switches it to modeAsk.
 	readMode inputMode
+	// ctrlCClears is what the read being served does with a Ctrl-C on a non-empty
+	// line: it is handed to the line editor (SetCtrlCClearsLine). The prompt and the
+	// read a running turn owns set it - they edit the person's own input line, where
+	// a stray key press must not throw a half-typed message away - while the answer
+	// of an approval question and the read of a running local command leave it off
+	// (Ctrl-C is "cancel" there, as it always was). Guarded by mu; the read applies
+	// it when it starts (readLine) and Ask switches it on a read it borrows.
+	ctrlCClears bool
 	// inputWait reports whether more input is ready within the timeout, without
 	// reading it: the wait behind the lone-Esc and the pasted-newline decisions of
 	// the byte pump. nil without a terminal.
@@ -377,6 +385,14 @@ func (s *chatInputSource) currentScreenWidth() int {
 	return s.screenWidth
 }
 
+// ctrlCClearsNow reports what the read being served does with a Ctrl-C on a
+// non-empty line (nothing off a terminal: there is no line to edit).
+func (s *chatInputSource) ctrlCClearsNow() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ctrlCClears
+}
+
 // watchScreenSize applies window size changes for as long as chat runs (SIGWINCH on
 // Unix, a poll where there is no signal). The line editor wraps at the size it was
 // last given, so a resized window has to reach it (SetSize also repaints the line
@@ -422,7 +438,7 @@ func (s *chatInputSource) applyTerminalSize() {
 
 // Request asks for one prompt line (between turns): the chat loop takes the result
 // from Next.
-func (s *chatInputSource) Request(prompt string) bool { return s.request(prompt, modePrompt) }
+func (s *chatInputSource) Request(prompt string) bool { return s.request(prompt, modePrompt, true) }
 
 // RequestSteer asks for a read during a turn (S2b): the input line stays available
 // while the model works, Enter submits an inserted message and Ctrl-C/Esc ask to end
@@ -430,11 +446,26 @@ func (s *chatInputSource) Request(prompt string) bool { return s.request(prompt,
 // returns: the turn consumer acts on its own generation only. ok=false means the
 // source is closing (the read could not be asked for).
 func (s *chatInputSource) RequestSteer(prompt string) (gen uint64, ok bool) {
+	return s.steer(prompt, true)
+}
+
+// RequestCommandKeys asks for the read a running local command owns (local_cmd.go's
+// watchLocalCommand): the same steer read, but Ctrl-C ends the command even with
+// text on the line. The line there belongs to the command - it goes back to the
+// input once the command is over - so dropping it instead of ending the command
+// would leave the person with a command they cannot stop.
+func (s *chatInputSource) RequestCommandKeys() (gen uint64, ok bool) {
+	return s.steer("", false)
+}
+
+// steer asks for a steer read with the given Ctrl-C behaviour (ctrlCClears) and
+// returns its generation.
+func (s *chatInputSource) steer(prompt string, ctrlCClears bool) (gen uint64, ok bool) {
 	s.mu.Lock()
 	s.steerGen++
 	gen = s.steerGen
 	s.mu.Unlock()
-	if !s.request(prompt, modeSteer) {
+	if !s.request(prompt, modeSteer, ctrlCClears) {
 		return 0, false
 	}
 	return gen, true
@@ -459,13 +490,15 @@ func (s *chatInputSource) lineOnScreen() bool {
 	return s.steering && s.pending
 }
 
-// request asks the reader goroutine for one read in mode. The mode is set here, under
-// the same lock as pending: a read already waiting for input continues as this read
-// (only its prompt and mode change), a finished one starts a new request — and between
+// request asks the reader goroutine for one read in mode, with ctrlCClears deciding
+// what a Ctrl-C on a non-empty line does in it (the line editor's
+// SetCtrlCClearsLine). The mode is set here, under the same lock as pending: a read
+// already waiting for input continues as this read (only its prompt, its mode and
+// its Ctrl-C behaviour change), a finished one starts a new request - and between
 // the two nothing reads, so input typed meanwhile is never taken early.
-func (s *chatInputSource) request(prompt string, mode inputMode) bool {
+func (s *chatInputSource) request(prompt string, mode inputMode, ctrlCClears bool) bool {
 	s.mu.Lock()
-	s.readMode = mode
+	s.readMode, s.ctrlCClears = mode, ctrlCClears
 	// Back at a prompt: raw mode is allowed again. If a read from before the turn is still
 	// blocked it continues as this prompt's read, so switch to raw for it right here.
 	s.turnActive = false
@@ -478,9 +511,10 @@ func (s *chatInputSource) request(prompt string, mode inputMode) bool {
 		s.outputProcessingForRawLocked()
 		s.mu.Unlock()
 		_ = err // best effort: the pending read still works in cooked mode
-		// The read keeps its line; only the prompt changes (e.g. a Stop hook that
-		// returned without waiting for an external reply).
+		// The read keeps its line; only the prompt and the Ctrl-C behaviour change
+		// (e.g. a Stop hook that returned without waiting for an external reply).
 		if s.terminal != nil {
+			s.terminal.SetCtrlCClearsLine(ctrlCClears)
 			_ = s.terminal.UpdatePrompt(prompt)
 		}
 		return true
@@ -705,6 +739,11 @@ func (s *chatInputSource) readLine(request chatInputRequest) (string, error) {
 		}
 		defer s.leaveRaw()
 		s.terminal.SetPrompt(prompt)
+		// What the read does with Ctrl-C on a non-empty line: the prompt and the read
+		// of a running turn drop the line (the person's own input line, so a stray key
+		// press does not throw a half-typed message away), the answer of an approval
+		// question and the read of a local command do not (ask.go, local_cmd.go).
+		s.terminal.SetCtrlCClearsLine(s.ctrlCClearsNow())
 		s.reader.activitySent = false
 		var line string
 		var err error

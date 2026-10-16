@@ -143,6 +143,42 @@ func (t *Terminal) advanceCursor(places int) {
 	}
 }
 
+// clearInputLine drops the line being edited and blanks every screen row it was
+// drawn on, leaving the cursor at the start of the empty input - just after the
+// prompt, which is drawn again. It is what Ctrl-C does to a non-empty line
+// (readLine), so the text goes away without the read ending. t.lock must be held.
+func (t *Terminal) clearInputLine() {
+	if !t.echo {
+		// Nothing of the line is on screen: only the state goes away.
+		t.line, t.pos = t.line[:0], 0
+		t.cursorX, t.cursorY, t.maxLine = 0, 0, 0
+		return
+	}
+	// From the last row of the text back up to the row the prompt is on: every row
+	// the input used is blanked on the way, a multi-line input (pasted text, a
+	// message put back with Up) included.
+	t.moveCursorToPos(len(t.line))
+	for {
+		if t.cursorX > 0 {
+			t.move(0, 0, t.cursorX, 0)
+			t.cursorX = 0
+		}
+		t.clearLineToRight()
+		if t.cursorY == 0 {
+			break
+		}
+		t.move(1, 0, 0, 0)
+		t.cursorY--
+	}
+	// The prompt went with its row (the rows are blanked from column 0): draw it
+	// again, so the cursor sits at the start of the empty input line.
+	t.line, t.pos = t.line[:0], 0
+	t.queue(t.prompt)
+	t.cursorX, t.cursorY = 0, 0
+	t.advanceCursor(visualLength(t.prompt))
+	t.maxLine = t.cursorY
+}
+
 func (t *Terminal) eraseNPreviousChars(n int) {
 	if n == 0 {
 		return

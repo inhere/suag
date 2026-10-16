@@ -168,6 +168,13 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 	}
 }
 
+// waitKbIdle waits until every byte typed so far has been handled: nothing is left
+// in the fake keyboard and the line editor is blocked in a read for more.
+func waitKbIdle(t *testing.T, kb *fakeKeyboard) {
+	t.Helper()
+	waitUntil(t, "the keyboard to be idle", func() bool { return kb.Unread() == 0 && kb.Reading() > 0 })
+}
+
 // waitPrompt waits until the question prompt is on screen (after the flush).
 func (h *askHarness) waitPrompt(t *testing.T) {
 	t.Helper()
