@@ -7,6 +7,7 @@ package rules
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -219,7 +220,12 @@ func modeMatches(modes []Mode, target Mode) bool {
 }
 
 func isFileTool(tool string) bool {
-	return tool == "file_write" || tool == "file_edit" || tool == "file_remove"
+	switch tool {
+	case "file_write", "file_edit", "file_remove":
+		return true
+	default:
+		return false
+	}
 }
 
 func validAction(action Action) bool {
@@ -241,6 +247,65 @@ func strength(action Action) int {
 	default:
 		return 0
 	}
+}
+
+// ClampAllow prevents an approval rule from granting access to suga's own
+// control-plane files. The entry point still decides whether a protected path
+// is askable: chat and ACP can ask, while non-interactive run/sub-agents deny.
+func ClampAllow(action Action, target Target, workspace, sugaHome string, ruleFiles ...string) Action {
+	if action != Allow || !IsProtectedPath(target, workspace, sugaHome, ruleFiles...) {
+		return action
+	}
+	if target.Mode == ModeChat || target.Mode == ModeACP {
+		return Ask
+	}
+	return Deny
+}
+
+// IsProtectedPath reports whether a file target is inside an internal control
+// path. This is intentionally owned by the rules package so every entry point
+// applies the same protection list instead of maintaining local copies.
+func IsProtectedPath(target Target, workspace, sugaHome string, ruleFiles ...string) bool {
+	if target.MCP || !isFileTool(target.Tool) || target.Path == "" {
+		return false
+	}
+	candidate := target.Path
+	if !filepath.IsAbs(candidate) {
+		candidate = filepath.Join(target.Root, candidate)
+	}
+	candidate, err := filepath.Abs(filepath.Clean(candidate))
+	if err != nil {
+		return false
+	}
+	protected := []string{sugaHome}
+	if workspace != "" {
+		protected = append(protected,
+			filepath.Join(workspace, ".git"),
+			filepath.Join(workspace, ".suga"),
+		)
+	}
+	protected = append(protected, ruleFiles...)
+	for _, root := range protected {
+		if root == "" {
+			continue
+		}
+		root, err = filepath.Abs(filepath.Clean(root))
+		if err != nil {
+			continue
+		}
+		if samePath(candidate, root) || pathWithin(root, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathWithin(root, candidate string) bool {
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil || rel == "." || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // Summary returns the stable human-readable form used by approval reports.
