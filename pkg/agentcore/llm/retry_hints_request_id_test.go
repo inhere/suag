@@ -91,40 +91,43 @@ func TestShouldRetryFalseStopsHTTPRetry(t *testing.T) {
 	_, err := p.Generate(context.Background(), &agentcoreapi.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "hi"}}})
 	assert.Err(t, err)
 	assert.Eq(t, int32(1), hits.Load())
-	assert.Eq(t, ErrorKindRejected, ErrorKind(err))
+	assert.Eq(t, ErrorKindTransient, ErrorKind(err))
 	assert.ErrMsgContains(t, err, "request-id: req-no-retry")
 }
 
 func TestRequestIDIsReportedOnSuccessAndRetryExhaustion(t *testing.T) {
 	req := &agentcoreapi.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "hi"}}}
-	for _, header := range []string{"x-request-id", "request-id", "anthropic-request-id", "openai-request-id"} {
-		t.Run(header, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				_, _ = io.Copy(io.Discard, r.Body)
-				w.Header().Set(header, "req-success")
-				_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
-			}))
-			t.Cleanup(server.Close)
-			var got Attempt
-			_, err := GenerateObserved(context.Background(), NewOpenAIProvider(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "m"}), req, 1,
-				func(_ context.Context, attempt Attempt) { got = attempt })
-			assert.NoErr(t, err)
-			assert.Eq(t, "req-success", got.RequestID)
-		})
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
-		w.Header().Set("request-id", "req-failed")
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = io.WriteString(w, `{"error":{"message":"busy"}}`)
-	}))
-	t.Cleanup(server.Close)
-	p := NewOpenAIProvider(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "m",
-		Retry: RetryPolicy{MaxAttempts: 1, BaseDelay: time.Millisecond, MaxDelay: time.Millisecond}})
-	var got Attempt
-	_, err := GenerateObserved(context.Background(), p, req, 1, func(_ context.Context, attempt Attempt) { got = attempt })
-	assert.Err(t, err)
-	assert.ErrMsgContains(t, err, "request-id: req-failed")
-	assert.Eq(t, "req-failed", got.RequestID)
+	t.Run("success", func(t *testing.T) {
+		for _, header := range []string{"x-request-id", "request-id", "anthropic-request-id", "openai-request-id"} {
+			t.Run(header, func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					_, _ = io.Copy(io.Discard, r.Body)
+					w.Header().Set(header, "req-success")
+					_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
+				}))
+				t.Cleanup(server.Close)
+				var got Attempt
+				_, err := GenerateObserved(context.Background(), NewOpenAIProvider(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "m"}), req, 1,
+					func(_ context.Context, attempt Attempt) { got = attempt })
+				assert.NoErr(t, err)
+				assert.Eq(t, "req-success", got.RequestID)
+			})
+		}
+	})
+	t.Run("retry exhaustion", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.Header().Set("request-id", "req-failed")
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = io.WriteString(w, `{"error":{"message":"busy"}}`)
+		}))
+		t.Cleanup(server.Close)
+		p := NewOpenAIProvider(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "m",
+			Retry: RetryPolicy{MaxAttempts: 1, BaseDelay: time.Millisecond, MaxDelay: time.Millisecond}})
+		var got Attempt
+		_, err := GenerateObserved(context.Background(), p, req, 1, func(_ context.Context, attempt Attempt) { got = attempt })
+		assert.Err(t, err)
+		assert.ErrMsgContains(t, err, "request-id: req-failed")
+		assert.Eq(t, "req-failed", got.RequestID)
+	})
 }

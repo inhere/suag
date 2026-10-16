@@ -103,7 +103,7 @@ func retryStream(ctx context.Context, b *backoff, provider string, emit agentcor
 			return res, err
 		}
 		if n >= b.attempts() {
-			return nil, retryErr.giveUp(provider, n)
+			return nil, withRequestID(ctx, retryErr.giveUp(provider, n))
 		}
 		// Both kinds of failure wait the same backoff: a Retry-After the server
 		// sent was already honoured by postWithRetry (which retries 408/429/5xx

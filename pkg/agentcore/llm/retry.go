@@ -123,6 +123,8 @@ func sleepRetry(ctx context.Context, d time.Duration) error {
 func retryableStatus(code int) bool {
 	return code == http.StatusRequestTimeout || code == http.StatusTooManyRequests || code >= 500
 }
+
+// retryAfterOf reads the preferred millisecond hint, then the standard Retry-After formats.
 func retryAfterOf(h http.Header, now time.Time) time.Duration {
 	if v := strings.TrimSpace(h.Get("Retry-After-Ms")); v != "" {
 		if ms, err := strconv.ParseInt(v, 10, 64); err == nil && ms > 0 {
@@ -162,6 +164,7 @@ func retryAfterMessage(text string) time.Duration {
 	return time.Duration(value * float64(time.Second))
 }
 
+// requestIDOf returns the first supported provider correlation header.
 func requestIDOf(h http.Header) string {
 	for _, name := range []string{"x-request-id", "request-id", "anthropic-request-id", "openai-request-id"} {
 		if id := strings.TrimSpace(h.Get(name)); id != "" {
@@ -171,15 +174,14 @@ func requestIDOf(h http.Header) string {
 	return ""
 }
 
+// noteRequestID records the id for the current HTTP attempt; an empty id clears a prior attempt.
 func noteRequestID(ctx context.Context, id string) {
-	if id == "" {
-		return
-	}
 	if r, _ := ctx.Value(retryReportKey{}).(*RetryReport); r != nil {
 		r.RequestID = id
 	}
 }
 
+// requestIDFrom retrieves the correlation id recorded for the current attempt.
 func requestIDFrom(ctx context.Context) string {
 	if r, _ := ctx.Value(retryReportKey{}).(*RetryReport); r != nil {
 		return r.RequestID
@@ -243,6 +245,7 @@ func postWithRetry(ctx context.Context, client *http.Client, b *backoff, provide
 		if err != nil {
 			return nil, err
 		}
+		noteRequestID(ctx, "")
 		resp, err := client.Do(req)
 		var retryAfter time.Duration
 		var reason string
@@ -267,7 +270,7 @@ func postWithRetry(ctx context.Context, client *http.Client, b *backoff, provide
 			if strings.EqualFold(strings.TrimSpace(resp.Header.Get("X-Should-Retry")), "false") {
 				// The provider explicitly says this response is final. Classify the
 				// actual HTTP failure without making another request.
-				return nil, withRequestID(ctx, statusErr(resp.StatusCode, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))))
+				return nil, &transientRequestError{withRequestID(ctx, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body))))}
 			}
 			retryAfter = retryAfterOf(resp.Header, time.Now())
 			if retryAfter == 0 {
