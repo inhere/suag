@@ -85,6 +85,15 @@ type EntrySearch struct {
 	// IncludeAgents searches sub-agent sessions too (they belong to their
 	// parent session and are left out by default).
 	IncludeAgents bool
+	// Kinds restricts results to indexed entry roles. An empty slice means all
+	// indexed roles; values must be user, assistant, tool or compaction.
+	Kinds []string
+	// Since is an inclusive lower bound on entry creation time. Zero means no
+	// lower bound.
+	Since time.Time
+	// Until is an exclusive upper bound on entry creation time. Zero means no
+	// upper bound.
+	Until time.Time
 }
 
 // EntryHit is one matching entry, located by SessionID/Seq.
@@ -96,14 +105,17 @@ type EntryHit struct {
 	CreatedAt time.Time
 }
 
-// SearchEntries searches the ledger index. When every term has at least three
-// runes it uses the trigram index (FTS5 MATCH, bm25 ranking, snippet());
-// otherwise the whole query falls back to LIKE over the indexed text (newest
-// first). Results are not redacted here; callers do that.
+// SearchEntries searches the ledger index. Terms with at least three runes use
+// the trigram index (FTS5 MATCH, bm25 ranking); shorter terms stay as LIKE
+// filters in the same WHERE clause. Results are not redacted here; callers do
+// that.
 func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, error) {
 	terms := strings.Fields(q.Query)
 	if len(terms) == 0 {
 		return nil, errors.New("search query is required")
+	}
+	if err := validateSearchKinds(q.Kinds); err != nil {
+		return nil, err
 	}
 	limit := q.Limit
 	if limit <= 0 {
@@ -111,11 +123,13 @@ func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, e
 	}
 	limit = min(limit, maxSearchLimit)
 
-	useMatch := true
-	for _, t := range terms {
-		if utf8.RuneCountInString(t) < minMatchRunes {
-			useMatch = false
-			break
+	matchTerms := make([]string, 0, len(terms))
+	likeTerms := make([]string, 0, len(terms))
+	for _, term := range terms {
+		if utf8.RuneCountInString(term) >= minMatchRunes {
+			matchTerms = append(matchTerms, term)
+		} else {
+			likeTerms = append(likeTerms, term)
 		}
 	}
 
@@ -123,36 +137,56 @@ func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, e
 		cols, where, order string
 		args               []any
 	)
-	if useMatch {
+	if len(matchTerms) > 0 {
 		// Column 3 is text; up to 64 tokens (trigram: ~64 runes) of context.
 		cols = `snippet(entries_fts, 3, '', '', '…', 64)`
 		where = `entries_fts MATCH ?`
-		args = append(args, ftsMatchExpr(terms))
+		args = append(args, ftsMatchExpr(matchTerms))
 		order = `bm25(entries_fts), f.session_id, f.seq`
 	} else {
 		cols = `f.text`
-		likes := make([]string, len(terms))
-		for i, t := range terms {
-			likes[i] = `f.text LIKE ? ESCAPE '\'`
-			args = append(args, "%"+escapeLike(t)+"%")
-		}
-		where = strings.Join(likes, ` AND `)
 		order = `e.created_at DESC, f.session_id, f.seq DESC`
 	}
+	if len(likeTerms) > 0 {
+		likes := make([]string, len(likeTerms))
+		for i, term := range likeTerms {
+			likes[i] = `f.text LIKE ? ESCAPE '\'`
+			args = append(args, "%"+escapeLike(term)+"%")
+		}
+		where = joinWhere(where, strings.Join(likes, ` AND `))
+	}
 	if len(q.SessionIDs) > 0 {
-		where += ` AND f.session_id IN (` + placeholders(len(q.SessionIDs)) + `)`
+		where = joinWhere(where, `f.session_id IN (`+placeholders(len(q.SessionIDs))+`)`)
 		for _, id := range q.SessionIDs {
 			args = append(args, id)
 		}
 	}
 	if !q.IncludeAgents {
-		where += ` AND ` + notAgentSession("ss.meta_json")
+		where = joinWhere(where, notAgentSession("ss.meta_json"))
 	}
 	if q.CWDPrefix != "" {
 		// substr/length instead of LIKE: exact, case-sensitive, no escaping.
-		where += ` AND substr(ss.cwd, 1, length(?)) = ?`
+		where = joinWhere(where, `substr(ss.cwd, 1, length(?)) = ?`)
 		args = append(args, q.CWDPrefix, q.CWDPrefix)
 	}
+	if len(q.Kinds) > 0 {
+		where = joinWhere(where, `f.role IN (`+placeholders(len(q.Kinds))+`)`)
+		for _, kind := range q.Kinds {
+			args = append(args, kind)
+		}
+	}
+	if !q.Since.IsZero() {
+		where = joinWhere(where, `e.created_at >= ?`)
+		args = append(args, formatTime(q.Since))
+	}
+	if !q.Until.IsZero() {
+		where = joinWhere(where, `e.created_at < ?`)
+		args = append(args, formatTime(q.Until))
+	}
+	// Search results must not recursively contain the two retrieval tools'
+	// own transcripts, while other tool results remain searchable.
+	where = joinWhere(where, `NOT (f.role = ? AND json_extract(e.json, '$.ToolCall.Name') IN (?, ?))`)
+	args = append(args, EntryTool, "session_search", "recall")
 	// MATCH, snippet() and bm25() take the FTS hidden column, which is named
 	// after the table (entries_fts) and resolves through the alias f.
 	sqlText := `SELECT f.session_id, f.seq, f.role, ` + cols + `, e.created_at
@@ -176,7 +210,7 @@ func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, e
 			return nil, err
 		}
 		h.CreatedAt = parseTime(created)
-		if useMatch {
+		if len(matchTerms) > 0 {
 			h.Snippet = text
 		} else {
 			h.Snippet = likeSnippet(text, terms[0])
@@ -184,6 +218,27 @@ func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, e
 		out = append(out, h)
 	}
 	return out, rows.Err()
+}
+
+// validateSearchKinds rejects values that cannot occur in entries_fts. Keeping
+// this check in the store protects direct callers before the native tool parser
+// is introduced.
+func validateSearchKinds(kinds []string) error {
+	for _, kind := range kinds {
+		switch kind {
+		case EntryUser, EntryAssistant, EntryTool, EntryCompaction:
+		default:
+			return fmt.Errorf("invalid search kind %q", kind)
+		}
+	}
+	return nil
+}
+
+func joinWhere(base, condition string) string {
+	if base == "" {
+		return condition
+	}
+	return base + ` AND ` + condition
 }
 
 // ftsMatchExpr turns each term into an FTS5 string (phrase): wrapped in double
