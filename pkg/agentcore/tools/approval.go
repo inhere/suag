@@ -142,6 +142,12 @@ type ApprovalReport struct {
 	// Danger is why the call needed a stricter decision (a dangerous delete
 	// command), "" for an ordinary call.
 	Danger string
+	// Rule is the stable summary of the representative approval rule. An empty
+	// value means no declarative rule matched the call (the policy default ran).
+	Rule string
+	// Scope is the session rule's scope key; it is empty for user, project and
+	// legacy rules, and for calls without a representative rule.
+	Scope string
 }
 
 type approvalReportKey struct{}
