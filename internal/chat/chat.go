@@ -601,23 +601,14 @@ func (s *chatStats) add(result personal.RunResult) {
 	}
 }
 
-// print writes the exit summary: the resume command (with the session's short
-// name, the address `suga send --session <name>` accepts), this process's turns
-// and tokens (plus the session total when known) and how long chat ran.
+// print writes the exit summary built by BuildExitSummary (layout.go): the
+// resume command (behind the session's short name, the address `suga send
+// --session <name>` accepts), this process's turns and tokens (plus the session
+// total when known) and how long chat ran. It has no colors: the resume command
+// is meant to be copied as it is.
 func (s chatStats) print(w io.Writer, sessionID, shortName string, elapsed time.Duration) {
-	if sessionID == "" {
-		return
-	}
-	line := fmt.Sprintf("本次 %d 轮 · in %d / out %d tokens", s.turns, s.usage.InputTokens, s.usage.OutputTokens)
-	if s.session.InputTokens > 0 || s.session.OutputTokens > 0 {
-		line += fmt.Sprintf("（会话累计 in %d / out %d）", s.session.InputTokens, s.session.OutputTokens)
-	}
-	// The short name goes before the resume command, which ends the line so it
-	// can be copied as it is (a name glued after the id broke the command).
-	name := ""
-	if shortName != "" {
-		name = "会话 " + shortName + " · "
-	}
-	// Leading newline: Ctrl-C/Ctrl-D at the prompt leaves the cursor after "❯ ".
-	fmt.Fprintf(w, "\n%s · 运行 %s\n%s续接：suga chat --resume %s\n", line, formatElapsed(elapsed), name, sessionID)
+	printLayout(w, false, BuildExitSummary(ExitSummary{
+		SessionID: sessionID, ShortName: shortName,
+		Turns: s.turns, Usage: s.usage, SessionUsage: s.session, Elapsed: elapsed,
+	}))
 }

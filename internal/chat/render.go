@@ -449,100 +449,56 @@ func (r *Renderer) noteMemory(event personal.Event) {
 	r.memory = append(r.memory, fmt.Sprintf("%s：%s（%s）", memoryVerbs[change.Action], title, change.Scope))
 }
 
-// Status prints the grey end-of-turn line: model, token usage, the share of the
-// context window the last request used, elapsed time, the local time the turn
-// ended at and how many messages the person inserted while it ran, preceded by
-// one line per memory write of the turn.
+// Status prints the end of a turn on the chat output: the memory lines of the
+// turn and the status line (model, token usage, context share, elapsed time,
+// local end time, inserted messages). The text and its styles are built by
+// BuildTurnStatus (layout.go); this only collects the data.
 func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration, steers int) {
 	r.stopThinking()
-	for _, line := range r.memory {
-		fmt.Fprintln(r.opts.Out, r.paint(color.Green, line))
-	}
+	printLayout(r.opts.Out, r.opts.Color, BuildTurnStatus(TurnStatus{
+		Memory:   r.memory,
+		Provider: r.opts.Provider, Model: r.opts.Model,
+		Usage:           result.Usage,
+		LastInputTokens: result.LastInputTokens, ContextWindow: r.opts.ContextWindow,
+		Elapsed: elapsed, EndTime: r.localNow(), Steers: steers,
+	}))
 	r.memory = nil
-	var parts []string
-	if label := modelLabel(r.opts.Provider, r.opts.Model); label != "" {
-		parts = append(parts, label)
-	}
-	parts = append(parts,
-		fmt.Sprintf("in %d / out %d tokens", result.Usage.InputTokens, result.Usage.OutputTokens),
-	)
-	// How full the context is: the same number the idle consolidation compares
-	// with context.idle_min_ratio, so the person can tell when it will fire.
-	if share := r.contextShare(result); share != "" {
-		parts = append(parts, share)
-	}
-	parts = append(parts,
-		formatElapsed(elapsed),
-		// When the turn ended, so the person can tell long sessions apart (:03).
-		clockTime(r.localNow()))
-	// Inserted messages (steering) only, so the line is unchanged for a turn
-	// nobody typed into.
-	if steers > 0 {
-		parts = append(parts, fmt.Sprintf("插话 %d", steers))
-	}
-	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, strings.Join(parts, " · ")))
-}
-
-// contextShare renders the context usage of the turn's last model request as
-// "ctx 55%": its input tokens (cache included) over the model window. Empty
-// when the window is unknown or no model call of the turn reported tokens. A
-// request above the window stays honest (>100%) instead of being clamped.
-func (r *Renderer) contextShare(result personal.RunResult) string {
-	if r.opts.ContextWindow <= 0 || result.LastInputTokens <= 0 {
-		return ""
-	}
-	return fmt.Sprintf("ctx %d%%", result.LastInputTokens*100/r.opts.ContextWindow)
 }
 
 // LastReply prints the last reply of a session chat continues, above the first
-// prompt: a dim label first, so it is not taken for a fresh answer, and a dim
-// note when the previous turn did not end normally (incomplete) or when only
-// the tail of a long reply is shown. sessionID only names the trace command of
-// that truncation note.
+// prompt: the dim label and notes of BuildLastReplyNotices (layout.go) first,
+// so it is not taken for a fresh answer, then the reply itself, rendered like
+// an answer.
 func (r *Renderer) LastReply(text, sessionID string, incomplete bool) {
 	r.stopThinking()
-	fmt.Fprintln(r.opts.Out, r.paintDim("上一次回复："))
-	if incomplete {
-		fmt.Fprintln(r.opts.Out, r.paintDim("上一回合未正常结束"))
+	body := strings.Split(strings.TrimRight(text, "\r\n"), "\n")
+	omitted := len(body) - replyTailLines
+	if omitted < 0 {
+		omitted = 0
 	}
-	lines := strings.Split(strings.TrimRight(text, "\r\n"), "\n")
-	if omitted := len(lines) - replyTailLines; omitted > 0 {
-		lines = lines[omitted:]
-		fmt.Fprintln(r.opts.Out, r.paintDim(fmt.Sprintf("已截断前 %d 行，完整记录见 suga trace %s", omitted, sessionID)))
+	if omitted > 0 {
+		body = body[omitted:]
 	}
+	printLayout(r.opts.Out, r.opts.Color, BuildLastReplyNotices(LastReplyInfo{
+		Incomplete: incomplete, Omitted: omitted, SessionID: sessionID,
+	}))
 	// The same marker and markdown rendering as a streamed answer.
-	r.Answer(strings.Join(lines, "\n"))
+	r.Answer(strings.Join(body, "\n"))
 }
 
 // SetSessionName records the session's short name for the banner; chat calls it
 // once the local session socket is registered (before Banner).
 func (r *Renderer) SetSessionName(name string) { r.opts.SessionName = name }
 
-// Banner prints the chat header: the model in use and the commands.
+// Banner prints the chat header: the model in use and the commands. The text
+// and its styles are built by BuildBanner (layout.go).
 func (r *Renderer) Banner() {
 	r.stopThinking()
-	head := "Suga chat"
-	if label := modelLabel(r.opts.Provider, r.opts.Model); label != "" {
-		head += " · " + label
-	}
-	if r.opts.Thinking != "" {
-		head += " · thinking " + r.opts.Thinking
-	}
-	if r.opts.ContextWindow > 0 {
-		head += " · ctx " + formatTokens(r.opts.ContextWindow)
-	}
-	if r.opts.SessionName != "" {
-		head += " · 会话 " + r.opts.SessionName
-	}
-	fmt.Fprintln(r.opts.Out, r.paint(color.Cyan, head))
-	fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "输入任务开始对话；:session 显示会话，:add-dir/:dirs/:rm-dir 管理附加目录，:compact 压缩上下文，:quit/:exit 退出；Alt+Enter（Windows 上 Ctrl+Enter / Ctrl+J）在输入里换行，多行时上下键移动光标。"))
-	if r.opts.WriteTools {
-		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "工具：可读写文件、执行 shell（tools.approval 决定是否先确认）。"))
-	} else {
-		// The usual reason the model says it has no shell_exec: write tools
-		// are off unless SUGA_HOME/config.yaml sets tools.allow_write.
-		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, "工具：只读。要写文件、执行 shell，在 SUGA_HOME/config.yaml 设 tools.allow_write: true。"))
-	}
+	printLayout(r.opts.Out, r.opts.Color, BuildBanner(BannerInfo{
+		Provider: r.opts.Provider, Model: r.opts.Model,
+		Thinking: r.opts.Thinking, ContextWindow: r.opts.ContextWindow,
+		SessionName: r.opts.SessionName, WriteTools: r.opts.WriteTools,
+	}))
 }
 
 // clockTime renders the end-of-turn time as a 24 hour local HH:MM.
