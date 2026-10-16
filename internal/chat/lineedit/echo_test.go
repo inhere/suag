@@ -126,3 +126,45 @@ func readLineWithin(t *testing.T, lines <-chan string) string {
 		return ""
 	}
 }
+
+func TestTerminal_ReverseSearchUsesTypedKeys(t *testing.T) {
+	feed := &feedingTerm{in: make(chan string, 1), waiting: make(chan struct{}, 1)}
+	tm := NewTerminal(feed, "❯ ")
+	tm.SetHistory([]string{"first", "second history line"})
+	lines := make(chan string, 1)
+	go func() {
+		line, err := tm.ReadLine()
+		if err != nil {
+			t.Errorf("ReadLine: %v", err)
+		}
+		lines <- line
+	}()
+	waitRead(t, feed.waiting)
+	feed.in <- "second"
+	line := readLineWithin(t, lines)
+	assert.Eq(t, "second history line", line)
+	assert.StrContains(t, feed.out.String(), "(reverse-i-search)")
+	assert.StrContains(t, feed.out.String(), "second history line")
+}
+
+func TestTerminal_AutoCompleteUsesTypedTab(t *testing.T) {
+	feed := &feedingTerm{in: make(chan string, 1), waiting: make(chan struct{}, 1)}
+	tm := NewTerminal(feed, "❯ ")
+	tm.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
+		if key == '\t' && line == ":se" && pos == len(line) {
+			return ":session", len(":session"), true
+		}
+		return "", 0, false
+	}
+	lines := make(chan string, 1)
+	go func() {
+		line, err := tm.ReadLine()
+		if err != nil {
+			t.Errorf("ReadLine: %v", err)
+		}
+		lines <- line
+	}()
+	waitRead(t, feed.waiting)
+	feed.in <- ":se\t\r"
+	assert.Eq(t, ":session", readLineWithin(t, lines))
+}

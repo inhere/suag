@@ -351,10 +351,24 @@ func (t *Terminal) reverseSearch() {
 		t.reverseOriginal = string(t.line)
 		t.reverseIndex = 0
 		t.reversePrompt = string(t.prompt)
-		t.prompt = []rune("(reverse-i-search)`" + t.reverseQuery + "': ")
 	} else {
 		t.reverseIndex++
 	}
+	t.reversePromptForState()
+	t.findReverseMatch()
+}
+
+func (t *Terminal) reversePromptForState() {
+	if t.reverseQuery == "" {
+		t.prompt = []rune("(reverse-i-search)`': ")
+	} else {
+		t.prompt = []rune("(reverse-i-search)`" + t.reverseQuery + "': ")
+	}
+}
+
+// findReverseMatch redraws the complete input block so the search prompt and the
+// matched line stay in sync, including when a status line is present.
+func (t *Terminal) findReverseMatch() {
 	for i := t.reverseIndex; ; i++ {
 		entry, ok := t.history.NthPreviousEntry(i)
 		if !ok {
@@ -364,13 +378,23 @@ func (t *Terminal) reverseSearch() {
 			runes := []rune(entry)
 			t.setLine(runes, len(runes))
 			t.reverseIndex = i
+			_ = t.repaintLocked()
 			return
 		}
 	}
-	// Keep the search active, but make a failed repeat visible instead of
-	// silently leaving the previous match on screen.
 	t.prompt = []rune("(failed reverse-i-search)`" + t.reverseQuery + "': ")
 	_ = t.repaintLocked()
+}
+
+func (t *Terminal) reverseSearchBackspace() {
+	if len(t.reverseQuery) == 0 {
+		return
+	}
+	runes := []rune(t.reverseQuery)
+	t.reverseQuery = string(runes[:len(runes)-1])
+	t.reverseIndex = 0
+	t.reversePromptForState()
+	t.findReverseMatch()
 }
 
 func (t *Terminal) cancelReverseSearch() {
@@ -379,6 +403,7 @@ func (t *Terminal) cancelReverseSearch() {
 	}
 	t.setLine([]rune(t.reverseOriginal), len([]rune(t.reverseOriginal)))
 	t.endReverseSearch()
+	_ = t.repaintLocked()
 }
 
 func (t *Terminal) endReverseSearch() {
