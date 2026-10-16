@@ -101,12 +101,12 @@ func TestSessionSearchTool(t *testing.T) {
 		assert.Eq(t, LedgerQuery{Query: "x", Scope: LedgerScopeAll, Ref: "out:sess_1:0123456789abcdef", Limit: 7}, f.q)
 
 		_, err = run(f, map[string]any{
-			"query": "x", "scope": "current", "limit": 8, "cursor": "v1:snap_1:20",
+			"query": "x", "scope": "current", "limit": 8, "cursor": "v1.snap_1.20",
 			"kind": "tool, user,tool", "since": "2026-10-01T00:00:00Z", "until": "2026-10-02",
 		})
 		assert.NoErr(t, err)
 		assert.Eq(t, LedgerQuery{
-			Query: "x", Scope: LedgerScopeCurrent, Limit: 8, Cursor: "v1:snap_1:20",
+			Query: "x", Scope: LedgerScopeCurrent, Limit: 8, Cursor: "v1.snap_1.20",
 			Kinds: []string{"tool", "user"},
 			Since: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
 			Until: time.Date(2026, 10, 2, 0, 0, 0, 0, time.Local),
@@ -145,11 +145,11 @@ func TestSessionSearchTool(t *testing.T) {
 	})
 
 	t.Run("cursor and notice render only when returned", func(t *testing.T) {
-		f := &fakeLedger{hits: []LedgerHit{{Ref: "sess_1/4", Role: "user", Snippet: "hello"}}, nextCursor: "v1:snap_1:20", notice: "cursor ignored; starting from beginning"}
+		f := &fakeLedger{hits: []LedgerHit{{Ref: "sess_1/4", Role: "user", Snippet: "hello"}}, nextCursor: "v1.snap_1.20", notice: "cursor ignored; starting from beginning"}
 		res, err := run(f, map[string]any{"query": "x"})
 		assert.NoErr(t, err)
 		assert.StrContains(t, res.Content, "cursor ignored; starting from beginning")
-		assert.StrContains(t, res.Content, "next_cursor: v1:snap_1:20")
+		assert.StrContains(t, res.Content, "next_cursor: v1.snap_1.20")
 
 		f.nextCursor, f.notice = "", ""
 		res, err = run(f, map[string]any{"query": "x"})

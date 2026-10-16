@@ -96,14 +96,13 @@ func NewSessionSearchTool(searcher LedgerSearcher) *SessionSearchTool {
 func (t *SessionSearchTool) Name() string { return "session_search" }
 func (t *SessionSearchTool) Description() string {
 	return "Full-text search of earlier conversation history (messages, tool results and compaction summaries). " +
-		"Every whitespace-separated word must occur; words are matched literally. scope: workspace (default, " +
-		"sessions of this workspace), current (this session) or all. Each hit is `<ref>  <role>  <snippet>`; " +
-		"read around a hit with recall(ref). kind accepts comma-separated user, assistant, tool or compaction. " +
-		"since is inclusive and until exclusive; each accepts 7d/36h or a date/RFC3339 time. When results include " +
-		"next_cursor, pass that value back verbatim as cursor; a stale or mismatched cursor restarts from the " +
-		"beginning. For Chinese, prefer search terms of two or more characters; one-character searches are slower. " +
-		"With ref=out:<session>:<hex> it instead searches that saved tool output line by line (case-insensitive) and " +
-		"returns `<ref>  L<line>  <text>`; ref cannot be combined with cursor, kind or time filters."
+		"Every whitespace-separated word must occur; words are matched literally. scope: workspace (default), " +
+		"current or all. Each hit is `<ref>  <role>  <snippet>`; read it with recall(ref). " +
+		"kind is comma-separated user, assistant, tool or compaction; since is inclusive and until exclusive " +
+		"(7d/36h, date or RFC3339). When results include next_cursor, pass it back verbatim as cursor; a stale " +
+		"cursor restarts from the beginning. For Chinese, prefer terms of two or more characters. With " +
+		"ref=out:<session>:<hex> it searches saved output lines (case-insensitive); ref cannot combine with " +
+		"cursor, kind or time filters."
 }
 
 // ToolMeta: read-only search; results are external content (taint).
@@ -254,9 +253,8 @@ func parseLedgerKinds(raw string) ([]string, error) {
 	return kinds, nil
 }
 
-// parseLedgerTime accepts the same relative and absolute forms as the sessions
-// command, but keeps the parser in the native tool layer to avoid an internal
-// package dependency.
+// parseLedgerTime accepts the approved relative and absolute forms while
+// keeping the parser in the native tool layer to avoid an internal dependency.
 func parseLedgerTime(raw, name string, now time.Time) (time.Time, error) {
 	if len(raw) > 1 {
 		switch raw[len(raw)-1] {
@@ -274,10 +272,11 @@ func parseLedgerTime(raw, name string, now time.Time) (time.Time, error) {
 			return time.Time{}, fmt.Errorf("%s %q is invalid; use 7d, 36h, a date or RFC3339", name, raw)
 		}
 	}
-	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04", "2006-01-02T15:04", "2006-01-02"} {
-		if value, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
-			return value, nil
-		}
+	if value, err := time.Parse(time.RFC3339, raw); err == nil {
+		return value, nil
+	}
+	if value, err := time.ParseInLocation("2006-01-02", raw, time.Local); err == nil {
+		return value, nil
 	}
 	return time.Time{}, fmt.Errorf("%s %q is invalid; use 7d, 36h, a date or RFC3339", name, raw)
 }
