@@ -1,10 +1,14 @@
 package wiring
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/goccy/go-yaml/ast"
 	"github.com/goccy/go-yaml/parser"
@@ -25,20 +29,41 @@ const (
 // retained for the later read-modify-write task; parsing itself never rewrites
 // a user's file or expands YAML aliases.
 type ApprovalRuleSource struct {
-	Path    string
-	Source  rules.Source
-	Content []byte
-	AST     *ast.File
-	Rules   []rules.Rule
+	Path        string
+	Source      rules.Source
+	Content     []byte
+	AST         *ast.File
+	Rules       []rules.Rule
+	Fingerprint RuleFileFingerprint
 }
 
 // ApprovalRules is the validated user/project rule snapshot used by later
 // wiring tasks. Disabled settings return an empty snapshot without reading
 // either rule file, preserving the legacy approval path.
 type ApprovalRules struct {
-	Settings axconfig.ApprovalRulesSettings
-	User     ApprovalRuleSource
-	Project  ApprovalRuleSource
+	Workspace string
+	Settings  axconfig.ApprovalRulesSettings
+	User      ApprovalRuleSource
+	Project   ApprovalRuleSource
+	Events    []ApprovalRuleEvent
+}
+
+// RuleFileFingerprint is the complete reload identity. Size and mtime make the
+// common unchanged-file check cheap; Hash protects against same-size timestamp
+// races and is the value used by project trust.
+type RuleFileFingerprint struct {
+	Exists  bool
+	Size    int64
+	ModTime time.Time
+	Hash    string
+}
+
+// ApprovalRuleEvent is deliberately small so the personal trace layer can
+// consume reload warnings later without depending on filesystem internals.
+type ApprovalRuleEvent struct {
+	Kind   string
+	Path   string
+	Reason string
 }
 
 // LoadApprovalRules loads and validates the two independent rule files for a
@@ -57,14 +82,6 @@ func LoadApprovalRules(workspace string) (ApprovalRules, error) {
 	if err != nil {
 		return ApprovalRules{}, fmt.Errorf("resolve project approval rules: %w", err)
 	}
-	snapshot := ApprovalRules{
-		Settings: settings,
-		User:     ApprovalRuleSource{Path: userPath, Source: rules.SourceUser},
-		Project:  ApprovalRuleSource{Path: projectPath, Source: rules.SourceProject},
-	}
-	if !settings.Enabled {
-		return snapshot, nil
-	}
 	root := workspace
 	if strings.TrimSpace(root) == "" {
 		root = axconfig.ResolveWorkspacePath()
@@ -72,6 +89,15 @@ func LoadApprovalRules(workspace string) (ApprovalRules, error) {
 	root, err = filepath.Abs(root)
 	if err != nil {
 		return ApprovalRules{}, fmt.Errorf("resolve approval rules root: %w", err)
+	}
+	snapshot := ApprovalRules{
+		Workspace: root,
+		Settings:  settings,
+		User:      ApprovalRuleSource{Path: userPath, Source: rules.SourceUser},
+		Project:   ApprovalRuleSource{Path: projectPath, Source: rules.SourceProject},
+	}
+	if !settings.Enabled {
+		return snapshot, nil
 	}
 	for _, source := range []struct {
 		path   string
@@ -92,10 +118,14 @@ func LoadApprovalRules(workspace string) (ApprovalRules, error) {
 
 func loadApprovalRuleSource(path string, source rules.Source, root string) (ApprovalRuleSource, error) {
 	loaded := ApprovalRuleSource{Path: path, Source: source}
-	content, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	info, statErr := os.Stat(path)
+	if os.IsNotExist(statErr) {
 		return loaded, nil
 	}
+	if statErr != nil {
+		return loaded, fmt.Errorf("stat approval rules %q: %w", path, statErr)
+	}
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return loaded, fmt.Errorf("read approval rules %q: %w", path, err)
 	}
@@ -104,11 +134,15 @@ func loadApprovalRuleSource(path string, source rules.Source, root string) (Appr
 		return loaded, err
 	}
 	parsed.Path = path
+	parsed.Fingerprint = fingerprint(info, content)
 	return parsed, nil
 }
 
 func parseApprovalRuleFile(content []byte, filename string, source rules.Source, root string) (ApprovalRuleSource, error) {
 	loaded := ApprovalRuleSource{Path: filename, Source: source, Content: append([]byte(nil), content...)}
+	if info, err := os.Stat(filename); err == nil {
+		loaded.Fingerprint = fingerprint(info, content)
+	}
 	if len(content) > maxApprovalRulesFileBytes {
 		return loaded, fmt.Errorf("approval rules %q exceeds %d bytes", filename, maxApprovalRulesFileBytes)
 	}
@@ -307,4 +341,114 @@ func isExactFileTool(tool string) bool {
 	default:
 		return false
 	}
+}
+
+func fingerprint(info os.FileInfo, content []byte) RuleFileFingerprint {
+	digest := sha256.Sum256(content)
+	return RuleFileFingerprint{
+		Exists:  true,
+		Size:    info.Size(),
+		ModTime: info.ModTime(),
+		Hash:    hex.EncodeToString(digest[:]),
+	}
+}
+
+// ProjectAllowTrusted reports whether the currently loaded project file is the
+// exact file explicitly trusted for this workspace. Missing trust never grants
+// project allows; project deny rules remain available to tighten a policy.
+func (a ApprovalRules) ProjectAllowTrusted() bool {
+	workspace := filepath.Clean(a.ProjectRoot())
+	if workspace == "." || workspace == "" || !a.Project.Fingerprint.Exists {
+		return false
+	}
+	expected, ok := a.Settings.ProjectTrust[workspace]
+	return ok && strings.EqualFold(strings.TrimSpace(expected), a.Project.Fingerprint.Hash)
+}
+
+// ProjectRoot returns the workspace root encoded by the project rule source.
+func (a ApprovalRules) ProjectRoot() string {
+	if a.Workspace != "" {
+		return filepath.Clean(a.Workspace)
+	}
+	if len(a.Project.Rules) == 0 {
+		return ""
+	}
+	return filepath.Clean(a.Project.Rules[0].Root)
+}
+
+// EffectiveRules merges sources while enforcing the project trust boundary.
+// Project allow rules are ignored unless the exact workspace and file hash were
+// trusted; project deny rules are never filtered out.
+func (a ApprovalRules) EffectiveRules() []rules.Rule {
+	out := append([]rules.Rule(nil), a.User.Rules...)
+	trusted := a.ProjectAllowTrusted()
+	for _, rule := range a.Project.Rules {
+		if rule.Action == rules.Allow && !trusted {
+			continue
+		}
+		out = append(out, rule)
+	}
+	return out
+}
+
+// ReloadApprovalRules performs an all-or-nothing per-turn reload. A deleted,
+// changed-but-invalid, or otherwise unreadable file leaves the previous valid
+// snapshot in place and emits a warning event; callers can attach that event to
+// trace without making a failed reload fatal to the current turn.
+func ReloadApprovalRules(previous ApprovalRules, workspace string) (ApprovalRules, error) {
+	for _, source := range []ApprovalRuleSource{previous.User, previous.Project} {
+		if source.Fingerprint.Exists {
+			if _, err := os.Stat(source.Path); os.IsNotExist(err) {
+				return retainApprovalRulesAfterReloadFailure(previous, source.Path,
+					fmt.Errorf("approval rules file was deleted"))
+			}
+		}
+	}
+	current, err := LoadApprovalRules(workspace)
+	if err != nil {
+		path := workspace
+		if previous.Project.Path != "" {
+			path = previous.Project.Path
+		}
+		return retainApprovalRulesAfterReloadFailure(previous, path, err)
+	}
+	if ApprovalRuleSourceChanged(previous.Project, current.Project) && !current.ProjectAllowTrusted() {
+		// A changed project file may tighten policy immediately, but an old deny
+		// cannot disappear merely because the workspace file was edited.
+		current.Project.Rules = appendProjectDenies(previous.Project.Rules, current.Project.Rules)
+	}
+	return current, nil
+}
+
+func appendProjectDenies(previous, current []rules.Rule) []rules.Rule {
+	for _, oldRule := range previous {
+		if oldRule.Action != rules.Deny {
+			continue
+		}
+		duplicate := false
+		for _, newRule := range current {
+			if newRule.Summary() == oldRule.Summary() {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			current = append(current, oldRule)
+		}
+	}
+	return current
+}
+
+func retainApprovalRulesAfterReloadFailure(previous ApprovalRules, path string, err error) (ApprovalRules, error) {
+	event := ApprovalRuleEvent{Kind: "approval_rule_reload", Path: path, Reason: err.Error()}
+	previous.Events = append(append([]ApprovalRuleEvent(nil), previous.Events...), event)
+	slog.Warn("approval rules reload failed; retaining previous policy", "path", path, "err", err)
+	return previous, err
+}
+
+// ApprovalRuleSourceChanged compares all reload metadata, not only mtime. It is
+// useful to callers that want to avoid rebuilding a Policy for an unchanged
+// source while still detecting same-size timestamp-preserving edits.
+func ApprovalRuleSourceChanged(before, after ApprovalRuleSource) bool {
+	return before.Fingerprint != after.Fingerprint
 }
