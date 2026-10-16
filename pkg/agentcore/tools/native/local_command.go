@@ -144,7 +144,11 @@ func (c *LocalCommand) Run(ctx context.Context, command string, stream io.Writer
 		switch {
 		case errors.Is(waitErr, exec.ErrWaitDelay):
 			status = fmt.Sprintf("[exit code: %d; a background process kept the output open and was killed]", res.ExitCode)
-		case waitErr != nil && res.ExitCode < 0:
+		case waitErr != nil && res.ExitCode < 0 && runCtx.Err() == nil:
+			// A shell killed by a signal nobody here sent. A tree killed for the
+			// person's Ctrl-C or the timeout also ends by a signal on Unix
+			// ("signal: killed", exit code -1): that is the cancellation or the
+			// timeout reported below, not a failure.
 			return res, fmt.Errorf("run %s: %w", c.shell.name(), waitErr)
 		}
 	}
