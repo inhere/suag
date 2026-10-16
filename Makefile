@@ -157,6 +157,7 @@ smoke-chat:
 	python3 -I scripts/ptysmoke/chat_bang.py --bin tmp/smoke/suga --work tmp/smoke-bang
 	python3 -I scripts/ptysmoke/chat_paste.py --bin tmp/smoke/suga --work tmp/smoke-paste
 	python3 -I scripts/ptysmoke/chat_history.py --bin tmp/smoke/suga --work tmp/smoke-history
+	python3 -I scripts/ptysmoke/chat_sanitize.py --bin tmp/smoke/suga --work tmp/smoke-sanitize
 
 ## clean: remove build artifacts
 clean:

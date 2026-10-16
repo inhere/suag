@@ -15,6 +15,7 @@ import (
 	"github.com/inhere/suga/internal/chat/lineedit"
 	"github.com/inhere/suga/internal/diffview"
 	"github.com/inhere/suga/internal/output"
+	"github.com/inhere/suga/internal/output/termtext"
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/redact"
@@ -170,6 +171,8 @@ func colorEnabled(isTTY bool) bool {
 }
 
 func (r *Renderer) paint(c color.Color, s string) string {
+	// Clean external text before adding our own SGR style, so plain and colored output are safe.
+	s = termtext.Clean(s)
 	if !r.opts.Color {
 		return s
 	}
@@ -422,6 +425,7 @@ func steerNotice(text, suffix string) string {
 // terminal row.
 func (r *Renderer) External(text string) {
 	r.stopThinking()
+	text = termtext.Clean(text)
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
 		if r.highlightInput() {
@@ -484,13 +488,13 @@ func (r *Renderer) Interrupt() { r.Notice(interruptNotice) }
 // Notice prints a plain informational line on the chat output.
 func (r *Renderer) Notice(text string) {
 	r.endThinking()
-	fmt.Fprintln(r.opts.Out, text)
+	fmt.Fprintln(r.opts.Out, termtext.Clean(text))
 }
 
 // Error prints a failed turn on the error stream.
 func (r *Renderer) Error(err error) {
 	r.endThinking()
-	text := "Error: " + err.Error()
+	text := termtext.Clean("Error: " + err.Error())
 	if r.opts.ErrColor {
 		text = color.Red.Text(text)
 	}
@@ -614,9 +618,9 @@ func formatElapsed(d time.Duration) string {
 	}
 }
 
-// truncateLine collapses whitespace (one display line) and cuts to limit runes.
+// truncateLine collapses whitespace (one display line), removes terminal controls, and cuts to limit runes.
 func truncateLine(s string, limit int) string {
-	s = strings.Join(strings.Fields(s), " ")
+	s = strings.Join(strings.Fields(termtext.Clean(s)), " ")
 	runes := []rune(s)
 	if len(runes) <= limit {
 		return s

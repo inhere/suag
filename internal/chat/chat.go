@@ -13,6 +13,7 @@ import (
 	"github.com/inhere/suga/internal/chat/lineedit"
 	appconfig "github.com/inhere/suga/internal/config"
 	sugahooks "github.com/inhere/suga/internal/hooks"
+	"github.com/inhere/suga/internal/output/termtext"
 	"github.com/inhere/suga/internal/personal"
 	personalprocess "github.com/inhere/suga/internal/personal/process"
 	"github.com/inhere/suga/pkg/agentcore"
@@ -570,7 +571,7 @@ func nextChatInput(ctx context.Context, source *chatInputSource, render *Rendere
 			return in, err
 		case result, ok := <-stopDone:
 			if ok && result.Response.Notice != "" {
-				fmt.Fprintln(source, result.Response.Notice)
+				fmt.Fprintln(source, termtext.Clean(result.Response.Notice))
 			}
 			if !ok || result.Err != nil || result.Response.Decision != "block" || result.Response.Reason == "" {
 				fmt.Fprintln(source)
@@ -647,7 +648,7 @@ func appendContext(current, next string) string {
 // It always goes to stderr so it never mixes into the conversation output.
 func showHookNotice(w io.Writer, response sugahooks.Response) {
 	if response.Notice != "" {
-		fmt.Fprintln(w, response.Notice)
+		fmt.Fprintln(w, termtext.Clean(response.Notice))
 	}
 }
 
