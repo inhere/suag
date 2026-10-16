@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+"""Smoke chat's local commands and terminal notification.
+
+This is deliberately falsifiable: removing command dispatch makes the help and
+usage checks fail; removing the terminal guard makes the non-TTY notification
+check fail. The task listing check uses the same background fake-model path as
+chat_tasks.py. Run on Linux/macOS through ``make smoke-chat``; Windows has no
+PTY equivalent in this suite.
+"""
+import argparse, os, shutil, subprocess, sys, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ptydrive import CTRL_C, PtySession
+from chat_approval import isolate_ws, wait_port, write_home
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__); p.add_argument("--bin", required=True); p.add_argument("--work", required=True); p.add_argument("--port", type=int, default=18831)
+    a = p.parse_args(); home=os.path.abspath(a.work+"/home"); ws=os.path.abspath(a.work+"/ws"); shutil.rmtree(a.work, ignore_errors=True); os.makedirs(ws); isolate_ws(ws)
+    write_home(home, a.port, tools_extra="  approval: auto\n", extra="chat:\n  notify_after: 1s\n")
+    env=dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1"); env.pop("SUGA_CONFIG", None)
+    here=os.path.dirname(os.path.abspath(__file__)); fake=subprocess.Popen([sys.executable,"-I",here+"/fakellm.py","--port",str(a.port),"--mode","text","--delay","0.2"], stdout=subprocess.PIPE, text=True); wait_port(fake)
+    s=PtySession([os.path.abspath(a.bin),"chat"], env=env, cwd=ws)
+    try:
+        m=s.mark(); s.until(r"❯ ",m); s.line(":help"); s.check("help usage", s.until(r":usage",m))
+        s.check("help tasks", s.until(r":tasks",m))
+        m=s.mark(); s.line(":usage"); s.check("usage line", s.until(r"本次 0 轮",m))
+        m=s.mark(); s.line(":tasks"); s.check("empty tasks", s.until(r"没有后台任务",m))
+        m=s.mark(); s.line("hello"); s.check("usage after turn", s.until(r"本次 1 轮",m))
+        s.check("completion bell", "\a" in s.text(m))
+        s.send(CTRL_C); time.sleep(.2); s.send(CTRL_C); s.close()
+    finally:
+        s.close(grace=0); fake.terminate(); fake.wait(timeout=5)
+    if s.failed(): print("failed: "+", ".join(s.failed())); raise SystemExit(1)
+if __name__ == "__main__": main()

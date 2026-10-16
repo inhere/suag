@@ -153,6 +153,8 @@ providers:
 #                       # reply, a task notice) on a low-saturation background, so
 #                       # your own words stand apart from the model's answer; the two
 #                       # get different backgrounds. Needs a terminal with colors.
+#   notify: auto        # long-turn/approval notification: auto | bell | osc9 | off
+#   notify_after: 60s   # notify after a turn lasts at least this long
 #   terminal_title: true # name the terminal's window/tab after the session:
 #                       # "suga · <short name> · <session title>" (the session title,
 #                       # its first message or the one a resumed session stores, cut
