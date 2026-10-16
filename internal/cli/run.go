@@ -16,6 +16,7 @@ import (
 	"github.com/inhere/suga/internal/chat"
 	appconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/internal/output"
+	"github.com/inhere/suga/internal/output/termtext"
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/internal/wiring"
 	"github.com/inhere/suga/pkg/agentcore"
@@ -148,8 +149,8 @@ func runPersonalWithOptions(ctx context.Context, mode string, opts personalOptio
 	defer func() { retErr = errors.Join(retErr, runtime.Close()) }()
 	defer taskManager.Close()
 	// The session is opened after the runtime is assembled, so its own
-	// additional directories (the metadata of a resumed session) are published
-	// once it is known, before the first turn.
+	// additional directories (--add-dir) are published once it is known,
+	// before the first turn.
 	opts.setupSession = func(ctx context.Context, sessionID string) error {
 		if err := runtime.ApplyAddDirs(ctx, sessionID); err != nil {
 			return err
@@ -291,10 +292,16 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 		}
 	} else {
 		fmt.Fprintln(stderr, "session id:", sessionID)
-		fmt.Fprintln(stderr, "model:", chat.ModelLabel(runner.ProviderName(), runner.Model()))
+		fmt.Fprintln(stderr, "model:", termtext.Clean(chat.ModelLabel(runner.ProviderName(), runner.Model())))
 	}
 	live := output.NewLiveText(stdout)
+	var budget *personal.BudgetSnapshot
 	emit := func(_ context.Context, event personal.Event) error {
+		if event.Budget != nil {
+			budget = event.Budget
+		} else if event.Usage != nil && event.Usage.Budget != nil {
+			budget = event.Usage.Budget
+		}
 		if event.Kind == personal.EventSessionRecovered {
 			// The session was left running by a process that died mid-turn and has
 			// been taken back to open before this turn (personal/recovery.go);
@@ -322,28 +329,30 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 	}
 	streamed := live.Finish() // end the streamed line before any error or status output
 	if encoder == nil {
-		// Text mode: a wrap-up names its reason on stderr, so a short answer is
-		// not read as a finished one; stdout stays the answer only.
+		// Text mode: a wrap-up names its reason on stderr, so a short answer
+		// is not read as a finished one; stdout stays the answer only.
 		if notice := output.WrapUpNotice(result.WrapUp, runner.MaxSteps()); notice != "" {
 			fmt.Fprintln(stderr, notice)
 		}
-		// Text mode: an answer cut off at the output limit names that limit too
-		// (the answer itself just stops mid-sentence).
-		if result.Truncated {
+		// A wrap-up can itself be truncated by the per-request output limit;
+		// keep that distinct from an ordinary truncated answer.
+		if result.Truncated && result.WrapUp != "" {
+			fmt.Fprintln(stderr, output.WrapUpTruncatedNotice(result.OutputLimit))
+		} else if result.Truncated {
 			fmt.Fprintln(stderr, output.OutputLimitNotice(result.OutputLimit))
 		}
 		// Text mode: a usage summary on stderr (stdout stays the answer only).
-		fmt.Fprintln(stderr, runSummary(runner, result, time.Since(runStart)))
+		fmt.Fprintln(stderr, runSummary(runner, result, time.Since(runStart), budget))
 	}
 	if err != nil {
 		if encoder != nil {
-			_ = encoder.Encode(output.ErrorLine(sessionID, err, result))
+			_ = encoder.Encode(output.ErrorLine(sessionID, err, result, budget))
 		}
 		return err
 	}
 	if result.Status == agentcore.RunYielded {
 		if encoder != nil {
-			_ = encoder.Encode(output.YieldedLine(sessionID, result))
+			_ = encoder.Encode(output.YieldedLine(sessionID, result, budget))
 		}
 		return ErrInputRequired
 	}
@@ -351,12 +360,12 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 	// model worked around the refusal: the caller still learns authorization
 	// was missing. denied_tools is the only field added to the line.
 	if len(result.DeniedTools) > 0 && encoder != nil {
-		if err := encoder.Encode(output.DeniedLine(sessionID, result)); err != nil {
+		if err := encoder.Encode(output.DeniedLine(sessionID, result, budget)); err != nil {
 			return err
 		}
 	}
 	if encoder != nil {
-		return encoder.Encode(output.ResultLine(sessionID, result))
+		return encoder.Encode(output.ResultLine(sessionID, result, budget))
 	}
 	if streamed {
 		return nil
@@ -404,11 +413,14 @@ func openRequestedSession(ctx context.Context, runner *personal.Runner, opts per
 
 // runSummary is the text-mode closing line: model, this turn's tokens, the
 // session total when known, and the elapsed time.
-func runSummary(runner *personal.Runner, result personal.RunResult, elapsed time.Duration) string {
-	line := fmt.Sprintf("%s · in %d / out %d tokens", chat.ModelLabel(runner.ProviderName(), runner.Model()),
+func runSummary(runner *personal.Runner, result personal.RunResult, elapsed time.Duration, budget *personal.BudgetSnapshot) string {
+	line := fmt.Sprintf("%s · in %d / out %d tokens", termtext.Clean(chat.ModelLabel(runner.ProviderName(), runner.Model())),
 		result.Usage.InputTokens, result.Usage.OutputTokens)
 	if s := result.SessionUsage; s.InputTokens > 0 || s.OutputTokens > 0 {
 		line += fmt.Sprintf("（会话累计 in %d / out %d）", s.InputTokens, s.OutputTokens)
+	}
+	if budget != nil && budget.Estimated {
+		line += "（其中本轮用量含估算）"
 	}
 	return line + " · " + chat.FormatElapsed(elapsed)
 }
