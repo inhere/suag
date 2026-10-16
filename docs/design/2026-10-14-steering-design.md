@@ -268,6 +268,7 @@ Q1–Q4（2026-10-14，均按建议）与 r2 N1（方案 B）均已由用户答�
 | 2026-10-15 | suga（会话 sess_2610141itpnahmur8001o） | 注记：取消/失败回合由“整段不回放”改为前缀回放（docs/design/2026-10-15-interrupted-turn-replay-design.md），“交还全部插话”的理由随之变为“回放跳过插话条目”；本设计的退回规则与代码不变 |
 | 2026-10-15 | suga（会话 sess_2610141itpnahmur8001o） | 部分实施 S2b（中止先行，回应 suga-nrf2）：回合中继续读键盘（不经行编辑器，避免输入行与模型输出互相打断——M1 由后续阶段负责），`chat.steering`（默认开）下 Esc / 单次 Ctrl-C 中止本轮、3 秒内两次 Ctrl-C 退出；raw 期间恢复 `OPOST | ONLCR`；审批提问期间让出键盘。插话送达收件箱、退回处理、`--steer`、屏幕模型与 wincons 场景仍待做（suag-mbwu） |
 | 2026-10-16 | Claude（监督会话） | 注记：S2b 完整实施合入 main（2a1d398）：常驻输入行 + 插话、Esc/单次 Ctrl-C 只中止本轮、退回处理、输出方式（只交完整行、尺寸、spinner 并入状态行）、回合中多行粘贴；取代 0.7 的静默读键盘（按键行为不变）；OPOST 只在回合中的 steer 读取期间恢复。S3（`send --steer`）与收尾见计划 T4/T5 |
+| 2026-10-16 | suga（会话 b7f） | 注记：M1 的“spinner 并入状态行”按首选做法落地（issue suga-54cl）：回合进行中在输入行上一行显示 spinner + 状态文字 + 已用时间（`⠋ 思考中… 12s` / `⠋ 执行 shell_exec… 3s`），由行编辑器当输入块的第一行管理与重绘（`lineedit.Terminal.SetStatus`），审批提问借用输入行时隐藏、回合结束消失；`chat.spinner: false` 与无彩色终端下不显示。本节 151–153 行的“或停用”不再是选项 |
 
 ## 结论与人工计划 Gate
 
