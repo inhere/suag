@@ -70,10 +70,12 @@ type rendererOptions struct {
 	// turn running (chat.steering with a terminal). The output then works around
 	// that line (r3 M1): the streamed text leaves only complete lines - the line
 	// editor repaints its line after every write, so a partial one would stay next
-	// to it - and the waiting line stays off, because a frame is a bare carriage
-	// return plus erase on the current row (spinnerClear) and would fight the input
-	// line for that row.
+	// to it - and the waiting line becomes a status line above that input line
+	// (Status), which the line editor keeps clear of every write of its own.
 	InputLineUp bool
+	// Status is where that status line goes (the input source); nil while chat keeps
+	// no input line on screen.
+	Status statusSetter
 	// Spinner shows the "思考中…" waiting line while the model is asked for its
 	// next message (config chat.spinner, on by default). Like Markdown it needs
 	// a colored terminal: a pipe, a redirected output or NO_COLOR keeps it off.
@@ -116,6 +118,7 @@ func newRenderer(opts rendererOptions) *Renderer {
 	r.spin = newThinkingSpinner(spinnerConfig{
 		enabled: opts.Spinner && opts.Color,
 		out:     opts.Out,
+		status:  opts.Status,
 		paint:   r.paintDim,
 		speed:   spinnerSpeed,
 		now:     opts.spinnerNow,
@@ -188,22 +191,50 @@ func (r *Renderer) resetLive() {
 	r.memory = nil
 }
 
-// startThinking shows the waiting line: the model is working on its next
-// message. A no-op while the line is already shown, the spinner is off, or chat
-// keeps an input line on screen (chat.steering): a frame would fight that line for
-// the row it is on, and the input line itself shows that the turn is running
-// (design r3 M1).
+// startThinking shows the waiting state: the model is working on its next
+// message. A no-op while the spinner is off (chat.spinner: false or no colored
+// terminal) or the line is already shown.
 func (r *Renderer) startThinking() {
-	if r.opts.InputLineUp {
-		return
+	if r.statusLine() {
+		// The status line above the input line: it says what the turn waits for, so
+		// only that changes (the frame loop is the turn's own, BeginTurn).
+		r.spin.SetLabel(spinnerLabel)
 	}
 	r.spin.Start()
 }
 
-// stopThinking erases that line. Every write of this renderer goes through it
-// first, so a frame can never mix into a tool line, an answer or a prompt, and
-// the caller prints on a line of its own.
-func (r *Renderer) stopThinking() { r.spin.Stop() }
+// toolRunning switches the status line to the tool that runs now ("执行
+// shell_exec…"). Without a status line it takes the waiting line of its own down
+// instead: the model is not the one being waited for any more.
+func (r *Renderer) toolRunning(name string) {
+	if !r.statusLine() {
+		r.spin.Stop()
+		return
+	}
+	r.spin.SetLabel(toolLabel(name))
+}
+
+// stopThinking clears the renderer's own waiting line before a write of this
+// renderer, so a frame can never mix into a tool line, a line of the turn's status,
+// an answer or a prompt. With the status line above the input line there is nothing
+// to do: the line editor keeps that row clear of every write by itself, so it stays
+// up for the whole turn (its end takes it down: endThinking).
+func (r *Renderer) stopThinking() {
+	if r.statusLine() {
+		return
+	}
+	r.spin.Stop()
+}
+
+// endThinking ends the turn's waiting state for good: the line of its own is
+// erased, and the status line above the input line goes away.
+func (r *Renderer) endThinking() { r.spin.Stop() }
+
+// suspendStatus takes the status line off screen while another part of chat owns
+// the input line (an approval question asks on it) and resumeStatus brings it back
+// with what the turn is waiting for. Both are no-ops without a status line.
+func (r *Renderer) suspendStatus() { r.spin.Suspend() }
+func (r *Renderer) resumeStatus()  { r.spin.Resume() }
 
 // answerPrefix marks the start of each model message so it stands apart from
 // tool lines and the user's input.
@@ -213,7 +244,7 @@ func (r *Renderer) answerPrefix() string { return r.paint(color.Green, "▣") + 
 // Events the chat does not render (run_started, usage, ...) leave the waiting
 // line alone; the model may still be answering through them.
 func (r *Renderer) Handle(event personal.Event) {
-	if stopsWaiting(event) {
+	if !r.statusLine() && stopsWaiting(event) {
 		r.stopThinking()
 	}
 	if r.live.Handle(event) {
@@ -227,6 +258,7 @@ func (r *Renderer) Handle(event personal.Event) {
 			line += " " + args
 		}
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, line))
+		r.toolRunning(event.ToolName) // the tool runs now, the model does not
 	case "tool_result":
 		r.live.Finish()
 		summary := truncateLine(redact.Secrets(event.Text), resultSummaryLimit)
@@ -245,7 +277,7 @@ func (r *Renderer) Handle(event personal.Event) {
 			line += " " + args
 		}
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, line))
-		r.startThinking() // the model waits for the sub-agent
+		r.startThinking() // the model waits for the sub-agent (the wording stays 思考中…)
 	case "plan":
 		if event.Plan != nil {
 			r.live.Finish()
@@ -264,6 +296,13 @@ func (r *Renderer) Handle(event personal.Event) {
 		r.startThinking()
 	}
 }
+
+// statusLine reports whether what the turn waits for shows on a row above the
+// input line (chat.steering keeps that line on screen for the whole turn) instead
+// of on a line of its own. The status text only changes there, since the line
+// editor clears that row around every write anyway; a line of its own has to be
+// taken down before each one.
+func (r *Renderer) statusLine() bool { return r.spin.statusRow() }
 
 // stopsWaiting reports whether event ends the "the model is answering" state:
 // its text, a tool call it asked for, a plan it published, or the next request
@@ -299,7 +338,7 @@ func (r *Renderer) renderPlan(event personal.Event) {
 
 // Finish closes the turn's streamed text and reports whether any was shown.
 func (r *Renderer) Finish() bool {
-	r.stopThinking()
+	r.endThinking()
 	return r.live.Finish()
 }
 
@@ -307,7 +346,7 @@ func (r *Renderer) Finish() bool {
 // renderer does it, so the message prefix, markdown and whole-line handling stay
 // exactly the ones the streamed case uses (r3 M1).
 func (r *Renderer) Answer(text string) {
-	r.stopThinking()
+	r.endThinking()
 	r.live.Answer(text)
 }
 
@@ -423,13 +462,13 @@ func (r *Renderer) Interrupt() { r.Notice(interruptNotice) }
 
 // Notice prints a plain informational line on the chat output.
 func (r *Renderer) Notice(text string) {
-	r.stopThinking()
+	r.endThinking()
 	fmt.Fprintln(r.opts.Out, text)
 }
 
 // Error prints a failed turn on the error stream.
 func (r *Renderer) Error(err error) {
-	r.stopThinking()
+	r.endThinking()
 	text := "Error: " + err.Error()
 	if r.opts.ErrColor {
 		text = color.Red.Text(text)
@@ -463,7 +502,7 @@ func (r *Renderer) noteMemory(event personal.Event) {
 // local end time, inserted messages). The text and its styles are built by
 // BuildTurnStatus (layout.go); this only collects the data.
 func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration, steers int) {
-	r.stopThinking()
+	r.endThinking()
 	printLayout(r.opts.Out, r.opts.Color, BuildTurnStatus(TurnStatus{
 		Memory:   r.memory,
 		Provider: r.opts.Provider, Model: r.opts.Model,
@@ -479,7 +518,7 @@ func (r *Renderer) Status(result personal.RunResult, elapsed time.Duration, stee
 // so it is not taken for a fresh answer, then the reply itself, rendered like
 // an answer.
 func (r *Renderer) LastReply(text, sessionID string, incomplete bool) {
-	r.stopThinking()
+	r.endThinking()
 	body := strings.Split(strings.TrimRight(text, "\r\n"), "\n")
 	omitted := len(body) - replyTailLines
 	if omitted < 0 {
@@ -502,7 +541,7 @@ func (r *Renderer) SetSessionName(name string) { r.opts.SessionName = name }
 // Banner prints the chat header: the model in use and the commands. The text
 // and its styles are built by BuildBanner (layout.go).
 func (r *Renderer) Banner() {
-	r.stopThinking()
+	r.endThinking()
 	printLayout(r.opts.Out, r.opts.Color, BuildBanner(BannerInfo{
 		Provider: r.opts.Provider, Model: r.opts.Model,
 		Thinking: r.opts.Thinking, ContextWindow: r.opts.ContextWindow,

@@ -241,8 +241,9 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		WriteTools: opts.WriteTools, Markdown: opts.Markdown, Spinner: opts.Spinner,
 		HighlightInput: opts.HighlightInput, HighlightWidth: inputSource.highlightWidth,
 		// The input line stays on screen while a turn runs: the streamed text then
-		// leaves only complete lines and the waiting line stays off (r3 M1).
-		InputLineUp: steering,
+		// leaves only complete lines, and the waiting line becomes a status line above
+		// that input line (r3 M1, design suga-54cl).
+		InputLineUp: steering, Status: inputSource,
 	})
 	// The terminal's window/tab title (chat.terminal_title): set below, once the
 	// session's short name and title are known, and given back on the way out.
@@ -339,7 +340,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	// Registered after every other defer, so it runs first on the way out: the
 	// waiting line is down before the exit warnings, the SessionEnd hook and the
 	// usage summary print, and no frame goroutine is left behind.
-	defer render.stopThinking()
+	defer render.endThinking()
 	for {
 		in, err := nextChatInput(ctx, inputSource, render, state.waiting, &state.lostReply)
 		line, hasLine, stopDone, injected, interrupted := in.line, in.hasLine, in.stopDone, in.injected, in.interrupted

@@ -266,9 +266,9 @@ func TestSpinnerTurnEnd(t *testing.T) {
 	assert.StrContains(t, out.String(), "in 0 / out 0 tokens")
 }
 
-// TestSpinnerOff: with chat.spinner: false, without a colored terminal (a pipe,
-// a redirected output, NO_COLOR) or while chat keeps its input line on screen
-// (chat.steering) no frame is ever written.
+// TestSpinnerOff: with chat.spinner: false, or without a colored terminal (a pipe,
+// a redirected output, NO_COLOR), no frame is ever written - neither on a line of
+// its own nor as the status line above the input line (chat.steering).
 func TestSpinnerOff(t *testing.T) {
 	cases := []struct {
 		name string
@@ -276,14 +276,16 @@ func TestSpinnerOff(t *testing.T) {
 	}{
 		{"chat.spinner off", rendererOptions{Spinner: false, Color: true}},
 		{"no colored terminal", rendererOptions{Spinner: true}},
-		// The frame would share the row of the input line, which chat keeps up for
-		// the whole turn (r3 M1).
-		{"input line on screen", rendererOptions{Spinner: true, Color: true, InputLineUp: true}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			plainColor(t)
+			// The same options chat uses while it keeps an input line on screen: the
+			// line would go to the status setter, and neither of them may be used.
+			tc.opts.InputLineUp = true
+			tc.opts.Status = &statusLog{}
 			r, out, clock := newSpinnerRenderer(t, tc.opts)
+			status := tc.opts.Status.(*statusLog)
 			r.BeginTurn()
 			r.Handle(personal.Event{Kind: "tool_result", ToolName: "shell_exec", Text: "hi"})
 			r.Finish()
@@ -291,6 +293,7 @@ func TestSpinnerOff(t *testing.T) {
 			time.Sleep(20 * time.Millisecond)
 
 			assert.Eq(t, "  ⎿ ok: hi\n", out.String())
+			assert.Empty(t, status.frames())
 			assert.False(t, spinnerRunning(r.spin))
 			// The frame timer was never asked for.
 			assert.Eq(t, time.Duration(0), clock.frameInterval())

@@ -525,6 +525,16 @@ func (s *chatInputSource) Write(p []byte) (int, error) {
 	return s.output.Write(p)
 }
 
+// SetStatus shows the status line above the input line: what a running turn does
+// right now (the model thinking, a tool running). It is part of the renderer's
+// waiting line (spinner.go); input that is not a terminal has no line to put it
+// above, so nothing is shown.
+func (s *chatInputSource) SetStatus(text string) {
+	if s.terminal != nil {
+		s.terminal.SetStatus(text)
+	}
+}
+
 // putBackLine writes text into the prompt's input line, in front of whatever was
 // already typed, without submitting it: what chat uses to hand messages that a
 // cancelled or failed turn could not deliver back to the person (design D4).

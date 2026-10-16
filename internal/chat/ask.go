@@ -24,6 +24,11 @@ type chatAsker struct {
 }
 
 func (a chatAsker) Ask(ctx context.Context, q tools.Question) (string, error) {
+	// The question borrows the input line, so the turn's status line above it goes
+	// away for as long as the question is up (it would read as if the tool were
+	// still working away on its own) and comes back after the answer.
+	a.render.suspendStatus()
+	defer a.render.resumeStatus()
 	return a.source.Ask(ctx, a.render.ApprovalDetails(q), a.render.ApprovalPrompt(q))
 }
 
