@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
@@ -215,4 +216,31 @@ func chatConfigLoader(t *testing.T) func(t *testing.T, body string) {
 		assert.NoErr(t, os.WriteFile(filepath.Join(root, "config.yaml"), []byte(body), 0600))
 		assert.NoErr(t, Load())
 	}
+}
+
+func TestChatNotifySettings(t *testing.T) {
+	load := chatConfigLoader(t)
+	t.Run("defaults", func(t *testing.T) {
+		load(t, "model: openai/m\n")
+		mode, err := ChatNotifyMode()
+		assert.NoErr(t, err)
+		assert.Eq(t, "auto", mode)
+		after, err := ChatNotifyAfter()
+		assert.NoErr(t, err)
+		assert.Eq(t, time.Minute, after)
+	})
+	t.Run("configured", func(t *testing.T) {
+		load(t, "chat:\n  notify: osc9\n  notify_after: 1s\n")
+		mode, err := ChatNotifyMode()
+		assert.NoErr(t, err)
+		assert.Eq(t, "osc9", mode)
+		after, err := ChatNotifyAfter()
+		assert.NoErr(t, err)
+		assert.Eq(t, time.Second, after)
+	})
+	t.Run("invalid", func(t *testing.T) {
+		load(t, "chat:\n  notify: pager\n")
+		_, err := ChatNotifyMode()
+		assert.Err(t, err)
+	})
 }

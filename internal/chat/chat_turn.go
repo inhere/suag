@@ -14,6 +14,7 @@ import (
 	personalprocess "github.com/inhere/suga/internal/personal/process"
 	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/redact"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
 	"github.com/inhere/suga/pkg/agentcore/tools"
 	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
@@ -63,7 +64,9 @@ type chatState struct {
 	dirs SessionDirs
 	// local is the runner of the local commands (Options.Local): a "!cmd" line
 	// typed at the prompt runs through it; nil leaves them ordinary messages.
-	local *native.LocalCommand
+	local    *native.LocalCommand
+	tasks    *tasks.Manager
+	notifier chatNotifier
 	// localContext holds what the "!!" commands of this chat collected for the
 	// model (local_cmd.go): it is handed over with the next turn's context and
 	// dropped when chat ends without a message.
@@ -289,6 +292,11 @@ func (s *chatState) runOneTurn(line string, injected bool) (*steerTurn, error) {
 		}
 		s.render.Status(result, time.Since(turnStart), turnEnd.deliveredCount())
 		stopMessage = result.Output
+	}
+	// A long turn tells the person it is over (chat.notify / chat.notify_after):
+	// they may have looked away while it ran.
+	if elapsed := time.Since(turnStart); s.notifier.shouldNotify(elapsed) {
+		s.notifier.notify("suga：回合完成（" + formatElapsed(elapsed) + "）")
 	}
 	if s.hooks != nil {
 		stop := s.baseEvent("Stop")
