@@ -90,27 +90,30 @@ func (l *Ledger) store() (*store.Store, error) {
 
 // Search runs a ledger full-text search, or a line scan of one externalised
 // output when q.Ref is set. Snippets are cleaned (redact.Clean).
-func (l *Ledger) Search(ctx context.Context, q native.LedgerQuery) ([]native.LedgerHit, error) {
+func (l *Ledger) Search(ctx context.Context, q native.LedgerQuery) (native.LedgerSearchResult, error) {
 	if q.Ref != "" {
-		return l.searchOutput(ctx, q)
+		hits, err := l.searchOutput(ctx, q)
+		return native.LedgerSearchResult{Hits: hits}, err
 	}
 	repo, err := l.store()
 	if err != nil {
-		return nil, err
+		return native.LedgerSearchResult{}, err
 	}
-	search := store.EntrySearch{Query: q.Query, Limit: q.Limit}
+	search := store.EntrySearch{
+		Query: q.Query, Limit: q.Limit, Cursor: q.Cursor, Kinds: q.Kinds, Since: q.Since, Until: q.Until,
+	}
 	current := observeScopeFrom(ctx).sessionID
 	switch q.Scope {
 	case native.LedgerScopeAll:
 	case native.LedgerScopeCurrent, native.LedgerScopeWorkspace, "":
 		if current == "" {
-			return nil, fmt.Errorf("scope %s needs a current session; use scope all", scopeName(q.Scope))
+			return native.LedgerSearchResult{}, fmt.Errorf("scope %s needs a current session; use scope all", scopeName(q.Scope))
 		}
 		search.CurrentSessionID = current
 		if q.Scope != native.LedgerScopeCurrent {
 			sess, err := repo.GetSession(ctx, current)
 			if err != nil {
-				return nil, fmt.Errorf("load current session: %w", err)
+				return native.LedgerSearchResult{}, fmt.Errorf("load current session: %w", err)
 			}
 			if strings.TrimSpace(sess.Cwd) != "" {
 				search.WorkspaceDir = filepath.Clean(sess.Cwd)
@@ -118,19 +121,19 @@ func (l *Ledger) Search(ctx context.Context, q native.LedgerQuery) ([]native.Led
 			}
 		}
 	default:
-		return nil, fmt.Errorf("scope %q must be current, workspace or all", q.Scope)
+		return native.LedgerSearchResult{}, fmt.Errorf("scope %q must be current, workspace or all", q.Scope)
 	}
-	hits, err := repo.SearchEntries(ctx, search)
+	result, err := repo.SearchEntriesPage(ctx, search)
 	if err != nil {
-		return nil, err
+		return native.LedgerSearchResult{}, err
 	}
-	out := make([]native.LedgerHit, 0, len(hits))
-	for _, h := range hits {
+	out := make([]native.LedgerHit, 0, len(result.Hits))
+	for _, h := range result.Hits {
 		out = append(out, native.LedgerHit{
 			Ref: messageRef(h.SessionID, h.Seq), Role: h.Role, Snippet: redact.Clean(h.Snippet),
 		})
 	}
-	return out, nil
+	return native.LedgerSearchResult{Hits: out, NextCursor: result.NextCursor, Notice: result.Notice}, nil
 }
 
 func scopeName(scope string) string {

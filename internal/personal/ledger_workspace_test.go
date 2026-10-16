@@ -25,7 +25,7 @@ func TestLedgerWorkspaceScopePushesCwdToStore(t *testing.T) {
 	ctx := withObserveScope(context.Background(), "current", "turn_1")
 	hits, err := f.ledger.Search(ctx, native.LedgerQuery{Query: "workspace-only token", Scope: native.LedgerScopeWorkspace})
 	assert.NoErr(t, err)
-	assert.Eq(t, []string{"current/1"}, hitRefs(hits))
+	assert.Eq(t, []string{"current/1"}, hitRefs(hits.Hits))
 
 	// A current session with no cwd remains visible, while the store applies
 	// the workspace boundary to every other session in the same SQL query.
@@ -35,14 +35,14 @@ func TestLedgerWorkspaceScopePushesCwdToStore(t *testing.T) {
 	ctx = withObserveScope(context.Background(), "workspace-current", "turn_2")
 	hits, err = f.ledger.Search(ctx, native.LedgerQuery{Query: "workspace-only token", Scope: native.LedgerScopeWorkspace})
 	assert.NoErr(t, err)
-	assert.Eq(t, []string{"exact/1", "sub/1", "workspace-current/1"}, hitRefs(hits))
+	assert.Eq(t, []string{"exact/1", "sub/1", "workspace-current/1"}, hitRefs(hits.Hits))
 
 	// FoldCase is injected on the ledger to make this assertion independent of
 	// the host GOOS; production enables it only for Windows.
 	f.ledger.foldCase = true
 	hits, err = f.ledger.Search(ctx, native.LedgerQuery{Query: "workspace-only token", Scope: native.LedgerScopeWorkspace})
 	assert.NoErr(t, err)
-	assert.Eq(t, []string{"case/1", "exact/1", "sub/1", "workspace-current/1"}, hitRefs(hits))
+	assert.Eq(t, []string{"case/1", "exact/1", "sub/1", "workspace-current/1"}, hitRefs(hits.Hits))
 
 	// A non-existent current session remains a restricted SQL predicate rather
 	// than the empty SessionIDs value that historically meant "all".

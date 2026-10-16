@@ -22,9 +22,9 @@ type fakeLedger struct {
 	searched, fetchCalls int
 }
 
-func (f *fakeLedger) Search(_ context.Context, q LedgerQuery) ([]LedgerHit, error) {
+func (f *fakeLedger) Search(_ context.Context, q LedgerQuery) (LedgerSearchResult, error) {
 	f.q, f.searched = q, f.searched+1
-	return f.hits, f.err
+	return LedgerSearchResult{Hits: f.hits}, f.err
 }
 
 func (f *fakeLedger) Fetch(_ context.Context, ref string, offset, limit int) (string, error) {

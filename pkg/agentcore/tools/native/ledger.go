@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/inhere/suga/pkg/agentcore/api"
 	"github.com/inhere/suga/pkg/agentcore/redact"
@@ -35,6 +36,13 @@ type LedgerQuery struct {
 	Ref string
 	// Limit caps the hits (<= 0 = the implementation default).
 	Limit int
+	// Cursor resumes a process-local search snapshot returned by next_cursor.
+	Cursor string
+	// Kinds restrict message hits to the indexed entry roles.
+	Kinds []string
+	// Since is inclusive and Until is exclusive; zero means no bound.
+	Since time.Time
+	Until time.Time
 }
 
 // LedgerHit is one search match.
@@ -52,11 +60,20 @@ type LedgerHit struct {
 	Snippet string
 }
 
+// LedgerSearchResult is one page of ledger hits and its optional continuation
+// metadata. Notice explains a stale cursor or a bounded snapshot without making
+// an otherwise valid search fail.
+type LedgerSearchResult struct {
+	Hits       []LedgerHit
+	NextCursor string
+	Notice     string
+}
+
 // LedgerSearcher reads the session ledger and externalised tool outputs. The
 // host implements it (one real implementation, so the interface is declared
 // here at the consumer, like PlanSink and ToolSearcher).
 type LedgerSearcher interface {
-	Search(ctx context.Context, q LedgerQuery) ([]LedgerHit, error)
+	Search(ctx context.Context, q LedgerQuery) (LedgerSearchResult, error)
 	// Fetch returns a readable window: for <session_id>/<seq> the messages
 	// from seq on (offset skips messages, limit counts them); for out:... the
 	// lines starting at line offset (1-based; 0 = 1), limit lines.
@@ -115,11 +132,11 @@ func (t *SessionSearchTool) Execute(ctx context.Context, call api.ToolCall) (*ap
 	if t.searcher == nil {
 		return nil, errors.New("session_search: no ledger configured")
 	}
-	hits, err := t.searcher.Search(ctx, q)
+	result, err := t.searcher.Search(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("session_search: %w", err)
 	}
-	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: redact.Clean(renderLedgerHits(q, hits))}, nil
+	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: redact.Clean(renderLedgerHits(q, result.Hits))}, nil
 }
 
 // parseLedgerQuery validates the session_search arguments.
