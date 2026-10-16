@@ -90,48 +90,50 @@ func (l *Ledger) store() (*store.Store, error) {
 
 // Search runs a ledger full-text search, or a line scan of one externalised
 // output when q.Ref is set. Snippets are cleaned (redact.Clean).
-func (l *Ledger) Search(ctx context.Context, q native.LedgerQuery) ([]native.LedgerHit, error) {
+func (l *Ledger) Search(ctx context.Context, q native.LedgerQuery) (native.LedgerSearchResult, error) {
 	if q.Ref != "" {
-		return l.searchOutput(ctx, q)
+		hits, err := l.searchOutput(ctx, q)
+		return native.LedgerSearchResult{Hits: hits}, err
 	}
 	repo, err := l.store()
 	if err != nil {
-		return nil, err
+		return native.LedgerSearchResult{}, err
 	}
-	search := store.EntrySearch{Query: q.Query, Limit: q.Limit}
+	search := store.EntrySearch{
+		Query: q.Query, Limit: q.Limit, Cursor: q.Cursor, Kinds: q.Kinds, Since: q.Since, Until: q.Until,
+	}
 	current := observeScopeFrom(ctx).sessionID
 	switch q.Scope {
 	case native.LedgerScopeAll:
 	case native.LedgerScopeCurrent, native.LedgerScopeWorkspace, "":
 		if current == "" {
-			return nil, fmt.Errorf("scope %s needs a current session; use scope all", scopeName(q.Scope))
+			return native.LedgerSearchResult{}, fmt.Errorf("scope %s needs a current session; use scope all", scopeName(q.Scope))
 		}
-		search.SessionIDs = []string{current}
+		search.CurrentSessionID = current
 		if q.Scope != native.LedgerScopeCurrent {
-			if search.SessionIDs, err = l.workspaceSessions(ctx, repo, current); err != nil {
-				return nil, err
+			sess, err := repo.GetSession(ctx, current)
+			if err != nil {
+				return native.LedgerSearchResult{}, fmt.Errorf("load current session: %w", err)
+			}
+			if strings.TrimSpace(sess.Cwd) != "" {
+				search.WorkspaceDir = filepath.Clean(sess.Cwd)
+				search.FoldCase = l.foldCase
 			}
 		}
 	default:
-		return nil, fmt.Errorf("scope %q must be current, workspace or all", q.Scope)
+		return native.LedgerSearchResult{}, fmt.Errorf("scope %q must be current, workspace or all", q.Scope)
 	}
-	// An empty SessionIDs list means "all sessions" to the store; a scoped
-	// search always includes at least the current session, but never let an
-	// empty list widen the search.
-	if q.Scope != native.LedgerScopeAll && len(search.SessionIDs) == 0 {
-		return []native.LedgerHit{}, nil
-	}
-	hits, err := repo.SearchEntries(ctx, search)
+	result, err := repo.SearchEntriesPage(ctx, search)
 	if err != nil {
-		return nil, err
+		return native.LedgerSearchResult{}, err
 	}
-	out := make([]native.LedgerHit, 0, len(hits))
-	for _, h := range hits {
+	out := make([]native.LedgerHit, 0, len(result.Hits))
+	for _, h := range result.Hits {
 		out = append(out, native.LedgerHit{
 			Ref: messageRef(h.SessionID, h.Seq), Role: h.Role, Snippet: redact.Clean(h.Snippet),
 		})
 	}
-	return out, nil
+	return native.LedgerSearchResult{Hits: out, NextCursor: result.NextCursor, Notice: result.Notice}, nil
 }
 
 func scopeName(scope string) string {
@@ -139,31 +141,6 @@ func scopeName(scope string) string {
 		return native.LedgerScopeWorkspace
 	}
 	return scope
-}
-
-// workspaceSessions returns the current session plus every session whose cwd
-// equals the current session's cwd or lies below it. Matching respects path
-// separators (/repo never matches /repo2), which the store's plain string
-// prefix cannot. Without a recorded cwd the scope is the current session.
-func (l *Ledger) workspaceSessions(ctx context.Context, repo *store.Store, current string) ([]string, error) {
-	sess, err := repo.GetSession(ctx, current)
-	if err != nil {
-		return nil, fmt.Errorf("load current session: %w", err)
-	}
-	ids := []string{current}
-	if strings.TrimSpace(sess.Cwd) == "" {
-		return ids, nil
-	}
-	cwds, err := repo.SessionCwds(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for id, cwd := range cwds {
-		if id != current && pathWithin(sess.Cwd, cwd, l.foldCase) {
-			ids = append(ids, id)
-		}
-	}
-	return ids, nil
 }
 
 // pathWithin reports whether p is dir or lies below it, comparing cleaned

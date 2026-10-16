@@ -17,14 +17,14 @@ def main():
     a = p.parse_args(); home=os.path.abspath(a.work+"/home"); ws=os.path.abspath(a.work+"/ws"); shutil.rmtree(a.work, ignore_errors=True); os.makedirs(ws); isolate_ws(ws)
     write_home(home, a.port, tools_extra="  approval: auto\n", extra="chat:\n  notify_after: 1s\n")
     env=dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1"); env.pop("SUGA_CONFIG", None)
-    here=os.path.dirname(os.path.abspath(__file__)); fake=subprocess.Popen([sys.executable,"-I",here+"/fakellm.py","--port",str(a.port),"--mode","tool","--background","--command","sleep 5; echo TASK_COMMAND","--delay","0.7"], stdout=subprocess.PIPE, text=True); wait_port(fake)
+    here=os.path.dirname(os.path.abspath(__file__)); fake=subprocess.Popen([sys.executable,"-I",here+"/fakellm.py","--port",str(a.port),"--mode","tool","--background","--command","sleep 5; echo TASK_COMMAND","--delay","1.0"], stdout=subprocess.PIPE, text=True); wait_port(fake)
     s=PtySession([os.path.abspath(a.bin),"chat"], env=env, cwd=ws)
     try:
         m=s.mark(); s.until(r"❯ ",m); s.line(":help"); s.check("help usage", s.until(r":usage",m))
         s.check("help tasks", s.until(r":tasks",m))
         m=s.mark(); s.line(":usage"); s.check("usage line", s.until(r"本次 0 轮",m))
         m=s.mark(); s.line(":tasks"); s.check("empty tasks", s.until(r"没有后台任务",m))
-        # A turn of two model requests (0.7s each) that starts a background task:
+        # A turn of two model requests (1.0s each) that starts a background task:
         # longer than chat.notify_after (1s), so its end rings the bell.
         m=s.mark(); s.line("hello"); s.check("turn ends", s.until(r"tokens · ",m))
         s.check("completion bell", "\a" in s.text(m))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -75,16 +76,37 @@ type EntrySearch struct {
 	// Query is split on whitespace; every term must occur (AND). Terms are
 	// literal text: FTS5 syntax characters have no special meaning.
 	Query string
-	// SessionIDs restricts the search to these sessions; empty means all.
+	// SessionIDs restrict the search to these sessions; empty means all.
 	SessionIDs []string
 	// CWDPrefix keeps only sessions whose cwd starts with it (plain string
 	// prefix, case-sensitive); empty means no restriction.
 	CWDPrefix string
+	// WorkspaceDir restricts sessions to this directory and its descendants.
+	// The comparison is on path-separator boundaries; an empty cwd is excluded.
+	WorkspaceDir string
+	// CurrentSessionID is always included with WorkspaceDir, even when that
+	// session has no cwd. With no WorkspaceDir it restricts results to this ID.
+	CurrentSessionID string
+	// FoldCase applies SQLite's ASCII-only lower() folding to the workspace
+	// comparison. Ledger enables it on Windows to match the approved semantics.
+	FoldCase bool
 	// Limit caps the hits: <=0 means 20, at most 100.
 	Limit int
 	// IncludeAgents searches sub-agent sessions too (they belong to their
 	// parent session and are left out by default).
 	IncludeAgents bool
+	// Kinds restricts results to indexed entry roles. An empty slice means all
+	// indexed roles; values must be user, assistant, tool or compaction.
+	Kinds []string
+	// Since is an inclusive lower bound on entry creation time. Zero means no
+	// lower bound.
+	Since time.Time
+	// Until is an exclusive upper bound on entry creation time. Zero means no
+	// upper bound.
+	Until time.Time
+	// Cursor is a process-local snapshot position. Invalid or expired cursors
+	// are ignored by SearchEntriesPage, which starts a fresh query.
+	Cursor string
 }
 
 // EntryHit is one matching entry, located by SessionID/Seq.
@@ -96,26 +118,50 @@ type EntryHit struct {
 	CreatedAt time.Time
 }
 
-// SearchEntries searches the ledger index. When every term has at least three
-// runes it uses the trigram index (FTS5 MATCH, bm25 ranking, snippet());
-// otherwise the whole query falls back to LIKE over the indexed text (newest
-// first). Results are not redacted here; callers do that.
+// SearchResult contains one page and the optional continuation metadata. Notice
+// is informational: a stale cursor or a snapshot truncated at 500 hits never
+// turns a valid search into an error.
+type SearchResult struct {
+	Hits       []EntryHit
+	NextCursor string
+	Notice     string
+}
+
+// SearchEntries preserves the pre-cursor API for callers that only need hits.
+// The page-aware API is SearchEntriesPage; it owns snapshot creation and
+// continuation metadata.
 func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, error) {
+	result, err := s.SearchEntriesPage(ctx, q)
+	return result.Hits, err
+}
+
+// searchEntries executes one bounded SQL search. Snapshot pagination asks for
+// one more than the snapshot cap so the caller can distinguish truncation from
+// an exactly-full result without changing the normal page limit.
+func (s *Store) searchEntries(ctx context.Context, q EntrySearch, requestedLimit int) ([]EntryHit, error) {
 	terms := strings.Fields(q.Query)
 	if len(terms) == 0 {
 		return nil, errors.New("search query is required")
 	}
-	limit := q.Limit
-	if limit <= 0 {
-		limit = defaultSearchLimit
+	if err := validateSearchKinds(q.Kinds); err != nil {
+		return nil, err
 	}
-	limit = min(limit, maxSearchLimit)
+	limit := requestedLimit
+	if limit <= 0 {
+		limit = q.Limit
+		if limit <= 0 {
+			limit = defaultSearchLimit
+		}
+		limit = min(limit, maxSearchLimit)
+	}
 
-	useMatch := true
-	for _, t := range terms {
-		if utf8.RuneCountInString(t) < minMatchRunes {
-			useMatch = false
-			break
+	matchTerms := make([]string, 0, len(terms))
+	likeTerms := make([]string, 0, len(terms))
+	for _, term := range terms {
+		if utf8.RuneCountInString(term) >= minMatchRunes {
+			matchTerms = append(matchTerms, term)
+		} else {
+			likeTerms = append(likeTerms, term)
 		}
 	}
 
@@ -123,36 +169,61 @@ func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, e
 		cols, where, order string
 		args               []any
 	)
-	if useMatch {
+	if len(matchTerms) > 0 {
 		// Column 3 is text; up to 64 tokens (trigram: ~64 runes) of context.
 		cols = `snippet(entries_fts, 3, '', '', '…', 64)`
 		where = `entries_fts MATCH ?`
-		args = append(args, ftsMatchExpr(terms))
+		args = append(args, ftsMatchExpr(matchTerms))
 		order = `bm25(entries_fts), f.session_id, f.seq`
 	} else {
 		cols = `f.text`
-		likes := make([]string, len(terms))
-		for i, t := range terms {
-			likes[i] = `f.text LIKE ? ESCAPE '\'`
-			args = append(args, "%"+escapeLike(t)+"%")
-		}
-		where = strings.Join(likes, ` AND `)
 		order = `e.created_at DESC, f.session_id, f.seq DESC`
 	}
+	if len(likeTerms) > 0 {
+		likes := make([]string, len(likeTerms))
+		for i, term := range likeTerms {
+			likes[i] = `f.text LIKE ? ESCAPE '\'`
+			args = append(args, "%"+escapeLike(term)+"%")
+		}
+		where = joinWhere(where, strings.Join(likes, ` AND `))
+	}
 	if len(q.SessionIDs) > 0 {
-		where += ` AND f.session_id IN (` + placeholders(len(q.SessionIDs)) + `)`
+		where = joinWhere(where, `f.session_id IN (`+placeholders(len(q.SessionIDs))+`)`)
 		for _, id := range q.SessionIDs {
 			args = append(args, id)
 		}
 	}
 	if !q.IncludeAgents {
-		where += ` AND ` + notAgentSession("ss.meta_json")
+		where = joinWhere(where, notAgentSession("ss.meta_json"))
 	}
 	if q.CWDPrefix != "" {
 		// substr/length instead of LIKE: exact, case-sensitive, no escaping.
-		where += ` AND substr(ss.cwd, 1, length(?)) = ?`
+		where = joinWhere(where, `substr(ss.cwd, 1, length(?)) = ?`)
 		args = append(args, q.CWDPrefix, q.CWDPrefix)
 	}
+	if q.CurrentSessionID != "" || q.WorkspaceDir != "" {
+		condition, scopeArgs := workspaceScopeCondition(q)
+		where = joinWhere(where, condition)
+		args = append(args, scopeArgs...)
+	}
+	if len(q.Kinds) > 0 {
+		where = joinWhere(where, `f.role IN (`+placeholders(len(q.Kinds))+`)`)
+		for _, kind := range q.Kinds {
+			args = append(args, kind)
+		}
+	}
+	if !q.Since.IsZero() {
+		where = joinWhere(where, `e.created_at >= ?`)
+		args = append(args, formatTime(q.Since))
+	}
+	if !q.Until.IsZero() {
+		where = joinWhere(where, `e.created_at < ?`)
+		args = append(args, formatTime(q.Until))
+	}
+	// Search results must not recursively contain the two retrieval tools'
+	// own transcripts, while other tool results remain searchable.
+	where = joinWhere(where, `NOT (f.role = ? AND COALESCE(json_extract(e.json, '$.ToolCall.Name'), '') IN (?, ?))`)
+	args = append(args, EntryTool, "session_search", "recall")
 	// MATCH, snippet() and bm25() take the FTS hidden column, which is named
 	// after the table (entries_fts) and resolves through the alias f.
 	sqlText := `SELECT f.session_id, f.seq, f.role, ` + cols + `, e.created_at
@@ -176,7 +247,7 @@ func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, e
 			return nil, err
 		}
 		h.CreatedAt = parseTime(created)
-		if useMatch {
+		if len(matchTerms) > 0 {
 			h.Snippet = text
 		} else {
 			h.Snippet = likeSnippet(text, terms[0])
@@ -184,6 +255,64 @@ func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, e
 		out = append(out, h)
 	}
 	return out, rows.Err()
+}
+
+// workspaceScopeCondition builds the SQL scope without materializing session
+// cwd values in Go. The prefix includes one separator, so /repo does not match
+// /repo2; the current session branch intentionally bypasses cwd checks.
+func workspaceScopeCondition(q EntrySearch) (string, []any) {
+	parts := []string{}
+	args := []any{}
+	if q.CurrentSessionID != "" {
+		parts = append(parts, `f.session_id = ?`)
+		args = append(args, q.CurrentSessionID)
+	}
+	if q.WorkspaceDir != "" {
+		dir := filepath.Clean(q.WorkspaceDir)
+		separator := string(filepath.Separator)
+		prefix := dir
+		if !strings.HasSuffix(prefix, separator) {
+			prefix += separator
+		}
+		cwdExpr := "ss.cwd"
+		valueExpr := "?"
+		if q.FoldCase {
+			// SQLite lower() intentionally provides the design's ASCII-only
+			// folding; non-ASCII case differences are a documented limitation.
+			cwdExpr = "lower(ss.cwd)"
+			if strings.Contains(dir, `\`) {
+				// Windows accepts slash spellings in persisted legacy cwds;
+				// normalize those before applying the case fold.
+				cwdExpr = `lower(replace(ss.cwd, '/', char(92)))`
+			}
+			valueExpr = "lower(?)"
+		}
+		parts = append(parts, `(`+cwdExpr+` <> '' AND (`+
+			valueExpr+` = `+cwdExpr+` OR substr(`+cwdExpr+`, 1, length(`+valueExpr+`)) = `+valueExpr+`))`)
+		args = append(args, dir, prefix, prefix)
+	}
+	return `(` + strings.Join(parts, ` OR `) + `)`, args
+}
+
+// validateSearchKinds rejects values that cannot occur in entries_fts. Keeping
+// this check in the store protects direct callers before the native tool parser
+// is introduced.
+func validateSearchKinds(kinds []string) error {
+	for _, kind := range kinds {
+		switch kind {
+		case EntryUser, EntryAssistant, EntryTool, EntryCompaction:
+		default:
+			return fmt.Errorf("invalid search kind %q", kind)
+		}
+	}
+	return nil
+}
+
+func joinWhere(base, condition string) string {
+	if base == "" {
+		return condition
+	}
+	return base + ` AND ` + condition
 }
 
 // ftsMatchExpr turns each term into an FTS5 string (phrase): wrapped in double

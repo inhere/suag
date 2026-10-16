@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -48,6 +49,13 @@ func parseTime(s string) time.Time {
 type Store struct {
 	db   *sql.DB
 	path string
+
+	// searchMu protects the process-local cursor snapshots. They deliberately
+	// live beside the store rather than in SQLite, so cursors never become
+	// persistent state or part of a search query.
+	searchMu        sync.Mutex
+	searchSnapshots map[string]*searchSnapshot
+	searchSnapshotN uint64
 }
 
 // buildDSN makes every pooled connection run the pragmas on open (modernc

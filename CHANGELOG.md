@@ -11,10 +11,20 @@
 - chat 新增 `:model` 查看并从下一回合切换已配置模型，显示 thinking、上下文窗口与输出上限；切换保留 fallback、持久化到会话并写入 `model_switch` trace 事件，续接时沿用（显式 `--model` 优先）。
 - 路径审批规则现在会校验 root 锚定、词法与真实目标路径，并拒绝符号链接、硬链接和特殊文件的 allow。
 - LLM 重试识别 `X-Should-Retry`、`Retry-After-Ms` 与 provider 的 `try again in ...` 提示；上下文超长错误归为 `provider_rejected` 并提示压缩或新会话，模型 trace 记录 provider request id。
+- session_search 存储检索按词分流，支持 kind 与半开时间过滤，并排除自身检索工具结果。
+- session_search 的 workspace/current scope 改为 SQL 下推，按路径边界过滤 cwd 并保留无 cwd 的当前会话。
+- session_search 增加 v1 游标编解码与查询指纹基础，非法游标可安全回到首查。
+- session_search 增加进程内稳定快照分页，限制 500 条结果并提供 10 分钟 TTL / 64 个快照的 v1 游标续接。
+- session_search 的 Ledger 查询接口透传 workspace/current scope、kind、时间窗与 v1 游标，并向上层返回续接游标和说明。
+- 为 session_search 增加固定种子中英混合语料 benchmark，记录 1 万/10 万条查询基线并明确 S2 bigram 不纳入本期。
 
 ### 修复
 
 - chat 终端显示会清洗模型回答、工具结果与 diff 预览中的 ESC/OSC/CSI 等控制序列，避免恶意文本清屏、改标题或写剪贴板。
+
+### 变更
+
+- session_search 的中文混合检索、过滤与游标分页完成全量回归验证；本期不引入 S2 bigram。
 
 ## [0.26.0] - 2026-10-16
 
@@ -39,6 +49,8 @@
 - 输出达到模型上限时，chat、run、stream-json 与 trace 明确标记回答可能被截断，并给出可调整输出上限的提示。
 
 ### 变更
+
+- `suga sessions` 继续保持原有 query、session 时间/cwd 过滤、去重与首个 snippet 输出契约；session_search 的 cursor/kind 分页参数不扩展到 CLI。
 
 - `fallback_models` 不再对任何错误都换下一个模型（issue suga-8vzk）：只在**另一个模型还有机会**时换——瞬时故障（网络错误、408/429/5xx、响应头超时、流被切断/截断）或点名本 provider 的拒绝（401/403 凭据不对或无权用该模型、404 模型不存在）；400/422（请求格式或参数问题，换模型也一样）与无法使用的响应（不是合法 JSON、答复缺内容、API 在 200 里报自己的错）直接返回主模型的错误，不再把后备模型和它们的时间、token 白跑一遍。流式仍是只要已输出过文本就不换（避免答案重复或拼接）。每次尝试换/不换的原因写进日志与 trace 的 model 事件（`fallback` attr，如 `next, provider_transient`、`stop, provider_rejected (HTTP 400) would repeat on the next model`）。
 - agentcore：会话 id 的读写（`WithSessionID` / `SessionIDFrom`）从 `llm` 下沉到 `api`——它属于运行时会话概念，不是 provider 概念。`llm.WithSessionID` / `llm.SessionIDFrom` 保留为转发并标记 Deprecated；`tasks` 不再依赖 `llm`，后台任务层的依赖闭包不再拖进整个 provider 层（`llm.SessionIDPlaceholder` 与 `{{session_id}}` 请求头行为不变）。
