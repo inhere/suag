@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -90,6 +91,38 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// UpdateEventEntrySeq fills the sequence of a pending injected entry after the
+// next turn stores it. The event is written when undo completes, while the
+// entry itself is deliberately deferred until the user starts another turn.
+func (s *Store) UpdateEventEntrySeq(ctx context.Context, id, seq int64) error {
+	if id <= 0 || seq <= 0 {
+		return errors.New("event and entry sequence are required")
+	}
+	var raw string
+	if err := s.db.QueryRowContext(ctx, `SELECT attrs_json FROM events WHERE id = ?`, id).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return sql.ErrNoRows
+		}
+		return err
+	}
+	attrs := map[string]any{}
+	if raw != "" && raw != "{}" {
+		if err := json.Unmarshal([]byte(raw), &attrs); err != nil {
+			return fmt.Errorf("decode event attrs: %w", err)
+		}
+	}
+	attrs["entry_seq"] = seq
+	encoded, err := json.Marshal(attrs)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE events SET attrs_json = ? WHERE id = ?`, string(encoded), id)
+	if err != nil {
+		return fmt.Errorf("update event %d: %w", id, err)
+	}
+	return requireAffected(res, sql.ErrNoRows)
 }
 
 // SumUsageTree is SumUsage over the session and its sub-agent sessions

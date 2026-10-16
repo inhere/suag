@@ -100,9 +100,19 @@ func (u *UndoCore) Undo(ctx context.Context, sessionQuery string, n int, force b
 				return fmt.Errorf("set checkpoint %s state: %w", row.TurnID, err)
 			}
 		}
+		// Keep the existing session lock until the fact is queued, otherwise a
+		// concurrent new turn could start in the small gap after restoration.
+		if result.Turns > 0 {
+			if err := u.enqueueUndoNotice(ctx, result); err != nil {
+				return fmt.Errorf("queue undo notice: %w", err)
+			}
+		}
 		return nil
 	})
-	return result, err
+	if err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func selectUndoRows(rows []Checkpoint, n int) []Checkpoint {

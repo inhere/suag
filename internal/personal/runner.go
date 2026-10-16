@@ -626,6 +626,14 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		history.items = append(history.items, item)
 		update.applyTo(history.eff)
 	}
+	// Undo notices are persisted after history loading has finished. This keeps
+	// an interrupted turn's replay ahead of the fact that the user rolled back
+	// its file changes, and avoids opening a turn merely to deliver the notice.
+	if item, ok, err := r.injectUndoNotice(ctx, model.ID, turnID); err != nil {
+		return r.finish(ctx, model, result, turnStart, usage, nil, err, req.Emit)
+	} else if ok {
+		history.items = append(history.items, item)
+	}
 	// What this turn starts with (D9); best-effort like every event.
 	r.recordTurnContext(ctx, model, history.segment, history.eff)
 	if err := emit(ctx, req.Emit, Event{Kind: "run_started", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID}); err != nil {

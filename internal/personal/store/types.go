@@ -97,6 +97,9 @@ const (
 	// cancelled and timeout. It is how a trace shows what was run outside the
 	// model's turn; chat writes it.
 	EventLocalCommand = "local_command"
+	// EventUndo records a user rollback; its attrs include the file outcome
+	// counts and the seq of the deferred suga.undo entry when available.
+	EventUndo = "undo"
 )
 
 // Session is one conversation. Meta holds free-form keys (rules hash, append

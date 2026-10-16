@@ -29,13 +29,14 @@ type ctxItem struct {
 
 // injectedItemKeys are the Message.Metadata keys marking a user entry the
 // runtime injected into a running turn instead of a person writing it:
-// background task notices (metaTaskNotice), steering messages (metaSteer) and
-// the note an interrupted turn leaves behind (metaTurnInterrupted). Such an
+// background task notices (metaTaskNotice), steering messages (metaSteer),
+// undo facts (metaUndo) and the note an interrupted turn leaves behind
+// (metaTurnInterrupted). Such an
 // entry is stored with the turn's EntryUser type and replayed in place, so the
 // turn view (items), the notices compose renders and the user requests
 // (recentRequests) all have to tell it apart from the turn's own messages and
 // requests.
-var injectedItemKeys = []string{metaTaskNotice, metaSteer, metaTurnInterrupted}
+var injectedItemKeys = []string{metaTaskNotice, metaSteer, metaTurnInterrupted, metaUndo}
 
 // isInjectedItem reports whether m is an entry injected into a running turn
 // (one of injectedItemKeys set true in its metadata).
