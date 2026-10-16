@@ -183,13 +183,24 @@ func (w *localKeyWatch) handle(event chatInputEvent, cancel context.CancelFunc) 
 }
 
 // stop ends the read and waits for the watcher to be gone, so the next prompt
-// read owns the keyboard again.
+// read owns the keyboard again; what the read reported meanwhile is taken here
+// (the consumer is gone, it would sit in the channel otherwise).
 func (w *localKeyWatch) stop() {
 	if w == nil {
 		return
 	}
 	close(w.quit)
 	<-w.done
+	for {
+		select {
+		case event := <-w.source.TurnEvents():
+			if event.key == keyNone && event.err == nil && strings.TrimSpace(event.line) != "" {
+				w.source.putBackLine(event.line)
+			}
+		default:
+			return
+		}
+	}
 }
 
 // recordLocalCommand writes the local_command event of one run: what was typed
