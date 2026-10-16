@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -13,21 +12,15 @@ import (
 
 	"github.com/inhere/suga/pkg/agentcore/api"
 	"github.com/inhere/suga/pkg/agentcore/skills"
+	"github.com/inhere/suga/pkg/agentcore/testutil"
 	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
-// repoTmpDir returns a fresh directory under the repository's tmp/ that is
-// removed when the test ends.
-func repoTmpDir(t *testing.T) string {
+// shortTempDir returns a fresh directory with a short path that is removed when
+// the test ends.
+func shortTempDir(t *testing.T) string {
 	t.Helper()
-	_, src, _, ok := runtime.Caller(0)
-	assert.Require(t, assert.True(t, ok))
-	root := filepath.Join(filepath.Dir(src), "..", "..", "..", "..", "tmp", "t7-native")
-	assert.Require(t, assert.NoErr(t, os.MkdirAll(root, 0o700)))
-	dir, err := os.MkdirTemp(root, "ws-")
-	assert.Require(t, assert.NoErr(t, err))
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	return testutil.Dir(t)
 }
 
 type countingSpiller struct{ calls map[string]int }
@@ -41,7 +34,7 @@ func (s *countingSpiller) Spill(_ context.Context, call api.ToolCall, _ string) 
 // return raw output up to RawBytes, file_read pages itself, and the output
 // layer externalises every other oversized result.
 func TestOutputLayerWithNativeTools(t *testing.T) {
-	ws := repoTmpDir(t)
+	ws := shortTempDir(t)
 	var sb strings.Builder
 	for i := 1; i <= 2000; i++ {
 		fmt.Fprintf(&sb, "line %d of a large log file\n", i)

@@ -58,8 +58,10 @@ func TestResolveWorkspacePath(t *testing.T) {
 }
 
 func TestResolveSessionsDir(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("..", "..", "tmp", "t7-sessions-home"))
-	assert.Require(t, assert.NoErr(t, err))
+	// The test's own temporary directory, not one under the repository: a
+	// directory there is scanned by go list ./... while another test may be
+	// removing it (issue suga-wab3).
+	root := t.TempDir()
 	t.Setenv("SUGA_HOME", root)
 	got, err := ResolveSessionsDir()
 	assert.NoErr(t, err)

@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -22,6 +21,7 @@ import (
 	"github.com/inhere/suga/internal/personal/store"
 	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/mock"
+	"github.com/inhere/suga/pkg/agentcore/testutil"
 )
 
 func TestPersonalCLIUsesIsolatedHomeAcrossRuns(t *testing.T) {
@@ -290,24 +290,7 @@ func TestPersonalHelpDoesNotOpenRuntime(t *testing.T) {
 
 func shortTestHome(t *testing.T) string {
 	t.Helper()
-	_, source, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve test source path")
-	}
-	repoRoot, err := filepath.Abs(filepath.Join(filepath.Dir(source), "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := filepath.Join(repoRoot, "tmp", "s6test")
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	dir, err := os.MkdirTemp(root, "h-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	return testutil.Dir(t)
 }
 
 // newTestStorePath returns a fresh core store path under the test's temp dir.

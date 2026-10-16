@@ -17,27 +17,22 @@ import (
 	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/api"
 	"github.com/inhere/suga/pkg/agentcore/redact"
+	"github.com/inhere/suga/pkg/agentcore/testutil"
 	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
-// repoTmp returns a fresh directory under the repository's tmp/ that is
-// removed when the test ends.
-func repoTmp(t *testing.T) string {
+// shortTempDir returns a fresh directory with a short path that is removed when
+// the test ends (session spool files live under it).
+func shortTempDir(t *testing.T) string {
 	t.Helper()
-	root, err := filepath.Abs(filepath.Join("..", "..", "tmp", "t7-personal"))
-	assert.Require(t, assert.NoErr(t, err))
-	assert.Require(t, assert.NoErr(t, os.MkdirAll(root, 0o700)))
-	dir, err := os.MkdirTemp(root, "s-")
-	assert.Require(t, assert.NoErr(t, err))
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	return testutil.Dir(t)
 }
 
 var hex16 = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
 func TestSessionSpiller(t *testing.T) {
 	t.Run("file name is 16 hex digits inside the session outputs", func(t *testing.T) {
-		dir := repoTmp(t)
+		dir := shortTempDir(t)
 		sp := NewSessionSpiller(dir)
 		ctx := withObserveScope(context.Background(), "sess_1", "turn_1")
 		seen := map[string]bool{}
@@ -72,7 +67,7 @@ func TestSessionSpiller(t *testing.T) {
 	})
 
 	t.Run("secrets are masked in the file", func(t *testing.T) {
-		dir := repoTmp(t)
+		dir := shortTempDir(t)
 		ctx := withObserveScope(context.Background(), "sess_2", "turn_1")
 		ref, err := NewSessionSpiller(dir).Spill(ctx, agentcore.ToolCall{CallID: "c1"}, "api_key=sk-live-123456 rest")
 		assert.Require(t, assert.NoErr(t, err))
@@ -83,7 +78,7 @@ func TestSessionSpiller(t *testing.T) {
 	})
 
 	t.Run("invalid session ids are refused", func(t *testing.T) {
-		dir := repoTmp(t)
+		dir := shortTempDir(t)
 		for _, sid := range []string{"../evil", "a/b", `a\b`, "..", ".", "x:y", "/abs"} {
 			ctx := withObserveScope(context.Background(), sid, "turn_1")
 			_, err := NewSessionSpiller(dir).Spill(ctx, agentcore.ToolCall{CallID: "c1"}, "body")
@@ -96,7 +91,7 @@ func TestSessionSpiller(t *testing.T) {
 	})
 
 	t.Run("no session in ctx is an error", func(t *testing.T) {
-		_, err := NewSessionSpiller(repoTmp(t)).Spill(context.Background(), agentcore.ToolCall{CallID: "c1"}, "body")
+		_, err := NewSessionSpiller(shortTempDir(t)).Spill(context.Background(), agentcore.ToolCall{CallID: "c1"}, "body")
 		assert.ErrMsgContains(t, err, "no session")
 	})
 }
@@ -123,7 +118,7 @@ var refPattern = regexp.MustCompile(`ref (out:([^:\s]+):([0-9a-f]{16}))`)
 func TestRunnerSpillsLargeToolOutput(t *testing.T) {
 	ctx := context.Background()
 	repo := openObserveRepo(t)
-	sessions := repoTmp(t)
+	sessions := shortTempDir(t)
 	big := "HEAD-MARK\napi_key=sk-live-abcdef123456\n" + strings.Repeat("row of mcp tool output\n", 2200) + "TAIL-MARK"
 	assert.True(t, len(big) > 50000)
 	// Sizes and the hash describe the stored (redacted) text.

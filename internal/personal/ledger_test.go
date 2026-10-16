@@ -29,7 +29,7 @@ type ledgerFixture struct {
 func newLedgerFixture(t *testing.T) *ledgerFixture {
 	t.Helper()
 	repo := openObserveRepo(t)
-	dir := repoTmp(t)
+	dir := shortTempDir(t)
 	l := NewLedger(dir)
 	l.bind(repo)
 	return &ledgerFixture{repo: repo, ledger: l, dir: dir}
@@ -367,7 +367,7 @@ func TestSessionSearchThroughRunner(t *testing.T) {
 	_, err = repo.AppendEntries(ctx, "s_far", store.NewEntry{TurnID: "t", Type: store.EntryUser, JSON: data})
 	assert.NoErr(t, err)
 
-	ledger := NewLedger(repoTmp(t))
+	ledger := NewLedger(shortTempDir(t))
 	reg := tools.NewRegistry()
 	reg.Register(native.NewSessionSearchTool(ledger))
 	runner, err := New(Config{Repository: repo, Ledger: ledger, Tools: reg, Workspace: "/work/proj", Provider: mock.NewProvider(

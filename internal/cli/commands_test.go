@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +16,7 @@ import (
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/internal/personal/process"
 	"github.com/inhere/suga/internal/personal/store"
+	"github.com/inhere/suga/pkg/agentcore/testutil"
 )
 
 func TestCLIRegistersPersonalCommands(t *testing.T) {
@@ -90,24 +89,7 @@ func TestCLIRegistersProcessCommandsAndSendExitCodes(t *testing.T) {
 
 func shortCLIHome(t *testing.T) string {
 	t.Helper()
-	_, source, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve test source path")
-	}
-	repoRoot, err := filepath.Abs(filepath.Join(filepath.Dir(source), "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := filepath.Join(repoRoot, "tmp", "s6cli")
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	home, err := os.MkdirTemp(root, "h-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(home) })
-	return home
+	return testutil.Dir(t)
 }
 
 func TestACPRejectsPositionalsWithoutWritingProtocolOutput(t *testing.T) {

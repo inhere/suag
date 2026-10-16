@@ -12,20 +12,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/inhere/suga/pkg/agentcore/testutil"
 )
 
 func shortProcessRoot(t *testing.T) string {
 	t.Helper()
-	root := filepath.Join("tmp", "s6proc")
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	dir, err := os.MkdirTemp(root, "p-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	return testutil.Dir(t)
 }
 
 func TestServerPingDeliverListAndCleanup(t *testing.T) {

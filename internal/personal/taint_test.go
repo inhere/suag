@@ -55,7 +55,7 @@ func runTaintTurn(t *testing.T, repo *store.Store, sessionID string, mut func(*C
 	}
 	steps = append(steps, mock.Final("done"))
 	cfg := Config{Repository: repo, Provider: mock.NewProvider(steps...), Tools: taintRegistry(), Model: "m-1", ProviderName: "p-1",
-		InlineOutputBytes: 100, Spiller: NewSessionSpiller(repoTmp(t))}
+		InlineOutputBytes: 100, Spiller: NewSessionSpiller(shortTempDir(t))}
 	if mut != nil {
 		mut(&cfg)
 	}
