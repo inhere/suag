@@ -99,6 +99,18 @@ func TestSessionsCommand(t *testing.T) {
 		assert.True(t, pathHasPrefix(`D:\Work\x\ws`, "d:/work/x"))
 		assert.Eq(t, "…/x/ws", shortDir(`D:\work\x\ws`))
 	})
+	t.Run("time and cwd filters remain session filters", func(t *testing.T) {
+		// s05's matching entry is recent, but the session was last active five
+		// hours ago. CLI boundaries must use sessions.updated_at, not entries.created_at.
+		assert.Eq(t, []string{"s05"}, listed(t, ctx, "--query", "flaky", "--since", "6h"))
+		assert.Eq(t, []string{"s05"}, listed(t, ctx, "--query", "flaky", "--until", "4h"))
+		assert.Eq(t, []string{}, listed(t, ctx, "--query", "flaky", "--since", "3h"))
+
+		// The match is in /work/b; applying --cwd must filter the session after
+		// the conversation search rather than changing the entry search scope.
+		assert.Eq(t, []string{"s05"}, listed(t, ctx, "--query", "flaky", "--cwd", "/work/b"))
+		assert.Eq(t, []string{}, listed(t, ctx, "--query", "flaky", "--cwd", "/work/a"))
+	})
 	t.Run("table", func(t *testing.T) {
 		out, err := runCLI(t, ctx, "sessions", "-n", "2")
 		assert.Require(t, assert.NoErr(t, err))

@@ -44,6 +44,8 @@
 
 ### 变更
 
+- `suga sessions` 继续保持原有 query、session 时间/cwd 过滤、去重与首个 snippet 输出契约；session_search 的 cursor/kind 分页参数不扩展到 CLI。
+
 - `fallback_models` 不再对任何错误都换下一个模型（issue suga-8vzk）：只在**另一个模型还有机会**时换——瞬时故障（网络错误、408/429/5xx、响应头超时、流被切断/截断）或点名本 provider 的拒绝（401/403 凭据不对或无权用该模型、404 模型不存在）；400/422（请求格式或参数问题，换模型也一样）与无法使用的响应（不是合法 JSON、答复缺内容、API 在 200 里报自己的错）直接返回主模型的错误，不再把后备模型和它们的时间、token 白跑一遍。流式仍是只要已输出过文本就不换（避免答案重复或拼接）。每次尝试换/不换的原因写进日志与 trace 的 model 事件（`fallback` attr，如 `next, provider_transient`、`stop, provider_rejected (HTTP 400) would repeat on the next model`）。
 - agentcore：会话 id 的读写（`WithSessionID` / `SessionIDFrom`）从 `llm` 下沉到 `api`——它属于运行时会话概念，不是 provider 概念。`llm.WithSessionID` / `llm.SessionIDFrom` 保留为转发并标记 Deprecated；`tasks` 不再依赖 `llm`，后台任务层的依赖闭包不再拖进整个 provider 层（`llm.SessionIDPlaceholder` 与 `{{session_id}}` 请求头行为不变）。
 - agentcore：分层守卫（`pkg/agentcore/layering_test.go`）从“只挡 agentcore 之外的 suga 包”改为按包白名单：“每个包允许依赖哪些 agentcore 包”在测试里显式登记（以当前实际依赖为基线），表外依赖（能力层横向依赖、反向依赖内核）与未登记的新包都会失败；保留“不得依赖 agentcore 之外的 suga 包”的检查，修掉 `allowed` 前缀缺尾 `/` 的漏洞，缺 `go` 可执行文件时改为跳过。
