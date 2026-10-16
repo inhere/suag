@@ -54,6 +54,7 @@ const responsesPath = "/responses"
 
 // Generate implements Provider.
 func (p *ResponsesProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
+	ctx = ensureRetryReport(ctx)
 	body := p.buildResponsesBody(ctx, req, false)
 	logProviderRequest(p.Name(), responsesPath, body)
 	data, status, err := p.doRequest(ctx, responsesPath, body)

@@ -74,6 +74,7 @@ func TestRetryHintsUseProviderHeadersAndMessages(t *testing.T) {
 	}
 }
 
+// Reverse check: removing the X-Should-Retry guard makes this server receive a second request.
 func TestShouldRetryFalseStopsHTTPRetry(t *testing.T) {
 	var hits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

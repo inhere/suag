@@ -85,6 +85,14 @@ func withRetryReport(ctx context.Context) (context.Context, *RetryReport) {
 	return context.WithValue(ctx, retryReportKey{}, r), r
 }
 
+func ensureRetryReport(ctx context.Context) context.Context {
+	if _, ok := ctx.Value(retryReportKey{}).(*RetryReport); ok {
+		return ctx
+	}
+	ctx, _ = withRetryReport(ctx)
+	return ctx
+}
+
 type retryNotifier func(context.Context, int, time.Duration, string) error
 type retryNotifierKey struct{}
 

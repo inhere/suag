@@ -89,6 +89,7 @@ func (p *OpenAIProvider) SupportsToolChoice() bool { return true }
 
 // Generate implements the public agentcore provider contract.
 func (p *OpenAIProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
+	ctx = ensureRetryReport(ctx)
 	model := req.Model
 	if model == "" {
 		model = p.model

@@ -13,6 +13,7 @@ import (
 	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
 )
 
+// Reverse check: treating context errors as transient would increase hits above one and fail these cases.
 func TestContextLengthErrorsArePermanentRejections(t *testing.T) {
 	req := &agentcoreapi.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "hi"}}}
 

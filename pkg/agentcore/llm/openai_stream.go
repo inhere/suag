@@ -30,6 +30,7 @@ func newStreamClient(responseHeader time.Duration) *http.Client {
 // by openStream; a stream that breaks while being read is requested again by
 // retryStream (after a StreamEventRetry when text was already emitted).
 func (p *OpenAIProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	ctx = ensureRetryReport(ctx)
 	model := req.Model
 	if model == "" {
 		model = p.model
