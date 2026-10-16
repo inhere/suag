@@ -583,6 +583,11 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	defer r.dropSteerInbox(model.ID, inbox)
 	contextBuilder.steers, contextBuilder.emit = inbox, req.Emit
 	ctx = withSteerInbox(ctx, inbox)
+	// The sink of this turn's task notices: finish puts them back into the task
+	// manager when the turn ends cancelled or failed (issue suga-o26e).
+	notices := &turnNotices{}
+	contextBuilder.notices = notices
+	ctx = withTurnNotices(ctx, notices)
 	runtimeHooks := r.turnHooks(usage, denials, req.Emit, result)
 	runtime := agentcore.New(agentcore.Config{
 		Provider:       r.cfg.Provider,

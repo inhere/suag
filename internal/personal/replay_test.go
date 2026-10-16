@@ -143,14 +143,18 @@ func TestReplayablePrefix(t *testing.T) {
 		assert.Eq(t, 0, dropped)
 	})
 
-	t.Run("a task notice replays with the turn", func(t *testing.T) {
+	t.Run("a task notice neither replays nor cuts", func(t *testing.T) {
+		// The notice goes back to the task manager instead (finish,
+		// returnTaskNotices): replaying it would show the task end twice (issue
+		// suga-o26e).
 		entries := []store.Entry{
 			msgEntry(t, 1, store.EntryUser, userMsg("做一件事")),
 			msgEntry(t, 2, store.EntryUser, notice),
 		}
-		kept, _, _, err := replayablePrefix(entries)
+		kept, _, dropped, err := replayablePrefix(entries)
 		assert.Require(t, assert.NoErr(t, err))
-		assert.Eq(t, []int64{1, 2}, keptSeqs(kept))
+		assert.Eq(t, []int64{1}, keptSeqs(kept))
+		assert.Eq(t, 0, dropped)
 	})
 
 	t.Run("a turn without tool calls replays its messages", func(t *testing.T) {

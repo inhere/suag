@@ -3,6 +3,7 @@ package personal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -16,10 +17,12 @@ import (
 	"github.com/inhere/suga/pkg/agentcore/tools"
 )
 
-// fakeNotices hands out its infos once they are set.
+// fakeNotices hands out its infos once they are set and keeps the ones put back
+// (ReturnNotices), in front of what is left - like tasks.Manager.
 type fakeNotices struct {
-	mu    sync.Mutex
-	infos []tasks.Info
+	mu       sync.Mutex
+	infos    []tasks.Info
+	returned []tasks.Info
 }
 
 func (f *fakeNotices) set(infos ...tasks.Info) { f.mu.Lock(); f.infos = infos; f.mu.Unlock() }
@@ -29,6 +32,27 @@ func (f *fakeNotices) TakeNotices(string) []tasks.Info {
 	out := f.infos
 	f.infos = nil
 	return out
+}
+
+func (f *fakeNotices) ReturnNotices(_ string, infos []tasks.Info) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.returned = append(f.returned, infos...)
+	f.infos = append(append([]tasks.Info(nil), infos...), f.infos...)
+}
+
+// pending reports what a later TakeNotices would hand out.
+func (f *fakeNotices) pending() []tasks.Info {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]tasks.Info(nil), f.infos...)
+}
+
+// putBack reports the notices ReturnNotices was called with.
+func (f *fakeNotices) putBack() []tasks.Info {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]tasks.Info(nil), f.returned...)
 }
 
 // scriptProvider answers a tool call first, then finals; it keeps every
@@ -84,6 +108,14 @@ func TestTaskNoticesReachTheModel(t *testing.T) {
 	assert.StrContains(t, second[notice].Content, "t1 exited (exit 1) after 1m0s")
 	assert.StrContains(t, second[notice].Content, "last lines:\n  --- FAIL: TestX\n  FAIL")
 
+	t.Run("a completed turn keeps its notices", func(t *testing.T) {
+		// The notice entry of a completed turn replays in place, so the turn hands
+		// nothing back and the next turn takes nothing from the manager.
+		assert.Empty(t, notices.putBack())
+		assert.Empty(t, notices.pending())
+		last := provider.requests[len(provider.requests)-1]
+		assert.Eq(t, 1, occurrences(last, "[background task notice]"))
+	})
 	t.Run("the next turn replays it in place", func(t *testing.T) {
 		provider.calls = 1 // straight to the final answer
 		_, err := runner.Run(context.Background(), RunRequest{SessionID: res.SessionID, Prompt: "again"})
@@ -172,5 +204,104 @@ func TestTaskNoticeText(t *testing.T) {
 		assert.StrContains(t, text, "[background task notice] Background task updates")
 		assert.StrContains(t, text, "- t2 (watch) reports: run 3 (files: a.go): exit 0 -> 1\n  last lines:\n  FAIL")
 		assert.StrContains(t, text, "- t1 exited (exit 0)")
+	})
+}
+
+// failProv answers the first model call with a tool call and fails every later
+// one: the turn ends failed after it took its task notices.
+type failProv struct{ calls int }
+
+func (p *failProv) Name() string { return "fail" }
+
+func (p *failProv) Generate(_ context.Context, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	p.calls++
+	if p.calls == 1 {
+		return workCall("c1")
+	}
+	return nil, errors.New("the model gave up")
+}
+
+// noticeInfo is the ended task the notice tests hand out.
+func noticeInfo() tasks.Info {
+	return tasks.Info{ID: "t1", Kind: "shell", Summary: "go test ./...", Status: tasks.Exited, ExitCode: 1,
+		Started: time.Now().Add(-time.Minute), Ended: time.Now(), Tail: []string{"--- FAIL: TestX", "FAIL"}}
+}
+
+// A turn that ends cancelled after it took a task notice puts it back into the
+// manager's queue: the interrupted turn's replay skips its notices
+// (replayablePrefix), so the next turn has to take the notice again - and only
+// the next turn delivers it to the model (issue suga-o26e).
+func TestTaskNoticesGoBackOnACancelledTurn(t *testing.T) {
+	repo := openObserveRepo(t)
+	const sid = "s-notice-cancel"
+	ended := noticeInfo()
+	notices := &fakeNotices{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// The turn is cancelled right before its second model request goes out, i.e.
+	// after that step's context build took the notice the tool left behind.
+	abort := &abortOnModel{at: 2, cancel: cancel}
+	runner := compactRunner(t, repo, &abortProv{}, workRegistry(func() { notices.set(ended) }), func(c *Config) {
+		c.Tasks = notices
+		c.Hooks = []agentcore.Hook{abort}
+	})
+	_, err := runner.NewSession(context.Background(), sid, "notice cancel")
+	assert.Require(t, assert.NoErr(t, err))
+
+	res, err := runner.Run(ctx, RunRequest{SessionID: sid, Prompt: "run the job"})
+	assert.Require(t, assert.True(t, errors.Is(err, context.Canceled)))
+	assert.Eq(t, RunCanceled, res.State)
+
+	t.Run("the notice is back in the manager's queue", func(t *testing.T) {
+		assert.Eq(t, []tasks.Info{ended}, notices.putBack())
+		assert.Eq(t, []tasks.Info{ended}, notices.pending())
+	})
+
+	t.Run("the next turn takes it and sees it once", func(t *testing.T) {
+		next := &scriptProvider{}
+		next.calls = 1 // straight to the final answer
+		nextRunner, err := New(Config{Repository: repo, Provider: next, Tools: tools.NewRegistry(), Tasks: notices})
+		assert.Require(t, assert.NoErr(t, err))
+		_, err = nextRunner.Run(context.Background(), RunRequest{SessionID: sid, Prompt: "go on"})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Require(t, assert.Len(t, next.requests, 1))
+		last := next.requests[0]
+		// Once: the replay of the cancelled turn drops its notice entry, the
+		// notice the manager handed out again is the only one.
+		assert.Eq(t, 1, occurrences(last, "[background task notice]"))
+		assert.Eq(t, 1, occurrences(last, "t1 exited (exit 1)"))
+		assert.Empty(t, notices.pending()) // taken, so not handed out twice
+	})
+}
+
+// A turn that ends failed puts its task notices back the same way.
+func TestTaskNoticesGoBackOnAFailedTurn(t *testing.T) {
+	repo := openObserveRepo(t)
+	const sid = "s-notice-fail"
+	ended := noticeInfo()
+	notices := &fakeNotices{}
+	provider := &failProv{}
+	runner := compactRunner(t, repo, provider, workRegistry(func() { notices.set(ended) }), func(c *Config) {
+		c.Tasks = notices
+	})
+	_, err := runner.NewSession(context.Background(), sid, "notice fail")
+	assert.Require(t, assert.NoErr(t, err))
+
+	res, err := runner.Run(context.Background(), RunRequest{SessionID: sid, Prompt: "run the job"})
+	assert.Require(t, assert.True(t, err != nil))
+	assert.Eq(t, RunFailed, res.State)
+	assert.Eq(t, []tasks.Info{ended}, notices.putBack())
+	assert.Eq(t, []tasks.Info{ended}, notices.pending())
+
+	t.Run("the next turn sees the notice once", func(t *testing.T) {
+		next := &scriptProvider{}
+		next.calls = 1
+		nextRunner, err := New(Config{Repository: repo, Provider: next, Tools: tools.NewRegistry(), Tasks: notices})
+		assert.Require(t, assert.NoErr(t, err))
+		_, err = nextRunner.Run(context.Background(), RunRequest{SessionID: sid, Prompt: "go on"})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Require(t, assert.Len(t, next.requests, 1))
+		assert.Eq(t, 1, occurrences(next.requests[0], "[background task notice]"))
+		assert.Empty(t, notices.pending())
 	})
 }

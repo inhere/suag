@@ -104,13 +104,14 @@ func toolCallSummary(c *agentcore.ToolCall) string {
 // (already rendered for the note) and how many entries the cut left behind.
 //
 // The kept part is the turn's messages up to the last complete tool exchange: a
-// user message (a steering entry excepted - it goes back to the caller, design
-// D5), an assistant message whose tool call has its result in this turn, and
-// the results themselves. An assistant message whose call has no result cuts
-// everything after it: the dropped tail refers to content the model can no
-// longer see, so keeping parts of it would make the context contradict itself;
-// the note reports the cut. Context updates, compaction records and the note
-// itself are not part of the prefix and never cut it.
+// user message (a steering entry or a task notice excepted - both go back to the
+// queue they came from and replaying them would duplicate it, design D5 and
+// issue suga-o26e), an assistant message whose tool call has its result in this
+// turn, and the results themselves. An assistant message whose call has no
+// result cuts everything after it: the dropped tail refers to content the model
+// can no longer see, so keeping parts of it would make the context contradict
+// itself; the note reports the cut. Context updates, compaction records and the
+// note itself are not part of the prefix and never cut it.
 func replayablePrefix(entries []store.Entry) (kept []store.Entry, calls []string, dropped int, err error) {
 	results := make(map[string]bool)
 	for _, e := range entries {
@@ -158,6 +159,12 @@ func replayablePrefix(entries []store.Entry) (kept []store.Entry, calls []string
 			}
 			if isSteerItem(m) {
 				continue // the caller gets the steer back; replaying it would duplicate it
+			}
+			if isTaskNoticeItem(m) {
+				// The task notices the turn took go back to the task manager
+				// (finish, returnTaskNotices): replaying one here would show the
+				// same task end twice (issue suga-o26e).
+				continue
 			}
 		case store.EntryAssistant:
 			var m agentcore.Message

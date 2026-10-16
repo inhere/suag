@@ -5,7 +5,9 @@
 // redacted) to a file the host names per session. A finished task leaves a
 // notice the host hands to the model before its next request (TakeNotices),
 // unless the model already saw the end through Wait or Kill; a running
-// function task may leave notices too (Reporter.Notify). The whole process
+// function task may leave notices too (Reporter.Notify). A host that took
+// notices for a turn the model never got them in hands them back with
+// ReturnNotices. The whole process
 // tree of every command task is killed by Kill, by the limits and by Close;
 // a function task's context is cancelled. Nothing outlives the manager.
 package tasks
@@ -559,6 +561,51 @@ func (m *Manager) TakeNotices(sessionID string) []Info {
 		out = append(out, info)
 	}
 	return out
+}
+
+// ReturnNotices puts notices back into the session's pending queue (see
+// TakeNotices): a host that took them for a turn which then did not deliver
+// them to the model - a turn that ends cancelled or failed, whose entries only
+// replay up to its last complete tool exchange - hands them back here instead of
+// losing them. They keep their original order and go before the notices that
+// arrived in the meantime, so the next TakeNotices returns each of them once
+// more. A notice of a task that left a newer notice meanwhile (a running task
+// reporting again, or ending) is dropped: the same "a newer notice replaces the
+// older one" rule Reporter.Notify applies.
+func (m *Manager) ReturnNotices(sessionID string, infos []Info) {
+	if len(infos) == 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.sessions[sessionID]
+	if s == nil {
+		return
+	}
+	back := make([]pending, 0, len(infos))
+	for _, info := range infos {
+		if _, ok := s.tasks[info.ID]; !ok {
+			continue // the session no longer knows the task
+		}
+		if info.Notice != "" && hasNoticeLocked(s, info.ID) {
+			continue // a newer notice of the task is queued already
+		}
+		back = append(back, pending{id: info.ID, text: info.Notice})
+	}
+	if len(back) == 0 {
+		return
+	}
+	s.notices = append(back, s.notices...)
+}
+
+// hasNoticeLocked reports whether the session has a pending notice of id.
+func hasNoticeLocked(s *session, id string) bool {
+	for _, p := range s.notices {
+		if p.id == id {
+			return true
+		}
+	}
+	return false
 }
 
 // HasNotices reports whether the session has pending notices.

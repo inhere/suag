@@ -277,6 +277,10 @@ type contextBuilder struct {
 	// the steers it delivers to the context through both.
 	steers *steerInbox
 	emit   EmitFunc
+	// notices is the sink of the task notices this turn takes (finish puts them
+	// back into the task manager when the turn does not complete, issue
+	// suga-o26e); nil outside a turn.
+	notices *turnNotices
 }
 
 func (r *Runner) newContextBuilder(sessionID, turnID string, hist historyView, prompt agentcore.PromptBuilder, usage *usageCollector, hookContext string) *contextBuilder {

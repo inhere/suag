@@ -14,9 +14,46 @@ import (
 )
 
 // TaskNotices hands over the session's ended background tasks the model has
-// not seen yet (tasks.Manager).
+// not seen yet (tasks.Manager) and takes them back when the turn that took them
+// did not deliver them.
 type TaskNotices interface {
 	TakeNotices(sessionID string) []tasks.Info
+	// ReturnNotices puts notices a turn took but did not deliver back into the
+	// pending queue (a cancelled or failed turn: its entries do not replay the
+	// notice, see replayablePrefix).
+	ReturnNotices(sessionID string, infos []tasks.Info)
+}
+
+// turnNotices is the task notices one turn took from the manager, kept so finish
+// can put them back when the turn ends cancelled or failed (issue suga-o26e).
+// The turn's own goroutine is the only user (BuildMessages and finish run in
+// it), like the steering inbox.
+type turnNotices struct {
+	taken []tasks.Info
+}
+
+// add records the notices a model request took.
+func (n *turnNotices) add(infos []tasks.Info) { n.taken = append(n.taken, infos...) }
+
+// returned empties the sink and returns the notices the next turn has to take
+// again.
+func (n *turnNotices) returned() []tasks.Info {
+	out := n.taken
+	n.taken = nil
+	return out
+}
+
+// turnNoticesKey carries the turn's notice sink to finish, like steerInboxKey
+// carries the steering inbox.
+type turnNoticesKey struct{}
+
+func withTurnNotices(ctx context.Context, n *turnNotices) context.Context {
+	return context.WithValue(ctx, turnNoticesKey{}, n)
+}
+
+func turnNoticesOf(ctx context.Context) *turnNotices {
+	n, _ := ctx.Value(turnNoticesKey{}).(*turnNotices)
+	return n
 }
 
 // metaTaskNotice marks the user message carrying background task notices.
@@ -68,7 +105,9 @@ type turnInjected struct {
 
 // takeTaskNotices moves the session's pending task notices into this turn
 // (before the coming model request) and stores them as a user entry, so
-// later turns replay them in place.
+// later turns replay them in place. The notices themselves are recorded in the
+// turn's sink: a turn that ends without completing the delivery (cancelled or
+// failed) hands them back to the manager (returnTaskNotices).
 func (b *contextBuilder) takeTaskNotices(ctx context.Context, state *agentcore.RunState) {
 	src := b.r.cfg.Tasks
 	if src == nil || state == nil {
@@ -77,6 +116,9 @@ func (b *contextBuilder) takeTaskNotices(ctx context.Context, state *agentcore.R
 	infos := src.TakeNotices(b.sessionID)
 	if len(infos) == 0 {
 		return
+	}
+	if n := b.notices; n != nil {
+		n.add(infos)
 	}
 	msg := TaskNoticeMessage(infos)
 	notice := turnInjected{at: len(state.Messages), msg: msg}
@@ -95,6 +137,35 @@ func (b *contextBuilder) takeTaskNotices(ctx context.Context, state *agentcore.R
 	b.injected = append(b.injected, notice)
 	// The turn's stored entries changed: the cached view of items() is stale.
 	b.turnItemsCache = nil
+}
+
+// isTaskNoticeItem reports whether m is a background task notice the runtime
+// injected into a running turn.
+func isTaskNoticeItem(m agentcore.Message) bool {
+	v, _ := m.Metadata[metaTaskNotice].(bool)
+	return v
+}
+
+// returnTaskNotices puts the notices this turn took back into the manager's
+// pending queue when the turn ends without delivering them to the model
+// (cancelled or failed): such a turn replays only up to its last complete tool
+// exchange and replayablePrefix skips its notices, so the TakeNotices that
+// handed them out would be the model's last chance to see the task end. A
+// completed turn keeps them - its entries, the notice among them, replay - and
+// the reason mirrors the one that returns the steers of the same turn.
+func (r *Runner) returnTaskNotices(ctx context.Context, sessionID, turnStatus string) {
+	if turnStatus == store.TurnCompleted {
+		return
+	}
+	sink := turnNoticesOf(ctx)
+	if sink == nil || r.cfg.Tasks == nil {
+		return
+	}
+	infos := sink.returned()
+	if len(infos) == 0 {
+		return
+	}
+	r.cfg.Tasks.ReturnNotices(sessionID, infos)
 }
 
 // RecordTaskEnd records a background task's end in the trace (a task event

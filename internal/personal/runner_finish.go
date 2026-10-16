@@ -126,6 +126,11 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	// steer would otherwise be dropped (design D5 of the interrupted-turn replay
 	// design).
 	result.ReturnedSteers = r.returnSteers(finishCtx, inbox, result, turnStatus, sink)
+	// The task notices this turn took go back to the manager for the same
+	// reason: an interrupted turn's replay skips them (replayablePrefix), so
+	// without this the model would never learn that the task ended (issue
+	// suga-o26e).
+	r.returnTaskNotices(finishCtx, result.SessionID, turnStatus)
 	now := time.Now().UTC()
 	var persistErr error
 	if err := r.cfg.Repository.UpdateTurn(finishCtx, store.Turn{ID: result.TurnID, Status: turnStatus, StopReason: stopReason, EndedAt: now}); err != nil {

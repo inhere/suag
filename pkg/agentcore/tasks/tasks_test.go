@@ -266,6 +266,59 @@ func TestNoEndNotice(t *testing.T) {
 	assert.Eq(t, "asks to continue", got[0].Notice)
 }
 
+// TestReturnNotices: notices a host took for a turn that never delivered them go
+// back into the pending queue, in their original order and before the notices
+// that arrived meanwhile, so the next TakeNotices hands each of them out once
+// more (issue suga-o26e).
+func TestReturnNotices(t *testing.T) {
+	m, ctx := newTestManager(t, Limits{}, nil)
+	// t1 leaves its end notice before the host takes it, t2 ends while it is out.
+	first, err := m.Start(ctx, Spec{Kind: "shell", Cmd: helper("lines", "TASKS_LINES=1")})
+	assert.Require(t, assert.NoErr(t, err))
+	waitFor(t, func() bool { return m.HasNotices("s1") })
+	taken := m.TakeNotices("s1")
+	assert.Require(t, assert.Len(t, taken, 1))
+	assert.Eq(t, first.ID, taken[0].ID)
+
+	second, err := m.Start(ctx, Spec{Kind: "shell", Cmd: helper("lines", "TASKS_LINES=1")})
+	assert.Require(t, assert.NoErr(t, err))
+	waitFor(t, func() bool { return m.HasNotices("s1") })
+
+	m.ReturnNotices("s1", taken)
+	again := m.TakeNotices("s1")
+	assert.Require(t, assert.Len(t, again, 2))
+	// The returned notice comes first, the one that arrived meanwhile after it.
+	assert.Eq(t, []string{first.ID, second.ID}, []string{again[0].ID, again[1].ID})
+	assert.Empty(t, m.TakeNotices("s1")) // each of them once
+
+	t.Run("a newer notice of the same task wins", func(t *testing.T) {
+		var notified atomic.Int32
+		m2, ctx2 := newTestManager(t, Limits{}, func(Info) { notified.Add(1) })
+		step := make(chan struct{})
+		_, err := m2.Start(ctx2, Spec{Kind: "watch", Run: func(_ context.Context, _ io.Writer, r Reporter) (int, error) {
+			r.Notify("run 1: exit 0")
+			<-step
+			r.Notify("run 2: exit 1")
+			return 0, nil
+		}})
+		assert.Require(t, assert.NoErr(t, err))
+		waitFor(t, func() bool { return notified.Load() == 1 })
+		out := m2.TakeNotices("s1")
+		assert.Require(t, assert.Len(t, out, 1))
+		assert.Eq(t, "run 1: exit 0", out[0].Notice)
+
+		// The task reports again and ends while its first notice is out: both the
+		// newer report and the end notice are queued (each OnNotice call).
+		close(step)
+		waitFor(t, func() bool { return notified.Load() == 3 })
+		m2.ReturnNotices("s1", out)
+		back := m2.TakeNotices("s1")
+		assert.Require(t, assert.Len(t, back, 2))
+		assert.Eq(t, "run 2: exit 1", back[0].Notice)
+		assert.Eq(t, "", back[1].Notice) // the end of the same task
+	})
+}
+
 func TestWaitOnFunctionTask(t *testing.T) {
 	m, ctx := newTestManager(t, Limits{}, nil)
 	step := make(chan struct{})
