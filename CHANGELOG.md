@@ -8,6 +8,8 @@
 
 - run/chat 新增回合或会话级 token、成本预算的配置读取与 `--budget-tokens`、`--budget-cost-usd`、`--budget-scope` flags，支持环境变量覆盖。
 
+- 预算回合在达到 token 或成本上限后通过现有 wrap-up 机制收尾，并记录可辨识的 budget 事件、用量快照与无价表/关闭估算警告。
+
 - 自动识别 idev-std 发行目录与工作空间的 `tmp/idev-std` 加载产物目录为只读根，可通过 `tools.standards_roots` 关闭；支持 `IDEV_STD_RELEASES_ROOT` 与兼容的 `INHERE_DEV_STANDARDS_ROOT`。
 - chat 增加可脱敏持久化的本地输入历史（Up/Down、Ctrl+R 反查）与 `:` 命令/目录 Tab 补全，可通过 `chat.history` 和 `chat.history_size` 配置。
 - chat 新增 `:model` 查看并从下一回合切换已配置模型，显示 thinking、上下文窗口与输出上限；切换保留 fallback、持久化到会话并写入 `model_switch` trace 事件，续接时沿用（显式 `--model` 优先）。

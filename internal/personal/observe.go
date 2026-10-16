@@ -172,7 +172,7 @@ func (r *recorder) attemptObserver(defName, defModel string) llm.AttemptObserver
 		// compaction calls and failed attempts that reported usage.
 		priced := a.Usage
 		priced.CostUSD = cost
-		runUsageFrom(ctx).addModel(ctx, a.Usage, priced, a.Err != nil)
+		runUsageFrom(ctx).addModel(ctx, a.Usage, priced, a.Err != nil, a.Estimated)
 	}
 }
 

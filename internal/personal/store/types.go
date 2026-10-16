@@ -97,6 +97,9 @@ const (
 	// cancelled and timeout. It is how a trace shows what was run outside the
 	// model's turn; chat writes it.
 	EventLocalCommand = "local_command"
+	// EventBudget records a budget threshold or accounting warning. Its attrs
+	// carry scope, limits, usage, remaining amounts and the reason.
+	EventBudget = "budget"
 )
 
 // Session is one conversation. Meta holds free-form keys (rules hash, append

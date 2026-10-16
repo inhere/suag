@@ -187,7 +187,9 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 			persistErr = errors.Join(persistErr, err)
 		}
 	}
-	final := &UsageUpdate{Run: result.RunUsage, Session: result.SessionUsage}
+	finalUpdate := runUsageFrom(ctx).usageUpdate()
+	finalUpdate.Run, finalUpdate.Session = result.RunUsage, result.SessionUsage
+	final := &finalUpdate
 	if err := emit(finishCtx, sink, Event{Kind: "run_finished", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Status: result.Status, State: result.State, Text: result.Output, Usage: final}); err != nil {
 		persistErr = errors.Join(persistErr, err)
 	}

@@ -534,6 +534,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		TaintOnSpill: taintOnSpill,
 		Visibility:   vis,
 		Price:        priceLookup(settings),
+		Budget:       personal.BudgetSettings{Tokens: budget.Tokens, CostUSD: budget.CostUSD, Scope: budget.Scope, Estimate: budget.Estimate, EstimateFactor: budget.EstimateFactor, NoticeRatio: budget.NoticeRatio},
 		// Tool outputs above tools.max_output_bytes go to
 		// <SUGA_HOME>/sessions/<id>/outputs/ and the session keeps a ref.
 		InlineOutputBytes: inlineOutputBytes(),
