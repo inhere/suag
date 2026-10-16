@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 中文可用的 session_search（混合匹配、cursor 分页、kind/时间过滤与 cwd 下推）设计
 
-> 状态：Draft 0.2（按独立评审 r1 修订，待用户审阅）
+> 状态：Draft 0.3（按确认评审 r2 修订，待用户审阅）
 
 ## 修订记录
 
@@ -9,6 +9,7 @@
 |---|---|---|---|
 | 0.1 | 2026-10-16 | suga（gofer job） | 初稿（含 FTS5 实测） |
 | 0.2 | 2026-10-16 | suga（gofer job） | 按评审 r1 关闭 S-C1/S-M1–S-M6；S2 改为后续独立设计前提，不纳入本期 |
+| 0.3 | 2026-10-16 | suga（gofer job） | 按确认评审 r2 将正文统一为进程内快照游标，关闭 S2 旧表述、500 条上限/TTL、指纹与自身结果污染等一致性项 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -47,7 +48,7 @@
 - **term（查询词）**：`session_search` 的 `query` 按空白切分后的一个词；现状语义是"每个词都必须出现"（AND）且**按字面匹配**（不是 FTS5 语法）。
 - **rune / 字符长度**：词里 Unicode 码点的个数。trigram 的可用下限是 3（`internal/personal/store/fts.go:69-70` `minMatchRunes = 3`）。
 - **trigram 索引**：FTS5 `tokenize='trigram'`，把文本切成连续 3 rune 的片；支持 ≥3 rune 的**子串**匹配。
-- **bigram 辅助索引**：应用层把文本切成连续 2 rune 滑窗、以空格连接后交给 FTS5 `tokenize='unicode61'` 索引；查询侧同样切窗、按 AND 组合。
+- **bigram 方向**：后续可评估的 CJK 辅助索引；不属于本 Draft 的实现方案。
 - **MATCH / LIKE 路径**：现状两种检索实现（索引匹配 / 子串全表扫描）；本设计按词分流，两者可共存于一条 SQL。
 - **cursor（游标）**：进程内稳定快照的位置，编码 `snapshot_id + offset`，不把 bm25/时间作为可漂移排序键。
 - **scope**：`current`（当前会话）/ `workspace`（当前目录及其子树）/ `all`。
@@ -58,8 +59,8 @@
 
 范围：
 
-- `store/fts.go`：查询词分流（trigram / bigram / LIKE）、cursor 分页、kind 与时间过滤、cwd 条件与"当前会话"条件的 SQL 下推、索引就绪检测。
-- `store`：新增 bigram 索引的迁移与回填（S2，见方案与待确认 Q1）、删除/GC 路径覆盖两张索引表。
+- `store/fts.go`：查询词分流（trigram / LIKE）、进程内快照分页、kind 与时间过滤、cwd 条件与“当前会话”条件的 SQL 下推，以及排除检索工具自身结果。
+- 后续方向：记录 bigram 索引的准入前提，但本 Draft 不包含迁移、回填或第二张索引表。
 - `personal/ledger.go`：`workspaceSessions` 改为下推（不再读全部 cwd）；`LedgerQuery` 传递新参数。
 - `pkg/agentcore/tools/native/ledger.go`：`session_search` 的 schema、描述、结果文本（`next_cursor` 行）。
 - 可选：`internal/cli/sessions.go` 的 `--kind` 与 cursor 透出（CLI 现状只显示首个 snippet，`internal/cli/sessions.go:96-110`）。
@@ -118,7 +119,7 @@
 
 ```text
 go run ./tmp/ftsprobe    # 检索行为矩阵、语法/转义、2 万与 10 万行规模基准、体积与建索引耗时、查询计划
-go run ./tmp/ftsprobe2   # 短短语在复合查询里被丢弃、bm25 可否进 WHERE、子查询物化行值游标、FTS 表上的 LIKE 优化
+go run ./tmp/ftsprobe2   # 短短语在复合查询里的行为与 FTS/LIKE 组合实验
 go run ./tmp/ftsprobe3   # MATCH+LIKE 同句并存；两个 FTS 表同时 MATCH 的 JOIN/子查询/IN 形态
 ```
 
@@ -196,7 +197,7 @@ n=100000（约 9.6 MB 文本）
 6）**分页与组合的可行性（ftsprobe2/3）**
 
 ```text
--- bm25 可以出现在 WHERE；把 score 物化进子查询后行值游标可用
+-- bm25 与 MATCH/LIKE 组合实验结果（本 Draft 不采用分数游标）
   select count(*) from fts where fts match '中文检索' and bm25(fts) < -0.5  -> ok
   select rowid, score from (select rowid, bm25(fts) as score from fts where fts match '中文检索')
     where (score, rowid) > (-1.0, 3) order by score, rowid limit 5          -> ok [4(-0.48) 1(-0.23)]
@@ -218,27 +219,29 @@ n=100000（约 9.6 MB 文本）
 ### C. 从实测得到的结论
 
 1. `minMatchRunes = 3` 不是保守估计，而是**硬下限**：trigram 对 1–2 rune 的词一律无命中。
+
+S2 的 bigram 仅作为后续方向记录，不属于本 Draft 的方案、测试、迁移或运维承诺。
 2. 现状"整条退化 LIKE"避免了更糟的行为：若把短短语直接塞进 `MATCH`，复合查询里的短词约束会被**静默丢弃**（召回放宽、结果看起来"有结果"但条件没生效）。任何改造都必须保证"进 MATCH 的每个短语都 ≥3 rune"。
-3. 换 `unicode61` 不可行；`bigram` 辅助列是唯一能让 2 字中文词进索引的实测可行方案（代价：索引体积约 ×2，回填需 Go 侧参与）。
-4. 分页、kind/时间过滤、MATCH+LIKE 并存、两个 FTS 表同时 MATCH——四种机制在 SQLite 3.53.4 + 本驱动上都验证可行，设计不需要另找替代技术路线。
+3. 换 tokenizer 不可行；本 Draft 不新增辅助索引，2 字中文词走 LIKE。未来若要做 CJK 辅助索引，须另案验证边界、体积与回填一致性。
+4. 分页、kind/时间过滤、MATCH+LIKE 并存与 cwd 下推均已在 SQLite 3.53.4 + 本驱动上验证可行；本 Draft 不把双索引实验转为实现承诺。
 
 ## 总体方案
 
-分两段，S1 必做、S2 由用户按体积/复杂度取舍（Q1）：
+本 Draft 只批准 S1：按词分流、进程内快照分页、过滤与 cwd 下推；S2 只记录后续设计必须满足的前提。
 
-**S1（零迁移、不动索引）：按词分流 + 分页 + 过滤 + cwd 下推**
+**S1（零迁移、不动索引）：按词分流 + 快照分页 + 过滤 + cwd 下推**
 
 1. **按词分流**（修掉"整条退化"）：
    - `runeLen(term) >= 3` → 进 `entries_fts MATCH`（`ftsMatchExpr`，多个词仍用空格隐式 AND，全部 ≥3 rune 才成立）。
-   - `runeLen(term) == 2` → S1 下作为 `f.text LIKE '%词%' ESCAPE '\'` 过滤条件；S2 就绪后进 bigram 索引。
+   - `runeLen(term) == 2` → 作为 `f.text LIKE '%词%' ESCAPE '\'` 过滤条件；未来 S2 另案评估。
    - `runeLen(term) == 1` → 一律 `f.text LIKE '%词%'`（1 字中文的召回意义有限，工具描述里建议模型用 2 字以上）。
    - 两类条件用 `AND` 组合在同一条 SQL 里（实测形态 A）；**只有当没有任何 ≥3 rune 的词时**才完全没有 `MATCH`（此时退回"纯 LIKE + 时间序"，与现状的纯短词行为一致，但混合查询不再退化）。
    - 排序：有 `MATCH` 时 `ORDER BY bm25(entries_fts), f.session_id, f.seq`（与现状一致，LIKE 词不参与打分但继续作为过滤）；没有 `MATCH` 时 `ORDER BY e.created_at DESC, f.session_id, f.seq DESC`（与现状一致）。
    - `snippet`：有 `MATCH` 用 `snippet(entries_fts, 3, '', '', '…', 64)`；否则用 `likeSnippet(text, terms[0])` 的行为保持不变（多词时仍取第一个词做窗口，现状如此）。
 2. **cursor 分页**：`EntrySearch` 增 `Cursor string`，返回 `([]EntryHit, nextCursor string, err error)`（或 `SearchResult` 结构）。
-   - 排序键物化：MATCH 路径把 `bm25(entries_fts) AS score` 放进子查询再按 `(score, session_id, seq)` 行值比较（实测 6）；LIKE 路径按 `(e.created_at, f.session_id, f.seq)` 行值比较（降序用 `<`）。
-   - 游标编码（**纯文本、非 base64**，避免被 `redact.Clean` 误伤——`pkg/agentcore/tools/native/ledger.go:122` 会把整段结果过脱敏）：`v1.<路径>.<查询哈希>.<session_id>.<seq>[.<score>]`（score 用 `strconv.FormatFloat(score, 'g', -1, 64)`，不做 8 位小数舍入），例如 `v1.m.s_2610141itpnahmur8001o.42.-1.23456789` / `v1.t.s_…​.42.2026-10-16T08:31:55.123456789Z`；`fs` = FTS 路径、`t` = 时间路径。查询指纹放进游标前缀以减少误用风险：`v1.<路径>.<查询哈希8位>.<…>`。
-   - 用法契约：`limit` 保持默认 20 / 上限 100；查询多取一条，仅在确有下一条时返回 `next_cursor`；游标不匹配当前查询/scope/kind 时**忽略并从头开始**（结果里加一行说明），而不是报错——模型容易复用旧游标。
+   - 首次查询在当前进程生成完整有序的 `(session_id, seq)` 快照，最多缓存 500 条结果；游标只编码 `v1.<snapshot_id>.<offset>`，后续页按快照偏移取回。快照按查询指纹缓存，TTL 建议 10 分钟：足以完成连续工具调用，又不会长期保留会话结果；内存压力下可提前淘汰。
+   - 超过 500 条时不静默截断：返回前 500 条，并在结果中明确“结果超过 500 条，请缩小 query、时间窗、kind 或 scope”；仍可在这 500 条内用 `next_cursor` 翻页。快照缺失、进程重启或 TTL 到期时忽略游标，从头查询并说明。
+   - 查询指纹包含解析后的绝对 since/until（按 `timeLayout`）、scope、current session、规范化 workspace、kind 集合与 IncludeAgents；相对时间在首查时固定，不因翻页漂移。
    - 工具层：`session_search` 增可选参数 `cursor`，结果末尾追加一行 `next_cursor: <…>`（仅有下一页时）。
 3. **kind / 时间过滤**：`EntrySearch` 增 `Kinds []string`、`Since, Until time.Time`；SQL 用 `f.role IN (…)` 与 `e.created_at >= ? / < ?`（半开区间）。工具参数 `kind`（单值字符串，取值同上）、`since`/`until`（接受 `7d`/`36h`（相对现在）或 `2026-10-01`、RFC3339（绝对））。
 4. **cwd / 当前会话条件下推**：`EntrySearch` 增 `WorkspaceDir string`、`CurrentSessionID string`、`FoldCase bool`（或一个 `Workspace *WorkspaceFilter`）；`ledger.workspaceSessions` 与 `SessionCwds` 调用从检索路径移除。SQL 条件：
@@ -251,15 +254,11 @@ AND ( f.session_id = :current
 ```
 
    其中 `dir` 先按 `filepath.Clean` 规范化；根目录不再机械拼接分隔符，SQL 参数由规范化路径与边界谓词生成；`FoldCase`（Windows）时把 `ss.cwd` 与两个参数都包 `lower()`。语义与 `pathWithin` 对齐的点：按分隔符边界（`/repo` 不匹配 `/repo2`）、排除空 cwd（与 `SessionCwds` 的 `cwd <> ''` 一致）、**当前会话始终包含**（即使它没有 cwd）。已知差异（写进文档与测试）：Windows 上 `lower()` 只折叠 ASCII，路径里含大小写不同的**非 ASCII** 字符时不如 Go 的 `strings.ToLower` 精确（现状 `ledger.go:173-175`）；如需严格等价，见决策 D7 的备选（SQL 粗筛 + Go 精判候选）。
-5. **索引就绪检测**（为 S2 预留，S1 也用它做容错）：`Store` 暴露"当前库的 bigram 索引是否可用"，查询据此决定 2 字词走索引还是 LIKE；未知/未就绪一律走 LIKE，**绝不因为索引问题让检索失败**。
 
-**S2（后续独立设计方向，不属于本 Draft 0.2 的实施承诺）：让 2 字中文词也进索引**
 
-1. 后续设计必须先解决迁移边界、并发认领与就绪状态；以下仅记录方向，不是本稿批准的方案。新迁移 `internal/personal/store/migrations/20261016-XXXXXX-add-ledger-bigram-index.sql`：建 `entries_fts_bi(session_id UNINDEXED, seq UNINDEXED, grams, tokenize='unicode61')` + 扩展 session 删除触发器（同时清两张表）+ 新建 `index_state(name TEXT PRIMARY KEY, version INTEGER, updated_at TEXT)`（或用既有 `memory_meta` 存一个键）记录"bigram 索引版本/就绪"。
-2. **回填在 Go 侧**：bigram 切分无法在 SQL 里与 Go 逻辑保持一致（现有 `TestFTSExpressionsMatchMigration` 的"两份表达式必须一致"正是为了防这种漂移），所以新增 `store/fts_bigram.go`：`bigramText(s)`（与查询侧同一个函数）、`backfillBigramIndex(ctx, batch)`（分批事务、幂等、可中断、记进度），由 `Open` 之后的后台步骤或 `suga gc --rebuild-index` 触发。
-3. **写路径**：`AppendEntries` 在同一事务内多插一行索引（需要先取出该 entry 的 text：`SELECT text FROM (…ftsSourceSelect…) WHERE session_id=? AND seq=?`，或直接复用 `ftsTextExpr` 后再由 Go 切分）。
-4. **查询路径**：`runeLen == 2` 的词进 `entries_fts_bi MATCH`，与 trigram 的 `MATCH` 用 `JOIN`（按 `session_id/seq`）或 `IN`/`EXISTS` 子查询组合（实测 6 三种形态都可行）；排序仍用 `bm25(entries_fts)`（有 trigram 词时），只有 bigram 词时用 `bm25(entries_fts_bi)`。
-5. **删除/GC/迁移**：触发器覆盖两张表；`suga gc` 的会话删除走同一个触发器（`fts.go` 头注释提到的两处写入一致性约束扩展到三处，测试同步扩）。
+**S2（后续独立设计方向，不属于本 Draft 的实施承诺）**
+
+未来若要让 2 字 CJK 词进入索引，必须另起设计并先在真实 `sessions.db` 副本上量化体积、写放大与查询收益。前提包括：迁移事务固化每个 session 的回填边界；用 `BEGIN IMMEDIATE` 认领待回填任务，保证多进程不重复；就绪状态只由待回填任务为空决定；写路径与旧二进制都不能造成静默漏索引，必要时用版本闸门强制退回 LIKE；bigram 只包含 CJK 连续段、`remove_diacritics=0`，并与既有 FTS 行通过稳定 rowid 对齐。S2 不属于本期范围，也不新增配置键。
 
 ## 架构
 
@@ -275,15 +274,14 @@ AND ( f.session_id = :current
         │
         ▼
  Store.SearchEntries (internal/personal/store/fts.go)
-   ├─ 词分流:  ≥3 rune → MATCH(trigram)      [全部词]  ┐
-   │          2 rune → S1: LIKE 过滤 / S2: MATCH(bigram) ├─ 同一 SQL，AND 组合
-   │          1 rune → LIKE 过滤                          ┘
+   ├─ 词分流:  ≥3 rune → MATCH(trigram)
+   │          1–2 rune → LIKE 过滤（同一 SQL，AND 组合）
    ├─ 过滤: role IN (kind…) · created_at 区间 · cwd/当前会话下推 · 非子代理会话
    ├─ 排序: bm25(有 trigram 词) / created_at DESC(纯短词)
-   └─ cursor: (score|created_at, session_id, seq) 行值比较 LIMIT n+? → next_cursor
+   └─ cursor: snapshot_id + offset；按快照位置取回 LIMIT n+1 → next_cursor
         │
         ▼
- renderLedgerHits: "<ref>  <role>  <snippet>" … "next_cursor: v1.f.<hash>.<sid>.<seq>…"
+ renderLedgerHits: "<ref>  <role>  <snippet>" … "next_cursor: v1.<snapshot_id>.<offset>"
         │  redact.Clean（游标为纯文本短 token，脱敏不改写）
         ▼
  模型 → recall(ref) 读窗口（offset/limit 语义不变）
@@ -300,21 +298,20 @@ S1：query = "中文 token"   → 词 = [中文(2), token(5)]
   结果: 只含同时满足两者的行 —— 修掉"短词约束被静默丢弃"（实测 6 里 trigram 会返回只含 token 的行）
 
 S1：query = "缓存"        → 唯一词 2 rune → 无 MATCH：LIKE + created_at DESC（与现状同，但只在真的没有长词时）
-S2：query = "缓存"        → MATCH '"缓存"' on entries_fts_bi（bm25 可用，抽样数据 6.7ms@10 万行）
-S1/S2：query = "检索"（2 rune）→ 同上；query = "数据库"（3 rune）→ trigram MATCH（现状）
-S1/S2：query = "中"（1 rune）→ LIKE（S2 也切不出 bigram）
+未来 S2：若另案批准，再评估 bigram 索引；本 Draft 不执行
+query = "检索"（2 rune）→ LIKE；query = "数据库"（3 rune）→ trigram MATCH（现状）
+query = "中"（1 rune）→ LIKE
 ```
 
 ### 2. 翻页
 
 ```text
-第一次: limit=20 → 20 条 + next_cursor: v1.f.a1b2c3d4.s_xxx.137.-1.23456789
-模型:   session_search(query, cursor="v1.f.a1b2c3d4.s_xxx.137.-1.23456789", limit=20)
-SQL:    SELECT * FROM (SELECT …, bm25(entries_fts) AS score FROM entries_fts … WHERE … MATCH …)
-        WHERE (score, session_id, seq) > (-1.23456789, 's_xxx', 137) ORDER BY score, session_id, seq LIMIT 20
-（纯短词路径用 (created_at, session_id, seq) < (…, …, …)，因为排序是时间倒序）
+第一次: limit=20 → 生成最多 500 条的有序快照，返回 20 条 + next_cursor: v1.<snapshot_id>.20
+模型:   session_search(query, cursor="v1.<snapshot_id>.20", limit=20)
+SQL:    按快照中的 `(session_id, seq)` 批量取回下一段；不重新计算 bm25 排序
 到最后一页: 不再返回 next_cursor 行
-游标与当前 query/scope/kind 不匹配: 忽略游标、从头开始，并在结果首行说明"游标已失效，已从头开始"
+超过 500 条: 返回前 500 条并提示结果已截断，请缩小查询；不静默假装结果完整
+快照缺失、重启或 TTL 到期: 忽略游标、从头开始，并在结果首行说明"游标已失效，已从头开始"
 ```
 
 ### 3. workspace scope 下推
@@ -328,55 +325,54 @@ SQL:    SELECT * FROM (SELECT …, bm25(entries_fts) AS score FROM entries_fts �
 边界用例（等价性测试固定）: /repo vs /repo2 vs /repo/sub vs /repo-旧 vs 空 cwd vs 大小写
 ```
 
-### 4. S2 索引未就绪（回填中/中断/失败）
+### 4. 快照失效与大结果集
 
 ```text
-启动: 检查 index_state.bigram_version 与 entries_fts_bi 行数
-未就绪 → SearchEntries 的 2 字词继续走 LIKE（结果正确、只是慢），并在事件/日志里记一次"bigram 索引未就绪"
-回填: 分批（默认 500 行/事务）→ 中途 Ctrl-C/崩溃无需特殊处理（幂等，靠 (session_id,seq) 去重或"已完成 seq"水位）
-完成: 写 index_state 并 log；此后 2 字词自动走索引
+首查：按完整查询指纹生成并缓存有序结果，最多 500 条，TTL 10 分钟
+翻页：cursor 只携带 snapshot_id + offset；命中缓存则按偏移取回
+缓存缺失/重启/TTL 到期：忽略 cursor，从头查询并加说明行
+超过 500 条：返回前 500 条并明确提示缩小查询，不把截断结果称为完整结果
 ```
 
 ## 迁移与兼容
 
 - **S1 无迁移**：不加表、不加列、不改索引；`EntrySearch` 新字段都是零值可用（旧调用行为不变）。
-- **S2 一个迁移**（UP 段）：建虚表 + 触发器 + `index_state`；**不重建 `entries_fts`**（避免动既有索引与回填路径）。DOWN 段照习惯写上（当前机制不执行，`store.go:176-189`）。
+- **S2 不在本 Draft 的迁移范围内**；未来设计必须另行定义迁移与回填边界。
 - 回填耗时（实测外推）：纯文本插入 + 建 trigram 索引 10 万行（9.6 MB 文本）用 4.4s、建 bigram 索引 4.9s，两者同量级 → 回填成本 ≈ 再建一遍索引。真实库体积先测（见测试与基准）：计划里必须包含"用真实 `sessions.db` 副本测回填耗时与体积增长"。
 - 回滚：
   - S1：`git revert` 该提交即可（无数据变化）。
-  - S2：开关 `search.bigram: off`（新配置键，默认 on）立即退回 LIKE 路径；彻底回滚 = `DROP TABLE entries_fts_bi; DELETE FROM index_state WHERE name='bigram'`（迁移 DOWN 段的 SQL 可直接执行）。
 - 兼容：`session_search` 的新参数都是可选；结果文本只在还有下一页时多一行 `next_cursor:`，模型与既有测试的断言（含 `ledger_test.go:386-388`）不受影响。CLI `suga sessions --query` 走同一个 store 接口，行为随其存储层而变化（可选地暴露 `--kind`）。
 
 ## 安全、数据、运维与回滚
 
-- 安全：检索是只读工具（`ReadOnly: true`，`internal/personal/store/... ` 侧无写）；新增 SQL 全部参数化（`Kinds` 用占位符、时间与路径用绑定参数），不留拼接口子；`Cursor` 是**不可信输入**，解析失败一律忽略（`v1.` 前缀 + 固定字段数 + 白名单字符），不参与 SQL 拼接（只作为绑定参数做行值比较）。
-- 数据：S2 只新增派生索引（可从 `entries` 重建），不修改 `entries`/`sessions`；`index_state` 可删；`entries_fts_bi` 与 `entries_fts` 一样在 `suga gc` 的会话删除中被触发器清理。
-- 运维：`search.bigram`（S2）为回退开关；回填可中断、可重跑；`suga gc` 可加 `--rebuild-index`（可选）触发回填。
+- 安全：检索是只读工具（`ReadOnly: true`，`internal/personal/store` 仅执行参数化的只读查询）；新增 SQL 全部参数化（`Kinds` 用占位符、时间与路径用绑定参数），不留拼接口子；`Cursor` 是**不可信输入**，解析失败一律忽略（`v1.` 前缀 + 固定字段数 + 白名单字符），不参与 SQL 拼接，只用于查找进程内快照。
+- 数据：S1 不新增派生索引，不修改 `entries`/`sessions`；进程内快照不落盘。未来 S2 的派生索引与清理策略必须另案定义。
+- 运维：本 Draft 无后台回填与新索引；S1 的快照只存在进程内，TTL 10 分钟且可因内存压力淘汰。
 - 隐私：结果仍整体过 `redact.Clean`（`pkg/agentcore/tools/native/ledger.go:122`）；游标设计为纯文本短 token，测试断言"游标过 `redact.Clean` 后不变"。
-- 风险：S2 的索引体积翻倍（个人工具本地库，需在计划里用真实库量化并写进 README/设计）；Windows 非 ASCII 路径大小写折叠的已知差异（D7）；`snippet()` 的 64-token 窗口在 trigram 下约等于 64 rune（`fts.go:127-128` 注释），改造后不要改变它。
+- 风险：未来 S2 的索引体积与写放大必须在真实库上量化；Windows 非 ASCII 路径大小写折叠的已知差异（D7）；`snippet()` 的 64-token 窗口在 trigram 下约等于 64 rune（`fts.go:127-128` 注释），改造后不要改变它。
 
 ## 决策
 
-- **D1 不换 tokenizer**：`unicode61` 对连续 CJK 只能整段匹配（实测 2），直接排除；`trigram` 继续承担 ≥3 rune 的词。
+- **D1 不换 tokenizer**：`unicode61` 对连续 CJK 只能整段匹配，直接排除；`trigram` 继续承担 ≥3 rune 的词，短词走 LIKE。
 - **D2 短词不再让整条查询退化**（S1）：按词分流，长词走 `MATCH`、短词作为 `LIKE` 过滤条件，同一条 SQL 用 `AND` 组合。理由：修掉 issue 指出的"整条退化"，且零迁移。备选：保持现状只做分页/过滤——把最常见的 2 字中文查询留在无排序的全表扫描上，弃。
 - **D3 短短语绝不进 `MATCH`**：实测显示短短语会让约束被静默丢弃（隐式 AND）或整体空（显式 AND），两种都不可接受。加两条守卫测试：断言"进 MATCH 的词全部 ≥3 rune"、断言"混合查询不会返回只满足长词的行"。
-- **D4 S2 用 bigram 辅助列（而不是缩短 trigram 或加 unicode61 列）**：实测召回与 LIKE 完全一致、可用 bm25、SQL 形态可行（三种 JOIN/子查询写法都通过）。代价是索引体积 ×2 与 Go 侧回填，因此**放进待确认 Q1**由用户决定是否本期做。
-- **D5 游标用纯文本编码**（`v1.<路径>.<查询哈希>.<session_id>.<seq>[.<score|时间>]`），不用 base64/JSON：`redact.Clean` 会扫结果文本，长随机串有被当成凭据打码的风险（`ledger.go:122`）；纯文本短 token 兼顾可读、可测、可忽略。备选：base64url(JSON)——实现更"标准"但引入脱敏风险，弃。
-- **D6 排序键物化后再做行值游标**：`bm25()` 放进子查询的 SELECT 列（实测 6），不依赖"bm25 能否出现在 WHERE"的行为；LIKE 路径用 `(created_at, session_id, seq)`。
+- **D4 S2 不属于本 Draft**：未来若立项，必须先按后续方向中的边界、并发、稳定 rowid 与版本闸门条件另起设计。
+- **D5 游标用纯文本编码**（`v1.<snapshot_id>.<offset>`），不用 base64/JSON；它短、可读且不会把排序键暴露为可漂移状态。解析失败或快照不存在时忽略并从头查询。
+- **D6 进程内快照分页**：首次查询固定有序 `(session_id, seq)` 列表，游标只保存快照 id 与偏移；不把 bm25 或时间作为跨页游标键。
 - **D7 cwd 条件下推，Windows 用 `lower()`（ASCII 折叠）**：与现状 `strings.ToLower` 的差异仅限"路径含大小写不同的非 ASCII 字符"，接受并在测试里固定。备选：SQL 粗筛 + Go 对候选会话精判（语义完全等价，但要重新引入"先取 id 列表"的步骤，收益是极少数路径的精度），列为 Q3。
-- **D8 索引就绪时绝不让检索失败**：未就绪 → 退化 LIKE（慢但正确），日志/事件记一次。
+- **D8 S1 不依赖新增索引**：所有 1–2 rune 词稳定走 LIKE，未来辅助索引另案设计，不能改变本 Draft 的正确性语义。
 - **D9 `recall` 不引入游标**：它已有 `offset`/`limit`（`maxRecallOffset = 100000`，`ledger.go:34-35、255-290`），模型已经会用；只给 `session_search` 加游标。备选：统一成游标——收益低、提示词与测试面变大，弃。
 - **D10 kind 用逗号分隔的多值字符串**：合法值为 `user|assistant|tool|compaction`，schema 不使用 enum，服务端校验并拒绝空值/未知值。备选 JSON 数组弃用。
 - **D11 时间参数接受相对与绝对两种写法**：`7d`/`36h` 与 `2026-10-01`/RFC3339；`since` 含、`until` 不含（半开），并在描述里写明。
-- **D12 不重建 `entries_fts`**：迁移只新增 bigram 表（每个索引表保留自己的 rowid，按 `session_id/seq` 回连 entry——与迁移注释的既有约定一致，因为 `gc` 的 VACUUM 会重编号 `entries`）。
-- **D13 保留 `CWDPrefix` 字段**：它现在是"裸字符串前缀、大小写敏感"（`fts.go:80-82、151-155`），CLI/测试在用；新字段 `WorkspaceDir/CurrentSessionID/FoldCase` 与它并存，本次不改它的语义。`SessionCwds` 在 ledger 路径停用；若确认无其它调用者则由计划决定是否删除（`ledger.go:111` 是唯一调用者）。
+- **D12 本 Draft 不新增索引表**：S1 不改 schema；未来 S2 必须另行确定稳定 rowid 与清理策略。
+- **D13 保留 `CWDPrefix` 字段**：它现在是“裸字符串前缀、大小写敏感”（`fts.go:80-82、151-155`），测试仍在用；新字段 `WorkspaceDir/CurrentSessionID/FoldCase` 与它并存，本次不改它的语义。`SessionCwds` 在 ledger 路径停用；若确认无其它调用者则由计划决定是否删除（`ledger.go:111` 是唯一调用者）。
 
 ## session_search / recall 参数变化对模型提示的影响
 
 - `session_search` schema（`pkg/agentcore/tools/native/ledger.go:92-108`）新增三个可选参数：`cursor`（string）、`kind`（逗号分隔 string，服务端校验）、`since`/`until`（string）。description 必须回答"游标从哪来"：`"Paging: when the result ends with a next_cursor line, pass that value back verbatim as cursor; a cursor from a different query or scope is ignored."`
 - 描述里补一句中文行为提示：`"Chinese queries: a single character does not use the index (slow); two characters use it once the bigram index is ready, otherwise a scan."`（S2 完成后改写为不含"otherwise"的版本。）这句话是为模型行为服务的（鼓励 2 字以上查询），必须简短。
 - 上下文成本：工具描述每次请求都随 schema 发送。新增文字控制在 ~200 字符内，并在计划里核对 `suga manifest`/`turn_context` 的 tools 字符数变化（`internal/personal/trace.go:462-488` 的 `context` 事件记录了 `tools=` 字符数，可作为回归口径）。
-- 结果文本：`renderLedgerHits`（`ledger.go:154-176`）末尾追加 `next_cursor: <…>`（仅有下一页时）。既有断言（`internal/personal/ledger_test.go:386-388`、`store/fts_test.go:160-234` 的子用例）必须继续通过；新增断言覆盖 `next_cursor` 行与"末页无该行"。
+- 结果文本：`renderLedgerHits`（`ledger.go:154-176`）末尾追加 `next_cursor: <…>`（仅有下一页时）。既有断言（`internal/personal/ledger_test.go:386-388`、`store/fts_test.go:160-234` 的子用例）必须继续通过；新增断言包含 `next_cursor` 行与"末页无该行"。
 - `recall` 不变（描述与 schema 都不动）——减少对模型行为的影响面。
 - ACP/MCP 无需改动：工具分类仍是 `ToolKindSearch`（`internal/acpserver/policy.go:368`）。
 
@@ -384,61 +380,40 @@ SQL:    SELECT * FROM (SELECT …, bm25(entries_fts) AS score FROM entries_fts �
 
 单元测试（`store/fts_test.go` 扩展 + 新增等价性测试，都用 `t.TempDir()` 真实库；断言用 `github.com/gookit/goutil/x/assert`，用例用 `t.Run`）：
 
-1. **中文分词行为**：1 字（`中`）走 LIKE；2 字（`缓存`）S1 走 LIKE 且**结果与旧实现逐例相同**、S2 走 bigram 索引；3 字（`数据库`）走 trigram；混合（`中文 token`）断言"不返回只含 token 的行"（反例：构造一条只有 token 的 entry）。
-2. **语法字面量**：扩展现有 `FTS syntax characters are literal` 用例，覆盖 `"`、`-`、`.`、`*`、`(`、`，`、`！`；断言"进 MATCH 的词都 ≥3 rune"（守卫 D3）。
+1. **中文分词行为**：1 字（`中`）走 LIKE；2 字（`缓存`）走 LIKE 且**结果与旧实现逐例相同**；3 字（`数据库`）走 trigram；混合（`中文 token`）断言"不返回只含 token 的行"（反例：构造一条只有 token 的 entry）。
+2. **语法字面量**：扩展现有 `FTS syntax characters are literal` 用例，包含 `"`、`-`、`.`、`*`、`(`、`，`、`！`；断言"进 MATCH 的词都 ≥3 rune"（守卫 D3）。
 3. **分页**：构造 45 条命中，`limit=20` 连续三次取满 → 三次结果的并集 == 一次性 `limit=100` 的结果，无重复、无遗漏；`next_cursor` 在末页为空；游标与 query/scope/kind 不匹配 → 从头开始且结果里有说明行；游标字段非法（缺字段、多字段、坏字符）→ 忽略而不报错。
 4. **过滤**：`kind`（四类取值 + 非法值报错）、`since`/`until`（相对与绝对、边界含/不含）、`scope`（current/workspace/all）、`IncludeAgents`；过滤与分页同时使用的组合用例。
 5. **cwd 下推等价性**（最重要的守卫）：把旧实现（`SessionCwds` + `pathWithin`）保留为测试内的参照函数，对一组会话目录（`/repo`、`/repo2`、`/repo/sub`、`/repo-旧`、`C:\Repo`、空 cwd、"当前会话无 cwd"）逐例断言"新 SQL 下推的命中集合 == 参照实现"，平台折叠用参数注入（不依赖真实 GOOS）。
 6. **redact 与游标**：`redact.Clean(next_cursor)` == 原值；`session_search` 的渲染结果与游标共存的端到端用例（`internal/personal/ledger_test.go` 风格）。
-7. **S2 索引未就绪**：删除/清空 `entries_fts_bi` 后 2 字查询仍返回正确结果（走 LIKE）且不报错；回填后同一查询结果不变但走了索引（用 `EXPLAIN QUERY PLAN` 或计数器断言路径，避免依赖计时）。
+7. **快照边界**：构造超过 500 条命中，断言结果明确提示已截断且快照最多保留 500 条；连续分页无重复无遗漏；TTL 到期、进程内缓存缺失和指纹不匹配均从头查询并给出说明。
 
 基准（仓库首个 `func Benchmark`，`store/fts_bench_test.go`）：
 
 - 语料：固定种子的中英混合生成器（与 `tmp/ftsprobe` 的语料同构，便于对照实测数字），两档规模（1 万 / 10 万条）。
 - 用例：`trigram_hit`（3 rune 选择性）、`trigram_common`（3 rune 高频）、`like_2rune`（S1 的 2 字词）、`bigram_2rune`（S2）、`paginated_page2`（带游标）。
-- 报告口径：`ns/op`；用 `b.ReportMetric` 附上"命中数"以便判读；索引体积与建索引用时不在 Go benchmark 里测，改用命令实测记录（已在本设计 §B 记录基线，S2 实施时用真实库复测）。
+- 报告口径：`ns/op`；用 `b.ReportMetric` 附上"命中数"以便判读；索引体积与建索引用时不在 Go benchmark 里测，改用命令实测记录（已在本设计 §B 记录基线，未来 S2 立项时用真实库复测）。
 - 计划阶段的验收项（必须做，写进计划）：在**真实 `sessions.db` 副本**上测：(a) 回填耗时；(b) 库体积增长；(c) 十条典型中文查询的 `EXPLAIN QUERY PLAN` 与实际耗时（1 字/2 字/3 字/混合/纯英文各两条）。
 
 冒烟与真实模型：
 
-- 检索是工具层行为，不需要伪终端场景；用 `internal/personal/ledger_test.go` 的端到端（runner + 工具调用）覆盖"模型调 `session_search` → 拿到 `next_cursor` → 带游标再调"的链路（假 provider 即可确定性断言）。
+- 检索是工具层行为，不需要伪终端场景；用 `internal/personal/ledger_test.go` 的端到端（runner + 工具调用）包含"模型调 `session_search` → 拿到 `next_cursor` → 带游标再调"的链路（假 provider 即可确定性断言）。
 - 建议（AGENTS.md：涉 provider 协议才强制）加一轮真实 provider：让模型用一个 2 字中文词检索、按 `next_cursor` 翻一页，核对它把游标当字符串原样回传。做不到时在交付说明里写明。
 
 ## 待确认事项
 
-- **Q1 S2（bigram 辅助索引）本期做不做**：采纳“先只做 S1，S2 另起设计并按真实库实测再决定”。本期不新增 `search.bigram` 配置、不承诺迁移或回填；备选是用户明确批准后启动后续设计。
+- **Q1 S2（bigram 辅助索引）**：建议本期不做，另起设计并按真实库实测再决定；备选是用户明确批准后启动后续设计，但必须先满足本文列出的边界、并发、rowid 与版本闸门前提。
 - **Q2 2 字英文词**：采纳评审建议，不纳入未来 CJK-only bigram；S1 继续 LIKE。是否需要英文专用索引另案。
 - **Q3 cwd 折叠精度**：建议接受 `lower()`（ASCII）并在测试中固定；备选：SQL 粗筛 + Go 精判候选（语义完全等价，代价是重新引入一层"候选 id 列表"）。
 - **Q4 分页语义**：采纳多取一条；只有确认有下一页才返回 `next_cursor`。
 - **Q5 游标过期策略**：建议忽略不匹配的游标并从头发（并在结果里说明一行）；备选：报错让模型重写查询（更严格，但容易打断连续检索）。
-- **Q6 `kind` 是否允许多值**：建议允许（逗号分隔）；备选：只允许单值（schema 更简单）。
-- **Q7 CLI 是否跟进**：建议 `suga sessions --kind` 与 `--cursor/--all`（当前固定 `Limit: 100`、无游标）；备选：CLI 不动（检索主要给模型用）。
-- **Q8 是否引入 `search.*` 配置键**：建议只加 S2 的回退开关 `search.bigram`（`true/false`）与可选 `search.bigram_batch`（回填批大小，默认 500）；其余阈值继续硬编码，避免配置面膨胀。
+- **Q6 `kind` 是否允许多值**：建议允许逗号分隔的多值；备选：只允许单值（schema 更简单）。
+- **Q7 CLI 是否跟进**：建议 CLI 不跟进 cursor/kind/分页（检索主要给模型用，CLI 按会话去重且只显示首个 snippet）；备选：仅增加 `--kind`，但需要单独定义 CLI 的结果语义。
+- **Q8 是否引入 `search.*` 配置键**：建议不增加配置键，500 条上限与 10 分钟 TTL 固定在实现中；备选是未来 S2 立项时再为迁移/回填定义配置，避免本期扩大配置面。
 
-## Draft 0.2：独立评审 r1 的闭合说明
-
-本节是本版本的规范性补充；S2 的旧草案文字仅表示方向，与本节冲突处以本节为准。
-
-### S1：CORE/MAJOR 闭合
-
-- **S-C1（关闭）**：不使用会漂移的 bm25 键集游标。首次查询在同一进程生成完整有序 `(session_id, seq)` 快照（上限 500，按查询指纹缓存）；游标只携带 `snapshot_id + offset`，后续页按快照位置取值。快照缺失、重启或超过 TTL 时忽略游标并从头查询。若未来需要跨进程游标，必须另案定义不可变排序快照；不得退回 score 游标。时间路径也采用快照，因此不受写入漂移影响。
-- **S-M1（关闭）**：S1 的时间路径若不使用快照，必须展开混合方向比较；本稿选择快照后，SQL 只按快照中的 rowid/键取回，保留现有 `created_at DESC, session_id ASC, seq DESC` 的逐字节排序。
-- **S-M2（关闭）**：本 Draft 0.2 不批准 S2。后续 bigram 只覆盖 CJK 连续段（Han/Kana/Hangul），不跨空白/标点，不覆盖 ASCII bigram；FTS5 显式 `remove_diacritics=0`。准入必须用真实 sessions.db 副本量化体积、写放大和查询收益。
-- **S-M3（关闭）**：后续 S2 必须令 bigram 行的 rowid 与 `entries_fts` rowid 对齐，查询按 rowid JOIN；优先 contentless + `contentless_delete=1`，会话删除按对应 rowid 清理。不得按 UNINDEXED `(session_id,seq)` 做全表 JOIN。
-- **S-M4（关闭）**：cwd 下推使用规范化的 `pathWithin` 等价表达式，不拼 `dir + sep`。根目录、盘符根、尾分隔符先 `filepath.Clean`；Windows 的大小写规则在 SQL 参数上显式固定，并用 `/`、`C:\`、尾分隔符测试。
-- **S-M5（关闭）**：查询指纹包含解析后的绝对 since/until（按 store `timeLayout`）、scope、current session、规范化 workspace、kind 集合、IncludeAgents 及路径模式；相对时间不会因翻页重新解析成新边界。
-- **S-M6（关闭）**：工具条目的 JSON 保留 tool name，S1 查询在 JOIN 后按该字段排除 `session_search` 与 `recall` 的结果；没有合法工具名的普通 tool 条目不排除。新增测试先写入两种 tool 条目，确认检索输出不被自身结果污染。
-
-### S2 重新设计的前提（后续独立稿）
-
-迁移事务内先固化每个 session 的 `max_seq` 到待回填表；写路径负责边界之后的新条目。回填用 `BEGIN IMMEDIATE` 批量认领（lease/删除任务行），多进程不得重复处理；“就绪”只由待回填表为空表示，不能用索引行数。触发器或 SQL 递归 CTE 应优先作为所有版本写路径的同步维护方案；若仍用 Go，必须有版本闸门，旧二进制写入时查询强制退回 LIKE。迁移使用 `IF NOT EXISTS`，并另测 Open 并发。S2 仍需用户确认，不计入本期范围。
-
-### 其余 MINOR 与待确认
-
-已修正 FTS LIKE + ESCAPE 不享受 trigram LIKE 优化、Unicode 大小写折叠差异、`next_cursor` 多取一条、`CWDPrefix` 仅测试使用、schema enum 与多值矛盾、根目录边界、游标字段分隔等表述。Q1 采纳评审建议：先只做 S1，S2 另案；Q2 采纳“只覆盖 CJK，不做 ASCII bigram”；Q4 采纳多取一条；Q5 采纳失效游标忽略并说明；Q6 采纳多值字符串；Q7 倾向 CLI 不跟进；Q8 本期不加 S2 配置键。仍需用户决定：是否接受进程内快照的 500 条上限/TTL，以及 S2 是否按上述前提另起设计。
 
 ## 结论与人工计划 Gate
 
-方案的核心是"按词分流"：把 trigram 用不了的那部分词从 `MATCH` 表达式里拿出来，改成同一条 SQL 里的过滤条件（S1），再按用户取舍用 bigram 辅助索引把 2 字中文词也搬回索引（S2）；同时补上游标分页、kind/时间过滤与 cwd 条件下推，三者都不需要改索引即可落地。设计的三条硬约束来自本次实测而不是推断：`minMatchRunes=3` 是硬下限、短短语进 `MATCH` 会被静默丢弃（必须守卫）、`unicode61` 对连续 CJK 无效（排除该路线）。
+方案的核心是“按词分流”：把 trigram 用不了的词从 `MATCH` 表达式里拿出来，改成同一条 SQL 里的过滤条件；再用进程内有序快照与偏移游标提供稳定分页，同时补上 kind/时间过滤与 cwd 条件下推，S1 不需要改索引即可落地。设计的三条硬约束来自本次实测而不是推断：`minMatchRunes=3` 是硬下限、短短语进 `MATCH` 会被静默丢弃（必须守卫）、`unicode61` 对连续 CJK 无效（排除该路线）。
 
-下一步：请用户就 Q1–Q8 给出选择（Q1 决定本期的范围）→ 起草 `docs/plans/2026-10-16-session-search-cjk-plan.md`（建议 S1 → S2 两段，各自独立提交与验收；S2 先做真实库实测再决定默认开关）。批准设计不授权实施。
+下一步：请用户就 Q1–Q8 给出选择（Q1 决定后续 S2 是否另案）→ 起草 `docs/plans/2026-10-16-session-search-cjk-plan.md`（建议先实施 S1；S2 另起设计并先做真实库实测）。批准设计不授权实施。
