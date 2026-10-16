@@ -88,6 +88,13 @@ const (
 	// session's reach and when; chat's :add-dir/:rm-dir and the authorization
 	// write it.
 	EventAddDir = "add_dir"
+	// EventLocalCommand records one local command a person typed at the chat
+	// prompt ("!cmd"/"!!cmd") outside any turn: name "run", attrs command (the
+	// command, redacted), exit_code, bytes (the output the command wrote),
+	// sent (true: the result goes to the model with the next message),
+	// cancelled and timeout. It is how a trace shows what was run outside the
+	// model's turn; chat writes it.
+	EventLocalCommand = "local_command"
 )
 
 // Session is one conversation. Meta holds free-form keys (rules hash, append

@@ -39,6 +39,32 @@ func TestTraceAgentLines(t *testing.T) {
 	})
 }
 
+// TestTraceLocalCommandLine: a local command line shows the exit code, the
+// output bytes, whether the result goes to the model with the next message
+// (a "!!" command), how the run ended and the command last.
+func TestTraceLocalCommandLine(t *testing.T) {
+	line := func(attrs map[string]any) string {
+		return traceLine(store.Event{Kind: store.EventLocalCommand, Name: "run", Status: "ok", DurationMs: 320, Attrs: attrs})
+	}
+
+	t.Run("a plain command keeps the command in brackets", func(t *testing.T) {
+		assert.StrContains(t, line(map[string]any{"command": "echo hi", "exit_code": float64(0), "bytes": float64(12)}),
+			"local_command run ok 320ms exit=0 bytes=12 [echo hi]")
+	})
+
+	t.Run("a sent command names the model", func(t *testing.T) {
+		assert.StrContains(t, line(map[string]any{"command": "echo ctx", "exit_code": float64(1), "bytes": float64(4),
+			"sent": true}), "exit=1 bytes=4 model=next-message [echo ctx]")
+	})
+
+	t.Run("an ended run says how", func(t *testing.T) {
+		assert.StrContains(t, line(map[string]any{"command": "sleep 30", "exit_code": float64(-1), "bytes": float64(0),
+			"cancelled": true}), "exit=-1 bytes=0 cancelled [sleep 30]")
+		assert.StrContains(t, line(map[string]any{"command": "sleep 30", "exit_code": float64(-1),
+			"timeout": true}), "timeout [sleep 30]")
+	})
+}
+
 // TestTraceTaskLines: a task end event line shows the task's kind — a watch
 // with its runs and changes (or its last state when no counters arrived) and a
 // background Stop hook by its summary — while a shell task and events of

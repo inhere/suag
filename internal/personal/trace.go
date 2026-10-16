@@ -182,6 +182,9 @@ func traceLine(e store.Event) string {
 	if e.Kind == store.EventTask {
 		parts = append(parts, taskTraceParts(e)...)
 	}
+	if e.Kind == store.EventLocalCommand {
+		parts = append(parts, localCommandTraceParts(e)...)
+	}
 	if e.Kind == store.EventSession {
 		parts = append(parts, sessionTraceParts(e)...)
 	}
@@ -404,6 +407,33 @@ func taskTraceParts(e store.Event) []string {
 	default:
 		return toolTraceParts(e)
 	}
+}
+
+// localCommandTraceParts renders one local command a person typed at the chat
+// prompt (!cmd / !!cmd): the exit code, the output bytes, whether the result
+// goes to the model with the next message, how the run ended and the command
+// last, in brackets.
+func localCommandTraceParts(e store.Event) []string {
+	var parts []string
+	if code, ok := e.Attrs["exit_code"]; ok {
+		parts = append(parts, fmt.Sprintf("exit=%v", code))
+	}
+	if n, ok := e.Attrs["bytes"]; ok {
+		parts = append(parts, fmt.Sprintf("bytes=%v", n))
+	}
+	if sent, _ := e.Attrs["sent"].(bool); sent {
+		parts = append(parts, "model=next-message")
+	}
+	if cancelled, _ := e.Attrs["cancelled"].(bool); cancelled {
+		parts = append(parts, "cancelled")
+	}
+	if timedOut, _ := e.Attrs["timeout"].(bool); timedOut {
+		parts = append(parts, "timeout")
+	}
+	if command, _ := e.Attrs["command"].(string); command != "" {
+		parts = append(parts, "["+command+"]")
+	}
+	return parts
 }
 
 // segmentTraceParts renders a segment break (compaction "compact" event):
