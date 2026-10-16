@@ -9,7 +9,9 @@ import (
 )
 
 // ChatHistoryEnabled reports whether locally typed chat lines are persisted.
-func ChatHistoryEnabled() bool { return chatSwitch("chat.history") }
+func ChatHistoryEnabled() bool {
+	return chatSwitch("chat.history")
+}
 
 // ChatHistorySize returns the maximum number of persisted chat lines.
 func ChatHistorySize() (int, error) {
@@ -25,16 +27,63 @@ func ChatHistorySize() (int, error) {
 }
 
 // ChatMarkdownEnabled reports whether chat renders the model's markdown in the
-// terminal (chat.markdown, on by default).
-func ChatMarkdownEnabled() bool       { return chatSwitch("chat.markdown") }
-func ChatSpinnerEnabled() bool        { return chatSwitch("chat.spinner") }
-func ChatHighlightInputEnabled() bool { return chatSwitch("chat.highlight_input") }
-func ChatSteeringEnabled() bool       { return chatSwitch("chat.steering") }
-func ChatTerminalTitleEnabled() bool  { return chatSwitch("chat.terminal_title") }
-func ChatDiffEnabled() bool           { return chatSwitch("chat.diff") }
+// terminal (chat.markdown, on by default). The key accepts a bool or a string;
+// "off"/"false" turn the rendering off and show the exact model text instead.
+func ChatMarkdownEnabled() bool {
+	return chatSwitch("chat.markdown")
+}
 
+// ChatSpinnerEnabled reports whether chat shows its "思考中…" waiting line while
+// the model is asked for its next message (chat.spinner, on by default). It
+// takes the same values as chat.markdown; a non-terminal output or NO_COLOR
+// turns the line off anyway.
+func ChatSpinnerEnabled() bool {
+	return chatSwitch("chat.spinner")
+}
+
+// ChatHighlightInputEnabled reports whether chat paints a background behind the
+// line the person submitted at the prompt, and behind messages delivered from
+// elsewhere (chat.highlight_input, on by default). It takes the same values as
+// chat.markdown; a non-terminal output or NO_COLOR turns the background off.
+func ChatHighlightInputEnabled() bool {
+	return chatSwitch("chat.highlight_input")
+}
+
+// ChatSteeringEnabled reports whether chat keeps the input line available while
+// a turn runs (chat.steering, on by default): the person can insert a message
+// into the running turn (Enter), end this turn only (Esc, a single Ctrl-C) or
+// leave chat (a second Ctrl-C within a few seconds). It takes the same values as
+// chat.markdown; a non-terminal input keeps the old behaviour anyway (no line
+// editing, no reading during a turn).
+func ChatSteeringEnabled() bool {
+	return chatSwitch("chat.steering")
+}
+
+// ChatTerminalTitleEnabled reports whether chat sets the terminal's window/tab
+// title to the session, "suga · <短名称> · <会话标题>" (chat.terminal_title, on by
+// default). It takes the same values as chat.markdown; a non-terminal output or
+// NO_COLOR leaves the title alone anyway.
+func ChatTerminalTitleEnabled() bool {
+	return chatSwitch("chat.terminal_title")
+}
+
+// ChatDiffEnabled reports whether chat shows what a file tool call changed
+// (chat.diff, on by default): the unified diff under the tool result, the
+// pending diff before an approval question and the :diff command. It takes the
+// same values as chat.markdown. run, ACP and stream-json are not affected - ACP
+// builds its own diff for the client either way.
+func ChatDiffEnabled() bool {
+	return chatSwitch("chat.diff")
+}
+
+// DefaultChatDiffLines is how many lines one diff preview in chat shows
+// (chat.diff_lines) when the key is not set.
 const DefaultChatDiffLines = 20
 
+// ChatDiffLines reads chat.diff_lines: how many lines one diff preview shows
+// (the :diff command always shows the whole change). A value below 1 or
+// something that is not a whole number is an error rather than a silently
+// changed or ignored limit.
 func ChatDiffLines() (int, error) {
 	if gkconfig.Get("chat.diff_lines") == nil {
 		return DefaultChatDiffLines, nil
@@ -46,7 +95,18 @@ func ChatDiffLines() (int, error) {
 	}
 	return n, nil
 }
-func ChatAskOutsideDirs() bool { return chatSwitch("chat.ask_outside_dirs") }
+
+// ChatAskOutsideDirs reports whether an interactive chat asks the person to
+// authorize a directory a file tool wants to reach outside the workspace and the
+// session's added directories (chat.ask_outside_dirs, on by default). It takes
+// the same values as chat.markdown. The question is asked on the terminal, so
+// run, ACP and a chat without a terminal keep refusing such a call as before.
+func ChatAskOutsideDirs() bool {
+	return chatSwitch("chat.ask_outside_dirs")
+}
+
+// chatSwitch reads a chat.* switch: a missing key is on, a bool is used as is,
+// and a string is off for "off"/"false" (any case, surrounding spaces ignored).
 func chatSwitch(key string) bool {
 	switch value := gkconfig.Get(key).(type) {
 	case bool:
