@@ -145,9 +145,7 @@ func (u *UndoCore) restoreItem(ctx context.Context, sessionID, turnID string, it
 	case native.SnapshotKindAbsent:
 		return u.deleteAbsent(ctx, sessionID, turnID, meta, force)
 	case native.SnapshotKindTrash:
-		out.reason = "删除快照将在后续任务恢复"
-		out.unresolved = true
-		return out, nil
+		return u.restoreTrash(ctx, sessionID, turnID, meta)
 	default:
 		out.action = CheckpointActionUnrecoverable
 		out.reason = snapshotReason(meta, out.action)

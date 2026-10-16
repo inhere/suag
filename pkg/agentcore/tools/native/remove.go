@@ -386,6 +386,13 @@ func (t *FileRemoveTool) purgeTrash() {
 // volume (where a rename always fails).
 var renamePath = os.Rename
 
+// MovePath moves src to dst with the same-volume rename and cross-volume
+// copy-then-remove fallback used by file_remove. Undo uses this helper to
+// restore a trash entry without maintaining a second copy of the algorithm.
+func MovePath(src, dst string) error {
+	return moveToTrash(src, dst)
+}
+
 // moveToTrash renames src to dst, or copies and then deletes when the trash is
 // on another volume (at most RemoveMaxFiles files reach this point). A
 // failed copy leaves src untouched.
