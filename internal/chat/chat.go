@@ -439,6 +439,11 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 			// Show a file change of this session again, in full (:diff [N]).
 			render.ShowDiff(strings.TrimPrefix(line, diffCmd))
 			continue
+		case line == ":help", line == ":usage", line == ":tasks":
+			// The reference, this session's usage and its background tasks
+			// (chat_commands.go); like every : command, keyboard only.
+			state.runChatCommand(line)
+			continue
 		case state.dirs != nil && isDirCommand(line):
 			// The session's added directories (:add-dir/:dirs/:rm-dir).
 			state.runDirCommand(line)
