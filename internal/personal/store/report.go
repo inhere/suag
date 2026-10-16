@@ -11,20 +11,21 @@ import (
 // personal.ReportUsage): stored input minus cache read/write, floored at 0 per
 // event. CacheHitRate = cache_read / (input + cache_read + cache_write).
 type ModelStat struct {
-	Provider     string  `json:"provider"`
-	Model        string  `json:"model"`
-	Calls        int     `json:"calls"`
-	Errors       int     `json:"errors"`
-	ErrorRate    float64 `json:"error_rate"`
-	P50Ms        int64   `json:"p50_ms"`
-	P95Ms        int64   `json:"p95_ms"`
-	P50TTFTMs    int64   `json:"p50_ttft_ms,omitempty"`
-	InputTokens  int64   `json:"input_tokens"`
-	OutputTokens int64   `json:"output_tokens"`
-	CacheRead    int64   `json:"cache_read_tokens"`
-	CacheWrite   int64   `json:"cache_write_tokens"`
-	CacheHitRate float64 `json:"cache_hit_rate"`
-	CostUSD      float64 `json:"cost_usd"`
+	Provider       string  `json:"provider"`
+	Model          string  `json:"model"`
+	Calls          int     `json:"calls"`
+	EstimatedCalls int     `json:"estimated_calls,omitempty"`
+	Errors         int     `json:"errors"`
+	ErrorRate      float64 `json:"error_rate"`
+	P50Ms          int64   `json:"p50_ms"`
+	P95Ms          int64   `json:"p95_ms"`
+	P50TTFTMs      int64   `json:"p50_ttft_ms,omitempty"`
+	InputTokens    int64   `json:"input_tokens"`
+	OutputTokens   int64   `json:"output_tokens"`
+	CacheRead      int64   `json:"cache_read_tokens"`
+	CacheWrite     int64   `json:"cache_write_tokens"`
+	CacheHitRate   float64 `json:"cache_hit_rate"`
+	CostUSD        float64 `json:"cost_usd"`
 }
 
 // ToolStat aggregates tool events by tool name. Calls counts executed tool
@@ -94,6 +95,9 @@ func AggregateEvents(events []Event) Report {
 				models[key] = a
 			}
 			a.stat.Calls++
+			if estimated, _ := e.Attrs["estimated"].(bool); estimated {
+				a.stat.EstimatedCalls++
+			}
 			if e.Status == "error" {
 				a.stat.Errors++
 			}
