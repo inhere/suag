@@ -91,6 +91,7 @@ suga manifest                            # 生效的模型、工具、skills、�
 - 临时：`suga run --model <provider>/<model> --prompt ...`；不经过配置文件的默认：`SUGA_MODEL=<provider>/<model>`。
 - 永久：改 `model:`。便宜模型生成摘要：`compact_model:`；主模型失败时依次尝试：`fallback_models:`。
 - 思考档位 `off|minimal|low|medium|high|xhigh|max|auto`：命令行 `--thinking`（只作用于主模型）> `providers.<id>.models.<model>.thinking` > `providers.<id>.thinking`；都不设或 `auto` 时不发送参数，用 provider 默认。`openai` 类型发 `reasoning_effort`，`anthropic` 类型走 extended thinking。细节见 `references/providers.md`。
+- 交互式 `suga chat` 中，输入 `:model` 查看当前 provider/model、thinking、上下文窗口、`max_output_tokens` 与全部已配置模型；输入 `:model <provider>/<model>` 从下一回合切换主模型，模型键支持 Tab 补全。切换保留 `fallback_models`，写入会话元数据并记录 `model_switch` trace；`--resume` 会沿用该模型，除非命令行显式传入 `--model`。只认本地键盘输入。
 
 ### 开写权限与审批
 

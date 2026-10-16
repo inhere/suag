@@ -140,7 +140,7 @@ def make_handler(args):
                               if m.get("role") == "user"), "")
             # "user" is the last user message: what a smoke can check the model
             # actually received (e.g. a pasted multi-line text as one message).
-            print(json.dumps({"path": self.path, "stream": body.get("stream"),
+            print(json.dumps({"path": self.path, "model": body.get("model"), "stream": body.get("stream"),
                               "last_role": body["messages"][-1].get("role"),
                               "user": user_text,
                               "seen": [message_token(m) for m in body["messages"]],
