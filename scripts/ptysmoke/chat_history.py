@@ -34,15 +34,15 @@ def main():
                 s.line("first history line"); s.until(r"❯ ", s.mark())
                 s.line("second history line"); s.until(r"❯ ", s.mark())
                 s.send(CTRL_C); s.until(r"再按一次", s.mark()); s.send(CTRL_C); s.close(); continue
-            s.send(b"\x1b[A"); s.check("Up restores prior local input", s.until("second history line", m))
-            s.send(b"\x15"); s.send(b"history"); s.send(b"\x12")
+            s.send("\x1b[A"); s.check("Up restores prior local input", s.until("second history line", m))
+            s.send("\x15"); s.send("\x12"); s.send("second")
             s.check("Ctrl-R finds a match", s.until("reverse-i-search", m) and s.contains("second history line", m))
-            s.send(b"\x07")
-            s.send(b":se\t")
+            s.send("\x07")
+            s.send(":se\t")
             s.check("command Tab completion (:session)", s.until(":session", m))
-            s.send(b"\x15:add-dir tm\t")
+            s.send("\x15:add-dir tm\t")
             s.check("directory Tab completion", s.until(":add-dir tm-dir", m))
-            s.send(b"\x03"); s.send(b"\x03")
+            s.send("\x03"); s.send("\x03")
             s = None
     finally:
         for s in sessions:
