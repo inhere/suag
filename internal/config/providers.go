@@ -75,8 +75,8 @@ type ProviderConfig struct {
 	// Compat (providers.<id>.compat) names gateway adapters applied on top
 	// of the ones matched by base URL and model (llm.ResolveCompat).
 	Compat []string
-	// Retry is the global retry: policy (ReadRetryPolicy), the same for
-	// every provider.
+	// Retry is the retry policy: the global retry: section (ReadRetryPolicy),
+	// overridden by providers.<id>.retry.
 	Retry llm.RetryPolicy
 	// RequestTimeout and ResponseHeaderTimeout bound one model request: they
 	// come from `timeouts:` (ReadRequestTimeouts), overridden by
@@ -148,6 +148,16 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 		p.RequestTimeout, p.ResponseHeaderTimeout = timeouts.Request, timeouts.ResponseHeader
 		providers[id] = p
 	}
+	// Every provider retries with the global policy until providers.<id>.retry
+	// overrides it (read below, together with the other provider fields).
+	retry, err := ReadRetryPolicy()
+	if err != nil {
+		return nil, err
+	}
+	for id, p := range providers {
+		p.Retry = retry
+		providers[id] = p
+	}
 
 	raw, _ := gkconfig.Get("providers").(map[string]any)
 	for id, item := range raw {
@@ -193,6 +203,14 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 		if len(user.Compat) > 0 {
 			merged.Compat = user.Compat
 		}
+		// The global retry: policy is the default; providers.<id>.retry changes
+		// only the fields it names.
+		merged.Retry = retry
+		if section := mapValue(entry["retry"]); section != nil {
+			if merged.Retry, err = applyRetryPolicy(retry, section, "providers."+id+".retry"); err != nil {
+				return nil, err
+			}
+		}
 		mergedTimeouts, err := applyTimeouts(timeouts, mapValue(entry["timeouts"]), "providers."+id+".timeouts")
 		if err != nil {
 			return nil, err
@@ -210,14 +228,6 @@ func ReadProviders() (map[string]ProviderConfig, error) {
 			}
 		}
 		providers[id] = merged
-	}
-	retry, err := ReadRetryPolicy()
-	if err != nil {
-		return nil, err
-	}
-	for id, p := range providers {
-		p.Retry = retry
-		providers[id] = p
 	}
 	return providers, nil
 }
