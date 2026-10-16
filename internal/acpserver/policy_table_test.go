@@ -184,3 +184,56 @@ func TestPolicyTable(t *testing.T) {
 		})
 	}
 }
+
+func TestACPPolicyOptionsAndImmediateDecisions(t *testing.T) {
+	policy := PolicyDecision(func(agentcore.ToolCall, agentcore.Tool) (string, string, string) {
+		return "ask", "", "file_write:docs/**"
+	})
+	for _, tc := range []struct {
+		name     string
+		selected acp.PermissionOptionId
+		wantErr  bool
+		wantAsk  bool
+	}{
+		{name: "allow once", selected: "allow", wantAsk: true},
+		{name: "reject always", selected: "reject_always", wantErr: true, wantAsk: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &testACPClient{selected: tc.selected}
+			hook := newTableHook(t, t.TempDir(), false, client)
+			hook.policy = policy
+			call := agentcore.ToolCall{CallID: "policy-call", Name: "file_write", Arguments: map[string]any{"path": "docs/a.txt"}}
+			assert.Require(t, assert.NoErr(t, hook.BeforeTool(context.Background(), &agentcore.ToolEvent{RunID: "run", Call: &call}, nil)))
+			err := hook.Decide(context.Background(), call, nil)
+			assert.Eq(t, tc.wantErr, err != nil)
+			client.mu.Lock()
+			assert.Eq(t, tc.wantAsk, len(client.requests) == 1)
+			if tc.wantAsk {
+				assert.Len(t, client.requests[0].Options, 4)
+				assert.Eq(t, acp.PermissionOptionKindAllowOnce, client.requests[0].Options[0].Kind)
+				assert.Eq(t, acp.PermissionOptionId("allow"), client.requests[0].Options[0].OptionId)
+				assert.Eq(t, acp.PermissionOptionKindAllowAlways, client.requests[0].Options[1].Kind)
+				assert.Eq(t, acp.PermissionOptionId("allow_always"), client.requests[0].Options[1].OptionId)
+				assert.Eq(t, acp.PermissionOptionKindRejectOnce, client.requests[0].Options[2].Kind)
+				assert.Eq(t, acp.PermissionOptionId("reject"), client.requests[0].Options[2].OptionId)
+				assert.Eq(t, acp.PermissionOptionKindRejectAlways, client.requests[0].Options[3].Kind)
+				assert.Eq(t, acp.PermissionOptionId("reject_always"), client.requests[0].Options[3].OptionId)
+			}
+			client.mu.Unlock()
+		})
+	}
+
+	t.Run("allow policy does not ask but still starts the tool", func(t *testing.T) {
+		client := &testACPClient{selected: "reject"}
+		hook := newTableHook(t, t.TempDir(), false, client)
+		hook.policy = func(agentcore.ToolCall, agentcore.Tool) (string, string, string) {
+			return "allow", "user#1 file_write action=allow", "file_write:docs/**"
+		}
+		call := agentcore.ToolCall{CallID: "allow-call", Name: "file_write"}
+		assert.Require(t, assert.NoErr(t, hook.BeforeTool(context.Background(), &agentcore.ToolEvent{RunID: "run", Call: &call}, nil)))
+		assert.NoErr(t, hook.Decide(context.Background(), call, nil))
+		client.mu.Lock()
+		assert.Len(t, client.requests, 0)
+		client.mu.Unlock()
+	})
+}

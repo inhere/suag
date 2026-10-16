@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/inhere/suga/pkg/agentcore"
@@ -192,4 +193,62 @@ func (p approvalPolicy) Decide(target approvalrules.Target, meta tools.Meta) (ap
 	// used to run only for explicit rules, which let a no-rules run write into
 	// .git, .suga, SUGA_HOME, or an approval-rules file.
 	return approvalrules.ClampAllow(action, target, p.Workspace, p.SugaHome, p.RuleFiles...), nil
+}
+
+// approvalScopeKey gives ACP and chat the same coarse session-rule identity.
+// It is only an in-memory key; ACP never writes this value to a rule file.
+func approvalScopeKey(policy approvalPolicy, call agentcore.ToolCall, tool agentcore.Tool) string {
+	target := policy.targetFor(call, tool)
+	if target.MCP {
+		if target.MCPServer != "" {
+			return target.MCPServer + "/" + call.Name
+		}
+		return call.Name
+	}
+	if call.Name == "shell_exec" {
+		command, _ := call.Arguments["command"].(string)
+		tokens, ok := scopeCommandTokens(command)
+		if !ok || len(tokens) == 0 {
+			// An unsafe shell string has no reusable allow_always scope.
+			return ""
+		}
+		count := policy.AlwaysPrefixTokens
+		if count < 1 {
+			count = 2
+		}
+		if count > len(tokens) {
+			count = len(tokens)
+		}
+		return call.Name + ":" + scopeTokensText(tokens[:count])
+	}
+	if call.Name == "file_write" || call.Name == "file_edit" || call.Name == "file_remove" {
+		pathValue, _ := call.Arguments["path"].(string)
+		if relative, ok := approvalRelativeScopePath(policy.Workspace, pathValue); ok {
+			if call.Name == "file_remove" {
+				return call.Name + ":" + relative
+			}
+			if relative == "." {
+				return call.Name + ":**"
+			}
+			return call.Name + ":" + relative + "/**"
+		}
+		return ""
+	}
+	return call.Name
+}
+
+func approvalRelativeScopePath(workspace, value string) (string, bool) {
+	if workspace == "" || value == "" {
+		return "", false
+	}
+	absolute := value
+	if !filepath.IsAbs(absolute) {
+		absolute = filepath.Join(workspace, absolute)
+	}
+	relative, err := filepath.Rel(workspace, filepath.Clean(absolute))
+	if err != nil || filepath.IsAbs(relative) || relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return filepath.ToSlash(relative), true
 }
