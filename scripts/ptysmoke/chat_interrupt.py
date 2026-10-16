@@ -53,23 +53,32 @@ class FakeLog:
     def __init__(self, proc):
         self.proc = proc
         self.entries = []
+        # Bytes read from the pipe but not yet a whole line. The pipe is read with
+        # os.read, not readline: a buffered readline after select leaves a second
+        # line that arrived in the same chunk in Python's buffer, where select no
+        # longer sees it - the log then trails one request behind.
+        self.pending = b""
 
     def drain(self, timeout=0.3):
         end = time.time() + timeout
+        fd = self.proc.stdout.fileno()
         while True:
             left = end - time.time()
             if left <= 0:
                 return
-            ready, _, _ = select.select([self.proc.stdout], [], [], left)
+            ready, _, _ = select.select([fd], [], [], left)
             if not ready:
                 return
-            line = self.proc.stdout.readline()
-            if not line:
+            chunk = os.read(fd, 65536)
+            if not chunk:
                 return
-            try:
-                self.entries.append(json.loads(line))
-            except ValueError:
-                continue
+            self.pending += chunk
+            *lines, self.pending = self.pending.split(b"\n")
+            for line in lines:
+                try:
+                    self.entries.append(json.loads(line.decode("utf-8", "replace")))
+                except ValueError:
+                    continue
 
     def prompt_request(self, prompt):
         """The "seen" digest of the first request whose last user message is

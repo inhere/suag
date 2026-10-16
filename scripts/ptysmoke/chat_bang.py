@@ -26,9 +26,12 @@ Reverse validation (the named checks must fail):
     as a message instead -> "no request for !echo hi", "the command's output is
     shown", "the non-zero exit code is reported", "the result reaches the model"
     and the trace checks fail;
-  - drop the keyboard-only guard (the `case injected:` of that switch): the
-    delivered "!echo x" of `suga send` runs as a command instead of being
-    answered -> "the delivered text is a message, not a command" fails;
+  - the keyboard-only guard (the `case injected:` of that switch) cannot be
+    reverse-checked through `suga send`: a delivery reaches the loop already
+    prefixed with "[来自 cli] ", so it never starts with "!" and the delivered
+    checks pass with or without the guard (verified 2026-10-16). The guard
+    protects injected text without that prefix (a Stop hook reply); its unit
+    test in internal/chat/local_cmd_test.go covers it;
   - drop the read a local command holds (watchLocalCommand in
     internal/chat/local_cmd.go, so the terminal stays cooked): the Ctrl-C of the
     `!sleep 30` step reaches chat as SIGINT and ends it -> "Ctrl-C ends the
@@ -160,9 +163,17 @@ def scenario(s, log, binary, env):
                 s.until(r"\[来自 cli\] !echo " + SEND_MARK, m))
         s.check("the delivered text is answered, not run",
                 s.until(REPLY, m) and s.until(r"tokens · ", m))
-        log.drain(0.5)
-        s.check("the model received the delivered text",
-                any(str(entry.get("user") or "").endswith(SEND_TEXT) for entry in log.entries))
+        # The fake model's log line can trail the reply on screen: poll for it
+        # instead of draining once (a single 0.5s drain saw only the previous
+        # request's line on Linux).
+        received = False
+        end = time.time() + 10
+        while not received and time.time() < end:
+            log.drain(0.3)
+            received = any(str(entry.get("user") or "").endswith(SEND_TEXT) for entry in log.entries)
+        s.check("the model received the delivered text", received)
+        if not received:
+            print("  requests seen:", [str(e.get("user") or "")[-80:] for e in log.entries], flush=True)
     return session
 
 
