@@ -1,6 +1,7 @@
 package output
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -40,5 +41,24 @@ func TestEventLineToolEvents(t *testing.T) {
 		assert.StrNotContains(t, got, "\n")
 		assert.Eq(t, toolSummaryLimit, len([]rune(got)))
 		assert.True(t, strings.HasSuffix(got, "…"))
+	})
+}
+
+// TestErrorLineErrorKind: a failed turn names the kind of provider failure it hit
+// (transient: a cut stream whose retries ran out; bad response: an unusable
+// answer), so a caller such as gofer can decide whether to continue the session.
+// A turn that failed for another reason carries no field.
+func TestErrorLineErrorKind(t *testing.T) {
+	runErr := errors.New("provider error: read openai stream: stream truncated: unexpected EOF")
+	t.Run("a provider failure carries its kind", func(t *testing.T) {
+		line := ErrorLine("s", runErr, personal.RunResult{ErrorKind: "provider_transient"})
+		assert.Eq(t, "error", line["type"])
+		assert.Eq(t, "provider_transient", line["error_kind"])
+		assert.Eq(t, runErr.Error(), line["error"])
+	})
+	t.Run("another failure leaves the field out", func(t *testing.T) {
+		line := ErrorLine("s", errors.New("boom"), personal.RunResult{})
+		_, ok := line["error_kind"]
+		assert.Eq(t, false, ok)
 	})
 }

@@ -77,9 +77,16 @@ func ToolResultSummary(content string) string {
 	return text
 }
 
-// ErrorLine is the stream-json line for a failed run.
+// ErrorLine is the stream-json line for a failed run. error_kind (when the
+// failure was a provider error, see personal.RunResult.ErrorKind) tells a
+// transient one - a cut stream whose retries ran out - from an unusable
+// provider answer, so the caller can decide whether continuing makes sense.
 func ErrorLine(sessionID string, runErr error, result personal.RunResult) map[string]any {
-	return WithUsage(map[string]any{"type": "error", "session_id": sessionID, "error": runErr.Error()}, result)
+	line := map[string]any{"type": "error", "session_id": sessionID, "error": runErr.Error()}
+	if result.ErrorKind != "" {
+		line["error_kind"] = result.ErrorKind
+	}
+	return WithUsage(line, result)
 }
 
 // YieldedLine is the input_required line of a run that stopped for more input.

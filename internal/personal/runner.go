@@ -234,6 +234,14 @@ type RunResult struct {
 	// hook asked for one, e.g. a sub-agent's "max_tokens"); empty for a
 	// normal answer.
 	WrapUp string
+	// ErrorKind says why a failed turn failed (llm.ErrorKind):
+	// "provider_transient" for a cut or broken stream whose retries ran out,
+	// "provider_bad_response" for a provider answer that could not be used;
+	// empty for a completed turn, a cancelled one, or a failure that is not a
+	// provider error. The turn event carries it as attr error_kind and the
+	// stream-json error line as error_kind, so a caller such as gofer can decide
+	// whether continuing the session makes sense.
+	ErrorKind string
 	// ReturnedSteers are the steering messages the caller has to take care of
 	// after the turn (design D4), in arrival order: the ones the turn did not
 	// deliver (a completed turn) or all of them (a cancelled or failed turn, the

@@ -10,6 +10,7 @@ import (
 
 	"github.com/inhere/suga/internal/personal/store"
 	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 // Ending a turn: the last steps of Runner.Run after the runtime returned
@@ -89,6 +90,13 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	if canceled {
 		result.Status = agentcore.RunFailed
 	}
+	// Why a provider failure happened, for the hosts (the turn event's attr and the
+	// stream-json error line): a cut stream whose retries ran out reads differently
+	// from an answer that could not be used. A cancelled turn stays unclassified -
+	// its failure is the cancellation, not the provider's.
+	if !canceled {
+		result.ErrorKind = llm.ErrorKind(runErr)
+	}
 	denials := turnDenialsFrom(ctx)
 	result.DeniedTools, result.DenialLimitReached = denials.tools(), denials.limitReached()
 
@@ -140,6 +148,9 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	// The turn event is written outside the entry transactions and is
 	// best-effort; it is also what the trace timeline anchors on.
 	turnAttrs := map[string]any{"stop_reason": stopReason, "status": string(result.Status)}
+	if result.ErrorKind != "" {
+		turnAttrs["error_kind"] = result.ErrorKind
+	}
 	// What started the turn: the input's length and whether a person typed
 	// it (injected = a hook reply, gofer delivery, ...).
 	if in, ok := ctx.Value(turnInputKey{}).(turnInput); ok {
