@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 审批规则文件（命令/路径 glob → allow|ask|deny）与更细的“一直允许” 设计
 
-> 状态：Draft 0.2（按独立评审 r1 修订，待用户审阅）
+> 状态：Draft 0.3（按确认评审 r2 修订，待用户审阅）
 
 ## 修订记录
 
@@ -9,6 +9,7 @@
 |---|---|---|---|
 | 0.1 | 2026-10-16 | suga（gofer job） | 初稿：规则模型（来源、合并、优先）、命令/路径匹配语义、chat「一直允许」细化与写回、run/ACP/子 agent/MCP 并入同一模型、观测与验收 |
 | 0.2 | 2026-10-16 | suga（gofer job） | 关闭 R-C1–R-C5、R-M1–R-M10：校正 ACP/MCP 与 run 语义，收紧 shell/工具/路径匹配，补齐会话持久性、项目完整性、子 agent、重载与写回并发边界 |
+| 0.3 | 2026-10-16 | suga（gofer job） | 关闭 R-C2、N-A1、R-M1、R-M3、R-M8、R-M9 及全文一致性缺陷：补齐 shell 白名单、保护路径、项目信任钳制、会话规则生命周期与文件范围语义 |
 
 > 仅语义变化递增版本；纯 identity/provenance/元数据纠正沿用原版本，并在 Git/进度记录中留痕。
 
@@ -39,7 +40,7 @@
 1. 能写规则：`命令/路径 glob → allow|ask|deny`，放在全局配置与项目级文件里，改规则不必改代码。
 2. 规则可预期：**deny 恒优先**；同一条命令/路径的判定结果只由规则与默认动作决定，不依赖“先问过谁”。
 3. 「一直允许」细到命令前缀与目录，并且可以（经询问）写回规则文件，成为下一次启动就生效的规则。
-4. 同一套规则同时作用于 chat、run、ACP 与子 agent；MCP 白名单并入同一模型而不是并行第二套。
+4. 同一规则模型接入 chat、run、ACP 与子 agent；MCP 白名单按入口编译进同一模型，ACP 保持独立默认动作。
 5. 可观测：`suga trace` 能看出“这次调用为什么没问 / 为什么被拒”——命中的是哪一条规则。
 
 ## 名词
@@ -48,7 +49,7 @@
 - **动作（action）**：`allow`（不问，直接跑）、`ask`（询问，chat 在终端问、ACP 发权限请求、无终端则拒绝）、`deny`（直接拒绝，模型收到 tool error，回合继续）。
 - **来源（source）**：`user`（`$SUGA_HOME/approval-rules.yaml`）、`project`（`<workspace>/.suga/approval-rules.yaml`）、`session`（chat 答 `a`/`d`、ACP 回 allow_always/reject_always 得到）。legacy MCP 规则仅在 chat/run 的独立编译路径存在。
 - **默认动作（default action）**：没有任何规则命中时该入口的动作，按入口与模式决定（见 3.4）。
-- **范围键（scope key）**：会话级规则里 `command`/`path` 的具体值（命令前 N 个 token、目标所在目录、工具名），就是把「一直允许」写成一个规则时要填的东西。
+- **范围键（scope key）**：会话级规则里 `command`/`path` 的具体值。shell 使用命令前缀；`file_write`/`file_edit` 使用锚定 root 下的目标目录；`file_remove` 使用锚定 root 下的精确目标路径。
 - **命中（hit）**：规则与本次调用匹配。判定的输出是“最强动作 + 一条代表性命中（来源、序号、规则摘要）”。
 
 ## 范围与非目标
@@ -91,7 +92,7 @@
 | MCP 默认全拒：两个列表为空时每个 MCP 调用都被 `Denied("需要许可：…")` | `internal/wiring/cli_mcp.go:33-38,103-114` |
 | 危险删除守卫在审批最外层：chat 每次要求输入 `yes`（`auto`/always 都不绕过），run/ACP 直接拒绝 | `internal/wiring/danger_guard.go:20-54,57-83` |
 | 越界目录授权：`chat.ask_outside_dirs`（默认开）→ `授权访问 <dir>？[r] 只读 [w] 读写 [n] 拒绝`，授权记入会话（`source: ask`） | `internal/wiring/chat_approver.go:162-196,201-209,215-228`、`internal/config/chat.go:50-69` |
-| 子 agent：只注册只读工具，approver 恒 nil（全放行） | `internal/wiring/subagent.go:41-44,107-116` |
+| 子 agent：只注册只读工具，approver 恒 nil（全放行） | `internal/wiring/subagent.go:41-44,107-116`；创建子 agent 时传入父 Policy 与会话级规则快照，不能使用写死的 nil approver |
 | ACP：`permissionHook` 既是工具通知 hook 又是 approver；read_only 非只读工具直接拒；其余 `RequestPermission`，**选项只有 allow-once/reject-once** | `internal/acpserver/policy.go:52-73,114-182`（选项 `:158-161`） |
 | ACP 的 runtime 用 `wiring.Open(Approver: gate)` 打开，即 ACP 不经 `cliMCPGate` | `internal/cli/acp.go:42-73` |
 | 回合内拒绝上限 3 次结束回合 | `internal/personal/denial.go:14-16` |
@@ -103,12 +104,12 @@
 
 ## 总体方案
 
-主线一句话：**把“这一次工具调用要不要问人”收敛成一次纯函数判定** —— `Decide(call) → {allow | ask | deny, 命中的规则}`，规则来自“用户级 + 项目级 + 会话级”三个来源，取最强动作（deny > ask > allow）；legacy MCP 白名单只在 chat/run 编译，ACP 保持自己的入口默认动作；chat 的「一直允许」与 ACP 的 allow_always/reject_always 都编译成**同构的会话级规则**，MCP 白名单编译成 `legacy` 来源的 allow 规则。
+主线一句话：**把“这一次工具调用要不要问人”收敛成一次纯函数判定** —— `Decide(call) → {allow | ask | deny, 命中的规则}`，规则来自“用户级 + 项目级 + 会话级”三个来源，按 deny > ask > allow 取动作，并执行项目来源与入口默认动作的限制；legacy MCP 白名单只在 chat/run 编译，ACP 保持自己的入口默认动作；chat 的「一直允许」与 ACP 的 allow_always/reject_always 都编译成**同构的会话级规则**，MCP 白名单编译成 `legacy` 来源的 allow 规则。
 
 这样做的三个直接结果：
 
 - 原生规则与会话规则共用一个语义；MCP legacy 白名单只在 chat/run 使用，ACP 保持入口隔离。
-- deny 优先用于规则池；项目动作还受入口默认动作约束，危险删除不可放行是外层守卫的独立不变式。
+- deny 优先用于规则池；项目 deny 不可放宽；已信任的项目 allow 可在 ask 默认下生效，危险删除不可放行是外层守卫的独立不变式。
 - trace 里能报出“命中的是哪条规则”，用户能自己解释一次调用为什么没问。
 
 ## 架构
@@ -134,7 +135,7 @@
 
 组件划分（保持分层规矩：能力层不依赖 `internal/*`，见 `pkg/agentcore/layering_test.go`）：
 
-- `pkg/agentcore/tools/rules`（新）：`Rule{Source, Index, Tool, Command, Path, Action}`、`Policy{Rules, Default}`、匹配函数（工具名、命令 token、路径 glob）与判定 `Decide(Target) (Action, *Rule)`。纯逻辑、纯单测，不读配置、不碰文件系统。
+- `pkg/agentcore/tools/rules`（新）：`Rule{Source, Index, Tool, Command, Path, Root, Modes, Action}`、`Policy{Rules, Default}`、匹配函数（工具名、命令 token、路径 glob）与判定 `Decide(Target) (Action, *Rule)`。纯逻辑、纯单测，不读配置、不碰文件系统。
 - `internal/wiring/rules.go`（新）：读取规则文件与 `tools.approval_rules` 选项、校验、按 workspace/hash 信任过滤项目 allow；chat/run 另编译 MCP legacy 规则，ACP 使用自己的入口默认动作。
 - `internal/wiring/approval_policy.go`（新，或并入 `chat_approver.go` 的重写）：入口 approver 的判定核心——把 `Policy.Decide` 的结果翻译成“放行 / 询问 / `tools.Denied`”，并在 ctx 里上报命中的规则。
 - `internal/chat/approval_reply.go`（新）：答案解析（`y`/`a`/`d`/`n` 与持久化回答）、范围键计算、文案渲染。
@@ -155,8 +156,8 @@ rules:
   - tool: file_write
     path: ["docs/**", "README*.md"]  # 只对文件工具：目标路径匹配（相对工作区）
     action: allow
-  - tool: "*"                        # 任意工具
-    path: ["**/.env", "**/*.pem"]
+  - tool: file_write
+    path: ["**/.env", "**/*.pem"]  # 只保护写入/编辑/移除，不阻止读工具读取
     action: deny
   - tool: "gofer/gofer_*_delete"
     action: deny                     # MCP 工具也可以被显式拒绝
@@ -168,26 +169,26 @@ rules:
 |---|---|---|
 | `tool` | 否（缺省 `*`） | 工具名或 glob（`path.Match` 语义，`*` 不跨 `/`）；MCP 用 `server/toolglob`，与 `tools.auto_allow` 同一种写法 |
 | `command` | 否 | 字符串或列表；仅对 `shell_exec` 生效；只要声明了它，本次调用的工具不是 `shell_exec` 就不匹配 |
-| `path` | 否 | 字符串或列表；仅对 `file_write`/`file_edit`/`file_remove` 生效；相对工作区/附加目录的 glob，或绝对路径 glob |
+| `path` | 否 | 字符串或列表；仅对明确的 `file_write`/`file_edit`/`file_remove` 生效；相对绑定 root 的 glob，或绝对路径 glob。带 `path` 的 `tool` 不得是 glob。 |
 | `action` | 是 | `allow` / `ask` / `deny` |
 
-一条规则同时写 `command` 与 `path` 是配置错误（启动失败）：它们的适用工具集合不相交，写在一起说明作者意图不明，宁可报错也不猜。
+带 `path` 的 `tool` 必须是明确的文件写工具名；一条规则同时写 `command` 与 `path` 是配置错误（启动失败）：它们的适用工具集合不相交，写在一起说明作者意图不明，宁可报错也不猜。
 
 ### 3.2 匹配语义
 
 **工具身份**：无 `/` 的模式只匹配注册的原生工具；MCP 工具必须使用 `server/toolglob`。`command`/`path` 条件还要按工具身份校验，不能靠同名 MCP 工具冒充 `shell_exec` 或文件工具。
 
-**命令（`shell_exec`）**：先按实际 `resolveShell` 分类。allow 只对整条原文执行该 shell 的正向安全字符白名单；未知 shell、换行（含 `\r`、Unicode 行分隔）、控制操作符、替换/展开语法一律不匹配 allow，deny 仍做整串匹配。命令 deny 只是建议性收紧，不是沙箱或危险守卫的安全边界。token 数默认必须相等；只有末尾单独的 `*` 或 `**` 表示其后可有任意数量 token，token 内通配符不把 `/` 当特殊分隔符。Windows 比较大小写不敏感并忽略 `.exe`，不对别名、包装器、解释器或 `git -C` 做语义归一化。
+**命令（`shell_exec`）**：先按实际 `resolveShell` 分类。allow 只对整条原文执行对应 shell 的正向字符白名单；未知 shell、`\r`/`\n`/Unicode 行分隔符、控制操作符、替换与展开语法一律不匹配 allow，deny 仍做整串匹配。白名单是以下 ASCII 字符的精确集合（空格是唯一允许的空白；不允许 tab）并要求引号成对、不可嵌套：`sh`/`bash` 允许 `A-Z a-z 0-9 _ . / : = , + @ % -`、空格和单/双引号；引号只用于分组，反斜杠、`$`、反引号、分号、管道、重定向、括号、花括号、波浪号和感叹号均不允许。PowerShell 允许 `A-Z a-z 0-9 _ . / \ : = , + @ % -`、空格和单/双引号；引号只用于分组，`$`、反引号、`;`、`&`、`|`、重定向、括号、花括号和 `!` 均不允许。`cmd.exe` 允许 `A-Z a-z 0-9 _ . / \ : = , + @ -`、空格和双引号；双引号只用于分组，`%`、`^`、`!`、`&`、`|`、重定向、括号、花括号和单引号均不允许。字符白名单不承诺命令语义安全，只是 allow 的必要条件。token 数默认必须相等；只有末尾单独的 `*` 或 `**` 表示其后可有任意数量 token，token 内通配符不把 `/` 当特殊分隔符。Windows 比较大小写不敏感并忽略 `.exe`，不对别名、包装器、解释器或 `git -C` 做语义归一化。
 
 内置包装器/解释器（`sh`、`bash`、`pwsh`、`python`、`node`、`env`、`sudo`、`npx`、`xargs`、`find`、`go run` 等）不提供按前缀的 `a`；只能对完整安全命令作一次性 allow，并在提示中显示实际保存的模式。
 
-**路径（文件工具）**：先完成越界目录授权，再在更新后的根集合上解析目标；规则同时检查词法路径和 `EvalSymlinks` 后的真实路径。deny 任一命中即命中，allow 要求两者都命中；符号链接、硬链接（`nlink > 1`）、特殊文件、解析失败以及 Windows 短名/ADS/末尾点空格均不产生 allow，解析失败对 deny 按命中处理。相对规则绑定绝对 `root`，普通文件规则默认只绑定 workspace；glob 锚定 root，`*` 不代表任意深度。根文件的会话规则保存转义后的精确相对路径，`file_remove` 的 `a` 不授予递归或永久删除权限。
+**路径（文件工具）**：先完成越界目录授权，再在更新后的根集合上解析目标；规则同时检查词法路径和 `EvalSymlinks` 后的真实路径。deny 任一命中即命中，allow 要求两者都命中；符号链接、硬链接（`nlink > 1`）、特殊文件、解析失败以及 Windows 短名/ADS/末尾点空格均不产生 allow，解析失败对 deny 按命中处理。相对规则绑定绝对 `root`，普通文件规则默认只绑定 workspace；glob 锚定 root，`*` 不代表任意深度。目标不存在时，取最深的已存在祖先目录做 `EvalSymlinks`，再拼接剩余词法部分；目标不存在（ENOENT）不算解析失败，只有祖先解析失败或越出 root 才算失败。根文件的会话规则保存转义后的精确相对路径；`file_write`/`file_edit` 的会话范围是目录，`file_remove` 的会话范围是精确路径，`file_remove` 的 `a` 不授予递归或永久删除权限。
 
 ### 3.3 来源、合并与优先级
 
 - 用户级规则文件、项目级规则文件与会话级规则合并；legacy MCP 白名单只在 chat/run 的编译路径使用，ACP 不读取它。
-- 动作取最强：`deny > ask > allow`。项目动作还要与入口默认动作取更严格者，项目文件不能把 `deny` 默认放宽成 `ask`。
-- 项目 `allow` 默认忽略；信任改为用户配置中的 workspace 绝对路径及规则文件内容 hash。路径未获信任、hash 变化或仓库切换时继续忽略项目 allow。文件上限 64 KiB、规则条数有限制，禁用 YAML alias/anchor 展开。
+- 动作取最强：`deny > ask > allow`。项目 `deny` 永远生效；项目 `ask` 不得把入口默认 `deny` 放宽成询问；已获 workspace 路径与规则文件 hash 信任的项目 `allow` 可以在入口默认 `ask` 时生效，但不能绕过保护路径、危险删除或沙箱。未信任或 hash 变化的项目 `allow` 忽略。
+- 项目 `allow` 默认忽略；信任改为用户配置中的 workspace 绝对路径及规则文件内容 hash。路径未获信任、hash 变化或仓库切换时继续忽略项目 allow。文件上限 64 KiB、规则条数有限制，禁用 YAML alias/anchor 展开。规则文件、`.suga/**`、`.git/**` 与 `$SUGA_HOME/**` 是内置受保护路径：任何来源的 `allow` 对它们不生效；chat/ACP 按 `ask`，无终端的 run/子 agent 按 `deny`，显式 `deny` 仍按 `deny`。用户级规则文件也受此保护，不能借一次放行的写工具自我放权。
 - 每条规则可带 `modes: [chat, run, acp]`，缺省为三者；无终端的 run 命中 `ask` 按 deny 处理。`tools.approval_rules.enabled: false` 原样走旧的各入口路径。
 - 启动校验失败即退出；回合重载组合检查 size、mtime、hash。中途解析失败、文件删除或 hash 不一致时保留上一份有效规则并发 warning/trace；既有项目 deny 继续有效，直到用户确认新内容。
 - 写回使用文件锁、yaml.v3 Node、临时文件原子 rename 与回读校验；生成规则时转义 glob 元字符与 Windows `\`。
@@ -199,7 +200,7 @@ rules:
 | chat | `tools.approval` 的值：`ask`（默认）/ `auto` → `allow` | 保留现有键作为“默认动作”，不新增第二个同义键；`tools.approval` 非这两值是启动错误（现状） |
 | run | `allow` | 与现状一致：run 没有逐次确认，写工具直接跑 |
 | ACP（default 模式） | `ask` | 走 `RequestPermission`；read_only 模式下非只读工具直接 `deny`（现状 `policy.go:143-145`） |
-| 子 agent | `allow` | 只注册只读工具；规则可以收紧（D8） |
+| 子 agent | `allow` | 只注册只读工具；继承创建时的 Policy 与会话规则快照，子 agent 中 `ask` 等同 `deny` |
 | MCP 工具（chat/run） | `deny` | legacy 白名单可编译为 allow；ACP 不使用该默认值 |
 | MCP 工具（ACP default） | `ask` | 非只读模式走 `RequestPermission`；ACP read_only 下为 `deny` |
 | 只读工具（`Meta.ReadOnly`）与 agent-state 工具 | `allow` | 现状的快捷放行；规则可以把它改写成 `ask` 或 `deny`（见 3.7） |
@@ -213,13 +214,13 @@ rules:
 | 工具 | 范围键 | 记下的规则 | 询问文案 |
 |---|---|---|---|
 | `shell_exec` | 命令前 `N` 个 token（`tools.approval_rules.always_prefix_tokens`，默认 2；命令只有 1 个 token 时按 1 个） | `{tool: shell_exec, command: "go test *", action: allow}` | `[a]本会话总是允许“go test”开头的命令` |
-| `file_write` / `file_edit` | 目标文件的锚定相对路径与 root | `{tool: file_write, root: "<workspace>", path: "docs/design/x.md", action: allow}` | `[a]本会话总是允许该目标` |
+| `file_write` / `file_edit` | 目标目录的锚定相对路径与 root | `{tool: file_write, root: "<workspace>", path: "docs/design/**", action: allow}` | `[a]本会话总是允许写入 docs/design/ 目录` |
 | `file_remove` | 目标的精确相对路径 | `{tool: file_remove, root: "<workspace>", path: "tmp/x.log", action: allow}` | `[a]本会话总是允许该目标` |
 | 其余（MCP、将来新增的写工具） | 工具名 | `{tool: "server/tool", action: allow}` | `[a]本会话总是允许该工具` |
 
 配套两点：
 
-- 命令含控制符（3.2 第 3 条）时**不提供** `a`：文案里省略 `[a]`，并说明“含 `&&`/`|` 等的命令不能总是允许”。否则会话级 allow 会绕开刚立的规矩。
+- 命令不满足对应 shell 的正向白名单时**不提供** `a`：文案里省略 `[a]`，并说明“含 `&&`/`|` 等的命令不能总是允许”。否则会话级 allow 会绕开刚立的规矩。
 - 新增 `[d]本会话总是拒绝`：记 `action: deny` 的会话级规则，范围键与 `a` 相同。它对应 ACP 的 `reject_always`（suga-1ojw）与文件规则里的 `deny`，让“这次之后别再问我”两个方向都有出口。
 
 询问文案（chat，未命中任何规则时）：
@@ -257,12 +258,14 @@ rules:
 
 ### 3.7 与既有闸门的关系（顺序与不变式）
 
+子 agent 使用创建时的 Policy 快照，继承父会话规则；其入口没有终端，任何 `ask` 均按 `deny` 处理。
+
 判定顺序为：工具存在性 → 危险删除外层守卫 → chat 越界目录授权 → 规则判定 → 逐次确认/默认动作 → 只读与 agent-state 默认放行。显式规则先于内置快捷放行；规则不能扩大沙箱、改变工具存在性、放行危险删除或授予工作区外可达性。路径解析失败对 deny fail-closed。一个回合内 3 次拒绝仍结束回合，规则造成的拒绝也计数。
 
 ### 3.8 ACP 的 allow_always / reject_always（suga-1ojw 的映射）
 
 - 权限选项集从两种扩到四种，`OptionId` 保持现有 `allow` / `reject` 不变，新增 `allow_always` / `reject_always`（`policy.go:158-161`）。
-- `allow_always` → 保存在 `a.sessions[id]`、由后续 prompt 复用的会话级 allow；`reject_always` → 会话级 deny；session/load 恢复，未知或过期 session 不恢复。
+- `allow_always` → 保存在 `a.sessions[id]`、由后续 prompt 复用的会话级 allow；`reject_always` → 会话级 deny。`session/load` 整体替换会话状态，故 load 时保留同一进程中已有的规则快照；规则不写入 session/meta，跨进程重启或进程间 load 不恢复，客户端需重新选择。
 - 规则命中 `allow` 时**不发** `session/request_permission`，但 `BeforeTool` 的 `tool_call` 通知照常发（客户端仍看到这次调用）；命中 `deny` 时直接返回 `deniedError`（模型收到 tool error，回合继续，与 read_only 拒绝同一路径，`policy.go:143-145`）。
 - ACP 不写规则文件：持久化是客户端/用户的决定（它有自己的配置面）。ACP 所需的其余方法（`session/list|resume|close`、`fs/*`）仍属 suga-1ojw，不在本设计。
 
@@ -277,7 +280,7 @@ rules:
 ### 3.10 兼容与迁移
 
 - 全部现有配置键保留且语义等价：`tools.approval`（默认动作）、`tools.auto_allow`/`tools.read_only_allow`（编译成 legacy 规则）、`chat.ask_outside_dirs`（越界授权）、`tools.allow_write`、`--read-only`、`--allow-write`、`--add-dir`、`SUGA_ADD_DIRS`。
-- 无数据迁移：规则是配置。chat 会话级规则在进程内存；ACP 会话级规则保存在 session state，并由 session/load 恢复。
+- 无数据迁移：规则是配置。chat 会话级规则在进程内存；ACP 会话级规则保存在 session state。同一进程的 `session/load` 保留已有规则快照，跨进程不恢复。
 - 有意变化包括：项目 allow 按 workspace/hash 信任；只读/agent-state 可被规则改成 ask/deny；无终端 run 的 ask 按 deny；ACP 不读取 chat/run 的 legacy MCP 白名单而保持 MCP ask/deny 入口语义。
 - 新增键汇总：
 
@@ -285,7 +288,6 @@ rules:
 |---|---|---|
 | `tools.approval_rules` | 对象，默认启用 | 开关、选项；规则正文只在规则文件 |
 | `tools.approval_rules.enabled` | bool，默认 `true` | 关掉后不做规则判定（等价于现状） |
-| `tools.approval_rules.project_trust` | workspace 路径与内容 hash 列表，默认空 | 只有已确认且 hash 未变的项目文件 allow 才生效 |
 | `tools.approval_rules.always_prefix_tokens` | int，默认 `2`（`>= 1`） | `a` 记命令前缀的 token 数 |
 | `tools.approval_rules.persist_ask` | bool，默认 `true` | 答 `a`/`d` 后是否追问写回文件 |
 | `tools.approval_rules.project_trust` | workspace 路径与内容 hash 列表，默认空 | 只有已确认且 hash 未变的项目文件 allow 才生效 |
@@ -300,7 +302,7 @@ rules:
 模型调用 shell_exec{"command": "go test -race ./..."}
   Approval → guardDangerous（无危险）→ chatApprover
   Policy.Decide: tool=shell_exec 命中 user#3 {command: "go test *", allow}
-     命令无控制符、token 前缀匹配 → 动作 allow
+     命令满足 sh/PowerShell/cmd 对应白名单、token 匹配 → 动作 allow
   → 工具直接执行；ApprovalReport{Rule: "user#3 …"} → trace approval=rule(user#3: …)
 ```
 
@@ -310,7 +312,7 @@ rules:
 模型调用 shell_exec{"command": "go build ./cmd/suga"}
   无规则命中 → 默认动作 ask → 询问
   文案：允许执行 shell_exec？[y]是 [N]否 [a]本会话总是允许“go build”开头的命令 [d]本会话总是拒绝：
-  用户答 a → 会话级规则 {tool: shell_exec, command: "go build *", action: allow}
+  用户答 a → 会话级规则 {tool: shell_exec, command: "go build *", action: allow}（包装器/解释器命令只记录完整安全命令）
   追问：把这条规则写进规则文件？[u] 用户级 … [p] 项目级 … [N] 只本会话：
   用户答 u → 追加到 $SUGA_HOME/approval-rules.yaml；本回合调用执行；trace approval=always(shell_exec "go build")
 ```
@@ -347,11 +349,11 @@ ACP 客户端收到 session/request_permission（选项 allow / allow_always / r
 
 - **D1 规则放在独立文件而不是 `config.yaml`**。备选：全部内联进 `config.yaml`（与 `tools.*` 一致，但那是用户手写带注释的文件，程序追加会打乱它）；只读用户级、不做项目级（少一层，但项目需要“这个仓库不许改 .env”这类规则）。选：用户级 `$SUGA_HOME/approval-rules.yaml` + `tools.approval_rules` 选项、项目级单独文件（位置对齐 `output-rules.yaml` 的先例）。
 - **D2 优先级取最强（deny > ask > allow），而不是首次命中或按具体度排序**。备选：首次命中（顺序成为隐蔽语义，新增 deny 容易失效）；按 glob 具体度排序（需要定义“更具体”，解释成本高且容易被绕）。选最强：唯一规则、fail-closed 方向明确。
-- **D3 命令匹配用 token 前缀 glob + 控制符豁免**。备选：纯字符串前缀（简单，但不能表达 `go test -run *`，且 `go test*` 会误匹配 `go testing`）；正则（表达力强，但带来 ReDoS 风险与写法门槛，且用户写错的后果是放行）。选 token 前缀 glob，并**必须**带控制符豁免。
+- **D3 命令匹配用 token 语法 + 按 shell 的正向字符白名单**。备选：纯字符串前缀（简单，但不能表达 `go test -run *`，且 `go test*` 会误匹配 `go testing`）；正则（表达力强，但带来 ReDoS 风险与写法门槛，且用户写错的后果是放行）。选 token 前缀 glob，并对 allow 强制执行整串正向白名单；不满足白名单的调用回到默认动作。
 - **D4 项目级 `allow` 默认忽略**（按 workspace 路径与内容 hash 信任）。备选：项目级完全支持 allow（方便，但把审批权交给模型可写的文件）；项目级文件根本不读（最简单、最安全，但失去“仓库自带收紧规则”的价值）。选“可收紧、默认收紧”。
-- **D5 `a` 的范围键按工具类型细化**（命令前缀 2 token / 目录 / 工具名）。备选：全部按工具名（现状，粒度粗）；全部按“精确命令/文件”（安全但不实用：几乎每行命令都要重新答）。选细化 + `always_prefix_tokens` 可调。
+- **D5 `a` 的范围键按工具类型细化**（命令前缀 2 token / `file_write`、`file_edit` 目录 / `file_remove` 精确路径 / 其它工具名）。备选：全部按工具名（现状，粒度粗）；全部按“精确命令/文件”（安全但不实用：几乎每行命令都要重新答）。选细化 + `always_prefix_tokens` 可调。
 - **D6 答 `a`/`d` 后追问是否写回，默认不写**。备选：直接写回用户级（少一次交互，但用户会意外积累规则）；从不写回（每次重启都重新答）。选追问，回车即“只本会话”。
-- **D7 MCP 白名单编译进同一模型（`legacy` 来源）**，保留两个键与校验。备选：并行保留两套判定（MCP 独立闸门 + 原生规则，判定顺序复杂、无法用一条 deny 覆盖白名单）。选并入。
+- **D7 MCP 白名单编译进同一模型（`legacy` 来源）**，保留两个键与校验。备选：并行保留两套判定（MCP 独立闸门 + 原生规则，判定顺序复杂、无法用一条 deny 涵盖白名单）。选并入。
 - **D8 规则不能放行危险删除**。备选：允许显式 `allow` 放行（会削弱守卫存在的意义：它拦的正是“确定性删除”；确认过的一次就不该再确认）。选不放行；用户确实要跑时仍在 chat 里手输 `yes`。
 - **D9 ACP 的 allow_always/reject_always 落成会话级规则，不写文件**。备选：ACP 侧也写规则文件（超出客户端语义、且没人看得到写在哪）；不做（suga-1ojw 的验收会缺一半）。选会话级。
 - **D10 规则文件每回合按 size/mtime/hash 重载，失败保留上一份有效规则**。备选：只在启动读（改规则要重启 chat）。选每回合一次（文件小，成本可忽略）。
@@ -364,7 +366,9 @@ ACP 客户端收到 session/request_permission（选项 allow / allow_always / r
 - **Q3 命令匹配**：建议按 shell 的正向白名单、精确 token 与末尾 `*`/`**`；备选是更宽松的字符串前缀（实用但无法安全区分包装器与控制语法）。命令 deny 仅建议性收紧是评审要求，原稿把 deny 恒优先视作安全边界的理由不再采用。
 - **Q4 `[d]`**：建议保留，与 ACP `reject_always` 对齐；备选是不加，交互更小但没有“直接拒绝且不再问”的出口。
 - **Q5 写回**：建议默认仅本会话，用户级可写，项目级只允许 deny；备选是允许项目 allow 写回（原稿理由是固化仓库规则更方便，评审反对理由是可写仓库形成提权通道）。
-- **Q6 `file_remove`**：建议 `[a]` 只保存精确路径，不按目录放宽；备选是锚定目录且只允许直接文件，但评审认为递归/永久删除风险仍不值得。
+- **Q6 `file_remove`**：建议 `[a]` 只保存精确路径，不按目录放宽；备选是锚定目录且只允许直接文件，理由是减少重复询问，但递归/永久删除风险仍不值得。
+- **Q7 ACP session/load**：建议只在同一进程内保留 session state 中的规则快照，跨进程重新询问；备选是把规则写入 session meta，理由是跨进程恢复方便，但会扩大持久化敏感状态和协议兼容面。
+- **Q8 子 agent 规则传播**：建议创建时传入父 Policy 与会话规则快照，子 agent 的 `ask` 按 deny；备选是每次调用实时读取父策略，理由是能立即响应规则变化，但会引入并发和生命周期不一致。
 
 ## 结论与人工计划 Gate
 
