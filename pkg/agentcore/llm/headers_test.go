@@ -27,7 +27,7 @@ func TestOpenAIProviderSendsConfiguredHeaders(t *testing.T) {
 	req := &agentcoreapi.GenerateRequest{Messages: []agentcoreapi.Message{{Role: "user", Content: "hi"}}}
 
 	t.Run("session id substituted", func(t *testing.T) {
-		_, err := p.Generate(WithSessionID(context.Background(), "sess-1"), req)
+		_, err := p.Generate(agentcoreapi.WithSessionID(context.Background(), "sess-1"), req)
 		assert.NoErr(t, err)
 		assert.Eq(t, "sess-1", got.Get("X-Opencode-Session"))
 		assert.Eq(t, "conv-sess-1", got.Get("X-Route"))
@@ -48,4 +48,11 @@ func TestOpenAIProviderSendsConfiguredHeaders(t *testing.T) {
 		assert.NoErr(t, err)
 		assert.Eq(t, "my-agent/1.0", got.Get("User-Agent"))
 	})
+}
+
+// The deprecated llm helpers forward to api: a ctx marked either way carries
+// the same session id.
+func TestDeprecatedSessionIDHelpers(t *testing.T) {
+	assert.Eq(t, "s1", SessionIDFrom(agentcoreapi.WithSessionID(context.Background(), "s1")))
+	assert.Eq(t, "s1", agentcoreapi.SessionIDFrom(WithSessionID(context.Background(), "s1")))
 }

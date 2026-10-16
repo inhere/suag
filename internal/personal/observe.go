@@ -12,6 +12,7 @@ import (
 
 	"github.com/inhere/suga/internal/personal/store"
 	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/api"
 	"github.com/inhere/suga/pkg/agentcore/llm"
 	"github.com/inhere/suga/pkg/agentcore/redact"
 	"github.com/inhere/suga/pkg/agentcore/tools"
@@ -43,7 +44,7 @@ type observeScope struct{ sessionID, turnID string }
 // The session id is also handed to the llm providers for llm.headers values
 // that use the {{session_id}} placeholder.
 func withObserveScope(ctx context.Context, sessionID, turnID string) context.Context {
-	ctx = llm.WithSessionID(ctx, sessionID)
+	ctx = api.WithSessionID(ctx, sessionID)
 	return context.WithValue(ctx, scopeKey{}, observeScope{sessionID: sessionID, turnID: turnID})
 }
 

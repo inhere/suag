@@ -9,7 +9,6 @@ import (
 	"github.com/gookit/goutil/x/assert"
 
 	"github.com/inhere/suga/pkg/agentcore/api"
-	"github.com/inhere/suga/pkg/agentcore/llm"
 	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
@@ -19,7 +18,7 @@ func TestBackgroundShellAndTaskTool(t *testing.T) {
 		return filepath.Join(dir, id+".txt"), "out:" + sid + ":" + id, nil
 	}})
 	t.Cleanup(m.Close)
-	ctx := llm.WithSessionID(context.Background(), "s1")
+	ctx := api.WithSessionID(context.Background(), "s1")
 	shell := NewShellExecTool(t.TempDir(), 0)
 	shell.SetTasks(m)
 	task := NewTaskTool(m, 0)

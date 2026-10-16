@@ -16,7 +16,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 
-	"github.com/inhere/suga/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // The test binary doubles as the task command: TASKS_HELPER selects what it
@@ -61,7 +61,7 @@ func newTestManager(t *testing.T, limits Limits, onExit func(Info)) (*Manager, c
 		return filepath.Join(dir, sid+"-"+id+".txt"), "out:" + sid + ":" + id, nil
 	}})
 	t.Cleanup(m.Close)
-	return m, llm.WithSessionID(context.Background(), "s1")
+	return m, api.WithSessionID(context.Background(), "s1")
 }
 
 // waitFor polls cond for up to 10s.

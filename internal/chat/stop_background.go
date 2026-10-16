@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 
 	sugahooks "github.com/inhere/suga/internal/hooks"
-	"github.com/inhere/suga/pkg/agentcore/llm"
+	"github.com/inhere/suga/pkg/agentcore/api"
 	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
@@ -44,7 +44,7 @@ func (b *backgroundStop) start(ctx context.Context, stop sugahooks.Event) error 
 		}
 		b.current = ""
 	}
-	info, err := b.tasks.Start(llm.WithSessionID(ctx, b.sessionID), tasks.Spec{
+	info, err := b.tasks.Start(api.WithSessionID(ctx, b.sessionID), tasks.Spec{
 		Kind: "hook", Summary: "Stop hook", NoEndNotice: true,
 		Run: func(ctx context.Context, out io.Writer, r tasks.Reporter) (int, error) {
 			return b.run(ctx, stop, out, r)

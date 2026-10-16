@@ -51,7 +51,7 @@ func responsesHistory() []agentcoreapi.Message {
 func TestResponsesRequestBody(t *testing.T) {
 	p := NewResponsesProvider(ResponsesConfig{OpenAIConfig: OpenAIConfig{
 		BaseURL: "https://api.commandcode.ai/provider/v1", Model: "deepseek/deepseek-v4.1-flash", ReasoningEffort: "high"}})
-	ctx := WithSessionID(context.Background(), "sess-1")
+	ctx := agentcoreapi.WithSessionID(context.Background(), "sess-1")
 	body := p.buildResponsesBody(ctx, &agentcoreapi.GenerateRequest{System: "be brief", Messages: responsesHistory(),
 		Tools: []agentcoreapi.ToolSchema{{Name: "file_read", Description: "Read", InputSchema: map[string]any{"type": "object"}}}}, true)
 	raw, _ := json.Marshal(body)

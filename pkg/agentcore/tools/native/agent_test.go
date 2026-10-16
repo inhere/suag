@@ -11,7 +11,6 @@ import (
 	"github.com/gookit/goutil/x/assert"
 
 	"github.com/inhere/suga/pkg/agentcore/api"
-	"github.com/inhere/suga/pkg/agentcore/llm"
 	"github.com/inhere/suga/pkg/agentcore/tasks"
 	"github.com/inhere/suga/pkg/agentcore/tools"
 )
@@ -33,7 +32,7 @@ func TestAgentTool(t *testing.T) {
 	report := AgentReport{SessionID: "sess_c", Report: "Foo is in a.go:3", Stop: "final", Steps: 4, ToolCalls: 3,
 		Usage: api.Usage{InputTokens: 85000, CacheReadTokens: 60000, OutputTokens: 1200}, Duration: 41 * time.Second}
 	run := func(tool *AgentTool, args map[string]any) (*api.ToolResult, error) {
-		return tool.Execute(llm.WithSessionID(context.Background(), "s1"), api.ToolCall{CallID: "c7", Name: "agent", Arguments: args})
+		return tool.Execute(api.WithSessionID(context.Background(), "s1"), api.ToolCall{CallID: "c7", Name: "agent", Arguments: args})
 	}
 
 	t.Run("read-only, no background without a manager", func(t *testing.T) {
@@ -94,7 +93,7 @@ func TestAgentTool(t *testing.T) {
 		res, err := run(tool, map[string]any{"description": "survey", "prompt": "survey the api", "background": true})
 		assert.Require(t, assert.NoErr(t, err))
 		assert.StrContains(t, res.Content, "[background agent task t1 started: survey]")
-		ctx := llm.WithSessionID(context.Background(), "s1")
+		ctx := api.WithSessionID(context.Background(), "s1")
 		info, how, err := m.Wait(ctx, "s1", "t1", 5*time.Second)
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, tasks.WaitEnded, how)

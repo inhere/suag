@@ -122,7 +122,7 @@ func (p *ResponsesProvider) buildResponsesBody(ctx context.Context, req *agentco
 	}
 	// The session id keeps one conversation on one cache (the API caps the
 	// key at 64 characters).
-	if key := SessionIDFrom(ctx); key != "" && len(key) <= 64 {
+	if key := agentcoreapi.SessionIDFrom(ctx); key != "" && len(key) <= 64 {
 		body["prompt_cache_key"] = key
 	}
 	return body

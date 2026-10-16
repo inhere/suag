@@ -26,8 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/inhere/suga/pkg/agentcore/api"
 	"github.com/inhere/suga/pkg/agentcore/internal/proctree"
-	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 // Status is where a task is in its life.
@@ -75,7 +75,7 @@ type Config struct {
 	// model can pass to other tools, e.g. "out:<session>:<hex>"). Required.
 	Output func(sessionID, taskID string) (path, ref string, err error)
 	// Session returns the session a call belongs to; nil uses
-	// llm.SessionIDFrom.
+	// api.SessionIDFrom.
 	Session func(ctx context.Context) string
 	// OnNotice, when set, is called for every notice left pending: a task
 	// that ended unseen, or a running task's Reporter.Notify (e.g. to wake an
@@ -194,7 +194,7 @@ type pending struct {
 // NewManager returns a Manager; cfg.Output is required.
 func NewManager(cfg Config) *Manager {
 	if cfg.Session == nil {
-		cfg.Session = llm.SessionIDFrom
+		cfg.Session = api.SessionIDFrom
 	}
 	return &Manager{cfg: cfg, limits: cfg.Limits.withDefaults(), sessions: map[string]*session{}}
 }

@@ -12,7 +12,6 @@ import (
 	"github.com/gookit/goutil/x/assert"
 
 	"github.com/inhere/suga/pkg/agentcore/api"
-	"github.com/inhere/suga/pkg/agentcore/llm"
 	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
@@ -84,7 +83,7 @@ func newWatchFixture(t *testing.T) *watchFixture {
 	ws := t.TempDir()
 	shell := NewShellExecTool(ws, 0)
 	shell.SetTasks(m)
-	return &watchFixture{ws: ws, m: m, shell: shell, ctx: llm.WithSessionID(context.Background(), "s1")}
+	return &watchFixture{ws: ws, m: m, shell: shell, ctx: api.WithSessionID(context.Background(), "s1")}
 }
 
 func (f *watchFixture) write(t *testing.T, name, content string) {

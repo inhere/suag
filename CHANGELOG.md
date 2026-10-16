@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 变更
+
+- agentcore：会话 id 的读写（`WithSessionID` / `SessionIDFrom`）从 `llm` 下沉到 `api`——它属于运行时会话概念，不是 provider 概念。`llm.WithSessionID` / `llm.SessionIDFrom` 保留为转发并标记 Deprecated；`tasks` 不再依赖 `llm`，后台任务层的依赖闭包不再拖进整个 provider 层（`llm.SessionIDPlaceholder` 与 `{{session_id}}` 请求头行为不变）。
+
 ## [0.25.0] - 2026-10-16
 
 回合中插话（常驻输入行、状态行、Up 撤回、`suga send --steer`）；chat 支持 `!` 本地命令；续接时校验工作目录；流式回复被截断时自动重试；回合取消不再丢后台任务通知。
