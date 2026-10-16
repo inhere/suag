@@ -171,6 +171,9 @@ type runUsageMeter struct {
 	// every model call counted here counts in that session's run as well
 	// (forwardChildUsage).
 	parentSession string
+	// parentBackground marks a background child. Background children still
+	// forward usage, but they must not use the parent's budget to stop early.
+	parentBackground bool
 	// held is pending child usage moved into this run for stream/ACP accounting;
 	// turn budgets subtract it until the pending-aware session policy is applied.
 	held                  agentcore.Usage
@@ -181,6 +184,7 @@ type runUsageMeter struct {
 }
 
 type childRunKey struct{}
+type childBackgroundKey struct{}
 
 // withChildOf marks ctx as the start of a sub-agent run of parentSession: its
 // meter forwards its model usage to that session (forwardChildUsage).
@@ -188,9 +192,21 @@ func withChildOf(ctx context.Context, parentSession string) context.Context {
 	return context.WithValue(ctx, childRunKey{}, parentSession)
 }
 
+// withChildBackground marks whether a child is running as an asynchronous
+// background task. The usage still belongs to the parent session, but the
+// parent's soft budget only governs foreground children.
+func withChildBackground(ctx context.Context, background bool) context.Context {
+	return context.WithValue(ctx, childBackgroundKey{}, background)
+}
+
 func childOf(ctx context.Context) string {
 	parent, _ := ctx.Value(childRunKey{}).(string)
 	return parent
+}
+
+func childIsBackground(ctx context.Context) bool {
+	background, _ := ctx.Value(childBackgroundKey{}).(bool)
+	return background
 }
 
 // Sub-agent usage reaches the session that started it through the run in
@@ -243,6 +259,15 @@ func forwardChildUsage(ctx context.Context, parentSession string, priced agentco
 	}
 	childUsageMu.Unlock()
 	m.addChild(ctx, priced, estimated...)
+}
+
+// activeMeterFor returns the run currently active for a session. A foreground
+// child uses this meter for its parent-budget check; a missing meter means the
+// child is detached from an in-progress parent run and must not guess.
+func activeMeterFor(sessionID string) *runUsageMeter {
+	childUsageMu.Lock()
+	defer childUsageMu.Unlock()
+	return activeMeters[sessionID]
 }
 
 // subUsage is a minus b, field by field (never below zero).
@@ -369,6 +394,7 @@ func (m *runUsageMeter) snapshot() RunUsage {
 func (r *Runner) newRunUsageMeter(ctx context.Context, sessionID, turnID string, sink EmitFunc) *runUsageMeter {
 	m := &runUsageMeter{base: r.withSessionUsage(ctx, sessionID, RunResult{}).SessionUsage, budget: r.cfg.Budget.normalized()}
 	m.parentSession = childOf(ctx) // the session that started this sub-agent
+	m.parentBackground = childIsBackground(ctx)
 	if sink != nil {
 		m.onModel = func(ctx context.Context, u UsageUpdate) {
 			event := Event{Kind: "usage", SessionID: sessionID, TurnID: turnID, RunID: turnID, Usage: &u, Budget: u.Budget}

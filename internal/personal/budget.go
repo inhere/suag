@@ -36,14 +36,17 @@ type BudgetMetric struct {
 // BudgetSnapshot is attached to usage updates and budget events. It is an
 // optional observation object: old callers receive nil when no budget exists.
 type BudgetSnapshot struct {
-	Scope                 string       `json:"scope"`
-	Tokens                BudgetMetric `json:"tokens,omitempty"`
-	CostUSD               BudgetMetric `json:"cost_usd,omitempty"`
-	Exceeded              bool         `json:"exceeded"`
-	Reason                string       `json:"reason,omitempty"`
-	Estimated             bool         `json:"estimated,omitempty"`
-	EstimatedInputTokens  int          `json:"est_input_tokens,omitempty"`
-	EstimatedOutputTokens int          `json:"est_output_tokens,omitempty"`
+	Scope    string       `json:"scope"`
+	Tokens   BudgetMetric `json:"tokens,omitempty"`
+	CostUSD  BudgetMetric `json:"cost_usd,omitempty"`
+	Exceeded bool         `json:"exceeded"`
+	Reason   string       `json:"reason,omitempty"`
+	// Parent identifies a child event caused by the foreground parent's budget,
+	// rather than by the child's own agents.max_tokens limit.
+	Parent                bool `json:"parent,omitempty"`
+	Estimated             bool `json:"estimated,omitempty"`
+	EstimatedInputTokens  int  `json:"est_input_tokens,omitempty"`
+	EstimatedOutputTokens int  `json:"est_output_tokens,omitempty"`
 }
 
 func (b BudgetSettings) enabled() bool { return b.Tokens > 0 || b.CostUSD > 0 }
@@ -87,7 +90,7 @@ type budgetHook struct {
 // request; the usage collector distinguishes that case from an already-spent
 // session entering a new turn.
 func (h *budgetHook) BeforeModel(ctx context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
-	if h == nil || !h.settings.enabled() || h.settings.Scope != "session" || h.meter == nil || h.usage == nil {
+	if h == nil || h.isChild() || !h.settings.enabled() || h.settings.Scope != "session" || h.meter == nil || h.usage == nil {
 		return nil
 	}
 	if _, calls, _ := h.usage.snapshot(); calls > 0 {
@@ -114,6 +117,15 @@ func (h *budgetHook) AfterModel(ctx context.Context, event *agentcore.ModelEvent
 	if h == nil || !h.settings.enabled() || h.meter == nil {
 		return nil
 	}
+	if h.isChild() {
+		if h.meter.parentBackground {
+			return nil
+		}
+		if event != nil && event.Result != nil {
+			h.warnIfNeeded(ctx, event.Result.Usage)
+		}
+		return h.afterForegroundChild(ctx, ctrl)
+	}
 	if event != nil && event.Result != nil {
 		h.warnIfNeeded(ctx, event.Result.Usage)
 	}
@@ -123,6 +135,39 @@ func (h *budgetHook) AfterModel(ctx context.Context, event *agentcore.ModelEvent
 	}
 	h.reported = true
 	reason := budgetReason(h.settings, snapshot)
+	snapshot.Reason = reason
+	if h.onBudget != nil {
+		h.onBudget(ctx, snapshot, reason)
+	}
+	ctrl.RequestWrapUp(reason, budgetWrapUpInstruction(snapshot, reason))
+	return nil
+}
+
+// isChild separates the parent's budget from agents.max_tokens. A child runner
+// receives the parent settings so it can inspect the same limits, but it must
+// not apply those settings to its own session or to a background task.
+func (h *budgetHook) isChild() bool {
+	return h.meter != nil && h.meter.parentSession != ""
+}
+
+// afterForegroundChild checks the active parent after every child model call.
+// The parent runtime can only observe the forwarded usage at its next model
+// boundary, so the child is the timely soft-stop point for foreground work.
+func (h *budgetHook) afterForegroundChild(ctx context.Context, ctrl *agentcore.Control) error {
+	if h.meter.parentBackground || h.reported {
+		return nil
+	}
+	parent := activeMeterFor(h.meter.parentSession)
+	if parent == nil || !parent.budget.enabled() {
+		return nil
+	}
+	snapshot := parent.budgetSnapshot()
+	if !snapshot.Exceeded {
+		return nil
+	}
+	h.reported = true
+	snapshot.Parent = true
+	reason := budgetReason(parent.budget, snapshot)
 	snapshot.Reason = reason
 	if h.onBudget != nil {
 		h.onBudget(ctx, snapshot, reason)
@@ -212,6 +257,9 @@ func budgetAttrs(snapshot BudgetSnapshot, reason string) map[string]any {
 	attrs := map[string]any{
 		"scope": snapshot.Scope, "exceeded": snapshot.Exceeded, "estimated": snapshot.Estimated,
 		"reason": reason,
+	}
+	if snapshot.Parent {
+		attrs["parent"] = true
 	}
 	if snapshot.Tokens.Limit > 0 {
 		attrs["limit_tokens"] = snapshot.Tokens.Limit

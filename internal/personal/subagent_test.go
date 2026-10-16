@@ -191,3 +191,63 @@ func TestLimitHookTimeoutInstruction(t *testing.T) {
 	assert.StrContains(t, ctrl.WrapUpInstruction, "如实写明")
 	assert.StrContains(t, ctrl.WrapUpInstruction, "时间上限")
 }
+
+func TestChildBudgetFollowsParentAndSkipsBackground(t *testing.T) {
+	repo := openObserveRepo(t)
+	ctx := context.Background()
+	assert.Require(t, assert.NoErr(t, repo.CreateSession(ctx, store.Session{ID: "parent-budget", Status: store.SessionOpen})))
+	budget := BudgetSettings{Tokens: 5, Scope: "turn"}
+	newChild := func(t *testing.T, replies ...func(int, *agentcore.GenerateRequest) (*agentcore.GenerateResult, error)) (*Runner, *scriptProv) {
+		t.Helper()
+		prov := &scriptProv{normal: func(n int, req *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+			return replies[min(n-1, len(replies)-1)](n, req)
+		}}
+		runner := compactRunner(t, repo, prov, bigToolRegistry(10, nil), func(c *Config) { c.Budget = budget })
+		return runner, prov
+	}
+
+	t.Run("foreground child wraps up on the parent budget", func(t *testing.T) {
+		runner, prov := newChild(t,
+			func(int, *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+				return toolUsing("child", 10, 1)
+			},
+			func(int, *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+				return finalUsing("parent budget report", 1, 1)
+			})
+		parent := &runUsageMeter{budget: budget}
+		end := activateMeter("parent-budget", parent)
+		res, err := RunChild(ctx, runner, ChildRequest{ParentSession: "parent-budget", Type: "explore", Description: "foreground", Prompt: "inspect"})
+		end()
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, StopMaxTokens, res.Stop)
+		assert.Eq(t, 2, len(prov.reqs))
+		assert.True(t, parent.budgetSnapshot().Exceeded)
+
+		events := eventsOf(t, repo, res.SessionID, store.EventBudget)
+		assert.Require(t, assert.Len(t, events, 1))
+		assert.Eq(t, true, events[0].Attrs["parent"])
+		assert.Eq(t, "max_tokens", events[0].Attrs["reason"])
+
+		// Once the child returns, the parent's next model boundary still owns the
+		// final wrap-up decision.
+		ctrl := agentcore.NewControl()
+		hook := &budgetHook{settings: budget, meter: parent}
+		assert.NoErr(t, hook.AfterModel(ctx, nil, ctrl))
+		assert.Eq(t, "max_tokens", ctrl.WrapUpReason)
+	})
+
+	t.Run("background child keeps its own run alive", func(t *testing.T) {
+		runner, prov := newChild(t,
+			func(int, *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+				return finalUsing("background report", 10, 1)
+			})
+		parent := &runUsageMeter{budget: budget}
+		end := activateMeter("parent-budget", parent)
+		res, err := RunChild(ctx, runner, ChildRequest{ParentSession: "parent-budget", Type: "explore", Description: "background", Prompt: "inspect", Background: true})
+		end()
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, StopFinal, res.Stop)
+		assert.Eq(t, 1, len(prov.reqs))
+		assert.True(t, parent.budgetSnapshot().Exceeded)
+	})
+}
