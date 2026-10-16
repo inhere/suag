@@ -198,7 +198,11 @@ func postWithRetry(ctx context.Context, client *http.Client, b *backoff, provide
 			return resp, nil
 		}
 		if attempt >= b.attempts() {
-			return nil, fmt.Errorf("%s request failed after %d attempts: %w", provider, attempt, lastErr)
+			// The retries ran out on a reason the request itself was not to
+			// blame for (network error, 408/429/5xx, response header timeout):
+			// say so, so hosts and the pool can tell it from a refusal
+			// (ErrorKind, ShouldFallback).
+			return nil, &transientRequestError{fmt.Errorf("%s request failed after %d attempts: %w", provider, attempt, lastErr)}
 		}
 		wait := b.next(retryAfter)
 		slog.Warn("llm request failed, retrying", "provider", provider, "attempt", attempt, "reason", reason, "wait", wait.Round(time.Millisecond), "err", lastErr)

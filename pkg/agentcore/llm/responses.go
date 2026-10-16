@@ -56,11 +56,14 @@ const responsesPath = "/responses"
 func (p *ResponsesProvider) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
 	body := p.buildResponsesBody(ctx, req, false)
 	logProviderRequest(p.Name(), responsesPath, body)
-	data, err := p.doRequest(ctx, responsesPath, body)
+	data, status, err := p.doRequest(ctx, responsesPath, body)
 	if err != nil {
 		return nil, err
 	}
-	return p.parseResponsesBody(data)
+	res, err := p.parseResponsesBody(data)
+	// A rejected request (4xx) keeps the API's own message but is classified by
+	// its status (ErrorKind, ShouldFallback).
+	return res, statusErr(status, err)
 }
 
 // effort maps the configured thinking level to reasoning.effort: "off" is

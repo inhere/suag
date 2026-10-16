@@ -136,11 +136,14 @@ func (p *ClaudeProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 
 	body := p.buildRequestBody(req, model)
 	logProviderRequest(p.Name(), "/messages", body)
-	respData, err := p.doRequest(ctx, body)
+	respData, status, err := p.doRequest(ctx, body)
 	if err != nil {
 		return nil, err
 	}
-	return p.parseResponse(respData)
+	res, err := p.parseResponse(respData)
+	// A rejected request (4xx) keeps the API's own message but is classified by
+	// its status (ErrorKind, ShouldFallback).
+	return res, statusErr(status, err)
 }
 
 // appendClaudeBlock adds a content block as a message of the given role. When
@@ -357,13 +360,13 @@ func (p *ClaudeProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 	return resp, nil
 }
 
-// doRequest sends the request and returns the raw response body (an API
-// error's too: parseResponse reports it). Transient failures are retried by
-// postWithRetry.
-func (p *ClaudeProvider) doRequest(ctx context.Context, body map[string]any) ([]byte, error) {
+// doRequest sends the request and returns the raw response body and its HTTP
+// status (an API error's body too: parseResponse reports it and the status
+// classifies it). Transient failures are retried by postWithRetry.
+func (p *ClaudeProvider) doRequest(ctx context.Context, body map[string]any) ([]byte, int, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("marshal claude request: %w", err)
+		return nil, 0, fmt.Errorf("marshal claude request: %w", err)
 	}
 	resp, err := postWithRetry(ctx, p.client, p.retry, p.Name(), "/messages", func() (*http.Request, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.messagesURL, bytes.NewReader(data))
@@ -378,15 +381,16 @@ func (p *ClaudeProvider) doRequest(ctx context.Context, body map[string]any) ([]
 		return req, nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	respData, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read claude response: %w", err)
+		// The body broke while being read: the connection failed, not the request.
+		return nil, 0, &transientRequestError{fmt.Errorf("read claude response: %w", err)}
 	}
 	logProviderResponse(p.Name(), "/messages", resp.StatusCode, respData)
-	return respData, nil
+	return respData, resp.StatusCode, nil
 }
 
 func thinkingBlock(text, signature string) map[string]any {

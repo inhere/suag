@@ -4,6 +4,7 @@
       "type": "error",
       "fields": [
         "error",
+        "error_kind",
         "session_id",
         "session_usage",
         "type",

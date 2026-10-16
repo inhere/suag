@@ -96,16 +96,17 @@ func (p *OpenAIProvider) openStream(ctx context.Context, path string, body map[s
 	respData, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	logProviderResponse(p.Name(), path, resp.StatusCode, respData)
-	// 4xx: report the API's own message, as parseResponse does.
+	// 4xx: report the API's own message, as parseResponse does, but keep the
+	// status so the failure is classified as a rejection (ErrorKind).
 	var apiErr struct {
 		Error *struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
-		return nil, badResponsef("openai api error: %s", apiErr.Error.Message)
+		return nil, statusErr(resp.StatusCode, badResponsef("openai api error: %s", apiErr.Error.Message))
 	}
-	return nil, badResponsef("openai api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData)))
+	return nil, statusErr(resp.StatusCode, badResponsef("openai api error %d: %s", resp.StatusCode, strings.TrimSpace(string(respData))))
 }
 
 // streamChunk is one chat.completion.chunk event.

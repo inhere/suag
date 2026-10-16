@@ -96,12 +96,15 @@ func (p *OpenAIProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 
 	body := p.buildRequestBody(req, model, false)
 	logProviderRequest(p.Name(), "/chat/completions", body)
-	respBody, err := p.doRequest(ctx, "/chat/completions", body)
+	respBody, status, err := p.doRequest(ctx, "/chat/completions", body)
 	if err != nil {
 		return nil, err
 	}
 
-	return p.parseResponse(respBody)
+	res, err := p.parseResponse(respBody)
+	// A rejected request (4xx) keeps the API's own message but is classified by
+	// its status (ErrorKind, ShouldFallback).
+	return res, statusErr(status, err)
 }
 
 // buildRequestBody constructs the OpenAI chat completion request payload.
@@ -290,12 +293,12 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 }
 
 // doRequest sends a POST to the OpenAI API and returns the raw response body
-// (an API error's too: the caller parses it). Transient failures are retried
-// by postWithRetry.
-func (p *OpenAIProvider) doRequest(ctx context.Context, path string, body map[string]any) ([]byte, error) {
+// and its HTTP status (an API error's body too: the caller parses it and
+// classifies a non-2xx status). Transient failures are retried by postWithRetry.
+func (p *OpenAIProvider) doRequest(ctx context.Context, path string, body map[string]any) ([]byte, int, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return nil, 0, fmt.Errorf("marshal request: %w", err)
 	}
 	resp, err := postWithRetry(ctx, p.client, p.retry, p.Name(), path, func() (*http.Request, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+path, bytes.NewReader(data))
@@ -308,15 +311,16 @@ func (p *OpenAIProvider) doRequest(ctx context.Context, path string, body map[st
 		return req, nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	respData, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read %s response: %w", p.Name(), err)
+		// The body broke while being read: the connection failed, not the request.
+		return nil, 0, &transientRequestError{fmt.Errorf("read %s response: %w", p.Name(), err)}
 	}
 	logProviderResponse(p.Name(), path, resp.StatusCode, respData)
-	return respData, nil
+	return respData, resp.StatusCode, nil
 }
 
 func mustJSON(v any) string {
