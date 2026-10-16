@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/inhere/suga/internal/output/termtext"
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/pkg/agentcore"
 )
@@ -22,8 +23,9 @@ type LiveText struct {
 	started  bool    // the current model message already printed its prefix
 	// whole makes the text wait for line ends (SetWholeLines): only complete lines
 	// leave, the unfinished rest waits in tail.
-	whole bool
-	tail  string // text after the last newline of the current message
+	whole   bool
+	tail    string           // text after the last newline of the current message
+	cleaner termtext.Cleaner // keeps escape-sequence state across streamed deltas
 }
 
 // NewLiveText returns a LiveText writing to w.
@@ -96,7 +98,7 @@ func RetryNotice(event personal.Event) string {
 	if info == nil {
 		info = &personal.RetryInfo{}
 	}
-	line := fmt.Sprintf("↻ 模型请求失败（%s），%s 后重试（第 %d 次）", event.Text, info.Wait.Round(100*time.Millisecond), info.Attempt)
+	line := fmt.Sprintf("↻ 模型请求失败（%s），%s 后重试（第 %d 次）", termtext.Clean(event.Text), info.Wait.Round(100*time.Millisecond), info.Attempt)
 	if info.Restart {
 		line += "；上面的回复不完整，将重新输出"
 	}
@@ -109,6 +111,10 @@ func RetryNotice(event personal.Event) string {
 // whole-line mode and prints the message prefix itself in whole-line mode.
 func (l *LiveText) writeDelta(text string) {
 	l.streamed = true
+	text = l.cleaner.Write(text)
+	if text == "" {
+		return
+	}
 	switch {
 	case l.md != nil:
 		// In whole-line mode the markdown renderer prints the prefix (with the line
@@ -157,6 +163,8 @@ func (l *LiveText) writeWholeLine(line string) {
 // its last line (an open code block ends with it), whole-line mode writes the
 // buffered tail, and otherwise the open line gets its newline.
 func (l *LiveText) closeLine() {
+	// Do not let a partial escape sequence consume text from the next message.
+	l.cleaner.Flush()
 	if l.md != nil {
 		l.md.Flush()
 		return
@@ -181,6 +189,7 @@ func (l *LiveText) closeLine() {
 // whole lines are on (it may not leave as a write of its own), this text
 // otherwise.
 func (l *LiveText) Answer(text string) {
+	text = termtext.Clean(text)
 	if l.md == nil {
 		fmt.Fprintln(l.w, l.prefix+text)
 		return

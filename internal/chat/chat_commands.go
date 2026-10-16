@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/inhere/suga/internal/output/termtext"
 	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
@@ -45,7 +46,7 @@ func BuildChatTasks(items []tasks.Info, now time.Time) string {
 			last = item.Started
 		}
 		lines = append(lines, fmt.Sprintf("%s · %s · %s · 已运行 %s · 最近输出 %s · %s",
-			item.ID, item.Status, item.Summary, formatElapsedAt(item.Duration(), now), last.Local().Format("15:04:05"), item.Kind))
+			termtext.Clean(item.ID), termtext.Clean(string(item.Status)), termtext.Clean(item.Summary), formatElapsedAt(item.Duration(), now), last.Local().Format("15:04:05"), termtext.Clean(item.Kind)))
 	}
 	return strings.Join(lines, "\n")
 }

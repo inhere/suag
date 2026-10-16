@@ -7,6 +7,7 @@ import (
 
 	"github.com/gookit/color"
 	"github.com/inhere/suga/internal/diffview"
+	"github.com/inhere/suga/internal/output/termtext"
 )
 
 const diffCmd = ":diff"
@@ -35,11 +36,12 @@ func buildDiffLines(change *diffview.Change, limit, index int) []LayoutLine {
 		return nil
 	}
 	number := ""
+	rel := diffPathText(change.Rel)
 	if index > 0 {
 		number = fmt.Sprintf("#%d ", index)
 	}
 	if change.Tool == diffview.ToolRemove {
-		return []LayoutLine{{Text: fmt.Sprintf("  %s删除 %s（%d 行）", number, change.Rel, change.RemovedLines), Color: color.Gray}}
+		return []LayoutLine{{Text: fmt.Sprintf("  %s删除 %s（%d 行）", number, rel, change.RemovedLines), Color: color.Gray}}
 	}
 	body := change.Lines()
 	if change.NewFile() {
@@ -47,9 +49,9 @@ func buildDiffLines(change *diffview.Change, limit, index int) []LayoutLine {
 		body = (&diffview.Change{Old: &empty, New: change.New}).Lines()
 	}
 	adds, dels := diffCounts(body)
-	head := fmt.Sprintf("  %sdiff %s（+%d -%d）", number, change.Rel, adds, dels)
+	head := fmt.Sprintf("  %sdiff %s（+%d -%d）", number, rel, adds, dels)
 	if change.NewFile() {
-		head = fmt.Sprintf("  %s新文件 %s（共 %d 行）", number, change.Rel, adds)
+		head = fmt.Sprintf("  %s新文件 %s（共 %d 行）", number, rel, adds)
 	}
 	shown, omitted := body, 0
 	bodyLimit := limit
@@ -76,11 +78,12 @@ func buildDiffLines(change *diffview.Change, limit, index int) []LayoutLine {
 
 // diffPaintLine keeps the sign separate from the aligned line-number column.
 func diffPaintLine(line diffview.Line, width int) LayoutLine {
+	text := termtext.Clean(line.Text)
 	if line.Kind == diffview.Hunk {
-		return LayoutLine{Text: "  " + line.Text, Color: color.Gray}
+		return LayoutLine{Text: "  " + text, Color: color.Gray}
 	}
 	if line.Kind == diffview.Context {
-		return LayoutLine{Text: fmt.Sprintf("  %*s%d %s", width, "", line.Number(), line.Text), Color: color.Gray}
+		return LayoutLine{Text: fmt.Sprintf("  %*s%d %s", width, "", line.Number(), text), Color: color.Gray}
 	}
 	sign, paint := "", color.Gray
 	if line.Kind == diffview.Add {
@@ -89,8 +92,10 @@ func diffPaintLine(line diffview.Line, width int) LayoutLine {
 	if line.Kind == diffview.Del {
 		sign, paint = "-", color.Red
 	}
-	return LayoutLine{Text: fmt.Sprintf("  %s %*d %s", sign, width, line.Number(), line.Text), Color: paint}
+	return LayoutLine{Text: fmt.Sprintf("  %s %*d %s", sign, width, line.Number(), text), Color: paint}
 }
+
+func diffPathText(path string) string { return strings.Join(strings.Fields(termtext.Clean(path)), " ") }
 
 func diffNumberWidth(lines []diffview.Line) int {
 	width := 2
