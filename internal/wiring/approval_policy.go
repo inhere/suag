@@ -185,5 +185,11 @@ func (p approvalPolicy) Decide(target approvalrules.Target, meta tools.Meta) (ap
 		// read_only_allow legacy entries can grant an MCP call.
 		return approvalrules.Deny, hit
 	}
-	return action, hit
+	if hit != nil {
+		return action, hit
+	}
+	// The default run policy also has to protect the control plane. ClampAllow
+	// used to run only for explicit rules, which let a no-rules run write into
+	// .git, .suga, SUGA_HOME, or an approval-rules file.
+	return approvalrules.ClampAllow(action, target, p.Workspace, p.SugaHome, p.RuleFiles...), nil
 }

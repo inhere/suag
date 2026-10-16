@@ -10,9 +10,9 @@ import (
 	appconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/internal/personal/store"
-	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/tools"
 	"github.com/inhere/suga/pkg/agentcore/tools/native"
+	approvalrules "github.com/inhere/suga/pkg/agentcore/tools/rules"
 )
 
 // subAgents runs the agent tool's sub-agents (docs/design/2026-10-13-
@@ -31,6 +31,10 @@ type subAgents struct {
 	// addDirs is the parent session's additional-directory set (--add-dir): a
 	// sub-agent works on the same task, so it reads the same directories.
 	addDirs *native.AddDirs
+	// policySnapshot returns the parent's policy at child creation time. The
+	// child copies it before building its approval layer, so later session-rule
+	// changes cannot alter an already-created child.
+	policySnapshot func() approvalPolicy
 }
 
 var _ native.SubAgents = (*subAgents)(nil)
@@ -90,6 +94,29 @@ func markTainted(ctx context.Context, session, by string) error {
 	return err
 }
 
+// childPolicy takes a detached policy snapshot. A zero-value subAgents is kept
+// useful for direct callers and older tests by falling back to the run defaults.
+func (s *subAgents) childPolicy() approvalPolicy {
+	policy := approvalPolicy{
+		Mode:      approvalrules.ModeRun,
+		Workspace: s.workspace,
+		Defaults:  defaultApprovalDefaults(approvalrules.ModeRun, false),
+	}
+	if s.policySnapshot != nil {
+		policy = s.policySnapshot()
+	}
+	if policy.Mode == "" {
+		policy.Mode = approvalrules.ModeRun
+	}
+	if policy.Workspace == "" {
+		policy.Workspace = s.workspace
+	}
+	if policy.Defaults.Native == "" {
+		policy.Defaults = defaultApprovalDefaults(policy.Mode, false)
+	}
+	return cloneApprovalPolicy(policy)
+}
+
 // build assembles the Runner of one sub-agent run; the func closes it.
 func (s *subAgents) build(kind string) (*personal.Runner, func(), error) {
 	model := s.settings.Model
@@ -112,8 +139,11 @@ func (s *subAgents) build(kind string) (*personal.Runner, func(), error) {
 			}
 		}
 	}
-	// Every tool here only reads; anything else is not there to call.
-	approval := tools.NewApproval(registry, tools.ApproverFunc(func(context.Context, agentcore.ToolCall, agentcore.Tool) error { return nil }))
+	// Every tool here only reads; anything else is not there to call. The
+	// parent policy still applies explicit deny/ask rules, while an ask has no
+	// child terminal and therefore fails closed.
+	policy := s.childPolicy()
+	approval := tools.NewApproval(registry, newPolicyApprover(policy))
 	approval.SetDisabled(subAgentDisabledHints(registry))
 	dbPath, err := appconfig.ResolveCoreStorePath()
 	if err != nil {
@@ -151,6 +181,15 @@ func (s *subAgents) build(kind string) (*personal.Runner, func(), error) {
 		return nil, nil, err
 	}
 	return runner, func() { _ = repo.Close() }, nil
+}
+
+// cloneApprovalPolicy makes the rule and protected-path slices independent of
+// the parent. This is important when chat appends a session rule after a child
+// has started.
+func cloneApprovalPolicy(policy approvalPolicy) approvalPolicy {
+	policy.Rules = append([]approvalrules.Rule(nil), policy.Rules...)
+	policy.RuleFiles = append([]string(nil), policy.RuleFiles...)
+	return policy
 }
 
 // subAgentDisabledHints: a catalog tool a sub-agent lacks is refused with a

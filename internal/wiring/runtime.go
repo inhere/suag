@@ -87,8 +87,11 @@ type Options struct {
 	// is created by OpenCLI so the chat approver and the tools share one set; nil
 	// (a runtime assembled directly) means no additional directory.
 	sessionDirs *native.AddDirs
-	// approvalPolicy is compiled by the entry point before Open assembles the registry.
-	approvalPolicy *approvalPolicy
+	// approvalPolicy is compiled before Open builds the registry. A child takes a
+	// fresh copy through this callback so chat session rules are included without
+	// sharing a mutable policy with an already-running child.
+	approvalPolicy   *approvalPolicy
+	approvalSnapshot func() approvalPolicy
 }
 
 // Runtime is one assembled personal runner and the resources it owns.
@@ -296,6 +299,11 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 		approver = chatGate
 		// Memory writes of tainted sessions are confirmed at the same terminal.
 		opts.MemoryConfirm = newChatMemoryConfirmer(asker).confirm
+		opts.approvalSnapshot = func() approvalPolicy {
+			chatGate.mu.Lock()
+			defer chatGate.mu.Unlock()
+			return cloneApprovalPolicy(chatGate.policy)
+		}
 	}
 	opts.Workspace, opts.RuleCWD = workspace, cwd
 	// tools.allow_write applies to chat only: run (often started by a job
@@ -347,6 +355,10 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		if policyErr != nil {
 			return nil, policyErr
 		}
+	}
+	approvalSnapshot := opts.approvalSnapshot
+	if approvalSnapshot == nil {
+		approvalSnapshot = func() approvalPolicy { return cloneApprovalPolicy(approval) }
 	}
 	// The session's additional directories (--add-dir): the tools read the set at
 	// every call, so the requested ones are published here already (a new
@@ -423,7 +435,8 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	if agentSettings.Enabled {
 		agentTool := native.NewAgentTool(&subAgents{workspace: workspace, ruleCWD: ruleCWD, mainModel: opts.Model,
-			noProjectRules: opts.NoProjectRules, ruleFile: ruleFile, settings: agentSettings, addDirs: dirs})
+			noProjectRules: opts.NoProjectRules, ruleFile: ruleFile, settings: agentSettings, addDirs: dirs,
+			policySnapshot: approvalSnapshot})
 		if opts.Tasks != nil {
 			agentTool.SetTasks(opts.Tasks)
 		}
