@@ -12,6 +12,13 @@ import (
 
 func TestInputHistoryLoadOrderAndRedaction(t *testing.T) {
 	t.Setenv("SUGA_HOME", t.TempDir())
+	t.Run("disabled history does not read or write", func(t *testing.T) {
+		h, err := newInputHistory("current", false, 3)
+		assert.NoErr(t, err)
+		assert.False(t, h.enabled)
+		assert.Eq(t, "", h.path)
+		assert.NoErr(t, h.add("not persisted"))
+	})
 	h, err := newInputHistory("current", true, 3)
 	assert.NoErr(t, err)
 	assert.NoErr(t, h.add("old"))
