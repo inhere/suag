@@ -8,7 +8,7 @@ require (
 	github.com/gookit/cliui v0.5.3
 	github.com/gookit/color v1.6.3
 	github.com/gookit/config/v2 v2.2.9
-	github.com/gookit/goutil v0.8.2
+	github.com/gookit/goutil v0.8.3
 	github.com/gookit/ini/v2 v2.3.2
 	golang.org/x/net v0.59.0
 	golang.org/x/sys v0.49.0
