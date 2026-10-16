@@ -287,7 +287,7 @@ func (s *chatState) runOneTurn(line string, injected bool) (*steerTurn, error) {
 		s.render.Status(result, time.Since(turnStart), turnEnd.deliveredCount())
 	} else {
 		// Streamed text is already on screen; otherwise print the answer now.
-		if !s.render.Finish() {
+		if !s.render.Finish() && result.Output != "" {
 			s.render.Answer(result.Output)
 		}
 		if len(result.DeniedTools) > 0 {

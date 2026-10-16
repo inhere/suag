@@ -64,6 +64,23 @@ func TestBudgetHookRequestsWrapUpOnceAndRecordsEvent(t *testing.T) {
 	assert.Eq(t, "max_tokens", events[0].Attrs["reason"])
 }
 
+func TestBudgetFinalUsageCarriesWrapUpReason(t *testing.T) {
+	repo := openObserveRepo(t)
+	provider := &usageSteps{steps: []func() (*agentcore.GenerateResult, error){
+		withUsage(&agentcore.GenerateResult{Content: "done", FinishReason: agentcore.FinishFinal}, 10, 1),
+	}}
+	observed := &usageEvents{}
+	runner, err := New(Config{Repository: repo, Provider: provider,
+		Budget: BudgetSettings{Tokens: 5, Scope: "turn"}})
+	assert.Require(t, assert.NoErr(t, err))
+	result, err := runner.Run(context.Background(), RunRequest{Prompt: "inspect", Emit: observed.emit})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, "max_tokens", result.WrapUp)
+	assert.Require(t, assert.NotNil(t, observed.final))
+	assert.Require(t, assert.NotNil(t, observed.final.Budget))
+	assert.Eq(t, "max_tokens", observed.final.Budget.Reason)
+}
+
 func TestSessionBudgetShortCircuitsBeforeModelWithoutAssistant(t *testing.T) {
 	ctx := context.Background()
 	repo := openObserveRepo(t)

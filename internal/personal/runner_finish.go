@@ -101,6 +101,15 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	denials := turnDenialsFrom(ctx)
 	result.DeniedTools, result.DenialLimitReached = denials.tools(), denials.limitReached()
 
+	// A final answer can itself cross the budget: there is no following model
+	// request to carry the wrap-up instruction, but the completed turn still
+	// needs the same budget reason as a normal soft wrap-up.
+	if result.Status == agentcore.RunCompleted && result.WrapUp == "" && r.cfg.Budget.enabled() {
+		snapshot := runUsageFrom(ctx).budgetSnapshot()
+		if snapshot.Exceeded {
+			result.WrapUp = budgetReason(r.cfg.Budget.normalized(), snapshot)
+		}
+	}
 	// A yielded turn is stored as completed (its messages become history for the
 	// next turn) but reported to callers as INPUT_REQUIRED.
 	runState, turnStatus, stopReason := RunCompleted, store.TurnCompleted, ""
@@ -187,7 +196,13 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 			persistErr = errors.Join(persistErr, err)
 		}
 	}
+	// The final budget snapshot is the transport source for chat and stream-json;
+	// carry the completed result's wrap-up reason into it instead of replacing it
+	// with the reason-less snapshot from the last model usage update.
 	finalUpdate := runUsageFrom(ctx).usageUpdate()
+	if finalUpdate.Budget != nil && finalUpdate.Budget.Exceeded && result.WrapUp != "" {
+		finalUpdate.Budget.Reason = result.WrapUp
+	}
 	finalUpdate.Run, finalUpdate.Session = result.RunUsage, result.SessionUsage
 	final := &finalUpdate
 	if err := emit(finishCtx, sink, Event{Kind: "run_finished", SessionID: result.SessionID, TurnID: result.TurnID, RunID: result.RunID, Status: result.Status, State: result.State, Text: result.Output, Usage: final}); err != nil {
