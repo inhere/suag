@@ -48,6 +48,19 @@ func TestFTSShortAndLongTermsStayAND(t *testing.T) {
 	})
 }
 
+func TestFTSMixedQueryUsesMatchOrdering(t *testing.T) {
+	s := openTemp(t)
+	createSession(t, s, "s1", "/w")
+	appendAll(t, s, "s1", user(t, "中 needle needle needle"), user(t, "中 needle"))
+
+	// Match ranking puts the more selective long-term hit first; all-LIKE
+	// fallback would use created_at DESC and return the newer second row first.
+	hits := search(t, s, EntrySearch{Query: "中 needle"})
+	assert.Require(t, assert.Len(t, hits, 2))
+	assert.Eq(t, int64(1), hits[0].Seq)
+	assert.Eq(t, int64(2), hits[1].Seq)
+}
+
 func TestFTSKindAndTimeFilters(t *testing.T) {
 	s := openTemp(t)
 	createSession(t, s, "s1", "/w")
