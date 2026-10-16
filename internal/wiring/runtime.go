@@ -22,6 +22,7 @@ import (
 	"github.com/inhere/suga/pkg/agentcore/tools"
 	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
 	"github.com/inhere/suga/pkg/agentcore/tools/native"
+	approvalrules "github.com/inhere/suga/pkg/agentcore/tools/rules"
 )
 
 // Options carries everything needed to assemble one runtime.
@@ -86,6 +87,8 @@ type Options struct {
 	// is created by OpenCLI so the chat approver and the tools share one set; nil
 	// (a runtime assembled directly) means no additional directory.
 	sessionDirs *native.AddDirs
+	// approvalPolicy is compiled by the entry point before Open assembles the registry.
+	approvalPolicy *approvalPolicy
 }
 
 // Runtime is one assembled personal runner and the resources it owns.
@@ -140,7 +143,8 @@ type Runtime struct {
 	maxOutputOverride int
 	// tools is the registry stack the runner calls (visibility -> approval
 	// -> base); kept for tests.
-	tools agentcore.ToolRegistry
+	tools    agentcore.ToolRegistry
+	approval approvalPolicy
 }
 
 // ModelOptions returns the configured models in deterministic order.
@@ -259,6 +263,7 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts.approvalPolicy = &gate.policy
 	// One additional-directory set per runtime, shared by the tools, the
 	// environment prompt and the chat approver; the tools read it per call, so
 	// the session opened later can still fill it (ApplyAddDirs).
@@ -274,6 +279,9 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Keep mode-scoped file rules aligned with the interactive entry point.
+		gate.policy.Mode = approvalrules.ModeChat
+		gate.policy.Defaults = defaultApprovalDefaults(approvalrules.ModeChat, auto)
 		asker = tools.NewBindableAsker()
 		// The outside-directory question needs the tool's static read roots (a
 		// path under one needs no authorization) and the session's added-directory
@@ -329,6 +337,16 @@ func toolsAllowWrite() (bool, error) {
 // Open assembles one runtime.
 func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	workspace, ruleCWD, allowWrite, servers := opts.Workspace, opts.RuleCWD, opts.AllowWrite, opts.Servers
+	approval := approvalPolicy{}
+	if opts.approvalPolicy != nil {
+		approval = *opts.approvalPolicy
+	} else {
+		var policyErr error
+		approval, policyErr = compileACPApprovalPolicy(workspace, opts.ReadOnly || opts.MemoryReadOnly)
+		if policyErr != nil {
+			return nil, policyErr
+		}
+	}
 	// The session's additional directories (--add-dir): the tools read the set at
 	// every call, so the requested ones are published here already (a new
 	// session's first segment lists them) and ApplyAddDirs merges the session's
@@ -449,9 +467,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// visibility -> approval -> base registry. Unloaded deferred tools are
 	// answered by visibility and never reach the approver.
 	// Dangerous deletes are stopped before any approver (guardDangerous).
-	approval := tools.NewApproval(capabilities.Registry, guardDangerous(opts.Approver))
-	approval.SetDisabled(disabledToolHints(capabilities.Registry, opts))
-	vis, err := newToolVisibility(capabilities.Registry, approval, contextWindow)
+	approvalLayer := tools.NewApproval(capabilities.Registry, guardDangerous(opts.Approver))
+	approvalLayer.SetDisabled(disabledToolHints(capabilities.Registry, opts))
+	vis, err := newToolVisibility(capabilities.Registry, approvalLayer, contextWindow)
 	if err != nil {
 		_ = capabilities.Close()
 		return nil, err
@@ -572,7 +590,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	memHost.bind(runner, repo)
 	rt := &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
-		ContextWindow: contextWindow, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry,
+		ContextWindow: contextWindow, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry, approval: approval,
 		AddDirs: dirs, modelOptions: modelOptions, modelSpecs: modelSpecs,
 		fallbacks:        append([]appconfig.ModelSpec(nil), settings.Fallbacks...),
 		thinkingOverride: opts.Thinking, maxOutputOverride: opts.MaxOutputTokens}
