@@ -44,11 +44,16 @@ func seedSessions(t *testing.T) context.Context {
 	_, err = repo.AppendEntries(ctx, "s05", store.NewEntry{Type: store.EntryUser,
 		JSON: json.RawMessage(`{"Role":"user","Content":"why does the flaky ping test fail?"}`)})
 	assert.NoErr(t, err)
-	// Appending touched s05: put its activity time back.
-	s05, err := repo.GetSession(ctx, "s05")
+	_, err = repo.AppendEntries(ctx, "s06", store.NewEntry{Type: store.EntryUser,
+		JSON: json.RawMessage(`{"Role":"user","Content":"中文 token"}`)})
 	assert.NoErr(t, err)
-	s05.UpdatedAt = now.Add(-5 * time.Hour)
-	assert.NoErr(t, repo.UpdateSession(ctx, s05))
+	// Appending touched s05 and s06: put their activity times back.
+	for id, ago := range map[string]time.Duration{"s05": 5 * time.Hour, "s06": 6 * time.Hour} {
+		sess, err := repo.GetSession(ctx, id)
+		assert.NoErr(t, err)
+		sess.UpdatedAt = now.Add(-ago)
+		assert.NoErr(t, repo.UpdateSession(ctx, sess))
+	}
 	return ctx
 }
 
@@ -90,6 +95,8 @@ func TestSessionsCommand(t *testing.T) {
 		assert.Require(t, assert.Len(t, rows, 1))
 		assert.Eq(t, "s05", rows[0].ID)
 		assert.StrContains(t, rows[0].Match, "flaky ping test")
+		// A mixed Chinese/English query reaches the new term-splitting store path.
+		assert.Eq(t, []string{"s06"}, listed(t, ctx, "-q", "中文 token"))
 		assert.Eq(t, []string{}, listed(t, ctx, "-q", "nothing-like-this"))
 	})
 	t.Run("directory prefix", func(t *testing.T) {
