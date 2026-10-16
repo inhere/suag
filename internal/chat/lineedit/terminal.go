@@ -254,6 +254,11 @@ func (t *Terminal) readLine() (line string, err error) {
 			var key rune
 			key, rest = bytesToKey(rest, t.pasteActive)
 			if key == utf8.RuneError {
+				if t.reverseActive && len(rest) > 0 && rest[len(rest)-1] == keyEscape {
+					rest = rest[:len(rest)-1]
+					t.cancelReverseSearch()
+					continue
+				}
 				if !t.takeEscAlone(&rest) {
 					break
 				}
