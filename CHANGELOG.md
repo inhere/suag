@@ -13,6 +13,7 @@
 - LLM 重试识别 `X-Should-Retry`、`Retry-After-Ms` 与 provider 的 `try again in ...` 提示；上下文超长错误归为 `provider_rejected` 并提示压缩或新会话，模型 trace 记录 provider request id。
 - 写工具在实际写盘前可记录文件快照并在完成后补写状态，默认保持原有工具行为，支持后续会话回滚能力。
 - 新增不依赖 Provider 的 checkpoint 核心：复用会话 gate 与 run/locks，严格校验会话 cwd 和持久化 :rw 附加目录。
+- 回滚核心按调用逆序恢复文件内容，支持冲突检测、`--force`、幂等跳过及独立 `pre-undo` 快照。
 
 ### 修复
 
