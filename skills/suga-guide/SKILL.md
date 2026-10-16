@@ -100,6 +100,11 @@ suga manifest                            # 生效的模型、工具、skills、�
 - `--read-only` 永远优先。想收紧：给用户建议只读模式，而不是关掉审批。
 - 危险递归删除（`rm -r`、`Remove-Item -Recurse` 等指向 `/`、`~`、盘根或工作区及其父目录）在任何模式下都会被拦下，chat 只有手敲 `yes` 才执行。
 
+### chat 输入历史与快捷键
+
+- chat 默认把本地键入（包括 `!` 命令）写入 `$SUGA_HOME/history.jsonl`，每行含时间、工作区和脱敏后的文本；`chat.history: false` 可关闭，`chat.history_size` 默认 1000。投递消息不会写入。
+- `Up`/`Down` 浏览历史，当前工作区优先；`Ctrl+R` 增量反查，重复按键继续向前，Enter 采用、Ctrl+G 取消。行首 `:` 命令以及 `:add-dir` / `:rm-dir` 后的目录支持 Tab 补全。
+
 ### chat 里直接执行本地命令（`!` / `!!`）
 
 - 在提示符处输入 `!<命令>`：chat 直接在本地 shell 里执行（与模型的 `shell_exec` 同一个 shell、工作目录与环境），输出实时打印在终端，不调用模型、不开始回合、不进会话上下文；非零退出码、超时（`tools.shell_timeout_max`）或被你终止会各提示一行。

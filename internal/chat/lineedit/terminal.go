@@ -54,6 +54,7 @@ package lineedit
 
 import (
 	"io"
+	"strings"
 	"sync"
 	"unicode/utf8"
 )
@@ -121,7 +122,12 @@ type Terminal struct {
 	// When navigating up and down the history it's possible to return to
 	// the incomplete, initial line. That value is stored in
 	// historyPending.
-	historyPending string
+	historyPending  string
+	reverseActive   bool
+	reverseQuery    string
+	reverseIndex    int
+	reverseOriginal string
+	reversePrompt   string
 
 	// Local additions (see take.go): reading is set while ReadLine runs,
 	// noHistory keeps the current read out of history and pendingLine
@@ -319,6 +325,59 @@ func (t *Terminal) readLine() (line string, err error) {
 
 		t.remainder = t.inBuf[:n+len(t.remainder)]
 	}
+}
+
+// SetHistory replaces the editor history with entries ordered oldest to newest.
+func (t *Terminal) SetHistory(entries []string) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.history = stRingBuffer{}
+	for _, entry := range entries {
+		t.history.Add(entry)
+	}
+	t.historyIndex = -1
+}
+
+// reverseSearch implements bash-like incremental search over the loaded history.
+func (t *Terminal) reverseSearch() {
+	if !t.reverseActive {
+		t.reverseActive = true
+		t.reverseQuery = string(t.line)
+		t.reverseOriginal = string(t.line)
+		t.reverseIndex = 0
+		t.reversePrompt = string(t.prompt)
+		t.prompt = []rune("(reverse-i-search)`" + t.reverseQuery + "': ")
+	} else {
+		t.reverseIndex++
+	}
+	for i := t.reverseIndex; ; i++ {
+		entry, ok := t.history.NthPreviousEntry(i)
+		if !ok {
+			break
+		}
+		if strings.Contains(entry, t.reverseQuery) {
+			runes := []rune(entry)
+			t.setLine(runes, len(runes))
+			t.reverseIndex = i
+			return
+		}
+	}
+}
+
+func (t *Terminal) cancelReverseSearch() {
+	if !t.reverseActive {
+		return
+	}
+	t.setLine([]rune(t.reverseOriginal), len([]rune(t.reverseOriginal)))
+	t.endReverseSearch()
+}
+
+func (t *Terminal) endReverseSearch() {
+	if !t.reverseActive {
+		return
+	}
+	t.reverseActive = false
+	t.prompt = []rune(t.reversePrompt)
 }
 
 // SetPrompt sets the prompt to be used when reading subsequent lines.

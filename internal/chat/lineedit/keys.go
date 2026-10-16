@@ -40,6 +40,8 @@ const (
 	keyCtrlC = 3
 	keyCtrlD = 4
 	keyCtrlU = 21
+	keyCtrlR = 18
+	keyCtrlG = 7
 	keyEnter = '\r'
 	// keyLF is Enter as well: a terminal hands Enter over as LF when the line was
 	// typed in cooked mode (a line buffered before the prompt: ICRNL on Unix, or
@@ -273,6 +275,8 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 				t.setLine(runes, len(runes))
 			}
 		}
+	case keyCtrlR:
+		t.reverseSearch()
 	case keyEnter, keyLF:
 		// A submitted line stays on screen, repainted on the input style's
 		// background when one is set (highlight.go).

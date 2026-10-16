@@ -91,6 +91,7 @@ type chatInputSource struct {
 	sizeFD   int
 	closed   bool // set by DiscardQueued/Close: deliveries are refused afterwards (guarded by mu)
 	terminal *lineedit.Terminal
+	history  *inputHistory
 	requests chan chatInputRequest
 	// events carries the result of a prompt read (Next); answers the answer of a
 	// question (Ask) and turnEvents what a steer read reports (S2b). Each mode has
