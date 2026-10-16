@@ -167,6 +167,8 @@ providers:
 #   highlight_input: true
 #   terminal_title: true
 #   steering: true
+#   history: true       # persist keyboard input in $SUGA_HOME/history.jsonl
+#   history_size: 1000  # maximum saved input lines
 #   # Ask before a file tool reaches outside the workspace and the added
 #   # directories (--add-dir): the question authorizes the directory (read-only
 #   # or read-write) for the rest of the session. run, ACP and a chat without a
