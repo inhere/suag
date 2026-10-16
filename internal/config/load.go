@@ -34,13 +34,22 @@ func Load() error {
 		if err := gkconfig.LoadFiles(configPath); err != nil {
 			return fmt.Errorf("load SUGA_CONFIG: %w", err)
 		}
-		return nil
+		return validateLoadedSettings()
 	}
 	// Like .env, config.yaml is read from SUGA_HOME only: a config.yaml in the
 	// user's project directory is that project's file, not suga's.
 	if err := gkconfig.LoadExists(filepath.Join(privateDir, "config.yaml")); err != nil {
 		slog.Error("loading config file", "err", err)
 		return err
+	}
+	return validateLoadedSettings()
+}
+
+// validateLoadedSettings runs startup validation for settings whose malformed
+// values would otherwise be silently ignored until the approval layer starts.
+func validateLoadedSettings() error {
+	if _, err := ReadApprovalRulesSettings(); err != nil {
+		return fmt.Errorf("validate approval rules settings: %w", err)
 	}
 	return nil
 }
