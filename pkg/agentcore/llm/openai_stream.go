@@ -107,9 +107,9 @@ func (p *OpenAIProvider) openStream(ctx context.Context, path string, body map[s
 		Error *apiError `json:"error"`
 	}
 	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
-		return nil, statusErr(resp.StatusCode, apiErrorf("openai api error", apiErr.Error))
+		return nil, statusErr(resp.StatusCode, withRequestID(ctx, apiErrorf("openai api error", apiErr.Error)))
 	}
-	return nil, statusErr(resp.StatusCode, apiMessageErrorf(fmt.Sprintf("openai api error %d", resp.StatusCode), strings.TrimSpace(string(respData))))
+	return nil, statusErr(resp.StatusCode, withRequestID(ctx, apiMessageErrorf(fmt.Sprintf("openai api error %d", resp.StatusCode), strings.TrimSpace(string(respData)))))
 }
 
 // streamChunk is one chat.completion.chunk event.

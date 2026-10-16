@@ -70,13 +70,13 @@ type retryableStreamError interface {
 
 // retryStream runs one streamed request (attempt) and repeats it from the
 // start when it fails with a retryableStreamError (a broken or cut stream, or a
-// temporary API error such as an overload), up to the policy's attempts
-// with b's waits. Each retry, including the HTTP retries inside attempt
-// (postWithRetry), is announced to emit as a StreamEventRetry before the
-// wait, so a frontend can tell the user why nothing happens. When the broken
-// attempt already emitted text the event's metadata has restart=true: the
-// next attempt streams the message again from its start. attempt receives
-// the context carrying that notifier and emit wrapped to record text deltas.
+// temporary API error such as an overload), up to the policy's attempts. Each
+// retry, including the HTTP retries inside attempt (postWithRetry), is
+// announced to emit as a StreamEventRetry before the wait, so a frontend can
+// tell the user why nothing happens. When the broken attempt already emitted
+// text the event's metadata has restart=true: the next attempt streams the
+// message again from its start. attempt receives the context carrying that
+// notifier and emit wrapped to record text deltas.
 func retryStream(ctx context.Context, b *backoff, provider string, emit agentcoreapi.StreamFunc,
 	attempt func(ctx context.Context, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error)) (*agentcoreapi.GenerateResult, error) {
 	sent := false // the current attempt emitted text
@@ -97,6 +97,7 @@ func retryStream(ctx context.Context, b *backoff, provider string, emit agentcor
 	for n := 1; ; n++ {
 		sent = false
 		res, err := attempt(ctx, tracked)
+		err = withRequestID(ctx, err)
 		var retryErr retryableStreamError
 		if err == nil || !errors.As(err, &retryErr) || ctx.Err() != nil {
 			return res, err

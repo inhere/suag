@@ -44,6 +44,11 @@ type transientRequestError struct{ err error }
 func (e *transientRequestError) Error() string { return e.err.Error() }
 func (e *transientRequestError) Unwrap() error { return e.err }
 
+type contextLengthError struct{ err error }
+
+func (e *contextLengthError) Error() string { return e.err.Error() }
+func (e *contextLengthError) Unwrap() error { return e.err }
+
 type statusError struct {
 	status int
 	err    error
@@ -82,11 +87,12 @@ func statusErr(status int, err error) error {
 // (the account or billing allowance is exhausted; checked first, since quota
 // answers often come labelled as rate limits), ErrorKindTransient (a broken or
 // cut stream, a temporary API error or a retryable HTTP status whose retries ran
-// out), ErrorKindRejected (an HTTP status that refuses the request itself),
-// ErrorKindBadResponse (a provider answer that cannot be used, or a permanent
-// error the API reported) or "" for everything else - a cancelled turn, a
-// storage, tool or hook failure, or an error that did not come from a provider.
-// The value goes on the turn event's attrs and on the stream-json error line.
+// out), ErrorKindRejected (an HTTP status that refuses the request itself or a
+// context that cannot fit), ErrorKindBadResponse (a provider answer that cannot
+// be used, or a permanent error the API reported) or "" for everything else -
+// a cancelled turn, a storage, tool or hook failure, or an error that did not
+// come from a provider. The value goes on the turn event's attrs and on the
+// stream-json error line.
 func ErrorKind(err error) string {
 	if isQuotaError(err) {
 		return ErrorKindQuota
@@ -102,6 +108,10 @@ func ErrorKind(err error) string {
 	if errors.As(err, &transient) {
 		return ErrorKindTransient
 	}
+	var contextLength *contextLengthError
+	if errors.As(err, &contextLength) {
+		return ErrorKindRejected
+	}
 	var rejected *statusError
 	if errors.As(err, &rejected) {
 		return ErrorKindRejected
@@ -115,8 +125,17 @@ func ErrorKind(err error) string {
 
 // ShouldFallback reports whether another provider may succeed. Quota is allowed
 // here, while Pool separately prevents it from selecting another model of the
-// same provider (the account allowance would be shared).
+// same provider (the account allowance would be shared). A context-length
+// rejection may succeed on a different provider with a larger window, but Pool
+// skips sibling models of the same provider.
 func ShouldFallback(err error) bool {
+	if _, contextLength := err.(*contextLengthError); contextLength {
+		return true
+	}
+	var contextLength *contextLengthError
+	if errors.As(err, &contextLength) {
+		return true
+	}
 	switch ErrorKind(err) {
 	case ErrorKindTransient, ErrorKindQuota:
 		return true

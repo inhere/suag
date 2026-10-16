@@ -57,12 +57,12 @@ func (p *Pool) SupportsToolChoice() bool {
 
 // Generate tries each provider in turn and returns the first success. It moves
 // on only when another model has a chance (ShouldFallback): a transient failure
-// (broken stream, network error, 408/429/5xx) or a rejection that names this
-// provider (401/403/404 - its credentials or its models). A request the provider
-// refused on the request's own account (400/422), a bad response or an
-// unclassified failure is returned as it is, so the remaining models - and the
-// timeouts and tokens they would spend - are not wasted on an error they would
-// hit just the same.
+// (broken stream, network error, 408/429/5xx), a context that does not fit this
+// provider's window, or a rejection that names this provider (401/403/404 - its
+// credentials or its models). A request the provider refused on the request's
+// own account (400/422), a bad response or an unclassified failure is returned
+// as it is, so the remaining models - and the timeouts and tokens they would
+// spend - are not wasted on an error they would hit just the same.
 func (p *Pool) Generate(ctx context.Context, req *agentcoreapi.GenerateRequest) (*agentcoreapi.GenerateResult, error) {
 	p.mu.RLock()
 	providers, obs := p.providers, p.observer
@@ -168,18 +168,23 @@ func (p *Pool) Stream(ctx context.Context, req *agentcoreapi.GenerateRequest, em
 
 // nextProviderIndex is the index of the provider the pool would ask after
 // providers[i] failed with err, or -1 when none is left. An exhausted allowance
-// (ErrorKindQuota) belongs to the provider's account, not to one model: the
-// other models of the same provider (same Name) would hit it too, so they are
-// skipped and only a different provider is asked (issue suga-ok1r).
+// (ErrorKindQuota) belongs to the provider's account, not to one model (and a
+// context-length error belongs to that provider's window), so the other models
+// of the same provider are skipped and only a different provider is asked.
 func nextProviderIndex(providers []Provider, i int, err error) int {
-	quota := ErrorKind(err) == ErrorKindQuota
+	skipProvider := ErrorKind(err) == ErrorKindQuota || isContextLengthFailure(err)
 	for j := i + 1; j < len(providers); j++ {
-		if quota && providers[j].Name() == providers[i].Name() {
+		if skipProvider && providers[j].Name() == providers[i].Name() {
 			continue
 		}
 		return j
 	}
 	return -1
+}
+
+func isContextLengthFailure(err error) bool {
+	var contextLength *contextLengthError
+	return errors.As(err, &contextLength)
 }
 
 // AddProvider appends a provider to the pool (thread-safe).

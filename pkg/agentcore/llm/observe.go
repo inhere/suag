@@ -22,8 +22,8 @@ type Attempt struct {
 	Usage agentcoreapi.Usage
 	Err   error
 	// ToolCalls, ReasoningChars and TextChars describe the response: how
-	// many tool calls it issued (more than one = a parallel step) and how
-	// long its reasoning and text were. Zero when the attempt failed.
+	// many tool calls it issued (more than one = a parallel step) and how long
+	// its reasoning and text were. Zero when the attempt failed.
 	ToolCalls, ReasoningChars, TextChars int
 	// Finish is how the response ended: "tool_calls", "final", or
 	// "truncated" when the output limit cut it off; "" when it failed.
@@ -38,9 +38,11 @@ type Attempt struct {
 	Retries     int
 	RetryWait   time.Duration
 	RetryReason string
+	// RequestID is the provider's correlation id for the final HTTP request.
+	RequestID string
 	// Fallback is what the pool that owns the attempt did with its failure:
-	// "next, <reason>" when another provider is asked, "stop, <reason>" when
-	// the error goes back to the caller, "" for a successful attempt and for a
+	// "next, <reason>" when another provider is asked, "stop, <reason>" when the
+	// error goes back to the caller, "" for a successful attempt and for a
 	// provider used directly (not in a pool). The reason is the error kind and,
 	// for a rejection, the HTTP status (see ErrorKind, ShouldFallback).
 	Fallback string
@@ -98,7 +100,7 @@ func report(ctx context.Context, obs AttemptObserver, prov agentcoreapi.Provider
 	}
 	a := Attempt{Provider: prov.Name(), Model: providerModel(prov), Index: index, Streamed: streamed,
 		StartedAt: start, Duration: time.Since(start), TTFT: ttft, Err: err,
-		Retries: retries.Retries, RetryWait: retries.Wait, RetryReason: retries.Last}
+		Retries: retries.Retries, RetryWait: retries.Wait, RetryReason: retries.Last, RequestID: retries.RequestID}
 	if res != nil {
 		a.Usage = res.Usage
 		a.ToolCalls, a.ReasoningChars, a.TextChars = len(res.ToolCalls), len(res.Reasoning), len(res.Content)

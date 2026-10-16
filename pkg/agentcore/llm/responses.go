@@ -64,7 +64,7 @@ func (p *ResponsesProvider) Generate(ctx context.Context, req *agentcoreapi.Gene
 	if err != nil {
 		// A rejected request (4xx) keeps the API's own message but is classified by
 		// its status (ErrorKind, ShouldFallback).
-		return nil, statusErr(status, err)
+		return nil, statusErr(status, withRequestID(ctx, err))
 	}
 	res.OutputLimit = p.responsesMaxTokens(req)
 	return res, nil

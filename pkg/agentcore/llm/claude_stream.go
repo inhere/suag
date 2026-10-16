@@ -99,9 +99,9 @@ func (p *ClaudeProvider) openStream(ctx context.Context, body map[string]any) (*
 		Error *apiError `json:"error"`
 	}
 	if json.Unmarshal(respData, &apiErr) == nil && apiErr.Error != nil {
-		return nil, statusErr(resp.StatusCode, apiErrorf("claude api error", apiErr.Error))
+		return nil, statusErr(resp.StatusCode, withRequestID(ctx, apiErrorf("claude api error", apiErr.Error)))
 	}
-	return nil, statusErr(resp.StatusCode, apiMessageErrorf(fmt.Sprintf("claude api error %d", resp.StatusCode), strings.TrimSpace(string(respData))))
+	return nil, statusErr(resp.StatusCode, withRequestID(ctx, apiMessageErrorf(fmt.Sprintf("claude api error %d", resp.StatusCode), strings.TrimSpace(string(respData)))))
 }
 
 // claudeUsage is the usage object shared by message_start and message_delta.

@@ -73,9 +73,10 @@ func (b *backoff) next(retryAfter time.Duration) time.Duration {
 }
 
 type RetryReport struct {
-	Retries int
-	Wait    time.Duration
-	Last    string
+	Retries   int
+	Wait      time.Duration
+	Last      string
+	RequestID string
 }
 type retryReportKey struct{}
 
@@ -115,6 +116,11 @@ func retryableStatus(code int) bool {
 	return code == http.StatusRequestTimeout || code == http.StatusTooManyRequests || code >= 500
 }
 func retryAfterOf(h http.Header, now time.Time) time.Duration {
+	if v := strings.TrimSpace(h.Get("Retry-After-Ms")); v != "" {
+		if ms, err := strconv.ParseInt(v, 10, 64); err == nil && ms > 0 {
+			return time.Duration(ms) * time.Millisecond
+		}
+	}
 	v := strings.TrimSpace(h.Get("Retry-After"))
 	if v == "" {
 		return 0
@@ -126,6 +132,61 @@ func retryAfterOf(h http.Header, now time.Time) time.Duration {
 		return t.Sub(now)
 	}
 	return 0
+}
+
+var retryAfterMessagePattern = regexp.MustCompile(`(?i)try again in\s+([0-9]+(?:\.[0-9]+)?)\s*(ms|milliseconds?|s|seconds?)\b`)
+
+// retryAfterMessage parses the provider's human-readable retry hint. It is a
+// hint only: backoff.next applies jitter and the configured maximum afterwards.
+func retryAfterMessage(text string) time.Duration {
+	m := retryAfterMessagePattern.FindStringSubmatch(text)
+	if len(m) != 3 {
+		return 0
+	}
+	value, err := strconv.ParseFloat(m[1], 64)
+	if err != nil || value <= 0 {
+		return 0
+	}
+	unit := strings.ToLower(m[2])
+	if strings.HasPrefix(unit, "ms") || strings.HasPrefix(unit, "millisecond") {
+		return time.Duration(value * float64(time.Millisecond))
+	}
+	return time.Duration(value * float64(time.Second))
+}
+
+func requestIDOf(h http.Header) string {
+	for _, name := range []string{"x-request-id", "request-id", "anthropic-request-id", "openai-request-id"} {
+		if id := strings.TrimSpace(h.Get(name)); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+func noteRequestID(ctx context.Context, id string) {
+	if id == "" {
+		return
+	}
+	if r, _ := ctx.Value(retryReportKey{}).(*RetryReport); r != nil {
+		r.RequestID = id
+	}
+}
+
+func requestIDFrom(ctx context.Context) string {
+	if r, _ := ctx.Value(retryReportKey{}).(*RetryReport); r != nil {
+		return r.RequestID
+	}
+	return ""
+}
+
+// withRequestID puts the provider's correlation id at the end of an error so
+// the user can quote the same id when reporting the failure upstream.
+func withRequestID(ctx context.Context, err error) error {
+	id := requestIDFrom(ctx)
+	if err == nil || id == "" || strings.Contains(err.Error(), "request-id:") {
+		return err
+	}
+	return fmt.Errorf("%w (request-id: %s)", err, id)
 }
 
 var resetAtPattern = regexp.MustCompile(`(?i)resets at\s+([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.+\-]+Z)`)
@@ -163,6 +224,11 @@ func quotaFailure(status int, provider string, body []byte) error {
 // postWithRetry retries network and transient HTTP failures. Quota responses
 // are recognized from the body before the normal 429 retry path and never wait.
 func postWithRetry(ctx context.Context, client *http.Client, b *backoff, provider, path string, build func() (*http.Request, error)) (*http.Response, error) {
+	if _, ok := ctx.Value(retryReportKey{}).(*RetryReport); !ok {
+		// Direct provider calls still need request ids in their errors; observed
+		// calls already installed the report used for attempt telemetry.
+		ctx, _ = withRetryReport(ctx)
+	}
 	var lastErr error
 	for attempt := 1; ; attempt++ {
 		req, err := build()
@@ -183,20 +249,30 @@ func postWithRetry(ctx context.Context, client *http.Client, b *backoff, provide
 			}
 			lastErr, reason = err, "network error"
 		case retryableStatus(resp.StatusCode):
+			noteRequestID(ctx, requestIDOf(resp.Header))
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			logProviderResponse(provider, path, resp.StatusCode, body)
 			if quotaText(resp.StatusCode, string(body)) {
-				return nil, quotaFailure(resp.StatusCode, provider, body)
+				return nil, withRequestID(ctx, quotaFailure(resp.StatusCode, provider, body))
+			}
+			if strings.EqualFold(strings.TrimSpace(resp.Header.Get("X-Should-Retry")), "false") {
+				// The provider explicitly says this response is final. Classify the
+				// actual HTTP failure without making another request.
+				return nil, withRequestID(ctx, statusErr(resp.StatusCode, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))))
 			}
 			retryAfter = retryAfterOf(resp.Header, time.Now())
+			if retryAfter == 0 {
+				retryAfter = retryAfterMessage(string(body))
+			}
 			lastErr = fmt.Errorf("server error %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 			reason = fmt.Sprintf("HTTP %d", resp.StatusCode)
 		default:
+			noteRequestID(ctx, requestIDOf(resp.Header))
 			return resp, nil
 		}
 		if attempt >= b.attempts() {
-			return nil, &transientRequestError{fmt.Errorf("%s request failed after %d attempts: %w", provider, attempt, lastErr)}
+			return nil, &transientRequestError{withRequestID(ctx, fmt.Errorf("%s request failed after %d attempts: %w", provider, attempt, lastErr))}
 		}
 		wait := b.next(retryAfter)
 		slog.Warn("llm request failed, retrying", "provider", provider, "attempt", attempt, "reason", reason, "wait", wait.Round(time.Millisecond), "err", lastErr)

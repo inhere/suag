@@ -49,11 +49,26 @@ var transientAPIErrorCodes = map[string]bool{
 // case-insensitively.
 var transientAPIErrorPhrases = []string{"overloaded", "try again later"}
 
+func isContextLengthError(code, typ, msg string) bool {
+	for _, value := range []string{code, typ} {
+		if strings.EqualFold(strings.TrimSpace(value), "context_length_exceeded") {
+			return true
+		}
+	}
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "prompt is too long")
+}
+
+const contextLengthHint = "上下文超长，可 :compact 或开新会话"
+
 // isTransientAPIError reports whether an API error is worth requesting again:
 // its code or type names a temporary failure, or - without a usable code or
 // type - its message asks the caller to come back later. Everything else is
 // permanent: requesting it again would only get the same error.
 func isTransientAPIError(code, typ, msg string) bool {
+	if isContextLengthError(code, typ, msg) {
+		return false
+	}
 	if hasQuotaMarker(code) || hasQuotaMarker(typ) || hasQuotaMarker(msg) {
 		// An exhausted allowance is not temporary in any useful sense - it
 		// resets in hours or days - so it is not retried (ErrorKindQuota).
@@ -82,10 +97,10 @@ func (e *apiTransientError) Error() string { return e.err.Error() }
 func (e *apiTransientError) Unwrap() error { return e.err }
 
 // apiTransientReason is the retry cause of an overload or rate limit, shown by
-// a frontend before the wait (the terminal prints it in its retry notice,
-// stream-json in its retry line). It differs from the "stream broken" of a cut
-// stream: there, part of an answer was already streamed and is void; here the
-// provider refused the request before answering anything.
+// a frontend before the wait (the terminal prints it in its retry notice, stream-json
+// in its retry line). It differs from the "stream broken" of a cut stream: there,
+// part of an answer was already streamed and is void; here the provider refused
+// the request before answering anything.
 const apiTransientReason = "服务端过载/限流"
 
 // retryReason implements retryableStreamError.
@@ -122,6 +137,9 @@ func newAPIError(prefix, msg string, transient bool) error {
 // or a response body. prefix is the provider's wording for its API errors, e.g.
 // "openai api error" or "responses api error".
 func apiErrorf(prefix string, e *apiError) error {
+	if isContextLengthError(e.Code, e.Type, e.Message) {
+		return &contextLengthError{fmt.Errorf("%s: %s；%s", prefix, e.Message, contextLengthHint)}
+	}
 	err := newAPIError(prefix, e.Message, isTransientAPIError(e.Code, e.Type, e.Message))
 	if hasQuotaMarker(e.Code) || hasQuotaMarker(e.Type) {
 		// insufficient_quota and the like name the exhausted allowance only in the
@@ -135,5 +153,8 @@ func apiErrorf(prefix string, e *apiError) error {
 // text or as a bare message (a stream event with only a top-level "message",
 // an error body that is not JSON): the message is all there is to classify.
 func apiMessageErrorf(prefix, msg string) error {
+	if isContextLengthError("", "", msg) {
+		return &contextLengthError{fmt.Errorf("%s: %s；%s", prefix, msg, contextLengthHint)}
+	}
 	return newAPIError(prefix, msg, isTransientAPIError("", "", msg))
 }
