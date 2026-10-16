@@ -104,7 +104,7 @@ func (s *subAgents) build(kind string) (*personal.Runner, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("agents.model: %w", err)
 	}
-	provider, err := buildMainProvider(rs.models)
+	provider, err := buildMainProviderWithEstimate(rs.models, estimateOptionsForBudget(s.budget.Tokens, s.budget.CostUSD, s.budget.Estimate, s.budget.EstimateFactor))
 	if err != nil {
 		return nil, nil, err
 	}

@@ -81,7 +81,8 @@ func NewOpenAIProvider(cfg OpenAIConfig) *OpenAIProvider {
 }
 
 // Name implements Provider.
-func (p *OpenAIProvider) Name() string { return p.name }
+func (p *OpenAIProvider) Name() string  { return p.name }
+func (p *OpenAIProvider) Model() string { return p.model }
 
 // SupportsToolChoice implements api.ToolChooser: chat/completions takes the
 // tool_choice field ("none" included).

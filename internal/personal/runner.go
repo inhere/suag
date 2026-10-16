@@ -325,7 +325,7 @@ func New(cfg Config) (*Runner, error) {
 		}))
 	}
 	if cfg.CompactProvider != nil {
-		cfg.CompactProvider = rec.observeProvider(cfg.CompactProvider, cfg.ProviderName, cfg.CompactModel)
+		cfg.CompactProvider = rec.observeProvider(cfg.CompactProvider, cfg.CompactProvider.Name(), cfg.CompactModel)
 	}
 	runner := &Runner{cfg: cfg, heldLocks: make(map[string]*process.SessionLock),
 		steers: make(map[string]*steerInbox), rec: rec}

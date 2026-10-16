@@ -135,7 +135,8 @@ func claudeMessagesURL(base string) string {
 }
 
 // Name implements Provider.
-func (p *ClaudeProvider) Name() string { return p.name }
+func (p *ClaudeProvider) Name() string  { return p.name }
+func (p *ClaudeProvider) Model() string { return p.model }
 
 // SupportsToolChoice implements api.ToolChooser: /v1/messages takes
 // tool_choice as an object ({"type": "none"}), which is also allowed with
