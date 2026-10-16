@@ -362,6 +362,10 @@ func (t *Terminal) reverseSearch() {
 			return
 		}
 	}
+	// Keep the search active, but make a failed repeat visible instead of
+	// silently leaving the previous match on screen.
+	t.prompt = []rune("(failed reverse-i-search)`" + t.reverseQuery + "': ")
+	_ = t.repaintLocked()
 }
 
 func (t *Terminal) cancelReverseSearch() {

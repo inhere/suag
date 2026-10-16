@@ -277,7 +277,10 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 		}
 	case keyCtrlR:
 		t.reverseSearch()
+	case keyCtrlG:
+		t.cancelReverseSearch()
 	case keyEnter, keyLF:
+		t.endReverseSearch()
 		// A submitted line stays on screen, repainted on the input style's
 		// background when one is set (highlight.go).
 		if !t.repaintSubmittedLine() {
