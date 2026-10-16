@@ -50,34 +50,34 @@
 - 设计关联：`suga-wl0l`；`suga-zy9f` 只作为 spill/gc 配额边界参照，不在本计划实现；`suga-oyby` 的附加目录与 `:rw` 语义必须被快照 root 校验复用。
 - 事实基线：设计 §“已确认事实与规范”及本计划“能力发现”；实施前重新记录 HEAD、分支和 dirty 状态，若代码事实与设计冲突，按“待确认/风险”停止。
 
-## 能力发现
+## Capability Discovery
 
 ### Capability decisions
 
 | capability_id | required_capability | searched_candidates | direct_reuse | thin_adapter_or_owner_extension | decision | proven_gap | duplication_and_lifecycle_risk |
 |---|---|---|---|---|---|---|---|
-| CAP-UN-01 | 写工具执行前后传递快照信息 | `native.Env`、`file.go`、`edit.go`、`remove.go`、`native.Catalog` | Env/工具 catalog、`ApplyEdit`、现有 trash/origin metadata 可复用 | Env 只持有导出的 Snapshotter 接口；三个工具各在既有 owner 内调用 | OWNER_EXTENSION | 当前工具无快照钩子，native 不能依赖 `internal/personal` | 不能在 wiring 与 native 各存一份快照；I/O 前后状态必须由同一调用记录更新 |
-| CAP-UN-02 | 会话/回合/调用级安全落盘与清理 | `internal/personal/spill.go`、`process.SecureDir`、`validateSessionID`、sessions 路径 | 目录安全、hash 文件名、OpenRoot、权限、session scope 可复用 | 新 `SessionSnapshots` 作为与 `SessionSpiller` 同族的唯一存储 owner | OWNER_EXTENSION | 没有快照目录、meta 状态、大小/保留/全局清理 | 不建 DB BLOB；避免与 spill、suga-zy9f 建第二套全局配额语义 |
-| CAP-UN-03 | 回合选择、冲突检测、逆序恢复和锁 | `Runner.Compact`、session gate、`process` 跨进程锁、store turns | Runner API、回合排序、锁顺序、session cwd/meta 可复用 | 新 `internal/personal/undo.go` 编排，快照模块只负责存取 | OWNER_EXTENSION | 无 undo、pre-undo、root/real path/hash 校验 | chat 与 CLI 必须调用同一 Runner/Undo 核心，不能各自恢复 |
-| CAP-UN-04 | 回滚后模型通知与观测 | `EntryUser`/metadata、`injectedItemKeys`、task/steer 待投递、events/trace | 条目投递、上下文回放、event attrs、trace JSON 原样输出可复用 | 添加 `suga.undo` metadata 和 `EventUndo` | DIRECT_REUSE + OWNER_EXTENSION | 现有通知没有 undo 事实和恢复统计 | 不把 undo 误做 `context_update` 或真实用户请求；不进 export/transcript |
-| CAP-UN-05 | chat/CLI 交互 | chat 本地命令 switch、帮助常量、`openCoreStore`、CLI root 注册 | `:compact`/目录命令、确认器、CLI session 前缀解析、store 句柄可复用 | 新 `internal/cli/undo.go`，chat 只做解析和渲染 | OWNER_EXTENSION | 无 checkpoint 清单/确认/退出码 | chat/CLI 共享 undo 核心与锁；不能复制恢复算法 |
+| CAP-01 | 写工具执行前后传递快照信息 | `pkg/agentcore/tools/native/catalog.go:12-16,61-64`、`file.go`、`edit.go`、`remove.go:111-259`、`native.Catalog` | Env/工具 catalog、`ApplyEdit`、现有 trash/origin metadata 可复用 | Env 只持有导出的 Snapshotter 接口；三个工具各在既有 owner 内调用 | OWNER_EXTENSION | 当前工具无快照钩子，native 不能依赖 `internal/personal` | 不能在 wiring 与 native 各存一份快照；I/O 前后状态必须由同一调用记录更新 |
+| CAP-02 | 会话/回合/调用级安全落盘与清理 | `internal/personal/spill.go:23-116`、`process.SecureDir`、`validateSessionID`、sessions 路径 | 目录安全、hash 文件名、OpenRoot、权限、session scope 可复用 | 新 `SessionSnapshots` 作为与 `SessionSpiller` 同族的唯一存储 owner | MINIMAL_NEW_MODULE | 没有快照目录、meta 状态、大小/保留/全局清理 | 不建 DB BLOB；避免与 spill、suga-zy9f 建第二套全局配额语义 |
+| CAP-03 | 回合选择、冲突检测、逆序恢复和锁 | `internal/personal/gate.go:17-191`、`internal/chat/chat.go:441-447`、`process` 跨进程锁、store turns | Runner API、回合排序、锁顺序、session cwd/meta 可复用 | 新 `internal/personal/undo.go` 编排，快照模块只负责存取 | MINIMAL_NEW_MODULE | 无 undo、pre-undo、root/real path/hash 校验 | chat 与 CLI 必须调用同一 Runner/Undo 核心，不能各自恢复 |
+| CAP-04 | 回滚后模型通知与观测 | `internal/personal/context.go:30-42,300-367`、`internal/personal/store/types.go:48-167`、task/steer 待投递、events/trace | 条目投递、上下文回放、event attrs、trace JSON 原样输出可复用 | 添加 `suga.undo` metadata 和 `EventUndo` | OWNER_EXTENSION | 现有通知没有 undo 事实和恢复统计 | 不把 undo 误做 `context_update` 或真实用户请求；不进 export/transcript |
+| CAP-05 | chat/CLI 交互 | `internal/chat/chat.go:415-447`、帮助常量、`openCoreStore`、CLI root 注册 | `:compact`/目录命令、确认器、CLI session 前缀解析、store 句柄可复用 | 新 `internal/cli/undo.go`，chat 只做解析和渲染 | OWNER_EXTENSION | 无 checkpoint 清单/确认/退出码 | chat/CLI 共享 undo 核心与锁；不能复制恢复算法 |
 
 ### New module candidates
 
 | candidate_id | capability_id | proposed_module | searched_candidates | direct_reuse_gap | thin_adapter_or_owner_extension_gap | proven_gap | unique_owner_and_lifecycle | deletion_or_merge_handling |
 |---|---|---|---|---|---|---|---|---|
-| MOD-UN-01 | CAP-UN-02 | `internal/personal/snapshots.go` | `internal/personal/spill.go` | 需要二进制 before、meta/state、容量与清理 | 复用 spill 安全写入约定，但不复用其脱敏/输出接口 | 设计确认当前没有 snapshot 实现 | 与 sessions 目录同生命周期，受 gc 覆盖 | 若存储能完全合入 spill 会损失语义；保留独立 owner，gc 只按目录涵盖 |
-| MOD-UN-02 | CAP-UN-03 | `internal/personal/undo.go` | `runner.go`、`gate.go`、store turns | 需要逆序恢复和冲突矩阵 | Runner 上挂 `Undo`/`Checkpoints`，底层 root 校验共用 native helpers | 设计确认没有回滚入口 | chat/CLI 唯一执行 owner | 删除 chat/CLI 层恢复代码后核心仍可测试 |
+| MOD-UN-01 | CAP-02 | `internal/personal/snapshots.go` | `internal/personal/spill.go:23-116` | 需要二进制 before、meta/state、容量与清理 | 复用 spill 安全写入约定，但不复用其脱敏/输出接口 | 设计确认当前没有 snapshot 实现 | 与 sessions 目录同生命周期，受 gc 覆盖 | 若存储能完全合入 spill 会损失语义；保留独立 owner，gc 只按目录涵盖 |
+| MOD-UN-02 | CAP-03 | `internal/personal/undo.go` | `internal/personal/runner.go:500-600`、`internal/personal/gate.go:17-191`、store turns | 需要逆序恢复和冲突矩阵 | Runner 上挂 `Undo`/`Checkpoints`，底层 root 校验共用 native helpers | 设计确认没有回滚入口 | chat/CLI 唯一执行 owner | 删除 chat/CLI 层恢复代码后核心仍可测试 |
 
 ### Rejected new tools
 
 | rejected_candidate | capability_id | deletion_test_and_reason |
 |---|---|---|
-| git 基线自动回滚工具 | CAP-UN-03 | 删除后文件工具快照仍满足目标；git 会误含用户未提交修改、无法覆盖非 git/仓库外路径，设计选 G1 只提示 |
-| 模型可调用的 undo tool | CAP-UN-05 | 撤销是用户动作；删除该工具可避免模型自行覆盖用户状态，chat/CLI 入口仍足够 |
-| ACP 内 `undo` 方法 | CAP-UN-05 | ACP 客户端已有撤销面且不在范围；共享写工具仍可快照，CLI 可回滚会话 |
+| git 基线自动回滚工具 | CAP-03 | 删除后文件工具快照仍满足目标；git 会误含用户未提交修改、无法覆盖非 git/仓库外路径，设计选 G1 只提示 |
+| 模型可调用的 undo tool | CAP-05 | 撤销是用户动作；删除该工具可避免模型自行覆盖用户状态，chat/CLI 入口仍足够 |
+| ACP 内 `undo` 方法 | CAP-05 | ACP 客户端已有撤销面且不在范围；共享写工具仍可快照，CLI 可回滚会话 |
 
-## 预检（preflight）与 fail-closed 条件
+## Preflight
 
 - P0：确认 worktree 根、分支、HEAD、`git status --short`，确认 owner 路径无他人改动；冲突即停止。
 - P1：确认基线设计仍为 Draft 0.3 / 已批准；运行 `go test -race ./pkg/agentcore/tools/native/... ./internal/personal/... ./internal/chat/... ./internal/cli/...` 与现有 `make smoke-chat`，记录 exit code 和原始输出；基线失败不进入 W1。
