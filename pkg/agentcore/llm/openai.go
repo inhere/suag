@@ -101,7 +101,13 @@ func (p *OpenAIProvider) Generate(ctx context.Context, req *agentcoreapi.Generat
 		return nil, err
 	}
 
-	return p.parseResponse(respBody)
+	res, err := p.parseResponse(respBody)
+	if err != nil {
+		return nil, err
+	}
+	// The limit this request asked for; 0 = the API's own default.
+	res.OutputLimit = req.MaxTokens
+	return res, nil
 }
 
 // buildRequestBody constructs the OpenAI chat completion request payload.
@@ -276,6 +282,7 @@ func (p *OpenAIProvider) parseResponse(data []byte) (*agentcoreapi.GenerateResul
 		resp.ToolCalls = append(resp.ToolCalls, newToolCall(tc.ID, tc.Function.Name, tc.Function.Arguments))
 	}
 	if choice.FinishReason == "length" {
+		resp.Truncated = true
 		markTruncated(resp.ToolCalls)
 	}
 	if len(resp.ToolCalls) > 0 {

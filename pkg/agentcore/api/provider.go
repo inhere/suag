@@ -77,6 +77,16 @@ type GenerateResult struct {
 	// Reasoning is the model's reasoning text returned with this result; the
 	// runtime stores it on the assistant message it persists.
 	Reasoning string
+	// Truncated is true when the reply was cut off at the output token limit of
+	// the request (OpenAI finish_reason "length", Claude stop_reason
+	// "max_tokens", a Responses result with incomplete reason
+	// "max_output_tokens"): the answer may be incomplete.
+	Truncated bool
+	// OutputLimit is how many output tokens the request allowed (the provider's
+	// own default included); 0 when neither the request nor the protocol set
+	// one, so the server's default applied. It names the limit in the
+	// truncation notice.
+	OutputLimit int
 }
 
 // FinishReason explains whether a model response completed the step or requested tools.

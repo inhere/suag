@@ -29,6 +29,8 @@ const truncatedCallError = "the response was cut off by the output limit, so thi
 // markTruncated flags every tool call of a truncated response (OpenAI
 // finish_reason "length", Claude stop_reason "max_tokens"); the runtime then
 // answers them with an error result instead of running cut-off arguments.
+// The provider also sets GenerateResult.Truncated, and names the limit it
+// asked for in GenerateResult.OutputLimit.
 func markTruncated(calls []agentcoreapi.ToolCall) {
 	for i := range calls {
 		// The cut is the cause: it replaces a decode error of the same call.

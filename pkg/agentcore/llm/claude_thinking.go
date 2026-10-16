@@ -13,10 +13,8 @@ import (
 // before) still need, with the interleaved-thinking beta header for thinking
 // between tool calls.
 
-// claudeThinkingMaxTokens is max_tokens when thinking is on and the request
-// sets none: thinking counts toward max_tokens, so the 4096 default would cut
-// replies short.
-const claudeThinkingMaxTokens = 32000
+// claudeMinThinkingBudget is the smallest budget_tokens Anthropic accepts.
+const claudeMinThinkingBudget = 1024
 
 // claudeInterleavedBeta enables thinking between tool calls for budget mode.
 const claudeInterleavedBeta = "interleaved-thinking-2025-05-14"
@@ -51,20 +49,26 @@ func claudeBudgetMode(model string) bool {
 // and "auto" leave the model's default; "off" leaves them out as well, since
 // several newer models think by default and reject {"type": "disabled"}.
 // Budget mode also needs the interleaved-thinking beta (setThinkingBeta).
-func applyClaudeThinking(body map[string]any, model, level string, maxTokensSet bool) {
+//
+// Thinking counts toward max_tokens, so body's max_tokens must already be set:
+// the budget is capped below it, and a request with too little room for a
+// valid budget (max_tokens <= 1024) goes without thinking rather than with a
+// request the API rejects.
+func applyClaudeThinking(body map[string]any, model, level string) {
 	effort, ok := claudeEfforts[level]
 	if !ok {
 		return
-	}
-	if !maxTokensSet {
-		body["max_tokens"] = claudeThinkingMaxTokens
 	}
 	if claudeBudgetMode(model) {
 		budget := claudeBudgets[level]
 		if max, _ := body["max_tokens"].(int); max > 0 && budget >= max {
 			budget = max - 1 // budget_tokens must stay below max_tokens
 		}
-		body["thinking"] = map[string]any{"type": "enabled", "budget_tokens": max(budget, 1024)}
+		if budget < claudeMinThinkingBudget {
+			// Not enough room for thinking under this output limit.
+			return
+		}
+		body["thinking"] = map[string]any{"type": "enabled", "budget_tokens": budget}
 		return
 	}
 	// summarized: newer models omit the thinking text by default; suga shows

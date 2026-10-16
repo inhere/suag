@@ -28,6 +28,10 @@ type Attempt struct {
 	// Finish is how the response ended: "tool_calls", "final", or
 	// "truncated" when the output limit cut it off; "" when it failed.
 	Finish string
+	// OutputLimit is the output token limit the request asked for when Finish is
+	// "truncated" (0 = the provider's or server's own default applied); 0 as
+	// well for every other reply.
+	OutputLimit int
 	// Retries is how often the provider retried the request after a
 	// transient failure (RetryPolicy), RetryWait the time spent waiting and
 	// RetryReason the reason of the last retry ("HTTP 503", "stream broken").
@@ -93,15 +97,26 @@ func report(ctx context.Context, obs AttemptObserver, prov agentcoreapi.Provider
 		a.Usage = res.Usage
 		a.ToolCalls, a.ReasoningChars, a.TextChars = len(res.ToolCalls), len(res.Reasoning), len(res.Content)
 		a.Finish = finishOf(res)
+		if a.Finish == finishTruncated {
+			a.OutputLimit = res.OutputLimit
+		}
 	}
 	obs(ctx, a)
 }
 
+// finishTruncated names a reply the output token limit cut off.
+const finishTruncated = "truncated"
+
 // finishOf names how a response ended (Attempt.Finish).
 func finishOf(res *agentcoreapi.GenerateResult) string {
+	// Truncated covers an answer cut off at the output limit, with or without
+	// tool calls (whose arguments may then be incomplete).
+	if res.Truncated {
+		return finishTruncated
+	}
 	for _, c := range res.ToolCalls {
 		if c.ArgumentsError == truncatedCallError {
-			return "truncated"
+			return finishTruncated
 		}
 	}
 	if res.FinishReason == agentcoreapi.FinishToolCalls {

@@ -38,7 +38,7 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateR
 	body["stream_options"] = map[string]any{"include_usage": true}
 	logProviderRequest(p.Name(), "/chat/completions", body)
 
-	return retryStream(ctx, p.retry, p.Name(), emit, func(ctx context.Context, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
+	res, err := retryStream(ctx, p.retry, p.Name(), emit, func(ctx context.Context, emit agentcoreapi.StreamFunc) (*agentcoreapi.GenerateResult, error) {
 		resp, err := p.openStream(ctx, "/chat/completions", body)
 		if err != nil {
 			return nil, err
@@ -50,6 +50,11 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req *agentcoreapi.GenerateR
 		}
 		return p.readStream(ctx, resp.Body, emit)
 	})
+	if res != nil {
+		// The limit this request asked for; 0 = the API's own default.
+		res.OutputLimit = req.MaxTokens
+	}
+	return res, err
 }
 
 // readWhole parses a non-streamed completion and emits its text in one delta.
@@ -246,6 +251,7 @@ func (p *OpenAIProvider) readStream(ctx context.Context, r io.Reader, emit agent
 		res.ToolCalls = append(res.ToolCalls, newToolCall(call.id, call.name, json.RawMessage(raw)))
 	}
 	if finishReason == "length" {
+		res.Truncated = true
 		markTruncated(res.ToolCalls)
 	}
 	if len(res.ToolCalls) > 0 {
