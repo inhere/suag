@@ -140,7 +140,7 @@ func TestTerminal_ReverseSearchUsesTypedKeys(t *testing.T) {
 		lines <- line
 	}()
 	waitRead(t, feed.waiting)
-	feed.in <- "second"
+	feed.in <- "\x15\x12second\r"
 	line := readLineWithin(t, lines)
 	assert.Eq(t, "second history line", line)
 	assert.StrContains(t, feed.out.String(), "(reverse-i-search)")
