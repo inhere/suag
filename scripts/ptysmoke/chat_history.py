@@ -40,8 +40,8 @@ def main():
             s.send("\x07")
             s.send(":se\t")
             s.check("command Tab completion (:session)", s.until(":session", m))
-            s.send("\x15:add-dir tm\t")
-            s.check("directory Tab completion", s.until(":add-dir tm-dir", m))
+            s.send("\x15:add-dir " + os.path.join(ws, "tm") + "\t")
+            s.check("directory Tab completion", s.until(":add-dir " + os.path.join(ws, "tm-dir") + os.sep, m))
             s.send("\x03"); s.send("\x03")
             s = None
     finally:

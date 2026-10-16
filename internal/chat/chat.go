@@ -217,6 +217,7 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		}
 		if inputSource.terminal != nil {
 			inputSource.terminal.SetHistory(inputHistory.lines())
+			installCompletion(inputSource, opts.Dirs)
 		}
 		// Only lines received from the local keyboard are recorded; deliveries and
 		// hook/task messages must never become personal input history.

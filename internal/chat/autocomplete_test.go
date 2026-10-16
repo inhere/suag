@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
+	"github.com/inhere/suga/internal/chat/lineedit"
 )
 
 func TestChatCompletion(t *testing.T) {
@@ -26,9 +27,28 @@ func TestChatCompletion(t *testing.T) {
 		child := filepath.Join(dir, "folder with space")
 		assert.NoErr(t, os.Mkdir(child, 0o700))
 		source := &chatInputSource{output: &bytes.Buffer{}}
-		line, pos, ok := completePath(source, ":add-dir "+dir+string(os.PathSeparator)+"fol", ":add-dir", dir+string(os.PathSeparator)+"fol")
+		line, pos, ok := completePath(source, dir, ":add-dir "+dir+string(os.PathSeparator)+"fol", ":add-dir", dir+string(os.PathSeparator)+"fol")
 		assert.True(t, ok)
-		assert.Eq(t, ":add-dir "+child, line)
+		assert.Eq(t, ":add-dir "+child+string(os.PathSeparator), line)
 		assert.Eq(t, len(line), pos)
 	})
+	t.Run("relative directory is resolved from workspace", func(t *testing.T) {
+		workspace := t.TempDir()
+		child := filepath.Join(workspace, "tm-dir")
+		assert.NoErr(t, os.Mkdir(child, 0o700))
+		source := &chatInputSource{output: &bytes.Buffer{}}
+		line, _, ok := completePath(source, workspace, ":add-dir tm", ":add-dir", "tm")
+		assert.True(t, ok)
+		assert.Eq(t, ":add-dir "+child+string(os.PathSeparator), line)
+	})
+}
+
+func TestChatCompletionIsInstalledOnTerminalSource(t *testing.T) {
+	source := &chatInputSource{output: &bytes.Buffer{}}
+	source.terminal = lineedit.NewTerminal(&bytes.Buffer{}, "❯ ")
+	installCompletion(source, nil)
+	line, pos, ok := source.terminal.AutoCompleteCallback(":se", len(":se"), '\t')
+	assert.True(t, ok)
+	assert.Eq(t, ":session", line)
+	assert.Eq(t, len(line), pos)
 }

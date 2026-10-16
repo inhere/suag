@@ -3,6 +3,7 @@ package chat
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -11,13 +12,16 @@ var chatCommands = []string{":session", ":compact", ":add-dir", ":dirs", ":rm-di
 
 // installCompletion wires the line editor's callback to local chat commands and
 // directory arguments. Completion only acts at the command line and never on a
-// delivered message.
+// delivered message or an approval answer.
 func installCompletion(source *chatInputSource, dirs SessionDirs) {
 	if source.terminal == nil {
 		return
 	}
 	source.terminal.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
-		if key != '\t' || pos != len(line) || !strings.HasPrefix(line, ":") {
+		source.mu.Lock()
+		asking := source.readMode == modeAsk
+		source.mu.Unlock()
+		if asking || key != '\t' || pos != len(line) || !strings.HasPrefix(line, ":") {
 			return "", 0, false
 		}
 		name, arg := splitCommand(line)
@@ -33,7 +37,7 @@ func installCompletion(source *chatInputSource, dirs SessionDirs) {
 		if dirs == nil || (name != addDirCmd && name != rmDirCmd) {
 			return "", 0, false
 		}
-		return completePath(source, line, name, arg)
+		return completePath(source, dirs.Workspace(), line, name, arg)
 	}
 }
 
@@ -48,7 +52,7 @@ func completeCandidates(source *chatInputSource, line string, matches []string) 
 	return matches[0], len(matches[0]), true
 }
 
-func completePath(source *chatInputSource, line, name, arg string) (string, int, bool) {
+func completePath(source *chatInputSource, workspace, line, name, arg string) (string, int, bool) {
 	base := arg
 	prefix := ""
 	if i := strings.LastIndexAny(arg, `/\\`); i >= 0 {
@@ -57,6 +61,9 @@ func completePath(source *chatInputSource, line, name, arg string) (string, int,
 	dir := prefix
 	if dir == "" {
 		dir = "."
+	}
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(workspace, dir)
 	}
 	items, err := os.ReadDir(dir)
 	if err != nil {
@@ -72,10 +79,22 @@ func completePath(source *chatInputSource, line, name, arg string) (string, int,
 	if len(matches) == 0 {
 		return "", 0, false
 	}
+	sep := string(filepath.Separator)
+	completedPrefix := prefix
+	if !filepath.IsAbs(completedPrefix) {
+		completedPrefix = filepath.Join(workspace, completedPrefix)
+	}
+	if !strings.HasSuffix(completedPrefix, sep) {
+		completedPrefix += sep
+	}
 	if len(matches) > 1 {
-		_, _ = fmt.Fprintln(source, strings.Join(matches, "  "))
+		paths := make([]string, len(matches))
+		for i, match := range matches {
+			paths[i] = completedPrefix + match + sep
+		}
+		_, _ = fmt.Fprintln(source, strings.Join(paths, "  "))
 		return line, len(line), true
 	}
-	completed := name + " " + prefix + matches[0]
+	completed := name + " " + completedPrefix + matches[0] + sep
 	return completed, len(completed), true
 }
