@@ -34,7 +34,7 @@ def main():
                 s.line("first history line"); s.until(r"❯ ", s.mark())
                 s.line("second history line"); s.until(r"❯ ", s.mark())
                 s.send(CTRL_C); s.until(r"再按一次", s.mark()); s.send(CTRL_C); s.close(); continue
-            s.send(b"\x10"); s.check("Up restores prior local input", s.until("second history line", m))
+            s.send(b"\x1b[A"); s.check("Up restores prior local input", s.until("second history line", m))
             s.send(b"\x15"); s.send(b"history"); s.send(b"\x12")
             s.check("Ctrl-R finds a match", s.until("reverse-i-search", m) and s.contains("second history line", m))
             s.send(b"\x07")
