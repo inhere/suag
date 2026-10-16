@@ -166,6 +166,15 @@ func ReportApproval(ctx context.Context, source string, wait time.Duration) {
 	}
 }
 
+// ReportRule records the stable rule summary and optional session scope in the
+// current approval report. Empty values deliberately mean that no matching
+// rule or session scope was available.
+func ReportRule(ctx context.Context, summary, scope string) {
+	if r, _ := ctx.Value(approvalReportKey{}).(*ApprovalReport); r != nil {
+		r.Rule, r.Scope = summary, scope
+	}
+}
+
 // ReportDanger records in ctx's report why the call is dangerous.
 func ReportDanger(ctx context.Context, reason string) {
 	if r, _ := ctx.Value(approvalReportKey{}).(*ApprovalReport); r != nil {
