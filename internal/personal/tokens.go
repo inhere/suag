@@ -82,3 +82,30 @@ func tokensOfMessage(m agentcore.Message) int {
 	}
 	return n
 }
+
+// tokensOfTools estimates the JSON schema sent with a request. Encoding the
+// complete provider-neutral schema keeps descriptions and nested properties in
+// the same approximation as the request body without introducing a tokenizer.
+func tokensOfTools(tools []agentcore.ToolSchema) int {
+	if len(tools) == 0 {
+		return 0
+	}
+	raw, err := json.Marshal(tools)
+	if err != nil {
+		return 0
+	}
+	return tokensOfText(string(raw))
+}
+
+// tokensOfToolCalls estimates the visible output of tool calls, excluding the
+// call id because the model output contains the function name and arguments.
+func tokensOfToolCalls(calls []agentcore.ToolCall) int {
+	n := 0
+	for _, call := range calls {
+		n += tokensOfText(call.Name)
+		if raw, err := json.Marshal(call.Arguments); err == nil {
+			n += tokensOfText(string(raw))
+		}
+	}
+	return n
+}

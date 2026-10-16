@@ -76,6 +76,13 @@ type FinishReason = api.FinishReason
 // api.ToolChoiceNone.
 const ToolChoiceNone = api.ToolChoiceNone
 
+// Usage metadata keys are re-exported for callers using the root agentcore API.
+const (
+	UsageEstimatedMetaKey        = api.UsageEstimatedMetaKey
+	EstimatedInputTokensMetaKey  = api.EstimatedInputTokensMetaKey
+	EstimatedOutputTokensMetaKey = api.EstimatedOutputTokensMetaKey
+)
+
 const (
 	FinishFinal     = api.FinishFinal
 	FinishToolCalls = api.FinishToolCalls
