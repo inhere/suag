@@ -1,6 +1,8 @@
 package axconfig
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
@@ -45,6 +47,35 @@ func ChatSteeringEnabled() bool {
 // NO_COLOR leaves the title alone anyway.
 func ChatTerminalTitleEnabled() bool {
 	return chatSwitch("chat.terminal_title")
+}
+
+// ChatDiffEnabled reports whether chat shows what a file tool call changed
+// (chat.diff, on by default): the unified diff under the tool result, the
+// pending diff before an approval question and the :diff command. It takes the
+// same values as chat.markdown. run, ACP and stream-json are not affected - ACP
+// builds its own diff for the client either way.
+func ChatDiffEnabled() bool {
+	return chatSwitch("chat.diff")
+}
+
+// DefaultChatDiffLines is how many lines one diff preview in chat shows
+// (chat.diff_lines) when the key is not set.
+const DefaultChatDiffLines = 20
+
+// ChatDiffLines reads chat.diff_lines: how many lines one diff preview shows
+// (the :diff command always shows the whole change). A value below 1 or
+// something that is not a whole number is an error rather than a silently
+// changed or ignored limit.
+func ChatDiffLines() (int, error) {
+	if gkconfig.Get("chat.diff_lines") == nil {
+		return DefaultChatDiffLines, nil
+	}
+	raw := strings.TrimSpace(gkconfig.String("chat.diff_lines"))
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("chat.diff_lines must be a whole number >= 1, got %q", raw)
+	}
+	return n, nil
 }
 
 // ChatAskOutsideDirs reports whether an interactive chat asks the person to

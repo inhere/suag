@@ -4,15 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/coder/acp-go-sdk"
+	"github.com/inhere/suga/internal/diffview"
 	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/tools"
 	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
@@ -73,7 +70,8 @@ type permissionHook struct {
 var _ tools.Approver = (*permissionHook)(nil)
 
 // maxDiffBytes caps each side of a diff; larger files only report locations.
-const maxDiffBytes = 256 << 10
+// The change itself is built by internal/diffview, which chat shows too.
+const maxDiffBytes = diffview.MaxBytes
 
 // BeforeTool announces the call (status pending, with locations and diff). The
 // permission decision happens later in Decide, inside the approval layer.
@@ -268,87 +266,30 @@ func toolLocations(cwd string, args map[string]any) []acp.ToolCallLocation {
 
 // toolDiff records the proposed replacement for file_write (content) or
 // file_edit (old file with the replacement applied) without reading outside
-// the workspace.
+// the workspace. The change is built by internal/diffview, the same
+// construction chat previews with, so both show the same old and new text.
 // It never blocks: only regular files within maxDiffBytes are read, and binary
 // or oversized content yields no diff (locations are still reported).
 func toolDiff(cwd string, kind acp.ToolKind, locations []acp.ToolCallLocation, args map[string]any) []acp.ToolCallContent {
 	if kind != acp.ToolKindEdit || len(locations) == 0 || args == nil {
 		return nil
 	}
-	// file_edit carries old_string/new_string or edits: the new text is the
-	// current file with the replacements applied, computed once it is read.
-	_, isEdit := args["old_string"]
-	if _, multi := args["edits"]; multi {
-		isEdit = true
+	// A file call announced as an edit is file_write (its content argument) or
+	// file_edit (old_string/new_string or edits): the same distinction the tool
+	// makes by the arguments it carries.
+	name := diffview.ToolWrite
+	if _, isEdit := args["old_string"]; isEdit {
+		name = diffview.ToolEdit
+	} else if _, multi := args["edits"]; multi {
+		name = diffview.ToolEdit
 	}
-	newText, ok := args["content"].(string)
-	if !isEdit && (!ok || len(newText) > maxDiffBytes || !textual(newText)) {
+	change, ok := diffview.At(cwd, name, locations[0].Path, args)
+	if !ok || change.New == nil {
 		return nil
 	}
-	rel, err := filepath.Rel(cwd, locations[0].Path)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return nil
-	}
-	root, err := os.OpenRoot(cwd)
-	if err != nil {
-		return nil
-	}
-	defer root.Close()
-
-	var oldText *string
-	// Open exactly once through os.Root (which follows only in-root symlinks and
-	// rejects escapes), then judge the handle itself: no separate Lstat/Stat
-	// that a swap could race with.
-	f, err := openPreview(root, rel)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		// Absent target (including a missing parent directory, which file_write
-		// creates) is a new file. A dangling symlink also reports not-exist, so
-		// fail closed on anything that is still present as a link.
-		if _, lerr := root.Lstat(rel); lerr == nil {
-			return nil
-		}
-	case err != nil:
-		// os.Root rejects ".." and symlink escapes with a non-NotExist error.
-		return nil
-	default:
-		defer f.Close()
-		before, ok := readBounded(f)
-		if !ok {
-			return nil
-		}
-		oldText = acp.Ptr(before)
-	}
-	if isEdit {
-		if oldText == nil {
-			return nil // file_edit needs an existing file
-		}
-		edited, _, err := native.ApplyEdit(*oldText, args)
-		if err != nil || len(edited) > maxDiffBytes {
-			return nil
-		}
-		newText = edited
-	}
-	return []acp.ToolCallContent{{Diff: &acp.ToolCallContentDiff{Type: "diff", Path: locations[0].Path, OldText: oldText, NewText: newText}}}
-}
-
-// readBounded reads an opened regular file, giving up on non-regular files
-// (FIFO/device/directory), files past maxDiffBytes, or binary content.
-func readBounded(f *os.File) (string, bool) {
-	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() > maxDiffBytes {
-		return "", false
-	}
-	data, err := io.ReadAll(io.LimitReader(f, maxDiffBytes+1))
-	if err != nil || len(data) > maxDiffBytes || !textual(string(data)) {
-		return "", false
-	}
-	return string(data), true
-}
-
-// textual reports whether s is valid UTF-8 without NUL bytes (a binary marker).
-func textual(s string) bool {
-	return utf8.ValidString(s) && !strings.ContainsRune(s, 0)
+	return []acp.ToolCallContent{{Diff: &acp.ToolCallContentDiff{
+		Type: "diff", Path: change.Path, OldText: change.Old, NewText: *change.New,
+	}}}
 }
 
 // tool resolves name in this runtime; nil when unknown or without lookup.

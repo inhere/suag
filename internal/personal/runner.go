@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/inhere/suga/internal/diffview"
 	"github.com/inhere/suga/internal/personal/process"
 	"github.com/inhere/suga/internal/personal/store"
 	"github.com/inhere/suga/pkg/agentcore"
@@ -153,6 +154,13 @@ type Config struct {
 	// (and of older sessions without one on their next turn); session_search
 	// scope workspace matches sessions by it.
 	Workspace string
+	// DiffPreview attaches what a file tool call changes on disk
+	// (internal/diffview, the same construction ACP sends its client) to its
+	// "tool_call" event, read before the tool runs. Chat asks for it (chat.diff),
+	// so it can show the diff before an approval question and under the tool
+	// result; run, stream-json and ACP leave it off and carry no file text in
+	// their events.
+	DiffPreview bool
 }
 
 // Event is one transport-neutral lifecycle or model-stream update.
@@ -167,6 +175,12 @@ type Event struct {
 	IsError bool
 	// Plan is set on "plan" events (the full replaced task list).
 	Plan *native.Plan
+	// Change is set on the "tool_call" event of a file tool call (file_edit,
+	// file_write, file_remove) when this runner previews it (Config.DiffPreview):
+	// what the call changes on disk, read before the tool ran. Every other event
+	// leaves it nil, and a caller that did not ask for it (run, ACP) never sees
+	// one.
+	Change *diffview.Change
 	// Usage is set on "usage" events (after each counted model call) and on
 	// "run_finished" (the final run total).
 	Usage *UsageUpdate
@@ -655,7 +669,8 @@ func (r *Runner) turnHooks(usage *usageCollector, denials *turnDenials, sink Emi
 		hooks = append(hooks, limits)
 	}
 	if sink != nil {
-		hooks = append(hooks, toolEventHook{sink: sink, sessionID: result.SessionID, turnID: result.TurnID, runID: result.RunID})
+		hooks = append(hooks, toolEventHook{sink: sink, sessionID: result.SessionID, turnID: result.TurnID,
+			runID: result.RunID, workspace: r.cfg.Workspace, diffPreview: r.cfg.DiffPreview})
 	}
 	return hooks
 }
@@ -693,12 +708,19 @@ const toolArgSummaryLimit = 200
 // toolEventHook publishes "tool_call" (before execution) and "tool_result"
 // (after) events. Emit failures are only logged: returning them from a hook
 // stage would abort the tool or the turn, and display must never do that.
+// With Config.DiffPreview the tool_call event carries the change the call makes
+// on disk, read here - before the tool runs, so the file still holds the text
+// before it.
 type toolEventHook struct {
 	agentcore.NopHook
 	sink      EmitFunc
 	sessionID string
 	turnID    string
 	runID     string
+	// workspace is where a file tool call works; diffPreview turns the change
+	// Config.DiffPreview asks for on.
+	workspace   string
+	diffPreview bool
 }
 
 func (h toolEventHook) publish(ctx context.Context, event Event) {
@@ -712,7 +734,13 @@ func (h toolEventHook) BeforeTool(ctx context.Context, event *agentcore.ToolEven
 	if event == nil || event.Call == nil {
 		return nil
 	}
-	h.publish(ctx, Event{Kind: "tool_call", ToolName: event.Call.Name, Text: toolArgSummary(event.Call.Arguments)})
+	call := Event{Kind: "tool_call", ToolName: event.Call.Name, Text: toolArgSummary(event.Call.Arguments)}
+	if h.diffPreview {
+		if change, ok := diffview.Call(h.workspace, event.Call.Name, event.Call.Arguments); ok {
+			call.Change = change
+		}
+	}
+	h.publish(ctx, call)
 	return nil
 }
 

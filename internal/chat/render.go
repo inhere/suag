@@ -13,6 +13,7 @@ import (
 	"github.com/gookit/cliui/show/symbols"
 	"github.com/gookit/color"
 	"github.com/inhere/suga/internal/chat/lineedit"
+	"github.com/inhere/suga/internal/diffview"
 	"github.com/inhere/suga/internal/output"
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/pkg/agentcore"
@@ -66,6 +67,13 @@ type rendererOptions struct {
 	// Markdown renders the model's text as terminal markdown (config
 	// chat.markdown); it only applies to a colored terminal.
 	Markdown bool
+	// Diff shows what a file tool call changed (config chat.diff, on by default):
+	// the unified diff under the tool result, the pending one before an approval
+	// question, and the :diff command. DiffLines caps how many lines one preview
+	// shows (chat.diff_lines, default 20); :diff shows the whole change. The
+	// change itself arrives with the tool_call event (personal.Config.DiffPreview).
+	Diff      bool
+	DiffLines int
 	// InputLineUp is true while chat keeps its input line on screen for the whole
 	// turn running (chat.steering with a terminal). The output then works around
 	// that line (r3 M1): the streamed text leaves only complete lines - the line
@@ -100,7 +108,7 @@ type rendererOptions struct {
 }
 
 // Renderer owns all terminal output of one chat: prompt, streamed model text,
-// tool lines, plans, errors and the per-turn status line.
+// tool lines, diff previews, plans, errors and the per-turn status line.
 type Renderer struct {
 	opts rendererOptions
 	live *output.LiveText
@@ -109,6 +117,13 @@ type Renderer struct {
 	// memory collects this turn's successful memory writes, shown with the
 	// status line ("已记住：...").
 	memory []string
+	// changes are the file changes this chat showed, in order, numbered from 1:
+	// the :diff command shows one of them again in full (diff.go).
+	changes []*diffview.Change
+	// pending is the change the running tool call announced (its tool_call event
+	// arrived, its result not yet): the approval question shows it and the result
+	// prints it.
+	pending *diffview.Change
 }
 
 // newRenderer returns a renderer that shows no waiting line yet: the first turn
@@ -259,14 +274,20 @@ func (r *Renderer) Handle(event personal.Event) {
 		}
 		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, line))
 		r.toolRunning(event.ToolName) // the tool runs now, the model does not
+		// A file change was read before the tool ran (personal.Config.DiffPreview);
+		// the approval question and the result below show it.
+		r.noteToolCall(event.Change)
 	case "tool_result":
 		r.live.Finish()
+		change, tool := r.pending, event.ToolName
+		r.pending = nil
 		summary := truncateLine(redact.Secrets(event.Text), resultSummaryLimit)
 		if event.IsError {
 			fmt.Fprintln(r.opts.Out, r.paint(color.Red, strings.TrimRight("  ⎿ error: "+summary, " ")))
 		} else {
 			fmt.Fprintln(r.opts.Out, r.paint(color.Gray, strings.TrimRight("  ⎿ ok: "+summary, " ")))
 			r.noteMemory(event)
+			r.showToolResult(change, tool)
 		}
 		r.startThinking() // the model reads the result and thinks on
 	case "agent_progress":

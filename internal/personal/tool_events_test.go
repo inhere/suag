@@ -3,6 +3,8 @@ package personal
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -55,6 +57,53 @@ func TestToolEventsOrderAndSummary(t *testing.T) {
 		assert.False(t, events[1].IsError)
 		assert.True(t, events[3].IsError)
 		assert.Eq(t, "boom", events[3].Text)
+	})
+}
+
+// TestToolEventCarriesFileChange: with Config.DiffPreview the "tool_call" event
+// of a file tool carries what the call changes on disk (chat previews it);
+// without it no file text travels with the events (run, ACP, stream-json).
+func TestToolEventCarriesFileChange(t *testing.T) {
+	ctx := context.Background()
+	work := t.TempDir()
+	if err := os.WriteFile(filepath.Join(work, "a.go"), []byte("old := 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(t *testing.T, preview bool) []Event {
+		t.Helper()
+		repo := openObserveRepo(t)
+		reg := tools.NewRegistry()
+		reg.Register(fnTool{name: "file_edit", fn: func() (*agentcore.ToolResult, error) {
+			return &agentcore.ToolResult{Name: "file_edit", Content: "edited"}, nil
+		}})
+		prov := &reqProv{steps: []*agentcore.GenerateResult{
+			callStep("c1", "file_edit", map[string]any{"path": "a.go", "old_string": "old := 1", "new_string": "old := 2"}),
+			{Content: "done", FinishReason: agentcore.FinishFinal},
+		}}
+		runner, err := New(Config{Repository: repo, Provider: prov, Tools: reg, Workspace: work, DiffPreview: preview})
+		assert.NoErr(t, err)
+		var events []Event
+		_, err = runner.Run(ctx, RunRequest{Prompt: "go", Emit: func(_ context.Context, e Event) error {
+			if e.Kind == "tool_call" {
+				events = append(events, e)
+			}
+			return nil
+		}})
+		assert.NoErr(t, err)
+		assert.Require(t, assert.Len(t, events, 1))
+		return events
+	}
+
+	t.Run("the change is carried when asked for", func(t *testing.T) {
+		change := run(t, true)[0].Change
+		assert.NotNil(t, change)
+		assert.Eq(t, "a.go", change.Rel)
+		assert.Eq(t, "old := 1\n", *change.Old)
+		assert.Eq(t, "old := 2\n", *change.New)
+	})
+
+	t.Run("nothing is carried by default", func(t *testing.T) {
+		assert.Nil(t, run(t, false)[0].Change)
 	})
 }
 
