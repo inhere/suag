@@ -185,7 +185,7 @@ func (s *Store) SearchEntries(ctx context.Context, q EntrySearch) ([]EntryHit, e
 	}
 	// Search results must not recursively contain the two retrieval tools'
 	// own transcripts, while other tool results remain searchable.
-	where = joinWhere(where, `NOT (f.role = ? AND json_extract(e.json, '$.ToolCall.Name') IN (?, ?))`)
+	where = joinWhere(where, `NOT (f.role = ? AND COALESCE(json_extract(e.json, '$.ToolCall.Name'), '') IN (?, ?))`)
 	args = append(args, EntryTool, "session_search", "recall")
 	// MATCH, snippet() and bm25() take the FTS hidden column, which is named
 	// after the table (entries_fts) and resolves through the alias f.
