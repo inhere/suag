@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/inhere/suga/pkg/agentcore/tools/native"
+	approvalrules "github.com/inhere/suga/pkg/agentcore/tools/rules"
 )
 
 // UndoResult is the file-level outcome of one undo operation. Files contains
@@ -50,6 +51,10 @@ func (u *UndoCore) Undo(ctx context.Context, sessionQuery string, n int, force b
 	result.SessionID = sessionID
 	result.Forced = force
 	err = u.withSession(ctx, sessionID, func() error {
+		session, err := u.Repository.GetSession(ctx, sessionID)
+		if err != nil {
+			return err
+		}
 		rows, err := u.checkpointsLocked(ctx, sessionID, 0)
 		if err != nil {
 			return err
@@ -65,7 +70,7 @@ func (u *UndoCore) Undo(ctx context.Context, sessionQuery string, n int, force b
 			// two writes to one path converge on the turn's initial content.
 			for i := len(row.Items) - 1; i >= 0; i-- {
 				item := row.Items[i]
-				outcome, restoreErr := u.restoreItem(ctx, sessionID, row.TurnID, item, force)
+				outcome, restoreErr := u.restoreItem(ctx, session, sessionID, row.TurnID, item, force)
 				if outcome.action == CheckpointActionRestore || outcome.action == CheckpointActionDelete {
 					result.Files = append(result.Files, outcome.path)
 				}
@@ -125,7 +130,7 @@ func selectUndoRows(rows []Checkpoint, n int) []Checkpoint {
 	return selected
 }
 
-func (u *UndoCore) restoreItem(ctx context.Context, sessionID, turnID string, item CheckpointItem, force bool) (restoreOutcome, error) {
+func (u *UndoCore) restoreItem(ctx context.Context, session Session, sessionID, turnID string, item CheckpointItem, force bool) (restoreOutcome, error) {
 	meta := item.Meta
 	path := filepath.Join(meta.Root, filepath.FromSlash(meta.Rel))
 	out := restoreOutcome{action: CheckpointActionSkip, path: path}
@@ -136,6 +141,24 @@ func (u *UndoCore) restoreItem(ctx context.Context, sessionID, turnID string, it
 	}
 	if meta.Status != native.SnapshotStatusComplete && meta.Status != native.SnapshotStatusIncomplete {
 		out.reason = "快照尚未完成"
+		out.unresolved = true
+		return out, nil
+	}
+	if !undoTool(meta.Tool) {
+		out.reason = "快照工具身份无效，无法恢复"
+		out.unresolved = true
+		return out, nil
+	}
+	if _, err := native.ResolveSnapshotPath(meta.Root, meta.Rel, meta.RealRel); err != nil {
+		out.reason = "快照路径身份校验失败"
+		out.unresolved = true
+		return out, err
+	}
+	// The approval-rule owner supplies the canonical protected-path predicate.
+	// Check both lexical and resolved spellings so a link cannot hide a control
+	// plane file behind an ordinary-looking relative path.
+	if u.protectedUndoPath(session, meta) {
+		out.reason = "受保护路径，无法恢复"
 		out.unresolved = true
 		return out, nil
 	}
@@ -152,6 +175,37 @@ func (u *UndoCore) restoreItem(ctx context.Context, sessionID, turnID string, it
 		out.unresolved = true
 		return out, nil
 	}
+}
+
+func undoTool(tool string) bool {
+	switch strings.TrimSpace(tool) {
+	case "file_write", "file_edit", "file_remove":
+		return true
+	default:
+		return false
+	}
+}
+
+func (u *UndoCore) protectedUndoPath(session Session, meta SnapshotMeta) bool {
+	sugaHome := ""
+	if filepath.Base(filepath.Clean(u.SessionsRoot)) == "sessions" {
+		sugaHome = filepath.Dir(filepath.Clean(u.SessionsRoot))
+	}
+	ruleFiles, _ := RuleFiles(session.Cwd, sugaHome, false, "")
+	if meta.Root != session.Cwd {
+		if extra, _ := RuleFiles(meta.Root, sugaHome, false, ""); len(extra) > 0 {
+			ruleFiles = append(ruleFiles, extra...)
+		}
+	}
+	for _, rel := range []string{meta.Rel, meta.RealRel} {
+		for _, workspace := range []string{session.Cwd, meta.Root} {
+			target := approvalrules.Target{Tool: meta.Tool, Root: meta.Root, Path: rel}
+			if approvalrules.IsProtectedPath(target, workspace, sugaHome, ruleFiles...) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (u *UndoCore) restoreFile(ctx context.Context, sessionID, turnID string, meta SnapshotMeta, force bool) (restoreOutcome, error) {
@@ -188,7 +242,7 @@ func (u *UndoCore) restoreFile(ctx context.Context, sessionID, turnID string, me
 	}
 	if status != currentRegular {
 		_ = root.Close()
-		out.reason = "当前路径不是普通文件"
+		out.reason = "当前路径不是安全的普通文件（符号链接、硬链接或特殊文件）"
 		out.unresolved = true
 		return out, nil
 	}
@@ -241,7 +295,7 @@ func (u *UndoCore) deleteAbsent(ctx context.Context, sessionID, turnID string, m
 	}
 	if status != currentRegular {
 		_ = root.Close()
-		out.reason = "当前路径不是普通文件"
+		out.reason = "当前路径不是安全的普通文件（符号链接、硬链接或特殊文件）"
 		out.unresolved = true
 		return out, nil
 	}
@@ -281,14 +335,15 @@ const (
 )
 
 func openCurrentFile(meta SnapshotMeta) (*os.Root, string, []byte, int, error) {
-	rel := filepath.Clean(filepath.FromSlash(meta.Rel))
-	if rel == "." || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return nil, "", nil, currentOther, errors.New("snapshot path is not relative to its root")
-	}
-	root, err := os.OpenRoot(meta.Root)
+	resolved, err := native.ResolveSnapshotPath(meta.Root, meta.Rel, meta.RealRel)
 	if err != nil {
 		return nil, "", nil, currentOther, err
 	}
+	root, err := os.OpenRoot(resolved.Root)
+	if err != nil {
+		return nil, "", nil, currentOther, err
+	}
+	rel := filepath.FromSlash(resolved.Rel)
 	info, err := root.Lstat(rel)
 	if errors.Is(err, os.ErrNotExist) {
 		return root, rel, nil, currentAbsent, nil
@@ -297,7 +352,7 @@ func openCurrentFile(meta SnapshotMeta) (*os.Root, string, []byte, int, error) {
 		_ = root.Close()
 		return nil, "", nil, currentOther, err
 	}
-	if !info.Mode().IsRegular() {
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || native.IsHardLinked(resolved.Abs, info) {
 		return root, rel, nil, currentOther, nil
 	}
 	data, err := root.ReadFile(rel)

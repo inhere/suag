@@ -90,6 +90,17 @@ func (u *UndoCore) restoreTrash(ctx context.Context, _ string, _ string, meta Sn
 	if sourceName == "" {
 		sourceName = filepath.Base(origin.Path)
 	}
+	if !safeTrashName(sourceName) {
+		out.reason = "回收区来源文件名无效"
+		out.unresolved = true
+		return out, nil
+	}
+	expectedName := filepath.Base(origin.Path)
+	if !sameUndoName(sourceName, expectedName) && !(sameUndoName(expectedName, "origin.json") && sourceName == ".suga-content") {
+		out.reason = "回收区来源文件名与目标不一致"
+		out.unresolved = true
+		return out, nil
+	}
 	source := filepath.Join(entry, sourceName)
 	sourceInfo, err := os.Lstat(source)
 	if errors.Is(err, os.ErrNotExist) {
@@ -102,6 +113,11 @@ func (u *UndoCore) restoreTrash(ctx context.Context, _ string, _ string, meta Sn
 		out.reason = "无法读取回收区内容"
 		out.unresolved = true
 		return out, err
+	}
+	if !sourceInfo.IsDir() && sourceInfo.Mode()&os.ModeSymlink == 0 && (!sourceInfo.Mode().IsRegular() || native.IsHardLinked(source, sourceInfo)) {
+		out.reason = "回收区内容是硬链接或特殊文件"
+		out.unresolved = true
+		return out, nil
 	}
 	if _, err := os.Lstat(path); err == nil {
 		out.reason = "冲突：原位置已有文件"
@@ -162,6 +178,17 @@ func (u *UndoCore) restoreTrash(ctx context.Context, _ string, _ string, meta Sn
 	return out, nil
 }
 
+func safeTrashName(name string) bool {
+	return name != "" && name != "." && name != ".." && filepath.Base(name) == name && !strings.ContainsAny(name, `/\\`)
+}
+
+func sameUndoName(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
 func sameUndoPath(a, b string) bool {
 	a, _ = filepath.Abs(filepath.Clean(a))
 	b, _ = filepath.Abs(filepath.Clean(b))
@@ -206,6 +233,10 @@ func restoreTrashTree(source, destination string) (bool, []string, error) {
 		}
 		if !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
 			failures = append(failures, fmt.Sprintf("%s: unsupported file type", path))
+			return nil
+		}
+		if info.Mode().IsRegular() && native.IsHardLinked(path, info) {
+			failures = append(failures, fmt.Sprintf("%s: hard-linked file", path))
 			return nil
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
