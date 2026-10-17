@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.29.0] - 2026-10-17
+
+配置的优先工具：`tools.preferred` 里列出的命令或 MCP 服务存在时，在会话环境说明中列出并提示优先使用，优先 MCP 常驻加载，`suga manifest` 与 trace 可见；`suga config set` 缺父级键时改写块式 YAML。
+
 ### 新增
 
 - 配置 `tools.preferred` 支持声明 command/MCP 优先工具，并在运行时安全探测其可用性。
@@ -693,7 +697,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.28.0...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/inhere/suga/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/inhere/suga/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/inhere/suga/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/inhere/suga/compare/v0.26.0...v0.27.0
