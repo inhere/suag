@@ -386,17 +386,18 @@ func TestFTSHandoffMigrationBackfill(t *testing.T) {
 		assert.Empty(t, indexedRows(t, s, "old"))
 
 		assert.NoErr(t, s.migrate(ctx))
+		// The backfill takes only handoff rows: an older binary indexed the
+		// conversation types itself (AppendEntries), and a per-row existence
+		// check against entries_fts was a full scan per row on a large ledger.
 		rows := indexedRows(t, s, "old")
-		assert.Require(t, assert.Len(t, rows, 9))
-		assert.Eq(t, ftsRow{"old", EntryHandoff, "交接摘要：上次做到 handoff 检索", 14}, rows[8])
+		assert.Require(t, assert.Len(t, rows, 2))
+		assert.Eq(t, ftsRow{"old", EntryHandoff, "交接摘要：上次做到 handoff 检索", 14}, rows[1])
 
 		hits := search(t, s, EntrySearch{Query: "上次做到"})
 		assert.Eq(t, []string{"old/14"}, hitKeys(hits))
 		assert.Eq(t, EntryHandoff, hits[0].Role)
 		assert.StrContains(t, hits[0].Snippet, "上次做到")
-		// Both summary kinds are searchable, and the kinds filter tells them apart.
 		assert.Eq(t, []string{"old/10", "old/14"}, hitKeys(search(t, s, EntrySearch{Query: "摘要", Kinds: []string{EntryHandoff}})))
-		assert.Eq(t, []string{"old/8"}, hitKeys(search(t, s, EntrySearch{Query: "摘要", Kinds: []string{EntryCompaction}})))
 	})
 
 	t.Run("an already indexed ledger only gains the handoff rows", func(t *testing.T) {
@@ -577,4 +578,26 @@ func TestFTSSearchExcludesRetrievalToolTranscripts(t *testing.T) {
 	hits := search(t, s, EntrySearch{Query: "searchpollution"})
 	assert.Eq(t, []string{"s1/1"}, hitKeys(hits))
 	assert.Eq(t, EntryTool, hits[0].Role)
+}
+
+// TestFTSHandoffMigrationStaysFastOnALargeLedger: the handoff backfill must not
+// scan entries_fts per entry (v0.31.0 did, and never finished on a ~1 GB
+// ledger, blocking every start).
+func TestFTSHandoffMigrationStaysFastOnALargeLedger(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openAtCoreSchema(t)
+	defer s.Close()
+	// A large ledger of the previous release: the conversation rows indexed by
+	// the earlier migration, the handoff row not.
+	var batch []NewEntry
+	for i := 0; i < 20000; i++ {
+		batch = append(batch, NewEntry{Type: EntryUser, JSON: json.RawMessage(fmt.Sprintf(`{"Role":"user","Content":"message %d about the parser"}`, i))})
+	}
+	batch = append(batch, NewEntry{Type: EntryHandoff, JSON: json.RawMessage(`{"source":"x","summary":"交接：大库回填"}`)})
+	writeHistory(t, s, "big", batch)
+	assert.Require(t, assert.NoErr(t, s.migrateUpTo(ctx, ledgerFTSMigration)))
+	start := time.Now()
+	assert.Require(t, assert.NoErr(t, s.migrate(ctx)))
+	assert.True(t, time.Since(start) < 5*time.Second, "backfill took "+time.Since(start).String())
+	assert.Eq(t, []string{"big/20001"}, hitKeys(search(t, s, EntrySearch{Query: "大库回填"})))
 }

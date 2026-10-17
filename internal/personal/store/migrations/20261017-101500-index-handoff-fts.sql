@@ -9,8 +9,11 @@
 -- TestFTSExpressionsMatchMigration guards the copies against drift.
 --
 -- The earlier migration has already indexed the conversation types of an
--- existing ledger, so this backfill only adds the rows the index is still
--- missing: inserting everything again would duplicate those rows.
+-- existing ledger, and no handoff record was indexed before this one, so the
+-- backfill takes only the handoff rows. (A first version checked every entry
+-- with NOT EXISTS against entries_fts, whose session_id/seq are not indexed:
+-- a full scan per row, which never finished on a large ledger and blocked
+-- every start of v0.31.0.)
 INSERT INTO entries_fts(session_id, seq, role, text)
 SELECT session_id, seq, role, text FROM (
     SELECT session_id, seq,
@@ -24,10 +27,7 @@ SELECT session_id, seq, role, text FROM (
         END AS text
     FROM entries
     WHERE type IN ('user', 'assistant', 'tool', 'compaction', 'handoff')
-    -- entries is qualified on purpose: an unqualified session_id/seq would
-    -- resolve to entries_fts's own columns inside the subquery and match
-    -- everything.
-    AND NOT EXISTS (SELECT 1 FROM entries_fts f WHERE f.session_id = entries.session_id AND f.seq = entries.seq)
+    AND type = 'handoff'
 ) WHERE text <> '';
 
 -- Migrate:DOWN
