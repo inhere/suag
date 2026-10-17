@@ -66,6 +66,10 @@ def write_home(home, port, tools_extra="", memory_extra="", provider_extra="", e
     .gofer/tracker would otherwise select (and call) the real gofer.
     provider_extra goes under providers.fake, extra at the top level."""
     os.makedirs(home, exist_ok=True)
+    # An empty .env makes this a home that was already set up: without it the
+    # first run creates one and prints a notice naming the work directory,
+    # which other scenes would then see (chat_onboarding covers first runs).
+    open(os.path.join(home, ".env"), "a", encoding="utf-8").close()
     with open(os.path.join(home, "config.yaml"), "w", encoding="utf-8") as f:
         f.write(f"""model: fake/m1
 providers:
