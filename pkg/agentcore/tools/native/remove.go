@@ -235,6 +235,8 @@ func (t *FileRemoveTool) Execute(ctx context.Context, call api.ToolCall) (*api.T
 		}
 		beforeResult, err = t.snapshots.BeforeCall(ctx, snapshotReq)
 		if err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: snapshotReq.Kind, Status: SnapshotStatusIncomplete,
+				Bytes: plan.Bytes, Unrecoverable: beforeResult.Unrecoverable})
 			return nil, fmt.Errorf("file_remove: snapshot before: %w", err)
 		}
 	}
@@ -242,7 +244,7 @@ func (t *FileRemoveTool) Execute(ctx context.Context, call api.ToolCall) (*api.T
 		if t.snapshots == nil {
 			return nil
 		}
-		return t.snapshots.AfterCall(ctx, SnapshotResult{
+		result := SnapshotResult{
 			CallID:        call.CallID,
 			Tool:          t.Name(),
 			Root:          snapshotReq.Root,
@@ -254,7 +256,15 @@ func (t *FileRemoveTool) Execute(ctx context.Context, call api.ToolCall) (*api.T
 			Unrecoverable: beforeResult.Unrecoverable,
 			TrashEntries:  trashEntries,
 			PurgedDirs:    purgedDirs,
-		})
+		}
+		if err := t.snapshots.AfterCall(ctx, result); err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: result.Kind, Status: SnapshotStatusIncomplete,
+				Bytes: result.Size, Unrecoverable: result.Unrecoverable})
+			return err
+		}
+		ReportSnapshot(ctx, SnapshotReport{Kind: result.Kind, Status: result.Status,
+			Bytes: result.Size, Unrecoverable: result.Unrecoverable})
+		return nil
 	}
 	incomplete := func(opErr error, trashEntries, purgedDirs []string) (*api.ToolResult, error) {
 		if snapshotErr := finishSnapshot(SnapshotStatusIncomplete, trashEntries, purgedDirs); snapshotErr != nil {

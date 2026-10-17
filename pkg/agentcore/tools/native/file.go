@@ -85,6 +85,8 @@ func (t *FileWriteTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 		}
 		beforeResult, err = t.snapshots.BeforeCall(ctx, snapshotReq)
 		if err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: snapshotReq.Kind, Status: SnapshotStatusIncomplete,
+				Bytes: int64(len(before)), Unrecoverable: beforeResult.Unrecoverable})
 			return nil, fmt.Errorf("file_write: snapshot before: %w", err)
 		}
 	}
@@ -93,16 +95,24 @@ func (t *FileWriteTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 		if t.snapshots != nil {
 			incomplete := t.snapshotResult(call, snapshotReq, beforeResult, before, "", SnapshotStatusIncomplete)
 			if snapshotErr := t.snapshots.AfterCall(ctx, incomplete); snapshotErr != nil {
+				ReportSnapshot(ctx, SnapshotReport{Kind: incomplete.Kind, Status: SnapshotStatusIncomplete,
+					Bytes: incomplete.Size, Unrecoverable: incomplete.Unrecoverable})
 				return nil, fmt.Errorf("file_write: %w; snapshot incomplete: %v", err, snapshotErr)
 			}
+			ReportSnapshot(ctx, SnapshotReport{Kind: incomplete.Kind, Status: incomplete.Status,
+				Bytes: incomplete.Size, Unrecoverable: incomplete.Unrecoverable})
 		}
 		return nil, fmt.Errorf("file_write: %w", err)
 	}
 	if t.snapshots != nil {
 		complete := t.snapshotResult(call, snapshotReq, beforeResult, before, content, SnapshotStatusComplete)
 		if err := t.snapshots.AfterCall(ctx, complete); err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: complete.Kind, Status: SnapshotStatusIncomplete,
+				Bytes: complete.Size, Unrecoverable: complete.Unrecoverable})
 			return nil, fmt.Errorf("file_write: snapshot after failed after writing %s: %w", target.abs, err)
 		}
+		ReportSnapshot(ctx, SnapshotReport{Kind: complete.Kind, Status: complete.Status,
+			Bytes: complete.Size, Unrecoverable: complete.Unrecoverable})
 	}
 
 	out := fmt.Sprintf("wrote %d bytes to %s", len(content), target.abs)

@@ -58,6 +58,34 @@ type SnapshotResult struct {
 	PurgedDirs    []string
 }
 
+// SnapshotReport is the small, non-sensitive snapshot summary attached to a
+// tool event. It deliberately contains no before-image bytes or filesystem
+// contents.
+type SnapshotReport struct {
+	Kind          SnapshotKind
+	Status        string
+	Bytes         int64
+	Unrecoverable string
+}
+
+type snapshotReportKey struct{}
+
+// WithSnapshotReport returns a context carrying a fresh report. The observing
+// tool layer reads the report after the native tool has finished.
+func WithSnapshotReport(ctx context.Context) (context.Context, *SnapshotReport) {
+	report := &SnapshotReport{}
+	return context.WithValue(ctx, snapshotReportKey{}, report), report
+}
+
+// ReportSnapshot replaces the current context report with a snapshot summary.
+// Native tools call this only after the snapshot outcome is known; callers
+// without an observing context are intentionally ignored.
+func ReportSnapshot(ctx context.Context, report SnapshotReport) {
+	if current, _ := ctx.Value(snapshotReportKey{}).(*SnapshotReport); current != nil {
+		*current = report
+	}
+}
+
 // Snapshotter is implemented by the session snapshot store. Native tools only
 // know this contract; they do not depend on session storage or personal-agent
 // packages. A nil Snapshotter disables snapshots and preserves old behavior.

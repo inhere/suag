@@ -86,6 +86,8 @@ func (t *FileEditTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 		}
 		beforeResult, err = t.snapshots.BeforeCall(ctx, snapshotReq)
 		if err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: snapshotReq.Kind, Status: SnapshotStatusIncomplete,
+				Bytes: int64(len(data)), Unrecoverable: beforeResult.Unrecoverable})
 			return nil, fmt.Errorf("file_edit: snapshot before: %w", err)
 		}
 	}
@@ -94,16 +96,24 @@ func (t *FileEditTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 		if t.snapshots != nil {
 			incomplete := editSnapshotResult(call, snapshotReq, beforeResult, data, "", SnapshotStatusIncomplete)
 			if snapshotErr := t.snapshots.AfterCall(ctx, incomplete); snapshotErr != nil {
+				ReportSnapshot(ctx, SnapshotReport{Kind: incomplete.Kind, Status: SnapshotStatusIncomplete,
+					Bytes: incomplete.Size, Unrecoverable: incomplete.Unrecoverable})
 				return nil, fmt.Errorf("file_edit: %w; snapshot incomplete: %v", err, snapshotErr)
 			}
+			ReportSnapshot(ctx, SnapshotReport{Kind: incomplete.Kind, Status: incomplete.Status,
+				Bytes: incomplete.Size, Unrecoverable: incomplete.Unrecoverable})
 		}
 		return nil, fmt.Errorf("file_edit: %w", err)
 	}
 	if t.snapshots != nil {
 		complete := editSnapshotResult(call, snapshotReq, beforeResult, data, updated, SnapshotStatusComplete)
 		if err := t.snapshots.AfterCall(ctx, complete); err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: complete.Kind, Status: SnapshotStatusIncomplete,
+				Bytes: complete.Size, Unrecoverable: complete.Unrecoverable})
 			return nil, fmt.Errorf("file_edit: snapshot after failed after writing %s: %w", target.abs, err)
 		}
+		ReportSnapshot(ctx, SnapshotReport{Kind: complete.Kind, Status: complete.Status,
+			Bytes: complete.Size, Unrecoverable: complete.Unrecoverable})
 	}
 	// The edited lines are the verification: the model sees the result and
 	// needs no re-read (suag-jz0l review; omp, pigo and Cline do the same).
