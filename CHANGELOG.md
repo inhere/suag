@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 新增
+
+- 长时间前台 `shell_exec` 超过 `tools.shell_background_after` 时转为现有后台任务，保留交接前输出并在任务完成时通知模型；配置为 `0` 可关闭，`tools.shell_timeout_max` 仍负责硬终止。
+
 ## [0.30.0] - 2026-10-18
 
 chat 默认汇总子 agent 进度（`chat.agent_progress`），不再逐条刷子 agent 的工具调用；memory 工具补充价值门槛与“不记”清单。

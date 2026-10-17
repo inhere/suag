@@ -44,6 +44,9 @@ type Env struct {
 	Interpreters []Interpreter
 	// ShellTimeoutMax caps a shell_exec timeout (tools.shell_timeout_max).
 	ShellTimeoutMax time.Duration
+	// ShellBackgroundAfter is the foreground grace period before a shell is
+	// transferred to the task manager; zero disables transfer.
+	ShellBackgroundAfter time.Duration
 	// FetchAllowPrivate lets web_fetch reach private and local addresses
 	// (tools.web_fetch.allow_private).
 	FetchAllowPrivate bool
@@ -105,6 +108,9 @@ func Catalog() []Spec {
 			t := NewShellExecTool(env.Workspace, 0)
 			t.shell = resolveShell(env.Shell)
 			t.interpreters = env.Interpreters
+			if env.ShellBackgroundAfter >= 0 {
+				t.backgroundAfter = env.ShellBackgroundAfter
+			}
 			t.maxOut = env.RawBytes
 			if env.ShellTimeoutMax > 0 {
 				t.maxTimeout = env.ShellTimeoutMax

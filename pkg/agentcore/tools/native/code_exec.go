@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -25,6 +27,9 @@ import (
 const (
 	// DefaultShellTimeout is used when the call gives no timeout.
 	DefaultShellTimeout = 120 * time.Second
+	// DefaultShellBackgroundAfter is the foreground grace period before a
+	// long-running command is handed to the task manager.
+	DefaultShellBackgroundAfter = 120 * time.Second
 	// DefaultShellTimeoutMax caps the timeout a call may ask for
 	// (tools.shell_timeout_max).
 	DefaultShellTimeoutMax = 600 * time.Second
@@ -107,15 +112,19 @@ func resolveShell(explicit string) shellSpec {
 // (empty = OS default), for the system prompt.
 func ShellName(explicit string) string { return resolveShell(explicit).name() }
 
-// ShellExecTool runs a shell command inside the workspace directory. Every
-// call is time-limited, the whole process tree is killed on timeout, and the
-// output gathered so far is always returned with the exit code.
+// ShellExecTool runs a shell command inside the workspace directory. A call
+// either completes within its foreground timeout or, when tasks are enabled,
+// transfers a long-running process tree to the task manager without dropping
+// output; the configured maximum remains a hard kill deadline.
 type ShellExecTool struct {
 	workspace  string
 	shell      shellSpec
 	timeout    time.Duration // default per call
 	maxTimeout time.Duration
-	maxOut     int // raw result cap in bytes; 0 = DefaultRawOutputBytes
+	// backgroundAfter hands a foreground command to tasks instead of killing it;
+	// zero disables the handoff.
+	backgroundAfter time.Duration
+	maxOut          int // raw result cap in bytes; 0 = DefaultRawOutputBytes
 	// interpreters are the script interpreters detected on PATH
 	// (tools.interpreters); non-empty adds the write-a-script advice to the
 	// description.
@@ -134,10 +143,11 @@ func NewShellExecTool(workspace string, timeout time.Duration) *ShellExecTool {
 		timeout = DefaultShellTimeout
 	}
 	return &ShellExecTool{
-		workspace:  workspace,
-		shell:      resolveShell(""),
-		timeout:    timeout,
-		maxTimeout: DefaultShellTimeoutMax,
+		workspace:       workspace,
+		shell:           resolveShell(""),
+		timeout:         timeout,
+		maxTimeout:      DefaultShellTimeoutMax,
+		backgroundAfter: DefaultShellBackgroundAfter,
 	}
 }
 
@@ -158,6 +168,9 @@ func (t *ShellExecTool) Description() string {
 		if len(t.interpreters) > 0 {
 			desc += " " + WriteScriptAdvice
 		}
+	}
+	if t.tasks != nil && t.backgroundAfter > 0 {
+		desc += fmt.Sprintf(" Foreground commands running longer than %s are transferred to a background task instead of being killed; tools.shell_timeout_max (%s) remains the hard limit.", t.backgroundAfter, t.maxTimeout)
 	}
 	if t.tasks != nil {
 		desc += fmt.Sprintf(" With background: true it starts the command in the background and returns a task id at once "+
@@ -212,7 +225,9 @@ func (t *ShellExecTool) Schema() api.ToolSchema {
 	return schema
 }
 
-// callTimeout reads the optional timeout argument, clamped to maxTimeout.
+// callTimeout reads the optional foreground timeout argument, clamped to
+// maxTimeout. Once a command is handed to tasks, maxTimeout remains its hard
+// deadline.
 func (t *ShellExecTool) callTimeout(args map[string]any) time.Duration {
 	secs, ok := numberArg(args["timeout"])
 	if !ok || secs <= 0 {
@@ -244,68 +259,175 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 		return t.startBackground(ctx, call, command)
 	}
 	timeout := t.callTimeout(call.Arguments)
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
+	start := time.Now()
 	argv := t.shell.argv(command)
-	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
+	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = t.workspace
 	cmd.Env = shellEnv()
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr // stdin stays nil: the null device
-	// tree is the OS process group / job object; Cancel kills all of it, and
-	// WaitDelay forces Wait to return when a leftover child keeps a pipe open.
+	output := newHandoffOutput()
+	cmd.Stdout, cmd.Stderr = output.stdout, output.stderr // stdin stays nil: the null device
+	// The tree is created before Start so Unix gets a process group and Windows
+	// puts the shell in a kill-on-close job object. Adopt preserves this same
+	// owner when the foreground call becomes a task.
 	tree := proctree.New(cmd)
-	cmd.Cancel = tree.Kill
 	cmd.WaitDelay = shellWaitDelay
-
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("shell_exec: start %s: %w", t.shell.name(), err)
 	}
 	tree.Started()
-	err = cmd.Wait()
-	tree.Close() // also ends background children left behind by the command
 
-	// Colour codes carry nothing for the model (test libraries such as
-	// gookit/assert colour their failure reports even without a terminal).
-	var sb strings.Builder
-	if out := ansiPattern.ReplaceAllString(decodeOutput(stdout.Bytes()), ""); out != "" {
-		sb.WriteString(strings.TrimRight(out, "\r\n"))
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	var handoff <-chan time.Time
+	var handoffTimer *time.Timer
+	if t.tasks != nil && t.backgroundAfter > 0 && t.backgroundAfter <= timeout {
+		handoffTimer = time.NewTimer(t.backgroundAfter)
+		handoff = handoffTimer.C
+		defer handoffTimer.Stop()
 	}
-	if errOut := ansiPattern.ReplaceAllString(decodeOutput(stderr.Bytes()), ""); strings.TrimSpace(errOut) != "" {
-		sb.WriteString("\n[stderr]\n")
-		sb.WriteString(strings.TrimRight(errOut, "\r\n"))
+	var hardTimeout = timeout
+	if handoff != nil {
+		hardTimeout = t.maxTimeout
 	}
-	output := TruncateHeadTail(strings.TrimLeft(sb.String(), "\n"), rawLimit(t.maxOut))
+	hardTimer := time.NewTimer(hardTimeout)
+	defer hardTimer.Stop()
 
+	var waitErr error
+	var timedOut bool
+	select {
+	case waitErr = <-done:
+		tree.Close()
+	case <-ctx.Done():
+		_ = tree.Kill()
+		waitErr = <-done
+		tree.Close()
+		return nil, ctx.Err()
+	case <-handoff:
+		partial := foregroundOutput(output, t.maxOut)
+		info, err := t.tasks.Adopt(ctx, tasks.Spec{Kind: "shell", Summary: taskSummary(command),
+			Clean: cleanTaskLine}, tasks.RunningCommand{
+			Cmd: cmd, Tree: tree, Started: start, MaxDuration: t.maxTimeout,
+			AttachOutput: func(dst io.Writer) { output.attach(dst) },
+		})
+		if err != nil {
+			// Adoption is the ownership boundary. If it cannot be completed, kill
+			// the original tree here rather than leaving an orphan behind.
+			_ = tree.Kill()
+			waitErr = <-done
+			tree.Close()
+			return nil, fmt.Errorf("shell_exec: transfer to background: %w", err)
+		}
+		return &api.ToolResult{
+			CallID: call.CallID,
+			Name:   t.Name(),
+			Content: partial + fmt.Sprintf("\n[foreground command exceeded %s; transferred to background task %s, completion will notify]\nOutput: %s (read it with task output, or recall with the ref).",
+				t.backgroundAfter, info.ID, info.Ref),
+			Metadata: map[string]any{"task_id": info.ID, "background": true, "background_after": true},
+		}, nil
+	case <-hardTimer.C:
+		timedOut = true
+		_ = tree.Kill()
+		waitErr = <-done
+		tree.Close()
+	}
+
+	content := foregroundOutput(output, t.maxOut)
 	exitCode := cmd.ProcessState.ExitCode()
 	var status string
 	switch {
-	case runCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil:
-		status = fmt.Sprintf("[timeout after %s: process tree killed; output above is partial]", timeout)
 	case ctx.Err() != nil:
 		return nil, ctx.Err()
-	case errors.Is(err, exec.ErrWaitDelay):
+	case timedOut:
+		status = fmt.Sprintf("[timeout after %s: process tree killed; output above is partial]", hardTimeout)
+	case errors.Is(waitErr, exec.ErrWaitDelay):
 		status = fmt.Sprintf("[exit code: %d; a background process kept the output open and was killed]", exitCode)
-	case err != nil && exitCode < 0:
-		status = fmt.Sprintf("[error: %v]", err)
+	case exitCode < 0 && waitErr != nil:
+		status = fmt.Sprintf("[error: %v]", waitErr)
 	default:
 		status = fmt.Sprintf("[exit code: %d]", exitCode)
 	}
-	content := status
-	if output != "" {
-		content = output + "\n" + status
+	if content != "" {
+		content += "\n"
 	}
 	return &api.ToolResult{
 		CallID:   call.CallID,
 		Name:     t.Name(),
-		Content:  content,
+		Content:  content + status,
 		Metadata: map[string]any{"exit_code": exitCode},
 	}, nil
 }
 
-// shellEnv is the environment of a command: suga's own settings removed,
-// git and pagers kept from waiting for input.
+// handoffWriter buffers foreground output until the manager owns the command,
+// then forwards every subsequent write to the task output without dropping the
+// bytes crossing the ownership boundary.
+type handoffWriter struct {
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	target io.Writer
+	prefix string
+	marked bool
+}
+
+func (w *handoffWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.target == nil {
+		return w.buf.Write(p)
+	}
+	w.markPrefix()
+	return w.target.Write(p)
+}
+
+func (w *handoffWriter) markPrefix() {
+	if w.prefix != "" && !w.marked {
+		_, _ = io.WriteString(w.target, w.prefix)
+		w.marked = true
+	}
+}
+
+func (w *handoffWriter) attach(target io.Writer) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.target = target
+	if w.buf.Len() > 0 {
+		w.markPrefix()
+		_, _ = w.target.Write(w.buf.Bytes())
+		w.buf.Reset()
+	}
+}
+
+func (w *handoffWriter) bytes() []byte {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]byte(nil), w.buf.Bytes()...)
+}
+
+type handoffOutput struct {
+	stdout *handoffWriter
+	stderr *handoffWriter
+}
+
+func newHandoffOutput() *handoffOutput {
+	return &handoffOutput{stdout: &handoffWriter{}, stderr: &handoffWriter{prefix: "\n[stderr]\n"}}
+}
+
+func (o *handoffOutput) attach(dst io.Writer) {
+	o.stdout.attach(dst)
+	o.stderr.attach(dst)
+}
+
+func foregroundOutput(o *handoffOutput, max int) string {
+	var sb strings.Builder
+	if out := ansiPattern.ReplaceAllString(decodeOutput(o.stdout.bytes()), ""); out != "" {
+		sb.WriteString(strings.TrimRight(out, "\r\n"))
+	}
+	if errOut := ansiPattern.ReplaceAllString(decodeOutput(o.stderr.bytes()), ""); strings.TrimSpace(errOut) != "" {
+		sb.WriteString("\n[stderr]\n")
+		sb.WriteString(strings.TrimRight(errOut, "\r\n"))
+	}
+	return TruncateHeadTail(strings.TrimLeft(sb.String(), "\n"), rawLimit(max))
+}
+
 func shellEnv() []string {
 	return append(commandEnv(os.Environ()), "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat", "PAGER=cat")
 }

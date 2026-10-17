@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -102,6 +104,23 @@ func inlineOutputBytes() int {
 // (native and MCP), i.e. the most the output layer saves to a session file.
 func rawOutputBytes() int {
 	return gkconfig.Int("tools.max_spill_bytes", native.DefaultRawOutputBytes)
+}
+
+// shellBackgroundAfter is the foreground grace period before shell_exec
+// transfers a command to tasks. A bare number is seconds, matching other
+// duration settings; zero deliberately disables the handoff.
+func shellBackgroundAfter() time.Duration {
+	raw := strings.TrimSpace(gkconfig.String("tools.shell_background_after"))
+	if raw == "" {
+		return native.DefaultShellBackgroundAfter
+	}
+	if seconds, err := strconv.ParseInt(raw, 10, 64); err == nil && seconds >= 0 {
+		return time.Duration(seconds) * time.Second
+	}
+	if d, err := time.ParseDuration(raw); err == nil && d >= 0 {
+		return d
+	}
+	return native.DefaultShellBackgroundAfter
 }
 
 // warnReadRootsOnce reports rejected tools.read_roots entries once per process
@@ -204,6 +223,7 @@ func nativeEnvWithSnapshot(workspace string, dirs *native.AddDirs, snapshotter n
 		FetchProxy:        gkconfig.String("tools.web_fetch.proxy"),
 		ShellTimeoutMax: time.Duration(gkconfig.Int("tools.shell_timeout_max",
 			int(native.DefaultShellTimeoutMax/time.Second))) * time.Second,
+		ShellBackgroundAfter: shellBackgroundAfter(),
 	}
 }
 
