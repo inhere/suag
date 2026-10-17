@@ -11,6 +11,7 @@ import (
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suga/internal/personal/store"
 	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/tools/native"
 )
 
 const handoffPlan = `{"plan":[{"step":"ship T08","status":"in_progress"}]}`
@@ -141,6 +142,49 @@ func TestHandoffReusesCompactionSummary(t *testing.T) {
 		assert.Eq(t, 2, len(prov.sumReqs))
 		assert.Eq(t, true, strings.Contains(prov.sumReqs[1].Messages[0].Content, "SUMMARY-main-1"))
 		assert.Eq(t, true, strings.Contains(prov.sumReqs[1].Messages[0].Content, "more work"))
+	})
+}
+
+// A handoff summary is searchable as its own kind and readable by ref: the
+// cross-session "what did we get done" search works on the summary the
+// handoff record carries.
+func TestHandoffSummaryIsSearchableAndReadable(t *testing.T) {
+	repo, runner, _, src := handoffSource(t)
+	ctx := context.Background()
+	model, err := runner.Handoff(ctx, HandoffRequest{SourceID: src, NewID: "child-find"})
+	assert.NoErr(t, err)
+	// The child session's entries: the segment start record, then the handoff.
+	assert.Eq(t, 2, entryCount(t, repo, model.ID))
+	ledger := NewLedger(shortTempDir(t))
+	ledger.bind(repo)
+	ctx = withObserveScope(ctx, model.ID, "")
+
+	t.Run("session_search finds the handoff summary", func(t *testing.T) {
+		result, err := ledger.Search(ctx, native.LedgerQuery{
+			Query: "source work", Scope: native.LedgerScopeAll, Kinds: []string{store.EntryHandoff},
+		})
+		assert.NoErr(t, err)
+		assert.Require(t, assert.Eq(t, 1, len(result.Hits)))
+		assert.Eq(t, "child-find/2", result.Hits[0].Ref) // the handoff entry of the new session
+		assert.Eq(t, store.EntryHandoff, result.Hits[0].Role)
+		assert.StrContains(t, result.Hits[0].Snippet, "SUMMARY-main-1")
+
+		// The source session's own request is a user entry, not a handoff one.
+		result, err = ledger.Search(ctx, native.LedgerQuery{
+			Query: "source work", Scope: native.LedgerScopeAll, Kinds: []string{store.EntryUser},
+		})
+		assert.NoErr(t, err)
+		assert.Require(t, assert.Eq(t, 1, len(result.Hits)))
+		assert.Eq(t, store.EntryUser, result.Hits[0].Role)
+		assert.Eq(t, src, strings.SplitN(result.Hits[0].Ref, "/", 2)[0])
+	})
+
+	t.Run("recall reads the summary text", func(t *testing.T) {
+		text, err := ledger.Fetch(ctx, "child-find/2", 0, 5)
+		assert.NoErr(t, err)
+		assert.StrContains(t, text, "[child-find/2] handoff summary")
+		assert.StrContains(t, text, "SUMMARY-main-1")
+		assert.StrContains(t, text, "1. source work")
 	})
 }
 

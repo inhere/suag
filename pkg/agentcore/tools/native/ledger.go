@@ -52,7 +52,7 @@ type LedgerHit struct {
 	// ref for a line of an externalised output.
 	Ref string
 	// Role is the entry type of a message hit (user, assistant, tool,
-	// compaction); empty for line hits.
+	// compaction, handoff); empty for line hits.
 	Role string
 	// Line is the 1-based line number of a hit inside an externalised output;
 	// 0 for message hits.
@@ -95,10 +95,10 @@ func NewSessionSearchTool(searcher LedgerSearcher) *SessionSearchTool {
 
 func (t *SessionSearchTool) Name() string { return "session_search" }
 func (t *SessionSearchTool) Description() string {
-	return "Full-text search of earlier conversation history (messages, tool results and compaction summaries). " +
+	return "Full-text search of earlier conversation history (messages, tool results and compaction/handoff summaries). " +
 		"Every whitespace-separated word must occur; words are matched literally. scope: workspace (default), " +
 		"current or all. Each hit is `<ref>  <role>  <snippet>`; read it with recall(ref). " +
-		"kind is comma-separated user, assistant, tool or compaction; since is inclusive and until exclusive " +
+		"kind is comma-separated user, assistant, tool, compaction or handoff; since is inclusive and until exclusive " +
 		"(7d/36h, date or RFC3339). When results include next_cursor, pass it back verbatim as cursor; a stale " +
 		"cursor restarts from the beginning. For Chinese, prefer terms of two or more characters. With " +
 		"ref=out:<session>:<hex> it searches saved output lines (case-insensitive); ref cannot combine with " +
@@ -123,7 +123,7 @@ func (t *SessionSearchTool) Schema() api.ToolSchema {
 				"ref":    map[string]any{"type": "string", "description": "Optional out:<session>:<hex> ref: search inside that saved output"},
 				"limit":  map[string]any{"type": "integer", "description": "Max hits (default 20, at most 100)"},
 				"cursor": map[string]any{"type": "string", "description": "Value from a previous next_cursor; pass it back verbatim"},
-				"kind":   map[string]any{"type": "string", "description": "Comma-separated entry kinds: user, assistant, tool, compaction"},
+				"kind":   map[string]any{"type": "string", "description": "Comma-separated entry kinds: user, assistant, tool, compaction, handoff"},
 				"since":  map[string]any{"type": "string", "description": "Inclusive lower time bound: 7d, 36h, date or RFC3339"},
 				"until":  map[string]any{"type": "string", "description": "Exclusive upper time bound: 7d, 36h, date or RFC3339"},
 			},
@@ -240,14 +240,14 @@ func ledgerOptionalString(args map[string]any, name string) (string, bool, error
 
 func parseLedgerKinds(raw string) ([]string, error) {
 	allowed := map[string]bool{
-		"user": true, "assistant": true, "tool": true, "compaction": true,
+		"user": true, "assistant": true, "tool": true, "compaction": true, "handoff": true,
 	}
 	seen := make(map[string]bool)
-	kinds := make([]string, 0, 4)
+	kinds := make([]string, 0, len(allowed))
 	for _, part := range strings.Split(raw, ",") {
 		kind := strings.TrimSpace(part)
 		if kind == "" || !allowed[kind] {
-			return nil, fmt.Errorf("invalid kind %q; use user, assistant, tool or compaction", kind)
+			return nil, fmt.Errorf("invalid kind %q; use user, assistant, tool, compaction or handoff", kind)
 		}
 		if !seen[kind] {
 			seen[kind] = true
