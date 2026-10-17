@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # `suga` 上手、配置初始化与模型列表设计
 
-> 状态：Draft 0.2 / 待用户审批
+> 状态：Draft 0.3 / 已批准实施
 
 ## 修订记录
 
@@ -9,13 +9,14 @@
 |---|---|---|---|
 | 0.1 | 2026-10-17 | suga（gofer job） | 初稿：覆盖首次运行初始化、`suga init`、`suga config`、`suga models`、配置安全写回、模型切换范围、兼容与验证。 |
 | 0.2 | 2026-10-17 | 监督（Claude） | 审核修订：`set/unset` 只保留一份最近备份，时间戳备份仅用于 `init --force`；`config set/unset` 的 I/O 失败退出 1、输入错误退出 2；`SUGA_CONFIG` 缺失时不再建议未实现的 `--config`；run/acp 的首次初始化提示只写 stderr。 |
+| 0.3 | 2026-10-17 | 监督（Claude） | 用户批准（2026-10-17）：`.env` 改为自动创建——只写使用说明注释、不写任何值、已存在永不覆盖（含 `init --force`）；Q1–Q4 按建议接受。 |
 
 ### 思考模式与范围冻结
 
 - thinking_mode：RIGOROUS。
 - core_objective：新用户第一次运行 `suga` 就得到一个安全、可编辑、可解释的配置入口；已有用户可以用 `config get/set/unset/list/path` 维护配置，并用 `models` 在不联网的情况下看清可用模型与当前选择。
 - allowed_scope：`cmd/suga`、`internal/cli`、`internal/config`、`internal/wiring`、`internal/chat` 的命令注册或配置复用；`config/` 模板；`skills/suga-guide`、README 中英；相关单测与 Linux `scripts/ptysmoke` 场景。
-- non_goals：不改变 provider 协议、不探测远端模型、不创建 `.env`、不把密钥写进 YAML、不重做 `suga manifest` 或 chat `:model` 的既有语义、不实现交互式配置问答向导。
+- non_goals：不改变 provider 协议、不探测远端模型、不向 `.env` 写入任何值、不把密钥写进 YAML、不重做 `suga manifest` 或 chat `:model` 的既有语义、不实现交互式配置问答向导。
 - expansion_policy：DEFER_OR_REQUEST。若实施中发现必须改变配置优先级、`SUGA_CONFIG` 语义或 provider 协议，停止并回到设计 Gate。
 - review budget：中等；初始化涉及用户文件和并发，配置写回涉及注释保留与回滚，必须有隔离单测、PTY 场景和一次反向验证。
 - 停止条件：用户批准本设计和对应计划前不实施；任何情况下不得在未确认的路径上覆盖用户配置或泄露密钥。
@@ -43,7 +44,7 @@
 
 ### 用户可见目标
 
-1. 第一次执行会触发初始化的命令时，创建 `SUGA_HOME`（默认 `~/.suga`）和 0700 的最小注释模板 `config.yaml`；不创建 `.env`，只提示它的位置。
+1. 第一次执行会触发初始化的命令时，创建 `SUGA_HOME`（默认 `~/.suga`）和 0600 的最小注释模板 `config.yaml`，以及只含使用说明注释、不含任何值的 `.env`（0600）；已存在的 `.env` 永不覆盖。
 2. `suga init` 是明确、可重复执行的初始化入口：已有文件默认不动；`--force` 先生成备份再覆盖；备份失败或写入失败都不改变原文件。
 3. `suga config` 能读取生效值和来源，安全地设置/删除配置键，保留注释和用户格式，拒绝密钥写入 YAML。
 4. `suga models` 只读本地配置，列出内置 provider 命名空间、用户 `providers.*.models`、主/compact/fallback 标记和 chat `:model` 可切换范围，支持稳定 JSON。
@@ -62,7 +63,7 @@
 
 ### 非目标
 
-- `.env` 自动生成、密钥生成或密钥验证；`.env` 仍由用户自行创建。
+- 向 `.env` 写入任何键值、密钥生成或密钥验证：自动创建的 `.env` 只有注释，值由用户自己填。
 - 通过 `models` 请求 OpenAI/Anthropic/网关的模型目录；没有远端模型 API 假设。
 - 让 `suga config set` 改写 `SUGA_MODEL` 等环境变量；它只写 YAML，且明确显示环境覆盖。
 - 把所有运行时派生状态（session、manifest、工具列表、memory backend）复制为配置键。
@@ -123,7 +124,9 @@ model: deepseek/deepseek-chat
 #   allow_write: false
 ```
 
-`model` 是安全的只读/无写权限起点；没有密钥时真正请求仍会失败并给出配置提示。模板生成后 stderr 只提示路径、编辑模型/密钥和 `.env` 路径，不创建 `.env`，例如：`已创建 C:\\Users\\me\\.suga\\config.yaml；请编辑模型并在 C:\\Users\\me\\.suga\\.env 中配置密钥（文件不会自动创建）`。
+`model` 是安全的只读/无写权限起点；没有密钥时真正请求仍会失败并给出配置提示。模板生成后 stderr 只提示路径、编辑模型与在 `.env` 填密钥，例如：`已创建 C:\\Users\\me\\.suga\\config.yaml 与 .env；请编辑模型，并在 C:\\Users\\me\\.suga\\.env 中按注释填写密钥`。
+
+`.env` 模板（用户决定，0.3）：同样 `go:embed`（例如 `config/onboarding.env`），只有注释，不含任何 `KEY=value` 行，内容说明：本文件放密钥与私有地址、格式 `NAME=value`、在 `config.yaml` 里用 `${NAME}` 引用、内置 provider 读取的变量名（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DEEPSEEK_API_KEY`）、不要提交到版本库。文件权限 0600；**已存在的 `.env` 在任何情况下都不覆盖、不备份、不改写**（包括 `suga init --force`）；`SUGA_CONFIG` 模式下同样只在 `$SUGA_HOME` 缺 `.env` 时创建。测试断言模板里没有 `=` 赋值行。
 
 `suga-guide` 不再复制一套会漂移的完整模板：首次配置步骤改为先运行 `suga init`，然后引用 `config/onboarding.yaml` 产生的内容；完整键表仍以 `references/config.md` 为准，provider 细节仍以 `references/providers.md` 为准。README 快速开始改为命令优先，保留手工 YAML 作为无二进制场景的备选。
 
@@ -206,7 +209,8 @@ suga chat
   -> 取得 home init lock
   -> home 缺失：mkdir 0700
   -> config.yaml 缺失且无 SUGA_CONFIG：原子写 embedded onboarding.yaml 0600
-  -> 释放锁；stderr 一次性提示 config 和 .env
+  -> .env 缺失：原子写仅含注释的 onboarding.env 0600（已存在不动）
+  -> 释放锁；stderr 一次性提示 config 和 .env 的路径
   -> 现有 Load() 读取配置
   -> chat 继续，缺密钥/模型错误仍按真实配置报错
 ```
@@ -220,7 +224,7 @@ suga init                 # 缺失才创建
 suga init --force         # 原 config.yaml -> backup；再写模板
 ```
 
-`--force` 只覆盖 home 下的默认 config；当 `SUGA_CONFIG` 指向外部文件时拒绝覆盖并返回 2。默认 init 不要求模型可用，不发网络请求，不创建 `.env`。成功输出到 stdout，提示性 `.env` 文案到 stderr，便于脚本只消费 stdout。
+`--force` 只覆盖 home 下的默认 config；当 `SUGA_CONFIG` 指向外部文件时拒绝覆盖并返回 2。默认 init 不要求模型可用，不发网络请求；`.env` 缺失时创建仅含注释的模板，已存在则不动（`--force` 也不覆盖 `.env`）。成功输出到 stdout，提示性 `.env` 文案到 stderr，便于脚本只消费 stdout。
 
 ### `config` 来源显示
 

@@ -1,7 +1,7 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # `suga` 上手、配置初始化与模型列表实施计划
 
-> 状态：Draft 0.2 / 待用户审批
+> 状态：Draft 0.3 / 已批准实施
 
 ## 修订记录
 
@@ -9,13 +9,14 @@
 |---|---|---|---|
 | 0.1 | 2026-10-17 | suga（gofer job） | 依据 `docs/design/2026-10-17-cli-onboarding-config-design.md` Draft 0.1，拆分初始化、配置 group、模型投影、文档、PTY 与真实环境 Gate。 |
 | 0.2 | 2026-10-17 | 监督（Claude） | 跟随设计 Draft 0.2：备份命名（set/unset 单份 `.bak`、init --force 时间戳）、config 写命令 I/O 失败退出 1、run/acp 初始化提示只写 stderr 的测试要求。 |
+| 0.3 | 2026-10-17 | 监督（Claude） | 用户批准实施（2026-10-17“.env 自动创建但是不写值，只留简要的注释内容说明使用方式；其他按建议来”）：T1 增加仅注释的 `.env` 模板（已存在永不覆盖）；Q1–Q4 按建议。 |
 
 ### 思考模式与范围冻结
 
 - thinking_mode：RIGOROUS。
 - core_objective：实现首次运行安全初始化、注释保留的配置维护命令和完全离线的模型列表；保持现有配置优先级、provider 解析、manifest、chat `:model` 和 ACP/run 行为不变。
 - allowed_scope：`cmd/suga`、`internal/config`、`internal/cli`、必要的 `internal/wiring`/`internal/chat` 共享模型候选、`config/onboarding.yaml`、README 中英、`skills/suga-guide`、测试和 `scripts/ptysmoke`。
-- non_goals：`.env` 自动生成、远端模型目录/网络探测、provider 协议变更、密钥写入 YAML、manifest 重做、chat `:model` 持久配置写回、无批准的 JSON config API。
+- non_goals：向 `.env` 写入任何值、远端模型目录/网络探测、provider 协议变更、密钥写入 YAML、manifest 重做、chat `:model` 持久配置写回、无批准的 JSON config API。
 - expansion_policy：DEFER_OR_REQUEST。改变 `SUGA_CONFIG`、配置优先级、密钥策略、YAML 写回语义或 models 可用集合定义时停止，不在任务中自行扩展。
 - review budget：中等；每个功能点原子提交，先近端单测再全量，交互行为用 ptysmoke，不留人工 chat 验证。
 - 停止条件：计划未获批准不实施；初始化/写回若无法证明不覆盖用户数据，则停止。
@@ -39,7 +40,7 @@
 ## 范围、排除项与授权
 
 - 范围：上述目标、设计稿、测试和文档；只在当前 worktree 实施，不改 worktree 外文件。
-- 存储：不增加 SQLite migration；初始化只产生 home/config/backup/lock 等文件；不创建 `.env`。
+- 存储：不增加 SQLite migration；初始化只产生 home/config/.env（仅注释）/backup/lock 等文件；`.env` 已存在永不覆盖。
 - 配置：`config set/unset` 只操作显式 YAML 配置源；环境变量保持现有优先级，不被写回。
 - 离线：`models` 只读 `$SUGA_HOME`/`SUGA_CONFIG` 和已有本地配置；不发 HTTP，不启动 MCP、hook 或 provider 子进程。
 - 交互：PTY 只用于 chat 已有行为和 models/候选共享的回归；CLI config/init 以真实二进制非交互运行覆盖。
@@ -127,7 +128,7 @@
 ### T1 初始化器、模板与启动门控
 
 - 文件：`cmd/suga/main.go`、`internal/config/paths.go` 或新 `internal/config/bootstrap*.go`、`config/onboarding.yaml`、初始化测试、必要的 `internal/cli/root.go`。
-- 动作：加入 `EnsureHome` 结果模型和 embedded template；区分 version/help 与需初始化命令；创建 home 0700、config 0600；已有文件不动；进程/跨进程锁 double-check；原子临时写；不创建 `.env`；`SUGA_CONFIG` 外部源保护；错误不留半成品。保留现有 `Load` 的 `.env` 和 config precedence。
+- 动作：加入 `EnsureHome` 结果模型和 embedded template（`config/onboarding.yaml` 与仅注释的 `config/onboarding.env`：说明 `NAME=value` 格式、`${NAME}` 引用、内置 provider 变量名、勿提交版本库，不含任何赋值行；`.env` 缺失才创建 0600，已存在任何情况——含 `init --force`——都不动）；区分 version/help 与需初始化命令；创建 home 0700、config 0600；已有文件不动；进程/跨进程锁 double-check；原子临时写；`SUGA_CONFIG` 外部源保护；错误不留半成品。保留现有 `Load` 的 `.env` 和 config precedence。
 - 验证命令：`go test -count=1 ./internal/config/... ./internal/cli/...`；`go build ./...`；空隔离 home 下运行真实二进制 `version`、`--help`、`init`、`config path`。
 - 完成标准：首次、已有、force 前置契约、失败恢复、并发、权限、Windows `filepath` 语义有测试；`run --output-format stream-json` 与 `acp` 在空 home 首次运行时 stdout 不混入初始化文字（测试断言）；`version/help` 文件快照为空；模板无密钥且带注释；新函数有 main/CLI 实际调用点。
 - 反向验证方法：临时在 version/help 前调用 `EnsureHome`，空 home 的副作用断言必须失败；临时删除 double-check，双进程初始化测试必须发现覆盖/错误；临时启用 `SUGA_CONFIG` 时仍写 home，保护测试必须失败。
