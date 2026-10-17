@@ -398,6 +398,7 @@ def main():
     p.add_argument("--edit-path", default="target.txt", help="edit mode: file_edit target")
     p.add_argument("--edit-old", default="SMOKE_TARGET old", help="edit mode: old_string")
     p.add_argument("--edit-new", default="SMOKE_TARGET new", help="edit mode: new_string")
+    p.add_argument("--remove-path", default="delete.txt", help="edit mode: file_remove target")
     p.add_argument("--preferred-tool", default="preferred_lookup", help="preferred mode: MCP tool to call")
     p.add_argument("--shell-command", default="echo SMOKE_SHELL", help="edit mode: shell_exec command")
     p.add_argument("--agent", action="store_true", help="tool mode: call the agent tool instead of shell_exec")
