@@ -8,6 +8,7 @@ require (
 	github.com/gookit/cliui v0.5.3
 	github.com/gookit/color v1.6.3
 	github.com/gookit/config/v2 v2.2.9
+	github.com/gookit/gopty v0.1.1
 	github.com/gookit/goutil v0.8.3
 	github.com/gookit/ini/v2 v2.3.2
 	golang.org/x/net v0.59.0
@@ -19,6 +20,7 @@ require (
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
+	github.com/creack/pty v1.1.24 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

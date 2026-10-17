@@ -6,6 +6,7 @@
 
 ### 新增
 
+- 新增 Go `ptytest` chat 伪终端冒烟（`make smoke-go`）：用同一套测试驱动 Linux/macOS pty 与 Windows ConPTY，覆盖 Enter、多行输入、Esc/Ctrl-C 和写文件审批。
 - files 记忆后端使用可从 Markdown 自动重建的 FTS5 派生索引按相关度检索；索引缺失或未绑定时自动回退为原有子串搜索。
 - `session_search` 的 `kind` 支持 `handoff`：分段交接与 `--from` 交接的摘要进入会话全文检索（旧库升级时自动回填），`recall` 可按该 ref 读取摘要原文。
 
