@@ -419,6 +419,18 @@ func (r *Runner) segmentOrdinal(ctx context.Context, sessionID string, written [
 
 // compactProvider is the model used for summaries: llm.compact_model when
 // configured, otherwise the turn's own (already observed) provider.
+// generateQuietly asks for a whole answer that nobody watches arrive (a
+// summary): through Stream when the provider streams, with the deltas
+// dropped, else through Generate. Some gateways (an OpenAI Responses proxy in
+// front of a subscription model) accept only stream=true requests, so a plain
+// Generate failed every compaction and --from handoff on them.
+func generateQuietly(ctx context.Context, p agentcore.Provider, req *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	if sp, ok := p.(agentcore.StreamingProvider); ok {
+		return sp.Stream(ctx, req, func(context.Context, agentcore.StreamEvent) error { return nil })
+	}
+	return p.Generate(ctx, req)
+}
+
 func (r *Runner) compactProvider() agentcore.Provider {
 	if r.cfg.CompactProvider != nil {
 		return r.cfg.CompactProvider
@@ -476,7 +488,7 @@ func (r *Runner) summarize(ctx context.Context, in packageInput, threshold int) 
 	// No MaxTokens on purpose: a summary is short by nature, so the protocol's
 	// own default is enough here; the output limit setting target the main
 	// loop's answers (Config.MaxOutputTokens).
-	res, err := r.compactProvider().Generate(withPurpose(ctx, purposeCompact), &agentcore.GenerateRequest{
+	res, err := generateQuietly(withPurpose(ctx, purposeCompact), r.compactProvider(), &agentcore.GenerateRequest{
 		System:   compactSystemPrompt,
 		Messages: []agentcore.Message{{Role: "user", Content: sb.String()}},
 	})
