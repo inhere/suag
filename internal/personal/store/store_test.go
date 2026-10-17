@@ -22,7 +22,7 @@ func TestOpenCreatesSchemaAndIsIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "db", "sessions.db")
 	s, err := Open(path)
 	assert.Require(t, assert.NoErr(t, err))
-	for _, tbl := range []string{"sessions", "entries", "turns", "events", "entries_fts", "memory_meta"} {
+	for _, tbl := range []string{"sessions", "entries", "turns", "events", "entries_fts", "memory_fts", "memory_meta"} {
 		var n int
 		assert.NoErr(t, s.db.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name=?`, tbl).Scan(&n))
 		assert.Eq(t, 1, n)

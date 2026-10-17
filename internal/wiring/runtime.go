@@ -645,6 +645,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		_ = capabilities.Close()
 		return nil, err
 	}
+	memSetup.Bind(repo)
 	memHost.bind(runner, repo)
 	rt := &Runtime{Runner: runner, Registry: capabilities.Registry, PreferredTools: preferredTools,
 		ACPPolicy: func(call agentcore.ToolCall, tool agentcore.Tool) (action, rule, scope string) {
