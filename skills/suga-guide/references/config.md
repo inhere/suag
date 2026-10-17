@@ -91,6 +91,10 @@
 |---|---|---|
 | `tools.allow_write` | `false` | **仅 chat**：启用写文件与命令工具。`run` 需 `--allow-write`；ACP 看会话 mode；`--read-only` 优先 |
 | `tools.approval` | `ask` | **仅 chat**：`ask` 时每个非只读、非 MCP 工具调用前在终端询问；`auto` 不问。无终端时需确认的工具被拒 |
+| `tools.approval_rules.enabled` | `true` | 启用统一规则判定；`false` 回退到旧审批路径 |
+| `tools.approval_rules.always_prefix_tokens` | `2`（≥1） | chat 的 `a`/`always` 为安全 shell 命令保存的前缀 token 数 |
+| `tools.approval_rules.persist_ask` | `true` | chat 的 `a`/`d` 后是否询问写回用户级/项目级规则文件 |
+| `tools.approval_rules.project_trust` | `{}` | 绝对 workspace 路径到规则文件 SHA-256；未信任项目 allow 会被忽略 |
 | `tools.deferred` | `auto` | MCP 工具 schema 延迟加载：`auto`（schema 超过上下文窗口约 10% 时延迟）、`always`、`never`；被延迟的工具用 `tool_search` 取回 |
 | `tools.max_output_bytes` | `8000` | 单次工具结果内联进会话的上限；超出时脱敏原文存 `$SUGA_HOME/sessions/<id>/outputs/`，会话只留 ref 与头尾各 2000 字节 |
 | `tools.max_spill_bytes` | `1048576`（1 MiB） | 单次工具（含 MCP）原始输出上限 |
@@ -107,6 +111,14 @@
 | `tools.web_fetch.proxy` | `""` | `web_fetch` 的代理（`http://`、`https://`、`socks5://`）；只影响 web_fetch，不影响模型请求 |
 | `tools.auto_allow` | `[]` | MCP 放行名单（普通运行），条目 `server/toolglob`（裸 `toolglob` 也接受，会匹配任意 server） |
 | `tools.read_only_allow` | `[]` | `--read-only` 时**唯一**使用的放行名单，条目必须写成 `server/toolglob` |
+
+### 审批规则文件
+
+规则正文不放进 `config.yaml`，而是分别从 `$SUGA_HOME/approval-rules.yaml` 和 `<workspace>/.suga/approval-rules.yaml` 读取。每个文件是 `rules: [...]`，条目可含 `tool`、`command`、`path`、`action`（`allow`/`ask`/`deny`）和 `modes`。MCP 工具写 `server/toolglob`；`command` 只匹配 `shell_exec`，`path` 只匹配明确的文件写/编辑/删除工具。动作按 `deny > ask > allow` 合并，项目 allow 只有在 `project_trust` 同时信任绝对 workspace 和当前文件 hash 后才生效。
+
+allow 命令按实际 sh/bash、PowerShell 或 cmd 做 ASCII 字符、配对引号和 token 校验；只有末尾独立 `*`/`**` 扩展 token。allow 路径同时检查 root 锚定的词法和真实路径，符号链接、硬链接、特殊文件、解析失败及 Windows 特殊路径不放行。YAML anchor/alias、未知字段、错误组合、超过 64 KiB 或超过 256 条规则都会导致启动失败。规则不能绕过只读模式、沙箱、危险删除守卫或 `$SUGA_HOME`、`.suga`、`.git` 等受保护路径。
+
+chat 的 `a`/`d` 会创建按命令前缀、写入目录或删除精确路径区分的会话规则；`persist_ask` 开启时，随后用 `u` 写用户级，`p` 只写项目级 deny，回车保留本会话。ACP 的 `allow_always`/`reject_always` 只保存在当前进程会话状态，不写规则文件。`suga manifest --json` 显示路径、生效条数、hash/信任与忽略原因；`suga trace <session> --json` 显示 `approval_rule`、`approval_scope` 与 `approval_rule_persist`。`enabled: false` 可回退旧路径。
 
 输出规则：内置规则按语言/工具分文件（`go`、`rust`、`js`、`python`、`java`、`git`、`grep`）→ `$SUGA_HOME/output-rules.yaml` → `<workspace>/.suga/output-rules.yaml`（同名替换、新名追加、`enabled: false` 关闭）。一条规则可按命令（可加 `match_output` 再按输出）匹配，然后丢行、折叠噪声、按正则改写（`replace`）、按捕获键分组合并（`group_by`）、保留首尾 N 行（`head`/`tail`），并用 `min_bytes`/`min_saving` 给自己设更低的处理门槛（默认 <600 字节不动、省不到 20% 放弃）；整理结果永远不短于原文时不交给模型。字段与执行顺序见 `pkg/agentcore/tools/native/rules/README.md`。
 

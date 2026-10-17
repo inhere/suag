@@ -76,20 +76,63 @@ Suga reads only `$SUGA_HOME/config.yaml` and `$SUGA_HOME/.env` (default `~/.suga
 | `compact_model`, `fallback_models` | Cheaper model for summaries; models tried in order when the main one fails |
 | `tools.allow_write`, `tools.approval` | Chat only: enable write and shell tools (default false); `ask` (default) confirms every write and shell call, `auto` does not |
 
+
 ### Approval rules
 
-Set `tools.approval_rules` to control the rules files without putting rule bodies in `config.yaml`:
+Set `tools.approval_rules` to enable the shared approval policy. Rule bodies stay in separate files so suga can append a confirmed rule without rewriting your main configuration:
 
 ```yaml
 tools:
   approval_rules:
     enabled: true
     always_prefix_tokens: 2
+    persist_ask: true
     project_trust:
       /absolute/path/to/project: <sha256-from-suga-manifest>
 ```
 
-Rules are loaded from `$SUGA_HOME/approval-rules.yaml` and `<workspace>/.suga/approval-rules.yaml`. Actions use `deny > ask > allow`; project `allow` rules are ignored until the exact workspace and current file hash are trusted. YAML anchors and aliases are rejected. Use `suga manifest --json` to see both paths, effective counts, the current project hash and the reason an allow was ignored; copy `approval_rules.project.hash` into `tools.approval_rules.project_trust` for an explicit trust decision. `suga trace <session> --json` records `approval_rule` and `approval_scope` on tool and denial events. Set `tools.approval_rules.enabled: false` to use the legacy approval path.
+Suga reads `$SUGA_HOME/approval-rules.yaml` (user scope) and `<workspace>/.suga/approval-rules.yaml` (project scope). A file has one `rules` list:
+
+```yaml
+rules:
+  - tool: shell_exec
+    command: ["go test *", "go build *"]
+    action: allow
+  - tool: file_write
+    path: ["docs/**", "README*.md"]
+    action: allow
+  - tool: file_write
+    path: ["**/.env", "**/*.pem"]
+    action: deny
+  - tool: "gofer/gofer_*_delete"
+    action: deny
+```
+
+`tool` is a native-tool glob; an MCP rule must use `server/toolglob`. `command` is only for the native `shell_exec` tool. `path` is only for the exact `file_write`, `file_edit` or `file_remove` tools, and cannot be combined with `command`. Rules can also specify `modes: [chat, run, acp]`; without it they apply to every entry point. Invalid fields, actions, tool/path combinations, YAML anchors or aliases make startup fail. Files are limited to 64 KiB and 256 rules.
+
+Matching is fail-closed: the strongest matching action wins (`deny > ask > allow`), not the first rule. An allow command must use the actual configured shell (`sh`/`bash`, PowerShell or `cmd`) and pass its conservative ASCII, quoting and token checks; only a final standalone `*` or `**` extends the token list. Control operators, expansion, wrappers and unknown shells do not produce an allow. An allow path checks both the lexical path and the `EvalSymlinks` target under the rule's root; symlinks, hard links, special files, failed resolution and Windows short names, ADS or trailing-dot/space names do not produce an allow. Deny rules remain useful when an allow-safe check fails.
+
+Project rules are intentionally asymmetric: project `deny` and `ask` can tighten a policy, but project `allow` is ignored until the exact absolute workspace path and current project rule-file SHA-256 are listed in `project_trust`. The current hash and the reason an allow was ignored are shown by `suga manifest --json`; copy that hash into the configuration only after reviewing the file. Changes or reload failures keep the previous valid snapshot and are reported as diagnostics.
+
+Entry-point defaults remain explicit:
+
+| Entry | Default | Important boundary |
+|---|---|---|
+| chat | `tools.approval`: `ask` or `auto` → `allow` | `ask` can prompt; a rule can also change read-only/agent-state tools to `ask` or `deny` |
+| `run` | `allow` | no terminal means an `ask` result is denied; `--read-only` and tool availability still win |
+| ACP default | `ask` | `read_only` denies non-read tools; legacy CLI MCP allowlists are not read by ACP |
+| sub-agent | `allow` for its read-only tool set | it receives a creation-time policy snapshot; `ask` is denied without a terminal |
+| chat/run MCP | `deny` | `tools.auto_allow` / `tools.read_only_allow` are compiled as `legacy` allow rules only here |
+
+Rules never bypass tool registration, `--read-only`, file/shell sandbox boundaries, the dangerous-delete guard, or the protected control-plane paths: `$SUGA_HOME`, the workspace `.suga` and `.git` directories, and both approval-rules files. An allow targeting those paths is clamped to chat/ACP ask or non-interactive run/sub-agent deny. In particular, `run` rejecting a write under these paths is intentional.
+
+In chat, `y`/`yes` allows once. `a`/`always` creates a session allow scoped to a safe shell prefix (`always_prefix_tokens`, default 2), a write/edit directory, a precise `file_remove` path, or another tool name. Unsafe shell commands do not offer `[a]`. `d`/`deny` creates a session deny with the same scope; any other answer, including Enter, denies this call and continues the turn. When `persist_ask` is true, `a` or `d` is followed by a persistence question: `u` writes the user rule, `p` writes only a deny to the project rule, and `N`/Enter keeps it in this session. Writeback uses a locked, atomic read-modify-write and records an `approval_rule_persist` event; a failed write does not discard the session rule.
+
+ACP offers `allow`, `allow_always`, `reject` and `reject_always`. The `always` choices create in-process session rules: later matching calls skip or fail the permission request, while `tool_call` notifications still occur. They are not written to rule files; `session/load` retains them in the same process, but a new process must ask again.
+
+Use `suga manifest --json` for rule-file paths, effective counts, project hash/trust diagnostics, ignored rules and the configured `tools.approval` default. Use `suga trace <session> --json` to inspect `approval_rule` and `approval_scope` on tool/denial events and the `approval_rule_persist` writeback event. Set `tools.approval_rules.enabled: false` to return to the legacy approval path.
+| Setting | Meaning |
+|---|---|
 | `mcp.servers`, `tools.auto_allow`, `tools.read_only_allow` | MCP servers, and the MCP allowlists (`server/toolglob`); every MCP call is refused while both are empty |
 | `memory.user.backend`, `memory.project.backend`, `memory.write_tainted` | Memory backend per scope (`files`, `gofer` for the project, `exec`) and what a session that read external content does on a write (`ask`, `deny`, `allow`) |
 | `hooks.command`, `hooks.post_tool_use` | Chat hook command (an argv list) and which tool calls get a PostToolUse event; no `hooks.command`, no hooks |
@@ -134,7 +177,7 @@ All data lives in `$SUGA_HOME/db/sessions.db`.
 - **Read-only by default.** Write tools exist only with `run --allow-write`, chat with `tools.allow_write: true`, or an ACP session in `default` mode. `--read-only` always wins. If the model calls a disabled tool, it is told how to enable it, and the call counts as a refusal.
 - **Additional directories.** `run` and `chat` take `--add-dir <absolute directory>[:ro|:rw]` (repeatable, default `:ro`), and `SUGA_ADD_DIRS` adds more (entries separated by the OS path-list separator, `;` on Windows, which is how a job runner passes them). A `:ro` entry joins the session's read-only roots, like `tools.read_roots`, and suits the project root of a job whose `cwd` is one repository or a sibling module. A `:rw` entry also lets `file_write`, `file_edit` and `file_remove` write there, with the same approvals, dangerous-delete guard and `.git`/home/root refusals as the workspace; `shell_exec` still runs in the workspace. The directories are recorded in the session (`add_dirs`), so `--resume` / `--session-id` keeps them and a path named again takes the mode of this invocation. Under `--read-only` they are only ever readable (the flag is reported, the mode is kept in the session; only read-only directories can be authorized too). The context's environment section names each directory and its mode, so the model uses the file tools there instead of shell detours; a directory added in the middle of a chat is in the tools' reach from the next call on and reaches the model with the next turn's context update. Only existing absolute directories are accepted, `..` is cleaned, and a path outside the workspace and the added directories is still refused. ACP does not support added directories (a `session/new` with `additionalDirectories` is refused).
 - **A directory asked for mid-session.** In chat, `:add-dir` / `:rm-dir` change the session's added directories while it runs (see above). Without them the model can still ask: when a file tool reaches a path outside the workspace, the read-only roots and the added directories, chat asks `授权访问 <directory>？[r] 只读 [w] 读写 [n] 拒绝` before the call runs (`chat.ask_outside_dirs`, default on) — the directory shown is the one the tool really resolved, symlinks followed, never a path the model described. An answer of `r` or `w` records the directory in the session (`source: ask`) and lets the call run; a `:rw` grant still gets the ordinary write confirmation afterwards. `[w]` is not offered in a `--read-only` session. With the question turned off, without a terminal, or in `run` and ACP, such a call is simply refused as before.
-- **Chat asks first.** With `tools.approval: ask`, chat asks before each write or shell call and shows the full command, path or old/new text. Answer `y` (once), `a` (this tool for the rest of the process) or anything else to refuse. Three refusals end the turn.
+- **Chat asks first.** With `tools.approval: ask`, chat asks before each write or shell call and shows the full command, path or old/new text. Approval rules may allow or deny before the question; otherwise answer `y` (once), `a`/`always` for a scoped session allow, `d`/`deny` for a scoped session denial, or anything else to refuse. The `a`/`d` follow-up can write the rule with `u` or `p` when enabled. Three refusals end the turn.
 - **Dangerous deletes.** A `shell_exec` command that deletes recursively (`rm -r`, `Remove-Item -Recurse`, `rd /s`, also inside `sh -c`, `cmd /c` and `pwsh -Command`) is stopped before approval when it targets `/`, `~` or `$HOME`, a drive root, the workspace or one of its parents, or a path that starts with a variable which, if empty, would leave it at the root (`"$X/"`, `"$dir\*"`); a glob over those directories (`rm ~/*`) counts without `-r`. Chat asks every time, even with `tools.approval: auto` or an earlier `a`, and only a typed `yes` runs it; `run` and ACP refuse it and point the model to `file_remove`. The trace records the reason (`danger=…`). This catches common slips, not a determined command: it is not a security boundary.
 - **Background tasks.** `shell_exec` with `background: true` (write modes of `run`, chat and ACP) runs long builds, full test suites, servers or watchers while the model keeps working. Output goes line by line, redacted, to the session's outputs (`recall` reads its ref too). A task that ends before the model saw it leaves a notice that is added before the next model request (exit code, duration, size, last lines); chat waiting for input is woken by it and starts a turn (`tasks.wake_on_exit`, default true, which covers what a still running task reports as well). `run` reminds the model once when its answer leaves tasks running, then kills them at exit and names them on stderr. In ACP the tasks belong to the `suga acp` process: they keep running across prompts, the notice goes into the session's next prompt, `session/cancel` leaves them alone and they are killed when the connection closes. Limits: `tasks.max_running` (4 per session), `tasks.max_duration` (2h), `tasks.max_output_bytes` (64 MiB). The trace records a `task` event per task (its `kind` and, for a watch, its runs and changes); `--analyze` counts them and, per kind, the watch tasks and background Stop hooks. Design: docs/design/2026-10-13-background-tasks-design.md.
 - **Watch tasks.** `shell_exec` with `background: true` plus `every` (seconds, at least 10) and/or `watch_paths` (globs relative to the workspace, `**` crosses directories and a pattern without `/` matches that file name at any depth) runs the command as a watch: once at the start and then on each tick and when a watched file changes (polled every 2s; a change runs the command after one more poll without further changes). Runs never overlap, each is capped by the call's `timeout` (and a run's own writes are no change of the watched files). The task output holds every run between `=== run N (trigger) HH:MM:SS ===` and `=== exit X ===`. The model is told about a run only when its exit code or output differs from the previous one (durations and timestamps ignored), and about the baseline run only when it fails, so it can fix code and learn from the next run that the tests went green. `task wait` on a watch returns once its next run is done, with that run's report; `task list` shows the runs and the last exit code; `task kill` stops the watch.

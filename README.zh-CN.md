@@ -76,20 +76,63 @@ Suga 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`
 | `compact_model`、`fallback_models` | 生成摘要用的便宜模型；主模型失败时依次尝试的备用模型 |
 | `tools.allow_write`、`tools.approval` | 仅 chat：启用写文件与 shell 工具（默认 false）；`ask`（默认）每次写/shell 调用前询问，`auto` 不询问 |
 
+
 ### 审批规则
 
-用 `tools.approval_rules` 控制规则文件；规则正文不放进 `config.yaml`：
+设置 `tools.approval_rules` 启用统一审批策略。规则正文放在独立文件中，这样 suga 可以在用户确认后追加规则，而不会重写主配置：
 
 ```yaml
 tools:
   approval_rules:
     enabled: true
     always_prefix_tokens: 2
+    persist_ask: true
     project_trust:
-      /绝对路径/到/项目: <从 manifest 获取的 sha256>
+      /绝对路径/到/项目: <从 suga manifest 获取的 sha256>
 ```
 
-规则从 `$SUGA_HOME/approval-rules.yaml` 和 `<workspace>/.suga/approval-rules.yaml` 加载，动作优先级为 `deny > ask > allow`。项目级 `allow` 必须先信任准确的工作区路径和当前文件 hash，否则会被忽略；YAML anchor/alias 会被拒绝。运行 `suga manifest --json` 可查看两个文件的路径、生效条数、项目文件当前 hash，以及 allow 被忽略的原因；把 `approval_rules.project.hash` 复制到 `tools.approval_rules.project_trust` 后再显式信任。`suga trace <session> --json` 会在工具和拒绝事件中记录 `approval_rule`、`approval_scope`。设置 `tools.approval_rules.enabled: false` 可回退到旧审批路径。
+Suga 读取 `$SUGA_HOME/approval-rules.yaml`（用户级）和 `<workspace>/.suga/approval-rules.yaml`（项目级）。文件只包含一个 `rules` 列表：
+
+```yaml
+rules:
+  - tool: shell_exec
+    command: ["go test *", "go build *"]
+    action: allow
+  - tool: file_write
+    path: ["docs/**", "README*.md"]
+    action: allow
+  - tool: file_write
+    path: ["**/.env", "**/*.pem"]
+    action: deny
+  - tool: "gofer/gofer_*_delete"
+    action: deny
+```
+
+`tool` 是原生工具名 glob；MCP 规则必须写成 `server/toolglob`。`command` 只适用于原生 `shell_exec`；`path` 只适用于明确的 `file_write`、`file_edit` 或 `file_remove`，且不能和 `command` 同时出现。规则可用 `modes: [chat, run, acp]` 限定入口；省略时适用于所有入口。未知字段、动作、工具/path 组合以及 YAML anchor/alias 都会导致启动失败。单个文件上限 64 KiB、最多 256 条规则。
+
+匹配采用 fail-closed：所有命中中取最强动作（`deny > ask > allow`），不是首次命中。allow 命令必须按实际配置的 shell（`sh`/`bash`、PowerShell 或 `cmd`）通过保守的 ASCII、引号和 token 检查；只有末尾独立的 `*` 或 `**` 才能扩展 token。控制符、展开、包装器和未知 shell 不会产生 allow。allow 路径同时检查 root 下的词法路径和 `EvalSymlinks` 后的真实目标；符号链接、硬链接、特殊文件、解析失败，以及 Windows 短名、ADS、尾部点/空格名称都不会产生 allow。deny 在 allow 安全检查失败时仍可用于收紧策略。
+
+项目规则有意采用不对称信任：项目 `deny` 和 `ask` 可以收紧策略，但项目 `allow` 必须等精确的绝对 workspace 路径和当前规则文件 SHA-256 出现在 `project_trust` 后才生效。`suga manifest --json` 会显示当前 hash 及 allow 被忽略的原因；确认文件内容后再把 hash 复制进配置。文件变化或重载失败时保留上一份有效快照，并在诊断中报告。
+
+各入口默认动作保持明确：
+
+| 入口 | 默认动作 | 重要边界 |
+|---|---|---|
+| chat | `tools.approval`：`ask`，或 `auto` → `allow` | 可询问；规则也能把只读/agent-state 工具改为 `ask` 或 `deny` |
+| `run` | `allow` | 无终端时 `ask` 按拒绝处理；`--read-only` 与工具可用性优先 |
+| ACP default | `ask` | `read_only` 拒绝非只读工具；不读取 CLI 的 legacy MCP 放行名单 |
+| 子 agent | 其只读工具集合默认 `allow` | 创建时取得 Policy 快照；无终端时 `ask` 按拒绝处理 |
+| chat/run MCP | `deny` | `tools.auto_allow` / `tools.read_only_allow` 仅在这里编译成 `legacy` allow 规则 |
+
+规则不会绕过工具注册、`--read-only`、文件/shell 沙箱、危险删除守卫或受保护的控制面路径：`$SUGA_HOME`、workspace 下的 `.suga/` 与 `.git/`，以及两个 approval-rules 文件。命中这些路径的 allow 会被钳制为 chat/ACP 的 ask，或无交互 run/子 agent 的 deny。因此 `run` 拒绝写入这些路径是有意行为。
+
+chat 中，`y`/`yes` 只允许本次调用。`a`/`always` 为本会话创建规则：安全 shell 命令前缀（`always_prefix_tokens`，默认 2）、写/编辑目录、精确的 `file_remove` 路径或其他工具名。不安全 shell 命令不提供 `[a]`。`d`/`deny` 用相同范围创建本会话 deny；其它答案（包括回车）拒绝本次调用并继续回合。`persist_ask` 为 true 时，`a`/`d` 后会追问写回：`u` 写用户级规则，`p` 只把 deny 写项目级，`N`/回车只保留本会话。写回使用加锁、原子读改写，并记录 `approval_rule_persist` 事件；写失败也不会丢失会话规则。
+
+ACP 提供 `allow`、`allow_always`、`reject`、`reject_always` 四个选项。两个 `always` 选项创建进程内会话规则：后续同范围调用跳过或直接失败权限请求，但仍发送 `tool_call` 通知；不会写规则文件。同一进程内 `session/load` 保留它们，换进程后需要重新询问。
+
+用 `suga manifest --json` 查看规则文件路径、生效条数、项目 hash/信任诊断、被忽略规则和 `tools.approval` 默认动作；用 `suga trace <session> --json` 查看工具/拒绝事件的 `approval_rule`、`approval_scope` 以及写回事件 `approval_rule_persist`。设置 `tools.approval_rules.enabled: false` 可回到旧审批路径。
+| 配置项 | 含义 |
+|---|---|
 | `mcp.servers`、`tools.auto_allow`、`tools.read_only_allow` | MCP 服务，以及 MCP 放行名单（条目形如 `server/工具glob`）；两者都为空时所有 MCP 调用被拒绝 |
 | `memory.user.backend`、`memory.project.backend`、`memory.write_tainted` | 各范围的记忆后端（`files`、项目可用 `gofer`、`exec`），以及读过外部内容的会话写记忆时的处理（`ask`、`deny`、`allow`） |
 | `hooks.command`、`hooks.post_tool_use` | chat 的 hook 命令（argv 列表）与哪些工具调用发 PostToolUse；不设 `hooks.command` 即不启用 hooks |
@@ -134,7 +177,7 @@ tools:
 - **默认只读**：写工具只在 `run --allow-write`、chat 设置 `tools.allow_write: true`、或 ACP 会话处于 `default` 模式时才有；`--read-only` 永远优先。模型调用了未开启的工具时，会被告知开启方法，并计入拒绝次数。
 - **附加目录**：`run` 与 `chat` 支持可重复参数 `--add-dir <绝对目录>[:ro|:rw]`（默认 `:ro`），环境变量 `SUGA_ADD_DIRS` 可再加（各项用系统的路径列表分隔符分隔，Windows 是 `;`，适合 job runner 透传）。`:ro` 目录加入本会话的只读根（与 `tools.read_roots` 并列），适合 `cwd` 落在某个子仓、却要读项目根或兄弟模块文档的场景；`:rw` 目录同时允许 `file_write`、`file_edit`、`file_remove` 写入，审批、危险删除拦截、拒绝工作区根/自带 `.git`/主目录等规则与工作区完全一致，`shell_exec` 的 cwd 仍是工作区。目录写入会话元数据（`add_dirs`），`--resume` / `--session-id` 续接沿用，同路径重给时以本次的权限为准。`--read-only` 下它们只以只读生效（给出提示，会话里保留你要求的权限；会话中途也只能授权只读目录）。环境段会列出每个附加目录及其权限，模型因此直接用文件工具读取，不必绕 shell；会话中途追加的目录从下一次工具调用起就能用，下一回合的上下文更新把它告诉模型（环境段在段上下文里，不放在稳定系统提示，避免前缀缓存失效）。只接受已存在的绝对目录，会清理 `..`；工作区与附加目录之外的路径照旧被拒绝。ACP 暂不支持附加目录（`session/new` 带 `additionalDirectories` 会被拒绝）。
 - **会话中途要目录**：chat 里用 `:add-dir` / `:rm-dir` 改附加目录（见上）。不给命令时模型也能问：文件工具要访问工作区、只读根与附加目录之外的路径时，chat 先问一行 `授权访问 <目录>？[r] 只读 [w] 读写 [n] 拒绝`（`chat.ask_outside_dirs`，默认开），问的是工具真正解析出的那个目录（跟随符号链接），不是模型嘴里的路径。答 `r` 或 `w` 就把该目录写进会话（来源 `ask`）并让这次调用照常跑；答 `w` 的写工具随后仍会照常确认一次。`--read-only` 会话不提供 `[w]`。关掉这个开关、没有终端、或 `run`/ACP 下，越界调用照旧直接拒绝。
-- **chat 先询问**：`tools.approval: ask` 时，每次写文件或执行命令前都会询问，并显示完整命令、路径或改动前后的文本。回答 `y` 允许一次，`a` 在本进程内对该工具始终允许，其他任何回答都是拒绝。一轮里被拒 3 次就结束这一轮。
+- **chat 先询问**：`tools.approval: ask` 时，每次写文件或执行命令前都会询问，并显示完整命令、路径或改动前后的文本。审批规则会先决定是否放行或拒绝；需要询问时可答 `y`（一次）、`a`/`always`（按范围创建本会话 allow）、`d`/`deny`（按范围创建本会话 deny），其它任何回答都是拒绝。启用追问后，`a`/`d` 可再用 `u` 或 `p` 写回规则。一轮里被拒 3 次就结束这一轮。
 - **危险删除**：递归删除的 `shell_exec` 命令（`rm -r`、`Remove-Item -Recurse`、`rd /s`，以及 `sh -c`、`cmd /c`、`pwsh -Command` 里的同类命令）在审批前就会被拦下：目标是 `/`、`~` 或 `$HOME`、盘符根、工作区或其上级目录，或路径以变量开头、变量为空时会落到根目录（`"$X/"`、`"$dir\*"`）时；对这些目录用通配符（`rm ~/*`）时没有 `-r` 也算。chat 每次都询问，`tools.approval: auto` 或之前回答过的 `a` 也不例外，只有手动输入 `yes` 才执行；`run` 和 ACP 直接拒绝，并提示模型改用 `file_remove`。trace 里记下原因（`danger=…`）。这能挡住常见的误操作，挡不住刻意构造的命令：它不是安全边界。
 - **后台任务**：`shell_exec` 传 `background: true`（`run`、chat 与 ACP 的写模式）后，长时间构建、完整测试、服务或监听进程可以在模型继续工作的同时运行。输出逐行脱敏写入会话的 outputs（`recall` 也能读它的 ref）。任务在模型看到之前就结束时，会留下一条提示，在下一次模型请求前加入（退出码、耗时、大小、末尾几行）；正等待输入的 chat 会被它唤醒并开始一轮（`tasks.wake_on_exit`，默认 true，运行中的任务发来通知时同样唤醒）。`run` 在回答后仍有任务在跑时提醒模型一次，退出时终止它们并在 stderr 中列出名字。ACP 下任务属于 `suga acp` 进程：跨 prompt 继续运行，结束提示进入该会话的下一个 prompt；`session/cancel` 不影响它们，连接关闭时终止。上限：`tasks.max_running`（每会话 4）、`tasks.max_duration`（2h）、`tasks.max_output_bytes`（64 MiB）。trace 里每个任务记一条 `task` 事件（带种类，watch 还带运行与变化次数），`--analyze` 按种类统计，包括 watch 任务数与后台 Stop hook 次数。设计见 docs/design/2026-10-13-background-tasks-design.md。
 - **监听任务**：`shell_exec` 传 `background: true` 并带 `every`（秒，至少 10）和/或 `watch_paths`（相对工作区的 glob，`**` 跨目录，不含 `/` 的模式匹配任意深度的同名文件）时命令变成监听：启动时先跑一次，之后每个周期到点、以及被监听文件变化（每 2 秒轮询，变化停止后的下一次轮询才触发）时再跑。运行之间不会重叠，每次运行受调用的 `timeout` 限制（运行自身写入被监听的文件不算变化）。任务的输出文件里每轮以 `=== run N (触发原因) HH:MM:SS ===` 开头、`=== exit X ===` 结尾。只有退出码或输出（忽略耗时与时间戳）与上一次不同才通知模型，基线运行只在失败时通知，所以模型可以改代码、再从下一轮通知得知测试是否转绿。对监听调用 `task wait` 会在下一轮运行结束时返回，并带上这一轮的报告；`task list` 显示运行次数与最近一次退出码，`task kill` 停止监听。

@@ -9,12 +9,16 @@
 - `suga manifest --json` 与 `suga trace` 增加审批规则来源、项目 hash/信任诊断及命中规则与范围，便于解释工具为何放行或拒绝。
 
 - 审批规则将 MCP legacy 白名单编译为统一规则，并固定 chat、run、ACP 与只读入口的默认动作。
-- chat 审批支持按命令前缀、写编辑目录和删除精确路径生成会话级 allow/deny 规则，并在写回功能启用前明确提示仅本会话生效。
+- chat 审批支持按命令前缀、写编辑目录和删除精确路径生成会话级 allow/deny 规则，并可通过 `u`/`p`/`N` 选择用户级、仅 deny 的项目级或本会话写回范围。
 - 自动识别 idev-std 发行目录与工作空间的 `tmp/idev-std` 加载产物目录为只读根，可通过 `tools.standards_roots` 关闭；支持 `IDEV_STD_RELEASES_ROOT` 与兼容的 `INHERE_DEV_STANDARDS_ROOT`。
 - chat 增加可脱敏持久化的本地输入历史（Up/Down、Ctrl+R 反查）与 `:` 命令/目录 Tab 补全，可通过 `chat.history` 和 `chat.history_size` 配置。
 - chat 新增 `:model` 查看并从下一回合切换已配置模型，显示 thinking、上下文窗口与输出上限；切换保留 fallback、持久化到会话并写入 `model_switch` trace 事件，续接时沿用（显式 `--model` 优先）。
 - 路径审批规则现在会校验 root 锚定、词法与真实目标路径，并拒绝符号链接、硬链接和特殊文件的 allow。
 - LLM 重试识别 `X-Should-Retry`、`Retry-After-Ms` 与 provider 的 `try again in ...` 提示；上下文超长错误归为 `provider_rejected` 并提示压缩或新会话，模型 trace 记录 provider request id。
+
+### 变更
+
+- 审批规则文档现完整说明独立 YAML 文件、`deny > ask > allow`、shell/path 的 fail-closed 限制、项目 hash 信任、chat 的 `a/d/u/p/N`、ACP `allow_always/reject_always`、入口默认动作，以及 manifest/trace 诊断；`run` 对内置保护路径的拒绝是有意行为，可用 `tools.approval_rules.enabled: false` 回退。
 
 ### 修复
 
