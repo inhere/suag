@@ -147,8 +147,9 @@ func (t *AgentTool) Execute(ctx context.Context, call api.ToolCall) (*api.ToolRe
 // error (not a Go error) so the host still sees the metadata, the taint mark
 // included.
 func agentResult(call api.ToolCall, req AgentRequest, rep AgentReport, err error) *api.ToolResult {
-	meta := map[string]any{"child_session_id": rep.SessionID, "agent_type": req.Type, "steps": rep.Steps,
-		"tool_calls": rep.ToolCalls, "input_tokens": rep.Usage.InputTokens, "cache_read_tokens": rep.Usage.CacheReadTokens,
+	meta := map[string]any{"child_session_id": rep.SessionID, "agent_type": req.Type, "description": req.Description,
+		"steps": rep.Steps, "tool_calls": rep.ToolCalls, "duration_ms": rep.Duration.Milliseconds(), "background": req.Background,
+		"input_tokens": rep.Usage.InputTokens, "cache_read_tokens": rep.Usage.CacheReadTokens,
 		"output_tokens": rep.Usage.OutputTokens, "cost_usd": rep.Usage.CostUSD, "stop": rep.Stop}
 	if rep.Tainted {
 		meta["external"] = true // the report carries what the sub-agent read
@@ -211,7 +212,7 @@ func (t *AgentTool) startBackground(ctx context.Context, call api.ToolCall, req 
 		Name:   "agent",
 		Content: fmt.Sprintf("[background agent task %s started: %s]\nYou are told when it ends with the start of its report; "+
 			"task wait blocks on it, task output reads the whole report, task kill stops it.", info.ID, req.Description),
-		Metadata: map[string]any{"task_id": info.ID, "background": true, "agent_type": req.Type},
+		Metadata: map[string]any{"task_id": info.ID, "background": true, "description": req.Description, "agent_type": req.Type},
 	}, nil
 }
 

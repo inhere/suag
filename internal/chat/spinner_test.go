@@ -189,6 +189,7 @@ func TestSpinnerRestartsAfterToolResult(t *testing.T) {
 func TestSpinnerAgentProgress(t *testing.T) {
 	plainColor(t)
 	r, out, clock := newSpinnerRenderer(t, enabledOptions())
+	r.opts.AgentProgress = "full"
 	r.BeginTurn()
 	clock.tick(3 * time.Second)
 	assert.Require(t, waitOutput(t, out, spinnerLabel))

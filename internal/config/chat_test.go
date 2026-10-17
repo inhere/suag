@@ -62,6 +62,35 @@ func TestChatSpinnerEnabled(t *testing.T) {
 	})
 }
 
+// TestChatAgentProgress validates the enum and its summary default.
+func TestChatAgentProgress(t *testing.T) {
+	load := chatConfigLoader(t)
+	for _, tc := range []struct {
+		name, value, want string
+		wantErr           bool
+	}{
+		{name: "default summary", want: "summary"},
+		{name: "full", value: "full", want: "full"},
+		{name: "off", value: "off", want: "off"},
+		{name: "invalid", value: "nope", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.value == "" {
+				load(t, "model: openai/m\n")
+			} else {
+				load(t, "chat:\n  agent_progress: "+tc.value+"\n")
+			}
+			got, err := ChatAgentProgress()
+			if tc.wantErr {
+				assert.Err(t, err)
+				return
+			}
+			assert.NoErr(t, err)
+			assert.Eq(t, tc.want, got)
+		})
+	}
+}
+
 // TestChatHighlightInputEnabled: chat.highlight_input takes the same values as
 // chat.markdown, is on by default and is decided on its own.
 func TestChatHighlightInputEnabled(t *testing.T) {

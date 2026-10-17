@@ -73,13 +73,16 @@ type ResolvedConfigValue struct {
 // vocabulary here prevents config set from accepting values that runtime wiring
 // would reject.
 const (
-	ToolsApprovalAsk   = "ask"
-	ToolsApprovalAuto  = "auto"
-	MemoryWriteAuto    = "auto"  // memory.write: writes take effect directly (default)
-	MemoryWriteOff     = "off"   // memory.write: the memory tool is read-only
-	MemoryTaintedAsk   = "ask"   // memory.write_tainted: tainted sessions ask (default; run refuses)
-	MemoryTaintedDeny  = "deny"  // memory.write_tainted: tainted sessions never write
-	MemoryTaintedAllow = "allow" // memory.write_tainted: tainted sessions write without asking
+	ToolsApprovalAsk         = "ask"
+	ToolsApprovalAuto        = "auto"
+	ChatAgentProgressSummary = "summary"
+	ChatAgentProgressFull    = "full"
+	ChatAgentProgressOff     = "off"
+	MemoryWriteAuto          = "auto"  // memory.write: writes take effect directly (default)
+	MemoryWriteOff           = "off"   // memory.write: the memory tool is read-only
+	MemoryTaintedAsk         = "ask"   // memory.write_tainted: tainted sessions ask (default; run refuses)
+	MemoryTaintedDeny        = "deny"  // memory.write_tainted: tainted sessions never write
+	MemoryTaintedAllow       = "allow" // memory.write_tainted: tainted sessions write without asking
 )
 
 var configKeyDescriptors = []ConfigKey{
@@ -109,6 +112,7 @@ var configKeyDescriptors = []ConfigKey{
 	{Pattern: "chat.history_size", Type: ConfigTypeInt, Writable: true, Reader: "chat"},
 	{Pattern: "chat.markdown", Type: ConfigTypeSwitch, Writable: true, Reader: "chat"},
 	{Pattern: "chat.spinner", Type: ConfigTypeSwitch, Writable: true, Reader: "chat"},
+	{Pattern: "chat.agent_progress", Type: ConfigTypeEnum, Writable: true, Reader: "chat"},
 	{Pattern: "chat.highlight_input", Type: ConfigTypeSwitch, Writable: true, Reader: "chat"},
 	{Pattern: "chat.steering", Type: ConfigTypeSwitch, Writable: true, Reader: "chat"},
 	{Pattern: "chat.terminal_title", Type: ConfigTypeSwitch, Writable: true, Reader: "chat"},
@@ -371,6 +375,8 @@ func parseConfigEnum(key, raw string) (string, error) {
 		allowed = []string{ProviderTypeOpenAI, ProviderTypeOpenAIResponses, ProviderTypeAnthropic}
 	case strings.HasSuffix(key, ".thinking"):
 		allowed = ThinkingLevels
+	case key == "chat.agent_progress":
+		allowed = []string{ChatAgentProgressSummary, ChatAgentProgressFull, ChatAgentProgressOff}
 	case key == "chat.notify":
 		allowed = []string{"auto", "bell", "osc9", "off"}
 	case key == "tools.deferred":
@@ -541,6 +547,7 @@ type ChatSettings struct {
 	History, Markdown, Spinner, HighlightInput bool
 	Steering, TerminalTitle, Diff              bool
 	AskOutsideDirs, UndoConfirm                bool
+	AgentProgress                              string
 	HistorySize, DiffLines                     int
 	Notify                                     string
 	NotifyAfter                                time.Duration
@@ -559,6 +566,10 @@ func ReadChatSettings() (ChatSettings, error) {
 	if err != nil {
 		return ChatSettings{}, err
 	}
+	agentProgress, err := ChatAgentProgress()
+	if err != nil {
+		return ChatSettings{}, err
+	}
 	notifyAfter, err := ChatNotifyAfter()
 	if err != nil {
 		return ChatSettings{}, err
@@ -568,7 +579,8 @@ func ReadChatSettings() (ChatSettings, error) {
 		HighlightInput: ChatHighlightInputEnabled(), Steering: ChatSteeringEnabled(),
 		TerminalTitle: ChatTerminalTitleEnabled(), Diff: ChatDiffEnabled(),
 		AskOutsideDirs: ChatAskOutsideDirs(), UndoConfirm: ChatUndoConfirmEnabled(),
-		HistorySize: historySize, DiffLines: diffLines, Notify: notify, NotifyAfter: notifyAfter,
+		AgentProgress: agentProgress,
+		HistorySize:   historySize, DiffLines: diffLines, Notify: notify, NotifyAfter: notifyAfter,
 	}, nil
 }
 
@@ -698,7 +710,7 @@ func effectiveConfigValue(key string) (any, bool, error) {
 			return settings.Every, true, nil
 		}
 		return settings.Keep, true, nil
-	case "chat.history", "chat.markdown", "chat.spinner", "chat.highlight_input", "chat.steering", "chat.terminal_title", "chat.diff", "chat.ask_outside_dirs", "chat.undo_confirm", "chat.history_size", "chat.diff_lines", "chat.notify", "chat.notify_after":
+	case "chat.history", "chat.markdown", "chat.spinner", "chat.highlight_input", "chat.steering", "chat.terminal_title", "chat.diff", "chat.ask_outside_dirs", "chat.undo_confirm", "chat.history_size", "chat.diff_lines", "chat.notify", "chat.notify_after", "chat.agent_progress":
 		settings, err := ReadChatSettings()
 		if err != nil {
 			return nil, false, err
@@ -819,6 +831,8 @@ func chatSettingValue(key string, settings ChatSettings) any {
 		return settings.Markdown
 	case "chat.spinner":
 		return settings.Spinner
+	case "chat.agent_progress":
+		return settings.AgentProgress
 	case "chat.highlight_input":
 		return settings.HighlightInput
 	case "chat.steering":

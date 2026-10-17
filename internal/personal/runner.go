@@ -174,6 +174,15 @@ type Config struct {
 	DiffPreview bool
 }
 
+// AgentSummary is attached to an agent tool result so chat can report the
+// completed child without changing stream-json or ACP event payloads.
+type AgentSummary struct {
+	Description string
+	ToolCalls   int
+	Duration    time.Duration
+	Background  bool
+}
+
 // Event is one transport-neutral lifecycle or model-stream update.
 type Event struct {
 	Kind      string
@@ -201,9 +210,11 @@ type Event struct {
 	// Retry is set on "retry" events: a model request failed for a transient
 	// reason and is retried after Wait; Text is the reason.
 	Retry *RetryInfo
-	// Agent is set on "agent_progress" events (a sub-agent's tool call,
-	// ToolName and Text as on "tool_call"): the sub-agent's description.
+	// Agent is set on "agent_progress" events (a sub-agent's tool call): the
+	// sub-agent's description.
 	Agent string
+	// AgentSummary is set on the completed "agent" tool result.
+	AgentSummary *AgentSummary
 	// SteerID and SteerSource are set on "steer_delivered" and "steer_returned"
 	// events - Text is the steer's text: the id and the source ("keyboard",
 	// "send:<from>") of the message the event is about.
@@ -865,8 +876,43 @@ func (h toolEventHook) AfterTool(ctx context.Context, event *agentcore.ToolEvent
 	if event == nil || event.Result == nil {
 		return nil
 	}
-	h.publish(ctx, Event{Kind: "tool_result", ToolName: event.Result.Name, Text: event.Result.Content, IsError: event.Result.IsError})
+	resultEvent := Event{Kind: "tool_result", ToolName: event.Result.Name, Text: event.Result.Content, IsError: event.Result.IsError}
+	if event.Result.Name == "agent" {
+		resultEvent.AgentSummary = agentSummary(event.Result.Metadata)
+	}
+	h.publish(ctx, resultEvent)
 	return nil
+}
+
+func agentSummary(metadata map[string]any) *AgentSummary {
+	if metadata == nil {
+		return nil
+	}
+	description, _ := metadata["description"].(string)
+	calls := metadataInt(metadata["tool_calls"])
+	duration := time.Duration(metadataInt64(metadata["duration_ms"])) * time.Millisecond
+	background, _ := metadata["background"].(bool)
+	if description == "" && calls == 0 && duration == 0 && !background {
+		return nil
+	}
+	return &AgentSummary{Description: description, ToolCalls: calls, Duration: duration, Background: background}
+}
+
+func metadataInt(value any) int {
+	return int(metadataInt64(value))
+}
+
+func metadataInt64(value any) int64 {
+	switch n := value.(type) {
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	case float64:
+		return int64(n)
+	default:
+		return 0
+	}
 }
 
 // toolArgSummary renders call arguments as compact JSON, redacted and truncated.
