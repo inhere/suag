@@ -9,6 +9,7 @@ import (
 
 	gkconfig "github.com/gookit/config/v2"
 
+	axconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/pkg/agentcore/memory"
 	"github.com/inhere/suga/pkg/agentcore/redact"
@@ -20,14 +21,14 @@ import (
 // session (memory.Policy.Confirm). It receives the op before sanitizing.
 type MemoryConfirmFunc func(ctx context.Context, s memory.Scope, op memory.Op) error
 
-// memory.write and memory.write_tainted values (design D7).
+// memory.write and memory.write_tainted values (design D7) are shared with
+// the config registry so command validation and runtime parsing cannot drift.
 const (
-	memoryWriteAuto = "auto" // writes take effect directly (default)
-	memoryWriteOff  = "off"  // the memory tool is read-only
-
-	memoryTaintedAsk   = "ask"   // tainted sessions ask (default; run refuses)
-	memoryTaintedDeny  = "deny"  // tainted sessions never write
-	memoryTaintedAllow = "allow" // tainted sessions write without asking
+	memoryWriteAuto    = axconfig.MemoryWriteAuto
+	memoryWriteOff     = axconfig.MemoryWriteOff
+	memoryTaintedAsk   = axconfig.MemoryTaintedAsk
+	memoryTaintedDeny  = axconfig.MemoryTaintedDeny
+	memoryTaintedAllow = axconfig.MemoryTaintedAllow
 )
 
 // memoryWritePolicy is memory.write / memory.write_tainted.

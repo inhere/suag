@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
@@ -383,7 +382,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	modelOptions, modelSpecs, err := configuredModelOptions()
+	modelOptions, modelSpecs, err := configuredModelOptions(opts.Model)
 	if err != nil {
 		return nil, err
 	}
@@ -711,36 +710,32 @@ func estimateOptionsForBudget(tokens int, costUSD float64, mode string, factor f
 	return personal.EstimateOptions{Mode: mode, Factor: factor}
 }
 
-// configuredModelOptions lists only providers.<id>.models keys: :model is
-// intentionally strict, so a typo is caught before the next model request.
-func configuredModelOptions() ([]ModelOption, map[string]appconfig.ModelSpec, error) {
+// configuredModelOptions uses the same canonical catalog projection as the
+// offline models command. Runtime-only details such as provider specs and
+// output limits are attached after the projection has fixed ref order. The
+// model flag is included so an explicit current model is also selectable and
+// receives the same current marker in chat.
+func configuredModelOptions(model string) ([]ModelOption, map[string]appconfig.ModelSpec, error) {
 	providers, err := appconfig.ReadProviders()
 	if err != nil {
 		return nil, nil, err
 	}
-	ids := make([]string, 0, len(providers))
-	for id := range providers {
-		ids = append(ids, id)
+	settings, err := appconfig.ReadModelSettings(model)
+	if err != nil {
+		return nil, nil, err
 	}
-	sort.Strings(ids)
-	var options []ModelOption
-	specs := make(map[string]appconfig.ModelSpec)
-	for _, id := range ids {
-		keys := make([]string, 0, len(providers[id].Models))
-		for key := range providers[id].Models {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			ref := id + "/" + key
-			spec, err := appconfig.ResolveModel(ref, providers, "")
-			if err != nil {
-				return nil, nil, err
-			}
-			specs[ref] = spec
-			options = append(options, ModelOption{Provider: id, Model: key, Thinking: spec.ThinkingLevel(),
-				ContextWindow: appconfig.ContextWindowFor(spec), MaxOutputTokens: appconfig.MaxOutputTokensFor(spec)})
-		}
+	switchable, err := appconfig.SwitchableModelSpecs(providers, settings)
+	if err != nil {
+		return nil, nil, err
+	}
+	options := make([]ModelOption, 0, len(switchable))
+	specs := make(map[string]appconfig.ModelSpec, len(switchable))
+	for _, spec := range switchable {
+		ref := spec.Ref()
+		specs[ref] = spec
+		options = append(options, ModelOption{Provider: spec.Provider.ID, Model: spec.Model,
+			Thinking: spec.ThinkingLevel(), ContextWindow: appconfig.ContextWindowFor(spec),
+			MaxOutputTokens: appconfig.MaxOutputTokensFor(spec)})
 	}
 	return options, specs, nil
 }

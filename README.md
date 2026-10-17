@@ -31,23 +31,19 @@ Suga is a personal coding agent written in Go. One persistent conversation engin
 
 ## Quick start
 
-Create `~/.suga/config.yaml` (see [config/config.yaml](config/config.yaml) for every field):
-
-```yaml
-model: deepseek/deepseek-chat   # <provider>/<model>
-# providers: openai, anthropic and deepseek are built in and read
-# OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY.
-tools:
-  allow_write: true             # let chat write files and run commands (asks first)
-```
+Details: [references/config.md](skills/suga-guide/references/config.md) (onboarding and configuration commands, Chinese)
 
 ```bash
+suga init                                         # create ~/.suga, a commented config.yaml and a comment-only .env (existing files are kept)
+# put keys in ~/.suga/.env, e.g. DEEPSEEK_API_KEY=... (built-in providers: openai / anthropic / deepseek)
+suga config set model deepseek/deepseek-chat      # pick a model (<provider>/<model>); secrets cannot be set this way
+suga config set tools.allow_write true            # let chat write files and run commands (it asks first)
+suga models                                       # list usable models offline; suga config get <key> shows value and source
 suga chat                                         # interactive chat in the current directory
-suga run --prompt "Summarize this project"        # one turn, read-only
-suga run --allow-write --prompt "Fix the failing test"
-suga run --resume <session-id> --prompt "Continue"
-suga run --max-steps 30 --prompt "Long task"      # this turn's step limit (default max_steps: 240)
 ```
+
+- One turn: `suga run --prompt "Summarize this project"` (read-only), `suga run --allow-write --prompt "Fix the failing test"`, `suga run --resume <session-id> --prompt "Continue"`; `--max-steps` caps the turn's steps (default 240).
+- [config/config.yaml](config/config.yaml) lists every field; `suga manifest` reports the full effective capabilities.
 
 ## Chat
 
@@ -65,7 +61,9 @@ Details: [references/chat.md](skills/suga-guide/references/chat.md) (Chinese)
 Details: [references/config.md](skills/suga-guide/references/config.md) (every key and default), [references/providers.md](skills/suga-guide/references/providers.md) (providers and models) (Chinese)
 
 - Only `$SUGA_HOME/config.yaml` and `$SUGA_HOME/.env` are read (default `~/.suga`), never the working directory's; `SUGA_CONFIG` names a single config file.
-- Put keys in `$SUGA_HOME/.env` (e.g. `BAILIAN_API_KEY=...`); `${VAR}` in the config expands from there or the process environment.
+- `suga init` is safe to repeat; `suga init --force` backs up and replaces only the home config. It never writes `.env` values, and refuses to bypass an explicit `SUGA_CONFIG`.
+- `suga config get|set|unset|list|path` shows effective values and sources, preserves YAML comments, and rejects secret keys in YAML; put credentials in `.env` and reference them as `${VAR}`.
+- `suga models [--json]` is an offline view of local providers and model references. It does not replace `suga manifest` or chat's session-local `:model` switch.
 - `model` is `<provider>/<model>`, precedence `--model` > `SUGA_MODEL` > config; `fallback_models` are tried in order, `compact_model` writes summaries.
 - `providers.<id>`: `type` (`openai`, `openai-responses`, `anthropic`), `base_url`, `api_key`, `headers`, plus per-model `context_window`, `max_output_tokens`, `model_id`, `price`, `thinking`.
 - Common switches: `tools.allow_write`, `tools.approval`, `mcp.servers`, `memory.*`, `hooks.*`, `chat.*`, `skills.*`, `workspace`.

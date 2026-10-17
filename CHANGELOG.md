@@ -4,6 +4,12 @@
 
 ## [未发布]
 
+### 新增
+
+- 上手：首次运行（或显式 `suga init`）创建 `~/.suga`、带注释的 `config.yaml` 和只含使用说明注释的 `.env`；已有文件不覆盖，`suga init --force` 先备份 `config.yaml` 再重写、从不改 `.env`；`version`/`--help` 不写任何文件，首次初始化提示只写 stderr（issue suga-3ck6）。
+- `suga config get|set|unset|list|path`：显示生效值与来源（配置文件 / 环境变量 / 默认），`set`/`unset` 保留 YAML 注释与键顺序、按运行时的类型与取值校验、原子写回并保留一份 `config.yaml.bak`，拒绝把密钥写进 `config.yaml`（提示改放 `.env`）（issue suga-qkoe）。
+- `suga models [--json]`：离线列出内置与自定义 provider 的模型，标出当前、compact 与 fallback，给出 chat `:model` 的可切换范围（与 `:model` 候选同源）（issue suga-iai8）。
+
 ### 变更
 
 - `suga_manifest` 工具移至 suga 应用层 wiring；对用户与模型的行为保持不变。

@@ -30,3 +30,33 @@ func TestExitReportInterrupted(t *testing.T) {
 	assert.Eq(t, "session not found: x", msg)
 	assert.Eq(t, 4, code)
 }
+
+func TestBootstrapExemptRecognizesVersionAndHelp(t *testing.T) {
+	cases := map[string]struct {
+		args []string
+		want bool
+	}{
+		"version":           {args: []string{"version"}, want: true},
+		"bare config group": {args: []string{"config"}, want: true},
+		"config subcommand": {args: []string{"config", "path"}, want: false},
+		"version args":      {args: []string{"version", "extra"}, want: true},
+		"short version":     {args: []string{"-V"}, want: true},
+		"root help":         {args: []string{"--help"}, want: true},
+		"help command":      {args: []string{"help"}, want: true},
+		"command help":      {args: []string{"run", "--help"}, want: true},
+		"after delimiter":   {args: []string{"send", "--", "--help"}, want: false},
+		"chat":              {args: []string{"chat"}, want: false},
+		"default chat":      {args: []string{}, want: false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			assert.Eq(t, tc.want, bootstrapExempt(tc.args))
+		})
+	}
+}
+
+func TestIsInitCommandOnlyMatchesTopLevelInit(t *testing.T) {
+	assert.True(t, isInitCommand([]string{"init"}))
+	assert.False(t, isInitCommand([]string{"run", "init"}))
+	assert.False(t, isInitCommand(nil))
+}

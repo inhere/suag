@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -288,6 +289,57 @@ func TestBudgetWrapsEveryPoolMemberBeforeObservation(t *testing.T) {
 	chooser, hasChooser := provider.(agentcore.ToolChooser)
 	assert.Require(t, assert.True(t, hasChooser))
 	assert.True(t, chooser.SupportsToolChoice())
+}
+
+func TestConfiguredModelOptionsFollowOfflineCatalogOrder(t *testing.T) {
+	resetConfig(t)
+	assert.NoErr(t, gkconfig.Set("model", "proxy/primary"))
+	assert.NoErr(t, gkconfig.Set("compact_model", "proxy/compact"))
+	assert.NoErr(t, gkconfig.Set("fallback_models", []string{"deepseek/reasoner"}))
+	setProviders(t, map[string]any{"proxy": map[string]any{
+		"type": "openai", "base_url": "http://127.0.0.1:1/v1",
+		"models": map[string]any{
+			"compact": map[string]any{"context_window": 64000},
+			"primary": map[string]any{"context_window": 128000},
+		},
+	}})
+
+	providers, err := appconfig.ReadProviders()
+	assert.Require(t, assert.NoErr(t, err))
+	settings, err := appconfig.ReadModelSettings("")
+	assert.Require(t, assert.NoErr(t, err))
+	catalog := appconfig.BuildModelCatalog(providers, settings)
+	options, specs, err := configuredModelOptions("")
+	assert.Require(t, assert.NoErr(t, err))
+
+	refs := make([]string, 0, len(options))
+	for _, option := range options {
+		refs = append(refs, option.Ref())
+	}
+	assert.Eq(t, catalog.Switchable, refs)
+	assert.Eq(t, catalog.Switchable, sortedSpecRefs(specs))
+
+	t.Run("explicit model is included", func(t *testing.T) {
+		explicitSettings, err := appconfig.ReadModelSettings("deepseek/reasoner")
+		assert.Require(t, assert.NoErr(t, err))
+		explicitCatalog := appconfig.BuildModelCatalog(providers, explicitSettings)
+		explicitOptions, _, err := configuredModelOptions("deepseek/reasoner")
+		assert.Require(t, assert.NoErr(t, err))
+		explicitRefs := make([]string, 0, len(explicitOptions))
+		for _, option := range explicitOptions {
+			explicitRefs = append(explicitRefs, option.Ref())
+		}
+		assert.Eq(t, explicitCatalog.Switchable, explicitRefs)
+	})
+}
+
+func sortedSpecRefs(specs map[string]appconfig.ModelSpec) []string {
+	refs := make([]string, 0, len(specs))
+	for ref := range specs {
+		refs = append(refs, ref)
+	}
+	sort.Strings(refs)
+	return refs
 }
 
 func TestBudgetEstimatorRemainsOffWithoutLimits(t *testing.T) {

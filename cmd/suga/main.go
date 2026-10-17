@@ -25,14 +25,25 @@ func main() {
 	if len(args) == 0 {
 		args = []string{"chat"}
 	}
-	// Version must remain available even when a user's model config is invalid.
-	if len(args) != 1 || (args[0] != "version" && args[0] != "--version" && args[0] != "-V") {
+	// Version and help are pure queries: neither may create the user's home.
+	if !bootstrapExempt(args) && !isInitCommand(args) {
+		result, err := appconfig.EnsureHome(appconfig.BootstrapOptions{})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "initialize suga home:", err)
+			os.Exit(cli.ExitCode(err))
+		}
+		if err := appconfig.WriteBootstrapNotice(os.Stderr, result); err != nil {
+			fmt.Fprintln(os.Stderr, "write initialization notice:", err)
+			os.Exit(1)
+		}
 		if err := appconfig.Load(); err != nil {
 			fmt.Fprintln(os.Stderr, "load config:", err)
 			os.Exit(1)
 		}
 	}
-	wiring.SetupLogging()
+	if !bootstrapExempt(args) && !isInitCommand(args) {
+		wiring.SetupLogging()
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	if err := cli.New(ctx, os.Stdin, os.Stdout, os.Stderr, cli.Build{Version: Version, VersionLine: formatVersion(Version, GitCommit)}).RunWithArgs(args); err != nil {
@@ -40,6 +51,29 @@ func main() {
 		fmt.Fprintln(os.Stderr, msg)
 		os.Exit(code)
 	}
+}
+
+func bootstrapExempt(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if arg == "--help" || arg == "-h" {
+			return true
+		}
+	}
+	// A command group without a subcommand only prints its help (suga config).
+	if len(args) == 1 && args[0] == "config" {
+		return true
+	}
+	return args[0] == "help" || args[0] == "version" || args[0] == "--version" || args[0] == "-V"
+}
+
+func isInitCommand(args []string) bool {
+	return len(args) > 0 && args[0] == "init"
 }
 
 // exitReport turns the command error into the stderr line and exit code. An

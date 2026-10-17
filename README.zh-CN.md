@@ -31,23 +31,19 @@ Suga 是用 Go 写的个人编码 Agent。同一个持久会话引擎提供两�
 
 ## 快速开始
 
-创建 `~/.suga/config.yaml`（全部字段见 [config/config.yaml](config/config.yaml)）：
-
-```yaml
-model: deepseek/deepseek-chat   # <provider>/<model>
-# openai、anthropic、deepseek 是内置 provider，分别读取
-# OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY
-tools:
-  allow_write: true             # 允许 chat 写文件、执行命令（执行前会询问）
-```
+详细说明：[references/config.md](skills/suga-guide/references/config.md)（上手与配置命令）
 
 ```bash
+suga init                                         # 创建 ~/.suga、带注释的 config.yaml 与只含注释的 .env（已有文件不覆盖）
+# 在 ~/.suga/.env 填密钥，例如 DEEPSEEK_API_KEY=...（内置 provider：openai / anthropic / deepseek）
+suga config set model deepseek/deepseek-chat      # 选模型（<provider>/<model>）；密钥不能用 config set 写
+suga config set tools.allow_write true            # 允许 chat 写文件、执行命令（执行前会询问）
+suga models                                       # 离线查看可用模型；suga config get <key> 看生效值与来源
 suga chat                                         # 在当前目录开启交互式对话
-suga run --prompt "概括一下这个项目"               # 单轮，只读
-suga run --allow-write --prompt "修好失败的测试"
-suga run --resume <session-id> --prompt "继续"
-suga run --max-steps 30 --prompt "长任务"         # 本轮步数上限（默认 max_steps: 240）
 ```
+
+- 单轮：`suga run --prompt "概括一下这个项目"`（只读）、`suga run --allow-write --prompt "修好失败的测试"`、`suga run --resume <session-id> --prompt "继续"`；`--max-steps` 限制本轮步数（默认 240）。
+- 完整字段样例见 [config/config.yaml](config/config.yaml)；`suga manifest` 显示完整的生效能力。
 
 ## Chat
 
@@ -65,7 +61,9 @@ suga run --max-steps 30 --prompt "长任务"         # 本轮步数上限（默�
 详细说明：[references/config.md](skills/suga-guide/references/config.md)（全部键与默认值）、[references/providers.md](skills/suga-guide/references/providers.md)（provider 与模型）
 
 - 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`），工作目录下的配置不会被读取；`SUGA_CONFIG` 可指定唯一配置文件。
-- 密钥写进 `$SUGA_HOME/.env`（如 `BAILIAN_API_KEY=...`），配置里的 `${VAR}` 从这里或进程环境展开。
+- `suga init` 可安全重复执行；`suga init --force` 只备份并替换 home 配置，绝不写入 `.env` 值，也不会绕过显式 `SUGA_CONFIG` 保护。
+- `suga config get|set|unset|list|path` 显示生效值与来源、保留 YAML 注释，并拒绝把密钥写入 YAML；密钥放进 `.env`，配置用 `${VAR}` 引用。
+- `suga models [--json]` 只离线查看本地 provider 和模型引用，不替代 `suga manifest` 或 chat 会话级的 `:model` 切换。
 - `model` 为 `<provider>/<model>`，优先级 `--model` > `SUGA_MODEL` > 配置；`fallback_models` 依次备用，`compact_model` 生成摘要。
 - `providers.<id>`：`type`（`openai`、`openai-responses`、`anthropic`）、`base_url`、`api_key`、`headers`，以及模型级 `context_window`、`max_output_tokens`、`model_id`、`price`、`thinking`。
 - 常用开关：`tools.allow_write`、`tools.approval`、`mcp.servers`、`memory.*`、`hooks.*`、`chat.*`、`skills.*`、`workspace`。

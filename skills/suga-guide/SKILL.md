@@ -17,39 +17,36 @@ description: suga 的安装、配置与使用向导——首次配置（SUGA_HOM
 
 ## 首次配置向导（按顺序做）
 
-### 1. 确定 `SUGA_HOME`
+### 1. 确定 `SUGA_HOME` 并初始化
 
-- 默认 `~/.suga`。要换位置就在启动 suga 的环境里设 `SUGA_HOME`（配置、会话库、记忆、释放的 skills 全跟着走）。
-- 目录由 suga 自己创建，通常只要保证父目录存在（`~/.suga` 需要时 `mkdir -p`）。
-- 目录布局：`config.yaml`、`.env`、`db/sessions.db`（会话库）、`sessions/`（外置的工具输出）、`memory/user/`、`projects/`、`trash/`、`run/`（chat 进程登记）、`skills/`（本 skill 与用户自己的 skills）、`AGENTS.md`（用户级规则）。
+- 默认 `~/.suga`。要换位置，先在启动 suga 的环境里设 `SUGA_HOME`；配置、会话库、记忆、释放的 skills 全跟着走。
+- 运行 `suga init`。它会按需创建 home、带注释的 `config.yaml` 和只含说明注释的 `.env`；已有文件永不覆盖。`suga init --force` 只备份并替换 home 的 `config.yaml`，`.env` 在任何情况下都不改。
+- `version`、`--version` 和帮助命令是纯查询，不会创建 home 或文件。首次运行 `chat`、`run`、`acp`、`config`、`models` 等需配置的命令也会执行同一初始化门控。
 
-### 2. 写 `$SUGA_HOME/config.yaml`
+### 2. 检查路径并编辑配置
 
-最小可用（用内置预设 provider）：
-
-```yaml
-model: deepseek/deepseek-chat      # <provider>/<model>
+```bash
+suga config path
+suga config get model
+suga models
 ```
 
-自建 / 网关 provider（最常见）：
+- 在 `$SUGA_HOME/.env` 中自己填写 provider 密钥和私有地址；自动生成的文件只有注释，suga 不会替你写入任何值。配置里的 `${VAR}` 引用 `.env` 或进程环境。
+- 用 `suga config set <key> <value>`、`unset <key>` 修改已支持的非密钥键；`get`/`list` 显示生效值、来源并遮罩敏感值，`path` 显示 home、配置、`.env` 和当前来源。
+- `SUGA_CONFIG` 指向外部配置时，`config` 命令写该文件，`init --force` 拒绝覆盖它；缺失的显式文件不会被另建 home 配置。Windows 路径按当前 shell 的原生分隔符显示。
+- 需要手工配置时，参考仓库的 [最小上手模板](../../config/onboarding.yaml) 和 [完整字段样例](../../config/config.yaml)，不要把密钥提交到版本库。
+
+### 3. 写 `$SUGA_HOME/config.yaml`（无二进制时的手工备选）
+
+如果无法运行 `suga init`，可以手工创建最小配置：
 
 ```yaml
-model: bailian/glm-5
-providers:
-  bailian:
-    type: openai                   # openai | openai-responses | anthropic
-    base_url: "${BAILIAN_BASE_URL}"
-    api_key: "${BAILIAN_API_KEY}"
+model: deepseek/deepseek-chat
 ```
 
-要点：
+完整字段和 provider 选项见 `references/config.md` 与 `references/providers.md`；正常情况下优先让 `suga init` 生成模板，避免复制过时的完整样例。
 
-- `model` 写成 `<provider>/<model>`，只按**第一个** `/` 切分；前缀必须是内置预设（`openai`、`anthropic`、`deepseek`）或 `providers:` 下定义的 id。前缀不是已定义 provider 时，整串被当成模型名。
-- 内置预设的默认地址与密钥变量：`openai` → `https://api.openai.com/v1` / `OPENAI_API_KEY`；`anthropic` → `https://api.anthropic.com` / `ANTHROPIC_API_KEY`；`deepseek` → `https://api.deepseek.com/v1` / `DEEPSEEK_API_KEY`。同 id 的 `providers.<id>` 逐字段覆盖预设。
-- `base_url` 不要自己补路径：`openai` 类型会补 `/chat/completions`，`anthropic` 类型会补 `/v1/messages`（`base_url` 已以 `/v1` 结尾时补 `/messages`）。
-- 先向用户确认：用哪家、模型 id、base_url、密钥变量叫什么名字。**模型名要问清楚，不要猜**（写错模型名只有请求失败时才发现）。
-
-### 3. 密钥写进 `$SUGA_HOME/.env`
+### 4. 密钥写进 `$SUGA_HOME/.env`
 
 ```dotenv
 BAILIAN_API_KEY=<密钥>
@@ -60,7 +57,7 @@ BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 - 参看「铁律」：不在对话里回显密钥值；可以让用户自己粘进文件。
 - 也可以不用 `.env`，改为在启动 suga 的进程环境里设这些变量（Gofer server 场景常用）。
 
-### 4. 验证
+### 5. 验证
 
 ```bash
 suga run --prompt "只回答 ok 两个字"     # 单轮，只读
@@ -69,7 +66,7 @@ suga manifest                            # 生效的模型、工具、skills、�
 
 第一条能正常回话即配置完成。想确认发出去的模型 id、思考档位，用 `suga manifest`（主模型一行显示实际发送的 id）。
 
-### 5. 常见报错怎么处理
+### 6. 常见报错怎么处理
 
 | 报错 / 现象 | 原因与处理 |
 |---|---|
