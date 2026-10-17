@@ -410,7 +410,7 @@ func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *Ge
 			return nil, wrapProviderError(err)
 		}
 		if attempt >= emptyResultRetries {
-			if allowEmptyFinal {
+			if allowEmptyFinal && result != nil {
 				if result.Metadata == nil {
 					result.Metadata = map[string]any{}
 				}
