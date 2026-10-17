@@ -23,7 +23,7 @@
            agentcore/schedule     进程内定时：After/Every/Idle，只依赖标准库
            agentcore/tasks        后台任务：起命令或函数、读输出、等待、结束（按会话限额，结束通知交宿主）
            agentcore/tools        注册表、审批层、延迟加载（visibility）、输出治理（Output/Spiller）、工具元数据
-           agentcore/tools/native 内置工具：文件读写/搜索、shell、web、update_plan、tool_search、skill、memory、session_search、recall、suga_manifest
+           agentcore/tools/native 内置工具：文件读写/搜索、shell、web、update_plan、tool_search、skill、memory、session_search、recall
            agentcore/tools/mcp    stdio MCP 客户端，工具以 MCP kind 注册
            agentcore/skills       SKILL.md 解析、多根目录加载与检索
            agentcore/memory       长期记忆：Store 接口、Governed 治理层、Router 范围路由；memory/files、memory/execstore 两个内置后端

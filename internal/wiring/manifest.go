@@ -383,7 +383,7 @@ func loadManifest(opts ManifestOptions) (Manifest, manifestParts, error) {
 	if skillReg.Len() > 0 {
 		reg.Register(native.NewSkillTool(skillReg, st.spillBytes))
 	}
-	reg.Register(native.NewManifestTool(nil))
+	reg.Register(NewManifestTool(nil))
 
 	m := BuildManifest(ManifestInput{
 		Version: buildVersion, Settings: st.models, Registry: reg,

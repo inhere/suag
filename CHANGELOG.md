@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 变更
+
+- `suga_manifest` 工具移至 suga 应用层 wiring；对用户与模型的行为保持不变。
+
 ## [0.27.1] - 2026-10-17
 
 修复 Windows 上工作区路径含短名（如 `RUNNER~1`、`PROGRA~1`）时审批规则的 allow 全部失效（v0.27.0 的 Windows CI 因此失败）。

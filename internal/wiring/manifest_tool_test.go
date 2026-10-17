@@ -1,4 +1,4 @@
-package native
+package wiring
 
 import (
 	"context"

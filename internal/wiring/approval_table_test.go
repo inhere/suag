@@ -88,7 +88,7 @@ func approvalRows() []approvalRow {
 		wired("skill", func(*testing.T) agentcore.Tool { return native.NewSkillTool(skills.NewRegistry(), 0) }),
 		wired("session_search", func(*testing.T) agentcore.Tool { return native.NewSessionSearchTool(personal.NewLedger("")) }),
 		wired("recall", func(*testing.T) agentcore.Tool { return native.NewRecallTool(personal.NewLedger(""), 0) }),
-		wired("suga_manifest", func(*testing.T) agentcore.Tool { return native.NewManifestTool(nil) }),
+		wired("suga_manifest", func(*testing.T) agentcore.Tool { return NewManifestTool(nil) }),
 		// A native tool added later is asked about by default.
 		{name: "future_tool", tool: func(*testing.T) agentcore.Tool { return &nativeStubTool{name: "future_tool"} },
 			chatAsk: "ask", chatAuto: "run", chatAlwaysAsks: 1, cliRun: "run", cliReadOnly: "run", readOnlyRegistered: "-"},
