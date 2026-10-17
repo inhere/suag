@@ -297,6 +297,17 @@ func WriteBootstrapNotice(w io.Writer, result BootstrapResult) error {
 		_, err := fmt.Fprintf(w, "已创建 suga .env：%s；当前配置来自 SUGA_CONFIG，未写入 home config\n", result.Env)
 		return err
 	}
-	_, err := fmt.Fprintf(w, "已初始化 suga 配置：config=%s，env=%s；请编辑 config.yaml，并按 .env 注释填写变量\n", result.Config, result.Env)
-	return err
+	// Name only what this run created: a home that already had config.yaml and
+	// only got its .env must not read as a fresh configuration.
+	switch {
+	case result.CreatedConfig && result.CreatedEnv:
+		_, err := fmt.Fprintf(w, "已初始化 suga 配置：config=%s，env=%s；请编辑 config.yaml，并按 .env 注释填写变量\n", result.Config, result.Env)
+		return err
+	case result.CreatedConfig:
+		_, err := fmt.Fprintf(w, "已创建 suga 配置：%s；请编辑 config.yaml\n", result.Config)
+		return err
+	default:
+		_, err := fmt.Fprintf(w, "已创建 suga .env：%s；按其中注释填写变量\n", result.Env)
+		return err
+	}
 }

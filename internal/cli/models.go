@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/gookit/goutil/cflag/capp"
 	appconfig "github.com/inhere/suga/internal/config"
@@ -43,45 +44,48 @@ func newModelsCommand(stdout, stderr io.Writer) *capp.Cmd {
 
 func writeModelsText(out io.Writer, catalog appconfig.ModelCatalog) error {
 	var b strings.Builder
-	b.WriteString("Providers (offline)\n")
+	// Columns are aligned with a tabwriter: provider ids and model refs vary in
+	// length, so fixed padding would misalign them.
+	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "Providers (offline)")
 	for _, provider := range catalog.Providers {
 		if provider.Kind == "preset" && len(provider.ModelIDs) == 0 {
-			fmt.Fprintf(&b, "  %s       preset; model ids are user-specified\n", provider.ID)
+			fmt.Fprintf(tw, "  %s\tpreset; model ids are user-specified\n", provider.ID)
 			continue
 		}
-		if provider.Kind == "custom" {
-			fmt.Fprintf(&b, "  %s       custom; %d configured models", provider.ID, len(provider.ModelIDs))
-		} else {
-			fmt.Fprintf(&b, "  %s       preset; %d configured models", provider.ID, len(provider.ModelIDs))
-		}
+		fmt.Fprintf(tw, "  %s\t%s; %d configured models", provider.ID, provider.Kind, len(provider.ModelIDs))
 		if len(provider.ModelIDs) > 0 {
-			fmt.Fprintf(&b, "; model_ids=%s", strings.Join(provider.ModelIDs, ", "))
+			fmt.Fprintf(tw, "; model_ids=%s", strings.Join(provider.ModelIDs, ", "))
 		}
-		b.WriteByte('\n')
+		fmt.Fprintln(tw)
 	}
+	_ = tw.Flush()
 
 	b.WriteString("\nModels\n")
 	if len(catalog.Models) == 0 {
 		b.WriteString("  none\n")
 	} else {
+		tw = tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 		for _, model := range catalog.Models {
-			marker := "  "
+			marker := " "
 			if containsModelRole(model.Roles, "current") {
-				marker = "* "
+				marker = "*"
 			}
 			role := "configured"
 			if len(model.Roles) > 0 {
 				role = strings.Join(model.Roles, ",")
 			}
-			fmt.Fprintf(&b, "  %s%s  %-12s", marker, model.Ref, role)
+			var details []string
 			if model.ModelID != "" && model.ModelID != model.Model {
-				fmt.Fprintf(&b, " model_id=%s", model.ModelID)
+				details = append(details, "model_id="+model.ModelID)
 			}
 			if model.Type != "" {
-				fmt.Fprintf(&b, " type=%s", model.Type)
+				details = append(details, "type="+model.Type)
 			}
-			fmt.Fprintf(&b, " context=%d switch=%s\n", model.ContextWindow, yesNo(model.CanSwitch))
+			details = append(details, fmt.Sprintf("context=%d", model.ContextWindow), "switch="+yesNo(model.CanSwitch))
+			fmt.Fprintf(tw, "  %s %s\t%s\t%s\n", marker, model.Ref, role, strings.Join(details, " "))
 		}
+		_ = tw.Flush()
 	}
 	b.WriteString("\n:model switch range: ")
 	if len(catalog.Switchable) == 0 {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -32,7 +33,7 @@ providers:
 		err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"models"})
 		assert.NoErr(t, err)
 		assert.StrContains(t, stdout.String(), "Providers (offline)")
-		assert.StrContains(t, stdout.String(), "gateway       custom; 2 configured models")
+		assert.True(t, regexp.MustCompile(`(?m)^  gateway +custom; 2 configured models`).MatchString(stdout.String()))
 		assert.StrContains(t, stdout.String(), "* gateway/main")
 		assert.StrContains(t, stdout.String(), "fallback#1")
 		assert.StrContains(t, stdout.String(), ":model switch range: gateway/compact, gateway/main, openai/backup")
