@@ -4,8 +4,9 @@
 //
 // Two layouts are supported:
 //
-//   - DirLayout{Dir}: index <Dir>/MEMORY.md, entries <Dir>/<id>.md
-//     (user memory, ~/.suga/projects/<key>/memory).
+//   - DirLayout{Dir}: index <Dir>/MEMORY.md, entries <Dir>/<id>.md; used for
+//     user memory under <SUGA_HOME>/memory/user and for project memory without
+//     a repository MEMORY.md, under <SUGA_HOME>/projects/<key>/memory.
 //   - RepoLayout{Root}: index <Root>/MEMORY.md, entries
 //     <Root>/.suga/memory/<id>.md (project memory kept in the repository).
 //
