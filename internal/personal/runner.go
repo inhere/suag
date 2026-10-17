@@ -210,8 +210,8 @@ type Event struct {
 	// Retry is set on "retry" events: a model request failed for a transient
 	// reason and is retried after Wait; Text is the reason.
 	Retry *RetryInfo
-	// Agent is set on "agent_progress" events (a sub-agent's tool call): the
-	// sub-agent's description.
+	// Agent is set on "agent_progress" events (a sub-agent's tool call,
+	// ToolName and Text as on "tool_call"): the sub-agent's description.
 	Agent string
 	// AgentSummary is set on the completed "agent" tool result.
 	AgentSummary *AgentSummary

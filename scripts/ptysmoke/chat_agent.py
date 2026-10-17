@@ -64,13 +64,15 @@ def sync_scenario(s, binary, env, full=False):
     s.check("sync: agent call shown", s.until(r"⏺ agent", m))
     if full:
         s.check("sync full: sub-agent progress line", s.until(r"  · file_grep", m))
-    else:
-        s.check("sync summary: no per-call progress line", not s.contains(r"  · file_grep", m))
     if not full:
         # full keeps the old per-call lines and prints no summary line.
         s.check("sync summary: count and duration line", s.until(r"子 agent smoke survey：1 次工具调用，耗时", m))
     s.check("sync: report is the result", s.until(r"⎿ ok: SUBREPORT: SMOKE is in target\.txt", m))
     s.check("sync: turn ends", s.until(r"tokens · ", m))
+    if not full:
+        # Checked once the turn has ended: right after the agent call the
+        # sub-agent has not run its grep yet, so an early check proves nothing.
+        s.check("sync summary: no per-call progress line", not s.contains(r"  · file_grep", m))
     session = exit_chat(s)
     s.check("sync: session id", bool(session))
     events = trace_events(binary, env, session) if session else []
