@@ -11,6 +11,8 @@
 - 配置 registry 统一了已知键、动态 provider/model 路径、类型转换、来源归因与密钥脱敏，并通过现有 typed readers 复用配置校验。
 - `config.yaml` 的配置写回使用 AST 保留注释与键顺序，并以锁、备份、临时文件、原子替换和失败回滚保护用户原文。
 - 完成 `suga config get/set/unset/list/path`：显示生效值与来源、支持类型校验和环境覆盖，拒绝把密钥写入 YAML，并保留配置注释与最近备份。
+- 配置 registry 补齐 memory/hooks/tools 等参考键；简单标量、枚举和字符串列表可按运行时类型与范围校验后通过 `config set/unset` 维护，结构化值仍由 typed reader 保护。
+- 配置写锁统一移入 `$SUGA_HOME/run/locks/`，显式 `SUGA_CONFIG` 使用路径哈希锁名，避免在外部配置目录留下锁文件。
 
 ## [0.27.1] - 2026-10-17
 

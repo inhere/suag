@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/inhere/suga/pkg/agentcore/tools"
+
 	goccyyaml "github.com/goccy/go-yaml"
 	gkconfig "github.com/gookit/config/v2"
 )
@@ -67,8 +69,18 @@ type ResolvedConfigValue struct {
 	Sensitive  bool
 }
 
-// ConfigValue is the shorter public name used by config command consumers.
-type ConfigValue = ResolvedConfigValue
+// Shared values are also consumed by the runtime readers. Keeping the enum
+// vocabulary here prevents config set from accepting values that runtime wiring
+// would reject.
+const (
+	ToolsApprovalAsk   = "ask"
+	ToolsApprovalAuto  = "auto"
+	MemoryWriteAuto    = "auto"
+	MemoryWriteOff     = "off"
+	MemoryTaintedAsk   = "ask"
+	MemoryTaintedDeny  = "deny"
+	MemoryTaintedAllow = "allow"
+)
 
 var configKeyDescriptors = []ConfigKey{
 	{Pattern: "model", Type: ConfigTypeString, Writable: true, Reader: "model"},
@@ -118,46 +130,57 @@ var configKeyDescriptors = []ConfigKey{
 	{Pattern: "agents.max_tokens", Type: ConfigTypeInt, Writable: true, Reader: "agents"},
 	{Pattern: "agents.timeout", Type: ConfigTypeDuration, Writable: true, Reader: "agents"},
 	{Pattern: "mcp.call_timeout_sec", Type: ConfigTypeInt, Writable: true},
-	{Pattern: "mcp.servers", Type: ConfigTypeYAML, Writable: true},
-	{Pattern: "tools.deferred", Type: ConfigTypeEnum, Writable: false},
-	{Pattern: "tools.allow_write", Type: ConfigTypeBool, Writable: false},
-	{Pattern: "tools.approval", Type: ConfigTypeEnum, Writable: false},
-	{Pattern: "tools.max_output_bytes", Type: ConfigTypeInt64, Writable: false},
-	{Pattern: "tools.max_spill_bytes", Type: ConfigTypeInt64, Writable: false},
-	{Pattern: "tools.read_page_bytes", Type: ConfigTypeInt, Writable: false},
-	{Pattern: "tools.parallel_reads", Type: ConfigTypeBool, Writable: false},
-	{Pattern: "tools.minimize_output", Type: ConfigTypeBool, Writable: false},
-	{Pattern: "tools.dependency_roots", Type: ConfigTypeBool, Writable: false},
-	{Pattern: "tools.standards_roots", Type: ConfigTypeBool, Writable: false},
-	{Pattern: "tools.shell", Type: ConfigTypeString, Writable: false},
-	{Pattern: "tools.shell_timeout_max", Type: ConfigTypeInt, Writable: false},
-	{Pattern: "tools.web_fetch.allow_private", Type: ConfigTypeBool, Writable: false},
-	{Pattern: "tools.web_fetch.proxy", Type: ConfigTypeString, Sensitive: true, Writable: false},
-	{Pattern: "tools.interpreters", Type: ConfigTypeStringList, Writable: false},
-	{Pattern: "memory.user.backend", Type: ConfigTypeString, Writable: false},
-	{Pattern: "memory.user.command", Type: ConfigTypeString, Writable: false},
-	{Pattern: "memory.user.args", Type: ConfigTypeStringList, Writable: false},
-	{Pattern: "memory.user.timeout_sec", Type: ConfigTypeInt, Writable: false},
-	{Pattern: "memory.project.backend", Type: ConfigTypeString, Writable: false},
-	{Pattern: "memory.project.command", Type: ConfigTypeString, Writable: false},
-	{Pattern: "memory.project.args", Type: ConfigTypeStringList, Writable: false},
-	{Pattern: "memory.project.timeout_sec", Type: ConfigTypeInt, Writable: false},
-	{Pattern: "skills.list_max", Type: ConfigTypeInt, Writable: false},
-	{Pattern: "skills.always_load", Type: ConfigTypeStringList, Writable: false},
-	{Pattern: "hooks.stop_background", Type: ConfigTypeBool, Writable: false},
-	{Pattern: "hooks.timeout_ms", Type: ConfigTypeInt, Writable: false},
-	{Pattern: "hooks.stop_wait_sec", Type: ConfigTypeInt, Writable: false},
-	{Pattern: "hooks.post_tool_use.name", Type: ConfigTypeString, Writable: false},
+	{Pattern: "mcp.servers", Type: ConfigTypeYAML, Writable: true, Reader: "mcp"},
+	{Pattern: "tools.deferred", Type: ConfigTypeEnum, Writable: true},
+	{Pattern: "tools.allow_write", Type: ConfigTypeBool, Writable: true},
+	{Pattern: "tools.approval", Type: ConfigTypeEnum, Writable: true},
+	{Pattern: "tools.max_output_bytes", Type: ConfigTypeInt64, Writable: true},
+	{Pattern: "tools.max_spill_bytes", Type: ConfigTypeInt64, Writable: true},
+	{Pattern: "tools.read_page_bytes", Type: ConfigTypeInt, Writable: true},
+	{Pattern: "tools.parallel_reads", Type: ConfigTypeBool, Writable: true},
+	{Pattern: "tools.minimize_output", Type: ConfigTypeBool, Writable: true},
+	{Pattern: "tools.dependency_roots", Type: ConfigTypeBool, Writable: true},
+	{Pattern: "tools.standards_roots", Type: ConfigTypeBool, Writable: true},
+	{Pattern: "tools.shell", Type: ConfigTypeString, Writable: true},
+	{Pattern: "tools.shell_timeout_max", Type: ConfigTypeInt, Writable: true},
+	{Pattern: "tools.web_fetch.allow_private", Type: ConfigTypeBool, Writable: true},
+	{Pattern: "tools.web_fetch.proxy", Type: ConfigTypeString, Sensitive: true},
+	{Pattern: "tools.interpreters", Type: ConfigTypeStringList, Writable: true},
+	{Pattern: "tools.read_roots", Type: ConfigTypeStringList, Writable: true},
+	{Pattern: "tools.auto_allow", Type: ConfigTypeStringList, Writable: true},
+	{Pattern: "tools.read_only_allow", Type: ConfigTypeStringList, Writable: true},
+	{Pattern: "memory.write", Type: ConfigTypeEnum, Writable: true},
+	{Pattern: "memory.write_tainted", Type: ConfigTypeEnum, Writable: true},
+	{Pattern: "memory.taint_tools", Type: ConfigTypeStringList, Writable: true},
+	{Pattern: "memory.taint_on_spill", Type: ConfigTypeStringList, Writable: true},
+	{Pattern: "memory.user.backend", Type: ConfigTypeEnum, Writable: true},
+	{Pattern: "memory.user.command", Type: ConfigTypeString, Writable: true},
+	{Pattern: "memory.user.args", Type: ConfigTypeStringList, Writable: true},
+	{Pattern: "memory.user.timeout_sec", Type: ConfigTypeInt, Writable: true},
+	{Pattern: "memory.project.backend", Type: ConfigTypeEnum, Writable: true},
+	{Pattern: "memory.project.command", Type: ConfigTypeString, Writable: true},
+	{Pattern: "memory.project.args", Type: ConfigTypeStringList, Writable: true},
+	{Pattern: "memory.project.timeout_sec", Type: ConfigTypeInt, Writable: true},
+	{Pattern: "skills.list_max", Type: ConfigTypeInt, Writable: true},
+	{Pattern: "skills.always_load", Type: ConfigTypeStringList, Writable: true},
+	{Pattern: "hooks.command", Type: ConfigTypeStringList, Writable: true},
+	{Pattern: "hooks.timeout_ms", Type: ConfigTypeInt, Writable: true},
+	{Pattern: "hooks.stop_args", Type: ConfigTypeStringList, Writable: true},
+	{Pattern: "hooks.stop_wait_sec", Type: ConfigTypeInt, Writable: true},
+	{Pattern: "hooks.stop_background", Type: ConfigTypeBool, Writable: true},
+	{Pattern: "hooks.post_tool_use.tools", Type: ConfigTypeStringList, Writable: true},
+	{Pattern: "hooks.post_tool_use.name", Type: ConfigTypeString, Writable: true},
 	{Pattern: "tools.snapshots.enabled", Type: ConfigTypeBool, Writable: true, Reader: "snapshots"},
 	{Pattern: "tools.snapshots.max_file_bytes", Type: ConfigTypeInt64, Writable: true, Reader: "snapshots"},
 	{Pattern: "tools.snapshots.max_session_bytes", Type: ConfigTypeInt64, Writable: true, Reader: "snapshots"},
 	{Pattern: "tools.snapshots.max_global_bytes", Type: ConfigTypeInt64, Writable: true, Reader: "snapshots"},
 	{Pattern: "tools.snapshots.keep_turns", Type: ConfigTypeInt, Writable: true, Reader: "snapshots"},
-	{Pattern: "tools.snapshots.keep_days", Type: ConfigValueType("int"), Writable: true, Reader: "snapshots"},
+	{Pattern: "tools.snapshots.keep_days", Type: ConfigTypeInt, Writable: true, Reader: "snapshots"},
 	{Pattern: "tools.snapshots.on_error", Type: ConfigTypeEnum, Writable: true, Reader: "snapshots"},
 	{Pattern: "tools.approval_rules.enabled", Type: ConfigTypeBool, Writable: true, Reader: "approval_rules"},
 	{Pattern: "tools.approval_rules.always_prefix_tokens", Type: ConfigTypeInt, Writable: true, Reader: "approval_rules"},
 	{Pattern: "tools.approval_rules.persist_ask", Type: ConfigTypeBool, Writable: true, Reader: "approval_rules"},
+	{Pattern: "tools.approval_rules.project_trust", Type: ConfigTypeStringMap, Writable: true, Reader: "approval_rules"},
 }
 
 var (
@@ -237,6 +260,18 @@ func IsSecretKey(key string) bool {
 		}
 	}
 	return strings.Contains(strings.ToLower(key), "api_key")
+}
+
+// IsSimpleConfigType reports whether the registry can validate a value from its
+// scalar/list representation without a structured reader.
+func IsSimpleConfigType(valueType ConfigValueType) bool {
+	switch valueType {
+	case ConfigTypeString, ConfigTypeBool, ConfigTypeSwitch, ConfigTypeInt, ConfigTypeInt64,
+		ConfigTypeFloat, ConfigTypeDuration, ConfigTypeStringList, ConfigTypeEnum:
+		return true
+	default:
+		return false
+	}
 }
 
 // ParseConfigValue converts a command value according to the key descriptor.
@@ -335,9 +370,17 @@ func parseConfigEnum(key, raw string) (string, error) {
 	case key == "chat.notify":
 		allowed = []string{"auto", "bell", "osc9", "off"}
 	case key == "tools.deferred":
-		allowed = []string{"auto", "always", "never"}
+		allowed = []string{string(tools.DeferredAuto), string(tools.DeferredAlways), string(tools.DeferredNever)}
 	case key == "tools.approval":
-		allowed = []string{"ask", "auto"}
+		allowed = []string{ToolsApprovalAsk, ToolsApprovalAuto}
+	case key == "memory.write":
+		allowed = []string{MemoryWriteAuto, MemoryWriteOff}
+	case key == "memory.write_tainted":
+		allowed = []string{MemoryTaintedAsk, MemoryTaintedDeny, MemoryTaintedAllow}
+	case key == "memory.user.backend":
+		allowed = []string{"files", "exec"}
+	case key == "memory.project.backend":
+		allowed = []string{"files", "gofer", "exec"}
 	case strings.HasPrefix(key, "budget."):
 		switch key {
 		case "budget.scope":
@@ -360,18 +403,84 @@ func parseConfigEnum(key, raw string) (string, error) {
 	return "", fmt.Errorf("want one of %s", strings.Join(allowed, ", "))
 }
 
-// ValidateConfigKey dispatches validation to the existing typed reader for the
-// key. Keys without a reader deliberately return nil: they are not advertised
-// as semantically validated by this registry.
+// ValidateConfigKey dispatches validation to an existing typed reader. Simple
+// keys without a reader still get type/range/enum validation from the registry;
+// structured values remain rejected rather than gaining a second validator.
 func ValidateConfigKey(key string) error {
 	descriptor, err := MatchConfigKey(key)
 	if err != nil {
 		return err
 	}
 	if descriptor.Reader == "" {
-		return fmt.Errorf("%s has no typed reader; semantic validation is not available", key)
+		if !IsSimpleConfigType(descriptor.Type) {
+			return fmt.Errorf("%s has no typed reader; semantic validation is not available", key)
+		}
+		return validateSimpleConfigValue(key, descriptor)
 	}
 	return dispatchConfigReader(descriptor.Reader)
+}
+
+func validateSimpleConfigValue(key string, descriptor ConfigKey) error {
+	raw := gkconfig.Get(key)
+	if raw == nil {
+		return nil
+	}
+	switch descriptor.Type {
+	case ConfigTypeString:
+		if _, ok := raw.(string); !ok {
+			return fmt.Errorf("%s must be a string", key)
+		}
+	case ConfigTypeBool, ConfigTypeSwitch:
+		if _, ok := raw.(bool); !ok {
+			return fmt.Errorf("%s must be true or false", key)
+		}
+	case ConfigTypeInt, ConfigTypeInt64:
+		n, err := strconv.ParseInt(strings.TrimSpace(fmt.Sprint(raw)), 10, 64)
+		if err != nil {
+			return fmt.Errorf("%s must be a whole number", key)
+		}
+		if strings.HasSuffix(key, "timeout_sec") || strings.HasSuffix(key, "timeout_ms") ||
+			strings.HasSuffix(key, "max_bytes") || strings.HasSuffix(key, "max_output_bytes") ||
+			key == "mcp.call_timeout_sec" || key == "skills.list_max" {
+			if n < 1 {
+				return fmt.Errorf("%s must be a whole number >= 1", key)
+			}
+		}
+	case ConfigTypeFloat:
+		value, err := strconv.ParseFloat(strings.TrimSpace(fmt.Sprint(raw)), 64)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+			return fmt.Errorf("%s must be a number", key)
+		}
+	case ConfigTypeDuration:
+		if _, err := parseIdleDuration(strings.TrimSpace(fmt.Sprint(raw))); err != nil {
+			return fmt.Errorf("%s: %w", key, err)
+		}
+	case ConfigTypeStringList:
+		if !isStringList(raw) {
+			return fmt.Errorf("%s must be a list of strings", key)
+		}
+	case ConfigTypeEnum:
+		if _, err := parseConfigEnum(key, fmt.Sprint(raw)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isStringList(raw any) bool {
+	switch value := raw.(type) {
+	case []string:
+		return true
+	case []any:
+		for _, item := range value {
+			if _, ok := item.(string); !ok {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 func dispatchConfigReader(reader string) error {
@@ -403,6 +512,8 @@ func dispatchConfigReader(reader string) error {
 		_, err = ReadSnapshotSettings()
 	case "approval_rules":
 		_, err = ReadApprovalRulesSettings()
+	case "mcp":
+		_ = ReadMCPServerSettings()
 	case "rules":
 		_, err = ReadRuleFileName()
 	case "":

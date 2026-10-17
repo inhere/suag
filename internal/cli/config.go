@@ -159,7 +159,7 @@ func writableConfigKey(key string) (appconfig.ConfigKey, error) {
 	if !descriptor.Writable {
 		return appconfig.ConfigKey{}, configInputError(fmt.Sprintf("configuration key %q is read-only", key))
 	}
-	if descriptor.Reader == "" {
+	if !appconfig.IsSimpleConfigType(descriptor.Type) && descriptor.Reader == "" {
 		return appconfig.ConfigKey{}, configInputError(fmt.Sprintf("configuration key %q has no typed reader", key))
 	}
 	return descriptor, nil

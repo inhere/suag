@@ -1,6 +1,8 @@
 package axconfig
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -80,6 +82,33 @@ func UnsetConfigValue(path, key string, opts ConfigWriteOptions) (ConfigWriteRes
 	})
 }
 
+func configLockPath(path string) string {
+	home, err := ResolveSugaHome()
+	if err != nil {
+		return path + ".lock"
+	}
+	homeConfig := filepath.Join(home, "config.yaml")
+	lockName := "config.lock"
+	if filepath.Clean(path) != filepath.Clean(homeConfig) {
+		digest := sha256.Sum256([]byte(path))
+		lockName = "config-" + hex.EncodeToString(digest[:]) + ".lock"
+	}
+	lockDir := filepath.Join(home, "run", "locks")
+	// Direct library tests and callers may pass an isolated config without
+	// setting SUGA_HOME; keep those locks beside the isolated file, not in the
+	// user's default home. CLI calls always set or resolve the real home first.
+	if os.Getenv("SUGA_HOME") == "" && os.Getenv("SUGA_CONFIG") == "" && filepath.Clean(path) != filepath.Clean(homeConfig) {
+		lockDir = filepath.Join(filepath.Dir(path), "run", "locks")
+	}
+	// Ensure direct library callers get the same lock location as the CLI. The
+	// directory is private because the lock name can identify an external path.
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		digest := sha256.Sum256([]byte(path))
+		return filepath.Join(filepath.Dir(path), ".config-"+hex.EncodeToString(digest[:])+".lock")
+	}
+	return filepath.Join(lockDir, lockName)
+}
+
 func editConfigFile(path, key string, opts ConfigWriteOptions, edit func(*ast.MappingNode, []string) error) (ConfigWriteResult, error) {
 	path, err := filepath.Abs(path)
 	if err != nil {
@@ -89,7 +118,7 @@ func editConfigFile(path, key string, opts ConfigWriteOptions, edit func(*ast.Ma
 	if err != nil {
 		return ConfigWriteResult{}, err
 	}
-	lock, err := acquireBootstrapLock(path + ".lock")
+	lock, err := acquireBootstrapLock(configLockPath(path))
 	if err != nil {
 		return ConfigWriteResult{}, fmt.Errorf("lock config %q: %w", path, err)
 	}

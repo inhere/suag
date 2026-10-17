@@ -109,9 +109,9 @@ func toolsApprovalAuto() (bool, error) {
 		return false, nil
 	case string:
 		switch value {
-		case "ask":
+		case appconfig.ToolsApprovalAsk:
 			return false, nil
-		case "auto":
+		case appconfig.ToolsApprovalAuto:
 			return true, nil
 		}
 	}

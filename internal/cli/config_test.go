@@ -107,6 +107,11 @@ func TestConfigCommandsUseTheRealCappPath(t *testing.T) {
 		assert.StrContains(t, string(body), "deepseek/changed")
 		_, statErr := os.Stat(filepath.Join(home, "config.yaml"))
 		assert.True(t, os.IsNotExist(statErr))
+		matches, globErr := filepath.Glob(filepath.Join(home, "run", "locks", "config-*.lock"))
+		assert.Require(t, assert.NoError(t, globErr))
+		assert.Eq(t, 1, len(matches))
+		_, statErr = os.Stat(external + ".lock")
+		assert.True(t, os.IsNotExist(statErr))
 	})
 	t.Run("path and list are stable command outputs", func(t *testing.T) {
 		home := setupConfigCLI(t, "model: openai/config\n")
@@ -124,6 +129,38 @@ func TestConfigCommandsUseTheRealCappPath(t *testing.T) {
 	})
 }
 
+func TestConfigSetAllowsSimpleRuntimeKeys(t *testing.T) {
+	home := setupConfigCLI(t, "model: openai/config\n")
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	for _, tc := range []struct {
+		name, key, value string
+	}{
+		{name: "allow write", key: "tools.allow_write", value: "true"},
+		{name: "approval mode", key: "tools.approval", value: "auto"},
+		{name: "workspace", key: "workspace", value: workspace},
+		{name: "memory write", key: "memory.write", value: "off"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"config", "set", tc.key, tc.value})
+			assert.NoErr(t, err)
+			assert.StrContains(t, stdout.String(), "已写入")
+		})
+	}
+	configPath := filepath.Join(home, "config.yaml")
+	body, err := os.ReadFile(configPath)
+	assert.Require(t, assert.NoError(t, err))
+	text := string(body)
+	assert.StrContains(t, text, "allow_write: true")
+	assert.StrContains(t, text, "approval: auto")
+	assert.StrContains(t, text, "memory:")
+	assert.StrContains(t, text, "memory: {write: \"off\"}")
+	assert.StrContains(t, text, "workspace:")
+	_, err = os.Stat(filepath.Join(home, "config.yaml.lock"))
+	assert.True(t, os.IsNotExist(err))
+	_, err = os.Stat(filepath.Join(home, "run", "locks", "config.lock"))
+	assert.NoErr(t, err)
+}
 func setupConfigCLI(t *testing.T, content string) string {
 	t.Helper()
 	home := t.TempDir()

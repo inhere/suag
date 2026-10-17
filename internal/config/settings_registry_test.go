@@ -1,12 +1,59 @@
 package axconfig
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
+	goccyyaml "github.com/goccy/go-yaml"
 	"github.com/gookit/goutil/x/assert"
 )
 
+func TestReferenceConfigLeavesAreRegistered(t *testing.T) {
+	_, sourceFile, _, ok := runtime.Caller(0)
+	assert.True(t, ok)
+	path := filepath.Join(filepath.Dir(sourceFile), "..", "..", "config", "config.yaml")
+	content, err := os.ReadFile(path)
+	assert.Require(t, assert.NoError(t, err))
+	var document map[string]any
+	assert.Require(t, assert.NoError(t, goccyyaml.Unmarshal(content, &document)))
+
+	var check func(any, []string)
+	check = func(value any, prefix []string) {
+		if mapping, ok := value.(map[string]any); ok {
+			for key, child := range mapping {
+				check(child, append(prefix, key))
+			}
+			return
+		}
+		key := strings.Join(prefix, ".")
+		_, matchErr := MatchConfigKey(key)
+		assert.NoErr(t, matchErr)
+	}
+	check(document, nil)
+}
+
+func TestDocumentedSimpleKeysRemainWritable(t *testing.T) {
+	for _, key := range []string{
+		"tools.allow_write", "tools.approval", "tools.deferred", "tools.parallel_reads",
+		"tools.minimize_output", "tools.web_fetch.allow_private", "workspace",
+		"mcp.call_timeout_sec", "memory.write", "memory.write_tainted", "memory.taint_tools",
+		"memory.user.backend", "memory.project.backend", "hooks.timeout_ms", "hooks.stop_background",
+		"skills.list_max", "skills.always_load",
+	} {
+		t.Run(key, func(t *testing.T) {
+			descriptor, err := MatchConfigKey(key)
+			assert.NoErr(t, err)
+			assert.True(t, descriptor.Writable)
+			if descriptor.Reader == "" {
+				assert.True(t, IsSimpleConfigType(descriptor.Type))
+			}
+		})
+	}
+}
 func TestMatchConfigKey(t *testing.T) {
 	known := KnownConfigKeys()
 	assert.True(t, len(known) > 0)
@@ -148,11 +195,10 @@ func TestValidateConfigKeyUsesExistingReaders(t *testing.T) {
 		assert.StrContains(t, err.Error(), "chat.history_size")
 	})
 
-	t.Run("unreadable key is not reported as validated", func(t *testing.T) {
+	t.Run("simple key without reader still validates", func(t *testing.T) {
 		loadYAML(t, "tools:\n  allow_write: false\n")
 		err := ValidateConfigKey("tools.allow_write")
-		assert.Err(t, err)
-		assert.StrContains(t, err.Error(), "no typed reader")
+		assert.NoErr(t, err)
 	})
 }
 
