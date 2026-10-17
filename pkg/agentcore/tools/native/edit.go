@@ -82,6 +82,8 @@ func (t *FileEditTool) Execute(ctx context.Context, call api.ToolCall) (*api.Too
 	if t.snapshots != nil {
 		snapshotReq, err = editSnapshotRequest(target, call.CallID, data)
 		if err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: SnapshotKindFile, Status: SnapshotStatusIncomplete,
+				Bytes: int64(len(data))})
 			return nil, fmt.Errorf("file_edit: %w", err)
 		}
 		beforeResult, err = t.snapshots.BeforeCall(ctx, snapshotReq)

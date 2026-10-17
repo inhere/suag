@@ -16,6 +16,7 @@ const (
 	SnapshotStatusComplete        = "complete"
 	SnapshotStatusIncomplete      = "incomplete"
 	SnapshotUnrecoverableOversize = "oversize"
+	SnapshotUnrecoverablePurged   = "purged"
 )
 
 // SnapshotRequest carries the path and original bytes to the snapshot owner.
@@ -75,6 +76,14 @@ type snapshotReportKey struct{}
 func WithSnapshotReport(ctx context.Context) (context.Context, *SnapshotReport) {
 	report := &SnapshotReport{}
 	return context.WithValue(ctx, snapshotReportKey{}, report), report
+}
+
+// snapshotUnrecoverable adds the fixed reason for permanently purged paths.
+func snapshotUnrecoverable(kind SnapshotKind, reason string) string {
+	if kind == SnapshotKindPurged {
+		return SnapshotUnrecoverablePurged
+	}
+	return reason
 }
 
 // ReportSnapshot replaces the current context report with a snapshot summary.

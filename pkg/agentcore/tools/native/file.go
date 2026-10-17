@@ -81,6 +81,7 @@ func (t *FileWriteTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 	if t.snapshots != nil {
 		before, snapshotReq, err = t.snapshotRequest(target, call.CallID)
 		if err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Status: SnapshotStatusIncomplete})
 			return nil, fmt.Errorf("file_write: %w", err)
 		}
 		beforeResult, err = t.snapshots.BeforeCall(ctx, snapshotReq)

@@ -231,15 +231,17 @@ func (t *FileRemoveTool) Execute(ctx context.Context, call api.ToolCall) (*api.T
 	if t.snapshots != nil {
 		snapshotReq, err = t.removeSnapshotRequest(plan, call.CallID)
 		if err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Status: SnapshotStatusIncomplete, Bytes: plan.Bytes})
 			return nil, fmt.Errorf("file_remove: %w", err)
 		}
 		beforeResult, err = t.snapshots.BeforeCall(ctx, snapshotReq)
 		if err != nil {
 			ReportSnapshot(ctx, SnapshotReport{Kind: snapshotReq.Kind, Status: SnapshotStatusIncomplete,
-				Bytes: plan.Bytes, Unrecoverable: beforeResult.Unrecoverable})
+				Bytes: plan.Bytes, Unrecoverable: snapshotUnrecoverable(snapshotReq.Kind, beforeResult.Unrecoverable)})
 			return nil, fmt.Errorf("file_remove: snapshot before: %w", err)
 		}
 	}
+	unrecoverable := snapshotUnrecoverable(snapshotReq.Kind, beforeResult.Unrecoverable)
 	finishSnapshot := func(status string, trashEntries, purgedDirs []string) error {
 		if t.snapshots == nil {
 			return nil
@@ -253,7 +255,7 @@ func (t *FileRemoveTool) Execute(ctx context.Context, call api.ToolCall) (*api.T
 			Kind:          snapshotReq.Kind,
 			Size:          plan.Bytes,
 			Status:        status,
-			Unrecoverable: beforeResult.Unrecoverable,
+			Unrecoverable: unrecoverable,
 			TrashEntries:  trashEntries,
 			PurgedDirs:    purgedDirs,
 		}
