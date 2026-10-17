@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -139,7 +140,7 @@ func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool
 		if hit != nil {
 			reportScope := ""
 			if hit.Source == approvalrules.SourceSession {
-				reportScope = scope.key
+				reportScope = approvalScopeAttr(call.Name, scope.key)
 			}
 			tools.ReportRule(ctx, hit.Summary(), reportScope)
 		}
@@ -225,7 +226,7 @@ func (a *chatApprover) Decide(ctx context.Context, call agentcore.ToolCall, tool
 		scope.rule.Index = a.nextSessionRuleIndex()
 		scope.rule.Action = decision
 		a.policy.Rules = append(a.policy.Rules, scope.rule)
-		tools.ReportRule(ctx, scope.rule.Summary(), scope.key)
+		tools.ReportRule(ctx, scope.rule.Summary(), approvalScopeAttr(call.Name, scope.key))
 		tools.ReportApproval(ctx, tools.ApprovedByUser, wait)
 		if a.policy.PersistAsk {
 			persistAnswer, persistErr := a.asker.Ask(ctx, tools.Question{Tool: "approval_rule", Prompt: chatreply.PersistPrompt(string(decision))})
@@ -347,11 +348,15 @@ func (a *chatApprover) scopeFor(call agentcore.ToolCall, tool agentcore.Tool) ap
 			scope.rule.Path = []string{relative}
 			scope.description = "该目标"
 		} else {
-			if relative == "." {
+			// A write or edit names a file: "always" covers the directory it
+			// is in (docs/a.txt -> docs/**), not the file taken as a directory.
+			dir := path.Dir(relative)
+			scope.key = dir
+			if dir == "." {
 				scope.key = ""
 				scope.rule.Path = []string{"**"}
 			} else {
-				scope.rule.Path = []string{relative + "/**"}
+				scope.rule.Path = []string{dir + "/**"}
 			}
 			scope.description = "写入 " + displaySafe(redact.Secrets(scope.key)) + "/ 目录"
 		}
@@ -601,3 +606,12 @@ func argText(value any) string {
 // displaySafe removes terminal control sequences (including OSC/CSI) before
 // details or prompts are written. Newlines and tabs remain useful formatting.
 func displaySafe(s string) string { return termtext.Clean(s) }
+
+// approvalScopeAttr is the trace value of a session scope: the tool and its
+// scope key ("file_write:docs", "shell_exec:go test"), empty without a key.
+func approvalScopeAttr(tool, key string) string {
+	if key == "" {
+		return ""
+	}
+	return tool + ":" + key
+}

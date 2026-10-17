@@ -93,3 +93,25 @@ func TestChatProjectDenyPersistenceAndWriteFailureKeepSessionRule(t *testing.T) 
 		assert.StrContains(t, events[0].File, "approval-rules.yaml")
 	})
 }
+
+// TestChatWriteScopeCoversTheFileDirectory: "always" on a file write covers the
+// directory of the file (docs/a.txt -> docs/), so a sibling is allowed without a
+// question. Before the fix the file itself was taken as the directory
+// (docs/a.txt/**), which matched nothing.
+func TestChatWriteScopeCoversTheFileDirectory(t *testing.T) {
+	workspace := t.TempDir()
+	t.Setenv("SUGA_HOME", t.TempDir())
+	policy := approvalPolicy{Mode: approvalrules.ModeChat, Workspace: workspace,
+		Defaults: defaultApprovalDefaults(approvalrules.ModeChat, false)}
+	asker := &scriptedAsker{answers: []string{"a"}}
+	approver := newChatApprover(chatApproverOptions{gate: newCLIMCPGateWithPolicy(policy), asker: asker, workspace: workspace})
+	write := func(p string) error {
+		return approver.Decide(context.Background(), agentcore.ToolCall{Name: "file_write", Arguments: map[string]any{"path": p}}, &nativeStubTool{name: "file_write"})
+	}
+	scope := approver.scopeFor(agentcore.ToolCall{Name: "file_write", Arguments: map[string]any{"path": "docs/a.txt"}}, &nativeStubTool{name: "file_write"})
+	assert.Eq(t, "docs", scope.key)
+	assert.StrContains(t, scope.description, "写入 docs/ 目录")
+	assert.NoErr(t, write("docs/a.txt"))
+	assert.NoErr(t, write("docs/b.txt"))
+	assert.Eq(t, "file_write:docs", approvalScopeAttr("file_write", scope.key))
+}
