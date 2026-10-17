@@ -16,7 +16,7 @@ LDFLAGS := -s -w \
 	-X main.GitCommit=$(GIT_HASH) \
 	-X 'main.BuildDate=$(BUILD_TIME)'
 
-.PHONY: all build install run clean clean-dist help latest build-all dump-info latest-yaml build-linux build-linux-arm64 build-darwin build-darwin-arm64 build-windows smoke-chat
+.PHONY: all build install run clean clean-dist help latest build-all dump-info latest-yaml build-linux build-linux-arm64 build-darwin build-darwin-arm64 build-windows smoke-chat smoke-go
 
 DIST_DIR := dist
 # 注：值会经 `echo "description: $(DESCRIPTION)"` 写入 latest.yaml，避免 `;`/`:`/引号等
@@ -165,6 +165,11 @@ smoke-chat:
 	python3 -I scripts/ptysmoke/chat_budget.py --bin tmp/smoke/suga --work tmp/smoke-budget
 	python3 -I scripts/ptysmoke/chat_empty_final.py --bin tmp/smoke/suga --work tmp/smoke-empty-final
 	python3 -I scripts/ptysmoke/preferred_tools.py --bin tmp/smoke/suga --work tmp/smoke-preferred-tools
+
+## smoke-go: run the Go ptytest chat smoke (Linux/macOS and Windows ConPTY)
+## Windows: go test -tags ptye2e ./test/ptye2e/... -v
+smoke-go:
+	go test -tags ptye2e ./test/ptye2e/... -v
 
 ## clean: remove build artifacts
 clean:
