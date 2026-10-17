@@ -155,3 +155,21 @@ func TestValidateConfigKeyUsesExistingReaders(t *testing.T) {
 		assert.StrContains(t, err.Error(), "no typed reader")
 	})
 }
+
+// TestIsSecretKey: keys that hold credentials are recognized by path, so
+// config set can refuse to write them into config.yaml.
+func TestIsSecretKey(t *testing.T) {
+	for key, want := range map[string]bool{
+		"providers.gateway.api_key":       true,
+		"serpapi_key":                     true,
+		"providers.gateway.headers.token": true,
+		"mcp.servers.x.env.DB_PASSWORD":   true,
+		"model":                           false,
+		"tools.allow_write":               false,
+		"providers.gateway.base_url":      false,
+	} {
+		t.Run(key, func(t *testing.T) {
+			assert.Eq(t, want, IsSecretKey(key))
+		})
+	}
+}
