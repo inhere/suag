@@ -1,13 +1,14 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 配置的优先工具设计
 
-> 状态：Draft 0.1 / 待用户审批
+> 状态：Draft 0.2 / 待用户审批
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-17 | suga（gofer job） | 按 `suga-jipz` 最后一条方向调整，采用通用 command/MCP 配置、存在性探测和提示优先，不做逐工具适配。 |
+| 0.2 | 2026-10-17 | 监督（Claude） | 审核简化：manifest 不启动 MCP、不做分段 MCP 健康检查、子 agent 不列、trace 只记名字（见“0.2 审核简化”）。 |
 
 ### 思考模式与范围冻结
 
@@ -18,6 +19,15 @@
 - expansion_policy：DEFER_OR_REQUEST。若需要改变既有 MCP 启动失败语义、审批语义、provider 协议或稳定系统提示词，停止实施并回到设计 Gate。
 - review budget：小；优先复用现有配置 reader、MCP provider、segment context、approval 和 manifest，避免新增抽象层。
 - 停止条件：用户批准本设计和计划前不实施。
+
+## 0.2 审核简化（与下文冲突时以本节为准）
+
+按用户“简化，少依赖定制”的方向，审核收窄四处：
+
+1. **manifest 不启动 MCP**（取代 Q1 的 probe）：`suga manifest` 保持“不启动 MCP”的现有行为；`mcp` 类优先项只报告 `configured`（server id 是否在 `mcp.servers` 中）及“连接状态在会话启动时确认”，不做 initialize/`tools/list`。`command` 类照常 `LookPath`。
+2. **不做分段 MCP 健康检查**（取代 Q2）：MCP 优先项以 runtime 启动时 provider 注册成功为准，整个会话不变；中途断开沿用现有工具调用错误，agent 自行改用其他工具。不新增 provider 健康接口。`command` 类在新 segment 重新 `LookPath`（开销小，保留）。
+3. **子 agent 不列优先工具**（取代 Q3）：子 agent 没有 shell 与 MCP，列出不能用的工具只是噪音；子 agent 的环境说明不变。
+4. **trace 只记名字**：`turn_context` 只加 `preferred_tools`（本回合列出的名字），不加 `preferred_count`/`preferred_hash`。
 
 ## 背景与目标
 
@@ -231,9 +241,9 @@ command 新安装：下一次 segment snapshot 的 probe 能看到 PATH 变化�
 
 | ID | 问题 | 建议结论 |
 |---|---|---|
-| Q1 | `suga manifest` 为了判断 MCP 是否连上，是否允许启动并立即关闭已配置 MCP？ | 建议允许；只做有界 initialize/`tools/list` probe，并在帮助/文档中标明，不启动模型。若不接受，则 manifest 只能报告 configured，不能满足“连上”语义。 |
-| Q2 | MCP 断开是否在每个新 segment 做 `tools/list` health 检查？ | 建议做；不在每回合做，segment 是成本与缓存边界。若 provider 没有安全 health seam，先补通用 seam，不写服务专用逻辑。 |
-| Q3 | 子 agent 环境说明是否保留不可调用的 command/MCP 名称？ | 建议保留但加“子 agent 不能调用 shell/MCP，需交父 agent 执行”的明确句子；不扩大子 agent 工具目录。 |
+| Q1 | `suga manifest` 为了判断 MCP 是否连上，是否允许启动并立即关闭已配置 MCP？ | 0.2：不启动；manifest 只报 configured，连接状态在会话启动时确认。 |
+| Q2 | MCP 断开是否在每个新 segment 做 `tools/list` health 检查？ | 0.2：不做；以启动时注册为准，中途断开沿用现有错误。 |
+| Q3 | 子 agent 环境说明是否保留不可调用的 command/MCP 名称？ | 0.2：不列。 |
 | Q4 | `config get/list` 的 `when` 是否原文显示？ | 建议显示；它不是 secret。manifest/trace 只记录名字，避免长文本污染观测。 |
 
 ## 结论与人工计划 Gate

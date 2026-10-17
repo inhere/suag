@@ -1,13 +1,23 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # 配置的优先工具实施计划
 
-> 状态：Draft 0.1 / 待用户审批
+> 状态：Draft 0.2 / 待用户审批
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-17 | suga（gofer job） | 依据 `docs/design/2026-10-17-preferred-tools-design.md` Draft 0.1，拆分通用配置/探测、runtime 提示与延迟、manifest/trace、验证 Gate。 |
+| 0.2 | 2026-10-17 | 监督（Claude） | 跟随设计 0.2 审核简化：去掉 manifest MCP probe、分段 MCP 健康检查与 provider health seam、子 agent 接线、trace 计数/hash；T0 的 P5 与 Gate B 随之取消。 |
+
+## 0.2 审核简化（与下文冲突时以本节为准；对应任务里的 MCP probe / health seam / 子 agent / hash 内容不做）
+
+按用户“简化，少依赖定制”的方向，审核收窄四处：
+
+1. **manifest 不启动 MCP**（取代 Q1 的 probe）：`suga manifest` 保持“不启动 MCP”的现有行为；`mcp` 类优先项只报告 `configured`（server id 是否在 `mcp.servers` 中）及“连接状态在会话启动时确认”，不做 initialize/`tools/list`。`command` 类照常 `LookPath`。
+2. **不做分段 MCP 健康检查**（取代 Q2）：MCP 优先项以 runtime 启动时 provider 注册成功为准，整个会话不变；中途断开沿用现有工具调用错误，agent 自行改用其他工具。不新增 provider 健康接口。`command` 类在新 segment 重新 `LookPath`（开销小，保留）。
+3. **子 agent 不列优先工具**（取代 Q3）：子 agent 没有 shell 与 MCP，列出不能用的工具只是噪音；子 agent 的环境说明不变。
+4. **trace 只记名字**：`turn_context` 只加 `preferred_tools`（本回合列出的名字），不加 `preferred_count`/`preferred_hash`。
 
 ## 目标与完成定义
 
