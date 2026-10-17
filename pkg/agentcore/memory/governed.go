@@ -150,6 +150,12 @@ func (g *Governed) Write(ctx context.Context, s Scope, op Op) (Entry, error) {
 		// 2. Sanitize, then re-check that something is left.
 		op.Title = strings.TrimSpace(g.p.Sanitize(op.Title))
 		op.Body = strings.TrimSpace(g.p.Sanitize(op.Body))
+		for i, condition := range op.AppliesWhen {
+			if i == 0 {
+				op.AppliesWhen = append([]string(nil), op.AppliesWhen...)
+			}
+			op.AppliesWhen[i] = strings.TrimSpace(g.p.Sanitize(condition))
+		}
 		if verr := op.validateText(); verr != nil {
 			return Entry{}, g.deny(ctx, s, op, tainted, ReasonInvalid, verr)
 		}
@@ -339,5 +345,12 @@ func (g *Governed) clean(s string) string { return g.p.Sanitize(s) }
 
 func (g *Governed) cleanEntry(e Entry) Entry {
 	e.Title, e.Body = g.clean(e.Title), g.clean(e.Body)
+	if len(e.AppliesWhen) > 0 {
+		cleaned := make([]string, len(e.AppliesWhen))
+		for i, condition := range e.AppliesWhen {
+			cleaned[i] = g.clean(condition)
+		}
+		e.AppliesWhen = cleaned
+	}
 	return e
 }

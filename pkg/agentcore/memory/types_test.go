@@ -114,7 +114,7 @@ func TestFingerprint(t *testing.T) {
 
 func TestOpValidate(t *testing.T) {
 	ok := []Op{
-		{Action: ActionAdd, Title: "t", Body: "b", Kind: KindUser},
+		{Action: ActionAdd, Title: "t", Body: "b", Kind: KindUser, AppliesWhen: []string{"Go 1.26", "Windows"}},
 		{Action: ActionReplace, ID: "t", Title: "t", Body: "b"},
 		{Action: ActionRemove, ID: "t"},
 	}
@@ -122,14 +122,17 @@ func TestOpValidate(t *testing.T) {
 		assert.NoErr(t, op.Validate(), string(op.Action))
 	}
 	bad := map[string]Op{
-		"add with id":       {Action: ActionAdd, ID: "x", Title: "t", Body: "b", Kind: KindUser},
-		"add no kind":       {Action: ActionAdd, Title: "t", Body: "b"},
-		"add empty body":    {Action: ActionAdd, Title: "t", Body: " ", Kind: KindUser},
-		"multiline title":   {Action: ActionAdd, Title: "a\nb", Body: "b", Kind: KindUser},
-		"replace bad id":    {Action: ActionReplace, ID: "../x", Title: "t", Body: "b"},
-		"replace bad kind":  {Action: ActionReplace, ID: "x", Title: "t", Body: "b", Kind: "note"},
-		"remove missing id": {Action: ActionRemove},
-		"unknown action":    {Action: "upsert", ID: "x"},
+		"add with id":            {Action: ActionAdd, ID: "x", Title: "t", Body: "b", Kind: KindUser},
+		"add no kind":            {Action: ActionAdd, Title: "t", Body: "b"},
+		"add empty body":         {Action: ActionAdd, Title: "t", Body: " ", Kind: KindUser},
+		"multiline title":        {Action: ActionAdd, Title: "a\nb", Body: "b", Kind: KindUser},
+		"replace bad id":         {Action: ActionReplace, ID: "../x", Title: "t", Body: "b"},
+		"replace bad kind":       {Action: ActionReplace, ID: "x", Title: "t", Body: "b", Kind: "note"},
+		"remove missing id":      {Action: ActionRemove},
+		"unknown action":         {Action: "upsert", ID: "x"},
+		"too many applies_when":  {Action: ActionAdd, Title: "t", Body: "b", Kind: KindUser, AppliesWhen: make([]string, 11)},
+		"multiline applies_when": {Action: ActionAdd, Title: "t", Body: "b", Kind: KindUser, AppliesWhen: []string{"Windows\nLinux"}},
+		"long applies_when":      {Action: ActionAdd, Title: "t", Body: "b", Kind: KindUser, AppliesWhen: []string{strings.Repeat("中", 201)}},
 	}
 	for name, op := range bad {
 		t.Run(name, func(t *testing.T) {

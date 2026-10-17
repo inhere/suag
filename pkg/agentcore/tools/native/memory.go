@@ -79,7 +79,7 @@ func (t *MemoryTool) Description() string {
 		"out again. A dead end counts (the path and why it failed). For experience, state the conditions " +
 		"it applies under (versions, environment, endpoints).\n" +
 		"Facts go into memory; procedures and how-tos belong in skills.\n" +
-		"Actions: add (kind, title, body; the id is derived from the title), replace (id, title, body; " +
+		"Actions: add (kind, title, body; optional applies_when conditions; the id is derived from the title), replace (id, title, body; " +
 		"rewrites the whole entry), remove (id), get (id), search (query). scope: project (default) or user. " +
 		"Prefer replace to merge an existing entry over adding a near-duplicate. When the project memory " +
 		"is backed by gofer, every project entry is a gofer note that enters the start-up context of all " +
@@ -107,12 +107,13 @@ func (t *MemoryTool) Schema() api.ToolSchema {
 					MemoryActionRemove, MemoryActionGet, MemoryActionSearch}},
 				"scope": map[string]any{"type": "string", "enum": []any{memory.ScopeProject, memory.ScopeUser},
 					"description": "project (default): this repository; user: about the user, across projects"},
-				"kind":  map[string]any{"type": "string", "enum": kinds, "description": "Entry kind (add; optional for replace)"},
-				"title": map[string]any{"type": "string", "description": "One-line title (add, replace)"},
-				"body":  map[string]any{"type": "string", "description": "Entry text (add, replace)"},
-				"id":    map[string]any{"type": "string", "description": "Entry id from the index or search (replace, remove, get)"},
-				"query": map[string]any{"type": "string", "description": "Words to find (search)"},
-				"limit": map[string]any{"type": "integer", "description": "Max hits (search; default 10, at most 50)"},
+				"kind":         map[string]any{"type": "string", "enum": kinds, "description": "Entry kind (add; optional for replace)"},
+				"title":        map[string]any{"type": "string", "description": "One-line title (add, replace)"},
+				"body":         map[string]any{"type": "string", "description": "Entry text (add, replace)"},
+				"applies_when": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Conditions for which this entry applies (optional, add/replace)"},
+				"id":           map[string]any{"type": "string", "description": "Entry id from the index or search (replace, remove, get)"},
+				"query":        map[string]any{"type": "string", "description": "Words to find (search)"},
+				"limit":        map[string]any{"type": "integer", "description": "Max hits (search; default 10, at most 50)"},
 			},
 			"required": []any{"action"},
 		},
@@ -218,6 +219,11 @@ func (t *MemoryTool) parse(args map[string]any) (memoryRequest, error) {
 	switch req.action {
 	case MemoryActionAdd, MemoryActionReplace:
 		req.op = memory.Op{Action: memory.Action(req.action), ID: id, Title: str("title"), Body: str("body")}
+		var err error
+		req.op.AppliesWhen, err = parseAppliesWhen(args["applies_when"])
+		if err != nil {
+			return req, err
+		}
 		if kind := str("kind"); kind != "" {
 			k, err := memory.ParseKind(kind)
 			if err != nil {
@@ -262,6 +268,35 @@ func (t *MemoryTool) parse(args map[string]any) (memoryRequest, error) {
 		return req, fmt.Errorf("unknown action %q (want add, replace, remove, get or search)", req.action)
 	}
 	return req, nil
+}
+
+// parseAppliesWhen decodes the optional JSON array while leaving detailed
+// shape and length checks to memory.Op.Validate.
+func parseAppliesWhen(value any) ([]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	var raw []any
+	switch v := value.(type) {
+	case []any:
+		raw = v
+	case []string:
+		raw = make([]any, len(v))
+		for i := range v {
+			raw[i] = v[i]
+		}
+	default:
+		return nil, fmt.Errorf("%w: applies_when must be an array of strings", memory.ErrInvalid)
+	}
+	out := make([]string, len(raw))
+	for i, item := range raw {
+		text, ok := item.(string)
+		if !ok {
+			return nil, fmt.Errorf("%w: applies_when item %d must be a string", memory.ErrInvalid, i+1)
+		}
+		out[i] = strings.TrimSpace(text)
+	}
+	return out, nil
 }
 
 // external reports whether reads from s come from outside suga's own files.
@@ -350,6 +385,9 @@ func renderMemoryEntry(s memory.Scope, e memory.Entry) string {
 	meta := fmt.Sprintf("id: %s · kind: %s · scope: %s", e.ID, e.Kind, s.Kind)
 	if !e.Updated.IsZero() {
 		meta += " · updated: " + e.Updated.UTC().Format(time.DateOnly)
+	}
+	if len(e.AppliesWhen) > 0 {
+		meta += " · applies_when: " + strings.Join(e.AppliesWhen, " · ")
 	}
 	return "# " + e.Title + "\n" + meta + "\n\n" + e.Body
 }

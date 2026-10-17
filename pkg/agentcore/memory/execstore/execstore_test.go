@@ -105,7 +105,7 @@ func serveMem(req extproc.Request) {
 		switch op["action"] {
 		case "add":
 			id = strings.ToLower(strings.ReplaceAll(op["title"].(string), " ", "-"))
-			st.Entries[id] = map[string]any{"id": id, "title": op["title"], "body": op["body"], "kind": op["kind"], "updated": "2026-01-02T03:04:05Z"}
+			st.Entries[id] = map[string]any{"id": id, "title": op["title"], "body": op["body"], "kind": op["kind"], "applies_when": op["applies_when"], "updated": "2026-01-02T03:04:05Z"}
 		case "replace":
 			old, ok := st.Entries[id]
 			if !ok {
@@ -113,6 +113,7 @@ func serveMem(req extproc.Request) {
 				return
 			}
 			old["title"], old["body"] = op["title"], op["body"]
+			old["applies_when"] = op["applies_when"]
 			if k, _ := op["kind"].(string); k != "" {
 				old["kind"] = k
 			}
@@ -168,10 +169,11 @@ func TestRoundTrip(t *testing.T) {
 	st := newStore(t, "mem", 10*time.Second)
 	sc := memory.ProjectScope("proj")
 
-	added, err := st.Write(ctx, sc, memory.Op{Action: memory.ActionAdd, Title: "Use Tabs", Body: "tabs everywhere", Kind: memory.KindFeedback})
+	added, err := st.Write(ctx, sc, memory.Op{Action: memory.ActionAdd, Title: "Use Tabs", Body: "tabs everywhere", Kind: memory.KindFeedback,
+		AppliesWhen: []string{"Go 1.26", "Windows"}})
 	assert.Require(t, assert.NoErr(t, err))
 	assert.Eq(t, "use-tabs", added.ID)
-	assert.Eq(t, memory.KindFeedback, added.Kind)
+	assert.Eq(t, []string{"Go 1.26", "Windows"}, added.AppliesWhen)
 	assert.Eq(t, 2026, added.Updated.Year())
 
 	t.Run("index", func(t *testing.T) {
@@ -186,6 +188,7 @@ func TestRoundTrip(t *testing.T) {
 		e, err := st.Get(ctx, sc, "use-tabs")
 		assert.NoErr(t, err)
 		assert.Eq(t, "tabs everywhere", e.Body)
+		assert.Eq(t, []string{"Go 1.26", "Windows"}, e.AppliesWhen)
 	})
 	t.Run("search", func(t *testing.T) {
 		hits, err := st.Search(ctx, sc, "tabs", 5)

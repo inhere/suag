@@ -199,7 +199,8 @@ func (s *Store) Write(_ context.Context, sc memory.Scope, op memory.Op) (memory.
 		id := memory.UniqueID(memory.Slug(op.Title), func(id string) bool {
 			return doc.find(id) >= 0 || exists(root, entryPath(lp, id))
 		})
-		e := memory.Entry{ID: id, Title: op.Title, Body: op.Body, Kind: op.Kind, Updated: s.stamp(), Prov: op.Prov}
+		e := memory.Entry{ID: id, Title: op.Title, Body: op.Body, Kind: op.Kind,
+			AppliesWhen: append([]string(nil), op.AppliesWhen...), Updated: s.stamp(), Prov: op.Prov}
 		return e, s.store(root, lp, doc, e)
 
 	case memory.ActionReplace:
@@ -218,7 +219,8 @@ func (s *Store) Write(_ context.Context, sc memory.Scope, op memory.Op) (memory.
 		if !kind.Valid() {
 			return memory.Entry{}, fmt.Errorf("%w: entry %s has no valid kind; pass one", memory.ErrInvalid, op.ID)
 		}
-		e := memory.Entry{ID: op.ID, Title: op.Title, Body: op.Body, Kind: kind, Updated: s.stamp(), Prov: op.Prov}
+		e := memory.Entry{ID: op.ID, Title: op.Title, Body: op.Body, Kind: kind,
+			AppliesWhen: append([]string(nil), op.AppliesWhen...), Updated: s.stamp(), Prov: op.Prov}
 		return e, s.store(root, lp, doc, e)
 
 	default: // remove
@@ -291,6 +293,9 @@ func (s *Store) Search(_ context.Context, sc memory.Scope, q string, limit int) 
 			continue // unreadable or escaping symlink: skip, do not fail the search
 		}
 		text := e.Title + "\n" + e.Body
+		if len(e.AppliesWhen) > 0 {
+			text += "\napplies_when: " + strings.Join(e.AppliesWhen, "\napplies_when: ")
+		}
 		lower := strings.ToLower(text)
 		if !containsAll(lower, terms) {
 			continue

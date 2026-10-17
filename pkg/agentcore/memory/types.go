@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Kind classifies an entry. The four kinds follow the memory tool contract.
@@ -122,6 +123,7 @@ type Provenance struct {
 type Entry struct {
 	ID, Title, Body string
 	Kind            Kind
+	AppliesWhen     []string
 	Updated         time.Time
 	Prov            Provenance
 }
@@ -149,7 +151,10 @@ type Op struct {
 	Title  string
 	Body   string
 	Kind   Kind
-	Prov   Provenance
+	// AppliesWhen records versions, environments or other conditions under
+	// which this entry remains useful. It is optional and never enters Index.
+	AppliesWhen []string
+	Prov        Provenance
 }
 
 // Validate checks the shape of the op before any policy runs. Title and body
@@ -184,6 +189,17 @@ func (op Op) validateText() error {
 	}
 	if strings.ContainsAny(op.Title, "\r\n") {
 		return fmt.Errorf("%w: title must be a single line", ErrInvalid)
+	}
+	if len(op.AppliesWhen) > 10 {
+		return fmt.Errorf("%w: applies_when allows at most 10 items", ErrInvalid)
+	}
+	for _, condition := range op.AppliesWhen {
+		if strings.ContainsAny(condition, "\r\n") {
+			return fmt.Errorf("%w: applies_when items must be single lines", ErrInvalid)
+		}
+		if utf8.RuneCountInString(condition) > 200 {
+			return fmt.Errorf("%w: applies_when items must be at most 200 characters", ErrInvalid)
+		}
 	}
 	return nil
 }

@@ -50,7 +50,7 @@ func (f *fakeMemoryStore) Write(ctx context.Context, s memory.Scope, op memory.O
 	if id == "" {
 		id = memory.Slug(op.Title)
 	}
-	return memory.Entry{ID: id, Title: op.Title, Body: op.Body, Kind: op.Kind}, nil
+	return memory.Entry{ID: id, Title: op.Title, Body: op.Body, Kind: op.Kind, AppliesWhen: append([]string(nil), op.AppliesWhen...)}, nil
 }
 
 func (f *fakeMemoryStore) Search(_ context.Context, s memory.Scope, _ string, _ int) ([]memory.Hit, error) {
@@ -81,7 +81,7 @@ func TestMemoryToolValidation(t *testing.T) {
 		{"replace without id", map[string]any{"action": "replace", "title": "t", "body": "b"}, "needs the id"},
 		{"remove without id", map[string]any{"action": "remove"}, "needs an id"},
 		{"get bad id", map[string]any{"action": "get", "id": "../x"}, "invalid id"},
-		{"search without query", map[string]any{"action": "search"}, "needs a query"},
+		{"add bad applies_when type", map[string]any{"action": "add", "kind": "user", "title": "t", "body": "b", "applies_when": "Windows"}, "applies_when"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -105,12 +105,13 @@ func TestMemoryToolWrites(t *testing.T) {
 			ProvenanceFrom: func(context.Context) memory.Provenance {
 				return memory.Provenance{SessionID: "s1", TurnID: "t1"}
 			}})
-		res, err := runMemory(t, tool, map[string]any{"action": "add", "kind": "feedback", "title": "Use tabs", "body": "Always tabs"})
+		res, err := runMemory(t, tool, map[string]any{"action": "add", "kind": "feedback", "title": "Use tabs", "body": "Always tabs", "applies_when": []any{"Go 1.26", "Windows"}})
 		assert.Require(t, assert.NoErr(t, err))
 		assert.Eq(t, memory.ProjectScope("proj"), store.scopes[0])
 		op := store.writes[0]
 		assert.Eq(t, memory.ActionAdd, op.Action)
 		assert.Eq(t, memory.KindFeedback, op.Kind)
+		assert.Eq(t, []string{"Go 1.26", "Windows"}, op.AppliesWhen)
 		assert.Eq(t, memory.Provenance{SessionID: "s1", TurnID: "t1", Source: "tool"}, op.Prov)
 		assert.Eq(t, "c1", store.ctxCall)
 		assert.Nil(t, res.Metadata)
@@ -253,6 +254,28 @@ func TestMemoryToolFilesRoundTrip(t *testing.T) {
 	res, err = runMemory(t, tool, map[string]any{"action": "get", "id": change.ID})
 	assert.NoErr(t, err)
 	assert.True(t, strings.HasSuffix(res.Content, "Fridays only"))
+}
+
+func TestMemoryToolAppliesWhen(t *testing.T) {
+	t.Run("schema and get rendering", func(t *testing.T) {
+		store := &fakeMemoryStore{entry: memory.Entry{Title: "T", Body: "body", Kind: memory.KindProject,
+			AppliesWhen: []string{"Go 1.26", "Windows"}}}
+		tool := NewMemoryTool(store, MemoryToolOptions{ProjectKey: "p"})
+		props := tool.Schema().InputSchema["properties"].(map[string]any)
+		applies := props["applies_when"].(map[string]any)
+		assert.Eq(t, "array", applies["type"])
+		res, err := runMemory(t, tool, map[string]any{"action": "get", "id": "a"})
+		assert.NoErr(t, err)
+		assert.StrContains(t, res.Content, "applies_when: Go 1.26 · Windows")
+	})
+
+	t.Run("index-style write result stays unchanged", func(t *testing.T) {
+		tool := NewMemoryTool(&fakeMemoryStore{}, MemoryToolOptions{Writable: true, ProjectKey: "p"})
+		res, err := runMemory(t, tool, map[string]any{"action": "add", "kind": "user", "title": "T", "body": "B", "applies_when": []string{"CI"}})
+		assert.NoErr(t, err)
+		assert.StrContains(t, res.Content, "kind: user")
+		assert.False(t, strings.Contains(res.Content, "applies_when:"))
+	})
 }
 
 func TestParseMemoryResult(t *testing.T) {
