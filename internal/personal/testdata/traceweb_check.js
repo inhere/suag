@@ -26,6 +26,7 @@ Object.assign(globalThis, {
   __dump: n => n instanceof Text ? n.textContent : n.children.map(__dump).join(blocks.has(n.tag) ? "\n" : ""),
   __session: JSON.parse(fs.readFileSync(sessionPath, "utf8")),
   __env: JSON.parse(fs.readFileSync(envPath, "utf8")),
+  __html: fs.readFileSync(htmlPath, "utf8"),
 });
 
 const page = /<script>([\s\S]*)<\/script>/.exec(fs.readFileSync(htmlPath, "utf8"))[1];
@@ -112,6 +113,18 @@ check("analysis: no [object ...]", !text.includes("[object"));
 check("analysis: sub-agent numbers", ["agent_calls", "agent_steps", "agent_tool_calls", "agent_input_tokens", "agent_cost_usd", "agent_ms", "agent_stops"].every(k => text.includes(k)));
 check("analysis: sub-agent counts", [["agent_calls", "2"], ["agent_steps", "19"], ["agent_tool_calls", "8"]].every(([k, v]) => kvVal(k).startsWith(v)));
 check("analysis: why the sub-agents stopped", kvVal("agent_stops").includes('"final":1'));
+
+// 自动刷新：首屏是全量，之后的响应只带新增（delta），页面把它们合并进去。
+const beforeEvents = data.events.length, beforeEntries = data.entries.length;
+const newest = data.events[data.events.length - 1];
+check("auto refresh: the page has the switch, off by default", __html.includes('id="auto"') && document.getElementById("auto").checked !== true);
+applyView({delta:true, session:data.session, analysis:data.analysis,
+  events:[{id:9999, kind:"tool", name:"shell_exec", status:"ok", start:newest.start, duration_ms:1, attrs:{arg:"delta-probe-command"}}], entries:[]});
+check("auto refresh: a delta appends the new event only", data.events.length === beforeEvents + 1 && data.entries.length === beforeEntries);
+check("auto refresh: the markers follow what the page has", markEvent === 9999 && markSeq === data.entries[data.entries.length - 1].seq);
+const tl2 = new Node("main");
+renderTimeline(tl2);
+check("auto refresh: the merged event shows in the timeline", __dump(tl2).includes("delta-probe-command"));
 process.exitCode = bad ? 1 : 0;
 `;
 vm.runInThisContext(page + checks);

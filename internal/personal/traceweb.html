@@ -54,11 +54,13 @@ details summary { cursor:pointer; color:var(--mute); }
 .envlist div.item:hover { background:#f5f8ff; }
 .envlist div.item.sel { background:#e8efff; }
 .ok { color:var(--read); } .diff { color:var(--err); }
+header .refresh { margin-top:6px; font-size:12px; }
 a.jump { color:var(--model); text-decoration:none; border-bottom:1px dotted var(--model); }
 </style>
 </head>
 <body>
-<header><h1 id="title">suga trace</h1><div id="sub" class="mute"></div><div class="chips" id="chips"></div></header>
+<header><h1 id="title">suga trace</h1><div id="sub" class="mute"></div><div class="chips" id="chips"></div>
+<div class="refresh"><label title="开启后只拉取新增：会话进行中每 5 秒，空闲时每 15 秒检查新回合"><input type="checkbox" id="auto"> 自动刷新</label> <span id="autostate" class="mute"></span></div></header>
 <nav><button data-tab="timeline" class="on">时间线</button><button data-tab="context">上下文</button><button data-tab="analysis">分析</button><button data-tab="env">本机环境</button></nav>
 <main id="main"></main>
 <script>
@@ -68,6 +70,10 @@ const PARTS = [["system","系统提示","#5b8def"],["tools","工具定义","#8fb
 const READ_TOOLS = new Set(["file_read","file_list","file_grep","file_find","recall","session_search","web_fetch","web_search","skill","tool_search","suga_manifest"]);
 const WRITE_TOOLS = new Set(["file_write","file_edit","file_remove","update_plan","memory"]);
 let data, t0, entryBySeq = new Map(), selected = null, tab = "timeline";
+// Auto refresh: markSeq/markEvent mark what the page already has (they travel
+// as since_seq / since_event), autoRefresh is the switch, pollTimer its timer.
+let markSeq = 0, markEvent = 0, autoRefresh = false, pollTimer = null;
+const POLL_RUNNING_MS = 5000, POLL_IDLE_MS = 15000;
 const filt = { kinds: new Set(["turn","model","tool","denial","task","context","hook","fold","compaction"]), errors:false, slow:false, q:"" };
 
 function el(tag, attrs, ...kids) {
@@ -461,15 +467,84 @@ function setTab(name) {
 }
 document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
 
+// applyView merges a response into the page state: the first response (no
+// delta) replaces it, an incremental one only appends what the page did not
+// have yet.
+function applyView(d) {
+  const events = d.events || [], entries = d.entries || [];
+  if (d.delta) {
+    data.session = d.session || data.session;
+    data.analysis = d.analysis || data.analysis;
+    data.events = data.events.concat(events);
+    data.entries = data.entries.concat(entries);
+  } else {
+    data = d; data.events = events; data.entries = entries;
+  }
+  for (const en of entries) entryBySeq.set(en.seq, en);
+  // The server orders events by (start, id); a delta can carry an event that
+  // started before one already on the page (a parallel call reported later),
+  // so the merge keeps that order.
+  data.events.sort((a, b) => at(a) - at(b) || a.id - b.id);
+  data.entries.sort((a, b) => a.seq - b.seq);
+  markEvent = data.events.reduce((m, e) => Math.max(m, e.id), markEvent);
+  markSeq = data.entries.reduce((m, e) => Math.max(m, e.seq), markSeq);
+  if (selected) selected = data.events.find(e => e.id === selected.id) || selected;
+}
+
+// applyResponse is the shared tail of a load: merge, redraw and arm the next
+// poll.
+function applyResponse(d) {
+  applyView(d);
+  updateAuto();
+  renderHeader();
+  render();
+  schedulePoll();
+}
+
+// poll asks for the new part only: since_seq / since_event are what the page
+// already shows.
+function poll() {
+  fetch(`api/session?since_seq=${markSeq}&since_event=${markEvent}`)
+    .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(t)))
+    .then(applyResponse)
+    .catch(err => { setAutoState("拉取失败：" + err); schedulePoll(); });
+}
+
+// schedulePoll arms the next poll (nothing while the switch is off). The delay
+// follows the session: every 5s while its turn runs, every 15s when it is idle
+// and the page only checks whether a next turn started (the request carries the
+// same markers, so an idle check sends nothing).
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  pollTimer = null;
+  if (!autoRefresh) return;
+  pollTimer = setTimeout(poll, (data.session.status || "") === "running" ? POLL_RUNNING_MS : POLL_IDLE_MS);
+}
+
+function setAutoState(text) { document.getElementById("autostate").textContent = text; }
+
+// updateAuto says what the switch does right now.
+function updateAuto() {
+  if (!autoRefresh) { setAutoState("关闭"); return; }
+  setAutoState((data.session.status || "") === "running" ? "进行中，每 5 秒拉取新增" : "空闲，每 15 秒检查新回合");
+}
+
+document.getElementById("auto").addEventListener("change", ev => {
+  autoRefresh = ev.target.checked;
+  updateAuto();
+  if (autoRefresh) poll(); else schedulePoll();
+});
+
 fetch("api/session").then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(t))).then(d => {
-  data = d; data.events = data.events || []; data.entries = data.entries || [];
-  for (const en of data.entries) entryBySeq.set(en.seq, en);
+  applyView(d);
   t0 = Math.min(...data.events.map(at), ...data.entries.map(at), Date.now());
   // #tab=context or #ev=<event id> open a tab or select a row (shareable).
   const hash = new URLSearchParams(location.hash.slice(1));
   if (hash.get("ev")) selected = data.events.find(e => String(e.id) === hash.get("ev")) || null;
   renderHeader();
+  updateAuto();
   setTab(hash.get("tab") || "timeline");
+  schedulePoll(); // nothing while the switch is off
 }).catch(err => { document.getElementById("main").replaceChildren(el("pre", {class:"err"}, String(err))); });
 </script>
 </body>
