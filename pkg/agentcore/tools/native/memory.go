@@ -64,15 +64,20 @@ func NewMemoryTool(store memory.Store, opts MemoryToolOptions) *MemoryTool {
 func (t *MemoryTool) Name() string { return memoryToolName }
 
 // Description is the tool contract for the model (design D5): the four
-// kinds, what not to store, and facts-vs-procedures.
+// kinds, what is worth storing and what to leave out, and facts-vs-procedures.
 func (t *MemoryTool) Description() string {
-	return "Long-term memory shared across sessions. The system prompt lists a memory index (titles only, " +
-		"frozen at session start); read an entry's body with action=get.\n" +
+	return "Long-term memory shared across sessions. Each segment's context message carries the memory " +
+		"index (ids, kinds and titles, no bodies), frozen until the next segment; read an entry's body " +
+		"with action=get.\n" +
 		"Kinds: user (who the user is: role, preferences, expertise), feedback (corrections and confirmed " +
 		"choices about how to work), project (goals, constraints, decisions and progress the code and git " +
 		"do not show), reference (where external resources live: URLs, dashboards, tickets).\n" +
-		"Do NOT store: anything derivable from the code or git history; what AGENTS.md or other rule files " +
-		"already say; temporary details of the current session; secrets, tokens or passwords.\n" +
+		"Do NOT store: what the repository already states or makes derivable (code, README, git history); " +
+		"what AGENTS.md or other rule files already say; secrets, tokens or passwords; this turn's " +
+		"transient state, including a question you are waiting for the user to answer.\n" +
+		"Worth storing: what will come up again, is not trivial, and is cheaper to look up than to work " +
+		"out again. A dead end counts (the path and why it failed). For experience, state the conditions " +
+		"it applies under (versions, environment, endpoints).\n" +
 		"Facts go into memory; procedures and how-tos belong in skills.\n" +
 		"Actions: add (kind, title, body; the id is derived from the title), replace (id, title, body; " +
 		"rewrites the whole entry), remove (id), get (id), search (query). scope: project (default) or user. " +
@@ -316,7 +321,8 @@ func renderMemoryChange(action string, s memory.Scope, e memory.Entry) string {
 		return line
 	}
 	return line + "\nkind: " + string(e.Kind) +
-		"\nThe memory index in the system prompt is a snapshot from session start and does not show this change."
+		"\nThe memory index of the current segment does not show this change; it is re-read when the " +
+		"next segment starts."
 }
 
 // ParseMemoryResult reads the first line of a successful memory write result.
