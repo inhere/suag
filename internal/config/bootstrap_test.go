@@ -1,8 +1,11 @@
 package axconfig
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -145,6 +148,59 @@ func TestEnsureHomeConcurrentFirstRunWritesOnce(t *testing.T) {
 		}
 	}
 	assert.Eq(t, 1, created)
+}
+
+func TestEnsureHomeConcurrentAcrossProcessesWritesOnce(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	commands := make([]*exec.Cmd, 0, 2)
+	outputs := make([]bytes.Buffer, 2)
+	for i := range 2 {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestBootstrapHelperProcess$", "--")
+		cmd.Stdout = &outputs[i]
+		cmd.Stderr = &outputs[i]
+		cmd.Env = helperEnv(home)
+		commands = append(commands, cmd)
+	}
+	for _, cmd := range commands {
+		assert.NoErr(t, cmd.Start())
+	}
+	created := 0
+	for i, cmd := range commands {
+		err := cmd.Wait()
+		output := outputs[i].String()
+		assert.NoErr(t, err, output)
+		if strings.Contains(output, "created") {
+			created++
+		}
+	}
+	assert.Eq(t, 1, created)
+}
+
+// TestBootstrapHelperProcess is launched by the cross-process locking test.
+func TestBootstrapHelperProcess(t *testing.T) {
+	home := os.Getenv("SUGA_BOOTSTRAP_HELPER_HOME")
+	if home == "" {
+		return
+	}
+	_ = os.Setenv("SUGA_HOME", home)
+	result, err := EnsureHome(BootstrapOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CreatedConfig {
+		_, _ = fmt.Fprintln(os.Stdout, "created")
+	}
+}
+
+func helperEnv(home string) []string {
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, value := range os.Environ() {
+		if strings.HasPrefix(value, "SUGA_BOOTSTRAP_HELPER_HOME=") || strings.HasPrefix(value, "SUGA_HOME=") || strings.HasPrefix(value, "SUGA_CONFIG=") {
+			continue
+		}
+		env = append(env, value)
+	}
+	return append(env, "SUGA_BOOTSTRAP_HELPER_HOME="+home, "SUGA_CONFIG=")
 }
 
 func assertPrivateFile(t *testing.T, path string) {
