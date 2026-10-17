@@ -25,7 +25,7 @@ func TestNewToolVisibility(t *testing.T) {
 		cliGate, err := newCLIMCPGate(false)
 		assert.NoErr(t, err)
 		gate := &deniedCounter{inner: cliGate}
-		vis, err := newToolVisibility(reg, tools.NewApproval(reg, gate), 128000)
+		vis, err := newToolVisibility(reg, tools.NewApproval(reg, gate), 128000, nil)
 		return reg, gate, vis, err
 	}
 	t.Run("auto with small schemas sends everything directly", func(t *testing.T) {
@@ -56,6 +56,34 @@ func TestNewToolVisibility(t *testing.T) {
 		_, execErr = vis.ExecuteTool(context.Background(), agentcoreapi.ToolCall{Name: "srv_write"})
 		assert.Eq(t, true, errors.Is(execErr, tools.ErrDenied))
 		assert.Eq(t, 1, gate.denied)
+	})
+	t.Run("always pins preferred MCP tools without bypassing approval", func(t *testing.T) {
+		gkconfig.Reset()
+		t.Cleanup(gkconfig.Reset)
+		assert.NoErr(t, gkconfig.Set("tools.deferred", "always"))
+		reg := tools.NewRegistry()
+		reg.Register(newCapabilityStubTool("other_tool"))
+		reg.Register(newServerStubTool("srv", "srv_write"))
+		reg.Register(newServerStubTool("other", "other_write"))
+		cliGate, err := newCLIMCPGate(false)
+		assert.NoErr(t, err)
+		gate := &deniedCounter{inner: cliGate}
+		vis, err := newToolVisibility(reg, tools.NewApproval(reg, gate), 128000, []string{"srv_write"})
+		assert.NoErr(t, err)
+		assert.True(t, vis.Active())
+		listed, _ := vis.ListTools(context.Background())
+		var names []string
+		for _, schema := range listed {
+			names = append(names, schema.Name)
+		}
+		assert.Eq(t, []string{"srv_write", "tool_search"}, names)
+
+		_, err = vis.ExecuteTool(context.Background(), agentcoreapi.ToolCall{Name: "srv_write"})
+		assert.True(t, errors.Is(err, tools.ErrDenied))
+		assert.Eq(t, 1, gate.denied)
+		_, err = vis.ExecuteTool(context.Background(), agentcoreapi.ToolCall{Name: "other_write"})
+		assert.Err(t, err)
+		assert.Eq(t, 1, gate.denied) // deferred loading never asks for approval
 	})
 	t.Run("invalid mode is rejected", func(t *testing.T) {
 		_, _, _, err := build(t, "sometimes")

@@ -40,6 +40,8 @@ type Options struct {
 	ReadOnly bool
 	// Servers are extra MCP servers (from --mcp-config or the ACP session).
 	Servers []mcp.ServerSettings
+	// PreferredTools is the runtime discovery snapshot shown in segment context.
+	PreferredTools []PreferredToolStatus
 	// MCPConfigs are Claude-style config files read by OpenCLI into Servers.
 	MCPConfigs []string
 	Hooks      []agentcore.Hook
@@ -438,6 +440,10 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		_ = capabilities.Close()
 		return nil, err
 	}
+	// The preferred snapshot is captured after MCP registration. It is passed
+	// into the environment source rather than rebuilt by run/chat/ACP, so all
+	// entry points describe the same runtime facts.
+	opts.PreferredTools = append([]PreferredToolStatus(nil), preferredTools...)
 	// Background tasks: shell commands in write modes (they need
 	// shell_exec); sub-agents (below) in every mode, so the task tool and the
 	// notices are there in read-only sessions too.
@@ -508,7 +514,8 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// Dangerous deletes are stopped before any approver (guardDangerous).
 	approvalLayer := tools.NewApproval(capabilities.Registry, guardDangerous(opts.Approver))
 	approvalLayer.SetDisabled(disabledToolHints(capabilities.Registry, opts))
-	vis, err := newToolVisibility(capabilities.Registry, approvalLayer, contextWindow)
+	vis, err := newToolVisibility(capabilities.Registry, approvalLayer, contextWindow,
+		preferredMCPToolNames(capabilities.Registry, preferredTools))
 	if err != nil {
 		_ = capabilities.Close()
 		return nil, err
@@ -595,6 +602,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		PromptBuilder:     staticPrompt(basePrompt()),
 		// Environment and skills go into the segment context (design D1).
 		EnvironmentSource: func() string { return environmentPrompt(opts) },
+		SegmentEnvironmentSource: func() string {
+			segmentOpts := opts
+			segmentOpts.PreferredTools = refreshPreferredCommands(opts.PreferredTools)
+			return environmentPrompt(segmentOpts)
+		},
 		// The turn_context event records the session's added directories.
 		AddDirs: func() []string { return dirs.List() },
 		SkillsSource: func() string {

@@ -41,6 +41,31 @@ func TestResolvePreferredTools(t *testing.T) {
 	assert.Eq(t, 5, len(preferred))
 }
 
+func TestRefreshPreferredCommands(t *testing.T) {
+	got := refreshPreferredCommands([]PreferredToolStatus{
+		{Name: "go", Kind: "command", Present: false, Reason: preferredReasonMissingPath},
+		{Name: "missing-preferred-command", Kind: "command", Present: true, Reason: preferredReasonFoundPath},
+		{Name: "server", Kind: "mcp", Present: true, Reason: preferredReasonMCPConnected},
+	})
+	assert.True(t, got[0].Present)
+	assert.Eq(t, preferredReasonFoundPath, got[0].Reason)
+	assert.False(t, got[1].Present)
+	assert.Eq(t, preferredReasonMissingPath, got[1].Reason)
+	assert.Eq(t, PreferredToolStatus{Name: "server", Kind: "mcp", Present: true, Reason: preferredReasonMCPConnected}, got[2])
+}
+
+func TestPreferredMCPToolNames(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(newServerStubTool("graph", "z_search"))
+	registry.Register(newServerStubTool("graph", "a_lookup"))
+	registry.Register(newServerStubTool("other", "other_tool"))
+	got := preferredMCPToolNames(registry, []PreferredToolStatus{
+		{Name: "graph", Kind: "mcp", Present: true},
+		{Name: "other", Kind: "mcp", Present: false},
+	})
+	assert.Eq(t, []string{"a_lookup", "z_search"}, got)
+}
+
 func TestResolvePreferredToolsDoesNotExposeServerDetails(t *testing.T) {
 	gkconfig.Reset()
 	t.Cleanup(gkconfig.Reset)

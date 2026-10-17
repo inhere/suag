@@ -111,6 +111,16 @@ func TestEnvironmentPrompt(t *testing.T) {
 		assert.StrContains(t, p, "Mode: writable")
 		assert.StrContains(t, p, "Shell for shell_exec: ")
 	})
+	t.Run("preferred tools list only present entries and fixed usage hint", func(t *testing.T) {
+		p := environmentPrompt(Options{Workspace: "/w", PreferredTools: []PreferredToolStatus{
+			{Name: "rg", Kind: "command", When: "search text", Present: true},
+			{Name: "offline", Kind: "mcp", When: "graph", Present: false},
+		}})
+		assert.StrContains(t, p, "Preferred tool: rg (command) — search text")
+		assert.StrContains(t, p, "`--help`")
+		assert.StrContains(t, p, "record learned usage in memory")
+		assert.NotContains(t, p, "offline")
+	})
 }
 
 // stubInterpreters makes the environment section and the native tool catalog

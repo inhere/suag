@@ -218,7 +218,7 @@ func swapMCPProviderFactoryForTest(factory func(ctx context.Context, settings to
 // newToolVisibility wraps the (approval-gated) registry in the deferred-tool
 // layer per tools.deferred. When tools end up deferred, tool_search is added to
 // base so the model can load them; otherwise it is not registered at all.
-func newToolVisibility(base *tools.Registry, inner agentcore.ToolRegistry, contextWindow int) (*tools.Visibility, error) {
+func newToolVisibility(base *tools.Registry, inner agentcore.ToolRegistry, contextWindow int, pinnedMCPTools []string) (*tools.Visibility, error) {
 	mode, err := tools.ParseDeferredMode(gkconfig.String("tools.deferred"))
 	if err != nil {
 		return nil, err
@@ -230,7 +230,9 @@ func newToolVisibility(base *tools.Registry, inner agentcore.ToolRegistry, conte
 	if !ok {
 		return nil, fmt.Errorf("tool registry %T does not support lookup", inner)
 	}
-	vis := tools.NewVisibility(lookup, tools.VisibilityOptions{Mode: mode, ContextWindow: contextWindow})
+	vis := tools.NewVisibility(lookup, tools.VisibilityOptions{
+		Mode: mode, ContextWindow: contextWindow, PinnedMCPTools: pinnedMCPTools,
+	})
 	if vis.Active() {
 		base.MustRegister(native.NewToolSearchTool(vis))
 	}

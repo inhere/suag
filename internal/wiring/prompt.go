@@ -103,6 +103,18 @@ func dependencyAPILine() string {
 		strings.Join(clauses, "; ") + ".\n"
 }
 
+// writePreferredTools renders only available declarations. This section is
+// segment context, not basePrompt, because discovery facts can change.
+func writePreferredTools(b *strings.Builder, statuses []PreferredToolStatus) {
+	for _, status := range statuses {
+		if !status.Present {
+			continue
+		}
+		fmt.Fprintf(b, "- Preferred tool: %s (%s) — %s. Use when applicable; usage unclear, first check `--help`; record learned usage in memory.\n",
+			status.Name, status.Kind, status.When)
+	}
+}
+
 // environmentPrompt is the environment section of the segment context: OS,
 // workspace, shell (writable), read/write mode and how to enable writing. It
 // is read for every new segment and compared at each turn start.
@@ -131,6 +143,7 @@ func environmentPrompt(opts Options) string {
 			fmt.Fprintf(&b, "  - %s: %s\n", d.Path, mode)
 		}
 	}
+	writePreferredTools(&b, opts.PreferredTools)
 	if opts.AllowWrite {
 		fmt.Fprintf(&b, "- Shell for shell_exec: %s\n", native.ShellName(gkconfig.String("tools.shell")))
 		// Interpreters found on PATH (tools.interpreters): with one at hand the
