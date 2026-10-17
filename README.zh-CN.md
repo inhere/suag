@@ -33,17 +33,17 @@ Suga 是用 Go 写的个人编码 Agent。同一个持久会话引擎提供两�
 
 详细说明：[references/config.md](skills/suga-guide/references/config.md)（上手与配置命令）
 
-- 先运行 `suga init`；它会创建私有的 `~/.suga`、带注释的 `config.yaml` 和只含注释的 `.env` 模板。已有文件（包括 `.env`）永不覆盖。
-- 在 `.env` 填 provider 值，再用 `suga config get model`、`suga config path` 和离线的 `suga models` 检查生效配置；完整能力诊断仍用 `suga manifest`。
-- 没有二进制时可手工创建包含 `model: <provider>/<model>` 的最小 YAML；[config/config.yaml](config/config.yaml) 仍是完整字段样例。通常优先使用生成的模板和 `suga config set`。
-
 ```bash
+suga init                                         # 创建 ~/.suga、带注释的 config.yaml 与只含注释的 .env（已有文件不覆盖）
+# 在 ~/.suga/.env 填密钥，例如 DEEPSEEK_API_KEY=...（内置 provider：openai / anthropic / deepseek）
+suga config set model deepseek/deepseek-chat      # 选模型（<provider>/<model>）；密钥不能用 config set 写
+suga config set tools.allow_write true            # 允许 chat 写文件、执行命令（执行前会询问）
+suga models                                       # 离线查看可用模型；suga config get <key> 看生效值与来源
 suga chat                                         # 在当前目录开启交互式对话
-suga run --prompt "概括一下这个项目"               # 单轮，只读
-suga run --allow-write --prompt "修好失败的测试"
-suga run --resume <session-id> --prompt "继续"
-suga run --max-steps 30 --prompt "长任务"         # 本轮步数上限（默认 max_steps: 240）
 ```
+
+- 单轮：`suga run --prompt "概括一下这个项目"`（只读）、`suga run --allow-write --prompt "修好失败的测试"`、`suga run --resume <session-id> --prompt "继续"`；`--max-steps` 限制本轮步数（默认 240）。
+- 完整字段样例见 [config/config.yaml](config/config.yaml)；`suga manifest` 显示完整的生效能力。
 
 ## Chat
 
