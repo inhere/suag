@@ -48,6 +48,14 @@ func TestStoreSearchSynchronizesFilesAndFallsBack(t *testing.T) {
 		assert.Require(t, assert.Len(t, hits, 3))
 		assert.Eq(t, "needle-title", hits[0].ID)
 	})
+	t.Run("applies_when is searchable through the index", func(t *testing.T) {
+		entry, err := indexed.Write(ctx, scope, memory.Op{Action: memory.ActionAdd, Kind: memory.KindFeedback,
+			Title: "build flag", Body: "use the flag", AppliesWhen: []string{"toolchain zetagolang 1.26"}})
+		assert.Require(t, assert.NoErr(t, err))
+		hits, err := indexed.Search(ctx, scope, "zetagolang", 10)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Eq(t, []string{entry.ID}, hitIDs(hits))
+	})
 	t.Run("long English and short Chinese terms hit", func(t *testing.T) {
 		entry, err := indexed.Write(ctx, scope, memory.Op{Action: memory.ActionAdd, Kind: memory.KindUser,
 			Title: "中文记忆", Body: "alpha environment"})

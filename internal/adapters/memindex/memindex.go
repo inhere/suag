@@ -4,6 +4,7 @@ package memindex
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/inhere/suga/internal/personal/store"
@@ -83,8 +84,13 @@ func (s *Store) Search(ctx context.Context, scope memory.Scope, q string, limit 
 	byID := make(map[string]memory.Entry, len(entries))
 	for _, entry := range entries {
 		byID[entry.ID] = entry
-		sources = append(sources, store.MemorySource{ID: entry.ID,
-			Text: entry.Title + "\n" + entry.Body, Updated: entry.Updated})
+		// applies_when is searchable like the title and body (design: an entry
+		// is found by the versions or environments it applies to).
+		text := entry.Title + "\n" + entry.Body
+		if len(entry.AppliesWhen) > 0 {
+			text += "\n" + strings.Join(entry.AppliesWhen, "\n")
+		}
+		sources = append(sources, store.MemorySource{ID: entry.ID, Text: text, Updated: entry.Updated})
 	}
 	if _, _, err := s.db.SyncMemoryIndex(ctx, scope.String(), sources); err != nil {
 		return s.fallback(ctx, scope, q, limit, "sync index", err)
