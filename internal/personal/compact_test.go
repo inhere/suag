@@ -510,6 +510,70 @@ func TestManualCompactAndPlanInSummary(t *testing.T) {
 	assert.Eq(t, true, strings.Contains(prov.sumReqs[1].Messages[0].Content, "SUMMARY-main-1"))
 }
 
+// compactSections are the fixed sections of a handoff package, in order; the
+// last one is refsHeading, which parseRefs reads the refs back from.
+var compactSections = []string{
+	"## 当前任务", "## 坐标", "## 采纳与否决", "## 验证到哪", "## 进展与阻塞", "## 下一步", refsHeading,
+}
+
+// compactConstraints are the three hard constraints of the summary instruction.
+// They are spelled out here on purpose: dropping one from compactSystemPrompt
+// must fail the test below.
+var compactConstraints = []string{"一律原样保留", "不得写成已执行", "不得夸大为"}
+
+// compactSectionNames lists the "## " headings of text in order, without their
+// parenthetical note.
+func compactSectionNames(text string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.HasPrefix(line, "## ") {
+			continue
+		}
+		name, _, _ := strings.Cut(line, "（")
+		out = append(out, strings.TrimSpace(name))
+	}
+	return out
+}
+
+// TestCompactTemplateSections: the handoff package has fixed sections (the
+// plan stays out of the template, renderPackage appends it) and the summary
+// instruction carries the three hard constraints; summaries written with the
+// older, freer structure stay readable.
+func TestCompactTemplateSections(t *testing.T) {
+	t.Run("fixed sections in order, refs last", func(t *testing.T) {
+		assert.Eq(t, compactSections, compactSectionNames(compactTemplate))
+	})
+
+	t.Run("summary request carries the template and the constraints", func(t *testing.T) {
+		repo := openObserveRepo(t)
+		prov := &scriptProv{name: "main", normal: func(n int, _ *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+			return finalText(fmt.Sprintf("reply-%d", n))
+		}}
+		runner := compactRunner(t, repo, prov, nil, func(c *Config) { c.ContextWindow, c.CompactReserveTokens = 100000, 1000 })
+		res, err := runner.Run(context.Background(), RunRequest{Prompt: "hello there"})
+		assert.NoErr(t, err)
+		_, err = runner.Compact(context.Background(), res.SessionID)
+		assert.NoErr(t, err)
+		assert.Require(t, assert.Len(t, prov.sumReqs, 1))
+		req := prov.sumReqs[0]
+		assert.StrContains(t, req.Messages[0].Content, compactTemplate)
+		assert.Eq(t, compactSections, compactSectionNames(req.Messages[0].Content))
+		// The constraints are the fixed instruction outside the template, so the
+		// model is told them rather than writing them out as a section.
+		for _, c := range compactConstraints {
+			assert.StrContains(t, req.System, c)
+		}
+	})
+
+	t.Run("refs of a summary written before the sections were fixed", func(t *testing.T) {
+		// legacyRefsHeading is spelled out: it is what already stored summaries
+		// contain, so parseRefs must keep reading that heading.
+		const legacyRefsHeading = "## 与当前任务相关的引用"
+		body := "## 涉及文件\n- internal/x.go\n## 关键决策\n- 无\n" + legacyRefsHeading + "\n- sess_a/12 请求\n"
+		assert.Eq(t, []string{"sess_a/12"}, parseRefs(body, "sess_a", nil))
+	})
+}
+
 func TestTruncateMiddleKeepsUTF8(t *testing.T) {
 	s := strings.Repeat("中文字符", 3000)
 	out := truncateMiddle(s, 2001)

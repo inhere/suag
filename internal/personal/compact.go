@@ -26,24 +26,29 @@ const (
 var ErrNothingToCompact = errors.New("nothing to compact")
 
 // compactSystemPrompt is the fixed handoff-package instruction; tests match on
-// it to tell summary calls from ordinary turns.
+// it to tell summary calls from ordinary turns. The last sentence carries the
+// three hard constraints of a summary (design "交接包模板"): they belong to the
+// instruction, not to the section template the model writes out.
 const compactSystemPrompt = "你是会话交接助手。把给定的对话历史整理成一份交接包，供同一个智能体在新的一段对话里继续当前任务。" +
 	"只输出交接包正文，不要寒暄，不要调用工具。必须保留所有对继续当前任务有用的事实、路径、命令、标识符和数值；" +
-	"引用只能从给出的候选 ref 中挑选并原样写出。"
+	"引用只能从给出的候选 ref 中挑选并原样写出。硬约束：给出的路径、命令、标识符与数值一律原样保留，不得改写或省略；" +
+	"计划里没有真正执行过的部分不得写成已执行；局部搜索结果（某一个目录、某一次查询）不得夸大为“不存在”“没有实现”这类全局结论。"
 
 // refsHeading heads the handoff section the refs are parsed from.
 const refsHeading = "## 与当前任务相关的引用"
 
-// compactTemplate is the fixed handoff package structure (design "交接包模板").
+// compactTemplate is the fixed handoff package structure (design "交接包模板"):
+// the sections are fixed so a summary can be located by section and searched,
+// and the last one is refsHeading, which parseRefs reads the refs back from.
+// The plan is appended by renderPackage, so the template has no plan section.
 const compactTemplate = `请按下列固定结构输出交接包正文（没有内容的小节写“无”）：
 ## 当前任务（最近的用户请求原文会附在交接包里，不必复述）
-## 目标与约束
-## 进展（已完成 / 进行中 / 阻塞）
-## 当前计划
-## 关键决策
-## 涉及文件
-` + refsHeading + `（ref + 一句话说明，可用 recall 读取）
-## 下一步`
+## 坐标（文件 / 符号 / 分支 / 版本）
+## 采纳与否决
+## 验证到哪
+## 进展与阻塞
+## 下一步
+` + refsHeading + `（ref + 一句话说明，可用 recall 读取）`
 
 // compactLimits resolves the window and reserve budgets (tokens).
 //
