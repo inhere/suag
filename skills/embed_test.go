@@ -24,7 +24,8 @@ func TestEmbeddedGuideIsALoadableSkill(t *testing.T) {
 	assert.NotEmpty(t, skill.Description)
 	assert.NotEmpty(t, strings.TrimSpace(body))
 
-	for _, ref := range []string{"references/config.md", "references/providers.md", "references/gofer.md"} {
+	for _, ref := range []string{"references/config.md", "references/providers.md", "references/gofer.md",
+		"references/chat.md", "references/tools.md", "references/sessions.md", "references/observability.md"} {
 		t.Run(ref, func(t *testing.T) {
 			assert.StrContains(t, body, ref) // SKILL.md tells the model to read it
 			data, err := fs.ReadFile(FS, "suga-guide/"+ref)

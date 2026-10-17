@@ -180,5 +180,9 @@ hooks:
 - `references/config.md`：完整配置项参考（全部键、默认值、取值、作用范围）、环境变量、目录布局、命令与常用 flag。
 - `references/providers.md`：provider 与模型细节：类型、兼容适配、地址拼接、`model_id`、上下文窗口、价格、思考档位、`prompt_cache`、模型引用解析、网关示例、从旧配置迁移。
 - `references/gofer.md`：接入 gofer：`agents.yaml` 配置、只读/可写、审批与拒绝语义、chat 送话、观测命令、升级迁移要点。
+- `references/chat.md`：chat 交互：`:` 本地命令（`:diff`、`:model`、`:add-dir`/`:dirs`、`:help`/`:usage`/`:tasks`）、输入历史与多行输入、插话（steering）与 Esc/Ctrl-C 语义、`!`/`!!` 本地命令、续接预览与崩溃恢复、`suga send` 投递。用户问 chat 里某个按键或命令怎么用时读。
+- `references/tools.md`：工具与权限：工具清单、写权限与审批、`--add-dir` 与越界授权、只读根（依赖/idev-std）、危险删除拦截、大输出外置与输出规则、后台/监听任务、后台 Stop hook、MCP、子 agent。用户问某个工具能做什么、为什么被拒、怎么放行时读。
+- `references/sessions.md`：会话、记忆与 skills：续接与交接、换目录续接、分段压缩、中断回合、历史折叠、空闲整理、提示词结构、记忆后端与污染确认、skills 扫描与加载。用户问会话/记忆/skill 行为时读。
+- `references/observability.md`：观测：`suga trace`（各类行与 `--analyze` 字段）、`sessions`/`stats`/`export`/`gc`、stream-json 的 `usage`/`retry`/`wrap_up`、进程日志与 `SUGA_DEBUG`。排查一次运行、看用量成本时读。
 
 只有在需要某个具体键的默认值或取值范围、或要回答“能不能配 X”时再读 `references/config.md`；回答“怎么装、怎么改、报错怎么办”通常上面的向导就够了。

@@ -82,8 +82,13 @@
 | `chat.notify` | `auto` | 长回合结束或审批等待时通知：`auto`（Windows Terminal 用 OSC 9，否则 BEL）、`bell`、`osc9`、`off` |
 | `chat.notify_after` | `60s` | 回合达到此时长后结束时通知 |
 | `chat.terminal_title` | `true` | 把终端窗口/标签页标题设为 `suga · <短名称> · <会话标题>`（会话标题即续接时已有的那条，新会话取第一条消息，截到 30 字）：启动时先保存终端原有标题（`ESC[22;0t`），退出时置空并恢复（`ESC[23;0t`，置空是不支持标题栈的终端的兜底）。标题里的控制字符（含 ESC/BEL/C1）会被剔除，避免注入转义序列 |
+| `chat.history` | `true` | 本地 chat 输入历史保存在 `$SUGA_HOME/history.jsonl`；只记录键盘输入并先脱敏（`!` 本地命令也记录，投递消息不记录） |
+| `chat.history_size` | `1000` | 输入历史最多保存的条数 |
+| `chat.diff` | `true` | 文件改动预览；`false` 关闭（`:diff` / `:diff N` 查看完整改动） |
+| `chat.diff_lines` | `20` | 改动预览最多显示的行数（超出时提示用 `:diff` 查看全部） |
+| `chat.ask_outside_dirs` | `true` | 文件工具越出工作区、只读根与附加目录时询问 `[r] 只读 [w] 读写 [n] 拒绝`，答应后把目录写进会话；关闭时越界调用直接拒绝 |
 
-五个键都接受布尔或字符串（`"off"` / `"false"` 关闭）。`chat.markdown`、`chat.spinner`、`chat.highlight_input`、`chat.terminal_title` 只在彩色终端生效：非终端、重定向输出或 `NO_COLOR` 时按原文显示，不加任何转义。`chat.steering` 只要求输入是终端。
+上表中的开关键（`chat.markdown`、`chat.spinner`、`chat.steering`、`chat.highlight_input`、`chat.terminal_title`、`chat.history`、`chat.diff`、`chat.ask_outside_dirs`）都接受布尔或字符串（`"off"` / `"false"` 关闭）。`chat.markdown`、`chat.spinner`、`chat.highlight_input`、`chat.terminal_title` 只在彩色终端生效：非终端、重定向输出或 `NO_COLOR` 时按原文显示，不加任何转义。`chat.steering` 只要求输入是终端。
 
 ## `tools.*`
 
