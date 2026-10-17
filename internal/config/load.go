@@ -37,7 +37,7 @@ func Load() error {
 		return validateLoadedSettings()
 	}
 	// Like .env, config.yaml is read from SUGA_HOME only: a config.yaml in the
-	// user's project directory is that project's file, not suga's.
+	// user's project is that project's file, not suga's.
 	if err := gkconfig.LoadExists(filepath.Join(privateDir, "config.yaml")); err != nil {
 		slog.Error("loading config file", "err", err)
 		return err
@@ -50,6 +50,9 @@ func Load() error {
 func validateLoadedSettings() error {
 	if _, err := ReadApprovalRulesSettings(); err != nil {
 		return fmt.Errorf("validate approval rules settings: %w", err)
+	}
+	if _, err := ReadSnapshotSettings(); err != nil {
+		return fmt.Errorf("validate snapshot settings: %w", err)
 	}
 	return nil
 }

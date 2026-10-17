@@ -376,11 +376,12 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if _, err := native.ParseFetchProxy(gkconfig.String("tools.web_fetch.proxy")); err != nil {
 		return nil, err
 	}
+	snapshotter := configuredSnapshotter()
 	var capabilities defaultCapabilities
 	if opts.CLIMode {
-		capabilities, err = buildPersonalCLICapabilities(ctx, workspace, dirs, allowWrite, servers)
+		capabilities, err = buildPersonalCLICapabilitiesWithSnapshot(ctx, workspace, dirs, allowWrite, servers, snapshotter)
 	} else {
-		capabilities, err = buildPersonalCapabilitiesWithServers(ctx, workspace, dirs, allowWrite, servers)
+		capabilities, err = buildPersonalCapabilitiesWithServersAndSnapshot(ctx, workspace, dirs, allowWrite, servers, snapshotter)
 	}
 	if err != nil {
 		return nil, err
@@ -663,22 +664,25 @@ func buildPersonalCapabilities(workspace string, dirs *native.AddDirs, allowWrit
 }
 
 func buildPersonalCapabilitiesWithServers(ctx context.Context, workspace string, dirs *native.AddDirs, allowWrite bool, servers []mcp.ServerSettings) (defaultCapabilities, error) {
+	return buildPersonalCapabilitiesWithServersAndSnapshot(ctx, workspace, dirs, allowWrite, servers, nil)
+}
+
+func buildPersonalCapabilitiesWithServersAndSnapshot(ctx context.Context, workspace string, dirs *native.AddDirs, allowWrite bool, servers []mcp.ServerSettings, snapshotter native.Snapshotter) (defaultCapabilities, error) {
 	if allowWrite {
-		return buildDefaultCapabilitiesWithServers(ctx, workspace, dirs, servers)
+		return buildDefaultCapabilitiesWithServersAndSnapshot(ctx, workspace, dirs, servers, snapshotter)
 	}
 	// Read-only: only the catalog's read tools, and no MCP (ACP read_only
 	// sessions must not start MCP servers).
 	registry := tools.NewRegistry()
-	for _, tool := range native.BuildTools(nativeEnv(workspace, dirs), false) {
+	for _, tool := range native.BuildTools(nativeEnvWithSnapshot(workspace, dirs, snapshotter), false) {
 		registry.Register(tool)
 	}
 	return defaultCapabilities{Registry: registry}, nil
 }
 
-// CLI always exposes configured MCP tools; the dispatch gate enforces their permissions.
-func buildPersonalCLICapabilities(ctx context.Context, workspace string, dirs *native.AddDirs, allowWrite bool, servers []mcp.ServerSettings) (defaultCapabilities, error) {
+func buildPersonalCLICapabilitiesWithSnapshot(ctx context.Context, workspace string, dirs *native.AddDirs, allowWrite bool, servers []mcp.ServerSettings, snapshotter native.Snapshotter) (defaultCapabilities, error) {
 	if allowWrite {
-		return buildDefaultCapabilitiesWithServers(ctx, workspace, dirs, servers)
+		return buildDefaultCapabilitiesWithServersAndSnapshot(ctx, workspace, dirs, servers, snapshotter)
 	}
 	built, err := buildPersonalCapabilitiesWithServers(ctx, workspace, dirs, false, nil)
 	if err != nil {

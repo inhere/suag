@@ -176,6 +176,7 @@ providers:
 #   # or read-write) for the rest of the session. run, ACP and a chat without a
 #   # terminal never ask; they keep refusing such a path.
 #   ask_outside_dirs: true
+#   undo_confirm: true # :undo asks before changing files (default true)
 
 # Project rules: one file per directory level, from the Git root (or cwd) down
 # to cwd, plus $SUGA_HOME/AGENTS.md for the user level. Only a file name (no
@@ -221,6 +222,16 @@ max_steps: 240
 # window) | always | never. Deferred tools are loaded via the tool_search tool.
 tools:
   deferred: auto
+  # File-tool checkpoints. Sensitive before-images live under sessions/<id>/snapshots/.
+  # Snapshotting is opt-in; :undo and suga undo remain available when it is off.
+  snapshots:
+    enabled: true
+    max_file_bytes: 16777216       # 16 MiB
+    max_session_bytes: 268435456   # 256 MiB
+    max_global_bytes: 1073741824   # 1 GiB
+    keep_turns: 20
+    keep_days: 7
+    on_error: deny                 # deny | continue (continue marks writes unrecoverable)
   # chat only (run needs --allow-write; --read-only wins; ACP ignores it):
   # allow_write: true  # boolean, default false: enable file_write / shell_exec
   # chat only: ask (default) confirms every non-MCP tool outside the read-only

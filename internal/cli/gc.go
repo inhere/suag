@@ -12,6 +12,7 @@ import (
 
 	"github.com/gookit/goutil/cflag/capp"
 	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal"
 	personalprocess "github.com/inhere/suga/internal/personal/process"
 	"github.com/inhere/suga/internal/personal/store"
 )
@@ -42,6 +43,27 @@ func runGC(ctx context.Context, out io.Writer, cutoff time.Time, apply bool) err
 	if err != nil {
 		return err
 	}
+	sessionsDir, err := appconfig.ResolveSessionsDir()
+	if err != nil {
+		return err
+	}
+	snapshotSettings, err := appconfig.ReadSnapshotSettings()
+	if err != nil {
+		return err
+	}
+	// GC owns the sessions root, so it also performs the global checkpoint
+	// cleanup. Existing snapshots are cleaned even when new snapshotting is off.
+	snapshots := personal.NewSessionSnapshotsWithLimits(sessionsDir, personal.SnapshotLimits{
+		MaxFileBytes: snapshotSettings.MaxFileBytes, MaxSessionBytes: snapshotSettings.MaxSessionBytes,
+		MaxGlobalBytes: snapshotSettings.MaxGlobalBytes, KeepTurns: snapshotSettings.KeepTurns, KeepDays: snapshotSettings.KeepDays,
+	})
+	if _, err := snapshots.CleanupAll(); err != nil {
+		if snapshotSettings.OnError == appconfig.SnapshotOnErrorDeny {
+			return fmt.Errorf("clean snapshots: %w", err)
+		}
+		fmt.Fprintf(out, "warning: clean snapshots: %v\n", err)
+	}
+
 	repo, err := openCoreStore()
 	if err != nil {
 		return err
@@ -82,16 +104,25 @@ func runGC(ctx context.Context, out io.Writer, cutoff time.Time, apply bool) err
 	if err != nil {
 		return err
 	}
+	for _, session := range report.Sessions {
+		if dir, ok := sessionDir(sessionsDir, session.ID); ok {
+			bytes, sizeErr := personal.SnapshotDirectoryBytes(filepath.Join(dir, "snapshots"))
+			if sizeErr != nil {
+				if snapshotSettings.OnError == appconfig.SnapshotOnErrorDeny {
+					return fmt.Errorf("measure snapshots of %s: %w", session.ID, sizeErr)
+				}
+				fmt.Fprintf(out, "warning: measure snapshots of %s: %v\n", session.ID, sizeErr)
+			} else {
+				report.SnapshotBytes += bytes
+			}
+		}
+	}
 	if report.Applied {
 		// The readable per-session transcript (transcripts/<id>.jsonl) is not
 		// in the database; remove it with its session whatever the current
 		// transcripts setting, since an earlier run may have written it.
 		// Likewise the session directory (sessions/<id>/, externalised tool
-		// outputs) lives outside the database and goes with its session.
-		sessionsDir, err := appconfig.ResolveSessionsDir()
-		if err != nil {
-			return err
-		}
+		// outputs and snapshots) lives outside the database and goes with its session.
 		for _, session := range report.Sessions {
 			if err := os.Remove(filepath.Join(home, "transcripts", session.ID+".jsonl")); err != nil && !errors.Is(err, os.ErrNotExist) {
 				fmt.Fprintf(out, "warning: remove transcript of %s: %v\n", session.ID, err)
@@ -111,7 +142,7 @@ func runGC(ctx context.Context, out io.Writer, cutoff time.Time, apply bool) err
 // id that could name another place (separators, "..", absolute) yields false,
 // so a stored id can never make gc remove anything outside the sessions root.
 func sessionDir(sessionsDir, id string) (string, bool) {
-	if id == "" || id == "." || strings.ContainsAny(id, `/\:`) || !filepath.IsLocal(id) {
+	if id == "" || id == "." || strings.ContainsAny(id, `/\\:`) || !filepath.IsLocal(id) {
 		return "", false
 	}
 	return filepath.Join(sessionsDir, id), true
@@ -129,8 +160,8 @@ func writeGCReport(out io.Writer, report store.GCReport, cutoff time.Time) {
 	if report.Applied {
 		verb = "已删除"
 	}
-	fmt.Fprintf(out, "%s %d 个会话（%s 之前未更新，含其 transcript 文件与会话目录）与 %d 条事件记录", verb, len(report.Sessions),
-		cutoff.Local().Format("2006-01-02 15:04"), report.Events)
+	fmt.Fprintf(out, "%s %d 个会话（%s 之前未更新，含其 transcript 文件与会话目录）与 %d 条事件记录，含 snapshots %d 字节",
+		verb, len(report.Sessions), cutoff.Local().Format("2006-01-02 15:04"), report.Events, report.SnapshotBytes)
 	if !report.Applied {
 		fmt.Fprint(out, "；加 --apply 执行")
 	}
