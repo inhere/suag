@@ -52,6 +52,7 @@ func TestParseConfigValue(t *testing.T) {
 		{name: "duration", key: "retry.base_delay", raw: "2s", want: 2 * time.Second},
 		{name: "list", key: "fallback_models", raw: "openai/a, deepseek/b", want: []string{"openai/a", "deepseek/b"}},
 		{name: "enum", key: "providers.gateway.thinking", raw: "HIGH", want: "high"},
+		{name: "yaml map", key: "providers.gateway.headers", raw: "{X-Test: value}", want: map[string]string{"X-Test": "value"}},
 		{name: "bad type", key: "retry.max_attempts", raw: "many", err: true},
 		{name: "bad enum", key: "tools.deferred", raw: "sometimes", err: true},
 	}
@@ -121,6 +122,14 @@ func TestReadConfigValueSourcesAndSecrets(t *testing.T) {
 		assert.NoErr(t, err)
 		assert.Eq(t, false, value.Value)
 		assert.Eq(t, SourceDefault, value.Source)
+	})
+
+	t.Run("configured tool value wins over default", func(t *testing.T) {
+		loadYAML(t, "model: deepseek/m\ntools:\n  deferred: never\n")
+		value, err := ReadConfigValue("tools.deferred")
+		assert.NoErr(t, err)
+		assert.Eq(t, "never", value.Value)
+		assert.Eq(t, SourceConfig, value.Source)
 	})
 }
 

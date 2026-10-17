@@ -1,7 +1,6 @@
 package axconfig
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	goccyyaml "github.com/goccy/go-yaml"
 	gkconfig "github.com/gookit/config/v2"
 )
 
@@ -307,14 +307,14 @@ func parseConfigValue(descriptor ConfigKey, raw, key string) (any, error) {
 		return out, nil
 	case ConfigTypeStringMap:
 		var value map[string]string
-		if err := json.Unmarshal([]byte(raw), &value); err != nil {
-			return nil, fmt.Errorf("want a JSON object")
+		if err := goccyyaml.Unmarshal([]byte(raw), &value); err != nil {
+			return nil, fmt.Errorf("want a YAML mapping")
 		}
 		return value, nil
 	case ConfigTypeYAML:
 		var value any
-		if err := json.Unmarshal([]byte(raw), &value); err != nil {
-			return nil, fmt.Errorf("want a JSON/YAML-compatible value")
+		if err := goccyyaml.Unmarshal([]byte(raw), &value); err != nil {
+			return nil, fmt.Errorf("want a YAML value")
 		}
 		return value, nil
 	case ConfigTypeEnum:
@@ -622,14 +622,29 @@ func effectiveConfigValue(key string) (any, bool, error) {
 	case "mcp.call_timeout_sec":
 		return MCPCallTimeout(), gkconfig.Get(key) != nil, nil
 	case "tools.allow_write":
+		if value, present := lookupRawConfig(key); present {
+			return value, true, nil
+		}
 		return false, false, nil
 	case "tools.deferred":
+		if value, present := lookupRawConfig(key); present {
+			return value, true, nil
+		}
 		return "auto", false, nil
 	case "tools.approval":
+		if value, present := lookupRawConfig(key); present {
+			return value, true, nil
+		}
 		return "ask", false, nil
 	case "tools.parallel_reads", "tools.minimize_output", "tools.dependency_roots", "tools.standards_roots":
+		if value, present := lookupRawConfig(key); present {
+			return value, true, nil
+		}
 		return true, false, nil
 	case "tools.web_fetch.allow_private":
+		if value, present := lookupRawConfig(key); present {
+			return value, true, nil
+		}
 		return false, false, nil
 	case "tools.snapshots.enabled", "tools.snapshots.max_file_bytes", "tools.snapshots.max_session_bytes", "tools.snapshots.max_global_bytes", "tools.snapshots.keep_turns", "tools.snapshots.keep_days", "tools.snapshots.on_error":
 		settings, err := ReadSnapshotSettings()
