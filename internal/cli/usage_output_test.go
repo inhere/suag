@@ -327,8 +327,44 @@ func TestRunTextModeShowsContextShare(t *testing.T) {
 	}
 }
 
+// TestStreamJSONResultContext pins the result event's context object and its
+// omission when the model window is unknown.
+func TestStreamJSONResultContext(t *testing.T) {
+	for _, tc := range []struct {
+		name                            string
+		window                          int
+		wantContext                     bool
+		wantUsed, wantWindow, wantShare float64
+	}{
+		{name: "known window", window: 1000, wantContext: true, wantUsed: 550, wantWindow: 1000, wantShare: 55},
+		{name: "unknown window", wantContext: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, err := store.Open(newTestStorePath(t))
+			assert.Require(t, assert.NoErr(t, err))
+			t.Cleanup(func() { _ = repo.Close() })
+			runner, err := personal.New(personal.Config{
+				Repository: repo, Provider: contextUsageProvider{input: 550}, ContextWindow: tc.window,
+			})
+			assert.Require(t, assert.NoErr(t, err))
+			var stdout, stderr bytes.Buffer
+			assert.NoErr(t, executePersonalRun(context.Background(), runner,
+				personalOptions{Prompt: "x", OutputFormat: "stream-json"}, &stdout, &stderr))
+			line := lastJSONLine(t, stdout.String())
+			contextValue, ok := line["context"].(map[string]any)
+			assert.Eq(t, tc.wantContext, ok)
+			if !tc.wantContext {
+				return
+			}
+			assert.Eq(t, tc.wantUsed, contextValue["used"])
+			assert.Eq(t, tc.wantWindow, contextValue["window"])
+			assert.Eq(t, tc.wantShare, contextValue["share"])
+		})
+	}
+}
+
 // Text mode prints the model at the start and a usage summary at the end on
-// stderr; stdout keeps only the answer. stream-json output is unchanged.
+// stderr; stdout keeps only the answer. stream-json output remains machine-readable.
 func TestRunTextModeShowsModelAndSummary(t *testing.T) {
 	runner, _ := newCLITestRunner(t, cachedUsageProvider{})
 	var stdout, stderr bytes.Buffer

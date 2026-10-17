@@ -413,7 +413,7 @@ func openRequestedSession(ctx context.Context, runner *personal.Runner, opts per
 }
 
 // runSummary is the text-mode closing line: model, this turn's tokens, the
-// session total when known, and the elapsed time.
+// session total and context share when known, and the elapsed time.
 func runSummary(runner *personal.Runner, result personal.RunResult, elapsed time.Duration, budget *personal.BudgetSnapshot) string {
 	line := fmt.Sprintf("%s · in %d / out %d tokens", termtext.Clean(chat.ModelLabel(runner.ProviderName(), runner.Model())),
 		result.Usage.InputTokens, result.Usage.OutputTokens)
