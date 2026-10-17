@@ -63,6 +63,23 @@ In chat, `:session` shows the session id, `:compact` starts a new segment (see [
 On exit chat prints token usage and the command that resumes the session. Continuing an existing session (`--resume <id>`, or `--session-id <id>` naming one that exists) first shows the last reply the model gave with text, above the first prompt, so you can go on from it: a dim "上一次回复：" (last reply) sets it apart, a long reply is cut to its last 40 lines with the `suga trace` command for the rest, and a turn that was interrupted or failed is marked "上一回合未正常结束" (the previous turn did not end normally). It only reads: no model call, no session entry. A session a killed process left in `running` (kill -9, a crash) is recovered by the first prompt after the continue - chat prints "上一回合异常中断，已恢复会话" and the interrupted turn is recorded `cancelled`, so the new turn can start; a session a live process is inside is still refused, as before. `:help` lists local commands and keyboard shortcuts; `:usage` shows this process and session token/cache/cost totals; `:tasks` lists background tasks.
 
 
+### Undoing file-tool changes
+
+When enabled (the default), `file_write`, `file_edit` and `file_remove` save a before-image before changing a file. Snapshots are private local data under `$SUGA_HOME/sessions/<session-id>/snapshots/`; they are not model context, transcripts or `suga export` data. Only the file tools are covered: `shell_exec` (including background tasks) is reported as out of scope, not automatically undone. `file_remove` keeps its normal seven-day trash behavior; ignored directories that are permanently purged remain unrecoverable.
+
+At the chat prompt, type `:checkpoints` to inspect recent writes, including restore/delete/skip/unrecoverable states and shell commands that were not snapshotted. Type `:undo` to preview and undo the latest file-changing turn, or `:undo N` for the latest N file-changing turns; append `force` to overwrite content conflicts. The default `chat.undo_confirm: true` asks for confirmation and treats anything other than `y`/`yes` as cancel. These commands are local keyboard commands only: delivered text, hooks, task notices and steering are ordinary messages; while a turn is running, a line beginning with `:` stays in the input line.
+
+The provider-independent CLI works without a configured provider:
+
+```text
+suga undo <session> --list [--json]
+suga undo <session> [--turn <turn-id> | -n <count>] [--force] [--yes] [--json]
+```
+
+The session accepts a full ID or a unique prefix. Destructive non-terminal use requires `--yes`; `--force` only overrides content conflicts and never bypasses root, path, file-type, link or protected-path checks. Undo is applied in reverse call order, can remove files created by a write, can restore eligible `file_remove` trash entries, and records a pre-undo snapshot. A moved session cwd or removed writable added directory makes old snapshots unavailable rather than restoring into an untrusted root. Read-only sessions may undo their own trusted snapshots, but cannot widen the allowed roots. There is no redo and no ACP-local undo command; ACP and `run` still create snapshots for their file writes.
+
+Defaults are a 16 MiB before-image per call, 256 MiB per session, 1 GiB globally, and retention of 20 completed turns or 7 days. `tools.snapshots.enabled: false` stops new snapshots but leaves the commands available for existing snapshots. `on_error: deny` (default) refuses the file I/O if snapshot storage, cleanup or state checks are uncertain; `continue` allows the write but marks it unrecoverable. A file over `max_file_bytes` is written but explicitly cannot be undone. `suga gc` cleans snapshots with session data and reports their byte count. After undo, the next explicit turn receives a `suga.undo` fact message (not a new user request); inspect the undo event and each tool event's `attrs.snapshot` with `suga trace <session> --json`. On a Git workspace, use `git status --short` and `git diff` to inspect changes outside the file-tool snapshot boundary.
+
 ## Configuration
 
 Suga reads only `$SUGA_HOME/config.yaml` and `$SUGA_HOME/.env` (default `~/.suga`); the working directory's config and `.env` files belong to your project and are never read. `SUGA_CONFIG` selects one config file. Secrets go into `$SUGA_HOME/.env` (e.g. `BAILIAN_API_KEY=...`); a `${VAR}` in the config is expanded from there or from the process environment. The settings used most:
@@ -75,6 +92,7 @@ Suga reads only `$SUGA_HOME/config.yaml` and `$SUGA_HOME/.env` (default `~/.suga
 | `providers.<id>.models.<model>` | `context_window`, `max_output_tokens`, `model_id` (the id sent to the provider when it differs from the key), `type`/`base_url` (a model may use its own protocol), `price`, `thinking` |
 | `compact_model`, `fallback_models` | Cheaper model for summaries; models tried in order when the main one fails |
 | `tools.allow_write`, `tools.approval` | Chat only: enable write and shell tools (default false); `ask` (default) confirms every write and shell call, `auto` does not |
+| `tools.snapshots.*` | File-tool checkpoints: enabled by default; 16 MiB per call, 256 MiB per session, 1 GiB globally, 20 turns/7 days retention, and `on_error: deny`; see [Undoing file-tool changes](#undoing-file-tool-changes) |
 | `mcp.servers`, `tools.auto_allow`, `tools.read_only_allow` | MCP servers, and the MCP allowlists (`server/toolglob`); every MCP call is refused while both are empty |
 | `memory.user.backend`, `memory.project.backend`, `memory.write_tainted` | Memory backend per scope (`files`, `gofer` for the project, `exec`) and what a session that read external content does on a write (`ask`, `deny`, `allow`) |
 | `hooks.command`, `hooks.post_tool_use` | Chat hook command (an argv list) and which tool calls get a PostToolUse event; no `hooks.command`, no hooks |

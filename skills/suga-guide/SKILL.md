@@ -101,6 +101,14 @@ suga manifest                            # 生效的模型、工具、skills、�
 - `--read-only` 永远优先。想收紧：给用户建议只读模式，而不是关掉审批。
 - 危险递归删除（`rm -r`、`Remove-Item -Recurse` 等指向 `/`、`~`、盘根或工作区及其父目录）在任何模式下都会被拦下，chat 只有手敲 `yes` 才执行。
 
+### 检查点与回滚
+
+- 默认情况下，`file_write`、`file_edit`、`file_remove` 在写入前把原内容保存到 `$SUGA_HOME/sessions/<session-id>/snapshots/`。快照不进入模型上下文、transcript 或 export；`shell_exec` 的改动不在回滚范围内，`file_remove` 的 7 天回收区语义不变。
+- chat 提示符使用 `:checkpoints` 查看清单，使用 `:undo`、`:undo N` 回滚最近的文件改动，`force` 只覆盖内容冲突；默认会确认，可用 `chat.undo_confirm: false` 关闭。只认本地键盘输入，投递消息不会触发这些命令。
+- CLI 使用 `suga undo <session> --list [--json]`，或 `suga undo <session> [--turn <id>|-n <count>] [--force] [--yes] [--json]`。session 支持唯一前缀；非终端破坏性调用必须 `--yes`。该命令不需要 provider，可在没有模型配置时列出或回滚。
+- 默认上限为单次 16 MiB、会话 256 MiB、全局 1 GiB，保留 20 个已完成回合或 7 天。`on_error: deny` 在快照不可靠时拒绝文件 I/O；`continue` 会继续但标为不可恢复。`shell_exec`、cwd/可写附加目录变更、冲突与 `--force` 的安全边界见 README 的回滚章节。
+- 回滚后下一次显式回合会收到 `suga.undo` 事实通知；用 `suga trace <session> --json` 检查 undo 事件和写工具事件的 `attrs.snapshot`。没有 redo，也没有 ACP 内置 undo 命令，但 ACP/run 的文件写操作照常快照。
+
 ### chat 输入历史与快捷键
 
 - chat 默认把本地键入（包括 `!` 命令）写入 `$SUGA_HOME/history.jsonl`，每行含时间、工作区和脱敏后的文本；`chat.history: false` 可关闭，`chat.history_size` 默认 1000。投递消息不会写入。

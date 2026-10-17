@@ -92,6 +92,13 @@
 | `tools.allow_write` | `false` | **仅 chat**：启用写文件与命令工具。`run` 需 `--allow-write`；ACP 看会话 mode；`--read-only` 优先 |
 | `tools.approval` | `ask` | **仅 chat**：`ask` 时每个非只读、非 MCP 工具调用前在终端询问；`auto` 不问。无终端时需确认的工具被拒 |
 | `tools.deferred` | `auto` | MCP 工具 schema 延迟加载：`auto`（schema 超过上下文窗口约 10% 时延迟）、`always`、`never`；被延迟的工具用 `tool_search` 取回 |
+| `tools.snapshots.enabled` | `true` | 是否为 `file_write`、`file_edit`、`file_remove` 保存写前快照；关闭只停止新快照，不删除已有快照或命令 |
+| `tools.snapshots.max_file_bytes` | `16777216`（16 MiB） | 单次调用保留的写前内容上限；超过时照常写入但标记不可恢复 |
+| `tools.snapshots.max_session_bytes` | `268435456`（256 MiB） | 一个会话的快照内容上限 |
+| `tools.snapshots.max_global_bytes` | `1073741824`（1 GiB） | `$SUGA_HOME/sessions` 下快照的全局内容上限 |
+| `tools.snapshots.keep_turns` | `20` | 保留的已完成 checkpoint 回合数；open/incomplete 回合不因数量清理 |
+| `tools.snapshots.keep_days` | `7` | 已完成 checkpoint 的最长保留天数 |
+| `tools.snapshots.on_error` | `deny` | `deny` 在快照存储、清理或状态不确定时在文件 I/O 前拒绝；`continue` 允许写入但标记不可恢复 |
 | `tools.max_output_bytes` | `8000` | 单次工具结果内联进会话的上限；超出时脱敏原文存 `$SUGA_HOME/sessions/<id>/outputs/`，会话只留 ref 与头尾各 2000 字节 |
 | `tools.max_spill_bytes` | `1048576`（1 MiB） | 单次工具（含 MCP）原始输出上限 |
 | `tools.parallel_reads` | `true` | 同一次回复里的多个本地读调用（file_read/list/grep/find）并发执行 |
@@ -202,6 +209,7 @@
 | `config.yaml`、`.env` | 配置与密钥 |
 | `db/sessions.db` | 全部会话（单个 SQLite 库，WAL） |
 | `sessions/<session-id>/outputs/` | 外置的大工具输出（`recall` 用 `out:<session>:<hex>` 读） |
+| `sessions/<session-id>/snapshots/` | 文件工具的敏感写前快照；按会话、回合和调用保存，不进入上下文、transcript 或 export |
 | `memory/user/` | 用户级记忆（files 后端） |
 | `projects/<key>/memory/` | 项目记忆（files 后端，非仓库模式） |
 | `trash/` | `file_remove` 的回收区（保留 7 天，`origin.json` 记录来源） |
@@ -231,6 +239,8 @@ suga send --session <id|短名称|前缀> --text <文本>   # 给正在运行的
 suga ps                   # 正在运行的 chat 进程（第二列是短名称）
 suga sessions [关键词] [-n 10] [--since 7d] [--cwd .] [--agents] [--json]
 suga trace <session> [--turn <id>] [--json] [--analyze] [--web]
+suga undo <session> --list [--json]
+suga undo <session> [--turn <id>|-n <count>] [--force] [--yes] [--json]
 suga stats [--session <id>] [--since 7d] [--json]
 suga export <session> [--redact] [-o <file>]
 suga gc --older-than 30d [--apply]
@@ -239,3 +249,5 @@ suga version
 ```
 
 chat 里的命令：`:session`（会话 ID）、`:compact`（开启新段）、`:quit` / `:exit`（退出）。退出码：会话不存在 `4`、被中断 `130`、其它 `1`。
+
+`suga undo` 不依赖 provider，session 参数接受完整 ID 或唯一前缀。`--list` 只读；破坏性操作在非终端 stdin 下必须 `--yes`，`--force` 只覆盖内容冲突。退出码为：`0` 完整恢复或幂等无操作，`3` 无快照/部分恢复/不可恢复文件，`4` 会话不存在，`5` 会话忙，`1` 参数、取消或其它错误。`--json` 输出 checkpoint 清单或回滚结果。chat 的 `:checkpoints` 和 `:undo [N] [force]` 只认本地提示符输入；shell_exec 只列出不回滚，cwd 或可写附加目录变化会使旧快照不可恢复。
