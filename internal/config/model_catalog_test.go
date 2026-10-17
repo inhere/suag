@@ -149,6 +149,6 @@ func findCatalogModel(t *testing.T, catalog ModelCatalog, ref string) ModelCatal
 			return model
 		}
 	}
-	t.Fatalf("model %q was not found", ref)
+	assert.Require(t, assert.True(t, false, "model %q was not found", ref))
 	return ModelCatalogModel{}
 }

@@ -36,9 +36,7 @@ func TestEnsureHomeCreatesSafeOnboardingFiles(t *testing.T) {
 	assert.Require(t, assert.NoErr(t, err))
 	for _, line := range strings.Split(string(env), "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
-			t.Fatalf("onboarding env contains a value line: %q", line)
-		}
+		assert.True(t, trimmed == "" || strings.HasPrefix(trimmed, "#"), "onboarding env contains a value line: %q", line)
 	}
 }
 
@@ -184,9 +182,7 @@ func TestBootstrapHelperProcess(t *testing.T) {
 	}
 	_ = os.Setenv("SUGA_HOME", home)
 	result, err := EnsureHome(BootstrapOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.Require(t, assert.NoErr(t, err))
 	if result.CreatedConfig {
 		_, _ = fmt.Fprintln(os.Stdout, "created")
 	}
