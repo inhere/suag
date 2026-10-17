@@ -1,7 +1,7 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 配置的优先工具设计
 
-> 状态：Draft 0.3 / 已批准实施
+> 状态：Draft 0.4 / 已批准实施
 
 ## 修订记录
 
@@ -10,6 +10,7 @@
 | 0.1 | 2026-10-17 | suga（gofer job） | 按 `suga-jipz` 最后一条方向调整，采用通用 command/MCP 配置、存在性探测和提示优先，不做逐工具适配。 |
 | 0.2 | 2026-10-17 | 监督（Claude） | 审核简化：manifest 不启动 MCP、不做分段 MCP 健康检查、子 agent 不列、trace 只记名字（见“0.2 审核简化”）。 |
 | 0.3 | 2026-10-17 | 监督（Claude） | 用户批准实施（2026-10-17“批准实施”），按 0.2 审核简化执行。 |
+| 0.4 | 2026-10-17 | 监督（Claude） | 更正：chat/run 对不在放行名单的 MCP 工具是直接拒绝而非询问（PTY 冒烟实测，与现有审批规则一致）。 |
 
 ### 思考模式与范围冻结
 
@@ -124,7 +125,7 @@ suga config set tools.preferred '[{name: rg, kind: command, when: "精确搜索�
 
 runtime 构建 `Visibility` 时增加一组“pinned MCP tool names”：优先 MCP server 注册成功的所有工具都进入 direct set，永不进入 deferred set；同一 server 的其余工具也按该规则处理。其他 MCP 仍按 `tools.deferred`：`auto` 继续按大小、`always` 继续延迟、`never` 全部直发。优先 MCP 常驻不是新审批等级，也不等于自动允许调用。
 
-如果优先 MCP 不在放行名单，环境说明仍列出它，但在调用时照常 ask/deny：run 使用现有非交互规则失败闭合，chat 询问，ACP 走客户端权限请求；只在 `tools.auto_allow` 或 `tools.read_only_allow`（只读模式）中明确配置后才改变已有行为。例如 CLI 人可以按现有 server/tool pattern 配置：
+如果优先 MCP 不在放行名单，环境说明仍列出它，但在调用时照常按现有规则处理：chat 与 run 对不在 `tools.auto_allow` 的 MCP 工具直接拒绝（不询问），ACP 走客户端权限请求；只在 `tools.auto_allow` 或 `tools.read_only_allow`（只读模式）中明确配置后才改变已有行为。例如 CLI 人可以按现有 server/tool pattern 配置：
 
 ```yaml
 tools:
