@@ -1,6 +1,7 @@
 package axconfig
 
 import (
+	"fmt"
 	"os"
 	"slices"
 	"strconv"
@@ -165,6 +166,23 @@ func sortedModelRefs(models map[string]*ModelCatalogModel) []string {
 	}
 	slices.Sort(refs)
 	return refs
+}
+
+// SwitchableModelSpecs resolves the canonical switchable references from the
+// catalog back to the specs used by runtime model switching. Keeping the
+// catalog's ordered refs as the source ensures CLI output and chat candidates
+// cannot drift or produce duplicate aliases.
+func SwitchableModelSpecs(providers map[string]ProviderConfig, settings ModelSettings) ([]ModelSpec, error) {
+	catalog := BuildModelCatalog(providers, settings)
+	specs := make([]ModelSpec, 0, len(catalog.Switchable))
+	for _, ref := range catalog.Switchable {
+		spec, err := ResolveModel(ref, providers, "")
+		if err != nil {
+			return nil, fmt.Errorf("resolve switchable model %q: %w", ref, err)
+		}
+		specs = append(specs, spec)
+	}
+	return specs, nil
 }
 
 // ModelCatalogSource reports the only environment override that changes the

@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """PTY smoke test for chat's :model inspection, switching and resume.
 
-It configures two fake models, checks that :model lists both, switches to m2,
-checks fakellm's request log for the next request's model field, then resumes the
-same session and checks both the banner and the next request still use m2. This
-is deliberately falsifiable: removing command dispatch, the runtime switch,
-the session metadata patch, or the trace event makes a check fail. Reverse
-verification: temporarily remove any one of those paths and rerun this scenario;
-the corresponding assertion must fail.
+It configures two fake models plus referenced compact/fallback models, checks that :model
+lists all four, switches to m2, checks fakellm's request log for the next request's model
+field, then resumes the same session and checks both the banner and the next request still use
+m2. This is deliberately falsifiable: temporarily retain wiring's old configured-only candidate
+generation; the unlisted fallback assertion must fail. Removing command dispatch, the runtime
+switch, the session metadata patch, or the trace event also makes a check fail.
 
 Run on Linux/macOS through ``make smoke-chat``; Windows has no PTY equivalent.
 """
@@ -74,13 +73,16 @@ def main():
         context_window: 64000
         max_output_tokens: 42
 """
-    write_home(home, a.port, provider_extra=provider_extra, extra="chat:\n  steering: false\n")
+    write_home(home, a.port, provider_extra=provider_extra, extra="compact_model: fake/compact\nfallback_models:\n  - fake/unlisted\nchat:\n  steering: false\n")
     env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
     env.pop("SUGA_CONFIG", None)
     here = os.path.dirname(os.path.abspath(__file__))
     fake = subprocess.Popen([sys.executable, "-I", here + "/fakellm.py", "--port", str(a.port), "--mode", "text", "--reply", "MODEL_REPLY"], stdout=subprocess.PIPE, text=True)
     wait_port(fake)
     first = PtySession([os.path.abspath(a.bin), "chat"], env=env, cwd=ws)
+    config_path = os.path.join(home, "config.yaml")
+    with open(config_path, "rb") as config_file:
+        config_before = config_file.read()
     try:
         mark = first.mark()
         first.check("banner starts with m1", first.until(r"Suga chat · fake/m1", mark))
@@ -88,9 +90,14 @@ def main():
         first.line(":model")
         first.check("model list has m1", first.until(r"\* fake/m1", mark))
         first.check("model list has m2", first.until(r"fake/m2", mark))
+        first.check("model list has compact", first.until(r"fake/compact", mark))
+        first.check("model list has unlisted fallback", first.until(r"fake/unlisted", mark))
         mark = first.mark()
         first.line(":model fake/m2")
         first.check("switch accepted", first.until(r"已切换模型：fake/m2", mark))
+        with open(config_path, "rb") as config_file:
+            config_unchanged = config_file.read() == config_before
+        first.check("model command does not write config", config_unchanged)
         mark = first.mark()
         first.line("first request")
         first.check("next request uses m2", wait_models(fake, 1) == ["m2"])

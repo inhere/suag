@@ -31,9 +31,12 @@ providers:
 	assert.Require(t, assert.NoErr(t, err))
 	settings, err := ReadModelSettings("")
 	assert.Require(t, assert.NoErr(t, err))
-
 	catalog := BuildModelCatalog(providers, settings)
 	assert.True(t, catalog.Offline)
+	specs, err := SwitchableModelSpecs(providers, settings)
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, []string{"deepseek/reasoner", "proxy/alias", "proxy/compact", "proxy/primary"}, specRefs(specs))
+
 	assert.Eq(t, []string{"anthropic", "deepseek", "openai", "proxy"}, providerIDs(catalog))
 	assert.Eq(t, []string{"deepseek/reasoner", "proxy/alias", "proxy/compact", "proxy/primary"}, catalog.Switchable)
 	assert.Eq(t, []string{"deepseek/reasoner", "proxy/alias", "proxy/compact", "proxy/primary"}, modelRefs(catalog))
@@ -113,6 +116,14 @@ providers:
 	_, err := ReadModelSettings("")
 	assert.Require(t, assert.Err(t, err))
 	assert.True(t, strings.Contains(err.Error(), "matches several configured models"))
+}
+
+func specRefs(specs []ModelSpec) []string {
+	refs := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		refs = append(refs, spec.Ref())
+	}
+	return refs
 }
 
 func providerIDs(catalog ModelCatalog) []string {
