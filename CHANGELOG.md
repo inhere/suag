@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 新增
+
+- 配置 `tools.preferred` 支持声明 command/MCP 优先工具，并在运行时安全探测其可用性。
+
 ## [0.28.0] - 2026-10-17
 
 上手与配置命令：首次运行自动初始化 `~/.suga`（`suga init`）、`suga config get/set/unset/list/path`、离线的 `suga models`；工具调用后模型回空文本不再让回合失败。

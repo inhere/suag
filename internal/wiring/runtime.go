@@ -113,6 +113,9 @@ type Runtime struct {
 	Runner *personal.Runner
 	// Registry is the base tool registry (lets ACP tell MCP tools apart).
 	Registry *tools.Registry
+	// PreferredTools is the startup discovery snapshot used by prompt and
+	// manifest layers; it is frozen for this runtime.
+	PreferredTools []PreferredToolStatus
 	// ACPPolicy exposes the same compiled policy to the ACP permission hook
 	// without coupling the internal wiring package to the ACP server package.
 	ACPPolicy func(agentcore.ToolCall, agentcore.Tool) (action, rule, scope string)
@@ -430,6 +433,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	preferredTools, err := ResolvePreferredTools(capabilities.Registry, servers)
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, err
+	}
 	// Background tasks: shell commands in write modes (they need
 	// shell_exec); sub-agents (below) in every mode, so the task tool and the
 	// notices are there in read-only sessions too.
@@ -621,7 +629,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	memHost.bind(runner, repo)
-	rt := &Runtime{Runner: runner, Registry: capabilities.Registry,
+	rt := &Runtime{Runner: runner, Registry: capabilities.Registry, PreferredTools: preferredTools,
 		ACPPolicy: func(call agentcore.ToolCall, tool agentcore.Tool) (action, rule, scope string) {
 			policyAction, hit := approval.Decide(approval.targetFor(call, tool), tools.MetaOf(tool))
 			if hit != nil {

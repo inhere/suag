@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	goccyyaml "github.com/goccy/go-yaml"
 	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/cflag/capp"
 	appconfig "github.com/inhere/suga/internal/config"
@@ -265,6 +266,12 @@ func formatConfigValue(value any) string {
 		encoded, err := json.Marshal(mapping)
 		if err == nil {
 			return string(encoded)
+		}
+	}
+	if preferred, ok := value.([]appconfig.PreferredTool); ok {
+		encoded, err := goccyyaml.Marshal(preferred)
+		if err == nil {
+			return strings.TrimSpace(string(encoded))
 		}
 	}
 	return fmt.Sprint(value)
