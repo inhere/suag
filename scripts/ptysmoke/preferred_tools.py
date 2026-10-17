@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""End-to-end smoke test for preferred command/MCP discovery (Linux/macOS).
+
+The scenario drives the real ``suga chat`` binary with fakellm.py and a tiny
+stdio MCP server.  It checks that the environment lists the found command and
+connected preferred MCP server but not the missing command, that a preferred
+MCP tool is directly visible with ``tools.deferred: always`` (no tool_search),
+and that the ordinary approval question still appears.  It then checks the
+turn_context trace contains only the names that were listed.
+
+Reverse verification (drop one behavior and the corresponding check fails):
+- remove the present-only prompt filter: the missing-command check fails;
+- remove Visibility's pinned MCP set: the fake model request omits the MCP
+  schema and the MCP server receives no tools/call;
+- remove turn_context's preferred_tools attribute: the trace check fails.
+
+The standalone manifest check also confirms that it reports command presence
+and configured MCP status without starting the MCP process or leaking its
+configured secret.
+
+  python3 -I scripts/ptysmoke/preferred_tools.py --bin tmp/smoke/suga
+"""
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ptydrive import CTRL_C, PtySession  # noqa: E402
+from chat_approval import isolate_ws, wait_port, write_home  # noqa: E402
+
+FOUND_NAME = "preferred-smoke-command"
+MISSING_NAME = "suga-missing-preferred-command"
+MCP_NAME = "preferred-mcp"
+MCP_TOOL = "preferred_lookup"
+MCP_SECRET = "SMOKE_MCP_SECRET"
+MCP_OK = "PREFERRED_MCP_OK"
+
+MCP_SERVER = r'''import json
+import sys
+
+log_path = sys.argv[1]
+
+def log(method):
+    with open(log_path, "a", encoding="utf-8") as stream:
+        stream.write(method + "\n")
+
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request.get("method", "")
+    log(method)
+    if method == "initialize":
+        result = {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}},
+                  "serverInfo": {"name": "preferred-smoke", "version": "1"}}
+    elif method == "tools/list":
+        result = {"tools": [{"name": "preferred_lookup",
+                              "description": "preferred smoke lookup",
+                              "inputSchema": {"type": "object",
+                                              "properties": {"query": {"type": "string"}}}}]}
+    elif method == "tools/call":
+        result = {"content": [{"type": "text", "text": "PREFERRED_MCP_OK"}]}
+    else:
+        result = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": request.get("id"), "result": result}), flush=True)
+'''
+
+
+def yaml_string(value):
+    """Return a JSON string literal, which is also a valid YAML scalar."""
+    return json.dumps(value)
+
+
+def trace_events(binary, env, cwd, session):
+    out = subprocess.run([binary, "trace", session, "--json"], capture_output=True,
+                         text=True, env=env, cwd=cwd, timeout=60)
+    events = []
+    for line in out.stdout.splitlines():
+        try:
+            events.append(json.loads(line))
+        except ValueError:
+            pass
+    return out, events
+
+
+def manifest_checks(binary, env, cwd):
+    """Run the no-runtime manifest before the MCP server is allowed to start."""
+    out = subprocess.run([binary, "manifest", "--json"], capture_output=True,
+                         text=True, env=env, cwd=cwd, timeout=60)
+    checks = [("manifest command succeeds", out.returncode == 0)]
+    try:
+        manifest = json.loads(out.stdout)
+    except ValueError:
+        manifest = {}
+        checks.append(("manifest is JSON", False))
+    preferred = {item.get("name"): item for item in manifest.get("preferred_tools", [])}
+    checks.extend([
+        ("manifest found command", preferred.get(FOUND_NAME, {}).get("present") is True
+         and preferred.get(FOUND_NAME, {}).get("reason") == "found on PATH"),
+        ("manifest keeps missing command reason", preferred.get(MISSING_NAME, {}).get("present") is False
+         and preferred.get(MISSING_NAME, {}).get("reason") == "not found on PATH"),
+        ("manifest reports configured MCP without starting it",
+         preferred.get(MCP_NAME, {}).get("present") is False
+         and preferred.get(MCP_NAME, {}).get("reason") == "configured; connection confirmed at session start"),
+        ("manifest does not leak MCP secret", MCP_SECRET not in out.stdout),
+    ])
+    return checks
+
+
+def scenario(s):
+    m = s.mark()
+    s.check("banner", s.until(r"Suga chat · fake/m1", m))
+    s.check("prompt", s.until(r"❯ ", m))
+
+    m = s.mark()
+    s.line("使用优先工具")
+    s.check("found command is listed", s.until(
+        r"Preferred tool: preferred-smoke-command \(command\) — 搜索文本", m))
+    s.check("preferred MCP is listed", s.until(
+        r"Preferred tool: preferred-mcp \(mcp\) — 代码图谱", m))
+    s.check("missing command is not listed", not s.contains(MISSING_NAME, m))
+    s.check("fixed help and memory hints are listed", s.until(r"--help.*memory", m))
+    s.check("preferred MCP still asks for approval",
+            s.until(r"允许执行 .*preferred_lookup", m))
+    s.line("y")
+    s.check("preferred MCP tool executes", s.until(MCP_OK, m))
+    s.check("turn ends", s.until(r"tokens · ", m))
+
+    m = s.mark()
+    time.sleep(0.3)
+    s.send(CTRL_C)
+    time.sleep(0.3)
+    s.send(CTRL_C)
+    s.check("exit: resume command", s.until(r"续接：suga chat --resume sess_", m))
+    found = re.search(r"--resume (sess_\S+)", s.text(m))
+    return found.group(1) if found else ""
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--bin", default="tmp/smoke/suga")
+    parser.add_argument("--work", default="tmp/smoke-preferred-tools")
+    parser.add_argument("--port", type=int, default=18817)
+    parser.add_argument("--keep", action="store_true")
+    args = parser.parse_args()
+
+    binary = os.path.abspath(args.bin)
+    work = os.path.abspath(args.work)
+    home = os.path.join(work, "home")
+    ws = os.path.join(work, "ws")
+    command_dir = os.path.join(work, "bin")
+    command_path = os.path.join(command_dir, FOUND_NAME)
+    mcp_script = os.path.join(home, "mcp_server.py")
+    mcp_log = os.path.join(home, "mcp.log")
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(command_dir, exist_ok=True)
+    os.makedirs(home, exist_ok=True)
+    os.makedirs(ws, exist_ok=True)
+    isolate_ws(ws)
+    with open(command_path, "w", encoding="utf-8") as stream:
+        stream.write("#!/bin/sh\nexit 0\n")
+    os.chmod(command_path, 0o755)
+    with open(mcp_script, "w", encoding="utf-8") as stream:
+        stream.write(MCP_SERVER)
+
+    preferred = f"""  preferred:
+    - name: {FOUND_NAME}
+      kind: command
+      when: 搜索文本
+    - name: {MISSING_NAME}
+      kind: command
+      when: 不应出现
+    - name: {MCP_NAME}
+      kind: mcp
+      when: 代码图谱
+"""
+    mcp = f"""mcp:
+  servers:
+    - id: {MCP_NAME}
+      command: {yaml_string(sys.executable)}
+      args:
+        - -I
+        - {yaml_string(mcp_script)}
+        - {yaml_string(mcp_log)}
+      env:
+        SMOKE_SECRET: {MCP_SECRET}
+"""
+    write_home(home, args.port, tools_extra="  deferred: always\n" + preferred,
+               extra=mcp)
+    env = dict(os.environ, SUGA_HOME=home, HOME=home, SUGA_HOOKS="off", TERM="xterm",
+               NO_COLOR="1")
+    env["PATH"] = command_dir + os.pathsep + env.get("PATH", "")
+    env.pop("SUGA_CONFIG", None)
+
+    checks = manifest_checks(binary, env, ws)
+    here = os.path.dirname(os.path.abspath(__file__))
+    fake = subprocess.Popen([
+        sys.executable, "-I", os.path.join(here, "fakellm.py"),
+        "--port", str(args.port), "--mode", "preferred", "--delay", "0.3",
+        "--preferred-tool", MCP_TOOL, "--reply", "优先工具完成"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    session = None
+    pty = None
+    try:
+        wait_port(fake)
+        pty = PtySession([binary, "chat"], env=env, cwd=ws)
+        session = scenario(pty)
+        pty.close()
+        pty.check("session id", bool(session))
+
+        if session:
+            trace, events = trace_events(binary, env, ws, session)
+            pty.check("trace command succeeds", trace.returncode == 0)
+            turns = [e for e in events if e.get("kind") == "turn_context"
+                     or e.get("name") == "turn_context"]
+            attrs = (turns[0].get("attrs") or {}) if turns else {}
+            pty.check("trace: preferred names match prompt",
+                      attrs.get("preferred_tools") == [FOUND_NAME, MCP_NAME])
+            pty.check("trace: preferred observation is names only",
+                      "搜索文本" not in trace.stdout and "SMOKE_SECRET" not in trace.stdout
+                      and MISSING_NAME not in attrs.get("preferred_tools", []))
+
+        for name, ok in checks:
+            pty.check(name, ok)
+
+        if os.path.exists(mcp_log):
+            with open(mcp_log, encoding="utf-8") as stream:
+                methods = [line.strip() for line in stream if line.strip()]
+        else:
+            methods = []
+        pty.check("MCP server was not started by manifest", methods.count("initialize") == 1)
+        pty.check("MCP preferred tool was called directly", "tools/call" in methods)
+
+        fake_output, _ = fake.communicate(timeout=5)
+        requests = []
+        for line in fake_output.splitlines():
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if row.get("path") == "/v1/chat/completions":
+                requests.append(row)
+        first_tools = requests[0].get("tools", []) if requests else []
+        pty.check("fake model saw preferred MCP schema directly", MCP_TOOL in first_tools)
+        pty.check("preferred MCP did not require tool_search", "tool_search" not in first_tools)
+    finally:
+        if pty is not None:
+            pty.close(grace=0)
+        fake.terminate()
+        try:
+            fake.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            fake.kill()
+            fake.wait(timeout=5)
+        if not args.keep:
+            shutil.rmtree(work, ignore_errors=True)
+
+    failed = pty.failed() if pty else ["setup"]
+    print(f"\n{len(pty.results) - len(failed) if pty else 0}/{len(pty.results) if pty else 0} passed")
+    if failed:
+        print("failed: " + ", ".join(failed))
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -14,6 +14,8 @@ Modes (--mode):
         message containing "直接" skips the shell_exec.
   empty-final  first requests file_write (--write-path/--write-body), then return an
         empty streamed completion after the tool result, including resamples.
+  preferred  every user message first gets the MCP tool named by --preferred-tool,
+        then returns the text --reply. The request log includes visible tool names.
   adddir  every user message first gets file_read (--read-path), then
         file_write (--write-path with --write-body), then the text --reply:
         the smoke for --add-dir, where both paths live outside the workspace.
@@ -174,6 +176,8 @@ def make_handler(args):
                               "last_role": body["messages"][-1].get("role"),
                               "user": user_text,
                               "seen": [message_token(m) for m in body["messages"]],
+                              "tools": [((tool.get("function") or {}).get("name") or tool.get("name", ""))
+                                        for tool in (body.get("tools") or [])],
                               "tail": message_tail(body["messages"])}), flush=True)
             system = " ".join(str(m.get("content")) for m in body["messages"] if m.get("role") == "system")
             child = "suga sub-agent" in system
@@ -263,6 +267,11 @@ def make_handler(args):
                 call = {"index": 0, "id": "call_%d" % time.time_ns(),
                         "function": {"name": "file_write", "arguments": json.dumps({
                             "path": args.write_path, "content": args.write_body})}}
+                chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
+            elif args.mode == "preferred" and not tool_done:
+                call = {"index": 0, "id": "call_%d" % time.time_ns(),
+                        "function": {"name": args.preferred_tool,
+                                     "arguments": json.dumps({"query": "SMOKE_PREFERRED"})}}
                 chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
             elif args.mode == "empty-final":
                 chunks = [{"choices": [{"delta": {}}]}]
@@ -366,7 +375,7 @@ class QuietServer(http.server.ThreadingHTTPServer):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, default=18795)
-    p.add_argument("--mode", choices=["tool", "text", "edit", "memory", "adddir", "empty-final"], default="tool")
+    p.add_argument("--mode", choices=["tool", "text", "edit", "memory", "adddir", "empty-final", "preferred"], default="tool")
     p.add_argument("--delay", type=float, default=1.0)
     p.add_argument("--command", default="echo SMOKE_OK")
     p.add_argument("--reply", default="完成")
@@ -384,7 +393,7 @@ def main():
     p.add_argument("--edit-path", default="target.txt", help="edit mode: file_edit target")
     p.add_argument("--edit-old", default="SMOKE_TARGET old", help="edit mode: old_string")
     p.add_argument("--edit-new", default="SMOKE_TARGET new", help="edit mode: new_string")
-    p.add_argument("--remove-path", default="delete.txt", help="edit mode: file_remove target")
+    p.add_argument("--preferred-tool", default="preferred_lookup", help="preferred mode: MCP tool to call")
     p.add_argument("--shell-command", default="echo SMOKE_SHELL", help="edit mode: shell_exec command")
     p.add_argument("--agent", action="store_true", help="tool mode: call the agent tool instead of shell_exec")
     p.add_argument("--child-delay", type=float, default=0, help="extra seconds before each sub-agent response")

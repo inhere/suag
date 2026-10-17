@@ -9,6 +9,7 @@
 - 配置 `tools.preferred` 支持声明 command/MCP 优先工具，并在运行时安全探测其可用性。
 - 运行时环境说明展示已发现的优先工具；优先 MCP 工具在延迟模式下保持直接可见，但仍遵循既有审批。
 - `suga manifest` 新增 `preferred_tools`：每项声明都列出 kind、适用场景、`present` 与原因（command 查 PATH；MCP 只报是否已配置，连接在会话启动时确认）；trace 的 `turn_context` 记录本回合列出的优先工具名字。
+- Linux/macOS PTY 冒烟覆盖优先 command/MCP 的发现、延迟可见性、审批、manifest 与 trace 观测，并包含对应反向断言。
 
 ### 修复
 
