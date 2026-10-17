@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/redact"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
 	"github.com/inhere/suga/pkg/agentcore/tools"
 	"github.com/inhere/suga/pkg/agentcore/tools/native"
 	"golang.org/x/term"
@@ -89,6 +91,8 @@ type rendererOptions struct {
 	// next message (config chat.spinner, on by default). Like Markdown it needs
 	// a colored terminal: a pipe, a redirected output or NO_COLOR keeps it off.
 	Spinner bool
+	// AgentProgress controls sub-agent tool-call display: summary, full or off.
+	AgentProgress string
 	// now supplies the local wall clock of the end-of-turn time on the status
 	// line (nil: time.Now). Tests inject a fixed clock.
 	now func() time.Time
@@ -129,12 +133,21 @@ type Renderer struct {
 	budget *personal.BudgetSnapshot
 	// budgetNoticed prevents repeated threshold reminders within one turn.
 	budgetNoticed bool
+	// agentProgress tracks child calls by description. It deliberately lives on the
+	// renderer, not in the event stream, so concurrent children cannot share counts.
+	agentProgress map[string]*agentProgressState
+}
+
+type agentProgressState struct {
+	calls      int
+	started    time.Time
+	background bool
 }
 
 // newRenderer returns a renderer that shows no waiting line yet: the first turn
 // starts it (chat prints the banner before that).
 func newRenderer(opts rendererOptions) *Renderer {
-	r := &Renderer{opts: opts}
+	r := &Renderer{opts: opts, agentProgress: make(map[string]*agentProgressState)}
 	r.spin = newThinkingSpinner(spinnerConfig{
 		enabled: opts.Spinner && opts.Color,
 		out:     opts.Out,
@@ -219,17 +232,110 @@ func (r *Renderer) resetLive() {
 // message. A no-op while the spinner is off (chat.spinner: false or no colored
 // terminal) or the line is already shown.
 func (r *Renderer) startThinking() {
-	if r.statusLine() {
-		// The status line above the input line: it says what the turn waits for, so
-		// only that changes (the frame loop is the turn's own, BeginTurn).
-		r.spin.SetLabel(spinnerLabel)
-	}
+	// The status row and the standalone spinner share one label, so summaries
+	// stay in the existing waiting indicator rather than adding another painter.
+	r.spin.SetLabel(r.agentStatusLabel())
 	r.spin.Start()
 }
 
-// toolRunning switches the status line to the tool that runs now ("执行
-// shell_exec…"). Without a status line it takes the waiting line of its own
-// down instead: the model is not the one being waited for any more.
+// agentProgressMode keeps direct renderer tests and callers without config on the
+// documented default.
+func (r *Renderer) agentProgressMode() string {
+	switch r.opts.AgentProgress {
+	case "full", "off", "summary":
+		return r.opts.AgentProgress
+	default:
+		return "summary"
+	}
+}
+
+func (r *Renderer) agentStatusLabel() string {
+	if r.agentProgressMode() != "summary" || len(r.agentProgress) == 0 {
+		return spinnerLabel
+	}
+	names := make([]string, 0, len(r.agentProgress))
+	for name, state := range r.agentProgress {
+		if state != nil {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return spinnerLabel
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, fmt.Sprintf("%s %d 次调用", truncateLine(name, 24), r.agentProgress[name].calls))
+	}
+	return truncateLine(fmt.Sprintf("子 agent：%d 个运行中（%s）", len(names), strings.Join(parts, "、")), 120)
+}
+
+func (r *Renderer) beginAgent(event personal.Event) {
+	if event.ToolName != "agent" {
+		return
+	}
+	name, background := agentCallDetails(event.Text)
+	if name == "" {
+		return
+	}
+	if _, ok := r.agentProgress[name]; !ok {
+		r.agentProgress[name] = &agentProgressState{started: time.Now(), background: background}
+	}
+}
+
+func agentCallDetails(text string) (string, bool) {
+	var args struct {
+		Description string `json:"description"`
+		Background  bool   `json:"background"`
+	}
+	if err := json.Unmarshal([]byte(text), &args); err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(args.Description), args.Background
+}
+
+func (r *Renderer) finishAgent(summary *personal.AgentSummary) {
+	if summary == nil || summary.Description == "" {
+		return
+	}
+	state := r.agentProgress[summary.Description]
+	if state == nil {
+		state = &agentProgressState{started: time.Now()}
+	}
+	if summary.Background {
+		state.background = true
+		if summary.ToolCalls > state.calls {
+			state.calls = summary.ToolCalls
+		}
+		r.agentProgress[summary.Description] = state
+		return
+	}
+	calls := summary.ToolCalls
+	if calls < state.calls {
+		calls = state.calls
+	}
+	delete(r.agentProgress, summary.Description)
+	if r.agentProgressMode() == "summary" {
+		fmt.Fprintf(r.opts.Out, "子 agent %s：%d 次工具调用，耗时 %s\n", truncateLine(summary.Description, 40), calls, formatElapsed(summary.Duration))
+	}
+}
+
+// AgentTaskSummaries prints completions of background agents before their task
+// notice. The task manager owns their counters because they outlive the turn.
+func (r *Renderer) AgentTaskSummaries(infos []tasks.Info) {
+	if r.agentProgressMode() != "summary" {
+		return
+	}
+	for _, info := range infos {
+		if info.Kind != "agent" || !strings.HasPrefix(info.Summary, "agent: ") {
+			continue
+		}
+		name := strings.TrimPrefix(info.Summary, "agent: ")
+		calls := info.Counters["tool_calls"]
+		fmt.Fprintf(r.opts.Out, "子 agent %s：%d 次工具调用，耗时 %s\n", truncateLine(name, 40), calls, formatElapsed(info.Duration()))
+		delete(r.agentProgress, name)
+	}
+}
 func (r *Renderer) toolRunning(name string) {
 	if !r.statusLine() {
 		r.spin.Stop()
@@ -281,6 +387,7 @@ func (r *Renderer) Handle(event personal.Event) {
 	switch event.Kind {
 	case "tool_call":
 		r.live.Finish() // never start a tool line in the middle of streamed text
+		r.beginAgent(event)
 		line := "⏺ " + event.ToolName
 		if args := truncateLine(toolArgsText(event.Text), callArgsLimit); args != "" {
 			line += " " + args
@@ -302,16 +409,26 @@ func (r *Renderer) Handle(event personal.Event) {
 			r.noteMemory(event)
 			r.showToolResult(change, tool)
 		}
+		r.finishAgent(event.AgentSummary)
 		r.startThinking() // the model reads the result and thinks on
 	case "agent_progress":
 		// A sub-agent's tool call, under the agent call that started it.
-		r.live.Finish()
-		line := "  · " + event.ToolName
-		if args := truncateLine(toolArgsText(event.Text), callArgsLimit); args != "" {
-			line += " " + args
+		name := event.Agent
+		state := r.agentProgress[name]
+		if state == nil {
+			state = &agentProgressState{started: time.Now()}
+			r.agentProgress[name] = state
 		}
-		fmt.Fprintln(r.opts.Out, r.paint(color.Gray, line))
-		r.startThinking() // the model waits for the sub-agent (the wording stays 思考中…)
+		state.calls++
+		if r.agentProgressMode() == "full" {
+			r.live.Finish()
+			line := "  · " + event.ToolName
+			if args := truncateLine(toolArgsText(event.Text), callArgsLimit); args != "" {
+				line += " " + args
+			}
+			fmt.Fprintln(r.opts.Out, r.paint(color.Gray, line))
+		}
+		r.startThinking() // the model waits for the sub-agent
 	case "plan":
 		if event.Plan != nil {
 			r.live.Finish()

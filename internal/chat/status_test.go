@@ -141,7 +141,7 @@ func TestStatusLineFollowsTheTurn(t *testing.T) {
 		r.Handle(personal.Event{Kind: "tool_call", ToolName: "agent", Text: `{"prompt":"survey"}`})
 		assert.StrContains(t, log.last(), toolLabel("agent"))
 		r.Handle(personal.Event{Kind: "agent_progress", Agent: "survey", ToolName: "file_grep", Text: `{"pattern":"x"}`})
-		assert.StrContains(t, log.last(), spinnerLabel)
+		assert.StrContains(t, log.last(), "子 agent：1 个运行中")
 		assert.StrNotContains(t, log.last(), "file_grep")
 	})
 

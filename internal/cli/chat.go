@@ -36,6 +36,10 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 	if err != nil {
 		return err
 	}
+	agentProgress, err := appconfig.ChatAgentProgress()
+	if err != nil {
+		return err
+	}
 	modelOptions := make([]chat.ModelOption, 0, len(runtime.ModelOptions()))
 	for _, option := range runtime.ModelOptions() {
 		modelOptions = append(modelOptions, chat.ModelOption{Provider: option.Provider, Model: option.Model,
@@ -55,6 +59,7 @@ func runChat(ctx context.Context, runtime *wiring.Runtime, opts personalOptions,
 		Thinking: runtime.Thinking, ContextWindow: runtime.ContextWindow,
 		Markdown:       appconfig.ChatMarkdownEnabled(),
 		Spinner:        appconfig.ChatSpinnerEnabled(),
+		AgentProgress:  agentProgress,
 		HighlightInput: appconfig.ChatHighlightInputEnabled(),
 		Steering:       appconfig.ChatSteeringEnabled(),
 		TerminalTitle:  appconfig.ChatTerminalTitleEnabled(),

@@ -119,7 +119,7 @@ func TestRendererToolArgsAreReadable(t *testing.T) {
 
 	t.Run("a sub-agent's tool call as well", func(t *testing.T) {
 		var out bytes.Buffer
-		newRenderer(rendererOptions{Out: &out}).Handle(personal.Event{Kind: "agent_progress", Agent: "survey",
+		newRenderer(rendererOptions{Out: &out, AgentProgress: "full"}).Handle(personal.Event{Kind: "agent_progress", Agent: "survey",
 			ToolName: "file_grep", Text: `{"pattern":"a<b>c&d"}`})
 		assert.Eq(t, `  · file_grep {"pattern":"a<b>c&d"}`+"\n", out.String())
 	})
@@ -450,7 +450,7 @@ func TestRendererMemoryWrites(t *testing.T) {
 // agent call, its result as usual.
 func TestRendererAgentProgress(t *testing.T) {
 	var out bytes.Buffer
-	r := newRenderer(rendererOptions{Out: &out, Err: &out})
+	r := newRenderer(rendererOptions{Out: &out, Err: &out, AgentProgress: "full"})
 	r.Handle(personal.Event{Kind: "tool_call", ToolName: "agent", Text: `{"description":"find Foo"}`})
 	r.Handle(personal.Event{Kind: "agent_progress", Agent: "find Foo", ToolName: "file_grep", Text: `{"pattern":"Foo"}`})
 	r.Handle(personal.Event{Kind: "tool_result", ToolName: "agent", Text: "Foo is in a.go:3"})
@@ -460,4 +460,36 @@ func TestRendererAgentProgress(t *testing.T) {
 		"  ⎿ ok: Foo is in a.go:3",
 		"",
 	}, "\n"), out.String())
+}
+
+// TestRendererAgentProgressModes covers the three chat display modes and keeps
+// separate counts for interleaved child descriptions.
+func TestRendererAgentProgressModes(t *testing.T) {
+	for _, tc := range []struct {
+		name, mode        string
+		progress, summary bool
+	}{
+		{name: "summary", mode: "summary", progress: false, summary: true},
+		{name: "full", mode: "full", progress: true, summary: false},
+		{name: "off", mode: "off", progress: false, summary: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			r := newRenderer(rendererOptions{Out: &out, AgentProgress: tc.mode})
+			r.Handle(personal.Event{Kind: "tool_call", ToolName: "agent", Text: `{"description":"审计 bug"}`})
+			r.Handle(personal.Event{Kind: "tool_call", ToolName: "agent", Text: `{"description":"读文档"}`})
+			r.Handle(personal.Event{Kind: "agent_progress", Agent: "审计 bug", ToolName: "file_read"})
+			r.Handle(personal.Event{Kind: "agent_progress", Agent: "读文档", ToolName: "file_grep"})
+			r.Handle(personal.Event{Kind: "agent_progress", Agent: "审计 bug", ToolName: "file_find"})
+			r.Handle(personal.Event{Kind: "agent_progress", Agent: "读文档", ToolName: "file_read"})
+			r.Handle(personal.Event{Kind: "tool_result", ToolName: "agent", Text: "report 1",
+				AgentSummary: &personal.AgentSummary{Description: "审计 bug", ToolCalls: 2, Duration: 2 * time.Second}})
+			r.Handle(personal.Event{Kind: "tool_result", ToolName: "agent", Text: "report 2",
+				AgentSummary: &personal.AgentSummary{Description: "读文档", ToolCalls: 2, Duration: 3 * time.Second}})
+			got := out.String()
+			assert.Eq(t, tc.progress, strings.Contains(got, "  · "))
+			assert.Eq(t, tc.summary, strings.Contains(got, "子 agent 审计 bug：2 次工具调用，耗时 2.0s") &&
+				strings.Contains(got, "子 agent 读文档：2 次工具调用，耗时 3.0s"))
+		})
+	}
 }

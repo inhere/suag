@@ -133,7 +133,7 @@ func (s *thinkingSpinner) statusRow() bool { return s.status != nil }
 // changes in place. A no-op without a status line (the line of its own only ever
 // says 思考中…) and while the line is not running.
 func (s *thinkingSpinner) SetLabel(label string) {
-	if !s.enabled || s.status == nil {
+	if !s.enabled {
 		return
 	}
 	s.mu.Lock()

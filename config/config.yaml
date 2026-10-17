@@ -136,6 +136,8 @@ providers:
 #                       # model's text exactly. Only a terminal with colors
 #                       # renders it (NO_COLOR turns it off); run, stream-json and
 #                       # ACP always keep the raw text.
+#   agent_progress: summary # summary: one status line and completion totals; full:
+#                           # show each child tool call; off: hide child progress
 #   spinner: true       # show "思考中… 3s" while the model is asked for its next
 #                       # message (every turn start and after every tool result),
 #                       # erased as soon as it answers; false turns the line off.
@@ -165,6 +167,7 @@ providers:
 #                       # with colors, like markdown.
 # chat:
 #   markdown: true
+#   agent_progress: summary
 #   spinner: true
 #   highlight_input: true
 #   terminal_title: true

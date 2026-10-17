@@ -63,6 +63,8 @@ type Options struct {
 	// next message (config chat.spinner, on by default). Like Markdown it needs
 	// a colored terminal: a pipe, a redirected output or NO_COLOR keeps it off.
 	Spinner bool
+	// AgentProgress controls sub-agent tool-call display: summary (default), full or off.
+	AgentProgress string
 	// HighlightInput paints the line the person submitted at the prompt, and the
 	// messages delivered from elsewhere, on a background of their own (config
 	// chat.highlight_input, on by default). Like Markdown it needs a colored
@@ -246,12 +248,16 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 		// hook/task messages must never become personal input history.
 		inputSource.history = inputHistory
 	}
+	var render *Renderer
 	if err == nil && opts.Tasks != nil {
 		inputSource.taskWake = opts.TaskWake
 		inputSource.taskNotice = func() string {
 			infos := opts.Tasks.TakeNotices(sessionID)
 			if len(infos) == 0 {
 				return ""
+			}
+			if render != nil {
+				render.AgentTaskSummaries(infos)
 			}
 			return personal.TaskNoticeText(infos)
 		}
@@ -288,13 +294,14 @@ func Run(ctx context.Context, runner *personal.Runner, opts Options, stdin io.Re
 	if steering {
 		status = inputSource
 	}
-	render := newRenderer(rendererOptions{
+	render = newRenderer(rendererOptions{
 		Out: inputSource, Err: errOut,
 		Color: color, ErrColor: colorEnabledFor(stderr),
 		Provider: runner.ProviderName(), Model: runner.Model(),
 		Thinking: opts.Thinking, ContextWindow: opts.ContextWindow,
 		WriteTools: opts.WriteTools, Markdown: opts.Markdown, Spinner: opts.Spinner,
-		Diff: opts.Diff, DiffLines: opts.DiffLines,
+		AgentProgress: opts.AgentProgress,
+		Diff:          opts.Diff, DiffLines: opts.DiffLines,
 		HighlightInput: opts.HighlightInput, HighlightWidth: inputSource.highlightWidth,
 		// The input line stays on screen while a turn runs: the streamed text then
 		// leaves only complete lines, and the waiting line becomes a status line above

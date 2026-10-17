@@ -90,6 +90,11 @@
 - 两个参数都不给时：文本等自己的回合。
 - 任何模式下投递的文本都只是普通消息，永远不会被当成命令（`:add-dir`、`:quit`、`!cmd` …）。
 
+## 子 agent 进度（`chat.agent_progress`）
+
+- 默认 `summary`：不逐条打印子 agent 的工具调用；等待状态行按 description 显示运行中的数量与各自调用次数，子 agent 结束时在结果旁显示调用总数与耗时。多个并行子 agent 按名字分别计数。
+- `full` 保留逐条的 `  · <工具> <参数>` 行；`off` 隐藏逐条进度和汇总，但 agent 工具本身的调用行与结果行不变。
+- 前台子 agent 的汇总跟随 agent 工具结果；`background: true` 的子 agent 在后台任务完成通知之前显示汇总。终端状态行沿用已有 spinner/steering 行，过长内容会按终端宽度截断。
 ## 通知与终端显示
 
 长回合结束或审批等待时的通知（`chat.notify`、`chat.notify_after`）、markdown 渲染、spinner、输入高亮与终端标题等显示开关见 `references/config.md` 的 `chat.*` 一节。

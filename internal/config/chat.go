@@ -126,6 +126,21 @@ func chatSwitch(key string) bool {
 	}
 }
 
+// ChatAgentProgress reads chat.agent_progress. Summary is the default so a busy
+// group of sub-agents does not fill the terminal with one line per tool call.
+func ChatAgentProgress() (string, error) {
+	value := strings.ToLower(strings.TrimSpace(gkconfig.String("chat.agent_progress")))
+	if value == "" {
+		return ChatAgentProgressSummary, nil
+	}
+	switch value {
+	case ChatAgentProgressSummary, ChatAgentProgressFull, ChatAgentProgressOff:
+		return value, nil
+	default:
+		return "", fmt.Errorf("chat.agent_progress must be summary, full or off, got %q", value)
+	}
+}
+
 // ChatNotifyMode selects terminal notifications: auto, bell, osc9 or off.
 func ChatNotifyMode() (string, error) {
 	value := strings.ToLower(strings.TrimSpace(gkconfig.String("chat.notify")))
