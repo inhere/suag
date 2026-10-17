@@ -157,6 +157,7 @@ func unescapeTitle(s string) string {
 //	kind: feedback
 //	title: "Prefer table tests"
 //	updated: 2026-10-11T08:00:00Z
+//	applies_when: "Go 1.26"
 //	source: "tool"
 //	session: "s-123"
 //	---
@@ -179,6 +180,9 @@ func renderEntry(e memory.Entry) []byte {
 	}
 	if e.Prov.SessionID != "" {
 		b.WriteString("session: " + strconv.Quote(e.Prov.SessionID) + "\n")
+	}
+	for _, condition := range e.AppliesWhen {
+		b.WriteString("applies_when: " + strconv.Quote(condition) + "\n")
 	}
 	b.WriteString("---\n\n")
 	b.WriteString(strings.Trim(e.Body, "\r\n"))
@@ -221,6 +225,8 @@ func parseEntry(data string) memory.Entry {
 			e.Prov.Source = val
 		case "session":
 			e.Prov.SessionID = val
+		case "applies_when":
+			e.AppliesWhen = append(e.AppliesWhen, val)
 		}
 	}
 	e.Body = strings.Trim(body, "\n")

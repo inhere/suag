@@ -389,6 +389,51 @@ func TestNewAndScopes(t *testing.T) {
 	})
 }
 
+func TestAppliesWhen(t *testing.T) {
+	dir := t.TempDir()
+	s := newStore(t, map[memory.Scope]Layout{user: DirLayout{Dir: dir}})
+
+	t.Run("frontmatter round trip and search", func(t *testing.T) {
+		e, err := s.Write(ctx, user, memory.Op{Action: memory.ActionAdd, Title: "Version note", Body: "use the pinned toolchain", Kind: memory.KindProject,
+			AppliesWhen: []string{"Go 1.26", "Windows"}})
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Contains(t, readText(t, filepath.Join(dir, e.ID+".md")), "applies_when: \"Go 1.26\"\n")
+		got, err := s.Get(ctx, user, e.ID)
+		assert.NoErr(t, err)
+		assert.Eq(t, []string{"Go 1.26", "Windows"}, got.AppliesWhen)
+		ix, err := s.Index(ctx, user)
+		assert.NoErr(t, err)
+		assert.NotContains(t, ix.Render(), "Go 1.26")
+		hits, err := s.Search(ctx, user, "Windows", 5)
+		assert.NoErr(t, err)
+		assert.Len(t, hits, 1)
+		assert.Eq(t, e.ID, hits[0].ID)
+	})
+
+	t.Run("duplicate keys and old entry", func(t *testing.T) {
+		id := "hand"
+		data := `---
+kind: user
+title: "Hand"
+applies_when: Linux
+applies_when: 'CI'
+---
+
+body
+`
+		assert.NoErr(t, os.WriteFile(filepath.Join(dir, id+".md"), []byte(data), 0o600))
+		got, err := s.Get(ctx, user, id)
+		assert.NoErr(t, err)
+		assert.Eq(t, []string{"Linux", "CI"}, got.AppliesWhen)
+
+		oldID := "old"
+		assert.NoErr(t, os.WriteFile(filepath.Join(dir, oldID+".md"), []byte("plain body\\n"), 0o600))
+		old, err := s.Get(ctx, user, oldID)
+		assert.NoErr(t, err)
+		assert.Empty(t, old.AppliesWhen)
+	})
+}
+
 func fileExists(path string) bool {
 	_, err := os.Lstat(path)
 	return err == nil

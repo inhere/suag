@@ -13,14 +13,14 @@
 //	             result {"lines":[{"id","title","kind"}],"bytes":0}
 //	op "get"     args {"scope","id"}
 //	             result entry
-//	op "write"   args {"scope","op":{"action":"add|replace|remove","id","title","body","kind"}}
+//	op "write"   args {"scope","op":{"action":"add|replace|remove","id","title","body","kind","applies_when"}}
 //	             result entry; for "add" the backend derives the id from the
 //	             title (the request id is empty); for "remove" it returns the
 //	             entry as it was before removal, with title and body
 //	op "search"  args {"scope","query","limit"}  (limit 0: backend default)
 //	             result {"hits":[{"id","title","kind","snippet","updated"}]}
 //
-// An entry is {"id","title","body","kind","updated"} with kind one of user,
+// An entry is {"id","title","body","kind","applies_when","updated"} with kind one of user,
 // feedback, project, reference and updated an RFC 3339 time (optional).
 //
 // Ids must satisfy memory.ValidateID (lowercase a-z, 0-9, '-'). A missing
@@ -95,11 +95,12 @@ type wireIndex struct {
 }
 
 type wireEntry struct {
-	ID      string    `json:"id"`
-	Title   string    `json:"title"`
-	Body    string    `json:"body"`
-	Kind    string    `json:"kind"`
-	Updated time.Time `json:"updated"`
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	Body        string    `json:"body"`
+	Kind        string    `json:"kind"`
+	AppliesWhen []string  `json:"applies_when,omitempty"`
+	Updated     time.Time `json:"updated"`
 }
 
 type wireHit struct {
@@ -115,11 +116,12 @@ type wireSearch struct {
 }
 
 type wireOp struct {
-	Action string `json:"action"`
-	ID     string `json:"id,omitempty"`
-	Title  string `json:"title,omitempty"`
-	Body   string `json:"body,omitempty"`
-	Kind   string `json:"kind,omitempty"`
+	Action      string   `json:"action"`
+	ID          string   `json:"id,omitempty"`
+	Title       string   `json:"title,omitempty"`
+	Body        string   `json:"body,omitempty"`
+	Kind        string   `json:"kind,omitempty"`
+	AppliesWhen []string `json:"applies_when,omitempty"`
 }
 
 // call runs one request and decodes the result into out. ok=false becomes
@@ -190,7 +192,7 @@ func (s *Store) Write(ctx context.Context, sc memory.Scope, op memory.Op) (memor
 	if err := op.Validate(); err != nil {
 		return memory.Entry{}, err
 	}
-	w := wireOp{Action: string(op.Action), ID: op.ID, Title: op.Title, Body: op.Body, Kind: string(op.Kind)}
+	w := wireOp{Action: string(op.Action), ID: op.ID, Title: op.Title, Body: op.Body, Kind: string(op.Kind), AppliesWhen: op.AppliesWhen}
 	var res wireEntry
 	if err := s.call(ctx, "write", map[string]any{"scope": sc.String(), "op": w}, &res); err != nil {
 		return memory.Entry{}, err
@@ -234,5 +236,5 @@ func decodeEntry(w wireEntry, wantID string) (memory.Entry, error) {
 	if !kind.Valid() {
 		return memory.Entry{}, fmt.Errorf("%w: backend returned unknown kind %q", memory.ErrInvalid, w.Kind)
 	}
-	return memory.Entry{ID: w.ID, Title: w.Title, Body: w.Body, Kind: kind, Updated: w.Updated}, nil
+	return memory.Entry{ID: w.ID, Title: w.Title, Body: w.Body, Kind: kind, AppliesWhen: w.AppliesWhen, Updated: w.Updated}, nil
 }
