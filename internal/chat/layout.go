@@ -88,7 +88,7 @@ type BannerInfo struct {
 // model says it has no shell_exec: write tools are off unless
 // SUGA_HOME/config.yaml sets tools.allow_write.
 const (
-	bannerHelpText       = "输入任务开始对话；!<命令> 直接在本地执行（!!<命令> 把结果附给下一条消息）；:session 显示会话，:add-dir/:dirs/:rm-dir 管理附加目录，:compact 压缩上下文，:diff 显示文件改动，:quit/:exit 退出；:help 查看命令；Alt+Enter（Windows 上 Ctrl+Enter / Ctrl+J）在输入里换行，多行时上下键移动光标。"
+	bannerHelpText       = "输入任务开始对话；!<命令> 直接在本地执行（!!<命令> 把结果附给下一条消息）；:session 显示会话，:add-dir/:dirs/:rm-dir 管理附加目录，:compact 压缩上下文，:diff 显示文件改动，:checkpoints 列出快照，:undo [N] [force] 回滚文件改动，:quit/:exit 退出；:help 查看命令；Alt+Enter（Windows 上 Ctrl+Enter / Ctrl+J）在输入里换行，多行时上下键移动光标。"
 	bannerWriteToolsText = "工具：可读写文件、执行 shell（tools.approval 决定是否先确认）。"
 	bannerReadOnlyText   = "工具：只读。要写文件、执行 shell，在 SUGA_HOME/config.yaml 设 tools.allow_write: true。"
 )
@@ -179,8 +179,8 @@ type TurnStatus struct {
 }
 
 // BuildTurnStatus builds the end of a turn: one green line per memory write of
-// the turn, then the grey status line (model, token usage, how full the context
-// is, elapsed time, the local time the turn ended at, inserted messages).
+// the turn, then the grey status line (model, token usage, how full the
+// context is, elapsed time, the local time the turn ended at, inserted messages).
 func BuildTurnStatus(s TurnStatus) []LayoutLine {
 	lines := make([]LayoutLine, 0, len(s.Memory)+1)
 	for _, memory := range s.Memory {
@@ -194,7 +194,7 @@ func BuildTurnStatus(s TurnStatus) []LayoutLine {
 		fmt.Sprintf("in %d / out %d tokens", s.Usage.InputTokens, s.Usage.OutputTokens),
 	)
 	// How full the context is: the same number the idle consolidation compares
-	// with context.idle_min_ratio, so the person can tell when it will fire.
+	// with context.context_idle_min_ratio, so the person can tell when it will fire.
 	if share := contextShare(s.LastInputTokens, s.ContextWindow); share != "" {
 		parts = append(parts, share)
 	}
@@ -249,9 +249,9 @@ type ExitSummary struct {
 }
 
 // BuildExitSummary builds the lines chat leaves behind when it ends: the resume
-// command (behind the session's short name), this process's turns and tokens
-// (plus the session total when known) and its running time. A chat without a
-// session builds no lines.
+// command (behind the session's short name, the address `suga send
+// --session <name>` accepts), this process's turns and tokens (plus the session
+// total when known) and its running time. A chat without a session builds no lines.
 func BuildExitSummary(s ExitSummary) []LayoutLine {
 	if s.SessionID == "" {
 		return nil

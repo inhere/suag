@@ -14,6 +14,8 @@ const (
 :compact 压缩上下文
 :add-dir/:dirs/:rm-dir 管理附加目录
 :diff [N] 显示文件改动
+:checkpoints 列出写操作快照
+:undo [N] [force] 回滚文件改动
 :help 显示此帮助
 :usage 显示本会话用量与成本
 :tasks 显示后台任务
@@ -53,9 +55,10 @@ func BuildChatTasks(items []tasks.Info, now time.Time) string {
 
 func formatElapsedAt(d time.Duration, _ time.Time) string { return formatElapsed(d) }
 
-// isModelCommand recognizes only the exact command or its argument form.
+// isModelCommand recognizes the model command and the checkpoint commands that
+// share the prompt dispatch branch in chat.go.
 func isModelCommand(line string) bool {
-	return line == ":model" || strings.HasPrefix(line, ":model ")
+	return line == ":model" || strings.HasPrefix(line, ":model ") || isCheckpointCommand(line) || isUndoCommand(line)
 }
 
 func modelRefs(options []ModelOption) []string {
@@ -98,7 +101,7 @@ func (s *chatState) runChatCommand(line string) bool {
 	switch {
 	case line == ":help":
 		fmt.Fprintln(s.source, BuildChatHelp())
-	case isModelCommand(line):
+	case isModelCommand(line) && !isCheckpointCommand(line) && !isUndoCommand(line):
 		arg := strings.TrimSpace(strings.TrimPrefix(line, ":model"))
 		if arg == "" {
 			fmt.Fprintln(s.source, BuildChatModel(s.modelInfo, s.modelOptions))
@@ -123,6 +126,19 @@ func (s *chatState) runChatCommand(line string) bool {
 			fmt.Fprintln(s.source, chatTasksEmpty)
 		} else {
 			fmt.Fprintln(s.source, BuildChatTasks(s.tasks.List(s.sessionID), time.Now()))
+		}
+	case isCheckpointCommand(line):
+		if strings.TrimSpace(line) != checkpointsCmd {
+			fmt.Fprintln(s.source, "用法：:checkpoints")
+		} else {
+			s.runCheckpoints()
+		}
+	case isUndoCommand(line):
+		command, ok := parseUndoCommand(line)
+		if !ok {
+			fmt.Fprintln(s.source, undoUsageHint)
+		} else {
+			s.runUndo(command)
 		}
 	default:
 		return false
