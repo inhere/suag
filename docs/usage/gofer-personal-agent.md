@@ -81,6 +81,14 @@ BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 
 ## 批处理 CLI
 
+`suga run --output-format stream-json` 的最终 `result` 事件在能确定本回合最后一次模型请求和模型窗口时还会带 `context`：
+
+```json
+{"context":{"used":550,"window":1000,"share":55}}
+```
+
+`context.used` 是最后一次模型请求的输入 token 数（包含缓存 token），`context.window` 是模型上下文窗口；`context.share` 是 `used * 100 / window` 向下取整的整数百分比，因此超过窗口时可能大于 `100`。这与 ACP 的 `usage_update` 中 `used`/`size` 口径一致，`share` 只是便于客户端直接显示的补充字段。窗口未知或本回合没有模型调用时省略整个 `context` 对象；其它 `usage` 与 `session_usage` 字段的累计口径不变。
+
 CLI 可在 agent 的 `args` 中加入 `--mcp-config <file>` 接入本机 stdio MCP 服务；可重复指定多个 JSON 文件。文件格式为 Claude 的 `mcpServers`，例如 `{"mcpServers":{"gofer":{"command":"gofer","args":["mcp"]}}}`。Suga 的 YAML 配置也可在 `mcp.servers` 下列出默认服务。MCP 子进程继承启动环境（`GOFER_*` 等保留），但会剔除凭据变量：名称以 `_API_KEY`、`_AUTH_TOKEN` 结尾的变量及 suga 自己读取的 LLM 密钥（`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`），再叠加各服务的 `env`；服务 `env` 里显式配置的同名变量照常传入。MCP 工具名保持原名；若与内置工具或更早配置的 server 的工具重名，后者被丢弃并记录警告，不会覆盖。需要让 Gofer job 调用其工具时，须在可执行路径和运行环境中提供 `gofer`；不要把密钥放在参数或文档中。
 
 MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目形如 `server/工具glob`：`tools.auto_allow` 用于普通运行；`--read-only` 只认 `tools.read_only_allow`（条目必须带服务名，`auto_allow` 不会扩大它）。两者都为空时所有 MCP 调用被拒绝。Gofer 只读 job 需要的典型配置见「升级迁移」。其余 MCP 工具在 CLI 中被拒绝，即使带 `--allow-write`；拒绝信息作为工具错误交给模型，回合继续。拒绝语义见下文“工具拒绝语义”。需要逐次审批 MCP 写工具时使用 ACP。

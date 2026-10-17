@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 变更
+
+- `suga run` 文本收尾行与 stream-json `result` 事件补充最后一次模型请求的上下文使用比例；stream-json 同时提供 `context.used`、`context.window` 与可直接显示的 `context.share`。
+
 ## [0.30.0] - 2026-10-18
 
 chat 默认汇总子 agent 进度（`chat.agent_progress`），不再逐条刷子 agent 的工具调用；memory 工具补充价值门槛与“不记”清单。
