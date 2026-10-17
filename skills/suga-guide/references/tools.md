@@ -1,6 +1,6 @@
 # 工具与权限参考
 
-内置工具清单、写权限与审批、附加目录与只读根、危险删除拦截、后台与监听任务、大输出外置、MCP 与子 agent。相关键（`tools.*`、`tasks.*`、`agents.*`、`mcp.*`）的默认值见 `references/config.md`；面向 Gofer 接入方的完整语义另见仓库 `docs/usage/gofer-personal-agent.md` 的“内置工具与相关配置”。
+内置工具清单、写权限与审批、优先工具（`tools.preferred`）、附加目录与只读根、危险删除拦截、后台与监听任务、大输出外置、MCP 与子 agent。相关键（`tools.*`、`tasks.*`、`agents.*`、`mcp.*`）的默认值见 `references/config.md`；面向 Gofer 接入方的完整语义另见仓库 `docs/usage/gofer-personal-agent.md` 的“内置工具与相关配置”。
 
 ## 工具清单
 
@@ -27,6 +27,33 @@
 - `file_remove`：移入 `$SUGA_HOME/trash/` 保留 7 天（`origin.json` 记录原路径），单次最多 1000 个文件。被 `.gitignore` 忽略的目录（以及 `node_modules`、`vendor`、`dist`），如被忽略的 `tmp/` 下的测试仓库，视为可再生：不遍历、不计数、直接永久删除，并在结果中列出；被忽略的单个文件（如 `.env`）仍进回收区。拒绝工作区根、工作区自己的 `.git`、用户主目录、通配符与工作区外路径。
 - 忽略规则：`file_grep`、`file_find` 与递归的 `file_list` 跳过 `.git`、`node_modules`、`vendor`、`dist` 和 `.gitignore` 匹配的路径（各级目录的 `.gitignore`，支持 `!` 与 `**`）；结果末尾一行注明跳过了什么，传 `no_ignore: true` 可包含它们（`.git` 除外）。
 - 并发读取：同一次回复里有多个 `file_read`、`file_list`、`file_grep`、`file_find` 调用时并发执行（`tools.parallel_reads`，默认开）；每个调用仍按顺序经过审批、污染追踪与 trace 记录，只有读取本身重叠。
+
+## 优先工具（`tools.preferred`）
+
+声明本机已有的强工具：确实可用时 Agent 在环境说明里看到并优先使用，不可用时提示词里完全不提，Agent 照常用内置工具。配置可以手写 YAML，也可以用 `suga config set`：
+
+```yaml
+tools:
+  preferred:
+    - name: rg
+      kind: command
+      when: 精确搜索文本或正则，优先于反复读取文件
+    - name: codebase-memory-mcp
+      kind: mcp
+      when: 需要跨文件查符号、调用关系时
+```
+
+```text
+suga config set tools.preferred '[{name: rg, kind: command, when: "精确搜索文本或正则"}]'
+```
+
+- 三项都必填：`name`（可执行文件名，不带参数和 shell 语法；`mcp` 时是 `mcp.servers` 里的 server `id`）、`kind`（`command` 或 `mcp`）、`when`（一句适用场景）。列表顺序即展示顺序；`config set` 整列表替换，不支持 `tools.preferred[0]` 这样的元素级路径。名字重复、空值、未知字段、非法 `kind` 都会让命令失败（退出码 2）且原配置文件不变。
+- **探测方式**：`command` 按当前 PATH 查找（Windows 交给 Go 的 `PATHEXT`，`.exe`、`.cmd` 都认），只查 PATH 不执行命令，也不产生审批请求；`mcp` 以会话启动时该 server 启动并 `tools/list` 成功为准。`suga manifest` 不启动 MCP，`mcp` 项只报是否已在 `mcp.servers` 中配置。
+- **只列存在项**：环境说明里只出现可用项，形如 ``- Preferred tool: rg (command) — <when>. Use when applicable; usage unclear, first check `--help`; record learned usage in memory.``；不可用项不写进提示词。列表只进段上下文，不改稳定系统提示，所以新装命令在下一个 segment 才出现，`command` 在新 segment 重新查 PATH，MCP 状态在会话启动时固定。
+- **MCP 常驻**：`kind: mcp` 的 server 注册出来的工具不会被 `tools.deferred: auto|always` 放进 `tool_search` 延迟集合，直接出现在工具列表里；其他 MCP 照旧。
+- **优先不等于放行**：`preferred` 只影响提示词与可见性。MCP 调用仍按 `tools.auto_allow` / `tools.read_only_allow` 判定：不在放行名单时 chat 与 `run` 直接拒绝（不询问），ACP 走客户端权限请求；`command` 仍经过 `shell_exec` 的审批，可用审批规则放行，例如 `command: ["rg *"]`。
+- **观测**：`suga manifest --json` 的 `preferred_tools` 列出每个声明的 `kind`、`when`、`present` 与原因（`found on PATH`、`not found on PATH`、`server not configured`、`configured; connection confirmed at session start`、`connected at runtime`、`not connected at runtime`）；`suga trace <session> --json` 的 `turn_context.preferred_tools` 是本回合环境说明实际列出的名字（按声明顺序）。
+- **语义检索提供者**：例如把 `xerj`（`command`，在已建索引的项目上做语义检索）或某个代码图谱 MCP 声明为优先项，让 Agent 先试它、再用内置工具兜底。不可用时（命令不在 PATH、MCP 没配置或没连上）Agent 照常用 `file_grep`、`file_find`、`session_search` 等内置工具，不会因为优先项缺失而失败。MCP 返回属外部内容：读过之后会话按现有污点规则被标记，之后的记忆写入受 `memory.write_tainted` 约束。
 
 ## 写权限与审批
 

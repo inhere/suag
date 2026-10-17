@@ -4,6 +4,18 @@
 
 ## [未发布]
 
+### 新增
+
+- 配置 `tools.preferred` 支持声明 command/MCP 优先工具，并在运行时安全探测其可用性。
+- 运行时环境说明展示已发现的优先工具；优先 MCP 工具在延迟模式下保持直接可见，但仍遵循既有审批。
+- `suga manifest` 新增 `preferred_tools`：每项声明都列出 kind、适用场景、`present` 与原因（command 查 PATH；MCP 只报是否已配置，连接在会话启动时确认）；trace 的 `turn_context` 记录本回合列出的优先工具名字。
+- Linux/macOS PTY 冒烟覆盖优先 command/MCP 的发现、延迟可见性、审批、manifest 与 trace 观测，并包含对应反向断言。
+- 文档补齐 `tools.preferred`：README（中英）要点、suga-guide 的 tools/config 参考与 `config/config.yaml` 样例写明配置写法、探测方式、只列存在项、“优先不等于放行”和观测方法。
+
+### 修复
+
+- `suga config set` 在父级键不存在时（如还没有 `tools:` 段）改为写入分行缩进的块式 YAML，不再生成 `tools: {allow_write: true}` 这样的流式写法。
+
 ## [0.28.0] - 2026-10-17
 
 上手与配置命令：首次运行自动初始化 `~/.suga`（`suga init`）、`suga config get/set/unset/list/path`、离线的 `suga models`；工具调用后模型回空文本不再让回合失败。

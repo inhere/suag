@@ -100,6 +100,46 @@ func TestVisibilityModes(t *testing.T) {
 	})
 }
 
+func TestVisibilityPinnedMCPTools(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name   string
+		mode   DeferredMode
+		window int
+		active bool
+	}{
+		{name: "auto", mode: DeferredAuto, window: 1, active: true},
+		{name: "always", mode: DeferredAlways, window: 128000, active: true},
+		{name: "never", mode: DeferredNever, window: 1, active: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := NewRegistry()
+			reg.Register(&mockTool{name: "file_read"})
+			reg.Register(&fakeMCP{name: "preferred", server: "preferred", desc: "preferred"})
+			reg.Register(&fakeMCP{name: "other", server: "other", desc: "other", pad: 1000})
+			v := NewVisibility(reg, VisibilityOptions{Mode: tc.mode, ContextWindow: tc.window, PinnedMCPTools: []string{"preferred"}})
+			assert.Eq(t, tc.active, v.Active())
+			listed, _ := v.ListTools(ctx)
+			got := names(listed)
+			assert.True(t, containsName(got, "preferred"))
+			if tc.active {
+				assert.False(t, containsName(got, "other"))
+			} else {
+				assert.True(t, containsName(got, "other"))
+			}
+		})
+	}
+}
+
+func containsName(names []string, want string) bool {
+	for _, name := range names {
+		if name == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestVisibilitySearchAndListing(t *testing.T) {
 	ctx := context.Background()
 	v := NewVisibility(thirtyMCP(10, nil), VisibilityOptions{Mode: DeferredAlways})

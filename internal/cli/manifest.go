@@ -17,7 +17,7 @@ import (
 func newManifestCommand(ctx context.Context, stdout, stderr io.Writer) *capp.Cmd {
 	var asJSON bool
 	var model, thinking string
-	cmd := capp.NewCmd("manifest", "Show capabilities: models, tools, MCP, skills, memory backends, output limits", func(c *capp.Cmd) error {
+	cmd := capp.NewCmd("manifest", "Show capabilities: models, tools, preferred tools, MCP, skills, memory backends, output limits", func(c *capp.Cmd) error {
 		if len(c.RemainArgs()) > 0 {
 			return fmt.Errorf("usage: suga manifest [--model m] [--thinking level] [--json]")
 		}
@@ -87,6 +87,21 @@ func writeManifestText(out io.Writer, m wiring.Manifest) error {
 	}
 	for _, s := range m.MCPServers {
 		fmt.Fprintf(&b, "  %s: %s\n", s.ID, s.Command)
+	}
+
+	// tools.preferred: every declaration is listed with its reason, so a false
+	// entry explains why the prompt does not offer it. MCP declarations are only
+	// reported as configured: this command never starts a server.
+	b.WriteString("\nPreferred tools (tools.preferred; MCP connections are confirmed when a session starts)\n")
+	if len(m.Preferred) == 0 {
+		b.WriteString("  none\n")
+	}
+	for _, p := range m.Preferred {
+		fmt.Fprintf(&b, "  %s (%s) present=%t: %s", p.Name, p.Kind, p.Present, p.Reason)
+		if p.When != "" {
+			fmt.Fprintf(&b, " — %s", p.When)
+		}
+		b.WriteByte('\n')
 	}
 
 	fmt.Fprintf(&b, "\nSkills\n  found %d\n", m.Skills.Count)

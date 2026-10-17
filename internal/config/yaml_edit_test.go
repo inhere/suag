@@ -208,3 +208,21 @@ func TestConfigWriterKeepsOneRecentBackup(t *testing.T) {
 	_, err = os.Stat(path + ".bak.bak")
 	assert.True(t, errors.Is(err, os.ErrNotExist))
 }
+
+// TestWriteConfigValueCreatesMissingParentsBlockStyle: a key whose parents are
+// missing is written as an indented block, nested deeper than one level too,
+// and a later key under the same parent joins that block.
+func TestWriteConfigValueCreatesMissingParentsBlockStyle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	assert.NoErr(t, os.WriteFile(path, []byte("# keep me\nmodel: deepseek/m\n"), 0o600))
+	_, err := WriteConfigValue(path, "tools.snapshots.keep_days", 3, ConfigWriteOptions{})
+	assert.NoErr(t, err)
+	_, err = WriteConfigValue(path, "tools.allow_write", true, ConfigWriteOptions{})
+	assert.NoErr(t, err)
+	data, err := os.ReadFile(path)
+	assert.NoErr(t, err)
+	text := string(data)
+	assert.StrContains(t, text, "# keep me\nmodel: deepseek/m\n")
+	assert.StrContains(t, text, "tools:\n  snapshots:\n    keep_days: 3\n  allow_write: true")
+	assert.NotContains(t, text, "{")
+}

@@ -154,7 +154,9 @@ func TestConfigSetAllowsSimpleRuntimeKeys(t *testing.T) {
 	assert.StrContains(t, text, "allow_write: true")
 	assert.StrContains(t, text, "approval: auto")
 	assert.StrContains(t, text, "memory:")
-	assert.StrContains(t, text, "memory: {write: \"off\"}")
+	// Missing parents are written block style, the way config.yaml is edited.
+	assert.StrContains(t, text, "memory:\n  write: \"off\"")
+	assert.StrContains(t, text, "tools:\n  allow_write: true\n  approval: auto")
 	assert.StrContains(t, text, "workspace:")
 	_, err = os.Stat(filepath.Join(home, "config.yaml.lock"))
 	assert.True(t, os.IsNotExist(err))

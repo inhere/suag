@@ -131,6 +131,7 @@ var configKeyDescriptors = []ConfigKey{
 	{Pattern: "agents.timeout", Type: ConfigTypeDuration, Writable: true, Reader: "agents"},
 	{Pattern: "mcp.call_timeout_sec", Type: ConfigTypeInt, Writable: true},
 	{Pattern: "mcp.servers", Type: ConfigTypeYAML, Writable: true, Reader: "mcp"},
+	{Pattern: "tools.preferred", Type: ConfigTypeYAML, Writable: true, Reader: "preferred_tools"},
 	{Pattern: "tools.deferred", Type: ConfigTypeEnum, Writable: true},
 	{Pattern: "tools.allow_write", Type: ConfigTypeBool, Writable: true},
 	{Pattern: "tools.approval", Type: ConfigTypeEnum, Writable: true},
@@ -522,6 +523,8 @@ func dispatchConfigReader(reader string) error {
 		_, err = ReadApprovalRulesSettings()
 	case "mcp":
 		_ = ReadMCPServerSettings()
+	case "preferred_tools":
+		_, err = ReadPreferredTools()
 	case "rules":
 		_, err = ReadRuleFileName()
 	case "":
@@ -740,6 +743,9 @@ func effectiveConfigValue(key string) (any, bool, error) {
 		}
 	case "mcp.call_timeout_sec":
 		return MCPCallTimeout(), gkconfig.Get(key) != nil, nil
+	case "tools.preferred":
+		value, err := ReadPreferredTools()
+		return value, gkconfig.Get(key) != nil, err
 	case "tools.allow_write":
 		if value, present := lookupRawConfig(key); present {
 			return value, true, nil

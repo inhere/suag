@@ -67,7 +67,7 @@ func (c *segmentContext) seal() {
 // stored.
 func (r *Runner) legacySnapshot(meta map[string]any) *segmentContext {
 	c := &segmentContext{
-		Environment:   r.environment(),
+		Environment:   r.segmentEnvironment(),
 		Rules:         metaString(meta, "personal_rules_content"),
 		RulesHash:     metaString(meta, "personal_rules_hash"),
 		MemoryIndex:   metaString(meta, metaMemoryIndexContent),
@@ -92,7 +92,7 @@ func (r *Runner) freshSnapshot(ctx context.Context, sessionID string, prev *segm
 		prev = &segmentContext{}
 	}
 	c := &segmentContext{
-		Environment:   r.environment(),
+		Environment:   r.segmentEnvironment(),
 		Rules:         prev.Rules,
 		RulesHash:     prev.RulesHash,
 		MemoryIndex:   prev.MemoryIndex,
@@ -123,6 +123,13 @@ func (r *Runner) environment() string {
 		return ""
 	}
 	return r.cfg.EnvironmentSource()
+}
+
+func (r *Runner) segmentEnvironment() string {
+	if r.cfg.SegmentEnvironmentSource != nil {
+		return r.cfg.SegmentEnvironmentSource()
+	}
+	return r.environment()
 }
 
 func (r *Runner) skills() string {

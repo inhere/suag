@@ -59,8 +59,16 @@ type Config struct {
 	// skills listing. Both go into the segment context: read for every new
 	// segment, and the environment is also compared at each turn start (a
 	// resumed session in another mode or workspace gets a context update).
-	EnvironmentSource func() string
-	SkillsSource      func() string
+	// SegmentEnvironmentSource is read only when a new segment snapshot is built.
+	// It may refresh cheap external facts without changing the current segment.
+	EnvironmentSource        func() string
+	SegmentEnvironmentSource func() string
+	// PreferredToolsSource returns the names of the preferred tools the
+	// environment section lists (the available declarations, in configuration
+	// order); the turn_context event records them, so a trace shows which
+	// preferred tools the turn saw. nil = this session lists none.
+	PreferredToolsSource func() []string
+	SkillsSource         func() string
 	// AddDirs returns the session's additional directories (--add-dir) as
 	// "path:ro"/"path:rw" entries; the turn_context event records them so a
 	// trace shows what the session could reach. nil = none.

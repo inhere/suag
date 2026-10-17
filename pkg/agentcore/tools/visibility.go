@@ -82,6 +82,9 @@ type VisibilityOptions struct {
 	Mode DeferredMode
 	// ContextWindow is the model window in tokens (<=0 uses 128000).
 	ContextWindow int
+	// PinnedMCPTools are MCP tool names that stay directly visible even when
+	// the selected deferred mode would otherwise hide them.
+	PinnedMCPTools []string
 }
 
 // SearchHit is one tool_search match.
@@ -143,10 +146,14 @@ func NewVisibility(inner lookupRegistry, opts VisibilityOptions) *Visibility {
 		return v
 	}
 	mcp := map[string]*deferredTool{}
+	pinned := make(map[string]bool, len(opts.PinnedMCPTools))
+	for _, name := range opts.PinnedMCPTools {
+		pinned[name] = true
+	}
 	total := 0
 	for _, s := range schemas {
 		tool, err := inner.Get(s.Name)
-		if err != nil || !IsMCP(tool) {
+		if err != nil || !IsMCP(tool) || pinned[s.Name] {
 			continue
 		}
 		server := MCPServerOf(tool)

@@ -34,10 +34,26 @@ type ConfigWriteResult struct {
 // validator which uses the existing typed readers.
 func WriteConfigValue(path, key string, value any, opts ConfigWriteOptions) (ConfigWriteResult, error) {
 	return editConfigFile(path, key, opts, func(root *ast.MappingNode, segments []string) error {
-		parent, err := ensureMappingPath(root, segments[:len(segments)-1])
+		// Missing parents are written with the value as one block-style subtree
+		// (tools:\n  allow_write: true), the way people write config.yaml; building
+		// them one empty map at a time could only produce flow style ({...}).
+		existing, depth, err := deepestMapping(root, segments[:len(segments)-1])
 		if err != nil {
 			return err
 		}
+		if depth < len(segments)-1 {
+			var nested any = value
+			for i := len(segments) - 1; i > depth; i-- {
+				nested = map[string]any{segments[i]: nested}
+			}
+			entry, err := yamlMappingEntry(segments[depth], nested)
+			if err != nil {
+				return err
+			}
+			appendMappingEntry(existing, entry)
+			return nil
+		}
+		parent := existing
 		leaf := segments[len(segments)-1]
 		if entry := mappingEntry(parent, leaf); entry != nil {
 			replacement, err := yamlValueNode(value)
@@ -277,32 +293,22 @@ func findMappingEntry(root *ast.MappingNode, segments []string) (*ast.MappingNod
 	return current, nil, links, nil
 }
 
-func ensureMappingPath(root *ast.MappingNode, segments []string) (*ast.MappingNode, error) {
+// deepestMapping follows segments while they name existing mappings and returns
+// the last one with the number of segments it consumed.
+func deepestMapping(root *ast.MappingNode, segments []string) (*ast.MappingNode, int, error) {
 	current := root
-	for _, segment := range segments {
+	for i, segment := range segments {
 		entry := mappingEntry(current, segment)
 		if entry == nil {
-			value, err := yamlValueNode(map[string]any{})
-			if err != nil {
-				return nil, err
-			}
-			entry, err = yamlMappingEntry(segment, value)
-			if err != nil {
-				return nil, err
-			}
-			entry.IsFlowStyle = true
-			if mapping, ok := entry.Value.(*ast.MappingNode); ok {
-				mapping.SetIsFlowStyle(true)
-			}
-			appendMappingEntry(current, entry)
+			return current, i, nil
 		}
 		child, ok := entry.Value.(*ast.MappingNode)
 		if !ok {
-			return nil, fmt.Errorf("configuration path %q is not a mapping", segment)
+			return nil, 0, fmt.Errorf("configuration path %q is not a mapping", segment)
 		}
 		current = child
 	}
-	return current, nil
+	return current, len(segments), nil
 }
 
 func mappingEntry(mapping *ast.MappingNode, key string) *ast.MappingValueNode {

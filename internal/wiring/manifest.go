@@ -33,6 +33,7 @@ type Manifest struct {
 	Models        ManifestModels        `json:"models"`
 	Tools         []ManifestTool        `json:"tools"`
 	MCPServers    []ManifestMCPServer   `json:"mcp_servers"`
+	Preferred     []ManifestPreferred   `json:"preferred_tools"`
 	Skills        ManifestSkills        `json:"skills"`
 	Memory        []ManifestMemory      `json:"memory"`
 	Output        ManifestOutput        `json:"output"`
@@ -77,6 +78,18 @@ type ManifestTool struct {
 type ManifestMCPServer struct {
 	ID      string `json:"id"`
 	Command string `json:"command"`
+}
+
+// ManifestPreferred is one declared preferred tool (tools.preferred) with its
+// discovery reason. Declarations that are not available are kept so a manifest
+// can explain why they are missing from the prompt. It holds no command path,
+// MCP argument or environment value.
+type ManifestPreferred struct {
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	When    string `json:"when"`
+	Present bool   `json:"present"`
+	Reason  string `json:"reason"`
 }
 
 // ManifestSkills reports the skill roots and how many skills were found.
@@ -156,6 +169,9 @@ type ManifestInput struct {
 	// Registry is the base tool registry (MCP tools included when running).
 	Registry   *tools.Registry
 	MCPServers []mcp.ServerSettings
+	// Preferred is the discovery snapshot shown by the manifest; nil = no
+	// declared tool. The runtime manifest reuses its startup snapshot.
+	Preferred  []PreferredToolStatus
 	SkillRoots []capskills.Root
 	Skills     *capskills.Registry
 	Memory     *MemorySetup
@@ -186,6 +202,7 @@ func BuildManifest(in ManifestInput) Manifest {
 		ApprovalRules: manifestApprovalRules(in.Approval, in.ToolsApproval),
 		Tools:         []ManifestTool{},
 		MCPServers:    []ManifestMCPServer{},
+		Preferred:     []ManifestPreferred{},
 		Memory:        []ManifestMemory{},
 		Skills:        ManifestSkills{Roots: []string{}},
 	}
@@ -215,6 +232,12 @@ func BuildManifest(in ManifestInput) Manifest {
 	}
 	for _, s := range in.MCPServers {
 		m.MCPServers = append(m.MCPServers, ManifestMCPServer{ID: s.ID, Command: s.Command})
+	}
+	// Declaration order: the resolver keeps the configured order, so a manifest
+	// renders the same list the prompt shows. The conversion copies exactly the
+	// safe fields (name, kind, scenario, present, reason).
+	for _, p := range in.Preferred {
+		m.Preferred = append(m.Preferred, ManifestPreferred(p))
 	}
 	for _, r := range in.SkillRoots {
 		m.Skills.Roots = append(m.Skills.Roots, r.Dir)
@@ -385,9 +408,18 @@ func loadManifest(opts ManifestOptions) (Manifest, manifestParts, error) {
 	}
 	reg.Register(NewManifestTool(nil))
 
+	// tools.preferred: command presence comes from PATH; a configured MCP
+	// server is reported as configured, because this command never starts one
+	// (design 0.2). A malformed declaration fails the manifest instead of
+	// silently dropping the list.
+	preferred, err := ResolvePreferredTools(nil, nil)
+	if err != nil {
+		return Manifest{}, manifestParts{}, err
+	}
+
 	m := BuildManifest(ManifestInput{
 		Version: buildVersion, Settings: st.models, Registry: reg,
-		MCPServers: appconfig.ReadMCPServerSettings(),
+		MCPServers: appconfig.ReadMCPServerSettings(), Preferred: preferred,
 		SkillRoots: skillRoots(workspace), Skills: skillReg,
 		Memory: st.memSetup, Policy: st.memPolicy, Approval: approval,
 		ToolsApproval: manifestToolsApprovalAction(),

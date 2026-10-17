@@ -40,6 +40,8 @@ type Options struct {
 	ReadOnly bool
 	// Servers are extra MCP servers (from --mcp-config or the ACP session).
 	Servers []mcp.ServerSettings
+	// PreferredTools is the runtime discovery snapshot shown in segment context.
+	PreferredTools []PreferredToolStatus
 	// MCPConfigs are Claude-style config files read by OpenCLI into Servers.
 	MCPConfigs []string
 	Hooks      []agentcore.Hook
@@ -113,6 +115,9 @@ type Runtime struct {
 	Runner *personal.Runner
 	// Registry is the base tool registry (lets ACP tell MCP tools apart).
 	Registry *tools.Registry
+	// PreferredTools is the startup discovery snapshot used by prompt and
+	// manifest layers; it is frozen for this runtime.
+	PreferredTools []PreferredToolStatus
 	// ACPPolicy exposes the same compiled policy to the ACP permission hook
 	// without coupling the internal wiring package to the ACP server package.
 	ACPPolicy func(agentcore.ToolCall, agentcore.Tool) (action, rule, scope string)
@@ -430,6 +435,20 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	preferredTools, err := ResolvePreferredTools(capabilities.Registry, servers)
+	if err != nil {
+		_ = capabilities.Close()
+		return nil, err
+	}
+	// The preferred snapshot is captured after MCP registration. It is passed
+	// into the environment source rather than rebuilt by run/chat/ACP, so all
+	// entry points describe the same runtime facts.
+	opts.PreferredTools = append([]PreferredToolStatus(nil), preferredTools...)
+	// preferredNames holds the names the environment section listed last;
+	// preferredEnvironment is the only writer, so the rendered text and the
+	// turn_context event cannot drift apart.
+	preferredNames := &listedPreferredNames{}
+	preferredEnvironment := newPreferredEnvironmentSource(opts, preferredNames)
 	// Background tasks: shell commands in write modes (they need
 	// shell_exec); sub-agents (below) in every mode, so the task tool and the
 	// notices are there in read-only sessions too.
@@ -487,6 +506,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return BuildManifest(ManifestInput{
 			Version: buildVersion, Settings: settings, Registry: capabilities.Registry,
 			MCPServers: append(appconfig.ReadMCPServerSettings(), servers...),
+			Preferred:  preferredTools,
 			SkillRoots: skillRoots(workspace), Skills: skillReg,
 			Memory: memSetup, Policy: memPolicy, Approval: refreshManifestApprovalRules(approval.RuleSource),
 			ToolsApproval: manifestToolsApprovalAction(),
@@ -500,7 +520,8 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// Dangerous deletes are stopped before any approver (guardDangerous).
 	approvalLayer := tools.NewApproval(capabilities.Registry, guardDangerous(opts.Approver))
 	approvalLayer.SetDisabled(disabledToolHints(capabilities.Registry, opts))
-	vis, err := newToolVisibility(capabilities.Registry, approvalLayer, contextWindow)
+	vis, err := newToolVisibility(capabilities.Registry, approvalLayer, contextWindow,
+		preferredMCPToolNames(capabilities.Registry, preferredTools))
 	if err != nil {
 		_ = capabilities.Close()
 		return nil, err
@@ -586,7 +607,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		Tools:             toolRegistry,
 		PromptBuilder:     staticPrompt(basePrompt()),
 		// Environment and skills go into the segment context (design D1).
-		EnvironmentSource: func() string { return environmentPrompt(opts) },
+		// preferredEnvironment records the names it lists, so turn_context and
+		// the prompt agree on what the turn saw.
+		EnvironmentSource:        func() string { return preferredEnvironment(opts.PreferredTools) },
+		SegmentEnvironmentSource: func() string { return preferredEnvironment(refreshPreferredCommands(opts.PreferredTools)) },
+		PreferredToolsSource:     preferredNames.get,
 		// The turn_context event records the session's added directories.
 		AddDirs: func() []string { return dirs.List() },
 		SkillsSource: func() string {
@@ -621,7 +646,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	memHost.bind(runner, repo)
-	rt := &Runtime{Runner: runner, Registry: capabilities.Registry,
+	rt := &Runtime{Runner: runner, Registry: capabilities.Registry, PreferredTools: preferredTools,
 		ACPPolicy: func(call agentcore.ToolCall, tool agentcore.Tool) (action, rule, scope string) {
 			policyAction, hit := approval.Decide(approval.targetFor(call, tool), tools.MetaOf(tool))
 			if hit != nil {

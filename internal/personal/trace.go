@@ -266,6 +266,13 @@ func turnContextLine(e store.Event) string {
 	if v := attr("version"); v != "" {
 		parts = append(parts, "suga="+v)
 	}
+	// The preferred tools the environment section listed this turn: names only.
+	// Events read back from the store hold the names as a generic slice.
+	if v, ok := e.Attrs["preferred_tools"]; ok {
+		if names := strings.Join(strings.Fields(strings.Trim(fmt.Sprint(v), "[]")), ","); names != "" {
+			parts = append(parts, "preferred="+names)
+		}
+	}
 	if e.TurnID != "" {
 		parts = append(parts, "turn="+e.TurnID)
 	}

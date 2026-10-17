@@ -64,6 +64,15 @@ func (r *Runner) recordTurnContext(ctx context.Context, model Session, seg, eff 
 	if r.cfg.Version != "" {
 		e.Attrs["version"] = r.cfg.Version
 	}
+	// The preferred tools this turn's environment section listed, in
+	// configuration order. Names only: the declaration's scenario text,
+	// command paths, MCP arguments and secrets stay out of the trace (design
+	// 0.2). The source is read, not re-probed, so it matches the prompt.
+	if r.cfg.PreferredToolsSource != nil {
+		if names := r.cfg.PreferredToolsSource(); len(names) > 0 {
+			e.Attrs["preferred_tools"] = names
+		}
+	}
 	// The files outside the workspace this session may reach (--add-dir):
 	// "path:ro"/"path:rw", the effective mode of this run.
 	if r.cfg.AddDirs != nil {
