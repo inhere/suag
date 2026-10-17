@@ -1,0 +1,12 @@
+# suga first-run configuration; edit this file or use `suga config set`.
+# Secrets belong in $SUGA_HOME/.env; this file contains no secret value.
+# The model below is a safe local starting point; add a provider and credentials
+# in .env before sending a request.
+model: deepseek/deepseek-chat
+# providers:
+#   my-gateway:
+#     type: openai
+#     base_url: "${MY_GATEWAY_BASE_URL}"
+#     api_key: "${MY_GATEWAY_API_KEY}"
+# tools:
+#   allow_write: false

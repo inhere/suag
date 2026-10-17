@@ -50,6 +50,7 @@ func New(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, build B
 		NewPersonalCommand(ctx, "run", stdin, stdout, stderr),
 		NewPersonalCommand(ctx, "chat", stdin, stdout, stderr),
 		newACPCommand(ctx, stdin, stdout, stderr),
+		newInitCommand(stdout, stderr),
 		newVersionCommand(stdout, stderr, build),
 		newPSCommand(stdout, stderr),
 		newSendCommand(stdin, stderr),
