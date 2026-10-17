@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 变更
+
+- chat 默认汇总子 agent 的工具调用进度，支持 `chat.agent_progress` 的 `summary`、`full` 与 `off` 模式；stream-json、ACP 与 trace 保持逐条事件。
+
 ## [0.29.0] - 2026-10-17
 
 配置的优先工具：`tools.preferred` 里列出的命令或 MCP 服务存在时，在会话环境说明中列出并提示优先使用，优先 MCP 常驻加载，`suga manifest` 与 trace 可见；`suga config set` 缺父级键时改写块式 YAML。

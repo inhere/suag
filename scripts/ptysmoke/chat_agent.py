@@ -4,10 +4,7 @@
 fakellm.py (tool mode, --agent) has the model call the agent tool; the
 sub-agent's requests (its system prompt names it) grep once and report.
 
-sync: the sub-agent's grep shows as a progress line under the agent call,
-the report comes back as the tool result, the turn ends; the trace has the
-agent tool event naming the sub-agent session, which `suga sessions` hides
-and `suga sessions --agents` lists.
+sync: by default the sub-agent's grep is summarized (no `  ·` line) with a count/duration line; the `sync-full` case keeps the old per-call progress line. The report comes back as the tool result, and the trace has the agent tool event naming the sub-agent session, which `suga sessions` hides and `suga sessions --agents` lists.
 
 cancel: the sub-agent is slow (--child-delay); Ctrl-C during it ends chat
 cleanly (resume line), the interrupted turn reads 已中断本轮 (never the raw
@@ -60,13 +57,17 @@ def sessions(binary, env, *args):
         return []
 
 
-def sync_scenario(s, binary, env):
+def sync_scenario(s, binary, env, full=False):
     m = s.mark()
     s.check("sync: ❯ prompt", s.until(r"❯ ", m))
     m = s.mark(); s.line("调研一下")
     s.check("sync: agent call shown", s.until(r"⏺ agent", m))
-    s.check("sync: sub-agent progress line", s.until(r"  · file_grep", m))
-    s.check("sync: report is the result", s.until(r"⎿ ok: SUBREPORT: SMOKE is in target\.txt", m))
+    if full:
+        s.check("sync full: sub-agent progress line", s.until(r"  · file_grep", m))
+    else:
+        s.check("sync summary: no per-call progress line", not s.contains(r"  · file_grep", m))
+    s.check("sync: report is the result", s.until(r"子 agent smoke survey：1 次工具调用，耗时", m) and
+            s.until(r"⎿ ok: SUBREPORT: SMOKE is in target\.txt", m))
     s.check("sync: turn ends", s.until(r"tokens · ", m))
     session = exit_chat(s)
     s.check("sync: session id", bool(session))
@@ -117,6 +118,7 @@ def background_scenario(s):
     s.check("background: task started", s.until(r"background agent task t1 started: smoke survey", m))
     s.check("background: turn ends", s.until(r"tokens · ", m))
     m = s.mark()
+    s.check("background: summary", s.until(r"子 agent smoke survey：1 次工具调用，耗时", m, timeout=20))
     s.check("background: idle chat woken by its report", s.until(r'agent "smoke survey" finished \(stop=final\)', m, timeout=20))
     s.check("background: report in the notice", s.until(r"SUBREPORT: SMOKE is in target\.txt", m))
     s.check("background: notice turn ends", s.until(r"tokens · ", m))
@@ -138,10 +140,11 @@ def main():
     agents = "agents:\n  enabled: false\n" if args.agents_off else ""
     scenarios = [
         ("sync", [], "", lambda s, env: sync_scenario(s, binary, env)),
+        ("sync-full", [], "chat:\n  agent_progress: full\n", lambda s, env: sync_scenario(s, binary, env, full=True)),
         # The two Ctrl-C groups (plan F1): with steering on (the default) a press
         # ends the turn only, with chat.steering false it ends chat as before.
-        ("cancel", ["--child-delay", "30"], "", lambda s, env: cancel_scenario(s, binary, env)),
-        ("cancel-off", ["--child-delay", "30"], "chat:\n  steering: false\n",
+        ("cancel", ["--child-delay", "30"], "chat:\n  agent_progress: full\n", lambda s, env: cancel_scenario(s, binary, env)),
+        ("cancel-off", ["--child-delay", "30"], "chat:\n  agent_progress: full\n  steering: false\n",
          lambda s, env: cancel_scenario(s, binary, env, label="cancel-off", steering=False)),
         ("background", ["--background"], "", lambda s, env: background_scenario(s)),
     ]

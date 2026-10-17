@@ -75,7 +75,7 @@
 
 | 键 | 默认 | 含义 |
 |---|---|---|
-| `chat.markdown` | `true` | 在终端渲染模型输出的 markdown（标题、粗体、行内代码、代码块、列表、引用、链接） |
+| `chat.agent_progress` | `summary` | 子 agent 进度显示：`summary` 在等待状态行按 description 汇总调用次数、结束时显示耗时；`full` 显示每次工具调用；`off` 不显示进度（agent 工具行与结果仍显示） |
 | `chat.spinner` | `true` | 等待模型输出时显示“思考中… Ns”，正文/工具调用/审批问题之前清除；`chat.steering` 开启时回合中不显示（输入行常驻，避免与它争同一行；工具调用行、回答与输入行本身仍能看出在干活） |
 | `chat.steering` | `true` | 回合进行中输入行保持可用：提示符为 `↳ `，回车把内容插进当前回合（模型下一次请求前送达；模型已答完则作为下一回合），Esc 或一次 Ctrl-C 只中止本轮（未送达的插话回到输入行），3 秒内两次 Ctrl-C 退出 chat。按键以字节到达，不依赖控制台的 Ctrl-C 事件，因此在 ConPTY（Zed、Windows Terminal）里同样有效；仅在输入是终端时生效，关闭后回合中恢复 cooked 模式，`Ctrl-C` 是 SIGINT、一次即退出 |
 | `chat.highlight_input` | `true` | 提示符提交的那行（含粘贴的多行）与外部投递的消息（`suga send`、Stop hook 回复、任务通知）整行加低饱和背景，与模型回答区分；两者背景色不同 |
@@ -88,7 +88,7 @@
 | `chat.diff_lines` | `20` | 改动预览最多显示的行数（超出时提示用 `:diff` 查看全部） |
 | `chat.ask_outside_dirs` | `true` | 文件工具越出工作区、只读根与附加目录时询问 `[r] 只读 [w] 读写 [n] 拒绝`，答应后把目录写进会话；关闭时越界调用直接拒绝 |
 
-上表中的开关键（`chat.markdown`、`chat.spinner`、`chat.steering`、`chat.highlight_input`、`chat.terminal_title`、`chat.history`、`chat.diff`、`chat.ask_outside_dirs`）都接受布尔或字符串（`"off"` / `"false"` 关闭）。`chat.markdown`、`chat.spinner`、`chat.highlight_input`、`chat.terminal_title` 只在彩色终端生效：非终端、重定向输出或 `NO_COLOR` 时按原文显示，不加任何转义。`chat.steering` 只要求输入是终端。
+上表中的开关键（`chat.markdown`、`chat.spinner`、`chat.steering`、`chat.highlight_input`、`chat.terminal_title`、`chat.history`、`chat.diff`、`chat.ask_outside_dirs`）都接受布尔或字符串（`"off"` / `"false"` 关闭）。`chat.agent_progress` 不是开关，只接受 `summary`、`full`、`off`。`chat.markdown`、`chat.spinner`、`chat.highlight_input`、`chat.terminal_title` 只在彩色终端生效：非终端、重定向输出或 `NO_COLOR` 时按原文显示，不加任何转义。`chat.steering` 只要求输入是终端。
 
 ## `tools.*`
 
