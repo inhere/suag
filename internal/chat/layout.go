@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/gookit/color"
+	"github.com/inhere/suga/internal/output"
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/pkg/agentcore"
 )
@@ -200,7 +201,7 @@ func BuildTurnStatus(s TurnStatus) []LayoutLine {
 	)
 	// How full the context is: the same number the idle consolidation compares
 	// with context.idle_min_ratio, so the person can tell when it will fire.
-	if share := contextShare(s.LastInputTokens, s.ContextWindow); share != "" {
+	if share := output.ContextShare(s.LastInputTokens, s.ContextWindow); share != "" {
 		parts = append(parts, share)
 	}
 	parts = append(parts,
@@ -305,17 +306,6 @@ func budgetNoticeText(b *personal.BudgetSnapshot) string {
 		name = "会话预算"
 	}
 	return fmt.Sprintf("预算提醒：%s已使用 %s%d%%", name, prefix, share)
-}
-
-// contextShare renders the context usage of a turn's last model request as
-// "ctx 55%": its input tokens (cache included) over the model window. Empty
-// when the window is unknown or no model call of the turn reported tokens. A
-// request above the window stays honest (>100%) instead of being clamped.
-func contextShare(lastInputTokens, contextWindow int) string {
-	if contextWindow <= 0 || lastInputTokens <= 0 {
-		return ""
-	}
-	return fmt.Sprintf("ctx %d%%", lastInputTokens*100/contextWindow)
 }
 
 // ExitSummary is everything the exit summary shows.

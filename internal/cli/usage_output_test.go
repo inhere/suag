@@ -35,6 +35,17 @@ func (cachedUsageProvider) Generate(context.Context, *agentcore.GenerateRequest)
 	}, nil
 }
 
+type contextUsageProvider struct{ input int }
+
+func (p contextUsageProvider) Name() string { return "context-usage" }
+
+func (p contextUsageProvider) Generate(context.Context, *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	return &agentcore.GenerateResult{
+		Content: "done", FinishReason: agentcore.FinishFinal,
+		Usage: agentcore.Usage{InputTokens: p.input, OutputTokens: 1, TotalTokens: p.input + 1},
+	}, nil
+}
+
 type yieldAfterModelHook struct{ agentcore.NopHook }
 
 func (yieldAfterModelHook) AfterModel(_ context.Context, _ *agentcore.ModelEvent, ctrl *agentcore.Control) error {
@@ -281,6 +292,38 @@ func TestMissingSessionIsStableError(t *testing.T) {
 		assert.Eq(t, 4, notFound.ExitCode())
 		assert.Eq(t, "session not found: gone-session", err.Error())
 		assert.Eq(t, true, errors.Is(err, store.ErrSessionNotFound))
+	}
+}
+
+// TestRunTextModeShowsContextShare checks the real text-mode closing path uses
+// the same context ratio as chat, while omitting it when the window is unknown.
+func TestRunTextModeShowsContextShare(t *testing.T) {
+	for _, tc := range []struct {
+		name, want    string
+		input, window int
+	}{
+		{name: "rounds down to zero", input: 9, window: 1000, want: "ctx 0%"},
+		{name: "reports an oversized request", input: 1050, window: 1000, want: "ctx 105%"},
+		{name: "unknown window is omitted", input: 550},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, err := store.Open(newTestStorePath(t))
+			assert.Require(t, assert.NoErr(t, err))
+			t.Cleanup(func() { _ = repo.Close() })
+			runner, err := personal.New(personal.Config{
+				Repository: repo, Provider: contextUsageProvider{input: tc.input},
+				ContextWindow: tc.window,
+			})
+			assert.Require(t, assert.NoErr(t, err))
+			var stdout, stderr bytes.Buffer
+			assert.NoErr(t, executePersonalRun(context.Background(), runner,
+				personalOptions{Prompt: "x", OutputFormat: "text"}, &stdout, &stderr))
+			if tc.want == "" {
+				assert.StrNotContains(t, stderr.String(), "ctx ")
+				return
+			}
+			assert.StrContains(t, stderr.String(), tc.want)
+		})
 	}
 }
 

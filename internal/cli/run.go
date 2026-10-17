@@ -419,6 +419,10 @@ func runSummary(runner *personal.Runner, result personal.RunResult, elapsed time
 	if s := result.SessionUsage; s.InputTokens > 0 || s.OutputTokens > 0 {
 		line += fmt.Sprintf("（会话累计 in %d / out %d）", s.InputTokens, s.OutputTokens)
 	}
+	_, _, window, _ := runner.ModelSettings()
+	if share := output.ContextShare(result.LastInputTokens, window); share != "" {
+		line += " · " + share
+	}
 	if budget != nil && budget.Estimated {
 		line += "（其中本轮用量含估算）"
 	}
