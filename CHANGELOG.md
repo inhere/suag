@@ -14,6 +14,7 @@
 - 配置 registry 补齐 memory/hooks/tools 等参考键；简单标量、枚举和字符串列表可按运行时类型与范围校验后通过 `config set/unset` 维护，结构化值仍由 typed reader 保护。
 - `suga models` 现在从本地配置投影内置/自定义 provider、当前/compact/fallback 模型与稳定的 `:model` 候选，支持离线文本和 `--json` 输出，不启动 provider 或发网络请求。
 - `chat :model` 的显示、切换与 Tab 补全现在复用 `suga models` 的 canonical 候选投影，包含当前/compact/fallback 引用并保持稳定去重排序。
+- 上手文档改为 `suga init`、`.env`、`config` 与离线 `models` 的命令优先流程，并补充 `SUGA_CONFIG`、退出码、密钥禁写和 YAML 注释保留说明。
 - 配置写锁统一移入 `$SUGA_HOME/run/locks/`，显式 `SUGA_CONFIG` 使用路径哈希锁名，避免在外部配置目录留下锁文件。
 
 ## [0.27.1] - 2026-10-17

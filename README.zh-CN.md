@@ -31,15 +31,11 @@ Suga 是用 Go 写的个人编码 Agent。同一个持久会话引擎提供两�
 
 ## 快速开始
 
-创建 `~/.suga/config.yaml`（全部字段见 [config/config.yaml](config/config.yaml)）：
+详细说明：[references/config.md](skills/suga-guide/references/config.md)（上手与配置命令）
 
-```yaml
-model: deepseek/deepseek-chat   # <provider>/<model>
-# openai、anthropic、deepseek 是内置 provider，分别读取
-# OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY
-tools:
-  allow_write: true             # 允许 chat 写文件、执行命令（执行前会询问）
-```
+- 先运行 `suga init`；它会创建私有的 `~/.suga`、带注释的 `config.yaml` 和只含注释的 `.env` 模板。已有文件（包括 `.env`）永不覆盖。
+- 在 `.env` 填 provider 值，再用 `suga config get model`、`suga config path` 和离线的 `suga models` 检查生效配置；完整能力诊断仍用 `suga manifest`。
+- 没有二进制时可手工创建包含 `model: <provider>/<model>` 的最小 YAML；[config/config.yaml](config/config.yaml) 仍是完整字段样例。通常优先使用生成的模板和 `suga config set`。
 
 ```bash
 suga chat                                         # 在当前目录开启交互式对话
@@ -65,7 +61,9 @@ suga run --max-steps 30 --prompt "长任务"         # 本轮步数上限（默�
 详细说明：[references/config.md](skills/suga-guide/references/config.md)（全部键与默认值）、[references/providers.md](skills/suga-guide/references/providers.md)（provider 与模型）
 
 - 只读取 `$SUGA_HOME/config.yaml` 和 `$SUGA_HOME/.env`（默认 `~/.suga`），工作目录下的配置不会被读取；`SUGA_CONFIG` 可指定唯一配置文件。
-- 密钥写进 `$SUGA_HOME/.env`（如 `BAILIAN_API_KEY=...`），配置里的 `${VAR}` 从这里或进程环境展开。
+- `suga init` 可安全重复执行；`suga init --force` 只备份并替换 home 配置，绝不写入 `.env` 值，也不会绕过显式 `SUGA_CONFIG` 保护。
+- `suga config get|set|unset|list|path` 显示生效值与来源、保留 YAML 注释，并拒绝把密钥写入 YAML；密钥放进 `.env`，配置用 `${VAR}` 引用。
+- `suga models [--json]` 只离线查看本地 provider 和模型引用，不替代 `suga manifest` 或 chat 会话级的 `:model` 切换。
 - `model` 为 `<provider>/<model>`，优先级 `--model` > `SUGA_MODEL` > 配置；`fallback_models` 依次备用，`compact_model` 生成摘要。
 - `providers.<id>`：`type`（`openai`、`openai-responses`、`anthropic`）、`base_url`、`api_key`、`headers`，以及模型级 `context_window`、`max_output_tokens`、`model_id`、`price`、`thinking`。
 - 常用开关：`tools.allow_write`、`tools.approval`、`mcp.servers`、`memory.*`、`hooks.*`、`chat.*`、`skills.*`、`workspace`。

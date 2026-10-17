@@ -201,6 +201,54 @@ chat 的 `a`/`d` 会创建按命令前缀、写入目录或删除精确路径区
 
 事件：SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd、Interrupt。`SUGA_HOOKS=off` 整体关闭。
 
+## 上手、初始化与配置命令
+
+### `suga init`
+
+首次配置建议先运行：
+
+```bash
+suga init
+```
+
+它按需创建 `$SUGA_HOME`（默认 `~/.suga`）、0600 的注释型 `config.yaml` 和只含说明注释的 0600 `.env`。模板中没有任何 `NAME=value` 赋值；用户自行把密钥和私有地址写入 `.env`，在 YAML 中用 `${NAME}` 引用。已有 `config.yaml` 或 `.env` 都不覆盖，`.env` 也不备份。
+
+`--force` 只针对 home 下的 `config.yaml`：先创建带 UTC 时间戳的 `.bak.<timestamp>` 备份，再写入 onboarding 模板；它仍不会改动 `.env`。设置 `SUGA_CONFIG` 后，配置命令以该外部文件为源，`init --force` 会拒绝覆盖（退出码 2），缺失的显式配置文件也不会静默改写为 home 配置。Windows 下路径使用平台原生分隔符。
+
+`version`、`--version`、`-V` 及帮助命令不初始化、不创建目录或文件。`chat`、`run`、`acp`、`config`、`models` 和其它需要配置的命令会在加载配置前执行同一个安全初始化门控；首次提示写 stderr，因此不会污染 `run --output-format stream-json` 或 ACP 的协议 stdout。
+
+### `suga config`
+
+配置命令只维护 YAML 配置源，不修改环境变量：
+
+```text
+suga config get <key>       # 生效值与来源；敏感值遮罩
+suga config set <key> <value>
+suga config unset <key>
+suga config list             # 稳定排序的键、值和来源
+suga config path             # home/config/.env/source
+```
+
+- `get` 遵守默认值、配置文件和环境变量的现有优先级；`SUGA_MODEL` 覆盖 `model` 时会显示 `env:SUGA_MODEL` 来源。
+- `set`/`unset` 只接受 registry 中的可写键，使用现有 typed reader 做类型与语义校验；拒绝 `api_key`、token、password、secret 等密钥键写入 YAML。请改 `.env`，不要把密钥放命令行或配置文件。
+- YAML AST 写回只改目标节点，保留注释、键顺序、行内注释和原有换行；每次 `set`/`unset` 只保留最近的 `<config>.bak`，失败时原文件保持不变。
+- `SUGA_CONFIG` 存在时 `get`/`set`/`unset`/`list` 使用显式文件；`path` 总是显示 home、实际 config、`.env` 与 `source`。配置输入/类型/策略错误退出 2，读取或写盘错误退出 1。
+
+### `suga models`
+
+`models` 是完全离线的本地模型投影：
+
+```bash
+suga models
+suga models --json
+```
+
+它只读取本地配置，列出内置 provider 命名空间、已配置模型以及当前/compact/fallback 角色，并输出与 chat `:model` 共享的 `switchable` 范围。它不构造 provider、不启动 MCP 或 hooks、不请求远端模型目录；`suga manifest` 仍负责完整能力诊断，chat 的 `:model` 仍是会话级切换且不写配置。
+
+### 命令退出码与手工备选
+
+成功为 0；初始化、配置读写的普通文件系统失败为 1；初始化保护、未知键、只读/密钥键、类型或参数错误为 2。无法运行二进制时，可按仓库的 [onboarding.yaml](../../../config/onboarding.yaml) 手工创建最小配置，再按 [providers.md](providers.md) 设置 provider；不要提交 `.env` 或真实密钥。
+
 ## 环境变量
 
 | 变量 | 含义 |

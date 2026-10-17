@@ -31,15 +31,11 @@ Suga is a personal coding agent written in Go. One persistent conversation engin
 
 ## Quick start
 
-Create `~/.suga/config.yaml` (see [config/config.yaml](config/config.yaml) for every field):
+Details: [references/config.md](skills/suga-guide/references/config.md) (onboarding and configuration commands)
 
-```yaml
-model: deepseek/deepseek-chat   # <provider>/<model>
-# providers: openai, anthropic and deepseek are built in and read
-# OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY.
-tools:
-  allow_write: true             # let chat write files and run commands (asks first)
-```
+- Run `suga init` once; it creates a private `~/.suga` with a commented `config.yaml` and comment-only `.env` template. Existing files, including `.env`, are never overwritten.
+- Edit `.env` with your provider values, then use `suga config get model`, `suga config path`, and offline `suga models` to check the effective setup. `suga manifest` remains the full capability report.
+- Without a binary, create a minimal YAML containing `model: <provider>/<model>` manually; [config/config.yaml](config/config.yaml) remains the full field reference. Normally prefer the generated onboarding template and `suga config set`.
 
 ```bash
 suga chat                                         # interactive chat in the current directory
@@ -65,7 +61,9 @@ Details: [references/chat.md](skills/suga-guide/references/chat.md) (Chinese)
 Details: [references/config.md](skills/suga-guide/references/config.md) (every key and default), [references/providers.md](skills/suga-guide/references/providers.md) (providers and models) (Chinese)
 
 - Only `$SUGA_HOME/config.yaml` and `$SUGA_HOME/.env` are read (default `~/.suga`), never the working directory's; `SUGA_CONFIG` names a single config file.
-- Put keys in `$SUGA_HOME/.env` (e.g. `BAILIAN_API_KEY=...`); `${VAR}` in the config expands from there or the process environment.
+- `suga init` is safe to repeat; `suga init --force` backs up and replaces only the home config. It never writes `.env` values, and refuses to bypass an explicit `SUGA_CONFIG`.
+- `suga config get|set|unset|list|path` shows effective values and sources, preserves YAML comments, and rejects secret keys in YAML; put credentials in `.env` and reference them as `${VAR}`.
+- `suga models [--json]` is an offline view of local providers and model references. It does not replace `suga manifest` or chat's session-local `:model` switch.
 - `model` is `<provider>/<model>`, precedence `--model` > `SUGA_MODEL` > config; `fallback_models` are tried in order, `compact_model` writes summaries.
 - `providers.<id>`: `type` (`openai`, `openai-responses`, `anthropic`), `base_url`, `api_key`, `headers`, plus per-model `context_window`, `max_output_tokens`, `model_id`, `price`, `thinking`.
 - Common switches: `tools.allow_write`, `tools.approval`, `mcp.servers`, `memory.*`, `hooks.*`, `chat.*`, `skills.*`, `workspace`.
