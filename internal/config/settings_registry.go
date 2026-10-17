@@ -328,6 +328,9 @@ func parseConfigValue(descriptor ConfigKey, raw, key string) (any, error) {
 		}
 		return value, nil
 	case ConfigTypeStringList:
+		if key == "tools.interpreters" && (strings.EqualFold(raw, "off") || strings.EqualFold(raw, "false")) {
+			return false, nil
+		}
 		if raw == "" {
 			return []string{}, nil
 		}
@@ -456,6 +459,11 @@ func validateSimpleConfigValue(key string, descriptor ConfigKey) error {
 			return fmt.Errorf("%s: %w", key, err)
 		}
 	case ConfigTypeStringList:
+		if key == "tools.interpreters" {
+			if _, ok := raw.(bool); ok {
+				return nil
+			}
+		}
 		if !isStringList(raw) {
 			return fmt.Errorf("%s must be a list of strings", key)
 		}

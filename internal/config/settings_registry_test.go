@@ -98,6 +98,7 @@ func TestParseConfigValue(t *testing.T) {
 		{name: "integer", key: "retry.max_attempts", raw: "4", want: 4},
 		{name: "duration", key: "retry.base_delay", raw: "2s", want: 2 * time.Second},
 		{name: "list", key: "fallback_models", raw: "openai/a, deepseek/b", want: []string{"openai/a", "deepseek/b"}},
+		{name: "interpreter switch", key: "tools.interpreters", raw: "off", want: false},
 		{name: "enum", key: "providers.gateway.thinking", raw: "HIGH", want: "high"},
 		{name: "yaml map", key: "providers.gateway.headers", raw: "{X-Test: value}", want: map[string]string{"X-Test": "value"}},
 		{name: "bad type", key: "retry.max_attempts", raw: "many", err: true},
