@@ -270,6 +270,7 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 	// puts the shell in a kill-on-close job object. Adopt preserves this same
 	// owner when the foreground call becomes a task.
 	tree := proctree.New(cmd)
+	// WaitDelay forces Wait to return when a leftover child keeps a pipe open.
 	cmd.WaitDelay = shellWaitDelay
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("shell_exec: start %s: %w", t.shell.name(), err)
@@ -424,6 +425,8 @@ func (o *handoffOutput) attach(dst io.Writer) {
 
 func foregroundOutput(o *handoffOutput, max int) string {
 	var sb strings.Builder
+	// Colour codes carry nothing for the model (test libraries such as
+	// gookit/assert colour their failure reports even without a terminal).
 	if out := ansiPattern.ReplaceAllString(decodeOutput(o.stdout.bytes()), ""); out != "" {
 		sb.WriteString(strings.TrimRight(out, "\r\n"))
 	}
@@ -434,6 +437,8 @@ func foregroundOutput(o *handoffOutput, max int) string {
 	return TruncateHeadTail(strings.TrimLeft(sb.String(), "\n"), rawLimit(max))
 }
 
+// shellEnv is the environment of a command: suga's own settings removed,
+// git and pagers kept from waiting for input.
 func shellEnv() []string {
 	return append(commandEnv(os.Environ()), "GIT_TERMINAL_PROMPT=0", "GIT_PAGER=cat", "PAGER=cat")
 }
