@@ -3,6 +3,7 @@ package wiring
 import (
 	"context"
 	"fmt"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -232,10 +233,13 @@ func approvalScopeKey(policy approvalPolicy, call agentcore.ToolCall, tool agent
 			if call.Name == "file_remove" {
 				return call.Name + ":" + relative
 			}
-			if relative == "." {
+			// Like chat, a write or edit is scoped to the directory of the
+			// file (docs/a.txt -> docs/**), not to the file as a directory.
+			dir := path.Dir(relative)
+			if dir == "." {
 				return call.Name + ":**"
 			}
-			return call.Name + ":" + relative + "/**"
+			return call.Name + ":" + dir + "/**"
 		}
 		return ""
 	}

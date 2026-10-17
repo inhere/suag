@@ -115,3 +115,23 @@ func TestChatWriteScopeCoversTheFileDirectory(t *testing.T) {
 	assert.NoErr(t, write("docs/b.txt"))
 	assert.Eq(t, "file_write:docs", approvalScopeAttr("file_write", scope.key))
 }
+
+// TestApprovalScopeKeyUsesTheFileDirectory: the ACP always scope of a write or
+// edit is the directory of the file, so docs/a.txt and docs/b.txt share it.
+func TestApprovalScopeKeyUsesTheFileDirectory(t *testing.T) {
+	workspace := t.TempDir()
+	policy := approvalPolicy{Mode: approvalrules.ModeACP, Workspace: workspace}
+	key := func(name, p string) string {
+		return approvalScopeKey(policy, agentcore.ToolCall{Name: name, Arguments: map[string]any{"path": p}}, &nativeStubTool{name: name})
+	}
+	t.Run("write in a directory", func(t *testing.T) {
+		assert.Eq(t, "file_write:docs/**", key("file_write", "docs/a.txt"))
+		assert.Eq(t, key("file_write", "docs/a.txt"), key("file_write", "docs/b.txt"))
+	})
+	t.Run("edit at the root", func(t *testing.T) {
+		assert.Eq(t, "file_edit:**", key("file_edit", "README.md"))
+	})
+	t.Run("remove keeps the exact path", func(t *testing.T) {
+		assert.Eq(t, "file_remove:docs/a.txt", key("file_remove", "docs/a.txt"))
+	})
+}
