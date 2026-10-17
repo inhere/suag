@@ -24,14 +24,18 @@ import (
 )
 
 type fakeChat struct {
-	mode  string
-	delay time.Duration
+	mode             string
+	delay            time.Duration
+	blockUntilCancel bool
 
 	mu       sync.Mutex
 	lastUser string
 	calls    int
 }
 
+// ServeHTTP implements the smallest chat/completions stream needed by these
+// scenarios. It recognizes a completed tool call from the request history so the
+// real agent performs the tool step before receiving the final text.
 func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Messages []struct {
@@ -75,6 +79,11 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if f.blockUntilCancel {
+		<-r.Context().Done()
+		return
+	}
+
 	if f.mode == "approval" && !toolDone {
 		writeStream(w, map[string]any{
 			"choices": []any{
@@ -83,7 +92,7 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						"tool_calls": []any{
 							map[string]any{
 								"index": 0, "id": fmt.Sprintf("call-%d", callID),
-								"function": map[string]any{"name": "file_write", "arguments": `{"path":"approved.txt","content":"APPROVED"}`},
+								"function": map[string]any{"name": "file_write", "arguments": fmt.Sprintf(`{"path":%q,"content":"APPROVED"}`, approvalPath(lastUser))},
 							},
 						},
 					},
@@ -102,6 +111,17 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}}})
 }
 
+// approvalPath gives the rejection turn a separate path, allowing the smoke to
+// check both the accepted write and the rejected write's absence.
+func approvalPath(user string) string {
+	if strings.Contains(user, "reject") {
+		return "rejected.txt"
+	}
+	return "approved.txt"
+}
+
+// writeStream emits SSE boundaries separately, matching the provider's streaming
+// contract while keeping this fake deterministic and dependency-free.
 func writeStream(w http.ResponseWriter, chunk map[string]any) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -109,7 +129,11 @@ func writeStream(w http.ResponseWriter, chunk map[string]any) {
 		flusher.Flush()
 	}
 	data, _ := json.Marshal(chunk)
-	_, _ = fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", data)
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
 func TestChatPTYSmoke(t *testing.T) {
@@ -158,7 +182,7 @@ func TestChatPTYSmoke(t *testing.T) {
 	})
 
 	t.Run("esc and ctrl-c keep the prompt semantics", func(t *testing.T) {
-		server := httptest.NewServer(&fakeChat{mode: "text", delay: 4 * time.Second})
+		server := httptest.NewServer(&fakeChat{mode: "text", blockUntilCancel: true})
 		defer server.Close()
 		s := startChat(t, binary, server.URL, t.TempDir(), t.TempDir())
 		mark := s.Mark()
@@ -204,6 +228,9 @@ func TestChatPTYSmoke(t *testing.T) {
 		expect(t, s, `允许执行 file_write`, mark)
 		s.SendLine("n")
 		expect(t, s, `用户拒绝执行 file_write`, mark)
+		if _, err := os.Stat(filepath.Join(work, "rejected.txt")); !os.IsNotExist(err) {
+			t.Fatalf("rejected write exists or stat failed: %v; terminal tail:\n%s", err, tail(s.Text()))
+		}
 		s.SendLine(":quit")
 		waitExit(t, s)
 	})
@@ -265,6 +292,8 @@ chat:
 	return ptytest.StartSpec(t, spec)
 }
 
+// testEnv removes inherited suga settings so the temporary config is the only
+// source of model, home, hook and feature settings for the child process.
 func testEnv(home string) []string {
 	env := make([]string, 0, len(os.Environ())+5)
 	for _, entry := range os.Environ() {
@@ -272,7 +301,7 @@ func testEnv(home string) []string {
 		if i := strings.IndexByte(key, '='); i >= 0 {
 			key = key[:i]
 		}
-		if key == "SUGA_HOME" || key == "SUGA_CONFIG" || key == "SUGA_HOOKS" || key == "NO_COLOR" {
+		if strings.HasPrefix(key, "SUGA_") || key == "NO_COLOR" {
 			continue
 		}
 		env = append(env, entry)
