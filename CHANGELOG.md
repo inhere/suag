@@ -4,6 +4,14 @@
 
 ## [未发布]
 
+## [0.31.1] - 2026-10-18
+
+修复 v0.31.0 在大会话库上启动卡死：交接摘要的全文索引回填迁移对每条记录全表扫描（耗时随库大小平方增长，约 1 GB 的库永远跑不完，每次启动都被卡住）。
+
+### 修复
+
+- 交接摘要 FTS 回填迁移只回填 `handoff` 记录，不再逐条检查已有索引；约 1 GB 的会话库上迁移在 1 秒内完成。
+
 ## [0.31.0] - 2026-10-18
 
 记忆检索按相关度排序（FTS5 派生索引）、交接摘要固定小节并可检索、记忆条目可标注 `applies_when`；前台长命令超时转后台任务；写工具参数按 schema 校验；`trace --web` 只读与自动刷新；run 收尾行显示上下文用量；修复只接受流式请求的网关上压缩与交接失败；新增可在 Windows 跑的 Go 版终端冒烟。
@@ -730,7 +738,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.31.0...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.31.1...HEAD
+[0.31.1]: https://github.com/inhere/suga/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/inhere/suga/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/inhere/suga/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/inhere/suga/compare/v0.28.0...v0.29.0
