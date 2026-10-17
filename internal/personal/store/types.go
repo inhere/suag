@@ -146,6 +146,19 @@ type NewEntry struct {
 	JSON   json.RawMessage
 }
 
+// EntryRef is the minimal entry data a reader needs to link events to
+// entries: the call id (tool call or result), the turn, the type and the time,
+// without the entry body. The trace page joins the events of an incremental
+// load against the whole session this way, without sending or parsing the
+// bodies it already showed.
+type EntryRef struct {
+	Seq       int64
+	TurnID    string
+	Type      string
+	CallID    string
+	CreatedAt time.Time
+}
+
 // EntryFilter narrows ListEntries; zero values mean no restriction.
 type EntryFilter struct {
 	SinceSeq int64 // only entries with seq > SinceSeq

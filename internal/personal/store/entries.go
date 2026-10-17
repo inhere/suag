@@ -110,6 +110,36 @@ func (s *Store) ListEntries(ctx context.Context, sessionID string, f EntryFilter
 	return out, rows.Err()
 }
 
+// ListEntryRefs returns the link fields of every entry of a session, oldest
+// first, with the bodies left in the store (see EntryRef).
+func (s *Store) ListEntryRefs(ctx context.Context, sessionID string) ([]EntryRef, error) {
+	// The call id of a message lives under ToolCall (the call) or ToolResult
+	// (the result); other entry types carry none. json_valid guards the
+	// extraction: a foreign row must not fail the whole page.
+	q := `SELECT seq, turn_id, type, created_at, CASE WHEN json_valid(json)
+		THEN COALESCE(json_extract(json, '$.ToolCall.CallID'), json_extract(json, '$.ToolResult.CallID')) END
+		FROM entries WHERE session_id = ? ORDER BY seq ASC`
+	rows, err := s.db.QueryContext(ctx, q, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("list entry refs: %w", err)
+	}
+	defer rows.Close()
+	out := []EntryRef{}
+	for rows.Next() {
+		var (
+			r       EntryRef
+			callID  sql.NullString
+			created string
+		)
+		if err := rows.Scan(&r.Seq, &r.TurnID, &r.Type, &created, &callID); err != nil {
+			return nil, err
+		}
+		r.CreatedAt, r.CallID = parseTime(created), callID.String
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // LatestEntry returns the highest-seq entry of the given type, or (nil, nil)
 // when the session has none.
 func (s *Store) LatestEntry(ctx context.Context, sessionID, typ string) (*Entry, error) {
