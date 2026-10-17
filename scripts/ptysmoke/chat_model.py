@@ -101,7 +101,10 @@ def main():
         first.check("model list has compact", first.until(r"fake/compact", mark))
         first.check("model list has unlisted fallback", first.until(r"fake/unlisted", mark))
         model_lines = set()
-        for line in first.text(mark).splitlines():
+        # Only the lines under "可选模型：" are candidates; the "当前模型：" header
+        # above them also looks like provider/model.
+        listing = first.text(mark).split("可选模型：", 1)[-1]
+        for line in listing.splitlines():
             candidate = line.strip()
             if candidate.startswith("* "):
                 candidate = candidate[2:].strip()
