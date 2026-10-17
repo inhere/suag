@@ -444,6 +444,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// into the environment source rather than rebuilt by run/chat/ACP, so all
 	// entry points describe the same runtime facts.
 	opts.PreferredTools = append([]PreferredToolStatus(nil), preferredTools...)
+	// preferredNames holds the names the environment section listed last;
+	// preferredEnvironment is the only writer, so the rendered text and the
+	// turn_context event cannot drift apart.
+	preferredNames := &listedPreferredNames{}
+	preferredEnvironment := newPreferredEnvironmentSource(opts, preferredNames)
 	// Background tasks: shell commands in write modes (they need
 	// shell_exec); sub-agents (below) in every mode, so the task tool and the
 	// notices are there in read-only sessions too.
@@ -501,6 +506,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return BuildManifest(ManifestInput{
 			Version: buildVersion, Settings: settings, Registry: capabilities.Registry,
 			MCPServers: append(appconfig.ReadMCPServerSettings(), servers...),
+			Preferred:  preferredTools,
 			SkillRoots: skillRoots(workspace), Skills: skillReg,
 			Memory: memSetup, Policy: memPolicy, Approval: refreshManifestApprovalRules(approval.RuleSource),
 			ToolsApproval: manifestToolsApprovalAction(),
@@ -601,12 +607,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		Tools:             toolRegistry,
 		PromptBuilder:     staticPrompt(basePrompt()),
 		// Environment and skills go into the segment context (design D1).
-		EnvironmentSource: func() string { return environmentPrompt(opts) },
-		SegmentEnvironmentSource: func() string {
-			segmentOpts := opts
-			segmentOpts.PreferredTools = refreshPreferredCommands(opts.PreferredTools)
-			return environmentPrompt(segmentOpts)
-		},
+		// preferredEnvironment records the names it lists, so turn_context and
+		// the prompt agree on what the turn saw.
+		EnvironmentSource:        func() string { return preferredEnvironment(opts.PreferredTools) },
+		SegmentEnvironmentSource: func() string { return preferredEnvironment(refreshPreferredCommands(opts.PreferredTools)) },
+		PreferredToolsSource:     preferredNames.get,
 		// The turn_context event records the session's added directories.
 		AddDirs: func() []string { return dirs.List() },
 		SkillsSource: func() string {

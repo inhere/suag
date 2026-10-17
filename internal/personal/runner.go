@@ -63,7 +63,12 @@ type Config struct {
 	// It may refresh cheap external facts without changing the current segment.
 	EnvironmentSource        func() string
 	SegmentEnvironmentSource func() string
-	SkillsSource             func() string
+	// PreferredToolsSource returns the names of the preferred tools the
+	// environment section lists (the available declarations, in configuration
+	// order); the turn_context event records them, so a trace shows which
+	// preferred tools the turn saw. nil = this session lists none.
+	PreferredToolsSource func() []string
+	SkillsSource         func() string
 	// AddDirs returns the session's additional directories (--add-dir) as
 	// "path:ro"/"path:rw" entries; the turn_context event records them so a
 	// trace shows what the session could reach. nil = none.

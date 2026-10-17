@@ -4,6 +4,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 
 	appconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/pkg/agentcore/tools"
@@ -14,8 +15,12 @@ const (
 	preferredReasonFoundPath        = "found on PATH"
 	preferredReasonMissingPath      = "not found on PATH"
 	preferredReasonMCPNotConfigured = "server not configured"
-	preferredReasonMCPConnected     = "connected at runtime"
-	preferredReasonMCPUnavailable   = "not connected at runtime"
+	// preferredReasonMCPConfigured is the reason without a runtime to observe:
+	// the standalone manifest never starts MCP (design 0.2), so it only reports
+	// that the server is declared.
+	preferredReasonMCPConfigured  = "configured; connection confirmed at session start"
+	preferredReasonMCPConnected   = "connected at runtime"
+	preferredReasonMCPUnavailable = "not connected at runtime"
 )
 
 // PreferredToolStatus is the safe runtime fact used by later prompt and
@@ -32,7 +37,9 @@ type PreferredToolStatus struct {
 // ResolvePreferredTools validates the configured declarations and resolves
 // their current availability without executing a command. MCP availability is
 // inferred from the already-built registry, so this function never starts a
-// second provider or changes provider lifecycle.
+// second provider or changes provider lifecycle. A nil registry means the
+// caller has no runtime (the standalone manifest): a configured MCP server is
+// then reported as configured only.
 func ResolvePreferredTools(registry *tools.Registry, extraServers []mcp.ServerSettings) ([]PreferredToolStatus, error) {
 	preferred, err := appconfig.ReadPreferredTools()
 	if err != nil {
@@ -66,7 +73,11 @@ func ResolvePreferredTools(registry *tools.Registry, extraServers []mcp.ServerSe
 				status.Reason = preferredReasonMCPNotConfigured
 				break
 			}
-			if registry != nil && registryHasMCPServer(registry, item.Name) {
+			if registry == nil {
+				status.Reason = preferredReasonMCPConfigured
+				break
+			}
+			if registryHasMCPServer(registry, item.Name) {
 				status.Present = true
 				status.Reason = preferredReasonMCPConnected
 			} else {
@@ -96,6 +107,53 @@ func refreshPreferredCommands(statuses []PreferredToolStatus) []PreferredToolSta
 		}
 	}
 	return refreshed
+}
+
+// listedPreferredToolNames returns the declarations the environment section
+// actually lists: the available ones, in configuration order. Declarations that
+// are not available never reach the prompt (design D6).
+func listedPreferredToolNames(statuses []PreferredToolStatus) []string {
+	var names []string
+	for _, status := range statuses {
+		if status.Present {
+			names = append(names, status.Name)
+		}
+	}
+	return names
+}
+
+// listedPreferredNames records the names the environment section lists for the
+// current snapshot. The environment sources write it whenever they rebuild the
+// text (session start, new segment, context update), so the turn_context event
+// reports exactly the list the prompt showed without re-probing PATH per turn.
+type listedPreferredNames struct {
+	mu    sync.Mutex
+	names []string
+}
+
+func (l *listedPreferredNames) set(names []string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.names = append([]string(nil), names...)
+}
+
+func (l *listedPreferredNames) get() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.names...)
+}
+
+// newPreferredEnvironmentSource builds the environment source of a runtime: it
+// renders the preferred declarations (the available ones only) and records the
+// names it listed in listed, so the turn_context event reports exactly the list
+// the prompt shows.
+func newPreferredEnvironmentSource(opts Options, listed *listedPreferredNames) func([]PreferredToolStatus) string {
+	return func(statuses []PreferredToolStatus) string {
+		listed.set(listedPreferredToolNames(statuses))
+		envOpts := opts
+		envOpts.PreferredTools = statuses
+		return environmentPrompt(envOpts)
+	}
 }
 
 // preferredMCPToolNames returns every registered tool belonging to a preferred
