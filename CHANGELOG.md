@@ -20,6 +20,10 @@
 - 工具调用参数按工具声明的 JSON schema 校验（类型、枚举、数值/长度/项数范围、`additionalProperties: false` 下的未知字段），并在一次错误结果里列全所有问题（字段名与期望值），模型可以一次改对；可选字段的空占位（`""`、`[]`、`{}`）视为未提供并丢弃，schema 未声明或用了 `anyOf`/`oneOf`/`$ref` 等未建模写法的字段一律放行（MCP 等第三方 schema 写得不严不会被拒绝，只会拒绝 schema 明确说不合法的调用，被拒的调用不执行、该响应的其它调用照常执行）。
 - 长时间前台 `shell_exec` 超过 `tools.shell_background_after` 时转为现有后台任务，保留交接前输出并在任务完成时通知模型；配置为 `0` 可关闭，`tools.shell_timeout_max` 仍负责硬终止。
 
+### 修复
+
+- 上下文压缩与 `--from` 交接的摘要请求在 provider 支持流式时改用流式：只接受 `stream=true` 的网关（如 OpenAI Responses 代理）此前会拒绝，导致压缩与交接失败。
+
 ## [0.30.0] - 2026-10-18
 
 chat 默认汇总子 agent 进度（`chat.agent_progress`），不再逐条刷子 agent 的工具调用；memory 工具补充价值门槛与“不记”清单。
