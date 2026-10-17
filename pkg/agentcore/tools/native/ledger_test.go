@@ -59,6 +59,8 @@ func TestSessionSearchSchema(t *testing.T) {
 	}
 	assert.StrContains(t, tool.Description(), "next_cursor")
 	assert.StrContains(t, tool.Description(), "two or more characters")
+	// The summary kinds are advertised: handoff summaries are searchable too.
+	assert.StrContains(t, tool.Description(), "compaction or handoff")
 }
 
 func TestSessionSearchTool(t *testing.T) {
@@ -90,6 +92,7 @@ func TestSessionSearchTool(t *testing.T) {
 			{map[string]any{"query": "x", "ref": "sess_1/3"}, "only out:<session>:<hex> refs can be searched"},
 			{map[string]any{"query": "x", "kind": "user,unknown"}, "invalid kind"},
 			{map[string]any{"query": "x", "kind": "user,"}, "invalid kind"},
+			{map[string]any{"query": "x", "kind": "transfer"}, "invalid kind"},
 			{map[string]any{"query": "x", "since": "not-a-time"}, "since"},
 			{map[string]any{"query": "x", "since": "2026-10-02", "until": "2026-10-01"}, "since must be before until"},
 		} {
@@ -129,6 +132,17 @@ func TestSessionSearchTool(t *testing.T) {
 		assert.NoErr(t, err)
 		age := time.Since(f.q.Since)
 		assert.True(t, age > 35*time.Hour && age < 37*time.Hour)
+	})
+
+	t.Run("handoff is a kind of its own", func(t *testing.T) {
+		f := &fakeLedger{}
+		_, err := run(f, map[string]any{"query": "x", "kind": "handoff"})
+		assert.NoErr(t, err)
+		assert.Eq(t, []string{"handoff"}, f.q.Kinds)
+
+		_, err = run(f, map[string]any{"query": "x", "kind": "compaction,handoff"})
+		assert.NoErr(t, err)
+		assert.Eq(t, []string{"compaction", "handoff"}, f.q.Kinds)
 	})
 
 	t.Run("ref rejects new filters and cursor", func(t *testing.T) {

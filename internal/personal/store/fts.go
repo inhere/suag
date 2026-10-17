@@ -22,28 +22,30 @@ import (
 //   - AppendEntries, for every new entry, using the constants below.
 //
 // Any change to ftsIndexedTypes, ftsRoleExpr or ftsTextExpr has to be copied
-// into a NEW migration (applied migrations never re-run);
+// into a NEW migration (applied migrations never re-run; a backfill inserts the
+// rows the index is still missing, so it is idempotent);
 // TestFTSExpressionsMatchMigration fails when the two copies drift.
 const (
 	// ftsIndexedTypes lists the entry types worth searching: conversation
-	// messages (EntryUser, EntryAssistant, EntryTool) and compaction summaries
-	// (EntryCompaction, the only text left of compacted history). Plan,
-	// handoff and context_update records are structured state, not prose.
-	ftsIndexedTypes = `'user', 'assistant', 'tool', 'compaction'`
+	// messages (EntryUser, EntryAssistant, EntryTool) and the summaries that
+	// outlive their raw context (EntryCompaction, EntryHandoff). Plan and
+	// context_update records are structured state, not prose.
+	ftsIndexedTypes = `'user', 'assistant', 'tool', 'compaction', 'handoff'`
 
 	// ftsRoleExpr stores the entry type as the role.
 	ftsRoleExpr = `type`
 
 	// ftsTextExpr extracts the searchable text from entries.json:
 	//   - invalid JSON yields '' (json_extract would raise and fail the write);
-	//   - compaction records ({"summary": ...}) index their summary;
+	//   - compaction and handoff records ({"summary": ...}) index their summary:
+	//     both are the text that stands for a stretch of past work;
 	//   - api.Message JSON (no json tags) indexes Content, plus
 	//     ToolResult.Content when it adds something: a tool message carries the
 	//     same stored result in both fields, so equal values are kept once.
 	// Surrounding whitespace is trimmed; rows whose text ends up '' are skipped.
 	ftsTextExpr = `CASE
             WHEN NOT json_valid(json) THEN ''
-            WHEN type = 'compaction' THEN trim(coalesce(json_extract(json, '$.summary'), ''), char(32, 9, 10, 13))
+            WHEN type IN ('compaction', 'handoff') THEN trim(coalesce(json_extract(json, '$.summary'), ''), char(32, 9, 10, 13))
             ELSE trim(coalesce(json_extract(json, '$.Content'), '') ||
                 CASE WHEN coalesce(json_extract(json, '$.ToolResult.Content'), '') IN ('', coalesce(json_extract(json, '$.Content'), ''))
                     THEN '' ELSE char(10) || json_extract(json, '$.ToolResult.Content') END, char(32, 9, 10, 13))
@@ -96,7 +98,8 @@ type EntrySearch struct {
 	// parent session and are left out by default).
 	IncludeAgents bool
 	// Kinds restricts results to indexed entry roles. An empty slice means all
-	// indexed roles; values must be user, assistant, tool or compaction.
+	// indexed roles; values must be user, assistant, tool, compaction or
+	// handoff.
 	Kinds []string
 	// Since is an inclusive lower bound on entry creation time. Zero means no
 	// lower bound.
@@ -300,7 +303,7 @@ func workspaceScopeCondition(q EntrySearch) (string, []any) {
 func validateSearchKinds(kinds []string) error {
 	for _, kind := range kinds {
 		switch kind {
-		case EntryUser, EntryAssistant, EntryTool, EntryCompaction:
+		case EntryUser, EntryAssistant, EntryTool, EntryCompaction, EntryHandoff:
 		default:
 			return fmt.Errorf("invalid search kind %q", kind)
 		}

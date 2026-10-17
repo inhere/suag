@@ -19,6 +19,9 @@ import (
 // coreMigration is the schema before the ledger FTS migration.
 const coreMigration = "20261008-230000-create-core-store.sql"
 
+// ledgerFTSMigration is the migration that created entries_fts.
+const ledgerFTSMigration = "20261010-234359-add-ledger-fts-memory-meta.sql"
+
 func migrationNames(t *testing.T) []string {
 	t.Helper()
 	files, err := migrationFS.ReadDir("migrations")
@@ -65,7 +68,8 @@ func varietyEntries(t *testing.T) []NewEntry {
 		toolMsg(t, "lead", "different result"),
 		{Type: EntryCompaction, JSON: json.RawMessage(`{"summary":"压缩摘要：讨论了检索方案","first_kept_seq":3}`)},
 		{Type: EntryPlan, JSON: json.RawMessage(`{"Items":[{"Content":"plan step text"}]}`)},
-		{Type: EntryHandoff, JSON: json.RawMessage(`{"Content":"handoff text"}`)},
+		// A handoff record indexes its summary, like a compaction one.
+		{Type: EntryHandoff, JSON: json.RawMessage(`{"source":"s_old","summary":"交接摘要：handoff 前的进展"}`)},
 		{Type: EntryContextUpdate, JSON: json.RawMessage(`{"Content":"context text"}`)},
 		{Type: EntryUser, JSON: json.RawMessage(`not json`)},
 		{Type: EntryUser, JSON: json.RawMessage(`{}`)},
@@ -139,6 +143,7 @@ func TestFTSIndexOnAppend(t *testing.T) {
 		{"s1", EntryTool, "only the result", 6},
 		{"s1", EntryTool, "lead\ndifferent result", 7},
 		{"s1", EntryCompaction, "压缩摘要：讨论了检索方案", 8},
+		{"s1", EntryHandoff, "交接摘要：handoff 前的进展", 10},
 	}, indexedRows(t, s, "s1"))
 }
 
@@ -325,7 +330,7 @@ func TestFTSMigrationBackfillsHistoryOnce(t *testing.T) {
 	hits := search(t, s, EntrySearch{Query: "记忆管理"})
 	assert.Eq(t, []string{"old/1"}, hitKeys(hits))
 	assert.Eq(t, []string{"old/4"}, hitKeys(search(t, s, EntrySearch{Query: "缓存"})))
-	assert.Len(t, indexedRows(t, s, "old"), 7)
+	assert.Len(t, indexedRows(t, s, "old"), 8)
 
 	// New writes after the migration are indexed by AppendEntries.
 	got := appendAll(t, s, "old", user(t, "迁移之后的记忆管理"))
@@ -343,30 +348,89 @@ func TestFTSMigrationBackfillsHistoryOnce(t *testing.T) {
 		assert.NoErr(t, s2.db.QueryRow(`SELECT COUNT(1) FROM schema_migrations WHERE name = ?`, name).Scan(&n))
 		assert.Eq(t, 1, n, name)
 	}
-	assert.Len(t, indexedRows(t, s2, "old"), 8)
+	assert.Len(t, indexedRows(t, s2, "old"), 9)
+}
+
+// ftsBackfillMigrations returns the UP sections of every migration that
+// backfills entries_fts, oldest first.
+func ftsBackfillMigrations(t *testing.T) []string {
+	t.Helper()
+	out := []string{}
+	for _, name := range migrationNames(t) {
+		b, err := migrationFS.ReadFile("migrations/" + name)
+		assert.Require(t, assert.NoErr(t, err))
+		up, err := parseUp(name, string(b))
+		assert.Require(t, assert.NoErr(t, err))
+		if strings.Contains(up, "INSERT INTO entries_fts") {
+			out = append(out, up)
+		}
+	}
+	return out
+}
+
+// TestFTSHandoffMigrationBackfill: a ledger written before handoff summaries
+// were indexed gets them backfilled once, without duplicating the rows the
+// earlier migration had already indexed.
+func TestFTSHandoffMigrationBackfill(t *testing.T) {
+	ctx := context.Background()
+	handoff := NewEntry{Type: EntryHandoff, JSON: json.RawMessage(`{"source":"s_old","summary":"交接摘要：上次做到 handoff 检索"}`)}
+
+	t.Run("a pre-upgrade ledger gets its handoff rows indexed", func(t *testing.T) {
+		s, _ := openAtCoreSchema(t)
+		defer s.Close()
+		// At the schema before this migration: the conversation types were
+		// indexed by the older migration, and this handoff record was written by
+		// the older binary (writeHistory bypasses AppendEntries).
+		assert.Require(t, assert.NoErr(t, s.migrateUpTo(ctx, ledgerFTSMigration)))
+		writeHistory(t, s, "old", append(varietyEntries(t), handoff))
+		assert.Empty(t, indexedRows(t, s, "old"))
+
+		assert.NoErr(t, s.migrate(ctx))
+		rows := indexedRows(t, s, "old")
+		assert.Require(t, assert.Len(t, rows, 9))
+		assert.Eq(t, ftsRow{"old", EntryHandoff, "交接摘要：上次做到 handoff 检索", 14}, rows[8])
+
+		hits := search(t, s, EntrySearch{Query: "上次做到"})
+		assert.Eq(t, []string{"old/14"}, hitKeys(hits))
+		assert.Eq(t, EntryHandoff, hits[0].Role)
+		assert.StrContains(t, hits[0].Snippet, "上次做到")
+		// Both summary kinds are searchable, and the kinds filter tells them apart.
+		assert.Eq(t, []string{"old/10", "old/14"}, hitKeys(search(t, s, EntrySearch{Query: "摘要", Kinds: []string{EntryHandoff}})))
+		assert.Eq(t, []string{"old/8"}, hitKeys(search(t, s, EntrySearch{Query: "摘要", Kinds: []string{EntryCompaction}})))
+	})
+
+	t.Run("an already indexed ledger only gains the handoff rows", func(t *testing.T) {
+		s, path := openAtCoreSchema(t)
+		writeHistory(t, s, "old", append(varietyEntries(t), handoff))
+		// Migrate to the schema of the previous release: the conversation types
+		// are indexed, the handoff records still are not.
+		assert.Require(t, assert.NoErr(t, s.migrateUpTo(ctx, ledgerFTSMigration)))
+		assert.Len(t, indexedRows(t, s, "old"), 7)
+		assert.NoErr(t, s.Close())
+
+		s2, err := Open(path)
+		assert.Require(t, assert.NoErr(t, err))
+		defer s2.Close()
+		rows := indexedRows(t, s2, "old")
+		assert.Require(t, assert.Len(t, rows, 9)) // the seven stay single, two handoffs join
+		assert.Eq(t, EntryHandoff, rows[7].Role)
+		assert.Eq(t, ftsRow{"old", EntryHandoff, "交接摘要：上次做到 handoff 检索", 14}, rows[8])
+	})
 }
 
 func normalizeSQL(s string) string {
 	return strings.Join(strings.Fields(regexp.MustCompile(`\s*([(),|])\s*`).ReplaceAllString(s, " $1 ")), " ")
 }
 
-// TestFTSExpressionsMatchMigration guards the two copies of the role/text
-// expressions (migration literal and fts.go constants) against drift.
+// TestFTSExpressionsMatchMigration guards the copies of the role/text
+// expressions (each backfill migration's literal and the fts.go constants)
+// against drift: the newest migration that backfills entries_fts must agree
+// with the constants in use now.
 func TestFTSExpressionsMatchMigration(t *testing.T) {
-	t.Run("migration text contains the constants", func(t *testing.T) {
-		names := migrationNames(t)
-		var raw []byte
-		for _, name := range names {
-			if strings.HasSuffix(name, "-add-ledger-fts-memory-meta.sql") {
-				b, err := migrationFS.ReadFile("migrations/" + name)
-				assert.Require(t, assert.NoErr(t, err))
-				raw = b
-			}
-		}
-		assert.Require(t, assert.NotEmpty(t, raw))
-		up, err := parseUp("fts", string(raw))
-		assert.Require(t, assert.NoErr(t, err))
-		mig := normalizeSQL(up)
+	t.Run("the newest backfill contains the constants", func(t *testing.T) {
+		backfills := ftsBackfillMigrations(t)
+		assert.Require(t, assert.NotEmpty(t, backfills))
+		mig := normalizeSQL(backfills[len(backfills)-1])
 		assert.StrContains(t, mig, normalizeSQL(ftsRoleExpr+` AS role,`+ftsTextExpr+` AS text FROM entries WHERE type IN (`+ftsIndexedTypes+`)`))
 		assert.StrContains(t, mig, normalizeSQL(`) WHERE text <> ''`))
 	})
@@ -455,8 +519,9 @@ func TestFTSKindAndTimeFilters(t *testing.T) {
 		assistant(t, "kindneedle"),
 		t1NamedTool(t, "shell", "kindneedle"),
 		NewEntry{Type: EntryCompaction, JSON: json.RawMessage(`{"summary":"kindneedle"}`)},
+		NewEntry{Type: EntryHandoff, JSON: json.RawMessage(`{"source":"s_old","summary":"kindneedle"}`)},
 	)
-	assert.Len(t, entries, 4)
+	assert.Len(t, entries, 5)
 
 	t.Run("each indexed kind and multiple kinds", func(t *testing.T) {
 		for _, tc := range []struct {
@@ -468,12 +533,17 @@ func TestFTSKindAndTimeFilters(t *testing.T) {
 			{"assistant", []string{EntryAssistant}, []string{"s1/2"}},
 			{"tool", []string{EntryTool}, []string{"s1/3"}},
 			{"compaction", []string{EntryCompaction}, []string{"s1/4"}},
+			{"handoff", []string{EntryHandoff}, []string{"s1/5"}},
 			{"multiple", []string{EntryUser, EntryAssistant}, []string{"s1/1", "s1/2"}},
+			{"the two summary kinds", []string{EntryCompaction, EntryHandoff}, []string{"s1/4", "s1/5"}},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				assert.Eq(t, tc.want, hitKeys(search(t, s, EntrySearch{Query: "kindneedle", Kinds: tc.kinds})))
 			})
 		}
+	})
+	t.Run("no kinds returns every indexed role", func(t *testing.T) {
+		assert.Eq(t, []string{"s1/1", "s1/2", "s1/3", "s1/4", "s1/5"}, hitKeys(search(t, s, EntrySearch{Query: "kindneedle"})))
 	})
 	t.Run("invalid kind is rejected", func(t *testing.T) {
 		_, err := s.SearchEntries(context.Background(), EntrySearch{Query: "kindneedle", Kinds: []string{"unknown"}})
@@ -491,7 +561,7 @@ func TestFTSKindAndTimeFilters(t *testing.T) {
 	t.Run("since is inclusive and until is exclusive", func(t *testing.T) {
 		query := EntrySearch{Query: "kindneedle", Since: base.AddDate(0, 0, 1), Until: base.AddDate(0, 0, 3)}
 		assert.Eq(t, []string{"s1/2", "s1/3"}, hitKeys(search(t, s, query)))
-		assert.Eq(t, []string{"s1/4"}, hitKeys(search(t, s, EntrySearch{Query: "kindneedle", Since: base.AddDate(0, 0, 3)})))
+		assert.Eq(t, []string{"s1/4", "s1/5"}, hitKeys(search(t, s, EntrySearch{Query: "kindneedle", Since: base.AddDate(0, 0, 3)})))
 	})
 }
 

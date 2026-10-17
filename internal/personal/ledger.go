@@ -51,8 +51,8 @@ var (
 )
 
 // ledgerMessageTypes are the entry types a recall window shows (the same
-// types the FTS index holds).
-var ledgerMessageTypes = []string{store.EntryUser, store.EntryAssistant, store.EntryTool, store.EntryCompaction}
+// types the FTS index holds; handoff summaries are readable that way too).
+var ledgerMessageTypes = []string{store.EntryUser, store.EntryAssistant, store.EntryTool, store.EntryCompaction, store.EntryHandoff}
 
 // Ledger implements native.LedgerSearcher over the session store and the
 // sessions directory (externalised outputs). Like PlanRecorder it is created
@@ -280,6 +280,14 @@ func renderEntry(b *strings.Builder, e store.Entry) {
 			return
 		}
 		fmt.Fprintf(b, "[%s] compaction summary (%s)\n%s\n\n", ref, stamp, capText(rec.Summary, maxMessageBytes))
+		return
+	}
+	if e.Type == store.EntryHandoff {
+		// A handoff record is not an api.Message: its summary is the readable
+		// body, exactly like a compilation summary's.
+		var rec handoffRecord
+		_ = json.Unmarshal(e.JSON, &rec)
+		fmt.Fprintf(b, "[%s] handoff summary (%s)\n%s\n\n", ref, stamp, capText(rec.Summary, maxMessageBytes))
 		return
 	}
 	var msg agentcore.Message

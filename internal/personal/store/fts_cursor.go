@@ -214,7 +214,7 @@ func canonicalSearchKinds(kinds []string) ([]string, error) {
 	if len(kinds) == 0 {
 		return nil, nil
 	}
-	allowed := []string{EntryUser, EntryAssistant, EntryTool, EntryCompaction}
+	allowed := []string{EntryUser, EntryAssistant, EntryTool, EntryCompaction, EntryHandoff}
 	present := make(map[string]bool, len(kinds))
 	for _, kind := range kinds {
 		present[kind] = true
