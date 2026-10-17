@@ -83,8 +83,9 @@ type Store struct {
 }
 
 var (
-	_ memory.Store = (*Store)(nil)
-	_ memory.Named = (*Store)(nil)
+	_ memory.Store      = (*Store)(nil)
+	_ memory.Named      = (*Store)(nil)
+	_ memory.Enumerator = (*Store)(nil)
 )
 
 // Option configures a Store.
@@ -249,7 +250,7 @@ func (s *Store) Write(_ context.Context, sc memory.Scope, op memory.Op) (memory.
 // Search implements memory.Store: every entry file is scanned and matched
 // case-insensitively against all whitespace-separated terms of q (AND) in
 // its title and body. Hits are ordered by Updated (newest first), then id.
-func (s *Store) Search(_ context.Context, sc memory.Scope, q string, limit int) ([]memory.Hit, error) {
+func (s *Store) Search(ctx context.Context, sc memory.Scope, q string, limit int) ([]memory.Hit, error) {
 	terms := strings.Fields(strings.ToLower(q))
 	if len(terms) == 0 {
 		return nil, fmt.Errorf("%w: empty search query", memory.ErrInvalid)
@@ -257,45 +258,19 @@ func (s *Store) Search(_ context.Context, sc memory.Scope, q string, limit int) 
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
-	root, lp, err := s.open(sc, false)
-	if err != nil || root == nil {
-		return nil, err
-	}
-	defer root.Close()
-
-	dir := lp.entryDir
-	if dir == "" {
-		dir = "."
-	}
-	f, err := root.Open(filepath.FromSlash(dir))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	names, err := f.Readdirnames(-1)
-	f.Close()
+	entries, err := s.Entries(ctx, sc)
 	if err != nil {
 		return nil, err
 	}
 
 	var hits []memory.Hit
-	for _, name := range names {
-		id, ok := strings.CutSuffix(name, ".md")
-		if !ok || memory.ValidateID(id) != nil {
-			continue
-		}
-		e, rerr := readEntry(root, lp, id)
-		if rerr != nil {
-			continue // unreadable or escaping symlink: skip, do not fail the search
-		}
+	for _, e := range entries {
 		text := e.Title + "\n" + e.Body
 		lower := strings.ToLower(text)
 		if !containsAll(lower, terms) {
 			continue
 		}
-		hits = append(hits, memory.Hit{ID: id, Title: e.Title, Kind: e.Kind, Updated: e.Updated,
+		hits = append(hits, memory.Hit{ID: e.ID, Title: e.Title, Kind: e.Kind, Updated: e.Updated,
 			Snippet: snippet(text, lower, terms[0])})
 	}
 	sort.Slice(hits, func(i, j int) bool {

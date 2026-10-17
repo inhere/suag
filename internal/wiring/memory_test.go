@@ -13,6 +13,8 @@ import (
 	"github.com/gookit/goutil/x/assert"
 
 	"github.com/inhere/suga/internal/adapters/gofermem"
+	"github.com/inhere/suga/internal/adapters/memindex"
+	"github.com/inhere/suga/internal/personal/store"
 	"github.com/inhere/suga/pkg/agentcore/memory"
 )
 
@@ -213,12 +215,24 @@ func TestBuildMemory(t *testing.T) {
 			Location: filepath.Join(home, "memory", "user")}, setup.User)
 		assert.Eq(t, MemoryReasonGoferTracker, setup.Project.Reason)
 
+		userBackend, err := setup.Router.Route(memory.UserScope())
+		assert.Require(t, assert.NoErr(t, err))
+		_, ok := userBackend.(*memindex.Store)
+		assert.True(t, ok)
+		repo, err := store.Open(filepath.Join(t.TempDir(), "sessions.db"))
+		assert.Require(t, assert.NoErr(t, err))
+		defer repo.Close()
+		setup.Bind(repo)
+
 		// The user scope writes under SUGA_HOME through the router.
 		e, err := setup.Router.Write(context.Background(), memory.UserScope(), memory.Op{Action: memory.ActionAdd,
 			Title: "Prefers Chinese replies", Body: "reply in Chinese", Kind: memory.KindUser})
 		assert.Require(t, assert.NoErr(t, err))
 		_, serr := os.Stat(filepath.Join(home, "memory", "user", e.ID+".md"))
 		assert.NoErr(t, serr)
+		hits, err := setup.Router.Search(context.Background(), memory.UserScope(), "Chinese", 10)
+		assert.Require(t, assert.NoErr(t, err))
+		assert.Len(t, hits, 1)
 	})
 	t.Run("user backend config", func(t *testing.T) {
 		setup, err := buildMemory(sub, MemoryConfig{UserBackend: "files", SugaHome: home})

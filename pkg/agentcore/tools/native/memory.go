@@ -66,9 +66,9 @@ func (t *MemoryTool) Name() string { return memoryToolName }
 // Description is the tool contract for the model (design D5): the four
 // kinds, what is worth storing and what to leave out, and facts-vs-procedures.
 func (t *MemoryTool) Description() string {
-	return "Long-term memory shared across sessions. Each segment's context message carries the memory " +
-		"index (ids, kinds and titles, no bodies), frozen until the next segment; read an entry's body " +
-		"with action=get.\n" +
+	return "Long-term memory shared across sessions. Each segment's context message carries a snapshot of the memory " +
+		"index (ids, kinds and titles), frozen until the next segment; writes are searchable immediately with " +
+		"action=search, and action=get reads an entry's body.\n" +
 		"Kinds: user (who the user is: role, preferences, expertise), feedback (corrections and confirmed " +
 		"choices about how to work), project (goals, constraints, decisions and progress the code and git " +
 		"do not show), reference (where external resources live: URLs, dashboards, tickets).\n" +

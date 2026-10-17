@@ -16,7 +16,9 @@ import (
 	gkconfig "github.com/gookit/config/v2"
 
 	"github.com/inhere/suga/internal/adapters/gofermem"
+	"github.com/inhere/suga/internal/adapters/memindex"
 	axconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal/store"
 	"github.com/inhere/suga/pkg/agentcore/memory"
 	"github.com/inhere/suga/pkg/agentcore/memory/execstore"
 	"github.com/inhere/suga/pkg/agentcore/memory/files"
@@ -151,6 +153,21 @@ type MemorySetup struct {
 	Router  *memory.Router
 	User    MemoryBackendChoice
 	Project MemoryBackendChoice
+
+	indexes []*memindex.Store
+}
+
+// Bind attaches the session database to files-backed memory index wrappers.
+// Manifest construction does not call this, so it remains a read-only path.
+func (s *MemorySetup) Bind(repo *store.Store) {
+	if s == nil {
+		return
+	}
+	for _, index := range s.indexes {
+		if index != nil {
+			index.Bind(repo)
+		}
+	}
 }
 
 // buildMemory selects the user and project backends for workspaceRoot and
@@ -164,6 +181,8 @@ func buildMemory(workspaceRoot string, cfg MemoryConfig) (*MemorySetup, error) {
 	if err != nil {
 		return nil, err
 	}
+	user, userIndex := wrapMemoryIndex(user)
+	project, projectIndex := wrapMemoryIndex(project)
 	r := memory.NewRouter()
 	if err := r.Register(memory.ScopeUser, user); err != nil {
 		return nil, err
@@ -171,7 +190,18 @@ func buildMemory(workspaceRoot string, cfg MemoryConfig) (*MemorySetup, error) {
 	if err := r.Register(memory.ScopeProject, project); err != nil {
 		return nil, err
 	}
-	return &MemorySetup{Router: r, User: userChoice, Project: projectChoice}, nil
+	return &MemorySetup{Router: r, User: userChoice, Project: projectChoice,
+		indexes: []*memindex.Store{userIndex, projectIndex}}, nil
+}
+
+// wrapMemoryIndex adds the files-only derived FTS layer. Other backends are
+// intentionally left untouched and continue to own their search semantics.
+func wrapMemoryIndex(base memory.Store) (memory.Store, *memindex.Store) {
+	if _, ok := base.(memory.Enumerator); !ok {
+		return base, nil
+	}
+	indexed := memindex.New(base)
+	return indexed, indexed
 }
 
 // selectUserBackend returns the user-scope backend: files under

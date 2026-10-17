@@ -30,6 +30,13 @@ type Named interface {
 	BackendName() string
 }
 
+// Enumerator is optionally implemented by a backend that can enumerate all
+// readable entries in a scope. It supports rebuildable derived indexes without
+// changing Store's four-method contract.
+type Enumerator interface {
+	Entries(ctx context.Context, s Scope) ([]Entry, error)
+}
+
 // ProvenanceStore keeps provenance and tombstones for entries. A backend that
 // can store them itself implements it; otherwise the host injects one through
 // Policy.Provenance (suga uses a SQLite side table). backend is the backend
