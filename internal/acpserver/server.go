@@ -33,6 +33,9 @@ type Runtime struct {
 	// unknown. Permission handling classifies calls by the tool's tools.Meta,
 	// never by name, so an MCP tool always needs permission.
 	LookupTool func(name string) agentcore.Tool
+	// Policy is the shared wiring policy. ACP adds session-level always rules
+	// around this immutable per-runtime decision function.
+	Policy PolicyDecision
 }
 
 func (r Runtime) close() error {
@@ -68,6 +71,9 @@ type sessionState struct {
 	// total and lastContext are guarded by Agent.mu; see recordUsage.
 	total       agentcore.Usage
 	lastContext int
+	// always is intentionally kept in memory only. LoadSession can retain it
+	// while this Agent process lives; a new process starts with no snapshot.
+	always *sessionPolicy
 }
 
 // Agent owns ACP connection state; personal.Runner owns persisted conversation state.
@@ -141,7 +147,7 @@ func (a *Agent) NewSession(ctx context.Context, req acp.NewSessionRequest) (acp.
 	}
 	id := acp.SessionId(model.ID)
 	a.mu.Lock()
-	a.sessions[id] = &sessionState{cwd: cwd, servers: servers, mode: "default"}
+	a.sessions[id] = &sessionState{cwd: cwd, servers: servers, mode: "default", always: newSessionPolicy()}
 	a.mu.Unlock()
 	return acp.NewSessionResponse{SessionId: id, Modes: sessionModes("default")}, nil
 }
@@ -173,11 +179,16 @@ func (a *Agent) LoadSession(ctx context.Context, req acp.LoadSessionRequest) (ac
 		return acp.LoadSessionResponse{}, cwdMismatchError(req.SessionId, recorded, cwd)
 	}
 	a.mu.Lock()
-	if current := a.sessions[req.SessionId]; current != nil && current.cancel != nil {
+	current := a.sessions[req.SessionId]
+	if current != nil && current.cancel != nil {
 		a.mu.Unlock()
 		return acp.LoadSessionResponse{}, acp.NewInvalidParams(map[string]any{"sessionId": req.SessionId, "reason": "prompt active"})
 	}
-	a.sessions[req.SessionId] = &sessionState{cwd: cwd, servers: servers, mode: "default"}
+	always := newSessionPolicy()
+	if current != nil && current.always != nil {
+		always = current.always
+	}
+	a.sessions[req.SessionId] = &sessionState{cwd: cwd, servers: servers, mode: "default", always: always}
 	a.mu.Unlock()
 	return acp.LoadSessionResponse{Modes: sessionModes("default")}, nil
 }
@@ -213,6 +224,7 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 	turnCtx, cancel := context.WithCancel(ctx)
 	state.cancel = cancel
 	cwd, servers, readOnly := state.cwd, state.servers, state.mode == "read_only"
+	always := state.always
 	a.mu.Unlock()
 	defer func() {
 		cancel()
@@ -221,12 +233,14 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 		a.mu.Unlock()
 	}()
 
-	hook := &permissionHook{conn: a.connection(), sessionID: req.SessionId, cwd: cwd, readOnly: readOnly}
+	hook := &permissionHook{conn: a.connection(), sessionID: req.SessionId, cwd: cwd, readOnly: readOnly,
+		session: always}
 	runtime, err := a.open(turnCtx, cwd, readOnly, servers, hook)
 	if err != nil {
 		return acp.PromptResponse{}, err
 	}
 	hook.lookup = runtime.LookupTool
+	hook.policy = runtime.Policy
 	window := runtime.ContextWindow
 	if window <= 0 {
 		window = appconfig.DefaultContextWindow

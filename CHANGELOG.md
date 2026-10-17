@@ -17,6 +17,10 @@
 - chat 预算回合的最终用量快照与 wrap-up 原因保持一致；会话预算短路不再打印空答复前缀。
 - ACP 预算收尾继续返回 `end_turn`，`usage_update` 的 `_meta` 在启用预算时可选暴露 scope、limit、used、remaining、exceeded、reason 与 `estimated`；未配置预算时保持兼容。
 
+- `suga manifest --json` 与 `suga trace` 增加审批规则来源、项目 hash/信任诊断及命中规则与范围，便于解释工具为何放行或拒绝。
+
+- 审批规则将 MCP legacy 白名单编译为统一规则，并固定 chat、run、ACP 与只读入口的默认动作。
+- chat 审批支持按命令前缀、写编辑目录和删除精确路径生成会话级 allow/deny 规则，并可通过 `u`/`p`/`N` 选择用户级、仅 deny 的项目级或本会话写回范围。
 - 自动识别 idev-std 发行目录与工作空间的 `tmp/idev-std` 加载产物目录为只读根，可通过 `tools.standards_roots` 关闭；支持 `IDEV_STD_RELEASES_ROOT` 与兼容的 `INHERE_DEV_STANDARDS_ROOT`。
 - chat 增加可脱敏持久化的本地输入历史（Up/Down、Ctrl+R 反查）与 `:` 命令/目录 Tab 补全，可通过 `chat.history` 和 `chat.history_size` 配置。
 - chat 新增 `:model` 查看并从下一回合切换已配置模型，显示 thinking、上下文窗口与输出上限；切换保留 fallback、持久化到会话并写入 `model_switch` trace 事件，续接时沿用（显式 `--model` 优先）。
@@ -29,7 +33,13 @@
 - session_search 的 Ledger 查询接口透传 workspace/current scope、kind、时间窗与 v1 游标，并向上层返回续接游标和说明。
 - 为 session_search 增加固定种子中英混合语料 benchmark，记录 1 万/10 万条查询基线并明确 S2 bigram 不纳入本期。
 
+### 变更
+
+- 审批规则文档现完整说明独立 YAML 文件、`deny > ask > allow`、shell/path 的 fail-closed 限制、项目 hash 信任、chat 的 `a/d/u/p/N`、ACP `allow_always/reject_always`、入口默认动作，以及 manifest/trace 诊断；`run` 对内置保护路径的拒绝是有意行为，可用 `tools.approval_rules.enabled: false` 回退。
+
 ### 修复
+
+- chat 审批在连续追问时正确重绘第二个问题提示，并保留第一个回答的终端回显。
 
 - chat 终端显示会清洗模型回答、工具结果与 diff 预览中的 ESC/OSC/CSI 等控制序列，避免恶意文本清屏、改标题或写剪贴板。
 

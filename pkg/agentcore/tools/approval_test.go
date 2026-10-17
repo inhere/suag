@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -98,7 +99,26 @@ func TestApprovalReport(t *testing.T) {
 		assert.NoErr(t, err)
 		assert.Eq(t, ApprovalReport{Source: ApprovedByUser, Wait: 1500 * time.Millisecond}, *rep)
 	})
+	t.Run("rule and scope survive context and serialization", func(t *testing.T) {
+		a := NewApproval(reg, ApproverFunc(func(ctx context.Context, _ api.ToolCall, _ api.Tool) error {
+			ReportRule(ctx, `user#3 shell_exec command="go test *" action=allow`, `shell_exec:go test`)
+			return nil
+		}))
+		ctx, rep := WithApprovalReport(context.Background())
+		_, err := a.ExecuteTool(ctx, call)
+		assert.NoErr(t, err)
+		assert.Eq(t, `user#3 shell_exec command="go test *" action=allow`, rep.Rule)
+		assert.Eq(t, `shell_exec:go test`, rep.Scope)
+		assert.Eq(t, rep.Rule, approvalReportOf(ctx).Rule)
+		assert.Eq(t, rep.Scope, approvalReportOf(ctx).Scope)
+		encoded, err := json.Marshal(rep)
+		assert.NoErr(t, err)
+		var decoded ApprovalReport
+		assert.NoErr(t, json.Unmarshal(encoded, &decoded))
+		assert.Eq(t, *rep, decoded)
+	})
 	t.Run("without a report in the context nothing breaks", func(t *testing.T) {
 		ReportApproval(context.Background(), ApprovedByUser, time.Second)
+		ReportRule(context.Background(), "ignored", "ignored")
 	})
 }

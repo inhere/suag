@@ -228,6 +228,31 @@ tools:
   # skill, update_plan, tool_search) on the terminal;
   # auto never asks. Without a terminal, tools needing confirmation are refused.
   # approval: ask
+  # Approval rules are kept outside config.yaml. The default is enabled; these
+  # settings control how $SUGA_HOME/approval-rules.yaml and
+  # <workspace>/.suga/approval-rules.yaml are loaded.
+  # approval_rules:
+  #   enabled: true
+  #   always_prefix_tokens: 2 # chat `a`: number of safe shell tokens to keep
+  #   persist_ask: true      # ask after `a`/`d` whether to write the rule
+  #   project_trust:         # absolute workspace path -> current file SHA-256
+  #     /absolute/path/to/project: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  #
+  # Each rule file contains only a rules list. `tool` may be a native-tool glob
+  # or server/toolglob for MCP; `command` is for shell_exec and `path` is for
+  # file_write/file_edit/file_remove. `action` is allow, ask or deny.
+  #   rules:
+  #     - tool: shell_exec
+  #       command: ["go test *", "go build *"]
+  #       action: allow
+  #     - tool: file_write
+  #       path: ["docs/**", "README*.md"]
+  #       action: allow
+  #     - tool: file_write
+  #       path: ["**/.env", "**/*.pem"]
+  #       action: deny
+  # YAML anchors and aliases are rejected; each file is limited to 64 KiB and
+  # 256 rules. Project allow rules require an exact workspace+content-hash trust.
   # max_output_bytes: 8000   # largest tool result kept whole in the session; larger ones are
   #                          # saved to ~/.suga/sessions/<id>/outputs/ and kept as ref + head/tail
   # max_spill_bytes: 1048576 # raw output cap of one tool call (native and MCP)

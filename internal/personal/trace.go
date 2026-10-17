@@ -188,7 +188,7 @@ func traceLine(e store.Event) string {
 	if e.Kind == store.EventBudget {
 		parts = append(parts, budgetTraceParts(e)...)
 	}
-	if e.Kind == store.EventTool {
+	if e.Kind == store.EventTool || e.Kind == store.EventDenial {
 		parts = append(parts, toolTraceParts(e)...)
 	}
 	if e.Kind == store.EventTask {
@@ -199,6 +199,13 @@ func traceLine(e store.Event) string {
 	}
 	if e.Kind == store.EventSession {
 		parts = append(parts, sessionTraceParts(e)...)
+	}
+	if e.Kind == "approval_rule_persist" {
+		for _, key := range []string{"file", "action", "result"} {
+			if value, _ := e.Attrs[key].(string); value != "" {
+				parts = append(parts, key+"="+value)
+			}
+		}
 	}
 	if e.Kind == store.EventContext {
 		parts = append(parts, contextTraceParts(e))
@@ -273,13 +280,28 @@ func toolTraceParts(e store.Event) []string {
 		return append(agentTraceParts(e), toolArgPart(e)...)
 	}
 	var parts []string
-	// Only a person's decision is shown; rule approvals are the norm.
-	if src, _ := e.Attrs["approval"].(string); src != "" && src != "rule" {
-		item := "approval=" + src
-		if ms := attrInt(e.Attrs["approval_wait_ms"]); ms > 0 {
-			item += fmt.Sprintf("(wait=%.1fs)", float64(ms)/1000)
+	src, _ := e.Attrs["approval"].(string)
+	rule, _ := e.Attrs["approval_rule"].(string)
+	if src != "" || rule != "" {
+		item := ""
+		if rule != "" {
+			if src == "always" {
+				if scope, _ := e.Attrs["approval_scope"].(string); scope != "" {
+					item = "approval=always(" + approvalScopeText(scope) + ")"
+				}
+			}
+			if item == "" {
+				item = "approval=rule(" + approvalRuleText(rule) + ")"
+			}
+		} else if src != "rule" {
+			item = "approval=" + src
 		}
-		parts = append(parts, item)
+		if item != "" {
+			if ms := attrInt(e.Attrs["approval_wait_ms"]); ms > 0 {
+				item += fmt.Sprintf("(wait=%.1fs)", float64(ms)/1000)
+			}
+			parts = append(parts, item)
+		}
 	}
 	if d, _ := e.Attrs["danger"].(string); d != "" {
 		parts = append(parts, fmt.Sprintf("danger=%q", d))
@@ -300,6 +322,36 @@ func toolTraceParts(e store.Event) []string {
 		parts = append(parts, fmt.Sprintf("tidied(raw=%v)", e.Attrs["raw_bytes"]))
 	}
 	return append(parts, toolArgPart(e)...)
+}
+
+// approvalRuleText turns Rule.Summary into compact trace notation while
+// retaining the source and rule number that explain the decision.
+func approvalRuleText(summary string) string {
+	core := summary
+	if i := strings.LastIndex(core, " action="); i >= 0 {
+		core = core[:i]
+	}
+	i := strings.IndexByte(core, ' ')
+	if i < 0 {
+		return core
+	}
+	prefix, detail := core[:i], core[i+1:]
+	for _, field := range []string{" command=", " path="} {
+		if i := strings.Index(detail, field); i >= 0 {
+			detail = detail[:i] + " " + detail[i+len(field):]
+			break
+		}
+	}
+	return prefix + ": " + detail
+}
+
+// approvalScopeText renders a session scope without exposing its internal
+// separator as the human-facing trace explanation.
+func approvalScopeText(scope string) string {
+	if i := strings.IndexByte(scope, ':'); i >= 0 {
+		return scope[:i] + fmt.Sprintf(" %q", scope[i+1:])
+	}
+	return scope
 }
 
 // toolArgPart is the redacted argument summary of a tool call, rendered last

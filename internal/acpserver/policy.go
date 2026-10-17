@@ -19,6 +19,68 @@ import (
 var ErrPermissionDenied = errors.New("ACP tool permission denied")
 var ErrReadOnly = errors.New("tool is unavailable in read_only mode")
 
+// PolicyDecision is the wiring-neutral result of the shared approval policy.
+// action is one of allow, ask, or deny; rule is the representative rule
+// summary, and scope is the stable key used by ACP session rules.
+type PolicyDecision func(call agentcore.ToolCall, tool agentcore.Tool) (action, rule, scope string)
+
+type sessionRule struct {
+	action  string
+	summary string
+}
+
+// sessionPolicy holds ACP's in-process always decisions. It deliberately has
+// no persistence representation: a new ACP process starts with an empty set.
+type sessionPolicy struct {
+	mu    sync.Mutex
+	next  int
+	rules map[string]sessionRule
+}
+
+func newSessionPolicy() *sessionPolicy {
+	return &sessionPolicy{rules: make(map[string]sessionRule)}
+}
+
+func (p *sessionPolicy) decide(scope string) (sessionRule, bool) {
+	if p == nil || scope == "" {
+		return sessionRule{}, false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	rule, ok := p.rules[scope]
+	return rule, ok
+}
+
+func (p *sessionPolicy) add(scope, action string) sessionRule {
+	if p == nil || scope == "" {
+		return sessionRule{}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.rules == nil {
+		p.rules = make(map[string]sessionRule)
+	}
+	p.next++
+	rule := sessionRule{action: action, summary: fmt.Sprintf("session#%d %s action=%s", p.next, scope, action)}
+	p.rules[scope] = rule
+	return rule
+}
+
+// strength is shared by base policy and session rules: a deny can never be
+// weakened by an allow_always decision, and an allow cannot weaken a deny.
+func strength(action string) int {
+	switch action {
+	case "allow":
+		return 1
+	case "ask":
+		return 2
+	case "deny":
+		return 3
+	default:
+		return 0
+	}
+}
+
 // deniedError refuses a tool call: it matches tools.ErrDenied (so the approval
 // layer returns it to the model as a tool error and observe records a denial)
 // and keeps the ACP cause (ErrPermissionDenied / ErrReadOnly) reachable.
@@ -62,6 +124,10 @@ type permissionHook struct {
 	// tools.Meta, so an MCP tool called "web_search" cannot pass for the
 	// built-in read tool.
 	lookup func(name string) agentcore.Tool
+	// policy is supplied by wiring for real ACP sessions. A nil policy keeps
+	// package-level compatibility tests on the historical read/ask behavior.
+	policy  PolicyDecision
+	session *sessionPolicy
 
 	mu    sync.Mutex
 	calls map[acp.ToolCallId]*pendingCall
@@ -138,41 +204,105 @@ func (h *permissionHook) Decide(ctx context.Context, call agentcore.ToolCall, to
 		// refusal below; MCP tools never take this path.
 		readTool = true
 	}
+	action, rule, scope, sessionHit := h.decide(call, tool, readTool)
+	if rule != "" {
+		if sessionHit {
+			tools.ReportRule(ctx, rule, scope)
+		} else {
+			tools.ReportRule(ctx, rule, "")
+		}
+	}
+	if action == "deny" {
+		return h.deny(ctx, id, pending, ErrPermissionDenied)
+	}
 	if h.readOnly && !readTool {
 		return h.deny(ctx, id, pending, ErrReadOnly)
 	}
-	if !readTool {
-		asked := time.Now()
-		decision, err := h.conn.RequestPermission(ctx, acp.RequestPermissionRequest{
-			SessionId: h.sessionID,
-			ToolCall: acp.ToolCallUpdate{
-				ToolCallId: id,
-				Title:      acp.Ptr(callTitle(call)),
-				Kind:       acp.Ptr(kind),
-				Locations:  pending.locations,
-				Content:    pending.content,
-				Status:     acp.Ptr(acp.ToolCallStatusPending),
-			},
-			Options: []acp.PermissionOption{
-				{Kind: acp.PermissionOptionKindAllowOnce, Name: "Allow once", OptionId: "allow"},
-				{Kind: acp.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: "reject"},
-			},
-		})
-		if err != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return ctxErr // the turn was cancelled while asking
-			}
-			return h.deny(ctx, id, pending, fmt.Errorf("%w: %v", ErrPermissionDenied, err))
+	if action == "allow" {
+		if sessionHit {
+			tools.ReportApproval(ctx, tools.ApprovedAlways, 0)
 		}
-		if decision.Outcome.Cancelled != nil {
-			return context.Canceled
-		}
-		if decision.Outcome.Selected == nil || decision.Outcome.Selected.OptionId != "allow" {
-			tools.ReportApproval(ctx, tools.AskedAndDenied, time.Since(asked))
-			return h.deny(ctx, id, pending, ErrPermissionDenied)
-		}
-		tools.ReportApproval(ctx, tools.ApprovedByUser, time.Since(asked))
+		return h.approve(ctx, pending, id)
 	}
+	if action != "ask" {
+		return h.deny(ctx, id, pending, ErrPermissionDenied)
+	}
+
+	asked := time.Now()
+	decision, err := h.conn.RequestPermission(ctx, acp.RequestPermissionRequest{
+		SessionId: h.sessionID,
+		ToolCall: acp.ToolCallUpdate{
+			ToolCallId: id,
+			Title:      acp.Ptr(callTitle(call)),
+			Kind:       acp.Ptr(kind),
+			Locations:  pending.locations,
+			Content:    pending.content,
+			Status:     acp.Ptr(acp.ToolCallStatusPending),
+		},
+		Options: []acp.PermissionOption{
+			{Kind: acp.PermissionOptionKindAllowOnce, Name: "Allow once", OptionId: "allow"},
+			{Kind: acp.PermissionOptionKindAllowAlways, Name: "Allow always", OptionId: "allow_always"},
+			{Kind: acp.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: "reject"},
+			{Kind: acp.PermissionOptionKindRejectAlways, Name: "Reject always", OptionId: "reject_always"},
+		},
+	})
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr // the turn was cancelled while asking
+		}
+		return h.deny(ctx, id, pending, fmt.Errorf("%w: %v", ErrPermissionDenied, err))
+	}
+	if decision.Outcome.Cancelled != nil {
+		return context.Canceled
+	}
+	selected := ""
+	if decision.Outcome.Selected != nil {
+		selected = string(decision.Outcome.Selected.OptionId)
+	}
+	switch selected {
+	case "allow":
+		tools.ReportApproval(ctx, tools.ApprovedByUser, time.Since(asked))
+	case "allow_always":
+		sessionRule := h.session.add(scope, "allow")
+		if sessionRule.summary != "" {
+			tools.ReportRule(ctx, sessionRule.summary, scope)
+		}
+		tools.ReportApproval(ctx, tools.ApprovedAlways, time.Since(asked))
+	case "reject_always":
+		sessionRule := h.session.add(scope, "deny")
+		if sessionRule.summary != "" {
+			tools.ReportRule(ctx, sessionRule.summary, scope)
+		}
+		tools.ReportApproval(ctx, tools.AskedAndDenied, time.Since(asked))
+		return h.deny(ctx, id, pending, ErrPermissionDenied)
+	default:
+		tools.ReportApproval(ctx, tools.AskedAndDenied, time.Since(asked))
+		return h.deny(ctx, id, pending, ErrPermissionDenied)
+	}
+	return h.approve(ctx, pending, id)
+}
+
+func (h *permissionHook) decide(call agentcore.ToolCall, tool agentcore.Tool, readTool bool) (action, rule, scope string, sessionHit bool) {
+	if h.policy == nil {
+		if readTool {
+			return "allow", "", call.Name, false
+		}
+		return "ask", "", call.Name, false
+	}
+	action, rule, scope = h.policy(call, tool)
+	if scope == "" && h.policy == nil {
+		scope = call.Name
+	}
+	if strength(action) == 0 {
+		return "deny", rule, scope, false
+	}
+	if sessionRule, ok := h.session.decide(scope); ok && (rule == "" || strength(sessionRule.action) >= strength(action)) {
+		return sessionRule.action, sessionRule.summary, scope, true
+	}
+	return action, rule, scope, false
+}
+
+func (h *permissionHook) approve(ctx context.Context, pending *pendingCall, id acp.ToolCallId) error {
 	h.mu.Lock()
 	pending.state = callInProgress
 	h.mu.Unlock()

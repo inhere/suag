@@ -138,21 +138,22 @@ func TestChatApprover(t *testing.T) {
 		}
 	})
 
-	t.Run("always allows the same tool for the process only", func(t *testing.T) {
-		asker := &scriptedAsker{answers: []string{"a", "n"}}
+	t.Run("always allows the same scope for the process only", func(t *testing.T) {
+		asker := &scriptedAsker{answers: []string{"a", "", "y"}}
 		approval, stubs := newChatApproval(t, false, asker)
 		assert.NoErr(t, runTool(approval, "shell_exec", map[string]any{"command": "ls"}))
+		// pwd is a different command prefix, so the scoped rule asks again.
 		assert.NoErr(t, runTool(approval, "shell_exec", map[string]any{"command": "pwd"}))
 		assert.Eq(t, 2, stubs["shell_exec"].runs)
-		assert.Len(t, asker.questions, 1)
+		assert.Len(t, asker.questions, 3) // approval, persistence, approval
 		// Another tool is still asked.
 		assert.ErrIs(t, runTool(approval, "file_write", map[string]any{"path": "a", "content": "x"}), tools.ErrDenied)
-		assert.Len(t, asker.questions, 2)
+		assert.Len(t, asker.questions, 4)
 		// A new approver (a new chat process) asks again.
-		asker2 := &scriptedAsker{answers: []string{"always"}}
+		asker2 := &scriptedAsker{answers: []string{"always", ""}}
 		approval2, _ := newChatApproval(t, false, asker2)
 		assert.NoErr(t, runTool(approval2, "shell_exec", map[string]any{"command": "ls"}))
-		assert.Len(t, asker2.questions, 1)
+		assert.Len(t, asker2.questions, 2)
 	})
 
 	t.Run("future tools are asked too", func(t *testing.T) {
@@ -264,9 +265,9 @@ func TestChatApproverQuestion(t *testing.T) {
 		q := approver.question(agentcore.ToolCall{Name: "web_search", Arguments: map[string]any{"query": "golang tcflush"}})
 		assert.Eq(t, []string{"查询：golang tcflush"}, q.Details)
 	})
-	t.Run("control characters cannot hide part of a command", func(t *testing.T) {
+	t.Run("control characters are removed before display", func(t *testing.T) {
 		q := approver.question(agentcore.ToolCall{Name: "shell_exec", Arguments: map[string]any{"command": "rm -rf ~\r\x1b[2Kecho safe\nls\t-l"}})
-		assert.Eq(t, "命令：rm -rf ~\\u000d\\u001b[2Kecho safe\nls\t-l", q.Details[0])
+		assert.Eq(t, "命令：rm -rf ~echo safe\nls\t-l", q.Details[0])
 	})
 }
 
@@ -341,7 +342,7 @@ func TestChatApproverReportsSource(t *testing.T) {
 		_, err := approval.ExecuteTool(ctx, agentcore.ToolCall{CallID: "c", Name: name, Arguments: map[string]any{"command": "echo"}})
 		return rep, err
 	}
-	asker := &scriptedAsker{answers: []string{"a", "n"}}
+	asker := &scriptedAsker{answers: []string{"a", "", "n"}}
 	approval, _ := newChatApproval(t, false, asker)
 	rep, err := run(approval, "file_read")
 	assert.NoErr(t, err)
@@ -351,7 +352,7 @@ func TestChatApproverReportsSource(t *testing.T) {
 	assert.Eq(t, tools.ApprovedByUser, rep.Source) // answered "always"
 	rep, err = run(approval, "shell_exec")
 	assert.NoErr(t, err)
-	assert.Eq(t, tools.ApprovedAlways, rep.Source) // not asked again
+	assert.Eq(t, tools.ApprovedAlways, rep.Source) // not asked again for the same scope
 	rep, err = run(approval, "file_write")
 	assert.Error(t, err)
 	assert.Eq(t, tools.AskedAndDenied, rep.Source)

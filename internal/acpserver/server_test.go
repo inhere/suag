@@ -86,6 +86,8 @@ type acpTestOptions struct {
 	// before the runner finishes it.
 	failRules *atomic.Bool
 	budget    personal.BudgetSettings
+	// policy exercises the same runtime-to-ACP policy handoff as the CLI.
+	policy PolicyDecision
 }
 
 func testACPRuntimeWith(t *testing.T, provider agentcore.Provider, tool *countingTool, opts acpTestOptions) OpenRuntime {
@@ -138,7 +140,7 @@ func testACPRuntimeWith(t *testing.T, provider agentcore.Provider, tool *countin
 			}
 			return found
 		}
-		return Runtime{Runner: runner, Close: repo.Close, LookupTool: lookup}, nil
+		return Runtime{Runner: runner, Close: repo.Close, LookupTool: lookup, Policy: opts.policy}, nil
 	}
 }
 
@@ -680,4 +682,76 @@ func TestPersonalACPBudgetWrapUpAndTruncationKeepEndTurn(t *testing.T) {
 	response, err := conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("truncate wrap-up")}})
 	assert.Require(t, assert.NoErr(t, err))
 	assert.Eq(t, acp.StopReasonEndTurn, response.StopReason)
+}
+
+func TestPersonalACPAlwaysDecisionsAreSessionScoped(t *testing.T) {
+	policy := PolicyDecision(func(agentcore.ToolCall, agentcore.Tool) (string, string, string) {
+		return "ask", "", "file_write:docs/**"
+	})
+	for _, tc := range []struct {
+		name       string
+		selected   acp.PermissionOptionId
+		wantCalls  int32
+		wantPrompt int
+	}{
+		{name: "allow_always", selected: "allow_always", wantCalls: 2, wantPrompt: 1},
+		{name: "reject_always", selected: "reject_always", wantCalls: 0, wantPrompt: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tool := &countingTool{}
+			provider := mock.NewProvider(
+				mock.ToolCall("call-1", "file_write", map[string]any{"path": "docs/a.txt"}),
+				mock.ToolCall("call-2", "file_write", map[string]any{"path": "docs/b.txt"}),
+				mock.Final("done"),
+			)
+			client := &testACPClient{selected: tc.selected}
+			response := promptOnce(t, testACPRuntimeWith(t, provider, tool, acpTestOptions{policy: policy}), client, "")
+			assert.Eq(t, acp.StopReasonEndTurn, response.StopReason)
+			assert.Eq(t, tc.wantCalls, tool.calls.Load())
+			client.mu.Lock()
+			assert.Eq(t, tc.wantPrompt, len(client.requests))
+			client.mu.Unlock()
+		})
+	}
+}
+
+func TestPersonalACPLoadSessionKeepsAlwaysOnlyInProcess(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "db", "sessions.db")
+	policy := PolicyDecision(func(agentcore.ToolCall, agentcore.Tool) (string, string, string) {
+		return "ask", "", "file_write:docs/**"
+	})
+	provider := mock.NewProvider(
+		mock.ToolCall("call-1", "file_write", map[string]any{"path": "docs/a.txt"}), mock.Final("first"),
+		mock.ToolCall("call-2", "file_write", map[string]any{"path": "docs/b.txt"}), mock.Final("second"),
+		mock.ToolCall("call-3", "file_write", map[string]any{"path": "docs/c.txt"}), mock.Final("third"),
+	)
+	open := testACPRuntimeWith(t, provider, &countingTool{}, acpTestOptions{dbPath: dbPath, policy: policy})
+	client := &testACPClient{selected: "allow_always"}
+	conn := connectPersonalACP(t, open, client)
+	cwd := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	created, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: cwd, McpServers: []acp.McpServer{}})
+	assert.Require(t, assert.NoErr(t, err))
+	_, err = conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("first")}})
+	assert.NoErr(t, err)
+	_, err = conn.LoadSession(ctx, acp.LoadSessionRequest{SessionId: created.SessionId, Cwd: cwd, McpServers: []acp.McpServer{}})
+	assert.NoErr(t, err)
+	_, err = conn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("second")}})
+	assert.NoErr(t, err)
+	client.mu.Lock()
+	assert.Eq(t, 1, len(client.requests))
+	client.mu.Unlock()
+
+	// A fresh Agent models a new ACP process: the database session survives,
+	// but its in-memory always rule must not.
+	newClient := &testACPClient{selected: "allow"}
+	newConn := connectPersonalACP(t, open, newClient)
+	_, err = newConn.LoadSession(ctx, acp.LoadSessionRequest{SessionId: created.SessionId, Cwd: cwd, McpServers: []acp.McpServer{}})
+	assert.NoErr(t, err)
+	_, err = newConn.Prompt(ctx, acp.PromptRequest{SessionId: created.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock("third")}})
+	assert.NoErr(t, err)
+	newClient.mu.Lock()
+	assert.Eq(t, 1, len(newClient.requests))
+	newClient.mu.Unlock()
 }

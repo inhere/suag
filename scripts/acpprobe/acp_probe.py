@@ -46,8 +46,10 @@ def read_dotenv(path):
 class Client:
     """JSON-RPC over the server's stdin/stdout, one JSON object per line."""
 
-    def __init__(self, proc):
+    def __init__(self, proc, permission):
         self.proc = proc
+        self.permission = permission
+        self.permission_requests = 0
         self.next_id = 0
         self.pending = {}
         self.lock = threading.Lock()
@@ -96,8 +98,17 @@ class Client:
     def answer(self, msg):
         if msg["method"] == "session/request_permission":
             options = msg["params"].get("options", [])
-            pick = next((o for o in options if o.get("kind") == "allow_once"), None) or \
-                next((o for o in options if str(o.get("kind", "")).startswith("allow")), options[0] if options else {})
+            self.permission_requests += 1
+            wanted = {
+                "allow_once": ("allow_once", "allow"),
+                "allow_always": ("allow_always", "allow_always"),
+                "reject": ("reject_once", "reject"),
+                "reject_always": ("reject_always", "reject_always"),
+            }[self.permission]
+            kind, option_id = wanted
+            pick = next((o for o in options if o.get("kind") == kind and o.get("optionId") == option_id), None)
+            if pick is None:
+                pick = next((o for o in options if o.get("kind") == kind), None) or (options[0] if options else {})
             tool = (msg["params"].get("toolCall") or {}).get("title", "")
             print(f"  permission: {tool} -> {pick.get('optionId')}", flush=True)
             self.send({"jsonrpc": "2.0", "id": msg["id"],
@@ -126,6 +137,8 @@ def main():
     p.add_argument("--home", default="tmp/acp/home", help="isolated SUGA_HOME (reset at start)")
     p.add_argument("--config-from", required=True, help="dir with the real config.yaml and .env")
     p.add_argument("--prompt", action="append", default=[], help="a prompt (repeatable, sent in order)")
+    p.add_argument("--permission", choices=("allow_once", "allow_always", "reject", "reject_always"),
+                   default="allow_once", help="permission option to select for each request")
     p.add_argument("--wait", action="append", type=float, default=[],
                    help="seconds to sleep after the prompt of the same position (repeatable)")
     args = p.parse_args()
@@ -145,7 +158,7 @@ def main():
 
     proc = subprocess.Popen([binary, "acp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=open(os.path.join(home, "acp.stderr.log"), "wb"), env=env, cwd=cwd)
-    client = Client(proc)
+    client = Client(proc, args.permission)
     ok = True
     try:
         client.call("initialize", {"protocolVersion": 1, "clientCapabilities": {}}, timeout=60)
@@ -157,7 +170,8 @@ def main():
             answer, tools = summarize(client.updates[mark:])
             stop = res.get("stopReason")
             ok = ok and stop == "end_turn"
-            print(f"prompt {i + 1} ({time.time() - start:.1f}s) stop={stop} tools={tools}\n  answer: {answer[:600]}", flush=True)
+            print(f"prompt {i + 1} ({time.time() - start:.1f}s) stop={stop} tools={tools} "
+                  f"permission_requests={client.permission_requests}\n  answer: {answer[:600]}", flush=True)
             if i < len(args.wait) and args.wait[i] > 0:
                 time.sleep(args.wait[i])
     finally:

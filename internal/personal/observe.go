@@ -287,6 +287,12 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 	if approval.Source != "" {
 		e.Attrs["approval"] = approval.Source
 	}
+	if approval.Rule != "" {
+		e.Attrs["approval_rule"] = approval.Rule
+	}
+	if approval.Scope != "" {
+		e.Attrs["approval_scope"] = approval.Scope
+	}
 	if approval.Wait > 0 {
 		e.Attrs["approval_wait_ms"] = approval.Wait.Milliseconds()
 	}

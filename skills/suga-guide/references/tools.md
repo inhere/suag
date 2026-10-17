@@ -31,7 +31,62 @@
 ## 写权限与审批
 
 - **默认只读**：写工具只在 `run --allow-write`、chat 设置 `tools.allow_write: true`、或 ACP 会话处于 `default` 模式时才有；`--read-only` 永远优先。模型调用了未开启的工具时，会被告知开启方法，并计入拒绝次数。
-- **chat 先询问**：`tools.approval: ask`（默认）时，每次写文件或执行命令前都会询问，并显示完整命令、路径或改动前后的文本。回答 `y` 允许一次，`a` 在本进程内对该工具始终允许，其他任何回答都是拒绝。一轮里被拒 3 次就结束这一轮。`tools.approval: auto` 不询问。
+- **chat 先询问**：`tools.approval: ask` 时，每次写文件或执行命令前都会询问，并显示完整命令、路径或改动前后的文本。审批规则会先决定是否放行或拒绝；需要询问时可答 `y`（一次）、`a`/`always`（按范围创建本会话 allow）、`d`/`deny`（按范围创建本会话 deny），其它任何回答都是拒绝。启用追问后，`a`/`d` 可再用 `u` 或 `p` 写回规则。一轮里被拒 3 次就结束这一轮。
+
+## 审批规则（`tools.approval_rules`）
+
+设置 `tools.approval_rules` 启用统一审批策略。规则正文放在独立文件中，这样 suga 可以在用户确认后追加规则，而不会重写主配置：
+
+```yaml
+tools:
+  approval_rules:
+    enabled: true
+    always_prefix_tokens: 2
+    persist_ask: true
+    project_trust:
+      /绝对路径/到/项目: <从 suga manifest 获取的 sha256>
+```
+
+Suga 读取 `$SUGA_HOME/approval-rules.yaml`（用户级）和 `<workspace>/.suga/approval-rules.yaml`（项目级）。文件只包含一个 `rules` 列表：
+
+```yaml
+rules:
+  - tool: shell_exec
+    command: ["go test *", "go build *"]
+    action: allow
+  - tool: file_write
+    path: ["docs/**", "README*.md"]
+    action: allow
+  - tool: file_write
+    path: ["**/.env", "**/*.pem"]
+    action: deny
+  - tool: "gofer/gofer_*_delete"
+    action: deny
+```
+
+`tool` 是原生工具名 glob；MCP 规则必须写成 `server/toolglob`。`command` 只适用于原生 `shell_exec`；`path` 只适用于明确的 `file_write`、`file_edit` 或 `file_remove`，且不能和 `command` 同时出现。规则可用 `modes: [chat, run, acp]` 限定入口；省略时适用于所有入口。未知字段、动作、工具/path 组合以及 YAML anchor/alias 都会导致启动失败。单个文件上限 64 KiB、最多 256 条规则。
+
+匹配采用 fail-closed：所有命中中取最强动作（`deny > ask > allow`），不是首次命中。allow 命令必须按实际配置的 shell（`sh`/`bash`、PowerShell 或 `cmd`）通过保守的 ASCII、引号和 token 检查；只有末尾独立的 `*` 或 `**` 才能扩展 token。控制符、展开、包装器和未知 shell 不会产生 allow。allow 路径同时检查 root 下的词法路径和 `EvalSymlinks` 后的真实目标；符号链接、硬链接、特殊文件、解析失败，以及 Windows 短名、ADS、尾部点/空格名称都不会产生 allow。deny 在 allow 安全检查失败时仍可用于收紧策略。
+
+项目规则有意采用不对称信任：项目 `deny` 和 `ask` 可以收紧策略，但项目 `allow` 必须等精确的绝对 workspace 路径和当前规则文件 SHA-256 出现在 `project_trust` 后才生效。`suga manifest --json` 会显示当前 hash 及 allow 被忽略的原因；确认文件内容后再把 hash 复制进配置。文件变化或重载失败时保留上一份有效快照，并在诊断中报告。
+
+各入口默认动作保持明确：
+
+| 入口 | 默认动作 | 重要边界 |
+|---|---|---|
+| chat | `tools.approval`：`ask`，或 `auto` → `allow` | 可询问；规则也能把只读/agent-state 工具改为 `ask` 或 `deny` |
+| `run` | `allow` | 无终端时 `ask` 按拒绝处理；`--read-only` 与工具可用性优先 |
+| ACP default | `ask` | `read_only` 拒绝非只读工具；不读取 CLI 的 legacy MCP 放行名单 |
+| 子 agent | 其只读工具集合默认 `allow` | 创建时取得 Policy 快照；无终端时 `ask` 按拒绝处理 |
+| chat/run MCP | `deny` | `tools.auto_allow` / `tools.read_only_allow` 仅在这里编译成 `legacy` allow 规则 |
+
+规则不会绕过工具注册、`--read-only`、文件/shell 沙箱、危险删除守卫或受保护的控制面路径：`$SUGA_HOME`、workspace 下的 `.suga/` 与 `.git/`，以及两个 approval-rules 文件。命中这些路径的 allow 会被钳制为 chat/ACP 的 ask，或无交互 run/子 agent 的 deny。因此 `run` 拒绝写入这些路径是有意行为。
+
+chat 中，`y`/`yes` 只允许本次调用。`a`/`always` 为本会话创建规则：安全 shell 命令前缀（`always_prefix_tokens`，默认 2）、写/编辑目录、精确的 `file_remove` 路径或其他工具名。不安全 shell 命令不提供 `[a]`。`d`/`deny` 用相同范围创建本会话 deny；其它答案（包括回车）拒绝本次调用并继续回合。`persist_ask` 为 true 时，`a`/`d` 后会追问写回：`u` 写用户级规则，`p` 只把 deny 写项目级，`N`/回车只保留本会话。写回使用加锁、原子读改写，并记录 `approval_rule_persist` 事件；写失败也不会丢失会话规则。
+
+ACP 提供 `allow`、`allow_always`、`reject`、`reject_always` 四个选项。两个 `always` 选项创建进程内会话规则：后续同范围调用跳过或直接失败权限请求，但仍发送 `tool_call` 通知；不会写规则文件。同一进程内 `session/load` 保留它们，换进程后需要重新询问。
+
+用 `suga manifest --json` 查看规则文件路径、生效条数、项目 hash/信任诊断、被忽略规则和 `tools.approval` 默认动作；用 `suga trace <session> --json` 查看工具/拒绝事件的 `approval_rule`、`approval_scope` 以及写回事件 `approval_rule_persist`。设置 `tools.approval_rules.enabled: false` 可回到旧审批路径。
 
 ## 附加目录（`--add-dir`）
 

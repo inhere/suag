@@ -69,6 +69,7 @@ func RunPersonalACP(ctx context.Context, input io.Reader, output io.Writer) erro
 			}
 			return tool
 		}
-		return acpserver.Runtime{Runner: runtime.Runner, Close: runtime.Close, LookupTool: lookup, ContextWindow: runtime.ContextWindow}, nil
+		return acpserver.Runtime{Runner: runtime.Runner, Close: runtime.Close, LookupTool: lookup,
+			Policy: runtime.ACPPolicy, ContextWindow: runtime.ContextWindow}, nil
 	})
 }

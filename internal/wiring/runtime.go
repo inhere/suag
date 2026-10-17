@@ -22,6 +22,7 @@ import (
 	"github.com/inhere/suga/pkg/agentcore/tools"
 	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
 	"github.com/inhere/suga/pkg/agentcore/tools/native"
+	approvalrules "github.com/inhere/suga/pkg/agentcore/tools/rules"
 )
 
 // Options carries everything needed to assemble one runtime.
@@ -89,6 +90,11 @@ type Options struct {
 	// is created by OpenCLI so the chat approver and the tools share one set; nil
 	// (a runtime assembled directly) means no additional directory.
 	sessionDirs *native.AddDirs
+	// approvalPolicy is compiled before Open builds the registry. A child takes a
+	// fresh copy through this callback so chat session rules are included without
+	// sharing a mutable policy with an already-running child.
+	approvalPolicy   *approvalPolicy
+	approvalSnapshot func() approvalPolicy
 }
 
 // Runtime is one assembled personal runner and the resources it owns.
@@ -108,6 +114,9 @@ type Runtime struct {
 	Runner *personal.Runner
 	// Registry is the base tool registry (lets ACP tell MCP tools apart).
 	Registry *tools.Registry
+	// ACPPolicy exposes the same compiled policy to the ACP permission hook
+	// without coupling the internal wiring package to the ACP server package.
+	ACPPolicy func(agentcore.ToolCall, agentcore.Tool) (action, rule, scope string)
 	// ContextWindow is the window of the model actually used by the provider.
 	ContextWindow int
 	// Budget is the resolved budget input retained for later runner/provider
@@ -146,7 +155,8 @@ type Runtime struct {
 	maxOutputOverride int
 	// tools is the registry stack the runner calls (visibility -> approval
 	// -> base); kept for tests.
-	tools agentcore.ToolRegistry
+	tools    agentcore.ToolRegistry
+	approval approvalPolicy
 }
 
 // ModelOptions returns the configured models in deterministic order.
@@ -260,17 +270,19 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	opts.CLIMode = true
-	// The run approver is the MCP allowlist (cliMCPGate); it never prompts.
+	// The run approver is the compiled policy; it has no terminal, so ask
+	// decisions fail closed as tool denials while the turn can continue.
 	gate, err := newCLIMCPGate(opts.ReadOnly)
 	if err != nil {
 		return nil, err
 	}
+	opts.approvalPolicy = &gate.policy
 	// One additional-directory set per runtime, shared by the tools, the
 	// environment prompt and the chat approver; the tools read it per call, so
 	// the session opened later can still fill it (ApplyAddDirs).
 	dirs := native.NewAddDirs()
 	opts.sessionDirs = dirs
-	var approver tools.Approver = gate
+	var approver tools.Approver = newPolicyApprover(gate.policy)
 	var asker *tools.BindableAsker
 	var chatGate *chatApprover
 	if opts.ChatMode {
@@ -280,6 +292,9 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Keep mode-scoped file rules aligned with the interactive entry point.
+		gate.policy.Mode = approvalrules.ModeChat
+		gate.policy.Defaults = defaultApprovalDefaults(approvalrules.ModeChat, auto)
 		asker = tools.NewBindableAsker()
 		// The outside-directory question needs the tool's static read roots (a
 		// path under one needs no authorization) and the session's added-directory
@@ -293,6 +308,11 @@ func OpenCLI(ctx context.Context, opts Options) (*Runtime, error) {
 		approver = chatGate
 		// Memory writes of tainted sessions are confirmed at the same terminal.
 		opts.MemoryConfirm = newChatMemoryConfirmer(asker).confirm
+		opts.approvalSnapshot = func() approvalPolicy {
+			chatGate.mu.Lock()
+			defer chatGate.mu.Unlock()
+			return cloneApprovalPolicy(chatGate.policy)
+		}
 	}
 	opts.Workspace, opts.RuleCWD = workspace, cwd
 	// tools.allow_write applies to chat only: run (often started by a job
@@ -335,6 +355,20 @@ func toolsAllowWrite() (bool, error) {
 // Open assembles one runtime.
 func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	workspace, ruleCWD, allowWrite, servers := opts.Workspace, opts.RuleCWD, opts.AllowWrite, opts.Servers
+	approval := approvalPolicy{}
+	if opts.approvalPolicy != nil {
+		approval = *opts.approvalPolicy
+	} else {
+		var policyErr error
+		approval, policyErr = compileACPApprovalPolicy(workspace, opts.ReadOnly || opts.MemoryReadOnly)
+		if policyErr != nil {
+			return nil, policyErr
+		}
+	}
+	approvalSnapshot := opts.approvalSnapshot
+	if approvalSnapshot == nil {
+		approvalSnapshot = func() approvalPolicy { return cloneApprovalPolicy(approval) }
+	}
 	// The session's additional directories (--add-dir): the tools read the set at
 	// every call, so the requested ones are published here already (a new
 	// session's first segment lists them) and ApplyAddDirs merges the session's
@@ -417,7 +451,8 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		agentTool := native.NewAgentTool(&subAgents{workspace: workspace, ruleCWD: ruleCWD, mainModel: opts.Model,
 			noProjectRules: opts.NoProjectRules, ruleFile: ruleFile, settings: agentSettings, addDirs: dirs,
 			budget: personal.BudgetSettings{Tokens: budget.Tokens, CostUSD: budget.CostUSD, Scope: budget.Scope,
-				Estimate: budget.Estimate, EstimateFactor: budget.EstimateFactor, NoticeRatio: budget.NoticeRatio}})
+				Estimate: budget.Estimate, EstimateFactor: budget.EstimateFactor, NoticeRatio: budget.NoticeRatio},
+			policySnapshot: approvalSnapshot})
 		if opts.Tasks != nil {
 			agentTool.SetTasks(opts.Tasks)
 		}
@@ -453,8 +488,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 			Version: buildVersion, Settings: settings, Registry: capabilities.Registry,
 			MCPServers: append(appconfig.ReadMCPServerSettings(), servers...),
 			SkillRoots: skillRoots(workspace), Skills: skillReg,
-			Memory: memSetup, Policy: memPolicy,
-			InlineBytes: rs.inlineBytes, SpillBytes: rs.spillBytes, SessionsDir: sessionsDir,
+			Memory: memSetup, Policy: memPolicy, Approval: refreshManifestApprovalRules(approval.RuleSource),
+			ToolsApproval: manifestToolsApprovalAction(),
+			InlineBytes:   rs.inlineBytes, SpillBytes: rs.spillBytes, SessionsDir: sessionsDir,
 			TaintTools: taintTools, TaintOnSpill: taintOnSpill,
 		}), nil
 	}))
@@ -462,9 +498,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// visibility -> approval -> base registry. Unloaded deferred tools are
 	// answered by visibility and never reach the approver.
 	// Dangerous deletes are stopped before any approver (guardDangerous).
-	approval := tools.NewApproval(capabilities.Registry, guardDangerous(opts.Approver))
-	approval.SetDisabled(disabledToolHints(capabilities.Registry, opts))
-	vis, err := newToolVisibility(capabilities.Registry, approval, contextWindow)
+	approvalLayer := tools.NewApproval(capabilities.Registry, guardDangerous(opts.Approver))
+	approvalLayer.SetDisabled(disabledToolHints(capabilities.Registry, opts))
+	vis, err := newToolVisibility(capabilities.Registry, approvalLayer, contextWindow)
 	if err != nil {
 		_ = capabilities.Close()
 		return nil, err
@@ -585,8 +621,17 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 	memHost.bind(runner, repo)
-	rt := &Runtime{Runner: runner, Registry: capabilities.Registry, repo: repo, capabilities: capabilities,
-		ContextWindow: contextWindow, Budget: budget, Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry,
+	rt := &Runtime{Runner: runner, Registry: capabilities.Registry,
+		ACPPolicy: func(call agentcore.ToolCall, tool agentcore.Tool) (action, rule, scope string) {
+			policyAction, hit := approval.Decide(approval.targetFor(call, tool), tools.MetaOf(tool))
+			if hit != nil {
+				rule = hit.Summary()
+			}
+			scope = approvalScopeKey(approval, call, tool)
+			return string(policyAction), rule, scope
+		},
+		repo: repo, capabilities: capabilities, ContextWindow: contextWindow, Budget: budget,
+		Thinking: settings.Main.ThinkingLevel(), tools: toolRegistry, approval: approval,
 		AddDirs: dirs, modelOptions: modelOptions, modelSpecs: modelSpecs,
 		fallbacks:        append([]appconfig.ModelSpec(nil), settings.Fallbacks...),
 		thinkingOverride: opts.Thinking, maxOutputOverride: opts.MaxOutputTokens}

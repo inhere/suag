@@ -142,6 +142,12 @@ type ApprovalReport struct {
 	// Danger is why the call needed a stricter decision (a dangerous delete
 	// command), "" for an ordinary call.
 	Danger string
+	// Rule is the stable summary of the representative approval rule. An empty
+	// value means no declarative rule matched the call (the policy default ran).
+	Rule string
+	// Scope is the session rule's scope key; it is empty for user, project and
+	// legacy rules, and for calls without a representative rule.
+	Scope string
 }
 
 type approvalReportKey struct{}
@@ -157,6 +163,15 @@ func WithApprovalReport(ctx context.Context) (context.Context, *ApprovalReport) 
 func ReportApproval(ctx context.Context, source string, wait time.Duration) {
 	if r, _ := ctx.Value(approvalReportKey{}).(*ApprovalReport); r != nil {
 		r.Source, r.Wait = source, wait
+	}
+}
+
+// ReportRule records the stable rule summary and optional session scope in the
+// current approval report. Empty values deliberately mean that no matching
+// rule or session scope was available.
+func ReportRule(ctx context.Context, summary, scope string) {
+	if r, _ := ctx.Value(approvalReportKey{}).(*ApprovalReport); r != nil {
+		r.Rule, r.Scope = summary, scope
 	}
 }
 

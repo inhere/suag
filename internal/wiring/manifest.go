@@ -5,12 +5,14 @@ import (
 	"path/filepath"
 	"slices"
 
+	gkconfig "github.com/gookit/config/v2"
 	appconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/internal/personal"
 	capskills "github.com/inhere/suga/pkg/agentcore/skills"
 	"github.com/inhere/suga/pkg/agentcore/tools"
 	"github.com/inhere/suga/pkg/agentcore/tools/mcp"
 	"github.com/inhere/suga/pkg/agentcore/tools/native"
+	approvalrules "github.com/inhere/suga/pkg/agentcore/tools/rules"
 )
 
 // buildVersion is the suga version shown by the manifest; the CLI sets it
@@ -27,15 +29,16 @@ func SetBuildVersion(v string) {
 // Manifest describes what this suga instance can do (design D15). It holds
 // no secrets: no API keys, base URLs, MCP arguments or environment values.
 type Manifest struct {
-	Version     string              `json:"version"`
-	Models      ManifestModels      `json:"models"`
-	Tools       []ManifestTool      `json:"tools"`
-	MCPServers  []ManifestMCPServer `json:"mcp_servers"`
-	Skills      ManifestSkills      `json:"skills"`
-	Memory      []ManifestMemory    `json:"memory"`
-	Output      ManifestOutput      `json:"output"`
-	Taint       ManifestTaint       `json:"taint"`
-	WritePolicy ManifestWritePolicy `json:"write_policy"`
+	Version       string                `json:"version"`
+	Models        ManifestModels        `json:"models"`
+	Tools         []ManifestTool        `json:"tools"`
+	MCPServers    []ManifestMCPServer   `json:"mcp_servers"`
+	Skills        ManifestSkills        `json:"skills"`
+	Memory        []ManifestMemory      `json:"memory"`
+	Output        ManifestOutput        `json:"output"`
+	Taint         ManifestTaint         `json:"taint"`
+	WritePolicy   ManifestWritePolicy   `json:"write_policy"`
+	ApprovalRules ManifestApprovalRules `json:"approval_rules"`
 }
 
 // ManifestModel is one model and the provider serving it.
@@ -112,6 +115,40 @@ type ManifestWritePolicy struct {
 	MemoryWriteTainted string `json:"memory_write_tainted"`
 }
 
+// ManifestApprovalRules describes both rule files and the default used by the
+// legacy tools.approval setting. It deliberately reports diagnostics rather
+// than the full rule pool, so a manifest explains trust without duplicating the
+// policy used by the approval layer.
+type ManifestApprovalRules struct {
+	Enabled  bool                     `json:"enabled"`
+	User     ManifestApprovalSource   `json:"user"`
+	Project  ManifestApprovalSource   `json:"project"`
+	Defaults ManifestApprovalDefaults `json:"defaults"`
+}
+
+// ManifestApprovalSource is the diagnostic summary for one rule file.
+type ManifestApprovalSource struct {
+	Path           string                        `json:"path"`
+	Hash           string                        `json:"hash,omitempty"`
+	EffectiveRules int                           `json:"effective_rules"`
+	Ignored        []ManifestApprovalIgnoredRule `json:"ignored"`
+	Trusted        bool                          `json:"trusted,omitempty"`
+	TrustReason    string                        `json:"trust_reason,omitempty"`
+}
+
+// ManifestApprovalIgnoredRule explains why a parsed rule was not effective.
+type ManifestApprovalIgnoredRule struct {
+	Index   int    `json:"index"`
+	Action  string `json:"action"`
+	Summary string `json:"summary"`
+	Reason  string `json:"reason"`
+}
+
+// ManifestApprovalDefaults records the old chat configuration in action terms.
+type ManifestApprovalDefaults struct {
+	ToolsApproval string `json:"tools_approval"`
+}
+
 // ManifestInput is everything BuildManifest summarizes.
 type ManifestInput struct {
 	Version  string
@@ -124,10 +161,14 @@ type ManifestInput struct {
 	Memory     *MemorySetup
 	Policy     memoryWritePolicy
 
-	InlineBytes, SpillBytes int
-	SessionsDir             string
-	TaintTools              []string
-	TaintOnSpill            []string
+	// Approval is the exact file snapshot used to assemble the runtime policy.
+	Approval ApprovalRules
+	// ToolsApproval is the effective legacy chat default rendered as an action.
+	ToolsApproval string
+
+	InlineBytes, SpillBytes  int
+	SessionsDir              string
+	TaintTools, TaintOnSpill []string
 }
 
 // BuildManifest summarizes in. It only reads the given structures: no
@@ -141,11 +182,12 @@ func BuildManifest(in ManifestInput) Manifest {
 			TaintTools:   nonNil(in.TaintTools),
 			TaintOnSpill: nonNil(in.TaintOnSpill),
 		},
-		WritePolicy: ManifestWritePolicy{MemoryWrite: in.Policy.Write, MemoryWriteTainted: in.Policy.Tainted},
-		Tools:       []ManifestTool{},
-		MCPServers:  []ManifestMCPServer{},
-		Memory:      []ManifestMemory{},
-		Skills:      ManifestSkills{Roots: []string{}},
+		WritePolicy:   ManifestWritePolicy{MemoryWrite: in.Policy.Write, MemoryWriteTainted: in.Policy.Tainted},
+		ApprovalRules: manifestApprovalRules(in.Approval, in.ToolsApproval),
+		Tools:         []ManifestTool{},
+		MCPServers:    []ManifestMCPServer{},
+		Memory:        []ManifestMemory{},
+		Skills:        ManifestSkills{Roots: []string{}},
 	}
 	if in.Settings.Compact != nil {
 		c := manifestModel(*in.Settings.Compact)
@@ -190,6 +232,75 @@ func BuildManifest(in ManifestInput) Manifest {
 	return m
 }
 
+// refreshManifestApprovalRules rereads a valid rule snapshot for the live
+// manifest. The approval layer keeps its creation-time Policy snapshot, while
+// diagnostics should still show a valid file hash changed during that runtime.
+// A malformed or unreadable edit is left at the last valid snapshot, matching
+// the fail-closed reload contract.
+func refreshManifestApprovalRules(previous ApprovalRules) ApprovalRules {
+	current, err := LoadApprovalRules(previous.Workspace)
+	if err != nil {
+		return previous
+	}
+	return current
+}
+
+// manifestToolsApprovalAction reports the legacy chat setting in action terms.
+// It is shared by the static command and live runtime manifest; run/ACP keep
+// their own policy defaults but still expose the configured chat default.
+func manifestToolsApprovalAction() string {
+	if gkconfig.String("tools.approval") == "auto" {
+		return string(approvalrules.Allow)
+	}
+	return string(approvalrules.Ask)
+}
+
+// manifestApprovalRules is shared by static and runtime manifests. Project
+// deny/ask rules are effective without trust; only project allows are filtered.
+func manifestApprovalRules(loaded ApprovalRules, toolsApproval string) ManifestApprovalRules {
+	result := ManifestApprovalRules{
+		Enabled:  loaded.Settings.Enabled,
+		User:     ManifestApprovalSource{Path: loaded.User.Path, Ignored: []ManifestApprovalIgnoredRule{}},
+		Project:  ManifestApprovalSource{Path: loaded.Project.Path, Ignored: []ManifestApprovalIgnoredRule{}},
+		Defaults: ManifestApprovalDefaults{ToolsApproval: toolsApproval},
+	}
+	result.User.Hash = loaded.User.Fingerprint.Hash
+	if loaded.Settings.Enabled {
+		result.User.EffectiveRules = len(loaded.User.Rules)
+	}
+	result.Project.Hash = loaded.Project.Fingerprint.Hash
+	result.Project.Trusted = loaded.ProjectAllowTrusted()
+	result.Project.TrustReason = projectTrustReason(loaded)
+	if loaded.Settings.Enabled {
+		for _, rule := range loaded.Project.Rules {
+			if rule.Action == approvalrules.Allow && !result.Project.Trusted {
+				result.Project.Ignored = append(result.Project.Ignored, ManifestApprovalIgnoredRule{
+					Index: rule.Index, Action: string(rule.Action), Summary: rule.Summary(),
+					Reason: result.Project.TrustReason,
+				})
+				continue
+			}
+			result.Project.EffectiveRules++
+		}
+	}
+	return result
+}
+
+func projectTrustReason(loaded ApprovalRules) string {
+	if !loaded.Project.Fingerprint.Exists {
+		return "project rule file is not present"
+	}
+	if loaded.ProjectAllowTrusted() {
+		return "trusted workspace and hash"
+	}
+	workspace := filepath.Clean(loaded.ProjectRoot())
+	expected, ok := loaded.Settings.ProjectTrust[workspace]
+	if !ok || expected == "" {
+		return "workspace has no trusted hash"
+	}
+	return fmt.Sprintf("hash changed since trust (expected %s)", expected)
+}
+
 func manifestModel(s appconfig.ModelSpec) ManifestModel {
 	m := ManifestModel{Provider: s.Provider.ID, Model: s.Model, ContextWindow: appconfig.ContextWindowFor(s), Thinking: s.ThinkingLevel()}
 	if id := s.APIModel(); id != s.Model {
@@ -205,7 +316,7 @@ func nonNil(s []string) []string {
 	return s
 }
 
-// ManifestOptions selects the model and workspace of LoadManifest.
+// ManifestOptions selects the model and workspace of LoadManifest
 type ManifestOptions struct {
 	// Model overrides the configured model (like --model).
 	Model string
@@ -246,6 +357,13 @@ func loadManifest(opts ManifestOptions) (Manifest, manifestParts, error) {
 	if err != nil {
 		return Manifest{}, manifestParts{}, err
 	}
+	approval, err := LoadApprovalRules(workspace)
+	if err != nil {
+		return Manifest{}, manifestParts{}, err
+	}
+	if _, err := toolsApprovalAuto(); err != nil {
+		return Manifest{}, manifestParts{}, err
+	}
 	reg := tools.NewRegistry()
 	for _, t := range native.BuildTools(nativeEnv(workspace, nil), true) {
 		reg.Register(t)
@@ -271,8 +389,9 @@ func loadManifest(opts ManifestOptions) (Manifest, manifestParts, error) {
 		Version: buildVersion, Settings: st.models, Registry: reg,
 		MCPServers: appconfig.ReadMCPServerSettings(),
 		SkillRoots: skillRoots(workspace), Skills: skillReg,
-		Memory: st.memSetup, Policy: st.memPolicy,
-		InlineBytes: st.inlineBytes, SpillBytes: st.spillBytes, SessionsDir: st.sessionsDir,
+		Memory: st.memSetup, Policy: st.memPolicy, Approval: approval,
+		ToolsApproval: manifestToolsApprovalAction(),
+		InlineBytes:   st.inlineBytes, SpillBytes: st.spillBytes, SessionsDir: st.sessionsDir,
 		TaintTools: st.taintTools, TaintOnSpill: st.taintOnSpill,
 	})
 	return m, manifestParts{workspace: workspace, registry: reg, skills: skillReg}, nil

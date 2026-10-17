@@ -7,41 +7,18 @@ import (
 	"strings"
 
 	gkconfig "github.com/gookit/config/v2"
+	appconfig "github.com/inhere/suga/internal/config"
 	"github.com/inhere/suga/pkg/agentcore"
 	"github.com/inhere/suga/pkg/agentcore/tools"
+	approvalrules "github.com/inhere/suga/pkg/agentcore/tools/rules"
 )
 
-// mcpPatternMatches matches an allowlist entry against an MCP tool. An entry
-// with "/" is "serverglob/toolglob" and needs the tool's server to match. A bare
-// entry (tools.auto_allow only) matches the tool name from any server; prefer
-// the server-qualified form.
-func mcpPatternMatches(pattern, server, tool string) bool {
-	if serverPat, toolPat, ok := strings.Cut(pattern, "/"); ok {
-		if match, _ := path.Match(serverPat, server); !match {
-			return false
-		}
-		match, _ := path.Match(toolPat, tool)
-		return match
-	}
-	match, _ := path.Match(pattern, tool)
-	return match
-}
-
-// cliMCPGate is the CLI tools.Approver: it checks the tool kind at dispatch, so
-// --allow-write never grants MCP writes. Only MCP tools are gated; which native
-// tools exist at all (--read-only, --allow-write) is decided by the tool set.
-type cliMCPGate struct {
-	patterns []string
-}
-
-// newCLIMCPGate builds the dispatch approver. There is no built-in allowlist:
-// an unconfigured list denies every MCP tool.
-//   - Normal mode uses tools.auto_allow (bare or server-qualified globs).
-//   - readOnly mode uses only tools.read_only_allow, whose entries must be
-//     server-qualified ("server/toolglob") so a same-named tool from another
-//     server is never trusted. tools.auto_allow is still validated there but
-//     never widens the allowlist, so no extra (possibly mutating) MCP tool runs.
-func newCLIMCPGate(readOnly bool) (*cliMCPGate, error) {
+// compileLegacyMCPRules converts the two historical MCP lists into the common
+// rule model. A bare auto_allow pattern becomes */toolglob, preserving its
+// old any-server meaning while satisfying the rules package's MCP identity
+// requirement. The modes keep these rules out of ACP even if a caller copies
+// the resulting slice into another policy accidentally.
+func compileLegacyMCPRules(readOnly bool) ([]approvalrules.Rule, error) {
 	autoAllow, err := mcpAllowlist("tools.auto_allow", false)
 	if err != nil {
 		return nil, err
@@ -50,10 +27,63 @@ func newCLIMCPGate(readOnly bool) (*cliMCPGate, error) {
 	if err != nil {
 		return nil, err
 	}
+	patterns := autoAllow
 	if readOnly {
-		return &cliMCPGate{patterns: readOnlyAllow}, nil
+		patterns = readOnlyAllow
 	}
-	return &cliMCPGate{patterns: autoAllow}, nil
+	rules := make([]approvalrules.Rule, 0, len(patterns))
+	for i, pattern := range patterns {
+		if !strings.Contains(pattern, "/") {
+			pattern = "*/" + pattern
+		}
+		rules = append(rules, approvalrules.Rule{
+			Source: approvalrules.SourceLegacy,
+			Index:  i + 1,
+			Tool:   pattern,
+			Modes:  []approvalrules.Mode{approvalrules.ModeChat, approvalrules.ModeRun},
+			Action: approvalrules.Allow,
+		})
+	}
+	return rules, nil
+}
+
+// cliMCPGate is the CLI tools.Approver: it checks the tool kind at dispatch, so
+// --allow-write never grants MCP writes. Only MCP tools are gated; which native
+// tools exist at all (--read-only, --allow-write) is decided by the tool set.
+type cliMCPGate struct {
+	policy approvalPolicy
+}
+
+// newCLIMCPGate builds the CLI dispatch approver. It loads the user/project
+// rules here because OpenCLI calls this gate before assembling the registry;
+// ACP uses Open directly and therefore never enters this legacy path.
+func newCLIMCPGate(readOnly bool) (*cliMCPGate, error) {
+	policy, err := compileCLIApprovalPolicy(appconfig.ResolveWorkspacePath(), approvalrules.ModeRun, false, readOnly)
+	if err != nil {
+		return nil, err
+	}
+	return newCLIMCPGateWithPolicy(policy), nil
+}
+
+func newCLIMCPGateWithPolicy(policy approvalPolicy) *cliMCPGate {
+	return &cliMCPGate{policy: policy}
+}
+
+// Decide allows only a matching MCP rule. This gate cannot ask, so an explicit
+// ask is fail-closed here; chat's later approval assembly can provide a real
+// asker without changing the legacy/default policy.
+func (g *cliMCPGate) Decide(_ context.Context, call agentcore.ToolCall, tool agentcore.Tool) error {
+	if !tools.IsMCP(tool) {
+		return nil
+	}
+	target := approvalrules.Target{
+		Tool: call.Name, MCP: true, MCPServer: tools.MCPServerOf(tool), Mode: g.policy.Mode,
+	}
+	action, _ := g.policy.Decide(target, tools.MetaOf(tool))
+	if action == approvalrules.Allow {
+		return nil
+	}
+	return tools.Denied(fmt.Sprintf("需要许可：%s，本次运行未授权", call.Name))
 }
 
 // mcpAllowlist reads and validates one allowlist config key. qualifiedOnly
@@ -96,19 +126,4 @@ func mcpAllowlist(key string, qualifiedOnly bool) ([]string, error) {
 		}
 	}
 	return patterns, nil
-}
-
-// Decide allows native tools and allowlisted MCP tools; any other MCP tool is
-// refused with tools.Denied, which the model sees as a tool error.
-func (g *cliMCPGate) Decide(_ context.Context, call agentcore.ToolCall, tool agentcore.Tool) error {
-	if !tools.IsMCP(tool) {
-		return nil
-	}
-	server := tools.MCPServerOf(tool)
-	for _, pattern := range g.patterns {
-		if mcpPatternMatches(pattern, server, call.Name) {
-			return nil
-		}
-	}
-	return tools.Denied(fmt.Sprintf("需要许可：%s，本次运行未授权", call.Name))
 }
