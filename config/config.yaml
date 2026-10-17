@@ -222,6 +222,20 @@ max_steps: 240
 # window) | always | never. Deferred tools are loaded via the tool_search tool.
 tools:
   deferred: auto
+  # Tools this machine already has and the agent should prefer: a command on PATH
+  # or an mcp.servers id, plus one line of "when to use it". Available items are
+  # listed in the environment section (missing ones are left out and only show up
+  # in `suga manifest` with a reason). A preferred MCP server is never deferred
+  # (tools.deferred above), but it is still denied until it is allowed in
+  # auto_allow / read_only_allow below; a preferred command still goes through the
+  # shell_exec approval (e.g. an approval rule with command: ["rg *"]).
+  # preferred:
+  #   - name: rg
+  #     kind: command
+  #     when: 精确搜索文本或正则，优先于反复读取文件
+  #   - name: codebase-memory-mcp
+  #     kind: mcp
+  #     when: 跨文件查符号与调用关系
   # File-tool checkpoints. Enabled by default; sensitive before-images live under
   # sessions/<id>/snapshots/. :undo and suga undo remain available when it is off.
   snapshots:
