@@ -115,8 +115,9 @@ func TestSelectProjectBackend(t *testing.T) {
 		assert.Eq(t, MemoryReasonDefault, choice.Reason)
 	})
 
-	t.Run("no git root uses the workspace itself", func(t *testing.T) {
+	t.Run("workspace itself is used when no parent git root exists", func(t *testing.T) {
 		ws := t.TempDir()
+		assert.NoErr(t, os.MkdirAll(filepath.Join(ws, ".git"), 0o700))
 		assert.NoErr(t, os.WriteFile(filepath.Join(ws, "MEMORY.md"), nil, 0o600))
 		_, choice, err := selectProjectBackend(ws, MemoryConfig{SugaHome: home})
 		assert.NoErr(t, err)

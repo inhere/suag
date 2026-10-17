@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -50,7 +51,9 @@ type memEnv struct {
 
 func newMemEnv(t *testing.T, policy memoryWritePolicy, readOnly bool, confirm MemoryConfirmFunc) *memEnv {
 	t.Helper()
-	setup, err := buildMemory(t.TempDir(), MemoryConfig{SugaHome: t.TempDir()})
+	workspace := t.TempDir()
+	assert.Require(t, assert.NoErr(t, os.MkdirAll(filepath.Join(workspace, ".git"), 0o700)))
+	setup, err := buildMemory(workspace, MemoryConfig{SugaHome: t.TempDir()})
 	assert.Require(t, assert.NoErr(t, err))
 	assert.Require(t, assert.Eq(t, "files", setup.Project.Backend))
 	repo, err := store.Open(filepath.Join(t.TempDir(), "db", "sessions.db"))
