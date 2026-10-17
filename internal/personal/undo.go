@@ -34,6 +34,10 @@ type CheckpointItem struct {
 	Action     CheckpointAction   `json:"action"`
 	RootStatus SnapshotRootStatus `json:"root_status,omitempty"`
 	Reason     string             `json:"reason,omitempty"`
+	// Conflict is set by Select when the target changed after the snapshot
+	// (contentConflict): undo skips it unless forced, so the plan shown before
+	// the confirmation lists it as skipped (design 3.4).
+	Conflict bool `json:"conflict,omitempty"`
 }
 
 // ShellCommand is a redacted shell_exec event associated with a checkpoint.
@@ -168,6 +172,9 @@ func (u *UndoCore) Select(ctx context.Context, sessionQuery string, n int) ([]Ch
 			}
 			if row.State == SnapshotStateUndone {
 				continue
+			}
+			for i := range row.Items {
+				row.Items[i].Conflict = contentConflict(row.Items[i])
 			}
 			out = append(out, row)
 			selected++

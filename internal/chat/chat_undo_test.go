@@ -99,3 +99,24 @@ func TestRunningTurnKeepsColonCommandOutOfSteering(t *testing.T) {
 	assert.NoErr(t, <-done)
 	assert.Eq(t, []string{"干活"}, h.cast.prompts())
 }
+
+// TestBuildUndoPlanListsConflicts: a target changed after its snapshot is shown
+// as skipped with the conflict reason before the confirmation; with force it is
+// restored and still marked as a conflict.
+func TestBuildUndoPlanListsConflicts(t *testing.T) {
+	row := personal.Checkpoint{
+		TurnID: "turn-1",
+		Items: []personal.CheckpointItem{{Meta: personal.SnapshotMeta{Rel: "a.txt", Size: 4},
+			Action: personal.CheckpointActionRestore, Conflict: true}},
+	}
+	t.Run("default skips the conflict", func(t *testing.T) {
+		got := BuildUndoPlan([]personal.Checkpoint{row}, undoCommand{n: 1})
+		assert.Contains(t, got, "跳过 a.txt")
+		assert.Contains(t, got, "冲突：快照之后被改动过")
+	})
+	t.Run("force restores it", func(t *testing.T) {
+		got := BuildUndoPlan([]personal.Checkpoint{row}, undoCommand{n: 1, force: true})
+		assert.Contains(t, got, "恢复 a.txt")
+		assert.Contains(t, got, "冲突：快照之后被改动过")
+	})
+}

@@ -13,13 +13,14 @@ import (
 )
 
 const (
-	checkpointsCmd = ":checkpoints"
-	undoCmd        = ":undo"
-	undoForceArg   = "force"
-	undoUsageHint  = "用法：:undo [N] [force]（N 为最近 N 个有文件改动的回合）"
-	noUndoHint     = "没有可回滚的快照（本会话没有写工具改动，或快照已按 tools.snapshots 清理）。"
-	undoBusyHint   = "回合进行中，等它结束再执行本地命令"
-	undoConfirm    = "执行？[y] 回滚 [N] 取消："
+	checkpointsCmd     = ":checkpoints"
+	undoCmd            = ":undo"
+	undoForceArg       = "force"
+	undoUsageHint      = "用法：:undo [N] [force]（N 为最近 N 个有文件改动的回合）"
+	noUndoHint         = "没有可回滚的快照（本会话没有写工具改动，或快照已按 tools.snapshots 清理）。"
+	undoConflictReason = "冲突：快照之后被改动过"
+	undoBusyHint       = "回合进行中，等它结束再执行本地命令"
+	undoConfirm        = "执行？[y] 回滚 [N] 取消："
 )
 
 type undoCommand struct {
@@ -183,7 +184,7 @@ func BuildCheckpoints(rows []personal.Checkpoint) string {
 			fmt.Fprintf(&b, "    %s %s%s%s\n", actionLabel(item.Action), cleanText(item.Meta.Rel), sizeSuffix(item.Meta.Size), reasonSuffix(item.Reason))
 		}
 		for _, shell := range row.Shell {
-			fmt.Fprintf(&b, "    shell_exec：%s%s\n", cleanText(shell.Command), taskSuffix(shell.TaskID))
+			fmt.Fprintf(&b, "    shell_exec：%s%s（改动不在快照范围内）\n", cleanText(shell.Command), taskSuffix(shell.TaskID))
 		}
 		totalFiles += row.Files
 		totalBytes += row.Bytes
@@ -215,7 +216,16 @@ func BuildUndoPlan(rows []personal.Checkpoint, command undoCommand) string {
 			first = false
 		}
 		for _, item := range row.Items {
-			fmt.Fprintf(&b, "  %s %s%s%s\n", actionLabel(item.Action), cleanText(item.Meta.Rel), sizeSuffix(item.Meta.Size), reasonSuffix(item.Reason))
+			action, reason := item.Action, item.Reason
+			if item.Conflict {
+				// Undo skips a target changed after the snapshot unless forced
+				// (personal.contentConflict); force covers it and says so.
+				reason = undoConflictReason
+				if !command.force {
+					action = personal.CheckpointActionSkip
+				}
+			}
+			fmt.Fprintf(&b, "  %s %s%s%s\n", actionLabel(action), cleanText(item.Meta.Rel), sizeSuffix(item.Meta.Size), reasonSuffix(reason))
 		}
 		for _, shell := range row.Shell {
 			fmt.Fprintf(&b, "  shell_exec：%s%s（改动不在快照范围内）\n", cleanText(shell.Command), taskSuffix(shell.TaskID))

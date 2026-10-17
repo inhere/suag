@@ -338,6 +338,31 @@ func (u *UndoCore) deleteAbsent(ctx context.Context, sessionID, turnID string, m
 	return out, nil
 }
 
+// contentConflict reports whether undoing item would hit the content conflict
+// restoreFile/deleteAbsent refuse without force: the current file is neither
+// what the write left (sha256_after) nor, for a restore, already the snapshot.
+// It only reads the file, for the plan shown before the confirmation; the
+// undo itself checks again under the session lock.
+func contentConflict(item CheckpointItem) bool {
+	if item.Meta.SHA256After == "" ||
+		(item.Action != CheckpointActionRestore && item.Action != CheckpointActionDelete) {
+		return false
+	}
+	root, _, current, status, err := openCurrentFile(item.Meta)
+	if err != nil {
+		return false
+	}
+	_ = root.Close()
+	if status != currentRegular {
+		return false
+	}
+	hash := nativeSHA256(current)
+	if item.Action == CheckpointActionRestore && hash == item.Meta.SHA256Before {
+		return false
+	}
+	return hash != item.Meta.SHA256After
+}
+
 const (
 	currentAbsent = iota
 	currentRegular
