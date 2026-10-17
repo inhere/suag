@@ -34,6 +34,9 @@ func New(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, build B
   suga                         Start interactive chat
   suga run --prompt "hello"    Run one turn
   suga acp                     Serve ACP over stdio
+  suga init                    Create the onboarding config
+  suga config get model        Show the effective model and source
+  suga models --json           List configured models offline
   suga undo <session> --list   List file checkpoints
   suga trace <session> --json  Show the event timeline of a session
 `
@@ -51,6 +54,8 @@ func New(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, build B
 		NewPersonalCommand(ctx, "chat", stdin, stdout, stderr),
 		newACPCommand(ctx, stdin, stdout, stderr),
 		newInitCommand(stdout, stderr),
+		newConfigCommand(stderr),
+		newModelsCommand(stdout, stderr),
 		newVersionCommand(stdout, stderr, build),
 		newPSCommand(stdout, stderr),
 		newSendCommand(stdin, stderr),
