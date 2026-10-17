@@ -230,7 +230,16 @@ func renderUndoPlan(rows []personal.Checkpoint, options personal.UndoOptions) st
 	}
 	for _, row := range rows {
 		for _, item := range row.Items {
-			fmt.Fprintf(&b, "  %s %s%s%s\n", undoActionLabel(item.Action), cleanUndoValue(item.Meta.Rel), undoSizeSuffix(item.Meta.Size), undoReasonSuffix(item.Reason))
+			action, reason := item.Action, item.Reason
+			if item.Conflict {
+				// Undo skips a target changed after its snapshot unless forced
+				// (personal.contentConflict), the same plan chat shows.
+				reason = "冲突：快照之后被改动过"
+				if !options.Force {
+					action = personal.CheckpointActionSkip
+				}
+			}
+			fmt.Fprintf(&b, "  %s %s%s%s\n", undoActionLabel(action), cleanUndoValue(item.Meta.Rel), undoSizeSuffix(item.Meta.Size), undoReasonSuffix(reason))
 		}
 		for _, shell := range row.Shell {
 			fmt.Fprintf(&b, "  shell_exec：%s%s（改动不在快照范围内）\n", cleanUndoValue(shell.Command), undoTaskSuffix(shell.TaskID))

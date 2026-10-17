@@ -10,6 +10,7 @@ import (
 
 	"github.com/gookit/goutil/x/assert"
 	appconfig "github.com/inhere/suga/internal/config"
+	"github.com/inhere/suga/internal/personal"
 	personalprocess "github.com/inhere/suga/internal/personal/process"
 	"github.com/inhere/suga/internal/personal/store"
 )
@@ -72,5 +73,21 @@ func TestUndoCLISafetyAndExitCodes(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err = newCLI(ctx, strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"undo", "cli-undo-safe", "--yes"})
 		assert.Eq(t, 5, ExitCode(err))
+	})
+}
+
+// TestRenderUndoPlanListsConflicts: the CLI plan, like chat's, shows a target
+// changed after its snapshot as skipped, or restored with --force.
+func TestRenderUndoPlanListsConflicts(t *testing.T) {
+	rows := []personal.Checkpoint{{TurnID: "turn-1", Items: []personal.CheckpointItem{{
+		Meta: personal.SnapshotMeta{Rel: "a.txt", Size: 4}, Action: personal.CheckpointActionRestore, Conflict: true}}}}
+	t.Run("default skips", func(t *testing.T) {
+		got := renderUndoPlan(rows, personal.UndoOptions{Count: 1})
+		assert.StrContains(t, got, "跳过 a.txt")
+		assert.StrContains(t, got, "冲突：快照之后被改动过")
+	})
+	t.Run("force restores", func(t *testing.T) {
+		got := renderUndoPlan(rows, personal.UndoOptions{Count: 1, Force: true})
+		assert.StrContains(t, got, "恢复 a.txt")
 	})
 }
