@@ -56,3 +56,19 @@ func TestRuleMatchesPathWindowsNames(t *testing.T) {
 		assert.False(t, allow.MatchesPath(Target{Tool: "file_write", Root: root, Path: target}))
 	})
 }
+
+// TestRuleMatchesPathRootWithShortName: a short-name spelling in the approved
+// root (CI runners: C:\Users\RUNNER~1\...) must not void allows below it; only
+// the part below the root is checked for unsafe Windows names.
+func TestRuleMatchesPathRootWithShortName(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "RUNNER~1")
+	assert.NoErr(t, os.MkdirAll(filepath.Join(root, "docs"), 0o755))
+	allow := Rule{Tool: "file_write", Root: root, Path: []string{"docs/**"}, Action: Allow}
+	t.Run("allow below a short-name root", func(t *testing.T) {
+		assert.True(t, allow.MatchesPath(Target{Tool: "file_write", Root: root, Path: `docs\a.txt`}))
+	})
+	t.Run("a short name below the root still gives no allow", func(t *testing.T) {
+		assert.NoErr(t, os.MkdirAll(filepath.Join(root, "docs", "LONGNA~1"), 0o755))
+		assert.False(t, allow.MatchesPath(Target{Tool: "file_write", Root: root, Path: `docs\LONGNA~1\a.txt`}))
+	})
+}

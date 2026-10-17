@@ -130,7 +130,10 @@ func resolveTargetPath(root, target string) (resolvedPath, bool) {
 	base.real = real
 	base.realRelative = filepath.ToSlash(realRelative)
 	base.realOK = true
-	base.allowSafe = !internalLink && !finalUnsafe && !windowsUnsafePath(absolute)
+	// Only the part below the root is checked for Windows-unsafe names: the root
+	// is the approved workspace or directory, and a short-name spelling of it
+	// (C:\Users\RUNNER~1\...) must not void every allow below it.
+	base.allowSafe = !internalLink && !finalUnsafe && !windowsUnsafePath(relative)
 	return base, true
 }
 
