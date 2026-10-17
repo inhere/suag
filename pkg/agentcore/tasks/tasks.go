@@ -178,6 +178,7 @@ type RunningCommand struct {
 	Cmd          *exec.Cmd
 	Tree         ProcessTree
 	AttachOutput func(io.Writer)
+	Wait         <-chan error
 	Started      time.Time
 	// MaxDuration is measured from Started; zero uses the manager limit.
 	MaxDuration time.Duration
@@ -309,11 +310,14 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Info, error) {
 // a foreground shell reaches its handoff threshold; the caller's process tree
 // and output stream are transferred before the manager starts waiting for it.
 func (m *Manager) Adopt(ctx context.Context, spec Spec, running RunningCommand) (Info, error) {
+	if err := ctx.Err(); err != nil {
+		return Info{}, err
+	}
 	if running.Cmd == nil || running.Cmd.Process == nil {
 		return Info{}, errors.New("a running command is required")
 	}
-	if running.Tree == nil || running.AttachOutput == nil {
-		return Info{}, errors.New("a running command needs its tree and output attachment")
+	if running.Tree == nil || running.AttachOutput == nil || running.Wait == nil {
+		return Info{}, errors.New("a running command needs its tree, output attachment and waiter")
 	}
 	sid := m.cfg.Session(ctx)
 	if sid == "" {
@@ -364,7 +368,7 @@ func (m *Manager) Adopt(ctx context.Context, spec Spec, running RunningCommand) 
 	// owned by the task and the foreground caller must no longer close the tree.
 	running.AttachOutput(t.out)
 	m.registerWithDuration(s, t, started, running.MaxDuration)
-	go m.wait(s, t, running.Cmd)
+	go m.waitResult(s, t, running.Cmd, running.Wait)
 	return t.snapshot(), nil
 }
 
@@ -395,7 +399,20 @@ func (m *Manager) registerWithDuration(s *session, t *task, started time.Time, m
 
 // wait reaps the command and records how it ended.
 func (m *Manager) wait(s *session, t *task, cmd *exec.Cmd) {
-	err := cmd.Wait()
+	m.waitResult(s, t, cmd, waitCommand(cmd))
+}
+
+func waitCommand(cmd *exec.Cmd) <-chan error {
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	return done
+}
+
+// waitResult consumes the one and only Wait result. Adopted commands already
+// have a waiter from their foreground caller, so calling cmd.Wait again would
+// lose the exit result and leave the task in a failed state.
+func (m *Manager) waitResult(s *session, t *task, cmd *exec.Cmd, done <-chan error) {
+	err := <-done
 	t.tree.Close() // also ends children left running in the background
 	code := cmd.ProcessState.ExitCode()
 	status := Exited

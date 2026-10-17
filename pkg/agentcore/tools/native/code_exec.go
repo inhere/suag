@@ -299,21 +299,27 @@ func (t *ShellExecTool) Execute(ctx context.Context, call api.ToolCall) (*api.To
 		tree.Close()
 	case <-ctx.Done():
 		_ = tree.Kill()
-		waitErr = <-done
+		<-done
 		tree.Close()
 		return nil, ctx.Err()
 	case <-handoff:
+		if ctx.Err() != nil {
+			_ = tree.Kill()
+			<-done
+			tree.Close()
+			return nil, ctx.Err()
+		}
 		partial := foregroundOutput(output, t.maxOut)
 		info, err := t.tasks.Adopt(ctx, tasks.Spec{Kind: "shell", Summary: taskSummary(command),
 			Clean: cleanTaskLine}, tasks.RunningCommand{
-			Cmd: cmd, Tree: tree, Started: start, MaxDuration: t.maxTimeout,
+			Cmd: cmd, Tree: tree, Wait: done, Started: start, MaxDuration: t.maxTimeout,
 			AttachOutput: func(dst io.Writer) { output.attach(dst) },
 		})
 		if err != nil {
 			// Adoption is the ownership boundary. If it cannot be completed, kill
 			// the original tree here rather than leaving an orphan behind.
 			_ = tree.Kill()
-			waitErr = <-done
+			<-done
 			tree.Close()
 			return nil, fmt.Errorf("shell_exec: transfer to background: %w", err)
 		}
