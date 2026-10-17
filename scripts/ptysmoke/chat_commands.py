@@ -27,7 +27,9 @@ def main():
         # A turn of two model requests (1.0s each) that starts a background task:
         # longer than chat.notify_after (1s), so its end rings the bell.
         m=s.mark(); s.line("hello"); s.check("turn ends", s.until(r"tokens · ",m))
-        s.check("completion bell", "\a" in s.text(m))
+        # The bell may follow the status line by a moment (it is written when the
+        # turn is wrapped up): wait for it instead of checking at once.
+        s.check("completion bell", s.until(r"\x07", m, timeout=3))
         m=s.mark(); s.line(":usage"); s.check("usage after turn", s.until(r"本次 1 轮",m))
         m=s.mark(); s.line(":tasks"); s.check("running task listed", s.until(r"running",m) and s.contains(r"TASK_COMMAND|sleep 5",m))
         s.send(CTRL_C); time.sleep(.2); s.send(CTRL_C); s.close()
