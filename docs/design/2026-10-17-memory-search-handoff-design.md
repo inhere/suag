@@ -1,13 +1,14 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # 记忆检索与交接改进设计
 
-> 状态：Draft 0.1 / 待用户审批
+> 状态：Draft 0.2 / 已批准实施
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-17 | suga（gofer job） | 依据 `suga-xis4`、`suga-fuw0`、`suga-8nzb` 与 `local/analysis/2026-10-17-hy-memory-zvec-exploration.md` 的 A/C 节，设计 files 后端的 FTS5 派生索引、交接摘要固定小节并纳入 FTS、记忆条目可选 `applies_when`。 |
+| 0.2 | 2026-10-18 | 监督（Claude） | 用户批准实施（2026-10-18“记忆检索的设计按推荐，批准”）：Q1–Q5 按建议结论执行。 |
 
 ### 思考模式与范围冻结
 
