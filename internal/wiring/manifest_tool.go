@@ -1,4 +1,4 @@
-package native
+package wiring
 
 import (
 	"context"
@@ -13,33 +13,33 @@ import (
 )
 
 // ManifestSource produces the manifest value (any JSON-encodable value) on
-// demand. The host injects it so this package never depends on wiring or the
+// demand. The caller injects it so the tool has no dependency on the
 // configuration layer.
 type ManifestSource func(ctx context.Context) (any, error)
 
-// ManifestTool (suga_manifest) reports what this suga instance can do: the
+// manifestTool (suga_manifest) reports what this suga instance can do: the
 // model and tool set, memory backends, output limits. It is read-only and
 // makes no network request.
-type ManifestTool struct {
+type manifestTool struct {
 	source ManifestSource
 }
 
 // NewManifestTool creates the suga_manifest tool reading from source.
-func NewManifestTool(source ManifestSource) *ManifestTool { return &ManifestTool{source: source} }
+func NewManifestTool(source ManifestSource) *manifestTool { return &manifestTool{source: source} }
 
-func (*ManifestTool) Name() string { return "suga_manifest" }
+func (*manifestTool) Name() string { return "suga_manifest" }
 
-func (*ManifestTool) Description() string {
+func (*manifestTool) Description() string {
 	return "Show this agent's capabilities as JSON: version, models, tools with their metadata, MCP servers, " +
 		"skills, memory backends per scope, output limits and write policy. Read-only; no network access."
 }
 
 // ToolMeta marks the tool read-only: the data is local configuration.
-func (*ManifestTool) ToolMeta() tools.Meta {
+func (*manifestTool) ToolMeta() tools.Meta {
 	return tools.Meta{Category: tools.CategoryRead, ReadOnly: true}
 }
 
-func (t *ManifestTool) Schema() api.ToolSchema {
+func (t *manifestTool) Schema() api.ToolSchema {
 	return api.ToolSchema{
 		Name:        t.Name(),
 		Description: t.Description(),
@@ -58,7 +58,9 @@ func (t *ManifestTool) Schema() api.ToolSchema {
 	}
 }
 
-func (t *ManifestTool) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
+// Execute obtains the current manifest, optionally selects one top-level section,
+// and returns the result as JSON text for the model.
+func (t *manifestTool) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	if t.source == nil {
 		return nil, errors.New("suga_manifest: no manifest source configured")
 	}

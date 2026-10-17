@@ -484,7 +484,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	// suga_manifest is read-only local data, so it is registered in every
 	// mode. It reports the live registry (MCP tools included) when called.
-	capabilities.Registry.Register(native.NewManifestTool(func(context.Context) (any, error) {
+	capabilities.Registry.Register(NewManifestTool(func(context.Context) (any, error) {
 		return BuildManifest(ManifestInput{
 			Version: buildVersion, Settings: settings, Registry: capabilities.Registry,
 			MCPServers: append(appconfig.ReadMCPServerSettings(), servers...),
