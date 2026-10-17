@@ -2,6 +2,7 @@ package agentcore
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
@@ -45,6 +46,16 @@ func TestValidateToolCallArguments(t *testing.T) {
 	}{
 		"a fitting call": {
 			args: map[string]any{"path": "a.go", "content": "x", "chunk": float64(3), "mode": "replace"},
+		},
+		"an int of a host caller fits an integer field": {
+			args: map[string]any{"path": "a.go", "content": "x", "chunk": 3},
+		},
+		"a json.Number of a host caller fits an integer field": {
+			args: map[string]any{"path": "a.go", "content": "x", "chunk": json.Number("3")},
+		},
+		"the limits hold for host-side numbers too": {
+			args: map[string]any{"path": "a.go", "content": "x", "chunk": 0},
+			want: []string{`argument "chunk" must be at least 1, got 0`},
 		},
 		"missing and blank required fields are named": {
 			args: map[string]any{"path": "  "},

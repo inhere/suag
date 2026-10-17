@@ -223,8 +223,6 @@ func (v *schemaValidator) value(loc string, value any, schema map[string]any) {
 	v.checkType(loc, value, schema)
 	v.checkEnum(loc, value, schema)
 	switch typed := value.(type) {
-	case float64:
-		v.checkRange(loc, typed, schema)
 	case string:
 		v.checkLength(loc, typed, schema)
 	case []any:
@@ -236,6 +234,10 @@ func (v *schemaValidator) value(loc string, value any, schema map[string]any) {
 		}
 	case map[string]any:
 		v.object(loc, typed, schema)
+	default:
+		if number, ok := numericValue(value); ok {
+			v.checkRange(loc, number, schema)
+		}
 	}
 }
 
@@ -335,10 +337,9 @@ func schemaTypes(raw any) []string {
 // matchesJSONType reports whether a decoded JSON value has the named JSON type
 // (an integral number matches "integer" as well as "number").
 func matchesJSONType(value any, typ string) bool {
-	if typ == "integer" {
-		if number, ok := value.(float64); ok {
-			return number == math.Trunc(number)
-		}
+	if typ == "integer" || typ == "number" {
+		number, ok := numericValue(value)
+		return ok && (typ == "number" || number == math.Trunc(number))
 	}
 	return jsonTypeName(value) == typ
 }
@@ -346,16 +347,11 @@ func matchesJSONType(value any, typ string) bool {
 // jsonTypeName names the JSON type of a decoded value, as a model reading the
 // error understands it; a value that is not JSON is named by its Go type.
 func jsonTypeName(value any) string {
-	switch v := value.(type) {
+	switch value.(type) {
 	case nil:
 		return "null"
 	case bool:
 		return "boolean"
-	case float64:
-		if v == math.Trunc(v) {
-			return "integer" // a whole number is reported as the type models know
-		}
-		return "number"
 	case string:
 		return "string"
 	case []any:
@@ -363,13 +359,20 @@ func jsonTypeName(value any) string {
 	case map[string]any:
 		return "object"
 	}
+	if number, ok := numericValue(value); ok {
+		if number == math.Trunc(number) {
+			return "integer" // a whole number is reported as the type models know
+		}
+		return "number"
+	}
 	return fmt.Sprintf("%T", value)
 }
 
-// schemaNumber reads a schema's numeric keyword (JSON numbers decode to
-// float64, but a hand-written schema may hold an int).
-func schemaNumber(raw any) (float64, bool) {
-	switch v := raw.(type) {
+// numericValue reads a JSON number in whatever Go type the caller used: a
+// provider decodes one to float64, but a host embedding agentcore may pass an
+// int, and a decoder with UseNumber a json.Number.
+func numericValue(value any) (float64, bool) {
+	switch v := value.(type) {
 	case float64:
 		return v, true
 	case int:
@@ -384,15 +387,22 @@ func schemaNumber(raw any) (float64, bool) {
 	return 0, false
 }
 
+// schemaNumber reads a schema's numeric keyword (JSON numbers decode to
+// float64, but a hand-written schema may hold an int).
+func schemaNumber(raw any) (float64, bool) {
+	return numericValue(raw)
+}
+
 // jsonValueEqual compares two decoded JSON values, so an enum member and the
-// argument can be matched (numbers are float64, arrays and objects compare by
-// value).
+// argument can be matched (arrays and objects compare by value, numbers by
+// their numeric value, whatever Go type either side used).
 func jsonValueEqual(a, b any) bool {
-	if af, ok := a.(float64); ok {
-		if bf, ok := b.(float64); ok {
-			return af == bf
-		}
-		return false
+	if an, ok := numericValue(a); ok {
+		bn, ok := numericValue(b)
+		return ok && an == bn
+	}
+	if _, ok := numericValue(b); ok {
+		return false // a number never equals a string, boolean or the like
 	}
 	return reflect.DeepEqual(a, b)
 }
