@@ -4,7 +4,7 @@
 The scenario drives the real ``suga chat`` binary with fakellm.py and a tiny
 stdio MCP server.  It checks that the environment lists the found command and
 connected preferred MCP server but not the missing command, that a preferred
-MCP tool is directly visible with ``tools.deferred: always`` (no tool_search),
+MCP tool is directly visible with ``tools.deferred: auto`` (no tool_search),
 and that the ordinary approval question still appears.  It then checks the
 turn_context trace contains only the names that were listed.
 
@@ -189,7 +189,8 @@ def main():
       env:
         SMOKE_SECRET: {MCP_SECRET}
 """
-    write_home(home, args.port, tools_extra="  deferred: always\n" + preferred,
+    write_home(home, args.port, tools_extra="  deferred: auto\n" + preferred,
+               provider_extra="    models:\n      m1:\n        context_window: 10\n",
                extra=mcp)
     env = dict(os.environ, SUGA_HOME=home, HOME=home, SUGA_HOOKS="off", TERM="xterm",
                NO_COLOR="1")
@@ -222,7 +223,8 @@ def main():
                       attrs.get("preferred_tools") == [FOUND_NAME, MCP_NAME])
             pty.check("trace: preferred observation is names only",
                       "搜索文本" not in trace.stdout and "SMOKE_SECRET" not in trace.stdout
-                      and MISSING_NAME not in attrs.get("preferred_tools", []))
+                      and MISSING_NAME not in attrs.get("preferred_tools", [])
+                      and "preferred_count" not in attrs and "preferred_hash" not in attrs)
 
         for name, ok in checks:
             pty.check(name, ok)
