@@ -11,7 +11,9 @@ two Ctrl-C exit.
   python3 -I scripts/ptysmoke/chat_edit.py --bin tmp/smoke/suga
 """
 import argparse
+import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -42,6 +44,8 @@ def scenario(s, ws):
     s.check("ctrl-c once: hint", s.until(r"再按一次 Ctrl\+C 退出", m))
     m = s.mark(); s.send(CTRL_C)
     s.check("ctrl-c twice: exit", s.until(r"续接：suga chat --resume sess_", m))
+    match = re.search(r"--resume (sess_\S+)", s.text(m))
+    return match.group(1) if match else ""
 
 
 def main():
@@ -73,8 +77,22 @@ def main():
     try:
         wait_port(fake)
         s = PtySession([binary, "chat"], env=env, cwd=ws)
-        scenario(s, ws)
+        session = scenario(s, ws)
         s.close()
+        s.check("session id", bool(session))
+        if session:
+            trace = subprocess.run([binary, "trace", session, "--json"], capture_output=True,
+                                   text=True, env=env, cwd=ws, timeout=60)
+            events = []
+            for line in trace.stdout.splitlines():
+                try:
+                    events.append(json.loads(line))
+                except ValueError:
+                    pass
+            tool = next((e for e in events if e.get("kind") == "tool" and e.get("name") == "file_edit"), {})
+            snapshot = (tool.get("attrs") or {}).get("snapshot")
+            s.check("trace: file_edit has complete snapshot attrs",
+                    isinstance(snapshot, dict) and snapshot.get("status") == "complete")
     finally:
         if s is not None:
             s.close(grace=0)

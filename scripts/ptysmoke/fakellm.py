@@ -6,8 +6,9 @@ Modes (--mode):
         request after the tool result gets the text --reply. (default)
   text  every request gets the text --reply.
   edit  every user message gets file_grep (pattern SMOKE_TARGET), then after
-        its result file_edit on target.txt ("SMOKE_TARGET old" -> "... new"),
-        then the text --reply.
+        its result file_edit on target.txt ("SMOKE_TARGET old" -> "... new");
+        messages containing 删除/新建/附加/shell select file_remove/file_write/
+        shell_exec so one fake server can drive undo scenarios, then text --reply.
   memory  every user message gets shell_exec (--command), then memory add
         (kind feedback, title "Smoke rule"), then the text --reply; a user
         message containing "直接" skips the shell_exec.
@@ -94,6 +95,28 @@ def message_tail(messages, count=4, limit=90):
             text = (text + " tool_calls:" + names).strip()
         out.append({"role": m.get("role"), "text": text[:limit]})
     return out
+
+
+
+def edit_call_sequence(args, user_text):
+    """Choose a small deterministic edit-mode script for the undo smoke.
+
+    The ordinary chat_edit flow stays grep -> edit. Named prompts select one
+    write tool so the undo scenario can exercise new files, trash and shell-only
+    turns without adding a second fake provider protocol.
+    """
+    text = str(user_text)
+    if "收到回滚通知" in text or "回滚通知" in text:
+        return []
+    if "删除" in text:
+        return [("file_remove", {"path": args.remove_path})]
+    if "新建" in text or "附加" in text:
+        return [("file_write", {"path": args.write_path, "content": args.write_body})]
+    if "shell" in text:
+        return [("shell_exec", {"command": args.shell_command})]
+    return [("file_grep", {"pattern": "SMOKE_TARGET"}),
+            ("file_edit", {"path": args.edit_path, "old_string": args.edit_old,
+                           "new_string": args.edit_new})]
 
 
 def build_reply(args):
@@ -184,9 +207,7 @@ def make_handler(args):
                     break
                 if m.get("role") == "tool":
                     step += 1
-            edit_calls = [("file_grep", {"pattern": "SMOKE_TARGET"}),
-                          ("file_edit", {"path": "target.txt", "old_string": "SMOKE_TARGET old",
-                                         "new_string": "SMOKE_TARGET new"})]
+            edit_calls = edit_call_sequence(args, user_text)
             adddir_calls = [("file_read", {"path": args.read_path}),
                             ("file_write", {"path": args.write_path, "content": args.write_body})]
             memory_calls = [("shell_exec", {"command": args.command}),
@@ -342,6 +363,11 @@ def main():
     p.add_argument("--read-path", default="", help="adddir mode: file to read (outside the workspace)")
     p.add_argument("--write-path", default="", help="adddir mode: file to write (under a :rw added directory)")
     p.add_argument("--write-body", default="SMOKE_ADD_DIR_WRITE", help="adddir mode: content of the written file")
+    p.add_argument("--edit-path", default="target.txt", help="edit mode: file_edit target")
+    p.add_argument("--edit-old", default="SMOKE_TARGET old", help="edit mode: old_string")
+    p.add_argument("--edit-new", default="SMOKE_TARGET new", help="edit mode: new_string")
+    p.add_argument("--remove-path", default="delete.txt", help="edit mode: file_remove target")
+    p.add_argument("--shell-command", default="echo SMOKE_SHELL", help="edit mode: shell_exec command")
     p.add_argument("--agent", action="store_true", help="tool mode: call the agent tool instead of shell_exec")
     p.add_argument("--child-delay", type=float, default=0, help="extra seconds before each sub-agent response")
     p.add_argument("--fail-first", type=int, default=0, help="answer the first N requests with HTTP 503")
