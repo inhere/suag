@@ -1,7 +1,7 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # 配置的优先工具实施计划
 
-> 状态：Draft 0.2 / 待用户审批
+> 状态：Draft 0.3 / 已批准实施
 
 ## 修订记录
 
@@ -9,6 +9,7 @@
 |---|---|---|---|
 | 0.1 | 2026-10-17 | suga（gofer job） | 依据 `docs/design/2026-10-17-preferred-tools-design.md` Draft 0.1，拆分通用配置/探测、runtime 提示与延迟、manifest/trace、验证 Gate。 |
 | 0.2 | 2026-10-17 | 监督（Claude） | 跟随设计 0.2 审核简化：去掉 manifest MCP probe、分段 MCP 健康检查与 provider health seam、子 agent 接线、trace 计数/hash；T0 的 P5 与 Gate B 随之取消。 |
+| 0.3 | 2026-10-17 | 监督（Claude） | 用户批准实施（2026-10-17“批准实施”），按 0.2 审核简化执行。 |
 
 ## 0.2 审核简化（与下文冲突时以本节为准；对应任务里的 MCP probe / health seam / 子 agent / hash 内容不做）
 
