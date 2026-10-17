@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.30.0] - 2026-10-18
+
+chat 默认汇总子 agent 进度（`chat.agent_progress`），不再逐条刷子 agent 的工具调用；memory 工具补充价值门槛与“不记”清单。
+
 ### 变更
 
 - chat 默认汇总子 agent 的工具调用进度，支持 `chat.agent_progress` 的 `summary`、`full` 与 `off` 模式；stream-json、ACP 与 trace 保持逐条事件。
@@ -702,7 +706,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.29.0...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/inhere/suga/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/inhere/suga/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/inhere/suga/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/inhere/suga/compare/v0.27.0...v0.27.1
