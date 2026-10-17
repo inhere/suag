@@ -4,12 +4,17 @@
 
 ## [未发布]
 
+## [0.27.0] - 2026-10-17
+
+文件改动可回滚（快照 + `:undo` / `suga undo`）；审批规则文件与按范围的“总是允许/拒绝”；回合/会话 token 与成本预算；session_search 中英混合检索与游标分页；chat 输入历史、补全与 `:model`；修复 Windows 部分终端 Enter 无法发送。
+
 ### 新增
 
+- 文件工具改动可回滚：`file_write`/`file_edit`/`file_remove` 改文件前自动快照，chat 里 `:checkpoints` 查看、`:undo [N] [force]` 回滚（确认前的清单会列出冲突与 shell 改动），CLI 用 `suga undo <session>`；回滚后下一回合把 `suga.undo` 事实告知模型（issue suga-wl0l）。
+- 审批规则：`tools.approval_rules` 从用户级与项目级 `approval-rules.yaml` 读取 `allow`/`ask`/`deny` 规则，取最强命中，项目 `allow` 需 `project_trust`；chat 的 `a`/`d` 按范围生成会话规则并可写回，ACP 支持 `allow_always`/`reject_always`（issue suga-ob4a）。
 - 额度耗尽（`error_kind: provider_quota`）且 provider 给出恢复时间时，`run --output-format stream-json` 的 `error` 行与 ACP 错误 `data` 另带 `reset_at`（RFC3339），此前只写进 trace；Gofer 用它在 job 错误里显示额度恢复时间。
 - run/chat 新增回合或会话级 token、成本预算的配置读取与 `--budget-tokens`、`--budget-cost-usd`、`--budget-scope` flags，支持环境变量覆盖。
 - Gofer 用法文档补充预算环境变量注入、turn/session 选择、缓存扣除口径，以及 Suga 软收尾和 Gofer 硬熔断的边界。
-
 - 预算回合在达到 token 或成本上限后通过现有 wrap-up 机制收尾，并记录可辨识的 budget 事件、用量快照与无价表/关闭估算警告。
 - 会话预算耗尽时在用户消息落库后于首个模型请求前短路收尾；后台子 agent 的挂起用量计入会话但不挤占下一回合的 turn 预算。
 - 前台子 agent 在父回合预算耗尽时协同收尾，后台子 agent 不受父回合预算收尾影响并继续使用自身限制。
@@ -17,9 +22,7 @@
 - chat 状态行显示回合/会话预算占用、估算标记与一次性提醒；预算收尾、会话短路、插话后的新回合及未配置回归加入伪终端冒烟。
 - chat 预算回合的最终用量快照与 wrap-up 原因保持一致；会话预算短路不再打印空答复前缀。
 - ACP 预算收尾继续返回 `end_turn`，`usage_update` 的 `_meta` 在启用预算时可选暴露 scope、limit、used、remaining、exceeded、reason 与 `estimated`；未配置预算时保持兼容。
-
 - `suga manifest --json` 与 `suga trace` 增加审批规则来源、项目 hash/信任诊断及命中规则与范围，便于解释工具为何放行或拒绝。
-
 - 审批规则将 MCP legacy 白名单编译为统一规则，并固定 chat、run、ACP 与只读入口的默认动作。
 - chat 审批支持按命令前缀、写编辑目录和删除精确路径生成会话级 allow/deny 规则，并可通过 `u`/`p`/`N` 选择用户级、仅 deny 的项目级或本会话写回范围。
 - 自动识别 idev-std 发行目录与工作空间的 `tmp/idev-std` 加载产物目录为只读根，可通过 `tools.standards_roots` 关闭；支持 `IDEV_STD_RELEASES_ROOT` 与兼容的 `INHERE_DEV_STANDARDS_ROOT`。
@@ -33,15 +36,6 @@
 - session_search 增加进程内稳定快照分页，限制 500 条结果并提供 10 分钟 TTL / 64 个快照的 v1 游标续接。
 - session_search 的 Ledger 查询接口透传 workspace/current scope、kind、时间窗与 v1 游标，并向上层返回续接游标和说明。
 - 为 session_search 增加固定种子中英混合语料 benchmark，记录 1 万/10 万条查询基线并明确 S2 bigram 不纳入本期。
-
-### 变更
-
-- 审批规则文档现完整说明独立 YAML 文件、`deny > ask > allow`、shell/path 的 fail-closed 限制、项目 hash 信任、chat 的 `a/d/u/p/N`、ACP `allow_always/reject_always`、入口默认动作，以及 manifest/trace 诊断；`run` 对内置保护路径的拒绝是有意行为，可用 `tools.approval_rules.enabled: false` 回退。
-
-### 修复
-
-- chat 审批在连续追问时正确重绘第二个问题提示，并保留第一个回答的终端回显。
-
 - 写工具在实际写盘前可记录文件快照并在完成后补写状态，默认保持原有工具行为，支持后续会话回滚能力。
 - 新增不依赖 Provider 的 checkpoint 核心：复用会话 gate 与 run/locks，严格校验会话 cwd 和持久化 :rw 附加目录。
 - 回滚核心按调用逆序恢复文件内容，支持冲突检测、`--force`、幂等跳过及独立 `pre-undo` 快照。
@@ -50,15 +44,21 @@
 - wiring 统一读取写操作快照上限与清理策略，并让 run、chat、ACP 和 `suga gc` 共享快照装配与空间统计。
 - CLI 新增 `suga undo`，支持会话前缀、回合/N/强制回滚、确认、JSON 清单与退出码。
 
-### 修复
-
-- 回滚前校验 undo 目标的 root/真实路径、文件类型、链接身份、硬链接和审批保护路径，逐文件失败时保持 partial。
-- chat 终端显示会清洗模型回答、工具结果与 diff 预览中的 ESC/OSC/CSI 等控制序列，避免恶意文本清屏、改标题或写剪贴板。
-
 ### 变更
 
+- 审批规则文档现完整说明独立 YAML 文件、`deny > ask > allow`、shell/path 的 fail-closed 限制、项目 hash 信任、chat 的 `a/d/u/p/N`、ACP `allow_always/reject_always`、入口默认动作，以及 manifest/trace 诊断；`run` 对内置保护路径的拒绝是有意行为，可用 `tools.approval_rules.enabled: false` 回退。
 - session_search 的中文混合检索、过滤与游标分页完成全量回归验证；本期不引入 S2 bigram。
 - Gofer 调用的 `suga run` 与 chat、ACP 共用写操作快照；默认 `tools.snapshots.on_error: deny` 时快照不可写、清理或状态不确定会在写盘前拒绝，显式设为 `continue` 才会继续并标明不可撤销。
+- README 改为按功能点的精简要点，各节开头链接到内置 skill `suga-guide` 新增的参考文档（chat、tools、sessions、observability），细节移入参考文档。
+
+### 修复
+
+- chat 审批在连续追问时正确重绘第二个问题提示，并保留第一个回答的终端回显。
+- 回滚前校验 undo 目标的 root/真实路径、文件类型、链接身份、硬链接和审批保护路径，逐文件失败时保持 partial。
+- chat 终端显示会清洗模型回答、工具结果与 diff 预览中的 ESC/OSC/CSI 等控制序列，避免恶意文本清屏、改标题或写剪贴板。
+- Windows：部分终端里 Enter 变成换行、无法发送（Esc 也可能失灵）——控制台输入句柄会被 Enter 抬起等非按键事件唤醒，被误判为粘贴的后续输入；现在只认队列里真正的按下键（issue suga-uhbr）。
+- `file_edit` 不再把空的 `edits: []`（或 `edits` 旁空的 `old_string`）当作同时传了两种形式：严格 schema 的模型会填全可选字段，此前每次都被拒。
+- 对文件写入选“总是允许”时，chat 与 ACP 的范围改为文件所在目录（此前误把文件本身当目录，`docs/a.txt/**` 什么也匹配不上）；trace 的 `approval_scope` 带上工具名。
 
 ## [0.26.0] - 2026-10-16
 
@@ -655,7 +655,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.26.0...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/inhere/suga/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/inhere/suga/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/inhere/suga/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/inhere/suga/compare/v0.23.1...v0.24.0
