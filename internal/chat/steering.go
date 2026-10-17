@@ -30,7 +30,7 @@ const steerPrompt = "↳ "
 const steerFullHint = "插话过多，请等本步结束"
 
 // errExitChat ends the chat REPL: a second Ctrl-C during a turn asked to leave.
-// Run's loop turns it into the same clean exit as the second one at the
+// Run's loop turns it into the same clean exit as the second Ctrl-C at the
 // prompt.
 var errExitChat = errors.New("leave chat")
 
@@ -61,7 +61,7 @@ type turnInput struct {
 	exited  bool
 }
 
-// turnSteer is one message a person inserted into a running turn.
+// turnSteer is one message a person inserted into the running turn.
 type turnSteer struct {
 	msg personal.Steer
 	// accepted is false when the turn took nothing (it was already ending, or
@@ -202,10 +202,11 @@ func (t *turnInput) insert(line string) {
 	if text == "" {
 		return
 	}
-	// A colon-prefixed local command is never steering. Return the whole line so
-	// the prompt can execute it after the running turn finishes; external delivery
-	// bypasses insert and therefore remains ordinary model input.
-	if strings.HasPrefix(text, ":") {
+	// :undo and :checkpoints are never steering either: they read and change the
+	// session's files, so the line goes back to the input line and runs at the
+	// next prompt, after the turn. External delivery bypasses insert and stays
+	// ordinary model input.
+	if isUndoCommand(text) || isCheckpointCommand(text) {
 		t.state.render.Hint(undoBusyHint)
 		t.state.source.putBackLine(line)
 		return
@@ -235,9 +236,13 @@ func (t *turnInput) insert(line string) {
 	state.render.SteerLate(text)
 }
 
-// withdraw takes the messages still waiting to be delivered back out of
-// the running turn and reports their text, so the input line can carry it for
-// editing (Up on an empty line, the counter-key of the Enter that inserted them).
+// withdraw takes the messages still waiting in the running turn's inbox back out of
+// it and reports their text, so the input line can carry it for editing (Up on an
+// empty line, the counter-key of the Enter that inserted them). Only the messages
+// typed at this keyboard come back: a `suga send --steer` message has a sender
+// waiting for its own fate (Runner.WithdrawSteers). Each one is shown where it was
+// shown as waiting, as withdrawn. The second return value is false when nothing was
+// waiting, in which case Up keeps its usual meaning (history).
 func (t *turnInput) withdraw() (string, bool) {
 	if t == nil || t.state == nil {
 		return "", false
@@ -361,8 +366,8 @@ type steerReturn struct {
 	// (steer_send.go) and is ignored for the messages a person typed here.
 	id   string
 	text string
-	// sender is who sent the steer: "" for the person at this keyboard, otherwise
-	// the sender of a message that came from elsewhere (SteerSender).
+	// sender is who sent it: "" for the person at this keyboard, otherwise the
+	// sender of a message that came from elsewhere (SteerSender).
 	sender string
 }
 

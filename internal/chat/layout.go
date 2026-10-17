@@ -179,8 +179,8 @@ type TurnStatus struct {
 }
 
 // BuildTurnStatus builds the end of a turn: one green line per memory write of
-// the turn, then the grey status line (model, token usage, how full the
-// context is, elapsed time, the local time the turn ended at, inserted messages).
+// the turn, then the grey status line (model, token usage, how full the context
+// is, elapsed time, the local time the turn ended at, inserted messages).
 func BuildTurnStatus(s TurnStatus) []LayoutLine {
 	lines := make([]LayoutLine, 0, len(s.Memory)+1)
 	for _, memory := range s.Memory {
@@ -194,7 +194,7 @@ func BuildTurnStatus(s TurnStatus) []LayoutLine {
 		fmt.Sprintf("in %d / out %d tokens", s.Usage.InputTokens, s.Usage.OutputTokens),
 	)
 	// How full the context is: the same number the idle consolidation compares
-	// with context.context_idle_min_ratio, so the person can tell when it will fire.
+	// with context.idle_min_ratio, so the person can tell when it will fire.
 	if share := contextShare(s.LastInputTokens, s.ContextWindow); share != "" {
 		parts = append(parts, share)
 	}
@@ -249,9 +249,9 @@ type ExitSummary struct {
 }
 
 // BuildExitSummary builds the lines chat leaves behind when it ends: the resume
-// command (behind the session's short name, the address `suga send
-// --session <name>` accepts), this process's turns and tokens (plus the session
-// total when known) and its running time. A chat without a session builds no lines.
+// command (behind the session's short name), this process's turns and tokens
+// (plus the session total when known) and its running time. A chat without a
+// session builds no lines.
 func BuildExitSummary(s ExitSummary) []LayoutLine {
 	if s.SessionID == "" {
 		return nil
