@@ -126,4 +126,7 @@ type RunResult struct {
 	// default, i.e. no limit was configured).
 	Truncated   bool
 	OutputLimit int
+	// EmptyFinal marks a normal completion whose final model answer was empty
+	// after repeated empty replies following a successful tool call.
+	EmptyFinal bool
 }

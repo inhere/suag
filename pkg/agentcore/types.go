@@ -81,6 +81,7 @@ const (
 	UsageEstimatedMetaKey        = api.UsageEstimatedMetaKey
 	EstimatedInputTokensMetaKey  = api.EstimatedInputTokensMetaKey
 	EstimatedOutputTokensMetaKey = api.EstimatedOutputTokensMetaKey
+	EmptyFinalMetaKey            = api.EmptyFinalMetaKey
 )
 
 const (

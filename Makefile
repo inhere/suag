@@ -162,6 +162,7 @@ smoke-chat:
 	python3 -I scripts/ptysmoke/chat_history.py --bin tmp/smoke/suga --work tmp/smoke-history
 	python3 -I scripts/ptysmoke/chat_sanitize.py --bin tmp/smoke/suga --work tmp/smoke-sanitize
 	python3 -I scripts/ptysmoke/chat_budget.py --bin tmp/smoke/suga --work tmp/smoke-budget
+	python3 -I scripts/ptysmoke/chat_empty_final.py --bin tmp/smoke/suga --work tmp/smoke-empty-final
 
 ## clean: remove build artifacts
 clean:

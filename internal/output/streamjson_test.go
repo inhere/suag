@@ -11,6 +11,12 @@ import (
 	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
+func TestResultLineKeepsEmptyResult(t *testing.T) {
+	line := ResultLine("s", personal.RunResult{RunID: "r", State: personal.RunCompleted, Output: ""})
+	assert.Eq(t, "result", line["type"])
+	assert.Eq(t, "", line["result"])
+}
+
 func TestEventLineToolEvents(t *testing.T) {
 	t.Run("tool_call carries name and args summary", func(t *testing.T) {
 		line, ok := EventLine(personal.Event{Kind: "tool_call", SessionID: "s", RunID: "r", ToolName: "file_read", Text: `{"path":"a.txt"}`})
