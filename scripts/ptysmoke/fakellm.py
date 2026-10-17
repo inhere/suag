@@ -110,7 +110,10 @@ def edit_call_sequence(args, user_text):
         return []
     if "删除" in text:
         return [("file_remove", {"path": args.remove_path})]
-    if "新建" in text or "附加" in text:
+    if "新建" in text:
+        # A new file in the workspace (undo deletes it); 附加 writes --write-path.
+        return [("file_write", {"path": "new.txt", "content": "SMOKE_NEW"})]
+    if "附加" in text:
         return [("file_write", {"path": args.write_path, "content": args.write_body})]
     if "shell" in text:
         return [("shell_exec", {"command": args.shell_command})]

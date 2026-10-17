@@ -67,7 +67,7 @@ def scenario(s, ws, shared):
 
     m = s.mark()
     s.line("编辑")
-    s.check("edit tool completed", s.until(r"ok: edited ", m) and turn_end(s, m))
+    s.check("edit tool completed", approve(s, m, "edit") and s.contains(r"ok: edited ", m))
     s.check("edit changed on disk", open(os.path.join(ws, "target.txt"), encoding="utf-8").read()
             == "SMOKE_TARGET new\n")
 
@@ -86,7 +86,8 @@ def scenario(s, ws, shared):
     s.check("undo plan repeats", s.until(r"将回滚最近 1 个回合", m))
     s.check("undo confirmation repeats", s.until(r"执行？\[y\] 回滚", m))
     s.line("y")
-    s.check("undo restores edit", s.until(r"已回滚 1 个文件", m) and turn_end(s, m))
+    # :undo is a local command: no model turn, so no turn status line follows.
+    s.check("undo restores edit", s.until(r"已回滚 1 个文件", m) and s.until(r"❯ ", m))
     s.check("edit restored on disk", open(os.path.join(ws, "target.txt"), encoding="utf-8").read()
             == "SMOKE_TARGET old\n")
 
@@ -103,7 +104,9 @@ def scenario(s, ws, shared):
     m = s.mark()
     s.line(":checkpoints")
     s.check("shell is shown as outside undo", s.until(r"shell_exec：.*改动不在快照范围内", m))
-    s.check("checkpoint terminal text is clean", CONTROL not in s.text_raw(m))
+    # The line editor itself writes escapes; what must not reach the terminal is
+    # the command's own clear-screen sequence (cleanText escapes it).
+    s.check("checkpoint terminal text is clean", CONTROL + "[2J" not in s.text_raw(m))
 
     m = s.mark()
     s.line("新建")
@@ -112,7 +115,9 @@ def scenario(s, ws, shared):
     s.check("new file exists", os.path.exists(new_path))
     m = s.mark()
     s.line(":undo")
-    s.check("new-file undo plan includes shell boundary", s.until(r"shell_exec：.*改动不在快照范围内", m))
+    # :undo 1 covers only the newest turn (the new file); the shell-only turn
+    # before it is outside that range, so its boundary is not repeated here.
+    s.check("new-file undo plan deletes the new file", s.until(r"删除 new\.txt", m))
     s.check("new-file undo confirmation", s.until(r"执行？\[y\] 回滚", m))
     s.line("y")
     s.check("new file deleted by undo", s.until(r"删除 1 个新建文件", m) and not os.path.exists(new_path))
@@ -171,6 +176,7 @@ def scenario(s, ws, shared):
     s.send(CTRL_C)
     s.until(r"再按一次 Ctrl\+C 退出", m)
     s.send(CTRL_C)
+    s.until(r"--resume sess_\S+", m, timeout=5)
     found = re.search(r"--resume (sess_\S+)", s.text(m))
     s.check("exit reports session", bool(found))
     return found.group(1) if found else ""
@@ -281,7 +287,10 @@ def main():
 
             fake.terminate()
             fake_output = fake.communicate(timeout=5)[0]
-            first.check("next turn received suga.undo", "用户回滚了文件改动" in fake_output)
+            # fakellm logs each request as JSON with ASCII escapes: match both forms.
+            notice = "用户回滚了文件改动"
+            first.check("next turn received suga.undo", notice in fake_output
+                        or json.dumps(notice)[1:-1] in fake_output)
             out, events = trace_events(binary, env, session_id, ws2)
             first.check("trace command succeeds", out.returncode == 0)
             undo = [e for e in events if e.get("kind") == "undo"]
