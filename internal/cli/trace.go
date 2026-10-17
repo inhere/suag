@@ -75,9 +75,11 @@ func runTraceWeb(ctx context.Context, out io.Writer, sessionID, addr string) err
 	if err != nil {
 		return err
 	}
-	repo, err := store.Open(dbPath)
+	// A read-only page must not create or migrate the store: an uninitialized
+	// or missing session store is an error, not something to write.
+	repo, err := store.OpenReadOnly(dbPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("trace --web: %w", err)
 	}
 	defer repo.Close()
 	view, err := personal.BuildTraceView(ctx, repo, sessionID)
@@ -86,8 +88,11 @@ func runTraceWeb(ctx context.Context, out io.Writer, sessionID, addr string) err
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
-	load := func(ctx context.Context) (*personal.TraceView, error) {
-		return personal.BuildTraceView(ctx, repo, sessionID)
+	// Loaded per request: the page refreshes (and polls /api/session with its
+	// own since_seq / since_event while the session runs), so it shows new
+	// steps without re-sending the old ones.
+	load := func(ctx context.Context, q personal.TraceQuery) (*personal.TraceView, error) {
+		return personal.BuildTraceViewSince(ctx, repo, sessionID, q)
 	}
 	// The environment a session in its directory would get now; read per
 	// request, so an edited config shows on reload.

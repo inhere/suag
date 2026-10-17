@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 	"unicode/utf8"
 
@@ -31,7 +32,22 @@ type TraceView struct {
 	Events   []webEvent    `json:"events"`
 	Entries  []traceEntry  `json:"entries"`
 	Analysis TraceAnalysis `json:"analysis"`
+	// Delta marks a view that carries only the part the page did not have yet
+	// (see TraceQuery): the page merges it into what it already shows. The
+	// analysis stays the whole session's, so the header numbers keep up.
+	Delta bool `json:"delta,omitempty"`
 }
+
+// TraceQuery narrows a trace view load to what a page does not have yet:
+// entries after SinceSeq and events after SinceEvent. The zero value loads
+// everything (the first load).
+type TraceQuery struct {
+	SinceSeq   int64 // entries with seq > SinceSeq
+	SinceEvent int64 // events with id > SinceEvent
+}
+
+// incremental reports whether the query asks for the new part only.
+func (q TraceQuery) incremental() bool { return q.SinceSeq > 0 || q.SinceEvent > 0 }
 
 type traceSession struct {
 	ID        string         `json:"id"`
@@ -88,15 +104,25 @@ type traceEntry struct {
 
 // BuildTraceView loads one session for the trace page.
 func BuildTraceView(ctx context.Context, repo *store.Store, sessionID string) (*TraceView, error) {
+	return BuildTraceViewSince(ctx, repo, sessionID, TraceQuery{})
+}
+
+// BuildTraceViewSince loads one session for the trace page, narrowed to q: a
+// page keeps what it loaded first and asks for the new part on every refresh,
+// so a running session is not built and sent again in full each time.
+func BuildTraceViewSince(ctx context.Context, repo *store.Store, sessionID string, q TraceQuery) (*TraceView, error) {
 	sess, err := repo.GetSession(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("trace session %q: %w", sessionID, err)
 	}
+	// Events are read whole even for an incremental load: the analysis shown
+	// in the header is the whole session's, and an event row is small (the
+	// long texts live in the entries, which are read narrowed to q).
 	events, err := repo.ListEvents(ctx, store.EventFilter{SessionID: sessionID})
 	if err != nil {
 		return nil, err
 	}
-	entries, err := repo.ListEntries(ctx, sessionID, store.EntryFilter{})
+	entries, err := repo.ListEntries(ctx, sessionID, store.EntryFilter{SinceSeq: q.SinceSeq})
 	if err != nil {
 		return nil, err
 	}
@@ -105,15 +131,41 @@ func BuildTraceView(ctx context.Context, repo *store.Store, sessionID string) (*
 		Session: traceSession{ID: sess.ID, Title: SessionTitle(sess.Title), Cwd: sess.Cwd, Status: sess.Status,
 			CreatedAt: sess.CreatedAt, UpdatedAt: sess.UpdatedAt, Meta: sess.Meta},
 		Analysis: AnalyzeTrace(events),
+		Delta:    q.incremental(),
 	}
 	for _, e := range entries {
 		view.Entries = append(view.Entries, webEntry(e))
 	}
+	// Every event of the session goes through the join, also for an
+	// incremental load: the main model calls of a turn pair with its assistant
+	// messages in order, so a turn cut in half must still see all of them. Only
+	// then is the view narrowed to the new part.
 	for _, e := range events {
 		view.Events = append(view.Events, webEvent{ID: e.ID, TurnID: e.TurnID, Kind: e.Kind, Name: e.Name,
 			Status: e.Status, Start: e.StartedAt, DurationMs: e.DurationMs, TTFTMs: e.TTFTMs,
 			InputTokens: e.InputTokens, OutputTokens: e.OutputTokens, CacheReadTokens: e.CacheReadTokens,
 			CacheWriteTokens: e.CacheWriteTokens, Error: e.Error, Attrs: e.Attrs})
+	}
+	if q.incremental() {
+		// The join runs over every entry of the session too, but through the
+		// store, so the bodies the page already has stay there.
+		stored, err := repo.ListEntryRefs(ctx, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		refs := make([]entryRef, 0, len(stored))
+		for _, r := range stored {
+			refs = append(refs, entryRef{seq: r.Seq, turnID: r.TurnID, typ: r.Type, callID: r.CallID, at: r.CreatedAt})
+		}
+		joinEntriesRefs(view, refs)
+		newer := make([]webEvent, 0, len(view.Events))
+		for _, e := range view.Events {
+			if e.ID > q.SinceEvent {
+				newer = append(newer, e)
+			}
+		}
+		view.Events = newer
+		return view, nil
 	}
 	joinEntries(view)
 	return view, nil
@@ -179,13 +231,32 @@ func capWebText(s string, n int) string {
 	return s[:cut] + fmt.Sprintf("\n[... %d more bytes; full text: suga export]", len(s)-cut)
 }
 
+// entryRef is the minimal entry data the event↔entry join needs. The join runs
+// over every entry of the session, also when only the new ones are sent.
+type entryRef struct {
+	seq    int64
+	turnID string
+	typ    string
+	callID string
+	at     time.Time
+}
+
 // joinEntries links entries to events: a tool event gets its call and
 // result (by call id), a model event the assistant message it produced.
 func joinEntries(view *TraceView) {
-	byCall := map[string][]int64{}
+	refs := make([]entryRef, 0, len(view.Entries))
 	for _, en := range view.Entries {
-		if en.CallID != "" {
-			byCall[en.CallID] = append(byCall[en.CallID], en.Seq)
+		refs = append(refs, entryRef{seq: en.Seq, turnID: en.TurnID, typ: en.Type, callID: en.CallID, at: en.Time})
+	}
+	joinEntriesRefs(view, refs)
+}
+
+// joinEntriesRefs is joinEntries over an explicit entry index.
+func joinEntriesRefs(view *TraceView, refs []entryRef) {
+	byCall := map[string][]int64{}
+	for _, r := range refs {
+		if r.callID != "" {
+			byCall[r.callID] = append(byCall[r.callID], r.seq)
 		}
 	}
 	var models []int // indexes of main model events, in time order
@@ -213,7 +284,7 @@ func joinEntries(view *TraceView) {
 		byTurn[id] = append(byTurn[id], i)
 	}
 	for _, turn := range turns {
-		joinTurnModels(view, byTurn[turn])
+		joinTurnModels(view, refs, byTurn[turn])
 	}
 }
 
@@ -223,12 +294,12 @@ func joinEntries(view *TraceView) {
 // provider puts two calls and their messages in the same millisecond (as on
 // Windows CI). When the counts differ (a turn cut short, older data), a call
 // gets the messages written from its start until the next call's start.
-func joinTurnModels(view *TraceView, models []int) {
+func joinTurnModels(view *TraceView, refs []entryRef, models []int) {
 	turn := view.Events[models[0]].TurnID
 	var answers []int64
-	for _, en := range view.Entries {
-		if en.Type == store.EntryAssistant && en.TurnID == turn {
-			answers = append(answers, en.Seq)
+	for _, r := range refs {
+		if r.typ == store.EntryAssistant && r.turnID == turn {
+			answers = append(answers, r.seq)
 		}
 	}
 	var ok []int
@@ -249,23 +320,41 @@ func joinTurnModels(view *TraceView, models []int) {
 		if k+1 < len(models) {
 			until = view.Events[models[k+1]].Start
 		}
-		for _, en := range view.Entries {
-			if en.Type != store.EntryAssistant || en.TurnID != turn || en.Time.Before(e.Start) {
+		for _, r := range refs {
+			if r.typ != store.EntryAssistant || r.turnID != turn || r.at.Before(e.Start) {
 				continue
 			}
-			if !until.IsZero() && !en.Time.Before(until) {
+			if !until.IsZero() && !r.at.Before(until) {
 				continue
 			}
-			e.Entries = append(e.Entries, en.Seq)
+			e.Entries = append(e.Entries, r.seq)
 		}
 	}
 }
 
+// traceQueryFrom reads the incremental markers of a /api/session request:
+// since_seq and since_event are the page's highest seq and event id. A missing
+// or unparsable value means "send everything" (the first load).
+func traceQueryFrom(r *http.Request) TraceQuery {
+	q := r.URL.Query()
+	var out TraceQuery
+	if v, err := strconv.ParseInt(q.Get("since_seq"), 10, 64); err == nil {
+		out.SinceSeq = v
+	}
+	if v, err := strconv.ParseInt(q.Get("since_event"), 10, 64); err == nil {
+		out.SinceEvent = v
+	}
+	return out
+}
+
 // ServeTraceView serves the trace page for view on addr (a loopback
-// address; ":0" picks a port) until ctx ends. env, when set, serves
-// /api/env: this machine's current environment for the session (the 本机环境
-// tab). ready receives the URL once the listener is up.
-func ServeTraceView(ctx context.Context, addr string, load func(context.Context) (*TraceView, error),
+// address; ":0" picks a port) until ctx ends. load is called per request, so
+// a reload (or the page's own polling) shows a session still running; the
+// request's since_seq / since_event reach it as a TraceQuery, so a page asks
+// for the new part only. env, when set, serves /api/env: this machine's
+// current environment for the session (the 本机环境 tab). ready receives the
+// URL once the listener is up.
+func ServeTraceView(ctx context.Context, addr string, load func(context.Context, TraceQuery) (*TraceView, error),
 	env func(context.Context) (any, error), ready func(url string)) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -289,7 +378,7 @@ func ServeTraceView(ctx context.Context, addr string, load func(context.Context)
 	})
 	mux.HandleFunc("/api/session", func(w http.ResponseWriter, r *http.Request) {
 		// Loaded per request, so a reload shows a session still running.
-		view, err := load(r.Context())
+		view, err := load(r.Context(), traceQueryFrom(r))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

@@ -58,6 +58,17 @@ type Store struct {
 	searchSnapshotN uint64
 }
 
+// fileURI is the file: URI of a store path, well-formed on Windows too. It is
+// shared by the read-write and read-only DSN builders.
+func fileURI(path string) string {
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p // "C:/x" -> "/C:/x" keeps the file: URI well-formed on Windows
+	}
+	u := url.URL{Path: p}
+	return "file://" + u.EscapedPath()
+}
+
 // buildDSN makes every pooled connection run the pragmas on open (modernc
 // executes each _pragma value as "PRAGMA ..." for every new connection).
 //
@@ -71,17 +82,24 @@ type Store struct {
 //     run past a 5s busy_timeout (suag-5o5g). A power loss may drop the last
 //     commits, never corrupt the database.
 func buildDSN(path string) string {
-	p := filepath.ToSlash(path)
-	if !strings.HasPrefix(p, "/") {
-		p = "/" + p // "C:/x" -> "/C:/x" keeps the file: URI well-formed on Windows
-	}
-	u := url.URL{Path: p}
 	q := url.Values{}
 	q.Add("_pragma", "busy_timeout(15000)")
 	q.Add("_pragma", "journal_mode(WAL)")
 	q.Add("_pragma", "synchronous(NORMAL)")
 	q.Add("_pragma", "foreign_keys(1)")
-	return "file://" + u.EscapedPath() + "?" + q.Encode()
+	return fileURI(path) + "?" + q.Encode()
+}
+
+// buildReadOnlyDSN is buildDSN for a pure reader: mode=ro makes SQLite fail on
+// a missing file instead of creating it, and the pragmas a reader may not set
+// (journal_mode, synchronous) are left out. busy_timeout stays, so a reader
+// waits for a writer instead of failing at once (SQLITE_BUSY, suag-5o5g).
+func buildReadOnlyDSN(path string) string {
+	q := url.Values{}
+	q.Add("mode", "ro")
+	q.Add("_pragma", "busy_timeout(15000)")
+	q.Add("_pragma", "foreign_keys(1)")
+	return fileURI(path) + "?" + q.Encode()
 }
 
 // Open opens (creating if needed) the store at path and applies pending
@@ -108,6 +126,38 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// OpenReadOnly opens an existing store for reading only: it never creates the
+// file, never migrates and never writes. A missing file or a database without
+// the migration ledger (an empty or foreign file) is reported as an error, so a
+// read-only page cannot touch a session store it merely is asked to show.
+func OpenReadOnly(path string) (*Store, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(abs); err != nil {
+		return nil, fmt.Errorf("open store read-only: %w", err)
+	}
+	db, err := sql.Open("sqlite", buildReadOnlyDSN(abs))
+	if err != nil {
+		return nil, fmt.Errorf("open store read-only: %w", err)
+	}
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("open store read-only: %w", err)
+	}
+	var ledger int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'`).Scan(&ledger); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("open store read-only: %w", err)
+	}
+	if ledger == 0 {
+		_ = db.Close()
+		return nil, fmt.Errorf("store %s is not initialized: run a suga session against it first", abs)
+	}
+	return &Store{db: db, path: abs}, nil
 }
 
 // Close releases the database handle.

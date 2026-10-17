@@ -3,6 +3,7 @@ package personal
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -144,8 +145,8 @@ func TestServeTraceView(t *testing.T) {
 	urls := make(chan string, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- ServeTraceView(ctx, "127.0.0.1:0", func(ctx context.Context) (*TraceView, error) {
-			return BuildTraceView(ctx, repo, sid)
+		done <- ServeTraceView(ctx, "127.0.0.1:0", func(ctx context.Context, q TraceQuery) (*TraceView, error) {
+			return BuildTraceViewSince(ctx, repo, sid, q)
 		}, func(context.Context) (any, error) {
 			return map[string]any{"workspace": "/w"}, nil
 		}, func(url string) { urls <- url })
@@ -176,6 +177,27 @@ func TestServeTraceView(t *testing.T) {
 	ctype, body = get("api/env")
 	assert.StrContains(t, ctype, "application/json")
 	assert.StrContains(t, body, `"workspace":"/w"`)
+	// An incremental request asks for the new part only (since_seq /
+	// since_event): what the page already shows does not travel again.
+	var lastEvent, lastSeq int64
+	for _, e := range view.Events {
+		if e.ID > lastEvent {
+			lastEvent = e.ID
+		}
+	}
+	for _, en := range view.Entries {
+		if en.Seq > lastSeq {
+			lastSeq = en.Seq
+		}
+	}
+	ctype, body = get(fmt.Sprintf("api/session?since_seq=%d&since_event=%d", lastSeq, lastEvent))
+	assert.StrContains(t, ctype, "application/json")
+	var delta TraceView
+	assert.NoErr(t, json.Unmarshal([]byte(body), &delta))
+	assert.True(t, delta.Delta)
+	assert.Empty(t, delta.Events)
+	assert.Empty(t, delta.Entries)
+	assert.Eq(t, sid, delta.Session.ID)
 	cancel()
 	select {
 	case err := <-done:
