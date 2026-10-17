@@ -48,6 +48,21 @@ func (t fnTool) Execute(context.Context, agentcore.ToolCall) (*agentcore.ToolRes
 	return t.fn()
 }
 
+type emptyAfterToolProvider struct{ calls int }
+
+func (p *emptyAfterToolProvider) Name() string { return "empty-after-tool" }
+
+func (p *emptyAfterToolProvider) Generate(context.Context, *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	p.calls++
+	if p.calls == 1 {
+		return &agentcore.GenerateResult{
+			ToolCalls:    []agentcore.ToolCall{{CallID: "call-1", Name: "write"}},
+			FinishReason: agentcore.FinishToolCalls,
+		}, nil
+	}
+	return &agentcore.GenerateResult{FinishReason: agentcore.FinishFinal}, nil
+}
+
 func TestPoolFallbackRecordsOneModelEventPerAttempt(t *testing.T) {
 	repo := openObserveRepo(t)
 	// The primary fails transiently (an HTTP 503 with retries off), which is what
@@ -89,6 +104,29 @@ func TestPoolFallbackRecordsOneModelEventPerAttempt(t *testing.T) {
 	})
 }
 
+func TestEmptyFinalIsMarkedOnModelAndTurnTrace(t *testing.T) {
+	repo := openObserveRepo(t)
+	registry := tools.NewRegistry()
+	registry.Register(fnTool{name: "write", fn: func() (*agentcore.ToolResult, error) {
+		return &agentcore.ToolResult{Content: "written"}, nil
+	}})
+	provider := &emptyAfterToolProvider{}
+	runner, err := New(Config{Repository: repo, Provider: provider, Tools: registry})
+	assert.NoErr(t, err)
+
+	result, err := runner.Run(context.Background(), RunRequest{Prompt: "write it"})
+	assert.NoErr(t, err)
+	assert.Eq(t, RunCompleted, result.State)
+	assert.Eq(t, "", result.Output)
+	assert.True(t, result.EmptyFinal)
+
+	models := eventsOf(t, repo, result.SessionID, store.EventModel)
+	assert.Require(t, assert.Len(t, models, 4))
+	assert.Eq(t, true, models[3].Attrs[agentcore.EmptyFinalMetaKey])
+	turns := eventsOf(t, repo, result.SessionID, store.EventTurn)
+	assert.Require(t, assert.Len(t, turns, 1))
+	assert.Eq(t, true, turns[0].Attrs[agentcore.EmptyFinalMetaKey])
+}
 func TestToolEventsRecordErrorAndDenial(t *testing.T) {
 	repo := openObserveRepo(t)
 	registry := tools.NewRegistry()

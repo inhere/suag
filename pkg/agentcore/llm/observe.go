@@ -38,6 +38,9 @@ type Attempt struct {
 	// "truncated" (0 = the provider's or server's own default applied); 0 as
 	// well for every other reply.
 	OutputLimit int
+	// EmptyFinal is true when this was the final retry attempt and the provider
+	// returned the empty response accepted after successful tool execution.
+	EmptyFinal bool
 	// Retries is how often the provider retried the request after a
 	// transient failure (RetryPolicy), RetryWait the time spent waiting and
 	// RetryReason the reason of the last retry ("HTTP 503", "stream broken").
@@ -115,6 +118,7 @@ func report(ctx context.Context, obs AttemptObserver, prov agentcoreapi.Provider
 		a.EstimatedOutputTokens = metadataInt(res.Metadata, agentcoreapi.EstimatedOutputTokensMetaKey)
 		a.Usage = res.Usage
 		a.ToolCalls, a.ReasoningChars, a.TextChars = len(res.ToolCalls), len(res.Reasoning), len(res.Content)
+		a.EmptyFinal = agentcoreapi.EmptyFinalAttempt(ctx) && res.Content == "" && len(res.ToolCalls) == 0
 		a.Finish = finishOf(res)
 		if a.Finish == finishTruncated {
 			a.OutputLimit = res.OutputLimit

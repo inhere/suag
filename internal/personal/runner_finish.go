@@ -71,6 +71,7 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	if coreResult != nil {
 		result.Status, result.Output, result.Usage = coreResult.Status, coreResult.Output, coreResult.Usage
 		result.WrapUp = coreResult.WrapUp
+		result.EmptyFinal = coreResult.EmptyFinal
 		result.Truncated, result.OutputLimit = coreResult.Truncated, coreResult.OutputLimit
 	}
 	// Prefer the hook-collected sum: it also covers failed/cancelled turns.
@@ -165,6 +166,9 @@ func (r *Runner) finish(ctx context.Context, model Session, result RunResult, tu
 	// The turn event is written outside the entry transactions and is
 	// best-effort; it is also what the trace timeline anchors on.
 	turnAttrs := map[string]any{"stop_reason": stopReason, "status": string(result.Status)}
+	if result.EmptyFinal {
+		turnAttrs[agentcore.EmptyFinalMetaKey] = true
+	}
 	if result.ErrorKind != "" {
 		turnAttrs["error_kind"] = result.ErrorKind
 	}

@@ -258,6 +258,9 @@ type RunResult struct {
 	// hook asked for one, e.g. a sub-agent's "max_tokens"); empty for a
 	// normal answer.
 	WrapUp string
+	// EmptyFinal marks a normal completion whose final model answer was empty
+	// after repeated empty replies following a successful tool call.
+	EmptyFinal bool
 	// Truncated is true when this turn's answer was cut off at the output token
 	// limit and may be incomplete; OutputLimit names that limit (0 = the
 	// provider's or server's own default).

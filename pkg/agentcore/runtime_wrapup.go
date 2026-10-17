@@ -77,11 +77,12 @@ func (r *DefaultRuntime) persistFinalAnswer(ctx context.Context, input RunInput,
 	}
 
 	return &RunResult{
-		RunID:  state.RunID,
-		Status: RunCompleted,
-		Output: result.Content,
-		Steps:  state.Step,
-		Usage:  state.Usage,
+		RunID:      state.RunID,
+		Status:     RunCompleted,
+		Output:     result.Content,
+		EmptyFinal: result.Metadata[EmptyFinalMetaKey] == true,
+		Steps:      state.Step,
+		Usage:      state.Usage,
 	}, nil
 }
 
@@ -107,7 +108,7 @@ func (r *DefaultRuntime) finishIgnoredWrapUp(ctx context.Context, input RunInput
 		// Same messages, same wrap-up instruction: only tool use is forbidden.
 		retryReq := *req
 		retryReq.ToolChoice = ToolChoiceNone
-		retryRes, err := r.callModel(ctx, state, &retryReq, ctrl, input.Stream)
+		retryRes, err := r.callModel(ctx, state, &retryReq, ctrl, input.Stream, false)
 		if err != nil {
 			return r.returnWithHandledError(ctx, input, state, "model", err, ctrl)
 		}

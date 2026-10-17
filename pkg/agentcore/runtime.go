@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	agentcoreapi "github.com/inhere/suga/pkg/agentcore/api"
 )
 
 // Runtime executes agent runs using the public agentcore contracts.
@@ -189,7 +191,7 @@ func (r *DefaultRuntime) Run(ctx context.Context, input RunInput) (*RunResult, e
 			Metadata:  cloneMetadata(state.Metadata),
 		}
 
-		res, err := r.callModel(ctx, state, req, ctrl, input.Stream)
+		res, err := r.callModel(ctx, state, req, ctrl, input.Stream, hasSuccessfulToolCall(state))
 		if err != nil {
 			return r.returnWithHandledError(ctx, input, state, "model", err, ctrl)
 		}
@@ -369,7 +371,7 @@ func (r *DefaultRuntime) listTools(ctx context.Context) ([]ToolSchema, error) {
 // response was empty before failing the run.
 const emptyResultRetries = 2
 
-func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *GenerateRequest, ctrl *Control, stream StreamFunc) (*GenerateResult, error) {
+func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *GenerateRequest, ctrl *Control, stream StreamFunc, allowEmptyFinal bool) (*GenerateResult, error) {
 	event := &ModelEvent{
 		RunID:     state.RunID,
 		AgentID:   state.AgentID,
@@ -390,7 +392,13 @@ func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *Ge
 	var result *GenerateResult
 	for attempt := 0; ; attempt++ {
 		var err error
-		result, err = r.invokeProvider(ctx, event.Request, stream)
+		attemptCtx := ctx
+		if allowEmptyFinal && attempt >= emptyResultRetries {
+			// Only the last resample is eligible; the observer can mark it only
+			// when the provider actually returned an empty response.
+			attemptCtx = agentcoreapi.WithEmptyFinalAttempt(ctx, true)
+		}
+		result, err = r.invokeProvider(attemptCtx, event.Request, stream)
 		if err != nil {
 			return nil, wrapProviderError(err)
 		}
@@ -398,7 +406,18 @@ func (r *DefaultRuntime) callModel(ctx context.Context, state *RunState, req *Ge
 		if err == nil {
 			break
 		}
-		if !errors.Is(err, ErrEmptyGenerateResult) || attempt >= emptyResultRetries || ctx.Err() != nil {
+		if !errors.Is(err, ErrEmptyGenerateResult) || ctx.Err() != nil {
+			return nil, wrapProviderError(err)
+		}
+		if attempt >= emptyResultRetries {
+			if allowEmptyFinal {
+				if result.Metadata == nil {
+					result.Metadata = map[string]any{}
+				}
+				result.Metadata[agentcoreapi.EmptyFinalMetaKey] = true
+				result.FinishReason = FinishFinal
+				break
+			}
 			return nil, wrapProviderError(err)
 		}
 	}
@@ -421,6 +440,20 @@ func (r *DefaultRuntime) invokeProvider(ctx context.Context, req *GenerateReques
 	}
 
 	return r.provider.Generate(ctx, req)
+}
+
+// hasSuccessfulToolCall uses the current run's persisted transcript rather than
+// a separate counter: failed or refused tool results must not unlock this fallback.
+func hasSuccessfulToolCall(state *RunState) bool {
+	if state == nil {
+		return false
+	}
+	for _, message := range state.Messages {
+		if message.Role == "tool" && message.ToolResult != nil && !message.ToolResult.IsError {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *DefaultRuntime) saveState(ctx context.Context, state *RunState, messages []Message) error {

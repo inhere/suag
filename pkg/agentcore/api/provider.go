@@ -62,6 +62,26 @@ const ToolChoiceNone = "none"
 // runtime and observation layers keep the same estimated/real distinction.
 const UsageEstimatedMetaKey = "usage_estimated"
 
+// EmptyFinalMetaKey marks a final model result synthesized after repeated empty replies
+// following a successful tool call. It is carried through hooks and observation.
+const EmptyFinalMetaKey = "empty_final"
+
+// emptyFinalAttemptKey marks the last provider attempt that may be accepted as an
+// empty final answer. It stays in context so providers do not see an internal field.
+type emptyFinalAttemptKey struct{}
+
+// WithEmptyFinalAttempt marks a provider request as the final empty-answer candidate.
+func WithEmptyFinalAttempt(ctx context.Context, enabled bool) context.Context {
+	return context.WithValue(ctx, emptyFinalAttemptKey{}, enabled)
+}
+
+// EmptyFinalAttempt reports whether the current provider request is the candidate
+// whose empty response may complete a run after successful tool execution.
+func EmptyFinalAttempt(ctx context.Context) bool {
+	enabled, _ := ctx.Value(emptyFinalAttemptKey{}).(bool)
+	return enabled
+}
+
 // EstimatedInputTokensMetaKey and EstimatedOutputTokensMetaKey retain the
 // estimator's two values for observers that need to show the estimate beside
 // the normalized Usage fields.

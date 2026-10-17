@@ -154,6 +154,22 @@ type countingTool struct {
 	agentState bool
 }
 
+type emptyFinalACPProvider struct {
+	calls atomic.Int32
+}
+
+func (p *emptyFinalACPProvider) Name() string { return "empty-final-acp" }
+
+func (p *emptyFinalACPProvider) Generate(context.Context, *agentcore.GenerateRequest) (*agentcore.GenerateResult, error) {
+	if p.calls.Add(1) == 1 {
+		return &agentcore.GenerateResult{
+			ToolCalls:    []agentcore.ToolCall{{CallID: "call-1", Name: "file_write"}},
+			FinishReason: agentcore.FinishToolCalls,
+		}, nil
+	}
+	return &agentcore.GenerateResult{FinishReason: agentcore.FinishFinal}, nil
+}
+
 type countedUsageProvider struct{ *mock.Provider }
 
 type truncatedACPProvider struct {
@@ -226,6 +242,17 @@ func (t *countingTool) Execute(_ context.Context, call agentcore.ToolCall) (*age
 		}
 	}
 	return &agentcore.ToolResult{CallID: call.CallID, Name: call.Name, Content: "written"}, nil
+}
+
+func TestPersonalACPEmptyFinalAfterToolEndsTurn(t *testing.T) {
+	provider := &emptyFinalACPProvider{}
+	tool := &countingTool{}
+	client := &testACPClient{selected: "allow"}
+	response := promptOnce(t, testACPRuntime(t, provider, tool), client, "")
+
+	assert.Eq(t, acp.StopReasonEndTurn, response.StopReason)
+	assert.Eq(t, int32(1), tool.calls.Load())
+	assert.Eq(t, "", agentText(client))
 }
 
 func TestPersonalACPRequiresPermissionBeforeToolExecution(t *testing.T) {

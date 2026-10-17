@@ -133,6 +133,9 @@ func (r *recorder) attemptObserver(defName, defModel string) llm.AttemptObserver
 		if a.Finish != "" {
 			e.Attrs["finish"] = a.Finish
 		}
+		if a.EmptyFinal {
+			e.Attrs[api.EmptyFinalMetaKey] = true
+		}
 		if a.OutputLimit > 0 {
 			// How many output tokens the request allowed: names the limit of a
 			// reply the model cut off (finish=truncated).
