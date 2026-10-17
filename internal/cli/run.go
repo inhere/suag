@@ -328,6 +328,7 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 		result, err = finishBackgroundTasks(ctx, runner, opts.tasks, sessionID, result, emit, live, stderr)
 	}
 	streamed := live.Finish() // end the streamed line before any error or status output
+	_, _, window, _ := runner.ModelSettings()
 	if encoder == nil {
 		// Text mode: a wrap-up names its reason on stderr, so a short answer
 		// is not read as a finished one; stdout stays the answer only.
@@ -365,7 +366,7 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 		}
 	}
 	if encoder != nil {
-		return encoder.Encode(output.ResultLine(sessionID, result, budget))
+		return encoder.Encode(output.ResultLineWithContext(sessionID, result, window, budget))
 	}
 	if streamed {
 		return nil
