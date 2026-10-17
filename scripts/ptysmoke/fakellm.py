@@ -12,6 +12,8 @@ Modes (--mode):
   memory  every user message gets shell_exec (--command), then memory add
         (kind feedback, title "Smoke rule"), then the text --reply; a user
         message containing "直接" skips the shell_exec.
+  empty-final  first requests file_write (--write-path/--write-body), then return an
+        empty streamed completion after the tool result, including resamples.
   adddir  every user message first gets file_read (--read-path), then
         file_write (--write-path with --write-body), then the text --reply:
         the smoke for --add-dir, where both paths live outside the workspace.
@@ -257,6 +259,13 @@ def make_handler(args):
                 call = {"index": 0, "id": "call_%d" % time.time_ns(),
                         "function": {"name": "agent", "arguments": json.dumps(agent_args)}}
                 chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
+            elif args.mode == "empty-final" and not tool_done:
+                call = {"index": 0, "id": "call_%d" % time.time_ns(),
+                        "function": {"name": "file_write", "arguments": json.dumps({
+                            "path": args.write_path, "content": args.write_body})}}
+                chunks = [{"choices": [{"delta": {"tool_calls": [call]}}]}]
+            elif args.mode == "empty-final":
+                chunks = [{"choices": [{"delta": {}}]}]
             elif args.mode == "tool" and not tool_done and "[background task" not in str(user_text):
                 shell_args = {"command": args.command}
                 if args.background:
@@ -357,7 +366,7 @@ class QuietServer(http.server.ThreadingHTTPServer):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, default=18795)
-    p.add_argument("--mode", choices=["tool", "text", "edit", "memory", "adddir"], default="tool")
+    p.add_argument("--mode", choices=["tool", "text", "edit", "memory", "adddir", "empty-final"], default="tool")
     p.add_argument("--delay", type=float, default=1.0)
     p.add_argument("--command", default="echo SMOKE_OK")
     p.add_argument("--reply", default="完成")
