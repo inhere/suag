@@ -4,6 +4,14 @@
 
 ## [未发布]
 
+## [0.27.1] - 2026-10-17
+
+修复 Windows 上工作区路径含短名（如 `RUNNER~1`、`PROGRA~1`）时审批规则的 allow 全部失效（v0.27.0 的 Windows CI 因此失败）。
+
+### 修复
+
+- 审批规则只对工作区根目录以下的路径检查 Windows 短名、尾随点/空格与 ADS：根目录本身以短名写法出现时不再使所有 allow 失效。
+
 ## [0.27.0] - 2026-10-17
 
 文件改动可回滚（快照 + `:undo` / `suga undo`）；审批规则文件与按范围的“总是允许/拒绝”；回合/会话 token 与成本预算；session_search 中英混合检索与游标分页；chat 输入历史、补全与 `:model`；修复 Windows 部分终端 Enter 无法发送。
@@ -655,7 +663,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.27.0...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/inhere/suga/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/inhere/suga/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/inhere/suga/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/inhere/suga/compare/v0.24.0...v0.25.0
