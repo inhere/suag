@@ -3,6 +3,7 @@ package wiring
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -15,12 +16,13 @@ import (
 	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
-// manifestConfig sets a fake provider and a workspace outside any git
-// repository (so the project backend is the built-in files one, never gofer).
+// manifestConfig sets a fake provider and a workspace with its own Git boundary
+// (so parent repository files cannot leak into the test environment).
 func manifestConfig(t *testing.T) (workspace string) {
 	t.Helper()
 	resetConfig(t)
 	workspace = t.TempDir()
+	assert.NoErr(t, os.MkdirAll(filepath.Join(workspace, ".git"), 0o755))
 	setProviders(t, map[string]any{"openai": map[string]any{"api_key": "k", "base_url": "http://127.0.0.1:1/v1"}})
 	assert.NoErr(t, gkconfig.Set("model", "openai/gpt-4o"))
 	assert.NoErr(t, gkconfig.Set("compact_model", "openai/gpt-4o-mini"))

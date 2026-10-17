@@ -21,25 +21,35 @@ func resetStandardsConfig(t *testing.T) {
 	assert.NoErr(t, gkconfig.Set("tools.dependency_roots", false))
 }
 
+// isolatedStandardsWorkspace pins the test workspace at its own directory. This
+// prevents a parent checkout's tmp/idev-std marker from changing the result when
+// the test runner's TMP is inside that checkout.
+func isolatedStandardsWorkspace(t *testing.T) string {
+	t.Helper()
+	workspace := t.TempDir()
+	assert.NoErr(t, os.WriteFile(filepath.Join(workspace, "standards.json"), []byte("{}\n"), 0o644))
+	return workspace
+}
+
 func TestStandardsRootsThroughNativeEnv(t *testing.T) {
 	t.Run("release environment variable", func(t *testing.T) {
 		resetStandardsConfig(t)
 		releases := t.TempDir()
 		t.Setenv("IDEV_STD_RELEASES_ROOT", releases)
-		assert.Eq(t, []string{releases}, nativeEnv(t.TempDir(), nil).ReadRoots)
+		assert.Eq(t, []string{releases}, nativeEnv(isolatedStandardsWorkspace(t), nil).ReadRoots)
 	})
 
 	t.Run("compatible environment variable", func(t *testing.T) {
 		resetStandardsConfig(t)
 		releases := t.TempDir()
 		t.Setenv("INHERE_DEV_STANDARDS_ROOT", releases)
-		assert.Eq(t, []string{releases}, nativeEnv(t.TempDir(), nil).ReadRoots)
+		assert.Eq(t, []string{releases}, nativeEnv(isolatedStandardsWorkspace(t), nil).ReadRoots)
 	})
 
 	t.Run("missing release directory is ignored", func(t *testing.T) {
 		resetStandardsConfig(t)
 		t.Setenv("IDEV_STD_RELEASES_ROOT", filepath.Join(t.TempDir(), "missing"))
-		assert.Empty(t, nativeEnv(t.TempDir(), nil).ReadRoots)
+		assert.Empty(t, nativeEnv(isolatedStandardsWorkspace(t), nil).ReadRoots)
 	})
 
 	t.Run("workspace pin finds loading artifacts while walking upward", func(t *testing.T) {
@@ -72,12 +82,13 @@ func TestStandardsRootsThroughNativeEnv(t *testing.T) {
 		workspace := filepath.Join(root, "repo")
 		assert.NoErr(t, os.MkdirAll(filepath.Join(root, "tmp", "idev-std"), 0o755))
 		assert.NoErr(t, os.MkdirAll(workspace, 0o755))
+		assert.NoErr(t, os.WriteFile(filepath.Join(root, "standards.json"), []byte("{}\n"), 0o644))
 		assert.Eq(t, []string{filepath.Join(root, "tmp", "idev-std")}, nativeEnv(workspace, nil).ReadRoots)
 	})
 
 	t.Run("unbound workspace has no loading root", func(t *testing.T) {
 		resetStandardsConfig(t)
-		workspace := t.TempDir()
+		workspace := isolatedStandardsWorkspace(t)
 		assert.Empty(t, nativeEnv(workspace, nil).ReadRoots)
 	})
 
@@ -88,7 +99,7 @@ func TestStandardsRootsThroughNativeEnv(t *testing.T) {
 		assert.NoErr(t, os.WriteFile(path, []byte("release payload\n"), 0o644))
 		t.Setenv("IDEV_STD_RELEASES_ROOT", releases)
 		byName := map[string]api.Tool{}
-		for _, tool := range native.BuildTools(nativeEnv(t.TempDir(), nil), false) {
+		for _, tool := range native.BuildTools(nativeEnv(isolatedStandardsWorkspace(t), nil), false) {
 			byName[tool.Name()] = tool
 		}
 		result, err := byName["file_read"].Execute(context.Background(), api.ToolCall{
