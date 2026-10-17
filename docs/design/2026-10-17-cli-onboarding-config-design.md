@@ -1,13 +1,14 @@
 <!-- template_id: design; template_version: 1.1.1 -->
 # `suga` 上手、配置初始化与模型列表设计
 
-> 状态：Draft 0.1 / 待用户审批
+> 状态：Draft 0.2 / 待用户审批
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-17 | suga（gofer job） | 初稿：覆盖首次运行初始化、`suga init`、`suga config`、`suga models`、配置安全写回、模型切换范围、兼容与验证。 |
+| 0.2 | 2026-10-17 | 监督（Claude） | 审核修订：`set/unset` 只保留一份最近备份，时间戳备份仅用于 `init --force`；`config set/unset` 的 I/O 失败退出 1、输入错误退出 2；`SUGA_CONFIG` 缺失时不再建议未实现的 `--config`；run/acp 的首次初始化提示只写 stderr。 |
 
 ### 思考模式与范围冻结
 
@@ -100,7 +101,7 @@
 - `SUGA_HOME` 非空时先 `filepath.Abs`，作为数据根；创建目录使用 0700（Windows 用 ACL/只读属性能表达的最小等价安全设置，至少不放宽已有权限）。`config.yaml` 和备份使用 0600，保留已有文件模式时不主动放宽。
 - 首次创建使用进程内路径锁加跨进程 lock file（位于 `SUGA_HOME/run/locks`；现有会话锁目录在 `internal/cli/gc.go:87-100`），锁内再次检查目录和配置文件；已有文件立即视为成功，不覆盖。两个进程同时首次运行最多一个写模板，另一个输出“已存在/已由其他进程初始化”。
 - `SUGA_CONFIG` 非空表示用户选择了外部配置文件：不创建或覆盖 `$SUGA_HOME/config.yaml`，`config path` 仍显示两条路径和 `source=explicit`；为运行时数据创建 `$SUGA_HOME` 仅限命令确实需要数据根的场景。`suga init` 在该模式下默认报告“已指定 SUGA_CONFIG，未写入 home config”，`--force` 也不允许越过该保护；可通过未来明确的 `--config <path>` 扩展，不在本期猜测。
-- `SUGA_CONFIG` 指向不存在文件时不静默生成另一个文件：返回明确错误，建议 `suga init --config <path>`（若该扩展被批准）或手工创建；本期的 canonical 入口是 `suga init`。
+- `SUGA_CONFIG` 指向不存在文件时不静默生成另一个文件：返回明确错误，提示手工创建该文件或取消 `SUGA_CONFIG` 后用 `suga init` 初始化 home 配置；本期不提供 `--config` 参数。
 - 写回采用同目录临时文件、`fsync`、Windows 可替换文件策略和 rename；rename 失败保留原文件，清理临时文件。`set/unset` 的写锁覆盖读、AST 修改、临时写、校验和替换，避免两个进程丢更新。
 
 ### 模板来源与 `suga-guide`
@@ -188,11 +189,11 @@ chat :model              -> existing session-local switch/candidates (不改为 
 
 1. 打开配置文件并取得跨进程 lock；保存原 bytes、mode、mtime 供诊断。
 2. parse AST，解析/修改目标，输出新 bytes；禁止 secret value；用临时路径写 0600，flush + fsync，重新 parse 并运行候选配置 validation。
-3. 先将原文件复制为 `<config>.bak.<UTC>.<random>`（0600，`--force` 初始化备份也走同一 helper）；备份失败停止。
+3. 先将原文件复制为备份（0600）；备份失败停止。`config set/unset` 只保留一份最近的 `<config>.bak`（每次覆盖），避免每次修改都留下新文件；`suga init --force` 用带时间戳的 `<config>.bak.<UTC>`，不覆盖已有备份。两者共用同一个备份 helper，只是命名策略不同。
 4. rename 临时文件到目标；rename/目录 fsync 失败时保留原文件并删除临时文件；若平台替换失败，不能先删目标。
 5. 重新读取有效值，输出新值/来源；任何 post-write 检查失败都尝试用保存的原 bytes 原子恢复，并报告“配置未生效/恢复结果”。
 
-备份不包含密钥（YAML 本来就拒绝写入），默认不自动滚动删除历史备份；未来清理另立策略。
+备份不包含密钥（YAML 本来就拒绝写入）。`config set/unset` 的备份只有一份；`init --force` 的时间戳备份不自动删除（只在用户显式强制覆盖时产生，数量有限）。
 
 ## 关键流程
 
@@ -210,7 +211,7 @@ suga chat
   -> chat 继续，缺密钥/模型错误仍按真实配置报错
 ```
 
-已有目录/文件不被重写；“已存在”不是错误。创建过程任何一步失败都返回错误码 1，并说明目标路径和下一步，不留下半成品。
+已有目录/文件不被重写；“已存在”不是错误。创建过程任何一步失败都返回错误码 1，并说明目标路径和下一步，不留下半成品。首次初始化的提示一律写 stderr：`suga run --output-format stream-json` 的 stdout 和 `suga acp` 的 stdio 协议流不能混入任何初始化文字。
 
 ### `suga init`
 
@@ -290,8 +291,8 @@ JSON 示例：
 | `suga init` | stdout `已创建 <config>` 或 `已存在 <config>，未覆盖`；stderr `.env` 提示 | 0；路径/权限/写入失败 1；`SUGA_CONFIG` 保护或参数错误 2 |
 | `suga init --force` | stdout `备份 <old> -> <backup>`、`已写入 <config>` | 0；备份失败、替换失败且原文保留 1；保护/参数错误 2 |
 | `suga config get <key>` | `key = value`、`source = ...` | 0；未知键/参数 2；配置解析/读取 1 |
-| `suga config set <key> <value>` | `已写入 <config>`、`key = ...`、`source = config` | 0；secret、类型、语义校验、并发/写回失败 2（原文件不变） |
-| `suga config unset <key>` | `已删除 <key>` | 0；未知/只读/secret 或校验失败 2（原文件不变） |
+| `suga config set <key> <value>` | `已写入 <config>`、`key = ...`、`source = config` | 0；未知键、secret、类型或语义校验失败 2；锁、备份、写入、替换等 I/O 失败 1（两种情况原文件都不变） |
+| `suga config unset <key>` | `已删除 <key>` | 0；未知/只读/secret 或校验失败 2；I/O 失败 1（原文件不变） |
 | `suga config list` | 稳定排序的脱敏键和值及来源 | 0；配置解析 1 |
 | `suga config path` | `home`、`config`、`env`、`source` 四行 | 0；路径解析 1 |
 | `suga models` | 离线文本列表和 `:model` 范围 | 0；配置无效 1 |

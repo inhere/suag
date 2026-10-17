@@ -1,13 +1,14 @@
 <!-- template_id: plan; template_version: 1.2.0 -->
 # `suga` 上手、配置初始化与模型列表实施计划
 
-> 状态：Draft 0.1 / 待用户审批
+> 状态：Draft 0.2 / 待用户审批
 
 ## 修订记录
 
 | 版本 | 日期 | 作者 | 摘要 |
 |---|---|---|---|
 | 0.1 | 2026-10-17 | suga（gofer job） | 依据 `docs/design/2026-10-17-cli-onboarding-config-design.md` Draft 0.1，拆分初始化、配置 group、模型投影、文档、PTY 与真实环境 Gate。 |
+| 0.2 | 2026-10-17 | 监督（Claude） | 跟随设计 Draft 0.2：备份命名（set/unset 单份 `.bak`、init --force 时间戳）、config 写命令 I/O 失败退出 1、run/acp 初始化提示只写 stderr 的测试要求。 |
 
 ### 思考模式与范围冻结
 
@@ -128,7 +129,7 @@
 - 文件：`cmd/suga/main.go`、`internal/config/paths.go` 或新 `internal/config/bootstrap*.go`、`config/onboarding.yaml`、初始化测试、必要的 `internal/cli/root.go`。
 - 动作：加入 `EnsureHome` 结果模型和 embedded template；区分 version/help 与需初始化命令；创建 home 0700、config 0600；已有文件不动；进程/跨进程锁 double-check；原子临时写；不创建 `.env`；`SUGA_CONFIG` 外部源保护；错误不留半成品。保留现有 `Load` 的 `.env` 和 config precedence。
 - 验证命令：`go test -count=1 ./internal/config/... ./internal/cli/...`；`go build ./...`；空隔离 home 下运行真实二进制 `version`、`--help`、`init`、`config path`。
-- 完成标准：首次、已有、force 前置契约、失败恢复、并发、权限、Windows `filepath` 语义有测试；`version/help` 文件快照为空；模板无密钥且带注释；新函数有 main/CLI 实际调用点。
+- 完成标准：首次、已有、force 前置契约、失败恢复、并发、权限、Windows `filepath` 语义有测试；`run --output-format stream-json` 与 `acp` 在空 home 首次运行时 stdout 不混入初始化文字（测试断言）；`version/help` 文件快照为空；模板无密钥且带注释；新函数有 main/CLI 实际调用点。
 - 反向验证方法：临时在 version/help 前调用 `EnsureHome`，空 home 的副作用断言必须失败；临时删除 double-check，双进程初始化测试必须发现覆盖/错误；临时启用 `SUGA_CONFIG` 时仍写 home，保护测试必须失败。
 - 预计改动规模：M/L，4–8 个 Go/YAML/测试文件。
 - 依赖/并行：T0 后；T2 可在不同文件实现，但 root/main 合入按 T1→T2。
@@ -174,7 +175,7 @@
   - `path` 输出 home/config/.env/source；
   所有命令在隔离 home/explicit config 下走真实 capp app。
 - 验证命令：`go test -count=1 ./internal/config/... ./internal/cli/...`；隔离 home 中执行 `go run ./cmd/suga config get/set/unset/list/path`；检查 stdout/stderr 分离和退出码。
-- 完成标准：设计中的示例输出/退出码可追溯；config 注释保持；环境覆盖可见；secret/API key 不落 YAML；并发和失败不丢更新；未知键、只读/derived 键、坏类型返回 2；`.env` 从不自动创建。
+- 完成标准：设计中的示例输出/退出码可追溯（输入错误 2、I/O 失败 1）；连续多次 `set` 只留一份 `config.yaml.bak`；config 注释保持；环境覆盖可见；secret/API key 不落 YAML；并发和失败不丢更新；未知键、只读/derived 键、坏类型返回 2；`.env` 从不自动创建。
 - 反向验证方法：临时把 `set providers.x.api_key` 写入 AST，secret test 必须失败；临时把 `get model` 只读 raw config，SUGA_MODEL precedence test 必须失败；临时绕过 AST writer，comment preservation test 必须失败；临时让失败写先覆盖目标，rollback hash test 必须失败。
 - 预计改动规模：L，4–9 个 Go/测试文件。
 - 依赖/并行：T3/T4 后；T7 可在 model catalog 后实施，最终 CLI suite 串行。
@@ -255,7 +256,7 @@
 - T6/T7 revert 后现有 manifest/`:model` 保持可用；删除 models command 不改变 provider runtime。
 - T8/T9 文档/脚本可独立 revert；不要通过删除测试来隐藏行为变化。
 - 运行时回退策略：`SUGA_CONFIG` 外部文件和 `$SUGA_HOME/config.yaml` 都不自动迁移；新版本只新增备份/lock 文件，旧二进制忽略它们。若 rename/lock 在 Windows 失败，返回错误而不是降级为 truncate。
-- 用户数据恢复：优先使用 `<config>.bak.<timestamp>.<random>` 恢复；恢复也必须原子替换并保留原文件副本。`.env` 始终由用户自行管理，本计划不改它。
+- 用户数据恢复：`config set/unset` 后用 `<config>.bak` 恢复，`init --force` 后用 `<config>.bak.<UTC>` 恢复；恢复也必须原子替换并保留原文件副本。`.env` 始终由用户自行管理，本计划不改它。
 
 ## 人工 Gate
 
