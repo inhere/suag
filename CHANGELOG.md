@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+## [0.28.0] - 2026-10-17
+
+上手与配置命令：首次运行自动初始化 `~/.suga`（`suga init`）、`suga config get/set/unset/list/path`、离线的 `suga models`；工具调用后模型回空文本不再让回合失败。
+
 ### 新增
 
 - 上手：首次运行（或显式 `suga init`）创建 `~/.suga`、带注释的 `config.yaml` 和只含使用说明注释的 `.env`；已有文件不覆盖，`suga init --force` 先备份 `config.yaml` 再重写、从不改 `.env`；`version`/`--help` 不写任何文件，首次初始化提示只写 stderr（issue suga-3ck6）。
@@ -677,7 +681,8 @@ OpenAI Responses API provider 与网关适配层、`suag trace --web` 时间线�
 
 - 首个标记版本（旧控制面，代码保留在此 tag）。
 
-[未发布]: https://github.com/inhere/suga/compare/v0.27.1...HEAD
+[未发布]: https://github.com/inhere/suga/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/inhere/suga/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/inhere/suga/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/inhere/suga/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/inhere/suga/compare/v0.25.0...v0.26.0
