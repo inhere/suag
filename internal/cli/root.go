@@ -54,7 +54,7 @@ func New(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, build B
 		NewPersonalCommand(ctx, "chat", stdin, stdout, stderr),
 		newACPCommand(ctx, stdin, stdout, stderr),
 		newInitCommand(stdout, stderr),
-		newConfigCommand(stderr),
+		newConfigCommand(stdout, stderr),
 		newModelsCommand(stdout, stderr),
 		newVersionCommand(stdout, stderr, build),
 		newPSCommand(stdout, stderr),

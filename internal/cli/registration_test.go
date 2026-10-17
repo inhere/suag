@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	gkconfig "github.com/gookit/config/v2"
 	"github.com/gookit/goutil/x/assert"
+	appconfig "github.com/inhere/suga/internal/config"
 )
 
 func TestCLIRegistersOnboardingCommands(t *testing.T) {
@@ -37,13 +39,21 @@ func TestConfigGroupHelpListsLeavesWithoutWriting(t *testing.T) {
 
 func TestOnboardingLeavesReachTheirCappHandlers(t *testing.T) {
 	t.Run("config get", func(t *testing.T) {
+		home := filepath.Join(t.TempDir(), "home")
+		t.Setenv("SUGA_HOME", home)
+		assert.NoErr(t, os.MkdirAll(home, 0o700))
+		assert.NoErr(t, os.WriteFile(filepath.Join(home, "config.yaml"), []byte("model: openai/test\n"), 0o600))
+		gkconfig.Reset()
+		t.Cleanup(gkconfig.Reset)
+		assert.NoErr(t, appconfig.Load())
 		var stdout, stderr bytes.Buffer
 		err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"config", "get", "model"})
-		assert.Require(t, assert.Err(t, err))
-		assert.StrContains(t, err.Error(), "suga config get is not implemented")
+		assert.NoErr(t, err)
+		assert.StrContains(t, stdout.String(), "model = openai/test")
+		assert.StrContains(t, stdout.String(), "source = config:")
 	})
 
-	t.Run("models json", func(t *testing.T) {
+	t.Run("models json remains a later task", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"models", "--json"})
 		assert.Require(t, assert.Err(t, err))
