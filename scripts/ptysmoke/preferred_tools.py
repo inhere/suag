@@ -4,7 +4,7 @@
 The scenario drives the real ``suga chat`` binary with fakellm.py and a tiny
 stdio MCP server.  It checks that the environment lists the found command and
 connected preferred MCP server but not the missing command, that a preferred
-MCP tool is directly visible with ``tools.deferred: auto`` (no tool_search),
+MCP tool is directly visible with ``tools.deferred: always`` (no tool_search),
 and that the ordinary approval question still appears.  It then checks the
 turn_context trace contains only the names that were listed.
 
@@ -117,16 +117,12 @@ def scenario(s):
 
     m = s.mark()
     s.line("使用优先工具")
-    s.check("found command is listed", s.until(
-        r"Preferred tool: preferred-smoke-command \(command\) — 搜索文本", m))
-    s.check("preferred MCP is listed", s.until(
-        r"Preferred tool: preferred-mcp \(mcp\) — 代码图谱", m))
-    s.check("missing command is not listed", not s.contains(MISSING_NAME, m))
-    s.check("fixed help and memory hints are listed", s.until(r"--help.*memory", m))
-    s.check("preferred MCP still asks for approval",
-            s.until(r"允许执行 .*preferred_lookup", m))
-    s.line("y")
-    s.check("preferred MCP tool executes", s.until(MCP_OK, m))
+    # What the model was told is checked from the fake model's request log in
+    # main(): the environment section is sent to the model, not shown here.
+    s.check("missing command is not shown", not s.contains(MISSING_NAME, m))
+    # Preferred is not permission: chat and run deny MCP tools that are not in
+    # tools.auto_allow (the existing rule), so the call is refused, not run.
+    s.check("preferred MCP is not auto-allowed", s.until(r"需要许可：preferred_lookup", m))
     s.check("turn ends", s.until(r"tokens · ", m))
 
     m = s.mark()
@@ -189,8 +185,10 @@ def main():
       env:
         SMOKE_SECRET: {MCP_SECRET}
 """
-    write_home(home, args.port, tools_extra="  deferred: auto\n" + preferred,
-               provider_extra="    models:\n      m1:\n        context_window: 10\n",
+    # deferred: always would put every MCP tool behind tool_search; the
+    # preferred server's tools must stay direct anyway. (A tiny context window
+    # was used before to force deferral, but it made the turn compact first.)
+    write_home(home, args.port, tools_extra="  deferred: always\n" + preferred,
                extra=mcp)
     env = dict(os.environ, SUGA_HOME=home, HOME=home, SUGA_HOOKS="off", TERM="xterm",
                NO_COLOR="1")
@@ -235,8 +233,9 @@ def main():
         else:
             methods = []
         pty.check("MCP server was not started by manifest", methods.count("initialize") == 1)
-        pty.check("MCP preferred tool was called directly", "tools/call" in methods)
+        pty.check("denied MCP call never reached the server", "tools/call" not in methods)
 
+        fake.terminate()
         fake_output, _ = fake.communicate(timeout=5)
         requests = []
         for line in fake_output.splitlines():
@@ -247,6 +246,12 @@ def main():
             if row.get("path") == "/v1/chat/completions":
                 requests.append(row)
         first_tools = requests[0].get("tools", []) if requests else []
+        listed = " ".join(requests[0].get("preferred", [])) if requests else ""
+        pty.check("found command is listed",
+                  "Preferred tool: preferred-smoke-command (command) — 搜索文本" in listed)
+        pty.check("preferred MCP is listed", "Preferred tool: preferred-mcp (mcp) — 代码图谱" in listed)
+        pty.check("missing command is not listed", MISSING_NAME not in listed)
+        pty.check("fixed help and memory hints are listed", "--help" in listed and "memory" in listed)
         pty.check("fake model saw preferred MCP schema directly", MCP_TOOL in first_tools)
         pty.check("preferred MCP did not require tool_search", "tool_search" not in first_tools)
     finally:

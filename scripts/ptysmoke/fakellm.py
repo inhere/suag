@@ -178,7 +178,12 @@ def make_handler(args):
                               "seen": [message_token(m) for m in body["messages"]],
                               "tools": [((tool.get("function") or {}).get("name") or tool.get("name", ""))
                                         for tool in (body.get("tools") or [])],
-                              "tail": message_tail(body["messages"])}), flush=True)
+                              "tail": message_tail(body["messages"]),
+                              # The "Preferred tool:" lines of the environment the
+                              # model was sent (it never reaches the terminal).
+                              "preferred": [line.strip() for m in body["messages"]
+                                            for line in str(m.get("content") or "").splitlines()
+                                            if "Preferred tool:" in line]}), flush=True)
             system = " ".join(str(m.get("content")) for m in body["messages"] if m.get("role") == "system")
             child = "suga sub-agent" in system
             # --child-delay slows the sub-agent's report (after its grep).
