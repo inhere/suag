@@ -15,6 +15,7 @@
 - 记忆条目支持可选的 `applies_when` 适用条件，可在 `memory get` 中查看并参与搜索，旧条目格式保持兼容。
 - `suga trace <session> --web` 的页面新增“自动刷新”开关（默认关闭）：打开后只拉取新增步骤（回合进行中每 5 秒，空闲时每 15 秒检查新回合），不再反复传输与重建已看过的数据；`/api/session` 支持 `since_seq` / `since_event`。
 - `trace --web` 以只读方式打开会话库：不再创建文件、不再跑迁移，库不存在或未初始化时直接报错（`suga web` 可复用这套只读读层）。
+- `suga run` 文本收尾行与 stream-json `result` 事件补充最后一次模型请求的上下文使用比例；stream-json 同时提供 `context.used`、`context.window` 与可直接显示的 `context.share`。
 
 ## [0.30.0] - 2026-10-18
 

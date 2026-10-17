@@ -328,6 +328,7 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 		result, err = finishBackgroundTasks(ctx, runner, opts.tasks, sessionID, result, emit, live, stderr)
 	}
 	streamed := live.Finish() // end the streamed line before any error or status output
+	_, _, window, _ := runner.ModelSettings()
 	if encoder == nil {
 		// Text mode: a wrap-up names its reason on stderr, so a short answer
 		// is not read as a finished one; stdout stays the answer only.
@@ -365,7 +366,7 @@ func executePersonalRun(ctx context.Context, runner *personal.Runner, opts perso
 		}
 	}
 	if encoder != nil {
-		return encoder.Encode(output.ResultLine(sessionID, result, budget))
+		return encoder.Encode(output.ResultLineWithContext(sessionID, result, window, budget))
 	}
 	if streamed {
 		return nil
@@ -412,12 +413,16 @@ func openRequestedSession(ctx context.Context, runner *personal.Runner, opts per
 }
 
 // runSummary is the text-mode closing line: model, this turn's tokens, the
-// session total when known, and the elapsed time.
+// session total and context share when known, and the elapsed time.
 func runSummary(runner *personal.Runner, result personal.RunResult, elapsed time.Duration, budget *personal.BudgetSnapshot) string {
 	line := fmt.Sprintf("%s · in %d / out %d tokens", termtext.Clean(chat.ModelLabel(runner.ProviderName(), runner.Model())),
 		result.Usage.InputTokens, result.Usage.OutputTokens)
 	if s := result.SessionUsage; s.InputTokens > 0 || s.OutputTokens > 0 {
 		line += fmt.Sprintf("（会话累计 in %d / out %d）", s.InputTokens, s.OutputTokens)
+	}
+	_, _, window, _ := runner.ModelSettings()
+	if share := output.ContextShare(result.LastInputTokens, window); share != "" {
+		line += " · " + share
 	}
 	if budget != nil && budget.Estimated {
 		line += "（其中本轮用量含估算）"

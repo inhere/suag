@@ -76,6 +76,7 @@
       "type": "result",
       "status": "COMPLETED",
       "fields": [
+        "context",
         "result",
         "run_id",
         "session_id",
@@ -157,6 +158,7 @@
       "type": "result",
       "status": "COMPLETED",
       "fields": [
+        "context",
         "result",
         "run_id",
         "session_id",

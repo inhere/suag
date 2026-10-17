@@ -144,3 +144,9 @@ func ResultLine(sessionID string, result personal.RunResult, budget ...*personal
 	}
 	return WithUsage(line, result, budget...)
 }
+
+// ResultLineWithContext is ResultLine with the optional context usage object
+// used by the CLI's final result event.
+func ResultLineWithContext(sessionID string, result personal.RunResult, contextWindow int, budget ...*personal.BudgetSnapshot) map[string]any {
+	return WithContext(ResultLine(sessionID, result, budget...), result, contextWindow)
+}
