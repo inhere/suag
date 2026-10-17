@@ -13,11 +13,11 @@
 | `web_fetch` | 读 | 抓取网页正文（保留标题、链接、代码块）；拒绝内网和本机地址 |
 | `web_search` | 读 | SerpAPI 搜索（需 `serpapi_key`） |
 | `skill` | 读 | 加载 skill、读取其文件，或检索 skills（`query`；`"*"` 列出全部名字） |
-| `session_search` | 读 | 全文检索过往消息、工具结果与摘要（`scope`：workspace、current、all）；带 `ref=out:...` 时在那份已保存的输出内检索 |
+| `session_search` | 读 | 全文检索过往消息、工具结果与摘要（`scope`：workspace、current、all，`kind`：user、assistant、tool、compaction、handoff）；带 `ref=out:...` 时在那份已保存的输出内检索 |
 | `recall` | 读 | 按 ref 读取命中附近内容：`<session>/<seq>` 起的消息，或已保存输出 `out:<session>:<hex>` 的带行号文本 |
 | `agent` | 读 | 把一件独立的任务交给子 agent：它在自己的上下文里大量读取，只把报告带回来（`description`、`prompt`、`type`：`explore` 或 `research`、`background`）；见下文“子 agent” |
 | `suga_manifest` | 读 | 以 JSON 返回本实例的能力清单（与 `suga manifest` 相同） |
-| `memory` | 状态 | 对长期记忆 `add`、`replace`、`remove`、`get`、`search`（`scope` 为 project 或 user），见 `references/sessions.md` 的“记忆” |
+| `memory` | 状态 | 对长期记忆 `add`、`replace`、`remove`、`get`、`search`（`scope` 为 project 或 user），条目可选 `applies_when` 适用条件，见 `references/sessions.md` 的“记忆” |
 | `file_write` | 写 | 整文件写入 |
 | `file_edit` | 写 | 替换一处唯一的字符串（`replace_all` 替换全部），或用 `edits` 一次替换多处（全部成功或全部不改）；保留 CRLF |
 | `file_remove` | 写 | 删除文件，或带 `recursive` 删除目录（细节见下） |
@@ -26,6 +26,7 @@
 
 - `file_remove`：移入 `$SUGA_HOME/trash/` 保留 7 天（`origin.json` 记录原路径），单次最多 1000 个文件。被 `.gitignore` 忽略的目录（以及 `node_modules`、`vendor`、`dist`），如被忽略的 `tmp/` 下的测试仓库，视为可再生：不遍历、不计数、直接永久删除，并在结果中列出；被忽略的单个文件（如 `.env`）仍进回收区。拒绝工作区根、工作区自己的 `.git`、用户主目录、通配符与工作区外路径。
 - 忽略规则：`file_grep`、`file_find` 与递归的 `file_list` 跳过 `.git`、`node_modules`、`vendor`、`dist` 和 `.gitignore` 匹配的路径（各级目录的 `.gitignore`，支持 `!` 与 `**`）；结果末尾一行注明跳过了什么，传 `no_ignore: true` 可包含它们（`.git` 除外）。
+- 参数校验：工具调用先按工具自己声明的 JSON schema 校验（类型、枚举、范围、长度与项数、`additionalProperties: false` 下的未知字段），一次报出全部问题让模型一次改对；被拒的调用不执行、该响应的其它调用照常执行。schema 未声明的字段，以及 `anyOf`/`oneOf`/`allOf`/`$ref` 这类未建模的写法一律放行——MCP 等第三方 schema 写得不严不会被拒。可选字段的空占位（`""`、`[]`、`{}`）视为未提供。
 - 并发读取：同一次回复里有多个 `file_read`、`file_list`、`file_grep`、`file_find` 调用时并发执行（`tools.parallel_reads`，默认开）；每个调用仍按顺序经过审批、污染追踪与 trace 记录，只有读取本身重叠。
 
 ## 优先工具（`tools.preferred`）
