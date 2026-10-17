@@ -167,12 +167,15 @@ func mapPos(pos int, placed []replacement, isEnd bool) int {
 // EditList returns file_edit's replacements as a list: the edits argument,
 // or the single old_string/new_string pair. edits may arrive as a JSON string
 // (some models encode nested arrays that way); mixing both forms is an error.
+// An empty value of the form not used counts as absent: models with strict
+// tool schemas fill every optional field, sending edits: [] next to an
+// old_string/new_string pair, or old_string: "" next to edits.
 func EditList(args map[string]any) ([]map[string]any, error) {
 	raw, ok := args["edits"]
-	if !ok || raw == nil {
+	if !ok || emptyEdits(raw) {
 		return []map[string]any{args}, nil
 	}
-	if _, single := args["old_string"]; single {
+	if oldStr, single := args["old_string"]; single && oldStr != nil && oldStr != "" {
 		return nil, fmt.Errorf("pass either edits or old_string/new_string, not both")
 	}
 	if text, isText := raw.(string); isText {
@@ -193,6 +196,21 @@ func EditList(args map[string]any) ([]map[string]any, error) {
 		edits[i] = edit
 	}
 	return edits, nil
+}
+
+// emptyEdits reports whether the edits argument carries no replacement: null,
+// an empty array, or an empty / "[]" JSON string.
+func emptyEdits(raw any) bool {
+	switch v := raw.(type) {
+	case nil:
+		return true
+	case []any:
+		return len(v) == 0
+	case string:
+		text := strings.TrimSpace(v)
+		return text == "" || text == "[]" || text == "null"
+	}
+	return false
 }
 
 // applyOne applies a single replacement (old_string, new_string,

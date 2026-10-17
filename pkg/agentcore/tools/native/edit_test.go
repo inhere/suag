@@ -81,7 +81,9 @@ func TestEditFile(t *testing.T) {
 	})
 	t.Run("bad edits shapes are errors", func(t *testing.T) {
 		write("j.go", "x\n")
-		assert.ErrMsgContains(t, edit(map[string]any{"path": "j.go", "edits": []any{}}), "non-empty array")
+		// An empty edits counts as absent (models fill optional fields), so with no
+		// old_string either the single form reports the missing old_string.
+		assert.ErrMsgContains(t, edit(map[string]any{"path": "j.go", "edits": []any{}}), "old_string is required")
 		assert.ErrMsgContains(t, edit(map[string]any{"path": "j.go", "edits": []any{"x"}}), "edits[0] must be an object")
 		assert.ErrMsgContains(t, edit(map[string]any{"path": "j.go", "old_string": "x", "new_string": "y",
 			"edits": []any{map[string]any{"old_string": "x", "new_string": "z"}}}), "not both")
