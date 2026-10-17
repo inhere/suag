@@ -65,6 +65,10 @@ func bootstrapExempt(args []string) bool {
 			return true
 		}
 	}
+	// A command group without a subcommand only prints its help (suga config).
+	if len(args) == 1 && args[0] == "config" {
+		return true
+	}
 	return args[0] == "help" || args[0] == "version" || args[0] == "--version" || args[0] == "-V"
 }
 
