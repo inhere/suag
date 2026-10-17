@@ -53,11 +53,13 @@ func TestOnboardingLeavesReachTheirCappHandlers(t *testing.T) {
 		assert.StrContains(t, stdout.String(), "source = config:")
 	})
 
-	t.Run("models json remains a later task", func(t *testing.T) {
+	t.Run("models json reaches its offline handler", func(t *testing.T) {
+		setupConfigCLI(t, "model: openai/test\n")
 		var stdout, stderr bytes.Buffer
 		err := newCLI(context.Background(), strings.NewReader(""), &stdout, &stderr).RunWithArgs([]string{"models", "--json"})
-		assert.Require(t, assert.Err(t, err))
-		assert.StrContains(t, err.Error(), "suga models is not implemented")
+		assert.NoErr(t, err)
+		assert.StrContains(t, stdout.String(), `"offline": true`)
+		assert.StrContains(t, stdout.String(), `"ref": "openai/test"`)
 	})
 }
 
