@@ -382,7 +382,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	modelOptions, modelSpecs, err := configuredModelOptions()
+	modelOptions, modelSpecs, err := configuredModelOptions(opts.Model)
 	if err != nil {
 		return nil, err
 	}
@@ -712,13 +712,15 @@ func estimateOptionsForBudget(tokens int, costUSD float64, mode string, factor f
 
 // configuredModelOptions uses the same canonical catalog projection as the
 // offline models command. Runtime-only details such as provider specs and
-// output limits are attached after the projection has fixed ref order.
-func configuredModelOptions() ([]ModelOption, map[string]appconfig.ModelSpec, error) {
+// output limits are attached after the projection has fixed ref order. The
+// model flag is included so an explicit current model is also selectable and
+// receives the same current marker in chat.
+func configuredModelOptions(model string) ([]ModelOption, map[string]appconfig.ModelSpec, error) {
 	providers, err := appconfig.ReadProviders()
 	if err != nil {
 		return nil, nil, err
 	}
-	settings, err := appconfig.ReadModelSettings("")
+	settings, err := appconfig.ReadModelSettings(model)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -309,7 +309,7 @@ func TestConfiguredModelOptionsFollowOfflineCatalogOrder(t *testing.T) {
 	settings, err := appconfig.ReadModelSettings("")
 	assert.Require(t, assert.NoErr(t, err))
 	catalog := appconfig.BuildModelCatalog(providers, settings)
-	options, specs, err := configuredModelOptions()
+	options, specs, err := configuredModelOptions("")
 	assert.Require(t, assert.NoErr(t, err))
 
 	refs := make([]string, 0, len(options))
@@ -318,6 +318,19 @@ func TestConfiguredModelOptionsFollowOfflineCatalogOrder(t *testing.T) {
 	}
 	assert.Eq(t, catalog.Switchable, refs)
 	assert.Eq(t, catalog.Switchable, sortedSpecRefs(specs))
+
+	t.Run("explicit model is included", func(t *testing.T) {
+		explicitSettings, err := appconfig.ReadModelSettings("deepseek/reasoner")
+		assert.Require(t, assert.NoErr(t, err))
+		explicitCatalog := appconfig.BuildModelCatalog(providers, explicitSettings)
+		explicitOptions, _, err := configuredModelOptions("deepseek/reasoner")
+		assert.Require(t, assert.NoErr(t, err))
+		explicitRefs := make([]string, 0, len(explicitOptions))
+		for _, option := range explicitOptions {
+			explicitRefs = append(explicitRefs, option.Ref())
+		}
+		assert.Eq(t, explicitCatalog.Switchable, explicitRefs)
+	})
 }
 
 func sortedSpecRefs(specs map[string]appconfig.ModelSpec) []string {

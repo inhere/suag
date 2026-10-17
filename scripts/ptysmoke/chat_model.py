@@ -93,6 +93,10 @@ def main():
         first.check("model list has compact", first.until(r"fake/compact", mark))
         first.check("model list has unlisted fallback", first.until(r"fake/unlisted", mark))
         mark = first.mark()
+        first.send(":model fake/un\t")
+        first.check("model Tab completion shares unlisted fallback", first.until(r":model fake/unlisted", mark))
+        first.send("\x15")
+        mark = first.mark()
         first.line(":model fake/m2")
         first.check("switch accepted", first.until(r"已切换模型：fake/m2", mark))
         with open(config_path, "rb") as config_file:
