@@ -111,3 +111,20 @@ func rpcErrorData(t *testing.T, err error) map[string]any {
 	assert.Require(t, assert.True(t, ok))
 	return data
 }
+
+// TestPromptErrorCarriesQuotaReset: an exhausted quota whose provider named a
+// reset time adds it to the JSON-RPC error data as reset_at, next to
+// error_kind, so a client such as gofer can say when trying again makes sense.
+func TestPromptErrorCarriesQuotaReset(t *testing.T) {
+	t.Run("quota with a reset time", func(t *testing.T) {
+		err := promptError(llm.NewQuotaError(errors.New("weekly usage limit"), "2026-10-19T06:50:37Z"))
+		data := rpcErrorData(t, err)
+		assert.Eq(t, llm.ErrorKindQuota, data["error_kind"])
+		assert.Eq(t, "2026-10-19T06:50:37Z", data["reset_at"])
+	})
+	t.Run("quota without a reset time", func(t *testing.T) {
+		data := rpcErrorData(t, promptError(llm.NewQuotaError(errors.New("quota"), "")))
+		_, ok := data["reset_at"]
+		assert.False(t, ok)
+	})
+}

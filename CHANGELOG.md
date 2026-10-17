@@ -6,6 +6,7 @@
 
 ### 新增
 
+- 额度耗尽（`error_kind: provider_quota`）且 provider 给出恢复时间时，`run --output-format stream-json` 的 `error` 行与 ACP 错误 `data` 另带 `reset_at`（RFC3339），此前只写进 trace；Gofer 用它在 job 错误里显示额度恢复时间。
 - run/chat 新增回合或会话级 token、成本预算的配置读取与 `--budget-tokens`、`--budget-cost-usd`、`--budget-scope` flags，支持环境变量覆盖。
 - Gofer 用法文档补充预算环境变量注入、turn/session 选择、缓存扣除口径，以及 Suga 软收尾和 Gofer 硬熔断的边界。
 

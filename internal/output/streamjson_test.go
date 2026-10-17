@@ -2,11 +2,13 @@ package output
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/gookit/goutil/x/assert"
 	"github.com/inhere/suga/internal/personal"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 )
 
 func TestEventLineToolEvents(t *testing.T) {
@@ -60,5 +62,13 @@ func TestErrorLineErrorKind(t *testing.T) {
 		line := ErrorLine("s", errors.New("boom"), personal.RunResult{})
 		_, ok := line["error_kind"]
 		assert.Eq(t, false, ok)
+		_, ok = line["reset_at"]
+		assert.Eq(t, false, ok)
+	})
+	t.Run("an exhausted quota carries its reset time", func(t *testing.T) {
+		quota := fmt.Errorf("provider error: %w", llm.NewQuotaError(errors.New("weekly usage limit"), "2026-10-19T06:50:37Z"))
+		line := ErrorLine("s", quota, personal.RunResult{ErrorKind: llm.ErrorKindQuota})
+		assert.Eq(t, "provider_quota", line["error_kind"])
+		assert.Eq(t, "2026-10-19T06:50:37Z", line["reset_at"])
 	})
 }

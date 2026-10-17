@@ -67,6 +67,12 @@ type quotaError struct {
 func (e *quotaError) Error() string { return e.err.Error() }
 func (e *quotaError) Unwrap() error { return e.err }
 
+// NewQuotaError marks err as an exhausted quota (ErrorKindQuota) with an optional
+// RFC3339 reset time, for a host whose own provider reports one and for tests.
+func NewQuotaError(err error, resetAt string) error {
+	return &quotaError{err: err, resetAt: resetAt}
+}
+
 // ResetAt returns the provider-supplied quota reset time, if one was present.
 func ResetAt(err error) string {
 	var q *quotaError

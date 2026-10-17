@@ -5,6 +5,7 @@ import (
 
 	"github.com/inhere/suga/internal/personal"
 	"github.com/inhere/suga/pkg/agentcore"
+	"github.com/inhere/suga/pkg/agentcore/llm"
 	"github.com/inhere/suga/pkg/agentcore/redact"
 )
 
@@ -95,10 +96,15 @@ func ToolResultSummary(content string) string {
 // failure was a provider error, see personal.RunResult.ErrorKind) tells a
 // transient one - a cut stream whose retries ran out - from an unusable
 // provider answer, so the caller can decide whether continuing makes sense.
+// reset_at is the quota reset time a provider named for an exhausted quota
+// (llm.ResetAt), so the caller can say when trying again makes sense.
 func ErrorLine(sessionID string, runErr error, result personal.RunResult, budget ...*personal.BudgetSnapshot) map[string]any {
 	line := map[string]any{"type": "error", "session_id": sessionID, "error": runErr.Error()}
 	if result.ErrorKind != "" {
 		line["error_kind"] = result.ErrorKind
+	}
+	if reset := llm.ResetAt(runErr); reset != "" {
+		line["reset_at"] = reset
 	}
 	return WithUsage(line, result, budget...)
 }

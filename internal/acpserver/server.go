@@ -322,10 +322,15 @@ func (a *Agent) Prompt(ctx context.Context, req acp.PromptRequest) (acp.PromptRe
 // cut stream from a request the provider refused - the same value the CLI
 // writes on its stream-json error line. A failure without a model error (a
 // storage or hook error, a cancelled turn) carries no error_kind and is
-// reported as before.
+// reported as before. An exhausted quota whose provider named a reset time adds
+// it as reset_at (llm.ResetAt), like the stream-json error line.
 func promptError(err error) error {
 	if kind := llm.ErrorKind(err); kind != "" {
-		return acp.NewInternalError(map[string]any{"error": err.Error(), "error_kind": kind})
+		data := map[string]any{"error": err.Error(), "error_kind": kind}
+		if reset := llm.ResetAt(err); reset != "" {
+			data["reset_at"] = reset
+		}
+		return acp.NewInternalError(data)
 	}
 	return err
 }
