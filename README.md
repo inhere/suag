@@ -110,6 +110,7 @@ Details: [references/sessions.md#记忆](skills/suga-guide/references/sessions.m
 - The model writes cross-session memory with the `memory` tool: `user`, `feedback`, `project` and `reference` entries.
 - User memory lives in `$SUGA_HOME/memory/user`; the project backend is picked automatically (repo-root `MEMORY.md`, `.gofer/tracker`, or `$SUGA_HOME/projects/<key>/memory`).
 - The memory index is frozen per segment; what this session writes shows up in the next segment.
+- `memory search` on the files backend ranks hits through a rebuildable FTS5 index (Markdown stays the source of truth), and entries may carry optional `applies_when` conditions.
 - A session that has read outside content must confirm memory writes (`memory.write_tainted`).
 
 ## Sessions
@@ -118,7 +119,7 @@ Details: [references/sessions.md](skills/suga-guide/references/sessions.md) (Chi
 
 - `--session-id` creates or reuses a session, `--resume` requires it to exist (exit code 4 otherwise), `run --from` starts a new one carrying over the summary and plan.
 - Resuming from another directory asks first (switch to the original / continue here / cancel); without a terminal use `--allow-cwd-change`.
-- Near the context window or on `:compact` a new segment starts with a handoff summary; old segments stay reachable through `session_search` / `recall`.
+- Near the context window or on `:compact` a new segment starts with a handoff summary (fixed sections); old segments stay reachable through `session_search` / `recall`, and `session_search` with `kind: handoff` finds the summaries themselves.
 - An interrupted turn is replayed up to its last complete tool call, with a short recap.
 - Optional history folding (`context.fold_every`); idle chat compacts in the background (`context.idle_after`).
 - The system prompt holds only stable content; environment, rules (`AGENTS.md`), memory index and skills list go into each segment's context message.

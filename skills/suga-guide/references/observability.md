@@ -16,6 +16,8 @@ suga ps                                           # 正在运行的 chat 进程�
 suga manifest [--json] [--model <p/m>]            # 模型、工具、MCP、skills、记忆后端、输出上限
 ```
 
+- `trace --web` 以只读方式打开会话库：不创建文件、不跑迁移，库不存在或未初始化时直接报错；页面上的“自动刷新”开关默认关闭，打开后只拉取新增步骤（回合进行中每 5 秒，空闲时每 15 秒检查新回合）。
+
 ## `suga trace` 时间线里的各类行
 
 - **工具行**：退出码（shell）、进入上下文的字节数、转存标记与脱敏后的参数摘要；编辑的增删行数（`+新增/-删除`）；问过人时显示 `approval=user(wait=3.2s)`。
@@ -59,6 +61,7 @@ suga manifest [--json] [--model <p/m>]            # 模型、工具、MCP、skil
 - 模型请求因瞬时故障重试时会输出一行 `retry`（`reason`、`attempt`、`wait_ms`、`restart`）；`restart: true` 表示这条消息此前输出的 `message_delta` 文本作废，会从头重新流式输出。chat 把这种重试显示为一行 `↻` 提示，`run` 打到 stderr，ACP 作为 thought 块下发。
 - ACP 在同一时机发 `usage_update`（说明见仓库 `docs/usage/gofer-personal-agent.md` 的“ACP 用量上报”）。
 - 因上限收尾而非正常作答的回合会在最后的 `result` 行上带 `wrap_up`（到步数上限时为 `"max_steps"`，正常答复不带该字段）；文本模式把该原因打到 stderr，短答复因此不会被当成完成，也不会被当成超时。
+- `result` 还能带 `context`（`used`、`window`、`share`），文本模式的收尾行则显示 `ctx N%`：两者都是本回合最后一次模型请求的输入 token 占模型窗口的整数百分比（含缓存 token，超窗口时可能大于 100）；窗口未知或本回合没有模型调用时省略 `context`、收尾行也不显示。
 
 ## 进程日志
 

@@ -110,6 +110,7 @@ suga chat                                         # 在当前目录开启交互�
 - 模型通过 `memory` 工具写入跨会话记忆：`user`、`feedback`、`project`、`reference` 四类。
 - 用户记忆在 `$SUGA_HOME/memory/user`；项目记忆自动选后端（仓库根 `MEMORY.md`、`.gofer/tracker` 或 `$SUGA_HOME/projects/<key>/memory`）。
 - 记忆索引在每段开头冻结，本会话写入的内容下一段才可见。
+- files 后端的 `memory search` 用可从 Markdown 重建的 FTS5 索引按相关度排序，条目可带可选的 `applies_when` 适用条件。
 - 读过外部内容的会话写记忆需要确认（`memory.write_tainted`）。
 
 ## 会话
@@ -118,7 +119,7 @@ suga chat                                         # 在当前目录开启交互�
 
 - `--session-id` 创建或复用，`--resume` 要求已存在（不存在退出码 4），`run --from` 继承摘要与计划开新会话。
 - 换目录续接会先询问（切回原目录 / 在当前目录继续 / 取消）；非终端用 `--allow-cwd-change`。
-- 上下文接近窗口或 `:compact` 时开启新段，带交接摘要；旧段可用 `session_search` / `recall` 取回。
+- 上下文接近窗口或 `:compact` 时开启新段，带交接摘要（固定小节）；旧段可用 `session_search` / `recall` 取回，`session_search` 传 `kind: handoff` 可直接搜到摘要本身。
 - 中断的回合回放到最后一个完整的工具调用，并附小结。
 - 可选历史折叠（`context.fold_every`）；chat 空闲时后台整理（`context.idle_after`）。
 - 系统提示词只含稳定内容；环境、规则（`AGENTS.md`）、记忆索引、skills 列表放在每段的上下文消息里。
