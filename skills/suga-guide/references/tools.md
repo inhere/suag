@@ -183,7 +183,7 @@ suga undo <session> [--turn <turn-id> | -n <count>] [--force] [--yes] [--json]
 
 ## 后台任务
 
-- `shell_exec` 传 `background: true`（`run`、chat 与 ACP 的写模式）后，长时间构建、完整测试、服务或监听进程可以在模型继续工作的同时运行。
+- 前台命令超过 `tools.shell_background_after` 后会转为后台任务：工具结果保留已输出并给出任务 id，完成时沿用任务通知；设为 `0` 关闭。硬上限仍是 `tools.shell_timeout_max`。
 - 输出逐行脱敏写入会话的 outputs（`recall` 也能读它的 ref）。
 - 任务在模型看到之前就结束时，会留下一条提示，在下一次模型请求前加入（退出码、耗时、大小、末尾几行）；正等待输入的 chat 会被它唤醒并开始一轮（`tasks.wake_on_exit`，默认 true，运行中的任务发来通知时同样唤醒）。
 - `run` 在回答后仍有任务在跑时提醒模型一次，退出时终止它们并在 stderr 中列出名字。

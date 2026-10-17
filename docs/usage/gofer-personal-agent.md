@@ -104,7 +104,7 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 - `web_fetch` 在拨号时检查实际连接的 IP，拒绝回环、私网、链路本地（含云元数据地址）、CGNAT 与组播地址，跳转与 DNS 重绑定同样受限；不读取环境代理（`HTTPS_PROXY` 等）。需要代理才能访问的站点，设 `tools.web_fetch.proxy`（`http://`、`https://` 或 `socks5://` 地址，如 `http://127.0.0.1:7890`）：此时连接只发往代理，改为在请求前与每次跳转时解析目标域名并校验其 IP，解析失败也拒绝（代理端若对同一域名解析出不同地址则无法察觉，保护弱于直连）；格式错误时启动报错。`tools.web_fetch.allow_private: true` 可放开内网限制。
 - skills：启动时扫描一次 `<工作区>/.agents/skills`、`<工作区>/skills`、`~/.agents/skills` 下的 `SKILL.md`（frontmatter 含 `name`、`description`，可选 `allowed-tools` 仅展示），同名时工作区优先，无效文件记警告后跳过。段上下文消息按数量呈现 skills：总数不超过 `skills.list_max`（缺省 15）时全部列出“名字 — 描述”（描述截到 160 字符）；超过时只列工作区内的 skills（带描述），其余只列名字（名字合计上限 3000 字节，超出的只给数量），模型可直接按名字加载，或用 `skill` 工具的 `query`（关键词，名字命中优先，中文按两字切分；`*` 按工作区/用户分组列出全部名字）检索后再按名字加载。模型用 `skill`（`name`）取正文与目录文件列表，`file` 参数只能读该 skill 目录内的文件。需要每次都生效的 skill 可预加载：在 SKILL.md frontmatter 写 `metadata: {always_load: true}`（或顶层 `always_load: true`），或在 `~/.suga/config.yaml` 设 `skills.always_load: [名字]`；其正文（每个上限 8000 字节）放进段上下文消息。
 
-`shell_exec` 在 Windows 用 PowerShell（优先 `pwsh`，否则 `powershell`），输出固定 UTF-8，返回原生命令的退出码；其他系统用 `sh -c`。每次调用可传 `timeout`（秒，默认 120），超时后整组进程（Unix 进程组 / Windows job object）被终止，已有输出与退出码照常返回；后台残留进程占住输出时最多再等 2 秒。命令以 `GIT_TERMINAL_PROMPT=0`、`GIT_PAGER=cat`、`PAGER=cat` 运行，没有标准输入；suga 自身的 `SUGA_HOME`、`SUGA_CONFIG`、`SUGA_MODEL` 不传给命令（在 shell 里再调用 suga 时用默认的 `~/.suga`，需要时在命令里显式设置）。输出去掉 ANSI 颜色码。
+`shell_exec` 在 Windows 用 PowerShell（优先 `pwsh`，否则 `powershell`），输出固定 UTF-8，返回原生命令的退出码；其他系统用 `sh -c`。每次调用可传 `timeout`（秒，默认 120），前台运行超过 `tools.shell_background_after`（默认 120s）且启用了任务管理时会转为后台任务，工具结果保留交接前的输出并给出任务 id；设为 0 关闭。`tools.shell_timeout_max` 仍是硬上限，超过后整组进程（Unix 进程组 / Windows job object）被终止；后台残留进程占住输出时最多再等 2 秒。命令以 `GIT_TERMINAL_PROMPT=0`、`GIT_PAGER=cat`、`PAGER=cat` 运行，没有标准输入；suga 自身的 `SUGA_HOME`、`SUGA_CONFIG`、`SUGA_MODEL` 不传给命令（在 shell 里再调用 suga 时用默认的 `~/.suga`，需要时在命令里显式设置）。输出去掉 ANSI 颜色码。
 
 后台任务（`shell_exec` 传 `background: true`，写模式才有）在两种 agent 下生命周期不同：`suga`（run）在回答前若仍有任务在跑，会提醒模型一次先 `task wait` 或 `task kill`，进程退出时终止剩下的任务并写到 stderr；`suga-acp` 的任务属于 `suga acp` 进程，跨 prompt 继续运行，结束提示进入该会话的下一个 prompt，`session/cancel` 只取消当前回合，连接关闭（Gofer 结束会话）时终止仍在运行的任务，trace 里记为 killed。所以一次性的 ACP 作业里，需要结果的任务要在本回合内 `task wait`。
 
@@ -115,6 +115,7 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 - `tools.max_spill_bytes`（缺省 1048576）：单次工具（含 MCP）原始输出上限，超出部分按 UTF-8 边界保留头尾截断。
 - `tools.shell`：显式指定 shell（命令名或路径，如 `bash`）；不自动探测。
 - `tools.shell_timeout_max`（缺省 600）：`shell_exec` 的 `timeout` 上限（秒）。
+- `tools.shell_background_after`（缺省 120s）：前台 `shell_exec` 超过此时长后转为后台任务；设为 `0` 关闭，硬上限仍由 `tools.shell_timeout_max` 控制。
 - `tools.dependency_roots`（缺省 `true`）、`tools.standards_roots`（缺省 `true`）与 `tools.read_roots`（目录列表，支持 `~`，须为已存在的绝对路径）：工作区外的只读目录。`file_read`、`file_list`、`file_grep`、`file_find` 可用绝对路径读取其中文件，写工具与 `shell_exec` 的工作目录不受影响。自动识别的依赖根只取源码目录：Go 模块缓存（`GOMODCACHE`，或 `go env -w` 写的值，或 `GOPATH/pkg/mod`）、Go 标准库（`GOROOT/src`，未设置时按 PATH 中 `go` 的位置推断）、Rust crate 源码（`CARGO_HOME/registry/src`），不会放开整个 `~/.cargo`、`~/.m2` 这类含凭据的目录；Java 依赖多为 jar，需要时把解压后的源码目录写进 `tools.read_roots`。开启 `tools.standards_roots` 后，`IDEV_STD_RELEASES_ROOT` 或兼容的 `INHERE_DEV_STANDARDS_ROOT` 若指向已存在目录就加入 idev-std 发行根；再从工作区向上查找带 `standards.json` 的工作空间根，把存在的 `<工作空间根>/tmp/idev-std` 加入加载产物根。识别结果列在提示词的环境一节，grep/find 在这些目录里输出绝对路径；重复路径会合并。
 - `mcp.call_timeout_sec`（缺省 120）：单次 MCP 工具调用的超时。
 

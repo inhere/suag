@@ -148,6 +148,7 @@ var configKeyDescriptors = []ConfigKey{
 	{Pattern: "tools.standards_roots", Type: ConfigTypeBool, Writable: true},
 	{Pattern: "tools.shell", Type: ConfigTypeString, Writable: true},
 	{Pattern: "tools.shell_timeout_max", Type: ConfigTypeInt, Writable: true},
+	{Pattern: "tools.shell_background_after", Type: ConfigTypeDuration, Writable: true},
 	{Pattern: "tools.web_fetch.allow_private", Type: ConfigTypeBool, Writable: true},
 	{Pattern: "tools.web_fetch.proxy", Type: ConfigTypeString, Sensitive: true},
 	{Pattern: "tools.interpreters", Type: ConfigTypeStringList, Writable: true},

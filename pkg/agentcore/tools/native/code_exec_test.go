@@ -2,12 +2,16 @@ package native
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/gookit/goutil/x/assert"
 
 	"github.com/inhere/suga/pkg/agentcore/api"
+	"github.com/inhere/suga/pkg/agentcore/tasks"
 )
 
 func runShell(t *testing.T, tool *ShellExecTool, args map[string]any) (*api.ToolResult, time.Duration) {
@@ -96,6 +100,35 @@ func TestShellExecOutputIsCapped(t *testing.T) {
 	assert.StrContains(t, res.Content, "[exit code: 0]")
 }
 
+func TestForegroundShellTransfersOutputToTask(t *testing.T) {
+	dir := t.TempDir()
+	m := tasks.NewManager(tasks.Config{Output: func(sid, id string) (string, string, error) {
+		return filepath.Join(dir, id+".txt"), "out:" + sid + ":" + id, nil
+	}})
+	t.Cleanup(m.Close)
+	shell := NewShellExecTool(t.TempDir(), 2*time.Second)
+	shell.SetTasks(m)
+	shell.backgroundAfter = 100 * time.Millisecond
+	shell.maxTimeout = 3 * time.Second
+	command := "echo before; sleep 1; echo after"
+	if runtime.GOOS == "windows" {
+		command = "Write-Output before; Start-Sleep -Milliseconds 1000; Write-Output after"
+	}
+	ctx := api.WithSessionID(context.Background(), "s1")
+	res, err := shell.Execute(ctx, api.ToolCall{CallID: "c", Name: shell.Name(), Arguments: map[string]any{"command": command}})
+	assert.Require(t, assert.NoErr(t, err))
+	assert.StrContains(t, res.Content, "transferred to background task t1")
+	assert.Eq(t, "t1", res.Metadata["task_id"])
+
+	info, outcome, err := m.Wait(ctx, "s1", "t1", 5*time.Second)
+	assert.Require(t, assert.NoErr(t, err))
+	assert.Eq(t, tasks.WaitEnded, outcome)
+	assert.Eq(t, tasks.Exited, info.Status)
+	data, err := os.ReadFile(info.Path)
+	assert.Require(t, assert.NoErr(t, err))
+	assert.StrContains(t, string(data), "before")
+	assert.StrContains(t, string(data), "after")
+}
 func TestCommandEnv(t *testing.T) {
 	got := commandEnv([]string{"PATH=/bin", "SUGA_HOME=/h", "suga_config=/c", "SUGA_MODEL=m", "SUGA_HOOKS=off", "SUGA_HOMEX=1"})
 	assert.Eq(t, []string{"PATH=/bin", "SUGA_HOOKS=off", "SUGA_HOMEX=1"}, got)

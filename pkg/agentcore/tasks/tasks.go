@@ -162,6 +162,28 @@ func (i Info) Duration() time.Duration {
 // ErrUnknownTask is returned for an id the session does not have.
 var ErrUnknownTask = errors.New("unknown task")
 
+// ProcessTree owns a command's process group or Windows job object. It is
+// passed when a foreground command is adopted so ownership of the already
+// started process tree moves to the manager without opening a kill window.
+type ProcessTree interface {
+	Kill() error
+	Close()
+	Started()
+}
+
+// RunningCommand is a command that has already been started by its caller.
+// AttachOutput must atomically switch the command's output to the supplied
+// writer, including bytes written before the handoff.
+type RunningCommand struct {
+	Cmd          *exec.Cmd
+	Tree         ProcessTree
+	AttachOutput func(io.Writer)
+	Wait         <-chan error
+	Started      time.Time
+	// MaxDuration is measured from Started; zero uses the manager limit.
+	MaxDuration time.Duration
+}
+
 // Manager owns the background tasks of one host process.
 type Manager struct {
 	cfg    Config
@@ -284,18 +306,113 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Info, error) {
 	return t.snapshot(), nil
 }
 
+// Adopt takes ownership of a command that is already running. It is used when
+// a foreground shell reaches its handoff threshold; the caller's process tree
+// and output stream are transferred before the manager starts waiting for it.
+func (m *Manager) Adopt(ctx context.Context, spec Spec, running RunningCommand) (Info, error) {
+	if err := ctx.Err(); err != nil {
+		return Info{}, err
+	}
+	if running.Cmd == nil || running.Cmd.Process == nil {
+		return Info{}, errors.New("a running command is required")
+	}
+	if running.Tree == nil || running.AttachOutput == nil || running.Wait == nil {
+		return Info{}, errors.New("a running command needs its tree, output attachment and waiter")
+	}
+	sid := m.cfg.Session(ctx)
+	if sid == "" {
+		return Info{}, errors.New("background tasks need a session")
+	}
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return Info{}, errors.New("background tasks are shut down")
+	}
+	s := m.sessionLocked(sid)
+	runningCount := 0
+	for _, task := range s.tasks {
+		if task.status() == Running {
+			runningCount++
+		}
+	}
+	if runningCount >= m.limits.MaxRunning {
+		m.mu.Unlock()
+		return Info{}, fmt.Errorf("%d background tasks are already running (the limit): wait for or kill one first", runningCount)
+	}
+	s.seq++
+	id := "t" + strconv.Itoa(s.seq)
+	m.mu.Unlock()
+
+	path, ref, err := m.cfg.Output(sid, id)
+	if err != nil {
+		return Info{}, fmt.Errorf("task output: %w", err)
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return Info{}, fmt.Errorf("task output: %w", err)
+	}
+	started := running.Started
+	if started.IsZero() {
+		started = time.Now()
+	}
+	t := &task{
+		info: Info{ID: id, SessionID: sid, Kind: spec.Kind, Summary: spec.Summary, Status: Running,
+			ExitCode: -1, Started: started, Path: path, Ref: ref},
+		done:    make(chan struct{}),
+		updated: make(chan struct{}),
+		seen:    spec.NoEndNotice,
+		tree:    running.Tree,
+	}
+	t.out = newLineWriter(file, spec.Clean, m.limits.MaxOutputBytes)
+	// Attach before registration: once visible in :tasks, every byte must be
+	// owned by the task and the foreground caller must no longer close the tree.
+	running.AttachOutput(t.out)
+	m.registerWithDuration(s, t, started, running.MaxDuration)
+	go m.waitResult(s, t, running.Cmd, running.Wait)
+	return t.snapshot(), nil
+}
+
 // register adds a started task to its session and arms its time limit.
 func (m *Manager) register(s *session, t *task) {
+	m.registerWithDuration(s, t, t.info.Started, 0)
+}
+
+// registerWithDuration uses the shorter of the manager limit and an adopted
+// command's hard deadline. The latter is measured from the original start.
+func (m *Manager) registerWithDuration(s *session, t *task, started time.Time, maxDuration time.Duration) {
 	m.mu.Lock()
 	s.tasks[t.info.ID] = t
 	s.order = append(s.order, t.info.ID)
 	m.mu.Unlock()
-	t.timer = time.AfterFunc(m.limits.MaxDuration, func() { t.end(TimedOut) })
+	duration := m.limits.MaxDuration
+	if maxDuration > 0 {
+		remaining := time.Until(started.Add(maxDuration))
+		if remaining < duration {
+			duration = remaining
+		}
+	}
+	if duration <= 0 {
+		duration = time.Nanosecond
+	}
+	t.timer = time.AfterFunc(duration, func() { t.end(TimedOut) })
 }
 
 // wait reaps the command and records how it ended.
 func (m *Manager) wait(s *session, t *task, cmd *exec.Cmd) {
-	err := cmd.Wait()
+	m.waitResult(s, t, cmd, waitCommand(cmd))
+}
+
+func waitCommand(cmd *exec.Cmd) <-chan error {
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	return done
+}
+
+// waitResult consumes the one and only Wait result. Adopted commands already
+// have a waiter from their foreground caller, so calling cmd.Wait again would
+// lose the exit result and leave the task in a failed state.
+func (m *Manager) waitResult(s *session, t *task, cmd *exec.Cmd, done <-chan error) {
+	err := <-done
 	t.tree.Close() // also ends children left running in the background
 	code := cmd.ProcessState.ExitCode()
 	status := Exited
@@ -658,7 +775,7 @@ type task struct {
 	info   Info
 	ending Status             // set by end before the kill: how the end is reported
 	seen   bool               // the model saw the end (Wait, Kill or a notice)
-	tree   *proctree.Tree     // a command's process tree
+	tree   ProcessTree        // a command's process tree
 	cancel context.CancelFunc // a function's context
 	// updated is closed (and replaced) when a function task reports.
 	updated chan struct{}
