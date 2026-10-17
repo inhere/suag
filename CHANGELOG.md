@@ -15,6 +15,7 @@
 - `suga models` 现在从本地配置投影内置/自定义 provider、当前/compact/fallback 模型与稳定的 `:model` 候选，支持离线文本和 `--json` 输出，不启动 provider 或发网络请求。
 - `chat :model` 的显示、切换与 Tab 补全现在复用 `suga models` 的 canonical 候选投影，包含当前/compact/fallback 引用并保持稳定去重排序。
 - 上手文档改为 `suga init`、`.env`、`config` 与离线 `models` 的命令优先流程，并补充 `SUGA_CONFIG`、退出码、密钥禁写和 YAML 注释保留说明。
+- 新增 `scripts/ptysmoke/chat_onboarding.py`：用真实二进制覆盖首次运行无副作用、初始化/备份、`.env` 保留、`SUGA_CONFIG` 保护，以及 config/models 的隔离 CLI 冒烟；与 `chat_model.py` 一起检查离线模型候选和 `:model` 文件快照。
 - 配置写锁统一移入 `$SUGA_HOME/run/locks/`，显式 `SUGA_CONFIG` 使用路径哈希锁名，避免在外部配置目录留下锁文件。
 
 ## [0.27.1] - 2026-10-17

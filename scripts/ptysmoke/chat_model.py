@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """PTY smoke test for chat's :model inspection, switching and resume.
 
-It configures two fake models plus referenced compact/fallback models, checks that :model
-lists all four, switches to m2, checks fakellm's request log for the next request's model
+It configures two fake models plus referenced compact/fallback models, checks that the offline
+``models --json`` switchable set is exactly the same set shown by ``:model``, switches to m2, checks fakellm's request log for the next request's model
 field, then resumes the same session and checks both the banner and the next request still use
 m2. This is deliberately falsifiable: temporarily retain wiring's old configured-only candidate
 generation; the unlisted fallback assertion must fail. Removing command dispatch, the runtime
@@ -76,6 +76,14 @@ def main():
     write_home(home, a.port, provider_extra=provider_extra, extra="compact_model: fake/compact\nfallback_models:\n  - fake/unlisted\nchat:\n  steering: false\n")
     env = dict(os.environ, SUGA_HOME=home, SUGA_HOOKS="off", TERM="xterm", NO_COLOR="1")
     env.pop("SUGA_CONFIG", None)
+    catalog_result = subprocess.run([os.path.abspath(a.bin), "models", "--json"], capture_output=True,
+                                    text=True, env=env, cwd=ws, timeout=60)
+    if catalog_result.returncode != 0:
+        raise SystemExit("models --json failed: " + catalog_result.stderr)
+    catalog = json.loads(catalog_result.stdout)
+    switchable = catalog.get("switchable") or []
+    if not switchable:
+        raise SystemExit("models --json returned no switchable candidates")
     here = os.path.dirname(os.path.abspath(__file__))
     fake = subprocess.Popen([sys.executable, "-I", here + "/fakellm.py", "--port", str(a.port), "--mode", "text", "--reply", "MODEL_REPLY"], stdout=subprocess.PIPE, text=True)
     wait_port(fake)
@@ -92,6 +100,14 @@ def main():
         first.check("model list has m2", first.until(r"fake/m2", mark))
         first.check("model list has compact", first.until(r"fake/compact", mark))
         first.check("model list has unlisted fallback", first.until(r"fake/unlisted", mark))
+        model_lines = set()
+        for line in first.text(mark).splitlines():
+            candidate = line.strip()
+            if candidate.startswith("* "):
+                candidate = candidate[2:].strip()
+            if re.fullmatch(r"[^\s/]+/[^\s/]+", candidate):
+                model_lines.add(candidate)
+        first.check("models JSON and chat candidates are equal", model_lines == set(switchable))
         mark = first.mark()
         first.send(":model fake/un\t")
         first.check("model Tab completion shares unlisted fallback", first.until(r":model fake/unlisted", mark))
