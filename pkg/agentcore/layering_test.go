@@ -36,11 +36,8 @@ const (
 // outside its entry and a stale entry all fail the test; the failure message
 // names the entry to change.
 var layerAllowed = map[string][]string{
-	// kernel: the runtime loop and the contracts. tools/native is a test-only
-	// edge: the root package's suite checks the deployed native write tool
-	// schemas against the argument validator (suga-g6in); production code of
-	// the root does not import it.
-	".":   {"api", "internal/runid", "internal/utils", "storage/files", "testing", "tools", "tools/native"},
+	// kernel: the runtime loop and the contracts
+	".":   {"api", "internal/runid", "internal/utils", "storage/files", "testing", "tools"},
 	"api": {"internal/utils"},
 	// shared base below the contracts (Go's internal rule keeps it inside the
 	// subtree as well)

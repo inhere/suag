@@ -17,6 +17,13 @@ import (
 // result and the other calls and the run go on (instead of failing the whole
 // run). One rejected call costs the model one retry step, not a failed run.
 func prepareToolCalls(schemas []ToolSchema, calls []ToolCall) {
+	PrepareToolCalls(schemas, calls)
+}
+
+// PrepareToolCalls is prepareToolCalls for hosts that own a tool catalog
+// outside this package (and their tests): it coerces each call's arguments
+// and sets ArgumentsError when they do not fit the tool's schema.
+func PrepareToolCalls(schemas []ToolSchema, calls []ToolCall) {
 	if len(schemas) == 0 || len(calls) == 0 {
 		return
 	}
