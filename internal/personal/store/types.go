@@ -100,6 +100,9 @@ const (
 	// EventBudget records a budget threshold or accounting warning. Its attrs
 	// carry scope, limits, usage, remaining amounts and the reason.
 	EventBudget = "budget"
+	// EventUndo records a user rollback; its attrs include the file outcome
+	// counts and the seq of the deferred suga.undo entry when available.
+	EventUndo = "undo"
 )
 
 // Session is one conversation. Meta holds free-form keys (rules hash, append

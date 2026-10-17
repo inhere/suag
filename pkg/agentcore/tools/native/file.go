@@ -3,6 +3,8 @@ package native
 
 import (
 	"context"
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +20,7 @@ import (
 type FileWriteTool struct {
 	workspace string
 	addDirs   *AddDirs
+	snapshots Snapshotter
 }
 
 // NewFileTools returns the three file tools scoped to workspace.
@@ -65,21 +68,129 @@ func (t *FileWriteTool) Schema() api.ToolSchema {
 	}
 }
 
-func (t *FileWriteTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+func (t *FileWriteTool) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	target, err := writeTargetPath(t.workspace, t.addDirs, call.Arguments)
 	if err != nil {
 		return nil, err
 	}
 	content, _ := call.Arguments["content"].(string)
 
+	var before []byte
+	var snapshotReq SnapshotRequest
+	var beforeResult SnapshotBefore
+	if t.snapshots != nil {
+		before, snapshotReq, err = t.snapshotRequest(target, call.CallID)
+		if err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Status: SnapshotStatusIncomplete})
+			return nil, fmt.Errorf("file_write: %w", err)
+		}
+		beforeResult, err = t.snapshots.BeforeCall(ctx, snapshotReq)
+		if err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: snapshotReq.Kind, Status: SnapshotStatusIncomplete,
+				Bytes: int64(len(before)), Unrecoverable: beforeResult.Unrecoverable})
+			return nil, fmt.Errorf("file_write: snapshot before: %w", err)
+		}
+	}
+
 	if err := writeFileInRoot(target.base, target.abs, []byte(content)); err != nil {
+		if t.snapshots != nil {
+			incomplete := t.snapshotResult(call, snapshotReq, beforeResult, before, "", SnapshotStatusIncomplete)
+			if snapshotErr := t.snapshots.AfterCall(ctx, incomplete); snapshotErr != nil {
+				ReportSnapshot(ctx, SnapshotReport{Kind: incomplete.Kind, Status: SnapshotStatusIncomplete,
+					Bytes: incomplete.Size, Unrecoverable: incomplete.Unrecoverable})
+				return nil, fmt.Errorf("file_write: %w; snapshot incomplete: %v", err, snapshotErr)
+			}
+			ReportSnapshot(ctx, SnapshotReport{Kind: incomplete.Kind, Status: incomplete.Status,
+				Bytes: incomplete.Size, Unrecoverable: incomplete.Unrecoverable})
+		}
 		return nil, fmt.Errorf("file_write: %w", err)
+	}
+	if t.snapshots != nil {
+		complete := t.snapshotResult(call, snapshotReq, beforeResult, before, content, SnapshotStatusComplete)
+		if err := t.snapshots.AfterCall(ctx, complete); err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: complete.Kind, Status: SnapshotStatusIncomplete,
+				Bytes: complete.Size, Unrecoverable: complete.Unrecoverable})
+			return nil, fmt.Errorf("file_write: snapshot after failed after writing %s: %w", target.abs, err)
+		}
+		ReportSnapshot(ctx, SnapshotReport{Kind: complete.Kind, Status: complete.Status,
+			Bytes: complete.Size, Unrecoverable: complete.Unrecoverable})
+	}
+
+	out := fmt.Sprintf("wrote %d bytes to %s", len(content), target.abs)
+	if notice := snapshotNotice(beforeResult); notice != "" {
+		out += "\n" + notice
 	}
 	return &api.ToolResult{
 		CallID:  call.CallID,
 		Name:    t.Name(),
-		Content: fmt.Sprintf("wrote %d bytes to %s", len(content), target.abs),
+		Content: out,
 	}, nil
+}
+
+func (t *FileWriteTool) snapshotResult(call api.ToolCall, req SnapshotRequest, beforeResult SnapshotBefore, before []byte, content, status string) SnapshotResult {
+	result := SnapshotResult{
+		CallID:        call.CallID,
+		Tool:          t.Name(),
+		Root:          req.Root,
+		Rel:           req.Rel,
+		RealRel:       req.RealRel,
+		Kind:          req.Kind,
+		Size:          int64(len(before)),
+		Status:        status,
+		Unrecoverable: beforeResult.Unrecoverable,
+	}
+	// The original design leaves sha256_after empty for a newly created path;
+	// undo only needs the after hash when there was an original file.
+	if status == SnapshotStatusComplete && req.Kind != SnapshotKindAbsent {
+		result.AfterSHA256 = sha256Hex([]byte(content))
+	}
+	return result
+}
+
+// snapshotRequest reads the original file through the same os.Root sandbox as
+// the write. It runs before BeforeCall so a snapshot failure can never follow
+// a write that already changed the target.
+func (t *FileWriteTool) snapshotRequest(target readTarget, callID string) ([]byte, SnapshotRequest, error) {
+	rel, err := relInWorkspace(target.base, target.abs)
+	if err != nil {
+		return nil, SnapshotRequest{}, err
+	}
+	realRel, err := realRelInRoot(target.base, target.abs)
+	if err != nil {
+		return nil, SnapshotRequest{}, err
+	}
+	before, err := readFileInRoot(target.base, target.abs)
+	kind := SnapshotKindFile
+	if errors.Is(err, os.ErrNotExist) {
+		before = nil
+		kind = SnapshotKindAbsent
+	} else if err != nil {
+		return nil, SnapshotRequest{}, fmt.Errorf("read original file: %w", err)
+	}
+	return before, SnapshotRequest{
+		CallID:  callID,
+		Tool:    "file_write",
+		Root:    target.base,
+		Rel:     filepath.ToSlash(rel),
+		RealRel: filepath.ToSlash(realRel),
+		Kind:    kind,
+		Before:  before,
+	}, nil
+}
+
+func sha256Hex(data []byte) string { return fmt.Sprintf("%x", sha256.Sum256(data)) }
+
+func snapshotNotice(before SnapshotBefore) string {
+	if before.Notice != "" {
+		return before.Notice
+	}
+	if before.Unrecoverable == "" {
+		return ""
+	}
+	if before.Unrecoverable == SnapshotUnrecoverableOversize {
+		return "本次写入不可撤销：快照超过单文件上限（16 MiB）"
+	}
+	return "本次写入不可撤销：" + before.Unrecoverable
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

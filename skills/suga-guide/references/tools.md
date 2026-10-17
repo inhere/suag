@@ -88,6 +88,23 @@ ACP 提供 `allow`、`allow_always`、`reject`、`reject_always` 四个选项。
 
 用 `suga manifest --json` 查看规则文件路径、生效条数、项目 hash/信任诊断、被忽略规则和 `tools.approval` 默认动作；用 `suga trace <session> --json` 查看工具/拒绝事件的 `approval_rule`、`approval_scope` 以及写回事件 `approval_rule_persist`。设置 `tools.approval_rules.enabled: false` 可回到旧审批路径。
 
+## 回滚文件工具改动（快照与 undo）
+
+默认开启时，`file_write`、`file_edit`、`file_remove` 会在实际改动文件前保存原内容快照。快照是本机私有数据，位于 `$SUGA_HOME/sessions/<session-id>/snapshots/`，不会进入模型上下文、transcript 或 `suga export`。只覆盖文件工具：`shell_exec`（包括后台任务）的改动只会被列出，不会自动回滚。`file_remove` 仍按原语义保留 7 天回收区；被忽略目录直接永久删除时，仍不可恢复。
+
+在 chat 提示符输入 `:checkpoints` 查看最近写操作，清单会区分恢复、删除、跳过、无法恢复，并列出未纳入快照的 shell 命令。输入 `:undo` 回滚最近一个有文件改动的回合，或输入 `:undo N` 回滚最近 N 个这样的回合；追加 `force` 才会覆盖内容冲突。默认 `chat.undo_confirm: true`，会先询问，除 `y`/`yes` 外都取消。这些命令只认本地键盘：投递文本、hook、任务通知和插话仍是普通消息；回合进行中输入的 `:undo` / `:checkpoints` 会退回输入框，等回合结束后再执行。
+
+不依赖 provider 的 CLI 也可以执行：
+
+```text
+suga undo <session> --list [--json]
+suga undo <session> [--turn <turn-id> | -n <count>] [--force] [--yes] [--json]
+```
+
+`<session>` 支持完整 ID 或唯一前缀。非终端执行破坏性操作必须带 `--yes`；`--force` 只覆盖内容冲突，不绕过 root、路径、文件类型、链接或保护路径校验。回滚按调用逆序执行，可删除写操作新建的文件，可恢复符合条件的 `file_remove` 回收区条目，并在回滚前建立独立快照。会话 cwd 变化或可写附加目录被移除后，旧快照会被标记为不可恢复，不会写入不可信 root。只读会话可以回滚自己可信的快照，但不能扩大允许的 root。没有 redo，也没有 ACP 内置 undo 命令；ACP 与 `run` 的文件写操作仍会创建快照。
+
+默认上限为每次调用 16 MiB、每会话 256 MiB、全局 1 GiB；保留最近 20 个已完成回合或 7 天。`tools.snapshots.enabled: false` 只停止新快照，已有快照仍可由命令读取。默认 `on_error: deny`：快照存储、清理或状态检查不确定时，在文件 I/O 前拒绝写入；显式设为 `continue` 才会继续，但会标记为不可恢复。超过 `max_file_bytes` 的文件照常写入，并明确提示不可回滚。`suga gc` 会随会话数据清理快照，并报告快照字节数。回滚后，下一次显式回合会收到 `suga.undo` 事实通知（不是新的用户请求）；可用 `suga trace <session> --json` 查看 undo 事件以及各写工具事件的 `attrs.snapshot`。Git 工作区中，快照边界之外的改动请用 `git status --short` 和 `git diff` 核对。
+
 ## 附加目录（`--add-dir`）
 
 - `run` 与 `chat` 支持可重复参数 `--add-dir <绝对目录>[:ro|:rw]`（默认 `:ro`）；环境变量 `SUGA_ADD_DIRS` 可再加（各项用系统的路径列表分隔符分隔，Windows 是 `;`，适合 job runner 透传）。

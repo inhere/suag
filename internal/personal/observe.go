@@ -262,6 +262,7 @@ func (o *observedTools) Get(name string) (agentcore.Tool, error) {
 func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall) (*agentcore.ToolResult, error) {
 	start := time.Now()
 	ctx, approval := tools.WithApprovalReport(ctx)
+	ctx, snapshot := native.WithSnapshotReport(ctx)
 	res, err := o.inner.ExecuteTool(ctx, call)
 	e := store.Event{
 		Kind: store.EventTool, Name: call.Name, Status: eventOK, StartedAt: start,
@@ -299,6 +300,9 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 	if approval.Danger != "" {
 		e.Attrs["danger"] = approval.Danger
 	}
+	if snapshot.Status != "" {
+		e.Attrs["snapshot"] = snapshotEventAttrs(snapshot)
+	}
 	o.rec.record(ctx, e)
 	// Every call reaching the registry counts, refused ones included.
 	runUsageFrom(ctx).addTool()
@@ -309,6 +313,16 @@ func (o *observedTools) ExecuteTool(ctx context.Context, call agentcore.ToolCall
 		o.rec.taint.observe(ctx, tool, call.Name, res)
 	}
 	return res, err
+}
+
+// snapshotEventAttrs projects only the non-sensitive snapshot outcome. The
+// before-image stays on disk and never enters event attrs, model context or
+// transcript data.
+func snapshotEventAttrs(report *native.SnapshotReport) map[string]any {
+	return map[string]any{
+		"kind": report.Kind, "status": report.Status, "bytes": report.Bytes,
+		"unrecoverable": report.Unrecoverable,
+	}
 }
 
 // addCallAttrs records what a tool call was about, for trace and analysis:

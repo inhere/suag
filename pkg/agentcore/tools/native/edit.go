@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/inhere/suga/pkg/agentcore/api"
@@ -15,6 +16,7 @@ import (
 type FileEditTool struct {
 	workspace string
 	addDirs   *AddDirs
+	snapshots Snapshotter
 }
 
 func (t *FileEditTool) Name() string { return "file_edit" }
@@ -60,7 +62,7 @@ func (t *FileEditTool) Schema() api.ToolSchema {
 	}
 }
 
-func (t *FileEditTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+func (t *FileEditTool) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	target, err := writeTargetPath(t.workspace, t.addDirs, call.Arguments)
 	if err != nil {
 		return nil, err
@@ -74,12 +76,53 @@ func (t *FileEditTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 	if err != nil {
 		return nil, fmt.Errorf("file_edit %s: %w", path, err)
 	}
+
+	var snapshotReq SnapshotRequest
+	var beforeResult SnapshotBefore
+	if t.snapshots != nil {
+		snapshotReq, err = editSnapshotRequest(target, call.CallID, data)
+		if err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: SnapshotKindFile, Status: SnapshotStatusIncomplete,
+				Bytes: int64(len(data))})
+			return nil, fmt.Errorf("file_edit: %w", err)
+		}
+		beforeResult, err = t.snapshots.BeforeCall(ctx, snapshotReq)
+		if err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: snapshotReq.Kind, Status: SnapshotStatusIncomplete,
+				Bytes: int64(len(data)), Unrecoverable: beforeResult.Unrecoverable})
+			return nil, fmt.Errorf("file_edit: snapshot before: %w", err)
+		}
+	}
+
 	if err := writeFileInRoot(target.base, path, []byte(updated)); err != nil {
+		if t.snapshots != nil {
+			incomplete := editSnapshotResult(call, snapshotReq, beforeResult, data, "", SnapshotStatusIncomplete)
+			if snapshotErr := t.snapshots.AfterCall(ctx, incomplete); snapshotErr != nil {
+				ReportSnapshot(ctx, SnapshotReport{Kind: incomplete.Kind, Status: SnapshotStatusIncomplete,
+					Bytes: incomplete.Size, Unrecoverable: incomplete.Unrecoverable})
+				return nil, fmt.Errorf("file_edit: %w; snapshot incomplete: %v", err, snapshotErr)
+			}
+			ReportSnapshot(ctx, SnapshotReport{Kind: incomplete.Kind, Status: incomplete.Status,
+				Bytes: incomplete.Size, Unrecoverable: incomplete.Unrecoverable})
+		}
 		return nil, fmt.Errorf("file_edit: %w", err)
+	}
+	if t.snapshots != nil {
+		complete := editSnapshotResult(call, snapshotReq, beforeResult, data, updated, SnapshotStatusComplete)
+		if err := t.snapshots.AfterCall(ctx, complete); err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: complete.Kind, Status: SnapshotStatusIncomplete,
+				Bytes: complete.Size, Unrecoverable: complete.Unrecoverable})
+			return nil, fmt.Errorf("file_edit: snapshot after failed after writing %s: %w", target.abs, err)
+		}
+		ReportSnapshot(ctx, SnapshotReport{Kind: complete.Kind, Status: complete.Status,
+			Bytes: complete.Size, Unrecoverable: complete.Unrecoverable})
 	}
 	// The edited lines are the verification: the model sees the result and
 	// needs no re-read (suag-jz0l review; omp, pigo and Cline do the same).
 	out := fmt.Sprintf("edited %s: %d replacement(s)", path, len(spans))
+	if notice := snapshotNotice(beforeResult); notice != "" {
+		out += "\n" + notice
+	}
 	if warn := syntaxRegression(path, string(data), updated); warn != "" {
 		out += "\n" + warn
 	}
@@ -87,6 +130,46 @@ func (t *FileEditTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolR
 		out += "\n" + snippet
 	}
 	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: out}, nil
+}
+
+// editSnapshotRequest reuses file_edit's already-read bytes. A second read here
+// would make the snapshot race with an approval hook and violate edit atomicity.
+func editSnapshotRequest(target readTarget, callID string, before []byte) (SnapshotRequest, error) {
+	rel, err := relInWorkspace(target.base, target.abs)
+	if err != nil {
+		return SnapshotRequest{}, err
+	}
+	realRel, err := realRelInRoot(target.base, target.abs)
+	if err != nil {
+		return SnapshotRequest{}, err
+	}
+	return SnapshotRequest{
+		CallID:  callID,
+		Tool:    "file_edit",
+		Root:    target.base,
+		Rel:     filepath.ToSlash(rel),
+		RealRel: filepath.ToSlash(realRel),
+		Kind:    SnapshotKindFile,
+		Before:  before,
+	}, nil
+}
+
+func editSnapshotResult(call api.ToolCall, req SnapshotRequest, before SnapshotBefore, original []byte, updated, status string) SnapshotResult {
+	result := SnapshotResult{
+		CallID:        call.CallID,
+		Tool:          "file_edit",
+		Root:          req.Root,
+		Rel:           req.Rel,
+		RealRel:       req.RealRel,
+		Kind:          req.Kind,
+		Size:          int64(len(original)),
+		Status:        status,
+		Unrecoverable: before.Unrecoverable,
+	}
+	if status == SnapshotStatusComplete {
+		result.AfterSHA256 = sha256Hex([]byte(updated))
+	}
+	return result
 }
 
 // ApplyEdit applies file_edit's arguments (old_string, new_string,

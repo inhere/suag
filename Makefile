@@ -136,6 +136,7 @@ smoke-chat:
 	python3 -I scripts/ptysmoke/chat_approval.py --bin tmp/smoke/suga --work tmp/smoke
 	python3 -I scripts/ptysmoke/chat_rules.py --bin tmp/smoke/suga --work tmp/smoke-rules
 	python3 -I scripts/ptysmoke/chat_edit.py --bin tmp/smoke/suga --work tmp/smoke-edit
+	python3 -I scripts/ptysmoke/chat_undo.py --bin tmp/smoke/suga --work tmp/smoke-undo
 	python3 -I scripts/ptysmoke/chat_diff.py --bin tmp/smoke/suga --work tmp/smoke-diff
 	python3 -I scripts/ptysmoke/chat_memory.py --bin tmp/smoke/suga --work tmp/smoke-memory
 	python3 -I scripts/ptysmoke/chat_idle.py --bin tmp/smoke/suga --work tmp/smoke-idle

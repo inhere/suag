@@ -26,6 +26,7 @@ func TestChatCompletion(t *testing.T) {
 		assert.Eq(t, ":model f", line)
 		assert.Eq(t, len(line), pos)
 	})
+
 	t.Run("directory with spaces", func(t *testing.T) {
 		dir := t.TempDir()
 		child := filepath.Join(dir, "folder with space")
@@ -36,6 +37,7 @@ func TestChatCompletion(t *testing.T) {
 		assert.Eq(t, ":add-dir "+child+string(os.PathSeparator), line)
 		assert.Eq(t, len(line), pos)
 	})
+
 	t.Run("relative directory is resolved from workspace", func(t *testing.T) {
 		workspace := t.TempDir()
 		child := filepath.Join(workspace, "tm-dir")
@@ -58,5 +60,9 @@ func TestChatCompletionIsInstalledOnTerminalSource(t *testing.T) {
 	line, pos, ok = source.terminal.AutoCompleteCallback(":model f", len(":model f"), '\t')
 	assert.True(t, ok)
 	assert.Eq(t, ":model f", line)
+	assert.Eq(t, len(line), pos)
+	line, pos, ok = source.terminal.AutoCompleteCallback(":check", len(":check"), '\t')
+	assert.True(t, ok)
+	assert.Eq(t, ":checkpoints", line)
 	assert.Eq(t, len(line), pos)
 }

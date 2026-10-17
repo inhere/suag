@@ -13,6 +13,9 @@ type GCReport struct {
 	// Events counts the observability rows removed with those sessions plus
 	// older rows whose session no longer exists.
 	Events int64
+	// SnapshotBytes is the on-disk size of snapshots below the sessions removed
+	// by this report. It is populated by the CLI, which owns that file root.
+	SnapshotBytes int64
 	// Applied is false for a dry run.
 	Applied bool
 }

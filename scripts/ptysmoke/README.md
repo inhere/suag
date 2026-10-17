@@ -10,6 +10,7 @@
 | `chat_approval.py` | 现成场景：开场模型、❯ 提示符、写工具确认（y/n/a/Ctrl-C）、提示符处单次 Ctrl-C 只提示、连按两次退出（汇总与续接命令）、非 TTY 拒绝；窗口设为 100 列，并检查输入行按终端宽度折行（90 个字符仍在同一行；去掉 `SetSize` 调用时该检查会失败），以及运行中把窗口改到 60 列后编辑器按新宽度排版（用宽字符在行尾的填充空格判断；去掉 resize 监听时该检查会失败）；输入行有文字（`abc`）时 Ctrl-C 只清空输入行——不出现“再按一次 Ctrl+C 退出”、chat 不退出、屏幕模型看到那一行只剩提示符，接着键入的文字自成一行（wll1）；审批提问处即便行上有文字，Ctrl-C 仍是取消该问题（`SetCtrlCClearsLine` 只给提示符与回合的读取）；回合中提前输入不放行分 `chat.steering` 开/关两组跑：开着时该行算插话（显示 `[插话] y`，随后的问题仍要下一行作答）、关着时该行被问句的读取丢弃且不算插话 |
 | `chat_budget.py` | 预算交互：小 token 预算的状态行、一次提醒与软收尾；session 已用尽时不再调用模型；真实/估算用量、`estimate: off`、插话返回后新 turn 预算重置与未配置回归；退出后用 `suga trace --json` 检查 scope/reason/estimated。反向验证见脚本 docstring |
 | `chat_edit.py` | `file_grep` 免确认、`file_edit` 确认显示原文/改为、确认后文件被修改、两次 Ctrl-C 退出 |
+| `chat_undo.py` | 写入/编辑/删除快照、`:checkpoints`/`:undo` 确认与补全、冲突/force、shell 边界、回滚通知、trace snapshot attrs、附加目录/cwd 变化、无快照和终端文本清洗；脚本 docstring 列出反向验证 |
 | `chat_idle.py` | 空闲整理：`context.idle_after: 2s` + 小 `context_window`，回合时长超过 idle_after 时回合中不触发；回合结束后出现“✦ 空闲整理中…”与“✦ 已整理上下文：X → Y token”；之后输入正常；整理进行中输入会抢占它（无成功提示、回合照常回答）；`suga trace` 可见 schedule 事件与 reason=idle 的分段 |
 | `chat_observe.py` | 观测进入 trace：配置一个 hook 命令（UserPromptSubmit 注入上下文），在审批提示处停 1.2s 再答 y，退出后检查 `suga trace --json`：SessionStart / UserPromptSubmit（注入字符数）/ Stop 三个 hook 事件，shell_exec 的 `approval=user` 与等待时间，回合 context 事件计入 hook 注入 |
 | `chat_retry.py` | 模型重试：`retry` 配成 200ms 级等待，假模型先回 503、再断一次流、再完整回复；检查 chat 显示 503 重试提示与“将重新输出”的断流提示、之后完整回复，`suga trace --json` 的 model 事件 `retries=2`、`retry_reason=stream broken` 与等待时间 |

@@ -72,7 +72,7 @@ func ChatTerminalTitleEnabled() bool {
 // (chat.diff, on by default): the unified diff under the tool result, the
 // pending diff before an approval question and the :diff command. It takes the
 // same values as chat.markdown. run, ACP and stream-json are not affected - ACP
-// builds its own diff for the client either way.
+// builds its own diff for its client either way.
 func ChatDiffEnabled() bool {
 	return chatSwitch("chat.diff")
 }
@@ -104,6 +104,13 @@ func ChatDiffLines() (int, error) {
 // run, ACP and a chat without a terminal keep refusing such a call as before.
 func ChatAskOutsideDirs() bool {
 	return chatSwitch("chat.ask_outside_dirs")
+}
+
+// ChatUndoConfirmEnabled reports whether :undo asks for confirmation before it
+// changes files. It is on by default and accepts the same bool/string switches
+// as the other chat safety settings.
+func ChatUndoConfirmEnabled() bool {
+	return chatSwitch("chat.undo_confirm")
 }
 
 // chatSwitch reads a chat.* switch: a missing key is on, a bool is used as is,

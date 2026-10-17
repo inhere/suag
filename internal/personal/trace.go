@@ -306,6 +306,9 @@ func toolTraceParts(e store.Event) []string {
 	if d, _ := e.Attrs["danger"].(string); d != "" {
 		parts = append(parts, fmt.Sprintf("danger=%q", d))
 	}
+	if snapshot, ok := e.Attrs["snapshot"].(map[string]any); ok {
+		parts = append(parts, snapshotTracePart(snapshot))
+	}
 	if code, ok := e.Attrs["exit_code"]; ok {
 		parts = append(parts, fmt.Sprintf("exit=%v", code))
 	}
@@ -352,6 +355,16 @@ func approvalScopeText(scope string) string {
 		return scope[:i] + fmt.Sprintf(" %q", scope[i+1:])
 	}
 	return scope
+}
+
+// snapshotTracePart renders the safe snapshot summary without exposing the
+// before-image or any filesystem content.
+func snapshotTracePart(snapshot map[string]any) string {
+	part := fmt.Sprintf("snapshot=%v %v bytes=%v", snapshot["kind"], snapshot["status"], attrInt(snapshot["bytes"]))
+	if reason, _ := snapshot["unrecoverable"].(string); reason != "" {
+		part += " unrecoverable=" + reason
+	}
+	return part
 }
 
 // toolArgPart is the redacted argument summary of a tool call, rendered last

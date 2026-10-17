@@ -46,6 +46,7 @@ type FileRemoveTool struct {
 	workspace string
 	trashDir  string
 	addDirs   *AddDirs
+	snapshots Snapshotter
 	now       func() time.Time
 }
 
@@ -219,39 +220,109 @@ func PlanRemoveWithDirs(workspace string, writeRoots []string, args map[string]a
 	return plan, walk(plan.Rel)
 }
 
-func (t *FileRemoveTool) Execute(_ context.Context, call api.ToolCall) (*api.ToolResult, error) {
+func (t *FileRemoveTool) Execute(ctx context.Context, call api.ToolCall) (*api.ToolResult, error) {
 	plan, err := PlanRemoveWithDirs(t.workspace, t.addDirs.WritePaths(), call.Arguments)
 	if err != nil {
 		return nil, fmt.Errorf("file_remove: %w", err)
 	}
-	if plan.Purge {
-		if err := os.RemoveAll(plan.Abs); err != nil {
+
+	var snapshotReq SnapshotRequest
+	var beforeResult SnapshotBefore
+	if t.snapshots != nil {
+		snapshotReq, err = t.removeSnapshotRequest(plan, call.CallID)
+		if err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Status: SnapshotStatusIncomplete, Bytes: plan.Bytes})
 			return nil, fmt.Errorf("file_remove: %w", err)
 		}
-		return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: fmt.Sprintf(
-			"removed %s permanently: it is ignored (regenerable) content, which does not go to the trash", plan.Rel)}, nil
+		beforeResult, err = t.snapshots.BeforeCall(ctx, snapshotReq)
+		if err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: snapshotReq.Kind, Status: SnapshotStatusIncomplete,
+				Bytes: plan.Bytes, Unrecoverable: snapshotUnrecoverable(snapshotReq.Kind, beforeResult.Unrecoverable)})
+			return nil, fmt.Errorf("file_remove: snapshot before: %w", err)
+		}
+	}
+	unrecoverable := snapshotUnrecoverable(snapshotReq.Kind, beforeResult.Unrecoverable)
+	finishSnapshot := func(status string, trashEntries, purgedDirs []string) error {
+		if t.snapshots == nil {
+			return nil
+		}
+		result := SnapshotResult{
+			CallID:        call.CallID,
+			Tool:          t.Name(),
+			Root:          snapshotReq.Root,
+			Rel:           snapshotReq.Rel,
+			RealRel:       snapshotReq.RealRel,
+			Kind:          snapshotReq.Kind,
+			Size:          plan.Bytes,
+			Status:        status,
+			Unrecoverable: unrecoverable,
+			TrashEntries:  trashEntries,
+			PurgedDirs:    purgedDirs,
+		}
+		if err := t.snapshots.AfterCall(ctx, result); err != nil {
+			ReportSnapshot(ctx, SnapshotReport{Kind: result.Kind, Status: SnapshotStatusIncomplete,
+				Bytes: result.Size, Unrecoverable: result.Unrecoverable})
+			return err
+		}
+		ReportSnapshot(ctx, SnapshotReport{Kind: result.Kind, Status: result.Status,
+			Bytes: result.Size, Unrecoverable: result.Unrecoverable})
+		return nil
+	}
+	incomplete := func(opErr error, trashEntries, purgedDirs []string) (*api.ToolResult, error) {
+		if snapshotErr := finishSnapshot(SnapshotStatusIncomplete, trashEntries, purgedDirs); snapshotErr != nil {
+			return nil, fmt.Errorf("file_remove: %w; snapshot incomplete: %v", opErr, snapshotErr)
+		}
+		return nil, fmt.Errorf("file_remove: %w", opErr)
+	}
+
+	if plan.Purge {
+		if err := os.RemoveAll(plan.Abs); err != nil {
+			return incomplete(err, nil, nil)
+		}
+		if err := finishSnapshot(SnapshotStatusComplete, nil, []string{plan.Rel}); err != nil {
+			return nil, fmt.Errorf("file_remove: snapshot after failed after removing %s: %w", plan.Abs, err)
+		}
+		out := fmt.Sprintf("removed %s permanently: it is ignored (regenerable) content, which does not go to the trash", plan.Rel)
+		if notice := snapshotNotice(beforeResult); notice != "" {
+			out += "\n" + notice
+		}
+		return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: out}, nil
 	}
 	// Regenerable directories first: they are never kept, so the move to the
 	// trash (possibly a copy to another volume) only handles the rest.
+	var purgedDirs []string
 	for _, dir := range plan.PurgeDirs {
 		if err := os.RemoveAll(filepath.Join(plan.Base, filepath.FromSlash(dir))); err != nil {
-			return nil, fmt.Errorf("file_remove: %w", err)
+			return incomplete(err, nil, purgedDirs)
 		}
+		purgedDirs = append(purgedDirs, dir)
 	}
 	t.purgeTrash()
 	entry, err := t.newTrashEntry()
 	if err != nil {
-		return nil, fmt.Errorf("file_remove: trash: %w", err)
+		return incomplete(fmt.Errorf("trash: %w", err), nil, purgedDirs)
 	}
-	if err := moveToTrash(plan.Abs, filepath.Join(entry, filepath.Base(plan.Abs))); err != nil {
+	trashName := filepath.Base(plan.Abs)
+	// origin.json is reserved for provenance. Keep a removed file with that
+	// basename under a separate payload name so its bytes are not overwritten.
+	if strings.EqualFold(trashName, "origin.json") {
+		trashName = ".suga-content"
+	}
+	if err := moveToTrash(plan.Abs, filepath.Join(entry, trashName)); err != nil {
 		_ = os.RemoveAll(entry)
-		return nil, fmt.Errorf("file_remove: %w", err)
+		return incomplete(err, nil, purgedDirs)
 	}
 	origin, _ := json.Marshal(map[string]any{
-		"path": plan.Abs, "removed_at": t.now().UTC().Format(time.RFC3339), "files": plan.Files, "bytes": plan.Bytes,
+		"path": plan.Abs, "name": trashName, "removed_at": t.now().UTC().Format(time.RFC3339), "files": plan.Files, "bytes": plan.Bytes,
 		"purged_dirs": plan.PurgeDirs,
 	})
-	_ = os.WriteFile(filepath.Join(entry, "origin.json"), origin, 0o644)
+	if err := os.WriteFile(filepath.Join(entry, "origin.json"), origin, 0o644); err != nil {
+		return incomplete(fmt.Errorf("write trash origin: %w", err), []string{entry}, purgedDirs)
+	}
+	trashEntries := []string{entry}
+	if err := finishSnapshot(SnapshotStatusComplete, trashEntries, purgedDirs); err != nil {
+		return nil, fmt.Errorf("file_remove: snapshot after failed after removing %s: %w", plan.Abs, err)
+	}
 	what := "file"
 	if plan.Dir {
 		what = fmt.Sprintf("directory (%d files)", plan.Files)
@@ -262,7 +333,32 @@ func (t *FileRemoveTool) Execute(_ context.Context, call api.ToolCall) (*api.Too
 		out += fmt.Sprintf("\n%d ignored (regenerable) director%s deleted permanently: %s",
 			n, map[bool]string{true: "y", false: "ies"}[n == 1], NotedDirs(plan.PurgeDirs))
 	}
+	if notice := snapshotNotice(beforeResult); notice != "" {
+		out += "\n" + notice
+	}
 	return &api.ToolResult{CallID: call.CallID, Name: t.Name(), Content: out}, nil
+}
+
+// removeSnapshotRequest records a pending deletion before any trash or purge
+// I/O. The target itself is not followed when it is a symlink, so its lexical
+// path remains the safe real path fallback for that case.
+func (t *FileRemoveTool) removeSnapshotRequest(plan RemovePlan, callID string) (SnapshotRequest, error) {
+	realRel, err := realRelInRoot(plan.Base, plan.Abs)
+	if err != nil {
+		realRel = plan.Rel
+	}
+	kind := SnapshotKindTrash
+	if plan.Purge {
+		kind = SnapshotKindPurged
+	}
+	return SnapshotRequest{
+		CallID:  callID,
+		Tool:    t.Name(),
+		Root:    plan.Base,
+		Rel:     plan.Rel,
+		RealRel: filepath.ToSlash(realRel),
+		Kind:    kind,
+	}, nil
 }
 
 // NotedDirs names the first few directories of dirs and how many more.
@@ -308,8 +404,15 @@ func (t *FileRemoveTool) purgeTrash() {
 // volume (where a rename always fails).
 var renamePath = os.Rename
 
-// moveToTrash renames src to dst, or copies and then deletes when the trash
-// is on another volume (at most RemoveMaxFiles files reach this point). A
+// MovePath moves src to dst with the same-volume rename and cross-volume
+// copy-then-remove fallback used by file_remove. Undo uses this helper to
+// restore a trash entry without maintaining a second copy of the algorithm.
+func MovePath(src, dst string) error {
+	return moveToTrash(src, dst)
+}
+
+// moveToTrash renames src to dst, or copies and then deletes when the trash is
+// on another volume (at most RemoveMaxFiles files reach this point). A
 // failed copy leaves src untouched.
 func moveToTrash(src, dst string) error {
 	if err := renamePath(src, dst); err == nil {

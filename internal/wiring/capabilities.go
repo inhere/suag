@@ -52,8 +52,12 @@ func buildDefaultCapabilities(workspace string) (defaultCapabilities, error) {
 }
 
 func buildDefaultCapabilitiesWithServers(ctx context.Context, workspace string, dirs *native.AddDirs, additional []toolsmcp.ServerSettings) (defaultCapabilities, error) {
+	return buildDefaultCapabilitiesWithServersAndSnapshot(ctx, workspace, dirs, additional, nil)
+}
+
+func buildDefaultCapabilitiesWithServersAndSnapshot(ctx context.Context, workspace string, dirs *native.AddDirs, additional []toolsmcp.ServerSettings, snapshotter native.Snapshotter) (defaultCapabilities, error) {
 	registry := tools.NewRegistry()
-	for _, tool := range native.BuildTools(nativeEnv(workspace, dirs), true) {
+	for _, tool := range native.BuildTools(nativeEnvWithSnapshot(workspace, dirs, snapshotter), true) {
 		registry.MustRegister(tool)
 	}
 	built := defaultCapabilities{Registry: registry}
@@ -148,8 +152,7 @@ func minimizeOutput(workspace string) func(agentcore.ToolCall, string) (string, 
 	return native.NewOutputMinimizer(rules).Minimize
 }
 
-// prefetchTools lets a reply's local read calls (file_read, file_list,
-// file_grep, file_find) run concurrently (tools.parallel_reads, default true);
+// prefetchTools lets a reply's local read calls (file_read, file_list, file_grep, file_find) run concurrently (tools.parallel_reads, default true);
 // nil when off.
 func prefetchTools(reg *tools.Registry) func(context.Context, []agentcore.ToolCall) {
 	if reg == nil || !gkconfig.Bool("tools.parallel_reads", true) {
@@ -175,6 +178,10 @@ func trashDir() string {
 // the session's additional-directory set (--add-dir), which the tools read at
 // every call, so it may still be empty here (nil = none).
 func nativeEnv(workspace string, dirs *native.AddDirs) native.Env {
+	return nativeEnvWithSnapshot(workspace, dirs, nil)
+}
+
+func nativeEnvWithSnapshot(workspace string, dirs *native.AddDirs, snapshotter native.Snapshotter) native.Env {
 	roots, errs := readRoots(workspace)
 	warnReadRootsOnce.Do(func() {
 		for _, err := range errs {
@@ -186,6 +193,7 @@ func nativeEnv(workspace string, dirs *native.AddDirs) native.Env {
 		AddDirs:           dirs,
 		TrashDir:          trashDir(),
 		ReadRoots:         native.RootPaths(roots),
+		Snapshots:         snapshotter,
 		InlineBytes:       inlineOutputBytes(),
 		ReadPageBytes:     gkconfig.Int("tools.read_page_bytes", native.DefaultReadPageBytes),
 		RawBytes:          rawOutputBytes(),

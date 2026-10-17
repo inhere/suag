@@ -34,6 +34,7 @@ func New(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, build B
   suga                         Start interactive chat
   suga run --prompt "hello"    Run one turn
   suga acp                     Serve ACP over stdio
+  suga undo <session> --list   List file checkpoints
   suga trace <session> --json  Show the event timeline of a session
 `
 
@@ -57,6 +58,7 @@ func New(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, build B
 		newStatsCommand(ctx, stdout, stderr),
 		newManifestCommand(ctx, stdout, stderr),
 		newGCCommand(ctx, stdout, stderr),
+		newUndoCommand(ctx, stdin, stdout, stderr),
 		newExportCommand(ctx, stdout, stderr),
 	)
 	return root

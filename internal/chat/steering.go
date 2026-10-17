@@ -202,6 +202,15 @@ func (t *turnInput) insert(line string) {
 	if text == "" {
 		return
 	}
+	// :undo and :checkpoints are never steering either: they read and change the
+	// session's files, so the line goes back to the input line and runs at the
+	// next prompt, after the turn. External delivery bypasses insert and stays
+	// ordinary model input.
+	if isUndoCommand(text) || isCheckpointCommand(text) {
+		t.state.render.Hint(undoBusyHint)
+		t.state.source.putBackLine(line)
+		return
+	}
 	// A local command cannot run while the turn does (the prompt belongs to the
 	// turn): the line is not inserted as a message either, it goes back to the
 	// input line for the next prompt (the way a message the turn refused does).

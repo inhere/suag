@@ -18,6 +18,8 @@ func TestChatCommandsText(t *testing.T) {
 :compact 压缩上下文
 :add-dir/:dirs/:rm-dir 管理附加目录
 :diff [N] 显示文件改动
+:checkpoints 列出写操作快照
+:undo [N] [force] 回滚文件改动
 :help 显示此帮助
 :usage 显示本会话用量与成本
 :tasks 显示后台任务

@@ -116,6 +116,12 @@ MCP 工具默认一律不放行，由 YAML 中两个 glob 列表控制，条目�
 - `suga_manifest`：以 JSON 返回能力清单，等同在主机上跑 `suga manifest --json`（模型、工具及元数据、MCP、skills、记忆后端及选择原因、输出上限）。
 - `memory`：长期记忆，见下节。
 
+### 写操作快照与回滚
+
+可写的 `suga run`、chat 和 ACP 共享同一套写操作快照配置；`file_write`、`file_edit`、`file_remove` 在实际 I/O 前保存写前状态，快照位于 `$SUGA_HOME/sessions/<session-id>/snapshots/`。默认单次 16 MiB、会话 256 MiB、全局 1 GiB，保留 20 个已完成回合或 7 天。默认 `tools.snapshots.on_error: deny` 时快照不可写、清理或状态不确定会在写盘前拒绝；只有显式 `continue` 才允许写入并标明不可恢复，因此 Gofer 派发的 `suga run` 也遵守 fail-closed。
+
+ACP 没有内置 undo 命令，但它的文件写操作照常创建快照；可在同一用户的 Suga 环境中用 `suga undo <session>` 列出或回滚。`shell_exec`（含后台任务）不自动回滚，`file_remove` 的回收区仍只保留 7 天。快照不进模型上下文、transcript 或 export；回滚后的 `suga.undo` 通知在下一次显式回合投递，`suga trace <session> --json` 可查看 undo 事件和工具事件的 `attrs.snapshot`。关闭 `tools.snapshots.enabled` 只停止新快照，不删除已有数据或命令面。
+
 ### 子 agent（`agent` 工具）
 
 `agent` 工具把一件独立任务交给只读子 agent：`type` 为 `explore`（缺省，工作区只读工具）或 `research`（再加 `web_fetch`、`web_search`），它只把最终报告带回来，`description` 就是它的名字。完整说明（两种类型、后台运行、上限与 `agents.*` 配置、用量与污染口径、子会话的列表/搜索/gc）见 [README 的“子 agent”一节](../../README.zh-CN.md#子-agent)。这里只列接入方会看到的部分：
