@@ -75,11 +75,11 @@ type ResolvedConfigValue struct {
 const (
 	ToolsApprovalAsk   = "ask"
 	ToolsApprovalAuto  = "auto"
-	MemoryWriteAuto    = "auto"
-	MemoryWriteOff     = "off"
-	MemoryTaintedAsk   = "ask"
-	MemoryTaintedDeny  = "deny"
-	MemoryTaintedAllow = "allow"
+	MemoryWriteAuto    = "auto"  // memory.write: writes take effect directly (default)
+	MemoryWriteOff     = "off"   // memory.write: the memory tool is read-only
+	MemoryTaintedAsk   = "ask"   // memory.write_tainted: tainted sessions ask (default; run refuses)
+	MemoryTaintedDeny  = "deny"  // memory.write_tainted: tainted sessions never write
+	MemoryTaintedAllow = "allow" // memory.write_tainted: tainted sessions write without asking
 )
 
 var configKeyDescriptors = []ConfigKey{
